@@ -1,0 +1,6 @@
+{
+  "name": "Kyrub",
+  "description": "Kyrub Super App - Ecossistema B2B2C Multi-Tenant de Marketplace conectando Fornecedores, Varejistas e Consumidores.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

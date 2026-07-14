@@ -1,0 +1,226 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ==========================================
+    // GLOBAL HELPERS
+    // ==========================================
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // Verifies that a user is part of the tenant and belongs to it via Custom Claims
+    function isTenantUser(tenantId) {
+      return isSignedIn() && (request.auth.token.tenantId == tenantId || request.auth.uid == tenantId);
+    }
+
+    // Role-based authorization helpers reading directly from Custom Claims
+    function isAdmin() {
+      return isSignedIn() && request.auth.token.role == "admin";
+    }
+
+    function isSupplier() {
+      return isSignedIn() && request.auth.token.role == "supplier";
+    }
+
+    function isRetailer() {
+      return isSignedIn() && request.auth.token.role == "retailer";
+    }
+
+    // Checks valid string identifier lengths
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    // Helper shortcuts
+    function incoming() {
+      return request.resource.data;
+    }
+    
+    function existing() {
+      return resource.data;
+    }
+
+    // ==========================================
+    // GLOBAL SAFETY NET (DEFAULT DENY)
+    // ==========================================
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // ==========================================
+    // GLOBAL COLLECTIONS (9 PILLARS COMPLIANCE)
+    // ==========================================
+    
+    // 1. Unified Global User Profiles
+    match /users/{uid} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && request.auth.uid == uid;
+      
+      // Connection requests subcollection for real-time multiplayer requests
+      match /connection_requests/{requestId} {
+        allow read: if isSignedIn() && request.auth.uid == uid;
+        allow create: if isSignedIn();
+        allow update, delete: if isSignedIn() && request.auth.uid == uid;
+      }
+
+      // Friends subcollection
+      match /friends/{friendId} {
+        allow read: if isSignedIn();
+        allow write: if isSignedIn() && request.auth.uid == uid;
+      }
+    }
+
+    // 3. Fintech Digital Wallets (BaaS)
+    match /wallets/{holderId} {
+      allow read: if isSignedIn() && (request.auth.uid == holderId || isAdmin());
+      allow write: if isSignedIn() && (request.auth.uid == holderId || isAdmin());
+    }
+
+    // 4. Admin Subscriptions status validation
+    match /kyrub_admin/subscriptions {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+    match /kyrub_admin/subscriptions/{subId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // 5. Public Marketplace Listings
+    match /marketplace_listings/{listingId} {
+      allow read: if true; // Public marketplace browsing
+      allow write: if isSignedIn();
+    }
+
+    // 6. Freelance gig job economy board
+    match /freelance_jobs/{jobId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn();
+    }
+
+    // 7. Delivery dispatcher freight tracker
+    match /delivery_jobs/{jobId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn();
+    }
+    match /deliveries/{deliveryId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn();
+    }
+
+    // 8. Social Feed and Real-time Chat
+    match /social_feed/{postId} {
+      allow read: if true; // Public feed access
+      allow write: if isSignedIn();
+    }
+    match /posts/{postId} {
+      allow read: if true; // Public feed access
+      allow write: if isSignedIn();
+    }
+    match /social_chats/{chatId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn();
+    }
+
+    // 10. Momentos (Shared stories/experiences)
+    match /momentos/{momentoId} {
+      allow read: if true; // Public access to momentos
+      allow write: if isSignedIn();
+    }
+
+    // Multiplayer shared tasks, notes, and connections
+    match /social_tasks/{taskId} {
+      allow read, write: if isSignedIn();
+    }
+    match /shared_notes/{noteId} {
+      allow read, write: if isSignedIn();
+    }
+    match /connections/{connectionId} {
+      allow read, write: if isSignedIn();
+    }
+
+    // 9. Storage Metadata and Global Audit Logs
+    match /storage_metadata/{metaId} {
+      allow read, write: if isSignedIn();
+    }
+    match /audit_logs/{logId} {
+      allow read: if isSignedIn() && (request.auth.uid == logId || isAdmin());
+      allow create: if isSignedIn();
+      allow update, delete: if false; // Immutable ledger
+    }
+
+    // ==========================================
+    // MULTI-TENANT ROUTING & SECURITY RULES
+    // ==========================================
+    match /tenants/{tenantId} {
+      allow get: if isSignedIn();
+      allow list: if isSignedIn() && resource.data.email == request.auth.token.email;
+      allow create: if isSignedIn() && incoming().email == request.auth.token.email;
+      allow update: if isTenantUser(tenantId) && incoming().email == existing().email; // prevent owner transfer spoofing
+      allow delete: if false; // soft-delete only
+
+      // 1. Audit Logs Subcollection - STRICT IMMUTABILITY
+      match /audit_logs/{logId} {
+        allow get: if isTenantUser(tenantId);
+        allow list: if isTenantUser(tenantId);
+        
+        // Allowed to append audit logs with strict schema
+        allow create: if isTenantUser(tenantId) 
+          && incoming().tenantId == tenantId
+          && incoming().timestamp == request.time
+          && incoming().action is string;
+
+        // Strictly forbid modifying or removing audit trails
+        allow update, delete: if false;
+      }
+
+      // 2. Branding Stores Subcollection
+      match /stores/{storeId} {
+        allow read: if true; // Public customer access
+        allow write: if isTenantUser(tenantId);
+      }
+
+      // 3. Products/Services Subcollection
+      match /products/{productId} {
+        allow read: if true; // Public client browsing
+        allow write: if isTenantUser(tenantId);
+      }
+
+      // 4. B2B and B2C Orders
+      match /orders/{orderId} {
+        allow get: if isTenantUser(tenantId) || (isSignedIn() && existing().buyerEmail == request.auth.token.email);
+        allow list: if isTenantUser(tenantId) || (isSignedIn() && resource.data.buyerEmail == request.auth.token.email);
+        allow create: if true; // Public checkout allowed
+        allow update: if isTenantUser(tenantId) && incoming().type == existing().type; // lock order type after creation
+        allow delete: if false; // forbid order deletion
+      }
+
+      // 5. Active Sessions (Concurrency-managed - Tables, Fitting Rooms, Collection Spots)
+      match /active_sessions/{sessionId} {
+        allow read: if isTenantUser(tenantId);
+        allow create: if isTenantUser(tenantId) 
+          && incoming().status == "open"
+          && incoming().locationIdentifier != null
+          && incoming().staffId != null;
+        
+        // Update must be atomic - protected via status checks
+        allow update: if isTenantUser(tenantId) 
+          && (existing().status == "open" || incoming().status == "closed")
+          && incoming().lastUpdated == request.time;
+          
+        allow delete: if false;
+      }
+
+      // 6. Sectors
+      match /sectors/{sectorId} {
+        allow read, write: if isTenantUser(tenantId);
+      }
+
+      // 7. Tasks (Kanban)
+      match /tasks/{taskId} {
+        allow read, write: if isTenantUser(tenantId);
+      }
+    }
+  }
+}

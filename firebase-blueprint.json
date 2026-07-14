@@ -1,0 +1,178 @@
+{
+  "entities": {
+    "Tenant": {
+      "title": "Tenant",
+      "description": "Kyrub tenant profile (supplier or retailer)",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "role": { "type": "string", "enum": ["supplier", "retailer"] },
+        "storeId": { "type": "string" },
+        "plan": { "type": "string", "enum": ["free", "business"] }
+      },
+      "required": ["id", "name", "email", "role", "plan"]
+    },
+    "Store": {
+      "title": "Store",
+      "description": "Retailer's digital storefront branding and setup",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "slug": { "type": "string" },
+        "description": { "type": "string" },
+        "logo": { "type": "string" },
+        "banner": { "type": "string" },
+        "primaryColor": { "type": "string" },
+        "plan": { "type": "string", "enum": ["free", "business"] },
+        "ownerEmail": { "type": "string", "format": "email" }
+      },
+      "required": ["id", "name", "slug", "plan", "ownerEmail"]
+    },
+    "Product": {
+      "title": "Product",
+      "description": "A physical product or professional service in the catalog",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "price": { "type": "number" },
+        "wholesalePrice": { "type": "number" },
+        "image": { "type": "string" },
+        "stock": { "type": "integer" },
+        "supplierId": { "type": "string" },
+        "isService": { "type": "boolean" },
+        "category": { "type": "string" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "name", "price", "stock", "category"]
+    },
+    "Order": {
+      "title": "Order",
+      "description": "B2B or B2C order transaction record",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "storeId": { "type": "string" },
+        "buyerName": { "type": "string" },
+        "buyerEmail": { "type": "string", "format": "email" },
+        "items": { "type": "array" },
+        "total": { "type": "number" },
+        "status": { "type": "string", "enum": ["pending", "processing", "shipped", "delivered"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "type": { "type": "string", "enum": ["retail", "wholesale"] }
+      },
+      "required": ["id", "buyerName", "buyerEmail", "items", "total", "status", "createdAt", "type"]
+    },
+    "AuditLog": {
+      "title": "AuditLog",
+      "description": "Immutable log recording payment split transactions or operations",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "action": { "type": "string" },
+        "tenantId": { "type": "string" },
+        "preSplitState": { "type": "object" },
+        "postSplitState": { "type": "object" },
+        "metadata": { "type": "object" }
+      },
+      "required": ["id", "timestamp", "action", "tenantId", "preSplitState", "postSplitState"]
+    },
+    "ActiveSession": {
+      "title": "ActiveSession",
+      "description": "Active session representing a customer comanda or spot transaction (e.g. table, fitting room, pick-up lane)",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "locationIdentifier": { "type": "string" },
+        "status": { "type": "string", "enum": ["open", "closing", "closed"] },
+        "staffId": { "type": "string" },
+        "currentBill": { "type": "number" },
+        "lastUpdated": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "locationIdentifier", "status", "currentBill", "lastUpdated"]
+    },
+    "SocialTask": {
+      "title": "SocialTask",
+      "description": "Multiplayer task or note",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "content": { "type": "string" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "title", "content"]
+    },
+    "SharedNote": {
+      "title": "SharedNote",
+      "description": "Multiplayer shared note",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "content": { "type": "string" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "title", "content"]
+    },
+    "Connection": {
+      "title": "Connection",
+      "description": "User connection/contact request",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "toUserId": { "type": "string" },
+        "fromUserId": { "type": "string" },
+        "fromUserName": { "type": "string" },
+        "fromUserRole": { "type": "string" },
+        "fromUserAvatar": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "accepted", "declined"] },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "toUserId", "fromUserId", "status"]
+    }
+  },
+  "firestore": {
+    "/tenants/{tenantId}": {
+      "schema": "Tenant",
+      "description": "Multi-tenant master records"
+    },
+    "/tenants/{tenantId}/stores/{storeId}": {
+      "schema": "Store",
+      "description": "Storefront branding configurations"
+    },
+    "/tenants/{tenantId}/products/{productId}": {
+      "schema": "Product",
+      "description": "Tenant inventory catalogs"
+    },
+    "/tenants/{tenantId}/orders/{orderId}": {
+      "schema": "Order",
+      "description": "Order records with customer info"
+    },
+    "/tenants/{tenantId}/audit_logs/{logId}": {
+      "schema": "AuditLog",
+      "description": "Immutable ledger tracking money splits"
+    },
+    "/tenants/{tenantId}/active_sessions/{sessionId}": {
+      "schema": "ActiveSession",
+      "description": "Concurrently managed active sessions (tables, fitting rooms, collection spots)"
+    },
+    "/social_tasks/{taskId}": {
+      "schema": "SocialTask",
+      "description": "Multiplayer shared tasks and notes"
+    },
+    "/shared_notes/{noteId}": {
+      "schema": "SharedNote",
+      "description": "Multiplayer shared notes"
+    },
+    "/connections/{connectionId}": {
+      "schema": "Connection",
+      "description": "Multiplayer real-time contact connection requests"
+    }
+  }
+}
