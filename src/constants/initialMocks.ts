@@ -13,7 +13,7 @@ export const deliveries: DeliveryJob[] = [];
 
 export const freelanceJobs: FreelanceJob[] = [];
 
-export const momentos = [];
+export const momentos: any[] = [];
 
 export const connectionRequests = [];
 // Mantemos o chat vazio para novos usuários

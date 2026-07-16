@@ -115,7 +115,54 @@ export async function syncOfflineBatch(
 }
 
 import { doc, getDoc, setDoc, collection, onSnapshot } from 'firebase/firestore';
-import { db } from './firebase';
+import { db, auth } from './firebase';
+
+export enum OperationType {
+  CREATE = 'create',
+  UPDATE = 'update',
+  DELETE = 'delete',
+  LIST = 'list',
+  GET = 'get',
+  WRITE = 'write',
+}
+
+export interface FirestoreErrorInfo {
+  error: string;
+  operationType: OperationType;
+  path: string | null;
+  authInfo: {
+    userId?: string | null;
+    email?: string | null;
+    emailVerified?: boolean | null;
+    isAnonymous?: boolean | null;
+    tenantId?: string | null;
+    providerInfo?: {
+      providerId?: string | null;
+      email?: string | null;
+    }[];
+  }
+}
+
+export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null): never {
+  const errInfo: FirestoreErrorInfo = {
+    error: error instanceof Error ? error.message : String(error),
+    authInfo: {
+      userId: auth.currentUser?.uid,
+      email: auth.currentUser?.email,
+      emailVerified: auth.currentUser?.emailVerified,
+      isAnonymous: auth.currentUser?.isAnonymous,
+      tenantId: auth.currentUser?.tenantId,
+      providerInfo: auth.currentUser?.providerData?.map(provider => ({
+        providerId: provider.providerId,
+        email: provider.email,
+      })) || []
+    },
+    operationType,
+    path
+  };
+  console.error('Firestore Error: ', JSON.stringify(errInfo));
+  throw new Error(JSON.stringify(errInfo));
+}
 
 /**
  * Saves a document to Firestore using the LWW strategy if it exists, otherwise creates it.
@@ -124,8 +171,10 @@ import { db } from './firebase';
 export async function saveDocLWW(colPath: string, docId: string, localData: any): Promise<{ winner: 'local' | 'remote'; resolvedData: any }> {
   try {
     const docRef = doc(db, colPath, docId);
-    const docSnap = await getDoc(docRef);
-    if (docSnap.exists()) {
+    const docSnap = await getDoc(docRef).catch(err => {
+      handleFirestoreError(err, OperationType.GET, `${colPath}/${docId}`);
+    });
+    if (docSnap && docSnap.exists()) {
       const remoteData = docSnap.data();
       if (remoteData && remoteData.updatedAt && localData.updatedAt) {
         const remoteTime = new Date(remoteData.updatedAt).getTime();
@@ -143,11 +192,17 @@ export async function saveDocLWW(colPath: string, docId: string, localData: any)
         delete dataToWrite[key];
       }
     });
-    await setDoc(docRef, { ...dataToWrite, updatedAt: dataToWrite.updatedAt || new Date().toISOString() });
+    await setDoc(docRef, { ...dataToWrite, updatedAt: dataToWrite.updatedAt || new Date().toISOString() }).catch(err => {
+      handleFirestoreError(err, OperationType.WRITE, `${colPath}/${docId}`);
+    });
     return { winner: 'local', resolvedData: localData };
   } catch (e) {
     console.error(`Error in saveDocLWW for path ${colPath}/${docId}:`, e);
-    return { winner: 'local', resolvedData: localData };
+    // If it's already an error containing our JSON, just rethrow it
+    if (e instanceof Error && e.message.startsWith('{"error":')) {
+      throw e;
+    }
+    handleFirestoreError(e, OperationType.WRITE, `${colPath}/${docId}`);
   }
 }
 
@@ -163,10 +218,10 @@ export function listenCollection(colPath: string, callback: (docs: any[]) => voi
       });
       callback(list);
     }, (err) => {
-      console.error(`Error in listening to collection ${colPath}:`, err);
+      console.warn(`Firestore collection listener offline/restricted for ${colPath}:`, err.message);
     });
   } catch (error) {
-    console.error(`Error setting up listener for ${colPath}:`, error);
+    console.warn(`Error setting up listener for ${colPath}:`, error);
     return () => {};
   }
 }

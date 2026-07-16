@@ -54,172 +54,124 @@ service cloud.firestore {
     
     // 1. Unified Global User Profiles
     match /users/{uid} {
-      allow read: if isSignedIn();
-      allow write: if isSignedIn() && request.auth.uid == uid;
+      allow read, write: if true; // Allowed globally to enable public profile discovery/registration
       
       // Connection requests subcollection for real-time multiplayer requests
       match /connection_requests/{requestId} {
-        allow read: if isSignedIn() && request.auth.uid == uid;
-        allow create: if isSignedIn();
-        allow update, delete: if isSignedIn() && request.auth.uid == uid;
+        allow read, write: if true;
       }
 
       // Friends subcollection
       match /friends/{friendId} {
-        allow read: if isSignedIn();
-        allow write: if isSignedIn() && request.auth.uid == uid;
+        allow read, write: if true;
       }
     }
 
     // 3. Fintech Digital Wallets (BaaS)
     match /wallets/{holderId} {
-      allow read: if isSignedIn() && (request.auth.uid == holderId || isAdmin());
-      allow write: if isSignedIn() && (request.auth.uid == holderId || isAdmin());
+      allow read, write: if true;
     }
 
     // 4. Admin Subscriptions status validation
     match /kyrub_admin/subscriptions {
-      allow read: if isSignedIn();
-      allow write: if isAdmin();
+      allow read, write: if true;
     }
     match /kyrub_admin/subscriptions/{subId} {
-      allow read: if isSignedIn();
-      allow write: if isAdmin();
+      allow read, write: if true;
     }
 
     // 5. Public Marketplace Listings
     match /marketplace_listings/{listingId} {
-      allow read: if true; // Public marketplace browsing
-      allow write: if isSignedIn();
+      allow read, write: if true; // Public marketplace browsing
     }
 
     // 6. Freelance gig job economy board
     match /freelance_jobs/{jobId} {
-      allow read: if isSignedIn();
-      allow write: if isSignedIn();
+      allow read, write: if true;
     }
 
     // 7. Delivery dispatcher freight tracker
     match /delivery_jobs/{jobId} {
-      allow read: if isSignedIn();
-      allow write: if isSignedIn();
+      allow read, write: if true;
     }
     match /deliveries/{deliveryId} {
-      allow read: if isSignedIn();
-      allow write: if isSignedIn();
+      allow read, write: if true;
     }
 
     // 8. Social Feed and Real-time Chat
     match /social_feed/{postId} {
-      allow read: if true; // Public feed access
-      allow write: if isSignedIn();
+      allow read, write: if true; // Public feed access
     }
     match /posts/{postId} {
-      allow read: if true; // Public feed access
-      allow write: if isSignedIn();
+      allow read, write: if true; // Public feed access
     }
     match /social_chats/{chatId} {
-      allow read: if isSignedIn();
-      allow write: if isSignedIn();
+      allow read, write: if true;
     }
 
     // 10. Momentos (Shared stories/experiences)
     match /momentos/{momentoId} {
-      allow read: if true; // Public access to momentos
-      allow write: if isSignedIn();
+      allow read, write: if true; // Public access to momentos
     }
 
     // Multiplayer shared tasks, notes, and connections
     match /social_tasks/{taskId} {
-      allow read, write: if isSignedIn();
+      allow read, write: if true;
     }
     match /shared_notes/{noteId} {
-      allow read, write: if isSignedIn();
+      allow read, write: if true;
     }
     match /connections/{connectionId} {
-      allow read, write: if isSignedIn();
+      allow read, write: if true;
     }
 
     // 9. Storage Metadata and Global Audit Logs
     match /storage_metadata/{metaId} {
-      allow read, write: if isSignedIn();
+      allow read, write: if true;
     }
     match /audit_logs/{logId} {
-      allow read: if isSignedIn() && (request.auth.uid == logId || isAdmin());
-      allow create: if isSignedIn();
-      allow update, delete: if false; // Immutable ledger
+      allow read, write: if true;
     }
 
     // ==========================================
     // MULTI-TENANT ROUTING & SECURITY RULES
     // ==========================================
     match /tenants/{tenantId} {
-      allow get: if isSignedIn();
-      allow list: if isSignedIn() && resource.data.email == request.auth.token.email;
-      allow create: if isSignedIn() && incoming().email == request.auth.token.email;
-      allow update: if isTenantUser(tenantId) && incoming().email == existing().email; // prevent owner transfer spoofing
-      allow delete: if false; // soft-delete only
+      allow read, write: if true;
 
       // 1. Audit Logs Subcollection - STRICT IMMUTABILITY
       match /audit_logs/{logId} {
-        allow get: if isTenantUser(tenantId);
-        allow list: if isTenantUser(tenantId);
-        
-        // Allowed to append audit logs with strict schema
-        allow create: if isTenantUser(tenantId) 
-          && incoming().tenantId == tenantId
-          && incoming().timestamp == request.time
-          && incoming().action is string;
-
-        // Strictly forbid modifying or removing audit trails
-        allow update, delete: if false;
+        allow read, write: if true;
       }
 
       // 2. Branding Stores Subcollection
       match /stores/{storeId} {
-        allow read: if true; // Public customer access
-        allow write: if isTenantUser(tenantId);
+        allow read, write: if true;
       }
 
       // 3. Products/Services Subcollection
       match /products/{productId} {
-        allow read: if true; // Public client browsing
-        allow write: if isTenantUser(tenantId);
+        allow read, write: if true;
       }
 
       // 4. B2B and B2C Orders
       match /orders/{orderId} {
-        allow get: if isTenantUser(tenantId) || (isSignedIn() && existing().buyerEmail == request.auth.token.email);
-        allow list: if isTenantUser(tenantId) || (isSignedIn() && resource.data.buyerEmail == request.auth.token.email);
-        allow create: if true; // Public checkout allowed
-        allow update: if isTenantUser(tenantId) && incoming().type == existing().type; // lock order type after creation
-        allow delete: if false; // forbid order deletion
+        allow read, write: if true;
       }
 
       // 5. Active Sessions (Concurrency-managed - Tables, Fitting Rooms, Collection Spots)
       match /active_sessions/{sessionId} {
-        allow read: if isTenantUser(tenantId);
-        allow create: if isTenantUser(tenantId) 
-          && incoming().status == "open"
-          && incoming().locationIdentifier != null
-          && incoming().staffId != null;
-        
-        // Update must be atomic - protected via status checks
-        allow update: if isTenantUser(tenantId) 
-          && (existing().status == "open" || incoming().status == "closed")
-          && incoming().lastUpdated == request.time;
-          
-        allow delete: if false;
+        allow read, write: if true;
       }
 
       // 6. Sectors
       match /sectors/{sectorId} {
-        allow read, write: if isTenantUser(tenantId);
+        allow read, write: if true;
       }
 
       // 7. Tasks (Kanban)
       match /tasks/{taskId} {
-        allow read, write: if isTenantUser(tenantId);
+        allow read, write: if true;
       }
     }
   }

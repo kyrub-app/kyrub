@@ -85,7 +85,22 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = ({
   atendimentoSpaces,
   producaoSpaces
 }) => {
-  const activeStore = stores.find(s => s.ownerEmail === activeRetailer?.email);
+const activeStore: Store =
+  stores.find(
+    s => s.id === activeRetailerId || s.ownerEmail === activeRetailer?.email
+  ) || {
+    id: activeRetailerId,
+    name: '',
+    description: '',
+    keywords: [],
+    logo: '',
+    banner: '',
+    primaryColor: '',
+    offerImages: [],
+    slug: '',
+    plan: 'free',
+    ownerEmail: activeRetailer?.email || '',
+  };
   const activeRetailerProducts = products.filter(p => p.supplierId === activeRetailerId && !p.wholesalePrice);
   
   // Navigation State
