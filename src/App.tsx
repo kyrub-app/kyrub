@@ -87,7 +87,12 @@ import { getDistance, formatWhatsApp, formatCpf, formatCnpj } from './utils/help
 // Firebase & Sync engine integration imports
 import { db, auth } from './utils/firebase';
 import { saveDocLWW, listenCollection, syncOfflineBatch, resolveConflictLWW } from './utils/syncEngine';
-import { onAuthStateChanged, signInAnonymously, signOut } from 'firebase/auth';
+import {
+  GoogleAuthProvider,
+  onAuthStateChanged,
+  signInWithPopup,
+  signOut,
+} from 'firebase/auth';
 import { doc, getDoc, setDoc, updateDoc, runTransaction, collection, onSnapshot, getDocs, deleteDoc } from 'firebase/firestore';
 
 // Import fallback/seed initial mocks
@@ -1245,21 +1250,43 @@ const activeStore = useMemo<Store>(() => {
   }, [notes, dismissedAlarms, activeAlarmNote]);
 
   // Handle Login Flow
-  const handleLogin = async (provider: 'google' | 'apple') => {
-    try {
-      await signInAnonymously(auth);
-      setShowLoginModal(false);
-      setShowGpsOverlay(true);
-      triggerToast(`Conectado com sucesso via ${provider === 'google' ? 'Google' : 'Apple'} no Firebase!`, 'success');
-    } catch (error) {
-      console.warn('Firebase Auth restricted or unavailable, falling back to offline/local session:', error instanceof Error ? error.message : error);
-      setIsLoggedIn(true);
-      setShowLoginModal(false);
-      setShowGpsOverlay(true);
-      triggerToast(`Conectado localmente via ${provider === 'google' ? 'Google' : 'Apple'}!`, 'success');
-    }
-  };
+const handleLogin = async (provider: 'google' | 'apple') => {
+  if (provider === 'apple') {
+    triggerToast(
+      'O login com Apple ainda não está disponível.',
+      'warning'
+    );
+    return;
+  }
 
+  try {
+    const googleProvider = new GoogleAuthProvider();
+
+    googleProvider.setCustomParameters({
+      prompt: 'select_account',
+    });
+
+    await signInWithPopup(auth, googleProvider);
+
+    setShowLoginModal(false);
+    setShowGpsOverlay(true);
+
+    triggerToast(
+      'Conectado com sucesso via Google!',
+      'success'
+    );
+  } catch (error) {
+    console.error(
+      'Erro ao autenticar com Google:',
+      error instanceof Error ? error.message : error
+    );
+
+    triggerToast(
+      'Não foi possível concluir o login com Google.',
+      'error'
+    );
+  }
+};
   // Handle GPS Permission Flow
   const handleGpsPermission = (granted: boolean) => {
     setGpsGranted(granted);
