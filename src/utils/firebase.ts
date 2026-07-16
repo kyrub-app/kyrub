@@ -1,20 +1,19 @@
-import { initializeApp, getApp, getApps } from "firebase/app";
-import { initializeFirestore, getFirestore } from "firebase/firestore";
+import { getApp, getApps, initializeApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
+import { getFirestore } from "firebase/firestore";
 
-// Firebase Applet Config values from firebase-applet-config.json
 const firebaseConfig = {
-  projectId: "gen-lang-client-0139766792",
-  appId: "1:60459199718:web:672292eafae443c39c1f27",
-  apiKey: "AIzaSyAKlHhj8xYi4W61VBCbJV06kgWguMZsxPQ",
-  authDomain: "gen-lang-client-0139766792.firebaseapp.com",
-  storageBucket: "gen-lang-client-0139766792.firebasestorage.app",
-  messagingSenderId: "60459199718",
+  apiKey: "AIzaSyCgWDortDA5DYjx4xIlC9YjKH3ZNIrv99U",
+  authDomain: "kyrub-b8d0e.firebaseapp.com",
+  projectId: "kyrub-b8d0e",
+  storageBucket: "kyrub-b8d0e.firebasestorage.app",
+  messagingSenderId: "636039448089",
+  appId: "1:636039448089:web:85a6c6620341bc5bcb8c88",
 };
 
-const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
-
-// Use initializeFirestore to specify the custom databaseId if provided
-export const db = initializeFirestore(app, {}, "ai-studio-kyrub-317e88e7-24bf-410f-9c7d-aa8aecc4aa39");
+const app = getApps().length === 0
+  ? initializeApp(firebaseConfig)
+  : getApp();
 
 export const auth = getAuth(app);
+export const db = getFirestore(app);
