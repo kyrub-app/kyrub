@@ -2,177 +2,152 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // ==========================================
-    // GLOBAL HELPERS
-    // ==========================================
-    function isSignedIn() {
-      return request.auth != null;
-    }
-
-    // Verifies that a user is part of the tenant and belongs to it via Custom Claims
-    function isTenantUser(tenantId) {
-      return isSignedIn() && (request.auth.token.tenantId == tenantId || request.auth.uid == tenantId);
-    }
-
-    // Role-based authorization helpers reading directly from Custom Claims
-    function isAdmin() {
-      return isSignedIn() && request.auth.token.role == "admin";
-    }
-
-    function isSupplier() {
-      return isSignedIn() && request.auth.token.role == "supplier";
-    }
-
-    function isRetailer() {
-      return isSignedIn() && request.auth.token.role == "retailer";
-    }
-
-    // Checks valid string identifier lengths
-    function isValidId(id) {
-      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
-    }
-
-    // Helper shortcuts
-    function incoming() {
-      return request.resource.data;
-    }
-    
-    function existing() {
-      return resource.data;
-    }
-
-    // ==========================================
-    // GLOBAL SAFETY NET (DEFAULT DENY)
-    // ==========================================
+    // 0. Global Safety Net
     match /{document=**} {
       allow read, write: if false;
     }
 
-    // ==========================================
-    // GLOBAL COLLECTIONS (9 PILLARS COMPLIANCE)
-    // ==========================================
-    
-    // 1. Unified Global User Profiles
-    match /users/{uid} {
-      allow read, write: if true; // Allowed globally to enable public profile discovery/registration
-      
-      // Connection requests subcollection for real-time multiplayer requests
-      match /connection_requests/{requestId} {
-        allow read, write: if true;
-      }
+    // --- Helpers ---
+    function isValidId(id) { return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+    function isSignedIn() { return request.auth != null; }
 
-      // Friends subcollection
-      match /friends/{friendId} {
-        allow read, write: if true;
-      }
-    }
+    // Otimizado: Verificação de papéis usando Custom Claims do Auth (sem custo de leitura de banco)
+    function hasRole(roleList) { return isSignedIn() && request.auth.token.role in roleList; }
+    function isAdmin() { return isSignedIn() && request.auth.token.role == 'admin'; }
 
-    // 3. Fintech Digital Wallets (BaaS)
-    match /wallets/{holderId} {
-      allow read, write: if true;
-    }
+    // --- Global User Directory ---
+    match /users/{userId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn()
+              && request.auth.uid == userId
+              && incoming().keys().hasAll([
+                'uid',
+                'name',
+                'email',
+                'photoUrl',
+                'isProfileVisible',
+                'createdAt',
+                'updatedAt'
+              ])
+              && incoming().keys().hasOnly([
+                'uid',
+                'name',
+                'email',
+                'photoUrl',
+                'isProfileVisible',
+                'createdAt',
+                'updatedAt'
+              ])
+              && incoming().uid == userId
+              && incoming().name is string
+              && incoming().email is string
+              && incoming().photoUrl is string
+              && incoming().isProfileVisible is bool
+              && incoming().createdAt == request.time
+              && incoming().updatedAt == request.time;
 
-    // 4. Admin Subscriptions status validation
-    match /kyrub_admin/subscriptions {
-      allow read, write: if true;
-    }
-    match /kyrub_admin/subscriptions/{subId} {
-      allow read, write: if true;
-    }
+			allow update: if isSignedIn()
+              && request.auth.uid == userId
+              && incoming().uid == existing().uid
+              && incoming().createdAt == existing().createdAt
+              && incoming().updatedAt == request.time
+              && incoming().diff(existing()).affectedKeys().hasOnly([
+                'name',
+                'email',
+                'photoUrl',
+                'isProfileVisible',
+                'updatedAt'
+              ])
+              && incoming().name is string
+              && incoming().email is string
+              && incoming().photoUrl is string
+              && incoming().isProfileVisible is bool;
 
-    // 5. Public Marketplace Listings
-    match /marketplace_listings/{listingId} {
-      allow read, write: if true; // Public marketplace browsing
-    }
-
-    // 6. Freelance gig job economy board
-    match /freelance_jobs/{jobId} {
-      allow read, write: if true;
-    }
-
-    // 7. Delivery dispatcher freight tracker
-    match /delivery_jobs/{jobId} {
-      allow read, write: if true;
-    }
-    match /deliveries/{deliveryId} {
-      allow read, write: if true;
-    }
-
-    // 8. Social Feed and Real-time Chat
-    match /social_feed/{postId} {
-      allow read, write: if true; // Public feed access
-    }
-    match /posts/{postId} {
-      allow read, write: if true; // Public feed access
-    }
-    match /social_chats/{chatId} {
-      allow read, write: if true;
-    }
-
-    // 10. Momentos (Shared stories/experiences)
-    match /momentos/{momentoId} {
-      allow read, write: if true; // Public access to momentos
-    }
-
-    // Multiplayer shared tasks, notes, and connections
-    match /social_tasks/{taskId} {
-      allow read, write: if true;
-    }
-    match /shared_notes/{noteId} {
-      allow read, write: if true;
-    }
-    match /connections/{connectionId} {
-      allow read, write: if true;
-    }
-
-    // 9. Storage Metadata and Global Audit Logs
-    match /storage_metadata/{metaId} {
-      allow read, write: if true;
-    }
-    match /audit_logs/{logId} {
-      allow read, write: if true;
-    }
-
-    // ==========================================
-    // MULTI-TENANT ROUTING & SECURITY RULES
-    // ==========================================
-    match /tenants/{tenantId} {
-      allow read, write: if true;
-
-      // 1. Audit Logs Subcollection - STRICT IMMUTABILITY
-      match /audit_logs/{logId} {
-        allow read, write: if true;
-      }
-
-      // 2. Branding Stores Subcollection
-      match /stores/{storeId} {
-        allow read, write: if true;
-      }
-
-      // 3. Products/Services Subcollection
-      match /products/{productId} {
-        allow read, write: if true;
-      }
-
-      // 4. B2B and B2C Orders
-      match /orders/{orderId} {
-        allow read, write: if true;
-      }
-
-      // 5. Active Sessions (Concurrency-managed - Tables, Fitting Rooms, Collection Spots)
-      match /active_sessions/{sessionId} {
-        allow read, write: if true;
-      }
-
-      // 6. Sectors
-      match /sectors/{sectorId} {
-        allow read, write: if true;
-      }
-
-      // 7. Tasks (Kanban)
+      // Coleção interna de Notas / Tarefas individuais e compartilhadas
       match /tasks/{taskId} {
-        allow read, write: if true;
+        allow read: if isSignedIn() && (
+          userId == request.auth.uid ||
+          (resource != null && 'sharedWith' in resource.data && resource.data.sharedWith is list && request.auth.uid in resource.data.sharedWith)
+        );
+        allow create: if isSignedIn() && userId == request.auth.uid;
+        allow update: if isSignedIn() && (
+          userId == request.auth.uid ||
+          (resource != null && 'sharedWith' in resource.data && resource.data.sharedWith is list && request.auth.uid in resource.data.sharedWith)
+        );
+        allow delete: if isSignedIn() && userId == request.auth.uid;
+      }
+      match /favorites/{favoriteId} {
+        allow read, write: if isSignedIn() && request.auth.uid == userId;
+      }
+      match /skills/{skillId} {
+        allow read, write: if isSignedIn() && request.auth.uid == userId;
       }
     }
+
+    // --- Collection Group Match para permitir leitura de notas compartilhadas ---
+    match /{path=**}/tasks/{taskId} {
+      allow read: if isSignedIn() && (
+        resource != null && 'sharedWith' in resource.data && resource.data.sharedWith is list && request.auth.uid in resource.data.sharedWith
+      );
+    }
+
+    // --- Tenants (Store Directory) ---
+    match /tenants/{tenantId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && incoming().ownerId == request.auth.uid;
+      allow update, delete: if isSignedIn() && (existing().ownerId == request.auth.uid || isAdmin());
+    }
+
+    // --- Tenant Artifacts (Multi-tenant) ---
+    match /artifacts/{tenantId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn();
+
+      match /{allData=**} {
+        allow read: if isSignedIn();
+        allow write: if isSignedIn();
+      }
+    }
+
+    // --- Kyrub Social Connections & Feed ---
+    match /connections/{connectionId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && incoming().senderId == request.auth.uid;
+      allow update, delete: if isSignedIn() && (existing().senderId == request.auth.uid || existing().receiverId == request.auth.uid || isAdmin());
+    }
+
+    // --- Reviews ---
+    match /reviews/{reviewId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && incoming().userId == request.auth.uid;
+      allow update: if isSignedIn() && (existing().userId == request.auth.uid || incoming().keys().hasOnly(['likes']) || isAdmin());
+      allow delete: if isSignedIn() && (existing().userId == request.auth.uid || isAdmin());
+    }
+
+    // --- Guia Renda: Entregas Solicitadas/Disponíveis ---
+    match /hub/renda/deliveries/{deliveryId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn(); // Qualquer usuário ou lojista logado pode solicitar
+      allow update, delete: if isSignedIn();
+    }
+
+    // --- Guia Renda: Vagas de Freela (Otimizado com Custom Claims) ---
+    match /vagas/{vagaId} {
+      allow read: if isSignedIn();
+      // Apenas contratantes (owner, manager, staff) ou admin podem criar e gerenciar vagas
+      allow create, update, delete: if isAdmin() || hasRole(['owner', 'manager', 'staff']);
+    }
+
+    // --- Candidaturas (Prestar o serviço de Freela) ---
+    match /candidaturas/{candiId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if isSignedIn();
+    }
+
+    match /artifacts { allow list: if isSignedIn(); }
+    match /tenants { allow list: if isSignedIn(); }
   }
 }

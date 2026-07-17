@@ -93,7 +93,18 @@ import {
   signInWithPopup,
   signOut,
 } from 'firebase/auth';
-import { doc, getDoc, setDoc, updateDoc, runTransaction, collection, onSnapshot, getDocs, deleteDoc } from 'firebase/firestore';
+import {
+  collection,
+  deleteDoc,
+  doc,
+  getDoc,
+  getDocs,
+  onSnapshot,
+  runTransaction,
+  serverTimestamp,
+  setDoc,
+  updateDoc,
+} from 'firebase/firestore';
 
 // Import fallback/seed initial mocks
 import {
@@ -754,25 +765,34 @@ const activeStore = useMemo<Store>(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
         setIsLoggedIn(true);
-        setProfileName(user.displayName || 'Você');
-        setProfileEmail(user.email || 'usuario@kyrub.com');
-        setProfilePhotoUrl(user.photoURL || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&h=100&fit=crop&q=80');
+        setProfileName(user.displayName ?? '');
+        setProfileEmail(user.email ?? '');
+        setProfilePhotoUrl(user.photoURL ?? '');
 
-        // Register authenticated user globally in /users/{uid} for real-time suggestions and multiplayer connections
         try {
-          const userPayload = {
-            id: user.uid,
-            name: user.displayName || 'Você',
-            email: user.email || 'usuario@kyrub.com',
-            photoUrl: user.photoURL || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&h=100&fit=crop&q=80',
-            isProfileVisible: true,
-            updatedAt: new Date().toISOString()
-          };
-          setDoc(doc(db, 'users', user.uid), userPayload, { merge: true }).catch(err => console.error("Error writing user doc:", err));
-        } catch (e) {
-          console.error("Failed to write authenticated user doc", e);
-        }
+          const userRef = doc(db, 'users', user.uid);
+          const userSnapshot = await getDoc(userRef);
 
+          const userPayload = {
+            uid: user.uid,
+            name: user.displayName ?? '',
+            email: user.email ?? '',
+            photoUrl: user.photoURL ?? '',
+            isProfileVisible: true,
+            updatedAt: serverTimestamp(),
+            ...(userSnapshot.exists()
+              ? {}
+              : { createdAt: serverTimestamp() }),
+          };
+
+          await setDoc(userRef, userPayload, { merge: true });
+        } catch (error) {
+          console.error(
+            'Falha ao registrar o usuário autenticado no Firestore:',
+            error
+          );
+        }
+        
         try {
           triggerToast('Conectando e sincronizando dados com Firestore...', 'info');
 
