@@ -115,7 +115,6 @@ import {
   freelanceJobs as initialFreelanceJobs,
   momentos as initialMomentos,
   connectionRequests as initialConnectionRequests,
-  simulatedChatHistory as initialChatHistory,
   initialNotes,
   initialTenants,
   initialStores,
@@ -135,7 +134,6 @@ const STORAGE_KEYS = {
   DELIVERIES: 'kyrub_deliveries',
   FREELANCE_JOBS: 'kyrub_freelance_jobs',
   MOMENTOS: 'kyrub_momentos',
-  CHAT_HISTORY: 'kyrub_chat_history',
   WALLET_BALANCE: 'kyrub_wallet_balance',
   WALLET_HISTORY: 'kyrub_wallet_history',
   FAVORITE_STORES: 'kyrub_favorite_stores'
@@ -327,14 +325,10 @@ export default function App() {
   const [pracaFilter, setPracaFilter] = useState<'recentes' | 'favoritos' | 'conectados'>('recentes');
   const [conectadosSubTab, setConectadosSubTab] = useState<'sugestoes' | 'solicitacoes'>('sugestoes');
 
-  // Simulated private chat state (Persistent)
+  // Private chat state
   const [showChatModal, setShowChatModal] = useState(false);
   const [selectedChatUser, setSelectedChatUser] = useState<any | null>(null);
   const [chatMessageText, setChatMessageText] = useState('');
-  const [simulatedChatHistory, setSimulatedChatHistory] = useState<{ [key: string]: { sender: string, text: string, time: string }[] }>(() => {
-    const saved = localStorage.getItem(STORAGE_KEYS.CHAT_HISTORY);
-    return saved ? JSON.parse(saved) : initialChatHistory;
-  });
 
   // Store Moments (Avaliações/Depoimentos) states (Persistent)
   const [showMomentsModal, setShowMomentsModal] = useState(false);
@@ -464,11 +458,6 @@ export default function App() {
     };
     pushMomentos();
   }, [momentos, isLoggedIn]);
-
-  useEffect(() => {
-    if (!isLoggedIn) return;
-    localStorage.setItem(STORAGE_KEYS.CHAT_HISTORY, JSON.stringify(simulatedChatHistory));
-  }, [simulatedChatHistory, isLoggedIn]);
 
   // Product addition state
   const [newProductModal, setNewProductModal] = useState(false);
@@ -935,7 +924,6 @@ const activeStore = useMemo<Store>(() => {
         setFreelanceJobs([]);
         setMomentos([]);
         setConnectionRequests([]);
-        setSimulatedChatHistory({});
       }
     });
 
@@ -2009,10 +1997,6 @@ if (newMomentPublishToPraca) {
         setSelectedChatUser={setSelectedChatUser}
         chatMessageText={chatMessageText}
         setChatMessageText={setChatMessageText}
-        simulatedChatHistory={simulatedChatHistory}
-        setSimulatedChatHistory={setSimulatedChatHistory}
-        profileName={profileName}
-        triggerToast={triggerToast}
       />
 
       {/* MOMENTS MODAL - STORE REVIEWS & SOCIAL INTEGRATION */}

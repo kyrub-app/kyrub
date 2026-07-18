@@ -233,6 +233,70 @@ match /connections/{connectionId} {
     );
 }
 
+    match /social_chats/{connectionId} {
+      function connectionExists() {
+        return exists(
+          /databases/$(database)/documents/connections/$(connectionId)
+        );
+      }
+
+      function connectionData() {
+        return get(
+          /databases/$(database)/documents/connections/$(connectionId)
+        ).data;
+      }
+
+      function canAccessMessages(messageId) {
+        return isSignedIn()
+          && isValidId(connectionId)
+          && isValidId(messageId)
+          && connectionExists()
+          && connectionData().status == 'accepted'
+          && request.auth.uid in connectionData().participantIds;
+      }
+
+      function hasValidReceiver() {
+        return (
+          request.auth.uid == connectionData().senderId
+          && incoming().receiverId == connectionData().receiverId
+        ) || (
+          request.auth.uid == connectionData().receiverId
+          && incoming().receiverId == connectionData().senderId
+        );
+      }
+
+      allow read, write: if false;
+
+      match /messages/{messageId} {
+        allow read: if canAccessMessages(messageId);
+
+        allow create: if canAccessMessages(messageId)
+          && incoming().keys().hasAll([
+            'senderId',
+            'receiverId',
+            'text',
+            'createdAt'
+          ])
+          && incoming().keys().hasOnly([
+            'senderId',
+            'receiverId',
+            'text',
+            'createdAt'
+          ])
+          && incoming().senderId == request.auth.uid
+          && isValidId(incoming().senderId)
+          && isValidId(incoming().receiverId)
+          && hasValidReceiver()
+          && incoming().text is string
+          && incoming().text.size() >= 1
+          && incoming().text.size() <= 4000
+          && incoming().createdAt == request.time;
+
+        allow update: if false;
+        allow delete: if false;
+      }
+    }
+
     // --- Reviews ---
     match /reviews/{reviewId} {
       allow read: if isSignedIn();
