@@ -82,6 +82,35 @@ export function useSocialDirectoryV2({
   }, [favoriteStoreIds]);
 
   useEffect(() => {
+    const currentUser = auth.currentUser;
+
+    if (!isLoggedIn || !currentUser) {
+      setConnections([]);
+      return;
+    }
+
+    const connectionsQuery = query(
+      collection(db, 'connections'),
+      where('participantIds', 'array-contains', currentUser.uid)
+    );
+
+    return onSnapshot(
+      connectionsQuery,
+      snapshot => {
+        setConnections(
+          snapshot.docs.map(snapshotDoc => ({
+            id: snapshotDoc.id,
+            ...(snapshotDoc.data() as Omit<ConnectionDocument, 'id'>)
+          }))
+        );
+      },
+      error => {
+        console.error('Falha ao escutar conexões:', error);
+        setConnections([]);
+      }
+    );
+  }, [isLoggedIn]);
+  useEffect(() => {
     const currentUid = auth.currentUser?.uid;
 
     if (!isLoggedIn || !currentUid) {
