@@ -569,9 +569,14 @@ export function KyrubTab({
                         <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-950">
                           <button
                             onClick={() => handleToggleFriend(friend.id)}
-                            className="py-1.5 px-2 rounded-xl text-[9px] font-black uppercase bg-teal-500 text-slate-950 hover:bg-teal-400 transition-all text-center cursor-pointer"
+                            className={`py-1.5 px-2 rounded-xl text-[9px] font-black uppercase transition-all text-center cursor-pointer ${friend.connectionStatus === 'pending_sent'
+                                ? 'bg-slate-800 border border-slate-700 text-slate-300 hover:bg-slate-700'
+                                : 'bg-teal-500 text-slate-950 hover:bg-teal-400'
+                              }`}
                           >
-                            Conectar
+                            {friend.connectionStatus === 'pending_sent'
+                              ? 'Cancelar pedido'
+                              : 'Conectar'}
                           </button>
 
                           <button
@@ -596,8 +601,7 @@ export function KyrubTab({
                       </div>
                     ))}
 
-                    {friends.filter(f => !f.added && (f as any).isProfileVisible !== false).length === 0 && (
-                      <div className="text-center py-6 bg-slate-900/40 rounded-2xl border border-slate-900/60 text-slate-500 text-xs italic">
+                    {getSuggestions().length === 0 && (                      <div className="text-center py-6 bg-slate-900/40 rounded-2xl border border-slate-900/60 text-slate-500 text-xs italic">
                         Nenhuma sugestão pública disponível no momento.
                       </div>
                     )}

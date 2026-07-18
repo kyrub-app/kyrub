@@ -112,11 +112,126 @@ service cloud.firestore {
     }
 
     // --- Kyrub Social Connections & Feed ---
-    match /connections/{connectionId} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn() && incoming().senderId == request.auth.uid;
-      allow update, delete: if isSignedIn() && (existing().senderId == request.auth.uid || existing().receiverId == request.auth.uid || isAdmin());
-    }
+match /connections/{connectionId} {
+  function hasValidConnectionId() {
+    return connectionId.size() > 0
+      && connectionId.size() <= 128
+      && connectionId.matches('^[a-zA-Z0-9_-]+$');
+  }
+
+  function hasValidParticipants(data) {
+    return data.senderId is string
+      && data.receiverId is string
+      && data.senderId.size() > 0
+      && data.senderId.size() <= 128
+      && data.receiverId.size() > 0
+      && data.receiverId.size() <= 128
+      && data.senderId.matches('^[a-zA-Z0-9_-]+$')
+      && data.receiverId.matches('^[a-zA-Z0-9_-]+$')
+      && data.senderId != data.receiverId
+      && data.participantIds is list
+      && data.participantIds.size() == 2
+      && data.participantIds.hasAll([
+        data.senderId,
+        data.receiverId
+      ])
+      && (
+        connectionId == data.senderId + '_' + data.receiverId
+        || connectionId == data.receiverId + '_' + data.senderId
+      );
+  }
+
+  function hasImmutableParticipants() {
+    return incoming().senderId == existing().senderId
+      && incoming().receiverId == existing().receiverId
+      && incoming().participantIds == existing().participantIds;
+  }
+
+  allow read: if isSignedIn()
+    && (
+      request.auth.uid in existing().participantIds
+      || isAdmin()
+    );
+
+  allow create: if isSignedIn()
+    && hasValidConnectionId()
+    && hasValidParticipants(incoming())
+    && incoming().senderId == request.auth.uid
+    && incoming().status == 'pending'
+    && incoming().createdAt == request.time
+    && incoming().updatedAt == request.time
+    && incoming().keys().hasAll([
+      'senderId',
+      'receiverId',
+      'participantIds',
+      'status',
+      'createdAt',
+      'updatedAt'
+    ])
+    && incoming().keys().hasOnly([
+      'senderId',
+      'receiverId',
+      'participantIds',
+      'status',
+      'senderName',
+      'senderRole',
+      'senderAvatar',
+      'senderBio',
+      'receiverName',
+      'receiverRole',
+      'receiverAvatar',
+      'receiverBio',
+      'createdAt',
+      'updatedAt'
+    ]);
+
+  allow update: if isSignedIn()
+    && request.auth.uid == existing().receiverId
+    && existing().status == 'pending'
+    && incoming().status == 'accepted'
+    && hasImmutableParticipants()
+    && incoming().diff(existing()).affectedKeys().hasOnly([
+  'status',
+  'acceptedAt',
+  'updatedAt'
+])
+    && incoming().createdAt == existing().createdAt
+    && incoming().acceptedAt == request.time
+    && incoming().updatedAt == request.time
+    && incoming().keys().hasOnly([
+      'senderId',
+      'receiverId',
+      'participantIds',
+      'status',
+      'senderName',
+      'senderRole',
+      'senderAvatar',
+      'senderBio',
+      'receiverName',
+      'receiverRole',
+      'receiverAvatar',
+      'receiverBio',
+      'createdAt',
+      'acceptedAt',
+      'updatedAt'
+    ]);
+
+  allow delete: if isSignedIn()
+    && (
+      isAdmin()
+      || (
+        existing().status == 'pending'
+        && (
+          request.auth.uid == existing().senderId
+          || request.auth.uid == existing().receiverId
+        )
+      )
+      || (
+        existing().status == 'accepted'
+        && request.auth.uid in existing().participantIds
+      )
+    );
+}
 
     // --- Reviews ---
     match /reviews/{reviewId} {
