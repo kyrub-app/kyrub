@@ -1,10 +1,6 @@
 import React from 'react';
-
-interface ChatMessage {
-  sender: string;
-  text: string;
-  time: string;
-}
+import { useChatMessages } from '../../hooks/useChatMessages';
+import { auth } from '../../utils/firebase';
 
 interface ChatModalProps {
   isOpen: boolean;
@@ -13,10 +9,6 @@ interface ChatModalProps {
   setSelectedChatUser: (user: any | null) => void;
   chatMessageText: string;
   setChatMessageText: (text: string) => void;
-  simulatedChatHistory: { [key: string]: ChatMessage[] };
-  setSimulatedChatHistory: React.Dispatch<React.SetStateAction<{ [key: string]: ChatMessage[] }>>;
-  profileName: string;
-  triggerToast: (msg: string, type: 'success' | 'error' | 'info' | 'warning') => void;
 }
 
 export const ChatModal: React.FC<ChatModalProps> = ({
@@ -25,51 +17,40 @@ export const ChatModal: React.FC<ChatModalProps> = ({
   selectedChatUser,
   setSelectedChatUser,
   chatMessageText,
-  setChatMessageText,
-  simulatedChatHistory,
-  setSimulatedChatHistory,
-  profileName,
-  triggerToast,
+  setChatMessageText
 }) => {
+  const isChatEnabled = Boolean(
+    isOpen
+    && selectedChatUser
+    && selectedChatUser.connectionStatus === 'accepted'
+    && selectedChatUser.connectionId
+  );
+
+  const {
+    messages,
+    isLoading,
+    isSending,
+    error,
+    sendMessage
+  } = useChatMessages({
+    connectionId: selectedChatUser?.connectionId,
+    receiverId: selectedChatUser?.id,
+    enabled: isChatEnabled
+  });
+
   if (!isOpen || !selectedChatUser) return null;
 
-  const handleSendChatMessage = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!chatMessageText.trim()) return;
+  const handleSendChatMessage = async (event: React.FormEvent) => {
+    event.preventDefault();
 
-    const userId = selectedChatUser.id;
-    const userMsg = {
-      sender: profileName || 'Você',
-      text: chatMessageText,
-      time: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
-    };
+    if (!isChatEnabled || isSending || !chatMessageText.trim()) return;
 
-    setSimulatedChatHistory(prev => ({
-      ...prev,
-      [userId]: [...(prev[userId] || []), userMsg]
-    }));
-    setChatMessageText('');
-
-    setTimeout(() => {
-      const responses = [
-        "Que ótimo! Com certeza podemos negociar isso.",
-        "Perfeito, vou verificar no estoque do ERP agora mesmo e te retorno.",
-        "Obrigado pelo contato! Se quiser, posso gerar um split de faturamento via BaaS.",
-        "Excelente! Vamos conversando por aqui."
-      ];
-      const randomResponse = responses[Math.floor(Math.random() * responses.length)];
-      const systemMsg = {
-        sender: selectedChatUser.name,
-        text: randomResponse,
-        time: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
-      };
-
-      setSimulatedChatHistory(prev => ({
-        ...prev,
-        [userId]: [...(prev[userId] || []), systemMsg]
-      }));
-      triggerToast(`Nova mensagem de ${selectedChatUser.name}`, 'info');
-    }, 1500);
+    try {
+      await sendMessage(chatMessageText);
+      setChatMessageText('');
+    } catch {
+      // O hook preserva o erro para exibição e o texto permanece no campo.
+    }
   };
 
   return (
@@ -79,20 +60,19 @@ export const ChatModal: React.FC<ChatModalProps> = ({
         <div className="flex items-center justify-between bg-slate-950 p-4 border-b border-slate-800/60 shrink-0">
           <div className="flex items-center gap-3">
             <div className="relative">
-              <img 
-                src={selectedChatUser.avatar} 
-                alt={selectedChatUser.name} 
-                className="w-10 h-10 rounded-full object-cover border border-slate-800" 
-                referrerPolicy="no-referrer" 
+              <img
+                src={selectedChatUser.avatar}
+                alt={selectedChatUser.name}
+                className="w-10 h-10 rounded-full object-cover border border-slate-800"
+                referrerPolicy="no-referrer"
               />
-              <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-emerald-500 border-2 border-slate-950 rounded-full animate-pulse" />
             </div>
             <div>
               <h4 className="text-xs font-black text-white uppercase tracking-wide">{selectedChatUser.name}</h4>
               <span className="text-[8px] font-mono text-slate-500 uppercase">{selectedChatUser.role}</span>
             </div>
           </div>
-          <button 
+          <button
             onClick={() => {
               onClose();
               setSelectedChatUser(null);
@@ -106,52 +86,77 @@ export const ChatModal: React.FC<ChatModalProps> = ({
         {/* Chat History Messages Container */}
         <div className="flex-1 p-4 overflow-y-auto bg-slate-950/40 space-y-3.5 flex flex-col-reverse">
           <div className="space-y-3.5">
-            {(simulatedChatHistory[selectedChatUser.id] || [])
-              .map((msg, i) => {
-                const isMe = msg.sender.includes('Você') || msg.sender === 'me';
-                return (
-                  <div key={i} className={`flex ${isMe ? 'justify-end' : 'justify-start'} animate-fade-in`}>
-                    <div className={`max-w-[80%] rounded-2xl p-3 space-y-1 ${
-                      isMe 
-                        ? 'bg-orange-600 text-white rounded-tr-none' 
-                        : 'bg-slate-850 text-slate-200 rounded-tl-none border border-slate-800/80'
-                    }`}>
-                      <p className="text-xs leading-relaxed break-words">{msg.text}</p>
-                      <span className={`text-[8px] font-mono block text-right ${
-                        isMe ? 'text-orange-200' : 'text-slate-500'
-                      }`}>
-                        {msg.time}
-                      </span>
-                    </div>
-                  </div>
-                );
-              })}
+            {isLoading && (
+              <div className="text-center py-4 text-slate-500 text-xs italic">
+                Carregando mensagens...
+              </div>
+            )}
 
-            {(!simulatedChatHistory[selectedChatUser.id] || simulatedChatHistory[selectedChatUser.id].length === 0) && (
+            {error && (
+              <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2 text-center text-[10px] text-red-300">
+                {error}
+              </div>
+            )}
+
+            {!isChatEnabled && (
+              <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-center text-[10px] text-amber-300">
+                Esta conversa não está disponível para envio de mensagens.
+              </div>
+            )}
+
+            {messages.map(message => {
+              const isMe = message.senderId === auth.currentUser?.uid;
+              const messageTime = message.createdAt
+                ? message.createdAt.toDate().toLocaleTimeString('pt-BR', {
+                    hour: '2-digit',
+                    minute: '2-digit'
+                  })
+                : 'Enviando...';
+
+              return (
+                <div key={message.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'} animate-fade-in`}>
+                  <div className={`max-w-[80%] rounded-2xl p-3 space-y-1 ${
+                    isMe
+                      ? 'bg-orange-600 text-white rounded-tr-none'
+                      : 'bg-slate-850 text-slate-200 rounded-tl-none border border-slate-800/80'
+                  }`}>
+                    <p className="text-xs leading-relaxed break-words">{message.text}</p>
+                    <span className={`text-[8px] font-mono block text-right ${
+                      isMe ? 'text-orange-200' : 'text-slate-500'
+                    }`}>
+                      {messageTime}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+
+            {!isLoading && isChatEnabled && messages.length === 0 && (
               <div className="text-center py-12 text-slate-500 text-xs italic">
-                Nenhuma mensagem anterior. Digite algo abaixo para iniciar o chat criptografado local!
+                Nenhuma mensagem anterior. Digite algo abaixo para iniciar a conversa.
               </div>
             )}
           </div>
         </div>
 
         {/* Bottom Message Input Form */}
-        <form 
+        <form
           onSubmit={handleSendChatMessage}
           className="p-3 bg-slate-950 border-t border-slate-800/80 shrink-0 flex gap-2"
         >
           <input
             type="text"
             value={chatMessageText}
-            onChange={(e) => setChatMessageText(e.target.value)}
+            onChange={(event) => setChatMessageText(event.target.value)}
             placeholder="Escreva uma mensagem privada..."
             className="flex-1 bg-slate-900 border border-slate-800 rounded-xl px-3.5 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-orange-500 font-sans"
           />
           <button
             type="submit"
-            className="px-4 py-2 bg-orange-600 hover:bg-orange-500 text-white font-black rounded-xl text-xs uppercase tracking-wider transition-colors cursor-pointer"
+            disabled={!isChatEnabled || isSending || !chatMessageText.trim()}
+            className="px-4 py-2 bg-orange-600 hover:bg-orange-500 disabled:bg-slate-800 disabled:text-slate-500 disabled:cursor-not-allowed text-white font-black rounded-xl text-xs uppercase tracking-wider transition-colors cursor-pointer"
           >
-            Enviar
+            {isSending ? 'Enviando...' : 'Enviar'}
           </button>
         </form>
       </div>

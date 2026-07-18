@@ -16,6 +16,4 @@ export const freelanceJobs: FreelanceJob[] = [];
 export const momentos: any[] = [];
 
 export const connectionRequests = [];
-// Mantemos o chat vazio para novos usuários
-export const simulatedChatHistory: Record<string, { sender: string; text: string; time: string }[]> = {};
 export const initialNotes: Note[] = [];
