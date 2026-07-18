@@ -76,6 +76,12 @@ export interface Note {
   isPublishedToFeed?: boolean;
 }
 
+export type ConnectionStatus =
+  | 'none'
+  | 'pending_sent'
+  | 'pending_received'
+  | 'accepted';
+
 export interface Friend {
   id: string;
   name: string;
@@ -85,6 +91,8 @@ export interface Friend {
   bio?: string;
   isProfileVisible?: boolean;
   favorited?: boolean;
+  connectionStatus?: ConnectionStatus;
+  connectionId?: string;
 }
 
 export interface SocialPost {

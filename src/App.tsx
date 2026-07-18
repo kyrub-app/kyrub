@@ -1,14 +1,14 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { 
-  ShieldCheck, 
-  Package, 
-  Store as StoreIcon, 
-  Compass, 
-  Layers, 
-  ShoppingCart, 
+import {
+  ShieldCheck,
+  Package,
+  Store as StoreIcon,
+  Compass,
+  Layers,
+  ShoppingCart,
   ShoppingBag,
   Tag,
-  Plus, 
+  Plus,
   Sparkles,
   Zap,
   Wallet,
@@ -74,7 +74,7 @@ import { B2CCartDrawer } from './components/modals/B2CCartDrawer';
 import { GpsOverlayModal } from './components/modals/GpsOverlayModal';
 import { useWallet } from './hooks/useWallet';
 import { useProductivityNotes } from './hooks/useProductivityNotes';
-import { useSocialDirectory } from './hooks/useSocialDirectory';
+import { useSocialDirectoryV2 } from './hooks/useSocialDirectoryV2';
 import { LandingView } from './components/LandingView';
 import { StaffViewport } from './components/StaffViewport';
 import { PerfilTab } from './components/tabs/PerfilTab';
@@ -135,7 +135,6 @@ const STORAGE_KEYS = {
   DELIVERIES: 'kyrub_deliveries',
   FREELANCE_JOBS: 'kyrub_freelance_jobs',
   MOMENTOS: 'kyrub_momentos',
-  CONNECTION_REQUESTS: 'kyrub_connection_requests',
   CHAT_HISTORY: 'kyrub_chat_history',
   WALLET_BALANCE: 'kyrub_wallet_balance',
   WALLET_HISTORY: 'kyrub_wallet_history',
@@ -144,8 +143,8 @@ const STORAGE_KEYS = {
 
 export default function App() {
   const isAdminSubdomain = typeof window !== 'undefined' && (
-    window.location.hostname === 'admin.kyrub.com' || 
-    window.location.hostname.includes('admin') || 
+    window.location.hostname === 'admin.kyrub.com' ||
+    window.location.hostname.includes('admin') ||
     window.location.hash.includes('admin')
   );
 
@@ -247,10 +246,10 @@ export default function App() {
       lng: s.lng ?? (s.id === 's-1' ? -46.6350 : -46.6500),
       isNew: s.isNew ?? (s.id === 's-1'),
       status: s.status ?? (s.id === 's-1' ? 'open' : 'delayed') as 'open' | 'delayed' | 'closed',
-      keywords: s.keywords || (s.id === 's-1' 
+      keywords: s.keywords || (s.id === 's-1'
         ? ['eletrônicos', 'gadgets', 'celulares', 'fones', 'teclados']
         : ['moda', 'vestidos', 'boutique', 'linho', 'acessórios']),
-      offerImages: s.offerImages || (s.id === 's-1' 
+      offerImages: s.offerImages || (s.id === 's-1'
         ? [
             'https://images.unsplash.com/photo-1542751371-adc38448a05e?w=600&fit=crop&q=80',
             'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=600&fit=crop&q=80',
@@ -585,7 +584,7 @@ export default function App() {
     handleToggleFavoriteStore,
     handleAcceptRequest,
     handleDeclineRequest
-  } = useSocialDirectory({
+  } = useSocialDirectoryV2({
     profileName,
     profilePhotoUrl,
     profileAddress,
@@ -594,27 +593,6 @@ export default function App() {
     isLoggedIn,
     triggerToast
   });
-
-  useEffect(() => {
-    if (!isLoggedIn) return;
-    localStorage.setItem(STORAGE_KEYS.FRIENDS, JSON.stringify(friends));
-    const pushFriends = async () => {
-      const uid = auth.currentUser?.uid;
-      if (!uid) return;
-      for (const friend of friends) {
-        await saveDocLWW(`users/${uid}/friends`, friend.id, {
-          ...friend,
-          updatedAt: (friend as any).updatedAt || new Date().toISOString()
-        });
-      }
-    };
-    pushFriends();
-  }, [friends, isLoggedIn]);
-
-  useEffect(() => {
-    if (!isLoggedIn) return;
-    localStorage.setItem(STORAGE_KEYS.CONNECTION_REQUESTS, JSON.stringify(connectionRequests));
-  }, [connectionRequests, isLoggedIn]);
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEYS.FAVORITE_STORES, JSON.stringify(favoriteStoreIds));
@@ -792,7 +770,7 @@ const activeStore = useMemo<Store>(() => {
             error
           );
         }
-        
+
         try {
           triggerToast('Conectando e sincronizando dados com Firestore...', 'info');
 
@@ -1029,33 +1007,6 @@ const activeStore = useMemo<Store>(() => {
       setDbUsers(docs);
     });
 
-    // Listen to current user's incoming connection requests in real-time
-    const uid = auth.currentUser?.uid;
-    let unsubConnectionRequests = () => {};
-    if (uid) {
-      unsubConnectionRequests = listenCollection(`users/${uid}/connection_requests`, (docs) => {
-        setConnectionRequests(prev => {
-          const mergedMap = new Map(prev.map(r => [r.id, r]));
-          let changed = false;
-          docs.forEach(remoteDoc => {
-            const localDoc = mergedMap.get(remoteDoc.id);
-            if (!localDoc) {
-              mergedMap.set(remoteDoc.id, remoteDoc);
-              changed = true;
-            } else if (remoteDoc.updatedAt && (localDoc as any).updatedAt) {
-              const remoteTime = new Date(remoteDoc.updatedAt).getTime();
-              const localTime = new Date((localDoc as any).updatedAt).getTime();
-              if (remoteTime > localTime) {
-                mergedMap.set(remoteDoc.id, remoteDoc);
-                changed = true;
-              }
-            }
-          });
-          return changed ? Array.from(mergedMap.values()) : prev;
-        });
-      });
-    }
-
     // Listen to notes/tasks
     const unsubNotes = listenCollection('tenants/tenant_default/tasks', (docs) => {
       setNotes(prev => {
@@ -1161,43 +1112,6 @@ const activeStore = useMemo<Store>(() => {
       });
     });
 
-    // Listen to connections
-    let unsubConnections = () => {};
-    if (uid) {
-      unsubConnections = listenCollection('connections', (docs) => {
-        const incomingReqs = docs.filter(d => d.toUserId === uid);
-        if (incomingReqs.length > 0) {
-          setConnectionRequests(prev => {
-            const mergedMap = new Map(prev.map(r => [r.id, r]));
-            let changed = false;
-            incomingReqs.forEach(remoteDoc => {
-              const adaptedDoc = {
-                ...remoteDoc,
-                id: remoteDoc.fromUserId || remoteDoc.id,
-                name: remoteDoc.fromUserName || remoteDoc.name || 'Conexão',
-                avatar: remoteDoc.fromUserAvatar || remoteDoc.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&h=100&fit=crop&q=80',
-                role: remoteDoc.fromUserRole || remoteDoc.role || 'Cliente',
-                bio: remoteDoc.fromUserBio || remoteDoc.bio || 'Membro do Kyrub',
-                updatedAt: remoteDoc.updatedAt || new Date().toISOString()
-              };
-              const localDoc = mergedMap.get(adaptedDoc.id);
-              if (!localDoc) {
-                mergedMap.set(adaptedDoc.id, adaptedDoc);
-                changed = true;
-              } else if (adaptedDoc.updatedAt && (localDoc as any).updatedAt) {
-                const remoteTime = new Date(adaptedDoc.updatedAt).getTime();
-                const localTime = new Date((localDoc as any).updatedAt).getTime();
-                if (remoteTime > localTime) {
-                  mergedMap.set(adaptedDoc.id, adaptedDoc);
-                  changed = true;
-                }
-              }
-            });
-            return changed ? Array.from(mergedMap.values()) : prev;
-          });
-        }
-      });
-    }
 
     return () => {
       unsubSocialFeed();
@@ -1208,11 +1122,9 @@ const activeStore = useMemo<Store>(() => {
       unsubDeliveries();
       unsubFreelance();
       unsubUsers();
-      unsubConnectionRequests();
       unsubNotes();
       unsubSocialTasks();
       unsubSharedNotes();
-      unsubConnections();
     };
   }, [isLoggedIn]);
 
@@ -1231,7 +1143,7 @@ const activeStore = useMemo<Store>(() => {
         if (note.reminderDateTime && note.reminderDateTime === currentTimeString) {
           if (!dismissedAlarms.includes(note.id) && (!activeAlarmNote || activeAlarmNote.id !== note.id)) {
             setActiveAlarmNote(note);
-            
+
             // Native sound attempt
             try {
               const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
@@ -1497,9 +1409,9 @@ if (newMomentPublishToPraca) {
 
   // Filtered stores list by GPS radius & search query
   const filteredStores = storesWithCoords.filter(store => {
-    const isMatchingQuery = store.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+    const isMatchingQuery = store.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
                            store.description.toLowerCase().includes(searchQuery.toLowerCase());
-    
+
     // Simulate published checks if required
     const isPublished = true; // All mock stores are published
 
@@ -1557,7 +1469,7 @@ if (newMomentPublishToPraca) {
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col justify-between font-sans antialiased selection:bg-orange-500/30 selection:text-white" id="root-app-container">
-      
+
       {/* LANDING PAGE & LOGIN DETECT */}
       {!isLoggedIn ? (
         <LandingView
@@ -1569,7 +1481,7 @@ if (newMomentPublishToPraca) {
       ) : (
         /* REGISTERED LOGIN SCREEN WORKSPACE */
         <div className="flex-1 flex flex-col min-h-screen">
-          
+
           {/* 1. TOP MOBILE NAV HEADER */}
           <header className="border-b border-slate-900 bg-slate-950/90 backdrop-blur-md sticky top-0 z-40 px-4 py-3 flex items-center justify-between" id="app-header">
             <button
@@ -1596,7 +1508,7 @@ if (newMomentPublishToPraca) {
             <div className="flex items-center gap-3">
               {/* Wallet and account balance in Header for ease of use with privacy mask */}
               <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-800 text-teal-400 font-mono text-[11px]" id="header-wallet-balance">
-                <button 
+                <button
                   onClick={() => setIsWalletOpen(true)}
                   className="flex items-center gap-1.5 hover:text-teal-300 transition-all font-mono"
                   title="Abrir Carteira BaaS"
@@ -1604,7 +1516,7 @@ if (newMomentPublishToPraca) {
                   <Wallet className="w-3.5 h-3.5 shrink-0" />
                   <span>{showBalance ? `R$ ${walletBalance.toFixed(2)}` : 'R$ •••••'}</span>
                 </button>
-                <button 
+                <button
                   onClick={() => setShowBalance(!showBalance)}
                   className="text-slate-400 hover:text-slate-200 p-0.5 ml-0.5 transition-all flex items-center justify-center shrink-0"
                   title={showBalance ? "Ocultar Saldo" : "Exibir Saldo"}
@@ -1637,7 +1549,7 @@ if (newMomentPublishToPraca) {
 
           {/* MAIN TAB CONTENT DISPLAY ROUTER */}
           <main className="flex-1 max-w-lg w-full mx-auto px-4 py-6 pb-24 relative space-y-6">
-            
+
             {/* GUIA 1: NOTAS (Notes & Productivity) */}
             {activeTab === 'perfil' && (
               <PerfilTab
@@ -1771,7 +1683,7 @@ if (newMomentPublishToPraca) {
         <div className="fixed inset-0 z-50 bg-slate-950/95 backdrop-blur-sm flex flex-col">
           {/* Header Gestão */}
           <div className="bg-slate-900 border-b border-slate-800 px-6 py-2.5 flex items-center justify-between gap-4 font-sans shrink-0" id="erp-main-header">
-            
+
             {/* LADO ESQUERDO: Botão de fechar */}
             {!isAdminSubdomain && (
               <button
@@ -1813,8 +1725,8 @@ if (newMomentPublishToPraca) {
                         key={tab.id}
                         onClick={() => setActiveSubTab(tab.id as any)}
                         className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer shrink-0 ${
-                          isSelected 
-                            ? 'bg-orange-500 text-slate-950 shadow-md shadow-orange-500/10' 
+                          isSelected
+                            ? 'bg-orange-500 text-slate-950 shadow-md shadow-orange-500/10'
                             : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/40'
                         }`}
                       >
@@ -1839,7 +1751,7 @@ if (newMomentPublishToPraca) {
           {/* ERP Core Panel Container */}
           <div className="flex-1 overflow-y-auto px-6 py-8 max-w-7xl w-full mx-auto">
             {gestaoRole === 'retailer' && (
-              <RetailerPanel 
+              <RetailerPanel
                 activeRetailerId={activeRetailerId}
                 activeRetailer={activeRetailer}
                 stores={stores}
@@ -1858,10 +1770,10 @@ if (newMomentPublishToPraca) {
             )}
 
             {gestaoRole === 'admin' && (
-              <AdminPanel 
-                tenants={tenants} 
-                stores={stores} 
-                products={products} 
+              <AdminPanel
+                tenants={tenants}
+                stores={stores}
+                products={products}
                 orders={orders}
                 setTenants={setTenants}
                 setStores={setStores}
@@ -1907,7 +1819,7 @@ if (newMomentPublishToPraca) {
           </div>
 
           <div className="flex-1 overflow-y-auto p-6 max-w-4xl w-full mx-auto">
-            <StorefrontPanel 
+            <StorefrontPanel
               activeConsumerStore={visitingStore}
               products={products}
               cart={cart}
