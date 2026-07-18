@@ -246,10 +246,9 @@ match /connections/{connectionId} {
         ).data;
       }
 
-      function canAccessMessages(messageId) {
+      function canAccessMessages() {
         return isSignedIn()
           && isValidId(connectionId)
-          && isValidId(messageId)
           && connectionExists()
           && connectionData().status == 'accepted'
           && request.auth.uid in connectionData().participantIds;
@@ -268,9 +267,14 @@ match /connections/{connectionId} {
       allow read, write: if false;
 
       match /messages/{messageId} {
-        allow read: if canAccessMessages(messageId);
+        allow get: if canAccessMessages()
+          && isValidId(messageId);
 
-        allow create: if canAccessMessages(messageId)
+        allow list: if canAccessMessages()
+          && request.query.limit <= 100;
+
+        allow create: if canAccessMessages()
+          && isValidId(messageId)
           && incoming().keys().hasAll([
             'senderId',
             'receiverId',
