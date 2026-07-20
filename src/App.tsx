@@ -87,6 +87,7 @@ import { getDistance, formatWhatsApp, formatCpf, formatCnpj } from './utils/help
 // Firebase & Sync engine integration imports
 import { db, auth } from './utils/firebase';
 import { saveDocLWW, listenCollection, syncOfflineBatch, resolveConflictLWW } from './utils/syncEngine';
+import { classifyFirestoreFailure } from './utils/firestoreFailure';
 import {
   GoogleAuthProvider,
   onAuthStateChanged,
@@ -117,7 +118,6 @@ import {
   connectionRequests as initialConnectionRequests,
   initialNotes,
   initialTenants,
-  initialStores,
   initialProducts,
   initialOrders
 } from './constants/initialMocks';
@@ -139,6 +139,23 @@ const STORAGE_KEYS = {
   FAVORITE_STORES: 'kyrub_favorite_stores'
 };
 
+const logBackgroundSyncFailure = (
+  module: string,
+  error: unknown
+): void => {
+  const navigatorOnline =
+    typeof navigator === 'undefined'
+      ? true
+      : navigator.onLine;
+  const failure = classifyFirestoreFailure(error, navigatorOnline);
+
+  console.warn('Background Firestore sync failed', {
+    module,
+    kind: failure.kind,
+    code: failure.code
+  });
+};
+
 export default function App() {
   const isAdminSubdomain = typeof window !== 'undefined' && (
     window.location.hostname === 'admin.kyrub.com' ||
@@ -154,7 +171,7 @@ export default function App() {
 
   const [stores, setStores] = useState<Store[]>(() => {
     const saved = localStorage.getItem(STORAGE_KEYS.STORES);
-    return saved ? JSON.parse(saved) : initialStores;
+    return saved ? JSON.parse(saved) : [];
   });
 
   const [products, setProducts] = useState<Product[]>(() => {
@@ -354,21 +371,14 @@ export default function App() {
         });
       }
     };
-    pushTenants();
+    void pushTenants().catch(error => {
+      logBackgroundSyncFailure('tenants', error);
+    });
   }, [tenants, isLoggedIn]);
 
   useEffect(() => {
     if (!isLoggedIn) return;
     localStorage.setItem(STORAGE_KEYS.STORES, JSON.stringify(stores));
-    const pushStores = async () => {
-      for (const store of stores) {
-        await saveDocLWW('tenants/tenant_default/stores', store.id, {
-          ...store,
-          updatedAt: (store as any).updatedAt || new Date().toISOString()
-        });
-      }
-    };
-    pushStores();
   }, [stores, isLoggedIn]);
 
   useEffect(() => {
@@ -382,7 +392,9 @@ export default function App() {
         });
       }
     };
-    pushProducts();
+    void pushProducts().catch(error => {
+      logBackgroundSyncFailure('products', error);
+    });
   }, [products, isLoggedIn]);
 
   useEffect(() => {
@@ -396,7 +408,9 @@ export default function App() {
         });
       }
     };
-    pushOrders();
+    void pushOrders().catch(error => {
+      logBackgroundSyncFailure('orders', error);
+    });
   }, [orders, isLoggedIn]);
 
   useEffect(() => {
@@ -412,7 +426,9 @@ export default function App() {
         await saveDocLWW('posts', post.id, payload);
       }
     };
-    pushPosts();
+    void pushPosts().catch(error => {
+      logBackgroundSyncFailure('posts', error);
+    });
   }, [posts, isLoggedIn]);
 
   useEffect(() => {
@@ -428,7 +444,9 @@ export default function App() {
         await saveDocLWW('deliveries', del.id, payload);
       }
     };
-    pushDeliveries();
+    void pushDeliveries().catch(error => {
+      logBackgroundSyncFailure('deliveries', error);
+    });
   }, [deliveries, isLoggedIn]);
 
   useEffect(() => {
@@ -442,7 +460,9 @@ export default function App() {
         });
       }
     };
-    pushFreelance();
+    void pushFreelance().catch(error => {
+      logBackgroundSyncFailure('freelance-jobs', error);
+    });
   }, [freelanceJobs, isLoggedIn]);
 
   useEffect(() => {
@@ -456,7 +476,9 @@ export default function App() {
         });
       }
     };
-    pushMomentos();
+    void pushMomentos().catch(error => {
+      logBackgroundSyncFailure('momentos', error);
+    });
   }, [momentos, isLoggedIn]);
 
   // Product addition state
@@ -598,7 +620,9 @@ export default function App() {
         });
       }
     };
-    pushNotes();
+    void pushNotes().catch(error => {
+      logBackgroundSyncFailure('notes', error);
+    });
   }, [notes, isLoggedIn]);
 
   // Active Retailer state
@@ -728,7 +752,6 @@ const activeStore = useMemo<Store>(() => {
 
   // Firebase auth state listener and global Initial Sync
   useEffect(() => {
-    let unsubStoresInit = () => {};
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
         setIsLoggedIn(true);
@@ -804,22 +827,6 @@ const activeStore = useMemo<Store>(() => {
             const syncResult = await syncOfflineBatch(momentos.length > 0 ? (momentos as any) : (initialMomentos as any), remoteMomentos);
             setMomentos(syncResult.syncedRecords as any);
           }
-
-          // Sync stores dynamically via onSnapshot
-          unsubStoresInit = onSnapshot(collection(db, 'tenants/tenant_default/stores'), async (snapshot) => {
-            const remoteStores: any[] = [];
-            snapshot.forEach(docSnap => remoteStores.push({ id: docSnap.id, ...docSnap.data() }));
-            if (remoteStores.length === 0) {
-              for (const s of initialStores) {
-                await setDoc(doc(db, 'tenants/tenant_default/stores', s.id), { ...s, updatedAt: new Date().toISOString() });
-              }
-              setStores(initialStores);
-            } else {
-              setStores(remoteStores);
-            }
-          }, (err) => {
-            console.error("Error listening to stores initially:", err);
-          });
 
           // Sync products
           const productsSnap = await getDocs(collection(db, 'tenants/tenant_default/products'));
@@ -906,13 +913,52 @@ const activeStore = useMemo<Store>(() => {
           }
 
           triggerToast('Sincronização global de nuvem concluída com sucesso!', 'success');
-        } catch (e) {
-          console.error('Initial sync error:', e);
-          triggerToast('Iniciando em modo offline resiliente (Cache local ativo).', 'info');
+        } catch (error) {
+          const navigatorOnline =
+            typeof navigator === 'undefined'
+              ? true
+              : navigator.onLine;
+          const failure = classifyFirestoreFailure(error, navigatorOnline);
+
+          console.warn('Initial Firestore sync failed', {
+            kind: failure.kind,
+            code: failure.code
+          });
+
+          switch (failure.kind) {
+            case 'offline':
+              triggerToast(
+                'Sem conexão com a internet. Usando dados locais.',
+                'info'
+              );
+              break;
+            case 'temporarily-unavailable':
+              triggerToast(
+                'Serviço temporariamente indisponível. Os dados locais continuam disponíveis.',
+                'info'
+              );
+              break;
+            case 'permission-denied':
+              triggerToast(
+                'Alguns módulos não estão autorizados ou configurados para esta conta.',
+                'warning'
+              );
+              break;
+            case 'unauthenticated':
+              triggerToast(
+                'Sua sessão não está autenticada para concluir a sincronização.',
+                'error'
+              );
+              break;
+            default:
+              triggerToast(
+                'Não foi possível concluir toda a sincronização inicial.',
+                'warning'
+              );
+          }
         }
       } else {
         setIsLoggedIn(false);
-        unsubStoresInit();
         setTenants([]);
         setStores([]);
         setProducts([]);
@@ -929,7 +975,6 @@ const activeStore = useMemo<Store>(() => {
 
     return () => {
       unsubscribe();
-      unsubStoresInit();
     };
   }, []);
 
@@ -957,15 +1002,6 @@ const activeStore = useMemo<Store>(() => {
     // Listen to momentos
     const unsubMomentos = listenCollection('momentos', (docs) => {
       setMomentos(docs);
-    });
-
-    // Listen to stores
-    const unsubStores = onSnapshot(collection(db, 'tenants/tenant_default/stores'), (snapshot) => {
-      const docs: any[] = [];
-      snapshot.forEach(docSnap => docs.push({ id: docSnap.id, ...docSnap.data() }));
-      setStores(docs);
-    }, (err) => {
-      console.warn("Error listening to stores in unsubStores:", err);
     });
 
     // Listen to deliveries ('delivery_jobs' and 'deliveries' aliases)
@@ -1105,7 +1141,6 @@ const activeStore = useMemo<Store>(() => {
       unsubSocialFeed();
       unsubPosts();
       unsubMomentos();
-      unsubStores();
       unsubDeliveryJobs();
       unsubDeliveries();
       unsubFreelance();

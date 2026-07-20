@@ -116,6 +116,7 @@ export async function syncOfflineBatch(
 
 import { doc, getDoc, setDoc, collection, onSnapshot } from 'firebase/firestore';
 import { db, auth } from './firebase';
+import { classifyFirestoreFailure } from './firestoreFailure';
 
 export enum OperationType {
   CREATE = 'create',
@@ -209,7 +210,15 @@ export async function saveDocLWW(colPath: string, docId: string, localData: any)
 /**
  * Real-time collection snapshot listener
  */
+const toSafeCollectionPath = (collectionPath: string): string =>
+  collectionPath
+    .split('/')
+    .map((segment, index) => index % 2 === 1 ? '{document}' : segment)
+    .join('/');
+
 export function listenCollection(colPath: string, callback: (docs: any[]) => void) {
+  const safePath = toSafeCollectionPath(colPath);
+
   try {
     return onSnapshot(collection(db, colPath), (snapshot) => {
       const list: any[] = [];
@@ -217,12 +226,32 @@ export function listenCollection(colPath: string, callback: (docs: any[]) => voi
         list.push({ ...doc.data(), id: doc.id });
       });
       callback(list);
-    }, (err) => {
-      console.warn(`Firestore collection listener offline/restricted for ${colPath}:`, err.message);
+    }, (error) => {
+      const navigatorOnline =
+        typeof navigator === 'undefined'
+          ? true
+          : navigator.onLine;
+      const failure = classifyFirestoreFailure(error, navigatorOnline);
+
+      console.warn('Firestore collection listener failed', {
+        path: safePath,
+        kind: failure.kind,
+        code: failure.code
+      });
     });
   } catch (error) {
-    console.warn(`Error setting up listener for ${colPath}:`, error);
+    const navigatorOnline =
+      typeof navigator === 'undefined'
+        ? true
+        : navigator.onLine;
+    const failure = classifyFirestoreFailure(error, navigatorOnline);
+
+    console.warn('Firestore collection listener setup failed', {
+      path: safePath,
+      kind: failure.kind,
+      code: failure.code
+    });
+
     return () => {};
   }
 }
-

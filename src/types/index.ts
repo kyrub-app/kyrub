@@ -1,3 +1,5 @@
+import type { Timestamp } from 'firebase/firestore';
+
 export interface Product {
   id: string;
   name: string;
@@ -28,6 +30,23 @@ export interface Store {
   isNew?: boolean;
   status?: 'open' | 'delayed' | 'closed';
 }
+
+export interface UserOwnedStore extends Store {
+  ownerId: string;
+}
+
+export type UserStoreDocument = Omit<
+  UserOwnedStore,
+  'isNew' | 'keywords' | 'offerImages' | 'status'
+> & {
+  address: string;
+  contact: string;
+  keywords: string[];
+  offerImages: string[];
+  status: 'open' | 'delayed' | 'closed';
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+};
 
 export interface OrderItem {
   productId: string;

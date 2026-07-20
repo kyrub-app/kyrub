@@ -84,6 +84,136 @@ service cloud.firestore {
       match /skills/{skillId} {
         allow read, write: if isSignedIn() && request.auth.uid == userId;
       }
+
+      match /stores/{storeId} {
+        function isUserStoreOwner(userId, storeId) {
+          return request.auth != null
+            && request.auth.uid == userId
+            && storeId == userId;
+        }
+
+        function hasValidUserStoreKeys(data) {
+          return data.keys().hasAll([
+            'id',
+            'ownerId',
+            'ownerEmail',
+            'name',
+            'slug',
+            'description',
+            'logo',
+            'banner',
+            'primaryColor',
+            'plan',
+            'keywords',
+            'offerImages',
+            'address',
+            'contact',
+            'status',
+            'createdAt',
+            'updatedAt'
+          ]) && data.keys().hasOnly([
+            'id',
+            'ownerId',
+            'ownerEmail',
+            'name',
+            'slug',
+            'description',
+            'logo',
+            'banner',
+            'primaryColor',
+            'plan',
+            'keywords',
+            'offerImages',
+            'address',
+            'contact',
+            'status',
+            'createdAt',
+            'updatedAt',
+            'lat',
+            'lng'
+          ]);
+        }
+
+        function hasValidUserStoreCoordinates(data) {
+          return !data.keys().hasAny(['lat', 'lng']) || (
+            data.keys().hasAll(['lat', 'lng'])
+              && data.lat is number
+              && data.lng is number
+              && data.lat >= -90
+              && data.lat <= 90
+              && data.lng >= -180
+              && data.lng <= 180
+          );
+        }
+
+        function hasValidUserStoreTypes(data) {
+          return data.id is string
+            && data.ownerId is string
+            && data.ownerEmail is string
+            && data.name is string
+            && data.slug is string
+            && data.description is string
+            && data.logo is string
+            && data.banner is string
+            && data.primaryColor is string
+            && data.plan is string
+            && data.keywords is list
+            && data.offerImages is list
+            && data.address is string
+            && data.contact is string
+            && data.status is string
+            && data.createdAt is timestamp
+            && data.updatedAt is timestamp
+            && data.plan in ['free', 'business']
+            && data.status in ['open', 'delayed', 'closed']
+            && hasValidUserStoreCoordinates(data);
+        }
+
+        allow get: if isUserStoreOwner(userId, storeId);
+        allow list: if false;
+
+        allow create: if isUserStoreOwner(userId, storeId)
+          && hasValidUserStoreKeys(request.resource.data)
+          && hasValidUserStoreTypes(request.resource.data)
+          && request.resource.data.id == userId
+          && request.resource.data.ownerId == userId
+          && request.resource.data.plan == 'free'
+          && request.resource.data.createdAt == request.time
+          && request.resource.data.updatedAt == request.time;
+
+        allow update: if isUserStoreOwner(userId, storeId)
+          && resource.data.id == userId
+          && resource.data.ownerId == userId
+          && hasValidUserStoreKeys(request.resource.data)
+          && hasValidUserStoreTypes(request.resource.data)
+          && request.resource.data.id == resource.data.id
+          && request.resource.data.ownerId == resource.data.ownerId
+          && request.resource.data.createdAt == resource.data.createdAt
+          && request.resource.data.plan == resource.data.plan
+          && request.resource.data.updatedAt == request.time
+          && request.resource.data
+            .diff(resource.data)
+            .affectedKeys()
+            .hasOnly([
+              'ownerEmail',
+              'name',
+              'slug',
+              'description',
+              'logo',
+              'banner',
+              'primaryColor',
+              'keywords',
+              'offerImages',
+              'address',
+              'contact',
+              'status',
+              'lat',
+              'lng',
+              'updatedAt'
+            ]);
+
+        allow delete: if false;
+      }
     }
 
     // --- Collection Group Match para permitir leitura de notas compartilhadas ---
