@@ -1,1 +1,1 @@
-Run the one-time validated store persistence and marketplace publishing integration for PR #14.
+Synchronize PR #14 so the validated main-branch executor applies the store persistence and publishing fix.
