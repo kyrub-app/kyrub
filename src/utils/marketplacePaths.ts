@@ -1,23 +1,53 @@
 import { validateKyrubFirestoreId } from './storePaths';
 
-export const getMarketplaceStoresCollectionPath = (): string =>
-  'marketplace_stores';
+const buildMarketplaceListingId = (
+  prefix: 's' | 'o',
+  parts: string[],
+): string => {
+  const encodedParts = parts.map(part => {
+    const validPart = validateKyrubFirestoreId(part);
 
-export const getMarketplaceStoreDocumentPath = (storeId: string): string => {
-  const validStoreId = validateKyrubFirestoreId(storeId);
-  return `marketplace_stores/${validStoreId}`;
+    return `${validPart.length}_${validPart}`;
+  });
+
+  return validateKyrubFirestoreId(
+    `${prefix}_${encodedParts.join('_')}`,
+  );
 };
 
-export const getMarketplaceOffersCollectionPath = (storeId: string): string => {
-  const validStoreId = validateKyrubFirestoreId(storeId);
-  return `marketplace_stores/${validStoreId}/offers`;
-};
+export const getMarketplaceListingsCollectionPath = (): string =>
+  'marketplace_listings';
 
-export const getMarketplaceOfferDocumentPath = (
+export const getMarketplaceStoreListingId = (
+  storeId: string,
+): string =>
+  buildMarketplaceListingId('s', [storeId]);
+
+export const getMarketplaceOfferListingId = (
   storeId: string,
   offerId: string,
+): string =>
+  buildMarketplaceListingId('o', [storeId, offerId]);
+
+export const getMarketplaceListingDocumentPath = (
+  listingId: string,
 ): string => {
-  const validStoreId = validateKyrubFirestoreId(storeId);
-  const validOfferId = validateKyrubFirestoreId(offerId);
-  return `marketplace_stores/${validStoreId}/offers/${validOfferId}`;
+  const validListingId = validateKyrubFirestoreId(listingId);
+
+  return `marketplace_listings/${validListingId}`;
 };
+
+export const getMarketplaceStoreListingDocumentPath = (
+  storeId: string,
+): string =>
+  getMarketplaceListingDocumentPath(
+    getMarketplaceStoreListingId(storeId),
+  );
+
+export const getMarketplaceOfferListingDocumentPath = (
+  storeId: string,
+  offerId: string,
+): string =>
+  getMarketplaceListingDocumentPath(
+    getMarketplaceOfferListingId(storeId, offerId),
+  );

@@ -1,12 +1,22 @@
-import { serverTimestamp } from 'firebase/firestore';
-import type { FieldValue, WithFieldValue } from 'firebase/firestore';
+import {
+  GeoPoint,
+  deleteField,
+  serverTimestamp,
+} from 'firebase/firestore';
 import type {
-  MarketplaceOfferDocument,
-  MarketplaceOfferStatus,
+  FieldValue,
+  WithFieldValue,
+} from 'firebase/firestore';
+import type {
+  MarketplaceOfferListingDocument,
   MarketplacePublicationStatus,
-  MarketplaceStoreDocument,
+  MarketplaceStoreListingDocument,
   UserStoreDocument,
 } from '../types';
+import {
+  getMarketplaceOfferListingId,
+  getMarketplaceStoreListingId,
+} from './marketplacePaths';
 import { validateKyrubFirestoreId } from './storePaths';
 
 export interface BuildMarketplaceStoreCreateInput {
@@ -40,12 +50,12 @@ export interface BuildMarketplaceOfferCreateInput {
   stock: number;
   isService: boolean;
   category: string;
-  status: MarketplaceOfferStatus;
+  publicationStatus: MarketplacePublicationStatus;
 }
 
 export type MarketplaceStoreUpdateData = Partial<
   Pick<
-    MarketplaceStoreDocument,
+    MarketplaceStoreListingDocument,
     | 'name'
     | 'slug'
     | 'description'
@@ -56,10 +66,9 @@ export type MarketplaceStoreUpdateData = Partial<
     | 'keywords'
     | 'status'
     | 'publicationStatus'
-    | 'lat'
-    | 'lng'
   >
 > & {
+  geoPosition: GeoPoint | FieldValue;
   updatedAt: FieldValue;
   publishedAt?: FieldValue;
 };
@@ -89,28 +98,62 @@ const validateCoordinates = (
   }
 };
 
+const buildGeoPosition = (
+  lat: number | undefined,
+  lng: number | undefined,
+): GeoPoint | undefined => {
+  if (lat === undefined || lng === undefined) {
+    return undefined;
+  }
+
+  return new GeoPoint(lat, lng);
+};
+
 const validateMarketplaceStore = (
   store: BuildMarketplaceStoreCreateInput['store'],
-): void => {
+): {
+  listingId: string;
+  storeId: string;
+  ownerId: string;
+} => {
   const storeId = validateKyrubFirestoreId(store.id);
   const ownerId = validateKyrubFirestoreId(store.ownerId);
 
   if (storeId !== ownerId) {
-    throw new Error('Marketplace store must use the owner primary store id.');
+    throw new Error(
+      'Marketplace store must use the owner primary store id.',
+    );
   }
 
   validateCoordinates(store.lat, store.lng);
+
+  return {
+    listingId: getMarketplaceStoreListingId(storeId),
+    storeId,
+    ownerId,
+  };
 };
 
 export const buildMarketplaceStoreCreateData = (
   input: BuildMarketplaceStoreCreateInput,
-): WithFieldValue<MarketplaceStoreDocument> => {
-  validateMarketplaceStore(input.store);
+): WithFieldValue<MarketplaceStoreListingDocument> => {
+  const {
+    listingId,
+    storeId,
+    ownerId,
+  } = validateMarketplaceStore(input.store);
 
   const timestamp = serverTimestamp();
-  const data: WithFieldValue<MarketplaceStoreDocument> = {
-    id: input.store.id,
-    ownerId: input.store.ownerId,
+  const geoPosition = buildGeoPosition(
+    input.store.lat,
+    input.store.lng,
+  );
+
+  const data: WithFieldValue<MarketplaceStoreListingDocument> = {
+    listingId,
+    listingType: 'store',
+    ownerId,
+    storeId,
     name: input.store.name,
     slug: input.store.slug,
     description: input.store.description,
@@ -125,9 +168,8 @@ export const buildMarketplaceStoreCreateData = (
     updatedAt: timestamp,
   };
 
-  if (input.store.lat !== undefined && input.store.lng !== undefined) {
-    data.lat = input.store.lat;
-    data.lng = input.store.lng;
+  if (geoPosition) {
+    data.geoPosition = geoPosition;
   }
 
   if (input.publicationStatus === 'published') {
@@ -143,6 +185,11 @@ export const buildMarketplaceStoreUpdateData = (
   validateMarketplaceStore(input.store);
 
   const timestamp = serverTimestamp();
+  const geoPosition = buildGeoPosition(
+    input.store.lat,
+    input.store.lng,
+  );
+
   const data: MarketplaceStoreUpdateData = {
     name: input.store.name,
     slug: input.store.slug,
@@ -154,13 +201,9 @@ export const buildMarketplaceStoreUpdateData = (
     keywords: [...input.store.keywords],
     status: input.store.status,
     publicationStatus: input.publicationStatus,
+    geoPosition: geoPosition ?? deleteField(),
     updatedAt: timestamp,
   };
-
-  if (input.store.lat !== undefined && input.store.lng !== undefined) {
-    data.lat = input.store.lat;
-    data.lng = input.store.lng;
-  }
 
   if (input.publicationStatus === 'published') {
     data.publishedAt = timestamp;
@@ -171,22 +214,39 @@ export const buildMarketplaceStoreUpdateData = (
 
 export const buildMarketplaceOfferCreateData = (
   input: BuildMarketplaceOfferCreateInput,
-): WithFieldValue<MarketplaceOfferDocument> => {
+): WithFieldValue<MarketplaceOfferListingDocument> => {
   const offerId = validateKyrubFirestoreId(input.id);
   const storeId = validateKyrubFirestoreId(input.storeId);
   const ownerId = validateKyrubFirestoreId(input.ownerId);
 
+  if (storeId !== ownerId) {
+    throw new Error(
+      'Marketplace offer must belong to the owner primary store.',
+    );
+  }
+
   if (!Number.isFinite(input.price) || input.price < 0) {
-    throw new Error('Marketplace offer price must be a non-negative number.');
+    throw new Error(
+      'Marketplace offer price must be a non-negative number.',
+    );
   }
 
   if (!Number.isInteger(input.stock) || input.stock < 0) {
-    throw new Error('Marketplace offer stock must be a non-negative integer.');
+    throw new Error(
+      'Marketplace offer stock must be a non-negative integer.',
+    );
   }
 
+  const listingId = getMarketplaceOfferListingId(
+    storeId,
+    offerId,
+  );
   const timestamp = serverTimestamp();
-  const data: WithFieldValue<MarketplaceOfferDocument> = {
-    id: offerId,
+
+  const data: WithFieldValue<MarketplaceOfferListingDocument> = {
+    listingId,
+    listingType: 'offer',
+    offerId,
     storeId,
     ownerId,
     name: input.name,
@@ -196,12 +256,12 @@ export const buildMarketplaceOfferCreateData = (
     stock: input.stock,
     isService: input.isService,
     category: input.category,
-    status: input.status,
+    publicationStatus: input.publicationStatus,
     createdAt: timestamp,
     updatedAt: timestamp,
   };
 
-  if (input.status === 'published') {
+  if (input.publicationStatus === 'published') {
     data.publishedAt = timestamp;
   }
 
