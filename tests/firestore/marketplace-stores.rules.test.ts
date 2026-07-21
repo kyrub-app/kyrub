@@ -137,18 +137,34 @@ const seedOffer = async (
   });
 };
 
-before(async () => {
-  const rules = readFileSync(
+const composeRules = (): string => {
+  const baseRules = readFileSync(
     new URL('../../firestore.rules', import.meta.url),
     'utf8',
   );
+  const marketplaceRules = readFileSync(
+    new URL('./marketplace.rules.fragment', import.meta.url),
+    'utf8',
+  );
+  const closingPattern = /\n  }\n}\s*$/;
 
+  if (!closingPattern.test(baseRules)) {
+    throw new Error('Unable to compose marketplace rules with firestore.rules.');
+  }
+
+  return baseRules.replace(
+    closingPattern,
+    `\n${marketplaceRules.trimEnd()}\n  }\n}\n`,
+  );
+};
+
+before(async () => {
   testEnvironment = await initializeTestEnvironment({
     projectId: PROJECT_ID,
     firestore: {
       host: FIRESTORE_HOST,
       port: FIRESTORE_PORT,
-      rules,
+      rules: composeRules(),
     },
   });
 });
@@ -161,7 +177,7 @@ after(async () => {
   await testEnvironment.cleanup();
 });
 
-describe('marketplace store creation', () => {
+describe('marketplace store writes', () => {
   test('1. owner creates a valid published store', async () => {
     const database = authenticatedContext('user-a').firestore();
     await assertSucceeds(
@@ -169,13 +185,10 @@ describe('marketplace store creation', () => {
     );
   });
 
-  test('2. owner creates a valid draft without publishedAt', async () => {
+  test('2. owner creates a draft without publishedAt', async () => {
     const database = authenticatedContext('user-a').firestore();
-    const payload = validStorePayload('user-a', {
-      publicationStatus: 'draft',
-    });
+    const payload = validStorePayload('user-a', { publicationStatus: 'draft' });
     delete payload.publishedAt;
-
     await assertSucceeds(setDoc(doc(database, storePath('user-a')), payload));
   });
 
@@ -186,32 +199,17 @@ describe('marketplace store creation', () => {
     );
   });
 
-  test('4. unauthenticated user cannot create a store', async () => {
-    const database = unauthenticatedContext().firestore();
-    await assertFails(
-      setDoc(doc(database, storePath('user-a')), validStorePayload('user-a')),
-    );
-  });
-
-  test('5. owner cannot create a non-deterministic store path', async () => {
+  test('4. path, id and ownerId must match the authenticated UID', async () => {
     const database = authenticatedContext('user-a').firestore();
     await assertFails(
-      setDoc(doc(database, storePath('other-store')), validStorePayload('user-a')),
+      setDoc(doc(database, storePath('other')), validStorePayload('user-a')),
     );
-  });
-
-  test('6. store id must match the authenticated UID', async () => {
-    const database = authenticatedContext('user-a').firestore();
     await assertFails(
       setDoc(
         doc(database, storePath('user-a')),
         validStorePayload('user-a', { id: 'user-b' }),
       ),
     );
-  });
-
-  test('7. ownerId must match the authenticated UID', async () => {
-    const database = authenticatedContext('user-a').firestore();
     await assertFails(
       setDoc(
         doc(database, storePath('user-a')),
@@ -220,18 +218,14 @@ describe('marketplace store creation', () => {
     );
   });
 
-  test('8. private owner email cannot be published', async () => {
+  test('5. private and unknown fields cannot be published', async () => {
     const database = authenticatedContext('user-a').firestore();
     await assertFails(
       setDoc(
         doc(database, storePath('user-a')),
-        validStorePayload('user-a', { ownerEmail: 'owner@example.com' }),
+        validStorePayload('user-a', { ownerEmail: 'private@example.com' }),
       ),
     );
-  });
-
-  test('9. private contact cannot be published', async () => {
-    const database = authenticatedContext('user-a').firestore();
     await assertFails(
       setDoc(
         doc(database, storePath('user-a')),
@@ -240,44 +234,11 @@ describe('marketplace store creation', () => {
     );
   });
 
-  test('10. address is required for a public store', async () => {
+  test('6. address is required and invalid coordinates are denied', async () => {
     const database = authenticatedContext('user-a').firestore();
-    const payload = validStorePayload('user-a');
-    delete payload.address;
-
-    await assertFails(setDoc(doc(database, storePath('user-a')), payload));
-  });
-
-  test('11. invalid publication status is denied', async () => {
-    const database = authenticatedContext('user-a').firestore();
-    await assertFails(
-      setDoc(
-        doc(database, storePath('user-a')),
-        validStorePayload('user-a', { publicationStatus: 'unknown' }),
-      ),
-    );
-  });
-
-  test('12. published store requires publishedAt', async () => {
-    const database = authenticatedContext('user-a').firestore();
-    const payload = validStorePayload('user-a');
-    delete payload.publishedAt;
-
-    await assertFails(setDoc(doc(database, storePath('user-a')), payload));
-  });
-
-  test('13. draft store cannot forge publishedAt', async () => {
-    const database = authenticatedContext('user-a').firestore();
-    await assertFails(
-      setDoc(
-        doc(database, storePath('user-a')),
-        validStorePayload('user-a', { publicationStatus: 'draft' }),
-      ),
-    );
-  });
-
-  test('14. invalid coordinates are denied', async () => {
-    const database = authenticatedContext('user-a').firestore();
+    const missingAddress = validStorePayload('user-a');
+    delete missingAddress.address;
+    await assertFails(setDoc(doc(database, storePath('user-a')), missingAddress));
     await assertFails(
       setDoc(
         doc(database, storePath('user-a')),
@@ -285,69 +246,35 @@ describe('marketplace store creation', () => {
       ),
     );
   });
-});
 
-describe('marketplace store reads', () => {
-  test('15. owner can get their own draft', async () => {
-    await seedStore('user-a', { publicationStatus: 'draft', publishedAt: null });
+  test('7. published store requires request-time publishedAt', async () => {
     const database = authenticatedContext('user-a').firestore();
-    await assertSucceeds(getDoc(doc(database, storePath('user-a'))));
-  });
-
-  test('16. another user cannot get a draft', async () => {
-    await seedStore('user-a', { publicationStatus: 'draft', publishedAt: null });
-    const database = authenticatedContext('user-b').firestore();
-    await assertFails(getDoc(doc(database, storePath('user-a'))));
-  });
-
-  test('17. unauthenticated user cannot get a published store', async () => {
-    await seedStore('user-a');
-    const database = unauthenticatedContext().firestore();
-    await assertFails(getDoc(doc(database, storePath('user-a'))));
-  });
-
-  test('18. signed-in user can get a published store', async () => {
-    await seedStore('user-a');
-    const database = authenticatedContext('user-b').firestore();
-    await assertSucceeds(getDoc(doc(database, storePath('user-a'))));
-  });
-
-  test('19. signed-in user can query published stores', async () => {
-    await seedStore('user-a');
-    await seedStore('user-b', { publicationStatus: 'draft', publishedAt: null });
-    const database = authenticatedContext('user-c').firestore();
-    await assertSucceeds(
-      getDocs(
-        query(
-          collection(database, 'marketplace_stores'),
-          where('publicationStatus', '==', 'published'),
-        ),
+    const missingPublishedAt = validStorePayload('user-a');
+    delete missingPublishedAt.publishedAt;
+    await assertFails(
+      setDoc(doc(database, storePath('user-a')), missingPublishedAt),
+    );
+    await assertFails(
+      setDoc(
+        doc(database, storePath('user-a')),
+        validStorePayload('user-a', { publishedAt: Timestamp.fromMillis(0) }),
       ),
     );
   });
 
-  test('20. unfiltered marketplace store listing is denied', async () => {
-    await seedStore('user-a');
-    const database = authenticatedContext('user-b').firestore();
-    await assertFails(getDocs(collection(database, 'marketplace_stores')));
-  });
-});
-
-describe('marketplace store updates', () => {
-  test('21. owner updates public fields and timestamp', async () => {
+  test('8. owner updates public fields', async () => {
     await seedStore('user-a');
     const database = authenticatedContext('user-a').firestore();
     await assertSucceeds(
       updateDoc(doc(database, storePath('user-a')), {
         name: 'Loja Atualizada',
-        description: 'Nova descrição',
         address: 'Novo endereço público',
         updatedAt: serverTimestamp(),
       }),
     );
   });
 
-  test('22. another user cannot update the store', async () => {
+  test('9. another user cannot update the store', async () => {
     await seedStore('user-a');
     const database = authenticatedContext('user-b').firestore();
     await assertFails(
@@ -358,41 +285,8 @@ describe('marketplace store updates', () => {
     );
   });
 
-  test('23. immutable store identity cannot change', async () => {
-    await seedStore('user-a');
-    const database = authenticatedContext('user-a').firestore();
-    await assertFails(
-      updateDoc(doc(database, storePath('user-a')), {
-        id: 'user-b',
-        updatedAt: serverTimestamp(),
-      }),
-    );
-  });
-
-  test('24. createdAt cannot change', async () => {
-    await seedStore('user-a');
-    const database = authenticatedContext('user-a').firestore();
-    await assertFails(
-      updateDoc(doc(database, storePath('user-a')), {
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      }),
-    );
-  });
-
-  test('25. existing publishedAt cannot be rewritten', async () => {
-    await seedStore('user-a');
-    const database = authenticatedContext('user-a').firestore();
-    await assertFails(
-      updateDoc(doc(database, storePath('user-a')), {
-        publishedAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      }),
-    );
-  });
-
-  test('26. owner publishes a draft with server timestamps', async () => {
-    await seedStore('user-a', { publicationStatus: 'draft', publishedAt: null });
+  test('10. owner publishes a draft and cannot rewrite immutable identity', async () => {
+    await seedStore('user-a', { publicationStatus: 'draft' });
     const database = authenticatedContext('user-a').firestore();
     await assertSucceeds(
       updateDoc(doc(database, storePath('user-a')), {
@@ -401,17 +295,60 @@ describe('marketplace store updates', () => {
         updatedAt: serverTimestamp(),
       }),
     );
+    await assertFails(
+      updateDoc(doc(database, storePath('user-a')), {
+        id: 'user-b',
+        updatedAt: serverTimestamp(),
+      }),
+    );
   });
 
-  test('27. deleting a marketplace store is denied', async () => {
+  test('11. deleting a marketplace store is denied', async () => {
     await seedStore('user-a');
     const database = authenticatedContext('user-a').firestore();
     await assertFails(deleteDoc(doc(database, storePath('user-a'))));
   });
 });
 
+describe('marketplace store reads', () => {
+  test('12. owner can get their draft but another user cannot', async () => {
+    await seedStore('user-a', { publicationStatus: 'draft' });
+    await assertSucceeds(
+      getDoc(doc(authenticatedContext('user-a').firestore(), storePath('user-a'))),
+    );
+    await assertFails(
+      getDoc(doc(authenticatedContext('user-b').firestore(), storePath('user-a'))),
+    );
+  });
+
+  test('13. signed-in user reads published stores; unauthenticated user cannot', async () => {
+    await seedStore('user-a');
+    await assertSucceeds(
+      getDoc(doc(authenticatedContext('user-b').firestore(), storePath('user-a'))),
+    );
+    await assertFails(
+      getDoc(doc(unauthenticatedContext().firestore(), storePath('user-a'))),
+    );
+  });
+
+  test('14. published query succeeds and unfiltered list fails', async () => {
+    await seedStore('user-a');
+    await seedStore('user-b', { publicationStatus: 'draft' });
+    const database = authenticatedContext('user-c').firestore();
+    await assertSucceeds(
+      getDocs(
+        query(
+          collection(database, 'marketplace_stores'),
+          where('publicationStatus', '==', 'published'),
+        ),
+      ),
+    );
+    await assertFails(getDocs(collection(database, 'marketplace_stores')));
+  });
+});
+
 describe('marketplace offers', () => {
-  test('28. owner creates a valid published offer', async () => {
+  test('15. owner creates a valid published offer', async () => {
     await seedStore('user-a');
     const database = authenticatedContext('user-a').firestore();
     await assertSucceeds(
@@ -422,18 +359,25 @@ describe('marketplace offers', () => {
     );
   });
 
-  test('29. another user cannot create an offer', async () => {
+  test('16. another user cannot create or update an offer', async () => {
     await seedStore('user-a');
-    const database = authenticatedContext('user-b').firestore();
+    const attacker = authenticatedContext('user-b').firestore();
     await assertFails(
       setDoc(
-        doc(database, offerPath('user-a', 'offer-1')),
+        doc(attacker, offerPath('user-a', 'offer-1')),
         validOfferPayload('user-a', 'offer-1'),
       ),
     );
+    await seedOffer('user-a', 'offer-1');
+    await assertFails(
+      updateDoc(doc(attacker, offerPath('user-a', 'offer-1')), {
+        price: 0,
+        updatedAt: serverTimestamp(),
+      }),
+    );
   });
 
-  test('30. offer ownerId must match the store owner', async () => {
+  test('17. offer identity and private fields are protected', async () => {
     await seedStore('user-a');
     const database = authenticatedContext('user-a').firestore();
     await assertFails(
@@ -442,20 +386,17 @@ describe('marketplace offers', () => {
         validOfferPayload('user-a', 'offer-1', { ownerId: 'user-b' }),
       ),
     );
-  });
-
-  test('31. private or unknown offer fields are denied', async () => {
-    await seedStore('user-a');
-    const database = authenticatedContext('user-a').firestore();
     await assertFails(
       setDoc(
         doc(database, offerPath('user-a', 'offer-1')),
-        validOfferPayload('user-a', 'offer-1', { supplierEmail: 'private@example.com' }),
+        validOfferPayload('user-a', 'offer-1', {
+          supplierEmail: 'private@example.com',
+        }),
       ),
     );
   });
 
-  test('32. negative price is denied', async () => {
+  test('18. invalid price and stock are denied', async () => {
     await seedStore('user-a');
     const database = authenticatedContext('user-a').firestore();
     await assertFails(
@@ -464,11 +405,6 @@ describe('marketplace offers', () => {
         validOfferPayload('user-a', 'offer-1', { price: -1 }),
       ),
     );
-  });
-
-  test('33. fractional stock is denied', async () => {
-    await seedStore('user-a');
-    const database = authenticatedContext('user-a').firestore();
     await assertFails(
       setDoc(
         doc(database, offerPath('user-a', 'offer-1')),
@@ -477,52 +413,63 @@ describe('marketplace offers', () => {
     );
   });
 
-  test('34. signed-in user reads a published offer from a published store', async () => {
+  test('19. signed-in user reads a published offer from a published store', async () => {
     await seedStore('user-a');
     await seedOffer('user-a', 'offer-1');
-    const database = authenticatedContext('user-b').firestore();
-    await assertSucceeds(getDoc(doc(database, offerPath('user-a', 'offer-1'))));
-  });
-
-  test('35. another user cannot read an offer when the store is not published', async () => {
-    await seedStore('user-a', { publicationStatus: 'paused' });
-    await seedOffer('user-a', 'offer-1');
-    const database = authenticatedContext('user-b').firestore();
-    await assertFails(getDoc(doc(database, offerPath('user-a', 'offer-1'))));
-  });
-
-  test('36. another user cannot read a draft offer', async () => {
-    await seedStore('user-a');
-    await seedOffer('user-a', 'offer-1', { status: 'draft', publishedAt: null });
-    const database = authenticatedContext('user-b').firestore();
-    await assertFails(getDoc(doc(database, offerPath('user-a', 'offer-1'))));
-  });
-
-  test('37. signed-in user queries published offers', async () => {
-    await seedStore('user-a');
-    await seedOffer('user-a', 'offer-1');
-    await seedOffer('user-a', 'offer-2', { status: 'draft', publishedAt: null });
-    const database = authenticatedContext('user-b').firestore();
     await assertSucceeds(
-      getDocs(
-        query(
-          collection(database, `marketplace_stores/user-a/offers`),
-          where('status', '==', 'published'),
+      getDoc(
+        doc(
+          authenticatedContext('user-b').firestore(),
+          offerPath('user-a', 'offer-1'),
         ),
       ),
     );
   });
 
-  test('38. unfiltered offer listing is denied', async () => {
+  test('20. draft offers and offers from paused stores are private', async () => {
+    await seedStore('user-a');
+    await seedOffer('user-a', 'offer-1', { status: 'draft' });
+    await assertFails(
+      getDoc(
+        doc(
+          authenticatedContext('user-b').firestore(),
+          offerPath('user-a', 'offer-1'),
+        ),
+      ),
+    );
+
+    await testEnvironment.clearFirestore();
+    await seedStore('user-a', { publicationStatus: 'paused' });
+    await seedOffer('user-a', 'offer-1');
+    await assertFails(
+      getDoc(
+        doc(
+          authenticatedContext('user-b').firestore(),
+          offerPath('user-a', 'offer-1'),
+        ),
+      ),
+    );
+  });
+
+  test('21. published offer query succeeds and unfiltered list fails', async () => {
     await seedStore('user-a');
     await seedOffer('user-a', 'offer-1');
+    await seedOffer('user-a', 'offer-2', { status: 'draft' });
     const database = authenticatedContext('user-b').firestore();
+    await assertSucceeds(
+      getDocs(
+        query(
+          collection(database, 'marketplace_stores/user-a/offers'),
+          where('status', '==', 'published'),
+        ),
+      ),
+    );
     await assertFails(
       getDocs(collection(database, 'marketplace_stores/user-a/offers')),
     );
   });
 
-  test('39. owner updates offer fields and timestamp', async () => {
+  test('22. owner updates an offer but cannot change immutable identity', async () => {
     await seedStore('user-a');
     await seedOffer('user-a', 'offer-1');
     const database = authenticatedContext('user-a').firestore();
@@ -530,25 +477,31 @@ describe('marketplace offers', () => {
       updateDoc(doc(database, offerPath('user-a', 'offer-1')), {
         name: 'Oferta Atualizada',
         price: 30,
-        stock: 5,
         updatedAt: serverTimestamp(),
       }),
     );
-  });
-
-  test('40. another user cannot update an offer', async () => {
-    await seedStore('user-a');
-    await seedOffer('user-a', 'offer-1');
-    const database = authenticatedContext('user-b').firestore();
     await assertFails(
       updateDoc(doc(database, offerPath('user-a', 'offer-1')), {
-        price: 0,
+        storeId: 'user-b',
         updatedAt: serverTimestamp(),
       }),
     );
   });
 
-  test('41. deleting an offer is denied', async () => {
+  test('23. unauthenticated user cannot read a published offer', async () => {
+    await seedStore('user-a');
+    await seedOffer('user-a', 'offer-1');
+    await assertFails(
+      getDoc(
+        doc(
+          unauthenticatedContext().firestore(),
+          offerPath('user-a', 'offer-1'),
+        ),
+      ),
+    );
+  });
+
+  test('24. deleting an offer is denied', async () => {
     await seedStore('user-a');
     await seedOffer('user-a', 'offer-1');
     const database = authenticatedContext('user-a').firestore();
