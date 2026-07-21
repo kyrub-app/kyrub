@@ -1,5 +1,5 @@
 import { serverTimestamp } from 'firebase/firestore';
-import type { WithFieldValue } from 'firebase/firestore';
+import type { FieldValue, WithFieldValue } from 'firebase/firestore';
 import type {
   MarketplaceOfferDocument,
   MarketplaceOfferStatus,
@@ -17,6 +17,7 @@ export interface BuildMarketplaceStoreCreateInput {
     | 'name'
     | 'slug'
     | 'description'
+    | 'address'
     | 'logo'
     | 'banner'
     | 'primaryColor'
@@ -41,6 +42,27 @@ export interface BuildMarketplaceOfferCreateInput {
   category: string;
   status: MarketplaceOfferStatus;
 }
+
+export type MarketplaceStoreUpdateData = Partial<
+  Pick<
+    MarketplaceStoreDocument,
+    | 'name'
+    | 'slug'
+    | 'description'
+    | 'address'
+    | 'logo'
+    | 'banner'
+    | 'primaryColor'
+    | 'keywords'
+    | 'status'
+    | 'publicationStatus'
+    | 'lat'
+    | 'lng'
+  >
+> & {
+  updatedAt: FieldValue;
+  publishedAt?: FieldValue;
+};
 
 const validateCoordinates = (
   lat: number | undefined,
@@ -67,25 +89,32 @@ const validateCoordinates = (
   }
 };
 
-export const buildMarketplaceStoreCreateData = (
-  input: BuildMarketplaceStoreCreateInput,
-): WithFieldValue<MarketplaceStoreDocument> => {
-  const storeId = validateKyrubFirestoreId(input.store.id);
-  const ownerId = validateKyrubFirestoreId(input.store.ownerId);
+const validateMarketplaceStore = (
+  store: BuildMarketplaceStoreCreateInput['store'],
+): void => {
+  const storeId = validateKyrubFirestoreId(store.id);
+  const ownerId = validateKyrubFirestoreId(store.ownerId);
 
   if (storeId !== ownerId) {
     throw new Error('Marketplace store must use the owner primary store id.');
   }
 
-  validateCoordinates(input.store.lat, input.store.lng);
+  validateCoordinates(store.lat, store.lng);
+};
+
+export const buildMarketplaceStoreCreateData = (
+  input: BuildMarketplaceStoreCreateInput,
+): WithFieldValue<MarketplaceStoreDocument> => {
+  validateMarketplaceStore(input.store);
 
   const timestamp = serverTimestamp();
   const data: WithFieldValue<MarketplaceStoreDocument> = {
-    id: storeId,
-    ownerId,
+    id: input.store.id,
+    ownerId: input.store.ownerId,
     name: input.store.name,
     slug: input.store.slug,
     description: input.store.description,
+    address: input.store.address,
     logo: input.store.logo,
     banner: input.store.banner,
     primaryColor: input.store.primaryColor,
@@ -93,6 +122,38 @@ export const buildMarketplaceStoreCreateData = (
     status: input.store.status,
     publicationStatus: input.publicationStatus,
     createdAt: timestamp,
+    updatedAt: timestamp,
+  };
+
+  if (input.store.lat !== undefined && input.store.lng !== undefined) {
+    data.lat = input.store.lat;
+    data.lng = input.store.lng;
+  }
+
+  if (input.publicationStatus === 'published') {
+    data.publishedAt = timestamp;
+  }
+
+  return data;
+};
+
+export const buildMarketplaceStoreUpdateData = (
+  input: BuildMarketplaceStoreCreateInput,
+): MarketplaceStoreUpdateData => {
+  validateMarketplaceStore(input.store);
+
+  const timestamp = serverTimestamp();
+  const data: MarketplaceStoreUpdateData = {
+    name: input.store.name,
+    slug: input.store.slug,
+    description: input.store.description,
+    address: input.store.address,
+    logo: input.store.logo,
+    banner: input.store.banner,
+    primaryColor: input.store.primaryColor,
+    keywords: [...input.store.keywords],
+    status: input.store.status,
+    publicationStatus: input.publicationStatus,
     updatedAt: timestamp,
   };
 
