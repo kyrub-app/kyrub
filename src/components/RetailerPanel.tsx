@@ -56,7 +56,7 @@ const erpDB = new DexieERPDB();
 interface RetailerPanelProps {
   activeRetailerId: string;
   activeRetailer: Tenant | undefined;
-  stores: Store[];
+  activeStore: Store;
   products: Product[];
   orders: Order[];
   setNewProductModal: (val: boolean) => void;
@@ -73,7 +73,7 @@ interface RetailerPanelProps {
 export const RetailerPanel: React.FC<RetailerPanelProps> = ({
   activeRetailerId,
   activeRetailer,
-  stores,
+  activeStore,
   products,
   orders,
   setNewProductModal,
@@ -86,23 +86,6 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = ({
   atendimentoSpaces,
   producaoSpaces
 }) => {
-const activeStore: Store =
-  stores.find(store => store.id === activeRetailerId) || {
-    id: activeRetailerId,
-    name: '',
-    description: '',
-    keywords: [],
-    logo: '',
-    banner: '',
-    primaryColor: '',
-    offerImages: [],
-    slug: '',
-    plan: 'free',
-    ownerEmail: activeRetailer?.email || '',
-    address: '',
-    contact: '',
-    status: 'closed',
-  };
   const activeRetailerProducts = products.filter(p => p.supplierId === activeRetailerId && !p.wholesalePrice);
   
   // Navigation State

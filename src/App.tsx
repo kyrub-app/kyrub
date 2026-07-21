@@ -254,7 +254,10 @@ export default function App() {
     return saved ? JSON.parse(saved) : initialTenants;
   });
 
+  // Public marketplace stores remain separate from the authenticated
+  // user's private ERP store document.
   const [stores, setStores] = useState<Store[]>([]);
+  const [userStore, setUserStore] = useState<Store | null>(null);
 
   const [products, setProducts] = useState<Product[]>(() => {
     const saved = localStorage.getItem(STORAGE_KEYS.PRODUCTS);
@@ -444,19 +447,13 @@ export default function App() {
   }, [tenants, isLoggedIn]);
 
   useEffect(() => {
-    if (!authenticatedUserId) return;
-
-    const userStore = stores.find(
-      store => store.id === authenticatedUserId
-    );
-
-    if (!userStore) return;
+    if (!authenticatedUserId || !userStore) return;
 
     localStorage.setItem(
       getUserStoreCacheKey(authenticatedUserId),
       JSON.stringify(userStore)
     );
-  }, [stores, authenticatedUserId]);
+  }, [userStore, authenticatedUserId]);
 
   useEffect(() => {
     if (!isLoggedIn) return;
@@ -706,16 +703,11 @@ export default function App() {
   const activeRetailerId = authenticatedUserId;
 
   const activeStore = useMemo<Store>(() => {
-    const existingStore = stores.find(
-      store => store.id === activeRetailerId
+    return userStore ?? createEmptyUserStore(
+      activeRetailerId,
+      profileEmail
     );
-
-    if (existingStore) {
-      return existingStore;
-    }
-
-    return createEmptyUserStore(activeRetailerId, profileEmail);
-  }, [stores, activeRetailerId, profileEmail]);
+  }, [userStore, activeRetailerId, profileEmail]);
 
   const activeRetailer = useMemo<Tenant | undefined>(() => {
     if (!activeRetailerId) return undefined;
@@ -771,10 +763,7 @@ export default function App() {
       status: persistedFields.status ?? activeStore.status ?? 'closed',
     };
 
-    setStores(previousStores => [
-      nextStore,
-      ...previousStores.filter(store => store.id !== user.uid),
-    ]);
+    setUserStore(nextStore);
 
     const storeReference = doc(
       db,
@@ -798,15 +787,7 @@ export default function App() {
         );
       }
     } catch (error) {
-      setStores(previousStores => {
-        const otherStores = previousStores.filter(
-          store => store.id !== user.uid
-        );
-
-        return previousStore.id
-          ? [previousStore, ...otherStores]
-          : otherStores;
-      });
+      setUserStore(previousStore.id ? previousStore : null);
 
       console.error(
         'Falha ao atualizar a loja principal do usuário:',
@@ -915,6 +896,7 @@ export default function App() {
       if (user) {
         setIsLoggedIn(true);
         setAuthenticatedUserId(user.uid);
+        setUserStore(null);
         setStores([]);
         setProfileName(user.displayName ?? '');
         setProfileEmail(user.email ?? '');
@@ -942,7 +924,7 @@ export default function App() {
                   ? parsedStore.offerImages
                   : [],
               };
-              setStores([cachedStore]);
+              setUserStore(cachedStore);
             }
           } catch (error) {
             console.warn(
@@ -1003,10 +985,7 @@ export default function App() {
             );
           }
 
-          setStores(previousStores => [
-            userStore,
-            ...previousStores.filter(store => store.id !== user.uid),
-          ]);
+          setUserStore(userStore);
           localStorage.setItem(
             getUserStoreCacheKey(user.uid),
             JSON.stringify(userStore)
@@ -1018,9 +997,9 @@ export default function App() {
           );
 
           if (!cachedStore) {
-            setStores([
-              createEmptyUserStore(user.uid, user.email ?? ''),
-            ]);
+            setUserStore(
+              createEmptyUserStore(user.uid, user.email ?? '')
+            );
           }
         }
 
@@ -1201,6 +1180,7 @@ export default function App() {
       } else {
         setIsLoggedIn(false);
         setAuthenticatedUserId('');
+        setUserStore(null);
         setTenants([]);
         setStores([]);
         setProducts([]);
@@ -2051,7 +2031,7 @@ if (newMomentPublishToPraca) {
               <RetailerPanel
                 activeRetailerId={activeRetailerId}
                 activeRetailer={activeRetailer}
-                stores={stores}
+                activeStore={activeStore}
                 products={products}
                 orders={orders}
                 setNewProductModal={setNewProductModal}
