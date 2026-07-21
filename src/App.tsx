@@ -80,6 +80,7 @@ import { StaffViewport } from './components/StaffViewport';
 import { PerfilTab } from './components/tabs/PerfilTab';
 import { RendaTab } from './components/tabs/RendaTab';
 import { KyrubTab } from './components/tabs/KyrubTab';
+import { MobileErpMenu } from './components/MobileErpMenu';
 
 // Import helper functions
 import { getDistance, formatWhatsApp, formatCpf, formatCnpj } from './utils/helpers';
@@ -1707,11 +1708,20 @@ if (newMomentPublishToPraca) {
           {/* Header Gestão */}
           <div className="bg-slate-900 border-b border-slate-800 px-6 py-2.5 flex items-center justify-between gap-4 font-sans shrink-0" id="erp-main-header">
 
+            <MobileErpMenu
+              activeSubTab={activeSubTab}
+              isRetailer={gestaoRole === 'retailer'}
+              canClosePanel={!isAdminSubdomain}
+              onClosePanel={() => setIsGestaoOpen(false)}
+              onOpenStoreConfig={() => setIsConfigModalOpen(true)}
+              onSelectTab={setActiveSubTab}
+            />
+
             {/* LADO ESQUERDO: Botão de fechar */}
             {!isAdminSubdomain && (
               <button
                 onClick={() => setIsGestaoOpen(false)}
-                className="text-slate-500 hover:text-slate-300 font-bold bg-slate-950 border border-slate-850 w-8 h-8 rounded-full flex items-center justify-center text-sm cursor-pointer shadow-sm shrink-0"
+                className="hidden sm:flex text-slate-500 hover:text-slate-300 font-bold bg-slate-950 border border-slate-850 w-8 h-8 rounded-full items-center justify-center text-sm cursor-pointer shadow-sm shrink-0"
               >
                 ✕
               </button>
@@ -1720,7 +1730,7 @@ if (newMomentPublishToPraca) {
             {/* CENTRO/DIREITA: Itens de navegação unificados e roláveis horizontalmente */}
             <div className="flex-1 min-w-0 flex items-center gap-2">
               {gestaoRole === 'retailer' ? (
-                <div className="flex items-center gap-1.5 overflow-x-auto whitespace-nowrap scrollbar-none flex-1 px-2" id="erp-tab-navigation-header">
+                <div className="hidden sm:flex items-center gap-1.5 overflow-x-auto whitespace-nowrap scrollbar-none flex-1 px-2" id="erp-tab-navigation-header">
                   {/* Botão Loja (estilizado como os itens do menu) */}
                   <button
                     onClick={() => setIsConfigModalOpen(true)}
