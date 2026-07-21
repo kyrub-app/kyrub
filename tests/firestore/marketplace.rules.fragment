@@ -1,0 +1,321 @@
+    // --- Public Marketplace Stores and Offers ---
+    match /marketplace_stores/{storeId} {
+      function isMarketplaceStoreOwner() {
+        return isSignedIn()
+          && isValidId(storeId)
+          && request.auth.uid == storeId;
+      }
+
+      function hasValidMarketplaceStoreKeys(data) {
+        return data.keys().hasAll([
+          'id',
+          'ownerId',
+          'name',
+          'slug',
+          'description',
+          'logo',
+          'banner',
+          'primaryColor',
+          'keywords',
+          'address',
+          'status',
+          'publicationStatus',
+          'createdAt',
+          'updatedAt'
+        ]) && data.keys().hasOnly([
+          'id',
+          'ownerId',
+          'name',
+          'slug',
+          'description',
+          'logo',
+          'banner',
+          'primaryColor',
+          'keywords',
+          'address',
+          'status',
+          'publicationStatus',
+          'createdAt',
+          'updatedAt',
+          'publishedAt',
+          'lat',
+          'lng'
+        ]);
+      }
+
+      function hasValidMarketplaceStoreCoordinates(data) {
+        return !data.keys().hasAny(['lat', 'lng']) || (
+          data.keys().hasAll(['lat', 'lng'])
+            && data.lat is number
+            && data.lng is number
+            && data.lat >= -90
+            && data.lat <= 90
+            && data.lng >= -180
+            && data.lng <= 180
+        );
+      }
+
+      function hasValidMarketplaceStoreTypes(data) {
+        return data.id is string
+          && data.ownerId is string
+          && data.name is string
+          && data.name.size() >= 1
+          && data.name.size() <= 120
+          && data.slug is string
+          && data.slug.size() <= 120
+          && data.description is string
+          && data.description.size() <= 2000
+          && data.logo is string
+          && data.logo.size() <= 2048
+          && data.banner is string
+          && data.banner.size() <= 2048
+          && data.primaryColor is string
+          && data.primaryColor.size() <= 32
+          && data.keywords is list
+          && data.keywords.size() <= 30
+          && data.address is string
+          && data.address.size() >= 1
+          && data.address.size() <= 500
+          && data.status is string
+          && data.status in ['open', 'delayed', 'closed']
+          && data.publicationStatus is string
+          && data.publicationStatus in ['draft', 'published', 'paused']
+          && data.createdAt is timestamp
+          && data.updatedAt is timestamp
+          && (!data.keys().hasAny(['publishedAt']) || data.publishedAt is timestamp)
+          && hasValidMarketplaceStoreCoordinates(data);
+      }
+
+      function hasValidMarketplaceStoreCreatePublication(data) {
+        return (
+          data.publicationStatus == 'published'
+            && data.keys().hasAll(['publishedAt'])
+            && data.publishedAt == request.time
+        ) || (
+          data.publicationStatus in ['draft', 'paused']
+            && !data.keys().hasAny(['publishedAt'])
+        );
+      }
+
+      function preservesMarketplaceStorePublishedAt() {
+        return (
+          existing().publicationStatus != 'published'
+            && incoming().publicationStatus == 'published'
+            && incoming().keys().hasAll(['publishedAt'])
+            && incoming().publishedAt == request.time
+        ) || (
+          existing().keys().hasAny(['publishedAt'])
+            && incoming().keys().hasAll(['publishedAt'])
+            && incoming().publishedAt == existing().publishedAt
+        ) || (
+          !existing().keys().hasAny(['publishedAt'])
+            && !incoming().keys().hasAny(['publishedAt'])
+            && incoming().publicationStatus != 'published'
+        );
+      }
+
+      allow get: if isMarketplaceStoreOwner()
+        || (
+          isSignedIn()
+            && existing().publicationStatus == 'published'
+        );
+
+      allow list: if isSignedIn()
+        && existing().publicationStatus == 'published';
+
+      allow create: if isMarketplaceStoreOwner()
+        && hasValidMarketplaceStoreKeys(incoming())
+        && hasValidMarketplaceStoreTypes(incoming())
+        && incoming().id == storeId
+        && incoming().ownerId == request.auth.uid
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && hasValidMarketplaceStoreCreatePublication(incoming());
+
+      allow update: if isMarketplaceStoreOwner()
+        && existing().id == storeId
+        && existing().ownerId == request.auth.uid
+        && hasValidMarketplaceStoreKeys(incoming())
+        && hasValidMarketplaceStoreTypes(incoming())
+        && incoming().id == existing().id
+        && incoming().ownerId == existing().ownerId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && preservesMarketplaceStorePublishedAt()
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'name',
+          'slug',
+          'description',
+          'logo',
+          'banner',
+          'primaryColor',
+          'keywords',
+          'address',
+          'status',
+          'publicationStatus',
+          'publishedAt',
+          'lat',
+          'lng',
+          'updatedAt'
+        ]);
+
+      allow delete: if false;
+
+      match /offers/{offerId} {
+        function marketplaceParentStoreExists() {
+          return exists(
+            /databases/$(database)/documents/marketplace_stores/$(storeId)
+          );
+        }
+
+        function marketplaceParentStore() {
+          return get(
+            /databases/$(database)/documents/marketplace_stores/$(storeId)
+          ).data;
+        }
+
+        function isMarketplaceOfferOwner() {
+          return isSignedIn()
+            && isValidId(storeId)
+            && isValidId(offerId)
+            && request.auth.uid == storeId
+            && marketplaceParentStoreExists()
+            && marketplaceParentStore().ownerId == request.auth.uid;
+        }
+
+        function hasValidMarketplaceOfferKeys(data) {
+          return data.keys().hasAll([
+            'id',
+            'storeId',
+            'ownerId',
+            'name',
+            'description',
+            'price',
+            'imageUrls',
+            'stock',
+            'isService',
+            'category',
+            'status',
+            'createdAt',
+            'updatedAt'
+          ]) && data.keys().hasOnly([
+            'id',
+            'storeId',
+            'ownerId',
+            'name',
+            'description',
+            'price',
+            'imageUrls',
+            'stock',
+            'isService',
+            'category',
+            'status',
+            'createdAt',
+            'updatedAt',
+            'publishedAt'
+          ]);
+        }
+
+        function hasValidMarketplaceOfferTypes(data) {
+          return data.id is string
+            && data.storeId is string
+            && data.ownerId is string
+            && data.name is string
+            && data.name.size() >= 1
+            && data.name.size() <= 160
+            && data.description is string
+            && data.description.size() <= 4000
+            && data.price is number
+            && data.price >= 0
+            && data.imageUrls is list
+            && data.imageUrls.size() <= 12
+            && data.stock is int
+            && data.stock >= 0
+            && data.isService is bool
+            && data.category is string
+            && data.category.size() <= 120
+            && data.status is string
+            && data.status in ['draft', 'published', 'paused']
+            && data.createdAt is timestamp
+            && data.updatedAt is timestamp
+            && (!data.keys().hasAny(['publishedAt']) || data.publishedAt is timestamp);
+        }
+
+        function hasValidMarketplaceOfferCreatePublication(data) {
+          return (
+            data.status == 'published'
+              && data.keys().hasAll(['publishedAt'])
+              && data.publishedAt == request.time
+          ) || (
+            data.status in ['draft', 'paused']
+              && !data.keys().hasAny(['publishedAt'])
+          );
+        }
+
+        function preservesMarketplaceOfferPublishedAt() {
+          return (
+            existing().status != 'published'
+              && incoming().status == 'published'
+              && incoming().keys().hasAll(['publishedAt'])
+              && incoming().publishedAt == request.time
+          ) || (
+            existing().keys().hasAny(['publishedAt'])
+              && incoming().keys().hasAll(['publishedAt'])
+              && incoming().publishedAt == existing().publishedAt
+          ) || (
+            !existing().keys().hasAny(['publishedAt'])
+              && !incoming().keys().hasAny(['publishedAt'])
+              && incoming().status != 'published'
+          );
+        }
+
+        function isPublishedMarketplaceOfferVisible() {
+          return isSignedIn()
+            && marketplaceParentStoreExists()
+            && marketplaceParentStore().publicationStatus == 'published'
+            && existing().status == 'published';
+        }
+
+        allow get: if isMarketplaceOfferOwner()
+          || isPublishedMarketplaceOfferVisible();
+
+        allow list: if isPublishedMarketplaceOfferVisible();
+
+        allow create: if isMarketplaceOfferOwner()
+          && hasValidMarketplaceOfferKeys(incoming())
+          && hasValidMarketplaceOfferTypes(incoming())
+          && incoming().id == offerId
+          && incoming().storeId == storeId
+          && incoming().ownerId == request.auth.uid
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time
+          && hasValidMarketplaceOfferCreatePublication(incoming());
+
+        allow update: if isMarketplaceOfferOwner()
+          && existing().id == offerId
+          && existing().storeId == storeId
+          && existing().ownerId == request.auth.uid
+          && hasValidMarketplaceOfferKeys(incoming())
+          && hasValidMarketplaceOfferTypes(incoming())
+          && incoming().id == existing().id
+          && incoming().storeId == existing().storeId
+          && incoming().ownerId == existing().ownerId
+          && incoming().createdAt == existing().createdAt
+          && incoming().updatedAt == request.time
+          && preservesMarketplaceOfferPublishedAt()
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'name',
+            'description',
+            'price',
+            'imageUrls',
+            'stock',
+            'isService',
+            'category',
+            'status',
+            'publishedAt',
+            'updatedAt'
+          ]);
+
+        allow delete: if false;
+      }
+    }
