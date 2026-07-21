@@ -1,7 +1,7 @@
 const KYRUB_FIRESTORE_ID_PATTERN = /^[a-zA-Z0-9_-]+$/;
 const KYRUB_FIRESTORE_ID_MAX_LENGTH = 128;
 
-const validateKyrubFirestoreId = (id: string): string => {
+export const validateKyrubFirestoreId = (id: string): string => {
   if (typeof id !== 'string') {
     throw new TypeError('Firestore ID must be a valid string.');
   }
