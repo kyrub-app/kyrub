@@ -1,4 +1,4 @@
-import type { Timestamp } from 'firebase/firestore';
+import type { GeoPoint, Timestamp } from 'firebase/firestore';
 
 export interface Product {
   id: string;
@@ -48,11 +48,27 @@ export type UserStoreDocument = Omit<
   updatedAt: Timestamp;
 };
 
-export type MarketplacePublicationStatus = 'draft' | 'published' | 'paused';
+export type MarketplacePublicationStatus =
+  | 'draft'
+  | 'published'
+  | 'paused';
 
-export interface MarketplaceStoreDocument {
-  id: string;
+export type MarketplaceListingType = 'store' | 'offer';
+
+export interface MarketplaceListingBaseDocument {
+  listingId: string;
+  listingType: MarketplaceListingType;
   ownerId: string;
+  storeId: string;
+  publicationStatus: MarketplacePublicationStatus;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+  publishedAt?: Timestamp;
+}
+
+export interface MarketplaceStoreListingDocument
+  extends MarketplaceListingBaseDocument {
+  listingType: 'store';
   name: string;
   slug: string;
   description: string;
@@ -62,20 +78,13 @@ export interface MarketplaceStoreDocument {
   primaryColor: string;
   keywords: string[];
   status: 'open' | 'delayed' | 'closed';
-  publicationStatus: MarketplacePublicationStatus;
-  lat?: number;
-  lng?: number;
-  createdAt: Timestamp;
-  updatedAt: Timestamp;
-  publishedAt?: Timestamp;
+  geoPosition?: GeoPoint;
 }
 
-export type MarketplaceOfferStatus = 'draft' | 'published' | 'paused';
-
-export interface MarketplaceOfferDocument {
-  id: string;
-  storeId: string;
-  ownerId: string;
+export interface MarketplaceOfferListingDocument
+  extends MarketplaceListingBaseDocument {
+  listingType: 'offer';
+  offerId: string;
   name: string;
   description: string;
   price: number;
@@ -83,11 +92,11 @@ export interface MarketplaceOfferDocument {
   stock: number;
   isService: boolean;
   category: string;
-  status: MarketplaceOfferStatus;
-  createdAt: Timestamp;
-  updatedAt: Timestamp;
-  publishedAt?: Timestamp;
 }
+
+export type MarketplaceListingDocument =
+  | MarketplaceStoreListingDocument
+  | MarketplaceOfferListingDocument;
 
 export interface OrderItem {
   productId: string;
