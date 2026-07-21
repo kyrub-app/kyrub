@@ -1,0 +1,98 @@
+name: Format retailer cleanup once
+
+on:
+  push:
+    branches:
+      - agent/remove-retailer-fake-data
+
+permissions:
+  contents: write
+
+jobs:
+  format:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/remove-retailer-fake-data
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Normalize formatting
+        shell: bash
+        run: |
+          python <<'PY'
+          from pathlib import Path
+
+          path = Path('src/components/RetailerPanel.tsx')
+          source = path.read_text(encoding='utf-8')
+
+          before = """  const registerFiscalIntegrationPending = () => {
+  setLatestFiscalXml('');
+  setFiscalLogs(prev => [
+    `[${new Date().toLocaleTimeString()}] Documento fiscal não emitido: integração fiscal ainda não configurada para esta loja.`,
+    ...prev
+  ]);
+};"""
+          after = """  const registerFiscalIntegrationPending = () => {
+    setLatestFiscalXml('');
+    setFiscalLogs(prev => [
+      `[${new Date().toLocaleTimeString()}] Documento fiscal não emitido: integração fiscal ainda não configurada para esta loja.`,
+      ...prev
+    ]);
+  };"""
+          assert before in source
+          source = source.replace(before, after, 1)
+
+          before = """  // The ticket is closed without fabricating price, stock or fiscal data.
+  // Real stock and financial movements will be recorded when the sale flow
+  // provides validated items, quantities and payment totals.
+  registerFiscalIntegrationPending();
+
+  setActiveTickets(prev => prev.filter(t => t.id !== ticketId));
+  triggerToast(
+    `Atendimento ${ticket.id} fechado. Emissão fiscal ainda não configurada.`,
+    'success'
+  );"""
+          after = """    // The ticket is closed without fabricating price, stock or fiscal data.
+    // Real stock and financial movements will be recorded when the sale flow
+    // provides validated items, quantities and payment totals.
+    registerFiscalIntegrationPending();
+
+    setActiveTickets(prev => prev.filter(t => t.id !== ticketId));
+    triggerToast(
+      `Atendimento ${ticket.id} fechado. Emissão fiscal ainda não configurada.`,
+      'success'
+    );"""
+          assert before in source
+          source = source.replace(before, after, 1)
+
+          path.write_text(source, encoding='utf-8')
+          PY
+
+      - name: Validate patch
+        run: git diff --check
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check
+        run: npm run lint
+
+      - name: Build
+        run: npm run build
+
+      - name: Commit validated formatting
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/retailer-format-once.yml
+          git add src/components/RetailerPanel.tsx
+          git commit -m "style: normalize retailer cleanup formatting"
+          git push origin HEAD:agent/remove-retailer-fake-data
