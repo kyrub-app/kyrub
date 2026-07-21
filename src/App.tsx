@@ -254,28 +254,12 @@ export default function App() {
   const defaultLat = -23.5505;
   const defaultLng = -46.6333;
 
-  // Add coordinates to stores dynamically, wrapped in useMemo for optimal CPU cycle savings
+  // Preserve store data while normalizing optional list fields.
   const storesWithCoords = useMemo(() => {
     return stores.map((s) => ({
       ...s,
-      lat: s.lat ?? (s.id === 's-1' ? -23.5450 : -23.5600),
-      lng: s.lng ?? (s.id === 's-1' ? -46.6350 : -46.6500),
-      isNew: s.isNew ?? (s.id === 's-1'),
-      status: s.status ?? (s.id === 's-1' ? 'open' : 'delayed') as 'open' | 'delayed' | 'closed',
-      keywords: s.keywords || (s.id === 's-1'
-        ? ['eletrônicos', 'gadgets', 'celulares', 'fones', 'teclados']
-        : ['moda', 'vestidos', 'boutique', 'linho', 'acessórios']),
-      offerImages: s.offerImages || (s.id === 's-1'
-        ? [
-            'https://images.unsplash.com/photo-1542751371-adc38448a05e?w=600&fit=crop&q=80',
-            'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=600&fit=crop&q=80',
-            'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=600&fit=crop&q=80'
-          ]
-        : [
-            'https://images.unsplash.com/photo-1490481651871-ab68de25d43d?w=600&fit=crop&q=80',
-            'https://images.unsplash.com/photo-1483985988355-763728e1935b?w=600&fit=crop&q=80',
-            'https://images.unsplash.com/photo-1441986300917-64674bd600d8?w=600&fit=crop&q=80'
-          ])
+      keywords: Array.isArray(s.keywords) ? s.keywords : [],
+      offerImages: Array.isArray(s.offerImages) ? s.offerImages : []
     }));
   }, [stores]);
 
@@ -1433,17 +1417,31 @@ if (newMomentPublishToPraca) {
 
   // Filtered stores list by GPS radius & search query
   const filteredStores = storesWithCoords.filter(store => {
-    const isMatchingQuery = store.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                           store.description.toLowerCase().includes(searchQuery.toLowerCase());
+    const isMatchingQuery =
+      store.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      store.description.toLowerCase().includes(searchQuery.toLowerCase());
 
-    // Simulate published checks if required
-    const isPublished = true; // All mock stores are published
+    const storeLat = store.lat;
+    const storeLng = store.lng;
 
-    if (userCoords) {
-      const distance = getDistance(userCoords.lat, userCoords.lng, store.lat, store.lng);
-      return isMatchingQuery && isPublished && distance <= radiusKm;
+    if (
+      userCoords &&
+      typeof storeLat === 'number' &&
+      typeof storeLng === 'number' &&
+      Number.isFinite(storeLat) &&
+      Number.isFinite(storeLng)
+    ) {
+      const distance = getDistance(
+        userCoords.lat,
+        userCoords.lng,
+        storeLat,
+        storeLng
+      );
+
+      return isMatchingQuery && distance <= radiusKm;
     }
-    return isMatchingQuery && isPublished;
+
+    return isMatchingQuery;
   });
 
   // Rota externa privada /staff
