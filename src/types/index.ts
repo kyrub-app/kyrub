@@ -56,6 +56,7 @@ export interface MarketplaceStoreDocument {
   name: string;
   slug: string;
   description: string;
+  address: string;
   logo: string;
   banner: string;
   primaryColor: string;
