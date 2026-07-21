@@ -3,6 +3,7 @@ import type React from 'react';
 import { createPortal } from 'react-dom';
 import { RetailerPanel as LegacyRetailerPanel } from './LegacyRetailerPanel';
 import { CustomerOrderInbox } from './customer/CustomerOrderInbox';
+import { CustomerTableBoard } from './customer/CustomerTableBoard';
 import { auth } from '../utils/firebase';
 import {
   persistPublicProduct,
@@ -26,9 +27,11 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = props => {
     setProducts,
     triggerToast,
     activeSubTab,
+    setActiveSubTab,
   } = props;
 
   const [ordersHost, setOrdersHost] = useState<HTMLElement | null>(null);
+  const [tablesHost, setTablesHost] = useState<HTMLElement | null>(null);
   const [customerOrders, setCustomerOrders] = useState<CustomerOrder[]>([]);
   const [busyOrderId, setBusyOrderId] = useState('');
 
@@ -138,7 +141,46 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = props => {
   }, [activeSubTab]);
 
   useEffect(() => {
-    if (activeSubTab !== 'pedidos' || !activeRetailerId) {
+    if (activeSubTab !== 'clientes') {
+      setTablesHost(null);
+      return;
+    }
+
+    let cancelled = false;
+    let timer = 0;
+    let portalHost: HTMLDivElement | null = null;
+
+    const mountTableBoard = (): void => {
+      if (cancelled) return;
+      const clientsContainer = document.getElementById('erp-clientes-tab');
+
+      if (!clientsContainer) {
+        timer = window.setTimeout(mountTableBoard, 40);
+        return;
+      }
+
+      portalHost = document.createElement('div');
+      portalHost.id = 'kyrub-customer-table-board-host';
+      portalHost.className = 'mb-5';
+      clientsContainer.insertBefore(portalHost, clientsContainer.firstChild);
+      setTablesHost(portalHost);
+    };
+
+    timer = window.setTimeout(mountTableBoard, 0);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+      portalHost?.remove();
+      setTablesHost(null);
+    };
+  }, [activeSubTab]);
+
+  useEffect(() => {
+    const needsCustomerOrders =
+      activeSubTab === 'clientes' || activeSubTab === 'pedidos';
+
+    if (!needsCustomerOrders || !activeRetailerId) {
       setCustomerOrders([]);
       return;
     }
@@ -187,9 +229,22 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = props => {
     }
   };
 
+  const handleOpenTableOrders = (tableCode: string): void => {
+    setActiveSubTab('pedidos');
+    triggerToast(`Pedidos da mesa ${tableCode} abertos no KDS.`, 'info');
+  };
+
   return (
     <>
       <LegacyRetailerPanel {...props} />
+      {tablesHost &&
+        createPortal(
+          <CustomerTableBoard
+            orders={customerOrders}
+            onOpenOrders={handleOpenTableOrders}
+          />,
+          tablesHost
+        )}
       {ordersHost &&
         createPortal(
           <CustomerOrderInbox
