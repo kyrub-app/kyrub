@@ -20,10 +20,13 @@ const makeOrder = (
   customerNote: '',
   items: [
     {
+      lineId: 'order-1-line-1',
       productId: 'product-1',
       name: 'Produto',
       price: 20,
       quantity: 2,
+      paidQuantity: 0,
+      transferredQuantity: 0,
       note: '',
       image: '',
       isService: false,
@@ -33,6 +36,9 @@ const makeOrder = (
   total: 40,
   status: 'pending',
   paymentStatus: 'unpaid',
+  source: 'customer',
+  operatorId: '',
+  operatorName: '',
   createdAt: '2026-07-21T20:00:00.000Z',
   updatedAt: '2026-07-21T20:00:00.000Z',
   ...overrides,
@@ -51,10 +57,13 @@ test('groups active dine-in orders into one card per normalized table code', () 
       subtotal: 15,
       items: [
         {
+          lineId: 'order-2-line-1',
           productId: 'product-2',
           name: 'Outro produto',
           price: 15,
           quantity: 1,
+          paidQuantity: 0,
+          transferredQuantity: 0,
           note: '',
           image: '',
           isService: false,
@@ -111,4 +120,29 @@ test('uses the highest-priority operational state within a shared table', () => 
 
   assert.equal(cards[0].state, 'ready');
   assert.equal(getCustomerTableStateLabel(cards[0].state, 0), 'Pronto');
+});
+
+test('shows only unpaid and non-transferred quantities in the table card', () => {
+  const cards = buildCustomerTableCards([
+    makeOrder({
+      status: 'accepted',
+      items: [
+        {
+          lineId: 'line-1',
+          productId: 'product-1',
+          name: 'Produto',
+          price: 20,
+          quantity: 4,
+          paidQuantity: 1,
+          transferredQuantity: 1,
+          note: '',
+          image: '',
+          isService: false,
+        },
+      ],
+    }),
+  ]);
+
+  assert.equal(cards[0].itemCount, 2);
+  assert.equal(cards[0].total, 40);
 });
