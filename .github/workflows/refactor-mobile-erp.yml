@@ -1,0 +1,41 @@
+name: Refactor mobile ERP navigation
+
+on:
+  push:
+    branches:
+      - refactor/mobile-erp-react-navigation
+
+permissions:
+  contents: write
+
+jobs:
+  refactor:
+    if: github.actor != 'github-actions[bot]' && !contains(github.event.head_commit.message, '[skip refactor]')
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          ref: refactor/mobile-erp-react-navigation
+          fetch-depth: 0
+
+      - name: Apply React-integrated mobile ERP refactor
+        run: python scripts/apply_mobile_erp_refactor.py
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type-check
+        run: npm run lint
+
+      - name: Build
+        run: npm run build
+
+      - name: Commit generated refactor
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/App.tsx src/main.tsx src/components/MobileErpMenu.tsx src/components/MobileErpMenuEnhancer.tsx
+          git commit -m "refactor: integrate mobile ERP navigation with React state"
+          git push origin HEAD:refactor/mobile-erp-react-navigation
