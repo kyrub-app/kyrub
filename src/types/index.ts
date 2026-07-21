@@ -48,6 +48,46 @@ export type UserStoreDocument = Omit<
   updatedAt: Timestamp;
 };
 
+export type MarketplacePublicationStatus = 'draft' | 'published' | 'paused';
+
+export interface MarketplaceStoreDocument {
+  id: string;
+  ownerId: string;
+  name: string;
+  slug: string;
+  description: string;
+  logo: string;
+  banner: string;
+  primaryColor: string;
+  keywords: string[];
+  status: 'open' | 'delayed' | 'closed';
+  publicationStatus: MarketplacePublicationStatus;
+  lat?: number;
+  lng?: number;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+  publishedAt?: Timestamp;
+}
+
+export type MarketplaceOfferStatus = 'draft' | 'published' | 'paused';
+
+export interface MarketplaceOfferDocument {
+  id: string;
+  storeId: string;
+  ownerId: string;
+  name: string;
+  description: string;
+  price: number;
+  imageUrls: string[];
+  stock: number;
+  isService: boolean;
+  category: string;
+  status: MarketplaceOfferStatus;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+  publishedAt?: Timestamp;
+}
+
 export interface OrderItem {
   productId: string;
   name: string;
