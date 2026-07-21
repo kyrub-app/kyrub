@@ -1,0 +1,72 @@
+name: Fix store persistence and publishing once
+
+on:
+  push:
+    branches:
+      - agent/fix-store-persistence-publishing
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/fix-store-persistence-publishing
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Apply persistence and publishing integration
+        run: python scripts/apply_store_persistence_publishing.py
+
+      - name: Verify source and patch
+        shell: bash
+        run: |
+          git diff --check
+          test -z "$(grep -R "'t-3'" src || true)"
+          grep -q "Publicar" src/components/modals/StoreConfigModal.tsx
+          grep -q "marketplace_listings" firestore.rules
+          grep -q "saveUserStoreCache" src/App.tsx
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check
+        run: npm run lint
+
+      - name: Build
+        run: npm run build
+
+      - name: Test user store cache
+        run: node --test --import tsx tests/user-store-cache.test.ts
+
+      - name: Test Firestore rules
+        run: >-
+          npx --yes firebase-tools@latest emulators:exec
+          --only firestore
+          --project demo-kyrub-store-publishing
+          "node --test --test-concurrency=1 --import tsx tests/firestore/user-stores.rules.test.ts tests/firestore/marketplace-listings.rules.test.ts"
+
+      - name: Commit validated fix
+        shell: bash
+        run: |
+          rm -f .github/workflows/fix-store-persistence-publishing.yml
+          rm -f scripts/apply_store_persistence_publishing.py
+          rm -f .store-persistence-publishing-trigger
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/App.tsx src/components/modals/StoreConfigModal.tsx src/utils/userStoreCache.ts firestore.rules tests/user-store-cache.test.ts tests/firestore/marketplace-listings.rules.test.ts
+          git add -u .github/workflows scripts .store-persistence-publishing-trigger || true
+          git commit -m "Fix store persistence and marketplace publishing"
+          git push origin HEAD:agent/fix-store-persistence-publishing
