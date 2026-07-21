@@ -12,14 +12,19 @@ import {
   X,
 } from 'lucide-react';
 
-type ErpTabId =
-  | 'loja'
+export type ErpSubTab =
   | 'clientes'
   | 'caixa'
   | 'pedidos'
   | 'reservas'
   | 'ponto'
   | 'gerencial';
+
+interface MobileErpMenuProps {
+  activeSubTab: ErpSubTab;
+  onSelectSubTab: (tab: ErpSubTab) => void;
+  onOpenStore: () => void;
+}
 
 const MENU_ITEMS = [
   { id: 'loja', label: 'Loja', icon: StoreIcon },
@@ -29,71 +34,19 @@ const MENU_ITEMS = [
   { id: 'reservas', label: 'Reservas', icon: Calendar },
   { id: 'ponto', label: 'Ponto', icon: Fingerprint },
   { id: 'gerencial', label: 'Gerencial', icon: LayoutGrid },
-] satisfies ReadonlyArray<{
-  id: ErpTabId;
-  label: string;
-  icon: typeof StoreIcon;
-}>;
+] as const;
 
-const normalizeLabel = (value: string): string =>
-  value.replace(/\s+/g, ' ').trim().toLocaleLowerCase('pt-BR');
-
-const TAB_LABELS: Record<Exclude<ErpTabId, 'loja'>, string> = {
-  clientes: 'clientes',
-  caixa: 'caixa',
-  pedidos: 'kds/vendas',
-  reservas: 'reservas',
-  ponto: 'ponto',
-  gerencial: 'gerencial',
-};
-
-export function MobileErpMenuEnhancer() {
-  const [isVisible, setIsVisible] = useState(false);
+export function MobileErpMenu({
+  activeSubTab,
+  onSelectSubTab,
+  onOpenStore,
+}: MobileErpMenuProps) {
   const [isOpen, setIsOpen] = useState(false);
-  const [activeItem, setActiveItem] = useState<ErpTabId>('clientes');
 
   const activeLabel = useMemo(
-    () => MENU_ITEMS.find(item => item.id === activeItem)?.label ?? 'Menu',
-    [activeItem],
+    () => MENU_ITEMS.find(item => item.id === activeSubTab)?.label ?? 'Menu',
+    [activeSubTab],
   );
-
-  useEffect(() => {
-    const syncFromErpNavigation = () => {
-      const header = document.getElementById('erp-main-header');
-      const navigation = document.getElementById('erp-tab-navigation-header');
-      const nextVisible = Boolean(header && navigation);
-
-      setIsVisible(nextVisible);
-      if (!nextVisible) {
-        setIsOpen(false);
-        return;
-      }
-
-      const selectedButton = Array.from(
-        navigation?.querySelectorAll<HTMLButtonElement>('button') ?? [],
-      ).find(button => button.className.includes('bg-orange-500'));
-
-      const selectedLabel = normalizeLabel(selectedButton?.textContent ?? '');
-      const selectedItem = MENU_ITEMS.find(item => {
-        if (item.id === 'loja') return false;
-        return normalizeLabel(TAB_LABELS[item.id]) === selectedLabel;
-      });
-
-      if (selectedItem) setActiveItem(selectedItem.id);
-    };
-
-    syncFromErpNavigation();
-
-    const observer = new MutationObserver(syncFromErpNavigation);
-    observer.observe(document.body, {
-      childList: true,
-      subtree: true,
-      attributes: true,
-      attributeFilter: ['class'],
-    });
-
-    return () => observer.disconnect();
-  }, []);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -112,48 +65,18 @@ export function MobileErpMenuEnhancer() {
     };
   }, [isOpen]);
 
-  const selectItem = (itemId: ErpTabId) => {
+  const selectItem = (itemId: (typeof MENU_ITEMS)[number]['id']) => {
     if (itemId === 'loja') {
-      document.getElementById('orange-house-config-btn')?.click();
-      setIsOpen(false);
-      return;
+      onOpenStore();
+    } else {
+      onSelectSubTab(itemId);
     }
 
-    const navigation = document.getElementById('erp-tab-navigation-header');
-    const targetLabel = normalizeLabel(TAB_LABELS[itemId]);
-    const targetButton = Array.from(
-      navigation?.querySelectorAll<HTMLButtonElement>('button') ?? [],
-    ).find(button => normalizeLabel(button.textContent ?? '') === targetLabel);
-
-    targetButton?.click();
-    setActiveItem(itemId);
     setIsOpen(false);
   };
 
-  if (!isVisible || typeof document === 'undefined') return null;
-
-  return createPortal(
-    <>
-      <style>{`
-        @media (max-width: 639px) {
-          #erp-tab-navigation-header {
-            display: none !important;
-          }
-        }
-      `}</style>
-
-      <button
-        type="button"
-        onClick={() => setIsOpen(true)}
-        aria-label={`Abrir menu do painel. Seção atual: ${activeLabel}`}
-        aria-controls="mobile-erp-navigation-drawer"
-        aria-expanded={isOpen}
-        className="sm:hidden fixed top-2.5 right-6 z-[80] w-8 h-8 rounded-full bg-slate-950 border border-slate-700 text-slate-300 hover:text-white hover:border-orange-500/70 transition-colors flex items-center justify-center shadow-lg"
-      >
-        <Menu className="w-4 h-4" />
-      </button>
-
-      {isOpen && (
+  const drawer = isOpen && typeof document !== 'undefined'
+    ? createPortal(
         <div className="sm:hidden fixed inset-0 z-[90]" role="presentation">
           <button
             type="button"
@@ -186,7 +109,7 @@ export function MobileErpMenuEnhancer() {
             <nav className="p-4 space-y-2 overflow-y-auto" aria-label="Seções do painel">
               {MENU_ITEMS.map(item => {
                 const Icon = item.icon;
-                const isSelected = item.id === activeItem && item.id !== 'loja';
+                const isSelected = item.id === activeSubTab;
 
                 return (
                   <button
@@ -209,9 +132,24 @@ export function MobileErpMenuEnhancer() {
               })}
             </nav>
           </aside>
-        </div>
-      )}
-    </>,
-    document.body,
+        </div>,
+        document.body,
+      )
+    : null;
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setIsOpen(true)}
+        aria-label={`Abrir menu do painel. Seção atual: ${activeLabel}`}
+        aria-controls="mobile-erp-navigation-drawer"
+        aria-expanded={isOpen}
+        className="sm:hidden ml-auto w-8 h-8 rounded-full bg-slate-950 border border-slate-700 text-slate-300 hover:text-white hover:border-orange-500/70 transition-colors flex items-center justify-center shadow-lg"
+      >
+        <Menu className="w-4 h-4" />
+      </button>
+      {drawer}
+    </>
   );
 }
