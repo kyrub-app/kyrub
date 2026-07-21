@@ -49,7 +49,7 @@ import {
   Fingerprint,
   LayoutGrid
 } from 'lucide-react';
-import { Tenant, Store, Product, Order, CartItem, Note, Friend, SocialPost, DeliveryJob, FreelanceJob } from './types';
+import { Tenant, Store, Product, Order, CartItem, Note, Friend, SocialPost, DeliveryJob, FreelanceJob, type UserStoreDocument } from './types';
 
 // Import our modular sub-panels
 import { AdminPanel } from './components/AdminPanel';
@@ -89,6 +89,13 @@ import { getDistance, formatWhatsApp, formatCpf, formatCnpj } from './utils/help
 import { db, auth } from './utils/firebase';
 import { saveDocLWW, listenCollection, syncOfflineBatch, resolveConflictLWW } from './utils/syncEngine';
 import { classifyFirestoreFailure } from './utils/firestoreFailure';
+import { getPrimaryUserStoreDocumentPath } from './utils/storePaths';
+import {
+  buildUserStoreCreateData,
+  buildUserStoreUpdateData,
+  type BuildUserStoreCreateInput,
+  type BuildUserStoreUpdateInput,
+} from './utils/userStoreDocument';
 import {
   GoogleAuthProvider,
   onAuthStateChanged,
@@ -126,7 +133,6 @@ import {
 // Persistent LocalStorage storage keys
 const STORAGE_KEYS = {
   TENANTS: 'kyrub_tenants',
-  STORES: 'kyrub_stores',
   PRODUCTS: 'kyrub_products',
   ORDERS: 'kyrub_orders',
   NOTES: 'kyrub_notes',
@@ -157,6 +163,84 @@ const logBackgroundSyncFailure = (
   });
 };
 
+const getUserStoreCacheKey = (uid: string): string =>
+  `kyrub_user_store_${uid}`;
+
+const createEmptyUserStore = (
+  uid: string,
+  ownerEmail: string
+): Store => ({
+  id: uid,
+  name: '',
+  slug: '',
+  description: '',
+  logo: '',
+  banner: '',
+  primaryColor: '',
+  plan: 'free',
+  ownerEmail,
+  address: '',
+  contact: '',
+  keywords: [],
+  offerImages: [],
+  status: 'closed',
+});
+
+const mapUserStoreDocumentToStore = (
+  data: UserStoreDocument
+): Store => ({
+  id: data.id,
+  name: data.name,
+  slug: data.slug,
+  description: data.description,
+  logo: data.logo,
+  banner: data.banner,
+  primaryColor: data.primaryColor,
+  plan: data.plan,
+  ownerEmail: data.ownerEmail,
+  address: data.address,
+  contact: data.contact,
+  keywords: [...data.keywords],
+  offerImages: [...data.offerImages],
+  status: data.status,
+  lat: data.lat,
+  lng: data.lng,
+});
+
+const getUserStoreCreateInput = (
+  store: Store,
+  uid: string,
+  ownerEmail: string
+): BuildUserStoreCreateInput => {
+  const input: BuildUserStoreCreateInput = {
+    uid,
+    ownerEmail,
+    name: store.name,
+    slug: store.slug,
+    description: store.description,
+    logo: store.logo,
+    banner: store.banner,
+    primaryColor: store.primaryColor,
+    keywords: [...(store.keywords ?? [])],
+    offerImages: [...(store.offerImages ?? [])],
+    address: store.address ?? '',
+    contact: store.contact ?? '',
+    status: store.status ?? 'closed',
+  };
+
+  if (
+    typeof store.lat === 'number' &&
+    typeof store.lng === 'number' &&
+    Number.isFinite(store.lat) &&
+    Number.isFinite(store.lng)
+  ) {
+    input.lat = store.lat;
+    input.lng = store.lng;
+  }
+
+  return input;
+};
+
 export default function App() {
   const isAdminSubdomain = typeof window !== 'undefined' && (
     window.location.hostname === 'admin.kyrub.com' ||
@@ -170,10 +254,7 @@ export default function App() {
     return saved ? JSON.parse(saved) : initialTenants;
   });
 
-  const [stores, setStores] = useState<Store[]>(() => {
-    const saved = localStorage.getItem(STORAGE_KEYS.STORES);
-    return saved ? JSON.parse(saved) : [];
-  });
+  const [stores, setStores] = useState<Store[]>([]);
 
   const [products, setProducts] = useState<Product[]>(() => {
     const saved = localStorage.getItem(STORAGE_KEYS.PRODUCTS);
@@ -187,6 +268,7 @@ export default function App() {
 
   // Authentication & GPS states
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [authenticatedUserId, setAuthenticatedUserId] = useState('');
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [gpsGranted, setGpsGranted] = useState(false);
   const [showGpsOverlay, setShowGpsOverlay] = useState(false);
@@ -362,9 +444,19 @@ export default function App() {
   }, [tenants, isLoggedIn]);
 
   useEffect(() => {
-    if (!isLoggedIn) return;
-    localStorage.setItem(STORAGE_KEYS.STORES, JSON.stringify(stores));
-  }, [stores, isLoggedIn]);
+    if (!authenticatedUserId) return;
+
+    const userStore = stores.find(
+      store => store.id === authenticatedUserId
+    );
+
+    if (!userStore) return;
+
+    localStorage.setItem(
+      getUserStoreCacheKey(authenticatedUserId),
+      JSON.stringify(userStore)
+    );
+  }, [stores, authenticatedUserId]);
 
   useEffect(() => {
     if (!isLoggedIn) return;
@@ -610,50 +702,122 @@ export default function App() {
     });
   }, [notes, isLoggedIn]);
 
-  // Active Retailer state
-  const activeRetailerId = 't-3'; // Default organization
-  const activeRetailer = tenants.find(t => t.id === activeRetailerId);
+  // The private ERP store is owned by the authenticated Firebase user.
+  const activeRetailerId = authenticatedUserId;
 
-const activeStore = useMemo<Store>(() => {
-  const authenticatedEmail =
-    auth.currentUser?.email ||
-    profileEmail ||
-    '';
+  const activeStore = useMemo<Store>(() => {
+    const existingStore = stores.find(
+      store => store.id === activeRetailerId
+    );
 
-  const existingStore = stores.find(
-    store => store.ownerEmail === authenticatedEmail
-  );
+    if (existingStore) {
+      return existingStore;
+    }
 
-  if (existingStore) {
-    return existingStore;
-  }
+    return createEmptyUserStore(activeRetailerId, profileEmail);
+  }, [stores, activeRetailerId, profileEmail]);
 
-  return {
-    id: auth.currentUser?.uid || '',
-    name: '',
-    description: '',
-    address: '',
-    contact: '',
-    keywords: [],
-    logo: '',
-    banner: '',
-    primaryColor: '',
-    offerImages: [],
-    slug: '',
-    plan: 'free',
-    ownerEmail: authenticatedEmail,
-  };
-}, [stores, profileEmail]);
+  const activeRetailer = useMemo<Tenant | undefined>(() => {
+    if (!activeRetailerId) return undefined;
 
-  const handleUpdateStoreProfile = (updatedFields: Partial<Store> & { address?: string; contact?: string }) => {
-    setStores(prev => {
-      const exists = prev.some(s => s.id === activeRetailerId);
-      if (exists) {
-        return prev.map(s => s.id === activeRetailerId ? { ...s, ...updatedFields } : s);
+    return tenants.find(tenant => tenant.id === activeRetailerId) ?? {
+      id: activeRetailerId,
+      name: profileName || profileEmail,
+      email: profileEmail,
+      role: 'retailer',
+      plan: activeStore.plan,
+    };
+  }, [
+    tenants,
+    activeRetailerId,
+    profileName,
+    profileEmail,
+    activeStore.plan,
+  ]);
+
+  const handleUpdateStoreProfile = async (
+    updatedFields: BuildUserStoreUpdateInput
+  ): Promise<void> => {
+    const user = auth.currentUser;
+
+    if (!user) {
+      triggerToast(
+        'Faça login novamente para atualizar sua loja.',
+        'error'
+      );
+      throw new Error('Authenticated user is required.');
+    }
+
+    const ownerEmail = user.email ?? '';
+    const persistedFields: BuildUserStoreUpdateInput = {
+      ...updatedFields,
+      ownerEmail,
+    };
+
+    const previousStore = activeStore;
+    const nextStore: Store = {
+      ...activeStore,
+      ...persistedFields,
+      id: user.uid,
+      ownerEmail,
+      address: persistedFields.address ?? activeStore.address ?? '',
+      contact: persistedFields.contact ?? activeStore.contact ?? '',
+      keywords: persistedFields.keywords
+        ? [...persistedFields.keywords]
+        : [...(activeStore.keywords ?? [])],
+      offerImages: persistedFields.offerImages
+        ? [...persistedFields.offerImages]
+        : [...(activeStore.offerImages ?? [])],
+      status: persistedFields.status ?? activeStore.status ?? 'closed',
+    };
+
+    setStores(previousStores => [
+      nextStore,
+      ...previousStores.filter(store => store.id !== user.uid),
+    ]);
+
+    const storeReference = doc(
+      db,
+      getPrimaryUserStoreDocumentPath(user.uid)
+    );
+
+    try {
+      const storeSnapshot = await getDoc(storeReference);
+
+      if (storeSnapshot.exists()) {
+        await updateDoc(
+          storeReference,
+          buildUserStoreUpdateData(persistedFields)
+        );
       } else {
-        return [...prev, { ...activeStore, ...updatedFields } as any];
+        await setDoc(
+          storeReference,
+          buildUserStoreCreateData(
+            getUserStoreCreateInput(nextStore, user.uid, ownerEmail)
+          )
+        );
       }
-    });
+    } catch (error) {
+      setStores(previousStores => {
+        const otherStores = previousStores.filter(
+          store => store.id !== user.uid
+        );
+
+        return previousStore.id
+          ? [previousStore, ...otherStores]
+          : otherStores;
+      });
+
+      console.error(
+        'Falha ao atualizar a loja principal do usuário:',
+        error
+      );
+      triggerToast(
+        'Não foi possível salvar as alterações da loja.',
+        'error'
+      );
+      throw error;
+    }
   };
 
   useEffect(() => {
@@ -708,23 +872,33 @@ const activeStore = useMemo<Store>(() => {
     triggerToast(`Espaço de produção "${space}" removido.`, 'info');
   };
 
-  const handleSaveStoreProfile = () => {
-    handleUpdateStoreProfile({
-      name: configStoreName,
-      description: configStoreBio,
-      address: configStoreAddress,
-      contact: configStoreContact,
-      keywords: configStoreKeywords.split(',').map(k => k.trim()).filter(Boolean)
-    });
-    triggerToast('Perfil da loja atualizado com sucesso!', 'success');
-    setIsConfigModalOpen(false);
+  const handleSaveStoreProfile = async () => {
+    try {
+      await handleUpdateStoreProfile({
+        name: configStoreName,
+        description: configStoreBio,
+        address: configStoreAddress,
+        contact: configStoreContact,
+        keywords: configStoreKeywords
+          .split(',')
+          .map(keyword => keyword.trim())
+          .filter(Boolean),
+      });
+      triggerToast(
+        'Perfil da loja atualizado com sucesso!',
+        'success'
+      );
+      setIsConfigModalOpen(false);
+    } catch {
+      // The persistence function already restored state and notified the user.
+    }
   };
 
   // Active products in user's retail store (for freemium checks & dash)
   const userRetailerProducts = products.filter(p => p.supplierId === activeRetailerId && !p.wholesalePrice);
 
   // Product Limit Check
-  const isLimitReached = userRetailerProducts.length >= 5 && activeRetailer?.plan === 'free';
+  const isLimitReached = userRetailerProducts.length >= 5 && activeStore.plan === 'free';
 
   // Notification Permissions & Alarm background checker
   useEffect(() => {
@@ -740,9 +914,43 @@ const activeStore = useMemo<Store>(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
         setIsLoggedIn(true);
+        setAuthenticatedUserId(user.uid);
+        setStores([]);
         setProfileName(user.displayName ?? '');
         setProfileEmail(user.email ?? '');
         setProfilePhotoUrl(user.photoURL ?? '');
+
+        let cachedStore: Store | null = null;
+        const cachedStoreValue = localStorage.getItem(
+          getUserStoreCacheKey(user.uid)
+        );
+
+        if (cachedStoreValue) {
+          try {
+            const parsedStore = JSON.parse(cachedStoreValue) as Store;
+
+            if (parsedStore.id === user.uid) {
+              cachedStore = {
+                ...createEmptyUserStore(user.uid, user.email ?? ''),
+                ...parsedStore,
+                id: user.uid,
+                ownerEmail: user.email ?? '',
+                keywords: Array.isArray(parsedStore.keywords)
+                  ? parsedStore.keywords
+                  : [],
+                offerImages: Array.isArray(parsedStore.offerImages)
+                  ? parsedStore.offerImages
+                  : [],
+              };
+              setStores([cachedStore]);
+            }
+          } catch (error) {
+            console.warn(
+              'Falha ao ler o cache local da loja do usuário:',
+              error
+            );
+          }
+        }
 
         try {
           const userRef = doc(db, 'users', user.uid);
@@ -766,6 +974,54 @@ const activeStore = useMemo<Store>(() => {
             'Falha ao registrar o usuário autenticado no Firestore:',
             error
           );
+        }
+
+        try {
+          const ownerEmail = user.email ?? '';
+          const storeReference = doc(
+            db,
+            getPrimaryUserStoreDocumentPath(user.uid)
+          );
+          const storeSnapshot = await getDoc(storeReference);
+          let userStore: Store;
+
+          if (storeSnapshot.exists()) {
+            userStore = mapUserStoreDocumentToStore(
+              storeSnapshot.data() as UserStoreDocument
+            );
+          } else {
+            userStore = createEmptyUserStore(user.uid, ownerEmail);
+            await setDoc(
+              storeReference,
+              buildUserStoreCreateData(
+                getUserStoreCreateInput(
+                  userStore,
+                  user.uid,
+                  ownerEmail
+                )
+              )
+            );
+          }
+
+          setStores(previousStores => [
+            userStore,
+            ...previousStores.filter(store => store.id !== user.uid),
+          ]);
+          localStorage.setItem(
+            getUserStoreCacheKey(user.uid),
+            JSON.stringify(userStore)
+          );
+        } catch (error) {
+          console.warn(
+            'Falha ao sincronizar a loja principal do usuário:',
+            error
+          );
+
+          if (!cachedStore) {
+            setStores([
+              createEmptyUserStore(user.uid, user.email ?? ''),
+            ]);
+          }
         }
 
         try {
@@ -944,6 +1200,7 @@ const activeStore = useMemo<Store>(() => {
         }
       } else {
         setIsLoggedIn(false);
+        setAuthenticatedUserId('');
         setTenants([]);
         setStores([]);
         setProducts([]);
@@ -1300,9 +1557,10 @@ if (newMomentPublishToPraca) {
 
   // Promotion plan button
   const handlePremiumUpgrade = () => {
-    setTenants(prev => prev.map(t => t.id === activeRetailerId ? { ...t, plan: 'business' } : t));
-    setStores(prev => prev.map(s => s.id === 's-1' || s.id === 's-2' ? { ...s, plan: 'business' } : s));
-    triggerToast('Parabéns! Sua organização foi promovida para Kyrub Premium Business!', 'success');
+    triggerToast(
+      'A contratação do plano Business ainda não está configurada.',
+      'info'
+    );
   };
 
   // Original product creation handler
@@ -1446,9 +1704,17 @@ if (newMomentPublishToPraca) {
 
   // Rota externa privada /staff
   if (currentPath === '/staff' || currentPath.endsWith('/staff')) {
-    const activeStore = stores.find(s => s.id === 's-1'); // Default to Pixel Store
-    const staffProducts = products.filter(p => p.supplierId === 't-3' && !p.wholesalePrice);
-    const staffOrders = orders.filter(o => o.storeId === 's-1');
+    const staffStore = activeStore.id ? activeStore : undefined;
+    const staffProducts = activeRetailerId
+      ? products.filter(
+          product =>
+            product.supplierId === activeRetailerId &&
+            !product.wholesalePrice
+        )
+      : [];
+    const staffOrders = staffStore
+      ? orders.filter(order => order.storeId === staffStore.id)
+      : [];
 
     const handleStaffLogin = (e: React.FormEvent) => {
       e.preventDefault();
@@ -1482,7 +1748,7 @@ if (newMomentPublishToPraca) {
         handleStaffLogin={handleStaffLogin}
         handleStaffLogout={handleStaffLogout}
         handleGoBackToMain={handleGoBackToMain}
-        activeStore={activeStore}
+        activeStore={staffStore}
         staffProducts={staffProducts}
         staffOrders={staffOrders}
       />
@@ -1791,7 +2057,7 @@ if (newMomentPublishToPraca) {
                 setNewProductModal={setNewProductModal}
                 setProducts={setProducts}
                 setOrders={setOrders}
-                setStores={setStores}
+                onUpdateStore={handleUpdateStoreProfile}
                 triggerToast={triggerToast}
                 activeSubTab={activeSubTab}
                 setActiveSubTab={setActiveSubTab}
