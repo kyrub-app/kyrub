@@ -325,7 +325,7 @@ export function KyrubTab({
                     return false;
                   }
                 }
-                if (userCoords) {
+                if (userCoords && Number.isFinite(store.lat) && Number.isFinite(store.lng)) {
                   const dist = getDistance(userCoords.lat, userCoords.lng, store.lat, store.lng);
                   if (dist > radiusKm) return false;
                 }
@@ -335,7 +335,10 @@ export function KyrubTab({
                 return true;
               })
               .map(store => {
-                const dist = userCoords ? getDistance(userCoords.lat, userCoords.lng, store.lat, store.lng) : 1.2;
+                const hasValidCoords = Number.isFinite(store.lat) && Number.isFinite(store.lng);
+                const dist = userCoords && hasValidCoords
+                  ? getDistance(userCoords.lat, userCoords.lng, store.lat, store.lng)
+                  : null;
                 return (
                   <div key={store.id} className="relative rounded-3xl overflow-hidden border border-slate-800 bg-slate-950 flex flex-col justify-between h-[148px] group hover:border-slate-700 transition-all shadow-xl">
                     {/* Automatic Vitrine Slide background */}
@@ -360,7 +363,8 @@ export function KyrubTab({
                           title={
                             store.status === 'open' ? 'Aberta' :
                             store.status === 'delayed' ? 'Alerta: +20 pedidos' :
-                            'Pausada'
+                            store.status === 'closed' ? 'Pausada' :
+                            'Status não informado'
                           }
                         />
                       </div>
@@ -386,7 +390,9 @@ export function KyrubTab({
                       <p className="text-[8.5px] text-slate-400 line-clamp-1 leading-none mb-1">{store.description}</p>
                       
                       <div className="flex items-center justify-between text-[8px] font-mono text-slate-500">
-                        <span className="shrink-0 font-bold text-slate-400">📍 {dist.toFixed(1)} KM</span>
+                        <span className="shrink-0 font-bold text-slate-400">
+                          {dist !== null ? `📍 ${dist.toFixed(1)} KM` : '📍 Localização não informada'}
+                        </span>
                         <div className="flex items-center gap-1 truncate text-[7px] text-orange-400/90 font-bold max-w-[65%]">
                           {store.keywords?.slice(0, 3).map((kw: string) => `#${kw}`).join(' ')}
                         </div>
@@ -421,7 +427,7 @@ export function KyrubTab({
               const q = searchQuery.toLowerCase();
               if (!store.name.toLowerCase().includes(q) && !store.description.toLowerCase().includes(q) && !(store.keywords?.some((kw: string) => kw.toLowerCase().includes(q)))) return false;
             }
-            if (userCoords) {
+            if (userCoords && Number.isFinite(store.lat) && Number.isFinite(store.lng)) {
               const dist = getDistance(userCoords.lat, userCoords.lng, store.lat, store.lng);
               if (dist > radiusKm) return false;
             }
