@@ -170,28 +170,20 @@ const activeStore: Store =
   }, [producaoSpaces]);
   
   // 4. RESERVATIONS
-  const [reservations, setReservations] = useState<any[]>([
-    { id: 'res-1', client: 'Amanda Nogueira', date: '15/07/2026', time: '19:30', people: 4 }
-  ]);
+  const [reservations, setReservations] = useState<any[]>([]);
   const [showNewReservationModal, setShowNewReservationModal] = useState(false);
   const [newResName, setNewResName] = useState('');
-  const [newResDate, setNewResDate] = useState('2026-07-12');
-  const [newResTime, setNewResTime] = useState('20:00');
-  const [newResPeople, setNewResPeople] = useState(2);
+  const [newResDate, setNewResDate] = useState('');
+  const [newResTime, setNewResTime] = useState('');
+  const [newResPeople, setNewResPeople] = useState(1);
 
   // 5. COLLABORATOR PORTAL / GPS PUNCH-IN
   const [pontoLogs, setPontoLogs] = useState<any[]>([]);
 
   // 6. GENERAL FINANCE / HR / CUSTOMIZATION / FISCAL
-  const [hrWorkers, setHrWorkers] = useState<any[]>([
-    { id: 'w-1', name: 'Guilherme Silva', role: 'Gerente Operacional', email: 'guilherme@kyrub.com', status: 'Ativo' },
-    { id: 'w-2', name: 'Larissa Costa', role: 'Atendente de Caixa', email: 'larissa@kyrub.com', status: 'Ativo' }
-  ]);
+  const [hrWorkers, setHrWorkers] = useState<any[]>([]);
 
-  const [finMovements, setFinMovements] = useState<any[]>([
-    { id: 'f-1', desc: 'Compra de Embalagens', val: 120.00, type: 'saida', cat: 'Mercadorias' },
-    { id: 'f-2', desc: 'Venda de Balcão', val: 89.90, type: 'entrada', cat: 'Custos Operacionais' }
-  ]);
+  const [finMovements, setFinMovements] = useState<any[]>([]);
   const [newFinDesc, setNewFinDesc] = useState('');
   const [newFinVal, setNewFinVal] = useState('');
   const [newFinType, setNewFinType] = useState<'entrada' | 'saida'>('entrada');
@@ -207,9 +199,7 @@ const activeStore: Store =
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Vouchers state
-  const [vouchers, setVouchers] = useState<any[]>([
-    { id: 'v-1', code: 'KYRUB10', type: 'percentage', val: 10, limit: 100 }
-  ]);
+  const [vouchers, setVouchers] = useState<any[]>([]);
   const [newVoucherCode, setNewVoucherCode] = useState('');
   const [newVoucherType, setNewVoucherType] = useState<'percentage' | 'fixed'>('percentage');
   const [newVoucherVal, setNewVoucherVal] = useState('');
@@ -226,85 +216,13 @@ const activeStore: Store =
   // ==========================================
   // ECOSSISTEMA: PDV SALE SUBTRACTION LINKED TO MARKETPLACE
   // ==========================================
-  const triggerSefazFiscalSigning = (clientName: string, itemsCount: number, totalAmount: number) => {
-    // Calculadora de impostos SEFAZ Fator-PDV
-    const icms = totalAmount * 0.18;
-    const pis = totalAmount * 0.0165;
-    const cofins = totalAmount * 0.076;
-    const ibpt = totalAmount * 0.1345;
-    
-    const xml = `<?xml version="1.0" encoding="UTF-8"?>
-<nfeProc xmlns="http://www.portalfiscal.inf.br/nfe" versao="4.00">
-  <NFe>
-    <infNFe Id="NFe35260711178dc1f3a94060961fea3ded3965d9">
-      <ide>
-        <cUF>35</cUF>
-        <natOp>Venda de mercadoria adquirida de terceiros</natOp>
-        <mod>65</mod>
-        <serie>1</serie>
-        <nNF>1042</nNF>
-        <dhEmi>${new Date().toISOString()}</dhEmi>
-        <tpNF>1</tpNF>
-        <cMunFG>3550308</cMunFG>
-        <tpImp>1</tpImp>
-        <tpEmis>1</tpEmis>
-      </ide>
-      <emit>
-        <CNPJ>12.345.678/0001-99</CNPJ>
-        <xNome>${activeStore?.name || 'Kyrub Retail'}</xNome>
-        <IE>110.042.502.110</IE>
-        <CRT>1</CRT>
-      </emit>
-      <dest>
-        <xNome>${clientName || 'Consumidor Final'}</xNome>
-      </dest>
-      <det nItem="1">
-        <prod>
-          <cProd>PROD-99</cProd>
-          <xProd>Venda Unificada - ${itemsCount} itens</xProd>
-          <NCM>85176277</NCM>
-          <CFOP>5102</CFOP>
-          <uCom>UN</uCom>
-          <qCom>${itemsCount}</qCom>
-          <vUn>${(totalAmount / itemsCount).toFixed(2)}</vUn>
-          <vProd>${totalAmount.toFixed(2)}</vProd>
-        </prod>
-        <imposto>
-          <vTotTrib>${ibpt.toFixed(2)}</vTotTrib>
-          <ICMS><ICMSSN102><orig>0</orig><CSOSN>102</CSOSN></ICMSSN102></ICMS>
-          <PIS><PISAliq><CST>01</CST><vBC>${totalAmount.toFixed(2)}</vBC><pPIS>1.65</pPIS><vPIS>${pis.toFixed(2)}</vPIS></PISAliq></PIS>
-          <COFINS><COFINSAliq><CST>01</CST><vBC>${totalAmount.toFixed(2)}</vBC><pCOFINS>7.60</pCOFINS><vCOFINS>${cofins.toFixed(2)}</vCOFINS></COFINSAliq></COFINS>
-        </imposto>
-      </det>
-      <total>
-        <ICMSTot>
-          <vBC>${totalAmount.toFixed(2)}</vBC>
-          <vICMS>${icms.toFixed(2)}</vICMS>
-          <vPIS>${pis.toFixed(2)}</vPIS>
-          <vCOFINS>${cofins.toFixed(2)}</vCOFINS>
-          <vNF>${totalAmount.toFixed(2)}</vNF>
-        </ICMSTot>
-      </total>
-    </infNFe>
-  </NFe>
-  <protNFe versao="4.00">
-    <infProt>
-      <tpAmb>1</tpAmb>
-      <verAplic>SP_NFE_PL_009</verAplic>
-      <chNFe>35260711178dc1f3a94060961fea3ded3965d9</chNFe>
-      <dhRecbto>${new Date().toISOString()}</dhRecbto>
-      <nProt>135260420042123</nProt>
-      <digVal>Sdfg90842NdfgKL982Sdfg2=</digVal>
-      <cStat>100</cStat>
-      <xMotivo>Autorizado o uso da NF-e</xMotivo>
-    </infProt>
-  </protNFe>
-</nfeProc>`;
-
-    setLatestFiscalXml(xml);
-    const newLog = `[${new Date().toLocaleTimeString()}] Assinando lote XML... ICMS: R$ ${icms.toFixed(2)} | PIS: R$ ${pis.toFixed(2)} | COFINS: R$ ${cofins.toFixed(2)} -> RECEBIDO E AUTORIZADO PELO PORTAL SEFAZ SP!`;
-    setFiscalLogs(prev => [newLog, ...prev]);
-  };
+  const registerFiscalIntegrationPending = () => {
+  setLatestFiscalXml('');
+  setFiscalLogs(prev => [
+    `[${new Date().toLocaleTimeString()}] Documento fiscal não emitido: integração fiscal ainda não configurada para esta loja.`,
+    ...prev
+  ]);
+};
 
   const handleOpenTicket = async () => {
     if (!clientSearchCode.trim()) {
@@ -367,45 +285,16 @@ const activeStore: Store =
       return;
     }
 
-    // Simulate stock subtraction in active products
-    if (activeRetailerProducts.length > 0) {
-      const prodToUpdate = activeRetailerProducts[0];
-      const quantitySold = ticket.items || 1;
-      
-      setProducts(prev => prev.map(p => {
-        if (p.id === prodToUpdate.id) {
-          const newStock = Math.max(0, p.stock - quantitySold);
-          return { ...p, stock: newStock };
-        }
-        return p;
-      }));
-      triggerToast(`Baixa de ${quantitySold} un de "${prodToUpdate.name}" refletida no Marketplace!`, 'info');
-    }
+  // The ticket is closed without fabricating price, stock or fiscal data.
+  // Real stock and financial movements will be recorded when the sale flow
+  // provides validated items, quantities and payment totals.
+  registerFiscalIntegrationPending();
 
-    // Add cash cashier log via Dexie (Offline-First)
-    const amount = (ticket.items || 1) * 45.00; // Simulated sale amount
-    const move: CashMovement = {
-      type: 'entrada',
-      description: `Fechamento ${ticket.id} (${ticket.name})`,
-      amount,
-      category: 'Mercadorias',
-      timestamp: new Date().toLocaleTimeString()
-    };
-
-    try {
-      await erpDB.movements.add(move);
-      const moves = await erpDB.movements.toArray();
-      setCashList(moves);
-    } catch (e) {
-      console.error('Dexie cache error: ', e);
-    }
-
-    // Trigger fiscal machine signing
-    triggerSefazFiscalSigning(ticket.name, ticket.items, amount);
-
-    // Remove from active tickets
-    setActiveTickets(prev => prev.filter(t => t.id !== ticketId));
-    triggerToast(`Atendimento ${ticket.id} faturado e fechado. NFC-e transmitida!`, 'success');
+  setActiveTickets(prev => prev.filter(t => t.id !== ticketId));
+  triggerToast(
+    `Atendimento ${ticket.id} fechado. Emissão fiscal ainda não configurada.`,
+    'success'
+  );
   };
 
   const handleManualProductAddition = () => {
@@ -460,7 +349,7 @@ const activeStore: Store =
     const newLog = {
       time: timeStr,
       date: dateStr,
-      location: '📍 Próximo - São Paulo, SP (Verificado via GPS)'
+      location: ''
     };
     setPontoLogs([newLog, ...pontoLogs]);
     triggerToast(`Ponto registrado com sucesso às ${timeStr}!`, 'success');
@@ -794,6 +683,7 @@ const activeStore: Store =
                 <div className="bg-slate-900/40 border border-dashed border-slate-800 rounded-3xl py-12 text-center">
                   <Calendar className="w-10 h-10 text-slate-600 mx-auto mb-3" />
                   <p className="text-xs text-slate-400 font-bold">NENHUMA RESERVA ENCONTRADA</p>
+                  <p className="text-[10px] text-slate-600 mt-1">Crie a primeira reserva usando o botão acima.</p>
                 </div>
               )}
             </div>
@@ -836,7 +726,7 @@ const activeStore: Store =
                         <div key={idx} className="bg-slate-950 p-2.5 rounded-xl border border-slate-850 text-[10px] font-mono flex items-center justify-between">
                           <div>
                             <span className="text-white font-bold block">Entrada Registrada</span>
-                            <span className="text-slate-500">{log.location}</span>
+                            <span className="text-slate-500">{log.location || 'Localização não registrada'}</span>
                           </div>
                           <span className="text-emerald-400 font-bold">{log.time}</span>
                         </div>
@@ -1260,7 +1150,7 @@ const activeStore: Store =
 
                         <div className="bg-slate-950 p-3.5 rounded-2xl border border-slate-850 font-mono text-[10px] text-slate-400">
                           <p className="text-emerald-400">POST /api/webhooks/order-received</p>
-                          <p className="text-slate-500">Body: {"{ id: 'sim-99', total: 145.00 }"}</p>
+                          <p className="text-slate-500">Nenhuma requisição simulada nesta sessão.</p>
                         </div>
 
                         <button
@@ -1473,7 +1363,7 @@ const activeStore: Store =
                   type="number"
                   min={1}
                   value={newResPeople}
-                  onChange={(e) => setNewResPeople(parseInt(e.target.value) || 2)}
+                  onChange={(e) => setNewResPeople(parseInt(e.target.value) || 1)}
                   className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-white text-center"
                 />
               </div>
@@ -1509,7 +1399,7 @@ const activeStore: Store =
             </div>
 
             <p className="text-[11px] text-slate-400 leading-relaxed">
-              Calculadora integrada de impostos estaduais e federais <strong>ICMS, PIS, COFINS, CFOP 5102</strong> assinando digitalmente payloads XML para o portal oficial da SEFAZ SP.
+              A integração fiscal ainda não está configurada para esta loja. Nenhum XML, protocolo ou autorização é fabricado pelo painel.
             </p>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1527,9 +1417,9 @@ const activeStore: Store =
               </div>
 
               <div className="space-y-2">
-                <span className="text-[10px] font-mono text-slate-500 uppercase block">Último Assinado (XML SEFAZ SP)</span>
+                <span className="text-[10px] font-mono text-slate-500 uppercase block">Último documento fiscal</span>
                 <div className="bg-slate-950 border border-slate-850 p-3 rounded-2xl h-60 overflow-y-auto text-[9px] font-mono text-amber-500/95 leading-tight whitespace-pre">
-                  {latestFiscalXml || 'Nenhum XML assinado recentemente. Fature um cliente no painel para assinar.'}
+                  {latestFiscalXml || 'Nenhum documento fiscal emitido.'}
                 </div>
               </div>
             </div>
