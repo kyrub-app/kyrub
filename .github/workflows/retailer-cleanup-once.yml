@@ -1,0 +1,219 @@
+name: Apply retailer cleanup once
+
+on:
+  push:
+    branches:
+      - agent/remove-retailer-fake-data
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/remove-retailer-fake-data
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Remove fictitious retailer data
+        shell: bash
+        run: |
+          python <<'PY'
+          from pathlib import Path
+          import re
+
+          path = Path('src/components/RetailerPanel.tsx')
+          source = path.read_text(encoding='utf-8')
+
+          source, count = re.subn(
+              r"  const \[reservations, setReservations\] = useState<any\[\]>\(\[.*?\n  \]\);",
+              "  const [reservations, setReservations] = useState<any[]>([]);",
+              source,
+              count=1,
+              flags=re.S,
+          )
+          assert count == 1
+          source = source.replace(
+              "  const [newResDate, setNewResDate] = useState('2026-07-12');",
+              "  const [newResDate, setNewResDate] = useState('');",
+          )
+          source = source.replace(
+              "  const [newResTime, setNewResTime] = useState('20:00');",
+              "  const [newResTime, setNewResTime] = useState('');",
+          )
+          source = source.replace(
+              "  const [newResPeople, setNewResPeople] = useState(2);",
+              "  const [newResPeople, setNewResPeople] = useState(1);",
+          )
+          source = source.replace(
+              "onChange={(e) => setNewResPeople(parseInt(e.target.value) || 2)}",
+              "onChange={(e) => setNewResPeople(parseInt(e.target.value) || 1)}",
+          )
+
+          source, count = re.subn(
+              r"  const \[hrWorkers, setHrWorkers\] = useState<any\[\]>\(\[.*?\n  \]\);",
+              "  const [hrWorkers, setHrWorkers] = useState<any[]>([]);",
+              source,
+              count=1,
+              flags=re.S,
+          )
+          assert count == 1
+          source, count = re.subn(
+              r"  const \[finMovements, setFinMovements\] = useState<any\[\]>\(\[.*?\n  \]\);",
+              "  const [finMovements, setFinMovements] = useState<any[]>([]);",
+              source,
+              count=1,
+              flags=re.S,
+          )
+          assert count == 1
+          source, count = re.subn(
+              r"  const \[vouchers, setVouchers\] = useState<any\[\]>\(\[.*?\n  \]\);",
+              "  const [vouchers, setVouchers] = useState<any[]>([]);",
+              source,
+              count=1,
+              flags=re.S,
+          )
+          assert count == 1
+
+          fiscal_start = source.index('  const triggerSefazFiscalSigning =')
+          fiscal_end = source.index('\n\n  const handleOpenTicket', fiscal_start)
+          source = (
+              source[:fiscal_start]
+              + """  const registerFiscalIntegrationPending = () => {
+            setLatestFiscalXml('');
+            setFiscalLogs(prev => [
+              `[${new Date().toLocaleTimeString()}] Documento fiscal não emitido: integração fiscal ainda não configurada para esta loja.`,
+              ...prev
+            ]);
+          };"""
+              + source[fiscal_end:]
+          )
+
+          checkout_pattern = re.compile(
+              r"\n    // Simulate stock subtraction in active products.*?"
+              r"    triggerToast\(`Atendimento \$\{ticket\.id\} faturado e fechado\. NFC-e transmitida!`, 'success'\);",
+              re.S,
+          )
+          checkout_replacement = """
+            // The ticket is closed without fabricating price, stock or fiscal data.
+            // Real stock and financial movements will be recorded when the sale flow
+            // provides validated items, quantities and payment totals.
+            registerFiscalIntegrationPending();
+
+            setActiveTickets(prev => prev.filter(t => t.id !== ticketId));
+            triggerToast(
+              `Atendimento ${ticket.id} fechado. Emissão fiscal ainda não configurada.`,
+              'success'
+            );"""
+          source, count = checkout_pattern.subn(checkout_replacement, source, count=1)
+          assert count == 1
+
+          source = source.replace(
+              "      location: '📍 Próximo - São Paulo, SP (Verificado via GPS)'",
+              "      location: ''",
+          )
+          source = source.replace(
+              '<span className="text-slate-500">{log.location}</span>',
+              '<span className="text-slate-500">{log.location || \'Localização não registrada\'}</span>',
+          )
+
+          source = source.replace(
+              '<p className="text-xs text-slate-400 font-bold">NENHUMA RESERVA ENCONTRADA</p>',
+              '<p className="text-xs text-slate-400 font-bold">NENHUMA RESERVA ENCONTRADA</p>\n                  <p className="text-[10px] text-slate-600 mt-1">Crie a primeira reserva usando o botão acima.</p>',
+          )
+
+          source = source.replace(
+              '''                      <div className="space-y-3">
+                        {hrWorkers.map(w => (''',
+              '''                      <div className="space-y-3">
+                        {hrWorkers.length === 0 && (
+                          <div className="bg-slate-950/70 border border-dashed border-slate-800 rounded-2xl py-10 text-center">
+                            <Users className="w-9 h-9 text-slate-600 mx-auto mb-2" />
+                            <p className="text-[10px] font-black text-slate-400 uppercase">Nenhum colaborador cadastrado</p>
+                            <p className="text-[10px] text-slate-600 mt-1">Cadastre sua equipe para liberar folha, cargos e acessos.</p>
+                          </div>
+                        )}
+                        {hrWorkers.map(w => (''',
+          )
+          source = source.replace(
+              '''                        <div className="space-y-1.5 max-h-[220px] overflow-y-auto">
+                          {finMovements.map(m => (''',
+              '''                        <div className="space-y-1.5 max-h-[220px] overflow-y-auto">
+                          {finMovements.length === 0 && (
+                            <div className="bg-slate-950/70 border border-dashed border-slate-800 rounded-2xl py-10 text-center">
+                              <DollarSign className="w-9 h-9 text-slate-600 mx-auto mb-2" />
+                              <p className="text-[10px] font-black text-slate-400 uppercase">Nenhuma movimentação registrada</p>
+                              <p className="text-[10px] text-slate-600 mt-1">Entradas e saídas reais aparecerão aqui após o primeiro lançamento.</p>
+                            </div>
+                          )}
+                          {finMovements.map(m => (''',
+          )
+          source = source.replace(
+              '''                        <div className="space-y-2">
+                          {vouchers.map(v => (''',
+              '''                        <div className="space-y-2">
+                          {vouchers.length === 0 && (
+                            <div className="bg-slate-950/70 border border-dashed border-slate-800 rounded-2xl py-10 text-center">
+                              <Gift className="w-9 h-9 text-slate-600 mx-auto mb-2" />
+                              <p className="text-[10px] font-black text-slate-400 uppercase">Nenhum cupom ativo</p>
+                              <p className="text-[10px] text-slate-600 mt-1">Os cupons criados pela loja aparecerão nesta lista.</p>
+                            </div>
+                          )}
+                          {vouchers.map(v => (''',
+          )
+
+          source = source.replace(
+              '<p className="text-slate-500">Body: {"{ id: \'sim-99\', total: 145.00 }"}</p>',
+              '<p className="text-slate-500">Nenhuma requisição simulada nesta sessão.</p>',
+          )
+          source = source.replace(
+              'Calculadora integrada de impostos estaduais e federais <strong>ICMS, PIS, COFINS, CFOP 5102</strong> assinando digitalmente payloads XML para o portal oficial da SEFAZ SP.',
+              'A integração fiscal ainda não está configurada para esta loja. Nenhum XML, protocolo ou autorização é fabricado pelo painel.',
+          )
+          source = source.replace('Último Assinado (XML SEFAZ SP)', 'Último documento fiscal')
+          source = source.replace(
+              "{latestFiscalXml || 'Nenhum XML assinado recentemente. Fature um cliente no painel para assinar.'}",
+              "{latestFiscalXml || 'Nenhum documento fiscal emitido.'}",
+          )
+
+          forbidden = [
+              'Amanda Nogueira', 'Guilherme Silva', 'Larissa Costa', 'KYRUB10',
+              'Compra de Embalagens', 'Venda de Balcão', '12.345.678/0001-99',
+              '110.042.502.110', 'PROD-99', 'NFC-e transmitida',
+              "* 45.00", 'São Paulo, SP (Verificado via GPS)', "id: 'sim-99'",
+          ]
+          for value in forbidden:
+              assert value not in source, value
+
+          path.write_text(source, encoding='utf-8')
+          PY
+
+      - name: Validate patch
+        run: git diff --check
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check
+        run: npm run lint
+
+      - name: Build
+        run: npm run build
+
+      - name: Commit validated cleanup
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/retailer-cleanup-once.yml
+          git add src/components/RetailerPanel.tsx
+          git commit -m "fix: remove fake retailer data"
+          git push origin HEAD:agent/remove-retailer-fake-data
