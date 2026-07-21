@@ -24,6 +24,11 @@ type ToastState = {
   type: 'success' | 'warning' | 'error';
 } | null;
 
+type SaveStoreResult = {
+  localSaved: boolean;
+  cloudSynced: boolean;
+};
+
 export const StoreConfigModal: React.FC<StoreConfigModalProps> = props => {
   const [actionsHost, setActionsHost] = useState<HTMLElement | null>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -168,11 +173,11 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = props => {
     props.configStoreKeywords,
   ]);
 
-  const saveStore = async (): Promise<boolean> => {
+  const saveStore = async (): Promise<SaveStoreResult> => {
     const user = auth.currentUser;
     if (!user || !configuredStore) {
       notify('Faça login novamente para salvar sua loja.', 'error');
-      return false;
+      return { localSaved: false, cloudSynced: false };
     }
 
     saveCachedUserStore(
@@ -183,6 +188,14 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = props => {
     );
     setPendingSync(true);
 
+    // The local cache is authoritative for the current session even when
+    // the private Firestore document cannot be synchronized yet.
+    window.dispatchEvent(
+      new CustomEvent('kyrub-user-store-saved', {
+        detail: { store: configuredStore },
+      })
+    );
+
     try {
       await persistPrivateUserStore(user, configuredStore);
       saveCachedUserStore(
@@ -192,28 +205,24 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = props => {
         false
       );
       setPendingSync(false);
-      window.dispatchEvent(
-        new CustomEvent('kyrub-user-store-saved', {
-          detail: { store: configuredStore },
-        })
-      );
-      return true;
+      return { localSaved: true, cloudSynced: true };
     } catch (error) {
       console.warn('Store kept locally while cloud sync is pending.', error);
-      notify(
-        'Loja salva neste dispositivo. A sincronização com a nuvem ficou pendente.',
-        'warning'
-      );
-      return false;
+      return { localSaved: true, cloudSynced: false };
     }
   };
 
   const handleSave = async (): Promise<void> => {
     setIsSaving(true);
-    const synced = await saveStore();
+    const result = await saveStore();
 
-    if (synced) {
-      notify('Perfil da loja salvo com sucesso!', 'success');
+    if (result.localSaved) {
+      notify(
+        result.cloudSynced
+          ? 'Perfil da loja salvo com sucesso!'
+          : 'Loja salva neste dispositivo. A sincronização com a nuvem ficou pendente.',
+        result.cloudSynced ? 'success' : 'warning'
+      );
     }
 
     setIsSaving(false);
@@ -227,38 +236,44 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = props => {
       return;
     }
 
-    if (!isPublished && !configuredStore.name) {
+    const targetPublished = !isPublished;
+
+    if (targetPublished && !configuredStore.name) {
       notify('Informe o nome da loja antes de publicar.', 'error');
       return;
     }
 
     setIsPublishing(true);
-    const synced = await saveStore();
+    const saveResult = await saveStore();
 
-    if (!synced) {
-      notify(
-        'A loja precisa sincronizar com a nuvem antes da publicação.',
-        'warning'
-      );
+    if (!saveResult.localSaved) {
       setIsPublishing(false);
       return;
     }
 
     try {
+      // Marketplace publication is independent from the private-store sync.
+      // A pending private sync must never block a public publish/pause action.
       await setStoreMarketplacePublication(
         user,
         configuredStore,
-        !isPublished
+        targetPublished
       );
-      setCanonicalPublished(!isPublished);
-      setFallbackPublished(!isPublished);
+
+      // The compatibility marketplace write is guaranteed on a successful
+      // return from setStoreMarketplacePublication, so update it immediately.
+      setFallbackPublished(targetPublished);
+
       notify(
-        isPublished
-          ? 'Loja ocultada do marketplace.'
-          : 'Loja publicada no marketplace!',
-        'success'
+        targetPublished
+          ? saveResult.cloudSynced
+            ? 'Loja publicada no marketplace!'
+            : 'Loja publicada. A sincronização privada continua pendente.'
+          : saveResult.cloudSynced
+            ? 'Loja ocultada do marketplace.'
+            : 'Loja ocultada. A sincronização privada continua pendente.',
+        saveResult.cloudSynced ? 'success' : 'warning'
       );
-      props.onClose();
     } catch (error) {
       console.error('Store publication failed.', error);
       notify('Não foi possível alterar a publicação da loja.', 'error');
