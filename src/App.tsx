@@ -1728,7 +1728,7 @@ if (newMomentPublishToPraca) {
             )}
 
             {/* CENTRO/DIREITA: Itens de navegação unificados e roláveis horizontalmente */}
-            <div className="flex-1 min-w-0 flex items-center gap-2">
+            <div className="hidden sm:flex flex-1 min-w-0 items-center gap-2">
               {gestaoRole === 'retailer' ? (
                 <div className="hidden sm:flex items-center gap-1.5 overflow-x-auto whitespace-nowrap scrollbar-none flex-1 px-2" id="erp-tab-navigation-header">
                   {/* Botão Loja (estilizado como os itens do menu) */}
