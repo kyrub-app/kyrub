@@ -12,6 +12,7 @@ import { Tenant, Store, Product, Order } from '../types';
 import { db } from '../utils/firebase';
 import { doc, runTransaction, deleteDoc } from 'firebase/firestore';
 import { listenCollection, saveDocLWW } from '../utils/syncEngine';
+import type { BuildUserStoreUpdateInput } from '../utils/userStoreDocument';
 
 // ==========================================
 // DEXIE OFFLINE CACHE SCHEMA
@@ -55,13 +56,13 @@ const erpDB = new DexieERPDB();
 interface RetailerPanelProps {
   activeRetailerId: string;
   activeRetailer: Tenant | undefined;
-  stores: Store[];
+  activeStore: Store;
   products: Product[];
   orders: Order[];
   setNewProductModal: (val: boolean) => void;
   setProducts: React.Dispatch<React.SetStateAction<Product[]>>;
   setOrders: React.Dispatch<React.SetStateAction<Order[]>>;
-  setStores: React.Dispatch<React.SetStateAction<Store[]>>;
+  onUpdateStore: (updates: BuildUserStoreUpdateInput) => Promise<void>;
   triggerToast: (msg: string, type?: 'success' | 'error' | 'info') => void;
   activeSubTab: 'clientes' | 'caixa' | 'pedidos' | 'reservas' | 'ponto' | 'gerencial';
   setActiveSubTab: (tab: 'clientes' | 'caixa' | 'pedidos' | 'reservas' | 'ponto' | 'gerencial') => void;
@@ -72,35 +73,19 @@ interface RetailerPanelProps {
 export const RetailerPanel: React.FC<RetailerPanelProps> = ({
   activeRetailerId,
   activeRetailer,
-  stores,
+  activeStore,
   products,
   orders,
   setNewProductModal,
   setProducts,
   setOrders,
-  setStores,
+  onUpdateStore,
   triggerToast,
   activeSubTab,
   setActiveSubTab,
   atendimentoSpaces,
   producaoSpaces
 }) => {
-const activeStore: Store =
-  stores.find(
-    s => s.id === activeRetailerId || s.ownerEmail === activeRetailer?.email
-  ) || {
-    id: activeRetailerId,
-    name: '',
-    description: '',
-    keywords: [],
-    logo: '',
-    banner: '',
-    primaryColor: '',
-    offerImages: [],
-    slug: '',
-    plan: 'free',
-    ownerEmail: activeRetailer?.email || '',
-  };
   const activeRetailerProducts = products.filter(p => p.supplierId === activeRetailerId && !p.wholesalePrice);
   
   // Navigation State
@@ -198,6 +183,21 @@ const activeStore: Store =
   const [customImageUrl, setCustomImageUrl] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  useEffect(() => {
+    setStoreName(activeStore.name || '');
+    setStoreDesc(activeStore.description || '');
+    setStoreColor(activeStore.primaryColor || '#3b82f6');
+    setStoreKeywords((activeStore.keywords || []).join(', '));
+    setStoreOfferImages(activeStore.offerImages || []);
+  }, [
+    activeStore.id,
+    activeStore.name,
+    activeStore.description,
+    activeStore.primaryColor,
+    activeStore.keywords,
+    activeStore.offerImages,
+  ]);
+
   // Vouchers state
   const [vouchers, setVouchers] = useState<any[]>([]);
   const [newVoucherCode, setNewVoucherCode] = useState('');
@@ -217,12 +217,12 @@ const activeStore: Store =
   // ECOSSISTEMA: PDV SALE SUBTRACTION LINKED TO MARKETPLACE
   // ==========================================
   const registerFiscalIntegrationPending = () => {
-  setLatestFiscalXml('');
-  setFiscalLogs(prev => [
-    `[${new Date().toLocaleTimeString()}] Documento fiscal não emitido: integração fiscal ainda não configurada para esta loja.`,
-    ...prev
-  ]);
-};
+    setLatestFiscalXml('');
+    setFiscalLogs(prev => [
+      `[${new Date().toLocaleTimeString()}] Documento fiscal não emitido: integração fiscal ainda não configurada para esta loja.`,
+      ...prev
+    ]);
+  };
 
   const handleOpenTicket = async () => {
     if (!clientSearchCode.trim()) {
@@ -285,16 +285,16 @@ const activeStore: Store =
       return;
     }
 
-  // The ticket is closed without fabricating price, stock or fiscal data.
-  // Real stock and financial movements will be recorded when the sale flow
-  // provides validated items, quantities and payment totals.
-  registerFiscalIntegrationPending();
+    // The ticket is closed without fabricating price, stock or fiscal data.
+    // Real stock and financial movements will be recorded when the sale flow
+    // provides validated items, quantities and payment totals.
+    registerFiscalIntegrationPending();
 
-  setActiveTickets(prev => prev.filter(t => t.id !== ticketId));
-  triggerToast(
-    `Atendimento ${ticket.id} fechado. Emissão fiscal ainda não configurada.`,
-    'success'
-  );
+    setActiveTickets(prev => prev.filter(t => t.id !== ticketId));
+    triggerToast(
+      `Atendimento ${ticket.id} fechado. Emissão fiscal ainda não configurada.`,
+      'success'
+    );
   };
 
   const handleManualProductAddition = () => {
@@ -306,21 +306,10 @@ const activeStore: Store =
   };
 
   const handlePlanUpgrade = () => {
-    setStores(prev => prev.map(s => s.id === activeStore?.id ? { ...s, plan: 'business' } : s));
-    setStores(prev => prev.map(s => {
-      if (s.id === activeStore?.id) {
-        return { ...s, plan: 'business' };
-      }
-      return s;
-    }));
-    // Trigger plan update on tenants list as well
-    setStores(prev => {
-      // Side-effect update of activeRetailer plan simulated via App state
-      triggerToast('Parabéns! Sua loja foi promovida para o Plano Kyrub Business.', 'success');
-      return prev;
-    });
-    // Dynamically upgrade plan state in tenants via trigger
-    window.dispatchEvent(new CustomEvent('kyrub-upgrade-tenant', { detail: { id: activeRetailerId } }));
+    triggerToast(
+      'A contratação do plano Business ainda não está configurada.',
+      'info'
+    );
   };
 
   // 4. RESERVATIONS CONFIRMATION
@@ -356,18 +345,28 @@ const activeStore: Store =
   };
 
   // Theme configuration saving
-  const handleSaveThemeCustomization = () => {
-    if (!activeStore) return;
-    const kwArray = storeKeywords.split(',').map(k => k.trim().toLowerCase()).filter(Boolean).slice(0, 5);
-    setStores(prev => prev.map(s => s.id === activeStore.id ? {
-      ...s,
-      name: storeName,
-      description: storeDesc,
-      primaryColor: storeColor,
-      keywords: kwArray,
-      offerImages: storeOfferImages.length > 0 ? storeOfferImages : undefined
-    } : s));
-    triggerToast('Configurações de Vitrine e SEO Local gravadas!', 'success');
+  const handleSaveThemeCustomization = async () => {
+    const keywords = storeKeywords
+      .split(',')
+      .map(keyword => keyword.trim().toLowerCase())
+      .filter(Boolean)
+      .slice(0, 5);
+
+    try {
+      await onUpdateStore({
+        name: storeName,
+        description: storeDesc,
+        primaryColor: storeColor,
+        keywords,
+        offerImages: [...storeOfferImages],
+      });
+      triggerToast(
+        'Configurações de Vitrine e SEO Local gravadas!',
+        'success'
+      );
+    } catch {
+      // The parent persistence handler already restored state and notified.
+    }
   };
 
   const handleSelectPresetBanner = (url: string) => {
