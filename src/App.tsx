@@ -77,6 +77,7 @@ import { useProductivityNotes } from './hooks/useProductivityNotes';
 import { useSocialDirectoryV2 } from './hooks/useSocialDirectoryV2';
 import { LandingView } from './components/LandingView';
 import { StaffViewport } from './components/StaffViewport';
+import { MobileErpMenu } from './components/MobileErpMenu';
 import { PerfilTab } from './components/tabs/PerfilTab';
 import { RendaTab } from './components/tabs/RendaTab';
 import { KyrubTab } from './components/tabs/KyrubTab';
@@ -1712,53 +1713,60 @@ if (newMomentPublishToPraca) {
               <button
                 onClick={() => setIsGestaoOpen(false)}
                 className="text-slate-500 hover:text-slate-300 font-bold bg-slate-950 border border-slate-850 w-8 h-8 rounded-full flex items-center justify-center text-sm cursor-pointer shadow-sm shrink-0"
+                aria-label="Fechar painel de gestão"
               >
                 ✕
               </button>
             )}
 
-            {/* CENTRO/DIREITA: Itens de navegação unificados e roláveis horizontalmente */}
+            {/* CENTRO LIVRE / DIREITA: navegação mobile e desktop */}
             <div className="flex-1 min-w-0 flex items-center gap-2">
               {gestaoRole === 'retailer' ? (
-                <div className="flex items-center gap-1.5 overflow-x-auto whitespace-nowrap scrollbar-none flex-1 px-2" id="erp-tab-navigation-header">
-                  {/* Botão Loja (estilizado como os itens do menu) */}
-                  <button
-                    onClick={() => setIsConfigModalOpen(true)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer shrink-0 text-slate-400 hover:text-slate-200 hover:bg-slate-800/40"
-                    title="Configurar Perfil e Ambientes"
-                    id="orange-house-config-btn"
-                  >
-                    <StoreIcon className="w-3.5 h-3.5" />
-                    <span>Loja</span>
-                  </button>
+                <>
+                  <div className="hidden sm:flex items-center gap-1.5 overflow-x-auto whitespace-nowrap scrollbar-none flex-1 px-2" id="erp-tab-navigation-header">
+                    <button
+                      onClick={() => setIsConfigModalOpen(true)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer shrink-0 text-slate-400 hover:text-slate-200 hover:bg-slate-800/40"
+                      title="Configurar Perfil e Ambientes"
+                      id="orange-house-config-btn"
+                    >
+                      <StoreIcon className="w-3.5 h-3.5" />
+                      <span>Loja</span>
+                    </button>
 
-                  {/* Restantes abas de navegação */}
-                  {[
-                    { id: 'clientes', label: 'Clientes', icon: Users },
-                    { id: 'caixa', label: 'Caixa', icon: DollarSign },
-                    { id: 'pedidos', label: 'KDS/Vendas', icon: ClipboardList },
-                    { id: 'reservas', label: 'Reservas', icon: Calendar },
-                    { id: 'ponto', label: 'Ponto', icon: Fingerprint },
-                    { id: 'gerencial', label: 'Gerencial', icon: LayoutGrid }
-                  ].map(tab => {
-                    const Icon = tab.icon;
-                    const isSelected = activeSubTab === tab.id;
-                    return (
-                      <button
-                        key={tab.id}
-                        onClick={() => setActiveSubTab(tab.id as any)}
-                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer shrink-0 ${
-                          isSelected
-                            ? 'bg-orange-500 text-slate-950 shadow-md shadow-orange-500/10'
-                            : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/40'
-                        }`}
-                      >
-                        <Icon className="w-3.5 h-3.5" />
-                        <span>{tab.label}</span>
-                      </button>
-                    );
-                  })}
-                </div>
+                    {[
+                      { id: 'clientes', label: 'Clientes', icon: Users },
+                      { id: 'caixa', label: 'Caixa', icon: DollarSign },
+                      { id: 'pedidos', label: 'KDS/Vendas', icon: ClipboardList },
+                      { id: 'reservas', label: 'Reservas', icon: Calendar },
+                      { id: 'ponto', label: 'Ponto', icon: Fingerprint },
+                      { id: 'gerencial', label: 'Gerencial', icon: LayoutGrid }
+                    ].map(tab => {
+                      const Icon = tab.icon;
+                      const isSelected = activeSubTab === tab.id;
+                      return (
+                        <button
+                          key={tab.id}
+                          onClick={() => setActiveSubTab(tab.id as typeof activeSubTab)}
+                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer shrink-0 ${
+                            isSelected
+                              ? 'bg-orange-500 text-slate-950 shadow-md shadow-orange-500/10'
+                              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/40'
+                          }`}
+                        >
+                          <Icon className="w-3.5 h-3.5" />
+                          <span>{tab.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  <MobileErpMenu
+                    activeSubTab={activeSubTab}
+                    onSelectSubTab={setActiveSubTab}
+                    onOpenStore={() => setIsConfigModalOpen(true)}
+                  />
+                </>
               ) : (
                 <div className="flex items-center gap-2 px-2 shrink-0">
                   <div className="w-8 h-8 rounded-lg bg-teal-500 flex items-center justify-center text-slate-950 shrink-0">
@@ -1770,7 +1778,6 @@ if (newMomentPublishToPraca) {
             </div>
 
           </div>
-
           {/* ERP Core Panel Container */}
           <div className="flex-1 overflow-y-auto px-6 py-8 max-w-7xl w-full mx-auto">
             {gestaoRole === 'retailer' && (
