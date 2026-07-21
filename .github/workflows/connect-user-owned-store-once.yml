@@ -1,15 +1,20 @@
 name: Connect user-owned store once
 
 on:
-  push:
+  pull_request:
     branches:
-      - agent/connect-user-owned-store
+      - main
+    types:
+      - opened
+      - synchronize
+      - reopened
 
 permissions:
   contents: write
 
 jobs:
   apply:
+    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -51,7 +56,7 @@ jobs:
           app = replace_once(
               app,
               "import { Tenant, Store, Product, Order, CartItem, Note, Friend, SocialPost, DeliveryJob, FreelanceJob } from './types';",
-              "import { Tenant, Store, Product, Order, CartItem, Note, Friend, SocialPost, DeliveryJob, FreelanceJob, UserStoreDocument } from './types';",
+              "import { Tenant, Store, Product, Order, CartItem, Note, Friend, SocialPost, DeliveryJob, FreelanceJob, type UserStoreDocument } from './types';",
               'App type import',
           )
 
@@ -572,8 +577,12 @@ jobs:
 
           app = replace_once(
               app,
-              '                setStores={setStores}\n                triggerToast={triggerToast}',
-              '                onUpdateStore={handleUpdateStoreProfile}\n                triggerToast={triggerToast}',
+              """                setOrders={setOrders}
+                          setStores={setStores}
+                          triggerToast={triggerToast}""",
+              """                setOrders={setOrders}
+                          onUpdateStore={handleUpdateStoreProfile}
+                          triggerToast={triggerToast}""",
               'App retailer update prop',
           )
 
@@ -672,6 +681,67 @@ jobs:
 
           retailer = replace_once(
               retailer,
+              """  const registerFiscalIntegrationPending = () => {
+            setLatestFiscalXml('');
+            setFiscalLogs(prev => [
+              `[${new Date().toLocaleTimeString()}] Documento fiscal não emitido: integração fiscal ainda não configurada para esta loja.`,
+              ...prev
+            ]);
+          };""",
+              """  const registerFiscalIntegrationPending = () => {
+            setLatestFiscalXml('');
+            setFiscalLogs(prev => [
+              `[${new Date().toLocaleTimeString()}] Documento fiscal não emitido: integração fiscal ainda não configurada para esta loja.`,
+              ...prev
+            ]);
+          };""",
+              'Retailer fiscal already formatted guard',
+          ) if "  const registerFiscalIntegrationPending = () => {\n    setLatestFiscalXml('');" in retailer else replace_once(
+              retailer,
+              """  const registerFiscalIntegrationPending = () => {
+            setLatestFiscalXml('');
+            setFiscalLogs(prev => [
+              `[${new Date().toLocaleTimeString()}] Documento fiscal não emitido: integração fiscal ainda não configurada para esta loja.`,
+              ...prev
+            ]);
+          };""".replace('    setLatestFiscalXml', '  setLatestFiscalXml').replace('    setFiscalLogs', '  setFiscalLogs').replace('      `[', '    `[').replace('      ...prev', '    ...prev').replace('    ]);', '  ]);').replace('  };', '};'),
+              """  const registerFiscalIntegrationPending = () => {
+            setLatestFiscalXml('');
+            setFiscalLogs(prev => [
+              `[${new Date().toLocaleTimeString()}] Documento fiscal não emitido: integração fiscal ainda não configurada para esta loja.`,
+              ...prev
+            ]);
+          };""",
+              'Retailer fiscal formatting',
+          )
+
+          retailer = replace_once(
+              retailer,
+              """  // The ticket is closed without fabricating price, stock or fiscal data.
+            // Real stock and financial movements will be recorded when the sale flow
+            // provides validated items, quantities and payment totals.
+            registerFiscalIntegrationPending();
+
+            setActiveTickets(prev => prev.filter(t => t.id !== ticketId));
+            triggerToast(
+              `Atendimento ${ticket.id} fechado. Emissão fiscal ainda não configurada.`,
+              'success'
+            );""".replace('    // The ticket', '  // The ticket').replace('    // Real stock', '  // Real stock').replace('    // provides', '  // provides').replace('    registerFiscal', '  registerFiscal').replace('    setActiveTickets', '  setActiveTickets').replace('    triggerToast', '  triggerToast').replace('      `Atendimento', '    `Atendimento').replace("      'success'", "    'success'").replace('    );', '  );'),
+              """    // The ticket is closed without fabricating price, stock or fiscal data.
+            // Real stock and financial movements will be recorded when the sale flow
+            // provides validated items, quantities and payment totals.
+            registerFiscalIntegrationPending();
+
+            setActiveTickets(prev => prev.filter(t => t.id !== ticketId));
+            triggerToast(
+              `Atendimento ${ticket.id} fechado. Emissão fiscal ainda não configurada.`,
+              'success'
+            );""",
+              'Retailer close ticket formatting',
+          )
+
+          retailer = replace_once(
+              retailer,
               """  const handlePlanUpgrade = () => {
             setStores(prev => prev.map(s => s.id === activeStore?.id ? { ...s, plan: 'business' } : s));
             setStores(prev => prev.map(s => {
@@ -737,25 +807,6 @@ jobs:
             }
           };""",
               'Retailer theme persistence',
-          )
-
-          retailer = replace_once(
-              retailer,
-              """  const registerFiscalIntegrationPending = () => {
-            setLatestFiscalXml('');
-            setFiscalLogs(prev => [
-              `[${new Date().toLocaleTimeString()}] Documento fiscal não emitido: integração fiscal ainda não configurada para esta loja.`,
-              ...prev
-            ]);
-          };""",
-              """  const registerFiscalIntegrationPending = () => {
-            setLatestFiscalXml('');
-            setFiscalLogs(prev => [
-              `[${new Date().toLocaleTimeString()}] Documento fiscal não emitido: integração fiscal ainda não configurada para esta loja.`,
-              ...prev
-            ]);
-          };""",
-              'Retailer fiscal formatting guard',
           )
 
           retailer_path.write_text(retailer, encoding='utf-8')
