@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type React from 'react';
 import { createPortal } from 'react-dom';
 import { RetailerPanel as LegacyRetailerPanel } from './LegacyRetailerPanel';
 import { CustomerOrderInbox } from './customer/CustomerOrderInbox';
 import { CustomerTableBoard } from './customer/CustomerTableBoard';
+import { TableServiceWorkspace } from './customer/TableServiceWorkspace';
 import { auth } from '../utils/firebase';
 import {
   persistPublicProduct,
@@ -16,6 +17,7 @@ import {
   type CustomerOrder,
   type CustomerOrderStatus,
 } from '../utils/customerOrders';
+import { buildCustomerTableCards } from '../utils/customerTables';
 
 type RetailerPanelProps = React.ComponentProps<typeof LegacyRetailerPanel>;
 
@@ -27,13 +29,17 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = props => {
     setProducts,
     triggerToast,
     activeSubTab,
-    setActiveSubTab,
   } = props;
 
   const [ordersHost, setOrdersHost] = useState<HTMLElement | null>(null);
   const [tablesHost, setTablesHost] = useState<HTMLElement | null>(null);
   const [customerOrders, setCustomerOrders] = useState<CustomerOrder[]>([]);
   const [busyOrderId, setBusyOrderId] = useState('');
+  const [selectedTableCode, setSelectedTableCode] = useState('');
+  const tableCards = useMemo(
+    () => buildCustomerTableCards(customerOrders),
+    [customerOrders]
+  );
 
   useEffect(() => {
     const handlePublicProductCreate = (event: Event): void => {
@@ -161,8 +167,9 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = props => {
 
       portalHost = document.createElement('div');
       portalHost.id = 'kyrub-customer-table-board-host';
-      portalHost.className = 'mb-5';
-      clientsContainer.insertBefore(portalHost, clientsContainer.firstChild);
+      portalHost.className = 'min-w-0';
+      const insertionTarget = clientsContainer.children.item(2);
+      clientsContainer.insertBefore(portalHost, insertionTarget ?? null);
       setTablesHost(portalHost);
     };
 
@@ -177,8 +184,23 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = props => {
   }, [activeSubTab]);
 
   useEffect(() => {
+    if (activeSubTab !== 'clientes') return;
+    const emptyState = document.getElementById('empty-clients');
+    if (!emptyState) return;
+
+    const previousDisplay = emptyState.style.display;
+    emptyState.style.display = tableCards.length > 0 ? 'none' : previousDisplay;
+
+    return () => {
+      emptyState.style.display = previousDisplay;
+    };
+  }, [activeSubTab, tableCards.length]);
+
+  useEffect(() => {
     const needsCustomerOrders =
-      activeSubTab === 'clientes' || activeSubTab === 'pedidos';
+      activeSubTab === 'clientes' ||
+      activeSubTab === 'pedidos' ||
+      selectedTableCode.length > 0;
 
     if (!needsCustomerOrders || !activeRetailerId) {
       setCustomerOrders([]);
@@ -199,7 +221,7 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = props => {
         triggerToast('Não foi possível carregar os pedidos da loja.', 'error');
       }
     );
-  }, [activeRetailerId, activeSubTab, triggerToast]);
+  }, [activeRetailerId, activeSubTab, selectedTableCode, triggerToast]);
 
   const handleChangeOrderStatus = async (
     order: CustomerOrder,
@@ -229,9 +251,8 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = props => {
     }
   };
 
-  const handleOpenTableOrders = (tableCode: string): void => {
-    setActiveSubTab('pedidos');
-    triggerToast(`Pedidos da mesa ${tableCode} abertos no KDS.`, 'info');
+  const handleOpenTable = (tableCode: string): void => {
+    setSelectedTableCode(tableCode);
   };
 
   return (
@@ -241,7 +262,7 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = props => {
         createPortal(
           <CustomerTableBoard
             orders={customerOrders}
-            onOpenOrders={handleOpenTableOrders}
+            onOpenTable={handleOpenTable}
           />,
           tablesHost
         )}
@@ -254,6 +275,16 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = props => {
           />,
           ordersHost
         )}
+      {selectedTableCode && (
+        <TableServiceWorkspace
+          storeId={activeRetailerId}
+          tableCode={selectedTableCode}
+          products={products}
+          orders={customerOrders}
+          onClose={() => setSelectedTableCode('')}
+          notify={triggerToast}
+        />
+      )}
     </>
   );
 };

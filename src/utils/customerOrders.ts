@@ -21,11 +21,17 @@ export type CustomerOrderStatus =
   | 'rejected'
   | 'cancelled';
 
+export type CustomerOrderPaymentStatus = 'unpaid' | 'partial' | 'paid';
+export type CustomerOrderSource = 'customer' | 'staff' | 'transfer';
+
 export interface CustomerOrderItem {
+  lineId: string;
   productId: string;
   name: string;
   price: number;
   quantity: number;
+  paidQuantity: number;
+  transferredQuantity: number;
   note: string;
   image: string;
   isService: boolean;
@@ -45,7 +51,10 @@ export interface CustomerOrder {
   subtotal: number;
   total: number;
   status: CustomerOrderStatus;
-  paymentStatus: 'unpaid';
+  paymentStatus: CustomerOrderPaymentStatus;
+  source: CustomerOrderSource;
+  operatorId: string;
+  operatorName: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -70,8 +79,8 @@ export interface StorageLike {
 
 const STATUS_TRANSITIONS: Record<CustomerOrderStatus, CustomerOrderStatus[]> = {
   pending: ['accepted', 'rejected', 'cancelled'],
-  accepted: ['preparing', 'cancelled'],
-  preparing: ['ready', 'cancelled'],
+  accepted: ['preparing', 'cancelled', 'completed'],
+  preparing: ['ready', 'cancelled', 'completed'],
   ready: ['out_for_delivery', 'completed'],
   out_for_delivery: ['completed'],
   completed: [],
@@ -92,6 +101,14 @@ const isFulfillmentType = (
 
 const isOrderStatus = (value: unknown): value is CustomerOrderStatus =>
   typeof value === 'string' && value in STATUS_TRANSITIONS;
+
+const isOrderSource = (value: unknown): value is CustomerOrderSource =>
+  value === 'customer' || value === 'staff' || value === 'transfer';
+
+const isPaymentStatus = (
+  value: unknown
+): value is CustomerOrderPaymentStatus =>
+  value === 'unpaid' || value === 'partial' || value === 'paid';
 
 export const getCustomerOrdersCollectionPath = (storeId: string): string =>
   `artifacts/${storeId}/public/data/customerOrders`;
@@ -130,6 +147,33 @@ export const clearLastCustomerOrderId = (
   storage.removeItem(getLastCustomerOrderStorageKey(buyerId, storeId));
 };
 
+export const getCustomerOrderItemOpenQuantity = (
+  item: CustomerOrderItem
+): number =>
+  Math.max(0, item.quantity - item.paidQuantity - item.transferredQuantity);
+
+export const getCustomerOrderOutstandingTotal = (
+  order: Pick<CustomerOrder, 'items'>
+): number =>
+  order.items.reduce(
+    (sum, item) => sum + getCustomerOrderItemOpenQuantity(item) * item.price,
+    0
+  );
+
+export const resolveCustomerOrderPaymentStatus = (
+  items: CustomerOrderItem[]
+): CustomerOrderPaymentStatus => {
+  const billableQuantity = items.reduce(
+    (sum, item) => sum + Math.max(0, item.quantity - item.transferredQuantity),
+    0
+  );
+  const paidQuantity = items.reduce((sum, item) => sum + item.paidQuantity, 0);
+
+  if (billableQuantity === 0 || paidQuantity >= billableQuantity) return 'paid';
+  if (paidQuantity > 0) return 'partial';
+  return 'unpaid';
+};
+
 export const buildCustomerOrder = (
   user: Pick<User, 'uid'>,
   input: BuildCustomerOrderInput,
@@ -158,7 +202,9 @@ export const buildCustomerOrder = (
     throw new Error('Informe a mesa ou o código de atendimento.');
   }
 
-  const items = input.cart.map(({ product, quantity }) => {
+  const timestamp = new Date(now).toISOString();
+  const orderId = `customer-order-${user.uid}-${now}`;
+  const items = input.cart.map(({ product, quantity }, index) => {
     const normalizedQuantity = Math.trunc(quantity);
 
     if (
@@ -174,10 +220,13 @@ export const buildCustomerOrder = (
     }
 
     return {
+      lineId: `${orderId}-line-${index + 1}`,
       productId: product.id,
       name: product.name.trim(),
       price: product.price,
       quantity: normalizedQuantity,
+      paidQuantity: 0,
+      transferredQuantity: 0,
       note: cleanString(input.itemNotes[product.id]),
       image: cleanString(product.image),
       isService: product.isService === true,
@@ -188,10 +237,9 @@ export const buildCustomerOrder = (
     (sum, item) => sum + item.price * item.quantity,
     0
   );
-  const timestamp = new Date(now).toISOString();
 
   return {
-    id: `customer-order-${user.uid}-${now}`,
+    id: orderId,
     storeId,
     buyerId: user.uid,
     buyerName,
@@ -206,6 +254,9 @@ export const buildCustomerOrder = (
     total: subtotal,
     status: 'pending',
     paymentStatus: 'unpaid',
+    source: 'customer',
+    operatorId: '',
+    operatorName: '',
     createdAt: timestamp,
     updatedAt: timestamp,
   };
@@ -219,6 +270,7 @@ export const parseCustomerOrder = (value: unknown): CustomerOrder | null => {
   const storeId = cleanString(candidate.storeId);
   const buyerId = cleanString(candidate.buyerId);
   const buyerName = cleanString(candidate.buyerName);
+  const source = isOrderSource(candidate.source) ? candidate.source : 'customer';
   const buyerEmail = cleanString(candidate.buyerEmail);
   const subtotal = finiteNumber(candidate.subtotal);
   const total = finiteNumber(candidate.total);
@@ -228,7 +280,7 @@ export const parseCustomerOrder = (value: unknown): CustomerOrder | null => {
     !storeId ||
     !buyerId ||
     !buyerName ||
-    !buyerEmail ||
+    (source === 'customer' && !buyerEmail) ||
     !isFulfillmentType(candidate.fulfillmentType) ||
     !isOrderStatus(candidate.status) ||
     subtotal === null ||
@@ -240,13 +292,15 @@ export const parseCustomerOrder = (value: unknown): CustomerOrder | null => {
     return null;
   }
 
-  const items = candidate.items.flatMap(item => {
+  const items = candidate.items.flatMap((item, index) => {
     if (!item || typeof item !== 'object') return [];
     const record = item as Record<string, unknown>;
     const productId = cleanString(record.productId);
     const name = cleanString(record.name);
     const price = finiteNumber(record.price);
     const quantity = finiteNumber(record.quantity);
+    const paidQuantity = finiteNumber(record.paidQuantity) ?? 0;
+    const transferredQuantity = finiteNumber(record.transferredQuantity) ?? 0;
 
     if (
       !productId ||
@@ -255,16 +309,24 @@ export const parseCustomerOrder = (value: unknown): CustomerOrder | null => {
       price < 0 ||
       quantity === null ||
       !Number.isInteger(quantity) ||
-      quantity <= 0
+      quantity <= 0 ||
+      !Number.isInteger(paidQuantity) ||
+      paidQuantity < 0 ||
+      !Number.isInteger(transferredQuantity) ||
+      transferredQuantity < 0 ||
+      paidQuantity + transferredQuantity > quantity
     ) {
       return [];
     }
 
     return [{
+      lineId: cleanString(record.lineId) || `${id}-line-${index + 1}`,
       productId,
       name,
       price,
       quantity,
+      paidQuantity,
+      transferredQuantity,
       note: cleanString(record.note),
       image: cleanString(record.image),
       isService: record.isService === true,
@@ -272,6 +334,10 @@ export const parseCustomerOrder = (value: unknown): CustomerOrder | null => {
   });
 
   if (items.length !== candidate.items.length || items.length === 0) return null;
+
+  const paymentStatus = isPaymentStatus(candidate.paymentStatus)
+    ? candidate.paymentStatus
+    : resolveCustomerOrderPaymentStatus(items);
 
   return {
     id,
@@ -287,7 +353,10 @@ export const parseCustomerOrder = (value: unknown): CustomerOrder | null => {
     subtotal,
     total,
     status: candidate.status,
-    paymentStatus: 'unpaid',
+    paymentStatus,
+    source,
+    operatorId: cleanString(candidate.operatorId),
+    operatorName: cleanString(candidate.operatorName),
     createdAt: cleanString(candidate.createdAt),
     updatedAt: cleanString(candidate.updatedAt),
   };
@@ -394,6 +463,18 @@ export const getCustomerOrderStatusLabel = (
     completed: 'Concluído',
     rejected: 'Recusado',
     cancelled: 'Cancelado',
+  };
+
+  return labels[status];
+};
+
+export const getCustomerOrderPaymentStatusLabel = (
+  status: CustomerOrderPaymentStatus
+): string => {
+  const labels: Record<CustomerOrderPaymentStatus, string> = {
+    unpaid: 'Não pago',
+    partial: 'Parcialmente pago',
+    paid: 'Pago',
   };
 
   return labels[status];

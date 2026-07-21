@@ -11,6 +11,9 @@ import {
   XCircle,
 } from 'lucide-react';
 import {
+  getCustomerOrderItemOpenQuantity,
+  getCustomerOrderOutstandingTotal,
+  getCustomerOrderPaymentStatusLabel,
   getCustomerOrderStatusLabel,
   getFulfillmentLabel,
   type CustomerOrder,
@@ -109,14 +112,14 @@ export const CustomerOrderInbox = ({
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <span className="font-mono text-[9px] font-bold uppercase tracking-[0.18em] text-orange-400">
-            Pedidos da vitrine
+            Pedidos da vitrine e do PDV
           </span>
           <h3 className="mt-1 flex items-center gap-2 text-base font-black text-white">
             <ShoppingBag className="h-5 w-5 text-orange-400" />
-            Atendimento em tempo real
+            Produção em tempo real
           </h3>
           <p className="mt-1 text-[11px] text-slate-500">
-            Aceite, prepare e conclua os pedidos enviados pelos clientes.
+            Pedidos do cliente aguardam aceite; pedidos lançados pelo garçom entram aceitos.
           </p>
         </div>
         <span className="w-fit rounded-full border border-slate-800 bg-slate-950 px-3 py-1 font-mono text-[10px] font-bold text-slate-400">
@@ -156,6 +159,10 @@ export const CustomerOrderInbox = ({
           {filteredOrders.map(order => {
             const actions = actionForOrder(order);
             const isBusy = busyOrderId === order.id;
+            const outstandingTotal = getCustomerOrderOutstandingTotal(order);
+            const visibleItems = order.items.filter(
+              item => item.quantity - item.transferredQuantity > 0
+            );
 
             return (
               <article
@@ -166,6 +173,7 @@ export const CustomerOrderInbox = ({
                   <div className="min-w-0">
                     <span className="font-mono text-[9px] font-bold uppercase tracking-wide text-orange-400">
                       {getFulfillmentLabel(order.fulfillmentType)}
+                      {order.source !== 'customer' ? ' · PDV' : ''}
                     </span>
                     <h4 className="mt-1 truncate text-sm font-black text-white">
                       {order.buyerName}
@@ -182,35 +190,55 @@ export const CustomerOrderInbox = ({
 
                 <div className="flex-1 space-y-4 p-4">
                   <div className="space-y-2">
-                    {order.items.map(item => (
-                      <div
-                        key={`${order.id}-${item.productId}`}
-                        className="rounded-2xl border border-slate-800 bg-slate-900/70 p-3"
-                      >
-                        <div className="flex items-start justify-between gap-3">
-                          <div>
-                            <strong className="text-xs text-slate-200">
-                              {item.quantity}× {item.name}
-                            </strong>
-                            {item.note && (
-                              <p className="mt-1 text-[10px] italic text-amber-300">
-                                Obs.: {item.note}
-                              </p>
-                            )}
+                    {visibleItems.map(item => {
+                      const operationalQuantity = item.quantity - item.transferredQuantity;
+                      const openQuantity = getCustomerOrderItemOpenQuantity(item);
+                      return (
+                        <div
+                          key={item.lineId}
+                          className="rounded-2xl border border-slate-800 bg-slate-900/70 p-3"
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <strong className="text-xs text-slate-200">
+                                {operationalQuantity}× {item.name}
+                              </strong>
+                              {item.note && (
+                                <p className="mt-1 text-[10px] italic text-amber-300">
+                                  Obs.: {item.note}
+                                </p>
+                              )}
+                              {(item.paidQuantity > 0 || item.transferredQuantity > 0) && (
+                                <p className="mt-1 text-[9px] text-slate-500">
+                                  {item.paidQuantity > 0 ? `${item.paidQuantity} pago(s)` : ''}
+                                  {item.paidQuantity > 0 && item.transferredQuantity > 0 ? ' · ' : ''}
+                                  {item.transferredQuantity > 0 ? `${item.transferredQuantity} transferido(s)` : ''}
+                                </p>
+                              )}
+                            </div>
+                            <div className="text-right">
+                              <span className="block font-mono text-[10px] font-bold text-slate-400">
+                                R$ {(item.price * operationalQuantity).toFixed(2)}
+                              </span>
+                              {openQuantity > 0 && (
+                                <span className="text-[8px] text-slate-600">
+                                  {openQuantity} em aberto
+                                </span>
+                              )}
+                            </div>
                           </div>
-                          <span className="font-mono text-[10px] font-bold text-slate-400">
-                            R$ {(item.price * item.quantity).toFixed(2)}
-                          </span>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
 
                   <div className="space-y-2 rounded-2xl border border-slate-800 bg-slate-900/50 p-3 text-[10px] text-slate-400">
-                    <p className="flex items-center gap-2">
-                      <UserRound className="h-3.5 w-3.5 text-slate-500" />
-                      {order.buyerEmail}
-                    </p>
+                    {order.buyerEmail && (
+                      <p className="flex items-center gap-2">
+                        <UserRound className="h-3.5 w-3.5 text-slate-500" />
+                        {order.buyerEmail}
+                      </p>
+                    )}
                     {order.deliveryAddress && (
                       <p className="flex items-start gap-2">
                         <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-500" />
@@ -223,6 +251,12 @@ export const CustomerOrderInbox = ({
                         Mesa/código: {order.tableCode}
                       </p>
                     )}
+                    {order.operatorName && (
+                      <p className="flex items-center gap-2">
+                        <UserRound className="h-3.5 w-3.5 text-slate-500" />
+                        Lançado por: {order.operatorName}
+                      </p>
+                    )}
                     {order.customerNote && (
                       <p className="border-t border-slate-800 pt-2 text-amber-200">
                         Observação geral: {order.customerNote}
@@ -233,14 +267,20 @@ export const CustomerOrderInbox = ({
                   <div className="flex items-end justify-between gap-3 border-t border-slate-800 pt-3">
                     <div>
                       <span className="block font-mono text-[8px] uppercase text-slate-600">
-                        Total pendente
+                        Saldo do pedido
                       </span>
                       <strong className="font-mono text-base text-white">
-                        R$ {order.total.toFixed(2)}
+                        R$ {outstandingTotal.toFixed(2)}
                       </strong>
                     </div>
-                    <span className="rounded-lg bg-amber-500/10 px-2.5 py-1 text-[9px] font-bold uppercase text-amber-300">
-                      Não pago
+                    <span className={`rounded-lg px-2.5 py-1 text-[9px] font-bold uppercase ${
+                      order.paymentStatus === 'paid'
+                        ? 'bg-emerald-500/10 text-emerald-300'
+                        : order.paymentStatus === 'partial'
+                          ? 'bg-blue-500/10 text-blue-300'
+                          : 'bg-amber-500/10 text-amber-300'
+                    }`}>
+                      {getCustomerOrderPaymentStatusLabel(order.paymentStatus)}
                     </span>
                   </div>
                 </div>

@@ -1,4 +1,8 @@
 import type { CustomerOrder } from './customerOrders';
+import {
+  getCustomerOrderItemOpenQuantity,
+  getCustomerOrderOutstandingTotal,
+} from './customerOrders';
 
 export type CustomerTableOperationalState =
   | 'pending'
@@ -41,7 +45,8 @@ const tableCodeCollator = new Intl.Collator('pt-BR', {
 const isActiveDineInOrder = (order: CustomerOrder): boolean =>
   order.fulfillmentType === 'dine_in' &&
   order.tableCode.trim().length > 0 &&
-  !TERMINAL_STATUSES.has(order.status);
+  !TERMINAL_STATUSES.has(order.status) &&
+  order.items.some(item => getCustomerOrderItemOpenQuantity(item) > 0);
 
 const resolveTableState = (
   orders: CustomerOrder[]
@@ -87,10 +92,17 @@ export const buildCustomerTableCards = (
         itemCount: sortedOrders.reduce(
           (sum, order) =>
             sum +
-            order.items.reduce((itemSum, item) => itemSum + item.quantity, 0),
+            order.items.reduce(
+              (itemSum, item) =>
+                itemSum + getCustomerOrderItemOpenQuantity(item),
+              0
+            ),
           0
         ),
-        total: sortedOrders.reduce((sum, order) => sum + order.total, 0),
+        total: sortedOrders.reduce(
+          (sum, order) => sum + getCustomerOrderOutstandingTotal(order),
+          0
+        ),
         buyerNames,
         primaryBuyerName: buyerNames[0] ?? 'Cliente',
         openedAt: sortedOrders.reduce(
