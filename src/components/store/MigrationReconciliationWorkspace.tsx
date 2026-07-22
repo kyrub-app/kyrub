@@ -33,6 +33,11 @@ interface MigrationReconciliationWorkspaceProps {
   ) => void;
 }
 
+const isReadDomain = (
+  key: MigrationReconciliationSection['key']
+): key is CanonicalReadDomain =>
+  key === 'products' || key === 'orders' || key === 'payments';
+
 const formatMetricValue = (
   value: number,
   format: ReconciliationMetric['format']
@@ -41,13 +46,7 @@ const formatMetricValue = (
     ? value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
     : value.toLocaleString('pt-BR');
 
-const statusPresentation = (
-  section: MigrationReconciliationSection
-): {
-  label: string;
-  className: string;
-  Icon: typeof CheckCircle2;
-} => {
+const statusPresentation = (section: MigrationReconciliationSection) => {
   if (section.status === 'matched') {
     return {
       label: 'Conferido',
@@ -69,11 +68,6 @@ const statusPresentation = (
   };
 };
 
-const isReadDomain = (
-  key: MigrationReconciliationSection['key']
-): key is CanonicalReadDomain =>
-  key === 'products' || key === 'orders' || key === 'payments';
-
 const SectionCard = ({
   section,
   readEnabled,
@@ -88,9 +82,10 @@ const SectionCard = ({
   const presentation = statusPresentation(section);
   const { Icon } = presentation;
   const canActivate = section.status === 'matched';
+  const controlledRead = isReadDomain(section.key);
 
   return (
-    <article className="rounded-3xl border border-slate-800 bg-slate-950/70 p-4 space-y-4 min-w-0">
+    <article className="min-w-0 space-y-4 rounded-3xl border border-slate-800 bg-slate-950/70 p-4">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <h4 className="text-xs font-black uppercase tracking-wider text-white">
@@ -101,14 +96,14 @@ const SectionCard = ({
           </p>
         </div>
         <span
-          className={`shrink-0 inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[9px] font-black uppercase ${presentation.className}`}
+          className={`inline-flex shrink-0 items-center gap-1 rounded-full border px-2 py-1 text-[9px] font-black uppercase ${presentation.className}`}
         >
           <Icon className="h-3 w-3" />
           {presentation.label}
         </span>
       </div>
 
-      {isReadDomain(section.key) ? (
+      {controlledRead ? (
         <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-3">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
@@ -328,9 +323,9 @@ export const MigrationReconciliationWorkspace = ({
   };
 
   return (
-    <section className="rounded-[2rem] border border-slate-800 bg-slate-900/70 p-4 sm:p-5 space-y-5">
+    <section className="space-y-5 rounded-[2rem] border border-slate-800 bg-slate-900/70 p-4 sm:p-5">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-        <div className="flex items-start gap-3 min-w-0">
+        <div className="flex min-w-0 items-start gap-3">
           <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-cyan-500/20 bg-cyan-500/10 text-cyan-300">
             <Database className="h-5 w-5" />
           </div>
@@ -407,23 +402,20 @@ export const MigrationReconciliationWorkspace = ({
           </div>
 
           <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-            {report.sections.map(section => (
-              <SectionCard
-                key={section.key}
-                section={section}
-                readEnabled={
-                  isReadDomain(section.key)
-                    ? readConfig.preferences[section.key]
-                    : true
-                }
-                busy={busyDomain === section.key}
-                onToggle={
-                  isReadDomain(section.key)
-                    ? () => void handleToggle(section.key)
-                    : undefined
-                }
-              />
-            ))}
+            {report.sections.map(section => {
+              const domain = isReadDomain(section.key) ? section.key : null;
+              return (
+                <SectionCard
+                  key={section.key}
+                  section={section}
+                  readEnabled={domain ? readConfig.preferences[domain] : true}
+                  busy={domain ? busyDomain === domain : false}
+                  onToggle={
+                    domain ? () => void handleToggle(domain) : undefined
+                  }
+                />
+              );
+            })}
           </div>
         </>
       )}
