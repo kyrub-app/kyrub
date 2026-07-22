@@ -1,7 +1,9 @@
 import { useEffect } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
 import LegacyApp from './LegacyApp';
+import AdminControlPlaneApp from './components/admin/AdminControlPlaneApp';
 import { auth } from './utils/firebase';
+import { isAdminControlPlaneLocation } from './utils/adminControlPlane';
 import {
   hasPendingUserStoreSync,
   loadCachedUserStore,
@@ -22,7 +24,6 @@ function StorePersistenceBridge() {
         user.uid,
         user.email ?? ''
       );
-
       if (!cachedStore) return;
 
       void persistPrivateUserStore(user, cachedStore)
@@ -63,6 +64,13 @@ function StorePersistenceBridge() {
 }
 
 export default function App() {
+  const adminControlPlane = isAdminControlPlaneLocation(
+    window.location.hostname,
+    window.location.pathname
+  );
+
+  if (adminControlPlane) return <AdminControlPlaneApp />;
+
   return (
     <>
       <StorePersistenceBridge />

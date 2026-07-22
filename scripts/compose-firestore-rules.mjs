@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const basePath = resolve(root, 'firestore.rules');
 const fragmentPaths = [
+  resolve(root, 'firestore.admin-control-plane.fragment.rules'),
   resolve(root, 'firestore.store-security.fragment.rules'),
   resolve(root, 'firestore.store-directory-query.fragment.rules'),
   resolve(root, 'firestore.operational-dual-write.fragment.rules'),
