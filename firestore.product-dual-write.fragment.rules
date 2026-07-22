@@ -45,3 +45,35 @@
         && incoming().migration is map
         && incoming().migration.keys().size() == 3;
     }
+
+    function canonicalProductMigrationCreateIsValid(storeId, productId) {
+      return storeSecOwner(storeId)
+        && incoming().legacyStoreId != ''
+        && incoming().legacyStoreId != storeId
+        && incoming().legacyProductId == productId
+        && incoming().legacySupplierId == incoming().legacyStoreId
+        && incoming().migratedFromPath != ''
+        && incoming().migration.mode == 'dual_write'
+        && incoming().migration.migratedByUserId == request.auth.uid
+        && incoming().migration.migratedByRole == 'owner'
+        && incoming().createdByUserId == request.auth.uid
+        && incoming().createdByRole == 'owner'
+        && incoming().updatedByUserId == request.auth.uid
+        && incoming().updatedByRole == 'owner';
+    }
+
+    function canonicalProductDirectCreateIsValid(storeId) {
+      return canonicalProductEditor(storeId)
+        && incoming().legacyStoreId == ''
+        && incoming().legacyProductId == ''
+        && incoming().legacySupplierId == ''
+        && incoming().legacyUpdatedAt == ''
+        && incoming().migratedFromPath == ''
+        && incoming().migration.mode == 'canonical'
+        && incoming().migration.migratedByUserId == ''
+        && incoming().migration.migratedByRole == ''
+        && incoming().createdByUserId == request.auth.uid
+        && incoming().createdByRole == storeSecCurrentRole(storeId)
+        && incoming().updatedByUserId == request.auth.uid
+        && incoming().updatedByRole == storeSecCurrentRole(storeId);
+    }
