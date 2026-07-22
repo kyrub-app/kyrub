@@ -11,7 +11,8 @@
     "prebuild": "npm run lint && node --test --import tsx tests/store-persistence.test.ts tests/public-products.test.ts tests/customer-orders.test.ts tests/customer-tables.test.ts tests/table-operations.test.ts tests/store-security.test.ts tests/canonical-store-data.test.ts tests/store-directory.test.ts tests/operational-dual-write.test.ts tests/canonical-product-dual-write.test.ts tests/canonical-cash.test.ts tests/canonical-cash-rules-contract.test.ts tests/store-security-rules-contract.test.ts tests/responsive-product-cards.test.ts",
     "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
     "start": "node dist/server.cjs",
-    "clean": "rm -rf dist server.js"
+    "clean": "rm -rf dist server.js",
+    "lint": "tsc --noEmit"
   },
   "dependencies": {
     "@firebase/rules-unit-testing": "^5.0.1",
