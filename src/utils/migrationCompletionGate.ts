@@ -270,7 +270,7 @@ const assertOwnerContext = (
 
 const writeGate = async (
   legacyStoreId: string,
-  gate: Omit<MigrationCompletionGateState, 'updatedAt'> & {
+  gate: Omit<MigrationCompletionGateState, 'updatedAt' | 'confirmedAt'> & {
     updatedAt: ReturnType<typeof serverTimestamp>;
     confirmedAt: string | ReturnType<typeof serverTimestamp>;
   }
