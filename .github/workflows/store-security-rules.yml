@@ -6,6 +6,7 @@ on:
       - 'firestore.rules'
       - 'firestore.store-security.rules'
       - 'firestore.store-security.fragment.rules'
+      - 'firestore.store-directory-query.fragment.rules'
       - 'firebase.json'
       - 'firebase.security.json'
       - 'scripts/compose-firestore-rules.mjs'
@@ -14,6 +15,7 @@ on:
       - 'src/utils/storeDirectory.ts'
       - 'src/components/store/StoreTeamWorkspace.tsx'
       - 'tests/firestore-store-security.test.ts'
+      - 'tests/firestore-store-directory.test.ts'
       - 'tests/store-security.test.ts'
       - 'tests/canonical-store-data.test.ts'
       - 'tests/store-directory.test.ts'
@@ -57,4 +59,4 @@ jobs:
           --config firebase.security.json
           --project kyrub-security-test
           --only firestore
-          "node --test --import tsx tests/firestore-store-security.test.ts"
+          "node --test --test-concurrency=1 --import tsx tests/firestore-store-security.test.ts tests/firestore-store-directory.test.ts"
