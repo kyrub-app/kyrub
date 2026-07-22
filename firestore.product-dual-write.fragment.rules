@@ -1,0 +1,142 @@
+    // --- Canonical Products and Product Dual Write ---
+    function canonicalProductEditor(storeId) {
+      return storeSecOwner(storeId)
+        || (
+          storeSecActiveMember(storeId)
+          && storeSecMemberData(storeId).role == 'manager'
+        );
+    }
+
+    function canonicalProductPublicationStatusIsValid(status) {
+      return status == 'draft'
+        || status == 'published'
+        || status == 'paused'
+        || status == 'archived';
+    }
+
+    function canonicalProductFieldsAreValid(storeId, productId) {
+      return incoming().keys().size() == 24
+        && incoming().id == productId
+        && incoming().storeId == storeId
+        && incoming().supplierId == storeId
+        && incoming().name is string
+        && incoming().name.size() > 0
+        && incoming().description is string
+        && incoming().price is number
+        && incoming().price >= 0
+        && incoming().image is string
+        && incoming().stock is int
+        && incoming().stock >= 0
+        && incoming().category is string
+        && incoming().category.size() > 0
+        && incoming().isService is bool
+        && (incoming().isService == false || incoming().stock == 0)
+        && canonicalProductPublicationStatusIsValid(incoming().publicationStatus)
+        && incoming().createdByUserId is string
+        && storeSecValidRole(incoming().createdByRole)
+        && incoming().updatedByUserId is string
+        && storeSecValidRole(incoming().updatedByRole)
+        && incoming().legacyStoreId is string
+        && incoming().legacyProductId is string
+        && incoming().legacySupplierId is string
+        && incoming().legacyUpdatedAt is string
+        && incoming().migratedFromPath is string
+        && (
+          incoming().archivedAt is string
+          || incoming().archivedAt is timestamp
+        )
+        && incoming().migration is map
+        && incoming().migration.keys().size() == 3;
+    }
+
+    function canonicalProductMigrationCreateIsValid(storeId, productId) {
+      return storeSecOwner(storeId)
+        && incoming().legacyStoreId != ''
+        && incoming().legacyStoreId != storeId
+        && incoming().legacyProductId == productId
+        && incoming().legacySupplierId == incoming().legacyStoreId
+        && incoming().migratedFromPath != ''
+        && incoming().migration.mode == 'dual_write'
+        && incoming().migration.migratedByUserId == request.auth.uid
+        && incoming().migration.migratedByRole == 'owner'
+        && incoming().createdByUserId == request.auth.uid
+        && incoming().createdByRole == 'owner'
+        && incoming().updatedByUserId == request.auth.uid
+        && incoming().updatedByRole == 'owner';
+    }
+
+    function canonicalProductDirectCreateIsValid(storeId) {
+      return canonicalProductEditor(storeId)
+        && incoming().legacyStoreId == ''
+        && incoming().legacyProductId == ''
+        && incoming().legacySupplierId == ''
+        && incoming().legacyUpdatedAt == ''
+        && incoming().migratedFromPath == ''
+        && incoming().migration.mode == 'canonical'
+        && incoming().migration.migratedByUserId == ''
+        && incoming().migration.migratedByRole == ''
+        && incoming().createdByUserId == request.auth.uid
+        && incoming().createdByRole == storeSecCurrentRole(storeId)
+        && incoming().updatedByUserId == request.auth.uid
+        && incoming().updatedByRole == storeSecCurrentRole(storeId);
+    }
+
+    function canonicalProductIdentityIsImmutable() {
+      return incoming().id == existing().id
+        && incoming().storeId == existing().storeId
+        && incoming().supplierId == existing().supplierId
+        && incoming().createdByUserId == existing().createdByUserId
+        && incoming().createdByRole == existing().createdByRole
+        && incoming().legacyStoreId == existing().legacyStoreId
+        && incoming().legacyProductId == existing().legacyProductId
+        && incoming().legacySupplierId == existing().legacySupplierId
+        && incoming().migratedFromPath == existing().migratedFromPath
+        && incoming().migration == existing().migration
+        && incoming().createdAt == existing().createdAt;
+    }
+
+    function canonicalProductArchiveMetadataIsValid() {
+      return incoming().publicationStatus == 'archived'
+        ? (
+          incoming().archivedAt == request.time
+          || (
+            existing().publicationStatus == 'archived'
+            && incoming().archivedAt == existing().archivedAt
+          )
+        )
+        : incoming().archivedAt == '';
+    }
+
+    match /stores/{storeId}/products/{productId} {
+      allow get, list: if isSignedIn()
+        && (
+          resource.data.publicationStatus == 'published'
+          || storeSecProductionStaff(storeId)
+        );
+
+      allow create: if isSignedIn()
+        && canonicalProductFieldsAreValid(storeId, productId)
+        && incoming().publicationStatus != 'archived'
+        && incoming().archivedAt == ''
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && (
+          canonicalProductMigrationCreateIsValid(storeId, productId)
+          || canonicalProductDirectCreateIsValid(storeId)
+        );
+
+      allow update: if isSignedIn()
+        && canonicalProductEditor(storeId)
+        && canonicalProductIdentityIsImmutable()
+        && canonicalProductFieldsAreValid(storeId, productId)
+        && incoming().updatedByUserId == request.auth.uid
+        && incoming().updatedByRole == storeSecCurrentRole(storeId)
+        && incoming().updatedAt == request.time
+        && canonicalProductArchiveMetadataIsValid()
+        && (
+          storeSecOwner(storeId)
+          || incoming().legacyUpdatedAt == existing().legacyUpdatedAt
+        );
+
+      allow delete: if false;
+    }
