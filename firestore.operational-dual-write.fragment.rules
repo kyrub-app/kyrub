@@ -48,4 +48,35 @@
         && incoming().legacyUpdatedAt is string
         && incoming().createdAt == request.time
         && incoming().updatedAt == request.time;
+
+      allow update: if storeSecOwner(storeId)
+        && storeSecImmutableOrderIdentity()
+        && incoming().legacyStoreId == existing().legacyStoreId
+        && incoming().legacyCreatedAt == existing().legacyCreatedAt
+        && incoming().migratedFromPath == existing().migratedFromPath
+        && incoming().migration == existing().migration
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'items',
+          'status',
+          'paymentStatus',
+          'tableCode',
+          'customerNote',
+          'legacyUpdatedAt',
+          'updatedAt'
+        ]);
+    }
+
+    match /stores/{storeId}/payments/{paymentId} {
+      allow create: if operationalMirrorMetadataIsValid(storeId)
+        && incoming().id == paymentId
+        && incoming().storeId == storeId
+        && incoming().actorUserId == request.auth.uid
+        && incoming().actorRole == 'owner'
+        && incoming().amount is number
+        && incoming().amount >= 0
+        && incoming().quantity is int
+        && incoming().quantity > 0
+        && incoming().legacyCreatedAt is string
+        && incoming().createdAt == request.time;
     }
