@@ -5,6 +5,8 @@ import {
   Database,
   RefreshCw,
   ShieldCheck,
+  ToggleLeft,
+  ToggleRight,
   XCircle,
 } from 'lucide-react';
 import { auth } from '../../utils/firebase';
@@ -14,6 +16,14 @@ import {
   type MigrationReconciliationSection,
   type ReconciliationMetric,
 } from '../../utils/migrationReconciliation';
+import {
+  DEFAULT_CANONICAL_READ_PREFERENCES,
+  canEnableCanonicalReadDomain,
+  subscribeToCanonicalReadConfig,
+  updateCanonicalReadPreference,
+  type CanonicalReadConfig,
+  type CanonicalReadDomain,
+} from '../../utils/canonicalReadCutover';
 
 interface MigrationReconciliationWorkspaceProps {
   legacyStoreId: string;
@@ -59,9 +69,25 @@ const statusPresentation = (
   };
 };
 
-const SectionCard = ({ section }: { section: MigrationReconciliationSection }) => {
+const isReadDomain = (
+  key: MigrationReconciliationSection['key']
+): key is CanonicalReadDomain =>
+  key === 'products' || key === 'orders' || key === 'payments';
+
+const SectionCard = ({
+  section,
+  readEnabled,
+  busy,
+  onToggle,
+}: {
+  section: MigrationReconciliationSection;
+  readEnabled: boolean;
+  busy: boolean;
+  onToggle?: () => void;
+}) => {
   const presentation = statusPresentation(section);
   const { Icon } = presentation;
+  const canActivate = section.status === 'matched';
 
   return (
     <article className="rounded-3xl border border-slate-800 bg-slate-950/70 p-4 space-y-4 min-w-0">
@@ -81,6 +107,58 @@ const SectionCard = ({ section }: { section: MigrationReconciliationSection }) =
           {presentation.label}
         </span>
       </div>
+
+      {isReadDomain(section.key) ? (
+        <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-3">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <span className="block text-[9px] font-black uppercase tracking-wider text-slate-400">
+                Fonte preferencial
+              </span>
+              <strong
+                className={`mt-1 block text-xs ${
+                  readEnabled ? 'text-cyan-300' : 'text-slate-300'
+                }`}
+              >
+                {readEnabled ? 'Canônico com fallback' : 'Legado'}
+              </strong>
+              <p className="mt-1 text-[9px] leading-relaxed text-slate-500">
+                {readEnabled
+                  ? 'Diferença ou indisponibilidade retorna automaticamente ao legado.'
+                  : canActivate
+                    ? 'Este domínio já pode ser ativado de forma controlada.'
+                    : 'Conclua a conferência antes de ativar.'}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={onToggle}
+              disabled={busy || (!readEnabled && !canActivate)}
+              className={`inline-flex shrink-0 items-center justify-center gap-2 rounded-xl border px-3 py-2 text-[9px] font-black uppercase tracking-wider transition disabled:cursor-not-allowed disabled:opacity-40 ${
+                readEnabled
+                  ? 'border-cyan-500/30 bg-cyan-500/10 text-cyan-200 hover:bg-cyan-500/20'
+                  : 'border-slate-700 bg-slate-800 text-slate-300 hover:bg-slate-700'
+              }`}
+            >
+              {readEnabled ? (
+                <ToggleRight className="h-4 w-4" />
+              ) : (
+                <ToggleLeft className="h-4 w-4" />
+              )}
+              {busy ? 'Salvando' : readEnabled ? 'Usar legado' : 'Ativar canônico'}
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-3">
+          <span className="block text-[9px] font-black uppercase tracking-wider text-emerald-300">
+            Fonte canônica ativa
+          </span>
+          <p className="mt-1 text-[9px] leading-relaxed text-slate-400">
+            O caixa já nasceu no modelo canônico e mantém o Dexie como fila offline.
+          </p>
+        </div>
+      )}
 
       {section.metrics.length > 0 && (
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
@@ -149,7 +227,12 @@ export const MigrationReconciliationWorkspace = ({
   notify,
 }: MigrationReconciliationWorkspaceProps) => {
   const [report, setReport] = useState<MigrationReconciliationReport | null>(null);
+  const [readConfig, setReadConfig] = useState<CanonicalReadConfig>({
+    canonicalStoreId: '',
+    preferences: { ...DEFAULT_CANONICAL_READ_PREFERENCES },
+  });
   const [loading, setLoading] = useState(false);
+  const [busyDomain, setBusyDomain] = useState<CanonicalReadDomain | ''>('');
   const [error, setError] = useState('');
 
   const runCheck = useCallback(
@@ -193,6 +276,57 @@ export const MigrationReconciliationWorkspace = ({
     void runCheck(false);
   }, [runCheck]);
 
+  useEffect(
+    () =>
+      subscribeToCanonicalReadConfig(
+        legacyStoreId,
+        config => setReadConfig(config),
+        caught => console.warn('Preferências de leitura indisponíveis.', caught)
+      ),
+    [legacyStoreId]
+  );
+
+  const handleToggle = async (domain: CanonicalReadDomain): Promise<void> => {
+    const user = auth.currentUser;
+    if (!user || !report) {
+      notify('Execute a conferência antes de alterar a fonte de leitura.', 'warning');
+      return;
+    }
+
+    const enabled = readConfig.preferences[domain];
+    if (!enabled && !canEnableCanonicalReadDomain(report, domain)) {
+      notify('Este domínio ainda possui divergências ou está indisponível.', 'warning');
+      return;
+    }
+
+    setBusyDomain(domain);
+    try {
+      const nextConfig = await updateCanonicalReadPreference(
+        user,
+        report,
+        readConfig,
+        domain,
+        !enabled
+      );
+      setReadConfig(nextConfig);
+      notify(
+        !enabled
+          ? `Leitura canônica de ${domain} ativada com fallback automático.`
+          : `Leitura de ${domain} voltou ao caminho legado.`,
+        'success'
+      );
+    } catch (caught) {
+      notify(
+        caught instanceof Error
+          ? caught.message
+          : 'Não foi possível alterar a fonte de leitura.',
+        'error'
+      );
+    } finally {
+      setBusyDomain('');
+    }
+  };
+
   return (
     <section className="rounded-[2rem] border border-slate-800 bg-slate-900/70 p-4 sm:p-5 space-y-5">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
@@ -205,10 +339,10 @@ export const MigrationReconciliationWorkspace = ({
               Migração multi-loja
             </span>
             <h3 className="text-sm font-black uppercase tracking-wider text-white">
-              Conferência legado × canônico
+              Conferência e leitura controlada
             </h3>
             <p className="mt-1 max-w-3xl text-[10px] leading-relaxed text-slate-400">
-              Esta tela apenas compara os dados. Nenhuma fonte de leitura é alterada automaticamente.
+              Compare os dados e ative o canônico por domínio. A gravação dupla e o fallback legado permanecem ativos durante os testes reais.
             </p>
           </div>
         </div>
@@ -249,8 +383,8 @@ export const MigrationReconciliationWorkspace = ({
                 <div>
                   <strong className="block text-xs font-black uppercase text-white">
                     {report.readyForCanonicalRead
-                      ? 'Pronto para preparar leitura canônica'
-                      : 'Leitura canônica ainda não recomendada'}
+                      ? 'Domínios prontos para ativação controlada'
+                      : 'Revise as divergências antes de ativar'}
                   </strong>
                   <span className="text-[9px] text-slate-400">
                     Loja: {report.store.name} · conferido em{' '}
@@ -274,7 +408,21 @@ export const MigrationReconciliationWorkspace = ({
 
           <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
             {report.sections.map(section => (
-              <SectionCard key={section.key} section={section} />
+              <SectionCard
+                key={section.key}
+                section={section}
+                readEnabled={
+                  isReadDomain(section.key)
+                    ? readConfig.preferences[section.key]
+                    : true
+                }
+                busy={busyDomain === section.key}
+                onToggle={
+                  isReadDomain(section.key)
+                    ? () => void handleToggle(section.key)
+                    : undefined
+                }
+              />
             ))}
           </div>
         </>
