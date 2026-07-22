@@ -1,6 +1,10 @@
     // --- Canonical Products and Product Dual Write ---
     function canonicalProductEditor(storeId) {
-      return storeSecOwner(storeId);
+      return storeSecOwner(storeId)
+        || (
+          storeSecActiveMember(storeId)
+          && storeSecMemberData(storeId).role == 'manager'
+        );
     }
 
     function canonicalProductPublicationStatusIsValid(status) {
@@ -8,4 +12,36 @@
         || status == 'published'
         || status == 'paused'
         || status == 'archived';
+    }
+
+    function canonicalProductFieldsAreValid(storeId, productId) {
+      return incoming().keys().size() == 24
+        && incoming().id == productId
+        && incoming().storeId == storeId
+        && incoming().supplierId == storeId
+        && incoming().name is string
+        && incoming().name.size() > 0
+        && incoming().description is string
+        && incoming().price is number
+        && incoming().price >= 0
+        && incoming().image is string
+        && incoming().stock is int
+        && incoming().stock >= 0
+        && incoming().category is string
+        && incoming().category.size() > 0
+        && incoming().isService is bool
+        && (incoming().isService == false || incoming().stock == 0)
+        && canonicalProductPublicationStatusIsValid(incoming().publicationStatus)
+        && incoming().createdByUserId is string
+        && storeSecValidRole(incoming().createdByRole)
+        && incoming().updatedByUserId is string
+        && storeSecValidRole(incoming().updatedByRole)
+        && incoming().legacyStoreId is string
+        && incoming().legacyProductId is string
+        && incoming().legacySupplierId is string
+        && incoming().legacyUpdatedAt is string
+        && incoming().migratedFromPath is string
+        && incoming().archivedAt is string
+        && incoming().migration is map
+        && incoming().migration.keys().size() == 3;
     }
