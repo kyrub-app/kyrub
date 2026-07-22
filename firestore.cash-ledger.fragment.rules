@@ -1,1 +1,107 @@
-    // Canonical cash ledger rules placeholder
+    function cashLedgerRoleAllowed(storeId) {
+      return storeSecActiveRole(storeId, ['owner', 'manager', 'cashier']);
+    }
+
+    function cashLedgerSessionPath(storeId, sessionId) {
+      return /databases/$(database)/documents/stores/$(storeId)/cashSessions/$(sessionId);
+    }
+
+    function cashLedgerMigrationIsValid() {
+      return incoming().migration is map
+        && incoming().migration.keys().hasOnly(['mode', 'source'])
+        && incoming().migration.mode == 'write_through'
+        && incoming().migration.source == 'dexie';
+    }
+
+    function cashLedgerSessionFieldsAreValid(storeId, sessionId) {
+      return incoming().keys().hasOnly([
+        'id', 'storeId', 'status', 'operatorUserId', 'operatorRole',
+        'operatorName', 'openingAmount', 'expectedAmount', 'countedAmount',
+        'difference', 'openedAt', 'closedAt', 'closedByUserId',
+        'closedByRole', 'closedByName', 'closeReason', 'deviceId',
+        'legacyStoreId', 'migration', 'createdAt', 'updatedAt'
+      ])
+        && incoming().id == sessionId
+        && incoming().storeId == storeId
+        && incoming().status in ['open', 'closed']
+        && incoming().operatorUserId is string
+        && storeSecValidRole(incoming().operatorRole)
+        && incoming().operatorName is string
+        && incoming().operatorName.size() > 0
+        && incoming().openingAmount is number
+        && incoming().openingAmount >= 0
+        && incoming().expectedAmount is number
+        && incoming().expectedAmount >= 0
+        && incoming().countedAmount is number
+        && incoming().countedAmount >= 0
+        && incoming().difference is number
+        && incoming().deviceId is string
+        && incoming().deviceId.size() > 0
+        && incoming().legacyStoreId is string
+        && incoming().legacyStoreId != storeId
+        && cashLedgerMigrationIsValid();
+    }
+
+    function cashLedgerSessionIdentityIsImmutable() {
+      return incoming().id == existing().id
+        && incoming().storeId == existing().storeId
+        && incoming().operatorUserId == existing().operatorUserId
+        && incoming().operatorRole == existing().operatorRole
+        && incoming().operatorName == existing().operatorName
+        && incoming().openingAmount == existing().openingAmount
+        && incoming().openedAt == existing().openedAt
+        && incoming().deviceId == existing().deviceId
+        && incoming().legacyStoreId == existing().legacyStoreId
+        && incoming().migration == existing().migration
+        && incoming().createdAt == existing().createdAt;
+    }
+
+    function cashLedgerMovementTypeIsValid(type) {
+      return type in ['sale', 'income', 'expense', 'supply', 'withdrawal', 'adjustment'];
+    }
+
+    function cashLedgerDirectionMatchesType(type, direction) {
+      return (type in ['sale', 'income', 'supply'] && direction == 'in')
+        || (type in ['expense', 'withdrawal'] && direction == 'out')
+        || (type == 'adjustment' && direction in ['in', 'out']);
+    }
+
+    function cashLedgerMovementReasonIsValid(type, reason) {
+      return type in ['expense', 'withdrawal', 'adjustment']
+        ? reason is string && reason.size() > 0
+        : reason is string;
+    }
+
+    function cashLedgerMovementFieldsAreValid(storeId, sessionId, movementId) {
+      return incoming().keys().hasOnly([
+        'id', 'storeId', 'sessionId', 'type', 'direction', 'amount',
+        'description', 'category', 'reason', 'actorUserId', 'actorRole',
+        'actorName', 'source', 'paymentId', 'deviceId', 'legacyStoreId',
+        'occurredAt', 'createdAt'
+      ])
+        && incoming().id == movementId
+        && incoming().storeId == storeId
+        && incoming().sessionId == sessionId
+        && cashLedgerMovementTypeIsValid(incoming().type)
+        && incoming().direction in ['in', 'out']
+        && cashLedgerDirectionMatchesType(incoming().type, incoming().direction)
+        && incoming().amount is number
+        && incoming().amount > 0
+        && incoming().description is string
+        && incoming().description.size() > 0
+        && incoming().category is string
+        && incoming().category.size() > 0
+        && cashLedgerMovementReasonIsValid(incoming().type, incoming().reason)
+        && incoming().actorUserId == request.auth.uid
+        && incoming().actorRole == storeSecCurrentRole(storeId)
+        && incoming().actorName is string
+        && incoming().actorName.size() > 0
+        && incoming().source in ['manual', 'payment', 'migration']
+        && incoming().paymentId is string
+        && incoming().deviceId is string
+        && incoming().deviceId.size() > 0
+        && incoming().legacyStoreId is string
+        && incoming().legacyStoreId != storeId
+        && incoming().occurredAt == request.time
+        && incoming().createdAt == request.time;
+    }
