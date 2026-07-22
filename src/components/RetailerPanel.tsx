@@ -5,6 +5,7 @@ import { RetailerPanel as LegacyRetailerPanel } from './LegacyRetailerPanel';
 import { CustomerOrderInbox } from './customer/CustomerOrderInbox';
 import { CustomerTableBoard } from './customer/CustomerTableBoard';
 import { TableServiceWorkspace } from './customer/TableServiceWorkspace';
+import { CashWorkspace } from './store/CashWorkspace';
 import { OperationalDualWriteBridge } from './store/OperationalDualWriteBridge';
 import { StoreTeamWorkspace } from './store/StoreTeamWorkspace';
 import { auth } from '../utils/firebase';
@@ -35,6 +36,7 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = props => {
 
   const [ordersHost, setOrdersHost] = useState<HTMLElement | null>(null);
   const [tablesHost, setTablesHost] = useState<HTMLElement | null>(null);
+  const [cashHost, setCashHost] = useState<HTMLElement | null>(null);
   const [teamHost, setTeamHost] = useState<HTMLElement | null>(null);
   const [customerOrders, setCustomerOrders] = useState<CustomerOrder[]>([]);
   const [busyOrderId, setBusyOrderId] = useState('');
@@ -187,6 +189,44 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = props => {
   }, [activeSubTab]);
 
   useEffect(() => {
+    if (activeSubTab !== 'caixa') {
+      setCashHost(null);
+      return;
+    }
+
+    let cancelled = false;
+    let timer = 0;
+    let portalHost: HTMLDivElement | null = null;
+
+    const mountCashWorkspace = (): void => {
+      if (cancelled) return;
+      const cashContainer = document.getElementById('erp-caixa-tab');
+
+      if (!cashContainer) {
+        timer = window.setTimeout(mountCashWorkspace, 40);
+        return;
+      }
+
+      cashContainer.innerHTML = '';
+      cashContainer.className = '';
+      portalHost = document.createElement('div');
+      portalHost.id = 'kyrub-canonical-cash-workspace-host';
+      portalHost.className = 'min-w-0';
+      cashContainer.appendChild(portalHost);
+      setCashHost(portalHost);
+    };
+
+    timer = window.setTimeout(mountCashWorkspace, 0);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+      portalHost?.remove();
+      setCashHost(null);
+    };
+  }, [activeSubTab]);
+
+  useEffect(() => {
     if (activeSubTab !== 'gerencial') {
       setTeamHost(null);
       return;
@@ -311,6 +351,14 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = props => {
             onOpenTable={handleOpenTable}
           />,
           tablesHost
+        )}
+      {cashHost &&
+        createPortal(
+          <CashWorkspace
+            legacyStoreId={activeRetailerId}
+            notify={triggerToast}
+          />,
+          cashHost
         )}
       {teamHost &&
         createPortal(
