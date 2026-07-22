@@ -188,14 +188,18 @@ const createStrictAuditId = (): string => {
     : `audit_${Date.now()}_${Math.random().toString(36).slice(2, 12)}`;
 };
 
-export const recordAdminSessionAccess = async (
+const recordStrictAdminAudit = async (
   user: Pick<User, 'uid'>,
-  profile: AdminProfile
+  profile: AdminProfile,
+  action: 'admin.session.accessed' | 'admin.directory.user.searched',
+  targetType: 'control_plane' | 'user',
+  targetId: string
 ): Promise<void> => {
   if (
     profile.status !== 'active' ||
     profile.uid !== user.uid ||
-    !isAdminRole(profile.role)
+    !isAdminRole(profile.role) ||
+    !/^[a-zA-Z0-9_-]{1,128}$/.test(targetId)
   ) {
     throw new Error('Acesso administrativo inválido para auditoria.');
   }
@@ -205,16 +209,41 @@ export const recordAdminSessionAccess = async (
     doc(db, 'kyrub_admin', 'control_plane', 'audit_logs', auditId),
     {
       id: auditId,
-      action: 'admin.session.accessed',
+      action,
       actorId: user.uid,
       actorRole: profile.role,
-      targetType: 'control_plane',
-      targetId: 'admin_portal',
+      targetType,
+      targetId,
       source: 'client',
       createdAt: serverTimestamp(),
     }
   );
 };
+
+export const recordAdminSessionAccess = async (
+  user: Pick<User, 'uid'>,
+  profile: AdminProfile
+): Promise<void> =>
+  recordStrictAdminAudit(
+    user,
+    profile,
+    'admin.session.accessed',
+    'control_plane',
+    'admin_portal'
+  );
+
+export const recordAdminDirectorySearch = async (
+  user: Pick<User, 'uid'>,
+  profile: AdminProfile,
+  targetUserId: string
+): Promise<void> =>
+  recordStrictAdminAudit(
+    user,
+    profile,
+    'admin.directory.user.searched',
+    'user',
+    targetUserId.trim()
+  );
 
 const countCollection = async (path: string): Promise<number | null> => {
   try {
