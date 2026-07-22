@@ -4,10 +4,17 @@ import {
   onSnapshot,
   runTransaction,
   setDoc,
+  type Unsubscribe,
 } from 'firebase/firestore';
 import type { User } from 'firebase/auth';
 import type { CartItem } from '../types';
 import { db } from './firebase';
+import {
+  chooseCanonicalReadSource,
+  parseCanonicalReadConfig,
+  recordCanonicalReadDecision,
+  type CanonicalReadDecision,
+} from './canonicalReadCutover';
 
 export type CustomerFulfillmentType = 'delivery' | 'pickup' | 'dine_in';
 
@@ -77,6 +84,18 @@ export interface StorageLike {
   removeItem(key: string): void;
 }
 
+export interface PreferredCustomerOrderResult {
+  order: CustomerOrder | null;
+  decision: CanonicalReadDecision;
+  canonicalStoreId: string;
+}
+
+export interface PreferredCustomerOrdersResult {
+  orders: CustomerOrder[];
+  decision: CanonicalReadDecision;
+  canonicalStoreId: string;
+}
+
 const STATUS_TRANSITIONS: Record<CustomerOrderStatus, CustomerOrderStatus[]> = {
   pending: ['accepted', 'rejected', 'cancelled'],
   accepted: ['preparing', 'cancelled', 'completed'],
@@ -117,6 +136,14 @@ export const getCustomerOrderDocumentPath = (
   storeId: string,
   orderId: string
 ): string => `${getCustomerOrdersCollectionPath(storeId)}/${orderId}`;
+
+const getCanonicalOrdersCollectionPath = (storeId: string): string =>
+  `stores/${storeId.trim()}/orders`;
+
+const getCanonicalOrderDocumentPath = (
+  storeId: string,
+  orderId: string
+): string => `${getCanonicalOrdersCollectionPath(storeId)}/${orderId.trim()}`;
 
 export const getLastCustomerOrderStorageKey = (
   buyerId: string,
@@ -362,6 +389,54 @@ export const parseCustomerOrder = (value: unknown): CustomerOrder | null => {
   };
 };
 
+const comparableOrder = (order: CustomerOrder) => ({
+  id: order.id,
+  buyerId: order.buyerId,
+  fulfillmentType: order.fulfillmentType,
+  tableCode: order.tableCode,
+  subtotal: Number(order.subtotal.toFixed(2)),
+  total: Number(order.total.toFixed(2)),
+  status: order.status,
+  paymentStatus: order.paymentStatus,
+  source: order.source,
+  items: order.items.map(item => ({
+    lineId: item.lineId,
+    productId: item.productId,
+    price: Number(item.price.toFixed(2)),
+    quantity: item.quantity,
+    paidQuantity: item.paidQuantity,
+    transferredQuantity: item.transferredQuantity,
+    note: item.note,
+  })),
+});
+
+export const customerOrderCollectionsEquivalent = (
+  legacyOrders: CustomerOrder[],
+  canonicalOrders: CustomerOrder[]
+): boolean => {
+  if (legacyOrders.length !== canonicalOrders.length) return false;
+  const normalize = (orders: CustomerOrder[]) =>
+    orders
+      .map(comparableOrder)
+      .sort((left, right) => left.id.localeCompare(right.id));
+  return JSON.stringify(normalize(legacyOrders)) ===
+    JSON.stringify(normalize(canonicalOrders));
+};
+
+export const customerOrdersEquivalent = (
+  legacyOrder: CustomerOrder | null,
+  canonicalOrder: CustomerOrder | null
+): boolean => {
+  if (!legacyOrder || !canonicalOrder) return legacyOrder === canonicalOrder;
+  return JSON.stringify(comparableOrder(legacyOrder)) ===
+    JSON.stringify(comparableOrder(canonicalOrder));
+};
+
+const mapCanonicalOrderToLegacyStore = (
+  order: CustomerOrder | null,
+  legacyStoreId: string
+): CustomerOrder | null => order ? { ...order, storeId: legacyStoreId } : null;
+
 export const persistCustomerOrder = async (
   order: CustomerOrder
 ): Promise<void> => {
@@ -371,52 +446,269 @@ export const persistCustomerOrder = async (
   );
 };
 
+export const subscribeToPreferredCustomerOrder = (
+  legacyStoreId: string,
+  orderId: string,
+  onResult: (result: PreferredCustomerOrderResult) => void,
+  onError?: (error: Error) => void
+): Unsubscribe => {
+  const normalizedStoreId = legacyStoreId.trim();
+  const normalizedOrderId = orderId.trim();
+  if (!normalizedStoreId || !normalizedOrderId) {
+    onResult({
+      order: null,
+      canonicalStoreId: '',
+      decision: { source: 'legacy', reason: 'missing_mapping' },
+    });
+    return () => undefined;
+  }
+
+  let legacyOrder: CustomerOrder | null = null;
+  let canonicalOrder: CustomerOrder | null = null;
+  let legacyState: 'waiting' | 'available' | 'unavailable' = 'waiting';
+  let canonicalState: 'waiting' | 'available' | 'unavailable' = 'waiting';
+  let canonicalStoreId = '';
+  let canonicalEnabled = false;
+  let unsubscribeCanonical: Unsubscribe = () => undefined;
+
+  const publish = (): void => {
+    const equivalent =
+      legacyState === 'unavailable' ||
+      (legacyState === 'available' &&
+        customerOrdersEquivalent(legacyOrder, canonicalOrder));
+    const decision = chooseCanonicalReadSource(
+      canonicalEnabled,
+      canonicalStoreId,
+      canonicalState,
+      equivalent
+    );
+    recordCanonicalReadDecision(normalizedStoreId, 'orders', decision);
+    onResult({
+      order: decision.source === 'canonical' ? canonicalOrder : legacyOrder,
+      decision,
+      canonicalStoreId,
+    });
+  };
+
+  const restartCanonical = (): void => {
+    unsubscribeCanonical();
+    unsubscribeCanonical = () => undefined;
+    canonicalOrder = null;
+    canonicalState = 'waiting';
+    if (!canonicalEnabled || !canonicalStoreId) {
+      publish();
+      return;
+    }
+    publish();
+    unsubscribeCanonical = onSnapshot(
+      doc(db, getCanonicalOrderDocumentPath(canonicalStoreId, normalizedOrderId)),
+      snapshot => {
+        canonicalOrder = mapCanonicalOrderToLegacyStore(
+          parseCustomerOrder(snapshot.data()),
+          normalizedStoreId
+        );
+        canonicalState = 'available';
+        publish();
+      },
+      error => {
+        canonicalState = 'unavailable';
+        publish();
+        onError?.(error);
+      }
+    );
+  };
+
+  const unsubscribeLegacy = onSnapshot(
+    doc(db, getCustomerOrderDocumentPath(normalizedStoreId, normalizedOrderId)),
+    snapshot => {
+      legacyOrder = parseCustomerOrder(snapshot.data());
+      legacyState = 'available';
+      publish();
+    },
+    error => {
+      legacyState = 'unavailable';
+      publish();
+      onError?.(error);
+    }
+  );
+
+  const unsubscribeConfig = onSnapshot(
+    doc(db, 'tenants', normalizedStoreId),
+    snapshot => {
+      const previousStoreId = canonicalStoreId;
+      const previousEnabled = canonicalEnabled;
+      const config = parseCanonicalReadConfig(snapshot.data());
+      canonicalStoreId = config.canonicalStoreId;
+      canonicalEnabled = config.preferences.orders;
+      if (
+        canonicalStoreId !== previousStoreId ||
+        canonicalEnabled !== previousEnabled
+      ) {
+        restartCanonical();
+      } else {
+        publish();
+      }
+    },
+    error => {
+      canonicalEnabled = false;
+      publish();
+      onError?.(error);
+    }
+  );
+
+  return () => {
+    unsubscribeLegacy();
+    unsubscribeConfig();
+    unsubscribeCanonical();
+  };
+};
+
 export const subscribeToCustomerOrder = (
   storeId: string,
   orderId: string,
   onOrder: (order: CustomerOrder | null) => void,
   onError?: (error: Error) => void
-): (() => void) => {
-  if (!storeId || !orderId) {
-    onOrder(null);
+): Unsubscribe =>
+  subscribeToPreferredCustomerOrder(
+    storeId,
+    orderId,
+    result => onOrder(result.order),
+    onError
+  );
+
+export const subscribeToPreferredStoreCustomerOrders = (
+  legacyStoreId: string,
+  onResult: (result: PreferredCustomerOrdersResult) => void,
+  onError?: (error: Error) => void
+): Unsubscribe => {
+  const normalizedStoreId = legacyStoreId.trim();
+  if (!normalizedStoreId) {
+    onResult({
+      orders: [],
+      canonicalStoreId: '',
+      decision: { source: 'legacy', reason: 'missing_mapping' },
+    });
     return () => undefined;
   }
 
-  return onSnapshot(
-    doc(db, getCustomerOrderDocumentPath(storeId, orderId)),
-    snapshot => onOrder(parseCustomerOrder(snapshot.data())),
+  let legacyOrders: CustomerOrder[] = [];
+  let canonicalOrders: CustomerOrder[] = [];
+  let legacyState: 'waiting' | 'available' | 'unavailable' = 'waiting';
+  let canonicalState: 'waiting' | 'available' | 'unavailable' = 'waiting';
+  let canonicalStoreId = '';
+  let canonicalEnabled = false;
+  let unsubscribeCanonical: Unsubscribe = () => undefined;
+
+  const publish = (): void => {
+    const equivalent =
+      legacyState === 'unavailable' ||
+      (legacyState === 'available' &&
+        customerOrderCollectionsEquivalent(legacyOrders, canonicalOrders));
+    const decision = chooseCanonicalReadSource(
+      canonicalEnabled,
+      canonicalStoreId,
+      canonicalState,
+      equivalent
+    );
+    recordCanonicalReadDecision(normalizedStoreId, 'orders', decision);
+    onResult({
+      orders: decision.source === 'canonical' ? canonicalOrders : legacyOrders,
+      decision,
+      canonicalStoreId,
+    });
+  };
+
+  const restartCanonical = (): void => {
+    unsubscribeCanonical();
+    unsubscribeCanonical = () => undefined;
+    canonicalOrders = [];
+    canonicalState = 'waiting';
+    if (!canonicalEnabled || !canonicalStoreId) {
+      publish();
+      return;
+    }
+    publish();
+    unsubscribeCanonical = onSnapshot(
+      collection(db, getCanonicalOrdersCollectionPath(canonicalStoreId)),
+      snapshot => {
+        canonicalOrders = snapshot.docs
+          .flatMap(document => {
+            const parsed = mapCanonicalOrderToLegacyStore(
+              parseCustomerOrder(document.data()),
+              normalizedStoreId
+            );
+            return parsed ? [parsed] : [];
+          })
+          .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+        canonicalState = 'available';
+        publish();
+      },
+      error => {
+        canonicalState = 'unavailable';
+        publish();
+        onError?.(error);
+      }
+    );
+  };
+
+  const unsubscribeLegacy = onSnapshot(
+    collection(db, getCustomerOrdersCollectionPath(normalizedStoreId)),
+    snapshot => {
+      legacyOrders = snapshot.docs
+        .map(orderDocument => parseCustomerOrder(orderDocument.data()))
+        .filter((order): order is CustomerOrder => order !== null)
+        .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+      legacyState = 'available';
+      publish();
+    },
     error => {
-      onOrder(null);
+      legacyState = 'unavailable';
+      publish();
       onError?.(error);
     }
   );
+
+  const unsubscribeConfig = onSnapshot(
+    doc(db, 'tenants', normalizedStoreId),
+    snapshot => {
+      const previousStoreId = canonicalStoreId;
+      const previousEnabled = canonicalEnabled;
+      const config = parseCanonicalReadConfig(snapshot.data());
+      canonicalStoreId = config.canonicalStoreId;
+      canonicalEnabled = config.preferences.orders;
+      if (
+        canonicalStoreId !== previousStoreId ||
+        canonicalEnabled !== previousEnabled
+      ) {
+        restartCanonical();
+      } else {
+        publish();
+      }
+    },
+    error => {
+      canonicalEnabled = false;
+      publish();
+      onError?.(error);
+    }
+  );
+
+  return () => {
+    unsubscribeLegacy();
+    unsubscribeConfig();
+    unsubscribeCanonical();
+  };
 };
 
 export const subscribeToStoreCustomerOrders = (
   storeId: string,
   onOrders: (orders: CustomerOrder[]) => void,
   onError?: (error: Error) => void
-): (() => void) => {
-  if (!storeId) {
-    onOrders([]);
-    return () => undefined;
-  }
-
-  return onSnapshot(
-    collection(db, getCustomerOrdersCollectionPath(storeId)),
-    snapshot => {
-      const orders = snapshot.docs
-        .map(orderDocument => parseCustomerOrder(orderDocument.data()))
-        .filter((order): order is CustomerOrder => order !== null)
-        .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
-      onOrders(orders);
-    },
-    error => {
-      onOrders([]);
-      onError?.(error);
-    }
+): Unsubscribe =>
+  subscribeToPreferredStoreCustomerOrders(
+    storeId,
+    result => onOrders(result.orders),
+    onError
   );
-};
 
 export const canTransitionCustomerOrderStatus = (
   current: CustomerOrderStatus,
