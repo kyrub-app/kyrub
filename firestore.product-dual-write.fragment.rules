@@ -41,7 +41,10 @@
         && incoming().legacySupplierId is string
         && incoming().legacyUpdatedAt is string
         && incoming().migratedFromPath is string
-        && incoming().archivedAt is string
+        && (
+          incoming().archivedAt is string
+          || incoming().archivedAt is timestamp
+        )
         && incoming().migration is map
         && incoming().migration.keys().size() == 3;
     }
