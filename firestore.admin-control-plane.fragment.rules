@@ -1,0 +1,112 @@
+    // --- Kyrub Administrative Control Plane ---
+    function controlPlaneAdminDocument(userId) {
+      return /databases/$(database)/documents/kyrub_admin/control_plane/admins/$(userId);
+    }
+
+    function hasControlPlaneAdminRecord() {
+      return isSignedIn()
+        && exists(controlPlaneAdminDocument(request.auth.uid));
+    }
+
+    function controlPlaneAdminRecord() {
+      return get(controlPlaneAdminDocument(request.auth.uid)).data;
+    }
+
+    function isActiveControlPlaneAdmin() {
+      return hasControlPlaneAdminRecord()
+        && controlPlaneAdminRecord().uid == request.auth.uid
+        && controlPlaneAdminRecord().status == 'active'
+        && controlPlaneAdminRecord().role in [
+          'super_admin',
+          'support',
+          'operations',
+          'finance',
+          'compliance'
+        ];
+    }
+
+    function hasControlPlaneRole(roles) {
+      return isActiveControlPlaneAdmin()
+        && controlPlaneAdminRecord().role in roles;
+    }
+
+    match /kyrub_admin/control_plane {
+      allow read, write: if false;
+
+      match /admins/{adminId} {
+        allow get: if isSignedIn() && (
+          request.auth.uid == adminId
+          || hasControlPlaneRole(['super_admin'])
+        );
+        allow list: if hasControlPlaneRole(['super_admin']);
+        allow create, update, delete: if false;
+      }
+
+      match /audit_logs/{auditId} {
+        function hasValidClientSessionAudit(data) {
+          return isValidId(auditId)
+            && data.keys().hasAll([
+              'id',
+              'action',
+              'actorId',
+              'actorRole',
+              'targetType',
+              'targetId',
+              'source',
+              'createdAt'
+            ])
+            && data.keys().hasOnly([
+              'id',
+              'action',
+              'actorId',
+              'actorRole',
+              'targetType',
+              'targetId',
+              'source',
+              'createdAt'
+            ])
+            && data.id == auditId
+            && data.action == 'admin.session.accessed'
+            && data.actorId == request.auth.uid
+            && data.actorRole == controlPlaneAdminRecord().role
+            && data.targetType == 'control_plane'
+            && data.targetId == 'admin_portal'
+            && data.source == 'client'
+            && data.createdAt == request.time;
+        }
+
+        allow get, list: if hasControlPlaneRole(['super_admin', 'compliance']);
+        allow create: if isActiveControlPlaneAdmin()
+          && hasValidClientSessionAudit(request.resource.data);
+        allow update, delete: if false;
+      }
+    }
+
+    // Aggregate reads for the initial administrative dashboard. These rules
+    // deliberately do not grant writes or administrative mutations.
+    match /users/{userId} {
+      allow list: if hasControlPlaneRole([
+        'super_admin',
+        'support',
+        'operations',
+        'compliance'
+      ]);
+    }
+
+    match /stores/{storeId} {
+      allow list: if hasControlPlaneRole([
+        'super_admin',
+        'support',
+        'operations',
+        'compliance'
+      ]);
+    }
+
+    match /tenants/{tenantId} {
+      allow list: if hasControlPlaneRole([
+        'super_admin',
+        'support',
+        'operations',
+        'compliance'
+      ]);
+    }
