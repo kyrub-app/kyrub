@@ -1,6 +1,6 @@
 {
   "firestore": {
-    "rules": "firestore.store-security.rules"
+    "rules": ".firebase/firestore.combined.rules"
   },
   "emulators": {
     "firestore": {
