@@ -2,9 +2,14 @@ import { HttpsError } from 'firebase-functions/v2/https';
 import { AdminAuthorizationError } from './contracts';
 import { AdminAuditConflictError } from './audit';
 import { AdminRateLimitError } from './rateLimit';
+import { InvalidAdminRequestError } from './request';
 
 export const toAdminHttpsError = (error: unknown): HttpsError => {
   if (error instanceof HttpsError) return error;
+
+  if (error instanceof InvalidAdminRequestError) {
+    return new HttpsError('invalid-argument', error.message);
+  }
 
   if (error instanceof AdminAuthorizationError) {
     if (error.code === 'unauthenticated') {
@@ -26,10 +31,6 @@ export const toAdminHttpsError = (error: unknown): HttpsError => {
 
   if (error instanceof AdminAuditConflictError) {
     return new HttpsError('already-exists', error.message);
-  }
-
-  if (error instanceof Error && error.message.startsWith('requestId')) {
-    return new HttpsError('invalid-argument', error.message);
   }
 
   return new HttpsError(
