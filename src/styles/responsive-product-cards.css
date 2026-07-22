@@ -1,0 +1,112 @@
+/*
+ * Product card grids shared by the public storefront and the in-store seller
+ * workspace. Keep two useful cards visible on phones and progressively add
+ * columns as the viewport grows.
+ */
+
+#storefront-panel-container
+  section[aria-labelledby='storefront-offers-title']
+  > .grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+#storefront-panel-container article[id^='storefront-prod-'] {
+  min-width: 0;
+  border-radius: 1rem;
+}
+
+#storefront-panel-container article[id^='storefront-prod-'] > div:last-child {
+  gap: 0.75rem;
+  padding: 0.75rem;
+}
+
+#storefront-panel-container article[id^='storefront-prod-'] h4 {
+  display: -webkit-box;
+  overflow: hidden;
+  font-size: 0.75rem;
+  line-height: 1rem;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+#storefront-panel-container article[id^='storefront-prod-'] p {
+  font-size: 0.625rem;
+  line-height: 0.875rem;
+}
+
+#storefront-panel-container
+  article[id^='storefront-prod-']
+  > div:last-child
+  > div:last-child {
+  align-items: stretch;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding-top: 0.75rem;
+}
+
+#storefront-panel-container article[id^='storefront-prod-'] button[id^='add-to'] {
+  min-height: 2.25rem;
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+}
+
+/* The seller workspace already starts with two columns. These rules align its
+ * breakpoints with the public catalog and override the older md/xl split. */
+.z-\[120\] main > .grid.grid-cols-2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+@media (min-width: 640px) {
+  #storefront-panel-container
+    section[aria-labelledby='storefront-offers-title']
+    > .grid,
+  .z-\[120\] main > .grid.grid-cols-2 {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.75rem;
+  }
+
+  #storefront-panel-container article[id^='storefront-prod-'] {
+    border-radius: 1.25rem;
+  }
+
+  #storefront-panel-container article[id^='storefront-prod-'] > div:last-child {
+    padding: 1rem;
+  }
+
+  #storefront-panel-container article[id^='storefront-prod-'] h4 {
+    font-size: 0.875rem;
+    line-height: 1.25rem;
+  }
+
+  #storefront-panel-container article[id^='storefront-prod-'] p {
+    font-size: 0.75rem;
+    line-height: 1rem;
+  }
+
+  #storefront-panel-container
+    article[id^='storefront-prod-']
+    > div:last-child
+    > div:last-child {
+    align-items: flex-end;
+    flex-direction: row;
+    gap: 0.75rem;
+    padding-top: 1rem;
+  }
+
+  #storefront-panel-container article[id^='storefront-prod-'] button[id^='add-to'] {
+    min-height: 2.75rem;
+    width: auto;
+    padding: 0.5rem 1rem;
+  }
+}
+
+@media (min-width: 1024px) {
+  #storefront-panel-container
+    section[aria-labelledby='storefront-offers-title']
+    > .grid,
+  .z-\[120\] main > .grid.grid-cols-2 {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}

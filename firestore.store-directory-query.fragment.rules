@@ -1,0 +1,6 @@
+    // A collection-group query must constrain the member field to the signed-in user.
+    match /{path=**}/members/{memberId} {
+      allow list: if isSignedIn()
+        && resource.data.userId == request.auth.uid;
+    }
+

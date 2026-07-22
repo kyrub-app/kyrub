@@ -23,6 +23,8 @@ export interface Store {
   primaryColor: string;
   plan: 'free' | 'business';
   ownerEmail: string;
+  address?: string;
+  contact?: string;
   keywords?: string[];
   offerImages?: string[];
   lat?: number;

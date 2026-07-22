@@ -1,257 +1,344 @@
-import React, { useState } from 'react';
-import { Store as StoreIcon } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import type React from 'react';
+import { createPortal } from 'react-dom';
+import { onSnapshot, doc } from 'firebase/firestore';
+import { StoreConfigModal as LegacyStoreConfigModal } from './LegacyStoreConfigModal';
+import type { MarketplaceListingDocument } from '../../types';
+import { auth, db } from '../../utils/firebase';
+import { getMarketplaceStoreListingDocumentPath } from '../../utils/marketplacePaths';
+import {
+  buildConfiguredStore,
+  hasPendingUserStoreSync,
+  loadCachedUserStore,
+  persistPrivateUserStore,
+  saveCachedUserStore,
+  setStoreMarketplacePublication,
+} from '../../utils/storePersistence';
 
-interface StoreConfigModalProps {
-  isOpen: boolean;
-  onClose: () => void;
-  configStoreName: string;
-  setConfigStoreName: (val: string) => void;
-  configStoreBio: string;
-  setConfigStoreBio: (val: string) => void;
-  configStoreAddress: string;
-  setConfigStoreAddress: (val: string) => void;
-  configStoreContact: string;
-  setConfigStoreContact: (val: string) => void;
-  configStoreKeywords: string;
-  setConfigStoreKeywords: (val: string) => void;
-  newAtendimentoSpace: string;
-  setNewAtendimentoSpace: (val: string) => void;
-  handleAddAtendimentoSpace: () => void;
-  atendimentoSpaces: string[];
-  handleRemoveAtendimentoSpace: (space: string) => void;
-  newProducaoSpace: string;
-  setNewProducaoSpace: (val: string) => void;
-  handleAddProducaoSpace: () => void;
-  producaoSpaces: string[];
-  handleRemoveProducaoSpace: (space: string) => void;
-  handleSaveStoreProfile: () => void;
-}
+type StoreConfigModalProps = React.ComponentProps<
+  typeof LegacyStoreConfigModal
+>;
 
-export const StoreConfigModal: React.FC<StoreConfigModalProps> = ({
-  isOpen,
-  onClose,
-  configStoreName,
-  setConfigStoreName,
-  configStoreBio,
-  setConfigStoreBio,
-  configStoreAddress,
-  setConfigStoreAddress,
-  configStoreContact,
-  setConfigStoreContact,
-  configStoreKeywords,
-  setConfigStoreKeywords,
-  newAtendimentoSpace,
-  setNewAtendimentoSpace,
-  handleAddAtendimentoSpace,
-  atendimentoSpaces,
-  handleRemoveAtendimentoSpace,
-  newProducaoSpace,
-  setNewProducaoSpace,
-  handleAddProducaoSpace,
-  producaoSpaces,
-  handleRemoveProducaoSpace,
-  handleSaveStoreProfile
-}) => {
-  const [configActiveTab, setConfigActiveTab] = useState<'perfil' | 'ambiente'>('perfil');
+type ToastState = {
+  message: string;
+  type: 'success' | 'warning' | 'error';
+} | null;
 
-  if (!isOpen) return null;
+type SaveStoreResult = {
+  localSaved: boolean;
+  cloudSynced: boolean;
+};
+
+export const StoreConfigModal: React.FC<StoreConfigModalProps> = props => {
+  const [actionsHost, setActionsHost] = useState<HTMLElement | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isPublishing, setIsPublishing] = useState(false);
+  const [canonicalPublished, setCanonicalPublished] = useState(false);
+  const [fallbackPublished, setFallbackPublished] = useState(false);
+  const [toast, setToast] = useState<ToastState>(null);
+  const [pendingSync, setPendingSync] = useState(false);
+
+  const isPublished = canonicalPublished || fallbackPublished;
+
+  const notify = (
+    message: string,
+    type: NonNullable<ToastState>['type']
+  ): void => {
+    setToast({ message, type });
+    window.setTimeout(() => setToast(null), 4200);
+  };
+
+  useEffect(() => {
+    if (!props.isOpen) {
+      setActionsHost(null);
+      return;
+    }
+
+    let originalSaveButton: HTMLButtonElement | null = null;
+    let host: HTMLDivElement | null = null;
+    let cancelled = false;
+
+    const mountActions = (): void => {
+      if (cancelled) return;
+
+      originalSaveButton = Array.from(
+        document.querySelectorAll<HTMLButtonElement>('button')
+      ).find(button =>
+        button.textContent?.trim().toLowerCase().startsWith('salvar')
+      ) ?? null;
+
+      const footer = originalSaveButton?.parentElement;
+      if (!originalSaveButton || !footer) {
+        window.setTimeout(mountActions, 50);
+        return;
+      }
+
+      originalSaveButton.style.display = 'none';
+      host = document.createElement('div');
+      host.id = 'kyrub-store-save-publish-actions';
+      host.className = 'flex items-center gap-3';
+      footer.appendChild(host);
+      setActionsHost(host);
+    };
+
+    window.setTimeout(mountActions, 0);
+
+    return () => {
+      cancelled = true;
+      if (originalSaveButton) {
+        originalSaveButton.style.display = '';
+      }
+      host?.remove();
+      setActionsHost(null);
+    };
+  }, [props.isOpen]);
+
+  useEffect(() => {
+    if (!props.isOpen) return;
+    const user = auth.currentUser;
+    if (!user) return;
+
+    const cachedStore = loadCachedUserStore(
+      localStorage,
+      user.uid,
+      user.email ?? ''
+    );
+    setPendingSync(hasPendingUserStoreSync(localStorage, user.uid));
+
+    if (!cachedStore) return;
+
+    // Run after the legacy parent initializes its controlled fields.
+    window.setTimeout(() => {
+      props.setConfigStoreName(cachedStore.name);
+      props.setConfigStoreBio(cachedStore.description);
+      props.setConfigStoreAddress(cachedStore.address ?? '');
+      props.setConfigStoreContact(cachedStore.contact ?? '');
+      props.setConfigStoreKeywords((cachedStore.keywords ?? []).join(', '));
+    }, 0);
+  }, [props.isOpen]);
+
+  useEffect(() => {
+    if (!props.isOpen) return;
+    const user = auth.currentUser;
+    if (!user) return;
+
+    const unsubscribeCanonical = onSnapshot(
+      doc(db, getMarketplaceStoreListingDocumentPath(user.uid)),
+      snapshot => {
+        const listing = snapshot.data() as MarketplaceListingDocument | undefined;
+        setCanonicalPublished(
+          listing?.listingType === 'store' &&
+          listing.publicationStatus === 'published'
+        );
+      },
+      () => setCanonicalPublished(false)
+    );
+
+    const unsubscribeFallback = onSnapshot(
+      doc(db, 'tenants', user.uid),
+      snapshot => {
+        setFallbackPublished(
+          snapshot.data()?.publicationStatus === 'published'
+        );
+      },
+      () => setFallbackPublished(false)
+    );
+
+    return () => {
+      unsubscribeCanonical();
+      unsubscribeFallback();
+    };
+  }, [props.isOpen]);
+
+  const configuredStore = useMemo(() => {
+    const user = auth.currentUser;
+    if (!user) return null;
+
+    return buildConfiguredStore(
+      loadCachedUserStore(localStorage, user.uid, user.email ?? ''),
+      user,
+      {
+        name: props.configStoreName,
+        description: props.configStoreBio,
+        address: props.configStoreAddress,
+        contact: props.configStoreContact,
+        keywords: props.configStoreKeywords.split(','),
+      }
+    );
+  }, [
+    props.configStoreName,
+    props.configStoreBio,
+    props.configStoreAddress,
+    props.configStoreContact,
+    props.configStoreKeywords,
+  ]);
+
+  const saveStore = async (): Promise<SaveStoreResult> => {
+    const user = auth.currentUser;
+    if (!user || !configuredStore) {
+      notify('Faça login novamente para salvar sua loja.', 'error');
+      return { localSaved: false, cloudSynced: false };
+    }
+
+    saveCachedUserStore(
+      localStorage,
+      user.uid,
+      configuredStore,
+      true
+    );
+    setPendingSync(true);
+
+    // The local cache is authoritative for the current session even when
+    // the private Firestore document cannot be synchronized yet.
+    window.dispatchEvent(
+      new CustomEvent('kyrub-user-store-saved', {
+        detail: { store: configuredStore },
+      })
+    );
+
+    try {
+      await persistPrivateUserStore(user, configuredStore);
+      saveCachedUserStore(
+        localStorage,
+        user.uid,
+        configuredStore,
+        false
+      );
+      setPendingSync(false);
+      return { localSaved: true, cloudSynced: true };
+    } catch (error) {
+      console.warn('Store kept locally while cloud sync is pending.', error);
+      return { localSaved: true, cloudSynced: false };
+    }
+  };
+
+  const handleSave = async (): Promise<void> => {
+    setIsSaving(true);
+    const result = await saveStore();
+
+    if (result.localSaved) {
+      notify(
+        result.cloudSynced
+          ? 'Perfil da loja salvo com sucesso!'
+          : 'Loja salva neste dispositivo. A sincronização com a nuvem ficou pendente.',
+        result.cloudSynced ? 'success' : 'warning'
+      );
+    }
+
+    setIsSaving(false);
+    props.onClose();
+  };
+
+  const handlePublication = async (): Promise<void> => {
+    const user = auth.currentUser;
+    if (!user || !configuredStore) {
+      notify('Faça login novamente para publicar sua loja.', 'error');
+      return;
+    }
+
+    const targetPublished = !isPublished;
+
+    if (targetPublished && !configuredStore.name) {
+      notify('Informe o nome da loja antes de publicar.', 'error');
+      return;
+    }
+
+    setIsPublishing(true);
+    const saveResult = await saveStore();
+
+    if (!saveResult.localSaved) {
+      setIsPublishing(false);
+      return;
+    }
+
+    try {
+      // Marketplace publication is independent from the private-store sync.
+      // A pending private sync must never block a public publish/pause action.
+      await setStoreMarketplacePublication(
+        user,
+        configuredStore,
+        targetPublished
+      );
+
+      // The compatibility marketplace write is guaranteed on a successful
+      // return from setStoreMarketplacePublication, so update it immediately.
+      setFallbackPublished(targetPublished);
+
+      notify(
+        targetPublished
+          ? saveResult.cloudSynced
+            ? 'Loja publicada no marketplace!'
+            : 'Loja publicada. A sincronização privada continua pendente.'
+          : saveResult.cloudSynced
+            ? 'Loja ocultada do marketplace.'
+            : 'Loja ocultada. A sincronização privada continua pendente.',
+        saveResult.cloudSynced ? 'success' : 'warning'
+      );
+    } catch (error) {
+      console.error('Store publication failed.', error);
+      notify('Não foi possível alterar a publicação da loja.', 'error');
+    } finally {
+      setIsPublishing(false);
+    }
+  };
 
   return (
-    <div className="fixed inset-0 z-[100] bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto">
-      <div className="bg-slate-900 border border-slate-800 w-full max-w-lg rounded-3xl overflow-hidden shadow-2xl flex flex-col font-sans animate-fade-in my-8">
-        {/* Header */}
-        <div className="bg-slate-950 px-6 py-4 border-b border-slate-850 flex justify-between items-center">
-          <div className="flex items-center gap-2">
-            <div className="w-6 h-6 rounded bg-orange-500 flex items-center justify-center">
-              <StoreIcon className="w-3.5 h-3.5 text-slate-950" />
-            </div>
-            <h3 className="text-xs font-black text-white uppercase tracking-wider">Configurações da Loja</h3>
-          </div>
-          <button
-            onClick={onClose}
-            className="text-slate-400 hover:text-white font-bold bg-slate-900 border border-slate-800 w-6 h-6 rounded-full flex items-center justify-center text-xs cursor-pointer"
-          >
-            ✕
-          </button>
-        </div>
+    <>
+      <LegacyStoreConfigModal {...props} />
 
-        {/* Tabs Selector */}
-        <div className="flex border-b border-slate-850 bg-slate-950/50">
-          <button
-            onClick={() => setConfigActiveTab('perfil')}
-            className={`flex-1 py-3 text-xs font-black uppercase tracking-wider border-b-2 transition-all cursor-pointer ${
-              configActiveTab === 'perfil'
-                ? 'border-orange-500 text-white bg-slate-900/40'
-                : 'border-transparent text-slate-400 hover:text-slate-300'
-            }`}
-          >
-            Perfil
-          </button>
-          <button
-            onClick={() => setConfigActiveTab('ambiente')}
-            className={`flex-1 py-3 text-xs font-black uppercase tracking-wider border-b-2 transition-all cursor-pointer ${
-              configActiveTab === 'ambiente'
-                ? 'border-orange-500 text-white bg-slate-900/40'
-                : 'border-transparent text-slate-400 hover:text-slate-300'
-            }`}
-          >
-            Ambiente
-          </button>
-        </div>
-
-        {/* Content Container */}
-        <div className="p-6 overflow-y-auto max-h-[60vh] space-y-5">
-          {configActiveTab === 'perfil' ? (
-            <div className="space-y-4 animate-fade-in">
-              <div className="space-y-1">
-                <label className="text-[10px] font-mono text-slate-400 uppercase font-black">Nome da Loja</label>
-                <input
-                  type="text"
-                  value={configStoreName}
-                  onChange={(e) => setConfigStoreName(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-850 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-slate-750"
-                  placeholder="Nome Fantasia..."
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-[10px] font-mono text-slate-400 uppercase font-black">Biografia (Descrição)</label>
-                <textarea
-                  value={configStoreBio}
-                  onChange={(e) => setConfigStoreBio(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-850 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-slate-750 h-20 resize-none"
-                  placeholder="Fale brevemente sobre o seu negócio..."
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-[10px] font-mono text-slate-400 uppercase font-black">Endereço</label>
-                <input
-                  type="text"
-                  value={configStoreAddress}
-                  onChange={(e) => setConfigStoreAddress(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-850 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-slate-750"
-                  placeholder="Rua, número, bairro..."
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-[10px] font-mono text-slate-400 uppercase font-black">Contato</label>
-                <input
-                  type="text"
-                  value={configStoreContact}
-                  onChange={(e) => setConfigStoreContact(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-850 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-slate-750"
-                  placeholder="(DD) 99999-9999..."
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-[10px] font-mono text-slate-400 uppercase font-black">Palavras-chave de SEO Local (Separadas por vírgula)</label>
-                <input
-                  type="text"
-                  value={configStoreKeywords}
-                  onChange={(e) => setConfigStoreKeywords(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-850 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-slate-750"
-                  placeholder="pizza, bar, lanches, entrega rapida..."
-                />
-              </div>
-            </div>
-          ) : (
-            <div className="space-y-6 animate-fade-in">
-              {/* Atendimento Spaces */}
-              <div className="space-y-3 bg-slate-950/40 border border-slate-850 p-4 rounded-2xl">
-                <h4 className="text-[10px] font-mono text-orange-400 uppercase font-black">Espaços de Atendimento</h4>
-                
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={newAtendimentoSpace}
-                    onChange={(e) => setNewAtendimentoSpace(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && handleAddAtendimentoSpace()}
-                    className="flex-1 bg-slate-950 border border-slate-850 rounded-xl px-3 py-1.5 text-xs text-white focus:outline-none uppercase"
-                    placeholder="Novo espaço (ex: MESA 5)..."
-                  />
-                  <button
-                    onClick={handleAddAtendimentoSpace}
-                    className="bg-orange-500 hover:bg-orange-600 text-slate-950 font-bold px-3 py-1.5 rounded-xl text-xs uppercase cursor-pointer"
-                  >
-                    + Adicionar
-                  </button>
-                </div>
-
-                <div className="flex flex-wrap gap-1.5 pt-2">
-                  {atendimentoSpaces.map(space => (
-                    <span key={space} className="inline-flex items-center gap-1 bg-slate-900 border border-slate-800 text-[10px] text-slate-300 px-2.5 py-1 rounded-full font-bold">
-                      {space}
-                      <button
-                        onClick={() => handleRemoveAtendimentoSpace(space)}
-                        className="text-red-400 hover:text-red-300 ml-1 font-bold font-mono focus:outline-none text-xs"
-                      >
-                        ✕
-                      </button>
-                    </span>
-                  ))}
-                </div>
-              </div>
-
-              {/* Producao Spaces */}
-              <div className="space-y-3 bg-slate-950/40 border border-slate-850 p-4 rounded-2xl">
-                <h4 className="text-[10px] font-mono text-teal-400 uppercase font-black">Espaços de Produção</h4>
-                
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={newProducaoSpace}
-                    onChange={(e) => setNewProducaoSpace(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && handleAddProducaoSpace()}
-                    className="flex-1 bg-slate-950 border border-slate-850 rounded-xl px-3 py-1.5 text-xs text-white focus:outline-none uppercase"
-                    placeholder="Novo espaço (ex: SALADAS)..."
-                  />
-                  <button
-                    onClick={handleAddProducaoSpace}
-                    className="bg-teal-500 hover:bg-teal-600 text-slate-950 font-bold px-3 py-1.5 rounded-xl text-xs uppercase cursor-pointer"
-                  >
-                    + Adicionar
-                  </button>
-                </div>
-
-                <div className="flex flex-wrap gap-1.5 pt-2">
-                  {producaoSpaces.map(space => (
-                    <span key={space} className="inline-flex items-center gap-1 bg-slate-900 border border-slate-800 text-[10px] text-slate-300 px-2.5 py-1 rounded-full font-bold">
-                      {space}
-                      <button
-                        onClick={() => handleRemoveProducaoSpace(space)}
-                        className="text-red-400 hover:text-red-300 ml-1 font-bold font-mono focus:outline-none text-xs"
-                      >
-                        ✕
-                      </button>
-                    </span>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Footer */}
-        <div className="bg-slate-950 px-6 py-4 border-t border-slate-850 flex justify-end gap-3">
-          <button
-            onClick={onClose}
-            className="bg-slate-900 hover:bg-slate-850 text-slate-300 font-bold px-4 py-2 rounded-xl text-xs uppercase cursor-pointer"
-          >
-            Fechar
-          </button>
-          {configActiveTab === 'perfil' && (
+      {actionsHost &&
+        createPortal(
+          <>
+            {pendingSync && (
+              <span className="hidden sm:inline text-[9px] font-mono uppercase text-amber-400">
+                Sincronização pendente
+              </span>
+            )}
             <button
-              onClick={handleSaveStoreProfile}
-              className="bg-orange-500 hover:bg-orange-600 text-slate-950 font-black px-5 py-2 rounded-xl text-xs uppercase tracking-wider cursor-pointer"
+              type="button"
+              onClick={() => void handleSave()}
+              disabled={isSaving || isPublishing}
+              className="bg-orange-500 hover:bg-orange-600 disabled:opacity-50 disabled:cursor-not-allowed text-slate-950 font-black px-5 py-2 rounded-xl text-xs uppercase tracking-wider cursor-pointer"
             >
-              Salvar Alterações
+              {isSaving ? 'Salvando...' : 'Salvar'}
             </button>
-          )}
-        </div>
-      </div>
-    </div>
+            <button
+              type="button"
+              onClick={() => void handlePublication()}
+              disabled={isSaving || isPublishing}
+              className={`font-black px-5 py-2 rounded-xl text-xs uppercase tracking-wider cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
+                isPublished
+                  ? 'bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-500/30'
+                  : 'bg-teal-500 hover:bg-teal-600 text-slate-950'
+              }`}
+            >
+              {isPublishing
+                ? 'Processando...'
+                : isPublished
+                  ? 'Ocultar'
+                  : 'Publicar'}
+            </button>
+          </>,
+          actionsHost
+        )}
+
+      {toast &&
+        createPortal(
+          <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-[90] bg-slate-900 border border-slate-700 text-white px-5 py-3.5 rounded-2xl shadow-2xl max-w-sm text-center">
+            <span
+              className={`text-[11px] font-bold font-mono uppercase tracking-wide ${
+                toast.type === 'success'
+                  ? 'text-emerald-300'
+                  : toast.type === 'warning'
+                    ? 'text-amber-300'
+                    : 'text-red-300'
+              }`}
+            >
+              {toast.message}
+            </span>
+          </div>,
+          document.body
+        )}
+    </>
   );
 };

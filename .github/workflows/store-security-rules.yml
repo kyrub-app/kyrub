@@ -1,0 +1,68 @@
+name: Store security rules
+
+on:
+  pull_request:
+    paths:
+      - 'firestore.rules'
+      - 'firestore.store-security.rules'
+      - 'firestore.store-security.fragment.rules'
+      - 'firestore.store-directory-query.fragment.rules'
+      - 'firestore.operational-dual-write.fragment.rules'
+      - 'firebase.json'
+      - 'firebase.security.json'
+      - 'scripts/compose-firestore-rules.mjs'
+      - 'src/utils/storeSecurity.ts'
+      - 'src/utils/canonicalStoreData.ts'
+      - 'src/utils/storeDirectory.ts'
+      - 'src/utils/operationalDualWrite.ts'
+      - 'src/components/RetailerPanel.tsx'
+      - 'src/components/store/StoreTeamWorkspace.tsx'
+      - 'src/components/store/OperationalDualWriteBridge.tsx'
+      - 'tests/firestore-store-security.test.ts'
+      - 'tests/firestore-store-directory.test.ts'
+      - 'tests/firestore-operational-dual-write.test.ts'
+      - 'tests/store-security.test.ts'
+      - 'tests/canonical-store-data.test.ts'
+      - 'tests/store-directory.test.ts'
+      - 'tests/operational-dual-write.test.ts'
+      - 'tests/store-security-rules-contract.test.ts'
+      - '.github/workflows/store-security-rules.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  firestore-rules:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Compose production-compatible rules
+        run: npm run firestore:compose
+
+      - name: Run Firestore emulator authorization tests
+        run: >-
+          npx --yes firebase-tools emulators:exec
+          --config firebase.security.json
+          --project kyrub-security-test
+          --only firestore
+          "node --test --test-concurrency=1 --import tsx tests/firestore-store-security.test.ts tests/firestore-store-directory.test.ts tests/firestore-operational-dual-write.test.ts"
