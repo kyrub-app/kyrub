@@ -1,9 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { auth } from '../../utils/firebase';
-import {
-  subscribeToOperationalDualWrite,
-  type OperationalMirrorKind,
-} from '../../utils/operationalDualWrite';
+import { subscribeToOperationalDualWrite } from '../../utils/operationalDualWrite';
 
 interface OperationalDualWriteBridgeProps {
   legacyStoreId: string;
@@ -19,11 +16,20 @@ const permissionMessageKey = (storeId: string): string =>
 const readyMessageKey = (storeId: string): string =>
   `kyrub_dual_write_ready_notice_${storeId}`;
 
+const isPermissionDenied = (error: Error): boolean => {
+  const code = (error as Error & { code?: string }).code ?? '';
+  return (
+    code === 'permission-denied' ||
+    error.message.toLocaleLowerCase('pt-BR').includes('permission')
+  );
+};
+
 export const OperationalDualWriteBridge = ({
   legacyStoreId,
   notify,
 }: OperationalDualWriteBridgeProps) => {
-  const mirroredKinds = useRef<Set<OperationalMirrorKind>>(new Set());
+  const notifyRef = useRef(notify);
+  notifyRef.current = notify;
 
   useEffect(() => {
     const user = auth.currentUser;
@@ -32,19 +38,30 @@ export const OperationalDualWriteBridge = ({
     let cancelled = false;
     let unsubscribe = () => undefined;
 
+    const reportFailure = (error: Error): void => {
+      if (cancelled) return;
+      console.warn('Falha no espelhamento operacional canônico.', error);
+      if (!isPermissionDenied(error)) return;
+
+      const storageKey = permissionMessageKey(legacyStoreId);
+      if (localStorage.getItem(storageKey)) return;
+      localStorage.setItem(storageKey, '1');
+      notifyRef.current(
+        'O fluxo atual foi preservado, mas as regras multi-loja ainda precisam ser publicadas no Firebase.',
+        'warning'
+      );
+    };
+
     void subscribeToOperationalDualWrite(user, legacyStoreId, {
       onReady: store => {
         if (cancelled) return;
         const storageKey = readyMessageKey(store.id);
         if (localStorage.getItem(storageKey)) return;
         localStorage.setItem(storageKey, '1');
-        notify(
+        notifyRef.current(
           'Migração segura ativada: pedidos e pagamentos serão mantidos nos dois caminhos.',
           'success'
         );
-      },
-      onMirrored: kind => {
-        mirroredKinds.current.add(kind);
       },
       onUnavailable: () => {
         console.info(
@@ -52,24 +69,7 @@ export const OperationalDualWriteBridge = ({
           { legacyStoreId }
         );
       },
-      onError: error => {
-        if (cancelled) return;
-        console.warn('Falha no espelhamento operacional canônico.', error);
-
-        const code = (error as Error & { code?: string }).code ?? '';
-        const permissionDenied =
-          code === 'permission-denied' ||
-          error.message.toLocaleLowerCase('pt-BR').includes('permission');
-
-        if (!permissionDenied) return;
-        const storageKey = permissionMessageKey(legacyStoreId);
-        if (localStorage.getItem(storageKey)) return;
-        localStorage.setItem(storageKey, '1');
-        notify(
-          'O fluxo atual foi preservado, mas as regras multi-loja ainda precisam ser publicadas no Firebase.',
-          'warning'
-        );
-      },
+      onError: reportFailure,
     })
       .then(stop => {
         if (cancelled) {
@@ -79,15 +79,18 @@ export const OperationalDualWriteBridge = ({
         unsubscribe = stop;
       })
       .catch(error => {
-        if (cancelled) return;
-        console.warn('Não foi possível iniciar a gravação dupla.', error);
+        reportFailure(
+          error instanceof Error
+            ? error
+            : new Error('Não foi possível iniciar a gravação dupla.')
+        );
       });
 
     return () => {
       cancelled = true;
       unsubscribe();
     };
-  }, [legacyStoreId, notify]);
+  }, [legacyStoreId]);
 
   return null;
 };
