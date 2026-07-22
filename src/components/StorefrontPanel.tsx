@@ -2,11 +2,11 @@ import { useEffect, useMemo, useState } from 'react';
 import type React from 'react';
 import { StorefrontPanel as LegacyStorefrontPanel } from './LegacyStorefrontPanel';
 import {
-  subscribeToPublicProducts,
+  subscribeToPreferredPublicProducts,
   type PublicProduct,
 } from '../utils/publicProducts';
 
-type StorefrontPanelProps = React.ComponentProps<typeof LegacyStorefrontPanel>;
+ type StorefrontPanelProps = React.ComponentProps<typeof LegacyStorefrontPanel>;
 
 export const StorefrontPanel: React.FC<StorefrontPanelProps> = props => {
   const storeId = props.activeConsumerStore?.id ?? '';
@@ -22,11 +22,14 @@ export const StorefrontPanel: React.FC<StorefrontPanelProps> = props => {
       return;
     }
 
-    return subscribeToPublicProducts(
+    return subscribeToPreferredPublicProducts(
       storeId,
-      products => setPublicProducts(products),
+      result => setPublicProducts(result.products),
       error => {
-        console.warn('Produtos públicos da loja indisponíveis.', error);
+        console.warn(
+          'Leitura canônica de produtos indisponível; usando o catálogo legado.',
+          error
+        );
       }
     );
   }, [storeId]);
