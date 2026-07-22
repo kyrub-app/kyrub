@@ -1,0 +1,338 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function storePath(storeId) {
+      return /databases/$(database)/documents/stores/$(storeId);
+    }
+
+    function memberPath(storeId, userId) {
+      return /databases/$(database)/documents/stores/$(storeId)/members/$(userId);
+    }
+
+    function storeExists(storeId) {
+      return exists(storePath(storeId));
+    }
+
+    function storeData(storeId) {
+      return get(storePath(storeId)).data;
+    }
+
+    function memberExists(storeId) {
+      return signedIn() && exists(memberPath(storeId, request.auth.uid));
+    }
+
+    function memberData(storeId) {
+      return get(memberPath(storeId, request.auth.uid)).data;
+    }
+
+    function activeMember(storeId) {
+      return memberExists(storeId) && memberData(storeId).status == 'active';
+    }
+
+    function owner(storeId) {
+      return signedIn()
+        && storeExists(storeId)
+        && storeData(storeId).ownerId == request.auth.uid;
+    }
+
+    function activeRole(storeId, roles) {
+      return owner(storeId)
+        || (
+          activeMember(storeId)
+          && memberData(storeId).role in roles
+        );
+    }
+
+    function ownerOrManager(storeId) {
+      return activeRole(storeId, ['owner', 'manager']);
+    }
+
+    function operationalStaff(storeId) {
+      return activeRole(storeId, ['owner', 'manager', 'cashier', 'seller']);
+    }
+
+    function productionStaff(storeId) {
+      return activeRole(
+        storeId,
+        ['owner', 'manager', 'cashier', 'seller', 'production']
+      );
+    }
+
+    function paymentStaff(storeId) {
+      return activeRole(storeId, ['owner', 'manager', 'cashier', 'seller']);
+    }
+
+    function currentStoreRole(storeId) {
+      return owner(storeId) ? 'owner' : memberData(storeId).role;
+    }
+
+    function validRole(role) {
+      return role in ['owner', 'manager', 'cashier', 'seller', 'production'];
+    }
+
+    function validMemberStatus(status) {
+      return status in ['invited', 'active', 'suspended', 'removed'];
+    }
+
+    function managerCanManageRole(role) {
+      return role in ['cashier', 'seller', 'production'];
+    }
+
+    function actorCanManageRole(storeId, role) {
+      return owner(storeId)
+        ? role != 'owner'
+        : (
+          activeRole(storeId, ['manager'])
+          && managerCanManageRole(role)
+        );
+    }
+
+    function immutableStoreIdentity() {
+      return incoming().id == existing().id
+        && incoming().ownerId == existing().ownerId
+        && incoming().createdAt == existing().createdAt;
+    }
+
+    function immutableMemberIdentity() {
+      return incoming().storeId == existing().storeId
+        && incoming().userId == existing().userId
+        && incoming().createdAt == existing().createdAt
+        && incoming().invitedBy == existing().invitedBy;
+    }
+
+    function immutableOrderIdentity() {
+      return incoming().id == existing().id
+        && incoming().storeId == existing().storeId
+        && incoming().source == existing().source
+        && incoming().buyerId == existing().buyerId
+        && incoming().createdByUserId == existing().createdByUserId
+        && incoming().createdByRole == existing().createdByRole
+        && incoming().createdAt == existing().createdAt;
+    }
+
+    function validCustomerOrderCreate(storeId) {
+      return incoming().storeId == storeId
+        && incoming().source == 'customer'
+        && incoming().buyerId == request.auth.uid
+        && incoming().createdByUserId == request.auth.uid
+        && incoming().createdByRole == 'customer'
+        && incoming().status == 'pending'
+        && incoming().paymentStatus == 'unpaid'
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+    }
+
+    function validStaffOrderCreate(storeId) {
+      return operationalStaff(storeId)
+        && incoming().storeId == storeId
+        && incoming().source in ['staff', 'transfer']
+        && incoming().createdByUserId == request.auth.uid
+        && incoming().createdByRole == currentStoreRole(storeId)
+        && incoming().status in ['pending', 'accepted', 'preparing', 'ready']
+        && incoming().paymentStatus in ['unpaid', 'partial', 'paid']
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+    }
+
+    match /stores/{storeId} {
+      allow get: if signedIn()
+        && (
+          resource.data.publicationStatus == 'published'
+          || owner(storeId)
+          || activeMember(storeId)
+        );
+
+      allow list: if signedIn()
+        && resource.data.publicationStatus == 'published';
+
+      allow create: if signedIn()
+        && incoming().id == storeId
+        && incoming().ownerId == request.auth.uid
+        && incoming().publicationStatus in ['paused', 'published']
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+
+      allow update: if ownerOrManager(storeId)
+        && immutableStoreIdentity()
+        && incoming().updatedAt == request.time;
+
+      allow delete: if false;
+
+      match /members/{userId} {
+        allow get: if signedIn()
+          && (
+            request.auth.uid == userId
+            || ownerOrManager(storeId)
+          );
+
+        allow list: if ownerOrManager(storeId);
+
+        allow create: if signedIn()
+          && incoming().storeId == storeId
+          && incoming().userId == userId
+          && validRole(incoming().role)
+          && actorCanManageRole(storeId, incoming().role)
+          && incoming().status == 'invited'
+          && incoming().invitedBy == request.auth.uid
+          && incoming().invitedAt == request.time
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time;
+
+        allow update: if signedIn()
+          && immutableMemberIdentity()
+          && incoming().updatedAt == request.time
+          && validRole(incoming().role)
+          && validMemberStatus(incoming().status)
+          && (
+            (
+              request.auth.uid == userId
+              && existing().status == 'invited'
+              && incoming().status == 'active'
+              && incoming().role == existing().role
+              && incoming().acceptedAt == request.time
+              && incoming().diff(existing()).affectedKeys().hasOnly([
+                'status',
+                'acceptedAt',
+                'updatedAt'
+              ])
+            )
+            || (
+              actorCanManageRole(storeId, existing().role)
+              && actorCanManageRole(storeId, incoming().role)
+              && incoming().diff(existing()).affectedKeys().hasOnly([
+                'role',
+                'status',
+                'acceptedAt',
+                'suspendedAt',
+                'removedAt',
+                'updatedAt'
+              ])
+            )
+          );
+
+        allow delete: if false;
+      }
+
+      match /orders/{orderId} {
+        allow get, list: if signedIn()
+          && (
+            resource.data.buyerId == request.auth.uid
+            || productionStaff(storeId)
+          );
+
+        allow create: if signedIn()
+          && incoming().id == orderId
+          && (
+            validCustomerOrderCreate(storeId)
+            || validStaffOrderCreate(storeId)
+          );
+
+        allow update: if signedIn()
+          && immutableOrderIdentity()
+          && incoming().updatedAt == request.time
+          && (
+            (
+              existing().buyerId == request.auth.uid
+              && existing().source == 'customer'
+              && existing().status == 'pending'
+              && incoming().status == 'cancelled'
+              && incoming().diff(existing()).affectedKeys().hasOnly([
+                'status',
+                'updatedAt'
+              ])
+            )
+            || (
+              operationalStaff(storeId)
+              && incoming().diff(existing()).affectedKeys().hasOnly([
+                'items',
+                'status',
+                'paymentStatus',
+                'tableCode',
+                'customerNote',
+                'updatedAt'
+              ])
+            )
+            || (
+              activeRole(storeId, ['production'])
+              && incoming().diff(existing()).affectedKeys().hasOnly([
+                'items',
+                'status',
+                'updatedAt'
+              ])
+            )
+          );
+
+        allow delete: if false;
+      }
+
+      match /payments/{paymentId} {
+        allow get, list: if signedIn()
+          && (
+            activeRole(storeId, ['owner', 'manager', 'cashier'])
+            || (
+              activeRole(storeId, ['seller'])
+              && resource.data.actorUserId == request.auth.uid
+            )
+          );
+
+        allow create: if paymentStaff(storeId)
+          && incoming().id == paymentId
+          && incoming().storeId == storeId
+          && incoming().actorUserId == request.auth.uid
+          && incoming().actorRole == currentStoreRole(storeId)
+          && incoming().createdAt == request.time;
+
+        allow update, delete: if false;
+      }
+
+      match /cashSessions/{sessionId} {
+        allow read: if activeRole(storeId, ['owner', 'manager', 'cashier']);
+
+        allow create: if activeRole(storeId, ['owner', 'manager', 'cashier'])
+          && incoming().id == sessionId
+          && incoming().storeId == storeId
+          && incoming().operatorUserId == request.auth.uid
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time;
+
+        allow update: if activeRole(storeId, ['owner', 'manager', 'cashier'])
+          && incoming().id == existing().id
+          && incoming().storeId == existing().storeId
+          && incoming().operatorUserId == existing().operatorUserId
+          && incoming().createdAt == existing().createdAt
+          && incoming().updatedAt == request.time;
+
+        allow delete: if false;
+      }
+
+      match /auditLogs/{logId} {
+        allow get, list: if ownerOrManager(storeId);
+
+        allow create: if activeMember(storeId) || owner(storeId)
+          && incoming().id == logId
+          && incoming().storeId == storeId
+          && incoming().actorUserId == request.auth.uid
+          && incoming().actorRole == currentStoreRole(storeId)
+          && incoming().createdAt == request.time;
+
+        allow update, delete: if false;
+      }
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
