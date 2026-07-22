@@ -8,3 +8,16 @@
         && incoming().legacyStoreId != storeId
         && incoming().migratedFromPath is string;
     }
+
+    function operationalMirroredOrderActorIsValid() {
+      return (
+          incoming().source == 'customer'
+          && incoming().createdByUserId == incoming().buyerId
+          && incoming().createdByRole == 'customer'
+        )
+        || (
+          (incoming().source == 'staff' || incoming().source == 'transfer')
+          && incoming().createdByUserId == request.auth.uid
+          && incoming().createdByRole == 'owner'
+        );
+    }
