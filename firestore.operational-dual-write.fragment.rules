@@ -1,1 +1,10 @@
-    // Operational dual write rules placeholder
+    // --- Operational Orders and Payments Dual Write ---
+    function operationalMirrorMetadataIsValid(storeId) {
+      return storeSecOwner(storeId)
+        && incoming().migration.mode == 'dual_write'
+        && incoming().migration.migratedByUserId == request.auth.uid
+        && incoming().migration.migratedByRole == 'owner'
+        && incoming().legacyStoreId is string
+        && incoming().legacyStoreId != storeId
+        && incoming().migratedFromPath is string;
+    }
