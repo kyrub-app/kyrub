@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Calendar,
   ClipboardList,
@@ -59,12 +59,19 @@ export function MobileErpMenu({
   onSelectTab,
 }: MobileErpMenuProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const drawerRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
     if (!isOpen) return;
 
-    const previousOverflow = document.documentElement.style.overflow;
+    const previousHtmlOverflow = document.documentElement.style.overflow;
+    const previousBodyOverflow = document.body.style.overflow;
     document.documentElement.style.overflow = 'hidden';
+    document.body.style.overflow = 'hidden';
+
+    const focusFrame = window.requestAnimationFrame(() => {
+      drawerRef.current?.focus();
+    });
 
     const handleEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') setIsOpen(false);
@@ -73,8 +80,10 @@ export function MobileErpMenu({
     window.addEventListener('keydown', handleEscape);
 
     return () => {
+      window.cancelAnimationFrame(focusFrame);
       window.removeEventListener('keydown', handleEscape);
-      document.documentElement.style.overflow = previousOverflow;
+      document.documentElement.style.overflow = previousHtmlOverflow;
+      document.body.style.overflow = previousBodyOverflow;
     };
   }, [isOpen]);
 
@@ -89,19 +98,23 @@ export function MobileErpMenu({
   };
 
   return (
-    <div className="sm:hidden flex items-center justify-between w-full">
+    <div className="flex min-h-11 w-full items-center justify-between sm:hidden">
       {canClosePanel ? (
         <button
           type="button"
           onClick={onClosePanel}
           aria-label="Fechar painel de gestão"
-          className="w-8 h-8 rounded-full bg-slate-950 border border-slate-700 text-slate-400 hover:text-white flex items-center justify-center shadow-sm"
+          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-slate-700 bg-slate-950 text-slate-400 shadow-sm transition-colors hover:text-white"
         >
-          <X className="w-4 h-4" />
+          <X className="h-4 w-4" />
         </button>
       ) : (
-        <span className="w-8 h-8" aria-hidden="true" />
+        <span className="h-11 w-11" aria-hidden="true" />
       )}
+
+      <span className="min-w-0 px-2 text-center text-[10px] font-black uppercase tracking-[0.16em] text-slate-500">
+        Painel da loja
+      </span>
 
       {isRetailer ? (
         <button
@@ -110,12 +123,12 @@ export function MobileErpMenu({
           aria-label="Abrir menu do painel de gestão"
           aria-controls="mobile-erp-navigation-drawer"
           aria-expanded={isOpen}
-          className="w-8 h-8 rounded-full bg-slate-950 border border-slate-700 text-slate-300 hover:text-white hover:border-orange-500/70 transition-colors flex items-center justify-center shadow-lg"
+          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-slate-700 bg-slate-950 text-slate-300 shadow-lg transition-colors hover:border-orange-500/70 hover:text-white"
         >
-          <Menu className="w-4 h-4" />
+          <Menu className="h-5 w-5" />
         </button>
       ) : (
-        <span className="w-8 h-8" aria-hidden="true" />
+        <span className="h-11 w-11" aria-hidden="true" />
       )}
 
       {isOpen && isRetailer && (
@@ -124,31 +137,39 @@ export function MobileErpMenu({
             type="button"
             aria-label="Fechar menu do painel"
             onClick={() => setIsOpen(false)}
-            className="absolute inset-0 bg-slate-950/75 backdrop-blur-sm"
+            className="absolute inset-0 bg-slate-950/80 backdrop-blur-sm"
           />
 
           <aside
+            ref={drawerRef}
             id="mobile-erp-navigation-drawer"
             role="dialog"
             aria-modal="true"
-            aria-label="Menu do painel de gestão"
-            className="absolute inset-y-0 right-0 w-[82vw] max-w-sm bg-slate-900 border-l border-slate-800 shadow-2xl flex flex-col animate-fade-in"
+            aria-labelledby="mobile-erp-navigation-title"
+            tabIndex={-1}
+            className="absolute inset-y-0 right-0 flex h-[100dvh] w-[min(88vw,24rem)] flex-col border-l border-slate-800 bg-slate-900 shadow-2xl outline-none animate-fade-in"
           >
-            <div className="h-[53px] px-5 flex items-center justify-between border-b border-slate-800 shrink-0">
-              <span className="text-[11px] font-black uppercase tracking-[0.18em] text-orange-400">
+            <div className="flex min-h-16 shrink-0 items-center justify-between border-b border-slate-800 px-4">
+              <span
+                id="mobile-erp-navigation-title"
+                className="text-[11px] font-black uppercase tracking-[0.18em] text-orange-400"
+              >
                 Painel da loja
               </span>
               <button
                 type="button"
                 onClick={() => setIsOpen(false)}
                 aria-label="Fechar menu"
-                className="w-8 h-8 rounded-full bg-slate-950 border border-slate-700 text-slate-400 hover:text-white flex items-center justify-center"
+                className="flex h-11 w-11 items-center justify-center rounded-2xl border border-slate-700 bg-slate-950 text-slate-400 transition-colors hover:text-white"
               >
-                <X className="w-4 h-4" />
+                <X className="h-4 w-4" />
               </button>
             </div>
 
-            <nav className="p-4 space-y-2 overflow-y-auto" aria-label="Seções do painel">
+            <nav
+              className="kyrub-modal-scroll flex-1 space-y-2 overflow-y-auto p-4"
+              aria-label="Seções do painel"
+            >
               {MENU_ITEMS.map(item => {
                 const Icon = item.icon;
                 const isSelected = item.id !== 'loja' && item.id === activeSubTab;
@@ -159,13 +180,13 @@ export function MobileErpMenu({
                     type="button"
                     onClick={() => handleSelect(item.id)}
                     aria-current={isSelected ? 'page' : undefined}
-                    className={`w-full min-h-12 px-4 py-3 rounded-2xl flex items-center gap-3 text-left transition-colors border ${
+                    className={`flex min-h-14 w-full items-center gap-3 rounded-2xl border px-4 py-3 text-left transition-colors ${
                       isSelected
-                        ? 'bg-orange-500 text-slate-950 border-orange-400 shadow-lg shadow-orange-500/10'
-                        : 'bg-slate-950/70 text-slate-300 border-slate-800 hover:border-slate-700 hover:text-white'
+                        ? 'border-orange-400 bg-orange-500 text-slate-950 shadow-lg shadow-orange-500/10'
+                        : 'border-slate-800 bg-slate-950/70 text-slate-300 hover:border-slate-700 hover:text-white'
                     }`}
                   >
-                    <Icon className="w-5 h-5 shrink-0" />
+                    <Icon className="h-5 w-5 shrink-0" />
                     <span className="text-sm font-black uppercase tracking-wide">
                       {item.label}
                     </span>
