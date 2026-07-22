@@ -5,6 +5,7 @@ import { RetailerPanel as LegacyRetailerPanel } from './LegacyRetailerPanel';
 import { CustomerOrderInbox } from './customer/CustomerOrderInbox';
 import { CustomerTableBoard } from './customer/CustomerTableBoard';
 import { TableServiceWorkspace } from './customer/TableServiceWorkspace';
+import { OperationalDualWriteBridge } from './store/OperationalDualWriteBridge';
 import { StoreTeamWorkspace } from './store/StoreTeamWorkspace';
 import { auth } from '../utils/firebase';
 import {
@@ -298,6 +299,10 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = props => {
 
   return (
     <>
+      <OperationalDualWriteBridge
+        legacyStoreId={activeRetailerId}
+        notify={triggerToast}
+      />
       <LegacyRetailerPanel {...props} />
       {tablesHost &&
         createPortal(

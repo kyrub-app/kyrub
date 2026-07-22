@@ -1,0 +1,82 @@
+    // --- Operational Orders and Payments Dual Write ---
+    function operationalMirrorMetadataIsValid(storeId) {
+      return storeSecOwner(storeId)
+        && incoming().migration.mode == 'dual_write'
+        && incoming().migration.migratedByUserId == request.auth.uid
+        && incoming().migration.migratedByRole == 'owner'
+        && incoming().legacyStoreId is string
+        && incoming().legacyStoreId != storeId
+        && incoming().migratedFromPath is string;
+    }
+
+    function operationalMirroredOrderActorIsValid() {
+      return (
+          incoming().source == 'customer'
+          && incoming().createdByUserId == incoming().buyerId
+          && incoming().createdByRole == 'customer'
+        )
+        || (
+          (incoming().source == 'staff' || incoming().source == 'transfer')
+          && incoming().createdByUserId == request.auth.uid
+          && incoming().createdByRole == 'owner'
+        );
+    }
+
+    function operationalOrderStatusIsValid(status) {
+      return status == 'pending'
+        || status == 'accepted'
+        || status == 'preparing'
+        || status == 'ready'
+        || status == 'out_for_delivery'
+        || status == 'completed'
+        || status == 'rejected'
+        || status == 'cancelled';
+    }
+
+    function operationalPaymentStatusIsValid(status) {
+      return status == 'unpaid' || status == 'partial' || status == 'paid';
+    }
+
+    match /stores/{storeId}/orders/{orderId} {
+      allow create: if operationalMirrorMetadataIsValid(storeId)
+        && incoming().id == orderId
+        && incoming().storeId == storeId
+        && operationalMirroredOrderActorIsValid()
+        && operationalOrderStatusIsValid(incoming().status)
+        && operationalPaymentStatusIsValid(incoming().paymentStatus)
+        && incoming().legacyCreatedAt is string
+        && incoming().legacyUpdatedAt is string
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+
+      allow update: if storeSecOwner(storeId)
+        && storeSecImmutableOrderIdentity()
+        && incoming().legacyStoreId == existing().legacyStoreId
+        && incoming().legacyCreatedAt == existing().legacyCreatedAt
+        && incoming().migratedFromPath == existing().migratedFromPath
+        && incoming().migration == existing().migration
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'items',
+          'status',
+          'paymentStatus',
+          'tableCode',
+          'customerNote',
+          'legacyUpdatedAt',
+          'updatedAt'
+        ]);
+    }
+
+    match /stores/{storeId}/payments/{paymentId} {
+      allow create: if operationalMirrorMetadataIsValid(storeId)
+        && incoming().id == paymentId
+        && incoming().storeId == storeId
+        && incoming().actorUserId == request.auth.uid
+        && incoming().actorRole == 'owner'
+        && incoming().amount is number
+        && incoming().amount >= 0
+        && incoming().quantity is int
+        && incoming().quantity > 0
+        && incoming().legacyCreatedAt is string
+        && incoming().createdAt == request.time;
+    }
