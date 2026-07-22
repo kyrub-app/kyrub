@@ -320,7 +320,7 @@ service cloud.firestore {
       match /auditLogs/{logId} {
         allow get, list: if ownerOrManager(storeId);
 
-        allow create: if activeMember(storeId) || owner(storeId)
+        allow create: if (activeMember(storeId) || owner(storeId))
           && incoming().id == logId
           && incoming().storeId == storeId
           && incoming().actorUserId == request.auth.uid
