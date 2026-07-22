@@ -77,3 +77,29 @@
         && incoming().updatedByUserId == request.auth.uid
         && incoming().updatedByRole == storeSecCurrentRole(storeId);
     }
+
+    function canonicalProductIdentityIsImmutable() {
+      return incoming().id == existing().id
+        && incoming().storeId == existing().storeId
+        && incoming().supplierId == existing().supplierId
+        && incoming().createdByUserId == existing().createdByUserId
+        && incoming().createdByRole == existing().createdByRole
+        && incoming().legacyStoreId == existing().legacyStoreId
+        && incoming().legacyProductId == existing().legacyProductId
+        && incoming().legacySupplierId == existing().legacySupplierId
+        && incoming().migratedFromPath == existing().migratedFromPath
+        && incoming().migration == existing().migration
+        && incoming().createdAt == existing().createdAt;
+    }
+
+    function canonicalProductArchiveMetadataIsValid() {
+      return incoming().publicationStatus == 'archived'
+        ? (
+          incoming().archivedAt == request.time
+          || (
+            existing().publicationStatus == 'archived'
+            && incoming().archivedAt == existing().archivedAt
+          )
+        )
+        : incoming().archivedAt == '';
+    }
