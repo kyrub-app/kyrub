@@ -30,6 +30,15 @@
         && controlPlaneAdminRecord().role in roles;
     }
 
+    function canReadControlPlaneDirectory() {
+      return hasControlPlaneRole([
+        'super_admin',
+        'support',
+        'operations',
+        'compliance'
+      ]);
+    }
+
     match /kyrub_admin/control_plane {
       allow read, write: if false;
 
@@ -43,7 +52,19 @@
       }
 
       match /audit_logs/{auditId} {
-        function hasValidClientSessionAudit(data) {
+        function hasValidClientAuditTarget(data) {
+          return (
+            data.action == 'admin.session.accessed'
+            && data.targetType == 'control_plane'
+            && data.targetId == 'admin_portal'
+          ) || (
+            data.action == 'admin.directory.user.searched'
+            && data.targetType == 'user'
+            && isValidId(data.targetId)
+          );
+        }
+
+        function hasValidClientAudit(data) {
           return isValidId(auditId)
             && data.keys().hasAll([
               'id',
@@ -66,47 +87,37 @@
               'createdAt'
             ])
             && data.id == auditId
-            && data.action == 'admin.session.accessed'
             && data.actorId == request.auth.uid
             && data.actorRole == controlPlaneAdminRecord().role
-            && data.targetType == 'control_plane'
-            && data.targetId == 'admin_portal'
             && data.source == 'client'
-            && data.createdAt == request.time;
+            && data.createdAt == request.time
+            && hasValidClientAuditTarget(data);
         }
 
         allow get, list: if hasControlPlaneRole(['super_admin', 'compliance']);
         allow create: if isActiveControlPlaneAdmin()
-          && hasValidClientSessionAudit(request.resource.data);
+          && hasValidClientAudit(request.resource.data);
         allow update, delete: if false;
       }
     }
 
-    // Aggregate reads for the initial administrative dashboard. These rules
-    // deliberately do not grant writes or administrative mutations.
+    // Read-only directory and aggregate access. Client code uses exact e-mail or
+    // UID lookups and bounded membership queries; no mutation is granted here.
     match /users/{userId} {
-      allow list: if hasControlPlaneRole([
-        'super_admin',
-        'support',
-        'operations',
-        'compliance'
-      ]);
+      allow get, list: if canReadControlPlaneDirectory();
     }
 
     match /stores/{storeId} {
-      allow list: if hasControlPlaneRole([
-        'super_admin',
-        'support',
-        'operations',
-        'compliance'
-      ]);
+      allow get, list: if canReadControlPlaneDirectory();
     }
 
     match /tenants/{tenantId} {
-      allow list: if hasControlPlaneRole([
-        'super_admin',
-        'support',
-        'operations',
-        'compliance'
-      ]);
+      allow get, list: if canReadControlPlaneDirectory();
+    }
+
+    match /{path=**}/members/{memberId} {
+      allow get: if canReadControlPlaneDirectory();
+      allow list: if canReadControlPlaneDirectory()
+        && request.query.limit != null
+        && request.query.limit <= 100;
     }
