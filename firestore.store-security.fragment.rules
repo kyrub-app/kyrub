@@ -311,33 +311,11 @@
         allow update, delete: if false;
       }
 
+      // Cash sessions are authorized by firestore.cash-ledger.fragment.rules.
+      // Keeping this explicit deny prevents this foundational block from
+      // weakening the stricter financial contract through overlapping matches.
       match /cashSessions/{sessionId} {
-        allow read: if storeSecActiveRole(
-          storeId,
-          ['owner', 'manager', 'cashier']
-        );
-
-        allow create: if storeSecActiveRole(
-          storeId,
-          ['owner', 'manager', 'cashier']
-        )
-          && incoming().id == sessionId
-          && incoming().storeId == storeId
-          && incoming().operatorUserId == request.auth.uid
-          && incoming().createdAt == request.time
-          && incoming().updatedAt == request.time;
-
-        allow update: if storeSecActiveRole(
-          storeId,
-          ['owner', 'manager', 'cashier']
-        )
-          && incoming().id == existing().id
-          && incoming().storeId == existing().storeId
-          && incoming().operatorUserId == existing().operatorUserId
-          && incoming().createdAt == existing().createdAt
-          && incoming().updatedAt == request.time;
-
-        allow delete: if false;
+        allow read, create, update, delete: if false;
       }
 
       match /auditLogs/{logId} {
@@ -361,4 +339,3 @@
     match /{path=**}/members/{userId} {
       allow get, list: if isSignedIn() && request.auth.uid == userId;
     }
-

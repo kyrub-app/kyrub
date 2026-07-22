@@ -273,5 +273,15 @@ export const getStorePaymentsCollectionPath = (storeId: string): string =>
 export const getStoreCashSessionsCollectionPath = (storeId: string): string =>
   `${getStoreDocumentPath(storeId)}/cashSessions`;
 
+export const getStoreCashSessionDocumentPath = (
+  storeId: string,
+  sessionId: string
+): string => `${getStoreCashSessionsCollectionPath(storeId)}/${sessionId.trim()}`;
+
+export const getStoreCashMovementsCollectionPath = (
+  storeId: string,
+  sessionId: string
+): string => `${getStoreCashSessionDocumentPath(storeId, sessionId)}/movements`;
+
 export const getStoreAuditLogsCollectionPath = (storeId: string): string =>
   `${getStoreDocumentPath(storeId)}/auditLogs`;

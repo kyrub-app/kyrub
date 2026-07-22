@@ -1,0 +1,41 @@
+    match /stores/{storeId}/cashSessions/{sessionId} {
+      allow get, list: if cashLedgerRoleAllowed(storeId);
+
+      allow create: if cashLedgerRoleAllowed(storeId)
+        && cashLedgerSessionFieldsAreValid(storeId, sessionId)
+        && incoming().status == 'open'
+        && incoming().operatorUserId == request.auth.uid
+        && incoming().operatorRole == storeSecCurrentRole(storeId)
+        && incoming().expectedAmount == incoming().openingAmount
+        && incoming().countedAmount == 0
+        && incoming().difference == 0
+        && incoming().openedAt == request.time
+        && incoming().closedAt == ''
+        && incoming().closedByUserId == ''
+        && incoming().closedByRole == ''
+        && incoming().closedByName == ''
+        && incoming().closeReason == ''
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+
+      allow update: if cashLedgerRoleAllowed(storeId)
+        && cashLedgerSessionFieldsAreValid(storeId, sessionId)
+        && cashLedgerSessionIdentityIsImmutable()
+        && existing().status == 'open'
+        && incoming().status == 'closed'
+        && incoming().closedAt == request.time
+        && incoming().closedByUserId == request.auth.uid
+        && incoming().closedByRole == storeSecCurrentRole(storeId)
+        && incoming().closedByName is string
+        && incoming().closedByName.size() > 0
+        && incoming().difference == incoming().countedAmount - incoming().expectedAmount
+        && (incoming().difference == 0 || incoming().closeReason.size() > 0)
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'status', 'expectedAmount', 'countedAmount', 'difference',
+          'closedAt', 'closedByUserId', 'closedByRole', 'closedByName',
+          'closeReason', 'updatedAt'
+        ]);
+
+      allow delete: if false;
+    }
