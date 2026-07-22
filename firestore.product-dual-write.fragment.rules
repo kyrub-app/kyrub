@@ -1,1 +1,4 @@
-    // Canonical product rules placeholder
+    // --- Canonical Products ---
+    function canonicalProductEditor(storeId) {
+      return storeSecOwner(storeId);
+    }
