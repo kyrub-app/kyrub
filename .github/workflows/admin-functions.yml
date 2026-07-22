@@ -1,0 +1,33 @@
+name: Admin privileged backend
+
+on:
+  pull_request:
+    paths:
+      - 'functions/**'
+      - 'firebase.json'
+      - 'package.json'
+      - '.github/workflows/admin-functions.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  functions-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install Functions dependencies
+        run: npm install --prefix functions --no-audit --no-fund
+
+      - name: Test and compile privileged backend
+        run: npm run check --prefix functions
