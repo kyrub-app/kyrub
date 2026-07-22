@@ -154,6 +154,7 @@ export const canEnableCanonicalReadDomain = (
 export const updateCanonicalReadPreference = async (
   user: Pick<User, 'uid'>,
   report: MigrationReconciliationReport,
+  currentConfig: CanonicalReadConfig,
   domain: CanonicalReadDomain,
   enabled: boolean
 ): Promise<CanonicalReadConfig> => {
@@ -172,7 +173,7 @@ export const updateCanonicalReadPreference = async (
 
   const preferences: CanonicalReadPreferences = {
     ...DEFAULT_CANONICAL_READ_PREFERENCES,
-    ...report.store.readPreferences,
+    ...currentConfig.preferences,
     [domain]: enabled,
   };
 
