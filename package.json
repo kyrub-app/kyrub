@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
-    "prebuild": "npm run lint && node --test --import tsx tests/store-persistence.test.ts tests/public-products.test.ts tests/customer-orders.test.ts tests/customer-tables.test.ts tests/table-operations.test.ts",
+    "test:rules": "firebase emulators:exec --config firebase.security.json --project kyrub-security-test --only firestore \"node --test --import tsx tests/firestore-store-security.test.ts\"",
+    "prebuild": "npm run lint && node --test --import tsx tests/store-persistence.test.ts tests/public-products.test.ts tests/customer-orders.test.ts tests/customer-tables.test.ts tests/table-operations.test.ts tests/store-security.test.ts tests/canonical-store-data.test.ts",
     "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
     "start": "node dist/server.cjs",
     "clean": "rm -rf dist server.js",
