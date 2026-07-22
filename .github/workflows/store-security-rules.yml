@@ -59,4 +59,4 @@ jobs:
           --config firebase.security.json
           --project kyrub-security-test
           --only firestore
-          "node --test --test-concurrency=1 --import tsx tests/firestore-store-security.test.ts tests/firestore-store-directory.test.ts"
+          "node --test --test-concurrency=1 --import tsx tests/firestore-store-security.test.ts tests/firestore-store-directory.test.ts tests/firestore-operational-dual-write.test.ts"
