@@ -21,3 +21,31 @@
           && incoming().createdByRole == 'owner'
         );
     }
+
+    function operationalOrderStatusIsValid(status) {
+      return status == 'pending'
+        || status == 'accepted'
+        || status == 'preparing'
+        || status == 'ready'
+        || status == 'out_for_delivery'
+        || status == 'completed'
+        || status == 'rejected'
+        || status == 'cancelled';
+    }
+
+    function operationalPaymentStatusIsValid(status) {
+      return status == 'unpaid' || status == 'partial' || status == 'paid';
+    }
+
+    match /stores/{storeId}/orders/{orderId} {
+      allow create: if operationalMirrorMetadataIsValid(storeId)
+        && incoming().id == orderId
+        && incoming().storeId == storeId
+        && operationalMirroredOrderActorIsValid()
+        && operationalOrderStatusIsValid(incoming().status)
+        && operationalPaymentStatusIsValid(incoming().paymentStatus)
+        && incoming().legacyCreatedAt is string
+        && incoming().legacyUpdatedAt is string
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+    }
