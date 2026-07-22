@@ -1,0 +1,10 @@
+    match /stores/{storeId}/cashSessions/{sessionId}/movements/{movementId} {
+      allow get, list: if cashLedgerRoleAllowed(storeId);
+
+      allow create: if cashLedgerRoleAllowed(storeId)
+        && exists(cashLedgerSessionPath(storeId, sessionId))
+        && get(cashLedgerSessionPath(storeId, sessionId)).data.status == 'open'
+        && cashLedgerMovementFieldsAreValid(storeId, sessionId, movementId);
+
+      allow update, delete: if false;
+    }
