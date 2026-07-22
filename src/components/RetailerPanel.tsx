@@ -6,6 +6,7 @@ import { CustomerOrderInbox } from './customer/CustomerOrderInbox';
 import { CustomerTableBoard } from './customer/CustomerTableBoard';
 import { TableServiceWorkspace } from './customer/TableServiceWorkspace';
 import { CashWorkspace } from './store/CashWorkspace';
+import { MigrationReconciliationWorkspace } from './store/MigrationReconciliationWorkspace';
 import { OperationalDualWriteBridge } from './store/OperationalDualWriteBridge';
 import { StoreTeamWorkspace } from './store/StoreTeamWorkspace';
 import { auth } from '../utils/firebase';
@@ -362,11 +363,17 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = props => {
         )}
       {teamHost &&
         createPortal(
-          <StoreTeamWorkspace
-            legacyStore={activeStore}
-            legacyStoreId={activeRetailerId}
-            notify={triggerToast}
-          />,
+          <div className="space-y-5">
+            <MigrationReconciliationWorkspace
+              legacyStoreId={activeRetailerId}
+              notify={triggerToast}
+            />
+            <StoreTeamWorkspace
+              legacyStore={activeStore}
+              legacyStoreId={activeRetailerId}
+              notify={triggerToast}
+            />
+          </div>,
           teamHost
         )}
       {ordersHost &&
