@@ -1,4 +1,11 @@
-    // --- Canonical Products ---
+    // --- Canonical Products and Product Dual Write ---
     function canonicalProductEditor(storeId) {
       return storeSecOwner(storeId);
+    }
+
+    function canonicalProductPublicationStatusIsValid(status) {
+      return status == 'draft'
+        || status == 'published'
+        || status == 'paused'
+        || status == 'archived';
     }
