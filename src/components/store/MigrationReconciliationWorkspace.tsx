@@ -24,6 +24,7 @@ import {
   type CanonicalReadConfig,
   type CanonicalReadDomain,
 } from '../../utils/canonicalReadCutover';
+import { MigrationCompletionGate } from './MigrationCompletionGate';
 
 interface MigrationReconciliationWorkspaceProps {
   legacyStoreId: string;
@@ -417,6 +418,13 @@ export const MigrationReconciliationWorkspace = ({
               );
             })}
           </div>
+
+          <MigrationCompletionGate
+            legacyStoreId={legacyStoreId}
+            report={report}
+            readConfig={readConfig}
+            notify={notify}
+          />
         </>
       )}
 
