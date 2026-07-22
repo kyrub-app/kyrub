@@ -4,13 +4,16 @@ import { fileURLToPath } from 'node:url';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const basePath = resolve(root, 'firestore.rules');
-const fragmentPath = resolve(root, 'firestore.store-security.fragment.rules');
+const fragmentPaths = [
+  resolve(root, 'firestore.store-security.fragment.rules'),
+  resolve(root, 'firestore.store-directory-query.fragment.rules'),
+];
 const outputPath = resolve(root, '.firebase/firestore.combined.rules');
 const marker = '    // --- Kyrub Social Connections & Feed ---';
 
-const [baseRules, fragment] = await Promise.all([
+const [baseRules, ...fragments] = await Promise.all([
   readFile(basePath, 'utf8'),
-  readFile(fragmentPath, 'utf8'),
+  ...fragmentPaths.map(fragmentPath => readFile(fragmentPath, 'utf8')),
 ]);
 
 if (!baseRules.includes(marker)) {
@@ -21,9 +24,10 @@ if (baseRules.includes('// --- Canonical Stores, Members and Operations ---')) {
   throw new Error('Canonical store rules are already present in firestore.rules.');
 }
 
+const composedFragment = fragments.map(fragment => fragment.trimEnd()).join('\n\n');
 const combinedRules = baseRules.replace(
   marker,
-  `${fragment.trimEnd()}\n\n${marker}`
+  `${composedFragment}\n\n${marker}`
 );
 
 await mkdir(dirname(outputPath), { recursive: true });
