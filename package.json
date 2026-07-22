@@ -8,7 +8,7 @@
     "firestore:compose": "node scripts/compose-firestore-rules.mjs",
     "test:rules": "npm run firestore:compose && npx --yes firebase-tools emulators:exec --config firebase.security.json --project kyrub-security-test --only firestore \"node --test --test-concurrency=1 --import tsx tests/firestore-store-security.test.ts tests/firestore-store-directory.test.ts\"",
     "deploy:firestore-security": "npm run firestore:compose && npx --yes firebase-tools deploy --only firestore:rules --project kyrub-b8d0e --config firebase.json",
-    "prebuild": "npm run lint && node --test --import tsx tests/store-persistence.test.ts tests/public-products.test.ts tests/customer-orders.test.ts tests/customer-tables.test.ts tests/table-operations.test.ts tests/store-security.test.ts tests/canonical-store-data.test.ts tests/store-directory.test.ts tests/store-security-rules-contract.test.ts",
+    "prebuild": "npm run lint && node --test --import tsx tests/store-persistence.test.ts tests/public-products.test.ts tests/customer-orders.test.ts tests/customer-tables.test.ts tests/table-operations.test.ts tests/store-security.test.ts tests/canonical-store-data.test.ts tests/store-directory.test.ts tests/store-security-rules-contract.test.ts tests/responsive-product-cards.test.ts",
     "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
     "start": "node dist/server.cjs",
     "clean": "rm -rf dist server.js",
