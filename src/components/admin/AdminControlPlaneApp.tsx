@@ -10,7 +10,6 @@ import {
   LayoutDashboard,
   LockKeyhole,
   LogOut,
-  Search,
   Settings2,
   ShieldCheck,
   Users,
@@ -34,6 +33,7 @@ import {
   type AdminProfile,
   type AdminRole,
 } from '../../utils/adminControlPlane';
+import AdminDirectoryWorkspace from './AdminDirectoryWorkspace';
 
 const ROLE_LABELS: Record<AdminRole, string> = {
   super_admin: 'Super Admin',
@@ -52,17 +52,17 @@ const MODULES: Array<{
 }> = [
   {
     label: 'Usuários',
-    description: 'Diretório, situação da conta e linha do tempo.',
+    description: 'Busca exata, situação cadastral e lojas vinculadas.',
     permission: 'read_users',
     icon: Users,
-    status: 'planned',
+    status: 'available',
   },
   {
     label: 'Lojas',
-    description: 'Tenants, equipes, migração e planos.',
+    description: 'Tenants, equipes, migração e planos registrados.',
     permission: 'read_stores',
     icon: Building2,
-    status: 'planned',
+    status: 'available',
   },
   {
     label: 'Financeiro e BaaS',
@@ -96,11 +96,17 @@ const MODULES: Array<{
 
 const formatMetric = (metric: AdminDashboardMetric): string => {
   if (metric.state === 'restricted') return 'Restrito';
-  if (metric.state === 'unavailable' || metric.value === null) return 'Indisponível';
+  if (metric.state === 'unavailable' || metric.value === null) {
+    return 'Indisponível';
+  }
   return metric.value.toLocaleString('pt-BR');
 };
 
-const LoginScreen = ({ busy, error, onLogin }: {
+const LoginScreen = ({
+  busy,
+  error,
+  onLogin,
+}: {
   busy: boolean;
   error: string;
   onLogin: () => void;
@@ -143,7 +149,11 @@ const LoginScreen = ({ busy, error, onLogin }: {
   </main>
 );
 
-const AccessDeniedScreen = ({ user, profile, onLogout }: {
+const AccessDeniedScreen = ({
+  user,
+  profile,
+  onLogout,
+}: {
   user: User;
   profile: AdminProfile | null;
   onLogout: () => void;
@@ -164,7 +174,9 @@ const AccessDeniedScreen = ({ user, profile, onLogout }: {
         </div>
         <h1 className="mt-5 text-xl font-black text-white">{title}</h1>
         <p className="mt-3 text-sm leading-relaxed text-slate-400">
-          A autenticação de <strong className="text-slate-200">{user.email ?? user.uid}</strong> foi concluída, mas o Control Plane exige um registro administrativo ativo separado da conta Kyrub comum.
+          A autenticação de{' '}
+          <strong className="text-slate-200">{user.email ?? user.uid}</strong>{' '}
+          foi concluída, mas o Control Plane exige um registro administrativo ativo separado da conta Kyrub comum.
         </p>
         <button
           type="button"
@@ -254,7 +266,9 @@ export default function AdminControlPlaneApp() {
   const visibleModules = useMemo(
     () =>
       profile
-        ? MODULES.filter(module => hasAdminPermission(profile, module.permission))
+        ? MODULES.filter(module =>
+            hasAdminPermission(profile, module.permission)
+          )
         : [],
     [profile]
   );
@@ -297,10 +311,17 @@ export default function AdminControlPlaneApp() {
   }
 
   if (!profile || profile.status !== 'active') {
-    return <AccessDeniedScreen user={user} profile={profile ?? null} onLogout={handleLogout} />;
+    return (
+      <AccessDeniedScreen
+        user={user}
+        profile={profile ?? null}
+        onLogout={handleLogout}
+      />
+    );
   }
 
   const permissions = getAdminPermissions(profile.role);
+  const canReadDirectory = hasAdminPermission(profile, 'read_users');
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100">
@@ -314,7 +335,9 @@ export default function AdminControlPlaneApp() {
               <span className="block text-[9px] font-black uppercase tracking-[0.22em] text-cyan-400">
                 admin.kyrub.com
               </span>
-              <strong className="block truncate text-sm text-white">Kyrub Control Plane</strong>
+              <strong className="block truncate text-sm text-white">
+                Kyrub Control Plane
+              </strong>
             </div>
           </div>
           <div className="flex items-center gap-3">
@@ -362,9 +385,13 @@ export default function AdminControlPlaneApp() {
           <div className="rounded-[2rem] border border-emerald-500/20 bg-emerald-500/5 p-5">
             <div className="flex items-center gap-2 text-emerald-300">
               <BadgeCheck className="h-5 w-5" />
-              <strong className="text-xs font-black uppercase tracking-wider">Acesso ativo</strong>
+              <strong className="text-xs font-black uppercase tracking-wider">
+                Acesso ativo
+              </strong>
             </div>
-            <p className="mt-3 text-sm font-bold text-white">{ROLE_LABELS[profile.role]}</p>
+            <p className="mt-3 text-sm font-bold text-white">
+              {ROLE_LABELS[profile.role]}
+            </p>
             <p className="mt-1 text-[10px] leading-relaxed text-slate-400">
               {permissions.length} permissão(ões) derivadas do papel. Alterações de papel não são permitidas pelo navegador.
             </p>
@@ -374,16 +401,35 @@ export default function AdminControlPlaneApp() {
         <section>
           <div className="mb-3 flex items-center justify-between">
             <div>
-              <h2 className="text-sm font-black uppercase tracking-wider text-white">Indicadores básicos</h2>
-              <p className="mt-1 text-[10px] text-slate-500">Contagens consultadas diretamente no Firestore, sem valores fictícios.</p>
+              <h2 className="text-sm font-black uppercase tracking-wider text-white">
+                Indicadores básicos
+              </h2>
+              <p className="mt-1 text-[10px] text-slate-500">
+                Contagens consultadas diretamente no Firestore, sem valores fictícios.
+              </p>
             </div>
-            {metricsLoading && <span className="text-[9px] uppercase text-cyan-400">Atualizando</span>}
+            {metricsLoading && (
+              <span className="text-[9px] uppercase text-cyan-400">
+                Atualizando
+              </span>
+            )}
           </div>
           <div className="grid gap-3 sm:grid-cols-3">
             {metrics.map(metric => (
-              <article key={metric.key} className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
-                <span className="text-[9px] font-black uppercase tracking-wider text-slate-500">{metric.label}</span>
-                <strong className={`mt-2 block text-2xl font-black ${metric.state === 'available' ? 'text-white' : 'text-slate-500'}`}>
+              <article
+                key={metric.key}
+                className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4"
+              >
+                <span className="text-[9px] font-black uppercase tracking-wider text-slate-500">
+                  {metric.label}
+                </span>
+                <strong
+                  className={`mt-2 block text-2xl font-black ${
+                    metric.state === 'available'
+                      ? 'text-white'
+                      : 'text-slate-500'
+                  }`}
+                >
                   {formatMetric(metric)}
                 </strong>
               </article>
@@ -396,26 +442,49 @@ export default function AdminControlPlaneApp() {
           </div>
         </section>
 
+        {canReadDirectory && (
+          <AdminDirectoryWorkspace
+            authenticatedUser={user}
+            profile={profile}
+          />
+        )}
+
         <section>
           <div className="mb-3 flex items-center gap-2">
             <Settings2 className="h-4 w-4 text-cyan-400" />
-            <h2 className="text-sm font-black uppercase tracking-wider text-white">Módulos autorizados</h2>
+            <h2 className="text-sm font-black uppercase tracking-wider text-white">
+              Módulos autorizados
+            </h2>
           </div>
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
             {visibleModules.map(module => {
               const Icon = module.icon;
+              const available = module.status === 'available';
               return (
-                <article key={module.label} className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
+                <article
+                  key={module.label}
+                  className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4"
+                >
                   <div className="flex items-start justify-between gap-3">
                     <div className="rounded-xl bg-slate-800 p-2 text-slate-300">
                       <Icon className="h-4 w-4" />
                     </div>
-                    <span className="rounded-full bg-amber-500/10 px-2 py-1 text-[8px] font-black uppercase tracking-wider text-amber-300">
-                      Próxima etapa
+                    <span
+                      className={`rounded-full px-2 py-1 text-[8px] font-black uppercase tracking-wider ${
+                        available
+                          ? 'bg-emerald-500/10 text-emerald-300'
+                          : 'bg-amber-500/10 text-amber-300'
+                      }`}
+                    >
+                      {available ? 'Disponível' : 'Próxima etapa'}
                     </span>
                   </div>
-                  <h3 className="mt-4 text-sm font-black text-white">{module.label}</h3>
-                  <p className="mt-1 text-[10px] leading-relaxed text-slate-500">{module.description}</p>
+                  <h3 className="mt-4 text-sm font-black text-white">
+                    {module.label}
+                  </h3>
+                  <p className="mt-1 text-[10px] leading-relaxed text-slate-500">
+                    {module.description}
+                  </p>
                 </article>
               );
             })}
@@ -424,11 +493,13 @@ export default function AdminControlPlaneApp() {
 
         <section className="rounded-2xl border border-slate-800 bg-slate-900/50 p-4">
           <div className="flex items-start gap-3">
-            <Search className="mt-0.5 h-4 w-4 shrink-0 text-slate-500" />
+            <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-slate-500" />
             <div>
-              <strong className="text-xs text-slate-300">Escopo desta entrega</strong>
+              <strong className="text-xs text-slate-300">
+                Escopo desta entrega
+              </strong>
               <p className="mt-1 text-[10px] leading-relaxed text-slate-500">
-                Esta versão estabelece autenticação, autorização, papéis, métricas básicas e auditoria de entrada. Bloqueios, planos, integrações e mutações críticas serão adicionados sobre uma camada de backend segura, nunca por segredos expostos no cliente.
+                O diretório consulta usuários, lojas canônicas, equipes e tenants legados em modo somente leitura. Bloqueios, planos, integrações e mutações críticas continuam dependentes de backend seguro e auditoria autoritativa.
               </p>
             </div>
           </div>
