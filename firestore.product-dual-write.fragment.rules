@@ -103,3 +103,37 @@
         )
         : incoming().archivedAt == '';
     }
+
+    match /stores/{storeId}/products/{productId} {
+      allow get, list: if isSignedIn()
+        && (
+          resource.data.publicationStatus == 'published'
+          || storeSecProductionStaff(storeId)
+        );
+
+      allow create: if isSignedIn()
+        && canonicalProductFieldsAreValid(storeId, productId)
+        && incoming().publicationStatus != 'archived'
+        && incoming().archivedAt == ''
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && (
+          canonicalProductMigrationCreateIsValid(storeId, productId)
+          || canonicalProductDirectCreateIsValid(storeId)
+        );
+
+      allow update: if isSignedIn()
+        && canonicalProductEditor(storeId)
+        && canonicalProductIdentityIsImmutable()
+        && canonicalProductFieldsAreValid(storeId, productId)
+        && incoming().updatedByUserId == request.auth.uid
+        && incoming().updatedByRole == storeSecCurrentRole(storeId)
+        && incoming().updatedAt == request.time
+        && canonicalProductArchiveMetadataIsValid()
+        && (
+          storeSecOwner(storeId)
+          || incoming().legacyUpdatedAt == existing().legacyUpdatedAt
+        );
+
+      allow delete: if false;
+    }
