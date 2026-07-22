@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { auth } from '../../utils/firebase';
 import { subscribeToOperationalDualWrite } from '../../utils/operationalDualWrite';
+import { subscribeToCanonicalProductDualWrite } from '../../utils/canonicalProductDualWrite';
 
 interface OperationalDualWriteBridgeProps {
   legacyStoreId: string;
@@ -15,6 +16,9 @@ const permissionMessageKey = (storeId: string): string =>
 
 const readyMessageKey = (storeId: string): string =>
   `kyrub_dual_write_ready_notice_${storeId}`;
+
+const catalogReadyMessageKey = (storeId: string): string =>
+  `kyrub_product_dual_write_ready_notice_${storeId}`;
 
 const isPermissionDenied = (error: Error): boolean => {
   const code = (error as Error & { code?: string }).code ?? '';
@@ -83,6 +87,68 @@ export const OperationalDualWriteBridge = ({
           error instanceof Error
             ? error
             : new Error('Não foi possível iniciar a gravação dupla.')
+        );
+      });
+
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
+  }, [legacyStoreId]);
+
+  useEffect(() => {
+    const user = auth.currentUser;
+    if (!user || !legacyStoreId || user.uid !== legacyStoreId) return;
+
+    let cancelled = false;
+    let unsubscribe = () => undefined;
+
+    const reportCatalogFailure = (error: Error): void => {
+      if (cancelled) return;
+      console.warn('Falha no espelhamento do catálogo canônico.', error);
+      if (!isPermissionDenied(error)) return;
+
+      const storageKey = permissionMessageKey(legacyStoreId);
+      if (localStorage.getItem(storageKey)) return;
+      localStorage.setItem(storageKey, '1');
+      notifyRef.current(
+        'O catálogo atual foi preservado, mas as regras multi-loja ainda precisam ser publicadas no Firebase.',
+        'warning'
+      );
+    };
+
+    void subscribeToCanonicalProductDualWrite(user, legacyStoreId, {
+      onSynced: stats => {
+        if (cancelled) return;
+        const storageKey = catalogReadyMessageKey(legacyStoreId);
+        if (localStorage.getItem(storageKey)) return;
+        localStorage.setItem(storageKey, '1');
+        const activeCount = stats.created + stats.updated + stats.unchanged;
+        notifyRef.current(
+          `Catálogo canônico sincronizado: ${activeCount} item(ns) ativo(s) e ${stats.archived} arquivado(s).`,
+          'success'
+        );
+      },
+      onUnavailable: () => {
+        console.info(
+          'Dual-write do catálogo aguardando o registro da loja canônica.',
+          { legacyStoreId }
+        );
+      },
+      onError: reportCatalogFailure,
+    })
+      .then(stop => {
+        if (cancelled) {
+          stop();
+          return;
+        }
+        unsubscribe = stop;
+      })
+      .catch(error => {
+        reportCatalogFailure(
+          error instanceof Error
+            ? error
+            : new Error('Não foi possível iniciar a gravação dupla do catálogo.')
         );
       });
 
