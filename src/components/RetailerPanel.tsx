@@ -5,6 +5,7 @@ import { RetailerPanel as LegacyRetailerPanel } from './LegacyRetailerPanel';
 import { CustomerOrderInbox } from './customer/CustomerOrderInbox';
 import { CustomerTableBoard } from './customer/CustomerTableBoard';
 import { TableServiceWorkspace } from './customer/TableServiceWorkspace';
+import { StoreTeamWorkspace } from './store/StoreTeamWorkspace';
 import { auth } from '../utils/firebase';
 import {
   persistPublicProduct,
@@ -33,6 +34,7 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = props => {
 
   const [ordersHost, setOrdersHost] = useState<HTMLElement | null>(null);
   const [tablesHost, setTablesHost] = useState<HTMLElement | null>(null);
+  const [teamHost, setTeamHost] = useState<HTMLElement | null>(null);
   const [customerOrders, setCustomerOrders] = useState<CustomerOrder[]>([]);
   const [busyOrderId, setBusyOrderId] = useState('');
   const [selectedTableCode, setSelectedTableCode] = useState('');
@@ -184,6 +186,45 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = props => {
   }, [activeSubTab]);
 
   useEffect(() => {
+    if (activeSubTab !== 'gerencial') {
+      setTeamHost(null);
+      return;
+    }
+
+    let cancelled = false;
+    let timer = 0;
+    let portalHost: HTMLDivElement | null = null;
+
+    const mountTeamWorkspace = (): void => {
+      if (cancelled) return;
+      const managementContainer = document.getElementById('erp-gerencial-tab');
+
+      if (!managementContainer) {
+        timer = window.setTimeout(mountTeamWorkspace, 40);
+        return;
+      }
+
+      portalHost = document.createElement('div');
+      portalHost.id = 'kyrub-store-team-workspace-host';
+      portalHost.className = 'min-w-0';
+      managementContainer.insertBefore(
+        portalHost,
+        managementContainer.firstChild
+      );
+      setTeamHost(portalHost);
+    };
+
+    timer = window.setTimeout(mountTeamWorkspace, 0);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+      portalHost?.remove();
+      setTeamHost(null);
+    };
+  }, [activeSubTab]);
+
+  useEffect(() => {
     if (activeSubTab !== 'clientes') return;
     const emptyState = document.getElementById('empty-clients');
     if (!emptyState) return;
@@ -265,6 +306,15 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = props => {
             onOpenTable={handleOpenTable}
           />,
           tablesHost
+        )}
+      {teamHost &&
+        createPortal(
+          <StoreTeamWorkspace
+            legacyStore={activeStore}
+            legacyStoreId={activeRetailerId}
+            notify={triggerToast}
+          />,
+          teamHost
         )}
       {ordersHost &&
         createPortal(
