@@ -9,9 +9,6 @@ import {
 } from 'lucide-react';
 import Dexie, { type Table } from 'dexie';
 import { Tenant, Store, Product, Order } from '../types';
-import { db } from '../utils/firebase';
-import { doc, runTransaction, deleteDoc } from 'firebase/firestore';
-import { listenCollection, saveDocLWW } from '../utils/syncEngine';
 import type { BuildUserStoreUpdateInput } from '../utils/userStoreDocument';
 
 // ==========================================
@@ -49,6 +46,9 @@ class DexieERPDB extends Dexie {
 }
 
 const erpDB = new DexieERPDB();
+
+const getLegacyActiveTicketsStorageKey = (storeId: string): string =>
+  `kyrub_legacy_active_tickets_${storeId}`;
 
 // ==========================================
 // RETAILER PANEL MAIN COMPONENT
@@ -104,6 +104,8 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = ({
   const [clientItemCount, setClientItemCount] = useState(1);
   const [clientSubTab, setClientSubTab] = useState<string>('GERAL');
   const [activeTickets, setActiveTickets] = useState<any[]>([]);
+  const [activeTicketsCacheStoreId, setActiveTicketsCacheStoreId] =
+    useState('');
 
   useEffect(() => {
     if (atendimentoSpaces && atendimentoSpaces.length > 0) {
@@ -117,13 +119,39 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = ({
   }, [atendimentoSpaces]);
 
   useEffect(() => {
-    const tenantId = activeRetailerId || 'tenant_default';
-    const unsub = listenCollection(`tenants/${tenantId}/active_sessions`, (docs) => {
-      const activeFromRemote = docs.filter(d => d.status !== 'closed');
-      setActiveTickets(activeFromRemote);
-    });
-    return () => unsub();
+    if (!activeRetailerId) {
+      setActiveTickets([]);
+      setActiveTicketsCacheStoreId('');
+      return;
+    }
+
+    try {
+      const saved = localStorage.getItem(
+        getLegacyActiveTicketsStorageKey(activeRetailerId)
+      );
+      const parsed = saved ? JSON.parse(saved) : [];
+      setActiveTickets(Array.isArray(parsed) ? parsed : []);
+    } catch (error) {
+      console.warn('Falha ao ler atendimentos locais da loja:', error);
+      setActiveTickets([]);
+    }
+
+    setActiveTicketsCacheStoreId(activeRetailerId);
   }, [activeRetailerId]);
+
+  useEffect(() => {
+    if (
+      !activeRetailerId ||
+      activeTicketsCacheStoreId !== activeRetailerId
+    ) {
+      return;
+    }
+
+    localStorage.setItem(
+      getLegacyActiveTicketsStorageKey(activeRetailerId),
+      JSON.stringify(activeTickets)
+    );
+  }, [activeRetailerId, activeTickets, activeTicketsCacheStoreId]);
 
   // 2. CAIXA STATES (Dexie Cached)
   const [isCashierOpen, setIsCashierOpen] = useState(true);
@@ -224,7 +252,7 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = ({
     ]);
   };
 
-  const handleOpenTicket = async () => {
+  const handleOpenTicket = () => {
     if (!clientSearchCode.trim()) {
       triggerToast('Insira um nome ou identificador do cliente!', 'error');
       return;
@@ -239,60 +267,24 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = ({
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };
-    setActiveTickets([newTicket, ...activeTickets]);
+    setActiveTickets(previous => [newTicket, ...previous]);
     setClientSearchCode('');
     triggerToast(`Atendimento ${id} aberto com sucesso!`, 'success');
 
-    // Dual-write to Firestore in background
-    const tenantId = activeRetailerId || 'tenant_default';
-    await saveDocLWW(`tenants/${tenantId}/active_sessions`, id, newTicket);
   };
 
-  const handleCheckoutTicket = async (ticketId: string) => {
-    const ticket = activeTickets.find(t => t.id === ticketId);
+  const handleCheckoutTicket = (ticketId: string) => {
+    const ticket = activeTickets.find(item => item.id === ticketId);
     if (!ticket) return;
 
-    // Use transaction lock
-    const tenantId = activeRetailerId || 'tenant_default';
-    const ticketRef = doc(db, 'tenants', tenantId, 'active_sessions', ticketId);
-    try {
-      await runTransaction(db, async (transaction) => {
-        const ticketDoc = await transaction.get(ticketRef);
-        if (ticketDoc.exists()) {
-          const data = ticketDoc.data();
-          if (data.status === 'closed') {
-            throw new Error('Esta comanda já foi fechada por outro operador!');
-          }
-          transaction.update(ticketRef, { 
-            status: 'closed', 
-            closedAt: new Date().toISOString(),
-            closedBy: activeRetailer?.email || 'Operador',
-            updatedAt: new Date().toISOString()
-          });
-        } else {
-          // If it doesn't exist on server yet, write it as closed
-          transaction.set(ticketRef, {
-            ...ticket,
-            status: 'closed',
-            closedAt: new Date().toISOString(),
-            closedBy: activeRetailer?.email || 'Operador',
-            updatedAt: new Date().toISOString()
-          });
-        }
-      });
-    } catch (error: any) {
-      triggerToast(error.message || 'Falha concorrente ao fechar comanda!', 'error');
-      return;
-    }
-
-    // The ticket is closed without fabricating price, stock or fiscal data.
-    // Real stock and financial movements will be recorded when the sale flow
-    // provides validated items, quantities and payment totals.
+    // This legacy attendance card stays local until it is replaced by the
+    // canonical table and order workflow rendered by RetailerPanel.tsx.
     registerFiscalIntegrationPending();
-
-    setActiveTickets(prev => prev.filter(t => t.id !== ticketId));
+    setActiveTickets(previous =>
+      previous.filter(item => item.id !== ticketId)
+    );
     triggerToast(
-      `Atendimento ${ticket.id} fechado. Emissão fiscal ainda não configurada.`,
+      `Atendimento ${ticket.id} fechado neste dispositivo. Emissão fiscal ainda não configurada.`,
       'success'
     );
   };
@@ -487,14 +479,10 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = ({
                           Faturar & Transmitir Fiscal
                         </button>
                         <button
-                          onClick={async () => {
-                            const tenantId = activeRetailerId || 'tenant_default';
-                            setActiveTickets(activeTickets.filter(t => t.id !== ticket.id));
-                            try {
-                              await deleteDoc(doc(db, 'tenants', tenantId, 'active_sessions', ticket.id));
-                            } catch (err) {
-                              console.error("Error deleting session doc in Firestore:", err);
-                            }
+                          onClick={() => {
+                            setActiveTickets(previous =>
+                              previous.filter(item => item.id !== ticket.id)
+                            );
                             triggerToast('Atendimento cancelado.', 'info');
                           }}
                           className="p-2 bg-slate-950 border border-slate-850 hover:bg-red-950/20 text-red-400 hover:text-red-300 rounded-xl transition-all cursor-pointer"
