@@ -87,8 +87,7 @@ import { getDistance, formatWhatsApp, formatCpf, formatCnpj } from './utils/help
 
 // Firebase & Sync engine integration imports
 import { db, auth } from './utils/firebase';
-import { saveDocLWW, listenCollection, syncOfflineBatch, resolveConflictLWW } from './utils/syncEngine';
-import { classifyFirestoreFailure } from './utils/firestoreFailure';
+import { listenCollection, resolveConflictLWW } from './utils/syncEngine';
 import { getPrimaryUserStoreDocumentPath } from './utils/storePaths';
 import {
   buildUserStoreCreateData,
@@ -144,23 +143,6 @@ const STORAGE_KEYS = {
   WALLET_BALANCE: 'kyrub_wallet_balance',
   WALLET_HISTORY: 'kyrub_wallet_history',
   FAVORITE_STORES: 'kyrub_favorite_stores'
-};
-
-const logBackgroundSyncFailure = (
-  module: string,
-  error: unknown
-): void => {
-  const navigatorOnline =
-    typeof navigator === 'undefined'
-      ? true
-      : navigator.onLine;
-  const failure = classifyFirestoreFailure(error, navigatorOnline);
-
-  console.warn('Background Firestore sync failed', {
-    module,
-    kind: failure.kind,
-    code: failure.code
-  });
 };
 
 const getUserStoreCacheKey = (uid: string): string =>
@@ -433,17 +415,6 @@ export default function App() {
   useEffect(() => {
     if (!isLoggedIn) return;
     localStorage.setItem(STORAGE_KEYS.TENANTS, JSON.stringify(tenants));
-    const pushTenants = async () => {
-      for (const tenant of tenants) {
-        await saveDocLWW('tenants', tenant.id, {
-          ...tenant,
-          updatedAt: (tenant as any).updatedAt || new Date().toISOString()
-        });
-      }
-    };
-    void pushTenants().catch(error => {
-      logBackgroundSyncFailure('tenants', error);
-    });
   }, [tenants, isLoggedIn]);
 
   useEffect(() => {
@@ -458,101 +429,31 @@ export default function App() {
   useEffect(() => {
     if (!isLoggedIn) return;
     localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(products));
-    const pushProducts = async () => {
-      for (const product of products) {
-        await saveDocLWW('tenants/tenant_default/products', product.id, {
-          ...product,
-          updatedAt: (product as any).updatedAt || new Date().toISOString()
-        });
-      }
-    };
-    void pushProducts().catch(error => {
-      logBackgroundSyncFailure('products', error);
-    });
   }, [products, isLoggedIn]);
 
   useEffect(() => {
     if (!isLoggedIn) return;
     localStorage.setItem(STORAGE_KEYS.ORDERS, JSON.stringify(orders));
-    const pushOrders = async () => {
-      for (const order of orders) {
-        await saveDocLWW('tenants/tenant_default/orders', order.id, {
-          ...order,
-          updatedAt: (order as any).updatedAt || new Date().toISOString()
-        });
-      }
-    };
-    void pushOrders().catch(error => {
-      logBackgroundSyncFailure('orders', error);
-    });
   }, [orders, isLoggedIn]);
 
   useEffect(() => {
     if (!isLoggedIn) return;
     localStorage.setItem(STORAGE_KEYS.POSTS, JSON.stringify(posts));
-    const pushPosts = async () => {
-      for (const post of posts) {
-        const payload = {
-          ...post,
-          updatedAt: (post as any).updatedAt || new Date().toISOString()
-        };
-        await saveDocLWW('social_feed', post.id, payload);
-        await saveDocLWW('posts', post.id, payload);
-      }
-    };
-    void pushPosts().catch(error => {
-      logBackgroundSyncFailure('posts', error);
-    });
   }, [posts, isLoggedIn]);
 
   useEffect(() => {
     if (!isLoggedIn) return;
     localStorage.setItem(STORAGE_KEYS.DELIVERIES, JSON.stringify(deliveries));
-    const pushDeliveries = async () => {
-      for (const del of deliveries) {
-        const payload = {
-          ...del,
-          updatedAt: (del as any).updatedAt || new Date().toISOString()
-        };
-        await saveDocLWW('delivery_jobs', del.id, payload);
-        await saveDocLWW('deliveries', del.id, payload);
-      }
-    };
-    void pushDeliveries().catch(error => {
-      logBackgroundSyncFailure('deliveries', error);
-    });
   }, [deliveries, isLoggedIn]);
 
   useEffect(() => {
     if (!isLoggedIn) return;
     localStorage.setItem(STORAGE_KEYS.FREELANCE_JOBS, JSON.stringify(freelanceJobs));
-    const pushFreelance = async () => {
-      for (const free of freelanceJobs) {
-        await saveDocLWW('freelance_jobs', free.id, {
-          ...free,
-          updatedAt: (free as any).updatedAt || new Date().toISOString()
-        });
-      }
-    };
-    void pushFreelance().catch(error => {
-      logBackgroundSyncFailure('freelance-jobs', error);
-    });
   }, [freelanceJobs, isLoggedIn]);
 
   useEffect(() => {
     if (!isLoggedIn) return;
     localStorage.setItem(STORAGE_KEYS.MOMENTOS, JSON.stringify(momentos));
-    const pushMomentos = async () => {
-      for (const mom of momentos) {
-        await saveDocLWW('momentos', mom.id, {
-          ...mom,
-          updatedAt: (mom as any).updatedAt || new Date().toISOString()
-        });
-      }
-    };
-    void pushMomentos().catch(error => {
-      logBackgroundSyncFailure('momentos', error);
-    });
   }, [momentos, isLoggedIn]);
 
   // Product addition state
@@ -686,17 +587,6 @@ export default function App() {
   useEffect(() => {
     if (!isLoggedIn) return;
     localStorage.setItem(STORAGE_KEYS.NOTES, JSON.stringify(notes));
-    const pushNotes = async () => {
-      for (const note of notes) {
-        await saveDocLWW('tenants/tenant_default/tasks', note.id, {
-          ...note,
-          updatedAt: (note as any).updatedAt || new Date().toISOString()
-        });
-      }
-    };
-    void pushNotes().catch(error => {
-      logBackgroundSyncFailure('notes', error);
-    });
   }, [notes, isLoggedIn]);
 
   // The private ERP store is owned by the authenticated Firebase user.
@@ -890,7 +780,7 @@ export default function App() {
     }
   }, []);
 
-  // Firebase auth state listener and global Initial Sync
+  // Firebase auth state listener and authorized profile/store initialization
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
@@ -1003,180 +893,6 @@ export default function App() {
           }
         }
 
-        try {
-          triggerToast('Conectando e sincronizando dados com Firestore...', 'info');
-
-          // Sync tenants
-          const tenantsSnap = await getDocs(collection(db, 'tenants'));
-          const remoteTenants: any[] = [];
-          tenantsSnap.forEach(docSnap => remoteTenants.push({ id: docSnap.id, ...docSnap.data() }));
-          if (remoteTenants.length === 0) {
-            for (const t of initialTenants) {
-              await setDoc(doc(db, 'tenants', t.id), { ...t, updatedAt: new Date().toISOString() });
-            }
-            setTenants(initialTenants);
-          } else {
-            const syncResult = await syncOfflineBatch(tenants.length > 0 ? (tenants as any) : (initialTenants as any), remoteTenants);
-            setTenants(syncResult.syncedRecords as any);
-          }
-
-          // Sync posts
-          const postsSnap = await getDocs(collection(db, 'social_feed'));
-          const remotePosts: any[] = [];
-          postsSnap.forEach(docSnap => remotePosts.push({ id: docSnap.id, ...docSnap.data() }));
-          if (remotePosts.length === 0) {
-            for (const p of initialPosts) {
-              await setDoc(doc(db, 'social_feed', p.id), { ...p, updatedAt: new Date().toISOString() });
-            }
-            setPosts(initialPosts);
-          } else {
-            const syncResult = await syncOfflineBatch(posts.length > 0 ? (posts as any) : (initialPosts as any), remotePosts);
-            setPosts(syncResult.syncedRecords as any);
-          }
-
-          // Sync momentos
-          const momentosSnap = await getDocs(collection(db, 'momentos'));
-          const remoteMomentos: any[] = [];
-          momentosSnap.forEach(docSnap => remoteMomentos.push({ id: docSnap.id, ...docSnap.data() }));
-          if (remoteMomentos.length === 0) {
-            for (const m of initialMomentos) {
-              await setDoc(doc(db, 'momentos', m.id), { ...m, updatedAt: new Date().toISOString() });
-            }
-            setMomentos(initialMomentos);
-          } else {
-            const syncResult = await syncOfflineBatch(momentos.length > 0 ? (momentos as any) : (initialMomentos as any), remoteMomentos);
-            setMomentos(syncResult.syncedRecords as any);
-          }
-
-          // Sync products
-          const productsSnap = await getDocs(collection(db, 'tenants/tenant_default/products'));
-          const remoteProducts: any[] = [];
-          productsSnap.forEach(docSnap => remoteProducts.push({ id: docSnap.id, ...docSnap.data() }));
-          if (remoteProducts.length === 0) {
-            for (const p of initialProducts) {
-              await setDoc(doc(db, 'tenants/tenant_default/products', p.id), { ...p, updatedAt: new Date().toISOString() });
-            }
-            setProducts(initialProducts);
-          } else {
-            const syncResult = await syncOfflineBatch(products.length > 0 ? (products as any) : (initialProducts as any), remoteProducts);
-            setProducts(syncResult.syncedRecords as any);
-          }
-
-          // Sync notes
-          const notesSnap = await getDocs(collection(db, 'tenants/tenant_default/tasks'));
-          const remoteNotes: any[] = [];
-          notesSnap.forEach(docSnap => remoteNotes.push({ id: docSnap.id, ...docSnap.data() }));
-          if (remoteNotes.length === 0) {
-            for (const n of initialNotes) {
-              await setDoc(doc(db, 'tenants/tenant_default/tasks', n.id), { ...n, updatedAt: new Date().toISOString() });
-            }
-            setNotes(initialNotes);
-          } else {
-            const syncResult = await syncOfflineBatch(notes.length > 0 ? (notes as any) : (initialNotes as any), remoteNotes);
-            setNotes(syncResult.syncedRecords as any);
-          }
-
-          // Sync orders
-          const ordersSnap = await getDocs(collection(db, 'tenants/tenant_default/orders'));
-          const remoteOrders: any[] = [];
-          ordersSnap.forEach(docSnap => remoteOrders.push({ id: docSnap.id, ...docSnap.data() }));
-          if (remoteOrders.length === 0) {
-            for (const o of initialOrders) {
-              await setDoc(doc(db, 'tenants/tenant_default/orders', o.id), { ...o, updatedAt: new Date().toISOString() });
-            }
-            setOrders(initialOrders);
-          } else {
-            const syncResult = await syncOfflineBatch(orders.length > 0 ? (orders as any) : (initialOrders as any), remoteOrders);
-            setOrders(syncResult.syncedRecords as any);
-          }
-
-          // Sync friends
-          const friendsSnap = await getDocs(collection(db, `users/${user.uid}/friends`));
-          const remoteFriends: any[] = [];
-          friendsSnap.forEach(docSnap => remoteFriends.push({ id: docSnap.id, ...docSnap.data() }));
-          if (remoteFriends.length === 0) {
-            for (const f of initialFriends) {
-              await setDoc(doc(db, `users/${user.uid}/friends`, f.id), { ...f, updatedAt: new Date().toISOString() });
-            }
-            setFriends(initialFriends);
-          } else {
-            const syncResult = await syncOfflineBatch(friends.length > 0 ? (friends as any) : (initialFriends as any), remoteFriends);
-            setFriends(syncResult.syncedRecords as any);
-          }
-
-          // Sync deliveries
-          const deliveriesSnap = await getDocs(collection(db, 'delivery_jobs'));
-          const remoteDeliveries: any[] = [];
-          deliveriesSnap.forEach(docSnap => remoteDeliveries.push({ id: docSnap.id, ...docSnap.data() }));
-          if (remoteDeliveries.length === 0) {
-            for (const d of initialDeliveries) {
-              await setDoc(doc(db, 'delivery_jobs', d.id), { ...d, updatedAt: new Date().toISOString() });
-            }
-            setDeliveries(initialDeliveries);
-          } else {
-            const syncResult = await syncOfflineBatch(deliveries.length > 0 ? (deliveries as any) : (initialDeliveries as any), remoteDeliveries);
-            setDeliveries(syncResult.syncedRecords as any);
-          }
-
-          // Sync freelance jobs
-          const freelanceSnap = await getDocs(collection(db, 'freelance_jobs'));
-          const remoteFreelance: any[] = [];
-          freelanceSnap.forEach(docSnap => remoteFreelance.push({ id: docSnap.id, ...docSnap.data() }));
-          if (remoteFreelance.length === 0) {
-            for (const f of initialFreelanceJobs) {
-              await setDoc(doc(db, 'freelance_jobs', f.id), { ...f, updatedAt: new Date().toISOString() });
-            }
-            setFreelanceJobs(initialFreelanceJobs);
-          } else {
-            const syncResult = await syncOfflineBatch(freelanceJobs.length > 0 ? (freelanceJobs as any) : (initialFreelanceJobs as any), remoteFreelance);
-            setFreelanceJobs(syncResult.syncedRecords as any);
-          }
-
-          triggerToast('Sincronização global de nuvem concluída com sucesso!', 'success');
-        } catch (error) {
-          const navigatorOnline =
-            typeof navigator === 'undefined'
-              ? true
-              : navigator.onLine;
-          const failure = classifyFirestoreFailure(error, navigatorOnline);
-
-          console.warn('Initial Firestore sync failed', {
-            kind: failure.kind,
-            code: failure.code
-          });
-
-          switch (failure.kind) {
-            case 'offline':
-              triggerToast(
-                'Sem conexão com a internet. Usando dados locais.',
-                'info'
-              );
-              break;
-            case 'temporarily-unavailable':
-              triggerToast(
-                'Serviço temporariamente indisponível. Os dados locais continuam disponíveis.',
-                'info'
-              );
-              break;
-            case 'permission-denied':
-              triggerToast(
-                'Alguns módulos não estão autorizados ou configurados para esta conta.',
-                'warning'
-              );
-              break;
-            case 'unauthenticated':
-              triggerToast(
-                'Sua sessão não está autenticada para concluir a sincronização.',
-                'error'
-              );
-              break;
-            default:
-              triggerToast(
-                'Não foi possível concluir toda a sincronização inicial.',
-                'warning'
-              );
-          }
-        }
       } else {
         setIsLoggedIn(false);
         setAuthenticatedUserId('');
@@ -1200,176 +916,16 @@ export default function App() {
     };
   }, []);
 
-  // Real-time Firestore Snapshot subscriptions
+  // Keep only the authorized signed-in user directory listener.
   useEffect(() => {
     if (!isLoggedIn) return;
 
-    // Listen to posts ('social_feed' and 'posts' aliases for real-time multiplayer)
-    const unsubSocialFeed = listenCollection('social_feed', (docs) => {
-      setPosts(prev => {
-        const otherPosts = prev.filter(p => (p as any).collectionAlias !== 'social_feed');
-        const newDocs = docs.map(d => ({ ...d, collectionAlias: 'social_feed' }));
-        return [...otherPosts, ...newDocs];
-      });
-    });
-
-    const unsubPosts = listenCollection('posts', (docs) => {
-      setPosts(prev => {
-        const otherPosts = prev.filter(p => (p as any).collectionAlias !== 'posts');
-        const newDocs = docs.map(d => ({ ...d, collectionAlias: 'posts' }));
-        return [...otherPosts, ...newDocs];
-      });
-    });
-
-    // Listen to momentos
-    const unsubMomentos = listenCollection('momentos', (docs) => {
-      setMomentos(docs);
-    });
-
-    // Listen to deliveries ('delivery_jobs' and 'deliveries' aliases)
-    const unsubDeliveryJobs = listenCollection('delivery_jobs', (docs) => {
-      setDeliveries(prev => {
-        const otherDeliveries = prev.filter(d => (d as any).collectionAlias !== 'delivery_jobs');
-        const newDocs = docs.map(d => ({ ...d, collectionAlias: 'delivery_jobs' }));
-        return [...otherDeliveries, ...newDocs];
-      });
-    });
-
-    const unsubDeliveries = listenCollection('deliveries', (docs) => {
-      setDeliveries(prev => {
-        const otherDeliveries = prev.filter(d => (d as any).collectionAlias !== 'deliveries');
-        const newDocs = docs.map(d => ({ ...d, collectionAlias: 'deliveries' }));
-        return [...otherDeliveries, ...newDocs];
-      });
-    });
-
-    // Listen to freelance jobs
-    const unsubFreelance = listenCollection('freelance_jobs', (docs) => {
-      setFreelanceJobs(docs);
-    });
-
-    // Listen to global users directories
-    const unsubUsers = listenCollection('users', (docs) => {
+    const unsubscribeUsers = listenCollection('users', docs => {
       setDbUsers(docs);
     });
 
-    // Listen to notes/tasks
-    const unsubNotes = listenCollection('tenants/tenant_default/tasks', (docs) => {
-      setNotes(prev => {
-        const remoteIds = new Set(docs.map(d => (d as any).id));
-        const mergedMap = new Map(prev.map(n => [n.id, n]));
-        let changed = false;
-
-        docs.forEach(remoteDoc => {
-          const localDoc = mergedMap.get((remoteDoc as any).id);
-          if (!localDoc) {
-            mergedMap.set((remoteDoc as any).id, remoteDoc);
-            changed = true;
-          } else {
-            const remoteTime = (remoteDoc as any).updatedAt ? new Date((remoteDoc as any).updatedAt).getTime() : 0;
-            const localTime = (localDoc as any).updatedAt ? new Date((localDoc as any).updatedAt).getTime() : 0;
-            if (remoteTime > localTime) {
-              mergedMap.set((remoteDoc as any).id, remoteDoc);
-              changed = true;
-            }
-          }
-        });
-
-        if (docs.length > 0) {
-          prev.forEach(localDoc => {
-            if (!remoteIds.has(localDoc.id)) {
-              mergedMap.delete(localDoc.id);
-              changed = true;
-            }
-          });
-        }
-
-        return changed ? Array.from(mergedMap.values()) : prev;
-      });
-    });
-
-    // Listen to social_tasks
-    const unsubSocialTasks = listenCollection('social_tasks', (docs) => {
-      setNotes(prev => {
-        const remoteIds = new Set(docs.map(d => (d as any).id));
-        const mergedMap = new Map(prev.map(n => [n.id, n]));
-        let changed = false;
-
-        docs.forEach(remoteDoc => {
-          const localDoc = mergedMap.get((remoteDoc as any).id);
-          if (!localDoc) {
-            mergedMap.set((remoteDoc as any).id, remoteDoc);
-            changed = true;
-          } else {
-            const remoteTime = (remoteDoc as any).updatedAt ? new Date((remoteDoc as any).updatedAt).getTime() : 0;
-            const localTime = (localDoc as any).updatedAt ? new Date((localDoc as any).updatedAt).getTime() : 0;
-            if (remoteTime > localTime) {
-              mergedMap.set((remoteDoc as any).id, remoteDoc);
-              changed = true;
-            }
-          }
-        });
-
-        if (docs.length > 0) {
-          prev.forEach(localDoc => {
-            if (!remoteIds.has(localDoc.id)) {
-              mergedMap.delete(localDoc.id);
-              changed = true;
-            }
-          });
-        }
-
-        return changed ? Array.from(mergedMap.values()) : prev;
-      });
-    });
-
-    // Listen to shared_notes
-    const unsubSharedNotes = listenCollection('shared_notes', (docs) => {
-      setNotes(prev => {
-        const remoteIds = new Set(docs.map(d => (d as any).id));
-        const mergedMap = new Map(prev.map(n => [n.id, n]));
-        let changed = false;
-
-        docs.forEach(remoteDoc => {
-          const localDoc = mergedMap.get((remoteDoc as any).id);
-          if (!localDoc) {
-            mergedMap.set((remoteDoc as any).id, remoteDoc);
-            changed = true;
-          } else {
-            const remoteTime = (remoteDoc as any).updatedAt ? new Date((remoteDoc as any).updatedAt).getTime() : 0;
-            const localTime = (localDoc as any).updatedAt ? new Date((localDoc as any).updatedAt).getTime() : 0;
-            if (remoteTime > localTime) {
-              mergedMap.set((remoteDoc as any).id, remoteDoc);
-              changed = true;
-            }
-          }
-        });
-
-        if (docs.length > 0) {
-          prev.forEach(localDoc => {
-            if (!remoteIds.has(localDoc.id)) {
-              mergedMap.delete(localDoc.id);
-              changed = true;
-            }
-          });
-        }
-
-        return changed ? Array.from(mergedMap.values()) : prev;
-      });
-    });
-
-
     return () => {
-      unsubSocialFeed();
-      unsubPosts();
-      unsubMomentos();
-      unsubDeliveryJobs();
-      unsubDeliveries();
-      unsubFreelance();
-      unsubUsers();
-      unsubNotes();
-      unsubSocialTasks();
-      unsubSharedNotes();
+      unsubscribeUsers();
     };
   }, [isLoggedIn]);
 
