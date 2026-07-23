@@ -1,1 +1,17 @@
 @import "tailwindcss";
+
+/* The header keeps the established wallet action while presenting only its icon. */
+#header-wallet-balance {
+  padding: 0.375rem;
+}
+
+#header-wallet-balance > button:first-child {
+  min-width: 2rem;
+  min-height: 2rem;
+  justify-content: center;
+}
+
+#header-wallet-balance > button:first-child span,
+#toggle-balance-visibility-btn {
+  display: none;
+}

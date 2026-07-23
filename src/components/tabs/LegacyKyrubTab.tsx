@@ -1,16 +1,28 @@
-import React from 'react';
-import { 
+import React, { useEffect, useMemo, useState } from 'react';
+import {
+  AtSign,
+  CircleUserRound,
+  Clock3,
+  Heart,
+  ImagePlus,
+  LoaderCircle,
+  LocateFixed,
+  MapPin,
+  MessageCircle,
   Search,
   SearchX,
+  Send,
+  Star,
   Store as StoreIcon,
-  MapPin, 
-  Heart, 
-  ThumbsUp, 
-  Users 
+  ThumbsUp,
+  UserMinus,
+  Users,
+  X,
 } from 'lucide-react';
 import { StoreOfferCarousel } from '../StoreOfferCarousel';
 import { MediaCarousel } from '../MediaCarousel';
-import { Store, Friend, SocialPost, Order } from '../../types';
+import { Friend, Order, SocialPost, Store } from '../../types';
+import { auth } from '../../utils/firebase';
 
 interface KyrubTabProps {
   searchQuery: string;
@@ -21,11 +33,11 @@ interface KyrubTabProps {
   setSocialSubTab: (val: 'lojas' | 'usuarios') => void;
   ofertasFilter: string;
   setOfertasFilter: React.Dispatch<
-  React.SetStateAction<'todas' | 'novas' | 'favoritas' | 'cliente'>
->;
+    React.SetStateAction<'todas' | 'novas' | 'favoritas' | 'cliente'>
+  >;
   favoriteStoreIds: string[];
   handleToggleFavoriteStore: (id: string) => void;
-  storesWithCoords: any[];
+  storesWithCoords: Store[];
   userCoords: { lat: number; lng: number } | null;
   orders: Order[];
   setSelectedStoreForMoments: (val: Store | null) => void;
@@ -46,11 +58,35 @@ interface KyrubTabProps {
   conectadosSubTab: 'sugestoes' | 'solicitacoes';
   setConectadosSubTab: (val: 'sugestoes' | 'solicitacoes') => void;
   getSuggestions: () => Friend[];
-  connectionRequests: any[];
-  handleAcceptRequest: (req: any) => void;
+  connectionRequests: Array<{
+    id: string;
+    name: string;
+    avatar?: string;
+    role?: string;
+    bio?: string;
+  }>;
+  handleAcceptRequest: (req: unknown) => void;
   handleDeclineRequest: (id: string, name: string) => void;
   triggerToast: (msg: string, type?: 'success' | 'error' | 'info') => void;
-  getDistance: (lat1: number, lon1: number, lat2: number, lon2: number) => number;
+  getDistance: (
+    lat1: number,
+    lon1: number,
+    lat2: number,
+    lon2: number
+  ) => number;
+}
+
+type ExtendedSocialPost = SocialPost & {
+  authorId?: string;
+  publicationType?: 'feed' | 'status';
+  taggedUsers?: string[];
+  createdAt?: string;
+};
+
+interface RegisterTarget {
+  id: string;
+  name: string;
+  avatar: string;
 }
 
 interface MarketplaceEmptyStateProps {
@@ -95,6 +131,40 @@ function MarketplaceEmptyState({
   );
 }
 
+function Avatar({
+  src,
+  name,
+  className,
+}: {
+  src?: string;
+  name: string;
+  className: string;
+}) {
+  if (src) {
+    return (
+      <img
+        src={src}
+        alt={name}
+        className={className}
+        referrerPolicy="no-referrer"
+      />
+    );
+  }
+
+  return (
+    <div
+      className={`${className} flex items-center justify-center bg-slate-950 text-slate-500`}
+      role="img"
+      aria-label={`Foto de ${name} não informada`}
+    >
+      <CircleUserRound className="h-1/2 w-1/2" />
+    </div>
+  );
+}
+
+const matchesSearch = (value: string | undefined, search: string) =>
+  Boolean(value?.toLocaleLowerCase('pt-BR').includes(search));
+
 export function KyrubTab({
   searchQuery,
   setSearchQuery,
@@ -116,7 +186,6 @@ export function KyrubTab({
   setPracaFilter,
   newPostText,
   setNewPostText,
-  handlePublishPost,
   posts,
   setPosts,
   friends,
@@ -131,11 +200,118 @@ export function KyrubTab({
   handleAcceptRequest,
   handleDeclineRequest,
   triggerToast,
-  getDistance
+  getDistance,
 }: KyrubTabProps) {
-  const marketplaceEmptyState: MarketplaceEmptyStateProps = (() => {
-    const normalizedSearch = searchQuery.trim();
+  const [effectiveUserCoords, setEffectiveUserCoords] = useState(userCoords);
+  const [isDistancePanelOpen, setIsDistancePanelOpen] = useState(false);
+  const [locationStatus, setLocationStatus] = useState<
+    'idle' | 'loading' | 'ready' | 'error'
+  >(userCoords ? 'ready' : 'idle');
+  const [postMediaUrls, setPostMediaUrls] = useState<string[]>([]);
+  const [taggedUsers, setTaggedUsers] = useState<string[]>([]);
+  const [isTagPickerOpen, setIsTagPickerOpen] = useState(false);
+  const [selectedRegister, setSelectedRegister] =
+    useState<RegisterTarget | null>(null);
 
+  useEffect(() => {
+    if (!userCoords) return;
+    setEffectiveUserCoords(userCoords);
+    setLocationStatus('ready');
+  }, [userCoords]);
+
+  const normalizedSearch = searchQuery.trim().toLocaleLowerCase('pt-BR');
+  const currentUser = auth.currentUser;
+  const currentUserName =
+    currentUser?.displayName || currentUser?.email?.split('@')[0] || 'Você';
+  const currentUserAvatar = currentUser?.photoURL || '';
+
+  const requestActualLocation = () => {
+    setIsDistancePanelOpen(true);
+
+    if (!navigator.geolocation) {
+      setLocationStatus('error');
+      triggerToast('Seu navegador não oferece geolocalização.', 'error');
+      return;
+    }
+
+    setLocationStatus('loading');
+    navigator.geolocation.getCurrentPosition(
+      position => {
+        setEffectiveUserCoords({
+          lat: position.coords.latitude,
+          lng: position.coords.longitude,
+        });
+        setLocationStatus('ready');
+        triggerToast('Localização atualizada com precisão do dispositivo.', 'success');
+      },
+      error => {
+        console.warn('Geolocation request failed.', error);
+        setLocationStatus('error');
+        triggerToast(
+          'Não foi possível acessar sua localização. Confira a permissão do navegador.',
+          'error'
+        );
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 12000,
+        maximumAge: 60000,
+      }
+    );
+  };
+
+  const filteredStores = useMemo(() => {
+    return storesWithCoords.filter(store => {
+      if (normalizedSearch) {
+        const matchesName = matchesSearch(store.name, normalizedSearch);
+        const matchesDescription = matchesSearch(
+          store.description,
+          normalizedSearch
+        );
+        const matchesKeywords = store.keywords?.some(keyword =>
+          matchesSearch(keyword, normalizedSearch)
+        );
+
+        if (!matchesName && !matchesDescription && !matchesKeywords) {
+          return false;
+        }
+      }
+
+      if (effectiveUserCoords) {
+        if (!Number.isFinite(store.lat) || !Number.isFinite(store.lng)) {
+          return false;
+        }
+
+        const distance = getDistance(
+          effectiveUserCoords.lat,
+          effectiveUserCoords.lng,
+          store.lat as number,
+          store.lng as number
+        );
+        if (distance > radiusKm) return false;
+      }
+
+      if (ofertasFilter === 'novas') return Boolean(store.isNew);
+      if (ofertasFilter === 'favoritas') {
+        return favoriteStoreIds.includes(store.id);
+      }
+      if (ofertasFilter === 'cliente') {
+        return orders.some(order => order.storeId === store.id);
+      }
+      return true;
+    });
+  }, [
+    effectiveUserCoords,
+    favoriteStoreIds,
+    getDistance,
+    normalizedSearch,
+    ofertasFilter,
+    orders,
+    radiusKm,
+    storesWithCoords,
+  ]);
+
+  const marketplaceEmptyState: MarketplaceEmptyStateProps = (() => {
     if (storesWithCoords.length === 0) {
       return {
         icon: StoreIcon,
@@ -149,55 +325,33 @@ export function KyrubTab({
       return {
         icon: SearchX,
         title: 'Nenhuma loja encontrada',
-        description: `Não encontramos resultados para “${normalizedSearch}”. Tente outro nome, produto ou categoria.`,
+        description: `Não encontramos resultados para “${searchQuery.trim()}”. Tente outro nome, produto ou categoria.`,
         actionLabel: 'Limpar busca',
         onAction: () => setSearchQuery(''),
       };
     }
 
-    if (ofertasFilter === 'favoritas') {
-      return {
-        icon: Heart,
-        title: 'Nenhuma loja favorita',
-        description:
-          'Toque no coração de uma loja para encontrá-la rapidamente nesta área.',
-        actionLabel: 'Ver todas as lojas',
-        onAction: () => setOfertasFilter('todas'),
-      };
-    }
-
-    if (ofertasFilter === 'novas') {
-      return {
-        icon: StoreIcon,
-        title: 'Nenhuma novidade por enquanto',
-        description:
-          'Novas vitrines publicadas pelos lojistas aparecerão aqui automaticamente.',
-        actionLabel: 'Ver todas as lojas',
-        onAction: () => setOfertasFilter('todas'),
-      };
-    }
-
-    if (ofertasFilter === 'cliente') {
-      return {
-        icon: Users,
-        title: 'Nenhuma loja no seu histórico',
-        description:
-          'Depois da sua primeira compra, as lojas das quais você já foi cliente aparecerão aqui.',
-        actionLabel: 'Explorar lojas',
-        onAction: () => setOfertasFilter('todas'),
-      };
-    }
-
-    if (userCoords) {
+    if (effectiveUserCoords) {
       return {
         icon: MapPin,
         title: `Nenhuma loja em até ${radiusKm} km`,
         description:
           radiusKm < 50
             ? 'Amplie o raio de busca para descobrir vitrines publicadas em outras regiões.'
-            : 'Ainda não há vitrines publicadas dentro do maior raio de busca disponível.',
+            : 'Ainda não há vitrines com localização cadastrada dentro do maior raio disponível.',
         actionLabel: radiusKm < 50 ? 'Buscar em até 50 km' : undefined,
         onAction: radiusKm < 50 ? () => setRadiusKm(50) : undefined,
+      };
+    }
+
+    if (ofertasFilter !== 'todas') {
+      return {
+        icon: Heart,
+        title: 'Nenhum resultado para este filtro',
+        description:
+          'Altere o filtro para continuar explorando as vitrines publicadas.',
+        actionLabel: 'Ver todas as lojas',
+        onAction: () => setOfertasFilter('todas'),
       };
     }
 
@@ -206,367 +360,691 @@ export function KyrubTab({
       title: 'Nenhuma oferta disponível',
       description:
         'Ajuste os filtros ou volte mais tarde para conferir novas vitrines publicadas.',
-      actionLabel: 'Redefinir filtros',
-      onAction: () => setOfertasFilter('todas'),
     };
   })();
 
+  const connectedFriends = useMemo(
+    () =>
+      friends.filter(friend => {
+        if (!friend.added || friend.isProfileVisible === false) return false;
+        if (!normalizedSearch) return true;
+        return (
+          matchesSearch(friend.name, normalizedSearch) ||
+          matchesSearch(friend.role, normalizedSearch) ||
+          matchesSearch(friend.bio, normalizedSearch)
+        );
+      }),
+    [friends, normalizedSearch]
+  );
+
+  const suggestions = useMemo(
+    () =>
+      getSuggestions().filter(friend => {
+        if (!normalizedSearch) return true;
+        return (
+          matchesSearch(friend.name, normalizedSearch) ||
+          matchesSearch(friend.role, normalizedSearch) ||
+          matchesSearch(friend.bio, normalizedSearch)
+        );
+      }),
+    [getSuggestions, normalizedSearch]
+  );
+
+  const feedPosts = useMemo(() => {
+    return (posts as ExtendedSocialPost[]).filter(post => {
+      if (post.publicationType === 'status') return false;
+
+      if (normalizedSearch) {
+        const matchesPost =
+          matchesSearch(post.user, normalizedSearch) ||
+          matchesSearch(post.content, normalizedSearch) ||
+          post.taggedUsers?.some(user => matchesSearch(user, normalizedSearch));
+        if (!matchesPost) return false;
+      }
+
+      if (pracaFilter === 'favoritos') {
+        if (
+          post.authorId === currentUser?.uid ||
+          post.user === currentUserName ||
+          post.user.includes('Você')
+        ) {
+          return true;
+        }
+        const friend = friends.find(
+          item => item.id === post.authorId || item.name === post.user
+        );
+        return Boolean(friend?.favorited);
+      }
+
+      return true;
+    });
+  }, [
+    currentUser?.uid,
+    currentUserName,
+    friends,
+    normalizedSearch,
+    posts,
+    pracaFilter,
+  ]);
+
+  const readPostImages = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files ?? []);
+    event.target.value = '';
+    if (files.length === 0) return;
+
+    const remainingSlots = 9 - postMediaUrls.length;
+    if (remainingSlots <= 0) {
+      triggerToast('O carrossel aceita no máximo 9 imagens.', 'info');
+      return;
+    }
+
+    const selectedFiles = files
+      .filter(file => file.type.startsWith('image/'))
+      .slice(0, remainingSlots);
+
+    if (selectedFiles.length < files.length) {
+      triggerToast(
+        'Foram adicionadas apenas imagens até o limite de 9 arquivos.',
+        'info'
+      );
+    }
+
+    const encodedImages = await Promise.all(
+      selectedFiles.map(
+        file =>
+          new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(String(reader.result));
+            reader.onerror = () => reject(reader.error);
+            reader.readAsDataURL(file);
+          })
+      )
+    );
+
+    setPostMediaUrls(current => [...current, ...encodedImages].slice(0, 9));
+  };
+
+  const publishPost = (publicationType: 'feed' | 'status') => {
+    const content = newPostText.trim();
+    if (!content && postMediaUrls.length === 0) {
+      triggerToast('Escreva algo ou adicione imagens antes de publicar.', 'info');
+      return;
+    }
+
+    const newPost: ExtendedSocialPost = {
+      id: `${publicationType}-${Date.now()}`,
+      authorId: currentUser?.uid,
+      user: currentUserName,
+      avatar: currentUserAvatar,
+      time: 'Agora mesmo',
+      createdAt: new Date().toISOString(),
+      content,
+      likes: 0,
+      mediaUrls: postMediaUrls,
+      taggedUsers,
+      publicationType,
+    };
+
+    setPosts(current => [newPost, ...current]);
+    setNewPostText('');
+    setPostMediaUrls([]);
+    setTaggedUsers([]);
+    setIsTagPickerOpen(false);
+    triggerToast(
+      publicationType === 'feed'
+        ? 'Publicação enviada para o feed da Praça.'
+        : 'Status publicado para seus contatos conectados.',
+      'success'
+    );
+  };
+
+  const toggleTaggedUser = (friendName: string) => {
+    setTaggedUsers(current =>
+      current.includes(friendName)
+        ? current.filter(name => name !== friendName)
+        : [...current, friendName]
+    );
+  };
+
+  const openOwnRegister = () => {
+    setSelectedRegister({
+      id: currentUser?.uid || 'current-user',
+      name: currentUserName,
+      avatar: currentUserAvatar,
+    });
+  };
+
+  const registerPosts = useMemo(() => {
+    if (!selectedRegister) return [];
+
+    return (posts as ExtendedSocialPost[]).filter(post => {
+      if (post.authorId && post.authorId === selectedRegister.id) return true;
+      if (post.user === selectedRegister.name) return true;
+      return (
+        selectedRegister.id === (currentUser?.uid || 'current-user') &&
+        post.user.includes('Você')
+      );
+    });
+  }, [currentUser?.uid, posts, selectedRegister]);
+
   return (
-    <div className="space-y-6 animate-fade-in" id="kyrub-tab-container">
-      
-      {/* Header: Keyword Search & Radius adjustments */}
-      <div className="space-y-3.5 bg-slate-900 p-4 rounded-3xl border border-slate-800">
-        <div className="flex gap-2">
-          <div className="relative flex-1">
-            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+    <div className="space-y-5 animate-fade-in" id="kyrub-tab-container">
+      <section className="space-y-3 rounded-3xl border border-slate-800 bg-slate-900 p-4">
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={requestActualLocation}
+            className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border transition-colors ${
+              locationStatus === 'ready'
+                ? 'border-orange-500/50 bg-orange-500/15 text-orange-400'
+                : locationStatus === 'error'
+                  ? 'border-red-500/40 bg-red-500/10 text-red-400'
+                  : 'border-slate-800 bg-slate-950 text-slate-500 hover:text-orange-400'
+            }`}
+            title="Usar localização atual e ajustar distância"
+            aria-label="Filtro de distância"
+            id="distance-filter-trigger"
+          >
+            {locationStatus === 'loading' ? (
+              <LoaderCircle className="h-4 w-4 animate-spin" />
+            ) : (
+              <LocateFixed className="h-4 w-4" />
+            )}
+          </button>
+
+          <div className="relative min-w-0 flex-1">
+            <Search className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
             <input
-              type="text"
+              type="search"
               placeholder="Buscar lojas, produtos ou usuários..."
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-10 pr-4 py-2 text-xs text-white focus:outline-none"
+              onChange={event => setSearchQuery(event.target.value)}
+              className="w-full rounded-xl border border-slate-800 bg-slate-950 py-2.5 pl-10 pr-9 text-xs text-white outline-none transition-colors focus:border-orange-500/60"
             />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white"
+                title="Limpar busca"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
           </div>
         </div>
 
-        {/* GPS Distance Adjustment slider */}
-        <div className="flex items-center justify-between text-xs font-mono pt-1">
-          <span className="text-slate-400 flex items-center gap-1.5">
-            <MapPin className="w-3.5 h-3.5 text-orange-500" />
-            Filtro de Distância (GPS):
-          </span>
-          <div className="flex items-center gap-2 font-bold text-orange-400">
-            <input
-              type="range"
-              min="1"
-              max="50"
-              value={radiusKm}
-              onChange={(e) => setRadiusKm(Number(e.target.value))}
-              className="w-24 h-1 bg-slate-950 rounded-lg appearance-none cursor-pointer accent-orange-500"
-            />
-            <span>{radiusKm} KM</span>
+        {isDistancePanelOpen && (
+          <div className="rounded-2xl border border-slate-800 bg-slate-950/80 p-3">
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <span className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider text-slate-300">
+                  <MapPin className="h-3.5 w-3.5 text-orange-400" />
+                  Distância
+                </span>
+                <p className="mt-1 text-[9px] text-slate-500">
+                  {locationStatus === 'ready'
+                    ? 'Localização ativa. Lojas sem coordenadas não entram no resultado.'
+                    : 'Autorize sua localização para filtrar as vitrines próximas.'}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsDistancePanelOpen(false)}
+                className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-900 hover:text-white"
+                title="Fechar filtro"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+
+            <div className="mt-3 flex items-center gap-3">
+              <input
+                type="range"
+                min="1"
+                max="50"
+                value={radiusKm}
+                onChange={event => setRadiusKm(Number(event.target.value))}
+                className="h-1 flex-1 cursor-pointer appearance-none rounded-lg bg-slate-800 accent-orange-500"
+                aria-label="Raio de distância em quilômetros"
+              />
+              <span className="w-12 text-right font-mono text-[10px] font-black text-orange-400">
+                {radiusKm} KM
+              </span>
+            </div>
           </div>
+        )}
+
+        <div className="flex border-b border-slate-800" id="social-tabs">
+          <button
+            type="button"
+            onClick={() => setSocialSubTab('lojas')}
+            className={`flex-1 border-b-2 pb-2.5 text-xs font-black uppercase tracking-wider transition-all ${
+              socialSubTab === 'lojas'
+                ? 'border-orange-500 text-white'
+                : 'border-transparent text-slate-500 hover:text-slate-300'
+            }`}
+          >
+            Ofertas
+          </button>
+          <button
+            type="button"
+            onClick={() => setSocialSubTab('usuarios')}
+            className={`flex-1 border-b-2 pb-2.5 text-xs font-black uppercase tracking-wider transition-all ${
+              socialSubTab === 'usuarios'
+                ? 'border-orange-500 text-white'
+                : 'border-transparent text-slate-500 hover:text-slate-300'
+            }`}
+          >
+            Praça
+          </button>
         </div>
-      </div>
+      </section>
 
-      {/* Two internal tabs: Ofertas and Praça */}
-      <div className="flex border-b border-slate-800" id="social-tabs">
-        <button
-          onClick={() => setSocialSubTab('lojas')}
-          className={`flex-1 pb-3 text-xs font-black uppercase tracking-wider border-b-2 transition-all ${
-            socialSubTab === 'lojas' 
-              ? 'border-orange-500 text-white' 
-              : 'border-transparent text-slate-500 hover:text-slate-300'
-          }`}
-        >
-          Ofertas
-        </button>
-        <button
-          onClick={() => setSocialSubTab('usuarios')}
-          className={`flex-1 pb-3 text-xs font-black uppercase tracking-wider border-b-2 transition-all ${
-            socialSubTab === 'usuarios' 
-              ? 'border-orange-500 text-white' 
-              : 'border-transparent text-slate-500 hover:text-slate-300'
-          }`}
-        >
-          Praça
-        </button>
-      </div>
-
-      {/* Sub Tab: OFERTAS */}
       {socialSubTab === 'lojas' && (
         <div className="space-y-4 animate-fade-in">
-          {/* Horizontal Filters Bar */}
-          <div className="flex items-center justify-around bg-slate-900/60 p-3 rounded-2xl border border-slate-800/80">
-            <button
-              onClick={() => setOfertasFilter(ofertasFilter === 'novas' ? 'todas' : 'novas')}
-              className={`px-4 py-2 rounded-full border transition-all cursor-pointer text-xs font-bold uppercase ${
-                ofertasFilter === 'novas'
-                  ? 'bg-orange-500/20 border-orange-500 text-orange-400'
-                  : 'bg-slate-950 border-slate-850 text-slate-400 hover:text-white'
-              }`}
-            >
-              <span>Novas</span>
-            </button>
-            
-            <button
-              onClick={() => setOfertasFilter(ofertasFilter === 'favoritas' ? 'todas' : 'favoritas')}
-              className={`px-4 py-2 rounded-full border transition-all cursor-pointer text-xs font-bold uppercase ${
-                ofertasFilter === 'favoritas'
-                  ? 'bg-red-500/20 border-red-500 text-red-400'
-                  : 'bg-slate-950 border-slate-850 text-slate-400 hover:text-white'
-              }`}
-            >
-              <span>Favoritas</span>
-            </button>
-
-            <button
-              onClick={() => setOfertasFilter(ofertasFilter === 'cliente' ? 'todas' : 'cliente')}
-              className={`px-4 py-2 rounded-full border transition-all cursor-pointer text-xs font-bold uppercase ${
-                ofertasFilter === 'cliente'
-                  ? 'bg-teal-500/20 border-teal-500 text-teal-400'
-                  : 'bg-slate-950 border-slate-850 text-slate-400 hover:text-white'
-              }`}
-            >
-              <span>Cliente</span>
-            </button>
+          <div className="flex items-center justify-around rounded-2xl border border-slate-800/80 bg-slate-900/60 p-3">
+            {[
+              { id: 'novas', label: 'Novas' },
+              { id: 'favoritas', label: 'Favoritas' },
+              { id: 'cliente', label: 'Cliente' },
+            ].map(filter => (
+              <button
+                type="button"
+                key={filter.id}
+                onClick={() =>
+                  setOfertasFilter(
+                    ofertasFilter === filter.id
+                      ? 'todas'
+                      : (filter.id as 'novas' | 'favoritas' | 'cliente')
+                  )
+                }
+                className={`rounded-full border px-3 py-2 text-[10px] font-bold uppercase transition-all ${
+                  ofertasFilter === filter.id
+                    ? 'border-orange-500 bg-orange-500/20 text-orange-400'
+                    : 'border-slate-800 bg-slate-950 text-slate-400 hover:text-white'
+                }`}
+              >
+                {filter.label}
+              </button>
+            ))}
           </div>
 
-          {/* Stores Grid Layout (2 columns / compact card height) */}
-          <div className="grid grid-cols-2 gap-1.5">
-            {storesWithCoords
-              .filter(store => {
-                if (searchQuery) {
-                  const q = searchQuery.toLowerCase();
-                  const matchesName = store.name.toLowerCase().includes(q);
-                  const matchesDesc = store.description.toLowerCase().includes(q);
-                  const matchesKeywords = store.keywords?.some((kw: string) => kw.toLowerCase().includes(q)) || false;
-                  if (!matchesName && !matchesDesc && !matchesKeywords) {
-                    return false;
-                  }
-                }
-                if (userCoords && Number.isFinite(store.lat) && Number.isFinite(store.lng)) {
-                  const dist = getDistance(userCoords.lat, userCoords.lng, store.lat, store.lng);
-                  if (dist > radiusKm) return false;
-                }
-                if (ofertasFilter === 'novas') return store.isNew;
-                if (ofertasFilter === 'favoritas') return favoriteStoreIds.includes(store.id);
-                if (ofertasFilter === 'cliente') return orders.some(o => o.storeId === store.id);
-                return true;
-              })
-              .map(store => {
-                const hasValidCoords = Number.isFinite(store.lat) && Number.isFinite(store.lng);
-                const dist = userCoords && hasValidCoords
-                  ? getDistance(userCoords.lat, userCoords.lng, store.lat, store.lng)
+          <div className="grid grid-cols-2 gap-2 sm:gap-3">
+            {filteredStores.map(store => {
+              const hasValidCoords =
+                Number.isFinite(store.lat) && Number.isFinite(store.lng);
+              const distance =
+                effectiveUserCoords && hasValidCoords
+                  ? getDistance(
+                      effectiveUserCoords.lat,
+                      effectiveUserCoords.lng,
+                      store.lat as number,
+                      store.lng as number
+                    )
                   : null;
-                return (
-                  <div key={store.id} className="relative rounded-3xl overflow-hidden border border-slate-800 bg-slate-950 flex flex-col justify-between h-[148px] group hover:border-slate-700 transition-all shadow-xl">
-                    {/* Automatic Vitrine Slide background */}
-                    <StoreOfferCarousel images={store.offerImages} />
 
-                    {/* Top Indicators/Actions Overlay */}
-                    <div className="absolute top-0 inset-x-0 p-2 flex justify-between items-start z-10">
-                      {/* Logo da Loja */}
-                      <div className="relative w-8.5 h-8.5 shrink-0">
-                        {store.logo ? (
-                          <img
-                            src={store.logo}
-                            alt={store.name}
-                            className="w-8.5 h-8.5 object-cover rounded-xl border border-slate-800 bg-slate-900 shadow-md"
-                            referrerPolicy="no-referrer"
-                          />
-                        ) : (
-                          <div
-                            className="flex w-8.5 h-8.5 items-center justify-center rounded-xl border border-slate-800 bg-slate-900 text-slate-500 shadow-md"
-                            role="img"
-                            aria-label="Logo da loja não informado"
-                          >
-                            <StoreIcon className="h-4 w-4" />
-                          </div>
-                        )}
-                        <span 
-                          className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border border-slate-950 shadow-sm ${
-                            store.status === 'open' ? 'bg-emerald-500 animate-pulse' :
-                            store.status === 'delayed' ? 'bg-amber-500 animate-pulse' :
-                            'bg-slate-500'
-                          }`} 
-                          title={
-                            store.status === 'open' ? 'Aberta' :
-                            store.status === 'delayed' ? 'Alerta: +20 pedidos' :
-                            store.status === 'closed' ? 'Pausada' :
-                            'Status não informado'
-                          }
+              return (
+                <article
+                  key={store.id}
+                  className="group relative flex h-[156px] flex-col justify-between overflow-hidden rounded-3xl border border-slate-800 bg-slate-950 shadow-xl transition-all hover:border-slate-700"
+                >
+                  <StoreOfferCarousel images={store.offerImages} />
+
+                  <div className="absolute inset-x-0 top-0 z-10 flex items-start justify-between p-2">
+                    <div className="relative h-9 w-9 shrink-0">
+                      {store.logo ? (
+                        <img
+                          src={store.logo}
+                          alt={store.name}
+                          className="h-9 w-9 rounded-xl border border-slate-800 bg-slate-900 object-cover shadow-md"
+                          referrerPolicy="no-referrer"
                         />
-                      </div>
-
-                      {/* Favorite Toggle (Heart) */}
-                      <button
-                        onClick={() => handleToggleFavoriteStore(store.id)}
-                        className="p-1 bg-slate-950/85 backdrop-blur-md rounded-full border border-slate-800/80 hover:scale-110 transition-transform cursor-pointer"
-                      >
-                        <Heart
-                          className={`w-3 h-3 transition-all ${
-                            favoriteStoreIds.includes(store.id) ? 'text-red-500 fill-red-500' : 'text-slate-400'
-                          }`}
-                        />
-                      </button>
-                    </div>
-
-                    {/* Bottom Information */}
-                    <div className="mt-auto p-2 border-t border-slate-900/40 relative z-10 flex flex-col justify-end bg-gradient-to-t from-slate-950 via-slate-950/90 to-transparent">
-                      <h3 className="font-black text-[13px] text-white uppercase tracking-wider truncate" title={store.name}>
-                        {store.name}
-                      </h3>
-                      <p className="text-[8.5px] text-slate-400 line-clamp-1 leading-none mb-1">{store.description}</p>
-                      
-                      <div className="flex items-center justify-between text-[8px] font-mono text-slate-500">
-                        <span className="shrink-0 font-bold text-slate-400">
-                          {dist !== null ? `📍 ${dist.toFixed(1)} KM` : '📍 Localização não informada'}
-                        </span>
-                        <div className="flex items-center gap-1 truncate text-[7px] text-orange-400/90 font-bold max-w-[65%]">
-                          {store.keywords?.slice(0, 3).map((kw: string) => `#${kw}`).join(' ')}
+                      ) : (
+                        <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-800 bg-slate-900 text-slate-500 shadow-md">
+                          <StoreIcon className="h-4 w-4" />
                         </div>
-                      </div>
+                      )}
+                      <span
+                        className={`absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border border-slate-950 ${
+                          store.status === 'open'
+                            ? 'bg-emerald-500'
+                            : store.status === 'delayed'
+                              ? 'bg-amber-500'
+                              : 'bg-slate-500'
+                        }`}
+                      />
                     </div>
 
-                    {/* Bottom buttons */}
-                    <div className="grid grid-cols-2 border-t border-slate-850 relative z-10 bg-slate-950/95 rounded-b-3xl">
-                      <button
-                        onClick={() => {
-                          setSelectedStoreForMoments(store);
-                          setShowMomentsModal(true);
-                        }}
-                        className="py-1.5 text-[8.5px] font-mono font-black uppercase tracking-widest text-slate-400 hover:text-white hover:bg-slate-900 border-r border-slate-850 transition-colors text-center cursor-pointer"
-                      >
-                        MOMENTOS
-                      </button>
-                      <button
-                        onClick={() => setVisitingStore(store)}
-                        className="py-1.5 text-[8.5px] font-mono font-black uppercase tracking-widest text-teal-400 hover:text-teal-300 hover:bg-slate-900 transition-colors text-center cursor-pointer"
-                      >
-                        ENTRAR
-                      </button>
+                    <button
+                      type="button"
+                      onClick={() => handleToggleFavoriteStore(store.id)}
+                      className="rounded-full border border-slate-800/80 bg-slate-950/85 p-1.5 backdrop-blur-md transition-transform hover:scale-110"
+                      title="Favoritar loja"
+                    >
+                      <Heart
+                        className={`h-3 w-3 ${
+                          favoriteStoreIds.includes(store.id)
+                            ? 'fill-red-500 text-red-500'
+                            : 'text-slate-400'
+                        }`}
+                      />
+                    </button>
+                  </div>
+
+                  <div className="relative z-10 mt-auto bg-gradient-to-t from-slate-950 via-slate-950/95 to-transparent p-2">
+                    <h3 className="truncate text-[13px] font-black uppercase tracking-wider text-white">
+                      {store.name}
+                    </h3>
+                    <p className="mb-1 line-clamp-1 text-[8.5px] leading-none text-slate-400">
+                      {store.description}
+                    </p>
+                    <div className="flex items-center justify-between gap-1 font-mono text-[8px] text-slate-400">
+                      <span className="shrink-0 font-bold">
+                        {distance !== null
+                          ? `📍 ${distance.toFixed(1)} KM`
+                          : '📍 Localização não informada'}
+                      </span>
                     </div>
                   </div>
-                );
-              })}
+
+                  <div className="relative z-10 grid grid-cols-2 border-t border-slate-800 bg-slate-950/95">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedStoreForMoments(store);
+                        setShowMomentsModal(true);
+                      }}
+                      className="border-r border-slate-800 py-1.5 text-center font-mono text-[8.5px] font-black uppercase tracking-widest text-slate-400 hover:bg-slate-900 hover:text-white"
+                    >
+                      Momentos
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setVisitingStore(store)}
+                      className="py-1.5 text-center font-mono text-[8.5px] font-black uppercase tracking-widest text-teal-400 hover:bg-slate-900 hover:text-teal-300"
+                    >
+                      Entrar
+                    </button>
+                  </div>
+                </article>
+              );
+            })}
           </div>
 
-          {storesWithCoords.filter(store => {
-            if (searchQuery) {
-              const q = searchQuery.toLowerCase();
-              if (!store.name.toLowerCase().includes(q) && !store.description.toLowerCase().includes(q) && !(store.keywords?.some((kw: string) => kw.toLowerCase().includes(q)))) return false;
-            }
-            if (userCoords && Number.isFinite(store.lat) && Number.isFinite(store.lng)) {
-              const dist = getDistance(userCoords.lat, userCoords.lng, store.lat, store.lng);
-              if (dist > radiusKm) return false;
-            }
-            if (ofertasFilter === 'novas') return store.isNew;
-            if (ofertasFilter === 'favoritas') return favoriteStoreIds.includes(store.id);
-            if (ofertasFilter === 'cliente') return orders.some(o => o.storeId === store.id);
-            return true;
-          }).length === 0 && (
+          {filteredStores.length === 0 && (
             <MarketplaceEmptyState {...marketplaceEmptyState} />
           )}
         </div>
       )}
 
-      {/* Sub Tab: PRAÇA */}
       {socialSubTab === 'usuarios' && (
         <div className="space-y-5 animate-fade-in">
-          
-          {/* Horizontal 3-Filter Selection Bar */}
-          <div className="flex bg-slate-900/80 p-1 rounded-2xl border border-slate-800 gap-1 shadow-lg">
-            <button
-              onClick={() => setPracaFilter('recentes')}
-              className={`flex-1 py-2 text-[10px] font-black uppercase tracking-wider rounded-xl transition-all cursor-pointer ${
-                pracaFilter === 'recentes'
-                  ? 'bg-orange-600 text-white shadow-lg shadow-orange-600/10'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              Recentes
-            </button>
-            <button
-              onClick={() => setPracaFilter('favoritos')}
-              className={`flex-1 py-2 text-[10px] font-black uppercase tracking-wider rounded-xl transition-all cursor-pointer ${
-                pracaFilter === 'favoritos'
-                  ? 'bg-orange-600 text-white shadow-lg shadow-orange-600/10'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              Favoritos
-            </button>
-            <button
-              onClick={() => setPracaFilter('conectados')}
-              className={`flex-1 py-2 text-[10px] font-black uppercase tracking-wider rounded-xl transition-all cursor-pointer ${
-                pracaFilter === 'conectados'
-                  ? 'bg-orange-600 text-white shadow-lg shadow-orange-600/10'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              Conectados
-            </button>
+          <div className="flex gap-1 rounded-2xl border border-slate-800 bg-slate-900/80 p-1 shadow-lg">
+            {[
+              { id: 'recentes', label: 'Recentes' },
+              { id: 'favoritos', label: 'Favoritos' },
+              { id: 'conectados', label: 'Conectados' },
+            ].map(filter => (
+              <button
+                type="button"
+                key={filter.id}
+                onClick={() =>
+                  setPracaFilter(
+                    filter.id as 'recentes' | 'favoritos' | 'conectados'
+                  )
+                }
+                className={`flex-1 rounded-xl py-2 text-[10px] font-black uppercase tracking-wider transition-all ${
+                  pracaFilter === filter.id
+                    ? 'bg-orange-600 text-white shadow-lg shadow-orange-600/10'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                {filter.label}
+              </button>
+            ))}
           </div>
 
-          {/* PRACA: RECENTES OR FAVORITOS VIEW */}
           {(pracaFilter === 'recentes' || pracaFilter === 'favoritos') && (
             <div className="space-y-4">
-              {/* Status Publish Form */}
               {pracaFilter === 'recentes' && (
-                <form onSubmit={handlePublishPost} className="bg-slate-900 p-4 rounded-3xl border border-slate-800/80 space-y-3">
-                  <textarea
-                    value={newPostText}
-                    onChange={(e) => setNewPostText(e.target.value)}
-                    placeholder="O que está acontecendo no seu negócio ou região?"
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-orange-500"
-                    rows={2}
-                  />
-                  <div className="flex justify-between items-center">
-                    <span className="text-[9px] text-slate-500 font-mono">Compartilhar com a comunidade local</span>
-                    <button
-                      type="submit"
-                      className="px-4 py-1.5 bg-orange-600 hover:bg-orange-500 text-white font-bold rounded-xl text-xs uppercase cursor-pointer"
-                    >
-                      Postar Status
-                    </button>
-                  </div>
-                </form>
-              )}
-
-              {/* Feed Posts */}
-              <div className="space-y-4">
-                {posts
-                  .filter(post => {
-                    if (pracaFilter === 'favoritos') {
-                      if (post.user.includes('Você')) return true;
-                      const matchFriend = friends.find(f => f.name === post.user || post.user.includes(f.name));
-                      return (matchFriend as any)?.favorited || false;
-                    }
-                    return true;
-                  })
-                  .map(post => (
-                    <div key={post.id} className="bg-slate-900 border border-slate-800/80 rounded-2xl p-4 space-y-3">
-                      <div className="flex gap-3 items-center">
-                        <img src={post.avatar} alt={post.user} className="w-9 h-9 object-cover rounded-full" referrerPolicy="no-referrer" />
-                        <div>
-                          <h4 className="text-xs font-bold text-slate-200">{post.user}</h4>
-                          <span className="text-[9px] font-mono text-slate-500">{post.time}</span>
-                        </div>
-                      </div>
-                      <p className="text-slate-300 text-xs leading-relaxed whitespace-pre-line">{post.content}</p>
-                      
-                      {post.mediaUrls && post.mediaUrls.length > 0 && (
-                        <div className="py-1">
-                          <MediaCarousel mediaUrls={post.mediaUrls} />
-                        </div>
-                      )}
-                      
-                      <div className="flex justify-between items-center text-[10px] text-slate-500 font-mono pt-2.5 border-t border-slate-800/60">
-                        <button 
-                          onClick={() => {
-                            setPosts(curr => curr.map(p => p.id === post.id ? { ...p, likes: p.likes + 1 } : p));
-                            triggerToast('Status curtido!', 'success');
-                          }}
-                          className="hover:text-white flex items-center gap-1.5 cursor-pointer"
-                        >
-                          <ThumbsUp className="w-3.5 h-3.5 text-orange-500" />
-                          <span>{post.likes} curtidas</span>
-                        </button>
-                        <span className="text-[9px] text-orange-400">Kyrub Social Network</span>
+                <section className="space-y-3 rounded-3xl border border-slate-800/80 bg-slate-900 p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2">
+                      <Avatar
+                        src={currentUserAvatar}
+                        name={currentUserName}
+                        className="h-9 w-9 rounded-full border border-slate-800 object-cover"
+                      />
+                      <div>
+                        <span className="block text-[10px] font-black text-white">
+                          {currentUserName}
+                        </span>
+                        <span className="text-[8px] font-mono uppercase text-slate-500">
+                          Nova publicação
+                        </span>
                       </div>
                     </div>
-                  ))}
+                    <button
+                      type="button"
+                      onClick={openOwnRegister}
+                      className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-800 bg-slate-950 text-slate-400 hover:border-orange-500/40 hover:text-orange-400"
+                      title="Meu registro de publicações"
+                      aria-label="Abrir meu registro de publicações"
+                    >
+                      <CircleUserRound className="h-4 w-4" />
+                    </button>
+                  </div>
 
-                {posts.filter(post => {
-                  if (pracaFilter === 'favoritos') {
-                    if (post.user.includes('Você')) return true;
-                    const matchFriend = friends.find(f => f.name === post.user || post.user.includes(f.name));
-                    return (matchFriend as any)?.favorited || false;
-                  }
-                  return true;
-                }).length === 0 && (
-                  <div className="text-center py-12 text-slate-500 text-xs">
+                  <textarea
+                    value={newPostText}
+                    onChange={event => setNewPostText(event.target.value)}
+                    placeholder="O que está acontecendo no seu negócio ou região?"
+                    className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 text-xs text-white outline-none focus:border-orange-500"
+                    rows={3}
+                  />
+
+                  {postMediaUrls.length > 0 && (
+                    <div className="grid grid-cols-3 gap-2 rounded-2xl border border-slate-800 bg-slate-950 p-2">
+                      {postMediaUrls.map((url, index) => (
+                        <div
+                          key={`${url.slice(0, 32)}-${index}`}
+                          className="relative aspect-square overflow-hidden rounded-xl border border-slate-800"
+                        >
+                          <img
+                            src={url}
+                            alt={`Imagem ${index + 1} da publicação`}
+                            className="h-full w-full object-cover"
+                          />
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setPostMediaUrls(current =>
+                                current.filter((_, itemIndex) => itemIndex !== index)
+                              )
+                            }
+                            className="absolute right-1 top-1 rounded-full bg-slate-950/90 p-1 text-white"
+                            title="Remover imagem"
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {taggedUsers.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5">
+                      {taggedUsers.map(name => (
+                        <button
+                          type="button"
+                          key={name}
+                          onClick={() => toggleTaggedUser(name)}
+                          className="flex items-center gap-1 rounded-full border border-teal-500/30 bg-teal-500/10 px-2 py-1 text-[9px] font-bold text-teal-300"
+                          title="Remover marcação"
+                        >
+                          @{name}
+                          <X className="h-2.5 w-2.5" />
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  <div className="relative flex flex-wrap items-center justify-between gap-2 border-t border-slate-800/70 pt-3">
+                    <div className="flex items-center gap-2">
+                      <label
+                        className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-xl border border-slate-800 bg-slate-950 text-slate-400 hover:text-orange-400"
+                        title="Adicionar até 9 imagens"
+                      >
+                        <ImagePlus className="h-4 w-4" />
+                        <input
+                          type="file"
+                          accept="image/*"
+                          multiple
+                          className="hidden"
+                          onChange={readPostImages}
+                        />
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => setIsTagPickerOpen(current => !current)}
+                        className={`flex h-9 w-9 items-center justify-center rounded-xl border bg-slate-950 transition-colors ${
+                          isTagPickerOpen || taggedUsers.length > 0
+                            ? 'border-teal-500/40 text-teal-400'
+                            : 'border-slate-800 text-slate-400 hover:text-teal-400'
+                        }`}
+                        title="Marcar usuários"
+                      >
+                        <AtSign className="h-4 w-4" />
+                      </button>
+                      <span className="font-mono text-[8px] text-slate-500">
+                        {postMediaUrls.length}/9
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => publishPost('status')}
+                        className="flex items-center gap-1.5 rounded-xl border border-teal-500/30 bg-teal-500/10 px-3 py-2 text-[9px] font-black uppercase text-teal-300 hover:bg-teal-500/20"
+                      >
+                        <Clock3 className="h-3.5 w-3.5" />
+                        Status
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => publishPost('feed')}
+                        className="flex items-center gap-1.5 rounded-xl bg-orange-600 px-3 py-2 text-[9px] font-black uppercase text-white hover:bg-orange-500"
+                      >
+                        <Send className="h-3.5 w-3.5" />
+                        Feed
+                      </button>
+                    </div>
+
+                    {isTagPickerOpen && (
+                      <div className="absolute left-0 right-0 top-full z-20 mt-2 max-h-52 overflow-y-auto rounded-2xl border border-slate-800 bg-slate-950 p-2 shadow-2xl">
+                        {friends.filter(friend => friend.isProfileVisible !== false)
+                          .length === 0 ? (
+                          <p className="p-3 text-center text-[10px] text-slate-500">
+                            Nenhum usuário disponível para marcação.
+                          </p>
+                        ) : (
+                          friends
+                            .filter(friend => friend.isProfileVisible !== false)
+                            .map(friend => (
+                              <button
+                                type="button"
+                                key={friend.id}
+                                onClick={() => toggleTaggedUser(friend.name)}
+                                className="flex w-full items-center justify-between gap-3 rounded-xl px-2 py-2 text-left hover:bg-slate-900"
+                              >
+                                <span className="flex min-w-0 items-center gap-2">
+                                  <Avatar
+                                    src={friend.avatar}
+                                    name={friend.name}
+                                    className="h-7 w-7 shrink-0 rounded-full border border-slate-800 object-cover"
+                                  />
+                                  <span className="truncate text-[10px] font-bold text-slate-300">
+                                    {friend.name}
+                                  </span>
+                                </span>
+                                <span className="text-[9px] font-mono text-teal-400">
+                                  {taggedUsers.includes(friend.name)
+                                    ? 'Marcado'
+                                    : 'Marcar'}
+                                </span>
+                              </button>
+                            ))
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </section>
+              )}
+
+              <div className="space-y-4">
+                {feedPosts.map(post => (
+                  <article
+                    key={post.id}
+                    className="space-y-3 rounded-2xl border border-slate-800/80 bg-slate-900 p-4"
+                  >
+                    <div className="flex items-center gap-3">
+                      <Avatar
+                        src={post.avatar}
+                        name={post.user}
+                        className="h-9 w-9 rounded-full border border-slate-800 object-cover"
+                      />
+                      <div className="min-w-0">
+                        <h4 className="truncate text-xs font-bold text-slate-200">
+                          {post.user}
+                        </h4>
+                        <span className="font-mono text-[9px] text-slate-500">
+                          {post.time}
+                        </span>
+                      </div>
+                    </div>
+
+                    {post.content && (
+                      <p className="whitespace-pre-line text-xs leading-relaxed text-slate-300">
+                        {post.content}
+                      </p>
+                    )}
+
+                    {post.taggedUsers && post.taggedUsers.length > 0 && (
+                      <p className="text-[9px] font-mono text-teal-400">
+                        com {post.taggedUsers.map(name => `@${name}`).join(', ')}
+                      </p>
+                    )}
+
+                    {post.mediaUrls && post.mediaUrls.length > 0 && (
+                      <MediaCarousel mediaUrls={post.mediaUrls} />
+                    )}
+
+                    <div className="flex items-center justify-between border-t border-slate-800/60 pt-2.5 font-mono text-[10px] text-slate-500">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPosts(current =>
+                            current.map(item =>
+                              item.id === post.id
+                                ? { ...item, likes: item.likes + 1 }
+                                : item
+                            )
+                          );
+                          triggerToast('Publicação curtida!', 'success');
+                        }}
+                        className="flex items-center gap-1.5 hover:text-white"
+                      >
+                        <ThumbsUp className="h-3.5 w-3.5 text-orange-500" />
+                        {post.likes} curtidas
+                      </button>
+                      <span className="text-[9px] text-orange-400">Feed Kyrub</span>
+                    </div>
+                  </article>
+                ))}
+
+                {feedPosts.length === 0 && (
+                  <div className="py-12 text-center text-xs text-slate-500">
                     Nenhuma publicação encontrada para os filtros selecionados.
                   </div>
                 )}
@@ -574,231 +1052,342 @@ export function KyrubTab({
             </div>
           )}
 
-          {/* PRACA: CONECTADOS / DIRECTORY VIEW */}
           {pracaFilter === 'conectados' && (
             <div className="space-y-6">
-              
-              <div className="space-y-3">
-                <h4 className="text-[10px] font-mono uppercase text-slate-400 tracking-wider flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-teal-500"></span>
-                  <span>Meus Contatos Conectados ({friends.filter(f => f.added && (f as any).isProfileVisible !== false).length})</span>
+              <section className="space-y-3">
+                <h4 className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-wider text-slate-400">
+                  <span className="h-2 w-2 rounded-full bg-teal-500" />
+                  Contatos conectados ({connectedFriends.length})
                 </h4>
-                
-                <div className="grid grid-cols-1 gap-3">
-                  {friends
-                    .filter(f => f.added && (f as any).isProfileVisible !== false)
-                    .map(friend => (
-                      <div key={friend.id} className="bg-slate-900 border border-slate-800 p-4 rounded-3xl flex flex-col justify-between space-y-4 hover:border-slate-700 transition-all">
-                        <div className="flex gap-3 items-start">
-                          <img 
-                            src={friend.avatar} 
-                            alt={friend.name} 
-                            className="w-12 h-12 rounded-full object-cover border border-slate-800 shrink-0" 
-                            referrerPolicy="no-referrer"
-                          />
-                          <div className="space-y-1 min-w-0 flex-1">
-                            <div className="flex justify-between items-start gap-1">
-                              <h4 className="text-xs font-black text-white uppercase truncate">{friend.name}</h4>
-                              <span className="text-[8px] bg-slate-950 px-1.5 py-0.5 rounded text-slate-500 font-mono uppercase shrink-0">
-                                {friend.role}
-                              </span>
-                            </div>
-                            <p className="text-[10px] text-slate-400 line-clamp-2 leading-relaxed italic">
-                              "{ (friend as any).bio || 'Sem biografia cadastrada no perfil.' }"
-                            </p>
+
+                <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
+                  {connectedFriends.map(friend => {
+                    const friendStatuses = (posts as ExtendedSocialPost[]).filter(
+                      post =>
+                        post.publicationType === 'status' &&
+                        (post.authorId === friend.id || post.user === friend.name)
+                    );
+                    const latestStatus = friendStatuses[0];
+
+                    return (
+                      <article
+                        key={friend.id}
+                        className="flex min-w-0 flex-col justify-between gap-3 rounded-3xl border border-slate-800 bg-slate-900 p-3 transition-colors hover:border-slate-700"
+                      >
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setSelectedRegister({
+                              id: friend.id,
+                              name: friend.name,
+                              avatar: friend.avatar,
+                            })
+                          }
+                          className="text-left"
+                          title={`Ver registro de ${friend.name}`}
+                        >
+                          <div className="relative mx-auto w-fit">
+                            <Avatar
+                              src={friend.avatar}
+                              name={friend.name}
+                              className={`h-14 w-14 rounded-full border-2 object-cover ${
+                                latestStatus
+                                  ? 'border-orange-500'
+                                  : 'border-slate-800'
+                              }`}
+                            />
+                            <span className="absolute -bottom-1 -right-1 flex h-6 w-6 items-center justify-center rounded-full border-2 border-slate-900 bg-slate-950 text-orange-400">
+                              <CircleUserRound className="h-3 w-3" />
+                            </span>
                           </div>
-                        </div>
+                          <h5 className="mt-2 truncate text-center text-[10px] font-black uppercase text-white">
+                            {friend.name}
+                          </h5>
+                          <p className="truncate text-center font-mono text-[8px] uppercase text-slate-500">
+                            {friend.role}
+                          </p>
+                        </button>
 
-                        {/* 3 Action Buttons */}
-                        <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-950">
+                        {latestStatus ? (
+                          <div className="rounded-xl border border-orange-500/20 bg-orange-500/5 p-2">
+                            <span className="block text-[8px] font-black uppercase text-orange-400">
+                              Status
+                            </span>
+                            <p className="mt-1 line-clamp-2 text-[9px] leading-relaxed text-slate-300">
+                              {latestStatus.content || 'Publicou novas imagens.'}
+                            </p>
+                            {latestStatus.mediaUrls?.[0] && (
+                              <img
+                                src={latestStatus.mediaUrls[0]}
+                                alt="Prévia do status"
+                                className="mt-2 aspect-video w-full rounded-lg object-cover"
+                              />
+                            )}
+                          </div>
+                        ) : (
+                          <p className="line-clamp-2 min-h-8 text-center text-[9px] italic leading-relaxed text-slate-500">
+                            {friend.bio || 'Sem status publicado.'}
+                          </p>
+                        )}
+
+                        <div className="grid grid-cols-2 gap-1.5 border-t border-slate-800/70 pt-2">
                           <button
-                            onClick={() => handleToggleFriend(friend.id)}
-                            className="py-1.5 px-2 rounded-xl text-[9px] font-black uppercase bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500/20 transition-all cursor-pointer text-center"
+                            type="button"
+                            onClick={() => {
+                              setSelectedRegister({
+                                id: friend.id,
+                                name: friend.name,
+                                avatar: friend.avatar,
+                              });
+                            }}
+                            className="flex items-center justify-center gap-1 rounded-lg border border-slate-800 bg-slate-950 px-1 py-1.5 text-[8px] font-black uppercase text-slate-300 hover:text-orange-400"
+                            title="Registro de publicações"
                           >
-                            Desconectar
+                            <CircleUserRound className="h-3 w-3" />
+                            Registro
                           </button>
-
                           <button
-                            onClick={() => handleToggleFavoriteFriend(friend.id)}
-                            className={`py-1.5 px-2 rounded-xl border transition-all text-center text-[9px] font-black uppercase cursor-pointer ${
-                              (friend as any).favorited
-                                ? 'bg-amber-500/10 border-amber-500/30 text-amber-400'
-                                : 'bg-slate-950 border-slate-850 text-slate-400 hover:text-slate-300'
-                            }`}
-                          >
-                            {(friend as any).favorited ? '★ Favorito' : '☆ Favoritar'}
-                          </button>
-
-                          <button
+                            type="button"
                             onClick={() => {
                               setSelectedChatUser(friend);
                               setShowChatModal(true);
                             }}
-                            className="py-1.5 px-2 rounded-xl text-[9px] font-black uppercase bg-orange-600 text-white hover:bg-orange-500 transition-all text-center cursor-pointer shadow-lg shadow-orange-600/15"
+                            className="flex items-center justify-center gap-1 rounded-lg bg-orange-600 px-1 py-1.5 text-[8px] font-black uppercase text-white hover:bg-orange-500"
                           >
-                            💬 Chat
+                            <MessageCircle className="h-3 w-3" />
+                            Chat
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleToggleFavoriteFriend(friend.id)}
+                            className={`flex items-center justify-center gap-1 rounded-lg border px-1 py-1.5 text-[8px] font-black uppercase ${
+                              friend.favorited
+                                ? 'border-amber-500/30 bg-amber-500/10 text-amber-400'
+                                : 'border-slate-800 bg-slate-950 text-slate-400'
+                            }`}
+                          >
+                            <Star className="h-3 w-3" />
+                            {friend.favorited ? 'Favorito' : 'Favoritar'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleToggleFriend(friend.id)}
+                            className="flex items-center justify-center gap-1 rounded-lg border border-red-500/20 bg-red-500/10 px-1 py-1.5 text-[8px] font-black uppercase text-red-400"
+                          >
+                            <UserMinus className="h-3 w-3" />
+                            Remover
                           </button>
                         </div>
-                      </div>
-                    ))}
-
-                  {friends.filter(f => f.added && (f as any).isProfileVisible !== false).length === 0 && (
-                    <div className="text-center py-6 bg-slate-900/40 rounded-2xl border border-slate-900/60 text-slate-500 text-xs italic">
-                      Você ainda não possui contatos ativos na rede. Conecte-se abaixo!
-                    </div>
-                  )}
+                      </article>
+                    );
+                  })}
                 </div>
-              </div>
 
-              {/* Sistema de Sub-abas */}
-              <div className="space-y-4 pt-2 border-t border-slate-900">
-                {/* Inner Tabs Bar */}
-                <div className="flex border-b border-slate-800/80 gap-4" id="conectados-internal-tabs">
+                {connectedFriends.length === 0 && (
+                  <div className="rounded-2xl border border-slate-900/60 bg-slate-900/40 py-6 text-center text-xs italic text-slate-500">
+                    Você ainda não possui contatos ativos na rede.
+                  </div>
+                )}
+              </section>
+
+              <section className="space-y-4 border-t border-slate-900 pt-4">
+                <div className="flex gap-4 border-b border-slate-800/80">
                   <button
+                    type="button"
                     onClick={() => setConectadosSubTab('sugestoes')}
-                    className={`pb-2 text-xs font-black uppercase tracking-wider border-b-2 transition-all ${
+                    className={`border-b-2 pb-2 text-xs font-black uppercase tracking-wider ${
                       conectadosSubTab === 'sugestoes'
                         ? 'border-orange-500 text-white'
-                        : 'border-transparent text-slate-500 hover:text-slate-300'
+                        : 'border-transparent text-slate-500'
                     }`}
                   >
-                    Sugestões ({getSuggestions().length})
+                    Sugestões ({suggestions.length})
                   </button>
                   <button
+                    type="button"
                     onClick={() => setConectadosSubTab('solicitacoes')}
-                    className={`pb-2 text-xs font-black uppercase tracking-wider border-b-2 transition-all ${
+                    className={`border-b-2 pb-2 text-xs font-black uppercase tracking-wider ${
                       conectadosSubTab === 'solicitacoes'
                         ? 'border-orange-500 text-white'
-                        : 'border-transparent text-slate-500 hover:text-slate-300'
+                        : 'border-transparent text-slate-500'
                     }`}
                   >
                     Solicitações ({connectionRequests.length})
                   </button>
                 </div>
 
-                {/* Sugestões */}
                 {conectadosSubTab === 'sugestoes' && (
-                  <div className="grid grid-cols-1 gap-3 animate-fade-in">
-                    {getSuggestions().map(friend => (
-                      <div key={friend.id} className="bg-slate-900 border border-slate-800 p-4 rounded-3xl flex flex-col justify-between space-y-4 hover:border-slate-700 transition-all">
-                        <div className="flex gap-3 items-start">
-                          <img 
-                            src={friend.avatar} 
-                            alt={friend.name} 
-                            className="w-12 h-12 rounded-full object-cover border border-slate-800 shrink-0" 
-                            referrerPolicy="no-referrer"
+                  <div className="space-y-3">
+                    {suggestions.map(friend => (
+                      <article
+                        key={friend.id}
+                        className="flex items-center justify-between gap-3 rounded-2xl border border-slate-800 bg-slate-900 p-3"
+                      >
+                        <div className="flex min-w-0 items-center gap-3">
+                          <Avatar
+                            src={friend.avatar}
+                            name={friend.name}
+                            className="h-11 w-11 shrink-0 rounded-full border border-slate-800 object-cover"
                           />
-                          <div className="space-y-1 min-w-0 flex-1">
-                            <div className="flex justify-between items-start gap-1">
-                              <h4 className="text-xs font-black text-white uppercase truncate">{friend.name}</h4>
-                              <span className="text-[8px] bg-slate-950 px-1.5 py-0.5 rounded text-slate-500 font-mono uppercase shrink-0">
-                                {friend.role}
-                              </span>
-                            </div>
-                            <p className="text-[10px] text-slate-400 line-clamp-2 leading-relaxed italic">
-                              "{ (friend as any).bio || 'Sem biografia cadastrada no perfil.' }"
+                          <div className="min-w-0">
+                            <h5 className="truncate text-xs font-black uppercase text-white">
+                              {friend.name}
+                            </h5>
+                            <p className="truncate text-[9px] text-slate-500">
+                              {friend.bio || friend.role}
                             </p>
                           </div>
                         </div>
-
-                        {/* 3 Action Buttons */}
-                        <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-950">
-                          <button
-                            onClick={() => handleToggleFriend(friend.id)}
-                            className={`py-1.5 px-2 rounded-xl text-[9px] font-black uppercase transition-all text-center cursor-pointer ${friend.connectionStatus === 'pending_sent'
-                                ? 'bg-slate-800 border border-slate-700 text-slate-300 hover:bg-slate-700'
-                                : 'bg-teal-500 text-slate-950 hover:bg-teal-400'
-                              }`}
-                          >
-                            {friend.connectionStatus === 'pending_sent'
-                              ? 'Cancelar pedido'
-                              : 'Conectar'}
-                          </button>
-
-                          <button
-                            onClick={() => handleToggleFavoriteFriend(friend.id)}
-                            className={`py-1.5 px-2 rounded-xl border transition-all text-center text-[9px] font-black uppercase cursor-pointer ${
-                              (friend as any).favorited
-                                ? 'bg-amber-500/10 border-amber-500/30 text-amber-400'
-                                : 'bg-slate-950 border-slate-850 text-slate-400 hover:text-slate-300'
-                            }`}
-                          >
-                            {(friend as any).favorited ? '★ Favorito' : '☆ Favoritar'}
-                          </button>
-
-                          <button
-                            disabled
-                            className="py-1.5 px-2 rounded-xl text-[9px] font-black uppercase bg-slate-950 border border-slate-850 text-slate-600 text-center cursor-not-allowed opacity-50"
-                            title="Conecte-se primeiro para liberar o chat privado"
-                          >
-                            🚫 Chat
-                          </button>
-                        </div>
-                      </div>
+                        <button
+                          type="button"
+                          onClick={() => handleToggleFriend(friend.id)}
+                          className={`shrink-0 rounded-xl px-3 py-2 text-[9px] font-black uppercase ${
+                            friend.connectionStatus === 'pending_sent'
+                              ? 'border border-slate-700 bg-slate-800 text-slate-300'
+                              : 'bg-teal-500 text-slate-950'
+                          }`}
+                        >
+                          {friend.connectionStatus === 'pending_sent'
+                            ? 'Cancelar'
+                            : 'Conectar'}
+                        </button>
+                      </article>
                     ))}
 
-                    {getSuggestions().length === 0 && (                      <div className="text-center py-6 bg-slate-900/40 rounded-2xl border border-slate-900/60 text-slate-500 text-xs italic">
+                    {suggestions.length === 0 && (
+                      <div className="rounded-2xl border border-slate-900/60 bg-slate-900/40 py-6 text-center text-xs italic text-slate-500">
                         Nenhuma sugestão pública disponível no momento.
                       </div>
                     )}
                   </div>
                 )}
 
-                {/* Solicitações */}
                 {conectadosSubTab === 'solicitacoes' && (
-                  <div className="grid grid-cols-1 gap-3 animate-fade-in">
-                    {connectionRequests.map(req => (
-                      <div key={req.id} className="bg-slate-900 border border-slate-800 p-4 rounded-3xl flex flex-col justify-between space-y-4 hover:border-slate-700 transition-all">
-                        <div className="flex gap-3 items-start">
-                          <img 
-                            src={req.avatar} 
-                            alt={req.name} 
-                            className="w-12 h-12 rounded-full object-cover border border-slate-800 shrink-0" 
-                            referrerPolicy="no-referrer"
+                  <div className="space-y-3">
+                    {connectionRequests.map(request => (
+                      <article
+                        key={request.id}
+                        className="rounded-2xl border border-slate-800 bg-slate-900 p-3"
+                      >
+                        <div className="flex items-center gap-3">
+                          <Avatar
+                            src={request.avatar}
+                            name={request.name}
+                            className="h-11 w-11 shrink-0 rounded-full border border-slate-800 object-cover"
                           />
-                          <div className="space-y-1 min-w-0 flex-1">
-                            <div className="flex justify-between items-start gap-1">
-                              <h4 className="text-xs font-black text-white uppercase truncate">{req.name}</h4>
-                              <span className="text-[8px] bg-slate-950 px-1.5 py-0.5 rounded text-slate-500 font-mono uppercase shrink-0">
-                                {req.role}
-                              </span>
-                            </div>
-                            <p className="text-[10px] text-slate-400 line-clamp-2 leading-relaxed italic">
-                              "{ req.bio || 'Sem biografia cadastrada no perfil.' }"
+                          <div className="min-w-0">
+                            <h5 className="truncate text-xs font-black uppercase text-white">
+                              {request.name}
+                            </h5>
+                            <p className="truncate text-[9px] text-slate-500">
+                              {request.bio || request.role || 'Usuário Kyrub'}
                             </p>
                           </div>
                         </div>
-
-                        {/* Approve / Refuse Buttons */}
-                        <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-950">
+                        <div className="mt-3 grid grid-cols-2 gap-2">
                           <button
-                            onClick={() => handleAcceptRequest(req)}
-                            className="py-2 px-3 rounded-xl text-[10px] font-black uppercase bg-emerald-600 hover:bg-emerald-500 text-white transition-all text-center cursor-pointer shadow-lg shadow-emerald-600/10"
+                            type="button"
+                            onClick={() => handleAcceptRequest(request)}
+                            className="rounded-xl bg-emerald-600 py-2 text-[9px] font-black uppercase text-white"
                           >
-                            ✓ Aceitar Conexão
+                            Aceitar
                           </button>
                           <button
-                            onClick={() => handleDeclineRequest(req.id, req.name)}
-                            className="py-2 px-3 rounded-xl text-[10px] font-black uppercase bg-slate-950 border border-slate-800 text-slate-400 hover:bg-slate-900 hover:text-white transition-all text-center cursor-pointer"
+                            type="button"
+                            onClick={() =>
+                              handleDeclineRequest(request.id, request.name)
+                            }
+                            className="rounded-xl border border-slate-800 bg-slate-950 py-2 text-[9px] font-black uppercase text-slate-400"
                           >
-                            ✕ Recusar
+                            Recusar
                           </button>
                         </div>
-                      </div>
+                      </article>
                     ))}
 
                     {connectionRequests.length === 0 && (
-                      <div className="text-center py-8 bg-slate-900/40 rounded-2xl border border-slate-900/60 text-slate-500 text-xs italic">
+                      <div className="rounded-2xl border border-slate-900/60 bg-slate-900/40 py-8 text-center text-xs italic text-slate-500">
                         Nenhuma solicitação de conexão pendente.
                       </div>
                     )}
                   </div>
                 )}
-              </div>
-
+              </section>
             </div>
           )}
+        </div>
+      )}
 
+      {selectedRegister && (
+        <div className="fixed inset-0 z-[70] flex items-end justify-center bg-slate-950/85 p-0 backdrop-blur-sm sm:items-center sm:p-4">
+          <section className="flex max-h-[88dvh] w-full max-w-lg flex-col overflow-hidden rounded-t-3xl border border-slate-800 bg-slate-900 shadow-2xl sm:rounded-3xl">
+            <header className="flex items-center justify-between gap-3 border-b border-slate-800 p-4">
+              <div className="flex min-w-0 items-center gap-3">
+                <Avatar
+                  src={selectedRegister.avatar}
+                  name={selectedRegister.name}
+                  className="h-11 w-11 shrink-0 rounded-full border border-slate-800 object-cover"
+                />
+                <div className="min-w-0">
+                  <span className="block font-mono text-[8px] font-black uppercase tracking-wider text-orange-400">
+                    Registro de publicações
+                  </span>
+                  <h3 className="truncate text-sm font-black uppercase text-white">
+                    {selectedRegister.name}
+                  </h3>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedRegister(null)}
+                className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-800 bg-slate-950 text-slate-400 hover:text-white"
+                title="Fechar registro"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </header>
+
+            <div className="flex-1 space-y-3 overflow-y-auto p-4">
+              {registerPosts.map(post => (
+                <article
+                  key={post.id}
+                  className="space-y-2 rounded-2xl border border-slate-800 bg-slate-950 p-3"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span
+                      className={`rounded-full px-2 py-1 font-mono text-[8px] font-black uppercase ${
+                        post.publicationType === 'status'
+                          ? 'bg-teal-500/10 text-teal-400'
+                          : 'bg-orange-500/10 text-orange-400'
+                      }`}
+                    >
+                      {post.publicationType === 'status' ? 'Status' : 'Feed'}
+                    </span>
+                    <span className="font-mono text-[8px] text-slate-500">
+                      {post.time}
+                    </span>
+                  </div>
+                  {post.content && (
+                    <p className="whitespace-pre-line text-[11px] leading-relaxed text-slate-300">
+                      {post.content}
+                    </p>
+                  )}
+                  {post.mediaUrls && post.mediaUrls.length > 0 && (
+                    <MediaCarousel mediaUrls={post.mediaUrls} />
+                  )}
+                </article>
+              ))}
+
+              {registerPosts.length === 0 && (
+                <div className="py-12 text-center">
+                  <Users className="mx-auto h-8 w-8 text-slate-700" />
+                  <p className="mt-3 text-xs text-slate-500">
+                    Este usuário ainda não possui publicações registradas.
+                  </p>
+                </div>
+              )}
+            </div>
+          </section>
         </div>
       )}
     </div>

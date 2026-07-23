@@ -41,5 +41,9 @@ test('legacy active tickets remain scoped to local storage', () => {
 
 test('marketplace logo does not render an empty src attribute', () => {
   assert.match(legacyMarketplace, /\{store\.logo \? \(/);
-  assert.match(legacyMarketplace, /Logo da loja não informado/);
+  assert.match(legacyMarketplace, /<StoreIcon className=/);
+  assert.doesNotMatch(
+    legacyMarketplace,
+    /<img[^>]*src=\{store\.logo \|\| ['"]{2}\}/
+  );
 });
