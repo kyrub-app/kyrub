@@ -34,6 +34,13 @@ test('bootstrap prevents duplicate super admins and commits lock profile and aud
   assert.equal((script.match(/currentDocument: \{ exists: false \}/g) ?? []).length, 3);
 });
 
+test('bootstrap resolves the Windows gcloud command without requiring a permanent PATH edit', () => {
+  assert.match(script, /resolveGcloudExecutable/);
+  assert.match(script, /ProgramFiles\(x86\)/);
+  assert.match(script, /existsSync\(candidate\)/);
+  assert.match(script, /shell: process\.platform === 'win32'/);
+});
+
 test('bootstrap does not embed long-lived credentials or mutate Firebase rules', () => {
   assert.doesNotMatch(script, /private_key/i);
   assert.doesNotMatch(script, /serviceAccountKey/i);
