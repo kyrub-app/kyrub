@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
-import { increaseFontSizesByFourPixels } from '../build/fontSizeAccessibility';
+import { increaseFontSizesByTenPixels } from '../build/fontSizeAccessibility';
 
-test('font accessibility transform adds exactly four pixels to CSS sizes', () => {
+test('font accessibility transform adds exactly ten pixels to CSS sizes', () => {
   const source = `
     :root {
       --text-xs: .75rem;
@@ -16,23 +16,23 @@ test('font accessibility transform adds exactly four pixels to CSS sizes', () =>
     .hidden-text { font-size: 0px; }
   `;
 
-  const adjusted = increaseFontSizesByFourPixels(source);
+  const adjusted = increaseFontSizesByTenPixels(source);
 
-  assert.match(adjusted, /--text-xs:\s*calc\(\.75rem \+ 4px\)/);
-  assert.match(adjusted, /--text-sm:\s*calc\(\.875rem \+ 4px\)/);
-  assert.match(adjusted, /body\s*\{\s*font-size:\s*20px/);
-  assert.match(adjusted, /\.compact\s*\{\s*font-size:\s*13px/);
-  assert.match(adjusted, /\.relative\s*\{\s*font-size:\s*calc\(1rem \+ 4px\)/);
+  assert.match(adjusted, /--text-xs:\s*calc\(\.75rem \+ 10px\)/);
+  assert.match(adjusted, /--text-sm:\s*calc\(\.875rem \+ 10px\)/);
+  assert.match(adjusted, /body\s*\{\s*font-size:\s*26px/);
+  assert.match(adjusted, /\.compact\s*\{\s*font-size:\s*19px/);
+  assert.match(adjusted, /\.relative\s*\{\s*font-size:\s*calc\(1rem \+ 10px\)/);
   assert.match(adjusted, /\.hidden-text\s*\{\s*font-size:\s*0px/);
   assert.match(adjusted, /--text-xs--line-height:\s*calc\(1 \/ \.75\)/);
 });
 
 test('font accessibility transform is idempotent', () => {
-  const once = increaseFontSizesByFourPixels('.label { font-size: 10px; }');
-  const twice = increaseFontSizesByFourPixels(once);
+  const once = increaseFontSizesByTenPixels('.label { font-size: 10px; }');
+  const twice = increaseFontSizesByTenPixels(once);
 
   assert.equal(twice, once);
-  assert.match(twice, /font-size:\s*14px/);
+  assert.match(twice, /font-size:\s*20px/);
 });
 
 test('Vite applies the transform after Tailwind and defines inherited text', () => {

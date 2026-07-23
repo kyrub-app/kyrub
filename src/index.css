@@ -1,6 +1,6 @@
 @import "tailwindcss";
 
-/* Baseline inherited text; the Vite accessibility transform adds exactly 4px. */
+/* Baseline inherited text; the Vite accessibility transform adds exactly 10px. */
 body {
   font-size: 16px;
 }
