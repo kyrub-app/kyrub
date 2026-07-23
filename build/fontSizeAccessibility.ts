@@ -1,9 +1,9 @@
 import type { Plugin } from 'vite';
 
 const FONT_SIZE_ACCESSIBILITY_MARKER =
-  '/* kyrub-accessibility-font-size-plus-10px */';
+  '/* kyrub-accessibility-font-size-plus-18px */';
 
-const FONT_SIZE_INCREASE_PX = 10;
+export const FONT_SIZE_INCREASE_PX = 18;
 
 const TAILWIND_TEXT_TOKEN_PATTERN =
   /(--text-(?:xs|sm|base|lg|xl|2xl|3xl|4xl|5xl|6xl|7xl|8xl|9xl)\s*:\s*)(\d*\.?\d+)(px|rem)\b/g;
@@ -14,7 +14,7 @@ const FONT_SIZE_DECLARATION_PATTERN =
 const formatPixels = (value: number): string =>
   Number.isInteger(value) ? String(value) : String(Number(value.toFixed(4)));
 
-const increaseLengthByTenPixels = (
+const increaseLengthForAccessibility = (
   rawValue: string,
   unit: 'px' | 'rem'
 ): string => {
@@ -32,33 +32,39 @@ const increaseLengthByTenPixels = (
   return `calc(${rawValue}rem + ${FONT_SIZE_INCREASE_PX}px)`;
 };
 
-export const increaseFontSizesByTenPixels = (css: string): string => {
+export const increaseFontSizesForAccessibility = (css: string): string => {
   if (css.includes(FONT_SIZE_ACCESSIBILITY_MARKER)) return css;
 
   const withAdjustedTailwindTokens = css.replace(
     TAILWIND_TEXT_TOKEN_PATTERN,
     (_match, prefix: string, rawValue: string, unit: 'px' | 'rem') =>
-      `${prefix}${increaseLengthByTenPixels(rawValue, unit)}`
+      `${prefix}${increaseLengthForAccessibility(rawValue, unit)}`
   );
 
   const withAdjustedDeclarations = withAdjustedTailwindTokens.replace(
     FONT_SIZE_DECLARATION_PATTERN,
     (_match, prefix: string, rawValue: string, unit: 'px' | 'rem') =>
-      `${prefix}${increaseLengthByTenPixels(rawValue, unit)}`
+      `${prefix}${increaseLengthForAccessibility(rawValue, unit)}`
   );
 
   return `${FONT_SIZE_ACCESSIBILITY_MARKER}\n${withAdjustedDeclarations}`;
 };
 
 export const fontSizeAccessibilityPlugin = (): Plugin => ({
-  name: 'kyrub-accessibility-font-size-plus-10px',
+  name: 'kyrub-accessibility-font-size-plus-18px',
   enforce: 'post',
-  transform(code, id) {
-    if (!id.includes('.css')) return null;
+  generateBundle(_options, bundle) {
+    for (const output of Object.values(bundle)) {
+      if (output.type !== 'asset' || !output.fileName.endsWith('.css')) {
+        continue;
+      }
 
-    return {
-      code: increaseFontSizesByTenPixels(code),
-      map: null,
-    };
+      const css =
+        typeof output.source === 'string'
+          ? output.source
+          : new TextDecoder().decode(output.source);
+
+      output.source = increaseFontSizesForAccessibility(css);
+    }
   },
 });
