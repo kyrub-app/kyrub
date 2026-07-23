@@ -18,6 +18,9 @@ import { getMarketplaceListingsCollectionPath } from '../../utils/marketplacePat
 
 type KyrubTabProps = React.ComponentProps<typeof LegacyKyrubTab>;
 
+const CANONICAL_MARKETPLACE_READ_ENABLED =
+  import.meta.env.VITE_ENABLE_CANONICAL_MARKETPLACE_READ === 'true';
+
 const canonicalListingToStore = (
   listing: MarketplaceStoreListingDocument
 ): Store => ({
@@ -103,26 +106,28 @@ export function KyrubTab(props: KyrubTabProps) {
 
       if (!user) return;
 
-      const canonicalQuery = query(
-        collection(db, getMarketplaceListingsCollectionPath()),
-        where('publicationStatus', '==', 'published')
-      );
-      unsubscribeCanonical = onSnapshot(
-        canonicalQuery,
-        snapshot => {
-          const stores = snapshot.docs.flatMap(snapshotDocument => {
-            const listing = snapshotDocument.data() as MarketplaceListingDocument;
-            return listing.listingType === 'store'
-              ? [canonicalListingToStore(listing)]
-              : [];
-          });
-          setCanonicalStores(stores);
-        },
-        error => {
-          console.warn('Canonical marketplace listings are unavailable.', error);
-          setCanonicalStores([]);
-        }
-      );
+      if (CANONICAL_MARKETPLACE_READ_ENABLED) {
+        const canonicalQuery = query(
+          collection(db, getMarketplaceListingsCollectionPath()),
+          where('publicationStatus', '==', 'published')
+        );
+        unsubscribeCanonical = onSnapshot(
+          canonicalQuery,
+          snapshot => {
+            const stores = snapshot.docs.flatMap(snapshotDocument => {
+              const listing = snapshotDocument.data() as MarketplaceListingDocument;
+              return listing.listingType === 'store'
+                ? [canonicalListingToStore(listing)]
+                : [];
+            });
+            setCanonicalStores(stores);
+          },
+          error => {
+            console.warn('Canonical marketplace listings are unavailable.', error);
+            setCanonicalStores([]);
+          }
+        );
+      }
 
       const fallbackQuery = query(
         collection(db, 'tenants'),

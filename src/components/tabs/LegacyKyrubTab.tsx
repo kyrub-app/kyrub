@@ -348,12 +348,22 @@ export function KyrubTab({
                     <div className="absolute top-0 inset-x-0 p-2 flex justify-between items-start z-10">
                       {/* Logo da Loja */}
                       <div className="relative w-8.5 h-8.5 shrink-0">
-                        <img 
-                          src={store.logo} 
-                          alt={store.name} 
-                          className="w-8.5 h-8.5 object-cover rounded-xl border border-slate-800 bg-slate-900 shadow-md" 
-                          referrerPolicy="no-referrer" 
-                        />
+                        {store.logo ? (
+                          <img
+                            src={store.logo}
+                            alt={store.name}
+                            className="w-8.5 h-8.5 object-cover rounded-xl border border-slate-800 bg-slate-900 shadow-md"
+                            referrerPolicy="no-referrer"
+                          />
+                        ) : (
+                          <div
+                            className="flex w-8.5 h-8.5 items-center justify-center rounded-xl border border-slate-800 bg-slate-900 text-slate-500 shadow-md"
+                            role="img"
+                            aria-label="Logo da loja não informado"
+                          >
+                            <StoreIcon className="h-4 w-4" />
+                          </div>
+                        )}
                         <span 
                           className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border border-slate-950 shadow-sm ${
                             store.status === 'open' ? 'bg-emerald-500 animate-pulse' :
