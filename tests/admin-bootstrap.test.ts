@@ -6,6 +6,14 @@ const script = readFileSync(
   new URL('../scripts/bootstrap-first-super-admin.mjs', import.meta.url),
   'utf8'
 );
+const runner = readFileSync(
+  new URL('../scripts/bootstrap-first-super-admin-runner.mjs', import.meta.url),
+  'utf8'
+);
+const windowsProxy = readFileSync(
+  new URL('../scripts/gcloud-windows-proxy.cmd', import.meta.url),
+  'utf8'
+);
 const packageJson = JSON.parse(
   readFileSync(new URL('../package.json', import.meta.url), 'utf8')
 ) as { scripts?: Record<string, string> };
@@ -34,11 +42,12 @@ test('bootstrap prevents duplicate super admins and commits lock profile and aud
   assert.equal((script.match(/currentDocument: \{ exists: false \}/g) ?? []).length, 3);
 });
 
-test('bootstrap resolves the Windows gcloud command without requiring a permanent PATH edit', () => {
-  assert.match(script, /resolveGcloudExecutable/);
-  assert.match(script, /ProgramFiles\(x86\)/);
-  assert.match(script, /existsSync\(candidate\)/);
-  assert.match(script, /shell: process\.platform === 'win32'/);
+test('Windows launcher uses a repository-relative proxy that quotes the real gcloud path', () => {
+  assert.match(runner, /GCLOUD_CMD = 'scripts\\\\gcloud-windows-proxy\.cmd'/);
+  assert.match(runner, /spawnSync\(process\.execPath/);
+  assert.match(windowsProxy, /call "%ProgramFiles\(x86\)%\\Google\\Cloud SDK/);
+  assert.match(windowsProxy, /call "%ProgramFiles%\\Google\\Cloud SDK/);
+  assert.match(windowsProxy, /call "%LOCALAPPDATA%\\Google\\Cloud SDK/);
 });
 
 test('bootstrap does not embed long-lived credentials or mutate Firebase rules', () => {
@@ -52,7 +61,7 @@ test('bootstrap does not embed long-lived credentials or mutate Firebase rules',
 test('bootstrap command and regression test remain part of the project contract', () => {
   assert.equal(
     packageJson.scripts?.['admin:bootstrap:first-super-admin'],
-    'node scripts/bootstrap-first-super-admin.mjs'
+    'node scripts/bootstrap-first-super-admin-runner.mjs'
   );
   assert.match(packageJson.scripts?.prebuild ?? '', /tests\/admin-bootstrap\.test\.ts/);
 });
