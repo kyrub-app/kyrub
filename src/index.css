@@ -1,5 +1,10 @@
 @import "tailwindcss";
 
+/* Baseline inherited text; the Vite accessibility transform adds exactly 2px. */
+body {
+  font-size: 16px;
+}
+
 /* The header keeps the established wallet action while presenting only its icon. */
 #header-wallet-balance {
   padding: 0.375rem;
