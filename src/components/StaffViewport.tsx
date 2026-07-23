@@ -197,7 +197,7 @@ export function StaffViewport({
                         </span>
                         {order.items.map((item, index) => (
                           <div
-                            key={`${order.id}-${item.id ?? index}`}
+                            key={`${order.id}-${item.productId || index}`}
                             className="flex min-w-0 items-start justify-between gap-3 text-xs text-slate-300"
                           >
                             <span className="min-w-0 break-words">{item.name}</span>
