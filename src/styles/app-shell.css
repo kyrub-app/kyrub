@@ -1,0 +1,274 @@
+:root {
+  --kyrub-safe-top: env(safe-area-inset-top, 0px);
+  --kyrub-safe-right: env(safe-area-inset-right, 0px);
+  --kyrub-safe-bottom: env(safe-area-inset-bottom, 0px);
+  --kyrub-safe-left: env(safe-area-inset-left, 0px);
+  --kyrub-bottom-nav-height: 5rem;
+  color-scheme: dark;
+}
+
+html {
+  min-width: 320px;
+  min-height: 100%;
+  background: #020617;
+  scroll-behavior: smooth;
+}
+
+body {
+  min-width: 320px;
+  min-height: 100%;
+  margin: 0;
+  overflow-x: clip;
+  background: #020617;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+}
+
+#root,
+.kyrub-app-shell,
+#root-app-container {
+  width: 100%;
+  min-width: 0;
+  min-height: 100dvh;
+  max-width: 100%;
+  overflow-x: clip;
+}
+
+.kyrub-app-shell {
+  isolation: isolate;
+}
+
+button,
+a,
+input,
+select,
+textarea,
+[role='button'] {
+  touch-action: manipulation;
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[role='button']:focus-visible {
+  outline: 2px solid rgb(249 115 22 / 0.9);
+  outline-offset: 2px;
+}
+
+#app-header {
+  min-width: 0;
+  min-height: calc(4rem + var(--kyrub-safe-top));
+  padding-top: max(0.75rem, var(--kyrub-safe-top));
+  padding-right: max(0.75rem, var(--kyrub-safe-right));
+  padding-left: max(0.75rem, var(--kyrub-safe-left));
+  gap: 0.5rem;
+}
+
+#app-header > * {
+  min-width: 0;
+}
+
+#header-user-profile-trigger {
+  min-width: 0;
+  flex: 1 1 auto;
+  max-width: 52%;
+}
+
+#header-user-profile-trigger > div:last-child,
+#header-user-profile-trigger h1,
+#header-user-profile-trigger h1 span {
+  min-width: 0;
+  max-width: 100%;
+}
+
+#header-user-profile-trigger h1 span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#app-header > div:last-child {
+  min-width: 0;
+  flex: 0 1 auto;
+  gap: 0.5rem;
+}
+
+#app-header button {
+  min-width: 2.75rem;
+  min-height: 2.75rem;
+}
+
+#header-wallet-balance {
+  min-width: 0;
+  max-width: min(46vw, 13rem);
+  min-height: 2.75rem;
+  padding-inline: 0.625rem;
+}
+
+#header-wallet-balance button:first-child {
+  min-width: 0;
+  min-height: 2.5rem;
+  overflow: hidden;
+}
+
+#header-wallet-balance button:first-child span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#header-wallet-balance #toggle-balance-visibility-btn {
+  min-width: 2.25rem;
+  min-height: 2.25rem;
+  margin-left: 0;
+}
+
+#root-app-container main {
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: clip;
+  padding-bottom: calc(
+    var(--kyrub-bottom-nav-height) + var(--kyrub-safe-bottom) + 1.25rem
+  );
+}
+
+#root-app-container nav.fixed.bottom-0 {
+  min-height: calc(var(--kyrub-bottom-nav-height) + var(--kyrub-safe-bottom));
+  padding-right: max(0.75rem, var(--kyrub-safe-right));
+  padding-bottom: max(0.75rem, var(--kyrub-safe-bottom));
+  padding-left: max(0.75rem, var(--kyrub-safe-left));
+  gap: 0.25rem;
+}
+
+#root-app-container nav.fixed.bottom-0 button {
+  min-width: 4.5rem;
+  min-height: 3.25rem;
+  padding: 0.375rem 0.75rem;
+  border-radius: 1rem;
+}
+
+#erp-main-header {
+  min-width: 0;
+  min-height: calc(4rem + var(--kyrub-safe-top));
+  padding-top: max(0.625rem, var(--kyrub-safe-top));
+  padding-right: max(0.75rem, var(--kyrub-safe-right));
+  padding-left: max(0.75rem, var(--kyrub-safe-left));
+}
+
+#erp-main-header button {
+  min-width: 2.75rem;
+  min-height: 2.75rem;
+}
+
+#erp-main-header + div {
+  min-width: 0;
+  max-width: 100%;
+  padding: 1rem max(0.75rem, var(--kyrub-safe-right))
+    calc(1.5rem + var(--kyrub-safe-bottom))
+    max(0.75rem, var(--kyrub-safe-left));
+  overscroll-behavior-y: contain;
+}
+
+#mobile-erp-navigation-drawer {
+  height: 100dvh;
+  max-height: 100dvh;
+  padding-top: var(--kyrub-safe-top);
+  padding-right: var(--kyrub-safe-right);
+  padding-bottom: var(--kyrub-safe-bottom);
+  overflow: hidden;
+  overscroll-behavior: contain;
+}
+
+#mobile-erp-navigation-drawer nav {
+  overscroll-behavior-y: contain;
+}
+
+#landing-page {
+  min-height: 100dvh;
+  overflow-x: clip;
+  padding-right: var(--kyrub-safe-right);
+  padding-bottom: var(--kyrub-safe-bottom);
+  padding-left: var(--kyrub-safe-left);
+}
+
+#landing-page > header {
+  padding-top: max(1.25rem, var(--kyrub-safe-top));
+}
+
+#staff-viewport {
+  min-height: 100dvh;
+  overflow-x: clip;
+  padding-top: max(0.75rem, var(--kyrub-safe-top));
+  padding-right: max(0.75rem, var(--kyrub-safe-right));
+  padding-bottom: max(0.75rem, var(--kyrub-safe-bottom));
+  padding-left: max(0.75rem, var(--kyrub-safe-left));
+}
+
+.kyrub-modal-viewport {
+  width: 100%;
+  min-width: 0;
+  height: 100dvh;
+  max-height: 100dvh;
+  overflow: hidden;
+}
+
+.kyrub-modal-scroll {
+  min-width: 0;
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+@media (max-width: 639px) {
+  input,
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+
+  #root-app-container main {
+    padding-right: 0.75rem;
+    padding-left: 0.75rem;
+  }
+
+  #app-header {
+    padding-bottom: 0.625rem;
+  }
+
+  #app-header img {
+    flex-shrink: 0;
+  }
+}
+
+@media (max-width: 374px) {
+  #header-user-profile-trigger {
+    max-width: 44%;
+  }
+
+  #header-wallet-balance {
+    max-width: 8.25rem;
+  }
+
+  #root-app-container nav.fixed.bottom-0 button {
+    min-width: 4rem;
+    padding-inline: 0.5rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}

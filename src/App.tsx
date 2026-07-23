@@ -69,12 +69,16 @@ export default function App() {
     window.location.pathname
   );
 
-  if (adminControlPlane) return <AdminControlPlaneApp />;
-
   return (
-    <>
-      <StorePersistenceBridge />
-      <LegacyApp />
-    </>
+    <div className="kyrub-app-shell" data-kyrub-shell="application">
+      {adminControlPlane ? (
+        <AdminControlPlaneApp />
+      ) : (
+        <>
+          <StorePersistenceBridge />
+          <LegacyApp />
+        </>
+      )}
+    </div>
   );
 }
