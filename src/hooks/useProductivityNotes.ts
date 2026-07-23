@@ -1,6 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import { db } from '../utils/firebase';
-import { doc, deleteDoc } from 'firebase/firestore';
 import { Note, SocialPost } from '../types';
 import { initialNotes } from '../constants/initialMocks';
 
@@ -130,7 +128,7 @@ export function useProductivityNotes({
             ]
           };
 
-          console.log(`[Firestore] Atualizando documento em 'tasks/${note.id}'`, {
+          console.log(`[Local] Atualizando documento em 'tasks/${note.id}'`, {
             id: note.id,
             title: updatedNote.title,
             content: updatedNote.content,
@@ -198,7 +196,7 @@ export function useProductivityNotes({
       ]
     };
 
-    console.log(`[Firestore] Salvando novo documento em 'tasks/${noteIdToUse}'`, {
+    console.log(`[Local] Salvando novo documento em 'tasks/${noteIdToUse}'`, {
       id: noteIdToUse,
       title: newNote.title,
       content: newNote.content,
@@ -259,10 +257,7 @@ export function useProductivityNotes({
 
   // Delete note
   const handleDeleteNote = (noteId: string) => {
-    console.log(`[Firestore] Deletando documento em 'tasks/${noteId}'`);
-    deleteDoc(doc(db, 'tenants/tenant_default/tasks', noteId))
-      .catch(err => console.error("Error deleting note in Firestore:", err));
-
+    // Notes remain local until the private per-user sync is implemented.
     setNotes(prev => prev.filter(n => n.id !== noteId));
     if (editingNoteId === noteId) {
       setEditingNoteId(null);
