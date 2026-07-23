@@ -1,5 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 
 const EXPECTED_PROJECT_ID = 'kyrub-b8d0e';
 const DATABASE_ID = '(default)';
@@ -62,20 +64,61 @@ const normalizeEmail = value => String(value ?? '').trim().toLowerCase();
 const stringValue = value => ({ stringValue: String(value) });
 const timestampValue = value => ({ timestampValue: value });
 
+const resolveGcloudExecutable = () => {
+  if (process.platform !== 'win32') return 'gcloud';
+
+  const candidates = [
+    process.env.GCLOUD_CMD,
+    process.env.LOCALAPPDATA
+      ? join(
+          process.env.LOCALAPPDATA,
+          'Google',
+          'Cloud SDK',
+          'google-cloud-sdk',
+          'bin',
+          'gcloud.cmd'
+        )
+      : '',
+    process.env.ProgramFiles
+      ? join(
+          process.env.ProgramFiles,
+          'Google',
+          'Cloud SDK',
+          'google-cloud-sdk',
+          'bin',
+          'gcloud.cmd'
+        )
+      : '',
+    process.env['ProgramFiles(x86)']
+      ? join(
+          process.env['ProgramFiles(x86)'],
+          'Google',
+          'Cloud SDK',
+          'google-cloud-sdk',
+          'bin',
+          'gcloud.cmd'
+        )
+      : '',
+  ].filter(Boolean);
+
+  return candidates.find(candidate => existsSync(candidate)) ?? 'gcloud.cmd';
+};
+
 const runGcloud = args => {
-  const executable = process.platform === 'win32' ? 'gcloud.cmd' : 'gcloud';
+  const executable = resolveGcloudExecutable();
 
   try {
     return execFileSync(executable, args, {
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'pipe'],
       windowsHide: true,
+      shell: process.platform === 'win32',
     }).trim();
   } catch (error) {
     const stderr = error?.stderr ? String(error.stderr).trim() : '';
     throw new Error(
       stderr ||
-        'Não foi possível executar a Google Cloud CLI. Confirme que gcloud está instalado e disponível no PATH.'
+        `Não foi possível executar a Google Cloud CLI (${executable}). Confirme a instalação e o ADC.`
     );
   }
 };
