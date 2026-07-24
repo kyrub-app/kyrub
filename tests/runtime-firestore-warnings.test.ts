@@ -14,8 +14,10 @@ const legacyMarketplace = fs.readFileSync(
   'src/components/tabs/LegacyKyrubTab.tsx',
   'utf8'
 );
+const app = fs.readFileSync('src/App.tsx', 'utf8');
+const indexHtml = fs.readFileSync('index.html', 'utf8');
 
-test('canonical marketplace reading is opt-in until backend activation', () => {
+ test('canonical marketplace reading is opt-in until backend activation', () => {
   const guardIndex = marketplace.indexOf(
     'if (CANONICAL_MARKETPLACE_READ_ENABLED)'
   );
@@ -46,4 +48,27 @@ test('marketplace logo does not render an empty src attribute', () => {
     legacyMarketplace,
     /<img[^>]*src=\{store\.logo \|\| ['"]{2}\}/
   );
+});
+
+test('pending user store replay waits for the server-confirmed primary store', () => {
+  const existsGuard = app.indexOf('!snapshot.exists()');
+  const cacheGuard = app.indexOf('snapshot.metadata.fromCache');
+  const persistCall = app.indexOf('persistPrivateUserStore(user, cachedStore)');
+
+  assert.match(app, /onSnapshot\(/);
+  assert.match(app, /getPrimaryUserStoreDocumentPath\(user\.uid\)/);
+  assert.ok(existsGuard >= 0);
+  assert.ok(cacheGuard >= 0);
+  assert.ok(persistCall > existsGuard);
+  assert.ok(persistCall > cacheGuard);
+  assert.match(app, /LegacyApp owns the initial create\/read bootstrap/);
+});
+
+test('document language and translation guard protect React-managed DOM', () => {
+  assert.match(indexHtml, /<html lang="pt-BR" translate="no">/);
+  assert.match(indexHtml, /<meta name="google" content="notranslate" \/>/);
+  assert.match(indexHtml, /<body class="notranslate">/);
+  assert.match(indexHtml, /<div id="root" class="notranslate"><\/div>/);
+  assert.match(indexHtml, /<link rel="icon" href="\/favicon\.ico" sizes="any" \/>/);
+  assert.equal(fs.existsSync('public/favicon.ico'), true);
 });
