@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 
-export const ACCESSIBILITY_FONT_INCREASE_PX = 10;
+export const ACCESSIBILITY_FONT_INCREASE_PX = 4;
 
 export const getAccessibleFontSize = (
   computedFontSize: string,
