@@ -4,11 +4,11 @@ export interface Product {
   id: string;
   name: string;
   description: string;
-  price: number; // Retail price set by retailer
-  wholesalePrice?: number; // Wholesale price set by supplier
+  price: number;
+  wholesalePrice?: number;
   image: string;
   stock: number;
-  supplierId?: string; // If imported from a supplier
+  supplierId?: string;
   isService?: boolean;
   category: string;
 }
@@ -134,17 +134,47 @@ export interface CartItem {
   quantity: number;
 }
 
+export interface NoteChecklistItem {
+  id: string;
+  text: string;
+  done: boolean;
+}
+
+export interface NoteAuditLog {
+  user: string;
+  action: string;
+  timestamp: string;
+  userId?: string;
+}
+
+export interface NoteCollaborator {
+  uid: string;
+  name: string;
+  email?: string;
+  avatar?: string;
+}
+
 export interface Note {
   id: string;
   title: string;
   content: string;
   associatedUsers: string[];
-  checklist: { id: string; text: string; done: boolean }[];
-  auditLogs: { user: string; action: string; timestamp: string }[];
+  checklist: NoteChecklistItem[];
+  auditLogs: NoteAuditLog[];
   shared?: boolean;
   mediaUrls?: string[];
   reminderDateTime?: string | null;
   isPublishedToFeed?: boolean;
+  ownerId?: string;
+  ownerName?: string;
+  ownerEmail?: string;
+  ownerAvatar?: string;
+  collaborators?: NoteCollaborator[];
+  sharedWith?: string[];
+  acceptedWith?: string[];
+  createdAt?: string;
+  updatedAt?: string;
+  syncState?: 'local' | 'pending' | 'synced' | 'error';
 }
 
 export type ConnectionStatus =

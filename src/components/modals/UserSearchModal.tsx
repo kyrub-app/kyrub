@@ -3,6 +3,10 @@ import { onAuthStateChanged } from 'firebase/auth';
 import { collection, onSnapshot } from 'firebase/firestore';
 import { Search, UserRound, Users } from 'lucide-react';
 import { auth, db } from '../../utils/firebase';
+import {
+  decodeNoteCollaborator,
+  encodeNoteCollaborator,
+} from '../../utils/noteCollaboration';
 
 interface AppUser {
   id: string;
@@ -54,6 +58,13 @@ const normalizeDirectoryUser = (
           : '',
 });
 
+const selectionMatchesUser = (selection: string, user: AppUser): boolean => {
+  const collaborator = decodeNoteCollaborator(selection);
+  return collaborator.uid
+    ? collaborator.uid === user.id
+    : collaborator.name === user.name;
+};
+
 export const UserSearchModal: React.FC<UserSearchModalProps> = ({
   isOpen,
   onClose,
@@ -89,8 +100,7 @@ export const UserSearchModal: React.FC<UserSearchModalProps> = ({
         snapshot => {
           const users = snapshot.docs
             .flatMap(snapshotDocument => {
-              const data =
-                snapshotDocument.data() as Record<string, unknown>;
+              const data = snapshotDocument.data() as Record<string, unknown>;
 
               if (data.isProfileVisible === false) return [];
 
@@ -99,9 +109,7 @@ export const UserSearchModal: React.FC<UserSearchModalProps> = ({
                 data
               );
 
-              return directoryUser.id === user.uid
-                ? []
-                : [directoryUser];
+              return directoryUser.id === user.uid ? [] : [directoryUser];
             })
             .sort((first, second) =>
               first.name.localeCompare(second.name, 'pt-BR')
@@ -223,8 +231,9 @@ export const UserSearchModal: React.FC<UserSearchModalProps> = ({
             ) : (
               <div className="space-y-2">
                 {filteredUsers.map(user => {
-                  const isAlreadyAdded =
-                    selectedFriendsForNote.includes(user.name);
+                  const isAlreadyAdded = selectedFriendsForNote.some(selection =>
+                    selectionMatchesUser(selection, user)
+                  );
 
                   return (
                     <div
@@ -266,7 +275,9 @@ export const UserSearchModal: React.FC<UserSearchModalProps> = ({
                         onClick={() => {
                           if (isAlreadyAdded) {
                             setSelectedFriendsForNote(previous =>
-                              previous.filter(name => name !== user.name)
+                              previous.filter(
+                                selection => !selectionMatchesUser(selection, user)
+                              )
                             );
                             triggerToast(`${user.name} removido!`, 'info');
                             return;
@@ -274,7 +285,12 @@ export const UserSearchModal: React.FC<UserSearchModalProps> = ({
 
                           setSelectedFriendsForNote(previous => [
                             ...previous,
-                            user.name,
+                            encodeNoteCollaborator({
+                              uid: user.id,
+                              name: user.name,
+                              email: user.email,
+                              avatar: user.avatar,
+                            }),
                           ]);
                           triggerToast(`${user.name} adicionado!`, 'success');
                         }}
