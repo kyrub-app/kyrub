@@ -8,6 +8,7 @@ const fragmentPaths = [
   resolve(root, 'firestore.admin-control-plane.fragment.rules'),
   resolve(root, 'firestore.store-security.fragment.rules'),
   resolve(root, 'firestore.store-directory-query.fragment.rules'),
+  resolve(root, 'firestore.note-invitations.fragment.rules'),
   resolve(root, 'firestore.operational-dual-write.fragment.rules'),
   resolve(root, 'firestore.product-dual-write.fragment.rules'),
   resolve(root, 'firestore.cash-ledger.fragment.rules'),
