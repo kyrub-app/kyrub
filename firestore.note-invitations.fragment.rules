@@ -1,0 +1,110 @@
+    // --- Direct Note Collaboration Invitations ---
+    match /note_invitations/{invitationId} {
+      function hasValidInvitationParticipants(data) {
+        return data.ownerId is string
+          && data.recipientId is string
+          && data.noteId is string
+          && data.ownerId.size() > 0
+          && data.recipientId.size() > 0
+          && data.noteId.size() > 0
+          && data.ownerId != data.recipientId
+          && invitationId == data.ownerId + '__' + data.noteId + '__' + data.recipientId;
+      }
+
+      function hasImmutableInvitationIdentity() {
+        return incoming().ownerId == existing().ownerId
+          && incoming().recipientId == existing().recipientId
+          && incoming().noteId == existing().noteId
+          && incoming().sourcePath == existing().sourcePath
+          && incoming().createdAt == existing().createdAt;
+      }
+
+      allow read: if isSignedIn()
+        && (
+          existing().ownerId == request.auth.uid
+          || existing().recipientId == request.auth.uid
+        );
+
+      allow create: if isSignedIn()
+        && incoming().ownerId == request.auth.uid
+        && hasValidInvitationParticipants(incoming())
+        && incoming().status == 'pending'
+        && incoming().sourcePath == 'users/' + incoming().ownerId + '/tasks/' + incoming().noteId
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && incoming().keys().hasAll([
+          'ownerId',
+          'ownerName',
+          'ownerEmail',
+          'recipientId',
+          'recipientName',
+          'recipientEmail',
+          'recipientAvatar',
+          'noteId',
+          'sourcePath',
+          'noteUpdatedAtIso',
+          'status',
+          'createdAt',
+          'updatedAt'
+        ])
+        && incoming().keys().hasOnly([
+          'ownerId',
+          'ownerName',
+          'ownerEmail',
+          'recipientId',
+          'recipientName',
+          'recipientEmail',
+          'recipientAvatar',
+          'noteId',
+          'sourcePath',
+          'noteUpdatedAtIso',
+          'status',
+          'createdAt',
+          'updatedAt',
+          'respondedAtIso'
+        ]);
+
+      allow update: if isSignedIn()
+        && hasImmutableInvitationIdentity()
+        && incoming().updatedAt == request.time
+        && (
+          (
+            request.auth.uid == existing().ownerId
+            && incoming().diff(existing()).affectedKeys().hasOnly([
+              'ownerName',
+              'ownerEmail',
+              'recipientName',
+              'recipientEmail',
+              'recipientAvatar',
+              'noteUpdatedAtIso',
+              'status',
+              'updatedAt'
+            ])
+            && incoming().status in ['pending', 'accepted', 'declined', 'revoked']
+          )
+          ||
+          (
+            request.auth.uid == existing().recipientId
+            && incoming().diff(existing()).affectedKeys().hasOnly([
+              'status',
+              'respondedAtIso',
+              'noteUpdatedAtIso',
+              'updatedAt'
+            ])
+            && (
+              (
+                existing().status == 'pending'
+                && incoming().status in ['accepted', 'declined']
+              )
+              ||
+              (
+                existing().status == 'accepted'
+                && incoming().status == 'accepted'
+              )
+            )
+          )
+        );
+
+      allow delete: if isSignedIn()
+        && existing().ownerId == request.auth.uid;
+    }
