@@ -6,11 +6,11 @@ import {
   getAccessibleFontSize,
 } from '../src/hooks/useFontSizeAccessibility';
 
-test('font accessibility adds exactly ten pixels to computed sizes', () => {
-  assert.equal(ACCESSIBILITY_FONT_INCREASE_PX, 10);
-  assert.equal(getAccessibleFontSize('16px'), '26px');
-  assert.equal(getAccessibleFontSize('9px'), '19px');
-  assert.equal(getAccessibleFontSize('12.5px'), '22.5px');
+test('font accessibility adds exactly four pixels to computed sizes', () => {
+  assert.equal(ACCESSIBILITY_FONT_INCREASE_PX, 4);
+  assert.equal(getAccessibleFontSize('16px'), '20px');
+  assert.equal(getAccessibleFontSize('9px'), '13px');
+  assert.equal(getAccessibleFontSize('12.5px'), '16.5px');
 });
 
 test('font accessibility preserves zero and rejects invalid sizes', () => {
