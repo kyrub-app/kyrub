@@ -35,8 +35,14 @@ test('authorized user directory listener remains active', () => {
   assert.match(legacyApp, /listenCollection\('users'/);
 });
 
-test('notes no longer delete from the fixed legacy tenant', () => {
+test('notes use the authenticated user task path instead of the fixed legacy tenant', () => {
   assert.doesNotMatch(productivityNotes, /tenant_default/);
-  assert.doesNotMatch(productivityNotes, /deleteDoc/);
-  assert.doesNotMatch(productivityNotes, /from 'firebase\/firestore'/);
+  assert.match(
+    productivityNotes,
+    /doc\(db, 'users', user\.uid, 'tasks', noteId\)/
+  );
+  assert.match(
+    productivityNotes,
+    /collection\(db, 'users', user\.uid, 'tasks'\)/
+  );
 });
