@@ -15,6 +15,7 @@ import {
   Check,
   CheckCircle2,
   Clock3,
+  Pencil,
   RefreshCw,
   UserRoundCheck,
   UserRoundX,
@@ -28,6 +29,7 @@ import {
   formatNoteAuditTimestamp,
   normalizeCloudNote,
 } from '../../utils/noteCollaboration';
+import { SharedNoteParticipantEditor } from './SharedNoteParticipantEditor';
 
 interface SharedNotesModalProps {
   isOpen: boolean;
@@ -84,6 +86,7 @@ export const SharedNotesModal: React.FC<SharedNotesModalProps> = ({
   const [isLoading, setIsLoading] = useState(false);
   const [syncError, setSyncError] = useState('');
   const [busyInvitationId, setBusyInvitationId] = useState('');
+  const [editingInvitationId, setEditingInvitationId] = useState('');
 
   useEffect(() => {
     if (!isOpen) return;
@@ -94,6 +97,7 @@ export const SharedNotesModal: React.FC<SharedNotesModalProps> = ({
       unsubscribeInvitations();
       setSyncError('');
       setNotesByInvitationId({});
+      setEditingInvitationId('');
 
       if (!user) {
         setInvitations([]);
@@ -223,6 +227,20 @@ export const SharedNotesModal: React.FC<SharedNotesModalProps> = ({
     [invitations, notesByInvitationId]
   );
 
+  const editingRecord = useMemo(
+    () =>
+      participatingRecords.find(
+        record => record.invitation.id === editingInvitationId
+      ) ?? null,
+    [editingInvitationId, participatingRecords]
+  );
+
+  useEffect(() => {
+    if (editingInvitationId && !editingRecord) {
+      setEditingInvitationId('');
+    }
+  }, [editingInvitationId, editingRecord]);
+
   useEffect(() => {
     if (pendingRecords.length === 0 && participatingRecords.length > 0) {
       setActiveView('participating');
@@ -230,6 +248,11 @@ export const SharedNotesModal: React.FC<SharedNotesModalProps> = ({
   }, [participatingRecords.length, pendingRecords.length]);
 
   if (!isOpen) return null;
+
+  const handleCloseModal = () => {
+    setEditingInvitationId('');
+    onClose();
+  };
 
   const commitInvitationResponse = async (
     record: SharedNoteRecord,
@@ -359,210 +382,255 @@ export const SharedNotesModal: React.FC<SharedNotesModalProps> = ({
     activeView === 'requests' ? pendingRecords : participatingRecords;
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4 backdrop-blur-sm animate-fade-in"
-      id="modal-notas-compartilhadas"
-    >
-      <div className="relative max-h-[88vh] w-full max-w-lg overflow-y-auto rounded-3xl border border-slate-800 bg-slate-900 p-5 shadow-2xl animate-scale-up">
-        <div className="sticky top-0 z-10 -mx-1 mb-4 flex items-center justify-between border-b border-slate-800 bg-slate-900/95 px-1 pb-3 backdrop-blur">
-          <div className="min-w-0">
-            <h3 className="flex items-center gap-2 text-base font-black text-white">
-              <Users className="h-5 w-5 shrink-0 text-teal-400" />
-              <span className="truncate">Notas compartilhadas comigo</span>
-            </h3>
-            <p className="mt-1 text-[10px] text-slate-500">
-              Convites diretos e notas em que você já participa.
-            </p>
+    <>
+      <div
+        className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4 backdrop-blur-sm animate-fade-in"
+        id="modal-notas-compartilhadas"
+      >
+        <div className="relative max-h-[88vh] w-full max-w-lg overflow-y-auto rounded-3xl border border-slate-800 bg-slate-900 p-5 shadow-2xl animate-scale-up">
+          <div className="sticky top-0 z-10 -mx-1 mb-4 flex items-center justify-between border-b border-slate-800 bg-slate-900/95 px-1 pb-3 backdrop-blur">
+            <div className="min-w-0">
+              <h3 className="flex items-center gap-2 text-base font-black text-white">
+                <Users className="h-5 w-5 shrink-0 text-teal-400" />
+                <span className="truncate">Notas compartilhadas comigo</span>
+              </h3>
+              <p className="mt-1 text-[10px] text-slate-500">
+                Convites diretos e notas em que você já participa.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={handleCloseModal}
+              className="ml-3 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-950 text-slate-500 hover:text-slate-300"
+              aria-label="Fechar notas compartilhadas"
+            >
+              <X className="h-4 w-4" />
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="ml-3 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-950 text-slate-500 hover:text-slate-300"
-            aria-label="Fechar notas compartilhadas"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
 
-        <div className="mb-4 grid grid-cols-2 gap-2 rounded-2xl border border-slate-800 bg-slate-950 p-1.5">
-          <button
-            type="button"
-            onClick={() => setActiveView('requests')}
-            className={`rounded-xl px-3 py-2 text-[10px] font-black uppercase transition-all ${
-              activeView === 'requests'
-                ? 'bg-orange-500 text-slate-950'
-                : 'text-slate-500 hover:text-slate-300'
-            }`}
-          >
-            Solicitações ({pendingRecords.length})
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveView('participating')}
-            className={`rounded-xl px-3 py-2 text-[10px] font-black uppercase transition-all ${
-              activeView === 'participating'
-                ? 'bg-teal-500 text-slate-950'
-                : 'text-slate-500 hover:text-slate-300'
-            }`}
-          >
-            Participando ({participatingRecords.length})
-          </button>
-        </div>
-
-        {syncError && (
-          <div className="mb-4 rounded-2xl border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-[10px] leading-relaxed text-amber-300">
-            {syncError}
+          <div className="mb-4 grid grid-cols-2 gap-2 rounded-2xl border border-slate-800 bg-slate-950 p-1.5">
+            <button
+              type="button"
+              onClick={() => setActiveView('requests')}
+              className={`rounded-xl px-3 py-2 text-[10px] font-black uppercase transition-all ${
+                activeView === 'requests'
+                  ? 'bg-orange-500 text-slate-950'
+                  : 'text-slate-500 hover:text-slate-300'
+              }`}
+            >
+              Solicitações ({pendingRecords.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveView('participating')}
+              className={`rounded-xl px-3 py-2 text-[10px] font-black uppercase transition-all ${
+                activeView === 'participating'
+                  ? 'bg-teal-500 text-slate-950'
+                  : 'text-slate-500 hover:text-slate-300'
+              }`}
+            >
+              Participando ({participatingRecords.length})
+            </button>
           </div>
-        )}
 
-        {isLoading ? (
-          <div className="flex items-center justify-center gap-2 py-12 text-xs text-slate-500">
-            <RefreshCw className="h-4 w-4 animate-spin" />
-            Atualizando convites...
-          </div>
-        ) : visibleRecords.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-slate-800 bg-slate-950/60 px-5 py-10 text-center">
-            <Users className="mx-auto h-7 w-7 text-slate-700" />
-            <p className="mt-3 text-xs italic text-slate-500">
-              {activeView === 'requests'
-                ? 'Nenhuma solicitação de colaboração no momento.'
-                : 'Você ainda não participa de nenhuma nota compartilhada.'}
-            </p>
-          </div>
-        ) : (
-          <div className="space-y-3.5">
-            {visibleRecords.map(record => {
-              const note = record.note;
-              const latestLog = note?.auditLogs[0];
-              const isBusy = busyInvitationId === record.invitation.id;
+          {syncError && (
+            <div className="mb-4 rounded-2xl border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-[10px] leading-relaxed text-amber-300">
+              {syncError}
+            </div>
+          )}
 
-              return (
-                <article
-                  key={record.invitation.id}
-                  className="space-y-3 rounded-2xl border border-slate-800 bg-slate-950 p-4"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <span className="block truncate text-[9px] font-bold font-mono uppercase text-orange-400">
-                        {activeView === 'requests' ? 'Convite de' : 'Criada por'}: {record.invitation.ownerName}
+          {isLoading ? (
+            <div className="flex items-center justify-center gap-2 py-12 text-xs text-slate-500">
+              <RefreshCw className="h-4 w-4 animate-spin" />
+              Atualizando convites...
+            </div>
+          ) : visibleRecords.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-slate-800 bg-slate-950/60 px-5 py-10 text-center">
+              <Users className="mx-auto h-7 w-7 text-slate-700" />
+              <p className="mt-3 text-xs italic text-slate-500">
+                {activeView === 'requests'
+                  ? 'Nenhuma solicitação de colaboração no momento.'
+                  : 'Você ainda não participa de nenhuma nota compartilhada.'}
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-3.5">
+              {visibleRecords.map(record => {
+                const note = record.note;
+                const latestLog = note?.auditLogs[0];
+                const isBusy = busyInvitationId === record.invitation.id;
+
+                return (
+                  <article
+                    key={record.invitation.id}
+                    className="space-y-3 rounded-2xl border border-slate-800 bg-slate-950 p-4"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <span className="block truncate text-[9px] font-bold font-mono uppercase text-orange-400">
+                          {activeView === 'requests' ? 'Convite de' : 'Criada por'}:{' '}
+                          {record.invitation.ownerName}
+                        </span>
+                        <h4 className="mt-0.5 truncate text-sm font-black uppercase text-white">
+                          {note?.title || 'Carregando nota...'}
+                        </h4>
+                      </div>
+                      <span className="shrink-0 rounded-full border border-teal-500/20 bg-teal-500/10 px-2 py-1 text-[8px] font-bold font-mono uppercase text-teal-300">
+                        Convite direto
                       </span>
-                      <h4 className="mt-0.5 truncate text-sm font-black uppercase text-white">
-                        {note?.title || 'Carregando nota...'}
-                      </h4>
                     </div>
-                    <span className="shrink-0 rounded-full border border-teal-500/20 bg-teal-500/10 px-2 py-1 text-[8px] font-bold font-mono uppercase text-teal-300">
-                      Convite direto
-                    </span>
-                  </div>
 
-                  {note ? (
-                    <>
-                      <p className="text-xs leading-relaxed text-slate-300">
-                        {note.content}
-                      </p>
+                    {note ? (
+                      <>
+                        <p className="text-xs leading-relaxed text-slate-300">
+                          {note.content}
+                        </p>
 
-                      {activeView === 'participating' && note.checklist.length > 0 && (
-                        <div className="space-y-2 border-t border-slate-900 pt-3">
-                          <span className="block text-[9px] font-mono uppercase text-slate-500">
-                            Checklist compartilhado
-                          </span>
-                          {note.checklist.map(item => (
-                            <label
-                              key={item.id}
-                              className="flex cursor-pointer items-start gap-2 text-xs text-slate-300"
-                            >
-                              <input
-                                type="checkbox"
-                                checked={item.done}
-                                disabled={isBusy}
-                                onChange={() =>
-                                  handleToggleSharedChecklist(record, item.id)
-                                }
-                                className="mt-0.5 accent-teal-500"
-                              />
-                              <span className={item.done ? 'text-slate-500 line-through' : ''}>
-                                {item.text}
+                        {activeView === 'participating' &&
+                          note.checklist.length > 0 && (
+                            <div className="space-y-2 border-t border-slate-900 pt-3">
+                              <span className="block text-[9px] font-mono uppercase text-slate-500">
+                                Checklist compartilhado
                               </span>
-                            </label>
-                          ))}
-                        </div>
-                      )}
+                              {note.checklist.map(item => (
+                                <label
+                                  key={item.id}
+                                  className="flex cursor-pointer items-start gap-2 text-xs text-slate-300"
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={item.done}
+                                    disabled={isBusy}
+                                    onChange={() =>
+                                      handleToggleSharedChecklist(record, item.id)
+                                    }
+                                    className="mt-0.5 accent-teal-500"
+                                  />
+                                  <span
+                                    className={
+                                      item.done
+                                        ? 'text-slate-500 line-through'
+                                        : ''
+                                    }
+                                  >
+                                    {item.text}
+                                  </span>
+                                </label>
+                              ))}
+                            </div>
+                          )}
 
-                      {latestLog && (
-                        <div className="rounded-xl border border-slate-900 bg-slate-900/60 p-2.5 text-[9px] font-mono text-slate-500">
-                          <div className="flex items-center gap-1.5 text-orange-400">
-                            <Clock3 className="h-3 w-3" />
-                            <span className="font-bold uppercase">Última alteração</span>
+                        {latestLog && (
+                          <div className="rounded-xl border border-slate-900 bg-slate-900/60 p-2.5 text-[9px] font-mono text-slate-500">
+                            <div className="flex items-center gap-1.5 text-orange-400">
+                              <Clock3 className="h-3 w-3" />
+                              <span className="font-bold uppercase">
+                                Última alteração
+                              </span>
+                            </div>
+                            <p className="mt-1 text-slate-400">
+                              <span className="text-slate-300">
+                                {latestLog.user}
+                              </span>
+                              : {latestLog.action}
+                            </p>
+                            <span className="mt-1 block text-[8px] text-slate-600">
+                              {formatNoteAuditTimestamp(latestLog.timestamp)}
+                            </span>
                           </div>
-                          <p className="mt-1 text-slate-400">
-                            <span className="text-slate-300">{latestLog.user}</span>: {latestLog.action}
-                          </p>
-                          <span className="mt-1 block text-[8px] text-slate-600">
-                            {formatNoteAuditTimestamp(latestLog.timestamp)}
+                        )}
+                      </>
+                    ) : (
+                      <div className="flex items-center justify-center gap-2 rounded-xl border border-slate-900 bg-slate-900/50 py-6 text-[10px] text-slate-500">
+                        <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                        Sincronizando conteúdo da nota...
+                      </div>
+                    )}
+
+                    {activeView === 'requests' ? (
+                      <div className="grid grid-cols-2 gap-2 border-t border-slate-900 pt-3">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            void commitInvitationResponse(record, 'declined')
+                          }
+                          disabled={isBusy || !note}
+                          className="flex items-center justify-center gap-1.5 rounded-xl border border-red-500/25 bg-red-500/10 py-2 text-[10px] font-bold uppercase text-red-300 disabled:opacity-50"
+                        >
+                          <UserRoundX className="h-3.5 w-3.5" />
+                          Recusar
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            void commitInvitationResponse(record, 'accepted')
+                          }
+                          disabled={isBusy || !note}
+                          className="flex items-center justify-center gap-1.5 rounded-xl bg-teal-500 py-2 text-[10px] font-black uppercase text-slate-950 disabled:opacity-50"
+                        >
+                          <UserRoundCheck className="h-3.5 w-3.5" />
+                          Aceitar
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="space-y-2 border-t border-slate-900 pt-3">
+                        <div className="flex items-center justify-between text-[9px] font-mono text-slate-500">
+                          <span className="flex min-w-0 items-center gap-1.5 truncate">
+                            <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-teal-400" />
+                            Participação ativa
+                          </span>
+                          <span className="flex items-center gap-1 text-slate-600">
+                            <Check className="h-3 w-3" />
+                            {note
+                              ? `${
+                                  note.checklist.filter(item => item.done).length
+                                }/${note.checklist.length}`
+                              : '—'}
                           </span>
                         </div>
-                      )}
-                    </>
-                  ) : (
-                    <div className="flex items-center justify-center gap-2 rounded-xl border border-slate-900 bg-slate-900/50 py-6 text-[10px] text-slate-500">
-                      <RefreshCw className="h-3.5 w-3.5 animate-spin" />
-                      Sincronizando conteúdo da nota...
-                    </div>
-                  )}
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setEditingInvitationId(record.invitation.id)
+                          }
+                          disabled={isBusy || !note}
+                          className="flex w-full items-center justify-center gap-2 rounded-xl border border-teal-500/25 bg-teal-500/10 py-2.5 text-[10px] font-black uppercase text-teal-300 transition-colors hover:bg-teal-500/20 disabled:opacity-50"
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                          Abrir e editar nota
+                        </button>
+                      </div>
+                    )}
+                  </article>
+                );
+              })}
+            </div>
+          )}
 
-                  {activeView === 'requests' ? (
-                    <div className="grid grid-cols-2 gap-2 border-t border-slate-900 pt-3">
-                      <button
-                        type="button"
-                        onClick={() =>
-                          void commitInvitationResponse(record, 'declined')
-                        }
-                        disabled={isBusy || !note}
-                        className="flex items-center justify-center gap-1.5 rounded-xl border border-red-500/25 bg-red-500/10 py-2 text-[10px] font-bold uppercase text-red-300 disabled:opacity-50"
-                      >
-                        <UserRoundX className="h-3.5 w-3.5" />
-                        Recusar
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          void commitInvitationResponse(record, 'accepted')
-                        }
-                        disabled={isBusy || !note}
-                        className="flex items-center justify-center gap-1.5 rounded-xl bg-teal-500 py-2 text-[10px] font-black uppercase text-slate-950 disabled:opacity-50"
-                      >
-                        <UserRoundCheck className="h-3.5 w-3.5" />
-                        Aceitar
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="flex items-center justify-between border-t border-slate-900 pt-3 text-[9px] font-mono text-slate-500">
-                      <span className="flex min-w-0 items-center gap-1.5 truncate">
-                        <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-teal-400" />
-                        Participação ativa
-                      </span>
-                      <span className="flex items-center gap-1 text-slate-600">
-                        <Check className="h-3 w-3" />
-                        {note
-                          ? `${note.checklist.filter(item => item.done).length}/${note.checklist.length}`
-                          : '—'}
-                      </span>
-                    </div>
-                  )}
-                </article>
-              );
-            })}
-          </div>
-        )}
-
-        <button
-          type="button"
-          onClick={onClose}
-          className="mt-5 w-full rounded-xl bg-slate-800 py-2.5 text-xs font-bold uppercase tracking-wider text-slate-300 transition-all hover:bg-slate-700"
-        >
-          Fechar painel
-        </button>
+          <button
+            type="button"
+            onClick={handleCloseModal}
+            className="mt-5 w-full rounded-xl bg-slate-800 py-2.5 text-xs font-bold uppercase tracking-wider text-slate-300 transition-all hover:bg-slate-700"
+          >
+            Fechar painel
+          </button>
+        </div>
       </div>
-    </div>
+
+      {editingRecord?.note && (
+        <SharedNoteParticipantEditor
+          key={editingRecord.invitation.id}
+          invitation={{
+            id: editingRecord.invitation.id,
+            ownerId: editingRecord.invitation.ownerId,
+            ownerName: editingRecord.invitation.ownerName,
+            noteId: editingRecord.invitation.noteId,
+            status: 'accepted',
+          }}
+          note={editingRecord.note}
+          onClose={() => setEditingInvitationId('')}
+        />
+      )}
+    </>
   );
 };
