@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
 import LegacyApp from './LegacyApp';
 import AdminControlPlaneApp from './components/admin/AdminControlPlaneApp';
+import { NoteInvitationOutboxBridge } from './components/NoteInvitationOutboxBridge';
 import { useFontSizeAccessibility } from './hooks/useFontSizeAccessibility';
 import { auth } from './utils/firebase';
 import { isAdminControlPlaneLocation } from './utils/adminControlPlane';
@@ -77,6 +78,7 @@ export default function App() {
   return (
     <>
       <StorePersistenceBridge />
+      <NoteInvitationOutboxBridge />
       <LegacyApp />
     </>
   );
