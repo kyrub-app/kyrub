@@ -1,9 +1,28 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { onAuthStateChanged } from 'firebase/auth';
+import { onAuthStateChanged, type User as FirebaseUser } from 'firebase/auth';
+import {
+  collection,
+  deleteDoc,
+  doc,
+  onSnapshot,
+  serverTimestamp,
+  setDoc,
+  type DocumentData,
+  type QueryDocumentSnapshot,
+} from 'firebase/firestore';
 import { Note, SocialPost } from '../types';
-import { auth } from '../utils/firebase';
+import { auth, db } from '../utils/firebase';
+import {
+  createAuditLog,
+  encodeNoteCollaborator,
+  getNoteUpdatedAt,
+  mergeNoteVersions,
+  normalizeCloudNote,
+  normalizeCollaboratorSelections,
+  sanitizeCloudMediaUrls,
+  sortNotesByUpdatedAt,
+} from '../utils/noteCollaboration';
 
-const LEGACY_NOTES_KEY = 'kyrub_notes';
 const getUserNotesKey = (uid: string) => `kyrub_notes_${uid}`;
 const MAX_NOTE_ATTACHMENTS = 9;
 const MAX_NOTE_ATTACHMENT_BYTES = 4 * 1024 * 1024;
@@ -44,6 +63,112 @@ const fileToDataUrl = (file: File): Promise<string> =>
     reader.readAsDataURL(file);
   });
 
+const getOwnerName = (
+  user: FirebaseUser,
+  profileName: string
+): string => user.displayName?.trim() || profileName.trim() || user.email || 'Você';
+
+const normalizeLocalNote = (
+  note: Note,
+  user: FirebaseUser,
+  profileName: string,
+  profilePhotoUrl: string
+): Note => {
+  const ownerName = getOwnerName(user, profileName);
+  const createdAt =
+    note.createdAt || note.auditLogs[note.auditLogs.length - 1]?.timestamp || new Date().toISOString();
+  const updatedAt =
+    note.updatedAt || note.auditLogs[0]?.timestamp || createdAt;
+
+  return {
+    ...note,
+    ownerId: note.ownerId || user.uid,
+    ownerName: note.ownerName || ownerName,
+    ownerEmail: note.ownerEmail || user.email || '',
+    ownerAvatar: note.ownerAvatar || user.photoURL || profilePhotoUrl || '',
+    collaborators: note.collaborators ?? [],
+    sharedWith: note.sharedWith ?? note.collaborators?.map(item => item.uid).filter(Boolean) ?? [],
+    acceptedWith: note.acceptedWith ?? [],
+    createdAt,
+    updatedAt,
+    syncState: note.syncState ?? 'local',
+    mediaUrls: note.mediaUrls ?? [],
+  };
+};
+
+const mapTaskSnapshot = (
+  snapshot: QueryDocumentSnapshot<DocumentData>
+): Note => {
+  const ownerId = snapshot.ref.parent.parent?.id ?? '';
+  return {
+    ...normalizeCloudNote(
+      snapshot.id,
+      snapshot.data() as Record<string, unknown>,
+      ownerId
+    ),
+    syncState: snapshot.metadata.hasPendingWrites ? 'pending' : 'synced',
+  };
+};
+
+const buildCloudNoteDocument = (
+  note: Note,
+  user: FirebaseUser,
+  profileName: string,
+  profilePhotoUrl: string
+): Record<string, unknown> => {
+  const ownerName = note.ownerName || getOwnerName(user, profileName);
+  const collaborators = (note.collaborators ?? [])
+    .filter(item => item.uid && item.name)
+    .map(item => ({
+      uid: item.uid,
+      name: item.name,
+      email: item.email ?? '',
+      avatar: item.avatar ?? '',
+    }));
+  const sharedWith = [...new Set([
+    ...(note.sharedWith ?? []),
+    ...collaborators.map(item => item.uid),
+  ].filter(Boolean))];
+  const acceptedWith = (note.acceptedWith ?? []).filter(uid =>
+    sharedWith.includes(uid)
+  );
+  const createdAtIso = note.createdAt || new Date().toISOString();
+  const updatedAtIso = note.updatedAt || createdAtIso;
+
+  return {
+    schemaVersion: 1,
+    id: note.id,
+    ownerId: user.uid,
+    ownerName,
+    ownerEmail: note.ownerEmail || user.email || '',
+    ownerAvatar: note.ownerAvatar || user.photoURL || profilePhotoUrl || '',
+    title: note.title,
+    content: note.content,
+    associatedUsers: note.associatedUsers,
+    checklist: note.checklist.map(item => ({
+      id: item.id,
+      text: item.text,
+      done: item.done,
+    })),
+    auditLogs: note.auditLogs.map(log => ({
+      user: log.user,
+      action: log.action,
+      timestamp: log.timestamp,
+      userId: log.userId ?? '',
+    })),
+    shared: note.shared === true,
+    mediaUrls: sanitizeCloudMediaUrls(note.mediaUrls ?? []),
+    reminderDateTime: note.reminderDateTime ?? null,
+    isPublishedToFeed: note.isPublishedToFeed === true,
+    collaborators,
+    sharedWith,
+    acceptedWith,
+    createdAtIso,
+    updatedAtIso,
+    serverUpdatedAt: serverTimestamp(),
+  };
+};
+
 export function useProductivityNotes({
   profileName,
   profilePhotoUrl,
@@ -58,25 +183,72 @@ export function useProductivityNotes({
   const [newNoteTitle, setNewNoteTitle] = useState('');
   const [newNoteContent, setNewNoteContent] = useState('');
   const [newNoteChecklist, setNewNoteChecklist] = useState('');
-  const [selectedFriendsForNote, setSelectedFriendsForNote] = useState<
-    string[]
-  >([]);
+  const [selectedFriendsForNote, setSelectedFriendsForNote] = useState<string[]>([]);
   const [showAddNoteForm, setShowAddNoteForm] = useState(false);
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
   const [newNoteMediaUrls, setNewNoteMediaUrls] = useState<string[]>([]);
   const [newNoteReminderDateTime, setNewNoteReminderDateTime] = useState('');
-  const [newNoteIsPublishedToFeed, setNewNoteIsPublishedToFeed] =
-    useState(false);
+  const [newNoteIsPublishedToFeed, setNewNoteIsPublishedToFeed] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
 
   const [activeAlarmNote, setActiveAlarmNote] = useState<Note | null>(null);
   const [dismissedAlarms, setDismissedAlarms] = useState<string[]>([]);
   const uploadGeneration = useRef(0);
+  const profileNameRef = useRef(profileName);
+  const profilePhotoUrlRef = useRef(profilePhotoUrl);
+  const initialLocalNotesRef = useRef<Note[]>([]);
+  const initialSnapshotHandledRef = useRef(false);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, user => {
+    profileNameRef.current = profileName;
+  }, [profileName]);
+
+  useEffect(() => {
+    profilePhotoUrlRef.current = profilePhotoUrl;
+  }, [profilePhotoUrl]);
+
+  const queueCloudWrite = (note: Note): void => {
+    const user = auth.currentUser;
+    if (!user || note.ownerId && note.ownerId !== user.uid) return;
+
+    const normalized = normalizeLocalNote(
+      { ...note, syncState: 'pending' },
+      user,
+      profileNameRef.current,
+      profilePhotoUrlRef.current
+    );
+
+    void setDoc(
+      doc(db, 'users', user.uid, 'tasks', note.id),
+      buildCloudNoteDocument(
+        normalized,
+        user,
+        profileNameRef.current,
+        profilePhotoUrlRef.current
+      ),
+      { merge: true }
+    ).catch(error => {
+      console.warn('A nota permaneceu na fila local de sincronização.', error);
+      setNotes(previous =>
+        previous.map(item =>
+          item.id === note.id ? { ...item, syncState: 'error' } : item
+        )
+      );
+      triggerToast(
+        'Nota salva no dispositivo. A sincronização será tentada novamente quando houver conexão.',
+        'warning'
+      );
+    });
+  };
+
+  useEffect(() => {
+    let unsubscribeTasks = () => undefined;
+
+    const unsubscribeAuth = onAuthStateChanged(auth, user => {
+      unsubscribeTasks();
       uploadGeneration.current += 1;
+      initialSnapshotHandledRef.current = false;
 
       if (!user) {
         setActiveUserId(null);
@@ -84,33 +256,102 @@ export function useProductivityNotes({
         setNotes([]);
         setEditingNoteId(null);
         setShowAddNoteForm(false);
+        initialLocalNotesRef.current = [];
         return;
       }
 
-      const userStorageKey = getUserNotesKey(user.uid);
-      const storedForUser = localStorage.getItem(userStorageKey);
-      const legacyStoredNotes = localStorage.getItem(LEGACY_NOTES_KEY);
       const hydratedNotes = readStoredNotes(
-        storedForUser ?? legacyStoredNotes
+        localStorage.getItem(getUserNotesKey(user.uid))
+      ).map(note =>
+        normalizeLocalNote(
+          note,
+          user,
+          profileNameRef.current,
+          profilePhotoUrlRef.current
+        )
       );
 
-      if (!storedForUser && legacyStoredNotes && hydratedNotes.length > 0) {
-        try {
-          localStorage.setItem(
-            userStorageKey,
-            JSON.stringify(hydratedNotes)
-          );
-        } catch (error) {
-          console.warn('Não foi possível migrar as notas locais.', error);
-        }
-      }
-
+      initialLocalNotesRef.current = hydratedNotes;
       setActiveUserId(user.uid);
-      setNotes(hydratedNotes);
+      setNotes(sortNotesByUpdatedAt(hydratedNotes));
       setNotesHydrated(true);
+
+      unsubscribeTasks = onSnapshot(
+        collection(db, 'users', user.uid, 'tasks'),
+        { includeMetadataChanges: true },
+        snapshot => {
+          const remoteNotes = snapshot.docs.map(mapTaskSnapshot);
+          const remoteById = new Map(remoteNotes.map(note => [note.id, note]));
+
+          if (!initialSnapshotHandledRef.current) {
+            initialSnapshotHandledRef.current = true;
+            const localNotes = initialLocalNotesRef.current;
+            const mergedById = new Map<string, Note>();
+
+            for (const remoteNote of remoteNotes) {
+              mergedById.set(remoteNote.id, remoteNote);
+            }
+
+            for (const localNote of localNotes) {
+              const remoteNote = remoteById.get(localNote.id);
+              if (!remoteNote) {
+                mergedById.set(localNote.id, {
+                  ...localNote,
+                  syncState: 'pending',
+                });
+                queueCloudWrite(localNote);
+                continue;
+              }
+
+              const merged = mergeNoteVersions(localNote, remoteNote);
+              mergedById.set(localNote.id, merged);
+
+              if (getNoteUpdatedAt(localNote) > getNoteUpdatedAt(remoteNote)) {
+                queueCloudWrite(localNote);
+              }
+            }
+
+            setNotes(sortNotesByUpdatedAt([...mergedById.values()]));
+            return;
+          }
+
+          setNotes(previous => {
+            const nextById = new Map<string, Note>();
+
+            for (const remoteNote of remoteNotes) {
+              const localNote = previous.find(item => item.id === remoteNote.id);
+              nextById.set(
+                remoteNote.id,
+                localNote ? mergeNoteVersions(localNote, remoteNote) : remoteNote
+              );
+            }
+
+            for (const localNote of previous) {
+              if (
+                !remoteById.has(localNote.id) &&
+                localNote.syncState === 'pending'
+              ) {
+                nextById.set(localNote.id, localNote);
+              }
+            }
+
+            return sortNotesByUpdatedAt([...nextById.values()]);
+          });
+        },
+        error => {
+          console.warn('Sincronização em nuvem das notas indisponível.', error);
+          triggerToast(
+            'As notas continuam disponíveis offline. A nuvem será reconectada automaticamente.',
+            'warning'
+          );
+        }
+      );
     });
 
-    return unsubscribe;
+    return () => {
+      unsubscribeAuth();
+      unsubscribeTasks();
+    };
   }, []);
 
   useEffect(() => {
@@ -149,8 +390,7 @@ export function useProductivityNotes({
 
     if (selectedFiles.length === 0) return;
 
-    const remainingSlots =
-      MAX_NOTE_ATTACHMENTS - newNoteMediaUrls.length;
+    const remainingSlots = MAX_NOTE_ATTACHMENTS - newNoteMediaUrls.length;
 
     if (remainingSlots <= 0) {
       triggerToast(
@@ -193,10 +433,7 @@ export function useProductivityNotes({
       })
       .catch(error => {
         console.warn('Falha ao preparar anexos da nota.', error);
-        triggerToast(
-          'Não foi possível adicionar um dos arquivos.',
-          'error'
-        );
+        triggerToast('Não foi possível adicionar um dos arquivos.', 'error');
       })
       .finally(() => {
         if (uploadGeneration.current !== currentGeneration) return;
@@ -232,12 +469,7 @@ export function useProductivityNotes({
       if (existingPost) {
         return previousPosts.map(post =>
           post.id === postId
-            ? {
-                ...post,
-                content: postContent,
-                mediaUrls,
-                time: 'Agora mesmo',
-              }
+            ? { ...post, content: postContent, mediaUrls, time: 'Agora mesmo' }
             : post
         );
       }
@@ -260,28 +492,30 @@ export function useProductivityNotes({
   const handleCreateNote = (event: React.FormEvent) => {
     event.preventDefault();
 
-    if (!newNoteTitle.trim() || !newNoteContent.trim()) {
-      triggerToast(
-        'Preencha o título e o conteúdo da nota.',
-        'error'
-      );
+    const user = auth.currentUser;
+    if (!user) {
+      triggerToast('Faça login novamente para salvar a nota.', 'error');
       return;
     }
 
+    if (!newNoteTitle.trim() || !newNoteContent.trim()) {
+      triggerToast('Preencha o título e o conteúdo da nota.', 'error');
+      return;
+    }
+
+    const existingNote = editingNoteId
+      ? notes.find(note => note.id === editingNoteId)
+      : undefined;
     const checklistItems = newNoteChecklist
       .split(',')
       .map(item => item.trim())
       .filter(Boolean)
       .map((text, index) => {
-        const existingItem = editingNoteId
-          ? notes
-              .find(note => note.id === editingNoteId)
-              ?.checklist.find(
-                item =>
-                  item.text.toLocaleLowerCase('pt-BR') ===
-                  text.toLocaleLowerCase('pt-BR')
-              )
-          : undefined;
+        const existingItem = existingNote?.checklist.find(
+          item =>
+            item.text.toLocaleLowerCase('pt-BR') ===
+            text.toLocaleLowerCase('pt-BR')
+        );
 
         return {
           id: existingItem?.id ?? `item-${Date.now()}-${index}`,
@@ -289,213 +523,184 @@ export function useProductivityNotes({
           done: existingItem?.done ?? false,
         };
       });
-
+    const collaborators = normalizeCollaboratorSelections(
+      selectedFriendsForNote
+    ).filter(item => item.uid);
+    const sharedWith = collaborators.map(item => item.uid);
+    const acceptedWith = (existingNote?.acceptedWith ?? []).filter(uid =>
+      sharedWith.includes(uid)
+    );
     const noteId = editingNoteId ?? `note-${Date.now()}`;
-    const now = new Date().toLocaleString('pt-BR');
-
-    if (editingNoteId) {
-      setNotes(previousNotes =>
-        previousNotes.map(note =>
-          note.id === editingNoteId
-            ? {
-                ...note,
-                title: newNoteTitle.trim().toUpperCase(),
-                content: newNoteContent.trim(),
-                associatedUsers: [
-                  'Você',
-                  ...selectedFriendsForNote,
-                ],
-                checklist: checklistItems,
-                mediaUrls: newNoteMediaUrls,
-                reminderDateTime:
-                  newNoteReminderDateTime || null,
-                isPublishedToFeed: newNoteIsPublishedToFeed,
-                auditLogs: [
-                  {
-                    user: 'Você',
-                    action: 'Editou a nota de trabalho',
-                    timestamp: now,
-                  },
-                  ...note.auditLogs,
-                ],
-              }
-            : note
-        )
-      );
-
-      if (newNoteIsPublishedToFeed) {
-        publishNoteToFeed(
-          noteId,
-          newNoteTitle,
-          newNoteContent,
-          checklistItems,
-          newNoteMediaUrls
-        );
-      }
-
-      resetComposer();
-      setShowAddNoteForm(false);
-      triggerToast(
-        'Nota de trabalho atualizada com sucesso.',
-        'success'
-      );
-      return;
-    }
-
-    const newNote: Note = {
+    const now = new Date().toISOString();
+    const ownerName = getOwnerName(user, profileName);
+    const auditAction = editingNoteId
+      ? 'Editou a nota de trabalho'
+      : 'Criou a nota de produtividade';
+    const nextNote: Note = {
+      ...(existingNote ?? {}),
       id: noteId,
       title: newNoteTitle.trim().toUpperCase(),
       content: newNoteContent.trim(),
-      associatedUsers: ['Você', ...selectedFriendsForNote],
+      associatedUsers: ['Você', ...collaborators.map(item => item.name)],
       checklist: checklistItems,
       mediaUrls: newNoteMediaUrls,
       reminderDateTime: newNoteReminderDateTime || null,
       isPublishedToFeed: newNoteIsPublishedToFeed,
       auditLogs: [
-        {
-          user: 'Você',
-          action: 'Criou a nota de produtividade',
-          timestamp: now,
-        },
+        createAuditLog(ownerName, auditAction, user.uid, now),
+        ...(existingNote?.auditLogs ?? []),
       ],
+      ownerId: user.uid,
+      ownerName,
+      ownerEmail: user.email ?? '',
+      ownerAvatar: user.photoURL || profilePhotoUrl || '',
+      collaborators,
+      sharedWith,
+      acceptedWith,
+      createdAt: existingNote?.createdAt ?? now,
+      updatedAt: now,
+      syncState: 'pending',
     };
 
-    setNotes(previousNotes => [newNote, ...previousNotes]);
+    setNotes(previous => {
+      const withoutCurrent = previous.filter(note => note.id !== noteId);
+      return sortNotesByUpdatedAt([nextNote, ...withoutCurrent]);
+    });
+    queueCloudWrite(nextNote);
 
     if (newNoteIsPublishedToFeed) {
       publishNoteToFeed(
         noteId,
-        newNoteTitle,
-        newNoteContent,
+        nextNote.title,
+        nextNote.content,
         checklistItems,
         newNoteMediaUrls
-      );
-      triggerToast(
-        'Nota salva e publicada no feed.',
-        'success'
-      );
-    } else {
-      triggerToast(
-        'Nota e checklist criados com sucesso.',
-        'success'
       );
     }
 
     resetComposer();
     setShowAddNoteForm(false);
+    triggerToast(
+      editingNoteId
+        ? 'Nota atualizada e sincronizada.'
+        : collaborators.length > 0
+          ? 'Nota salva e solicitações de colaboração enviadas.'
+          : 'Nota e checklist criados com sucesso.',
+      'success'
+    );
   };
 
   const handleEditClick = (note: Note) => {
     setEditingNoteId(note.id);
     setNewNoteTitle(note.title);
     setNewNoteContent(note.content);
-    setNewNoteChecklist(
-      note.checklist.map(item => item.text).join(', ')
-    );
+    setNewNoteChecklist(note.checklist.map(item => item.text).join(', '));
     setSelectedFriendsForNote(
-      note.associatedUsers.filter(user => user !== 'Você')
+      note.collaborators?.length
+        ? note.collaborators.map(encodeNoteCollaborator)
+        : note.associatedUsers
+            .filter(userName => userName !== 'Você')
     );
     setNewNoteMediaUrls(note.mediaUrls ?? []);
     setNewNoteReminderDateTime(note.reminderDateTime ?? '');
-    setNewNoteIsPublishedToFeed(
-      note.isPublishedToFeed ?? false
-    );
+    setNewNoteIsPublishedToFeed(note.isPublishedToFeed ?? false);
     setShowAddNoteForm(true);
     triggerToast(`Editando nota: ${note.title}`, 'info');
   };
 
   const handleDeleteNote = (noteId: string) => {
-    setNotes(previous =>
-      previous.filter(note => note.id !== noteId)
-    );
+    const user = auth.currentUser;
+    setNotes(previous => previous.filter(note => note.id !== noteId));
     setPosts(previous =>
       previous.filter(post => post.id !== `post-shared-${noteId}`)
     );
 
-    if (editingNoteId === noteId) {
-      resetComposer();
+    if (editingNoteId === noteId) resetComposer();
+
+    if (user) {
+      void deleteDoc(doc(db, 'users', user.uid, 'tasks', noteId)).catch(error => {
+        console.warn('Exclusão em nuvem permaneceu pendente.', error);
+        triggerToast(
+          'A nota foi removida deste dispositivo e será excluída da nuvem quando a conexão voltar.',
+          'warning'
+        );
+      });
     }
 
     triggerToast('Nota excluída com sucesso.', 'success');
   };
 
-  const handleToggleChecklistItem = (
-    noteId: string,
-    itemId: string
-  ) => {
-    setNotes(previousNotes =>
-      previousNotes.map(note => {
-        if (note.id !== noteId) return note;
+  const handleToggleChecklistItem = (noteId: string, itemId: string) => {
+    const user = auth.currentUser;
+    const current = notes.find(note => note.id === noteId);
+    if (!current || !user) return;
 
-        const toggledItem = note.checklist.find(
-          item => item.id === itemId
-        );
-        const checklist = note.checklist.map(item =>
-          item.id === itemId
-            ? { ...item, done: !item.done }
-            : item
-        );
+    const toggledItem = current.checklist.find(item => item.id === itemId);
+    const now = new Date().toISOString();
+    const updatedNote: Note = {
+      ...current,
+      checklist: current.checklist.map(item =>
+        item.id === itemId ? { ...item, done: !item.done } : item
+      ),
+      auditLogs: [
+        createAuditLog(
+          getOwnerName(user, profileName),
+          toggledItem
+            ? `Marcou "${toggledItem.text}" como ${
+                toggledItem.done ? 'PENDENTE' : 'CONCLUÍDO'
+              }`
+            : 'Alterou item do checklist',
+          user.uid,
+          now
+        ),
+        ...current.auditLogs,
+      ],
+      updatedAt: now,
+      syncState: 'pending',
+    };
 
-        return {
-          ...note,
-          checklist,
-          auditLogs: [
-            {
-              user: 'Você',
-              action: toggledItem
-                ? `Marcou "${toggledItem.text}" como ${
-                    toggledItem.done
-                      ? 'PENDENTE'
-                      : 'CONCLUÍDO'
-                  }`
-                : 'Alterou item do checklist',
-              timestamp: new Date().toLocaleString('pt-BR'),
-            },
-            ...note.auditLogs,
-          ],
-        };
-      })
+    setNotes(previous =>
+      sortNotesByUpdatedAt(
+        previous.map(note => note.id === noteId ? updatedNote : note)
+      )
     );
-
+    queueCloudWrite(updatedNote);
     triggerToast('Tarefa atualizada.', 'success');
   };
 
-  const handleShareNoteWithFriend = (
-    noteId: string,
-    friendName: string
-  ) => {
-    setNotes(previousNotes =>
-      previousNotes.map(note => {
-        if (note.id !== noteId) return note;
-        if (note.associatedUsers.includes(friendName)) return note;
+  const handleShareNoteWithFriend = (noteId: string, friendName: string) => {
+    const current = notes.find(note => note.id === noteId);
+    const user = auth.currentUser;
+    if (!current || !user || current.associatedUsers.includes(friendName)) return;
 
-        return {
-          ...note,
-          associatedUsers: [
-            ...note.associatedUsers,
-            friendName,
-          ],
-          auditLogs: [
-            {
-              user: 'Você',
-              action: `Compartilhou nota com ${friendName}`,
-              timestamp: new Date().toLocaleString('pt-BR'),
-            },
-            ...note.auditLogs,
-          ],
-        };
-      })
-    );
+    const now = new Date().toISOString();
+    const updatedNote: Note = {
+      ...current,
+      associatedUsers: [...current.associatedUsers, friendName],
+      auditLogs: [
+        createAuditLog(
+          getOwnerName(user, profileName),
+          `Adicionou ${friendName} à nota`,
+          user.uid,
+          now
+        ),
+        ...current.auditLogs,
+      ],
+      updatedAt: now,
+      syncState: 'pending',
+    };
 
-    triggerToast(
-      `Nota compartilhada com ${friendName}.`,
-      'success'
+    setNotes(previous =>
+      previous.map(note => note.id === noteId ? updatedNote : note)
     );
+    queueCloudWrite(updatedNote);
+    triggerToast(`${friendName} adicionado à nota.`, 'success');
   };
 
   const handleShareNoteExternally = (noteId: string) => {
     const noteToShare = notes.find(note => note.id === noteId);
-    if (!noteToShare) return;
+    const user = auth.currentUser;
+    if (!noteToShare || !user) return;
 
     publishNoteToFeed(
       noteId,
@@ -505,31 +710,28 @@ export function useProductivityNotes({
       noteToShare.mediaUrls ?? []
     );
 
-    setNotes(previousNotes =>
-      previousNotes.map(note =>
-        note.id === noteId
-          ? {
-              ...note,
-              shared: true,
-              auditLogs: [
-                {
-                  user: 'Você',
-                  action:
-                    'Compartilhou nota publicamente no feed',
-                  timestamp:
-                    new Date().toLocaleString('pt-BR'),
-                },
-                ...note.auditLogs,
-              ],
-            }
-          : note
-      )
-    );
+    const now = new Date().toISOString();
+    const updatedNote: Note = {
+      ...noteToShare,
+      shared: true,
+      auditLogs: [
+        createAuditLog(
+          getOwnerName(user, profileName),
+          'Compartilhou a nota publicamente no feed',
+          user.uid,
+          now
+        ),
+        ...noteToShare.auditLogs,
+      ],
+      updatedAt: now,
+      syncState: 'pending',
+    };
 
-    triggerToast(
-      'Nota compartilhada no feed com sucesso.',
-      'success'
+    setNotes(previous =>
+      previous.map(note => note.id === noteId ? updatedNote : note)
     );
+    queueCloudWrite(updatedNote);
+    triggerToast('Nota compartilhada no feed com sucesso.', 'success');
   };
 
   useEffect(() => {
@@ -567,27 +769,16 @@ export function useProductivityNotes({
               tag: note.id,
             });
           } catch (error) {
-            console.warn(
-              'A notificação nativa não pôde ser exibida.',
-              error
-            );
+            console.warn('A notificação nativa não pôde ser exibida.', error);
           }
         }
 
-        triggerToast(
-          `Alarme de tarefa: ${note.title}`,
-          'success'
-        );
+        triggerToast(`Alarme de tarefa: ${note.title}`, 'success');
       });
     }, 4000);
 
     return () => window.clearInterval(interval);
-  }, [
-    activeAlarmNote,
-    dismissedAlarms,
-    notes,
-    triggerToast,
-  ]);
+  }, [activeAlarmNote, dismissedAlarms, notes, triggerToast]);
 
   return {
     notes,
