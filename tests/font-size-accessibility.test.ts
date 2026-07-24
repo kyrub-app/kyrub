@@ -19,7 +19,7 @@ test('font accessibility preserves zero and rejects invalid sizes', () => {
   assert.equal(getAccessibleFontSize('16px', Number.NaN), null);
 });
 
-test('runtime observer covers authenticated and dynamically mounted screens', () => {
+test('runtime observer adjusts new screens without reapplying existing text', () => {
   const hookSource = readFileSync(
     'src/hooks/useFontSizeAccessibility.ts',
     'utf8'
@@ -28,14 +28,20 @@ test('runtime observer covers authenticated and dynamically mounted screens', ()
   const viteConfig = readFileSync('vite.config.ts', 'utf8');
   const globalStyles = readFileSync('src/index.css', 'utf8');
 
-  assert.match(hookSource, /new MutationObserver\(scheduleFontIncrease\)/);
-  assert.match(hookSource, /rootElement\.querySelectorAll\('\*'\)/);
+  assert.match(hookSource, /new MutationObserver\(mutations =>/);
+  assert.match(hookSource, /collectElementSubtree\(addedRoot\)/);
   assert.match(hookSource, /window\.getComputedStyle\(element\)\.fontSize/);
   assert.match(
     hookSource,
     /setProperty\('font-size', accessibleFontSize, 'important'\)/
   );
-  assert.match(hookSource, /attributeFilter:\s*\['class'\]/);
+  assert.match(hookSource, /adjustedElements\.has\(element\)/);
+  assert.match(
+    hookSource,
+    /observer\.observe\(rootElement,\s*\{\s*childList:\s*true,\s*subtree:\s*true,\s*\}\)/
+  );
+  assert.doesNotMatch(hookSource, /attributes:\s*true/);
+  assert.doesNotMatch(hookSource, /requestAnimationFrame/);
   assert.match(appSource, /useFontSizeAccessibility\(\);/);
   assert.doesNotMatch(viteConfig, /fontSizeAccessibilityPlugin/);
   assert.equal(existsSync('build/fontSizeAccessibility.ts'), false);
