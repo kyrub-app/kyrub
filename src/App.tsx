@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
 import LegacyApp from './LegacyApp';
 import AdminControlPlaneApp from './components/admin/AdminControlPlaneApp';
+import { useFontSizeAccessibility } from './hooks/useFontSizeAccessibility';
 import { auth } from './utils/firebase';
 import { isAdminControlPlaneLocation } from './utils/adminControlPlane';
 import {
@@ -64,6 +65,8 @@ function StorePersistenceBridge() {
 }
 
 export default function App() {
+  useFontSizeAccessibility();
+
   const adminControlPlane = isAdminControlPlaneLocation(
     window.location.hostname,
     window.location.pathname
