@@ -1,9 +1,9 @@
 import type { Plugin } from 'vite';
 
 const FONT_SIZE_ACCESSIBILITY_MARKER =
-  '/* kyrub-accessibility-font-size-plus-18px */';
+  '/* kyrub-accessibility-font-size-plus-10px-final-css */';
 
-export const FONT_SIZE_INCREASE_PX = 18;
+export const FONT_SIZE_INCREASE_PX = 10;
 
 const TAILWIND_TEXT_TOKEN_PATTERN =
   /(--text-(?:xs|sm|base|lg|xl|2xl|3xl|4xl|5xl|6xl|7xl|8xl|9xl)\s*:\s*)(\d*\.?\d+)(px|rem)\b/g;
@@ -51,7 +51,7 @@ export const increaseFontSizesForAccessibility = (css: string): string => {
 };
 
 export const fontSizeAccessibilityPlugin = (): Plugin => ({
-  name: 'kyrub-accessibility-font-size-plus-18px',
+  name: 'kyrub-accessibility-font-size-plus-10px-final-css',
   enforce: 'post',
   generateBundle(_options, bundle) {
     for (const output of Object.values(bundle)) {
