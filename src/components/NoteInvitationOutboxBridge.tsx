@@ -3,7 +3,6 @@ import { onAuthStateChanged } from 'firebase/auth';
 import {
   collection,
   doc,
-  getDoc,
   onSnapshot,
   query,
   serverTimestamp,
@@ -23,6 +22,28 @@ interface CollaboratorRecord {
 interface InvitationRecord {
   id: string;
   status: string;
+  ownerName: string;
+  ownerEmail: string;
+  recipientName: string;
+  recipientEmail: string;
+  recipientAvatar: string;
+  noteUpdatedAtIso: string;
+}
+
+interface ExpectedInvitation {
+  id: string;
+  payload: {
+    ownerId: string;
+    ownerName: string;
+    ownerEmail: string;
+    recipientId: string;
+    recipientName: string;
+    recipientEmail: string;
+    recipientAvatar: string;
+    noteId: string;
+    sourcePath: string;
+    noteUpdatedAtIso: string;
+  };
 }
 
 const readString = (value: unknown): string =>
@@ -68,42 +89,143 @@ const invitationIdFor = (
   recipientId: string
 ): string => `${ownerId}__${noteId}__${recipientId}`;
 
+const invitationMetadataChanged = (
+  existing: InvitationRecord,
+  expected: ExpectedInvitation
+): boolean =>
+  existing.ownerName !== expected.payload.ownerName ||
+  existing.ownerEmail !== expected.payload.ownerEmail ||
+  existing.recipientName !== expected.payload.recipientName ||
+  existing.recipientEmail !== expected.payload.recipientEmail ||
+  existing.recipientAvatar !== expected.payload.recipientAvatar ||
+  existing.noteUpdatedAtIso !== expected.payload.noteUpdatedAtIso;
+
 export function NoteInvitationOutboxBridge() {
   useEffect(() => {
     let unsubscribeTasks = () => undefined;
     let unsubscribeInvitations = () => undefined;
     let cancelled = false;
     let tasksReadyFromServer = false;
-    let expectedInvitationIds = new Set<string>();
-    let ownerInvitations: InvitationRecord[] = [];
+    let invitationsReadyFromServer = false;
+    let expectedInvitations = new Map<string, ExpectedInvitation>();
+    let ownerInvitations = new Map<string, InvitationRecord>();
+    const pendingCreateIds = new Set<string>();
+    const pendingUpdateIds = new Set<string>();
 
     const reconcileRevokedInvitations = () => {
-      if (!tasksReadyFromServer || cancelled) return;
+      if (
+        !tasksReadyFromServer ||
+        !invitationsReadyFromServer ||
+        cancelled
+      ) {
+        return;
+      }
 
-      for (const invitation of ownerInvitations) {
+      for (const invitation of ownerInvitations.values()) {
         if (
-          expectedInvitationIds.has(invitation.id) ||
+          expectedInvitations.has(invitation.id) ||
           invitation.status === 'declined' ||
-          invitation.status === 'revoked'
+          invitation.status === 'revoked' ||
+          pendingUpdateIds.has(invitation.id)
         ) {
           continue;
         }
 
+        pendingUpdateIds.add(invitation.id);
         void updateDoc(doc(db, 'note_invitations', invitation.id), {
           status: 'revoked',
           updatedAt: serverTimestamp(),
-        }).catch(error => {
-          console.warn('Não foi possível revogar um convite removido.', error);
-        });
+        })
+          .catch(error => {
+            console.warn('Não foi possível revogar um convite removido.', error);
+          })
+          .finally(() => {
+            pendingUpdateIds.delete(invitation.id);
+          });
       }
+    };
+
+    const synchronizeExpectedInvitations = () => {
+      if (
+        !tasksReadyFromServer ||
+        !invitationsReadyFromServer ||
+        cancelled
+      ) {
+        return;
+      }
+
+      for (const expected of expectedInvitations.values()) {
+        const existing = ownerInvitations.get(expected.id);
+        const invitationReference = doc(
+          db,
+          'note_invitations',
+          expected.id
+        );
+
+        if (!existing) {
+          if (pendingCreateIds.has(expected.id)) continue;
+
+          pendingCreateIds.add(expected.id);
+          void setDoc(invitationReference, {
+            ...expected.payload,
+            status: 'pending',
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          }).catch(error => {
+            pendingCreateIds.delete(expected.id);
+            console.warn(
+              'Não foi possível criar um convite de participação em nota.',
+              error
+            );
+          });
+          continue;
+        }
+
+        if (
+          pendingUpdateIds.has(expected.id) ||
+          (
+            existing.status !== 'revoked' &&
+            !invitationMetadataChanged(existing, expected)
+          )
+        ) {
+          continue;
+        }
+
+        pendingUpdateIds.add(expected.id);
+        void setDoc(
+          invitationReference,
+          {
+            ...expected.payload,
+            ...(existing.status === 'revoked'
+              ? { status: 'pending' }
+              : {}),
+            updatedAt: serverTimestamp(),
+          },
+          { merge: true }
+        )
+          .catch(error => {
+            console.warn(
+              'Não foi possível atualizar um convite de participação em nota.',
+              error
+            );
+          })
+          .finally(() => {
+            pendingUpdateIds.delete(expected.id);
+          });
+      }
+
+      reconcileRevokedInvitations();
     };
 
     const unsubscribeAuth = onAuthStateChanged(auth, user => {
       unsubscribeTasks();
       unsubscribeInvitations();
       tasksReadyFromServer = false;
-      expectedInvitationIds = new Set<string>();
-      ownerInvitations = [];
+      invitationsReadyFromServer = false;
+      expectedInvitations = new Map<string, ExpectedInvitation>();
+      ownerInvitations = new Map<string, InvitationRecord>();
+      pendingCreateIds.clear();
+      pendingUpdateIds.clear();
 
       if (!user) return;
 
@@ -112,15 +234,31 @@ export function NoteInvitationOutboxBridge() {
           collection(db, 'note_invitations'),
           where('ownerId', '==', user.uid)
         ),
+        { includeMetadataChanges: true },
         snapshot => {
-          ownerInvitations = snapshot.docs.map(snapshotDocument => {
-            const data = snapshotDocument.data() as Record<string, unknown>;
-            return {
-              id: snapshotDocument.id,
-              status: readString(data.status),
-            };
-          });
-          reconcileRevokedInvitations();
+          ownerInvitations = new Map(
+            snapshot.docs.map(snapshotDocument => {
+              const data = snapshotDocument.data() as Record<string, unknown>;
+              const record: InvitationRecord = {
+                id: snapshotDocument.id,
+                status: readString(data.status),
+                ownerName: readString(data.ownerName),
+                ownerEmail: readString(data.ownerEmail),
+                recipientName: readString(data.recipientName),
+                recipientEmail: readString(data.recipientEmail),
+                recipientAvatar: readString(data.recipientAvatar),
+                noteUpdatedAtIso: readString(data.noteUpdatedAtIso),
+              };
+              pendingCreateIds.delete(record.id);
+              return [record.id, record] as const;
+            })
+          );
+
+          if (!snapshot.metadata.fromCache) {
+            invitationsReadyFromServer = true;
+          }
+
+          synchronizeExpectedInvitations();
         },
         error => {
           console.warn('Caixa de convites do proprietário indisponível.', error);
@@ -131,7 +269,7 @@ export function NoteInvitationOutboxBridge() {
         collection(db, 'users', user.uid, 'tasks'),
         { includeMetadataChanges: true },
         snapshot => {
-          const nextExpectedIds = new Set<string>();
+          const nextExpectedInvitations = new Map<string, ExpectedInvitation>();
 
           for (const taskSnapshot of snapshot.docs) {
             const data = taskSnapshot.data() as Record<string, unknown>;
@@ -154,72 +292,33 @@ export function NoteInvitationOutboxBridge() {
                 taskSnapshot.id,
                 collaborator.uid
               );
-              nextExpectedIds.add(invitationId);
-              const invitationReference = doc(
-                db,
-                'note_invitations',
-                invitationId
-              );
-
-              void getDoc(invitationReference)
-                .then(async invitationSnapshot => {
-                  if (cancelled) return;
-
-                  const commonPayload = {
-                    ownerId: user.uid,
-                    ownerName:
-                      readString(data.ownerName) ||
-                      user.displayName ||
-                      user.email ||
-                      'Usuário Kyrub',
-                    ownerEmail: readString(data.ownerEmail) || user.email || '',
-                    recipientId: collaborator.uid,
-                    recipientName: collaborator.name,
-                    recipientEmail: collaborator.email,
-                    recipientAvatar: collaborator.avatar,
-                    noteId: taskSnapshot.id,
-                    sourcePath: `users/${user.uid}/tasks/${taskSnapshot.id}`,
-                    noteUpdatedAtIso: readString(data.updatedAtIso),
-                    updatedAt: serverTimestamp(),
-                  };
-
-                  if (!invitationSnapshot.exists()) {
-                    await setDoc(invitationReference, {
-                      ...commonPayload,
-                      status: 'pending',
-                      createdAt: serverTimestamp(),
-                    });
-                    return;
-                  }
-
-                  const existingStatus = readString(
-                    invitationSnapshot.data().status
-                  );
-                  await setDoc(
-                    invitationReference,
-                    {
-                      ...commonPayload,
-                      ...(existingStatus === 'revoked'
-                        ? { status: 'pending' }
-                        : {}),
-                    },
-                    { merge: true }
-                  );
-                })
-                .catch(error => {
-                  console.warn(
-                    'Não foi possível sincronizar um convite de nota.',
-                    error
-                  );
-                });
+              nextExpectedInvitations.set(invitationId, {
+                id: invitationId,
+                payload: {
+                  ownerId: user.uid,
+                  ownerName:
+                    readString(data.ownerName) ||
+                    user.displayName ||
+                    user.email ||
+                    'Usuário Kyrub',
+                  ownerEmail: readString(data.ownerEmail) || user.email || '',
+                  recipientId: collaborator.uid,
+                  recipientName: collaborator.name,
+                  recipientEmail: collaborator.email,
+                  recipientAvatar: collaborator.avatar,
+                  noteId: taskSnapshot.id,
+                  sourcePath: `users/${user.uid}/tasks/${taskSnapshot.id}`,
+                  noteUpdatedAtIso: readString(data.updatedAtIso),
+                },
+              });
             }
           }
 
-          expectedInvitationIds = nextExpectedIds;
+          expectedInvitations = nextExpectedInvitations;
           if (!snapshot.metadata.fromCache) {
             tasksReadyFromServer = true;
           }
-          reconcileRevokedInvitations();
+          synchronizeExpectedInvitations();
         },
         error => {
           console.warn('Não foi possível observar notas para convites.', error);
