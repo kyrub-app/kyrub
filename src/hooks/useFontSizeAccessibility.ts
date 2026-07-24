@@ -96,13 +96,17 @@ export const useFontSizeAccessibility = (
       }
     };
 
+    const restoreAdjustedElement = (element: HTMLElement): void => {
+      const original = originalInlineFontSizes.get(element);
+      if (original) restoreInlineFontSize(element, original);
+      element.removeAttribute('data-kyrub-font-adjusted');
+      adjustedElements.delete(element);
+    };
+
     const restoreAllAdjustedElements = (): void => {
-      for (const element of adjustedElements) {
-        const original = originalInlineFontSizes.get(element);
-        if (original) restoreInlineFontSize(element, original);
-        element.removeAttribute('data-kyrub-font-adjusted');
+      for (const element of [...adjustedElements]) {
+        restoreAdjustedElement(element);
       }
-      adjustedElements.clear();
     };
 
     const temporarilyRestoreAdjustedAncestors = (
@@ -167,8 +171,10 @@ export const useFontSizeAccessibility = (
         applyToAddedSubtree(addedRoot);
       }
 
-      for (const element of adjustedElements) {
-        if (!element.isConnected) adjustedElements.delete(element);
+      // Restore detached nodes before forgetting them. If React later reuses a
+      // node, it returns with its original size instead of receiving another 4px.
+      for (const element of [...adjustedElements]) {
+        if (!element.isConnected) restoreAdjustedElement(element);
       }
     });
 
