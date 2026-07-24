@@ -1,5 +1,22 @@
-import React from 'react';
-import { ShieldCheck } from 'lucide-react';
+import React, { useState } from 'react';
+import {
+  BadgeCheck,
+  Bike,
+  Building2,
+  CheckCircle2,
+  Fingerprint,
+  IdCard,
+  LockKeyhole,
+  MapPin,
+  ShieldCheck,
+  Smartphone,
+  Store,
+  UserRound,
+  UsersRound,
+  X,
+} from 'lucide-react';
+import { doc, serverTimestamp, updateDoc } from 'firebase/firestore';
+import { auth, db } from '../../utils/firebase';
 import { formatWhatsApp, formatCpf, formatCnpj } from '../../utils/helpers';
 
 interface UserProfileModalProps {
@@ -22,11 +39,13 @@ interface UserProfileModalProps {
   transactionPin: string;
   setTransactionPin: React.Dispatch<React.SetStateAction<string>>;
   kycDocType: 'bike' | 'motorized' | 'lojista';
-  setKycDocType: React.Dispatch<React.SetStateAction<'bike' | 'motorized' | 'lojista'>>;
+  setKycDocType: React.Dispatch<
+    React.SetStateAction<'bike' | 'motorized' | 'lojista'>
+  >;
   kycStatus: string;
   setKycStatus: React.Dispatch<
-  React.SetStateAction<'Pendente' | 'Em Análise' | 'Verificado'>
->;
+    React.SetStateAction<'Pendente' | 'Em Análise' | 'Verificado'>
+  >;
   facialValidated: boolean;
   setFacialValidated: React.Dispatch<React.SetStateAction<boolean>>;
   isFacialScanning: boolean;
@@ -41,8 +60,52 @@ interface UserProfileModalProps {
   setKycCnh: React.Dispatch<React.SetStateAction<string>>;
   kycCnpj: string;
   setKycCnpj: React.Dispatch<React.SetStateAction<string>>;
-  triggerToast: (msg: string, type: 'success' | 'error' | 'info' | 'warning') => void;
+  triggerToast: (
+    msg: string,
+    type: 'success' | 'error' | 'info' | 'warning'
+  ) => void;
 }
+
+type ProfileSection = 'conta' | 'dados' | 'seguranca' | 'verificacao';
+
+const sectionItems: Array<{
+  id: ProfileSection;
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+}> = [
+  { id: 'conta', label: 'Conta', icon: UserRound },
+  { id: 'dados', label: 'Dados', icon: MapPin },
+  { id: 'seguranca', label: 'Segurança', icon: LockKeyhole },
+  { id: 'verificacao', label: 'Verificação', icon: BadgeCheck },
+];
+
+const Toggle = ({
+  active,
+  onClick,
+  label,
+}: {
+  active: boolean;
+  onClick: () => void;
+  label: string;
+}) => (
+  <button
+    type="button"
+    onClick={onClick}
+    className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full border transition-colors ${
+      active
+        ? 'border-teal-400/50 bg-teal-500'
+        : 'border-slate-700 bg-slate-800'
+    }`}
+    aria-pressed={active}
+    aria-label={label}
+  >
+    <span
+      className={`h-4 w-4 rounded-full bg-slate-950 shadow transition-transform ${
+        active ? 'translate-x-6' : 'translate-x-1'
+      }`}
+    />
+  </button>
+);
 
 export const UserProfileModal: React.FC<UserProfileModalProps> = ({
   isOpen,
@@ -83,415 +146,555 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
   setKycCnpj,
   triggerToast,
 }) => {
+  const [activeSection, setActiveSection] =
+    useState<ProfileSection>('conta');
+  const [isSaving, setIsSaving] = useState(false);
+
   if (!isOpen) return null;
 
+  const handleSavePublicProfile = async () => {
+    const user = auth.currentUser;
+    if (!user) {
+      triggerToast('Faça login novamente para salvar o perfil.', 'error');
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      await updateDoc(doc(db, 'users', user.uid), {
+        name: profileName.trim() || user.displayName || '',
+        email: user.email ?? profileEmail,
+        photoUrl: user.photoURL ?? profilePhotoUrl,
+        isProfileVisible,
+        updatedAt: serverTimestamp(),
+      });
+
+      triggerToast(
+        'Perfil público atualizado e sincronizado entre dispositivos.',
+        'success'
+      );
+      onClose();
+    } catch (error) {
+      console.error('Falha ao salvar perfil público:', error);
+      triggerToast(
+        'Não foi possível sincronizar o perfil agora. Revise sua conexão.',
+        'error'
+      );
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const startDocumentSimulation = () => {
+    setKycStatus('Em Análise');
+    triggerToast(
+      'Documento preparado para análise. O envio definitivo dependerá do backend seguro.',
+      'info'
+    );
+  };
+
+  const startFacialSimulation = () => {
+    setIsFacialScanning(true);
+    triggerToast('Iniciando demonstração da validação facial...', 'info');
+
+    window.setTimeout(() => {
+      setIsFacialScanning(false);
+      setFacialValidated(true);
+      triggerToast('Demonstração facial concluída.', 'success');
+    }, 2500);
+  };
+
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in" id="modal-user-profile">
-      <div className="bg-slate-900 border border-slate-800 w-full max-w-lg p-6 rounded-3xl shadow-2xl relative space-y-5 max-h-[90vh] overflow-y-auto animate-scale-up text-xs">
-        
-        {/* Header */}
-        <div className="flex items-center justify-between border-b border-slate-800/80 pb-3">
-          <h3 className="text-base font-black text-white flex items-center gap-2">
-            <ShieldCheck className="w-5 h-5 text-teal-400" />
-            <span>Meu Perfil e Segurança</span>
-          </h3>
-          <button 
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/85 p-3 backdrop-blur-sm animate-fade-in sm:p-4"
+      id="modal-user-profile"
+    >
+      <div className="flex max-h-[92vh] w-full max-w-2xl flex-col overflow-hidden rounded-3xl border border-slate-800 bg-slate-900 shadow-2xl animate-scale-up">
+        <div className="flex items-center justify-between border-b border-slate-800 px-5 py-4">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-teal-500/30 bg-teal-500/10 text-teal-400">
+              <ShieldCheck className="h-5 w-5" />
+            </div>
+            <div className="min-w-0">
+              <h3 className="truncate text-base font-black text-white">
+                Meu perfil
+              </h3>
+              <p className="truncate text-[10px] text-slate-500">
+                Identidade, preferências e segurança da conta
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
             onClick={onClose}
-            className="text-slate-500 hover:text-slate-300 font-bold bg-slate-950 w-7 h-7 rounded-full flex items-center justify-center text-xs cursor-pointer"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-950 text-slate-500 hover:text-white"
+            aria-label="Fechar perfil"
           >
-            ✕
+            <X className="h-4 w-4" />
           </button>
         </div>
 
-        {/* BLOC 1: Identidade */}
-        <div className="bg-slate-950 border border-slate-850 p-4 rounded-2xl space-y-3">
-          <div className="flex items-center gap-4">
-            <div className="relative">
-              <img 
-                src={profilePhotoUrl || undefined} 
-                alt={profileName} 
-                className="w-16 h-16 rounded-full object-cover border-2 border-teal-500/80" 
-              />
-              <div className="absolute -bottom-1 -right-1 bg-teal-500 text-slate-950 w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold">
-                G
-              </div>
-            </div>
-            <div className="space-y-1">
-              <h4 className="text-sm font-black text-white uppercase">{profileName}</h4>
-              <p className="text-slate-400 text-[10px] font-mono">{profileEmail}</p>
-              <span className="text-[8px] bg-teal-400/10 border border-teal-400/20 text-teal-400 font-bold font-mono px-2 py-0.5 rounded uppercase">
-                Autenticado via Google
-              </span>
-            </div>
-          </div>
-
-          {/* Account tags selection/visuals */}
-          <div className="space-y-1.5 pt-2 border-t border-slate-900">
-            <span className="text-[10px] text-slate-500 uppercase font-mono block">Tipos de Conta Ativos</span>
-            <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={() => setAccountTypeCliente(!accountTypeCliente)}
-                className={`px-3 py-1.5 rounded-xl font-bold uppercase transition-all ${
-                  accountTypeCliente 
-                    ? 'bg-orange-500 text-slate-950 text-[10px]' 
-                    : 'bg-slate-900 border border-slate-800 text-slate-500 text-[10px]'
-                }`}
-              >
-                Cliente
-              </button>
-              <button
-                type="button"
-                onClick={() => setAccountTypeEntregador(!accountTypeEntregador)}
-                className={`px-3 py-1.5 rounded-xl font-bold uppercase transition-all ${
-                  accountTypeEntregador 
-                    ? 'bg-teal-500 text-slate-950 text-[10px]' 
-                    : 'bg-slate-900 border border-slate-800 text-slate-500 text-[10px]'
-                }`}
-              >
-                Entregador
-              </button>
-              <button
-                type="button"
-                onClick={() => setAccountTypeLojista(!accountTypeLojista)}
-                className={`px-3 py-1.5 rounded-xl font-bold uppercase transition-all ${
-                  accountTypeLojista 
-                    ? 'bg-indigo-500 text-white text-[10px]' 
-                    : 'bg-slate-900 border border-slate-800 text-slate-500 text-[10px]'
-                }`}
-              >
-                Lojista
-              </button>
-            </div>
-          </div>
-
-          {/* Privacy Setting Toggle */}
-          <div className="space-y-1.5 pt-2.5 border-t border-slate-900 flex items-center justify-between">
-            <div>
-              <span className="text-[10px] text-slate-300 uppercase font-mono block">Tornar meu perfil visível na Praça</span>
-              <p className="text-[9px] text-slate-500">Permite que outros usuários se conectem e enviem mensagens.</p>
-            </div>
-            <button
-              type="button"
-              onClick={() => setIsProfileVisible(!isProfileVisible)}
-              className={`relative inline-flex h-5.5 w-10 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                isProfileVisible ? 'bg-orange-500' : 'bg-slate-800'
-              }`}
-            >
-              <span
-                className={`pointer-events-none inline-block h-4.5 w-4.5 transform rounded-full bg-slate-950 shadow ring-0 transition duration-200 ease-in-out ${
-                  isProfileVisible ? 'translate-x-4.5' : 'translate-x-0'
-                }`}
-              />
-            </button>
+        <div className="border-b border-slate-800 bg-slate-950/50 px-3 py-2 sm:px-5">
+          <div className="grid grid-cols-4 gap-1.5">
+            {sectionItems.map(section => {
+              const Icon = section.icon;
+              const active = activeSection === section.id;
+              return (
+                <button
+                  key={section.id}
+                  type="button"
+                  onClick={() => setActiveSection(section.id)}
+                  className={`flex min-h-12 flex-col items-center justify-center gap-1 rounded-xl px-1 text-[9px] font-bold uppercase transition-all sm:flex-row sm:text-[10px] ${
+                    active
+                      ? 'bg-slate-800 text-white'
+                      : 'text-slate-500 hover:bg-slate-900 hover:text-slate-300'
+                  }`}
+                >
+                  <Icon
+                    className={`h-4 w-4 ${
+                      active ? 'text-teal-400' : 'text-slate-600'
+                    }`}
+                  />
+                  <span>{section.label}</span>
+                </button>
+              );
+            })}
           </div>
         </div>
 
-        {/* BLOC 2: Dados Cadastrais */}
-        <div className="bg-slate-950 border border-slate-850 p-4 rounded-2xl space-y-3">
-          <h4 className="font-black text-white uppercase tracking-wider text-[11px] flex items-center gap-1.5 text-orange-400">
-            <span>Dados Cadastrais</span>
-          </h4>
-          <div className="grid grid-cols-1 gap-3">
-            <div className="space-y-1">
-              <label className="text-[10px] text-slate-400 font-mono uppercase">Endereço de Atuação/Faturamento</label>
-              <input
-                type="text"
-                value={profileAddress}
-                onChange={(e) => setProfileAddress(e.target.value)}
-                placeholder="Rua, Número, Bairro, Cidade - UF"
-                className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-orange-500"
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="text-[10px] text-slate-400 font-mono uppercase">WhatsApp</label>
-              <input
-                type="text"
-                value={profileWhatsApp}
-                onChange={(e) => setProfileWhatsApp(formatWhatsApp(e.target.value))}
-                placeholder="(11) 99999-9999"
-                className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-white font-mono focus:outline-none focus:border-orange-500"
-              />
-            </div>
-          </div>
-        </div>
+        <div className="flex-1 overflow-y-auto p-4 sm:p-5">
+          {activeSection === 'conta' && (
+            <div className="space-y-4">
+              <section className="rounded-2xl border border-slate-800 bg-slate-950 p-4">
+                <div className="flex items-center gap-3">
+                  {profilePhotoUrl ? (
+                    <img
+                      src={profilePhotoUrl}
+                      alt={profileName}
+                      className="h-16 w-16 shrink-0 rounded-2xl border-2 border-teal-500/60 object-cover"
+                      referrerPolicy="no-referrer"
+                    />
+                  ) : (
+                    <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl border-2 border-teal-500/30 bg-slate-900 text-slate-500">
+                      <UserRound className="h-7 w-7" />
+                    </div>
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <span className="inline-flex rounded-full border border-teal-500/20 bg-teal-500/10 px-2 py-1 text-[8px] font-bold uppercase text-teal-400">
+                      Google conectado
+                    </span>
+                    <p className="mt-2 truncate text-[10px] font-mono text-slate-500">
+                      {profileEmail}
+                    </p>
+                  </div>
+                </div>
 
-        {/* BLOC 3: Segurança Financeira */}
-        <div className="bg-slate-950 border border-slate-850 p-4 rounded-2xl space-y-3">
-          <h4 className="font-black text-white uppercase tracking-wider text-[11px] flex items-center gap-1.5 text-teal-400">
-            <span>Segurança Financeira (BaaS Guard)</span>
-          </h4>
-          <div className="flex items-center justify-between bg-slate-900/50 p-2.5 rounded-xl border border-slate-900">
-            <div>
-              <span className="font-bold text-slate-200 block">Biometria Nativa Local</span>
-              <p className="text-[9px] text-slate-500">Exigir autenticação biométrica do dispositivo antes de confirmar splits e transações.</p>
-            </div>
-            <button
-              type="button"
-              onClick={() => setBiometricsActive(!biometricsActive)}
-              className={`w-11 h-6 rounded-full transition-colors relative flex items-center p-1 cursor-pointer ${
-                biometricsActive ? 'bg-teal-500' : 'bg-slate-800'
-              }`}
-            >
-              <span className={`w-4 h-4 bg-slate-950 rounded-full shadow-md transform transition-transform ${
-                biometricsActive ? 'translate-x-5' : 'translate-x-0'
-              }`} />
-            </button>
-          </div>
-
-          <div className="space-y-1">
-            <label className="text-[10px] text-slate-400 font-mono uppercase flex items-center gap-1">
-              <span>PIN Transacional BaaS (4 dígitos)</span>
-            </label>
-            <div className="relative">
-              <input
-                type="password"
-                value={transactionPin}
-                onChange={(e) => setTransactionPin(e.target.value.replace(/\D/g, '').slice(0, 4))}
-                placeholder="••••"
-                maxLength={4}
-                className="w-full bg-slate-900 border border-slate-800 rounded-xl pl-9 pr-3 py-2 text-white font-mono tracking-[0.5em] focus:outline-none focus:border-teal-500"
-              />
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500">🔒</span>
-            </div>
-            <p className="text-[9px] text-slate-500 font-mono">Senha segura criptografada e armazenada localmente com assinatura hash no Firestore.</p>
-          </div>
-        </div>
-
-        {/* BLOC 4: Onboarding de Documentos / KYC */}
-        <div className="bg-slate-950 border border-slate-850 p-4 rounded-2xl space-y-3">
-          <div className="flex items-center justify-between border-b border-slate-900 pb-1.5">
-            <h4 className="font-black text-white uppercase tracking-wider text-[11px] text-indigo-400">
-              <span>Onboarding de Documentos &amp; KYC</span>
-            </h4>
-            <div className="flex items-center gap-1.5">
-              <span className="text-[8px] uppercase font-mono text-slate-500 font-bold">Status:</span>
-              <span className={`text-[9px] font-black font-mono uppercase px-2 py-0.5 rounded-full ${
-                kycStatus === 'Verificado' 
-                  ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-400' 
-                  : kycStatus === 'Em Análise' 
-                  ? 'bg-orange-500/10 border border-orange-500/20 text-orange-400 animate-pulse' 
-                  : 'bg-slate-900 border border-slate-800 text-slate-500'
-              }`}>
-                {kycStatus}
-              </span>
-            </div>
-          </div>
-
-          {/* Onboarding Selector */}
-          <div className="space-y-1">
-            <label className="text-[10px] text-slate-400 font-mono uppercase block">Tipo de Perfil Profissional para Validação</label>
-            <div className="grid grid-cols-3 gap-2">
-              <button
-                type="button"
-                onClick={() => { setKycDocType('bike'); setKycStatus('Pendente'); }}
-                className={`py-1.5 rounded-lg border font-bold uppercase text-[9px] transition-all text-center ${
-                  kycDocType === 'bike' 
-                    ? 'bg-indigo-600 border-indigo-500 text-white' 
-                    : 'bg-slate-900 border-slate-800 text-slate-500 hover:text-slate-300'
-                }`}
-              >
-                Entregador Bike
-              </button>
-              <button
-                type="button"
-                onClick={() => { setKycDocType('motorized'); setKycStatus('Pendente'); }}
-                className={`py-1.5 rounded-lg border font-bold uppercase text-[9px] transition-all text-center ${
-                  kycDocType === 'motorized' 
-                    ? 'bg-indigo-600 border-indigo-500 text-white' 
-                    : 'bg-slate-900 border-slate-800 text-slate-500 hover:text-slate-300'
-                }`}
-              >
-                Motorizado (CNH)
-              </button>
-              <button
-                type="button"
-                onClick={() => { setKycDocType('lojista'); setKycStatus('Pendente'); }}
-                className={`py-1.5 rounded-lg border font-bold uppercase text-[9px] transition-all text-center ${
-                  kycDocType === 'lojista' 
-                    ? 'bg-indigo-600 border-indigo-500 text-white' 
-                    : 'bg-slate-900 border-slate-800 text-slate-500 hover:text-slate-300'
-                }`}
-              >
-                Lojista (CNPJ)
-              </button>
-            </div>
-          </div>
-
-          {/* Conditional input fields */}
-          <div className="bg-slate-900/55 p-3 rounded-xl space-y-3.5 border border-slate-900">
-            {kycDocType === 'bike' && (
-              <div className="space-y-1">
-                <label className="text-[10px] text-slate-400 font-mono uppercase">CPF do Entregador</label>
-                <input
-                  type="text"
-                  value={kycCpf}
-                  onChange={(e) => setKycCpf(formatCpf(e.target.value))}
-                  placeholder="000.000.000-00"
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white font-mono focus:outline-none focus:border-indigo-500"
-                />
-                <p className="text-[8px] text-slate-500 leading-tight mt-1">
-                  Necessário para emissão de relatórios de fretes e seguro de acidentes pessoais no modal de bike.
-                </p>
-              </div>
-            )}
-
-            {kycDocType === 'motorized' && (
-              <div className="space-y-3">
-                <div className="space-y-1">
-                  <label className="text-[10px] text-slate-400 font-mono uppercase">CNH (Com EAR)</label>
+                <div className="mt-4 space-y-1.5 border-t border-slate-900 pt-4">
+                  <label className="text-[9px] font-mono uppercase text-slate-500">
+                    Nome exibido no Kyrub
+                  </label>
                   <input
                     type="text"
-                    value={kycCnh}
-                    onChange={(e) => setKycCnh(e.target.value.replace(/\D/g, '').slice(0, 11))}
-                    placeholder="Digite o número de registro da CNH"
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white font-mono focus:outline-none focus:border-indigo-500"
+                    value={profileName}
+                    onChange={event => setProfileName(event.target.value)}
+                    className="w-full rounded-xl border border-slate-800 bg-slate-900 px-3 py-2.5 text-xs text-white focus:border-teal-500/50 focus:outline-none"
+                    placeholder="Seu nome"
                   />
-                  <span className="text-[8px] text-orange-400 font-bold block mt-1">⚠️ Obrigatório conter a observação "EAR" (Exerce Atividade Remunerada)</span>
                 </div>
-              </div>
-            )}
+              </section>
 
-            {kycDocType === 'lojista' && (
-              <div className="space-y-1">
-                <label className="text-[10px] text-slate-400 font-mono uppercase">CNPJ da Empresa</label>
-                <input
-                  type="text"
-                  value={kycCnpj}
-                  onChange={(e) => setKycCnpj(formatCnpj(e.target.value))}
-                  placeholder="00.000.000/0001-00"
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white font-mono focus:outline-none focus:border-indigo-500"
+              <section className="space-y-3 rounded-2xl border border-slate-800 bg-slate-950 p-4">
+                <div className="flex items-center gap-2">
+                  <UsersRound className="h-4 w-4 text-orange-400" />
+                  <h4 className="text-[10px] font-black uppercase text-slate-200">
+                    Perfis de uso
+                  </h4>
+                </div>
+                <p className="text-[9px] leading-relaxed text-slate-500">
+                  Uma mesma conta pode acessar recursos de cliente, entregas e loja.
+                </p>
+                <div className="grid grid-cols-3 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setAccountTypeCliente(!accountTypeCliente)}
+                    className={`rounded-xl border p-3 text-[9px] font-black uppercase transition-all ${
+                      accountTypeCliente
+                        ? 'border-orange-500/40 bg-orange-500/15 text-orange-300'
+                        : 'border-slate-800 bg-slate-900 text-slate-500'
+                    }`}
+                  >
+                    <UserRound className="mx-auto mb-1.5 h-4 w-4" />
+                    Cliente
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setAccountTypeEntregador(!accountTypeEntregador)
+                    }
+                    className={`rounded-xl border p-3 text-[9px] font-black uppercase transition-all ${
+                      accountTypeEntregador
+                        ? 'border-teal-500/40 bg-teal-500/15 text-teal-300'
+                        : 'border-slate-800 bg-slate-900 text-slate-500'
+                    }`}
+                  >
+                    <Bike className="mx-auto mb-1.5 h-4 w-4" />
+                    Entregador
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAccountTypeLojista(!accountTypeLojista)}
+                    className={`rounded-xl border p-3 text-[9px] font-black uppercase transition-all ${
+                      accountTypeLojista
+                        ? 'border-indigo-500/40 bg-indigo-500/15 text-indigo-300'
+                        : 'border-slate-800 bg-slate-900 text-slate-500'
+                    }`}
+                  >
+                    <Store className="mx-auto mb-1.5 h-4 w-4" />
+                    Lojista
+                  </button>
+                </div>
+              </section>
+
+              <section className="flex items-center justify-between gap-4 rounded-2xl border border-slate-800 bg-slate-950 p-4">
+                <div className="min-w-0">
+                  <h4 className="text-[10px] font-black uppercase text-slate-200">
+                    Perfil visível na Praça
+                  </h4>
+                  <p className="mt-1 text-[9px] leading-relaxed text-slate-500">
+                    Permite que outros usuários encontrem você para conexões e colaboração.
+                  </p>
+                </div>
+                <Toggle
+                  active={isProfileVisible}
+                  onClick={() => setIsProfileVisible(!isProfileVisible)}
+                  label="Alternar visibilidade do perfil"
                 />
-                <p className="text-[8px] text-slate-500 leading-tight mt-1">
-                  Utilizado para faturamento e integração com a Receita Federal para emissão automatizada de NF-e e splits B2B.
+              </section>
+            </div>
+          )}
+
+          {activeSection === 'dados' && (
+            <div className="space-y-4">
+              <section className="space-y-4 rounded-2xl border border-slate-800 bg-slate-950 p-4">
+                <div className="flex items-center gap-2">
+                  <MapPin className="h-4 w-4 text-orange-400" />
+                  <div>
+                    <h4 className="text-[10px] font-black uppercase text-slate-200">
+                      Dados de atuação
+                    </h4>
+                    <p className="mt-0.5 text-[9px] text-slate-500">
+                      Informações usadas para recursos de distância e contato.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-[9px] font-mono uppercase text-slate-500">
+                    Endereço de atuação ou faturamento
+                  </label>
+                  <input
+                    type="text"
+                    value={profileAddress}
+                    onChange={event => setProfileAddress(event.target.value)}
+                    placeholder="Rua, número, bairro, cidade - UF"
+                    className="w-full rounded-xl border border-slate-800 bg-slate-900 px-3 py-2.5 text-xs text-white focus:border-orange-500/50 focus:outline-none"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-[9px] font-mono uppercase text-slate-500">
+                    WhatsApp
+                  </label>
+                  <div className="relative">
+                    <Smartphone className="absolute left-3 top-3 h-4 w-4 text-slate-600" />
+                    <input
+                      type="text"
+                      value={profileWhatsApp}
+                      onChange={event =>
+                        setProfileWhatsApp(formatWhatsApp(event.target.value))
+                      }
+                      placeholder="(11) 99999-9999"
+                      className="w-full rounded-xl border border-slate-800 bg-slate-900 py-2.5 pl-9 pr-3 text-xs font-mono text-white focus:border-orange-500/50 focus:outline-none"
+                    />
+                  </div>
+                </div>
+              </section>
+
+              <div className="rounded-2xl border border-amber-500/20 bg-amber-500/10 p-4 text-[9px] leading-relaxed text-amber-200/80">
+                Endereço e telefone ainda permanecem no contexto operacional deste dispositivo. A sincronização desses campos será ativada junto ao contrato privado do perfil, sem expô-los no diretório público.
+              </div>
+            </div>
+          )}
+
+          {activeSection === 'seguranca' && (
+            <div className="space-y-4">
+              <section className="space-y-3 rounded-2xl border border-slate-800 bg-slate-950 p-4">
+                <div className="flex items-center gap-2">
+                  <Fingerprint className="h-4 w-4 text-teal-400" />
+                  <h4 className="text-[10px] font-black uppercase text-slate-200">
+                    Proteção do dispositivo
+                  </h4>
+                </div>
+
+                <div className="flex items-center justify-between gap-4 rounded-xl border border-slate-900 bg-slate-900/60 p-3">
+                  <div>
+                    <span className="block text-[10px] font-bold text-slate-200">
+                      Biometria local
+                    </span>
+                    <p className="mt-1 text-[9px] leading-relaxed text-slate-500">
+                      Confirma operações sensíveis usando os recursos do aparelho.
+                    </p>
+                  </div>
+                  <Toggle
+                    active={biometricsActive}
+                    onClick={() => setBiometricsActive(!biometricsActive)}
+                    label="Alternar biometria local"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-[9px] font-mono uppercase text-slate-500">
+                    PIN transacional de demonstração
+                  </label>
+                  <div className="relative">
+                    <LockKeyhole className="absolute left-3 top-3 h-4 w-4 text-slate-600" />
+                    <input
+                      type="password"
+                      value={transactionPin}
+                      onChange={event =>
+                        setTransactionPin(
+                          event.target.value.replace(/\D/g, '').slice(0, 4)
+                        )
+                      }
+                      placeholder="••••"
+                      maxLength={4}
+                      className="w-full rounded-xl border border-slate-800 bg-slate-900 py-2.5 pl-9 pr-3 text-xs tracking-[0.45em] text-white focus:border-teal-500/50 focus:outline-none"
+                    />
+                  </div>
+                  <p className="text-[8px] leading-relaxed text-slate-600">
+                    Este protótipo não envia nem armazena o PIN no Firestore. O recurso definitivo exigirá cofre seguro e backend privilegiado.
+                  </p>
+                </div>
+              </section>
+
+              <section className="space-y-3 rounded-2xl border border-slate-800 bg-slate-950 p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    <ShieldCheck className="h-4 w-4 text-orange-400" />
+                    <div>
+                      <h4 className="text-[10px] font-black uppercase text-slate-200">
+                        Validação facial
+                      </h4>
+                      <p className="mt-0.5 text-[9px] text-slate-500">
+                        Demonstração visual de liveness antifraude.
+                      </p>
+                    </div>
+                  </div>
+                  <span
+                    className={`rounded-full border px-2 py-1 text-[8px] font-black uppercase ${
+                      facialValidated
+                        ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400'
+                        : 'border-slate-800 bg-slate-900 text-slate-500'
+                    }`}
+                  >
+                    {facialValidated ? 'Validado' : 'Pendente'}
+                  </span>
+                </div>
+
+                {isFacialScanning ? (
+                  <div className="flex flex-col items-center justify-center rounded-xl border border-orange-500/20 bg-orange-500/5 py-8 text-center">
+                    <div className="flex h-20 w-20 animate-pulse items-center justify-center rounded-full border-2 border-dashed border-orange-500 text-orange-300">
+                      <UserRound className="h-8 w-8" />
+                    </div>
+                    <span className="mt-3 text-[10px] font-bold text-orange-300">
+                      Simulando leitura facial...
+                    </span>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={startFacialSimulation}
+                    className="w-full rounded-xl border border-orange-500/25 bg-orange-500/10 py-2.5 text-[10px] font-black uppercase text-orange-300 hover:bg-orange-500/15"
+                  >
+                    {facialValidated ? 'Refazer demonstração' : 'Iniciar demonstração'}
+                  </button>
+                )}
+              </section>
+            </div>
+          )}
+
+          {activeSection === 'verificacao' && (
+            <div className="space-y-4">
+              <section className="space-y-4 rounded-2xl border border-slate-800 bg-slate-950 p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    <IdCard className="h-4 w-4 text-indigo-400" />
+                    <div>
+                      <h4 className="text-[10px] font-black uppercase text-slate-200">
+                        Perfil para verificação
+                      </h4>
+                      <p className="mt-0.5 text-[9px] text-slate-500">
+                        Organize os documentos conforme a atividade exercida.
+                      </p>
+                    </div>
+                  </div>
+                  <span
+                    className={`rounded-full border px-2 py-1 text-[8px] font-black uppercase ${
+                      kycStatus === 'Verificado'
+                        ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400'
+                        : kycStatus === 'Em Análise'
+                          ? 'border-orange-500/30 bg-orange-500/10 text-orange-300'
+                          : 'border-slate-800 bg-slate-900 text-slate-500'
+                    }`}
+                  >
+                    {kycStatus}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-3 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setKycDocType('bike');
+                      setKycStatus('Pendente');
+                    }}
+                    className={`rounded-xl border p-2.5 text-[8px] font-bold uppercase ${
+                      kycDocType === 'bike'
+                        ? 'border-indigo-500/40 bg-indigo-500/15 text-indigo-300'
+                        : 'border-slate-800 bg-slate-900 text-slate-500'
+                    }`}
+                  >
+                    <Bike className="mx-auto mb-1 h-4 w-4" />
+                    Bike
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setKycDocType('motorized');
+                      setKycStatus('Pendente');
+                    }}
+                    className={`rounded-xl border p-2.5 text-[8px] font-bold uppercase ${
+                      kycDocType === 'motorized'
+                        ? 'border-indigo-500/40 bg-indigo-500/15 text-indigo-300'
+                        : 'border-slate-800 bg-slate-900 text-slate-500'
+                    }`}
+                  >
+                    <IdCard className="mx-auto mb-1 h-4 w-4" />
+                    Motorizado
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setKycDocType('lojista');
+                      setKycStatus('Pendente');
+                    }}
+                    className={`rounded-xl border p-2.5 text-[8px] font-bold uppercase ${
+                      kycDocType === 'lojista'
+                        ? 'border-indigo-500/40 bg-indigo-500/15 text-indigo-300'
+                        : 'border-slate-800 bg-slate-900 text-slate-500'
+                    }`}
+                  >
+                    <Building2 className="mx-auto mb-1 h-4 w-4" />
+                    Lojista
+                  </button>
+                </div>
+
+                {kycDocType === 'bike' && (
+                  <div className="space-y-1.5">
+                    <label className="text-[9px] font-mono uppercase text-slate-500">
+                      CPF do entregador
+                    </label>
+                    <input
+                      type="text"
+                      value={kycCpf}
+                      onChange={event => setKycCpf(formatCpf(event.target.value))}
+                      placeholder="000.000.000-00"
+                      className="w-full rounded-xl border border-slate-800 bg-slate-900 px-3 py-2.5 text-xs font-mono text-white focus:border-indigo-500/50 focus:outline-none"
+                    />
+                  </div>
+                )}
+
+                {kycDocType === 'motorized' && (
+                  <div className="space-y-1.5">
+                    <label className="text-[9px] font-mono uppercase text-slate-500">
+                      Registro da CNH com EAR
+                    </label>
+                    <input
+                      type="text"
+                      value={kycCnh}
+                      onChange={event =>
+                        setKycCnh(
+                          event.target.value.replace(/\D/g, '').slice(0, 11)
+                        )
+                      }
+                      placeholder="Número de registro da CNH"
+                      className="w-full rounded-xl border border-slate-800 bg-slate-900 px-3 py-2.5 text-xs font-mono text-white focus:border-indigo-500/50 focus:outline-none"
+                    />
+                  </div>
+                )}
+
+                {kycDocType === 'lojista' && (
+                  <div className="space-y-1.5">
+                    <label className="text-[9px] font-mono uppercase text-slate-500">
+                      CNPJ da empresa
+                    </label>
+                    <input
+                      type="text"
+                      value={kycCnpj}
+                      onChange={event =>
+                        setKycCnpj(formatCnpj(event.target.value))
+                      }
+                      placeholder="00.000.000/0001-00"
+                      className="w-full rounded-xl border border-slate-800 bg-slate-900 px-3 py-2.5 text-xs font-mono text-white focus:border-indigo-500/50 focus:outline-none"
+                    />
+                  </div>
+                )}
+
+                <button
+                  type="button"
+                  onClick={startDocumentSimulation}
+                  className="w-full rounded-xl border border-dashed border-indigo-500/35 bg-indigo-500/10 py-3 text-[9px] font-black uppercase text-indigo-300 hover:bg-indigo-500/15"
+                >
+                  Preparar documento para análise
+                </button>
+              </section>
+
+              <div className="rounded-2xl border border-slate-800 bg-slate-950 p-4 text-[9px] leading-relaxed text-slate-500">
+                <div className="flex items-center gap-2 text-slate-300">
+                  <CheckCircle2 className="h-4 w-4 text-teal-400" />
+                  <span className="font-bold uppercase">
+                    Separação de segurança
+                  </span>
+                </div>
+                <p className="mt-2">
+                  Documentos, PIN e biometria não são gravados pelo navegador no diretório público. O fluxo definitivo será ligado ao backend administrativo e ao armazenamento protegido.
                 </p>
               </div>
-            )}
-
-            {/* Upload document placeholder button */}
-            <div className="border border-dashed border-slate-800 rounded-xl p-4 flex flex-col items-center justify-center space-y-2 bg-slate-950 text-center">
-              <span className="text-lg">📁</span>
-              <div>
-                <span className="text-[10px] font-bold text-slate-300 block">Anexar Cópia do Documento Oficial</span>
-                <span className="text-[8px] text-slate-500">Formatos aceitos: PDF, PNG, JPG (Max: 5MB)</span>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setKycStatus('Em Análise');
-                  triggerToast('Documento enviado com sucesso para análise no KYC!', 'success');
-                  
-                  // Auto-simulate verification after 4 seconds
-                  setTimeout(() => {
-                    setKycStatus('Verificado');
-                    triggerToast('Onboarding KYC verificado com sucesso!', 'success');
-                  }, 4000);
-                }}
-                className="px-3 py-1 bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 font-bold rounded-lg text-[9px] uppercase tracking-wider transition-colors cursor-pointer"
-              >
-                Simular Envio / Upload
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* BLOC 5: Validação Facial */}
-        <div className="bg-slate-950 border border-slate-850 p-4 rounded-2xl space-y-3">
-          <h4 className="font-black text-white uppercase tracking-wider text-[11px] flex items-center gap-1.5 text-orange-400">
-            <span>Validação Facial Liveness Antifraude</span>
-          </h4>
-          
-          {isFacialScanning ? (
-            <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 flex flex-col items-center justify-center space-y-4 animate-pulse">
-              <div className="relative w-28 h-28 rounded-full border-4 border-dashed border-orange-500 flex items-center justify-center">
-                <div className="w-24 h-24 rounded-full bg-slate-950 flex items-center justify-center">
-                  <span className="text-2xl animate-pulse">👤</span>
-                </div>
-              </div>
-              <div className="text-center space-y-1">
-                <span className="text-[10px] font-bold text-orange-400 block">Escaneando Biometria Facial...</span>
-                <span className="text-[8px] text-slate-500">Mantenha o rosto centralizado e pisque para validar.</span>
-              </div>
-            </div>
-          ) : (
-            <div className="flex items-center justify-between bg-slate-900/50 p-3 rounded-xl border border-slate-900">
-              <div className="space-y-0.5">
-                <span className="font-bold text-slate-200 flex items-center gap-1.5">
-                  <span>Status da Validação:</span>
-                  {facialValidated ? (
-                    <span className="text-emerald-400 font-bold font-mono">✓ Validado</span>
-                  ) : (
-                    <span className="text-slate-500 font-mono">Não Realizada</span>
-                  )}
-                </span>
-                <p className="text-[9px] text-slate-500 leading-tight">Biometria liveness exigida para autorizar saques e transferências de PIX acima de R$ 1.000,00.</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setIsFacialScanning(true);
-                  triggerToast('Iniciando captura de biometria facial...', 'info');
-                  
-                  setTimeout(() => {
-                    setIsFacialScanning(false);
-                    setFacialValidated(true);
-                    triggerToast('✓ Reconhecimento facial antifraude validado com sucesso!', 'success');
-                  }, 3000);
-                }}
-                className={`shrink-0 px-3 py-2 font-black rounded-xl text-[10px] uppercase tracking-wider transition-all cursor-pointer ${
-                  facialValidated 
-                    ? 'bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/25'
-                    : 'bg-orange-600 hover:bg-orange-500 text-white shadow-lg shadow-orange-600/10'
-                }`}
-              >
-                {facialValidated ? 'Refazer Scanner' : 'Iniciar Facial'}
-              </button>
             </div>
           )}
         </div>
 
-        {/* Actions: Save / Cancel */}
-        <div className="flex gap-3 border-t border-slate-800/80 pt-4">
-          <button
-            type="button"
-            onClick={onClose}
-            className="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold py-2.5 rounded-xl transition-all uppercase tracking-wider cursor-pointer text-center"
-          >
-            Cancelar
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              triggerToast('⏱ Persistindo dados no Firestore...', 'info');
-              
-              // Simulate Firebase Write I/O latency
-              setTimeout(() => {
-                console.log("[Firestore] Salvando dados cadastrais no document users/" + profileEmail, {
-                  name: profileName,
-                  email: profileEmail,
-                  photoUrl: profilePhotoUrl,
-                  accountTypes: { cliente: accountTypeCliente, entregador: accountTypeEntregador, lojista: accountTypeLojista },
-                  address: profileAddress,
-                  whatsapp: profileWhatsApp,
-                  biometricsActive,
-                  transactionPin,
-                  kycDocType,
-                  kycCpf,
-                  kycCnh,
-                  kycCnpj,
-                  kycStatus,
-                  facialValidated,
-                  updatedAt: new Date().toISOString()
-                });
-                
-                triggerToast('✓ Perfil e Segurança persistidos com segurança no Firestore!', 'success');
-                onClose();
-              }, 800); // 800ms simulation
-            }}
-            className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-black py-2.5 rounded-xl transition-all uppercase tracking-wider cursor-pointer text-center"
-          >
-            Salvar Alterações
-          </button>
+        <div className="border-t border-slate-800 bg-slate-950/50 p-4">
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 rounded-xl bg-slate-800 py-2.5 text-[10px] font-bold uppercase text-slate-300 hover:bg-slate-700"
+            >
+              Fechar
+            </button>
+            <button
+              type="button"
+              onClick={handleSavePublicProfile}
+              disabled={isSaving}
+              className="flex-1 rounded-xl bg-emerald-600 py-2.5 text-[10px] font-black uppercase text-white hover:bg-emerald-500 disabled:cursor-wait disabled:opacity-60"
+            >
+              {isSaving ? 'Sincronizando...' : 'Salvar perfil público'}
+            </button>
+          </div>
+          <p className="mt-2 text-center text-[8px] text-slate-600">
+            Nome e visibilidade são sincronizados na nuvem. Dados sensíveis permanecem fora do diretório público.
+          </p>
         </div>
       </div>
     </div>
