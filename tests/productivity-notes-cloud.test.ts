@@ -144,6 +144,9 @@ test('notes use Firestore persistence and a direct invitation inbox', () => {
   assert.match(outboxSource, /'note_invitations'/);
   assert.match(outboxSource, /status: 'pending'/);
   assert.match(outboxSource, /status: 'revoked'/);
+  assert.doesNotMatch(outboxSource, /\bgetDoc\(/);
+  assert.match(outboxSource, /invitationsReadyFromServer/);
+  assert.match(outboxSource, /pendingCreateIds/);
 
   assert.match(sharedModalSource, /collection\(db, 'note_invitations'\)/);
   assert.match(
