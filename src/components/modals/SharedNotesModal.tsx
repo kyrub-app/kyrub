@@ -3,13 +3,13 @@ import { onAuthStateChanged } from 'firebase/auth';
 import {
   arrayRemove,
   arrayUnion,
-  collectionGroup,
+  collection,
   doc,
   onSnapshot,
   query,
   serverTimestamp,
-  updateDoc,
   where,
+  writeBatch,
 } from 'firebase/firestore';
 import {
   Check,
@@ -27,7 +27,6 @@ import {
   createAuditLog,
   formatNoteAuditTimestamp,
   normalizeCloudNote,
-  sortNotesByUpdatedAt,
 } from '../../utils/noteCollaboration';
 
 interface SharedNotesModalProps {
@@ -38,6 +37,33 @@ interface SharedNotesModalProps {
 }
 
 type SharedView = 'requests' | 'participating';
+type InvitationStatus = 'pending' | 'accepted' | 'declined' | 'revoked';
+
+interface NoteInvitation {
+  id: string;
+  ownerId: string;
+  ownerName: string;
+  ownerEmail: string;
+  recipientId: string;
+  noteId: string;
+  sourcePath: string;
+  status: InvitationStatus;
+}
+
+interface SharedNoteRecord {
+  invitation: NoteInvitation;
+  note: Note | null;
+}
+
+const readString = (value: unknown): string =>
+  typeof value === 'string' ? value.trim() : '';
+
+const readInvitationStatus = (value: unknown): InvitationStatus =>
+  value === 'accepted' ||
+  value === 'declined' ||
+  value === 'revoked'
+    ? value
+    : 'pending';
 
 const getCurrentUserName = (): string =>
   auth.currentUser?.displayName?.trim() ||
@@ -50,60 +76,71 @@ export const SharedNotesModal: React.FC<SharedNotesModalProps> = ({
   notes: _legacyNotes,
   handleToggleChecklistItem: _legacyToggleChecklistItem,
 }) => {
-  const [sharedNotes, setSharedNotes] = useState<Note[]>([]);
+  const [invitations, setInvitations] = useState<NoteInvitation[]>([]);
+  const [notesByInvitationId, setNotesByInvitationId] = useState<
+    Record<string, Note | null>
+  >({});
   const [activeView, setActiveView] = useState<SharedView>('requests');
   const [isLoading, setIsLoading] = useState(false);
   const [syncError, setSyncError] = useState('');
-  const [busyNoteId, setBusyNoteId] = useState('');
+  const [busyInvitationId, setBusyInvitationId] = useState('');
 
   useEffect(() => {
     if (!isOpen) return;
 
-    let unsubscribeSharedNotes = () => undefined;
+    let unsubscribeInvitations = () => undefined;
 
     const unsubscribeAuth = onAuthStateChanged(auth, user => {
-      unsubscribeSharedNotes();
+      unsubscribeInvitations();
       setSyncError('');
+      setNotesByInvitationId({});
 
       if (!user) {
-        setSharedNotes([]);
+        setInvitations([]);
         setIsLoading(false);
         return;
       }
 
       setIsLoading(true);
-      const sharedTasksQuery = query(
-        collectionGroup(db, 'tasks'),
-        where('sharedWith', 'array-contains', user.uid)
+      const invitationQuery = query(
+        collection(db, 'note_invitations'),
+        where('recipientId', '==', user.uid)
       );
 
-      unsubscribeSharedNotes = onSnapshot(
-        sharedTasksQuery,
+      unsubscribeInvitations = onSnapshot(
+        invitationQuery,
         { includeMetadataChanges: true },
         snapshot => {
-          const notes = snapshot.docs
+          const nextInvitations = snapshot.docs
             .map(snapshotDocument => {
-              const ownerId = snapshotDocument.ref.parent.parent?.id ?? '';
+              const data = snapshotDocument.data() as Record<string, unknown>;
               return {
-                ...normalizeCloudNote(
-                  snapshotDocument.id,
-                  snapshotDocument.data() as Record<string, unknown>,
-                  ownerId
-                ),
-                syncState: snapshotDocument.metadata.hasPendingWrites
-                  ? 'pending' as const
-                  : 'synced' as const,
-              };
+                id: snapshotDocument.id,
+                ownerId: readString(data.ownerId),
+                ownerName: readString(data.ownerName) || 'Usuário Kyrub',
+                ownerEmail: readString(data.ownerEmail),
+                recipientId: readString(data.recipientId),
+                noteId: readString(data.noteId),
+                sourcePath: readString(data.sourcePath),
+                status: readInvitationStatus(data.status),
+              } satisfies NoteInvitation;
             })
-            .filter(note => note.ownerId !== user.uid);
+            .filter(
+              invitation =>
+                invitation.ownerId &&
+                invitation.noteId &&
+                invitation.recipientId === user.uid &&
+                (invitation.status === 'pending' ||
+                  invitation.status === 'accepted')
+            );
 
-          setSharedNotes(sortNotesByUpdatedAt(notes));
+          setInvitations(nextInvitations);
           setIsLoading(false);
         },
         error => {
-          console.warn('Não foi possível carregar as notas compartilhadas.', error);
+          console.warn('Não foi possível carregar os convites de notas.', error);
           setSyncError(
-            'Não foi possível atualizar as solicitações agora. Os dados já armazenados continuarão disponíveis offline.'
+            'Não foi possível atualizar as solicitações agora. Verifique a conexão e tente novamente.'
           );
           setIsLoading(false);
         }
@@ -112,105 +149,159 @@ export const SharedNotesModal: React.FC<SharedNotesModalProps> = ({
 
     return () => {
       unsubscribeAuth();
-      unsubscribeSharedNotes();
+      unsubscribeInvitations();
     };
   }, [isOpen]);
 
-  const currentUserId = auth.currentUser?.uid ?? '';
-  const pendingNotes = useMemo(
-    () => sharedNotes.filter(note => !(note.acceptedWith ?? []).includes(currentUserId)),
-    [currentUserId, sharedNotes]
+  useEffect(() => {
+    if (!isOpen || invitations.length === 0) {
+      setNotesByInvitationId({});
+      return;
+    }
+
+    const unsubscribers = invitations.map(invitation =>
+      onSnapshot(
+        doc(db, 'users', invitation.ownerId, 'tasks', invitation.noteId),
+        { includeMetadataChanges: true },
+        snapshot => {
+          setNotesByInvitationId(previous => ({
+            ...previous,
+            [invitation.id]: snapshot.exists()
+              ? {
+                  ...normalizeCloudNote(
+                    snapshot.id,
+                    snapshot.data() as Record<string, unknown>,
+                    invitation.ownerId
+                  ),
+                  syncState: snapshot.metadata.hasPendingWrites
+                    ? 'pending'
+                    : 'synced',
+                }
+              : null,
+          }));
+        },
+        error => {
+          console.warn(
+            `Não foi possível abrir a nota compartilhada ${invitation.noteId}.`,
+            error
+          );
+          setNotesByInvitationId(previous => ({
+            ...previous,
+            [invitation.id]: null,
+          }));
+          setSyncError(
+            'Um convite foi encontrado, mas a nota ainda não pôde ser carregada. Aguarde a sincronização do proprietário.'
+          );
+        }
+      )
+    );
+
+    return () => {
+      unsubscribers.forEach(unsubscribe => unsubscribe());
+    };
+  }, [invitations, isOpen]);
+
+  const pendingRecords = useMemo<SharedNoteRecord[]>(
+    () =>
+      invitations
+        .filter(invitation => invitation.status === 'pending')
+        .map(invitation => ({
+          invitation,
+          note: notesByInvitationId[invitation.id] ?? null,
+        })),
+    [invitations, notesByInvitationId]
   );
-  const participatingNotes = useMemo(
-    () => sharedNotes.filter(note => (note.acceptedWith ?? []).includes(currentUserId)),
-    [currentUserId, sharedNotes]
+
+  const participatingRecords = useMemo<SharedNoteRecord[]>(
+    () =>
+      invitations
+        .filter(invitation => invitation.status === 'accepted')
+        .map(invitation => ({
+          invitation,
+          note: notesByInvitationId[invitation.id] ?? null,
+        })),
+    [invitations, notesByInvitationId]
   );
 
   useEffect(() => {
-    if (pendingNotes.length === 0 && participatingNotes.length > 0) {
+    if (pendingRecords.length === 0 && participatingRecords.length > 0) {
       setActiveView('participating');
     }
-  }, [participatingNotes.length, pendingNotes.length]);
+  }, [participatingRecords.length, pendingRecords.length]);
 
   if (!isOpen) return null;
 
-  const updateSharedNote = async (
-    note: Note,
-    changes: Record<string, unknown>
+  const commitInvitationResponse = async (
+    record: SharedNoteRecord,
+    nextStatus: 'accepted' | 'declined'
   ): Promise<void> => {
-    if (!note.ownerId || !auth.currentUser) return;
+    const user = auth.currentUser;
+    const note = record.note;
+    if (!user || !note) return;
 
-    setBusyNoteId(note.id);
+    setBusyInvitationId(record.invitation.id);
+    setSyncError('');
+    const now = new Date().toISOString();
+    const batch = writeBatch(db);
+    const taskReference = doc(
+      db,
+      'users',
+      record.invitation.ownerId,
+      'tasks',
+      record.invitation.noteId
+    );
+    const invitationReference = doc(
+      db,
+      'note_invitations',
+      record.invitation.id
+    );
+    const action =
+      nextStatus === 'accepted'
+        ? 'Aceitou o convite para colaborar na nota'
+        : 'Recusou o convite para colaborar na nota';
+
+    batch.update(taskReference, {
+      ...(nextStatus === 'accepted'
+        ? { acceptedWith: arrayUnion(user.uid) }
+        : {
+            sharedWith: arrayRemove(user.uid),
+            acceptedWith: arrayRemove(user.uid),
+          }),
+      auditLogs: [
+        createAuditLog(getCurrentUserName(), action, user.uid, now),
+        ...note.auditLogs,
+      ],
+      updatedAtIso: now,
+      serverUpdatedAt: serverTimestamp(),
+    });
+    batch.update(invitationReference, {
+      status: nextStatus,
+      respondedAtIso: now,
+      updatedAt: serverTimestamp(),
+    });
+
     try {
-      await updateDoc(
-        doc(db, 'users', note.ownerId, 'tasks', note.id),
-        {
-          ...changes,
-          updatedAtIso: new Date().toISOString(),
-          serverUpdatedAt: serverTimestamp(),
-        }
+      await batch.commit();
+      if (nextStatus === 'accepted') {
+        setActiveView('participating');
+      }
+    } catch (error) {
+      console.warn('Falha ao responder ao convite de nota.', error);
+      setSyncError(
+        'A resposta não pôde ser confirmada agora. Tente novamente quando a conexão estiver disponível.'
       );
     } finally {
-      setBusyNoteId('');
-    }
-  };
-
-  const handleAccept = async (note: Note) => {
-    const user = auth.currentUser;
-    if (!user) return;
-    const now = new Date().toISOString();
-
-    try {
-      await updateSharedNote(note, {
-        acceptedWith: arrayUnion(user.uid),
-        auditLogs: [
-          createAuditLog(
-            getCurrentUserName(),
-            'Aceitou o convite para colaborar na nota',
-            user.uid,
-            now
-          ),
-          ...note.auditLogs,
-        ],
-      });
-      setActiveView('participating');
-    } catch (error) {
-      console.warn('Falha ao aceitar colaboração.', error);
-      setSyncError(
-        'A aceitação não pôde ser confirmada agora. Tente novamente quando a conexão estiver disponível.'
-      );
-    }
-  };
-
-  const handleDecline = async (note: Note) => {
-    const user = auth.currentUser;
-    if (!user) return;
-
-    try {
-      await updateSharedNote(note, {
-        sharedWith: arrayRemove(user.uid),
-        acceptedWith: arrayRemove(user.uid),
-        auditLogs: [
-          createAuditLog(
-            getCurrentUserName(),
-            'Recusou o convite para colaborar na nota',
-            user.uid
-          ),
-          ...note.auditLogs,
-        ],
-      });
-    } catch (error) {
-      console.warn('Falha ao recusar colaboração.', error);
-      setSyncError('Não foi possível recusar o convite agora.');
+      setBusyInvitationId('');
     }
   };
 
   const handleToggleSharedChecklist = async (
-    note: Note,
+    record: SharedNoteRecord,
     itemId: string
   ) => {
     const user = auth.currentUser;
-    if (!user || !(note.acceptedWith ?? []).includes(user.uid)) return;
+    const note = record.note;
+    if (!user || !note || record.invitation.status !== 'accepted') return;
 
     const toggledItem = note.checklist.find(item => item.id === itemId);
     const checklist = note.checklist.map(item =>
@@ -218,32 +309,54 @@ export const SharedNotesModal: React.FC<SharedNotesModalProps> = ({
     );
     const now = new Date().toISOString();
 
+    setBusyInvitationId(record.invitation.id);
+    setSyncError('');
     try {
-      await updateSharedNote(note, {
-        checklist,
-        auditLogs: [
-          createAuditLog(
-            getCurrentUserName(),
-            toggledItem
-              ? `Marcou "${toggledItem.text}" como ${
-                  toggledItem.done ? 'PENDENTE' : 'CONCLUÍDO'
-                }`
-              : 'Alterou item do checklist compartilhado',
-            user.uid,
-            now
-          ),
-          ...note.auditLogs,
-        ],
+      const batch = writeBatch(db);
+      batch.update(
+        doc(
+          db,
+          'users',
+          record.invitation.ownerId,
+          'tasks',
+          record.invitation.noteId
+        ),
+        {
+          checklist,
+          auditLogs: [
+            createAuditLog(
+              getCurrentUserName(),
+              toggledItem
+                ? `Marcou "${toggledItem.text}" como ${
+                    toggledItem.done ? 'PENDENTE' : 'CONCLUÍDO'
+                  }`
+                : 'Alterou item do checklist compartilhado',
+              user.uid,
+              now
+            ),
+            ...note.auditLogs,
+          ],
+          updatedAtIso: now,
+          serverUpdatedAt: serverTimestamp(),
+        }
+      );
+      batch.update(doc(db, 'note_invitations', record.invitation.id), {
+        noteUpdatedAtIso: now,
+        updatedAt: serverTimestamp(),
       });
+      await batch.commit();
     } catch (error) {
       console.warn('Falha ao atualizar checklist compartilhado.', error);
       setSyncError(
-        'A alteração ficou pendente. Ela será reenviada quando a conexão estiver disponível.'
+        'A alteração não pôde ser sincronizada agora. Tente novamente quando houver conexão.'
       );
+    } finally {
+      setBusyInvitationId('');
     }
   };
 
-  const visibleNotes = activeView === 'requests' ? pendingNotes : participatingNotes;
+  const visibleRecords =
+    activeView === 'requests' ? pendingRecords : participatingRecords;
 
   return (
     <div
@@ -258,7 +371,7 @@ export const SharedNotesModal: React.FC<SharedNotesModalProps> = ({
               <span className="truncate">Notas compartilhadas comigo</span>
             </h3>
             <p className="mt-1 text-[10px] text-slate-500">
-              Convites e notas em que você já participa, sincronizados entre dispositivos.
+              Convites diretos e notas em que você já participa.
             </p>
           </div>
           <button
@@ -281,7 +394,7 @@ export const SharedNotesModal: React.FC<SharedNotesModalProps> = ({
                 : 'text-slate-500 hover:text-slate-300'
             }`}
           >
-            Solicitações ({pendingNotes.length})
+            Solicitações ({pendingRecords.length})
           </button>
           <button
             type="button"
@@ -292,7 +405,7 @@ export const SharedNotesModal: React.FC<SharedNotesModalProps> = ({
                 : 'text-slate-500 hover:text-slate-300'
             }`}
           >
-            Participando ({participatingNotes.length})
+            Participando ({participatingRecords.length})
           </button>
         </div>
 
@@ -305,9 +418,9 @@ export const SharedNotesModal: React.FC<SharedNotesModalProps> = ({
         {isLoading ? (
           <div className="flex items-center justify-center gap-2 py-12 text-xs text-slate-500">
             <RefreshCw className="h-4 w-4 animate-spin" />
-            Atualizando notas compartilhadas...
+            Atualizando convites...
           </div>
-        ) : visibleNotes.length === 0 ? (
+        ) : visibleRecords.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-slate-800 bg-slate-950/60 px-5 py-10 text-center">
             <Users className="mx-auto h-7 w-7 text-slate-700" />
             <p className="mt-3 text-xs italic text-slate-500">
@@ -318,74 +431,82 @@ export const SharedNotesModal: React.FC<SharedNotesModalProps> = ({
           </div>
         ) : (
           <div className="space-y-3.5">
-            {visibleNotes.map(note => {
-              const latestLog = note.auditLogs[0];
-              const isBusy = busyNoteId === note.id;
+            {visibleRecords.map(record => {
+              const note = record.note;
+              const latestLog = note?.auditLogs[0];
+              const isBusy = busyInvitationId === record.invitation.id;
 
               return (
                 <article
-                  key={`${note.ownerId}-${note.id}`}
+                  key={record.invitation.id}
                   className="space-y-3 rounded-2xl border border-slate-800 bg-slate-950 p-4"
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <span className="block truncate text-[9px] font-bold font-mono uppercase text-orange-400">
-                        {activeView === 'requests' ? 'Convite de' : 'Criada por'}: {note.ownerName || 'Usuário Kyrub'}
+                        {activeView === 'requests' ? 'Convite de' : 'Criada por'}: {record.invitation.ownerName}
                       </span>
                       <h4 className="mt-0.5 truncate text-sm font-black uppercase text-white">
-                        {note.title}
+                        {note?.title || 'Carregando nota...'}
                       </h4>
                     </div>
-                    <span className={`shrink-0 rounded-full border px-2 py-1 text-[8px] font-bold font-mono uppercase ${
-                      note.syncState === 'pending'
-                        ? 'border-amber-500/20 bg-amber-500/10 text-amber-300'
-                        : 'border-teal-500/20 bg-teal-500/10 text-teal-300'
-                    }`}>
-                      {note.syncState === 'pending' ? 'Sincronizando' : 'Na nuvem'}
+                    <span className="shrink-0 rounded-full border border-teal-500/20 bg-teal-500/10 px-2 py-1 text-[8px] font-bold font-mono uppercase text-teal-300">
+                      Convite direto
                     </span>
                   </div>
 
-                  <p className="text-xs leading-relaxed text-slate-300">
-                    {note.content}
-                  </p>
-
-                  {activeView === 'participating' && note.checklist.length > 0 && (
-                    <div className="space-y-2 border-t border-slate-900 pt-3">
-                      <span className="block text-[9px] font-mono uppercase text-slate-500">
-                        Checklist compartilhado
-                      </span>
-                      {note.checklist.map(item => (
-                        <label
-                          key={item.id}
-                          className="flex cursor-pointer items-start gap-2 text-xs text-slate-300"
-                        >
-                          <input
-                            type="checkbox"
-                            checked={item.done}
-                            disabled={isBusy}
-                            onChange={() => handleToggleSharedChecklist(note, item.id)}
-                            className="mt-0.5 accent-teal-500"
-                          />
-                          <span className={item.done ? 'text-slate-500 line-through' : ''}>
-                            {item.text}
-                          </span>
-                        </label>
-                      ))}
-                    </div>
-                  )}
-
-                  {latestLog && (
-                    <div className="rounded-xl border border-slate-900 bg-slate-900/60 p-2.5 text-[9px] font-mono text-slate-500">
-                      <div className="flex items-center gap-1.5 text-orange-400">
-                        <Clock3 className="h-3 w-3" />
-                        <span className="font-bold uppercase">Última alteração</span>
-                      </div>
-                      <p className="mt-1 text-slate-400">
-                        <span className="text-slate-300">{latestLog.user}</span>: {latestLog.action}
+                  {note ? (
+                    <>
+                      <p className="text-xs leading-relaxed text-slate-300">
+                        {note.content}
                       </p>
-                      <span className="mt-1 block text-[8px] text-slate-600">
-                        {formatNoteAuditTimestamp(latestLog.timestamp)}
-                      </span>
+
+                      {activeView === 'participating' && note.checklist.length > 0 && (
+                        <div className="space-y-2 border-t border-slate-900 pt-3">
+                          <span className="block text-[9px] font-mono uppercase text-slate-500">
+                            Checklist compartilhado
+                          </span>
+                          {note.checklist.map(item => (
+                            <label
+                              key={item.id}
+                              className="flex cursor-pointer items-start gap-2 text-xs text-slate-300"
+                            >
+                              <input
+                                type="checkbox"
+                                checked={item.done}
+                                disabled={isBusy}
+                                onChange={() =>
+                                  handleToggleSharedChecklist(record, item.id)
+                                }
+                                className="mt-0.5 accent-teal-500"
+                              />
+                              <span className={item.done ? 'text-slate-500 line-through' : ''}>
+                                {item.text}
+                              </span>
+                            </label>
+                          ))}
+                        </div>
+                      )}
+
+                      {latestLog && (
+                        <div className="rounded-xl border border-slate-900 bg-slate-900/60 p-2.5 text-[9px] font-mono text-slate-500">
+                          <div className="flex items-center gap-1.5 text-orange-400">
+                            <Clock3 className="h-3 w-3" />
+                            <span className="font-bold uppercase">Última alteração</span>
+                          </div>
+                          <p className="mt-1 text-slate-400">
+                            <span className="text-slate-300">{latestLog.user}</span>: {latestLog.action}
+                          </p>
+                          <span className="mt-1 block text-[8px] text-slate-600">
+                            {formatNoteAuditTimestamp(latestLog.timestamp)}
+                          </span>
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <div className="flex items-center justify-center gap-2 rounded-xl border border-slate-900 bg-slate-900/50 py-6 text-[10px] text-slate-500">
+                      <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                      Sincronizando conteúdo da nota...
                     </div>
                   )}
 
@@ -393,8 +514,10 @@ export const SharedNotesModal: React.FC<SharedNotesModalProps> = ({
                     <div className="grid grid-cols-2 gap-2 border-t border-slate-900 pt-3">
                       <button
                         type="button"
-                        onClick={() => handleDecline(note)}
-                        disabled={isBusy}
+                        onClick={() =>
+                          void commitInvitationResponse(record, 'declined')
+                        }
+                        disabled={isBusy || !note}
                         className="flex items-center justify-center gap-1.5 rounded-xl border border-red-500/25 bg-red-500/10 py-2 text-[10px] font-bold uppercase text-red-300 disabled:opacity-50"
                       >
                         <UserRoundX className="h-3.5 w-3.5" />
@@ -402,8 +525,10 @@ export const SharedNotesModal: React.FC<SharedNotesModalProps> = ({
                       </button>
                       <button
                         type="button"
-                        onClick={() => handleAccept(note)}
-                        disabled={isBusy}
+                        onClick={() =>
+                          void commitInvitationResponse(record, 'accepted')
+                        }
+                        disabled={isBusy || !note}
                         className="flex items-center justify-center gap-1.5 rounded-xl bg-teal-500 py-2 text-[10px] font-black uppercase text-slate-950 disabled:opacity-50"
                       >
                         <UserRoundCheck className="h-3.5 w-3.5" />
@@ -418,7 +543,9 @@ export const SharedNotesModal: React.FC<SharedNotesModalProps> = ({
                       </span>
                       <span className="flex items-center gap-1 text-slate-600">
                         <Check className="h-3 w-3" />
-                        {note.checklist.filter(item => item.done).length}/{note.checklist.length}
+                        {note
+                          ? `${note.checklist.filter(item => item.done).length}/${note.checklist.length}`
+                          : '—'}
                       </span>
                     </div>
                   )}
