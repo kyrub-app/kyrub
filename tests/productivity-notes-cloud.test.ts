@@ -107,9 +107,14 @@ test('offline and remote note versions reconcile by latest update', () => {
   );
 });
 
-test('notes use Firestore persistence and real collaboration requests', () => {
+test('notes use Firestore persistence and a direct invitation inbox', () => {
+  const appSource = readFileSync('src/App.tsx', 'utf8');
   const hookSource = readFileSync(
     'src/hooks/useProductivityNotes.ts',
+    'utf8'
+  );
+  const outboxSource = readFileSync(
+    'src/components/NoteInvitationOutboxBridge.tsx',
     'utf8'
   );
   const sharedModalSource = readFileSync(
@@ -122,7 +127,6 @@ test('notes use Firestore persistence and real collaboration requests', () => {
   );
   const firebaseSource = readFileSync('src/utils/firebase.ts', 'utf8');
   const firebaseConfig = JSON.parse(readFileSync('firebase.json', 'utf8'));
-  const indexes = JSON.parse(readFileSync('firestore.indexes.json', 'utf8'));
 
   assert.match(
     hookSource,
@@ -132,11 +136,25 @@ test('notes use Firestore persistence and real collaboration requests', () => {
   assert.match(hookSource, /getUserNotesKey\(user\.uid\)/);
   assert.doesNotMatch(hookSource, /LEGACY_NOTES_KEY/);
 
-  assert.match(sharedModalSource, /collectionGroup\(db, 'tasks'\)/);
+  assert.match(appSource, /<NoteInvitationOutboxBridge \/>/);
+  assert.match(
+    outboxSource,
+    /collection\(db, 'users', user\.uid, 'tasks'\)/
+  );
+  assert.match(outboxSource, /'note_invitations'/);
+  assert.match(outboxSource, /status: 'pending'/);
+  assert.match(outboxSource, /status: 'revoked'/);
+
+  assert.match(sharedModalSource, /collection\(db, 'note_invitations'\)/);
   assert.match(
     sharedModalSource,
-    /where\('sharedWith', 'array-contains', user\.uid\)/
+    /where\('recipientId', '==', user\.uid\)/
   );
+  assert.match(
+    sharedModalSource,
+    /doc\(db, 'users', invitation\.ownerId, 'tasks', invitation\.noteId\)/
+  );
+  assert.match(sharedModalSource, /status: nextStatus/);
   assert.match(sharedModalSource, /acceptedWith: arrayUnion\(user\.uid\)/);
   assert.match(sharedModalSource, /Solicitações/);
   assert.match(sharedModalSource, /Participando/);
@@ -148,12 +166,6 @@ test('notes use Firestore persistence and real collaboration requests', () => {
   assert.match(firebaseSource, /persistentLocalCache/);
   assert.match(firebaseSource, /persistentMultipleTabManager/);
   assert.equal(firebaseConfig.firestore.indexes, 'firestore.indexes.json');
-  assert.equal(indexes.fieldOverrides[0].collectionGroup, 'tasks');
-  assert.equal(indexes.fieldOverrides[0].fieldPath, 'sharedWith');
-  assert.equal(
-    indexes.fieldOverrides[0].indexes[0].queryScope,
-    'COLLECTION_GROUP'
-  );
 });
 
 test('profile panel is organized and does not claim to store sensitive data publicly', () => {
