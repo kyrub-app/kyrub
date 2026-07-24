@@ -121,6 +121,10 @@ test('notes use Firestore persistence and a direct invitation inbox', () => {
     'src/components/modals/SharedNotesModal.tsx',
     'utf8'
   );
+  const participantEditorSource = readFileSync(
+    'src/components/modals/SharedNoteParticipantEditor.tsx',
+    'utf8'
+  );
   const noteTabSource = readFileSync(
     'src/components/tabs/PerfilTab.tsx',
     'utf8'
@@ -161,6 +165,22 @@ test('notes use Firestore persistence and a direct invitation inbox', () => {
   assert.match(sharedModalSource, /acceptedWith: arrayUnion\(user\.uid\)/);
   assert.match(sharedModalSource, /Solicitações/);
   assert.match(sharedModalSource, /Participando/);
+  assert.match(sharedModalSource, /Abrir e editar nota/);
+  assert.match(sharedModalSource, /<SharedNoteParticipantEditor/);
+
+  assert.match(participantEditorSource, /Editar nota compartilhada/);
+  assert.match(participantEditorSource, /Salvar alterações/);
+  assert.match(participantEditorSource, /title: normalizedTitle/);
+  assert.match(participantEditorSource, /content: normalizedContent/);
+  assert.match(participantEditorSource, /checklist: normalizedChecklist/);
+  assert.match(
+    participantEditorSource,
+    /Editou \$\{changedSections\.join\(', '\)\} como participante/
+  );
+  assert.match(
+    participantEditorSource,
+    /doc\(db, 'note_invitations', invitation\.id\)/
+  );
 
   assert.match(noteTabSource, /Histórico de alterações/);
   assert.match(noteTabSource, /aria-label="Publicar nota no feed"/);
