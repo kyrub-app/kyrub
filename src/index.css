@@ -1,6 +1,6 @@
 @import "tailwindcss";
 
-/* Baseline inherited text; the final CSS accessibility pass adds exactly 10px. */
+/* Baseline inherited text; the runtime accessibility observer adds exactly 10px. */
 body {
   font-size: 16px;
 }
