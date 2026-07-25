@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import {
+  ChevronRight,
+  FolderOpen,
   Info,
   ListChecks,
   MapPin,
@@ -32,6 +34,15 @@ type StorefrontProduct = Product & {
 
 type NativeStorefrontFilter = 'new' | 'best_sellers';
 
+type CollectionCard = {
+  key: string;
+  name: string;
+  path: string;
+  segments: string[];
+  image: string;
+  itemCount: number;
+};
+
 const KEYWORD_FILTER_PREFIX = 'keyword:';
 
 const currencyFormatter = new Intl.NumberFormat('pt-BR', {
@@ -45,6 +56,29 @@ const normalizeSearchValue = (value: string): string =>
     .replace(/[\u0300-\u036f]/g, '')
     .trim()
     .toLocaleLowerCase('pt-BR');
+
+const splitCategoryPath = (category: string): string[] =>
+  category
+    .split(/\s*(?:>|\/)\s*/)
+    .map(segment => segment.trim())
+    .filter(Boolean);
+
+const normalizePath = (segments: string[]): string =>
+  segments.map(normalizeSearchValue).join(' > ');
+
+const categoryStartsWithPath = (
+  category: string,
+  expectedPath: string[]
+): boolean => {
+  const productSegments = splitCategoryPath(category);
+  if (productSegments.length < expectedPath.length) return false;
+
+  return expectedPath.every(
+    (segment, index) =>
+      normalizeSearchValue(productSegments[index] ?? '') ===
+      normalizeSearchValue(segment)
+  );
+};
 
 const getStoreInitials = (name: string): string => {
   const initials = name
@@ -75,6 +109,55 @@ const sortByNewest = (offers: Product[]): Product[] =>
     return recencyDifference || right.id.localeCompare(left.id);
   });
 
+const findCollectionImage = (product: Product, path: string[]): string => {
+  const normalizedTarget = normalizePath(path);
+  const configuredImage = product.categoryCollections?.find(
+    collection =>
+      normalizePath(splitCategoryPath(collection.path)) === normalizedTarget &&
+      collection.image.trim()
+  )?.image;
+
+  return configuredImage?.trim() || product.image.trim();
+};
+
+const buildChildCollections = (
+  offers: Product[],
+  currentPath: string[]
+): CollectionCard[] => {
+  const collections = new Map<string, CollectionCard>();
+
+  for (const product of sortByNewest(offers)) {
+    if (!categoryStartsWithPath(product.category, currentPath)) continue;
+    const segments = splitCategoryPath(product.category);
+    if (segments.length <= currentPath.length) continue;
+
+    const childSegments = segments.slice(0, currentPath.length + 1);
+    const key = normalizePath(childSegments);
+    const existing = collections.get(key);
+
+    if (existing) {
+      existing.itemCount += 1;
+      if (!existing.image) {
+        existing.image = findCollectionImage(product, childSegments);
+      }
+      continue;
+    }
+
+    collections.set(key, {
+      key,
+      name: childSegments.at(-1) ?? '',
+      path: childSegments.join(' > '),
+      segments: childSegments,
+      image: findCollectionImage(product, childSegments),
+      itemCount: 1,
+    });
+  }
+
+  return [...collections.values()].sort((left, right) =>
+    left.name.localeCompare(right.name, 'pt-BR')
+  );
+};
+
 export const StorefrontPanel: React.FC<StorefrontPanelProps> = ({
   activeConsumerStore,
   products,
@@ -89,10 +172,12 @@ export const StorefrontPanel: React.FC<StorefrontPanelProps> = ({
   const [selectedFilter, setSelectedFilter] = useState<
     NativeStorefrontFilter | string
   >('new');
+  const [collectionPath, setCollectionPath] = useState<string[]>([]);
   const [isStoreInfoOpen, setIsStoreInfoOpen] = useState(false);
 
   useEffect(() => {
     setSelectedFilter('new');
+    setCollectionPath([]);
     setIsStoreInfoOpen(false);
   }, [activeConsumerStore?.id]);
 
@@ -166,6 +251,13 @@ export const StorefrontPanel: React.FC<StorefrontPanelProps> = ({
   const selectedKeyword = selectedFilter.startsWith(KEYWORD_FILTER_PREFIX)
     ? selectedFilter.slice(KEYWORD_FILTER_PREFIX.length)
     : '';
+  const activeCollectionPath = selectedKeyword
+    ? collectionPath.length > 0 &&
+      normalizeSearchValue(collectionPath[0] ?? '') ===
+        normalizeSearchValue(selectedKeyword)
+      ? collectionPath
+      : [selectedKeyword]
+    : [];
 
   const filteredOffers = (() => {
     if (selectedFilter === 'best_sellers') {
@@ -178,19 +270,19 @@ export const StorefrontPanel: React.FC<StorefrontPanelProps> = ({
 
     if (selectedKeyword) {
       return sortByNewest(
-        storefrontOffers.filter(product => {
-          const searchCorpus = normalizeSearchValue(
-            [product.category, product.name, product.description]
-              .filter(Boolean)
-              .join(' ')
-          );
-          return searchCorpus.includes(normalizeSearchValue(selectedKeyword));
-        })
+        storefrontOffers.filter(product =>
+          categoryStartsWithPath(product.category, activeCollectionPath)
+        )
       );
     }
 
     return sortByNewest(storefrontOffers);
   })();
+
+  const childCollections = selectedKeyword
+    ? buildChildCollections(storefrontOffers, activeCollectionPath)
+    : [];
+  const currentCollectionName = activeCollectionPath.at(-1) ?? selectedKeyword;
 
   const movementMetadata = (() => {
     if (activeConsumerStore.status === 'closed') {
@@ -379,7 +471,10 @@ export const StorefrontPanel: React.FC<StorefrontPanelProps> = ({
           >
             <button
               type="button"
-              onClick={() => setSelectedFilter('new')}
+              onClick={() => {
+                setSelectedFilter('new');
+                setCollectionPath([]);
+              }}
               className={filterButtonClassName(selectedFilter === 'new')}
               id="storefront-filter-new"
             >
@@ -387,7 +482,10 @@ export const StorefrontPanel: React.FC<StorefrontPanelProps> = ({
             </button>
             <button
               type="button"
-              onClick={() => setSelectedFilter('best_sellers')}
+              onClick={() => {
+                setSelectedFilter('best_sellers');
+                setCollectionPath([]);
+              }}
               className={filterButtonClassName(selectedFilter === 'best_sellers')}
               id="storefront-filter-best-sellers"
             >
@@ -399,7 +497,10 @@ export const StorefrontPanel: React.FC<StorefrontPanelProps> = ({
                 <button
                   key={keyword}
                   type="button"
-                  onClick={() => setSelectedFilter(filterId)}
+                  onClick={() => {
+                    setSelectedFilter(filterId);
+                    setCollectionPath([keyword]);
+                  }}
                   className={filterButtonClassName(selectedFilter === filterId)}
                 >
                   {keyword}
@@ -409,10 +510,103 @@ export const StorefrontPanel: React.FC<StorefrontPanelProps> = ({
           </div>
         </div>
 
+        {selectedKeyword && (
+          <section
+            className="space-y-3 rounded-3xl border border-slate-800 bg-slate-950/65 p-3 sm:p-4"
+            id="storefront-collection-browser"
+            aria-label={`Coleções da categoria ${selectedKeyword}`}
+          >
+            <nav
+              className="flex max-w-full items-center gap-1 overflow-x-auto pb-1"
+              id="storefront-collection-breadcrumb"
+              aria-label="Caminho da coleção"
+            >
+              {activeCollectionPath.map((segment, index) => (
+                <React.Fragment key={`${normalizeSearchValue(segment)}-${index}`}>
+                  {index > 0 && (
+                    <ChevronRight className="h-3.5 w-3.5 shrink-0 text-slate-700" />
+                  )}
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setCollectionPath(activeCollectionPath.slice(0, index + 1))
+                    }
+                    className={`min-h-8 shrink-0 rounded-xl px-2.5 text-[9px] font-black uppercase transition-colors ${
+                      index === activeCollectionPath.length - 1
+                        ? 'bg-orange-500/15 text-orange-300'
+                        : 'text-slate-500 hover:bg-slate-900 hover:text-slate-300'
+                    }`}
+                  >
+                    {segment}
+                  </button>
+                </React.Fragment>
+              ))}
+            </nav>
+
+            {childCollections.length > 0 && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <span className="font-mono text-[8px] font-black uppercase tracking-[0.16em] text-slate-600">
+                      Navegue pelas coleções
+                    </span>
+                    <h4 className="mt-0.5 text-xs font-black text-white">
+                      Dentro de {currentCollectionName}
+                    </h4>
+                  </div>
+                  <span className="text-[9px] text-slate-600">
+                    {childCollections.length} coleção(ões)
+                  </span>
+                </div>
+
+                <div
+                  className="grid auto-cols-[minmax(138px,44%)] grid-flow-col gap-2.5 overflow-x-auto pb-2 sm:auto-cols-[180px]"
+                  id="storefront-subcategory-collections"
+                >
+                  {childCollections.map(collection => (
+                    <button
+                      key={collection.key}
+                      type="button"
+                      onClick={() => setCollectionPath(collection.segments)}
+                      className="group relative aspect-[4/3] min-w-0 overflow-hidden rounded-2xl border border-slate-800 bg-slate-900 text-left transition-all hover:-translate-y-0.5 hover:border-orange-500/40"
+                      aria-label={`Abrir coleção ${collection.path}`}
+                    >
+                      {collection.image ? (
+                        <img
+                          src={collection.image}
+                          alt=""
+                          className="absolute inset-0 h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+                          referrerPolicy="no-referrer"
+                        />
+                      ) : (
+                        <div className="absolute inset-0 flex items-center justify-center text-slate-700">
+                          <FolderOpen className="h-8 w-8" />
+                        </div>
+                      )}
+                      <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/30 to-transparent" />
+                      <div className="absolute inset-x-0 bottom-0 p-3">
+                        <strong className="block truncate text-xs font-black text-white">
+                          {collection.name}
+                        </strong>
+                        <span className="mt-0.5 block text-[9px] text-slate-400">
+                          {collection.itemCount} item(ns)
+                        </span>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </section>
+        )}
+
         {filteredOffers.length > 0 ? (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             {filteredOffers.map(product => {
               const isUnavailable = !product.isService && product.stock <= 0;
+              const productCategorySegments = splitCategoryPath(product.category);
+              const productLeafCategory =
+                productCategorySegments.at(-1) || product.category || 'Produto';
 
               return (
                 <article
@@ -434,14 +628,19 @@ export const StorefrontPanel: React.FC<StorefrontPanelProps> = ({
                       </div>
                     )}
 
-                    <span className="absolute left-3 top-3 rounded-lg border border-slate-700 bg-slate-950/85 px-2.5 py-1 font-mono text-[9px] font-bold uppercase text-slate-300 backdrop-blur-sm">
-                      {product.isService ? 'Serviço' : product.category || 'Produto'}
+                    <span className="absolute left-3 top-3 max-w-[80%] truncate rounded-lg border border-slate-700 bg-slate-950/85 px-2.5 py-1 font-mono text-[9px] font-bold uppercase text-slate-300 backdrop-blur-sm">
+                      {product.isService ? 'Serviço' : productLeafCategory}
                     </span>
                   </div>
 
                   <div className="space-y-4 p-4">
                     <div>
                       <h4 className="text-sm font-black text-white">{product.name}</h4>
+                      {productCategorySegments.length > 1 && (
+                        <p className="mt-1 line-clamp-1 font-mono text-[8px] uppercase tracking-wide text-orange-300/70">
+                          {productCategorySegments.join(' › ')}
+                        </p>
+                      )}
                       <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-slate-400">
                         {product.description || 'Descrição não informada.'}
                       </p>
@@ -485,11 +684,11 @@ export const StorefrontPanel: React.FC<StorefrontPanelProps> = ({
               <PackageSearch className="h-5 w-5" />
             </div>
             <h4 className="text-sm font-black uppercase tracking-wide text-slate-100">
-              {selectedKeyword ? 'Nenhuma oferta neste filtro' : 'Nenhuma oferta publicada'}
+              {selectedKeyword ? 'Nenhuma oferta nesta coleção' : 'Nenhuma oferta publicada'}
             </h4>
             <p className="mx-auto mt-2 max-w-sm text-xs leading-relaxed text-slate-500">
               {selectedKeyword
-                ? `Não encontramos produtos relacionados a “${selectedKeyword}”.`
+                ? `Não encontramos produtos em “${activeCollectionPath.join(' › ')}”.`
                 : 'Os produtos e serviços aparecerão aqui quando o lojista publicar ofertas vinculadas a esta vitrine.'}
             </p>
           </div>

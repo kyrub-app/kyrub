@@ -57,11 +57,13 @@ test('retailer inventory starts with two mobile columns and expands responsively
   assert.match(inventoryWorkspace, /categoryRoot\(product\.category\)/);
 });
 
-test('new product categories come from store keywords and support hierarchical levels', () => {
+test('new product categories come from store keywords and support visual hierarchical levels', () => {
   assert.match(productModal, /snapshot\.data\(\)\?\.keywords/);
   assert.match(productModal, /Categoria da loja/);
   assert.match(productModal, /product-subcategory-control/);
-  assert.match(productModal, /Vinhos → Branco → Italiano/);
+  assert.match(productModal, /Subcategorias e coleções/);
   assert.match(productModal, /join\(' > '\)/);
   assert.match(productModal, /category: categoryPath/);
+  assert.match(productModal, /categoryCollections/);
+  assert.match(productModal, /product-subcategory-media-list/);
 });

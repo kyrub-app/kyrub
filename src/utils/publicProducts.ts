@@ -12,7 +12,7 @@ import {
   type Unsubscribe,
 } from 'firebase/firestore';
 import type { User } from 'firebase/auth';
-import type { Product } from '../types';
+import type { Product, ProductCategoryCollection } from '../types';
 import { db } from './firebase';
 import {
   chooseCanonicalReadSource,
@@ -36,6 +36,7 @@ export interface PublicProductDraft {
   category: string;
   image: string;
   isService: boolean;
+  categoryCollections?: ProductCategoryCollection[];
 }
 
 export interface PublicProductCreateRequest {
@@ -64,6 +65,26 @@ const timestampToIso = (value: unknown): string => {
   return '';
 };
 
+export const parseProductCategoryCollections = (
+  value: unknown
+): ProductCategoryCollection[] => {
+  if (!Array.isArray(value)) return [];
+
+  const seen = new Set<string>();
+  return value.flatMap(candidate => {
+    if (!candidate || typeof candidate !== 'object') return [];
+    const record = candidate as Record<string, unknown>;
+    const path = cleanString(record.path);
+    const name = cleanString(record.name);
+    const image = cleanString(record.image);
+    const normalizedPath = path.toLocaleLowerCase('pt-BR');
+
+    if (!path || !name || seen.has(normalizedPath)) return [];
+    seen.add(normalizedPath);
+    return [{ path, name, image } satisfies ProductCategoryCollection];
+  });
+};
+
 export const buildPublicProduct = (
   user: Pick<User, 'uid'>,
   draft: PublicProductDraft,
@@ -75,6 +96,9 @@ export const buildPublicProduct = (
   const parsedStock = draft.isService
     ? 0
     : Number.parseInt(draft.stock || '0', 10);
+  const categoryCollections = parseProductCategoryCollections(
+    draft.categoryCollections
+  );
 
   if (!name) {
     throw new Error('Informe o nome do item.');
@@ -103,6 +127,7 @@ export const buildPublicProduct = (
     stock: draft.isService ? 0 : parsedStock,
     category,
     isService: draft.isService,
+    ...(categoryCollections.length > 0 ? { categoryCollections } : {}),
     updatedAt: new Date(now).toISOString(),
   };
 };
@@ -121,6 +146,9 @@ export const parsePublicProducts = (value: unknown): PublicProduct[] => {
     const category = cleanString(product.category);
     const price = finiteNumber(product.price);
     const stock = finiteNumber(product.stock);
+    const categoryCollections = parseProductCategoryCollections(
+      product.categoryCollections
+    );
 
     if (
       !id ||
@@ -147,6 +175,7 @@ export const parsePublicProducts = (value: unknown): PublicProduct[] => {
       stock,
       category,
       isService: product.isService === true,
+      ...(categoryCollections.length > 0 ? { categoryCollections } : {}),
       updatedAt: cleanString(product.updatedAt),
     } satisfies PublicProduct];
   });
@@ -162,6 +191,9 @@ const parseCanonicalPublicProduct = (
   const category = cleanString(value.category);
   const price = finiteNumber(value.price);
   const stock = finiteNumber(value.stock);
+  const categoryCollections = parseProductCategoryCollections(
+    value.categoryCollections
+  );
 
   if (
     !id ||
@@ -187,6 +219,7 @@ const parseCanonicalPublicProduct = (
     stock: value.isService === true ? 0 : stock,
     category,
     isService: value.isService === true,
+    ...(categoryCollections.length > 0 ? { categoryCollections } : {}),
     updatedAt:
       cleanString(value.legacyUpdatedAt) || timestampToIso(value.updatedAt),
   };
@@ -200,6 +233,9 @@ const comparableProduct = (product: PublicProduct) => ({
   image: product.image.trim(),
   stock: product.isService ? 0 : product.stock,
   category: product.category.trim(),
+  categoryCollections: parseProductCategoryCollections(
+    product.categoryCollections
+  ),
   isService: product.isService === true,
 });
 
