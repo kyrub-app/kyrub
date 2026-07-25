@@ -6,9 +6,8 @@ import { CustomerOrderInbox } from './customer/CustomerOrderInbox';
 import { CustomerTableBoard } from './customer/CustomerTableBoard';
 import { TableServiceWorkspace } from './customer/TableServiceWorkspace';
 import { CashWorkspace } from './store/CashWorkspace';
-import { MigrationReconciliationWorkspace } from './store/MigrationReconciliationWorkspace';
 import { OperationalDualWriteBridge } from './store/OperationalDualWriteBridge';
-import { StoreTeamWorkspace } from './store/StoreTeamWorkspace';
+import { ProductInventoryWorkspace } from './store/ProductInventoryWorkspace';
 import { auth } from '../utils/firebase';
 import {
   persistPublicProduct,
@@ -31,6 +30,7 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = props => {
     activeStore,
     products,
     setProducts,
+    setNewProductModal,
     triggerToast,
     activeSubTab,
   } = props;
@@ -38,13 +38,23 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = props => {
   const [ordersHost, setOrdersHost] = useState<HTMLElement | null>(null);
   const [tablesHost, setTablesHost] = useState<HTMLElement | null>(null);
   const [cashHost, setCashHost] = useState<HTMLElement | null>(null);
-  const [teamHost, setTeamHost] = useState<HTMLElement | null>(null);
+  const [productsHost, setProductsHost] = useState<HTMLElement | null>(null);
   const [customerOrders, setCustomerOrders] = useState<CustomerOrder[]>([]);
   const [busyOrderId, setBusyOrderId] = useState('');
   const [selectedTableCode, setSelectedTableCode] = useState('');
   const tableCards = useMemo(
     () => buildCustomerTableCards(customerOrders),
     [customerOrders]
+  );
+
+  const activeRetailerProducts = useMemo(
+    () =>
+      products.filter(
+        item =>
+          item.supplierId === activeRetailerId &&
+          item.wholesalePrice === undefined
+      ),
+    [activeRetailerId, products]
   );
 
   useEffect(() => {
@@ -229,40 +239,63 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = props => {
 
   useEffect(() => {
     if (activeSubTab !== 'gerencial') {
-      setTeamHost(null);
+      setProductsHost(null);
       return;
     }
 
     let cancelled = false;
     let timer = 0;
     let portalHost: HTMLDivElement | null = null;
+    let legacyProductsGrid: HTMLElement | null = null;
+    let previousDisplay = '';
 
-    const mountTeamWorkspace = (): void => {
+    const synchronizeProductsWorkspace = (): void => {
       if (cancelled) return;
-      const managementContainer = document.getElementById('erp-gerencial-tab');
 
-      if (!managementContainer) {
-        timer = window.setTimeout(mountTeamWorkspace, 40);
-        return;
+      if (portalHost && !portalHost.isConnected) {
+        portalHost = null;
+        legacyProductsGrid = null;
+        previousDisplay = '';
+        setProductsHost(null);
       }
 
-      portalHost = document.createElement('div');
-      portalHost.id = 'kyrub-store-team-workspace-host';
-      portalHost.className = 'min-w-0';
-      managementContainer.insertBefore(
-        portalHost,
-        managementContainer.firstChild
-      );
-      setTeamHost(portalHost);
+      if (!portalHost) {
+        const managementContainer = document.getElementById('erp-gerencial-tab');
+        const appearanceHeading = Array.from(
+          managementContainer?.querySelectorAll('h4') ?? []
+        ).find(
+          heading =>
+            heading.textContent?.trim().toLocaleUpperCase('pt-BR') ===
+            'APARÊNCIA DA VITRINE'
+        );
+        const candidateGrid = appearanceHeading?.closest('.grid');
+
+        if (candidateGrid instanceof HTMLElement && candidateGrid.parentElement) {
+          legacyProductsGrid = candidateGrid;
+          previousDisplay = candidateGrid.style.display;
+          candidateGrid.style.display = 'none';
+
+          portalHost = document.createElement('div');
+          portalHost.id = 'kyrub-product-inventory-workspace-host';
+          portalHost.className = 'min-w-0';
+          candidateGrid.parentElement.insertBefore(portalHost, candidateGrid);
+          setProductsHost(portalHost);
+        }
+      }
+
+      timer = window.setTimeout(synchronizeProductsWorkspace, 80);
     };
 
-    timer = window.setTimeout(mountTeamWorkspace, 0);
+    timer = window.setTimeout(synchronizeProductsWorkspace, 0);
 
     return () => {
       cancelled = true;
       window.clearTimeout(timer);
+      if (legacyProductsGrid?.isConnected) {
+        legacyProductsGrid.style.display = previousDisplay;
+      }
       portalHost?.remove();
-      setTeamHost(null);
+      setProductsHost(null);
     };
   }, [activeSubTab]);
 
@@ -338,6 +371,18 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = props => {
     setSelectedTableCode(tableCode);
   };
 
+  const handleCreateProduct = (): void => {
+    if (activeStore.plan === 'free' && activeRetailerProducts.length >= 5) {
+      triggerToast(
+        'O plano gratuito permite até 5 produtos ou serviços por loja.',
+        'error'
+      );
+      return;
+    }
+
+    setNewProductModal(true);
+  };
+
   return (
     <>
       <OperationalDualWriteBridge
@@ -361,20 +406,14 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = props => {
           />,
           cashHost
         )}
-      {teamHost &&
+      {productsHost &&
         createPortal(
-          <div className="space-y-5">
-            <MigrationReconciliationWorkspace
-              legacyStoreId={activeRetailerId}
-              notify={triggerToast}
-            />
-            <StoreTeamWorkspace
-              legacyStore={activeStore}
-              legacyStoreId={activeRetailerId}
-              notify={triggerToast}
-            />
-          </div>,
-          teamHost
+          <ProductInventoryWorkspace
+            products={activeRetailerProducts}
+            keywords={activeStore.keywords ?? []}
+            onCreateProduct={handleCreateProduct}
+          />,
+          productsHost
         )}
       {ordersHost &&
         createPortal(
