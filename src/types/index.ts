@@ -1,5 +1,11 @@
 import type { GeoPoint, Timestamp } from 'firebase/firestore';
 
+export interface ProductCategoryCollection {
+  path: string;
+  name: string;
+  image: string;
+}
+
 export interface Product {
   id: string;
   name: string;
@@ -11,6 +17,7 @@ export interface Product {
   supplierId?: string;
   isService?: boolean;
   category: string;
+  categoryCollections?: ProductCategoryCollection[];
 }
 
 export interface Store {
