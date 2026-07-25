@@ -86,7 +86,6 @@ export function PublicSocialFeedPanel({
   const visiblePosts = useMemo(() => {
     const normalizedSearch = searchQuery.trim().toLocaleLowerCase('pt-BR');
     return posts.filter(post => {
-      if (post.publicationType === 'status') return false;
       if (normalizedSearch) {
         const matches =
           matchesSearch(post.user, normalizedSearch) ||
@@ -147,17 +146,24 @@ export function PublicSocialFeedPanel({
         const comments = commentsByPost.get(post.id) ?? [];
         const isLiked = likedPostIds.has(post.id);
         const commentsOpen = expandedComments.has(post.id);
+        const isStatus = post.publicationType === 'status';
 
         return (
           <article
             key={post.id}
-            className="space-y-3 rounded-3xl border border-slate-800/80 bg-slate-900 p-4 shadow-lg"
+            className={`space-y-3 rounded-3xl border p-4 shadow-lg ${
+              isStatus
+                ? 'border-teal-500/25 bg-gradient-to-br from-teal-950/80 to-slate-900'
+                : 'border-slate-800/80 bg-slate-900'
+            }`}
           >
             <header className="flex items-center gap-3">
               <Avatar
                 src={post.avatar}
                 name={post.user}
-                className="h-10 w-10 rounded-full border border-slate-800 object-cover"
+                className={`h-10 w-10 rounded-full border-2 object-cover ${
+                  isStatus ? 'border-teal-400' : 'border-slate-800'
+                }`}
               />
               <div className="min-w-0 flex-1">
                 <h4 className="truncate text-xs font-black text-slate-100">
@@ -167,8 +173,14 @@ export function PublicSocialFeedPanel({
                   {post.time}
                 </span>
               </div>
-              <span className="rounded-full border border-orange-500/20 bg-orange-500/10 px-2 py-1 text-[8px] font-black uppercase text-orange-300">
-                Feed
+              <span
+                className={`rounded-full border px-2 py-1 text-[8px] font-black uppercase ${
+                  isStatus
+                    ? 'border-teal-500/30 bg-teal-500/10 text-teal-300'
+                    : 'border-orange-500/20 bg-orange-500/10 text-orange-300'
+                }`}
+              >
+                {isStatus ? 'Status' : 'Feed'}
               </span>
             </header>
 
