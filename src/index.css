@@ -27,3 +27,11 @@ body {
   ) {
   display: none;
 }
+
+/* The React wrapper renders the refined network panel after the legacy shell. */
+.connected-contacts-redesign-active
+  #kyrub-tab-container
+  > .space-y-5.animate-fade-in
+  > .space-y-6 {
+  display: none;
+}
