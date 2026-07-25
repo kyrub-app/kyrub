@@ -38,20 +38,14 @@ interface TableServiceWorkspaceProps {
   storeId: string;
   tableCode: string;
   products: Product[];
-  keywords: string[];
-  accentColor?: string;
   orders: CustomerOrder[];
   onClose: () => void;
   notify: (message: string, type?: 'success' | 'error' | 'info') => void;
 }
 
-type WorkspaceTab = 'catalog' | 'account' | 'transfer';
-
-type CartEntry = {
-  product: Product;
-  quantity: number;
-  note: string;
-};
+type WorkspaceView = 'catalog' | 'account' | 'transfer';
+type BusyAction = '' | 'order' | 'payment' | 'transfer';
+type CartEntry = { product: Product; quantity: number; note: string };
 
 const CONFIRMED_SALE_STATUSES = new Set<CustomerOrder['status']>([
   'accepted',
@@ -66,6 +60,9 @@ const formatCurrency = (value: number): string =>
     style: 'currency',
     currency: 'BRL',
   }).format(value);
+
+const categoryRoot = (category: string): string =>
+  category.split(/\s*(?:>|\/)\s*/)[0]?.trim() ?? '';
 
 const selectionToArray = (
   values: Record<string, number>,
@@ -91,10 +88,7 @@ const SelectionList = ({
 }) => {
   const updateQuantity = (line: TableOpenLine, quantity: number): void => {
     const safeQuantity = Math.max(0, Math.min(line.availableQuantity, quantity));
-    setSelections(previous => ({
-      ...previous,
-      [line.key]: safeQuantity,
-    }));
+    setSelections(previous => ({ ...previous, [line.key]: safeQuantity }));
   };
 
   if (lines.length === 0) {
@@ -163,12 +157,11 @@ const SelectionList = ({
               >
                 {selected > 0 && <Check className="h-3.5 w-3.5" />}
               </button>
-
               <div className="flex items-center gap-2">
                 <button
                   type="button"
                   onClick={() => updateQuantity(line, selected - 1)}
-                  className="flex h-7 w-7 items-center justify-center rounded-lg bg-slate-900 text-slate-400 hover:text-white"
+                  className="flex h-7 w-7 items-center justify-center rounded-lg bg-slate-900 text-slate-400"
                 >
                   <Minus className="h-3.5 w-3.5" />
                 </button>
@@ -178,7 +171,7 @@ const SelectionList = ({
                 <button
                   type="button"
                   onClick={() => updateQuantity(line, selected + 1)}
-                  className="flex h-7 w-7 items-center justify-center rounded-lg bg-slate-900 text-slate-400 hover:text-white"
+                  className="flex h-7 w-7 items-center justify-center rounded-lg bg-slate-900 text-slate-400"
                 >
                   <Plus className="h-3.5 w-3.5" />
                 </button>
@@ -195,14 +188,12 @@ export const TableServiceWorkspace = ({
   storeId,
   tableCode,
   products,
-  keywords,
-  accentColor = '#f97316',
   orders,
   onClose,
   notify,
 }: TableServiceWorkspaceProps) => {
-  const [activeTab, setActiveTab] = useState<WorkspaceTab>('catalog');
-  const [isOrderReviewOpen, setIsOrderReviewOpen] = useState(false);
+  const [view, setView] = useState<WorkspaceView>('catalog');
+  const [isReviewOpen, setIsReviewOpen] = useState(false);
   const [cart, setCart] = useState<Record<string, CartEntry>>({});
   const [buyerName, setBuyerName] = useState('Atendimento presencial');
   const [customerNote, setCustomerNote] = useState('');
@@ -210,11 +201,11 @@ export const TableServiceWorkspace = ({
   const [transferSelections, setTransferSelections] = useState<Record<string, number>>({});
   const [paymentMethod, setPaymentMethod] = useState<TablePaymentMethod>('cash');
   const [targetTableCode, setTargetTableCode] = useState('');
-  const [busyAction, setBusyAction] = useState<'' | 'order' | 'payment' | 'transfer'>('');
+  const [busyAction, setBusyAction] = useState<BusyAction>('');
 
   useEffect(() => {
-    setActiveTab('catalog');
-    setIsOrderReviewOpen(false);
+    setView('catalog');
+    setIsReviewOpen(false);
     setCart({});
     setBuyerName('Atendimento presencial');
     setCustomerNote('');
@@ -231,7 +222,13 @@ export const TableServiceWorkspace = ({
       ),
     [products, storeId]
   );
-
+  const staffKeywords = useMemo(
+    () =>
+      Array.from(
+        new Set(storeProducts.map(product => categoryRoot(product.category)).filter(Boolean))
+      ),
+    [storeProducts]
+  );
   const activeOrders = useMemo(
     () => getActiveTableOrders(orders, tableCode),
     [orders, tableCode]
@@ -245,18 +242,17 @@ export const TableServiceWorkspace = ({
     [orders, tableCode]
   );
   const salesByProductId = useMemo(() => {
-    const next: Record<string, number> = {};
+    const result: Record<string, number> = {};
     for (const order of orders) {
       if (!CONFIRMED_SALE_STATUSES.has(order.status)) continue;
       for (const item of order.items) {
-        next[item.productId] = (next[item.productId] ?? 0) + item.quantity;
+        result[item.productId] = (result[item.productId] ?? 0) + item.quantity;
       }
     }
-    return next;
+    return result;
   }, [orders]);
 
   const cartEntries = Object.values(cart);
-  const cartQuantity = cartEntries.reduce((sum, entry) => sum + entry.quantity, 0);
   const cartTotal = cartEntries.reduce(
     (sum, entry) => sum + entry.product.price * entry.quantity,
     0
@@ -294,22 +290,18 @@ export const TableServiceWorkspace = ({
         return next;
       }
       const current = previous[productId];
-      if (!current) return previous;
-      return {
-        ...previous,
-        [productId]: { ...current, quantity },
-      };
+      return current
+        ? { ...previous, [productId]: { ...current, quantity } }
+        : previous;
     });
   };
 
   const updateCartNote = (productId: string, note: string): void => {
     setCart(previous => {
       const current = previous[productId];
-      if (!current) return previous;
-      return {
-        ...previous,
-        [productId]: { ...current, note },
-      };
+      return current
+        ? { ...previous, [productId]: { ...current, note } }
+        : previous;
     });
   };
 
@@ -336,9 +328,9 @@ export const TableServiceWorkspace = ({
       });
       setCart({});
       setCustomerNote('');
-      setIsOrderReviewOpen(false);
+      setIsReviewOpen(false);
+      setView('account');
       notify(`Pedido da mesa ${tableCode} enviado ao KDS.`, 'success');
-      setActiveTab('account');
     } catch (error) {
       notify(
         error instanceof Error ? error.message : 'Não foi possível enviar o pedido.',
@@ -413,7 +405,7 @@ export const TableServiceWorkspace = ({
   return (
     <div className="fixed inset-0 z-[120] bg-slate-950/90 backdrop-blur-sm">
       <div className="relative mx-auto flex h-full w-full max-w-6xl flex-col overflow-hidden bg-slate-900 shadow-2xl lg:my-4 lg:h-[calc(100%-2rem)] lg:rounded-3xl lg:border lg:border-slate-800">
-        <header className="border-b border-slate-800 bg-slate-900/95 px-4 py-3 backdrop-blur-sm sm:px-6">
+        <header className="border-b border-slate-800 bg-slate-900/95 px-4 py-3 sm:px-6">
           <div className="flex items-center justify-between gap-3">
             <div className="flex min-w-0 items-center gap-3">
               <button
@@ -436,7 +428,6 @@ export const TableServiceWorkspace = ({
                 </h2>
               </div>
             </div>
-
             <div className="flex items-center gap-3">
               <div className="text-right">
                 <span className="block font-mono text-[8px] uppercase text-slate-600">
@@ -458,27 +449,29 @@ export const TableServiceWorkspace = ({
           </div>
         </header>
 
-        {activeTab === 'catalog' && (
-          <main className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-5" id="staff-shared-pdv-view">
+        {view === 'catalog' && (
+          <main
+            className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-5"
+            id="staff-shared-pdv-view"
+          >
             <SharedPdvCatalog
               idPrefix="staff-pdv"
               resetKey={`${storeId}:${tableCode}`}
               products={storeProducts}
-              keywords={keywords}
+              keywords={staffKeywords}
               selectedItems={cartEntries}
               onAddProduct={addProduct}
-              accentColor={accentColor}
               salesByProductId={salesByProductId}
               emptySelectionMessage="Selecione produtos para montar o pedido da mesa."
               emptyCatalogMessage="Nenhum produto foi cadastrado no PDV desta loja."
               primaryAction={{
-                onClick: () => setIsOrderReviewOpen(true),
+                onClick: () => setIsReviewOpen(true),
                 disabled: cartEntries.length === 0,
                 label: 'Revisar e enviar o pedido da mesa ao KDS',
                 title: 'Revisar pedido',
               }}
               secondaryAction={{
-                onClick: () => setActiveTab('account'),
+                onClick: () => setView('account'),
                 label: 'Abrir conta e operações da mesa',
                 title: 'Conta da mesa',
               }}
@@ -486,25 +479,26 @@ export const TableServiceWorkspace = ({
           </main>
         )}
 
-        {activeTab === 'account' && (
-          <main className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6" id="staff-pdv-account-view">
+        {view === 'account' && (
+          <main
+            className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6"
+            id="staff-pdv-account-view"
+          >
             <div className="mx-auto max-w-5xl">
               <div className="mb-4 flex items-center justify-between gap-3">
                 <button
                   type="button"
-                  onClick={() => setActiveTab('catalog')}
-                  className="flex min-h-10 items-center gap-2 rounded-xl border border-slate-800 bg-slate-950 px-3 text-[10px] font-black uppercase text-slate-300 hover:text-white"
+                  onClick={() => setView('catalog')}
+                  className="flex min-h-10 items-center gap-2 rounded-xl border border-slate-800 bg-slate-950 px-3 text-[10px] font-black uppercase text-slate-300"
                 >
-                  <ChevronLeft className="h-4 w-4" />
-                  Voltar ao PDV
+                  <ChevronLeft className="h-4 w-4" /> Voltar ao PDV
                 </button>
                 <button
                   type="button"
-                  onClick={() => setActiveTab('transfer')}
+                  onClick={() => setView('transfer')}
                   className="flex min-h-10 items-center gap-2 rounded-xl border border-blue-500/30 bg-blue-500/10 px-3 text-[10px] font-black uppercase text-blue-300"
                 >
-                  <ArrowRightLeft className="h-4 w-4" />
-                  Transferir
+                  <ArrowRightLeft className="h-4 w-4" /> Transferir
                 </button>
               </div>
 
@@ -548,7 +542,6 @@ export const TableServiceWorkspace = ({
                       <span>{formatCurrency(selectedPaymentTotal)}</span>
                     </div>
                   </div>
-
                   <div className="grid grid-cols-2 gap-2">
                     {(['cash', 'pix', 'card', 'other'] as TablePaymentMethod[]).map(method => (
                       <button
@@ -565,16 +558,14 @@ export const TableServiceWorkspace = ({
                       </button>
                     ))}
                   </div>
-
                   <p className="text-[9px] leading-relaxed text-slate-600">
                     Este botão registra um recebimento presencial no PDV; ele não processa transações bancárias.
                   </p>
-
                   <button
                     type="button"
                     disabled={paymentSelectionArray.length === 0 || busyAction === 'payment'}
                     onClick={() => void handleRegisterPayment()}
-                    className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 text-[10px] font-black uppercase text-white disabled:cursor-not-allowed disabled:opacity-50"
+                    className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 text-[10px] font-black uppercase text-white disabled:opacity-50"
                   >
                     <CreditCard className="h-4 w-4" />
                     {busyAction === 'payment' ? 'Registrando...' : 'Registrar pagamento'}
@@ -585,25 +576,26 @@ export const TableServiceWorkspace = ({
           </main>
         )}
 
-        {activeTab === 'transfer' && (
-          <main className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6" id="staff-pdv-transfer-view">
+        {view === 'transfer' && (
+          <main
+            className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6"
+            id="staff-pdv-transfer-view"
+          >
             <div className="mx-auto max-w-5xl">
               <div className="mb-4 flex items-center justify-between gap-3">
                 <button
                   type="button"
-                  onClick={() => setActiveTab('account')}
-                  className="flex min-h-10 items-center gap-2 rounded-xl border border-slate-800 bg-slate-950 px-3 text-[10px] font-black uppercase text-slate-300 hover:text-white"
+                  onClick={() => setView('account')}
+                  className="flex min-h-10 items-center gap-2 rounded-xl border border-slate-800 bg-slate-950 px-3 text-[10px] font-black uppercase text-slate-300"
                 >
-                  <ChevronLeft className="h-4 w-4" />
-                  Voltar à conta
+                  <ChevronLeft className="h-4 w-4" /> Voltar à conta
                 </button>
                 <button
                   type="button"
-                  onClick={() => setActiveTab('catalog')}
+                  onClick={() => setView('catalog')}
                   className="flex min-h-10 items-center gap-2 rounded-xl border border-orange-500/30 bg-orange-500/10 px-3 text-[10px] font-black uppercase text-orange-300"
                 >
-                  <ReceiptText className="h-4 w-4" />
-                  Abrir PDV
+                  <ReceiptText className="h-4 w-4" /> Abrir PDV
                 </button>
               </div>
 
@@ -660,7 +652,7 @@ export const TableServiceWorkspace = ({
                       busyAction === 'transfer'
                     }
                     onClick={() => void handleTransferItems()}
-                    className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 text-[10px] font-black uppercase text-white disabled:cursor-not-allowed disabled:opacity-50"
+                    className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 text-[10px] font-black uppercase text-white disabled:opacity-50"
                   >
                     <ArrowRightLeft className="h-4 w-4" />
                     {busyAction === 'transfer' ? 'Transferindo...' : 'Transferir itens'}
@@ -678,11 +670,11 @@ export const TableServiceWorkspace = ({
           <span className="font-mono">Mesa {tableCode}</span>
         </footer>
 
-        {isOrderReviewOpen && (
+        {isReviewOpen && (
           <div
             className="absolute inset-0 z-20 flex items-end justify-center bg-slate-950/85 backdrop-blur-sm sm:items-center sm:p-5"
             role="presentation"
-            onClick={() => busyAction !== 'order' && setIsOrderReviewOpen(false)}
+            onClick={() => busyAction !== 'order' && setIsReviewOpen(false)}
           >
             <section
               className="max-h-[92vh] w-full max-w-xl overflow-y-auto rounded-t-3xl border border-slate-800 bg-slate-900 p-4 shadow-2xl sm:rounded-3xl sm:p-5"
@@ -697,15 +689,18 @@ export const TableServiceWorkspace = ({
                   <span className="font-mono text-[9px] font-black uppercase tracking-[0.18em] text-orange-400">
                     Pedido da mesa {tableCode}
                   </span>
-                  <h3 id="staff-order-review-title" className="mt-1 text-lg font-black text-white">
+                  <h3
+                    id="staff-order-review-title"
+                    className="mt-1 text-lg font-black text-white"
+                  >
                     Revisar antes de enviar ao KDS
                   </h3>
                 </div>
                 <button
                   type="button"
-                  onClick={() => setIsOrderReviewOpen(false)}
+                  onClick={() => setIsReviewOpen(false)}
                   disabled={busyAction === 'order'}
-                  className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-800 bg-slate-950 text-slate-500 hover:text-white disabled:opacity-40"
+                  className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-800 bg-slate-950 text-slate-500 disabled:opacity-40"
                   aria-label="Fechar revisão do pedido"
                 >
                   <X className="h-4 w-4" />
@@ -792,7 +787,7 @@ export const TableServiceWorkspace = ({
                     type="button"
                     disabled={cartEntries.length === 0 || busyAction === 'order'}
                     onClick={() => void handleSendToKds()}
-                    className="flex min-h-11 items-center gap-2 rounded-xl bg-emerald-600 px-4 text-[10px] font-black uppercase text-white disabled:cursor-not-allowed disabled:opacity-50"
+                    className="flex min-h-11 items-center gap-2 rounded-xl bg-emerald-600 px-4 text-[10px] font-black uppercase text-white disabled:opacity-50"
                   >
                     <Send className="h-4 w-4" />
                     {busyAction === 'order' ? 'Enviando...' : 'Enviar ao KDS'}
