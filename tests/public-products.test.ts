@@ -3,6 +3,7 @@ import { describe, test } from 'node:test';
 import {
   buildPublicProduct,
   parsePublicProducts,
+  parseProductCategoryCollections,
 } from '../src/utils/publicProducts';
 
 describe('public marketplace products', () => {
@@ -68,6 +69,59 @@ describe('public marketplace products', () => {
     );
   });
 
+  test('persists cumulative collection paths and staff-selected images', () => {
+    const product = buildPublicProduct(
+      { uid: 'user-a' },
+      {
+        name: 'Vinho reserva',
+        description: '',
+        price: '120',
+        stock: '4',
+        category: 'Vinhos > Branco > Italiano',
+        image: '/api/media/drive?fileId=product',
+        isService: false,
+        categoryCollections: [
+          {
+            path: 'Vinhos > Branco',
+            name: 'Branco',
+            image: '/api/media/drive?fileId=white',
+          },
+          {
+            path: 'Vinhos > Branco > Italiano',
+            name: 'Italiano',
+            image: '/api/media/drive?fileId=italian',
+          },
+        ],
+      },
+      456
+    );
+
+    assert.deepEqual(product.categoryCollections, [
+      {
+        path: 'Vinhos > Branco',
+        name: 'Branco',
+        image: '/api/media/drive?fileId=white',
+      },
+      {
+        path: 'Vinhos > Branco > Italiano',
+        name: 'Italiano',
+        image: '/api/media/drive?fileId=italian',
+      },
+    ]);
+  });
+
+  test('sanitizes duplicated or malformed collection metadata', () => {
+    assert.deepEqual(
+      parseProductCategoryCollections([
+        { path: 'Vinhos > Branco', name: 'Branco', image: 'photo-a' },
+        { path: 'vinhos > branco', name: 'Repetido', image: 'photo-b' },
+        { path: '', name: 'Inválido', image: '' },
+        null,
+      ]),
+      [{ path: 'Vinhos > Branco', name: 'Branco', image: 'photo-a' }]
+    );
+  });
+
   test('parses only valid products from a public tenant document', () => {
     const parsed = parsePublicProducts([
       {
@@ -79,7 +133,14 @@ describe('public marketplace products', () => {
         price: 10,
         image: '',
         stock: 2,
-        category: 'Local',
+        category: 'Local > Artesanal',
+        categoryCollections: [
+          {
+            path: 'Local > Artesanal',
+            name: 'Artesanal',
+            image: '/api/media/drive?fileId=artisan',
+          },
+        ],
         isService: false,
         updatedAt: '2026-07-21T00:00:00.000Z',
       },
@@ -96,5 +157,12 @@ describe('public marketplace products', () => {
 
     assert.equal(parsed.length, 1);
     assert.equal(parsed[0]?.name, 'Produto A');
+    assert.deepEqual(parsed[0]?.categoryCollections, [
+      {
+        path: 'Local > Artesanal',
+        name: 'Artesanal',
+        image: '/api/media/drive?fileId=artisan',
+      },
+    ]);
   });
 });
