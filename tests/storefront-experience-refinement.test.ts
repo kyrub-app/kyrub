@@ -14,12 +14,20 @@ const checkoutSource = readFileSync(
   'src/components/modals/B2CCartDrawer.tsx',
   'utf8'
 );
+const productModalSource = readFileSync(
+  'src/components/modals/NewProductModal.tsx',
+  'utf8'
+);
 const storeConfigSource = readFileSync(
   'src/components/modals/StoreConfigModal.tsx',
   'utf8'
 );
 const storePersistenceSource = readFileSync(
   'src/utils/storePersistence.ts',
+  'utf8'
+);
+const publicProductsSource = readFileSync(
+  'src/utils/publicProducts.ts',
   'utf8'
 );
 
@@ -64,13 +72,46 @@ test('ERP-native filters precede optional store keyword filters', () => {
   assert.match(storefrontSource, /salesByProductId\[right\.id\]/);
 });
 
-test('store keywords filter products below the offers heading', () => {
+test('store keywords open exact root categories below the offers heading', () => {
   assert.match(storefrontSource, /id="storefront-offers-title"/);
   assert.match(storefrontSource, /id="storefront-keyword-filters"/);
   assert.match(storefrontSource, /storeKeywords\.map/);
   assert.match(storefrontSource, /KEYWORD_FILTER_PREFIX/);
-  assert.match(storefrontSource, /searchCorpus\.includes/);
+  assert.match(storefrontSource, /categoryStartsWithPath\(product\.category/);
+  assert.match(storefrontSource, /setCollectionPath\(\[keyword\]\)/);
   assert.match(storefrontSource, /filteredOffers\.map/);
+});
+
+test('hierarchical categories render iFood-style collection navigation', () => {
+  assert.match(storefrontSource, /id="storefront-collection-browser"/);
+  assert.match(storefrontSource, /id="storefront-collection-breadcrumb"/);
+  assert.match(storefrontSource, /id="storefront-subcategory-collections"/);
+  assert.match(storefrontSource, /buildChildCollections/);
+  assert.match(storefrontSource, /Navegue pelas coleções/);
+  assert.match(storefrontSource, /setCollectionPath\(collection\.segments\)/);
+  assert.match(storefrontSource, /activeCollectionPath\.slice\(0, index \+ 1\)/);
+  assert.match(storefrontSource, /collection\.itemCount/);
+});
+
+test('collection cards prefer staff media and fall back to a product photo', () => {
+  assert.match(storefrontSource, /findCollectionImage/);
+  assert.match(storefrontSource, /product\.categoryCollections\?\.find/);
+  assert.match(storefrontSource, /configuredImage\?\.trim\(\) \|\| product\.image\.trim\(\)/);
+  assert.match(storefrontSource, /collection\.image/);
+  assert.match(storefrontSource, /<FolderOpen/);
+});
+
+test('staff can attach Google Photos or Drive media to each subcategory level', () => {
+  assert.match(productModalSource, /type SubcategoryDraft/);
+  assert.match(productModalSource, /categoryCollections/);
+  assert.match(productModalSource, /id="product-subcategory-media-list"/);
+  assert.match(productModalSource, /Subcategorias e coleções/);
+  assert.match(productModalSource, /Imagem da coleção/);
+  assert.match(productModalSource, /<GooglePhotosImagePickerButton/);
+  assert.match(productModalSource, /<GoogleDriveImagePickerButton/);
+  assert.match(productModalSource, /categoryCollections,/);
+  assert.match(publicProductsSource, /parseProductCategoryCollections/);
+  assert.match(publicProductsSource, /categoryCollections: parseProductCategoryCollections/);
 });
 
 test('saving store keywords refreshes private state and published marketplace copies', () => {
