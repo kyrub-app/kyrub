@@ -42,6 +42,9 @@ export interface Product {
   category: string;
   categoryCollections?: ProductCategoryCollection[];
   optionGroups?: ProductOptionGroup[];
+  sourceProductId?: string;
+  selectedOptions?: ProductSelectedOption[];
+  customizationSummary?: string;
 }
 
 export interface Store {
