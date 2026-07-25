@@ -25,6 +25,7 @@ interface StoreConfigModalProps {
   producaoSpaces: string[];
   handleRemoveProducaoSpace: (space: string) => void;
   handleSaveStoreProfile: () => void;
+  profileMediaControls?: React.ReactNode;
 }
 
 export const StoreConfigModal: React.FC<StoreConfigModalProps> = ({
@@ -50,7 +51,8 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = ({
   handleAddProducaoSpace,
   producaoSpaces,
   handleRemoveProducaoSpace,
-  handleSaveStoreProfile
+  handleSaveStoreProfile,
+  profileMediaControls,
 }) => {
   const [configActiveTab, setConfigActiveTab] = useState<'perfil' | 'ambiente'>('perfil');
 
@@ -123,6 +125,8 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = ({
                   placeholder="Fale brevemente sobre o seu negócio..."
                 />
               </div>
+
+              {profileMediaControls}
 
               <div className="space-y-1">
                 <label className="text-[10px] font-mono text-slate-400 uppercase font-black">Endereço</label>

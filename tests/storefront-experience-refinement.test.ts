@@ -77,8 +77,8 @@ test('saving store keywords refreshes private state and published marketplace co
     storeConfigSource,
     /setStoreMarketplacePublication\(user, configuredStore, true\)/
   );
-  assert.match(storeConfigSource, /syncLegacyStoreState/);
-  assert.match(storeConfigSource, /props\.handleSaveStoreProfile\(\)/);
+  assert.match(storeConfigSource, /kyrub-user-store-saved/);
+  assert.match(storeConfigSource, /detail: \{ store: configuredStore \}/);
   assert.match(storePersistenceSource, /keywords: \[\.\.\.\(store\.keywords \?\? \[\]\)\]/);
   assert.match(storePersistenceSource, /keywords: fields\.keywords/);
 });
