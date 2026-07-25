@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ImagePlus, Plus, Trash2, X } from 'lucide-react';
+import { ImagePlus, Layers3, Plus, Trash2, X } from 'lucide-react';
 import { onAuthStateChanged } from 'firebase/auth';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { GoogleDriveImagePickerButton } from '../GoogleDriveImagePickerButton';
@@ -11,6 +11,7 @@ import {
   PUBLIC_PRODUCT_CREATE_EVENT,
   type PublicProductCreateRequest,
 } from '../../utils/publicProducts';
+import type { ProductCategoryCollection } from '../../types';
 
 interface NewProductModalProps {
   isOpen: boolean;
@@ -29,6 +30,13 @@ interface NewProductModalProps {
   newProdIsService: boolean;
   setNewProdIsService: (val: boolean) => void;
 }
+
+type SubcategoryDraft = {
+  id: string;
+  name: string;
+  image: string;
+  fileName: string;
+};
 
 const normalizeCategoryValue = (value: string): string =>
   value
@@ -73,11 +81,29 @@ export const NewProductModal: React.FC<NewProductModalProps> = ({
   const [categoryOptions, setCategoryOptions] = useState<string[]>([]);
   const [loadingCategories, setLoadingCategories] = useState(false);
   const [subcategoryDraft, setSubcategoryDraft] = useState('');
-  const [subcategories, setSubcategories] = useState<string[]>([]);
+  const [subcategories, setSubcategories] = useState<SubcategoryDraft[]>([]);
   const wasOpen = useRef(false);
 
   const categoryPath = useMemo(
-    () => [newProdCategory, ...subcategories].filter(Boolean).join(' > '),
+    () =>
+      [newProdCategory, ...subcategories.map(subcategory => subcategory.name)]
+        .filter(Boolean)
+        .join(' > '),
+    [newProdCategory, subcategories]
+  );
+
+  const categoryCollections = useMemo<ProductCategoryCollection[]>(
+    () =>
+      subcategories.map((subcategory, index) => ({
+        path: [
+          newProdCategory,
+          ...subcategories.slice(0, index + 1).map(level => level.name),
+        ]
+          .filter(Boolean)
+          .join(' > '),
+        name: subcategory.name,
+        image: subcategory.image.trim(),
+      })),
     [newProdCategory, subcategories]
   );
 
@@ -176,7 +202,9 @@ export const NewProductModal: React.FC<NewProductModalProps> = ({
 
     setSubcategories(current => {
       const next = [...current];
-      const normalizedValues = new Set(next.map(normalizeCategoryValue));
+      const normalizedValues = new Set(
+        next.map(subcategory => normalizeCategoryValue(subcategory.name))
+      );
 
       for (const candidate of candidates) {
         if (next.length >= 6) break;
@@ -184,12 +212,28 @@ export const NewProductModal: React.FC<NewProductModalProps> = ({
         const normalized = normalizeCategoryValue(limitedCandidate);
         if (!normalized || normalizedValues.has(normalized)) continue;
         normalizedValues.add(normalized);
-        next.push(limitedCandidate);
+        next.push({
+          id: `subcategory-${Date.now()}-${next.length}`,
+          name: limitedCandidate,
+          image: '',
+          fileName: '',
+        });
       }
 
       return next;
     });
     setSubcategoryDraft('');
+  };
+
+  const updateSubcategory = (
+    id: string,
+    patch: Partial<SubcategoryDraft>
+  ): void => {
+    setSubcategories(current =>
+      current.map(subcategory =>
+        subcategory.id === id ? { ...subcategory, ...patch } : subcategory
+      )
+    );
   };
 
   const handleSubmit = (event: React.FormEvent): void => {
@@ -218,6 +262,7 @@ export const NewProductModal: React.FC<NewProductModalProps> = ({
         price: newProdPrice,
         stock: newProdStock,
         category: categoryPath,
+        categoryCollections,
         image: imageUrl,
         isService: newProdIsService,
       });
@@ -379,11 +424,12 @@ export const NewProductModal: React.FC<NewProductModalProps> = ({
             id="product-subcategory-control"
           >
             <div>
-              <label className="block font-mono text-xs uppercase text-slate-400">
-                Subcategorias
+              <label className="flex items-center gap-2 font-mono text-xs uppercase text-slate-400">
+                <Layers3 className="h-4 w-4 text-teal-400" />
+                Subcategorias e coleções
               </label>
               <p className="mt-1 text-[10px] leading-relaxed text-slate-500">
-                Adicione um nível por vez. Exemplo: Vinhos → Branco → Italiano.
+                Adicione um nível por vez. Cada nível pode receber uma imagem própria para aparecer na navegação da vitrine.
               </p>
             </div>
 
@@ -422,27 +468,115 @@ export const NewProductModal: React.FC<NewProductModalProps> = ({
             </div>
 
             {subcategories.length > 0 && (
-              <div className="flex flex-wrap gap-2">
-                {subcategories.map((subcategory, index) => (
-                  <span
-                    key={`${normalizeCategoryValue(subcategory)}-${index}`}
-                    className="inline-flex items-center gap-1.5 rounded-full border border-teal-500/25 bg-teal-500/10 px-2.5 py-1 text-[9px] font-bold text-teal-200"
-                  >
-                    {index + 1}. {subcategory}
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setSubcategories(current =>
-                          current.filter((_, currentIndex) => currentIndex !== index)
-                        )
-                      }
-                      className="text-teal-400 hover:text-white"
-                      aria-label={`Remover subcategoria ${subcategory}`}
+              <div className="space-y-3" id="product-subcategory-media-list">
+                {subcategories.map((subcategory, index) => {
+                  const collectionPath = categoryCollections[index]?.path ?? '';
+                  return (
+                    <article
+                      key={subcategory.id}
+                      className="relative rounded-2xl border border-slate-800 bg-slate-900/75 p-3"
                     >
-                      <X className="h-3 w-3" />
-                    </button>
-                  </span>
-                ))}
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setSubcategories(current =>
+                            current.filter(level => level.id !== subcategory.id)
+                          )
+                        }
+                        className="absolute right-2 top-2 flex h-8 w-8 items-center justify-center rounded-xl border border-slate-800 bg-slate-950 text-slate-500 hover:text-red-300"
+                        aria-label={`Remover subcategoria ${subcategory.name}`}
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+
+                      <div className="pr-10">
+                        <span className="font-mono text-[8px] font-black uppercase tracking-wide text-teal-400">
+                          Coleção {index + 1}
+                        </span>
+                        <h4 className="mt-1 text-xs font-black text-white">
+                          {subcategory.name}
+                        </h4>
+                        <p className="mt-1 text-[9px] text-slate-500">
+                          {collectionPath}
+                        </p>
+                      </div>
+
+                      <div className="mt-3 grid gap-3 sm:grid-cols-[92px_minmax(0,1fr)]">
+                        <div className="aspect-square overflow-hidden rounded-2xl border border-slate-800 bg-slate-950">
+                          {subcategory.image ? (
+                            <img
+                              src={subcategory.image}
+                              alt={`Imagem da coleção ${subcategory.name}`}
+                              className="h-full w-full object-cover"
+                              referrerPolicy="no-referrer"
+                            />
+                          ) : (
+                            <div className="flex h-full w-full items-center justify-center text-slate-700">
+                              <ImagePlus className="h-6 w-6" />
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="min-w-0 space-y-2">
+                          <input
+                            type="url"
+                            value={subcategory.image}
+                            onChange={event =>
+                              updateSubcategory(subcategory.id, {
+                                image: event.target.value,
+                                fileName: '',
+                              })
+                            }
+                            placeholder="URL da imagem da coleção"
+                            className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 text-[10px] text-white focus:border-teal-500 focus:outline-none"
+                          />
+
+                          <div className="flex flex-wrap gap-2">
+                            <GooglePhotosImagePickerButton
+                              label="Galeria"
+                              onSelect={selection =>
+                                updateSubcategory(subcategory.id, {
+                                  image: selection.url,
+                                  fileName: selection.fileName,
+                                })
+                              }
+                            />
+                            <GoogleDriveImagePickerButton
+                              label="Drive"
+                              onSelect={selection =>
+                                updateSubcategory(subcategory.id, {
+                                  image: selection.url,
+                                  fileName: selection.fileName,
+                                })
+                              }
+                            />
+                            {subcategory.image && (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  updateSubcategory(subcategory.id, {
+                                    image: '',
+                                    fileName: '',
+                                  })
+                                }
+                                className="flex min-h-10 items-center gap-1.5 rounded-xl border border-red-500/20 bg-red-500/10 px-3 text-[9px] font-black uppercase text-red-300"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                                Limpar
+                              </button>
+                            )}
+                          </div>
+
+                          <p className="text-[9px] leading-relaxed text-slate-600">
+                            {subcategory.fileName
+                              ? `Arquivo selecionado: ${subcategory.fileName}`
+                              : 'Sem imagem, a vitrine usará a foto de um item desta coleção como capa.'}
+                          </p>
+                        </div>
+                      </div>
+                    </article>
+                  );
+                })}
               </div>
             )}
 
