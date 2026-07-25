@@ -1,12 +1,15 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
-  Clock3,
+  Info,
+  ListChecks,
   MapPin,
   PackageSearch,
+  Plus,
+  Send,
   ShoppingBag,
-  ShoppingCart,
   Store as StoreIcon,
-  Tag,
+  X,
+  Zap,
 } from 'lucide-react';
 import { CartItem, Product, Store } from '../types';
 
@@ -18,11 +21,24 @@ interface StorefrontPanelProps {
   handleAddToCart: (product: Product) => void;
   stores: Store[];
   setActiveConsumerStore: (store: Store) => void;
+  activeKdsOrderCount?: number;
 }
 
 type StorefrontProduct = Product & {
   storeId?: string;
 };
+
+const currencyFormatter = new Intl.NumberFormat('pt-BR', {
+  style: 'currency',
+  currency: 'BRL',
+});
+
+const normalizeSearchValue = (value: string): string =>
+  value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .toLocaleLowerCase('pt-BR');
 
 const getStoreInitials = (name: string): string => {
   const initials = name
@@ -44,7 +60,16 @@ export const StorefrontPanel: React.FC<StorefrontPanelProps> = ({
   handleAddToCart,
   stores,
   setActiveConsumerStore,
+  activeKdsOrderCount = 0,
 }) => {
+  const [selectedKeyword, setSelectedKeyword] = useState('');
+  const [isStoreInfoOpen, setIsStoreInfoOpen] = useState(false);
+
+  useEffect(() => {
+    setSelectedKeyword('');
+    setIsStoreInfoOpen(false);
+  }, [activeConsumerStore?.id]);
+
   if (!activeConsumerStore) {
     return (
       <section
@@ -90,7 +115,17 @@ export const StorefrontPanel: React.FC<StorefrontPanelProps> = ({
 
   const accentColor = activeConsumerStore.primaryColor || '#f97316';
   const cartItemsCount = cart.reduce((sum, item) => sum + item.quantity, 0);
-  const storeKeywords = activeConsumerStore.keywords?.filter(Boolean) ?? [];
+  const cartSubtotal = cart.reduce(
+    (sum, item) => sum + item.product.price * item.quantity,
+    0
+  );
+  const storeKeywords = Array.from(
+    new Set(
+      (activeConsumerStore.keywords ?? [])
+        .map(keyword => keyword.trim())
+        .filter(Boolean)
+    )
+  );
   const otherStores = stores.filter(store => store.id !== activeConsumerStore.id);
 
   const storefrontOffers = products.filter(product => {
@@ -102,33 +137,43 @@ export const StorefrontPanel: React.FC<StorefrontPanelProps> = ({
     return belongsToStore && product.wholesalePrice === undefined;
   });
 
-  const categories = Array.from(
-    new Set(storefrontOffers.map(product => product.category).filter(Boolean)),
-  );
+  const filteredOffers = selectedKeyword
+    ? storefrontOffers.filter(product => {
+        const searchCorpus = normalizeSearchValue(
+          [product.category, product.name, product.description]
+            .filter(Boolean)
+            .join(' ')
+        );
+        return searchCorpus.includes(normalizeSearchValue(selectedKeyword));
+      })
+    : storefrontOffers;
 
-  const statusMetadata = (() => {
-    switch (activeConsumerStore.status) {
-      case 'open':
-        return {
-          label: 'Aberta agora',
-          className: 'border-emerald-500/25 bg-emerald-500/10 text-emerald-300',
-        };
-      case 'delayed':
-        return {
-          label: 'Atendimento com espera',
-          className: 'border-amber-500/25 bg-amber-500/10 text-amber-300',
-        };
-      case 'closed':
-        return {
-          label: 'Fechada no momento',
-          className: 'border-slate-700 bg-slate-900 text-slate-400',
-        };
-      default:
-        return {
-          label: 'Horário não informado',
-          className: 'border-slate-700 bg-slate-900 text-slate-400',
-        };
+  const movementMetadata = (() => {
+    if (activeConsumerStore.status === 'closed') {
+      return {
+        label: 'Loja fechada',
+        colorClassName: 'text-slate-400',
+      };
     }
+
+    if (activeKdsOrderCount > 20) {
+      return {
+        label: `Movimento muito alto: ${activeKdsOrderCount} pedidos ativos`,
+        colorClassName: 'text-orange-500',
+      };
+    }
+
+    if (activeKdsOrderCount > 10) {
+      return {
+        label: `Movimento alto: ${activeKdsOrderCount} pedidos ativos`,
+        colorClassName: 'text-amber-400',
+      };
+    }
+
+    return {
+      label: `Loja aberta: ${activeKdsOrderCount} pedidos ativos`,
+      colorClassName: 'text-emerald-400',
+    };
   })();
 
   return (
@@ -158,22 +203,36 @@ export const StorefrontPanel: React.FC<StorefrontPanelProps> = ({
 
           <div className="relative z-10 flex min-h-48 flex-col justify-end gap-5 p-5 sm:p-7">
             <div className="flex items-start gap-4">
-              {activeConsumerStore.logo ? (
-                <img
-                  src={activeConsumerStore.logo}
-                  alt={activeConsumerStore.name}
-                  className="h-16 w-16 shrink-0 rounded-2xl border border-white/10 bg-slate-900 object-cover shadow-xl"
-                  referrerPolicy="no-referrer"
+              <button
+                type="button"
+                onClick={() => setIsStoreInfoOpen(true)}
+                className="group relative shrink-0 rounded-2xl outline-none focus-visible:ring-2 focus-visible:ring-orange-400"
+                aria-label={`Abrir informações públicas de ${activeConsumerStore.name}`}
+                id="storefront-store-info-trigger"
+              >
+                {activeConsumerStore.logo ? (
+                  <img
+                    src={activeConsumerStore.logo}
+                    alt={activeConsumerStore.name}
+                    className="h-16 w-16 rounded-2xl border border-white/10 bg-slate-900 object-cover shadow-xl transition-transform group-hover:scale-[1.03]"
+                    referrerPolicy="no-referrer"
+                  />
+                ) : (
+                  <span
+                    className="flex h-16 w-16 items-center justify-center rounded-2xl border border-white/10 text-xl font-black text-white shadow-xl transition-transform group-hover:scale-[1.03]"
+                    style={{ backgroundColor: accentColor }}
+                    aria-label={`Iniciais de ${activeConsumerStore.name}`}
+                  >
+                    {getStoreInitials(activeConsumerStore.name)}
+                  </span>
+                )}
+
+                <Zap
+                  className={`absolute -bottom-1 -right-1 h-5 w-5 fill-current drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)] ${movementMetadata.colorClassName}`}
+                  aria-hidden="true"
                 />
-              ) : (
-                <div
-                  className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl border border-white/10 text-xl font-black text-white shadow-xl"
-                  style={{ backgroundColor: accentColor }}
-                  aria-label={`Iniciais de ${activeConsumerStore.name}`}
-                >
-                  {getStoreInitials(activeConsumerStore.name)}
-                </div>
-              )}
+                <span className="sr-only">{movementMetadata.label}</span>
+              </button>
 
               <div className="min-w-0 flex-1">
                 <span className="font-mono text-[9px] font-black uppercase tracking-[0.2em] text-orange-300">
@@ -188,84 +247,118 @@ export const StorefrontPanel: React.FC<StorefrontPanelProps> = ({
                 </p>
               </div>
             </div>
-
-            <div className="flex flex-wrap items-center gap-2">
-              <span
-                className={`inline-flex min-h-8 items-center gap-1.5 rounded-full border px-3 py-1 text-[10px] font-bold uppercase tracking-wide ${statusMetadata.className}`}
-              >
-                <Clock3 className="h-3.5 w-3.5" />
-                {statusMetadata.label}
-              </span>
-
-              {categories.slice(0, 3).map(category => (
-                <span
-                  key={category}
-                  className="inline-flex min-h-8 items-center gap-1.5 rounded-full border border-slate-700 bg-slate-900/85 px-3 py-1 text-[10px] font-bold text-slate-300"
-                >
-                  <Tag className="h-3 w-3" />
-                  {category}
-                </span>
-              ))}
-            </div>
           </div>
         </div>
 
-        <div className="grid gap-3 border-t border-slate-800 bg-slate-950/95 p-4 sm:grid-cols-[1fr_auto] sm:items-center sm:p-5">
-          <div className="min-w-0">
-            {storeKeywords.length > 0 ? (
-              <div className="flex flex-wrap gap-2">
-                {storeKeywords.slice(0, 6).map(keyword => (
-                  <span
-                    key={keyword}
-                    className="rounded-lg bg-slate-900 px-2.5 py-1 text-[9px] font-bold text-slate-400"
-                  >
-                    #{keyword}
-                  </span>
-                ))}
-              </div>
-            ) : (
-              <span className="inline-flex items-center gap-2 text-[10px] text-slate-500">
-                <MapPin className="h-3.5 w-3.5 text-orange-400" />
-                Localização e categorias ainda não informadas
+        <div
+          className="border-t border-slate-800 bg-slate-950/95 p-4 sm:p-5"
+          id="storefront-selected-items"
+        >
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <span className="flex items-center gap-2 text-[10px] font-black uppercase tracking-wide text-slate-200">
+                <ListChecks className="h-4 w-4" style={{ color: accentColor }} />
+                Itens adicionados
               </span>
-            )}
+              <p className="mt-1 text-[10px] text-slate-500">
+                {cartItemsCount > 0
+                  ? `${cartItemsCount} item(ns) · ${currencyFormatter.format(cartSubtotal)}`
+                  : 'Selecione produtos para montar sua solicitação.'}
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setIsCartOpen(true)}
+              disabled={cartItemsCount === 0}
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl text-white shadow-lg transition-transform hover:scale-105 disabled:cursor-not-allowed disabled:opacity-35"
+              style={{ backgroundColor: accentColor }}
+              id="storefront-send-selection-btn"
+              aria-label="Revisar e enviar itens para aprovação da loja"
+              title="Revisar e enviar"
+            >
+              <Send className="h-4 w-4" />
+            </button>
           </div>
 
-          <button
-            type="button"
-            onClick={() => setIsCartOpen(true)}
-            className="flex min-h-11 items-center justify-center gap-2 rounded-2xl px-5 py-3 text-xs font-black uppercase tracking-wide text-white shadow-lg transition-transform hover:scale-[1.01]"
-            style={{ backgroundColor: accentColor }}
-            id="storefront-view-cart-btn"
-          >
-            <ShoppingCart className="h-4 w-4" />
-            Carrinho ({cartItemsCount})
-          </button>
+          {cart.length > 0 && (
+            <ul className="mt-3 grid gap-2 sm:grid-cols-2" aria-label="Itens selecionados">
+              {cart.map(item => (
+                <li
+                  key={item.product.id}
+                  className="flex min-w-0 items-center justify-between gap-3 rounded-2xl border border-slate-800 bg-slate-900/80 px-3 py-2"
+                >
+                  <span className="min-w-0 truncate text-[10px] font-bold text-slate-300">
+                    {item.quantity}× {item.product.name}
+                  </span>
+                  <span className="shrink-0 font-mono text-[9px] text-slate-500">
+                    {currencyFormatter.format(item.product.price * item.quantity)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       </section>
 
       <section className="space-y-4" aria-labelledby="storefront-offers-title">
-        <div className="flex items-center justify-between gap-3 border-b border-slate-800 pb-3">
-          <div>
-            <span className="font-mono text-[9px] uppercase tracking-[0.18em] text-slate-500">
-              Produtos e serviços publicados
+        <div className="border-b border-slate-800 pb-3">
+          <div className="flex items-end justify-between gap-3">
+            <div>
+              <span className="font-mono text-[9px] uppercase tracking-[0.18em] text-slate-500">
+                Produtos e serviços publicados
+              </span>
+              <h3
+                id="storefront-offers-title"
+                className="mt-1 flex items-center gap-2 text-lg font-black text-white"
+              >
+                <ShoppingBag className="h-5 w-5" style={{ color: accentColor }} />
+                Ofertas da loja
+              </h3>
+            </div>
+            <span className="rounded-full border border-slate-800 bg-slate-900 px-3 py-1 text-[10px] font-bold text-slate-400">
+              {filteredOffers.length} {filteredOffers.length === 1 ? 'oferta' : 'ofertas'}
             </span>
-            <h3
-              id="storefront-offers-title"
-              className="mt-1 flex items-center gap-2 text-lg font-black text-white"
-            >
-              <ShoppingBag className="h-5 w-5" style={{ color: accentColor }} />
-              Ofertas da loja
-            </h3>
           </div>
-          <span className="rounded-full border border-slate-800 bg-slate-900 px-3 py-1 text-[10px] font-bold text-slate-400">
-            {storefrontOffers.length} {storefrontOffers.length === 1 ? 'oferta' : 'ofertas'}
-          </span>
+
+          {storeKeywords.length > 0 && (
+            <div
+              className="mt-3 flex gap-2 overflow-x-auto pb-1"
+              id="storefront-keyword-filters"
+              aria-label="Filtrar ofertas pelas palavras-chave da loja"
+            >
+              <button
+                type="button"
+                onClick={() => setSelectedKeyword('')}
+                className={`min-h-9 shrink-0 rounded-xl border px-3 text-[9px] font-black uppercase tracking-wide transition-colors ${
+                  selectedKeyword === ''
+                    ? 'border-orange-500/50 bg-orange-500/15 text-orange-300'
+                    : 'border-slate-800 bg-slate-900 text-slate-500 hover:text-slate-300'
+                }`}
+              >
+                Todos
+              </button>
+              {storeKeywords.map(keyword => (
+                <button
+                  key={keyword}
+                  type="button"
+                  onClick={() => setSelectedKeyword(keyword)}
+                  className={`min-h-9 shrink-0 rounded-xl border px-3 text-[9px] font-black uppercase tracking-wide transition-colors ${
+                    selectedKeyword === keyword
+                      ? 'border-orange-500/50 bg-orange-500/15 text-orange-300'
+                      : 'border-slate-800 bg-slate-900 text-slate-500 hover:text-slate-300'
+                  }`}
+                >
+                  {keyword}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
-        {storefrontOffers.length > 0 ? (
+        {filteredOffers.length > 0 ? (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            {storefrontOffers.map(product => {
+            {filteredOffers.map(product => {
               const isUnavailable = !product.isService && product.stock <= 0;
 
               return (
@@ -307,7 +400,7 @@ export const StorefrontPanel: React.FC<StorefrontPanelProps> = ({
                           Valor
                         </span>
                         <span className="font-mono text-lg font-black text-white">
-                          R$ {product.price.toFixed(2)}
+                          {currencyFormatter.format(product.price)}
                         </span>
                         {!product.isService && (
                           <span className="mt-1 block text-[9px] text-slate-500">
@@ -324,7 +417,7 @@ export const StorefrontPanel: React.FC<StorefrontPanelProps> = ({
                         style={{ backgroundColor: accentColor }}
                         id={`add-to-cart-btn-${product.id}`}
                       >
-                        <ShoppingCart className="h-4 w-4" />
+                        <Plus className="h-4 w-4" />
                         Adicionar
                       </button>
                     </div>
@@ -339,10 +432,12 @@ export const StorefrontPanel: React.FC<StorefrontPanelProps> = ({
               <PackageSearch className="h-5 w-5" />
             </div>
             <h4 className="text-sm font-black uppercase tracking-wide text-slate-100">
-              Nenhuma oferta publicada
+              {selectedKeyword ? 'Nenhuma oferta neste filtro' : 'Nenhuma oferta publicada'}
             </h4>
             <p className="mx-auto mt-2 max-w-sm text-xs leading-relaxed text-slate-500">
-              Os produtos e serviços aparecerão aqui quando o lojista publicar ofertas vinculadas a esta vitrine.
+              {selectedKeyword
+                ? `Não encontramos produtos relacionados a “${selectedKeyword}”.`
+                : 'Os produtos e serviços aparecerão aqui quando o lojista publicar ofertas vinculadas a esta vitrine.'}
             </p>
           </div>
         )}
@@ -381,6 +476,118 @@ export const StorefrontPanel: React.FC<StorefrontPanelProps> = ({
             ))}
           </div>
         </section>
+      )}
+
+      {isStoreInfoOpen && (
+        <div
+          className="fixed inset-0 z-[70] flex items-end justify-center bg-slate-950/85 p-0 backdrop-blur-md sm:items-center sm:p-5"
+          role="presentation"
+          onClick={() => setIsStoreInfoOpen(false)}
+        >
+          <section
+            className="max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-t-3xl border border-slate-800 bg-slate-900 p-5 shadow-2xl sm:rounded-3xl sm:p-6"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="storefront-store-info-title"
+            onClick={event => event.stopPropagation()}
+            id="storefront-store-info-modal"
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex min-w-0 items-center gap-3">
+                {activeConsumerStore.logo ? (
+                  <img
+                    src={activeConsumerStore.logo}
+                    alt={activeConsumerStore.name}
+                    className="h-14 w-14 shrink-0 rounded-2xl border border-slate-800 object-cover"
+                    referrerPolicy="no-referrer"
+                  />
+                ) : (
+                  <span
+                    className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl text-base font-black text-white"
+                    style={{ backgroundColor: accentColor }}
+                  >
+                    {getStoreInitials(activeConsumerStore.name)}
+                  </span>
+                )}
+                <div className="min-w-0">
+                  <span className="font-mono text-[9px] font-black uppercase tracking-[0.18em] text-orange-400">
+                    Informações da loja
+                  </span>
+                  <h3
+                    id="storefront-store-info-title"
+                    className="mt-1 truncate text-lg font-black text-white"
+                  >
+                    {activeConsumerStore.name || 'Loja sem nome'}
+                  </h3>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setIsStoreInfoOpen(false)}
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-800 bg-slate-950 text-slate-500 hover:text-white"
+                aria-label="Fechar informações da loja"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="mt-5 space-y-4">
+              <div className="rounded-2xl border border-slate-800 bg-slate-950 p-4">
+                <span className="flex items-center gap-2 text-[10px] font-black uppercase text-slate-300">
+                  <Info className="h-4 w-4" style={{ color: accentColor }} />
+                  Sobre
+                </span>
+                <p className="mt-2 whitespace-pre-line text-xs leading-relaxed text-slate-400">
+                  {activeConsumerStore.description ||
+                    'Esta loja ainda não adicionou uma descrição pública.'}
+                </p>
+              </div>
+
+              <div className="rounded-2xl border border-slate-800 bg-slate-950 p-4">
+                <span className="flex items-center gap-2 text-[10px] font-black uppercase text-slate-300">
+                  <MapPin className="h-4 w-4" style={{ color: accentColor }} />
+                  Endereço
+                </span>
+                <p className="mt-2 text-xs leading-relaxed text-slate-400">
+                  {activeConsumerStore.address || 'Endereço não informado.'}
+                </p>
+              </div>
+
+              <div className="rounded-2xl border border-slate-800 bg-slate-950 p-4">
+                <span className="flex items-center gap-2 text-[10px] font-black uppercase text-slate-300">
+                  <Zap className={`h-4 w-4 fill-current ${movementMetadata.colorClassName}`} />
+                  Movimento atual
+                </span>
+                <p className="mt-2 text-xs leading-relaxed text-slate-400">
+                  {movementMetadata.label}
+                </p>
+              </div>
+
+              <div className="rounded-2xl border border-slate-800 bg-slate-950 p-4">
+                <span className="text-[10px] font-black uppercase text-slate-300">
+                  Palavras-chave
+                </span>
+                {storeKeywords.length > 0 ? (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {storeKeywords.map(keyword => (
+                      <span
+                        key={keyword}
+                        className="rounded-xl border border-slate-800 bg-slate-900 px-3 py-1.5 text-[9px] font-bold text-slate-400"
+                      >
+                        {keyword}
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="mt-2 text-xs text-slate-500">
+                    Palavras-chave não informadas.
+                  </p>
+                )}
+              </div>
+            </div>
+          </section>
+        </div>
       )}
     </div>
   );
