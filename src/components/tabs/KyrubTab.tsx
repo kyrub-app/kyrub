@@ -7,6 +7,7 @@ import {
   query,
   where,
 } from 'firebase/firestore';
+import { ConnectedContactsPanel } from '../ConnectedContactsPanel';
 import { KyrubTab as LegacyKyrubTab } from './LegacyKyrubTab';
 import type {
   MarketplaceListingDocument,
@@ -347,10 +348,40 @@ export function KyrubTab(props: KyrubTabProps) {
     return Array.from(storesById.values());
   }, [canonicalStores, fallbackStores]);
 
+  const isConnectedContactsActive =
+    props.socialSubTab === 'usuarios' &&
+    props.pracaFilter === 'conectados';
+
   return (
-    <LegacyKyrubTab
-      {...props}
-      storesWithCoords={publishedStores}
-    />
+    <div
+      className={
+        isConnectedContactsActive
+          ? 'connected-contacts-redesign-active'
+          : undefined
+      }
+    >
+      <LegacyKyrubTab
+        {...props}
+        storesWithCoords={publishedStores}
+      />
+
+      {isConnectedContactsActive && (
+        <ConnectedContactsPanel
+          searchQuery={props.searchQuery}
+          friends={props.friends}
+          posts={props.posts}
+          getSuggestions={props.getSuggestions}
+          connectionRequests={props.connectionRequests}
+          setConectadosSubTab={props.setConectadosSubTab}
+          handleToggleFriend={props.handleToggleFriend}
+          handleToggleFavoriteFriend={props.handleToggleFavoriteFriend}
+          setSelectedChatUser={props.setSelectedChatUser}
+          setShowChatModal={props.setShowChatModal}
+          handleAcceptRequest={props.handleAcceptRequest}
+          handleDeclineRequest={props.handleDeclineRequest}
+          triggerToast={props.triggerToast}
+        />
+      )}
+    </div>
   );
 }
