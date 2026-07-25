@@ -22,6 +22,7 @@ type LocalSocialPost = SocialPost & {
 type SocialPostsUpdatedDetail = {
   uid?: string;
   posts?: LocalSocialPost[];
+  source?: 'local' | 'cloud';
 };
 
 const LEGACY_POSTS_KEY = 'kyrub_posts';
@@ -140,6 +141,7 @@ export function SocialPublishingBridge() {
     let cloudReadyFromServer = false;
     let queuedLocalPosts: LocalSocialPost[] = [];
     let ownCloudPosts: LocalSocialPost[] = [];
+    let lastPublishedCloudSignature = '';
     const knownCloudPostIds = new Set<string>();
     const pendingCloudPostIds = new Set<string>();
 
@@ -168,16 +170,24 @@ export function SocialPublishingBridge() {
         (left, right) =>
           Date.parse(right.createdAt ?? '') - Date.parse(left.createdAt ?? '')
       );
+      const cloudSignature = JSON.stringify(sortedPosts);
+      if (cloudSignature === lastPublishedCloudSignature) return;
+
       try {
-        localStorage.setItem(getUserPostsKey(user.uid), JSON.stringify(sortedPosts));
-        localStorage.setItem(LEGACY_POSTS_KEY, JSON.stringify(sortedPosts));
+        localStorage.setItem(getUserPostsKey(user.uid), cloudSignature);
+        localStorage.setItem(LEGACY_POSTS_KEY, cloudSignature);
       } catch (error) {
         console.warn('Não foi possível atualizar o cache social local.', error);
       }
 
+      lastPublishedCloudSignature = cloudSignature;
       window.dispatchEvent(
         new CustomEvent('kyrub-social-posts-updated', {
-          detail: { uid: user.uid, posts: sortedPosts },
+          detail: {
+            uid: user.uid,
+            posts: sortedPosts,
+            source: 'cloud',
+          },
         })
       );
     };
@@ -212,6 +222,7 @@ export function SocialPublishingBridge() {
     const handlePostsUpdated = (event: Event) => {
       const detail = (event as CustomEvent<SocialPostsUpdatedDetail>).detail;
       if (
+        detail?.source === 'cloud' ||
         !activeUser ||
         detail?.uid !== activeUser.uid ||
         !Array.isArray(detail.posts)
@@ -234,6 +245,7 @@ export function SocialPublishingBridge() {
       cloudReadyFromServer = false;
       queuedLocalPosts = [];
       ownCloudPosts = [];
+      lastPublishedCloudSignature = '';
       knownCloudPostIds.clear();
       pendingCloudPostIds.clear();
 
