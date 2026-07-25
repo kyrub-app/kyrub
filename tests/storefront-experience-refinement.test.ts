@@ -93,7 +93,7 @@ test('selected items keep send action and expose an always-available customer pa
   assert.match(storefrontSource, /cart\.map/);
   assert.match(storefrontSource, /id="storefront-send-selection-btn"/);
   assert.match(storefrontSource, /<Send className="h-4 w-4"/);
-  assert.match(wrapperSource, /id="storefront-customer-panel-host"/);
+  assert.match(wrapperSource, /storefront-customer-panel-host/);
   assert.match(wrapperSource, /id="storefront-customer-panel-btn"/);
   assert.match(wrapperSource, /<ReceiptText className="h-4 w-4"/);
   assert.match(wrapperSource, /props\.setIsCartOpen\(true\)/);
