@@ -160,13 +160,13 @@ const driveRequest = async <T>(
   accessToken: string,
   init?: RequestInit
 ): Promise<T> => {
+  const headers = new Headers(init?.headers);
+  headers.set('Authorization', `Bearer ${accessToken}`);
+  if (init?.body) headers.set('Content-Type', 'application/json');
+
   const response = await fetch(`https://www.googleapis.com/drive/v3${path}`, {
     ...init,
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      ...(init?.body ? { 'Content-Type': 'application/json' } : {}),
-      ...init?.headers,
-    },
+    headers,
   });
 
   if (!response.ok) {
