@@ -204,6 +204,13 @@ export interface SocialPost {
   content: string;
   likes: number;
   mediaUrls?: string[];
+  authorId?: string;
+  publicationType?: 'feed' | 'status';
+  taggedUsers?: string[];
+  taggedUserIds?: string[];
+  createdAt?: string;
+  visibility?: 'public' | 'private';
+  commentCount?: number;
 }
 
 export interface DeliveryJob {
