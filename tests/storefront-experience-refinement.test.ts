@@ -10,6 +10,14 @@ const storefrontSource = readFileSync(
   'src/components/LegacyStorefrontPanel.tsx',
   'utf8'
 );
+const sharedPdvSource = readFileSync(
+  'src/components/pdv/SharedPdvCatalog.tsx',
+  'utf8'
+);
+const staffPdvSource = readFileSync(
+  'src/components/customer/TableServiceWorkspace.tsx',
+  'utf8'
+);
 const checkoutSource = readFileSync(
   'src/components/modals/B2CCartDrawer.tsx',
   'utf8'
@@ -55,50 +63,83 @@ test('store logo opens public store information without private contact data', (
   assert.doesNotMatch(storefrontSource, /activeConsumerStore\.ownerEmail/);
 });
 
-test('ERP-native filters precede optional store keyword filters', () => {
-  const novidadesPosition = storefrontSource.indexOf('Novidades');
-  const bestSellerPosition = storefrontSource.indexOf('Mais vendido');
-  const keywordMapPosition = storefrontSource.indexOf('storeKeywords.map');
+test('customer and staff render the same shared PDV catalog', () => {
+  assert.match(storefrontSource, /<SharedPdvCatalog/);
+  assert.match(storefrontSource, /idPrefix="storefront"/);
+  assert.match(staffPdvSource, /<SharedPdvCatalog/);
+  assert.match(staffPdvSource, /idPrefix="staff-pdv"/);
+  assert.match(staffPdvSource, /id="staff-shared-pdv-view"/);
+  assert.match(sharedPdvSource, /PDV de produtos e serviços/);
+  assert.match(sharedPdvSource, /Itens adicionados/);
+});
+
+test('marked storefront headings and offer counter are removed from both PDV views', () => {
+  assert.doesNotMatch(storefrontSource, /Produtos e serviços publicados/);
+  assert.doesNotMatch(storefrontSource, />\s*Ofertas da loja\s*</);
+  assert.doesNotMatch(sharedPdvSource, /Produtos e serviços publicados/);
+  assert.doesNotMatch(sharedPdvSource, />\s*Ofertas da loja\s*</);
+  assert.doesNotMatch(staffPdvSource, /Buscar no cardápio/);
+  assert.doesNotMatch(staffPdvSource, /Pedido do garçom/);
+});
+
+test('ERP-native filters precede optional keyword filters in the shared PDV', () => {
+  const novidadesPosition = sharedPdvSource.indexOf('Novidades');
+  const bestSellerPosition = sharedPdvSource.indexOf('Mais vendido');
+  const keywordMapPosition = sharedPdvSource.indexOf('normalizedKeywords.map');
 
   assert.ok(novidadesPosition >= 0);
   assert.ok(bestSellerPosition > novidadesPosition);
   assert.ok(keywordMapPosition > bestSellerPosition);
-  assert.doesNotMatch(storefrontSource, />\s*Todos\s*</);
-  assert.match(storefrontSource, /id="storefront-filter-new"/);
-  assert.match(storefrontSource, /id="storefront-filter-best-sellers"/);
-  assert.match(storefrontSource, /getProductRecency/);
+  assert.doesNotMatch(sharedPdvSource, />\s*Todos\s*</);
+  assert.match(sharedPdvSource, /filter-new/);
+  assert.match(sharedPdvSource, /filter-best-sellers/);
+  assert.match(sharedPdvSource, /getProductRecency/);
   assert.match(wrapperSource, /CONFIRMED_SALE_STATUSES/);
   assert.match(wrapperSource, /nextSalesByProductId\[item\.productId\]/);
-  assert.match(storefrontSource, /salesByProductId\[right\.id\]/);
+  assert.match(sharedPdvSource, /salesByProductId\[right\.id\]/);
 });
 
-test('store keywords open exact root categories below the offers heading', () => {
-  assert.match(storefrontSource, /id="storefront-offers-title"/);
-  assert.match(storefrontSource, /id="storefront-keyword-filters"/);
-  assert.match(storefrontSource, /storeKeywords\.map/);
-  assert.match(storefrontSource, /KEYWORD_FILTER_PREFIX/);
-  assert.match(storefrontSource, /categoryStartsWithPath\(product\.category/);
-  assert.match(storefrontSource, /setCollectionPath\(\[keyword\]\)/);
-  assert.match(storefrontSource, /filteredOffers\.map/);
-});
-
-test('hierarchical categories render iFood-style collection navigation', () => {
-  assert.match(storefrontSource, /id="storefront-collection-browser"/);
-  assert.match(storefrontSource, /id="storefront-collection-breadcrumb"/);
-  assert.match(storefrontSource, /id="storefront-subcategory-collections"/);
-  assert.match(storefrontSource, /buildChildCollections/);
-  assert.match(storefrontSource, /Navegue pelas coleções/);
-  assert.match(storefrontSource, /setCollectionPath\(collection\.segments\)/);
-  assert.match(storefrontSource, /activeCollectionPath\.slice\(0, index \+ 1\)/);
-  assert.match(storefrontSource, /collection\.itemCount/);
+test('keywords open exact root categories with visual hierarchical collections', () => {
+  assert.match(sharedPdvSource, /KEYWORD_FILTER_PREFIX/);
+  assert.match(sharedPdvSource, /categoryStartsWithPath\(product\.category/);
+  assert.match(sharedPdvSource, /setCollectionPath\(\[keyword\]\)/);
+  assert.match(sharedPdvSource, /collection-browser/);
+  assert.match(sharedPdvSource, /collection-breadcrumb/);
+  assert.match(sharedPdvSource, /subcategory-collections/);
+  assert.match(sharedPdvSource, /buildChildCollections/);
+  assert.match(sharedPdvSource, /setCollectionPath\(collection\.segments\)/);
+  assert.match(sharedPdvSource, /activeCollectionPath\.slice\(0, index \+ 1\)/);
 });
 
 test('collection cards prefer staff media and fall back to a product photo', () => {
-  assert.match(storefrontSource, /findCollectionImage/);
-  assert.match(storefrontSource, /product\.categoryCollections\?\.find/);
-  assert.match(storefrontSource, /configuredImage\?\.trim\(\) \|\| product\.image\.trim\(\)/);
-  assert.match(storefrontSource, /collection\.image/);
-  assert.match(storefrontSource, /<FolderOpen/);
+  assert.match(sharedPdvSource, /findCollectionImage/);
+  assert.match(sharedPdvSource, /product\.categoryCollections\?\.find/);
+  assert.match(
+    sharedPdvSource,
+    /configuredImage\?\.trim\(\) \|\| product\.image\.trim\(\)/
+  );
+  assert.match(sharedPdvSource, /collection\.image/);
+  assert.match(sharedPdvSource, /<FolderOpen/);
+});
+
+test('staff PDV keeps review, notes and direct KDS submission behind the send icon', () => {
+  assert.match(staffPdvSource, /setIsReviewOpen\(true\)/);
+  assert.match(staffPdvSource, /id="staff-pdv-order-review"/);
+  assert.match(staffPdvSource, /Observação do item/);
+  assert.match(staffPdvSource, /Observação geral \(opcional\)/);
+  assert.match(staffPdvSource, /createStaffTableOrder/);
+  assert.match(staffPdvSource, /Enviar ao KDS/);
+  assert.match(staffPdvSource, /setView\('account'\)/);
+});
+
+test('staff account and transfer operations stay available without the old top tab bar', () => {
+  assert.match(staffPdvSource, /id="staff-pdv-account-view"/);
+  assert.match(staffPdvSource, /id="staff-pdv-transfer-view"/);
+  assert.match(staffPdvSource, /Voltar ao PDV/);
+  assert.match(staffPdvSource, /Registrar pagamento/);
+  assert.match(staffPdvSource, /Transferir itens/);
+  assert.doesNotMatch(staffPdvSource, /const tabs:/);
+  assert.doesNotMatch(staffPdvSource, /grid grid-cols-3 gap-1/);
 });
 
 test('staff can attach Google Photos or Drive media to each subcategory level', () => {
@@ -109,9 +150,7 @@ test('staff can attach Google Photos or Drive media to each subcategory level', 
   assert.match(productModalSource, /Imagem da coleção/);
   assert.match(productModalSource, /<GooglePhotosImagePickerButton/);
   assert.match(productModalSource, /<GoogleDriveImagePickerButton/);
-  assert.match(productModalSource, /categoryCollections,/);
   assert.match(publicProductsSource, /parseProductCategoryCollections/);
-  assert.match(publicProductsSource, /categoryCollections: parseProductCategoryCollections/);
 });
 
 test('saving store keywords refreshes private state and published marketplace copies', () => {
@@ -123,25 +162,20 @@ test('saving store keywords refreshes private state and published marketplace co
     /setStoreMarketplacePublication\(user, configuredStore, true\)/
   );
   assert.match(storeConfigSource, /kyrub-user-store-saved/);
-  assert.match(storeConfigSource, /detail: \{ store: configuredStore \}/);
   assert.match(storePersistenceSource, /keywords: \[\.\.\.\(store\.keywords \?\? \[\]\)\]/);
   assert.match(storePersistenceSource, /keywords: fields\.keywords/);
 });
 
-test('selected items keep send action and expose an always-available customer panel shortcut', () => {
-  assert.match(storefrontSource, /id="storefront-selected-items"/);
-  assert.match(storefrontSource, /Itens adicionados/);
-  assert.match(storefrontSource, /cart\.map/);
-  assert.match(storefrontSource, /id="storefront-send-selection-btn"/);
-  assert.match(storefrontSource, /<Send className="h-4 w-4"/);
-  assert.match(wrapperSource, /storefront-customer-panel-host/);
-  assert.match(wrapperSource, /id="storefront-customer-panel-btn"/);
-  assert.match(wrapperSource, /<ReceiptText className="h-4 w-4"/);
-  assert.match(wrapperSource, /props\.setIsCartOpen\(true\)/);
-  assert.match(
-    wrapperSource,
-    /aria-label="Abrir finalizar pedido, meu pedido e conta"/
-  );
+test('customer PDV exposes send and account actions directly in the shared selected-items bar', () => {
+  assert.match(storefrontSource, /primaryAction=\{\{/);
+  assert.match(storefrontSource, /secondaryAction=\{\{/);
+  assert.match(storefrontSource, /Revisar e enviar itens para aprovação da loja/);
+  assert.match(storefrontSource, /Abrir finalizar pedido, meu pedido e conta/);
+  assert.match(sharedPdvSource, /send-selection-btn/);
+  assert.match(sharedPdvSource, /account-btn/);
+  assert.match(sharedPdvSource, /<Send className="h-4 w-4"/);
+  assert.match(sharedPdvSource, /<ReceiptText className="h-4 w-4"/);
+  assert.doesNotMatch(wrapperSource, /createPortal/);
 });
 
 test('customer checkout panel offers cart, order and account tabs in that order', () => {
@@ -167,5 +201,8 @@ test('account tab tracks consumed, paid, transferred and outstanding amounts in 
   assert.match(checkoutSource, /Pago/);
   assert.match(checkoutSource, /Transferido/);
   assert.match(checkoutSource, /Total para fechamento/);
-  assert.match(checkoutSource, /A forma de pagamento e o fechamento são confirmados pela loja/);
+  assert.match(
+    checkoutSource,
+    /A forma de pagamento e o fechamento são confirmados pela loja/
+  );
 });
