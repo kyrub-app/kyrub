@@ -6,6 +6,7 @@ import AdminControlPlaneApp from './components/admin/AdminControlPlaneApp';
 import { NoteInvitationOutboxBridge } from './components/NoteInvitationOutboxBridge';
 import { PublicStorefrontApp } from './components/PublicStorefrontApp';
 import { SocialPublishingBridge } from './components/SocialPublishingBridge';
+import { OperationalAppEntryBridge } from './components/store/OperationalAppEntryBridge';
 import { StoreSharingPortalBridge } from './components/store/StoreSharingPortalBridge';
 import { useFontSizeAccessibility } from './hooks/useFontSizeAccessibility';
 import { resolveKyrubAppRoute } from './utils/appRoutes';
@@ -99,13 +100,14 @@ function StorePersistenceBridge() {
   return null;
 }
 
-function AuthenticatedKyrubApp() {
+function AuthenticatedKyrubApp({ operational }: { operational: boolean }) {
   return (
     <>
       <StorePersistenceBridge />
       <NoteInvitationOutboxBridge />
       <SocialPublishingBridge />
       <StoreSharingPortalBridge />
+      {operational && <OperationalAppEntryBridge />}
       <LegacyApp />
     </>
   );
@@ -131,5 +133,5 @@ export default function App() {
     window.history.replaceState({}, '', route.canonicalPath);
   }
 
-  return <AuthenticatedKyrubApp />;
+  return <AuthenticatedKyrubApp operational={route.kind === 'staff-app'} />;
 }
