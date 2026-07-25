@@ -19,6 +19,10 @@
     {
       "source": "/staff",
       "destination": "/index.html"
+    },
+    {
+      "source": "/:slug/staff",
+      "destination": "/index.html"
     }
   ]
 }
