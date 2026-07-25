@@ -5,7 +5,7 @@ import type {
   ProductSelectedOption,
 } from '../types';
 
-export interface ProductConfigurationSelection {
+export interface ProductConfigurationSelection extends Product {
   lineKey: string;
   product: Product;
   unitPrice: number;
@@ -160,23 +160,31 @@ export const buildProductConfigurationSelection = (
       selectedOptions.reduce((sum, option) => sum + option.priceDelta, 0)
     ).toFixed(2)
   );
+  const lineKey = getCartLineKey(product.id, selectedOptions);
+  const customizationSummary = summaryParts.join(' · ');
+  const cartProduct: Product = {
+    ...product,
+    id: lineKey,
+    sourceProductId: product.sourceProductId ?? product.id,
+    price: unitPrice,
+    selectedOptions: [...selectedOptions],
+    customizationSummary,
+  };
 
   return {
-    lineKey: getCartLineKey(product.id, selectedOptions),
+    ...cartProduct,
+    lineKey,
     product,
     unitPrice,
     selectedOptions,
-    customizationSummary: summaryParts.join(' · '),
+    customizationSummary,
   };
 };
 
 export const configurationSelectionToCartProduct = (
   selection: ProductConfigurationSelection
 ): Product => ({
-  ...selection.product,
-  id: selection.lineKey,
-  sourceProductId: selection.product.sourceProductId ?? selection.product.id,
-  price: selection.unitPrice,
-  selectedOptions: [...selection.selectedOptions],
-  customizationSummary: selection.customizationSummary,
+  ...selection,
+  optionGroups: selection.product.optionGroups,
+  categoryCollections: selection.product.categoryCollections,
 });
