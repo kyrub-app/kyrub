@@ -4,6 +4,15 @@ import test from 'node:test';
 
 const styles = readFileSync('src/styles/responsive-product-cards.css', 'utf8');
 const main = readFileSync('src/main.tsx', 'utf8');
+const retailerPanel = readFileSync('src/components/RetailerPanel.tsx', 'utf8');
+const inventoryWorkspace = readFileSync(
+  'src/components/store/ProductInventoryWorkspace.tsx',
+  'utf8'
+);
+const productModal = readFileSync(
+  'src/components/modals/NewProductModal.tsx',
+  'utf8'
+);
 
 test('public storefront starts with two product columns on mobile', () => {
   assert.match(
@@ -28,4 +37,31 @@ test('responsive product styles load after the Tailwind entry stylesheet', () =>
 
   assert.ok(tailwindImport >= 0);
   assert.ok(responsiveImport > tailwindImport);
+});
+
+test('retailer inventory removes admin workspaces and replaces the appearance card', () => {
+  assert.doesNotMatch(retailerPanel, /MigrationReconciliationWorkspace/);
+  assert.doesNotMatch(retailerPanel, /StoreTeamWorkspace/);
+  assert.match(retailerPanel, /ProductInventoryWorkspace/);
+  assert.match(retailerPanel, /APARÊNCIA DA VITRINE/);
+  assert.match(retailerPanel, /candidateGrid\.style\.display = 'none'/);
+});
+
+test('retailer inventory starts with two mobile columns and expands responsively', () => {
+  assert.match(inventoryWorkspace, /id="erp-product-inventory-grid"/);
+  assert.match(
+    inventoryWorkspace,
+    /grid grid-cols-2[\s\S]*sm:grid-cols-3[\s\S]*lg:grid-cols-4[\s\S]*2xl:grid-cols-5/
+  );
+  assert.match(inventoryWorkspace, /id="erp-product-keyword-filters"/);
+  assert.match(inventoryWorkspace, /categoryRoot\(product\.category\)/);
+});
+
+test('new product categories come from store keywords and support hierarchical levels', () => {
+  assert.match(productModal, /snapshot\.data\(\)\?\.keywords/);
+  assert.match(productModal, /Categoria da loja/);
+  assert.match(productModal, /product-subcategory-control/);
+  assert.match(productModal, /Vinhos → Branco → Italiano/);
+  assert.match(productModal, /join\(' > '\)/);
+  assert.match(productModal, /category: categoryPath/);
 });
