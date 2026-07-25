@@ -21,6 +21,11 @@ type KyrubTabProps = React.ComponentProps<
   typeof LegacyKyrubTab
 >;
 
+type SocialPostsUpdatedDetail = {
+  uid?: string;
+  posts?: SocialPost[];
+};
+
 const CANONICAL_MARKETPLACE_READ_ENABLED =
   import.meta.env.VITE_ENABLE_CANONICAL_MARKETPLACE_READ ===
   'true';
@@ -184,6 +189,51 @@ export function KyrubTab(props: KyrubTabProps) {
 
     return unsubscribe;
   }, [setPosts]);
+
+  useEffect(() => {
+    const handleProfilePostsUpdated = (event: Event) => {
+      const detail = (
+        event as CustomEvent<SocialPostsUpdatedDetail>
+      ).detail;
+
+      if (
+        !activePostsUserId ||
+        detail?.uid !== activePostsUserId ||
+        !Array.isArray(detail.posts)
+      ) {
+        return;
+      }
+
+      setPosts(detail.posts);
+      setPostsHydrated(true);
+    };
+
+    const handleStorage = (event: StorageEvent) => {
+      if (
+        !activePostsUserId ||
+        event.key !== getUserPostsKey(activePostsUserId)
+      ) {
+        return;
+      }
+
+      setPosts(readStoredPosts(event.newValue));
+      setPostsHydrated(true);
+    };
+
+    window.addEventListener(
+      'kyrub-social-posts-updated',
+      handleProfilePostsUpdated as EventListener
+    );
+    window.addEventListener('storage', handleStorage);
+
+    return () => {
+      window.removeEventListener(
+        'kyrub-social-posts-updated',
+        handleProfilePostsUpdated as EventListener
+      );
+      window.removeEventListener('storage', handleStorage);
+    };
+  }, [activePostsUserId, setPosts]);
 
   useEffect(() => {
     if (!activePostsUserId || !postsHydrated) return;

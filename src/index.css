@@ -1,6 +1,6 @@
 @import "tailwindcss";
 
-/* Baseline inherited text; the runtime accessibility observer adds exactly 10px. */
+/* Baseline inherited text; the runtime accessibility observer adds exactly 4px. */
 body {
   font-size: 16px;
 }
@@ -18,5 +18,12 @@ body {
 
 #header-wallet-balance > button:first-child span,
 #toggle-balance-visibility-btn {
+  display: none;
+}
+
+/* The publication composer now belongs to Meu perfil. Keep Recentes focused on the feed. */
+#kyrub-tab-container section:has(
+    textarea[placeholder="O que está acontecendo no seu negócio ou região?"]
+  ) {
   display: none;
 }

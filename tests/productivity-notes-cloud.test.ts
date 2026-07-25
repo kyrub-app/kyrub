@@ -199,7 +199,8 @@ test('profile panel is organized and does not claim to store sensitive data publ
 
   assert.match(profileSource, /type ProfileSection = 'conta' \| 'dados' \| 'seguranca' \| 'verificacao'/);
   assert.match(profileSource, /Salvar perfil público/);
-  assert.match(profileSource, /updateDoc\(doc\(db, 'users', user\.uid\)/);
+  assert.match(profileSource, /setDoc\(/);
+  assert.match(profileSource, /\{ merge: true \}/);
   assert.match(profileSource, /não envia nem armazena o PIN no Firestore/);
   assert.doesNotMatch(profileSource, /Simulate Firebase Write I\/O latency/);
 });
