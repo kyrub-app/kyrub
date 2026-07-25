@@ -2,7 +2,9 @@ import { useEffect, useMemo, useState } from 'react';
 import type React from 'react';
 import { createPortal } from 'react-dom';
 import { doc, getDoc, onSnapshot } from 'firebase/firestore';
+import { Image as ImageIcon, Trash2 } from 'lucide-react';
 import { StoreConfigModal as LegacyStoreConfigModal } from './LegacyStoreConfigModal';
+import { GoogleDriveImagePickerButton } from '../GoogleDriveImagePickerButton';
 import type { MarketplaceListingDocument } from '../../types';
 import { auth, db } from '../../utils/firebase';
 import { getMarketplaceStoreListingDocumentPath } from '../../utils/marketplacePaths';
@@ -38,6 +40,8 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = props => {
   const [fallbackPublished, setFallbackPublished] = useState(false);
   const [toast, setToast] = useState<ToastState>(null);
   const [pendingSync, setPendingSync] = useState(false);
+  const [configStoreLogo, setConfigStoreLogo] = useState('');
+  const [configStoreBanner, setConfigStoreBanner] = useState('');
 
   const isPublished = canonicalPublished || fallbackPublished;
 
@@ -105,6 +109,8 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = props => {
       user.email ?? ''
     );
     setPendingSync(hasPendingUserStoreSync(localStorage, user.uid));
+    setConfigStoreLogo(cachedStore?.logo ?? '');
+    setConfigStoreBanner(cachedStore?.banner ?? '');
 
     if (!cachedStore) return;
 
@@ -155,7 +161,7 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = props => {
     const user = auth.currentUser;
     if (!user) return null;
 
-    return buildConfiguredStore(
+    const store = buildConfiguredStore(
       loadCachedUserStore(localStorage, user.uid, user.email ?? ''),
       user,
       {
@@ -166,12 +172,20 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = props => {
         keywords: props.configStoreKeywords.split(','),
       }
     );
+
+    return {
+      ...store,
+      logo: configStoreLogo.trim(),
+      banner: configStoreBanner.trim(),
+    };
   }, [
     props.configStoreName,
     props.configStoreBio,
     props.configStoreAddress,
     props.configStoreContact,
     props.configStoreKeywords,
+    configStoreLogo,
+    configStoreBanner,
   ]);
 
   const resolvePublishedState = async (uid: string): Promise<boolean> => {
@@ -214,8 +228,8 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = props => {
     );
     setPendingSync(true);
 
-    // The cache immediately preserves the controlled profile values while the
-    // private and public Firestore copies are synchronized.
+    // The cache immediately preserves every profile value, including Drive
+    // images, while the private and public Firestore copies are synchronized.
     window.dispatchEvent(
       new CustomEvent('kyrub-user-store-saved', {
         detail: { store: configuredStore },
@@ -240,8 +254,6 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = props => {
     let marketplaceSynced = true;
     if (refreshPublishedMarketplace && await resolvePublishedState(user.uid)) {
       try {
-        // Saving an already-published profile must refresh both public mirrors;
-        // otherwise keywords remain stale in the Ofertas card and storefront.
         await setStoreMarketplacePublication(user, configuredStore, true);
         setCanonicalPublished(true);
         setFallbackPublished(true);
@@ -258,23 +270,16 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = props => {
     };
   };
 
-  const syncLegacyStoreState = async (): Promise<void> => {
-    // LegacyApp owns activeStore. Reusing its existing handler keeps that state
-    // aligned immediately instead of waiting for a page reload.
-    await Promise.resolve(props.handleSaveStoreProfile());
-  };
-
   const handleSave = async (): Promise<void> => {
     setIsSaving(true);
     const result = await saveStore(true);
 
     if (result.localSaved) {
-      await syncLegacyStoreState();
       notify(
         !result.marketplaceSynced
           ? 'Perfil salvo. A atualização da vitrine pública ficou pendente.'
           : result.cloudSynced
-            ? 'Perfil e palavras-chave atualizados com sucesso!'
+            ? 'Perfil, palavras-chave e imagens atualizados com sucesso!'
             : 'Loja salva neste dispositivo. A sincronização privada ficou pendente.',
         result.marketplaceSynced && result.cloudSynced ? 'success' : 'warning'
       );
@@ -307,8 +312,6 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = props => {
     }
 
     try {
-      // Marketplace publication is independent from the private-store sync.
-      // A pending private sync must never block a public publish/pause action.
       await setStoreMarketplacePublication(
         user,
         configuredStore,
@@ -317,7 +320,6 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = props => {
 
       setCanonicalPublished(targetPublished);
       setFallbackPublished(targetPublished);
-      await syncLegacyStoreState();
 
       notify(
         targetPublished
@@ -337,9 +339,95 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = props => {
     }
   };
 
+  const profileMediaControls = (
+    <section
+      className="space-y-3 rounded-2xl border border-slate-800 bg-slate-950/55 p-4"
+      id="store-drive-media-controls"
+    >
+      <div>
+        <span className="flex items-center gap-2 text-[10px] font-black uppercase tracking-wide text-slate-300">
+          <ImageIcon className="h-4 w-4 text-teal-400" />
+          Imagens públicas da loja
+        </span>
+        <p className="mt-1 text-[10px] leading-relaxed text-slate-500">
+          Selecione imagens do seu Google Drive. O Kyrub salva apenas a referência do arquivo, não a foto no Firestore.
+        </p>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div className="space-y-2 rounded-2xl border border-slate-800 bg-slate-900/70 p-3">
+          <span className="text-[9px] font-black uppercase text-slate-400">Logo</span>
+          <div className="flex h-24 items-center justify-center overflow-hidden rounded-xl border border-slate-800 bg-slate-950">
+            {configStoreLogo ? (
+              <img
+                src={configStoreLogo}
+                alt="Prévia do logo da loja"
+                className="h-full w-full object-contain"
+                referrerPolicy="no-referrer"
+              />
+            ) : (
+              <ImageIcon className="h-7 w-7 text-slate-700" />
+            )}
+          </div>
+          <div className="flex flex-wrap items-start gap-2">
+            <GoogleDriveImagePickerButton
+              label="Escolher logo"
+              onSelect={selection => setConfigStoreLogo(selection.url)}
+            />
+            {configStoreLogo && (
+              <button
+                type="button"
+                onClick={() => setConfigStoreLogo('')}
+                className="flex min-h-10 items-center gap-1.5 rounded-xl border border-red-500/20 bg-red-500/10 px-3 text-[9px] font-black uppercase text-red-300"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                Remover
+              </button>
+            )}
+          </div>
+        </div>
+
+        <div className="space-y-2 rounded-2xl border border-slate-800 bg-slate-900/70 p-3">
+          <span className="text-[9px] font-black uppercase text-slate-400">Banner</span>
+          <div className="flex h-24 items-center justify-center overflow-hidden rounded-xl border border-slate-800 bg-slate-950">
+            {configStoreBanner ? (
+              <img
+                src={configStoreBanner}
+                alt="Prévia do banner da loja"
+                className="h-full w-full object-cover"
+                referrerPolicy="no-referrer"
+              />
+            ) : (
+              <ImageIcon className="h-7 w-7 text-slate-700" />
+            )}
+          </div>
+          <div className="flex flex-wrap items-start gap-2">
+            <GoogleDriveImagePickerButton
+              label="Escolher banner"
+              onSelect={selection => setConfigStoreBanner(selection.url)}
+            />
+            {configStoreBanner && (
+              <button
+                type="button"
+                onClick={() => setConfigStoreBanner('')}
+                className="flex min-h-10 items-center gap-1.5 rounded-xl border border-red-500/20 bg-red-500/10 px-3 text-[9px] font-black uppercase text-red-300"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                Remover
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+
   return (
     <>
-      <LegacyStoreConfigModal {...props} />
+      <LegacyStoreConfigModal
+        {...props}
+        profileMediaControls={profileMediaControls}
+      />
 
       {actionsHost &&
         createPortal(
