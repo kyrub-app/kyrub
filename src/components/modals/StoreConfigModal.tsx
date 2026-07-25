@@ -5,6 +5,7 @@ import { doc, getDoc, onSnapshot } from 'firebase/firestore';
 import { Image as ImageIcon, Trash2 } from 'lucide-react';
 import { StoreConfigModal as LegacyStoreConfigModal } from './LegacyStoreConfigModal';
 import { GoogleDriveImagePickerButton } from '../GoogleDriveImagePickerButton';
+import { GooglePhotosImagePickerButton } from '../GooglePhotosImagePickerButton';
 import type { MarketplaceListingDocument } from '../../types';
 import { auth, db } from '../../utils/firebase';
 import { getMarketplaceStoreListingDocumentPath } from '../../utils/marketplacePaths';
@@ -228,7 +229,7 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = props => {
     );
     setPendingSync(true);
 
-    // The cache immediately preserves every profile value, including Drive
+    // The cache immediately preserves every profile value, including cloud
     // images, while the private and public Firestore copies are synchronized.
     window.dispatchEvent(
       new CustomEvent('kyrub-user-store-saved', {
@@ -350,7 +351,7 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = props => {
           Imagens públicas da loja
         </span>
         <p className="mt-1 text-[10px] leading-relaxed text-slate-500">
-          Selecione imagens do seu Google Drive. O Kyrub salva apenas a referência do arquivo, não a foto no Firestore.
+          Escolha no Google Fotos ou no Drive. Fotos da galeria são copiadas para seu Drive e compartilhadas como somente leitura; o Firestore guarda apenas a referência.
         </p>
       </div>
 
@@ -370,8 +371,12 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = props => {
             )}
           </div>
           <div className="flex flex-wrap items-start gap-2">
+            <GooglePhotosImagePickerButton
+              label="Logo no Google Fotos"
+              onSelect={selection => setConfigStoreLogo(selection.url)}
+            />
             <GoogleDriveImagePickerButton
-              label="Escolher logo"
+              label="Escolher logo no Drive"
               onSelect={selection => setConfigStoreLogo(selection.url)}
             />
             {configStoreLogo && (
@@ -402,8 +407,12 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = props => {
             )}
           </div>
           <div className="flex flex-wrap items-start gap-2">
+            <GooglePhotosImagePickerButton
+              label="Banner no Google Fotos"
+              onSelect={selection => setConfigStoreBanner(selection.url)}
+            />
             <GoogleDriveImagePickerButton
-              label="Escolher banner"
+              label="Escolher banner no Drive"
               onSelect={selection => setConfigStoreBanner(selection.url)}
             />
             {configStoreBanner && (
