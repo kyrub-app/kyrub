@@ -11,6 +11,10 @@ const publicStorefrontDataSource = readFileSync(
   'src/utils/publicStorefront.ts',
   'utf8'
 );
+const operationalEntrySource = readFileSync(
+  'src/components/store/OperationalAppEntryBridge.tsx',
+  'utf8'
+);
 const sharingPanelSource = readFileSync(
   'src/components/store/StoreSharingPanel.tsx',
   'utf8'
@@ -27,6 +31,15 @@ test('application routes public slugs before the authenticated legacy shell', ()
   assert.match(appSource, /<PublicStorefrontApp slug=\{route\.slug\}/);
   assert.match(appSource, /route\.legacyRedirect/);
   assert.match(appSource, /window\.history\.replaceState\(\{\}, '', route\.canonicalPath\)/);
+});
+
+test('the operational route opens the real retailer workspace after Google authentication', () => {
+  assert.match(appSource, /operational=\{route\.kind === 'staff-app'\}/);
+  assert.match(appSource, /<OperationalAppEntryBridge/);
+  assert.match(operationalEntrySource, /onAuthStateChanged/);
+  assert.match(operationalEntrySource, /btn-criar-loja-ofertas/);
+  assert.match(operationalEntrySource, /rendaButton\.click\(\)/);
+  assert.match(operationalEntrySource, /retailerButton\.click\(\)/);
 });
 
 test('direct storefront keeps checkout authenticated and opens the existing PDV', () => {
