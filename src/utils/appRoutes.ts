@@ -48,7 +48,10 @@ export const resolveKyrubAppRoute = (pathname: string): KyrubAppRoute => {
     .replace(/\/{2,}/g, '/')
     .replace(/\/$/, '') || '/';
 
-  if (cleanPath === LEGACY_STAFF_PATH) {
+  if (
+    cleanPath === LEGACY_STAFF_PATH ||
+    cleanPath.endsWith(LEGACY_STAFF_PATH)
+  ) {
     return {
       kind: 'staff-app',
       canonicalPath: OPERATIONAL_PATH,
