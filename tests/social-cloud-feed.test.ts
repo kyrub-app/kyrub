@@ -23,7 +23,7 @@ const firebaseSource = readFileSync('src/utils/firebase.ts', 'utf8');
 const firebaseConfig = JSON.parse(readFileSync('firebase.json', 'utf8'));
 const storageRules = readFileSync('storage.rules', 'utf8');
 
- test('local profile publications are migrated to Firestore and Storage', () => {
+test('local profile publications are migrated to Firestore and Storage', () => {
   assert.match(appSource, /<SocialPublishingBridge \/>/);
   assert.match(bridgeSource, /collection\(db, 'social_posts'\)/);
   assert.match(bridgeSource, /uploadString\(/);
@@ -32,6 +32,14 @@ const storageRules = readFileSync('storage.rules', 'utf8');
   assert.match(bridgeSource, /kyrub-social-posts-updated/);
   assert.match(firebaseSource, /getStorage/);
   assert.match(firebaseSource, /export const storage/);
+});
+
+test('cloud state broadcasts cannot synchronously consume themselves', () => {
+  assert.match(bridgeSource, /source\?: 'local' \| 'cloud'/);
+  assert.match(bridgeSource, /source: 'cloud'/);
+  assert.match(bridgeSource, /detail\?\.source === 'cloud'/);
+  assert.match(bridgeSource, /lastPublishedCloudSignature/);
+  assert.match(bridgeSource, /cloudSignature === lastPublishedCloudSignature/);
 });
 
 test('Praça reads posts, likes and comments in realtime', () => {
