@@ -4,6 +4,7 @@ import rateLimit from "express-rate-limit";
 import dotenv from "dotenv";
 import { GoogleGenAI } from "@google/genai";
 import { createServer as createViteServer } from "vite";
+import { proxyPublicGoogleDriveImage } from "./server/driveMediaProxy";
 
 // Load environment variables
 dotenv.config();
@@ -42,6 +43,17 @@ const geminiRateLimiter = rateLimit({
   message: {
     error: "Limite de taxa excedido. Requisições para o Mentor Kyrub estão limitadas a 20 por minuto para controle de custos.",
     code: "TOO_MANY_REQUESTS"
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+const driveMediaRateLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 180,
+  message: {
+    error: "Muitas solicitações de imagens. Tente novamente em instantes.",
+    code: "TOO_MANY_MEDIA_REQUESTS",
   },
   standardHeaders: true,
   legacyHeaders: false,
@@ -87,6 +99,13 @@ Ajude o usuário com conselhos realistas sobre concorrência no Firestore, estra
     res.status(500).json({ error: "Erro interno ao processar inteligência do Mentor Kyrub: " + (error.message || String(error)) });
   }
 });
+
+app.get(
+  "/api/media/drive",
+  driveMediaRateLimiter,
+  async (req: express.Request, res: express.Response) =>
+    proxyPublicGoogleDriveImage(req.query.fileId, res)
+);
 
 // Simple health check
 app.get("/api/health", (req, res) => {
