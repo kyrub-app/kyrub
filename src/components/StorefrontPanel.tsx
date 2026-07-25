@@ -17,9 +17,17 @@ const KDS_ACTIVE_STATUSES = new Set<CustomerOrderStatus>([
   'ready',
 ]);
 
+const CONFIRMED_SALE_STATUSES = new Set<CustomerOrderStatus>([
+  'accepted',
+  'preparing',
+  'ready',
+  'out_for_delivery',
+  'completed',
+]);
+
 type StorefrontPanelProps = Omit<
   React.ComponentProps<typeof LegacyStorefrontPanel>,
-  'activeKdsOrderCount'
+  'activeKdsOrderCount' | 'salesByProductId'
 >;
 
 export const StorefrontPanel: React.FC<StorefrontPanelProps> = props => {
@@ -28,6 +36,9 @@ export const StorefrontPanel: React.FC<StorefrontPanelProps> = props => {
     null
   );
   const [activeKdsOrderCount, setActiveKdsOrderCount] = useState(0);
+  const [salesByProductId, setSalesByProductId] = useState<Record<string, number>>(
+    {}
+  );
 
   useEffect(() => {
     setPublicProducts(null);
@@ -51,6 +62,7 @@ export const StorefrontPanel: React.FC<StorefrontPanelProps> = props => {
 
   useEffect(() => {
     setActiveKdsOrderCount(0);
+    setSalesByProductId({});
     if (!storeId) return;
 
     return subscribeToStoreCustomerOrders(
@@ -59,10 +71,21 @@ export const StorefrontPanel: React.FC<StorefrontPanelProps> = props => {
         setActiveKdsOrderCount(
           orders.filter(order => KDS_ACTIVE_STATUSES.has(order.status)).length
         );
+
+        const nextSalesByProductId: Record<string, number> = {};
+        for (const order of orders) {
+          if (!CONFIRMED_SALE_STATUSES.has(order.status)) continue;
+          for (const item of order.items) {
+            nextSalesByProductId[item.productId] =
+              (nextSalesByProductId[item.productId] ?? 0) + item.quantity;
+          }
+        }
+        setSalesByProductId(nextSalesByProductId);
       },
       error => {
         console.warn('Carga atual do KDS indisponível para a vitrine.', error);
         setActiveKdsOrderCount(0);
+        setSalesByProductId({});
       }
     );
   }, [storeId]);
@@ -81,6 +104,7 @@ export const StorefrontPanel: React.FC<StorefrontPanelProps> = props => {
       {...props}
       products={publicProducts ?? localStoreProducts}
       activeKdsOrderCount={activeKdsOrderCount}
+      salesByProductId={salesByProductId}
     />
   );
 };

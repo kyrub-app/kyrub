@@ -22,11 +22,17 @@ interface StorefrontPanelProps {
   stores: Store[];
   setActiveConsumerStore: (store: Store) => void;
   activeKdsOrderCount?: number;
+  salesByProductId?: Record<string, number>;
 }
 
 type StorefrontProduct = Product & {
   storeId?: string;
+  updatedAt?: string;
 };
+
+type NativeStorefrontFilter = 'new' | 'best_sellers';
+
+const KEYWORD_FILTER_PREFIX = 'keyword:';
 
 const currencyFormatter = new Intl.NumberFormat('pt-BR', {
   style: 'currency',
@@ -52,6 +58,23 @@ const getStoreInitials = (name: string): string => {
   return initials || 'K';
 };
 
+const getProductRecency = (product: Product): number => {
+  const storefrontProduct = product as StorefrontProduct;
+  const updatedAt = storefrontProduct.updatedAt?.trim() ?? '';
+  const parsedUpdatedAt = Date.parse(updatedAt);
+  if (Number.isFinite(parsedUpdatedAt)) return parsedUpdatedAt;
+
+  const idTimestamp = product.id.match(/(\d{10,})$/)?.[1];
+  const parsedIdTimestamp = idTimestamp ? Number(idTimestamp) : 0;
+  return Number.isFinite(parsedIdTimestamp) ? parsedIdTimestamp : 0;
+};
+
+const sortByNewest = (offers: Product[]): Product[] =>
+  [...offers].sort((left, right) => {
+    const recencyDifference = getProductRecency(right) - getProductRecency(left);
+    return recencyDifference || right.id.localeCompare(left.id);
+  });
+
 export const StorefrontPanel: React.FC<StorefrontPanelProps> = ({
   activeConsumerStore,
   products,
@@ -61,12 +84,15 @@ export const StorefrontPanel: React.FC<StorefrontPanelProps> = ({
   stores,
   setActiveConsumerStore,
   activeKdsOrderCount = 0,
+  salesByProductId = {},
 }) => {
-  const [selectedKeyword, setSelectedKeyword] = useState('');
+  const [selectedFilter, setSelectedFilter] = useState<
+    NativeStorefrontFilter | string
+  >('new');
   const [isStoreInfoOpen, setIsStoreInfoOpen] = useState(false);
 
   useEffect(() => {
-    setSelectedKeyword('');
+    setSelectedFilter('new');
     setIsStoreInfoOpen(false);
   }, [activeConsumerStore?.id]);
 
@@ -137,16 +163,34 @@ export const StorefrontPanel: React.FC<StorefrontPanelProps> = ({
     return belongsToStore && product.wholesalePrice === undefined;
   });
 
-  const filteredOffers = selectedKeyword
-    ? storefrontOffers.filter(product => {
-        const searchCorpus = normalizeSearchValue(
-          [product.category, product.name, product.description]
-            .filter(Boolean)
-            .join(' ')
-        );
-        return searchCorpus.includes(normalizeSearchValue(selectedKeyword));
-      })
-    : storefrontOffers;
+  const selectedKeyword = selectedFilter.startsWith(KEYWORD_FILTER_PREFIX)
+    ? selectedFilter.slice(KEYWORD_FILTER_PREFIX.length)
+    : '';
+
+  const filteredOffers = (() => {
+    if (selectedFilter === 'best_sellers') {
+      return sortByNewest(storefrontOffers).sort((left, right) => {
+        const salesDifference =
+          (salesByProductId[right.id] ?? 0) - (salesByProductId[left.id] ?? 0);
+        return salesDifference || getProductRecency(right) - getProductRecency(left);
+      });
+    }
+
+    if (selectedKeyword) {
+      return sortByNewest(
+        storefrontOffers.filter(product => {
+          const searchCorpus = normalizeSearchValue(
+            [product.category, product.name, product.description]
+              .filter(Boolean)
+              .join(' ')
+          );
+          return searchCorpus.includes(normalizeSearchValue(selectedKeyword));
+        })
+      );
+    }
+
+    return sortByNewest(storefrontOffers);
+  })();
 
   const movementMetadata = (() => {
     if (activeConsumerStore.status === 'closed') {
@@ -175,6 +219,13 @@ export const StorefrontPanel: React.FC<StorefrontPanelProps> = ({
       colorClassName: 'text-emerald-400',
     };
   })();
+
+  const filterButtonClassName = (active: boolean): string =>
+    `min-h-9 shrink-0 rounded-xl border px-3 text-[9px] font-black uppercase tracking-wide transition-colors ${
+      active
+        ? 'border-orange-500/50 bg-orange-500/15 text-orange-300'
+        : 'border-slate-800 bg-slate-900 text-slate-500 hover:text-slate-300'
+    }`;
 
   return (
     <div className="space-y-6 animate-fade-in" id="storefront-panel-container">
@@ -321,39 +372,41 @@ export const StorefrontPanel: React.FC<StorefrontPanelProps> = ({
             </span>
           </div>
 
-          {storeKeywords.length > 0 && (
-            <div
-              className="mt-3 flex gap-2 overflow-x-auto pb-1"
-              id="storefront-keyword-filters"
-              aria-label="Filtrar ofertas pelas palavras-chave da loja"
+          <div
+            className="mt-3 flex gap-2 overflow-x-auto pb-1"
+            id="storefront-keyword-filters"
+            aria-label="Filtros nativos do ERP e palavras-chave da loja"
+          >
+            <button
+              type="button"
+              onClick={() => setSelectedFilter('new')}
+              className={filterButtonClassName(selectedFilter === 'new')}
+              id="storefront-filter-new"
             >
-              <button
-                type="button"
-                onClick={() => setSelectedKeyword('')}
-                className={`min-h-9 shrink-0 rounded-xl border px-3 text-[9px] font-black uppercase tracking-wide transition-colors ${
-                  selectedKeyword === ''
-                    ? 'border-orange-500/50 bg-orange-500/15 text-orange-300'
-                    : 'border-slate-800 bg-slate-900 text-slate-500 hover:text-slate-300'
-                }`}
-              >
-                Todos
-              </button>
-              {storeKeywords.map(keyword => (
+              Novidades
+            </button>
+            <button
+              type="button"
+              onClick={() => setSelectedFilter('best_sellers')}
+              className={filterButtonClassName(selectedFilter === 'best_sellers')}
+              id="storefront-filter-best-sellers"
+            >
+              Mais vendido
+            </button>
+            {storeKeywords.map(keyword => {
+              const filterId = `${KEYWORD_FILTER_PREFIX}${keyword}`;
+              return (
                 <button
                   key={keyword}
                   type="button"
-                  onClick={() => setSelectedKeyword(keyword)}
-                  className={`min-h-9 shrink-0 rounded-xl border px-3 text-[9px] font-black uppercase tracking-wide transition-colors ${
-                    selectedKeyword === keyword
-                      ? 'border-orange-500/50 bg-orange-500/15 text-orange-300'
-                      : 'border-slate-800 bg-slate-900 text-slate-500 hover:text-slate-300'
-                  }`}
+                  onClick={() => setSelectedFilter(filterId)}
+                  className={filterButtonClassName(selectedFilter === filterId)}
                 >
                   {keyword}
                 </button>
-              ))}
-            </div>
-          )}
+              );
+            })}
+          </div>
         </div>
 
         {filteredOffers.length > 0 ? (
