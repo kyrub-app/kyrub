@@ -4,6 +4,7 @@ import { doc, onSnapshot } from 'firebase/firestore';
 import LegacyApp from './LegacyApp';
 import AdminControlPlaneApp from './components/admin/AdminControlPlaneApp';
 import { NoteInvitationOutboxBridge } from './components/NoteInvitationOutboxBridge';
+import { SocialPublishingBridge } from './components/SocialPublishingBridge';
 import { useFontSizeAccessibility } from './hooks/useFontSizeAccessibility';
 import { auth, db } from './utils/firebase';
 import { isAdminControlPlaneLocation } from './utils/adminControlPlane';
@@ -109,6 +110,7 @@ export default function App() {
     <>
       <StorePersistenceBridge />
       <NoteInvitationOutboxBridge />
+      <SocialPublishingBridge />
       <LegacyApp />
     </>
   );
