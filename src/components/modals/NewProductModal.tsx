@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ImagePlus, Plus } from 'lucide-react';
+import { ImagePlus, Plus, Trash2 } from 'lucide-react';
+import { GoogleDriveImagePickerButton } from '../GoogleDriveImagePickerButton';
 import { auth } from '../../utils/firebase';
 import {
   buildPublicProduct,
@@ -42,6 +43,7 @@ export const NewProductModal: React.FC<NewProductModalProps> = ({
   setNewProdIsService,
 }) => {
   const [imageUrl, setImageUrl] = useState('');
+  const [driveFileName, setDriveFileName] = useState('');
   const [formError, setFormError] = useState('');
   const wasOpen = useRef(false);
 
@@ -54,6 +56,7 @@ export const NewProductModal: React.FC<NewProductModalProps> = ({
       setNewProdDesc('');
       setNewProdIsService(false);
       setImageUrl('');
+      setDriveFileName('');
       setFormError('');
     }
 
@@ -116,6 +119,7 @@ export const NewProductModal: React.FC<NewProductModalProps> = ({
       setNewProdDesc('');
       setNewProdIsService(false);
       setImageUrl('');
+      setDriveFileName('');
       onClose();
     } catch (error) {
       setFormError(
@@ -206,19 +210,67 @@ export const NewProductModal: React.FC<NewProductModalProps> = ({
 
             <div>
               <label className="mb-1.5 block font-mono text-xs uppercase text-slate-400">
-                Imagem por URL
+                Imagem do item
               </label>
               <div className="relative">
                 <ImagePlus className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-600" />
                 <input
                   type="url"
                   value={imageUrl}
-                  onChange={event => setImageUrl(event.target.value)}
-                  placeholder="Cole uma URL, ou deixe vazio"
+                  onChange={event => {
+                    setImageUrl(event.target.value);
+                    setDriveFileName('');
+                  }}
+                  placeholder="URL externa ou imagem do Drive"
                   className="w-full rounded-xl border border-slate-800 bg-slate-950 py-2 pl-10 pr-3.5 text-sm text-white focus:border-teal-500 focus:outline-none"
                 />
               </div>
             </div>
+          </div>
+
+          <div
+            className="space-y-3 rounded-2xl border border-slate-800 bg-slate-950/55 p-3"
+            id="product-drive-image-control"
+          >
+            {imageUrl && (
+              <div className="overflow-hidden rounded-xl border border-slate-800 bg-slate-950">
+                <img
+                  src={imageUrl}
+                  alt="Prévia da imagem do produto"
+                  className="h-36 w-full object-cover"
+                  referrerPolicy="no-referrer"
+                />
+              </div>
+            )}
+
+            <div className="flex flex-wrap items-start gap-2">
+              <GoogleDriveImagePickerButton
+                label="Selecionar foto do Drive"
+                onSelect={selection => {
+                  setImageUrl(selection.url);
+                  setDriveFileName(selection.fileName);
+                }}
+              />
+              {imageUrl && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setImageUrl('');
+                    setDriveFileName('');
+                  }}
+                  className="flex min-h-10 items-center gap-1.5 rounded-xl border border-red-500/20 bg-red-500/10 px-3 text-[9px] font-black uppercase text-red-300"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  Remover imagem
+                </button>
+              )}
+            </div>
+
+            <p className="text-[10px] leading-relaxed text-slate-500">
+              {driveFileName
+                ? `Arquivo selecionado: ${driveFileName}`
+                : 'O arquivo escolhido será compartilhado publicamente como somente leitura. O Firestore receberá apenas a referência da imagem.'}
+            </p>
           </div>
 
           <div>
