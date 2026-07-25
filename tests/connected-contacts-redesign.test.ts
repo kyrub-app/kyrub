@@ -36,10 +36,10 @@ test('contact card actions are positioned as favorite, chat and overflow menu', 
   assert.match(panelSource, /handleToggleFavoriteFriend\(friend\.id\)/);
   assert.match(panelSource, /setShowChatModal\(true\)/);
   assert.match(panelSource, /<EllipsisVertical/);
-  assert.match(panelSource, />Desconectar</);
-  assert.match(panelSource, />Bloquear</);
-  assert.match(panelSource, />Denunciar</);
-  assert.doesNotMatch(panelSource, />Registro</);
+  assert.match(panelSource, />\s*Desconectar\s*</);
+  assert.match(panelSource, />\s*Bloquear\s*</);
+  assert.match(panelSource, />\s*Denunciar\s*</);
+  assert.doesNotMatch(panelSource, />\s*Registro\s*</);
 });
 
 test('suggestions and requests are modal lists with suggestion dismissal', () => {
