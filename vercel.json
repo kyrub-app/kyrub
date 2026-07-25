@@ -1,0 +1,28 @@
+{
+  "rewrites": [
+    {
+      "source": "/app",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/app/:path*",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/@:slug",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/@:slug/:path*",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/staff",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/:slug/staff",
+      "destination": "/index.html"
+    }
+  ]
+}

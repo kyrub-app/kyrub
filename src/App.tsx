@@ -4,8 +4,12 @@ import { doc, onSnapshot } from 'firebase/firestore';
 import LegacyApp from './LegacyApp';
 import AdminControlPlaneApp from './components/admin/AdminControlPlaneApp';
 import { NoteInvitationOutboxBridge } from './components/NoteInvitationOutboxBridge';
+import { PublicStorefrontApp } from './components/PublicStorefrontApp';
 import { SocialPublishingBridge } from './components/SocialPublishingBridge';
+import { OperationalAppEntryBridge } from './components/store/OperationalAppEntryBridge';
+import { StoreSharingPortalBridge } from './components/store/StoreSharingPortalBridge';
 import { useFontSizeAccessibility } from './hooks/useFontSizeAccessibility';
+import { resolveKyrubAppRoute } from './utils/appRoutes';
 import { auth, db } from './utils/firebase';
 import { isAdminControlPlaneLocation } from './utils/adminControlPlane';
 import {
@@ -96,6 +100,19 @@ function StorePersistenceBridge() {
   return null;
 }
 
+function AuthenticatedKyrubApp({ operational }: { operational: boolean }) {
+  return (
+    <>
+      <StorePersistenceBridge />
+      <NoteInvitationOutboxBridge />
+      <SocialPublishingBridge />
+      <StoreSharingPortalBridge />
+      {operational && <OperationalAppEntryBridge />}
+      <LegacyApp />
+    </>
+  );
+}
+
 export default function App() {
   useFontSizeAccessibility();
 
@@ -106,12 +123,15 @@ export default function App() {
 
   if (adminControlPlane) return <AdminControlPlaneApp />;
 
-  return (
-    <>
-      <StorePersistenceBridge />
-      <NoteInvitationOutboxBridge />
-      <SocialPublishingBridge />
-      <LegacyApp />
-    </>
-  );
+  const route = resolveKyrubAppRoute(window.location.pathname);
+
+  if (route.kind === 'public-storefront') {
+    return <PublicStorefrontApp slug={route.slug} />;
+  }
+
+  if (route.kind === 'staff-app' && route.legacyRedirect) {
+    window.history.replaceState({}, '', route.canonicalPath);
+  }
+
+  return <AuthenticatedKyrubApp operational={route.kind === 'staff-app'} />;
 }
