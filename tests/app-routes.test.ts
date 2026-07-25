@@ -39,8 +39,13 @@ describe('Kyrub public and operational routes', () => {
     assert.equal(resolveKyrubAppRoute('/app/lojas/store-a/pdv').kind, 'staff-app');
   });
 
-  test('redirects the legacy staff path to the authenticated operational app', () => {
+  test('redirects every legacy staff alias to the authenticated operational app', () => {
     assert.deepEqual(resolveKyrubAppRoute('/staff'), {
+      kind: 'staff-app',
+      canonicalPath: '/app',
+      legacyRedirect: true,
+    });
+    assert.deepEqual(resolveKyrubAppRoute('/do-mau/staff'), {
       kind: 'staff-app',
       canonicalPath: '/app',
       legacyRedirect: true,
