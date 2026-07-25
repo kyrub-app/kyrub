@@ -6,6 +6,7 @@ import AdminControlPlaneApp from './components/admin/AdminControlPlaneApp';
 import { NoteInvitationOutboxBridge } from './components/NoteInvitationOutboxBridge';
 import { PublicStorefrontApp } from './components/PublicStorefrontApp';
 import { SocialPublishingBridge } from './components/SocialPublishingBridge';
+import { StoreSharingPortalBridge } from './components/store/StoreSharingPortalBridge';
 import { useFontSizeAccessibility } from './hooks/useFontSizeAccessibility';
 import { resolveKyrubAppRoute } from './utils/appRoutes';
 import { auth, db } from './utils/firebase';
@@ -104,6 +105,7 @@ function AuthenticatedKyrubApp() {
       <StorePersistenceBridge />
       <NoteInvitationOutboxBridge />
       <SocialPublishingBridge />
+      <StoreSharingPortalBridge />
       <LegacyApp />
     </>
   );
