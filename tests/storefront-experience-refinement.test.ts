@@ -10,6 +10,10 @@ const storefrontSource = readFileSync(
   'src/components/LegacyStorefrontPanel.tsx',
   'utf8'
 );
+const checkoutSource = readFileSync(
+  'src/components/modals/B2CCartDrawer.tsx',
+  'utf8'
+);
 const storeConfigSource = readFileSync(
   'src/components/modals/StoreConfigModal.tsx',
   'utf8'
@@ -83,14 +87,44 @@ test('saving store keywords refreshes private state and published marketplace co
   assert.match(storePersistenceSource, /keywords: fields\.keywords/);
 });
 
-test('selected items replace the old cart strip and use a send-only action', () => {
+test('selected items keep send action and expose an always-available customer panel shortcut', () => {
   assert.match(storefrontSource, /id="storefront-selected-items"/);
   assert.match(storefrontSource, /Itens adicionados/);
   assert.match(storefrontSource, /cart\.map/);
   assert.match(storefrontSource, /id="storefront-send-selection-btn"/);
   assert.match(storefrontSource, /<Send className="h-4 w-4"/);
+  assert.match(wrapperSource, /storefront-customer-panel-host/);
+  assert.match(wrapperSource, /id="storefront-customer-panel-btn"/);
+  assert.match(wrapperSource, /<ReceiptText className="h-4 w-4"/);
+  assert.match(wrapperSource, /props\.setIsCartOpen\(true\)/);
   assert.match(
-    storefrontSource,
-    /aria-label="Revisar e enviar itens para aprovação da loja"/
+    wrapperSource,
+    /aria-label="Abrir finalizar pedido, meu pedido e conta"/
   );
+});
+
+test('customer checkout panel offers cart, order and account tabs in that order', () => {
+  const cartPosition = checkoutSource.indexOf('id="customer-cart-tab"');
+  const orderPosition = checkoutSource.indexOf('id="customer-order-tab"');
+  const accountPosition = checkoutSource.indexOf('id="customer-account-tab"');
+
+  assert.ok(cartPosition >= 0);
+  assert.ok(orderPosition > cartPosition);
+  assert.ok(accountPosition > orderPosition);
+  assert.match(checkoutSource, /grid-cols-3/);
+  assert.match(checkoutSource, /Finalizar pedido/);
+  assert.match(checkoutSource, /Meu pedido/);
+  assert.match(checkoutSource, />Conta</);
+});
+
+test('account tab tracks consumed, paid, transferred and outstanding amounts in realtime', () => {
+  assert.match(checkoutSource, /id="customer-account-panel"/);
+  assert.match(checkoutSource, /getCustomerOrderOutstandingTotal\(currentOrder\)/);
+  assert.match(checkoutSource, /getCustomerOrderItemOpenQuantity\(item\)/);
+  assert.match(checkoutSource, /Consumo total/);
+  assert.match(checkoutSource, /Em aberto/);
+  assert.match(checkoutSource, /Pago/);
+  assert.match(checkoutSource, /Transferido/);
+  assert.match(checkoutSource, /Total para fechamento/);
+  assert.match(checkoutSource, /A forma de pagamento e o fechamento são confirmados pela loja/);
 });

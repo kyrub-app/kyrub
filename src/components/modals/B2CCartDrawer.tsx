@@ -8,16 +8,20 @@ import {
   Minus,
   PackageCheck,
   Plus,
+  ReceiptText,
   ShoppingCart,
   Store as StoreIcon,
   Truck,
   Utensils,
+  WalletCards,
   XCircle,
 } from 'lucide-react';
 import { B2CCartDrawer as LegacyB2CCartDrawer } from './LegacyB2CCartDrawer';
 import { auth } from '../../utils/firebase';
 import {
   buildCustomerOrder,
+  getCustomerOrderItemOpenQuantity,
+  getCustomerOrderOutstandingTotal,
   getCustomerOrderStatusLabel,
   getFulfillmentLabel,
   loadLastCustomerOrderId,
@@ -26,17 +30,23 @@ import {
   subscribeToCustomerOrder,
   type CustomerFulfillmentType,
   type CustomerOrder,
+  type CustomerOrderPaymentStatus,
   type CustomerOrderStatus,
 } from '../../utils/customerOrders';
 
 type B2CCartDrawerProps = React.ComponentProps<typeof LegacyB2CCartDrawer>;
-type DrawerView = 'cart' | 'order';
+type DrawerView = 'cart' | 'order' | 'account';
 
 const terminalStatuses: CustomerOrderStatus[] = [
   'completed',
   'rejected',
   'cancelled',
 ];
+
+const currencyFormatter = new Intl.NumberFormat('pt-BR', {
+  style: 'currency',
+  currency: 'BRL',
+});
 
 const formatDateTime = (value: string): string => {
   const date = new Date(value);
@@ -52,6 +62,29 @@ const statusStepsFor = (order: CustomerOrder): CustomerOrderStatus[] =>
   order.fulfillmentType === 'delivery'
     ? ['pending', 'accepted', 'preparing', 'ready', 'out_for_delivery', 'completed']
     : ['pending', 'accepted', 'preparing', 'ready', 'completed'];
+
+const paymentPresentation = (
+  paymentStatus: CustomerOrderPaymentStatus
+): { label: string; className: string } => {
+  if (paymentStatus === 'paid') {
+    return {
+      label: 'Conta paga',
+      className: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300',
+    };
+  }
+
+  if (paymentStatus === 'partial') {
+    return {
+      label: 'Pagamento parcial',
+      className: 'border-amber-500/30 bg-amber-500/10 text-amber-300',
+    };
+  }
+
+  return {
+    label: 'Conta em aberto',
+    className: 'border-orange-500/30 bg-orange-500/10 text-orange-300',
+  };
+};
 
 export const B2CCartDrawer: React.FC<B2CCartDrawerProps> = props => {
   const {
@@ -90,6 +123,40 @@ export const B2CCartDrawer: React.FC<B2CCartDrawerProps> = props => {
     [cart]
   );
 
+  const accountTotals = useMemo(() => {
+    if (!currentOrder) {
+      return {
+        consumed: 0,
+        billable: 0,
+        paid: 0,
+        transferred: 0,
+        outstanding: 0,
+      };
+    }
+
+    const paid = currentOrder.items.reduce(
+      (sum, item) => sum + item.paidQuantity * item.price,
+      0
+    );
+    const transferred = currentOrder.items.reduce(
+      (sum, item) => sum + item.transferredQuantity * item.price,
+      0
+    );
+    const billable = currentOrder.items.reduce(
+      (sum, item) =>
+        sum + Math.max(0, item.quantity - item.transferredQuantity) * item.price,
+      0
+    );
+
+    return {
+      consumed: currentOrder.total,
+      billable,
+      paid,
+      transferred,
+      outstanding: getCustomerOrderOutstandingTotal(currentOrder),
+    };
+  }, [currentOrder]);
+
   useEffect(() => {
     if (!isOpen || !visitingStore) return;
     const user = auth.currentUser;
@@ -105,8 +172,7 @@ export const B2CCartDrawer: React.FC<B2CCartDrawerProps> = props => {
     );
     setTrackedOrderId(previousOrderId);
     setCurrentOrder(null);
-
-    if (previousOrderId && cart.length === 0) setView('order');
+    setView(previousOrderId && cart.length === 0 ? 'order' : 'cart');
   }, [isOpen, visitingStore?.id]);
 
   useEffect(() => {
@@ -126,6 +192,9 @@ export const B2CCartDrawer: React.FC<B2CCartDrawerProps> = props => {
   if (!isOpen || !visitingStore) return null;
 
   const accentColor = visitingStore.primaryColor || '#f97316';
+  const currentPaymentPresentation = currentOrder
+    ? paymentPresentation(currentOrder.paymentStatus)
+    : null;
 
   const handleCreateOrder = async (event: React.FormEvent): Promise<void> => {
     event.preventDefault();
@@ -205,6 +274,13 @@ export const B2CCartDrawer: React.FC<B2CCartDrawerProps> = props => {
     },
   ];
 
+  const tabClassName = (tab: DrawerView): string =>
+    `flex min-h-10 min-w-0 items-center justify-center gap-1.5 rounded-xl px-2 text-[9px] font-black uppercase tracking-wide transition-colors ${
+      view === tab
+        ? 'bg-slate-800 text-white'
+        : 'text-slate-500 hover:text-slate-300'
+    }`;
+
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-slate-950/80 backdrop-blur-sm">
       <div className="flex h-full w-full max-w-md flex-col overflow-y-auto border-l border-slate-800 bg-slate-900">
@@ -212,7 +288,7 @@ export const B2CCartDrawer: React.FC<B2CCartDrawerProps> = props => {
           <div className="flex items-start justify-between gap-3">
             <div>
               <span className="font-mono text-[9px] font-bold uppercase tracking-[0.18em] text-orange-400">
-                Painel do cliente
+                Finalizar pedido
               </span>
               <h3 className="mt-1 text-lg font-black text-white">
                 {visitingStore.name}
@@ -227,35 +303,41 @@ export const B2CCartDrawer: React.FC<B2CCartDrawerProps> = props => {
             </button>
           </div>
 
-          <div className="mt-4 grid grid-cols-2 gap-2 rounded-2xl bg-slate-950 p-1.5">
+          <div
+            className="mt-4 grid grid-cols-3 gap-1.5 rounded-2xl bg-slate-950 p-1.5"
+            id="customer-checkout-tabs"
+          >
             <button
               type="button"
               onClick={() => setView('cart')}
-              className={`flex min-h-10 items-center justify-center gap-2 rounded-xl px-3 text-[10px] font-black uppercase tracking-wide ${
-                view === 'cart'
-                  ? 'bg-slate-800 text-white'
-                  : 'text-slate-500 hover:text-slate-300'
-              }`}
+              className={tabClassName('cart')}
+              id="customer-cart-tab"
             >
-              <ShoppingCart className="h-4 w-4" />
-              Carrinho ({cartItemsCount})
+              <ShoppingCart className="h-4 w-4 shrink-0" />
+              <span className="truncate">Carrinho ({cartItemsCount})</span>
             </button>
             <button
               type="button"
               onClick={() => setView('order')}
-              className={`flex min-h-10 items-center justify-center gap-2 rounded-xl px-3 text-[10px] font-black uppercase tracking-wide ${
-                view === 'order'
-                  ? 'bg-slate-800 text-white'
-                  : 'text-slate-500 hover:text-slate-300'
-              }`}
+              className={tabClassName('order')}
+              id="customer-order-tab"
             >
-              <PackageCheck className="h-4 w-4" />
-              Meu pedido
+              <PackageCheck className="h-4 w-4 shrink-0" />
+              <span className="truncate">Meu pedido</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setView('account')}
+              className={tabClassName('account')}
+              id="customer-account-tab"
+            >
+              <ReceiptText className="h-4 w-4 shrink-0" />
+              <span className="truncate">Conta</span>
             </button>
           </div>
         </header>
 
-        {view === 'cart' ? (
+        {view === 'cart' && (
           <form
             onSubmit={event => void handleCreateOrder(event)}
             className="flex flex-1 flex-col"
@@ -278,7 +360,7 @@ export const B2CCartDrawer: React.FC<B2CCartDrawerProps> = props => {
                       Seu carrinho está vazio
                     </p>
                     <p className="mt-1 text-[11px] text-slate-600">
-                      Adicione produtos na vitrine para continuar.
+                      Consulte seu pedido ou sua conta pelas abas acima.
                     </p>
                   </div>
                 ) : (
@@ -307,7 +389,7 @@ export const B2CCartDrawer: React.FC<B2CCartDrawerProps> = props => {
                               {item.product.name}
                             </h5>
                             <p className="mt-1 font-mono text-xs text-white">
-                              R$ {item.product.price.toFixed(2)}
+                              {currencyFormatter.format(item.product.price)}
                             </p>
 
                             <div className="mt-2 flex items-center gap-2">
@@ -461,13 +543,13 @@ export const B2CCartDrawer: React.FC<B2CCartDrawerProps> = props => {
                     <div className="flex justify-between text-xs text-slate-400">
                       <span>Subtotal</span>
                       <span className="font-mono text-slate-200">
-                        R$ {subtotal.toFixed(2)}
+                        {currencyFormatter.format(subtotal)}
                       </span>
                     </div>
                     <div className="mt-2 flex justify-between border-t border-slate-800 pt-2 text-sm font-black text-white">
                       <span>Total do pedido</span>
                       <span className="font-mono" style={{ color: accentColor }}>
-                        R$ {subtotal.toFixed(2)}
+                        {currencyFormatter.format(subtotal)}
                       </span>
                     </div>
                     <p className="mt-3 text-[10px] leading-relaxed text-slate-600">
@@ -498,8 +580,10 @@ export const B2CCartDrawer: React.FC<B2CCartDrawerProps> = props => {
               </footer>
             )}
           </form>
-        ) : (
-          <div className="flex-1 p-5">
+        )}
+
+        {view === 'order' && (
+          <div className="flex-1 p-5" id="customer-order-panel">
             {!currentOrder ? (
               <div className="rounded-3xl border border-dashed border-slate-800 bg-slate-950/50 px-5 py-14 text-center">
                 <PackageCheck className="mx-auto h-10 w-10 text-slate-700" />
@@ -588,7 +672,7 @@ export const B2CCartDrawer: React.FC<B2CCartDrawerProps> = props => {
                             {item.quantity}× {item.name}
                           </span>
                           <span className="font-mono text-slate-400">
-                            R$ {(item.price * item.quantity).toFixed(2)}
+                            {currencyFormatter.format(item.price * item.quantity)}
                           </span>
                         </div>
                         {item.note && (
@@ -604,12 +688,16 @@ export const B2CCartDrawer: React.FC<B2CCartDrawerProps> = props => {
                       <span className="block font-mono text-[8px] uppercase text-slate-600">
                         Pagamento
                       </span>
-                      <span className="text-[10px] font-bold uppercase text-amber-300">
-                        Não realizado
-                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setView('account')}
+                        className="text-[10px] font-bold uppercase text-amber-300 hover:text-amber-200"
+                      >
+                        Consultar conta
+                      </button>
                     </div>
                     <strong className="font-mono text-lg text-white">
-                      R$ {currentOrder.total.toFixed(2)}
+                      {currencyFormatter.format(currentOrder.total)}
                     </strong>
                   </div>
                 </section>
@@ -621,6 +709,173 @@ export const B2CCartDrawer: React.FC<B2CCartDrawerProps> = props => {
                 >
                   Voltar ao carrinho
                 </button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {view === 'account' && (
+          <div className="flex-1 p-5" id="customer-account-panel">
+            {!currentOrder || !currentPaymentPresentation ? (
+              <div className="rounded-3xl border border-dashed border-slate-800 bg-slate-950/50 px-5 py-14 text-center">
+                <ReceiptText className="mx-auto h-10 w-10 text-slate-700" />
+                <p className="mt-3 text-xs font-black uppercase text-slate-500">
+                  Nenhuma conta aberta
+                </p>
+                <p className="mt-1 text-[11px] leading-relaxed text-slate-600">
+                  A conta será criada quando seu primeiro pedido for enviado à loja.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setView('cart')}
+                  className="mt-5 rounded-xl bg-slate-800 px-4 py-2 text-[10px] font-black uppercase text-white"
+                >
+                  Abrir carrinho
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-5">
+                <section className="rounded-3xl border border-slate-800 bg-slate-950 p-5">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex min-w-0 items-start gap-3">
+                      <span
+                        className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl text-white"
+                        style={{ backgroundColor: accentColor }}
+                      >
+                        <WalletCards className="h-5 w-5" />
+                      </span>
+                      <div className="min-w-0">
+                        <span className="font-mono text-[9px] font-bold uppercase tracking-wide text-orange-400">
+                          Checkout do consumo
+                        </span>
+                        <h4 className="mt-1 text-lg font-black text-white">
+                          Sua conta
+                        </h4>
+                        <p className="mt-1 text-[10px] text-slate-500">
+                          Pedido de {formatDateTime(currentOrder.createdAt)}
+                        </p>
+                      </div>
+                    </div>
+                    <span
+                      className={`shrink-0 rounded-full border px-2.5 py-1 text-[8px] font-black uppercase ${currentPaymentPresentation.className}`}
+                    >
+                      {currentPaymentPresentation.label}
+                    </span>
+                  </div>
+
+                  <div className="mt-5 grid grid-cols-2 gap-2">
+                    <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-3">
+                      <span className="block font-mono text-[8px] uppercase text-slate-600">
+                        Consumo total
+                      </span>
+                      <strong className="mt-1 block font-mono text-sm text-white">
+                        {currencyFormatter.format(accountTotals.consumed)}
+                      </strong>
+                    </div>
+                    <div className="rounded-2xl border border-orange-500/20 bg-orange-500/5 p-3">
+                      <span className="block font-mono text-[8px] uppercase text-orange-300/70">
+                        Em aberto
+                      </span>
+                      <strong className="mt-1 block font-mono text-sm text-orange-300">
+                        {currencyFormatter.format(accountTotals.outstanding)}
+                      </strong>
+                    </div>
+                    <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-3">
+                      <span className="block font-mono text-[8px] uppercase text-slate-600">
+                        Pago
+                      </span>
+                      <strong className="mt-1 block font-mono text-sm text-emerald-300">
+                        {currencyFormatter.format(accountTotals.paid)}
+                      </strong>
+                    </div>
+                    <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-3">
+                      <span className="block font-mono text-[8px] uppercase text-slate-600">
+                        Transferido
+                      </span>
+                      <strong className="mt-1 block font-mono text-sm text-slate-300">
+                        {currencyFormatter.format(accountTotals.transferred)}
+                      </strong>
+                    </div>
+                  </div>
+                </section>
+
+                <section className="rounded-3xl border border-slate-800 bg-slate-950 p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <h5 className="text-xs font-black uppercase text-white">
+                      Itens consumidos
+                    </h5>
+                    <span className="font-mono text-[9px] text-slate-600">
+                      Base cobrável {currencyFormatter.format(accountTotals.billable)}
+                    </span>
+                  </div>
+
+                  <div className="mt-3 space-y-2">
+                    {currentOrder.items.map(item => {
+                      const openQuantity = getCustomerOrderItemOpenQuantity(item);
+                      return (
+                        <article
+                          key={`${currentOrder.id}-account-${item.lineId}`}
+                          className="rounded-2xl border border-slate-800 bg-slate-900/70 p-3"
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <strong className="block truncate text-xs text-slate-200">
+                                {item.quantity}× {item.name}
+                              </strong>
+                              <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 font-mono text-[8px] uppercase text-slate-600">
+                                {item.paidQuantity > 0 && (
+                                  <span className="text-emerald-400">
+                                    Pago: {item.paidQuantity}
+                                  </span>
+                                )}
+                                {item.transferredQuantity > 0 && (
+                                  <span>Transferido: {item.transferredQuantity}</span>
+                                )}
+                                <span className={openQuantity > 0 ? 'text-orange-300' : ''}>
+                                  Em aberto: {openQuantity}
+                                </span>
+                              </div>
+                            </div>
+                            <span className="shrink-0 font-mono text-xs text-white">
+                              {currencyFormatter.format(openQuantity * item.price)}
+                            </span>
+                          </div>
+                        </article>
+                      );
+                    })}
+                  </div>
+
+                  <div className="mt-4 flex items-end justify-between border-t border-slate-800 pt-4">
+                    <div>
+                      <span className="block font-mono text-[8px] uppercase text-slate-600">
+                        Total para fechamento
+                      </span>
+                      <p className="mt-1 max-w-[230px] text-[9px] leading-relaxed text-slate-500">
+                        A forma de pagamento e o fechamento são confirmados pela loja.
+                      </p>
+                    </div>
+                    <strong className="font-mono text-xl" style={{ color: accentColor }}>
+                      {currencyFormatter.format(accountTotals.outstanding)}
+                    </strong>
+                  </div>
+                </section>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setView('order')}
+                    className="rounded-xl border border-slate-800 bg-slate-950 py-3 text-[9px] font-black uppercase text-slate-300 hover:text-white"
+                  >
+                    Meu pedido
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setView('cart')}
+                    className="rounded-xl border border-slate-800 bg-slate-950 py-3 text-[9px] font-black uppercase text-slate-300 hover:text-white"
+                  >
+                    Adicionar itens
+                  </button>
+                </div>
               </div>
             )}
           </div>
