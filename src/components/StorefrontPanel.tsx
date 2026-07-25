@@ -5,14 +5,29 @@ import {
   subscribeToPreferredPublicProducts,
   type PublicProduct,
 } from '../utils/publicProducts';
+import {
+  subscribeToStoreCustomerOrders,
+  type CustomerOrderStatus,
+} from '../utils/customerOrders';
 
- type StorefrontPanelProps = React.ComponentProps<typeof LegacyStorefrontPanel>;
+const KDS_ACTIVE_STATUSES = new Set<CustomerOrderStatus>([
+  'pending',
+  'accepted',
+  'preparing',
+  'ready',
+]);
+
+type StorefrontPanelProps = Omit<
+  React.ComponentProps<typeof LegacyStorefrontPanel>,
+  'activeKdsOrderCount'
+>;
 
 export const StorefrontPanel: React.FC<StorefrontPanelProps> = props => {
   const storeId = props.activeConsumerStore?.id ?? '';
   const [publicProducts, setPublicProducts] = useState<PublicProduct[] | null>(
     null
   );
+  const [activeKdsOrderCount, setActiveKdsOrderCount] = useState(0);
 
   useEffect(() => {
     setPublicProducts(null);
@@ -34,6 +49,24 @@ export const StorefrontPanel: React.FC<StorefrontPanelProps> = props => {
     );
   }, [storeId]);
 
+  useEffect(() => {
+    setActiveKdsOrderCount(0);
+    if (!storeId) return;
+
+    return subscribeToStoreCustomerOrders(
+      storeId,
+      orders => {
+        setActiveKdsOrderCount(
+          orders.filter(order => KDS_ACTIVE_STATUSES.has(order.status)).length
+        );
+      },
+      error => {
+        console.warn('Carga atual do KDS indisponível para a vitrine.', error);
+        setActiveKdsOrderCount(0);
+      }
+    );
+  }, [storeId]);
+
   const localStoreProducts = useMemo(
     () =>
       props.products.filter(
@@ -47,6 +80,7 @@ export const StorefrontPanel: React.FC<StorefrontPanelProps> = props => {
     <LegacyStorefrontPanel
       {...props}
       products={publicProducts ?? localStoreProducts}
+      activeKdsOrderCount={activeKdsOrderCount}
     />
   );
 };
