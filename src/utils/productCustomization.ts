@@ -166,6 +166,9 @@ export const buildProductConfigurationSelection = (
     ...product,
     id: lineKey,
     sourceProductId: product.sourceProductId ?? product.id,
+    name: customizationSummary
+      ? `${product.name} — ${customizationSummary}`
+      : product.name,
     price: unitPrice,
     selectedOptions: [...selectedOptions],
     customizationSummary,
