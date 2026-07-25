@@ -1,0 +1,157 @@
+    // --- Public Social Feed, Likes and Comments ---
+    match /social_posts/{postId} {
+      function hasValidSocialPostShape(data) {
+        return data.keys().hasAll([
+          'postId',
+          'sourcePostId',
+          'authorId',
+          'authorName',
+          'authorAvatar',
+          'content',
+          'publicationType',
+          'taggedUsers',
+          'taggedUserIds',
+          'mediaUrls',
+          'visibility',
+          'createdAtIso',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'postId',
+          'sourcePostId',
+          'authorId',
+          'authorName',
+          'authorAvatar',
+          'content',
+          'publicationType',
+          'taggedUsers',
+          'taggedUserIds',
+          'mediaUrls',
+          'visibility',
+          'createdAtIso',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.postId == postId
+        && data.sourcePostId is string
+        && data.sourcePostId.size() > 0
+        && data.sourcePostId.size() <= 500
+        && data.authorId is string
+        && data.authorId.size() > 0
+        && data.authorId.size() <= 128
+        && data.authorName is string
+        && data.authorName.size() > 0
+        && data.authorName.size() <= 160
+        && data.authorAvatar is string
+        && data.authorAvatar.size() <= 2048
+        && data.content is string
+        && data.content.size() <= 3000
+        && data.publicationType in ['feed', 'status']
+        && data.taggedUsers is list
+        && data.taggedUsers.size() <= 30
+        && data.taggedUserIds is list
+        && data.taggedUserIds.size() <= 30
+        && data.mediaUrls is list
+        && data.mediaUrls.size() <= 9
+        && data.visibility == 'public'
+        && data.createdAtIso is string
+        && data.createdAtIso.size() <= 64
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+      }
+
+      allow read: if isSignedIn() && existing().visibility == 'public';
+
+      allow create: if isSignedIn()
+        && incoming().authorId == request.auth.uid
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && hasValidSocialPostShape(incoming());
+
+      allow update: if isSignedIn()
+        && existing().authorId == request.auth.uid
+        && incoming().authorId == existing().authorId
+        && incoming().postId == existing().postId
+        && incoming().sourcePostId == existing().sourcePostId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'authorName',
+          'authorAvatar',
+          'content',
+          'publicationType',
+          'taggedUsers',
+          'taggedUserIds',
+          'mediaUrls',
+          'visibility',
+          'createdAtIso',
+          'updatedAt'
+        ])
+        && hasValidSocialPostShape(incoming());
+
+      allow delete: if isSignedIn()
+        && (existing().authorId == request.auth.uid || isAdmin());
+    }
+
+    match /social_post_likes/{likeId} {
+      allow read: if isSignedIn();
+
+      allow create: if isSignedIn()
+        && incoming().keys().hasAll(['postId', 'userId', 'createdAt'])
+        && incoming().keys().hasOnly(['postId', 'userId', 'createdAt'])
+        && incoming().postId is string
+        && incoming().postId.size() > 0
+        && incoming().postId.size() <= 500
+        && incoming().userId == request.auth.uid
+        && likeId == incoming().postId + '__' + request.auth.uid
+        && incoming().createdAt == request.time
+        && exists(/databases/$(database)/documents/social_posts/$(incoming().postId));
+
+      allow update: if false;
+      allow delete: if isSignedIn() && existing().userId == request.auth.uid;
+    }
+
+    match /social_post_comments/{commentId} {
+      allow read: if isSignedIn();
+
+      allow create: if isSignedIn()
+        && incoming().keys().hasAll([
+          'postId',
+          'authorId',
+          'authorName',
+          'authorAvatar',
+          'text',
+          'createdAtIso',
+          'createdAt'
+        ])
+        && incoming().keys().hasOnly([
+          'postId',
+          'authorId',
+          'authorName',
+          'authorAvatar',
+          'text',
+          'createdAtIso',
+          'createdAt'
+        ])
+        && incoming().postId is string
+        && incoming().postId.size() > 0
+        && incoming().postId.size() <= 500
+        && incoming().authorId == request.auth.uid
+        && incoming().authorName is string
+        && incoming().authorName.size() > 0
+        && incoming().authorName.size() <= 160
+        && incoming().authorAvatar is string
+        && incoming().authorAvatar.size() <= 2048
+        && incoming().text is string
+        && incoming().text.size() > 0
+        && incoming().text.size() <= 1000
+        && incoming().createdAtIso is string
+        && incoming().createdAtIso.size() <= 64
+        && incoming().createdAt == request.time
+        && exists(/databases/$(database)/documents/social_posts/$(incoming().postId));
+
+      allow update: if false;
+      allow delete: if isSignedIn()
+        && (existing().authorId == request.auth.uid || isAdmin());
+    }
