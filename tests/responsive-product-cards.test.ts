@@ -2,11 +2,14 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
-const styles = readFileSync('src/styles/responsive-product-cards.css', 'utf8');
 const main = readFileSync('src/main.tsx', 'utf8');
 const retailerPanel = readFileSync('src/components/RetailerPanel.tsx', 'utf8');
 const inventoryWorkspace = readFileSync(
   'src/components/store/ProductInventoryWorkspace.tsx',
+  'utf8'
+);
+const sharedPdv = readFileSync(
+  'src/components/pdv/SharedPdvCatalog.tsx',
   'utf8'
 );
 const productModal = readFileSync(
@@ -14,24 +17,21 @@ const productModal = readFileSync(
   'utf8'
 );
 
-test('public storefront starts with two product columns on mobile', () => {
+test('shared customer and staff PDV starts with two product columns on mobile', () => {
+  assert.match(sharedPdv, /id=\{`\$\{idPrefix\}-pdv-products-grid`\}/);
   assert.match(
-    styles,
-    /#storefront-panel-container[\s\S]*grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\)/
+    sharedPdv,
+    /grid grid-cols-2[\s\S]*sm:grid-cols-3[\s\S]*lg:grid-cols-4[\s\S]*2xl:grid-cols-5/
   );
 });
 
-test('product grids progressively expand to three and four columns', () => {
-  assert.match(styles, /@media \(min-width: 640px\)[\s\S]*repeat\(3, minmax\(0, 1fr\)\)/);
-  assert.match(styles, /@media \(min-width: 1024px\)[\s\S]*repeat\(4, minmax\(0, 1fr\)\)/);
+test('shared PDV keeps compact cards and actions usable in two mobile columns', () => {
+  assert.match(sharedPdv, /rounded-2xl[\s\S]*sm:rounded-3xl/);
+  assert.match(sharedPdv, /min-h-9 w-full[\s\S]*sm:min-h-11 sm:w-auto/);
+  assert.match(sharedPdv, /text-\[8px\][\s\S]*sm:text-\[10px\]/);
 });
 
-test('seller cardápio and customer catálogo share the responsive contract', () => {
-  assert.match(styles, /\.z-\\\[120\\\] main > \.grid\.grid-cols-2/);
-  assert.match(styles, /article\[id\^='storefront-prod-'\]/);
-});
-
-test('responsive product styles load after the Tailwind entry stylesheet', () => {
+test('responsive product styles still load after the Tailwind entry stylesheet', () => {
   const tailwindImport = main.indexOf("import './index.css';");
   const responsiveImport = main.indexOf("import './styles/responsive-product-cards.css';");
 
@@ -57,7 +57,7 @@ test('retailer inventory starts with two mobile columns and expands responsively
   assert.match(inventoryWorkspace, /categoryRoot\(product\.category\)/);
 });
 
-test('new product categories come from store keywords and support visual hierarchical levels', () => {
+test('new product categories support hierarchy, complimentary items and choice groups', () => {
   assert.match(productModal, /snapshot\.data\(\)\?\.keywords/);
   assert.match(productModal, /Categoria da loja/);
   assert.match(productModal, /product-subcategory-control/);
@@ -66,4 +66,10 @@ test('new product categories come from store keywords and support visual hierarc
   assert.match(productModal, /category: categoryPath/);
   assert.match(productModal, /categoryCollections/);
   assert.match(productModal, /product-subcategory-media-list/);
+  assert.match(productModal, /id="product-complimentary-control"/);
+  assert.match(productModal, /Item sem custo/);
+  assert.match(productModal, /id="product-option-groups-control"/);
+  assert.match(productModal, /Personalização, etapas e múltiplas escolhas/);
+  assert.match(productModal, /minSelections/);
+  assert.match(productModal, /maxSelections/);
 });
