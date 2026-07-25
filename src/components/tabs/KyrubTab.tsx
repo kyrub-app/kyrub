@@ -9,6 +9,7 @@ import {
 } from 'firebase/firestore';
 import { ConnectedContactsPanel } from '../ConnectedContactsPanel';
 import { PublicSocialFeedPanel } from '../PublicSocialFeedPanel';
+import { StoreOfferCardPresentationBridge } from '../StoreOfferCardPresentationBridge';
 import { KyrubTab as LegacyKyrubTab } from './LegacyKyrubTab';
 import { usePublicSocialFeed } from '../../hooks/usePublicSocialFeed';
 import type {
@@ -219,6 +220,11 @@ export function KyrubTab(props: KyrubTabProps) {
         {...props}
         posts={socialFeed.posts}
         storesWithCoords={publishedStores}
+      />
+
+      <StoreOfferCardPresentationBridge
+        stores={publishedStores}
+        enabled={props.socialSubTab === 'lojas'}
       />
 
       {isPublicFeedActive && (
