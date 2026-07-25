@@ -1,13 +1,21 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  AtSign,
   BadgeCheck,
   Bike,
   Building2,
   CheckCircle2,
+  CircleUserRound,
+  Clock3,
+  Copy,
+  Eye,
+  EyeOff,
   Fingerprint,
   IdCard,
+  ImagePlus,
   LockKeyhole,
   MapPin,
+  Send,
   ShieldCheck,
   Smartphone,
   Store,
@@ -15,7 +23,15 @@ import {
   UsersRound,
   X,
 } from 'lucide-react';
-import { doc, serverTimestamp, updateDoc } from 'firebase/firestore';
+import {
+  collection,
+  doc,
+  onSnapshot,
+  serverTimestamp,
+  setDoc,
+} from 'firebase/firestore';
+import type { SocialPost } from '../../types';
+import { MediaCarousel } from '../MediaCarousel';
 import { auth, db } from '../../utils/firebase';
 import { formatWhatsApp, formatCpf, formatCnpj } from '../../utils/helpers';
 
@@ -66,18 +82,79 @@ interface UserProfileModalProps {
   ) => void;
 }
 
+type ExtendedSocialPost = SocialPost & {
+  authorId?: string;
+  publicationType?: 'feed' | 'status';
+  taggedUsers?: string[];
+  taggedUserIds?: string[];
+  createdAt?: string;
+};
+
 type ProfileSection = 'conta' | 'dados' | 'seguranca' | 'verificacao';
 
-const sectionItems: Array<{
-  id: ProfileSection;
-  label: string;
-  icon: React.ComponentType<{ className?: string }>;
-}> = [
-  { id: 'conta', label: 'Conta', icon: UserRound },
-  { id: 'dados', label: 'Dados', icon: MapPin },
-  { id: 'seguranca', label: 'Segurança', icon: LockKeyhole },
-  { id: 'verificacao', label: 'Verificação', icon: BadgeCheck },
-];
+type DirectoryUser = {
+  uid: string;
+  name: string;
+  email: string;
+  photoUrl: string;
+};
+
+const LEGACY_POSTS_KEY = 'kyrub_posts';
+const getUserPostsKey = (uid: string) => `kyrub_posts_${uid}`;
+
+const readStoredPosts = (rawValue: string | null): ExtendedSocialPost[] => {
+  if (!rawValue) return [];
+
+  try {
+    const parsed = JSON.parse(rawValue);
+    return Array.isArray(parsed) ? (parsed as ExtendedSocialPost[]) : [];
+  } catch (error) {
+    console.warn('Não foi possível ler as publicações do perfil.', error);
+    return [];
+  }
+};
+
+const getProfileHandle = (email: string, name: string): string => {
+  const emailHandle = email.split('@')[0]?.trim();
+  const source = emailHandle || name || 'usuario';
+  return source
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, '')
+    .slice(0, 30);
+};
+
+const Avatar = ({
+  src,
+  name,
+  className,
+}: {
+  src?: string;
+  name: string;
+  className: string;
+}) => {
+  if (src) {
+    return (
+      <img
+        src={src}
+        alt={name}
+        className={className}
+        referrerPolicy="no-referrer"
+      />
+    );
+  }
+
+  return (
+    <div
+      className={`${className} flex items-center justify-center bg-slate-950 text-slate-500`}
+      role="img"
+      aria-label={`Foto de ${name || 'usuário'} não informada`}
+    >
+      <CircleUserRound className="h-1/2 w-1/2" />
+    </div>
+  );
+};
 
 const Toggle = ({
   active,
@@ -107,45 +184,46 @@ const Toggle = ({
   </button>
 );
 
-export const UserProfileModal: React.FC<UserProfileModalProps> = ({
-  isOpen,
-  onClose,
-  profileName,
-  setProfileName,
-  profileEmail,
-  profilePhotoUrl,
-  accountTypeCliente,
-  setAccountTypeCliente,
-  accountTypeEntregador,
-  setAccountTypeEntregador,
-  accountTypeLojista,
-  setAccountTypeLojista,
-  isProfileVisible,
-  setIsProfileVisible,
-  biometricsActive,
-  setBiometricsActive,
-  transactionPin,
-  setTransactionPin,
-  kycDocType,
-  setKycDocType,
-  kycStatus,
-  setKycStatus,
-  facialValidated,
-  setFacialValidated,
-  isFacialScanning,
-  setIsFacialScanning,
-  profileAddress,
-  setProfileAddress,
-  profileWhatsApp,
-  setProfileWhatsApp,
-  kycCpf,
-  setKycCpf,
-  kycCnh,
-  setKycCnh,
-  kycCnpj,
-  setKycCnpj,
-  triggerToast,
-}) => {
+const ProfileSettingsPanel: React.FC<UserProfileModalProps> = props => {
+  const {
+    isOpen,
+    onClose,
+    profileName,
+    setProfileName,
+    profileEmail,
+    profilePhotoUrl,
+    accountTypeCliente,
+    setAccountTypeCliente,
+    accountTypeEntregador,
+    setAccountTypeEntregador,
+    accountTypeLojista,
+    setAccountTypeLojista,
+    isProfileVisible,
+    setIsProfileVisible,
+    biometricsActive,
+    setBiometricsActive,
+    transactionPin,
+    setTransactionPin,
+    kycDocType,
+    setKycDocType,
+    kycStatus,
+    setKycStatus,
+    facialValidated,
+    setFacialValidated,
+    isFacialScanning,
+    setIsFacialScanning,
+    profileAddress,
+    setProfileAddress,
+    profileWhatsApp,
+    setProfileWhatsApp,
+    kycCpf,
+    setKycCpf,
+    kycCnh,
+    setKycCnh,
+    kycCnpj,
+    setKycCnpj,
+    triggerToast,
+  } = props;
   const [activeSection, setActiveSection] =
     useState<ProfileSection>('conta');
   const [isSaving, setIsSaving] = useState(false);
@@ -161,13 +239,18 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
 
     setIsSaving(true);
     try {
-      await updateDoc(doc(db, 'users', user.uid), {
-        name: profileName.trim() || user.displayName || '',
-        email: user.email ?? profileEmail,
-        photoUrl: user.photoURL ?? profilePhotoUrl,
-        isProfileVisible,
-        updatedAt: serverTimestamp(),
-      });
+      await setDoc(
+        doc(db, 'users', user.uid),
+        {
+          uid: user.uid,
+          name: profileName.trim() || user.displayName || '',
+          email: user.email ?? profileEmail,
+          photoUrl: user.photoURL ?? profilePhotoUrl,
+          isProfileVisible,
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true }
+      );
 
       triggerToast(
         'Perfil público atualizado e sincronizado entre dispositivos.',
@@ -204,23 +287,31 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
     }, 2500);
   };
 
+  const sectionItems: Array<{
+    id: ProfileSection;
+    label: string;
+    icon: React.ComponentType<{ className?: string }>;
+  }> = [
+    { id: 'conta', label: 'Conta', icon: UserRound },
+    { id: 'dados', label: 'Dados', icon: MapPin },
+    { id: 'seguranca', label: 'Segurança', icon: LockKeyhole },
+    { id: 'verificacao', label: 'Verificação', icon: BadgeCheck },
+  ];
+
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/85 p-3 backdrop-blur-sm animate-fade-in sm:p-4"
-      id="modal-user-profile"
-    >
+    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/90 p-3 backdrop-blur-md animate-fade-in sm:p-4">
       <div className="flex max-h-[92vh] w-full max-w-2xl flex-col overflow-hidden rounded-3xl border border-slate-800 bg-slate-900 shadow-2xl animate-scale-up">
-        <div className="flex items-center justify-between border-b border-slate-800 px-5 py-4">
+        <header className="flex items-center justify-between border-b border-slate-800 px-5 py-4">
           <div className="flex min-w-0 items-center gap-3">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-teal-500/30 bg-teal-500/10 text-teal-400">
               <ShieldCheck className="h-5 w-5" />
             </div>
             <div className="min-w-0">
               <h3 className="truncate text-base font-black text-white">
-                Meu perfil
+                Informações e configurações
               </h3>
               <p className="truncate text-[10px] text-slate-500">
-                Identidade, preferências e segurança da conta
+                Conta, dados, segurança, verificação e visibilidade
               </p>
             </div>
           </div>
@@ -228,11 +319,11 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
             type="button"
             onClick={onClose}
             className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-950 text-slate-500 hover:text-white"
-            aria-label="Fechar perfil"
+            aria-label="Fechar configurações do perfil"
           >
             <X className="h-4 w-4" />
           </button>
-        </div>
+        </header>
 
         <div className="border-b border-slate-800 bg-slate-950/50 px-3 py-2 sm:px-5">
           <div className="grid grid-cols-4 gap-1.5">
@@ -267,18 +358,11 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
             <div className="space-y-4">
               <section className="rounded-2xl border border-slate-800 bg-slate-950 p-4">
                 <div className="flex items-center gap-3">
-                  {profilePhotoUrl ? (
-                    <img
-                      src={profilePhotoUrl}
-                      alt={profileName}
-                      className="h-16 w-16 shrink-0 rounded-2xl border-2 border-teal-500/60 object-cover"
-                      referrerPolicy="no-referrer"
-                    />
-                  ) : (
-                    <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl border-2 border-teal-500/30 bg-slate-900 text-slate-500">
-                      <UserRound className="h-7 w-7" />
-                    </div>
-                  )}
+                  <Avatar
+                    src={profilePhotoUrl}
+                    name={profileName}
+                    className="h-16 w-16 shrink-0 rounded-2xl border-2 border-teal-500/60 object-cover"
+                  />
                   <div className="min-w-0 flex-1">
                     <span className="inline-flex rounded-full border border-teal-500/20 bg-teal-500/10 px-2 py-1 text-[8px] font-bold uppercase text-teal-400">
                       Google conectado
@@ -387,7 +471,6 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
                     </p>
                   </div>
                 </div>
-
                 <div className="space-y-1.5">
                   <label className="text-[9px] font-mono uppercase text-slate-500">
                     Endereço de atuação ou faturamento
@@ -400,7 +483,6 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
                     className="w-full rounded-xl border border-slate-800 bg-slate-900 px-3 py-2.5 text-xs text-white focus:border-orange-500/50 focus:outline-none"
                   />
                 </div>
-
                 <div className="space-y-1.5">
                   <label className="text-[9px] font-mono uppercase text-slate-500">
                     WhatsApp
@@ -419,9 +501,8 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
                   </div>
                 </div>
               </section>
-
               <div className="rounded-2xl border border-amber-500/20 bg-amber-500/10 p-4 text-[9px] leading-relaxed text-amber-200/80">
-                Endereço e telefone ainda permanecem no contexto operacional deste dispositivo. A sincronização desses campos será ativada junto ao contrato privado do perfil, sem expô-los no diretório público.
+                Endereço e telefone permanecem no contexto operacional deste dispositivo até a ativação do contrato privado do perfil.
               </div>
             </div>
           )}
@@ -435,7 +516,6 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
                     Proteção do dispositivo
                   </h4>
                 </div>
-
                 <div className="flex items-center justify-between gap-4 rounded-xl border border-slate-900 bg-slate-900/60 p-3">
                   <div>
                     <span className="block text-[10px] font-bold text-slate-200">
@@ -451,7 +531,6 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
                     label="Alternar biometria local"
                   />
                 </div>
-
                 <div className="space-y-1.5">
                   <label className="text-[9px] font-mono uppercase text-slate-500">
                     PIN transacional de demonstração
@@ -472,7 +551,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
                     />
                   </div>
                   <p className="text-[8px] leading-relaxed text-slate-600">
-                    Este protótipo não envia nem armazena o PIN no Firestore. O recurso definitivo exigirá cofre seguro e backend privilegiado.
+                    Este protótipo não envia nem armazena o PIN no Firestore.
                   </p>
                 </div>
               </section>
@@ -500,7 +579,6 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
                     {facialValidated ? 'Validado' : 'Pendente'}
                   </span>
                 </div>
-
                 {isFacialScanning ? (
                   <div className="flex flex-col items-center justify-center rounded-xl border border-orange-500/20 bg-orange-500/5 py-8 text-center">
                     <div className="flex h-20 w-20 animate-pulse items-center justify-center rounded-full border-2 border-dashed border-orange-500 text-orange-300">
@@ -516,7 +594,9 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
                     onClick={startFacialSimulation}
                     className="w-full rounded-xl border border-orange-500/25 bg-orange-500/10 py-2.5 text-[10px] font-black uppercase text-orange-300 hover:bg-orange-500/15"
                   >
-                    {facialValidated ? 'Refazer demonstração' : 'Iniciar demonstração'}
+                    {facialValidated
+                      ? 'Refazer demonstração'
+                      : 'Iniciar demonstração'}
                   </button>
                 )}
               </section>
@@ -550,106 +630,63 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
                     {kycStatus}
                   </span>
                 </div>
-
                 <div className="grid grid-cols-3 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setKycDocType('bike');
-                      setKycStatus('Pendente');
-                    }}
-                    className={`rounded-xl border p-2.5 text-[8px] font-bold uppercase ${
-                      kycDocType === 'bike'
-                        ? 'border-indigo-500/40 bg-indigo-500/15 text-indigo-300'
-                        : 'border-slate-800 bg-slate-900 text-slate-500'
-                    }`}
-                  >
-                    <Bike className="mx-auto mb-1 h-4 w-4" />
-                    Bike
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setKycDocType('motorized');
-                      setKycStatus('Pendente');
-                    }}
-                    className={`rounded-xl border p-2.5 text-[8px] font-bold uppercase ${
-                      kycDocType === 'motorized'
-                        ? 'border-indigo-500/40 bg-indigo-500/15 text-indigo-300'
-                        : 'border-slate-800 bg-slate-900 text-slate-500'
-                    }`}
-                  >
-                    <IdCard className="mx-auto mb-1 h-4 w-4" />
-                    Motorizado
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setKycDocType('lojista');
-                      setKycStatus('Pendente');
-                    }}
-                    className={`rounded-xl border p-2.5 text-[8px] font-bold uppercase ${
-                      kycDocType === 'lojista'
-                        ? 'border-indigo-500/40 bg-indigo-500/15 text-indigo-300'
-                        : 'border-slate-800 bg-slate-900 text-slate-500'
-                    }`}
-                  >
-                    <Building2 className="mx-auto mb-1 h-4 w-4" />
-                    Lojista
-                  </button>
+                  {[
+                    { id: 'bike' as const, label: 'Bike', icon: Bike },
+                    { id: 'motorized' as const, label: 'Motorizado', icon: IdCard },
+                    { id: 'lojista' as const, label: 'Lojista', icon: Building2 },
+                  ].map(item => {
+                    const Icon = item.icon;
+                    return (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => {
+                          setKycDocType(item.id);
+                          setKycStatus('Pendente');
+                        }}
+                        className={`rounded-xl border p-2.5 text-[8px] font-bold uppercase ${
+                          kycDocType === item.id
+                            ? 'border-indigo-500/40 bg-indigo-500/15 text-indigo-300'
+                            : 'border-slate-800 bg-slate-900 text-slate-500'
+                        }`}
+                      >
+                        <Icon className="mx-auto mb-1 h-4 w-4" />
+                        {item.label}
+                      </button>
+                    );
+                  })}
                 </div>
 
                 {kycDocType === 'bike' && (
-                  <div className="space-y-1.5">
-                    <label className="text-[9px] font-mono uppercase text-slate-500">
-                      CPF do entregador
-                    </label>
-                    <input
-                      type="text"
-                      value={kycCpf}
-                      onChange={event => setKycCpf(formatCpf(event.target.value))}
-                      placeholder="000.000.000-00"
-                      className="w-full rounded-xl border border-slate-800 bg-slate-900 px-3 py-2.5 text-xs font-mono text-white focus:border-indigo-500/50 focus:outline-none"
-                    />
-                  </div>
+                  <input
+                    type="text"
+                    value={kycCpf}
+                    onChange={event => setKycCpf(formatCpf(event.target.value))}
+                    placeholder="CPF: 000.000.000-00"
+                    className="w-full rounded-xl border border-slate-800 bg-slate-900 px-3 py-2.5 text-xs font-mono text-white focus:border-indigo-500/50 focus:outline-none"
+                  />
                 )}
-
                 {kycDocType === 'motorized' && (
-                  <div className="space-y-1.5">
-                    <label className="text-[9px] font-mono uppercase text-slate-500">
-                      Registro da CNH com EAR
-                    </label>
-                    <input
-                      type="text"
-                      value={kycCnh}
-                      onChange={event =>
-                        setKycCnh(
-                          event.target.value.replace(/\D/g, '').slice(0, 11)
-                        )
-                      }
-                      placeholder="Número de registro da CNH"
-                      className="w-full rounded-xl border border-slate-800 bg-slate-900 px-3 py-2.5 text-xs font-mono text-white focus:border-indigo-500/50 focus:outline-none"
-                    />
-                  </div>
+                  <input
+                    type="text"
+                    value={kycCnh}
+                    onChange={event =>
+                      setKycCnh(event.target.value.replace(/\D/g, '').slice(0, 11))
+                    }
+                    placeholder="Número de registro da CNH com EAR"
+                    className="w-full rounded-xl border border-slate-800 bg-slate-900 px-3 py-2.5 text-xs font-mono text-white focus:border-indigo-500/50 focus:outline-none"
+                  />
                 )}
-
                 {kycDocType === 'lojista' && (
-                  <div className="space-y-1.5">
-                    <label className="text-[9px] font-mono uppercase text-slate-500">
-                      CNPJ da empresa
-                    </label>
-                    <input
-                      type="text"
-                      value={kycCnpj}
-                      onChange={event =>
-                        setKycCnpj(formatCnpj(event.target.value))
-                      }
-                      placeholder="00.000.000/0001-00"
-                      className="w-full rounded-xl border border-slate-800 bg-slate-900 px-3 py-2.5 text-xs font-mono text-white focus:border-indigo-500/50 focus:outline-none"
-                    />
-                  </div>
+                  <input
+                    type="text"
+                    value={kycCnpj}
+                    onChange={event => setKycCnpj(formatCnpj(event.target.value))}
+                    placeholder="CNPJ: 00.000.000/0001-00"
+                    className="w-full rounded-xl border border-slate-800 bg-slate-900 px-3 py-2.5 text-xs font-mono text-white focus:border-indigo-500/50 focus:outline-none"
+                  />
                 )}
-
                 <button
                   type="button"
                   onClick={startDocumentSimulation}
@@ -658,23 +695,20 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
                   Preparar documento para análise
                 </button>
               </section>
-
               <div className="rounded-2xl border border-slate-800 bg-slate-950 p-4 text-[9px] leading-relaxed text-slate-500">
                 <div className="flex items-center gap-2 text-slate-300">
                   <CheckCircle2 className="h-4 w-4 text-teal-400" />
-                  <span className="font-bold uppercase">
-                    Separação de segurança
-                  </span>
+                  <span className="font-bold uppercase">Separação de segurança</span>
                 </div>
                 <p className="mt-2">
-                  Documentos, PIN e biometria não são gravados pelo navegador no diretório público. O fluxo definitivo será ligado ao backend administrativo e ao armazenamento protegido.
+                  Documentos, PIN e biometria não são gravados pelo navegador no diretório público.
                 </p>
               </div>
             </div>
           )}
         </div>
 
-        <div className="border-t border-slate-800 bg-slate-950/50 p-4">
+        <footer className="border-t border-slate-800 bg-slate-950/50 p-4">
           <div className="flex gap-2">
             <button
               type="button"
@@ -695,8 +729,606 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
           <p className="mt-2 text-center text-[8px] text-slate-600">
             Nome e visibilidade são sincronizados na nuvem. Dados sensíveis permanecem fora do diretório público.
           </p>
-        </div>
+        </footer>
       </div>
     </div>
+  );
+};
+
+export const UserProfileModal: React.FC<UserProfileModalProps> = props => {
+  const {
+    isOpen,
+    onClose,
+    profileName,
+    profileEmail,
+    profilePhotoUrl,
+    isProfileVisible,
+    triggerToast,
+  } = props;
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [newPostText, setNewPostText] = useState('');
+  const [postMediaUrls, setPostMediaUrls] = useState<string[]>([]);
+  const [taggedUsers, setTaggedUsers] = useState<string[]>([]);
+  const [taggedUserIds, setTaggedUserIds] = useState<string[]>([]);
+  const [isTagPickerOpen, setIsTagPickerOpen] = useState(false);
+  const [directoryUsers, setDirectoryUsers] = useState<DirectoryUser[]>([]);
+  const [profilePosts, setProfilePosts] = useState<ExtendedSocialPost[]>([]);
+  const postsSectionRef = useRef<HTMLElement | null>(null);
+
+  const currentUser = auth.currentUser;
+  const currentUserId = currentUser?.uid ?? '';
+  const displayName =
+    profileName.trim() || currentUser?.displayName || profileEmail || 'Você';
+  const displayAvatar = profilePhotoUrl || currentUser?.photoURL || '';
+  const profileHandle = getProfileHandle(profileEmail, displayName);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const user = auth.currentUser;
+    if (!user) return;
+
+    const userPostsKey = getUserPostsKey(user.uid);
+    setProfilePosts(
+      readStoredPosts(
+        localStorage.getItem(userPostsKey) ??
+          localStorage.getItem(LEGACY_POSTS_KEY)
+      )
+    );
+
+    const unsubscribeDirectory = onSnapshot(
+      collection(db, 'users'),
+      snapshot => {
+        setDirectoryUsers(
+          snapshot.docs.flatMap(snapshotDocument => {
+            if (snapshotDocument.id === user.uid) return [];
+            const data = snapshotDocument.data() as Record<string, unknown>;
+            if (data.isProfileVisible === false) return [];
+            const name =
+              typeof data.name === 'string' && data.name.trim()
+                ? data.name.trim()
+                : typeof data.email === 'string'
+                  ? data.email.split('@')[0]
+                  : 'Usuário Kyrub';
+            return [
+              {
+                uid: snapshotDocument.id,
+                name,
+                email: typeof data.email === 'string' ? data.email : '',
+                photoUrl:
+                  typeof data.photoUrl === 'string' ? data.photoUrl : '',
+              },
+            ];
+          })
+        );
+      },
+      error => {
+        console.warn('Não foi possível carregar usuários para marcação.', error);
+        setDirectoryUsers([]);
+      }
+    );
+
+    const handlePostsUpdated = (event: Event) => {
+      const detail = (
+        event as CustomEvent<{ uid?: string; posts?: ExtendedSocialPost[] }>
+      ).detail;
+      if (detail?.uid === user.uid && Array.isArray(detail.posts)) {
+        setProfilePosts(detail.posts);
+      }
+    };
+
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key === userPostsKey) {
+        setProfilePosts(readStoredPosts(event.newValue));
+      }
+    };
+
+    window.addEventListener(
+      'kyrub-social-posts-updated',
+      handlePostsUpdated as EventListener
+    );
+    window.addEventListener('storage', handleStorage);
+
+    return () => {
+      unsubscribeDirectory();
+      window.removeEventListener(
+        'kyrub-social-posts-updated',
+        handlePostsUpdated as EventListener
+      );
+      window.removeEventListener('storage', handleStorage);
+    };
+  }, [isOpen]);
+
+  const ownFeedPosts = useMemo(
+    () =>
+      profilePosts.filter(post => {
+        if (post.publicationType === 'status') return false;
+        if (post.authorId && currentUserId) return post.authorId === currentUserId;
+        return post.user === displayName || post.user.includes('Você');
+      }),
+    [currentUserId, displayName, profilePosts]
+  );
+
+  const ownStatusCount = useMemo(
+    () =>
+      profilePosts.filter(
+        post =>
+          post.publicationType === 'status' &&
+          (!post.authorId || post.authorId === currentUserId)
+      ).length,
+    [currentUserId, profilePosts]
+  );
+
+  if (!isOpen) return null;
+
+  const persistPosts = (nextPosts: ExtendedSocialPost[]) => {
+    const user = auth.currentUser;
+    if (!user) return;
+
+    try {
+      localStorage.setItem(getUserPostsKey(user.uid), JSON.stringify(nextPosts));
+      localStorage.setItem(LEGACY_POSTS_KEY, JSON.stringify(nextPosts));
+    } catch (error) {
+      console.warn('Não foi possível salvar a publicação localmente.', error);
+    }
+
+    setProfilePosts(nextPosts);
+    window.dispatchEvent(
+      new CustomEvent('kyrub-social-posts-updated', {
+        detail: { uid: user.uid, posts: nextPosts },
+      })
+    );
+  };
+
+  const readPostImages = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files ?? []);
+    event.target.value = '';
+    if (files.length === 0) return;
+
+    const remainingSlots = 9 - postMediaUrls.length;
+    if (remainingSlots <= 0) {
+      triggerToast('O carrossel aceita no máximo 9 imagens.', 'info');
+      return;
+    }
+
+    const selectedFiles = files
+      .filter(file => file.type.startsWith('image/'))
+      .slice(0, remainingSlots);
+    const encodedImages = await Promise.all(
+      selectedFiles.map(
+        file =>
+          new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(String(reader.result));
+            reader.onerror = () => reject(reader.error);
+            reader.readAsDataURL(file);
+          })
+      )
+    );
+
+    setPostMediaUrls(current => [...current, ...encodedImages].slice(0, 9));
+  };
+
+  const toggleTaggedUser = (user: DirectoryUser) => {
+    const selected = taggedUserIds.includes(user.uid);
+    setTaggedUserIds(current =>
+      selected ? current.filter(uid => uid !== user.uid) : [...current, user.uid]
+    );
+    setTaggedUsers(current =>
+      selected
+        ? current.filter(name => name !== user.name)
+        : [...current, user.name]
+    );
+  };
+
+  const publishPost = (publicationType: 'feed' | 'status') => {
+    const user = auth.currentUser;
+    const content = newPostText.trim();
+    if (!user) {
+      triggerToast('Faça login novamente para publicar.', 'error');
+      return;
+    }
+    if (!content && postMediaUrls.length === 0) {
+      triggerToast('Escreva algo ou adicione imagens antes de publicar.', 'info');
+      return;
+    }
+
+    const newPost: ExtendedSocialPost = {
+      id: `${publicationType}-${Date.now()}`,
+      authorId: user.uid,
+      user: displayName,
+      avatar: displayAvatar,
+      time: 'Agora mesmo',
+      createdAt: new Date().toISOString(),
+      content,
+      likes: 0,
+      mediaUrls: postMediaUrls,
+      taggedUsers,
+      taggedUserIds,
+      publicationType,
+    };
+    persistPosts([newPost, ...profilePosts]);
+    setNewPostText('');
+    setPostMediaUrls([]);
+    setTaggedUsers([]);
+    setTaggedUserIds([]);
+    setIsTagPickerOpen(false);
+    triggerToast(
+      publicationType === 'feed'
+        ? 'Publicação enviada para o feed da Praça.'
+        : 'Status publicado para seus contatos conectados.',
+      'success'
+    );
+  };
+
+  const likeOwnPost = (postId: string) => {
+    persistPosts(
+      profilePosts.map(post =>
+        post.id === postId ? { ...post, likes: post.likes + 1 } : post
+      )
+    );
+  };
+
+  return (
+    <>
+      <div
+        className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/90 p-3 backdrop-blur-md animate-fade-in sm:p-4"
+        id="modal-user-profile"
+      >
+        <div className="flex max-h-[94vh] w-full max-w-2xl flex-col overflow-hidden rounded-3xl border border-slate-800 bg-slate-950 shadow-2xl animate-scale-up">
+          <header className="flex items-center justify-between border-b border-slate-900 bg-slate-950/95 px-4 py-3 sm:px-5">
+            <div className="min-w-0">
+              <span className="block text-[9px] font-black uppercase tracking-[0.18em] text-orange-400">
+                Meu perfil
+              </span>
+              <h2 className="truncate text-base font-black text-white">
+                {displayName}
+              </h2>
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-800 bg-slate-900 text-slate-500 hover:text-white"
+              aria-label="Fechar meu perfil"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </header>
+
+          <div className="flex-1 overflow-y-auto">
+            <section className="border-b border-slate-900 bg-gradient-to-b from-slate-900/90 to-slate-950 px-4 py-5 sm:px-5">
+              <div className="flex items-center gap-4">
+                <Avatar
+                  src={displayAvatar}
+                  name={displayName}
+                  className="h-20 w-20 shrink-0 rounded-full border-2 border-orange-500 object-cover shadow-lg shadow-orange-500/10 sm:h-24 sm:w-24"
+                />
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="truncate text-lg font-black text-white">
+                      {displayName}
+                    </h3>
+                    <span
+                      className={`rounded-full border px-2 py-1 text-[8px] font-black uppercase ${
+                        isProfileVisible
+                          ? 'border-teal-500/30 bg-teal-500/10 text-teal-300'
+                          : 'border-slate-700 bg-slate-900 text-slate-500'
+                      }`}
+                    >
+                      {isProfileVisible ? 'Visível na Praça' : 'Perfil reservado'}
+                    </span>
+                  </div>
+                  <p className="mt-1 truncate text-[10px] font-mono text-slate-500">
+                    @{profileHandle}
+                  </p>
+                  <div className="mt-4 grid grid-cols-3 gap-2">
+                    <div className="rounded-xl border border-slate-800 bg-slate-900/80 px-2 py-2 text-center">
+                      <strong className="block text-sm font-black text-white">
+                        {ownFeedPosts.length}
+                      </strong>
+                      <span className="text-[8px] uppercase text-slate-500">
+                        Publicações
+                      </span>
+                    </div>
+                    <div className="rounded-xl border border-slate-800 bg-slate-900/80 px-2 py-2 text-center">
+                      <strong className="block text-sm font-black text-white">
+                        {ownStatusCount}
+                      </strong>
+                      <span className="text-[8px] uppercase text-slate-500">
+                        Status
+                      </span>
+                    </div>
+                    <div className="rounded-xl border border-slate-800 bg-slate-900/80 px-2 py-2 text-center">
+                      <strong className="block text-sm font-black text-white">
+                        {taggedUsers.length}
+                      </strong>
+                      <span className="text-[8px] uppercase text-slate-500">
+                        Marcados
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section
+              className="space-y-3 border-b border-slate-900 bg-slate-900/55 p-4 sm:p-5"
+              id="profile-publication-composer"
+            >
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <Avatar
+                    src={displayAvatar}
+                    name={displayName}
+                    className="h-9 w-9 rounded-full border border-slate-800 object-cover"
+                  />
+                  <div>
+                    <span className="block text-[10px] font-black text-white">
+                      {displayName}
+                    </span>
+                    <span className="text-[8px] font-mono uppercase text-slate-500">
+                      Nova publicação
+                    </span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsSettingsOpen(true)}
+                    className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-800 bg-slate-950 text-slate-400 hover:border-orange-500/40 hover:text-orange-400"
+                    title="Informações e configurações do perfil"
+                    aria-label="Abrir informações e configurações do perfil"
+                  >
+                    <Copy className="h-4 w-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      postsSectionRef.current?.scrollIntoView({
+                        behavior: 'smooth',
+                        block: 'start',
+                      })
+                    }
+                    className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-800 bg-slate-950 text-slate-400 hover:border-teal-500/40 hover:text-teal-400"
+                    title="Meu registro de publicações"
+                    aria-label="Abrir meu registro de publicações"
+                  >
+                    <CircleUserRound className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+
+              <textarea
+                value={newPostText}
+                onChange={event => setNewPostText(event.target.value)}
+                placeholder="O que está acontecendo no seu negócio ou região?"
+                className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-3 text-xs text-white outline-none focus:border-orange-500"
+                rows={4}
+                maxLength={3000}
+              />
+
+              {postMediaUrls.length > 0 && (
+                <div className="grid grid-cols-3 gap-2 rounded-2xl border border-slate-800 bg-slate-950 p-2">
+                  {postMediaUrls.map((url, index) => (
+                    <div
+                      key={`${url.slice(0, 32)}-${index}`}
+                      className="relative aspect-square overflow-hidden rounded-xl border border-slate-800"
+                    >
+                      <img
+                        src={url}
+                        alt={`Imagem ${index + 1} da publicação`}
+                        className="h-full w-full object-cover"
+                      />
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setPostMediaUrls(current =>
+                            current.filter((_, itemIndex) => itemIndex !== index)
+                          )
+                        }
+                        className="absolute right-1 top-1 rounded-full bg-slate-950/90 p-1 text-white"
+                        aria-label={`Remover imagem ${index + 1}`}
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {taggedUsers.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {taggedUsers.map(name => (
+                    <span
+                      key={name}
+                      className="rounded-full border border-teal-500/30 bg-teal-500/10 px-2 py-1 text-[9px] font-bold text-teal-300"
+                    >
+                      @{name}
+                    </span>
+                  ))}
+                </div>
+              )}
+
+              <div className="relative flex flex-wrap items-center justify-between gap-2 border-t border-slate-800/70 pt-3">
+                <div className="flex items-center gap-2">
+                  <label
+                    className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-xl border border-slate-800 bg-slate-950 text-slate-400 hover:text-orange-400"
+                    title="Adicionar até 9 imagens"
+                  >
+                    <ImagePlus className="h-4 w-4" />
+                    <input
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      className="hidden"
+                      onChange={readPostImages}
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setIsTagPickerOpen(current => !current)}
+                    className={`flex h-9 w-9 items-center justify-center rounded-xl border bg-slate-950 transition-colors ${
+                      isTagPickerOpen || taggedUsers.length > 0
+                        ? 'border-teal-500/40 text-teal-400'
+                        : 'border-slate-800 text-slate-400 hover:text-teal-400'
+                    }`}
+                    title="Marcar usuários"
+                    aria-label="Marcar usuários na publicação"
+                  >
+                    <AtSign className="h-4 w-4" />
+                  </button>
+                  <span className="font-mono text-[8px] text-slate-500">
+                    {postMediaUrls.length}/9
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => publishPost('status')}
+                    className="flex items-center gap-1.5 rounded-xl border border-teal-500/30 bg-teal-500/10 px-3 py-2 text-[9px] font-black uppercase text-teal-300 hover:bg-teal-500/20"
+                  >
+                    <Clock3 className="h-3.5 w-3.5" />
+                    Status
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => publishPost('feed')}
+                    className="flex items-center gap-1.5 rounded-xl bg-orange-600 px-3 py-2 text-[9px] font-black uppercase text-white hover:bg-orange-500"
+                  >
+                    <Send className="h-3.5 w-3.5" />
+                    Feed
+                  </button>
+                </div>
+
+                {isTagPickerOpen && (
+                  <div className="absolute left-0 right-0 top-full z-20 mt-2 max-h-56 overflow-y-auto rounded-2xl border border-slate-800 bg-slate-950 p-2 shadow-2xl">
+                    {directoryUsers.length === 0 ? (
+                      <p className="p-3 text-center text-[10px] text-slate-500">
+                        Nenhum usuário visível disponível para marcação.
+                      </p>
+                    ) : (
+                      directoryUsers.map(user => (
+                        <button
+                          type="button"
+                          key={user.uid}
+                          onClick={() => toggleTaggedUser(user)}
+                          className="flex w-full items-center justify-between gap-3 rounded-xl px-2 py-2 text-left hover:bg-slate-900"
+                        >
+                          <span className="flex min-w-0 items-center gap-2">
+                            <Avatar
+                              src={user.photoUrl}
+                              name={user.name}
+                              className="h-7 w-7 shrink-0 rounded-full border border-slate-800 object-cover"
+                            />
+                            <span className="min-w-0">
+                              <span className="block truncate text-[10px] font-bold text-slate-300">
+                                {user.name}
+                              </span>
+                              <span className="block truncate text-[8px] text-slate-600">
+                                {user.email}
+                              </span>
+                            </span>
+                          </span>
+                          <span className="text-[9px] font-mono text-teal-400">
+                            {taggedUserIds.includes(user.uid)
+                              ? 'Marcado'
+                              : 'Marcar'}
+                          </span>
+                        </button>
+                      ))
+                    )}
+                  </div>
+                )}
+              </div>
+            </section>
+
+            <section
+              ref={postsSectionRef}
+              className="space-y-4 p-4 sm:p-5"
+              id="profile-publication-register"
+            >
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-sm font-black uppercase tracking-wide text-white">
+                    Minhas publicações
+                  </h3>
+                  <p className="mt-1 text-[9px] text-slate-500">
+                    Seu registro social publicado no feed da Praça.
+                  </p>
+                </div>
+                <span className="rounded-full border border-slate-800 bg-slate-900 px-2.5 py-1 text-[9px] font-mono text-slate-400">
+                  {ownFeedPosts.length}
+                </span>
+              </div>
+
+              {ownFeedPosts.length === 0 ? (
+                <div className="rounded-3xl border border-dashed border-slate-800 bg-slate-900/40 px-5 py-12 text-center">
+                  <CircleUserRound className="mx-auto h-8 w-8 text-slate-700" />
+                  <p className="mt-3 text-xs text-slate-500">
+                    Suas publicações aparecerão aqui e no feed Recentes da Praça.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {ownFeedPosts.map(post => (
+                    <article
+                      key={post.id}
+                      className="space-y-3 rounded-2xl border border-slate-800 bg-slate-900 p-4"
+                    >
+                      <div className="flex items-center gap-3">
+                        <Avatar
+                          src={post.avatar || displayAvatar}
+                          name={post.user}
+                          className="h-9 w-9 rounded-full border border-slate-800 object-cover"
+                        />
+                        <div className="min-w-0">
+                          <h4 className="truncate text-xs font-bold text-slate-200">
+                            {post.user}
+                          </h4>
+                          <span className="font-mono text-[9px] text-slate-500">
+                            {post.time}
+                          </span>
+                        </div>
+                      </div>
+                      {post.content && (
+                        <p className="whitespace-pre-line text-xs leading-relaxed text-slate-300">
+                          {post.content}
+                        </p>
+                      )}
+                      {post.taggedUsers && post.taggedUsers.length > 0 && (
+                        <p className="text-[9px] font-mono text-teal-400">
+                          com {post.taggedUsers.map(name => `@${name}`).join(', ')}
+                        </p>
+                      )}
+                      {post.mediaUrls && post.mediaUrls.length > 0 && (
+                        <MediaCarousel mediaUrls={post.mediaUrls} />
+                      )}
+                      <div className="flex items-center justify-between border-t border-slate-800 pt-2.5 text-[9px] font-mono text-slate-500">
+                        <button
+                          type="button"
+                          onClick={() => likeOwnPost(post.id)}
+                          className="flex items-center gap-1.5 hover:text-orange-300"
+                        >
+                          <CheckCircle2 className="h-3.5 w-3.5 text-orange-500" />
+                          {post.likes} curtidas
+                        </button>
+                        <span>Feed Kyrub</span>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              )}
+            </section>
+          </div>
+        </div>
+      </div>
+
+      <ProfileSettingsPanel
+        {...props}
+        isOpen={isSettingsOpen}
+        onClose={() => setIsSettingsOpen(false)}
+      />
+    </>
   );
 };
