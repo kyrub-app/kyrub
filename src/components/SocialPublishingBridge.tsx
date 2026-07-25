@@ -85,7 +85,7 @@ const cloudDocumentToLocalPost = (
   if (!authorId || !user) return null;
 
   return {
-    id,
+    id: readString(data.sourcePostId) || id,
     authorId,
     user,
     avatar: readString(data.authorAvatar),
@@ -143,9 +143,26 @@ export function SocialPublishingBridge() {
     const knownCloudPostIds = new Set<string>();
     const pendingCloudPostIds = new Set<string>();
 
+    const hasUnsyncedLocalPosts = () => {
+      const user = activeUser;
+      if (!user) return false;
+      return queuedLocalPosts.some(post => {
+        if (post.authorId && post.authorId !== user.uid) return false;
+        if (!post.id) return false;
+        return !knownCloudPostIds.has(cloudPostId(user.uid, post.id));
+      });
+    };
+
     const publishOwnCloudState = () => {
       const user = activeUser;
-      if (!user || cancelled || pendingCloudPostIds.size > 0) return;
+      if (
+        !user ||
+        cancelled ||
+        pendingCloudPostIds.size > 0 ||
+        hasUnsyncedLocalPosts()
+      ) {
+        return;
+      }
 
       const sortedPosts = [...ownCloudPosts].sort(
         (left, right) =>
