@@ -8,11 +8,12 @@ import {
   where,
 } from 'firebase/firestore';
 import { ConnectedContactsPanel } from '../ConnectedContactsPanel';
+import { PublicSocialFeedPanel } from '../PublicSocialFeedPanel';
 import { KyrubTab as LegacyKyrubTab } from './LegacyKyrubTab';
+import { usePublicSocialFeed } from '../../hooks/usePublicSocialFeed';
 import type {
   MarketplaceListingDocument,
   MarketplaceStoreListingDocument,
-  SocialPost,
   Store,
 } from '../../types';
 import { auth, db } from '../../utils/firebase';
@@ -22,37 +23,9 @@ type KyrubTabProps = React.ComponentProps<
   typeof LegacyKyrubTab
 >;
 
-type SocialPostsUpdatedDetail = {
-  uid?: string;
-  posts?: SocialPost[];
-};
-
 const CANONICAL_MARKETPLACE_READ_ENABLED =
   import.meta.env.VITE_ENABLE_CANONICAL_MARKETPLACE_READ ===
   'true';
-
-const LEGACY_POSTS_KEY = 'kyrub_posts';
-const getUserPostsKey = (uid: string) =>
-  `kyrub_posts_${uid}`;
-
-const readStoredPosts = (
-  rawValue: string | null
-): SocialPost[] => {
-  if (!rawValue) return [];
-
-  try {
-    const parsedValue = JSON.parse(rawValue);
-    return Array.isArray(parsedValue)
-      ? (parsedValue as SocialPost[])
-      : [];
-  } catch (error) {
-    console.warn(
-      'Não foi possível ler as publicações salvas.',
-      error
-    );
-    return [];
-  }
-};
 
 const canonicalListingToStore = (
   listing: MarketplaceStoreListingDocument
@@ -135,198 +108,79 @@ const tenantListingToStore = (
 };
 
 export function KyrubTab(props: KyrubTabProps) {
-  const [canonicalStores, setCanonicalStores] = useState<
-    Store[]
-  >([]);
-  const [fallbackStores, setFallbackStores] = useState<
-    Store[]
-  >([]);
-  const [activePostsUserId, setActivePostsUserId] =
-    useState<string | null>(null);
-  const [postsHydrated, setPostsHydrated] =
-    useState(false);
-
-  const { posts, setPosts } = props;
+  const [canonicalStores, setCanonicalStores] = useState<Store[]>([]);
+  const [fallbackStores, setFallbackStores] = useState<Store[]>([]);
+  const socialFeed = usePublicSocialFeed();
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, user => {
-      if (!user) {
-        setActivePostsUserId(null);
-        setPostsHydrated(false);
-        return;
-      }
-
-      const userPostsKey = getUserPostsKey(user.uid);
-      const storedForUser =
-        localStorage.getItem(userPostsKey);
-      const legacyStoredPosts =
-        localStorage.getItem(LEGACY_POSTS_KEY);
-      const hydratedPosts = readStoredPosts(
-        storedForUser ?? legacyStoredPosts
-      );
-
-      if (
-        !storedForUser &&
-        legacyStoredPosts &&
-        hydratedPosts.length > 0
-      ) {
-        try {
-          localStorage.setItem(
-            userPostsKey,
-            JSON.stringify(hydratedPosts)
-          );
-        } catch (error) {
-          console.warn(
-            'Não foi possível migrar as publicações locais.',
-            error
-          );
-        }
-      }
-
-      setActivePostsUserId(user.uid);
-      setPosts(hydratedPosts);
-      setPostsHydrated(true);
-    });
-
-    return unsubscribe;
-  }, [setPosts]);
-
-  useEffect(() => {
-    const handleProfilePostsUpdated = (event: Event) => {
-      const detail = (
-        event as CustomEvent<SocialPostsUpdatedDetail>
-      ).detail;
-
-      if (
-        !activePostsUserId ||
-        detail?.uid !== activePostsUserId ||
-        !Array.isArray(detail.posts)
-      ) {
-        return;
-      }
-
-      setPosts(detail.posts);
-      setPostsHydrated(true);
-    };
-
-    const handleStorage = (event: StorageEvent) => {
-      if (
-        !activePostsUserId ||
-        event.key !== getUserPostsKey(activePostsUserId)
-      ) {
-        return;
-      }
-
-      setPosts(readStoredPosts(event.newValue));
-      setPostsHydrated(true);
-    };
-
-    window.addEventListener(
-      'kyrub-social-posts-updated',
-      handleProfilePostsUpdated as EventListener
-    );
-    window.addEventListener('storage', handleStorage);
-
-    return () => {
-      window.removeEventListener(
-        'kyrub-social-posts-updated',
-        handleProfilePostsUpdated as EventListener
-      );
-      window.removeEventListener('storage', handleStorage);
-    };
-  }, [activePostsUserId, setPosts]);
-
-  useEffect(() => {
-    if (!activePostsUserId || !postsHydrated) return;
-
-    try {
-      localStorage.setItem(
-        getUserPostsKey(activePostsUserId),
-        JSON.stringify(posts)
-      );
-    } catch (error) {
-      console.warn(
-        'Não foi possível salvar as publicações localmente.',
-        error
-      );
-    }
-  }, [activePostsUserId, posts, postsHydrated]);
+    props.setPosts(socialFeed.posts);
+  }, [props.setPosts, socialFeed.posts]);
 
   useEffect(() => {
     let unsubscribeCanonical = () => undefined;
     let unsubscribeFallback = () => undefined;
 
-    const unsubscribeAuth = onAuthStateChanged(
-      auth,
-      user => {
-        unsubscribeCanonical();
-        unsubscribeFallback();
-        setCanonicalStores([]);
-        setFallbackStores([]);
+    const unsubscribeAuth = onAuthStateChanged(auth, user => {
+      unsubscribeCanonical();
+      unsubscribeFallback();
+      setCanonicalStores([]);
+      setFallbackStores([]);
 
-        if (!user) return;
+      if (!user) return;
 
-        if (CANONICAL_MARKETPLACE_READ_ENABLED) {
-          const canonicalQuery = query(
-            collection(
-              db,
-              getMarketplaceListingsCollectionPath()
-            ),
-            where('publicationStatus', '==', 'published')
-          );
-          unsubscribeCanonical = onSnapshot(
-            canonicalQuery,
-            snapshot => {
-              const stores = snapshot.docs.flatMap(
-                snapshotDocument => {
-                  const listing =
-                    snapshotDocument.data() as MarketplaceListingDocument;
-                  return listing.listingType === 'store'
-                    ? [canonicalListingToStore(listing)]
-                    : [];
-                }
-              );
-              setCanonicalStores(stores);
-            },
-            error => {
-              console.warn(
-                'Canonical marketplace listings are unavailable.',
-                error
-              );
-              setCanonicalStores([]);
-            }
-          );
-        }
-
-        const fallbackQuery = query(
-          collection(db, 'tenants'),
+      if (CANONICAL_MARKETPLACE_READ_ENABLED) {
+        const canonicalQuery = query(
+          collection(db, getMarketplaceListingsCollectionPath()),
           where('publicationStatus', '==', 'published')
         );
-        unsubscribeFallback = onSnapshot(
-          fallbackQuery,
+        unsubscribeCanonical = onSnapshot(
+          canonicalQuery,
           snapshot => {
-            setFallbackStores(
+            setCanonicalStores(
               snapshot.docs.flatMap(snapshotDocument => {
-                const store = tenantListingToStore(
-                  snapshotDocument.data() as Record<
-                    string,
-                    unknown
-                  >
-                );
-                return store ? [store] : [];
+                const listing =
+                  snapshotDocument.data() as MarketplaceListingDocument;
+                return listing.listingType === 'store'
+                  ? [canonicalListingToStore(listing)]
+                  : [];
               })
             );
           },
           error => {
             console.warn(
-              'Marketplace fallback listings are unavailable.',
+              'Canonical marketplace listings are unavailable.',
               error
             );
-            setFallbackStores([]);
+            setCanonicalStores([]);
           }
         );
       }
-    );
+
+      const fallbackQuery = query(
+        collection(db, 'tenants'),
+        where('publicationStatus', '==', 'published')
+      );
+      unsubscribeFallback = onSnapshot(
+        fallbackQuery,
+        snapshot => {
+          setFallbackStores(
+            snapshot.docs.flatMap(snapshotDocument => {
+              const store = tenantListingToStore(
+                snapshotDocument.data() as Record<string, unknown>
+              );
+              return store ? [store] : [];
+            })
+          );
+        },
+        error => {
+          console.warn(
+            'Marketplace fallback listings are unavailable.',
+            error
+          );
+          setFallbackStores([]);
+        }
+      );
+    });
 
     return () => {
       unsubscribeAuth();
@@ -337,39 +191,58 @@ export function KyrubTab(props: KyrubTabProps) {
 
   const publishedStores = useMemo(() => {
     const storesById = new Map<string, Store>();
-
-    for (const store of fallbackStores) {
-      storesById.set(store.id, store);
-    }
-    for (const store of canonicalStores) {
-      storesById.set(store.id, store);
-    }
-
+    for (const store of fallbackStores) storesById.set(store.id, store);
+    for (const store of canonicalStores) storesById.set(store.id, store);
     return Array.from(storesById.values());
   }, [canonicalStores, fallbackStores]);
 
   const isConnectedContactsActive =
     props.socialSubTab === 'usuarios' &&
     props.pracaFilter === 'conectados';
+  const isPublicFeedActive =
+    props.socialSubTab === 'usuarios' &&
+    (props.pracaFilter === 'recentes' ||
+      props.pracaFilter === 'favoritos');
+
+  const wrapperClassName = [
+    isConnectedContactsActive
+      ? 'connected-contacts-redesign-active'
+      : '',
+    isPublicFeedActive ? 'public-social-feed-active' : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
 
   return (
-    <div
-      className={
-        isConnectedContactsActive
-          ? 'connected-contacts-redesign-active'
-          : undefined
-      }
-    >
+    <div className={wrapperClassName || undefined}>
       <LegacyKyrubTab
         {...props}
+        posts={socialFeed.posts}
         storesWithCoords={publishedStores}
       />
+
+      {isPublicFeedActive && (
+        <PublicSocialFeedPanel
+          posts={socialFeed.posts}
+          loading={socialFeed.loading}
+          currentUserId={socialFeed.currentUserId}
+          likedPostIds={socialFeed.likedPostIds}
+          commentsByPost={socialFeed.commentsByPost}
+          friends={props.friends}
+          searchQuery={props.searchQuery}
+          filter={props.pracaFilter as 'recentes' | 'favoritos'}
+          onToggleLike={socialFeed.toggleLike}
+          onAddComment={socialFeed.addComment}
+          onDeleteComment={socialFeed.deleteComment}
+          triggerToast={props.triggerToast}
+        />
+      )}
 
       {isConnectedContactsActive && (
         <ConnectedContactsPanel
           searchQuery={props.searchQuery}
           friends={props.friends}
-          posts={props.posts}
+          posts={socialFeed.posts}
           getSuggestions={props.getSuggestions}
           connectionRequests={props.connectionRequests}
           setConectadosSubTab={props.setConectadosSubTab}

@@ -6,6 +6,10 @@ const profileSource = readFileSync(
   'src/components/modals/UserProfileModal.tsx',
   'utf8'
 );
+const bridgeSource = readFileSync(
+  'src/components/SocialPublishingBridge.tsx',
+  'utf8'
+);
 const kyrubWrapperSource = readFileSync(
   'src/components/tabs/KyrubTab.tsx',
   'utf8'
@@ -36,15 +40,16 @@ test('the Clips action opens account, data, security and verification settings',
   assert.match(profileSource, /Perfil visível na Praça/);
 });
 
-test('profile publications remain connected to the Praça feed', () => {
+test('profile publications remain connected to the realtime Praça feed', () => {
   assert.match(profileSource, /getUserPostsKey/);
   assert.match(profileSource, /kyrub-social-posts-updated/);
   assert.match(profileSource, /publicationType: 'feed' \| 'status'/);
   assert.match(profileSource, /Publicação enviada para o feed da Praça/);
 
-  assert.match(kyrubWrapperSource, /kyrub-social-posts-updated/);
-  assert.match(kyrubWrapperSource, /handleProfilePostsUpdated/);
-  assert.match(kyrubWrapperSource, /getUserPostsKey\(activePostsUserId\)/);
+  assert.match(bridgeSource, /kyrub-social-posts-updated/);
+  assert.match(bridgeSource, /collection\(db, 'social_posts'\)/);
+  assert.match(kyrubWrapperSource, /usePublicSocialFeed/);
+  assert.match(kyrubWrapperSource, /<PublicSocialFeedPanel/);
 });
 
 test('Praça Recentes no longer displays the old publication composer', () => {

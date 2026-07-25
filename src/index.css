@@ -35,3 +35,15 @@ body {
   > .space-y-6 {
   display: none;
 }
+
+/* Keep the Praça navigation, but replace its old local feed body with the realtime cloud feed. */
+.public-social-feed-active
+  #kyrub-tab-container
+  > .space-y-5.animate-fade-in
+  > :nth-child(2) {
+  display: none;
+}
+
+.public-social-feed-active > #public-social-feed-panel {
+  margin-top: 1.25rem;
+}

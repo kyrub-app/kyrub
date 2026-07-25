@@ -6,6 +6,7 @@ import {
   persistentLocalCache,
   persistentMultipleTabManager,
 } from 'firebase/firestore';
+import { getStorage } from 'firebase/storage';
 
 const firebaseConfig = {
   apiKey: 'AIzaSyCgWDortDA5DYjx4xIlC9YjKH3ZNIrv99U',
@@ -21,6 +22,7 @@ const app = getApps().length === 0
   : getApp();
 
 export const auth = getAuth(app);
+export const storage = getStorage(app);
 
 const initializeOfflineFirstFirestore = () => {
   try {
