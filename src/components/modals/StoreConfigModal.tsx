@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type React from 'react';
 import { createPortal } from 'react-dom';
-import { onSnapshot, doc } from 'firebase/firestore';
+import { doc, getDoc, onSnapshot } from 'firebase/firestore';
 import { StoreConfigModal as LegacyStoreConfigModal } from './LegacyStoreConfigModal';
 import type { MarketplaceListingDocument } from '../../types';
 import { auth, db } from '../../utils/firebase';
@@ -27,6 +27,7 @@ type ToastState = {
 type SaveStoreResult = {
   localSaved: boolean;
   cloudSynced: boolean;
+  marketplaceSynced: boolean;
 };
 
 export const StoreConfigModal: React.FC<StoreConfigModalProps> = props => {
@@ -173,11 +174,36 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = props => {
     props.configStoreKeywords,
   ]);
 
-  const saveStore = async (): Promise<SaveStoreResult> => {
+  const resolvePublishedState = async (uid: string): Promise<boolean> => {
+    if (isPublished) return true;
+
+    const [canonicalResult, fallbackResult] = await Promise.allSettled([
+      getDoc(doc(db, getMarketplaceStoreListingDocumentPath(uid))),
+      getDoc(doc(db, 'tenants', uid)),
+    ]);
+
+    const canonicalIsPublished =
+      canonicalResult.status === 'fulfilled' &&
+      (canonicalResult.value.data() as MarketplaceListingDocument | undefined)
+        ?.publicationStatus === 'published';
+    const fallbackIsPublished =
+      fallbackResult.status === 'fulfilled' &&
+      fallbackResult.value.data()?.publicationStatus === 'published';
+
+    return canonicalIsPublished || fallbackIsPublished;
+  };
+
+  const saveStore = async (
+    refreshPublishedMarketplace: boolean
+  ): Promise<SaveStoreResult> => {
     const user = auth.currentUser;
     if (!user || !configuredStore) {
       notify('Faça login novamente para salvar sua loja.', 'error');
-      return { localSaved: false, cloudSynced: false };
+      return {
+        localSaved: false,
+        cloudSynced: false,
+        marketplaceSynced: false,
+      };
     }
 
     saveCachedUserStore(
@@ -188,14 +214,15 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = props => {
     );
     setPendingSync(true);
 
-    // The local cache is authoritative for the current session even when
-    // the private Firestore document cannot be synchronized yet.
+    // The cache immediately preserves the controlled profile values while the
+    // private and public Firestore copies are synchronized.
     window.dispatchEvent(
       new CustomEvent('kyrub-user-store-saved', {
         detail: { store: configuredStore },
       })
     );
 
+    let cloudSynced = false;
     try {
       await persistPrivateUserStore(user, configuredStore);
       saveCachedUserStore(
@@ -205,28 +232,56 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = props => {
         false
       );
       setPendingSync(false);
-      return { localSaved: true, cloudSynced: true };
+      cloudSynced = true;
     } catch (error) {
       console.warn('Store kept locally while cloud sync is pending.', error);
-      return { localSaved: true, cloudSynced: false };
     }
+
+    let marketplaceSynced = true;
+    if (refreshPublishedMarketplace && await resolvePublishedState(user.uid)) {
+      try {
+        // Saving an already-published profile must refresh both public mirrors;
+        // otherwise keywords remain stale in the Ofertas card and storefront.
+        await setStoreMarketplacePublication(user, configuredStore, true);
+        setCanonicalPublished(true);
+        setFallbackPublished(true);
+      } catch (error) {
+        marketplaceSynced = false;
+        console.warn('Published store profile refresh is pending.', error);
+      }
+    }
+
+    return {
+      localSaved: true,
+      cloudSynced,
+      marketplaceSynced,
+    };
+  };
+
+  const syncLegacyStoreState = async (): Promise<void> => {
+    // LegacyApp owns activeStore. Reusing its existing handler keeps that state
+    // aligned immediately instead of waiting for a page reload.
+    await Promise.resolve(props.handleSaveStoreProfile());
   };
 
   const handleSave = async (): Promise<void> => {
     setIsSaving(true);
-    const result = await saveStore();
+    const result = await saveStore(true);
 
     if (result.localSaved) {
+      await syncLegacyStoreState();
       notify(
-        result.cloudSynced
-          ? 'Perfil da loja salvo com sucesso!'
-          : 'Loja salva neste dispositivo. A sincronização com a nuvem ficou pendente.',
-        result.cloudSynced ? 'success' : 'warning'
+        !result.marketplaceSynced
+          ? 'Perfil salvo. A atualização da vitrine pública ficou pendente.'
+          : result.cloudSynced
+            ? 'Perfil e palavras-chave atualizados com sucesso!'
+            : 'Loja salva neste dispositivo. A sincronização privada ficou pendente.',
+        result.marketplaceSynced && result.cloudSynced ? 'success' : 'warning'
       );
     }
 
     setIsSaving(false);
-    props.onClose();
+    if (result.localSaved) props.onClose();
   };
 
   const handlePublication = async (): Promise<void> => {
@@ -244,7 +299,7 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = props => {
     }
 
     setIsPublishing(true);
-    const saveResult = await saveStore();
+    const saveResult = await saveStore(false);
 
     if (!saveResult.localSaved) {
       setIsPublishing(false);
@@ -260,9 +315,9 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = props => {
         targetPublished
       );
 
-      // The compatibility marketplace write is guaranteed on a successful
-      // return from setStoreMarketplacePublication, so update it immediately.
+      setCanonicalPublished(targetPublished);
       setFallbackPublished(targetPublished);
+      await syncLegacyStoreState();
 
       notify(
         targetPublished
