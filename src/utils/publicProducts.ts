@@ -12,7 +12,11 @@ import {
   type Unsubscribe,
 } from 'firebase/firestore';
 import type { User } from 'firebase/auth';
-import type { Product, ProductCategoryCollection } from '../types';
+import type {
+  Product,
+  ProductCategoryCollection,
+  ProductOptionGroup,
+} from '../types';
 import { db } from './firebase';
 import {
   chooseCanonicalReadSource,
@@ -20,6 +24,7 @@ import {
   recordCanonicalReadDecision,
   type CanonicalReadDecision,
 } from './canonicalReadCutover';
+import { parseProductOptionGroups } from './productCustomization';
 
 export const PUBLIC_PRODUCT_CREATE_EVENT = 'kyrub-public-product-create';
 
@@ -36,7 +41,9 @@ export interface PublicProductDraft {
   category: string;
   image: string;
   isService: boolean;
+  isComplimentary?: boolean;
   categoryCollections?: ProductCategoryCollection[];
+  optionGroups?: ProductOptionGroup[];
 }
 
 export interface PublicProductCreateRequest {
@@ -92,13 +99,16 @@ export const buildPublicProduct = (
 ): PublicProduct => {
   const name = draft.name.trim();
   const category = draft.category.trim();
-  const price = Number.parseFloat(draft.price.replace(',', '.'));
+  const isComplimentary = draft.isComplimentary === true;
+  const parsedPrice = Number.parseFloat(draft.price.replace(',', '.'));
+  const price = isComplimentary ? 0 : parsedPrice;
   const parsedStock = draft.isService
     ? 0
     : Number.parseInt(draft.stock || '0', 10);
   const categoryCollections = parseProductCategoryCollections(
     draft.categoryCollections
   );
+  const optionGroups = parseProductOptionGroups(draft.optionGroups);
 
   if (!name) {
     throw new Error('Informe o nome do item.');
@@ -127,7 +137,9 @@ export const buildPublicProduct = (
     stock: draft.isService ? 0 : parsedStock,
     category,
     isService: draft.isService,
+    isComplimentary,
     ...(categoryCollections.length > 0 ? { categoryCollections } : {}),
+    ...(optionGroups.length > 0 ? { optionGroups } : {}),
     updatedAt: new Date(now).toISOString(),
   };
 };
@@ -149,6 +161,7 @@ export const parsePublicProducts = (value: unknown): PublicProduct[] => {
     const categoryCollections = parseProductCategoryCollections(
       product.categoryCollections
     );
+    const optionGroups = parseProductOptionGroups(product.optionGroups);
 
     if (
       !id ||
@@ -170,12 +183,14 @@ export const parsePublicProducts = (value: unknown): PublicProduct[] => {
       supplierId,
       name,
       description: cleanString(product.description),
-      price,
+      price: product.isComplimentary === true ? 0 : price,
       image: cleanString(product.image),
       stock,
       category,
       isService: product.isService === true,
+      isComplimentary: product.isComplimentary === true,
       ...(categoryCollections.length > 0 ? { categoryCollections } : {}),
+      ...(optionGroups.length > 0 ? { optionGroups } : {}),
       updatedAt: cleanString(product.updatedAt),
     } satisfies PublicProduct];
   });
@@ -194,6 +209,7 @@ const parseCanonicalPublicProduct = (
   const categoryCollections = parseProductCategoryCollections(
     value.categoryCollections
   );
+  const optionGroups = parseProductOptionGroups(value.optionGroups);
 
   if (
     !id ||
@@ -214,12 +230,14 @@ const parseCanonicalPublicProduct = (
     supplierId: legacyStoreId,
     name,
     description: cleanString(value.description),
-    price,
+    price: value.isComplimentary === true ? 0 : price,
     image: cleanString(value.image),
     stock: value.isService === true ? 0 : stock,
     category,
     isService: value.isService === true,
+    isComplimentary: value.isComplimentary === true,
     ...(categoryCollections.length > 0 ? { categoryCollections } : {}),
+    ...(optionGroups.length > 0 ? { optionGroups } : {}),
     updatedAt:
       cleanString(value.legacyUpdatedAt) || timestampToIso(value.updatedAt),
   };
@@ -236,7 +254,9 @@ const comparableProduct = (product: PublicProduct) => ({
   categoryCollections: parseProductCategoryCollections(
     product.categoryCollections
   ),
+  optionGroups: parseProductOptionGroups(product.optionGroups),
   isService: product.isService === true,
+  isComplimentary: product.isComplimentary === true,
 });
 
 export const publicProductCollectionsEquivalent = (
