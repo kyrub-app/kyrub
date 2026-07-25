@@ -71,4 +71,5 @@ test('Vercel sends direct public and operational routes to the SPA entry', () =>
   assert.equal(routes.get('/@:slug'), '/index.html');
   assert.equal(routes.get('/@:slug/:path*'), '/index.html');
   assert.equal(routes.get('/staff'), '/index.html');
+  assert.equal(routes.get('/:slug/staff'), '/index.html');
 });
