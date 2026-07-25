@@ -1,5 +1,13 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ImagePlus, Layers3, Plus, Trash2, X } from 'lucide-react';
+import {
+  CircleDollarSign,
+  ImagePlus,
+  Layers3,
+  ListPlus,
+  Plus,
+  Trash2,
+  X,
+} from 'lucide-react';
 import { onAuthStateChanged } from 'firebase/auth';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { GoogleDriveImagePickerButton } from '../GoogleDriveImagePickerButton';
@@ -11,7 +19,10 @@ import {
   PUBLIC_PRODUCT_CREATE_EVENT,
   type PublicProductCreateRequest,
 } from '../../utils/publicProducts';
-import type { ProductCategoryCollection } from '../../types';
+import type {
+  ProductCategoryCollection,
+  ProductOptionGroup,
+} from '../../types';
 
 interface NewProductModalProps {
   isOpen: boolean;
@@ -38,6 +49,20 @@ type SubcategoryDraft = {
   fileName: string;
 };
 
+type OptionChoiceDraft = {
+  id: string;
+  name: string;
+  priceDelta: string;
+};
+
+type OptionGroupDraft = {
+  id: string;
+  name: string;
+  minSelections: number;
+  maxSelections: number;
+  choices: OptionChoiceDraft[];
+};
+
 const normalizeCategoryValue = (value: string): string =>
   value
     .normalize('NFD')
@@ -58,6 +83,20 @@ const readCategoryOptions = (value: unknown): string[] => {
     return [keyword];
   });
 };
+
+const createChoiceDraft = (index: number): OptionChoiceDraft => ({
+  id: `choice-${Date.now()}-${index}`,
+  name: '',
+  priceDelta: '0',
+});
+
+const createGroupDraft = (): OptionGroupDraft => ({
+  id: `group-${Date.now()}`,
+  name: '',
+  minSelections: 1,
+  maxSelections: 1,
+  choices: [createChoiceDraft(1), createChoiceDraft(2)],
+});
 
 export const NewProductModal: React.FC<NewProductModalProps> = ({
   isOpen,
@@ -82,6 +121,8 @@ export const NewProductModal: React.FC<NewProductModalProps> = ({
   const [loadingCategories, setLoadingCategories] = useState(false);
   const [subcategoryDraft, setSubcategoryDraft] = useState('');
   const [subcategories, setSubcategories] = useState<SubcategoryDraft[]>([]);
+  const [isComplimentary, setIsComplimentary] = useState(false);
+  const [optionGroups, setOptionGroups] = useState<OptionGroupDraft[]>([]);
   const wasOpen = useRef(false);
 
   const categoryPath = useMemo(
@@ -120,6 +161,8 @@ export const NewProductModal: React.FC<NewProductModalProps> = ({
       setFormError('');
       setSubcategoryDraft('');
       setSubcategories([]);
+      setIsComplimentary(false);
+      setOptionGroups([]);
     }
 
     wasOpen.current = isOpen;
@@ -236,6 +279,79 @@ export const NewProductModal: React.FC<NewProductModalProps> = ({
     );
   };
 
+  const updateOptionGroup = (
+    groupId: string,
+    patch: Partial<OptionGroupDraft>
+  ): void => {
+    setOptionGroups(current =>
+      current.map(group =>
+        group.id === groupId ? { ...group, ...patch } : group
+      )
+    );
+  };
+
+  const updateChoice = (
+    groupId: string,
+    choiceId: string,
+    patch: Partial<OptionChoiceDraft>
+  ): void => {
+    setOptionGroups(current =>
+      current.map(group =>
+        group.id === groupId
+          ? {
+              ...group,
+              choices: group.choices.map(choice =>
+                choice.id === choiceId ? { ...choice, ...patch } : choice
+              ),
+            }
+          : group
+      )
+    );
+  };
+
+  const buildOptionGroups = (): ProductOptionGroup[] =>
+    optionGroups.map((group, groupIndex) => {
+      const name = group.name.trim();
+      const choices = group.choices.flatMap((choice, choiceIndex) => {
+        const choiceName = choice.name.trim();
+        if (!choiceName) return [];
+        const parsedDelta = Number.parseFloat(choice.priceDelta.replace(',', '.'));
+        if (!Number.isFinite(parsedDelta) || parsedDelta < 0) {
+          throw new Error(
+            `Revise o preço adicional de “${choiceName || `opção ${choiceIndex + 1}`}”.`
+          );
+        }
+        return [{
+          id: choice.id || `choice-${groupIndex + 1}-${choiceIndex + 1}`,
+          name: choiceName,
+          priceDelta: Number(parsedDelta.toFixed(2)),
+        }];
+      });
+
+      if (!name) {
+        throw new Error(`Informe o nome da etapa/grupo ${groupIndex + 1}.`);
+      }
+      if (choices.length === 0) {
+        throw new Error(`Adicione opções à etapa “${name}”.`);
+      }
+      if (
+        group.minSelections < 0 ||
+        group.maxSelections < 1 ||
+        group.minSelections > group.maxSelections ||
+        group.maxSelections > choices.length
+      ) {
+        throw new Error(`Revise o mínimo e o máximo de escolhas em “${name}”.`);
+      }
+
+      return {
+        id: group.id || `group-${groupIndex + 1}`,
+        name,
+        minSelections: group.minSelections,
+        maxSelections: group.maxSelections,
+        choices,
+      };
+    });
+
   const handleSubmit = (event: React.FormEvent): void => {
     event.preventDefault();
     setFormError('');
@@ -259,12 +375,14 @@ export const NewProductModal: React.FC<NewProductModalProps> = ({
       const product = buildPublicProduct(user, {
         name: newProdName,
         description: newProdDesc,
-        price: newProdPrice,
+        price: isComplimentary ? '0' : newProdPrice,
         stock: newProdStock,
         category: categoryPath,
         categoryCollections,
+        optionGroups: buildOptionGroups(),
         image: imageUrl,
         isService: newProdIsService,
+        isComplimentary,
       });
 
       const request: PublicProductCreateRequest = {
@@ -295,6 +413,8 @@ export const NewProductModal: React.FC<NewProductModalProps> = ({
       setImageFileName('');
       setSubcategoryDraft('');
       setSubcategories([]);
+      setIsComplimentary(false);
+      setOptionGroups([]);
       onClose();
     } catch (error) {
       setFormError(
@@ -305,7 +425,7 @@ export const NewProductModal: React.FC<NewProductModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4 backdrop-blur-sm">
-      <div className="relative max-h-[90vh] w-full max-w-lg space-y-4 overflow-y-auto rounded-3xl border border-slate-800 bg-slate-900 p-6 shadow-2xl">
+      <div className="relative max-h-[92vh] w-full max-w-2xl space-y-4 overflow-y-auto rounded-3xl border border-slate-800 bg-slate-900 p-5 shadow-2xl sm:p-6">
         <div className="flex items-center justify-between">
           <h3 className="flex items-center gap-2 text-lg font-black text-white">
             <Plus className="h-5 w-5 text-teal-400" />
@@ -330,7 +450,7 @@ export const NewProductModal: React.FC<NewProductModalProps> = ({
               type="text"
               value={newProdName}
               onChange={event => setNewProdName(event.target.value)}
-              placeholder="Digite o nome"
+              placeholder="Ex.: Menu Executivo, Monte seu prato, Repetição do rodízio"
               className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3.5 py-2 text-sm text-white focus:border-teal-500 focus:outline-none"
               required
             />
@@ -345,11 +465,12 @@ export const NewProductModal: React.FC<NewProductModalProps> = ({
                 type="number"
                 min="0"
                 step="0.01"
-                value={newProdPrice}
+                value={isComplimentary ? '0' : newProdPrice}
                 onChange={event => setNewProdPrice(event.target.value)}
                 placeholder="0,00"
-                className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3.5 py-2 text-sm text-white focus:border-teal-500 focus:outline-none"
-                required
+                disabled={isComplimentary}
+                className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3.5 py-2 text-sm text-white focus:border-teal-500 focus:outline-none disabled:cursor-not-allowed disabled:opacity-45"
+                required={!isComplimentary}
               />
             </div>
 
@@ -419,6 +540,34 @@ export const NewProductModal: React.FC<NewProductModalProps> = ({
             </div>
           </div>
 
+          <label
+            className={`flex cursor-pointer items-start gap-3 rounded-2xl border p-3 transition-colors ${
+              isComplimentary
+                ? 'border-emerald-500/40 bg-emerald-500/10'
+                : 'border-slate-800 bg-slate-950'
+            }`}
+            id="product-complimentary-control"
+          >
+            <input
+              type="checkbox"
+              checked={isComplimentary}
+              onChange={event => {
+                setIsComplimentary(event.target.checked);
+                if (event.target.checked) setNewProdPrice('0');
+              }}
+              className="mt-0.5 accent-emerald-500"
+            />
+            <span>
+              <strong className="flex items-center gap-2 text-xs text-white">
+                <CircleDollarSign className="h-4 w-4 text-emerald-400" />
+                Item sem custo
+              </strong>
+              <span className="mt-1 block text-[10px] leading-relaxed text-slate-500">
+                Use para reposições, repetições de rodízio, brindes ou componentes que precisam chegar ao KDS sem aumentar a conta.
+              </span>
+            </span>
+          </label>
+
           <div
             className="space-y-3 rounded-2xl border border-slate-800 bg-slate-950/55 p-3"
             id="product-subcategory-control"
@@ -429,7 +578,7 @@ export const NewProductModal: React.FC<NewProductModalProps> = ({
                 Subcategorias e coleções
               </label>
               <p className="mt-1 text-[10px] leading-relaxed text-slate-500">
-                Adicione um nível por vez. Cada nível pode receber uma imagem própria para aparecer na navegação da vitrine.
+                Adicione um nível por vez. Cada nível pode receber uma imagem própria para aparecer na navegação do PDV.
               </p>
             </div>
 
@@ -570,7 +719,7 @@ export const NewProductModal: React.FC<NewProductModalProps> = ({
                           <p className="text-[9px] leading-relaxed text-slate-600">
                             {subcategory.fileName
                               ? `Arquivo selecionado: ${subcategory.fileName}`
-                              : 'Sem imagem, a vitrine usará a foto de um item desta coleção como capa.'}
+                              : 'Sem imagem, o PDV usará a foto de um item desta coleção como capa.'}
                           </p>
                         </div>
                       </div>
@@ -589,6 +738,177 @@ export const NewProductModal: React.FC<NewProductModalProps> = ({
               </strong>
             </div>
           </div>
+
+          <section
+            className="space-y-3 rounded-2xl border border-slate-800 bg-slate-950/55 p-3"
+            id="product-option-groups-control"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h4 className="flex items-center gap-2 font-mono text-xs uppercase text-slate-400">
+                  <ListPlus className="h-4 w-4 text-orange-400" />
+                  Personalização, etapas e múltiplas escolhas
+                </h4>
+                <p className="mt-1 text-[10px] leading-relaxed text-slate-500">
+                  Crie etapas como Entrada, Principal e Sobremesa, ou grupos como Tamanho, Ingredientes, Cores e Acessórios. Mínimo zero torna o grupo opcional; máximo maior que um permite múltiplas escolhas.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setOptionGroups(current => [...current, createGroupDraft()])}
+                disabled={optionGroups.length >= 10}
+                className="flex min-h-10 shrink-0 items-center gap-1 rounded-xl bg-orange-500 px-3 text-[9px] font-black uppercase text-slate-950 disabled:opacity-40"
+                id="add-product-option-group"
+              >
+                <Plus className="h-4 w-4" />
+                Grupo
+              </button>
+            </div>
+
+            {optionGroups.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-slate-800 px-4 py-6 text-center text-[10px] text-slate-600">
+                Este item será adicionado diretamente. Crie um grupo quando o cliente precisar montar, personalizar ou escolher etapas.
+              </div>
+            ) : (
+              <div className="space-y-3" id="product-option-groups-list">
+                {optionGroups.map((group, groupIndex) => (
+                  <article
+                    key={group.id}
+                    className="space-y-3 rounded-2xl border border-slate-800 bg-slate-900/75 p-3"
+                  >
+                    <div className="flex items-start gap-2">
+                      <div className="min-w-0 flex-1">
+                        <span className="font-mono text-[8px] font-black uppercase tracking-wide text-orange-400">
+                          Etapa/grupo {groupIndex + 1}
+                        </span>
+                        <input
+                          type="text"
+                          value={group.name}
+                          onChange={event =>
+                            updateOptionGroup(group.id, { name: event.target.value })
+                          }
+                          placeholder="Ex.: Entrada, Principal, Ingredientes, Acessórios"
+                          className="mt-1 w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 text-xs text-white focus:border-orange-500 focus:outline-none"
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setOptionGroups(current =>
+                            current.filter(candidate => candidate.id !== group.id)
+                          )
+                        }
+                        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-red-500/20 bg-red-500/10 text-red-300"
+                        aria-label={`Remover grupo ${group.name || groupIndex + 1}`}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <label className="text-[9px] font-bold uppercase text-slate-500">
+                        Mínimo
+                        <input
+                          type="number"
+                          min="0"
+                          max={group.maxSelections}
+                          value={group.minSelections}
+                          onChange={event =>
+                            updateOptionGroup(group.id, {
+                              minSelections: Math.max(0, Number(event.target.value) || 0),
+                            })
+                          }
+                          className="mt-1 w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 text-xs text-white"
+                        />
+                      </label>
+                      <label className="text-[9px] font-bold uppercase text-slate-500">
+                        Máximo
+                        <input
+                          type="number"
+                          min="1"
+                          max={Math.max(1, group.choices.length)}
+                          value={group.maxSelections}
+                          onChange={event =>
+                            updateOptionGroup(group.id, {
+                              maxSelections: Math.max(1, Number(event.target.value) || 1),
+                            })
+                          }
+                          className="mt-1 w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 text-xs text-white"
+                        />
+                      </label>
+                    </div>
+
+                    <div className="space-y-2">
+                      {group.choices.map((choice, choiceIndex) => (
+                        <div
+                          key={choice.id}
+                          className="grid grid-cols-[minmax(0,1fr)_100px_36px] gap-2"
+                        >
+                          <input
+                            type="text"
+                            value={choice.name}
+                            onChange={event =>
+                              updateChoice(group.id, choice.id, {
+                                name: event.target.value,
+                              })
+                            }
+                            placeholder={`Opção ${choiceIndex + 1}`}
+                            className="min-w-0 rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 text-xs text-white focus:border-orange-500 focus:outline-none"
+                          />
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={choice.priceDelta}
+                            onChange={event =>
+                              updateChoice(group.id, choice.id, {
+                                priceDelta: event.target.value,
+                              })
+                            }
+                            placeholder="+ R$"
+                            title="Preço adicional"
+                            className="rounded-xl border border-slate-800 bg-slate-950 px-2 py-2 text-xs text-white focus:border-orange-500 focus:outline-none"
+                          />
+                          <button
+                            type="button"
+                            onClick={() =>
+                              updateOptionGroup(group.id, {
+                                choices: group.choices.filter(
+                                  candidate => candidate.id !== choice.id
+                                ),
+                              })
+                            }
+                            disabled={group.choices.length <= 1}
+                            className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-800 bg-slate-950 text-slate-500 disabled:opacity-30"
+                            aria-label={`Remover opção ${choice.name || choiceIndex + 1}`}
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        updateOptionGroup(group.id, {
+                          choices: [
+                            ...group.choices,
+                            createChoiceDraft(group.choices.length + 1),
+                          ],
+                        })
+                      }
+                      disabled={group.choices.length >= 30}
+                      className="flex min-h-9 items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-950 px-3 text-[9px] font-black uppercase text-slate-300 disabled:opacity-40"
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                      Adicionar opção
+                    </button>
+                  </article>
+                ))}
+              </div>
+            )}
+          </section>
 
           {categoryOptions.length === 0 && !loadingCategories && (
             <p className="rounded-xl border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-[10px] leading-relaxed text-amber-200">

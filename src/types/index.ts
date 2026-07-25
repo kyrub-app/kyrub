@@ -6,6 +6,28 @@ export interface ProductCategoryCollection {
   image: string;
 }
 
+export interface ProductOptionChoice {
+  id: string;
+  name: string;
+  priceDelta: number;
+}
+
+export interface ProductOptionGroup {
+  id: string;
+  name: string;
+  minSelections: number;
+  maxSelections: number;
+  choices: ProductOptionChoice[];
+}
+
+export interface ProductSelectedOption {
+  groupId: string;
+  groupName: string;
+  choiceId: string;
+  choiceName: string;
+  priceDelta: number;
+}
+
 export interface Product {
   id: string;
   name: string;
@@ -16,8 +38,13 @@ export interface Product {
   stock: number;
   supplierId?: string;
   isService?: boolean;
+  isComplimentary?: boolean;
   category: string;
   categoryCollections?: ProductCategoryCollection[];
+  optionGroups?: ProductOptionGroup[];
+  sourceProductId?: string;
+  selectedOptions?: ProductSelectedOption[];
+  customizationSummary?: string;
 }
 
 export interface Store {
@@ -139,6 +166,10 @@ export interface Tenant {
 export interface CartItem {
   product: Product;
   quantity: number;
+  lineKey?: string;
+  unitPrice?: number;
+  selectedOptions?: ProductSelectedOption[];
+  customizationSummary?: string;
 }
 
 export interface NoteChecklistItem {
