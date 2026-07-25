@@ -169,3 +169,14 @@ export const buildProductConfigurationSelection = (
     customizationSummary: summaryParts.join(' · '),
   };
 };
+
+export const configurationSelectionToCartProduct = (
+  selection: ProductConfigurationSelection
+): Product => ({
+  ...selection.product,
+  id: selection.lineKey,
+  sourceProductId: selection.product.sourceProductId ?? selection.product.id,
+  price: selection.unitPrice,
+  selectedOptions: [...selection.selectedOptions],
+  customizationSummary: selection.customizationSummary,
+});
