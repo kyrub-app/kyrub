@@ -24,7 +24,7 @@ export const normalizeStorefrontSlug = (value: string): string =>
     .replace(/[\u0300-\u036f]/g, '')
     .trim()
     .toLocaleLowerCase('pt-BR')
-    .replace(/[^a-z0-9-]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
     .replace(/-+/g, '-')
     .replace(/^-+|-+$/g, '')
     .slice(0, 120);
