@@ -47,3 +47,35 @@ body {
 .public-social-feed-active > #public-social-feed-panel {
   margin-top: 1.25rem;
 }
+
+/* Ofertas cards gain about 3 cm of vertical room for their store showcase. */
+#kyrub-tab-container [data-offer-store-card="true"] {
+  height: calc(156px + 3cm);
+}
+
+/* Replace the old location row with the keywords maintained in the ERP store profile. */
+#kyrub-tab-container
+  [data-offer-store-card="true"]
+  [data-store-keywords] {
+  min-width: 0;
+  overflow: hidden;
+}
+
+#kyrub-tab-container
+  [data-offer-store-card="true"]
+  [data-store-keywords]
+  > span {
+  display: none;
+}
+
+#kyrub-tab-container
+  [data-offer-store-card="true"]
+  [data-store-keywords]::before {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  color: rgb(148 163 184);
+  content: attr(data-store-keywords);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
