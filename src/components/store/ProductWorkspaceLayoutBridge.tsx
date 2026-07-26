@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type MutableRefObject } from 'react';
 import { createPortal } from 'react-dom';
 import { ArrowLeft, Package } from 'lucide-react';
 
@@ -44,7 +44,7 @@ export function ProductWorkspaceLayoutBridge() {
 
   useEffect(() => {
     const restoreHiddenElement = (
-      hiddenElementRef: React.MutableRefObject<HiddenElementState | null>
+      hiddenElementRef: MutableRefObject<HiddenElementState | null>
     ): void => {
       const hiddenState = hiddenElementRef.current;
       if (!hiddenState) return;
@@ -71,7 +71,7 @@ export function ProductWorkspaceLayoutBridge() {
 
     const hideElement = (
       element: HTMLElement,
-      hiddenElementRef: React.MutableRefObject<HiddenElementState | null>
+      hiddenElementRef: MutableRefObject<HiddenElementState | null>
     ): void => {
       if (hiddenElementRef.current?.element === element) {
         element.style.display = 'none';
