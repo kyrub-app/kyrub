@@ -5,6 +5,7 @@ import {
   X,
 } from 'lucide-react';
 import type { ProductOptionGroup } from '../../types';
+import { QUICK_NOTES_OPTION_GROUP_ID } from '../../utils/productCustomization';
 
 export type ProductOptionChoiceDraft = {
   id: string;
@@ -40,17 +41,19 @@ export const createProductOptionGroupDraft = (): ProductOptionGroupDraft => ({
 export const productOptionGroupsToDrafts = (
   groups: ProductOptionGroup[] | undefined
 ): ProductOptionGroupDraft[] =>
-  (groups ?? []).map(group => ({
-    id: group.id,
-    name: group.name,
-    minSelections: group.minSelections,
-    maxSelections: group.maxSelections,
-    choices: group.choices.map(choice => ({
-      id: choice.id,
-      name: choice.name,
-      priceDelta: String(choice.priceDelta),
-    })),
-  }));
+  (groups ?? [])
+    .filter(group => group.id !== QUICK_NOTES_OPTION_GROUP_ID)
+    .map(group => ({
+      id: group.id,
+      name: group.name,
+      minSelections: group.minSelections,
+      maxSelections: group.maxSelections,
+      choices: group.choices.map(choice => ({
+        id: choice.id,
+        name: choice.name,
+        priceDelta: String(choice.priceDelta),
+      })),
+    }));
 
 export const buildProductOptionGroups = (
   drafts: ProductOptionGroupDraft[]
