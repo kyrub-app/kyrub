@@ -1,0 +1,9 @@
+/* The editable folder tree replaces the old one-off collection selector
+   inside ProductEditorModal while keeping the category root selector. */
+#catalog-category-tree-host + .grid > label:nth-child(2) {
+  display: none;
+}
+
+#catalog-category-tree-host + .grid {
+  grid-template-columns: minmax(0, 1fr);
+}
