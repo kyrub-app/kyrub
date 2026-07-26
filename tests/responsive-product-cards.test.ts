@@ -3,9 +3,14 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
 const main = readFileSync('src/main.tsx', 'utf8');
+const app = readFileSync('src/App.tsx', 'utf8');
 const retailerPanel = readFileSync('src/components/RetailerPanel.tsx', 'utf8');
 const inventoryWorkspace = readFileSync(
   'src/components/store/ProductInventoryWorkspace.tsx',
+  'utf8'
+);
+const productWorkspaceLayout = readFileSync(
+  'src/components/store/ProductWorkspaceLayoutBridge.tsx',
   'utf8'
 );
 const sharedPdv = readFileSync(
@@ -45,6 +50,20 @@ test('retailer inventory removes admin workspaces and replaces the appearance ca
   assert.match(retailerPanel, /ProductInventoryWorkspace/);
   assert.match(retailerPanel, /APARÊNCIA DA VITRINE/);
   assert.match(retailerPanel, /candidateGrid\.style\.display = 'none'/);
+});
+
+test('product module keeps navigation above the cards and hides both legacy blocks', () => {
+  assert.match(app, /<ProductWorkspaceLayoutBridge \/>/);
+  assert.match(productWorkspaceLayout, /id="erp-product-navigation"/);
+  assert.match(productWorkspaceLayout, /id="erp-product-back-to-management"/);
+  assert.match(
+    productWorkspaceLayout,
+    /portalHost\.parentElement\.insertBefore\(host, portalHost\)/
+  );
+  assert.match(productWorkspaceLayout, /APARÊNCIA DA VITRINE/);
+  assert.match(productWorkspaceLayout, /ITENS ATIVOS NO ESTOQUE/);
+  assert.match(productWorkspaceLayout, /legacyGrid[\s\S]*hideElement/);
+  assert.match(productWorkspaceLayout, /originalBreadcrumb[\s\S]*hideElement/);
 });
 
 test('retailer inventory starts with two mobile columns and expands responsively', () => {

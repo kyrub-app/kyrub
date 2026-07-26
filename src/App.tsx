@@ -8,6 +8,7 @@ import { PublicStorefrontApp } from './components/PublicStorefrontApp';
 import { SocialPublishingBridge } from './components/SocialPublishingBridge';
 import { OperationalAppEntryBridge } from './components/store/OperationalAppEntryBridge';
 import { ProductCreationEnhancementBridge } from './components/store/ProductCreationEnhancementBridge';
+import { ProductWorkspaceLayoutBridge } from './components/store/ProductWorkspaceLayoutBridge';
 import { StoreRestartLandingBridge } from './components/store/StoreRestartLandingBridge';
 import { StoreSharingPortalBridge } from './components/store/StoreSharingPortalBridge';
 import { useFontSizeAccessibility } from './hooks/useFontSizeAccessibility';
@@ -111,6 +112,7 @@ function AuthenticatedKyrubApp({ operational }: { operational: boolean }) {
       <StoreSharingPortalBridge />
       <StoreRestartLandingBridge />
       <ProductCreationEnhancementBridge />
+      <ProductWorkspaceLayoutBridge />
       {operational && <OperationalAppEntryBridge />}
       <LegacyApp />
     </>
