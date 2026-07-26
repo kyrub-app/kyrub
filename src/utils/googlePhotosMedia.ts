@@ -53,6 +53,17 @@ type DriveFileMetadata = {
   size?: string;
 };
 
+class GooglePhotosApiError extends Error {
+  constructor(
+    message: string,
+    readonly httpStatus: number,
+    readonly apiStatus: string
+  ) {
+    super(message);
+    this.name = 'GooglePhotosApiError';
+  }
+}
+
 const wait = (milliseconds: number): Promise<void> =>
   new Promise(resolve => window.setTimeout(resolve, milliseconds));
 
@@ -71,15 +82,23 @@ const parseGoogleDurationMs = (
 const readGoogleApiError = async (
   response: Response,
   fallback: string
-): Promise<Error> => {
+): Promise<GooglePhotosApiError> => {
   try {
     const payload = (await response.json()) as {
-      error?: { message?: string; status?: string };
+      error?: {
+        message?: string;
+        status?: string;
+        code?: number;
+      };
     };
     const detail = payload.error?.message?.trim();
-    return new Error(detail || fallback);
+    return new GooglePhotosApiError(
+      detail || fallback,
+      response.status,
+      payload.error?.status?.trim() ?? ''
+    );
   } catch {
-    return new Error(fallback);
+    return new GooglePhotosApiError(fallback, response.status, '');
   }
 };
 
@@ -135,17 +154,43 @@ const photosRequest = async <T>(
   return response.json() as Promise<T>;
 };
 
-const createPickingSession = (
+const createPickingSession = async (
   accessToken: string
-): Promise<PhotosPickingSession> =>
-  photosRequest('/sessions', accessToken, {
-    method: 'POST',
-    body: JSON.stringify({
-      pickingConfig: {
-        maxItemCount: '1',
-      },
-    }),
-  });
+): Promise<PhotosPickingSession> => {
+  try {
+    return await photosRequest('/sessions', accessToken, {
+      method: 'POST',
+      body: JSON.stringify({
+        pickingConfig: {
+          maxItemCount: '1',
+        },
+      }),
+    });
+  } catch (error) {
+    const retryWithoutPickingConfig =
+      error instanceof GooglePhotosApiError &&
+      error.httpStatus === 400 &&
+      (
+        error.apiStatus === 'INVALID_ARGUMENT' ||
+        /pickingConfig|maxItemCount/i.test(error.message)
+      );
+
+    if (!retryWithoutPickingConfig) throw error;
+
+    console.warn(
+      'Google Photos rejected the one-item picking configuration; retrying with the default session configuration.',
+      {
+        status: error.apiStatus || error.httpStatus,
+        message: error.message,
+      }
+    );
+
+    return photosRequest('/sessions', accessToken, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    });
+  }
+};
 
 const deletePickingSession = async (
   sessionId: string,
@@ -164,9 +209,8 @@ const deletePickingSession = async (
 
 const pollPickingSession = async (
   initialSession: PhotosPickingSession,
-  accessToken: string,
-  pickerWindow: Window
-): Promise<PhotosPickingSession | null> => {
+  accessToken: string
+): Promise<PhotosPickingSession> => {
   const sessionId = initialSession.id?.trim() ?? '';
   if (!sessionId) {
     throw new Error('O Google Fotos não retornou uma sessão válida.');
@@ -202,10 +246,11 @@ const pollPickingSession = async (
     );
 
     if (session.mediaItemsSet) return session;
-    if (pickerWindow.closed && Date.now() - startedAt > 2000) return null;
   }
 
-  throw new Error('A seleção no Google Fotos expirou. Tente novamente.');
+  throw new Error(
+    'A seleção no Google Fotos expirou ou foi fechada antes da conclusão. Tente novamente.'
+  );
 };
 
 const downloadPickedPhoto = async (
@@ -378,12 +423,7 @@ export const pickGooglePhotosImageToDrive = async (): Promise<
     }
 
     pickerWindow.location.href = `${pickerUri.replace(/\/$/, '')}/autoclose`;
-    const completedSession = await pollPickingSession(
-      session,
-      accessToken,
-      pickerWindow
-    );
-    if (!completedSession) return null;
+    const completedSession = await pollPickingSession(session, accessToken);
 
     const pickedItems = await photosRequest<PickedMediaItemsResponse>(
       `/mediaItems?sessionId=${encodeURIComponent(sessionId)}&pageSize=1`,
@@ -396,8 +436,23 @@ export const pickGooglePhotosImageToDrive = async (): Promise<
 
     const { blob, fileName } = await downloadPickedPhoto(mediaItem, accessToken);
     return uploadPhotoCopyToDrive(blob, fileName, accessToken);
+  } catch (error) {
+    console.error('Google Photos Picker flow failed.', error);
+
+    if (error instanceof GooglePhotosApiError && error.httpStatus === 400) {
+      const status = error.apiStatus || 'HTTP 400';
+      throw new Error(
+        `O Google Fotos recusou a criação da sessão (${status}): ${error.message} Confira se a API Google Photos Picker e o cliente OAuth pertencem ao mesmo projeto do Kyrub.`
+      );
+    }
+
+    throw error;
   } finally {
-    if (!pickerWindow.closed) pickerWindow.close();
+    try {
+      pickerWindow.close();
+    } catch {
+      // The popup can already be closed by /autoclose.
+    }
     if (sessionId && accessToken) {
       await deletePickingSession(sessionId, accessToken);
     }
