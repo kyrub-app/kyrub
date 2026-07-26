@@ -42,8 +42,10 @@ export interface Product {
   category: string;
   categoryCollections?: ProductCategoryCollection[];
   optionGroups?: ProductOptionGroup[];
+  quickNotes?: string[];
   sourceProductId?: string;
   selectedOptions?: ProductSelectedOption[];
+  selectedQuickNotes?: string[];
   customizationSummary?: string;
 }
 
@@ -169,6 +171,7 @@ export interface CartItem {
   lineKey?: string;
   unitPrice?: number;
   selectedOptions?: ProductSelectedOption[];
+  selectedQuickNotes?: string[];
   customizationSummary?: string;
 }
 
