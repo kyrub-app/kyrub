@@ -45,9 +45,10 @@ const findLabelControl = <T extends HTMLElement>(labelText: string): T | null =>
       labelText.toLocaleLowerCase('pt-BR')
     )
   );
-  return (label?.parentElement?.querySelector(
+  const control = label?.parentElement?.querySelector(
     labelText === 'Categoria da loja' ? 'select' : 'input'
-  ) as T | null) ?? null;
+  );
+  return (control as unknown as T | null) ?? null;
 };
 
 const findPickerButton = (text: string): HTMLButtonElement | null => {
