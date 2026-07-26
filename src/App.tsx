@@ -7,10 +7,10 @@ import { NoteInvitationOutboxBridge } from './components/NoteInvitationOutboxBri
 import { PublicStorefrontApp } from './components/PublicStorefrontApp';
 import { SocialPublishingBridge } from './components/SocialPublishingBridge';
 import { OperationalAppEntryBridge } from './components/store/OperationalAppEntryBridge';
-import { ProductCreationEnhancementBridge } from './components/store/ProductCreationEnhancementBridge';
 import { ProductWorkspaceLayoutBridge } from './components/store/ProductWorkspaceLayoutBridge';
 import { StoreRestartLandingBridge } from './components/store/StoreRestartLandingBridge';
 import { StoreSharingPortalBridge } from './components/store/StoreSharingPortalBridge';
+import { UnifiedProductCreateModalBridge } from './components/store/UnifiedProductCreateModalBridge';
 import { useFontSizeAccessibility } from './hooks/useFontSizeAccessibility';
 import { resolveKyrubAppRoute } from './utils/appRoutes';
 import { auth, db } from './utils/firebase';
@@ -111,7 +111,7 @@ function AuthenticatedKyrubApp({ operational }: { operational: boolean }) {
       <SocialPublishingBridge />
       <StoreSharingPortalBridge />
       <StoreRestartLandingBridge />
-      <ProductCreationEnhancementBridge />
+      <UnifiedProductCreateModalBridge />
       <ProductWorkspaceLayoutBridge />
       {operational && <OperationalAppEntryBridge />}
       <LegacyApp />
