@@ -7,12 +7,28 @@ const inventorySource = readFileSync(
   'utf8'
 );
 const retailerSource = readFileSync('src/components/RetailerPanel.tsx', 'utf8');
-const editorSource = readFileSync(
+const editorAdapterSource = readFileSync(
   'src/components/store/ProductEditorModal.tsx',
   'utf8'
 );
-const creationBridgeSource = readFileSync(
-  'src/components/store/ProductCreationEnhancementBridge.tsx',
+const unifiedModalSource = readFileSync(
+  'src/components/store/UnifiedProductModal.tsx',
+  'utf8'
+);
+const createBridgeSource = readFileSync(
+  'src/components/store/UnifiedProductCreateModalBridge.tsx',
+  'utf8'
+);
+const hierarchySource = readFileSync(
+  'src/components/store/CatalogHierarchySelector.tsx',
+  'utf8'
+);
+const quickNotesSource = readFileSync(
+  'src/components/store/ProductQuickNotesEditor.tsx',
+  'utf8'
+);
+const optionGroupsSource = readFileSync(
+  'src/components/store/ProductOptionGroupsEditor.tsx',
   'utf8'
 );
 const mutationSource = readFileSync(
@@ -30,6 +46,17 @@ test('product cards expose edit and delete actions', () => {
   assert.match(inventorySource, /<Trash2/);
 });
 
+test('new and edited items open the same unified product modal', () => {
+  assert.match(inventorySource, /requestProductCreateModal\(products, keywords\)/);
+  assert.match(inventorySource, /open-unified-product-create-modal/);
+  assert.match(createBridgeSource, /<ProductEditorModal/);
+  assert.match(createBridgeSource, /mode="create"/);
+  assert.match(editorAdapterSource, /<UnifiedProductModal/);
+  assert.match(retailerSource, /<ProductEditorModal/);
+  assert.match(appSource, /<UnifiedProductCreateModalBridge/);
+  assert.doesNotMatch(appSource, /<ProductCreationEnhancementBridge/);
+});
+
 test('retailer catalog persists edits and confirms deletion', () => {
   assert.match(retailerSource, /handleSaveProduct/);
   assert.match(retailerSource, /persistPublicProduct\(user, updatedProduct\)/);
@@ -39,22 +66,16 @@ test('retailer catalog persists edits and confirms deletion', () => {
   assert.match(retailerSource, /Pedidos antigos continuarão preservando/);
 });
 
-test('product editor supports category reuse and media replacement', () => {
-  assert.match(editorSource, /Reutilizar caminho existente/);
-  assert.match(editorSource, /reusableCategoryPaths/);
-  assert.match(editorSource, /collectionsForPath/);
-  assert.match(editorSource, /GooglePhotosImagePickerButton/);
-  assert.match(editorSource, /GoogleDriveImagePickerButton/);
-});
-
-test('product modals receive an editable category tree and paperclip attachment control', () => {
-  assert.match(creationBridgeSource, /catalog-category-tree-manager/);
-  assert.match(creationBridgeSource, /Pastas e subpastas da categoria/);
-  assert.match(creationBridgeSource, /findEditorCategorySection/);
-  assert.match(creationBridgeSource, /product-image-paperclip-button/);
-  assert.match(creationBridgeSource, /Google Fotos \/ Galeria/);
-  assert.match(creationBridgeSource, /Google Drive/);
-  assert.match(appSource, /<ProductCreationEnhancementBridge/);
+test('the unified modal keeps media, hierarchy, quick notes and personalization', () => {
+  assert.match(unifiedModalSource, /CatalogHierarchySelector/);
+  assert.match(unifiedModalSource, /ProductQuickNotesEditor/);
+  assert.match(unifiedModalSource, /ProductOptionGroupsEditor/);
+  assert.match(unifiedModalSource, /GooglePhotosImagePickerButton/);
+  assert.match(unifiedModalSource, /GoogleDriveImagePickerButton/);
+  assert.match(unifiedModalSource, /id="unified-product-modal"/);
+  assert.match(hierarchySource, /Categorias e grupos/);
+  assert.match(quickNotesSource, /Botões rápidos de observação/);
+  assert.match(optionGroupsSource, /Personalização, etapas e múltiplas escolhas/);
 });
 
 test('product deletion removes only the authenticated store item', () => {
