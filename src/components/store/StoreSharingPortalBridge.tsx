@@ -6,6 +6,10 @@ import type { MarketplaceListingDocument, Store } from '../../types';
 import { auth, db } from '../../utils/firebase';
 import { getMarketplaceStoreListingDocumentPath } from '../../utils/marketplacePaths';
 import { loadCachedUserStore } from '../../utils/storePersistence';
+import {
+  resetStoreForRestart,
+  type StoreResetResult,
+} from '../../utils/storeReset';
 import { StoreSharingPanel } from './StoreSharingPanel';
 
 export function StoreSharingPortalBridge() {
@@ -13,6 +17,7 @@ export function StoreSharingPortalBridge() {
   const [store, setStore] = useState<Store | null>(null);
   const [canonicalPublished, setCanonicalPublished] = useState(false);
   const [fallbackPublished, setFallbackPublished] = useState(false);
+  const [isResetting, setIsResetting] = useState(false);
 
   useEffect(() => {
     let currentHost: HTMLElement | null = null;
@@ -111,11 +116,40 @@ export function StoreSharingPortalBridge() {
     };
   }, []);
 
+  const handleReset = async (): Promise<void> => {
+    const user = auth.currentUser;
+    if (!user || !store) {
+      throw new Error('Faça login novamente para excluir a loja.');
+    }
+
+    setIsResetting(true);
+    try {
+      const result: StoreResetResult = await resetStoreForRestart(
+        user,
+        store,
+        localStorage
+      );
+      setStore(result.store);
+      setCanonicalPublished(false);
+      setFallbackPublished(false);
+
+      window.dispatchEvent(
+        new CustomEvent<StoreResetResult>('kyrub-user-store-reset', {
+          detail: result,
+        })
+      );
+    } finally {
+      setIsResetting(false);
+    }
+  };
+
   return host
     ? createPortal(
         <StoreSharingPanel
           store={store}
           isPublished={canonicalPublished || fallbackPublished}
+          isResetting={isResetting}
+          onReset={handleReset}
         />,
         host
       )
