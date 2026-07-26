@@ -26,7 +26,6 @@ interface StoreConfigModalProps {
   handleRemoveProducaoSpace: (space: string) => void;
   handleSaveStoreProfile: () => void;
   profileMediaControls?: React.ReactNode;
-  dangerZoneControls?: React.ReactNode;
 }
 
 export const StoreConfigModal: React.FC<StoreConfigModalProps> = ({
@@ -54,7 +53,6 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = ({
   handleRemoveProducaoSpace,
   handleSaveStoreProfile,
   profileMediaControls,
-  dangerZoneControls,
 }) => {
   const [configActiveTab, setConfigActiveTab] = useState<'perfil' | 'ambiente'>('perfil');
 
@@ -162,8 +160,6 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = ({
                   placeholder="pizza, bar, lanches, entrega rapida..."
                 />
               </div>
-
-              {dangerZoneControls}
             </div>
           ) : (
             <div className="space-y-6 animate-fade-in">
