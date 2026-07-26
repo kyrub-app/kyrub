@@ -5,6 +5,8 @@ import type {
   ProductSelectedOption,
 } from '../types';
 
+export const QUICK_NOTES_OPTION_GROUP_ID = 'quick-observations';
+
 export interface ProductConfigurationSelection extends Product {
   lineKey: string;
   product: Product;
@@ -42,6 +44,30 @@ export const parseProductQuickNotes = (value: unknown): string[] => {
     seen.add(normalized);
     return [note];
   });
+};
+
+export const quickNotesToOptionGroup = (
+  value: unknown
+): ProductOptionGroup | null => {
+  const notes = parseProductQuickNotes(value);
+  if (notes.length === 0) return null;
+
+  return {
+    id: QUICK_NOTES_OPTION_GROUP_ID,
+    name: 'Observações rápidas',
+    minSelections: 0,
+    maxSelections: notes.length,
+    choices: notes.map((note, index) => ({
+      id: `quick-note-${index + 1}-${note
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLocaleLowerCase('pt-BR')
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '')}`,
+      name: note,
+      priceDelta: 0,
+    })),
+  };
 };
 
 export const parseProductOptionChoices = (
@@ -107,6 +133,13 @@ export const parseProductOptionGroups = (
     } satisfies ProductOptionGroup];
   });
 };
+
+export const withoutQuickNotesOptionGroup = (
+  groups: ProductOptionGroup[] | undefined
+): ProductOptionGroup[] =>
+  parseProductOptionGroups(groups).filter(
+    group => group.id !== QUICK_NOTES_OPTION_GROUP_ID
+  );
 
 export const getCartLineKey = (
   productId: string,
