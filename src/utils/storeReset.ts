@@ -24,6 +24,12 @@ import {
 } from './storePersistence';
 
 export const STORE_RESET_CONFIRMATION_TEXT = 'EXCLUIR';
+export const STORE_RESTART_SESSION_KEY = 'kyrub_store_restart_completed';
+
+const LOCAL_PRODUCTS_KEY = 'kyrub_products';
+const LOCAL_TENANTS_KEY = 'kyrub_tenants';
+const LOCAL_ATENDIMENTO_SPACES_KEY = 'kyrub_atendimento_spaces';
+const LOCAL_PRODUCAO_SPACES_KEY = 'kyrub_producao_spaces';
 
 export interface StoreResetResult {
   store: Store;
@@ -183,6 +189,50 @@ const pauseCanonicalStoreAndArchiveCatalog = async (
   return activeProductDocuments.length;
 };
 
+const filterStoredArray = (
+  storage: StorageLike,
+  key: string,
+  keep: (candidate: Record<string, unknown>) => boolean
+): void => {
+  const serialized = storage.getItem(key);
+  if (!serialized) return;
+
+  try {
+    const parsed = JSON.parse(serialized) as unknown;
+    if (!Array.isArray(parsed)) {
+      storage.removeItem(key);
+      return;
+    }
+
+    const filtered = parsed.filter(candidate => {
+      if (!candidate || typeof candidate !== 'object') return false;
+      return keep(candidate as Record<string, unknown>);
+    });
+    storage.setItem(key, JSON.stringify(filtered));
+  } catch {
+    storage.removeItem(key);
+  }
+};
+
+export const clearLocalStoreSetup = (
+  storage: StorageLike,
+  userId: string
+): void => {
+  filterStoredArray(
+    storage,
+    LOCAL_PRODUCTS_KEY,
+    candidate =>
+      candidate.supplierId !== userId && candidate.storeId !== userId
+  );
+  filterStoredArray(
+    storage,
+    LOCAL_TENANTS_KEY,
+    candidate => candidate.id !== userId
+  );
+  storage.removeItem(LOCAL_ATENDIMENTO_SPACES_KEY);
+  storage.removeItem(LOCAL_PRODUCAO_SPACES_KEY);
+};
+
 export const resetStoreForRestart = async (
   user: Pick<User, 'uid' | 'email'>,
   currentStore: Store,
@@ -227,6 +277,7 @@ export const resetStoreForRestart = async (
   // payments, cash records, memberships and audit history remain available.
   await persistPrivateUserStore(user, restartedStore);
   saveCachedUserStore(storage, user.uid, restartedStore, false);
+  clearLocalStoreSetup(storage, user.uid);
 
   return {
     store: restartedStore,
