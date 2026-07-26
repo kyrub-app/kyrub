@@ -47,8 +47,10 @@ test('product editor supports category reuse and media replacement', () => {
   assert.match(editorSource, /GoogleDriveImagePickerButton/);
 });
 
-test('new item modal receives reusable categories and a paperclip attachment control', () => {
-  assert.match(creationBridgeSource, /reusable-product-category-select/);
+test('product modals receive an editable category tree and paperclip attachment control', () => {
+  assert.match(creationBridgeSource, /catalog-category-tree-manager/);
+  assert.match(creationBridgeSource, /Pastas e subpastas da categoria/);
+  assert.match(creationBridgeSource, /findEditorCategorySection/);
   assert.match(creationBridgeSource, /product-image-paperclip-button/);
   assert.match(creationBridgeSource, /Google Fotos \/ Galeria/);
   assert.match(creationBridgeSource, /Google Drive/);
