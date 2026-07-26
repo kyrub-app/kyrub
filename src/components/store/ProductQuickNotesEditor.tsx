@@ -83,7 +83,7 @@ export function ProductQuickNotesEditor({
         <div className="grid gap-2 sm:grid-cols-2" id="product-quick-notes-list">
           {value.map((note, index) => (
             <div
-              key={`${index}-${note}`}
+              key={`quick-note-${index}`}
               className="grid grid-cols-[minmax(0,1fr)_36px] gap-2 rounded-xl border border-slate-800 bg-slate-900/75 p-2"
             >
               <input
