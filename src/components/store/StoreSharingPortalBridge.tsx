@@ -8,6 +8,7 @@ import { getMarketplaceStoreListingDocumentPath } from '../../utils/marketplaceP
 import { loadCachedUserStore } from '../../utils/storePersistence';
 import {
   resetStoreForRestart,
+  STORE_RESTART_SESSION_KEY,
   type StoreResetResult,
 } from '../../utils/storeReset';
 import { StoreSharingPanel } from './StoreSharingPanel';
@@ -138,6 +139,8 @@ export function StoreSharingPortalBridge() {
           detail: result,
         })
       );
+      sessionStorage.setItem(STORE_RESTART_SESSION_KEY, '1');
+      window.location.assign('/');
     } finally {
       setIsResetting(false);
     }
