@@ -7,6 +7,7 @@ import { NoteInvitationOutboxBridge } from './components/NoteInvitationOutboxBri
 import { PublicStorefrontApp } from './components/PublicStorefrontApp';
 import { SocialPublishingBridge } from './components/SocialPublishingBridge';
 import { OperationalAppEntryBridge } from './components/store/OperationalAppEntryBridge';
+import { StoreRestartLandingBridge } from './components/store/StoreRestartLandingBridge';
 import { StoreSharingPortalBridge } from './components/store/StoreSharingPortalBridge';
 import { useFontSizeAccessibility } from './hooks/useFontSizeAccessibility';
 import { resolveKyrubAppRoute } from './utils/appRoutes';
@@ -107,6 +108,7 @@ function AuthenticatedKyrubApp({ operational }: { operational: boolean }) {
       <NoteInvitationOutboxBridge />
       <SocialPublishingBridge />
       <StoreSharingPortalBridge />
+      <StoreRestartLandingBridge />
       {operational && <OperationalAppEntryBridge />}
       <LegacyApp />
     </>
