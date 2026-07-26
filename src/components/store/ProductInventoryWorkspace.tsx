@@ -1,11 +1,20 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ImageOff, Package, Plus } from 'lucide-react';
+import {
+  ImageOff,
+  Package,
+  Pencil,
+  Plus,
+  Trash2,
+} from 'lucide-react';
 import type { Product } from '../../types';
 
 interface ProductInventoryWorkspaceProps {
   products: Product[];
   keywords: string[];
   onCreateProduct: () => void;
+  onEditProduct: (product: Product) => void;
+  onDeleteProduct: (product: Product) => void;
+  busyProductId?: string;
 }
 
 const currencyFormatter = new Intl.NumberFormat('pt-BR', {
@@ -42,6 +51,9 @@ export function ProductInventoryWorkspace({
   products,
   keywords,
   onCreateProduct,
+  onEditProduct,
+  onDeleteProduct,
+  busyProductId = '',
 }: ProductInventoryWorkspaceProps) {
   const categoryOptions = useMemo(() => uniqueKeywords(keywords), [keywords]);
   const [selectedKeyword, setSelectedKeyword] = useState('');
@@ -138,49 +150,78 @@ export function ProductInventoryWorkspace({
           className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 sm:gap-3 lg:grid-cols-4 2xl:grid-cols-5"
           id="erp-product-inventory-grid"
         >
-          {visibleProducts.map(product => (
-            <article
-              key={product.id}
-              className="min-w-0 overflow-hidden rounded-2xl border border-slate-800 bg-slate-950"
-              id={`erp-product-${product.id}`}
-            >
-              <div className="relative aspect-square overflow-hidden bg-slate-900">
-                {product.image ? (
-                  <img
-                    src={product.image}
-                    alt={product.name}
-                    className="h-full w-full object-cover"
-                    referrerPolicy="no-referrer"
-                  />
-                ) : (
-                  <div className="flex h-full items-center justify-center text-slate-700">
-                    <ImageOff className="h-7 w-7" />
+          {visibleProducts.map(product => {
+            const isBusy = busyProductId === product.id;
+
+            return (
+              <article
+                key={product.id}
+                className="min-w-0 overflow-hidden rounded-2xl border border-slate-800 bg-slate-950"
+                id={`erp-product-${product.id}`}
+              >
+                <div className="relative aspect-square overflow-hidden bg-slate-900">
+                  {product.image ? (
+                    <img
+                      src={product.image}
+                      alt={product.name}
+                      className="h-full w-full object-cover"
+                      referrerPolicy="no-referrer"
+                    />
+                  ) : (
+                    <div className="flex h-full items-center justify-center text-slate-700">
+                      <ImageOff className="h-7 w-7" />
+                    </div>
+                  )}
+                </div>
+
+                <div className="space-y-2 p-3">
+                  <div className="min-w-0">
+                    <h5 className="line-clamp-2 text-xs font-black leading-tight text-white">
+                      {product.name}
+                    </h5>
+                    <p className="mt-1 line-clamp-2 text-[9px] leading-relaxed text-slate-500">
+                      {product.category}
+                    </p>
                   </div>
-                )}
-              </div>
 
-              <div className="space-y-2 p-3">
-                <div className="min-w-0">
-                  <h5 className="line-clamp-2 text-xs font-black leading-tight text-white">
-                    {product.name}
-                  </h5>
-                  <p className="mt-1 line-clamp-2 text-[9px] leading-relaxed text-slate-500">
-                    {product.category}
-                  </p>
-                </div>
+                  <div className="flex items-end justify-between gap-2 border-t border-slate-800 pt-2">
+                    <div className="min-w-0 space-y-1">
+                      <strong className="block truncate text-[11px] text-emerald-400">
+                        {currencyFormatter.format(product.price)}
+                      </strong>
+                      <span className="flex items-center gap-1 text-[9px] font-mono text-slate-500">
+                        <Package className="h-3 w-3" />
+                        {product.isService ? 'Serviço' : `${product.stock} un.`}
+                      </span>
+                    </div>
 
-                <div className="space-y-1 border-t border-slate-800 pt-2">
-                  <strong className="block text-[11px] text-emerald-400">
-                    {currencyFormatter.format(product.price)}
-                  </strong>
-                  <span className="flex items-center gap-1 text-[9px] font-mono text-slate-500">
-                    <Package className="h-3 w-3" />
-                    {product.isService ? 'Serviço' : `${product.stock} un. em estoque`}
-                  </span>
+                    <div className="flex shrink-0 items-center gap-1" aria-label={`Ações de ${product.name}`}>
+                      <button
+                        type="button"
+                        onClick={() => onEditProduct(product)}
+                        disabled={isBusy}
+                        className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-700 bg-slate-900 text-slate-400 hover:border-orange-500/40 hover:text-orange-300 disabled:opacity-35"
+                        aria-label={`Editar ${product.name}`}
+                        title="Editar item"
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onDeleteProduct(product)}
+                        disabled={isBusy}
+                        className="flex h-8 w-8 items-center justify-center rounded-lg border border-red-500/20 bg-red-500/10 text-red-300 hover:bg-red-500/20 disabled:opacity-35"
+                        aria-label={`Excluir ${product.name}`}
+                        title="Excluir item"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  </div>
                 </div>
-              </div>
-            </article>
-          ))}
+              </article>
+            );
+          })}
         </div>
       ) : (
         <div className="rounded-3xl border border-dashed border-slate-800 bg-slate-950/45 px-4 py-12 text-center">
