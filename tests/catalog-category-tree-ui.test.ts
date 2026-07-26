@@ -2,29 +2,36 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
-const bridge = readFileSync(
-  'src/components/store/ProductCreationEnhancementBridge.tsx',
+const hierarchySelector = readFileSync(
+  'src/components/store/CatalogHierarchySelector.tsx',
+  'utf8'
+);
+const hierarchyUtility = readFileSync(
+  'src/utils/catalogHierarchy.ts',
   'utf8'
 );
 const treeUtility = readFileSync(
   'src/utils/catalogCategoryTree.ts',
   'utf8'
 );
+const unifiedModal = readFileSync(
+  'src/components/store/UnifiedProductModal.tsx',
+  'utf8'
+);
 
-test('product creation and editing share an editable folder tree', () => {
-  assert.match(bridge, /Pastas e subpastas da categoria/);
-  assert.match(bridge, /catalog-category-tree-manager/);
-  assert.match(bridge, /findEditorCategorySection/);
-  assert.match(bridge, /product-subcategory-control/);
-  assert.match(bridge, /Renomear pasta/);
-  assert.match(bridge, /Excluir pasta/);
-  assert.match(bridge, /applyPathToForm/);
+test('product creation and editing share the semantic hierarchy selector', () => {
+  assert.match(unifiedModal, /<CatalogHierarchySelector/);
+  assert.match(hierarchySelector, /Categorias e grupos/);
+  assert.match(hierarchySelector, /Categoria da loja/);
+  assert.match(hierarchySelector, /CATALOG_HIERARCHY_TIERS\.map/);
+  assert.match(hierarchySelector, /Editar \$\{tierLabel\.toLowerCase\(\)\}/);
+  assert.match(hierarchySelector, /Excluir \$\{tierLabel\.toLowerCase\(\)\}/);
 });
 
 test('category roots remain controlled by profile keywords', () => {
   assert.match(
-    bridge,
-    /A palavra-chave é a pasta principal/
+    hierarchySelector,
+    /A categoria principal vem das palavras-chave do perfil/
   );
   assert.match(
     treeUtility,
@@ -34,15 +41,19 @@ test('category roots remain controlled by profile keywords', () => {
 
 test('folder removal promotes products instead of deleting them', () => {
   assert.match(
-    bridge,
-    /Itens e subpastas serão movidos para o nível anterior/
+    hierarchySelector,
+    /Os produtos não serão apagados; itens e níveis internos serão promovidos/
   );
   assert.match(treeUtility, /deleteProductCategoryPath/);
   assert.match(treeUtility, /publicProducts: result\.products/);
 });
 
-test('the hierarchy is limited to six total levels', () => {
-  assert.match(treeUtility, /MAX_CATALOG_CATEGORY_LEVELS = 6/);
-  assert.match(bridge, /Máx\. \{MAX_CATALOG_CATEGORY_LEVELS\} níveis/);
-  assert.match(bridge, /MAX_CATALOG_CATEGORY_LEVELS - 1/);
+test('semantic hierarchy has four reusable levels and five children per parent', () => {
+  assert.match(
+    hierarchyUtility,
+    /'Subcategoria',[\s\S]*'Grupo',[\s\S]*'Subgrupo',[\s\S]*'Pasta'/
+  );
+  assert.match(hierarchyUtility, /MAX_CATALOG_HIERARCHY_CHILDREN = 5/);
+  assert.match(hierarchySelector, /children\.length >= MAX_CATALOG_HIERARCHY_CHILDREN/);
+  assert.match(hierarchySelector, /getDirectCatalogHierarchyChildren/);
 });
