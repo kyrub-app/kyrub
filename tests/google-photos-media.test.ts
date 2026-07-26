@@ -45,6 +45,16 @@ test('Photos flow creates, polls, lists and deletes one-item sessions', () => {
   assert.match(photosSource, /method: 'DELETE'/);
 });
 
+test('Photos session retries only compatible invalid one-item configurations', () => {
+  assert.match(photosSource, /class GooglePhotosApiError/);
+  assert.match(photosSource, /error\.httpStatus === 400/);
+  assert.match(photosSource, /error\.apiStatus === 'INVALID_ARGUMENT'/);
+  assert.match(photosSource, /pickingConfig\|maxItemCount/);
+  assert.match(photosSource, /body: JSON\.stringify\(\{\}\)/);
+  assert.match(photosSource, /Google Photos Picker flow failed/);
+  assert.match(photosSource, /cliente OAuth pertencem ao mesmo projeto/);
+});
+
 test('picked Photos image is downloaded briefly and copied to public Drive media', () => {
   assert.match(photosSource, /fetch\(`\$\{baseUrl\}=d`/);
   assert.match(photosSource, /mimeType\.startsWith\('image\/'\)/);
