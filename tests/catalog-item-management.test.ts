@@ -24,8 +24,8 @@ const appSource = readFileSync('src/App.tsx', 'utf8');
 test('product cards expose edit and delete actions', () => {
   assert.match(inventorySource, /onEditProduct/);
   assert.match(inventorySource, /onDeleteProduct/);
-  assert.match(inventorySource, /aria-label={`Editar/);
-  assert.match(inventorySource, /aria-label={`Excluir/);
+  assert.match(inventorySource, /Editar \$\{product\.name\}/);
+  assert.match(inventorySource, /Excluir \$\{product\.name\}/);
   assert.match(inventorySource, /<Pencil/);
   assert.match(inventorySource, /<Trash2/);
 });
