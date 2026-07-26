@@ -329,8 +329,8 @@ export const persistPublicProduct = async (
     );
     const normalizedProduct: PublicProduct = {
       ...product,
-      ...(quickNotes.length > 0 ? { quickNotes } : { quickNotes: undefined }),
-      ...(optionGroups.length > 0 ? { optionGroups } : { optionGroups: undefined }),
+      quickNotes,
+      optionGroups,
     };
     const nextProducts = [
       normalizedProduct,
