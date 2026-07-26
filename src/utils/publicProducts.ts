@@ -24,7 +24,10 @@ import {
   recordCanonicalReadDecision,
   type CanonicalReadDecision,
 } from './canonicalReadCutover';
-import { parseProductOptionGroups } from './productCustomization';
+import {
+  parseProductOptionGroups,
+  parseProductQuickNotes,
+} from './productCustomization';
 
 export const PUBLIC_PRODUCT_CREATE_EVENT = 'kyrub-public-product-create';
 
@@ -44,6 +47,7 @@ export interface PublicProductDraft {
   isComplimentary?: boolean;
   categoryCollections?: ProductCategoryCollection[];
   optionGroups?: ProductOptionGroup[];
+  quickNotes?: string[];
 }
 
 export interface PublicProductCreateRequest {
@@ -109,6 +113,7 @@ export const buildPublicProduct = (
     draft.categoryCollections
   );
   const optionGroups = parseProductOptionGroups(draft.optionGroups);
+  const quickNotes = parseProductQuickNotes(draft.quickNotes);
 
   if (!name) {
     throw new Error('Informe o nome do item.');
@@ -140,6 +145,7 @@ export const buildPublicProduct = (
     isComplimentary,
     ...(categoryCollections.length > 0 ? { categoryCollections } : {}),
     ...(optionGroups.length > 0 ? { optionGroups } : {}),
+    ...(quickNotes.length > 0 ? { quickNotes } : {}),
     updatedAt: new Date(now).toISOString(),
   };
 };
@@ -162,6 +168,7 @@ export const parsePublicProducts = (value: unknown): PublicProduct[] => {
       product.categoryCollections
     );
     const optionGroups = parseProductOptionGroups(product.optionGroups);
+    const quickNotes = parseProductQuickNotes(product.quickNotes);
 
     if (
       !id ||
@@ -191,6 +198,7 @@ export const parsePublicProducts = (value: unknown): PublicProduct[] => {
       isComplimentary: product.isComplimentary === true,
       ...(categoryCollections.length > 0 ? { categoryCollections } : {}),
       ...(optionGroups.length > 0 ? { optionGroups } : {}),
+      ...(quickNotes.length > 0 ? { quickNotes } : {}),
       updatedAt: cleanString(product.updatedAt),
     } satisfies PublicProduct];
   });
@@ -210,6 +218,7 @@ const parseCanonicalPublicProduct = (
     value.categoryCollections
   );
   const optionGroups = parseProductOptionGroups(value.optionGroups);
+  const quickNotes = parseProductQuickNotes(value.quickNotes);
 
   if (
     !id ||
@@ -238,6 +247,7 @@ const parseCanonicalPublicProduct = (
     isComplimentary: value.isComplimentary === true,
     ...(categoryCollections.length > 0 ? { categoryCollections } : {}),
     ...(optionGroups.length > 0 ? { optionGroups } : {}),
+    ...(quickNotes.length > 0 ? { quickNotes } : {}),
     updatedAt:
       cleanString(value.legacyUpdatedAt) || timestampToIso(value.updatedAt),
   };
@@ -255,6 +265,7 @@ const comparableProduct = (product: PublicProduct) => ({
     product.categoryCollections
   ),
   optionGroups: parseProductOptionGroups(product.optionGroups),
+  quickNotes: parseProductQuickNotes(product.quickNotes),
   isService: product.isService === true,
   isComplimentary: product.isComplimentary === true,
 });
