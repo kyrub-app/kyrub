@@ -24,7 +24,12 @@ import {
   recordCanonicalReadDecision,
   type CanonicalReadDecision,
 } from './canonicalReadCutover';
-import { parseProductOptionGroups } from './productCustomization';
+import {
+  parseProductOptionGroups,
+  parseProductQuickNotes,
+  quickNotesToOptionGroup,
+  QUICK_NOTES_OPTION_GROUP_ID,
+} from './productCustomization';
 
 export const PUBLIC_PRODUCT_CREATE_EVENT = 'kyrub-public-product-create';
 
@@ -44,6 +49,7 @@ export interface PublicProductDraft {
   isComplimentary?: boolean;
   categoryCollections?: ProductCategoryCollection[];
   optionGroups?: ProductOptionGroup[];
+  quickNotes?: string[];
 }
 
 export interface PublicProductCreateRequest {
@@ -70,6 +76,17 @@ const timestampToIso = (value: unknown): string => {
     return (value as Timestamp).toDate().toISOString();
   }
   return '';
+};
+
+const optionGroupsWithQuickNotes = (
+  optionGroups: unknown,
+  quickNotes: unknown
+): ProductOptionGroup[] => {
+  const baseGroups = parseProductOptionGroups(optionGroups).filter(
+    group => group.id !== QUICK_NOTES_OPTION_GROUP_ID
+  );
+  const quickNotesGroup = quickNotesToOptionGroup(quickNotes);
+  return quickNotesGroup ? [...baseGroups, quickNotesGroup] : baseGroups;
 };
 
 export const parseProductCategoryCollections = (
@@ -108,7 +125,11 @@ export const buildPublicProduct = (
   const categoryCollections = parseProductCategoryCollections(
     draft.categoryCollections
   );
-  const optionGroups = parseProductOptionGroups(draft.optionGroups);
+  const quickNotes = parseProductQuickNotes(draft.quickNotes);
+  const optionGroups = optionGroupsWithQuickNotes(
+    draft.optionGroups,
+    quickNotes
+  );
 
   if (!name) {
     throw new Error('Informe o nome do item.');
@@ -140,6 +161,7 @@ export const buildPublicProduct = (
     isComplimentary,
     ...(categoryCollections.length > 0 ? { categoryCollections } : {}),
     ...(optionGroups.length > 0 ? { optionGroups } : {}),
+    ...(quickNotes.length > 0 ? { quickNotes } : {}),
     updatedAt: new Date(now).toISOString(),
   };
 };
@@ -161,7 +183,11 @@ export const parsePublicProducts = (value: unknown): PublicProduct[] => {
     const categoryCollections = parseProductCategoryCollections(
       product.categoryCollections
     );
-    const optionGroups = parseProductOptionGroups(product.optionGroups);
+    const quickNotes = parseProductQuickNotes(product.quickNotes);
+    const optionGroups = optionGroupsWithQuickNotes(
+      product.optionGroups,
+      quickNotes
+    );
 
     if (
       !id ||
@@ -191,6 +217,7 @@ export const parsePublicProducts = (value: unknown): PublicProduct[] => {
       isComplimentary: product.isComplimentary === true,
       ...(categoryCollections.length > 0 ? { categoryCollections } : {}),
       ...(optionGroups.length > 0 ? { optionGroups } : {}),
+      ...(quickNotes.length > 0 ? { quickNotes } : {}),
       updatedAt: cleanString(product.updatedAt),
     } satisfies PublicProduct];
   });
@@ -209,7 +236,11 @@ const parseCanonicalPublicProduct = (
   const categoryCollections = parseProductCategoryCollections(
     value.categoryCollections
   );
-  const optionGroups = parseProductOptionGroups(value.optionGroups);
+  const quickNotes = parseProductQuickNotes(value.quickNotes);
+  const optionGroups = optionGroupsWithQuickNotes(
+    value.optionGroups,
+    quickNotes
+  );
 
   if (
     !id ||
@@ -238,6 +269,7 @@ const parseCanonicalPublicProduct = (
     isComplimentary: value.isComplimentary === true,
     ...(categoryCollections.length > 0 ? { categoryCollections } : {}),
     ...(optionGroups.length > 0 ? { optionGroups } : {}),
+    ...(quickNotes.length > 0 ? { quickNotes } : {}),
     updatedAt:
       cleanString(value.legacyUpdatedAt) || timestampToIso(value.updatedAt),
   };
@@ -254,7 +286,11 @@ const comparableProduct = (product: PublicProduct) => ({
   categoryCollections: parseProductCategoryCollections(
     product.categoryCollections
   ),
-  optionGroups: parseProductOptionGroups(product.optionGroups),
+  optionGroups: optionGroupsWithQuickNotes(
+    product.optionGroups,
+    product.quickNotes
+  ),
+  quickNotes: parseProductQuickNotes(product.quickNotes),
   isService: product.isService === true,
   isComplimentary: product.isComplimentary === true,
 });
@@ -286,8 +322,18 @@ export const persistPublicProduct = async (
     const snapshot = await transaction.get(tenantReference);
     const currentData = snapshot.data() as Record<string, unknown> | undefined;
     const existingProducts = parsePublicProducts(currentData?.publicProducts);
+    const quickNotes = parseProductQuickNotes(product.quickNotes);
+    const optionGroups = optionGroupsWithQuickNotes(
+      product.optionGroups,
+      quickNotes
+    );
+    const normalizedProduct: PublicProduct = {
+      ...product,
+      quickNotes,
+      optionGroups,
+    };
     const nextProducts = [
-      product,
+      normalizedProduct,
       ...existingProducts.filter(item => item.id !== product.id),
     ].slice(0, 200);
 

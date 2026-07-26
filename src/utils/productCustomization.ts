@@ -5,11 +5,14 @@ import type {
   ProductSelectedOption,
 } from '../types';
 
+export const QUICK_NOTES_OPTION_GROUP_ID = 'quick-observations';
+
 export interface ProductConfigurationSelection extends Product {
   lineKey: string;
   product: Product;
   unitPrice: number;
   selectedOptions: ProductSelectedOption[];
+  selectedQuickNotes: string[];
   customizationSummary: string;
 }
 
@@ -28,6 +31,43 @@ const integerInRange = (
   const parsed = finiteNumber(value);
   if (parsed === null || !Number.isInteger(parsed)) return fallback;
   return Math.max(min, Math.min(max, parsed));
+};
+
+export const parseProductQuickNotes = (value: unknown): string[] => {
+  if (!Array.isArray(value)) return [];
+
+  const seen = new Set<string>();
+  return value.slice(0, 30).flatMap(candidate => {
+    const note = cleanString(candidate).slice(0, 60);
+    const normalized = note.toLocaleLowerCase('pt-BR');
+    if (!note || seen.has(normalized)) return [];
+    seen.add(normalized);
+    return [note];
+  });
+};
+
+export const quickNotesToOptionGroup = (
+  value: unknown
+): ProductOptionGroup | null => {
+  const notes = parseProductQuickNotes(value);
+  if (notes.length === 0) return null;
+
+  return {
+    id: QUICK_NOTES_OPTION_GROUP_ID,
+    name: 'Observações rápidas',
+    minSelections: 0,
+    maxSelections: notes.length,
+    choices: notes.map((note, index) => ({
+      id: `quick-note-${index + 1}-${note
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLocaleLowerCase('pt-BR')
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '')}`,
+      name: note,
+      priceDelta: 0,
+    })),
+  };
 };
 
 export const parseProductOptionChoices = (
@@ -94,9 +134,17 @@ export const parseProductOptionGroups = (
   });
 };
 
+export const withoutQuickNotesOptionGroup = (
+  groups: ProductOptionGroup[] | undefined
+): ProductOptionGroup[] =>
+  parseProductOptionGroups(groups).filter(
+    group => group.id !== QUICK_NOTES_OPTION_GROUP_ID
+  );
+
 export const getCartLineKey = (
   productId: string,
-  selectedOptions: ProductSelectedOption[]
+  selectedOptions: ProductSelectedOption[],
+  selectedQuickNotes: string[] = []
 ): string => {
   const optionKey = [...selectedOptions]
     .sort((left, right) => {
@@ -105,15 +153,33 @@ export const getCartLineKey = (
     })
     .map(option => `${option.groupId}:${option.choiceId}`)
     .join('|');
+  const quickNoteKey = parseProductQuickNotes(selectedQuickNotes)
+    .map(note => note.toLocaleLowerCase('pt-BR'))
+    .sort((left, right) => left.localeCompare(right, 'pt-BR'))
+    .join('|');
+  const configurationKey = [
+    optionKey ? `options=${optionKey}` : '',
+    quickNoteKey ? `notes=${quickNoteKey}` : '',
+  ]
+    .filter(Boolean)
+    .join('&');
 
-  return optionKey ? `${productId}::${optionKey}` : productId;
+  return configurationKey ? `${productId}::${configurationKey}` : productId;
 };
 
 export const buildProductConfigurationSelection = (
   product: Product,
-  selectedChoiceIds: Record<string, string[]>
+  selectedChoiceIds: Record<string, string[]>,
+  selectedQuickNotes: string[] = []
 ): ProductConfigurationSelection => {
   const optionGroups = parseProductOptionGroups(product.optionGroups);
+  const availableQuickNotes = parseProductQuickNotes(product.quickNotes);
+  const allowedQuickNoteKeys = new Set(
+    availableQuickNotes.map(note => note.toLocaleLowerCase('pt-BR'))
+  );
+  const normalizedSelectedQuickNotes = parseProductQuickNotes(selectedQuickNotes).filter(
+    note => allowedQuickNoteKeys.has(note.toLocaleLowerCase('pt-BR'))
+  );
   const selectedOptions: ProductSelectedOption[] = [];
   const summaryParts: string[] = [];
 
@@ -153,6 +219,10 @@ export const buildProductConfigurationSelection = (
     });
   }
 
+  if (normalizedSelectedQuickNotes.length > 0) {
+    summaryParts.push(`Observações: ${normalizedSelectedQuickNotes.join(', ')}`);
+  }
+
   const basePrice = product.isComplimentary ? 0 : product.price;
   const unitPrice = Number(
     (
@@ -160,7 +230,11 @@ export const buildProductConfigurationSelection = (
       selectedOptions.reduce((sum, option) => sum + option.priceDelta, 0)
     ).toFixed(2)
   );
-  const lineKey = getCartLineKey(product.id, selectedOptions);
+  const lineKey = getCartLineKey(
+    product.id,
+    selectedOptions,
+    normalizedSelectedQuickNotes
+  );
   const customizationSummary = summaryParts.join(' · ');
   const cartProduct: Product = {
     ...product,
@@ -171,6 +245,7 @@ export const buildProductConfigurationSelection = (
       : product.name,
     price: unitPrice,
     selectedOptions: [...selectedOptions],
+    selectedQuickNotes: [...normalizedSelectedQuickNotes],
     customizationSummary,
   };
 
@@ -180,6 +255,7 @@ export const buildProductConfigurationSelection = (
     product,
     unitPrice,
     selectedOptions,
+    selectedQuickNotes: normalizedSelectedQuickNotes,
     customizationSummary,
   };
 };
@@ -190,4 +266,5 @@ export const configurationSelectionToCartProduct = (
   ...selection,
   optionGroups: selection.product.optionGroups,
   categoryCollections: selection.product.categoryCollections,
+  quickNotes: selection.product.quickNotes,
 });

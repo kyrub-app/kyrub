@@ -17,8 +17,12 @@ const sharedPdv = readFileSync(
   'src/components/pdv/SharedPdvCatalog.tsx',
   'utf8'
 );
-const productModal = readFileSync(
-  'src/components/modals/NewProductModal.tsx',
+const unifiedProductModal = readFileSync(
+  'src/components/store/UnifiedProductModal.tsx',
+  'utf8'
+);
+const hierarchySelector = readFileSync(
+  'src/components/store/CatalogHierarchySelector.tsx',
   'utf8'
 );
 
@@ -76,19 +80,14 @@ test('retailer inventory starts with two mobile columns and expands responsively
   assert.match(inventoryWorkspace, /categoryRoot\(product\.category\)/);
 });
 
-test('new product categories support hierarchy, complimentary items and choice groups', () => {
-  assert.match(productModal, /snapshot\.data\(\)\?\.keywords/);
-  assert.match(productModal, /Categoria da loja/);
-  assert.match(productModal, /product-subcategory-control/);
-  assert.match(productModal, /Subcategorias e coleções/);
-  assert.match(productModal, /join\(' > '\)/);
-  assert.match(productModal, /category: categoryPath/);
-  assert.match(productModal, /categoryCollections/);
-  assert.match(productModal, /product-subcategory-media-list/);
-  assert.match(productModal, /id="product-complimentary-control"/);
-  assert.match(productModal, /Item sem custo/);
-  assert.match(productModal, /id="product-option-groups-control"/);
-  assert.match(productModal, /Personalização, etapas e múltiplas escolhas/);
-  assert.match(productModal, /minSelections/);
-  assert.match(productModal, /maxSelections/);
+test('the unified product modal supports hierarchy, complimentary items and choices', () => {
+  assert.match(unifiedProductModal, /id="unified-product-modal"/);
+  assert.match(unifiedProductModal, /<CatalogHierarchySelector/);
+  assert.match(hierarchySelector, /Categoria da loja/);
+  assert.match(hierarchySelector, /Subcategoria/);
+  assert.match(hierarchySelector, /Subgrupo/);
+  assert.match(hierarchySelector, /Pasta/);
+  assert.match(unifiedProductModal, /id="product-complimentary-control"/);
+  assert.match(unifiedProductModal, /ProductQuickNotesEditor/);
+  assert.match(unifiedProductModal, /ProductOptionGroupsEditor/);
 });

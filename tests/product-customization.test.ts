@@ -4,6 +4,8 @@ import type { Product } from '../src/types';
 import {
   buildProductConfigurationSelection,
   parseProductOptionGroups,
+  parseProductQuickNotes,
+  quickNotesToOptionGroup,
 } from '../src/utils/productCustomization';
 
 const menuProduct: Product = {
@@ -124,6 +126,46 @@ describe('product customization', () => {
     assert.equal(premium.unitPrice, 12);
   });
 
+  test('rapid observations become an optional multi-choice PDV group', () => {
+    const group = quickNotesToOptionGroup([
+      'Sem gelo',
+      'Limão',
+      'Sem gelo',
+      'Pouco açúcar',
+    ]);
+
+    assert.ok(group);
+    assert.equal(group.name, 'Observações rápidas');
+    assert.equal(group.minSelections, 0);
+    assert.equal(group.maxSelections, 3);
+    assert.deepEqual(
+      group.choices.map(choice => choice.name),
+      ['Sem gelo', 'Limão', 'Pouco açúcar']
+    );
+    assert.ok(group.choices.every(choice => choice.priceDelta === 0));
+  });
+
+  test('different observation buttons generate different order lines', () => {
+    const product: Product = {
+      ...menuProduct,
+      id: 'suco',
+      name: 'Suco',
+      quickNotes: ['Sem gelo', 'Limão'],
+      optionGroups: [quickNotesToOptionGroup(['Sem gelo', 'Limão'])!],
+    };
+    const group = product.optionGroups![0];
+    const semGelo = buildProductConfigurationSelection(product, {
+      [group.id]: [group.choices[0].id],
+    });
+    const comLimao = buildProductConfigurationSelection(product, {
+      [group.id]: [group.choices[1].id],
+    });
+
+    assert.notEqual(semGelo.lineKey, comLimao.lineKey);
+    assert.match(semGelo.customizationSummary, /Observações rápidas: Sem gelo/);
+    assert.match(comLimao.name, /Limão/);
+  });
+
   test('sanitizes optional, single and multiple-choice groups', () => {
     assert.deepEqual(
       parseProductOptionGroups([
@@ -150,6 +192,10 @@ describe('product customization', () => {
           ],
         },
       ]
+    );
+    assert.deepEqual(
+      parseProductQuickNotes(['Gelo', 'gelo', '', ' Limão ']),
+      ['Gelo', 'Limão']
     );
   });
 });

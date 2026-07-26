@@ -7,6 +7,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import type { Product } from '../../types';
+import { requestProductCreateModal } from '../../utils/productModalEvents';
 
 interface ProductInventoryWorkspaceProps {
   products: Product[];
@@ -50,7 +51,6 @@ const uniqueKeywords = (keywords: string[]): string[] => {
 export function ProductInventoryWorkspace({
   products,
   keywords,
-  onCreateProduct,
   onEditProduct,
   onDeleteProduct,
   busyProductId = '',
@@ -94,8 +94,9 @@ export function ProductInventoryWorkspace({
         </div>
         <button
           type="button"
-          onClick={onCreateProduct}
+          onClick={() => requestProductCreateModal(products, keywords)}
           className="inline-flex min-h-10 shrink-0 items-center justify-center gap-1.5 rounded-xl bg-orange-500 px-3 text-[9px] font-black uppercase text-slate-950 transition-colors hover:bg-orange-400"
+          id="open-unified-product-create-modal"
         >
           <Plus className="h-4 w-4" />
           Novo item
