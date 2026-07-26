@@ -27,6 +27,8 @@ import {
 import {
   parseProductOptionGroups,
   parseProductQuickNotes,
+  quickNotesToOptionGroup,
+  QUICK_NOTES_OPTION_GROUP_ID,
 } from './productCustomization';
 
 export const PUBLIC_PRODUCT_CREATE_EVENT = 'kyrub-public-product-create';
@@ -76,6 +78,17 @@ const timestampToIso = (value: unknown): string => {
   return '';
 };
 
+const optionGroupsWithQuickNotes = (
+  optionGroups: unknown,
+  quickNotes: unknown
+): ProductOptionGroup[] => {
+  const baseGroups = parseProductOptionGroups(optionGroups).filter(
+    group => group.id !== QUICK_NOTES_OPTION_GROUP_ID
+  );
+  const quickNotesGroup = quickNotesToOptionGroup(quickNotes);
+  return quickNotesGroup ? [...baseGroups, quickNotesGroup] : baseGroups;
+};
+
 export const parseProductCategoryCollections = (
   value: unknown
 ): ProductCategoryCollection[] => {
@@ -112,8 +125,11 @@ export const buildPublicProduct = (
   const categoryCollections = parseProductCategoryCollections(
     draft.categoryCollections
   );
-  const optionGroups = parseProductOptionGroups(draft.optionGroups);
   const quickNotes = parseProductQuickNotes(draft.quickNotes);
+  const optionGroups = optionGroupsWithQuickNotes(
+    draft.optionGroups,
+    quickNotes
+  );
 
   if (!name) {
     throw new Error('Informe o nome do item.');
@@ -167,8 +183,11 @@ export const parsePublicProducts = (value: unknown): PublicProduct[] => {
     const categoryCollections = parseProductCategoryCollections(
       product.categoryCollections
     );
-    const optionGroups = parseProductOptionGroups(product.optionGroups);
     const quickNotes = parseProductQuickNotes(product.quickNotes);
+    const optionGroups = optionGroupsWithQuickNotes(
+      product.optionGroups,
+      quickNotes
+    );
 
     if (
       !id ||
@@ -217,8 +236,11 @@ const parseCanonicalPublicProduct = (
   const categoryCollections = parseProductCategoryCollections(
     value.categoryCollections
   );
-  const optionGroups = parseProductOptionGroups(value.optionGroups);
   const quickNotes = parseProductQuickNotes(value.quickNotes);
+  const optionGroups = optionGroupsWithQuickNotes(
+    value.optionGroups,
+    quickNotes
+  );
 
   if (
     !id ||
@@ -264,7 +286,10 @@ const comparableProduct = (product: PublicProduct) => ({
   categoryCollections: parseProductCategoryCollections(
     product.categoryCollections
   ),
-  optionGroups: parseProductOptionGroups(product.optionGroups),
+  optionGroups: optionGroupsWithQuickNotes(
+    product.optionGroups,
+    product.quickNotes
+  ),
   quickNotes: parseProductQuickNotes(product.quickNotes),
   isService: product.isService === true,
   isComplimentary: product.isComplimentary === true,
@@ -297,8 +322,18 @@ export const persistPublicProduct = async (
     const snapshot = await transaction.get(tenantReference);
     const currentData = snapshot.data() as Record<string, unknown> | undefined;
     const existingProducts = parsePublicProducts(currentData?.publicProducts);
+    const quickNotes = parseProductQuickNotes(product.quickNotes);
+    const optionGroups = optionGroupsWithQuickNotes(
+      product.optionGroups,
+      quickNotes
+    );
+    const normalizedProduct: PublicProduct = {
+      ...product,
+      ...(quickNotes.length > 0 ? { quickNotes } : { quickNotes: undefined }),
+      ...(optionGroups.length > 0 ? { optionGroups } : { optionGroups: undefined }),
+    };
     const nextProducts = [
-      product,
+      normalizedProduct,
       ...existingProducts.filter(item => item.id !== product.id),
     ].slice(0, 200);
 
