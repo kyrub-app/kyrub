@@ -1,0 +1,159 @@
+    // --- Marketplace Listings ---
+    function marketplacePublicationStatusIsValid(status) {
+      return status in ['draft', 'published', 'paused'];
+    }
+
+    function marketplaceCommonFieldsAreValid(listingId, data) {
+      return data.keys().hasAll([
+          'listingId',
+          'listingType',
+          'ownerId',
+          'storeId',
+          'publicationStatus',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.listingId == listingId
+        && isValidId(data.ownerId)
+        && isValidId(data.storeId)
+        && data.ownerId == data.storeId
+        && data.listingType in ['store', 'offer']
+        && marketplacePublicationStatusIsValid(data.publicationStatus)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp
+        && (
+          !data.keys().hasAny(['publishedAt'])
+          || data.publishedAt is timestamp
+        );
+    }
+
+    function marketplaceStoreFieldsAreValid(listingId, data) {
+      return data.listingType == 'store'
+        && marketplaceCommonFieldsAreValid(listingId, data)
+        && data.keys().hasAll([
+          'name',
+          'slug',
+          'description',
+          'address',
+          'logo',
+          'banner',
+          'primaryColor',
+          'keywords',
+          'status'
+        ])
+        && data.keys().hasOnly([
+          'listingId',
+          'listingType',
+          'ownerId',
+          'storeId',
+          'publicationStatus',
+          'name',
+          'slug',
+          'description',
+          'address',
+          'logo',
+          'banner',
+          'primaryColor',
+          'keywords',
+          'status',
+          'geoPosition',
+          'createdAt',
+          'updatedAt',
+          'publishedAt'
+        ])
+        && data.name is string
+        && data.slug is string
+        && data.description is string
+        && data.address is string
+        && data.logo is string
+        && data.banner is string
+        && data.primaryColor is string
+        && data.keywords is list
+        && data.status in ['open', 'delayed', 'closed']
+        && (
+          !data.keys().hasAny(['geoPosition'])
+          || data.geoPosition is latlng
+        );
+    }
+
+    function marketplaceOfferFieldsAreValid(listingId, data) {
+      return data.listingType == 'offer'
+        && marketplaceCommonFieldsAreValid(listingId, data)
+        && data.keys().hasAll([
+          'offerId',
+          'name',
+          'description',
+          'price',
+          'imageUrls',
+          'stock',
+          'isService',
+          'category'
+        ])
+        && data.keys().hasOnly([
+          'listingId',
+          'listingType',
+          'ownerId',
+          'storeId',
+          'publicationStatus',
+          'offerId',
+          'name',
+          'description',
+          'price',
+          'imageUrls',
+          'stock',
+          'isService',
+          'category',
+          'createdAt',
+          'updatedAt',
+          'publishedAt'
+        ])
+        && isValidId(data.offerId)
+        && data.name is string
+        && data.description is string
+        && data.price is number
+        && data.price >= 0
+        && data.imageUrls is list
+        && data.stock is int
+        && data.stock >= 0
+        && data.isService is bool
+        && data.category is string;
+    }
+
+    function marketplaceListingFieldsAreValid(listingId, data) {
+      return marketplaceStoreFieldsAreValid(listingId, data)
+        || marketplaceOfferFieldsAreValid(listingId, data);
+    }
+
+    match /marketplace_listings/{listingId} {
+      allow get, list: if isSignedIn()
+        && (
+          resource.data.publicationStatus == 'published'
+          || resource.data.ownerId == request.auth.uid
+        );
+
+      allow create: if isSignedIn()
+        && marketplaceListingFieldsAreValid(listingId, incoming())
+        && incoming().ownerId == request.auth.uid
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && (
+          incoming().publicationStatus != 'published'
+          || incoming().publishedAt == request.time
+        );
+
+      allow update: if isSignedIn()
+        && existing().ownerId == request.auth.uid
+        && marketplaceListingFieldsAreValid(listingId, incoming())
+        && incoming().listingId == existing().listingId
+        && incoming().listingType == existing().listingType
+        && incoming().ownerId == existing().ownerId
+        && incoming().storeId == existing().storeId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          incoming().publicationStatus != 'published'
+          || incoming().publishedAt is timestamp
+        );
+
+      allow delete: if false;
+    }
