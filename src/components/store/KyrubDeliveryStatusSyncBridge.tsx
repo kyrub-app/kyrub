@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
+import type { User } from 'firebase/auth';
 import type { DeliveryJob } from '../../types';
 import { auth } from '../../utils/firebase';
 import {
@@ -15,6 +16,23 @@ const CLOUD_STATUSES = new Set<KyrubDeliveryOperationalStatus>([
   'delivering',
   'done',
 ]);
+
+const normalize = (value: string): string =>
+  value.trim().toLocaleLowerCase('pt-BR');
+
+const belongsToAuthenticatedCourier = (
+  delivery: DeliveryJob,
+  user: Pick<User, 'uid' | 'displayName' | 'email'>
+): boolean => {
+  const acceptedBy = normalize(delivery.acceptedBy ?? '');
+  if (!acceptedBy) return false;
+  const identities = new Set(
+    [user.uid, user.displayName ?? '', user.email ?? '', 'Você']
+      .map(normalize)
+      .filter(Boolean)
+  );
+  return identities.has(acceptedBy);
+};
 
 const readCachedDeliveries = (): DeliveryJob[] => {
   try {
@@ -48,6 +66,7 @@ export function KyrubDeliveryStatusSyncBridge() {
           if (!CLOUD_STATUSES.has(delivery.status as KyrubDeliveryOperationalStatus)) {
             continue;
           }
+          if (!belongsToAuthenticatedCourier(delivery, user)) continue;
           if (synchronized.current.get(delivery.id) === delivery.status) continue;
           if (inFlight.current.has(delivery.id)) continue;
           if ((retryAt.current.get(delivery.id) ?? 0) > Date.now()) continue;
