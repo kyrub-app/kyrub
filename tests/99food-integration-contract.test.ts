@@ -52,13 +52,16 @@ test('credentials stay server-side and are encrypted before persistence', () => 
   assert.match(frontendSource, /Client Secret/);
 });
 
-test('webhooks are authenticated and events are idempotent', () => {
+test('webhooks are authenticated and events are idempotent and retryable', () => {
   assert.match(routerSource, /x-app-merchantid/);
   assert.match(routerSource, /x-app-signature/);
   assert.match(serviceSource, /verifyOpenDeliverySignature/);
   assert.match(serviceSource, /integrationEvents/);
-  assert.match(serviceSource, /eventReference\.create/);
+  assert.match(serviceSource, /runTransaction/);
+  assert.match(serviceSource, /leaseExpiresAt/);
+  assert.match(serviceSource, /status: 'failed'/);
   assert.match(serviceSource, /duplicate: true/);
+  assert.match(serviceSource, /acknowledgeEvents\(acknowledged\)/);
 });
 
 test('Open Delivery client supports OAuth, webhook registration and polling acknowledgment', () => {
