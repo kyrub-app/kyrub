@@ -26,13 +26,15 @@ test('ready delivery orders publish idempotent Kyrub Entregas jobs', () => {
   assert.match(routerSource, /fulfillmentType !== 'delivery'/);
   assert.match(routerSource, /\['ready', 'out_for_delivery'\]/);
   assert.match(routerSource, /hub\/renda\/deliveries/);
+  assert.match(routerSource, /deliveryEscalationQueue/);
   assert.match(routerSource, /sourceOrderId/);
   assert.match(bridgeSource, /orders\/:orderId\/publish|delivery-opportunities\/orders/);
 });
 
 test('unaccepted jobs escalate after three minutes to admin control plane', () => {
   assert.match(routerSource, /3 \* 60 \* 1000/);
-  assert.match(routerSource, /waiting_kyrub/);
+  assert.match(routerSource, /deliveryEscalationQueue/);
+  assert.match(routerSource, /deliveryClaims/);
   assert.match(routerSource, /adminLogisticsEscalations/);
   assert.match(routerSource, /awaiting_provider_routing/);
   assert.match(routerSource, /admin\.kyrub\.com/);
@@ -47,14 +49,16 @@ test('delivery opportunities refresh the authorized Renda mural cache', () => {
   assert.match(appSource, /onOpportunitiesChanged=\{refreshLegacyCache\}/);
 });
 
-test('legacy courier actions are persisted before fallback escalation', () => {
+test('courier actions use a server-authoritative atomic claim', () => {
   assert.match(statusBridgeSource, /kyrub_deliveries/);
   assert.match(statusBridgeSource, /delivery\.id\.startsWith\('order-'\)/);
   assert.match(statusBridgeSource, /updateKyrubDeliveryOpportunityStatus/);
-  assert.match(utilitySource, /runTransaction/);
-  assert.match(utilitySource, /currentStatus !== 'available'/);
-  assert.match(utilitySource, /acceptedBy !== user\.uid/);
-  assert.match(utilitySource, /fallbackStatus: 'accepted_by_kyrub'/);
-  assert.match(utilitySource, /serverTimestamp/);
+  assert.match(utilitySource, /delivery-opportunities\/\$\{encodeURIComponent/);
+  assert.match(utilitySource, /authorization: `Bearer/);
+  assert.match(routerSource, /runTransaction/);
+  assert.match(routerSource, /transaction\.create\(claimReference/);
+  assert.match(routerSource, /courierId === actor\.uid/);
+  assert.match(routerSource, /fallbackStatus: 'accepted_by_kyrub'/);
+  assert.match(routerSource, /scheduleSnapshot\.exists/);
   assert.match(appSource, /KyrubDeliveryStatusSyncBridge/);
 });
