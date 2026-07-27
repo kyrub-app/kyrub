@@ -13,6 +13,7 @@ import { NinetyNineFoodConnectionBridge } from './components/store/NinetyNineFoo
 import { NinetyNineFoodOrderStatusBridge } from './components/store/NinetyNineFoodOrderStatusBridge';
 import { OperationalAppEntryBridge } from './components/store/OperationalAppEntryBridge';
 import { ProductCrossDeviceSyncBridge } from './components/store/ProductCrossDeviceSyncBridge';
+import { ProductStationRoutingWorkspace } from './components/store/ProductStationRoutingWorkspace';
 import { ProductWorkspaceLayoutBridge } from './components/store/ProductWorkspaceLayoutBridge';
 import { StoreRestartLandingBridge } from './components/store/StoreRestartLandingBridge';
 import { StoreSharingPortalBridge } from './components/store/StoreSharingPortalBridge';
@@ -136,6 +137,7 @@ function AuthenticatedKyrubApp({ operational }: { operational: boolean }) {
       <StoreRestartLandingBridge />
       <UnifiedProductCreateModalBridge />
       <ProductWorkspaceLayoutBridge />
+      <ProductStationRoutingWorkspace />
       {operational && <OperationalAppEntryBridge />}
       <LegacyApp key={`legacy-cache-${legacyCacheRevision}`} />
     </>

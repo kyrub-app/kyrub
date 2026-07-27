@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   CheckCircle2,
   ChefHat,
@@ -26,6 +26,13 @@ import {
   getOrderOrigin,
   type OrderDecision,
 } from '../../utils/orderWorkflow';
+import {
+  getProductionStationOptions,
+  loadCachedProductPreparationStations,
+  PRODUCTION_ROUTING_UPDATED_EVENT,
+  resolveProductPreparationStation,
+  type ProductPreparationStations,
+} from '../../utils/productionRouting';
 
 interface CustomerOrderInboxProps {
   orders: CustomerOrder[];
@@ -102,25 +109,64 @@ export const CustomerOrderInbox = ({
 }: CustomerOrderInboxProps) => {
   const [filter, setFilter] = useState<InboxFilter>('active');
   const [originFilter, setOriginFilter] = useState('all');
+  const [stationFilter, setStationFilter] = useState('all');
+  const [stationRoutes, setStationRoutes] = useState<ProductPreparationStations>(
+    loadCachedProductPreparationStations
+  );
   const [rejectingOrder, setRejectingOrder] = useState<CustomerOrder | null>(null);
   const [rejectionReason, setRejectionReason] = useState('');
   const [suggestedAlternative, setSuggestedAlternative] = useState('');
+
+  useEffect(() => {
+    const refresh = (event?: Event): void => {
+      const detail = (event as CustomEvent<ProductPreparationStations> | undefined)?.detail;
+      setStationRoutes(detail ?? loadCachedProductPreparationStations());
+    };
+    window.addEventListener(PRODUCTION_ROUTING_UPDATED_EVENT, refresh);
+    window.addEventListener('storage', refresh);
+    return () => {
+      window.removeEventListener(PRODUCTION_ROUTING_UPDATED_EVENT, refresh);
+      window.removeEventListener('storage', refresh);
+    };
+  }, []);
 
   const originOptions = useMemo(
     () => buildOrderOriginOptions(orders, attendanceSpaces),
     [attendanceSpaces, orders]
   );
 
+  const stationOptions = useMemo(
+    () => getProductionStationOptions(
+      orders.flatMap(order => order.items),
+      stationRoutes
+    ),
+    [orders, stationRoutes]
+  );
+
+  useEffect(() => {
+    if (stationFilter !== 'all' && !stationOptions.includes(stationFilter)) {
+      setStationFilter('all');
+    }
+  }, [stationFilter, stationOptions]);
+
   const filteredOrders = useMemo(
     () =>
       orders.filter(order => {
         const origin = getOrderOrigin(order, attendanceSpaces);
+        const hasStation =
+          stationFilter === 'all' ||
+          order.items.some(
+            item =>
+              resolveProductPreparationStation(item.productId, stationRoutes) ===
+              stationFilter
+          );
         return (
           (originFilter === 'all' || origin.id === originFilter) &&
+          hasStation &&
           matchesStage(order, filter)
         );
       }),
-    [attendanceSpaces, filter, orders, originFilter]
+    [attendanceSpaces, filter, orders, originFilter, stationFilter, stationRoutes]
   );
 
   const filterOptions: Array<{ id: InboxFilter; label: string }> = [
@@ -195,6 +241,39 @@ export const CustomerOrderInbox = ({
         </div>
       </div>
 
+      <div className="rounded-2xl border border-violet-500/20 bg-violet-500/5 p-2.5">
+        <div className="mb-2 flex items-center gap-1.5 px-1 text-[8px] font-black uppercase tracking-wide text-violet-300">
+          <ChefHat className="h-3.5 w-3.5" /> Estação de preparo
+        </div>
+        <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none">
+          <button
+            type="button"
+            onClick={() => setStationFilter('all')}
+            className={`whitespace-nowrap rounded-xl px-3 py-2 text-[9px] font-black uppercase ${
+              stationFilter === 'all'
+                ? 'bg-violet-500 text-white'
+                : 'border border-slate-800 bg-slate-950 text-slate-400'
+            }`}
+          >
+            Todas as estações
+          </button>
+          {stationOptions.map(station => (
+            <button
+              key={station}
+              type="button"
+              onClick={() => setStationFilter(station)}
+              className={`whitespace-nowrap rounded-xl px-3 py-2 text-[9px] font-black uppercase ${
+                stationFilter === station
+                  ? 'bg-violet-500 text-white'
+                  : 'border border-slate-800 bg-slate-950 text-slate-400'
+              }`}
+            >
+              {station}
+            </button>
+          ))}
+        </div>
+      </div>
+
       <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none">
         {filterOptions.map(option => (
           <button
@@ -219,7 +298,7 @@ export const CustomerOrderInbox = ({
             Nenhum pedido nesta combinação
           </p>
           <p className="mt-1 text-[11px] text-slate-600">
-            Altere a origem ou a etapa para consultar outros pedidos.
+            Altere a origem, a estação ou a etapa para consultar outros pedidos.
           </p>
         </div>
       ) : (
@@ -228,9 +307,14 @@ export const CustomerOrderInbox = ({
             const actions = actionForOrder(order);
             const isBusy = busyOrderId === order.id;
             const outstandingTotal = getCustomerOrderOutstandingTotal(order);
-            const visibleItems = order.items.filter(
-              item => item.quantity - item.transferredQuantity > 0
-            );
+            const visibleItems = order.items.filter(item => {
+              const operational = item.quantity - item.transferredQuantity > 0;
+              const matchesStation =
+                stationFilter === 'all' ||
+                resolveProductPreparationStation(item.productId, stationRoutes) ===
+                  stationFilter;
+              return operational && matchesStation;
+            });
             const origin = getOrderOrigin(order, attendanceSpaces);
 
             return (
@@ -261,6 +345,10 @@ export const CustomerOrderInbox = ({
                     {visibleItems.map(item => {
                       const operationalQuantity = item.quantity - item.transferredQuantity;
                       const openQuantity = getCustomerOrderItemOpenQuantity(item);
+                      const station = resolveProductPreparationStation(
+                        item.productId,
+                        stationRoutes
+                      );
                       return (
                         <div
                           key={item.lineId}
@@ -268,7 +356,10 @@ export const CustomerOrderInbox = ({
                         >
                           <div className="flex items-start justify-between gap-3">
                             <div>
-                              <strong className="text-xs text-slate-200">
+                              <span className="mb-1 inline-flex rounded-full bg-violet-500/10 px-2 py-0.5 text-[8px] font-black uppercase text-violet-300">
+                                {station}
+                              </span>
+                              <strong className="block text-xs text-slate-200">
                                 {operationalQuantity}× {item.name}
                               </strong>
                               {item.note && (
