@@ -48,10 +48,15 @@ const isActiveDineInOrder = (order: CustomerOrder): boolean =>
   !TERMINAL_STATUSES.has(order.status) &&
   order.items.some(item => getCustomerOrderItemOpenQuantity(item) > 0);
 
+const awaitsAttendanceApproval = (order: CustomerOrder): boolean =>
+  order.source === 'customer' &&
+  order.status === 'pending' &&
+  !order.operatorId.trim();
+
 const resolveTableState = (
   orders: CustomerOrder[]
 ): CustomerTableOperationalState => {
-  if (orders.some(order => order.status === 'pending')) return 'pending';
+  if (orders.some(awaitsAttendanceApproval)) return 'pending';
   if (orders.some(order => order.status === 'ready')) return 'ready';
   if (orders.some(order => order.status === 'preparing')) return 'preparing';
   return 'accepted';
@@ -87,8 +92,7 @@ export const buildCustomerTableCards = (
         tableCode: sortedOrders[0].tableCode,
         orders: sortedOrders,
         orderCount: sortedOrders.length,
-        pendingCount: sortedOrders.filter(order => order.status === 'pending')
-          .length,
+        pendingCount: sortedOrders.filter(awaitsAttendanceApproval).length,
         itemCount: sortedOrders.reduce(
           (sum, order) =>
             sum +
