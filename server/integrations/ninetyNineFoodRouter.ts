@@ -150,7 +150,7 @@ export const createNinetyNineFoodRouter = (): Router => {
       const tenantId = await authenticatedTenantId(request);
       const ingress = await drainNinetyNineFoodIngressQueue(100);
       const polling = await pollNinetyNineFood(tenantId);
-      response.json({ ingress, polling });
+      response.json({ ...polling, ingress });
     } catch (error) {
       errorResponse(response, error);
     }
