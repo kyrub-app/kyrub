@@ -10,6 +10,7 @@ import {
   type RawBodyRequest,
 } from "./server/integrations/ninetyNineFoodRouter";
 import { createDeliveryOpportunityRouter } from "./server/delivery/deliveryOpportunityRouter";
+import { createOperationsHealthRouter } from "./server/admin/operationsHealthRouter";
 
 // Load environment variables
 dotenv.config();
@@ -94,6 +95,12 @@ app.use(
   createDeliveryOpportunityRouter()
 );
 
+app.use(
+  "/api/admin/operations/health",
+  integrationRateLimiter,
+  createOperationsHealthRouter()
+);
+
 // Gemini Assistant Endpoint
 app.post("/api/gemini/generate", geminiRateLimiter, async (req: express.Request, res: express.Response) => {
   const { prompt } = req.body;
@@ -127,7 +134,6 @@ Ajude o usuário com conselhos realistas sobre concorrência no Firestore, estra
         temperature: 0.7,
       },
     });
-
     res.json({ text: response.text });
   } catch (error: any) {
     console.error("[Kyrub Server] Gemini generation error:", error);
