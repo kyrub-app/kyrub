@@ -4,6 +4,7 @@ import { createPortal } from 'react-dom';
 import { AlertTriangle, Trash2, X } from 'lucide-react';
 import { RetailerPanel as LegacyRetailerPanel } from './LegacyRetailerPanel';
 import { CustomerOrderInbox } from './customer/CustomerOrderInbox';
+import { AttendanceOrderApproval } from './customer/AttendanceOrderApproval';
 import { CustomerTableBoard } from './customer/CustomerTableBoard';
 import { TableServiceWorkspace } from './customer/TableServiceWorkspace';
 import { CashWorkspace } from './store/CashWorkspace';
@@ -21,11 +22,15 @@ import {
 import { removePublicProduct } from '../utils/publicProductMutations';
 import {
   subscribeToStoreCustomerOrders,
-  updateCustomerOrderStatus,
   type CustomerOrder,
   type CustomerOrderStatus,
 } from '../utils/customerOrders';
 import { buildCustomerTableCards } from '../utils/customerTables';
+import {
+  isOrderVisibleInKds,
+  updateOrderStatusWithDecision,
+  type OrderDecision,
+} from '../utils/orderWorkflow';
 
 type RetailerPanelProps = React.ComponentProps<typeof LegacyRetailerPanel>;
 
@@ -38,6 +43,7 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = props => {
     setNewProductModal,
     triggerToast,
     activeSubTab,
+    atendimentoSpaces,
   } = props;
 
   const [ordersHost, setOrdersHost] = useState<HTMLElement | null>(null);
@@ -52,6 +58,10 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = props => {
   const [busyProductId, setBusyProductId] = useState('');
   const tableCards = useMemo(
     () => buildCustomerTableCards(customerOrders),
+    [customerOrders]
+  );
+  const kdsOrders = useMemo(
+    () => customerOrders.filter(isOrderVisibleInKds),
     [customerOrders]
   );
 
@@ -349,7 +359,8 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = props => {
 
   const handleChangeOrderStatus = async (
     order: CustomerOrder,
-    status: CustomerOrderStatus
+    status: CustomerOrderStatus,
+    decision?: OrderDecision
   ): Promise<void> => {
     const user = auth.currentUser;
     if (!user || user.uid !== activeRetailerId) {
@@ -360,7 +371,12 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = props => {
     setBusyOrderId(order.id);
 
     try {
-      await updateCustomerOrderStatus(activeRetailerId, order.id, status);
+      await updateOrderStatusWithDecision(
+        activeRetailerId,
+        order.id,
+        status,
+        decision
+      );
       triggerToast('Status do pedido atualizado.', 'success');
     } catch (error) {
       console.error('Falha ao atualizar pedido do cliente:', error);
@@ -494,21 +510,30 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = props => {
       {ordersHost &&
         createPortal(
           <CustomerOrderInbox
-            orders={customerOrders}
+            orders={kdsOrders}
             busyOrderId={busyOrderId}
+            attendanceSpaces={atendimentoSpaces}
             onChangeStatus={handleChangeOrderStatus}
           />,
           ordersHost
         )}
       {selectedTableCode && (
-        <TableServiceWorkspace
-          storeId={activeRetailerId}
-          tableCode={selectedTableCode}
-          products={products}
-          orders={customerOrders}
-          onClose={() => setSelectedTableCode('')}
-          notify={triggerToast}
-        />
+        <>
+          <TableServiceWorkspace
+            storeId={activeRetailerId}
+            tableCode={selectedTableCode}
+            products={products}
+            orders={customerOrders}
+            onClose={() => setSelectedTableCode('')}
+            notify={triggerToast}
+          />
+          <AttendanceOrderApproval
+            storeId={activeRetailerId}
+            tableCode={selectedTableCode}
+            orders={customerOrders}
+            notify={triggerToast}
+          />
+        </>
       )}
 
       <ProductEditorModal

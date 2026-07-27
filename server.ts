@@ -9,6 +9,7 @@ import {
   createNinetyNineFoodRouter,
   type RawBodyRequest,
 } from "./server/integrations/ninetyNineFoodRouter";
+import { createDeliveryOpportunityRouter } from "./server/delivery/deliveryOpportunityRouter";
 
 // Load environment variables
 dotenv.config();
@@ -87,9 +88,15 @@ app.use(
   createNinetyNineFoodRouter()
 );
 
+app.use(
+  "/api/delivery-opportunities",
+  integrationRateLimiter,
+  createDeliveryOpportunityRouter()
+);
+
 // Gemini Assistant Endpoint
 app.post("/api/gemini/generate", geminiRateLimiter, async (req: express.Request, res: express.Response) => {
-  const { prompt, history } = req.body;
+  const { prompt } = req.body;
 
   if (!prompt) {
     return res.status(400).json({ error: "O campo 'prompt' é obrigatório." });
@@ -137,7 +144,7 @@ app.get(
 
 // Simple health check
 app.get("/api/health", (_req, res) => {
-  res.json({ status: "ok", app: "Kyrub", version: "1.3.0" });
+  res.json({ status: "ok", app: "Kyrub", version: "1.4.0" });
 });
 
 // Serve static assets in production, hook Vite dev server in development

@@ -504,6 +504,7 @@ export class OpenDeliveryClient {
       client_id: this.connection.credentials.clientId,
       client_secret: this.connection.credentials.clientSecret,
       grant_type: 'client_credentials',
+      scope: 'od.all',
     });
     const response = await fetchWithTimeout(this.connection.tokenUrl, {
       method: 'POST',

@@ -6,10 +6,13 @@ import {
   getNinetyNineFoodStatus,
   pollAllNinetyNineFoodConnections,
   pollNinetyNineFood,
-  receiveNinetyNineFoodWebhook,
   sendNinetyNineFoodOrderStatus,
   type NinetyNineFoodConnectInput,
 } from './ninetyNineFoodService';
+import {
+  drainNinetyNineFoodIngressQueue,
+  enqueueNinetyNineFoodWebhook,
+} from './ninetyNineFoodIngressQueue';
 import type { NormalizedIntegrationOrder } from './openDelivery';
 
 export interface RawBodyRequest extends Request {
@@ -53,7 +56,7 @@ const errorResponse = (response: Response, error: unknown): void => {
     response.status(404).json({ error: message });
     return;
   }
-  if (/inválid|informe|HTTPS|excede/i.test(message)) {
+  if (/inválid|informe|HTTPS|excede|incompleto/i.test(message)) {
     response.status(400).json({ error: message });
     return;
   }
@@ -145,7 +148,9 @@ export const createNinetyNineFoodRouter = (): Router => {
   router.post('/poll', async (request, response) => {
     try {
       const tenantId = await authenticatedTenantId(request);
-      response.json(await pollNinetyNineFood(tenantId));
+      const ingress = await drainNinetyNineFoodIngressQueue(100);
+      const polling = await pollNinetyNineFood(tenantId);
+      response.json({ ...polling, ingress });
     } catch (error) {
       errorResponse(response, error);
     }
@@ -182,13 +187,16 @@ export const createNinetyNineFoodRouter = (): Router => {
         response.status(400).json({ error: 'Corpo bruto do webhook indisponível.' });
         return;
       }
-      const result = await receiveNinetyNineFoodWebhook({
+      const result = await enqueueNinetyNineFoodWebhook({
         externalStoreId: request.get('x-app-merchantid')?.trim() ?? '',
         signature: request.get('x-app-signature')?.trim() ?? '',
         rawBody: request.rawBody,
         payload: request.body,
       });
-      response.setHeader('x-kyrub-idempotent', result.duplicate ? 'duplicate' : 'processed');
+      response.setHeader(
+        'x-kyrub-idempotent',
+        result.duplicate ? 'duplicate' : 'queued'
+      );
       response.status(200).end();
     } catch (error) {
       errorResponse(response, error);
@@ -199,18 +207,34 @@ export const createNinetyNineFoodRouter = (): Router => {
   router.post('/v1/newEvent', webhookHandler);
   router.post('/v1/orderUpdate', webhookHandler);
 
+  const drainHandler = async (request: Request, response: Response) => {
+    if (!cronAuthorized(request)) {
+      response.status(401).json({ error: 'Cron não autorizado.' });
+      return;
+    }
+    try {
+      response.json(await drainNinetyNineFoodIngressQueue(250));
+    } catch (error) {
+      errorResponse(response, error);
+    }
+  };
+
   const pollAllHandler = async (request: Request, response: Response) => {
     if (!cronAuthorized(request)) {
       response.status(401).json({ error: 'Cron não autorizado.' });
       return;
     }
     try {
-      response.json(await pollAllNinetyNineFoodConnections());
+      const ingress = await drainNinetyNineFoodIngressQueue(250);
+      const polling = await pollAllNinetyNineFoodConnections();
+      response.json({ ingress, polling });
     } catch (error) {
       errorResponse(response, error);
     }
   };
 
+  router.get('/internal/drain', drainHandler);
+  router.post('/internal/drain', drainHandler);
   router.get('/internal/poll-all', pollAllHandler);
   router.post('/internal/poll-all', pollAllHandler);
 
