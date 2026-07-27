@@ -3,7 +3,7 @@ import { Router, type Request, type Response } from 'express';
 import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { adminAuth, adminDb } from '../firebaseAdmin';
 
-const DELIVERY_COLLECTION = 'delivery_jobs';
+const DELIVERY_COLLECTION = 'hub/renda/deliveries';
 const ESCALATION_COLLECTION = 'adminLogisticsEscalations';
 const ESCALATION_DELAY_MS = 3 * 60 * 1000;
 
@@ -52,7 +52,7 @@ const errorResponse = (response: Response, error: unknown): void => {
   });
 };
 
-const publishOrderOpportunity = async (
+export const publishKyrubDeliveryOpportunity = async (
   tenantId: string,
   orderId: string
 ): Promise<Record<string, unknown>> => {
@@ -106,7 +106,7 @@ const publishOrderOpportunity = async (
   return { ...payload, created: !existing.exists };
 };
 
-const escalateUnacceptedOpportunities = async (): Promise<{
+export const escalateUnacceptedKyrubDeliveries = async (): Promise<{
   checked: number;
   escalated: number;
 }> => {
@@ -129,11 +129,11 @@ const escalateUnacceptedOpportunities = async (): Promise<{
     if (!threshold || threshold > now) continue;
     if (clean(data.fallbackStatus) !== 'waiting_kyrub') continue;
 
-    await adminDb.runTransaction(async transaction => {
+    const didEscalate = await adminDb.runTransaction(async transaction => {
       const fresh = await transaction.get(document.ref);
       const current = fresh.data() as Record<string, unknown> | undefined;
-      if (!fresh.exists || clean(current?.status) !== 'available') return;
-      if (clean(current?.fallbackStatus) !== 'waiting_kyrub') return;
+      if (!fresh.exists || clean(current?.status) !== 'available') return false;
+      if (clean(current?.fallbackStatus) !== 'waiting_kyrub') return false;
 
       const escalationReference = adminDb.doc(
         `${ESCALATION_COLLECTION}/${document.id}`
@@ -159,8 +159,9 @@ const escalateUnacceptedOpportunities = async (): Promise<{
         fallbackQueuedAt: FieldValue.serverTimestamp(),
         updatedAt: FieldValue.serverTimestamp(),
       });
-      escalated += 1;
+      return true;
     });
+    if (didEscalate) escalated += 1;
   }
 
   return { checked, escalated };
@@ -172,7 +173,9 @@ export const createDeliveryOpportunityRouter = (): Router => {
   router.post('/orders/:orderId/publish', async (request, response) => {
     try {
       const tenantId = await authenticatedTenantId(request);
-      response.json(await publishOrderOpportunity(tenantId, request.params.orderId));
+      response.json(
+        await publishKyrubDeliveryOpportunity(tenantId, request.params.orderId)
+      );
     } catch (error) {
       errorResponse(response, error);
     }
@@ -184,7 +187,7 @@ export const createDeliveryOpportunityRouter = (): Router => {
       return;
     }
     try {
-      response.json(await escalateUnacceptedOpportunities());
+      response.json(await escalateUnacceptedKyrubDeliveries());
     } catch (error) {
       errorResponse(response, error);
     }
