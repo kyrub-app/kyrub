@@ -5,6 +5,7 @@ import type { DeliveryJob } from '../../types';
 import { auth, db } from '../../utils/firebase';
 
 const DELIVERY_STORAGE_KEY = 'kyrub_deliveries';
+const DELIVERY_COLLECTION_PATH = 'hub/renda/deliveries';
 
 interface KyrubDeliveryOpportunityBridgeProps {
   onOpportunitiesChanged: () => void;
@@ -79,27 +80,26 @@ export function KyrubDeliveryOpportunityBridge({
       );
 
       unsubscribeJobs = onSnapshot(
-        collection(db, 'delivery_jobs'),
+        collection(db, DELIVERY_COLLECTION_PATH),
         snapshot => {
-          const jobs = snapshot.docs
-            .flatMap(document => {
-              const data = document.data() as Record<string, unknown>;
-              if (clean(data.source) !== 'kyrub-order') return [];
-              const status = clean(data.status);
-              if (!['available', 'accepted', 'delivering', 'done'].includes(status)) {
-                return [];
-              }
-              return [{
-                id: clean(data.id) || document.id,
-                from: clean(data.from),
-                to: clean(data.to),
-                distance: finite(data.distance),
-                payment: finite(data.payment),
-                status: status as DeliveryJob['status'],
-                requestedBy: clean(data.requestedBy),
-                acceptedBy: clean(data.acceptedBy) || undefined,
-              } satisfies DeliveryJob];
-            });
+          const jobs = snapshot.docs.flatMap(document => {
+            const data = document.data() as Record<string, unknown>;
+            if (clean(data.source) !== 'kyrub-order') return [];
+            const status = clean(data.status);
+            if (!['available', 'accepted', 'delivering', 'done'].includes(status)) {
+              return [];
+            }
+            return [{
+              id: clean(data.id) || document.id,
+              from: clean(data.from),
+              to: clean(data.to),
+              distance: finite(data.distance),
+              payment: finite(data.payment),
+              status: status as DeliveryJob['status'],
+              requestedBy: clean(data.requestedBy),
+              acceptedBy: clean(data.acceptedBy) || undefined,
+            } satisfies DeliveryJob];
+          });
           localStorage.setItem(DELIVERY_STORAGE_KEY, JSON.stringify(jobs));
           onOpportunitiesChanged();
         },
