@@ -146,3 +146,17 @@ test('shows only unpaid and non-transferred quantities in the table card', () =>
   assert.equal(cards[0].itemCount, 2);
   assert.equal(cards[0].total, 40);
 });
+
+test('clears the attendance alert while the KDS decision remains pending', () => {
+  const cards = buildCustomerTableCards([
+    makeOrder({
+      status: 'pending',
+      operatorId: 'staff-1',
+      operatorName: 'Garçom',
+    }),
+  ]);
+
+  assert.equal(cards[0].pendingCount, 0);
+  assert.equal(cards[0].state, 'accepted');
+  assert.equal(getCustomerTableStateLabel(cards[0].state, 0), 'Em atendimento');
+});
