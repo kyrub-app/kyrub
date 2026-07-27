@@ -42,6 +42,7 @@ test('unaccepted jobs escalate after three minutes to admin control plane', () =
 test('delivery opportunities refresh the authorized Renda mural cache', () => {
   assert.match(bridgeSource, /kyrub_deliveries/);
   assert.match(bridgeSource, /hub\/renda\/deliveries/);
+  assert.match(bridgeSource, /acceptedByName/);
   assert.match(appSource, /KyrubDeliveryOpportunityBridge/);
   assert.match(appSource, /onOpportunitiesChanged=\{refreshLegacyCache\}/);
 });
@@ -50,9 +51,10 @@ test('legacy courier actions are persisted before fallback escalation', () => {
   assert.match(statusBridgeSource, /kyrub_deliveries/);
   assert.match(statusBridgeSource, /delivery\.id\.startsWith\('order-'\)/);
   assert.match(statusBridgeSource, /updateKyrubDeliveryOpportunityStatus/);
-  assert.match(utilitySource, /status: 'accepted'|status,/);
-  assert.match(utilitySource, /acceptedBy/);
-  assert.match(utilitySource, /fallbackStatus = 'accepted_by_kyrub'/);
+  assert.match(utilitySource, /runTransaction/);
+  assert.match(utilitySource, /currentStatus !== 'available'/);
+  assert.match(utilitySource, /acceptedBy !== user\.uid/);
+  assert.match(utilitySource, /fallbackStatus: 'accepted_by_kyrub'/);
   assert.match(utilitySource, /serverTimestamp/);
   assert.match(appSource, /KyrubDeliveryStatusSyncBridge/);
 });
