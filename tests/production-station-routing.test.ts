@@ -76,14 +76,14 @@ describe('production station routing', () => {
       tickets.map(ticket => [ticket.station, ticket.quantity]),
       [
         ['BAR', 2],
-        ['COZINHA', 1],
         ['CONFEITARIA', 3],
+        ['COZINHA', 1],
       ]
     );
     assert.deepEqual(getProductionStationOptions(items, routes), [
       'BAR',
-      'COZINHA',
       'CONFEITARIA',
+      'COZINHA',
     ]);
   });
 
