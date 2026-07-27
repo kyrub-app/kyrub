@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
 import { doc, onSnapshot } from 'firebase/firestore';
 import LegacyApp from './LegacyApp';
@@ -6,6 +6,9 @@ import AdminControlPlaneApp from './components/admin/AdminControlPlaneApp';
 import { NoteInvitationOutboxBridge } from './components/NoteInvitationOutboxBridge';
 import { PublicStorefrontApp } from './components/PublicStorefrontApp';
 import { SocialPublishingBridge } from './components/SocialPublishingBridge';
+import { IntegrationTestOrderBridge } from './components/store/IntegrationTestOrderBridge';
+import { NinetyNineFoodConnectionBridge } from './components/store/NinetyNineFoodConnectionBridge';
+import { NinetyNineFoodOrderStatusBridge } from './components/store/NinetyNineFoodOrderStatusBridge';
 import { OperationalAppEntryBridge } from './components/store/OperationalAppEntryBridge';
 import { ProductCrossDeviceSyncBridge } from './components/store/ProductCrossDeviceSyncBridge';
 import { ProductWorkspaceLayoutBridge } from './components/store/ProductWorkspaceLayoutBridge';
@@ -105,16 +108,23 @@ function StorePersistenceBridge() {
 }
 
 function AuthenticatedKyrubApp({ operational }: { operational: boolean }) {
-  const [productCacheRevision, setProductCacheRevision] = useState(0);
+  const [legacyCacheRevision, setLegacyCacheRevision] = useState(0);
+  const refreshLegacyCache = useCallback(
+    () => setLegacyCacheRevision(current => current + 1),
+    []
+  );
 
   return (
     <>
       <StorePersistenceBridge />
       <ProductCrossDeviceSyncBridge
-        onCloudProductsApplied={() =>
-          setProductCacheRevision(current => current + 1)
-        }
+        onCloudProductsApplied={refreshLegacyCache}
       />
+      <IntegrationTestOrderBridge
+        onTestOrderCreated={refreshLegacyCache}
+      />
+      <NinetyNineFoodConnectionBridge />
+      <NinetyNineFoodOrderStatusBridge />
       <NoteInvitationOutboxBridge />
       <SocialPublishingBridge />
       <StoreSharingPortalBridge />
@@ -122,7 +132,7 @@ function AuthenticatedKyrubApp({ operational }: { operational: boolean }) {
       <UnifiedProductCreateModalBridge />
       <ProductWorkspaceLayoutBridge />
       {operational && <OperationalAppEntryBridge />}
-      <LegacyApp key={`legacy-products-${productCacheRevision}`} />
+      <LegacyApp key={`legacy-cache-${legacyCacheRevision}`} />
     </>
   );
 }

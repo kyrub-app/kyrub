@@ -70,7 +70,7 @@ test('invalid browser cache falls back to an empty product list', () => {
   assert.deepEqual(parseLegacyProductCache(null), []);
 });
 
-test('runtime bridge ignores cache-only snapshots and remounts legacy state after cloud hydration', () => {
+test('runtime bridge ignores cache-only snapshots and remounts shared legacy state after cloud hydration', () => {
   const bridge = readFileSync(
     'src/components/store/ProductCrossDeviceSyncBridge.tsx',
     'utf8'
@@ -82,6 +82,6 @@ test('runtime bridge ignores cache-only snapshots and remounts legacy state afte
   assert.match(bridge, /mergeCloudProductsIntoLegacyCache/);
   assert.match(bridge, /kyrub-products-cloud-cache-updated/);
   assert.match(app, /ProductCrossDeviceSyncBridge/);
-  assert.match(app, /setProductCacheRevision\(current => current \+ 1\)/);
-  assert.match(app, /<LegacyApp key=\{`legacy-products-\$\{productCacheRevision\}`\}/);
+  assert.match(app, /setLegacyCacheRevision\(current => current \+ 1\)/);
+  assert.match(app, /<LegacyApp key=\{`legacy-cache-\$\{legacyCacheRevision\}`\}/);
 });

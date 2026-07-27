@@ -38,11 +38,24 @@ export const STORE_INTEGRATION_IDS = [
 ] as const;
 
 export type StoreIntegrationId = (typeof STORE_INTEGRATION_IDS)[number];
-export type StoreIntegrationPlanStatus = 'not-configured' | 'planned';
+export type StoreIntegrationEnvironment = 'sandbox' | 'production';
+export type StoreIntegrationStatus =
+  | 'not-configured'
+  | 'draft'
+  | 'awaiting-authorization'
+  | 'sandbox-ready'
+  | 'attention';
 
 export interface StoreIntegrationPlan {
-  status: StoreIntegrationPlanStatus;
-  environment: 'sandbox' | 'production';
+  status: StoreIntegrationStatus;
+  environment: StoreIntegrationEnvironment;
+  accountLabel: string;
+  externalStoreId: string;
+  routingTarget: string;
+  receiveOrders: boolean;
+  syncCatalog: boolean;
+  syncInventory: boolean;
+  lastTestAt: string;
 }
 
 export type StoreIntegrationPlans = Record<
@@ -61,6 +74,16 @@ export interface StorageLike {
 }
 
 const TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
+const MAX_TEXT_LENGTH = 120;
+
+const normalizeText = (value: unknown): string =>
+  typeof value === 'string' ? value.trim().slice(0, MAX_TEXT_LENGTH) : '';
+
+const normalizeDateTime = (value: unknown): string => {
+  if (typeof value !== 'string' || !value.trim()) return '';
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) ? new Date(timestamp).toISOString() : '';
+};
 
 export const createEmptyStoreOpeningHours = (): StoreOpeningHours =>
   Object.fromEntries(
@@ -70,11 +93,23 @@ export const createEmptyStoreOpeningHours = (): StoreOpeningHours =>
     ])
   ) as StoreOpeningHours;
 
+export const createEmptyStoreIntegrationPlan = (): StoreIntegrationPlan => ({
+  status: 'not-configured',
+  environment: 'sandbox',
+  accountLabel: '',
+  externalStoreId: '',
+  routingTarget: '',
+  receiveOrders: false,
+  syncCatalog: false,
+  syncInventory: false,
+  lastTestAt: '',
+});
+
 export const createEmptyStoreIntegrationPlans = (): StoreIntegrationPlans =>
   Object.fromEntries(
     STORE_INTEGRATION_IDS.map(integrationId => [
       integrationId,
-      { status: 'not-configured', environment: 'sandbox' },
+      createEmptyStoreIntegrationPlan(),
     ])
   ) as StoreIntegrationPlans;
 
@@ -106,17 +141,52 @@ const parseOpeningDay = (value: unknown): StoreOpeningHoursDay => {
   };
 };
 
-const parseIntegrationPlan = (value: unknown): StoreIntegrationPlan => {
+const parseIntegrationStatus = (value: unknown): StoreIntegrationStatus => {
+  if (value === 'planned') return 'draft';
+  if (
+    value === 'draft' ||
+    value === 'awaiting-authorization' ||
+    value === 'sandbox-ready' ||
+    value === 'attention'
+  ) {
+    return value;
+  }
+  return 'not-configured';
+};
+
+export const parseIntegrationPlan = (value: unknown): StoreIntegrationPlan => {
   if (!value || typeof value !== 'object') {
-    return { status: 'not-configured', environment: 'sandbox' };
+    return createEmptyStoreIntegrationPlan();
   }
 
   const candidate = value as Record<string, unknown>;
   return {
-    status: candidate.status === 'planned' ? 'planned' : 'not-configured',
+    status: parseIntegrationStatus(candidate.status),
     environment:
       candidate.environment === 'production' ? 'production' : 'sandbox',
+    accountLabel: normalizeText(candidate.accountLabel),
+    externalStoreId: normalizeText(candidate.externalStoreId),
+    routingTarget: normalizeText(candidate.routingTarget),
+    receiveOrders: candidate.receiveOrders === true,
+    syncCatalog: candidate.syncCatalog === true,
+    syncInventory: candidate.syncInventory === true,
+    lastTestAt: normalizeDateTime(candidate.lastTestAt),
   };
+};
+
+export const parseStoreIntegrationPlans = (
+  value: unknown
+): StoreIntegrationPlans => {
+  const candidate = value && typeof value === 'object'
+    ? value as Record<string, unknown>
+    : {};
+
+  return Object.fromEntries(
+    STORE_INTEGRATION_IDS.map(integrationId => [
+      integrationId,
+      parseIntegrationPlan(candidate[integrationId]),
+    ])
+  ) as StoreIntegrationPlans;
 };
 
 export const parseStoreOperationalSettings = (
@@ -128,20 +198,12 @@ export const parseStoreOperationalSettings = (
   const openingCandidate = candidate.openingHours && typeof candidate.openingHours === 'object'
     ? candidate.openingHours as Record<string, unknown>
     : {};
-  const integrationsCandidate = candidate.integrations && typeof candidate.integrations === 'object'
-    ? candidate.integrations as Record<string, unknown>
-    : {};
 
   return {
     openingHours: Object.fromEntries(
       STORE_WEEKDAYS.map(day => [day, parseOpeningDay(openingCandidate[day])])
     ) as StoreOpeningHours,
-    integrations: Object.fromEntries(
-      STORE_INTEGRATION_IDS.map(integrationId => [
-        integrationId,
-        parseIntegrationPlan(integrationsCandidate[integrationId]),
-      ])
-    ) as StoreIntegrationPlans,
+    integrations: parseStoreIntegrationPlans(candidate.integrations),
   };
 };
 
@@ -157,6 +219,32 @@ export const validateStoreOpeningHours = (
     if (schedule.opensAt === schedule.closesAt) {
       throw new Error('Abertura e fechamento não podem ter o mesmo horário.');
     }
+  }
+};
+
+export const validateStoreIntegrationSetup = (
+  integrationId: StoreIntegrationId,
+  plan: StoreIntegrationPlan,
+  options: { forOrderTest?: boolean } = {}
+): void => {
+  if (!plan.accountLabel.trim()) {
+    throw new Error('Informe o nome da conta ou unidade no parceiro.');
+  }
+
+  if (!plan.externalStoreId.trim()) {
+    throw new Error('Informe o identificador da loja no parceiro.');
+  }
+
+  if (plan.receiveOrders && !plan.routingTarget.trim()) {
+    throw new Error('Informe para qual fila, setor ou equipe os pedidos serão enviados.');
+  }
+
+  if (options.forOrderTest && integrationId === 'sefaz') {
+    throw new Error('SEFAZ é uma integração fiscal e não recebe pedidos.');
+  }
+
+  if (options.forOrderTest && !plan.receiveOrders) {
+    throw new Error('Ative o recebimento de pedidos antes de testar o roteamento.');
   }
 };
 
@@ -202,6 +290,28 @@ export const subscribeToStoreOperationalSettings = (
     },
     error => onError?.(error)
   );
+
+export const persistStoreIntegrationPlans = async (
+  user: Pick<User, 'uid' | 'email'>,
+  integrations: StoreIntegrationPlans
+): Promise<void> => {
+  const normalized = parseStoreIntegrationPlans(integrations);
+
+  await setDoc(
+    doc(db, 'tenants', user.uid),
+    {
+      id: user.uid,
+      ownerId: user.uid,
+      email: user.email ?? '',
+      role: 'retailer',
+      operationalSettings: {
+        integrations: normalized,
+      },
+      updatedAt: serverTimestamp(),
+    },
+    { merge: true }
+  );
+};
 
 export const persistStoreOperationalSettings = async (
   user: Pick<User, 'uid' | 'email'>,
