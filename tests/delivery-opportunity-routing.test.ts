@@ -11,6 +11,14 @@ const bridgeSource = readFileSync(
   'src/components/store/KyrubDeliveryOpportunityBridge.tsx',
   'utf8'
 );
+const statusBridgeSource = readFileSync(
+  'src/components/store/KyrubDeliveryStatusSyncBridge.tsx',
+  'utf8'
+);
+const utilitySource = readFileSync(
+  'src/utils/deliveryOpportunities.ts',
+  'utf8'
+);
 const appSource = readFileSync('src/App.tsx', 'utf8');
 
 test('ready delivery orders publish idempotent Kyrub Entregas jobs', () => {
@@ -36,4 +44,15 @@ test('delivery opportunities refresh the authorized Renda mural cache', () => {
   assert.match(bridgeSource, /hub\/renda\/deliveries/);
   assert.match(appSource, /KyrubDeliveryOpportunityBridge/);
   assert.match(appSource, /onOpportunitiesChanged=\{refreshLegacyCache\}/);
+});
+
+test('legacy courier actions are persisted before fallback escalation', () => {
+  assert.match(statusBridgeSource, /kyrub_deliveries/);
+  assert.match(statusBridgeSource, /delivery\.id\.startsWith\('order-'\)/);
+  assert.match(statusBridgeSource, /updateKyrubDeliveryOpportunityStatus/);
+  assert.match(utilitySource, /status: 'accepted'|status,/);
+  assert.match(utilitySource, /acceptedBy/);
+  assert.match(utilitySource, /fallbackStatus = 'accepted_by_kyrub'/);
+  assert.match(utilitySource, /serverTimestamp/);
+  assert.match(appSource, /KyrubDeliveryStatusSyncBridge/);
 });
