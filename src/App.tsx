@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
 import { doc, onSnapshot } from 'firebase/firestore';
 import LegacyApp from './LegacyApp';
-import AdminControlPlaneApp from './components/admin/AdminControlPlaneApp';
+import AdminControlPlaneRoot from './components/admin/AdminControlPlaneRoot';
 import { NoteInvitationOutboxBridge } from './components/NoteInvitationOutboxBridge';
 import { PublicStorefrontApp } from './components/PublicStorefrontApp';
 import { SocialPublishingBridge } from './components/SocialPublishingBridge';
@@ -150,7 +150,7 @@ export default function App() {
     window.location.pathname
   );
 
-  if (adminControlPlane) return <AdminControlPlaneApp />;
+  if (adminControlPlane) return <AdminControlPlaneRoot />;
 
   const route = resolveKyrubAppRoute(window.location.pathname);
 
