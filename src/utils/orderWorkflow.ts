@@ -45,7 +45,8 @@ export const isPendingAttendanceApproval = (order: CustomerOrder): boolean =>
   order.source === 'customer' &&
   order.fulfillmentType === 'dine_in' &&
   Boolean(order.tableCode.trim()) &&
-  order.status === 'pending';
+  order.status === 'pending' &&
+  !order.operatorId.trim();
 
 export const isOrderVisibleInKds = (order: CustomerOrder): boolean =>
   !isPendingAttendanceApproval(order);
@@ -230,7 +231,7 @@ export const reviewAttendanceOrder = async (
       subtotal: total,
       total,
       customerNote: input.customerNote.trim(),
-      status: 'accepted',
+      status: 'pending',
       operatorId: user.uid,
       operatorName: operatorLabel(user),
       updatedAt: new Date().toISOString(),
