@@ -16,6 +16,7 @@ const fragmentPaths = [
   resolve(root, 'firestore.cash-ledger.fragment.rules'),
   resolve(root, 'firestore.cash-sessions.fragment.rules'),
   resolve(root, 'firestore.cash-movements.fragment.rules'),
+  resolve(root, 'firestore.kyrub-deliveries.fragment.rules'),
 ];
 const outputPath = resolve(root, '.firebase/firestore.combined.rules');
 const marker = '    // --- Kyrub Social Connections & Feed ---';
