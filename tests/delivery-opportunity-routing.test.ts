@@ -52,6 +52,8 @@ test('delivery opportunities refresh the authorized Renda mural cache', () => {
 test('courier actions use a server-authoritative atomic claim', () => {
   assert.match(statusBridgeSource, /kyrub_deliveries/);
   assert.match(statusBridgeSource, /delivery\.id\.startsWith\('order-'\)/);
+  assert.match(statusBridgeSource, /belongsToAuthenticatedCourier/);
+  assert.match(statusBridgeSource, /identities\.has\(acceptedBy\)/);
   assert.match(statusBridgeSource, /updateKyrubDeliveryOpportunityStatus/);
   assert.match(utilitySource, /delivery-opportunities\/\$\{encodeURIComponent/);
   assert.match(utilitySource, /authorization: `Bearer/);
