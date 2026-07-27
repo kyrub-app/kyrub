@@ -17,7 +17,7 @@ test('ready delivery orders publish idempotent Kyrub Entregas jobs', () => {
   assert.match(serverSource, /createDeliveryOpportunityRouter/);
   assert.match(routerSource, /fulfillmentType !== 'delivery'/);
   assert.match(routerSource, /\['ready', 'out_for_delivery'\]/);
-  assert.match(routerSource, /delivery_jobs/);
+  assert.match(routerSource, /hub\/renda\/deliveries/);
   assert.match(routerSource, /sourceOrderId/);
   assert.match(bridgeSource, /orders\/:orderId\/publish|delivery-opportunities\/orders/);
 });
@@ -31,9 +31,9 @@ test('unaccepted jobs escalate after three minutes to admin control plane', () =
   assert.match(routerSource, /internal\/escalate/);
 });
 
-test('delivery opportunities refresh the existing Renda mural cache', () => {
+test('delivery opportunities refresh the authorized Renda mural cache', () => {
   assert.match(bridgeSource, /kyrub_deliveries/);
-  assert.match(bridgeSource, /delivery_jobs/);
+  assert.match(bridgeSource, /hub\/renda\/deliveries/);
   assert.match(appSource, /KyrubDeliveryOpportunityBridge/);
   assert.match(appSource, /onOpportunitiesChanged=\{refreshLegacyCache\}/);
 });
