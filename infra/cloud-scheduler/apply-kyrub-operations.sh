@@ -22,20 +22,39 @@ POLL_SCHEDULE="${NINETY_NINE_FOOD_POLL_SCHEDULE:-*/5 * * * *}"
 BASE_URL="${PUBLIC_APP_URL%/}"
 HEADERS="X-Cron-Secret=${INTEGRATION_CRON_SECRET},Content-Type=application/json"
 
+common_flags() {
+  printf '%s\n' \
+    "--project=${FIREBASE_PROJECT_ID}" \
+    "--location=${LOCATION}"
+}
+
 upsert_job() {
   local name="$1"
   local schedule="$2"
   local uri="$3"
   local description="$4"
-  local action="create"
 
   if gcloud scheduler jobs describe "${name}" \
     --project="${FIREBASE_PROJECT_ID}" \
     --location="${LOCATION}" >/dev/null 2>&1; then
-    action="update"
+    gcloud scheduler jobs update http "${name}" \
+      --project="${FIREBASE_PROJECT_ID}" \
+      --location="${LOCATION}" \
+      --schedule="${schedule}" \
+      --time-zone="${TIME_ZONE}" \
+      --uri="${uri}" \
+      --http-method=POST \
+      --update-headers="${HEADERS}" \
+      --attempt-deadline=30s \
+      --max-retry-attempts=3 \
+      --min-backoff=10s \
+      --max-backoff=60s \
+      --description="${description}" \
+      --quiet
+    return
   fi
 
-  gcloud scheduler jobs "${action}" http "${name}" \
+  gcloud scheduler jobs create http "${name}" \
     --project="${FIREBASE_PROJECT_ID}" \
     --location="${LOCATION}" \
     --schedule="${schedule}" \
