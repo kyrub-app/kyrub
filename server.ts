@@ -5,14 +5,26 @@ import dotenv from "dotenv";
 import { GoogleGenAI } from "@google/genai";
 import { createServer as createViteServer } from "vite";
 import { proxyPublicGoogleDriveImage } from "./server/driveMediaProxy";
+import {
+  createNinetyNineFoodRouter,
+  type RawBodyRequest,
+} from "./server/integrations/ninetyNineFoodRouter";
 
 // Load environment variables
 dotenv.config();
 
 const app = express();
-const PORT = 3000;
+const PORT = Number(process.env.PORT || 3000);
 
-app.use(express.json());
+app.set("trust proxy", 1);
+app.use(
+  express.json({
+    limit: "2mb",
+    verify: (request, _response, buffer) => {
+      (request as RawBodyRequest).rawBody = Buffer.from(buffer);
+    },
+  })
+);
 
 // Initialize server-side Gemini SDK (as per the gemini-api skill instructions)
 // Never expose process.env.GEMINI_API_KEY to the client/browser bundle!
@@ -34,12 +46,11 @@ if (apiKey) {
 }
 
 // ==========================================
-// 5. RATE LIMITING & GEMINI API PROTECTION
+// 5. RATE LIMITING & API PROTECTION
 // ==========================================
-// Restrict requests to Gemini API (IA do Kyrub) to 20 requests per minute per IP
 const geminiRateLimiter = rateLimit({
-  windowMs: 60 * 1000, // 1 minute
-  max: 20, // 20 requests per minute
+  windowMs: 60 * 1000,
+  max: 20,
   message: {
     error: "Limite de taxa excedido. Requisições para o Mentor Kyrub estão limitadas a 20 por minuto para controle de custos.",
     code: "TOO_MANY_REQUESTS"
@@ -58,6 +69,23 @@ const driveMediaRateLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
 });
+
+const integrationRateLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 600,
+  message: {
+    error: "Muitas solicitações de integração. Tente novamente em instantes.",
+    code: "TOO_MANY_INTEGRATION_REQUESTS",
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+app.use(
+  "/api/integrations/99food",
+  integrationRateLimiter,
+  createNinetyNineFoodRouter()
+);
 
 // Gemini Assistant Endpoint
 app.post("/api/gemini/generate", geminiRateLimiter, async (req: express.Request, res: express.Response) => {
@@ -108,8 +136,8 @@ app.get(
 );
 
 // Simple health check
-app.get("/api/health", (req, res) => {
-  res.json({ status: "ok", app: "Kyrub", version: "1.2.0" });
+app.get("/api/health", (_req, res) => {
+  res.json({ status: "ok", app: "Kyrub", version: "1.3.0" });
 });
 
 // Serve static assets in production, hook Vite dev server in development
@@ -125,7 +153,7 @@ async function bootstrap() {
     console.log("[Kyrub Server] Running in PRODUCTION mode. Serving static assets...");
     const distPath = path.join(process.cwd(), "dist");
     app.use(express.static(distPath));
-    app.get("*", (req, res) => {
+    app.get("*", (_req, res) => {
       res.sendFile(path.join(distPath, "index.html"));
     });
   }
