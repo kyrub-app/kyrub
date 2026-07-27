@@ -3,11 +3,13 @@ import { describe, test } from 'node:test';
 import {
   STORE_INTEGRATION_IDS,
   STORE_WEEKDAYS,
+  createEmptyStoreIntegrationPlan,
   createEmptyStoreOperationalSettings,
   getStoreOperationalSettingsCacheKey,
   loadCachedStoreOperationalSettings,
   parseStoreOperationalSettings,
   saveCachedStoreOperationalSettings,
+  validateStoreIntegrationSetup,
   validateStoreOpeningHours,
 } from '../src/utils/storeOperationalSettings';
 
@@ -36,14 +38,14 @@ describe('store operational settings', () => {
     }
 
     for (const integrationId of STORE_INTEGRATION_IDS) {
-      assert.deepEqual(settings.integrations[integrationId], {
-        status: 'not-configured',
-        environment: 'sandbox',
-      });
+      assert.deepEqual(
+        settings.integrations[integrationId],
+        createEmptyStoreIntegrationPlan()
+      );
     }
   });
 
-  test('parses only valid hours and supported integration metadata', () => {
+  test('migrates old planning metadata into an editable draft', () => {
     const parsed = parseStoreOperationalSettings({
       openingHours: {
         monday: { enabled: true, opensAt: '08:30', closesAt: '22:00' },
@@ -65,13 +67,42 @@ describe('store operational settings', () => {
       opensAt: '',
       closesAt: '18:00',
     });
-    assert.deepEqual(parsed.integrations.ifood, {
-      status: 'planned',
-      environment: 'production',
+    assert.equal(parsed.integrations.ifood.status, 'draft');
+    assert.equal(parsed.integrations.ifood.environment, 'production');
+    assert.equal(parsed.integrations.ifood.accountLabel, '');
+    assert.deepEqual(
+      parsed.integrations.sefaz,
+      createEmptyStoreIntegrationPlan()
+    );
+  });
+
+  test('normalizes non-secret integration onboarding fields', () => {
+    const parsed = parseStoreOperationalSettings({
+      integrations: {
+        '99food': {
+          status: 'sandbox-ready',
+          environment: 'sandbox',
+          accountLabel: '  Loja Centro  ',
+          externalStoreId: ' merchant-123 ',
+          routingTarget: ' COZINHA ',
+          receiveOrders: true,
+          syncCatalog: true,
+          syncInventory: false,
+          lastTestAt: '2026-07-27T12:00:00.000Z',
+        },
+      },
     });
-    assert.deepEqual(parsed.integrations.sefaz, {
-      status: 'not-configured',
+
+    assert.deepEqual(parsed.integrations['99food'], {
+      status: 'sandbox-ready',
       environment: 'sandbox',
+      accountLabel: 'Loja Centro',
+      externalStoreId: 'merchant-123',
+      routingTarget: 'COZINHA',
+      receiveOrders: true,
+      syncCatalog: true,
+      syncInventory: false,
+      lastTestAt: '2026-07-27T12:00:00.000Z',
     });
   });
 
@@ -98,6 +129,40 @@ describe('store operational settings', () => {
     assert.doesNotThrow(() => validateStoreOpeningHours(settings.openingHours));
   });
 
+  test('validates account identity and operational routing before tests', () => {
+    const plan = {
+      ...createEmptyStoreIntegrationPlan(),
+      status: 'draft' as const,
+      receiveOrders: true,
+    };
+
+    assert.throws(
+      () => validateStoreIntegrationSetup('ifood', plan, { forOrderTest: true }),
+      /nome da conta/
+    );
+
+    plan.accountLabel = 'Loja Centro';
+    assert.throws(
+      () => validateStoreIntegrationSetup('ifood', plan, { forOrderTest: true }),
+      /identificador da loja/
+    );
+
+    plan.externalStoreId = 'merchant-123';
+    assert.throws(
+      () => validateStoreIntegrationSetup('ifood', plan, { forOrderTest: true }),
+      /fila, setor ou equipe/
+    );
+
+    plan.routingTarget = 'COZINHA';
+    assert.doesNotThrow(() =>
+      validateStoreIntegrationSetup('ifood', plan, { forOrderTest: true })
+    );
+    assert.throws(
+      () => validateStoreIntegrationSetup('sefaz', plan, { forOrderTest: true }),
+      /integração fiscal/
+    );
+  });
+
   test('keeps settings available in the device cache', () => {
     const storage = new MemoryStorage();
     const settings = createEmptyStoreOperationalSettings();
@@ -107,8 +172,12 @@ describe('store operational settings', () => {
       closesAt: '16:00',
     };
     settings.integrations['open-delivery'] = {
-      status: 'planned',
-      environment: 'sandbox',
+      ...createEmptyStoreIntegrationPlan(),
+      status: 'awaiting-authorization',
+      accountLabel: 'Unidade Centro',
+      externalStoreId: 'merchant-123',
+      routingTarget: 'EXPEDIÇÃO',
+      receiveOrders: true,
     };
 
     saveCachedStoreOperationalSettings(storage, 'user-a', settings);
