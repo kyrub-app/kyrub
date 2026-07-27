@@ -160,14 +160,14 @@ export const validateStoreOpeningHours = (
   }
 };
 
-const getOperationalSettingsCacheKey = (uid: string): string =>
+export const getStoreOperationalSettingsCacheKey = (uid: string): string =>
   `kyrub_store_operational_settings_${uid}`;
 
 export const loadCachedStoreOperationalSettings = (
   storage: StorageLike,
   uid: string
 ): StoreOperationalSettings => {
-  const serialized = storage.getItem(getOperationalSettingsCacheKey(uid));
+  const serialized = storage.getItem(getStoreOperationalSettingsCacheKey(uid));
   if (!serialized) return createEmptyStoreOperationalSettings();
 
   try {
@@ -183,7 +183,7 @@ export const saveCachedStoreOperationalSettings = (
   settings: StoreOperationalSettings
 ): void => {
   storage.setItem(
-    getOperationalSettingsCacheKey(uid),
+    getStoreOperationalSettingsCacheKey(uid),
     JSON.stringify(parseStoreOperationalSettings(settings))
   );
 };
