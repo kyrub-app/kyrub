@@ -99,6 +99,13 @@ const ORDER_STATUSES = new Set<NormalizedIntegrationOrder['status']>([
   'cancelled',
 ]);
 
+const cronAuthorized = (request: Request): boolean => {
+  const configuredSecret = process.env.INTEGRATION_CRON_SECRET?.trim();
+  if (!configuredSecret) return false;
+  const explicitSecret = request.get('x-cron-secret')?.trim();
+  return explicitSecret === configuredSecret || bearerToken(request) === configuredSecret;
+};
+
 export const createNinetyNineFoodRouter = (): Router => {
   const router = Router();
 
@@ -182,7 +189,7 @@ export const createNinetyNineFoodRouter = (): Router => {
         payload: request.body,
       });
       response.setHeader('x-kyrub-idempotent', result.duplicate ? 'duplicate' : 'processed');
-      response.status(204).end();
+      response.status(200).end();
     } catch (error) {
       errorResponse(response, error);
     }
@@ -192,10 +199,8 @@ export const createNinetyNineFoodRouter = (): Router => {
   router.post('/v1/newEvent', webhookHandler);
   router.post('/v1/orderUpdate', webhookHandler);
 
-  router.post('/internal/poll-all', async (request, response) => {
-    const configuredSecret = process.env.INTEGRATION_CRON_SECRET?.trim();
-    const receivedSecret = request.get('x-cron-secret')?.trim();
-    if (!configuredSecret || receivedSecret !== configuredSecret) {
+  const pollAllHandler = async (request: Request, response: Response) => {
+    if (!cronAuthorized(request)) {
       response.status(401).json({ error: 'Cron não autorizado.' });
       return;
     }
@@ -204,7 +209,10 @@ export const createNinetyNineFoodRouter = (): Router => {
     } catch (error) {
       errorResponse(response, error);
     }
-  });
+  };
+
+  router.get('/internal/poll-all', pollAllHandler);
+  router.post('/internal/poll-all', pollAllHandler);
 
   return router;
 };
