@@ -14,6 +14,7 @@ import {
 const PROVIDER = '99food';
 const INGRESS_COLLECTION = 'integrationIngress';
 const LEASE_MS = 60_000;
+const PROCESSED_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 
 interface StoredCredentials {
   clientId: string;
@@ -208,9 +209,13 @@ export const drainNinetyNineFoodIngressQueue = async (
       await document.ref.update({
         status: 'processed',
         processedAt: FieldValue.serverTimestamp(),
+        expiresAt: Timestamp.fromMillis(Date.now() + PROCESSED_RETENTION_MS),
         leaseExpiresAt: FieldValue.delete(),
         nextAttemptAt: FieldValue.delete(),
         availableAt: FieldValue.delete(),
+        rawBodyBase64: FieldValue.delete(),
+        payload: FieldValue.delete(),
+        signature: FieldValue.delete(),
         error: FieldValue.delete(),
         updatedAt: FieldValue.serverTimestamp(),
       });
