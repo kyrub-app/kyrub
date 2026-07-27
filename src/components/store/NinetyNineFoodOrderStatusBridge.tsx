@@ -17,6 +17,15 @@ const OUTBOUND_STATUSES = new Set([
 const cleanString = (value: unknown): string =>
   typeof value === 'string' ? value.trim() : '';
 
+const outboundReason = (
+  data: Record<string, unknown>,
+  status: string
+): string => {
+  if (status !== 'rejected' && status !== 'cancelled') return '';
+  const note = cleanString(data.customerNote);
+  return note.slice(0, 500);
+};
+
 export function NinetyNineFoodOrderStatusBridge() {
   const previousStatuses = useRef(new Map<string, string>());
   const initialized = useRef(false);
@@ -60,7 +69,11 @@ export function NinetyNineFoodOrderStatusBridge() {
               continue;
             }
 
-            void sendNinetyNineFoodOrderStatus(externalOrderId, status)
+            void sendNinetyNineFoodOrderStatus(
+              externalOrderId,
+              status,
+              outboundReason(data, status)
+            )
               .then(() => {
                 setMessage(`Status do pedido ${externalOrderId} enviado à 99Food.`);
               })
