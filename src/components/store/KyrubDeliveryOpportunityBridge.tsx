@@ -97,7 +97,8 @@ export function KyrubDeliveryOpportunityBridge({
               payment: finite(data.payment),
               status: status as DeliveryJob['status'],
               requestedBy: clean(data.requestedBy),
-              acceptedBy: clean(data.acceptedBy) || undefined,
+              acceptedBy:
+                clean(data.acceptedByName) || clean(data.acceptedBy) || undefined,
             } satisfies DeliveryJob];
           });
           localStorage.setItem(DELIVERY_STORAGE_KEY, JSON.stringify(jobs));
