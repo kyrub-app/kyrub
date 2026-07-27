@@ -114,18 +114,37 @@ hub/renda/deliveries/{deliveryJobId}
 
 A oportunidade aparece no mural existente da guia `Renda → Kyrub Entregas`.
 
-O aceite do entregador é gravado nesse mesmo documento com:
+O aceite não é decidido pelo documento público do mural. A interface envia a ação para um endpoint autenticado, e o backend cria atomicamente uma reivindicação server-only:
+
+```text
+deliveryClaims/{deliveryJobId}
+```
+
+Ela contém o UID do entregador e controla as transições:
+
+```text
+available → accepted → delivering → done
+```
+
+Apenas o primeiro aceite é confirmado. Somente o UID que possui a reivindicação pode registrar coleta e conclusão. O documento público recebe uma projeção para exibição:
 
 ```text
 status=accepted
 acceptedBy={uid}
+acceptedByName={nome}
 acceptedAt={server timestamp}
 fallbackStatus=accepted_by_kyrub
 ```
 
-Dessa forma, o backend reconhece o aceite mesmo em outro dispositivo e não dispara o fallback indevidamente.
+A agenda de três minutos também é server-only:
 
-Se o status continuar `available` após três minutos, o worker cria:
+```text
+deliveryEscalationQueue/{deliveryJobId}
+```
+
+O aceite cancela essa agenda na mesma transação. Assim, alterações diretas no navegador não conseguem reservar uma corrida ou impedir o fallback.
+
+Se não existir reivindicação após três minutos, o worker cria:
 
 ```text
 adminLogisticsEscalations/{deliveryJobId}
@@ -151,6 +170,7 @@ Isso prepara o controle de `admin.kyrub.com`, mas ainda não chama Lalamove, ent
 - falha de worker permanece reprocessável;
 - payload sensível é removido após sucesso;
 - entrega pronta cria uma única oportunidade;
-- aceite é persistido no mural canônico;
-- aceite antes de três minutos impede o fallback;
+- dois entregadores não conseguem aceitar a mesma corrida;
+- somente o entregador responsável avança coleta e conclusão;
+- aceite antes de três minutos cancela a agenda de fallback;
 - ausência de aceite cria uma única escalada para o painel administrativo.
