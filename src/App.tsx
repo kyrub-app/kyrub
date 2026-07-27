@@ -7,6 +7,8 @@ import { NoteInvitationOutboxBridge } from './components/NoteInvitationOutboxBri
 import { PublicStorefrontApp } from './components/PublicStorefrontApp';
 import { SocialPublishingBridge } from './components/SocialPublishingBridge';
 import { IntegrationTestOrderBridge } from './components/store/IntegrationTestOrderBridge';
+import { NinetyNineFoodConnectionBridge } from './components/store/NinetyNineFoodConnectionBridge';
+import { NinetyNineFoodOrderStatusBridge } from './components/store/NinetyNineFoodOrderStatusBridge';
 import { OperationalAppEntryBridge } from './components/store/OperationalAppEntryBridge';
 import { ProductCrossDeviceSyncBridge } from './components/store/ProductCrossDeviceSyncBridge';
 import { ProductWorkspaceLayoutBridge } from './components/store/ProductWorkspaceLayoutBridge';
@@ -121,6 +123,8 @@ function AuthenticatedKyrubApp({ operational }: { operational: boolean }) {
       <IntegrationTestOrderBridge
         onTestOrderCreated={refreshLegacyCache}
       />
+      <NinetyNineFoodConnectionBridge />
+      <NinetyNineFoodOrderStatusBridge />
       <NoteInvitationOutboxBridge />
       <SocialPublishingBridge />
       <StoreSharingPortalBridge />
