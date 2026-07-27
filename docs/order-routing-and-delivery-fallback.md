@@ -109,10 +109,21 @@ Recomenda-se execução ao menos uma vez por minuto para aproximar o fallback da
 Quando um pedido com `fulfillmentType=delivery` chega a `ready` ou `out_for_delivery`, o Kyrub cria uma oportunidade idempotente em:
 
 ```text
-delivery_jobs/{deliveryJobId}
+hub/renda/deliveries/{deliveryJobId}
 ```
 
 A oportunidade aparece no mural existente da guia `Renda → Kyrub Entregas`.
+
+O aceite do entregador é gravado nesse mesmo documento com:
+
+```text
+status=accepted
+acceptedBy={uid}
+acceptedAt={server timestamp}
+fallbackStatus=accepted_by_kyrub
+```
+
+Dessa forma, o backend reconhece o aceite mesmo em outro dispositivo e não dispara o fallback indevidamente.
 
 Se o status continuar `available` após três minutos, o worker cria:
 
@@ -140,5 +151,6 @@ Isso prepara o controle de `admin.kyrub.com`, mas ainda não chama Lalamove, ent
 - falha de worker permanece reprocessável;
 - payload sensível é removido após sucesso;
 - entrega pronta cria uma única oportunidade;
+- aceite é persistido no mural canônico;
 - aceite antes de três minutos impede o fallback;
 - ausência de aceite cria uma única escalada para o painel administrativo.
