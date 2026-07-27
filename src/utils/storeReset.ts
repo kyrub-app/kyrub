@@ -17,6 +17,10 @@ import { db } from './firebase';
 import { getMarketplaceListingsCollectionPath } from './marketplacePaths';
 import { resolveCanonicalStoreForLegacyTenant } from './operationalDualWrite';
 import {
+  createEmptyStoreOperationalSettings,
+  getStoreOperationalSettingsCacheKey,
+} from './storeOperationalSettings';
+import {
   persistPrivateUserStore,
   saveCachedUserStore,
   setStoreMarketplacePublication,
@@ -117,6 +121,7 @@ const clearLegacyMarketplaceCopy = async (
       status: 'closed',
       publicationStatus: 'paused',
       publicProducts: [],
+      operationalSettings: createEmptyStoreOperationalSettings(),
       updatedAt: serverTimestamp(),
     },
     { merge: true }
@@ -231,6 +236,7 @@ export const clearLocalStoreSetup = (
   );
   storage.removeItem(LOCAL_ATENDIMENTO_SPACES_KEY);
   storage.removeItem(LOCAL_PRODUCAO_SPACES_KEY);
+  storage.removeItem(getStoreOperationalSettingsCacheKey(userId));
 };
 
 export const resetStoreForRestart = async (
@@ -245,8 +251,6 @@ export const resetStoreForRestart = async (
   let archivedCanonicalProducts = 0;
   let pausedMarketplaceOffers = 0;
 
-  // Clear the legacy public catalog first. This prevents the product mirror from
-  // republishing an old catalog while the private profile is being restarted.
   await clearLegacyMarketplaceCopy(user, restartedStore);
 
   try {
@@ -273,8 +277,6 @@ export const resetStoreForRestart = async (
     warnings.push('O catálogo canônico será arquivado pela gravação dupla assim que ela reconectar.');
   }
 
-  // The primary document is intentionally reset instead of hard-deleted. Orders,
-  // payments, cash records, memberships and audit history remain available.
   await persistPrivateUserStore(user, restartedStore);
   saveCachedUserStore(storage, user.uid, restartedStore, false);
   clearLocalStoreSetup(storage, user.uid);
