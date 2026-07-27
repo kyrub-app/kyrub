@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
 import { doc, onSnapshot } from 'firebase/firestore';
 import LegacyApp from './LegacyApp';
@@ -7,6 +7,7 @@ import { NoteInvitationOutboxBridge } from './components/NoteInvitationOutboxBri
 import { PublicStorefrontApp } from './components/PublicStorefrontApp';
 import { SocialPublishingBridge } from './components/SocialPublishingBridge';
 import { OperationalAppEntryBridge } from './components/store/OperationalAppEntryBridge';
+import { ProductCrossDeviceSyncBridge } from './components/store/ProductCrossDeviceSyncBridge';
 import { ProductWorkspaceLayoutBridge } from './components/store/ProductWorkspaceLayoutBridge';
 import { StoreRestartLandingBridge } from './components/store/StoreRestartLandingBridge';
 import { StoreSharingPortalBridge } from './components/store/StoreSharingPortalBridge';
@@ -104,9 +105,16 @@ function StorePersistenceBridge() {
 }
 
 function AuthenticatedKyrubApp({ operational }: { operational: boolean }) {
+  const [productCacheRevision, setProductCacheRevision] = useState(0);
+
   return (
     <>
       <StorePersistenceBridge />
+      <ProductCrossDeviceSyncBridge
+        onCloudProductsApplied={() =>
+          setProductCacheRevision(current => current + 1)
+        }
+      />
       <NoteInvitationOutboxBridge />
       <SocialPublishingBridge />
       <StoreSharingPortalBridge />
@@ -114,7 +122,7 @@ function AuthenticatedKyrubApp({ operational }: { operational: boolean }) {
       <UnifiedProductCreateModalBridge />
       <ProductWorkspaceLayoutBridge />
       {operational && <OperationalAppEntryBridge />}
-      <LegacyApp />
+      <LegacyApp key={`legacy-products-${productCacheRevision}`} />
     </>
   );
 }
