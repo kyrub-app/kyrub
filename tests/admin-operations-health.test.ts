@@ -75,7 +75,7 @@ describe('admin operations health', () => {
   });
 
   test('health response counts queues without returning documents or secrets', () => {
-    assert.match(serverSource, /\.count\(\)\.get\(\)/);
+    assert.match(serverSource, /\.count\(\)\s*\.get\(\)/);
     assert.match(serverSource, /integrationIngress/);
     assert.match(serverSource, /integrationConnections/);
     assert.match(serverSource, /deliveryEscalationQueue/);
