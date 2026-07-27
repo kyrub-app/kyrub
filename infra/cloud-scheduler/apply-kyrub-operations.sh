@@ -22,12 +22,6 @@ POLL_SCHEDULE="${NINETY_NINE_FOOD_POLL_SCHEDULE:-*/5 * * * *}"
 BASE_URL="${PUBLIC_APP_URL%/}"
 HEADERS="X-Cron-Secret=${INTEGRATION_CRON_SECRET},Content-Type=application/json"
 
-common_flags() {
-  printf '%s\n' \
-    "--project=${FIREBASE_PROJECT_ID}" \
-    "--location=${LOCATION}"
-}
-
 upsert_job() {
   local name="$1"
   local schedule="$2"
