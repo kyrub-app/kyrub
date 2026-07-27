@@ -47,7 +47,7 @@ test('KDS exposes origin filter above production stage filters', () => {
   const stageIndex = inboxSource.indexOf("{filterOptions.map");
   assert.ok(originIndex >= 0);
   assert.ok(stageIndex > originIndex);
-  assert.match(inboxSource, /Kyrub Ofertas/);
+  assert.match(workflowSource, /Kyrub Ofertas/);
   assert.match(workflowSource, /marketplace:99food/);
   assert.match(workflowSource, /attendanceSpaces/);
 });
