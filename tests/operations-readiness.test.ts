@@ -55,7 +55,7 @@ describe('production operations readiness', () => {
     assert.match(formatOperationsReadiness(report), /Bloqueios:/);
   });
 
-  test('accepts a structurally valid service account JSON', () => {
+  test('accepts a structurally valid matching service account JSON', () => {
     const report = evaluateOperationsReadiness({
       PUBLIC_APP_URL: 'https://app.kyrub.com',
       FIREBASE_PROJECT_ID: 'kyrub-b8d0e',
@@ -73,9 +73,28 @@ describe('production operations readiness', () => {
     assert.equal(report.warnings.length, 2);
   });
 
+  test('rejects a service account from another project', () => {
+    const report = evaluateOperationsReadiness({
+      PUBLIC_APP_URL: 'https://app.kyrub.com',
+      FIREBASE_PROJECT_ID: 'kyrub-b8d0e',
+      FIREBASE_SERVICE_ACCOUNT_JSON: JSON.stringify({
+        project_id: 'another-project',
+        client_email: 'server@example.iam.gserviceaccount.com',
+        private_key: 'test',
+      }),
+      INTEGRATION_MASTER_KEY: 'ab'.repeat(32),
+      INTEGRATION_CRON_SECRET: 's'.repeat(40),
+    });
+    assert.equal(report.ready, false);
+    assert.match(report.issues.join(' '), /projeto diferente/);
+  });
+
   test('scheduler installer upserts the three protected minute-level jobs', () => {
     assert.match(schedulerSource, /scheduler jobs describe/);
-    assert.match(schedulerSource, /scheduler jobs "\$\{action\}" http/);
+    assert.match(schedulerSource, /scheduler jobs create http/);
+    assert.match(schedulerSource, /scheduler jobs update http/);
+    assert.match(schedulerSource, /--headers="\$\{HEADERS\}"/);
+    assert.match(schedulerSource, /--update-headers="\$\{HEADERS\}"/);
     assert.match(schedulerSource, /kyrub-99food-ingress-drain/);
     assert.match(schedulerSource, /kyrub-99food-poll-all/);
     assert.match(schedulerSource, /kyrub-delivery-fallback/);
