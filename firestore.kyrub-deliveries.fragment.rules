@@ -1,9 +1,0 @@
-    // --- Kyrub Entregas: mural server-authoritative ---
-    match /kyrub_delivery_opportunities/{deliveryId} {
-      // Entregadores autenticados podem consultar as oportunidades.
-      allow read: if request.auth != null;
-
-      // Publicação, reivindicação, coleta e conclusão são executadas apenas
-      // pelo Firebase Admin SDK no backend. Clientes nunca escrevem aqui.
-      allow create, update, delete: if false;
-    }
