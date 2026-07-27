@@ -3,11 +3,13 @@ import {
   CheckCircle2,
   ChefHat,
   Clock3,
+  Filter,
   MapPin,
   PackageCheck,
   ShoppingBag,
   Truck,
   UserRound,
+  X,
   XCircle,
 } from 'lucide-react';
 import {
@@ -19,17 +21,29 @@ import {
   type CustomerOrder,
   type CustomerOrderStatus,
 } from '../../utils/customerOrders';
+import {
+  buildOrderOriginOptions,
+  getOrderOrigin,
+  type OrderDecision,
+} from '../../utils/orderWorkflow';
 
 interface CustomerOrderInboxProps {
   orders: CustomerOrder[];
   busyOrderId: string;
+  attendanceSpaces?: string[];
   onChangeStatus: (
     order: CustomerOrder,
-    status: CustomerOrderStatus
+    status: CustomerOrderStatus,
+    decision?: OrderDecision
   ) => Promise<void>;
 }
 
 type InboxFilter = 'active' | 'pending' | 'preparing' | 'ready' | 'finished';
+
+const currency = new Intl.NumberFormat('pt-BR', {
+  style: 'currency',
+  currency: 'BRL',
+});
 
 const formatDateTime = (value: string): string => {
   const date = new Date(value);
@@ -56,7 +70,7 @@ const actionForOrder = (
       return [{ label: 'Marcar pronto', status: 'ready', emphasis: true }];
     case 'ready':
       return order.fulfillmentType === 'delivery'
-        ? [{ label: 'Saiu para entrega', status: 'out_for_delivery', emphasis: true }]
+        ? [{ label: 'Confirmar saída', status: 'out_for_delivery', emphasis: true }]
         : [{ label: 'Concluir pedido', status: 'completed', emphasis: true }];
     case 'out_for_delivery':
       return [{ label: 'Confirmar entrega', status: 'completed', emphasis: true }];
@@ -65,39 +79,49 @@ const actionForOrder = (
   }
 };
 
+const matchesStage = (order: CustomerOrder, filter: InboxFilter): boolean => {
+  switch (filter) {
+    case 'pending':
+      return order.status === 'pending';
+    case 'preparing':
+      return order.status === 'accepted' || order.status === 'preparing';
+    case 'ready':
+      return order.status === 'ready' || order.status === 'out_for_delivery';
+    case 'finished':
+      return ['completed', 'rejected', 'cancelled'].includes(order.status);
+    default:
+      return !['completed', 'rejected', 'cancelled'].includes(order.status);
+  }
+};
+
 export const CustomerOrderInbox = ({
   orders,
   busyOrderId,
+  attendanceSpaces = [],
   onChangeStatus,
 }: CustomerOrderInboxProps) => {
   const [filter, setFilter] = useState<InboxFilter>('active');
+  const [originFilter, setOriginFilter] = useState('all');
+  const [rejectingOrder, setRejectingOrder] = useState<CustomerOrder | null>(null);
+  const [rejectionReason, setRejectionReason] = useState('');
+  const [suggestedAlternative, setSuggestedAlternative] = useState('');
 
-  const filteredOrders = useMemo(() => {
-    switch (filter) {
-      case 'pending':
-        return orders.filter(order => order.status === 'pending');
-      case 'preparing':
-        return orders.filter(order =>
-          order.status === 'accepted' || order.status === 'preparing'
+  const originOptions = useMemo(
+    () => buildOrderOriginOptions(orders, attendanceSpaces),
+    [attendanceSpaces, orders]
+  );
+
+  const filteredOrders = useMemo(
+    () =>
+      orders.filter(order => {
+        const origin = getOrderOrigin(order, attendanceSpaces);
+        return (
+          (originFilter === 'all' || origin.id === originFilter) &&
+          matchesStage(order, filter)
         );
-      case 'ready':
-        return orders.filter(order =>
-          order.status === 'ready' || order.status === 'out_for_delivery'
-        );
-      case 'finished':
-        return orders.filter(order =>
-          order.status === 'completed' ||
-          order.status === 'rejected' ||
-          order.status === 'cancelled'
-        );
-      default:
-        return orders.filter(order =>
-          order.status !== 'completed' &&
-          order.status !== 'rejected' &&
-          order.status !== 'cancelled'
-        );
-    }
-  }, [filter, orders]);
+      }),
+    [attendanceSpaces, filter, orders, originFilter]
+  );
 
   const filterOptions: Array<{ id: InboxFilter; label: string }> = [
     { id: 'active', label: 'Ativos' },
@@ -107,24 +131,68 @@ export const CustomerOrderInbox = ({
     { id: 'finished', label: 'Finalizados' },
   ];
 
+  const confirmRejection = async (): Promise<void> => {
+    if (!rejectingOrder || !rejectionReason.trim()) return;
+    await onChangeStatus(rejectingOrder, 'rejected', {
+      reason: rejectionReason,
+      alternative: suggestedAlternative,
+    });
+    setRejectingOrder(null);
+    setRejectionReason('');
+    setSuggestedAlternative('');
+  };
+
   return (
     <section className="space-y-4 rounded-3xl border border-slate-800 bg-slate-900/70 p-4 sm:p-5">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <span className="font-mono text-[9px] font-bold uppercase tracking-[0.18em] text-orange-400">
-            Pedidos da vitrine e do PDV
+            Pedidos aprovados para operação
           </span>
           <h3 className="mt-1 flex items-center gap-2 text-base font-black text-white">
             <ShoppingBag className="h-5 w-5 text-orange-400" />
             Produção em tempo real
           </h3>
           <p className="mt-1 text-[11px] text-slate-500">
-            Pedidos do cliente aguardam aceite; pedidos lançados pelo garçom entram aceitos.
+            Autoatendimento presencial só entra aqui depois da aprovação do staff.
           </p>
         </div>
         <span className="w-fit rounded-full border border-slate-800 bg-slate-950 px-3 py-1 font-mono text-[10px] font-bold text-slate-400">
           {orders.length} no histórico
         </span>
+      </div>
+
+      <div className="rounded-2xl border border-cyan-500/20 bg-cyan-500/5 p-2.5">
+        <div className="mb-2 flex items-center gap-1.5 px-1 text-[8px] font-black uppercase tracking-wide text-cyan-300">
+          <Filter className="h-3.5 w-3.5" /> Origem do pedido
+        </div>
+        <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none">
+          <button
+            type="button"
+            onClick={() => setOriginFilter('all')}
+            className={`whitespace-nowrap rounded-xl px-3 py-2 text-[9px] font-black uppercase ${
+              originFilter === 'all'
+                ? 'bg-cyan-500 text-slate-950'
+                : 'border border-slate-800 bg-slate-950 text-slate-400'
+            }`}
+          >
+            Todas as origens
+          </button>
+          {originOptions.map(option => (
+            <button
+              key={option.id}
+              type="button"
+              onClick={() => setOriginFilter(option.id)}
+              className={`whitespace-nowrap rounded-xl px-3 py-2 text-[9px] font-black uppercase ${
+                originFilter === option.id
+                  ? 'bg-cyan-500 text-slate-950'
+                  : 'border border-slate-800 bg-slate-950 text-slate-400'
+              }`}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none">
@@ -148,10 +216,10 @@ export const CustomerOrderInbox = ({
         <div className="rounded-3xl border border-dashed border-slate-800 bg-slate-950/50 px-5 py-12 text-center">
           <PackageCheck className="mx-auto h-10 w-10 text-slate-700" />
           <p className="mt-3 text-xs font-black uppercase text-slate-500">
-            Nenhum pedido nesta etapa
+            Nenhum pedido nesta combinação
           </p>
           <p className="mt-1 text-[11px] text-slate-600">
-            Novos pedidos aparecerão automaticamente aqui.
+            Altere a origem ou a etapa para consultar outros pedidos.
           </p>
         </div>
       ) : (
@@ -163,6 +231,7 @@ export const CustomerOrderInbox = ({
             const visibleItems = order.items.filter(
               item => item.quantity - item.transferredQuantity > 0
             );
+            const origin = getOrderOrigin(order, attendanceSpaces);
 
             return (
               <article
@@ -172,8 +241,7 @@ export const CustomerOrderInbox = ({
                 <div className="flex items-start justify-between gap-3 border-b border-slate-800 p-4">
                   <div className="min-w-0">
                     <span className="font-mono text-[9px] font-bold uppercase tracking-wide text-orange-400">
-                      {getFulfillmentLabel(order.fulfillmentType)}
-                      {order.source !== 'customer' ? ' · PDV' : ''}
+                      {origin.label} · {getFulfillmentLabel(order.fulfillmentType)}
                     </span>
                     <h4 className="mt-1 truncate text-sm font-black text-white">
                       {order.buyerName}
@@ -208,17 +276,10 @@ export const CustomerOrderInbox = ({
                                   Obs.: {item.note}
                                 </p>
                               )}
-                              {(item.paidQuantity > 0 || item.transferredQuantity > 0) && (
-                                <p className="mt-1 text-[9px] text-slate-500">
-                                  {item.paidQuantity > 0 ? `${item.paidQuantity} pago(s)` : ''}
-                                  {item.paidQuantity > 0 && item.transferredQuantity > 0 ? ' · ' : ''}
-                                  {item.transferredQuantity > 0 ? `${item.transferredQuantity} transferido(s)` : ''}
-                                </p>
-                              )}
                             </div>
                             <div className="text-right">
                               <span className="block font-mono text-[10px] font-bold text-slate-400">
-                                R$ {(item.price * operationalQuantity).toFixed(2)}
+                                {currency.format(item.price * operationalQuantity)}
                               </span>
                               {openQuantity > 0 && (
                                 <span className="text-[8px] text-slate-600">
@@ -254,7 +315,7 @@ export const CustomerOrderInbox = ({
                     {order.operatorName && (
                       <p className="flex items-center gap-2">
                         <UserRound className="h-3.5 w-3.5 text-slate-500" />
-                        Lançado por: {order.operatorName}
+                        Operador: {order.operatorName}
                       </p>
                     )}
                     {order.customerNote && (
@@ -270,7 +331,7 @@ export const CustomerOrderInbox = ({
                         Saldo do pedido
                       </span>
                       <strong className="font-mono text-base text-white">
-                        R$ {outstandingTotal.toFixed(2)}
+                        {currency.format(outstandingTotal)}
                       </strong>
                     </div>
                     <span className={`rounded-lg px-2.5 py-1 text-[9px] font-bold uppercase ${
@@ -292,7 +353,15 @@ export const CustomerOrderInbox = ({
                         key={action.status}
                         type="button"
                         disabled={isBusy}
-                        onClick={() => void onChangeStatus(order, action.status)}
+                        onClick={() => {
+                          if (action.status === 'rejected') {
+                            setRejectingOrder(order);
+                            setRejectionReason('');
+                            setSuggestedAlternative('');
+                            return;
+                          }
+                          void onChangeStatus(order, action.status);
+                        }}
                         className={`flex min-h-10 flex-1 items-center justify-center gap-1.5 rounded-xl px-3 py-2 text-[10px] font-black uppercase tracking-wide disabled:cursor-not-allowed disabled:opacity-50 ${
                           action.emphasis
                             ? 'bg-emerald-600 text-white hover:bg-emerald-500'
@@ -316,6 +385,58 @@ export const CustomerOrderInbox = ({
               </article>
             );
           })}
+        </div>
+      )}
+
+      {rejectingOrder && (
+        <div className="fixed inset-0 z-[145] flex items-end justify-center bg-slate-950/85 backdrop-blur-sm sm:items-center sm:p-5">
+          <section className="w-full max-w-lg rounded-t-3xl border border-red-500/25 bg-slate-900 p-5 shadow-2xl sm:rounded-3xl">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <span className="font-mono text-[9px] font-black uppercase tracking-wide text-red-300">
+                  Recusar pedido
+                </span>
+                <h3 className="mt-1 text-lg font-black text-white">
+                  Explique e sugira uma alternativa
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setRejectingOrder(null)}
+                className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-800 bg-slate-950 text-slate-500"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <label className="mt-4 block text-[9px] font-black uppercase text-red-200">
+              Motivo obrigatório
+              <textarea
+                value={rejectionReason}
+                onChange={event => setRejectionReason(event.target.value)}
+                rows={3}
+                className="mt-1.5 w-full rounded-xl border border-red-500/20 bg-slate-950 px-3 py-2 text-[10px] normal-case text-white outline-none focus:border-red-400"
+              />
+            </label>
+            <label className="mt-3 block text-[9px] font-black uppercase text-slate-500">
+              Alternativa sugerida
+              <input
+                type="text"
+                value={suggestedAlternative}
+                onChange={event => setSuggestedAlternative(event.target.value)}
+                placeholder="Ex.: trocar por um item semelhante disponível"
+                className="mt-1.5 w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 text-[10px] normal-case text-white outline-none focus:border-orange-500"
+              />
+            </label>
+            <button
+              type="button"
+              onClick={() => void confirmRejection()}
+              disabled={!rejectionReason.trim() || busyOrderId === rejectingOrder.id}
+              className="mt-5 flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-red-600 px-4 text-[10px] font-black uppercase text-white disabled:opacity-40"
+            >
+              <XCircle className="h-4 w-4" />
+              Confirmar recusa
+            </button>
+          </section>
         </div>
       )}
     </section>
