@@ -54,6 +54,10 @@ function StorePersistenceBridge() {
         getPrimaryUserStoreDocumentPath(user.uid)
       );
 
+      // LegacyApp owns the initial create/read bootstrap for the private store.
+      // Wait until that document is confirmed by the server before replaying an
+      // offline pending update. This prevents two clients in the same page from
+      // both observing a missing document and racing to create it.
       unsubscribeStore = onSnapshot(
         storeReference,
         { includeMetadataChanges: true },
