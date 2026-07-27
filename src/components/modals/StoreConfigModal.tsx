@@ -6,9 +6,20 @@ import { Image as ImageIcon, Trash2 } from 'lucide-react';
 import { StoreConfigModal as LegacyStoreConfigModal } from './LegacyStoreConfigModal';
 import { GoogleDriveImagePickerButton } from '../GoogleDriveImagePickerButton';
 import { GooglePhotosImagePickerButton } from '../GooglePhotosImagePickerButton';
+import { StoreIntegrationsPanel } from '../store/StoreIntegrationsPanel';
+import { StoreOpeningHoursEditor } from '../store/StoreOpeningHoursEditor';
 import type { MarketplaceListingDocument } from '../../types';
 import { auth, db } from '../../utils/firebase';
 import { getMarketplaceStoreListingDocumentPath } from '../../utils/marketplacePaths';
+import {
+  createEmptyStoreOperationalSettings,
+  loadCachedStoreOperationalSettings,
+  persistStoreOperationalSettings,
+  saveCachedStoreOperationalSettings,
+  subscribeToStoreOperationalSettings,
+  validateStoreOpeningHours,
+  type StoreOperationalSettings,
+} from '../../utils/storeOperationalSettings';
 import {
   buildConfiguredStore,
   hasPendingUserStoreSync,
@@ -43,6 +54,8 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = props => {
   const [pendingSync, setPendingSync] = useState(false);
   const [configStoreLogo, setConfigStoreLogo] = useState('');
   const [configStoreBanner, setConfigStoreBanner] = useState('');
+  const [operationalSettings, setOperationalSettings] =
+    useState<StoreOperationalSettings>(createEmptyStoreOperationalSettings);
 
   const isPublished = canonicalPublished || fallbackPublished;
 
@@ -112,10 +125,12 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = props => {
     setPendingSync(hasPendingUserStoreSync(localStorage, user.uid));
     setConfigStoreLogo(cachedStore?.logo ?? '');
     setConfigStoreBanner(cachedStore?.banner ?? '');
+    setOperationalSettings(
+      loadCachedStoreOperationalSettings(localStorage, user.uid)
+    );
 
     if (!cachedStore) return;
 
-    // Run after the legacy parent initializes its controlled fields.
     window.setTimeout(() => {
       props.setConfigStoreName(cachedStore.name);
       props.setConfigStoreBio(cachedStore.description);
@@ -123,6 +138,23 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = props => {
       props.setConfigStoreContact(cachedStore.contact ?? '');
       props.setConfigStoreKeywords((cachedStore.keywords ?? []).join(', '));
     }, 0);
+  }, [props.isOpen]);
+
+  useEffect(() => {
+    if (!props.isOpen) return;
+    const user = auth.currentUser;
+    if (!user) return;
+
+    return subscribeToStoreOperationalSettings(
+      user,
+      settings => {
+        setOperationalSettings(settings);
+        saveCachedStoreOperationalSettings(localStorage, user.uid, settings);
+      },
+      error => {
+        console.warn('Store operational settings are unavailable.', error);
+      }
+    );
   }, [props.isOpen]);
 
   useEffect(() => {
@@ -221,23 +253,44 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = props => {
       };
     }
 
+    try {
+      validateStoreOpeningHours(operationalSettings.openingHours);
+    } catch (error) {
+      notify(
+        error instanceof Error
+          ? error.message
+          : 'Revise o horário de funcionamento.',
+        'error'
+      );
+      return {
+        localSaved: false,
+        cloudSynced: false,
+        marketplaceSynced: false,
+      };
+    }
+
     saveCachedUserStore(
       localStorage,
       user.uid,
       configuredStore,
       true
     );
+    saveCachedStoreOperationalSettings(
+      localStorage,
+      user.uid,
+      operationalSettings
+    );
     setPendingSync(true);
 
-    // The cache immediately preserves every profile value, including cloud
-    // images, while the private and public Firestore copies are synchronized.
     window.dispatchEvent(
       new CustomEvent('kyrub-user-store-saved', {
         detail: { store: configuredStore },
       })
     );
 
-    let cloudSynced = false;
+    let privateProfileSynced = false;
+    let operationalSettingsSynced = false;
+
     try {
       await persistPrivateUserStore(user, configuredStore);
       saveCachedUserStore(
@@ -246,11 +299,20 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = props => {
         configuredStore,
         false
       );
-      setPendingSync(false);
-      cloudSynced = true;
+      privateProfileSynced = true;
     } catch (error) {
       console.warn('Store kept locally while cloud sync is pending.', error);
     }
+
+    try {
+      await persistStoreOperationalSettings(user, operationalSettings);
+      operationalSettingsSynced = true;
+    } catch (error) {
+      console.warn('Store hours and integrations sync is pending.', error);
+    }
+
+    const cloudSynced = privateProfileSynced && operationalSettingsSynced;
+    setPendingSync(!cloudSynced);
 
     let marketplaceSynced = true;
     if (refreshPublishedMarketplace && await resolvePublishedState(user.uid)) {
@@ -278,10 +340,10 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = props => {
     if (result.localSaved) {
       notify(
         !result.marketplaceSynced
-          ? 'Perfil salvo. A atualização da vitrine pública ficou pendente.'
+          ? 'Configurações salvas. A atualização da vitrine pública ficou pendente.'
           : result.cloudSynced
-            ? 'Perfil, palavras-chave e imagens atualizados com sucesso!'
-            : 'Loja salva neste dispositivo. A sincronização privada ficou pendente.',
+            ? 'Perfil, horários e plano de integrações atualizados com sucesso!'
+            : 'Configurações salvas neste dispositivo. A sincronização ficou pendente.',
         result.marketplaceSynced && result.cloudSynced ? 'success' : 'warning'
       );
     }
@@ -431,11 +493,33 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = props => {
     </section>
   );
 
+  const profileOperationalControls = (
+    <StoreOpeningHoursEditor
+      value={operationalSettings.openingHours}
+      onChange={openingHours =>
+        setOperationalSettings(current => ({ ...current, openingHours }))
+      }
+      disabled={isSaving || isPublishing}
+    />
+  );
+
+  const integrationsControls = (
+    <StoreIntegrationsPanel
+      value={operationalSettings.integrations}
+      onChange={integrations =>
+        setOperationalSettings(current => ({ ...current, integrations }))
+      }
+      disabled={isSaving || isPublishing}
+    />
+  );
+
   return (
     <>
       <LegacyStoreConfigModal
         {...props}
         profileMediaControls={profileMediaControls}
+        profileOperationalControls={profileOperationalControls}
+        integrationsControls={integrationsControls}
       />
 
       {actionsHost &&
