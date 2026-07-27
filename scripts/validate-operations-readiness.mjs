@@ -20,17 +20,17 @@ const validMasterKey = value => {
   }
 };
 
-const validServiceAccount = value => {
-  if (!clean(value)) return false;
+const parseServiceAccount = value => {
+  if (!clean(value)) return null;
   try {
     const parsed = JSON.parse(value);
-    return Boolean(
-      clean(parsed.project_id) &&
+    return clean(parsed.project_id) &&
       clean(parsed.client_email) &&
       clean(parsed.private_key)
-    );
+      ? parsed
+      : null;
   } catch {
-    return false;
+    return null;
   }
 };
 
@@ -45,15 +45,21 @@ export const evaluateOperationsReadiness = (environment = process.env) => {
     clean(environment.K_SERVICE) ||
     clean(environment.GAE_SERVICE)
   );
-  const hasServiceAccount = validServiceAccount(
+  const serviceAccount = parseServiceAccount(
     environment.FIREBASE_SERVICE_ACCOUNT_JSON
   );
+  const hasServiceAccount = Boolean(serviceAccount);
 
   if (!isHttpsUrl(publicAppUrl)) {
     issues.push('PUBLIC_APP_URL deve ser uma URL HTTPS pública.');
   }
   if (projectId !== 'kyrub-b8d0e') {
     issues.push('FIREBASE_PROJECT_ID deve apontar para kyrub-b8d0e.');
+  }
+  if (serviceAccount && clean(serviceAccount.project_id) !== projectId) {
+    issues.push(
+      'FIREBASE_SERVICE_ACCOUNT_JSON pertence a um projeto diferente de FIREBASE_PROJECT_ID.'
+    );
   }
   if (!validMasterKey(environment.INTEGRATION_MASTER_KEY)) {
     issues.push(
