@@ -65,6 +65,20 @@ const resolveConnection = async (
   };
 };
 
+const isAlreadyExistsError = (error: unknown): boolean => {
+  const candidate = error && typeof error === 'object'
+    ? error as { code?: unknown; message?: unknown }
+    : {};
+  const code = candidate.code;
+  const message = typeof candidate.message === 'string'
+    ? candidate.message
+    : String(error);
+  return code === 6 ||
+    code === 'already-exists' ||
+    code === 'ALREADY_EXISTS' ||
+    /already exists|ALREADY_EXISTS/i.test(message);
+};
+
 export const enqueueNinetyNineFoodWebhook = async (input: {
   externalStoreId: string;
   signature: string;
@@ -108,12 +122,12 @@ export const enqueueNinetyNineFoodWebhook = async (input: {
       status: 'queued',
       attempts: 0,
       receivedAt: FieldValue.serverTimestamp(),
+      availableAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
     });
     return { duplicate: false, queued: true, eventId: event.eventId };
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    if (/already exists|ALREADY_EXISTS|6/i.test(message)) {
+    if (isAlreadyExistsError(error)) {
       return { duplicate: true, queued: false, eventId: event.eventId };
     }
     throw error;
@@ -145,10 +159,12 @@ const reserveIngress = async (
     ) {
       return null;
     }
+    const leaseExpiresAt = Timestamp.fromMillis(Date.now() + LEASE_MS);
     transaction.update(reference, {
       status: 'processing',
       attempts: FieldValue.increment(1),
-      leaseExpiresAt: Timestamp.fromMillis(Date.now() + LEASE_MS),
+      leaseExpiresAt,
+      availableAt: leaseExpiresAt,
       updatedAt: FieldValue.serverTimestamp(),
     });
     return data;
@@ -160,7 +176,8 @@ export const drainNinetyNineFoodIngressQueue = async (
 ): Promise<{ checked: number; processed: number; failed: number }> => {
   const snapshot = await adminDb
     .collection(INGRESS_COLLECTION)
-    .where('provider', '==', PROVIDER)
+    .where('availableAt', '<=', Timestamp.now())
+    .orderBy('availableAt', 'asc')
     .limit(Math.max(1, Math.min(250, limit)))
     .get();
   let checked = 0;
@@ -169,6 +186,7 @@ export const drainNinetyNineFoodIngressQueue = async (
 
   for (const document of snapshot.docs) {
     const current = document.data() as Record<string, unknown>;
+    if (clean(current.provider) !== PROVIDER) continue;
     if (!['queued', 'failed', 'processing'].includes(clean(current.status))) continue;
     checked += 1;
     const reserved = await reserveIngress(document.ref.path);
@@ -192,6 +210,7 @@ export const drainNinetyNineFoodIngressQueue = async (
         processedAt: FieldValue.serverTimestamp(),
         leaseExpiresAt: FieldValue.delete(),
         nextAttemptAt: FieldValue.delete(),
+        availableAt: FieldValue.delete(),
         error: FieldValue.delete(),
         updatedAt: FieldValue.serverTimestamp(),
       });
@@ -200,11 +219,13 @@ export const drainNinetyNineFoodIngressQueue = async (
       failed += 1;
       const attempts = Number(reserved.attempts ?? 0) + 1;
       const backoffMs = Math.min(15 * 60_000, 15_000 * 2 ** Math.min(6, attempts));
+      const nextAttemptAt = Timestamp.fromMillis(Date.now() + backoffMs);
       await document.ref.update({
         status: 'failed',
         error: (error instanceof Error ? error.message : String(error)).slice(0, 1_000),
         failedAt: FieldValue.serverTimestamp(),
-        nextAttemptAt: Timestamp.fromMillis(Date.now() + backoffMs),
+        nextAttemptAt,
+        availableAt: nextAttemptAt,
         leaseExpiresAt: FieldValue.delete(),
         updatedAt: FieldValue.serverTimestamp(),
       });
