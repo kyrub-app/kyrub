@@ -1,5 +1,5 @@
 import { randomBytes, createHash } from 'node:crypto';
-import { FieldValue } from 'firebase-admin/firestore';
+import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { adminDb } from '../firebaseAdmin';
 import {
   OpenDeliveryClient,
@@ -25,6 +25,7 @@ import {
 const PROVIDER = '99food' as const;
 const CONNECTION_COLLECTION = 'integrationConnections';
 const LOOKUP_COLLECTION = 'integrationConnectionLookup';
+const EVENT_LEASE_MS = 2 * 60 * 1000;
 
 export interface NinetyNineFoodConnectInput {
   externalStoreId: string;
@@ -274,7 +275,16 @@ export const connectNinetyNineFood = async (
   const connectionReference = adminDb.doc(connectionPath(tenantId));
   const lookupReference = adminDb.doc(lookupPath(normalized.externalStoreId));
   const existing = await connectionReference.get();
+  const previousConnection = parseConnectionDocument(existing.data());
   const batch = adminDb.batch();
+
+  if (
+    previousConnection &&
+    previousConnection.externalStoreId !== normalized.externalStoreId
+  ) {
+    batch.delete(adminDb.doc(lookupPath(previousConnection.externalStoreId)));
+  }
+
   batch.set(
     connectionReference,
     {
@@ -385,24 +395,62 @@ const updatePersistedOrderStatus = async (
 ): Promise<void> => {
   const orderId = internalOrderId(externalOrderId);
   const canonicalStoreId = await canonicalStoreIdForTenant(tenantId);
-  const updatedAt = new Date().toISOString();
   const patch = {
     status,
-    updatedAt,
-    'integration.lastEvent': lastEvent,
+    updatedAt: new Date().toISOString(),
+    integration: { lastEvent },
   };
   const batch = adminDb.batch();
-  batch.update(adminDb.doc(legacyOrderPath(tenantId, orderId)), patch);
+  batch.set(adminDb.doc(legacyOrderPath(tenantId, orderId)), patch, { merge: true });
   if (canonicalStoreId) {
-    batch.update(adminDb.doc(`stores/${canonicalStoreId}/orders/${orderId}`), patch);
+    batch.set(
+      adminDb.doc(`stores/${canonicalStoreId}/orders/${orderId}`),
+      patch,
+      { merge: true }
+    );
   }
   await batch.commit();
 };
 
-const eventAlreadyExists = (error: unknown): boolean => {
-  if (!error || typeof error !== 'object') return false;
-  const candidate = error as { code?: string | number };
-  return candidate.code === 6 || candidate.code === 'already-exists';
+const reserveEvent = async (
+  connection: NinetyNineFoodConnectionDocument,
+  event: OpenDeliveryEvent
+): Promise<{ reserved: boolean; referencePath: string }> => {
+  const referencePath =
+    `tenants/${connection.tenantId}/integrationEvents/${eventDocumentId(event.eventId)}`;
+  const reference = adminDb.doc(referencePath);
+  const reserved = await adminDb.runTransaction(async transaction => {
+    const snapshot = await transaction.get(reference);
+    const existing = snapshot.data() as Record<string, unknown> | undefined;
+    const status = clean(existing?.status);
+    const lease = existing?.leaseExpiresAt;
+    const leaseActive =
+      lease instanceof Timestamp && lease.toMillis() > Date.now();
+
+    if (status === 'processed' || (status === 'processing' && leaseActive)) {
+      return false;
+    }
+
+    transaction.set(
+      reference,
+      {
+        provider: PROVIDER,
+        tenantId: connection.tenantId,
+        eventId: event.eventId,
+        eventType: event.eventType,
+        externalOrderId: event.orderId,
+        status: 'processing',
+        attempts: FieldValue.increment(1),
+        receivedAt: FieldValue.serverTimestamp(),
+        leaseExpiresAt: Timestamp.fromMillis(Date.now() + EVENT_LEASE_MS),
+        error: FieldValue.delete(),
+      },
+      { merge: true }
+    );
+    return true;
+  });
+
+  return { reserved, referencePath };
 };
 
 export const processNinetyNineFoodEvent = async (
@@ -410,24 +458,9 @@ export const processNinetyNineFoodEvent = async (
   eventValue: unknown
 ): Promise<{ duplicate: boolean; event: OpenDeliveryEvent }> => {
   const event = parseOpenDeliveryEvent(eventValue);
-  const eventReference = adminDb.doc(
-    `tenants/${connection.tenantId}/integrationEvents/${eventDocumentId(event.eventId)}`
-  );
-
-  try {
-    await eventReference.create({
-      provider: PROVIDER,
-      tenantId: connection.tenantId,
-      eventId: event.eventId,
-      eventType: event.eventType,
-      externalOrderId: event.orderId,
-      status: 'processing',
-      receivedAt: FieldValue.serverTimestamp(),
-    });
-  } catch (error) {
-    if (eventAlreadyExists(error)) return { duplicate: true, event };
-    throw error;
-  }
+  const reservation = await reserveEvent(connection, event);
+  if (!reservation.reserved) return { duplicate: true, event };
+  const eventReference = adminDb.doc(reservation.referencePath);
 
   try {
     const legacyReference = adminDb.doc(
@@ -458,9 +491,11 @@ export const processNinetyNineFoodEvent = async (
       eventReference.update({
         status: 'processed',
         processedAt: FieldValue.serverTimestamp(),
+        leaseExpiresAt: FieldValue.delete(),
       }),
       adminDb.doc(connectionPath(connection.tenantId)).set(
         {
+          status: 'connected',
           lastWebhookAt: FieldValue.serverTimestamp(),
           lastError: '',
           updatedAt: FieldValue.serverTimestamp(),
@@ -477,6 +512,7 @@ export const processNinetyNineFoodEvent = async (
         status: 'failed',
         error: message.slice(0, 1_000),
         failedAt: FieldValue.serverTimestamp(),
+        leaseExpiresAt: FieldValue.delete(),
       }),
       adminDb.doc(connectionPath(connection.tenantId)).set(
         {
@@ -520,7 +556,7 @@ export const receiveNinetyNineFoodWebhook = async (input: {
 
 export const pollNinetyNineFood = async (
   tenantId: string
-): Promise<{ received: number; processed: number }> => {
+): Promise<{ received: number; processed: number; failed: number }> => {
   const connection = await loadConnectionDocument(tenantId);
   if (!connection || connection.status === 'disabled') {
     throw new Error('A integração 99Food não está configurada.');
@@ -528,21 +564,32 @@ export const pollNinetyNineFood = async (
   const client = new OpenDeliveryClient(connectionRuntime(connection));
   const events = await client.pollEvents();
   const acknowledged: OpenDeliveryEvent[] = [];
+  let processed = 0;
+  let failed = 0;
+  let lastError = '';
 
   for (const event of events) {
-    await processNinetyNineFoodEvent(connection, event);
-    acknowledged.push(event);
+    try {
+      const result = await processNinetyNineFoodEvent(connection, event);
+      acknowledged.push(event);
+      if (!result.duplicate) processed += 1;
+    } catch (error) {
+      failed += 1;
+      lastError = error instanceof Error ? error.message : String(error);
+    }
   }
+
   await client.acknowledgeEvents(acknowledged);
   await adminDb.doc(connectionPath(tenantId)).set(
     {
+      status: failed > 0 ? 'attention' : 'connected',
       lastPollAt: FieldValue.serverTimestamp(),
-      lastError: '',
+      lastError: lastError.slice(0, 1_000),
       updatedAt: FieldValue.serverTimestamp(),
     },
     { merge: true }
   );
-  return { received: events.length, processed: acknowledged.length };
+  return { received: events.length, processed, failed };
 };
 
 export const pollAllNinetyNineFoodConnections = async (): Promise<{
@@ -565,6 +612,7 @@ export const pollAllNinetyNineFoodConnections = async (): Promise<{
     try {
       const result = await pollNinetyNineFood(connection.tenantId);
       processed += result.processed;
+      failures += result.failed;
     } catch (error) {
       failures += 1;
       await document.ref.set(
