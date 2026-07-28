@@ -34,8 +34,9 @@ import { parseProductQuickNotes } from '../../utils/productCustomization';
 import {
   EMPTY_PRODUCT_COMPOSITION,
   calculateProductAvailableStock,
+  getProductInventoryDocumentPath,
   persistProductInventorySettings,
-  readProductInventorySettingsFromTenant,
+  readProductInventorySettings,
   type InventoryCatalogItem,
   type ProductComposition,
 } from '../../utils/productInventory';
@@ -246,13 +247,16 @@ export const UnifiedProductModal: React.FC<UnifiedProductModalProps> = ({
   useEffect(() => {
     if (!isOpen) return;
 
-    let unsubscribeStore = () => undefined;
+    let unsubscribeTenant = () => undefined;
+    let unsubscribeInventory = () => undefined;
     const unsubscribeAuth = onAuthStateChanged(auth, user => {
-      unsubscribeStore();
-      unsubscribeStore = () => undefined;
+      unsubscribeTenant();
+      unsubscribeInventory();
+      unsubscribeTenant = () => undefined;
+      unsubscribeInventory = () => undefined;
       if (!user) return;
 
-      unsubscribeStore = onSnapshot(
+      unsubscribeTenant = onSnapshot(
         doc(db, 'tenants', user.uid),
         snapshot => {
           const tenantData = snapshot.data();
@@ -265,10 +269,16 @@ export const UnifiedProductModal: React.FC<UnifiedProductModalProps> = ({
               cloudProducts
             )
           );
+        },
+        error => {
+          console.warn('Não foi possível carregar a hierarquia do catálogo.', error);
+        }
+      );
 
-          const inventorySettings = readProductInventorySettingsFromTenant(
-            tenantData
-          );
+      unsubscribeInventory = onSnapshot(
+        doc(db, getProductInventoryDocumentPath(user.uid)),
+        snapshot => {
+          const inventorySettings = readProductInventorySettings(snapshot.data());
           const storedComposition = product?.id
             ? inventorySettings.compositions[product.id]
               ?? { ...EMPTY_PRODUCT_COMPOSITION, lines: [] }
@@ -286,7 +296,7 @@ export const UnifiedProductModal: React.FC<UnifiedProductModalProps> = ({
           setInventoryLoadError('');
         },
         error => {
-          console.warn('Não foi possível carregar o estoque da loja.', error);
+          console.warn('Não foi possível carregar o estoque privado da loja.', error);
           setInventoryLoaded(true);
           setInventoryLoadError(
             'O estoque privado está indisponível. Os dados públicos ainda podem ser salvos, mas composição e compras não serão alteradas.'
@@ -297,7 +307,8 @@ export const UnifiedProductModal: React.FC<UnifiedProductModalProps> = ({
 
     return () => {
       unsubscribeAuth();
-      unsubscribeStore();
+      unsubscribeTenant();
+      unsubscribeInventory();
     };
   }, [inventoryDirty, isOpen, product?.id, products]);
 
