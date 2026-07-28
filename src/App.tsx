@@ -12,6 +12,7 @@ import { KyrubDeliveryStatusSyncBridge } from './components/store/KyrubDeliveryS
 import { NinetyNineFoodConnectionBridge } from './components/store/NinetyNineFoodConnectionBridge';
 import { NinetyNineFoodOrderStatusBridge } from './components/store/NinetyNineFoodOrderStatusBridge';
 import { OperationalAppEntryBridge } from './components/store/OperationalAppEntryBridge';
+import { OrderInventoryReconciliationBridge } from './components/store/OrderInventoryReconciliationBridge';
 import { ProductCrossDeviceSyncBridge } from './components/store/ProductCrossDeviceSyncBridge';
 import { ProductStationRoutingWorkspace } from './components/store/ProductStationRoutingWorkspace';
 import { ProductWorkspaceLayoutBridge } from './components/store/ProductWorkspaceLayoutBridge';
@@ -125,6 +126,7 @@ function AuthenticatedKyrubApp({ operational }: { operational: boolean }) {
       <IntegrationTestOrderBridge
         onTestOrderCreated={refreshLegacyCache}
       />
+      <OrderInventoryReconciliationBridge />
       <KyrubDeliveryOpportunityBridge
         onOpportunitiesChanged={refreshLegacyCache}
       />

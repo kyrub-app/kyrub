@@ -1,6 +1,10 @@
 import { Router, type Request, type Response } from 'express';
 import { adminAuth } from '../firebaseAdmin';
 import {
+  reconcileConnectedNinetyNineFoodOrdersUpdatedSince,
+  reconcileTenantOrdersUpdatedSince,
+} from '../inventory/recentOrderInventorySweep';
+import {
   connectNinetyNineFood,
   disconnectNinetyNineFood,
   getNinetyNineFoodStatus,
@@ -148,9 +152,14 @@ export const createNinetyNineFoodRouter = (): Router => {
   router.post('/poll', async (request, response) => {
     try {
       const tenantId = await authenticatedTenantId(request);
+      const startedAt = Date.now() - 5_000;
       const ingress = await drainNinetyNineFoodIngressQueue(100);
       const polling = await pollNinetyNineFood(tenantId);
-      response.json({ ...polling, ingress });
+      const inventory = await reconcileTenantOrdersUpdatedSince(
+        tenantId,
+        startedAt
+      );
+      response.json({ ...polling, ingress, inventory });
     } catch (error) {
       errorResponse(response, error);
     }
@@ -225,9 +234,12 @@ export const createNinetyNineFoodRouter = (): Router => {
       return;
     }
     try {
+      const startedAt = Date.now() - 5_000;
       const ingress = await drainNinetyNineFoodIngressQueue(250);
       const polling = await pollAllNinetyNineFoodConnections();
-      response.json({ ingress, polling });
+      const inventory =
+        await reconcileConnectedNinetyNineFoodOrdersUpdatedSince(startedAt);
+      response.json({ ingress, polling, inventory });
     } catch (error) {
       errorResponse(response, error);
     }

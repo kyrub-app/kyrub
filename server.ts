@@ -11,6 +11,7 @@ import {
 } from "./server/integrations/ninetyNineFoodRouter";
 import { createDeliveryOpportunityRouter } from "./server/delivery/deliveryOpportunityRouter";
 import { createOperationsHealthRouter } from "./server/admin/operationsHealthRouter";
+import { createOrderInventoryRouter } from "./server/inventory/orderInventoryRouter";
 
 // Load environment variables
 dotenv.config();
@@ -87,6 +88,12 @@ app.use(
   "/api/integrations/99food",
   integrationRateLimiter,
   createNinetyNineFoodRouter()
+);
+
+app.use(
+  "/api/orders",
+  integrationRateLimiter,
+  createOrderInventoryRouter()
 );
 
 app.use(

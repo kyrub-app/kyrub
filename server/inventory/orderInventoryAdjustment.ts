@@ -1,0 +1,225 @@
+import { FieldValue, type DocumentData } from 'firebase-admin/firestore';
+import { adminDb } from '../firebaseAdmin';
+import {
+  applyInventoryConsumptionLines,
+  buildOrderInventoryConsumption,
+  calculateCompositionAvailableStock,
+  parseInventoryCatalogRecords,
+  parseInventoryCompositionRecords,
+  type InventoryConsumptionLine,
+  type InventoryOrderItemRecord,
+} from '../../shared/inventoryConsumption';
+import { reconcilePersistedOrderInventory } from './orderInventoryService';
+import { createHash } from 'node:crypto';
+
+const clean = (value: unknown): string =>
+  typeof value === 'string' ? value.trim() : '';
+
+const finiteInteger = (value: unknown): number | null =>
+  typeof value === 'number' && Number.isInteger(value) && value >= 0
+    ? value
+    : null;
+
+const orderPath = (tenantId: string, orderId: string): string =>
+  `artifacts/${tenantId}/public/data/customerOrders/${orderId}`;
+
+const inventoryPath = (tenantId: string): string =>
+  `users/${tenantId}/private_store/inventory`;
+
+const ledgerPath = (tenantId: string, orderId: string): string =>
+  `inventoryOrderConsumptions/${createHash('sha256')
+    .update(`${tenantId}:${orderId}`)
+    .digest('hex')}`;
+
+const parseOrderItems = (value: unknown): InventoryOrderItemRecord[] => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return [];
+  const record = value as Record<string, unknown>;
+  if (!Array.isArray(record.items)) return [];
+  return record.items.flatMap(candidate => {
+    if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) {
+      return [];
+    }
+    const item = candidate as Record<string, unknown>;
+    const productId = clean(item.productId);
+    const name = clean(item.name);
+    const quantity = finiteInteger(item.quantity);
+    const transferredQuantity = finiteInteger(item.transferredQuantity) ?? 0;
+    if (!productId || !name || quantity === null || quantity <= 0) return [];
+    return [{ productId, name, quantity, transferredQuantity }];
+  });
+};
+
+const parseLedgerLines = (value: unknown): InventoryConsumptionLine[] => {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap(candidate => {
+    if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) {
+      return [];
+    }
+    const line = candidate as Record<string, unknown>;
+    const inventoryItemId = clean(line.inventoryItemId);
+    const quantity =
+      typeof line.quantity === 'number' && Number.isFinite(line.quantity)
+        ? line.quantity
+        : null;
+    if (!inventoryItemId || quantity === null || quantity <= 0) return [];
+    return [{
+      inventoryItemId,
+      inventoryItemName: clean(line.inventoryItemName),
+      unit: clean(line.unit),
+      quantity,
+      beforeQuantity:
+        typeof line.beforeQuantity === 'number' ? line.beforeQuantity : 0,
+      afterQuantity:
+        typeof line.afterQuantity === 'number' ? line.afterQuantity : 0,
+      productIds: Array.isArray(line.productIds)
+        ? line.productIds.map(clean).filter(Boolean)
+        : [],
+    } satisfies InventoryConsumptionLine];
+  });
+};
+
+const comparableLines = (lines: InventoryConsumptionLine[]): string =>
+  JSON.stringify(
+    [...lines]
+      .map(line => ({
+        inventoryItemId: line.inventoryItemId,
+        quantity: Math.round(line.quantity * 1_000_000) / 1_000_000,
+        productIds: [...line.productIds].sort(),
+      }))
+      .sort((left, right) =>
+        left.inventoryItemId.localeCompare(right.inventoryItemId)
+      )
+  );
+
+const projectPublicStocks = (
+  tenantData: DocumentData | undefined,
+  catalog: ReturnType<typeof parseInventoryCatalogRecords>,
+  compositions: ReturnType<typeof parseInventoryCompositionRecords>
+): unknown[] | null => {
+  if (!Array.isArray(tenantData?.publicProducts)) return null;
+  return tenantData.publicProducts.map((candidate: unknown) => {
+    if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) {
+      return candidate;
+    }
+    const product = candidate as Record<string, unknown>;
+    const productId = clean(product.id);
+    if (!productId || product.isService === true) {
+      return product.isService === true ? { ...product, stock: 0 } : product;
+    }
+    const available = calculateCompositionAvailableStock(
+      catalog,
+      compositions[productId]
+    );
+    return available === null ? product : { ...product, stock: available };
+  });
+};
+
+export type InventoryQuantityReconciliationAction =
+  | 'not-consumed'
+  | 'unchanged'
+  | 'adjusted';
+
+export const adjustConsumedOrderInventoryQuantities = async (
+  tenantId: string,
+  orderId: string
+): Promise<InventoryQuantityReconciliationAction> =>
+  adminDb.runTransaction(async transaction => {
+    const orderReference = adminDb.doc(orderPath(tenantId, orderId));
+    const inventoryReference = adminDb.doc(inventoryPath(tenantId));
+    const tenantReference = adminDb.doc(`tenants/${tenantId}`);
+    const ledgerReference = adminDb.doc(ledgerPath(tenantId, orderId));
+    const [orderSnapshot, inventorySnapshot, tenantSnapshot, ledgerSnapshot] =
+      await Promise.all([
+        transaction.get(orderReference),
+        transaction.get(inventoryReference),
+        transaction.get(tenantReference),
+        transaction.get(ledgerReference),
+      ]);
+    const ledgerData = ledgerSnapshot.data() as Record<string, unknown> | undefined;
+    if (!ledgerSnapshot.exists || clean(ledgerData?.status) !== 'consumed') {
+      return 'not-consumed';
+    }
+
+    const inventoryData = inventorySnapshot.data();
+    const catalog = parseInventoryCatalogRecords(inventoryData?.catalog);
+    const compositions = parseInventoryCompositionRecords(inventoryData?.compositions);
+    const previousLines = parseLedgerLines(ledgerData?.lines);
+    const restoredCatalog = applyInventoryConsumptionLines(
+      catalog,
+      previousLines,
+      'restore'
+    );
+    const desiredLines = buildOrderInventoryConsumption(
+      parseOrderItems(orderSnapshot.data()),
+      restoredCatalog,
+      compositions
+    );
+
+    if (comparableLines(previousLines) === comparableLines(desiredLines)) {
+      return 'unchanged';
+    }
+
+    const adjustedCatalog = applyInventoryConsumptionLines(
+      restoredCatalog,
+      desiredLines,
+      'consume'
+    );
+    const publicProducts = projectPublicStocks(
+      tenantSnapshot.data(),
+      adjustedCatalog,
+      compositions
+    );
+    transaction.set(
+      inventoryReference,
+      {
+        catalog: adjustedCatalog,
+        updatedAt: FieldValue.serverTimestamp(),
+      },
+      { merge: true }
+    );
+    if (publicProducts) {
+      transaction.set(
+        tenantReference,
+        {
+          publicProducts,
+          updatedAt: FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      );
+    }
+    transaction.set(
+      ledgerReference,
+      {
+        lines: desiredLines,
+        adjustedAt: FieldValue.serverTimestamp(),
+        adjustmentReason: 'order_items_changed',
+        updatedAt: FieldValue.serverTimestamp(),
+      },
+      { merge: true }
+    );
+    transaction.set(
+      orderReference,
+      {
+        inventory: {
+          lastAction: 'adjusted',
+          reconciledAt: new Date().toISOString(),
+        },
+      },
+      { merge: true }
+    );
+    return 'adjusted';
+  });
+
+export const reconcileOrderInventoryAfterMutation = async (
+  tenantId: string,
+  orderId: string
+) => {
+  const adjustment = await adjustConsumedOrderInventoryQuantities(
+    tenantId,
+    orderId
+  );
+  if (adjustment !== 'not-consumed') {
+    return { orderId, inventoryAction: adjustment };
+  }
+  return reconcilePersistedOrderInventory(tenantId, orderId);
+};
