@@ -250,7 +250,8 @@ export interface SocialPost {
   taggedUsers?: string[];
   taggedUserIds?: string[];
   createdAt?: string;
-  visibility?: 'public' | 'private';
+  visibility?: 'public' | 'private' | 'connections';
+  audienceIds?: string[];
   commentCount?: number;
 }
 

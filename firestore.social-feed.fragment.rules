@@ -1,4 +1,4 @@
-    // --- Public Social Feed, Likes and Comments ---
+    // --- Public Social Feed, Connection Status, Likes and Comments ---
     match /social_posts/{postId} {
       function hasValidSocialPostShape(data) {
         return data.keys().hasAll([
@@ -13,6 +13,7 @@
           'taggedUserIds',
           'mediaUrls',
           'visibility',
+          'audienceIds',
           'createdAtIso',
           'createdAt',
           'updatedAt'
@@ -29,6 +30,7 @@
           'taggedUserIds',
           'mediaUrls',
           'visibility',
+          'audienceIds',
           'createdAtIso',
           'createdAt',
           'updatedAt'
@@ -54,14 +56,35 @@
         && data.taggedUserIds.size() <= 30
         && data.mediaUrls is list
         && data.mediaUrls.size() <= 9
-        && data.visibility == 'public'
+        && data.visibility in ['public', 'connections']
+        && data.audienceIds is list
+        && data.audienceIds.size() <= 500
+        && (
+          (
+            data.publicationType == 'feed'
+            && data.visibility == 'public'
+            && data.audienceIds.size() == 0
+          )
+          || (
+            data.publicationType == 'status'
+            && data.visibility == 'connections'
+            && data.authorId in data.audienceIds
+          )
+        )
         && data.createdAtIso is string
         && data.createdAtIso.size() <= 64
         && data.createdAt is timestamp
         && data.updatedAt is timestamp;
       }
 
-      allow read: if isSignedIn();
+      allow read: if isSignedIn()
+        && existing().visibility == 'public';
+
+      allow read: if isSignedIn()
+        && existing().authorId == request.auth.uid;
+
+      allow read: if isSignedIn()
+        && request.auth.uid in existing().audienceIds;
 
       allow create: if isSignedIn()
         && incoming().authorId == request.auth.uid
@@ -85,6 +108,7 @@
           'taggedUserIds',
           'mediaUrls',
           'visibility',
+          'audienceIds',
           'createdAtIso',
           'updatedAt'
         ])

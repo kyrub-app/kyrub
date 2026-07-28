@@ -11,6 +11,18 @@ const aiSource = readFileSync(
   'src/components/KyrubAiWorkspaceBridge.tsx',
   'utf8'
 );
+const publishingSource = readFileSync(
+  'src/components/SocialPublishingBridge.tsx',
+  'utf8'
+);
+const feedHookSource = readFileSync(
+  'src/hooks/usePublicSocialFeed.ts',
+  'utf8'
+);
+const socialRules = readFileSync(
+  'firestore.social-feed.fragment.rules',
+  'utf8'
+);
 const storageRules = readFileSync('storage.rules', 'utf8');
 const composeSource = readFileSync(
   'scripts/compose-firestore-rules.mjs',
@@ -58,6 +70,18 @@ describe('profile social hub navigation', () => {
     assert.match(profileSource, /Você já possui 9 status ativos/);
     assert.match(profileSource, /Esta seção é privada e visível somente para você/);
     assert.match(profileSource, /users\/\$\{user\.uid\}\/favorites/);
+  });
+
+  test('publishes status to accepted connections instead of the public feed', () => {
+    assert.match(publishingSource, /where\('participantIds', 'array-contains', user\.uid\)/);
+    assert.match(publishingSource, /data\.status !== 'accepted'/);
+    assert.match(publishingSource, /visibility: isStatus \? 'connections' : 'public'/);
+    assert.match(publishingSource, /audienceIds/);
+    assert.match(feedHookSource, /where\('visibility', '==', 'public'\)/);
+    assert.match(feedHookSource, /where\('audienceIds', 'array-contains', user\.uid\)/);
+    assert.match(socialRules, /existing\(\)\.visibility == 'public'/);
+    assert.match(socialRules, /existing\(\)\.authorId == request\.auth\.uid/);
+    assert.match(socialRules, /request\.auth\.uid in existing\(\)\.audienceIds/);
   });
 
   test('prepares the former Kyrub tab as a transparent AI project workspace', () => {
