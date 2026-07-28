@@ -4,6 +4,7 @@ import { describe, test } from 'node:test';
 import {
   buildInventoryPurchaseList,
   calculateProductAvailableStock,
+  getProductInventoryDocumentPath,
   parseInventoryCatalog,
   parseProductComposition,
   type InventoryCatalogItem,
@@ -121,10 +122,15 @@ describe('product inventory and composition', () => {
     assert.match(editorSource, /Kit \/ combinação/);
   });
 
-  test('inventory stays private instead of entering public product payloads', () => {
-    assert.match(inventorySource, /operationalSettings/);
+  test('inventory stays owner-only instead of entering public product payloads', () => {
+    assert.equal(
+      getProductInventoryDocumentPath('owner-a'),
+      'users/owner-a/private_store/inventory'
+    );
+    assert.match(inventorySource, /users\/\$\{uid\.trim\(\)\}\/private_store\/inventory/);
     assert.match(inventorySource, /inventoryCatalog/);
     assert.match(inventorySource, /productCompositions/);
+    assert.doesNotMatch(inventorySource, /doc\(db, 'tenants'/);
     assert.doesNotMatch(publicProductsSource, /inventoryCatalog/);
     assert.doesNotMatch(publicProductsSource, /productCompositions/);
     assert.match(purchaseSource, /Reposição sugerida pelo estoque mínimo/);
