@@ -78,15 +78,13 @@
       }
 
       allow read: if isSignedIn()
-        && (
-          existing().visibility == 'public'
-          || existing().authorId == request.auth.uid
-          || (
-            existing().visibility == 'connections'
-            && existing().audienceIds is list
-            && request.auth.uid in existing().audienceIds
-          )
-        );
+        && existing().visibility == 'public';
+
+      allow read: if isSignedIn()
+        && existing().authorId == request.auth.uid;
+
+      allow read: if isSignedIn()
+        && request.auth.uid in existing().audienceIds;
 
       allow create: if isSignedIn()
         && incoming().authorId == request.auth.uid
