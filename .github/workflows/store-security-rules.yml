@@ -78,4 +78,15 @@ jobs:
         run: npm ci
 
       - name: Run complete Firestore emulator authorization suite
-        run: npm run test:rules
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run test:rules 2>&1 | tee firestore-rules.log
+
+      - name: Upload Firestore rules failure log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: firestore-rules-failure-log
+          path: firestore-rules.log
+          if-no-files-found: ignore
