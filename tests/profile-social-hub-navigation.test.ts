@@ -79,7 +79,8 @@ describe('profile social hub navigation', () => {
     assert.match(publishingSource, /audienceIds/);
     assert.match(feedHookSource, /where\('visibility', '==', 'public'\)/);
     assert.match(feedHookSource, /where\('audienceIds', 'array-contains', user\.uid\)/);
-    assert.match(socialRules, /existing\(\)\.visibility == 'connections'/);
+    assert.match(socialRules, /existing\(\)\.visibility == 'public'/);
+    assert.match(socialRules, /existing\(\)\.authorId == request\.auth\.uid/);
     assert.match(socialRules, /request\.auth\.uid in existing\(\)\.audienceIds/);
   });
 
