@@ -3,7 +3,9 @@ import { onAuthStateChanged } from 'firebase/auth';
 import { doc, onSnapshot } from 'firebase/firestore';
 import LegacyApp from './LegacyApp';
 import AdminControlPlaneRoot from './components/admin/AdminControlPlaneRoot';
+import { KyrubAiWorkspaceBridge } from './components/KyrubAiWorkspaceBridge';
 import { NoteInvitationOutboxBridge } from './components/NoteInvitationOutboxBridge';
+import { ProfileSocialHubBridge } from './components/ProfileSocialHubBridge';
 import { PublicStorefrontApp } from './components/PublicStorefrontApp';
 import { SocialPublishingBridge } from './components/SocialPublishingBridge';
 import { IntegrationTestOrderBridge } from './components/store/IntegrationTestOrderBridge';
@@ -134,6 +136,8 @@ function AuthenticatedKyrubApp({ operational }: { operational: boolean }) {
       <NinetyNineFoodOrderStatusBridge />
       <NoteInvitationOutboxBridge />
       <SocialPublishingBridge />
+      <ProfileSocialHubBridge />
+      <KyrubAiWorkspaceBridge />
       <StoreSharingPortalBridge />
       <StoreRestartLandingBridge />
       <UnifiedProductCreateModalBridge />

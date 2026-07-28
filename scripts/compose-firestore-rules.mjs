@@ -11,6 +11,7 @@ const fragmentPaths = [
   resolve(root, 'firestore.marketplace.fragment.rules'),
   resolve(root, 'firestore.note-invitations.fragment.rules'),
   resolve(root, 'firestore.product-inventory.fragment.rules'),
+  resolve(root, 'firestore.profile-social-hub.fragment.rules'),
   resolve(root, 'firestore.social-feed.fragment.rules'),
   resolve(root, 'firestore.operational-dual-write.fragment.rules'),
   resolve(root, 'firestore.product-dual-write.fragment.rules'),

@@ -1,0 +1,37 @@
+    // --- Public Profile Extension for the Social Hub ---
+    match /users/{userId}/public_profile/{profileId} {
+      function hasValidPublicProfile(data) {
+        return profileId == 'main'
+          && data.keys().hasAll([
+            'userId',
+            'name',
+            'bio',
+            'photoUrl',
+            'updatedAt'
+          ])
+          && data.keys().hasOnly([
+            'userId',
+            'name',
+            'bio',
+            'photoUrl',
+            'updatedAt'
+          ])
+          && data.userId == userId
+          && data.name is string
+          && data.name.size() > 0
+          && data.name.size() <= 160
+          && data.bio is string
+          && data.bio.size() <= 280
+          && data.photoUrl is string
+          && data.photoUrl.size() <= 2048
+          && data.updatedAt == request.time;
+      }
+
+      allow read: if isSignedIn();
+
+      allow create, update: if isSignedIn()
+        && request.auth.uid == userId
+        && hasValidPublicProfile(incoming());
+
+      allow delete: if false;
+    }
