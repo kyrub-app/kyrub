@@ -1,0 +1,50 @@
+    // --- Private Product Inventory, Compositions and Purchases ---
+    match /users/{userId}/private_store/{documentId} {
+      function isPrivateInventoryOwner() {
+        return isSignedIn()
+          && request.auth.uid == userId
+          && documentId == 'inventory';
+      }
+
+      function hasValidPrivateInventoryShape(data) {
+        return data.keys().hasAll([
+          'ownerId',
+          'inventoryCatalog',
+          'productCompositions',
+          'createdAt',
+          'updatedAt'
+        ])
+          && data.keys().hasOnly([
+            'ownerId',
+            'inventoryCatalog',
+            'productCompositions',
+            'createdAt',
+            'updatedAt'
+          ])
+          && data.ownerId == userId
+          && data.inventoryCatalog is list
+          && data.productCompositions is map;
+      }
+
+      allow get: if isPrivateInventoryOwner();
+      allow list: if false;
+
+      allow create: if isPrivateInventoryOwner()
+        && hasValidPrivateInventoryShape(incoming())
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+
+      allow update: if isPrivateInventoryOwner()
+        && existing().ownerId == userId
+        && hasValidPrivateInventoryShape(incoming())
+        && incoming().ownerId == existing().ownerId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'inventoryCatalog',
+          'productCompositions',
+          'updatedAt'
+        ]);
+
+      allow delete: if false;
+    }
