@@ -1,8 +1,7 @@
 import { doc, runTransaction } from 'firebase/firestore';
 import type { User } from 'firebase/auth';
-import { db } from './firebase';
+import { auth, db } from './firebase';
 import {
-  canTransitionCustomerOrderStatus,
   getCustomerOrderDocumentPath,
   parseCustomerOrder,
   type CustomerOrder,
@@ -142,22 +141,29 @@ export const updateOrderStatusWithDecision = async (
   nextStatus: CustomerOrderStatus,
   decision: OrderDecision = {}
 ): Promise<void> => {
-  const reference = doc(db, getCustomerOrderDocumentPath(storeId, orderId));
-  await runTransaction(db, async transaction => {
-    const snapshot = await transaction.get(reference);
-    const current = parseCustomerOrder(snapshot.data());
-    if (!current) throw new Error('Pedido não encontrado.');
-    if (!canTransitionCustomerOrderStatus(current.status, nextStatus)) {
-      throw new Error('Esta mudança de status não é permitida.');
+  const user = auth.currentUser;
+  if (!user || user.uid !== storeId.trim()) {
+    throw new Error('Faça login novamente para atualizar o pedido.');
+  }
+  const token = await user.getIdToken();
+  const response = await fetch(
+    `/api/orders/${encodeURIComponent(orderId.trim())}/status`,
+    {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${token}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ status: nextStatus, decision }),
     }
-
-    const extra = decisionText(decision);
-    transaction.update(reference, {
-      status: nextStatus,
-      ...(extra ? { customerNote: mergeCustomerNote(current.customerNote, extra) } : {}),
-      updatedAt: new Date().toISOString(),
-    });
-  });
+  );
+  if (response.ok) return;
+  const payload = await response.json().catch(() => ({})) as Record<string, unknown>;
+  throw new Error(
+    typeof payload.error === 'string'
+      ? payload.error
+      : 'Não foi possível atualizar o pedido e o estoque.'
+  );
 };
 
 export const reviewAttendanceOrder = async (
