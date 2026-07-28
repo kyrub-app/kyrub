@@ -10,15 +10,20 @@ import {
   collection,
   deleteDoc,
   doc,
+  getDoc,
   getDocs,
+  query,
   serverTimestamp,
   setDoc,
+  where,
 } from 'firebase/firestore';
 
 const PROJECT_ID = 'kyrub-security-test';
 const OWNER_ID = 'social-owner';
 const VIEWER_ID = 'social-viewer';
+const STRANGER_ID = 'social-stranger';
 const POST_ID = `${OWNER_ID}__feed-123`;
+const STATUS_ID = `${OWNER_ID}__status-123`;
 let environment: RulesTestEnvironment;
 
 const postPayload = (authorId = OWNER_ID) => ({
@@ -33,6 +38,25 @@ const postPayload = (authorId = OWNER_ID) => ({
   taggedUserIds: [],
   mediaUrls: [],
   visibility: 'public',
+  audienceIds: [],
+  createdAtIso: '2026-07-25T12:00:00.000Z',
+  createdAt: serverTimestamp(),
+  updatedAt: serverTimestamp(),
+});
+
+const statusPayload = () => ({
+  postId: STATUS_ID,
+  sourcePostId: 'status-123',
+  authorId: OWNER_ID,
+  authorName: 'Usuário Social',
+  authorAvatar: '',
+  content: 'Status somente para conectados.',
+  publicationType: 'status',
+  taggedUsers: [],
+  taggedUserIds: [],
+  mediaUrls: [],
+  visibility: 'connections',
+  audienceIds: [OWNER_ID, VIEWER_ID],
   createdAtIso: '2026-07-25T12:00:00.000Z',
   createdAt: serverTimestamp(),
   updatedAt: serverTimestamp(),
@@ -57,7 +81,7 @@ after(async () => {
   await environment.cleanup();
 });
 
-test('author publishes and another authenticated user lists the public feed', async () => {
+test('author publishes and another authenticated user queries the public feed', async () => {
   const owner = environment.authenticatedContext(OWNER_ID).firestore();
   await assertSucceeds(
     setDoc(doc(owner, 'social_posts', POST_ID), postPayload())
@@ -65,11 +89,58 @@ test('author publishes and another authenticated user lists the public feed', as
 
   const viewer = environment.authenticatedContext(VIEWER_ID).firestore();
   const snapshot = await assertSucceeds(
-    getDocs(collection(viewer, 'social_posts'))
+    getDocs(
+      query(
+        collection(viewer, 'social_posts'),
+        where('visibility', '==', 'public')
+      )
+    )
   );
   if (snapshot.size !== 1) {
     throw new Error(`Expected one social post, received ${snapshot.size}.`);
   }
+});
+
+test('status is readable by its audience and rejected for other users', async () => {
+  const owner = environment.authenticatedContext(OWNER_ID).firestore();
+  await assertSucceeds(
+    setDoc(doc(owner, 'social_posts', STATUS_ID), statusPayload())
+  );
+
+  const viewer = environment.authenticatedContext(VIEWER_ID).firestore();
+  const audienceSnapshot = await assertSucceeds(
+    getDocs(
+      query(
+        collection(viewer, 'social_posts'),
+        where('audienceIds', 'array-contains', VIEWER_ID)
+      )
+    )
+  );
+  if (audienceSnapshot.size !== 1) {
+    throw new Error(`Expected one connection status, received ${audienceSnapshot.size}.`);
+  }
+  await assertSucceeds(getDoc(doc(viewer, 'social_posts', STATUS_ID)));
+
+  const stranger = environment.authenticatedContext(STRANGER_ID).firestore();
+  await assertFails(getDoc(doc(stranger, 'social_posts', STATUS_ID)));
+});
+
+test('feed and status visibility shapes cannot be mixed', async () => {
+  const owner = environment.authenticatedContext(OWNER_ID).firestore();
+  await assertFails(
+    setDoc(doc(owner, 'social_posts', STATUS_ID), {
+      ...statusPayload(),
+      visibility: 'public',
+      audienceIds: [],
+    })
+  );
+  await assertFails(
+    setDoc(doc(owner, 'social_posts', POST_ID), {
+      ...postPayload(),
+      visibility: 'connections',
+      audienceIds: [OWNER_ID],
+    })
+  );
 });
 
 test('users cannot publish content under another author identity', async () => {
