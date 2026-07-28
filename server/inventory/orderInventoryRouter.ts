@@ -1,4 +1,5 @@
 import { Router, type Request, type Response } from 'express';
+import { FieldValue } from 'firebase-admin/firestore';
 import { adminAuth, adminDb } from '../firebaseAdmin';
 import { sendNinetyNineFoodOrderStatus } from '../integrations/ninetyNineFoodService';
 import {
@@ -63,19 +64,30 @@ const errorResponse = (response: Response, error: unknown): void => {
   });
 };
 
+const orderReference = (tenantId: string, orderId: string) =>
+  adminDb.doc(`artifacts/${tenantId}/public/data/customerOrders/${orderId}`);
+
 const markPartnerSyncError = async (
   tenantId: string,
   orderId: string,
   message: string
 ): Promise<void> => {
-  const patch = {
+  await orderReference(tenantId, orderId).update({
     'integration.outboundStatus': 'attention',
     'integration.outboundError': message.slice(0, 500),
     'integration.outboundUpdatedAt': new Date().toISOString(),
-  };
-  await adminDb
-    .doc(`artifacts/${tenantId}/public/data/customerOrders/${orderId}`)
-    .set(patch, { merge: true });
+  });
+};
+
+const markPartnerSyncSuccess = async (
+  tenantId: string,
+  orderId: string
+): Promise<void> => {
+  await orderReference(tenantId, orderId).update({
+    'integration.outboundStatus': 'sent',
+    'integration.outboundError': FieldValue.delete(),
+    'integration.outboundUpdatedAt': new Date().toISOString(),
+  });
 };
 
 export const createOrderInventoryRouter = (): Router => {
@@ -112,6 +124,7 @@ export const createOrderInventoryRouter = (): Router => {
               : ''
           );
           partnerSync = 'sent';
+          await markPartnerSyncSuccess(tenantId, result.orderId);
         } catch (error) {
           partnerSync = 'attention';
           partnerWarning =
