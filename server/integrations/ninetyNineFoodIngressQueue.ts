@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { adminDb } from '../firebaseAdmin';
+import { reconcilePersistedOrderInventory } from '../inventory/orderInventoryService';
 import { parseOpenDeliveryEvent } from './openDelivery';
 import { receiveNinetyNineFoodWebhook } from './ninetyNineFoodService';
 import {
@@ -43,6 +44,9 @@ const ingressId = (externalStoreId: string, eventId: string): string =>
   `${PROVIDER}-${createHash('sha256')
     .update(`${externalStoreId}:${eventId}`)
     .digest('hex')}`;
+
+const internalOrderId = (externalOrderId: string): string =>
+  `99food-${externalOrderId.replace(/[^a-zA-Z0-9_-]/g, '-')}`;
 
 const resolveConnection = async (
   externalStoreId: string
@@ -197,7 +201,15 @@ export const drainNinetyNineFoodIngressQueue = async (
       const rawBodyBase64 = clean(reserved.rawBodyBase64);
       const signature = clean(reserved.signature);
       const externalStoreId = clean(reserved.externalStoreId);
-      if (!rawBodyBase64 || !signature || !externalStoreId) {
+      const tenantId = clean(reserved.tenantId);
+      const externalOrderId = clean(reserved.externalOrderId);
+      if (
+        !rawBodyBase64 ||
+        !signature ||
+        !externalStoreId ||
+        !tenantId ||
+        !externalOrderId
+      ) {
         throw new Error('Evento de entrada 99Food incompleto.');
       }
       await receiveNinetyNineFoodWebhook({
@@ -206,6 +218,10 @@ export const drainNinetyNineFoodIngressQueue = async (
         rawBody: Buffer.from(rawBodyBase64, 'base64'),
         payload: reserved.payload,
       });
+      await reconcilePersistedOrderInventory(
+        tenantId,
+        internalOrderId(externalOrderId)
+      );
       await document.ref.update({
         status: 'processed',
         processedAt: FieldValue.serverTimestamp(),
