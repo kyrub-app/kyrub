@@ -51,6 +51,10 @@ const compositions: Record<string, InventoryCompositionRecord> = {
   },
 };
 
+const domainSource = readFileSync(
+  'shared/inventoryConsumption.ts',
+  'utf8'
+);
 const serviceSource = readFileSync(
   'server/inventory/orderInventoryService.ts',
   'utf8'
@@ -66,6 +70,10 @@ const ingressSource = readFileSync(
 );
 const pollingSource = readFileSync(
   'server/integrations/ninetyNineFoodRouter.ts',
+  'utf8'
+);
+const sweepSource = readFileSync(
+  'server/inventory/recentOrderInventorySweep.ts',
   'utf8'
 );
 const serverSource = readFileSync('server.ts', 'utf8');
@@ -115,14 +123,14 @@ describe('order inventory consumption', () => {
     );
   });
 
-  test('blocks production when a required component is insufficient', () => {
+  test('blocks production when any required component is insufficient', () => {
     assert.throws(
       () => buildOrderInventoryConsumption(
         [{ productId: 'pizza', name: 'Pizza', quantity: 20 }],
         catalog,
         compositions
       ),
-      /Estoque insuficiente de “Queijo”/
+      /Estoque insuficiente de “(?:Farinha|Queijo)”/
     );
   });
 
@@ -148,7 +156,7 @@ describe('order inventory consumption', () => {
     assert.match(serviceSource, /transaction\.create\(ledgerReference/);
     assert.match(serviceSource, /users\/\$\{tenantId\}\/private_store\/inventory/);
     assert.match(serviceSource, /publicProductsWithCalculatedStock/);
-    assert.match(serviceSource, /Estoque insuficiente/);
+    assert.match(domainSource, /Estoque insuficiente/);
   });
 
   test('KDS changes use the authenticated backend instead of direct status writes', () => {
@@ -174,5 +182,7 @@ describe('order inventory consumption', () => {
       pollingSource,
       /reconcileConnectedNinetyNineFoodOrdersUpdatedSince/
     );
+    assert.match(sweepSource, /inventoryReconciliationQueue/);
+    assert.match(sweepSource, /drainInventoryReconciliationQueue/);
   });
 });
