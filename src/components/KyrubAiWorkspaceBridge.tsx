@@ -131,6 +131,7 @@ export function KyrubAiWorkspaceBridge() {
   }, []);
 
   const activeCards = useMemo(() => WORKSPACE_CARDS, []);
+  const SelectedCardIcon = selectedCard?.icon ?? Bot;
   if (!host) return null;
 
   return createPortal(
@@ -191,7 +192,7 @@ export function KyrubAiWorkspaceBridge() {
           <section className="w-full max-w-md rounded-t-3xl border border-slate-800 bg-slate-900 p-5 shadow-2xl sm:rounded-3xl">
             <div className="flex items-start gap-3">
               <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-violet-500/15 text-violet-300">
-                <selectedCard.icon className="h-5 w-5" />
+                <SelectedCardIcon className="h-5 w-5" />
               </div>
               <div className="min-w-0 flex-1">
                 <span className="font-mono text-[8px] font-black uppercase text-violet-300">Kyrub I.A · Estrutura inicial</span>
