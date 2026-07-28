@@ -2,6 +2,7 @@ import type { User } from 'firebase/auth';
 import {
   doc,
   runTransaction,
+  serverTimestamp,
   type DocumentData,
 } from 'firebase/firestore';
 import { db } from './firebase';
@@ -83,6 +84,9 @@ const positiveNumber = (value: unknown): number | null =>
 
 const validEntityId = (value: string): boolean =>
   /^[a-zA-Z0-9_-]{1,128}$/.test(value);
+
+export const getProductInventoryDocumentPath = (uid: string): string =>
+  `users/${uid.trim()}/private_store/inventory`;
 
 export const isInventoryUnit = (value: unknown): value is InventoryUnit =>
   typeof value === 'string' &&
@@ -189,21 +193,12 @@ export const parseProductCompositions = (
   return parsed;
 };
 
-export const readProductInventorySettingsFromTenant = (
-  tenant: DocumentData | undefined
-): ProductInventorySettings => {
-  const operationalSettings =
-    tenant?.operationalSettings && typeof tenant.operationalSettings === 'object'
-      ? tenant.operationalSettings as Record<string, unknown>
-      : {};
-
-  return {
-    catalog: parseInventoryCatalog(operationalSettings.inventoryCatalog),
-    compositions: parseProductCompositions(
-      operationalSettings.productCompositions
-    ),
-  };
-};
+export const readProductInventorySettings = (
+  value: DocumentData | undefined
+): ProductInventorySettings => ({
+  catalog: parseInventoryCatalog(value?.inventoryCatalog),
+  compositions: parseProductCompositions(value?.productCompositions),
+});
 
 export const calculateProductAvailableStock = (
   catalog: InventoryCatalogItem[],
@@ -260,9 +255,10 @@ const cleanCompositionsAgainstCatalog = (
   const cleaned: Record<string, ProductComposition> = {};
 
   for (const [productId, composition] of Object.entries(compositions)) {
+    const parsedComposition = parseProductComposition(composition);
     const nextComposition = {
-      ...parseProductComposition(composition),
-      lines: parseProductComposition(composition).lines.filter(line =>
+      ...parsedComposition,
+      lines: parsedComposition.lines.filter(line =>
         allowedItemIds.has(line.inventoryItemId)
       ),
     };
@@ -288,16 +284,18 @@ export const persistProductInventorySettings = async (
     throw new Error('Revise os componentes do estoque antes de salvar.');
   }
 
-  const tenantReference = doc(db, 'tenants', user.uid);
+  const inventoryReference = doc(
+    db,
+    getProductInventoryDocumentPath(user.uid)
+  );
   let nextSettings: ProductInventorySettings = {
     catalog: normalizedCatalog,
     compositions: {},
   };
 
   await runTransaction(db, async transaction => {
-    const snapshot = await transaction.get(tenantReference);
-    const data = snapshot.data();
-    const current = readProductInventorySettingsFromTenant(data);
+    const snapshot = await transaction.get(inventoryReference);
+    const current = readProductInventorySettings(snapshot.data());
     const nextComposition = {
       ...parseProductComposition(composition),
       updatedAt: new Date().toISOString(),
@@ -318,19 +316,14 @@ export const persistProductInventorySettings = async (
       ),
     };
 
-    const operationalSettings =
-      data?.operationalSettings && typeof data.operationalSettings === 'object'
-        ? data.operationalSettings as Record<string, unknown>
-        : {};
-
     transaction.set(
-      tenantReference,
+      inventoryReference,
       {
-        operationalSettings: {
-          ...operationalSettings,
-          inventoryCatalog: nextSettings.catalog,
-          productCompositions: nextSettings.compositions,
-        },
+        ownerId: user.uid,
+        inventoryCatalog: nextSettings.catalog,
+        productCompositions: nextSettings.compositions,
+        updatedAt: serverTimestamp(),
+        ...(snapshot.exists() ? {} : { createdAt: serverTimestamp() }),
       },
       { merge: true }
     );
