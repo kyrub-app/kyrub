@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import type React from 'react';
 import {
+  Boxes,
   CircleDollarSign,
   ImagePlus,
+  RefreshCw,
   Save,
   ShoppingCart,
   Store,
@@ -40,6 +42,14 @@ import {
   type InventoryCatalogItem,
   type ProductComposition,
 } from '../../utils/productInventory';
+import {
+  DEFAULT_PRODUCTION_STATION,
+  persistProductPreparationStation,
+  readAvailableProductionStations,
+  readProductPreparationStationsFromTenant,
+  removeProductPreparationStation,
+  resolveProductPreparationStation,
+} from '../../utils/productionRouting';
 import { CatalogHierarchySelector } from './CatalogHierarchySelector';
 import {
   buildProductOptionGroups,
@@ -189,6 +199,18 @@ export const UnifiedProductModal: React.FC<UnifiedProductModalProps> = ({
   const [inventoryDirty, setInventoryDirty] = useState(false);
   const [inventoryLoaded, setInventoryLoaded] = useState(false);
   const [inventoryLoadError, setInventoryLoadError] = useState('');
+  const [inventoryRetryRevision, setInventoryRetryRevision] = useState(0);
+  const [preparationStation, setPreparationStation] = useState(
+    DEFAULT_PRODUCTION_STATION
+  );
+  const [initialPreparationStation, setInitialPreparationStation] = useState(
+    DEFAULT_PRODUCTION_STATION
+  );
+  const [productionSpaces, setProductionSpaces] = useState<string[]>(
+    readAvailableProductionStations
+  );
+  const [stationDirty, setStationDirty] = useState(false);
+  const [stationLoadError, setStationLoadError] = useState('');
   const [formError, setFormError] = useState('');
 
   const fullCategoryPath = useMemo(
@@ -199,6 +221,14 @@ export const UnifiedProductModal: React.FC<UnifiedProductModalProps> = ({
     () => calculateProductAvailableStock(inventoryCatalog, composition),
     [composition, inventoryCatalog]
   );
+  const preparationStationOptions = useMemo(
+    () => [...new Set([
+      DEFAULT_PRODUCTION_STATION,
+      preparationStation,
+      ...productionSpaces,
+    ])],
+    [preparationStation, productionSpaces]
+  );
 
   useEffect(() => {
     if (!isOpen) return;
@@ -206,10 +236,16 @@ export const UnifiedProductModal: React.FC<UnifiedProductModalProps> = ({
     setInventoryDirty(false);
     setInventoryLoaded(false);
     setInventoryLoadError('');
+    setInventoryRetryRevision(0);
     setInventoryCatalog([]);
     setInitialInventoryCatalog([]);
     setComposition({ ...EMPTY_PRODUCT_COMPOSITION, lines: [] });
     setInitialComposition({ ...EMPTY_PRODUCT_COMPOSITION, lines: [] });
+    setPreparationStation(DEFAULT_PRODUCTION_STATION);
+    setInitialPreparationStation(DEFAULT_PRODUCTION_STATION);
+    setProductionSpaces(readAvailableProductionStations());
+    setStationDirty(false);
+    setStationLoadError('');
 
     if (mode === 'edit' && product) {
       const segments = splitCatalogCategoryPath(product.category);
@@ -246,6 +282,19 @@ export const UnifiedProductModal: React.FC<UnifiedProductModalProps> = ({
 
   useEffect(() => {
     if (!isOpen) return;
+    const refreshSpaces = (): void => {
+      setProductionSpaces(readAvailableProductionStations());
+    };
+    window.addEventListener('storage', refreshSpaces);
+    const interval = window.setInterval(refreshSpaces, 2_000);
+    return () => {
+      window.removeEventListener('storage', refreshSpaces);
+      window.clearInterval(interval);
+    };
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) return;
 
     let unsubscribeTenant = () => undefined;
     let unsubscribeInventory = () => undefined;
@@ -269,9 +318,21 @@ export const UnifiedProductModal: React.FC<UnifiedProductModalProps> = ({
               cloudProducts
             )
           );
+          if (!stationDirty) {
+            const stations = readProductPreparationStationsFromTenant(tenantData);
+            const nextStation = product?.id
+              ? resolveProductPreparationStation(product.id, stations)
+              : DEFAULT_PRODUCTION_STATION;
+            setPreparationStation(nextStation);
+            setInitialPreparationStation(nextStation);
+          }
+          setStationLoadError('');
         },
         error => {
-          console.warn('Não foi possível carregar a hierarquia do catálogo.', error);
+          console.warn('Não foi possível carregar a hierarquia ou a rota do catálogo.', error);
+          setStationLoadError(
+            'A estação atual não pôde ser confirmada. Uma nova escolha será validada ao salvar.'
+          );
         }
       );
 
@@ -299,7 +360,7 @@ export const UnifiedProductModal: React.FC<UnifiedProductModalProps> = ({
           console.warn('Não foi possível carregar o estoque privado da loja.', error);
           setInventoryLoaded(true);
           setInventoryLoadError(
-            'O estoque privado está indisponível. Os dados públicos ainda podem ser salvos, mas composição e compras não serão alteradas.'
+            'O estoque privado está indisponível. Os campos continuam editáveis, mas alterações de composição só serão salvas após reconectar.'
           );
         }
       );
@@ -310,7 +371,14 @@ export const UnifiedProductModal: React.FC<UnifiedProductModalProps> = ({
       unsubscribeTenant();
       unsubscribeInventory();
     };
-  }, [inventoryDirty, isOpen, product?.id, products]);
+  }, [
+    inventoryDirty,
+    inventoryRetryRevision,
+    isOpen,
+    product?.id,
+    products,
+    stationDirty,
+  ]);
 
   if (!isOpen) return null;
 
@@ -322,6 +390,12 @@ export const UnifiedProductModal: React.FC<UnifiedProductModalProps> = ({
   const updateComposition = (nextComposition: ProductComposition): void => {
     setComposition(nextComposition);
     setInventoryDirty(true);
+  };
+
+  const retryInventoryConnection = (): void => {
+    setInventoryLoaded(false);
+    setInventoryLoadError('');
+    setInventoryRetryRevision(current => current + 1);
   };
 
   const handleSubmit = async (event: React.FormEvent): Promise<void> => {
@@ -346,6 +420,13 @@ export const UnifiedProductModal: React.FC<UnifiedProductModalProps> = ({
       setActiveTab('inventory');
       setFormError(
         'Revise a composição: todos os componentes precisam ter quantidade maior que zero.'
+      );
+      return;
+    }
+    if (inventoryDirty && inventoryLoadError) {
+      setActiveTab('inventory');
+      setFormError(
+        'A composição foi mantida neste formulário, mas ainda não pode ser salva. Toque em “Tentar novamente” antes de concluir.'
       );
       return;
     }
@@ -408,17 +489,25 @@ export const UnifiedProductModal: React.FC<UnifiedProductModalProps> = ({
       }
 
       let privateInventoryPersisted = false;
-      if (!inventoryLoadError && inventoryLoaded) {
-        await persistProductInventorySettings(
-          user,
-          nextProduct.id,
-          inventoryCatalog,
-          composition
-        );
-        privateInventoryPersisted = true;
-      }
-
+      let preparationStationPersisted = false;
       try {
+        if (!inventoryLoadError && inventoryLoaded) {
+          await persistProductInventorySettings(
+            user,
+            nextProduct.id,
+            inventoryCatalog,
+            composition
+          );
+          privateInventoryPersisted = true;
+        }
+        if (stationDirty) {
+          await persistProductPreparationStation(
+            user,
+            nextProduct.id,
+            preparationStation
+          );
+          preparationStationPersisted = true;
+        }
         await onSave(nextProduct);
       } catch (saveError) {
         if (privateInventoryPersisted) {
@@ -430,6 +519,21 @@ export const UnifiedProductModal: React.FC<UnifiedProductModalProps> = ({
           ).catch(rollbackError => {
             console.error(
               'Não foi possível reverter a composição após a falha do item.',
+              rollbackError
+            );
+          });
+        }
+        if (preparationStationPersisted) {
+          const rollback = mode === 'create'
+            ? removeProductPreparationStation(user, nextProduct.id)
+            : persistProductPreparationStation(
+                user,
+                nextProduct.id,
+                initialPreparationStation
+              );
+          void rollback.catch(rollbackError => {
+            console.error(
+              'Não foi possível reverter a estação após a falha do item.',
               rollbackError
             );
           });
@@ -475,7 +579,7 @@ export const UnifiedProductModal: React.FC<UnifiedProductModalProps> = ({
         </header>
 
         <nav
-          className="mt-5 grid gap-2 sm:grid-cols-3"
+          className="mt-5 flex gap-2 overflow-x-auto pb-1"
           aria-label="Áreas do item"
           id="unified-product-modal-tabs"
         >
@@ -487,17 +591,17 @@ export const UnifiedProductModal: React.FC<UnifiedProductModalProps> = ({
                 key={tab.id}
                 type="button"
                 onClick={() => setActiveTab(tab.id)}
-                className={`rounded-2xl border p-3 text-left transition ${
+                className={`min-w-[9rem] flex-1 rounded-xl border px-3 py-2.5 text-left transition ${
                   active
                     ? 'border-orange-500/45 bg-orange-500/10'
                     : 'border-slate-800 bg-slate-950/60 hover:border-slate-700'
                 }`}
               >
-                <span className="flex items-center gap-2 text-[10px] font-black uppercase text-white">
-                  <Icon className={`h-4 w-4 ${active ? 'text-orange-300' : 'text-slate-500'}`} />
+                <span className="flex items-center gap-1.5 whitespace-nowrap text-[9px] font-black uppercase text-white">
+                  <Icon className={`h-3.5 w-3.5 ${active ? 'text-orange-300' : 'text-slate-500'}`} />
                   {tab.label}
                 </span>
-                <span className="mt-1 block text-[8px] leading-relaxed text-slate-500">
+                <span className="mt-1 hidden text-[8px] leading-relaxed text-slate-500 sm:block">
                   {tab.description}
                 </span>
               </button>
@@ -565,6 +669,41 @@ export const UnifiedProductModal: React.FC<UnifiedProductModalProps> = ({
                 }}
                 disabled={isSaving}
               />
+
+              <section
+                id="product-preparation-station-control"
+                className="rounded-2xl border border-violet-500/20 bg-violet-500/5 p-4"
+              >
+                <div className="flex items-start gap-3">
+                  <Boxes className="mt-0.5 h-4 w-4 shrink-0 text-violet-300" />
+                  <div className="min-w-0 flex-1">
+                    <label className="block text-[10px] font-black uppercase tracking-wide text-violet-200">
+                      Estação de preparo
+                    </label>
+                    <p className="mt-1 text-[9px] leading-relaxed text-slate-500">
+                      Define para qual setor do painel Pedidos este item será direcionado. As opções vêm de Ambientes.
+                    </p>
+                    <select
+                      value={preparationStation}
+                      onChange={event => {
+                        setPreparationStation(event.target.value);
+                        setStationDirty(true);
+                      }}
+                      disabled={isSaving}
+                      className="mt-3 w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2.5 text-xs font-black uppercase text-violet-200 outline-none focus:border-violet-400 disabled:opacity-45"
+                    >
+                      {preparationStationOptions.map(station => (
+                        <option key={station} value={station}>{station}</option>
+                      ))}
+                    </select>
+                    {stationLoadError && (
+                      <p className="mt-2 text-[9px] text-amber-300">
+                        {stationLoadError}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </section>
 
               <section
                 className="space-y-3 rounded-2xl border border-slate-800 bg-slate-950/55 p-4"
@@ -699,9 +838,18 @@ export const UnifiedProductModal: React.FC<UnifiedProductModalProps> = ({
           {activeTab === 'inventory' && (
             <div className="space-y-4" id="product-inventory-tab">
               {inventoryLoadError && (
-                <p className="rounded-xl border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-[10px] text-amber-200">
-                  {inventoryLoadError}
-                </p>
+                <div className="flex flex-col gap-2 rounded-xl border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-[10px] text-amber-200 sm:flex-row sm:items-center sm:justify-between">
+                  <span>{inventoryLoadError}</span>
+                  <button
+                    type="button"
+                    onClick={retryInventoryConnection}
+                    disabled={isSaving}
+                    className="flex min-h-9 shrink-0 items-center justify-center gap-1.5 rounded-lg border border-amber-400/30 bg-slate-950 px-3 text-[9px] font-black uppercase text-amber-200"
+                  >
+                    <RefreshCw className="h-3.5 w-3.5" />
+                    Tentar novamente
+                  </button>
+                </div>
               )}
               {!inventoryLoaded && (
                 <p className="rounded-xl border border-slate-800 bg-slate-950 px-3 py-3 text-[10px] text-slate-500">
@@ -713,7 +861,7 @@ export const UnifiedProductModal: React.FC<UnifiedProductModalProps> = ({
                 composition={composition}
                 onCatalogChange={updateInventoryCatalog}
                 onCompositionChange={updateComposition}
-                disabled={isSaving || !inventoryLoaded || Boolean(inventoryLoadError)}
+                disabled={isSaving || !inventoryLoaded}
               />
             </div>
           )}

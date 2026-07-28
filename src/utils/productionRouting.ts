@@ -11,6 +11,7 @@ export const PRODUCTION_ROUTING_CACHE_KEY =
   'kyrub_product_preparation_stations';
 export const PRODUCTION_ROUTING_UPDATED_EVENT =
   'kyrub-production-routing-updated';
+export const PRODUCTION_SPACES_STORAGE_KEY = 'kyrub_producao_spaces';
 export const DEFAULT_PRODUCTION_STATION = 'GERAL';
 
 export type ProductPreparationStations = Record<string, string>;
@@ -31,6 +32,25 @@ export const normalizeProductionStation = (value: unknown): string => {
   return normalized || DEFAULT_PRODUCTION_STATION;
 };
 
+export const readAvailableProductionStations = (): string[] => {
+  if (typeof localStorage === 'undefined') {
+    return [DEFAULT_PRODUCTION_STATION];
+  }
+  try {
+    const parsed = JSON.parse(
+      localStorage.getItem(PRODUCTION_SPACES_STORAGE_KEY) ?? '[]'
+    ) as unknown;
+    const values = Array.isArray(parsed) ? parsed : [];
+    return [...new Set(
+      [DEFAULT_PRODUCTION_STATION, ...values]
+        .map(normalizeProductionStation)
+        .filter(value => value !== 'TODOS')
+    )];
+  } catch {
+    return [DEFAULT_PRODUCTION_STATION];
+  }
+};
+
 export const parseProductPreparationStations = (
   value: unknown
 ): ProductPreparationStations => {
@@ -49,6 +69,7 @@ export const parseProductPreparationStations = (
 };
 
 export const loadCachedProductPreparationStations = (): ProductPreparationStations => {
+  if (typeof localStorage === 'undefined') return {};
   try {
     return parseProductPreparationStations(
       JSON.parse(localStorage.getItem(PRODUCTION_ROUTING_CACHE_KEY) ?? '{}')
@@ -61,6 +82,7 @@ export const loadCachedProductPreparationStations = (): ProductPreparationStatio
 export const cacheProductPreparationStations = (
   stations: ProductPreparationStations
 ): void => {
+  if (typeof localStorage === 'undefined' || typeof window === 'undefined') return;
   localStorage.setItem(
     PRODUCTION_ROUTING_CACHE_KEY,
     JSON.stringify(parseProductPreparationStations(stations))
@@ -119,30 +141,17 @@ export const getProductionStationOptions = (
     items.map(item => resolveProductPreparationStation(item.productId, stations))
   )].sort((left, right) => left.localeCompare(right, 'pt-BR'));
 
-export const persistProductPreparationStation = async (
+const writeProductPreparationStations = async (
   user: Pick<User, 'uid'>,
-  productId: string,
-  station: string
+  transform: (current: ProductPreparationStations) => ProductPreparationStations
 ): Promise<ProductPreparationStations> => {
-  const normalizedProductId = clean(productId);
-  if (!/^[a-zA-Z0-9_-]{1,128}$/.test(normalizedProductId)) {
-    throw new Error('O produto não foi identificado para roteamento.');
-  }
-  const normalizedStation = normalizeProductionStation(station);
-  if (normalizedStation.length > 80) {
-    throw new Error('O nome do setor deve ter no máximo 80 caracteres.');
-  }
-
   const tenantReference = doc(db, 'tenants', user.uid);
   let nextStations: ProductPreparationStations = {};
   await runTransaction(db, async transaction => {
     const snapshot = await transaction.get(tenantReference);
     const data = snapshot.data();
     const current = readProductPreparationStationsFromTenant(data);
-    nextStations = {
-      ...current,
-      [normalizedProductId]: normalizedStation,
-    };
+    nextStations = parseProductPreparationStations(transform(current));
     const operationalSettings =
       data?.operationalSettings && typeof data.operationalSettings === 'object'
         ? data.operationalSettings as Record<string, unknown>
@@ -160,4 +169,38 @@ export const persistProductPreparationStation = async (
   });
   cacheProductPreparationStations(nextStations);
   return nextStations;
+};
+
+export const persistProductPreparationStation = async (
+  user: Pick<User, 'uid'>,
+  productId: string,
+  station: string
+): Promise<ProductPreparationStations> => {
+  const normalizedProductId = clean(productId);
+  if (!/^[a-zA-Z0-9_-]{1,128}$/.test(normalizedProductId)) {
+    throw new Error('O produto não foi identificado para roteamento.');
+  }
+  const normalizedStation = normalizeProductionStation(station);
+  if (normalizedStation.length > 80) {
+    throw new Error('O nome do setor deve ter no máximo 80 caracteres.');
+  }
+  return writeProductPreparationStations(user, current => ({
+    ...current,
+    [normalizedProductId]: normalizedStation,
+  }));
+};
+
+export const removeProductPreparationStation = async (
+  user: Pick<User, 'uid'>,
+  productId: string
+): Promise<ProductPreparationStations> => {
+  const normalizedProductId = clean(productId);
+  if (!/^[a-zA-Z0-9_-]{1,128}$/.test(normalizedProductId)) {
+    throw new Error('O produto não foi identificado para roteamento.');
+  }
+  return writeProductPreparationStations(user, current => {
+    const next = { ...current };
+    delete next[normalizedProductId];
+    return next;
+  });
 };

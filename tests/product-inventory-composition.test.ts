@@ -101,15 +101,28 @@ describe('product inventory and composition', () => {
     assert.equal(list[0]?.estimatedCost, 12);
   });
 
-  test('modal exposes showcase, inventory and purchase tabs', () => {
+  test('modal exposes compact showcase, inventory and purchase tabs', () => {
     assert.match(modalSource, /Itens da vitrine/);
     assert.match(modalSource, /label: 'Estoque'/);
     assert.match(modalSource, /Lista de compras/);
+    assert.match(modalSource, /overflow-x-auto/);
+    assert.match(modalSource, /min-w-\[9rem\]/);
     assert.match(modalSource, /ProductInventoryCompositionEditor/);
     assert.match(modalSource, /ProductPurchaseList/);
     assert.match(modalSource, /calculateProductAvailableStock/);
     assert.match(modalSource, /persistProductInventorySettings/);
     assert.doesNotMatch(modalSource, /Estoque inicial/);
+  });
+
+  test('inventory fields remain editable after a sync error without silent loss', () => {
+    assert.match(modalSource, /Os campos continuam editáveis/);
+    assert.match(modalSource, /Tentar novamente/);
+    assert.match(modalSource, /inventoryDirty && inventoryLoadError/);
+    assert.match(modalSource, /disabled=\{isSaving \|\| !inventoryLoaded\}/);
+    assert.doesNotMatch(
+      modalSource,
+      /disabled=\{isSaving \|\| !inventoryLoaded \|\| Boolean\(inventoryLoadError\)\}/
+    );
   });
 
   test('selection options support create, edit and removal', () => {

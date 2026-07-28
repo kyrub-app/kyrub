@@ -8,6 +8,7 @@ import {
   getProductionStationOptions,
   normalizeProductionStation,
   parseProductPreparationStations,
+  readAvailableProductionStations,
   resolveProductPreparationStation,
 } from '../src/utils/productionRouting';
 
@@ -28,8 +29,8 @@ const item = (
   isService: false,
 });
 
-const workspaceSource = readFileSync(
-  'src/components/store/ProductStationRoutingWorkspace.tsx',
+const modalSource = readFileSync(
+  'src/components/store/UnifiedProductModal.tsx',
   'utf8'
 );
 const inboxSource = readFileSync(
@@ -38,11 +39,12 @@ const inboxSource = readFileSync(
 );
 const appSource = readFileSync('src/App.tsx', 'utf8');
 
-describe('production station routing', () => {
+ describe('production station routing', () => {
   test('normalizes route names and defaults unassigned items to GERAL', () => {
     assert.equal(normalizeProductionStation('  cozinha  '), 'COZINHA');
     assert.equal(normalizeProductionStation(''), DEFAULT_PRODUCTION_STATION);
     assert.equal(resolveProductPreparationStation('unknown', {}), 'GERAL');
+    assert.deepEqual(readAvailableProductionStations(), ['GERAL']);
   });
 
   test('parses only valid product identifiers and station names', () => {
@@ -87,14 +89,17 @@ describe('production station routing', () => {
     ]);
   });
 
-  test('routing workspace persists product tags inside tenant operational settings', () => {
+  test('product modal owns station selection and persistence', () => {
     const utilitySource = readFileSync('src/utils/productionRouting.ts', 'utf8');
     assert.match(utilitySource, /operationalSettings/);
     assert.match(utilitySource, /productPreparationStations/);
     assert.match(utilitySource, /runTransaction/);
-    assert.match(workspaceSource, /Estação de preparo por item/);
-    assert.match(workspaceSource, /kyrub_producao_spaces/);
-    assert.match(appSource, /ProductStationRoutingWorkspace/);
+    assert.match(utilitySource, /readAvailableProductionStations/);
+    assert.match(utilitySource, /removeProductPreparationStation/);
+    assert.match(modalSource, /product-preparation-station-control/);
+    assert.match(modalSource, /persistProductPreparationStation/);
+    assert.match(modalSource, /As opções vêm de Ambientes/);
+    assert.doesNotMatch(appSource, /ProductStationRoutingWorkspace/);
   });
 
   test('KDS places station filter below origin and filters items by product route', () => {
