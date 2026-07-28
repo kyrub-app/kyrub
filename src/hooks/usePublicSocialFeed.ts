@@ -5,8 +5,10 @@ import {
   deleteDoc,
   doc,
   onSnapshot,
+  query,
   serverTimestamp,
   setDoc,
+  where,
   type Timestamp,
 } from 'firebase/firestore';
 import type { SocialPost } from '../types';
@@ -72,8 +74,12 @@ const mapPost = (
   const authorId = readString(data.authorId);
   const user = readString(data.authorName) || readString(data.user);
   const publicationType = data.publicationType === 'status' ? 'status' : 'feed';
-  const visibility = data.visibility === 'private' ? 'private' : 'public';
-  if (!authorId || !user || visibility !== 'public') return null;
+  const visibility = data.visibility === 'connections'
+    ? 'connections'
+    : data.visibility === 'private'
+      ? 'private'
+      : 'public';
+  if (!authorId || !user || visibility === 'private') return null;
 
   const createdAt =
     readString(data.createdAtIso) || timestampToIso(data.createdAt, new Date().toISOString());
@@ -92,6 +98,7 @@ const mapPost = (
     taggedUserIds: readStringList(data.taggedUserIds),
     publicationType,
     visibility,
+    audienceIds: readStringList(data.audienceIds),
   };
 };
 
@@ -117,6 +124,18 @@ const mapComment = (
   };
 };
 
+const mergePosts = (
+  publicPosts: SocialPost[],
+  connectionPosts: SocialPost[]
+): SocialPost[] => {
+  const byId = new Map<string, SocialPost>();
+  for (const post of [...publicPosts, ...connectionPosts]) byId.set(post.id, post);
+  return [...byId.values()].sort(
+    (left, right) =>
+      Date.parse(right.createdAt ?? '') - Date.parse(left.createdAt ?? '')
+  );
+};
+
 export function usePublicSocialFeed() {
   const [posts, setPosts] = useState<SocialPost[]>([]);
   const [likes, setLikes] = useState<SocialLikeRecord[]>([]);
@@ -125,18 +144,33 @@ export function usePublicSocialFeed() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    let unsubscribePosts = () => undefined;
+    let unsubscribePublicPosts = () => undefined;
+    let unsubscribeConnectionPosts = () => undefined;
     let unsubscribeLikes = () => undefined;
     let unsubscribeComments = () => undefined;
+    let publicPosts: SocialPost[] = [];
+    let connectionPosts: SocialPost[] = [];
+    let publicReady = false;
+    let connectionsReady = false;
+
+    const publishPosts = () => {
+      setPosts(mergePosts(publicPosts, connectionPosts));
+      setLoading(!(publicReady && connectionsReady));
+    };
 
     const unsubscribeAuth = onAuthStateChanged(auth, user => {
-      unsubscribePosts();
+      unsubscribePublicPosts();
+      unsubscribeConnectionPosts();
       unsubscribeLikes();
       unsubscribeComments();
       setCurrentUserId(user?.uid ?? '');
       setPosts([]);
       setLikes([]);
       setComments([]);
+      publicPosts = [];
+      connectionPosts = [];
+      publicReady = false;
+      connectionsReady = false;
       setLoading(Boolean(user));
 
       if (!user) {
@@ -144,27 +178,49 @@ export function usePublicSocialFeed() {
         return;
       }
 
-      unsubscribePosts = onSnapshot(
-        collection(db, 'social_posts'),
+      unsubscribePublicPosts = onSnapshot(
+        query(
+          collection(db, 'social_posts'),
+          where('visibility', '==', 'public')
+        ),
         snapshot => {
-          const nextPosts = snapshot.docs
-            .flatMap(snapshotDocument => {
-              const post = mapPost(
-                snapshotDocument.id,
-                snapshotDocument.data() as Record<string, unknown>
-              );
-              return post ? [post] : [];
-            })
-            .sort(
-              (left, right) =>
-                Date.parse(right.createdAt ?? '') - Date.parse(left.createdAt ?? '')
+          publicPosts = snapshot.docs.flatMap(snapshotDocument => {
+            const post = mapPost(
+              snapshotDocument.id,
+              snapshotDocument.data() as Record<string, unknown>
             );
-          setPosts(nextPosts);
-          setLoading(false);
+            return post ? [post] : [];
+          });
+          publicReady = true;
+          publishPosts();
         },
         error => {
           console.warn('Não foi possível carregar o feed público.', error);
-          setLoading(false);
+          publicReady = true;
+          publishPosts();
+        }
+      );
+
+      unsubscribeConnectionPosts = onSnapshot(
+        query(
+          collection(db, 'social_posts'),
+          where('audienceIds', 'array-contains', user.uid)
+        ),
+        snapshot => {
+          connectionPosts = snapshot.docs.flatMap(snapshotDocument => {
+            const post = mapPost(
+              snapshotDocument.id,
+              snapshotDocument.data() as Record<string, unknown>
+            );
+            return post ? [post] : [];
+          });
+          connectionsReady = true;
+          publishPosts();
+        },
+        error => {
+          console.warn('Não foi possível carregar os status das conexões.', error);
+          connectionsReady = true;
+          publishPosts();
         }
       );
 
@@ -213,7 +269,8 @@ export function usePublicSocialFeed() {
 
     return () => {
       unsubscribeAuth();
-      unsubscribePosts();
+      unsubscribePublicPosts();
+      unsubscribeConnectionPosts();
       unsubscribeLikes();
       unsubscribeComments();
     };
