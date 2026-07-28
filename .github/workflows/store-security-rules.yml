@@ -8,6 +8,11 @@ on:
       - 'firestore.admin-control-plane.fragment.rules'
       - 'firestore.store-security.fragment.rules'
       - 'firestore.store-directory-query.fragment.rules'
+      - 'firestore.marketplace.fragment.rules'
+      - 'firestore.note-invitations.fragment.rules'
+      - 'firestore.product-inventory.fragment.rules'
+      - 'firestore.profile-social-hub.fragment.rules'
+      - 'firestore.social-feed.fragment.rules'
       - 'firestore.operational-dual-write.fragment.rules'
       - 'firestore.product-dual-write.fragment.rules'
       - 'firestore.cash-ledger.fragment.rules'
@@ -15,6 +20,7 @@ on:
       - 'firestore.cash-movements.fragment.rules'
       - 'firebase.json'
       - 'firebase.security.json'
+      - 'package.json'
       - 'scripts/compose-firestore-rules.mjs'
       - 'src/utils/adminControlPlane.ts'
       - 'src/utils/adminDirectory.ts'
@@ -30,13 +36,7 @@ on:
       - 'src/components/store/StoreTeamWorkspace.tsx'
       - 'src/components/store/OperationalDualWriteBridge.tsx'
       - 'src/components/store/CashWorkspace.tsx'
-      - 'tests/firestore-admin-control-plane.test.ts'
-      - 'tests/firestore-admin-directory.test.ts'
-      - 'tests/firestore-store-security.test.ts'
-      - 'tests/firestore-store-directory.test.ts'
-      - 'tests/firestore-operational-dual-write.test.ts'
-      - 'tests/firestore-canonical-product-dual-write.test.ts'
-      - 'tests/firestore-canonical-cash.test.ts'
+      - 'tests/firestore-*.test.ts'
       - 'tests/admin-control-plane.test.ts'
       - 'tests/admin-directory.test.ts'
       - 'tests/store-security.test.ts'
@@ -56,7 +56,7 @@ permissions:
 jobs:
   firestore-rules:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
 
     steps:
       - name: Checkout
@@ -77,13 +77,5 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Compose production-compatible rules
-        run: npm run firestore:compose
-
-      - name: Run Firestore emulator authorization tests
-        run: >-
-          npx --yes firebase-tools emulators:exec
-          --config firebase.security.json
-          --project kyrub-security-test
-          --only firestore
-          "node --test --test-concurrency=1 --import tsx tests/firestore-store-security.test.ts tests/firestore-store-directory.test.ts tests/firestore-operational-dual-write.test.ts tests/firestore-canonical-product-dual-write.test.ts tests/firestore-canonical-cash.test.ts tests/firestore-admin-control-plane.test.ts tests/firestore-admin-directory.test.ts"
+      - name: Run complete Firestore emulator authorization suite
+        run: npm run test:rules
