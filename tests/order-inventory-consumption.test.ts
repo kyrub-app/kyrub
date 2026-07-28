@@ -59,11 +59,20 @@ const serviceSource = readFileSync(
   'server/inventory/orderInventoryService.ts',
   'utf8'
 );
+const adjustmentSource = readFileSync(
+  'server/inventory/orderInventoryAdjustment.ts',
+  'utf8'
+);
 const routerSource = readFileSync(
   'server/inventory/orderInventoryRouter.ts',
   'utf8'
 );
 const workflowSource = readFileSync('src/utils/orderWorkflow.ts', 'utf8');
+const bridgeSource = readFileSync(
+  'src/components/store/OrderInventoryReconciliationBridge.tsx',
+  'utf8'
+);
+const appSource = readFileSync('src/App.tsx', 'utf8');
 const ingressSource = readFileSync(
   'server/integrations/ninetyNineFoodIngressQueue.ts',
   'utf8'
@@ -172,6 +181,17 @@ describe('order inventory consumption', () => {
     assert.match(routerSource, /transitionOrderStatusWithInventory/);
     assert.match(routerSource, /sendNinetyNineFoodOrderStatus/);
     assert.match(serverSource, /createOrderInventoryRouter/);
+  });
+
+  test('direct item transfers adjust the consumed ledger instead of charging twice', () => {
+    assert.match(adjustmentSource, /adjustConsumedOrderInventoryQuantities/);
+    assert.match(adjustmentSource, /applyInventoryConsumptionLines\([\s\S]*'restore'/);
+    assert.match(adjustmentSource, /buildOrderInventoryConsumption/);
+    assert.match(adjustmentSource, /adjustmentReason: 'order_items_changed'/);
+    assert.match(routerSource, /reconcile-inventory/);
+    assert.match(bridgeSource, /hasPendingWrites/);
+    assert.match(bridgeSource, /reconcile-inventory/);
+    assert.match(appSource, /OrderInventoryReconciliationBridge/);
   });
 
   test('webhook and polling paths reconcile external orders without a browser', () => {
