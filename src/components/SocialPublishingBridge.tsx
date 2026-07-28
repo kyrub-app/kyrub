@@ -4,8 +4,10 @@ import {
   collection,
   doc,
   onSnapshot,
+  query,
   serverTimestamp,
   setDoc,
+  where,
 } from 'firebase/firestore';
 import { getDownloadURL, ref, uploadString } from 'firebase/storage';
 import type { SocialPost } from '../types';
@@ -17,6 +19,8 @@ type LocalSocialPost = SocialPost & {
   taggedUsers?: string[];
   taggedUserIds?: string[];
   createdAt?: string;
+  visibility?: 'public' | 'private' | 'connections';
+  audienceIds?: string[];
 };
 
 type SocialPostsUpdatedDetail = {
@@ -85,6 +89,12 @@ const cloudDocumentToLocalPost = (
   const user = readString(data.authorName);
   if (!authorId || !user) return null;
 
+  const visibility = data.visibility === 'connections'
+    ? 'connections'
+    : data.visibility === 'private'
+      ? 'private'
+      : 'public';
+
   return {
     id: readString(data.sourcePostId) || id,
     authorId,
@@ -98,11 +108,16 @@ const cloudDocumentToLocalPost = (
     taggedUsers: readStringList(data.taggedUsers),
     taggedUserIds: readStringList(data.taggedUserIds),
     publicationType: data.publicationType === 'status' ? 'status' : 'feed',
-    visibility: data.visibility === 'private' ? 'private' : 'public',
+    visibility,
+    audienceIds: readStringList(data.audienceIds),
   };
 };
 
-const writeCloudPost = async (user: User, post: LocalSocialPost) => {
+const writeCloudPost = async (
+  user: User,
+  post: LocalSocialPost,
+  connectedAudienceIds: string[]
+) => {
   const sourcePostId = post.id || `${post.publicationType ?? 'feed'}-${Date.now()}`;
   const postId = cloudPostId(user.uid, sourcePostId);
   const createdAtIso = post.createdAt || new Date().toISOString();
@@ -111,6 +126,10 @@ const writeCloudPost = async (user: User, post: LocalSocialPost) => {
     postId,
     Array.isArray(post.mediaUrls) ? post.mediaUrls : []
   );
+  const isStatus = post.publicationType === 'status';
+  const audienceIds = isStatus
+    ? [...new Set([user.uid, ...connectedAudienceIds])].slice(0, 500)
+    : [];
 
   await setDoc(doc(db, 'social_posts', postId), {
     postId,
@@ -120,13 +139,14 @@ const writeCloudPost = async (user: User, post: LocalSocialPost) => {
       post.user || user.displayName || user.email?.split('@')[0] || 'Usuário Kyrub',
     authorAvatar: post.avatar || user.photoURL || '',
     content: post.content || '',
-    publicationType: post.publicationType === 'status' ? 'status' : 'feed',
+    publicationType: isStatus ? 'status' : 'feed',
     taggedUsers: Array.isArray(post.taggedUsers) ? post.taggedUsers.slice(0, 30) : [],
     taggedUserIds: Array.isArray(post.taggedUserIds)
       ? post.taggedUserIds.slice(0, 30)
       : [],
     mediaUrls,
-    visibility: 'public',
+    visibility: isStatus ? 'connections' : 'public',
+    audienceIds,
     createdAtIso,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
@@ -137,8 +157,11 @@ export function SocialPublishingBridge() {
   useEffect(() => {
     let cancelled = false;
     let unsubscribePosts = () => undefined;
+    let unsubscribeConnections = () => undefined;
     let activeUser: User | null = null;
     let cloudReadyFromServer = false;
+    let connectionsReadyFromServer = false;
+    let connectedAudienceIds: string[] = [];
     let queuedLocalPosts: LocalSocialPost[] = [];
     let ownCloudPosts: LocalSocialPost[] = [];
     let lastPublishedCloudSignature = '';
@@ -198,6 +221,7 @@ export function SocialPublishingBridge() {
 
       for (const post of queuedLocalPosts) {
         if (post.authorId && post.authorId !== user.uid) continue;
+        if (post.publicationType === 'status' && !connectionsReadyFromServer) continue;
         const sourcePostId = post.id || '';
         if (!sourcePostId) continue;
         const postId = cloudPostId(user.uid, sourcePostId);
@@ -206,7 +230,7 @@ export function SocialPublishingBridge() {
         }
 
         pendingCloudPostIds.add(postId);
-        void writeCloudPost(user, post)
+        void writeCloudPost(user, post, connectedAudienceIds)
           .catch(error => {
             console.warn('Não foi possível publicar conteúdo social na nuvem.', error);
           })
@@ -240,9 +264,13 @@ export function SocialPublishingBridge() {
 
     const unsubscribeAuth = onAuthStateChanged(auth, user => {
       unsubscribePosts();
+      unsubscribeConnections();
       unsubscribePosts = () => undefined;
+      unsubscribeConnections = () => undefined;
       activeUser = user;
       cloudReadyFromServer = false;
+      connectionsReadyFromServer = false;
+      connectedAudienceIds = [];
       queuedLocalPosts = [];
       ownCloudPosts = [];
       lastPublishedCloudSignature = '';
@@ -256,8 +284,37 @@ export function SocialPublishingBridge() {
           localStorage.getItem(LEGACY_POSTS_KEY)
       );
 
+      unsubscribeConnections = onSnapshot(
+        query(
+          collection(db, 'connections'),
+          where('participantIds', 'array-contains', user.uid)
+        ),
+        { includeMetadataChanges: true },
+        snapshot => {
+          connectedAudienceIds = snapshot.docs.flatMap(snapshotDocument => {
+            const data = snapshotDocument.data() as Record<string, unknown>;
+            if (data.status !== 'accepted') return [];
+            const senderId = readString(data.senderId);
+            const receiverId = readString(data.receiverId);
+            const otherId = senderId === user.uid ? receiverId : senderId;
+            return otherId && otherId !== user.uid ? [otherId] : [];
+          });
+          if (!snapshot.metadata.fromCache) connectionsReadyFromServer = true;
+          reconcileLocalPosts();
+        },
+        error => {
+          console.warn('Não foi possível carregar a audiência dos status.', error);
+          connectionsReadyFromServer = true;
+          connectedAudienceIds = [];
+          reconcileLocalPosts();
+        }
+      );
+
       unsubscribePosts = onSnapshot(
-        collection(db, 'social_posts'),
+        query(
+          collection(db, 'social_posts'),
+          where('authorId', '==', user.uid)
+        ),
         { includeMetadataChanges: true },
         snapshot => {
           knownCloudPostIds.clear();
@@ -266,7 +323,6 @@ export function SocialPublishingBridge() {
           for (const snapshotDocument of snapshot.docs) {
             knownCloudPostIds.add(snapshotDocument.id);
             const data = snapshotDocument.data() as Record<string, unknown>;
-            if (readString(data.authorId) !== user.uid) continue;
             const post = cloudDocumentToLocalPost(snapshotDocument.id, data);
             if (post) nextOwnPosts.push(post);
           }
@@ -290,6 +346,7 @@ export function SocialPublishingBridge() {
       );
       unsubscribeAuth();
       unsubscribePosts();
+      unsubscribeConnections();
     };
   }, []);
 
