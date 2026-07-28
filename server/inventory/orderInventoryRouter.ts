@@ -2,6 +2,7 @@ import { Router, type Request, type Response } from 'express';
 import { FieldValue } from 'firebase-admin/firestore';
 import { adminAuth, adminDb } from '../firebaseAdmin';
 import { sendNinetyNineFoodOrderStatus } from '../integrations/ninetyNineFoodService';
+import { reconcileOrderInventoryAfterMutation } from './orderInventoryAdjustment';
 import {
   transitionOrderStatusWithInventory,
   type OrderStatusDecisionInput,
@@ -92,6 +93,20 @@ const markPartnerSyncSuccess = async (
 
 export const createOrderInventoryRouter = (): Router => {
   const router = Router();
+
+  router.post('/:orderId/reconcile-inventory', async (request, response) => {
+    try {
+      const tenantId = await authenticatedTenantId(request);
+      response.json(
+        await reconcileOrderInventoryAfterMutation(
+          tenantId,
+          request.params.orderId
+        )
+      );
+    } catch (error) {
+      errorResponse(response, error);
+    }
+  });
 
   router.post('/:orderId/status', async (request, response) => {
     try {
