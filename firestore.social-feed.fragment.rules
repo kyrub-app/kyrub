@@ -1,4 +1,4 @@
-    // --- Public Social Feed, Connection Status, Likes and Comments ---
+    // --- Public Social Feed, Connection Status, Likes, Comments and Reports ---
     match /social_posts/{postId} {
       function hasValidSocialPostShape(data) {
         return data.keys().hasAll([
@@ -56,19 +56,29 @@
         && data.taggedUserIds.size() <= 30
         && data.mediaUrls is list
         && data.mediaUrls.size() <= 9
-        && data.visibility in ['public', 'connections']
+        && data.visibility in ['public', 'private', 'connections']
         && data.audienceIds is list
         && data.audienceIds.size() <= 500
         && (
           (
             data.publicationType == 'feed'
-            && data.visibility == 'public'
-            && data.audienceIds.size() == 0
+            && (
+              (
+                data.visibility == 'public'
+                && data.audienceIds.size() <= 30
+              )
+              || (
+                data.visibility == 'private'
+                && data.authorId in data.audienceIds
+                && data.audienceIds.hasAll(data.taggedUserIds)
+              )
+            )
           )
           || (
             data.publicationType == 'status'
-            && data.visibility == 'connections'
+            && data.visibility in ['connections', 'public']
             && data.authorId in data.audienceIds
+            && data.audienceIds.hasAll(data.taggedUserIds)
           )
         )
         && data.createdAtIso is string
@@ -178,4 +188,44 @@
       allow update: if false;
       allow delete: if isSignedIn()
         && (existing().authorId == request.auth.uid || isAdmin());
+    }
+
+    match /social_post_reports/{reportId} {
+      allow create: if isSignedIn()
+        && incoming().keys().hasAll([
+          'reportId',
+          'postId',
+          'reporterId',
+          'authorId',
+          'reason',
+          'status',
+          'createdAt'
+        ])
+        && incoming().keys().hasOnly([
+          'reportId',
+          'postId',
+          'reporterId',
+          'authorId',
+          'reason',
+          'status',
+          'createdAt'
+        ])
+        && incoming().reportId == reportId
+        && incoming().postId is string
+        && incoming().postId.size() > 0
+        && incoming().postId.size() <= 500
+        && incoming().reporterId == request.auth.uid
+        && incoming().authorId is string
+        && incoming().authorId.size() <= 128
+        && incoming().reason is string
+        && incoming().reason.size() > 0
+        && incoming().reason.size() <= 500
+        && incoming().status == 'pending'
+        && incoming().createdAt == request.time
+        && reportId == incoming().postId + '__' + request.auth.uid
+        && exists(/databases/$(database)/documents/social_posts/$(incoming().postId));
+
+      allow read: if isSignedIn()
+        && (existing().reporterId == request.auth.uid || isAdmin());
+      allow update, delete: if false;
     }
