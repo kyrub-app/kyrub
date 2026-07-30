@@ -7,6 +7,10 @@ const profileSource = readFileSync(
   'src/components/ProfileSocialHubBridge.tsx',
   'utf8'
 );
+const polishSource = readFileSync(
+  'src/components/ProfileSocialPolishBridge.tsx',
+  'utf8'
+);
 const aiSource = readFileSync(
   'src/components/KyrubAiWorkspaceBridge.tsx',
   'utf8'
@@ -34,11 +38,16 @@ const profileRules = readFileSync(
 );
 
 describe('profile social hub navigation', () => {
-  test('mounts the profile hub and the Kyrub AI workspace around the legacy app', () => {
+  test('mounts the profile hub, polish layer and Kyrub AI workspace around the legacy app', () => {
     assert.match(appSource, /ProfileSocialHubBridge/);
+    assert.match(appSource, /ProfileSocialPolishBridge/);
     assert.match(appSource, /KyrubAiWorkspaceBridge/);
     assert.ok(
       appSource.indexOf('<ProfileSocialHubBridge') <
+        appSource.indexOf('<LegacyApp')
+    );
+    assert.ok(
+      appSource.indexOf('<ProfileSocialPolishBridge') <
         appSource.indexOf('<LegacyApp')
     );
     assert.ok(
@@ -47,15 +56,42 @@ describe('profile social hub navigation', () => {
     );
   });
 
-  test('keeps the approved profile tabs and moves saved posts to a private modal', () => {
+  test('keeps the approved profile tabs and saved posts in a private modal', () => {
     assert.match(profileSource, /label: 'Publicações'/);
     assert.match(profileSource, /label: 'Status'/);
     assert.match(profileSource, /label: 'Conectados'/);
     assert.match(profileSource, /label: 'Praça'/);
-    assert.doesNotMatch(profileSource, /label: 'Marcados'/);
     assert.match(profileSource, /Publicações salvas/);
     assert.match(profileSource, /Salvos \{savedPosts\.length\}/);
     assert.match(profileSource, /users\/\$\{user\.uid\}\/favorites/);
+  });
+
+  test('restores Marcados between Status and Conectados for user mentions', () => {
+    assert.match(polishSource, /data-kyrub-marked-tab/);
+    assert.match(polishSource, /findButtonByText\(navigation, 'Status'\)/);
+    assert.match(
+      polishSource,
+      /navigation\.insertBefore\(nextTabHost, statusButton\.nextSibling\)/
+    );
+    assert.match(polishSource, /Marcados \{visibleMarkedPosts\.length\}/);
+    assert.match(
+      polishSource,
+      /where\('audienceIds', 'array-contains', user\.uid\)/
+    );
+    assert.match(polishSource, /taggedUserIds\.includes\(currentUserId\)/);
+    assert.match(polishSource, /Marcaram você/);
+  });
+
+  test('uses a portrait 3x4 profile photo without changing post avatars', () => {
+    assert.match(polishSource, /data-kyrub-profile-portrait/);
+    assert.match(polishSource, /width: 72px !important/);
+    assert.match(polishSource, /height: 96px !important/);
+    assert.match(polishSource, /width: 84px !important/);
+    assert.match(polishSource, /height: 112px !important/);
+    assert.match(
+      polishSource,
+      /button\[aria-label="Alterar foto do perfil"\]/
+    );
   });
 
   test('makes Praça sharing explicit and supports connected-user tagging', () => {
@@ -70,6 +106,17 @@ describe('profile social hub navigation', () => {
     assert.match(publishingSource, /post\.visibility === 'public'/);
     assert.match(publishingSource, /taggedUserIds/);
     assert.match(feedHookSource, /where\('authorId', '==', user\.uid\)/);
+  });
+
+  test('reports failed publication sync and retries the pending local post', () => {
+    assert.match(publishingSource, /kyrub-social-publish-result/);
+    assert.match(publishingSource, /kyrub-social-publish-retry/);
+    assert.match(publishingSource, /failedCloudPostIds/);
+    assert.match(publishingSource, /permission-denied/);
+    assert.match(publishingSource, /Firebase Storage ainda não está ativo/);
+    assert.match(polishSource, /Publicação pendente/);
+    assert.match(polishSource, /Tentar sincronizar/);
+    assert.match(polishSource, /retryPendingPublication/);
   });
 
   test('adds save and report actions without allowing status saves', () => {
@@ -105,7 +152,10 @@ describe('profile social hub navigation', () => {
     );
     assert.match(publishingSource, /visibility = isStatus/);
     assert.match(feedHookSource, /where\('visibility', '==', 'public'\)/);
-    assert.match(feedHookSource, /where\('audienceIds', 'array-contains', user\.uid\)/);
+    assert.match(
+      feedHookSource,
+      /where\('audienceIds', 'array-contains', user\.uid\)/
+    );
     assert.match(socialRules, /data\.visibility in \['connections', 'public'\]/);
   });
 

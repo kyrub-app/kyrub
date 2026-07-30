@@ -29,6 +29,19 @@ type SocialPostsUpdatedDetail = {
   source?: 'local' | 'cloud';
 };
 
+type SocialPublishRetryDetail = {
+  uid?: string;
+  sourcePostId?: string;
+};
+
+type SocialPublishResultDetail = {
+  uid: string;
+  sourcePostId: string;
+  status: 'success' | 'error';
+  code?: string;
+  message: string;
+};
+
 const LEGACY_POSTS_KEY = 'kyrub_posts';
 const getUserPostsKey = (uid: string) => `kyrub_posts_${uid}`;
 
@@ -53,6 +66,33 @@ const readStringList = (value: unknown): string[] =>
 
 const cloudPostId = (uid: string, localPostId: string) =>
   `${uid}__${localPostId.replaceAll('/', '_')}`.slice(0, 500);
+
+const readErrorCode = (error: unknown): string => {
+  if (!error || typeof error !== 'object' || !('code' in error)) return 'unknown';
+  return typeof error.code === 'string' ? error.code : 'unknown';
+};
+
+const publicationErrorMessage = (error: unknown): string => {
+  const code = readErrorCode(error);
+  if (code.includes('permission-denied')) {
+    return 'O Firebase recusou a publicação. Atualize as regras sociais e tente sincronizar novamente.';
+  }
+  if (code.startsWith('storage/')) {
+    return 'A publicação contém imagem, mas o Firebase Storage ainda não está ativo. O conteúdo ficou pendente.';
+  }
+  if (code === 'unavailable' || code.includes('network')) {
+    return 'A conexão com o Firebase está indisponível. A publicação ficou pendente para nova tentativa.';
+  }
+  return 'Não foi possível sincronizar a publicação com o Firebase. O conteúdo permaneceu pendente.';
+};
+
+const dispatchPublishResult = (detail: SocialPublishResultDetail) => {
+  window.dispatchEvent(
+    new CustomEvent<SocialPublishResultDetail>('kyrub-social-publish-result', {
+      detail,
+    })
+  );
+};
 
 const uploadPostMedia = async (
   userId: string,
@@ -118,7 +158,7 @@ const writeCloudPost = async (
   user: User,
   post: LocalSocialPost,
   connectedAudienceIds: string[]
-) => {
+): Promise<string> => {
   const sourcePostId =
     post.id || `${post.publicationType ?? 'feed'}-${Date.now()}`;
   const postId = cloudPostId(user.uid, sourcePostId);
@@ -168,6 +208,8 @@ const writeCloudPost = async (
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
+
+  return sourcePostId;
 };
 
 export function SocialPublishingBridge() {
@@ -184,6 +226,7 @@ export function SocialPublishingBridge() {
     let lastPublishedCloudSignature = '';
     const knownCloudPostIds = new Set<string>();
     const pendingCloudPostIds = new Set<string>();
+    const failedCloudPostIds = new Set<string>();
 
     const hasUnsyncedLocalPosts = () => {
       const user = activeUser;
@@ -244,14 +287,40 @@ export function SocialPublishingBridge() {
         const sourcePostId = post.id || '';
         if (!sourcePostId) continue;
         const postId = cloudPostId(user.uid, sourcePostId);
-        if (knownCloudPostIds.has(postId) || pendingCloudPostIds.has(postId)) {
+        if (
+          knownCloudPostIds.has(postId) ||
+          pendingCloudPostIds.has(postId) ||
+          failedCloudPostIds.has(postId)
+        ) {
           continue;
         }
 
         pendingCloudPostIds.add(postId);
         void writeCloudPost(user, post, connectedAudienceIds)
+          .then(syncedSourcePostId => {
+            failedCloudPostIds.delete(postId);
+            dispatchPublishResult({
+              uid: user.uid,
+              sourcePostId: syncedSourcePostId,
+              status: 'success',
+              message: 'Publicação sincronizada com o Firebase.',
+            });
+          })
           .catch(error => {
-            console.warn('Não foi possível publicar conteúdo social na nuvem.', error);
+            failedCloudPostIds.add(postId);
+            const code = readErrorCode(error);
+            console.warn('Não foi possível publicar conteúdo social na nuvem.', {
+              code,
+              sourcePostId,
+              error,
+            });
+            dispatchPublishResult({
+              uid: user.uid,
+              sourcePostId,
+              status: 'error',
+              code,
+              message: publicationErrorMessage(error),
+            });
           })
           .finally(() => {
             pendingCloudPostIds.delete(postId);
@@ -276,9 +345,26 @@ export function SocialPublishingBridge() {
       reconcileLocalPosts();
     };
 
+    const handleRetry = (event: Event) => {
+      const detail = (event as CustomEvent<SocialPublishRetryDetail>).detail;
+      const user = activeUser;
+      if (!user || detail?.uid !== user.uid) return;
+
+      if (detail.sourcePostId) {
+        failedCloudPostIds.delete(cloudPostId(user.uid, detail.sourcePostId));
+      } else {
+        failedCloudPostIds.clear();
+      }
+      reconcileLocalPosts();
+    };
+
     window.addEventListener(
       'kyrub-social-posts-updated',
       handlePostsUpdated as EventListener
+    );
+    window.addEventListener(
+      'kyrub-social-publish-retry',
+      handleRetry as EventListener
     );
 
     const unsubscribeAuth = onAuthStateChanged(auth, user => {
@@ -295,6 +381,7 @@ export function SocialPublishingBridge() {
       lastPublishedCloudSignature = '';
       knownCloudPostIds.clear();
       pendingCloudPostIds.clear();
+      failedCloudPostIds.clear();
 
       if (!user) return;
 
@@ -341,6 +428,7 @@ export function SocialPublishingBridge() {
 
           for (const snapshotDocument of snapshot.docs) {
             knownCloudPostIds.add(snapshotDocument.id);
+            failedCloudPostIds.delete(snapshotDocument.id);
             const data = snapshotDocument.data() as Record<string, unknown>;
             const post = cloudDocumentToLocalPost(snapshotDocument.id, data);
             if (post) nextOwnPosts.push(post);
@@ -362,6 +450,10 @@ export function SocialPublishingBridge() {
       window.removeEventListener(
         'kyrub-social-posts-updated',
         handlePostsUpdated as EventListener
+      );
+      window.removeEventListener(
+        'kyrub-social-publish-retry',
+        handleRetry as EventListener
       );
       unsubscribeAuth();
       unsubscribePosts();
