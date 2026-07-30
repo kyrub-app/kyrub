@@ -99,7 +99,10 @@ describe('profile social hub navigation', () => {
     assert.match(profileSource, /const MAX_ACTIVE_STATUSES = 9/);
     assert.match(profileSource, /const STATUS_TTL_MS = 24 \* 60 \* 60 \* 1000/);
     assert.match(profileSource, /Você já possui 9 status ativos/);
-    assert.match(profileSource, /sendToSquare \? 'public' : 'connections'/);
+    assert.match(
+      profileSource,
+      /publicationType === 'status'[\s\S]{0,180}\? sendToSquare[\s\S]{0,80}\? 'public'[\s\S]{0,80}: 'connections'/
+    );
     assert.match(publishingSource, /visibility = isStatus/);
     assert.match(feedHookSource, /where\('visibility', '==', 'public'\)/);
     assert.match(feedHookSource, /where\('audienceIds', 'array-contains', user\.uid\)/);
