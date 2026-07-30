@@ -89,11 +89,12 @@ const cloudDocumentToLocalPost = (
   const user = readString(data.authorName);
   if (!authorId || !user) return null;
 
-  const visibility = data.visibility === 'connections'
-    ? 'connections'
-    : data.visibility === 'private'
-      ? 'private'
-      : 'public';
+  const visibility =
+    data.visibility === 'connections'
+      ? 'connections'
+      : data.visibility === 'private'
+        ? 'private'
+        : 'public';
 
   return {
     id: readString(data.sourcePostId) || id,
@@ -118,7 +119,8 @@ const writeCloudPost = async (
   post: LocalSocialPost,
   connectedAudienceIds: string[]
 ) => {
-  const sourcePostId = post.id || `${post.publicationType ?? 'feed'}-${Date.now()}`;
+  const sourcePostId =
+    post.id || `${post.publicationType ?? 'feed'}-${Date.now()}`;
   const postId = cloudPostId(user.uid, sourcePostId);
   const createdAtIso = post.createdAt || new Date().toISOString();
   const mediaUrls = await uploadPostMedia(
@@ -127,25 +129,40 @@ const writeCloudPost = async (
     Array.isArray(post.mediaUrls) ? post.mediaUrls : []
   );
   const isStatus = post.publicationType === 'status';
+  const taggedUserIds = Array.isArray(post.taggedUserIds)
+    ? post.taggedUserIds.slice(0, 30)
+    : [];
+  const visibility = isStatus
+    ? post.visibility === 'public'
+      ? 'public'
+      : 'connections'
+    : post.visibility === 'private'
+      ? 'private'
+      : 'public';
   const audienceIds = isStatus
     ? [...new Set([user.uid, ...connectedAudienceIds])].slice(0, 500)
-    : [];
+    : visibility === 'private'
+      ? [...new Set([user.uid, ...taggedUserIds])].slice(0, 500)
+      : [...new Set(taggedUserIds)].slice(0, 30);
 
   await setDoc(doc(db, 'social_posts', postId), {
     postId,
     sourcePostId,
     authorId: user.uid,
     authorName:
-      post.user || user.displayName || user.email?.split('@')[0] || 'Usuário Kyrub',
+      post.user ||
+      user.displayName ||
+      user.email?.split('@')[0] ||
+      'Usuário Kyrub',
     authorAvatar: post.avatar || user.photoURL || '',
     content: post.content || '',
     publicationType: isStatus ? 'status' : 'feed',
-    taggedUsers: Array.isArray(post.taggedUsers) ? post.taggedUsers.slice(0, 30) : [],
-    taggedUserIds: Array.isArray(post.taggedUserIds)
-      ? post.taggedUserIds.slice(0, 30)
+    taggedUsers: Array.isArray(post.taggedUsers)
+      ? post.taggedUsers.slice(0, 30)
       : [],
+    taggedUserIds,
     mediaUrls,
-    visibility: isStatus ? 'connections' : 'public',
+    visibility,
     audienceIds,
     createdAtIso,
     createdAt: serverTimestamp(),
@@ -221,7 +238,9 @@ export function SocialPublishingBridge() {
 
       for (const post of queuedLocalPosts) {
         if (post.authorId && post.authorId !== user.uid) continue;
-        if (post.publicationType === 'status' && !connectionsReadyFromServer) continue;
+        if (post.publicationType === 'status' && !connectionsReadyFromServer) {
+          continue;
+        }
         const sourcePostId = post.id || '';
         if (!sourcePostId) continue;
         const postId = cloudPostId(user.uid, sourcePostId);
