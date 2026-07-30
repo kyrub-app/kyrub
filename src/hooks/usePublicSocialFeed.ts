@@ -53,7 +53,10 @@ const formatRelativeTime = (isoValue: string): string => {
   const timestamp = Date.parse(isoValue);
   if (!Number.isFinite(timestamp)) return 'Agora mesmo';
 
-  const elapsedSeconds = Math.max(0, Math.floor((Date.now() - timestamp) / 1000));
+  const elapsedSeconds = Math.max(
+    0,
+    Math.floor((Date.now() - timestamp) / 1000)
+  );
   if (elapsedSeconds < 60) return 'Agora mesmo';
   const minutes = Math.floor(elapsedSeconds / 60);
   if (minutes < 60) return `${minutes} min`;
@@ -74,15 +77,17 @@ const mapPost = (
   const authorId = readString(data.authorId);
   const user = readString(data.authorName) || readString(data.user);
   const publicationType = data.publicationType === 'status' ? 'status' : 'feed';
-  const visibility = data.visibility === 'connections'
-    ? 'connections'
-    : data.visibility === 'private'
-      ? 'private'
-      : 'public';
-  if (!authorId || !user || visibility === 'private') return null;
+  const visibility =
+    data.visibility === 'connections'
+      ? 'connections'
+      : data.visibility === 'private'
+        ? 'private'
+        : 'public';
+  if (!authorId || !user) return null;
 
   const createdAt =
-    readString(data.createdAtIso) || timestampToIso(data.createdAt, new Date().toISOString());
+    readString(data.createdAtIso) ||
+    timestampToIso(data.createdAt, new Date().toISOString());
 
   return {
     id,
@@ -124,12 +129,9 @@ const mapComment = (
   };
 };
 
-const mergePosts = (
-  publicPosts: SocialPost[],
-  connectionPosts: SocialPost[]
-): SocialPost[] => {
+const mergePosts = (...sources: SocialPost[][]): SocialPost[] => {
   const byId = new Map<string, SocialPost>();
-  for (const post of [...publicPosts, ...connectionPosts]) byId.set(post.id, post);
+  for (const post of sources.flat()) byId.set(post.id, post);
   return [...byId.values()].sort(
     (left, right) =>
       Date.parse(right.createdAt ?? '') - Date.parse(left.createdAt ?? '')
@@ -145,22 +147,26 @@ export function usePublicSocialFeed() {
 
   useEffect(() => {
     let unsubscribePublicPosts = () => undefined;
-    let unsubscribeConnectionPosts = () => undefined;
+    let unsubscribeAudiencePosts = () => undefined;
+    let unsubscribeOwnPosts = () => undefined;
     let unsubscribeLikes = () => undefined;
     let unsubscribeComments = () => undefined;
     let publicPosts: SocialPost[] = [];
-    let connectionPosts: SocialPost[] = [];
+    let audiencePosts: SocialPost[] = [];
+    let ownPosts: SocialPost[] = [];
     let publicReady = false;
-    let connectionsReady = false;
+    let audienceReady = false;
+    let ownReady = false;
 
     const publishPosts = () => {
-      setPosts(mergePosts(publicPosts, connectionPosts));
-      setLoading(!(publicReady && connectionsReady));
+      setPosts(mergePosts(publicPosts, audiencePosts, ownPosts));
+      setLoading(!(publicReady && audienceReady && ownReady));
     };
 
     const unsubscribeAuth = onAuthStateChanged(auth, user => {
       unsubscribePublicPosts();
-      unsubscribeConnectionPosts();
+      unsubscribeAudiencePosts();
+      unsubscribeOwnPosts();
       unsubscribeLikes();
       unsubscribeComments();
       setCurrentUserId(user?.uid ?? '');
@@ -168,9 +174,11 @@ export function usePublicSocialFeed() {
       setLikes([]);
       setComments([]);
       publicPosts = [];
-      connectionPosts = [];
+      audiencePosts = [];
+      ownPosts = [];
       publicReady = false;
-      connectionsReady = false;
+      audienceReady = false;
+      ownReady = false;
       setLoading(Boolean(user));
 
       if (!user) {
@@ -201,25 +209,51 @@ export function usePublicSocialFeed() {
         }
       );
 
-      unsubscribeConnectionPosts = onSnapshot(
+      unsubscribeAudiencePosts = onSnapshot(
         query(
           collection(db, 'social_posts'),
           where('audienceIds', 'array-contains', user.uid)
         ),
         snapshot => {
-          connectionPosts = snapshot.docs.flatMap(snapshotDocument => {
+          audiencePosts = snapshot.docs.flatMap(snapshotDocument => {
             const post = mapPost(
               snapshotDocument.id,
               snapshotDocument.data() as Record<string, unknown>
             );
             return post ? [post] : [];
           });
-          connectionsReady = true;
+          audienceReady = true;
           publishPosts();
         },
         error => {
-          console.warn('Não foi possível carregar os status das conexões.', error);
-          connectionsReady = true;
+          console.warn(
+            'Não foi possível carregar conteúdos destinados ao usuário.',
+            error
+          );
+          audienceReady = true;
+          publishPosts();
+        }
+      );
+
+      unsubscribeOwnPosts = onSnapshot(
+        query(
+          collection(db, 'social_posts'),
+          where('authorId', '==', user.uid)
+        ),
+        snapshot => {
+          ownPosts = snapshot.docs.flatMap(snapshotDocument => {
+            const post = mapPost(
+              snapshotDocument.id,
+              snapshotDocument.data() as Record<string, unknown>
+            );
+            return post ? [post] : [];
+          });
+          ownReady = true;
+          publishPosts();
+        },
+        error => {
+          console.warn('Não foi possível carregar a linha do tempo própria.', error);
+          ownReady = true;
           publishPosts();
         }
       );
@@ -270,7 +304,8 @@ export function usePublicSocialFeed() {
     return () => {
       unsubscribeAuth();
       unsubscribePublicPosts();
-      unsubscribeConnectionPosts();
+      unsubscribeAudiencePosts();
+      unsubscribeOwnPosts();
       unsubscribeLikes();
       unsubscribeComments();
     };

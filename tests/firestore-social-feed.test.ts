@@ -23,7 +23,9 @@ const OWNER_ID = 'social-owner';
 const VIEWER_ID = 'social-viewer';
 const STRANGER_ID = 'social-stranger';
 const POST_ID = `${OWNER_ID}__feed-123`;
+const PRIVATE_POST_ID = `${OWNER_ID}__feed-private`;
 const STATUS_ID = `${OWNER_ID}__status-123`;
+const PUBLIC_STATUS_ID = `${OWNER_ID}__status-public`;
 let environment: RulesTestEnvironment;
 
 const postPayload = (authorId = OWNER_ID) => ({
@@ -44,18 +46,31 @@ const postPayload = (authorId = OWNER_ID) => ({
   updatedAt: serverTimestamp(),
 });
 
-const statusPayload = () => ({
-  postId: STATUS_ID,
-  sourcePostId: 'status-123',
+const privatePostPayload = () => ({
+  ...postPayload(),
+  postId: PRIVATE_POST_ID,
+  sourcePostId: 'feed-private',
+  content: 'Publicação da linha do tempo com usuário marcado.',
+  taggedUsers: ['Visitante'],
+  taggedUserIds: [VIEWER_ID],
+  visibility: 'private',
+  audienceIds: [OWNER_ID, VIEWER_ID],
+});
+
+const statusPayload = (publicSquare = false) => ({
+  postId: publicSquare ? PUBLIC_STATUS_ID : STATUS_ID,
+  sourcePostId: publicSquare ? 'status-public' : 'status-123',
   authorId: OWNER_ID,
   authorName: 'Usuário Social',
   authorAvatar: '',
-  content: 'Status somente para conectados.',
+  content: publicSquare
+    ? 'Status enviado voluntariamente para a Praça.'
+    : 'Status somente para conectados.',
   publicationType: 'status',
   taggedUsers: [],
   taggedUserIds: [],
   mediaUrls: [],
-  visibility: 'connections',
+  visibility: publicSquare ? 'public' : 'connections',
   audienceIds: [OWNER_ID, VIEWER_ID],
   createdAtIso: '2026-07-25T12:00:00.000Z',
   createdAt: serverTimestamp(),
@@ -81,11 +96,9 @@ after(async () => {
   await environment.cleanup();
 });
 
-test('author publishes and another authenticated user queries the public feed', async () => {
+test('author opts a permanent publication into the public Praça feed', async () => {
   const owner = environment.authenticatedContext(OWNER_ID).firestore();
-  await assertSucceeds(
-    setDoc(doc(owner, 'social_posts', POST_ID), postPayload())
-  );
+  await assertSucceeds(setDoc(doc(owner, 'social_posts', POST_ID), postPayload()));
 
   const viewer = environment.authenticatedContext(VIEWER_ID).firestore();
   const snapshot = await assertSucceeds(
@@ -97,15 +110,16 @@ test('author publishes and another authenticated user queries the public feed', 
     )
   );
   if (snapshot.size !== 1) {
-    throw new Error(`Expected one social post, received ${snapshot.size}.`);
+    throw new Error(`Expected one public post, received ${snapshot.size}.`);
   }
 });
 
-test('status is readable by its audience and rejected for other users', async () => {
+test('private timeline publication is readable by author and tagged audience only', async () => {
   const owner = environment.authenticatedContext(OWNER_ID).firestore();
   await assertSucceeds(
-    setDoc(doc(owner, 'social_posts', STATUS_ID), statusPayload())
+    setDoc(doc(owner, 'social_posts', PRIVATE_POST_ID), privatePostPayload())
   );
+  await assertSucceeds(getDoc(doc(owner, 'social_posts', PRIVATE_POST_ID)));
 
   const viewer = environment.authenticatedContext(VIEWER_ID).firestore();
   const audienceSnapshot = await assertSucceeds(
@@ -117,21 +131,53 @@ test('status is readable by its audience and rejected for other users', async ()
     )
   );
   if (audienceSnapshot.size !== 1) {
-    throw new Error(`Expected one connection status, received ${audienceSnapshot.size}.`);
+    throw new Error(`Expected one tagged post, received ${audienceSnapshot.size}.`);
   }
-  await assertSucceeds(getDoc(doc(viewer, 'social_posts', STATUS_ID)));
+  await assertSucceeds(getDoc(doc(viewer, 'social_posts', PRIVATE_POST_ID)));
+
+  const stranger = environment.authenticatedContext(STRANGER_ID).firestore();
+  await assertFails(getDoc(doc(stranger, 'social_posts', PRIVATE_POST_ID)));
+});
+
+test('status stays connection scoped unless the author sends it to Praça', async () => {
+  const owner = environment.authenticatedContext(OWNER_ID).firestore();
+  await assertSucceeds(
+    setDoc(doc(owner, 'social_posts', STATUS_ID), statusPayload(false))
+  );
+  await assertSucceeds(
+    setDoc(doc(owner, 'social_posts', PUBLIC_STATUS_ID), statusPayload(true))
+  );
+
+  const viewer = environment.authenticatedContext(VIEWER_ID).firestore();
+  const audienceSnapshot = await assertSucceeds(
+    getDocs(
+      query(
+        collection(viewer, 'social_posts'),
+        where('audienceIds', 'array-contains', VIEWER_ID)
+      )
+    )
+  );
+  if (audienceSnapshot.size !== 2) {
+    throw new Error(`Expected two audience statuses, received ${audienceSnapshot.size}.`);
+  }
 
   const stranger = environment.authenticatedContext(STRANGER_ID).firestore();
   await assertFails(getDoc(doc(stranger, 'social_posts', STATUS_ID)));
+  await assertSucceeds(getDoc(doc(stranger, 'social_posts', PUBLIC_STATUS_ID)));
 });
 
-test('feed and status visibility shapes cannot be mixed', async () => {
+test('publication visibility and audience shapes cannot be forged', async () => {
   const owner = environment.authenticatedContext(OWNER_ID).firestore();
   await assertFails(
+    setDoc(doc(owner, 'social_posts', PRIVATE_POST_ID), {
+      ...privatePostPayload(),
+      audienceIds: [OWNER_ID],
+    })
+  );
+  await assertFails(
     setDoc(doc(owner, 'social_posts', STATUS_ID), {
-      ...statusPayload(),
-      visibility: 'public',
-      audienceIds: [],
+      ...statusPayload(false),
+      visibility: 'private',
     })
   );
   await assertFails(
@@ -148,6 +194,35 @@ test('users cannot publish content under another author identity', async () => {
   await assertFails(
     setDoc(doc(viewer, 'social_posts', POST_ID), postPayload(OWNER_ID))
   );
+});
+
+test('viewer reports a publication once and only sees their own report', async () => {
+  await environment.withSecurityRulesDisabled(async context => {
+    await setDoc(doc(context.firestore(), 'social_posts', POST_ID), {
+      ...postPayload(),
+      createdAt: new Date('2026-07-25T12:00:00.000Z'),
+      updatedAt: new Date('2026-07-25T12:00:00.000Z'),
+    });
+  });
+
+  const viewer = environment.authenticatedContext(VIEWER_ID).firestore();
+  const reportId = `${POST_ID}__${VIEWER_ID}`;
+  const reportReference = doc(viewer, 'social_post_reports', reportId);
+  const reportPayload = {
+    reportId,
+    postId: POST_ID,
+    reporterId: VIEWER_ID,
+    authorId: OWNER_ID,
+    reason: 'user_report',
+    status: 'pending',
+    createdAt: serverTimestamp(),
+  };
+  await assertSucceeds(setDoc(reportReference, reportPayload));
+  await assertSucceeds(getDoc(reportReference));
+  await assertFails(setDoc(reportReference, reportPayload));
+
+  const owner = environment.authenticatedContext(OWNER_ID).firestore();
+  await assertFails(getDoc(doc(owner, 'social_post_reports', reportId)));
 });
 
 test('viewer can like once and remove their own like', async () => {
@@ -195,7 +270,7 @@ test('viewer comments and only the comment author may delete it', async () => {
     })
   );
 
-  const stranger = environment.authenticatedContext('stranger').firestore();
+  const stranger = environment.authenticatedContext(STRANGER_ID).firestore();
   await assertFails(
     deleteDoc(doc(stranger, 'social_post_comments', 'comment-1'))
   );
