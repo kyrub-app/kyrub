@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import { useChatMessages } from '../../hooks/useChatMessages';
 import { auth } from '../../utils/firebase';
 
@@ -19,6 +19,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
   chatMessageText,
   setChatMessageText
 }) => {
+  const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const isChatEnabled = Boolean(
     isOpen
     && selectedChatUser
@@ -38,7 +39,17 @@ export const ChatModal: React.FC<ChatModalProps> = ({
     enabled: isChatEnabled
   });
 
+  useEffect(() => {
+    if (!isOpen) return;
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+  }, [isOpen, messages.length]);
+
   if (!isOpen || !selectedChatUser) return null;
+
+  const closeChat = () => {
+    onClose();
+    setSelectedChatUser(null);
+  };
 
   const handleSendChatMessage = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -53,41 +64,57 @@ export const ChatModal: React.FC<ChatModalProps> = ({
     }
   };
 
+  const contactInitial = String(selectedChatUser.name || 'K')
+    .trim()
+    .charAt(0)
+    .toLocaleUpperCase('pt-BR');
+
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in" id="chat-modal">
-      <div className="bg-slate-900 border border-slate-800 w-full max-w-md rounded-3xl shadow-2xl relative flex flex-col h-[500px] overflow-hidden animate-scale-up text-xs">
-        {/* Header */}
-        <div className="flex items-center justify-between bg-slate-950 p-4 border-b border-slate-800/60 shrink-0">
-          <div className="flex items-center gap-3">
-            <div className="relative">
+    <div
+      className="fixed inset-0 z-[170] flex items-stretch justify-center bg-slate-950/95 backdrop-blur-md sm:items-center sm:p-4"
+      id="chat-modal"
+      role="dialog"
+      aria-modal="true"
+      aria-label={`Conversa com ${selectedChatUser.name}`}
+    >
+      <div className="flex h-[100dvh] w-full flex-col overflow-hidden bg-slate-900 text-xs shadow-2xl sm:h-[min(720px,92dvh)] sm:max-w-md sm:rounded-3xl sm:border sm:border-slate-800">
+        <div className="flex shrink-0 items-center justify-between border-b border-slate-800/80 bg-slate-950 px-4 pb-4 pt-[max(1rem,env(safe-area-inset-top))] sm:py-4">
+          <div className="flex min-w-0 items-center gap-3">
+            {selectedChatUser.avatar ? (
               <img
                 src={selectedChatUser.avatar}
                 alt={selectedChatUser.name}
-                className="w-10 h-10 rounded-full object-cover border border-slate-800"
+                className="h-11 w-11 shrink-0 rounded-full border border-slate-800 object-cover"
                 referrerPolicy="no-referrer"
               />
-            </div>
-            <div>
-              <h4 className="text-xs font-black text-white uppercase tracking-wide">{selectedChatUser.name}</h4>
-              <span className="text-[8px] font-mono text-slate-500 uppercase">{selectedChatUser.role}</span>
+            ) : (
+              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-slate-800 bg-orange-500 text-sm font-black text-slate-950">
+                {contactInitial}
+              </span>
+            )}
+            <div className="min-w-0">
+              <h4 className="truncate text-sm font-black text-white">
+                {selectedChatUser.name}
+              </h4>
+              <span className="block truncate text-[9px] font-mono uppercase text-slate-500">
+                {selectedChatUser.role || 'Conectado no Kyrub'}
+              </span>
             </div>
           </div>
           <button
-            onClick={() => {
-              onClose();
-              setSelectedChatUser(null);
-            }}
-            className="text-slate-500 hover:text-slate-300 font-bold bg-slate-950 w-7 h-7 rounded-full flex items-center justify-center text-xs cursor-pointer"
+            type="button"
+            onClick={closeChat}
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-slate-800 bg-slate-900 text-lg text-slate-400"
+            aria-label="Fechar conversa"
           >
-            ✕
+            ×
           </button>
         </div>
 
-        {/* Chat History Messages Container */}
-        <div className="flex-1 p-4 overflow-y-auto bg-slate-950/40 space-y-3.5 flex flex-col-reverse">
+        <div className="flex-1 overflow-y-auto bg-slate-950/40 p-4">
           <div className="space-y-3.5">
             {isLoading && (
-              <div className="text-center py-4 text-slate-500 text-xs italic">
+              <div className="py-4 text-center text-xs italic text-slate-500">
                 Carregando mensagens...
               </div>
             )}
@@ -114,16 +141,25 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                 : 'Enviando...';
 
               return (
-                <div key={message.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'} animate-fade-in`}>
-                  <div className={`max-w-[80%] rounded-2xl p-3 space-y-1 ${
-                    isMe
-                      ? 'bg-orange-600 text-white rounded-tr-none'
-                      : 'bg-slate-850 text-slate-200 rounded-tl-none border border-slate-800/80'
-                  }`}>
-                    <p className="text-xs leading-relaxed break-words">{message.text}</p>
-                    <span className={`text-[8px] font-mono block text-right ${
-                      isMe ? 'text-orange-200' : 'text-slate-500'
-                    }`}>
+                <div
+                  key={message.id}
+                  className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}
+                >
+                  <div
+                    className={`max-w-[82%] space-y-1 rounded-2xl p-3 ${
+                      isMe
+                        ? 'rounded-tr-none bg-orange-600 text-white'
+                        : 'rounded-tl-none border border-slate-800/80 bg-slate-900 text-slate-200'
+                    }`}
+                  >
+                    <p className="break-words text-xs leading-relaxed">
+                      {message.text}
+                    </p>
+                    <span
+                      className={`block text-right font-mono text-[8px] ${
+                        isMe ? 'text-orange-200' : 'text-slate-500'
+                      }`}
+                    >
                       {messageTime}
                     </span>
                   </div>
@@ -132,31 +168,32 @@ export const ChatModal: React.FC<ChatModalProps> = ({
             })}
 
             {!isLoading && isChatEnabled && messages.length === 0 && (
-              <div className="text-center py-12 text-slate-500 text-xs italic">
+              <div className="py-12 text-center text-xs italic text-slate-500">
                 Nenhuma mensagem anterior. Digite algo abaixo para iniciar a conversa.
               </div>
             )}
+
+            <div ref={messagesEndRef} />
           </div>
         </div>
 
-        {/* Bottom Message Input Form */}
         <form
           onSubmit={handleSendChatMessage}
-          className="p-3 bg-slate-950 border-t border-slate-800/80 shrink-0 flex gap-2"
+          className="flex shrink-0 gap-2 border-t border-slate-800/80 bg-slate-950 px-3 pt-3 pb-[max(.75rem,env(safe-area-inset-bottom))]"
         >
           <input
             type="text"
             value={chatMessageText}
-            onChange={(event) => setChatMessageText(event.target.value)}
+            onChange={event => setChatMessageText(event.target.value.slice(0, 2000))}
             placeholder="Escreva uma mensagem privada..."
-            className="flex-1 bg-slate-900 border border-slate-800 rounded-xl px-3.5 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-orange-500 font-sans"
+            className="min-w-0 flex-1 rounded-xl border border-slate-800 bg-slate-900 px-3.5 py-3 text-xs text-white placeholder-slate-500 outline-none focus:border-orange-500"
           />
           <button
             type="submit"
             disabled={!isChatEnabled || isSending || !chatMessageText.trim()}
-            className="px-4 py-2 bg-orange-600 hover:bg-orange-500 disabled:bg-slate-800 disabled:text-slate-500 disabled:cursor-not-allowed text-white font-black rounded-xl text-xs uppercase tracking-wider transition-colors cursor-pointer"
+            className="min-w-20 rounded-xl bg-orange-600 px-4 py-3 text-xs font-black uppercase tracking-wider text-white transition-colors hover:bg-orange-500 disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-500"
           >
-            {isSending ? 'Enviando...' : 'Enviar'}
+            {isSending ? 'Enviando' : 'Enviar'}
           </button>
         </form>
       </div>
