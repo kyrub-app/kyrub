@@ -39,12 +39,17 @@ export type KyrubAiConsultantResponse = {
   capabilities: KyrubAiConsultantCapabilities;
 };
 
+export type KyrubAiConsultantErrorCode =
+  | 'AUTH_REQUIRED'
+  | 'AUTH_UNAVAILABLE'
+  | 'INVALID_REQUEST'
+  | 'AI_NOT_CONFIGURED'
+  | 'AI_MODEL_UNAVAILABLE'
+  | 'AI_QUOTA_EXCEEDED'
+  | 'AI_UNAVAILABLE'
+  | 'METHOD_NOT_ALLOWED';
+
 export type KyrubAiConsultantErrorResponse = {
   error: string;
-  code:
-    | 'AUTH_REQUIRED'
-    | 'INVALID_REQUEST'
-    | 'AI_NOT_CONFIGURED'
-    | 'AI_UNAVAILABLE'
-    | 'METHOD_NOT_ALLOWED';
+  code: KyrubAiConsultantErrorCode;
 };
