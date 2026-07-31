@@ -1,6 +1,13 @@
-import { useEffect, useMemo, useState } from 'react';
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+} from 'react';
 import { createPortal } from 'react-dom';
 import {
+  ArrowLeft,
   BookOpen,
   Bot,
   Brain,
@@ -8,82 +15,125 @@ import {
   Dumbbell,
   History,
   ImagePlus,
+  LoaderCircle,
+  MessageSquareText,
   PackagePlus,
   Plus,
+  Send,
+  ShieldCheck,
   Sparkles,
   Store,
+  Trash2,
 } from 'lucide-react';
+import { onAuthStateChanged, type User } from 'firebase/auth';
+import { auth } from '../utils/firebase';
+import { requestKyrubAiConsultant } from '../ai/consultantClient';
+import {
+  createKyrubAiConversation,
+  createKyrubAiMessage,
+  loadKyrubAiConversations,
+  saveKyrubAiConversations,
+  titleFromFirstRequest,
+  type KyrubAiLocalConversation,
+} from '../ai/conversationStore';
 
-type WorkspaceCard = {
+const MAX_VISIBLE_RECENT_CONVERSATIONS = 6;
+
+type WorkspaceTemplate = {
   id: string;
   title: string;
   description: string;
+  starterPrompt: string;
   icon: typeof Bot;
-  status: string;
 };
 
-const WORKSPACE_CARDS: WorkspaceCard[] = [
+const WORKSPACE_TEMPLATES: WorkspaceTemplate[] = [
   {
     id: 'store',
     title: 'Criar minha loja',
-    description: 'Perfil comercial, ambientes, publicação e primeiros passos.',
+    description: 'Organize perfil comercial, proposta, ambientes e primeiros passos.',
+    starterPrompt: 'Quero criar minha loja no Kyrub. Me ajude a organizar as informações necessárias.',
     icon: Store,
-    status: 'Estrutura preparada',
   },
   {
     id: 'products',
     title: 'Cadastrar produtos',
-    description: 'Descrição, preço, imagens, ficha técnica e estoque.',
+    description: 'Prepare descrição, preço, ficha técnica, imagens e estoque.',
+    starterPrompt: 'Quero cadastrar um produto. Me ajude a levantar todos os dados necessários.',
     icon: PackagePlus,
-    status: 'Aguardando agente',
   },
   {
     id: 'content',
     title: 'Conteúdo e imagens',
-    description: 'Publicações, legendas e materiais visuais para o feed.',
+    description: 'Planeje publicações, legendas e materiais para o feed.',
+    starterPrompt: 'Quero criar conteúdo para uma publicação no Kyrub. Me ajude a montar a ideia.',
     icon: ImagePlus,
-    status: 'Aguardando agente',
   },
   {
     id: 'work',
     title: 'Trabalho e organização',
-    description: 'Tarefas, planejamento, documentos e acompanhamento de projetos.',
+    description: 'Organize tarefas, notas, documentos e projetos.',
+    starterPrompt: 'Preciso organizar meu trabalho e minhas tarefas. Por onde começamos?',
     icon: BriefcaseBusiness,
-    status: 'Aguardando agente',
   },
   {
     id: 'training',
     title: 'Treino e hábitos',
-    description: 'Rotinas pessoais e acompanhamento de metas de atividade.',
+    description: 'Converse sobre rotinas, objetivos e acompanhamento de hábitos.',
+    starterPrompt: 'Quero organizar uma rotina de treino e hábitos adequada aos meus objetivos.',
     icon: Dumbbell,
-    status: 'Aguardando agente',
   },
   {
     id: 'study',
     title: 'Estudos e história',
-    description: 'Assuntos de estudo organizados em conversas independentes.',
+    description: 'Crie um caminho de estudo e mantenha assuntos separados.',
+    starterPrompt: 'Quero estudar um assunto novo. Me ajude a criar um plano simples.',
     icon: History,
-    status: 'Aguardando agente',
   },
   {
     id: 'wellbeing',
     title: 'Bem-estar',
-    description: 'Reflexão e organização emocional, sem substituir atendimento profissional.',
+    description: 'Reflexão e organização emocional, sem substituir profissionais.',
+    starterPrompt: 'Quero organizar melhor meus pensamentos e minha rotina de bem-estar.',
     icon: Brain,
-    status: 'Aguardando agente',
   },
   {
-    id: 'learning',
+    id: 'general',
     title: 'Novo assunto',
-    description: 'Espaço para iniciar qualquer outro projeto com a Kyrub I.A.',
+    description: 'Inicie qualquer outra solicitação com o Consultor Kyrub.',
+    starterPrompt: '',
     icon: BookOpen,
-    status: 'Em preparação',
   },
 ];
 
+const relativeConversationDate = (value: string): string => {
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp)) return '';
+  const difference = Date.now() - timestamp;
+  const minutes = Math.max(0, Math.floor(difference / 60_000));
+  if (minutes < 1) return 'agora';
+  if (minutes < 60) return `${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} h`;
+  const days = Math.floor(hours / 24);
+  return `${days} d`;
+};
+
 export function KyrubAiWorkspaceBridge() {
   const [host, setHost] = useState<HTMLElement | null>(null);
-  const [selectedCard, setSelectedCard] = useState<WorkspaceCard | null>(null);
+  const [user, setUser] = useState<User | null>(auth.currentUser);
+  const [hydratedUid, setHydratedUid] = useState('');
+  const [conversations, setConversations] = useState<KyrubAiLocalConversation[]>([]);
+  const [activeConversationId, setActiveConversationId] = useState('');
+  const [draft, setDraft] = useState('');
+  const [sending, setSending] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
+  const [failedConversationId, setFailedConversationId] = useState('');
+
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => onAuthStateChanged(auth, setUser), []);
 
   useEffect(() => {
     let currentContainer: HTMLElement | null = null;
@@ -118,7 +168,11 @@ export function KyrubAiWorkspaceBridge() {
 
     sync();
     const observer = new MutationObserver(sync);
-    observer.observe(document.body, { childList: true, subtree: true, characterData: true });
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+    });
     const interval = window.setInterval(sync, 500);
 
     return () => {
@@ -130,84 +184,442 @@ export function KyrubAiWorkspaceBridge() {
     };
   }, []);
 
-  const activeCards = useMemo(() => WORKSPACE_CARDS, []);
-  const SelectedCardIcon = selectedCard?.icon ?? Bot;
+  useEffect(() => {
+    abortControllerRef.current?.abort();
+    setSending(false);
+    setErrorMessage('');
+    setFailedConversationId('');
+    setActiveConversationId('');
+
+    if (!user) {
+      setConversations([]);
+      setHydratedUid('');
+      return;
+    }
+
+    setConversations(loadKyrubAiConversations(localStorage, user.uid));
+    setHydratedUid(user.uid);
+  }, [user?.uid]);
+
+  useEffect(() => {
+    if (!user || hydratedUid !== user.uid) return;
+    saveKyrubAiConversations(localStorage, user.uid, conversations);
+  }, [conversations, hydratedUid, user]);
+
+  const activeConversation = useMemo(
+    () => conversations.find(item => item.id === activeConversationId) ?? null,
+    [activeConversationId, conversations]
+  );
+
+  const recentConversations = useMemo(
+    () => conversations.slice(0, MAX_VISIBLE_RECENT_CONVERSATIONS),
+    [conversations]
+  );
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+  }, [activeConversation?.messages.length, sending]);
+
+  const updateConversation = (
+    conversationId: string,
+    updater: (conversation: KyrubAiLocalConversation) => KyrubAiLocalConversation
+  ) => {
+    setConversations(current =>
+      current
+        .map(conversation =>
+          conversation.id === conversationId
+            ? updater(conversation)
+            : conversation
+        )
+        .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
+    );
+  };
+
+  const requestReply = async (
+    conversation: KyrubAiLocalConversation,
+    messages = conversation.messages
+  ) => {
+    if (sending) return;
+    abortControllerRef.current?.abort();
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+    setSending(true);
+    setErrorMessage('');
+    setFailedConversationId('');
+
+    try {
+      const result = await requestKyrubAiConsultant(
+        {
+          conversationId: conversation.id,
+          topic: conversation.topic,
+          messages,
+        },
+        controller.signal
+      );
+      const assistantMessage = createKyrubAiMessage('assistant', result.reply);
+      updateConversation(conversation.id, current => ({
+        ...current,
+        updatedAt: new Date().toISOString(),
+        messages: [...current.messages, assistantMessage],
+      }));
+    } catch (error) {
+      if (controller.signal.aborted) return;
+      const message = error instanceof Error
+        ? error.message
+        : 'O Consultor Kyrub está temporariamente indisponível.';
+      setErrorMessage(message);
+      setFailedConversationId(conversation.id);
+    } finally {
+      if (abortControllerRef.current === controller) {
+        abortControllerRef.current = null;
+        setSending(false);
+      }
+    }
+  };
+
+  const startConversation = (template?: WorkspaceTemplate) => {
+    const conversation = createKyrubAiConversation(
+      template?.title ?? 'Nova solicitação',
+      template?.title ?? 'Nova solicitação'
+    );
+    setConversations(current => [conversation, ...current]);
+    setActiveConversationId(conversation.id);
+    setDraft(template?.starterPrompt ?? '');
+    setErrorMessage('');
+    setFailedConversationId('');
+  };
+
+  const sendMessage = async (event?: FormEvent) => {
+    event?.preventDefault();
+    const content = draft.trim();
+    if (!content || sending) return;
+    if (!user) {
+      setErrorMessage('Faça login para conversar com o Consultor Kyrub.');
+      return;
+    }
+
+    let conversation = activeConversation;
+    if (!conversation) {
+      conversation = createKyrubAiConversation('Nova solicitação');
+      setConversations(current => [conversation as KyrubAiLocalConversation, ...current]);
+      setActiveConversationId(conversation.id);
+    }
+
+    const userMessage = createKyrubAiMessage('user', content);
+    const firstUserMessage = !conversation.messages.some(message => message.role === 'user');
+    const nextConversation: KyrubAiLocalConversation = {
+      ...conversation,
+      title: firstUserMessage
+        ? titleFromFirstRequest(content)
+        : conversation.title,
+      updatedAt: new Date().toISOString(),
+      messages: [...conversation.messages, userMessage],
+    };
+
+    setDraft('');
+    setConversations(current => {
+      const withoutCurrent = current.filter(item => item.id !== nextConversation.id);
+      return [nextConversation, ...withoutCurrent];
+    });
+    await requestReply(nextConversation, nextConversation.messages);
+  };
+
+  const retryLastRequest = () => {
+    if (!activeConversation || sending) return;
+    void requestReply(activeConversation, activeConversation.messages);
+  };
+
+  const deleteActiveConversation = () => {
+    if (!activeConversation) return;
+    abortControllerRef.current?.abort();
+    setConversations(current =>
+      current.filter(item => item.id !== activeConversation.id)
+    );
+    setActiveConversationId('');
+    setDraft('');
+    setErrorMessage('');
+    setFailedConversationId('');
+  };
+
   if (!host) return null;
 
   return createPortal(
-    <div className="space-y-5 animate-fade-in" id="kyrub-ai-workspace">
-      <section className="overflow-hidden rounded-3xl border border-violet-500/25 bg-gradient-to-br from-violet-950/80 via-slate-900 to-slate-950 p-5 shadow-2xl">
-        <div className="flex items-start gap-4">
-          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-violet-400/30 bg-violet-500/15 text-violet-300">
-            <Bot className="h-6 w-6" />
-          </div>
-          <div className="min-w-0 flex-1">
-            <span className="font-mono text-[9px] font-black uppercase tracking-[0.18em] text-violet-300">
-              Guia principal do aplicativo
-            </span>
-            <h2 className="mt-1 text-xl font-black text-white">Kyrub I.A</h2>
-            <p className="mt-2 text-[10px] leading-relaxed text-slate-400">
-              Este será o painel central dos assuntos, tarefas e projetos conduzidos com o agente do Kyrub. A organização por cards já está pronta; a execução inteligente será conectada em uma fase própria e segura.
-            </p>
-          </div>
-        </div>
-        <div className="mt-4 flex items-center gap-2 rounded-2xl border border-violet-500/20 bg-slate-950/60 p-3 text-[9px] leading-relaxed text-slate-400">
-          <Sparkles className="h-4 w-4 shrink-0 text-violet-300" />
-          Cada card manterá seu próprio histórico, objetivo, arquivos, decisões e próximos passos.
-        </div>
-      </section>
-
-      <section className="grid grid-cols-2 gap-3" aria-label="Assuntos da Kyrub I.A">
-        {activeCards.map(card => {
-          const Icon = card.icon;
-          return (
-            <button
-              key={card.id}
-              type="button"
-              onClick={() => setSelectedCard(card)}
-              className="group min-h-44 rounded-3xl border border-slate-800 bg-slate-900 p-4 text-left transition-all hover:border-violet-500/40 hover:bg-slate-900/80"
-            >
-              <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-800 bg-slate-950 text-violet-300 group-hover:border-violet-500/30">
-                <Icon className="h-5 w-5" />
-              </div>
-              <h3 className="mt-4 text-[11px] font-black uppercase leading-tight text-white">{card.title}</h3>
-              <p className="mt-2 line-clamp-3 text-[9px] leading-relaxed text-slate-500">{card.description}</p>
-              <span className="mt-3 block font-mono text-[8px] uppercase text-violet-300">{card.status}</span>
-            </button>
-          );
-        })}
-      </section>
-
-      <button
-        type="button"
-        onClick={() => setSelectedCard(WORKSPACE_CARDS[WORKSPACE_CARDS.length - 1] ?? null)}
-        className="flex w-full items-center justify-center gap-2 rounded-2xl border border-dashed border-violet-500/35 bg-violet-500/5 py-4 text-[10px] font-black uppercase text-violet-300"
-      >
-        <Plus className="h-4 w-4" />
-        Novo assunto com a Kyrub I.A
-      </button>
-
-      {selectedCard && (
-        <div className="fixed inset-0 z-[125] flex items-end justify-center bg-slate-950/90 backdrop-blur-md sm:items-center sm:p-4">
-          <section className="w-full max-w-md rounded-t-3xl border border-slate-800 bg-slate-900 p-5 shadow-2xl sm:rounded-3xl">
-            <div className="flex items-start gap-3">
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-violet-500/15 text-violet-300">
-                <SelectedCardIcon className="h-5 w-5" />
+    <div className="animate-fade-in" id="kyrub-ai-workspace">
+      {!activeConversation ? (
+        <div className="space-y-5">
+          <section className="overflow-hidden rounded-3xl border border-violet-500/25 bg-gradient-to-br from-violet-950/90 via-slate-900 to-slate-950 p-5 shadow-2xl">
+            <div className="flex items-start gap-4">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-violet-400/30 bg-violet-500/15 text-violet-300">
+                <Bot className="h-6 w-6" />
               </div>
               <div className="min-w-0 flex-1">
-                <span className="font-mono text-[8px] font-black uppercase text-violet-300">Kyrub I.A · Estrutura inicial</span>
-                <h3 className="mt-1 text-base font-black text-white">{selectedCard.title}</h3>
-                <p className="mt-2 text-[10px] leading-relaxed text-slate-400">{selectedCard.description}</p>
+                <span className="text-xs font-black uppercase tracking-wider text-violet-300">
+                  Consultor Kyrub
+                </span>
+                <h2 className="mt-1 text-2xl font-black text-white">
+                  Em que posso ajudar hoje?
+                </h2>
+                <p className="mt-2 text-sm leading-relaxed text-slate-400">
+                  Faça sua solicitação em linguagem natural. Nesta primeira fase, o Consultor conversa, orienta e prepara planos sem alterar dados do aplicativo.
+                </p>
               </div>
             </div>
-            <div className="mt-5 rounded-2xl border border-amber-500/20 bg-amber-500/5 p-4 text-[10px] leading-relaxed text-amber-200">
-              O card está preparado para receber o agente, mas ainda não executa ações nem cria conteúdo automaticamente. Isso evita simular uma capacidade que ainda não foi conectada.
+
+            <form onSubmit={sendMessage} className="mt-5">
+              <textarea
+                value={draft}
+                onChange={event => setDraft(event.target.value.slice(0, 4_000))}
+                placeholder="Ex.: Quero criar minha loja de doces e preciso organizar os primeiros passos."
+                rows={4}
+                className="w-full resize-none rounded-2xl border border-slate-700 bg-slate-950/80 px-4 py-4 text-base leading-relaxed text-white outline-none placeholder:text-slate-600 focus:border-violet-500/60"
+              />
+              <div className="mt-3 flex items-center justify-between gap-3">
+                <span className="text-xs text-slate-500">
+                  Histórico salvo somente neste dispositivo nesta fase.
+                </span>
+                <button
+                  type="submit"
+                  disabled={!draft.trim() || sending || !user}
+                  className="flex shrink-0 items-center gap-2 rounded-xl bg-violet-500 px-5 py-3 text-sm font-black text-white disabled:opacity-50"
+                >
+                  <Send className="h-4 w-4" />
+                  Enviar
+                </button>
+              </div>
+            </form>
+
+            {!user && (
+              <p className="mt-3 rounded-2xl border border-amber-500/25 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
+                Entre com sua conta para iniciar uma conversa.
+              </p>
+            )}
+          </section>
+
+          <section className="grid grid-cols-3 gap-2" aria-label="Capacidades atuais da Kyrub I.A">
+            <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-3 text-center">
+              <MessageSquareText className="mx-auto h-5 w-5 text-emerald-300" />
+              <strong className="mt-2 block text-xs text-white">Texto ativo</strong>
             </div>
-            <button type="button" onClick={() => setSelectedCard(null)} className="mt-4 w-full rounded-xl bg-violet-500 py-3 text-[9px] font-black uppercase text-white">
-              Voltar ao painel
-            </button>
+            <div className="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-3 text-center">
+              <ShieldCheck className="mx-auto h-5 w-5 text-amber-300" />
+              <strong className="mt-2 block text-xs text-white">Sem ações</strong>
+            </div>
+            <div className="rounded-2xl border border-slate-700 bg-slate-900 p-3 text-center">
+              <Sparkles className="mx-auto h-5 w-5 text-violet-300" />
+              <strong className="mt-2 block text-xs text-white">Voz depois</strong>
+            </div>
+          </section>
+
+          {recentConversations.length > 0 && (
+            <section>
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <span className="text-xs font-black uppercase text-violet-300">
+                    Continuar
+                  </span>
+                  <h3 className="text-lg font-black text-white">Conversas recentes</h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => startConversation()}
+                  className="flex items-center gap-2 rounded-xl border border-violet-500/30 bg-violet-500/10 px-3 py-2 text-xs font-black text-violet-200"
+                >
+                  <Plus className="h-4 w-4" />
+                  Nova
+                </button>
+              </div>
+              <div className="mt-3 grid grid-cols-2 gap-3">
+                {recentConversations.map(conversation => (
+                  <button
+                    key={conversation.id}
+                    type="button"
+                    onClick={() => {
+                      setActiveConversationId(conversation.id);
+                      setDraft('');
+                      setErrorMessage('');
+                      setFailedConversationId('');
+                    }}
+                    className="min-h-32 rounded-3xl border border-slate-800 bg-slate-900 p-4 text-left"
+                  >
+                    <MessageSquareText className="h-5 w-5 text-violet-300" />
+                    <h4 className="mt-3 line-clamp-2 text-sm font-black text-white">
+                      {conversation.title}
+                    </h4>
+                    <div className="mt-2 flex items-center justify-between gap-2 text-xs text-slate-500">
+                      <span>{conversation.messages.length} mensagens</span>
+                      <span>{relativeConversationDate(conversation.updatedAt)}</span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </section>
+          )}
+
+          <section>
+            <span className="text-xs font-black uppercase text-violet-300">
+              Começar por um assunto
+            </span>
+            <h3 className="mt-1 text-lg font-black text-white">
+              O Consultor acompanha o contexto
+            </h3>
+            <div className="mt-3 grid grid-cols-2 gap-3">
+              {WORKSPACE_TEMPLATES.map(template => {
+                const Icon = template.icon;
+                return (
+                  <button
+                    key={template.id}
+                    type="button"
+                    onClick={() => startConversation(template)}
+                    className="group min-h-40 rounded-3xl border border-slate-800 bg-slate-900 p-4 text-left transition-colors hover:border-violet-500/40"
+                  >
+                    <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-800 bg-slate-950 text-violet-300">
+                      <Icon className="h-5 w-5" />
+                    </div>
+                    <h4 className="mt-4 text-sm font-black text-white">
+                      {template.title}
+                    </h4>
+                    <p className="mt-2 line-clamp-3 text-xs leading-relaxed text-slate-500">
+                      {template.description}
+                    </p>
+                  </button>
+                );
+              })}
+            </div>
           </section>
         </div>
+      ) : (
+        <section className="flex min-h-[70dvh] flex-col overflow-hidden rounded-3xl border border-slate-800 bg-slate-950 shadow-2xl">
+          <header className="flex items-center gap-3 border-b border-slate-800 px-3 py-3 sm:px-4">
+            <button
+              type="button"
+              onClick={() => {
+                abortControllerRef.current?.abort();
+                setActiveConversationId('');
+                setDraft('');
+                setErrorMessage('');
+                setFailedConversationId('');
+              }}
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-slate-800 bg-slate-900 text-slate-300"
+              aria-label="Voltar às conversas"
+            >
+              <ArrowLeft className="h-5 w-5" />
+            </button>
+            <div className="min-w-0 flex-1">
+              <span className="text-xs font-black uppercase text-violet-300">
+                Consultor Kyrub
+              </span>
+              <h2 className="truncate text-base font-black text-white">
+                {activeConversation.title}
+              </h2>
+            </div>
+            <button
+              type="button"
+              onClick={deleteActiveConversation}
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-red-500/20 bg-red-500/5 text-red-300"
+              aria-label="Excluir conversa"
+              title="Excluir conversa deste dispositivo"
+            >
+              <Trash2 className="h-4 w-4" />
+            </button>
+          </header>
+
+          <div className="flex-1 space-y-4 overflow-y-auto p-4">
+            {activeConversation.messages.length === 0 && (
+              <div className="flex items-start gap-3">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl bg-violet-500/15 text-violet-300">
+                  <Bot className="h-5 w-5" />
+                </div>
+                <div className="max-w-[85%] rounded-2xl rounded-tl-md border border-slate-800 bg-slate-900 px-4 py-3 text-sm leading-relaxed text-slate-300">
+                  Olá! Conte o que você precisa. Vou ajudar a organizar a solicitação e os próximos passos.
+                </div>
+              </div>
+            )}
+
+            {activeConversation.messages.map(message => (
+              <div
+                key={message.id ?? `${message.role}-${message.createdAt}`}
+                className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
+              >
+                {message.role === 'assistant' && (
+                  <div className="mr-2 flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl bg-violet-500/15 text-violet-300">
+                    <Bot className="h-5 w-5" />
+                  </div>
+                )}
+                <div
+                  className={`max-w-[84%] whitespace-pre-wrap rounded-2xl px-4 py-3 text-sm leading-relaxed ${
+                    message.role === 'user'
+                      ? 'rounded-tr-md bg-violet-500 text-white'
+                      : 'rounded-tl-md border border-slate-800 bg-slate-900 text-slate-300'
+                  }`}
+                >
+                  {message.content}
+                </div>
+              </div>
+            ))}
+
+            {sending && (
+              <div className="flex items-start gap-3">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl bg-violet-500/15 text-violet-300">
+                  <Bot className="h-5 w-5" />
+                </div>
+                <div className="flex items-center gap-2 rounded-2xl rounded-tl-md border border-slate-800 bg-slate-900 px-4 py-3 text-sm text-slate-400">
+                  <LoaderCircle className="h-4 w-4 animate-spin text-violet-300" />
+                  Pensando...
+                </div>
+              </div>
+            )}
+
+            {errorMessage && (
+              <div className="rounded-2xl border border-red-500/25 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+                <p>{errorMessage}</p>
+                {failedConversationId === activeConversation.id && (
+                  <button
+                    type="button"
+                    onClick={retryLastRequest}
+                    disabled={sending}
+                    className="mt-3 rounded-xl border border-red-400/30 bg-red-500/10 px-3 py-2 text-xs font-black text-red-100 disabled:opacity-50"
+                  >
+                    Tentar novamente
+                  </button>
+                )}
+              </div>
+            )}
+            <div ref={messagesEndRef} />
+          </div>
+
+          <form onSubmit={sendMessage} className="border-t border-slate-800 p-3 sm:p-4">
+            <div className="flex items-end gap-2 rounded-2xl border border-slate-700 bg-slate-900 p-2 focus-within:border-violet-500/60">
+              <textarea
+                value={draft}
+                onChange={event => setDraft(event.target.value.slice(0, 4_000))}
+                onKeyDown={event => {
+                  if (event.key === 'Enter' && !event.shiftKey) {
+                    event.preventDefault();
+                    void sendMessage();
+                  }
+                }}
+                placeholder="Digite sua solicitação..."
+                rows={2}
+                className="min-h-12 flex-1 resize-none bg-transparent px-2 py-2 text-base leading-relaxed text-white outline-none placeholder:text-slate-600"
+              />
+              <button
+                type="submit"
+                disabled={!draft.trim() || sending}
+                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-violet-500 text-white disabled:opacity-40"
+                aria-label="Enviar mensagem"
+              >
+                {sending ? (
+                  <LoaderCircle className="h-5 w-5 animate-spin" />
+                ) : (
+                  <Send className="h-5 w-5" />
+                )}
+              </button>
+            </div>
+            <p className="mt-2 text-center text-xs text-slate-600">
+              Ações no aplicativo ainda exigem o modo manual nesta primeira fase.
+            </p>
+          </form>
+        </section>
       )}
     </div>,
     host

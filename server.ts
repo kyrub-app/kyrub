@@ -12,6 +12,7 @@ import {
 import { createDeliveryOpportunityRouter } from "./server/delivery/deliveryOpportunityRouter";
 import { createOperationsHealthRouter } from "./server/admin/operationsHealthRouter";
 import { createOrderInventoryRouter } from "./server/inventory/orderInventoryRouter";
+import { createKyrubAiConsultantRouter } from "./server/ai/consultantRouter";
 
 // Load environment variables
 dotenv.config();
@@ -29,8 +30,8 @@ app.use(
   })
 );
 
-// Initialize server-side Gemini SDK (as per the gemini-api skill instructions)
-// Never expose process.env.GEMINI_API_KEY to the client/browser bundle!
+// Initialize the legacy server-side Gemini endpoint.
+// Never expose process.env.GEMINI_API_KEY to the client/browser bundle.
 const apiKey = process.env.GEMINI_API_KEY || "";
 let ai: GoogleGenAI | null = null;
 
@@ -45,7 +46,7 @@ if (apiKey) {
   });
   console.log("[Kyrub Server] Google GenAI SDK initialized successfully.");
 } else {
-  console.warn("[Kyrub Server] WARNING: GEMINI_API_KEY environment variable is not set. AI features will run in mock mode.");
+  console.warn("[Kyrub Server] WARNING: GEMINI_API_KEY environment variable is not set. AI features are unavailable until it is configured.");
 }
 
 // ==========================================
@@ -56,6 +57,17 @@ const geminiRateLimiter = rateLimit({
   max: 20,
   message: {
     error: "Limite de taxa excedido. Requisições para o Mentor Kyrub estão limitadas a 20 por minuto para controle de custos.",
+    code: "TOO_MANY_REQUESTS"
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+const consultantRateLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 12,
+  message: {
+    error: "Você enviou muitas solicitações ao Consultor Kyrub. Aguarde um instante.",
     code: "TOO_MANY_REQUESTS"
   },
   standardHeaders: true,
@@ -108,7 +120,13 @@ app.use(
   createOperationsHealthRouter()
 );
 
-// Gemini Assistant Endpoint
+app.use(
+  "/api/ai/consultant",
+  consultantRateLimiter,
+  createKyrubAiConsultantRouter()
+);
+
+// Legacy Gemini Assistant Endpoint kept for compatibility with older screens.
 app.post("/api/gemini/generate", geminiRateLimiter, async (req: express.Request, res: express.Response) => {
   const { prompt } = req.body;
 
@@ -116,35 +134,26 @@ app.post("/api/gemini/generate", geminiRateLimiter, async (req: express.Request,
     return res.status(400).json({ error: "O campo 'prompt' é obrigatório." });
   }
 
-  // If API key is missing, respond with a helpful mock dialogue under Kyrub brand
   if (!ai) {
-    const mockResponses = [
-      `Olá! Sou o Mentor Kyrub. Para ativar minhas respostas inteligentes reais alimentadas pelo Gemini 3.5, configure sua GEMINI_API_KEY no painel de Secrets da plataforma. No momento, estou simulando em modo offline!`,
-      `Como Mentor Kyrub, aconselho você a verificar os splits de pagamento do Fator MD. Cada centavo deve ser auditável para evitar atritos entre fornecedores e lojistas no ecossistema Kyrub.`,
-      `Estratégia de Produto Kyrub: No modelo multi-tenant, limite os lojistas do plano grátis a 5 produtos. Isso cria um funil perfeito de conversão para o plano Business de R$ 99/mês.`,
-    ];
-    const randomIndex = Math.floor(Math.random() * mockResponses.length);
-    return res.json({ text: mockResponses[randomIndex] + `\n\n[SIMULAÇÃO OFFLINE - ADICIONE A API KEY PARA RESPOSTA REAL]` });
+    return res.status(503).json({
+      error: "A inteligência do Kyrub ainda não foi configurada neste ambiente.",
+      code: "AI_NOT_CONFIGURED",
+    });
   }
 
   try {
-    // Basic Q&A / assistant task -> Use gemini-3.5-flash as per skill guide
     const response = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
+      model: process.env.GEMINI_MODEL?.trim() || "gemini-3.5-flash",
       contents: prompt,
       config: {
-        systemInstruction: `Você é o Mentor Kyrub, um assistente virtual especialista em negócios, inteligência de mercado, ERP, split de pagamentos e arquitetura cloud de alto desempenho.
-Você faz parte do Kyrub Super App (anteriormente Uhub / Fator MD).
-Sua linguagem deve ser profissional, inspiradora, focada em resolver problemas de lojistas, fornecedores e donos de plataforma (B2B2C).
-Nunca mencione as marcas antigas "Uhub", "Fator MD" ou "Mentor Fator MD", apenas o "Kyrub" e "Mentor Kyrub".
-Ajude o usuário com conselhos realistas sobre concorrência no Firestore, estratégias de precificação, tributação de split de pagamentos e otimização de logística.`,
+        systemInstruction: `Você é o Consultor Kyrub. Responda em português do Brasil, de forma clara e prática. Nunca diga que executou ações no aplicativo quando apenas gerou texto. Nunca invente dados do usuário.`,
         temperature: 0.7,
       },
     });
     res.json({ text: response.text });
   } catch (error: any) {
     console.error("[Kyrub Server] Gemini generation error:", error);
-    res.status(500).json({ error: "Erro interno ao processar inteligência do Mentor Kyrub: " + (error.message || String(error)) });
+    res.status(500).json({ error: "Erro interno ao processar inteligência do Kyrub: " + (error.message || String(error)) });
   }
 });
 
@@ -157,7 +166,7 @@ app.get(
 
 // Simple health check
 app.get("/api/health", (_req, res) => {
-  res.json({ status: "ok", app: "Kyrub", version: "1.4.0" });
+  res.json({ status: "ok", app: "Kyrub", version: "1.5.0" });
 });
 
 // Serve static assets in production, hook Vite dev server in development

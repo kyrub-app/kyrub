@@ -23,6 +23,10 @@ const aiSource = readFileSync(
   'src/components/KyrubAiWorkspaceBridge.tsx',
   'utf8'
 );
+const aiClientSource = readFileSync(
+  'src/ai/consultantClient.ts',
+  'utf8'
+);
 const publishingSource = readFileSync(
   'src/components/SocialPublishingBridge.tsx',
   'utf8'
@@ -212,14 +216,19 @@ describe('profile social hub navigation', () => {
     assert.match(socialRules, /data\.visibility in \['connections', 'public'\]/);
   });
 
-  test('prepares the former Kyrub tab as a transparent AI project workspace', () => {
+  test('runs the former Kyrub tab as an authenticated AI conversation workspace', () => {
     assert.match(aiSource, /Kyrub I\.A/);
     assert.match(aiSource, /Criar minha loja/);
     assert.match(aiSource, /Cadastrar produtos/);
     assert.match(aiSource, /Conteúdo e imagens/);
     assert.match(aiSource, /Treino e hábitos/);
     assert.match(aiSource, /Bem-estar/);
-    assert.match(aiSource, /ainda não executa ações/);
+    assert.match(aiSource, /Em que posso ajudar hoje\?/);
+    assert.match(aiSource, /requestKyrubAiConsultant/);
+    assert.match(aiSource, /Histórico salvo somente neste dispositivo/);
+    assert.match(aiSource, /Ações no aplicativo ainda exigem o modo manual/);
+    assert.match(aiClientSource, /currentUser\.getIdToken\(\)/);
+    assert.match(aiClientSource, /authorization: `Bearer \$\{token\}`/);
     assert.match(aiSource, /kyrub-tab-container/);
   });
 
