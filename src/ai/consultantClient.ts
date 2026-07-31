@@ -1,10 +1,10 @@
 import {
   KYRUB_AI_CONSULTANT_ENDPOINT,
   KYRUB_AI_CONSULTANT_LEGACY_ENDPOINT,
-  type KyrubAiConsultantErrorResponse,
   type KyrubAiConsultantRequest,
   type KyrubAiConsultantResponse,
 } from '../../shared/aiConsultant';
+import { normalizeConsultantError } from './consultantError';
 import { auth } from '../utils/firebase';
 
 export class KyrubAiClientError extends Error {
@@ -23,10 +23,21 @@ const CONSULTANT_ENDPOINTS = [
   KYRUB_AI_CONSULTANT_LEGACY_ENDPOINT,
 ] as const;
 
-const readResponseBody = async (
-  response: Response
-): Promise<Partial<KyrubAiConsultantResponse & KyrubAiConsultantErrorResponse>> =>
-  response.json().catch(() => ({}));
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+
+const readResponseBody = async (response: Response): Promise<unknown> => {
+  const text = await response.text().catch(() => '');
+  if (!text.trim()) return {};
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    return text;
+  }
+};
+
+const hasTopLevelKyrubCode = (value: unknown): boolean =>
+  isRecord(value) && typeof value.code === 'string' && value.code.length > 0;
 
 export const requestKyrubAiConsultant = async (
   payload: KyrubAiConsultantRequest,
@@ -81,19 +92,24 @@ export const requestKyrubAiConsultant = async (
       index === 0 &&
       (response.status === 404 ||
         response.status === 405 ||
-        (response.status >= 500 && !body.code));
+        (response.status >= 500 && !hasTopLevelKyrubCode(body)));
 
     if (canTryCompatibilityRoute) continue;
 
     if (!response.ok) {
+      const normalized = normalizeConsultantError(body);
       throw new KyrubAiClientError(
-        body.error || 'O Consultor Kyrub está temporariamente indisponível.',
-        body.code || 'AI_UNAVAILABLE',
+        normalized.message,
+        normalized.code,
         response.status
       );
     }
 
-    if (typeof body.reply !== 'string' || !body.reply.trim()) {
+    if (
+      !isRecord(body) ||
+      typeof body.reply !== 'string' ||
+      !body.reply.trim()
+    ) {
       throw new KyrubAiClientError(
         'O servidor respondeu sem uma mensagem válida. Tente novamente.',
         'AI_UNAVAILABLE',
