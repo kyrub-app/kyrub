@@ -2,6 +2,8 @@ import type {
   KyrubAiConsultantErrorCode,
   KyrubAiConsultantErrorResponse,
 } from '../shared/aiConsultant';
+import { authenticateConsultantRequest } from '../server/ai/consultantAuth';
+import { runKyrubConsultant } from '../server/ai/consultantService';
 
 type HeaderValue = string | string[] | undefined;
 
@@ -81,7 +83,7 @@ const sendError = (
 
   console.error('[Kyrub AI] Unhandled root Vercel function failure.', error);
   const payload: KyrubAiConsultantErrorResponse = {
-    error: 'O servidor da Kyrub I.A encontrou uma falha temporária ao iniciar o Consultor.',
+    error: 'O Consultor Kyrub encontrou uma falha temporária no servidor. Tente novamente em instantes.',
     code: 'AI_UNAVAILABLE',
   };
   response.status(503).json(payload);
@@ -117,14 +119,10 @@ export default async function handler(
   }
 
   try {
-    const [authModule, consultantModule] = await Promise.all([
-      import('../server/ai/consultantAuth'),
-      import('../server/ai/consultantService'),
-    ]);
-    const user = await authModule.authenticateConsultantRequest(
+    const user = await authenticateConsultantRequest(
       authorizationHeader(request)
     );
-    const result = await consultantModule.runKyrubConsultant(
+    const result = await runKyrubConsultant(
       requestBody(request.body),
       user
     );
