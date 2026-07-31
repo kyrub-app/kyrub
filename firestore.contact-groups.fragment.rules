@@ -1,12 +1,5 @@
     // --- Private Contact Groups ---
     match /users/{userId}/contact_groups/{groupId} {
-      function hasValidContactGroupId() {
-        return groupId is string
-          && groupId.size() > 0
-          && groupId.size() <= 128
-          && groupId.matches('^[a-zA-Z0-9_-]+$');
-      }
-
       function hasValidContactGroupShape(data) {
         return data.keys().hasAll([
           'groupId',
@@ -40,7 +33,6 @@
 
       allow create: if isSignedIn()
         && request.auth.uid == userId
-        && hasValidContactGroupId()
         && incoming().ownerId == request.auth.uid
         && incoming().createdAt == request.time
         && incoming().updatedAt == request.time
