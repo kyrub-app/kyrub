@@ -9,8 +9,6 @@ import {
   Check,
   FolderPlus,
   LoaderCircle,
-  MessageCircle,
-  MoreVertical,
   Plus,
   Star,
   UserMinus,
@@ -178,7 +176,7 @@ export function ProfileConnectedCardOrganizationBridge() {
       const nav = listButton?.parentElement;
       if (!nav || !listButton || !suggestionsButton || !requestsButton) {
         setFavoritesButtonHost(current =>
-          current?.isConnected ? null : current
+          current?.isConnected ? current : null
         );
         return;
       }
