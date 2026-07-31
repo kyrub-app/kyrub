@@ -37,7 +37,7 @@ test('AI error normalization never renders object coercion as a message', () => 
   assert.equal(result.code, 'AI_UNAVAILABLE');
 });
 
-test('root Vercel handler catches dynamically loaded consultant errors as JSON', async () => {
+test('root Vercel handler returns authentication errors as JSON', async () => {
   let statusCode = 0;
   let responseBody: unknown = null;
   const response = {
@@ -67,14 +67,20 @@ test('root Vercel handler catches dynamically loaded consultant errors as JSON',
   );
 });
 
-test('root Vercel handler defers server imports until invocation', async () => {
+test('root Vercel handler statically bundles consultant modules', async () => {
   const source = await readFile(
     new URL('../api/consultor-kyrub.ts', import.meta.url),
     'utf8'
   );
 
-  assert.match(source, /import\('\.\.\/server\/ai\/consultantAuth'\)/);
-  assert.match(source, /import\('\.\.\/server\/ai\/consultantService'\)/);
-  assert.doesNotMatch(source, /from '\.\.\/server\/ai\/consultantAuth'/);
+  assert.match(
+    source,
+    /from '\.\.\/server\/ai\/consultantAuth'/
+  );
+  assert.match(
+    source,
+    /from '\.\.\/server\/ai\/consultantService'/
+  );
+  assert.doesNotMatch(source, /import\('\.\.\/server\/ai\//);
   assert.doesNotMatch(source, /\[object Object\]/);
 });
