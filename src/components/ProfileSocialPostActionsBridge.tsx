@@ -72,7 +72,6 @@ const normalizeText = (value: string): string =>
 const formatRelativeTime = (isoValue: string): string => {
   const timestamp = Date.parse(isoValue);
   if (!Number.isFinite(timestamp)) return 'Agora mesmo';
-
   const elapsedSeconds = Math.max(
     0,
     Math.floor((Date.now() - timestamp) / 1000)
@@ -106,11 +105,11 @@ const restoreStorageValue = (key: string, rawValue: string | null) => {
 };
 
 const getCardContent = (article: HTMLElement): string => {
-  const directParagraph = Array.from(article.children).find(child => {
+  const paragraph = Array.from(article.children).find(child => {
     if (child.tagName !== 'P') return false;
     return !normalizeText(child.textContent ?? '').startsWith('com @');
   });
-  return directParagraph?.textContent ?? '';
+  return paragraph?.textContent ?? '';
 };
 
 const getCardTime = (article: HTMLElement): string => {
@@ -129,10 +128,18 @@ const postMatchesCard = (
     return false;
   }
   if (!requireTime) return true;
-  return normalizeText(getCardTime(article)) === normalizeText(
-    formatRelativeTime(post.createdAtIso)
+  return (
+    normalizeText(getCardTime(article)) ===
+    normalizeText(formatRelativeTime(post.createdAtIso))
   );
 };
+
+const findOriginalLikeButton = (
+  article: HTMLElement
+): HTMLButtonElement | undefined =>
+  Array.from(
+    article.querySelectorAll<HTMLButtonElement>(':scope > button')
+  ).find(button => /curtidas?/i.test(button.textContent ?? ''));
 
 export function ProfileSocialPostActionsBridge() {
   const [toast, setToast] = useState<ToastState | null>(null);
@@ -149,6 +156,10 @@ export function ProfileSocialPostActionsBridge() {
     toastTimerRef.current = window.setTimeout(() => setToast(null), 4000);
   };
 
+  const findOwnedPost = (article: HTMLElement): OwnedSocialPost | undefined =>
+    ownedPostsRef.current.find(post => postMatchesCard(post, article, true)) ??
+    ownedPostsRef.current.find(post => postMatchesCard(post, article, false));
+
   const removeOwnedPost = async (post: OwnedSocialPost) => {
     const user = currentUserRef.current;
     if (!user) return;
@@ -156,7 +167,8 @@ export function ProfileSocialPostActionsBridge() {
     const userKey = getUserPostsKey(user.uid);
     const previousUserRaw = localStorage.getItem(userKey);
     const previousLegacyRaw = localStorage.getItem(LEGACY_POSTS_KEY);
-    const sourcePostId = post.sourcePostId ||
+    const sourcePostId =
+      post.sourcePostId ||
       (post.id.startsWith(`${user.uid}__`)
         ? post.id.slice(user.uid.length + 2)
         : post.id);
@@ -164,14 +176,12 @@ export function ProfileSocialPostActionsBridge() {
     const shouldRemove = (item: LocalPost) => {
       const localId = readString(item.id);
       if (!localId) return false;
-      const calculatedCloudId = `${user.uid}__${localId.replaceAll('/', '_')}`.slice(
+      const cloudId = `${user.uid}__${localId.replaceAll('/', '_')}`.slice(
         0,
         500
       );
       return (
-        localId === sourcePostId ||
-        localId === post.id ||
-        calculatedCloudId === post.id
+        localId === sourcePostId || localId === post.id || cloudId === post.id
       );
     };
 
@@ -187,11 +197,7 @@ export function ProfileSocialPostActionsBridge() {
       localStorage.setItem(LEGACY_POSTS_KEY, JSON.stringify(nextLegacyPosts));
       window.dispatchEvent(
         new CustomEvent('kyrub-social-posts-updated', {
-          detail: {
-            uid: user.uid,
-            posts: nextUserPosts,
-            source: 'local',
-          },
+          detail: { uid: user.uid, posts: nextUserPosts, source: 'local' },
         })
       );
 
@@ -236,7 +242,6 @@ export function ProfileSocialPostActionsBridge() {
       currentUserRef.current = user;
       ownedPostsRef.current = [];
       decorateRef.current();
-
       if (!user) return;
 
       unsubscribePosts = onSnapshot(
@@ -296,7 +301,6 @@ export function ProfileSocialPostActionsBridge() {
           ? 'bg-rose-500/15 text-rose-300'
           : 'text-slate-500 hover:bg-slate-800 hover:text-rose-300'
       }`;
-      proxy.innerHTML = HEART_ICON;
       const icon = proxy.querySelector('svg');
       if (icon) icon.setAttribute('fill', liked ? 'currentColor' : 'none');
       const description = `${liked ? 'Remover curtida' : 'Curtir publicação'} · ${count} ${
@@ -310,15 +314,12 @@ export function ProfileSocialPostActionsBridge() {
       article: HTMLElement,
       menuButton: HTMLButtonElement
     ) => {
-      const originalLikeButton = Array.from(
-        article.querySelectorAll<HTMLButtonElement>(':scope > button')
-      ).find(button => /curtidas?/i.test(button.textContent ?? ''));
+      const originalLikeButton = findOriginalLikeButton(article);
       if (!originalLikeButton) return;
-
       originalLikeButton.dataset.kyrubOriginalLike = 'true';
+
       const actionGroup = menuButton.parentElement;
       if (!actionGroup) return;
-
       let proxy = actionGroup.querySelector<HTMLButtonElement>(
         'button[data-kyrub-like-proxy]'
       );
@@ -326,13 +327,7 @@ export function ProfileSocialPostActionsBridge() {
         proxy = document.createElement('button');
         proxy.type = 'button';
         proxy.dataset.kyrubLikeProxy = 'true';
-        proxy.addEventListener('click', event => {
-          event.preventDefault();
-          event.stopPropagation();
-          originalLikeButton.click();
-          window.setTimeout(() => decorateRef.current(), 0);
-          window.setTimeout(() => decorateRef.current(), 300);
-        });
+        proxy.innerHTML = HEART_ICON;
       }
 
       const saveButton = actionGroup.querySelector<HTMLButtonElement>(
@@ -353,29 +348,19 @@ export function ProfileSocialPostActionsBridge() {
         .closest('header')
         ?.querySelector<HTMLElement>('.absolute.right-0.top-10');
       if (!menu) return;
-      const ownPostNotice = Array.from(menu.children).find(child =>
+      const notice = Array.from(menu.children).find(child =>
         normalizeText(child.textContent ?? '').includes('esta publicação é sua')
       ) as HTMLElement | undefined;
-      if (!ownPostNotice) return;
+      if (!notice || menu.querySelector('[data-kyrub-delete-post]')) return;
 
-      const post =
-        ownedPostsRef.current.find(item =>
-          postMatchesCard(item, article, true)
-        ) ??
-        ownedPostsRef.current.find(item =>
-          postMatchesCard(item, article, false)
-        );
+      const post = findOwnedPost(article);
       if (!post) return;
+      notice.style.display = 'none';
 
-      ownPostNotice.style.display = 'none';
-      let deleteButton = menu.querySelector<HTMLButtonElement>(
-        'button[data-kyrub-delete-post]'
-      );
-      if (deleteButton) return;
-
-      deleteButton = document.createElement('button');
+      const deleteButton = document.createElement('button');
       deleteButton.type = 'button';
       deleteButton.dataset.kyrubDeletePost = 'true';
+      deleteButton.dataset.kyrubPublicationType = post.publicationType;
       deleteButton.className =
         'flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left font-black uppercase text-red-300 hover:bg-red-500/10';
       deleteButton.innerHTML = `${TRASH_ICON}<span>${
@@ -383,58 +368,6 @@ export function ProfileSocialPostActionsBridge() {
           ? 'Excluir status'
           : 'Excluir publicação'
       }</span>`;
-      deleteButton.setAttribute(
-        'aria-label',
-        post.publicationType === 'status'
-          ? 'Excluir status'
-          : 'Excluir publicação'
-      );
-
-      deleteButton.addEventListener('click', async event => {
-        event.preventDefault();
-        event.stopPropagation();
-
-        if (deleteButton?.dataset.confirmDelete !== 'true') {
-          if (!deleteButton) return;
-          deleteButton.dataset.confirmDelete = 'true';
-          deleteButton.classList.add('bg-red-500/15');
-          const label = deleteButton.querySelector('span');
-          if (label) label.textContent = 'Toque novamente para excluir';
-          window.setTimeout(() => {
-            if (!deleteButton?.isConnected) return;
-            delete deleteButton.dataset.confirmDelete;
-            deleteButton.classList.remove('bg-red-500/15');
-            const currentLabel = deleteButton.querySelector('span');
-            if (currentLabel) {
-              currentLabel.textContent =
-                post.publicationType === 'status'
-                  ? 'Excluir status'
-                  : 'Excluir publicação';
-            }
-          }, 4500);
-          return;
-        }
-
-        deleteButton.disabled = true;
-        deleteButton.classList.add('opacity-60');
-        const label = deleteButton.querySelector('span');
-        if (label) label.textContent = 'Excluindo...';
-        try {
-          await removeOwnedPost(post);
-        } catch {
-          if (!deleteButton.isConnected) return;
-          deleteButton.disabled = false;
-          deleteButton.classList.remove('opacity-60');
-          delete deleteButton.dataset.confirmDelete;
-          if (label) {
-            label.textContent =
-              post.publicationType === 'status'
-                ? 'Excluir status'
-                : 'Excluir publicação';
-          }
-        }
-      });
-
       menu.appendChild(deleteButton);
     };
 
@@ -452,8 +385,81 @@ export function ProfileSocialPostActionsBridge() {
         });
     };
 
+    const handleDocumentClick = async (event: Event) => {
+      const target = event.target as Element | null;
+      const likeProxy = target?.closest<HTMLButtonElement>(
+        'button[data-kyrub-like-proxy]'
+      );
+      if (likeProxy) {
+        event.preventDefault();
+        event.stopPropagation();
+        const article = likeProxy.closest<HTMLElement>('article');
+        const originalLikeButton = article
+          ? findOriginalLikeButton(article)
+          : undefined;
+        originalLikeButton?.click();
+        window.setTimeout(() => decorateRef.current(), 0);
+        window.setTimeout(() => decorateRef.current(), 300);
+        return;
+      }
+
+      const deleteButton = target?.closest<HTMLButtonElement>(
+        'button[data-kyrub-delete-post]'
+      );
+      if (!deleteButton) return;
+      event.preventDefault();
+      event.stopPropagation();
+
+      const article = deleteButton.closest<HTMLElement>('article');
+      const post = article ? findOwnedPost(article) : undefined;
+      if (!post) {
+        showToast('Não foi possível localizar esta publicação.', 'error');
+        return;
+      }
+
+      if (deleteButton.dataset.confirmDelete !== 'true') {
+        deleteButton.dataset.confirmDelete = 'true';
+        deleteButton.classList.add('bg-red-500/15');
+        const label = deleteButton.querySelector('span');
+        if (label) label.textContent = 'Toque novamente para excluir';
+        window.setTimeout(() => {
+          if (!deleteButton.isConnected) return;
+          delete deleteButton.dataset.confirmDelete;
+          deleteButton.classList.remove('bg-red-500/15');
+          const currentLabel = deleteButton.querySelector('span');
+          if (currentLabel) {
+            currentLabel.textContent =
+              post.publicationType === 'status'
+                ? 'Excluir status'
+                : 'Excluir publicação';
+          }
+        }, 4500);
+        return;
+      }
+
+      deleteButton.disabled = true;
+      deleteButton.classList.add('opacity-60');
+      const label = deleteButton.querySelector('span');
+      if (label) label.textContent = 'Excluindo...';
+      try {
+        await removeOwnedPost(post);
+      } catch {
+        if (!deleteButton.isConnected) return;
+        deleteButton.disabled = false;
+        deleteButton.classList.remove('opacity-60');
+        delete deleteButton.dataset.confirmDelete;
+        if (label) {
+          label.textContent =
+            post.publicationType === 'status'
+              ? 'Excluir status'
+              : 'Excluir publicação';
+        }
+      }
+    };
+
     decorateRef.current = decorate;
     decorate();
+    document.addEventListener('click', handleDocumentClick, true);
     const observer = new MutationObserver(decorate);
     observer.observe(document.body, {
       childList: true,
@@ -465,6 +471,7 @@ export function ProfileSocialPostActionsBridge() {
     return () => {
       observer.disconnect();
       window.clearInterval(timer);
+      document.removeEventListener('click', handleDocumentClick, true);
       decorateRef.current = () => undefined;
       document
         .querySelectorAll<HTMLElement>('[data-kyrub-original-like="true"]')
@@ -507,11 +514,12 @@ export function ProfileSocialPostActionsBridge() {
 
       {toast && (
         <div
-          className={`fixed left-1/2 top-[max(16px,env(safe-area-inset-top))] z-[220] w-[calc(100%-32px)] max-w-sm -translate-x-1/2 rounded-2xl border px-4 py-3 text-sm font-bold shadow-2xl ${
+          className={`fixed left-1/2 z-[220] w-[calc(100%-32px)] max-w-sm -translate-x-1/2 rounded-2xl border px-4 py-3 text-sm font-bold shadow-2xl ${
             toast.type === 'success'
               ? 'border-emerald-500/30 bg-emerald-950 text-emerald-100'
               : 'border-red-500/30 bg-red-950 text-red-100'
           }`}
+          style={{ top: 'max(16px, env(safe-area-inset-top, 0px))' }}
           role="status"
         >
           {toast.message}
