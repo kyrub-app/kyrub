@@ -11,6 +11,14 @@ const polishSource = readFileSync(
   'src/components/ProfileSocialPolishBridge.tsx',
   'utf8'
 );
+const mobileSource = readFileSync(
+  'src/components/ProfileSocialMobileFirstBridge.tsx',
+  'utf8'
+);
+const chatSource = readFileSync(
+  'src/components/modals/ChatModal.tsx',
+  'utf8'
+);
 const aiSource = readFileSync(
   'src/components/KyrubAiWorkspaceBridge.tsx',
   'utf8'
@@ -38,9 +46,10 @@ const profileRules = readFileSync(
 );
 
 describe('profile social hub navigation', () => {
-  test('mounts the profile hub, polish layer and Kyrub AI workspace around the legacy app', () => {
+  test('mounts the profile hub, polish layers and Kyrub AI workspace around the legacy app', () => {
     assert.match(appSource, /ProfileSocialHubBridge/);
     assert.match(appSource, /ProfileSocialPolishBridge/);
+    assert.match(appSource, /ProfileSocialMobileFirstBridge/);
     assert.match(appSource, /KyrubAiWorkspaceBridge/);
     assert.ok(
       appSource.indexOf('<ProfileSocialHubBridge') <
@@ -48,6 +57,10 @@ describe('profile social hub navigation', () => {
     );
     assert.ok(
       appSource.indexOf('<ProfileSocialPolishBridge') <
+        appSource.indexOf('<ProfileSocialMobileFirstBridge')
+    );
+    assert.ok(
+      appSource.indexOf('<ProfileSocialMobileFirstBridge') <
         appSource.indexOf('<LegacyApp')
     );
     assert.ok(
@@ -82,15 +95,55 @@ describe('profile social hub navigation', () => {
     assert.match(polishSource, /Marcaram você/);
   });
 
-  test('uses a portrait 3x4 profile photo without changing post avatars', () => {
-    assert.match(polishSource, /data-kyrub-profile-portrait/);
-    assert.match(polishSource, /width: 72px !important/);
-    assert.match(polishSource, /height: 96px !important/);
-    assert.match(polishSource, /width: 84px !important/);
-    assert.match(polishSource, /height: 112px !important/);
+  test('uses a larger 4x5 profile portrait and concentrates editing on its pencil icon', () => {
+    assert.match(mobileSource, /data-kyrub-profile-portrait-4x5/);
+    assert.match(mobileSource, /width: 88px !important/);
+    assert.match(mobileSource, /height: 110px !important/);
+    assert.match(mobileSource, /width: 104px !important/);
+    assert.match(mobileSource, /height: 130px !important/);
+    assert.match(mobileSource, /data-kyrub-profile-edit-trigger/);
+    assert.match(mobileSource, /originalEditButton\.style\.display = 'none'/);
+    assert.match(mobileSource, /originalEditButtonRef\.current\?\.click\(\)/);
+    assert.match(mobileSource, /content: "✎"/);
+  });
+
+  test('places the saved icon immediately before Offers and removes the large header actions', () => {
+    assert.match(mobileSource, /data-kyrub-saved-action-host/);
+    assert.match(mobileSource, /insertBefore\(host, offersButton\)/);
+    assert.match(mobileSource, /originalSavedButton\.style\.display = 'none'/);
+    assert.match(mobileSource, /data-kyrub-original-profile-actions/);
+    assert.match(mobileSource, /aria-label="Abrir publicações salvas"/);
+    assert.match(mobileSource, /<Bookmark className="h-5 w-5"/);
+  });
+
+  test('renders connected contacts as a two-column mobile grid with compact actions', () => {
+    assert.match(mobileSource, /data-kyrub-connected-grid/);
     assert.match(
-      polishSource,
-      /button\[aria-label="Alterar foto do perfil"\]/
+      mobileSource,
+      /grid-template-columns: repeat\(2, minmax\(0, 1fr\)\)/
+    );
+    assert.match(mobileSource, /data-kyrub-contact-card/);
+    assert.match(mobileSource, /aspect-ratio: 4 \/ 3/);
+    assert.match(mobileSource, /data-kyrub-contact-chat/);
+    assert.match(mobileSource, /data-kyrub-contact-remove/);
+    assert.match(
+      mobileSource,
+      /grid-template-columns: minmax\(0, 1fr\) 42px/
+    );
+  });
+
+  test('opens the real Firestore chat in a full-screen mobile conversation', () => {
+    assert.match(mobileSource, /<ChatModal/);
+    assert.match(mobileSource, /setSelectedChatUser\(selected\)/);
+    assert.match(chatSource, /useChatMessages/);
+    assert.match(chatSource, /selectedChatUser\.connectionStatus === 'accepted'/);
+    assert.match(chatSource, /connectionId: selectedChatUser\?\.connectionId/);
+    assert.match(chatSource, /h-\[100dvh\]/);
+    assert.match(chatSource, /messagesEndRef/);
+    assert.match(chatSource, /sendMessage\(chatMessageText\)/);
+    assert.doesNotMatch(
+      mobileSource,
+      /A conversa segura continua disponível pelo chat social/
     );
   });
 
