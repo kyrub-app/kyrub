@@ -3,11 +3,13 @@ import { onAuthStateChanged } from 'firebase/auth';
 import { doc, onSnapshot } from 'firebase/firestore';
 import LegacyApp from './LegacyApp';
 import AdminControlPlaneRoot from './components/admin/AdminControlPlaneRoot';
+import { AppModalLayoutBridge } from './components/AppModalLayoutBridge';
 import { KyrubAiWorkspaceBridge } from './components/KyrubAiWorkspaceBridge';
 import { NoteInvitationOutboxBridge } from './components/NoteInvitationOutboxBridge';
 import { ProfileSocialHubBridge } from './components/ProfileSocialHubBridge';
 import { ProfileSocialMobileFirstBridge } from './components/ProfileSocialMobileFirstBridge';
 import { ProfileSocialPolishBridge } from './components/ProfileSocialPolishBridge';
+import { ProfileSocialPostActionsBridge } from './components/ProfileSocialPostActionsBridge';
 import { PublicStorefrontApp } from './components/PublicStorefrontApp';
 import { SocialPublishingBridge } from './components/SocialPublishingBridge';
 import { IntegrationTestOrderBridge } from './components/store/IntegrationTestOrderBridge';
@@ -122,6 +124,7 @@ function AuthenticatedKyrubApp({ operational }: { operational: boolean }) {
 
   return (
     <>
+      <AppModalLayoutBridge />
       <StorePersistenceBridge />
       <ProductCrossDeviceSyncBridge
         onCloudProductsApplied={refreshLegacyCache}
@@ -141,6 +144,7 @@ function AuthenticatedKyrubApp({ operational }: { operational: boolean }) {
       <ProfileSocialHubBridge />
       <ProfileSocialPolishBridge />
       <ProfileSocialMobileFirstBridge />
+      <ProfileSocialPostActionsBridge />
       <KyrubAiWorkspaceBridge />
       <StoreSharingPortalBridge />
       <StoreRestartLandingBridge />
