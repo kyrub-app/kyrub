@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { generateKeyPairSync, sign } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import {
@@ -12,6 +13,7 @@ import {
   normalizeConsultantRequest,
   runKyrubConsultant,
 } from '../server/ai/consultantService';
+import { verifyFirebaseIdToken } from '../server/ai/consultantAuth';
 import type {
   AiConsultantProvider,
   ConsultantGenerationInput,
@@ -45,6 +47,9 @@ class MemoryStorage implements Storage {
     this.values.set(key, value);
   }
 }
+
+const encodedJson = (value: unknown): string =>
+  Buffer.from(JSON.stringify(value)).toString('base64url');
 
 test('consultant request validation accepts a user-ended conversation', () => {
   const request = normalizeConsultantRequest({
@@ -106,6 +111,59 @@ test('phase one provider receives the constitution and cannot advertise actions'
   assert.equal(result.capabilities.persistentCloudHistoryEnabled, false);
 });
 
+test('Firebase ID token verification uses public certificates without admin credentials', async () => {
+  const projectId = 'kyrub-security-test';
+  const keyId = 'firebase-test-key';
+  const now = Math.floor(Date.now() / 1_000);
+  const { privateKey, publicKey } = generateKeyPairSync('rsa', {
+    modulusLength: 2_048,
+  });
+  const header = encodedJson({ alg: 'RS256', typ: 'JWT', kid: keyId });
+  const payload = encodedJson({
+    aud: projectId,
+    iss: `https://securetoken.google.com/${projectId}`,
+    sub: 'user-verified',
+    exp: now + 3_600,
+    iat: now - 5,
+    auth_time: now - 10,
+    name: 'Usuário Verificado',
+    email: 'verified@example.com',
+  });
+  const signingInput = `${header}.${payload}`;
+  const signature = sign(
+    'RSA-SHA256',
+    Buffer.from(signingInput),
+    privateKey
+  ).toString('base64url');
+  const token = `${signingInput}.${signature}`;
+  const originalFetch = globalThis.fetch;
+
+  globalThis.fetch = async () =>
+    new Response(
+      JSON.stringify({
+        [keyId]: publicKey.export({ type: 'spki', format: 'pem' }).toString(),
+      }),
+      {
+        status: 200,
+        headers: {
+          'content-type': 'application/json',
+          'cache-control': 'public, max-age=3600',
+        },
+      }
+    );
+
+  try {
+    const user = await verifyFirebaseIdToken(token, projectId);
+    assert.deepEqual(user, {
+      uid: 'user-verified',
+      name: 'Usuário Verificado',
+      email: 'verified@example.com',
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('local conversation history is isolated by user and keeps messages', () => {
   const storage = new MemoryStorage();
   const conversation = createKyrubAiConversation('Trabalho e organização');
@@ -125,16 +183,27 @@ test('local conversation history is isolated by user and keeps messages', () => 
 });
 
 test('phase one is wired to Express, Vercel and the Kyrub AI workspace', async () => {
-  const [serverSource, vercelSource, workspaceSource, constitutionSource] =
-    await Promise.all([
-      readFile(new URL('../server.ts', import.meta.url), 'utf8'),
-      readFile(new URL('../api/ai/consultant.ts', import.meta.url), 'utf8'),
-      readFile(
-        new URL('../src/components/KyrubAiWorkspaceBridge.tsx', import.meta.url),
-        'utf8'
-      ),
-      readFile(new URL('../docs/CONSULTOR_KYRUB.md', import.meta.url), 'utf8'),
-    ]);
+  const [
+    serverSource,
+    vercelSource,
+    workspaceSource,
+    constitutionSource,
+    authSource,
+    providerSource,
+  ] = await Promise.all([
+    readFile(new URL('../server.ts', import.meta.url), 'utf8'),
+    readFile(new URL('../api/ai/consultant.ts', import.meta.url), 'utf8'),
+    readFile(
+      new URL('../src/components/KyrubAiWorkspaceBridge.tsx', import.meta.url),
+      'utf8'
+    ),
+    readFile(new URL('../docs/CONSULTOR_KYRUB.md', import.meta.url), 'utf8'),
+    readFile(new URL('../server/ai/consultantAuth.ts', import.meta.url), 'utf8'),
+    readFile(
+      new URL('../server/ai/geminiConsultantProvider.ts', import.meta.url),
+      'utf8'
+    ),
+  ]);
 
   assert.match(serverSource, /\/api\/ai\/consultant/);
   assert.match(vercelSource, /authenticateConsultantRequest/);
@@ -143,4 +212,10 @@ test('phase one is wired to Express, Vercel and the Kyrub AI workspace', async (
   assert.match(workspaceSource, /requestKyrubAiConsultant/);
   assert.match(workspaceSource, /Histórico salvo somente neste dispositivo/);
   assert.match(constitutionSource, /O modo manual nunca será removido/);
+  assert.match(authSource, /securetoken@system\.gserviceaccount\.com/);
+  assert.match(authSource, /verifySignature/);
+  assert.doesNotMatch(authSource, /firebaseAdmin/);
+  assert.match(providerSource, /gemini-3\.6-flash/);
+  assert.match(providerSource, /AI_QUOTA_EXCEEDED/);
+  assert.match(providerSource, /AI_MODEL_UNAVAILABLE/);
 });

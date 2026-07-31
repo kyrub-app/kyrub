@@ -36,6 +36,33 @@ Ainda não disponível:
 - automações;
 - acesso autônomo a dados privados do usuário.
 
+## Configuração de produção
+
+O endpoint do Consultor valida o Firebase ID Token usando a assinatura e as chaves públicas oficiais do Firebase. Essa verificação identifica o usuário sem exigir uma credencial administrativa somente para conversar.
+
+Variável obrigatória:
+
+```text
+GEMINI_API_KEY
+```
+
+Variáveis opcionais:
+
+```text
+FIREBASE_PROJECT_ID=kyrub-b8d0e
+GEMINI_MODEL=gemini-3.6-flash
+```
+
+`FIREBASE_SERVICE_ACCOUNT_JSON` continua sendo necessária para módulos administrativos do servidor que leem ou escrevem dados privilegiados, mas não é requisito do chat textual da Kyrub I.A.
+
+A aplicação nunca deve enviar `GEMINI_API_KEY` ao navegador. O endpoint deve diferenciar com mensagens seguras:
+
+- chave ausente ou inválida;
+- modelo indisponível;
+- cota esgotada;
+- falha temporária do provedor;
+- falha temporária na validação da sessão.
+
 ## Arquitetura alvo
 
 ```text

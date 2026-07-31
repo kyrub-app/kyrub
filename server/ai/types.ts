@@ -1,4 +1,5 @@
 import type {
+  KyrubAiConsultantErrorCode,
   KyrubAiConsultantRequest,
   KyrubAiConversationMessage,
 } from '../../shared/aiConsultant';
@@ -29,12 +30,7 @@ export interface AiConsultantProvider {
 export class ConsultantHttpError extends Error {
   constructor(
     public readonly status: number,
-    public readonly code:
-      | 'AUTH_REQUIRED'
-      | 'INVALID_REQUEST'
-      | 'AI_NOT_CONFIGURED'
-      | 'AI_UNAVAILABLE'
-      | 'METHOD_NOT_ALLOWED',
+    public readonly code: KyrubAiConsultantErrorCode,
     message: string
   ) {
     super(message);
