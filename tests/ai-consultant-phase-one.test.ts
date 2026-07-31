@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { generateKeyPairSync, sign } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
+import rootConsultantHandler from '../api/consultor-kyrub';
 import {
   createKyrubAiConversation,
   createKyrubAiMessage,
@@ -164,6 +165,38 @@ test('Firebase ID token verification uses public certificates without admin cred
   }
 });
 
+test('root Vercel route exposes a dependency-free consultant health response', async () => {
+  let statusCode = 0;
+  let responseBody: unknown = null;
+  const headers = new Map<string, string>();
+  const response = {
+    setHeader(name: string, value: string) {
+      headers.set(name.toLowerCase(), value);
+    },
+    status(code: number) {
+      statusCode = code;
+      return response;
+    },
+    json(body: unknown) {
+      responseBody = body;
+    },
+  };
+
+  await rootConsultantHandler(
+    { method: 'GET', headers: {} },
+    response
+  );
+
+  assert.equal(statusCode, 200);
+  assert.equal(headers.get('cache-control'), 'no-store');
+  assert.deepEqual(
+    responseBody && typeof responseBody === 'object'
+      ? (responseBody as Record<string, unknown>).service
+      : null,
+    'consultor-kyrub'
+  );
+});
+
 test('local conversation history is isolated by user and keeps messages', () => {
   const storage = new MemoryStorage();
   const conversation = createKyrubAiConversation('Trabalho e organização');
@@ -182,21 +215,27 @@ test('local conversation history is isolated by user and keeps messages', () => 
   );
 });
 
-test('phase one is wired to Express, Vercel and the Kyrub AI workspace', async () => {
+test('phase one is wired to Express, both Vercel routes and the Kyrub AI workspace', async () => {
   const [
     serverSource,
-    vercelSource,
+    legacyVercelSource,
+    rootVercelSource,
     workspaceSource,
+    clientSource,
+    sharedSource,
     constitutionSource,
     authSource,
     providerSource,
   ] = await Promise.all([
     readFile(new URL('../server.ts', import.meta.url), 'utf8'),
     readFile(new URL('../api/ai/consultant.ts', import.meta.url), 'utf8'),
+    readFile(new URL('../api/consultor-kyrub.ts', import.meta.url), 'utf8'),
     readFile(
       new URL('../src/components/KyrubAiWorkspaceBridge.tsx', import.meta.url),
       'utf8'
     ),
+    readFile(new URL('../src/ai/consultantClient.ts', import.meta.url), 'utf8'),
+    readFile(new URL('../shared/aiConsultant.ts', import.meta.url), 'utf8'),
     readFile(new URL('../docs/CONSULTOR_KYRUB.md', import.meta.url), 'utf8'),
     readFile(new URL('../server/ai/consultantAuth.ts', import.meta.url), 'utf8'),
     readFile(
@@ -206,8 +245,15 @@ test('phase one is wired to Express, Vercel and the Kyrub AI workspace', async (
   ]);
 
   assert.match(serverSource, /\/api\/ai\/consultant/);
-  assert.match(vercelSource, /authenticateConsultantRequest/);
-  assert.match(vercelSource, /runKyrubConsultant/);
+  assert.match(legacyVercelSource, /authenticateConsultantRequest/);
+  assert.match(legacyVercelSource, /runKyrubConsultant/);
+  assert.match(rootVercelSource, /export default async function handler/);
+  assert.match(rootVercelSource, /service: 'consultor-kyrub'/);
+  assert.match(sharedSource, /\/api\/consultor-kyrub/);
+  assert.match(sharedSource, /\/api\/ai\/consultant/);
+  assert.match(clientSource, /CONSULTANT_ENDPOINTS/);
+  assert.match(clientSource, /Não foi possível conectar ao servidor da Kyrub I\.A/);
+  assert.doesNotMatch(clientSource, /throw new Error\([^)]*Failed to fetch/);
   assert.match(workspaceSource, /Em que posso ajudar hoje\?/);
   assert.match(workspaceSource, /requestKyrubAiConsultant/);
   assert.match(workspaceSource, /Histórico salvo somente neste dispositivo/);
