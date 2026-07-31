@@ -1,0 +1,58 @@
+    // --- Private Contact Groups ---
+    match /users/{userId}/contact_groups/{groupId} {
+      function hasValidContactGroupShape(data) {
+        return data.keys().hasAll([
+          'groupId',
+          'ownerId',
+          'name',
+          'memberIds',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'groupId',
+          'ownerId',
+          'name',
+          'memberIds',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.groupId == groupId
+        && data.ownerId == userId
+        && data.name is string
+        && data.name.size() > 0
+        && data.name.size() <= 60
+        && data.memberIds is list
+        && data.memberIds.size() <= 200
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+      }
+
+      allow read: if isSignedIn()
+        && request.auth.uid == userId;
+
+      allow create: if isSignedIn()
+        && request.auth.uid == userId
+        && incoming().ownerId == request.auth.uid
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && hasValidContactGroupShape(incoming());
+
+      allow update: if isSignedIn()
+        && request.auth.uid == userId
+        && existing().ownerId == request.auth.uid
+        && incoming().groupId == existing().groupId
+        && incoming().ownerId == existing().ownerId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'name',
+          'memberIds',
+          'updatedAt'
+        ])
+        && hasValidContactGroupShape(incoming());
+
+      allow delete: if isSignedIn()
+        && request.auth.uid == userId
+        && existing().ownerId == request.auth.uid;
+    }
