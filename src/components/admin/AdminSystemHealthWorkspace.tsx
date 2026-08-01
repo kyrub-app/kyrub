@@ -151,6 +151,8 @@ export default function AdminSystemHealthWorkspace() {
       .finally(() => setLoading(false));
   };
 
+  const initialLoading = loading && !snapshot;
+
   return (
     <section className="bg-slate-950 px-4 pb-10 text-slate-100 sm:px-6">
       <div className="mx-auto max-w-7xl rounded-[2rem] border border-slate-800 bg-slate-900/70 p-5 sm:p-6">
@@ -174,6 +176,7 @@ export default function AdminSystemHealthWorkspace() {
           <div className="flex items-center gap-2">
             {snapshot && (
               <span
+                aria-live="polite"
                 className={`rounded-full px-3 py-1.5 text-[9px] font-black uppercase tracking-wider ${
                   snapshot.state === 'healthy'
                     ? 'bg-emerald-500/10 text-emerald-300'
@@ -189,22 +192,47 @@ export default function AdminSystemHealthWorkspace() {
               type="button"
               onClick={handleRefresh}
               disabled={loading}
-              className="inline-flex items-center gap-2 rounded-xl border border-slate-700 bg-slate-800 px-3 py-2 text-[10px] font-black uppercase tracking-wider text-slate-200 hover:bg-slate-700 disabled:opacity-60"
+              className="inline-flex items-center gap-2 rounded-xl border border-slate-700 bg-slate-800 px-3 py-2 text-[10px] font-black uppercase tracking-wider text-slate-200 hover:bg-slate-700 disabled:cursor-wait disabled:opacity-60"
             >
               <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
-              Atualizar
+              {loading ? 'Consultando' : 'Atualizar'}
             </button>
           </div>
         </div>
 
         {error && (
-          <div className="mt-4 flex gap-3 rounded-2xl border border-red-500/25 bg-red-500/10 p-3 text-xs text-red-200">
+          <div
+            role="status"
+            className="mt-4 flex gap-3 rounded-2xl border border-red-500/25 bg-red-500/10 p-3 text-xs text-red-200"
+          >
             <CircleAlert className="mt-0.5 h-4 w-4 shrink-0" />
-            <span>{error}</span>
+            <div>
+              <strong className="block text-[11px] font-black">
+                {snapshot ? 'Falha ao atualizar' : 'Consulta indisponível'}
+              </strong>
+              <span className="mt-1 block leading-relaxed">{error}</span>
+              {snapshot && (
+                <span className="mt-1 block text-[10px] text-red-200/70">
+                  A última leitura válida foi preservada abaixo.
+                </span>
+              )}
+            </div>
           </div>
         )}
 
         <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          {initialLoading &&
+            Array.from({ length: 4 }, (_, index) => (
+              <div
+                key={`health-loading-${index}`}
+                className="animate-pulse rounded-2xl border border-slate-800 bg-slate-950/70 p-4"
+              >
+                <div className="h-2.5 w-24 rounded bg-slate-800" />
+                <div className="mt-4 h-7 w-12 rounded bg-slate-800" />
+                <div className="mt-3 h-2.5 w-36 rounded bg-slate-900" />
+              </div>
+            ))}
+
           {cards.map(card => {
             const Icon = card.icon;
             return (
@@ -227,6 +255,7 @@ export default function AdminSystemHealthWorkspace() {
               </article>
             );
           })}
+
           {!snapshot && !loading && !error && (
             <div className="rounded-2xl border border-dashed border-slate-800 p-5 text-xs text-slate-500 sm:col-span-2 xl:col-span-4">
               As métricas ainda não foram consultadas.

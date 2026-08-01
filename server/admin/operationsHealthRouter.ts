@@ -10,18 +10,16 @@ interface AuthorizedAdmin {
   role: string;
 }
 
-const bearerToken = (request: Request): string => {
-  const authorization = request.get('authorization') ?? '';
-  return /^Bearer\s+(.+)$/i.exec(authorization)?.[1]?.trim() ?? '';
-};
+const bearerToken = (authorization: string): string =>
+  /^Bearer\s+(.+)$/i.exec(authorization)?.[1]?.trim() ?? '';
 
 const clean = (value: unknown): string =>
   typeof value === 'string' ? value.trim() : '';
 
-const authorizeSystemHealth = async (
-  request: Request
+export const authorizeOperationsHealth = async (
+  authorization: string
 ): Promise<AuthorizedAdmin> => {
-  const token = bearerToken(request);
+  const token = bearerToken(authorization);
   if (!token) throw new Error('AUTH_REQUIRED');
   const decoded = await adminAuth.verifyIdToken(token, true);
   if (decoded.email_verified !== true) throw new Error('EMAIL_NOT_VERIFIED');
@@ -143,30 +141,75 @@ export const loadOperationsHealthSnapshot = async (): Promise<OperationsHealthSn
   };
 };
 
-const errorResponse = (response: Response, error: unknown): void => {
+export const loadAuthorizedOperationsHealth = async (
+  authorization: string
+): Promise<OperationsHealthSnapshot> => {
+  const admin = await authorizeOperationsHealth(authorization);
+  const snapshot = await loadOperationsHealthSnapshot();
+  await recordHealthAudit(admin);
+  return snapshot;
+};
+
+export interface OperationsHealthErrorResponse {
+  status: number;
+  body: {
+    error: string;
+    code: string;
+  };
+}
+
+export const mapOperationsHealthError = (
+  error: unknown
+): OperationsHealthErrorResponse => {
   const message = error instanceof Error ? error.message : String(error);
   if (message === 'AUTH_REQUIRED' || /id-token|expired|revoked/i.test(message)) {
-    response.status(401).json({ error: 'Faça login novamente.' });
-    return;
+    return {
+      status: 401,
+      body: { error: 'Faça login novamente.', code: 'AUTH_REQUIRED' },
+    };
   }
   if (message === 'EMAIL_NOT_VERIFIED' || message === 'FORBIDDEN') {
-    response.status(403).json({ error: 'Acesso ao painel de saúde não autorizado.' });
-    return;
+    return {
+      status: 403,
+      body: {
+        error: 'Acesso ao painel de saúde não autorizado.',
+        code: 'FORBIDDEN',
+      },
+    };
   }
+  if (/default credentials|credential implementation|could not load/i.test(message)) {
+    return {
+      status: 503,
+      body: {
+        error: 'O backend administrativo ainda não possui credencial do Firebase neste ambiente.',
+        code: 'ADMIN_BACKEND_NOT_CONFIGURED',
+      },
+    };
+  }
+
   console.error('[Admin Operations Health]', error);
-  response.status(503).json({
-    error: 'Não foi possível consultar a saúde operacional agora.',
-  });
+  return {
+    status: 503,
+    body: {
+      error: 'Não foi possível consultar a saúde operacional agora.',
+      code: 'HEALTH_UNAVAILABLE',
+    },
+  };
+};
+
+const errorResponse = (response: Response, error: unknown): void => {
+  const mapped = mapOperationsHealthError(error);
+  response.status(mapped.status).json(mapped.body);
 };
 
 export const createOperationsHealthRouter = (): Router => {
   const router = Router();
 
-  router.get('/', async (request, response) => {
+  router.get('/', async (request: Request, response: Response) => {
     try {
-      const admin = await authorizeSystemHealth(request);
-      const snapshot = await loadOperationsHealthSnapshot();
-      await recordHealthAudit(admin);
+      const snapshot = await loadAuthorizedOperationsHealth(
+        request.get('authorization') ?? ''
+      );
       response.json(snapshot);
     } catch (error) {
       errorResponse(response, error);
