@@ -43,6 +43,7 @@ jobs:
           node --test --import tsx
           tests/identity-verification.test.ts
           tests/passkey-security.test.ts
+          tests/work-eligibility-enforcement.test.ts
           tests/app-error-boundary.test.ts
           tests/production-health.test.ts
 
