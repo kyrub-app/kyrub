@@ -4,6 +4,7 @@ import {
   type KyrubAiConsultantRequest,
   type KyrubAiConsultantResponse,
 } from '../../shared/aiConsultant';
+import { emitKyrubAiActionProposal } from './actionEvents';
 import { normalizeConsultantError } from './consultantError';
 import { auth } from '../utils/firebase';
 
@@ -117,7 +118,9 @@ export const requestKyrubAiConsultant = async (
       );
     }
 
-    return body as KyrubAiConsultantResponse;
+    const result = body as KyrubAiConsultantResponse;
+    emitKyrubAiActionProposal(payload.conversationId, result);
+    return result;
   }
 
   console.warn('[Kyrub AI] Consultant endpoint connection failed.', lastNetworkFailure);
