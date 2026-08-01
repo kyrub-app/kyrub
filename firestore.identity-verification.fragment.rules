@@ -1,0 +1,189 @@
+    // --- Identity verification, KYC and work eligibility ---
+    match /identity_verifications/{userId} {
+      function isVerificationOwner() {
+        return isSignedIn() && request.auth.uid == userId;
+      }
+
+      function validVerificationProfiles(profiles) {
+        return profiles is list
+          && profiles.size() <= 4
+          && profiles.hasOnly([
+            'requester',
+            'freelancer',
+            'bicycle_courier',
+            'motorized_courier'
+          ]);
+      }
+
+      function validIdentityVerification(data) {
+        return data.keys().hasAll([
+          'uid',
+          'status',
+          'requestedProfiles',
+          'approvedProfiles',
+          'fullName',
+          'cpf',
+          'address',
+          'whatsapp',
+          'documentType',
+          'documentPaths',
+          'selfiePath',
+          'cnhCategory',
+          'cnhHasEar',
+          'consentVersion',
+          'reviewReason',
+          'reviewedBy',
+          'reviewedAt',
+          'submittedAt',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'uid',
+          'status',
+          'requestedProfiles',
+          'approvedProfiles',
+          'fullName',
+          'cpf',
+          'address',
+          'whatsapp',
+          'documentType',
+          'documentPaths',
+          'selfiePath',
+          'cnhCategory',
+          'cnhHasEar',
+          'consentVersion',
+          'reviewReason',
+          'reviewedBy',
+          'reviewedAt',
+          'submittedAt',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.uid == userId
+        && data.status in ['draft', 'submitted', 'under_review', 'approved', 'rejected']
+        && validVerificationProfiles(data.requestedProfiles)
+        && validVerificationProfiles(data.approvedProfiles)
+        && data.fullName is string
+        && data.fullName.size() <= 160
+        && data.cpf is string
+        && data.cpf.matches('^[0-9]{11}$')
+        && data.address is string
+        && data.address.size() <= 300
+        && data.whatsapp is string
+        && data.whatsapp.size() <= 40
+        && data.documentType in ['cin', 'rg', 'cnh']
+        && data.documentPaths is list
+        && data.documentPaths.size() <= 4
+        && data.selfiePath is string
+        && data.selfiePath.size() <= 500
+        && data.cnhCategory is string
+        && data.cnhCategory.size() <= 8
+        && data.cnhHasEar is bool
+        && data.consentVersion is string
+        && data.consentVersion.size() <= 32
+        && data.reviewReason is string
+        && data.reviewReason.size() <= 500
+        && data.reviewedBy is string
+        && data.reviewedBy.size() <= 128;
+      }
+
+      allow get: if isVerificationOwner() || isActiveControlPlaneAdmin();
+      allow list: if hasControlPlaneRole([
+        'super_admin',
+        'support',
+        'operations',
+        'compliance'
+      ]) && request.query.limit != null && request.query.limit <= 100;
+
+      allow create: if isVerificationOwner()
+        && validIdentityVerification(incoming())
+        && incoming().status in ['draft', 'submitted']
+        && incoming().approvedProfiles.size() == 0
+        && incoming().reviewReason == ''
+        && incoming().reviewedBy == ''
+        && incoming().reviewedAt == null
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && (
+          incoming().status == 'draft'
+            ? incoming().submittedAt == null
+            : incoming().submittedAt == request.time
+        );
+
+      allow update: if isVerificationOwner()
+        && existing().uid == userId
+        && existing().status != 'approved'
+        && validIdentityVerification(incoming())
+        && incoming().uid == existing().uid
+        && incoming().createdAt == existing().createdAt
+        && incoming().approvedProfiles == existing().approvedProfiles
+        && incoming().reviewReason == existing().reviewReason
+        && incoming().reviewedBy == existing().reviewedBy
+        && incoming().reviewedAt == existing().reviewedAt
+        && incoming().status in ['draft', 'submitted']
+        && incoming().updatedAt == request.time
+        && (
+          incoming().status == 'draft'
+            ? incoming().submittedAt == null
+            : incoming().submittedAt == request.time
+        )
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'status',
+          'requestedProfiles',
+          'fullName',
+          'cpf',
+          'address',
+          'whatsapp',
+          'documentType',
+          'documentPaths',
+          'selfiePath',
+          'cnhCategory',
+          'cnhHasEar',
+          'consentVersion',
+          'submittedAt',
+          'updatedAt'
+        ]);
+
+      allow update: if hasControlPlaneRole([
+        'super_admin',
+        'operations',
+        'compliance'
+      ])
+        && validIdentityVerification(incoming())
+        && incoming().uid == existing().uid
+        && incoming().createdAt == existing().createdAt
+        && incoming().requestedProfiles == existing().requestedProfiles
+        && incoming().fullName == existing().fullName
+        && incoming().cpf == existing().cpf
+        && incoming().address == existing().address
+        && incoming().whatsapp == existing().whatsapp
+        && incoming().documentType == existing().documentType
+        && incoming().documentPaths == existing().documentPaths
+        && incoming().selfiePath == existing().selfiePath
+        && incoming().cnhCategory == existing().cnhCategory
+        && incoming().cnhHasEar == existing().cnhHasEar
+        && incoming().consentVersion == existing().consentVersion
+        && incoming().submittedAt == existing().submittedAt
+        && incoming().status in ['under_review', 'approved', 'rejected']
+        && validVerificationProfiles(incoming().approvedProfiles)
+        && incoming().reviewedBy == request.auth.uid
+        && incoming().reviewedAt == request.time
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'status',
+          'approvedProfiles',
+          'reviewReason',
+          'reviewedBy',
+          'reviewedAt',
+          'updatedAt'
+        ]);
+
+      allow delete: if false;
+    }
+
+    // PIN hashes are server-only. Client and Control Plane screens use the
+    // authenticated API and never read or write these documents directly.
+    match /user_security/{userId} {
+      allow read, write: if false;
+    }
