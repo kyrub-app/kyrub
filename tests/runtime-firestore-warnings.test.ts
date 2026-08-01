@@ -69,6 +69,9 @@ test('document language and translation guard protect React-managed DOM', () => 
   assert.match(indexHtml, /<meta name="google" content="notranslate" \/>/);
   assert.match(indexHtml, /<body class="notranslate">/);
   assert.match(indexHtml, /<div id="root" class="notranslate"><\/div>/);
-  assert.match(indexHtml, /<link rel="icon" href="\/favicon\.ico" sizes="any" \/>/);
-  assert.equal(fs.existsSync('public/favicon.ico'), true);
+  assert.match(
+    indexHtml,
+    /<link rel="icon" type="image\/svg\+xml" href="\/kyrub-logo\.svg" \/>/
+  );
+  assert.equal(fs.existsSync('public/kyrub-logo.svg'), true);
 });
