@@ -18,7 +18,10 @@ const SECURE_DELIVERY_RULES = `    // --- Guia Renda: Entregas Solicitadas/Dispo
       allow create, update, delete: if false;
     }`;
 
-const SECURE_FREELANCE_RULES = `    // --- Guia Renda: Vagas de Freela (Identidade verificada) ---
+const SECURE_FREELANCE_RULES = `${FREELANCE_SECTION_HEADER}
+    // A composição preserva o marcador acima para permanecer idempotente.
+    // As autorizações abaixo substituem os antigos claims amplos por perfis
+    // de identidade analisados e aprovados no Control Plane.
     match /vagas/{vagaId} {
       allow read: if isSignedIn();
       allow create: if isAdmin()
