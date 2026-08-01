@@ -5,6 +5,7 @@ import { AppErrorBoundary } from './components/AppErrorBoundary';
 import './index.css';
 import './styles/responsive-product-cards.css';
 import './styles/catalog-category-tree.css';
+import './styles/profile-verification.css';
 
 const rootElement = document.getElementById('root');
 

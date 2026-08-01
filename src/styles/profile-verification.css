@@ -1,0 +1,18 @@
+/* Keep the identity/security workspace as a distinct action below profile editing. */
+*:has(> #profile-verification-trigger) {
+  flex-wrap: wrap;
+}
+
+#profile-verification-trigger {
+  order: 99;
+  flex-basis: 100%;
+  width: 100%;
+  justify-content: center;
+  border-color: rgb(20 184 166 / 0.28);
+  background: rgb(20 184 166 / 0.06);
+  color: rgb(94 234 212);
+}
+
+#profile-verification-trigger:hover {
+  background: rgb(20 184 166 / 0.12);
+}

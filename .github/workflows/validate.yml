@@ -1,0 +1,62 @@
+name: Validate Kyrub
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main, 'agent/**', 'fix/**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: validate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  application:
+    name: TypeScript, contracts and build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Compose Firestore rules
+        run: npm run firestore:compose
+
+      - name: Capture composed rules
+        uses: actions/upload-artifact@v4
+        with:
+          name: composed-firestore-rules
+          path: .firebase/firestore.combined.rules
+          if-no-files-found: error
+          retention-days: 3
+
+      - name: MVP readiness
+        run: npm run mvp:check
+
+      - name: TypeScript
+        run: npm run lint
+
+      - name: Contract tests
+        run: >-
+          node --test --import tsx
+          tests/identity-verification.test.ts
+          tests/passkey-security.test.ts
+          tests/work-eligibility-enforcement.test.ts
+          tests/app-error-boundary.test.ts
+          tests/production-health.test.ts
+
+      - name: Build
+        run: npm run build

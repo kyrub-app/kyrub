@@ -11,10 +11,12 @@ import { KyrubiaNamingBridge } from './components/KyrubiaNamingBridge';
 import { NoteInvitationOutboxBridge } from './components/NoteInvitationOutboxBridge';
 import { ProfileConnectedCardOrganizationBridge } from './components/ProfileConnectedCardOrganizationBridge';
 import { ProfileConnectedGroupsBridge } from './components/ProfileConnectedGroupsBridge';
+import { ProfilePasskeyBridge } from './components/ProfilePasskeyBridge';
 import { ProfileSocialHubBridge } from './components/ProfileSocialHubBridge';
 import { ProfileSocialMobileFirstBridge } from './components/ProfileSocialMobileFirstBridge';
 import { ProfileSocialPolishBridge } from './components/ProfileSocialPolishBridge';
 import { ProfileSocialPostActionsBridge } from './components/ProfileSocialPostActionsBridge';
+import { ProfileVerificationBridge } from './components/ProfileVerificationBridge';
 import { PublicStorefrontApp } from './components/PublicStorefrontApp';
 import { SocialPublishingBridge } from './components/SocialPublishingBridge';
 import { IntegrationTestOrderBridge } from './components/store/IntegrationTestOrderBridge';
@@ -31,8 +33,9 @@ import { StoreSharingPortalBridge } from './components/store/StoreSharingPortalB
 import { UnifiedProductCreateModalBridge } from './components/store/UnifiedProductCreateModalBridge';
 import { useFontSizeAccessibility } from './hooks/useFontSizeAccessibility';
 import { resolveKyrubAppRoute } from './utils/appRoutes';
-import { auth, db } from './utils/firebase';
 import { isAdminControlPlaneLocation } from './utils/adminControlPlane';
+import { auth, db } from './utils/firebase';
+import { identityVerificationEnabled } from './utils/featureFlags';
 import {
   hasPendingUserStoreSync,
   loadCachedUserStore,
@@ -148,6 +151,12 @@ function AuthenticatedKyrubApp({ operational }: { operational: boolean }) {
       <NoteInvitationOutboxBridge />
       <SocialPublishingBridge />
       <ProfileSocialHubBridge />
+      {identityVerificationEnabled && (
+        <>
+          <ProfileVerificationBridge />
+          <ProfilePasskeyBridge />
+        </>
+      )}
       <ProfileSocialPolishBridge />
       <ProfileSocialMobileFirstBridge />
       <ProfileConnectedGroupsBridge />

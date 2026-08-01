@@ -1,0 +1,60 @@
+name: Identity security rules
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'storage.rules'
+      - 'firestore*.rules'
+      - 'scripts/compose-firestore-rules.mjs'
+      - 'scripts/firestore-rule-composition.mjs'
+      - 'tests/storage-identity-verification.test.ts'
+      - 'firebase.identity-security.json'
+      - 'package.json'
+      - '.github/workflows/identity-security.yml'
+  push:
+    branches: [main, 'agent/**', 'fix/**']
+    paths:
+      - 'storage.rules'
+      - 'firestore*.rules'
+      - 'scripts/compose-firestore-rules.mjs'
+      - 'scripts/firestore-rule-composition.mjs'
+      - 'tests/storage-identity-verification.test.ts'
+      - 'firebase.identity-security.json'
+      - 'package.json'
+      - '.github/workflows/identity-security.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: identity-security-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  identity-storage:
+    name: Firestore and Storage authorization
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Test private identity evidence
+        run: npm run test:identity-security
