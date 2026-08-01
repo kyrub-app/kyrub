@@ -15,6 +15,10 @@ const mobileSource = readFileSync(
   'src/components/ProfileSocialMobileFirstBridge.tsx',
   'utf8'
 );
+const statusCheckboxSource = readFileSync(
+  'src/components/ProfileStatusCheckboxBridge.tsx',
+  'utf8'
+);
 const chatSource = readFileSync(
   'src/components/modals/ChatModal.tsx',
   'utf8'
@@ -53,6 +57,7 @@ describe('profile social hub navigation', () => {
   test('mounts the profile hub, polish layers and Kyrub AI workspace around the legacy app', () => {
     assert.match(appSource, /ProfileSocialHubBridge/);
     assert.match(appSource, /ProfileSocialPolishBridge/);
+    assert.match(appSource, /ProfileStatusCheckboxBridge/);
     assert.match(appSource, /ProfileSocialMobileFirstBridge/);
     assert.match(appSource, /KyrubAiWorkspaceBridge/);
     assert.ok(
@@ -61,6 +66,10 @@ describe('profile social hub navigation', () => {
     );
     assert.ok(
       appSource.indexOf('<ProfileSocialPolishBridge') <
+        appSource.indexOf('<ProfileStatusCheckboxBridge')
+    );
+    assert.ok(
+      appSource.indexOf('<ProfileStatusCheckboxBridge') <
         appSource.indexOf('<ProfileSocialMobileFirstBridge')
     );
     assert.ok(
@@ -81,6 +90,23 @@ describe('profile social hub navigation', () => {
     assert.match(profileSource, /Publicações salvas/);
     assert.match(profileSource, /Salvos \{savedPosts\.length\}/);
     assert.match(profileSource, /users\/\$\{user\.uid\}\/favorites/);
+  });
+
+  test('moves Status into Publications as an optional 24-hour checkbox', () => {
+    assert.match(statusCheckboxSource, /data-kyrub-status-tab-hidden/);
+    assert.match(statusCheckboxSource, /Publicar no Status/);
+    assert.match(
+      statusCheckboxSource,
+      /esta publicação também ficará visível nos seus Status por 24 horas/
+    );
+    assert.match(statusCheckboxSource, /const MAX_ACTIVE_STATUSES = 9/);
+    assert.match(statusCheckboxSource, /publicationType: 'status'/);
+    assert.match(
+      statusCheckboxSource,
+      /visibility: pending\.sendToSquare \? 'public' : 'connections'/
+    );
+    assert.match(statusCheckboxSource, /kyrub-social-posts-updated/);
+    assert.match(statusCheckboxSource, /source: 'local'/);
   });
 
   test('restores Marcados between Status and Conectados for user mentions', () => {
