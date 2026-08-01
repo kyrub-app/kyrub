@@ -8,9 +8,12 @@ const landingSource = readFileSync(
 );
 const indexSource = readFileSync('index.html', 'utf8');
 const manifestSource = readFileSync('public/site.webmanifest', 'utf8');
+const logoSource = readFileSync('public/kyrub-logo.svg', 'utf8');
 
 test('landing uses the supplied Kyrub brand and focused hero copy', () => {
-  assert.match(landingSource, /src="\/kyrub-logo\.png"/);
+  assert.match(landingSource, /src="\/kyrub-logo\.svg"/);
+  assert.match(logoSource, /#ff7b00/);
+  assert.match(logoSource, /viewBox="0 0 500 500"/);
   assert.match(landingSource, /Um app, muitas possibilidades/);
   assert.match(
     landingSource,
@@ -35,12 +38,10 @@ test('about content is moved into an accessible modal', () => {
   assert.match(landingSource, /trustItems\.map/);
 });
 
-test('document registers the complete Kyrub favicon set', () => {
-  assert.match(indexSource, /\/favicon\.ico/);
-  assert.match(indexSource, /\/favicon-32x32\.png/);
-  assert.match(indexSource, /\/favicon-16x16\.png/);
-  assert.match(indexSource, /\/apple-touch-icon\.png/);
+test('document registers the Kyrub logo as favicon and install icon', () => {
+  assert.match(indexSource, /type="image\/svg\+xml"/);
+  assert.match(indexSource, /\/kyrub-logo\.svg/);
   assert.match(indexSource, /\/site\.webmanifest/);
-  assert.match(manifestSource, /android-chrome-192x192\.png/);
-  assert.match(manifestSource, /android-chrome-512x512\.png/);
+  assert.match(manifestSource, /\/kyrub-logo\.svg/);
+  assert.match(manifestSource, /"sizes": "any"/);
 });
