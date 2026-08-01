@@ -1,12 +1,16 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { hardenKyrubDeliveryRules } from './firestore-rule-composition.mjs';
+import {
+  hardenKyrubDeliveryRules,
+  hardenKyrubFreelanceRules,
+} from './firestore-rule-composition.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const basePath = resolve(root, 'firestore.rules');
 const fragmentPaths = [
   resolve(root, 'firestore.admin-control-plane.fragment.rules'),
+  resolve(root, 'firestore.identity-eligibility.fragment.rules'),
   resolve(root, 'firestore.identity-verification.fragment.rules'),
   resolve(root, 'firestore.store-security.fragment.rules'),
   resolve(root, 'firestore.store-directory-query.fragment.rules'),
@@ -38,7 +42,9 @@ if (baseRules.includes('// --- Canonical Stores, Members and Operations ---')) {
   throw new Error('Canonical store rules are already present in firestore.rules.');
 }
 
-const hardenedBaseRules = hardenKyrubDeliveryRules(baseRules);
+const hardenedBaseRules = hardenKyrubFreelanceRules(
+  hardenKyrubDeliveryRules(baseRules)
+);
 const composedFragment = fragments.map(fragment => fragment.trimEnd()).join('\n\n');
 const combinedRules = hardenedBaseRules.replace(
   marker,
