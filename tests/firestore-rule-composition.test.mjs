@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import {
   DELIVERY_SECTION_HEADER,
@@ -85,4 +86,16 @@ test('freelance applications and vacancy creation require approved profiles', ()
 test('freelance composition is idempotent', () => {
   const secured = hardenKyrubFreelanceRules(legacyFreelanceRules);
   assert.equal(hardenKyrubFreelanceRules(secured), secured);
+});
+
+test('the composer inserts fragments through a callback so dollar anchors stay literal', () => {
+  const composer = readFileSync('scripts/compose-firestore-rules.mjs', 'utf8');
+  const verificationRules = readFileSync(
+    'firestore.identity-verification.fragment.rules',
+    'utf8'
+  );
+
+  assert.match(composer, /replace\(\s*marker,\s*\(\) =>/);
+  assert.match(verificationRules, /matches\('\^\[0-9\]\{11\}\$'\)/);
+  assert.doesNotMatch(composer, /replace\(\s*marker,\s*`\$\{composedFragment\}/);
 });
