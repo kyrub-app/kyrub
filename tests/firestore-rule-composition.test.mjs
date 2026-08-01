@@ -30,7 +30,7 @@ service cloud.firestore {
 ${FREELANCE_SECTION_HEADER}
     match /vagas/{vagaId} {
       allow read: if isSignedIn();
-      allow create, update, delete: if isAdmin() || hasRole(['lojista', 'prestador']);
+      allow create, update, delete: if isAdmin() || hasRole(['owner', 'manager', 'staff']);
     }
     match /candidaturas/{candiId} {
       allow read: if isSignedIn();
@@ -38,9 +38,8 @@ ${FREELANCE_SECTION_HEADER}
       allow update, delete: if isSignedIn();
     }
 
-    match /artifacts/{userId}/{document=**} {
-      allow read: if request.auth.uid == userId;
-    }
+    match /artifacts { allow list: if isSignedIn(); }
+    match /tenants { allow list: if isSignedIn(); }
   }
 }`;
 
@@ -78,6 +77,7 @@ test('freelance applications and vacancy creation require approved profiles', ()
 
   assert.match(result, /hasApprovedIdentityProfile\('requester'\)/);
   assert.match(result, /hasApprovedIdentityProfile\('freelancer'\)/);
+  assert.match(result, /hasRole\(\['owner', 'manager', 'staff'\]\)/);
   assert.match(result, /existing\(\)\.userId == request\.auth\.uid/);
   assert.doesNotMatch(result, /allow update, delete: if isSignedIn\(\);/);
 });
