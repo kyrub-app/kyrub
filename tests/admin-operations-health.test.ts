@@ -8,6 +8,10 @@ const serverSource = readFileSync(
   'server/admin/operationsHealthRouter.ts',
   'utf8'
 );
+const vercelHandlerSource = readFileSync(
+  'api/admin/operations/health.ts',
+  'utf8'
+);
 const appSource = readFileSync('src/App.tsx', 'utf8');
 const workspaceSource = readFileSync(
   'src/components/admin/AdminSystemHealthWorkspace.tsx',
@@ -85,12 +89,20 @@ describe('admin operations health', () => {
     assert.doesNotMatch(serverSource, /customerName:/);
   });
 
+  test('the same protected health service is available to Express and Vercel', () => {
+    assert.match(serverEntrySource, /api\/admin\/operations\/health/);
+    assert.match(serverSource, /loadAuthorizedOperationsHealth/);
+    assert.match(vercelHandlerSource, /loadAuthorizedOperationsHealth/);
+    assert.match(vercelHandlerSource, /METHOD_NOT_ALLOWED/);
+    assert.match(vercelHandlerSource, /no-store, max-age=0/);
+    assert.match(vercelHandlerSource, /mapOperationsHealthError/);
+  });
+
   test('control plane mounts a read-only auto-refreshing health workspace', () => {
     assert.match(appSource, /AdminControlPlaneRoot/);
     assert.match(workspaceSource, /read_system_health/);
     assert.match(workspaceSource, /loadAdminOperationsHealth/);
     assert.match(workspaceSource, /60_000/);
     assert.match(workspaceSource, /Nenhum payload, cliente ou segredo é exposto/);
-    assert.match(serverEntrySource, /api\/admin\/operations\/health/);
   });
 });
