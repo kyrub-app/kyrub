@@ -114,7 +114,7 @@ function KyrubBrand({ compact = false }: { compact?: boolean }) {
   return (
     <span className="flex items-center gap-3">
       <img
-        src="/kyrub-logo.png"
+        src="/kyrub-logo.svg"
         alt=""
         aria-hidden="true"
         className={`${compact ? 'h-9 w-9' : 'h-11 w-11'} rounded-xl object-cover`}
