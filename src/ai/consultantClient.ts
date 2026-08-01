@@ -1,4 +1,5 @@
 import {
+  KYRUB_AI_CONSULTANT_COMPAT_ENDPOINT,
   KYRUB_AI_CONSULTANT_ENDPOINT,
   KYRUB_AI_CONSULTANT_LEGACY_ENDPOINT,
   type KyrubAiConsultantRequest,
@@ -21,6 +22,7 @@ export class KyrubAiClientError extends Error {
 
 const CONSULTANT_ENDPOINTS = [
   KYRUB_AI_CONSULTANT_ENDPOINT,
+  KYRUB_AI_CONSULTANT_COMPAT_ENDPOINT,
   KYRUB_AI_CONSULTANT_LEGACY_ENDPOINT,
 ] as const;
 
@@ -47,7 +49,7 @@ export const requestKyrubAiConsultant = async (
   const currentUser = auth.currentUser;
   if (!currentUser) {
     throw new KyrubAiClientError(
-      'Faça login para conversar com o Consultor Kyrub.',
+      'Faça login para conversar com a Kyrubia.',
       'AUTH_REQUIRED',
       401
     );
@@ -89,8 +91,9 @@ export const requestKyrubAiConsultant = async (
     }
 
     const body = await readResponseBody(response);
+    const hasAnotherEndpoint = index < CONSULTANT_ENDPOINTS.length - 1;
     const canTryCompatibilityRoute =
-      index === 0 &&
+      hasAnotherEndpoint &&
       (response.status === 404 ||
         response.status === 405 ||
         (response.status >= 500 && !hasTopLevelKyrubCode(body)));
@@ -123,9 +126,9 @@ export const requestKyrubAiConsultant = async (
     return result;
   }
 
-  console.warn('[Kyrub AI] Consultant endpoint connection failed.', lastNetworkFailure);
+  console.warn('[Kyrubia] AI endpoint connection failed.', lastNetworkFailure);
   throw new KyrubAiClientError(
-    'Não foi possível conectar ao servidor da Kyrub I.A. Verifique sua internet e tente novamente.',
+    'Não foi possível conectar ao servidor da Kyrubia. Verifique sua internet e tente novamente.',
     'AI_UNAVAILABLE',
     503
   );
