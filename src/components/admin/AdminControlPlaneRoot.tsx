@@ -8,7 +8,9 @@ export default function AdminControlPlaneRoot() {
     <div className="min-h-screen bg-slate-950">
       <AdminControlPlaneApp />
       {identityVerificationEnabled && <AdminIdentityVerificationWorkspace />}
-      <AdminSystemHealthWorkspace />
+      <div id="admin-system-health" className="scroll-mt-24">
+        <AdminSystemHealthWorkspace />
+      </div>
     </div>
   );
 }
