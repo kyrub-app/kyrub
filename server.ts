@@ -14,6 +14,7 @@ import { createDeliveryOpportunityRouter } from "./server/delivery/deliveryOppor
 import { createOperationsHealthRouter } from "./server/admin/operationsHealthRouter";
 import { createOrderInventoryRouter } from "./server/inventory/orderInventoryRouter";
 import { createKyrubAiConsultantRouter } from "./server/ai/consultantRouter";
+import { enforceDeliveryWorkEligibility } from "./server/identity/workEligibilityMiddleware";
 
 // Load environment variables
 dotenv.config();
@@ -112,6 +113,7 @@ app.use(
 app.use(
   "/api/delivery-opportunities",
   integrationRateLimiter,
+  enforceDeliveryWorkEligibility,
   createDeliveryOpportunityRouter()
 );
 
