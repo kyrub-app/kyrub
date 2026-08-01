@@ -1,0 +1,16 @@
+    // --- Verified work eligibility helpers ---
+    function identityVerificationDocument(userId) {
+      return /databases/$(database)/documents/identity_verifications/$(userId);
+    }
+
+    function hasApprovedIdentityProfile(profile) {
+      return isSignedIn()
+        && exists(identityVerificationDocument(request.auth.uid))
+        && get(identityVerificationDocument(request.auth.uid)).data.status == 'approved'
+        && profile in get(identityVerificationDocument(request.auth.uid)).data.approvedProfiles;
+    }
+
+    function hasApprovedCourierProfile() {
+      return hasApprovedIdentityProfile('bicycle_courier')
+        || hasApprovedIdentityProfile('motorized_courier');
+    }
