@@ -41,6 +41,8 @@ const MAX_NOTE_TITLE_CHARACTERS = 120;
 const MAX_NOTE_CONTENT_CHARACTERS = 10_000;
 const MAX_NOTE_CHECKLIST_ITEMS = 24;
 const MAX_NOTE_CHECKLIST_ITEM_CHARACTERS = 180;
+const SENSITIVE_OPPORTUNITY_CONTEXT =
+  /\b(luto|falecimento|morte|suic[ií]d|autoagress|crise|emerg[eê]ncia|viol[eê]ncia|abuso|doen[cç]a grave|diagn[oó]stico|hospitaliza[cç][aã]o|sa[uú]de mental|depress[aã]o|p[aâ]nico|vulnerabilidade)\b/i;
 
 class KyrubiaRouteError extends Error {
   constructor(
@@ -271,6 +273,7 @@ AÇÃO HABILITADA: CRIAR NOTA
 16. Quando faltarem informações essenciais para a nota, pergunte antes de chamar a função.
 17. Produtos, lojas, estoque, publicações, exclusões, convites e outras alterações ainda não podem ser executados automaticamente.
 18. O modo manual do Kyrub sempre continua disponível.
+19. Quando preparar uma nota e o assunto permitir expansão, não encerre apenas com a confirmação: também ofereça UMA pergunta curta para explorar caminhos práticos, profissionais, pessoais ou financeiros relacionados ao conteúdo.
 
 ESTILO
 - Seja objetiva, mas não superficial.
@@ -365,6 +368,24 @@ const createNoteProposalFromParts = (
   }
   return undefined;
 };
+
+const opportunityFollowUp = (
+  conversation: ReturnType<typeof normalizeConversation>
+): string => {
+  const context = [
+    conversation.topic,
+    conversation.screenContext,
+    ...conversation.messages.map(message => message.content),
+  ].join(' ');
+
+  if (SENSITIVE_OPPORTUNITY_CONTEXT.test(context)) return '';
+
+  return 'Esse conteúdo também pode revelar caminhos práticos, de desenvolvimento ou de renda. Você gostaria que a Kyrubia explorasse essas possibilidades, do caminho mais simples ao mais estrutural?';
+};
+
+const alreadyOffersExpansion = (reply: string): boolean =>
+  reply.includes('?') &&
+  /\b(oportunidade|renda|comercial|neg[oó]cio|monetiz|explorar|aprofundar|possibilidades)\b/i.test(reply);
 
 const mapGeminiFailure = (
   response: Response,
@@ -502,10 +523,16 @@ const generateReply = async (
     .trim();
 
   if (actionProposal) {
+    const confirmation =
+      textReply ||
+      `Preparei a nota “${actionProposal.title}”. Revise o conteúdo e confirme para adicioná-la às suas notas.`;
+    const followUp = opportunityFollowUp(conversation);
+
     return {
       reply:
-        textReply ||
-        `Preparei a nota “${actionProposal.title}”. Revise o conteúdo e confirme para adicioná-la às suas notas.`,
+        followUp && !alreadyOffersExpansion(confirmation)
+          ? `${confirmation}\n\n${followUp}`
+          : confirmation,
       model,
       actionProposal,
     };
