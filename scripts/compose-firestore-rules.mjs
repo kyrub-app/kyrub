@@ -46,9 +46,13 @@ const hardenedBaseRules = hardenKyrubFreelanceRules(
   hardenKyrubDeliveryRules(baseRules)
 );
 const composedFragment = fragments.map(fragment => fragment.trimEnd()).join('\n\n');
+
+// Use a replacement callback so regular-expression anchors and other dollar
+// sequences inside rule fragments remain literal. A plain replacement string
+// treats sequences such as `$'` specially and can corrupt the generated rules.
 const combinedRules = hardenedBaseRules.replace(
   marker,
-  `${composedFragment}\n\n${marker}`
+  () => `${composedFragment}\n\n${marker}`
 );
 
 await mkdir(dirname(outputPath), { recursive: true });
