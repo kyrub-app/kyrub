@@ -461,7 +461,6 @@ const generateReply = async (
           toolConfig: {
             functionCallingConfig: {
               mode: 'AUTO',
-              allowedFunctionNames: ['create_note'],
             },
           },
           generationConfig: {
