@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 500" role="img" aria-labelledby="title description">
+  <title id="title">Kyrub</title>
+  <description id="description">Símbolo geométrico laranja da marca Kyrub sobre fundo preto.</description>
+  <rect width="500" height="500" fill="#000000"/>
+  <path d="M98 165H75V425H322V390" fill="none" stroke="#ff7b00" stroke-width="46" stroke-linecap="square" stroke-linejoin="miter"/>
+  <path d="M174 320V74H426V320H337V164H174V320H294V207H216" fill="none" stroke="#ff7b00" stroke-width="46" stroke-linecap="square" stroke-linejoin="miter"/>
+  <rect x="228" y="218" width="46" height="46" fill="#ff7b00"/>
+</svg>
