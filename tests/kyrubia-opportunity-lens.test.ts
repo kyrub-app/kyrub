@@ -47,7 +47,8 @@ test('Kyrubia is the named AI persona and uses a restrained opportunity lens', (
   assert.match(routeSource, /Não force monetização em conversas de luto/);
   assert.match(routeSource, /Nunca garanta lucro, resultado, demanda, retorno ou sucesso/);
   assert.match(routeSource, /ingredientes, utensílios quando úteis, preparo, tempos, cuidados, conservação e o momento de servir/);
-  assert.match(routeSource, /allowedFunctionNames: \['create_note'\]/);
+  assert.match(routeSource, /functionCallingConfig:\s*{\s*mode: 'AUTO',\s*}/);
+  assert.doesNotMatch(routeSource, /allowedFunctionNames/);
   assert.doesNotMatch(routeSource, /firebase\/firestore|firebase-admin|@google\/genai/);
 
   assert.match(namingSource, /\['Consultor Kyrub', 'Kyrubia'\]/);
@@ -100,9 +101,13 @@ test('Kyrubia can prepare a complete recipe note without saving it directly', as
     assert.match(url, /generativelanguage\.googleapis\.com/);
     const requestPayload = JSON.parse(String(init?.body)) as Record<string, unknown>;
     const instruction = JSON.stringify(requestPayload.systemInstruction);
+    const toolConfig = requestPayload.toolConfig as Record<string, unknown>;
+    const functionCallingConfig = toolConfig.functionCallingConfig as Record<string, unknown>;
     assert.match(instruction, /Kyrubia/);
     assert.match(instruction, /oportunidade/i);
     assert.match(JSON.stringify(requestPayload.tools), /create_note/);
+    assert.equal(functionCallingConfig.mode, 'AUTO');
+    assert.equal('allowedFunctionNames' in functionCallingConfig, false);
 
     return new Response(JSON.stringify({
       candidates: [{
