@@ -1,4 +1,5 @@
-export const KYRUB_AI_CONSULTANT_ENDPOINT = '/api/consultor-kyrub';
+export const KYRUB_AI_CONSULTANT_ENDPOINT = '/api/kyrubia';
+export const KYRUB_AI_CONSULTANT_COMPAT_ENDPOINT = '/api/consultor-kyrub';
 export const KYRUB_AI_CONSULTANT_LEGACY_ENDPOINT = '/api/ai/consultant';
 
 export const KYRUB_AI_LIMITS = {

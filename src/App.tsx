@@ -6,6 +6,7 @@ import AdminControlPlaneRoot from './components/admin/AdminControlPlaneRoot';
 import { AppModalLayoutBridge } from './components/AppModalLayoutBridge';
 import { KyrubAiNoteActionBridge } from './components/KyrubAiNoteActionBridge';
 import { KyrubAiWorkspaceBridge } from './components/KyrubAiWorkspaceBridge';
+import { KyrubiaNamingBridge } from './components/KyrubiaNamingBridge';
 import { NoteInvitationOutboxBridge } from './components/NoteInvitationOutboxBridge';
 import { ProfileConnectedCardOrganizationBridge } from './components/ProfileConnectedCardOrganizationBridge';
 import { ProfileConnectedGroupsBridge } from './components/ProfileConnectedGroupsBridge';
@@ -151,6 +152,7 @@ function AuthenticatedKyrubApp({ operational }: { operational: boolean }) {
       <ProfileConnectedCardOrganizationBridge />
       <ProfileSocialPostActionsBridge />
       <KyrubAiWorkspaceBridge />
+      <KyrubiaNamingBridge />
       <KyrubAiNoteActionBridge />
       <StoreSharingPortalBridge />
       <StoreRestartLandingBridge />
