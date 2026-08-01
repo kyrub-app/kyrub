@@ -16,6 +16,10 @@ const TEXT_REPLACEMENTS = new Map<string, string>([
     'Olá! Conte o que você precisa. Vou ajudar a organizar a solicitação e os próximos passos.',
     'Olá! Eu sou a Kyrubia. Conte o que você precisa e vou ajudar a organizar o pedido, os próximos passos e oportunidades relacionadas.',
   ],
+  [
+    'Não foi possível conectar ao servidor da Kyrub I.A. Verifique sua internet e tente novamente.',
+    'Não foi possível conectar ao servidor da Kyrubia. Verifique sua internet e tente novamente.',
+  ],
 ]);
 
 const replaceExactText = (root: ParentNode): void => {
