@@ -32,6 +32,17 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Compose Firestore rules
+        run: npm run firestore:compose
+
+      - name: Capture composed rules
+        uses: actions/upload-artifact@v4
+        with:
+          name: composed-firestore-rules
+          path: .firebase/firestore.combined.rules
+          if-no-files-found: error
+          retention-days: 3
+
       - name: MVP readiness
         run: npm run mvp:check
 
