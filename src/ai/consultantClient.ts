@@ -128,7 +128,7 @@ export const requestKyrubAiConsultant = async (
 
   console.warn('[Kyrubia] AI endpoint connection failed.', lastNetworkFailure);
   throw new KyrubAiClientError(
-    'Não foi possível conectar ao servidor da Kyrubia. Verifique sua internet e tente novamente.',
+    'Não foi possível conectar ao servidor da Kyrub I.A. Verifique sua internet e tente novamente.',
     'AI_UNAVAILABLE',
     503
   );
