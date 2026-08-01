@@ -62,8 +62,13 @@ const isActiveStatus = (post: LocalSocialPost, now = Date.now()): boolean => {
   return Number.isFinite(createdAt) && now - createdAt < STATUS_TTL_MS;
 };
 
-const countActiveStatuses = (posts: LocalSocialPost[]): number =>
-  posts.filter(post => isActiveStatus(post)).length;
+const countActiveStatuses = (
+  posts: LocalSocialPost[],
+  userId: string
+): number =>
+  posts.filter(
+    post => post.authorId === userId && isActiveStatus(post)
+  ).length;
 
 export function ProfileStatusCheckboxBridge() {
   const [userId, setUserId] = useState(auth.currentUser?.uid ?? '');
@@ -85,6 +90,9 @@ export function ProfileStatusCheckboxBridge() {
 
   useEffect(() => {
     activeStatusCountRef.current = activeStatusCount;
+    if (activeStatusCount >= MAX_ACTIVE_STATUSES) {
+      setShareToStatus(false);
+    }
   }, [activeStatusCount]);
 
   useEffect(
@@ -104,7 +112,9 @@ export function ProfileStatusCheckboxBridge() {
           localStorage.getItem(getUserPostsKey(nextUserId)) ??
             localStorage.getItem(LEGACY_POSTS_KEY)
         );
-        setActiveStatusCount(countActiveStatuses(cachedPosts));
+        setActiveStatusCount(
+          countActiveStatuses(cachedPosts, nextUserId)
+        );
       }),
     []
   );
@@ -120,13 +130,14 @@ export function ProfileStatusCheckboxBridge() {
         return;
       }
 
-      setActiveStatusCount(countActiveStatuses(detail.posts));
+      setActiveStatusCount(countActiveStatuses(detail.posts, userId));
 
       const pending = pendingStatusShareRef.current;
       if (!pending || detail.source === 'cloud') return;
 
       const sourcePost = detail.posts.find(
         post =>
+          post.authorId === userId &&
           post.publicationType !== 'status' &&
           Boolean(post.id) &&
           !pending.beforeFeedIds.has(post.id)
@@ -149,7 +160,7 @@ export function ProfileStatusCheckboxBridge() {
 
       localStorage.setItem(getUserPostsKey(userId), JSON.stringify(nextPosts));
       localStorage.setItem(LEGACY_POSTS_KEY, JSON.stringify(nextPosts));
-      setActiveStatusCount(countActiveStatuses(nextPosts));
+      setActiveStatusCount(countActiveStatuses(nextPosts, userId));
       setShareToStatus(false);
       setFeedback('Também publicado nos seus Status por 24 horas.');
 
@@ -250,10 +261,13 @@ export function ProfileStatusCheckboxBridge() {
         !boundPublishButtonsRef.current.has(publishButton)
       ) {
         const handler: EventListener = event => {
-          if (!shareToStatusRef.current) {
+          const previousPending = pendingStatusShareRef.current;
+          if (previousPending) {
+            window.clearTimeout(previousPending.timeoutId);
             pendingStatusShareRef.current = null;
-            return;
           }
+
+          if (!shareToStatusRef.current) return;
 
           if (activeStatusCountRef.current >= MAX_ACTIVE_STATUSES) {
             event.preventDefault();
@@ -281,7 +295,11 @@ export function ProfileStatusCheckboxBridge() {
           pendingStatusShareRef.current = {
             beforeFeedIds: new Set(
               cachedPosts
-                .filter(post => post.publicationType !== 'status')
+                .filter(
+                  post =>
+                    post.authorId === userId &&
+                    post.publicationType !== 'status'
+                )
                 .map(post => post.id)
             ),
             sendToSquare: squareCheckbox?.checked === true,
