@@ -4,6 +4,7 @@ import rateLimit from "express-rate-limit";
 import dotenv from "dotenv";
 import { GoogleGenAI } from "@google/genai";
 import { createServer as createViteServer } from "vite";
+import handleKyrubAiConsultant from "./api/consultor-kyrub";
 import { proxyPublicGoogleDriveImage } from "./server/driveMediaProxy";
 import {
   createNinetyNineFoodRouter,
@@ -118,6 +119,14 @@ app.use(
   "/api/admin/operations/health",
   integrationRateLimiter,
   createOperationsHealthRouter()
+);
+
+app.all(
+  "/api/consultor-kyrub",
+  consultantRateLimiter,
+  async (request, response) => {
+    await handleKyrubAiConsultant(request, response);
+  }
 );
 
 app.use(
