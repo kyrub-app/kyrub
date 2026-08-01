@@ -7,6 +7,7 @@ import {
 } from '../../shared/aiConsultant';
 import { emitKyrubAiActionProposal } from './actionEvents';
 import { normalizeConsultantError } from './consultantError';
+import { prepareKyrubAiOpportunityContinuation } from './opportunityContinuation';
 import { auth } from '../utils/firebase';
 
 export class KyrubAiClientError extends Error {
@@ -55,6 +56,8 @@ export const requestKyrubAiConsultant = async (
     );
   }
 
+  const requestPayload = prepareKyrubAiOpportunityContinuation(payload);
+
   let token = '';
   try {
     token = await currentUser.getIdToken();
@@ -79,7 +82,7 @@ export const requestKyrubAiConsultant = async (
           'content-type': 'application/json',
           accept: 'application/json',
         },
-        body: JSON.stringify(payload),
+        body: JSON.stringify(requestPayload),
         cache: 'no-store',
         credentials: 'same-origin',
         signal,
