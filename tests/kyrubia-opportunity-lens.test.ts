@@ -47,6 +47,8 @@ test('Kyrubia is the named AI persona and uses a restrained opportunity lens', (
   assert.match(routeSource, /Não force monetização em conversas de luto/);
   assert.match(routeSource, /Nunca garanta lucro, resultado, demanda, retorno ou sucesso/);
   assert.match(routeSource, /ingredientes, utensílios quando úteis, preparo, tempos, cuidados, conservação e o momento de servir/);
+  assert.match(routeSource, /não encerre apenas com a confirmação/i);
+  assert.match(routeSource, /SENSITIVE_OPPORTUNITY_CONTEXT/);
   assert.match(routeSource, /functionCallingConfig:\s*{\s*mode: 'AUTO',\s*}/);
   assert.doesNotMatch(routeSource, /allowedFunctionNames/);
   assert.doesNotMatch(routeSource, /firebase\/firestore|firebase-admin|@google\/genai/);
@@ -75,7 +77,7 @@ test('Kyrubia health response exposes persona, note skill and opportunity lens',
   assert.equal(body.opportunityLensEnabled, true);
 });
 
-test('Kyrubia can prepare a complete recipe note without saving it directly', async () => {
+test('Kyrubia can prepare a complete recipe note and invite further exploration', async () => {
   const previousFetch = globalThis.fetch;
   const previousKey = process.env.GEMINI_API_KEY;
   process.env.GEMINI_API_KEY = 'test-gemini-key';
@@ -105,6 +107,7 @@ test('Kyrubia can prepare a complete recipe note without saving it directly', as
     const functionCallingConfig = toolConfig.functionCallingConfig as Record<string, unknown>;
     assert.match(instruction, /Kyrubia/);
     assert.match(instruction, /oportunidade/i);
+    assert.match(instruction, /não encerre apenas com a confirmação/i);
     assert.match(JSON.stringify(requestPayload.tools), /create_note/);
     assert.equal(functionCallingConfig.mode, 'AUTO');
     assert.equal('allowedFunctionNames' in functionCallingConfig, false);
@@ -163,6 +166,8 @@ test('Kyrubia can prepare a complete recipe note without saving it directly', as
     assert.equal(proposal.type, 'create_note');
     assert.equal(proposal.requiresConfirmation, true);
     assert.match(String(proposal.content), /Ingredientes/);
+    assert.match(String(body.reply), /caminhos práticos, de desenvolvimento ou de renda/i);
+    assert.match(String(body.reply), /Você gostaria que a Kyrubia explorasse/i);
     assert.deepEqual(proposal.checklist, [
       'Separar os ingredientes',
       'Preparar a massa',
