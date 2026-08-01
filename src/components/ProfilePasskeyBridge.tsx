@@ -69,8 +69,9 @@ const publicKeyCreationOptions = (
         const candidate = item as Record<string, unknown>;
         return {
           ...candidate,
+          type: 'public-key',
           id: fromBase64Url(String(candidate.id ?? '')),
-        } as PublicKeyCredentialDescriptor;
+        } satisfies PublicKeyCredentialDescriptor;
       })
     : [],
 });
@@ -85,8 +86,9 @@ const publicKeyRequestOptions = (
         const candidate = item as Record<string, unknown>;
         return {
           ...candidate,
+          type: 'public-key',
           id: fromBase64Url(String(candidate.id ?? '')),
-        } as PublicKeyCredentialDescriptor;
+        } satisfies PublicKeyCredentialDescriptor;
       })
     : [],
 });
