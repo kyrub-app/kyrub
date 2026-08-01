@@ -15,6 +15,7 @@ import { ProfileSocialHubBridge } from './components/ProfileSocialHubBridge';
 import { ProfileSocialMobileFirstBridge } from './components/ProfileSocialMobileFirstBridge';
 import { ProfileSocialPolishBridge } from './components/ProfileSocialPolishBridge';
 import { ProfileSocialPostActionsBridge } from './components/ProfileSocialPostActionsBridge';
+import { ProfileVerificationBridge } from './components/ProfileVerificationBridge';
 import { PublicStorefrontApp } from './components/PublicStorefrontApp';
 import { SocialPublishingBridge } from './components/SocialPublishingBridge';
 import { IntegrationTestOrderBridge } from './components/store/IntegrationTestOrderBridge';
@@ -148,6 +149,7 @@ function AuthenticatedKyrubApp({ operational }: { operational: boolean }) {
       <NoteInvitationOutboxBridge />
       <SocialPublishingBridge />
       <ProfileSocialHubBridge />
+      <ProfileVerificationBridge />
       <ProfileSocialPolishBridge />
       <ProfileSocialMobileFirstBridge />
       <ProfileConnectedGroupsBridge />
