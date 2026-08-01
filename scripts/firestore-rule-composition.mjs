@@ -5,10 +5,10 @@ export const NEXT_DELIVERY_SECTION_HEADER =
   '    // --- Guia Renda: Vagas de Freela';
 
 export const FREELANCE_SECTION_HEADER =
-  '    // --- Guia Renda: Vagas de Freela & Candidaturas ---';
+  '    // --- Guia Renda: Vagas de Freela (Otimizado com Custom Claims) ---';
 
 export const NEXT_FREELANCE_SECTION_HEADER =
-  '    match /artifacts/{userId}/{document=**} {';
+  '    match /artifacts { allow list: if isSignedIn(); }';
 
 const SECURE_DELIVERY_RULES = `    // --- Guia Renda: Entregas Solicitadas/Disponíveis ---
     // Esta coleção é uma projeção server-authoritative. O Firebase Admin SDK
@@ -18,27 +18,29 @@ const SECURE_DELIVERY_RULES = `    // --- Guia Renda: Entregas Solicitadas/Dispo
       allow create, update, delete: if false;
     }`;
 
-const SECURE_FREELANCE_RULES = `    // --- Guia Renda: Vagas de Freela & Candidaturas ---
+const SECURE_FREELANCE_RULES = `    // --- Guia Renda: Vagas de Freela (Identidade verificada) ---
     match /vagas/{vagaId} {
       allow read: if isSignedIn();
       allow create: if isAdmin()
         || (
-          hasRole(['lojista', 'prestador'])
+          hasRole(['owner', 'manager', 'staff'])
           && hasApprovedIdentityProfile('requester')
         );
-      allow update, delete: if isAdmin() || hasRole(['lojista', 'prestador']);
+      allow update, delete: if isAdmin()
+        || hasRole(['owner', 'manager', 'staff']);
     }
 
+    // --- Candidaturas (Prestar o serviço de Freela) ---
     match /candidaturas/{candiId} {
       allow read: if isSignedIn();
       allow create: if isSignedIn()
         && incoming().userId == request.auth.uid
         && hasApprovedIdentityProfile('freelancer');
       allow update: if isAdmin()
-        || hasRole(['lojista', 'prestador'])
+        || hasRole(['owner', 'manager', 'staff'])
         || (isSignedIn() && existing().userId == request.auth.uid);
       allow delete: if isAdmin()
-        || hasRole(['lojista', 'prestador'])
+        || hasRole(['owner', 'manager', 'staff'])
         || (isSignedIn() && existing().userId == request.auth.uid);
     }`;
 
