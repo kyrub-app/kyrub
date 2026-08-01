@@ -4,6 +4,7 @@ import { doc, onSnapshot } from 'firebase/firestore';
 import LegacyApp from './LegacyApp';
 import AdminControlPlaneRoot from './components/admin/AdminControlPlaneRoot';
 import { AppModalLayoutBridge } from './components/AppModalLayoutBridge';
+import { KyrubAiConversationHeaderGuard } from './components/KyrubAiConversationHeaderGuard';
 import { KyrubAiNoteActionBridge } from './components/KyrubAiNoteActionBridge';
 import { KyrubAiWorkspaceBridge } from './components/KyrubAiWorkspaceBridge';
 import { KyrubiaNamingBridge } from './components/KyrubiaNamingBridge';
@@ -129,6 +130,7 @@ function AuthenticatedKyrubApp({ operational }: { operational: boolean }) {
   return (
     <>
       <AppModalLayoutBridge />
+      <KyrubAiConversationHeaderGuard />
       <StorePersistenceBridge />
       <ProductCrossDeviceSyncBridge
         onCloudProductsApplied={refreshLegacyCache}
