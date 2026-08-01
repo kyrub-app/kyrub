@@ -11,6 +11,7 @@ import { KyrubiaNamingBridge } from './components/KyrubiaNamingBridge';
 import { NoteInvitationOutboxBridge } from './components/NoteInvitationOutboxBridge';
 import { ProfileConnectedCardOrganizationBridge } from './components/ProfileConnectedCardOrganizationBridge';
 import { ProfileConnectedGroupsBridge } from './components/ProfileConnectedGroupsBridge';
+import { ProfilePasskeyBridge } from './components/ProfilePasskeyBridge';
 import { ProfileSocialHubBridge } from './components/ProfileSocialHubBridge';
 import { ProfileSocialMobileFirstBridge } from './components/ProfileSocialMobileFirstBridge';
 import { ProfileSocialPolishBridge } from './components/ProfileSocialPolishBridge';
@@ -150,6 +151,7 @@ function AuthenticatedKyrubApp({ operational }: { operational: boolean }) {
       <SocialPublishingBridge />
       <ProfileSocialHubBridge />
       <ProfileVerificationBridge />
+      <ProfilePasskeyBridge />
       <ProfileSocialPolishBridge />
       <ProfileSocialMobileFirstBridge />
       <ProfileConnectedGroupsBridge />
