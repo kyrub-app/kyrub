@@ -3,8 +3,8 @@ import { readFileSync } from 'node:fs';
 import { describe, test } from 'node:test';
 
 const appSource = readFileSync('src/App.tsx', 'utf8');
-const bridgeSource = readFileSync(
-  'src/components/ProfileConnectedGroupsBridge.tsx',
+const profileSource = readFileSync(
+  'src/components/ProfileSocialHubNative.tsx',
   'utf8'
 );
 const rulesSource = readFileSync(
@@ -17,46 +17,47 @@ const composeSource = readFileSync(
 );
 
 describe('connected status covers and private groups', () => {
-  test('mounts the connected experience bridge after the mobile-first cards', () => {
-    assert.match(appSource, /ProfileConnectedGroupsBridge/);
-    assert.ok(
-      appSource.indexOf('<ProfileSocialMobileFirstBridge') <
-        appSource.indexOf('<ProfileConnectedGroupsBridge')
-    );
+  test('mounts the connected experience inside the native profile hub', () => {
+    assert.match(appSource, /ProfileSocialHubNative/);
+    assert.doesNotMatch(appSource, /ProfileSocialMobileFirstBridge/);
+    assert.doesNotMatch(appSource, /ProfileConnectedGroupsBridge/);
+    assert.match(profileSource, /type ConnectionSection/);
+    assert.match(profileSource, /id: 'groups'/);
   });
 
   test('uses the latest active status as the connected card cover', () => {
-    assert.match(bridgeSource, /const STATUS_TTL_MS = 24 \* 60 \* 60 \* 1000/);
-    assert.match(bridgeSource, /latestStatusByAuthor/);
-    assert.match(bridgeSource, /data-kyrub-connected-status-cover/);
-    assert.match(bridgeSource, /status\?\.mediaUrls\?\.\[0\]/);
-    assert.match(bridgeSource, /data-kyrub-connected-status-text/);
-    assert.match(bridgeSource, /Status ·/);
+    assert.match(profileSource, /const STATUS_TTL_MS = 24 \* 60 \* 60 \* 1000/);
+    assert.match(profileSource, /connectedStatusByAuthor/);
+    assert.match(profileSource, /latestStatus\?\.mediaUrls\?\.\[0\] \|\| friend\.avatar/);
+    assert.match(profileSource, /Status · \{remainingStatusLabel/);
   });
 
-  test('keeps a clickable circular profile thumbnail for connected users', () => {
-    assert.match(bridgeSource, /data-kyrub-connected-profile-trigger/);
-    assert.match(bridgeSource, /Abrir perfil de/);
-    assert.match(bridgeSource, /setSelectedProfile\(friend\)/);
-    assert.match(bridgeSource, /Perfil conectado/);
-    assert.match(bridgeSource, /post\.authorId === selectedProfile\?\.id/);
-    assert.match(bridgeSource, /post\.publicationType !== 'status'/);
+  test('keeps accepted contacts directly actionable without DOM proxies', () => {
+    assert.match(profileSource, /function ContactCard/);
+    assert.match(profileSource, /onChat/);
+    assert.match(profileSource, /setChatTarget\(friend\)/);
+    assert.match(profileSource, /onRemove/);
+    assert.match(profileSource, /directory\.handleToggleFriend\(friend\.id\)/);
+    assert.doesNotMatch(profileSource, /data-kyrub-connected-profile-trigger/);
   });
 
-  test('inserts Grupos between Minha lista and Sugestões', () => {
-    assert.match(bridgeSource, /findButtonByText\(modal, 'Minha lista'\)/);
-    assert.match(bridgeSource, /findButtonByText\(modal, 'Sugestões'\)/);
-    assert.match(bridgeSource, /nav\.insertBefore\(buttonHost, suggestionsButton\)/);
-    assert.match(bridgeSource, /data-kyrub-groups-subtab/);
-    assert.match(bridgeSource, />\s*Grupos\s*</);
+  test('renders Grupos after Sugestões and before Solicitações', () => {
+    const suggestionsIndex = profileSource.indexOf("label: 'Sugestões'");
+    const groupsIndex = profileSource.indexOf("label: 'Grupos'");
+    const requestsIndex = profileSource.indexOf("label: 'Solicitações'");
+    assert.ok(suggestionsIndex >= 0);
+    assert.ok(suggestionsIndex < groupsIndex);
+    assert.ok(groupsIndex < requestsIndex);
+    assert.match(profileSource, /connectionSection === 'groups'/);
   });
 
   test('persists private contact groups and manages accepted members', () => {
-    assert.match(bridgeSource, /users\/\$\{user\.uid\}\/contact_groups/);
-    assert.match(bridgeSource, /MAX_GROUPS = 30/);
-    assert.match(bridgeSource, /MAX_GROUP_MEMBERS = 200/);
-    assert.match(bridgeSource, /toggleGroupMember/);
-    assert.match(bridgeSource, /Confirmar exclusão/);
+    assert.match(profileSource, /users\/\$\{user\.uid\}\/contact_groups/);
+    assert.match(profileSource, /MAX_GROUPS = 30/);
+    assert.match(profileSource, /MAX_GROUP_MEMBERS = 200/);
+    assert.match(profileSource, /toggleGroupMember/);
+    assert.match(profileSource, /deleteGroup/);
+    assert.match(profileSource, /Nome do novo grupo/);
   });
 
   test('composes owner-only contact group rules', () => {
