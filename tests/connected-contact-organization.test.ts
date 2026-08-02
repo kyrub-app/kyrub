@@ -16,23 +16,39 @@ test('connected organization is owned by the native React profile hub', () => {
   assert.doesNotMatch(profileSource, /MutationObserver/);
 });
 
-test('connected subtabs are rendered directly in the approved order', () => {
-  const listIndex = profileSource.indexOf("label: 'Minha lista'");
-  const favoritesIndex = profileSource.indexOf("label: 'Favoritos'");
-  const suggestionsIndex = profileSource.indexOf("label: 'Sugestões'");
+test('connected tabs use the simplified approved order', () => {
+  const generalIndex = profileSource.indexOf("label: 'Geral'");
+  const frequentIndex = profileSource.indexOf("label: 'Frequentes'");
   const groupsIndex = profileSource.indexOf("label: 'Grupos'");
-  const requestsIndex = profileSource.indexOf("label: 'Solicitações'");
+  const newButtonIndex = profileSource.indexOf('aria-label="Abrir novas conexões"');
 
-  assert.ok(listIndex >= 0);
-  assert.ok(listIndex < favoritesIndex);
-  assert.ok(favoritesIndex < suggestionsIndex);
-  assert.ok(suggestionsIndex < groupsIndex);
-  assert.ok(groupsIndex < requestsIndex);
-  assert.match(profileSource, /aria-label="Seções de conectados"/);
-  assert.match(profileSource, /overflow-x-auto/);
+  assert.ok(generalIndex >= 0);
+  assert.ok(generalIndex < frequentIndex);
+  assert.ok(frequentIndex < groupsIndex);
+  assert.ok(groupsIndex < newButtonIndex);
+  assert.match(profileSource, /grid grid-cols-4 gap-2/);
+  assert.match(profileSource, />\s*Novos\s*</);
+  assert.doesNotMatch(profileSource, /label: 'Sugestões'/);
+  assert.doesNotMatch(profileSource, /label: 'Solicitações'/);
 });
 
-test('favorite contacts are filtered in React and receive an empty state', () => {
+test('Novos opens a native modal with requests before suggestions', () => {
+  const requestsIndex = profileSource.indexOf('Solicitações {requestCount}');
+  const suggestionsIndex = profileSource.indexOf('Sugestões {suggestionCount}');
+
+  assert.match(profileSource, /type NewConnectionsTab = 'requests' \| 'suggestions'/);
+  assert.match(profileSource, /newConnectionsOpen/);
+  assert.match(profileSource, /openNewConnections/);
+  assert.match(profileSource, /aria-label="Tipos de novos contatos"/);
+  assert.ok(requestsIndex >= 0);
+  assert.ok(requestsIndex < suggestionsIndex);
+  assert.match(profileSource, /newConnectionsTab === 'requests'/);
+  assert.match(profileSource, /newConnectionsTab === 'suggestions'/);
+  assert.doesNotMatch(profileSource, /connectionSection === 'requests'/);
+  assert.doesNotMatch(profileSource, /connectionSection === 'suggestions'/);
+});
+
+test('frequent contacts are filtered in React and receive an empty state', () => {
   assert.match(profileSource, /friend\.favorited/);
   assert.match(
     profileSource,
