@@ -1,4 +1,4 @@
-    // --- Private Product Inventory, Compositions and Purchases ---
+    // --- Private Product Inventory, Compositions, Fiscal Profiles and Purchases ---
     match /users/{userId}/private_store/{documentId} {
       function isPrivateInventoryOwner() {
         return isSignedIn()
@@ -18,12 +18,20 @@
             'ownerId',
             'inventoryCatalog',
             'productCompositions',
+            'productFiscalProfiles',
             'createdAt',
             'updatedAt'
           ])
           && data.ownerId == userId
           && data.inventoryCatalog is list
-          && data.productCompositions is map;
+          && data.productCompositions is map
+          && (
+            !data.keys().hasAny(['productFiscalProfiles'])
+            || (
+              data.productFiscalProfiles is map
+              && data.productFiscalProfiles.size() <= 200
+            )
+          );
       }
 
       allow get: if isPrivateInventoryOwner();
@@ -43,6 +51,7 @@
         && incoming().diff(existing()).affectedKeys().hasOnly([
           'inventoryCatalog',
           'productCompositions',
+          'productFiscalProfiles',
           'updatedAt'
         ]);
 
