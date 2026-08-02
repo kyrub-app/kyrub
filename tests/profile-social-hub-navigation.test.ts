@@ -94,26 +94,31 @@ describe('native React profile social hub', () => {
     assert.match(recoveredActionsSource, /kyrub-social-posts-updated/);
   });
 
-  test('restores documents, biometrics and facial validation access from edit profile', () => {
+  test('keeps Docs, Bio and Face inside the modern edit profile panel', () => {
     assert.match(
       recoveredActionsSource,
       /aria-label="Seções de edição e segurança"/
     );
     const profileIndex = recoveredActionsSource.indexOf("label: 'Perfil'");
-    const documentsIndex = recoveredActionsSource.indexOf("label: 'Documentos'");
-    const biometricsIndex = recoveredActionsSource.indexOf("label: 'Biometria'");
-    const facialIndex = recoveredActionsSource.indexOf(
-      "label: 'Validação facial'"
-    );
+    const documentsIndex = recoveredActionsSource.indexOf("label: 'Docs'");
+    const biometricsIndex = recoveredActionsSource.indexOf("label: 'Bio'");
+    const facialIndex = recoveredActionsSource.indexOf("label: 'Face'");
     assert.ok(profileIndex >= 0);
     assert.ok(profileIndex < documentsIndex);
     assert.ok(documentsIndex < biometricsIndex);
     assert.ok(biometricsIndex < facialIndex);
-    assert.match(recoveredActionsSource, /IDENTITY_VERIFICATION_OPEN_EVENT/);
-    assert.match(recoveredActionsSource, /verificationLabel: 'Documentos'/);
-    assert.match(recoveredActionsSource, /verificationLabel: 'Segurança'/);
-    assert.match(recoveredActionsSource, /verificationLabel: 'Validação'/);
+    assert.match(
+      recoveredActionsSource,
+      /setActiveEditSection\(shortcut\.id\)/
+    );
+    assert.match(recoveredActionsSource, /<ProfileSecureEditorSections/);
+    assert.match(recoveredActionsSource, /data-profile-edit-security-content/);
     assert.match(recoveredActionsSource, /identityVerificationEnabled/);
+    assert.doesNotMatch(
+      recoveredActionsSource,
+      /IDENTITY_VERIFICATION_OPEN_EVENT/
+    );
+    assert.doesNotMatch(recoveredActionsSource, /closeEditButton\?\.click/);
   });
 
   test('keeps Status inside Publications and creates a temporary copy', () => {
