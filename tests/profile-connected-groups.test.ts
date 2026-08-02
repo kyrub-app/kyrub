@@ -41,13 +41,13 @@ describe('connected status covers and private groups', () => {
     assert.doesNotMatch(profileSource, /data-kyrub-connected-profile-trigger/);
   });
 
-  test('renders Grupos after Sugestões and before Solicitações', () => {
-    const suggestionsIndex = profileSource.indexOf("label: 'Sugestões'");
+  test('renders Grupos after Frequentes and before Novos', () => {
+    const frequentIndex = profileSource.indexOf("label: 'Frequentes'");
     const groupsIndex = profileSource.indexOf("label: 'Grupos'");
-    const requestsIndex = profileSource.indexOf("label: 'Solicitações'");
-    assert.ok(suggestionsIndex >= 0);
-    assert.ok(suggestionsIndex < groupsIndex);
-    assert.ok(groupsIndex < requestsIndex);
+    const newButtonIndex = profileSource.indexOf('aria-label="Abrir novas conexões"');
+    assert.ok(frequentIndex >= 0);
+    assert.ok(frequentIndex < groupsIndex);
+    assert.ok(groupsIndex < newButtonIndex);
     assert.match(profileSource, /connectionSection === 'groups'/);
   });
 
