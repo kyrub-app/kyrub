@@ -11,6 +11,10 @@ const polishSource = readFileSync(
   'src/components/ProfileSocialPolishBridge.tsx',
   'utf8'
 );
+const markedRecoverySource = readFileSync(
+  'src/components/ProfileMarkedNavigationRecoveryBridge.tsx',
+  'utf8'
+);
 const mobileSource = readFileSync(
   'src/components/ProfileSocialMobileFirstBridge.tsx',
   'utf8'
@@ -57,6 +61,7 @@ describe('profile social hub navigation', () => {
   test('mounts the profile hub, polish layers and Kyrub AI workspace around the legacy app', () => {
     assert.match(appSource, /ProfileSocialHubBridge/);
     assert.match(appSource, /ProfileSocialPolishBridge/);
+    assert.match(appSource, /ProfileMarkedNavigationRecoveryBridge/);
     assert.match(appSource, /ProfileStatusCheckboxBridge/);
     assert.match(appSource, /ProfileSocialMobileFirstBridge/);
     assert.match(appSource, /KyrubAiWorkspaceBridge/);
@@ -66,6 +71,10 @@ describe('profile social hub navigation', () => {
     );
     assert.ok(
       appSource.indexOf('<ProfileSocialPolishBridge') <
+        appSource.indexOf('<ProfileMarkedNavigationRecoveryBridge')
+    );
+    assert.ok(
+      appSource.indexOf('<ProfileMarkedNavigationRecoveryBridge') <
         appSource.indexOf('<ProfileStatusCheckboxBridge')
     );
     assert.ok(
@@ -123,6 +132,17 @@ describe('profile social hub navigation', () => {
     );
     assert.match(polishSource, /taggedUserIds\.includes\(currentUserId\)/);
     assert.match(polishSource, /Marcaram você/);
+  });
+
+  test('recovers native profile tabs immediately after leaving Marcados', () => {
+    assert.match(markedRecoverySource, /event\.composedPath\(\)/);
+    assert.match(markedRecoverySource, /restoreNativeProfileContent/);
+    assert.match(markedRecoverySource, /data-kyrub-marked-content-host/);
+    assert.match(markedRecoverySource, /style\.removeProperty\('display'\)/);
+    assert.match(markedRecoverySource, /queueMicrotask/);
+    assert.match(markedRecoverySource, /requestAnimationFrame/);
+    assert.match(markedRecoverySource, /MutationObserver/);
+    assert.match(markedRecoverySource, /aria-pressed/);
   });
 
   test('uses a larger 4x5 profile portrait and concentrates editing on its pencil icon', () => {
