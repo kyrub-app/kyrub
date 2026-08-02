@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 
+const PROFILE_MODAL_SELECTOR = '#profile-social-hub-modal';
 const PROFILE_NAVIGATION_SELECTOR = 'nav[aria-label="Seções do perfil"]';
 const MARKED_TAB_SELECTOR = '[data-kyrub-marked-tab]';
 const MARKED_CONTENT_SELECTOR = '[data-kyrub-marked-content-host]';
@@ -77,6 +78,8 @@ export function ProfileMarkedNavigationRecoveryBridge() {
   useEffect(() => {
     let markedModeActive = false;
     let animationFrame = 0;
+    let observedModal: HTMLElement | null = null;
+    let modalObserver: MutationObserver | null = null;
 
     const recoverAfterNativeTabClick = (navigation: HTMLElement) => {
       restoreNativeProfileContent(navigation);
@@ -105,25 +108,50 @@ export function ProfileMarkedNavigationRecoveryBridge() {
       recoverAfterNativeTabClick(navigation);
     };
 
-    const observer = new MutationObserver(() => {
-      if (markedModeActive) return;
-      const navigation = document.querySelector<HTMLElement>(
-        `#profile-social-hub-modal ${PROFILE_NAVIGATION_SELECTOR}`
+    const enforceRecoveredState = () => {
+      if (markedModeActive || !observedModal) return;
+      const navigation = observedModal.querySelector<HTMLElement>(
+        PROFILE_NAVIGATION_SELECTOR
       );
       if (navigation) restoreNativeProfileContent(navigation);
-    });
+    };
+
+    const attachModalObserver = () => {
+      const nextModal = document.querySelector<HTMLElement>(
+        PROFILE_MODAL_SELECTOR
+      );
+      if (nextModal === observedModal) return;
+
+      modalObserver?.disconnect();
+      modalObserver = null;
+      observedModal = nextModal;
+      markedModeActive = false;
+
+      if (!observedModal) return;
+
+      modalObserver = new MutationObserver(enforceRecoveredState);
+      modalObserver.observe(observedModal, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        attributeFilter: ['class', 'style', 'aria-pressed'],
+      });
+      enforceRecoveredState();
+    };
+
+    const rootObserver = new MutationObserver(attachModalObserver);
 
     document.addEventListener('click', handleNavigationClick, true);
-    observer.observe(document.body, {
+    rootObserver.observe(document.body, {
       childList: true,
       subtree: true,
-      attributes: true,
-      attributeFilter: ['class', 'style', 'aria-pressed'],
     });
+    attachModalObserver();
 
     return () => {
       document.removeEventListener('click', handleNavigationClick, true);
-      observer.disconnect();
+      rootObserver.disconnect();
+      modalObserver?.disconnect();
       window.cancelAnimationFrame(animationFrame);
     };
   }, []);
