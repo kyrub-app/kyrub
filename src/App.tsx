@@ -12,6 +12,7 @@ import { NoteInvitationOutboxBridge } from './components/NoteInvitationOutboxBri
 import { ProfileConnectedCardOrganizationBridge } from './components/ProfileConnectedCardOrganizationBridge';
 import { ProfileConnectedGroupsBridge } from './components/ProfileConnectedGroupsBridge';
 import { ProfileConnectionSubtabsBridge } from './components/ProfileConnectionSubtabsBridge';
+import { ProfileMarkedNavigationRecoveryBridge } from './components/ProfileMarkedNavigationRecoveryBridge';
 import { ProfilePasskeyBridge } from './components/ProfilePasskeyBridge';
 import { ProfileSocialHubBridge } from './components/ProfileSocialHubBridge';
 import { ProfileSocialMobileFirstBridge } from './components/ProfileSocialMobileFirstBridge';
@@ -160,6 +161,7 @@ function AuthenticatedKyrubApp({ operational }: { operational: boolean }) {
         </>
       )}
       <ProfileSocialPolishBridge />
+      <ProfileMarkedNavigationRecoveryBridge />
       <ProfileStatusCheckboxBridge />
       <ProfileSocialMobileFirstBridge />
       <ProfileConnectionSubtabsBridge />
