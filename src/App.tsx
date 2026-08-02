@@ -47,6 +47,11 @@ import {
 } from './utils/storePersistence';
 import { getPrimaryUserStoreDocumentPath } from './utils/storePaths';
 
+// Emergency containment: these layers mutate the profile DOM outside React and
+// can trigger self-feeding MutationObserver cycles. Keep the native profile hub
+// available while the enhancements are rebuilt as React-owned navigation.
+const profileDomEnhancementsEnabled = false;
+
 function StorePersistenceBridge() {
   useEffect(() => {
     let cancelled = false;
@@ -160,14 +165,18 @@ function AuthenticatedKyrubApp({ operational }: { operational: boolean }) {
           <ProfilePasskeyBridge />
         </>
       )}
-      <ProfileSocialPolishBridge />
-      <ProfileMarkedNavigationRecoveryBridge />
-      <ProfileStatusCheckboxBridge />
-      <ProfileSocialMobileFirstBridge />
-      <ProfileConnectionSubtabsBridge />
-      <ProfileConnectedGroupsBridge />
-      <ProfileConnectedCardOrganizationBridge />
-      <ProfileSocialPostActionsBridge />
+      {profileDomEnhancementsEnabled && (
+        <>
+          <ProfileSocialPolishBridge />
+          <ProfileMarkedNavigationRecoveryBridge />
+          <ProfileStatusCheckboxBridge />
+          <ProfileSocialMobileFirstBridge />
+          <ProfileConnectionSubtabsBridge />
+          <ProfileConnectedGroupsBridge />
+          <ProfileConnectedCardOrganizationBridge />
+          <ProfileSocialPostActionsBridge />
+        </>
+      )}
       <KyrubAiWorkspaceBridge />
       <KyrubiaNamingBridge />
       <KyrubAiNoteActionBridge />
