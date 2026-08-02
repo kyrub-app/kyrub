@@ -7,6 +7,10 @@ const profileSource = readFileSync(
   'src/components/ProfileSocialHubNative.tsx',
   'utf8'
 );
+const recoveredActionsSource = readFileSync(
+  'src/components/ProfileRecoveredActionsBridge.tsx',
+  'utf8'
+);
 const chatSource = readFileSync(
   'src/components/modals/ChatModal.tsx',
   'utf8'
@@ -45,6 +49,7 @@ describe('native React profile social hub', () => {
   test('mounts one React-owned profile hub before the legacy application', () => {
     assert.match(appSource, /ProfileSocialHubNative/);
     assert.match(appSource, /<ProfileSocialHubNative\s*\/?>/);
+    assert.match(appSource, /<ProfileRecoveredActionsBridge\s*\/?>/);
     assert.ok(
       appSource.indexOf('<ProfileSocialHubNative') <
         appSource.indexOf('<LegacyApp')
@@ -57,6 +62,7 @@ describe('native React profile social hub', () => {
     assert.doesNotMatch(appSource, /ProfileConnectedGroupsBridge/);
     assert.doesNotMatch(appSource, /profileDomEnhancementsEnabled/);
     assert.doesNotMatch(profileSource, /MutationObserver/);
+    assert.doesNotMatch(recoveredActionsSource, /MutationObserver/);
   });
 
   test('restores the approved modern profile header without external DOM decoration', () => {
@@ -71,6 +77,43 @@ describe('native React profile social hub', () => {
     );
     assert.match(profileSource, /Foto do Google/);
     assert.match(profileSource, /Publicações salvas/);
+  });
+
+  test('restores the store review action beside Entrar', () => {
+    assert.match(recoveredActionsSource, /ProfileRecoveredActionsBridge/);
+    assert.match(
+      recoveredActionsSource,
+      /Abrir avaliações da loja \$\{item\.store\.name\}/
+    );
+    assert.match(recoveredActionsSource, /<MessageCircle/);
+    assert.match(recoveredActionsSource, /<MomentsModal/);
+    assert.match(recoveredActionsSource, /kyrub_momentos/);
+    assert.match(recoveredActionsSource, /profileOfferEnter/);
+    assert.match(recoveredActionsSource, /calc\(100% - 4rem\)/);
+    assert.match(recoveredActionsSource, /post-moment-/);
+    assert.match(recoveredActionsSource, /kyrub-social-posts-updated/);
+  });
+
+  test('restores documents, biometrics and facial validation access from edit profile', () => {
+    assert.match(
+      recoveredActionsSource,
+      /aria-label="Seções de edição e segurança"/
+    );
+    const profileIndex = recoveredActionsSource.indexOf("label: 'Perfil'");
+    const documentsIndex = recoveredActionsSource.indexOf("label: 'Documentos'");
+    const biometricsIndex = recoveredActionsSource.indexOf("label: 'Biometria'");
+    const facialIndex = recoveredActionsSource.indexOf(
+      "label: 'Validação facial'"
+    );
+    assert.ok(profileIndex >= 0);
+    assert.ok(profileIndex < documentsIndex);
+    assert.ok(documentsIndex < biometricsIndex);
+    assert.ok(biometricsIndex < facialIndex);
+    assert.match(recoveredActionsSource, /IDENTITY_VERIFICATION_OPEN_EVENT/);
+    assert.match(recoveredActionsSource, /verificationLabel: 'Documentos'/);
+    assert.match(recoveredActionsSource, /verificationLabel: 'Segurança'/);
+    assert.match(recoveredActionsSource, /verificationLabel: 'Validação'/);
+    assert.match(recoveredActionsSource, /identityVerificationEnabled/);
   });
 
   test('keeps Status inside Publications and creates a temporary copy', () => {
