@@ -1,9 +1,10 @@
-import { useState, type FormEvent } from 'react';
+import { useState, type ChangeEvent, type FormEvent } from 'react';
 import {
   BadgeCheck,
   Building2,
   CircleAlert,
   Database,
+  LoaderCircle,
   Search,
   ShieldCheck,
   Store,
@@ -42,10 +43,27 @@ const statusClass = (value: string): string => {
 const EmptyResult = ({ lookup }: { lookup: string }) => (
   <div className="rounded-3xl border border-dashed border-slate-700 bg-slate-900/40 px-5 py-10 text-center">
     <Search className="mx-auto h-6 w-6 text-slate-600" />
-    <strong className="mt-3 block text-sm text-slate-300">Nenhuma conta encontrada</strong>
-    <p className="mt-1 text-[10px] text-slate-500">
-      Não existe usuário cadastrado para a busca exata “{lookup}”.
+    <strong className="mt-3 block text-sm text-slate-300">
+      Nenhuma conta encontrada
+    </strong>
+    <p className="mt-1 text-[10px] leading-relaxed text-slate-500">
+      Não existe usuário cadastrado para a busca exata “{lookup}”. Confira o e-mail ou UID e tente novamente.
     </p>
+  </div>
+);
+
+const SearchProgress = ({ lookup }: { lookup: string }) => (
+  <div
+    className="flex items-center gap-3 rounded-2xl border border-cyan-500/20 bg-cyan-500/5 p-4 text-xs text-cyan-100"
+    role="status"
+  >
+    <LoaderCircle className="h-4 w-4 shrink-0 animate-spin text-cyan-300" />
+    <div>
+      <strong className="block">Consultando o diretório</strong>
+      <span className="mt-0.5 block break-all text-[10px] text-slate-400">
+        Busca exata: {lookup}
+      </span>
+    </div>
   </div>
 );
 
@@ -54,18 +72,39 @@ export default function AdminDirectoryWorkspace({
   profile,
 }: AdminDirectoryWorkspaceProps) {
   const [lookup, setLookup] = useState('');
+  const [submittedLookup, setSubmittedLookup] = useState('');
   const [result, setResult] = useState<AdminDirectoryResult | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
+  const handleLookupChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const nextValue = event.target.value;
+    setLookup(nextValue);
+
+    if (!busy && nextValue.trim() !== submittedLookup) {
+      setResult(null);
+      setError('');
+    }
+  };
+
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    const nextLookup = lookup.trim();
+    if (!nextLookup || busy) return;
+
+    setSubmittedLookup(nextLookup);
     setBusy(true);
     setError('');
     setResult(null);
 
     try {
-      setResult(await lookupAdminDirectory(authenticatedUser, profile, lookup));
+      setResult(
+        await lookupAdminDirectory(
+          authenticatedUser,
+          profile,
+          nextLookup
+        )
+      );
     } catch (caught) {
       setError(
         caught instanceof Error
@@ -78,7 +117,12 @@ export default function AdminDirectoryWorkspace({
   };
 
   return (
-    <section className="space-y-4 rounded-[2rem] border border-slate-800 bg-slate-900/60 p-4 sm:p-6">
+    <section
+      id="admin-directory"
+      aria-labelledby="admin-directory-title"
+      aria-busy={busy}
+      className="scroll-mt-24 space-y-4 rounded-[2rem] border border-slate-800 bg-slate-900/60 p-4 sm:p-6"
+    >
       <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div className="max-w-2xl">
           <div className="flex items-center gap-2 text-cyan-300">
@@ -87,7 +131,9 @@ export default function AdminDirectoryWorkspace({
               Diretório administrativo
             </span>
           </div>
-          <h2 className="mt-2 text-lg font-black text-white">Usuários e lojas vinculadas</h2>
+          <h2 id="admin-directory-title" className="mt-2 text-lg font-black text-white">
+            Usuários e lojas vinculadas
+          </h2>
           <p className="mt-2 text-xs leading-relaxed text-slate-400">
             Consulte somente por e-mail completo ou UID. Esta área não lista pessoas indiscriminadamente e não oferece ações de bloqueio, plano ou edição.
           </p>
@@ -99,42 +145,74 @@ export default function AdminDirectoryWorkspace({
         </div>
       </div>
 
-      <form onSubmit={handleSubmit} className="flex flex-col gap-3 sm:flex-row">
-        <label className="min-w-0 flex-1">
-          <span className="sr-only">E-mail completo ou UID</span>
-          <div className="flex items-center gap-2 rounded-2xl border border-slate-700 bg-slate-950 px-4 py-3 focus-within:border-cyan-500/50">
-            <Search className="h-4 w-4 shrink-0 text-slate-500" />
-            <input
-              type="text"
-              value={lookup}
-              onChange={event => setLookup(event.target.value)}
-              placeholder="email@dominio.com ou UID"
-              autoComplete="off"
-              className="min-w-0 flex-1 bg-transparent text-sm text-white outline-none placeholder:text-slate-600"
-            />
-          </div>
-        </label>
-        <button
-          type="submit"
-          disabled={busy || !lookup.trim()}
-          className="inline-flex items-center justify-center gap-2 rounded-2xl bg-cyan-500 px-5 py-3 text-xs font-black uppercase tracking-wider text-slate-950 transition hover:bg-cyan-400 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          <Search className="h-4 w-4" />
-          {busy ? 'Consultando' : 'Buscar'}
-        </button>
+      <form onSubmit={handleSubmit} className="space-y-2">
+        <div className="flex flex-col gap-3 sm:flex-row">
+          <label className="min-w-0 flex-1">
+            <span className="sr-only">E-mail completo ou UID</span>
+            <div className="flex items-center gap-2 rounded-2xl border border-slate-700 bg-slate-950 px-4 py-3 focus-within:border-cyan-500/50">
+              <Search className="h-4 w-4 shrink-0 text-slate-500" />
+              <input
+                type="text"
+                value={lookup}
+                onChange={handleLookupChange}
+                placeholder="email@dominio.com ou UID"
+                autoComplete="off"
+                autoCapitalize="none"
+                spellCheck={false}
+                disabled={busy}
+                className="min-w-0 flex-1 bg-transparent text-sm text-white outline-none placeholder:text-slate-600 disabled:cursor-wait disabled:opacity-70"
+              />
+            </div>
+          </label>
+          <button
+            type="submit"
+            disabled={busy || !lookup.trim()}
+            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-cyan-500 px-5 py-3 text-xs font-black uppercase tracking-wider text-slate-950 transition hover:bg-cyan-400 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {busy ? (
+              <LoaderCircle className="h-4 w-4 animate-spin" />
+            ) : (
+              <Search className="h-4 w-4" />
+            )}
+            {busy ? 'Consultando' : 'Buscar'}
+          </button>
+        </div>
+        <p className="px-1 text-[9px] leading-relaxed text-slate-600">
+          A busca é exata. Nomes parciais e listas amplas não são permitidos.
+        </p>
       </form>
 
-      {error && (
-        <div className="flex gap-3 rounded-2xl border border-red-500/25 bg-red-500/10 p-3 text-xs text-red-200">
-          <CircleAlert className="mt-0.5 h-4 w-4 shrink-0" />
-          <span>{error}</span>
-        </div>
-      )}
+      <div aria-live="polite">
+        {busy && <SearchProgress lookup={submittedLookup} />}
 
-      {result && !result.user && <EmptyResult lookup={result.lookup.value} />}
+        {!busy && error && (
+          <div className="flex gap-3 rounded-2xl border border-red-500/25 bg-red-500/10 p-3 text-xs text-red-200" role="alert">
+            <CircleAlert className="mt-0.5 h-4 w-4 shrink-0" />
+            <div>
+              <strong className="block">A consulta não foi concluída</strong>
+              <span className="mt-0.5 block text-[10px] leading-relaxed text-red-100/80">
+                {error}
+              </span>
+            </div>
+          </div>
+        )}
 
-      {result?.user && (
+        {!busy && result && !result.user && (
+          <EmptyResult lookup={result.lookup.value} />
+        )}
+      </div>
+
+      {!busy && result?.user && (
         <div className="space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-2 px-1">
+            <span className="text-[9px] font-black uppercase tracking-wider text-emerald-300">
+              Resultado encontrado
+            </span>
+            <span className="max-w-full break-all text-[9px] text-slate-600">
+              Busca: {result.lookup.value}
+            </span>
+          </div>
+
           <article className="rounded-3xl border border-slate-800 bg-slate-950/70 p-4 sm:p-5">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
               <div className="flex min-w-0 items-start gap-3">
@@ -160,7 +238,9 @@ export default function AdminDirectoryWorkspace({
                       Cadastrado
                     </span>
                   </div>
-                  <p className="mt-1 truncate text-xs text-slate-400">{result.user.email}</p>
+                  <p className="mt-1 truncate text-xs text-slate-400">
+                    {result.user.email}
+                  </p>
                   <p className="mt-2 break-all font-mono text-[9px] text-slate-600">
                     UID: {result.user.uid}
                   </p>
@@ -168,7 +248,10 @@ export default function AdminDirectoryWorkspace({
               </div>
 
               <div className="rounded-2xl border border-slate-800 bg-slate-900 px-3 py-2 text-[9px] text-slate-400">
-                Perfil social: <strong className="text-slate-200">{result.user.isProfileVisible ? 'visível' : 'restrito'}</strong>
+                Perfil social:{' '}
+                <strong className="text-slate-200">
+                  {result.user.isProfileVisible ? 'visível' : 'restrito'}
+                </strong>
               </div>
             </div>
           </article>
@@ -189,13 +272,16 @@ export default function AdminDirectoryWorkspace({
 
               <div className="mt-3 space-y-3">
                 {result.stores.map(store => (
-                  <article key={store.storeId} className="rounded-2xl border border-slate-800 bg-slate-900/80 p-3">
+                  <article
+                    key={store.storeId}
+                    className="rounded-2xl border border-slate-800 bg-slate-900/80 p-3"
+                  >
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
                         <strong className="block truncate text-sm text-white">
                           {valueOrFallback(store.storeName, store.storeId)}
                         </strong>
-                        <span className="mt-1 block font-mono text-[8px] text-slate-600">
+                        <span className="mt-1 block break-all font-mono text-[8px] text-slate-600">
                           {store.storeId}
                         </span>
                       </div>
@@ -207,19 +293,27 @@ export default function AdminDirectoryWorkspace({
                     <div className="mt-3 grid grid-cols-2 gap-2 text-[9px]">
                       <div className="rounded-xl bg-slate-950 p-2">
                         <span className="block text-slate-600">Papel</span>
-                        <strong className="text-slate-300">{valueOrFallback(store.role)}</strong>
+                        <strong className="text-slate-300">
+                          {valueOrFallback(store.role)}
+                        </strong>
                       </div>
                       <div className="rounded-xl bg-slate-950 p-2">
                         <span className="block text-slate-600">Plano</span>
-                        <strong className="text-slate-300">{valueOrFallback(store.plan)}</strong>
+                        <strong className="text-slate-300">
+                          {valueOrFallback(store.plan)}
+                        </strong>
                       </div>
                       <div className="rounded-xl bg-slate-950 p-2">
                         <span className="block text-slate-600">Migração</span>
-                        <strong className="text-slate-300">{valueOrFallback(store.migrationStatus)}</strong>
+                        <strong className="text-slate-300">
+                          {valueOrFallback(store.migrationStatus)}
+                        </strong>
                       </div>
                       <div className="rounded-xl bg-slate-950 p-2">
                         <span className="block text-slate-600">Vínculo</span>
-                        <strong className="text-slate-300">{valueOrFallback(store.membershipStatus)}</strong>
+                        <strong className="text-slate-300">
+                          {valueOrFallback(store.membershipStatus)}
+                        </strong>
                       </div>
                     </div>
 
@@ -261,7 +355,10 @@ export default function AdminDirectoryWorkspace({
 
               <div className="mt-3 space-y-3">
                 {result.legacyTenants.map(tenant => (
-                  <article key={tenant.tenantId} className="rounded-2xl border border-slate-800 bg-slate-900/80 p-3">
+                  <article
+                    key={tenant.tenantId}
+                    className="rounded-2xl border border-slate-800 bg-slate-900/80 p-3"
+                  >
                     <div className="flex items-start gap-3">
                       <div className="rounded-xl bg-amber-500/10 p-2 text-amber-300">
                         <Building2 className="h-4 w-4" />
@@ -277,12 +374,20 @@ export default function AdminDirectoryWorkspace({
                     </div>
                     <div className="mt-3 grid grid-cols-2 gap-2 text-[9px]">
                       <div className="rounded-xl bg-slate-950 p-2">
-                        <span className="block text-slate-600">Plano registrado</span>
-                        <strong className="text-slate-300">{valueOrFallback(tenant.plan)}</strong>
+                        <span className="block text-slate-600">
+                          Plano registrado
+                        </span>
+                        <strong className="text-slate-300">
+                          {valueOrFallback(tenant.plan)}
+                        </strong>
                       </div>
                       <div className="rounded-xl bg-slate-950 p-2">
-                        <span className="block text-slate-600">Estado registrado</span>
-                        <strong className="text-slate-300">{valueOrFallback(tenant.status)}</strong>
+                        <span className="block text-slate-600">
+                          Estado registrado
+                        </span>
+                        <strong className="text-slate-300">
+                          {valueOrFallback(tenant.status)}
+                        </strong>
                       </div>
                     </div>
                   </article>
@@ -300,7 +405,7 @@ export default function AdminDirectoryWorkspace({
           <div className="flex items-start gap-3 rounded-2xl border border-slate-800 bg-slate-950/50 p-3 text-[10px] leading-relaxed text-slate-500">
             <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" />
             <p>
-              “Cadastrado” confirma apenas a existência do documento de usuário. Bloqueio, KYC, assinatura, entregador e freelancer ainda não possuem uma fonte administrativa canônica nesta etapa.
+              “Cadastrado” confirma apenas a existência do documento de usuário. Bloqueio, KYC, assinatura, entregador e freelancer precisam de fontes administrativas próprias antes de aparecer como estados confirmados.
             </p>
           </div>
         </div>

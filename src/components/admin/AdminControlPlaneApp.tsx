@@ -1,18 +1,11 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
-  Activity,
   BadgeCheck,
-  Banknote,
-  Building2,
   CircleAlert,
-  FileCheck2,
-  Flag,
   LayoutDashboard,
   LockKeyhole,
   LogOut,
-  Settings2,
   ShieldCheck,
-  Users,
 } from 'lucide-react';
 import {
   GoogleAuthProvider,
@@ -29,11 +22,11 @@ import {
   recordAdminSessionAccess,
   subscribeToAdminProfile,
   type AdminDashboardMetric,
-  type AdminPermission,
   type AdminProfile,
   type AdminRole,
 } from '../../utils/adminControlPlane';
 import AdminDirectoryWorkspace from './AdminDirectoryWorkspace';
+import AdminModulesWorkspace from './AdminModulesWorkspace';
 
 const ROLE_LABELS: Record<AdminRole, string> = {
   super_admin: 'Super Admin',
@@ -42,57 +35,6 @@ const ROLE_LABELS: Record<AdminRole, string> = {
   finance: 'Financeiro',
   compliance: 'Compliance',
 };
-
-const MODULES: Array<{
-  label: string;
-  description: string;
-  permission: AdminPermission;
-  icon: typeof Users;
-  status: 'available' | 'planned';
-}> = [
-  {
-    label: 'Usuários',
-    description: 'Busca exata, situação cadastral e lojas vinculadas.',
-    permission: 'read_users',
-    icon: Users,
-    status: 'available',
-  },
-  {
-    label: 'Lojas',
-    description: 'Tenants, equipes, migração e planos registrados.',
-    permission: 'read_stores',
-    icon: Building2,
-    status: 'available',
-  },
-  {
-    label: 'Financeiro e BaaS',
-    description: 'Onboarding, taxas, splits e conciliação.',
-    permission: 'read_finance',
-    icon: Banknote,
-    status: 'planned',
-  },
-  {
-    label: 'Auditoria',
-    description: 'Ações administrativas e eventos críticos.',
-    permission: 'read_audit',
-    icon: FileCheck2,
-    status: 'planned',
-  },
-  {
-    label: 'Saúde do sistema',
-    description: 'Jobs, integrações, custos e falhas.',
-    permission: 'read_system_health',
-    icon: Activity,
-    status: 'planned',
-  },
-  {
-    label: 'Feature flags',
-    description: 'Ativações graduais por ambiente, plano e conta.',
-    permission: 'manage_features',
-    icon: Flag,
-    status: 'planned',
-  },
-];
 
 const formatMetric = (metric: AdminDashboardMetric): string => {
   if (metric.state === 'restricted') return 'Restrito';
@@ -191,12 +133,20 @@ const AccessDeniedScreen = ({
   );
 };
 
+const MetricSkeleton = () => (
+  <article className="animate-pulse rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
+    <div className="h-2 w-24 rounded bg-slate-800" />
+    <div className="mt-3 h-7 w-16 rounded bg-slate-800" />
+  </article>
+);
+
 export default function AdminControlPlaneApp() {
   const [authResolved, setAuthResolved] = useState(false);
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<AdminProfile | null | undefined>(undefined);
   const [metrics, setMetrics] = useState<AdminDashboardMetric[]>([]);
   const [metricsLoading, setMetricsLoading] = useState(false);
+  const [metricsError, setMetricsError] = useState('');
   const [loginBusy, setLoginBusy] = useState(false);
   const [error, setError] = useState('');
 
@@ -207,6 +157,7 @@ export default function AdminControlPlaneApp() {
       unsubscribeProfile = () => undefined;
       setUser(nextUser);
       setMetrics([]);
+      setMetricsError('');
       setError('');
 
       if (!nextUser) {
@@ -257,21 +208,27 @@ export default function AdminControlPlaneApp() {
 
   useEffect(() => {
     if (!profile || profile.status !== 'active') return;
+    let cancelled = false;
     setMetricsLoading(true);
-    void loadAdminDashboardMetrics(profile)
-      .then(setMetrics)
-      .finally(() => setMetricsLoading(false));
-  }, [profile]);
+    setMetricsError('');
 
-  const visibleModules = useMemo(
-    () =>
-      profile
-        ? MODULES.filter(module =>
-            hasAdminPermission(profile, module.permission)
-          )
-        : [],
-    [profile]
-  );
+    void loadAdminDashboardMetrics(profile)
+      .then(nextMetrics => {
+        if (!cancelled) setMetrics(nextMetrics);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setMetricsError('Não foi possível atualizar os indicadores básicos.');
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setMetricsLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [profile]);
 
   const handleLogin = async () => {
     setLoginBusy(true);
@@ -325,7 +282,7 @@ export default function AdminControlPlaneApp() {
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100">
-      <header className="border-b border-slate-800 bg-slate-950/95 px-4 py-4 backdrop-blur sm:px-6">
+      <header className="sticky top-0 z-20 border-b border-slate-800 bg-slate-950/95 px-4 py-4 backdrop-blur sm:px-6">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-4">
           <div className="flex min-w-0 items-center gap-3">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-cyan-500/30 bg-cyan-500/10 text-cyan-300">
@@ -353,6 +310,7 @@ export default function AdminControlPlaneApp() {
               type="button"
               onClick={handleLogout}
               title="Sair"
+              aria-label="Sair do Control Plane"
               className="rounded-xl border border-slate-800 bg-slate-900 p-2.5 text-slate-400 hover:bg-slate-800 hover:text-white"
             >
               <LogOut className="h-4 w-4" />
@@ -398,10 +356,13 @@ export default function AdminControlPlaneApp() {
           </div>
         </section>
 
-        <section>
-          <div className="mb-3 flex items-center justify-between">
+        <section aria-labelledby="admin-basic-metrics-title">
+          <div className="mb-3 flex items-center justify-between gap-3">
             <div>
-              <h2 className="text-sm font-black uppercase tracking-wider text-white">
+              <h2
+                id="admin-basic-metrics-title"
+                className="text-sm font-black uppercase tracking-wider text-white"
+              >
                 Indicadores básicos
               </h2>
               <p className="mt-1 text-[10px] text-slate-500">
@@ -409,32 +370,42 @@ export default function AdminControlPlaneApp() {
               </p>
             </div>
             {metricsLoading && (
-              <span className="text-[9px] uppercase text-cyan-400">
+              <span className="text-[9px] font-black uppercase text-cyan-400">
                 Atualizando
               </span>
             )}
           </div>
-          <div className="grid gap-3 sm:grid-cols-3">
-            {metrics.map(metric => (
-              <article
-                key={metric.key}
-                className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4"
-              >
-                <span className="text-[9px] font-black uppercase tracking-wider text-slate-500">
-                  {metric.label}
-                </span>
-                <strong
-                  className={`mt-2 block text-2xl font-black ${
-                    metric.state === 'available'
-                      ? 'text-white'
-                      : 'text-slate-500'
-                  }`}
-                >
-                  {formatMetric(metric)}
-                </strong>
-              </article>
-            ))}
-            {!metricsLoading && metrics.length === 0 && (
+
+          {metricsError && (
+            <div className="mb-3 flex gap-3 rounded-2xl border border-amber-500/25 bg-amber-500/10 p-3 text-xs text-amber-200">
+              <CircleAlert className="mt-0.5 h-4 w-4 shrink-0" />
+              <span>{metricsError}</span>
+            </div>
+          )}
+
+          <div className="grid gap-3 sm:grid-cols-3" aria-busy={metricsLoading}>
+            {metricsLoading && metrics.length === 0
+              ? [0, 1, 2].map(item => <MetricSkeleton key={item} />)
+              : metrics.map(metric => (
+                  <article
+                    key={metric.key}
+                    className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4"
+                  >
+                    <span className="text-[9px] font-black uppercase tracking-wider text-slate-500">
+                      {metric.label}
+                    </span>
+                    <strong
+                      className={`mt-2 block text-2xl font-black ${
+                        metric.state === 'available'
+                          ? 'text-white'
+                          : 'text-slate-500'
+                      }`}
+                    >
+                      {formatMetric(metric)}
+                    </strong>
+                  </article>
+                ))}
+            {!metricsLoading && metrics.length === 0 && !metricsError && (
               <div className="rounded-2xl border border-dashed border-slate-800 p-5 text-xs text-slate-500 sm:col-span-3">
                 Nenhum indicador disponível para este papel.
               </div>
@@ -449,59 +420,14 @@ export default function AdminControlPlaneApp() {
           />
         )}
 
-        <section>
-          <div className="mb-3 flex items-center gap-2">
-            <Settings2 className="h-4 w-4 text-cyan-400" />
-            <h2 className="text-sm font-black uppercase tracking-wider text-white">
-              Módulos autorizados
-            </h2>
-          </div>
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            {visibleModules.map(module => {
-              const Icon = module.icon;
-              const available = module.status === 'available';
-              return (
-                <article
-                  key={module.label}
-                  className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="rounded-xl bg-slate-800 p-2 text-slate-300">
-                      <Icon className="h-4 w-4" />
-                    </div>
-                    <span
-                      className={`rounded-full px-2 py-1 text-[8px] font-black uppercase tracking-wider ${
-                        available
-                          ? 'bg-emerald-500/10 text-emerald-300'
-                          : 'bg-amber-500/10 text-amber-300'
-                      }`}
-                    >
-                      {available ? 'Disponível' : 'Próxima etapa'}
-                    </span>
-                  </div>
-                  <h3 className="mt-4 text-sm font-black text-white">
-                    {module.label}
-                  </h3>
-                  <p className="mt-1 text-[10px] leading-relaxed text-slate-500">
-                    {module.description}
-                  </p>
-                </article>
-              );
-            })}
-          </div>
-        </section>
+        <AdminModulesWorkspace profile={profile} />
 
-        <section className="rounded-2xl border border-slate-800 bg-slate-900/50 p-4">
+        <section className="rounded-2xl border border-slate-800 bg-slate-900/40 px-4 py-3">
           <div className="flex items-start gap-3">
             <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-slate-500" />
-            <div>
-              <strong className="text-xs text-slate-300">
-                Escopo desta entrega
-              </strong>
-              <p className="mt-1 text-[10px] leading-relaxed text-slate-500">
-                O diretório consulta usuários, lojas canônicas, equipes e tenants legados em modo somente leitura. Bloqueios, planos, integrações e mutações críticas continuam dependentes de backend seguro e auditoria autoritativa.
-              </p>
-            </div>
+            <p className="text-[10px] leading-relaxed text-slate-500">
+              Consultas são somente leitura. Bloqueios, planos, integrações e alterações críticas exigem backend seguro e auditoria autoritativa.
+            </p>
           </div>
         </section>
       </main>
