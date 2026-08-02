@@ -10,6 +10,7 @@ import { KyrubAiWorkspaceBridge } from './components/KyrubAiWorkspaceBridge';
 import { KyrubiaNamingBridge } from './components/KyrubiaNamingBridge';
 import { NoteInvitationOutboxBridge } from './components/NoteInvitationOutboxBridge';
 import { ProfilePasskeyBridge } from './components/ProfilePasskeyBridge';
+import { ProfileRecoveredActionsBridge } from './components/ProfileRecoveredActionsBridge';
 import { ProfileSocialHubNative } from './components/ProfileSocialHubNative';
 import { ProfileVerificationBridge } from './components/ProfileVerificationBridge';
 import { PublicStorefrontApp } from './components/PublicStorefrontApp';
@@ -146,6 +147,7 @@ function AuthenticatedKyrubApp({ operational }: { operational: boolean }) {
       <NoteInvitationOutboxBridge />
       <SocialPublishingBridge />
       <ProfileSocialHubNative />
+      <ProfileRecoveredActionsBridge />
       {identityVerificationEnabled && (
         <>
           <ProfileVerificationBridge />
