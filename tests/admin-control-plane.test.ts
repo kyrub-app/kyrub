@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import {
   getAdminPermissions,
@@ -6,6 +7,19 @@ import {
   isAdminControlPlaneLocation,
   parseAdminProfile,
 } from '../src/utils/adminControlPlane';
+
+const modulesSource = readFileSync(
+  'src/components/admin/AdminModulesWorkspace.tsx',
+  'utf8'
+);
+const directorySource = readFileSync(
+  'src/components/admin/AdminDirectoryWorkspace.tsx',
+  'utf8'
+);
+const rootSource = readFileSync(
+  'src/components/admin/AdminControlPlaneRoot.tsx',
+  'utf8'
+);
 
 test('parses only known administrative roles and matching identities', () => {
   const profile = parseAdminProfile(
@@ -26,9 +40,15 @@ test('parses only known administrative roles and matching identities', () => {
 
   assert.equal(profile?.role, 'operations');
   assert.equal(profile?.status, 'active');
-  assert.equal(parseAdminProfile({ uid: 'admin_a', role: 'owner', status: 'active' }), null);
   assert.equal(
-    parseAdminProfile({ uid: 'admin_a', role: 'support', status: 'active' }, 'admin_b'),
+    parseAdminProfile({ uid: 'admin_a', role: 'owner', status: 'active' }),
+    null
+  );
+  assert.equal(
+    parseAdminProfile(
+      { uid: 'admin_a', role: 'support', status: 'active' },
+      'admin_b'
+    ),
     null
   );
 });
@@ -57,4 +77,25 @@ test('routes only the administrative hostname and explicit local development pat
   assert.equal(isAdminControlPlaneLocation('localhost', '/admin/users'), true);
   assert.equal(isAdminControlPlaneLocation('kyrub.com', '/admin'), false);
   assert.equal(isAdminControlPlaneLocation('kyrub.com', '/'), false);
+});
+
+test('groups active and future control plane modules for mobile', () => {
+  assert.match(modulesSource, /Áreas do Control Plane/);
+  assert.match(modulesSource, /Saúde do sistema/);
+  assert.match(modulesSource, /status: 'available'/);
+  assert.match(modulesSource, /Recursos em preparação/);
+  assert.match(modulesSource, /<details/);
+  assert.match(modulesSource, /admin-directory/);
+  assert.match(modulesSource, /admin-system-health/);
+  assert.match(rootSource, /id="admin-system-health"/);
+});
+
+test('directory exposes explicit searching, empty and error feedback', () => {
+  assert.match(directorySource, /id="admin-directory"/);
+  assert.match(directorySource, /aria-busy=\{busy\}/);
+  assert.match(directorySource, /Consultando o diretório/);
+  assert.match(directorySource, /Nenhuma conta encontrada/);
+  assert.match(directorySource, /A consulta não foi concluída/);
+  assert.match(directorySource, /A busca é exata/);
+  assert.match(directorySource, /aria-live="polite"/);
 });
