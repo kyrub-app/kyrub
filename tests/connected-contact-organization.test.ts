@@ -7,12 +7,24 @@ const bridgeSource = readFileSync(
   'src/components/ProfileConnectedCardOrganizationBridge.tsx',
   'utf8'
 );
+const subtabBridgeSource = readFileSync(
+  'src/components/ProfileConnectionSubtabsBridge.tsx',
+  'utf8'
+);
 
-test('connected organization bridge is mounted after status and group decoration', () => {
+test('connected organization bridge is mounted after stable subtabs and group decoration', () => {
   assert.match(
     appSource,
-    /<ProfileConnectedGroupsBridge\s*\/>[\s\S]*<ProfileConnectedCardOrganizationBridge\s*\/>/
+    /<ProfileConnectionSubtabsBridge\s*\/>[\s\S]*<ProfileConnectedGroupsBridge\s*\/>[\s\S]*<ProfileConnectedCardOrganizationBridge\s*\/>/
   );
+});
+
+test('base connected subtabs receive stable text anchors before favorite and group injection', () => {
+  assert.match(subtabBridgeSource, /SUBTAB_LABELS = \['Minha lista', 'Sugestões', 'Solicitações'\]/);
+  assert.match(subtabBridgeSource, /data-kyrub-connection-label-prefix/);
+  assert.match(subtabBridgeSource, /button\.prepend\(prefix\)/);
+  assert.match(subtabBridgeSource, /prefix\.textContent = `\$\{label\} `/);
+  assert.match(subtabBridgeSource, /MutationObserver\(decorate\)/);
 });
 
 test('favorites is inserted after Minha lista and groups moves after Sugestões', () => {
