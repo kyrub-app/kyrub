@@ -1,5 +1,14 @@
+import { useState } from 'react';
 import type React from 'react';
 import type { Product } from '../../types';
+import { auth } from '../../utils/firebase';
+import {
+  createEmptyProductFiscalProfile,
+  normalizeProductFiscalProfile,
+  persistProductFiscalProfile,
+  type ProductFiscalEditorState,
+} from '../../utils/productFiscal';
+import { ProductFiscalFieldsBridge } from './ProductFiscalFieldsBridge';
 import {
   UnifiedProductModal,
   type ProductModalMode,
@@ -17,14 +26,79 @@ export const ProductEditorModal: React.FC<ProductEditorModalProps> = ({
   isOpen,
   mode = 'edit',
   product,
+  onSave,
+  isSaving,
   ...props
-}) => (
-  <UnifiedProductModal
-    {...props}
-    isOpen={isOpen ?? Boolean(product)}
-    mode={mode}
-    product={product}
-  />
-);
+}) => {
+  const resolvedOpen = isOpen ?? Boolean(product);
+  const [fiscalState, setFiscalState] = useState<ProductFiscalEditorState>({
+    ready: false,
+    draft: createEmptyProductFiscalProfile(
+      product?.isService === true ? 'service' : 'goods'
+    ),
+    initialProfile: null,
+  });
+
+  const handleSave = async (nextProduct: Product): Promise<void> => {
+    if (!fiscalState.ready) {
+      throw new Error(
+        'Aguarde os dados fiscais terminarem de carregar antes de salvar.'
+      );
+    }
+
+    const user = auth.currentUser;
+    if (!user) {
+      throw new Error('Faça login novamente para salvar os dados fiscais.');
+    }
+
+    const kind = nextProduct.isService === true ? 'service' : 'goods';
+    const nextFiscalProfile = normalizeProductFiscalProfile(
+      fiscalState.draft,
+      kind
+    );
+    const previousFiscalProfile = fiscalState.initialProfile;
+
+    await persistProductFiscalProfile(
+      user,
+      nextProduct.id,
+      nextFiscalProfile
+    );
+
+    try {
+      await onSave(nextProduct);
+    } catch (error) {
+      void persistProductFiscalProfile(
+        user,
+        nextProduct.id,
+        previousFiscalProfile
+      ).catch(rollbackError => {
+        console.error(
+          'Não foi possível reverter os dados fiscais após a falha do item.',
+          rollbackError
+        );
+      });
+      throw error;
+    }
+  };
+
+  return (
+    <>
+      <UnifiedProductModal
+        {...props}
+        isOpen={resolvedOpen}
+        mode={mode}
+        product={product}
+        isSaving={isSaving}
+        onSave={handleSave}
+      />
+      <ProductFiscalFieldsBridge
+        isOpen={resolvedOpen}
+        product={product}
+        isSaving={isSaving}
+        onStateChange={setFiscalState}
+      />
+    </>
+  );
+};
 
 export type { ProductModalMode, UnifiedProductModalProps };
