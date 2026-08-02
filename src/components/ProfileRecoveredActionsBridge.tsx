@@ -17,8 +17,11 @@ import { collection, doc, onSnapshot } from 'firebase/firestore';
 import type { SocialPost, Store } from '../types';
 import { identityVerificationEnabled } from '../utils/featureFlags';
 import { auth, db } from '../utils/firebase';
-import { IDENTITY_VERIFICATION_OPEN_EVENT } from '../utils/identityVerification';
 import { MomentsModal } from './modals/MomentsModal';
+import {
+  ProfileSecureEditorSections,
+  type SecureEditorSection,
+} from './ProfileSecureEditorSections';
 
 type StoreMoment = {
   id: string;
@@ -38,10 +41,12 @@ type ReviewPortal = {
   store: Store;
 };
 
+type EditSection = 'profile' | SecureEditorSection;
+
 type VerificationShortcut = {
-  id: 'profile' | 'documents' | 'biometrics' | 'facial';
+  id: EditSection;
   label: string;
-  verificationLabel?: 'Documentos' | 'Segurança' | 'Validação';
+  fullLabel: string;
   icon: ComponentType<{ className?: string }>;
 };
 
@@ -50,23 +55,28 @@ const LEGACY_POSTS_KEY = 'kyrub_posts';
 const getUserPostsKey = (uid: string) => `kyrub_posts_${uid}`;
 
 const verificationShortcuts: VerificationShortcut[] = [
-  { id: 'profile', label: 'Perfil', icon: Pencil },
+  {
+    id: 'profile',
+    label: 'Perfil',
+    fullLabel: 'Perfil',
+    icon: Pencil,
+  },
   {
     id: 'documents',
-    label: 'Documentos',
-    verificationLabel: 'Documentos',
+    label: 'Docs',
+    fullLabel: 'Documentos',
     icon: FileBadge,
   },
   {
     id: 'biometrics',
-    label: 'Biometria',
-    verificationLabel: 'Segurança',
+    label: 'Bio',
+    fullLabel: 'Biometria',
     icon: Fingerprint,
   },
   {
     id: 'facial',
-    label: 'Validação facial',
-    verificationLabel: 'Validação',
+    label: 'Face',
+    fullLabel: 'Validação facial',
     icon: Camera,
   },
 ];
@@ -164,34 +174,6 @@ const persistLocalPost = (user: User, post: SocialPost) => {
   );
 };
 
-const findVerificationModal = (): HTMLElement | null => {
-  const heading = [...document.querySelectorAll<HTMLElement>('h2')].find(
-    item => item.textContent?.trim() === 'Verificação e segurança'
-  );
-  return heading?.closest('section') ?? null;
-};
-
-const activateVerificationTab = (
-  label: 'Documentos' | 'Segurança' | 'Validação',
-  attempt = 0
-) => {
-  const modal = findVerificationModal();
-  const targetButton = modal
-    ? [...modal.querySelectorAll<HTMLButtonElement>('button')].find(
-        button => button.textContent?.trim() === label
-      )
-    : undefined;
-
-  if (targetButton) {
-    targetButton.click();
-    return;
-  }
-
-  if (attempt < 20) {
-    window.setTimeout(() => activateVerificationTab(label, attempt + 1), 50);
-  }
-};
-
 export function ProfileRecoveredActionsBridge() {
   const [user, setUser] = useState<User | null>(auth.currentUser);
   const [profileName, setProfileName] = useState(
@@ -204,7 +186,14 @@ export function ProfileRecoveredActionsBridge() {
   const [moments, setMoments] = useState<StoreMoment[]>(readStoredMoments);
   const [selectedStore, setSelectedStore] = useState<Store | null>(null);
   const [reviewPortals, setReviewPortals] = useState<ReviewPortal[]>([]);
+  const [editFormTarget, setEditFormTarget] = useState<HTMLFormElement | null>(
+    null
+  );
   const [editTabsTarget, setEditTabsTarget] = useState<HTMLElement | null>(null);
+  const [editContentTarget, setEditContentTarget] =
+    useState<HTMLElement | null>(null);
+  const [activeEditSection, setActiveEditSection] =
+    useState<EditSection>('profile');
 
   useEffect(() => {
     let unsubscribeStores = () => undefined;
@@ -329,36 +318,72 @@ export function ProfileRecoveredActionsBridge() {
       const editCloseButton = document.querySelector<HTMLButtonElement>(
         'button[aria-label="Fechar edição"]'
       );
-      const editForm = editCloseButton?.closest('form');
-      let nextEditTarget: HTMLElement | null = null;
+      const editForm = editCloseButton?.closest('form') ?? null;
+      let nextTabsTarget: HTMLElement | null = null;
+      let nextContentTarget: HTMLElement | null = null;
 
       if (editForm) {
-        nextEditTarget = editForm.querySelector<HTMLElement>(
+        editForm.style.maxHeight = '94dvh';
+        editForm.style.overflowY = 'auto';
+        editForm.dataset.profileModernEditor = 'true';
+
+        nextTabsTarget = editForm.querySelector<HTMLElement>(
           '[data-profile-edit-security-tabs="true"]'
         );
-        if (!nextEditTarget) {
-          nextEditTarget = document.createElement('div');
-          nextEditTarget.dataset.profileEditSecurityTabs = 'true';
+        if (!nextTabsTarget) {
+          nextTabsTarget = document.createElement('div');
+          nextTabsTarget.dataset.profileEditSecurityTabs = 'true';
           editForm.firstElementChild?.insertAdjacentElement(
             'afterend',
-            nextEditTarget
+            nextTabsTarget
           );
         }
+
+        nextContentTarget = editForm.querySelector<HTMLElement>(
+          '[data-profile-edit-security-content="true"]'
+        );
+        if (!nextContentTarget) {
+          nextContentTarget = document.createElement('div');
+          nextContentTarget.dataset.profileEditSecurityContent = 'true';
+          nextTabsTarget.insertAdjacentElement('afterend', nextContentTarget);
+        }
+
+        Array.from(editForm.children).forEach(child => {
+          if (!(child instanceof HTMLElement)) return;
+          if (
+            child === editForm.firstElementChild ||
+            child === nextTabsTarget ||
+            child === nextContentTarget
+          ) {
+            return;
+          }
+          child.dataset.profileEditNativeContent = 'true';
+        });
       }
 
+      setEditFormTarget(current => current === editForm ? current : editForm);
       setEditTabsTarget(current =>
-        current === nextEditTarget ? current : nextEditTarget
+        current === nextTabsTarget ? current : nextTabsTarget
       );
+      setEditContentTarget(current =>
+        current === nextContentTarget ? current : nextContentTarget
+      );
+
+      if (!editForm) {
+        setActiveEditSection(current =>
+          current === 'profile' ? current : 'profile'
+        );
+      }
     };
 
     synchronizeTargets();
-    const timer = window.setInterval(synchronizeTargets, 300);
+    const timer = window.setInterval(synchronizeTargets, 250);
 
     return () => {
       window.clearInterval(timer);
       document
         .querySelectorAll<HTMLElement>(
-          '[data-profile-offer-review-slot="true"], [data-profile-edit-security-tabs="true"]'
+          '[data-profile-offer-review-slot="true"], [data-profile-edit-security-tabs="true"], [data-profile-edit-security-content="true"]'
         )
         .forEach(target => target.remove());
       document
@@ -373,19 +398,36 @@ export function ProfileRecoveredActionsBridge() {
           button.style.width = '';
           delete button.dataset.profileOfferEnter;
         });
+      document
+        .querySelectorAll<HTMLElement>('[data-profile-edit-native-content="true"]')
+        .forEach(element => {
+          element.style.display = '';
+          delete element.dataset.profileEditNativeContent;
+        });
+      document
+        .querySelectorAll<HTMLFormElement>('[data-profile-modern-editor="true"]')
+        .forEach(form => {
+          form.style.maxHeight = '';
+          form.style.overflowY = '';
+          delete form.dataset.profileModernEditor;
+        });
     };
   }, [storesByName]);
 
-  const openVerification = (
-    label: 'Documentos' | 'Segurança' | 'Validação'
-  ) => {
-    const closeEditButton = document.querySelector<HTMLButtonElement>(
-      'button[aria-label="Fechar edição"]'
-    );
-    closeEditButton?.click();
-    window.dispatchEvent(new CustomEvent(IDENTITY_VERIFICATION_OPEN_EVENT));
-    activateVerificationTab(label);
-  };
+  useEffect(() => {
+    if (!editFormTarget) return;
+    const showingProfile = activeEditSection === 'profile';
+    editFormTarget
+      .querySelectorAll<HTMLElement>(
+        ':scope > [data-profile-edit-native-content="true"]'
+      )
+      .forEach(element => {
+        element.style.display = showingProfile ? '' : 'none';
+      });
+    if (editContentTarget) {
+      editContentTarget.style.display = showingProfile ? 'none' : 'block';
+    }
+  }, [activeEditSection, editContentTarget, editFormTarget]);
 
   const publishMoment = (data: {
     content: string;
@@ -462,25 +504,22 @@ export function ProfileRecoveredActionsBridge() {
             className="overflow-x-auto rounded-2xl border border-slate-800 bg-slate-900/70 p-1"
             aria-label="Seções de edição e segurança"
           >
-            <div className="grid min-w-[380px] grid-cols-4 gap-1">
+            <div className="grid min-w-[300px] grid-cols-4 gap-1">
               {verificationShortcuts.map(shortcut => {
                 const Icon = shortcut.icon;
-                const active = shortcut.id === 'profile';
+                const active = activeEditSection === shortcut.id;
                 return (
                   <button
                     key={shortcut.id}
                     type="button"
-                    onClick={() =>
-                      shortcut.verificationLabel
-                        ? openVerification(shortcut.verificationLabel)
-                        : undefined
-                    }
+                    onClick={() => setActiveEditSection(shortcut.id)}
                     className={`flex min-h-12 flex-col items-center justify-center gap-1 rounded-xl px-2 text-[8px] font-black uppercase ${
                       active
                         ? 'bg-orange-500 text-slate-950'
                         : 'text-slate-400 hover:bg-slate-800 hover:text-white'
                     }`}
                     aria-current={active ? 'page' : undefined}
+                    aria-label={shortcut.fullLabel}
                   >
                     <Icon className="h-4 w-4" />
                     <span>{shortcut.label}</span>
@@ -490,6 +529,18 @@ export function ProfileRecoveredActionsBridge() {
             </div>
           </nav>,
           editTabsTarget
+        )}
+
+      {editContentTarget &&
+        user &&
+        activeEditSection !== 'profile' &&
+        createPortal(
+          <ProfileSecureEditorSections
+            activeSection={activeEditSection}
+            user={user}
+            profileName={profileName}
+          />,
+          editContentTarget
         )}
 
       <MomentsModal
