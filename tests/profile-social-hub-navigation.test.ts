@@ -99,18 +99,32 @@ describe('native React profile social hub', () => {
     assert.match(feedHookSource, /where\('audienceIds', 'array-contains', user\.uid\)/);
   });
 
-  test('restores the connected navigation in the approved order', () => {
-    const listIndex = profileSource.indexOf("label: 'Minha lista'");
-    const favoritesIndex = profileSource.indexOf("label: 'Favoritos'");
-    const suggestionsIndex = profileSource.indexOf("label: 'Sugestões'");
+  test('restores the simplified connected navigation and nested new contacts', () => {
+    const generalIndex = profileSource.indexOf("label: 'Geral'");
+    const frequentIndex = profileSource.indexOf("label: 'Frequentes'");
     const groupsIndex = profileSource.indexOf("label: 'Grupos'");
-    const requestsIndex = profileSource.indexOf("label: 'Solicitações'");
-    assert.ok(listIndex >= 0);
-    assert.ok(listIndex < favoritesIndex);
-    assert.ok(favoritesIndex < suggestionsIndex);
-    assert.ok(suggestionsIndex < groupsIndex);
-    assert.ok(groupsIndex < requestsIndex);
-    assert.match(profileSource, /overflow-x-auto/);
+    const newButtonIndex = profileSource.indexOf(
+      'aria-label="Abrir novas conexões"'
+    );
+    const requestsIndex = profileSource.indexOf(
+      'Solicitações {requestCount}'
+    );
+    const suggestionsIndex = profileSource.indexOf(
+      'Sugestões {suggestionCount}'
+    );
+
+    assert.ok(generalIndex >= 0);
+    assert.ok(generalIndex < frequentIndex);
+    assert.ok(frequentIndex < groupsIndex);
+    assert.ok(groupsIndex < newButtonIndex);
+    assert.ok(requestsIndex >= 0);
+    assert.ok(requestsIndex < suggestionsIndex);
+    assert.match(profileSource, /grid grid-cols-4 gap-2/);
+    assert.match(profileSource, /aria-label="Tipos de novos contatos"/);
+    assert.match(profileSource, /newConnectionsTab === 'requests'/);
+    assert.match(profileSource, /newConnectionsTab === 'suggestions'/);
+    assert.doesNotMatch(profileSource, /connectionSection === 'requests'/);
+    assert.doesNotMatch(profileSource, /connectionSection === 'suggestions'/);
     assert.match(profileSource, /grid grid-cols-2 gap-3/);
     assert.match(profileSource, /aspect-\[4\/3\]/);
     assert.match(profileSource, /Favoritar contato/);
