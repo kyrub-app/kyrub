@@ -197,7 +197,6 @@ export function ProductFiscalFieldsBridge({
     <details
       id="product-fiscal-data-section"
       className="overflow-hidden rounded-2xl border border-cyan-500/20 bg-cyan-500/5"
-      defaultOpen={draft.enabled}
     >
       <summary className="flex cursor-pointer list-none items-center gap-3 p-4">
         <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-cyan-500/10 text-cyan-300">
@@ -254,7 +253,12 @@ export function ProductFiscalFieldsBridge({
                   </label>
                   <input
                     value={draft.fiscalDescription}
-                    onChange={event => update('fiscalDescription', event.target.value.slice(0, 200))}
+                    onChange={event =>
+                      update(
+                        'fiscalDescription',
+                        event.target.value.slice(0, 200)
+                      )
+                    }
                     disabled={isSaving}
                     placeholder="Descrição objetiva usada no documento fiscal"
                     className={fieldClass}
@@ -270,7 +274,9 @@ export function ProductFiscalFieldsBridge({
                         </label>
                         <input
                           value={draft.ncm}
-                          onChange={event => update('ncm', onlyDigits(event.target.value, 8))}
+                          onChange={event =>
+                            update('ncm', onlyDigits(event.target.value, 8))
+                          }
                           disabled={isSaving}
                           inputMode="numeric"
                           placeholder="00000000"
@@ -283,7 +289,9 @@ export function ProductFiscalFieldsBridge({
                         </label>
                         <input
                           value={draft.cest}
-                          onChange={event => update('cest', onlyDigits(event.target.value, 7))}
+                          onChange={event =>
+                            update('cest', onlyDigits(event.target.value, 7))
+                          }
                           disabled={isSaving}
                           inputMode="numeric"
                           placeholder="0000000"
@@ -298,7 +306,12 @@ export function ProductFiscalFieldsBridge({
                       </label>
                       <select
                         value={draft.origin}
-                        onChange={event => update('origin', event.target.value as ProductFiscalProfile['origin'])}
+                        onChange={event =>
+                          update(
+                            'origin',
+                            event.target.value as ProductFiscalProfile['origin']
+                          )
+                        }
                         disabled={isSaving}
                         className={fieldClass}
                       >
@@ -315,7 +328,9 @@ export function ProductFiscalFieldsBridge({
                         <input
                           type="checkbox"
                           checked={draft.noGtin}
-                          onChange={event => update('noGtin', event.target.checked)}
+                          onChange={event =>
+                            update('noGtin', event.target.checked)
+                          }
                           disabled={isSaving}
                           className="h-4 w-4 accent-cyan-500"
                         />
@@ -324,7 +339,9 @@ export function ProductFiscalFieldsBridge({
                       {!draft.noGtin && (
                         <input
                           value={draft.gtin}
-                          onChange={event => update('gtin', onlyDigits(event.target.value, 14))}
+                          onChange={event =>
+                            update('gtin', onlyDigits(event.target.value, 14))
+                          }
                           disabled={isSaving}
                           inputMode="numeric"
                           placeholder="Código de barras com 8, 12, 13 ou 14 dígitos"
@@ -340,11 +357,19 @@ export function ProductFiscalFieldsBridge({
                         </label>
                         <select
                           value={draft.commercialUnit}
-                          onChange={event => update('commercialUnit', event.target.value as ProductFiscalProfile['commercialUnit'])}
+                          onChange={event =>
+                            update(
+                              'commercialUnit',
+                              event.target
+                                .value as ProductFiscalProfile['commercialUnit']
+                            )
+                          }
                           disabled={isSaving}
                           className={fieldClass}
                         >
-                          {FISCAL_UNITS.map(unit => <option key={unit}>{unit}</option>)}
+                          {FISCAL_UNITS.map(unit => (
+                            <option key={unit}>{unit}</option>
+                          ))}
                         </select>
                       </div>
                       <div>
@@ -353,11 +378,18 @@ export function ProductFiscalFieldsBridge({
                         </label>
                         <select
                           value={draft.taxUnit}
-                          onChange={event => update('taxUnit', event.target.value as ProductFiscalProfile['taxUnit'])}
+                          onChange={event =>
+                            update(
+                              'taxUnit',
+                              event.target.value as ProductFiscalProfile['taxUnit']
+                            )
+                          }
                           disabled={isSaving}
                           className={fieldClass}
                         >
-                          {FISCAL_UNITS.map(unit => <option key={unit}>{unit}</option>)}
+                          {FISCAL_UNITS.map(unit => (
+                            <option key={unit}>{unit}</option>
+                          ))}
                         </select>
                       </div>
                       <div>
@@ -369,7 +401,12 @@ export function ProductFiscalFieldsBridge({
                           min="0.000001"
                           step="0.000001"
                           value={draft.conversionFactor}
-                          onChange={event => update('conversionFactor', Number(event.target.value))}
+                          onChange={event =>
+                            update(
+                              'conversionFactor',
+                              Number(event.target.value)
+                            )
+                          }
                           disabled={isSaving}
                           className={fieldClass}
                         />
@@ -384,7 +421,12 @@ export function ProductFiscalFieldsBridge({
                       </label>
                       <input
                         value={draft.serviceListCode}
-                        onChange={event => update('serviceListCode', event.target.value.slice(0, 20))}
+                        onChange={event =>
+                          update(
+                            'serviceListCode',
+                            event.target.value.slice(0, 20)
+                          )
+                        }
                         disabled={isSaving}
                         placeholder="Ex.: 01.01"
                         className={fieldClass}
@@ -396,7 +438,12 @@ export function ProductFiscalFieldsBridge({
                       </label>
                       <input
                         value={draft.municipalServiceCode}
-                        onChange={event => update('municipalServiceCode', event.target.value.slice(0, 30))}
+                        onChange={event =>
+                          update(
+                            'municipalServiceCode',
+                            event.target.value.slice(0, 30)
+                          )
+                        }
                         disabled={isSaving}
                         placeholder="Conforme a prefeitura"
                         className={fieldClass}
@@ -408,7 +455,9 @@ export function ProductFiscalFieldsBridge({
                       </label>
                       <input
                         value={draft.nbs}
-                        onChange={event => update('nbs', event.target.value.slice(0, 20))}
+                        onChange={event =>
+                          update('nbs', event.target.value.slice(0, 20))
+                        }
                         disabled={isSaving}
                         placeholder="Preencha apenas quando a integração exigir"
                         className={fieldClass}
@@ -420,7 +469,9 @@ export function ProductFiscalFieldsBridge({
                 <div className="flex items-start gap-2 rounded-xl border border-amber-500/20 bg-amber-500/5 p-3 text-[9px] leading-relaxed text-amber-100">
                   <Info className="mt-0.5 h-4 w-4 shrink-0 text-amber-300" />
                   <span>
-                    O Kyrub valida formato, mas não escolhe NCM, CEST ou código de serviço por conta própria. A classificação deve ser confirmada pelo responsável fiscal da loja.
+                    O Kyrub valida formato, mas não escolhe NCM, CEST ou código
+                    de serviço por conta própria. A classificação deve ser
+                    confirmada pelo responsável fiscal da loja.
                   </span>
                 </div>
 
