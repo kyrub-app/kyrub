@@ -67,16 +67,59 @@ const inventoryPayload = () => ({
   updatedAt: serverTimestamp(),
 });
 
+const fiscalProfile = () => ({
+  enabled: true,
+  kind: 'goods',
+  fiscalDescription: 'Refrigerante lata 350 ml',
+  ncm: '22021000',
+  cest: '0300700',
+  gtin: '7894900011517',
+  noGtin: false,
+  commercialUnit: 'UN',
+  taxUnit: 'UN',
+  conversionFactor: 1,
+  origin: '0',
+  serviceListCode: '',
+  municipalServiceCode: '',
+  nbs: '',
+  updatedAt: '2026-08-01T00:00:00.000Z',
+});
+
 test('owner creates and reads the private inventory document', async () => {
   const owner = environment.authenticatedContext(OWNER_ID).firestore();
   await assertSucceeds(setDoc(doc(owner, INVENTORY_PATH), inventoryPayload()));
   await assertSucceeds(getDoc(doc(owner, INVENTORY_PATH)));
 });
 
-test('another authenticated user cannot read or change the inventory', async () => {
+test('owner stores and updates private fiscal profiles beside inventory data', async () => {
+  const owner = environment.authenticatedContext(OWNER_ID).firestore();
+  await assertSucceeds(
+    setDoc(doc(owner, INVENTORY_PATH), {
+      ...inventoryPayload(),
+      productFiscalProfiles: {
+        'product-1': fiscalProfile(),
+      },
+    })
+  );
+  await assertSucceeds(
+    updateDoc(doc(owner, INVENTORY_PATH), {
+      productFiscalProfiles: {
+        'product-1': {
+          ...fiscalProfile(),
+          noGtin: true,
+          gtin: '',
+        },
+      },
+      updatedAt: serverTimestamp(),
+    })
+  );
+});
+
+test('another authenticated user cannot read or change inventory or fiscal profiles', async () => {
   await environment.withSecurityRulesDisabled(async context => {
     await setDoc(doc(context.firestore(), INVENTORY_PATH), {
       ...inventoryPayload(),
+      productFiscalProfiles: { 'product-1': fiscalProfile() },
       createdAt: new Date('2026-07-28T00:00:00.000Z'),
       updatedAt: new Date('2026-07-28T00:00:00.000Z'),
     });
@@ -87,6 +130,7 @@ test('another authenticated user cannot read or change the inventory', async () 
   await assertFails(
     updateDoc(doc(other, INVENTORY_PATH), {
       inventoryCatalog: [],
+      productFiscalProfiles: {},
       updatedAt: serverTimestamp(),
     })
   );
@@ -106,6 +150,16 @@ test('owner updates operational values but cannot replace immutable ownership', 
     updateDoc(doc(owner, INVENTORY_PATH), {
       ownerId: 'other-user',
       updatedAt: serverTimestamp(),
+    })
+  );
+});
+
+test('private inventory rejects undeclared top-level data', async () => {
+  const owner = environment.authenticatedContext(OWNER_ID).firestore();
+  await assertFails(
+    setDoc(doc(owner, INVENTORY_PATH), {
+      ...inventoryPayload(),
+      publicTaxRates: { icms: 18 },
     })
   );
 });
