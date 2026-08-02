@@ -6,11 +6,9 @@ const MARKED_TAB_SELECTOR = '[data-kyrub-marked-tab]';
 const MARKED_CONTENT_SELECTOR = '[data-kyrub-marked-content-host]';
 
 const findClickedButton = (event: Event): HTMLButtonElement | null =>
-  event
-    .composedPath()
-    .find((target): target is HTMLButtonElement =>
-      target instanceof HTMLButtonElement
-    ) ?? null;
+  event.composedPath().find((target): target is HTMLButtonElement =>
+    target instanceof HTMLButtonElement
+  ) ?? null;
 
 const findOriginalContent = (
   navigation: HTMLElement
