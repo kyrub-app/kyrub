@@ -1,0 +1,377 @@
+import {
+  useEffect,
+  useRef,
+  useState,
+  type ComponentType,
+} from 'react';
+import { createPortal } from 'react-dom';
+import {
+  BarChart3,
+  Camera,
+  Compass,
+  FileBadge,
+  Fingerprint,
+  Megaphone,
+  Rocket,
+  X,
+} from 'lucide-react';
+
+type SecureShortcut = {
+  label: string;
+  fullLabel: string;
+  icon: ComponentType<{ className?: string }>;
+};
+
+const secureShortcuts: SecureShortcut[] = [
+  { label: 'Docs', fullLabel: 'Documentos', icon: FileBadge },
+  { label: 'Bio', fullLabel: 'Biometria', icon: Fingerprint },
+  { label: 'Face', fullLabel: 'Validação facial', icon: Camera },
+];
+
+const sameTarget = <T extends HTMLElement>(current: T | null, next: T | null) =>
+  current === next ? current : next;
+
+const buttonWithText = (
+  root: ParentNode,
+  label: string
+): HTMLButtonElement | null =>
+  [...root.querySelectorAll<HTMLButtonElement>('button')].find(
+    button => button.textContent?.trim() === label
+  ) ?? null;
+
+export function ProfileNextPolishBridge() {
+  const [squareTarget, setSquareTarget] = useState<HTMLElement | null>(null);
+  const [secureTarget, setSecureTarget] = useState<HTMLElement | null>(null);
+  const [metricsSponsorTarget, setMetricsSponsorTarget] =
+    useState<HTMLElement | null>(null);
+  const [sponsoredListTarget, setSponsoredListTarget] =
+    useState<HTMLElement | null>(null);
+  const [squareActive, setSquareActive] = useState(false);
+  const [activeSecureLabel, setActiveSecureLabel] = useState('Perfil');
+  const [sponsoredOpen, setSponsoredOpen] = useState(false);
+
+  const squareButtonRef = useRef<HTMLButtonElement | null>(null);
+  const sponsorButtonRef = useRef<HTMLButtonElement | null>(null);
+  const secureButtonsRef = useRef<Record<string, HTMLButtonElement | null>>({});
+
+  useEffect(() => {
+    const synchronize = () => {
+      const profileModal = document.getElementById('profile-social-hub-modal');
+      let nextSquareTarget: HTMLElement | null = null;
+
+      if (profileModal) {
+        const savedButton = profileModal.querySelector<HTMLButtonElement>(
+          'button[aria-label="Abrir publicações salvas"]'
+        );
+        const actionGroup = savedButton?.parentElement ?? null;
+        const profileNavigation = profileModal.querySelector<HTMLElement>(
+          'nav[aria-label="Seções do perfil"]'
+        );
+        const squareButton = profileNavigation
+          ? buttonWithText(profileNavigation, 'Praça')
+          : null;
+
+        squareButtonRef.current = squareButton;
+        setSquareActive(current => {
+          const next = Boolean(squareButton?.className.includes('bg-orange-500'));
+          return current === next ? current : next;
+        });
+
+        if (actionGroup && savedButton && squareButton) {
+          let target = actionGroup.querySelector<HTMLElement>(
+            '[data-profile-square-shortcut-slot="true"]'
+          );
+          if (!target) {
+            target = document.createElement('div');
+            target.dataset.profileSquareShortcutSlot = 'true';
+            savedButton.insertAdjacentElement('beforebegin', target);
+          }
+          nextSquareTarget = target;
+          squareButton.style.display = 'none';
+
+          if (profileNavigation) {
+            profileNavigation.style.display = 'grid';
+            profileNavigation.style.gridTemplateColumns =
+              'repeat(3, minmax(0, 1fr))';
+            profileNavigation.style.overflowX = 'visible';
+            profileNavigation
+              .querySelectorAll<HTMLButtonElement>('button')
+              .forEach(button => {
+                if (button !== squareButton) {
+                  button.style.width = '100%';
+                  button.style.minWidth = '0';
+                }
+              });
+          }
+        }
+      } else {
+        squareButtonRef.current = null;
+      }
+
+      setSquareTarget(current => sameTarget(current, nextSquareTarget));
+
+      const editCloseButton = document.querySelector<HTMLButtonElement>(
+        'button[aria-label="Fechar edição"]'
+      );
+      const editForm = editCloseButton?.closest('form') ?? null;
+      let nextSecureTarget: HTMLElement | null = null;
+
+      if (editForm) {
+        const originalNav = editForm.querySelector<HTMLElement>(
+          'nav[aria-label="Seções de edição e segurança"]'
+        );
+        const profileButton = originalNav?.querySelector<HTMLButtonElement>(
+          'button[aria-label="Perfil"]'
+        );
+        const galleryButton = buttonWithText(editForm, 'Galeria');
+        const controls = galleryButton?.parentElement ?? null;
+        const photoRow = controls?.parentElement ?? null;
+        const contentTarget = editForm.querySelector<HTMLElement>(
+          '[data-profile-edit-security-content="true"]'
+        );
+
+        if (originalNav && profileButton && controls && photoRow) {
+          secureShortcuts.forEach(shortcut => {
+            const originalButton = originalNav.querySelector<HTMLButtonElement>(
+              `button[aria-label="${shortcut.fullLabel}"]`
+            );
+            secureButtonsRef.current[shortcut.fullLabel] = originalButton;
+            if (originalButton) originalButton.style.display = 'none';
+          });
+
+          const activeButton = originalNav.querySelector<HTMLButtonElement>(
+            'button[aria-current="page"]'
+          );
+          const nextActive = activeButton?.getAttribute('aria-label') || 'Perfil';
+          setActiveSecureLabel(current =>
+            current === nextActive ? current : nextActive
+          );
+
+          originalNav.style.width = 'fit-content';
+          originalNav.style.maxWidth = '150px';
+          originalNav.style.overflowX = 'visible';
+          const originalGrid = originalNav.firstElementChild as HTMLElement | null;
+          if (originalGrid) {
+            originalGrid.style.minWidth = '0';
+            originalGrid.style.gridTemplateColumns = 'minmax(104px, 140px)';
+          }
+
+          controls.style.flex = '1';
+          controls.style.minWidth = '0';
+          photoRow.style.alignItems = 'flex-start';
+          photoRow.style.display = 'flex';
+          delete photoRow.dataset.profileEditNativeContent;
+
+          let target = controls.querySelector<HTMLElement>(
+            '[data-profile-secure-shortcuts-slot="true"]'
+          );
+          if (!target) {
+            target = document.createElement('div');
+            target.dataset.profileSecureShortcutsSlot = 'true';
+            controls.appendChild(target);
+          }
+          nextSecureTarget = target;
+
+          if (contentTarget && contentTarget.previousElementSibling !== photoRow) {
+            photoRow.insertAdjacentElement('afterend', contentTarget);
+          }
+        }
+      } else {
+        secureButtonsRef.current = {};
+      }
+
+      setSecureTarget(current => sameTarget(current, nextSecureTarget));
+
+      const metricsHeading = [...document.querySelectorAll<HTMLElement>('h3')]
+        .find(item => item.textContent?.trim() === 'Métricas da publicação');
+      const metricsSection = metricsHeading?.closest('section') ?? null;
+      let nextMetricsSponsorTarget: HTMLElement | null = null;
+      let nextSponsoredListTarget: HTMLElement | null = null;
+
+      if (metricsSection) {
+        const metricsGrid = metricsSection.querySelector<HTMLElement>(
+          'div.grid.grid-cols-2'
+        );
+        const sponsorButton = buttonWithText(
+          metricsSection,
+          'Patrocinar publicação'
+        );
+        sponsorButtonRef.current = sponsorButton;
+
+        if (metricsGrid && sponsorButton) {
+          let target = metricsGrid.querySelector<HTMLElement>(
+            '[data-profile-metrics-sponsor-slot="true"]'
+          );
+          if (!target) {
+            target = document.createElement('div');
+            target.dataset.profileMetricsSponsorSlot = 'true';
+            metricsGrid.appendChild(target);
+          }
+          nextMetricsSponsorTarget = target;
+          sponsorButton.style.display = 'none';
+
+          const footer = sponsorButton.parentElement;
+          if (footer) {
+            let listTarget = footer.querySelector<HTMLElement>(
+              '[data-profile-sponsored-list-slot="true"]'
+            );
+            if (!listTarget) {
+              listTarget = document.createElement('div');
+              listTarget.dataset.profileSponsoredListSlot = 'true';
+              footer.appendChild(listTarget);
+            }
+            nextSponsoredListTarget = listTarget;
+          }
+        }
+      } else {
+        sponsorButtonRef.current = null;
+      }
+
+      setMetricsSponsorTarget(current =>
+        sameTarget(current, nextMetricsSponsorTarget)
+      );
+      setSponsoredListTarget(current =>
+        sameTarget(current, nextSponsoredListTarget)
+      );
+    };
+
+    synchronize();
+    const timer = window.setInterval(synchronize, 250);
+    return () => {
+      window.clearInterval(timer);
+      document
+        .querySelectorAll<HTMLElement>(
+          '[data-profile-square-shortcut-slot="true"], [data-profile-secure-shortcuts-slot="true"], [data-profile-metrics-sponsor-slot="true"], [data-profile-sponsored-list-slot="true"]'
+        )
+        .forEach(target => target.remove());
+    };
+  }, []);
+
+  const openSponsoredPublications = () => {
+    window.dispatchEvent(
+      new CustomEvent('kyrub-sponsored-posts-open-requested')
+    );
+    setSponsoredOpen(true);
+  };
+
+  return (
+    <>
+      {squareTarget &&
+        createPortal(
+          <button
+            type="button"
+            onClick={() => squareButtonRef.current?.click()}
+            className={`flex h-11 w-11 items-center justify-center rounded-2xl border ${
+              squareActive
+                ? 'border-orange-500 bg-orange-500 text-slate-950'
+                : 'border-sky-500/30 bg-sky-500/10 text-sky-300'
+            }`}
+            aria-label="Abrir Praça"
+            title="Praça"
+          >
+            <Compass className="h-5 w-5" />
+          </button>,
+          squareTarget
+        )}
+
+      {secureTarget &&
+        createPortal(
+          <nav
+            className="grid grid-cols-3 gap-1.5 pt-2"
+            aria-label="Atalhos seguros do perfil"
+          >
+            {secureShortcuts.map(shortcut => {
+              const Icon = shortcut.icon;
+              const active = activeSecureLabel === shortcut.fullLabel;
+              return (
+                <button
+                  key={shortcut.fullLabel}
+                  type="button"
+                  onClick={() =>
+                    secureButtonsRef.current[shortcut.fullLabel]?.click()
+                  }
+                  className={`flex min-h-12 min-w-0 flex-col items-center justify-center gap-1 rounded-xl border px-1 text-[8px] font-black uppercase ${
+                    active
+                      ? 'border-orange-500 bg-orange-500 text-slate-950'
+                      : 'border-slate-800 bg-slate-900 text-slate-400'
+                  }`}
+                  aria-current={active ? 'page' : undefined}
+                  aria-label={shortcut.fullLabel}
+                >
+                  <Icon className="h-4 w-4" />
+                  <span className="truncate">{shortcut.label}</span>
+                </button>
+              );
+            })}
+          </nav>,
+          secureTarget
+        )}
+
+      {metricsSponsorTarget &&
+        createPortal(
+          <button
+            type="button"
+            onClick={() => sponsorButtonRef.current?.click()}
+            className="flex h-full min-h-[104px] w-full flex-col items-start justify-between rounded-2xl border border-orange-500/30 bg-orange-500/10 p-3 text-left text-orange-200"
+            aria-label="Patrocinar publicação"
+          >
+            <Rocket className="h-5 w-5" />
+            <span className="text-[9px] font-black uppercase leading-tight">
+              Patrocinar publicação
+            </span>
+          </button>,
+          metricsSponsorTarget
+        )}
+
+      {sponsoredListTarget &&
+        createPortal(
+          <button
+            type="button"
+            onClick={openSponsoredPublications}
+            className="mt-3 flex h-12 w-full items-center justify-center gap-2 rounded-xl border border-sky-500/30 bg-sky-500/10 text-[10px] font-black uppercase text-sky-200"
+          >
+            <BarChart3 className="h-4 w-4" />
+            Publicações patrocinadas
+          </button>,
+          sponsoredListTarget
+        )}
+
+      {sponsoredOpen && (
+        <div className="fixed inset-0 z-[178] flex items-end justify-center bg-slate-950/95 backdrop-blur-md sm:items-center sm:p-4">
+          <section className="w-full max-w-md overflow-hidden rounded-t-3xl border border-slate-800 bg-slate-950 sm:rounded-3xl">
+            <header className="flex items-center justify-between border-b border-slate-900 px-4 py-3">
+              <div>
+                <span className="text-[9px] font-black uppercase tracking-wider text-sky-300">
+                  Divulgação
+                </span>
+                <h3 className="text-base font-black text-white">
+                  Publicações patrocinadas
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSponsoredOpen(false)}
+                className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-900 text-slate-500"
+                aria-label="Fechar publicações patrocinadas"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </header>
+            <div className="p-5 text-center">
+              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl border border-sky-500/25 bg-sky-500/10 text-sky-300">
+                <Megaphone className="h-6 w-6" />
+              </div>
+              <h4 className="mt-4 text-sm font-black text-white">
+                Nenhuma campanha ativa
+              </h4>
+              <p className="mx-auto mt-2 max-w-sm text-[10px] leading-relaxed text-slate-500">
+                Quando uma publicação for patrocinada, o desempenho e o período
+                da campanha aparecerão aqui.
+              </p>
+            </div>
+          </section>
+        </div>
+      )}
+    </>
+  );
+}

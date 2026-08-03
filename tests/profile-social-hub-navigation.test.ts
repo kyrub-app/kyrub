@@ -3,24 +3,17 @@ import { readFileSync } from 'node:fs';
 import { describe, test } from 'node:test';
 
 const appSource = readFileSync('src/App.tsx', 'utf8');
+const mainSource = readFileSync('src/main.tsx', 'utf8');
 const profileSource = readFileSync(
-  'src/components/ProfileSocialHubBridge.tsx',
+  'src/components/ProfileSocialHubNative.tsx',
   'utf8'
 );
-const polishSource = readFileSync(
-  'src/components/ProfileSocialPolishBridge.tsx',
+const profileHeaderStyles = readFileSync(
+  'src/styles/profile-header-layout.css',
   'utf8'
 );
-const markedRecoverySource = readFileSync(
-  'src/components/ProfileMarkedNavigationRecoveryBridge.tsx',
-  'utf8'
-);
-const mobileSource = readFileSync(
-  'src/components/ProfileSocialMobileFirstBridge.tsx',
-  'utf8'
-);
-const statusCheckboxSource = readFileSync(
-  'src/components/ProfileStatusCheckboxBridge.tsx',
+const recoveredActionsSource = readFileSync(
+  'src/components/ProfileRecoveredActionsBridge.tsx',
   'utf8'
 );
 const chatSource = readFileSync(
@@ -57,228 +50,190 @@ const profileRules = readFileSync(
   'utf8'
 );
 
-describe('profile social hub navigation', () => {
-  test('mounts the profile hub, polish layers and Kyrub AI workspace around the legacy app', () => {
-    assert.match(appSource, /ProfileSocialHubBridge/);
-    assert.match(appSource, /ProfileSocialPolishBridge/);
-    assert.match(appSource, /ProfileMarkedNavigationRecoveryBridge/);
-    assert.match(appSource, /ProfileStatusCheckboxBridge/);
-    assert.match(appSource, /ProfileSocialMobileFirstBridge/);
-    assert.match(appSource, /KyrubAiWorkspaceBridge/);
+describe('native React profile social hub', () => {
+  test('mounts one React-owned profile hub before the legacy application', () => {
+    assert.match(appSource, /ProfileSocialHubNative/);
+    assert.match(appSource, /<ProfileSocialHubNative\s*\/?>/);
+    assert.match(appSource, /<ProfileRecoveredActionsBridge\s*\/?>/);
     assert.ok(
-      appSource.indexOf('<ProfileSocialHubBridge') <
+      appSource.indexOf('<ProfileSocialHubNative') <
         appSource.indexOf('<LegacyApp')
     );
-    assert.ok(
-      appSource.indexOf('<ProfileSocialPolishBridge') <
-        appSource.indexOf('<ProfileMarkedNavigationRecoveryBridge')
-    );
-    assert.ok(
-      appSource.indexOf('<ProfileMarkedNavigationRecoveryBridge') <
-        appSource.indexOf('<ProfileStatusCheckboxBridge')
-    );
-    assert.ok(
-      appSource.indexOf('<ProfileStatusCheckboxBridge') <
-        appSource.indexOf('<ProfileSocialMobileFirstBridge')
-    );
-    assert.ok(
-      appSource.indexOf('<ProfileSocialMobileFirstBridge') <
-        appSource.indexOf('<LegacyApp')
-    );
-    assert.ok(
-      appSource.indexOf('<KyrubAiWorkspaceBridge') <
-        appSource.indexOf('<LegacyApp')
-    );
+    assert.doesNotMatch(appSource, /ProfileSocialPolishBridge/);
+    assert.doesNotMatch(appSource, /ProfileMarkedNavigationRecoveryBridge/);
+    assert.doesNotMatch(appSource, /ProfileStatusCheckboxBridge/);
+    assert.doesNotMatch(appSource, /ProfileSocialMobileFirstBridge/);
+    assert.doesNotMatch(appSource, /ProfileConnectionSubtabsBridge/);
+    assert.doesNotMatch(appSource, /ProfileConnectedGroupsBridge/);
+    assert.doesNotMatch(appSource, /profileDomEnhancementsEnabled/);
+    assert.doesNotMatch(profileSource, /MutationObserver/);
+    assert.doesNotMatch(recoveredActionsSource, /MutationObserver/);
   });
 
-  test('keeps the approved profile tabs and saved posts in a private modal', () => {
-    assert.match(profileSource, /label: 'Publicações'/);
-    assert.match(profileSource, /label: 'Status'/);
-    assert.match(profileSource, /label: 'Conectados'/);
-    assert.match(profileSource, /label: 'Praça'/);
+  test('restores the approved modern profile header without external DOM decoration', () => {
+    assert.match(profileSource, /h-28 w-\[90px\]/);
+    assert.match(profileSource, /sm:h-32 sm:w-\[104px\]/);
+    assert.match(profileSource, /aria-label="Editar perfil"/);
+    assert.match(profileSource, /aria-label="Abrir publicações salvas"/);
+    assert.match(profileSource, /aria-label="Abrir Ofertas"/);
+    assert.ok(
+      profileSource.indexOf('aria-label="Abrir publicações salvas"') <
+        profileSource.indexOf('aria-label="Abrir Ofertas"')
+    );
+    assert.match(profileSource, /Foto do Google/);
     assert.match(profileSource, /Publicações salvas/);
-    assert.match(profileSource, /Salvos \{savedPosts\.length\}/);
-    assert.match(profileSource, /users\/\$\{user\.uid\}\/favorites/);
-  });
-
-  test('moves Status into Publications as an optional 24-hour checkbox', () => {
-    assert.match(statusCheckboxSource, /data-kyrub-status-tab-hidden/);
-    assert.match(statusCheckboxSource, /Publicar no Status/);
+    assert.match(mainSource, /profile-header-layout\.css/);
     assert.match(
-      statusCheckboxSource,
-      /esta publicação também ficará visível nos seus Status por 24 horas/
+      profileHeaderStyles,
+      /section:first-child \.mt-4\.grid\.grid-cols-3\.gap-2/
     );
-    assert.match(statusCheckboxSource, /const MAX_ACTIVE_STATUSES = 9/);
-    assert.match(statusCheckboxSource, /publicationType: 'status'/);
+    assert.match(profileHeaderStyles, /display:\s*none/);
+    assert.match(profileHeaderStyles, /-webkit-line-clamp:\s*6/);
+    assert.match(profileHeaderStyles, /-webkit-line-clamp:\s*8/);
+  });
+
+  test('restores the store review action beside Entrar', () => {
+    assert.match(recoveredActionsSource, /ProfileRecoveredActionsBridge/);
     assert.match(
-      statusCheckboxSource,
-      /visibility: pending\.sendToSquare \? 'public' : 'connections'/
+      recoveredActionsSource,
+      /Abrir avaliações da loja \$\{item\.store\.name\}/
     );
-    assert.match(statusCheckboxSource, /kyrub-social-posts-updated/);
-    assert.match(statusCheckboxSource, /source: 'local'/);
+    assert.match(recoveredActionsSource, /<MessageCircle/);
+    assert.match(recoveredActionsSource, /<MomentsModal/);
+    assert.match(recoveredActionsSource, /kyrub_momentos/);
+    assert.match(recoveredActionsSource, /profileOfferEnter/);
+    assert.match(recoveredActionsSource, /calc\(100% - 4rem\)/);
+    assert.match(recoveredActionsSource, /post-moment-/);
+    assert.match(recoveredActionsSource, /kyrub-social-posts-updated/);
   });
 
-  test('restores Marcados between Status and Conectados for user mentions', () => {
-    assert.match(polishSource, /data-kyrub-marked-tab/);
-    assert.match(polishSource, /findButtonByText\(navigation, 'Status'\)/);
+  test('keeps Docs, Bio and Face inside the modern edit profile panel', () => {
     assert.match(
-      polishSource,
-      /navigation\.insertBefore\(nextTabHost, statusButton\.nextSibling\)/
+      recoveredActionsSource,
+      /aria-label="Seções de edição e segurança"/
     );
-    assert.match(polishSource, /Marcados \{visibleMarkedPosts\.length\}/);
+    const profileIndex = recoveredActionsSource.indexOf("label: 'Perfil'");
+    const documentsIndex = recoveredActionsSource.indexOf("label: 'Docs'");
+    const biometricsIndex = recoveredActionsSource.indexOf("label: 'Bio'");
+    const facialIndex = recoveredActionsSource.indexOf("label: 'Face'");
+    assert.ok(profileIndex >= 0);
+    assert.ok(profileIndex < documentsIndex);
+    assert.ok(documentsIndex < biometricsIndex);
+    assert.ok(biometricsIndex < facialIndex);
     assert.match(
-      polishSource,
-      /where\('audienceIds', 'array-contains', user\.uid\)/
+      recoveredActionsSource,
+      /setActiveEditSection\(shortcut\.id\)/
     );
-    assert.match(polishSource, /taggedUserIds\.includes\(currentUserId\)/);
-    assert.match(polishSource, /Marcaram você/);
-  });
-
-  test('recovers native profile tabs immediately after leaving Marcados', () => {
-    assert.match(markedRecoverySource, /event\.composedPath\(\)/);
-    assert.match(markedRecoverySource, /restoreNativeProfileContent/);
-    assert.match(markedRecoverySource, /data-kyrub-marked-content-host/);
-    assert.match(markedRecoverySource, /style\.removeProperty\('display'\)/);
-    assert.match(markedRecoverySource, /queueMicrotask/);
-    assert.match(markedRecoverySource, /requestAnimationFrame/);
-    assert.match(markedRecoverySource, /MutationObserver/);
-    assert.match(markedRecoverySource, /aria-pressed/);
-  });
-
-  test('uses a larger 4x5 profile portrait and concentrates editing on its pencil icon', () => {
-    assert.match(mobileSource, /data-kyrub-profile-portrait-4x5/);
-    assert.match(mobileSource, /width: 88px !important/);
-    assert.match(mobileSource, /height: 110px !important/);
-    assert.match(mobileSource, /width: 104px !important/);
-    assert.match(mobileSource, /height: 130px !important/);
-    assert.match(mobileSource, /data-kyrub-profile-edit-trigger/);
-    assert.match(mobileSource, /originalEditButton\.style\.display = 'none'/);
-    assert.match(mobileSource, /originalEditButtonRef\.current\?\.click\(\)/);
-    assert.match(mobileSource, /content: "✎"/);
-  });
-
-  test('places the saved icon immediately before Offers and removes the large header actions', () => {
-    assert.match(mobileSource, /data-kyrub-saved-action-host/);
-    assert.match(mobileSource, /insertBefore\(host, offersButton\)/);
-    assert.match(mobileSource, /originalSavedButton\.style\.display = 'none'/);
-    assert.match(mobileSource, /data-kyrub-original-profile-actions/);
-    assert.match(mobileSource, /aria-label="Abrir publicações salvas"/);
-    assert.match(mobileSource, /<Bookmark className="h-5 w-5"/);
-  });
-
-  test('renders connected contacts as a two-column mobile grid with compact actions', () => {
-    assert.match(mobileSource, /data-kyrub-connected-grid/);
-    assert.match(
-      mobileSource,
-      /grid-template-columns: repeat\(2, minmax\(0, 1fr\)\)/
-    );
-    assert.match(mobileSource, /data-kyrub-contact-card/);
-    assert.match(mobileSource, /aspect-ratio: 4 \/ 3/);
-    assert.match(mobileSource, /data-kyrub-contact-chat/);
-    assert.match(mobileSource, /data-kyrub-contact-remove/);
-    assert.match(
-      mobileSource,
-      /grid-template-columns: minmax\(0, 1fr\) 42px/
-    );
-  });
-
-  test('opens the real Firestore chat in a full-screen mobile conversation', () => {
-    assert.match(mobileSource, /<ChatModal/);
-    assert.match(mobileSource, /setSelectedChatUser\(selected\)/);
-    assert.match(chatSource, /useChatMessages/);
-    assert.match(chatSource, /selectedChatUser\.connectionStatus === 'accepted'/);
-    assert.match(chatSource, /connectionId: selectedChatUser\?\.connectionId/);
-    assert.match(chatSource, /h-\[100dvh\]/);
-    assert.match(chatSource, /messagesEndRef/);
-    assert.match(chatSource, /sendMessage\(chatMessageText\)/);
+    assert.match(recoveredActionsSource, /<ProfileSecureEditorSections/);
+    assert.match(recoveredActionsSource, /data-profile-edit-security-content/);
+    assert.match(recoveredActionsSource, /identityVerificationEnabled/);
     assert.doesNotMatch(
-      mobileSource,
-      /A conversa segura continua disponível pelo chat social/
+      recoveredActionsSource,
+      /IDENTITY_VERIFICATION_OPEN_EVENT/
     );
+    assert.doesNotMatch(recoveredActionsSource, /closeEditButton\?\.click/);
   });
 
-  test('makes Praça sharing explicit and supports connected-user tagging', () => {
-    assert.match(profileSource, /Enviar para a Praça/);
-    assert.match(profileSource, /type="checkbox"/);
-    assert.match(profileSource, /Marcar conectados/);
-    assert.match(profileSource, /Marcar usuários conectados/);
-    assert.match(profileSource, /selectedTaggedUserIds/);
-    assert.match(profileSource, /taggedUsers: selectedTaggedFriends/);
-    assert.match(profileSource, /taggedUserIds: selectedTaggedFriends/);
-    assert.match(publishingSource, /post\.visibility === 'private'/);
-    assert.match(publishingSource, /post\.visibility === 'public'/);
-    assert.match(publishingSource, /taggedUserIds/);
-    assert.match(feedHookSource, /where\('authorId', '==', user\.uid\)/);
-  });
-
-  test('reports failed publication sync and retries the pending local post', () => {
-    assert.match(publishingSource, /kyrub-social-publish-result/);
-    assert.match(publishingSource, /kyrub-social-publish-retry/);
-    assert.match(publishingSource, /failedCloudPostIds/);
-    assert.match(publishingSource, /permission-denied/);
-    assert.match(publishingSource, /Firebase Storage ainda não está ativo/);
-    assert.match(polishSource, /Publicação pendente/);
-    assert.match(polishSource, /Tentar sincronizar/);
-    assert.match(polishSource, /retryPendingPublication/);
-  });
-
-  test('adds save and report actions without allowing status saves', () => {
-    assert.match(profileSource, /Salvar publicação/);
-    assert.match(profileSource, /EllipsisVertical/);
-    assert.match(profileSource, /Denunciar publicação/);
-    assert.match(profileSource, /social_post_reports/);
-    assert.match(profileSource, /post\.publicationType === 'status'/);
-    assert.match(profileSource, /onToggleSave=\{/);
-    assert.match(socialRules, /match \/social_post_reports\/\{reportId\}/);
-    assert.match(socialRules, /incoming\(\)\.reporterId == request\.auth\.uid/);
-  });
-
-  test('moves Offers to the shopping icon and restores the store card hierarchy', () => {
-    assert.match(profileSource, /ShoppingBag/);
-    assert.match(profileSource, /Abrir Ofertas/);
-    assert.match(profileSource, /Lojas para descobrir e consumir/);
-    assert.match(profileSource, /buildPublicStorefrontPath/);
-    assert.match(profileSource, /className="absolute left-3 top-3/);
-    assert.match(profileSource, /className=\{`absolute right-3 top-3/);
-    assert.match(profileSource, /Momentos da loja e dos produtos/);
-    assert.match(profileSource, /Publicar meu Momento/);
-    assert.match(profileSource, /collection\(db, 'reviews'\)/);
-  });
-
-  test('keeps status duration and lets the author opt a status into Praça', () => {
-    assert.match(profileSource, /const MAX_ACTIVE_STATUSES = 9/);
-    assert.match(profileSource, /const STATUS_TTL_MS = 24 \* 60 \* 60 \* 1000/);
-    assert.match(profileSource, /Você já possui 9 status ativos/);
+  test('keeps Status inside Publications and creates a temporary copy', () => {
+    assert.match(profileSource, /type ProfileTab = 'publications' \| 'marked' \| 'connected' \| 'square'/);
+    assert.doesNotMatch(profileSource, /ProfileTab[^\n]*'status'/);
+    assert.match(profileSource, /Publicar no Status/);
     assert.match(
       profileSource,
-      /publicationType === 'status'[\s\S]{0,180}\? sendToSquare[\s\S]{0,80}\? 'public'[\s\S]{0,80}: 'connections'/
+      /Esta publicação também ficará visível nos seus[\s\S]*Status por 24 horas/
     );
-    assert.match(publishingSource, /visibility = isStatus/);
-    assert.match(feedHookSource, /where\('visibility', '==', 'public'\)/);
+    assert.match(profileSource, /const MAX_ACTIVE_STATUSES = 9/);
+    assert.match(profileSource, /publicationType: 'feed'/);
+    assert.match(profileSource, /publicationType: 'status'/);
     assert.match(
-      feedHookSource,
-      /where\('audienceIds', 'array-contains', user\.uid\)/
+      profileSource,
+      /visibility: shareToSquare \? 'public' : 'connections'/
     );
-    assert.match(socialRules, /data\.visibility in \['connections', 'public'\]/);
+    assert.match(profileSource, /Seus Status ativos/);
   });
 
-  test('runs the former Kyrub tab as an authenticated AI conversation workspace', () => {
+  test('renders Marcados natively from tagged audience posts', () => {
+    assert.match(profileSource, /id: 'marked', label: 'Marcados'/);
+    assert.match(profileSource, /post\.taggedUserIds\?\.includes/);
+    assert.match(profileSource, /Marcaram você/);
+    assert.match(profileSource, /Nenhuma marcação/);
+    assert.match(feedHookSource, /where\('audienceIds', 'array-contains', user\.uid\)/);
+  });
+
+  test('restores the simplified connected navigation and nested new contacts', () => {
+    const generalIndex = profileSource.indexOf("label: 'Geral'");
+    const frequentIndex = profileSource.indexOf("label: 'Frequentes'");
+    const groupsIndex = profileSource.indexOf("label: 'Grupos'");
+    const newButtonIndex = profileSource.indexOf(
+      'aria-label="Abrir novas conexões"'
+    );
+    const requestsIndex = profileSource.indexOf(
+      'Solicitações {requestCount}'
+    );
+    const suggestionsIndex = profileSource.indexOf(
+      'Sugestões {suggestionCount}'
+    );
+
+    assert.ok(generalIndex >= 0);
+    assert.ok(generalIndex < frequentIndex);
+    assert.ok(frequentIndex < groupsIndex);
+    assert.ok(groupsIndex < newButtonIndex);
+    assert.ok(requestsIndex >= 0);
+    assert.ok(requestsIndex < suggestionsIndex);
+    assert.match(profileSource, /grid grid-cols-4 gap-2/);
+    assert.match(profileSource, /aria-label="Tipos de novos contatos"/);
+    assert.match(profileSource, /newConnectionsTab === 'requests'/);
+    assert.match(profileSource, /newConnectionsTab === 'suggestions'/);
+    assert.doesNotMatch(profileSource, /connectionSection === 'requests'/);
+    assert.doesNotMatch(profileSource, /connectionSection === 'suggestions'/);
+    assert.match(profileSource, /grid grid-cols-2 gap-3/);
+    assert.match(profileSource, /aspect-\[4\/3\]/);
+    assert.match(profileSource, /Favoritar contato/);
+  });
+
+  test('keeps chat and contact groups as real React functionality', () => {
+    assert.match(profileSource, /<ChatModal/);
+    assert.match(profileSource, /setChatTarget\(friend\)/);
+    assert.match(chatSource, /useChatMessages/);
+    assert.match(chatSource, /sendMessage\(chatMessageText\)/);
+    assert.match(profileSource, /contact_groups/);
+    assert.match(profileSource, /const MAX_GROUPS = 30/);
+    assert.match(profileSource, /const MAX_GROUP_MEMBERS = 200/);
+    assert.match(profileSource, /Criar grupo|Nome do novo grupo/);
+    assert.match(profileSource, /toggleGroupMember/);
+    assert.match(profileSource, /deleteGroup/);
+  });
+
+  test('publishes through the existing offline-to-cloud social pipeline', () => {
+    assert.match(profileSource, /kyrub-social-posts-updated/);
+    assert.match(profileSource, /source: 'local'/);
+    assert.match(profileSource, /taggedUserIds/);
+    assert.match(profileSource, /Enviar para a Praça/);
+    assert.match(publishingSource, /kyrub-social-posts-updated/);
+    assert.match(publishingSource, /writeCloudPost/);
+    assert.match(publishingSource, /failedCloudPostIds/);
+  });
+
+  test('keeps private saves, reports and marketplace access', () => {
+    assert.match(profileSource, /users\/\$\{user\.uid\}\/favorites/);
+    assert.match(profileSource, /social_post_reports/);
+    assert.match(profileSource, /Denunciar publicação/);
+    assert.match(profileSource, /collection\(db, 'tenants'\)/);
+    assert.match(profileSource, /buildPublicStorefrontPath/);
+    assert.match(profileSource, /Lojas para descobrir e consumir/);
+    assert.match(socialRules, /match \/social_post_reports\/\{reportId\}/);
+  });
+
+  test('keeps the authenticated Kyrub AI workspace unchanged', () => {
+    assert.match(appSource, /KyrubAiWorkspaceBridge/);
     assert.match(aiSource, /Kyrub I\.A/);
-    assert.match(aiSource, /Criar minha loja/);
-    assert.match(aiSource, /Cadastrar produtos/);
-    assert.match(aiSource, /Conteúdo e imagens/);
-    assert.match(aiSource, /Treino e hábitos/);
-    assert.match(aiSource, /Bem-estar/);
     assert.match(aiSource, /Em que posso ajudar hoje\?/);
     assert.match(aiSource, /requestKyrubAiConsultant/);
-    assert.match(aiSource, /Histórico salvo somente neste dispositivo/);
-    assert.match(aiSource, /Ações no aplicativo ainda exigem o modo manual/);
     assert.match(aiClientSource, /currentUser\.getIdToken\(\)/);
     assert.match(aiClientSource, /authorization: `Bearer \$\{token\}`/);
-    assert.match(aiSource, /kyrub-tab-container/);
   });
 
-  test('secures profile biography and owner image storage', () => {
+  test('keeps profile and social security contracts in place', () => {
     assert.match(
       composeSource,
       /firestore\.profile-social-hub\.fragment\.rules/
@@ -288,5 +243,6 @@ describe('profile social hub navigation', () => {
     assert.match(profileRules, /data\.bio\.size\(\) <= 280/);
     assert.match(storageRules, /profile-images\/\{userId\}/);
     assert.match(storageRules, /request\.auth\.uid == userId/);
+    assert.match(socialRules, /data\.visibility in \['connections', 'public'\]/);
   });
 });

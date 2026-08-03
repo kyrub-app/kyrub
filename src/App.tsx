@@ -9,16 +9,10 @@ import { KyrubAiNoteActionBridge } from './components/KyrubAiNoteActionBridge';
 import { KyrubAiWorkspaceBridge } from './components/KyrubAiWorkspaceBridge';
 import { KyrubiaNamingBridge } from './components/KyrubiaNamingBridge';
 import { NoteInvitationOutboxBridge } from './components/NoteInvitationOutboxBridge';
-import { ProfileConnectedCardOrganizationBridge } from './components/ProfileConnectedCardOrganizationBridge';
-import { ProfileConnectedGroupsBridge } from './components/ProfileConnectedGroupsBridge';
-import { ProfileConnectionSubtabsBridge } from './components/ProfileConnectionSubtabsBridge';
-import { ProfileMarkedNavigationRecoveryBridge } from './components/ProfileMarkedNavigationRecoveryBridge';
 import { ProfilePasskeyBridge } from './components/ProfilePasskeyBridge';
-import { ProfileSocialHubBridge } from './components/ProfileSocialHubBridge';
-import { ProfileSocialMobileFirstBridge } from './components/ProfileSocialMobileFirstBridge';
-import { ProfileSocialPolishBridge } from './components/ProfileSocialPolishBridge';
-import { ProfileSocialPostActionsBridge } from './components/ProfileSocialPostActionsBridge';
-import { ProfileStatusCheckboxBridge } from './components/ProfileStatusCheckboxBridge';
+import { ProfilePostInteractionsBridge } from './components/ProfilePostInteractionsBridge';
+import { ProfileRecoveredActionsBridge } from './components/ProfileRecoveredActionsBridge';
+import { ProfileSocialHubNative } from './components/ProfileSocialHubNative';
 import { ProfileVerificationBridge } from './components/ProfileVerificationBridge';
 import { PublicStorefrontApp } from './components/PublicStorefrontApp';
 import { SocialPublishingBridge } from './components/SocialPublishingBridge';
@@ -46,11 +40,6 @@ import {
   saveCachedUserStore,
 } from './utils/storePersistence';
 import { getPrimaryUserStoreDocumentPath } from './utils/storePaths';
-
-// Emergency containment: these layers mutate the profile DOM outside React and
-// can trigger self-feeding MutationObserver cycles. Keep the native profile hub
-// available while the enhancements are rebuilt as React-owned navigation.
-const profileDomEnhancementsEnabled = false;
 
 function StorePersistenceBridge() {
   useEffect(() => {
@@ -158,23 +147,13 @@ function AuthenticatedKyrubApp({ operational }: { operational: boolean }) {
       <NinetyNineFoodOrderStatusBridge />
       <NoteInvitationOutboxBridge />
       <SocialPublishingBridge />
-      <ProfileSocialHubBridge />
+      <ProfileSocialHubNative />
+      <ProfilePostInteractionsBridge />
+      <ProfileRecoveredActionsBridge />
       {identityVerificationEnabled && (
         <>
           <ProfileVerificationBridge />
           <ProfilePasskeyBridge />
-        </>
-      )}
-      {profileDomEnhancementsEnabled && (
-        <>
-          <ProfileSocialPolishBridge />
-          <ProfileMarkedNavigationRecoveryBridge />
-          <ProfileStatusCheckboxBridge />
-          <ProfileSocialMobileFirstBridge />
-          <ProfileConnectionSubtabsBridge />
-          <ProfileConnectedGroupsBridge />
-          <ProfileConnectedCardOrganizationBridge />
-          <ProfileSocialPostActionsBridge />
         </>
       )}
       <KyrubAiWorkspaceBridge />
