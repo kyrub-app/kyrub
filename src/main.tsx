@@ -2,6 +2,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App.tsx';
 import { AppErrorBoundary } from './components/AppErrorBoundary';
+import { ProfileNextPolishBridge } from './components/ProfileNextPolishBridge';
 import './index.css';
 import './styles/responsive-product-cards.css';
 import './styles/catalog-category-tree.css';
@@ -17,7 +18,10 @@ if (!rootElement) {
 createRoot(rootElement).render(
   <StrictMode>
     <AppErrorBoundary>
-      <App />
+      <>
+        <ProfileNextPolishBridge />
+        <App />
+      </>
     </AppErrorBoundary>
   </StrictMode>
 );
