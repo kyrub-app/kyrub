@@ -142,7 +142,15 @@ function ActionButton({
 }
 
 export function ProfileConnectedCardsPolishBridge() {
-  const directory = useSocialDirectoryV2();
+  const directory = useSocialDirectoryV2({
+    profileName: auth.currentUser?.displayName ?? '',
+    profilePhotoUrl: auth.currentUser?.photoURL ?? '',
+    profileAddress: '',
+    accountTypeLojista: false,
+    accountTypeEntregador: false,
+    isLoggedIn: Boolean(auth.currentUser),
+    triggerToast: () => undefined,
+  });
   const socialFeed = usePublicSocialFeed();
   const [targets, setTargets] = useState<ConnectedCardTarget[]>([]);
   const [menuContact, setMenuContact] =
