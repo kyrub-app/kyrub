@@ -169,21 +169,64 @@ export function ProfileConnectedCardsLayoutBridge() {
         gradient.style.zIndex = '1';
         gradient.style.pointerEvents = 'none';
         gradient.style.background =
-          'linear-gradient(to bottom, rgba(2,6,23,0.02) 30%, rgba(2,6,23,0.72) 67%, rgba(2,6,23,0.98) 100%)';
+          'linear-gradient(to bottom, rgba(2,6,23,0.76) 0%, rgba(2,6,23,0.2) 30%, rgba(2,6,23,0.2) 52%, rgba(2,6,23,0.78) 76%, rgba(2,6,23,0.98) 100%)';
 
-        content.style.position = 'relative';
-        content.style.zIndex = '3';
-        content.style.marginTop = 'auto';
-        content.style.minHeight = '74px';
+        content.dataset.profileConnectedNameTop = 'true';
+        content.style.position = 'absolute';
+        content.style.inset = '14px 56px auto 14px';
+        content.style.zIndex = '5';
+        content.style.margin = '0';
+        content.style.minHeight = '0';
+        content.style.padding = '0';
         content.style.background = 'transparent';
+        content.style.pointerEvents = 'none';
+
+        const headingSlot = content.querySelector<HTMLElement>(
+          '[data-profile-connected-heading-slot="true"]'
+        );
+        const headingRow = headingSlot?.firstElementChild as HTMLElement | null;
+        const nameButton = headingSlot?.querySelector<HTMLButtonElement>(
+          'button[aria-label^="Abrir perfil de "]'
+        );
+
+        if (headingSlot) {
+          headingSlot.style.pointerEvents = 'auto';
+          headingSlot.style.width = '100%';
+        }
+
+        if (headingRow) {
+          headingRow.style.alignItems = 'flex-start';
+          headingRow.style.width = '100%';
+        }
+
+        if (nameButton) {
+          nameButton.style.display = '-webkit-box';
+          nameButton.style.webkitBoxOrient = 'vertical';
+          nameButton.style.webkitLineClamp = '2';
+          nameButton.style.whiteSpace = 'normal';
+          nameButton.style.overflow = 'hidden';
+          nameButton.style.textOverflow = 'ellipsis';
+          nameButton.style.lineHeight = '1.05';
+          nameButton.style.maxHeight = '2.15em';
+          nameButton.style.fontSize = '0.82rem';
+          nameButton.style.textAlign = 'left';
+          nameButton.style.textShadow =
+            '0 2px 7px rgba(2, 6, 23, 0.95)';
+        }
 
         footer.style.position = 'relative';
         footer.style.zIndex = '3';
+        footer.style.marginTop = 'auto';
         footer.style.background = 'rgba(2, 6, 23, 0.82)';
         footer.style.backdropFilter = 'blur(8px)';
 
         const nativeDescription = content.querySelector<HTMLElement>('p');
-        if (nativeDescription) nativeDescription.style.display = 'none';
+        if (
+          nativeDescription &&
+          nativeDescription.dataset.profileConnectedGroupLabel !== 'true'
+        ) {
+          nativeDescription.style.display = 'none';
+        }
 
         let groupLabel = content.querySelector<HTMLElement>(
           '[data-profile-connected-group-label="true"]'
@@ -192,13 +235,22 @@ export function ProfileConnectedCardsLayoutBridge() {
           groupLabel = document.createElement('p');
           groupLabel.dataset.profileConnectedGroupLabel = 'true';
           groupLabel.className =
-            'mt-1 truncate text-[9px] font-bold text-slate-300';
+            'mt-1 text-[9px] font-bold text-slate-300';
           content.appendChild(groupLabel);
         }
 
         const label = groupLabelForFriend(groups, friend.id);
         groupLabel.textContent = label;
         groupLabel.style.display = label ? '' : 'none';
+        groupLabel.style.marginTop = '5px';
+        groupLabel.style.maxWidth = '100%';
+        groupLabel.style.whiteSpace = 'normal';
+        groupLabel.style.overflow = 'hidden';
+        groupLabel.style.textOverflow = 'ellipsis';
+        groupLabel.style.lineHeight = '1.1';
+        groupLabel.style.textShadow =
+          '0 2px 7px rgba(2, 6, 23, 0.95)';
+        groupLabel.style.pointerEvents = 'none';
       });
 
       groups.forEach(group => {
