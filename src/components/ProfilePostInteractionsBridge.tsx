@@ -118,6 +118,34 @@ const engagementDocumentId = (
 ): string =>
   `${postId.replaceAll('/', '_')}__${type}__${actorId}`.slice(0, 1000);
 
+const copyShareText = async (
+  value: string
+): Promise<void> => {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(value);
+    return;
+  }
+
+  const textarea = document.createElement('textarea');
+  textarea.value = value;
+  textarea.setAttribute('readonly', 'true');
+  textarea.style.position = 'fixed';
+  textarea.style.opacity = '0';
+  textarea.style.pointerEvents = 'none';
+
+  document.body.appendChild(textarea);
+  textarea.focus();
+  textarea.select();
+  textarea.setSelectionRange(0, textarea.value.length);
+
+  const copied = document.execCommand('copy');
+  textarea.remove();
+
+  if (!copied) {
+    throw new Error('clipboard_unavailable');
+  }
+};
+
 export function ProfilePostInteractionsBridge() {
   const [user, setUser] = useState<User | null>(auth.currentUser);
   const [targets, setTargets] = useState<PostTarget[]>([]);
@@ -386,26 +414,34 @@ export function ProfilePostInteractionsBridge() {
   }, [targets, user]);
 
   useEffect(() => {
-    const handleSaveClick = (event: Event) => {
-      const target = event.target as Element | null;
-      const button = target?.closest<HTMLButtonElement>(
-        'button[aria-label="Salvar publicação"], button[aria-label="Remover dos salvos"]'
-      );
-      if (!button || !button.closest('#profile-social-hub-modal')) return;
-      const card = button.closest<HTMLElement>('article');
-      const postId = card?.dataset.profilePostId;
-      const post = socialFeed.posts.find(item => item.id === postId);
-      if (!post) return;
+    const handleSaveChanged = (event: Event) => {
+      const detail = (
+        event as CustomEvent<{ postId?: string; saved?: boolean }>
+      ).detail;
 
-      window.setTimeout(() => {
-        const savedNow = button.getAttribute('aria-label') === 'Remover dos salvos';
-        if (savedNow) void recordEngagement(post, 'save', true);
-        else void removeSavedEngagement(post);
-      }, 650);
+      const post = socialFeed.posts.find(
+        item => item.id === detail?.postId
+      );
+
+      if (!post || typeof detail?.saved !== 'boolean') return;
+
+      if (detail.saved) {
+        void recordEngagement(post, 'save', true);
+      } else {
+        void removeSavedEngagement(post);
+      }
     };
 
-    document.addEventListener('click', handleSaveClick, true);
-    return () => document.removeEventListener('click', handleSaveClick, true);
+    window.addEventListener(
+      'kyrub-social-post-save-changed',
+      handleSaveChanged
+    );
+
+    return () =>
+      window.removeEventListener(
+        'kyrub-social-post-save-changed',
+        handleSaveChanged
+      );
   }, [socialFeed.posts, user]);
 
   const commentsForSelectedPost: SocialPostComment[] = commentsPost
@@ -462,26 +498,48 @@ export function ProfilePostInteractionsBridge() {
   };
 
   const sharePost = async (post: SocialPost) => {
-    const url = `${window.location.origin}${window.location.pathname}#publicacao=${encodeURIComponent(post.id)}`;
+    const url =
+      `${window.location.origin}${window.location.pathname}#publicacao=${encodeURIComponent(post.id)}`;
+
     const text = post.content.trim()
       ? `${post.user}: ${post.content.trim().slice(0, 220)}`
       : `Veja esta publicação de ${post.user} no Kyrub.`;
 
-    try {
-      if (navigator.share) {
+    const shareText = `${text}\n${url}`;
+    let completed = false;
+
+    if (navigator.share) {
+      try {
         await navigator.share({
           title: `Publicação de ${post.user}`,
           text,
           url,
         });
-      } else {
-        await navigator.clipboard.writeText(`${text}\n${url}`);
-        showNotice('Link da publicação copiado.');
+        completed = true;
+      } catch (error) {
+        if (
+          error instanceof DOMException &&
+          error.name === 'AbortError'
+        ) {
+          return;
+        }
       }
+    }
+
+    if (!completed) {
+      try {
+        await copyShareText(shareText);
+        showNotice('Link da publicação copiado.');
+        completed = true;
+      } catch {
+        showNotice(
+          'Não foi possível compartilhar ou copiar a publicação.'
+        );
+      }
+    }
+
+    if (completed) {
       await recordEngagement(post, 'share', false);
-    } catch (error) {
-      if (error instanceof DOMException && error.name === 'AbortError') return;
-      showNotice('Não foi possível compartilhar a publicação.');
     }
   };
 

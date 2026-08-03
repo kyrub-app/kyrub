@@ -864,20 +864,41 @@ export function ProfileSocialHubNative() {
 
   const toggleSavedPost = async (postId: string) => {
     if (!user) return;
-    const favoriteId = `social_${postId.replaceAll('/', '_')}`.slice(0, 500);
-    const reference = doc(db, `users/${user.uid}/favorites/${favoriteId}`);
+
+    const favoriteId =
+      `social_${postId.replaceAll('/', '_')}`.slice(0, 500);
+
+    const reference = doc(
+      db,
+      `users/${user.uid}/favorites/${favoriteId}`
+    );
+
+    const saving = !savedPostIds.has(postId);
+
     try {
-      if (savedPostIds.has(postId)) {
-        await deleteDoc(reference);
-      } else {
+      if (saving) {
         await setDoc(reference, {
           kind: 'social_post',
           postId,
           createdAt: serverTimestamp(),
         });
+      } else {
+        await deleteDoc(reference);
       }
+
+      window.dispatchEvent(
+        new CustomEvent('kyrub-social-post-save-changed', {
+          detail: {
+            postId,
+            saved: saving,
+          },
+        })
+      );
     } catch {
-      triggerToast('Não foi possível atualizar os itens salvos.', 'error');
+      triggerToast(
+        'Não foi possível atualizar os itens salvos.',
+        'error'
+      );
     }
   };
 
