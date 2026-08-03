@@ -229,3 +229,61 @@
         && (existing().reporterId == request.auth.uid || isAdmin());
       allow update, delete: if false;
     }
+
+    match /social_post_engagements/{engagementId} {
+      allow create: if isSignedIn()
+        && incoming().keys().hasAll([
+          'engagementId',
+          'postId',
+          'postAuthorId',
+          'actorId',
+          'type',
+          'createdAt'
+        ])
+        && incoming().keys().hasOnly([
+          'engagementId',
+          'postId',
+          'postAuthorId',
+          'actorId',
+          'type',
+          'createdAt'
+        ])
+        && incoming().engagementId == engagementId
+        && incoming().postId is string
+        && incoming().postId.size() > 0
+        && incoming().postId.size() <= 500
+        && incoming().postAuthorId is string
+        && incoming().postAuthorId.size() > 0
+        && incoming().postAuthorId.size() <= 128
+        && incoming().actorId == request.auth.uid
+        && incoming().type in ['view', 'save', 'share']
+        && incoming().createdAt == request.time
+        && exists(/databases/$(database)/documents/social_posts/$(incoming().postId))
+        && get(/databases/$(database)/documents/social_posts/$(incoming().postId)).data.authorId
+          == incoming().postAuthorId
+        && (
+          get(/databases/$(database)/documents/social_posts/$(incoming().postId)).data.visibility
+            == 'public'
+          || get(/databases/$(database)/documents/social_posts/$(incoming().postId)).data.authorId
+            == request.auth.uid
+          || request.auth.uid in get(/databases/$(database)/documents/social_posts/$(incoming().postId)).data.audienceIds
+        )
+        && (
+          incoming().type == 'share'
+          || engagementId
+            == incoming().postId + '__' + incoming().type + '__' + request.auth.uid
+        );
+
+      allow read: if isSignedIn()
+        && (
+          existing().actorId == request.auth.uid
+          || existing().postAuthorId == request.auth.uid
+          || isAdmin()
+        );
+
+      allow update: if false;
+
+      allow delete: if isSignedIn()
+        && existing().type == 'save'
+        && (existing().actorId == request.auth.uid || isAdmin());
+    }
