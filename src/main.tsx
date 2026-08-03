@@ -10,6 +10,7 @@ import './styles/catalog-category-tree.css';
 import './styles/profile-verification.css';
 import './styles/profile-header-layout.css';
 
+// Authenticated preview deployment revision: 2026-08-03T15:27-03:00.
 const rootElement = document.getElementById('root');
 
 if (!rootElement) {
