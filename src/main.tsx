@@ -4,7 +4,6 @@ import App from './App.tsx';
 import { AppErrorBoundary } from './components/AppErrorBoundary';
 import { ProfileConnectedCardsLayoutBridge } from './components/ProfileConnectedCardsLayoutBridge';
 import { ProfileConnectedCardsPolishBridge } from './components/ProfileConnectedCardsPolishBridge';
-import { ProfileConnectedNameTopBridge } from './components/ProfileConnectedNameTopBridge';
 import { ProfileNextPolishBridge } from './components/ProfileNextPolishBridge';
 import './index.css';
 import './styles/responsive-product-cards.css';
@@ -25,7 +24,6 @@ createRoot(rootElement).render(
         <ProfileNextPolishBridge />
         <ProfileConnectedCardsPolishBridge />
         <ProfileConnectedCardsLayoutBridge />
-        <ProfileConnectedNameTopBridge />
         <App />
       </>
     </AppErrorBoundary>
