@@ -3,8 +3,13 @@ import { readFileSync } from 'node:fs';
 import { describe, test } from 'node:test';
 
 const appSource = readFileSync('src/App.tsx', 'utf8');
+const mainSource = readFileSync('src/main.tsx', 'utf8');
 const profileSource = readFileSync(
   'src/components/ProfileSocialHubNative.tsx',
+  'utf8'
+);
+const profileHeaderStyles = readFileSync(
+  'src/styles/profile-header-layout.css',
   'utf8'
 );
 const recoveredActionsSource = readFileSync(
@@ -77,6 +82,14 @@ describe('native React profile social hub', () => {
     );
     assert.match(profileSource, /Foto do Google/);
     assert.match(profileSource, /Publicações salvas/);
+    assert.match(mainSource, /profile-header-layout\.css/);
+    assert.match(
+      profileHeaderStyles,
+      /section:first-child \.mt-4\.grid\.grid-cols-3\.gap-2/
+    );
+    assert.match(profileHeaderStyles, /display:\s*none/);
+    assert.match(profileHeaderStyles, /-webkit-line-clamp:\s*6/);
+    assert.match(profileHeaderStyles, /-webkit-line-clamp:\s*8/);
   });
 
   test('restores the store review action beside Entrar', () => {
