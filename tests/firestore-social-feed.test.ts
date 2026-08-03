@@ -276,3 +276,155 @@ test('viewer comments and only the comment author may delete it', async () => {
   );
   await assertSucceeds(deleteDoc(commentReference));
 });
+
+test('viewer records a unique view that only the actor and post author can read', async () => {
+  await environment.withSecurityRulesDisabled(async context => {
+    await setDoc(doc(context.firestore(), 'social_posts', POST_ID), {
+      ...postPayload(),
+      createdAt: new Date('2026-07-25T12:00:00.000Z'),
+      updatedAt: new Date('2026-07-25T12:00:00.000Z'),
+    });
+  });
+
+  const viewer = environment.authenticatedContext(VIEWER_ID).firestore();
+  const engagementId = `${POST_ID}__view__${VIEWER_ID}`;
+  const engagementReference = doc(
+    viewer,
+    'social_post_engagements',
+    engagementId
+  );
+  await assertSucceeds(
+    setDoc(engagementReference, {
+      engagementId,
+      postId: POST_ID,
+      postAuthorId: OWNER_ID,
+      actorId: VIEWER_ID,
+      type: 'view',
+      createdAt: serverTimestamp(),
+    })
+  );
+  await assertSucceeds(getDoc(engagementReference));
+  await assertFails(
+    setDoc(engagementReference, {
+      engagementId,
+      postId: POST_ID,
+      postAuthorId: OWNER_ID,
+      actorId: VIEWER_ID,
+      type: 'view',
+      createdAt: serverTimestamp(),
+    })
+  );
+
+  const owner = environment.authenticatedContext(OWNER_ID).firestore();
+  const metricsSnapshot = await assertSucceeds(
+    getDocs(
+      query(
+        collection(owner, 'social_post_engagements'),
+        where('postAuthorId', '==', OWNER_ID)
+      )
+    )
+  );
+  if (metricsSnapshot.size !== 1) {
+    throw new Error(`Expected one engagement, received ${metricsSnapshot.size}.`);
+  }
+
+  const stranger = environment.authenticatedContext(STRANGER_ID).firestore();
+  await assertFails(
+    getDoc(doc(stranger, 'social_post_engagements', engagementId))
+  );
+});
+
+test('save metrics are reversible while share metrics are permanent events', async () => {
+  await environment.withSecurityRulesDisabled(async context => {
+    await setDoc(doc(context.firestore(), 'social_posts', POST_ID), {
+      ...postPayload(),
+      createdAt: new Date('2026-07-25T12:00:00.000Z'),
+      updatedAt: new Date('2026-07-25T12:00:00.000Z'),
+    });
+  });
+
+  const viewer = environment.authenticatedContext(VIEWER_ID).firestore();
+  const saveId = `${POST_ID}__save__${VIEWER_ID}`;
+  const saveReference = doc(viewer, 'social_post_engagements', saveId);
+  await assertSucceeds(
+    setDoc(saveReference, {
+      engagementId: saveId,
+      postId: POST_ID,
+      postAuthorId: OWNER_ID,
+      actorId: VIEWER_ID,
+      type: 'save',
+      createdAt: serverTimestamp(),
+    })
+  );
+  await assertSucceeds(deleteDoc(saveReference));
+
+  const shareReference = doc(
+    collection(viewer, 'social_post_engagements')
+  );
+  await assertSucceeds(
+    setDoc(shareReference, {
+      engagementId: shareReference.id,
+      postId: POST_ID,
+      postAuthorId: OWNER_ID,
+      actorId: VIEWER_ID,
+      type: 'share',
+      createdAt: serverTimestamp(),
+    })
+  );
+  await assertFails(deleteDoc(shareReference));
+});
+
+test('users cannot forge metrics for another actor, author or inaccessible post', async () => {
+  await environment.withSecurityRulesDisabled(async context => {
+    await setDoc(doc(context.firestore(), 'social_posts', POST_ID), {
+      ...postPayload(),
+      createdAt: new Date('2026-07-25T12:00:00.000Z'),
+      updatedAt: new Date('2026-07-25T12:00:00.000Z'),
+    });
+    await setDoc(doc(context.firestore(), 'social_posts', PRIVATE_POST_ID), {
+      ...privatePostPayload(),
+      audienceIds: [OWNER_ID],
+      taggedUsers: [],
+      taggedUserIds: [],
+      createdAt: new Date('2026-07-25T12:00:00.000Z'),
+      updatedAt: new Date('2026-07-25T12:00:00.000Z'),
+    });
+  });
+
+  const viewer = environment.authenticatedContext(VIEWER_ID).firestore();
+  const forgedActorId = `${POST_ID}__view__${STRANGER_ID}`;
+  await assertFails(
+    setDoc(doc(viewer, 'social_post_engagements', forgedActorId), {
+      engagementId: forgedActorId,
+      postId: POST_ID,
+      postAuthorId: OWNER_ID,
+      actorId: STRANGER_ID,
+      type: 'view',
+      createdAt: serverTimestamp(),
+    })
+  );
+
+  const wrongAuthorId = `${POST_ID}__view__${VIEWER_ID}`;
+  await assertFails(
+    setDoc(doc(viewer, 'social_post_engagements', wrongAuthorId), {
+      engagementId: wrongAuthorId,
+      postId: POST_ID,
+      postAuthorId: STRANGER_ID,
+      actorId: VIEWER_ID,
+      type: 'view',
+      createdAt: serverTimestamp(),
+    })
+  );
+
+  const privateMetricId = `${PRIVATE_POST_ID}__view__${VIEWER_ID}`;
+  await assertFails(
+    setDoc(doc(viewer, 'social_post_engagements', privateMetricId), {
+      engagementId: privateMetricId,
+      postId: PRIVATE_POST_ID,
+      postAuthorId: OWNER_ID,
+      actorId: VIEWER_ID,
+      type: 'view',
+      createdAt: serverTimestamp(),
+    })
+  );
+});
