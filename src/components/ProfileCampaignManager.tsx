@@ -7,6 +7,7 @@ import {
 import {
   CirclePause,
   CirclePlay,
+  History,
   LoaderCircle,
   Megaphone,
   Rocket,
@@ -28,6 +29,7 @@ import { auth, db } from '../utils/firebase';
 
 type CampaignObjective = 'reach' | 'engagement' | 'messages';
 type CampaignStatus = 'active' | 'paused' | 'ended';
+type CampaignView = 'create' | 'history';
 
 type SocialCampaign = {
   id: string;
@@ -77,9 +79,135 @@ const statusLabels: Record<CampaignStatus, string> = {
   ended: 'Encerrada',
 };
 
+const compactPostId = (postId: string): string => {
+  const suffix = postId.split('__').at(-1) || postId;
+  return suffix.length > 18 ? `${suffix.slice(0, 18)}…` : suffix;
+};
+
+const statusClass = (status: CampaignStatus): string => {
+  if (status === 'active') return 'text-emerald-300';
+  if (status === 'paused') return 'text-amber-300';
+  return 'text-slate-500';
+};
+
+function CampaignCard({
+  campaign,
+  changing,
+  showActions,
+  showPostReference,
+  onStatusChange,
+}: {
+  campaign: SocialCampaign;
+  changing: boolean;
+  showActions: boolean;
+  showPostReference: boolean;
+  onStatusChange: (
+    campaign: SocialCampaign,
+    status: CampaignStatus
+  ) => Promise<void>;
+}) {
+  const ended = campaign.status === 'ended';
+
+  return (
+    <article
+      className={`rounded-2xl border p-3 ${
+        ended
+          ? 'border-slate-900 bg-slate-950/60 opacity-80'
+          : 'border-slate-800 bg-slate-900'
+      }`}
+    >
+      <div className="flex items-start gap-3">
+        <div
+          className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${
+            ended
+              ? 'bg-slate-900 text-slate-600'
+              : 'bg-sky-500/10 text-sky-300'
+          }`}
+        >
+          {ended ? (
+            <History className="h-4 w-4" />
+          ) : (
+            <Megaphone className="h-4 w-4" />
+          )}
+        </div>
+
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center justify-between gap-2">
+            <strong className="text-[10px] text-white">
+              {objectiveLabels[campaign.objective]}
+            </strong>
+            <span
+              className={`text-[8px] font-black uppercase ${statusClass(
+                campaign.status
+              )}`}
+            >
+              {statusLabels[campaign.status]}
+            </span>
+          </div>
+
+          <p className="mt-1 text-[9px] text-slate-500">
+            R${' '}
+            {(campaign.dailyBudgetCents / 100).toLocaleString(
+              'pt-BR',
+              { minimumFractionDigits: 2 }
+            )}{' '}
+            por dia · {campaign.startDate} até {campaign.endDate}
+          </p>
+
+          <p className="mt-1 truncate text-[9px] text-slate-600">
+            {campaign.audienceLocation}
+          </p>
+
+          {showPostReference && (
+            <p className="mt-1 text-[8px] font-bold uppercase text-slate-700">
+              Publicação · {compactPostId(campaign.postId)}
+            </p>
+          )}
+        </div>
+      </div>
+
+      {showActions && !ended && (
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            disabled={changing}
+            onClick={() =>
+              void onStatusChange(
+                campaign,
+                campaign.status === 'active' ? 'paused' : 'active'
+              )
+            }
+            className="flex h-9 items-center justify-center gap-2 rounded-xl border border-slate-700 text-[8px] font-black uppercase text-slate-300 disabled:opacity-50"
+          >
+            {campaign.status === 'active' ? (
+              <CirclePause className="h-4 w-4" />
+            ) : (
+              <CirclePlay className="h-4 w-4" />
+            )}
+            {campaign.status === 'active' ? 'Pausar' : 'Reativar'}
+          </button>
+
+          <button
+            type="button"
+            disabled={changing}
+            onClick={() =>
+              void onStatusChange(campaign, 'ended')
+            }
+            className="flex h-9 items-center justify-center gap-2 rounded-xl border border-red-500/20 bg-red-500/10 text-[8px] font-black uppercase text-red-300 disabled:opacity-50"
+          >
+            <Square className="h-3.5 w-3.5" />
+            Encerrar
+          </button>
+        </div>
+      )}
+    </article>
+  );
+}
+
 export function ProfileCampaignManager() {
   const [user, setUser] = useState<User | null>(auth.currentUser);
   const [open, setOpen] = useState(false);
+  const [view, setView] = useState<CampaignView>('create');
   const [postId, setPostId] = useState('');
   const [postAuthorId, setPostAuthorId] = useState('');
   const [campaigns, setCampaigns] = useState<SocialCampaign[]>([]);
@@ -106,7 +234,7 @@ export function ProfileCampaignManager() {
   );
 
   useEffect(() => {
-    const handleRequest = (event: Event) => {
+    const openCreate = (event: Event) => {
       const detail = (
         event as CustomEvent<SponsorshipRequest>
       ).detail;
@@ -115,20 +243,42 @@ export function ProfileCampaignManager() {
 
       setPostId(detail.postId);
       setPostAuthorId(detail.authorId ?? '');
+      setView('create');
+      setNotice('');
+      setOpen(true);
+    };
+
+    const openHistory = (event: Event) => {
+      const detail = (
+        event as CustomEvent<SponsorshipRequest>
+      ).detail;
+
+      setPostId(detail?.postId ?? '');
+      setPostAuthorId(detail?.authorId ?? '');
+      setView('history');
       setNotice('');
       setOpen(true);
     };
 
     window.addEventListener(
       'kyrub-sponsor-post-requested',
-      handleRequest
+      openCreate
+    );
+    window.addEventListener(
+      'kyrub-sponsored-posts-open-requested',
+      openHistory
     );
 
-    return () =>
+    return () => {
       window.removeEventListener(
         'kyrub-sponsor-post-requested',
-        handleRequest
+        openCreate
       );
+      window.removeEventListener(
+        'kyrub-sponsored-posts-open-requested',
+        openHistory
+      );
+    };
   }, []);
 
   useEffect(() => {
@@ -189,21 +339,33 @@ export function ProfileCampaignManager() {
       },
       () => {
         setCampaigns([]);
-        setNotice(
-          'As campanhas estarão disponíveis após a publicação das novas regras.'
-        );
+        setNotice('Não foi possível carregar as campanhas agora.');
       }
     );
   }, [user]);
 
-  const campaignsForPost = useMemo(
+  const scopedCampaigns = useMemo(
     () =>
-      campaigns.filter(
-        campaign =>
-          campaign.postId === postId &&
-          campaign.status !== 'ended'
-      ),
+      postId
+        ? campaigns.filter(campaign => campaign.postId === postId)
+        : campaigns,
     [campaigns, postId]
+  );
+
+  const ongoingCampaigns = useMemo(
+    () =>
+      scopedCampaigns.filter(
+        campaign => campaign.status !== 'ended'
+      ),
+    [scopedCampaigns]
+  );
+
+  const endedCampaigns = useMemo(
+    () =>
+      scopedCampaigns.filter(
+        campaign => campaign.status === 'ended'
+      ),
+    [scopedCampaigns]
   );
 
   const activateCampaign = async (event: FormEvent) => {
@@ -214,16 +376,16 @@ export function ProfileCampaignManager() {
       return;
     }
 
-    const budgetValue = Number(
-      dailyBudget.replace(',', '.')
-    );
+    const budgetValue = Number(dailyBudget.replace(',', '.'));
     const dailyBudgetCents = Math.round(budgetValue * 100);
 
     if (
       !Number.isFinite(dailyBudgetCents) ||
       dailyBudgetCents < 500
     ) {
-      setNotice('Informe um orçamento diário de pelo menos R$ 5,00.');
+      setNotice(
+        'Informe um orçamento diário de pelo menos R$ 5,00.'
+      );
       return;
     }
 
@@ -294,6 +456,12 @@ export function ProfileCampaignManager() {
 
   if (!open) return null;
 
+  const showingAllPosts = !postId;
+  const title =
+    view === 'history'
+      ? 'Publicações patrocinadas'
+      : 'Patrocinar publicação';
+
   return (
     <div className="fixed inset-0 z-[178] flex items-end justify-center bg-slate-950/95 backdrop-blur-md sm:items-center sm:p-4">
       <section className="flex max-h-[94dvh] w-full max-w-xl flex-col overflow-hidden rounded-t-3xl border border-slate-800 bg-slate-950 sm:rounded-3xl">
@@ -303,7 +471,7 @@ export function ProfileCampaignManager() {
               Divulgação
             </span>
             <h3 className="text-base font-black text-white">
-              Patrocinar publicação
+              {title}
             </h3>
           </div>
 
@@ -318,127 +486,129 @@ export function ProfileCampaignManager() {
         </header>
 
         <div className="flex-1 space-y-5 overflow-y-auto p-4">
-          <form
-            onSubmit={activateCampaign}
-            className="space-y-4 rounded-3xl border border-orange-500/20 bg-orange-500/5 p-4"
-          >
-            <div className="flex items-center gap-3">
-              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-orange-500/15 text-orange-300">
-                <Rocket className="h-5 w-5" />
+          {view === 'create' && (
+            <form
+              onSubmit={activateCampaign}
+              className="space-y-4 rounded-3xl border border-orange-500/20 bg-orange-500/5 p-4"
+            >
+              <div className="flex items-center gap-3">
+                <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-orange-500/15 text-orange-300">
+                  <Rocket className="h-5 w-5" />
+                </div>
+                <div>
+                  <h4 className="text-xs font-black text-white">
+                    Nova campanha
+                  </h4>
+                  <p className="text-[9px] text-slate-500">
+                    Configure objetivo, orçamento, período e público.
+                  </p>
+                </div>
               </div>
-              <div>
-                <h4 className="text-xs font-black text-white">
-                  Nova campanha
-                </h4>
-                <p className="text-[9px] text-slate-500">
-                  Configure objetivo, orçamento, período e público.
-                </p>
-              </div>
-            </div>
 
-            <label className="block">
-              <span className="text-[9px] font-black uppercase text-slate-500">
-                Objetivo
-              </span>
-              <select
-                value={objective}
-                onChange={event =>
-                  setObjective(
-                    event.target.value as CampaignObjective
-                  )
-                }
-                className="mt-1 h-11 w-full rounded-xl border border-slate-800 bg-slate-900 px-3 text-xs text-white outline-none"
-              >
-                <option value="reach">Aumentar alcance</option>
-                <option value="engagement">
-                  Gerar engajamento
-                </option>
-                <option value="messages">
-                  Receber mensagens
-                </option>
-              </select>
-            </label>
-
-            <div className="grid grid-cols-2 gap-2">
               <label className="block">
                 <span className="text-[9px] font-black uppercase text-slate-500">
-                  Orçamento diário
+                  Objetivo
                 </span>
-                <div className="mt-1 flex h-11 items-center rounded-xl border border-slate-800 bg-slate-900 px-3">
-                  <span className="mr-2 text-xs text-slate-500">
-                    R$
+                <select
+                  value={objective}
+                  onChange={event =>
+                    setObjective(
+                      event.target.value as CampaignObjective
+                    )
+                  }
+                  className="mt-1 h-11 w-full rounded-xl border border-slate-800 bg-slate-900 px-3 text-xs text-white outline-none"
+                >
+                  <option value="reach">Aumentar alcance</option>
+                  <option value="engagement">
+                    Gerar engajamento
+                  </option>
+                  <option value="messages">
+                    Receber mensagens
+                  </option>
+                </select>
+              </label>
+
+              <div className="grid grid-cols-2 gap-2">
+                <label className="block">
+                  <span className="text-[9px] font-black uppercase text-slate-500">
+                    Orçamento diário
+                  </span>
+                  <div className="mt-1 flex h-11 items-center rounded-xl border border-slate-800 bg-slate-900 px-3">
+                    <span className="mr-2 text-xs text-slate-500">
+                      R$
+                    </span>
+                    <input
+                      value={dailyBudget}
+                      onChange={event =>
+                        setDailyBudget(event.target.value)
+                      }
+                      inputMode="decimal"
+                      className="min-w-0 flex-1 bg-transparent text-xs text-white outline-none"
+                    />
+                  </div>
+                </label>
+
+                <label className="block">
+                  <span className="text-[9px] font-black uppercase text-slate-500">
+                    Público/localidade
                   </span>
                   <input
-                    value={dailyBudget}
+                    value={audienceLocation}
                     onChange={event =>
-                      setDailyBudget(event.target.value)
+                      setAudienceLocation(event.target.value)
                     }
-                    inputMode="decimal"
-                    className="min-w-0 flex-1 bg-transparent text-xs text-white outline-none"
+                    placeholder="Ex.: São Paulo"
+                    maxLength={160}
+                    className="mt-1 h-11 w-full rounded-xl border border-slate-800 bg-slate-900 px-3 text-xs text-white outline-none"
                   />
-                </div>
-              </label>
+                </label>
+              </div>
 
-              <label className="block">
-                <span className="text-[9px] font-black uppercase text-slate-500">
-                  Público/localidade
-                </span>
-                <input
-                  value={audienceLocation}
-                  onChange={event =>
-                    setAudienceLocation(event.target.value)
-                  }
-                  placeholder="Ex.: São Paulo"
-                  maxLength={160}
-                  className="mt-1 h-11 w-full rounded-xl border border-slate-800 bg-slate-900 px-3 text-xs text-white outline-none"
-                />
-              </label>
-            </div>
+              <div className="grid grid-cols-2 gap-2">
+                <label className="block">
+                  <span className="text-[9px] font-black uppercase text-slate-500">
+                    Início
+                  </span>
+                  <input
+                    type="date"
+                    value={startDate}
+                    onChange={event =>
+                      setStartDate(event.target.value)
+                    }
+                    className="mt-1 h-11 w-full rounded-xl border border-slate-800 bg-slate-900 px-3 text-xs text-white outline-none"
+                  />
+                </label>
 
-            <div className="grid grid-cols-2 gap-2">
-              <label className="block">
-                <span className="text-[9px] font-black uppercase text-slate-500">
-                  Início
-                </span>
-                <input
-                  type="date"
-                  value={startDate}
-                  onChange={event =>
-                    setStartDate(event.target.value)
-                  }
-                  className="mt-1 h-11 w-full rounded-xl border border-slate-800 bg-slate-900 px-3 text-xs text-white outline-none"
-                />
-              </label>
+                <label className="block">
+                  <span className="text-[9px] font-black uppercase text-slate-500">
+                    Término
+                  </span>
+                  <input
+                    type="date"
+                    value={endDate}
+                    min={startDate}
+                    onChange={event =>
+                      setEndDate(event.target.value)
+                    }
+                    className="mt-1 h-11 w-full rounded-xl border border-slate-800 bg-slate-900 px-3 text-xs text-white outline-none"
+                  />
+                </label>
+              </div>
 
-              <label className="block">
-                <span className="text-[9px] font-black uppercase text-slate-500">
-                  Término
-                </span>
-                <input
-                  type="date"
-                  value={endDate}
-                  min={startDate}
-                  onChange={event =>
-                    setEndDate(event.target.value)
-                  }
-                  className="mt-1 h-11 w-full rounded-xl border border-slate-800 bg-slate-900 px-3 text-xs text-white outline-none"
-                />
-              </label>
-            </div>
-
-            <button
-              type="submit"
-              disabled={busy}
-              className="flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-orange-500 text-[10px] font-black uppercase text-slate-950 disabled:opacity-50"
-            >
-              {busy ? (
-                <LoaderCircle className="h-4 w-4 animate-spin" />
-              ) : (
-                <Rocket className="h-4 w-4" />
-              )}
-              Ativar campanha
-            </button>
-          </form>
+              <button
+                type="submit"
+                disabled={busy}
+                className="flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-orange-500 text-[10px] font-black uppercase text-slate-950 disabled:opacity-50"
+              >
+                {busy ? (
+                  <LoaderCircle className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Rocket className="h-4 w-4" />
+                )}
+                Ativar campanha
+              </button>
+            </form>
+          )}
 
           <section>
             <div className="mb-3 flex items-center justify-between">
@@ -447,97 +617,73 @@ export function ProfileCampaignManager() {
                   Campanhas
                 </span>
                 <h4 className="text-sm font-black text-white">
-                  Ativas nesta publicação
+                  {showingAllPosts
+                    ? 'Ativas e pausadas'
+                    : 'Em andamento nesta publicação'}
                 </h4>
               </div>
 
               <span className="rounded-full border border-slate-800 bg-slate-900 px-2 py-1 text-[9px] font-black text-slate-400">
-                {campaignsForPost.length}
+                {ongoingCampaigns.length}
               </span>
             </div>
 
             <div className="space-y-2">
-              {campaignsForPost.map(campaign => (
-                <article
+              {ongoingCampaigns.map(campaign => (
+                <CampaignCard
                   key={campaign.id}
-                  className="rounded-2xl border border-slate-800 bg-slate-900 p-3"
-                >
-                  <div className="flex items-start gap-3">
-                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-sky-500/10 text-sky-300">
-                      <Megaphone className="h-4 w-4" />
-                    </div>
-
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center justify-between gap-2">
-                        <strong className="text-[10px] text-white">
-                          {objectiveLabels[campaign.objective]}
-                        </strong>
-                        <span className="text-[8px] font-black uppercase text-emerald-300">
-                          {statusLabels[campaign.status]}
-                        </span>
-                      </div>
-
-                      <p className="mt-1 text-[9px] text-slate-500">
-                        R${' '}
-                        {(
-                          campaign.dailyBudgetCents / 100
-                        ).toLocaleString('pt-BR', {
-                          minimumFractionDigits: 2,
-                        })}{' '}
-                        por dia · {campaign.startDate} até{' '}
-                        {campaign.endDate}
-                      </p>
-
-                      <p className="mt-1 truncate text-[9px] text-slate-600">
-                        {campaign.audienceLocation}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="mt-3 grid grid-cols-2 gap-2">
-                    <button
-                      type="button"
-                      disabled={changingId === campaign.id}
-                      onClick={() =>
-                        void changeStatus(
-                          campaign,
-                          campaign.status === 'active'
-                            ? 'paused'
-                            : 'active'
-                        )
-                      }
-                      className="flex h-9 items-center justify-center gap-2 rounded-xl border border-slate-700 text-[8px] font-black uppercase text-slate-300 disabled:opacity-50"
-                    >
-                      {campaign.status === 'active' ? (
-                        <CirclePause className="h-4 w-4" />
-                      ) : (
-                        <CirclePlay className="h-4 w-4" />
-                      )}
-                      {campaign.status === 'active'
-                        ? 'Pausar'
-                        : 'Reativar'}
-                    </button>
-
-                    <button
-                      type="button"
-                      disabled={changingId === campaign.id}
-                      onClick={() =>
-                        void changeStatus(campaign, 'ended')
-                      }
-                      className="flex h-9 items-center justify-center gap-2 rounded-xl border border-red-500/20 bg-red-500/10 text-[8px] font-black uppercase text-red-300 disabled:opacity-50"
-                    >
-                      <Square className="h-3.5 w-3.5" />
-                      Encerrar
-                    </button>
-                  </div>
-                </article>
+                  campaign={campaign}
+                  changing={changingId === campaign.id}
+                  showActions
+                  showPostReference={showingAllPosts}
+                  onStatusChange={changeStatus}
+                />
               ))}
 
-              {campaignsForPost.length === 0 && (
-                <div className="rounded-2xl border border-dashed border-slate-800 px-4 py-8 text-center">
+              {ongoingCampaigns.length === 0 && (
+                <div className="rounded-2xl border border-dashed border-slate-800 px-4 py-7 text-center">
                   <Megaphone className="mx-auto h-6 w-6 text-slate-700" />
                   <p className="mt-2 text-[10px] text-slate-500">
-                    Nenhuma campanha ativa para esta publicação.
+                    Nenhuma campanha ativa ou pausada.
+                  </p>
+                </div>
+              )}
+            </div>
+          </section>
+
+          <section>
+            <div className="mb-3 flex items-center justify-between">
+              <div>
+                <span className="text-[9px] font-black uppercase text-slate-500">
+                  Registro
+                </span>
+                <h4 className="text-sm font-black text-white">
+                  Histórico de divulgação
+                </h4>
+              </div>
+
+              <span className="rounded-full border border-slate-800 bg-slate-900 px-2 py-1 text-[9px] font-black text-slate-400">
+                {endedCampaigns.length}
+              </span>
+            </div>
+
+            <div className="space-y-2">
+              {endedCampaigns.map(campaign => (
+                <CampaignCard
+                  key={campaign.id}
+                  campaign={campaign}
+                  changing={false}
+                  showActions={false}
+                  showPostReference={showingAllPosts}
+                  onStatusChange={changeStatus}
+                />
+              ))}
+
+              {endedCampaigns.length === 0 && (
+                <div className="rounded-2xl border border-dashed border-slate-900 px-4 py-6 text-center">
+                  <History className="mx-auto h-5 w-5 text-slate-800" />
+                  <p className="mt-2 text-[9px] text-slate-600">
+                    Campanhas encerradas permanecerão registradas aqui.
                   </p>
                 </div>
               )}
