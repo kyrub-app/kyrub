@@ -32,9 +32,9 @@ const postPayload = (authorId = OWNER_ID) => ({
   postId: POST_ID,
   sourcePostId: 'feed-123',
   authorId,
-  authorName: 'Usuário Social',
+  authorName: 'UsuÃ¡rio Social',
   authorAvatar: '',
-  content: 'Publicação pública de teste.',
+  content: 'PublicaÃ§Ã£o pÃºblica de teste.',
   publicationType: 'feed',
   taggedUsers: [],
   taggedUserIds: [],
@@ -50,7 +50,7 @@ const privatePostPayload = () => ({
   ...postPayload(),
   postId: PRIVATE_POST_ID,
   sourcePostId: 'feed-private',
-  content: 'Publicação da linha do tempo com usuário marcado.',
+  content: 'PublicaÃ§Ã£o da linha do tempo com usuÃ¡rio marcado.',
   taggedUsers: ['Visitante'],
   taggedUserIds: [VIEWER_ID],
   visibility: 'private',
@@ -61,10 +61,10 @@ const statusPayload = (publicSquare = false) => ({
   postId: publicSquare ? PUBLIC_STATUS_ID : STATUS_ID,
   sourcePostId: publicSquare ? 'status-public' : 'status-123',
   authorId: OWNER_ID,
-  authorName: 'Usuário Social',
+  authorName: 'UsuÃ¡rio Social',
   authorAvatar: '',
   content: publicSquare
-    ? 'Status enviado voluntariamente para a Praça.'
+    ? 'Status enviado voluntariamente para a PraÃ§a.'
     : 'Status somente para conectados.',
   publicationType: 'status',
   taggedUsers: [],
@@ -96,7 +96,7 @@ after(async () => {
   await environment.cleanup();
 });
 
-test('author opts a permanent publication into the public Praça feed', async () => {
+test('author opts a permanent publication into the public PraÃ§a feed', async () => {
   const owner = environment.authenticatedContext(OWNER_ID).firestore();
   await assertSucceeds(setDoc(doc(owner, 'social_posts', POST_ID), postPayload()));
 
@@ -139,7 +139,7 @@ test('private timeline publication is readable by author and tagged audience onl
   await assertFails(getDoc(doc(stranger, 'social_posts', PRIVATE_POST_ID)));
 });
 
-test('status stays connection scoped unless the author sends it to Praça', async () => {
+test('status stays connection scoped unless the author sends it to PraÃ§a', async () => {
   const owner = environment.authenticatedContext(OWNER_ID).firestore();
   await assertSucceeds(
     setDoc(doc(owner, 'social_posts', STATUS_ID), statusPayload(false))
@@ -264,7 +264,7 @@ test('viewer comments and only the comment author may delete it', async () => {
       authorId: VIEWER_ID,
       authorName: 'Visitante',
       authorAvatar: '',
-      text: 'Comentário real.',
+      text: 'ComentÃ¡rio real.',
       createdAtIso: '2026-07-25T12:05:00.000Z',
       createdAt: serverTimestamp(),
     })
@@ -428,3 +428,207 @@ test('users cannot forge metrics for another actor, author or inaccessible post'
     })
   );
 });
+
+const campaignPayload = (
+  campaignId: string,
+  ownerId = OWNER_ID
+) => ({
+  campaignId,
+  ownerId,
+  postId: POST_ID,
+  objective: 'reach',
+  dailyBudgetCents: 1000,
+  startDate: '2026-08-03',
+  endDate: '2026-08-10',
+  audienceLocation: 'São Paulo',
+  status: 'active',
+  deliveryMode: 'configuration_only',
+  createdAt: serverTimestamp(),
+  updatedAt: serverTimestamp(),
+});
+
+test(
+  'post owner creates, reads and controls own sponsorship campaign',
+  async () => {
+    await environment.withSecurityRulesDisabled(async context => {
+      await setDoc(
+        doc(context.firestore(), 'social_posts', POST_ID),
+        {
+          ...postPayload(),
+          createdAt: new Date('2026-08-03T12:00:00.000Z'),
+          updatedAt: new Date('2026-08-03T12:00:00.000Z'),
+        }
+      );
+    });
+
+    const owner =
+      environment.authenticatedContext(OWNER_ID).firestore();
+
+    const campaignId = 'campaign-owner-1';
+    const reference = doc(
+      owner,
+      'social_post_campaigns',
+      campaignId
+    );
+
+    await assertSucceeds(
+      setDoc(reference, campaignPayload(campaignId))
+    );
+
+    const snapshot = await assertSucceeds(
+      getDocs(
+        query(
+          collection(owner, 'social_post_campaigns'),
+          where('ownerId', '==', OWNER_ID)
+        )
+      )
+    );
+
+    if (snapshot.size !== 1) {
+      throw new Error(
+        'Expected one campaign, received ' +
+          String(snapshot.size) +
+          '.'
+      );
+    }
+
+    await assertSucceeds(
+      setDoc(
+        reference,
+        {
+          status: 'paused',
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true }
+      )
+    );
+
+    await assertSucceeds(
+      setDoc(
+        reference,
+        {
+          status: 'active',
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true }
+      )
+    );
+
+    await assertSucceeds(
+      setDoc(
+        reference,
+        {
+          status: 'ended',
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true }
+      )
+    );
+
+    await assertFails(
+      setDoc(
+        reference,
+        {
+          status: 'active',
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true }
+      )
+    );
+
+    await assertFails(deleteDoc(reference));
+  }
+);
+
+test(
+  'campaigns reject forged owners, invalid budgets and foreign access',
+  async () => {
+    await environment.withSecurityRulesDisabled(async context => {
+      await setDoc(
+        doc(context.firestore(), 'social_posts', POST_ID),
+        {
+          ...postPayload(),
+          createdAt: new Date('2026-08-03T12:00:00.000Z'),
+          updatedAt: new Date('2026-08-03T12:00:00.000Z'),
+        }
+      );
+    });
+
+    const owner =
+      environment.authenticatedContext(OWNER_ID).firestore();
+
+    const campaignId = 'campaign-owner-2';
+    const reference = doc(
+      owner,
+      'social_post_campaigns',
+      campaignId
+    );
+
+    await assertSucceeds(
+      setDoc(reference, campaignPayload(campaignId))
+    );
+
+    await assertFails(
+      setDoc(
+        doc(
+          owner,
+          'social_post_campaigns',
+          'invalid-budget'
+        ),
+        {
+          ...campaignPayload('invalid-budget'),
+          dailyBudgetCents: 499,
+        }
+      )
+    );
+
+    await assertFails(
+      setDoc(
+        reference,
+        {
+          dailyBudgetCents: 999999,
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true }
+      )
+    );
+
+    const viewer =
+      environment.authenticatedContext(VIEWER_ID).firestore();
+
+    await assertFails(
+      setDoc(
+        doc(
+          viewer,
+          'social_post_campaigns',
+          'forged-campaign'
+        ),
+        campaignPayload('forged-campaign', VIEWER_ID)
+      )
+    );
+
+    await assertFails(
+      getDocs(
+        query(
+          collection(viewer, 'social_post_campaigns'),
+          where('ownerId', '==', OWNER_ID)
+        )
+      )
+    );
+
+    await assertFails(
+      setDoc(
+        doc(
+          viewer,
+          'social_post_campaigns',
+          campaignId
+        ),
+        {
+          status: 'paused',
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true }
+      )
+    );
+  }
+);

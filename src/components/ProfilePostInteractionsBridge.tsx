@@ -592,7 +592,6 @@ export function ProfilePostInteractionsBridge() {
         detail: { postId: post.id, authorId: post.authorId },
       })
     );
-    showNotice('O fluxo de patrocínio será conectado na próxima etapa.');
   };
 
   return (
@@ -709,7 +708,7 @@ export function ProfilePostInteractionsBridge() {
               {commentsForSelectedPost.map(comment => (
                 <article
                   key={comment.id}
-                  className="rounded-2xl border border-slate-800 bg-slate-900 p-3"
+                  className="min-h-[104px] rounded-2xl border border-slate-800 bg-slate-900 p-3"
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div>

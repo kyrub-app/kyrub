@@ -287,3 +287,109 @@
         && existing().type == 'save'
         && (existing().actorId == request.auth.uid || isAdmin());
     }
+match /social_post_campaigns/{campaignId} {
+      function hasValidSocialCampaignShape(data) {
+        return data.keys().hasAll([
+          'campaignId',
+          'ownerId',
+          'postId',
+          'objective',
+          'dailyBudgetCents',
+          'startDate',
+          'endDate',
+          'audienceLocation',
+          'status',
+          'deliveryMode',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'campaignId',
+          'ownerId',
+          'postId',
+          'objective',
+          'dailyBudgetCents',
+          'startDate',
+          'endDate',
+          'audienceLocation',
+          'status',
+          'deliveryMode',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.campaignId == campaignId
+        && data.ownerId is string
+        && data.ownerId.size() > 0
+        && data.ownerId.size() <= 128
+        && data.postId is string
+        && data.postId.size() > 0
+        && data.postId.size() <= 500
+        && data.objective in [
+          'reach',
+          'engagement',
+          'messages'
+        ]
+        && data.dailyBudgetCents is int
+        && data.dailyBudgetCents >= 500
+        && data.dailyBudgetCents <= 100000000
+        && data.startDate is string
+        && data.startDate.size() == 10
+        && data.endDate is string
+        && data.endDate.size() == 10
+        && data.audienceLocation is string
+        && data.audienceLocation.size() > 0
+        && data.audienceLocation.size() <= 160
+        && data.status in [
+          'active',
+          'paused',
+          'ended'
+        ]
+        && data.deliveryMode == 'configuration_only'
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+      }
+
+      allow create: if isSignedIn()
+        && incoming().ownerId == request.auth.uid
+        && incoming().status == 'active'
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && hasValidSocialCampaignShape(incoming())
+        && exists(
+          /databases/$(database)/documents/social_posts/$(incoming().postId)
+        )
+        && get(
+          /databases/$(database)/documents/social_posts/$(incoming().postId)
+        ).data.authorId == request.auth.uid
+        && get(
+          /databases/$(database)/documents/social_posts/$(incoming().postId)
+        ).data.publicationType == 'feed';
+
+      allow read: if isSignedIn()
+        && (
+          existing().ownerId == request.auth.uid
+          || isAdmin()
+        );
+
+      allow update: if isSignedIn()
+        && existing().ownerId == request.auth.uid
+        && existing().status != 'ended'
+        && incoming().campaignId == existing().campaignId
+        && incoming().ownerId == existing().ownerId
+        && incoming().postId == existing().postId
+        && incoming().objective == existing().objective
+        && incoming().dailyBudgetCents == existing().dailyBudgetCents
+        && incoming().startDate == existing().startDate
+        && incoming().endDate == existing().endDate
+        && incoming().audienceLocation == existing().audienceLocation
+        && incoming().deliveryMode == existing().deliveryMode
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'status',
+          'updatedAt'
+        ])
+        && hasValidSocialCampaignShape(incoming());
+
+      allow delete: if false;
+    }
