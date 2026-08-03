@@ -6,6 +6,7 @@ import './index.css';
 import './styles/responsive-product-cards.css';
 import './styles/catalog-category-tree.css';
 import './styles/profile-verification.css';
+import './styles/profile-header-layout.css';
 
 const rootElement = document.getElementById('root');
 
