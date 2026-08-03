@@ -2,6 +2,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App.tsx';
 import { AppErrorBoundary } from './components/AppErrorBoundary';
+import { ProfileConnectedCardsLayoutBridge } from './components/ProfileConnectedCardsLayoutBridge';
 import { ProfileConnectedCardsPolishBridge } from './components/ProfileConnectedCardsPolishBridge';
 import { ProfileNextPolishBridge } from './components/ProfileNextPolishBridge';
 import './index.css';
@@ -22,6 +23,7 @@ createRoot(rootElement).render(
       <>
         <ProfileNextPolishBridge />
         <ProfileConnectedCardsPolishBridge />
+        <ProfileConnectedCardsLayoutBridge />
         <App />
       </>
     </AppErrorBoundary>
