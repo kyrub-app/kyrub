@@ -4,7 +4,6 @@ import {
   useState,
   type ComponentType,
 } from 'react';
-import { createPortal } from 'react-dom';
 import {
   Clock3,
   EllipsisVertical,
@@ -16,8 +15,11 @@ import {
   UserRound,
   X,
 } from 'lucide-react';
+import { onAuthStateChanged } from 'firebase/auth';
 import {
+  collection,
   doc,
+  onSnapshot,
   serverTimestamp,
   setDoc,
 } from 'firebase/firestore';
@@ -31,22 +33,23 @@ type StatusPost = SocialPost & {
   publicationType?: 'feed' | 'status';
   createdAt?: string;
   mediaUrls?: string[];
+  content?: string;
+};
+
+type ContactGroup = {
+  id: string;
+  name: string;
+  memberIds: string[];
 };
 
 type ConnectedCardTarget = {
   key: string;
   card: HTMLElement;
-  headingTarget: HTMLElement;
-  imageTarget: HTMLElement;
-  menuTarget: HTMLElement;
-  nativeName: HTMLElement;
-  nativeStatus: HTMLElement | null;
-  nativeRemoveButton: HTMLButtonElement;
-  nativeFavoriteButton: HTMLButtonElement | null;
-  chatButton: HTMLButtonElement | null;
   friend: Friend;
   status: StatusPost | null;
-  statusLabel: string;
+  chatButton: HTMLButtonElement | null;
+  menuButton: HTMLButtonElement;
+  groupLabel: string;
 };
 
 type SelectedContact = {
@@ -55,20 +58,13 @@ type SelectedContact = {
 
 const STATUS_TTL_MS = 24 * 60 * 60 * 1000;
 
-const sameTargets = (
-  current: ConnectedCardTarget[],
-  next: ConnectedCardTarget[]
-): boolean =>
-  current.length === next.length &&
-  current.every((item, index) => {
-    const candidate = next[index];
-    return (
-      item.card === candidate?.card &&
-      item.friend.id === candidate?.friend.id &&
-      item.status?.id === candidate?.status?.id &&
-      item.statusLabel === candidate?.statusLabel
-    );
-  });
+const normalizeText = (value: string | null | undefined): string =>
+  (value ?? '').replace(/\s+/g, ' ').trim();
+
+const readStringList = (value: unknown): string[] =>
+  Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === 'string')
+    : [];
 
 const postTimestamp = (post: StatusPost): number => {
   const parsed = Date.parse(post.createdAt ?? '');
@@ -84,8 +80,14 @@ const isActiveStatus = (post: StatusPost): boolean => {
   );
 };
 
-const normalizeText = (value: string | null | undefined): string =>
-  (value ?? '').replace(/\s+/g, ' ').trim();
+const remainingStatusLabel = (post: StatusPost): string => {
+  const remaining = Math.max(
+    0,
+    STATUS_TTL_MS - (Date.now() - postTimestamp(post))
+  );
+  const hours = Math.max(1, Math.ceil(remaining / (60 * 60 * 1000)));
+  return `Status · ${hours} h`;
+};
 
 const findButtonByText = (
   root: ParentNode,
@@ -96,6 +98,34 @@ const findButtonByText = (
       text.toLocaleLowerCase('pt-BR')
     )
   ) ?? null;
+
+const groupLabelForFriend = (
+  groups: ContactGroup[],
+  friendId: string
+): string => {
+  const names = groups
+    .filter(group => group.memberIds.includes(friendId))
+    .map(group => group.name)
+    .filter(Boolean);
+
+  if (names.length === 0) return '';
+  return names.length === 1 ? names[0] : `${names[0]} +${names.length - 1}`;
+};
+
+const sameTargets = (
+  current: ConnectedCardTarget[],
+  next: ConnectedCardTarget[]
+): boolean =>
+  current.length === next.length &&
+  current.every((item, index) => {
+    const candidate = next[index];
+    return (
+      item.card === candidate?.card &&
+      item.friend.id === candidate?.friend.id &&
+      item.status?.id === candidate?.status?.id &&
+      item.groupLabel === candidate?.groupLabel
+    );
+  });
 
 const iconButtonClass =
   'flex h-10 w-10 items-center justify-center rounded-xl border border-slate-700 bg-slate-950 text-slate-400';
@@ -152,6 +182,7 @@ export function ProfileConnectedCardsPolishBridge() {
     triggerToast: () => undefined,
   });
   const socialFeed = usePublicSocialFeed();
+  const [groups, setGroups] = useState<ContactGroup[]>([]);
   const [targets, setTargets] = useState<ConnectedCardTarget[]>([]);
   const [menuContact, setMenuContact] =
     useState<SelectedContact | null>(null);
@@ -182,6 +213,47 @@ export function ProfileConnectedCardsPolishBridge() {
   }, [socialFeed.posts]);
 
   useEffect(() => {
+    let stopGroups: (() => void) | null = null;
+
+    const stopAuth = onAuthStateChanged(auth, user => {
+      stopGroups?.();
+      stopGroups = null;
+
+      if (!user) {
+        setGroups([]);
+        return;
+      }
+
+      stopGroups = onSnapshot(
+        collection(db, `users/${user.uid}/contact_groups`),
+        snapshot => {
+          setGroups(
+            snapshot.docs
+              .map(item => {
+                const data = item.data() as Record<string, unknown>;
+                return {
+                  id: item.id,
+                  name:
+                    typeof data.name === 'string' ? data.name.trim() : '',
+                  memberIds: readStringList(data.memberIds),
+                };
+              })
+              .filter(group => group.name)
+          );
+        },
+        () => setGroups([])
+      );
+    });
+
+    return () => {
+      stopGroups?.();
+      stopAuth();
+    };
+  }, []);
+
+  useEffect(() => {
+    let frame = 0;
+
     const synchronize = () => {
       const profileModal = document.getElementById(
         'profile-social-hub-modal'
@@ -202,19 +274,16 @@ export function ProfileConnectedCardsPolishBridge() {
 
       const usedFriendIds = new Set<string>();
       const nextTargets: ConnectedCardTarget[] = [];
-      const removeButtons = profileModal.querySelectorAll<HTMLButtonElement>(
+      const menuButtons = profileModal.querySelectorAll<HTMLButtonElement>(
         'button[aria-label^="Remover "]'
       );
 
-      removeButtons.forEach(nativeRemoveButton => {
-        const card = nativeRemoveButton.closest<HTMLElement>('article');
+      menuButtons.forEach(menuButton => {
+        const card = menuButton.closest<HTMLElement>('article');
         if (!card) return;
 
         const requestedName = normalizeText(
-          nativeRemoveButton.getAttribute('aria-label')?.replace(
-            /^Remover\s+/,
-            ''
-          )
+          menuButton.getAttribute('aria-label')?.replace(/^Remover\s+/, '')
         );
         const friend = directory.friends.find(
           item =>
@@ -224,82 +293,44 @@ export function ProfileConnectedCardsPolishBridge() {
         if (!friend) return;
         usedFriendIds.add(friend.id);
 
-        const nativeName = card.querySelector<HTMLElement>('h4');
-        const media = card.querySelector<HTMLImageElement>('img');
-        const imageContainer = media?.parentElement as HTMLElement | null;
-        const content = nativeName?.parentElement as HTMLElement | null;
-        const nativeStatus = [...card.querySelectorAll<HTMLElement>('span')]
-          .find(item =>
-            normalizeText(item.textContent).startsWith('Status ·')
-          ) ?? null;
-        const footer = nativeRemoveButton.parentElement;
+        const media = card.firstElementChild as HTMLElement | null;
+        const content = card.children.item(1) as HTMLElement | null;
+        const footer = menuButton.parentElement;
+        const name = content?.querySelector<HTMLElement>('h4');
+        if (!media || !content || !footer || !name) return;
 
-        if (
-          !nativeName ||
-          !imageContainer ||
-          !content ||
-          !footer
-        ) {
-          return;
-        }
-
-        let headingTarget = content.querySelector<HTMLElement>(
-          '[data-profile-connected-heading-slot="true"]'
-        );
-        if (!headingTarget) {
-          headingTarget = document.createElement('div');
-          headingTarget.dataset.profileConnectedHeadingSlot = 'true';
-          nativeName.insertAdjacentElement('beforebegin', headingTarget);
-        }
-
-        let imageTarget = imageContainer.querySelector<HTMLElement>(
-          '[data-profile-connected-image-slot="true"]'
-        );
-        if (!imageTarget) {
-          imageTarget = document.createElement('div');
-          imageTarget.dataset.profileConnectedImageSlot = 'true';
-          imageContainer.insertAdjacentElement('afterbegin', imageTarget);
-        }
-
-        let menuTarget = footer.querySelector<HTMLElement>(
-          '[data-profile-connected-menu-slot="true"]'
-        );
-        if (!menuTarget) {
-          menuTarget = document.createElement('div');
-          menuTarget.dataset.profileConnectedMenuSlot = 'true';
-          nativeRemoveButton.insertAdjacentElement('beforebegin', menuTarget);
-        }
-
-        nativeName.style.display = 'none';
-        if (nativeStatus) nativeStatus.style.display = 'none';
-        nativeRemoveButton.style.display = 'none';
-
-        const nativeFavoriteButton = card.querySelector<HTMLButtonElement>(
-          'button[aria-label="Favoritar contato"], button[aria-label="Remover dos favoritos"]'
-        );
-        if (nativeFavoriteButton) {
-          nativeFavoriteButton.style.zIndex = '4';
-        }
-
-        const chatButton = findButtonByText(card, 'Chat');
+        const groupLabel = groupLabelForFriend(groups, friend.id);
         const status = statusByAuthor.get(friend.id) ?? null;
 
+        card.dataset.profileConnectedCard = 'true';
+        card.dataset.profileConnectedFriendId = friend.id;
+        media.dataset.profileConnectedMedia = 'true';
+        content.dataset.profileConnectedContent = 'true';
+        content.dataset.profileGroupLabel = groupLabel;
+        footer.dataset.profileConnectedFooter = 'true';
+        menuButton.dataset.profileConnectedMenuButton = 'true';
+
+        name.setAttribute('role', 'button');
+        name.setAttribute('tabindex', '0');
+        name.setAttribute('aria-label', `Abrir perfil de ${friend.name}`);
+        media.setAttribute('role', 'button');
+        media.setAttribute('tabindex', '0');
+        media.setAttribute(
+          'aria-label',
+          status
+            ? `Ver Status de ${friend.name}`
+            : `Abrir perfil de ${friend.name}`
+        );
+
+        const chatButton = findButtonByText(card, 'Chat');
         nextTargets.push({
           key: friend.id,
           card,
-          headingTarget,
-          imageTarget,
-          menuTarget,
-          nativeName,
-          nativeStatus,
-          nativeRemoveButton,
-          nativeFavoriteButton,
-          chatButton,
           friend,
           status,
-          statusLabel: nativeStatus
-            ? normalizeText(nativeStatus.textContent)
-            : '',
+          chatButton,
+          menuButton,
+          groupLabel,
         });
       });
 
@@ -308,25 +339,125 @@ export function ProfileConnectedCardsPolishBridge() {
       );
     };
 
+    const schedule = () => {
+      window.cancelAnimationFrame(frame);
+      frame = window.requestAnimationFrame(synchronize);
+    };
+
     synchronize();
-    const timer = window.setInterval(synchronize, 250);
+    const observer = new MutationObserver(schedule);
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true,
+    });
 
     return () => {
-      window.clearInterval(timer);
-      document
-        .querySelectorAll<HTMLElement>(
-          '[data-profile-connected-heading-slot="true"], [data-profile-connected-image-slot="true"], [data-profile-connected-menu-slot="true"]'
-        )
-        .forEach(target => target.remove());
-      document
-        .querySelectorAll<HTMLButtonElement>(
-          'button[aria-label^="Remover "]'
-        )
-        .forEach(button => {
-          button.style.display = '';
-        });
+      window.cancelAnimationFrame(frame);
+      observer.disconnect();
     };
-  }, [directory.friends, statusByAuthor]);
+  }, [directory.friends, groups, statusByAuthor]);
+
+  useEffect(() => {
+    const targetForElement = (
+      element: Element | null
+    ): ConnectedCardTarget | undefined => {
+      const card = element?.closest<HTMLElement>(
+        'article[data-profile-connected-card="true"]'
+      );
+      if (!card) return undefined;
+      return targets.find(target => target.card === card);
+    };
+
+    const openFromElement = (element: Element | null, menu = false) => {
+      const target = targetForElement(element);
+      if (!target) return;
+      const selected = { target } satisfies SelectedContact;
+      if (menu) setMenuContact(selected);
+      else if (target.status) setStatusContact(selected);
+      else setProfileContact(selected);
+    };
+
+    const handleClick = (event: MouseEvent) => {
+      const element = event.target as Element | null;
+      const menuButton = element?.closest<HTMLButtonElement>(
+        'button[data-profile-connected-menu-button="true"]'
+      );
+      if (menuButton) {
+        event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation();
+        openFromElement(menuButton, true);
+        return;
+      }
+
+      const card = element?.closest<HTMLElement>(
+        'article[data-profile-connected-card="true"]'
+      );
+      if (!card) return;
+
+      if (
+        element?.closest(
+          'button[aria-label="Favoritar contato"], button[aria-label="Remover dos favoritos"]'
+        ) ||
+        element?.closest('[data-profile-connected-footer="true"]')
+      ) {
+        return;
+      }
+
+      const name = element?.closest('[data-profile-connected-content="true"] h4');
+      if (name) {
+        event.preventDefault();
+        openFromElement(name);
+        const target = targetForElement(name);
+        if (target) {
+          setProfileContact({ target });
+          setStatusContact(null);
+        }
+        return;
+      }
+
+      const media = element?.closest('[data-profile-connected-media="true"]');
+      if (media) {
+        event.preventDefault();
+        openFromElement(media);
+      }
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Enter' && event.key !== ' ') return;
+      const element = event.target as Element | null;
+      const menuButton = element?.closest<HTMLButtonElement>(
+        'button[data-profile-connected-menu-button="true"]'
+      );
+      if (menuButton) {
+        event.preventDefault();
+        event.stopPropagation();
+        openFromElement(menuButton, true);
+        return;
+      }
+
+      const name = element?.closest('[data-profile-connected-content="true"] h4');
+      if (name) {
+        event.preventDefault();
+        const target = targetForElement(name);
+        if (target) setProfileContact({ target });
+        return;
+      }
+
+      const media = element?.closest('[data-profile-connected-media="true"]');
+      if (media) {
+        event.preventDefault();
+        openFromElement(media);
+      }
+    };
+
+    document.addEventListener('click', handleClick, true);
+    document.addEventListener('keydown', handleKeyDown, true);
+    return () => {
+      document.removeEventListener('click', handleClick, true);
+      document.removeEventListener('keydown', handleKeyDown, true);
+    };
+  }, [targets]);
 
   const showNotice = (message: string) => {
     setNotice(message);
@@ -408,66 +539,117 @@ export function ProfileConnectedCardsPolishBridge() {
 
   return (
     <>
-      {targets.map(target => {
-        const selected = { target } satisfies SelectedContact;
-        return (
-          <div key={target.key}>
-            {createPortal(
-              <div className="flex min-w-0 items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setProfileContact(selected)}
-                  className="min-w-0 flex-1 truncate text-left text-xs font-black text-white hover:text-sky-300"
-                  aria-label={`Abrir perfil de ${target.friend.name}`}
-                >
-                  {target.friend.name}
-                </button>
-                {target.status && (
-                  <button
-                    type="button"
-                    onClick={() => setStatusContact(selected)}
-                    className="shrink-0 rounded-full border border-teal-400/30 bg-slate-950/85 px-2 py-1 text-[8px] font-black uppercase text-teal-300"
-                    aria-label={`Ver Status de ${target.friend.name}`}
-                  >
-                    {target.statusLabel || 'Status'}
-                  </button>
-                )}
-              </div>,
-              target.headingTarget
-            )}
+      <style>{`
+        #profile-social-hub-modal article[data-profile-connected-card="true"] {
+          position: relative;
+          isolation: isolate;
+          min-height: 300px;
+          overflow: hidden;
+          background: #020617;
+        }
 
-            {createPortal(
-              <button
-                type="button"
-                onClick={() =>
-                  target.status
-                    ? setStatusContact(selected)
-                    : setProfileContact(selected)
-                }
-                className="absolute inset-0 z-[2] rounded-t-3xl"
-                aria-label={
-                  target.status
-                    ? `Ver Status de ${target.friend.name}`
-                    : `Abrir perfil de ${target.friend.name}`
-                }
-              />,
-              target.imageTarget
-            )}
+        #profile-social-hub-modal [data-profile-connected-media="true"] {
+          position: absolute;
+          inset: 0;
+          z-index: 0;
+          height: 100%;
+          cursor: pointer;
+          overflow: hidden;
+        }
 
-            {createPortal(
-              <button
-                type="button"
-                onClick={() => setMenuContact(selected)}
-                className="flex h-10 w-[42px] items-center justify-center rounded-xl border border-slate-700 bg-slate-950 text-slate-400 hover:text-white"
-                aria-label={`Mais ações para ${target.friend.name}`}
-              >
-                <EllipsisVertical className="h-4 w-4" />
-              </button>,
-              target.menuTarget
-            )}
-          </div>
-        );
-      })}
+        #profile-social-hub-modal [data-profile-connected-media="true"]::after {
+          content: '';
+          position: absolute;
+          inset: 0;
+          z-index: 1;
+          pointer-events: none;
+          background: linear-gradient(to bottom, rgba(2,6,23,.82) 0%, rgba(2,6,23,.22) 31%, rgba(2,6,23,.18) 55%, rgba(2,6,23,.76) 78%, rgba(2,6,23,.98) 100%);
+        }
+
+        #profile-social-hub-modal [data-profile-connected-media="true"] > img,
+        #profile-social-hub-modal [data-profile-connected-media="true"] > span[role="img"] {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+        }
+
+        #profile-social-hub-modal [data-profile-connected-media="true"] > button,
+        #profile-social-hub-modal [data-profile-connected-media="true"] > span:not([role="img"]) {
+          z-index: 4;
+        }
+
+        #profile-social-hub-modal [data-profile-connected-content="true"] {
+          position: absolute;
+          inset: 14px 56px auto 14px;
+          z-index: 5;
+          min-height: 0;
+          margin: 0;
+          padding: 0;
+          background: transparent;
+          pointer-events: none;
+        }
+
+        #profile-social-hub-modal [data-profile-connected-content="true"] h4 {
+          display: -webkit-box;
+          width: 100%;
+          max-height: 2.2em;
+          margin: 0;
+          overflow: hidden;
+          -webkit-box-orient: vertical;
+          -webkit-line-clamp: 2;
+          white-space: normal;
+          text-align: left;
+          text-overflow: ellipsis;
+          font-size: .82rem;
+          line-height: 1.08;
+          color: #fff;
+          cursor: pointer;
+          pointer-events: auto;
+          text-shadow: 0 2px 8px rgba(2,6,23,.98);
+        }
+
+        #profile-social-hub-modal [data-profile-connected-content="true"] p {
+          display: none;
+        }
+
+        #profile-social-hub-modal [data-profile-connected-content="true"]::after {
+          content: attr(data-profile-group-label);
+          display: block;
+          max-width: 100%;
+          margin-top: 5px;
+          overflow: hidden;
+          white-space: nowrap;
+          text-overflow: ellipsis;
+          font-size: .58rem;
+          font-weight: 700;
+          line-height: 1.1;
+          color: #cbd5e1;
+          text-shadow: 0 2px 8px rgba(2,6,23,.98);
+        }
+
+        #profile-social-hub-modal [data-profile-connected-content="true"][data-profile-group-label=""]::after {
+          display: none;
+        }
+
+        #profile-social-hub-modal [data-profile-connected-footer="true"] {
+          position: relative;
+          z-index: 6;
+          margin-top: auto;
+          background: rgba(2,6,23,.84);
+          backdrop-filter: blur(8px);
+        }
+
+        #profile-social-hub-modal button[data-profile-connected-menu-button="true"] svg {
+          display: none;
+        }
+
+        #profile-social-hub-modal button[data-profile-connected-menu-button="true"]::before {
+          content: '⋮';
+          font-size: 1.35rem;
+          line-height: 1;
+          color: #94a3b8;
+        }
+      `}</style>
 
       {menuContact && (
         <div className="fixed inset-0 z-[190] flex items-end justify-center bg-slate-950/95 backdrop-blur-md sm:items-center sm:p-4">
@@ -615,7 +797,7 @@ export function ProfileConnectedCardsPolishBridge() {
                   {statusContact.target.friend.name}
                 </button>
                 <span className="shrink-0 rounded-full border border-teal-500/25 bg-teal-500/10 px-2 py-1 text-[8px] font-black uppercase text-teal-300">
-                  {statusContact.target.statusLabel || 'Status ativo'}
+                  {remainingStatusLabel(statusContact.target.status)}
                 </span>
               </div>
               {statusContact.target.status.content && (
