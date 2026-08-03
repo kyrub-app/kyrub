@@ -89,7 +89,7 @@ export function MobileErpMenu({
   };
 
   return (
-    <div className="sm:hidden flex w-full flex-1 min-w-0 self-stretch items-center justify-between">
+    <div className="sm:hidden -mx-6 -my-2.5 flex w-screen max-w-none shrink-0 items-center justify-between border-b border-slate-800 bg-slate-900 px-6 py-2.5">
       {isRetailer ? (
         <button
           type="button"
