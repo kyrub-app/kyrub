@@ -1,9 +1,6 @@
 import { useEffect, useState } from 'react';
-import {
-  collection,
-  onSnapshot,
-} from 'firebase/firestore';
 import { onAuthStateChanged } from 'firebase/auth';
+import { collection, onSnapshot } from 'firebase/firestore';
 import type { Friend } from '../types';
 import { useSocialDirectoryV2 } from '../hooks/useSocialDirectoryV2';
 import { auth, db } from '../utils/firebase';
@@ -33,17 +30,25 @@ const sameGroups = (current: ContactGroup[], next: ContactGroup[]): boolean =>
     );
   });
 
-const groupLabelForFriend = (
-  groups: ContactGroup[],
-  friendId: string
-): string => {
-  const names = groups
-    .filter(group => group.memberIds.includes(friendId))
-    .map(group => group.name)
+const findFriendForButton = (
+  button: HTMLButtonElement,
+  friends: Friend[],
+  usedIds: Set<string>
+): Friend | undefined => {
+  const visibleTexts = [...button.querySelectorAll<HTMLElement>('span')]
+    .map(item => normalizeText(item.textContent))
     .filter(Boolean);
+  const friendName = visibleTexts.find(text =>
+    friends.some(friend => normalizeText(friend.name) === text)
+  );
 
-  if (names.length === 0) return '';
-  return names.length === 1 ? names[0] : `${names[0]} +${names.length - 1}`;
+  if (!friendName) return undefined;
+
+  return friends.find(
+    friend =>
+      !usedIds.has(friend.id) &&
+      normalizeText(friend.name) === friendName
+  );
 };
 
 export function ProfileConnectedCardsLayoutBridge() {
@@ -91,7 +96,9 @@ export function ProfileConnectedCardsLayoutBridge() {
               left.name.localeCompare(right.name, 'pt-BR')
             );
 
-          setGroups(current => (sameGroups(current, next) ? current : next));
+          setGroups(current =>
+            sameGroups(current, next) ? current : next
+          );
         },
         () => setGroups([])
       );
@@ -104,160 +111,19 @@ export function ProfileConnectedCardsLayoutBridge() {
   }, []);
 
   useEffect(() => {
+    let frame = 0;
+
     const synchronize = () => {
       const profileModal = document.getElementById(
         'profile-social-hub-modal'
       );
       if (!profileModal) return;
 
-      const usedFriendIds = new Set<string>();
-      const removeButtons = profileModal.querySelectorAll<HTMLButtonElement>(
-        'button[aria-label^="Remover "]'
-      );
-
-      removeButtons.forEach(removeButton => {
-        const card = removeButton.closest<HTMLElement>('article');
-        if (!card) return;
-
-        const requestedName = normalizeText(
-          removeButton.getAttribute('aria-label')?.replace(/^Remover\s+/, '')
-        );
-        const friend = directory.friends.find(
-          item =>
-            !usedFriendIds.has(item.id) &&
-            normalizeText(item.name) === requestedName
-        );
-        if (!friend) return;
-        usedFriendIds.add(friend.id);
-
-        const imageContainer = card.firstElementChild as HTMLElement | null;
-        const media = imageContainer?.querySelector<HTMLElement>(
-          'img, [role="img"]'
-        );
-        const nativeName = card.querySelector<HTMLElement>('h4');
-        const content = nativeName?.parentElement as HTMLElement | null;
-        const footer = removeButton.parentElement;
-
-        if (!imageContainer || !media || !content || !footer) return;
-
-        card.dataset.profileConnectedFullImage = 'true';
-        card.style.position = 'relative';
-        card.style.isolation = 'isolate';
-        card.style.minHeight = '300px';
-        card.style.overflow = 'hidden';
-        card.style.background = '#020617';
-
-        imageContainer.style.position = 'absolute';
-        imageContainer.style.inset = '0';
-        imageContainer.style.height = '100%';
-        imageContainer.style.zIndex = '0';
-
-        media.style.width = '100%';
-        media.style.height = '100%';
-        media.style.objectFit = 'cover';
-
-        let gradient = imageContainer.querySelector<HTMLElement>(
-          '[data-profile-connected-full-gradient="true"]'
-        );
-        if (!gradient) {
-          gradient = document.createElement('div');
-          gradient.dataset.profileConnectedFullGradient = 'true';
-          imageContainer.appendChild(gradient);
-        }
-        gradient.style.position = 'absolute';
-        gradient.style.inset = '0';
-        gradient.style.zIndex = '1';
-        gradient.style.pointerEvents = 'none';
-        gradient.style.background =
-          'linear-gradient(to bottom, rgba(2,6,23,0.76) 0%, rgba(2,6,23,0.2) 30%, rgba(2,6,23,0.2) 52%, rgba(2,6,23,0.78) 76%, rgba(2,6,23,0.98) 100%)';
-
-        content.dataset.profileConnectedNameTop = 'true';
-        content.style.position = 'absolute';
-        content.style.inset = '14px 56px auto 14px';
-        content.style.zIndex = '5';
-        content.style.margin = '0';
-        content.style.minHeight = '0';
-        content.style.padding = '0';
-        content.style.background = 'transparent';
-        content.style.pointerEvents = 'none';
-
-        const headingSlot = content.querySelector<HTMLElement>(
-          '[data-profile-connected-heading-slot="true"]'
-        );
-        const headingRow = headingSlot?.firstElementChild as HTMLElement | null;
-        const nameButton = headingSlot?.querySelector<HTMLButtonElement>(
-          'button[aria-label^="Abrir perfil de "]'
-        );
-
-        if (headingSlot) {
-          headingSlot.style.pointerEvents = 'auto';
-          headingSlot.style.width = '100%';
-        }
-
-        if (headingRow) {
-          headingRow.style.alignItems = 'flex-start';
-          headingRow.style.width = '100%';
-        }
-
-        if (nameButton) {
-          nameButton.style.display = '-webkit-box';
-          nameButton.style.webkitBoxOrient = 'vertical';
-          nameButton.style.webkitLineClamp = '2';
-          nameButton.style.whiteSpace = 'normal';
-          nameButton.style.overflow = 'hidden';
-          nameButton.style.textOverflow = 'ellipsis';
-          nameButton.style.lineHeight = '1.05';
-          nameButton.style.maxHeight = '2.15em';
-          nameButton.style.fontSize = '0.82rem';
-          nameButton.style.textAlign = 'left';
-          nameButton.style.textShadow =
-            '0 2px 7px rgba(2, 6, 23, 0.95)';
-        }
-
-        footer.style.position = 'relative';
-        footer.style.zIndex = '3';
-        footer.style.marginTop = 'auto';
-        footer.style.background = 'rgba(2, 6, 23, 0.82)';
-        footer.style.backdropFilter = 'blur(8px)';
-
-        const nativeDescription = content.querySelector<HTMLElement>('p');
-        if (
-          nativeDescription &&
-          nativeDescription.dataset.profileConnectedGroupLabel !== 'true'
-        ) {
-          nativeDescription.style.display = 'none';
-        }
-
-        let groupLabel = content.querySelector<HTMLElement>(
-          '[data-profile-connected-group-label="true"]'
-        );
-        if (!groupLabel) {
-          groupLabel = document.createElement('p');
-          groupLabel.dataset.profileConnectedGroupLabel = 'true';
-          groupLabel.className =
-            'mt-1 text-[9px] font-bold text-slate-300';
-          content.appendChild(groupLabel);
-        }
-
-        const label = groupLabelForFriend(groups, friend.id);
-        groupLabel.textContent = label;
-        groupLabel.style.display = label ? '' : 'none';
-        groupLabel.style.marginTop = '5px';
-        groupLabel.style.maxWidth = '100%';
-        groupLabel.style.whiteSpace = 'normal';
-        groupLabel.style.overflow = 'hidden';
-        groupLabel.style.textOverflow = 'ellipsis';
-        groupLabel.style.lineHeight = '1.1';
-        groupLabel.style.textShadow =
-          '0 2px 7px rgba(2, 6, 23, 0.95)';
-        groupLabel.style.pointerEvents = 'none';
-      });
-
-      groups.forEach(group => {
+      for (const group of groups) {
         const heading = [...profileModal.querySelectorAll<HTMLElement>('h4')]
           .find(item => normalizeText(item.textContent) === group.name);
         const section = heading?.closest<HTMLElement>('section');
-        if (!heading || !section) return;
+        if (!heading || !section) continue;
 
         const header = heading.parentElement?.parentElement as HTMLElement | null;
         const memberGrid = [...section.children].find(child =>
@@ -265,18 +131,18 @@ export function ProfileConnectedCardsLayoutBridge() {
           child.className.includes('grid') &&
           child.querySelector('button')
         ) as HTMLElement | undefined;
-        if (!header || !memberGrid) return;
+        if (!header || !memberGrid) continue;
 
         let toggleButton = section.querySelector<HTMLButtonElement>(
           `[data-profile-group-add-people="${group.id}"]`
         );
+
         if (!toggleButton) {
           toggleButton = document.createElement('button');
           toggleButton.type = 'button';
           toggleButton.dataset.profileGroupAddPeople = group.id;
           toggleButton.className =
             'flex h-10 w-full items-center justify-center rounded-xl border border-violet-500/30 bg-violet-500/10 text-[9px] font-black uppercase text-violet-200';
-          header.insertAdjacentElement('afterend', toggleButton);
           toggleButton.addEventListener('click', () => {
             setExpandedGroupIds(current => {
               const next = new Set(current);
@@ -285,15 +151,20 @@ export function ProfileConnectedCardsLayoutBridge() {
               return next;
             });
           });
+          header.insertAdjacentElement('afterend', toggleButton);
         }
 
         const expanded = expandedGroupIds.has(group.id);
         const availableCount = directory.friends.filter(
           friend => !group.memberIds.includes(friend.id)
         ).length;
-        toggleButton.textContent = expanded
+        const nextLabel = expanded
           ? 'Concluir inclusão'
           : `Adicionar pessoas${availableCount > 0 ? ` (${availableCount})` : ''}`;
+
+        if (toggleButton.textContent !== nextLabel) {
+          toggleButton.textContent = nextLabel;
+        }
         toggleButton.disabled = !expanded && availableCount === 0;
         toggleButton.style.opacity =
           !expanded && availableCount === 0 ? '0.45' : '1';
@@ -302,15 +173,10 @@ export function ProfileConnectedCardsLayoutBridge() {
         memberGrid
           .querySelectorAll<HTMLButtonElement>('button')
           .forEach(friendButton => {
-            const friendName = normalizeText(
-              [...friendButton.querySelectorAll<HTMLElement>('span')]
-                .map(item => normalizeText(item.textContent))
-                .find(Boolean)
-            );
-            const friend = directory.friends.find(
-              item =>
-                !usedIds.has(item.id) &&
-                normalizeText(item.name) === friendName
+            const friend = findFriendForButton(
+              friendButton,
+              directory.friends,
+              usedIds
             );
             if (!friend) return;
             usedIds.add(friend.id);
@@ -321,12 +187,25 @@ export function ProfileConnectedCardsLayoutBridge() {
               ? 'member'
               : 'available';
           });
-      });
+      }
+    };
+
+    const schedule = () => {
+      window.cancelAnimationFrame(frame);
+      frame = window.requestAnimationFrame(synchronize);
     };
 
     synchronize();
-    const timer = window.setInterval(synchronize, 300);
-    return () => window.clearInterval(timer);
+    const observer = new MutationObserver(schedule);
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true,
+    });
+
+    return () => {
+      window.cancelAnimationFrame(frame);
+      observer.disconnect();
+    };
   }, [directory.friends, expandedGroupIds, groups]);
 
   return null;
