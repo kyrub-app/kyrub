@@ -47,10 +47,12 @@ export const resolveKyrubAppRoute = (pathname: string): KyrubAppRoute => {
   const cleanPath =
     `/${pathname}`.replace(/\/{2,}/g, '/').replace(/\/$/, '') || '/';
 
-  if (
+  const isLegacyOperationalPath =
     cleanPath === LEGACY_OPERATIONAL_PATH ||
-    cleanPath.startsWith(`${LEGACY_OPERATIONAL_PATH}/`)
-  ) {
+    cleanPath.startsWith(`${LEGACY_OPERATIONAL_PATH}/`) ||
+    (cleanPath !== OPERATIONAL_PATH && cleanPath.endsWith(OPERATIONAL_PATH));
+
+  if (isLegacyOperationalPath) {
     return {
       kind: 'staff-app',
       canonicalPath: OPERATIONAL_PATH,
@@ -60,8 +62,7 @@ export const resolveKyrubAppRoute = (pathname: string): KyrubAppRoute => {
 
   if (
     cleanPath === OPERATIONAL_PATH ||
-    cleanPath.startsWith(`${OPERATIONAL_PATH}/`) ||
-    cleanPath.endsWith(OPERATIONAL_PATH)
+    cleanPath.startsWith(`${OPERATIONAL_PATH}/`)
   ) {
     return {
       kind: 'staff-app',
