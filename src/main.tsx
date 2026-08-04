@@ -6,13 +6,14 @@ import { ProfileConnectedCardsPolishBridge } from './components/ProfileConnected
 import { ProfileConnectedImageFitBridge } from './components/ProfileConnectedImageFitBridge';
 import { ProfileContactGroupsPolishBridge } from './components/ProfileContactGroupsPolishBridge';
 import { ProfileNextPolishBridge } from './components/ProfileNextPolishBridge';
+import { ProfileOffersFiltersBridge } from './components/ProfileOffersFiltersBridge';
 import './index.css';
 import './styles/responsive-product-cards.css';
 import './styles/catalog-category-tree.css';
 import './styles/profile-verification.css';
 import './styles/profile-header-layout.css';
 
-// Authenticated preview deployment revision: 2026-08-03T16:38-03:00.
+// Authenticated preview deployment revision: 2026-08-03T22:01-03:00.
 const rootElement = document.getElementById('root');
 
 if (!rootElement) {
@@ -27,6 +28,7 @@ createRoot(rootElement).render(
         <ProfileConnectedCardsPolishBridge />
         <ProfileConnectedImageFitBridge />
         <ProfileContactGroupsPolishBridge />
+        <ProfileOffersFiltersBridge />
         <App />
       </>
     </AppErrorBoundary>
