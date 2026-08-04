@@ -13,6 +13,7 @@ export interface ProductConfigurationSelection extends Product {
   unitPrice: number;
   selectedOptions: ProductSelectedOption[];
   selectedQuickNotes: string[];
+  customerNote: string;
   customizationSummary: string;
 }
 
@@ -144,7 +145,8 @@ export const withoutQuickNotesOptionGroup = (
 export const getCartLineKey = (
   productId: string,
   selectedOptions: ProductSelectedOption[],
-  selectedQuickNotes: string[] = []
+  selectedQuickNotes: string[] = [],
+  customerNote: string = ''
 ): string => {
   const optionKey = [...selectedOptions]
     .sort((left, right) => {
@@ -157,9 +159,13 @@ export const getCartLineKey = (
     .map(note => note.toLocaleLowerCase('pt-BR'))
     .sort((left, right) => left.localeCompare(right, 'pt-BR'))
     .join('|');
+  const customerNoteKey = cleanString(customerNote)
+    .slice(0, 280)
+    .toLocaleLowerCase('pt-BR');
   const configurationKey = [
     optionKey ? `options=${optionKey}` : '',
     quickNoteKey ? `notes=${quickNoteKey}` : '',
+    customerNoteKey ? `customer-note=${encodeURIComponent(customerNoteKey)}` : '',
   ]
     .filter(Boolean)
     .join('&');
@@ -170,7 +176,8 @@ export const getCartLineKey = (
 export const buildProductConfigurationSelection = (
   product: Product,
   selectedChoiceIds: Record<string, string[]>,
-  selectedQuickNotes: string[] = []
+  selectedQuickNotes: string[] = [],
+  customerNote: string = ''
 ): ProductConfigurationSelection => {
   const optionGroups = parseProductOptionGroups(product.optionGroups);
   const availableQuickNotes = parseProductQuickNotes(product.quickNotes);
@@ -180,6 +187,7 @@ export const buildProductConfigurationSelection = (
   const normalizedSelectedQuickNotes = parseProductQuickNotes(selectedQuickNotes).filter(
     note => allowedQuickNoteKeys.has(note.toLocaleLowerCase('pt-BR'))
   );
+  const normalizedCustomerNote = cleanString(customerNote).slice(0, 280);
   const selectedOptions: ProductSelectedOption[] = [];
   const summaryParts: string[] = [];
 
@@ -222,6 +230,9 @@ export const buildProductConfigurationSelection = (
   if (normalizedSelectedQuickNotes.length > 0) {
     summaryParts.push(`Observações: ${normalizedSelectedQuickNotes.join(', ')}`);
   }
+  if (normalizedCustomerNote) {
+    summaryParts.push(`Observação: ${normalizedCustomerNote}`);
+  }
 
   const basePrice = product.isComplimentary ? 0 : product.price;
   const unitPrice = Number(
@@ -233,10 +244,11 @@ export const buildProductConfigurationSelection = (
   const lineKey = getCartLineKey(
     product.id,
     selectedOptions,
-    normalizedSelectedQuickNotes
+    normalizedSelectedQuickNotes,
+    normalizedCustomerNote
   );
   const customizationSummary = summaryParts.join(' · ');
-  const cartProduct: Product = {
+  const cartProduct = {
     ...product,
     id: lineKey,
     sourceProductId: product.sourceProductId ?? product.id,
@@ -246,8 +258,9 @@ export const buildProductConfigurationSelection = (
     price: unitPrice,
     selectedOptions: [...selectedOptions],
     selectedQuickNotes: [...normalizedSelectedQuickNotes],
+    customerNote: normalizedCustomerNote,
     customizationSummary,
-  };
+  } satisfies Product & { customerNote?: string };
 
   return {
     ...cartProduct,
@@ -256,6 +269,7 @@ export const buildProductConfigurationSelection = (
     unitPrice,
     selectedOptions,
     selectedQuickNotes: normalizedSelectedQuickNotes,
+    customerNote: normalizedCustomerNote,
     customizationSummary,
   };
 };
