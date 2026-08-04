@@ -33,9 +33,9 @@ type MenuItem =
 
 const MENU_ITEMS: readonly MenuItem[] = [
   { id: 'loja', label: 'Loja', icon: StoreIcon },
-  { id: 'clientes', label: 'Clientes', icon: Users },
+  { id: 'clientes', label: 'PDV', icon: Users },
   { id: 'caixa', label: 'Caixa', icon: DollarSign },
-  { id: 'pedidos', label: 'KDS / Vendas', icon: ClipboardList },
+  { id: 'pedidos', label: 'Pedidos', icon: ClipboardList },
   { id: 'reservas', label: 'Reservas', icon: Calendar },
   { id: 'ponto', label: 'Ponto', icon: Fingerprint },
   { id: 'gerencial', label: 'Gerencial', icon: LayoutGrid },
@@ -89,20 +89,7 @@ export function MobileErpMenu({
   };
 
   return (
-    <div className="sm:hidden flex items-center justify-between w-full">
-      {canClosePanel ? (
-        <button
-          type="button"
-          onClick={onClosePanel}
-          aria-label="Fechar painel de gestão"
-          className="w-8 h-8 rounded-full bg-slate-950 border border-slate-700 text-slate-400 hover:text-white flex items-center justify-center shadow-sm"
-        >
-          <X className="w-4 h-4" />
-        </button>
-      ) : (
-        <span className="w-8 h-8" aria-hidden="true" />
-      )}
-
+    <div className="sm:hidden -mx-6 -my-2.5 flex w-screen max-w-none shrink-0 items-center justify-between border-b border-slate-800 bg-slate-900 px-6 py-2.5">
       {isRetailer ? (
         <button
           type="button"
@@ -113,6 +100,19 @@ export function MobileErpMenu({
           className="w-8 h-8 rounded-full bg-slate-950 border border-slate-700 text-slate-300 hover:text-white hover:border-orange-500/70 transition-colors flex items-center justify-center shadow-lg"
         >
           <Menu className="w-4 h-4" />
+        </button>
+      ) : (
+        <span className="w-8 h-8" aria-hidden="true" />
+      )}
+
+      {canClosePanel ? (
+        <button
+          type="button"
+          onClick={onClosePanel}
+          aria-label="Fechar painel de gestão"
+          className="w-8 h-8 rounded-full bg-slate-950 border border-slate-700 text-slate-400 hover:text-white flex items-center justify-center shadow-sm"
+        >
+          <X className="w-4 h-4" />
         </button>
       ) : (
         <span className="w-8 h-8" aria-hidden="true" />

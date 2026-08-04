@@ -6,7 +6,7 @@ export type KyrubAppRoute =
     }
   | {
       kind: 'staff-app';
-      canonicalPath: '/app';
+      canonicalPath: '/staff';
       legacyRedirect: boolean;
     }
   | {
@@ -15,8 +15,8 @@ export type KyrubAppRoute =
     };
 
 const PUBLIC_STOREFRONT_PREFIX = '/@';
-const OPERATIONAL_PATH = '/app';
-const LEGACY_STAFF_PATH = '/staff';
+const OPERATIONAL_PATH = '/staff';
+const LEGACY_OPERATIONAL_PATH = '/app';
 
 export const normalizeStorefrontSlug = (value: string): string =>
   decodeURIComponent(value)
@@ -44,14 +44,15 @@ export const buildPublicStorefrontUrl = (
 };
 
 export const resolveKyrubAppRoute = (pathname: string): KyrubAppRoute => {
-  const cleanPath = `/${pathname}`
-    .replace(/\/{2,}/g, '/')
-    .replace(/\/$/, '') || '/';
+  const cleanPath =
+    `/${pathname}`.replace(/\/{2,}/g, '/').replace(/\/$/, '') || '/';
 
-  if (
-    cleanPath === LEGACY_STAFF_PATH ||
-    cleanPath.endsWith(LEGACY_STAFF_PATH)
-  ) {
+  const isLegacyOperationalPath =
+    cleanPath === LEGACY_OPERATIONAL_PATH ||
+    cleanPath.startsWith(`${LEGACY_OPERATIONAL_PATH}/`) ||
+    (cleanPath !== OPERATIONAL_PATH && cleanPath.endsWith(OPERATIONAL_PATH));
+
+  if (isLegacyOperationalPath) {
     return {
       kind: 'staff-app',
       canonicalPath: OPERATIONAL_PATH,
@@ -59,7 +60,10 @@ export const resolveKyrubAppRoute = (pathname: string): KyrubAppRoute => {
     };
   }
 
-  if (cleanPath === OPERATIONAL_PATH || cleanPath.startsWith(`${OPERATIONAL_PATH}/`)) {
+  if (
+    cleanPath === OPERATIONAL_PATH ||
+    cleanPath.startsWith(`${OPERATIONAL_PATH}/`)
+  ) {
     return {
       kind: 'staff-app',
       canonicalPath: OPERATIONAL_PATH,
@@ -68,7 +72,8 @@ export const resolveKyrubAppRoute = (pathname: string): KyrubAppRoute => {
   }
 
   if (cleanPath.startsWith(PUBLIC_STOREFRONT_PREFIX)) {
-    const slugSegment = cleanPath.slice(PUBLIC_STOREFRONT_PREFIX.length).split('/')[0] ?? '';
+    const slugSegment =
+      cleanPath.slice(PUBLIC_STOREFRONT_PREFIX.length).split('/')[0] ?? '';
     const slug = normalizeStorefrontSlug(slugSegment);
     if (slug) {
       return {

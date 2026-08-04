@@ -1,12 +1,15 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
+  ChevronLeft,
+  ChevronRight,
+  Flame,
   Info,
   MapPin,
   Store as StoreIcon,
   X,
-  Zap,
 } from 'lucide-react';
 import type { CartItem, Product, Store } from '../types';
+import { OPEN_PUBLIC_STOREFRONT_INFO_EVENT } from '../utils/storefrontEvents';
 import { SharedPdvCatalog } from './pdv/SharedPdvCatalog';
 
 interface StorefrontPanelProps {
@@ -37,6 +40,15 @@ const getStoreInitials = (name: string): string => {
   return initials || 'K';
 };
 
+const uniqueImages = (values: Array<string | undefined>): string[] =>
+  Array.from(
+    new Set(
+      values
+        .map(value => value?.trim() ?? '')
+        .filter(Boolean)
+    )
+  );
+
 export const StorefrontPanel: React.FC<StorefrontPanelProps> = ({
   activeConsumerStore,
   products,
@@ -49,10 +61,47 @@ export const StorefrontPanel: React.FC<StorefrontPanelProps> = ({
   salesByProductId = {},
 }) => {
   const [isStoreInfoOpen, setIsStoreInfoOpen] = useState(false);
+  const [activeHeroIndex, setActiveHeroIndex] = useState(0);
+  const [touchStartX, setTouchStartX] = useState<number | null>(null);
+
+  const heroImages = useMemo(
+    () =>
+      uniqueImages([
+        activeConsumerStore?.banner,
+        ...(activeConsumerStore?.offerImages ?? []),
+      ]),
+    [activeConsumerStore?.banner, activeConsumerStore?.offerImages]
+  );
 
   useEffect(() => {
     setIsStoreInfoOpen(false);
+    setActiveHeroIndex(0);
+    setTouchStartX(null);
   }, [activeConsumerStore?.id]);
+
+  useEffect(() => {
+    const openStoreInfo = (): void => setIsStoreInfoOpen(true);
+    window.addEventListener(
+      OPEN_PUBLIC_STOREFRONT_INFO_EVENT,
+      openStoreInfo
+    );
+
+    return () =>
+      window.removeEventListener(
+        OPEN_PUBLIC_STOREFRONT_INFO_EVENT,
+        openStoreInfo
+      );
+  }, []);
+
+  useEffect(() => {
+    if (heroImages.length <= 1) return;
+
+    const timer = window.setInterval(() => {
+      setActiveHeroIndex(current => (current + 1) % heroImages.length);
+    }, 5200);
+
+    return () => window.clearInterval(timer);
+  }, [heroImages.length]);
 
   if (!activeConsumerStore) {
     return (
@@ -67,7 +116,8 @@ export const StorefrontPanel: React.FC<StorefrontPanelProps> = ({
           Escolha uma vitrine
         </h3>
         <p className="mx-auto mt-2 max-w-md text-xs leading-relaxed text-slate-500">
-          As lojas publicadas no marketplace aparecerão aqui para você conhecer suas ofertas.
+          As lojas publicadas no marketplace aparecerão aqui para você conhecer
+          suas ofertas.
         </p>
 
         {stores.length > 0 ? (
@@ -89,7 +139,7 @@ export const StorefrontPanel: React.FC<StorefrontPanelProps> = ({
             ))}
           </div>
         ) : (
-          <p className="mt-6 text-[11px] font-mono uppercase tracking-wide text-slate-600">
+          <p className="mt-6 font-mono text-[11px] uppercase tracking-wide text-slate-600">
             Nenhuma vitrine pública disponível no momento
           </p>
         )}
@@ -98,6 +148,7 @@ export const StorefrontPanel: React.FC<StorefrontPanelProps> = ({
   }
 
   const accentColor = activeConsumerStore.primaryColor || '#f97316';
+  const activeHeroImage = heroImages[activeHeroIndex] ?? '';
   const storeKeywords = Array.from(
     new Set(
       (activeConsumerStore.keywords ?? [])
@@ -143,77 +194,133 @@ export const StorefrontPanel: React.FC<StorefrontPanelProps> = ({
     };
   })();
 
+  const previousHero = (): void => {
+    if (heroImages.length <= 1) return;
+    setActiveHeroIndex(current =>
+      current === 0 ? heroImages.length - 1 : current - 1
+    );
+  };
+
+  const nextHero = (): void => {
+    if (heroImages.length <= 1) return;
+    setActiveHeroIndex(current => (current + 1) % heroImages.length);
+  };
+
+  const handleTouchEnd = (clientX: number): void => {
+    if (touchStartX === null || heroImages.length <= 1) {
+      setTouchStartX(null);
+      return;
+    }
+
+    const delta = clientX - touchStartX;
+    if (Math.abs(delta) >= 42) {
+      if (delta < 0) nextHero();
+      else previousHero();
+    }
+    setTouchStartX(null);
+  };
+
   return (
     <div className="space-y-6 animate-fade-in" id="storefront-panel-container">
       <section
         className="relative overflow-hidden rounded-3xl border border-slate-800 bg-slate-950 shadow-2xl"
         id="storefront-banner"
+        aria-roledescription="carrossel"
+        aria-label={`Destaques de ${activeConsumerStore.name}`}
+        onTouchStart={event => setTouchStartX(event.touches[0]?.clientX ?? null)}
+        onTouchEnd={event =>
+          handleTouchEnd(event.changedTouches[0]?.clientX ?? touchStartX ?? 0)
+        }
       >
-        <div className="relative min-h-48 overflow-hidden">
-          {activeConsumerStore.banner ? (
-            <img
-              src={activeConsumerStore.banner}
-              alt=""
-              className="absolute inset-0 h-full w-full object-cover opacity-35"
-              referrerPolicy="no-referrer"
-            />
+        <div className="relative min-h-[250px] overflow-hidden sm:min-h-[320px]">
+          {activeHeroImage ? (
+            heroImages.map((image, index) => (
+              <img
+                key={image}
+                src={image}
+                alt={
+                  index === activeHeroIndex
+                    ? `Destaque ${index + 1} de ${activeConsumerStore.name}`
+                    : ''
+                }
+                className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-700 ${
+                  index === activeHeroIndex ? 'opacity-100' : 'opacity-0'
+                }`}
+                referrerPolicy="no-referrer"
+                aria-hidden={index !== activeHeroIndex}
+              />
+            ))
           ) : (
             <div
-              className="absolute inset-0 opacity-30"
+              className="absolute inset-0"
               style={{
-                background: `radial-gradient(circle at top right, ${accentColor}, transparent 58%)`,
+                background: `radial-gradient(circle at top right, ${accentColor}, transparent 58%), linear-gradient(135deg, #020617, #0f172a)`,
               }}
             />
           )}
 
-          <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/80 to-slate-950/25" />
+          <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/55 to-slate-950/10" />
 
-          <div className="relative z-10 flex min-h-48 flex-col justify-end gap-5 p-5 sm:p-7">
-            <div className="flex items-start gap-4">
+          {heroImages.length > 1 && (
+            <>
               <button
                 type="button"
-                onClick={() => setIsStoreInfoOpen(true)}
-                className="group relative shrink-0 rounded-2xl outline-none focus-visible:ring-2 focus-visible:ring-orange-400"
-                aria-label={`Abrir informações públicas de ${activeConsumerStore.name}`}
-                id="storefront-store-info-trigger"
+                onClick={previousHero}
+                className="absolute left-3 top-1/2 z-20 hidden h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full border border-white/15 bg-slate-950/65 text-white backdrop-blur-md sm:flex"
+                aria-label="Imagem anterior"
               >
-                {activeConsumerStore.logo ? (
-                  <img
-                    src={activeConsumerStore.logo}
-                    alt={activeConsumerStore.name}
-                    className="h-16 w-16 rounded-2xl border border-white/10 bg-slate-900 object-cover shadow-xl transition-transform group-hover:scale-[1.03]"
-                    referrerPolicy="no-referrer"
-                  />
-                ) : (
-                  <span
-                    className="flex h-16 w-16 items-center justify-center rounded-2xl border border-white/10 text-xl font-black text-white shadow-xl transition-transform group-hover:scale-[1.03]"
-                    style={{ backgroundColor: accentColor }}
-                    aria-label={`Iniciais de ${activeConsumerStore.name}`}
-                  >
-                    {getStoreInitials(activeConsumerStore.name)}
-                  </span>
-                )}
+                <ChevronLeft className="h-5 w-5" />
+              </button>
+              <button
+                type="button"
+                onClick={nextHero}
+                className="absolute right-3 top-1/2 z-20 hidden h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full border border-white/15 bg-slate-950/65 text-white backdrop-blur-md sm:flex"
+                aria-label="Próxima imagem"
+              >
+                <ChevronRight className="h-5 w-5" />
+              </button>
+            </>
+          )}
 
-                <Zap
-                  className={`absolute -bottom-1 -right-1 h-5 w-5 fill-current drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)] ${movementMetadata.colorClassName}`}
+          <div className="absolute inset-x-0 bottom-0 z-10 p-5 sm:p-7">
+            <div className="max-w-2xl">
+              <div className="flex items-start gap-2.5">
+                <Flame
+                  className={`mt-1 h-6 w-6 shrink-0 fill-current drop-shadow-lg ${movementMetadata.colorClassName}`}
                   aria-hidden="true"
                 />
-                <span className="sr-only">{movementMetadata.label}</span>
-              </button>
-
-              <div className="min-w-0 flex-1">
-                <span className="font-mono text-[9px] font-black uppercase tracking-[0.2em] text-orange-300">
-                  Vitrine pública
-                </span>
-                <h2 className="mt-1 truncate text-2xl font-black tracking-tight text-white sm:text-3xl">
+                <h2 className="line-clamp-2 text-2xl font-black tracking-tight text-white drop-shadow-lg sm:text-4xl">
                   {activeConsumerStore.name || 'Loja sem nome'}
                 </h2>
-                <p className="mt-2 max-w-2xl text-xs leading-relaxed text-slate-300 sm:text-sm">
-                  {activeConsumerStore.description ||
-                    'Esta loja ainda não adicionou uma descrição pública.'}
-                </p>
+                <span className="sr-only">{movementMetadata.label}</span>
               </div>
+              <p className="mt-2 line-clamp-3 text-xs leading-relaxed text-slate-200 drop-shadow-md sm:text-sm">
+                {activeConsumerStore.description ||
+                  'Esta loja ainda não adicionou uma descrição pública.'}
+              </p>
             </div>
+
+            {heroImages.length > 1 && (
+              <div
+                className="mt-4 flex items-center gap-1.5"
+                aria-label={`${activeHeroIndex + 1} de ${heroImages.length}`}
+              >
+                {heroImages.map((image, index) => (
+                  <button
+                    key={image}
+                    type="button"
+                    onClick={() => setActiveHeroIndex(index)}
+                    className={`h-1.5 rounded-full transition-all ${
+                      index === activeHeroIndex
+                        ? 'w-7 bg-orange-400'
+                        : 'w-2.5 bg-white/45'
+                    }`}
+                    aria-label={`Abrir destaque ${index + 1}`}
+                    aria-current={index === activeHeroIndex ? 'true' : undefined}
+                  />
+                ))}
+              </div>
+            )}
           </div>
         </div>
       </section>
@@ -356,7 +463,7 @@ export const StorefrontPanel: React.FC<StorefrontPanelProps> = ({
 
               <div className="rounded-2xl border border-slate-800 bg-slate-950 p-4">
                 <span className="flex items-center gap-2 text-[10px] font-black uppercase text-slate-300">
-                  <Zap
+                  <Flame
                     className={`h-4 w-4 fill-current ${movementMetadata.colorClassName}`}
                   />
                   Movimento atual

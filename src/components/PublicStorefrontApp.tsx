@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
 import {
   ArrowLeft,
-  ExternalLink,
+  Flame,
   LoaderCircle,
   LockKeyhole,
   LogIn,
   Store as StoreIcon,
+  X,
 } from 'lucide-react';
 import {
   GoogleAuthProvider,
@@ -14,8 +15,13 @@ import {
   type User,
 } from 'firebase/auth';
 import type { CartItem, Product, Store } from '../types';
+import {
+  subscribeToStoreCustomerOrders,
+  type CustomerOrderStatus,
+} from '../utils/customerOrders';
 import { auth } from '../utils/firebase';
 import { subscribeToPublishedStorefrontBySlug } from '../utils/publicStorefront';
+import { OPEN_PUBLIC_STOREFRONT_INFO_EVENT } from '../utils/storefrontEvents';
 import { StorefrontPanel } from './StorefrontPanel';
 import { B2CCartDrawer } from './modals/B2CCartDrawer';
 
@@ -25,6 +31,44 @@ interface PublicStorefrontAppProps {
 
 const googleProvider = new GoogleAuthProvider();
 googleProvider.setCustomParameters({ prompt: 'select_account' });
+
+const KDS_ACTIVE_STATUSES = new Set<CustomerOrderStatus>([
+  'pending',
+  'accepted',
+  'preparing',
+  'ready',
+]);
+
+const resolveMovementMetadata = (
+  store: Store,
+  activeKdsOrderCount: number
+): { label: string; colorClassName: string } => {
+  if (store.status === 'closed') {
+    return {
+      label: 'Loja fechada',
+      colorClassName: 'text-slate-400',
+    };
+  }
+
+  if (activeKdsOrderCount > 20) {
+    return {
+      label: `Movimento muito alto: ${activeKdsOrderCount} pedidos ativos`,
+      colorClassName: 'text-orange-500',
+    };
+  }
+
+  if (activeKdsOrderCount > 10) {
+    return {
+      label: `Movimento alto: ${activeKdsOrderCount} pedidos ativos`,
+      colorClassName: 'text-amber-400',
+    };
+  }
+
+  return {
+    label: `Loja aberta: ${activeKdsOrderCount} pedidos ativos`,
+    colorClassName: 'text-emerald-400',
+  };
+};
 
 export function PublicStorefrontApp({ slug }: PublicStorefrontAppProps) {
   const [user, setUser] = useState<User | null>(auth.currentUser);
@@ -38,16 +82,20 @@ export function PublicStorefrontApp({ slug }: PublicStorefrontAppProps) {
   const [buyerName, setBuyerName] = useState('');
   const [buyerEmail, setBuyerEmail] = useState('');
   const [buyerAddress, setBuyerAddress] = useState('');
+  const [activeKdsOrderCount, setActiveKdsOrderCount] = useState(0);
 
-  useEffect(() =>
-    onAuthStateChanged(auth, currentUser => {
-      setUser(currentUser);
-      setAuthLoading(false);
-      if (currentUser) {
-        setBuyerName(currentUser.displayName ?? '');
-        setBuyerEmail(currentUser.email ?? '');
-      }
-    }), []);
+  useEffect(
+    () =>
+      onAuthStateChanged(auth, currentUser => {
+        setUser(currentUser);
+        setAuthLoading(false);
+        if (currentUser) {
+          setBuyerName(currentUser.displayName ?? '');
+          setBuyerEmail(currentUser.email ?? '');
+        }
+      }),
+    []
+  );
 
   useEffect(() => {
     setStore(null);
@@ -66,12 +114,34 @@ export function PublicStorefrontApp({ slug }: PublicStorefrontAppProps) {
       },
       error => {
         console.warn('Não foi possível localizar a vitrine pelo slug.', error);
-        setErrorMessage('A consulta da vitrine está temporariamente indisponível.');
+        setErrorMessage(
+          'A consulta da vitrine está temporariamente indisponível.'
+        );
         setLoadCompleted(true);
         setStoreLoading(false);
       }
     );
   }, [slug, user?.uid]);
+
+  useEffect(() => {
+    setActiveKdsOrderCount(0);
+    if (!store?.id) return;
+
+    return subscribeToStoreCustomerOrders(
+      store.id,
+      orders =>
+        setActiveKdsOrderCount(
+          orders.filter(order => KDS_ACTIVE_STATUSES.has(order.status)).length
+        ),
+      error => {
+        console.warn(
+          'Não foi possível carregar o movimento atual da vitrine.',
+          error
+        );
+        setActiveKdsOrderCount(0);
+      }
+    );
+  }, [store?.id]);
 
   const handleGoogleLogin = async (): Promise<void> => {
     setErrorMessage('');
@@ -107,6 +177,19 @@ export function PublicStorefrontApp({ slug }: PublicStorefrontAppProps) {
     );
   };
 
+  const openStoreInfo = (): void => {
+    window.dispatchEvent(new Event(OPEN_PUBLIC_STOREFRONT_INFO_EVENT));
+  };
+
+  const closeStorefront = (): void => {
+    if (window.history.length > 1) {
+      window.history.back();
+      return;
+    }
+
+    window.location.assign('/');
+  };
+
   if (authLoading) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-slate-950 text-slate-300">
@@ -127,7 +210,8 @@ export function PublicStorefrontApp({ slug }: PublicStorefrontAppProps) {
           </span>
           <h1 className="mt-2 text-3xl font-black tracking-tight">@{slug}</h1>
           <p className="mt-3 text-sm leading-6 text-slate-400">
-            Entre com sua conta Google para consultar esta vitrine, montar o pedido e acompanhar a conta com segurança.
+            Entre com sua conta Google para consultar esta vitrine, montar o
+            pedido e acompanhar a conta com segurança.
           </p>
 
           <button
@@ -148,7 +232,10 @@ export function PublicStorefrontApp({ slug }: PublicStorefrontAppProps) {
 
           <div className="mt-5 flex items-start gap-2 text-[10px] leading-5 text-slate-500">
             <LockKeyhole className="mt-0.5 h-4 w-4 shrink-0 text-orange-400" />
-            <span>O endereço é público; pedidos, histórico e conta permanecem vinculados ao usuário autenticado.</span>
+            <span>
+              O endereço é público; pedidos, histórico e conta permanecem
+              vinculados ao usuário autenticado.
+            </span>
           </div>
 
           <a
@@ -181,7 +268,8 @@ export function PublicStorefrontApp({ slug }: PublicStorefrontAppProps) {
           <StoreIcon className="mx-auto h-10 w-10 text-slate-600" />
           <h1 className="mt-4 text-xl font-black">Vitrine indisponível</h1>
           <p className="mt-2 text-sm leading-6 text-slate-500">
-            {errorMessage || `A vitrine @${slug} não existe ou ainda não está publicada.`}
+            {errorMessage ||
+              `A vitrine @${slug} não existe ou ainda não está publicada.`}
           </p>
           <a
             href="/"
@@ -195,38 +283,97 @@ export function PublicStorefrontApp({ slug }: PublicStorefrontAppProps) {
     );
   }
 
+  const movementMetadata = resolveMovementMetadata(
+    store,
+    activeKdsOrderCount
+  );
+
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100">
-      <header className="sticky top-0 z-40 border-b border-slate-800 bg-slate-950/95 px-4 py-3 backdrop-blur-md">
-        <div className="mx-auto flex w-full max-w-5xl items-center justify-between gap-3">
-          <div className="flex min-w-0 items-center gap-3">
-            {store.logo ? (
-              <img
-                src={store.logo}
-                alt=""
-                className="h-9 w-9 shrink-0 rounded-xl object-cover"
-                referrerPolicy="no-referrer"
-              />
-            ) : (
-              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-orange-500 text-slate-950">
-                <StoreIcon className="h-4 w-4" />
+    <div
+      className="min-h-screen bg-slate-950 text-slate-100"
+      id="public-storefront-shell"
+    >
+      <style>{`
+        #public-storefront-shell #storefront-banner > div > div:last-child > div:first-child {
+          display: none;
+        }
+        #public-storefront-shell #storefront-banner > div > div:last-child {
+          padding: 1rem;
+        }
+        #public-storefront-shell #storefront-banner > div > div:last-child > div[aria-label] {
+          margin-top: 0;
+          justify-content: center;
+        }
+      `}</style>
+
+      <header className="sticky top-0 z-40 border-b border-slate-800 bg-slate-950/95 px-4 py-4 backdrop-blur-md">
+        <div className="mx-auto flex w-full max-w-5xl items-start justify-between gap-3">
+          <div className="flex min-w-0 flex-1 items-stretch gap-3">
+            <button
+              type="button"
+              onClick={openStoreInfo}
+              className="relative shrink-0 self-start rounded-2xl outline-none transition-transform hover:scale-[1.03] focus-visible:ring-2 focus-visible:ring-orange-400"
+              aria-label={`Abrir informações públicas de ${store.name}`}
+              id="public-storefront-header-info-trigger"
+            >
+              {store.logo ? (
+                <img
+                  src={store.logo}
+                  alt={`Logo de ${store.name}`}
+                  className="h-20 w-20 rounded-2xl border border-white/10 bg-slate-900 object-cover sm:h-24 sm:w-24"
+                  referrerPolicy="no-referrer"
+                />
+              ) : (
+                <span className="flex h-20 w-20 items-center justify-center rounded-2xl bg-orange-500 text-slate-950 sm:h-24 sm:w-24">
+                  <StoreIcon className="h-7 w-7" />
+                </span>
+              )}
+              <span
+                id="public-storefront-header-info-badge"
+                className="pointer-events-none absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full border-2 border-slate-950 bg-white text-[11px] font-black leading-none text-slate-950 shadow-lg"
+                aria-hidden="true"
+              >
+                i
               </span>
-            )}
-            <div className="min-w-0">
-              <span className="block font-mono text-[8px] font-black uppercase tracking-widest text-orange-400">
-                kyrub.com/@{store.slug}
-              </span>
-              <strong className="block truncate text-sm text-white">{store.name}</strong>
+            </button>
+
+            <div className="flex min-h-20 min-w-0 flex-1 flex-col sm:min-h-24">
+              <div className="flex min-w-0 items-center justify-between gap-2 pr-1">
+                <span className="block truncate font-mono text-[8px] font-black uppercase tracking-widest text-orange-400 sm:text-[9px]">
+                  kyrub.com/@{store.slug}
+                </span>
+                <span
+                  className={`flex shrink-0 items-center ${movementMetadata.colorClassName}`}
+                  title={movementMetadata.label}
+                >
+                  <Flame
+                    className="h-5 w-5 fill-current"
+                    aria-hidden="true"
+                  />
+                  <span className="sr-only">{movementMetadata.label}</span>
+                </span>
+              </div>
+
+              <strong className="mt-1 line-clamp-1 text-lg font-black leading-tight text-white sm:text-xl">
+                {store.name || 'Loja sem nome'}
+              </strong>
+
+              <p className="mt-auto line-clamp-3 pt-1 text-[10px] leading-4 text-slate-400 sm:text-xs sm:leading-5">
+                {store.description ||
+                  'Esta loja ainda não adicionou uma descrição pública.'}
+              </p>
             </div>
           </div>
-          <a
-            href="/app"
-            className="flex min-h-10 shrink-0 items-center gap-1.5 rounded-xl border border-slate-800 bg-slate-900 px-3 text-[9px] font-black uppercase text-slate-400 hover:text-white"
-            title="Acesso operacional para equipe autorizada"
+
+          <button
+            type="button"
+            onClick={closeStorefront}
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-slate-800 bg-slate-900 text-slate-400 transition-colors hover:border-orange-500/40 hover:text-white"
+            aria-label="Fechar vitrine"
+            id="public-storefront-close"
           >
-            <ExternalLink className="h-3.5 w-3.5" />
-            Área da equipe
-          </a>
+            <X className="h-5 w-5" />
+          </button>
         </div>
       </header>
 

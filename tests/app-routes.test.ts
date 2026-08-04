@@ -10,7 +10,10 @@ import {
 describe('Kyrub public and operational routes', () => {
   test('normalizes public store slugs for stable sharing', () => {
     assert.equal(normalizeStorefrontSlug('  Do Máu  '), 'do-mau');
-    assert.equal(normalizeStorefrontSlug('Pizzaria---Central'), 'pizzaria-central');
+    assert.equal(
+      normalizeStorefrontSlug('Pizzaria---Central'),
+      'pizzaria-central'
+    );
     assert.equal(buildPublicStorefrontPath('Do Máu'), '/@do-mau');
   });
 
@@ -30,24 +33,32 @@ describe('Kyrub public and operational routes', () => {
     assert.equal(resolveKyrubAppRoute('/@do-mau/').kind, 'public-storefront');
   });
 
-  test('resolves the operational app and nested future routes', () => {
-    assert.deepEqual(resolveKyrubAppRoute('/app'), {
-      kind: 'staff-app',
-      canonicalPath: '/app',
-      legacyRedirect: false,
-    });
-    assert.equal(resolveKyrubAppRoute('/app/lojas/store-a/pdv').kind, 'staff-app');
-  });
-
-  test('redirects every legacy staff alias to the authenticated operational app', () => {
+  test('resolves the canonical staff app and nested future routes', () => {
     assert.deepEqual(resolveKyrubAppRoute('/staff'), {
       kind: 'staff-app',
-      canonicalPath: '/app',
+      canonicalPath: '/staff',
+      legacyRedirect: false,
+    });
+    assert.equal(
+      resolveKyrubAppRoute('/staff/lojas/store-a/pdv').kind,
+      'staff-app'
+    );
+  });
+
+  test('redirects old operational aliases to the staff route', () => {
+    assert.deepEqual(resolveKyrubAppRoute('/app'), {
+      kind: 'staff-app',
+      canonicalPath: '/staff',
+      legacyRedirect: true,
+    });
+    assert.deepEqual(resolveKyrubAppRoute('/app/lojas/store-a/pdv'), {
+      kind: 'staff-app',
+      canonicalPath: '/staff',
       legacyRedirect: true,
     });
     assert.deepEqual(resolveKyrubAppRoute('/do-mau/staff'), {
       kind: 'staff-app',
-      canonicalPath: '/app',
+      canonicalPath: '/staff',
       legacyRedirect: true,
     });
   });
