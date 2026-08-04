@@ -1,6 +1,14 @@
 {
   "rewrites": [
     {
+      "source": "/staff",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/staff/:path*",
+      "destination": "/index.html"
+    },
+    {
       "source": "/app",
       "destination": "/index.html"
     },
@@ -14,10 +22,6 @@
     },
     {
       "source": "/@:slug/:path*",
-      "destination": "/index.html"
-    },
-    {
-      "source": "/staff",
       "destination": "/index.html"
     },
     {
