@@ -2,13 +2,14 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   ChevronLeft,
   ChevronRight,
+  Flame,
   Info,
   MapPin,
   Store as StoreIcon,
   X,
-  Zap,
 } from 'lucide-react';
 import type { CartItem, Product, Store } from '../types';
+import { OPEN_PUBLIC_STOREFRONT_INFO_EVENT } from '../utils/storefrontEvents';
 import { SharedPdvCatalog } from './pdv/SharedPdvCatalog';
 
 interface StorefrontPanelProps {
@@ -77,6 +78,20 @@ export const StorefrontPanel: React.FC<StorefrontPanelProps> = ({
     setActiveHeroIndex(0);
     setTouchStartX(null);
   }, [activeConsumerStore?.id]);
+
+  useEffect(() => {
+    const openStoreInfo = (): void => setIsStoreInfoOpen(true);
+    window.addEventListener(
+      OPEN_PUBLIC_STOREFRONT_INFO_EVENT,
+      openStoreInfo
+    );
+
+    return () =>
+      window.removeEventListener(
+        OPEN_PUBLIC_STOREFRONT_INFO_EVENT,
+        openStoreInfo
+      );
+  }, []);
 
   useEffect(() => {
     if (heroImages.length <= 1) return;
@@ -246,16 +261,6 @@ export const StorefrontPanel: React.FC<StorefrontPanelProps> = ({
 
           <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/55 to-slate-950/10" />
 
-          <button
-            type="button"
-            onClick={() => setIsStoreInfoOpen(true)}
-            className="absolute right-3 top-3 z-20 flex h-10 w-10 items-center justify-center rounded-full border border-white/15 bg-slate-950/70 text-white backdrop-blur-md transition-colors hover:bg-slate-950"
-            aria-label={`Abrir informações públicas de ${activeConsumerStore.name}`}
-            id="storefront-store-info-trigger"
-          >
-            <Info className="h-4 w-4" />
-          </button>
-
           {heroImages.length > 1 && (
             <>
               <button
@@ -279,19 +284,16 @@ export const StorefrontPanel: React.FC<StorefrontPanelProps> = ({
 
           <div className="absolute inset-x-0 bottom-0 z-10 p-5 sm:p-7">
             <div className="max-w-2xl">
-              <div className="flex items-center gap-2">
-                <span className="font-mono text-[9px] font-black uppercase tracking-[0.2em] text-orange-300">
-                  Vitrine pública
-                </span>
-                <Zap
-                  className={`h-4 w-4 fill-current ${movementMetadata.colorClassName}`}
+              <div className="flex items-start gap-2.5">
+                <Flame
+                  className={`mt-1 h-6 w-6 shrink-0 fill-current drop-shadow-lg ${movementMetadata.colorClassName}`}
                   aria-hidden="true"
                 />
+                <h2 className="line-clamp-2 text-2xl font-black tracking-tight text-white drop-shadow-lg sm:text-4xl">
+                  {activeConsumerStore.name || 'Loja sem nome'}
+                </h2>
                 <span className="sr-only">{movementMetadata.label}</span>
               </div>
-              <h2 className="mt-1 line-clamp-2 text-2xl font-black tracking-tight text-white drop-shadow-lg sm:text-4xl">
-                {activeConsumerStore.name || 'Loja sem nome'}
-              </h2>
               <p className="mt-2 line-clamp-3 text-xs leading-relaxed text-slate-200 drop-shadow-md sm:text-sm">
                 {activeConsumerStore.description ||
                   'Esta loja ainda não adicionou uma descrição pública.'}
@@ -461,7 +463,7 @@ export const StorefrontPanel: React.FC<StorefrontPanelProps> = ({
 
               <div className="rounded-2xl border border-slate-800 bg-slate-950 p-4">
                 <span className="flex items-center gap-2 text-[10px] font-black uppercase text-slate-300">
-                  <Zap
+                  <Flame
                     className={`h-4 w-4 fill-current ${movementMetadata.colorClassName}`}
                   />
                   Movimento atual
