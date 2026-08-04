@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Heart, LocateFixed, MapPin } from 'lucide-react';
+import { LocateFixed, Search } from 'lucide-react';
 import { collection, onSnapshot, query, where } from 'firebase/firestore';
 import { db } from '../utils/firebase';
 
@@ -15,8 +15,14 @@ type StoreMeta = {
 
 type OrderLike = { storeId?: string };
 
+type HiddenSearchState = {
+  element: HTMLElement;
+  display: string;
+};
+
 const FAVORITES_KEY = 'kyrub_favorite_stores';
 const ORDERS_KEY = 'kyrub_orders';
+const MAX_ORGANIC_RADIUS_KM = 30;
 
 const normalize = (value: string | null | undefined): string =>
   (value ?? '').replace(/\s+/g, ' ').trim().toLocaleLowerCase('pt-BR');
@@ -34,9 +40,17 @@ const readList = (key: string): string[] => {
 
 const readCustomerStoreIds = (): string[] => {
   try {
-    const parsed = JSON.parse(localStorage.getItem(ORDERS_KEY) ?? '[]') as OrderLike[];
+    const parsed = JSON.parse(
+      localStorage.getItem(ORDERS_KEY) ?? '[]'
+    ) as OrderLike[];
     return Array.isArray(parsed)
-      ? Array.from(new Set(parsed.map(order => order.storeId).filter((id): id is string => Boolean(id))))
+      ? Array.from(
+          new Set(
+            parsed
+              .map(order => order.storeId)
+              .filter((id): id is string => Boolean(id))
+          )
+        )
       : [];
   } catch {
     return [];
@@ -59,16 +73,41 @@ const distanceKm = (
   return earthRadius * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 };
 
+const writeNativeInputValue = (
+  input: HTMLInputElement,
+  value: string
+): void => {
+  const setter = Object.getOwnPropertyDescriptor(
+    HTMLInputElement.prototype,
+    'value'
+  )?.set;
+
+  if (setter) setter.call(input, value);
+  else input.value = value;
+
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+  input.dispatchEvent(new Event('change', { bubbles: true }));
+};
+
 export function ProfileOffersFiltersBridge() {
   const [host, setHost] = useState<HTMLElement | null>(null);
   const [stores, setStores] = useState<StoreMeta[]>([]);
   const [filter, setFilter] = useState<Filter>('todas');
-  const [favorites, setFavorites] = useState<string[]>(() => readList(FAVORITES_KEY));
-  const [customerStoreIds, setCustomerStoreIds] = useState<string[]>(() => readCustomerStoreIds());
+  const [favorites, setFavorites] = useState<string[]>(() =>
+    readList(FAVORITES_KEY)
+  );
+  const [customerStoreIds, setCustomerStoreIds] = useState<string[]>(() =>
+    readCustomerStoreIds()
+  );
   const [distanceOpen, setDistanceOpen] = useState(false);
   const [radiusKm, setRadiusKm] = useState(10);
-  const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(
+    null
+  );
   const [locationBusy, setLocationBusy] = useState(false);
+  const [searchValue, setSearchValue] = useState('');
+  const originalSearchInputRef = useRef<HTMLInputElement | null>(null);
+  const hiddenSearchRef = useRef<HiddenSearchState | null>(null);
 
   useEffect(() => {
     const storesQuery = query(
@@ -90,6 +129,16 @@ export function ProfileOffersFiltersBridge() {
     });
   }, []);
 
+  useEffect(
+    () => () => {
+      const hiddenSearch = hiddenSearchRef.current;
+      if (hiddenSearch?.element.isConnected) {
+        hiddenSearch.element.style.display = hiddenSearch.display;
+      }
+    },
+    []
+  );
+
   const storesByName = useMemo(() => {
     const map = new Map<string, StoreMeta>();
     stores.forEach(store => map.set(normalize(store.name), store));
@@ -109,10 +158,33 @@ export function ProfileOffersFiltersBridge() {
       }
 
       const body = panel.querySelector<HTMLElement>(':scope > div.flex-1');
-      const searchWrapper = body?.querySelector<HTMLElement>(':scope > div.relative');
+      const searchWrapper = body?.querySelector<HTMLElement>(
+        ':scope > div.relative'
+      );
       if (!body || !searchWrapper) return;
 
-      let bridgeHost = body.querySelector<HTMLElement>('#profile-offers-filters-host');
+      const originalSearchInput = searchWrapper.querySelector<HTMLInputElement>(
+        'input[type="search"], input'
+      );
+      if (
+        originalSearchInput &&
+        originalSearchInputRef.current !== originalSearchInput
+      ) {
+        originalSearchInputRef.current = originalSearchInput;
+        setSearchValue(originalSearchInput.value);
+      }
+
+      if (hiddenSearchRef.current?.element !== searchWrapper) {
+        hiddenSearchRef.current = {
+          element: searchWrapper,
+          display: searchWrapper.style.display,
+        };
+      }
+      searchWrapper.style.display = 'none';
+
+      let bridgeHost = body.querySelector<HTMLElement>(
+        '#profile-offers-filters-host'
+      );
       if (!bridgeHost) {
         bridgeHost = document.createElement('div');
         bridgeHost.id = 'profile-offers-filters-host';
@@ -128,24 +200,35 @@ export function ProfileOffersFiltersBridge() {
         card.dataset.profileOfferStoreId = store.id;
         card.style.position = 'relative';
 
-        let favoriteButton = card.querySelector<HTMLButtonElement>('[data-profile-offer-favorite="true"]');
+        let favoriteButton = card.querySelector<HTMLButtonElement>(
+          '[data-profile-offer-favorite="true"]'
+        );
         if (!favoriteButton) {
           favoriteButton = document.createElement('button');
           favoriteButton.type = 'button';
           favoriteButton.dataset.profileOfferFavorite = 'true';
-          favoriteButton.className = 'absolute right-2 top-2 z-20 flex h-9 w-9 items-center justify-center rounded-full border border-white/15 bg-slate-950/85 text-slate-300 backdrop-blur';
+          favoriteButton.className =
+            'absolute right-2 top-2 z-20 flex h-9 w-9 items-center justify-center rounded-full border border-white/15 bg-slate-950/85 text-slate-300 backdrop-blur';
           favoriteButton.setAttribute('aria-label', `Favoritar ${name}`);
           favoriteButton.innerHTML = '<span aria-hidden="true">♡</span>';
           card.appendChild(favoriteButton);
         }
 
         const favorite = favorites.includes(store.id);
-        favoriteButton.innerHTML = `<span aria-hidden="true" style="font-size:1.25rem;line-height:1;color:${favorite ? '#f59e0b' : '#cbd5e1'}">${favorite ? '♥' : '♡'}</span>`;
+        favoriteButton.innerHTML = `<span aria-hidden="true" style="font-size:1.25rem;line-height:1;color:${
+          favorite ? '#f59e0b' : '#cbd5e1'
+        }">${favorite ? '♥' : '♡'}</span>`;
 
         const byFavorite = filter !== 'favoritas' || favorite;
-        const byCustomer = filter !== 'cliente' || customerStoreIds.includes(store.id);
-        const hasCoords = typeof store.lat === 'number' && typeof store.lng === 'number';
-        const byDistance = !coords || !hasCoords || distanceKm(coords, { lat: store.lat!, lng: store.lng! }) <= radiusKm;
+        const byCustomer =
+          filter !== 'cliente' || customerStoreIds.includes(store.id);
+        const hasCoords =
+          typeof store.lat === 'number' && typeof store.lng === 'number';
+        const byDistance =
+          !coords ||
+          !hasCoords ||
+          distanceKm(coords, { lat: store.lat!, lng: store.lng! }) <=
+            radiusKm;
         card.style.display = byFavorite && byCustomer && byDistance ? '' : 'none';
       });
     };
@@ -161,7 +244,9 @@ export function ProfileOffersFiltersBridge() {
         '[data-profile-offer-favorite="true"]'
       );
       if (!button) return;
-      const card = button.closest<HTMLElement>('[data-profile-offer-store-id]');
+      const card = button.closest<HTMLElement>(
+        '[data-profile-offer-store-id]'
+      );
       const id = card?.dataset.profileOfferStoreId;
       if (!id) return;
       event.preventDefault();
@@ -184,12 +269,23 @@ export function ProfileOffersFiltersBridge() {
     setLocationBusy(true);
     navigator.geolocation.getCurrentPosition(
       position => {
-        setCoords({ lat: position.coords.latitude, lng: position.coords.longitude });
+        setCoords({
+          lat: position.coords.latitude,
+          lng: position.coords.longitude,
+        });
         setLocationBusy(false);
       },
       () => setLocationBusy(false),
       { enableHighAccuracy: true, timeout: 12000, maximumAge: 60000 }
     );
+  };
+
+  const updateSearch = (value: string) => {
+    setSearchValue(value);
+    const originalSearchInput = originalSearchInputRef.current;
+    if (originalSearchInput) {
+      writeNativeInputValue(originalSearchInput, value);
+    }
   };
 
   if (!host) return null;
@@ -200,21 +296,28 @@ export function ProfileOffersFiltersBridge() {
         <button
           type="button"
           onClick={requestLocation}
-          className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border ${
+          className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border ${
             coords
               ? 'border-orange-500/40 bg-orange-500/10 text-orange-300'
               : 'border-slate-800 bg-slate-900 text-slate-400'
           }`}
           aria-label="Definir distância das lojas"
         >
-          <LocateFixed className={`h-5 w-5 ${locationBusy ? 'animate-pulse' : ''}`} />
+          <LocateFixed
+            className={`h-5 w-5 ${locationBusy ? 'animate-pulse' : ''}`}
+          />
         </button>
-        <div className="min-w-0 flex-1 rounded-2xl border border-slate-800 bg-slate-900 px-3 py-2 text-[9px] text-slate-500">
-          <span className="flex items-center gap-2 font-black uppercase text-slate-300">
-            <MapPin className="h-4 w-4 text-orange-400" />
-            Proximidade
-          </span>
-          <span>{coords ? `Lojas em até ${radiusKm} km` : 'Toque na mira para usar sua localização'}</span>
+
+        <div className="relative min-w-0 flex-1">
+          <Search className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-500" />
+          <input
+            type="search"
+            value={searchValue}
+            onChange={event => updateSearch(event.target.value)}
+            placeholder="Buscar lojas..."
+            className="h-12 w-full rounded-2xl border border-slate-800 bg-slate-900 pl-12 pr-4 text-base text-white outline-none transition-colors placeholder:text-slate-500 focus:border-orange-500/60"
+            aria-label="Buscar lojas"
+          />
         </div>
       </div>
 
@@ -224,14 +327,27 @@ export function ProfileOffersFiltersBridge() {
             <input
               type="range"
               min="1"
-              max="100"
+              max={MAX_ORGANIC_RADIUS_KM}
               value={radiusKm}
-              onChange={event => setRadiusKm(Number(event.target.value))}
+              onChange={event =>
+                setRadiusKm(
+                  Math.min(
+                    MAX_ORGANIC_RADIUS_KM,
+                    Number(event.target.value)
+                  )
+                )
+              }
               className="h-1 flex-1 accent-orange-500"
               aria-label="Distância máxima em quilômetros"
             />
-            <strong className="w-14 text-right text-[10px] text-orange-300">{radiusKm} KM</strong>
+            <strong className="w-14 text-right text-[10px] text-orange-300">
+              {radiusKm} KM
+            </strong>
           </div>
+          <p className="mt-2 text-[9px] leading-relaxed text-slate-500">
+            Alcance orgânico limitado a 30 km. Distâncias maiores ficam
+            disponíveis por campanhas de marketing.
+          </p>
         </div>
       )}
 
@@ -250,7 +366,11 @@ export function ProfileOffersFiltersBridge() {
                 : 'border-slate-800 bg-slate-900 text-slate-400'
             }`}
           >
-            {item === 'todas' ? 'Todas' : item === 'favoritas' ? 'Favoritas' : 'Cliente'}
+            {item === 'todas'
+              ? 'Todas'
+              : item === 'favoritas'
+                ? 'Favoritas'
+                : 'Cliente'}
           </button>
         ))}
       </div>
