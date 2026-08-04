@@ -10,6 +10,14 @@ const storefrontSource = readFileSync(
   'src/components/LegacyStorefrontPanel.tsx',
   'utf8'
 );
+const publicStorefrontSource = readFileSync(
+  'src/components/PublicStorefrontApp.tsx',
+  'utf8'
+);
+const storefrontEventsSource = readFileSync(
+  'src/utils/storefrontEvents.ts',
+  'utf8'
+);
 const sharedPdvSource = readFileSync(
   'src/components/pdv/SharedPdvCatalog.tsx',
   'utf8'
@@ -51,16 +59,30 @@ test('storefront movement indicator uses live KDS order load', () => {
   assert.match(storefrontSource, /text-amber-400/);
   assert.match(storefrontSource, /text-emerald-400/);
   assert.match(storefrontSource, /text-slate-400/);
-  assert.match(storefrontSource, /<Zap/);
+  assert.match(storefrontSource, /<Flame/);
+  assert.doesNotMatch(storefrontSource, /<Zap/);
 });
 
-test('store logo opens public store information without private contact data', () => {
-  assert.match(storefrontSource, /id="storefront-store-info-trigger"/);
+test('header store logo opens public store information without private contact data', () => {
+  assert.match(
+    publicStorefrontSource,
+    /id="public-storefront-header-info-trigger"/
+  );
+  assert.match(publicStorefrontSource, /OPEN_PUBLIC_STOREFRONT_INFO_EVENT/);
+  assert.match(
+    storefrontEventsSource,
+    /kyrub:open-public-storefront-info/
+  );
+  assert.match(
+    storefrontSource,
+    /window\.addEventListener\(\s*OPEN_PUBLIC_STOREFRONT_INFO_EVENT/
+  );
   assert.match(storefrontSource, /id="storefront-store-info-modal"/);
   assert.match(storefrontSource, /activeConsumerStore\.description/);
   assert.match(storefrontSource, /activeConsumerStore\.address/);
   assert.doesNotMatch(storefrontSource, /activeConsumerStore\.contact/);
   assert.doesNotMatch(storefrontSource, /activeConsumerStore\.ownerEmail/);
+  assert.doesNotMatch(storefrontSource, /id="storefront-store-info-trigger"/);
 });
 
 test('customer and staff render the same shared PDV catalog', () => {
