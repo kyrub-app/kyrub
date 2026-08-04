@@ -54,7 +54,7 @@ export const StoreSharingPanel: React.FC<StoreSharingPanelProps> = ({
         : '',
     [store?.slug]
   );
-  const operationalUrl = `${window.location.origin.replace(/\/$/, '')}/app`;
+  const operationalUrl = `${window.location.origin.replace(/\/$/, '')}/staff`;
 
   const notify = (message: string, type: 'success' | 'warning'): void => {
     setFeedback({ message, type });
@@ -113,7 +113,8 @@ export const StoreSharingPanel: React.FC<StoreSharingPanelProps> = ({
             Divulgação e acessos
           </span>
           <p className="mt-1 text-[10px] leading-relaxed text-slate-500">
-            Compartilhe a vitrine com clientes. O endereço operacional é reservado à equipe autenticada.
+            Compartilhe a vitrine com clientes. O endereço operacional é
+            reservado à equipe autenticada.
           </p>
         </div>
 
@@ -125,7 +126,8 @@ export const StoreSharingPanel: React.FC<StoreSharingPanelProps> = ({
                 Link público da vitrine
               </span>
               <p className="mt-1 text-[9px] leading-relaxed text-slate-500">
-                Clientes usam este endereço para abrir o PDV, montar pedidos e acompanhar a conta.
+                Clientes usam este endereço para abrir o PDV, montar pedidos e
+                acompanhar a conta.
               </p>
             </div>
             <span
@@ -145,7 +147,8 @@ export const StoreSharingPanel: React.FC<StoreSharingPanelProps> = ({
 
           {!isPublished && storefrontUrl && (
             <p className="rounded-xl border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-[9px] leading-relaxed text-amber-200">
-              O link já está reservado, mas a loja precisa ser publicada para aparecer aos clientes.
+              O link já está reservado, mas a loja precisa ser publicada para
+              aparecer aos clientes.
             </p>
           )}
 
@@ -182,7 +185,9 @@ export const StoreSharingPanel: React.FC<StoreSharingPanelProps> = ({
             </button>
             <button
               type="button"
-              onClick={() => window.open(storefrontUrl, '_blank', 'noopener,noreferrer')}
+              onClick={() =>
+                window.open(storefrontUrl, '_blank', 'noopener,noreferrer')
+              }
               disabled={!storefrontUrl}
               className="flex min-h-10 items-center justify-center gap-1.5 rounded-xl bg-orange-500 px-2 text-[8px] font-black uppercase text-slate-950 disabled:opacity-35"
               id="open-public-storefront-link"
@@ -200,7 +205,8 @@ export const StoreSharingPanel: React.FC<StoreSharingPanelProps> = ({
               Acesso operacional
             </span>
             <p className="mt-1 text-[9px] leading-relaxed text-slate-500">
-              Proprietário e colaboradores autorizados entram com a própria conta Google. Este não é o link de divulgação para clientes.
+              Proprietário e colaboradores autorizados entram com a própria
+              conta Google. Este não é o link de divulgação para clientes.
             </p>
           </div>
           <div className="break-all rounded-xl border border-slate-800 bg-slate-950 px-3 py-2.5 font-mono text-[10px] text-slate-300">
@@ -209,7 +215,9 @@ export const StoreSharingPanel: React.FC<StoreSharingPanelProps> = ({
           <div className="grid grid-cols-2 gap-2">
             <button
               type="button"
-              onClick={() => void handleCopy(operationalUrl, 'Link operacional')}
+              onClick={() =>
+                void handleCopy(operationalUrl, 'Link operacional')
+              }
               className="flex min-h-10 items-center justify-center gap-1.5 rounded-xl border border-slate-700 bg-slate-950 px-3 text-[8px] font-black uppercase text-slate-300"
               id="copy-operational-app-link"
             >
@@ -218,12 +226,14 @@ export const StoreSharingPanel: React.FC<StoreSharingPanelProps> = ({
             </button>
             <button
               type="button"
-              onClick={() => window.open(operationalUrl, '_blank', 'noopener,noreferrer')}
+              onClick={() =>
+                window.open(operationalUrl, '_blank', 'noopener,noreferrer')
+              }
               className="flex min-h-10 items-center justify-center gap-1.5 rounded-xl border border-teal-500/25 bg-teal-500/10 px-3 text-[8px] font-black uppercase text-teal-300"
               id="open-operational-app-link"
             >
               <ExternalLink className="h-3.5 w-3.5" />
-              Abrir /app
+              Abrir /staff
             </button>
           </div>
         </article>
