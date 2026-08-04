@@ -5,6 +5,7 @@ import {
   ChevronRight,
   FolderOpen,
   ListChecks,
+  MessageSquareText,
   PackageSearch,
   Plus,
   ReceiptText,
@@ -16,6 +17,7 @@ import type { CartItem, Product } from '../../types';
 import {
   buildProductConfigurationSelection,
   parseProductOptionGroups,
+  parseProductQuickNotes,
   type ProductConfigurationSelection,
 } from '../../utils/productCustomization';
 
@@ -185,6 +187,8 @@ export const SharedPdvCatalog: React.FC<SharedPdvCatalogProps> = ({
   const [selectedChoiceIds, setSelectedChoiceIds] = useState<
     Record<string, string[]>
   >({});
+  const [selectedQuickNotes, setSelectedQuickNotes] = useState<string[]>([]);
+  const [customerNote, setCustomerNote] = useState('');
   const [customizationError, setCustomizationError] = useState('');
 
   useEffect(() => {
@@ -192,6 +196,8 @@ export const SharedPdvCatalog: React.FC<SharedPdvCatalogProps> = ({
     setCollectionPath([]);
     setCustomizingProduct(null);
     setSelectedChoiceIds({});
+    setSelectedQuickNotes([]);
+    setCustomerNote('');
     setCustomizationError('');
   }, [resetKey]);
 
@@ -262,17 +268,24 @@ export const SharedPdvCatalog: React.FC<SharedPdvCatalogProps> = ({
     [customizingProduct]
   );
 
+  const quickNotes = useMemo(
+    () => parseProductQuickNotes(customizingProduct?.quickNotes),
+    [customizingProduct]
+  );
+
   const customizationPreview = useMemo(() => {
     if (!customizingProduct) return null;
     try {
       return buildProductConfigurationSelection(
         customizingProduct,
-        selectedChoiceIds
+        selectedChoiceIds,
+        selectedQuickNotes,
+        customerNote
       );
     } catch {
       return null;
     }
-  }, [customizingProduct, selectedChoiceIds]);
+  }, [customizingProduct, customerNote, selectedChoiceIds, selectedQuickNotes]);
 
   const filterButtonClassName = (active: boolean): string =>
     `min-h-9 shrink-0 rounded-xl border px-3 text-[9px] font-black uppercase tracking-wide transition-colors ${
@@ -288,13 +301,16 @@ export const SharedPdvCatalog: React.FC<SharedPdvCatalogProps> = ({
   const collectionBrowserId = `${idPrefix}-collection-browser`;
   const productIdPrefix = `${idPrefix}-prod-`;
 
+  const closeProductModal = (): void => {
+    setCustomizingProduct(null);
+    setSelectedChoiceIds({});
+    setSelectedQuickNotes([]);
+    setCustomerNote('');
+    setCustomizationError('');
+  };
+
   const startProductSelection = (product: Product): void => {
     const groups = parseProductOptionGroups(product.optionGroups);
-    if (groups.length === 0) {
-      onAddProduct(buildProductConfigurationSelection(product, {}));
-      return;
-    }
-
     const defaults = Object.fromEntries(
       groups.map(group => [
         group.id,
@@ -303,7 +319,10 @@ export const SharedPdvCatalog: React.FC<SharedPdvCatalogProps> = ({
           : [],
       ])
     );
+
     setSelectedChoiceIds(defaults);
+    setSelectedQuickNotes([]);
+    setCustomerNote('');
     setCustomizationError('');
     setCustomizingProduct(product);
   };
@@ -330,17 +349,25 @@ export const SharedPdvCatalog: React.FC<SharedPdvCatalogProps> = ({
     });
   };
 
+  const toggleQuickNote = (note: string): void => {
+    setSelectedQuickNotes(previous =>
+      previous.includes(note)
+        ? previous.filter(current => current !== note)
+        : [...previous, note]
+    );
+  };
+
   const confirmCustomization = (): void => {
     if (!customizingProduct) return;
     try {
       const selection = buildProductConfigurationSelection(
         customizingProduct,
-        selectedChoiceIds
+        selectedChoiceIds,
+        selectedQuickNotes,
+        customerNote
       );
       onAddProduct(selection);
-      setCustomizingProduct(null);
-      setSelectedChoiceIds({});
-      setCustomizationError('');
+      closeProductModal();
     } catch (error) {
       setCustomizationError(
         error instanceof Error ? error.message : 'Revise as opções escolhidas.'
@@ -653,7 +680,7 @@ export const SharedPdvCatalog: React.FC<SharedPdvCatalogProps> = ({
                           ) : (
                             <Plus className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                           )}
-                          {hasOptions ? 'Montar' : 'Adicionar'}
+                          Adicionar
                         </button>
                       </div>
                     </div>
@@ -685,20 +712,20 @@ export const SharedPdvCatalog: React.FC<SharedPdvCatalogProps> = ({
         <div
           className="fixed inset-0 z-[140] flex items-end justify-center bg-slate-950/85 p-0 backdrop-blur-md sm:items-center sm:p-4"
           role="presentation"
-          onClick={() => setCustomizingProduct(null)}
+          onClick={closeProductModal}
         >
           <section
-            className="max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-t-3xl border border-slate-800 bg-slate-900 shadow-2xl sm:rounded-3xl"
+            className="max-h-[94vh] w-full max-w-lg overflow-y-auto rounded-t-3xl border border-slate-800 bg-slate-900 shadow-2xl sm:rounded-3xl"
             role="dialog"
             aria-modal="true"
             aria-labelledby={`${idPrefix}-customization-title`}
             onClick={event => event.stopPropagation()}
             id={`${idPrefix}-product-customization-modal`}
           >
-            <header className="sticky top-0 z-10 flex items-start justify-between gap-3 border-b border-slate-800 bg-slate-900/95 p-4 backdrop-blur-sm sm:p-5">
+            <header className="sticky top-0 z-20 flex items-start justify-between gap-3 border-b border-slate-800 bg-slate-900/95 p-4 backdrop-blur-sm sm:p-5">
               <div className="min-w-0">
                 <span className="font-mono text-[9px] font-black uppercase tracking-[0.18em] text-orange-400">
-                  Personalizar item
+                  Detalhes do item
                 </span>
                 <h3
                   id={`${idPrefix}-customization-title`}
@@ -707,20 +734,67 @@ export const SharedPdvCatalog: React.FC<SharedPdvCatalogProps> = ({
                   {customizingProduct.name}
                 </h3>
                 <p className="mt-1 text-[10px] text-slate-500">
-                  Escolha as etapas e opções antes de adicionar ao pedido.
+                  Confira os detalhes, personalize e adicione ao pedido.
                 </p>
               </div>
               <button
                 type="button"
-                onClick={() => setCustomizingProduct(null)}
+                onClick={closeProductModal}
                 className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-800 bg-slate-950 text-slate-500 hover:text-white"
-                aria-label="Fechar personalização"
+                aria-label="Fechar detalhes do item"
               >
                 <X className="h-4 w-4" />
               </button>
             </header>
 
             <div className="space-y-4 p-4 sm:p-5">
+              <section className="overflow-hidden rounded-3xl border border-slate-800 bg-slate-950/70">
+                <div className="relative aspect-[16/10] overflow-hidden bg-slate-950">
+                  {customizingProduct.image ? (
+                    <img
+                      src={customizingProduct.image}
+                      alt={customizingProduct.name}
+                      className="h-full w-full object-cover"
+                      referrerPolicy="no-referrer"
+                    />
+                  ) : (
+                    <div className="flex h-full w-full items-center justify-center text-slate-700">
+                      <PackageSearch className="h-12 w-12" />
+                    </div>
+                  )}
+                  {customizingProduct.isComplimentary && (
+                    <span className="absolute right-3 top-3 rounded-xl bg-emerald-500 px-3 py-1.5 text-[9px] font-black uppercase text-slate-950">
+                      Sem custo
+                    </span>
+                  )}
+                </div>
+
+                <div className="space-y-3 p-4">
+                  <p className="whitespace-pre-line text-xs leading-5 text-slate-300">
+                    {customizingProduct.description || 'Descrição não informada.'}
+                  </p>
+                  <div className="flex items-end justify-between gap-3 border-t border-slate-800 pt-3">
+                    <div>
+                      <span className="block font-mono text-[8px] uppercase tracking-wide text-slate-600">
+                        {customizationGroups.length > 0 ? 'A partir de' : 'Valor'}
+                      </span>
+                      <strong className="font-mono text-lg text-white">
+                        {currencyFormatter.format(
+                          customizingProduct.isComplimentary
+                            ? 0
+                            : customizingProduct.price
+                        )}
+                      </strong>
+                    </div>
+                    {!customizingProduct.isService && (
+                      <span className="text-[9px] text-slate-500">
+                        {customizingProduct.stock} em estoque
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </section>
+
               {customizationGroups.map(group => {
                 const selected = selectedChoiceIds[group.id] ?? [];
                 const selectionRule =
@@ -789,6 +863,61 @@ export const SharedPdvCatalog: React.FC<SharedPdvCatalogProps> = ({
                 );
               })}
 
+              {quickNotes.length > 0 && (
+                <fieldset className="rounded-3xl border border-slate-800 bg-slate-950/65 p-4">
+                  <legend className="flex items-center gap-2 text-sm font-black text-white">
+                    <MessageSquareText className="h-4 w-4 text-orange-400" />
+                    Observações rápidas
+                  </legend>
+                  <p className="mt-1 text-[9px] leading-4 text-slate-500">
+                    Toque nas opções cadastradas pela loja. Você pode marcar mais de uma.
+                  </p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {quickNotes.map(note => {
+                      const isSelected = selectedQuickNotes.includes(note);
+                      return (
+                        <button
+                          key={note}
+                          type="button"
+                          onClick={() => toggleQuickNote(note)}
+                          aria-pressed={isSelected}
+                          className={`min-h-10 rounded-2xl border px-3 py-2 text-[10px] font-bold transition-colors ${
+                            isSelected
+                              ? 'border-orange-500/55 bg-orange-500/15 text-orange-200'
+                              : 'border-slate-800 bg-slate-900 text-slate-400 hover:border-slate-700 hover:text-white'
+                          }`}
+                        >
+                          {isSelected && <Check className="mr-1 inline h-3.5 w-3.5" />}
+                          {note}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </fieldset>
+              )}
+
+              <label className="block rounded-3xl border border-slate-800 bg-slate-950/65 p-4">
+                <span className="flex items-center gap-2 text-sm font-black text-white">
+                  <MessageSquareText className="h-4 w-4 text-orange-400" />
+                  Observação do item
+                </span>
+                <span className="mt-1 block text-[9px] leading-4 text-slate-500">
+                  Escreva um detalhe específico para a preparação ou entrega.
+                </span>
+                <textarea
+                  value={customerNote}
+                  onChange={event => setCustomerNote(event.target.value)}
+                  maxLength={280}
+                  rows={4}
+                  placeholder="Ex.: retirar cebola, embalar separadamente, ponto da carne..."
+                  className="mt-3 w-full resize-none rounded-2xl border border-slate-800 bg-slate-900 px-3 py-3 text-sm text-white outline-none transition-colors placeholder:text-slate-600 focus:border-orange-500/60"
+                  id={`${idPrefix}-item-note`}
+                />
+                <span className="mt-1 block text-right font-mono text-[8px] text-slate-600">
+                  {customerNote.length}/280
+                </span>
+              </label>
+
               {customizationError && (
                 <p className="rounded-2xl border border-red-500/25 bg-red-500/10 px-3 py-2.5 text-xs text-red-300">
                   {customizationError}
@@ -796,10 +925,10 @@ export const SharedPdvCatalog: React.FC<SharedPdvCatalogProps> = ({
               )}
             </div>
 
-            <footer className="sticky bottom-0 flex items-center justify-between gap-3 border-t border-slate-800 bg-slate-900/95 p-4 backdrop-blur-sm sm:p-5">
+            <footer className="sticky bottom-0 z-20 flex items-center justify-between gap-3 border-t border-slate-800 bg-slate-900/95 p-4 backdrop-blur-sm sm:p-5">
               <div>
                 <span className="block font-mono text-[8px] uppercase text-slate-600">
-                  Valor configurado
+                  Valor do item
                 </span>
                 <strong className="font-mono text-lg text-white">
                   {currencyFormatter.format(
@@ -818,7 +947,7 @@ export const SharedPdvCatalog: React.FC<SharedPdvCatalogProps> = ({
                 id={`${idPrefix}-confirm-customization`}
               >
                 <Plus className="h-4 w-4" />
-                Adicionar configurado
+                Adicionar ao pedido
               </button>
             </footer>
           </section>
