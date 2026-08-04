@@ -27,6 +27,10 @@ const sharingBridgeSource = readFileSync(
   'src/components/store/StoreSharingPortalBridge.tsx',
   'utf8'
 );
+const storefrontEventsSource = readFileSync(
+  'src/utils/storefrontEvents.ts',
+  'utf8'
+);
 const vercelConfig = readFileSync('vercel.json', 'utf8');
 
 test('application routes public slugs before the authenticated legacy shell', () => {
@@ -69,6 +73,28 @@ test('public storefront uses the real logo in the header and a banner carousel',
   assert.match(storefrontPanelSource, /onTouchEnd/);
   assert.match(storefrontPanelSource, /bg-gradient-to-t/);
   assert.match(storefrontPanelSource, /line-clamp-3/);
+});
+
+test('storefront header owns info and close actions while movement uses fire beside the name', () => {
+  assert.match(
+    storefrontEventsSource,
+    /kyrub:open-public-storefront-info/
+  );
+  assert.match(
+    publicStorefrontSource,
+    /id="public-storefront-header-info-trigger"/
+  );
+  assert.match(publicStorefrontSource, /OPEN_PUBLIC_STOREFRONT_INFO_EVENT/);
+  assert.match(publicStorefrontSource, /id="public-storefront-close"/);
+  assert.match(publicStorefrontSource, /window\.history\.back\(\)/);
+  assert.match(
+    storefrontPanelSource,
+    /window\.addEventListener\(\s*OPEN_PUBLIC_STOREFRONT_INFO_EVENT/
+  );
+  assert.match(storefrontPanelSource, /<Flame/);
+  assert.doesNotMatch(storefrontPanelSource, /<Zap/);
+  assert.doesNotMatch(storefrontPanelSource, /storefront-store-info-trigger/);
+  assert.doesNotMatch(storefrontPanelSource, />\s*Vitrine pública\s*</);
 });
 
 test('slug lookup reads only published marketplace copies and strips private contact data', () => {
