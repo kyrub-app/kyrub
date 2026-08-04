@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
   ArrowLeft,
-  ExternalLink,
   LoaderCircle,
   LockKeyhole,
   LogIn,
@@ -39,15 +38,18 @@ export function PublicStorefrontApp({ slug }: PublicStorefrontAppProps) {
   const [buyerEmail, setBuyerEmail] = useState('');
   const [buyerAddress, setBuyerAddress] = useState('');
 
-  useEffect(() =>
-    onAuthStateChanged(auth, currentUser => {
-      setUser(currentUser);
-      setAuthLoading(false);
-      if (currentUser) {
-        setBuyerName(currentUser.displayName ?? '');
-        setBuyerEmail(currentUser.email ?? '');
-      }
-    }), []);
+  useEffect(
+    () =>
+      onAuthStateChanged(auth, currentUser => {
+        setUser(currentUser);
+        setAuthLoading(false);
+        if (currentUser) {
+          setBuyerName(currentUser.displayName ?? '');
+          setBuyerEmail(currentUser.email ?? '');
+        }
+      }),
+    []
+  );
 
   useEffect(() => {
     setStore(null);
@@ -66,7 +68,9 @@ export function PublicStorefrontApp({ slug }: PublicStorefrontAppProps) {
       },
       error => {
         console.warn('Não foi possível localizar a vitrine pelo slug.', error);
-        setErrorMessage('A consulta da vitrine está temporariamente indisponível.');
+        setErrorMessage(
+          'A consulta da vitrine está temporariamente indisponível.'
+        );
         setLoadCompleted(true);
         setStoreLoading(false);
       }
@@ -127,7 +131,8 @@ export function PublicStorefrontApp({ slug }: PublicStorefrontAppProps) {
           </span>
           <h1 className="mt-2 text-3xl font-black tracking-tight">@{slug}</h1>
           <p className="mt-3 text-sm leading-6 text-slate-400">
-            Entre com sua conta Google para consultar esta vitrine, montar o pedido e acompanhar a conta com segurança.
+            Entre com sua conta Google para consultar esta vitrine, montar o
+            pedido e acompanhar a conta com segurança.
           </p>
 
           <button
@@ -148,7 +153,10 @@ export function PublicStorefrontApp({ slug }: PublicStorefrontAppProps) {
 
           <div className="mt-5 flex items-start gap-2 text-[10px] leading-5 text-slate-500">
             <LockKeyhole className="mt-0.5 h-4 w-4 shrink-0 text-orange-400" />
-            <span>O endereço é público; pedidos, histórico e conta permanecem vinculados ao usuário autenticado.</span>
+            <span>
+              O endereço é público; pedidos, histórico e conta permanecem
+              vinculados ao usuário autenticado.
+            </span>
           </div>
 
           <a
@@ -181,7 +189,8 @@ export function PublicStorefrontApp({ slug }: PublicStorefrontAppProps) {
           <StoreIcon className="mx-auto h-10 w-10 text-slate-600" />
           <h1 className="mt-4 text-xl font-black">Vitrine indisponível</h1>
           <p className="mt-2 text-sm leading-6 text-slate-500">
-            {errorMessage || `A vitrine @${slug} não existe ou ainda não está publicada.`}
+            {errorMessage ||
+              `A vitrine @${slug} não existe ou ainda não está publicada.`}
           </p>
           <a
             href="/"
@@ -198,35 +207,27 @@ export function PublicStorefrontApp({ slug }: PublicStorefrontAppProps) {
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100">
       <header className="sticky top-0 z-40 border-b border-slate-800 bg-slate-950/95 px-4 py-3 backdrop-blur-md">
-        <div className="mx-auto flex w-full max-w-5xl items-center justify-between gap-3">
-          <div className="flex min-w-0 items-center gap-3">
-            {store.logo ? (
-              <img
-                src={store.logo}
-                alt=""
-                className="h-9 w-9 shrink-0 rounded-xl object-cover"
-                referrerPolicy="no-referrer"
-              />
-            ) : (
-              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-orange-500 text-slate-950">
-                <StoreIcon className="h-4 w-4" />
-              </span>
-            )}
-            <div className="min-w-0">
-              <span className="block font-mono text-[8px] font-black uppercase tracking-widest text-orange-400">
-                kyrub.com/@{store.slug}
-              </span>
-              <strong className="block truncate text-sm text-white">{store.name}</strong>
-            </div>
+        <div className="mx-auto flex w-full max-w-5xl items-center gap-3">
+          {store.logo ? (
+            <img
+              src={store.logo}
+              alt={`Logo de ${store.name}`}
+              className="h-10 w-10 shrink-0 rounded-xl border border-white/10 bg-slate-900 object-cover"
+              referrerPolicy="no-referrer"
+            />
+          ) : (
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-orange-500 text-slate-950">
+              <StoreIcon className="h-4 w-4" />
+            </span>
+          )}
+          <div className="min-w-0">
+            <span className="block truncate font-mono text-[8px] font-black uppercase tracking-widest text-orange-400">
+              kyrub.com/@{store.slug}
+            </span>
+            <strong className="block truncate text-sm text-white">
+              {store.name}
+            </strong>
           </div>
-          <a
-            href="/app"
-            className="flex min-h-10 shrink-0 items-center gap-1.5 rounded-xl border border-slate-800 bg-slate-900 px-3 text-[9px] font-black uppercase text-slate-400 hover:text-white"
-            title="Acesso operacional para equipe autorizada"
-          >
-            <ExternalLink className="h-3.5 w-3.5" />
-            Área da equipe
-          </a>
         </div>
       </header>
 
