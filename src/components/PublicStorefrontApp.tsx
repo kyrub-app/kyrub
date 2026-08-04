@@ -227,7 +227,7 @@ export function PublicStorefrontApp({ slug }: PublicStorefrontAppProps) {
             <button
               type="button"
               onClick={openStoreInfo}
-              className="shrink-0 rounded-xl outline-none transition-transform hover:scale-[1.03] focus-visible:ring-2 focus-visible:ring-orange-400"
+              className="relative shrink-0 rounded-xl outline-none transition-transform hover:scale-[1.03] focus-visible:ring-2 focus-visible:ring-orange-400"
               aria-label={`Abrir informações públicas de ${store.name}`}
               id="public-storefront-header-info-trigger"
             >
@@ -243,6 +243,13 @@ export function PublicStorefrontApp({ slug }: PublicStorefrontAppProps) {
                   <StoreIcon className="h-4 w-4" />
                 </span>
               )}
+              <span
+                id="public-storefront-header-info-badge"
+                className="pointer-events-none absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full border border-slate-950 bg-white text-[10px] font-black leading-none text-slate-950 shadow-lg"
+                aria-hidden="true"
+              >
+                i
+              </span>
             </button>
 
             <div className="min-w-0">
