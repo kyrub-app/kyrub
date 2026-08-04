@@ -5,6 +5,7 @@ import {
   LockKeyhole,
   LogIn,
   Store as StoreIcon,
+  X,
 } from 'lucide-react';
 import {
   GoogleAuthProvider,
@@ -15,6 +16,7 @@ import {
 import type { CartItem, Product, Store } from '../types';
 import { auth } from '../utils/firebase';
 import { subscribeToPublishedStorefrontBySlug } from '../utils/publicStorefront';
+import { OPEN_PUBLIC_STOREFRONT_INFO_EVENT } from '../utils/storefrontEvents';
 import { StorefrontPanel } from './StorefrontPanel';
 import { B2CCartDrawer } from './modals/B2CCartDrawer';
 
@@ -109,6 +111,19 @@ export function PublicStorefrontApp({ slug }: PublicStorefrontAppProps) {
             item.product.id === productId ? { ...item, quantity } : item
           )
     );
+  };
+
+  const openStoreInfo = (): void => {
+    window.dispatchEvent(new Event(OPEN_PUBLIC_STOREFRONT_INFO_EVENT));
+  };
+
+  const closeStorefront = (): void => {
+    if (window.history.length > 1) {
+      window.history.back();
+      return;
+    }
+
+    window.location.assign('/');
   };
 
   if (authLoading) {
@@ -207,27 +222,48 @@ export function PublicStorefrontApp({ slug }: PublicStorefrontAppProps) {
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100">
       <header className="sticky top-0 z-40 border-b border-slate-800 bg-slate-950/95 px-4 py-3 backdrop-blur-md">
-        <div className="mx-auto flex w-full max-w-5xl items-center gap-3">
-          {store.logo ? (
-            <img
-              src={store.logo}
-              alt={`Logo de ${store.name}`}
-              className="h-10 w-10 shrink-0 rounded-xl border border-white/10 bg-slate-900 object-cover"
-              referrerPolicy="no-referrer"
-            />
-          ) : (
-            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-orange-500 text-slate-950">
-              <StoreIcon className="h-4 w-4" />
-            </span>
-          )}
-          <div className="min-w-0">
-            <span className="block truncate font-mono text-[8px] font-black uppercase tracking-widest text-orange-400">
-              kyrub.com/@{store.slug}
-            </span>
-            <strong className="block truncate text-sm text-white">
-              {store.name}
-            </strong>
+        <div className="mx-auto flex w-full max-w-5xl items-center justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-3">
+            <button
+              type="button"
+              onClick={openStoreInfo}
+              className="shrink-0 rounded-xl outline-none transition-transform hover:scale-[1.03] focus-visible:ring-2 focus-visible:ring-orange-400"
+              aria-label={`Abrir informações públicas de ${store.name}`}
+              id="public-storefront-header-info-trigger"
+            >
+              {store.logo ? (
+                <img
+                  src={store.logo}
+                  alt={`Logo de ${store.name}`}
+                  className="h-10 w-10 rounded-xl border border-white/10 bg-slate-900 object-cover"
+                  referrerPolicy="no-referrer"
+                />
+              ) : (
+                <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-orange-500 text-slate-950">
+                  <StoreIcon className="h-4 w-4" />
+                </span>
+              )}
+            </button>
+
+            <div className="min-w-0">
+              <span className="block truncate font-mono text-[8px] font-black uppercase tracking-widest text-orange-400">
+                kyrub.com/@{store.slug}
+              </span>
+              <strong className="block truncate text-sm text-white">
+                {store.name}
+              </strong>
+            </div>
           </div>
+
+          <button
+            type="button"
+            onClick={closeStorefront}
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-slate-800 bg-slate-900 text-slate-400 transition-colors hover:border-orange-500/40 hover:text-white"
+            aria-label="Fechar vitrine"
+            id="public-storefront-close"
+          >
+            <X className="h-5 w-5" />
+          </button>
         </div>
       </header>
 
