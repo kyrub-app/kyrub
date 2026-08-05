@@ -8,6 +8,7 @@ export interface PreviewCommunity {
   location: string;
   visibility: PreviewCommunityVisibility;
   rules: string;
+  coverImage: string;
   createdAt: string;
   memberCount: number;
   isMember: boolean;
@@ -54,7 +55,9 @@ const seedCommunities: PreviewCommunity[] = [
     category: 'Negócios e oportunidades',
     location: 'Sua região',
     visibility: 'public',
-    rules: 'Respeite os membros, evite spam e mantenha as discussões relacionadas ao propósito da comunidade.',
+    rules:
+      'Respeite os membros, evite spam e mantenha as discussões relacionadas ao propósito da comunidade.',
+    coverImage: '',
     createdAt: '2026-08-01T12:00:00.000Z',
     memberCount: 428,
     isMember: false,
@@ -69,7 +72,9 @@ const seedCommunities: PreviewCommunity[] = [
     category: 'Gastronomia',
     location: 'Brasil',
     visibility: 'public',
-    rules: 'Compartilhe conteúdo autoral ou informe a fonte. Publicidade repetitiva será removida.',
+    rules:
+      'Compartilhe conteúdo autoral ou informe a fonte. Publicidade repetitiva será removida.',
+    coverImage: '',
     createdAt: '2026-08-02T12:00:00.000Z',
     memberCount: 936,
     isMember: false,
@@ -84,7 +89,9 @@ const seedCommunities: PreviewCommunity[] = [
     category: 'Profissões',
     location: 'Brasil',
     visibility: 'moderated',
-    rules: 'Não publique dados pessoais de terceiros. Vagas e oportunidades devem conter informações claras.',
+    rules:
+      'Não publique dados pessoais de terceiros. Vagas e oportunidades devem conter informações claras.',
+    coverImage: '',
     createdAt: '2026-08-03T12:00:00.000Z',
     memberCount: 671,
     isMember: false,
@@ -94,6 +101,9 @@ const seedCommunities: PreviewCommunity[] = [
 ];
 
 const canUseStorage = (): boolean => typeof window !== 'undefined';
+
+const cleanString = (value: unknown): string =>
+  typeof value === 'string' ? value.trim() : '';
 
 const parseArray = <T>(raw: string | null): T[] => {
   if (!raw) return [];
@@ -105,19 +115,24 @@ const parseArray = <T>(raw: string | null): T[] => {
   }
 };
 
+const normalizeCommunity = (community: PreviewCommunity): PreviewCommunity => ({
+  ...community,
+  coverImage: cleanString(community.coverImage),
+});
+
 const dispatchPreviewUpdate = (): void => {
   if (!canUseStorage()) return;
   window.dispatchEvent(new Event(COMMUNITY_PREVIEW_UPDATED_EVENT));
 };
 
 const ensureCommunities = (): PreviewCommunity[] => {
-  if (!canUseStorage()) return seedCommunities;
+  if (!canUseStorage()) return seedCommunities.map(normalizeCommunity);
   const stored = parseArray<PreviewCommunity>(
     localStorage.getItem(COMMUNITIES_STORAGE_KEY)
-  );
+  ).map(normalizeCommunity);
   if (stored.length > 0) return stored;
   localStorage.setItem(COMMUNITIES_STORAGE_KEY, JSON.stringify(seedCommunities));
-  return seedCommunities;
+  return seedCommunities.map(normalizeCommunity);
 };
 
 export const loadPreviewCommunities = (): PreviewCommunity[] =>
@@ -125,7 +140,10 @@ export const loadPreviewCommunities = (): PreviewCommunity[] =>
 
 const savePreviewCommunities = (communities: PreviewCommunity[]): void => {
   if (!canUseStorage()) return;
-  localStorage.setItem(COMMUNITIES_STORAGE_KEY, JSON.stringify(communities));
+  localStorage.setItem(
+    COMMUNITIES_STORAGE_KEY,
+    JSON.stringify(communities.map(normalizeCommunity))
+  );
   dispatchPreviewUpdate();
 };
 
@@ -173,6 +191,7 @@ export const createPreviewCommunity = (input: {
     rules:
       input.rules.trim().slice(0, 800) ||
       'Respeite os membros e mantenha as publicações relacionadas ao propósito da comunidade.',
+    coverImage: '',
     createdAt: now,
     memberCount: 1,
     isMember: true,
@@ -182,6 +201,41 @@ export const createPreviewCommunity = (input: {
 
   savePreviewCommunities([community, ...communities]);
   return community;
+};
+
+export const updatePreviewCommunity = (input: {
+  communityId: string;
+  rules: string;
+  coverImage: string;
+}): PreviewCommunity => {
+  const communityId = input.communityId.trim();
+  const rules = input.rules.trim().slice(0, 800);
+  const coverImage = input.coverImage.trim();
+  if (!communityId) throw new Error('A comunidade não foi identificada.');
+  if (!rules) throw new Error('Informe ao menos uma regra para a comunidade.');
+  if (coverImage.length > 2_500_000) {
+    throw new Error('A imagem de capa ficou muito grande para este preview local.');
+  }
+
+  const communities = loadPreviewCommunities();
+  const target = communities.find(community => community.id === communityId);
+  if (!target) throw new Error('Comunidade não encontrada.');
+  if (!target.isOwner) {
+    throw new Error('Somente o criador pode editar esta comunidade.');
+  }
+
+  const updated: PreviewCommunity = {
+    ...target,
+    rules,
+    coverImage,
+    activityLabel: 'Configurações atualizadas agora',
+  };
+  savePreviewCommunities(
+    communities.map(community =>
+      community.id === communityId ? updated : community
+    )
+  );
+  return updated;
 };
 
 export const setPreviewCommunityMembership = (
@@ -197,7 +251,8 @@ export const setPreviewCommunityMembership = (
       isMember,
       memberCount: Math.max(
         0,
-        community.memberCount + (isMember === community.isMember ? 0 : isMember ? 1 : -1)
+        community.memberCount +
+          (isMember === community.isMember ? 0 : isMember ? 1 : -1)
       ),
     };
     return updated;
