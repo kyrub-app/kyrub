@@ -2,6 +2,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App.tsx';
 import { AppErrorBoundary } from './components/AppErrorBoundary';
+import { ProfileCommunitiesPreviewBridge } from './components/ProfileCommunitiesPreviewBridge';
 import { ProfileConnectedCardsPolishBridge } from './components/ProfileConnectedCardsPolishBridge';
 import { ProfileConnectedImageFitBridge } from './components/ProfileConnectedImageFitBridge';
 import { ProfileContactGroupsPolishBridge } from './components/ProfileContactGroupsPolishBridge';
@@ -14,7 +15,7 @@ import './styles/catalog-category-tree.css';
 import './styles/profile-verification.css';
 import './styles/profile-header-layout.css';
 
-// Authenticated preview deployment revision: 2026-08-04T20:38-03:00.
+// Authenticated preview deployment revision: 2026-08-04T21:07-03:00.
 const rootElement = document.getElementById('root');
 
 if (!rootElement) {
@@ -31,6 +32,7 @@ createRoot(rootElement).render(
         <ProfileContactGroupsPolishBridge />
         <ProfileOffersFiltersBridge />
         <ProfilePublishingDestinationsPreviewBridge />
+        <ProfileCommunitiesPreviewBridge />
         <App />
       </>
     </AppErrorBoundary>
