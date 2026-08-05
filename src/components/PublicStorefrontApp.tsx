@@ -6,7 +6,6 @@ import {
   LockKeyhole,
   LogIn,
   Store as StoreIcon,
-  X,
 } from 'lucide-react';
 import {
   GoogleAuthProvider,
@@ -304,6 +303,9 @@ export function PublicStorefrontApp({ slug }: PublicStorefrontAppProps) {
           margin-top: 0;
           justify-content: center;
         }
+        #public-storefront-shell #storefront-pdv-products-grid article h4 + p.font-mono {
+          display: none;
+        }
       `}</style>
 
       <header className="sticky top-0 z-40 border-b border-slate-800 bg-slate-950/95 px-4 py-4 backdrop-blur-md">
@@ -338,10 +340,14 @@ export function PublicStorefrontApp({ slug }: PublicStorefrontAppProps) {
             </button>
 
             <div className="flex min-h-20 min-w-0 flex-1 flex-col sm:min-h-24">
-              <div className="flex min-w-0 items-center justify-between gap-2 pr-1">
-                <span className="block truncate font-mono text-[8px] font-black uppercase tracking-widest text-orange-400 sm:text-[9px]">
-                  kyrub.com/@{store.slug}
-                </span>
+              <span className="block truncate font-mono text-[8px] font-black uppercase tracking-widest text-orange-400 sm:text-[9px]">
+                kyrub.com/@{store.slug}
+              </span>
+
+              <div className="mt-1 flex min-w-0 items-center gap-2">
+                <strong className="line-clamp-1 min-w-0 text-lg font-black leading-tight text-white sm:text-xl">
+                  {store.name || 'Loja sem nome'}
+                </strong>
                 <span
                   className={`flex shrink-0 items-center ${movementMetadata.colorClassName}`}
                   title={movementMetadata.label}
@@ -354,10 +360,6 @@ export function PublicStorefrontApp({ slug }: PublicStorefrontAppProps) {
                 </span>
               </div>
 
-              <strong className="mt-1 line-clamp-1 text-lg font-black leading-tight text-white sm:text-xl">
-                {store.name || 'Loja sem nome'}
-              </strong>
-
               <p className="mt-auto line-clamp-3 pt-1 text-[10px] leading-4 text-slate-400 sm:text-xs sm:leading-5">
                 {store.description ||
                   'Esta loja ainda não adicionou uma descrição pública.'}
@@ -369,10 +371,10 @@ export function PublicStorefrontApp({ slug }: PublicStorefrontAppProps) {
             type="button"
             onClick={closeStorefront}
             className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-slate-800 bg-slate-900 text-slate-400 transition-colors hover:border-orange-500/40 hover:text-white"
-            aria-label="Fechar vitrine"
+            aria-label="Voltar"
             id="public-storefront-close"
           >
-            <X className="h-5 w-5" />
+            <ArrowLeft className="h-5 w-5" />
           </button>
         </div>
       </header>
