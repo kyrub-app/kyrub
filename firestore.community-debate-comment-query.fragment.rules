@@ -1,0 +1,16 @@
+    // --- Community debate comment query authorization ---
+    function communityDebateDocumentPathForCommentQuery(debateId) {
+      return /databases/$(database)/documents/community_debates/$(debateId);
+    }
+
+    function canReadDebateCommentQuery(debateId) {
+      return isSignedIn()
+        && exists(communityDebateDocumentPathForCommentQuery(debateId))
+        && canReadCommunity(
+          get(communityDebateDocumentPathForCommentQuery(debateId)).data.communityId
+        );
+    }
+
+    match /community_debate_comments/{commentId} {
+      allow read: if canReadDebateCommentQuery(existing().debateId);
+    }
