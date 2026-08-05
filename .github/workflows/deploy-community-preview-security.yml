@@ -1,29 +1,20 @@
-name: Deploy community preview security
+name: Deploy community security
 
 on:
-  push:
-    branches: [feat/cloud-communities-debates]
-    paths:
-      - 'firestore.communities.fragment.rules'
-      - 'storage.rules'
-      - 'scripts/compose-firestore-rules.mjs'
-      - 'tests/firestore-communities.test.ts'
-      - 'tests/storage-community-covers.test.ts'
-      - 'package.json'
-      - '.github/workflows/deploy-community-preview-security.yml'
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: community-preview-security-deploy
-  cancel-in-progress: true
+  group: community-security-deploy
+  cancel-in-progress: false
 
 jobs:
   validate-and-deploy:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    environment: firebase-production
     env:
       FIREBASE_SERVICE_ACCOUNT_PROJECT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_KYRUB_B8D0E }}
       FIREBASE_SERVICE_ACCOUNT_GENERIC: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
@@ -74,7 +65,7 @@ jobs:
           elif [ -n "${FIREBASE_CI_TOKEN:-}" ]; then
             echo "FIREBASE_AUTH_MODE=token" >> "$GITHUB_ENV"
           else
-            echo 'No Firebase deployment credential is configured.' >&2
+            echo 'Configure FIREBASE_SERVICE_ACCOUNT_KYRUB_B8D0E in the firebase-production environment before running this workflow.' >&2
             exit 1
           fi
 
