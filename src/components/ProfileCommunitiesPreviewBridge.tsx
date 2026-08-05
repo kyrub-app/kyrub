@@ -3,19 +3,24 @@ import {
   useMemo,
   useRef,
   useState,
+  type ChangeEvent,
   type FormEvent,
 } from 'react';
 import { createPortal } from 'react-dom';
 import {
   ArrowLeft,
+  Camera,
   Check,
   Globe2,
   LockKeyhole,
   MapPin,
   Megaphone,
   MessageCircle,
+  Pencil,
   Plus,
+  Save,
   ShieldCheck,
+  Trash2,
   UserPlus,
   Users,
   X,
@@ -30,6 +35,7 @@ import {
   loadPreviewCommunityPosts,
   OPEN_COMMUNITY_PREVIEW_CREATE_EVENT,
   setPreviewCommunityMembership,
+  updatePreviewCommunity,
   type PreviewCommunity,
   type PreviewCommunityDiscussion,
   type PreviewCommunityPost,
@@ -114,6 +120,79 @@ const isSquareSearchInput = (input: HTMLInputElement): boolean => {
   );
 };
 
+const readFileAsDataUrl = (file: File): Promise<string> =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+
+const prepareCoverImage = async (file: File): Promise<string> => {
+  if (!file.type.startsWith('image/')) {
+    throw new Error('Escolha um arquivo de imagem.');
+  }
+
+  const source = await readFileAsDataUrl(file);
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => {
+      const maxWidth = 1600;
+      const maxHeight = 1000;
+      const scale = Math.min(
+        1,
+        maxWidth / Math.max(1, image.naturalWidth),
+        maxHeight / Math.max(1, image.naturalHeight)
+      );
+      const width = Math.max(1, Math.round(image.naturalWidth * scale));
+      const height = Math.max(1, Math.round(image.naturalHeight * scale));
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const context = canvas.getContext('2d');
+      if (!context) {
+        reject(new Error('Não foi possível preparar a imagem.'));
+        return;
+      }
+      context.drawImage(image, 0, 0, width, height);
+      resolve(canvas.toDataURL('image/jpeg', 0.82));
+    };
+    image.onerror = () => reject(new Error('Não foi possível ler a imagem.'));
+    image.src = source;
+  });
+};
+
+function CommunityCover({
+  community,
+  className,
+  showInitial = true,
+}: {
+  community: PreviewCommunity;
+  className: string;
+  showInitial?: boolean;
+}) {
+  return (
+    <div
+      className={`relative overflow-hidden bg-gradient-to-br from-sky-500/25 via-violet-500/15 to-orange-500/20 ${className}`}
+    >
+      {community.coverImage ? (
+        <img
+          src={community.coverImage}
+          alt={`Capa da comunidade ${community.name}`}
+          className="absolute inset-0 h-full w-full object-cover"
+        />
+      ) : (
+        showInitial && (
+          <span className="absolute inset-0 flex items-center justify-center text-4xl font-black text-white/80">
+            {community.name.charAt(0).toLocaleUpperCase('pt-BR')}
+          </span>
+        )
+      )}
+      <div className="absolute inset-0 bg-gradient-to-t from-slate-950/70 via-transparent to-slate-950/15" />
+    </div>
+  );
+}
+
 export function ProfileCommunitiesPreviewBridge() {
   const [host, setHost] = useState<HTMLElement | null>(null);
   const [listTab, setListTab] = useState<CommunityListTab>('mine');
@@ -133,6 +212,11 @@ export function ProfileCommunitiesPreviewBridge() {
   const [createDraft, setCreateDraft] =
     useState<CreateCommunityDraft>(initialCreateDraft);
   const [createError, setCreateError] = useState('');
+  const [editOpen, setEditOpen] = useState(false);
+  const [editRules, setEditRules] = useState('');
+  const [editCoverImage, setEditCoverImage] = useState('');
+  const [editError, setEditError] = useState('');
+  const [coverBusy, setCoverBusy] = useState(false);
   const [wallDraft, setWallDraft] = useState('');
   const [discussionComposerOpen, setDiscussionComposerOpen] = useState(false);
   const [discussionTitle, setDiscussionTitle] = useState('');
@@ -242,13 +326,13 @@ export function ProfileCommunitiesPreviewBridge() {
   }, []);
 
   useEffect(() => {
-    if (!createOpen && !selectedCommunityId) return;
+    if (!createOpen && !selectedCommunityId && !editOpen) return;
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     return () => {
       document.body.style.overflow = previousOverflow;
     };
-  }, [createOpen, selectedCommunityId]);
+  }, [createOpen, editOpen, selectedCommunityId]);
 
   const normalizedSearch = searchValue.trim().toLocaleLowerCase('pt-BR');
   const visibleCommunities = useMemo(() => {
@@ -298,6 +382,14 @@ export function ProfileCommunitiesPreviewBridge() {
     setWallDraft('');
   };
 
+  const openCommunityEditor = (): void => {
+    if (!selectedCommunity?.isOwner) return;
+    setEditRules(selectedCommunity.rules);
+    setEditCoverImage(selectedCommunity.coverImage);
+    setEditError('');
+    setEditOpen(true);
+  };
+
   const handleMembership = (community: PreviewCommunity): void => {
     if (community.isOwner) return;
     setPreviewCommunityMembership(community.id, !community.isMember);
@@ -319,6 +411,47 @@ export function ProfileCommunitiesPreviewBridge() {
         error instanceof Error
           ? error.message
           : 'Não foi possível criar a comunidade.'
+      );
+    }
+  };
+
+  const readCoverImage = async (
+    event: ChangeEvent<HTMLInputElement>
+  ): Promise<void> => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    setCoverBusy(true);
+    setEditError('');
+    try {
+      setEditCoverImage(await prepareCoverImage(file));
+    } catch (error) {
+      setEditError(
+        error instanceof Error ? error.message : 'Não foi possível usar a imagem.'
+      );
+    } finally {
+      setCoverBusy(false);
+    }
+  };
+
+  const submitCommunityEdit = (event: FormEvent): void => {
+    event.preventDefault();
+    if (!selectedCommunity) return;
+    setEditError('');
+    try {
+      updatePreviewCommunity({
+        communityId: selectedCommunity.id,
+        rules: editRules,
+        coverImage: editCoverImage,
+      });
+      refresh();
+      setEditOpen(false);
+      setPageMessage('Capa e regras atualizadas neste preview.');
+    } catch (error) {
+      setEditError(
+        error instanceof Error
+          ? error.message
+          : 'Não foi possível atualizar a comunidade.'
       );
     }
   };
@@ -374,17 +507,13 @@ export function ProfileCommunitiesPreviewBridge() {
         onClick={() => openCommunity(community)}
         className="text-left"
       >
-        <div className="relative flex h-24 items-center justify-center bg-gradient-to-br from-sky-500/25 via-violet-500/15 to-orange-500/20">
-          <span className="flex h-14 w-14 items-center justify-center rounded-2xl border border-white/10 bg-slate-950/75 text-xl font-black text-white shadow-xl">
-            {community.name.charAt(0).toLocaleUpperCase('pt-BR')}
-          </span>
+        <CommunityCover community={community} className="h-24" />
+        <div className="relative p-3">
           {(community.isMember || community.isOwner) && (
-            <span className="absolute right-2 top-2 rounded-full border border-emerald-500/30 bg-slate-950/85 px-2 py-1 text-[7px] font-black uppercase text-emerald-300">
+            <span className="absolute -top-7 right-2 rounded-full border border-emerald-500/30 bg-slate-950/90 px-2 py-1 text-[7px] font-black uppercase text-emerald-300">
               Você participa
             </span>
           )}
-        </div>
-        <div className="p-3">
           <strong className="block line-clamp-2 min-h-8 text-[10px] font-black text-white">
             {community.name}
           </strong>
@@ -516,7 +645,7 @@ export function ProfileCommunitiesPreviewBridge() {
             </div>
 
             <p className="text-[7px] leading-relaxed text-slate-600">
-              Preview local: comunidades, participações, murais e discussões ficam apenas neste navegador.
+              Preview local: comunidades, participações, capas, regras, murais e discussões ficam apenas neste navegador.
             </p>
           </section>,
           host
@@ -738,21 +867,39 @@ export function ProfileCommunitiesPreviewBridge() {
         createPortal(
           <div className="fixed inset-0 z-[170] bg-slate-950/95 backdrop-blur-md">
             <section className="mx-auto flex h-[100dvh] w-full max-w-3xl flex-col overflow-hidden border-x border-slate-800 bg-slate-950">
-              <header className="border-b border-slate-800 bg-slate-900/95 p-4">
-                <div className="flex items-start gap-3">
+              <header className="border-b border-slate-800 bg-slate-900">
+                <div className="relative">
+                  <CommunityCover
+                    community={selectedCommunity}
+                    className="h-36 sm:h-44"
+                    showInitial={false}
+                  />
                   <button
                     type="button"
                     onClick={() => setSelectedCommunityId('')}
-                    className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-800 bg-slate-950 text-slate-400"
+                    className="absolute left-3 top-3 flex h-10 w-10 items-center justify-center rounded-xl border border-white/15 bg-slate-950/80 text-white backdrop-blur"
                     aria-label="Voltar para a Praça"
                   >
                     <ArrowLeft className="h-4 w-4" />
                   </button>
+                  {selectedCommunity.isOwner && (
+                    <button
+                      type="button"
+                      onClick={openCommunityEditor}
+                      className="absolute right-3 top-3 flex min-h-10 items-center gap-2 rounded-xl border border-white/15 bg-slate-950/80 px-3 text-[8px] font-black uppercase text-white backdrop-blur"
+                    >
+                      <Pencil className="h-4 w-4" />
+                      Editar comunidade
+                    </button>
+                  )}
+                </div>
+
+                <div className="flex items-start gap-3 p-4">
                   <div className="min-w-0 flex-1">
                     <span className="text-[8px] font-black uppercase tracking-[0.18em] text-sky-300">
                       Comunidade
                     </span>
-                    <h2 className="mt-0.5 truncate text-lg font-black text-white">
+                    <h2 className="mt-0.5 text-lg font-black text-white">
                       {selectedCommunity.name}
                     </h2>
                     <p className="mt-1 line-clamp-2 text-[9px] leading-relaxed text-slate-500">
@@ -761,7 +908,9 @@ export function ProfileCommunitiesPreviewBridge() {
                     <div className="mt-2 flex flex-wrap gap-2 text-[8px] text-slate-400">
                       <span>{selectedCommunity.memberCount} membros</span>
                       <span>•</span>
-                      <span>{visibilityDetails(selectedCommunity.visibility).label}</span>
+                      <span>
+                        {visibilityDetails(selectedCommunity.visibility).label}
+                      </span>
                       {selectedCommunity.location && (
                         <>
                           <span>•</span>
@@ -990,9 +1139,21 @@ export function ProfileCommunitiesPreviewBridge() {
                 {pageTab === 'about' && (
                   <div className="space-y-3">
                     <section className="rounded-3xl border border-slate-800 bg-slate-900 p-4">
-                      <h3 className="text-[10px] font-black uppercase text-white">
-                        Sobre a comunidade
-                      </h3>
+                      <div className="flex items-center justify-between gap-3">
+                        <h3 className="text-[10px] font-black uppercase text-white">
+                          Sobre a comunidade
+                        </h3>
+                        {selectedCommunity.isOwner && (
+                          <button
+                            type="button"
+                            onClick={openCommunityEditor}
+                            className="flex min-h-9 items-center gap-1.5 rounded-xl border border-sky-500/25 bg-sky-500/10 px-3 text-[8px] font-black uppercase text-sky-200"
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                            Editar
+                          </button>
+                        )}
+                      </div>
                       <p className="mt-3 text-xs leading-relaxed text-slate-300">
                         {selectedCommunity.description}
                       </p>
@@ -1045,6 +1206,127 @@ export function ProfileCommunitiesPreviewBridge() {
                 )}
               </main>
             </section>
+          </div>,
+          document.body
+        )}
+
+      {editOpen && selectedCommunity?.isOwner &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-[185] flex items-end justify-center bg-slate-950/92 backdrop-blur-md sm:items-center sm:p-4"
+            onClick={() => setEditOpen(false)}
+            role="presentation"
+          >
+            <form
+              onSubmit={submitCommunityEdit}
+              onClick={event => event.stopPropagation()}
+              className="max-h-[94dvh] w-full max-w-lg overflow-y-auto rounded-t-3xl border border-slate-800 bg-slate-900 shadow-2xl sm:rounded-3xl"
+            >
+              <header className="sticky top-0 z-10 flex items-start justify-between gap-3 border-b border-slate-800 bg-slate-900/95 p-4 backdrop-blur-sm">
+                <div>
+                  <span className="text-[8px] font-black uppercase tracking-[0.18em] text-sky-300">
+                    Administração
+                  </span>
+                  <h3 className="mt-1 text-lg font-black text-white">
+                    Editar comunidade
+                  </h3>
+                  <p className="mt-1 text-[9px] text-slate-500">
+                    Somente o criador visualiza este controle.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setEditOpen(false)}
+                  className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-800 bg-slate-950 text-slate-500"
+                  aria-label="Fechar edição"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </header>
+
+              <div className="space-y-4 p-4">
+                <section>
+                  <span className="text-[8px] font-black uppercase text-slate-400">
+                    Imagem de capa
+                  </span>
+                  <div className="mt-2 overflow-hidden rounded-3xl border border-slate-800 bg-slate-950">
+                    <div className="relative h-44">
+                      {editCoverImage ? (
+                        <img
+                          src={editCoverImage}
+                          alt="Prévia da capa"
+                          className="h-full w-full object-cover"
+                        />
+                      ) : (
+                        <div className="flex h-full items-center justify-center bg-gradient-to-br from-sky-500/20 via-violet-500/10 to-orange-500/20 text-slate-600">
+                          <Camera className="h-10 w-10" />
+                        </div>
+                      )}
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 p-3">
+                      <label className="flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-xl bg-sky-500 px-3 text-[8px] font-black uppercase text-slate-950">
+                        <Camera className="h-4 w-4" />
+                        {coverBusy ? 'Preparando...' : 'Escolher imagem'}
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          disabled={coverBusy}
+                          onChange={event => void readCoverImage(event)}
+                        />
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => setEditCoverImage('')}
+                        disabled={!editCoverImage || coverBusy}
+                        className="flex min-h-11 items-center justify-center gap-2 rounded-xl border border-red-500/20 bg-red-500/10 px-3 text-[8px] font-black uppercase text-red-300 disabled:opacity-35"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                        Remover capa
+                      </button>
+                    </div>
+                  </div>
+                  <p className="mt-2 text-[8px] leading-relaxed text-slate-600">
+                    A imagem é reduzida automaticamente para caber no armazenamento local do preview.
+                  </p>
+                </section>
+
+                <label className="block">
+                  <span className="text-[8px] font-black uppercase text-slate-400">
+                    Regras da comunidade
+                  </span>
+                  <textarea
+                    value={editRules}
+                    onChange={event =>
+                      setEditRules(event.target.value.slice(0, 800))
+                    }
+                    rows={7}
+                    className="mt-2 w-full resize-none rounded-2xl border border-slate-800 bg-slate-950 px-3 py-3 text-xs text-white outline-none focus:border-sky-500/60"
+                    placeholder="Defina convivência, temas permitidos, publicidade e moderação."
+                  />
+                  <span className="mt-1 block text-right font-mono text-[8px] text-slate-600">
+                    {editRules.length}/800
+                  </span>
+                </label>
+
+                {editError && (
+                  <p className="rounded-xl border border-red-500/25 bg-red-500/10 px-3 py-2 text-[9px] text-red-300">
+                    {editError}
+                  </p>
+                )}
+              </div>
+
+              <footer className="sticky bottom-0 border-t border-slate-800 bg-slate-900/95 p-4 backdrop-blur-sm">
+                <button
+                  type="submit"
+                  disabled={coverBusy}
+                  className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-sky-500 text-[9px] font-black uppercase text-slate-950 disabled:opacity-40"
+                >
+                  <Save className="h-4 w-4" />
+                  Salvar capa e regras
+                </button>
+              </footer>
+            </form>
           </div>,
           document.body
         )}
