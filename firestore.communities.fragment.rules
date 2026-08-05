@@ -1,0 +1,848 @@
+    // --- Kyrub Communities, Memberships, Walls, Debates and Comments ---
+    function communityDocumentPath(communityId) {
+      return /databases/$(database)/documents/communities/$(communityId);
+    }
+
+    function communityMembershipDocumentId(communityId, userId) {
+      return communityId + '__' + userId;
+    }
+
+    function communityMembershipDocumentPath(communityId, userId) {
+      return /databases/$(database)/documents/community_members/$(communityMembershipDocumentId(communityId, userId));
+    }
+
+    function communityExists(communityId) {
+      return exists(communityDocumentPath(communityId));
+    }
+
+    function isCommunityOwner(communityId) {
+      return isSignedIn()
+        && communityExists(communityId)
+        && get(communityDocumentPath(communityId)).data.ownerId == request.auth.uid;
+    }
+
+    function hasCommunityMembership(communityId) {
+      return isSignedIn()
+        && exists(communityMembershipDocumentPath(communityId, request.auth.uid));
+    }
+
+    function isActiveCommunityMember(communityId) {
+      return hasCommunityMembership(communityId)
+        && get(communityMembershipDocumentPath(communityId, request.auth.uid)).data.status == 'active';
+    }
+
+    function canReadCommunity(communityId) {
+      return isSignedIn()
+        && communityExists(communityId)
+        && (
+          get(communityDocumentPath(communityId)).data.visibility in ['public', 'moderated']
+          || get(communityDocumentPath(communityId)).data.ownerId == request.auth.uid
+          || hasCommunityMembership(communityId)
+        );
+    }
+
+    function hasValidCommunityShape(data, communityId) {
+      return data.keys().hasAll([
+        'communityId',
+        'ownerId',
+        'ownerName',
+        'ownerAvatar',
+        'name',
+        'description',
+        'category',
+        'location',
+        'visibility',
+        'rules',
+        'coverImage',
+        'coverPath',
+        'memberCount',
+        'lastMembershipChangeId',
+        'createdAtIso',
+        'createdAt',
+        'updatedAtIso',
+        'updatedAt',
+        'activityAtIso',
+        'activityAt'
+      ])
+      && data.keys().hasOnly([
+        'communityId',
+        'ownerId',
+        'ownerName',
+        'ownerAvatar',
+        'name',
+        'description',
+        'category',
+        'location',
+        'visibility',
+        'rules',
+        'coverImage',
+        'coverPath',
+        'memberCount',
+        'lastMembershipChangeId',
+        'createdAtIso',
+        'createdAt',
+        'updatedAtIso',
+        'updatedAt',
+        'activityAtIso',
+        'activityAt'
+      ])
+      && data.communityId == communityId
+      && data.ownerId is string
+      && data.ownerId.size() > 0
+      && data.ownerId.size() <= 128
+      && data.ownerName is string
+      && data.ownerName.size() > 0
+      && data.ownerName.size() <= 160
+      && data.ownerAvatar is string
+      && data.ownerAvatar.size() <= 4096
+      && data.name is string
+      && data.name.size() > 0
+      && data.name.size() <= 80
+      && data.description is string
+      && data.description.size() > 0
+      && data.description.size() <= 500
+      && data.category is string
+      && data.category.size() > 0
+      && data.category.size() <= 80
+      && data.location is string
+      && data.location.size() <= 120
+      && data.visibility in ['public', 'moderated', 'private']
+      && data.rules is string
+      && data.rules.size() > 0
+      && data.rules.size() <= 1200
+      && data.coverImage is string
+      && data.coverImage.size() <= 4096
+      && data.coverPath is string
+      && data.coverPath.size() <= 1024
+      && data.memberCount is int
+      && data.memberCount >= 1
+      && data.memberCount <= 1000000000
+      && data.lastMembershipChangeId is string
+      && data.lastMembershipChangeId.size() > 0
+      && data.lastMembershipChangeId.size() <= 500
+      && data.createdAtIso is string
+      && data.createdAtIso.size() <= 64
+      && data.createdAt is timestamp
+      && data.updatedAtIso is string
+      && data.updatedAtIso.size() <= 64
+      && data.updatedAt is timestamp
+      && data.activityAtIso is string
+      && data.activityAtIso.size() <= 64
+      && data.activityAt is timestamp;
+    }
+
+    match /communities/{communityId} {
+      allow read: if isSignedIn()
+        && (
+          existing().visibility in ['public', 'moderated']
+          || existing().ownerId == request.auth.uid
+          || hasCommunityMembership(communityId)
+        );
+
+      allow create: if isSignedIn()
+        && incoming().ownerId == request.auth.uid
+        && incoming().memberCount == 1
+        && incoming().lastMembershipChangeId
+          == communityMembershipDocumentId(communityId, request.auth.uid)
+        && incoming().coverImage == ''
+        && incoming().coverPath == ''
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && incoming().activityAt == request.time
+        && hasValidCommunityShape(incoming(), communityId)
+        && existsAfter(
+          communityMembershipDocumentPath(communityId, request.auth.uid)
+        )
+        && getAfter(
+          communityMembershipDocumentPath(communityId, request.auth.uid)
+        ).data.userId == request.auth.uid
+        && getAfter(
+          communityMembershipDocumentPath(communityId, request.auth.uid)
+        ).data.communityId == communityId
+        && getAfter(
+          communityMembershipDocumentPath(communityId, request.auth.uid)
+        ).data.role == 'owner'
+        && getAfter(
+          communityMembershipDocumentPath(communityId, request.auth.uid)
+        ).data.status == 'active';
+
+      allow update: if isSignedIn()
+        && existing().ownerId == request.auth.uid
+        && incoming().communityId == existing().communityId
+        && incoming().ownerId == existing().ownerId
+        && incoming().ownerName == existing().ownerName
+        && incoming().ownerAvatar == existing().ownerAvatar
+        && incoming().name == existing().name
+        && incoming().description == existing().description
+        && incoming().category == existing().category
+        && incoming().location == existing().location
+        && incoming().visibility == existing().visibility
+        && incoming().memberCount == existing().memberCount
+        && incoming().lastMembershipChangeId == existing().lastMembershipChangeId
+        && incoming().createdAtIso == existing().createdAtIso
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().activityAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'rules',
+          'coverImage',
+          'coverPath',
+          'updatedAtIso',
+          'updatedAt',
+          'activityAtIso',
+          'activityAt'
+        ])
+        && hasValidCommunityShape(incoming(), communityId);
+
+      allow update: if isSignedIn()
+        && incoming().communityId == existing().communityId
+        && incoming().ownerId == existing().ownerId
+        && incoming().ownerName == existing().ownerName
+        && incoming().ownerAvatar == existing().ownerAvatar
+        && incoming().name == existing().name
+        && incoming().description == existing().description
+        && incoming().category == existing().category
+        && incoming().location == existing().location
+        && incoming().visibility == existing().visibility
+        && incoming().rules == existing().rules
+        && incoming().coverImage == existing().coverImage
+        && incoming().coverPath == existing().coverPath
+        && incoming().createdAtIso == existing().createdAtIso
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().activityAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'memberCount',
+          'lastMembershipChangeId',
+          'updatedAtIso',
+          'updatedAt',
+          'activityAtIso',
+          'activityAt'
+        ])
+        && hasValidCommunityShape(incoming(), communityId)
+        && (
+          (
+            incoming().memberCount == existing().memberCount + 1
+            && existsAfter(
+              /databases/$(database)/documents/community_members/$(incoming().lastMembershipChangeId)
+            )
+            && getAfter(
+              /databases/$(database)/documents/community_members/$(incoming().lastMembershipChangeId)
+            ).data.communityId == communityId
+            && getAfter(
+              /databases/$(database)/documents/community_members/$(incoming().lastMembershipChangeId)
+            ).data.status == 'active'
+            && (
+              !exists(
+                /databases/$(database)/documents/community_members/$(incoming().lastMembershipChangeId)
+              )
+              || get(
+                /databases/$(database)/documents/community_members/$(incoming().lastMembershipChangeId)
+              ).data.status != 'active'
+            )
+            && (
+              getAfter(
+                /databases/$(database)/documents/community_members/$(incoming().lastMembershipChangeId)
+              ).data.userId == request.auth.uid
+              || existing().ownerId == request.auth.uid
+            )
+          )
+          || (
+            incoming().memberCount == existing().memberCount - 1
+            && existing().memberCount > 1
+            && exists(
+              /databases/$(database)/documents/community_members/$(incoming().lastMembershipChangeId)
+            )
+            && get(
+              /databases/$(database)/documents/community_members/$(incoming().lastMembershipChangeId)
+            ).data.communityId == communityId
+            && get(
+              /databases/$(database)/documents/community_members/$(incoming().lastMembershipChangeId)
+            ).data.status == 'active'
+            && (
+              !existsAfter(
+                /databases/$(database)/documents/community_members/$(incoming().lastMembershipChangeId)
+              )
+              || getAfter(
+                /databases/$(database)/documents/community_members/$(incoming().lastMembershipChangeId)
+              ).data.status != 'active'
+            )
+            && (
+              get(
+                /databases/$(database)/documents/community_members/$(incoming().lastMembershipChangeId)
+              ).data.userId == request.auth.uid
+              || existing().ownerId == request.auth.uid
+            )
+          )
+        );
+
+      allow delete: if false;
+    }
+
+    function hasValidCommunityMembershipShape(data, membershipId) {
+      return data.keys().hasAll([
+        'membershipId',
+        'communityId',
+        'userId',
+        'userName',
+        'userAvatar',
+        'role',
+        'status',
+        'joinedAtIso',
+        'joinedAt',
+        'updatedAtIso',
+        'updatedAt'
+      ])
+      && data.keys().hasOnly([
+        'membershipId',
+        'communityId',
+        'userId',
+        'userName',
+        'userAvatar',
+        'role',
+        'status',
+        'joinedAtIso',
+        'joinedAt',
+        'updatedAtIso',
+        'updatedAt'
+      ])
+      && data.membershipId == membershipId
+      && membershipId == data.communityId + '__' + data.userId
+      && data.communityId is string
+      && data.communityId.size() > 0
+      && data.communityId.size() <= 128
+      && data.userId is string
+      && data.userId.size() > 0
+      && data.userId.size() <= 128
+      && data.userName is string
+      && data.userName.size() > 0
+      && data.userName.size() <= 160
+      && data.userAvatar is string
+      && data.userAvatar.size() <= 4096
+      && data.role in ['owner', 'moderator', 'member']
+      && data.status in ['active', 'pending']
+      && data.joinedAtIso is string
+      && data.joinedAtIso.size() <= 64
+      && data.joinedAt is timestamp
+      && data.updatedAtIso is string
+      && data.updatedAtIso.size() <= 64
+      && data.updatedAt is timestamp;
+    }
+
+    match /community_members/{membershipId} {
+      allow read: if isSignedIn()
+        && (
+          existing().userId == request.auth.uid
+          || isCommunityOwner(existing().communityId)
+          || (
+            existing().status == 'active'
+            && canReadCommunity(existing().communityId)
+          )
+        );
+
+      allow create: if isSignedIn()
+        && incoming().userId == request.auth.uid
+        && incoming().joinedAt == request.time
+        && incoming().updatedAt == request.time
+        && hasValidCommunityMembershipShape(incoming(), membershipId)
+        && existsAfter(communityDocumentPath(incoming().communityId))
+        && (
+          (
+            incoming().role == 'owner'
+            && incoming().status == 'active'
+            && !communityExists(incoming().communityId)
+            && getAfter(communityDocumentPath(incoming().communityId)).data.ownerId
+              == request.auth.uid
+            && getAfter(communityDocumentPath(incoming().communityId)).data.memberCount
+              == 1
+            && getAfter(communityDocumentPath(incoming().communityId)).data.lastMembershipChangeId
+              == membershipId
+          )
+          || (
+            incoming().role == 'member'
+            && communityExists(incoming().communityId)
+            && get(communityDocumentPath(incoming().communityId)).data.visibility
+              == 'public'
+            && incoming().status == 'active'
+            && getAfter(communityDocumentPath(incoming().communityId)).data.memberCount
+              == get(communityDocumentPath(incoming().communityId)).data.memberCount + 1
+            && getAfter(communityDocumentPath(incoming().communityId)).data.lastMembershipChangeId
+              == membershipId
+          )
+          || (
+            incoming().role == 'member'
+            && communityExists(incoming().communityId)
+            && get(communityDocumentPath(incoming().communityId)).data.visibility
+              == 'moderated'
+            && incoming().status == 'pending'
+          )
+        );
+
+      allow update: if isSignedIn()
+        && existing().userId == request.auth.uid
+        && incoming().membershipId == existing().membershipId
+        && incoming().communityId == existing().communityId
+        && incoming().userId == existing().userId
+        && incoming().role == existing().role
+        && incoming().status == existing().status
+        && incoming().joinedAtIso == existing().joinedAtIso
+        && incoming().joinedAt == existing().joinedAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'userName',
+          'userAvatar',
+          'updatedAtIso',
+          'updatedAt'
+        ])
+        && hasValidCommunityMembershipShape(incoming(), membershipId);
+
+      allow update: if isCommunityOwner(existing().communityId)
+        && existing().role == 'member'
+        && existing().status == 'pending'
+        && incoming().membershipId == existing().membershipId
+        && incoming().communityId == existing().communityId
+        && incoming().userId == existing().userId
+        && incoming().userName == existing().userName
+        && incoming().userAvatar == existing().userAvatar
+        && incoming().role == existing().role
+        && incoming().status == 'active'
+        && incoming().joinedAtIso == existing().joinedAtIso
+        && incoming().joinedAt == existing().joinedAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'status',
+          'updatedAtIso',
+          'updatedAt'
+        ])
+        && hasValidCommunityMembershipShape(incoming(), membershipId)
+        && getAfter(communityDocumentPath(existing().communityId)).data.memberCount
+          == get(communityDocumentPath(existing().communityId)).data.memberCount + 1
+        && getAfter(communityDocumentPath(existing().communityId)).data.lastMembershipChangeId
+          == membershipId;
+
+      allow delete: if isSignedIn()
+        && existing().role != 'owner'
+        && (
+          existing().userId == request.auth.uid
+          || isCommunityOwner(existing().communityId)
+        )
+        && (
+          existing().status == 'pending'
+          || (
+            existing().status == 'active'
+            && getAfter(communityDocumentPath(existing().communityId)).data.memberCount
+              == get(communityDocumentPath(existing().communityId)).data.memberCount - 1
+            && getAfter(communityDocumentPath(existing().communityId)).data.lastMembershipChangeId
+              == membershipId
+          )
+        );
+    }
+
+    function hasValidCommunityPostShape(data, postId) {
+      return data.keys().hasAll([
+        'postId',
+        'communityId',
+        'authorId',
+        'authorName',
+        'authorAvatar',
+        'content',
+        'mediaUrls',
+        'createdAtIso',
+        'createdAt',
+        'updatedAtIso',
+        'updatedAt'
+      ])
+      && data.keys().hasOnly([
+        'postId',
+        'communityId',
+        'authorId',
+        'authorName',
+        'authorAvatar',
+        'content',
+        'mediaUrls',
+        'createdAtIso',
+        'createdAt',
+        'updatedAtIso',
+        'updatedAt'
+      ])
+      && data.postId == postId
+      && data.communityId is string
+      && data.communityId.size() > 0
+      && data.communityId.size() <= 128
+      && data.authorId is string
+      && data.authorId.size() > 0
+      && data.authorId.size() <= 128
+      && data.authorName is string
+      && data.authorName.size() > 0
+      && data.authorName.size() <= 160
+      && data.authorAvatar is string
+      && data.authorAvatar.size() <= 4096
+      && data.content is string
+      && data.content.size() <= 3000
+      && data.mediaUrls is list
+      && data.mediaUrls.size() <= 9
+      && (data.content.size() > 0 || data.mediaUrls.size() > 0)
+      && data.createdAtIso is string
+      && data.createdAtIso.size() <= 64
+      && data.createdAt is timestamp
+      && data.updatedAtIso is string
+      && data.updatedAtIso.size() <= 64
+      && data.updatedAt is timestamp;
+    }
+
+    match /community_posts/{postId} {
+      allow read: if canReadCommunity(existing().communityId);
+
+      allow create: if isSignedIn()
+        && incoming().authorId == request.auth.uid
+        && isActiveCommunityMember(incoming().communityId)
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && hasValidCommunityPostShape(incoming(), postId);
+
+      allow update: if isSignedIn()
+        && existing().authorId == request.auth.uid
+        && incoming().postId == existing().postId
+        && incoming().communityId == existing().communityId
+        && incoming().authorId == existing().authorId
+        && incoming().authorName == existing().authorName
+        && incoming().authorAvatar == existing().authorAvatar
+        && incoming().createdAtIso == existing().createdAtIso
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'content',
+          'mediaUrls',
+          'updatedAtIso',
+          'updatedAt'
+        ])
+        && hasValidCommunityPostShape(incoming(), postId);
+
+      allow delete: if isSignedIn()
+        && (
+          existing().authorId == request.auth.uid
+          || isCommunityOwner(existing().communityId)
+        );
+    }
+
+    function hasValidCommunityDebateShape(data, debateId) {
+      return data.keys().hasAll([
+        'debateId',
+        'communityId',
+        'authorId',
+        'authorName',
+        'authorAvatar',
+        'title',
+        'content',
+        'status',
+        'pinned',
+        'resolved',
+        'commentCount',
+        'lastCommentId',
+        'createdAtIso',
+        'createdAt',
+        'updatedAtIso',
+        'updatedAt',
+        'activityAtIso',
+        'activityAt'
+      ])
+      && data.keys().hasOnly([
+        'debateId',
+        'communityId',
+        'authorId',
+        'authorName',
+        'authorAvatar',
+        'title',
+        'content',
+        'status',
+        'pinned',
+        'resolved',
+        'commentCount',
+        'lastCommentId',
+        'createdAtIso',
+        'createdAt',
+        'updatedAtIso',
+        'updatedAt',
+        'activityAtIso',
+        'activityAt'
+      ])
+      && data.debateId == debateId
+      && data.communityId is string
+      && data.communityId.size() > 0
+      && data.communityId.size() <= 128
+      && data.authorId is string
+      && data.authorId.size() > 0
+      && data.authorId.size() <= 128
+      && data.authorName is string
+      && data.authorName.size() > 0
+      && data.authorName.size() <= 160
+      && data.authorAvatar is string
+      && data.authorAvatar.size() <= 4096
+      && data.title is string
+      && data.title.size() > 0
+      && data.title.size() <= 140
+      && data.content is string
+      && data.content.size() > 0
+      && data.content.size() <= 3000
+      && data.status in ['open', 'closed']
+      && data.pinned is bool
+      && data.resolved is bool
+      && data.commentCount is int
+      && data.commentCount >= 0
+      && data.commentCount <= 1000000000
+      && data.lastCommentId is string
+      && data.lastCommentId.size() <= 500
+      && data.createdAtIso is string
+      && data.createdAtIso.size() <= 64
+      && data.createdAt is timestamp
+      && data.updatedAtIso is string
+      && data.updatedAtIso.size() <= 64
+      && data.updatedAt is timestamp
+      && data.activityAtIso is string
+      && data.activityAtIso.size() <= 64
+      && data.activityAt is timestamp;
+    }
+
+    match /community_debates/{debateId} {
+      allow read: if canReadCommunity(existing().communityId);
+
+      allow create: if isSignedIn()
+        && incoming().authorId == request.auth.uid
+        && isActiveCommunityMember(incoming().communityId)
+        && incoming().status == 'open'
+        && incoming().pinned == false
+        && incoming().resolved == false
+        && incoming().commentCount == 0
+        && incoming().lastCommentId == ''
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && incoming().activityAt == request.time
+        && hasValidCommunityDebateShape(incoming(), debateId);
+
+      allow update: if isSignedIn()
+        && (
+          existing().authorId == request.auth.uid
+          || isCommunityOwner(existing().communityId)
+        )
+        && incoming().debateId == existing().debateId
+        && incoming().communityId == existing().communityId
+        && incoming().authorId == existing().authorId
+        && incoming().authorName == existing().authorName
+        && incoming().authorAvatar == existing().authorAvatar
+        && incoming().commentCount == existing().commentCount
+        && incoming().lastCommentId == existing().lastCommentId
+        && incoming().createdAtIso == existing().createdAtIso
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().activityAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'title',
+          'content',
+          'status',
+          'pinned',
+          'resolved',
+          'updatedAtIso',
+          'updatedAt',
+          'activityAtIso',
+          'activityAt'
+        ])
+        && hasValidCommunityDebateShape(incoming(), debateId);
+
+      allow update: if isSignedIn()
+        && incoming().debateId == existing().debateId
+        && incoming().communityId == existing().communityId
+        && incoming().authorId == existing().authorId
+        && incoming().authorName == existing().authorName
+        && incoming().authorAvatar == existing().authorAvatar
+        && incoming().title == existing().title
+        && incoming().content == existing().content
+        && incoming().status == existing().status
+        && incoming().pinned == existing().pinned
+        && incoming().resolved == existing().resolved
+        && incoming().createdAtIso == existing().createdAtIso
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().activityAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'commentCount',
+          'lastCommentId',
+          'updatedAtIso',
+          'updatedAt',
+          'activityAtIso',
+          'activityAt'
+        ])
+        && hasValidCommunityDebateShape(incoming(), debateId)
+        && (
+          (
+            incoming().commentCount == existing().commentCount + 1
+            && existsAfter(
+              /databases/$(database)/documents/community_debate_comments/$(incoming().lastCommentId)
+            )
+            && !exists(
+              /databases/$(database)/documents/community_debate_comments/$(incoming().lastCommentId)
+            )
+            && getAfter(
+              /databases/$(database)/documents/community_debate_comments/$(incoming().lastCommentId)
+            ).data.debateId == debateId
+            && getAfter(
+              /databases/$(database)/documents/community_debate_comments/$(incoming().lastCommentId)
+            ).data.authorId == request.auth.uid
+          )
+          || (
+            incoming().commentCount == existing().commentCount - 1
+            && existing().commentCount > 0
+            && exists(
+              /databases/$(database)/documents/community_debate_comments/$(incoming().lastCommentId)
+            )
+            && !existsAfter(
+              /databases/$(database)/documents/community_debate_comments/$(incoming().lastCommentId)
+            )
+            && get(
+              /databases/$(database)/documents/community_debate_comments/$(incoming().lastCommentId)
+            ).data.debateId == debateId
+            && (
+              get(
+                /databases/$(database)/documents/community_debate_comments/$(incoming().lastCommentId)
+              ).data.authorId == request.auth.uid
+              || isCommunityOwner(existing().communityId)
+            )
+          )
+        );
+
+      allow delete: if isSignedIn()
+        && (
+          existing().authorId == request.auth.uid
+          || isCommunityOwner(existing().communityId)
+        );
+    }
+
+    function hasValidDebateCommentShape(data, commentId) {
+      return data.keys().hasAll([
+        'commentId',
+        'communityId',
+        'debateId',
+        'authorId',
+        'authorName',
+        'authorAvatar',
+        'text',
+        'parentCommentId',
+        'createdAtIso',
+        'createdAt',
+        'updatedAtIso',
+        'updatedAt'
+      ])
+      && data.keys().hasOnly([
+        'commentId',
+        'communityId',
+        'debateId',
+        'authorId',
+        'authorName',
+        'authorAvatar',
+        'text',
+        'parentCommentId',
+        'createdAtIso',
+        'createdAt',
+        'updatedAtIso',
+        'updatedAt'
+      ])
+      && data.commentId == commentId
+      && data.communityId is string
+      && data.communityId.size() > 0
+      && data.communityId.size() <= 128
+      && data.debateId is string
+      && data.debateId.size() > 0
+      && data.debateId.size() <= 500
+      && data.authorId is string
+      && data.authorId.size() > 0
+      && data.authorId.size() <= 128
+      && data.authorName is string
+      && data.authorName.size() > 0
+      && data.authorName.size() <= 160
+      && data.authorAvatar is string
+      && data.authorAvatar.size() <= 4096
+      && data.text is string
+      && data.text.size() > 0
+      && data.text.size() <= 1400
+      && data.parentCommentId is string
+      && data.parentCommentId.size() <= 500
+      && data.createdAtIso is string
+      && data.createdAtIso.size() <= 64
+      && data.createdAt is timestamp
+      && data.updatedAtIso is string
+      && data.updatedAtIso.size() <= 64
+      && data.updatedAt is timestamp;
+    }
+
+    match /community_debate_comments/{commentId} {
+      allow read: if canReadCommunity(existing().communityId);
+
+      allow create: if isSignedIn()
+        && incoming().authorId == request.auth.uid
+        && isActiveCommunityMember(incoming().communityId)
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && hasValidDebateCommentShape(incoming(), commentId)
+        && exists(
+          /databases/$(database)/documents/community_debates/$(incoming().debateId)
+        )
+        && get(
+          /databases/$(database)/documents/community_debates/$(incoming().debateId)
+        ).data.communityId == incoming().communityId
+        && get(
+          /databases/$(database)/documents/community_debates/$(incoming().debateId)
+        ).data.status == 'open'
+        && (
+          incoming().parentCommentId == ''
+          || (
+            exists(
+              /databases/$(database)/documents/community_debate_comments/$(incoming().parentCommentId)
+            )
+            && get(
+              /databases/$(database)/documents/community_debate_comments/$(incoming().parentCommentId)
+            ).data.debateId == incoming().debateId
+          )
+        )
+        && getAfter(
+          /databases/$(database)/documents/community_debates/$(incoming().debateId)
+        ).data.commentCount
+          == get(
+            /databases/$(database)/documents/community_debates/$(incoming().debateId)
+          ).data.commentCount + 1
+        && getAfter(
+          /databases/$(database)/documents/community_debates/$(incoming().debateId)
+        ).data.lastCommentId == commentId;
+
+      allow update: if isSignedIn()
+        && existing().authorId == request.auth.uid
+        && incoming().commentId == existing().commentId
+        && incoming().communityId == existing().communityId
+        && incoming().debateId == existing().debateId
+        && incoming().authorId == existing().authorId
+        && incoming().authorName == existing().authorName
+        && incoming().authorAvatar == existing().authorAvatar
+        && incoming().parentCommentId == existing().parentCommentId
+        && incoming().createdAtIso == existing().createdAtIso
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'text',
+          'updatedAtIso',
+          'updatedAt'
+        ])
+        && hasValidDebateCommentShape(incoming(), commentId);
+
+      allow delete: if isSignedIn()
+        && (
+          existing().authorId == request.auth.uid
+          || isCommunityOwner(existing().communityId)
+        )
+        && getAfter(
+          /databases/$(database)/documents/community_debates/$(existing().debateId)
+        ).data.commentCount
+          == get(
+            /databases/$(database)/documents/community_debates/$(existing().debateId)
+          ).data.commentCount - 1
+        && getAfter(
+          /databases/$(database)/documents/community_debates/$(existing().debateId)
+        ).data.lastCommentId == commentId;
+    }
