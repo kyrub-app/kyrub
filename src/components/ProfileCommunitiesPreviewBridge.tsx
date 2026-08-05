@@ -188,7 +188,7 @@ export function ProfileCommunitiesPreviewBridge() {
         : null;
 
       if (!input) {
-        if (host) setHost(null);
+        setHost(null);
         return;
       }
 
@@ -239,7 +239,7 @@ export function ProfileCommunitiesPreviewBridge() {
       detachSearchListener();
       mountRef.current?.remove();
     };
-  }, [host]);
+  }, []);
 
   useEffect(() => {
     if (!createOpen && !selectedCommunityId) return;
@@ -1026,7 +1026,9 @@ export function ProfileCommunitiesPreviewBridge() {
                             Administração
                           </dt>
                           <dd className="mt-1 text-slate-300">
-                            {selectedCommunity.isOwner ? 'Você é o dono' : 'Administradores da comunidade'}
+                            {selectedCommunity.isOwner
+                              ? 'Você é o dono'
+                              : 'Administradores da comunidade'}
                           </dd>
                         </div>
                       </dl>
