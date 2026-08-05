@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Check,
-  Clock3,
   Compass,
   FolderPlus,
   MessageCircle,
@@ -10,8 +9,13 @@ import {
   Users,
   X,
 } from 'lucide-react';
-
-type PublicationMode = 'publication' | 'status';
+import {
+  addPreviewCommunityPost,
+  COMMUNITY_PREVIEW_UPDATED_EVENT,
+  loadPreviewCommunities,
+  OPEN_COMMUNITY_PREVIEW_CREATE_EVENT,
+  type PreviewCommunity,
+} from '../utils/communityPreview';
 
 type NativeComposerControls = {
   statusInput: HTMLInputElement | null;
@@ -41,22 +45,43 @@ const findLabel = (
     label.textContent?.includes(text)
   ) ?? null;
 
+const readAuthorName = (): string => {
+  const profileModal = document.querySelector('#profile-social-hub-modal');
+  const candidates = Array.from(
+    profileModal?.querySelectorAll<HTMLElement>('h3') ?? []
+  );
+  return candidates.find(item => item.textContent?.trim())?.textContent?.trim() || 'Você';
+};
+
 export function ProfilePublishingDestinationsPreviewBridge() {
   const [host, setHost] = useState<HTMLElement | null>(null);
-  const [mode, setMode] = useState<PublicationMode>('publication');
   const [shareToSquare, setShareToSquare] = useState(false);
   const [communityPanelOpen, setCommunityPanelOpen] = useState(false);
   const [selectionPanelOpen, setSelectionPanelOpen] = useState(false);
-  const [communityDraft, setCommunityDraft] = useState('');
+  const [selectedCommunityId, setSelectedCommunityId] = useState('');
   const [selectionDraft, setSelectionDraft] = useState('');
-  const [communityName, setCommunityName] = useState('');
   const [selectionName, setSelectionName] = useState('');
+  const [communities, setCommunities] = useState<PreviewCommunity[]>(() =>
+    loadPreviewCommunities()
+  );
   const controlsRef = useRef<NativeComposerControls>({
     statusInput: null,
     squareInput: null,
   });
+  const selectedCommunityIdRef = useRef('');
   const originalGridRef = useRef<HTMLElement | null>(null);
   const mountRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    selectedCommunityIdRef.current = selectedCommunityId;
+  }, [selectedCommunityId]);
+
+  useEffect(() => {
+    const refresh = (): void => setCommunities(loadPreviewCommunities());
+    window.addEventListener(COMMUNITY_PREVIEW_UPDATED_EVENT, refresh);
+    return () =>
+      window.removeEventListener(COMMUNITY_PREVIEW_UPDATED_EVENT, refresh);
+  }, []);
 
   useEffect(() => {
     let frame = 0;
@@ -64,9 +89,7 @@ export function ProfilePublishingDestinationsPreviewBridge() {
     const synchronize = (): void => {
       const textarea = Array.from(
         document.querySelectorAll<HTMLTextAreaElement>('textarea')
-      ).find(item =>
-        item.placeholder.includes('linha do tempo')
-      );
+      ).find(item => item.placeholder.includes('linha do tempo'));
       const composer = textarea?.closest<HTMLElement>('section');
 
       if (!composer) {
@@ -97,6 +120,8 @@ export function ProfilePublishingDestinationsPreviewBridge() {
         ),
       };
 
+      setNativeCheckbox(controlsRef.current.statusInput, false);
+
       if (originalGridRef.current !== originalGrid) {
         if (originalGridRef.current) {
           originalGridRef.current.style.removeProperty('display');
@@ -120,15 +145,7 @@ export function ProfilePublishingDestinationsPreviewBridge() {
       mountRef.current = mount;
       setHost(current => (current === mount ? current : mount));
 
-      const statusChecked = controlsRef.current.statusInput?.checked === true;
       const squareChecked = controlsRef.current.squareInput?.checked === true;
-      setMode(current =>
-        current === (statusChecked ? 'status' : 'publication')
-          ? current
-          : statusChecked
-            ? 'status'
-            : 'publication'
-      );
       setShareToSquare(current =>
         current === squareChecked ? current : squareChecked
       );
@@ -154,36 +171,66 @@ export function ProfilePublishingDestinationsPreviewBridge() {
     };
   }, []);
 
-  const selectMode = (nextMode: PublicationMode): void => {
-    setMode(nextMode);
-    setNativeCheckbox(
-      controlsRef.current.statusInput,
-      nextMode === 'status'
-    );
+  useEffect(() => {
+    const handlePublishClick = (event: MouseEvent): void => {
+      const target = event.target as Element | null;
+      const button = target?.closest<HTMLButtonElement>('button');
+      if (!button || button.textContent?.trim() !== 'Publicar') return;
 
-    if (nextMode === 'status') {
-      setShareToSquare(false);
-      setNativeCheckbox(controlsRef.current.squareInput, false);
-      setCommunityName('');
-      setCommunityPanelOpen(false);
-    }
-  };
+      const composer = button.closest<HTMLElement>('section');
+      const textarea = composer?.querySelector<HTMLTextAreaElement>(
+        'textarea[placeholder*="linha do tempo"]'
+      );
+      const communityId = selectedCommunityIdRef.current;
+      if (!composer || !textarea || !communityId) return;
+
+      const mediaUrls = Array.from(
+        composer.querySelectorAll<HTMLImageElement>('div.relative.aspect-square img')
+      )
+        .map(image => image.src)
+        .filter(Boolean);
+
+      if (!textarea.value.trim() && mediaUrls.length === 0) return;
+
+      try {
+        addPreviewCommunityPost({
+          communityId,
+          authorName: readAuthorName(),
+          content: textarea.value,
+          mediaUrls,
+        });
+        setSelectedCommunityId('');
+        setCommunityPanelOpen(false);
+        setSelectionName('');
+        setSelectionDraft('');
+      } catch {
+        // The native publisher remains authoritative for validation feedback.
+      }
+    };
+
+    document.addEventListener('click', handlePublishClick, true);
+    return () => document.removeEventListener('click', handlePublishClick, true);
+  }, []);
 
   const toggleSquare = (): void => {
-    if (mode === 'status') return;
     const nextValue = !shareToSquare;
     setShareToSquare(nextValue);
     setNativeCheckbox(controlsRef.current.squareInput, nextValue);
   };
 
+  const selectedCommunity = communities.find(
+    community => community.id === selectedCommunityId
+  );
+  const availableCommunities = communities.filter(
+    community => community.isMember || community.isOwner
+  );
+
   if (!host) return null;
 
   const distributionSummary = [
-    mode === 'status' ? 'Status · 24 h' : 'Perfil',
-    mode === 'publication' && shareToSquare ? 'Praça' : '',
-    mode === 'publication' && communityName
-      ? `Comunidade · ${communityName}`
-      : '',
+    'Perfil',
+    shareToSquare ? 'Praça' : '',
+    selectedCommunity ? `Comunidade · ${selectedCommunity.name}` : '',
     selectionName ? `Seleção · ${selectionName}` : '',
   ].filter(Boolean);
 
@@ -191,96 +238,35 @@ export function ProfilePublishingDestinationsPreviewBridge() {
     <section
       className="space-y-3 rounded-3xl border border-slate-700 bg-slate-950/75 p-3 shadow-inner"
       id="profile-publishing-destinations-preview"
-      aria-label="Prévia de destinos da publicação"
+      aria-label="Destinos da publicação"
     >
       <header className="flex items-start justify-between gap-3">
         <div>
           <span className="text-[8px] font-black uppercase tracking-[0.18em] text-orange-400">
-            Novo fluxo de publicação
+            Publicação permanente
           </span>
           <h4 className="mt-0.5 text-xs font-black text-white">
-            Como este conteúdo será publicado?
+            Onde este conteúdo deve aparecer?
           </h4>
+          <p className="mt-1 text-[8px] leading-relaxed text-slate-500">
+            A publicação permanece no perfil. Praça e Comunidade ampliam a distribuição.
+          </p>
         </div>
-        <span className="shrink-0 rounded-full border border-violet-500/25 bg-violet-500/10 px-2 py-1 text-[7px] font-black uppercase text-violet-300">
-          Protótipo visual
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-orange-500/25 bg-orange-500/10 text-orange-300">
+          <MessageCircle className="h-4 w-4" />
         </span>
       </header>
 
       <div>
         <span className="mb-2 block text-[8px] font-black uppercase tracking-wide text-slate-500">
-          1. Formato
+          Compartilhar em
         </span>
-        <div className="grid grid-cols-2 gap-2">
-          <button
-            type="button"
-            onClick={() => selectMode('publication')}
-            className={`min-h-[70px] rounded-2xl border p-3 text-left transition-colors ${
-              mode === 'publication'
-                ? 'border-orange-500/45 bg-orange-500/10'
-                : 'border-slate-800 bg-slate-900/70'
-            }`}
-          >
-            <span className="flex items-center gap-2">
-              <MessageCircle
-                className={`h-4 w-4 ${
-                  mode === 'publication' ? 'text-orange-300' : 'text-slate-500'
-                }`}
-              />
-              <strong className="text-[9px] font-black uppercase text-white">
-                Publicação
-              </strong>
-            </span>
-            <span className="mt-1 block text-[8px] leading-relaxed text-slate-500">
-              Permanente no perfil e pronta para distribuição.
-            </span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => selectMode('status')}
-            className={`min-h-[70px] rounded-2xl border p-3 text-left transition-colors ${
-              mode === 'status'
-                ? 'border-teal-500/45 bg-teal-500/10'
-                : 'border-slate-800 bg-slate-900/70'
-            }`}
-          >
-            <span className="flex items-center gap-2">
-              <Clock3
-                className={`h-4 w-4 ${
-                  mode === 'status' ? 'text-teal-300' : 'text-slate-500'
-                }`}
-              />
-              <strong className="text-[9px] font-black uppercase text-white">
-                Status
-              </strong>
-            </span>
-            <span className="mt-1 block text-[8px] leading-relaxed text-slate-500">
-              Temporário por 24 horas, sem virar publicação permanente.
-            </span>
-          </button>
-        </div>
-      </div>
-
-      <div>
-        <div className="mb-2 flex items-center justify-between gap-2">
-          <span className="text-[8px] font-black uppercase tracking-wide text-slate-500">
-            2. Onde compartilhar
-          </span>
-          {mode === 'status' && (
-            <span className="text-[7px] text-teal-300/75">
-              Status começa com alcance próprio
-            </span>
-          )}
-        </div>
-
         <div className="grid gap-2 sm:grid-cols-2">
           <button
             type="button"
             onClick={toggleSquare}
-            disabled={mode === 'status'}
-            className={`flex min-h-[62px] items-center gap-3 rounded-2xl border p-3 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
-              shareToSquare && mode === 'publication'
+            className={`flex min-h-[64px] items-center gap-3 rounded-2xl border p-3 text-left transition-colors ${
+              shareToSquare
                 ? 'border-orange-500/45 bg-orange-500/10'
                 : 'border-slate-800 bg-slate-900/70'
             }`}
@@ -296,20 +282,16 @@ export function ProfilePublishingDestinationsPreviewBridge() {
                 Descoberta pública no feed geral.
               </span>
             </span>
-            {shareToSquare && mode === 'publication' && (
+            {shareToSquare && (
               <Check className="h-4 w-4 shrink-0 text-orange-300" />
             )}
           </button>
 
           <button
             type="button"
-            onClick={() =>
-              mode === 'publication' &&
-              setCommunityPanelOpen(current => !current)
-            }
-            disabled={mode === 'status'}
-            className={`flex min-h-[62px] items-center gap-3 rounded-2xl border p-3 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
-              communityName && mode === 'publication'
+            onClick={() => setCommunityPanelOpen(current => !current)}
+            className={`flex min-h-[64px] items-center gap-3 rounded-2xl border p-3 text-left transition-colors ${
+              selectedCommunity
                 ? 'border-sky-500/45 bg-sky-500/10'
                 : 'border-slate-800 bg-slate-900/70'
             }`}
@@ -322,10 +304,10 @@ export function ProfilePublishingDestinationsPreviewBridge() {
                 Comunidade
               </strong>
               <span className="mt-0.5 block truncate text-[8px] text-slate-500">
-                {communityName || 'Escolher ou criar uma comunidade'}
+                {selectedCommunity?.name || 'Escolher uma comunidade'}
               </span>
             </span>
-            {communityName && mode === 'publication' ? (
+            {selectedCommunity ? (
               <Check className="h-4 w-4 shrink-0 text-sky-300" />
             ) : (
               <Plus className="h-4 w-4 shrink-0 text-slate-600" />
@@ -333,67 +315,87 @@ export function ProfilePublishingDestinationsPreviewBridge() {
           </button>
         </div>
 
-        {communityPanelOpen && mode === 'publication' && (
-          <div className="mt-2 rounded-2xl border border-sky-500/25 bg-sky-500/5 p-3">
+        {communityPanelOpen && (
+          <div className="mt-2 space-y-2 rounded-2xl border border-sky-500/25 bg-sky-500/5 p-3">
             <div className="flex items-center justify-between gap-2">
               <div>
                 <strong className="block text-[9px] font-black uppercase text-sky-200">
-                  Comunidade
+                  Suas comunidades
                 </strong>
                 <span className="text-[8px] text-slate-500">
-                  Digite um nome para simular escolher ou criar.
+                  A publicação também aparecerá no mural escolhido.
                 </span>
               </div>
               <button
                 type="button"
                 onClick={() => setCommunityPanelOpen(false)}
                 className="text-slate-500"
-                aria-label="Fechar prévia de comunidade"
+                aria-label="Fechar comunidades"
               >
                 <X className="h-4 w-4" />
               </button>
             </div>
-            <div className="mt-2 flex gap-2">
-              <input
-                value={communityDraft}
-                onChange={event =>
-                  setCommunityDraft(event.target.value.slice(0, 60))
-                }
-                placeholder="Nome da comunidade"
-                className="min-h-10 min-w-0 flex-1 rounded-xl border border-slate-800 bg-slate-950 px-3 text-[10px] text-white outline-none focus:border-sky-500/60"
-              />
-              <button
-                type="button"
-                onClick={() => {
-                  const name = communityDraft.trim();
-                  if (!name) return;
-                  setCommunityName(name);
-                  setCommunityPanelOpen(false);
-                }}
-                className="min-h-10 rounded-xl bg-sky-500 px-3 text-[8px] font-black uppercase text-slate-950"
-              >
-                Usar
-              </button>
+
+            <div className="max-h-48 space-y-2 overflow-y-auto">
+              {availableCommunities.map(community => (
+                <button
+                  key={community.id}
+                  type="button"
+                  onClick={() => {
+                    setSelectedCommunityId(
+                      selectedCommunityId === community.id ? '' : community.id
+                    );
+                    setCommunityPanelOpen(false);
+                  }}
+                  className={`flex w-full items-center gap-3 rounded-xl border p-2.5 text-left ${
+                    selectedCommunityId === community.id
+                      ? 'border-sky-500/45 bg-sky-500/10'
+                      : 'border-slate-800 bg-slate-950'
+                  }`}
+                >
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-900 text-xs font-black text-sky-300">
+                    {community.name.charAt(0).toLocaleUpperCase('pt-BR')}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <strong className="block truncate text-[9px] text-white">
+                      {community.name}
+                    </strong>
+                    <span className="block truncate text-[8px] text-slate-500">
+                      {community.category}
+                    </span>
+                  </span>
+                  {selectedCommunityId === community.id && (
+                    <Check className="h-4 w-4 text-sky-300" />
+                  )}
+                </button>
+              ))}
+              {availableCommunities.length === 0 && (
+                <p className="rounded-xl border border-dashed border-slate-800 px-3 py-5 text-center text-[8px] text-slate-500">
+                  Entre ou crie uma comunidade pela Praça para publicar nela.
+                </p>
+              )}
             </div>
-            {communityName && (
-              <button
-                type="button"
-                onClick={() => {
-                  setCommunityName('');
-                  setCommunityDraft('');
-                }}
-                className="mt-2 text-[8px] font-bold text-slate-500 underline"
-              >
-                Publicar sem comunidade
-              </button>
-            )}
+
+            <button
+              type="button"
+              onClick={() => {
+                setCommunityPanelOpen(false);
+                window.dispatchEvent(
+                  new Event(OPEN_COMMUNITY_PREVIEW_CREATE_EVENT)
+                );
+              }}
+              className="flex min-h-10 w-full items-center justify-center gap-2 rounded-xl border border-sky-500/25 bg-sky-500/10 px-3 text-[8px] font-black uppercase text-sky-200"
+            >
+              <Plus className="h-4 w-4" />
+              Criar comunidade
+            </button>
           </div>
         )}
       </div>
 
       <div>
         <span className="mb-2 block text-[8px] font-black uppercase tracking-wide text-slate-500">
-          3. Organizar, sem duplicar
+          Organizar, sem duplicar
         </span>
         <button
           type="button"
@@ -412,7 +414,7 @@ export function ProfilePublishingDestinationsPreviewBridge() {
               Seleções
             </strong>
             <span className="mt-0.5 block truncate text-[8px] text-slate-500">
-              {selectionName || 'Guardar em uma seleção do perfil'}
+              {selectionName || 'Agrupar esta publicação no perfil'}
             </span>
           </span>
           {selectionName ? (
@@ -430,14 +432,14 @@ export function ProfilePublishingDestinationsPreviewBridge() {
                   Seleção do perfil
                 </strong>
                 <span className="text-[8px] text-slate-500">
-                  A seleção organiza a publicação ou preserva o Status.
+                  Este nome ainda é parte do protótipo de nomenclatura.
                 </span>
               </div>
               <button
                 type="button"
                 onClick={() => setSelectionPanelOpen(false)}
                 className="text-slate-500"
-                aria-label="Fechar prévia de seleção"
+                aria-label="Fechar seleção"
               >
                 <X className="h-4 w-4" />
               </button>
@@ -482,7 +484,7 @@ export function ProfilePublishingDestinationsPreviewBridge() {
 
       <footer className="border-t border-slate-800 pt-3">
         <span className="block text-[7px] font-black uppercase tracking-wide text-slate-600">
-          Prévia do destino
+          Destino desta publicação
         </span>
         <div className="mt-2 flex flex-wrap gap-1.5">
           {distributionSummary.map(item => (
@@ -495,8 +497,7 @@ export function ProfilePublishingDestinationsPreviewBridge() {
           ))}
         </div>
         <p className="mt-2 text-[7px] leading-relaxed text-slate-600">
-          Nesta etapa, Comunidade e Seleções são apenas uma simulação visual;
-          nenhuma estrutura é criada ou salva no banco.
+          Comunidades e seus murais são funcionais apenas neste preview local. Seleções ainda não são persistidas.
         </p>
       </footer>
     </section>,
