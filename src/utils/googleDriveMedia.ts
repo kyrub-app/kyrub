@@ -25,7 +25,7 @@ const googleCloudProjectNumber =
   DEFAULT_GOOGLE_CLOUD_PROJECT_NUMBER;
 
 export interface GoogleDriveImageSelection {
-  provider: 'google_drive';
+  provider: 'google_drive' | 'firebase_storage';
   fileId: string;
   fileName: string;
   mimeType: string;
