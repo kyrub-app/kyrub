@@ -39,6 +39,16 @@ test('cloud data layer persists shared community resources in Firestore', () => 
   assert.match(cloud, /importLocalCommunityPrototype/);
 });
 
+test('debate comment subscription scopes the query to community and debate', () => {
+  const querySafe = read('src/utils/communityCloudQuerySafe.ts');
+  const vite = read('vite.config.ts');
+
+  assert.match(querySafe, /community_debates/);
+  assert.match(querySafe, /where\('communityId', '==', communityId\)/);
+  assert.match(querySafe, /where\('debateId', '==', debateId\)/);
+  assert.match(vite, /communityCloudQuerySafe\.ts/);
+});
+
 test('Firestore and Storage compose dedicated community authorization', () => {
   const fragment = read('firestore.communities.fragment.rules');
   const compose = read('scripts/compose-firestore-rules.mjs');
