@@ -1,6 +1,11 @@
 name: Deploy community security
 
 on:
+  push:
+    branches: ['feat/app-media-storage']
+    paths:
+      - 'storage.rules'
+      - '.github/workflows/deploy-community-preview-security.yml'
   workflow_dispatch:
 
 permissions:
