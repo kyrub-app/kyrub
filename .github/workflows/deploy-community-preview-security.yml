@@ -2,6 +2,11 @@ name: Deploy community security
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - feat/cloud-communities-debates
+    paths:
+      - '.github/workflows/deploy-community-preview-security.yml'
 
 permissions:
   contents: read
@@ -41,7 +46,7 @@ jobs:
       - name: Validate Firestore community rules
         run: npm run test:rules
 
-      - name: Validate deferred Storage rules
+      - name: Validate Storage community covers
         run: npm run test:identity-security
 
       - name: Compose production rules
@@ -69,20 +74,20 @@ jobs:
             exit 1
           fi
 
-      - name: Deploy Firestore rules
+      - name: Deploy Firestore and Storage rules
         shell: bash
         run: |
           set -euo pipefail
           if [ "$FIREBASE_AUTH_MODE" = 'token' ]; then
             npx --yes firebase-tools deploy \
-              --only firestore:rules \
+              --only firestore:rules,storage \
               --project kyrub-b8d0e \
               --config firebase.json \
               --non-interactive \
               --token "$FIREBASE_CI_TOKEN"
           else
             npx --yes firebase-tools deploy \
-              --only firestore:rules \
+              --only firestore:rules,storage \
               --project kyrub-b8d0e \
               --config firebase.json \
               --non-interactive
