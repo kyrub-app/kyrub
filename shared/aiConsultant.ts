@@ -1,7 +1,4 @@
-import type {
-  KyrubActionProposal,
-  KyrubAiCreateNoteProposal,
-} from './kyrubActions';
+import type { KyrubActionProposal } from './kyrubActions';
 
 export type {
   KyrubActionProposal as KyrubAiActionProposal,
@@ -67,5 +64,3 @@ export type KyrubAiConsultantErrorResponse = {
   error: string;
   code: KyrubAiConsultantErrorCode;
 };
-
-export type { KyrubAiCreateNoteProposal };
