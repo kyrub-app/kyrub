@@ -2,6 +2,8 @@ name: Application build
 
 on:
   pull_request:
+  push:
+    branches: ['feat/kyrubia-action-foundation']
   workflow_dispatch:
 
 permissions:
