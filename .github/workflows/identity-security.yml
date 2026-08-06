@@ -15,7 +15,7 @@ on:
       - 'package.json'
       - '.github/workflows/identity-security.yml'
   push:
-    branches: [main, 'agent/**', 'fix/**']
+    branches: [main, 'agent/**', 'fix/**', 'feat/app-media-storage']
     paths:
       - 'storage.rules'
       - 'firestore*.rules'
