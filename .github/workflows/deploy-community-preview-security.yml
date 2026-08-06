@@ -2,11 +2,6 @@ name: Deploy community security
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - feat/cloud-communities-debates
-    paths:
-      - '.github/workflows/deploy-community-preview-security.yml'
 
 permissions:
   contents: read
