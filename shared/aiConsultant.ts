@@ -1,3 +1,13 @@
+import type {
+  KyrubActionProposal,
+  KyrubAiCreateNoteProposal,
+} from './kyrubActions';
+
+export type {
+  KyrubActionProposal as KyrubAiActionProposal,
+  KyrubAiCreateNoteProposal,
+} from './kyrubActions';
+
 export const KYRUB_AI_CONSULTANT_ENDPOINT = '/api/kyrubia';
 export const KYRUB_AI_CONSULTANT_COMPAT_ENDPOINT = '/api/consultor-kyrub';
 export const KYRUB_AI_CONSULTANT_LEGACY_ENDPOINT = '/api/ai/consultant';
@@ -26,20 +36,9 @@ export type KyrubAiConsultantRequest = {
   screenContext?: string;
 };
 
-export type KyrubAiCreateNoteProposal = {
-  id: string;
-  type: 'create_note';
-  title: string;
-  content: string;
-  checklist: string[];
-  requiresConfirmation: true;
-};
-
-export type KyrubAiActionProposal = KyrubAiCreateNoteProposal;
-
 export type KyrubAiConsultantCapabilities = {
   actionsEnabled: boolean;
-  enabledActions?: Array<KyrubAiActionProposal['type']>;
+  enabledActions?: Array<KyrubActionProposal['type']>;
   voiceEnabled: boolean;
   persistentCloudHistoryEnabled: boolean;
 };
@@ -50,7 +49,7 @@ export type KyrubAiConsultantResponse = {
   model: string;
   mode: 'conversation';
   requestId: string;
-  actionProposal?: KyrubAiActionProposal;
+  actionProposal?: KyrubActionProposal;
   capabilities: KyrubAiConsultantCapabilities;
 };
 
@@ -68,3 +67,5 @@ export type KyrubAiConsultantErrorResponse = {
   error: string;
   code: KyrubAiConsultantErrorCode;
 };
+
+export type { KyrubAiCreateNoteProposal };
