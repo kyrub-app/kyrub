@@ -3,7 +3,6 @@ import { createRoot } from 'react-dom/client';
 import App from './App.tsx';
 import { AppErrorBoundary } from './components/AppErrorBoundary';
 import { ProfileCommunitiesCloudBridge } from './components/ProfileCommunitiesCloudBridge';
-import { ProfileCommunityStorageDeferredBridge } from './components/ProfileCommunityStorageDeferredBridge';
 import { ProfileConnectedCardsPolishBridge } from './components/ProfileConnectedCardsPolishBridge';
 import { ProfileConnectedImageFitBridge } from './components/ProfileConnectedImageFitBridge';
 import { ProfileContactGroupsPolishBridge } from './components/ProfileContactGroupsPolishBridge';
@@ -33,7 +32,6 @@ createRoot(rootElement).render(
         <ProfileOffersFiltersBridge />
         <ProfilePublishingDestinationsCloudBridge />
         <ProfileCommunitiesCloudBridge />
-        <ProfileCommunityStorageDeferredBridge />
         <App />
       </>
     </AppErrorBoundary>
