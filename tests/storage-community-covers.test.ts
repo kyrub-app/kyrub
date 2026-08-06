@@ -70,6 +70,15 @@ const metadata = (communityId: string, ownerId = OWNER_ID) => ({
   },
 });
 
+const appImageMetadata = (contentHash: string, ownerId = OWNER_ID) => ({
+  contentType: 'image/webp',
+  customMetadata: {
+    ownerId,
+    contentHash,
+    originalName: 'produto.webp',
+  },
+});
+
 test('community creator uploads, reads and removes the cover', async () => {
   const ownerStorage = environment.authenticatedContext(OWNER_ID).storage();
   const cover = ref(
@@ -146,6 +155,80 @@ test('forged metadata and oversized non-image content are rejected', async () =>
         customMetadata: {
           communityId: 'public_cover',
           ownerId: OWNER_ID,
+        },
+      }
+    )
+  );
+});
+
+test('owner uploads a content-addressed app image that public storefronts can read', async () => {
+  const hash = 'a'.repeat(64);
+  const path = `app-images/${OWNER_ID}/${hash}`;
+  const ownerStorage = environment.authenticatedContext(OWNER_ID).storage();
+
+  await assertSucceeds(
+    uploadBytes(
+      ref(ownerStorage, path),
+      new Uint8Array([1, 2, 3]),
+      appImageMetadata(hash)
+    )
+  );
+  await assertSucceeds(
+    getBytes(ref(environment.unauthenticatedContext().storage(), path))
+  );
+  await assertSucceeds(deleteObject(ref(ownerStorage, path)));
+});
+
+test('another user cannot replace or delete an app image', async () => {
+  const hash = 'b'.repeat(64);
+  const path = `app-images/${OWNER_ID}/${hash}`;
+  const ownerStorage = environment.authenticatedContext(OWNER_ID).storage();
+  const outsiderStorage = environment.authenticatedContext('outsider').storage();
+
+  await assertSucceeds(
+    uploadBytes(
+      ref(ownerStorage, path),
+      new Uint8Array([1]),
+      appImageMetadata(hash)
+    )
+  );
+  await assertFails(
+    uploadBytes(
+      ref(outsiderStorage, path),
+      new Uint8Array([9]),
+      appImageMetadata(hash, 'outsider')
+    )
+  );
+  await assertFails(deleteObject(ref(outsiderStorage, path)));
+});
+
+test('app images reject a forged hash, forged owner and unsupported content', async () => {
+  const hash = 'c'.repeat(64);
+  const ownerStorage = environment.authenticatedContext(OWNER_ID).storage();
+
+  await assertFails(
+    uploadBytes(
+      ref(ownerStorage, `app-images/${OWNER_ID}/${hash}`),
+      new Uint8Array([1]),
+      appImageMetadata('d'.repeat(64))
+    )
+  );
+  await assertFails(
+    uploadBytes(
+      ref(ownerStorage, `app-images/${OWNER_ID}/${hash}`),
+      new Uint8Array([1]),
+      appImageMetadata(hash, 'forged_owner')
+    )
+  );
+  await assertFails(
+    uploadBytes(
+      ref(ownerStorage, `app-images/${OWNER_ID}/${hash}`),
+      new Uint8Array([1]),
+      {
+        contentType: 'image/gif',
+        customMetadata: {
+          ownerId: OWNER_ID,
+          contentHash: hash,
         },
       }
     )
