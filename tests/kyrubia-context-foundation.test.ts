@@ -5,6 +5,7 @@ import type { KyrubErpContextSnapshot } from '../shared/kyrubErpContext';
 import { resolveKyrubiaDeterministicErpRead } from '../shared/kyrubiaDeterministicErp';
 import {
   describeKyrubiaTurnSelection,
+  resolveKyrubiaContextualRecall,
   resolveKyrubiaTurnSelection,
 } from '../shared/kyrubiaContext';
 
@@ -125,6 +126,48 @@ test('contextual follow-up resolves the first three real entities without guessi
   assert.equal(selection?.entityType, 'product');
 });
 
+test('contextual recall can answer which items were shown without generative AI', () => {
+  const list = resolveKyrubiaDeterministicErpRead(
+    'Liste os produtos com estoque baixo.',
+    snapshot()
+  );
+  assert.ok(list?.turnContext);
+
+  const recall = resolveKyrubiaContextualRecall(
+    'Dessa lista, quais são os dois primeiros?',
+    list.turnContext
+  );
+
+  assert.ok(recall);
+  assert.deepEqual(recall.selection.entityIds, ['product-a', 'product-b']);
+  assert.match(recall.reply, /Produto A/);
+  assert.match(recall.reply, /Produto B/);
+  assert.doesNotMatch(recall.reply, /100|80|estoque|preço/i);
+  assert.deepEqual(
+    recall.turnContext.entities.map(entity => ({
+      id: entity.entityId,
+      position: entity.position,
+    })),
+    [
+      { id: 'product-a', position: 1 },
+      { id: 'product-b', position: 2 },
+    ]
+  );
+});
+
+test('mutation wording is resolved as reference but is not intercepted as a readback', () => {
+  const list = resolveKyrubiaDeterministicErpRead(
+    'Liste os produtos com estoque baixo.',
+    snapshot()
+  );
+  assert.ok(list?.turnContext);
+  const message =
+    'Dessa lista que você acabou de me mostrar, aplique um desconto de 10% nos três primeiros itens.';
+
+  assert.ok(resolveKyrubiaTurnSelection(message, list.turnContext));
+  assert.equal(resolveKyrubiaContextualRecall(message, list.turnContext), null);
+});
+
 test('turn memory is not used when the user does not refer to the previous result', () => {
   const list = resolveKyrubiaDeterministicErpRead(
     'Liste os produtos com estoque baixo.',
@@ -170,6 +213,9 @@ test('workspace persists the latest structured turn and uses activate-store word
   assert.match(workspace, /lastTurnContext: result\.turnContext/);
   assert.match(conversationStore, /lastTurnContext\?: KyrubiaTurnContext/);
   assert.match(client, /resolveKyrubiaTurnSelection/);
+  assert.match(client, /resolveKyrubiaContextualRecall/);
   assert.match(client, /describeKyrubiaTurnSelection/);
   assert.match(client, /screenContext: appendStructuredReferenceContext/);
+  assert.match(client, /provider: 'kyrub'/);
+  assert.match(client, /mode: 'deterministic'/);
 });
