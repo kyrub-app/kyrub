@@ -9,6 +9,8 @@ on:
       - 'scripts/compose-firestore-rules.mjs'
       - 'scripts/firestore-rule-composition.mjs'
       - 'tests/storage-identity-verification.test.ts'
+      - 'tests/storage-community-covers.test.ts'
+      - 'src/utils/communityCloud.ts'
       - 'firebase.identity-security.json'
       - 'package.json'
       - '.github/workflows/identity-security.yml'
@@ -20,6 +22,8 @@ on:
       - 'scripts/compose-firestore-rules.mjs'
       - 'scripts/firestore-rule-composition.mjs'
       - 'tests/storage-identity-verification.test.ts'
+      - 'tests/storage-community-covers.test.ts'
+      - 'src/utils/communityCloud.ts'
       - 'firebase.identity-security.json'
       - 'package.json'
       - '.github/workflows/identity-security.yml'
@@ -56,5 +60,5 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Test private identity evidence
+      - name: Test private identity evidence and community covers
         run: npm run test:identity-security

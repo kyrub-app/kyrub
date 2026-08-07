@@ -1,0 +1,89 @@
+name: Deploy community security
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: community-security-deploy
+  cancel-in-progress: false
+
+jobs:
+  validate-and-deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: firebase-production
+    env:
+      FIREBASE_SERVICE_ACCOUNT_PROJECT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_KYRUB_B8D0E }}
+      FIREBASE_SERVICE_ACCOUNT_GENERIC: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+      FIREBASE_CI_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate Firestore community rules
+        run: npm run test:rules
+
+      - name: Validate Storage community covers
+        run: npm run test:identity-security
+
+      - name: Compose production rules
+        run: npm run firestore:compose
+
+      - name: Configure Firebase credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          SERVICE_ACCOUNT="${FIREBASE_SERVICE_ACCOUNT_PROJECT:-}"
+          if [ -z "$SERVICE_ACCOUNT" ]; then
+            SERVICE_ACCOUNT="${FIREBASE_SERVICE_ACCOUNT_GENERIC:-}"
+          fi
+
+          if [ -n "$SERVICE_ACCOUNT" ]; then
+            CREDENTIALS_PATH="$RUNNER_TEMP/kyrub-firebase-service-account.json"
+            printf '%s' "$SERVICE_ACCOUNT" > "$CREDENTIALS_PATH"
+            chmod 600 "$CREDENTIALS_PATH"
+            echo "GOOGLE_APPLICATION_CREDENTIALS=$CREDENTIALS_PATH" >> "$GITHUB_ENV"
+            echo "FIREBASE_AUTH_MODE=service-account" >> "$GITHUB_ENV"
+          elif [ -n "${FIREBASE_CI_TOKEN:-}" ]; then
+            echo "FIREBASE_AUTH_MODE=token" >> "$GITHUB_ENV"
+          else
+            echo 'Configure FIREBASE_SERVICE_ACCOUNT_KYRUB_B8D0E in the firebase-production environment before running this workflow.' >&2
+            exit 1
+          fi
+
+      - name: Deploy Firestore and Storage rules
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$FIREBASE_AUTH_MODE" = 'token' ]; then
+            npx --yes firebase-tools deploy \
+              --only firestore:rules,storage \
+              --project kyrub-b8d0e \
+              --config firebase.json \
+              --non-interactive \
+              --token "$FIREBASE_CI_TOKEN"
+          else
+            npx --yes firebase-tools deploy \
+              --only firestore:rules,storage \
+              --project kyrub-b8d0e \
+              --config firebase.json \
+              --non-interactive
+          fi

@@ -2,20 +2,19 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App.tsx';
 import { AppErrorBoundary } from './components/AppErrorBoundary';
-import { ProfileCommunitiesPreviewBridge } from './components/ProfileCommunitiesPreviewBridge';
+import { ProfileCommunitiesCloudBridge } from './components/ProfileCommunitiesCloudBridge';
 import { ProfileConnectedCardsPolishBridge } from './components/ProfileConnectedCardsPolishBridge';
 import { ProfileConnectedImageFitBridge } from './components/ProfileConnectedImageFitBridge';
 import { ProfileContactGroupsPolishBridge } from './components/ProfileContactGroupsPolishBridge';
 import { ProfileNextPolishBridge } from './components/ProfileNextPolishBridge';
 import { ProfileOffersFiltersBridge } from './components/ProfileOffersFiltersBridge';
-import { ProfilePublishingDestinationsPreviewBridge } from './components/ProfilePublishingDestinationsPreviewBridge';
+import { ProfilePublishingDestinationsCloudBridge } from './components/ProfilePublishingDestinationsCloudBridge';
 import './index.css';
 import './styles/responsive-product-cards.css';
 import './styles/catalog-category-tree.css';
 import './styles/profile-verification.css';
 import './styles/profile-header-layout.css';
 
-// Authenticated preview deployment revision: 2026-08-04T21:07-03:00.
 const rootElement = document.getElementById('root');
 
 if (!rootElement) {
@@ -31,8 +30,8 @@ createRoot(rootElement).render(
         <ProfileConnectedImageFitBridge />
         <ProfileContactGroupsPolishBridge />
         <ProfileOffersFiltersBridge />
-        <ProfilePublishingDestinationsPreviewBridge />
-        <ProfileCommunitiesPreviewBridge />
+        <ProfilePublishingDestinationsCloudBridge />
+        <ProfileCommunitiesCloudBridge />
         <App />
       </>
     </AppErrorBoundary>
