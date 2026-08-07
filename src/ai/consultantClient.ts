@@ -5,6 +5,7 @@ import {
   type KyrubAiConsultantRequest,
   type KyrubAiConsultantResponse,
 } from '../../shared/aiConsultant';
+import { resolveKyrubiaDeterministicErpRead } from '../../shared/kyrubiaDeterministicErp';
 import { readKyrubErpContext } from '../actions/erpReadActionService';
 import { auth } from '../utils/firebase';
 import { emitKyrubAiActionProposal } from './actionEvents';
@@ -28,6 +29,13 @@ const CONSULTANT_ENDPOINTS = [
   KYRUB_AI_CONSULTANT_LEGACY_ENDPOINT,
 ] as const;
 
+const DETERMINISTIC_READ_ACTIONS = [
+  'read_store_summary',
+  'list_products',
+  'list_low_stock_products',
+  'list_pending_orders',
+] as const;
+
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 
@@ -44,6 +52,14 @@ const readResponseBody = async (response: Response): Promise<unknown> => {
 const hasTopLevelKyrubCode = (value: unknown): boolean =>
   isRecord(value) && typeof value.code === 'string' && value.code.length > 0;
 
+const createRuntimeRequestId = (): string => {
+  try {
+    return globalThis.crypto.randomUUID();
+  } catch {
+    return `kyrub-runtime-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  }
+};
+
 export const requestKyrubAiConsultant = async (
   payload: KyrubAiConsultantRequest,
   signal?: AbortSignal
@@ -59,18 +75,6 @@ export const requestKyrubAiConsultant = async (
 
   const requestPayload = prepareKyrubAiOpportunityContinuation(payload);
 
-  let token = '';
-  try {
-    token = await currentUser.getIdToken();
-  } catch (error) {
-    if (signal?.aborted) throw error;
-    throw new KyrubAiClientError(
-      'Não foi possível validar sua sessão agora. Verifique sua internet e tente novamente.',
-      'AUTH_UNAVAILABLE',
-      503
-    );
-  }
-
   let erpContext = requestPayload.erpContext;
   if (!erpContext) {
     try {
@@ -82,6 +86,41 @@ export const requestKyrubAiConsultant = async (
         error
       );
     }
+  }
+
+  const latestUserMessage = requestPayload.messages.at(-1);
+  const deterministic = latestUserMessage?.role === 'user'
+    ? resolveKyrubiaDeterministicErpRead(latestUserMessage.content, erpContext)
+    : null;
+
+  if (deterministic) {
+    return {
+      reply: deterministic.reply,
+      provider: 'kyrub',
+      model: 'kyrub-runtime-v1',
+      mode: 'deterministic',
+      requestId: createRuntimeRequestId(),
+      actionProposal: undefined,
+      capabilities: {
+        actionsEnabled: true,
+        enabledActions: ['create_note'],
+        enabledReadActions: [...DETERMINISTIC_READ_ACTIONS],
+        voiceEnabled: false,
+        persistentCloudHistoryEnabled: false,
+      },
+    };
+  }
+
+  let token = '';
+  try {
+    token = await currentUser.getIdToken();
+  } catch (error) {
+    if (signal?.aborted) throw error;
+    throw new KyrubAiClientError(
+      'Não foi possível validar sua sessão agora. Verifique sua internet e tente novamente.',
+      'AUTH_UNAVAILABLE',
+      503
+    );
   }
 
   const enrichedPayload: KyrubAiConsultantRequest = erpContext
@@ -149,7 +188,7 @@ export const requestKyrubAiConsultant = async (
 
   console.warn('[Kyrubia] AI endpoint connection failed.', lastNetworkFailure);
   throw new KyrubAiClientError(
-    'Não foi possível conectar ao servidor da Kyrub I.A. Verifique sua internet e tente novamente.',
+    'Não foi possível conectar ao servidor da Kyrubia. Verifique sua internet e tente novamente.',
     'AI_UNAVAILABLE',
     503
   );
