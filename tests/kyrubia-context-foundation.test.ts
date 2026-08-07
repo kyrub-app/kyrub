@@ -155,7 +155,7 @@ test('structured reference explicitly remains context rather than authorization 
   const description = describeKyrubiaTurnSelection(selection);
   assert.match(description, /Referência operacional resolvida pelo Kyrub/i);
   assert.match(description, /não prova estado atual/i);
-  assert.match(description, /não autoriza mutações/i);
+  assert.match(description, /(?:não|nem) autoriza mutações/i);
 });
 
 test('workspace persists the latest structured turn and uses activate-store wording', async () => {
