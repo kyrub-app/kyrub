@@ -1,9 +1,14 @@
-import type { KyrubActionProposal } from './kyrubActions';
+import type {
+  KyrubActionProposal,
+  KyrubReadActionType,
+} from './kyrubActions';
+import type { KyrubErpContextSnapshot } from './kyrubErpContext';
 
 export type {
   KyrubActionProposal as KyrubAiActionProposal,
   KyrubAiCreateNoteProposal,
 } from './kyrubActions';
+export type { KyrubErpContextSnapshot } from './kyrubErpContext';
 
 export const KYRUB_AI_CONSULTANT_ENDPOINT = '/api/kyrubia';
 export const KYRUB_AI_CONSULTANT_COMPAT_ENDPOINT = '/api/consultor-kyrub';
@@ -31,20 +36,22 @@ export type KyrubAiConsultantRequest = {
   topic: string;
   messages: KyrubAiConversationMessage[];
   screenContext?: string;
+  erpContext?: KyrubErpContextSnapshot;
 };
 
 export type KyrubAiConsultantCapabilities = {
   actionsEnabled: boolean;
   enabledActions?: Array<KyrubActionProposal['type']>;
+  enabledReadActions?: KyrubReadActionType[];
   voiceEnabled: boolean;
   persistentCloudHistoryEnabled: boolean;
 };
 
 export type KyrubAiConsultantResponse = {
   reply: string;
-  provider: 'gemini';
+  provider: 'kyrub' | 'gemini';
   model: string;
-  mode: 'conversation';
+  mode: 'conversation' | 'deterministic';
   requestId: string;
   actionProposal?: KyrubActionProposal;
   capabilities: KyrubAiConsultantCapabilities;

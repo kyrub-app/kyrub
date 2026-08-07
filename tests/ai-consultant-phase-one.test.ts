@@ -252,7 +252,7 @@ test('phase one is wired to Express, both Vercel routes and the Kyrub AI workspa
   assert.match(sharedSource, /\/api\/consultor-kyrub/);
   assert.match(sharedSource, /\/api\/ai\/consultant/);
   assert.match(clientSource, /CONSULTANT_ENDPOINTS/);
-  assert.match(clientSource, /Não foi possível conectar ao servidor da Kyrub I\.A/);
+  assert.match(clientSource, /Não foi possível conectar ao servidor da Kyrubia/);
   assert.doesNotMatch(clientSource, /throw new Error\([^)]*Failed to fetch/);
   assert.match(workspaceSource, /Em que posso ajudar hoje\?/);
   assert.match(workspaceSource, /requestKyrubAiConsultant/);

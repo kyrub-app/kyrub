@@ -1,12 +1,13 @@
 export const KYRUB_ACTION_TYPES = {
   CREATE_NOTE: 'create_note',
-} as const;
-
-export const KYRUB_PLANNED_ERP_ACTION_TYPES = {
   READ_STORE_SUMMARY: 'read_store_summary',
   LIST_PRODUCTS: 'list_products',
   LIST_LOW_STOCK_PRODUCTS: 'list_low_stock_products',
   LIST_PENDING_ORDERS: 'list_pending_orders',
+} as const;
+
+export const KYRUB_PLANNED_ERP_ACTION_TYPES = {
+  CREATE_TASK: 'create_task',
   CREATE_PRODUCT_DRAFT: 'create_product_draft',
   UPDATE_PRODUCT_DRAFT: 'update_product_draft',
   ADJUST_INVENTORY: 'adjust_inventory',
@@ -22,6 +23,64 @@ export type KyrubActionOrigin =
   | 'automation';
 
 export type KyrubActionRisk = 'low' | 'medium' | 'high';
+export type KyrubActionMode = 'read' | 'write';
+
+export type KyrubActiveActionType =
+  typeof KYRUB_ACTION_TYPES[keyof typeof KYRUB_ACTION_TYPES];
+
+export type KyrubReadActionType = Exclude<
+  KyrubActiveActionType,
+  typeof KYRUB_ACTION_TYPES.CREATE_NOTE
+>;
+
+export type KyrubActionDefinition = {
+  type: KyrubActiveActionType;
+  mode: KyrubActionMode;
+  risk: KyrubActionRisk;
+  requiresConfirmation: boolean;
+  permission: string;
+};
+
+export const KYRUB_ACTION_REGISTRY: Record<
+  KyrubActiveActionType,
+  KyrubActionDefinition
+> = {
+  create_note: {
+    type: 'create_note',
+    mode: 'write',
+    risk: 'low',
+    requiresConfirmation: true,
+    permission: 'notes.write',
+  },
+  read_store_summary: {
+    type: 'read_store_summary',
+    mode: 'read',
+    risk: 'low',
+    requiresConfirmation: false,
+    permission: 'store.read',
+  },
+  list_products: {
+    type: 'list_products',
+    mode: 'read',
+    risk: 'low',
+    requiresConfirmation: false,
+    permission: 'products.read',
+  },
+  list_low_stock_products: {
+    type: 'list_low_stock_products',
+    mode: 'read',
+    risk: 'low',
+    requiresConfirmation: false,
+    permission: 'products.read',
+  },
+  list_pending_orders: {
+    type: 'list_pending_orders',
+    mode: 'read',
+    risk: 'low',
+    requiresConfirmation: false,
+    permission: 'orders.read',
+  },
+};
 
 export type KyrubActionProposalMetadata = {
   origin?: KyrubActionOrigin;
