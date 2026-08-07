@@ -158,9 +158,23 @@ test('Kyrubia runtime resolves simple ERP reads without generative reasoning', (
   assert.match(missingImage?.reply ?? '', /Banho/);
 });
 
-test('compound ERP requests still defer to the reasoning and proposal flow', () => {
+test('low-stock note composition stays deterministic and prepares confirmation', () => {
   const result = resolveKyrubiaDeterministicErpRead(
     'Liste os produtos com estoque baixo e salve isso em uma nota.',
+    erpSnapshot()
+  );
+
+  assert.equal(result?.action, 'list_low_stock_products');
+  assert.match(result?.reply ?? '', /Ração Premium/);
+  assert.match(result?.reply ?? '', /Revise e confirme/);
+  assert.equal(result?.noteDraft?.title, 'Produtos com estoque baixo');
+  assert.match(result?.noteDraft?.content ?? '', /Ração Premium/);
+  assert.deepEqual(result?.noteDraft?.checklist, []);
+});
+
+test('ERP requests that need open reasoning still defer to the AI flow', () => {
+  const result = resolveKyrubiaDeterministicErpRead(
+    'Analise meus produtos com estoque baixo, priorize os mais urgentes e salve isso em uma nota.',
     erpSnapshot()
   );
 
@@ -319,6 +333,8 @@ test('ERP reads are bounded, sanitized and remain separate from mutations', asyn
 
   assert.match(clientSource, /readKyrubErpContext/);
   assert.match(clientSource, /resolveKyrubiaDeterministicErpRead/);
+  assert.match(clientSource, /deterministic\.noteDraft/);
+  assert.match(clientSource, /emitKyrubAiActionProposal\(requestPayload\.conversationId, result\)/);
   assert.match(clientSource, /provider: 'kyrub'/);
   assert.match(clientSource, /mode: 'deterministic'/);
   assert.match(clientSource, /erpContext/);
@@ -352,6 +368,7 @@ test('ERP reads are bounded, sanitized and remain separate from mutations', asyn
   assert.match(sharedSource, /enabledReadActions\?: KyrubReadActionType\[\]/);
 
   assert.match(deterministicSource, /NEEDS_REASONING_OR_MUTATION/);
+  assert.match(deterministicSource, /resolveLowStockNote/);
   assert.match(deterministicSource, /list_low_stock_products/);
   assert.match(deterministicSource, /list_pending_orders/);
 });
