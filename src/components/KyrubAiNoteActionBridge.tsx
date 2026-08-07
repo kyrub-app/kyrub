@@ -10,6 +10,8 @@ import {
   KYRUB_AI_ACTION_PROPOSAL_EVENT,
   type KyrubAiActionProposalEventDetail,
 } from '../ai/actionEvents';
+import { executeConfirmedCreateNoteAction } from '../actions/noteActionService';
+import { auth } from '../utils/firebase';
 
 type ConfirmationState =
   | 'reviewing'
@@ -23,128 +25,7 @@ type PendingNoteAction = {
   proposal: KyrubAiCreateNoteProposal;
   state: ConfirmationState;
   errorMessage: string;
-};
-
-const normalizeLabel = (value: string | null | undefined): string =>
-  (value ?? '').replace(/\s+/g, ' ').trim().toLocaleUpperCase('pt-BR');
-
-const waitFor = async <T,>(
-  resolver: () => T | null,
-  timeoutMs = 5_000
-): Promise<T> => {
-  const startedAt = Date.now();
-  while (Date.now() - startedAt < timeoutMs) {
-    const result = resolver();
-    if (result !== null) return result;
-    await new Promise(resolve => window.setTimeout(resolve, 60));
-  }
-  throw new Error('A tela de notas não ficou pronta a tempo. Tente novamente.');
-};
-
-const nextPaint = (): Promise<void> =>
-  new Promise(resolve => window.requestAnimationFrame(() => resolve()));
-
-const setControlledValue = (
-  element: HTMLInputElement | HTMLTextAreaElement,
-  value: string
-): void => {
-  const prototype = element instanceof HTMLTextAreaElement
-    ? HTMLTextAreaElement.prototype
-    : HTMLInputElement.prototype;
-  const setter = Object.getOwnPropertyDescriptor(prototype, 'value')?.set;
-  setter?.call(element, value);
-  element.dispatchEvent(new InputEvent('input', {
-    bubbles: true,
-    inputType: 'insertText',
-    data: value,
-  }));
-  element.dispatchEvent(new Event('change', { bubbles: true }));
-};
-
-const findNotesNavigationButton = (): HTMLButtonElement | null =>
-  [...document.querySelectorAll<HTMLButtonElement>('nav button')].find(button =>
-    normalizeLabel(button.querySelector('span')?.textContent) === 'NOTAS'
-  ) ?? null;
-
-const findComposerButton = (container: HTMLElement): HTMLButtonElement | null =>
-  [...container.querySelectorAll<HTMLButtonElement>('button')].find(button => {
-    const label = normalizeLabel(button.textContent);
-    return label.includes('NOVA NOTA') || label.includes('EDITANDO');
-  }) ?? null;
-
-const createNoteThroughManualMode = async (
-  proposal: KyrubAiCreateNoteProposal
-): Promise<void> => {
-  const notesNavigationButton = findNotesNavigationButton();
-  if (!notesNavigationButton) {
-    throw new Error('Não foi possível localizar a guia Notas do Kyrub.');
-  }
-
-  notesNavigationButton.click();
-  const container = await waitFor(
-    () => document.getElementById('perfil-tab-container'),
-    4_000
-  );
-
-  let composerForm = container.querySelector<HTMLFormElement>('form');
-  let composerButton = findComposerButton(container);
-  if (!composerButton) {
-    throw new Error('Não foi possível abrir o formulário manual de notas.');
-  }
-
-  // Never overwrite a note that the user was editing before confirming the AI action.
-  if (composerForm) {
-    composerButton.click();
-    await waitFor(
-      () => container.querySelector('form') ? null : true,
-      2_000
-    );
-    composerButton = findComposerButton(container);
-    if (!composerButton) {
-      throw new Error('Não foi possível reiniciar o formulário de notas.');
-    }
-  }
-
-  composerButton.click();
-  composerForm = await waitFor(
-    () => container.querySelector<HTMLFormElement>('form'),
-    3_000
-  );
-
-  const titleInput = composerForm.querySelector<HTMLInputElement>(
-    'input[placeholder="Título da nota"]'
-  );
-  const contentInput = composerForm.querySelector<HTMLTextAreaElement>(
-    'textarea[placeholder="Conteúdo descritivo..."]'
-  );
-  const checklistInput = composerForm.querySelector<HTMLInputElement>(
-    'input[placeholder="Checklist (separe os itens por vírgula)"]'
-  );
-
-  if (!titleInput || !contentInput || !checklistInput) {
-    throw new Error('O formulário de notas mudou e não pôde ser preenchido.');
-  }
-
-  setControlledValue(titleInput, proposal.title);
-  setControlledValue(contentInput, proposal.content);
-  setControlledValue(checklistInput, proposal.checklist.join(', '));
-  await nextPaint();
-  await nextPaint();
-  composerForm.requestSubmit();
-
-  await waitFor(
-    () => container.querySelector('form') ? null : true,
-    6_000
-  );
-
-  const expectedTitle = normalizeLabel(proposal.title);
-  await waitFor(
-    () => normalizeLabel(container.querySelector('#notes-grid')?.textContent)
-      .includes(expectedTitle)
-      ? true
-      : null,
-    4_000
-  );
+  alreadyApplied: boolean;
 };
 
 export function KyrubAiNoteActionBridge() {
@@ -154,12 +35,21 @@ export function KyrubAiNoteActionBridge() {
     const handleProposal = (event: Event) => {
       const detail = (event as CustomEvent<KyrubAiActionProposalEventDetail>).detail;
       if (!detail || detail.proposal.type !== 'create_note') return;
+
       setPending({
         conversationId: detail.conversationId,
         requestId: detail.requestId,
-        proposal: detail.proposal,
+        proposal: {
+          ...detail.proposal,
+          origin: detail.proposal.origin ?? 'kyrubia',
+          risk: detail.proposal.risk ?? 'low',
+          idempotencyKey:
+            detail.proposal.idempotencyKey ??
+            `kyrubia:create_note:${detail.conversationId}:${detail.proposal.id}`,
+        },
         state: 'reviewing',
         errorMessage: '',
+        alreadyApplied: false,
       });
     };
 
@@ -168,39 +58,11 @@ export function KyrubAiNoteActionBridge() {
       window.removeEventListener(KYRUB_AI_ACTION_PROPOSAL_EVENT, handleProposal);
   }, []);
 
-  useEffect(() => {
-    const syncCapabilityCopy = () => {
-      document.querySelectorAll<HTMLElement>('#kyrub-ai-workspace strong')
-        .forEach(element => {
-          if (normalizeLabel(element.textContent) === 'SEM AÇÕES') {
-            element.textContent = 'Notas com confirmação';
-          }
-        });
-
-      document.querySelectorAll<HTMLParagraphElement>('#kyrub-ai-workspace p')
-        .forEach(element => {
-          const text = normalizeLabel(element.textContent);
-          if (text.includes('AÇÕES NO APLICATIVO AINDA EXIGEM O MODO MANUAL')) {
-            element.textContent =
-              'O Consultor cria notas somente depois da sua confirmação.';
-          }
-          if (text.includes('NESTA PRIMEIRA FASE, O CONSULTOR CONVERSA')) {
-            element.textContent =
-              'Converse normalmente. Quando você pedir uma nota, o Consultor prepara os dados e pede sua confirmação antes de usar o modo manual.';
-          }
-        });
-    };
-
-    syncCapabilityCopy();
-    const observer = new MutationObserver(syncCapabilityCopy);
-    observer.observe(document.body, { childList: true, subtree: true });
-    return () => observer.disconnect();
-  }, []);
-
   if (!pending) return null;
 
   const confirm = async () => {
     if (pending.state === 'executing') return;
+
     setPending(current => current ? {
       ...current,
       state: 'executing',
@@ -208,11 +70,21 @@ export function KyrubAiNoteActionBridge() {
     } : current);
 
     try {
-      await createNoteThroughManualMode(pending.proposal);
+      const user = auth.currentUser;
+      if (!user) {
+        throw new Error('Faça login novamente antes de confirmar a criação da nota.');
+      }
+
+      const result = await executeConfirmedCreateNoteAction(
+        user,
+        pending.proposal
+      );
+
       setPending(current => current ? {
         ...current,
         state: 'success',
         errorMessage: '',
+        alreadyApplied: result.status === 'already_applied',
       } : current);
     } catch (error) {
       setPending(current => current ? {
@@ -233,7 +105,7 @@ export function KyrubAiNoteActionBridge() {
       <section
         role="dialog"
         aria-modal="true"
-        aria-label="Confirmar criação de nota pelo Consultor Kyrub"
+        aria-label="Confirmar criação de nota pela Kyrubia"
         className="w-full max-w-md overflow-hidden rounded-3xl border border-violet-500/25 bg-slate-950 shadow-2xl"
       >
         <header className="flex items-start gap-3 border-b border-slate-800 p-4">
@@ -250,7 +122,7 @@ export function KyrubAiNoteActionBridge() {
           </div>
           <div className="min-w-0 flex-1">
             <span className="text-xs font-black uppercase tracking-wider text-violet-300">
-              Consultor Kyrub
+              Kyrubia
             </span>
             <h2 className="mt-1 text-xl font-black text-white">
               {isSuccess ? 'Nota criada' : 'Confirmar nova nota'}
@@ -270,7 +142,9 @@ export function KyrubAiNoteActionBridge() {
         <div className="space-y-4 p-4">
           {isSuccess ? (
             <p className="rounded-2xl border border-emerald-500/25 bg-emerald-500/10 px-4 py-4 text-sm leading-relaxed text-emerald-100">
-              A nota foi criada pelo mesmo formulário e pela mesma sincronização usados no modo manual.
+              {pending.alreadyApplied
+                ? 'Esta ação já havia sido concluída. Nenhuma nota duplicada foi criada.'
+                : 'A nota foi criada pelo serviço oficial do Kyrub e será exibida na guia Notas pela sincronização em nuvem.'}
             </p>
           ) : (
             <>

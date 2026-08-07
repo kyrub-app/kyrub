@@ -97,12 +97,14 @@ test('Gemini create_note function returns a proposal without executing data writ
   assert.equal(requests.length, 2);
 });
 
-test('create-note confirmation reuses the existing manual notes form', async () => {
+test('confirmed create-note uses the official action service instead of DOM automation', async () => {
   const [
     appSource,
     bridgeSource,
     clientSource,
     sharedSource,
+    actionProtocolSource,
+    actionServiceSource,
     routeSource,
     manualNotesSource,
     serverSource,
@@ -114,6 +116,8 @@ test('create-note confirmation reuses the existing manual notes form', async () 
     ),
     readFile(new URL('../src/ai/consultantClient.ts', import.meta.url), 'utf8'),
     readFile(new URL('../shared/aiConsultant.ts', import.meta.url), 'utf8'),
+    readFile(new URL('../shared/kyrubActions.ts', import.meta.url), 'utf8'),
+    readFile(new URL('../src/actions/noteActionService.ts', import.meta.url), 'utf8'),
     readFile(new URL('../api/consultor-kyrub.ts', import.meta.url), 'utf8'),
     readFile(new URL('../src/components/tabs/PerfilTab.tsx', import.meta.url), 'utf8'),
     readFile(new URL('../server.ts', import.meta.url), 'utf8'),
@@ -121,20 +125,36 @@ test('create-note confirmation reuses the existing manual notes form', async () 
 
   assert.match(appSource, /<KyrubAiNoteActionBridge \/>/);
   assert.match(clientSource, /emitKyrubAiActionProposal/);
-  assert.match(sharedSource, /type: 'create_note'/);
-  assert.match(sharedSource, /requiresConfirmation: true/);
+  assert.match(sharedSource, /from '\.\/kyrubActions'/);
+  assert.match(actionProtocolSource, /CREATE_NOTE: 'create_note'/);
+  assert.match(actionProtocolSource, /ANALYZE_CATALOG: 'analyze_catalog'/);
+  assert.match(actionProtocolSource, /IMPORT_CATALOG_DRAFT: 'import_catalog_draft'/);
+  assert.match(actionProtocolSource, /CREATE_PRODUCT_DRAFT: 'create_product_draft'/);
+  assert.match(actionProtocolSource, /KyrubActionOrigin/);
+  assert.match(actionProtocolSource, /idempotencyKey/);
+
   assert.match(routeSource, /name: 'create_note'/);
   assert.match(routeSource, /functionDeclarations/);
   assert.match(routeSource, /enabledActions: \['create_note'\]/);
   assert.doesNotMatch(routeSource, /firebase\/firestore/);
 
-  assert.match(bridgeSource, /normalizeLabel\(.*\) === 'NOTAS'/s);
-  assert.match(bridgeSource, /Título da nota/);
-  assert.match(bridgeSource, /Conteúdo descritivo/);
-  assert.match(bridgeSource, /Checklist \(separe os itens por vírgula\)/);
-  assert.match(bridgeSource, /requestSubmit\(\)/);
+  assert.match(bridgeSource, /executeConfirmedCreateNoteAction/);
+  assert.match(bridgeSource, /auth\.currentUser/);
   assert.match(bridgeSource, /Nada será salvo antes da confirmação/);
-  assert.doesNotMatch(bridgeSource, /firebase\/firestore/);
+  assert.match(bridgeSource, /Nenhuma nota duplicada foi criada/);
+  assert.doesNotMatch(bridgeSource, /querySelector/);
+  assert.doesNotMatch(bridgeSource, /requestSubmit/);
+  assert.doesNotMatch(bridgeSource, /Título da nota/);
+
+  assert.match(actionServiceSource, /runTransaction/);
+  assert.match(
+    actionServiceSource,
+    /doc\(db, 'users', user\.uid, 'tasks', noteId\)/
+  );
+  assert.match(actionServiceSource, /actionIdempotencyKey/);
+  assert.match(actionServiceSource, /actionOrigin/);
+  assert.match(actionServiceSource, /already_applied/);
+  assert.match(actionServiceSource, /serverTimestamp\(\)/);
 
   assert.match(manualNotesSource, /onSubmit=\{handleCreateNote\}/);
   assert.match(manualNotesSource, /placeholder="Título da nota"/);
