@@ -49,9 +49,9 @@ export type KyrubAiConsultantCapabilities = {
 
 export type KyrubAiConsultantResponse = {
   reply: string;
-  provider: 'gemini';
+  provider: 'kyrub' | 'gemini';
   model: string;
-  mode: 'conversation';
+  mode: 'conversation' | 'deterministic';
   requestId: string;
   actionProposal?: KyrubActionProposal;
   capabilities: KyrubAiConsultantCapabilities;
