@@ -32,6 +32,12 @@ export type KyrubiaTurnSelection = {
   resolution: 'all' | 'first_n' | 'position';
 };
 
+export type KyrubiaContextualRecallResult = {
+  reply: string;
+  selection: KyrubiaTurnSelection;
+  turnContext: KyrubiaTurnContext;
+};
+
 const normalize = (value: string): string =>
   value
     .normalize('NFD')
@@ -39,6 +45,14 @@ const normalize = (value: string): string =>
     .toLocaleLowerCase('pt-BR')
     .replace(/\s+/g, ' ')
     .trim();
+
+const createTurnId = (): string => {
+  try {
+    return globalThis.crypto.randomUUID();
+  } catch {
+    return `kyrub-turn-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  }
+};
 
 const numberWords: Record<string, number> = {
   um: 1,
@@ -123,6 +137,57 @@ export const resolveKyrubiaTurnSelection = (
   }
 
   return null;
+};
+
+const isReadbackRequest = (message: string): boolean => {
+  const intent = normalize(message);
+  return /\b(quais|qual|liste|listar|mostre|mostrar|diga|dizer|identifique|identificar)\b/.test(intent) ||
+    /\b(?:qual|quais)\b.*\b(?:e|sao)\b/.test(intent);
+};
+
+const narrowedTurnContext = (
+  source: KyrubiaTurnContext,
+  selection: KyrubiaTurnSelection
+): KyrubiaTurnContext => {
+  const selectedIds = new Set(selection.entityIds);
+  const selectedById = new Map(
+    source.entities
+      .filter(entity => selectedIds.has(entity.entityId))
+      .map(entity => [entity.entityId, entity] as const)
+  );
+  const entities = selection.entityIds.flatMap((entityId, index) => {
+    const entity = selectedById.get(entityId);
+    return entity
+      ? [{ ...entity, position: index + 1 }]
+      : [];
+  });
+
+  return {
+    ...source,
+    id: createTurnId(),
+    generatedAt: new Date().toISOString(),
+    entities,
+  };
+};
+
+export const resolveKyrubiaContextualRecall = (
+  message: string,
+  context?: KyrubiaTurnContext
+): KyrubiaContextualRecallResult | null => {
+  if (!isReadbackRequest(message)) return null;
+  const selection = resolveKyrubiaTurnSelection(message, context);
+  if (!selection || !context) return null;
+
+  const lines = selection.labels.map(label => `- ${label}`).join('\n');
+  const reply = selection.labels.length === 1
+    ? `O item selecionado daquela lista é:\n${lines}`
+    : `Os itens selecionados daquela lista são:\n${lines}`;
+
+  return {
+    reply,
+    selection,
+    turnContext: narrowedTurnContext(context, selection),
+  };
 };
 
 export const describeKyrubiaTurnSelection = (
