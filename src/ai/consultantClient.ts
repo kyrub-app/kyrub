@@ -5,10 +5,11 @@ import {
   type KyrubAiConsultantRequest,
   type KyrubAiConsultantResponse,
 } from '../../shared/aiConsultant';
+import { readKyrubErpContext } from '../actions/erpReadActionService';
+import { auth } from '../utils/firebase';
 import { emitKyrubAiActionProposal } from './actionEvents';
 import { normalizeConsultantError } from './consultantError';
 import { prepareKyrubAiOpportunityContinuation } from './opportunityContinuation';
-import { auth } from '../utils/firebase';
 
 export class KyrubAiClientError extends Error {
   constructor(
@@ -70,6 +71,23 @@ export const requestKyrubAiConsultant = async (
     );
   }
 
+  let erpContext = requestPayload.erpContext;
+  if (!erpContext) {
+    try {
+      erpContext = await readKyrubErpContext(currentUser);
+    } catch (error) {
+      if (signal?.aborted) throw error;
+      console.warn(
+        '[Kyrubia] ERP read context is temporarily unavailable.',
+        error
+      );
+    }
+  }
+
+  const enrichedPayload: KyrubAiConsultantRequest = erpContext
+    ? { ...requestPayload, erpContext }
+    : requestPayload;
+
   let lastNetworkFailure: unknown = null;
 
   for (const [index, endpoint] of CONSULTANT_ENDPOINTS.entries()) {
@@ -82,7 +100,7 @@ export const requestKyrubAiConsultant = async (
           'content-type': 'application/json',
           accept: 'application/json',
         },
-        body: JSON.stringify(requestPayload),
+        body: JSON.stringify(enrichedPayload),
         cache: 'no-store',
         credentials: 'same-origin',
         signal,
