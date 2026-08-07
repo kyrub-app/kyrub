@@ -28,6 +28,9 @@ export type KyrubActionMode = 'read' | 'write';
 export type KyrubActiveActionType =
   typeof KYRUB_ACTION_TYPES[keyof typeof KYRUB_ACTION_TYPES];
 
+export type KyrubPlannedErpActionType =
+  typeof KYRUB_PLANNED_ERP_ACTION_TYPES[keyof typeof KYRUB_PLANNED_ERP_ACTION_TYPES];
+
 export type KyrubReadActionType = Exclude<
   KyrubActiveActionType,
   typeof KYRUB_ACTION_TYPES.CREATE_NOTE
@@ -39,6 +42,15 @@ export type KyrubActionDefinition = {
   risk: KyrubActionRisk;
   requiresConfirmation: boolean;
   permission: string;
+};
+
+export type KyrubPlannedActionDefinition = {
+  type: KyrubPlannedErpActionType;
+  mode: KyrubActionMode;
+  risk: KyrubActionRisk;
+  requiresConfirmation: boolean;
+  permission: string;
+  executable: false;
 };
 
 export const KYRUB_ACTION_REGISTRY: Record<
@@ -82,6 +94,68 @@ export const KYRUB_ACTION_REGISTRY: Record<
   },
 };
 
+export const KYRUB_PLANNED_ACTION_REGISTRY: Record<
+  KyrubPlannedErpActionType,
+  KyrubPlannedActionDefinition
+> = {
+  create_task: {
+    type: 'create_task',
+    mode: 'write',
+    risk: 'low',
+    requiresConfirmation: true,
+    permission: 'tasks.write',
+    executable: false,
+  },
+  create_product_draft: {
+    type: 'create_product_draft',
+    mode: 'write',
+    risk: 'medium',
+    requiresConfirmation: true,
+    permission: 'products.write',
+    executable: false,
+  },
+  update_product_draft: {
+    type: 'update_product_draft',
+    mode: 'write',
+    risk: 'medium',
+    requiresConfirmation: true,
+    permission: 'products.write',
+    executable: false,
+  },
+  adjust_inventory: {
+    type: 'adjust_inventory',
+    mode: 'write',
+    risk: 'high',
+    requiresConfirmation: true,
+    permission: 'inventory.write',
+    executable: false,
+  },
+  update_store: {
+    type: 'update_store',
+    mode: 'write',
+    risk: 'medium',
+    requiresConfirmation: true,
+    permission: 'store.write',
+    executable: false,
+  },
+  analyze_catalog: {
+    type: 'analyze_catalog',
+    mode: 'read',
+    risk: 'low',
+    requiresConfirmation: false,
+    permission: 'products.read',
+    executable: false,
+  },
+  import_catalog_draft: {
+    type: 'import_catalog_draft',
+    mode: 'write',
+    risk: 'medium',
+    requiresConfirmation: true,
+    permission: 'products.write',
+    executable: false,
+  },
+};
+
 export type KyrubActionProposalMetadata = {
   origin?: KyrubActionOrigin;
   risk?: KyrubActionRisk;
@@ -97,7 +171,36 @@ export type KyrubAiCreateNoteProposal = KyrubActionProposalMetadata & {
   requiresConfirmation: true;
 };
 
-export type KyrubActionProposal = KyrubAiCreateNoteProposal;
+export type KyrubProductDraftMissingField =
+  | 'category'
+  | 'price'
+  | 'stock';
+
+export type KyrubProductDraftSource =
+  | 'conversation'
+  | 'catalog_analysis';
+
+export type KyrubAiCreateProductDraftProposal = KyrubActionProposalMetadata & {
+  id: string;
+  type: typeof KYRUB_PLANNED_ERP_ACTION_TYPES.CREATE_PRODUCT_DRAFT;
+  name: string;
+  description: string;
+  category: string;
+  price: number | null;
+  stock: number | null;
+  isService: boolean;
+  image: string;
+  source: KyrubProductDraftSource;
+  missingFields: KyrubProductDraftMissingField[];
+  requiresConfirmation: true;
+  executable: false;
+};
+
+export type KyrubActionProposal =
+  | KyrubAiCreateNoteProposal
+  | KyrubAiCreateProductDraftProposal;
+
+export type KyrubExecutableActionProposal = KyrubAiCreateNoteProposal;
 
 export type KyrubActionExecutionStatus =
   | 'success'
@@ -105,7 +208,7 @@ export type KyrubActionExecutionStatus =
 
 export type KyrubActionExecutionResult = {
   actionId: string;
-  type: KyrubActionProposal['type'];
+  type: KyrubExecutableActionProposal['type'];
   status: KyrubActionExecutionStatus;
   entityId: string;
   origin: KyrubActionOrigin;
