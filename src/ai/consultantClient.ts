@@ -9,6 +9,7 @@ import {
 import { resolveKyrubiaDeterministicErpRead } from '../../shared/kyrubiaDeterministicErp';
 import {
   describeKyrubiaTurnSelection,
+  resolveKyrubiaContextualRecall,
   resolveKyrubiaTurnSelection,
 } from '../../shared/kyrubiaContext';
 import { readKyrubErpContext } from '../actions/erpReadActionService';
@@ -64,6 +65,14 @@ const createRuntimeRequestId = (): string => {
     return `kyrub-runtime-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
   }
 };
+
+const runtimeCapabilities = (): KyrubAiConsultantResponse['capabilities'] => ({
+  actionsEnabled: true,
+  enabledActions: ['create_note'],
+  enabledReadActions: [...DETERMINISTIC_READ_ACTIONS],
+  voiceEnabled: false,
+  persistentCloudHistoryEnabled: false,
+});
 
 const appendStructuredReferenceContext = (
   screenContext: string | undefined,
@@ -132,17 +141,30 @@ export const requestKyrubAiConsultant = async (
       requestId,
       actionProposal,
       turnContext: deterministic.turnContext,
-      capabilities: {
-        actionsEnabled: true,
-        enabledActions: ['create_note'],
-        enabledReadActions: [...DETERMINISTIC_READ_ACTIONS],
-        voiceEnabled: false,
-        persistentCloudHistoryEnabled: false,
-      },
+      capabilities: runtimeCapabilities(),
     };
 
     emitKyrubAiActionProposal(requestPayload.conversationId, result);
     return result;
+  }
+
+  const contextualRecall = latestUserMessage?.role === 'user'
+    ? resolveKyrubiaContextualRecall(
+        latestUserMessage.content,
+        requestPayload.turnContext
+      )
+    : null;
+
+  if (contextualRecall) {
+    return {
+      reply: contextualRecall.reply,
+      provider: 'kyrub',
+      model: 'kyrub-runtime-v1',
+      mode: 'deterministic',
+      requestId: createRuntimeRequestId(),
+      turnContext: contextualRecall.turnContext,
+      capabilities: runtimeCapabilities(),
+    };
   }
 
   const turnSelection = latestUserMessage?.role === 'user'
