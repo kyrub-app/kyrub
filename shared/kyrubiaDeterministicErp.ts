@@ -4,9 +4,16 @@ import type {
   KyrubErpProductSummary,
 } from './kyrubErpContext';
 
+export type KyrubiaDeterministicNoteDraft = {
+  title: string;
+  content: string;
+  checklist: string[];
+};
+
 export type KyrubiaDeterministicErpResult = {
   action: KyrubReadActionType;
   reply: string;
+  noteDraft?: KyrubiaDeterministicNoteDraft;
 };
 
 const normalizeIntentText = (value: string): string =>
@@ -19,6 +26,13 @@ const normalizeIntentText = (value: string): string =>
 
 const NEEDS_REASONING_OR_MUTATION =
   /\b(salve|salvar|guarde|guardar|registre|registrar|crie|criar|adicione|adicionar|nota|notas|tarefa|tarefas|analise|analisar|priorize|priorizar|recomende|recomendar|sugira|sugerir|compare|comparar|explique|explicar|estrategia|estrategias|oportunidade|oportunidades)\b|\bpor que\b/;
+
+const NEEDS_OPEN_REASONING =
+  /\b(analise|analisar|priorize|priorizar|recomende|recomendar|sugira|sugerir|compare|comparar|explique|explicar|estrategia|estrategias|oportunidade|oportunidades)\b|\bpor que\b/;
+
+const asksToSaveAsNote = (intent: string): boolean =>
+  /\b(nota|notas)\b/.test(intent) &&
+  /\b(salve|salvar|guarde|guardar|registre|registrar|crie|criar|adicione|adicionar)\b/.test(intent);
 
 const productAvailabilityReply = (
   context: KyrubErpContextSnapshot | undefined
@@ -168,12 +182,40 @@ const resolveCatalogList = (
   };
 };
 
+const resolveLowStockNote = (
+  context: KyrubErpContextSnapshot | undefined
+): KyrubiaDeterministicErpResult => {
+  const readResult = resolveLowStock(context);
+  if (!context || !context.availability.products) return readResult;
+
+  return {
+    ...readResult,
+    reply: `${readResult.reply}\n\nPreparei uma nota com essa leitura. Revise e confirme para salvá-la nas suas notas.`,
+    noteDraft: {
+      title: 'Produtos com estoque baixo',
+      content: readResult.reply,
+      checklist: [],
+    },
+  };
+};
+
 export const resolveKyrubiaDeterministicErpRead = (
   message: string,
   context?: KyrubErpContextSnapshot
 ): KyrubiaDeterministicErpResult | null => {
   const intent = normalizeIntentText(message);
-  if (!intent || NEEDS_REASONING_OR_MUTATION.test(intent)) return null;
+  if (!intent) return null;
+
+  const asksLowStock =
+    /\b(estoque baixo|estoque minimo|baixo estoque|estoque.*acabando|acabando|pouco estoque)\b/.test(intent);
+
+  const asksLowStockNote =
+    asksLowStock &&
+    asksToSaveAsNote(intent) &&
+    !NEEDS_OPEN_REASONING.test(intent);
+  if (asksLowStockNote) return resolveLowStockNote(context);
+
+  if (NEEDS_REASONING_OR_MUTATION.test(intent)) return null;
 
   const asksMissingDescription =
     /\b(produto|produtos|item|itens)\b/.test(intent) &&
@@ -189,8 +231,6 @@ export const resolveKyrubiaDeterministicErpRead = (
     return resolveCatalogList(context, 'missing_image');
   }
 
-  const asksLowStock =
-    /\b(estoque baixo|estoque minimo|baixo estoque|estoque.*acabando|acabando|pouco estoque)\b/.test(intent);
   if (asksLowStock) return resolveLowStock(context);
 
   const asksPendingOrders =
