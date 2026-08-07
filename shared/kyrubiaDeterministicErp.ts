@@ -3,6 +3,10 @@ import type {
   KyrubErpContextSnapshot,
   KyrubErpProductSummary,
 } from './kyrubErpContext';
+import type {
+  KyrubiaEntityReference,
+  KyrubiaTurnContext,
+} from './kyrubiaContext';
 
 export type KyrubiaDeterministicNoteDraft = {
   title: string;
@@ -14,6 +18,7 @@ export type KyrubiaDeterministicErpResult = {
   action: KyrubReadActionType;
   reply: string;
   noteDraft?: KyrubiaDeterministicNoteDraft;
+  turnContext?: KyrubiaTurnContext;
 };
 
 const normalizeIntentText = (value: string): string =>
@@ -33,6 +38,36 @@ const NEEDS_OPEN_REASONING =
 const asksToSaveAsNote = (intent: string): boolean =>
   /\b(nota|notas)\b/.test(intent) &&
   /\b(salve|salvar|guarde|guardar|registre|registrar|crie|criar|adicione|adicionar)\b/.test(intent);
+
+const createTurnId = (): string => {
+  try {
+    return globalThis.crypto.randomUUID();
+  } catch {
+    return `kyrub-turn-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  }
+};
+
+const createProductTurnContext = (
+  action: KyrubReadActionType,
+  context: KyrubErpContextSnapshot,
+  items: KyrubErpProductSummary[]
+): KyrubiaTurnContext => ({
+  version: 1,
+  id: createTurnId(),
+  source: 'kyrub_runtime',
+  sourceAction: action,
+  generatedAt: new Date().toISOString(),
+  scope: {
+    kind: 'own_store',
+    storeId: context.store?.id ?? null,
+  },
+  entities: items.slice(0, 20).map((product, index): KyrubiaEntityReference => ({
+    entityType: 'product',
+    entityId: product.id,
+    label: product.name,
+    position: index + 1,
+  })),
+});
 
 const productAvailabilityReply = (
   context: KyrubErpContextSnapshot | undefined
@@ -63,11 +98,13 @@ const productTruncationSuffix = (context: KyrubErpContextSnapshot): string =>
     ? '\n\nA leitura atual do catálogo está limitada, então podem existir outros itens além dos mostrados aqui.'
     : '';
 
+const visibleProducts = (items: KyrubErpProductSummary[]): KyrubErpProductSummary[] =>
+  items.slice(0, 20);
+
 const formatProductNames = (
   items: KyrubErpProductSummary[],
   formatter: (product: KyrubErpProductSummary) => string = product => product.name
-): string => items
-  .slice(0, 20)
+): string => visibleProducts(items)
   .map(product => `- ${formatter(product)}`)
   .join('\n');
 
@@ -119,6 +156,11 @@ const resolveLowStock = (
   return {
     action: 'list_low_stock_products',
     reply: `${intro}\n${formatProductNames(items, product => `${product.name} — ${product.stock} ${product.stock === 1 ? 'unidade' : 'unidades'}`)}${productTruncationSuffix(context)}`,
+    turnContext: createProductTurnContext(
+      'list_low_stock_products',
+      context,
+      visibleProducts(items)
+    ),
   };
 };
 
@@ -179,6 +221,11 @@ const resolveCatalogList = (
     reply: `${intro}\n${formatProductNames(items, product =>
       product.category ? `${product.name} — ${product.category}` : product.name
     )}${items.length > 20 ? '\n- …' : ''}${productTruncationSuffix(context)}`,
+    turnContext: createProductTurnContext(
+      'list_products',
+      context,
+      visibleProducts(items)
+    ),
   };
 };
 
