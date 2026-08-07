@@ -3,12 +3,14 @@ import type {
   KyrubReadActionType,
 } from './kyrubActions';
 import type { KyrubErpContextSnapshot } from './kyrubErpContext';
+import type { KyrubiaTurnContext } from './kyrubiaContext';
 
 export type {
   KyrubActionProposal as KyrubAiActionProposal,
   KyrubAiCreateNoteProposal,
 } from './kyrubActions';
 export type { KyrubErpContextSnapshot } from './kyrubErpContext';
+export type { KyrubiaTurnContext } from './kyrubiaContext';
 
 export const KYRUB_AI_CONSULTANT_ENDPOINT = '/api/kyrubia';
 export const KYRUB_AI_CONSULTANT_COMPAT_ENDPOINT = '/api/consultor-kyrub';
@@ -37,6 +39,7 @@ export type KyrubAiConsultantRequest = {
   messages: KyrubAiConversationMessage[];
   screenContext?: string;
   erpContext?: KyrubErpContextSnapshot;
+  turnContext?: KyrubiaTurnContext;
 };
 
 export type KyrubAiConsultantCapabilities = {
@@ -54,6 +57,7 @@ export type KyrubAiConsultantResponse = {
   mode: 'conversation' | 'deterministic';
   requestId: string;
   actionProposal?: KyrubActionProposal;
+  turnContext?: KyrubiaTurnContext;
   capabilities: KyrubAiConsultantCapabilities;
 };
 
