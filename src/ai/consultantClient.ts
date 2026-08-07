@@ -2,10 +2,15 @@ import {
   KYRUB_AI_CONSULTANT_COMPAT_ENDPOINT,
   KYRUB_AI_CONSULTANT_ENDPOINT,
   KYRUB_AI_CONSULTANT_LEGACY_ENDPOINT,
+  KYRUB_AI_LIMITS,
   type KyrubAiConsultantRequest,
   type KyrubAiConsultantResponse,
 } from '../../shared/aiConsultant';
 import { resolveKyrubiaDeterministicErpRead } from '../../shared/kyrubiaDeterministicErp';
+import {
+  describeKyrubiaTurnSelection,
+  resolveKyrubiaTurnSelection,
+} from '../../shared/kyrubiaContext';
 import { readKyrubErpContext } from '../actions/erpReadActionService';
 import { auth } from '../utils/firebase';
 import { emitKyrubAiActionProposal } from './actionEvents';
@@ -58,6 +63,17 @@ const createRuntimeRequestId = (): string => {
   } catch {
     return `kyrub-runtime-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
   }
+};
+
+const appendStructuredReferenceContext = (
+  screenContext: string | undefined,
+  structuredContext: string | null
+): string | undefined => {
+  const joined = [screenContext?.trim(), structuredContext?.trim()]
+    .filter(Boolean)
+    .join(' | ')
+    .slice(0, KYRUB_AI_LIMITS.maxScreenContextCharacters);
+  return joined || undefined;
 };
 
 export const requestKyrubAiConsultant = async (
@@ -115,6 +131,7 @@ export const requestKyrubAiConsultant = async (
       mode: 'deterministic',
       requestId,
       actionProposal,
+      turnContext: deterministic.turnContext,
       capabilities: {
         actionsEnabled: true,
         enabledActions: ['create_note'],
@@ -128,6 +145,16 @@ export const requestKyrubAiConsultant = async (
     return result;
   }
 
+  const turnSelection = latestUserMessage?.role === 'user'
+    ? resolveKyrubiaTurnSelection(
+        latestUserMessage.content,
+        requestPayload.turnContext
+      )
+    : null;
+  const structuredReference = turnSelection
+    ? describeKyrubiaTurnSelection(turnSelection)
+    : null;
+
   let token = '';
   try {
     token = await currentUser.getIdToken();
@@ -140,9 +167,16 @@ export const requestKyrubAiConsultant = async (
     );
   }
 
+  const contextualPayload: KyrubAiConsultantRequest = {
+    ...requestPayload,
+    screenContext: appendStructuredReferenceContext(
+      requestPayload.screenContext,
+      structuredReference
+    ),
+  };
   const enrichedPayload: KyrubAiConsultantRequest = erpContext
-    ? { ...requestPayload, erpContext }
-    : requestPayload;
+    ? { ...contextualPayload, erpContext }
+    : contextualPayload;
 
   let lastNetworkFailure: unknown = null;
 
