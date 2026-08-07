@@ -28,13 +28,16 @@ export type KyrubActionMode = 'read' | 'write';
 export type KyrubActiveActionType =
   typeof KYRUB_ACTION_TYPES[keyof typeof KYRUB_ACTION_TYPES];
 
+export type KyrubPlannedActionType =
+  typeof KYRUB_PLANNED_ERP_ACTION_TYPES[keyof typeof KYRUB_PLANNED_ERP_ACTION_TYPES];
+
 export type KyrubReadActionType = Exclude<
   KyrubActiveActionType,
   typeof KYRUB_ACTION_TYPES.CREATE_NOTE
 >;
 
-export type KyrubActionDefinition = {
-  type: KyrubActiveActionType;
+export type KyrubActionDefinition<TType extends string = KyrubActiveActionType> = {
+  type: TType;
   mode: KyrubActionMode;
   risk: KyrubActionRisk;
   requiresConfirmation: boolean;
@@ -79,6 +82,61 @@ export const KYRUB_ACTION_REGISTRY: Record<
     risk: 'low',
     requiresConfirmation: false,
     permission: 'orders.read',
+  },
+};
+
+export const KYRUB_PLANNED_ACTION_REGISTRY: Record<
+  KyrubPlannedActionType,
+  KyrubActionDefinition<KyrubPlannedActionType>
+> = {
+  create_task: {
+    type: 'create_task',
+    mode: 'write',
+    risk: 'low',
+    requiresConfirmation: true,
+    permission: 'notes.write',
+  },
+  create_product_draft: {
+    type: 'create_product_draft',
+    mode: 'write',
+    risk: 'medium',
+    requiresConfirmation: true,
+    permission: 'products.write',
+  },
+  update_product_draft: {
+    type: 'update_product_draft',
+    mode: 'write',
+    risk: 'medium',
+    requiresConfirmation: true,
+    permission: 'products.write',
+  },
+  adjust_inventory: {
+    type: 'adjust_inventory',
+    mode: 'write',
+    risk: 'high',
+    requiresConfirmation: true,
+    permission: 'products.write',
+  },
+  update_store: {
+    type: 'update_store',
+    mode: 'write',
+    risk: 'medium',
+    requiresConfirmation: true,
+    permission: 'store.update',
+  },
+  analyze_catalog: {
+    type: 'analyze_catalog',
+    mode: 'read',
+    risk: 'low',
+    requiresConfirmation: false,
+    permission: 'products.read',
+  },
+  import_catalog_draft: {
+    type: 'import_catalog_draft',
+    mode: 'write',
+    risk: 'medium',
+    requiresConfirmation: true,
+    permission: 'products.write',
   },
 };
 
