@@ -10,6 +10,11 @@ const photosButtonSource = readFileSync(
   'src/components/GooglePhotosImagePickerButton.tsx',
   'utf8'
 );
+const appImageSource = readFileSync(
+  'src/utils/appImageStorage.ts',
+  'utf8'
+);
+const storageRulesSource = readFileSync('storage.rules', 'utf8');
 const storeConfigSource = readFileSync(
   'src/components/modals/StoreConfigModal.tsx',
   'utf8'
@@ -75,4 +80,26 @@ test('store and product media controls expose Photos beside Drive', () => {
   assert.match(productModalSource, /Selecionar da galeria/);
   assert.match(productModalSource, /setImageUrl\(selection\.url\)/);
   assert.match(photosButtonSource, /pickGooglePhotosImageToDrive/);
+});
+
+test('the shared media picker uploads device images to Firebase Storage', () => {
+  assert.match(photosButtonSource, /type="file"/);
+  assert.match(photosButtonSource, /APP_IMAGE_ACCEPT/);
+  assert.match(photosButtonSource, /uploadCurrentUserImage/);
+  assert.match(photosButtonSource, /Dispositivo/);
+  assert.match(photosButtonSource, /Enviando\.\.\./);
+  assert.match(appImageSource, /crypto\.subtle\.digest\('SHA-256'/);
+  assert.match(appImageSource, /app-images\/\$\{user\.uid\}\/\$\{hash\}/);
+  assert.match(appImageSource, /getDownloadURL/);
+  assert.match(appImageSource, /image\/jpeg/);
+  assert.match(appImageSource, /image\/png/);
+  assert.match(appImageSource, /image\/webp/);
+});
+
+test('device images are public to storefronts but writable only by their owner', () => {
+  assert.match(storageRulesSource, /match \/app-images\/\{userId\}\/\{contentHash\}/);
+  assert.match(storageRulesSource, /allow read: if true/);
+  assert.match(storageRulesSource, /request\.auth\.uid == userId/);
+  assert.match(storageRulesSource, /request\.resource\.metadata\.contentHash == contentHash/);
+  assert.match(storageRulesSource, /request\.resource\.metadata\.ownerId == userId/);
 });
