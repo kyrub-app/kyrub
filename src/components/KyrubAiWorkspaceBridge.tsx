@@ -50,9 +50,9 @@ type WorkspaceTemplate = {
 const WORKSPACE_TEMPLATES: WorkspaceTemplate[] = [
   {
     id: 'store',
-    title: 'Criar minha loja',
+    title: 'Ativar minha loja',
     description: 'Organize perfil comercial, proposta, ambientes e primeiros passos.',
-    starterPrompt: 'Quero criar minha loja no Kyrub. Me ajude a organizar as informações necessárias.',
+    starterPrompt: 'Quero ativar minha loja no Kyrub. Me ajude a organizar as informações necessárias.',
     icon: Store,
   },
   {
@@ -253,6 +253,7 @@ export function KyrubAiWorkspaceBridge() {
           conversationId: conversation.id,
           topic: conversation.topic,
           messages,
+          turnContext: conversation.lastTurnContext,
         },
         controller.signal
       );
@@ -261,6 +262,7 @@ export function KyrubAiWorkspaceBridge() {
         ...current,
         updatedAt: new Date().toISOString(),
         messages: [...current.messages, assistantMessage],
+        lastTurnContext: result.turnContext,
       }));
     } catch (error) {
       if (controller.signal.aborted) return;
@@ -369,7 +371,7 @@ export function KyrubAiWorkspaceBridge() {
               <textarea
                 value={draft}
                 onChange={event => setDraft(event.target.value.slice(0, 4_000))}
-                placeholder="Ex.: Quero criar minha loja de doces e preciso organizar os primeiros passos."
+                placeholder="Ex.: Quero ativar minha loja de doces e preciso organizar os primeiros passos."
                 rows={4}
                 className="w-full resize-none rounded-2xl border border-slate-700 bg-slate-950/80 px-4 py-4 text-base leading-relaxed text-white outline-none placeholder:text-slate-600 focus:border-violet-500/60"
               />
@@ -402,7 +404,7 @@ export function KyrubAiWorkspaceBridge() {
             </div>
             <div className="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-3 text-center">
               <ShieldCheck className="mx-auto h-5 w-5 text-amber-300" />
-              <strong className="mt-2 block text-xs text-white">Sem ações</strong>
+              <strong className="mt-2 block text-xs text-white">Ações confirmadas</strong>
             </div>
             <div className="rounded-2xl border border-slate-700 bg-slate-900 p-3 text-center">
               <Sparkles className="mx-auto h-5 w-5 text-violet-300" />
@@ -616,7 +618,7 @@ export function KyrubAiWorkspaceBridge() {
               </button>
             </div>
             <p className="mt-2 text-center text-xs text-slate-600">
-              Ações no aplicativo ainda exigem o modo manual nesta primeira fase.
+              Ações no aplicativo passam por confirmação quando necessário.
             </p>
           </form>
         </section>
