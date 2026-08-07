@@ -44,8 +44,8 @@ const isTurnContext = (value: unknown): value is KyrubiaTurnContext => {
     typeof candidate.id === 'string' &&
     typeof candidate.sourceAction === 'string' &&
     typeof candidate.generatedAt === 'string' &&
-    Boolean(scope) &&
-    scope?.kind === 'own_store' &&
+    scope !== null &&
+    scope.kind === 'own_store' &&
     (scope.storeId === null || typeof scope.storeId === 'string') &&
     Array.isArray(candidate.entities) &&
     candidate.entities.every(entity => {
