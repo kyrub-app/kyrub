@@ -139,8 +139,12 @@ export const resolveKyrubiaTurnSelection = (
   return null;
 };
 
+const MUTATION_OR_COMMAND_PATTERN =
+  /\b(aplique|aplicar|altere|alterar|atualize|atualizar|mude|mudar|desconto|descontar|preco|precos|estoque|exclua|excluir|delete|deletar|remova|remover|crie|criar|salve|salvar|adicione|adicionar|registre|registrar|compre|comprar|venda|vender|envie|enviar|publique|publicar)\b/;
+
 const isReadbackRequest = (message: string): boolean => {
   const intent = normalize(message);
+  if (MUTATION_OR_COMMAND_PATTERN.test(intent)) return false;
   return /\b(quais|qual|liste|listar|mostre|mostrar|diga|dizer|identifique|identificar)\b/.test(intent) ||
     /\b(?:qual|quais)\b.*\b(?:e|sao)\b/.test(intent);
 };
