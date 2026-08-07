@@ -4,9 +4,11 @@ export type NormalizedConsultantError = {
 };
 
 const DEFAULT_MESSAGE =
-  'O Consultor Kyrub está temporariamente indisponível. Tente novamente em instantes.';
+  'A conversa com a Kyrubia está temporariamente indisponível. Tente novamente em instantes.';
 const DEFAULT_CODE = 'AI_UNAVAILABLE';
 const MAX_DEPTH = 4;
+const PROVIDER_QUOTA_MESSAGE =
+  'A capacidade de IA generativa da Kyrubia atingiu temporariamente o limite do provedor. As consultas do Kyrub que não dependem de IA continuam disponíveis. Tente novamente em instantes.';
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   Boolean(value) && typeof value === 'object' && !Array.isArray(value);
@@ -74,7 +76,14 @@ export const normalizeConsultantError = (
   value: unknown,
   fallbackMessage = DEFAULT_MESSAGE,
   fallbackCode = DEFAULT_CODE
-): NormalizedConsultantError => ({
-  message: findMessage(value) || fallbackMessage,
-  code: findCode(value) || fallbackCode,
-});
+): NormalizedConsultantError => {
+  const code = findCode(value) || fallbackCode;
+  if (code === 'AI_QUOTA_EXCEEDED' || code === 'AI_PROVIDER_QUOTA_EXCEEDED') {
+    return { message: PROVIDER_QUOTA_MESSAGE, code };
+  }
+
+  return {
+    message: findMessage(value) || fallbackMessage,
+    code,
+  };
+};
