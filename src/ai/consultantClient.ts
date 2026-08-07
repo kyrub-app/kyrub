@@ -94,13 +94,27 @@ export const requestKyrubAiConsultant = async (
     : null;
 
   if (deterministic) {
-    return {
+    const requestId = createRuntimeRequestId();
+    const actionProposal = deterministic.noteDraft
+      ? {
+          id: createRuntimeRequestId(),
+          type: 'create_note' as const,
+          title: deterministic.noteDraft.title,
+          content: deterministic.noteDraft.content,
+          checklist: deterministic.noteDraft.checklist,
+          requiresConfirmation: true as const,
+          origin: 'kyrubia' as const,
+          risk: 'low' as const,
+        }
+      : undefined;
+
+    const result: KyrubAiConsultantResponse = {
       reply: deterministic.reply,
       provider: 'kyrub',
       model: 'kyrub-runtime-v1',
       mode: 'deterministic',
-      requestId: createRuntimeRequestId(),
-      actionProposal: undefined,
+      requestId,
+      actionProposal,
       capabilities: {
         actionsEnabled: true,
         enabledActions: ['create_note'],
@@ -109,6 +123,9 @@ export const requestKyrubAiConsultant = async (
         persistentCloudHistoryEnabled: false,
       },
     };
+
+    emitKyrubAiActionProposal(requestPayload.conversationId, result);
+    return result;
   }
 
   let token = '';
