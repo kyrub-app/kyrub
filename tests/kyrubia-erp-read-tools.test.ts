@@ -2,6 +2,9 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import kyrubiaHandler from '../api/kyrubia';
+import type { KyrubErpContextSnapshot } from '../shared/kyrubErpContext';
+import { resolveKyrubiaDeterministicErpRead } from '../shared/kyrubiaDeterministicErp';
+import { normalizeConsultantError } from '../src/ai/consultantError';
 
 const createResponse = () => {
   let statusCode = 0;
@@ -26,6 +29,73 @@ const createResponse = () => {
   };
 };
 
+const erpSnapshot = (): KyrubErpContextSnapshot => ({
+  source: 'authenticated_client_snapshot',
+  generatedAt: '2026-08-07T06:00:00.000Z',
+  store: {
+    id: 'owner-1',
+    name: 'Pet Kyrub',
+    description: 'Pet shop',
+    plan: 'business',
+    status: 'open',
+    address: 'Rua Exemplo',
+    keywords: ['pet'],
+    configured: true,
+  },
+  products: [
+    {
+      id: 'product-low',
+      name: 'Ração Premium',
+      category: 'Rações',
+      price: 89.9,
+      stock: 3,
+      isService: false,
+      hasDescription: true,
+      hasImage: true,
+    },
+    {
+      id: 'product-ok',
+      name: 'Brinquedo',
+      category: 'Brinquedos',
+      price: 29.9,
+      stock: 18,
+      isService: false,
+      hasDescription: false,
+      hasImage: false,
+    },
+    {
+      id: 'service-bath',
+      name: 'Banho',
+      category: 'Serviços',
+      price: 60,
+      stock: 0,
+      isService: true,
+      hasDescription: true,
+      hasImage: false,
+    },
+  ],
+  productCount: 3,
+  productsTruncated: false,
+  pendingOrders: [{
+    id: 'order-1',
+    status: 'preparing',
+    paymentStatus: 'paid',
+    fulfillmentType: 'delivery',
+    total: 119.8,
+    itemCount: 2,
+    createdAt: '2026-08-07T05:00:00.000Z',
+  }],
+  pendingOrderCount: 1,
+  ordersTruncated: false,
+  lowStockThreshold: 5,
+  availability: {
+    store: true,
+    products: true,
+    orders: true,
+  },
+  warnings: [],
+});
+
 test('Kyrubia health advertises ERP reads separately from write actions', async () => {
   const capture = createResponse();
 
@@ -44,6 +114,69 @@ test('Kyrubia health advertises ERP reads separately from write actions', async 
     'list_low_stock_products',
     'list_pending_orders',
   ]);
+});
+
+test('Kyrubia runtime resolves simple ERP reads without generative reasoning', () => {
+  const context = erpSnapshot();
+
+  const count = resolveKyrubiaDeterministicErpRead(
+    'Quantos produtos tenho cadastrados?',
+    context
+  );
+  assert.equal(count?.action, 'read_store_summary');
+  assert.match(count?.reply ?? '', /3 itens cadastrados/);
+
+  const lowStock = resolveKyrubiaDeterministicErpRead(
+    'Liste os produtos com estoque baixo da minha loja Kyrub',
+    context
+  );
+  assert.equal(lowStock?.action, 'list_low_stock_products');
+  assert.match(lowStock?.reply ?? '', /Ração Premium/);
+  assert.doesNotMatch(lowStock?.reply ?? '', /Banho/);
+
+  const pending = resolveKyrubiaDeterministicErpRead(
+    'Tenho pedidos pendentes?',
+    context
+  );
+  assert.equal(pending?.action, 'list_pending_orders');
+  assert.match(pending?.reply ?? '', /1 pedido pendente/);
+
+  const missingDescription = resolveKyrubiaDeterministicErpRead(
+    'Liste meus produtos sem descrição.',
+    context
+  );
+  assert.equal(missingDescription?.action, 'list_products');
+  assert.match(missingDescription?.reply ?? '', /Brinquedo/);
+  assert.doesNotMatch(missingDescription?.reply ?? '', /Ração Premium/);
+
+  const missingImage = resolveKyrubiaDeterministicErpRead(
+    'Quais produtos estão sem imagem?',
+    context
+  );
+  assert.equal(missingImage?.action, 'list_products');
+  assert.match(missingImage?.reply ?? '', /Brinquedo/);
+  assert.match(missingImage?.reply ?? '', /Banho/);
+});
+
+test('compound ERP requests still defer to the reasoning and proposal flow', () => {
+  const result = resolveKyrubiaDeterministicErpRead(
+    'Liste os produtos com estoque baixo e salve isso em uma nota.',
+    erpSnapshot()
+  );
+
+  assert.equal(result, null);
+});
+
+test('provider quota is not presented as a Kyrubia product usage limit', () => {
+  const normalized = normalizeConsultantError({
+    code: 'AI_QUOTA_EXCEEDED',
+    error: 'O limite de uso da Kyrubia foi atingido. Tente novamente mais tarde.',
+  });
+
+  assert.equal(normalized.code, 'AI_QUOTA_EXCEEDED');
+  assert.match(normalized.message, /limite do provedor/i);
+  assert.match(normalized.message, /não dependem de IA continuam disponíveis/i);
+  assert.doesNotMatch(normalized.message, /limite de uso da Kyrubia/i);
 });
 
 test('Kyrubia answers low-stock questions from the authenticated ERP snapshot', async () => {
@@ -124,6 +257,15 @@ test('Kyrubia answers low-stock questions from the authenticated ERP snapshot', 
 
   const capture = createResponse();
   try {
+    const snapshot = erpSnapshot();
+    snapshot.pendingOrders = [];
+    snapshot.pendingOrderCount = 0;
+    snapshot.products[1] = {
+      ...snapshot.products[1],
+      hasDescription: true,
+      hasImage: true,
+    };
+
     await kyrubiaHandler(
       {
         method: 'POST',
@@ -135,64 +277,7 @@ test('Kyrubia answers low-stock questions from the authenticated ERP snapshot', 
             role: 'user',
             content: 'Quais produtos estão com estoque baixo?',
           }],
-          erpContext: {
-            source: 'authenticated_client_snapshot',
-            generatedAt: '2026-08-07T06:00:00.000Z',
-            store: {
-              id: 'owner-1',
-              name: 'Pet Kyrub',
-              description: 'Pet shop',
-              plan: 'business',
-              status: 'open',
-              address: 'Rua Exemplo',
-              keywords: ['pet'],
-              configured: true,
-            },
-            products: [
-              {
-                id: 'product-low',
-                name: 'Ração Premium',
-                category: 'Rações',
-                price: 89.9,
-                stock: 3,
-                isService: false,
-                hasDescription: true,
-                hasImage: true,
-              },
-              {
-                id: 'product-ok',
-                name: 'Brinquedo',
-                category: 'Brinquedos',
-                price: 29.9,
-                stock: 18,
-                isService: false,
-                hasDescription: true,
-                hasImage: true,
-              },
-              {
-                id: 'service-bath',
-                name: 'Banho',
-                category: 'Serviços',
-                price: 60,
-                stock: 0,
-                isService: true,
-                hasDescription: true,
-                hasImage: false,
-              },
-            ],
-            productCount: 3,
-            productsTruncated: false,
-            pendingOrders: [],
-            pendingOrderCount: 0,
-            ordersTruncated: false,
-            lowStockThreshold: 5,
-            availability: {
-              store: true,
-              products: true,
-              orders: true,
-            },
-            warnings: [],
-          },
+          erpContext: snapshot,
         },
       },
       capture.response
@@ -222,15 +307,20 @@ test('ERP reads are bounded, sanitized and remain separate from mutations', asyn
     readServiceSource,
     actionProtocolSource,
     sharedSource,
+    deterministicSource,
   ] = await Promise.all([
     readFile(new URL('../api/kyrubia.ts', import.meta.url), 'utf8'),
     readFile(new URL('../src/ai/consultantClient.ts', import.meta.url), 'utf8'),
     readFile(new URL('../src/actions/erpReadActionService.ts', import.meta.url), 'utf8'),
     readFile(new URL('../shared/kyrubActions.ts', import.meta.url), 'utf8'),
     readFile(new URL('../shared/aiConsultant.ts', import.meta.url), 'utf8'),
+    readFile(new URL('../shared/kyrubiaDeterministicErp.ts', import.meta.url), 'utf8'),
   ]);
 
   assert.match(clientSource, /readKyrubErpContext/);
+  assert.match(clientSource, /resolveKyrubiaDeterministicErpRead/);
+  assert.match(clientSource, /provider: 'kyrub'/);
+  assert.match(clientSource, /mode: 'deterministic'/);
   assert.match(clientSource, /erpContext/);
   assert.match(readServiceSource, /getPrimaryUserStoreDocumentPath\(user\.uid\)/);
   assert.match(readServiceSource, /doc\(db, 'tenants', user\.uid\)/);
@@ -257,5 +347,11 @@ test('ERP reads are bounded, sanitized and remain separate from mutations', asyn
   assert.doesNotMatch(routeSource, /deleteDoc\(/);
 
   assert.match(sharedSource, /erpContext\?: KyrubErpContextSnapshot/);
+  assert.match(sharedSource, /provider: 'kyrub' \| 'gemini'/);
+  assert.match(sharedSource, /mode: 'conversation' \| 'deterministic'/);
   assert.match(sharedSource, /enabledReadActions\?: KyrubReadActionType\[\]/);
+
+  assert.match(deterministicSource, /NEEDS_REASONING_OR_MUTATION/);
+  assert.match(deterministicSource, /list_low_stock_products/);
+  assert.match(deterministicSource, /list_pending_orders/);
 });
