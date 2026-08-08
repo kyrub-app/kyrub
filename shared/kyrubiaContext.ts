@@ -105,15 +105,18 @@ const selectionFrom = (
   };
 };
 
+const refersToPreviousResult = (message: string): boolean => {
+  const intent = normalize(message);
+  return /\b(dessa|deste|desses|destes|daquela|daquele|da lista|dessa lista|desses itens|desses produtos|mostrou|acabou de mostrar|acima)\b/.test(intent);
+};
+
 export const resolveKyrubiaTurnSelection = (
   message: string,
   context?: KyrubiaTurnContext
 ): KyrubiaTurnSelection | null => {
   if (!context || context.entities.length === 0) return null;
   const intent = normalize(message);
-  const refersToPreviousResult =
-    /\b(dessa|deste|desses|destes|daquela|daquele|da lista|dessa lista|desses itens|desses produtos|mostrou|acabou de mostrar|acima)\b/.test(intent);
-  if (!refersToPreviousResult) return null;
+  if (!refersToPreviousResult(message)) return null;
 
   const ordered = context.entities
     .slice()
@@ -147,6 +150,18 @@ const isReadbackRequest = (message: string): boolean => {
   if (MUTATION_OR_COMMAND_PATTERN.test(intent)) return false;
   return /\b(quais|qual|liste|listar|mostre|mostrar|diga|dizer|identifique|identificar)\b/.test(intent) ||
     /\b(?:qual|quais)\b.*\b(?:e|sao)\b/.test(intent);
+};
+
+export const resolveKyrubiaMissingContextReply = (
+  message: string,
+  context?: KyrubiaTurnContext
+): string | null => {
+  if (context?.entities.length) return null;
+  if (!isReadbackRequest(message) || !refersToPreviousResult(message)) {
+    return null;
+  }
+
+  return 'Não tenho uma lista anterior nesta conversa para usar como referência. Peça para eu listar os itens primeiro.';
 };
 
 const narrowedTurnContext = (
