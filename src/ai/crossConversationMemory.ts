@@ -27,6 +27,9 @@ export type KyrubiaCrossChatResolution =
 const CONTINUATION_PATTERN =
   /\b(continuar|continue|continuidade|retomar|retome|voltar|volte|onde paramos|conversa anterior|chat anterior|outro chat|outra conversa|aquela conversa|aquele assunto|falamos|estavamos falando|estávamos falando)\b/i;
 
+const DOWNSTREAM_ACTION_PATTERN =
+  /\b(crie|criar|salve|salvar|adicione|adicionar|liste|listar|mostre|mostrar|analise|analisar|compare|comparar|aplique|aplicar|altere|alterar|mude|mudar|compre|comprar|exclua|excluir|edite|editar|cadastre|cadastrar|calcule|calcular|gere|gerar)\b/i;
+
 const STOP_WORDS = new Set([
   'aquela',
   'aquele',
@@ -172,6 +175,9 @@ const ambiguousReply = (candidates: KyrubiaCrossChatCandidate[]): string => {
     .join('\n');
   return `Encontrei mais de uma conversa que pode ser essa:\n${options}\nDiga o assunto com mais detalhe ou abra a conversa que deseja continuar.`;
 };
+
+export const isKyrubiaPureContinuationRequest = (message: string): boolean =>
+  CONTINUATION_PATTERN.test(message) && !DOWNSTREAM_ACTION_PATTERN.test(message);
 
 export const resolveKyrubiaCrossChatContinuation = (
   message: string,
