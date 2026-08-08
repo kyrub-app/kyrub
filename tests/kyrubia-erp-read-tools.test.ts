@@ -4,6 +4,7 @@ import test from 'node:test';
 import kyrubiaHandler from '../api/kyrubia';
 import type { KyrubErpContextSnapshot } from '../shared/kyrubErpContext';
 import { resolveKyrubiaDeterministicErpRead } from '../shared/kyrubiaDeterministicErp';
+import type { KyrubiaTurnContext } from '../shared/kyrubiaContext';
 import { normalizeConsultantError } from '../src/ai/consultantError';
 
 const createResponse = () => {
@@ -96,6 +97,32 @@ const erpSnapshot = (): KyrubErpContextSnapshot => ({
   warnings: [],
 });
 
+const productTurnContext = (): KyrubiaTurnContext => ({
+  version: 1,
+  id: 'turn-products-1',
+  source: 'kyrub_runtime',
+  sourceAction: 'list_products',
+  generatedAt: '2026-08-08T12:00:00.000Z',
+  scope: {
+    kind: 'own_store',
+    storeId: 'owner-1',
+  },
+  entities: [
+    {
+      entityType: 'product',
+      entityId: 'product-low',
+      label: 'Ração Premium',
+      position: 1,
+    },
+    {
+      entityType: 'product',
+      entityId: 'product-ok',
+      label: 'Brinquedo',
+      position: 2,
+    },
+  ],
+});
+
 test('Kyrubia health advertises ERP reads separately from write actions', async () => {
   const capture = createResponse();
 
@@ -156,6 +183,72 @@ test('Kyrubia runtime resolves simple ERP reads without generative reasoning', (
   assert.equal(missingImage?.action, 'list_products');
   assert.match(missingImage?.reply ?? '', /Brinquedo/);
   assert.match(missingImage?.reply ?? '', /Banho/);
+});
+
+test('store name and segment-style questions stay deterministic without inventing a canonical segment', () => {
+  const context = erpSnapshot();
+  context.store = {
+    ...context.store!,
+    name: 'Kyrub',
+    description: 'Restaurante local',
+    keywords: ['alimentação', 'restaurante'],
+  };
+  context.products = [
+    {
+      ...context.products[0],
+      category: 'alimentação > Restaurante > Rodízio',
+    },
+    {
+      ...context.products[1],
+      category: 'alimentação > Restaurante > Refeições',
+    },
+    {
+      ...context.products[2],
+      category: 'alimentação > Restaurante',
+    },
+  ];
+
+  const result = resolveKyrubiaDeterministicErpRead(
+    'Qual o nome e segmento da minha loja Kyrub?',
+    context
+  );
+
+  assert.equal(result?.action, 'read_store_summary');
+  assert.match(result?.reply ?? '', /Nome da sua loja: Kyrub/);
+  assert.match(result?.reply ?? '', /não possui um campo canônico de segmento/i);
+  assert.match(result?.reply ?? '', /alimentação > Restaurante/i);
+  assert.doesNotMatch(result?.reply ?? '', /Gemini/i);
+});
+
+test('elliptical catalog filters use turn memory for identity and current Kyrub data for truth', () => {
+  const context = erpSnapshot();
+  const turnContext = productTurnContext();
+
+  const result = resolveKyrubiaDeterministicErpRead(
+    'Quais estão sem imagem?',
+    context,
+    turnContext
+  );
+
+  assert.equal(result?.action, 'list_products');
+  assert.match(result?.reply ?? '', /Brinquedo/);
+  assert.doesNotMatch(result?.reply ?? '', /Banho/);
+  assert.deepEqual(result?.turnContext?.entities.map(item => item.entityId), ['product-ok']);
+
+  const refreshed = erpSnapshot();
+  refreshed.products = refreshed.products.map(product =>
+    product.id === 'product-ok'
+      ? { ...product, hasImage: true }
+      : product
+  );
+
+  const afterChange = resolveKyrubiaDeterministicErpRead(
+    'Quais estão sem imagem?',
+    refreshed,
+    turnContext
+  );
+  assert.match(afterChange?.reply ?? '', /nenhum está sem imagem neste momento/i);
+  assert.doesNotMatch(afterChange?.reply ?? '', /Brinquedo —/);
 });
 
 test('low-stock note composition stays deterministic and prepares confirmation', () => {
@@ -333,6 +426,7 @@ test('ERP reads are bounded, sanitized and remain separate from mutations', asyn
 
   assert.match(clientSource, /readKyrubErpContext/);
   assert.match(clientSource, /resolveKyrubiaDeterministicErpRead/);
+  assert.match(clientSource, /requestPayload\.turnContext/);
   assert.match(clientSource, /deterministic\.noteDraft/);
   assert.match(clientSource, /emitKyrubAiActionProposal\(requestPayload\.conversationId, result\)/);
   assert.match(clientSource, /provider: 'kyrub'/);
@@ -369,6 +463,8 @@ test('ERP reads are bounded, sanitized and remain separate from mutations', asyn
 
   assert.match(deterministicSource, /NEEDS_REASONING_OR_MUTATION/);
   assert.match(deterministicSource, /resolveLowStockNote/);
+  assert.match(deterministicSource, /resolveContextualCatalogFilter/);
+  assert.match(deterministicSource, /commonCatalogCategory/);
   assert.match(deterministicSource, /list_low_stock_products/);
   assert.match(deterministicSource, /list_pending_orders/);
 });
