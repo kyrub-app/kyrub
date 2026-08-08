@@ -18,7 +18,11 @@ import { readKyrubErpContext } from '../actions/erpReadActionService';
 import { auth } from '../utils/firebase';
 import { emitKyrubAiActionProposal } from './actionEvents';
 import { normalizeConsultantError } from './consultantError';
-import { loadKyrubAiConversations } from './conversationStore';
+import {
+  loadKyrubAiConversations,
+  loadKyrubAiHistoricalLink,
+  saveKyrubAiHistoricalLink,
+} from './conversationStore';
 import {
   isKyrubiaPureContinuationRequest,
   resolveKyrubiaCrossChatContinuation,
@@ -148,9 +152,17 @@ export const requestKyrubAiConsultant = async (
     };
   }
 
-  const storedConversations = typeof localStorage === 'undefined'
-    ? []
-    : loadKyrubAiConversations(localStorage, currentUser.uid);
+  const hasLocalStorage = typeof localStorage !== 'undefined';
+  const storedConversations = hasLocalStorage
+    ? loadKyrubAiConversations(localStorage, currentUser.uid)
+    : [];
+  const existingHistoricalLink = hasLocalStorage
+    ? loadKyrubAiHistoricalLink(
+        localStorage,
+        currentUser.uid,
+        requestPayload.conversationId
+      )
+    : undefined;
   const crossChatResolution = latestUserMessage?.role === 'user'
     ? resolveKyrubiaCrossChatContinuation(
         latestUserMessage.content,
@@ -180,6 +192,15 @@ export const requestKyrubAiConsultant = async (
       )
     : undefined;
 
+  if (resolvedHistoricalLink && hasLocalStorage) {
+    saveKyrubAiHistoricalLink(
+      localStorage,
+      currentUser.uid,
+      requestPayload.conversationId,
+      resolvedHistoricalLink
+    );
+  }
+
   if (
     crossChatResolution.kind === 'resolved' &&
     latestUserMessage?.role === 'user' &&
@@ -197,6 +218,7 @@ export const requestKyrubAiConsultant = async (
   }
 
   const historicalContext = resolvedHistoricalLink?.memoryContext
+    ?? existingHistoricalLink?.memoryContext
     ?? requestPayload.historicalLink?.memoryContext
     ?? null;
 
