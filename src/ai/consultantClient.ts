@@ -19,6 +19,12 @@ import { auth } from '../utils/firebase';
 import { emitKyrubAiActionProposal } from './actionEvents';
 import { normalizeConsultantError } from './consultantError';
 import {
+  clearKyrubiaPendingCrossChatChoice,
+  loadKyrubiaPendingCrossChatChoice,
+  resolveKyrubiaPendingCrossChatChoice,
+  saveKyrubiaPendingCrossChatChoice,
+} from './crossConversationChoiceStore';
+import {
   loadKyrubAiConversations,
   loadKyrubAiHistoricalLink,
   saveKyrubAiHistoricalLink,
@@ -119,6 +125,16 @@ const continuationAcknowledgement = (
   return `Retomei a conversa “${candidate.title}” e vinculei este chat àquele contexto histórico.${preview} Podemos continuar por aqui.`;
 };
 
+const previousAssistantMessage = (
+  messages: KyrubAiConsultantRequest['messages']
+): string | null => {
+  for (let index = messages.length - 2; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message.role === 'assistant') return message.content;
+  }
+  return null;
+};
+
 export const requestKyrubAiConsultant = async (
   payload: KyrubAiConsultantRequest,
   signal?: AbortSignal
@@ -164,6 +180,13 @@ export const requestKyrubAiConsultant = async (
         requestPayload.conversationId
       )
     : undefined;
+  const pendingCrossChatChoice = hasLocalStorage
+    ? loadKyrubiaPendingCrossChatChoice(
+        localStorage,
+        currentUser.uid,
+        requestPayload.conversationId
+      )
+    : undefined;
 
   const historicalLinkRecall = latestUserMessage?.role === 'user'
     ? resolveKyrubiaHistoricalLinkRecall(
@@ -182,20 +205,64 @@ export const requestKyrubAiConsultant = async (
     };
   }
 
-  const crossChatResolution = latestUserMessage?.role === 'user'
-    ? resolveKyrubiaCrossChatContinuation(
+  const previousAssistant = previousAssistantMessage(requestPayload.messages);
+  const mayResolvePendingChoice = Boolean(
+    pendingCrossChatChoice &&
+    previousAssistant?.includes('Encontrei mais de uma conversa que pode ser essa:')
+  );
+  const pendingChoiceResolution = latestUserMessage?.role === 'user' && mayResolvePendingChoice
+    ? resolveKyrubiaPendingCrossChatChoice(
         latestUserMessage.content,
+        pendingCrossChatChoice,
         storedConversations,
         requestPayload.conversationId
       )
-    : { kind: 'not_requested' as const };
+    : null;
+
+  if (pendingChoiceResolution && hasLocalStorage) {
+    clearKyrubiaPendingCrossChatChoice(
+      localStorage,
+      currentUser.uid,
+      requestPayload.conversationId
+    );
+  }
+
+  const crossChatResolution = pendingChoiceResolution ?? (
+    latestUserMessage?.role === 'user'
+      ? resolveKyrubiaCrossChatContinuation(
+          latestUserMessage.content,
+          storedConversations,
+          requestPayload.conversationId
+        )
+      : { kind: 'not_requested' as const }
+  );
+
+  if (crossChatResolution.kind === 'ambiguous' && hasLocalStorage) {
+    saveKyrubiaPendingCrossChatChoice(
+      localStorage,
+      currentUser.uid,
+      requestPayload.conversationId,
+      crossChatResolution.candidates.map(candidate => candidate.conversationId)
+    );
+  }
+
+  if (crossChatResolution.kind === 'resolved' && hasLocalStorage) {
+    clearKyrubiaPendingCrossChatChoice(
+      localStorage,
+      currentUser.uid,
+      requestPayload.conversationId
+    );
+  }
 
   if (
     crossChatResolution.kind === 'not_found' ||
     crossChatResolution.kind === 'ambiguous'
   ) {
+    const choiceHint = crossChatResolution.kind === 'ambiguous'
+      ? '\nVocê também pode responder “a primeira”, “a segunda” ou “a terceira”.'
+      : '';
     return {
-      reply: crossChatResolution.reply,
+      reply: `${crossChatResolution.reply}${choiceHint}`,
       provider: 'kyrub',
       model: 'kyrub-runtime-v1',
       mode: 'deterministic',
@@ -223,7 +290,8 @@ export const requestKyrubAiConsultant = async (
   if (
     crossChatResolution.kind === 'resolved' &&
     latestUserMessage?.role === 'user' &&
-    isKyrubiaPureContinuationRequest(latestUserMessage.content)
+    (pendingChoiceResolution?.kind === 'resolved' ||
+      isKyrubiaPureContinuationRequest(latestUserMessage.content))
   ) {
     return {
       reply: continuationAcknowledgement(crossChatResolution.candidate),
