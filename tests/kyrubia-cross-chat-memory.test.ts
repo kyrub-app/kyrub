@@ -90,6 +90,40 @@ test('generic continuation with multiple chats is ambiguous instead of guessed',
   assert.match(result.reply, /mais de uma conversa/i);
   assert.match(result.reply, /Reposição automática de estoque/);
   assert.match(result.reply, /Operação de delivery/);
+  assert.match(result.reply, /07\/08\/2026/);
+  assert.match(result.reply, /Último contexto:/);
+});
+
+test('duplicate conversation titles include preview and message count for useful disambiguation', () => {
+  const duplicateTitle = 'Quais são os três primeiros dessa lista?';
+  const result = resolveKyrubiaCrossChatContinuation(
+    'Continue de onde paramos.',
+    [
+      conversation(
+        'chat-a',
+        duplicateTitle,
+        '2026-08-08T02:00:00.000Z',
+        [duplicateTitle],
+        ['Não tenho uma lista anterior nesta conversa para usar como referência.']
+      ),
+      conversation(
+        'chat-b',
+        duplicateTitle,
+        '2026-08-07T23:00:00.000Z',
+        [duplicateTitle, 'Liste meus produtos.'],
+        ['Aqui estão 3 itens do catálogo.']
+      ),
+    ],
+    'current'
+  );
+
+  assert.equal(result.kind, 'ambiguous');
+  if (result.kind !== 'ambiguous') return;
+  assert.match(result.reply, /1\. Quais são os três primeiros dessa lista\?/);
+  assert.match(result.reply, /2 mensagens/);
+  assert.match(result.reply, /3 mensagens/);
+  assert.match(result.reply, /Não tenho uma lista anterior/);
+  assert.match(result.reply, /Aqui estão 3 itens do catálogo/);
 });
 
 test('generic continuation resolves when exactly one prior conversation exists', () => {
