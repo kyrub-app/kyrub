@@ -132,12 +132,23 @@ Essa memória pode identificar quais entidades reais estavam sendo exibidas e em
 
 Antes de executar uma ação, o Kyrub deve reconsultar o estado oficial aplicável e revalidar autorização, permissões e condições atuais. Memória identifica a referência; o estado oficial do Kyrub determina a verdade operacional.
 
+### 17. Continuidade entre conversas deve ser explícita, escopada e rastreável
+
+Kyrubia pode consultar conversas anteriores do mesmo usuário para retomar objetivos, decisões e assuntos quando houver intenção clara de continuidade, como “continue aquela conversa”, “retome o assunto” ou “onde paramos”.
+
+A recuperação deve usar apenas fontes pertencentes ao mesmo usuário e ao escopo autorizado. Quando mais de uma conversa puder corresponder ao pedido, a Kyrubia deve pedir desambiguação em vez de escolher silenciosamente.
+
+Contexto recuperado de outro chat é histórico. Ele não herda automaticamente memória operacional de turno, não autoriza ações e não prova que entidades ou estados continuam atuais. Qualquer dado operacional necessário deve ser revalidado no Kyrub.
+
+Enquanto o histórico da Kyrubia estiver salvo apenas no dispositivo, a continuidade transversal também será limitada às conversas disponíveis naquele dispositivo. Uma conversa excluída deixa de ser fonte de continuidade desta camada. Memórias duradouras futuras deverão ter ciclo de vida e controles próprios, separados do simples histórico de chats.
+
 ## Modelo conceitual de operação
 
 A Kyrubia pode ser entendida em camadas:
 
 - **Percepção:** observa eventos e estados do Kyrub.
 - **Contexto:** entende usuário, loja própria ativada ou contexto operacional autorizado, permissões, plano e ambiente operacional.
+- **Memória:** resolve referências da conversa atual e, quando solicitado, recupera continuidade histórica de outras conversas autorizadas sem substituir o estado oficial.
 - **Intenção:** identifica o objetivo expresso pelo usuário ou inferido de um evento autorizado.
 - **Orquestração:** escolhe módulos, ferramentas, workflows ou especialistas necessários.
 - **Raciocínio:** utiliza modelos de IA quando o problema exigir interpretação ou análise não determinística.
@@ -155,7 +166,7 @@ Usuário / Evento do Kyrub
           ↓
        Kyrubia
           ↓
-   contexto + intenção
+ contexto + memória + intenção
           ↓
    decisão de resolução
       ↙    ↓     ↘
@@ -192,11 +203,17 @@ O modelo interpreta o documento; o Kyrub valida e executa.
 
 “Preciso trocar o óleo da minha moto” → Kyrubia identifica necessidade → procura produtos, serviços, Marketplace, Orçamento ou Freela conforme o caso → apresenta alternativas → usuário confirma → Kyrub executa reserva, pedido ou contratação conforme permissões disponíveis.
 
+### Continuidade entre conversas
+
+“Vamos continuar aquela conversa sobre reposição automática” → Kyrubia procura conversas anteriores autorizadas → identifica uma correspondência clara ou pede desambiguação → recupera somente o contexto histórico necessário → continua o raciocínio. Se a continuação exigir preço, estoque, permissão ou outra informação operacional atual, o Kyrub consulta novamente a fonte oficial antes de agir.
+
 ## Questões que serão definidas durante a evolução
 
 Esta v1 deliberadamente deixa algumas políticas para serem detalhadas no momento de implementação de cada capacidade, incluindo:
 
-- memória pessoal e memória duradoura empresarial;
+- memória pessoal duradoura e memória duradoura empresarial, separadas do histórico de chats;
+- objetivos ativos persistentes e seu ciclo de vida;
+- sincronização segura de histórico e memória entre dispositivos;
 - participação em operações de terceiros como funcionário ou colaborador e suas permissões;
 - regras de proatividade e não perturbe;
 - ciclo de vida de alertas, insights e oportunidades;
