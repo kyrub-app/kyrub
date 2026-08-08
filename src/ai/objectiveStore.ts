@@ -313,7 +313,7 @@ export const addKyrubiaObjectiveProgress = (
         id: createId(),
         summary: clean(summary, MAX_PROGRESS_CHARACTERS),
         recordedAt: now,
-        source: 'user',
+        source: 'user' as const,
       },
     ].filter(entry => Boolean(entry.summary)),
   });
