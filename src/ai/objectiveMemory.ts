@@ -44,6 +44,7 @@ export const resolveKyrubiaObjectiveCommand = (
   }
 
   const nextStep = extract(message, [
+    /^\s*(?:o\s+)?pr[oó]ximo\s+passo\s+(?:do|desse|deste)\s+objetivo\s*[:\-]\s*(.+)\s*$/iu,
     /^\s*(?:o\s+)?pr[oó]ximo\s+passo\s+(?:do|desse|deste)\s+objetivo\s+(?:é|e)\s*[:\-]?\s*(.+)\s*$/iu,
     /^\s*(?:defina|registre)\s+(?:o\s+)?pr[oó]ximo\s+passo\s+(?:do|desse|deste)\s+objetivo\s+(?:como\s+)?[:\-]?\s*(.+)\s*$/iu,
   ]);
