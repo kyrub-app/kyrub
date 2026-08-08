@@ -5,6 +5,7 @@ import {
   KYRUB_AI_LIMITS,
   type KyrubAiConsultantRequest,
   type KyrubAiConsultantResponse,
+  type KyrubAiHistoricalLink,
 } from '../../shared/aiConsultant';
 import { resolveKyrubiaDeterministicErpRead } from '../../shared/kyrubiaDeterministicErp';
 import {
@@ -18,7 +19,11 @@ import { auth } from '../utils/firebase';
 import { emitKyrubAiActionProposal } from './actionEvents';
 import { normalizeConsultantError } from './consultantError';
 import { loadKyrubAiConversations } from './conversationStore';
-import { resolveKyrubiaCrossChatContinuation } from './crossConversationMemory';
+import {
+  isKyrubiaPureContinuationRequest,
+  resolveKyrubiaCrossChatContinuation,
+  type KyrubiaCrossChatCandidate,
+} from './crossConversationMemory';
 import { prepareKyrubAiOpportunityContinuation } from './opportunityContinuation';
 
 export class KyrubAiClientError extends Error {
@@ -88,6 +93,27 @@ const appendStructuredReferenceContext = (
   return joined || undefined;
 };
 
+const historicalLinkFromCandidate = (
+  candidate: KyrubiaCrossChatCandidate,
+  memoryContext: string
+): KyrubAiHistoricalLink => ({
+  sourceConversationId: candidate.conversationId,
+  sourceTitle: candidate.title,
+  sourceTopic: candidate.topic,
+  sourceUpdatedAt: candidate.updatedAt,
+  linkedAt: new Date().toISOString(),
+  memoryContext,
+});
+
+const continuationAcknowledgement = (
+  candidate: KyrubiaCrossChatCandidate
+): string => {
+  const preview = candidate.preview
+    ? ` O último contexto salvo foi: “${candidate.preview}”.`
+    : '';
+  return `Retomei a conversa “${candidate.title}” e vinculei este chat àquele contexto histórico.${preview} Podemos continuar por aqui.`;
+};
+
 export const requestKyrubAiConsultant = async (
   payload: KyrubAiConsultantRequest,
   signal?: AbortSignal
@@ -122,12 +148,13 @@ export const requestKyrubAiConsultant = async (
     };
   }
 
+  const storedConversations = typeof localStorage === 'undefined'
+    ? []
+    : loadKyrubAiConversations(localStorage, currentUser.uid);
   const crossChatResolution = latestUserMessage?.role === 'user'
     ? resolveKyrubiaCrossChatContinuation(
         latestUserMessage.content,
-        typeof localStorage === 'undefined'
-          ? []
-          : loadKyrubAiConversations(localStorage, currentUser.uid),
+        storedConversations,
         requestPayload.conversationId
       )
     : { kind: 'not_requested' as const };
@@ -146,9 +173,32 @@ export const requestKyrubAiConsultant = async (
     };
   }
 
-  const crossChatContext = crossChatResolution.kind === 'resolved'
-    ? crossChatResolution.memoryContext
-    : null;
+  const resolvedHistoricalLink = crossChatResolution.kind === 'resolved'
+    ? historicalLinkFromCandidate(
+        crossChatResolution.candidate,
+        crossChatResolution.memoryContext
+      )
+    : undefined;
+
+  if (
+    crossChatResolution.kind === 'resolved' &&
+    latestUserMessage?.role === 'user' &&
+    isKyrubiaPureContinuationRequest(latestUserMessage.content)
+  ) {
+    return {
+      reply: continuationAcknowledgement(crossChatResolution.candidate),
+      provider: 'kyrub',
+      model: 'kyrub-runtime-v1',
+      mode: 'deterministic',
+      requestId: createRuntimeRequestId(),
+      historicalLink: resolvedHistoricalLink,
+      capabilities: runtimeCapabilities(),
+    };
+  }
+
+  const historicalContext = resolvedHistoricalLink?.memoryContext
+    ?? requestPayload.historicalLink?.memoryContext
+    ?? null;
 
   let erpContext = requestPayload.erpContext;
   if (!erpContext) {
@@ -190,6 +240,7 @@ export const requestKyrubAiConsultant = async (
       requestId,
       actionProposal,
       turnContext: deterministic.turnContext,
+      historicalLink: resolvedHistoricalLink,
       capabilities: runtimeCapabilities(),
     };
 
@@ -212,6 +263,7 @@ export const requestKyrubAiConsultant = async (
       mode: 'deterministic',
       requestId: createRuntimeRequestId(),
       turnContext: contextualRecall.turnContext,
+      historicalLink: resolvedHistoricalLink,
       capabilities: runtimeCapabilities(),
     };
   }
@@ -238,12 +290,16 @@ export const requestKyrubAiConsultant = async (
     );
   }
 
+  const {
+    historicalLink: _historicalLink,
+    ...requestForServer
+  } = requestPayload;
   const contextualPayload: KyrubAiConsultantRequest = {
-    ...requestPayload,
+    ...requestForServer,
     screenContext: appendStructuredReferenceContext(
       requestPayload.screenContext,
       structuredReference,
-      crossChatContext
+      historicalContext
     ),
   };
   const enrichedPayload: KyrubAiConsultantRequest = erpContext
@@ -304,7 +360,10 @@ export const requestKyrubAiConsultant = async (
       );
     }
 
-    const result = body as KyrubAiConsultantResponse;
+    const result: KyrubAiConsultantResponse = {
+      ...(body as KyrubAiConsultantResponse),
+      historicalLink: resolvedHistoricalLink,
+    };
     emitKyrubAiActionProposal(payload.conversationId, result);
     return result;
   }
