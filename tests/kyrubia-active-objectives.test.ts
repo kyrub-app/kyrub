@@ -63,6 +63,7 @@ test('explicit objective declaration creates and links an active objective deter
   assert.ok(result);
   assert.match(result?.reply ?? '', /Objetivo ativo registrado/i);
   assert.match(result?.reply ?? '', /não autoriza ações/i);
+  assert.doesNotMatch(result?.reply ?? '', /”\./);
 
   const linked = loadKyrubiaConversationObjective(
     storage,
@@ -91,6 +92,7 @@ test('objective next step and progress survive reload through user-scoped storag
     'Próximo passo do objetivo: completar as imagens do catálogo.'
   );
   assert.match(next?.reply ?? '', /Próximo passo registrado/i);
+  assert.doesNotMatch(next?.reply ?? '', /\.\./);
 
   const progress = resolveKyrubiaObjectiveRuntime(
     storage,
@@ -99,6 +101,7 @@ test('objective next step and progress survive reload through user-scoped storag
     'Registre no progresso do objetivo: identificamos três produtos sem imagem.'
   );
   assert.match(progress?.reply ?? '', /Progresso registrado/i);
+  assert.doesNotMatch(progress?.reply ?? '', /\.\./);
 
   const reloaded = loadKyrubiaConversationObjective(
     storage,
@@ -118,6 +121,7 @@ test('objective next step and progress survive reload through user-scoped storag
   assert.match(status?.reply ?? '', /Objetivo ativo/i);
   assert.match(status?.reply ?? '', /três produtos sem imagem/i);
   assert.match(status?.reply ?? '', /completar as imagens do catálogo/i);
+  assert.doesNotMatch(status?.reply ?? '', /”\./);
 });
 
 test('resuming a conversation can inherit the same active objective instead of copying it', () => {
