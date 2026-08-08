@@ -1,8 +1,45 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
-import type { KyrubAiLocalConversation } from '../src/ai/conversationStore';
-import { resolveKyrubiaCrossChatContinuation } from '../src/ai/crossConversationMemory';
+import type { KyrubAiHistoricalLink } from '../shared/aiConsultant';
+import {
+  loadKyrubAiHistoricalLink,
+  saveKyrubAiConversations,
+  saveKyrubAiHistoricalLink,
+  type KyrubAiLocalConversation,
+} from '../src/ai/conversationStore';
+import {
+  isKyrubiaPureContinuationRequest,
+  resolveKyrubiaCrossChatContinuation,
+} from '../src/ai/crossConversationMemory';
+
+class MemoryStorage implements Storage {
+  private readonly values = new Map<string, string>();
+
+  get length() {
+    return this.values.size;
+  }
+
+  clear() {
+    this.values.clear();
+  }
+
+  getItem(key: string) {
+    return this.values.get(key) ?? null;
+  }
+
+  key(index: number) {
+    return [...this.values.keys()][index] ?? null;
+  }
+
+  removeItem(key: string) {
+    this.values.delete(key);
+  }
+
+  setItem(key: string, value: string) {
+    this.values.set(key, value);
+  }
+}
 
 const conversation = (
   id: string,
@@ -75,6 +112,21 @@ test('explicit continuation resolves a clearly matching prior conversation', () 
   assert.match(result.memoryContext, /Contexto histórico apenas/i);
   assert.match(result.memoryContext, /não prova estado atual nem autoriza ações/i);
   assert.ok(result.memoryContext.length <= 230);
+});
+
+test('pure continuation can be acknowledged by Kyrub runtime without generative AI', () => {
+  assert.equal(
+    isKyrubiaPureContinuationRequest(
+      'Continue aquela conversa sobre produtos sem imagem.'
+    ),
+    true
+  );
+  assert.equal(
+    isKyrubiaPureContinuationRequest(
+      'Continue aquela conversa e crie uma nota com os produtos.'
+    ),
+    false
+  );
 });
 
 test('generic continuation with multiple chats is ambiguous instead of guessed', () => {
@@ -172,7 +224,42 @@ test('deleted conversations disappear naturally because only current stored hist
   assert.equal(result.kind, 'not_found');
 });
 
-test('client uses local same-user history only for explicit continuation and does not import old turnContext', async () => {
+test('resolved historical link persists for the current chat and is invalidated if source chat is deleted', () => {
+  const storage = new MemoryStorage();
+  const uid = 'user-1';
+  const source = histories()[0];
+  const current = conversation(
+    'current',
+    'Nova solicitação',
+    '2026-08-08T09:00:00.000Z',
+    ['Continue aquela conversa sobre reposição de estoque.']
+  );
+  saveKyrubAiConversations(storage, uid, [current, source]);
+
+  const link: KyrubAiHistoricalLink = {
+    sourceConversationId: source.id,
+    sourceTitle: source.title,
+    sourceTopic: source.topic,
+    sourceUpdatedAt: source.updatedAt,
+    linkedAt: '2026-08-08T09:01:00.000Z',
+    memoryContext:
+      'Contexto histórico apenas; não prova estado atual nem autoriza ações.',
+  };
+  saveKyrubAiHistoricalLink(storage, uid, current.id, link);
+
+  assert.deepEqual(
+    loadKyrubAiHistoricalLink(storage, uid, current.id),
+    link
+  );
+
+  saveKyrubAiConversations(storage, uid, [current]);
+  assert.equal(
+    loadKyrubAiHistoricalLink(storage, uid, current.id),
+    undefined
+  );
+});
+
+test('client rehydrates scoped historical link but never imports old turnContext', async () => {
   const client = await readFile(
     new URL('../src/ai/consultantClient.ts', import.meta.url),
     'utf8'
@@ -180,8 +267,9 @@ test('client uses local same-user history only for explicit continuation and doe
 
   assert.match(client, /resolveKyrubiaCrossChatContinuation/);
   assert.match(client, /loadKyrubAiConversations\(localStorage, currentUser\.uid\)/);
-  assert.match(client, /crossChatResolution\.kind === 'resolved'/);
-  assert.match(client, /crossChatResolution\.memoryContext/);
-  assert.match(client, /appendStructuredReferenceContext\([\s\S]*crossChatContext/);
-  assert.doesNotMatch(client, /turnContext:\s*crossChat/);
+  assert.match(client, /loadKyrubAiHistoricalLink/);
+  assert.match(client, /saveKyrubAiHistoricalLink/);
+  assert.match(client, /existingHistoricalLink\?\.memoryContext/);
+  assert.match(client, /isKyrubiaPureContinuationRequest/);
+  assert.doesNotMatch(client, /turnContext:\s*(crossChat|historical)/);
 });
