@@ -10,6 +10,7 @@ import { resolveKyrubiaDeterministicErpRead } from '../../shared/kyrubiaDetermin
 import {
   describeKyrubiaTurnSelection,
   resolveKyrubiaContextualRecall,
+  resolveKyrubiaMissingContextReply,
   resolveKyrubiaTurnSelection,
 } from '../../shared/kyrubiaContext';
 import { readKyrubErpContext } from '../actions/erpReadActionService';
@@ -99,6 +100,25 @@ export const requestKyrubAiConsultant = async (
   }
 
   const requestPayload = prepareKyrubAiOpportunityContinuation(payload);
+  const latestUserMessage = requestPayload.messages.at(-1);
+
+  const missingContextReply = latestUserMessage?.role === 'user'
+    ? resolveKyrubiaMissingContextReply(
+        latestUserMessage.content,
+        requestPayload.turnContext
+      )
+    : null;
+
+  if (missingContextReply) {
+    return {
+      reply: missingContextReply,
+      provider: 'kyrub',
+      model: 'kyrub-runtime-v1',
+      mode: 'deterministic',
+      requestId: createRuntimeRequestId(),
+      capabilities: runtimeCapabilities(),
+    };
+  }
 
   let erpContext = requestPayload.erpContext;
   if (!erpContext) {
@@ -113,7 +133,6 @@ export const requestKyrubAiConsultant = async (
     }
   }
 
-  const latestUserMessage = requestPayload.messages.at(-1);
   const deterministic = latestUserMessage?.role === 'user'
     ? resolveKyrubiaDeterministicErpRead(latestUserMessage.content, erpContext)
     : null;
