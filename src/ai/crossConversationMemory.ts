@@ -177,7 +177,7 @@ const ambiguousReply = (candidates: KyrubiaCrossChatCandidate[]): string => {
       return `${index + 1}. ${candidate.title} — ${displayDate(candidate.updatedAt)} · ${countLabel}${preview}`;
     })
     .join('\n');
-  return `Encontrei mais de uma conversa que pode ser essa:\n${options}\nDiga o assunto com mais detalhe ou abra a conversa que deseja continuar.`;
+  return `Encontrei mais de uma conversa que pode ser essa:\n${options}\nDiga o assunto com mais detalhe ou responda “a primeira”, “a segunda” ou “a terceira”.`;
 };
 
 export const isKyrubiaPureContinuationRequest = (message: string): boolean =>
