@@ -229,7 +229,7 @@ test('objective context is compact and explicitly non-authoritative', () => {
   assert.ok(context);
   assert.ok((context?.length ?? 0) <= 220);
   assert.match(context ?? '', /não autoriza ações/i);
-  assert.match(context ?? '', /não prova estado atual/i);
+  assert.match(context ?? '', /nem prova estado atual/i);
 });
 
 test('consultant client resolves objective commands before ERP and forwards objective context only as context', async () => {
