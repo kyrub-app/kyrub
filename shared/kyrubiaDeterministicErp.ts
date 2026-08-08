@@ -81,6 +81,18 @@ const productAvailabilityReply = (
   return null;
 };
 
+const storeAvailabilityReply = (
+  context: KyrubErpContextSnapshot | undefined
+): string | null => {
+  if (!context) {
+    return 'Não consegui consultar os dados da sua loja nesta solicitação. Tente novamente em instantes.';
+  }
+  if (!context.availability.store) {
+    return 'Os dados da sua loja estão temporariamente indisponíveis para consulta.';
+  }
+  return null;
+};
+
 const orderAvailabilityReply = (
   context: KyrubErpContextSnapshot | undefined
 ): string | null => {
@@ -107,6 +119,67 @@ const formatProductNames = (
 ): string => visibleProducts(items)
   .map(product => `- ${formatter(product)}`)
   .join('\n');
+
+const commonCatalogCategory = (
+  products: KyrubErpProductSummary[]
+): string | null => {
+  const categories = products
+    .map(product => product.category
+      .split('>')
+      .map(part => part.trim())
+      .filter(Boolean)
+    )
+    .filter(parts => parts.length > 0);
+  if (categories.length === 0) return null;
+
+  const prefix = [...categories[0]];
+  for (const category of categories.slice(1)) {
+    while (
+      prefix.length > 0 &&
+      normalizeIntentText(prefix[prefix.length - 1]) !==
+        normalizeIntentText(category[prefix.length - 1] ?? '')
+    ) {
+      prefix.pop();
+    }
+    if (prefix.length === 0) return null;
+  }
+
+  return prefix.join(' > ') || null;
+};
+
+const resolveStoreIdentity = (
+  context: KyrubErpContextSnapshot | undefined
+): KyrubiaDeterministicErpResult => {
+  const unavailable = storeAvailabilityReply(context);
+  if (unavailable || !context) {
+    return { action: 'read_store_summary', reply: unavailable ?? 'Não consegui consultar sua loja.' };
+  }
+  if (!context.store) {
+    return {
+      action: 'read_store_summary',
+      reply: 'Não encontrei uma loja ativada para este usuário.',
+    };
+  }
+
+  const store = context.store;
+  const catalogSegment = context.availability.products
+    ? commonCatalogCategory(context.products)
+    : null;
+  const segmentLine = catalogSegment
+    ? `O Kyrub ainda não possui um campo canônico de segmento para a loja. Pela classificação atual dos produtos, o catálogo está em: ${catalogSegment}.`
+    : 'O Kyrub ainda não possui um campo canônico de segmento para a loja, então não vou inventar um segmento que não esteja cadastrado.';
+  const descriptionLine = store.description.trim()
+    ? `\nDescrição cadastrada: ${store.description.trim()}`
+    : '';
+  const keywordsLine = store.keywords.length > 0
+    ? `\nPalavras-chave cadastradas: ${store.keywords.join(', ')}`
+    : '';
+
+  return {
+    action: 'read_store_summary',
+    reply: `Nome da sua loja: ${store.name || 'não informado'}.\n${segmentLine}${descriptionLine}${keywordsLine}`,
+  };
+};
 
 const resolveProductCount = (
   context: KyrubErpContextSnapshot | undefined
@@ -229,6 +302,60 @@ const resolveCatalogList = (
   };
 };
 
+const resolveContextualCatalogFilter = (
+  context: KyrubErpContextSnapshot | undefined,
+  turnContext: KyrubiaTurnContext | undefined,
+  filter: 'missing_description' | 'missing_image'
+): KyrubiaDeterministicErpResult | null => {
+  if (!turnContext?.entities.length) return null;
+  if (turnContext.entities.some(entity => entity.entityType !== 'product')) return null;
+
+  const unavailable = productAvailabilityReply(context);
+  if (unavailable || !context) {
+    return { action: 'list_products', reply: unavailable ?? 'Não consegui consultar o catálogo.' };
+  }
+
+  if (
+    turnContext.scope.storeId &&
+    context.store?.id &&
+    turnContext.scope.storeId !== context.store.id
+  ) {
+    return {
+      action: 'list_products',
+      reply: 'A lista anterior pertence a outro contexto de loja e não pode ser reutilizada aqui.',
+    };
+  }
+
+  const currentById = new Map(context.products.map(product => [product.id, product] as const));
+  const revalidated = turnContext.entities.flatMap(reference => {
+    const product = currentById.get(reference.entityId);
+    return product ? [product] : [];
+  });
+  const items = revalidated.filter(product =>
+    filter === 'missing_image' ? !product.hasImage : !product.hasDescription
+  );
+  const missingReferenceCount = turnContext.entities.length - revalidated.length;
+  const incompleteSuffix = missingReferenceCount > 0
+    ? `\n\n${missingReferenceCount === 1 ? '1 item da lista anterior não pôde' : `${missingReferenceCount} itens da lista anterior não puderam`} ser revalidado nesta leitura.`
+    : '';
+  const label = filter === 'missing_image' ? 'imagem' : 'descrição';
+
+  if (items.length === 0) {
+    return {
+      action: 'list_products',
+      reply: `Dos itens daquela lista que consegui revalidar no Kyrub, nenhum está sem ${label} neste momento.${incompleteSuffix}`,
+    };
+  }
+
+  return {
+    action: 'list_products',
+    reply: `Dos itens daquela lista, ${items.length === 1 ? '1 continua' : `${items.length} continuam`} sem ${label}:\n${formatProductNames(items, product =>
+      product.category ? `${product.name} — ${product.category}` : product.name
+    )}${incompleteSuffix}`,
+    turnContext: createProductTurnContext('list_products', context, visibleProducts(items)),
+  };
+};
+
 const resolveLowStockNote = (
   context: KyrubErpContextSnapshot | undefined
 ): KyrubiaDeterministicErpResult => {
@@ -248,7 +375,8 @@ const resolveLowStockNote = (
 
 export const resolveKyrubiaDeterministicErpRead = (
   message: string,
-  context?: KyrubErpContextSnapshot
+  context?: KyrubErpContextSnapshot,
+  turnContext?: KyrubiaTurnContext
 ): KyrubiaDeterministicErpResult | null => {
   const intent = normalizeIntentText(message);
   if (!intent) return null;
@@ -264,18 +392,50 @@ export const resolveKyrubiaDeterministicErpRead = (
 
   if (NEEDS_REASONING_OR_MUTATION.test(intent)) return null;
 
+  const asksStoreIdentity =
+    /\b(loja|estabelecimento|negocio)\b/.test(intent) &&
+    /\b(nome|segmento|ramo|categoria)\b/.test(intent);
+  if (asksStoreIdentity) return resolveStoreIdentity(context);
+
+  const missingDescriptionPattern = /\bsem (descricao|descricoes)\b/;
+  const missingImagePattern = /\bsem (imagem|imagens|foto|fotos)\b/;
+  const explicitProductReference = /\b(produto|produtos|item|itens)\b/.test(intent);
+  const contextualFilterQuestion = /\b(quais|qual|estao|esta|continuam|continua|ficaram|ficou)\b/.test(intent);
+
   const asksMissingDescription =
-    /\b(produto|produtos|item|itens)\b/.test(intent) &&
-    /\bsem (descricao|descricoes)\b/.test(intent);
+    explicitProductReference && missingDescriptionPattern.test(intent);
   if (asksMissingDescription) {
     return resolveCatalogList(context, 'missing_description');
   }
 
   const asksMissingImage =
-    /\b(produto|produtos|item|itens)\b/.test(intent) &&
-    /\bsem (imagem|imagens|foto|fotos)\b/.test(intent);
+    explicitProductReference && missingImagePattern.test(intent);
   if (asksMissingImage) {
     return resolveCatalogList(context, 'missing_image');
+  }
+
+  if (
+    contextualFilterQuestion &&
+    missingDescriptionPattern.test(intent)
+  ) {
+    const contextual = resolveContextualCatalogFilter(
+      context,
+      turnContext,
+      'missing_description'
+    );
+    if (contextual) return contextual;
+  }
+
+  if (
+    contextualFilterQuestion &&
+    missingImagePattern.test(intent)
+  ) {
+    const contextual = resolveContextualCatalogFilter(
+      context,
+      turnContext,
+      'missing_image'
+    );
+    if (contextual) return contextual;
   }
 
   if (asksLowStock) return resolveLowStock(context);

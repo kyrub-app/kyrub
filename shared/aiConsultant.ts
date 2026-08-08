@@ -33,6 +33,15 @@ export type KyrubAiConversationMessage = {
   createdAt?: string;
 };
 
+export type KyrubAiHistoricalLink = {
+  sourceConversationId: string;
+  sourceTitle: string;
+  sourceTopic: string;
+  sourceUpdatedAt: string;
+  linkedAt: string;
+  memoryContext: string;
+};
+
 export type KyrubAiConsultantRequest = {
   conversationId: string;
   topic: string;
@@ -40,6 +49,7 @@ export type KyrubAiConsultantRequest = {
   screenContext?: string;
   erpContext?: KyrubErpContextSnapshot;
   turnContext?: KyrubiaTurnContext;
+  historicalLink?: KyrubAiHistoricalLink;
 };
 
 export type KyrubAiConsultantCapabilities = {
@@ -58,6 +68,7 @@ export type KyrubAiConsultantResponse = {
   requestId: string;
   actionProposal?: KyrubActionProposal;
   turnContext?: KyrubiaTurnContext;
+  historicalLink?: KyrubAiHistoricalLink;
   capabilities: KyrubAiConsultantCapabilities;
 };
 
