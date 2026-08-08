@@ -136,7 +136,7 @@ Antes de executar uma ação, o Kyrub deve reconsultar o estado oficial aplicáv
 
 Kyrubia pode consultar conversas anteriores do mesmo usuário para retomar objetivos, decisões e assuntos quando houver intenção clara de continuidade, como “continue aquela conversa”, “retome o assunto” ou “onde paramos”.
 
-A recuperação deve usar apenas fontes pertencentes ao mesmo usuário e ao escopo autorizado. Quando mais de uma conversa puder corresponder ao pedido, a Kyrubia deve pedir desambiguação em vez de escolher silenciosamente.
+A recuperação deve usar apenas fontes pertencentes ao mesmo usuário e ao escopo autorizado. Quando mais de uma conversa puder corresponder ao pedido, a Kyrubia deve pedir desambiguação em vez de escolher silenciosamente. Essa desambiguação deve fornecer contexto suficiente para que o usuário realmente consiga distinguir as opções, como trecho recente e data, sem expor mais histórico do que o necessário.
 
 Contexto recuperado de outro chat é histórico. Ele não herda automaticamente memória operacional de turno, não autoriza ações e não prova que entidades ou estados continuam atuais. Qualquer dado operacional necessário deve ser revalidado no Kyrub.
 
@@ -203,17 +203,11 @@ O modelo interpreta o documento; o Kyrub valida e executa.
 
 “Preciso trocar o óleo da minha moto” → Kyrubia identifica necessidade → procura produtos, serviços, Marketplace, Orçamento ou Freela conforme o caso → apresenta alternativas → usuário confirma → Kyrub executa reserva, pedido ou contratação conforme permissões disponíveis.
 
-### Continuidade entre conversas
-
-“Vamos continuar aquela conversa sobre reposição automática” → Kyrubia procura conversas anteriores autorizadas → identifica uma correspondência clara ou pede desambiguação → recupera somente o contexto histórico necessário → continua o raciocínio. Se a continuação exigir preço, estoque, permissão ou outra informação operacional atual, o Kyrub consulta novamente a fonte oficial antes de agir.
-
 ## Questões que serão definidas durante a evolução
 
 Esta v1 deliberadamente deixa algumas políticas para serem detalhadas no momento de implementação de cada capacidade, incluindo:
 
-- memória pessoal duradoura e memória duradoura empresarial, separadas do histórico de chats;
-- objetivos ativos persistentes e seu ciclo de vida;
-- sincronização segura de histórico e memória entre dispositivos;
+- memória pessoal e memória duradoura empresarial;
 - participação em operações de terceiros como funcionário ou colaborador e suas permissões;
 - regras de proatividade e não perturbe;
 - ciclo de vida de alertas, insights e oportunidades;
