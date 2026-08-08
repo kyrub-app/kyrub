@@ -6,6 +6,7 @@ import { resolveKyrubiaDeterministicErpRead } from '../shared/kyrubiaDeterminist
 import {
   describeKyrubiaTurnSelection,
   resolveKyrubiaContextualRecall,
+  resolveKyrubiaMissingContextReply,
   resolveKyrubiaTurnSelection,
 } from '../shared/kyrubiaContext';
 
@@ -155,6 +156,24 @@ test('contextual recall can answer which items were shown without generative AI'
   );
 });
 
+test('readback reference without a prior list is answered by Kyrub instead of generative AI', () => {
+  const reply = resolveKyrubiaMissingContextReply(
+    'Quais são os três primeiros dessa lista?'
+  );
+
+  assert.ok(reply);
+  assert.match(reply, /não tenho uma lista anterior nesta conversa/i);
+  assert.match(reply, /listar os itens primeiro/i);
+});
+
+test('missing context guard does not reinterpret a mutation as a harmless readback', () => {
+  const reply = resolveKyrubiaMissingContextReply(
+    'Dessa lista, aplique um desconto de 10% nos três primeiros itens.'
+  );
+
+  assert.equal(reply, null);
+});
+
 test('mutation wording is resolved as reference but is not intercepted as a readback', () => {
   const list = resolveKyrubiaDeterministicErpRead(
     'Liste os produtos com estoque baixo.',
@@ -214,8 +233,14 @@ test('workspace persists the latest structured turn and uses activate-store word
   assert.match(conversationStore, /lastTurnContext\?: KyrubiaTurnContext/);
   assert.match(client, /resolveKyrubiaTurnSelection/);
   assert.match(client, /resolveKyrubiaContextualRecall/);
+  assert.match(client, /resolveKyrubiaMissingContextReply/);
   assert.match(client, /describeKyrubiaTurnSelection/);
   assert.match(client, /screenContext: appendStructuredReferenceContext/);
   assert.match(client, /provider: 'kyrub'/);
   assert.match(client, /mode: 'deterministic'/);
+
+  const missingContextGuard = client.indexOf('const missingContextReply');
+  const erpRead = client.indexOf('readKyrubErpContext(currentUser)');
+  assert.ok(missingContextGuard >= 0 && erpRead >= 0);
+  assert.ok(missingContextGuard < erpRead);
 });
