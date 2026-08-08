@@ -1,5 +1,8 @@
 import {
   buildKyrubiaObjectiveContext,
+  formatKyrubiaQuotedLabel,
+  formatKyrubiaQuotedSentence,
+  formatKyrubiaSentence,
   inferKyrubiaObjectiveScope,
   renderKyrubiaObjective,
   renderKyrubiaObjectiveList,
@@ -52,7 +55,7 @@ export const resolveKyrubiaObjectiveRuntime = (
     return {
       objective,
       reply:
-        `Objetivo ativo registrado: “${objective.statement}”. ` +
+        `Objetivo ativo registrado: ${formatKyrubiaQuotedSentence(objective.statement)} ` +
         'Vou usar esse objetivo para manter continuidade entre conversas vinculadas. Ele organiza contexto; não autoriza ações nem substitui o estado atual do Kyrub.',
     };
   }
@@ -94,7 +97,7 @@ export const resolveKyrubiaObjectiveRuntime = (
     return {
       objective,
       reply:
-        `Próximo passo registrado no objetivo “${objective.title}”: ${objective.nextStep}. ` +
+        `Próximo passo registrado no objetivo ${formatKyrubiaQuotedLabel(objective.title)}: ${formatKyrubiaSentence(objective.nextStep ?? '')} ` +
         'Isso é planejamento de continuidade, não execução automática.',
     };
   }
@@ -107,10 +110,11 @@ export const resolveKyrubiaObjectiveRuntime = (
       command.summary
     );
     if (!objective) return { reply: missingLinkedObjectiveReply() };
+    const recordedProgress = objective.progress.at(-1)?.summary ?? command.summary;
     return {
       objective,
       reply:
-        `Progresso registrado no objetivo “${objective.title}”: ${command.summary}. ` +
+        `Progresso registrado no objetivo ${formatKyrubiaQuotedLabel(objective.title)}: ${formatKyrubiaSentence(recordedProgress)} ` +
         'Esse registro é histórico; qualquer estado operacional necessário continua sendo revalidado no Kyrub.',
     };
   }
@@ -124,7 +128,7 @@ export const resolveKyrubiaObjectiveRuntime = (
   return {
     objective,
     reply:
-      `Objetivo “${objective.title}” marcado como concluído na memória da Kyrubia. ` +
+      `Objetivo ${formatKyrubiaQuotedLabel(objective.title)} marcado como concluído na memória da Kyrubia. ` +
       'Isso encerra o objetivo de continuidade, mas não funciona como prova de que estados operacionais externos foram concluídos.',
   };
 };
