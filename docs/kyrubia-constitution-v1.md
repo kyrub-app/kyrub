@@ -146,6 +146,16 @@ Contexto recuperado de outro chat é histórico. Ele não herda automaticamente 
 
 Enquanto o histórico da Kyrubia estiver salvo apenas no dispositivo, a continuidade transversal também será limitada às conversas disponíveis naquele dispositivo. Uma conversa excluída deixa de ser fonte de continuidade desta camada. Memórias duradouras futuras deverão ter ciclo de vida e controles próprios, separados do simples histórico de chats.
 
+### 18. Objetivos ativos representam intenção estruturada, não autorização
+
+Kyrubia pode manter objetivos ativos para representar de forma estruturada um resultado que o usuário está tentando alcançar, como “preparar minha loja para delivery”, “deixar meu catálogo completo” ou “organizar a reposição de estoque”. O registro de um objetivo deve decorrer de intenção explícita do usuário ou de confirmação clara quando a Kyrubia o propuser.
+
+Um objetivo pode guardar seu enunciado, escopo, estado de continuidade, progresso histórico informado ou validado e próximo passo planejado. Esses elementos ajudam a Kyrubia a responder “o que estamos tentando concluir?”, “como estamos?” e “qual é o próximo passo?” sem depender de reler uma conversa inteira.
+
+Objetivo não é tarefa executada, promessa, autorização, política operacional nem prova de estado atual. Um próximo passo registrado não é uma ordem automática. Um marco de progresso não prova sozinho que estoque, catálogo, pedido, pagamento, permissão ou qualquer outro dado oficial continuam no mesmo estado. Quando a resposta ou ação depender da realidade atual, o Kyrub deve revalidá-la.
+
+Objetivos têm ciclo de vida próprio e podem atravessar conversas vinculadas. Excluir uma conversa não deve ser tratado automaticamente como autorização para apagar um objetivo estruturado que possua vida própria; da mesma forma, concluir um objetivo na memória de continuidade não equivale a afirmar que todos os efeitos externos foram concluídos. Controles futuros de memória deverão permitir ao usuário revisar, concluir, esquecer ou remover objetivos de forma explícita.
+
 ## Modelo conceitual de operação
 
 A Kyrubia pode ser entendida em camadas:
@@ -153,6 +163,7 @@ A Kyrubia pode ser entendida em camadas:
 - **Percepção:** observa eventos e estados do Kyrub.
 - **Contexto:** entende usuário, loja própria ativada ou contexto operacional autorizado, permissões, plano e ambiente operacional.
 - **Memória:** resolve referências da conversa atual e, quando solicitado, recupera continuidade histórica de outras conversas autorizadas sem substituir o estado oficial.
+- **Objetivos:** mantém resultados desejados, progresso histórico e próximos passos entre conversas, sem transformar continuidade em autorização.
 - **Intenção:** identifica o objetivo expresso pelo usuário ou inferido de um evento autorizado.
 - **Orquestração:** escolhe módulos, ferramentas, workflows ou especialistas necessários.
 - **Raciocínio:** utiliza modelos de IA quando o problema exigir interpretação ou análise não determinística.
@@ -170,7 +181,7 @@ Usuário / Evento do Kyrub
           ↓
        Kyrubia
           ↓
- contexto + memória + intenção
+ contexto + memória + objetivos + intenção
           ↓
    decisão de resolução
       ↙    ↓     ↘
@@ -212,6 +223,7 @@ O modelo interpreta o documento; o Kyrub valida e executa.
 Esta v1 deliberadamente deixa algumas políticas para serem detalhadas no momento de implementação de cada capacidade, incluindo:
 
 - memória pessoal e memória duradoura empresarial;
+- sincronização, edição, esquecimento e remoção de objetivos entre dispositivos;
 - participação em operações de terceiros como funcionário ou colaborador e suas permissões;
 - regras de proatividade e não perturbe;
 - ciclo de vida de alertas, insights e oportunidades;
