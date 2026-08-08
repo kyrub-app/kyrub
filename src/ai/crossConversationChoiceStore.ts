@@ -1,3 +1,4 @@
+import type { KyrubAiConversationMessage } from '../../shared/aiConsultant';
 import type { KyrubAiLocalConversation } from './conversationStore';
 import {
   resolveKyrubiaCrossChatContinuation,
@@ -5,8 +6,10 @@ import {
 } from './crossConversationMemory';
 
 const STORAGE_PREFIX = 'kyrub_ai_cross_chat_choices_v1';
-const MAX_AGE_MS = 10 * 60 * 1000;
+export const KYRUBIA_CROSS_CHAT_CHOICE_MAX_AGE_MS = 10 * 60 * 1000;
 const MAX_CANDIDATES = 3;
+const AMBIGUOUS_REPLY_MARKER =
+  'Encontrei mais de uma conversa que pode ser essa:';
 
 export type KyrubiaPendingCrossChatChoice = {
   createdAt: string;
@@ -30,6 +33,13 @@ const isPendingChoice = (
       item => typeof item === 'string' && item.length > 0
     )
   );
+};
+
+const isFresh = (createdAt: string): boolean => {
+  const timestamp = Date.parse(createdAt);
+  if (!Number.isFinite(timestamp)) return false;
+  const age = Date.now() - timestamp;
+  return age >= 0 && age <= KYRUBIA_CROSS_CHAT_CHOICE_MAX_AGE_MS;
 };
 
 export const saveKyrubiaPendingCrossChatChoice = (
@@ -67,12 +77,7 @@ export const loadKyrubiaPendingCrossChatChoice = (
   const key = storageKey(uid, conversationId);
   try {
     const parsed = JSON.parse(storage.getItem(key) ?? 'null');
-    if (!isPendingChoice(parsed)) {
-      storage.removeItem(key);
-      return undefined;
-    }
-    const createdAt = Date.parse(parsed.createdAt);
-    if (!Number.isFinite(createdAt) || Date.now() - createdAt > MAX_AGE_MS) {
+    if (!isPendingChoice(parsed) || !isFresh(parsed.createdAt)) {
       storage.removeItem(key);
       return undefined;
     }
@@ -102,13 +107,55 @@ const readChoicePosition = (message: string): number | null => {
   return patterns.find(([pattern]) => pattern.test(intent))?.[1] ?? null;
 };
 
+export const hasImmediateKyrubiaCrossChatDisambiguation = (
+  messages: KyrubAiConversationMessage[]
+): boolean => {
+  const latest = messages.at(-1);
+  const previous = messages.at(-2);
+  return Boolean(
+    latest?.role === 'user' &&
+    previous?.role === 'assistant' &&
+    previous.content.includes(AMBIGUOUS_REPLY_MARKER) &&
+    previous.createdAt &&
+    isFresh(previous.createdAt)
+  );
+};
+
+export const rebuildKyrubiaPendingCrossChatChoice = (
+  messages: KyrubAiConversationMessage[],
+  conversations: KyrubAiLocalConversation[],
+  currentConversationId: string
+): KyrubiaPendingCrossChatChoice | undefined => {
+  if (!hasImmediateKyrubiaCrossChatDisambiguation(messages)) return undefined;
+
+  const previousAssistant = messages.at(-2);
+  const priorUser = [...messages.slice(0, -2)]
+    .reverse()
+    .find(message => message.role === 'user');
+  if (!previousAssistant?.createdAt || !priorUser) return undefined;
+
+  const resolution = resolveKyrubiaCrossChatContinuation(
+    priorUser.content,
+    conversations,
+    currentConversationId
+  );
+  if (resolution.kind !== 'ambiguous') return undefined;
+
+  return {
+    createdAt: previousAssistant.createdAt,
+    candidateConversationIds: resolution.candidates
+      .slice(0, MAX_CANDIDATES)
+      .map(candidate => candidate.conversationId),
+  };
+};
+
 export const resolveKyrubiaPendingCrossChatChoice = (
   message: string,
   pending: KyrubiaPendingCrossChatChoice | undefined,
   conversations: KyrubAiLocalConversation[],
   currentConversationId: string
 ): KyrubiaCrossChatResolution | null => {
-  if (!pending) return null;
+  if (!pending || !isFresh(pending.createdAt)) return null;
   const position = readChoicePosition(message);
   if (!position) return null;
 
