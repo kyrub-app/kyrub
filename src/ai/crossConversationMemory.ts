@@ -1,3 +1,4 @@
+import type { KyrubAiHistoricalLink } from '../../shared/aiConsultant';
 import type { KyrubAiLocalConversation } from './conversationStore';
 
 export type KyrubiaCrossChatCandidate = {
@@ -29,6 +30,9 @@ const CONTINUATION_PATTERN =
 
 const DOWNSTREAM_ACTION_PATTERN =
   /\b(crie|criar|salve|salvar|adicione|adicionar|liste|listar|mostre|mostrar|analise|analisar|compare|comparar|aplique|aplicar|altere|alterar|mude|mudar|compre|comprar|exclua|excluir|edite|editar|cadastre|cadastrar|calcule|calcular|gere|gerar)\b/i;
+
+const HISTORICAL_LINK_RECALL_PATTERN =
+  /\b(qual|que)\s+(conversa|chat|assunto|contexto)\b.{0,50}\b(retomou|retomamos|retomei|vinculou|vinculado|continuando|continuamos)\b/i;
 
 const STOP_WORDS = new Set([
   'aquela',
@@ -178,6 +182,14 @@ const ambiguousReply = (candidates: KyrubiaCrossChatCandidate[]): string => {
 
 export const isKyrubiaPureContinuationRequest = (message: string): boolean =>
   CONTINUATION_PATTERN.test(message) && !DOWNSTREAM_ACTION_PATTERN.test(message);
+
+export const resolveKyrubiaHistoricalLinkRecall = (
+  message: string,
+  historicalLink?: KyrubAiHistoricalLink
+): string | null => {
+  if (!historicalLink || !HISTORICAL_LINK_RECALL_PATTERN.test(message)) return null;
+  return `Estou continuando a conversa “${historicalLink.sourceTitle}”. Esse vínculo é apenas contexto histórico; dados operacionais atuais continuam sendo consultados no Kyrub quando necessário.`;
+};
 
 export const resolveKyrubiaCrossChatContinuation = (
   message: string,
