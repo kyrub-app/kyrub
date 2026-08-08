@@ -5,6 +5,8 @@ export type KyrubiaCrossChatCandidate = {
   title: string;
   topic: string;
   updatedAt: string;
+  preview: string;
+  messageCount: number;
   score: number;
 };
 
@@ -113,6 +115,21 @@ const scoreConversation = (
   }, 0);
 };
 
+const candidatePreview = (conversation: KyrubAiLocalConversation): string => {
+  const lastAssistant = [...conversation.messages]
+    .reverse()
+    .find(message => message.role === 'assistant' && message.content.trim());
+  const fallback = [...conversation.messages]
+    .reverse()
+    .find(message => message.content.trim());
+  return compact(lastAssistant?.content ?? fallback?.content ?? '', 86);
+};
+
+const displayDate = (value: string): string => {
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
+  return match ? `${match[3]}/${match[2]}/${match[1]}` : 'data desconhecida';
+};
+
 const candidateFrom = (
   conversation: KyrubAiLocalConversation,
   score: number
@@ -121,6 +138,8 @@ const candidateFrom = (
   title: conversation.title,
   topic: conversation.topic,
   updatedAt: conversation.updatedAt,
+  preview: candidatePreview(conversation),
+  messageCount: conversation.messages.length,
   score,
 });
 
@@ -141,7 +160,15 @@ const buildHistoricalContext = (
 const ambiguousReply = (candidates: KyrubiaCrossChatCandidate[]): string => {
   const options = candidates
     .slice(0, 3)
-    .map((candidate, index) => `${index + 1}. ${candidate.title}`)
+    .map((candidate, index) => {
+      const countLabel = candidate.messageCount === 1
+        ? '1 mensagem'
+        : `${candidate.messageCount} mensagens`;
+      const preview = candidate.preview
+        ? `\n   Último contexto: “${candidate.preview}”`
+        : '';
+      return `${index + 1}. ${candidate.title} — ${displayDate(candidate.updatedAt)} · ${countLabel}${preview}`;
+    })
     .join('\n');
   return `Encontrei mais de uma conversa que pode ser essa:\n${options}\nDiga o assunto com mais detalhe ou abra a conversa que deseja continuar.`;
 };
