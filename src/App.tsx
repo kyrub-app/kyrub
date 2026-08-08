@@ -9,6 +9,7 @@ import { KyrubAiNoteActionBridge } from './components/KyrubAiNoteActionBridge';
 import { KyrubAiWorkspaceBridge } from './components/KyrubAiWorkspaceBridge';
 import { KyrubiaNamingBridge } from './components/KyrubiaNamingBridge';
 import { NoteInvitationOutboxBridge } from './components/NoteInvitationOutboxBridge';
+import { ProfileIdentityRecoveryBridge } from './components/ProfileIdentityRecoveryBridge';
 import { ProfilePasskeyBridge } from './components/ProfilePasskeyBridge';
 import { ProfilePostInteractionsBridge } from './components/ProfilePostInteractionsBridge';
 import { ProfileRecoveredActionsBridge } from './components/ProfileRecoveredActionsBridge';
@@ -147,6 +148,7 @@ function AuthenticatedKyrubApp({ operational }: { operational: boolean }) {
       <NinetyNineFoodOrderStatusBridge />
       <NoteInvitationOutboxBridge />
       <SocialPublishingBridge />
+      <ProfileIdentityRecoveryBridge />
       <ProfileSocialHubNative />
       <ProfilePostInteractionsBridge />
       <ProfileRecoveredActionsBridge />

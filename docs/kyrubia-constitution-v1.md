@@ -124,12 +124,20 @@ Kyrubia deve reduzir burocracia, repetição, procura desnecessária, esquecimen
 
 Decisões que envolvem valores, responsabilidade, preferência ou alto impacto continuam pertencendo às pessoas, salvo automações explicitamente delegadas dentro de limites claros.
 
+### 16. Memória resolve contexto; Kyrub resolve verdade
+
+Kyrubia pode manter memória conversacional e memória operacional estruturada para compreender continuidade, referências e expressões como “esse item”, “os três primeiros” ou “a lista que você acabou de mostrar”.
+
+Essa memória pode identificar quais entidades reais estavam sendo exibidas e em qual ordem, mas nunca deve ser tratada como prova de que preço, estoque, disponibilidade, permissão ou qualquer outro estado continuam iguais.
+
+Antes de executar uma ação, o Kyrub deve reconsultar o estado oficial aplicável e revalidar autorização, permissões e condições atuais. Memória identifica a referência; o estado oficial do Kyrub determina a verdade operacional.
+
 ## Modelo conceitual de operação
 
 A Kyrubia pode ser entendida em camadas:
 
 - **Percepção:** observa eventos e estados do Kyrub.
-- **Contexto:** entende usuário, loja ativa, permissões, plano e ambiente operacional.
+- **Contexto:** entende usuário, loja própria ativada ou contexto operacional autorizado, permissões, plano e ambiente operacional.
 - **Intenção:** identifica o objetivo expresso pelo usuário ou inferido de um evento autorizado.
 - **Orquestração:** escolhe módulos, ferramentas, workflows ou especialistas necessários.
 - **Raciocínio:** utiliza modelos de IA quando o problema exigir interpretação ou análise não determinística.
@@ -188,8 +196,8 @@ O modelo interpreta o documento; o Kyrub valida e executa.
 
 Esta v1 deliberadamente deixa algumas políticas para serem detalhadas no momento de implementação de cada capacidade, incluindo:
 
-- memória pessoal, empresarial e operacional;
-- contexto multi-loja e participação como funcionário;
+- memória pessoal e memória duradoura empresarial;
+- participação em operações de terceiros como funcionário ou colaborador e suas permissões;
 - regras de proatividade e não perturbe;
 - ciclo de vida de alertas, insights e oportunidades;
 - escolha e roteamento entre provedores de IA;

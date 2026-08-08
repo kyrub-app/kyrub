@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { DeliveryJob, FreelanceJob } from '../../types';
 import { auth, db } from '../../utils/firebase';
+import { loadCachedUserStore } from '../../utils/storePersistence';
 import { getPrimaryUserStoreDocumentPath } from '../../utils/storePaths';
 
 interface RendaTabProps {
@@ -28,6 +29,8 @@ interface RendaTabProps {
     type?: 'success' | 'error' | 'info' | 'warning'
   ) => void;
 }
+
+const STORE_CHECK_TIMEOUT_MS = 4_000;
 
 const hasMeaningfulStoreProfile = (
   data: Record<string, unknown>
@@ -55,15 +58,40 @@ export function RendaTab({
 
   useEffect(() => {
     let cancelled = false;
+    let checkTimeout: number | null = null;
+
+    const clearCheckTimeout = () => {
+      if (checkTimeout === null) return;
+      window.clearTimeout(checkTimeout);
+      checkTimeout = null;
+    };
 
     const unsubscribe = onAuthStateChanged(auth, user => {
+      clearCheckTimeout();
+
       if (!user) {
         setHasConfiguredStore(false);
         setIsCheckingStore(false);
         return;
       }
 
-      setIsCheckingStore(true);
+      const cachedStore = loadCachedUserStore(
+        localStorage,
+        user.uid,
+        user.email ?? ''
+      );
+      const cachedConfigured = cachedStore
+        ? hasMeaningfulStoreProfile(cachedStore as unknown as Record<string, unknown>)
+        : false;
+
+      setHasConfiguredStore(cachedConfigured);
+      setIsCheckingStore(!cachedConfigured);
+
+      // A leitura canônica continua sendo feita para atualizar a verdade atual,
+      // mas uma falha ou lentidão do Firestore não pode bloquear a entrada da loja.
+      checkTimeout = window.setTimeout(() => {
+        if (!cancelled) setIsCheckingStore(false);
+      }, STORE_CHECK_TIMEOUT_MS);
 
       void getDoc(
         doc(db, getPrimaryUserStoreDocumentPath(user.uid))
@@ -71,27 +99,34 @@ export function RendaTab({
         .then(snapshot => {
           if (cancelled) return;
 
-          setHasConfiguredStore(
+          const configured =
             snapshot.exists() &&
-              hasMeaningfulStoreProfile(
-                snapshot.data() as Record<string, unknown>
-              )
-          );
+            hasMeaningfulStoreProfile(
+              snapshot.data() as Record<string, unknown>
+            );
+          setHasConfiguredStore(configured || cachedConfigured);
         })
         .catch(error => {
           console.warn(
             'Não foi possível verificar a loja do usuário.',
             error
           );
-          if (!cancelled) setHasConfiguredStore(false);
+          // Preserve uma loja já conhecida localmente. A falha da validação
+          // remota não transforma uma loja configurada em loja inexistente.
+          if (!cancelled && cachedConfigured) {
+            setHasConfiguredStore(true);
+          }
         })
         .finally(() => {
-          if (!cancelled) setIsCheckingStore(false);
+          if (cancelled) return;
+          clearCheckTimeout();
+          setIsCheckingStore(false);
         });
     });
 
     return () => {
       cancelled = true;
+      clearCheckTimeout();
       unsubscribe();
     };
   }, []);
@@ -102,7 +137,7 @@ export function RendaTab({
     triggerToast(
       hasConfiguredStore
         ? 'Abrindo a gestão da sua loja.'
-        : 'Vamos configurar sua loja no Kyrub Ofertas.',
+        : 'Vamos ativar sua loja no Kyrub Ofertas.',
       'success'
     );
   };
@@ -239,7 +274,7 @@ export function RendaTab({
               ? 'Verificando loja...'
               : hasConfiguredStore
                 ? 'Acessar loja'
-                : 'Criar loja'}
+                : 'Ativar loja'}
           </button>
         </section>
 
