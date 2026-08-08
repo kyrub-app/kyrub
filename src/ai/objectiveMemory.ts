@@ -23,6 +23,23 @@ const normalize = (value: string): string =>
 const compact = (value: string, maximum: number): string =>
   value.replace(/\s+/g, ' ').trim().slice(0, maximum);
 
+const presentationText = (value: string): string =>
+  value.replace(/\s+/g, ' ').trim();
+
+export const formatKyrubiaSentence = (value: string): string => {
+  const clean = presentationText(value);
+  if (!clean) return '';
+  return /[.!?…]$/u.test(clean) ? clean : `${clean}.`;
+};
+
+export const formatKyrubiaQuotedSentence = (value: string): string =>
+  `“${formatKyrubiaSentence(value)}”`;
+
+export const formatKyrubiaQuotedLabel = (value: string): string => {
+  const clean = presentationText(value).replace(/[.!?…]+$/u, '');
+  return `“${clean}”`;
+};
+
 const extract = (message: string, patterns: RegExp[]): string | null => {
   for (const pattern of patterns) {
     const match = pattern.exec(message);
@@ -107,7 +124,7 @@ export const renderKyrubiaObjective = (
   objective: KyrubiaActiveObjective
 ): string => {
   const lines = [
-    `${objective.status === 'active' ? 'Objetivo ativo' : 'Objetivo concluído'}: “${objective.statement}”.`,
+    `${objective.status === 'active' ? 'Objetivo ativo' : 'Objetivo concluído'}: ${formatKyrubiaQuotedSentence(objective.statement)}`,
   ];
 
   if (objective.progress.length > 0) {
