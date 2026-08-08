@@ -37,6 +37,12 @@ import {
   resolveKyrubiaHistoricalLinkRecall,
   type KyrubiaCrossChatCandidate,
 } from './crossConversationMemory';
+import {
+  describeKyrubiaConversationObjective,
+  inheritKyrubiaConversationObjective,
+  loadKyrubiaConversationObjective,
+  resolveKyrubiaObjectiveRuntime,
+} from './objectiveRuntimeService';
 import { prepareKyrubAiOpportunityContinuation } from './opportunityContinuation';
 
 export class KyrubAiClientError extends Error {
@@ -119,12 +125,16 @@ const historicalLinkFromCandidate = (
 });
 
 const continuationAcknowledgement = (
-  candidate: KyrubiaCrossChatCandidate
+  candidate: KyrubiaCrossChatCandidate,
+  inheritedObjectiveTitle?: string
 ): string => {
   const preview = candidate.preview
     ? ` O último contexto salvo foi: “${candidate.preview}”.`
     : '';
-  return `Retomei a conversa “${candidate.title}” e vinculei este chat àquele contexto histórico.${preview} Podemos continuar por aqui.`;
+  const objective = inheritedObjectiveTitle
+    ? ` Este chat também continua o objetivo ativo “${inheritedObjectiveTitle}”.`
+    : '';
+  return `Retomei a conversa “${candidate.title}” e vinculei este chat àquele contexto histórico.${preview}${objective} Podemos continuar por aqui.`;
 };
 
 export const requestKyrubAiConsultant = async (
@@ -172,6 +182,13 @@ export const requestKyrubAiConsultant = async (
         requestPayload.conversationId
       )
     : undefined;
+  const existingObjective = hasLocalStorage
+    ? loadKyrubiaConversationObjective(
+        localStorage,
+        currentUser.uid,
+        requestPayload.conversationId
+      )
+    : undefined;
   const storedPendingCrossChatChoice = hasLocalStorage
     ? loadKyrubiaPendingCrossChatChoice(
         localStorage,
@@ -179,6 +196,25 @@ export const requestKyrubAiConsultant = async (
         requestPayload.conversationId
       )
     : undefined;
+
+  const objectiveRuntime = latestUserMessage?.role === 'user' && hasLocalStorage
+    ? resolveKyrubiaObjectiveRuntime(
+        localStorage,
+        currentUser.uid,
+        requestPayload.conversationId,
+        latestUserMessage.content
+      )
+    : null;
+  if (objectiveRuntime) {
+    return {
+      reply: objectiveRuntime.reply,
+      provider: 'kyrub',
+      model: 'kyrub-runtime-v1',
+      mode: 'deterministic',
+      requestId: createRuntimeRequestId(),
+      capabilities: runtimeCapabilities(),
+    };
+  }
 
   const historicalLinkRecall = latestUserMessage?.role === 'user'
     ? resolveKyrubiaHistoricalLinkRecall(
@@ -286,6 +322,16 @@ export const requestKyrubAiConsultant = async (
     );
   }
 
+  const inheritedObjective = resolvedHistoricalLink && hasLocalStorage
+    ? inheritKyrubiaConversationObjective(
+        localStorage,
+        currentUser.uid,
+        resolvedHistoricalLink.sourceConversationId,
+        requestPayload.conversationId
+      )
+    : undefined;
+  const effectiveObjective = inheritedObjective ?? existingObjective;
+
   if (
     crossChatResolution.kind === 'resolved' &&
     latestUserMessage?.role === 'user' &&
@@ -293,7 +339,10 @@ export const requestKyrubAiConsultant = async (
       isKyrubiaPureContinuationRequest(latestUserMessage.content))
   ) {
     return {
-      reply: continuationAcknowledgement(crossChatResolution.candidate),
+      reply: continuationAcknowledgement(
+        crossChatResolution.candidate,
+        inheritedObjective?.title
+      ),
       provider: 'kyrub',
       model: 'kyrub-runtime-v1',
       mode: 'deterministic',
@@ -307,6 +356,7 @@ export const requestKyrubAiConsultant = async (
     ?? existingHistoricalLink?.memoryContext
     ?? requestPayload.historicalLink?.memoryContext
     ?? null;
+  const objectiveContext = describeKyrubiaConversationObjective(effectiveObjective);
 
   let erpContext = requestPayload.erpContext;
   if (!erpContext) {
@@ -411,6 +461,7 @@ export const requestKyrubAiConsultant = async (
     screenContext: appendStructuredReferenceContext(
       requestPayload.screenContext,
       structuredReference,
+      objectiveContext,
       historicalContext
     ),
   };
