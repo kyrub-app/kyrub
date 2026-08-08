@@ -3,10 +3,9 @@ import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import type { KyrubAiHistoricalLink } from '../shared/aiConsultant';
 import {
-  clearKyrubiaPendingCrossChatChoice,
-  loadKyrubiaPendingCrossChatChoice,
+  hasImmediateKyrubiaCrossChatDisambiguation,
+  rebuildKyrubiaPendingCrossChatChoice,
   resolveKyrubiaPendingCrossChatChoice,
-  saveKyrubiaPendingCrossChatChoice,
 } from '../src/ai/crossConversationChoiceStore';
 import {
   loadKyrubAiHistoricalLink,
@@ -173,6 +172,8 @@ test('generic continuation with multiple chats is ambiguous instead of guessed',
   assert.match(result.reply, /Operação de delivery/);
   assert.match(result.reply, /07\/08\/2026/);
   assert.match(result.reply, /Último contexto:/);
+  assert.match(result.reply, /a primeira/i);
+  assert.match(result.reply, /a segunda/i);
 });
 
 test('duplicate conversation titles include preview and message count for useful disambiguation', () => {
@@ -207,64 +208,114 @@ test('duplicate conversation titles include preview and message count for useful
   assert.match(result.reply, /Aqui estão 3 itens do catálogo/);
 });
 
-test('ambiguous candidates can be persisted and resolved by a numbered follow-up', () => {
-  const storage = new MemoryStorage();
-  const uid = 'user-1';
-  const currentId = 'current';
-  const available = histories();
-
-  saveKyrubiaPendingCrossChatChoice(
-    storage,
-    uid,
-    currentId,
-    ['chat-stock', 'chat-delivery']
-  );
-  const pending = loadKyrubiaPendingCrossChatChoice(storage, uid, currentId);
-  assert.deepEqual(pending?.candidateConversationIds, ['chat-stock', 'chat-delivery']);
-
-  const resolution = resolveKyrubiaPendingCrossChatChoice(
-    'a segunda',
-    pending,
-    available,
-    currentId
-  );
-  assert.equal(resolution?.kind, 'resolved');
-  if (resolution?.kind !== 'resolved') return;
-  assert.equal(resolution.candidate.conversationId, 'chat-delivery');
-  assert.match(resolution.memoryContext, /Operação de delivery/);
-
-  clearKyrubiaPendingCrossChatChoice(storage, uid, currentId);
-  assert.equal(loadKyrubiaPendingCrossChatChoice(storage, uid, currentId), undefined);
-});
-
-test('numbered choice does not resolve without a pending ambiguity', () => {
-  const result = resolveKyrubiaPendingCrossChatChoice(
-    'a primeira',
-    undefined,
+test('ordinal choice can be rebuilt from the immediately preceding ambiguity when auxiliary metadata is missing', () => {
+  const now = new Date().toISOString();
+  const prior = resolveKyrubiaCrossChatContinuation(
+    'Continue de onde paramos.',
     histories(),
     'current'
   );
-  assert.equal(result, null);
-});
+  assert.equal(prior.kind, 'ambiguous');
+  if (prior.kind !== 'ambiguous') return;
 
-test('invalid numbered choice is deterministic and never guesses another candidate', () => {
-  const storage = new MemoryStorage();
-  saveKyrubiaPendingCrossChatChoice(
-    storage,
-    'user-1',
-    'current',
-    ['chat-stock', 'chat-delivery']
-  );
-  const pending = loadKyrubiaPendingCrossChatChoice(storage, 'user-1', 'current');
-  const result = resolveKyrubiaPendingCrossChatChoice(
-    'a terceira',
-    pending,
+  const messages = [
+    {
+      id: 'u-1',
+      role: 'user' as const,
+      content: 'Continue de onde paramos.',
+      createdAt: now,
+    },
+    {
+      id: 'a-1',
+      role: 'assistant' as const,
+      content: prior.reply,
+      createdAt: now,
+    },
+    {
+      id: 'u-2',
+      role: 'user' as const,
+      content: 'A primeira',
+      createdAt: now,
+    },
+  ];
+
+  assert.equal(hasImmediateKyrubiaCrossChatDisambiguation(messages), true);
+  const rebuilt = rebuildKyrubiaPendingCrossChatChoice(
+    messages,
     histories(),
     'current'
   );
-  assert.equal(result?.kind, 'not_found');
-  if (result?.kind !== 'not_found') return;
-  assert.match(result.reply, /apenas 2 opções/i);
+  assert.deepEqual(
+    rebuilt?.candidateConversationIds,
+    ['chat-stock', 'chat-delivery']
+  );
+
+  const resolved = resolveKyrubiaPendingCrossChatChoice(
+    'A primeira',
+    rebuilt,
+    histories(),
+    'current'
+  );
+  assert.equal(resolved?.kind, 'resolved');
+  if (resolved?.kind !== 'resolved') return;
+  assert.equal(resolved.candidate.conversationId, 'chat-stock');
+});
+
+test('relative choice is rejected when ambiguity is stale or no longer immediately preceding', () => {
+  const staleMessages = [
+    {
+      role: 'user' as const,
+      content: 'Continue de onde paramos.',
+      createdAt: '2000-01-01T00:00:00.000Z',
+    },
+    {
+      role: 'assistant' as const,
+      content: 'Encontrei mais de uma conversa que pode ser essa:\n1. A\n2. B',
+      createdAt: '2000-01-01T00:00:01.000Z',
+    },
+    {
+      role: 'user' as const,
+      content: 'A primeira',
+      createdAt: new Date().toISOString(),
+    },
+  ];
+  assert.equal(hasImmediateKyrubiaCrossChatDisambiguation(staleMessages), false);
+  assert.equal(
+    rebuildKyrubiaPendingCrossChatChoice(staleMessages, histories(), 'current'),
+    undefined
+  );
+
+  const interruptedMessages = [
+    {
+      role: 'user' as const,
+      content: 'Continue de onde paramos.',
+      createdAt: new Date().toISOString(),
+    },
+    {
+      role: 'assistant' as const,
+      content: 'Encontrei mais de uma conversa que pode ser essa:\n1. A\n2. B',
+      createdAt: new Date().toISOString(),
+    },
+    {
+      role: 'user' as const,
+      content: 'Vamos falar de outra coisa.',
+      createdAt: new Date().toISOString(),
+    },
+    {
+      role: 'assistant' as const,
+      content: 'Claro.',
+      createdAt: new Date().toISOString(),
+    },
+    {
+      role: 'user' as const,
+      content: 'A primeira',
+      createdAt: new Date().toISOString(),
+    },
+  ];
+  assert.equal(
+    hasImmediateKyrubiaCrossChatDisambiguation(interruptedMessages),
+    false
+  );
 });
 
 test('generic continuation resolves when exactly one prior conversation exists', () => {
@@ -348,7 +399,7 @@ test('resolved historical link persists for the current chat and is invalidated 
   );
 });
 
-test('client rehydrates scoped historical link and pending choices but never imports old turnContext', async () => {
+test('client rehydrates scoped historical link but never imports old turnContext', async () => {
   const client = await readFile(
     new URL('../src/ai/consultantClient.ts', import.meta.url),
     'utf8'
@@ -361,9 +412,7 @@ test('client rehydrates scoped historical link and pending choices but never imp
   assert.match(client, /resolveKyrubiaHistoricalLinkRecall/);
   assert.match(client, /existingHistoricalLink\?\.memoryContext/);
   assert.match(client, /isKyrubiaPureContinuationRequest/);
-  assert.match(client, /loadKyrubiaPendingCrossChatChoice/);
-  assert.match(client, /saveKyrubiaPendingCrossChatChoice/);
-  assert.match(client, /resolveKyrubiaPendingCrossChatChoice/);
-  assert.match(client, /previousAssistant\?\.includes\('Encontrei mais de uma conversa/);
+  assert.match(client, /rebuildKyrubiaPendingCrossChatChoice/);
+  assert.match(client, /hasImmediateKyrubiaCrossChatDisambiguation/);
   assert.doesNotMatch(client, /turnContext:\s*(crossChat|historical)/);
 });
