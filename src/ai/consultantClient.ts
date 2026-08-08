@@ -17,6 +17,8 @@ import { readKyrubErpContext } from '../actions/erpReadActionService';
 import { auth } from '../utils/firebase';
 import { emitKyrubAiActionProposal } from './actionEvents';
 import { normalizeConsultantError } from './consultantError';
+import { loadKyrubAiConversations } from './conversationStore';
+import { resolveKyrubiaCrossChatContinuation } from './crossConversationMemory';
 import { prepareKyrubAiOpportunityContinuation } from './opportunityContinuation';
 
 export class KyrubAiClientError extends Error {
@@ -77,9 +79,9 @@ const runtimeCapabilities = (): KyrubAiConsultantResponse['capabilities'] => ({
 
 const appendStructuredReferenceContext = (
   screenContext: string | undefined,
-  structuredContext: string | null
+  ...structuredContexts: Array<string | null | undefined>
 ): string | undefined => {
-  const joined = [screenContext?.trim(), structuredContext?.trim()]
+  const joined = [screenContext?.trim(), ...structuredContexts.map(item => item?.trim())]
     .filter(Boolean)
     .join(' | ')
     .slice(0, KYRUB_AI_LIMITS.maxScreenContextCharacters);
@@ -119,6 +121,34 @@ export const requestKyrubAiConsultant = async (
       capabilities: runtimeCapabilities(),
     };
   }
+
+  const crossChatResolution = latestUserMessage?.role === 'user'
+    ? resolveKyrubiaCrossChatContinuation(
+        latestUserMessage.content,
+        typeof localStorage === 'undefined'
+          ? []
+          : loadKyrubAiConversations(localStorage, currentUser.uid),
+        requestPayload.conversationId
+      )
+    : { kind: 'not_requested' as const };
+
+  if (
+    crossChatResolution.kind === 'not_found' ||
+    crossChatResolution.kind === 'ambiguous'
+  ) {
+    return {
+      reply: crossChatResolution.reply,
+      provider: 'kyrub',
+      model: 'kyrub-runtime-v1',
+      mode: 'deterministic',
+      requestId: createRuntimeRequestId(),
+      capabilities: runtimeCapabilities(),
+    };
+  }
+
+  const crossChatContext = crossChatResolution.kind === 'resolved'
+    ? crossChatResolution.memoryContext
+    : null;
 
   let erpContext = requestPayload.erpContext;
   if (!erpContext) {
@@ -212,7 +242,8 @@ export const requestKyrubAiConsultant = async (
     ...requestPayload,
     screenContext: appendStructuredReferenceContext(
       requestPayload.screenContext,
-      structuredReference
+      structuredReference,
+      crossChatContext
     ),
   };
   const enrichedPayload: KyrubAiConsultantRequest = erpContext
