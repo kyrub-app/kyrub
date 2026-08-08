@@ -26,6 +26,7 @@ import {
 import {
   isKyrubiaPureContinuationRequest,
   resolveKyrubiaCrossChatContinuation,
+  resolveKyrubiaHistoricalLinkRecall,
   type KyrubiaCrossChatCandidate,
 } from './crossConversationMemory';
 import { prepareKyrubAiOpportunityContinuation } from './opportunityContinuation';
@@ -163,6 +164,24 @@ export const requestKyrubAiConsultant = async (
         requestPayload.conversationId
       )
     : undefined;
+
+  const historicalLinkRecall = latestUserMessage?.role === 'user'
+    ? resolveKyrubiaHistoricalLinkRecall(
+        latestUserMessage.content,
+        existingHistoricalLink
+      )
+    : null;
+  if (historicalLinkRecall) {
+    return {
+      reply: historicalLinkRecall,
+      provider: 'kyrub',
+      model: 'kyrub-runtime-v1',
+      mode: 'deterministic',
+      requestId: createRuntimeRequestId(),
+      capabilities: runtimeCapabilities(),
+    };
+  }
+
   const crossChatResolution = latestUserMessage?.role === 'user'
     ? resolveKyrubiaCrossChatContinuation(
         latestUserMessage.content,
