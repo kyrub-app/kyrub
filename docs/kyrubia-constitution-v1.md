@@ -138,7 +138,7 @@ Kyrubia pode consultar conversas anteriores do mesmo usuário para retomar objet
 
 A recuperação deve usar apenas fontes pertencentes ao mesmo usuário e ao escopo autorizado. Quando mais de uma conversa puder corresponder ao pedido, a Kyrubia deve pedir desambiguação em vez de escolher silenciosamente. A desambiguação deve fornecer informação suficiente para o humano distinguir as opções, como data, quantidade de mensagens e um trecho curto do contexto, sem expor conteúdo além do necessário.
 
-Quando uma conversa de origem for identificada com segurança, o novo chat pode manter um vínculo histórico escopado com ela para permitir continuidade natural nas mensagens seguintes. Esse vínculo guarda somente referência e contexto histórico resumido; não importa automaticamente memória operacional de turno, permissões, autorização ou estado de entidades. Se a conversa de origem deixar de existir no histórico disponível, o vínculo deve ser invalidado.
+Quando uma conversa de origem for identificada com segurança, o novo chat pode manter um vínculo histórico escopado com ela para permitir continuidade natural nas mensagens seguintes. Esse vínculo guarda somente referência e contexto histórico resumido; não importa automaticamente memória operacional de turno, permissões, autorização ou estado de entidades. Se a conversa de origem deixar de existir no histórico disponível, o vínculo deve ser invalidado antes de ser reutilizado.
 
 Contexto recuperado de outro chat é histórico. Ele não herda automaticamente memória operacional de turno, não autoriza ações e não prova que entidades ou estados continuam atuais. Qualquer dado operacional necessário deve ser revalidado no Kyrub.
 
