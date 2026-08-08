@@ -255,7 +255,11 @@ export const requestKyrubAiConsultant = async (
   }
 
   const deterministic = latestUserMessage?.role === 'user'
-    ? resolveKyrubiaDeterministicErpRead(latestUserMessage.content, erpContext)
+    ? resolveKyrubiaDeterministicErpRead(
+        latestUserMessage.content,
+        erpContext,
+        requestPayload.turnContext
+      )
     : null;
 
   if (deterministic) {
