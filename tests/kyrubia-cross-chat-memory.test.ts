@@ -3,6 +3,12 @@ import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import type { KyrubAiHistoricalLink } from '../shared/aiConsultant';
 import {
+  clearKyrubiaPendingCrossChatChoice,
+  loadKyrubiaPendingCrossChatChoice,
+  resolveKyrubiaPendingCrossChatChoice,
+  saveKyrubiaPendingCrossChatChoice,
+} from '../src/ai/crossConversationChoiceStore';
+import {
   loadKyrubAiHistoricalLink,
   saveKyrubAiConversations,
   saveKyrubAiHistoricalLink,
@@ -201,6 +207,66 @@ test('duplicate conversation titles include preview and message count for useful
   assert.match(result.reply, /Aqui estão 3 itens do catálogo/);
 });
 
+test('ambiguous candidates can be persisted and resolved by a numbered follow-up', () => {
+  const storage = new MemoryStorage();
+  const uid = 'user-1';
+  const currentId = 'current';
+  const available = histories();
+
+  saveKyrubiaPendingCrossChatChoice(
+    storage,
+    uid,
+    currentId,
+    ['chat-stock', 'chat-delivery']
+  );
+  const pending = loadKyrubiaPendingCrossChatChoice(storage, uid, currentId);
+  assert.deepEqual(pending?.candidateConversationIds, ['chat-stock', 'chat-delivery']);
+
+  const resolution = resolveKyrubiaPendingCrossChatChoice(
+    'a segunda',
+    pending,
+    available,
+    currentId
+  );
+  assert.equal(resolution?.kind, 'resolved');
+  if (resolution?.kind !== 'resolved') return;
+  assert.equal(resolution.candidate.conversationId, 'chat-delivery');
+  assert.match(resolution.memoryContext, /Operação de delivery/);
+
+  clearKyrubiaPendingCrossChatChoice(storage, uid, currentId);
+  assert.equal(loadKyrubiaPendingCrossChatChoice(storage, uid, currentId), undefined);
+});
+
+test('numbered choice does not resolve without a pending ambiguity', () => {
+  const result = resolveKyrubiaPendingCrossChatChoice(
+    'a primeira',
+    undefined,
+    histories(),
+    'current'
+  );
+  assert.equal(result, null);
+});
+
+test('invalid numbered choice is deterministic and never guesses another candidate', () => {
+  const storage = new MemoryStorage();
+  saveKyrubiaPendingCrossChatChoice(
+    storage,
+    'user-1',
+    'current',
+    ['chat-stock', 'chat-delivery']
+  );
+  const pending = loadKyrubiaPendingCrossChatChoice(storage, 'user-1', 'current');
+  const result = resolveKyrubiaPendingCrossChatChoice(
+    'a terceira',
+    pending,
+    histories(),
+    'current'
+  );
+  assert.equal(result?.kind, 'not_found');
+  if (result?.kind !== 'not_found') return;
+  assert.match(result.reply, /apenas 2 opções/i);
+});
+
 test('generic continuation resolves when exactly one prior conversation exists', () => {
   const only = histories().slice(0, 1);
   const result = resolveKyrubiaCrossChatContinuation(
@@ -282,7 +348,7 @@ test('resolved historical link persists for the current chat and is invalidated 
   );
 });
 
-test('client rehydrates scoped historical link but never imports old turnContext', async () => {
+test('client rehydrates scoped historical link and pending choices but never imports old turnContext', async () => {
   const client = await readFile(
     new URL('../src/ai/consultantClient.ts', import.meta.url),
     'utf8'
@@ -295,5 +361,9 @@ test('client rehydrates scoped historical link but never imports old turnContext
   assert.match(client, /resolveKyrubiaHistoricalLinkRecall/);
   assert.match(client, /existingHistoricalLink\?\.memoryContext/);
   assert.match(client, /isKyrubiaPureContinuationRequest/);
+  assert.match(client, /loadKyrubiaPendingCrossChatChoice/);
+  assert.match(client, /saveKyrubiaPendingCrossChatChoice/);
+  assert.match(client, /resolveKyrubiaPendingCrossChatChoice/);
+  assert.match(client, /previousAssistant\?\.includes\('Encontrei mais de uma conversa/);
   assert.doesNotMatch(client, /turnContext:\s*(crossChat|historical)/);
 });
