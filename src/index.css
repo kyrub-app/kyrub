@@ -79,3 +79,25 @@ body {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* On phones, give the active Kyrubia conversation more vertical room for messages. */
+@media (max-width: 640px) {
+  #kyrub-ai-workspace > section > header {
+    gap: 0.5rem;
+    padding: 0.5rem 0.75rem;
+  }
+
+  #kyrub-ai-workspace > section > header > button {
+    width: 2.25rem;
+    height: 2.25rem;
+  }
+
+  #kyrub-ai-workspace > section > header > div > span {
+    display: none;
+  }
+
+  #kyrub-ai-workspace > section > header > div > h2 {
+    font-size: 0.875rem;
+    line-height: 1.25rem;
+  }
+}
