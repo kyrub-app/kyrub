@@ -11,6 +11,7 @@ import {
 import {
   isKyrubiaPureContinuationRequest,
   resolveKyrubiaCrossChatContinuation,
+  resolveKyrubiaHistoricalLinkRecall,
 } from '../src/ai/crossConversationMemory';
 
 class MemoryStorage implements Storage {
@@ -126,6 +127,28 @@ test('pure continuation can be acknowledged by Kyrub runtime without generative 
       'Continue aquela conversa e crie uma nota com os produtos.'
     ),
     false
+  );
+});
+
+test('persisted historical link can identify which conversation is being continued without generative AI', () => {
+  const link: KyrubAiHistoricalLink = {
+    sourceConversationId: 'chat-stock',
+    sourceTitle: 'Reposição automática de estoque',
+    sourceTopic: 'Reposição automática de estoque',
+    sourceUpdatedAt: '2026-08-07T20:00:00.000Z',
+    linkedAt: '2026-08-08T09:01:00.000Z',
+    memoryContext: 'Contexto histórico apenas.',
+  };
+
+  const reply = resolveKyrubiaHistoricalLinkRecall(
+    'Qual conversa você retomou?',
+    link
+  );
+  assert.match(reply ?? '', /Reposição automática de estoque/);
+  assert.match(reply ?? '', /contexto histórico/i);
+  assert.equal(
+    resolveKyrubiaHistoricalLinkRecall('Quantos produtos tenho?', link),
+    null
   );
 });
 
@@ -269,6 +292,7 @@ test('client rehydrates scoped historical link but never imports old turnContext
   assert.match(client, /loadKyrubAiConversations\(localStorage, currentUser\.uid\)/);
   assert.match(client, /loadKyrubAiHistoricalLink/);
   assert.match(client, /saveKyrubAiHistoricalLink/);
+  assert.match(client, /resolveKyrubiaHistoricalLinkRecall/);
   assert.match(client, /existingHistoricalLink\?\.memoryContext/);
   assert.match(client, /isKyrubiaPureContinuationRequest/);
   assert.doesNotMatch(client, /turnContext:\s*(crossChat|historical)/);
