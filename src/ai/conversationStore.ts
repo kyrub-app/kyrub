@@ -1,4 +1,7 @@
-import type { KyrubAiConversationMessage } from '../../shared/aiConsultant';
+import type {
+  KyrubAiConversationMessage,
+  KyrubAiHistoricalLink,
+} from '../../shared/aiConsultant';
 import type { KyrubiaTurnContext } from '../../shared/kyrubiaContext';
 
 const STORAGE_PREFIX = 'kyrub_ai_conversations_v1';
@@ -13,6 +16,7 @@ export type KyrubAiLocalConversation = {
   updatedAt: string;
   messages: KyrubAiConversationMessage[];
   lastTurnContext?: KyrubiaTurnContext;
+  historicalLink?: KyrubAiHistoricalLink;
 };
 
 const createId = (): string =>
@@ -63,6 +67,21 @@ const isTurnContext = (value: unknown): value is KyrubiaTurnContext => {
   );
 };
 
+const isHistoricalLink = (value: unknown): value is KyrubAiHistoricalLink => {
+  if (!value || typeof value !== 'object') return false;
+  const candidate = value as Record<string, unknown>;
+  return (
+    typeof candidate.sourceConversationId === 'string' &&
+    typeof candidate.sourceTitle === 'string' &&
+    typeof candidate.sourceTopic === 'string' &&
+    typeof candidate.sourceUpdatedAt === 'string' &&
+    typeof candidate.linkedAt === 'string' &&
+    typeof candidate.memoryContext === 'string' &&
+    candidate.sourceConversationId.length > 0 &&
+    candidate.memoryContext.length > 0
+  );
+};
+
 const isConversation = (value: unknown): value is KyrubAiLocalConversation => {
   if (!value || typeof value !== 'object') return false;
   const candidate = value as Record<string, unknown>;
@@ -74,8 +93,21 @@ const isConversation = (value: unknown): value is KyrubAiLocalConversation => {
     typeof candidate.updatedAt === 'string' &&
     Array.isArray(candidate.messages) &&
     candidate.messages.every(isMessage) &&
-    (candidate.lastTurnContext === undefined || isTurnContext(candidate.lastTurnContext))
+    (candidate.lastTurnContext === undefined || isTurnContext(candidate.lastTurnContext)) &&
+    (candidate.historicalLink === undefined || isHistoricalLink(candidate.historicalLink))
   );
+};
+
+const removeDanglingHistoricalLinks = (
+  conversations: KyrubAiLocalConversation[]
+): KyrubAiLocalConversation[] => {
+  const availableIds = new Set(conversations.map(conversation => conversation.id));
+  return conversations.map(conversation => {
+    const link = conversation.historicalLink;
+    if (!link || availableIds.has(link.sourceConversationId)) return conversation;
+    const { historicalLink: _removed, ...withoutLink } = conversation;
+    return withoutLink;
+  });
 };
 
 export const loadKyrubAiConversations = (
@@ -84,12 +116,12 @@ export const loadKyrubAiConversations = (
 ): KyrubAiLocalConversation[] => {
   try {
     const parsed = JSON.parse(storage.getItem(storageKey(uid)) ?? '[]');
-    return Array.isArray(parsed)
-      ? parsed
-          .filter(isConversation)
-          .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
-          .slice(0, MAX_CONVERSATIONS)
-      : [];
+    if (!Array.isArray(parsed)) return [];
+    const conversations = parsed
+      .filter(isConversation)
+      .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
+      .slice(0, MAX_CONVERSATIONS);
+    return removeDanglingHistoricalLinks(conversations);
   } catch {
     return [];
   }
@@ -111,10 +143,21 @@ export const saveKyrubAiConversations = (
       lastTurnContext: conversation.lastTurnContext && isTurnContext(conversation.lastTurnContext)
         ? conversation.lastTurnContext
         : undefined,
+      historicalLink: conversation.historicalLink && isHistoricalLink(conversation.historicalLink)
+        ? {
+            ...conversation.historicalLink,
+            sourceTitle: conversation.historicalLink.sourceTitle.trim().slice(0, 80),
+            sourceTopic: conversation.historicalLink.sourceTopic.trim().slice(0, 80),
+            memoryContext: conversation.historicalLink.memoryContext.trim().slice(0, 240),
+          }
+        : undefined,
     }))
     .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
     .slice(0, MAX_CONVERSATIONS);
-  storage.setItem(storageKey(uid), JSON.stringify(sanitized));
+  storage.setItem(
+    storageKey(uid),
+    JSON.stringify(removeDanglingHistoricalLinks(sanitized))
+  );
 };
 
 export const createKyrubAiConversation = (
