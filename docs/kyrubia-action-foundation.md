@@ -10,7 +10,7 @@ A fundação não é limitada a restaurantes. Ela deve atender cardápios, pet s
 
 A inteligência interpreta o pedido. O Kyrub autentica, autoriza, apresenta a proposta, recebe a confirmação e executa a operação.
 
-Nenhum modelo de IA recebe acesso direto e irrestrito ao Firestore. Todas as mutações passam por serviços oficiais do Kyrub.
+Nenhum modelo de IA recebe acesso direto e irrestrito ao Firestore. Mutações originadas pela Kyrubia passam pela fronteira de execução segura do servidor e pelos serviços oficiais do Kyrub.
 
 ## Camada compartilhada
 
@@ -61,15 +61,49 @@ Cada execução registra origem, usuário, tipo de ação, chave de idempotênci
 
 ## Primeiro serviço oficial
 
-A criação de notas é a primeira ação migrada. A Kyrubia deixa de localizar botões, placeholders e formulários no DOM. Após a confirmação, um serviço oficial grava a nota privada no caminho do usuário e o listener existente atualiza a interface.
+A criação de notas é a primeira ação migrada. A Kyrubia não localiza botões, placeholders ou formulários no DOM para executar a operação.
 
-O identificador da ação gera um documento determinístico. Repetições da mesma confirmação retornam o resultado existente, sem criar notas duplicadas.
+Na versão inicial, a gravação ainda era realizada por um action service no navegador. A Safe Execution Foundation move a mutação originada pela Kyrubia para uma rota autenticada do servidor: o cliente apresenta o draft, obtém confirmação, envia a proposta e o Firebase ID token, e o backend valida policy antes de fazer o commit.
+
+O identificador da ação gera um documento determinístico. Repetições da mesma confirmação com a mesma proposta retornam o resultado existente, sem criar notas duplicadas. Reutilizar a mesma chave com conteúdo diferente é rejeitado.
+
+## Fronteira de execução segura
+
+A especificação detalhada está em `docs/kyrubia-safe-execution-foundation.md`.
+
+A sequência de referência é:
+
+```text
+proposta estruturada
+      ↓
+proveniência + impacto
+      ↓
+Policy Engine determinístico
+      ↓
+confirmação ou delegação válida
+      ↓
+Execution Envelope vinculado ao hash da proposta
+      ↓
+Executor oficial
+      ↓
+recibo de execução
+```
+
+A proveniência informa de onde veio o conteúdo; ela não concede autoridade por si só. Conteúdo observado, citado, extraído de documento ou produzido por modelo pode alimentar um draft, mas uma mutação não pode nascer silenciosamente dessa observação.
+
+Permissão também não implica escala. Cada capability declara um blast radius permitido, e o servidor recalcula o impacto que ele próprio pode determinar em vez de confiar em valores enviados pelo cliente.
 
 ## Segurança
 
 - usuário Firebase obrigatório;
+- identidade revalidada no servidor para mutações originadas pela Kyrubia;
 - escrita apenas no espaço pertencente ao usuário ou à loja autorizada;
-- ações sensíveis com comparação antes/depois;
+- Policy Engine determinístico e sem LLM;
+- confirmação exigida conforme capability e impacto;
+- ações sensíveis com comparação antes/depois quando aplicável;
 - nenhum preço, estoque ou informação comercial inventado;
 - rascunho antes de publicação;
-- registro de origem `kyrubia`, `chatgpt`, `manual` ou `automation`.
+- registro de origem `kyrubia`, `chatgpt`, `manual` ou `automation`;
+- blast radius limitado por capability;
+- proposta autorizada vinculada por hash ao Execution Envelope;
+- recibo mínimo gravado junto da execução quando aplicável.
