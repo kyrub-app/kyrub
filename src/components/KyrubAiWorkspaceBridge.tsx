@@ -131,7 +131,7 @@ export function KyrubAiWorkspaceBridge() {
   const [failedConversationId, setFailedConversationId] = useState('');
 
   const abortControllerRef = useRef<AbortController | null>(null);
-  const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const messagesViewportRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => onAuthStateChanged(auth, setUser), []);
 
@@ -217,7 +217,12 @@ export function KyrubAiWorkspaceBridge() {
   );
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    const viewport = messagesViewportRef.current;
+    if (!viewport) return;
+    viewport.scrollTo({
+      top: viewport.scrollHeight,
+      behavior: 'smooth',
+    });
   }, [activeConversation?.messages.length, sending]);
 
   const updateConversation = (
@@ -525,7 +530,7 @@ export function KyrubAiWorkspaceBridge() {
             </button>
           </header>
 
-          <div className="flex-1 space-y-4 overflow-y-auto p-4">
+          <div ref={messagesViewportRef} className="flex-1 space-y-4 overflow-y-auto p-4">
             {activeConversation.messages.length === 0 && (
               <div className="flex items-start gap-3">
                 <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl bg-violet-500/15 text-violet-300">
@@ -586,7 +591,6 @@ export function KyrubAiWorkspaceBridge() {
                 )}
               </div>
             )}
-            <div ref={messagesEndRef} />
           </div>
 
           <form onSubmit={sendMessage} className="border-t border-slate-800 p-3 sm:p-4">
