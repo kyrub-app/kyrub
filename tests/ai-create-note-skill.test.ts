@@ -169,7 +169,8 @@ test('confirmed create-note crosses the authenticated safe executor instead of D
   assert.doesNotMatch(actionServiceSource, /runTransaction/);
   assert.doesNotMatch(actionServiceSource, /transaction\.set/);
 
-  assert.match(actionExecutionServiceSource, /adminAuth\.verifyIdToken\(token, true\)/);
+  assert.match(actionExecutionServiceSource, /verifyFirebaseIdToken\(token\)/);
+  assert.doesNotMatch(actionExecutionServiceSource, /adminAuth\.verifyIdToken/);
   assert.match(actionExecutionServiceSource, /evaluateKyrubActionPolicy/);
   assert.match(actionExecutionServiceSource, /adminDb\.runTransaction/);
   assert.match(actionExecutionServiceSource, /users\/\$\{actor\.uid\}\/tasks/);
