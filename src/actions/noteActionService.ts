@@ -26,6 +26,16 @@ const executionErrorMessage = (
   ? body.error.trim()
   : fallback;
 
+const unstructuredExecutionErrorMessage = (response: Response): string => {
+  if (response.status === 404) {
+    return 'O endpoint do executor seguro não foi encontrado neste ambiente (HTTP 404).';
+  }
+  if (response.status >= 500) {
+    return `O executor seguro falhou antes de devolver um diagnóstico estruturado (HTTP ${response.status}).`;
+  }
+  return `O executor seguro respondeu sem um diagnóstico estruturado (HTTP ${response.status}).`;
+};
+
 export const executeConfirmedCreateNoteAction = async (
   user: User,
   proposal: KyrubAiCreateNoteProposal
@@ -66,7 +76,7 @@ export const executeConfirmedCreateNoteAction = async (
     throw new Error(
       executionErrorMessage(
         body,
-        'O Kyrub não conseguiu executar esta ação com segurança.'
+        unstructuredExecutionErrorMessage(response)
       )
     );
   }
@@ -80,7 +90,7 @@ export const executeConfirmedCreateNoteAction = async (
     typeof body.idempotencyKey !== 'string'
   ) {
     throw new Error(
-      'O executor seguro respondeu sem um recibo de execução válido.'
+      `O executor seguro respondeu sem um recibo de execução válido (HTTP ${response.status}).`
     );
   }
 
