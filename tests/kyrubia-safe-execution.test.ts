@@ -229,3 +229,11 @@ test('Firebase Admin bootstrap stays lazy so serverless config failures reach th
   assert.doesNotMatch(source, /export const adminApp = getAdminApp\(\)/);
   assert.match(source, /Could not load Firebase Admin credentials/);
 });
+
+test('safe executor pins a Firebase Admin compatible Node runtime', () => {
+  const packageJson = JSON.parse(
+    readFileSync(new URL('../package.json', import.meta.url), 'utf8')
+  ) as { engines?: { node?: string } };
+
+  assert.equal(packageJson.engines?.node, '22.x');
+});
