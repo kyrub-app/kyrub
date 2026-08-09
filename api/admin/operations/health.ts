@@ -1,7 +1,7 @@
 import {
   loadAuthorizedOperationsHealth,
   mapOperationsHealthError,
-} from '../../../server/admin/operationsHealthRouter';
+} from '../../../server/admin/operationsHealthRouter.js';
 
 type HeaderValue = string | string[] | undefined;
 
