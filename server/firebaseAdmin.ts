@@ -44,6 +44,15 @@ const getAdminApp = () => {
     });
   }
 
+  // Vercel does not provide Google Application Default Credentials implicitly.
+  // Failing fast here keeps the request inside Kyrub's safe error envelope
+  // instead of allowing credential discovery to fail opaquely at runtime.
+  if (process.env.VERCEL) {
+    throw new Error(
+      'Could not load Firebase Admin credentials: FIREBASE_SERVICE_ACCOUNT_JSON is required on Vercel.'
+    );
+  }
+
   return initializeApp({
     credential: applicationDefault(),
     projectId: process.env.FIREBASE_PROJECT_ID || process.env.GCLOUD_PROJECT,
