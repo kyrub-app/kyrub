@@ -29,6 +29,19 @@ export const isKyrubAiActionProposal = (
   );
 };
 
+const prepareProposalForConfirmation = (
+  proposal: KyrubAiActionProposal
+): KyrubAiActionProposal => ({
+  ...proposal,
+  origin: proposal.origin ?? 'kyrubia',
+  risk: 'low',
+  inputProvenance: proposal.inputProvenance ?? 'user_intent',
+  impact: {
+    entityCount: 1,
+    reversibility: 'easy',
+  },
+});
+
 export const emitKyrubAiActionProposal = (
   conversationId: string,
   response: KyrubAiConsultantResponse
@@ -47,7 +60,7 @@ export const emitKyrubAiActionProposal = (
         detail: {
           conversationId,
           requestId: response.requestId,
-          proposal: response.actionProposal,
+          proposal: prepareProposalForConfirmation(response.actionProposal),
         },
       }
     )
