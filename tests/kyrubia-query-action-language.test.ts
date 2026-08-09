@@ -1,11 +1,31 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import kyrubiaHandler from '../api/kyrubia';
 import type { KyrubErpContextSnapshot } from '../shared/kyrubErpContext';
 import { resolveKyrubiaDeterministicErpRead } from '../shared/kyrubiaDeterministicErp';
 import {
   createKyrubiaProductQuery,
   executeKyrubiaProductQuery,
 } from '../shared/kyrubiaQueryLanguage';
+
+const createResponse = () => {
+  let statusCode = 0;
+  let responseBody: unknown = null;
+  const response = {
+    setHeader() {},
+    status(code: number) {
+      statusCode = code;
+      return response;
+    },
+    json(body: unknown) {
+      responseBody = body;
+    },
+  };
+  return {
+    response,
+    read: () => ({ statusCode, responseBody }),
+  };
+};
 
 const erpSnapshot = (): KyrubErpContextSnapshot => ({
   source: 'authenticated_client_snapshot',
@@ -155,4 +175,111 @@ test('open reasoning still stays outside the deterministic query compiler', () =
   );
 
   assert.equal(result, null);
+});
+
+test('generative ERP reasoning uses one generic query_products tool and Kyrub executes the plan', async () => {
+  const originalFetch = globalThis.fetch;
+  const originalApiKey = process.env.GEMINI_API_KEY;
+  const geminiBodies: Array<Record<string, any>> = [];
+
+  process.env.GEMINI_API_KEY = 'gemini-test-key';
+  globalThis.fetch = async (input, init) => {
+    const url = String(input);
+    const body = typeof init?.body === 'string'
+      ? JSON.parse(init.body) as Record<string, any>
+      : {};
+
+    if (url.includes('identitytoolkit.googleapis.com')) {
+      return Response.json({
+        users: [{
+          localId: 'owner-1',
+          email: 'owner@example.com',
+          displayName: 'Dona da Loja',
+        }],
+      });
+    }
+
+    assert.match(url, /generativelanguage\.googleapis\.com/);
+    geminiBodies.push(body);
+
+    if (geminiBodies.length === 1) {
+      const declarations = body.tools?.[0]?.functionDeclarations ?? [];
+      const names = declarations.map((item: Record<string, unknown>) => item.name);
+      assert.ok(names.includes('query_products'));
+      assert.equal(names.includes('list_products_without_images'), false);
+
+      return Response.json({
+        candidates: [{
+          content: {
+            role: 'model',
+            parts: [{
+              functionCall: {
+                id: 'generic-product-query-1',
+                name: 'query_products',
+                args: {
+                  hasImage: false,
+                  isService: false,
+                  stockMax: 10,
+                  sortBy: 'price',
+                  sortDirection: 'desc',
+                  limit: 2,
+                },
+              },
+            }],
+          },
+        }],
+      });
+    }
+
+    const responsePart = body.contents?.at(-1)?.parts?.[0]?.functionResponse;
+    assert.equal(responsePart?.name, 'query_products');
+    assert.equal(responsePart?.response?.available, true);
+    assert.equal(responsePart?.response?.totalMatched, 2);
+    assert.deepEqual(
+      responsePart?.response?.items?.map((item: Record<string, unknown>) => item.id),
+      ['p2', 'p1']
+    );
+    assert.equal(responsePart?.response?.query?.filters?.length, 3);
+    assert.equal(responsePart?.response?.query?.sort?.field, 'price');
+
+    return Response.json({
+      candidates: [{
+        content: {
+          role: 'model',
+          parts: [{
+            text: 'Os dois produtos físicos mais caros sem imagem e com estoque até 10 são Produto B e Produto A.',
+          }],
+        },
+      }],
+    });
+  };
+
+  const capture = createResponse();
+  try {
+    await kyrubiaHandler(
+      {
+        method: 'POST',
+        headers: { authorization: 'Bearer firebase-token' },
+        body: {
+          conversationId: 'conversation-query-language-1',
+          topic: 'Minha loja',
+          messages: [{
+            role: 'user',
+            content: 'Analise meu catálogo e me diga quais são os dois produtos mais caros sem imagem e com estoque até 10.',
+          }],
+          erpContext: erpSnapshot(),
+        },
+      },
+      capture.response
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalApiKey === undefined) delete process.env.GEMINI_API_KEY;
+    else process.env.GEMINI_API_KEY = originalApiKey;
+  }
+
+  const { statusCode, responseBody } = capture.read();
+  assert.equal(statusCode, 200);
+  assert.equal(geminiBodies.length, 2);
+  assert.match((responseBody as Record<string, any>).reply, /Produto B/);
 });
