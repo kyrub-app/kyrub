@@ -5,7 +5,7 @@ import {
   type KyrubActionProposal,
   type KyrubPolicyDecision,
   type KyrubPolicyReason,
-} from '../../shared/kyrubActions';
+} from '../../shared/kyrubActions.js';
 
 export type KyrubPolicyEvaluationContext = {
   actorUid: string;
