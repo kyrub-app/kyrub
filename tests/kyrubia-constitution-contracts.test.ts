@@ -64,7 +64,7 @@ test('constitution contract: authorization stays bound to a specific proposal', 
 test('constitution contract: Kyrubia client cannot perform the official commit', () => {
   assert.doesNotMatch(clientExecutor, /firebase\/firestore/);
   assert.doesNotMatch(clientExecutor, /runTransaction/);
-  assert.match(clientExecutor, /\/api\/actions\/execute/);
+  assert.match(clientExecutor, /\/api\/action-execute/);
 
   assert.match(serverExecutor, /adminAuth\.verifyIdToken\(token, true\)/);
   assert.match(serverExecutor, /evaluateKyrubActionPolicy/);
