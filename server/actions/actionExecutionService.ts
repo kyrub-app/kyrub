@@ -8,9 +8,9 @@ import {
   type KyrubExecutionEnvelope,
   type KyrubInputProvenance,
   type KyrubPolicyDecision,
-} from '../../shared/kyrubActions';
-import { adminAuth, adminDb } from '../firebaseAdmin';
-import { evaluateKyrubActionPolicy } from './kyrubiaPolicyEngine';
+} from '../../shared/kyrubActions.js';
+import { adminAuth, adminDb } from '../firebaseAdmin.js';
+import { evaluateKyrubActionPolicy } from './kyrubiaPolicyEngine.js';
 
 const MAX_TITLE_CHARACTERS = 120;
 const MAX_CONTENT_CHARACTERS = 8_000;
