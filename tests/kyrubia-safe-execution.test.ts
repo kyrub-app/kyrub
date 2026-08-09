@@ -212,20 +212,22 @@ test('Kyrubia note client no longer writes Firestore directly', () => {
   );
 
   assert.match(source, /\/api\/action-execute/);
+  assert.match(source, /getIdToken\(true\)/);
   assert.doesNotMatch(source, /firebase\/firestore/);
   assert.doesNotMatch(source, /runTransaction\s*\(/);
   assert.doesNotMatch(source, /transaction\.set\s*\(/);
 });
 
-test('Firebase Admin bootstrap stays lazy so serverless config failures reach the safe error envelope', () => {
+test('Firebase Admin bootstrap stays lazy and scoped to privileged Firestore access', () => {
   const source = readFileSync(
     new URL('../server/firebaseAdmin.ts', import.meta.url),
     'utf8'
   );
 
   assert.match(source, /lazyService/);
-  assert.match(source, /export const adminAuth = lazyService<Auth>/);
   assert.match(source, /export const adminDb = lazyService<Firestore>/);
+  assert.doesNotMatch(source, /firebase-admin\/auth/);
+  assert.doesNotMatch(source, /adminAuth/);
   assert.doesNotMatch(source, /export const adminApp = getAdminApp\(\)/);
   assert.match(source, /Could not load Firebase Admin credentials/);
 });
@@ -246,7 +248,7 @@ test('root Vercel safe executor statically bundles the execution service', () =>
 
   assert.match(
     executeRoute,
-    /from '\.\.\/server\/actions\/actionExecutionService'/
+    /from '\.\.\/server\/actions\/actionExecutionService\.js'/
   );
   assert.doesNotMatch(executeRoute, /import\(/);
 });
@@ -268,11 +270,18 @@ test('serverless dependency chains use ESM-resolvable relative imports where run
     new URL('../server/admin/operationsHealthRouter.ts', import.meta.url),
     'utf8'
   );
+  const authVerifier = readFileSync(
+    new URL('../server/ai/consultantAuth.ts', import.meta.url),
+    'utf8'
+  );
 
   assert.match(executionService, /shared\/kyrubActions\.js/);
+  assert.match(executionService, /ai\/consultantAuth\.js/);
   assert.match(executionService, /firebaseAdmin\.js/);
   assert.match(executionService, /kyrubiaPolicyEngine\.js/);
   assert.match(policyEngine, /shared\/kyrubActions\.js/);
   assert.match(healthRoute, /operationsHealthRouter\.js/);
+  assert.match(healthService, /ai\/consultantAuth\.js/);
   assert.match(healthService, /firebaseAdmin\.js/);
+  assert.match(authVerifier, /from '\.\/types\.js'/);
 });
