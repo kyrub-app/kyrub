@@ -1,8 +1,3 @@
-import {
-  executeAuthorizedKyrubAction,
-  mapKyrubActionExecutionError,
-} from '../../server/actions/actionExecutionService';
-
 type HeaderValue = string | string[] | undefined;
 
 type RequestLike = {
@@ -36,16 +31,29 @@ export default async function handler(
   }
 
   try {
-    const authorization = headerValue(
-      request.headers.authorization ?? request.headers.Authorization
-    );
-    const result = await executeAuthorizedKyrubAction(
-      authorization,
-      request.body
-    );
-    response.status(200).json(result);
+    const {
+      executeAuthorizedKyrubAction,
+      mapKyrubActionExecutionError,
+    } = await import('../../server/actions/actionExecutionService');
+
+    try {
+      const authorization = headerValue(
+        request.headers.authorization ?? request.headers.Authorization
+      );
+      const result = await executeAuthorizedKyrubAction(
+        authorization,
+        request.body
+      );
+      response.status(200).json(result);
+    } catch (error) {
+      const mapped = mapKyrubActionExecutionError(error);
+      response.status(mapped.status).json(mapped.body);
+    }
   } catch (error) {
-    const mapped = mapKyrubActionExecutionError(error);
-    response.status(mapped.status).json(mapped.body);
+    console.error('[Kyrub Safe Execution Bootstrap]', error);
+    response.status(503).json({
+      error: 'O executor seguro não conseguiu inicializar neste ambiente.',
+      code: 'EXECUTOR_BOOT_FAILED',
+    });
   }
 }
