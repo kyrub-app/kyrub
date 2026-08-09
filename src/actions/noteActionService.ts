@@ -42,7 +42,9 @@ export const executeConfirmedCreateNoteAction = async (
 ): Promise<KyrubActionExecutionResult> => {
   let token = '';
   try {
-    token = await user.getIdToken();
+    // A confirmed mutation requests a freshly issued Firebase ID token instead
+    // of reusing a cached bearer token from an older app session.
+    token = await user.getIdToken(true);
   } catch {
     throw new Error(
       'Não foi possível validar sua sessão. Entre novamente antes de confirmar a nota.'
