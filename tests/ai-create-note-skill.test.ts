@@ -163,6 +163,8 @@ test('confirmed create-note crosses the authenticated safe executor instead of D
   assert.match(actionServiceSource, /\/api\/actions\/execute/);
   assert.match(actionServiceSource, /user\.getIdToken\(\)/);
   assert.match(actionServiceSource, /confirmed: true/);
+  assert.match(actionServiceSource, /HTTP \$\{response\.status\}/);
+  assert.match(actionServiceSource, /endpoint do executor seguro não foi encontrado/);
   assert.doesNotMatch(actionServiceSource, /firebase\/firestore/);
   assert.doesNotMatch(actionServiceSource, /runTransaction/);
   assert.doesNotMatch(actionServiceSource, /transaction\.set/);
