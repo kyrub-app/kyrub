@@ -5,12 +5,20 @@ const TEXT_REPLACEMENTS = new Map<string, string>([
   ['O Consultor acompanha o contexto', 'A Kyrubia acompanha o contexto'],
   [
     'Faça sua solicitação em linguagem natural. Nesta primeira fase, o Consultor conversa, orienta e prepara planos sem alterar dados do aplicativo.',
-    'Converse com a Kyrubia em linguagem natural. Ela responde, cria notas com confirmação e ajuda a enxergar próximos caminhos.',
+    'Converse com a Kyrubia em linguagem natural. Ela consulta o Kyrub e executa ações habilitadas, como criar notas, ativar sua loja e cadastrar produtos, respeitando as confirmações e autorizações necessárias.',
   ],
-  ['Sem ações', 'Notas com confirmação'],
+  [
+    'Converse com a Kyrubia em linguagem natural. Ela responde, cria notas com confirmação e ajuda a enxergar próximos caminhos.',
+    'Converse com a Kyrubia em linguagem natural. Ela consulta o Kyrub e executa ações habilitadas, como criar notas, ativar sua loja e cadastrar produtos, respeitando as confirmações e autorizações necessárias.',
+  ],
+  ['Sem ações', 'Ações seguras'],
   [
     'Ações no aplicativo ainda exigem o modo manual nesta primeira fase.',
+    'A Kyrubia executa as ações habilitadas pelo Kyrub quando houver autorização ou confirmação necessária. O modo manual continua disponível.',
+  ],
+  [
     'A Kyrubia cria notas após sua confirmação. Outras ações continuam disponíveis no modo manual.',
+    'A Kyrubia executa as ações habilitadas pelo Kyrub quando houver autorização ou confirmação necessária. O modo manual continua disponível.',
   ],
   [
     'Olá! Conte o que você precisa. Vou ajudar a organizar a solicitação e os próximos passos.',
