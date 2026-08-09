@@ -1,5 +1,4 @@
 import { applicationDefault, cert, getApps, initializeApp } from 'firebase-admin/app';
-import { getAuth, type Auth } from 'firebase-admin/auth';
 import { getFirestore, type Firestore } from 'firebase-admin/firestore';
 
 const parseServiceAccount = (): Record<string, string> | null => {
@@ -70,7 +69,7 @@ const lazyService = <T extends object>(resolve: () => T): T =>
     },
   });
 
-// Keep module imports side-effect free: serverless configuration errors must be
-// caught by the action route rather than crashing before its error envelope runs.
-export const adminAuth = lazyService<Auth>(() => getAuth(getAdminApp()));
+// Firebase Authentication is deliberately not imported here. Serverless routes
+// verify Firebase ID tokens through the public-certificate verifier and keep the
+// Admin SDK scoped to privileged Firestore access.
 export const adminDb = lazyService<Firestore>(() => getFirestore(getAdminApp()));
