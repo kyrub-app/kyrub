@@ -129,7 +129,7 @@ test('confirmed create-note crosses the authenticated safe executor instead of D
       new URL('../server/actions/kyrubiaPolicyEngine.ts', import.meta.url),
       'utf8'
     ),
-    readFile(new URL('../api/actions/execute.ts', import.meta.url), 'utf8'),
+    readFile(new URL('../api/action-execute.ts', import.meta.url), 'utf8'),
     readFile(new URL('../api/consultor-kyrub.ts', import.meta.url), 'utf8'),
     readFile(new URL('../src/components/tabs/PerfilTab.tsx', import.meta.url), 'utf8'),
     readFile(new URL('../server.ts', import.meta.url), 'utf8'),
@@ -160,7 +160,7 @@ test('confirmed create-note crosses the authenticated safe executor instead of D
   assert.doesNotMatch(bridgeSource, /requestSubmit/);
   assert.doesNotMatch(bridgeSource, /Título da nota/);
 
-  assert.match(actionServiceSource, /\/api\/actions\/execute/);
+  assert.match(actionServiceSource, /\/api\/action-execute/);
   assert.match(actionServiceSource, /user\.getIdToken\(\)/);
   assert.match(actionServiceSource, /confirmed: true/);
   assert.match(actionServiceSource, /HTTP \$\{response\.status\}/);
@@ -181,7 +181,7 @@ test('confirmed create-note crosses the authenticated safe executor instead of D
   assert.match(policyEngineSource, /BLAST_RADIUS_EXCEEDED/);
   assert.match(
     actionExecutionRouteSource,
-    /from '\.\.\/\.\.\/server\/actions\/actionExecutionService\.js'/
+    /from '\.\.\/server\/actions\/actionExecutionService'/
   );
   assert.doesNotMatch(actionExecutionRouteSource, /await import\(/);
   assert.doesNotMatch(actionExecutionRouteSource, /EXECUTOR_BOOT_FAILED/);
