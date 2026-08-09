@@ -113,7 +113,7 @@ test('missing-image note composition is deterministic and does not require Gemin
 
 test('one deterministic compiler combines filters, ordering and limit', () => {
   const result = resolveKyrubiaDeterministicErpRead(
-    'Liste os 2 produtos mais caros sem imagem com estoque de até 10.',
+    'Liste os 2 produtos físicos mais caros sem imagem com estoque de até 10.',
     erpSnapshot()
   );
 
@@ -126,6 +126,9 @@ test('one deterministic compiler combines filters, ordering and limit', () => {
   assert.equal(result?.queryPlan?.limit, 2);
   assert.equal(result?.queryPlan?.filters.some(filter => filter.field === 'hasImage'), true);
   assert.equal(result?.queryPlan?.filters.some(filter => filter.field === 'stock'), true);
+  assert.equal(result?.queryPlan?.filters.some(filter =>
+    filter.field === 'isService' && filter.value === false
+  ), true);
 });
 
 test('low stock continues to use the same generic executor while preserving compatibility', () => {
