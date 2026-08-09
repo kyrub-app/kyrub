@@ -118,7 +118,11 @@ test('a complete product request on a configured store becomes a create_product 
     });
 
     assert.equal(result?.provider, 'kyrub');
-    assert.equal(result?.actionProposal?.type, 'create_product');
+    assert.equal(
+      result?.actionProposal?.type,
+      'create_product',
+      JSON.stringify({ reply: result?.reply, actionProposal: result?.actionProposal })
+    );
     if (result?.actionProposal?.type !== 'create_product') {
       assert.fail('Expected create_product proposal.');
     }
@@ -262,7 +266,12 @@ test('source contracts keep activation scoped and never publish or open a store 
   assert.match(source, /status: 'closed'/);
   assert.match(source, /FREE_PLAN_PRODUCT_LIMIT = 5/);
   assert.match(source, /STORE_ACTIVATION_REQUIRED/);
-  assert.doesNotMatch(source, /publicationStatus: 'published',[\s\S]{0,200}migrationStatus: 'registry_only'/);
+
+  const canonicalStoreCreation = /const id = deterministicCanonicalStoreId\(uid\);([\s\S]*?)return \{ id, name \};/.exec(source)?.[1] ?? '';
+  assert.match(canonicalStoreCreation, /publicationStatus: 'paused'/);
+  assert.match(canonicalStoreCreation, /migrationStatus: 'registry_only'/);
+  assert.doesNotMatch(canonicalStoreCreation, /publicationStatus: 'published'/);
+  assert.doesNotMatch(canonicalStoreCreation, /status: 'open'/);
 });
 
 test('quota-first contract keeps operational workflow ahead of the generative network call', () => {
