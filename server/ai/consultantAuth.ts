@@ -1,6 +1,6 @@
 import { verify as verifySignature } from 'node:crypto';
-import type { AuthenticatedConsultantUser } from './types';
-import { ConsultantHttpError } from './types';
+import type { AuthenticatedConsultantUser } from './types.js';
+import { ConsultantHttpError } from './types.js';
 
 const FIREBASE_CERTIFICATES_URL =
   'https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com';
@@ -22,6 +22,7 @@ type FirebaseTokenPayload = {
   auth_time?: unknown;
   name?: unknown;
   email?: unknown;
+  email_verified?: unknown;
 };
 
 type CertificateCache = {
@@ -201,6 +202,9 @@ export const verifyFirebaseIdToken = async (
           ? payload.email.split('@')[0] ?? 'Usuário do Kyrub'
           : 'Usuário do Kyrub',
     email: typeof payload.email === 'string' ? payload.email : '',
+    ...(typeof payload.email_verified === 'boolean'
+      ? { emailVerified: payload.email_verified }
+      : {}),
   };
 };
 

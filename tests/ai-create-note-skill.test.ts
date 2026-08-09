@@ -97,7 +97,7 @@ test('Gemini create_note function returns a proposal without executing data writ
   assert.equal(requests.length, 2);
 });
 
-test('confirmed create-note uses the official action service instead of DOM automation', async () => {
+test('confirmed create-note crosses the authenticated safe executor instead of DOM or client Firestore automation', async () => {
   const [
     appSource,
     bridgeSource,
@@ -105,6 +105,9 @@ test('confirmed create-note uses the official action service instead of DOM auto
     sharedSource,
     actionProtocolSource,
     actionServiceSource,
+    actionExecutionServiceSource,
+    policyEngineSource,
+    actionExecutionRouteSource,
     routeSource,
     manualNotesSource,
     serverSource,
@@ -118,6 +121,15 @@ test('confirmed create-note uses the official action service instead of DOM auto
     readFile(new URL('../shared/aiConsultant.ts', import.meta.url), 'utf8'),
     readFile(new URL('../shared/kyrubActions.ts', import.meta.url), 'utf8'),
     readFile(new URL('../src/actions/noteActionService.ts', import.meta.url), 'utf8'),
+    readFile(
+      new URL('../server/actions/actionExecutionService.ts', import.meta.url),
+      'utf8'
+    ),
+    readFile(
+      new URL('../server/actions/kyrubiaPolicyEngine.ts', import.meta.url),
+      'utf8'
+    ),
+    readFile(new URL('../api/action-execute.ts', import.meta.url), 'utf8'),
     readFile(new URL('../api/consultor-kyrub.ts', import.meta.url), 'utf8'),
     readFile(new URL('../src/components/tabs/PerfilTab.tsx', import.meta.url), 'utf8'),
     readFile(new URL('../server.ts', import.meta.url), 'utf8'),
@@ -131,6 +143,8 @@ test('confirmed create-note uses the official action service instead of DOM auto
   assert.match(actionProtocolSource, /IMPORT_CATALOG_DRAFT: 'import_catalog_draft'/);
   assert.match(actionProtocolSource, /CREATE_PRODUCT_DRAFT: 'create_product_draft'/);
   assert.match(actionProtocolSource, /KyrubActionOrigin/);
+  assert.match(actionProtocolSource, /KyrubInputProvenance/);
+  assert.match(actionProtocolSource, /KyrubExecutionEnvelope/);
   assert.match(actionProtocolSource, /idempotencyKey/);
 
   assert.match(routeSource, /name: 'create_note'/);
@@ -146,18 +160,38 @@ test('confirmed create-note uses the official action service instead of DOM auto
   assert.doesNotMatch(bridgeSource, /requestSubmit/);
   assert.doesNotMatch(bridgeSource, /Título da nota/);
 
-  assert.match(actionServiceSource, /runTransaction/);
+  assert.match(actionServiceSource, /\/api\/action-execute/);
+  assert.match(actionServiceSource, /user\.getIdToken\(true\)/);
+  assert.match(actionServiceSource, /confirmed: true/);
+  assert.match(actionServiceSource, /HTTP \$\{response\.status\}/);
+  assert.match(actionServiceSource, /endpoint do executor seguro não foi encontrado/);
+  assert.doesNotMatch(actionServiceSource, /firebase\/firestore/);
+  assert.doesNotMatch(actionServiceSource, /runTransaction/);
+  assert.doesNotMatch(actionServiceSource, /transaction\.set/);
+
+  assert.match(actionExecutionServiceSource, /verifyFirebaseIdToken\(token\)/);
+  assert.doesNotMatch(actionExecutionServiceSource, /adminAuth\.verifyIdToken/);
+  assert.doesNotMatch(actionExecutionServiceSource, /firebase-admin\/auth/);
+  assert.match(actionExecutionServiceSource, /evaluateKyrubActionPolicy/);
+  assert.match(actionExecutionServiceSource, /adminDb\.runTransaction/);
+  assert.match(actionExecutionServiceSource, /users\/\$\{actor\.uid\}\/tasks/);
+  assert.match(actionExecutionServiceSource, /kyrub_action_receipts/);
+  assert.match(actionExecutionServiceSource, /actionProposalHash/);
+  assert.match(actionExecutionServiceSource, /IDEMPOTENCY_CONFLICT/);
+  assert.match(actionExecutionServiceSource, /already_applied/);
+  assert.match(policyEngineSource, /UNTRUSTED_INPUT_REQUIRES_CONFIRMATION/);
+  assert.match(policyEngineSource, /BLAST_RADIUS_EXCEEDED/);
   assert.match(
-    actionServiceSource,
-    /doc\(db, 'users', user\.uid, 'tasks', noteId\)/
+    actionExecutionRouteSource,
+    /from '\.\.\/server\/actions\/actionExecutionService\.js'/
   );
-  assert.match(actionServiceSource, /actionIdempotencyKey/);
-  assert.match(actionServiceSource, /actionOrigin/);
-  assert.match(actionServiceSource, /already_applied/);
-  assert.match(actionServiceSource, /serverTimestamp\(\)/);
+  assert.doesNotMatch(actionExecutionRouteSource, /await import\(/);
+  assert.doesNotMatch(actionExecutionRouteSource, /EXECUTOR_BOOT_FAILED/);
 
   assert.match(manualNotesSource, /onSubmit=\{handleCreateNote\}/);
   assert.match(manualNotesSource, /placeholder="Título da nota"/);
   assert.match(serverSource, /"\/api\/consultor-kyrub"/);
   assert.match(serverSource, /handleKyrubAiConsultant/);
+  assert.match(serverSource, /"\/api\/actions"/);
+  assert.match(serverSource, /createKyrubActionExecutionRouter/);
 });

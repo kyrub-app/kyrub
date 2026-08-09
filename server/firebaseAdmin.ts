@@ -1,6 +1,9 @@
+import { createRequire } from 'node:module';
 import { applicationDefault, cert, getApps, initializeApp } from 'firebase-admin/app';
-import { getAuth } from 'firebase-admin/auth';
-import { getFirestore } from 'firebase-admin/firestore';
+import type { Auth } from 'firebase-admin/auth';
+import { getFirestore, type Firestore } from 'firebase-admin/firestore';
+
+const require = createRequire(import.meta.url);
 
 const parseServiceAccount = (): Record<string, string> | null => {
   const serialized = process.env.FIREBASE_SERVICE_ACCOUNT_JSON?.trim();
@@ -25,7 +28,7 @@ const parseServiceAccount = (): Record<string, string> | null => {
     };
   } catch (error) {
     throw new Error(
-      `FIREBASE_SERVICE_ACCOUNT_JSON is invalid: ${
+      `Could not load Firebase Admin credentials: ${
         error instanceof Error ? error.message : String(error)
       }`
     );
@@ -44,12 +47,36 @@ const getAdminApp = () => {
     });
   }
 
+  if (process.env.VERCEL) {
+    throw new Error(
+      'Could not load Firebase Admin credentials: FIREBASE_SERVICE_ACCOUNT_JSON is required on Vercel.'
+    );
+  }
+
   return initializeApp({
     credential: applicationDefault(),
     projectId: process.env.FIREBASE_PROJECT_ID || process.env.GCLOUD_PROJECT,
   });
 };
 
-export const adminApp = getAdminApp();
-export const adminAuth = getAuth(adminApp);
-export const adminDb = getFirestore(adminApp);
+const lazyService = <T extends object>(resolve: () => T): T =>
+  new Proxy({} as T, {
+    get(_target, property) {
+      const service = resolve();
+      const value = Reflect.get(service, property, service) as unknown;
+      return typeof value === 'function'
+        ? value.bind(service)
+        : value;
+    },
+  });
+
+const getLegacyAdminAuth = (): Auth => {
+  const authModule = require('firebase-admin/auth') as typeof import('firebase-admin/auth');
+  return authModule.getAuth(getAdminApp());
+};
+
+// Keep the Firestore-only bootstrap free from firebase-admin/auth. Legacy routes
+// can still resolve Admin Auth lazily, while new Vercel execution paths use the
+// public-certificate Firebase token verifier and avoid jwks-rsa/jose at startup.
+export const adminAuth = lazyService<Auth>(() => getLegacyAdminAuth());
+export const adminDb = lazyService<Firestore>(() => getFirestore(getAdminApp()));

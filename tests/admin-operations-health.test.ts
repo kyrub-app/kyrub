@@ -69,9 +69,10 @@ describe('admin operations health', () => {
     assert.equal('payload' in parsed, false);
   });
 
-  test('server validates token, verified email and authoritative admin profile', () => {
-    assert.match(serverSource, /verifyIdToken\(token, true\)/);
-    assert.match(serverSource, /email_verified !== true/);
+  test('server validates signed token, verified email and authoritative admin profile', () => {
+    assert.match(serverSource, /verifyFirebaseIdToken\(token\)/);
+    assert.match(serverSource, /emailVerified !== true/);
+    assert.doesNotMatch(serverSource, /firebase-admin\/auth/);
     assert.match(serverSource, /kyrub_admin\/control_plane\/admins/);
     assert.match(serverSource, /status\) !== 'active'/);
     assert.match(serverSource, /SYSTEM_HEALTH_ROLES/);

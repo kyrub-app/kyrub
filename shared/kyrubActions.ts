@@ -25,6 +25,69 @@ export type KyrubActionOrigin =
 export type KyrubActionRisk = 'low' | 'medium' | 'high';
 export type KyrubActionMode = 'read' | 'write';
 
+export type KyrubInputProvenance =
+  | 'user_intent'
+  | 'quoted_content'
+  | 'document_content'
+  | 'tool_output'
+  | 'ai_generated_content'
+  | 'sensor_inference';
+
+export type KyrubActionReversibility = 'easy' | 'limited' | 'hard';
+
+export type KyrubActionImpact = {
+  entityCount: number;
+  reversibility: KyrubActionReversibility;
+  financialExposureMinor?: number;
+  financialCurrency?: string;
+};
+
+export type KyrubPolicyOutcome =
+  | 'allow'
+  | 'require_confirmation'
+  | 'deny';
+
+export type KyrubPolicyReason =
+  | 'ACTION_NOT_REGISTERED'
+  | 'AUTH_REQUIRED'
+  | 'PERMISSION_REQUIRED'
+  | 'CONFIRMATION_REQUIRED'
+  | 'UNTRUSTED_INPUT_REQUIRES_CONFIRMATION'
+  | 'BLAST_RADIUS_EXCEEDED'
+  | 'INVALID_IMPACT';
+
+export type KyrubPolicyDecision = {
+  version: 1;
+  id: string;
+  outcome: KyrubPolicyOutcome;
+  actionType: KyrubActiveActionType;
+  permission: string;
+  reasons: KyrubPolicyReason[];
+  evaluatedAt: string;
+  maxAffectedEntities: number;
+};
+
+export type KyrubAuthorizationMode =
+  | 'human_confirmation'
+  | 'preauthorized';
+
+export type KyrubExecutionEnvelope = {
+  version: 1;
+  executionId: string;
+  actionId: string;
+  actionType: KyrubActiveActionType;
+  actorUid: string;
+  origin: KyrubActionOrigin;
+  inputProvenance: KyrubInputProvenance;
+  impact: KyrubActionImpact;
+  proposalHash: string;
+  policyDecisionId: string;
+  authorizationMode: KyrubAuthorizationMode;
+  authorizedAt: string;
+  expiresAt: string;
+  idempotencyKey: string;
+};
+
 export type KyrubActiveActionType =
   typeof KYRUB_ACTION_TYPES[keyof typeof KYRUB_ACTION_TYPES];
 
@@ -39,6 +102,7 @@ export type KyrubActionDefinition = {
   risk: KyrubActionRisk;
   requiresConfirmation: boolean;
   permission: string;
+  maxAffectedEntities: number;
 };
 
 export const KYRUB_ACTION_REGISTRY: Record<
@@ -51,6 +115,7 @@ export const KYRUB_ACTION_REGISTRY: Record<
     risk: 'low',
     requiresConfirmation: true,
     permission: 'notes.write',
+    maxAffectedEntities: 1,
   },
   read_store_summary: {
     type: 'read_store_summary',
@@ -58,6 +123,7 @@ export const KYRUB_ACTION_REGISTRY: Record<
     risk: 'low',
     requiresConfirmation: false,
     permission: 'store.read',
+    maxAffectedEntities: 1,
   },
   list_products: {
     type: 'list_products',
@@ -65,6 +131,7 @@ export const KYRUB_ACTION_REGISTRY: Record<
     risk: 'low',
     requiresConfirmation: false,
     permission: 'products.read',
+    maxAffectedEntities: 50,
   },
   list_low_stock_products: {
     type: 'list_low_stock_products',
@@ -72,6 +139,7 @@ export const KYRUB_ACTION_REGISTRY: Record<
     risk: 'low',
     requiresConfirmation: false,
     permission: 'products.read',
+    maxAffectedEntities: 50,
   },
   list_pending_orders: {
     type: 'list_pending_orders',
@@ -79,6 +147,7 @@ export const KYRUB_ACTION_REGISTRY: Record<
     risk: 'low',
     requiresConfirmation: false,
     permission: 'orders.read',
+    maxAffectedEntities: 50,
   },
 };
 
@@ -86,6 +155,8 @@ export type KyrubActionProposalMetadata = {
   origin?: KyrubActionOrigin;
   risk?: KyrubActionRisk;
   idempotencyKey?: string;
+  inputProvenance?: KyrubInputProvenance;
+  impact?: KyrubActionImpact;
 };
 
 export type KyrubAiCreateNoteProposal = KyrubActionProposalMetadata & {
@@ -110,4 +181,5 @@ export type KyrubActionExecutionResult = {
   entityId: string;
   origin: KyrubActionOrigin;
   idempotencyKey: string;
+  executionEnvelope?: KyrubExecutionEnvelope;
 };

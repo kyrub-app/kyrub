@@ -1,13 +1,14 @@
 import {
-  loadAuthorizedOperationsHealth,
-  mapOperationsHealthError,
-} from '../../../server/admin/operationsHealthRouter.js';
+  executeAuthorizedKyrubAction,
+  mapKyrubActionExecutionError,
+} from '../server/actions/actionExecutionService.js';
 
 type HeaderValue = string | string[] | undefined;
 
 type RequestLike = {
   method?: string;
   headers: Record<string, HeaderValue>;
+  body?: unknown;
 };
 
 type ResponseLike = {
@@ -26,7 +27,7 @@ export default async function handler(
   response.setHeader('cache-control', 'no-store, max-age=0');
   response.setHeader('content-type', 'application/json; charset=utf-8');
 
-  if ((request.method ?? 'GET').toUpperCase() !== 'GET') {
+  if ((request.method ?? 'GET').toUpperCase() !== 'POST') {
     response.status(405).json({
       error: 'Método não permitido.',
       code: 'METHOD_NOT_ALLOWED',
@@ -38,10 +39,13 @@ export default async function handler(
     const authorization = headerValue(
       request.headers.authorization ?? request.headers.Authorization
     );
-    const snapshot = await loadAuthorizedOperationsHealth(authorization);
-    response.status(200).json(snapshot);
+    const result = await executeAuthorizedKyrubAction(
+      authorization,
+      request.body
+    );
+    response.status(200).json(result);
   } catch (error) {
-    const mapped = mapOperationsHealthError(error);
+    const mapped = mapKyrubActionExecutionError(error);
     response.status(mapped.status).json(mapped.body);
   }
 }
