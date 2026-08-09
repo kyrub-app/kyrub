@@ -161,7 +161,7 @@ test('confirmed create-note crosses the authenticated safe executor instead of D
   assert.doesNotMatch(bridgeSource, /Título da nota/);
 
   assert.match(actionServiceSource, /\/api\/action-execute/);
-  assert.match(actionServiceSource, /user\.getIdToken\(\)/);
+  assert.match(actionServiceSource, /user\.getIdToken\(true\)/);
   assert.match(actionServiceSource, /confirmed: true/);
   assert.match(actionServiceSource, /HTTP \$\{response\.status\}/);
   assert.match(actionServiceSource, /endpoint do executor seguro não foi encontrado/);
@@ -171,6 +171,7 @@ test('confirmed create-note crosses the authenticated safe executor instead of D
 
   assert.match(actionExecutionServiceSource, /verifyFirebaseIdToken\(token\)/);
   assert.doesNotMatch(actionExecutionServiceSource, /adminAuth\.verifyIdToken/);
+  assert.doesNotMatch(actionExecutionServiceSource, /firebase-admin\/auth/);
   assert.match(actionExecutionServiceSource, /evaluateKyrubActionPolicy/);
   assert.match(actionExecutionServiceSource, /adminDb\.runTransaction/);
   assert.match(actionExecutionServiceSource, /users\/\$\{actor\.uid\}\/tasks/);
@@ -182,7 +183,7 @@ test('confirmed create-note crosses the authenticated safe executor instead of D
   assert.match(policyEngineSource, /BLAST_RADIUS_EXCEEDED/);
   assert.match(
     actionExecutionRouteSource,
-    /from '\.\.\/server\/actions\/actionExecutionService'/
+    /from '\.\.\/server\/actions\/actionExecutionService\.js'/
   );
   assert.doesNotMatch(actionExecutionRouteSource, /await import\(/);
   assert.doesNotMatch(actionExecutionRouteSource, /EXECUTOR_BOOT_FAILED/);
