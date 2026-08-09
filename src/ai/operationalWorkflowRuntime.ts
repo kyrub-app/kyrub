@@ -1,0 +1,469 @@
+import type { User } from 'firebase/auth';
+import type {
+  KyrubAiConsultantResponse,
+} from '../../shared/aiConsultant';
+import type { KyrubErpContextSnapshot } from '../../shared/kyrubErpContext';
+import type {
+  KyrubAiCreateProductProposal,
+  KyrubAiStartStoreActivationProposal,
+  KyrubAiUpdateStoreProfileProposal,
+} from '../../shared/kyrubActions';
+import { executePreauthorizedStoreProfileAction } from '../actions/kyrubActionService';
+import { invalidateKyrubErpContext } from '../actions/erpReadActionService';
+import {
+  clearKyrubiaOperationalWorkflow,
+  loadKyrubiaOperationalWorkflow,
+  saveKyrubiaOperationalWorkflow,
+  type KyrubiaOperationalWorkflow,
+  type KyrubiaOperationalWorkflowStage,
+  type KyrubiaProductDraft,
+} from './operationalWorkflowStore';
+
+const createRequestId = (): string => {
+  try {
+    return globalThis.crypto.randomUUID();
+  } catch {
+    return `kyrub-workflow-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  }
+};
+
+const response = (
+  reply: string,
+  actionProposal?: KyrubAiConsultantResponse['actionProposal']
+): KyrubAiConsultantResponse => ({
+  reply,
+  provider: 'kyrub',
+  model: 'kyrub-operational-runtime-v1',
+  mode: 'deterministic',
+  requestId: createRequestId(),
+  ...(actionProposal ? { actionProposal } : {}),
+  capabilities: {
+    actionsEnabled: true,
+    enabledActions: [
+      'create_note',
+      'start_store_activation',
+      'update_store_profile',
+      'create_product',
+    ],
+    enabledReadActions: [
+      'read_store_summary',
+      'list_products',
+      'list_low_stock_products',
+      'list_pending_orders',
+    ],
+    voiceEnabled: false,
+    persistentCloudHistoryEnabled: false,
+  },
+});
+
+const normalized = (value: string): string =>
+  value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLocaleLowerCase('pt-BR')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+const localizedNumber = (value: string | undefined): number | undefined => {
+  if (!value) return undefined;
+  const parsed = Number(value.replace(/\./g, '').replace(',', '.'));
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined;
+};
+
+const stripAnswerPrefix = (value: string): string =>
+  value
+    .trim()
+    .replace(/^(?:o nome (?:e|é)|vai se chamar|chama-se|nome|categoria (?:e|é)|categoria|estoque (?:e|é)|estoque|preco (?:e|é)|preco|o preco (?:e|é)|o preço (?:e|é)|preço)\s*[:=-]?\s*/i, '')
+    .replace(/^["“”']+|["“”']+$/g, '')
+    .trim();
+
+const parsePrice = (message: string): {
+  price?: number;
+  isComplimentary?: boolean;
+} => {
+  const intent = normalized(message);
+  if (/\b(gratis|gratuito|gratuita|cortesia)\b/.test(intent)) {
+    return { price: 0, isComplimentary: true };
+  }
+  const match =
+    /r\$\s*(\d+(?:[.,]\d{1,2})?)/i.exec(message) ??
+    /(?:pre[cç]o|valor)\s*(?:de|e|é|:)?\s*(\d+(?:[.,]\d{1,2})?)/i.exec(message) ??
+    /(?:por|a)\s+(\d+(?:[.,]\d{1,2})?)\s*(?:reais)?\b/i.exec(message);
+  const price = localizedNumber(match?.[1]);
+  return price === undefined ? {} : { price, isComplimentary: false };
+};
+
+const parseStock = (message: string): number | undefined => {
+  const intent = normalized(message);
+  if (/\bsem estoque\b|\bestoque zerado\b/.test(intent)) return 0;
+  const match =
+    /estoque\s*(?:de|e|é|:)?\s*(\d+)\b/i.exec(message) ??
+    /(?:com|tenho)\s+(\d+)\s+unidades?\b/i.exec(message) ??
+    /\b(\d+)\s+unidades?\s+(?:em )?estoque\b/i.exec(message);
+  const parsed = localizedNumber(match?.[1]);
+  return parsed === undefined ? undefined : Math.trunc(parsed);
+};
+
+const parseCategory = (message: string): string | undefined => {
+  const match = /categoria\s*(?:de|e|é|:)?\s*["“]?([^,.!?"”]+)["”]?/i.exec(message);
+  const value = match?.[1]?.trim();
+  return value || undefined;
+};
+
+const parseProductName = (message: string): string | undefined => {
+  const match = /\b(?:produto|item|servi[cç]o)\s+(?:(?:chamado|chamada|de nome)\s+)?["“]?([^,.!?"”]+?)["”]?(?=\s+(?:por\s+r\$|por\s+\d|a\s+r\$|pre[cç]o|valor|categoria|com\s+estoque|estoque)|$)/i.exec(message);
+  const value = match?.[1]?.trim();
+  if (!value || /^(?:novo|nova|me ajude|para minha loja|na minha loja)$/i.test(value)) {
+    return undefined;
+  }
+  return value.replace(/^(?:um|uma)\s+/i, '').trim() || undefined;
+};
+
+const parseInitialProductDraft = (message: string): KyrubiaProductDraft | null => {
+  const intent = normalized(message);
+  const createVerb = /\b(crie|criar|cadastre|cadastrar|adicione|adicionar|inclua|incluir)\b/.test(intent);
+  const productSignal = /\b(produto|produtos|item|itens|servico|servicos)\b/.test(intent);
+  if (!createVerb || !productSignal) return null;
+
+  const isService = /\bservico|servicos\b/.test(intent) && !/\bproduto|produtos\b/.test(intent);
+  const price = parsePrice(message);
+  return {
+    ...(parseProductName(message) ? { name: parseProductName(message) } : {}),
+    ...(price.price !== undefined ? { price: price.price } : {}),
+    ...(price.isComplimentary !== undefined
+      ? { isComplimentary: price.isComplimentary }
+      : {}),
+    ...(parseCategory(message) ? { category: parseCategory(message) } : {}),
+    ...(parseStock(message) !== undefined ? { stock: parseStock(message) } : {}),
+    isService,
+  };
+};
+
+const asksToActivateStore = (message: string): boolean => {
+  const intent = normalized(message);
+  return /\b(ativar|ative|configurar|configure)\b/.test(intent) &&
+    /\b(loja|estabelecimento|negocio)\b/.test(intent);
+};
+
+const activationProposal = (
+  objective: KyrubiaOperationalWorkflow['objective']
+): KyrubAiStartStoreActivationProposal => ({
+  id: createRequestId(),
+  type: 'start_store_activation',
+  purpose: objective === 'create_product' ? 'create_product' : 'store_setup',
+  requiresConfirmation: true,
+  origin: 'kyrubia',
+  risk: 'low',
+  inputProvenance: 'user_intent',
+  impact: { entityCount: 1, reversibility: 'easy' },
+});
+
+const nextProductStage = (
+  draft: KyrubiaProductDraft
+): KyrubiaOperationalWorkflowStage | 'ready' => {
+  if (!draft.name?.trim()) return 'collecting_product_name';
+  if (draft.price === undefined || !Number.isFinite(draft.price) || draft.price < 0) {
+    return 'collecting_product_price';
+  }
+  if (!draft.category?.trim()) return 'collecting_product_category';
+  if (draft.isService !== true && (
+    draft.stock === undefined ||
+    !Number.isInteger(draft.stock) ||
+    draft.stock < 0
+  )) {
+    return 'collecting_product_stock';
+  }
+  return 'ready';
+};
+
+const questionForProductStage = (
+  stage: KyrubiaOperationalWorkflowStage,
+  draft: KyrubiaProductDraft
+): string => {
+  switch (stage) {
+    case 'collecting_product_name':
+      return 'Qual será o nome do produto ou serviço?';
+    case 'collecting_product_price':
+      return `Qual será o preço de “${draft.name ?? 'este item'}”? Você também pode dizer “grátis”.`;
+    case 'collecting_product_category':
+      return `Em qual categoria da loja “${draft.name ?? 'este item'}” deve ficar?`;
+    case 'collecting_product_stock':
+      return `Quantas unidades de “${draft.name ?? 'este produto'}” estão disponíveis agora? Se ainda não houver estoque, diga 0.`;
+    default:
+      return '';
+  }
+};
+
+const createProductProposal = (
+  draft: KyrubiaProductDraft
+): KyrubAiCreateProductProposal => ({
+  id: createRequestId(),
+  type: 'create_product',
+  name: draft.name?.trim() ?? '',
+  description: draft.description?.trim() ?? '',
+  price: draft.isComplimentary === true ? 0 : draft.price ?? 0,
+  stock: draft.isService === true ? 0 : draft.stock ?? 0,
+  category: draft.category?.trim() ?? '',
+  image: draft.image?.trim() ?? '',
+  isService: draft.isService === true,
+  isComplimentary: draft.isComplimentary === true,
+  requiresConfirmation: true,
+  origin: 'kyrubia',
+  risk: 'medium',
+  inputProvenance: 'user_intent',
+  impact: { entityCount: 1, reversibility: 'limited' },
+});
+
+const productReviewResponse = (
+  workflow: KyrubiaOperationalWorkflow
+): KyrubAiConsultantResponse => {
+  const draft = workflow.productDraft;
+  const proposal = createProductProposal(draft);
+  const typeLabel = proposal.isService ? 'Serviço' : 'Produto';
+  const stockLine = proposal.isService
+    ? ''
+    : `\n- Estoque: ${proposal.stock} ${proposal.stock === 1 ? 'unidade' : 'unidades'}`;
+  return response(
+    `Tudo pronto para cadastrar:\n- ${typeLabel}: ${proposal.name}\n- Preço: ${proposal.isComplimentary ? 'grátis' : proposal.price.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}\n- Categoria: ${proposal.category}${stockLine}\n\nRevise e confirme antes de eu publicar o item no catálogo da sua loja.`,
+    proposal
+  );
+};
+
+const saveProductStage = (
+  storage: Storage,
+  workflow: KyrubiaOperationalWorkflow,
+  draft: KyrubiaProductDraft
+): KyrubAiConsultantResponse => {
+  const stage = nextProductStage(draft);
+  if (stage === 'ready') {
+    const next = {
+      ...workflow,
+      productDraft: draft,
+      stage: 'awaiting_product_confirmation' as const,
+      updatedAt: new Date().toISOString(),
+    };
+    saveKyrubiaOperationalWorkflow(storage, next);
+    return productReviewResponse(next);
+  }
+
+  const next = {
+    ...workflow,
+    productDraft: draft,
+    stage,
+    updatedAt: new Date().toISOString(),
+  };
+  saveKyrubiaOperationalWorkflow(storage, next);
+  return response(questionForProductStage(stage, draft));
+};
+
+const updateStoreProfile = async (
+  user: User,
+  workflow: KyrubiaOperationalWorkflow,
+  patch: KyrubAiUpdateStoreProfileProposal['patch']
+): Promise<void> => {
+  const grant = workflow.activationGrant;
+  if (!grant) {
+    throw new Error('A ativação da loja precisa ser confirmada novamente.');
+  }
+  const proposal: KyrubAiUpdateStoreProfileProposal = {
+    id: createRequestId(),
+    type: 'update_store_profile',
+    activationGrantId: grant.id,
+    patch,
+    requiresConfirmation: false,
+    origin: 'kyrubia',
+    risk: 'low',
+    inputProvenance: 'user_intent',
+    impact: { entityCount: 1, reversibility: 'easy' },
+  };
+  await executePreauthorizedStoreProfileAction(user, proposal);
+  invalidateKyrubErpContext(user.uid);
+};
+
+const handleExistingWorkflow = async (
+  storage: Storage,
+  user: User,
+  workflow: KyrubiaOperationalWorkflow,
+  message: string
+): Promise<KyrubAiConsultantResponse> => {
+  switch (workflow.stage) {
+    case 'awaiting_store_activation_confirmation':
+      return response(
+        'Para continuar, confirme a ativação da loja na janela de revisão. Nada será publicado no marketplace por essa confirmação.',
+        activationProposal(workflow.objective)
+      );
+
+    case 'collecting_store_name': {
+      const name = stripAnswerPrefix(message);
+      if (!name || name.length < 2) {
+        return response('Qual será o nome da sua loja?');
+      }
+      await updateStoreProfile(user, workflow, { name });
+      const next = {
+        ...workflow,
+        stage: 'collecting_store_keywords' as const,
+        updatedAt: new Date().toISOString(),
+      };
+      saveKyrubiaOperationalWorkflow(storage, next);
+      return response(
+        `Perfeito. “${name}” já foi salvo no perfil da sua loja. Agora me diga de 1 a 5 palavras-chave do que você vende ou oferece, separadas por vírgula. Ex.: roupas, camisetas, moda masculina.`
+      );
+    }
+
+    case 'collecting_store_keywords': {
+      const keywords = message
+        .split(/[,;\n]+/)
+        .map(item => item.trim().toLocaleLowerCase('pt-BR'))
+        .filter(Boolean)
+        .slice(0, 5);
+      if (keywords.length === 0) {
+        return response('Informe pelo menos uma palavra-chave sobre o que sua loja vende ou oferece.');
+      }
+      await updateStoreProfile(user, workflow, { keywords });
+
+      if (workflow.objective === 'store_setup') {
+        clearKyrubiaOperationalWorkflow(storage, user.uid, workflow.conversationId);
+        return response(
+          'Sua loja está ativada no Kyrub. O perfil privado foi configurado e a loja continua fora do marketplace até você decidir publicá-la.'
+        );
+      }
+
+      const productStage = nextProductStage(workflow.productDraft);
+      if (productStage === 'ready') {
+        const next = {
+          ...workflow,
+          stage: 'awaiting_product_confirmation' as const,
+          updatedAt: new Date().toISOString(),
+        };
+        saveKyrubiaOperationalWorkflow(storage, next);
+        return productReviewResponse(next);
+      }
+
+      const next = {
+        ...workflow,
+        stage: productStage,
+        updatedAt: new Date().toISOString(),
+      };
+      saveKyrubiaOperationalWorkflow(storage, next);
+      return response(
+        `Loja ativada. Agora vou retomar o produto que você estava cadastrando. ${questionForProductStage(productStage, workflow.productDraft)}`
+      );
+    }
+
+    case 'collecting_product_name': {
+      const name = stripAnswerPrefix(message);
+      if (!name) return response('Qual será o nome do produto ou serviço?');
+      return saveProductStage(storage, workflow, {
+        ...workflow.productDraft,
+        name,
+      });
+    }
+
+    case 'collecting_product_price': {
+      const parsed = parsePrice(message);
+      if (parsed.price === undefined) {
+        const direct = localizedNumber(stripAnswerPrefix(message));
+        if (direct === undefined) {
+          return response('Qual será o preço? Ex.: R$ 39,90. Se for gratuito, diga “grátis”.');
+        }
+        return saveProductStage(storage, workflow, {
+          ...workflow.productDraft,
+          price: direct,
+          isComplimentary: false,
+        });
+      }
+      return saveProductStage(storage, workflow, {
+        ...workflow.productDraft,
+        price: parsed.price,
+        isComplimentary: parsed.isComplimentary,
+      });
+    }
+
+    case 'collecting_product_category': {
+      const category = stripAnswerPrefix(message);
+      if (!category) return response('Em qual categoria este item deve ficar?');
+      return saveProductStage(storage, workflow, {
+        ...workflow.productDraft,
+        category,
+      });
+    }
+
+    case 'collecting_product_stock': {
+      const stock = parseStock(message) ?? localizedNumber(stripAnswerPrefix(message));
+      if (stock === undefined || !Number.isInteger(stock)) {
+        return response('Informe a quantidade atual em unidades. Ex.: 12. Se estiver sem estoque, diga 0.');
+      }
+      return saveProductStage(storage, workflow, {
+        ...workflow.productDraft,
+        stock,
+      });
+    }
+
+    case 'awaiting_product_confirmation':
+      return productReviewResponse(workflow);
+  }
+};
+
+export const resolveKyrubiaOperationalWorkflow = async (
+  input: {
+    user: User;
+    conversationId: string;
+    message: string;
+    erpContext?: KyrubErpContextSnapshot;
+  }
+): Promise<KyrubAiConsultantResponse | null> => {
+  if (typeof localStorage === 'undefined') return null;
+  const storage = localStorage;
+  const existing = loadKyrubiaOperationalWorkflow(
+    storage,
+    input.user.uid,
+    input.conversationId
+  );
+  if (existing) {
+    return handleExistingWorkflow(storage, input.user, existing, input.message);
+  }
+
+  const productDraft = parseInitialProductDraft(input.message);
+  const activationRequest = asksToActivateStore(input.message);
+  if (!productDraft && !activationRequest) return null;
+
+  const objective: KyrubiaOperationalWorkflow['objective'] = productDraft
+    ? 'create_product'
+    : 'store_setup';
+  const storeConfigured = input.erpContext?.store?.configured === true;
+
+  if (!storeConfigured) {
+    const workflow: KyrubiaOperationalWorkflow = {
+      version: 1,
+      conversationId: input.conversationId,
+      userId: input.user.uid,
+      objective,
+      stage: 'awaiting_store_activation_confirmation',
+      productDraft: productDraft ?? {},
+      updatedAt: new Date().toISOString(),
+    };
+    saveKyrubiaOperationalWorkflow(storage, workflow);
+    const reason = productDraft
+      ? 'Para cadastrar esse item, sua loja precisa estar ativada primeiro.'
+      : 'Sua loja ainda não está ativada.';
+    return response(
+      `${reason} Quer ativá-la agora? A ativação cria/configura o perfil privado da sua loja; ela não será publicada no marketplace automaticamente.`,
+      activationProposal(objective)
+    );
+  }
+
+  if (!productDraft) {
+    return response('Sua loja já está ativada. Posso ajudar a completar ou alterar o perfil quando você quiser.');
+  }
+
+  const workflow: KyrubiaOperationalWorkflow = {
+    version: 1,
+    conversationId: input.conversationId,
+    userId: input.user.uid,
+    objective: 'create_product',
+    stage: 'collecting_product_name',
+    productDraft,
+    updatedAt: new Date().toISOString(),
+  };
+  return saveProductStage(storage, workflow, productDraft);
+};
