@@ -218,7 +218,7 @@ test('Kyrubia note client no longer writes Firestore directly', () => {
   assert.doesNotMatch(source, /transaction\.set\s*\(/);
 });
 
-test('Firebase Admin bootstrap stays lazy and scoped to privileged Firestore access', () => {
+test('Firebase Admin bootstrap keeps legacy Auth isolated and lazy', () => {
   const source = readFileSync(
     new URL('../server/firebaseAdmin.ts', import.meta.url),
     'utf8'
@@ -226,8 +226,10 @@ test('Firebase Admin bootstrap stays lazy and scoped to privileged Firestore acc
 
   assert.match(source, /lazyService/);
   assert.match(source, /export const adminDb = lazyService<Firestore>/);
-  assert.doesNotMatch(source, /firebase-admin\/auth/);
-  assert.doesNotMatch(source, /adminAuth/);
+  assert.match(source, /import type \{ Auth \} from 'firebase-admin\/auth'/);
+  assert.match(source, /require\('firebase-admin\/auth'\)/);
+  assert.match(source, /export const adminAuth = lazyService<Auth>/);
+  assert.doesNotMatch(source, /import \{ getAuth[^\n]*from 'firebase-admin\/auth'/);
   assert.doesNotMatch(source, /export const adminApp = getAdminApp\(\)/);
   assert.match(source, /Could not load Firebase Admin credentials/);
 });
