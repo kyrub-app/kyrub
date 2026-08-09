@@ -4,6 +4,7 @@ import type {
   KyrubActionProposal,
   KyrubAiUpdateStoreProfileProposal,
 } from '../../shared/kyrubActions';
+import { invalidateKyrubErpContext } from './erpReadActionService';
 
 const SAFE_ACTION_ENDPOINT = '/api/action-execute';
 
@@ -95,6 +96,10 @@ export const executeKyrubAction = async (
     throw new Error(
       `O executor seguro respondeu sem um recibo de execução válido (HTTP ${response.status}).`
     );
+  }
+
+  if (proposal.type === 'create_product') {
+    invalidateKyrubErpContext(user.uid);
   }
 
   return body as unknown as KyrubActionExecutionResult;
