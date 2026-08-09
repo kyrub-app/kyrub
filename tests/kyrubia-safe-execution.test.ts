@@ -56,14 +56,27 @@ test('a confirmed low-impact user-intent note is allowed', () => {
   assert.equal(decision.maxAffectedEntities, 1);
 });
 
-test('quoted content is never promoted to write authority', () => {
+test('observed or quoted content cannot authorize a write by itself', () => {
   const decision = evaluateKyrubActionPolicy(
     noteProposal({ inputProvenance: 'quoted_content' }),
+    { ...baseContext, confirmed: false }
+  );
+
+  assert.equal(decision.outcome, 'require_confirmation');
+  assert.ok(
+    decision.reasons.includes('UNTRUSTED_INPUT_REQUIRES_CONFIRMATION')
+  );
+  assert.ok(decision.reasons.includes('CONFIRMATION_REQUIRED'));
+});
+
+test('fresh human confirmation can authorize the exact reviewed draft even when its content came from an observed source', () => {
+  const decision = evaluateKyrubActionPolicy(
+    noteProposal({ inputProvenance: 'document_content' }),
     { ...baseContext, confirmed: true }
   );
 
-  assert.equal(decision.outcome, 'deny');
-  assert.ok(decision.reasons.includes('WRITE_REQUIRES_USER_INTENT'));
+  assert.equal(decision.outcome, 'allow');
+  assert.deepEqual(decision.reasons, []);
 });
 
 test('permission is evaluated independently from confirmation', () => {
@@ -138,18 +151,27 @@ test('server normalization owns the blast radius for create_note', () => {
   });
 });
 
-test('missing provenance is conservative and cannot become write authority', () => {
+test('missing provenance stays conservative and requires a fresh confirmation', () => {
   const raw = noteProposal();
   delete (raw as Partial<KyrubAiCreateNoteProposal>).inputProvenance;
   const normalized = normalizeCreateNoteExecutionProposal(raw);
-  const decision = evaluateKyrubActionPolicy(normalized, {
+  const beforeConfirmation = evaluateKyrubActionPolicy(normalized, {
+    ...baseContext,
+    confirmed: false,
+  });
+  const afterConfirmation = evaluateKyrubActionPolicy(normalized, {
     ...baseContext,
     confirmed: true,
   });
 
   assert.equal(normalized.inputProvenance, 'ai_generated_content');
-  assert.equal(decision.outcome, 'deny');
-  assert.ok(decision.reasons.includes('WRITE_REQUIRES_USER_INTENT'));
+  assert.equal(beforeConfirmation.outcome, 'require_confirmation');
+  assert.ok(
+    beforeConfirmation.reasons.includes(
+      'UNTRUSTED_INPUT_REQUIRES_CONFIRMATION'
+    )
+  );
+  assert.equal(afterConfirmation.outcome, 'allow');
 });
 
 test('execution envelope is bound to the exact normalized proposal hash', () => {
