@@ -88,12 +88,11 @@ const filterMatches = (
   product: KyrubErpProductSummary,
   filter: KyrubiaProductQueryFilter
 ): boolean => {
-  const actual = product[filter.field];
-
   if (isNumericField(filter.field)) {
     if (typeof filter.value !== 'number' || !Number.isFinite(filter.value)) {
       return false;
     }
+    const actual = product[filter.field];
     const expected = filter.value;
     if (filter.operator === 'eq') return actual === expected;
     if (filter.operator === 'neq') return actual !== expected;
@@ -106,6 +105,7 @@ const filterMatches = (
 
   if (isBooleanField(filter.field)) {
     if (typeof filter.value !== 'boolean') return false;
+    const actual = product[filter.field];
     if (filter.operator === 'eq') return actual === filter.value;
     if (filter.operator === 'neq') return actual !== filter.value;
     return false;
@@ -113,7 +113,7 @@ const filterMatches = (
 
   if (isStringField(filter.field)) {
     if (typeof filter.value !== 'string') return false;
-    const current = normalizeText(actual);
+    const current = normalizeText(product[filter.field]);
     const expected = normalizeText(filter.value);
     if (filter.operator === 'eq') return current === expected;
     if (filter.operator === 'neq') return current !== expected;
