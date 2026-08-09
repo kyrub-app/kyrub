@@ -319,13 +319,10 @@ const mapPolicyFailure = (decision: KyrubPolicyDecision): never => {
     );
   }
 
-  const provenanceDenied = decision.reasons.includes('WRITE_REQUIRES_USER_INTENT');
   throw new KyrubActionExecutionError(
     403,
     'POLICY_DENIED',
-    provenanceDenied
-      ? 'Conteúdo observado ou citado não pode ser executado como comando.'
-      : 'A política de segurança do Kyrub bloqueou esta execução.'
+    'A política de segurança do Kyrub bloqueou esta execução.'
   );
 };
 
