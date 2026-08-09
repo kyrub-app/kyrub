@@ -4,7 +4,7 @@ import type {
   KyrubAiCreateNoteProposal,
 } from '../../shared/kyrubActions';
 
-const SAFE_ACTION_ENDPOINT = '/api/actions/execute';
+const SAFE_ACTION_ENDPOINT = '/api/action-execute';
 
 const readJson = async (response: Response): Promise<Record<string, unknown>> => {
   const text = await response.text().catch(() => '');
