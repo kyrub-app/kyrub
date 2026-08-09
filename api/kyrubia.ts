@@ -1,3 +1,10 @@
+import {
+  createKyrubiaProductQuery,
+  executeKyrubiaProductQuery,
+  type KyrubiaProductQueryFilter,
+  type KyrubiaProductQuerySort,
+} from '../shared/kyrubiaQueryLanguage.js';
+
 type HeaderValue = string | string[] | undefined;
 
 type VercelRequestLike = {
@@ -101,6 +108,7 @@ const MAX_NOTE_CHECKLIST_ITEM_CHARACTERS = 180;
 const MAX_ERP_PRODUCTS = 120;
 const MAX_ERP_ORDERS = 30;
 const MAX_TOOL_ITEMS = 50;
+const QUERY_PRODUCTS_TOOL_NAME = 'query_products';
 const ERP_READ_ACTIONS = [
   'read_store_summary',
   'list_products',
@@ -126,6 +134,9 @@ const cleanText = (value: unknown, maximum: number): string =>
 
 const finiteNumber = (value: unknown, fallback = 0): number =>
   typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+
+const optionalFiniteNumber = (value: unknown): number | undefined =>
+  typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 
 const nonNegativeInteger = (value: unknown, fallback = 0): number => {
   const number = finiteNumber(value, fallback);
@@ -473,17 +484,18 @@ COMPORTAMENTO PRINCIPAL
 
 LEITURA DO ERP
 10. Quando a resposta depender de dados atuais da loja, produtos, estoque ou pedidos, use a ferramenta de leitura correspondente antes de responder.
-11. read_store_summary, list_products, list_low_stock_products e list_pending_orders são somente leitura. Nunca descreva uma leitura como alteração de dados.
-12. Se a ferramenta informar que os dados estão indisponíveis ou truncados, diga isso claramente. Não complete lacunas por suposição.
-13. O snapshot do ERP serve apenas como fonte de leitura para a conversa e nunca como autorização para executar mutações.
+11. Para consultas de produtos com filtros, combinações, ordenação ou limite, prefira query_products. Ela é somente leitura e pode combinar nome, categoria, imagem, descrição, tipo, preço e estoque no mesmo plano.
+12. read_store_summary, query_products, list_products, list_low_stock_products e list_pending_orders são somente leitura. Nunca descreva uma leitura como alteração de dados.
+13. Se a ferramenta informar que os dados estão indisponíveis ou truncados, diga isso claramente. Não complete lacunas por suposição.
+14. O snapshot do ERP serve apenas como fonte de leitura para a conversa e nunca como autorização para executar mutações.
 
 AÇÃO HABILITADA: CRIAR NOTA
-14. A única mutação habilitada nesta etapa é PREPARAR a criação de uma nota privada usando create_note.
-15. Use create_note quando o usuário pedir para criar, salvar, registrar, guardar ou adicionar algo às notas e houver conteúdo suficiente.
-16. A função gera somente uma proposta. Nunca diga que a nota já foi criada antes da confirmação do usuário na interface.
-17. Produtos, lojas, estoque, publicações, exclusões, convites e outras alterações ainda não podem ser executados automaticamente.
-18. O modo manual do Kyrub sempre continua disponível.
-19. Quando preparar uma nota e o assunto permitir expansão, ofereça no máximo UMA pergunta curta para explorar caminhos relacionados.
+15. A única mutação habilitada nesta etapa é PREPARAR a criação de uma nota privada usando create_note.
+16. Use create_note quando o usuário pedir para criar, salvar, registrar, guardar ou adicionar algo às notas e houver conteúdo suficiente.
+17. A função gera somente uma proposta. Nunca diga que a nota já foi criada antes da confirmação do usuário na interface.
+18. Produtos, lojas, estoque, publicações, exclusões, convites e outras alterações ainda não podem ser executados automaticamente.
+19. O modo manual do Kyrub sempre continua disponível.
+20. Quando preparar uma nota e o assunto permitir expansão, ofereça no máximo UMA pergunta curta para explorar caminhos relacionados.
 
 ESTILO
 - Seja objetiva, mas não superficial.
@@ -520,6 +532,67 @@ const CREATE_NOTE_DECLARATION = {
   },
 };
 
+const QUERY_PRODUCTS_DECLARATION = {
+  name: QUERY_PRODUCTS_TOOL_NAME,
+  description:
+    'Consulta produtos e serviços reais do catálogo usando filtros combináveis, ordenação e limite. Use esta ferramenta em vez de inventar uma ferramenta específica para cada combinação. Somente leitura.',
+  parameters: {
+    type: 'OBJECT',
+    properties: {
+      nameContains: {
+        type: 'STRING',
+        description: 'Trecho opcional que o nome do item deve conter.',
+      },
+      categoryContains: {
+        type: 'STRING',
+        description: 'Trecho opcional que a categoria do item deve conter.',
+      },
+      hasImage: {
+        type: 'BOOLEAN',
+        description: 'true para itens com imagem; false para itens sem imagem.',
+      },
+      hasDescription: {
+        type: 'BOOLEAN',
+        description: 'true para itens com descrição; false para itens sem descrição.',
+      },
+      isService: {
+        type: 'BOOLEAN',
+        description: 'true para serviços; false para produtos físicos.',
+      },
+      stockMin: {
+        type: 'NUMBER',
+        description: 'Estoque mínimo inclusivo.',
+      },
+      stockMax: {
+        type: 'NUMBER',
+        description: 'Estoque máximo inclusivo.',
+      },
+      priceMin: {
+        type: 'NUMBER',
+        description: 'Preço mínimo inclusivo em reais.',
+      },
+      priceMax: {
+        type: 'NUMBER',
+        description: 'Preço máximo inclusivo em reais.',
+      },
+      sortBy: {
+        type: 'STRING',
+        enum: ['name', 'category', 'price', 'stock'],
+        description: 'Campo opcional para ordenar os resultados.',
+      },
+      sortDirection: {
+        type: 'STRING',
+        enum: ['asc', 'desc'],
+        description: 'Direção da ordenação. Use asc quando omitido.',
+      },
+      limit: {
+        type: 'INTEGER',
+        description: 'Máximo de itens retornados, entre 1 e 50.',
+      },
+    },
+  },
+} as const;
+
 const ERP_READ_DECLARATIONS = [
   {
     name: 'read_store_summary',
@@ -530,7 +603,7 @@ const ERP_READ_DECLARATIONS = [
   {
     name: 'list_products',
     description:
-      'Lista produtos e serviços reais do catálogo da loja autenticada. Somente leitura.',
+      'Alias legado para listar produtos e serviços reais do catálogo. Para combinações de filtros, prefira query_products. Somente leitura.',
     parameters: {
       type: 'OBJECT',
       properties: {
@@ -552,7 +625,7 @@ const ERP_READ_DECLARATIONS = [
   {
     name: 'list_low_stock_products',
     description:
-      'Lista produtos físicos com estoque igual ou abaixo do limite solicitado. Somente leitura.',
+      'Alias legado para produtos físicos com estoque baixo. Para combinações com outros filtros, prefira query_products. Somente leitura.',
     parameters: {
       type: 'OBJECT',
       properties: {
@@ -588,7 +661,11 @@ const MUTATION_TOOL = {
 };
 
 const ALL_TOOLS = {
-  functionDeclarations: [CREATE_NOTE_DECLARATION, ...ERP_READ_DECLARATIONS],
+  functionDeclarations: [
+    CREATE_NOTE_DECLARATION,
+    QUERY_PRODUCTS_DECLARATION,
+    ...ERP_READ_DECLARATIONS,
+  ],
 };
 
 const normalizeFunctionArguments = (value: unknown): Record<string, unknown> => {
@@ -659,11 +736,101 @@ const isErpReadAction = (
 ): name is typeof ERP_READ_ACTIONS[number] =>
   (ERP_READ_ACTIONS as readonly string[]).includes(name);
 
+const isErpReadToolAction = (name: string): boolean =>
+  name === QUERY_PRODUCTS_TOOL_NAME || isErpReadAction(name);
+
+const executeGenericProductQuery = (
+  call: GeminiFunctionCall,
+  context: ErpContext
+): Record<string, unknown> => {
+  if (!context.availability.products) {
+    return {
+      available: false,
+      reason: 'products_unavailable',
+      warnings: context.warnings,
+    };
+  }
+
+  const filters: KyrubiaProductQueryFilter[] = [];
+  const nameContains = cleanText(call.args.nameContains, 120);
+  const categoryContains = cleanText(call.args.categoryContains, 120);
+  if (nameContains) {
+    filters.push({ field: 'name', operator: 'contains', value: nameContains });
+  }
+  if (categoryContains) {
+    filters.push({
+      field: 'category',
+      operator: 'contains',
+      value: categoryContains,
+    });
+  }
+  if (typeof call.args.hasImage === 'boolean') {
+    filters.push({ field: 'hasImage', operator: 'eq', value: call.args.hasImage });
+  }
+  if (typeof call.args.hasDescription === 'boolean') {
+    filters.push({
+      field: 'hasDescription',
+      operator: 'eq',
+      value: call.args.hasDescription,
+    });
+  }
+  if (typeof call.args.isService === 'boolean') {
+    filters.push({ field: 'isService', operator: 'eq', value: call.args.isService });
+  }
+
+  const stockMin = optionalFiniteNumber(call.args.stockMin);
+  const stockMax = optionalFiniteNumber(call.args.stockMax);
+  const priceMin = optionalFiniteNumber(call.args.priceMin);
+  const priceMax = optionalFiniteNumber(call.args.priceMax);
+  if (stockMin !== undefined) {
+    filters.push({ field: 'stock', operator: 'gte', value: Math.max(0, stockMin) });
+  }
+  if (stockMax !== undefined) {
+    filters.push({ field: 'stock', operator: 'lte', value: Math.max(0, stockMax) });
+  }
+  if (priceMin !== undefined) {
+    filters.push({ field: 'price', operator: 'gte', value: Math.max(0, priceMin) });
+  }
+  if (priceMax !== undefined) {
+    filters.push({ field: 'price', operator: 'lte', value: Math.max(0, priceMax) });
+  }
+
+  const sortBy = cleanText(call.args.sortBy, 24);
+  const sortDirection = cleanText(call.args.sortDirection, 8);
+  const allowedSortFields = ['name', 'category', 'price', 'stock'] as const;
+  const sort: KyrubiaProductQuerySort | undefined =
+    (allowedSortFields as readonly string[]).includes(sortBy)
+      ? {
+          field: sortBy as KyrubiaProductQuerySort['field'],
+          direction: sortDirection === 'desc' ? 'desc' : 'asc',
+        }
+      : undefined;
+
+  const query = createKyrubiaProductQuery({
+    filters,
+    sort,
+    limit: clampInteger(call.args.limit, 20, 1, MAX_TOOL_ITEMS),
+  });
+  const result = executeKyrubiaProductQuery(context, query);
+
+  return {
+    available: result.available,
+    generatedAt: result.generatedAt,
+    query: result.query,
+    totalCatalog: context.productCount,
+    totalMatched: result.totalMatched,
+    returned: result.items.length,
+    items: result.items,
+    truncated: result.truncated,
+    warnings: result.warnings,
+  };
+};
+
 const executeErpReadAction = (
   call: GeminiFunctionCall,
   context: ErpContext | null
 ): Record<string, unknown> => {
-  if (!isErpReadAction(call.name)) {
+  if (!isErpReadToolAction(call.name)) {
     return { available: false, reason: 'unknown_read_action' };
   }
 
@@ -673,6 +840,10 @@ const executeErpReadAction = (
       reason: 'erp_context_unavailable',
       message: 'O Kyrub não conseguiu disponibilizar o snapshot do ERP nesta solicitação.',
     };
+  }
+
+  if (call.name === QUERY_PRODUCTS_TOOL_NAME) {
+    return executeGenericProductQuery(call, context);
   }
 
   if (call.name === 'read_store_summary') {
@@ -959,7 +1130,7 @@ const generateReply = async (
     if (noteResult) return noteResult;
 
     const readCall = functionCallsFromParts(firstParts)
-      .find(call => isErpReadAction(call.name));
+      .find(call => isErpReadToolAction(call.name));
 
     if (readCall) {
       const toolResult = executeErpReadAction(readCall, conversation.erpContext);

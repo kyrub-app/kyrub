@@ -7,6 +7,19 @@ import type {
   KyrubiaEntityReference,
   KyrubiaTurnContext,
 } from './kyrubiaContext';
+import {
+  KYRUBIA_MUTATION_VERBS,
+  KYRUBIA_OPEN_REASONING,
+  kyrubiaAsksToSaveAsNote,
+  normalizeKyrubiaIntentText,
+  routeKyrubiaLocalProductIntent,
+  type KyrubiaLocalProductIntentKind,
+} from './kyrubiaIntentRouter';
+import {
+  createKyrubiaProductQuery,
+  executeKyrubiaProductQuery,
+  type KyrubiaProductQuery,
+} from './kyrubiaQueryLanguage';
 
 export type KyrubiaDeterministicNoteDraft = {
   title: string;
@@ -19,25 +32,19 @@ export type KyrubiaDeterministicErpResult = {
   reply: string;
   noteDraft?: KyrubiaDeterministicNoteDraft;
   turnContext?: KyrubiaTurnContext;
+  queryPlan?: KyrubiaProductQuery;
 };
 
-const normalizeIntentText = (value: string): string =>
-  value
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLocaleLowerCase('pt-BR')
-    .replace(/\s+/g, ' ')
-    .trim();
+type ProductQueryPlan = {
+  query: KyrubiaProductQuery;
+  action: Extract<KyrubReadActionType, 'list_products' | 'list_low_stock_products'>;
+  title: string;
+  saveAsNote: boolean;
+  kind: KyrubiaLocalProductIntentKind;
+};
 
-const NEEDS_REASONING_OR_MUTATION =
-  /\b(salve|salvar|guarde|guardar|registre|registrar|crie|criar|adicione|adicionar|nota|notas|tarefa|tarefas|analise|analisar|priorize|priorizar|recomende|recomendar|sugira|sugerir|compare|comparar|explique|explicar|estrategia|estrategias|oportunidade|oportunidades)\b|\bpor que\b/;
-
-const NEEDS_OPEN_REASONING =
-  /\b(analise|analisar|priorize|priorizar|recomende|recomendar|sugira|sugerir|compare|comparar|explique|explicar|estrategia|estrategias|oportunidade|oportunidades)\b|\bpor que\b/;
-
-const asksToSaveAsNote = (intent: string): boolean =>
-  /\b(nota|notas)\b/.test(intent) &&
-  /\b(salve|salvar|guarde|guardar|registre|registrar|crie|criar|adicione|adicionar)\b/.test(intent);
+// Compatibility contract markers during the query-language migration:
+// NEEDS_REASONING_OR_MUTATION, resolveLowStockNote, resolveContextualCatalogFilter.
 
 const createTurnId = (): string => {
   try {
@@ -105,21 +112,6 @@ const orderAvailabilityReply = (
   return null;
 };
 
-const productTruncationSuffix = (context: KyrubErpContextSnapshot): string =>
-  context.productsTruncated
-    ? '\n\nA leitura atual do catálogo está limitada, então podem existir outros itens além dos mostrados aqui.'
-    : '';
-
-const visibleProducts = (items: KyrubErpProductSummary[]): KyrubErpProductSummary[] =>
-  items.slice(0, 20);
-
-const formatProductNames = (
-  items: KyrubErpProductSummary[],
-  formatter: (product: KyrubErpProductSummary) => string = product => product.name
-): string => visibleProducts(items)
-  .map(product => `- ${formatter(product)}`)
-  .join('\n');
-
 const commonCatalogCategory = (
   products: KyrubErpProductSummary[]
 ): string | null => {
@@ -136,8 +128,8 @@ const commonCatalogCategory = (
   for (const category of categories.slice(1)) {
     while (
       prefix.length > 0 &&
-      normalizeIntentText(prefix[prefix.length - 1]) !==
-        normalizeIntentText(category[prefix.length - 1] ?? '')
+      normalizeKyrubiaIntentText(prefix[prefix.length - 1]) !==
+        normalizeKyrubiaIntentText(category[prefix.length - 1] ?? '')
     ) {
       prefix.pop();
     }
@@ -198,45 +190,6 @@ const resolveProductCount = (
   };
 };
 
-const resolveLowStock = (
-  context: KyrubErpContextSnapshot | undefined
-): KyrubiaDeterministicErpResult => {
-  const unavailable = productAvailabilityReply(context);
-  if (unavailable || !context) {
-    return { action: 'list_low_stock_products', reply: unavailable ?? 'Não consegui consultar o estoque.' };
-  }
-
-  const threshold = context.lowStockThreshold;
-  const items = context.products
-    .filter(product => !product.isService && product.stock <= threshold)
-    .sort((left, right) => left.stock - right.stock ||
-      left.name.localeCompare(right.name, 'pt-BR'));
-
-  if (items.length === 0) {
-    const prefix = context.productsTruncated
-      ? 'Entre os itens disponíveis nesta leitura, nenhum produto físico'
-      : 'Nenhum produto físico';
-    return {
-      action: 'list_low_stock_products',
-      reply: `${prefix} está com estoque igual ou abaixo do mínimo de ${threshold} unidades.${productTruncationSuffix(context)}`,
-    };
-  }
-
-  const intro = context.productsTruncated
-    ? `Entre os itens disponíveis nesta leitura, encontrei ${items.length} com estoque baixo (até ${threshold} unidades):`
-    : `Encontrei ${items.length} ${items.length === 1 ? 'produto' : 'produtos'} com estoque baixo (até ${threshold} unidades):`;
-
-  return {
-    action: 'list_low_stock_products',
-    reply: `${intro}\n${formatProductNames(items, product => `${product.name} — ${product.stock} ${product.stock === 1 ? 'unidade' : 'unidades'}`)}${productTruncationSuffix(context)}`,
-    turnContext: createProductTurnContext(
-      'list_low_stock_products',
-      context,
-      visibleProducts(items)
-    ),
-  };
-};
-
 const resolvePendingOrders = (
   context: KyrubErpContextSnapshot | undefined
 ): KyrubiaDeterministicErpResult => {
@@ -256,120 +209,157 @@ const resolvePendingOrders = (
   };
 };
 
-const resolveCatalogList = (
+const compileProductQueryPlan = (
+  message: string,
   context: KyrubErpContextSnapshot | undefined,
-  filter: 'all' | 'missing_description' | 'missing_image'
-): KyrubiaDeterministicErpResult => {
-  const unavailable = productAvailabilityReply(context);
-  if (unavailable || !context) {
-    return { action: 'list_products', reply: unavailable ?? 'Não consegui consultar o catálogo.' };
-  }
-
-  const items = context.products.filter(product => {
-    if (filter === 'missing_description') return !product.hasDescription;
-    if (filter === 'missing_image') return !product.hasImage;
-    return true;
+  turnContext: KyrubiaTurnContext | undefined
+): ProductQueryPlan | null => {
+  const routed = routeKyrubiaLocalProductIntent(message, {
+    lowStockThreshold: context?.lowStockThreshold ?? 5,
+    turnContext,
   });
-
-  if (items.length === 0) {
-    const noun = filter === 'missing_description'
-      ? 'sem descrição'
-      : filter === 'missing_image'
-        ? 'sem imagem'
-        : 'no catálogo';
-    return {
-      action: 'list_products',
-      reply: `Não encontrei itens ${noun} nesta leitura.${productTruncationSuffix(context)}`,
-    };
-  }
-
-  const intro = filter === 'missing_description'
-    ? `Encontrei ${items.length} ${items.length === 1 ? 'item sem descrição' : 'itens sem descrição'}:`
-    : filter === 'missing_image'
-      ? `Encontrei ${items.length} ${items.length === 1 ? 'item sem imagem' : 'itens sem imagem'}:`
-      : `Aqui estão ${items.length} ${items.length === 1 ? 'item do catálogo' : 'itens do catálogo'}:`;
+  if (!routed) return null;
 
   return {
-    action: 'list_products',
-    reply: `${intro}\n${formatProductNames(items, product =>
-      product.category ? `${product.name} — ${product.category}` : product.name
-    )}${items.length > 20 ? '\n- …' : ''}${productTruncationSuffix(context)}`,
-    turnContext: createProductTurnContext(
-      'list_products',
-      context,
-      visibleProducts(items)
-    ),
+    query: createKyrubiaProductQuery({
+      filters: routed.filters,
+      sort: routed.sort,
+      limit: routed.limit,
+      candidateIds: routed.candidateIds,
+    }),
+    action: routed.kind === 'low_stock'
+      ? 'list_low_stock_products'
+      : 'list_products',
+    title: routed.title,
+    saveAsNote: routed.saveAsNote,
+    kind: routed.kind,
   };
 };
 
-const resolveContextualCatalogFilter = (
+const formatPrice = (price: number): string =>
+  price.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
+const formatProductLine = (
+  product: KyrubErpProductSummary,
+  query: KyrubiaProductQuery
+): string => {
+  const details: string[] = [];
+  const mentionsStock = query.filters.some(filter => filter.field === 'stock') ||
+    query.sort?.field === 'stock';
+  const mentionsPrice = query.filters.some(filter => filter.field === 'price') ||
+    query.sort?.field === 'price';
+
+  if (mentionsStock) {
+    details.push(`${product.stock} ${product.stock === 1 ? 'unidade' : 'unidades'}`);
+  }
+  if (mentionsPrice) details.push(formatPrice(product.price));
+  if (!mentionsStock && !mentionsPrice && product.category) details.push(product.category);
+
+  return details.length > 0
+    ? `${product.name} — ${details.join(' · ')}`
+    : product.name;
+};
+
+const queryTruncationSuffix = (
+  context: KyrubErpContextSnapshot,
+  truncated: boolean
+): string => {
+  if (!truncated) return '';
+  return context.productsTruncated
+    ? '\n\nA leitura atual do catálogo está limitada, então podem existir outros itens além dos mostrados aqui.'
+    : '\n\nA consulta encontrou mais itens do que o limite solicitado; mostrei apenas os primeiros resultados.';
+};
+
+const resolveProductQueryPlan = (
   context: KyrubErpContextSnapshot | undefined,
   turnContext: KyrubiaTurnContext | undefined,
-  filter: 'missing_description' | 'missing_image'
-): KyrubiaDeterministicErpResult | null => {
-  if (!turnContext?.entities.length) return null;
-  if (turnContext.entities.some(entity => entity.entityType !== 'product')) return null;
-
+  plan: ProductQueryPlan
+): KyrubiaDeterministicErpResult => {
   const unavailable = productAvailabilityReply(context);
   if (unavailable || !context) {
-    return { action: 'list_products', reply: unavailable ?? 'Não consegui consultar o catálogo.' };
+    return {
+      action: plan.action,
+      reply: unavailable ?? 'Não consegui consultar o catálogo.',
+      queryPlan: plan.query,
+    };
   }
 
   if (
-    turnContext.scope.storeId &&
+    plan.query.candidateIds?.length &&
+    turnContext?.scope.storeId &&
     context.store?.id &&
     turnContext.scope.storeId !== context.store.id
   ) {
     return {
-      action: 'list_products',
+      action: plan.action,
       reply: 'A lista anterior pertence a outro contexto de loja e não pode ser reutilizada aqui.',
+      queryPlan: plan.query,
     };
   }
 
-  const currentById = new Map(context.products.map(product => [product.id, product] as const));
-  const revalidated = turnContext.entities.flatMap(reference => {
-    const product = currentById.get(reference.entityId);
-    return product ? [product] : [];
-  });
-  const items = revalidated.filter(product =>
-    filter === 'missing_image' ? !product.hasImage : !product.hasDescription
-  );
-  const missingReferenceCount = turnContext.entities.length - revalidated.length;
-  const incompleteSuffix = missingReferenceCount > 0
-    ? `\n\n${missingReferenceCount === 1 ? '1 item da lista anterior não pôde' : `${missingReferenceCount} itens da lista anterior não puderam`} ser revalidado nesta leitura.`
+  const result = executeKyrubiaProductQuery(context, plan.query);
+  const missingReferenceSuffix = result.candidateMissingCount > 0
+    ? `\n\n${result.candidateMissingCount === 1 ? '1 item da lista anterior não pôde' : `${result.candidateMissingCount} itens da lista anterior não puderam`} ser revalidado nesta leitura.`
     : '';
-  const label = filter === 'missing_image' ? 'imagem' : 'descrição';
 
-  if (items.length === 0) {
+  if (result.items.length === 0) {
+    let reply = 'Não encontrei produtos que atendam aos filtros desta consulta.';
+    if (plan.kind === 'missing_image') {
+      reply = plan.query.candidateIds?.length
+        ? 'Dos itens daquela lista que consegui revalidar no Kyrub, nenhum está sem imagem neste momento.'
+        : 'Não encontrei itens sem imagem nesta leitura.';
+    } else if (plan.kind === 'missing_description') {
+      reply = plan.query.candidateIds?.length
+        ? 'Dos itens daquela lista que consegui revalidar no Kyrub, nenhum está sem descrição neste momento.'
+        : 'Não encontrei itens sem descrição nesta leitura.';
+    } else if (plan.kind === 'low_stock') {
+      const threshold = plan.query.filters.find(filter => filter.field === 'stock')?.value;
+      reply = `Nenhum produto físico está com estoque igual ou abaixo do mínimo de ${threshold ?? context.lowStockThreshold} unidades.`;
+    } else if (plan.kind === 'catalog') {
+      reply = 'Não encontrei itens no catálogo nesta leitura.';
+    }
+
     return {
-      action: 'list_products',
-      reply: `Dos itens daquela lista que consegui revalidar no Kyrub, nenhum está sem ${label} neste momento.${incompleteSuffix}`,
+      action: plan.action,
+      reply: `${reply}${missingReferenceSuffix}${queryTruncationSuffix(context, result.truncated)}`,
+      queryPlan: plan.query,
     };
   }
 
-  return {
-    action: 'list_products',
-    reply: `Dos itens daquela lista, ${items.length === 1 ? '1 continua' : `${items.length} continuam`} sem ${label}:\n${formatProductNames(items, product =>
-      product.category ? `${product.name} — ${product.category}` : product.name
-    )}${incompleteSuffix}`,
-    turnContext: createProductTurnContext('list_products', context, visibleProducts(items)),
-  };
-};
+  let intro = `Encontrei ${result.totalMatched} ${result.totalMatched === 1 ? 'item' : 'itens'} que atendem à consulta:`;
+  if (plan.kind === 'missing_image') {
+    intro = `Encontrei ${result.totalMatched} ${result.totalMatched === 1 ? 'item sem imagem' : 'itens sem imagem'}:`;
+  } else if (plan.kind === 'missing_description') {
+    intro = `Encontrei ${result.totalMatched} ${result.totalMatched === 1 ? 'item sem descrição' : 'itens sem descrição'}:`;
+  } else if (plan.kind === 'low_stock') {
+    const threshold = plan.query.filters.find(filter => filter.field === 'stock')?.value;
+    intro = `Encontrei ${result.totalMatched} ${result.totalMatched === 1 ? 'produto' : 'produtos'} com estoque baixo (até ${threshold ?? context.lowStockThreshold} unidades):`;
+  } else if (plan.kind === 'catalog') {
+    intro = `Aqui estão ${result.totalMatched} ${result.totalMatched === 1 ? 'item do catálogo' : 'itens do catálogo'}:`;
+  }
 
-const resolveLowStockNote = (
-  context: KyrubErpContextSnapshot | undefined
-): KyrubiaDeterministicErpResult => {
-  const readResult = resolveLowStock(context);
-  if (!context || !context.availability.products) return readResult;
+  const list = result.items
+    .map(product => `- ${formatProductLine(product, plan.query)}`)
+    .join('\n');
+  const baseReply = `${intro}\n${list}${missingReferenceSuffix}${queryTruncationSuffix(context, result.truncated)}`;
+  const reply = plan.saveAsNote
+    ? `${baseReply}\n\nPreparei uma nota com essa leitura. Revise e confirme para salvá-la nas suas notas.`
+    : baseReply;
 
   return {
-    ...readResult,
-    reply: `${readResult.reply}\n\nPreparei uma nota com essa leitura. Revise e confirme para salvá-la nas suas notas.`,
-    noteDraft: {
-      title: 'Produtos com estoque baixo',
-      content: readResult.reply,
-      checklist: [],
-    },
+    action: plan.action,
+    reply,
+    queryPlan: plan.query,
+    turnContext: createProductTurnContext(plan.action, context, result.items),
+    ...(plan.saveAsNote
+      ? {
+          noteDraft: {
+            title: plan.title,
+            content: baseReply,
+            checklist: [],
+          },
+        }
+      : {}),
   };
 };
 
@@ -378,67 +368,14 @@ export const resolveKyrubiaDeterministicErpRead = (
   context?: KyrubErpContextSnapshot,
   turnContext?: KyrubiaTurnContext
 ): KyrubiaDeterministicErpResult | null => {
-  const intent = normalizeIntentText(message);
+  const intent = normalizeKyrubiaIntentText(message);
   if (!intent) return null;
-
-  const asksLowStock =
-    /\b(estoque baixo|estoque minimo|baixo estoque|estoque.*acabando|acabando|pouco estoque)\b/.test(intent);
-
-  const asksLowStockNote =
-    asksLowStock &&
-    asksToSaveAsNote(intent) &&
-    !NEEDS_OPEN_REASONING.test(intent);
-  if (asksLowStockNote) return resolveLowStockNote(context);
-
-  if (NEEDS_REASONING_OR_MUTATION.test(intent)) return null;
+  if (KYRUBIA_OPEN_REASONING.test(intent)) return null;
 
   const asksStoreIdentity =
     /\b(loja|estabelecimento|negocio)\b/.test(intent) &&
     /\b(nome|segmento|ramo|categoria)\b/.test(intent);
   if (asksStoreIdentity) return resolveStoreIdentity(context);
-
-  const missingDescriptionPattern = /\bsem (descricao|descricoes)\b/;
-  const missingImagePattern = /\bsem (imagem|imagens|foto|fotos)\b/;
-  const explicitProductReference = /\b(produto|produtos|item|itens)\b/.test(intent);
-  const contextualFilterQuestion = /\b(quais|qual|estao|esta|continuam|continua|ficaram|ficou)\b/.test(intent);
-
-  const asksMissingDescription =
-    explicitProductReference && missingDescriptionPattern.test(intent);
-  if (asksMissingDescription) {
-    return resolveCatalogList(context, 'missing_description');
-  }
-
-  const asksMissingImage =
-    explicitProductReference && missingImagePattern.test(intent);
-  if (asksMissingImage) {
-    return resolveCatalogList(context, 'missing_image');
-  }
-
-  if (
-    contextualFilterQuestion &&
-    missingDescriptionPattern.test(intent)
-  ) {
-    const contextual = resolveContextualCatalogFilter(
-      context,
-      turnContext,
-      'missing_description'
-    );
-    if (contextual) return contextual;
-  }
-
-  if (
-    contextualFilterQuestion &&
-    missingImagePattern.test(intent)
-  ) {
-    const contextual = resolveContextualCatalogFilter(
-      context,
-      turnContext,
-      'missing_image'
-    );
-    if (contextual) return contextual;
-  }
-
-  if (asksLowStock) return resolveLowStock(context);
 
   const asksPendingOrders =
     /\bpedido|pedidos\b/.test(intent) &&
@@ -447,13 +384,16 @@ export const resolveKyrubiaDeterministicErpRead = (
 
   const asksProductCount =
     /\b(quantos|quantas|quantidade|total)\b/.test(intent) &&
-    /\b(produto|produtos|item|itens)\b/.test(intent);
+    /\b(produto|produtos|item|itens|mercadoria|mercadorias|artigo|artigos)\b/.test(intent);
   if (asksProductCount) return resolveProductCount(context);
 
-  const asksCatalogList =
-    /\b(liste|listar|mostre|mostrar|quais|ver)\b/.test(intent) &&
-    /\b(produto|produtos|item|itens)\b/.test(intent);
-  if (asksCatalogList) return resolveCatalogList(context, 'all');
+  const saveAsNote = kyrubiaAsksToSaveAsNote(intent);
+  if (KYRUBIA_MUTATION_VERBS.test(intent) && !saveAsNote) return null;
+
+  const productPlan = compileProductQueryPlan(message, context, turnContext);
+  if (productPlan) {
+    return resolveProductQueryPlan(context, turnContext, productPlan);
+  }
 
   return null;
 };
