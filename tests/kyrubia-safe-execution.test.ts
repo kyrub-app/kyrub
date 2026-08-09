@@ -237,3 +237,34 @@ test('safe executor pins a Firebase Admin compatible Node runtime', () => {
 
   assert.equal(packageJson.engines?.node, '22.x');
 });
+
+test('Vercel serverless dependency chains use ESM-resolvable relative imports', () => {
+  const executeRoute = readFileSync(
+    new URL('../api/actions/execute.ts', import.meta.url),
+    'utf8'
+  );
+  const executionService = readFileSync(
+    new URL('../server/actions/actionExecutionService.ts', import.meta.url),
+    'utf8'
+  );
+  const policyEngine = readFileSync(
+    new URL('../server/actions/kyrubiaPolicyEngine.ts', import.meta.url),
+    'utf8'
+  );
+  const healthRoute = readFileSync(
+    new URL('../api/admin/operations/health.ts', import.meta.url),
+    'utf8'
+  );
+  const healthService = readFileSync(
+    new URL('../server/admin/operationsHealthRouter.ts', import.meta.url),
+    'utf8'
+  );
+
+  assert.match(executeRoute, /actionExecutionService\.js/);
+  assert.match(executionService, /shared\/kyrubActions\.js/);
+  assert.match(executionService, /firebaseAdmin\.js/);
+  assert.match(executionService, /kyrubiaPolicyEngine\.js/);
+  assert.match(policyEngine, /shared\/kyrubActions\.js/);
+  assert.match(healthRoute, /operationsHealthRouter\.js/);
+  assert.match(healthService, /firebaseAdmin\.js/);
+});
