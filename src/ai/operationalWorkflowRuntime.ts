@@ -19,6 +19,22 @@ import {
   type KyrubiaProductDraft,
 } from './operationalWorkflowStore';
 
+const FREE_PLAN_PRODUCT_LIMIT = 5;
+const REQUESTED_PRODUCT_WORDS: Record<string, number> = {
+  um: 1,
+  uma: 1,
+  dois: 2,
+  duas: 2,
+  tres: 3,
+  quatro: 4,
+  cinco: 5,
+  seis: 6,
+  sete: 7,
+  oito: 8,
+  nove: 9,
+  dez: 10,
+};
+
 const createRequestId = (): string => {
   try {
     return globalThis.crypto.randomUUID();
@@ -63,6 +79,44 @@ const normalized = (value: string): string =>
     .toLocaleLowerCase('pt-BR')
     .replace(/\s+/g, ' ')
     .trim();
+
+const parseRequestedProductCount = (message: string): number => {
+  const intent = normalized(message);
+  const numeric = /\b(\d{1,2})\s+(?:novos?\s+)?(?:produtos?|itens?|servicos?)\b/.exec(intent);
+  if (numeric?.[1]) {
+    return Math.min(50, Math.max(1, Number.parseInt(numeric[1], 10)));
+  }
+
+  const written = /\b(um|uma|dois|duas|tres|quatro|cinco|seis|sete|oito|nove|dez)\s+(?:novos?\s+)?(?:produtos?|itens?|servicos?)\b/.exec(intent);
+  return written?.[1] ? REQUESTED_PRODUCT_WORDS[written[1]] ?? 1 : 1;
+};
+
+const productCapacityPreflight = (
+  context: KyrubErpContextSnapshot | undefined,
+  requestedCount: number
+): KyrubAiConsultantResponse | null => {
+  if (
+    !context ||
+    context.store?.plan !== 'free' ||
+    context.availability.products !== true
+  ) {
+    return null;
+  }
+
+  const currentCount = Math.max(0, Math.trunc(context.productCount));
+  const remaining = Math.max(0, FREE_PLAN_PRODUCT_LIMIT - currentCount);
+  if (requestedCount <= remaining) return null;
+
+  if (remaining === 0) {
+    return response(
+      `Sua loja já está usando os ${FREE_PLAN_PRODUCT_LIMIT} produtos incluídos no plano atual. Como você quer continuar ampliando o catálogo, para cadastrar mais ${requestedCount === 1 ? 'um produto' : `${requestedCount} produtos`} será necessário fazer upgrade para o plano Business. Posso te orientar sobre essa evolução. Nenhum produto foi criado agora.`
+    );
+  }
+
+  return response(
+    `Sua loja está usando ${currentCount} dos ${FREE_PLAN_PRODUCT_LIMIT} produtos incluídos no plano atual. Você pediu ${requestedCount} novos produtos, mas há espaço para apenas ${remaining}. Para cadastrar todos, será necessário fazer upgrade para o plano Business. Prefere usar ${remaining === 1 ? 'a última vaga' : `as ${remaining} vagas restantes`} agora ou conversar sobre o upgrade? Nenhum produto foi criado ainda.`
+  );
+};
 
 const localizedNumber = (value: string | undefined): number | undefined => {
   if (!value) return undefined;
@@ -454,6 +508,19 @@ export const resolveKyrubiaOperationalWorkflow = async (
 
   if (!productDraft) {
     return response('Sua loja já está ativada. Posso ajudar a completar ou alterar o perfil quando você quiser.');
+  }
+
+  const requestedProductCount = parseRequestedProductCount(input.message);
+  const capacityResponse = productCapacityPreflight(
+    input.erpContext,
+    requestedProductCount
+  );
+  if (capacityResponse) return capacityResponse;
+
+  if (requestedProductCount > 1) {
+    return response(
+      `Consigo cadastrar os produtos com revisão individual antes de cada gravação. Vamos começar pelo primeiro dos ${requestedProductCount}: qual será o nome dele?`
+    );
   }
 
   const workflow: KyrubiaOperationalWorkflow = {
