@@ -8,11 +8,17 @@ import type {
   KyrubiaTurnContext,
 } from './kyrubiaContext';
 import {
+  KYRUBIA_MUTATION_VERBS,
+  KYRUBIA_OPEN_REASONING,
+  kyrubiaAsksToSaveAsNote,
+  normalizeKyrubiaIntentText,
+  routeKyrubiaLocalProductIntent,
+  type KyrubiaLocalProductIntentKind,
+} from './kyrubiaIntentRouter';
+import {
   createKyrubiaProductQuery,
   executeKyrubiaProductQuery,
   type KyrubiaProductQuery,
-  type KyrubiaProductQueryFilter,
-  type KyrubiaProductQuerySort,
 } from './kyrubiaQueryLanguage';
 
 export type KyrubiaDeterministicNoteDraft = {
@@ -34,28 +40,11 @@ type ProductQueryPlan = {
   action: Extract<KyrubReadActionType, 'list_products' | 'list_low_stock_products'>;
   title: string;
   saveAsNote: boolean;
-  kind: 'catalog' | 'missing_image' | 'missing_description' | 'low_stock' | 'filtered';
+  kind: KyrubiaLocalProductIntentKind;
 };
-
-const normalizeIntentText = (value: string): string =>
-  value
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLocaleLowerCase('pt-BR')
-    .replace(/\s+/g, ' ')
-    .trim();
-
-const NEEDS_OPEN_REASONING =
-  /\b(analise|analisar|priorize|priorizar|recomende|recomendar|sugira|sugerir|compare|comparar|explique|explicar|estrategia|estrategias|oportunidade|oportunidades)\b|\bpor que\b/;
 
 // Compatibility contract markers during the query-language migration:
 // NEEDS_REASONING_OR_MUTATION, resolveLowStockNote, resolveContextualCatalogFilter.
-const UNSUPPORTED_MUTATION =
-  /\b(crie|criar|adicione|adicionar|salve|salvar|guarde|guardar|registre|registrar|altere|alterar|mude|mudar|atualize|atualizar|exclua|excluir|apague|apagar|publique|publicar|desconte|aplique|aplicar)\b/;
-
-const asksToSaveAsNote = (intent: string): boolean =>
-  /\b(nota|notas)\b/.test(intent) &&
-  /\b(salve|salvar|guarde|guardar|registre|registrar|crie|criar|adicione|adicionar)\b/.test(intent);
 
 const createTurnId = (): string => {
   try {
@@ -139,8 +128,8 @@ const commonCatalogCategory = (
   for (const category of categories.slice(1)) {
     while (
       prefix.length > 0 &&
-      normalizeIntentText(prefix[prefix.length - 1]) !==
-        normalizeIntentText(category[prefix.length - 1] ?? '')
+      normalizeKyrubiaIntentText(prefix[prefix.length - 1]) !==
+        normalizeKyrubiaIntentText(category[prefix.length - 1] ?? '')
     ) {
       prefix.pop();
     }
@@ -220,177 +209,30 @@ const resolvePendingOrders = (
   };
 };
 
-const parseNumber = (value: string | undefined): number | null => {
-  if (!value) return null;
-  const parsed = Number(value.replace(',', '.'));
-  return Number.isFinite(parsed) ? parsed : null;
-};
-
-const extractLimit = (intent: string): number => {
-  const patterns = [
-    /\btop\s+(\d{1,2})\b/,
-    /\b(\d{1,2})\s+(?:primeiros|primeiras)\b/,
-    /\b(?:primeiros|primeiras)\s+(\d{1,2})\b/,
-    /\b(?:os|as)\s+(\d{1,2})\s+(?:produtos|produto|itens|item)\b/,
-    /\b(?:liste|mostre)\s+(?:os|as)?\s*(\d{1,2})\b/,
-  ];
-  for (const pattern of patterns) {
-    const value = parseNumber(pattern.exec(intent)?.[1]);
-    if (value !== null) return Math.min(50, Math.max(1, Math.trunc(value)));
-  }
-  return 20;
-};
-
-const extractStockFilter = (
-  intent: string
-): KyrubiaProductQueryFilter | null => {
-  const patterns: Array<[RegExp, KyrubiaProductQueryFilter['operator']]> = [
-    [/\bestoque(?:\s+de)?\s+(?:ate|no maximo|menor ou igual a)\s+(\d+(?:[.,]\d+)?)\b/, 'lte'],
-    [/\bestoque(?:\s+de)?\s+(?:abaixo de|menor que)\s+(\d+(?:[.,]\d+)?)\b/, 'lt'],
-    [/\bestoque(?:\s+de)?\s+(?:pelo menos|a partir de|maior ou igual a)\s+(\d+(?:[.,]\d+)?)\b/, 'gte'],
-    [/\bestoque(?:\s+de)?\s+(?:acima de|maior que)\s+(\d+(?:[.,]\d+)?)\b/, 'gt'],
-  ];
-
-  for (const [pattern, operator] of patterns) {
-    const value = parseNumber(pattern.exec(intent)?.[1]);
-    if (value !== null) return { field: 'stock', operator, value };
-  }
-  return null;
-};
-
-const extractPriceFilter = (
-  intent: string
-): KyrubiaProductQueryFilter | null => {
-  const patterns: Array<[RegExp, KyrubiaProductQueryFilter['operator']]> = [
-    [/\b(?:preco|valor)(?:\s+de)?\s+(?:ate|no maximo|menor ou igual a)\s+(?:r\$\s*)?(\d+(?:[.,]\d+)?)\b/, 'lte'],
-    [/\b(?:preco|valor)(?:\s+de)?\s+(?:abaixo de|menor que)\s+(?:r\$\s*)?(\d+(?:[.,]\d+)?)\b/, 'lt'],
-    [/\b(?:preco|valor)(?:\s+de)?\s+(?:pelo menos|a partir de|maior ou igual a)\s+(?:r\$\s*)?(\d+(?:[.,]\d+)?)\b/, 'gte'],
-    [/\b(?:preco|valor)(?:\s+de)?\s+(?:acima de|maior que)\s+(?:r\$\s*)?(\d+(?:[.,]\d+)?)\b/, 'gt'],
-  ];
-
-  for (const [pattern, operator] of patterns) {
-    const value = parseNumber(pattern.exec(intent)?.[1]);
-    if (value !== null) return { field: 'price', operator, value };
-  }
-  return null;
-};
-
-const extractSort = (intent: string): KyrubiaProductQuerySort | undefined => {
-  if (/\b(mais caros|maior preco|precos mais altos)\b/.test(intent)) {
-    return { field: 'price', direction: 'desc' };
-  }
-  if (/\b(mais baratos|menor preco|precos mais baixos)\b/.test(intent)) {
-    return { field: 'price', direction: 'asc' };
-  }
-  if (/\b(menor estoque|estoque mais baixo|estoques mais baixos|mais criticos)\b/.test(intent)) {
-    return { field: 'stock', direction: 'asc' };
-  }
-  if (/\b(maior estoque|estoque mais alto|estoques mais altos)\b/.test(intent)) {
-    return { field: 'stock', direction: 'desc' };
-  }
-  if (/\b(ordem alfabetica|alfabetica|alfabetico)\b/.test(intent)) {
-    return { field: 'name', direction: 'asc' };
-  }
-  return undefined;
-};
-
 const compileProductQueryPlan = (
-  intent: string,
+  message: string,
   context: KyrubErpContextSnapshot | undefined,
   turnContext: KyrubiaTurnContext | undefined
 ): ProductQueryPlan | null => {
-  const missingDescriptionPattern = /\bsem (descricao|descricoes)\b/;
-  const missingImagePattern = /\bsem (imagem|imagens|foto|fotos)\b/;
-  const lowStockPattern =
-    /\b(estoque baixo|estoque minimo|baixo estoque|estoque.*acabando|acabando|pouco estoque)\b/;
-  const explicitProductReference = /\b(produto|produtos|item|itens|catalogo)\b/.test(intent);
-  const listVerb = /\b(liste|listar|mostre|mostrar|quais|qual|ver|encontre|encontrar)\b/.test(intent);
-  const saveAsNote = asksToSaveAsNote(intent);
-  const contextualQuestion = /\b(quais|qual|estao|esta|continuam|continua|ficaram|ficou)\b/.test(intent);
-  const hasMissingDescription = missingDescriptionPattern.test(intent);
-  const hasMissingImage = missingImagePattern.test(intent);
-  const hasLowStock = lowStockPattern.test(intent);
-  const stockFilter = extractStockFilter(intent);
-  const priceFilter = extractPriceFilter(intent);
-  const sort: KyrubiaProductQuerySort | undefined =
-    extractSort(intent) ??
-    (hasLowStock ? { field: 'stock', direction: 'asc' } : undefined);
-
-  const contextualCandidates =
-    !explicitProductReference &&
-    contextualQuestion &&
-    (hasMissingDescription || hasMissingImage || stockFilter !== null || priceFilter !== null) &&
-    turnContext?.entities.length &&
-    turnContext.entities.every(entity => entity.entityType === 'product')
-      ? turnContext.entities.map(entity => entity.entityId)
-      : undefined;
-
-  const hasProductSignal =
-    explicitProductReference ||
-    Boolean(contextualCandidates?.length) ||
-    hasMissingDescription ||
-    hasMissingImage ||
-    hasLowStock ||
-    stockFilter !== null ||
-    priceFilter !== null;
-
-  if (!hasProductSignal) return null;
-  if (!listVerb && !saveAsNote && !hasMissingDescription && !hasMissingImage && !hasLowStock && !stockFilter && !priceFilter && !sort) {
-    return null;
-  }
-
-  const filters: KyrubiaProductQueryFilter[] = [];
-  if (hasMissingImage) filters.push({ field: 'hasImage', operator: 'eq', value: false });
-  if (hasMissingDescription) {
-    filters.push({ field: 'hasDescription', operator: 'eq', value: false });
-  }
-  if (stockFilter) {
-    filters.push(stockFilter);
-  } else if (hasLowStock) {
-    filters.push({ field: 'isService', operator: 'eq', value: false });
-    filters.push({
-      field: 'stock',
-      operator: 'lte',
-      value: context?.lowStockThreshold ?? 5,
-    });
-  }
-  if (priceFilter) filters.push(priceFilter);
-  if (/\b(produtos fisicos|produto fisico|itens fisicos|item fisico)\b/.test(intent)) {
-    filters.push({ field: 'isService', operator: 'eq', value: false });
-  }
-  if (/\b(servico|servicos)\b/.test(intent) && !/\bproduto|produtos\b/.test(intent)) {
-    filters.push({ field: 'isService', operator: 'eq', value: true });
-  }
-
-  let kind: ProductQueryPlan['kind'] = 'filtered';
-  let title = 'Consulta de produtos';
-  let action: ProductQueryPlan['action'] = 'list_products';
-  if (hasLowStock && !hasMissingImage && !hasMissingDescription && !priceFilter) {
-    kind = 'low_stock';
-    title = 'Produtos com estoque baixo';
-    action = 'list_low_stock_products';
-  } else if (hasMissingImage && !hasMissingDescription && !hasLowStock && !stockFilter && !priceFilter) {
-    kind = 'missing_image';
-    title = 'Produtos sem imagem';
-  } else if (hasMissingDescription && !hasMissingImage && !hasLowStock && !stockFilter && !priceFilter) {
-    kind = 'missing_description';
-    title = 'Produtos sem descrição';
-  } else if (filters.length === 0 && !sort) {
-    kind = 'catalog';
-    title = 'Produtos do catálogo';
-  }
+  const routed = routeKyrubiaLocalProductIntent(message, {
+    lowStockThreshold: context?.lowStockThreshold ?? 5,
+    turnContext,
+  });
+  if (!routed) return null;
 
   return {
     query: createKyrubiaProductQuery({
-      filters,
-      sort,
-      limit: extractLimit(intent),
-      candidateIds: contextualCandidates,
+      filters: routed.filters,
+      sort: routed.sort,
+      limit: routed.limit,
+      candidateIds: routed.candidateIds,
     }),
-    action,
-    title,
-    saveAsNote,
-    kind,
+    action: routed.kind === 'low_stock'
+      ? 'list_low_stock_products'
+      : 'list_products',
+    title: routed.title,
+    saveAsNote: routed.saveAsNote,
+    kind: routed.kind,
   };
 };
 
@@ -526,9 +368,9 @@ export const resolveKyrubiaDeterministicErpRead = (
   context?: KyrubErpContextSnapshot,
   turnContext?: KyrubiaTurnContext
 ): KyrubiaDeterministicErpResult | null => {
-  const intent = normalizeIntentText(message);
+  const intent = normalizeKyrubiaIntentText(message);
   if (!intent) return null;
-  if (NEEDS_OPEN_REASONING.test(intent)) return null;
+  if (KYRUBIA_OPEN_REASONING.test(intent)) return null;
 
   const asksStoreIdentity =
     /\b(loja|estabelecimento|negocio)\b/.test(intent) &&
@@ -542,13 +384,13 @@ export const resolveKyrubiaDeterministicErpRead = (
 
   const asksProductCount =
     /\b(quantos|quantas|quantidade|total)\b/.test(intent) &&
-    /\b(produto|produtos|item|itens)\b/.test(intent);
+    /\b(produto|produtos|item|itens|mercadoria|mercadorias|artigo|artigos)\b/.test(intent);
   if (asksProductCount) return resolveProductCount(context);
 
-  const saveAsNote = asksToSaveAsNote(intent);
-  if (UNSUPPORTED_MUTATION.test(intent) && !saveAsNote) return null;
+  const saveAsNote = kyrubiaAsksToSaveAsNote(intent);
+  if (KYRUBIA_MUTATION_VERBS.test(intent) && !saveAsNote) return null;
 
-  const productPlan = compileProductQueryPlan(intent, context, turnContext);
+  const productPlan = compileProductQueryPlan(message, context, turnContext);
   if (productPlan) {
     return resolveProductQueryPlan(context, turnContext, productPlan);
   }
