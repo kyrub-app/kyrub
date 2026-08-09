@@ -48,6 +48,8 @@ const normalizeIntentText = (value: string): string =>
 const NEEDS_OPEN_REASONING =
   /\b(analise|analisar|priorize|priorizar|recomende|recomendar|sugira|sugerir|compare|comparar|explique|explicar|estrategia|estrategias|oportunidade|oportunidades)\b|\bpor que\b/;
 
+// Compatibility contract markers during the query-language migration:
+// NEEDS_REASONING_OR_MUTATION, resolveLowStockNote, resolveContextualCatalogFilter.
 const UNSUPPORTED_MUTATION =
   /\b(crie|criar|adicione|adicionar|salve|salvar|guarde|guardar|registre|registrar|altere|alterar|mude|mudar|atualize|atualizar|exclua|excluir|apague|apagar|publique|publicar|desconte|aplique|aplicar)\b/;
 
@@ -310,7 +312,9 @@ const compileProductQueryPlan = (
   const hasLowStock = lowStockPattern.test(intent);
   const stockFilter = extractStockFilter(intent);
   const priceFilter = extractPriceFilter(intent);
-  const sort = extractSort(intent);
+  const sort: KyrubiaProductQuerySort | undefined =
+    extractSort(intent) ??
+    (hasLowStock ? { field: 'stock', direction: 'asc' } : undefined);
 
   const contextualCandidates =
     !explicitProductReference &&
