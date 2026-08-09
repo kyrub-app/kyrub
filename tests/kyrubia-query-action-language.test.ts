@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import kyrubiaHandler from '../api/kyrubia';
 import type { KyrubErpContextSnapshot } from '../shared/kyrubErpContext';
 import { resolveKyrubiaDeterministicErpRead } from '../shared/kyrubiaDeterministicErp';
+import { routeKyrubiaLocalProductIntent } from '../shared/kyrubiaIntentRouter';
 import {
   createKyrubiaProductQuery,
   executeKyrubiaProductQuery,
@@ -131,7 +133,43 @@ test('missing-image note composition is deterministic and does not require Gemin
   ), true);
 });
 
-test('one deterministic compiler combines filters, ordering and limit', () => {
+test('local intent router composes paraphrases from domain concepts instead of exact commands', () => {
+  const routed = routeKyrubiaLocalProductIntent(
+    'Dos produtos sem foto, registra numa nota os três de maior valor que possuem no máximo dez unidades.'
+  );
+
+  assert.ok(routed);
+  assert.equal(routed.saveAsNote, true);
+  assert.equal(routed.limit, 3);
+  assert.deepEqual(routed.sort, { field: 'price', direction: 'desc' });
+  assert.equal(routed.filters.some(filter =>
+    filter.field === 'hasImage' && filter.operator === 'eq' && filter.value === false
+  ), true);
+  assert.equal(routed.filters.some(filter =>
+    filter.field === 'stock' && filter.operator === 'lte' && filter.value === 10
+  ), true);
+  assert.ok(routed.matchedConcepts.includes('compose:create_note'));
+});
+
+test('local intent router keeps boolean operators attached to the correct field', () => {
+  const result = resolveKyrubiaDeterministicErpRead(
+    'Mostra os produtos sem descrição e com imagem.',
+    erpSnapshot()
+  );
+
+  assert.deepEqual(
+    result?.turnContext?.entities.map(entity => entity.entityId),
+    ['p3']
+  );
+  assert.equal(result?.queryPlan?.filters.some(filter =>
+    filter.field === 'hasDescription' && filter.value === false
+  ), true);
+  assert.equal(result?.queryPlan?.filters.some(filter =>
+    filter.field === 'hasImage' && filter.value === true
+  ), true);
+});
+
+test('one local intent router combines filters, ordering and limit', () => {
   const result = resolveKyrubiaDeterministicErpRead(
     'Liste os 2 produtos físicos mais caros sem imagem com estoque de até 10.',
     erpSnapshot()
@@ -151,6 +189,25 @@ test('one deterministic compiler combines filters, ordering and limit', () => {
   ), true);
 });
 
+test('local intent router scopes contextual filters to previously shown product IDs', () => {
+  const first = resolveKyrubiaDeterministicErpRead(
+    'Liste os produtos sem imagem.',
+    erpSnapshot()
+  );
+  assert.ok(first?.turnContext);
+
+  const second = resolveKyrubiaDeterministicErpRead(
+    'Desses, quais continuam sem imagem?',
+    erpSnapshot(),
+    first.turnContext
+  );
+
+  assert.deepEqual(
+    second?.queryPlan?.candidateIds,
+    first.turnContext.entities.map(entity => entity.entityId)
+  );
+});
+
 test('low stock continues to use the same generic executor while preserving compatibility', () => {
   const result = resolveKyrubiaDeterministicErpRead(
     'Liste os produtos com estoque baixo e salve isso em uma nota.',
@@ -168,13 +225,29 @@ test('low stock continues to use the same generic executor while preserving comp
   ), true);
 });
 
-test('open reasoning still stays outside the deterministic query compiler', () => {
+test('open reasoning still stays outside the local intent router', () => {
   const result = resolveKyrubiaDeterministicErpRead(
     'Analise meus produtos sem imagem e recomende quais devo priorizar.',
     erpSnapshot()
   );
 
   assert.equal(result, null);
+});
+
+test('quota-first contract keeps local routing before consultant network calls', async () => {
+  const [clientSource, routerSource] = await Promise.all([
+    readFile(new URL('../src/ai/consultantClient.ts', import.meta.url), 'utf8'),
+    readFile(new URL('../shared/kyrubiaIntentRouter.ts', import.meta.url), 'utf8'),
+  ]);
+
+  const deterministicIndex = clientSource.indexOf('const deterministic =');
+  const deterministicReturnIndex = clientSource.indexOf('if (deterministic)', deterministicIndex);
+  const networkIndex = clientSource.indexOf('for (const [index, endpoint]');
+
+  assert.ok(deterministicIndex >= 0);
+  assert.ok(deterministicReturnIndex > deterministicIndex);
+  assert.ok(networkIndex > deterministicReturnIndex);
+  assert.doesNotMatch(routerSource, /generativelanguage|GEMINI_API_KEY|fetch\(/);
 });
 
 test('generative ERP reasoning uses one generic query_products tool and Kyrub executes the plan', async () => {
