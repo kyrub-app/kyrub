@@ -1,6 +1,6 @@
 import { applicationDefault, cert, getApps, initializeApp } from 'firebase-admin/app';
-import { getAuth } from 'firebase-admin/auth';
-import { getFirestore } from 'firebase-admin/firestore';
+import { getAuth, type Auth } from 'firebase-admin/auth';
+import { getFirestore, type Firestore } from 'firebase-admin/firestore';
 
 const parseServiceAccount = (): Record<string, string> | null => {
   const serialized = process.env.FIREBASE_SERVICE_ACCOUNT_JSON?.trim();
@@ -25,7 +25,7 @@ const parseServiceAccount = (): Record<string, string> | null => {
     };
   } catch (error) {
     throw new Error(
-      `FIREBASE_SERVICE_ACCOUNT_JSON is invalid: ${
+      `Could not load Firebase Admin credentials: ${
         error instanceof Error ? error.message : String(error)
       }`
     );
@@ -50,6 +50,18 @@ const getAdminApp = () => {
   });
 };
 
-export const adminApp = getAdminApp();
-export const adminAuth = getAuth(adminApp);
-export const adminDb = getFirestore(adminApp);
+const lazyService = <T extends object>(resolve: () => T): T =>
+  new Proxy({} as T, {
+    get(_target, property) {
+      const service = resolve();
+      const value = Reflect.get(service, property, service) as unknown;
+      return typeof value === 'function'
+        ? value.bind(service)
+        : value;
+    },
+  });
+
+// Keep module imports side-effect free: serverless configuration errors must be
+// caught by the action route rather than crashing before its error envelope runs.
+export const adminAuth = lazyService<Auth>(() => getAuth(getAdminApp()));
+export const adminDb = lazyService<Firestore>(() => getFirestore(getAdminApp()));
