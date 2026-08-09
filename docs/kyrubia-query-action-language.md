@@ -4,7 +4,7 @@
 
 A Kyrubia não pode crescer como uma coleção de caminhos específicos por frase, como `list_products_without_images`, `list_products_without_description`, `list_expensive_products` e assim por diante.
 
-O vocabulário humano é aberto; o domínio do Kyrub, porém, possui um conjunto finito de entidades, campos e operações. A arquitetura deve concentrar a determinismo no domínio, não em frases literais.
+O vocabulário humano é aberto; o domínio do Kyrub, porém, possui um conjunto finito de entidades, campos e operações. A arquitetura deve concentrar o determinismo no domínio, não em frases literais.
 
 ## Princípio
 
@@ -79,24 +79,30 @@ reutilizam o mesmo executor de consulta.
 
 Os nomes históricos `list_products` e `list_low_stock_products` permanecem temporariamente como aliases de capability/telemetria para evitar regressões durante a migração.
 
-Eles não precisam manter implementações separadas: o objetivo é que ambos sejam produzidos a partir do mesmo plano e executados pelo mesmo mecanismo.
+Eles não precisam manter implementações separadas: a nova Query Language concentra a execução genérica, enquanto os aliases preservam contratos existentes até uma migração posterior.
 
-## Deterministic fallback
+## Fallback determinístico
 
 A Kyrubia mantém um compilador local pequeno para construções operacionais comuns. Ele existe para resiliência quando o provedor generativo está indisponível ou em quota, não para tentar reproduzir toda a linguagem natural com regex.
 
 O compilador local reconhece operadores do domínio e produz a mesma estrutura utilizada pelo executor. Novas combinações de filtros não exigem novos executores.
 
+Por exemplo, `Crie uma nota com os produtos da minha loja que estão sem imagem` é resolvido localmente como uma consulta `hasImage = false` seguida pela composição `create_note`; não depende do Gemini para descobrir um caminho específico chamado “sem imagem”.
+
 ## Caminho generativo
 
-A próxima integração desta mesma fundação é expor uma primitiva genérica `query_products` ao modelo. O modelo poderá traduzir linguagem mais aberta para a estrutura permitida, mas não executará consultas diretamente e não poderá inventar campos ou operadores fora do schema.
+A mesma fundação expõe ao modelo uma única primitiva interna `query_products`. Ela aceita somente argumentos limitados pelo schema do Kyrub, como filtros de imagem, descrição, tipo, preço e estoque, além de ordenação e limite.
+
+O modelo pode traduzir linguagem mais aberta para esses argumentos, mas não consulta o catálogo diretamente, não inventa campos e não executa filtros arbitrários. O servidor normaliza os argumentos, cria `KyrubiaProductQuery` e usa o mesmo executor determinístico da Query Language.
 
 ```text
 usuário
   ↓
 interpretação (LLM ou fallback local)
   ↓
-KyrubiaProductQuery
+query_products / KyrubiaProductQuery
+  ↓
+normalização e validação pelo Kyrub
   ↓
 executor determinístico sobre dados atuais do Kyrub
   ↓
@@ -106,6 +112,15 @@ resposta ou composição com ação
 ```
 
 Mesmo no caminho generativo, a verdade operacional continua vindo do Kyrub.
+
+Não existe necessidade de ferramentas como:
+
+- `list_products_without_images`;
+- `list_products_without_description`;
+- `list_expensive_products`;
+- `list_low_stock_products_without_images`.
+
+Essas variações são combinações de filtros do mesmo plano.
 
 ## Relação com a Safe Execution Foundation
 
