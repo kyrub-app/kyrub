@@ -216,3 +216,16 @@ test('Kyrubia note client no longer writes Firestore directly', () => {
   assert.doesNotMatch(source, /runTransaction\s*\(/);
   assert.doesNotMatch(source, /transaction\.set\s*\(/);
 });
+
+test('Firebase Admin bootstrap stays lazy so serverless config failures reach the safe error envelope', () => {
+  const source = readFileSync(
+    new URL('../server/firebaseAdmin.ts', import.meta.url),
+    'utf8'
+  );
+
+  assert.match(source, /lazyService/);
+  assert.match(source, /export const adminAuth = lazyService<Auth>/);
+  assert.match(source, /export const adminDb = lazyService<Firestore>/);
+  assert.doesNotMatch(source, /export const adminApp = getAdminApp\(\)/);
+  assert.match(source, /Could not load Firebase Admin credentials/);
+});
