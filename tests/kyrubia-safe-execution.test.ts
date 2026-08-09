@@ -1,6 +1,12 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import type { KyrubAiCreateNoteProposal } from '../shared/kyrubActions';
+import {
+  buildKyrubExecutionEnvelope,
+  hashKyrubActionProposal,
+  normalizeCreateNoteExecutionProposal,
+} from '../server/actions/actionExecutionService';
 import { evaluateKyrubActionPolicy } from '../server/actions/kyrubiaPolicyEngine';
 
 const noteProposal = (
@@ -113,4 +119,78 @@ test('safe execution policy remains deterministic and model-free', () => {
   });
 
   assert.deepEqual(first, second);
+});
+
+test('server normalization owns the blast radius for create_note', () => {
+  const normalized = normalizeCreateNoteExecutionProposal({
+    ...noteProposal(),
+    impact: {
+      entityCount: 999,
+      reversibility: 'hard',
+      financialExposureMinor: 999_999,
+      financialCurrency: 'BRL',
+    },
+  });
+
+  assert.deepEqual(normalized.impact, {
+    entityCount: 1,
+    reversibility: 'easy',
+  });
+});
+
+test('missing provenance is conservative and cannot become write authority', () => {
+  const raw = noteProposal();
+  delete (raw as Partial<KyrubAiCreateNoteProposal>).inputProvenance;
+  const normalized = normalizeCreateNoteExecutionProposal(raw);
+  const decision = evaluateKyrubActionPolicy(normalized, {
+    ...baseContext,
+    confirmed: true,
+  });
+
+  assert.equal(normalized.inputProvenance, 'ai_generated_content');
+  assert.equal(decision.outcome, 'deny');
+  assert.ok(decision.reasons.includes('WRITE_REQUIRES_USER_INTENT'));
+});
+
+test('execution envelope is bound to the exact normalized proposal hash', () => {
+  const proposal = noteProposal({ idempotencyKey: 'idem-1' });
+  const decision = evaluateKyrubActionPolicy(proposal, {
+    ...baseContext,
+    confirmed: true,
+  });
+  const now = new Date('2026-08-08T22:05:00.000Z');
+  const envelope = buildKyrubExecutionEnvelope(
+    proposal,
+    'user-1',
+    'idem-1',
+    decision,
+    now
+  );
+
+  assert.equal(envelope.proposalHash, hashKyrubActionProposal(proposal, 'idem-1'));
+  assert.equal(envelope.actorUid, 'user-1');
+  assert.equal(envelope.policyDecisionId, decision.id);
+  assert.equal(envelope.authorizationMode, 'human_confirmation');
+  assert.equal(envelope.authorizedAt, now.toISOString());
+
+  const changed = noteProposal({
+    content: 'Conteúdo alterado depois da autorização.',
+    idempotencyKey: 'idem-1',
+  });
+  assert.notEqual(
+    envelope.proposalHash,
+    hashKyrubActionProposal(changed, 'idem-1')
+  );
+});
+
+test('Kyrubia note client no longer writes Firestore directly', () => {
+  const source = readFileSync(
+    new URL('../src/actions/noteActionService.ts', import.meta.url),
+    'utf8'
+  );
+
+  assert.match(source, /\/api\/actions\/execute/);
+  assert.doesNotMatch(source, /firebase\/firestore/);
+  assert.doesNotMatch(source, /runTransaction\s*\(/);
+  assert.doesNotMatch(source, /transaction\.set\s*\(/);
 });
