@@ -35,7 +35,7 @@ const prepareProposalForConfirmation = (
   ...proposal,
   origin: proposal.origin ?? 'kyrubia',
   risk: 'low',
-  inputProvenance: proposal.inputProvenance ?? 'user_intent',
+  inputProvenance: proposal.inputProvenance ?? 'ai_generated_content',
   impact: {
     entityCount: 1,
     reversibility: 'easy',
