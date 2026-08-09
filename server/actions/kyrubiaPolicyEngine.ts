@@ -18,9 +18,11 @@ export type KyrubPolicyEvaluationContext = {
 const hasPermission = (
   permissions: KyrubPolicyEvaluationContext['permissions'],
   permission: string
-): boolean => Array.isArray(permissions)
-  ? permissions.includes(permission)
-  : permissions.has(permission);
+): boolean => {
+  const setLike = permissions as ReadonlySet<string>;
+  if (typeof setLike.has === 'function') return setLike.has(permission);
+  return (permissions as readonly string[]).includes(permission);
+};
 
 const normalizedImpact = (
   proposal: KyrubActionProposal
