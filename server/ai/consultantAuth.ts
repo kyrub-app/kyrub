@@ -1,6 +1,6 @@
 import { verify as verifySignature } from 'node:crypto';
-import type { AuthenticatedConsultantUser } from './types';
-import { ConsultantHttpError } from './types';
+import type { AuthenticatedConsultantUser } from './types.js';
+import { ConsultantHttpError } from './types.js';
 
 const FIREBASE_CERTIFICATES_URL =
   'https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com';
