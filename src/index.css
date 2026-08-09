@@ -79,3 +79,41 @@ body {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* On phones, keep the active Kyrubia chat inside its own viewport-sized frame. */
+@media (max-width: 640px) {
+  #kyrub-ai-workspace > section {
+    height: 70dvh;
+    min-height: 0;
+    max-height: 70dvh;
+  }
+
+  #kyrub-ai-workspace > section > header {
+    flex-shrink: 0;
+    gap: 0.5rem;
+    padding: 0.5rem 0.75rem;
+  }
+
+  #kyrub-ai-workspace > section > header > button {
+    width: 2.25rem;
+    height: 2.25rem;
+  }
+
+  #kyrub-ai-workspace > section > header > div > span {
+    display: none;
+  }
+
+  #kyrub-ai-workspace > section > header > div > h2 {
+    font-size: 0.875rem;
+    line-height: 1.25rem;
+  }
+
+  #kyrub-ai-workspace > section > div.flex-1 {
+    min-height: 0;
+    overscroll-behavior: contain;
+  }
+
+  #kyrub-ai-workspace > section > form {
+    flex-shrink: 0;
+  }
+}
