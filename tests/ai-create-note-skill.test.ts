@@ -181,7 +181,7 @@ test('confirmed create-note crosses the authenticated safe executor instead of D
   assert.match(policyEngineSource, /BLAST_RADIUS_EXCEEDED/);
   assert.match(
     actionExecutionRouteSource,
-    /from '\.\.\/\.\.\/server\/actions\/actionExecutionService'/
+    /from '\.\.\/\.\.\/server\/actions\/actionExecutionService\.js'/
   );
   assert.doesNotMatch(actionExecutionRouteSource, /await import\(/);
   assert.doesNotMatch(actionExecutionRouteSource, /EXECUTOR_BOOT_FAILED/);
