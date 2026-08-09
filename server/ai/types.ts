@@ -8,6 +8,7 @@ export type AuthenticatedConsultantUser = {
   uid: string;
   name: string;
   email: string;
+  emailVerified?: boolean;
 };
 
 export type ConsultantGenerationInput = {
