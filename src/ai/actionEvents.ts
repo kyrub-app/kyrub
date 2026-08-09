@@ -68,7 +68,7 @@ const prepareProposalForConfirmation = (
   ...proposal,
   origin: proposal.origin ?? 'kyrubia',
   risk: proposal.risk ?? KYRUB_ACTION_REGISTRY[proposal.type].risk,
-  inputProvenance: proposal.inputProvenance ?? 'user_intent',
+  inputProvenance: proposal.inputProvenance ?? 'ai_generated_content',
   impact: proposal.impact ?? {
     entityCount: 1,
     reversibility: proposal.type === 'create_product' ? 'limited' : 'easy',
