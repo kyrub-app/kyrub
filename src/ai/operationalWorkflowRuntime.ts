@@ -109,12 +109,12 @@ const productCapacityPreflight = (
 
   if (remaining === 0) {
     return response(
-      `Sua loja já está usando os ${FREE_PLAN_PRODUCT_LIMIT} produtos incluídos no plano atual. Como você quer continuar ampliando o catálogo, para cadastrar mais ${requestedCount === 1 ? 'um produto' : `${requestedCount} produtos`} será necessário fazer upgrade para o plano Business. Posso te orientar sobre essa evolução. Nenhum produto foi criado agora.`
+      `Sua loja já está usando os ${FREE_PLAN_PRODUCT_LIMIT} produtos incluídos no plano atual. Você quer continuar ampliando o catálogo, mas o plano chegou ao limite. Para cadastrar mais ${requestedCount === 1 ? 'um produto' : `${requestedCount} produtos`}, será necessário fazer upgrade para o plano Business. Quer que eu te ajude a evoluir o plano? Nenhum produto foi criado agora.`
     );
   }
 
   return response(
-    `Sua loja está usando ${currentCount} dos ${FREE_PLAN_PRODUCT_LIMIT} produtos incluídos no plano atual. Você pediu ${requestedCount} novos produtos, mas há espaço para apenas ${remaining}. Para cadastrar todos, será necessário fazer upgrade para o plano Business. Prefere usar ${remaining === 1 ? 'a última vaga' : `as ${remaining} vagas restantes`} agora ou conversar sobre o upgrade? Nenhum produto foi criado ainda.`
+    `Sua loja está usando ${currentCount} dos ${FREE_PLAN_PRODUCT_LIMIT} produtos incluídos no plano atual. Você pediu ${requestedCount} novos produtos, mas há espaço para apenas ${remaining}. Posso usar ${remaining === 1 ? 'essa última vaga' : `essas ${remaining} vagas`} agora, mas para cadastrar todos será necessário fazer upgrade para o plano Business. Você prefere cadastrar ${remaining === 1 ? '1 produto' : `${remaining} produtos`} agora ou evoluir o plano para liberar mais espaço? Nenhum produto foi criado ainda.`
   );
 };
 
