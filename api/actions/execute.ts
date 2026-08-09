@@ -1,7 +1,7 @@
 import {
   executeAuthorizedKyrubAction,
   mapKyrubActionExecutionError,
-} from '../../server/actions/actionExecutionService';
+} from '../../server/actions/actionExecutionService.js';
 
 type HeaderValue = string | string[] | undefined;
 
