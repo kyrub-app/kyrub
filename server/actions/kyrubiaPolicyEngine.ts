@@ -64,12 +64,6 @@ export const evaluateKyrubActionPolicy = (
   }
   if (!impactIsValid(impact)) reasons.push('INVALID_IMPACT');
   if (
-    definition?.mode === 'write' &&
-    proposal.inputProvenance !== 'user_intent'
-  ) {
-    reasons.push('WRITE_REQUIRES_USER_INTENT');
-  }
-  if (
     definition &&
     impactIsValid(impact) &&
     impact.entityCount > definition.maxAffectedEntities
@@ -78,8 +72,16 @@ export const evaluateKyrubActionPolicy = (
   }
 
   const hardDenial = reasons.length > 0;
-  if (!hardDenial && definition.requiresConfirmation && !context.confirmed) {
-    reasons.push('CONFIRMATION_REQUIRED');
+  if (!hardDenial && !context.confirmed) {
+    if (
+      definition.mode === 'write' &&
+      proposal.inputProvenance !== 'user_intent'
+    ) {
+      reasons.push('UNTRUSTED_INPUT_REQUIRES_CONFIRMATION');
+    }
+    if (definition.requiresConfirmation) {
+      reasons.push('CONFIRMATION_REQUIRED');
+    }
   }
 
   const evaluatedAt = (context.now ?? new Date()).toISOString();
@@ -88,7 +90,7 @@ export const evaluateKyrubActionPolicy = (
     id: context.decisionId ?? randomUUID(),
     outcome: hardDenial
       ? 'deny'
-      : reasons.includes('CONFIRMATION_REQUIRED')
+      : reasons.length > 0
         ? 'require_confirmation'
         : 'allow',
     actionType: proposal.type,
