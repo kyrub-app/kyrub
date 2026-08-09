@@ -211,7 +211,7 @@ test('Kyrubia note client no longer writes Firestore directly', () => {
     'utf8'
   );
 
-  assert.match(source, /\/api\/actions\/execute/);
+  assert.match(source, /\/api\/action-execute/);
   assert.doesNotMatch(source, /firebase\/firestore/);
   assert.doesNotMatch(source, /runTransaction\s*\(/);
   assert.doesNotMatch(source, /transaction\.set\s*\(/);
@@ -238,11 +238,20 @@ test('safe executor pins a Firebase Admin compatible Node runtime', () => {
   assert.equal(packageJson.engines?.node, '22.x');
 });
 
-test('Vercel serverless dependency chains use ESM-resolvable relative imports', () => {
+test('root Vercel safe executor statically bundles the execution service', () => {
   const executeRoute = readFileSync(
-    new URL('../api/actions/execute.ts', import.meta.url),
+    new URL('../api/action-execute.ts', import.meta.url),
     'utf8'
   );
+
+  assert.match(
+    executeRoute,
+    /from '\.\.\/server\/actions\/actionExecutionService'/
+  );
+  assert.doesNotMatch(executeRoute, /import\(/);
+});
+
+test('serverless dependency chains use ESM-resolvable relative imports where runtime resolution remains necessary', () => {
   const executionService = readFileSync(
     new URL('../server/actions/actionExecutionService.ts', import.meta.url),
     'utf8'
@@ -260,7 +269,6 @@ test('Vercel serverless dependency chains use ESM-resolvable relative imports', 
     'utf8'
   );
 
-  assert.match(executeRoute, /actionExecutionService\.js/);
   assert.match(executionService, /shared\/kyrubActions\.js/);
   assert.match(executionService, /firebaseAdmin\.js/);
   assert.match(executionService, /kyrubiaPolicyEngine\.js/);
