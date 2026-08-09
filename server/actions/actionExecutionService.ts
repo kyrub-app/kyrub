@@ -9,7 +9,8 @@ import {
   type KyrubInputProvenance,
   type KyrubPolicyDecision,
 } from '../../shared/kyrubActions.js';
-import { adminAuth, adminDb } from '../firebaseAdmin.js';
+import { verifyFirebaseIdToken } from '../ai/consultantAuth.js';
+import { adminDb } from '../firebaseAdmin.js';
 import { evaluateKyrubActionPolicy } from './kyrubiaPolicyEngine.js';
 
 const MAX_TITLE_CHARACTERS = 120;
@@ -202,7 +203,6 @@ const executeCreateNote = async (
     uid: string;
     name?: string;
     email?: string;
-    picture?: string;
   },
   proposal: KyrubAiCreateNoteProposal,
   envelope: KyrubExecutionEnvelope
@@ -238,7 +238,7 @@ const executeCreateNote = async (
       ownerId: actor.uid,
       ownerName,
       ownerEmail: actor.email ?? '',
-      ownerAvatar: actor.picture ?? '',
+      ownerAvatar: '',
       title: proposal.title.toUpperCase(),
       content: proposal.content,
       associatedUsers: ['Você'],
@@ -326,6 +326,28 @@ const mapPolicyFailure = (decision: KyrubPolicyDecision): never => {
   );
 };
 
+const verifyActionActor = async (token: string) => {
+  try {
+    return await verifyFirebaseIdToken(token);
+  } catch (error) {
+    const code = error && typeof error === 'object' && 'code' in error
+      ? String((error as { code?: unknown }).code ?? '')
+      : '';
+    if (code === 'AUTH_UNAVAILABLE') {
+      throw new KyrubActionExecutionError(
+        503,
+        'AUTH_UNAVAILABLE',
+        'Não foi possível validar sua sessão agora. Tente novamente em instantes.'
+      );
+    }
+    throw new KyrubActionExecutionError(
+      401,
+      'AUTH_REQUIRED',
+      'Sua sessão expirou. Entre novamente no Kyrub.'
+    );
+  }
+};
+
 export const executeAuthorizedKyrubAction = async (
   authorization: string,
   rawRequest: unknown
@@ -339,7 +361,7 @@ export const executeAuthorizedKyrubAction = async (
     );
   }
 
-  const actor = await adminAuth.verifyIdToken(token, true);
+  const actor = await verifyActionActor(token);
   const body = requestRecord(rawRequest);
   const proposal = normalizeCreateNoteExecutionProposal(body.proposal);
   const confirmed = body.confirmed === true;
@@ -367,9 +389,8 @@ export const executeAuthorizedKyrubAction = async (
   return executeCreateNote(
     {
       uid: actor.uid,
-      name: typeof actor.name === 'string' ? actor.name : undefined,
-      email: typeof actor.email === 'string' ? actor.email : undefined,
-      picture: typeof actor.picture === 'string' ? actor.picture : undefined,
+      name: actor.name,
+      email: actor.email,
     },
     normalizedProposal,
     envelope
