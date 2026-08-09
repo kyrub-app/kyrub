@@ -66,7 +66,8 @@ test('constitution contract: Kyrubia client cannot perform the official commit',
   assert.doesNotMatch(clientExecutor, /runTransaction/);
   assert.match(clientExecutor, /\/api\/action-execute/);
 
-  assert.match(serverExecutor, /adminAuth\.verifyIdToken\(token, true\)/);
+  assert.match(serverExecutor, /verifyFirebaseIdToken\(token\)/);
+  assert.doesNotMatch(serverExecutor, /adminAuth\.verifyIdToken/);
   assert.match(serverExecutor, /evaluateKyrubActionPolicy/);
   assert.match(serverExecutor, /adminDb\.runTransaction/);
 });
