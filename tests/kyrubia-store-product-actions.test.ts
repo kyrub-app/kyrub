@@ -47,21 +47,25 @@ const fakeUser = {
   getIdToken: async () => 'unused-token',
 } as unknown as User;
 
-const erpContext = (configured: boolean): KyrubErpContextSnapshot => ({
+const erpContext = (
+  configured: boolean,
+  productCount = 0,
+  plan: 'free' | 'business' = 'free'
+): KyrubErpContextSnapshot => ({
   source: 'authenticated_client_snapshot',
   generatedAt: '2026-08-09T19:00:00.000Z',
   store: {
     id: fakeUser.uid,
     name: configured ? 'Loja Teste' : '',
     description: '',
-    plan: 'free',
+    plan,
     status: 'closed',
     address: '',
     keywords: configured ? ['roupas'] : [],
     configured,
   },
   products: [],
-  productCount: 0,
+  productCount,
   productsTruncated: false,
   pendingOrders: [],
   pendingOrderCount: 0,
@@ -108,6 +112,43 @@ test('product creation with no configured store is intercepted locally and asks 
   });
 });
 
+test('free-plan preflight blocks partial two-product creation when only one slot remains and offers upgrade', async () => {
+  await withMemoryStorage(async storage => {
+    const result = await resolveKyrubiaOperationalWorkflow({
+      user: fakeUser,
+      conversationId: 'conversation-capacity-4-of-5',
+      message: 'Cadastre mais 2 produtos na minha loja.',
+      erpContext: erpContext(true, 4, 'free'),
+    });
+
+    assert.equal(result?.provider, 'kyrub');
+    assert.equal(result?.mode, 'deterministic');
+    assert.equal(result?.actionProposal, undefined);
+    assert.match(result?.reply ?? '', /4 dos 5 produtos/i);
+    assert.match(result?.reply ?? '', /espaço para apenas 1/i);
+    assert.match(result?.reply ?? '', /plano Business/i);
+    assert.match(result?.reply ?? '', /Nenhum produto foi criado ainda/i);
+    assert.equal(storage.length, 0);
+  });
+});
+
+test('free-plan preflight turns a full catalog request into an upgrade conversation before execution', async () => {
+  await withMemoryStorage(async storage => {
+    const result = await resolveKyrubiaOperationalWorkflow({
+      user: fakeUser,
+      conversationId: 'conversation-capacity-5-of-5',
+      message: 'Cadastre um novo produto na minha loja.',
+      erpContext: erpContext(true, 5, 'free'),
+    });
+
+    assert.equal(result?.actionProposal, undefined);
+    assert.match(result?.reply ?? '', /5 produtos incluídos no plano atual/i);
+    assert.match(result?.reply ?? '', /upgrade para o plano Business/i);
+    assert.match(result?.reply ?? '', /Nenhum produto foi criado agora/i);
+    assert.equal(storage.length, 0);
+  });
+});
+
 test('a complete product request on a configured store becomes a create_product confirmation proposal locally', async () => {
   await withMemoryStorage(async () => {
     const result = await resolveKyrubiaOperationalWorkflow({
@@ -131,6 +172,19 @@ test('a complete product request on a configured store becomes a create_product 
     assert.equal(result.actionProposal.category, 'roupas');
     assert.equal(result.actionProposal.stock, 3);
     assert.equal(result.actionProposal.requiresConfirmation, true);
+  });
+});
+
+test('business plan is not blocked by the free-plan capacity preflight', async () => {
+  await withMemoryStorage(async () => {
+    const result = await resolveKyrubiaOperationalWorkflow({
+      user: fakeUser,
+      conversationId: 'conversation-business-product',
+      message: 'Cadastre um produto chamado Caneca por R$ 30, categoria presentes, com estoque de 5 unidades.',
+      erpContext: erpContext(true, 12, 'business'),
+    });
+
+    assert.equal(result?.actionProposal?.type, 'create_product');
   });
 });
 
@@ -290,6 +344,8 @@ test('quota-first contract keeps operational workflow ahead of the generative ne
   assert.ok(workflowIndex > 0);
   assert.ok(deterministicIndex > workflowIndex);
   assert.ok(networkIndex > deterministicIndex);
+  assert.match(runtime, /productCapacityPreflight/);
+  assert.match(runtime, /FREE_PLAN_PRODUCT_LIMIT = 5/);
   assert.doesNotMatch(runtime, /GEMINI_API_KEY|generativelanguage\.googleapis\.com/);
 });
 
