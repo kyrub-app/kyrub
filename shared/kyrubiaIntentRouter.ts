@@ -37,17 +37,18 @@ export const KYRUBIA_OPEN_REASONING =
   /\b(analise|analisar|priorize|priorizar|recomende|recomendar|sugira|sugerir|compare|comparar|explique|explicar|estrategia|estrategias|oportunidade|oportunidades|avalie|avaliar|diagnostique|diagnosticar)\b|\bpor que\b/;
 
 export const KYRUBIA_MUTATION_VERBS =
-  /\b(crie|criar|adicione|adicionar|salve|salvar|guarde|guardar|registre|registrar|altere|alterar|mude|mudar|atualize|atualizar|exclua|excluir|apague|apagar|publique|publicar|desconte|aplique|aplicar)\b/;
+  /\b(crie|cria|criar|adicione|adiciona|adicionar|salve|salva|salvar|guarde|guarda|guardar|registre|registra|registrar|anote|anota|anotar|altere|altera|alterar|mude|muda|mudar|atualize|atualiza|atualizar|exclua|exclui|excluir|apague|apaga|apagar|publique|publica|publicar|desconte|desconta|aplique|aplica|aplicar)\b/;
 
 const QUERY_VERBS = new Set([
-  'liste', 'listar', 'mostre', 'mostrar', 'quais', 'qual', 'ver', 'veja',
-  'encontre', 'encontrar', 'pegue', 'pegar', 'separe', 'separar', 'traga',
-  'buscar', 'busque', 'procure', 'procurar', 'quero', 'exiba', 'exibir',
+  'liste', 'lista', 'listar', 'mostre', 'mostra', 'mostrar', 'quais', 'qual',
+  'ver', 'veja', 'encontre', 'encontra', 'encontrar', 'pegue', 'pega', 'pegar',
+  'separe', 'separa', 'separar', 'traga', 'traz', 'buscar', 'busque', 'busca',
+  'procure', 'procura', 'procurar', 'quero', 'exiba', 'exibe', 'exibir',
 ]);
 
 const PRODUCT_NOUNS = new Set([
   'produto', 'produtos', 'item', 'itens', 'catalogo', 'mercadoria',
-  'mercadorias', 'artigo', 'artigos', 'produto-fisico', 'produtos-fisicos',
+  'mercadorias', 'artigo', 'artigos',
 ]);
 
 const SERVICE_NOUNS = new Set(['servico', 'servicos']);
@@ -56,14 +57,19 @@ const PHYSICAL_CUES = [
   'mercadoria', 'mercadorias',
 ];
 
-const IMAGE_TERMS = ['imagem', 'imagens', 'foto', 'fotos', 'fotografia', 'fotografias', 'midia visual'];
+const IMAGE_TERMS = [
+  'imagem', 'imagens', 'foto', 'fotos', 'fotografia', 'fotografias',
+  'midia visual',
+];
 const DESCRIPTION_TERMS = ['descricao', 'descricoes', 'texto descritivo'];
-const STOCK_TERMS = ['estoque', 'unidade', 'unidades', 'saldo de estoque', 'quantidade em estoque'];
+const STOCK_TERMS = [
+  'estoque', 'unidade', 'unidades', 'saldo de estoque', 'quantidade em estoque',
+];
 const PRICE_TERMS = ['preco', 'precos', 'valor', 'valores'];
-
-const MISSING_CUES = ['sem', 'faltando', 'ausente', 'ausentes', 'nao tem', 'nao possui', 'nao possuem', 'falta', 'faltam'];
-const PRESENT_CUES = ['com', 'tem', 'possuem', 'possui'];
-const CONTEXT_CUES = ['desses', 'dessas', 'daqueles', 'daquelas', 'dessa lista', 'daquela lista', 'deles', 'delas'];
+const CONTEXT_CUES = [
+  'desses', 'dessas', 'daqueles', 'daquelas', 'dessa lista', 'daquela lista',
+  'deles', 'delas', 'nesses', 'nessas', 'naqueles', 'naquelas',
+];
 
 const NUMBER_WORDS: Record<string, number> = {
   um: 1,
@@ -94,13 +100,20 @@ const NUMBER_WORDS: Record<string, number> = {
   cinquenta: 50,
 };
 
+const UNIT_NUMBER_WORD = '(?:um|uma|dois|duas|tres|quatro|cinco|seis|sete|oito|nove)';
 const NUMBER_PATTERN =
-  '(?:\\d+(?:[.,]\\d+)?|um|uma|dois|duas|tres|quatro|cinco|seis|sete|oito|nove|dez|onze|doze|treze|quatorze|catorze|quinze|dezesseis|dezessete|dezoito|dezenove|vinte|trinta|quarenta|cinquenta)';
+  `(?:\\d+(?:[.,]\\d+)?|um|uma|dois|duas|tres|quatro|cinco|seis|sete|oito|nove|dez|onze|doze|treze|quatorze|catorze|quinze|dezesseis|dezessete|dezoito|dezenove|vinte(?:\\s+e\\s+${UNIT_NUMBER_WORD})?|trinta(?:\\s+e\\s+${UNIT_NUMBER_WORD})?|quarenta(?:\\s+e\\s+${UNIT_NUMBER_WORD})?|cinquenta)`;
 
 const parseLocalizedNumber = (value: string | undefined): number | null => {
   if (!value) return null;
   const normalized = value.trim().toLocaleLowerCase('pt-BR');
   if (normalized in NUMBER_WORDS) return NUMBER_WORDS[normalized];
+  if (normalized.includes(' e ')) {
+    const parts = normalized.split(' e ').map(part => NUMBER_WORDS[part]);
+    if (parts.every(part => typeof part === 'number')) {
+      return parts.reduce((total, part) => total + part, 0);
+    }
+  }
   const parsed = Number(normalized.replace(',', '.'));
   return Number.isFinite(parsed) ? parsed : null;
 };
@@ -116,47 +129,33 @@ const intentTokens = (intent: string): string[] => intent.split(' ').filter(Bool
 const hasAnyToken = (tokens: string[], vocabulary: Set<string>): boolean =>
   tokens.some(token => vocabulary.has(token));
 
-const phrasePositions = (intent: string, terms: string[]): Array<{ start: number; end: number; term: string }> => {
-  const results: Array<{ start: number; end: number; term: string }> = [];
-  for (const term of terms) {
-    let cursor = 0;
-    while (cursor < intent.length) {
-      const index = intent.indexOf(term, cursor);
-      if (index < 0) break;
-      const before = index === 0 ? ' ' : intent[index - 1];
-      const afterIndex = index + term.length;
-      const after = afterIndex >= intent.length ? ' ' : intent[afterIndex];
-      if (/\s/.test(before) && /\s/.test(after)) {
-        results.push({ start: index, end: afterIndex, term });
-      }
-      cursor = index + term.length;
-    }
-  }
-  return results;
-};
+const escapeRegex = (value: string): string =>
+  value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-const localWindow = (
-  intent: string,
-  position: { start: number; end: number },
-  radius = 28
-): string => intent.slice(
-  Math.max(0, position.start - radius),
-  Math.min(intent.length, position.end + radius)
-);
+const termPattern = (terms: string[]): string => terms.map(escapeRegex).join('|');
 
 const booleanFieldFilter = (
   intent: string,
   field: 'hasImage' | 'hasDescription',
   terms: string[]
 ): KyrubiaProductQueryFilter | null => {
-  for (const position of phrasePositions(intent, terms)) {
-    const window = localWindow(intent, position);
-    if (containsAnyPhrase(window, MISSING_CUES)) {
-      return { field, operator: 'eq', value: false };
-    }
-    if (containsAnyPhrase(window, PRESENT_CUES)) {
-      return { field, operator: 'eq', value: true };
-    }
+  const term = `(?:${termPattern(terms)})`;
+  const missingPatterns = [
+    new RegExp(`\\bsem\\s+(?:nenhuma?\\s+)?${term}\\b`),
+    new RegExp(`\\bnao\\s+(?:tem|possui|possuem)\\s+(?:nenhuma?\\s+)?${term}\\b`),
+    new RegExp(`\\b(?:falta|faltam)\\s+${term}\\b`),
+    new RegExp(`\\b${term}\\s+(?:ausente|ausentes|faltando)\\b`),
+  ];
+  if (missingPatterns.some(pattern => pattern.test(intent))) {
+    return { field, operator: 'eq', value: false };
+  }
+
+  const presentPatterns = [
+    new RegExp(`\\bcom\\s+${term}\\b`),
+    new RegExp(`\\b(?:tem|possui|possuem)\\s+${term}\\b`),
+  ];
+  if (presentPatterns.some(pattern => pattern.test(intent))) {
+    return { field, operator: 'eq', value: true };
   }
   return null;
 };
@@ -184,24 +183,22 @@ const COMPARATORS: Array<{ operator: NumericOperator; phrase: string }> = [
   { operator: 'eq', phrase: 'igual a' },
 ];
 
-const escapeRegex = (value: string): string =>
-  value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-
 const numericFieldFilter = (
   intent: string,
   field: 'stock' | 'price',
   terms: string[]
 ): KyrubiaProductQueryFilter | null => {
-  const termPattern = terms.map(escapeRegex).join('|');
+  const termsPattern = termPattern(terms);
   const currency = field === 'price' ? '(?:r\\$\\s*)?' : '';
   const unitSuffix = field === 'stock' ? '(?:\\s+unidades?)?' : '(?:\\s+reais?)?';
 
   for (const { operator, phrase } of COMPARATORS) {
     const comparator = escapeRegex(phrase);
     const patterns = [
-      new RegExp(`\\b(?:${termPattern})(?:\\s+de)?\\s+${comparator}\\s+${currency}(${NUMBER_PATTERN})${unitSuffix}\\b`),
-      new RegExp(`\\b${comparator}\\s+${currency}(${NUMBER_PATTERN})${unitSuffix}\\s+(?:de\\s+)?(?:${termPattern})\\b`),
+      new RegExp(`\\b(?:${termsPattern})(?:\\s+de)?\\s+${comparator}\\s+${currency}(${NUMBER_PATTERN})${unitSuffix}\\b`),
+      new RegExp(`\\b${comparator}\\s+${currency}(${NUMBER_PATTERN})${unitSuffix}\\s+(?:de\\s+)?(?:${termsPattern})\\b`),
     ];
+
     if (field === 'stock') {
       patterns.push(
         new RegExp(`\\b${comparator}\\s+(${NUMBER_PATTERN})\\s+unidades?\\b`)
@@ -214,8 +211,7 @@ const numericFieldFilter = (
     }
 
     for (const pattern of patterns) {
-      const match = pattern.exec(intent);
-      const value = parseLocalizedNumber(match?.[1]);
+      const value = parseLocalizedNumber(pattern.exec(intent)?.[1]);
       if (value !== null) return { field, operator, value };
     }
   }
@@ -253,12 +249,13 @@ const extractSort = (intent: string): KyrubiaProductQuerySort | undefined => {
 const extractLimit = (intent: string): number => {
   const entity = '(?:produtos?|itens?|mercadorias?|artigos?|servicos?)';
   const ordering = '(?:de\\s+(?:maior|menor)\\s+(?:valor|preco)|mais\\s+(?:caros?|baratos?)|primeiros?|primeiras?)';
+  const verbs = '(?:liste|lista|mostre|mostra|pegue|pega|separe|separa|traga|traz|quero|exiba|exibe)';
   const patterns = [
     new RegExp(`\\btop\\s+(${NUMBER_PATTERN})\\b`),
     new RegExp(`\\b(${NUMBER_PATTERN})\\s+(?:primeiros|primeiras)\\b`),
     new RegExp(`\\b(?:primeiros|primeiras)\\s+(${NUMBER_PATTERN})\\b`),
     new RegExp(`\\b(?:os|as)?\\s*(${NUMBER_PATTERN})\\s+${entity}\\b`),
-    new RegExp(`\\b(?:liste|mostre|pegue|separe|traga|quero|exiba)\\s+(?:os|as)?\\s*(${NUMBER_PATTERN})\\b`),
+    new RegExp(`\\b${verbs}\\s+(?:os|as)?\\s*(${NUMBER_PATTERN})\\b`),
     new RegExp(`\\b(?:os|as)\\s+(${NUMBER_PATTERN})\\s+${ordering}\\b`),
   ];
 
@@ -271,7 +268,7 @@ const extractLimit = (intent: string): number => {
 
 export const kyrubiaAsksToSaveAsNote = (intent: string): boolean =>
   /\b(nota|notas)\b/.test(intent) &&
-  /\b(salve|salvar|guarde|guardar|registre|registrar|crie|criar|adicione|adicionar|anote|anotar)\b/.test(intent);
+  /\b(salve|salva|salvar|guarde|guarda|guardar|registre|registra|registrar|crie|cria|criar|adicione|adiciona|adicionar|anote|anota|anotar)\b/.test(intent);
 
 const hasLowStockConcept = (intent: string): boolean =>
   containsAnyPhrase(intent, [
@@ -319,6 +316,10 @@ export const routeKyrubiaLocalProductIntent = (
   );
   const hasQueryVerb = hasAnyToken(tokens, QUERY_VERBS);
   const hasContextCue = containsAnyPhrase(intent, CONTEXT_CUES);
+  const reusableProductContext = Boolean(
+    options.turnContext?.entities.length &&
+    options.turnContext.entities.every(entity => entity.entityType === 'product')
+  );
 
   if (!explicitProduct && !explicitService && !hasFieldSignal && !hasContextCue) {
     return null;
@@ -342,11 +343,11 @@ export const routeKyrubiaLocalProductIntent = (
     filters.push({ field: 'isService', operator: 'eq', value: true });
   }
 
-  const candidateIds = hasContextCue &&
-    options.turnContext?.entities.length &&
-    options.turnContext.entities.every(entity => entity.entityType === 'product')
-      ? options.turnContext.entities.map(entity => entity.entityId)
-      : undefined;
+  const usePreviousProducts = reusableProductContext &&
+    (hasContextCue || (!explicitProduct && !explicitService && hasFieldSignal));
+  const candidateIds = usePreviousProducts
+    ? options.turnContext?.entities.map(entity => entity.entityId)
+    : undefined;
 
   let kind: KyrubiaLocalProductIntentKind = 'filtered';
   let title = 'Consulta de produtos';
