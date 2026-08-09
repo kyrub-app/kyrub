@@ -1,5 +1,9 @@
+import { createRequire } from 'node:module';
 import { applicationDefault, cert, getApps, initializeApp } from 'firebase-admin/app';
+import type { Auth } from 'firebase-admin/auth';
 import { getFirestore, type Firestore } from 'firebase-admin/firestore';
+
+const require = createRequire(import.meta.url);
 
 const parseServiceAccount = (): Record<string, string> | null => {
   const serialized = process.env.FIREBASE_SERVICE_ACCOUNT_JSON?.trim();
@@ -43,9 +47,6 @@ const getAdminApp = () => {
     });
   }
 
-  // Vercel does not provide Google Application Default Credentials implicitly.
-  // Failing fast here keeps the request inside Kyrub's safe error envelope
-  // instead of allowing credential discovery to fail opaquely at runtime.
   if (process.env.VERCEL) {
     throw new Error(
       'Could not load Firebase Admin credentials: FIREBASE_SERVICE_ACCOUNT_JSON is required on Vercel.'
@@ -69,7 +70,13 @@ const lazyService = <T extends object>(resolve: () => T): T =>
     },
   });
 
-// Firebase Authentication is deliberately not imported here. Serverless routes
-// verify Firebase ID tokens through the public-certificate verifier and keep the
-// Admin SDK scoped to privileged Firestore access.
+const getLegacyAdminAuth = (): Auth => {
+  const authModule = require('firebase-admin/auth') as typeof import('firebase-admin/auth');
+  return authModule.getAuth(getAdminApp());
+};
+
+// Keep the Firestore-only bootstrap free from firebase-admin/auth. Legacy routes
+// can still resolve Admin Auth lazily, while new Vercel execution paths use the
+// public-certificate Firebase token verifier and avoid jwks-rsa/jose at startup.
+export const adminAuth = lazyService<Auth>(() => getLegacyAdminAuth());
 export const adminDb = lazyService<Firestore>(() => getFirestore(getAdminApp()));
