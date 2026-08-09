@@ -357,6 +357,7 @@ test('browser action client crosses only the official safe executor and never wr
 
   assert.match(source, /\/api\/action-execute/);
   assert.match(source, /getIdToken\(true\)/);
+  assert.match(source, /invalidateKyrubErpContext\(user\.uid\)/);
   assert.doesNotMatch(source, /firebase\/firestore/);
   assert.doesNotMatch(source, /setDoc\s*\(|updateDoc\s*\(|runTransaction\s*\(/);
 });
