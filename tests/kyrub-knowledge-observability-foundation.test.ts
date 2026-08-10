@@ -111,6 +111,23 @@ test('official community reader requires configured trust anchors and ignores co
   assert.doesNotMatch(source, /community_debate_comments/);
 });
 
+test('official knowledge anchors have versioned public defaults while environment remains authoritative', () => {
+  const source = readFileSync(
+    new URL('../src/knowledge/officialCommunityKnowledge.ts', import.meta.url),
+    'utf8'
+  );
+  const anchors = readFileSync(
+    new URL('../src/knowledge/officialKnowledgeAnchors.ts', import.meta.url),
+    'utf8'
+  );
+
+  assert.match(source, /source: 'environment'/);
+  assert.match(source, /source: 'versioned_defaults'/);
+  assert.ok(source.indexOf('envProfileUid') < source.indexOf('defaultProfileUid'));
+  assert.match(anchors, /8DK3cZ42hPVp8NCjzZEPpduV5rF2/);
+  assert.match(anchors, /fIemZnVFXZsagd6EA6sN/);
+});
+
 test('official knowledge setup is explicit, owner-scoped and probes the same trusted reader', () => {
   const source = readFileSync(
     new URL('../src/components/OfficialKnowledgeSetupBridge.tsx', import.meta.url),
