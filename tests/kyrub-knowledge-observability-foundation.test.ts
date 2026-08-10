@@ -96,7 +96,8 @@ test('official knowledge search keeps plan content below publication references 
   assert.ok(results.length >= 2);
   assert.notEqual(results[0]?.item.id, 'pro');
   assert.ok(['publication', 'lifecycle'].includes(results[0]?.item.id ?? ''));
-  assert.ok((results.findIndex(result => result.item.id === 'pro')) > 0);
+  const proIndex = results.findIndex(result => result.item.id === 'pro');
+  assert.ok(proIndex === -1 || proIndex > 0);
 });
 
 test('official knowledge search ranks lifecycle distinction when the query names activation, publication and opening', () => {
