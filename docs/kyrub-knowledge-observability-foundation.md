@@ -21,10 +21,17 @@ Essa convenção permite começar com a infraestrutura atual sem criar uma cole�
 
 O cliente não grava `isOfficial: true`.
 
-A leitura de conhecimento só é habilitada quando o deployment configura:
+A configuração preferida continua sendo pelo deployment:
 
 - `VITE_KYRUB_OFFICIAL_PROFILE_UID`;
 - `VITE_KYRUB_OFFICIAL_COMMUNITY_IDS` (lista separada por vírgulas).
+
+Como o conector operacional atual não permite escrever Environment Variables da Vercel, a PR #154 possui temporariamente um fallback versionado em `src/knowledge/officialKnowledgeAnchors.ts`. Esses IDs são públicos, não secrets, e o `env` continua tendo precedência quando existir. Como a PR está em Draft, esse fallback não alcança `main`/produção sem autorização explícita de merge.
+
+Âncoras humanas validadas nesta etapa:
+
+- perfil oficial candidato: `8DK3cZ42hPVp8NCjzZEPpduV5rF2`;
+- comunidade `Manual KYRUB`: `fIemZnVFXZsagd6EA6sN`.
 
 O leitor revalida que:
 
@@ -34,7 +41,7 @@ O leitor revalida que:
 4. o Debate está vigente (`open`);
 5. o `authorId` do Debate é o próprio perfil oficial.
 
-Os IDs são identificadores públicos, não secrets. Mesmo assim, a configuração deve ser administrada pelo deployment do Kyrub, e não por dados arbitrários escritos pelo usuário.
+A simples presença desses IDs no bundle não concede autoridade a outro usuário, porque a confiança depende das revalidações acima.
 
 ### Diagnóstico explícito de configuração
 
@@ -45,9 +52,9 @@ O Preview pode abrir o modo `?officialKnowledgeSetup=1`. Esse modo é visível a
 - não altera a oficialidade de nenhum documento;
 - testa a comunidade candidata usando o mesmo `readOfficialCommunityKnowledge` que será usado pela fundação;
 - exibe os títulos dos Debates elegíveis como prova de recuperação;
-- permite copiar as duas âncoras para configuração do deployment.
+- permite copiar as duas âncoras para configuração controlada.
 
-Esse diagnóstico não é uma credencial administrativa e não concede autoridade ao perfil. A oficialidade continua dependendo da configuração controlada pelo Kyrub e das revalidações do leitor.
+Esse diagnóstico não é uma credencial administrativa e não concede autoridade ao perfil.
 
 ## 3. Kyrubia ainda não lê essa fonte nesta PR
 
@@ -105,14 +112,15 @@ Primeiro artigo publicado manualmente:
 
 - `O que é o Kyrub?`
 
-O próximo gate é validar no Preview que o diagnóstico reconhece `Manual KYRUB`, recupera esse Debate como **Conhecimento elegível** e fornece as duas âncoras exatas para configurar o deployment.
+O diagnóstico humano recuperou as âncoras reais do proprietário e da comunidade, que agora estão configuradas na #154 com fallback versionado e precedência futura de `env`.
 
 ## 7. Próxima etapa
 
-Depois de validar esta fundação:
+Depois de CI/build do head com as âncoras:
 
-- configurar no Preview o perfil oficial e a comunidade `Manual KYRUB`;
-- validar novamente a recuperação determinística do primeiro artigo;
+- atualizar o Preview estável;
+- validar que o leitor inicia como fonte oficial configurada e recupera `O que é o Kyrub?` sem precisar selecionar manualmente a comunidade candidata;
 - publicar mais FAQs reais manualmente;
+- testar busca lexical com perguntas diferentes do título literal;
 - instrumentar algumas jornadas do app com eventos semânticos;
 - só então criar o adaptador que entrega conhecimento + estado + contexto recente para a Kyrubia.
