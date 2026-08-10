@@ -111,6 +111,23 @@ test('official community reader requires configured trust anchors and ignores co
   assert.doesNotMatch(source, /community_debate_comments/);
 });
 
+test('official knowledge setup is explicit, owner-scoped and probes the same trusted reader', () => {
+  const source = readFileSync(
+    new URL('../src/components/OfficialKnowledgeSetupBridge.tsx', import.meta.url),
+    'utf8'
+  );
+  const main = readFileSync(new URL('../src/main.tsx', import.meta.url), 'utf8');
+
+  assert.match(source, /officialKnowledgeSetup/);
+  assert.match(source, /communities\.filter\(community => community\.isOwner\)/);
+  assert.match(source, /readOfficialCommunityKnowledge\(config\)/);
+  assert.match(source, /VITE_KYRUB_OFFICIAL_PROFILE_UID/);
+  assert.match(source, /VITE_KYRUB_OFFICIAL_COMMUNITY_IDS/);
+  assert.match(source, /navigator\.clipboard\.writeText/);
+  assert.match(source, /Conhecimento elegível/);
+  assert.match(main, /OfficialKnowledgeSetupBridge/);
+});
+
 test('knowledge and activity foundations are not wired into Kyrubia yet', () => {
   const knowledge = readFileSync(
     new URL('../src/knowledge/officialCommunityKnowledge.ts', import.meta.url),
@@ -120,7 +137,12 @@ test('knowledge and activity foundations are not wired into Kyrubia yet', () => 
     new URL('../src/observability/kyrubActivityLog.ts', import.meta.url),
     'utf8'
   );
+  const setup = readFileSync(
+    new URL('../src/components/OfficialKnowledgeSetupBridge.tsx', import.meta.url),
+    'utf8'
+  );
 
   assert.doesNotMatch(knowledge, /consultantClient|KyrubAiConsultant|Gemini|@google\/genai/);
   assert.doesNotMatch(activity, /consultantClient|KyrubAiConsultant|Gemini|@google\/genai/);
+  assert.doesNotMatch(setup, /consultantClient|KyrubAiConsultant|Gemini|@google\/genai/);
 });
