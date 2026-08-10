@@ -17,7 +17,11 @@ export interface KyrubOfficialKnowledgeConfig {
   officialProfileUid: string;
   communityIds: string[];
   enabled: boolean;
-  source: 'environment' | 'versioned_defaults' | 'disabled';
+  source:
+    | 'environment'
+    | 'versioned_defaults'
+    | 'diagnostic_candidate'
+    | 'disabled';
 }
 
 const clean = (value: unknown): string =>
