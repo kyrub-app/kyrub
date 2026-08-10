@@ -27,7 +27,7 @@ Kyrub fortalece relações e comércio locais.
 - uma Loja Kyrub pode comprar alcance adicional por mídia paga;
 - anúncio pago nunca compra exclusividade sobre uma região nem suprime deliberadamente resultados orgânicos relevantes;
 - toda exposição patrocinada deve ser identificada claramente;
-- a relevância comercial continua obrigatória mesmo quando existe pagamento.
+- relevância comercial continua obrigatória mesmo quando existe pagamento.
 
 ## 4. Uma pessoa, vários papéis
 
@@ -46,7 +46,7 @@ Kyrubia é uma nova porta de entrada para capacidades de Kyrub, não substituiç
 
 ## 6. Contexto não é autoridade
 
-Memória de conversa, estado local, intenção inferida, histórico ou recomendação não concedem permissão para escrever dados críticos.
+Memória de conversa, estado local, intenção inferida, histórico, navegação, clique, recomendação ou sugestão visual não concedem permissão para escrever dados críticos.
 
 Para ações de escrita ou impacto relevante:
 
@@ -59,6 +59,10 @@ Para ações de escrita ou impacto relevante:
 - ações financeiras, destrutivas, públicas, de permissão ou alto impacto exigem controles adicionais.
 
 A Constituição de Segurança e os contratos de execução prevalecem sobre conveniência de UX.
+
+### Próximos passos estruturados
+
+Um chip, botão ou opção oferecida pela Kyrubia expressa **intenção conversacional**, nunca autoridade. Selecionar “Publicar”, “Criar nota”, “Ativar loja” ou qualquer outro próximo passo não pode, por si só, satisfazer uma confirmação de mutação nem contornar o Policy Engine.
 
 ## 7. A Kyrubia resolve antes de expandir
 
@@ -247,11 +251,74 @@ A plataforma deve ajudar pequenos negócios a construir recorrência e confianç
 
 ## 23. Comunidades Oficiais Kyrub
 
-Comunidades oficiais pertencem ao Kyrub; Kyrubia atua como anfitriã, educadora e, futuramente, moderadora.
+Comunidades oficiais pertencem ao Kyrub. Elas podem apoiar onboarding, descoberta de funcionalidades, educação e aprendizado contínuo.
 
-Elas podem apoiar onboarding, descoberta de funcionalidades e aprendizado contínuo. Participação e notificações não devem ser impostas em excesso.
+Na fase inicial da arquitetura de conhecimento:
 
-## 24. Kyrub Parceiros
+- conteúdos oficiais devem ser criados **manualmente**;
+- a Kyrubia não cria nem reescreve automaticamente a verdade oficial;
+- a oficialidade deve ser derivada de âncoras configuradas pelo Kyrub, não de `isOfficial: true` gravável por qualquer cliente;
+- comentários de participantes podem enriquecer debate e feedback, mas nunca alteram por si mesmos o conteúdo canônico;
+- participação e notificações não devem ser impostas em excesso.
+
+Kyrubia poderá atuar como anfitriã, educadora e futuramente moderadora depois que a governança de conhecimento estiver estabelecida.
+
+## 24. Conhecimento Oficial como fonte de verdade do produto
+
+Explicações padronizadas sobre “como o Kyrub funciona” devem existir fora do prompt da Kyrubia e fora de condicionais conversacionais espalhadas.
+
+A arquitetura deve distinguir quatro classes de verdade:
+
+1. **Conhecimento Oficial** — explica regras, conceitos e funcionamento do produto;
+2. **Estado real do usuário** — banco de dados, ERP, entitlements e demais domínios autoritativos;
+3. **Contexto recente** — eventos semânticos de navegação e tentativa, úteis para continuidade, porém não autoritativos;
+4. **Raciocínio generativo** — interpreta, compara e propõe sobre fatos já fundamentados; não inventa fatos do produto.
+
+> **A Kyrubia não precisa ter o Kyrub inteiro decorado. Ela precisa saber onde está a verdade, enxergar o que está acontecendo e ter permissão segura para agir.**
+
+### Regras do Conhecimento Oficial
+
+- precisa ter origem identificável e versão/atualização;
+- conteúdo retirado deve deixar de ser tratado como vigente;
+- IA não promove automaticamente conversa ou comentário a regra do produto;
+- conflito entre conhecimento oficial e estado executável deve ser explicitado; o código/servidor continua fonte de verdade sobre o que realmente está implementado;
+- a base pode ser apresentada aos humanos nas Comunidades e reutilizada pela Kyrubia, evitando duas documentações divergentes.
+
+### Convenção inicial
+
+Enquanto não existir um editor dedicado de Avisos/FAQ, Debates manuais de Comunidades Oficiais podem servir como artigos: título = assunto/pergunta, conteúdo = resposta oficial, `open` = vigente e `closed` = retirado. Essa é uma convenção transitória, não obrigação eterna do domínio Comunidades.
+
+## 25. Observabilidade semântica: enxergar sem “aprender sozinho”
+
+A Kyrubia pode futuramente acompanhar o que ocorre no app por **eventos semânticos estruturados**, não por ingestão indiscriminada de logs técnicos.
+
+Exemplos:
+
+- `navigation.screen_viewed`;
+- `navigation.community_opened`;
+- `interaction.action_attempted`;
+- `result.action_succeeded`;
+- `result.action_failed`.
+
+Devem existir três níveis distintos:
+
+1. **navegação** — onde o usuário esteve;
+2. **tentativa/intenção** — o que ele tentou fazer;
+3. **resultado confirmado** — o que o domínio/servidor afirma que aconteceu.
+
+Um clique em “Publicar” não prova que a loja foi publicada. Uma confirmação válida do domínio pode provar.
+
+Eventos observados no cliente são `context_only`. Somente eventos derivados de fonte confirmada podem carregar autoridade de resultado.
+
+### Minimização
+
+Eventos não devem copiar conversa privada, texto de notas, prompts, respostas, emails, telefones, endereços, tokens, secrets ou outros dados desnecessários. Devem preferir IDs, estados e categorias semânticas.
+
+### Não existe auto-treinamento silencioso
+
+Observar uso não significa permitir que a Kyrubia altere suas regras, prompts, política ou conhecimento oficial por conta própria. Logs/eventos podem gerar contexto, métricas ou propostas de melhoria; mudanças de comportamento continuam versionadas, testadas e governadas.
+
+## 26. Kyrub Parceiros
 
 Guarda-chuva futuro:
 
@@ -271,7 +338,7 @@ Usuário pode ser comerciante e parceiro, mas sua própria Loja Kyrub é ineleg�
 
 A cronologia e a atribuição registradas pelo Kyrub prevalecem sobre um código digitado posteriormente.
 
-## 25. Kyrub Compras
+## 27. Kyrub Compras
 
 Kyrub pode futuramente conectar estoque e velocidade de vendas a fornecedores B2B.
 
@@ -281,7 +348,7 @@ estoque tende a acabar → Kyrubia identifica necessidade → usuário escolhe c
 
 Não transformar fornecedor patrocinado em recomendação enganosa; patrocínio deve ser identificado.
 
-## 26. Densidade antes de escala
+## 28. Densidade antes de escala
 
 Para um produto local, densidade útil é mais importante que cadastros espalhados.
 
@@ -289,7 +356,7 @@ Kyrub deve medir se buscas relevantes encontram oferta suficiente dentro do cont
 
 Aquisição de usuários, Lojas Kyrub, parceiros e campanhas pode ser concentrada onde uma região precisa atingir massa crítica.
 
-## 27. Valor Gerado pelo Kyrub
+## 29. Valor Gerado pelo Kyrub
 
 No futuro, Kyrub deve conseguir demonstrar valor atribuído com transparência:
 
@@ -304,7 +371,7 @@ No futuro, Kyrub deve conseguir demonstrar valor atribuído com transparência:
 
 Nenhum valor deve ser inventado. Métricas precisam de evento, atribuição e metodologia documentada.
 
-## 28. Dados, eventos e consentimento como fundações
+## 30. Dados, eventos e consentimento como fundações
 
 Antes de construir dashboards inteligentes, criar eventos e atribuição confiáveis.
 
@@ -320,7 +387,7 @@ Fundações importantes:
 
 Não espalhar limites comerciais em dezenas de condicionais independentes.
 
-## 29. Centro de preferências e consentimentos
+## 31. Centro de preferências e consentimentos
 
 O usuário deve entender e controlar, quando aplicável:
 
@@ -333,7 +400,7 @@ O usuário deve entender e controlar, quando aplicável:
 
 Consentimento não deve ser usado como maquiagem para coleta desnecessária; minimização e finalidade continuam obrigatórias.
 
-## 30. Linha do Tempo e auditabilidade
+## 32. Linha do Tempo e auditabilidade
 
 Quanto mais poder Kyrubia e equipes ganharem, mais importante será responder:
 
@@ -341,7 +408,7 @@ Quanto mais poder Kyrubia e equipes ganharem, mais importante será responder:
 
 A Linha do Tempo deve evoluir como recurso de confiança, suporte e auditoria.
 
-## 31. Processo de desenvolvimento e gates humanos
+## 33. Processo de desenvolvimento e gates humanos
 
 Nenhuma grande capacidade deve avançar de ideia diretamente para produção.
 
@@ -357,16 +424,18 @@ Fluxo padrão:
 8. registrar resultado do teste;
 9. corrigir regressões;
 10. **pedir aprovação explícita antes de merge**;
-11. observar produção após merge.
+11. observar produção após merge;
+12. atualizar documentação canônica quando estratégia, arquitetura, prioridade ou estado técnico mudar materialmente.
 
 ### Gates obrigatórios
 
 - **Gate de teste humano**: quando a experiência puder ser validada no app, o proprietário deve ser chamado com roteiro objetivo de teste.
 - **Gate destrutivo**: exclusões, migrações irreversíveis e alterações reais de dados exigem autorização específica.
 - **Gate financeiro/comercial**: cobrança real, compra, assinatura, comissão ou gasto de Ads exigem desenho e aprovação explícitos antes de ativação.
+- **Gate de segurança/infraestrutura**: deployment de regras, permissões ou infraestrutura compartilhada deve ser separado da simples criação de código quando puder afetar produção.
 - **Gate de produção**: merge em `main` não ocorre sem autorização explícita do proprietário.
 
-## 32. Regra de priorização
+## 34. Regra de priorização
 
 Para cada nova ideia, perguntar:
 
@@ -380,15 +449,22 @@ Quando houver conflito de prioridade:
 
 **fundação reutilizável > ciclo completo de valor > feature isolada.**
 
-## 33. Fontes complementares
+Na evolução da Kyrubia, acrescentar:
+
+**fonte de verdade + observabilidade confiável > treinamento conversacional caso a caso.**
+
+## 35. Fontes complementares
 
 Esta Constituição deve ser lida junto com:
 
+- `docs/PRODUCT_ROADMAP.md`;
+- `docs/DEVELOPMENT_HANDOFF.md`;
 - `docs/ARCHITECTURE.md`;
 - `docs/KYRUBIA.md`;
 - `docs/AI_USAGE_GOVERNANCE.md`;
 - `docs/PRIVACY_SECURITY_READINESS.md`;
 - `docs/RELEASE_CHECKLIST.md`;
-- Constituição-as-Code e contratos de segurança existentes no projeto.
+- Constituição-as-Code e contratos de segurança existentes no projeto;
+- `docs/kyrub-knowledge-observability-foundation.md`, enquanto a fundação correspondente estiver em desenvolvimento.
 
 A Constituição de Produto descreve direção e invariantes de produto; o código e os testes continuam sendo a fonte de verdade do que está efetivamente implementado.

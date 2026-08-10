@@ -12,207 +12,283 @@ Comando recomendado:
 
 - Repositório: `kyrub-app/kyrub`
 - Branch principal: `main`
-- `main` atual na criação deste documento: `2178c2b084b541c2612ff7a158faed1996cc1e99`
-- PR #151 foi concluída/mergeada e estabeleceu a Query/Action Language quota-first da Kyrubia.
+- `main` atual nesta atualização: `2178c2b084b541c2612ff7a158faed1996cc1e99`
+- PR #151 foi mergeada e estabeleceu Query/Action Language quota-first da Kyrubia.
+- PR #137 já está mergeada e estabeleceu **Comunidades + Debates multiusuário** no Firebase.
 
-## PR ativa principal
+## Mudança estratégica de 2026-08-10
+
+O desenvolvimento **não deve continuar ampliando a Kyrubia frase por frase** como prioridade imediata.
+
+A sequência agora é:
+
+1. criar fonte humana/canônica de Conhecimento Oficial;
+2. criar observabilidade semântica do uso do app;
+3. validar recuperação determinística das fontes;
+4. só depois conectar a Kyrubia como leitora dessas fontes;
+5. manter execução segura/Policy Engine para qualquer ação;
+6. usar IA generativa principalmente para interpretação/julgamento que realmente exija raciocínio.
+
+Princípio:
+
+> **A Kyrubia não precisa ter o Kyrub inteiro decorado. Ela precisa saber onde está a verdade, enxergar o que está acontecendo e ter permissão segura para agir.**
+
+## Comunidades já existem — não reconstruir
+
+A PR #137 entregou:
+
+- comunidades compartilhadas entre usuários;
+- membros ligados ao Firebase Auth;
+- mural compartilhado;
+- Debates;
+- comentários em tempo real;
+- moderação;
+- capa no Firebase Storage;
+- regras/testes de Firestore e Storage;
+- migração assistida do protótipo local.
+
+Arquivos centrais existentes:
+
+- `src/utils/communityCloud.ts`;
+- `src/components/ProfileCommunitiesCloudBridge.tsx`;
+- `src/components/ProfilePublishingDestinationsCloudBridge.tsx`;
+- `src/hooks/useCommunityDirectory.ts`;
+- `firestore.communities.fragment.rules`;
+- `firestore.community-debate-comment-query.fragment.rules`;
+- `tests/community-cloud-contract.test.ts`.
+
+A aba **Avisos** existe visualmente, mas ainda é placeholder.
+
+### Convenção inicial para FAQ manual
+
+Para não criar nova coleção/regras antes da hora, a primeira fundação usa **Debates criados manualmente pelo perfil oficial** como artigos de conhecimento:
+
+- título = assunto/pergunta;
+- conteúdo = explicação oficial;
+- `status: open` = vigente;
+- `status: closed` = retirado;
+- comentários não fazem parte do conhecimento oficial;
+- Debates de membros não são conhecimento oficial.
+
+A aba Avisos pode virar um editor/leitor dedicado depois, mantendo o mesmo contrato de conhecimento.
+
+## PR #154 — prioridade técnica atual
+
+- PR: **#154 — `feat: establish official community knowledge foundation`**
+- URL: `https://github.com/kyrub-app/kyrub/pull/154`
+- Branch: `feat/official-community-knowledge-foundation`
+- Base: `main`
+- Head inicial: `8ff6bc674499d0a4c24a27041919ec38e5bd4875`
+- Estado: **Draft, aberta, não mergeada**
+- Regra: não fazer merge sem autorização explícita do proprietário.
+
+### Escopo da primeira fundação
+
+A PR #154 introduz:
+
+- `shared/kyrubKnowledge.ts` — contrato canônico de conhecimento;
+- `shared/kyrubKnowledgeSearch.ts` — busca lexical/determinística;
+- `src/knowledge/officialCommunityKnowledge.ts` — leitor de Debates oficiais;
+- `shared/kyrubActivityEvents.ts` — contrato de eventos semânticos;
+- `src/observability/kyrubActivityLog.ts` — buffer local limitado/minimizado;
+- testes de contrato/unidade;
+- `docs/kyrub-knowledge-observability-foundation.md`.
+
+### Âncoras de confiança
+
+A leitura de conhecimento oficial é desabilitada até o deployment configurar:
+
+- `VITE_KYRUB_OFFICIAL_PROFILE_UID`;
+- `VITE_KYRUB_OFFICIAL_COMMUNITY_IDS`.
+
+Esses IDs são públicos, não secrets.
+
+O leitor deve verificar simultaneamente:
+
+1. comunidade configurada existe;
+2. `ownerId` da comunidade == perfil oficial configurado;
+3. comunidade é pública/moderada;
+4. Debate está `open`;
+5. `authorId` do Debate == perfil oficial configurado.
+
+Não introduzir `isOfficial: true` gravável pelo cliente como fonte de autoridade.
+
+### Eventos semânticos
+
+A fundação distingue:
+
+- navegação/contexto;
+- tentativa/intenção;
+- resultado confirmado.
+
+Eventos observados no cliente são `context_only`.
+Somente fonte `server_confirmed` pode produzir `confirmed_result`.
+
+Um clique não é prova de sucesso.
+
+O buffer inicial é local e bloqueia metadados com conversa/PII/secrets, incluindo `content`, `message`, `text`, `prompt`, `response`, `email`, `phone`, `address`, tokens, secrets e senhas.
+
+### Fora do escopo da #154 inicial
+
+- Kyrubia lendo a base;
+- Kyrubia criando/alterando conteúdo oficial;
+- ingestão de log técnico bruto;
+- nova coleção Firestore de Avisos/FAQ;
+- deploy de regras Firebase;
+- autoaprendizado silencioso;
+- merge sem teste/aprovação.
+
+## Próximo gate da #154
+
+Depois de CI verde:
+
+1. revisar se a fundação compila/testa sem regressão;
+2. criar/selecionar a identidade oficial Kyrub;
+3. criar manualmente a primeira Comunidade Oficial no app;
+4. criar manualmente de 3 a 5 FAQs reais como Debates;
+5. configurar UID/IDs no **Preview**;
+6. validar leitura/busca determinística do conteúdo;
+7. instrumentar poucas jornadas reais com eventos semânticos;
+8. só então planejar o adaptador que entrega conhecimento + estado + contexto para a Kyrubia.
+
+Se alguma etapa exigir mudar regras Firebase de produção, parar no gate e pedir autorização específica antes do deploy.
+
+## PR #152 — preservada e temporariamente secundária
 
 - PR: **#152 — `feat: let Kyrubia activate stores and create products`**
 - URL: `https://github.com/kyrub-app/kyrub/pull/152`
-- Base: `main`
 - Branch: `feat/kyrubia-store-activation-product-creation`
-- Head validado ao criar este handoff: `e55760ec8c3bb357a1bb032b0292572eb572b87b`
+- Head limpo após o último teste: `e9084bb970dc54b40a71278ce47be4266e0f6a51`
 - Estado: **Draft, aberta, não mergeada**
-- Regra: **não fazer merge sem autorização explícita do proprietário**.
+- Não continuar adicionando rotas/regex conversacionais assunto por assunto enquanto a nova base de conhecimento não estiver estabelecida.
 
-## Objetivo da #152
+### O que a #152 já provou
 
-Permitir que a Kyrubia:
+- ativação segura de Loja Kyrub sem publicação automática;
+- criação segura de produto;
+- grants server-side escopados/expiráveis;
+- confirmação própria de produto;
+- enforcement de capacidade no servidor;
+- invalidação de cache ERP após criação pela Kyrubia;
+- Free 5/5 faz handoff para **Pro**, não Business;
+- catálogo comercial V1 determinístico de Free/Pro/Business;
+- próximos passos/chips com `authorization: intent_only`;
+- continuação genérica “Então explica” funciona quando há uma única oferta principal;
+- ambiguidade entre várias ofertas é mantida determinística e pede escolha.
 
-1. detecte objetivo de cadastrar produto/serviço;
-2. se necessário, peça autorização para **ATIVAR** a Loja Kyrub;
-3. colete dados mínimos da loja em passos curtos;
-4. grave perfil da loja sob grant server-side curto/escopado;
-5. retome automaticamente o objetivo de produto;
-6. colete apenas dados essenciais do item;
-7. mostre confirmação final específica do produto;
-8. execute criação pelo servidor com política, idempotência e recibo.
+### Testes humanos relevantes da #152
 
-Ativar Loja Kyrub não significa automaticamente abrir operação nem publicar a loja no marketplace.
+Fluxo testado:
 
-## Ações seguras introduzidas na #152
+- “Cadastre mais 2 produtos na minha loja” → bloqueou corretamente em 5/5 Free;
+- recomendou Pro e disse que Business era desnecessário;
+- “O q ele libera?” → respondeu fatos V1 do Pro sem Gemini;
+- “Então explica” após múltiplas opções → pediu escolha sem Gemini;
+- “Explica o que o plano pró libera” → determinístico;
+- “O q falta pra minha loja ser publicada?” → caiu no Gemini e encontrou limite do provedor.
 
-- `start_store_activation`
-- `update_store_profile`
-- `create_product`
-- `create_note` permanece existente
+Esse último teste foi o gatilho para a mudança de estratégia: em vez de codificar cada novo FAQ diretamente no roteador da Kyrubia, criar uma fonte oficial que explique o produto e combinar essa fonte com estado real do usuário.
 
-Princípios:
+### Publicação da Loja — diagnóstico útil preservado
 
-- servidor define blast radius/metadados;
-- browser não grava diretamente essas ações críticas;
-- grant de ativação é temporário, vinculado ao ator e ao escopo;
-- criação de produto possui confirmação própria;
-- contexto local do workflow não é autoridade;
-- loja canônica permanece pausada até ação explícita de publicação/abertura apropriada.
+O fluxo manual atual em `StoreConfigModal.tsx`:
 
-## Capacidade de produtos / plano
+- publicação é separada de `status: open/closed`;
+- `publicationStatus` usa `published/paused`;
+- o botão de publicar exige nome da loja;
+- descrição, endereço, logo e banner não são hoje requisitos obrigatórios de publicação;
+- o snapshot ERP atual da Kyrubia ainda não carrega `publicationStatus`.
 
-Estado implementado em #152:
+Não inventar requisitos adicionais de publicação.
 
-- servidor possui enforcement de capacidade;
-- Free atualmente bloqueia acima de 5 produtos;
-- cliente possui preflight conversacional de capacidade;
-- contexto ERP é invalidado após `create_product` para evitar contagem imediatamente obsoleta;
-- servidor continua autoridade final contra corrida/bypass.
+## Multi-produto da #152
 
-### Decisão comercial nova ainda a aplicar
+O problema humano original foi “Cadastre mais 2 produtos” ser tratado como um único produto com campos concatenados.
 
-A resposta atual da #152 pode oferecer **Business** quando o Free chega a 5 itens. Isso está obsoleto perante a Constituição de Produto.
+A implementação sequencial foi adicionada tecnicamente na #152:
 
-Novo fluxo esperado:
+- quantidade/progresso local;
+- um produto por vez;
+- confirmação individual;
+- criação individual por `create_product`, nunca batch fictício;
+- avanço para o próximo item após sucesso;
+- rechecagem de capacidade;
+- proteção contra nomes/preços/estoques combinados.
 
-- Free (5) → oferecer **Pro**;
-- Pro → Business somente quando uma capacidade Business realmente for necessária;
-- Kyrubia deve recomendar o menor plano suficiente.
-
-## Problema humano encontrado: múltiplos produtos
-
-Teste humano realizado com intenção “Cadastre mais 2 produtos na minha loja”.
-
-Comportamento observado:
-
-- o fluxo entrou como produto único;
-- entradas combinadas como “Teste2 e teste 3”, “R$14 e R$21” e “10 e 20” foram tratadas como campos de um único produto;
-- depois, ao tentar criar outro item com a loja já em 5/5, o bloqueio comercial funcionou e nenhum sexto item foi criado.
-
-### Diagnóstico e correção já realizada
-
-Havia risco de snapshot de contagem do ERP ficar até 10s atrasado após criação via Kyrubia. A #152 centralizou invalidação do cache após execução válida de `create_product`.
-
-**Não afirmar que existe force-read antes de toda intenção; o hardening implementado é invalidação após criação + enforcement server-side.**
-
-## Próxima implementação técnica recomendada
-
-**Criar workflow sequencial real para múltiplos produtos dentro da #152.**
-
-Requisitos:
-
-1. persistir quantidade solicitada e progresso apenas como estado conversacional local;
-2. coletar um item por vez;
-3. confirmação individual para cada produto;
-4. depois de sucesso do Produto 1, avançar para coleta do Produto 2 em vez de limpar todo o workflow;
-5. invalidar contexto ERP após cada criação;
-6. reavaliar capacidade antes de continuar;
-7. se capacidade acabar por concorrência/alteração externa, interromper e fazer handoff comercial correto;
-8. nunca criar ação de “batch” fictícia: reutilizar `create_product` individualmente;
-9. cancelamento precisa encerrar/ajustar o workflow de forma explícita;
-10. testes de contrato para não concatenar nomes, preços ou estoques de itens diferentes.
-
-## Human validation esperada após a próxima mudança
-
-Quando houver capacidade para 2 itens (preferencialmente conta/ambiente descartável ou estado controlado):
-
-1. enviar “Cadastre mais 2 produtos na minha loja”;
-2. Kyrubia inicia Produto 1;
-3. fornecer nome/preço/categoria/estoque do Produto 1;
-4. confirmar Produto 1;
-5. verificar um `/api/action-execute 200` e ausência de fallback `/api/kyrubia` para fluxo local suportado;
-6. Kyrubia retoma automaticamente Produto 2;
-7. fornecer e confirmar Produto 2;
-8. verificar segundo `/api/action-execute 200`;
-9. conferir dois produtos distintos na Loja Kyrub;
-10. confirmar que nenhum campo foi combinado entre itens.
-
-Não excluir produto real do proprietário nem resetar Loja Kyrub apenas para fabricar capacidade de teste sem autorização explícita.
+A validação humana completa com dois novos itens ainda exige um estado controlado com capacidade suficiente; não excluir produtos reais apenas para fabricar esse cenário sem autorização.
 
 ## Preview estável
-
-Estratégia intencional: utilizar um único alias de Preview para evitar adicionar um domínio Firebase novo a cada deployment.
 
 Alias estável conhecido:
 
 `https://kyrub-git-feat-profile-react-rebuild-kyrubapp-6434s-projects.vercel.app/`
 
-A branch de Preview estável é `feat/profile-react-rebuild`.
+Branch de Preview estável: `feat/profile-react-rebuild`.
 
-### Situação conhecida na criação deste handoff
+Estratégia intencional: reutilizar um alias para evitar cadastrar um domínio Firebase por deployment efêmero.
 
-A Vercel atingiu `build-rate-limit` ao tentar reconstruir o alias estável com as alterações mais recentes da #152. O deployment da própria branch da #152 no head `e55760ec...` chegou a READY, mas o usuário não deve ser orientado a cadastrar domínios Firebase efêmeros apenas para testar.
+Antes de pedir teste humano:
 
-Antes de pedir novo teste humano no alias estável:
-
-1. consultar o deployment realmente servido pelo alias;
-2. confirmar que o commit contém a mudança a testar;
-3. se ainda bloqueado por rate limit, não disparar sequência de commits vazios;
-4. quando liberar, gerar/atualizar **um único** build agrupado;
-5. só então notificar “pronto para testar”.
-
-## Política de builds durante desenvolvimento
-
-- agrupar pequenas alterações relacionadas antes de enviar;
-- evitar commits vazios repetidos apenas para forçar Vercel;
-- CI verde não substitui validação humana de fluxo;
-- Preview READY não significa automaticamente que o alias estável aponta para aquele deployment;
-- confirmar alias/commit antes de solicitar teste.
+1. confirmar commit realmente servido pelo alias;
+2. confirmar CI/build;
+3. atualizar o Preview uma única vez com mudança agrupada;
+4. só então avisar “pronto para testar”.
 
 ## Segurança que não pode regredir
 
-- nunca solicitar ou expor secrets/private keys;
-- `ActionEvents` deve usar proveniência conservadora por padrão; conteúdo generativo não vira `user_intent` automaticamente;
-- grants server-side são ator-específicos, escopados e expiram;
-- store activation e product creation têm autorizações distintas;
-- ativação da loja ≠ publicação/abertura no marketplace;
-- browser não é autoridade de plano/permissão;
-- servidor revalida limites e alvo do UID autenticado;
+- nunca solicitar/expor secrets/private keys;
+- `ActionEvents` usa proveniência conservadora por padrão;
+- grants são ator-específicos, escopados e expiram;
+- ativação de loja ≠ publicação/abertura;
+- contexto, botão ou evento observado ≠ autoridade;
+- browser não é autoridade final de plano/permissão;
+- servidor revalida limites e UID alvo;
 - ações destrutivas/financeiras/públicas exigem controles próprios;
-- modo manual permanece disponível.
-
-## Generative fallback — atenção
-
-A rota generativa/fallback ainda pode possuir textos/capacidades anteriores à #152. O fluxo operacional de produto atual foi desenhado quota-first/local antes do Gemini.
-
-Não afirmar que o fallback generativo completo de ativação/criação de produtos já está implementado até o código correspondente ser atualizado e testado.
+- modo manual permanece;
+- conhecimento oficial não pode ser autoalterado pela IA;
+- comentários de comunidade não viram regra de produto;
+- eventos não devem copiar conteúdo privado desnecessário.
 
 ## Documentação canônica
 
-Antes de qualquer grande alteração, ler:
+Antes de grande alteração, ler:
 
 - `docs/PRODUCT_CONSTITUTION.md` — invariantes e direção;
 - `docs/PRODUCT_ROADMAP.md` — prioridades/ideias consolidadas;
 - `docs/DEVELOPMENT_HANDOFF.md` — estado técnico atual;
-- `docs/ARCHITECTURE.md` — arquitetura existente;
-- `docs/KYRUBIA.md` — identidade e Lente de Oportunidades;
-- `docs/AI_USAGE_GOVERNANCE.md` — governança/custos de IA;
-- `docs/PRIVACY_SECURITY_READINESS.md` — privacidade e prontidão;
-- `docs/RELEASE_CHECKLIST.md` — liberação.
+- `docs/ARCHITECTURE.md`;
+- `docs/KYRUBIA.md`;
+- `docs/AI_USAGE_GOVERNANCE.md`;
+- `docs/PRIVACY_SECURITY_READINESS.md`;
+- `docs/RELEASE_CHECKLIST.md`;
+- `docs/kyrub-knowledge-observability-foundation.md` enquanto a #154 estiver em desenvolvimento.
+
+Atualizar os documentos automaticamente quando estratégia, arquitetura, prioridade ou próximo gate mudar materialmente. O proprietário não deve precisar lembrar de pedir essa atualização.
 
 ## Protocolo de notificação ao proprietário
-
-O responsável técnico/assistente deve notificar o proprietário quando um gate concreto for atingido, não a cada microalteração.
 
 ### “Pronto para teste humano”
 
 Informar:
 
 - o que mudou;
-- qual Preview/ambiente está correto;
-- roteiro curto e exato de teste;
+- Preview/ambiente correto;
+- roteiro curto/exato;
 - resultado esperado;
-- o que **não** deve ser feito com dados reais.
+- o que não deve ser feito com dados reais.
 
 ### “Teste humano aprovado”
 
-Registrar evidência observada e quais invariantes foram confirmados.
+Registrar evidência observada e invariantes confirmados.
 
 ### “Pronto para merge”
 
-Somente depois de CI + testes aplicáveis + validação humana. Solicitar autorização explícita.
+Somente depois de CI + testes aplicáveis + validação humana. Pedir autorização explícita.
 
 ### Merge
 
-Nunca inferir autorização a partir de elogio, “show”, “ótimo” ou aprovação de uma ideia. Merge precisa de autorização inequívoca, como **“Autorizado”**, **“pode fazer o merge”** ou equivalente explícito.
+Nunca inferir autorização de elogio, “show”, “ótimo” ou aprovação conceitual. Merge exige autorização inequívoca como **“Autorizado”** ou **“pode fazer o merge”**.
 
 ## Última atualização
 
-Criado em 2026-08-10 durante a PR #152. Atualizar este documento sempre que o próximo gate técnico mudar de forma material.
+Atualizado em 2026-08-10 após a decisão de priorizar **Comunidades Oficiais como Conhecimento Oficial + Observabilidade Semântica** antes de continuar a expansão conversacional da Kyrubia.

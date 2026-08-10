@@ -10,23 +10,54 @@
 - `[!]` bloqueado / exige decisão;
 - preços, franquias e comissões marcados como V1 são hipóteses sujeitas a validação econômica/jurídica antes de cobrança real.
 
-## Horizonte A — AGORA
+## Horizonte A — AGORA: conhecimento oficial antes de ampliar a Kyrubia
 
-- [~] Concluir PR #152: ativação de Loja Kyrub e criação segura de produtos pela Kyrubia.
-- [ ] Implementar criação sequencial real de múltiplos produtos: Produto 1 → confirmação → gravação → Produto 2 → confirmação → gravação.
-- [ ] Impedir que entradas como “Teste 2 e Teste 3” sejam interpretadas como um único produto quando o objetivo declarado é cadastrar vários itens.
-- [ ] Revalidar capacidade antes de cada criação; servidor continua autoridade final.
-- [ ] Alterar handoff comercial do limite Free de Business para **Pro**.
-- [ ] Preservar cache consistente do contexto ERP após criação de produto.
-- [ ] Preservar modo manual, idempotência, recibos, Policy Engine e autorização server-side.
-- [ ] Executar novo teste humano no Preview estável antes de merge.
+### Mudança de prioridade — 2026-08-10
+
+A expansão conversacional “frase por frase” da Kyrubia fica **pausada**. A fundação segura já criada não será descartada. O objetivo agora é dar à Kyrubia fontes explícitas de verdade e contexto antes de ensiná-la a responder novos assuntos do produto.
+
+- [x] Comunidades multiusuário já existem na `main` desde a PR #137: mural, Debates, comentários, membros, moderação e capa no Firebase.
+- [~] PR #154: fundação de **Conhecimento Oficial + Observabilidade Semântica**.
+- [ ] Criar/definir o perfil oficial Kyrub que será âncora de autoria confiável.
+- [ ] Criar manualmente a primeira **Comunidade Oficial Kyrub**.
+- [ ] Criar manualmente de 3 a 5 conteúdos reais de FAQ/explicação antes de qualquer geração automática.
+- [ ] Na fase inicial, utilizar Debates oficiais como artigos estruturados: título = assunto/pergunta; conteúdo = explicação oficial; `open` = vigente; `closed` = retirado.
+- [ ] Garantir que somente conteúdo produzido pelo perfil oficial em comunidades explicitamente configuradas seja considerado conhecimento oficial.
+- [ ] Nunca tratar comentários, conteúdo de membros ou um booleano gravado pelo cliente como verdade oficial.
+- [ ] Criar recuperação/busca determinística da base oficial.
+- [ ] Criar eventos semânticos de navegação, tentativa e resultado, sem despejar logs técnicos brutos na Kyrubia.
+- [ ] Instrumentar algumas jornadas reais do app com eventos estruturados depois que o contrato estiver validado.
+- [ ] Só então conectar a Kyrubia como **leitora** de: conhecimento oficial + estado real do usuário + contexto recente.
+- [ ] A Kyrubia não pode alterar silenciosamente conhecimento oficial; edição/publicação continua humana até existir governança específica.
+- [ ] Evoluir posteriormente a aba **Avisos** das Comunidades para uma experiência editorial própria de conteúdo oficial, se isso trouxer ganho real sobre a convenção inicial de Debates.
+
+### Princípio desta fase
+
+> **A Kyrubia não precisa ter o Kyrub inteiro decorado. Ela precisa saber onde está a verdade, enxergar o que está acontecendo e ter permissão segura para agir.**
+
+## Horizonte A.1 — PR #152 preservada, mas expansão conversacional pausada
+
+A PR #152 permanece Draft, não mergeada. O trabalho seguro de execução continua válido, mas novas frases/respostas específicas não são a prioridade enquanto a camada de conhecimento não existir.
+
+- [x] Fundação segura para ativação de Loja Kyrub e criação de produto.
+- [x] Enforcement server-side de capacidade Free.
+- [x] Handoff comercial Free → Pro no limite de catálogo.
+- [x] Catálogo comercial V1 determinístico para perguntas sobre Free/Pro/Business.
+- [x] Próximos Passos Estruturados/chips com `authorization: intent_only`.
+- [x] “Então explica” pode aceitar uma única oferta conversacional anterior sem Gemini.
+- [~] Workflow sequencial de múltiplos produtos implementado tecnicamente; validação humana completa ainda depende de capacidade controlada para dois itens.
+- [!] Perguntas operacionais não cobertas ainda podem cair no Gemini; não continuar criando regex/rotas assunto por assunto antes da nova base de conhecimento.
+- [ ] Retomar #152 depois da primeira fundação de Conhecimento Oficial/Observabilidade e decidir o mínimo necessário para concluir/mergear a PR.
 - [ ] Não fazer merge de #152 sem autorização explícita.
 
 ## Horizonte B — Fundações transversais
 
 - [ ] Centralizar planos, permissões e limites em uma camada de entitlements.
 - [ ] Modelar Free → Pro → Business sem condicionais comerciais espalhadas.
-- [ ] Estruturar eventos reutilizáveis de busca, visualização, clique, compra, reserva, campanha, ação da Kyrubia e retorno de cliente.
+- [~] Estruturar eventos semânticos reutilizáveis; fundação iniciada na PR #154.
+- [ ] Evoluir eventos de busca, descoberta, clique, compra, reserva, campanha, ação da Kyrubia e retorno de cliente.
+- [ ] Distinguir sempre **navegação**, **tentativa/intenção** e **resultado confirmado**.
+- [ ] Não considerar clique como prova de sucesso; resultado confirmado pelo domínio/servidor prevalece.
 - [ ] Criar modelo de atribuição de aquisição: `organic`, `partner`, `ads`, `invite` e futuras fontes.
 - [ ] Planejar/registrar `firstTouchAt`, `partnerId`, `referralCode`, `qualifiedAt`, `convertedAt` quando aplicável.
 - [ ] Evoluir geolocalização como infraestrutura central.
@@ -48,7 +79,7 @@
 - [ ] Fazer Kyrubia recomendar o menor plano suficiente.
 - [ ] Não usar faturamento total como trava automática.
 - [ ] Estudar comissão somente para vendas originadas/intermediadas pelo Kyrub; hipótese Free 10%, Pro 7%, Business 5%.
-- [ ] Criar futuramente indicador de Valor Gerado pelo Kyrub.
+- [ ] Criar futuramente indicador de **Valor Gerado pelo Kyrub**.
 
 ## Horizonte D — Kyrub Ads
 
@@ -128,10 +159,13 @@
 
 ## Horizonte M — Comunidades Oficiais Kyrub
 
+- [x] Infraestrutura de Comunidades multiusuário entregue pela PR #137.
+- [~] Reorientar Comunidades como interface humana também para Conhecimento Oficial.
 - [ ] Criar comunidades oficiais pelo perfil Kyrub.
-- [ ] Kyrubia atua como anfitriã/educadora e, futuramente, moderadora.
+- [ ] Manter criação inicial dos conteúdos **manual**, não automática pela Kyrubia.
+- [ ] Usar conteúdo oficial para onboarding contínuo e, futuramente, grounding da Kyrubia.
 - [ ] Avaliar “Comece pelo Kyrub”, “Kyrubia na prática”, “Venda mais com sua Loja Kyrub”, “Kyrub Freela” e “Comunidade Kyrub”.
-- [ ] Usar comunidades para onboarding contínuo.
+- [ ] Kyrubia atua como anfitriã/educadora e, futuramente, moderadora **somente depois** da governança da fonte estar estabelecida.
 - [ ] Conectar missões educativas ao Clube Kyrub quando fizer sentido.
 - [ ] Evitar inscrições/notificações excessivas por padrão.
 
@@ -206,7 +240,8 @@ Antes de qualquer item:
 7. criar testes antes de declarar concluído;
 8. disponibilizar Preview quando aplicável;
 9. notificar o proprietário com roteiro de teste humano;
-10. não fazer merge sem autorização explícita.
+10. não fazer merge sem autorização explícita;
+11. atualizar estes documentos quando mudar estratégia, arquitetura, prioridade ou próximo gate — sem exigir que o proprietário lembre de pedir.
 
 ## Filtro para novas ideias
 
