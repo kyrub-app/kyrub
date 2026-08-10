@@ -11,11 +11,13 @@ import type {
   KyrubKnowledgeSnapshot,
 } from '../../shared/kyrubKnowledge';
 import { db } from '../utils/firebase';
+import { KYRUB_OFFICIAL_KNOWLEDGE_DEFAULTS } from './officialKnowledgeAnchors';
 
 export interface KyrubOfficialKnowledgeConfig {
   officialProfileUid: string;
   communityIds: string[];
   enabled: boolean;
+  source: 'environment' | 'versioned_defaults' | 'disabled';
 }
 
 const clean = (value: unknown): string =>
@@ -24,22 +26,52 @@ const clean = (value: unknown): string =>
 const runtimeEnv = (): Record<string, unknown> =>
   ((import.meta as ImportMeta & { env?: Record<string, unknown> }).env ?? {});
 
-export const getKyrubOfficialKnowledgeConfig = (): KyrubOfficialKnowledgeConfig => {
-  const env = runtimeEnv();
-  const officialProfileUid = clean(env.VITE_KYRUB_OFFICIAL_PROFILE_UID);
-  const communityIds = Array.from(
+const normalizeCommunityIds = (value: unknown): string[] =>
+  Array.from(
     new Set(
-      clean(env.VITE_KYRUB_OFFICIAL_COMMUNITY_IDS)
-        .split(',')
-        .map(item => item.trim())
+      (Array.isArray(value) ? value : clean(value).split(','))
+        .map(item => clean(item))
         .filter(Boolean)
     )
   ).slice(0, 20);
 
+export const getKyrubOfficialKnowledgeConfig = (): KyrubOfficialKnowledgeConfig => {
+  const env = runtimeEnv();
+  const envProfileUid = clean(env.VITE_KYRUB_OFFICIAL_PROFILE_UID);
+  const envCommunityIds = normalizeCommunityIds(
+    env.VITE_KYRUB_OFFICIAL_COMMUNITY_IDS
+  );
+
+  if (envProfileUid && envCommunityIds.length > 0) {
+    return {
+      officialProfileUid: envProfileUid,
+      communityIds: envCommunityIds,
+      enabled: true,
+      source: 'environment',
+    };
+  }
+
+  const defaultProfileUid = clean(
+    KYRUB_OFFICIAL_KNOWLEDGE_DEFAULTS.officialProfileUid
+  );
+  const defaultCommunityIds = normalizeCommunityIds(
+    KYRUB_OFFICIAL_KNOWLEDGE_DEFAULTS.communityIds
+  );
+
+  if (defaultProfileUid && defaultCommunityIds.length > 0) {
+    return {
+      officialProfileUid: defaultProfileUid,
+      communityIds: defaultCommunityIds,
+      enabled: true,
+      source: 'versioned_defaults',
+    };
+  }
+
   return {
-    officialProfileUid,
-    communityIds,
-    enabled: Boolean(officialProfileUid && communityIds.length > 0),
+    officialProfileUid: '',
+    communityIds: [],
+    enabled: false,
+    source: 'disabled',
   };
 };
 
