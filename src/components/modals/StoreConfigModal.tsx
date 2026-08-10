@@ -28,6 +28,10 @@ import {
   saveCachedUserStore,
   setStoreMarketplacePublication,
 } from '../../utils/storePersistence';
+import {
+  recordStoreSettingsSaveAttempt,
+  recordStoreSettingsSaveConfirmed,
+} from '../../observability/kyrubActivityOutcomes';
 
 type StoreConfigModalProps = React.ComponentProps<
   typeof LegacyStoreConfigModal
@@ -334,8 +338,13 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = props => {
   };
 
   const handleSave = async (): Promise<void> => {
+    recordStoreSettingsSaveAttempt();
     setIsSaving(true);
     const result = await saveStore(true);
+
+    if (result.cloudSynced) {
+      recordStoreSettingsSaveConfirmed();
+    }
 
     if (result.localSaved) {
       notify(

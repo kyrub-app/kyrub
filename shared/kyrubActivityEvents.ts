@@ -16,6 +16,7 @@ export type KyrubActivityEventDomain =
 
 export type KyrubActivityEventSource =
   | 'client_observation'
+  | 'authoritative_write_ack'
   | 'server_confirmed';
 
 export type KyrubActivityEventAuthority =
@@ -46,4 +47,4 @@ export interface KyrubActivityEvent extends KyrubActivityEventInput {
 export const authorityForKyrubActivitySource = (
   source: KyrubActivityEventSource
 ): KyrubActivityEventAuthority =>
-  source === 'server_confirmed' ? 'confirmed_result' : 'context_only';
+  source === 'client_observation' ? 'context_only' : 'confirmed_result';

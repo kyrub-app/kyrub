@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
+import { authorityForKyrubActivitySource } from '../shared/kyrubActivityEvents';
 import {
   enteredSemanticScreens,
   forgetSemanticSelection,
@@ -60,6 +61,40 @@ test('browser activity adapter scopes the local timeline to the authenticated ui
   assert.match(source, /KYRUB_ACTIVITY_UPDATED_EVENT/);
   assert.match(source, /recordKyrubActivityEvent/);
   assert.match(source, /readRecentKyrubActivityEvents/);
+});
+
+test('authoritative cloud acknowledgement is distinct from client observation', () => {
+  assert.equal(authorityForKyrubActivitySource('client_observation'), 'context_only');
+  assert.equal(
+    authorityForKyrubActivitySource('authoritative_write_ack'),
+    'confirmed_result'
+  );
+  assert.equal(authorityForKyrubActivitySource('server_confirmed'), 'confirmed_result');
+});
+
+test('store settings save records attempt first and confirmation only after full cloud sync', () => {
+  const outcomes = readFileSync(
+    new URL('../src/observability/kyrubActivityOutcomes.ts', import.meta.url),
+    'utf8'
+  );
+  const storeModal = readFileSync(
+    new URL('../src/components/modals/StoreConfigModal.tsx', import.meta.url),
+    'utf8'
+  );
+
+  assert.match(outcomes, /store\.settings\.save/);
+  assert.match(outcomes, /interaction\.action_attempted/);
+  assert.match(outcomes, /source: 'client_observation'/);
+  assert.match(outcomes, /result\.action_succeeded/);
+  assert.match(outcomes, /source: 'authoritative_write_ack'/);
+  assert.doesNotMatch(outcomes, /metadata:/);
+
+  const attemptIndex = storeModal.indexOf('recordStoreSettingsSaveAttempt();');
+  const saveIndex = storeModal.indexOf('const result = await saveStore(true);');
+  const cloudGuardIndex = storeModal.indexOf('if (result.cloudSynced)');
+  const confirmedIndex = storeModal.indexOf('recordStoreSettingsSaveConfirmed();');
+  assert.ok(attemptIndex >= 0 && attemptIndex < saveIndex);
+  assert.ok(saveIndex < cloudGuardIndex && cloudGuardIndex < confirmedIndex);
 });
 
 test('activity diagnostic keeps observed context distinct from confirmed results', () => {
