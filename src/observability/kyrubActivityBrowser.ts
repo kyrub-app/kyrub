@@ -8,6 +8,10 @@ import {
   readRecentKyrubActivityEvents,
   recordKyrubActivityEvent,
 } from './kyrubActivityLog';
+import {
+  clearAuthoritativeActivityRuntimeEvents,
+  rememberAuthoritativeActivityRuntimeEvent,
+} from './kyrubAuthoritativeActivityRuntime';
 
 export const KYRUB_ACTIVITY_UPDATED_EVENT = 'kyrub-activity-updated';
 
@@ -23,6 +27,7 @@ export const recordCurrentUserActivityEvent = (
     actorUid,
     input
   );
+  rememberAuthoritativeActivityRuntimeEvent(event);
 
   window.dispatchEvent(
     new CustomEvent(KYRUB_ACTIVITY_UPDATED_EVENT, {
@@ -51,6 +56,7 @@ export const clearCurrentUserActivityEvents = (): void => {
   const actorUid = auth.currentUser?.uid?.trim() ?? '';
   if (!actorUid) return;
   clearKyrubActivityEvents(window.localStorage, actorUid);
+  clearAuthoritativeActivityRuntimeEvents(actorUid);
   window.dispatchEvent(
     new CustomEvent(KYRUB_ACTIVITY_UPDATED_EVENT, {
       detail: { actorUid, cleared: true },

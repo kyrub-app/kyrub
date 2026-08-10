@@ -11,6 +11,7 @@ import { ProfileContactGroupsPolishBridge } from './components/ProfileContactGro
 import { ProfileNextPolishBridge } from './components/ProfileNextPolishBridge';
 import { ProfileOffersFiltersBridge } from './components/ProfileOffersFiltersBridge';
 import { ProfilePublishingDestinationsCloudBridge } from './components/ProfilePublishingDestinationsCloudBridge';
+import { KyrubOfficialKnowledgeRuntimeBridge } from './knowledge/KyrubOfficialKnowledgeRuntimeBridge';
 import { KyrubActivityLogSetupBridge } from './observability/KyrubActivityLogSetupBridge';
 import { KyrubActivityObserverBridge } from './observability/KyrubActivityObserverBridge';
 import './index.css';
@@ -36,6 +37,7 @@ createRoot(rootElement).render(
         <ProfileOffersFiltersBridge />
         <ProfilePublishingDestinationsCloudBridge />
         <ProfileCommunitiesCloudBridge />
+        <KyrubOfficialKnowledgeRuntimeBridge />
         <KyrubActivityObserverBridge />
         <KyrubActivityLogSetupBridge />
         <OfficialKnowledgeSetupBridge />

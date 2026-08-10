@@ -6,6 +6,7 @@ import type {
 } from '../../shared/kyrubActivityEvents';
 import { auth } from '../utils/firebase';
 import { recordCurrentUserActivityEvent } from './kyrubActivityBrowser';
+import { clearAuthoritativeActivityRuntimeEvents } from './kyrubAuthoritativeActivityRuntime';
 import {
   enteredSemanticScreens,
   forgetSemanticSelection,
@@ -51,11 +52,19 @@ const domainForPresenceScreen = (screenId: string): KyrubActivityEventDomain => 
 
 export function KyrubActivityObserverBridge() {
   const authenticatedRef = useRef(Boolean(auth.currentUser));
+  const actorUidRef = useRef(auth.currentUser?.uid ?? '');
   const presenceRef = useRef(new Set<string>());
   const selectionRef = useRef(new Map<string, string>());
 
   useEffect(() =>
     onAuthStateChanged(auth, user => {
+      const previousUid = actorUidRef.current;
+      const nextUid = user?.uid ?? '';
+      if (previousUid && previousUid !== nextUid) {
+        clearAuthoritativeActivityRuntimeEvents(previousUid);
+      }
+
+      actorUidRef.current = nextUid;
       authenticatedRef.current = Boolean(user);
       if (!user) {
         presenceRef.current.clear();
