@@ -4,6 +4,10 @@ import test from 'node:test';
 import type { KyrubKnowledgeItem } from '../shared/kyrubKnowledge';
 import { searchKyrubKnowledge } from '../shared/kyrubKnowledgeSearch';
 import {
+  normalizeSemanticCandidateCatalog,
+  normalizeSemanticSelection,
+} from '../shared/kyrubKnowledgeSemantic';
+import {
   readRecentKyrubActivityEvents,
   recordKyrubActivityEvent,
   type KyrubActivityStorage,
@@ -144,6 +148,43 @@ test('official knowledge search exposes low lexical confidence instead of invent
   assert.ok((results[0]?.coverage ?? 1) < 0.5);
 });
 
+test('semantic candidate catalog sends only IDs and titles, never article bodies', () => {
+  const candidates = normalizeSemanticCandidateCatalog([
+    {
+      id: 'publication',
+      title: 'Como funciona a publicação da Loja Kyrub?',
+      content: 'Este corpo oficial não deve ser enviado ao interpretador.',
+      tags: ['loja'],
+    },
+  ]);
+
+  assert.deepEqual(candidates, [
+    {
+      id: 'publication',
+      title: 'Como funciona a publicação da Loja Kyrub?',
+    },
+  ]);
+});
+
+test('semantic selection cannot promote model-invented IDs into official knowledge', () => {
+  const candidates = normalizeSemanticCandidateCatalog([
+    { id: 'publication', title: 'Como funciona a publicação da Loja Kyrub?' },
+    { id: 'about', title: 'O que é o Kyrub?' },
+  ]);
+  const selection = normalizeSemanticSelection(
+    {
+      candidateIds: ['invented-rule', 'publication', 'publication'],
+      confidence: 'high',
+    },
+    candidates
+  );
+
+  assert.deepEqual(selection, {
+    candidateIds: ['publication'],
+    confidence: 'high',
+  });
+});
+
 test('activity log distinguishes observed context from server-confirmed results', () => {
   const storage = new MemoryStorage();
   const observed = recordKyrubActivityEvent(storage, 'user-1', {
@@ -233,6 +274,29 @@ test('official knowledge setup is explicit, owner-scoped and probes the same tru
   assert.match(source, /score/);
   assert.match(source, /cobertura/);
   assert.match(main, /OfficialKnowledgeSetupBridge/);
+});
+
+test('semantic diagnostic only routes to trusted article IDs and stays separate from Kyrubia answers', () => {
+  const route = readFileSync(
+    new URL('../api/official-knowledge-semantic.ts', import.meta.url),
+    'utf8'
+  );
+  const setup = readFileSync(
+    new URL('../src/components/OfficialKnowledgeSemanticSetupBridge.tsx', import.meta.url),
+    'utf8'
+  );
+  const main = readFileSync(new URL('../src/main.tsx', import.meta.url), 'utf8');
+
+  assert.match(route, /verifyFirebaseSession/);
+  assert.match(route, /GEMINI_API_KEY/);
+  assert.match(route, /Não responda à pergunta/);
+  assert.match(route, /normalizeSemanticSelection/);
+  assert.match(setup, /officialKnowledgeSemantic/);
+  assert.match(setup, /Interpretar significado/);
+  assert.match(setup, /user\.getIdToken\(\)/);
+  assert.match(setup, /id: item\.id/);
+  assert.match(setup, /title: item\.title/);
+  assert.match(main, /OfficialKnowledgeSemanticSetupBridge/);
 });
 
 test('knowledge and activity foundations are not wired into Kyrubia yet', () => {

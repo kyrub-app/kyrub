@@ -2,6 +2,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App.tsx';
 import { AppErrorBoundary } from './components/AppErrorBoundary';
+import { OfficialKnowledgeSemanticSetupBridge } from './components/OfficialKnowledgeSemanticSetupBridge';
 import { OfficialKnowledgeSetupBridge } from './components/OfficialKnowledgeSetupBridge';
 import { ProfileCommunitiesCloudBridge } from './components/ProfileCommunitiesCloudBridge';
 import { ProfileConnectedCardsPolishBridge } from './components/ProfileConnectedCardsPolishBridge';
@@ -34,6 +35,7 @@ createRoot(rootElement).render(
         <ProfilePublishingDestinationsCloudBridge />
         <ProfileCommunitiesCloudBridge />
         <OfficialKnowledgeSetupBridge />
+        <OfficialKnowledgeSemanticSetupBridge />
         <App />
       </>
     </AppErrorBoundary>
