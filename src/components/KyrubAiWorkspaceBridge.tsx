@@ -26,6 +26,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import { onAuthStateChanged, type User } from 'firebase/auth';
+import type { KyrubiaOfferedIntent } from '../../shared/kyrubiaContext';
 import { auth } from '../utils/firebase';
 import { requestKyrubAiConsultant } from '../ai/consultantClient';
 import {
@@ -242,7 +243,8 @@ export function KyrubAiWorkspaceBridge() {
 
   const requestReply = async (
     conversation: KyrubAiLocalConversation,
-    messages = conversation.messages
+    messages = conversation.messages,
+    selectedOfferedIntentId?: string
   ) => {
     if (sending) return;
     abortControllerRef.current?.abort();
@@ -259,6 +261,7 @@ export function KyrubAiWorkspaceBridge() {
           topic: conversation.topic,
           messages,
           turnContext: conversation.lastTurnContext,
+          ...(selectedOfferedIntentId ? { selectedOfferedIntentId } : {}),
         },
         controller.signal
       );
@@ -296,10 +299,12 @@ export function KyrubAiWorkspaceBridge() {
     setFailedConversationId('');
   };
 
-  const sendMessage = async (event?: FormEvent) => {
-    event?.preventDefault();
-    const content = draft.trim();
-    if (!content || sending) return;
+  const submitContent = async (
+    content: string,
+    selectedOfferedIntentId?: string
+  ) => {
+    const cleanContent = content.trim();
+    if (!cleanContent || sending) return;
     if (!user) {
       setErrorMessage('Faça login para conversar com o Consultor Kyrub.');
       return;
@@ -312,12 +317,12 @@ export function KyrubAiWorkspaceBridge() {
       setActiveConversationId(conversation.id);
     }
 
-    const userMessage = createKyrubAiMessage('user', content);
+    const userMessage = createKyrubAiMessage('user', cleanContent);
     const firstUserMessage = !conversation.messages.some(message => message.role === 'user');
     const nextConversation: KyrubAiLocalConversation = {
       ...conversation,
       title: firstUserMessage
-        ? titleFromFirstRequest(content)
+        ? titleFromFirstRequest(cleanContent)
         : conversation.title,
       updatedAt: new Date().toISOString(),
       messages: [...conversation.messages, userMessage],
@@ -328,7 +333,21 @@ export function KyrubAiWorkspaceBridge() {
       const withoutCurrent = current.filter(item => item.id !== nextConversation.id);
       return [nextConversation, ...withoutCurrent];
     });
-    await requestReply(nextConversation, nextConversation.messages);
+    await requestReply(
+      nextConversation,
+      nextConversation.messages,
+      selectedOfferedIntentId
+    );
+  };
+
+  const sendMessage = async (event?: FormEvent) => {
+    event?.preventDefault();
+    await submitContent(draft);
+  };
+
+  const chooseOfferedIntent = (offeredIntent: KyrubiaOfferedIntent) => {
+    if (sending || draft.trim()) return;
+    void submitContent(offeredIntent.label, offeredIntent.id);
   };
 
   const retryLastRequest = () => {
@@ -347,6 +366,10 @@ export function KyrubAiWorkspaceBridge() {
     setErrorMessage('');
     setFailedConversationId('');
   };
+
+  const visibleOfferedIntents = activeConversation?.messages.at(-1)?.role === 'assistant'
+    ? activeConversation.lastTurnContext?.offeredIntents?.slice(0, 3) ?? []
+    : [];
 
   if (!host) return null;
 
@@ -563,6 +586,24 @@ export function KyrubAiWorkspaceBridge() {
                 </div>
               </div>
             ))}
+
+            {visibleOfferedIntents.length > 0 && !sending && !draft.trim() && (
+              <div
+                className="ml-11 flex max-w-[84%] flex-wrap gap-2"
+                aria-label="Próximos passos sugeridos pela Kyrubia"
+              >
+                {visibleOfferedIntents.map(offeredIntent => (
+                  <button
+                    key={offeredIntent.id}
+                    type="button"
+                    onClick={() => chooseOfferedIntent(offeredIntent)}
+                    className="rounded-full border border-violet-500/30 bg-violet-500/10 px-3 py-2 text-left text-xs font-black text-violet-200 transition-colors hover:border-violet-400/60 hover:bg-violet-500/15"
+                  >
+                    {offeredIntent.label}
+                  </button>
+                ))}
+              </div>
+            )}
 
             {sending && (
               <div className="flex items-start gap-3">

@@ -93,7 +93,7 @@ test('Gemini create_note function returns a proposal without executing data writ
     'Comparar preços',
   ]);
   assert.equal(payload.capabilities.actionsEnabled, true);
-  assert.deepEqual(payload.capabilities.enabledActions, ['create_note']);
+  assert.ok(payload.capabilities.enabledActions.includes('create_note'));
   assert.equal(requests.length, 2);
 });
 
@@ -120,7 +120,7 @@ test('confirmed create-note crosses the authenticated safe executor instead of D
     readFile(new URL('../src/ai/consultantClient.ts', import.meta.url), 'utf8'),
     readFile(new URL('../shared/aiConsultant.ts', import.meta.url), 'utf8'),
     readFile(new URL('../shared/kyrubActions.ts', import.meta.url), 'utf8'),
-    readFile(new URL('../src/actions/noteActionService.ts', import.meta.url), 'utf8'),
+    readFile(new URL('../src/actions/kyrubActionService.ts', import.meta.url), 'utf8'),
     readFile(
       new URL('../server/actions/actionExecutionService.ts', import.meta.url),
       'utf8'
@@ -139,9 +139,10 @@ test('confirmed create-note crosses the authenticated safe executor instead of D
   assert.match(clientSource, /emitKyrubAiActionProposal/);
   assert.match(sharedSource, /from '\.\/kyrubActions'/);
   assert.match(actionProtocolSource, /CREATE_NOTE: 'create_note'/);
+  assert.match(actionProtocolSource, /CREATE_PRODUCT: 'create_product'/);
+  assert.match(actionProtocolSource, /UPDATE_PRODUCT_DRAFT: 'update_product_draft'/);
   assert.match(actionProtocolSource, /ANALYZE_CATALOG: 'analyze_catalog'/);
   assert.match(actionProtocolSource, /IMPORT_CATALOG_DRAFT: 'import_catalog_draft'/);
-  assert.match(actionProtocolSource, /CREATE_PRODUCT_DRAFT: 'create_product_draft'/);
   assert.match(actionProtocolSource, /KyrubActionOrigin/);
   assert.match(actionProtocolSource, /KyrubInputProvenance/);
   assert.match(actionProtocolSource, /KyrubExecutionEnvelope/);
@@ -149,10 +150,9 @@ test('confirmed create-note crosses the authenticated safe executor instead of D
 
   assert.match(routeSource, /name: 'create_note'/);
   assert.match(routeSource, /functionDeclarations/);
-  assert.match(routeSource, /enabledActions: \['create_note'\]/);
   assert.doesNotMatch(routeSource, /firebase\/firestore/);
 
-  assert.match(bridgeSource, /executeConfirmedCreateNoteAction/);
+  assert.match(bridgeSource, /executeKyrubAction\(user, pending\.proposal, true\)/);
   assert.match(bridgeSource, /auth\.currentUser/);
   assert.match(bridgeSource, /Nada será salvo antes da confirmação/);
   assert.match(bridgeSource, /Nenhuma nota duplicada foi criada/);
@@ -162,7 +162,7 @@ test('confirmed create-note crosses the authenticated safe executor instead of D
 
   assert.match(actionServiceSource, /\/api\/action-execute/);
   assert.match(actionServiceSource, /user\.getIdToken\(true\)/);
-  assert.match(actionServiceSource, /confirmed: true/);
+  assert.match(actionServiceSource, /JSON\.stringify\(\{ confirmed, proposal \}\)/);
   assert.match(actionServiceSource, /HTTP \$\{response\.status\}/);
   assert.match(actionServiceSource, /endpoint do executor seguro não foi encontrado/);
   assert.doesNotMatch(actionServiceSource, /firebase\/firestore/);
