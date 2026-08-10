@@ -1,9 +1,17 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
-import type { KyrubAiConversationMessage } from '../shared/aiConsultant';
+import type {
+  KyrubAiConsultantResponse,
+  KyrubAiConversationMessage,
+} from '../shared/aiConsultant';
 import type { KyrubErpContextSnapshot } from '../shared/kyrubErpContext';
 import { KYRUB_COMMERCIAL_PLANS_V1 } from '../shared/kyrubCommercialPlans';
+import {
+  attachKyrubiaCapacityPlanSuggestions,
+  createKyrubiaCapacityPlanTurnContext,
+  resolveKyrubiaOfferedIntentContinuation,
+} from '../src/ai/offeredIntentRuntime';
 import {
   describeKyrubiaPlanContextForGenerative,
   resolveKyrubiaPlanConversation,
@@ -45,6 +53,22 @@ const baseConversation = (): KyrubAiConversationMessage[] => [
       'Sua loja já está usando os 5 produtos do Free. Para ampliar o catálogo, o próximo passo é o plano Pro. O Business não é necessário para essa necessidade.',
   },
 ];
+
+const deterministicCapacityResponse = (): KyrubAiConsultantResponse => ({
+  reply:
+    'Sua loja já está usando os 5 produtos incluídos no plano atual (Free). Para cadastrar mais 2 produtos, o próximo passo é fazer upgrade para o plano Pro. Não recomendo upgrade para o plano Business, porque o Pro já atende essa necessidade. A contratação do Pro ainda será conectada ao fluxo de planos do Kyrub; por enquanto posso te explicar o que ele libera. Nenhum produto foi criado agora.',
+  provider: 'kyrub',
+  model: 'kyrub-operational-runtime-v1',
+  mode: 'deterministic',
+  requestId: 'capacity-test',
+  capabilities: {
+    actionsEnabled: true,
+    enabledActions: ['create_product'],
+    enabledReadActions: ['read_store_summary'],
+    voiceEnabled: false,
+    persistentCloudHistoryEnabled: false,
+  },
+});
 
 test('plan runtime answers Pro capabilities from the official V1 reference without Gemini', () => {
   const messages = [
@@ -99,6 +123,111 @@ test('plan runtime keeps conversational focus across short surprise-style follow
   const credits = resolveKyrubiaPlanConversation(creditsMessages, erpContext());
   assert.equal(credits?.focusPlan, 'business');
   assert.match(credits?.reply ?? '', /1\.500 Créditos Kyrubia/i);
+});
+
+test('structured offered intent makes “Então explica” resolve the explicit Pro offer without Gemini', () => {
+  const turnContext = createKyrubiaCapacityPlanTurnContext('owner-plan-test');
+  const result = resolveKyrubiaOfferedIntentContinuation(
+    [
+      ...baseConversation(),
+      { role: 'user', content: 'Então explica' },
+    ],
+    turnContext,
+    undefined,
+    erpContext()
+  );
+
+  assert.ok(result);
+  assert.match(result.reply, /100 produtos ou serviços ativos/i);
+  assert.match(result.reply, /300 Créditos Kyrubia/i);
+  assert.equal(
+    result.turnContext.offeredIntents?.some(item => item.intent === 'plan.price'),
+    true
+  );
+  assert.equal(
+    result.turnContext.offeredIntents?.some(item => item.primary === true),
+    false
+  );
+});
+
+test('ambiguous generic acceptance after a plan explanation stays deterministic and asks the user to choose', () => {
+  const initialTurn = createKyrubiaCapacityPlanTurnContext('owner-plan-test');
+  const firstMessages: KyrubAiConversationMessage[] = [
+    ...baseConversation(),
+    { role: 'user', content: 'Então explica' },
+  ];
+  const first = resolveKyrubiaOfferedIntentContinuation(
+    firstMessages,
+    initialTurn,
+    undefined,
+    erpContext()
+  );
+  assert.ok(first);
+
+  const second = resolveKyrubiaOfferedIntentContinuation(
+    [
+      ...firstMessages,
+      { role: 'assistant', content: first.reply },
+      { role: 'user', content: 'Então explica' },
+    ],
+    first.turnContext,
+    undefined,
+    erpContext()
+  );
+
+  assert.ok(second);
+  assert.match(second.reply, /Escolha uma opção abaixo/i);
+  assert.equal(second.turnContext.offeredIntents?.length, 3);
+});
+
+test('chip selection carries an exact structured intent instead of relying on button label parsing', () => {
+  const initialTurn = createKyrubiaCapacityPlanTurnContext('owner-plan-test');
+  const explained = resolveKyrubiaOfferedIntentContinuation(
+    [...baseConversation(), { role: 'user', content: 'Então explica' }],
+    initialTurn,
+    undefined,
+    erpContext()
+  );
+  assert.ok(explained);
+
+  const creditsIntent = explained.turnContext.offeredIntents?.find(
+    item => item.intent === 'plan.credits'
+  );
+  assert.ok(creditsIntent);
+  assert.equal(creditsIntent.authorization, 'intent_only');
+
+  const credits = resolveKyrubiaOfferedIntentContinuation(
+    [
+      ...baseConversation(),
+      { role: 'user', content: 'Então explica' },
+      { role: 'assistant', content: explained.reply },
+      { role: 'user', content: 'texto visual pode mudar sem quebrar o roteamento' },
+    ],
+    explained.turnContext,
+    creditsIntent.id,
+    erpContext()
+  );
+
+  assert.ok(credits);
+  assert.match(credits.reply, /300 Créditos Kyrubia/i);
+});
+
+test('capacity handoff exposes suggested next steps without granting action authority', () => {
+  const attached = attachKyrubiaCapacityPlanSuggestions(
+    deterministicCapacityResponse(),
+    'owner-plan-test'
+  );
+
+  assert.equal(attached.actionProposal, undefined);
+  assert.equal(attached.turnContext?.sourceAction, 'operational_workflow');
+  assert.equal(attached.turnContext?.offeredIntents?.length, 3);
+  assert.equal(attached.turnContext?.offeredIntents?.[0]?.primary, true);
+  assert.equal(
+    attached.turnContext?.offeredIntents?.every(
+      item => item.authorization === 'intent_only'
+    ),
+    true
+  );
 });
 
 test('plan runtime refuses to fake a paid upgrade flow that is not implemented', () => {
@@ -177,16 +306,30 @@ test('commercial plan reference stays separate from executable entitlement state
   assert.equal(KYRUB_COMMERCIAL_PLANS_V1.business.kyrubiaIntelligenceCredits, 1_500);
 });
 
-test('browser build routes the Kyrubia workspace through the plan-aware consultant wrapper', () => {
+test('browser build routes the workspace through structured plan suggestions and keeps chips intent-only', () => {
   const vite = readFileSync(new URL('../vite.config.ts', import.meta.url), 'utf8');
   const wrapper = readFileSync(
     new URL('../src/ai/consultantClientWithPlans.ts', import.meta.url),
     'utf8'
   );
+  const workspace = readFileSync(
+    new URL('../src/components/KyrubAiWorkspaceBridge.tsx', import.meta.url),
+    'utf8'
+  );
+  const context = readFileSync(
+    new URL('../shared/kyrubiaContext.ts', import.meta.url),
+    'utf8'
+  );
 
   assert.ok(vite.includes('find: /^\\.\\.\\/ai\\/consultantClient$/'));
   assert.match(vite, /consultantClientWithPlans\.ts/);
-  assert.match(wrapper, /resolveKyrubiaPlanConversation/);
+  assert.match(wrapper, /resolveKyrubiaOfferedIntentContinuation/);
+  assert.match(wrapper, /attachKyrubiaCapacityPlanSuggestions/);
   assert.match(wrapper, /kyrub-plan-runtime-v1/);
   assert.match(wrapper, /requestLegacyKyrubAiConsultant/);
+  assert.match(workspace, /selectedOfferedIntentId/);
+  assert.match(workspace, /visibleOfferedIntents/);
+  assert.match(workspace, /chooseOfferedIntent/);
+  assert.match(workspace, /Próximos passos sugeridos pela Kyrubia/);
+  assert.match(context, /authorization: 'intent_only'/);
 });

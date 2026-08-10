@@ -9,6 +9,11 @@ import {
   requestKyrubAiConsultant as requestLegacyKyrubAiConsultant,
 } from './consultantClient';
 import {
+  attachKyrubiaCapacityPlanSuggestions,
+  createKyrubiaPlanFollowUpTurnContext,
+  resolveKyrubiaOfferedIntentContinuation,
+} from './offeredIntentRuntime';
+import {
   describeKyrubiaPlanContextForGenerative,
   resolveKyrubiaPlanConversation,
 } from './planConversationRuntime';
@@ -50,18 +55,64 @@ const appendPlanScreenContext = (
     .join(' | ')
     .slice(0, 240);
 
+const withoutOfferedIntentSelection = (
+  payload: KyrubAiConsultantRequest
+): KyrubAiConsultantRequest => {
+  const {
+    selectedOfferedIntentId: _selectedOfferedIntentId,
+    ...cleanPayload
+  } = payload;
+  return cleanPayload;
+};
+
+const deterministicResponse = (
+  reply: string,
+  turnContext: NonNullable<KyrubAiConsultantResponse['turnContext']>
+): KyrubAiConsultantResponse => ({
+  reply,
+  provider: 'kyrub',
+  model: 'kyrub-plan-runtime-v1',
+  mode: 'deterministic',
+  requestId: createRequestId(),
+  turnContext,
+  capabilities: capabilities(),
+});
+
 export const requestKyrubAiConsultant = async (
   payload: KyrubAiConsultantRequest,
   signal?: AbortSignal
 ): Promise<KyrubAiConsultantResponse> => {
   const user = auth.currentUser;
   if (!user) {
-    return requestLegacyKyrubAiConsultant(payload, signal);
+    return requestLegacyKyrubAiConsultant(
+      withoutOfferedIntentSelection(payload),
+      signal
+    );
+  }
+
+  const offeredContinuation = resolveKyrubiaOfferedIntentContinuation(
+    payload.messages,
+    payload.turnContext,
+    payload.selectedOfferedIntentId,
+    payload.erpContext
+  );
+  if (offeredContinuation) {
+    return deterministicResponse(
+      offeredContinuation.reply,
+      offeredContinuation.turnContext
+    );
   }
 
   const planContext = describeKyrubiaPlanContextForGenerative(payload.messages);
   if (!planContext) {
-    return requestLegacyKyrubAiConsultant(payload, signal);
+    const legacyResult = await requestLegacyKyrubAiConsultant(
+      withoutOfferedIntentSelection(payload),
+      signal
+    );
+    return attachKyrubiaCapacityPlanSuggestions(
+      legacyResult,
+      payload.erpContext?.store?.id ?? null
+    );
   }
 
   let erpContext = payload.erpContext;
@@ -79,21 +130,22 @@ export const requestKyrubAiConsultant = async (
 
   const resolved = resolveKyrubiaPlanConversation(payload.messages, erpContext);
   if (resolved) {
-    return {
-      reply: resolved.reply,
-      provider: 'kyrub',
-      model: 'kyrub-plan-runtime-v1',
-      mode: 'deterministic',
-      requestId: createRequestId(),
-      capabilities: capabilities(),
-    };
+    const latestUserMessage = payload.messages.at(-1)?.content ?? '';
+    return deterministicResponse(
+      resolved.reply,
+      createKyrubiaPlanFollowUpTurnContext(
+        resolved.focusPlan,
+        latestUserMessage,
+        erpContext?.store?.id ?? null
+      )
+    );
   }
 
   // Open strategic/judgment questions still go to Gemini, but with the
   // commercial V1 facts attached so the model does not invent plan data.
   return requestLegacyKyrubAiConsultant(
     {
-      ...payload,
+      ...withoutOfferedIntentSelection(payload),
       ...(erpContext ? { erpContext } : {}),
       screenContext: appendPlanScreenContext(
         planContext,
