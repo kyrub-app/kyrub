@@ -36,6 +36,19 @@ O leitor revalida que:
 
 Os IDs são identificadores públicos, não secrets. Mesmo assim, a configuração deve ser administrada pelo deployment do Kyrub, e não por dados arbitrários escritos pelo usuário.
 
+### Diagnóstico explícito de configuração
+
+O Preview pode abrir o modo `?officialKnowledgeSetup=1`. Esse modo é visível apenas quando solicitado pela URL e:
+
+- lista apenas comunidades que o perfil autenticado realmente possui;
+- mostra `communityId` e o UID do proprietário candidato;
+- não altera a oficialidade de nenhum documento;
+- testa a comunidade candidata usando o mesmo `readOfficialCommunityKnowledge` que será usado pela fundação;
+- exibe os títulos dos Debates elegíveis como prova de recuperação;
+- permite copiar as duas âncoras para configuração do deployment.
+
+Esse diagnóstico não é uma credencial administrativa e não concede autoridade ao perfil. A oficialidade continua dependendo da configuração controlada pelo Kyrub e das revalidações do leitor.
+
 ## 3. Kyrubia ainda não lê essa fonte nesta PR
 
 Esta fundação deliberadamente **não conecta** Comunidades à Kyrubia ainda.
@@ -84,14 +97,22 @@ O logger bloqueia chaves de metadados que possam carregar conversa ou dados pess
 
 Eventos devem referenciar IDs e estados sem copiar conteúdo privado.
 
-## 6. Próxima etapa
+## 6. Estado humano desta etapa
+
+A primeira comunidade manual escolhida para a base oficial é **Manual KYRUB**.
+
+Primeiro artigo publicado manualmente:
+
+- `O que é o Kyrub?`
+
+O próximo gate é validar no Preview que o diagnóstico reconhece `Manual KYRUB`, recupera esse Debate como **Conhecimento elegível** e fornece as duas âncoras exatas para configurar o deployment.
+
+## 7. Próxima etapa
 
 Depois de validar esta fundação:
 
-- escolher/criar o perfil oficial Kyrub;
-- criar a primeira Comunidade Oficial manualmente;
-- publicar de 3 a 5 FAQs reais como Debates;
-- configurar os IDs no Preview;
-- validar a recuperação determinística desses conteúdos;
+- configurar no Preview o perfil oficial e a comunidade `Manual KYRUB`;
+- validar novamente a recuperação determinística do primeiro artigo;
+- publicar mais FAQs reais manualmente;
 - instrumentar algumas jornadas do app com eventos semânticos;
 - só então criar o adaptador que entrega conhecimento + estado + contexto recente para a Kyrubia.
