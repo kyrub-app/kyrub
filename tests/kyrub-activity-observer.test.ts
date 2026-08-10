@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
+import {
+  enteredSemanticScreens,
+  forgetSemanticSelection,
+  rememberSemanticSelection,
+} from '../src/observability/kyrubActivityTransitions';
 
 test('activity observer records semantic screen identifiers without raw user content', () => {
   const source = readFileSync(
@@ -17,7 +22,31 @@ test('activity observer records semantic screen identifiers without raw user con
   assert.match(source, /communities:directory/);
   assert.match(source, /source: 'client_observation'/);
   assert.match(source, /recordCurrentUserActivityEvent/);
+  assert.match(source, /enteredSemanticScreens/);
+  assert.match(source, /rememberSemanticSelection/);
   assert.doesNotMatch(source, /metadata:\s*\{[^}]*(content|message|email|phone|address)/s);
+});
+
+test('semantic presence records entry once and ignores DOM re-renders until exit', () => {
+  const firstPresence = new Set<string>();
+  const current = new Set(['erp:panel']);
+
+  assert.deepEqual(enteredSemanticScreens(firstPresence, current), ['erp:panel']);
+  assert.deepEqual(enteredSemanticScreens(current, current), []);
+  assert.deepEqual(enteredSemanticScreens(current, new Set()), []);
+  assert.deepEqual(enteredSemanticScreens(new Set(), current), ['erp:panel']);
+});
+
+test('semantic selections record actual screen transitions instead of repeated clicks', () => {
+  const memory = new Map<string, string>();
+
+  assert.equal(rememberSemanticSelection(memory, 'erp-tab', 'erp:reservas'), true);
+  assert.equal(rememberSemanticSelection(memory, 'erp-tab', 'erp:reservas'), false);
+  assert.equal(rememberSemanticSelection(memory, 'erp-tab', 'erp:gerencial'), true);
+  assert.equal(rememberSemanticSelection(memory, 'erp-tab', 'erp:reservas'), true);
+
+  forgetSemanticSelection(memory, 'erp-tab');
+  assert.equal(rememberSemanticSelection(memory, 'erp-tab', 'erp:reservas'), true);
 });
 
 test('browser activity adapter scopes the local timeline to the authenticated uid', () => {

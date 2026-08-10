@@ -6,8 +6,11 @@ import type {
 } from '../../shared/kyrubActivityEvents';
 import { auth } from '../utils/firebase';
 import { recordCurrentUserActivityEvent } from './kyrubActivityBrowser';
-
-const DUPLICATE_WINDOW_MS = 1_200;
+import {
+  enteredSemanticScreens,
+  forgetSemanticSelection,
+  rememberSemanticSelection,
+} from './kyrubActivityTransitions';
 
 const compactLabel = (button: HTMLButtonElement): string =>
   (button.textContent ?? '').replace(/\s+/g, ' ').trim().toLocaleLowerCase('pt-BR');
@@ -40,40 +43,48 @@ const eventForScreen = (
   screenId,
 });
 
+const domainForPresenceScreen = (screenId: string): KyrubActivityEventDomain => {
+  if (screenId === 'communities:directory') return 'community';
+  if (screenId === 'erp:panel') return 'store';
+  return 'app';
+};
+
 export function KyrubActivityObserverBridge() {
-  const recentRef = useRef(new Map<string, number>());
   const authenticatedRef = useRef(Boolean(auth.currentUser));
+  const presenceRef = useRef(new Set<string>());
+  const selectionRef = useRef(new Map<string, string>());
 
   useEffect(() =>
     onAuthStateChanged(auth, user => {
       authenticatedRef.current = Boolean(user);
-      if (!user) recentRef.current.clear();
+      if (!user) {
+        presenceRef.current.clear();
+        selectionRef.current.clear();
+      }
     }), []);
 
   useEffect(() => {
     const emit = (input: KyrubActivityEventInput) => {
       if (!authenticatedRef.current) return;
-      const signature = [
-        input.type,
-        input.domain,
-        input.screenId ?? '',
-        input.actionId ?? '',
-        input.entityType ?? '',
-        input.entityId ?? '',
-      ].join('|');
-      const now = Date.now();
-      const last = recentRef.current.get(signature) ?? 0;
-      if (now - last < DUPLICATE_WINDOW_MS) return;
-      recentRef.current.set(signature, now);
       recordCurrentUserActivityEvent(input);
+    };
+
+    const emitSelection = (
+      scope: string,
+      screenId: string,
+      domain: KyrubActivityEventDomain
+    ) => {
+      if (!rememberSemanticSelection(selectionRef.current, scope, screenId)) return;
+      emit(eventForScreen(screenId, domain));
     };
 
     const inspectKnownScreens = () => {
       if (!authenticatedRef.current) return;
 
+      const currentPresence = new Set<string>();
       const pathname = window.location.pathname;
       if (pathname === '/staff' || pathname.endsWith('/staff')) {
-        emit(eventForScreen('staff', 'app'));
+        currentPresence.add('staff');
       }
 
       if (
@@ -81,12 +92,28 @@ export function KyrubActivityObserverBridge() {
           '#profile-social-hub-modal [data-kyrub-cloud-communities]'
         )
       ) {
-        emit(eventForScreen('communities:directory', 'community'));
+        currentPresence.add('communities:directory');
       }
 
       if (document.querySelector('#erp-main-header')) {
-        emit(eventForScreen('erp:panel', 'store'));
+        currentPresence.add('erp:panel');
       }
+
+      for (const screenId of enteredSemanticScreens(
+        presenceRef.current,
+        currentPresence
+      )) {
+        emit(eventForScreen(screenId, domainForPresenceScreen(screenId)));
+      }
+
+      if (!currentPresence.has('erp:panel')) {
+        forgetSemanticSelection(selectionRef.current, 'erp-tab');
+      }
+      if (!currentPresence.has('communities:directory')) {
+        forgetSemanticSelection(selectionRef.current, 'community-area');
+      }
+
+      presenceRef.current = currentPresence;
     };
 
     const handleClick = (event: MouseEvent) => {
@@ -96,12 +123,12 @@ export function KyrubActivityObserverBridge() {
       if (!(button instanceof HTMLButtonElement)) return;
 
       if (button.id === 'header-user-profile-trigger') {
-        emit(eventForScreen('profile:settings', 'app'));
+        emitSelection('profile-modal', 'profile:settings', 'app');
         return;
       }
 
       if (button.id === 'orange-house-config-btn') {
-        emit(eventForScreen('store:settings', 'store'));
+        emitSelection('store-settings', 'store:settings', 'store');
         return;
       }
 
@@ -114,7 +141,7 @@ export function KyrubActivityObserverBridge() {
       ) {
         const screenId = mainTabScreen(label);
         if (screenId) {
-          emit(eventForScreen(screenId, 'app'));
+          emitSelection('main-tab', screenId, 'app');
           return;
         }
       }
@@ -125,7 +152,7 @@ export function KyrubActivityObserverBridge() {
       ) {
         const screenId = erpScreen(label);
         if (screenId) {
-          emit(eventForScreen(screenId, 'store'));
+          emitSelection('erp-tab', screenId, 'store');
         }
       }
     };
