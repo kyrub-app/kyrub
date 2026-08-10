@@ -106,21 +106,57 @@ Eventos devem referenciar IDs e estados sem copiar conteúdo privado.
 
 ## 6. Estado humano desta etapa
 
-A primeira comunidade manual escolhida para a base oficial é **Manual KYRUB**.
+A comunidade manual escolhida para a base oficial é **Manual KYRUB**.
 
-Primeiro artigo publicado manualmente:
+Artigos/FAQ publicados manualmente e mantidos `open` pelo perfil oficial:
 
-- `O que é o Kyrub?`
+- `O que é o Kyrub?`;
+- `Qual a diferença entre ativar, publicar e abrir uma Loja Kyrub?`;
+- `O que o plano Pro libera?`;
+- `Como funciona a publicação da Loja Kyrub?`.
 
-O diagnóstico humano recuperou as âncoras reais do proprietário e da comunidade, que agora estão configuradas na #154 com fallback versionado e precedência futura de `env`.
+A criação manual é intencional: a Kyrubia ainda não cria nem edita conhecimento oficial.
 
-## 7. Próxima etapa
+### Gate humano aprovado — identidade e recuperação
 
-Depois de CI/build do head com as âncoras:
+Em 2026-08-10 o proprietário validou no Preview estável que:
 
-- atualizar o Preview estável;
-- validar que o leitor inicia como fonte oficial configurada e recupera `O que é o Kyrub?` sem precisar selecionar manualmente a comunidade candidata;
-- publicar mais FAQs reais manualmente;
-- testar busca lexical com perguntas diferentes do título literal;
-- instrumentar algumas jornadas do app com eventos semânticos;
-- só então criar o adaptador que entrega conhecimento + estado + contexto recente para a Kyrubia.
+- a fonte ativa iniciou pelo fallback versionado da PR;
+- o perfil e a comunidade configurados foram reconhecidos sem seleção manual;
+- `Manual KYRUB` passou pelas revalidações de proprietário e visibilidade;
+- `O que é o Kyrub?` apareceu como **Conhecimento oficial recuperado**.
+
+Esse gate prova o circuito **conteúdo manual → Comunidade Oficial → âncora configurada → revalidação → recuperação automática**, ainda sem Kyrubia/Gemini.
+
+## 7. Busca determinística de diagnóstico
+
+O próximo gate mede qualidade de recuperação entre vários artigos oficiais concorrentes.
+
+`shared/kyrubKnowledgeSearch.ts` permanece local e determinístico, mas agora expõe também:
+
+- score de ranking;
+- cobertura dos termos relevantes da pergunta;
+- termos encontrados;
+- termos encontrados no título;
+- confiança `high`, `medium` ou `low`.
+
+A busca remove palavras funcionais comuns, diferencia termos raros dos muito repetidos entre os documentos e aceita correspondência morfológica limitada por prefixo lexical. Isso não é uma camada semântica nem IA.
+
+O diagnóstico deve ser conservador:
+
+- correspondência baixa não vira verdade automática;
+- ausência de correspondência é um resultado válido;
+- nenhuma busca nesta tela chama Gemini;
+- o ranking serve para testar a fonte e o mecanismo antes de integrá-los à Kyrubia.
+
+## 8. Próxima etapa
+
+Depois de CI/build do head com a caixa de busca:
+
+1. atualizar o Preview estável;
+2. confirmar que os quatro artigos são recuperados da `Manual KYRUB`;
+3. testar perguntas livres na caixa **Teste determinístico de busca · Zero Gemini**;
+4. observar ranking, score, cobertura, termos encontrados e confiança;
+5. registrar perguntas em que o ranking falha ou fica fraco sem corrigir tudo por regex;
+6. instrumentar algumas jornadas reais do app com eventos semânticos;
+7. somente depois criar o adaptador que entrega conhecimento + estado + contexto recente para a Kyrubia.

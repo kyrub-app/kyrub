@@ -46,6 +46,33 @@ const knowledgeItem = (
   tags: [],
 });
 
+const manualKnowledge = (): KyrubKnowledgeItem[] => [
+  knowledgeItem(
+    'about',
+    'O que é o Kyrub?',
+    'O Kyrub reúne organização, relações, comunidades, Loja Kyrub, produtos, serviços e a Kyrubia em um ecossistema conectado.',
+    '2026-08-10T12:00:00.000Z'
+  ),
+  knowledgeItem(
+    'lifecycle',
+    'Qual a diferença entre ativar, publicar e abrir uma Loja Kyrub?',
+    'Ativar cria a estrutura. Publicar torna a Loja Kyrub disponível para descoberta pública. Abrir ou fechar representa o estado operacional.',
+    '2026-08-10T13:00:00.000Z'
+  ),
+  knowledgeItem(
+    'pro',
+    'O que o plano Pro libera?',
+    'O Pro prevê até 100 produtos ou serviços ativos e 300 Créditos Kyrubia Inteligência por mês. O Free possui 5 produtos ou serviços ativos.',
+    '2026-08-10T14:00:00.000Z'
+  ),
+  knowledgeItem(
+    'publication',
+    'Como funciona a publicação da Loja Kyrub?',
+    'A publicação da Loja Kyrub exige nome e é separada da ativação e do estado open ou closed. O publicationStatus usa published ou paused.',
+    '2026-08-10T15:00:00.000Z'
+  ),
+];
+
 test('official knowledge search is deterministic and prefers title matches', () => {
   const results = searchKyrubKnowledge(
     [
@@ -57,6 +84,51 @@ test('official knowledge search is deterministic and prefers title matches', () 
 
   assert.equal(results[0]?.item.id, 'store');
   assert.ok((results[0]?.score ?? 0) > 0);
+  assert.ok((results[0]?.coverage ?? 0) > 0);
+});
+
+test('official knowledge search keeps plan content below publication references for publication questions', () => {
+  const results = searchKyrubKnowledge(
+    manualKnowledge(),
+    'quero publicar a minha loja'
+  );
+
+  assert.ok(results.length >= 2);
+  assert.notEqual(results[0]?.item.id, 'pro');
+  assert.ok(['publication', 'lifecycle'].includes(results[0]?.item.id ?? ''));
+  assert.ok((results.findIndex(result => result.item.id === 'pro')) > 0);
+});
+
+test('official knowledge search ranks lifecycle distinction when the query names activation, publication and opening', () => {
+  const results = searchKyrubKnowledge(
+    manualKnowledge(),
+    'qual a diferença entre ativar publicar e abrir a loja'
+  );
+
+  assert.equal(results[0]?.item.id, 'lifecycle');
+  assert.equal(results[0]?.confidence, 'high');
+  assert.ok(results[0]?.titleMatchedTokens.includes('ativar'));
+});
+
+test('official knowledge search ranks Pro for explicit plan questions', () => {
+  const results = searchKyrubKnowledge(
+    manualKnowledge(),
+    'o plano Pro libera quantos produtos'
+  );
+
+  assert.equal(results[0]?.item.id, 'pro');
+  assert.ok(['high', 'medium'].includes(results[0]?.confidence ?? ''));
+});
+
+test('official knowledge search exposes low lexical confidence instead of inventing certainty', () => {
+  const results = searchKyrubKnowledge(
+    manualKnowledge(),
+    'o que falta pra minha loja aparecer pras pessoas'
+  );
+
+  assert.ok(results.length > 0);
+  assert.equal(results[0]?.confidence, 'low');
+  assert.ok((results[0]?.coverage ?? 1) < 0.5);
 });
 
 test('activity log distinguishes observed context from server-confirmed results', () => {
@@ -142,6 +214,11 @@ test('official knowledge setup is explicit, owner-scoped and probes the same tru
   assert.match(source, /VITE_KYRUB_OFFICIAL_COMMUNITY_IDS/);
   assert.match(source, /navigator\.clipboard\.writeText/);
   assert.match(source, /Conhecimento elegível/);
+  assert.match(source, /Teste determinístico de busca/);
+  assert.match(source, /Zero Gemini/);
+  assert.match(source, /searchKyrubKnowledge/);
+  assert.match(source, /score/);
+  assert.match(source, /cobertura/);
   assert.match(main, /OfficialKnowledgeSetupBridge/);
 });
 
@@ -161,5 +238,5 @@ test('knowledge and activity foundations are not wired into Kyrubia yet', () => 
 
   assert.doesNotMatch(knowledge, /consultantClient|KyrubAiConsultant|Gemini|@google\/genai/);
   assert.doesNotMatch(activity, /consultantClient|KyrubAiConsultant|Gemini|@google\/genai/);
-  assert.doesNotMatch(setup, /consultantClient|KyrubAiConsultant|Gemini|@google\/genai/);
+  assert.doesNotMatch(setup, /consultantClient|KyrubAiConsultant|@google\/genai/);
 });
