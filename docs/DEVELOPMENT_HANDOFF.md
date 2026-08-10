@@ -78,7 +78,7 @@ A aba Avisos pode virar um editor/leitor dedicado depois, mantendo o mesmo contr
 - URL: `https://github.com/kyrub-app/kyrub/pull/154`
 - Branch: `feat/official-community-knowledge-foundation`
 - Base: `main`
-- Head inicial: `8ff6bc674499d0a4c24a27041919ec38e5bd4875`
+- Head validado nesta atualização: `4b630ce2aefd8000ed008cf26ec0ed51ee21f46c`
 - Estado: **Draft, aberta, não mergeada**
 - Regra: não fazer merge sem autorização explícita do proprietário.
 
@@ -91,6 +91,7 @@ A PR #154 introduz:
 - `src/knowledge/officialCommunityKnowledge.ts` — leitor de Debates oficiais;
 - `shared/kyrubActivityEvents.ts` — contrato de eventos semânticos;
 - `src/observability/kyrubActivityLog.ts` — buffer local limitado/minimizado;
+- `src/components/OfficialKnowledgeSetupBridge.tsx` — diagnóstico explícito das âncoras e prova de recuperação;
 - testes de contrato/unidade;
 - `docs/kyrub-knowledge-observability-foundation.md`.
 
@@ -112,6 +113,20 @@ O leitor deve verificar simultaneamente:
 5. `authorId` do Debate == perfil oficial configurado.
 
 Não introduzir `isOfficial: true` gravável pelo cliente como fonte de autoridade.
+
+### Diagnóstico de configuração
+
+O Preview pode abrir `?officialKnowledgeSetup=1`.
+
+Esse modo:
+
+- só aparece quando solicitado explicitamente na URL;
+- lista apenas comunidades pertencentes ao perfil autenticado;
+- mostra `communityId` + UID do proprietário candidato;
+- usa o próprio `readOfficialCommunityKnowledge` para testar a comunidade candidata;
+- mostra os Debates elegíveis como prova de recuperação;
+- não torna nenhuma comunidade oficial por si só;
+- não conecta a Kyrubia à fonte.
 
 ### Eventos semânticos
 
@@ -138,18 +153,34 @@ O buffer inicial é local e bloqueia metadados com conversa/PII/secrets, incluin
 - autoaprendizado silencioso;
 - merge sem teste/aprovação.
 
+## Estado humano da base oficial
+
+O proprietário criou manualmente a comunidade:
+
+- **Manual KYRUB**
+
+Primeiro artigo/FAQ publicado manualmente como Debate vigente:
+
+- **O que é o Kyrub?**
+
+A criação manual foi intencional: a Kyrubia ainda não cria nem edita conhecimento oficial.
+
 ## Próximo gate da #154
 
-Depois de CI verde:
+O head `4b630ce...` passou Application Build, Validate Kyrub, Store Security e Identity Security.
 
-1. revisar se a fundação compila/testa sem regressão;
-2. criar/selecionar a identidade oficial Kyrub;
-3. criar manualmente a primeira Comunidade Oficial no app;
-4. criar manualmente de 3 a 5 FAQs reais como Debates;
-5. configurar UID/IDs no **Preview**;
-6. validar leitura/busca determinística do conteúdo;
-7. instrumentar poucas jornadas reais com eventos semânticos;
-8. só então planejar o adaptador que entrega conhecimento + estado + contexto para a Kyrubia.
+Próximo teste humano:
+
+1. abrir o Preview estável com `?officialKnowledgeSetup=1`;
+2. confirmar que **Manual KYRUB** aparece como comunidade pertencente ao perfil autenticado;
+3. selecionar `Manual KYRUB`;
+4. confirmar que **O que é o Kyrub?** aparece como `Conhecimento elegível`;
+5. copiar os dois identificadores mostrados pelo diagnóstico;
+6. configurar UID/ID no Preview sob controle do deployment;
+7. revalidar a recuperação determinística usando as âncoras configuradas;
+8. depois publicar novos FAQs reais manualmente e testar busca lexical;
+9. instrumentar poucas jornadas reais com eventos semânticos;
+10. somente depois planejar o adaptador que entrega conhecimento + estado + contexto para a Kyrubia.
 
 Se alguma etapa exigir mudar regras Firebase de produção, parar no gate e pedir autorização específica antes do deploy.
 
@@ -158,7 +189,7 @@ Se alguma etapa exigir mudar regras Firebase de produção, parar no gate e pedi
 - PR: **#152 — `feat: let Kyrubia activate stores and create products`**
 - URL: `https://github.com/kyrub-app/kyrub/pull/152`
 - Branch: `feat/kyrubia-store-activation-product-creation`
-- Head limpo após o último teste: `e9084bb970dc54b40a71278ce47be4266e0f6a51`
+- Head atual confirmado: `e9084bb970dc54b40a71278ce47be4266e0f6a51`
 - Estado: **Draft, aberta, não mergeada**
 - Não continuar adicionando rotas/regex conversacionais assunto por assunto enquanto a nova base de conhecimento não estiver estabelecida.
 
@@ -219,11 +250,18 @@ A validação humana completa com dois novos itens ainda exige um estado control
 
 ## Preview estável
 
-Alias estável conhecido:
+Alias estável:
 
 `https://kyrub-git-feat-profile-react-rebuild-kyrubapp-6434s-projects.vercel.app/`
 
 Branch de Preview estável: `feat/profile-react-rebuild`.
+
+Estado nesta atualização:
+
+- branch estável foi apontada para `4b630ce2aefd8000ed008cf26ec0ed51ee21f46c`;
+- deployment Vercel `dpl_2bQGWGLEXh46DFZQAeyjZFK9JuYA` ficou **READY**;
+- alias estável está associado a esse deployment;
+- este Preview está dedicado ao gate atual da #154.
 
 Estratégia intencional: reutilizar um alias para evitar cadastrar um domínio Firebase por deployment efêmero.
 
@@ -291,4 +329,4 @@ Nunca inferir autorização de elogio, “show”, “ótimo” ou aprovação c
 
 ## Última atualização
 
-Atualizado em 2026-08-10 após a decisão de priorizar **Comunidades Oficiais como Conhecimento Oficial + Observabilidade Semântica** antes de continuar a expansão conversacional da Kyrubia.
+Atualizado em 2026-08-10 após criação manual da comunidade **Manual KYRUB**, publicação do primeiro artigo **O que é o Kyrub?**, inclusão do diagnóstico de âncoras na #154 e disponibilização do Preview estável para validação humana.
