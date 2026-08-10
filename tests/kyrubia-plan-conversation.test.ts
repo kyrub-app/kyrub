@@ -150,7 +150,7 @@ test('open commercial judgment remains generative but receives a compact grounde
   assert.ok(context);
   assert.ok(context.length <= 240);
   assert.match(context, /Pro R\$79,90\/100 itens\/300 créditos/i);
-  assert.match(context, /checkout pago ainda indisponível/i);
+  assert.match(context, /Checkout pago indisponível/i);
 });
 
 test('plan context never steals product mutations or live ERP count questions', () => {
@@ -184,7 +184,7 @@ test('browser build routes the Kyrubia workspace through the plan-aware consulta
     'utf8'
   );
 
-  assert.match(vite, /\.\.\\\/ai\\\/consultantClient/);
+  assert.ok(vite.includes('find: /^\\.\\.\\/ai\\/consultantClient$/'));
   assert.match(vite, /consultantClientWithPlans\.ts/);
   assert.match(wrapper, /resolveKyrubiaPlanConversation/);
   assert.match(wrapper, /kyrub-plan-runtime-v1/);
