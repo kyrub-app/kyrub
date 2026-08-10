@@ -87,6 +87,18 @@ test('official knowledge search is deterministic and prefers title matches', () 
   assert.ok((results[0]?.coverage ?? 0) > 0);
 });
 
+test('official knowledge search does not let a common brand token make unrelated recent articles outrank the overview', () => {
+  const results = searchKyrubKnowledge(
+    manualKnowledge(),
+    'Pra que serve Kyrub?'
+  );
+
+  assert.equal(results[0]?.item.id, 'about');
+  assert.equal(results[0]?.confidence, 'low');
+  assert.deepEqual(results[0]?.matchedTokens, ['kyrub']);
+  assert.ok((results[0]?.score ?? 0) > (results[1]?.score ?? 0));
+});
+
 test('official knowledge search keeps plan content below publication references for publication questions', () => {
   const results = searchKyrubKnowledge(
     manualKnowledge(),

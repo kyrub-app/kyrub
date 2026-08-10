@@ -66,11 +66,10 @@ interface IndexedKnowledgeItem {
 
 const confidenceFor = (
   score: number,
-  coverage: number,
-  titleMatchedCount: number
+  coverage: number
 ): KyrubKnowledgeSearchConfidence => {
   if (coverage >= 0.75 && score >= 8) return 'high';
-  if (coverage >= 0.5 && (score >= 4 || titleMatchedCount > 0)) return 'medium';
+  if (coverage >= 0.5 && score >= 6) return 'medium';
   return 'low';
 };
 
@@ -119,7 +118,7 @@ export const searchKyrubKnowledge = (
         if (titleQuality > 0) titleMatchedTokens.push(queryToken);
 
         const frequency = documentFrequency.get(queryToken) ?? 0;
-        const inverseFrequency = 1 + Math.log((items.length + 1) / (frequency + 1));
+        const inverseFrequency = Math.log((items.length + 1) / (frequency + 1));
         score += inverseFrequency * (
           titleQuality * 8 +
           contentQuality * 2 +
@@ -128,6 +127,16 @@ export const searchKyrubKnowledge = (
       }
 
       const coverage = matchedTokens.length / queryTokens.length;
+      const titleSpecificity = index.titleTokens.length > 0
+        ? titleMatchedTokens.length / index.titleTokens.length
+        : 0;
+
+      // A concise title that matches the user's entity/subject should outrank a recent article
+      // that only happens to repeat the same common brand term among several unrelated concepts.
+      // This bonus is deliberately small: it improves ranking but does not manufacture semantic
+      // confidence for words the lexical search did not actually understand.
+      score += titleSpecificity * 1.5;
+
       if (coverage === 1 && titleMatchedTokens.length === queryTokens.length) {
         score += 10;
       }
@@ -136,7 +145,7 @@ export const searchKyrubKnowledge = (
       return {
         item: index.item,
         score: roundedScore,
-        confidence: confidenceFor(roundedScore, coverage, titleMatchedTokens.length),
+        confidence: confidenceFor(roundedScore, coverage),
         coverage: Math.round(coverage * 100) / 100,
         matchedTokens,
         titleMatchedTokens,
