@@ -4,10 +4,7 @@ import type {
   KyrubActionProposal,
   KyrubAiUpdateStoreProfileProposal,
 } from '../../shared/kyrubActions';
-import {
-  completeKyrubiaProductAndAdvance,
-  dispatchKyrubiaOperationalWorkflowMessage,
-} from '../ai/operationalWorkflowStore';
+import { completeKyrubiaProductAndAdvance } from '../ai/operationalWorkflowStore';
 import { invalidateKyrubErpContext } from './erpReadActionService';
 
 const SAFE_ACTION_ENDPOINT = '/api/action-execute';
@@ -74,18 +71,11 @@ const advanceProductSequenceAfterExecution = (
   if (typeof localStorage === 'undefined') return;
   const conversationId = conversationIdFromProductIdempotencyKey(proposal);
   if (!conversationId) return;
-
-  const progress = completeKyrubiaProductAndAdvance(
+  completeKyrubiaProductAndAdvance(
     localStorage,
     user.uid,
     conversationId
   );
-  if (!progress?.hasMore || !progress.nextItemNumber) return;
-
-  dispatchKyrubiaOperationalWorkflowMessage({
-    conversationId,
-    message: `Produto ${progress.completedCount} de ${progress.requestedCount} concluído. Continue o cadastro informando somente o nome do produto ${progress.nextItemNumber} de ${progress.requestedCount}.`,
-  });
 };
 
 export const executeKyrubAction = async (

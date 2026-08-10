@@ -192,8 +192,8 @@ test('multi-product intent persists a sequential workflow instead of collapsing 
       nextItemNumber: 2,
     });
 
-    // The legacy confirmation bridge still calls clear after a successful product.
-    // The workflow store consumes the one-shot preservation marker instead.
+    // The confirmation bridge still clears the just-finished product state.
+    // The workflow store consumes the one-shot marker and preserves the next item.
     clearKyrubiaOperationalWorkflow(storage, fakeUser.uid, conversationId);
     const preserved = loadKyrubiaOperationalWorkflow(
       storage,
@@ -296,7 +296,7 @@ test('free-plan closer offers Pro at the five-product limit and explicitly avoid
   });
 });
 
-test('safe executor advances the local sequence and the action bridge surfaces the next product prompt', () => {
+test('safe executor advances the local sequence and confirmation UI tells the user which product comes next', () => {
   const actionSource = readFileSync(
     new URL('../src/actions/kyrubActionService.ts', import.meta.url),
     'utf8'
@@ -307,8 +307,7 @@ test('safe executor advances the local sequence and the action bridge surfaces t
   );
 
   assert.match(actionSource, /completeKyrubiaProductAndAdvance/);
-  assert.match(actionSource, /dispatchKyrubiaOperationalWorkflowMessage/);
   assert.match(actionSource, /invalidateKyrubErpContext\(user\.uid\)/);
-  assert.match(bridgeSource, /KYRUBIA_OPERATIONAL_WORKFLOW_MESSAGE_EVENT/);
-  assert.match(bridgeSource, /Kyrubia · próximo produto/);
+  assert.match(bridgeSource, /getKyrubiaProductSequenceProgress/);
+  assert.match(bridgeSource, /Feche esta janela e informe somente o nome do produto/);
 });
