@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Copy, ShieldCheck, X } from 'lucide-react';
 import { useCommunityDirectory } from '../hooks/useCommunityDirectory';
 import {
+  getKyrubOfficialKnowledgeConfig,
   readOfficialCommunityKnowledge,
   type KyrubOfficialKnowledgeConfig,
 } from '../knowledge/officialCommunityKnowledge';
@@ -19,13 +20,37 @@ export function OfficialKnowledgeSetupBridge() {
   const [selectedCommunityId, setSelectedCommunityId] = useState('');
   const [snapshot, setSnapshot] = useState<KyrubKnowledgeSnapshot | null>(null);
   const [probeBusy, setProbeBusy] = useState(false);
+  const [activeSnapshot, setActiveSnapshot] = useState<KyrubKnowledgeSnapshot | null>(null);
+  const [activeBusy, setActiveBusy] = useState(false);
   const [copyState, setCopyState] = useState('');
 
   const enabled = isSetupEnabled();
+  const activeConfig = useMemo(() => getKyrubOfficialKnowledgeConfig(), []);
   const ownedCommunities = useMemo(
     () => communities.filter(community => community.isOwner),
     [communities]
   );
+
+  useEffect(() => {
+    if (!enabled || !activeConfig.enabled) {
+      setActiveSnapshot(null);
+      return;
+    }
+
+    let cancelled = false;
+    setActiveBusy(true);
+    void readOfficialCommunityKnowledge(activeConfig)
+      .then(value => {
+        if (!cancelled) setActiveSnapshot(value);
+      })
+      .finally(() => {
+        if (!cancelled) setActiveBusy(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeConfig, enabled]);
 
   useEffect(() => {
     if (!enabled || selectedCommunityId || ownedCommunities.length === 0) return;
@@ -51,6 +76,7 @@ export function OfficialKnowledgeSetupBridge() {
       officialProfileUid: user.uid,
       communityIds: [selectedCommunity.id],
       enabled: true,
+      source: 'diagnostic_candidate',
     };
 
     void readOfficialCommunityKnowledge(config)
@@ -101,7 +127,7 @@ export function OfficialKnowledgeSetupBridge() {
               Identificar Comunidade Oficial Kyrub
             </h1>
             <p className="mt-2 text-[10px] leading-relaxed text-slate-400">
-              Este modo não transforma uma comunidade em oficial. Ele apenas mostra os identificadores da comunidade que você possui e testa se seus Debates são elegíveis pelas regras de confiança da fundação.
+              Este modo não transforma uma comunidade em oficial. Ele mostra as âncoras ativas, permite comparar comunidades pertencentes ao perfil e prova quais Debates passam pelas regras de confiança da fundação.
             </p>
           </div>
           <button
@@ -115,9 +141,67 @@ export function OfficialKnowledgeSetupBridge() {
         </header>
 
         <div className="space-y-4 p-4">
+          <section className="rounded-3xl border border-emerald-500/20 bg-emerald-500/5 p-4">
+            <div className="flex items-start gap-3">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-300">
+                <ShieldCheck className="h-5 w-5" />
+              </span>
+              <div className="min-w-0 flex-1">
+                <span className="text-[7px] font-black uppercase tracking-wide text-emerald-300">
+                  Fonte oficial configurada
+                </span>
+                {activeConfig.enabled ? (
+                  <>
+                    <p className="mt-1 text-[9px] text-slate-300">
+                      Origem da configuração: {activeConfig.source === 'environment' ? 'Environment Variables' : 'fallback versionado da PR'}.
+                    </p>
+                    <p className="mt-2 break-all font-mono text-[8px] text-slate-500">
+                      profileUid: {activeConfig.officialProfileUid}
+                    </p>
+                    <p className="mt-1 break-all font-mono text-[8px] text-slate-500">
+                      communityIds: {activeConfig.communityIds.join(', ')}
+                    </p>
+                  </>
+                ) : (
+                  <p className="mt-1 text-[9px] text-amber-200">
+                    Nenhuma fonte oficial está configurada neste build.
+                  </p>
+                )}
+              </div>
+            </div>
+
+            {activeConfig.enabled && (
+              <div className="mt-3">
+                {activeBusy ? (
+                  <p className="text-[9px] text-slate-500">Validando a fonte configurada…</p>
+                ) : activeSnapshot && activeSnapshot.items.length > 0 ? (
+                  <div className="space-y-2">
+                    {activeSnapshot.items.map(item => (
+                      <div key={item.id} className="rounded-2xl border border-emerald-500/20 bg-slate-950 p-3">
+                        <span className="text-[7px] font-black uppercase text-emerald-300">
+                          Conhecimento oficial recuperado
+                        </span>
+                        <strong className="mt-1 block text-[10px] text-white">{item.title}</strong>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-3 text-[9px] text-amber-200">
+                    A fonte está configurada, mas nenhum Debate vigente passou pelas revalidações de proprietário e autor.
+                  </p>
+                )}
+                {activeSnapshot?.warnings.map(warning => (
+                  <p key={warning} className="mt-2 text-[8px] text-amber-300">
+                    {warning}
+                  </p>
+                ))}
+              </div>
+            )}
+          </section>
+
           {!user && !loading && (
             <p className="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-4 text-[10px] text-amber-200">
-              Entre no Kyrub com o perfil proprietário da Comunidade Oficial para continuar.
+              Entre no Kyrub com o perfil proprietário da Comunidade Oficial para continuar o diagnóstico comparativo.
             </p>
           )}
 
@@ -166,13 +250,13 @@ export function OfficialKnowledgeSetupBridge() {
           {user && selectedCommunity && (
             <section className="rounded-3xl border border-slate-800 bg-slate-950 p-4">
               <div className="flex items-start gap-3">
-                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-300">
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-sky-500/10 text-sky-300">
                   <ShieldCheck className="h-5 w-5" />
                 </span>
                 <div className="min-w-0 flex-1">
-                  <h2 className="text-[10px] font-black uppercase text-white">Âncoras candidatas</h2>
+                  <h2 className="text-[10px] font-black uppercase text-white">Diagnóstico da comunidade selecionada</h2>
                   <p className="mt-1 text-[9px] leading-relaxed text-slate-500">
-                    Identificadores não são senha, token ou chave privada. A oficialidade só existirá depois que o deployment do Kyrub configurar estes valores e o leitor revalidar proprietário e autor.
+                    Estes identificadores não são senha, token ou chave privada. Esta seção apenas compara a comunidade selecionada usando as mesmas revalidações do leitor oficial.
                   </p>
                 </div>
               </div>
@@ -197,7 +281,7 @@ export function OfficialKnowledgeSetupBridge() {
           {user && selectedCommunity && (
             <section className="rounded-3xl border border-slate-800 bg-slate-950 p-4">
               <h2 className="text-[10px] font-black uppercase text-white">
-                Prova de recuperação do conhecimento
+                Prova de recuperação da comunidade selecionada
               </h2>
               {probeBusy ? (
                 <p className="mt-3 text-[9px] text-slate-500">Lendo Debates elegíveis…</p>
