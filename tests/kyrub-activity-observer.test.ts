@@ -94,6 +94,18 @@ test('store save confirmation is emitted only after full cloud sync', () => {
   assert.ok(save < guard && guard < confirmed);
 });
 
+test('trusted read normalizes common q abbreviation without provider fallback', () => {
+  const storage = new MemoryStorage();
+  recordKyrubActivityEvent(storage, 'user-1', {
+    type: 'navigation.screen_viewed', domain: 'app', source: 'client_observation',
+    screenId: 'home:renda',
+  });
+
+  const result = resolveKyrubiaTrustedReadRuntime(storage, 'user-1', 'O q acabei de fazer?');
+  assert.equal(result?.kind, 'recent_activity');
+  assert.match(result?.reply ?? '', /Pelo histórico recente que o próprio Kyrub registrou/);
+});
+
 test('trusted read says success only when the same action has a session-authoritative acknowledgement', () => {
   clearAuthoritativeActivityRuntimeEvents();
   const storage = new MemoryStorage();

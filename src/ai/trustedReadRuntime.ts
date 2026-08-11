@@ -23,6 +23,7 @@ const normalize = (value: string): string =>
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .toLocaleLowerCase('pt-BR')
+    .replace(/\bq\b/g, 'que')
     .replace(/\s+/g, ' ')
     .trim();
 
