@@ -3,14 +3,26 @@ import {
   CheckCircle2,
   FileText,
   LoaderCircle,
+  PackagePlus,
+  Store,
   X,
 } from 'lucide-react';
-import type { KyrubAiCreateNoteProposal } from '../../shared/aiConsultant';
+import type {
+  KyrubAiCreateNoteProposal,
+  KyrubAiCreateProductProposal,
+  KyrubAiStartStoreActivationProposal,
+} from '../../shared/kyrubActions';
+import { executeKyrubAction } from '../actions/kyrubActionService';
 import {
   KYRUB_AI_ACTION_PROPOSAL_EVENT,
   type KyrubAiActionProposalEventDetail,
 } from '../ai/actionEvents';
-import { executeConfirmedCreateNoteAction } from '../actions/noteActionService';
+import {
+  authorizeKyrubiaStoreActivationWorkflow,
+  clearKyrubiaOperationalWorkflow,
+  getKyrubiaProductSequenceProgress,
+  loadKyrubiaOperationalWorkflow,
+} from '../ai/operationalWorkflowStore';
 import { auth } from '../utils/firebase';
 
 type ConfirmationState =
@@ -19,34 +31,240 @@ type ConfirmationState =
   | 'success'
   | 'error';
 
-type PendingNoteAction = {
+type ConfirmableProposal =
+  | KyrubAiCreateNoteProposal
+  | KyrubAiStartStoreActivationProposal
+  | KyrubAiCreateProductProposal;
+
+type PendingAction = {
   conversationId: string;
   requestId: string;
-  proposal: KyrubAiCreateNoteProposal;
+  proposal: ConfirmableProposal;
   state: ConfirmationState;
   errorMessage: string;
   alreadyApplied: boolean;
 };
 
+const withIdempotency = (
+  conversationId: string,
+  proposal: ConfirmableProposal
+): ConfirmableProposal => ({
+  ...proposal,
+  origin: proposal.origin ?? 'kyrubia',
+  risk: proposal.risk ?? (proposal.type === 'create_product' ? 'medium' : 'low'),
+  idempotencyKey:
+    proposal.idempotencyKey ??
+    `kyrubia:${proposal.type}:${conversationId}:${proposal.id}`,
+});
+
+const actionTitle = (
+  proposal: ConfirmableProposal,
+  success: boolean
+): string => {
+  if (proposal.type === 'start_store_activation') {
+    return success ? 'Ativação autorizada' : 'Ativar sua loja';
+  }
+  if (proposal.type === 'create_product') {
+    return success ? 'Produto criado' : 'Confirmar novo produto';
+  }
+  return success ? 'Nota criada' : 'Confirmar nova nota';
+};
+
+const workingLabel = (proposal: ConfirmableProposal): string => {
+  if (proposal.type === 'start_store_activation') return 'Ativando...';
+  if (proposal.type === 'create_product') return 'Cadastrando...';
+  return 'Criando...';
+};
+
+const confirmLabel = (proposal: ConfirmableProposal): string =>
+  proposal.type === 'start_store_activation' ? 'Ativar' : 'Confirmar';
+
+const actionIcon = (
+  proposal: ConfirmableProposal,
+  success: boolean
+) => {
+  if (success) return <CheckCircle2 className="h-6 w-6" />;
+  if (proposal.type === 'start_store_activation') {
+    return <Store className="h-6 w-6" />;
+  }
+  if (proposal.type === 'create_product') {
+    return <PackagePlus className="h-6 w-6" />;
+  }
+  return <FileText className="h-6 w-6" />;
+};
+
+const nextProductMessage = (pending: PendingAction): string | null => {
+  if (
+    pending.proposal.type !== 'create_product' ||
+    typeof localStorage === 'undefined' ||
+    !auth.currentUser
+  ) {
+    return null;
+  }
+  const workflow = loadKyrubiaOperationalWorkflow(
+    localStorage,
+    auth.currentUser.uid,
+    pending.conversationId
+  );
+  if (!workflow || workflow.stage !== 'collecting_product_name') return null;
+  const progress = getKyrubiaProductSequenceProgress(workflow);
+  if (!progress.hasMore || !progress.nextItemNumber) return null;
+  return ` Produto ${progress.completedCount} de ${progress.requestedCount} concluído. Feche esta janela e informe somente o nome do produto ${progress.nextItemNumber} de ${progress.requestedCount} para continuar.`;
+};
+
+const successMessage = (pending: PendingAction): string => {
+  if (pending.proposal.type === 'start_store_activation') {
+    return pending.alreadyApplied
+      ? 'A autorização de ativação já estava válida. Feche esta janela e continue informando os dados da loja na conversa.'
+      : 'Ativação autorizada. A Kyrubia poderá configurar somente o perfil da sua própria loja durante este fluxo. A loja não foi publicada no marketplace. Feche esta janela e informe o nome da loja na conversa.';
+  }
+  if (pending.proposal.type === 'create_product') {
+    const continuation = nextProductMessage(pending) ?? '';
+    return pending.alreadyApplied
+      ? `Este produto já havia sido cadastrado por esta ação. Nenhuma duplicata foi criada.${continuation}`
+      : `O produto foi criado pelo executor oficial do Kyrub e será sincronizado no catálogo da sua loja.${continuation}`;
+  }
+  return pending.alreadyApplied
+    ? 'Esta ação já havia sido concluída. Nenhuma nota duplicada foi criada.'
+    : 'A nota foi criada pelo serviço oficial do Kyrub e será exibida na guia Notas pela sincronização em nuvem.';
+};
+
+const reviewHint = (proposal: ConfirmableProposal): string => {
+  if (proposal.type === 'start_store_activation') {
+    return 'Esta confirmação autoriza somente a configuração do perfil da sua loja durante o fluxo atual. Não publica a loja no marketplace e não a marca como aberta.';
+  }
+  if (proposal.type === 'create_product') {
+    return 'Nada será cadastrado antes da confirmação. O produto será criado na sua própria loja e respeitará os limites do seu plano.';
+  }
+  return 'Nada será salvo antes da confirmação. A nota continuará privada e não será publicada no feed.';
+};
+
+const ReviewContent = ({ proposal }: { proposal: ConfirmableProposal }) => {
+  if (proposal.type === 'start_store_activation') {
+    return (
+      <div className="rounded-2xl border border-slate-800 bg-slate-900 p-4">
+        <span className="text-[11px] font-black uppercase text-slate-500">
+          Escopo da autorização
+        </span>
+        <h3 className="mt-1 text-lg font-black text-white">
+          Configurar o perfil da sua loja
+        </h3>
+        <p className="mt-3 text-sm leading-relaxed text-slate-300">
+          A Kyrubia poderá salvar, enquanto você conversa, apenas nome, descrição,
+          endereço, contato e palavras-chave da sua própria loja. A autorização é
+          temporária e vinculada à sua conta.
+        </p>
+      </div>
+    );
+  }
+
+  if (proposal.type === 'create_product') {
+    return (
+      <div className="rounded-2xl border border-slate-800 bg-slate-900 p-4">
+        <span className="text-[11px] font-black uppercase text-slate-500">
+          {proposal.isService ? 'Serviço' : 'Produto'}
+        </span>
+        <h3 className="mt-1 text-lg font-black text-white">
+          {proposal.name}
+        </h3>
+        <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
+          <div>
+            <dt className="text-[10px] font-black uppercase text-slate-500">Preço</dt>
+            <dd className="mt-1 text-slate-200">
+              {proposal.isComplimentary
+                ? 'Grátis'
+                : proposal.price.toLocaleString('pt-BR', {
+                    style: 'currency',
+                    currency: 'BRL',
+                  })}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-[10px] font-black uppercase text-slate-500">Categoria</dt>
+            <dd className="mt-1 text-slate-200">{proposal.category}</dd>
+          </div>
+          {!proposal.isService && (
+            <div>
+              <dt className="text-[10px] font-black uppercase text-slate-500">Estoque</dt>
+              <dd className="mt-1 text-slate-200">{proposal.stock} unidades</dd>
+            </div>
+          )}
+          <div>
+            <dt className="text-[10px] font-black uppercase text-slate-500">Imagem</dt>
+            <dd className="mt-1 text-slate-200">
+              {proposal.image ? 'Informada' : 'Sem imagem'}
+            </dd>
+          </div>
+        </dl>
+        {proposal.description && (
+          <>
+            <span className="mt-4 block text-[11px] font-black uppercase text-slate-500">
+              Descrição
+            </span>
+            <p className="mt-1 whitespace-pre-wrap text-sm leading-relaxed text-slate-300">
+              {proposal.description}
+            </p>
+          </>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-2xl border border-slate-800 bg-slate-900 p-4">
+      <span className="text-[11px] font-black uppercase text-slate-500">
+        Título
+      </span>
+      <h3 className="mt-1 text-lg font-black text-white">
+        {proposal.title}
+      </h3>
+      <span className="mt-4 block text-[11px] font-black uppercase text-slate-500">
+        Conteúdo
+      </span>
+      <p className="mt-1 whitespace-pre-wrap text-sm leading-relaxed text-slate-300">
+        {proposal.content}
+      </p>
+      {proposal.checklist.length > 0 && (
+        <div className="mt-4">
+          <span className="text-[11px] font-black uppercase text-slate-500">
+            Checklist
+          </span>
+          <div className="mt-2 space-y-2">
+            {proposal.checklist.map((item, index) => (
+              <div
+                key={`${proposal.id}-${index}`}
+                className="flex gap-2 text-sm text-slate-300"
+              >
+                <span className="text-violet-300">☐</span>
+                <span>{item}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 export function KyrubAiNoteActionBridge() {
-  const [pending, setPending] = useState<PendingNoteAction | null>(null);
+  const [pending, setPending] = useState<PendingAction | null>(null);
 
   useEffect(() => {
     const handleProposal = (event: Event) => {
       const detail = (event as CustomEvent<KyrubAiActionProposalEventDetail>).detail;
-      if (!detail || detail.proposal.type !== 'create_note') return;
+      if (!detail) return;
+      if (
+        detail.proposal.type !== 'create_note' &&
+        detail.proposal.type !== 'start_store_activation' &&
+        detail.proposal.type !== 'create_product'
+      ) {
+        return;
+      }
 
       setPending({
         conversationId: detail.conversationId,
         requestId: detail.requestId,
-        proposal: {
-          ...detail.proposal,
-          origin: detail.proposal.origin ?? 'kyrubia',
-          risk: detail.proposal.risk ?? 'low',
-          idempotencyKey:
-            detail.proposal.idempotencyKey ??
-            `kyrubia:create_note:${detail.conversationId}:${detail.proposal.id}`,
-        },
+        proposal: withIdempotency(detail.conversationId, detail.proposal),
         state: 'reviewing',
         errorMessage: '',
         alreadyApplied: false,
@@ -60,6 +278,23 @@ export function KyrubAiNoteActionBridge() {
 
   if (!pending) return null;
 
+  const close = () => {
+    if (pending.state === 'executing') return;
+    if (
+      pending.state !== 'success' &&
+      pending.proposal.type !== 'create_note' &&
+      auth.currentUser &&
+      typeof localStorage !== 'undefined'
+    ) {
+      clearKyrubiaOperationalWorkflow(
+        localStorage,
+        auth.currentUser.uid,
+        pending.conversationId
+      );
+    }
+    setPending(null);
+  };
+
   const confirm = async () => {
     if (pending.state === 'executing') return;
 
@@ -72,13 +307,40 @@ export function KyrubAiNoteActionBridge() {
     try {
       const user = auth.currentUser;
       if (!user) {
-        throw new Error('Faça login novamente antes de confirmar a criação da nota.');
+        throw new Error('Faça login novamente antes de confirmar esta ação.');
       }
 
-      const result = await executeConfirmedCreateNoteAction(
-        user,
-        pending.proposal
-      );
+      const result = await executeKyrubAction(user, pending.proposal, true);
+
+      if (pending.proposal.type === 'start_store_activation') {
+        if (!result.authorizationGrant || typeof localStorage === 'undefined') {
+          throw new Error(
+            'A ativação foi processada sem uma autorização de continuidade válida. Tente novamente.'
+          );
+        }
+        const workflow = authorizeKyrubiaStoreActivationWorkflow(
+          localStorage,
+          user.uid,
+          pending.conversationId,
+          result.authorizationGrant
+        );
+        if (!workflow) {
+          throw new Error(
+            'O objetivo da conversa não pôde ser retomado. Faça o pedido novamente.'
+          );
+        }
+      }
+
+      if (
+        pending.proposal.type === 'create_product' &&
+        typeof localStorage !== 'undefined'
+      ) {
+        clearKyrubiaOperationalWorkflow(
+          localStorage,
+          user.uid,
+          pending.conversationId
+        );
+      }
 
       setPending(current => current ? {
         ...current,
@@ -92,7 +354,7 @@ export function KyrubAiNoteActionBridge() {
         state: 'error',
         errorMessage: error instanceof Error
           ? error.message
-          : 'Não foi possível criar a nota.',
+          : 'Não foi possível executar esta ação.',
       } : current);
     }
   };
@@ -105,7 +367,7 @@ export function KyrubAiNoteActionBridge() {
       <section
         role="dialog"
         aria-modal="true"
-        aria-label="Confirmar criação de nota pela Kyrubia"
+        aria-label={actionTitle(pending.proposal, isSuccess)}
         className="w-full max-w-md overflow-hidden rounded-3xl border border-violet-500/25 bg-slate-950 shadow-2xl"
       >
         <header className="flex items-start gap-3 border-b border-slate-800 p-4">
@@ -114,23 +376,19 @@ export function KyrubAiNoteActionBridge() {
               ? 'bg-emerald-500/15 text-emerald-300'
               : 'bg-violet-500/15 text-violet-300'
           }`}>
-            {isSuccess ? (
-              <CheckCircle2 className="h-6 w-6" />
-            ) : (
-              <FileText className="h-6 w-6" />
-            )}
+            {actionIcon(pending.proposal, isSuccess)}
           </div>
           <div className="min-w-0 flex-1">
             <span className="text-xs font-black uppercase tracking-wider text-violet-300">
               Kyrubia
             </span>
             <h2 className="mt-1 text-xl font-black text-white">
-              {isSuccess ? 'Nota criada' : 'Confirmar nova nota'}
+              {actionTitle(pending.proposal, isSuccess)}
             </h2>
           </div>
           <button
             type="button"
-            onClick={() => setPending(null)}
+            onClick={close}
             disabled={isWorking}
             className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-slate-800 bg-slate-900 text-slate-400 disabled:opacity-40"
             aria-label="Fechar confirmação"
@@ -142,47 +400,13 @@ export function KyrubAiNoteActionBridge() {
         <div className="space-y-4 p-4">
           {isSuccess ? (
             <p className="rounded-2xl border border-emerald-500/25 bg-emerald-500/10 px-4 py-4 text-sm leading-relaxed text-emerald-100">
-              {pending.alreadyApplied
-                ? 'Esta ação já havia sido concluída. Nenhuma nota duplicada foi criada.'
-                : 'A nota foi criada pelo serviço oficial do Kyrub e será exibida na guia Notas pela sincronização em nuvem.'}
+              {successMessage(pending)}
             </p>
           ) : (
             <>
-              <div className="rounded-2xl border border-slate-800 bg-slate-900 p-4">
-                <span className="text-[11px] font-black uppercase text-slate-500">
-                  Título
-                </span>
-                <h3 className="mt-1 text-lg font-black text-white">
-                  {pending.proposal.title}
-                </h3>
-                <span className="mt-4 block text-[11px] font-black uppercase text-slate-500">
-                  Conteúdo
-                </span>
-                <p className="mt-1 whitespace-pre-wrap text-sm leading-relaxed text-slate-300">
-                  {pending.proposal.content}
-                </p>
-                {pending.proposal.checklist.length > 0 && (
-                  <div className="mt-4">
-                    <span className="text-[11px] font-black uppercase text-slate-500">
-                      Checklist
-                    </span>
-                    <div className="mt-2 space-y-2">
-                      {pending.proposal.checklist.map((item, index) => (
-                        <div
-                          key={`${pending.proposal.id}-${index}`}
-                          className="flex gap-2 text-sm text-slate-300"
-                        >
-                          <span className="text-violet-300">☐</span>
-                          <span>{item}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-
+              <ReviewContent proposal={pending.proposal} />
               <p className="text-xs leading-relaxed text-slate-500">
-                Nada será salvo antes da confirmação. A nota continuará privada e não será publicada no feed.
+                {reviewHint(pending.proposal)}
               </p>
 
               {pending.state === 'error' && (
@@ -207,7 +431,7 @@ export function KyrubAiNoteActionBridge() {
             <>
               <button
                 type="button"
-                onClick={() => setPending(null)}
+                onClick={close}
                 disabled={isWorking}
                 className="flex-1 rounded-xl border border-slate-700 bg-slate-900 px-4 py-3 text-sm font-black text-slate-300 disabled:opacity-40"
               >
@@ -222,10 +446,10 @@ export function KyrubAiNoteActionBridge() {
                 {isWorking ? (
                   <>
                     <LoaderCircle className="h-4 w-4 animate-spin" />
-                    Criando...
+                    {workingLabel(pending.proposal)}
                   </>
                 ) : (
-                  'Confirmar'
+                  confirmLabel(pending.proposal)
                 )}
               </button>
             </>

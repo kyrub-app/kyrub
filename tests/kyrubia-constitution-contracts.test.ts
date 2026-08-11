@@ -9,7 +9,7 @@ const constitution = read('../docs/kyrubia-constitution-v1.md');
 const safeExecution = read('../docs/kyrubia-safe-execution-foundation.md');
 const actionProtocol = read('../shared/kyrubActions.ts');
 const actionEvents = read('../src/ai/actionEvents.ts');
-const clientExecutor = read('../src/actions/noteActionService.ts');
+const clientExecutor = read('../src/actions/kyrubActionService.ts');
 const policyEngine = read('../server/actions/kyrubiaPolicyEngine.ts');
 const serverExecutor = read('../server/actions/actionExecutionService.ts');
 
@@ -44,10 +44,13 @@ test('constitution contract: permission does not imply unlimited scale', () => {
   assert.match(actionProtocol, /maxAffectedEntities/);
   assert.match(policyEngine, /BLAST_RADIUS_EXCEEDED/);
   assert.match(policyEngine, /impact\.entityCount > definition\.maxAffectedEntities/);
+  assert.match(serverExecutor, /const metadataFor/);
+  assert.match(serverExecutor, /entityCount: 1/);
   assert.match(
     serverExecutor,
-    /impact: \{\s*entityCount: 1,\s*reversibility: 'easy',\s*\}/
+    /reversibility: proposal\.type === 'create_product' \? 'limited' : 'easy'/
   );
+  assert.doesNotMatch(serverExecutor, /impact: candidate\.impact/);
 });
 
 test('constitution contract: authorization stays bound to a specific proposal', () => {

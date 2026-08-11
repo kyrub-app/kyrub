@@ -57,7 +57,9 @@ test('Kyrubia is the named AI persona and uses a restrained opportunity lens', (
   assert.doesNotMatch(routeSource, /firebase\/firestore|firebase-admin|@google\/genai/);
 
   assert.match(namingSource, /\['Consultor Kyrub', 'Kyrubia'\]/);
-  assert.match(namingSource, /Notas com confirmação/);
+  assert.match(namingSource, /Ações seguras/);
+  assert.match(namingSource, /ativar sua loja e cadastrar produtos/);
+  assert.match(namingSource, /autorização ou confirmação necessária/);
   assert.match(appSource, /<KyrubiaNamingBridge \/>/);
   assert.match(constitution, /Lente de Oportunidades/);
   assert.match(constitution, /pedir permissão/i);
