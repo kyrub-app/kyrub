@@ -50,7 +50,7 @@ const fakeUser = {
 const erpContext = (
   configured: boolean,
   productCount = 0,
-  plan: 'free' | 'business' = 'free'
+  plan: 'free' | 'pro' | 'business' = 'free'
 ): KyrubErpContextSnapshot => ({
   source: 'authenticated_client_snapshot',
   generatedAt: '2026-08-09T19:00:00.000Z',
@@ -172,6 +172,20 @@ test('a complete product request on a configured store becomes a create_product 
     assert.equal(result.actionProposal.category, 'roupas');
     assert.equal(result.actionProposal.stock, 3);
     assert.equal(result.actionProposal.requiresConfirmation, true);
+  });
+});
+
+test('promotional Pro at five products is eligible to prepare the sixth product instead of hitting the Free gate', async () => {
+  await withMemoryStorage(async () => {
+    const result = await resolveKyrubiaOperationalWorkflow({
+      user: fakeUser,
+      conversationId: 'conversation-pro-sixth-product',
+      message: 'Cadastre um produto chamado Caneca Pro por R$ 30, categoria presentes, com estoque de 5 unidades.',
+      erpContext: erpContext(true, 5, 'pro'),
+    });
+
+    assert.equal(result?.actionProposal?.type, 'create_product');
+    assert.doesNotMatch(result?.reply ?? '', /plano chegou ao limite|upgrade para o plano Pro/i);
   });
 });
 
@@ -306,7 +320,7 @@ test('store profile execution can carry an explicit preauthorized envelope only 
   assert.equal(envelope.actorUid, fakeUser.uid);
 });
 
-test('source contracts keep activation scoped and never publish or open a store implicitly', () => {
+test('source contracts keep activation scoped and use the authoritative commercial plan limits for product execution', () => {
   const source = readFileSync(
     new URL('../server/actions/actionExecutionService.ts', import.meta.url),
     'utf8'
@@ -318,8 +332,11 @@ test('source contracts keep activation scoped and never publish or open a store 
   assert.match(source, /STORE_ACTIVATION_GRANT_TTL_MS/);
   assert.match(source, /publicationStatus: 'paused'/);
   assert.match(source, /status: 'closed'/);
-  assert.match(source, /FREE_PLAN_PRODUCT_LIMIT = 5/);
+  assert.match(source, /normalizeExecutableStorePlan/);
+  assert.match(source, /KYRUB_COMMERCIAL_PLANS_V1\[plan\]\.activeCatalogLimit/);
+  assert.match(source, /PLAN_PRODUCT_LIMIT_REACHED/);
   assert.match(source, /STORE_ACTIVATION_REQUIRED/);
+  assert.doesNotMatch(source, /FREE_PLAN_PRODUCT_LIMIT/);
 
   const canonicalStoreCreation = /const id = deterministicCanonicalStoreId\(uid\);([\s\S]*?)return \{ id, name \};/.exec(source)?.[1] ?? '';
   assert.match(canonicalStoreCreation, /publicationStatus: 'paused'/);
