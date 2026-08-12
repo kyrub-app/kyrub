@@ -41,12 +41,24 @@ const entitlementSource = readFileSync(
   'server/admin/storeEntitlementService.ts',
   'utf8'
 );
+const entitlementLifecycleSource = readFileSync(
+  'server/admin/storeEntitlementLifecycleService.ts',
+  'utf8'
+);
+const entitlementBridgeSource = readFileSync(
+  'src/components/store/StoreEntitlementLifecycleBridge.tsx',
+  'utf8'
+);
 const executableCatalogSource = readFileSync(
   'server/admin/executablePlanCatalogService.ts',
   'utf8'
 );
 const publicCatalogSource = readFileSync(
   'server/admin/publicPlanCatalogService.ts',
+  'utf8'
+);
+const commercialPlanSource = readFileSync(
+  'shared/kyrubCommercialPlans.ts',
   'utf8'
 );
 const activePlanClientSource = readFileSync(
@@ -217,7 +229,31 @@ test('coupon redemption and direct grants converge on authoritative entitlement 
   assert.match(entitlementSource, /admin\.store_plan\.complimentary\.granted/);
 
   assert.match(planGatewaySource, /store\.coupon\.redeem/);
-  assert.match(planGatewaySource, /redeemCouponForOwnStore/);
+  assert.match(planGatewaySource, /redeemCouponWithLifecycle/);
+});
+
+test('timed promotional benefits preserve a baseline and expire before further writes', () => {
+  assert.match(entitlementLifecycleSource, /store_entitlement_baselines/);
+  assert.match(entitlementLifecycleSource, /ACTIVE_PROMOTIONAL_BENEFIT_EXISTS/);
+  assert.match(entitlementLifecycleSource, /reconcileStoreEntitlementForOwner/);
+  assert.match(entitlementLifecycleSource, /store\.entitlement\.expired/);
+  assert.match(entitlementLifecycleSource, /fallbackPlan = baselineSnapshot\.exists/);
+  assert.match(entitlementLifecycleSource, /writePlanMirrors/);
+  assert.match(planGatewaySource, /store\.entitlement\.reconcile/);
+  assert.match(entitlementBridgeSource, /reconcileOwnStoreEntitlement/);
+
+  const reconciliationCall = actionExecuteSource.indexOf(
+    'await reconcileStoreEntitlementFromAuthorization(authorization)'
+  );
+  const planHydrationCall = actionExecuteSource.indexOf(
+    'await hydrateExecutablePlanCatalog()'
+  );
+  const executionCall = actionExecuteSource.lastIndexOf(
+    'executeAuthorizedKyrubAction('
+  );
+  assert.ok(reconciliationCall >= 0);
+  assert.ok(planHydrationCall > reconciliationCall);
+  assert.ok(executionCall > planHydrationCall);
 });
 
 test('active plan catalog is a read-only public projection and Kyrubia hydrates it before plan facts', () => {
@@ -235,6 +271,14 @@ test('active plan catalog is a read-only public projection and Kyrubia hydrates 
   );
   assert.ok(hydrationCall >= 0);
   assert.ok(knowledgeCall > hydrationCall);
+});
+
+test('runtime plan overrides reset to compiled V1 before stale or failed hydration can authorize capacity', () => {
+  assert.match(commercialPlanSource, /COMPILED_PLAN_REFERENCE/);
+  assert.match(commercialPlanSource, /resetKyrubCommercialPlanRuntimeOverrides/);
+  assert.match(executableCatalogSource, /resetKyrubCommercialPlanRuntimeOverrides\(\)/);
+  assert.match(activePlanClientSource, /resetKyrubCommercialPlanRuntimeOverrides\(\)/);
+  assert.match(activePlanClientSource, /cached = null/);
 });
 
 test('active plan versions hydrate the action executor with a safe V1 fallback', () => {
