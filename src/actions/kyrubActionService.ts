@@ -54,7 +54,10 @@ const validReceipt = (
 const activityEntityType = (
   proposal: KyrubActionProposal
 ): string | undefined => {
-  if (proposal.type === 'create_product') return 'product';
+  if (
+    proposal.type === 'create_product' ||
+    proposal.type === 'update_product'
+  ) return 'product';
   if (proposal.type === 'create_note') return 'note';
   if (
     proposal.type === 'start_store_activation' ||
@@ -181,6 +184,7 @@ export const executeKyrubAction = async (
 
   if (
     proposal.type === 'create_product' ||
+    proposal.type === 'update_product' ||
     proposal.type === 'update_store_profile'
   ) {
     invalidateKyrubErpContext(user.uid);
