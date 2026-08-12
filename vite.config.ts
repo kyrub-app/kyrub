@@ -9,6 +9,13 @@ export default defineConfig(() => {
     resolve: {
       alias: [
         {
+          find: /^\.\.\/ai\/consultantClient$/,
+          replacement: path.resolve(
+            __dirname,
+            'src/ai/consultantClientWithPlans.ts'
+          ),
+        },
+        {
           find: /^\.\.\/utils\/communityCloud$/,
           replacement: path.resolve(
             __dirname,

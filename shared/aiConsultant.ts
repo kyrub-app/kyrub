@@ -10,7 +10,11 @@ export type {
   KyrubAiCreateNoteProposal,
 } from './kyrubActions';
 export type { KyrubErpContextSnapshot } from './kyrubErpContext';
-export type { KyrubiaTurnContext } from './kyrubiaContext';
+export type {
+  KyrubiaOfferedIntent,
+  KyrubiaOfferedIntentKind,
+  KyrubiaTurnContext,
+} from './kyrubiaContext';
 
 export const KYRUB_AI_CONSULTANT_ENDPOINT = '/api/kyrubia';
 export const KYRUB_AI_CONSULTANT_COMPAT_ENDPOINT = '/api/consultor-kyrub';
@@ -49,6 +53,11 @@ export type KyrubAiConsultantRequest = {
   screenContext?: string;
   erpContext?: KyrubErpContextSnapshot;
   turnContext?: KyrubiaTurnContext;
+  /**
+   * ID of a structured option displayed by Kyrub. Selecting it expresses
+   * conversational intent only and never grants mutation authority.
+   */
+  selectedOfferedIntentId?: string;
   historicalLink?: KyrubAiHistoricalLink;
 };
 

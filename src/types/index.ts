@@ -49,6 +49,8 @@ export interface Product {
   customizationSummary?: string;
 }
 
+export type StorePlan = 'free' | 'pro' | 'business';
+
 export interface Store {
   id: string;
   name: string;
@@ -57,7 +59,7 @@ export interface Store {
   logo: string;
   banner: string;
   primaryColor: string;
-  plan: 'free' | 'business';
+  plan: StorePlan;
   ownerEmail: string;
   address?: string;
   contact?: string;
@@ -162,7 +164,7 @@ export interface Tenant {
   email: string;
   role: 'supplier' | 'retailer';
   storeId?: string;
-  plan: 'free' | 'business';
+  plan: StorePlan;
 }
 
 export interface CartItem {

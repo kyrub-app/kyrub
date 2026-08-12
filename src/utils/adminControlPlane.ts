@@ -155,15 +155,23 @@ export const getAdminAuditDocumentPath = (auditId: string): string =>
 
 export const isAdminControlPlaneLocation = (
   hostname: string,
-  pathname: string
+  pathname: string,
+  search = typeof globalThis.location !== 'undefined'
+    ? globalThis.location.search
+    : ''
 ): boolean => {
   const normalizedHost = hostname.trim().toLowerCase();
   const normalizedPath = pathname.trim().toLowerCase();
+  const previewAdminRequested =
+    normalizedHost.endsWith('.vercel.app') &&
+    new URLSearchParams(search).get('kyrub_admin_preview') === '1';
+
   return (
     normalizedHost === 'admin.kyrub.com' ||
     normalizedHost === 'admin.localhost' ||
     ((normalizedHost === 'localhost' || normalizedHost === '127.0.0.1') &&
-      (normalizedPath === '/admin' || normalizedPath.startsWith('/admin/')))
+      (normalizedPath === '/admin' || normalizedPath.startsWith('/admin/'))) ||
+    previewAdminRequested
   );
 };
 

@@ -14,14 +14,41 @@ export type KyrubiaOperationalScope = {
   storeId: string | null;
 };
 
+export type KyrubiaOfferedIntentKind =
+  | 'plan.explain'
+  | 'plan.price'
+  | 'plan.credits'
+  | 'plan.compare'
+  | 'plan.billing'
+  | 'plan.continue_free';
+
+export type KyrubiaOfferedIntent = {
+  id: string;
+  intent: KyrubiaOfferedIntentKind;
+  label: string;
+  payload?: {
+    planId?: 'free' | 'pro' | 'business';
+  };
+  /**
+   * A suggested option expresses conversational intent only. It never grants
+   * authority to mutate data, bypass policy, or satisfy a confirmation gate.
+   */
+  authorization: 'intent_only';
+  primary?: boolean;
+};
+
 export type KyrubiaTurnContext = {
   version: 1;
   id: string;
   source: 'kyrub_runtime';
-  sourceAction: KyrubReadActionType;
+  sourceAction:
+    | KyrubReadActionType
+    | 'plan_conversation'
+    | 'operational_workflow';
   generatedAt: string;
   scope: KyrubiaOperationalScope;
   entities: KyrubiaEntityReference[];
+  offeredIntents?: KyrubiaOfferedIntent[];
 };
 
 export type KyrubiaTurnSelection = {
@@ -186,6 +213,7 @@ const narrowedTurnContext = (
     id: createTurnId(),
     generatedAt: new Date().toISOString(),
     entities,
+    offeredIntents: undefined,
   };
 };
 

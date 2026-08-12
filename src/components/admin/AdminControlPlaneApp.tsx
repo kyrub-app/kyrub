@@ -27,6 +27,7 @@ import {
 } from '../../utils/adminControlPlane';
 import AdminDirectoryWorkspace from './AdminDirectoryWorkspace';
 import AdminModulesWorkspace from './AdminModulesWorkspace';
+import AdminPromotionalPlanWorkspace from './AdminPromotionalPlanWorkspace';
 
 const ROLE_LABELS: Record<AdminRole, string> = {
   super_admin: 'Super Admin',
@@ -420,13 +421,20 @@ export default function AdminControlPlaneApp() {
           />
         )}
 
+        {profile.role === 'super_admin' && (
+          <AdminPromotionalPlanWorkspace
+            authenticatedUser={user}
+            profile={profile}
+          />
+        )}
+
         <AdminModulesWorkspace profile={profile} />
 
         <section className="rounded-2xl border border-slate-800 bg-slate-900/40 px-4 py-3">
           <div className="flex items-start gap-3">
             <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-slate-500" />
             <p className="text-[10px] leading-relaxed text-slate-500">
-              Consultas são somente leitura. Bloqueios, planos, integrações e alterações críticas exigem backend seguro e auditoria autoritativa.
+              Consultas permanecem somente leitura. Alterações críticas, como concessões de plano, só podem ocorrer por backend seguro, autorização administrativa explícita e auditoria autoritativa.
             </p>
           </div>
         </section>

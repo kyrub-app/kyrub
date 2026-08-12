@@ -45,7 +45,7 @@ export const getUserStorePendingKey = (uid: string): string =>
   `kyrub_user_store_pending_${uid}`;
 
 const isStorePlan = (value: unknown): value is Store['plan'] =>
-  value === 'free' || value === 'business';
+  value === 'free' || value === 'pro' || value === 'business';
 
 const isStoreStatus = (value: unknown): value is Store['status'] =>
   value === 'open' || value === 'delayed' || value === 'closed';

@@ -30,16 +30,44 @@ export type KyrubiaObjectiveRuntimeResult = {
 const missingLinkedObjectiveReply = (): string =>
   'Este chat ainda não está vinculado a um objetivo ativo. Diga “meu objetivo é...” para registrar um objetivo aqui ou peça para listar seus objetivos ativos.';
 
+const normalizeOperationalIntent = (value: string): string =>
+  value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLocaleLowerCase('pt-BR')
+    .replace(/\bq\b/g, 'que')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+export const shouldDeferTrustedReadToOperationalWorkflow = (
+  message: string
+): boolean => {
+  const intent = normalizeOperationalIntent(message);
+  const hasProductTarget =
+    /\b(produto|produtos|item|itens|servico|servicos)\b/.test(intent);
+  const hasMutationVerb =
+    /\b(cadastrar|cadastre|criar|crie|adicionar|adicione|incluir|inclua)\b/.test(intent);
+  const hasActionFraming =
+    /\b(quero|queremos|vamos|pode|podemos|preciso|precisamos|gostaria|me ajude|me ajuda)\b/.test(intent) ||
+    /\b(cadastre|crie|adicione|inclua)\b/.test(intent);
+
+  return hasProductTarget && hasMutationVerb && hasActionFraming;
+};
+
 export const resolveKyrubiaObjectiveRuntime = (
   storage: Storage,
   uid: string,
   conversationId: string,
   message: string
 ): KyrubiaObjectiveRuntimeResult | null => {
-  // consultantClient already enters this local deterministic stage before any
-  // network/provider call. Trusted reads live here temporarily so observed
-  // context and official product facts can answer without granting any action.
-  const trustedRead = resolveKyrubiaTrustedReadRuntime(storage, uid, message);
+  // Trusted reads stay ahead of objectives and provider calls, except when the
+  // user is explicitly asking to mutate the product catalog. In that case this
+  // layer deliberately falls through so the downstream operational workflow can
+  // perform its own preflight/review/confirmation. Falling through is not
+  // authorization and never executes an action by itself.
+  const trustedRead = shouldDeferTrustedReadToOperationalWorkflow(message)
+    ? null
+    : resolveKyrubiaTrustedReadRuntime(storage, uid, message);
   if (trustedRead) return { reply: trustedRead.reply };
 
   const command = resolveKyrubiaObjectiveCommand(message);

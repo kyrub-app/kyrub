@@ -1,5 +1,8 @@
 export const KYRUB_ACTION_TYPES = {
   CREATE_NOTE: 'create_note',
+  START_STORE_ACTIVATION: 'start_store_activation',
+  UPDATE_STORE_PROFILE: 'update_store_profile',
+  CREATE_PRODUCT: 'create_product',
   READ_STORE_SUMMARY: 'read_store_summary',
   LIST_PRODUCTS: 'list_products',
   LIST_LOW_STOCK_PRODUCTS: 'list_low_stock_products',
@@ -8,10 +11,8 @@ export const KYRUB_ACTION_TYPES = {
 
 export const KYRUB_PLANNED_ERP_ACTION_TYPES = {
   CREATE_TASK: 'create_task',
-  CREATE_PRODUCT_DRAFT: 'create_product_draft',
   UPDATE_PRODUCT_DRAFT: 'update_product_draft',
   ADJUST_INVENTORY: 'adjust_inventory',
-  UPDATE_STORE: 'update_store',
   ANALYZE_CATALOG: 'analyze_catalog',
   IMPORT_CATALOG_DRAFT: 'import_catalog_draft',
 } as const;
@@ -91,9 +92,15 @@ export type KyrubExecutionEnvelope = {
 export type KyrubActiveActionType =
   typeof KYRUB_ACTION_TYPES[keyof typeof KYRUB_ACTION_TYPES];
 
+export type KyrubWriteActionType =
+  | typeof KYRUB_ACTION_TYPES.CREATE_NOTE
+  | typeof KYRUB_ACTION_TYPES.START_STORE_ACTIVATION
+  | typeof KYRUB_ACTION_TYPES.UPDATE_STORE_PROFILE
+  | typeof KYRUB_ACTION_TYPES.CREATE_PRODUCT;
+
 export type KyrubReadActionType = Exclude<
   KyrubActiveActionType,
-  typeof KYRUB_ACTION_TYPES.CREATE_NOTE
+  KyrubWriteActionType
 >;
 
 export type KyrubActionDefinition = {
@@ -115,6 +122,30 @@ export const KYRUB_ACTION_REGISTRY: Record<
     risk: 'low',
     requiresConfirmation: true,
     permission: 'notes.write',
+    maxAffectedEntities: 1,
+  },
+  start_store_activation: {
+    type: 'start_store_activation',
+    mode: 'write',
+    risk: 'low',
+    requiresConfirmation: true,
+    permission: 'store.activate',
+    maxAffectedEntities: 1,
+  },
+  update_store_profile: {
+    type: 'update_store_profile',
+    mode: 'write',
+    risk: 'low',
+    requiresConfirmation: false,
+    permission: 'store.profile.write',
+    maxAffectedEntities: 1,
+  },
+  create_product: {
+    type: 'create_product',
+    mode: 'write',
+    risk: 'medium',
+    requiresConfirmation: true,
+    permission: 'products.write',
     maxAffectedEntities: 1,
   },
   read_store_summary: {
@@ -168,11 +199,62 @@ export type KyrubAiCreateNoteProposal = KyrubActionProposalMetadata & {
   requiresConfirmation: true;
 };
 
-export type KyrubActionProposal = KyrubAiCreateNoteProposal;
+export type KyrubStoreActivationPurpose =
+  | 'store_setup'
+  | 'create_product';
+
+export type KyrubAiStartStoreActivationProposal = KyrubActionProposalMetadata & {
+  id: string;
+  type: typeof KYRUB_ACTION_TYPES.START_STORE_ACTIVATION;
+  purpose: KyrubStoreActivationPurpose;
+  requiresConfirmation: true;
+};
+
+export type KyrubStoreProfilePatch = {
+  name?: string;
+  description?: string;
+  address?: string;
+  contact?: string;
+  keywords?: string[];
+};
+
+export type KyrubAiUpdateStoreProfileProposal = KyrubActionProposalMetadata & {
+  id: string;
+  type: typeof KYRUB_ACTION_TYPES.UPDATE_STORE_PROFILE;
+  activationGrantId: string;
+  patch: KyrubStoreProfilePatch;
+  requiresConfirmation: false;
+};
+
+export type KyrubAiCreateProductProposal = KyrubActionProposalMetadata & {
+  id: string;
+  type: typeof KYRUB_ACTION_TYPES.CREATE_PRODUCT;
+  name: string;
+  description: string;
+  price: number;
+  stock: number;
+  category: string;
+  image: string;
+  isService: boolean;
+  isComplimentary: boolean;
+  requiresConfirmation: true;
+};
+
+export type KyrubActionProposal =
+  | KyrubAiCreateNoteProposal
+  | KyrubAiStartStoreActivationProposal
+  | KyrubAiUpdateStoreProfileProposal
+  | KyrubAiCreateProductProposal;
 
 export type KyrubActionExecutionStatus =
   | 'success'
   | 'already_applied';
+
+export type KyrubActionAuthorizationGrant = {
+  id: string;
+  scope: 'store_activation';
+  expiresAt: string;
+};
 
 export type KyrubActionExecutionResult = {
   actionId: string;
@@ -182,4 +264,5 @@ export type KyrubActionExecutionResult = {
   origin: KyrubActionOrigin;
   idempotencyKey: string;
   executionEnvelope?: KyrubExecutionEnvelope;
+  authorizationGrant?: KyrubActionAuthorizationGrant;
 };

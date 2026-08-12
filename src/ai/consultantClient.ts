@@ -43,6 +43,7 @@ import {
   loadKyrubiaConversationObjective,
   resolveKyrubiaObjectiveRuntime,
 } from './objectiveRuntimeService';
+import { resolveKyrubiaOperationalWorkflow } from './operationalWorkflowRuntime';
 import { prepareKyrubAiOpportunityContinuation } from './opportunityContinuation';
 
 export class KyrubAiClientError extends Error {
@@ -95,7 +96,12 @@ const createRuntimeRequestId = (): string => {
 
 const runtimeCapabilities = (): KyrubAiConsultantResponse['capabilities'] => ({
   actionsEnabled: true,
-  enabledActions: ['create_note'],
+  enabledActions: [
+    'create_note',
+    'start_store_activation',
+    'update_store_profile',
+    'create_product',
+  ],
   enabledReadActions: [...DETERMINISTIC_READ_ACTIONS],
   voiceEnabled: false,
   persistentCloudHistoryEnabled: false,
@@ -369,6 +375,25 @@ export const requestKyrubAiConsultant = async (
         error
       );
     }
+  }
+
+  const operational = latestUserMessage?.role === 'user'
+    ? await resolveKyrubiaOperationalWorkflow({
+        user: currentUser,
+        conversationId: requestPayload.conversationId,
+        message: latestUserMessage.content,
+        erpContext,
+      })
+    : null;
+
+  if (operational) {
+    const result: KyrubAiConsultantResponse = {
+      ...operational,
+      historicalLink: resolvedHistoricalLink,
+      capabilities: runtimeCapabilities(),
+    };
+    emitKyrubAiActionProposal(requestPayload.conversationId, result);
+    return result;
   }
 
   const deterministic = latestUserMessage?.role === 'user'
