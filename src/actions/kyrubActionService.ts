@@ -5,6 +5,7 @@ import type {
   KyrubAiUpdateStoreProfileProposal,
 } from '../../shared/kyrubActions';
 import { completeKyrubiaProductAndAdvance } from '../ai/operationalWorkflowStore';
+import { recordCurrentUserActivityEvent } from '../observability/kyrubActivityBrowser';
 import { invalidateKyrubErpContext } from './erpReadActionService';
 
 const SAFE_ACTION_ENDPOINT = '/api/action-execute';
@@ -50,6 +51,52 @@ const validReceipt = (
   typeof body.origin === 'string' &&
   typeof body.idempotencyKey === 'string';
 
+const activityEntityType = (
+  proposal: KyrubActionProposal
+): string | undefined => {
+  if (proposal.type === 'create_product') return 'product';
+  if (proposal.type === 'create_note') return 'note';
+  if (
+    proposal.type === 'start_store_activation' ||
+    proposal.type === 'update_store_profile'
+  ) {
+    return 'store';
+  }
+  return undefined;
+};
+
+const recordConfirmedKyrubiaActionAttempt = (
+  proposal: KyrubActionProposal,
+  confirmed: boolean
+): void => {
+  if (!confirmed) return;
+  recordCurrentUserActivityEvent({
+    type: 'interaction.action_attempted',
+    domain: 'kyrubia',
+    source: 'client_observation',
+    screenId: 'home:kyrub',
+    actionId: proposal.type,
+    entityType: activityEntityType(proposal),
+  });
+};
+
+const recordConfirmedKyrubiaActionResult = (
+  proposal: KyrubActionProposal,
+  result: KyrubActionExecutionResult,
+  confirmed: boolean
+): void => {
+  if (!confirmed) return;
+  recordCurrentUserActivityEvent({
+    type: 'result.action_succeeded',
+    domain: 'kyrubia',
+    source: 'authoritative_write_ack',
+    screenId: 'home:kyrub',
+    actionId: proposal.type,
+    entityType: activityEntityType(proposal),
+    entityId: result.entityId,
+  });
+};
+
 const conversationIdFromProductIdempotencyKey = (
   proposal: KyrubActionProposal
 ): string | null => {
@@ -83,6 +130,8 @@ export const executeKyrubAction = async (
   proposal: KyrubActionProposal,
   confirmed: boolean
 ): Promise<KyrubActionExecutionResult> => {
+  recordConfirmedKyrubiaActionAttempt(proposal, confirmed);
+
   let token = '';
   try {
     token = await user.getIdToken(true);
@@ -127,12 +176,15 @@ export const executeKyrubAction = async (
     );
   }
 
+  const result = body as unknown as KyrubActionExecutionResult;
+  recordConfirmedKyrubiaActionResult(proposal, result, confirmed);
+
   if (proposal.type === 'create_product') {
     invalidateKyrubErpContext(user.uid);
     advanceProductSequenceAfterExecution(user, proposal);
   }
 
-  return body as unknown as KyrubActionExecutionResult;
+  return result;
 };
 
 export const executePreauthorizedStoreProfileAction = async (
