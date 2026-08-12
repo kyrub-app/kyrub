@@ -35,7 +35,10 @@ const erpContext = (): KyrubErpContextSnapshot => ({
   warnings: [],
 });
 
-test('choosing Continue on Free consumes the offer instead of re-offering the same decision', () => {
+const intents = (result: ReturnType<typeof createKyrubiaCapacityPlanTurnContext>) =>
+  result.offeredIntents?.map(item => item.intent) ?? [];
+
+test('choosing Continue on Free consumes only that chip and preserves sibling suggestions', () => {
   const turnContext = createKyrubiaCapacityPlanTurnContext(
     'owner-free-terminal-test'
   );
@@ -66,10 +69,10 @@ test('choosing Continue on Free consumes the offer instead of re-offering the sa
 
   assert.ok(result);
   assert.match(result.reply, /Você pode continuar no Free/i);
-  assert.equal(result.turnContext.offeredIntents?.length ?? 0, 0);
+  assert.deepEqual(intents(result.turnContext), ['plan.explain', 'plan.compare']);
 });
 
-test('typing the exact Continue on Free label also closes that offered-intent branch', () => {
+test('typing the exact Continue on Free label consumes only the matching chip', () => {
   const turnContext = createKyrubiaCapacityPlanTurnContext(
     'owner-free-terminal-test'
   );
@@ -82,5 +85,43 @@ test('typing the exact Continue on Free label also closes that offered-intent br
 
   assert.ok(result);
   assert.match(result.reply, /Você pode continuar no Free/i);
-  assert.equal(result.turnContext.offeredIntents?.length ?? 0, 0);
+  assert.deepEqual(intents(result.turnContext), ['plan.explain', 'plan.compare']);
+});
+
+test('every selected chip is consumed independently while the remaining chips stay available', () => {
+  const initialTurn = createKyrubiaCapacityPlanTurnContext(
+    'owner-free-terminal-test'
+  );
+  const compare = initialTurn.offeredIntents?.find(
+    item => item.intent === 'plan.compare'
+  );
+  assert.ok(compare);
+
+  const compared = resolveKyrubiaOfferedIntentContinuation(
+    [{ role: 'user', content: 'Comparar planos' }],
+    initialTurn,
+    compare.id,
+    erpContext()
+  );
+  assert.ok(compared);
+  assert.match(compared.reply, /Free/i);
+  assert.match(compared.reply, /Pro/i);
+  assert.match(compared.reply, /Business/i);
+  assert.deepEqual(intents(compared.turnContext), [
+    'plan.explain',
+    'plan.continue_free',
+  ]);
+
+  const stayFree = compared.turnContext.offeredIntents?.find(
+    item => item.intent === 'plan.continue_free'
+  );
+  assert.ok(stayFree);
+  const stayed = resolveKyrubiaOfferedIntentContinuation(
+    [{ role: 'user', content: 'Continuar no Free' }],
+    compared.turnContext,
+    stayFree.id,
+    erpContext()
+  );
+  assert.ok(stayed);
+  assert.deepEqual(intents(stayed.turnContext), ['plan.explain']);
 });
