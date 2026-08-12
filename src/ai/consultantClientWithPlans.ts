@@ -13,10 +13,15 @@ import {
   bypassLegacyFreeCapacityContext,
   resolveActivePlanProductCapacity,
 } from './activePlanProductCapacity';
+import { emitKyrubAiActionProposal } from './actionEvents';
 import {
   KyrubAiClientError,
   requestKyrubAiConsultant as requestLegacyKyrubAiConsultant,
 } from './consultantClient';
+import {
+  isKyrubiaDeterministicProductUpdateIntent,
+  resolveKyrubiaDeterministicProductUpdate,
+} from './deterministicProductUpdate';
 import {
   shouldDeferTrustedReadToOperationalWorkflow,
 } from './objectiveRuntimeService';
@@ -51,6 +56,7 @@ const capabilities = (): KyrubAiConsultantResponse['capabilities'] => ({
     'start_store_activation',
     'update_store_profile',
     'create_product',
+    'update_product',
   ],
   enabledReadActions: [
     'read_store_summary',
@@ -139,6 +145,36 @@ export const requestKyrubAiConsultant = async (
   const latestContent = latestUserMessage?.role === 'user'
     ? latestUserMessage.content
     : '';
+  let erpContext = payload.erpContext;
+
+  // An explicit rename is an operational mutation even when the product name
+  // itself contains commercial words such as “Pro”, “Free” or “Business”. It
+  // must be resolved before plan knowledge so a catalog entity can never be
+  // reinterpreted as a subscription plan merely because of its name.
+  if (
+    latestUserMessage?.role === 'user' &&
+    isKyrubiaDeterministicProductUpdateIntent(latestContent)
+  ) {
+    erpContext ??= await readErpContextSafely(user, signal);
+    const productUpdate = resolveKyrubiaDeterministicProductUpdate(
+      latestContent,
+      erpContext
+    );
+    if (productUpdate) {
+      const result: KyrubAiConsultantResponse = {
+        reply: productUpdate.reply,
+        provider: 'kyrub',
+        model: 'kyrub-product-update-runtime-v1',
+        mode: 'deterministic',
+        requestId: createRequestId(),
+        actionProposal: productUpdate.actionProposal,
+        capabilities: capabilities(),
+      };
+      emitKyrubAiActionProposal(payload.conversationId, result);
+      return result;
+    }
+  }
+
   const defersToOperational = latestUserMessage?.role === 'user'
     ? shouldDeferTrustedReadToOperationalWorkflow(latestContent)
     : false;
@@ -195,7 +231,6 @@ export const requestKyrubAiConsultant = async (
     latestUserMessage?.role === 'user' &&
     (defersToOperational || storedWorkflow?.objective === 'create_product');
 
-  let erpContext = payload.erpContext;
   let legacyErpContext = erpContext;
   if (productOperationalTurn) {
     erpContext ??= await readErpContextSafely(user, signal);
