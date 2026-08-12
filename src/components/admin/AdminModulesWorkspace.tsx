@@ -45,6 +45,15 @@ const MODULES: AdminModuleDefinition[] = [
     locationLabel: 'Diretório administrativo',
   },
   {
+    label: 'Planos & Cupons',
+    description: 'Versões comerciais, funcionalidades, campanhas e cortesias auditadas.',
+    permission: 'manage_admins',
+    icon: Banknote,
+    status: 'available',
+    anchor: 'admin-plans-coupons',
+    locationLabel: 'Governança comercial',
+  },
+  {
     label: 'Saúde do sistema',
     description: 'Filas, integrações e situação da operação logística.',
     permission: 'read_system_health',
