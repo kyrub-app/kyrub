@@ -8,6 +8,7 @@ import {
   type KyrubAiHistoricalLink,
 } from '../../shared/aiConsultant';
 import { resolveKyrubiaDeterministicErpRead } from '../../shared/kyrubiaDeterministicErp';
+import { resolveKyrubiaDeterministicNote } from '../../shared/kyrubiaDeterministicNote';
 import {
   describeKyrubiaTurnSelection,
   resolveKyrubiaContextualRecall,
@@ -356,6 +357,35 @@ export const requestKyrubAiConsultant = async (
       historicalLink: resolvedHistoricalLink,
       capabilities: runtimeCapabilities(),
     };
+  }
+
+  const deterministicNote = latestUserMessage?.role === 'user'
+    ? resolveKyrubiaDeterministicNote(latestUserMessage.content)
+    : null;
+
+  if (deterministicNote) {
+    const result: KyrubAiConsultantResponse = {
+      reply: deterministicNote.reply,
+      provider: 'kyrub',
+      model: 'kyrub-runtime-v1',
+      mode: 'deterministic',
+      requestId: createRuntimeRequestId(),
+      actionProposal: {
+        id: createRuntimeRequestId(),
+        type: 'create_note',
+        title: deterministicNote.noteDraft.title,
+        content: deterministicNote.noteDraft.content,
+        checklist: deterministicNote.noteDraft.checklist,
+        requiresConfirmation: true,
+        origin: 'kyrubia',
+        risk: 'low',
+        inputProvenance: 'user_intent',
+      },
+      historicalLink: resolvedHistoricalLink,
+      capabilities: runtimeCapabilities(),
+    };
+    emitKyrubAiActionProposal(requestPayload.conversationId, result);
+    return result;
   }
 
   const historicalContext = resolvedHistoricalLink?.memoryContext
