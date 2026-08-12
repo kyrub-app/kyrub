@@ -3,6 +3,7 @@ import {
   mapKyrubActionExecutionError,
 } from '../server/actions/actionExecutionService.js';
 import { hydrateExecutablePlanCatalog } from '../server/admin/executablePlanCatalogService.js';
+import { reconcileStoreEntitlementFromAuthorization } from '../server/admin/storeEntitlementLifecycleService.js';
 
 type HeaderValue = string | string[] | undefined;
 
@@ -40,6 +41,10 @@ export default async function handler(
     const authorization = headerValue(
       request.headers.authorization ?? request.headers.Authorization
     );
+    // Benefit expiry is an already-agreed entitlement boundary, not a new
+    // discretionary action. Reconcile it before loading plan capacity so an
+    // expired Pro/Business benefit can never authorize a write.
+    await reconcileStoreEntitlementFromAuthorization(authorization);
     await hydrateExecutablePlanCatalog();
     const result = await executeAuthorizedKyrubAction(
       authorization,
