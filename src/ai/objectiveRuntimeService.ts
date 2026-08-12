@@ -47,8 +47,11 @@ export const shouldDeferTrustedReadToOperationalWorkflow = (
     /\b(produto|produtos|item|itens|servico|servicos|catalogo)\b/.test(intent);
   const hasMutationVerb =
     /\b(cadastrar|cadastre|criar|crie|adicionar|adicione|incluir|inclua|alterar|altere|atualizar|atualize|mudar|mude|trocar|troque|renomear|renomeie|editar|edite|remover|remova|excluir|exclua)\b/.test(intent);
+  const hasActionFraming =
+    /\b(quero|preciso|gostaria|vamos|pode|poderia)\b/.test(intent) ||
+    /^(cadastre|crie|adicione|inclua|altere|atualize|mude|troque|renomeie|edite|remova|exclua)\b/.test(intent);
 
-  return hasProductTarget && hasMutationVerb;
+  return hasProductTarget && hasMutationVerb && hasActionFraming;
 };
 
 export const resolveKyrubiaObjectiveRuntime = (
