@@ -28,10 +28,16 @@ const normalize = (value: string): string =>
     .trim();
 
 const actionLabel = (actionId: string | undefined): string => {
-  if (actionId === 'store.settings.save') {
-    return 'salvar as configurações da Loja Kyrub';
-  }
-  return actionId ? `executar ${actionId}` : 'executar a ação';
+  const labels: Record<string, string> = {
+    'store.settings.save': 'salvar as configurações da Loja Kyrub',
+    create_product: 'cadastrar um produto pela Kyrubia',
+    create_note: 'criar uma nota pela Kyrubia',
+    start_store_activation: 'autorizar a ativação da Loja Kyrub pela Kyrubia',
+    update_store_profile: 'atualizar o perfil da Loja Kyrub pela Kyrubia',
+  };
+  return actionId
+    ? labels[actionId] ?? `executar ${actionId}`
+    : 'executar a ação';
 };
 
 const screenLabel = (screenId: string | undefined): string => {
