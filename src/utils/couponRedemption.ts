@@ -16,7 +16,7 @@ export const redeemKyrubCoupon = async (
   code: string
 ): Promise<CouponRedemptionResult> => {
   const token = await user.getIdToken(true);
-  const response = await fetch('/api/coupons/redeem', {
+  const response = await fetch('/api/plan-control?op=store.coupon.redeem', {
     method: 'POST',
     headers: {
       authorization: `Bearer ${token}`,
