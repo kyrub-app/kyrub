@@ -11,6 +11,14 @@ export type KyrubCommercialPlanReference = {
   positioning: string;
 };
 
+export type KyrubCommercialPlanRuntimeOverride = Pick<
+  KyrubCommercialPlanReference,
+  | 'monthlyPriceBRL'
+  | 'activeCatalogLimit'
+  | 'kyrubiaIntelligenceCredits'
+  | 'marketplaceOriginatedSaleCommissionPercent'
+>;
+
 export const KYRUB_COMMERCIAL_PLAN_BILLING_AVAILABLE = false;
 export const KYRUB_COMMERCIAL_PLAN_REFERENCE_NOTICE =
   'Valores, franquias e comissões são referências comerciais V1 sujeitas a validação antes de cobrança real.';
@@ -50,6 +58,29 @@ export const KYRUB_COMMERCIAL_PLANS_V1: Record<
     positioning:
       'equipe, automações, integrações e inteligência ampliadas',
   },
+};
+
+const catalogLabel = (limit: number | null): string =>
+  limit === null
+    ? 'catálogo comercialmente ilimitado, sujeito a uso justo'
+    : `até ${limit.toLocaleString('pt-BR')} produtos ou serviços ativos`;
+
+// Server entrypoints can hydrate the commercial contract from the active,
+// versioned Control Plane catalog before executing an operation. Browser builds
+// keep the compiled V1 fallback unless they explicitly load the public catalog.
+export const applyKyrubCommercialPlanRuntimeOverrides = (
+  overrides: Partial<
+    Record<KyrubCommercialPlanId, KyrubCommercialPlanRuntimeOverride>
+  >
+): void => {
+  for (const planId of Object.keys(overrides) as KyrubCommercialPlanId[]) {
+    const override = overrides[planId];
+    if (!override) continue;
+    const current = KYRUB_COMMERCIAL_PLANS_V1[planId];
+    Object.assign(current, override, {
+      catalogLimitLabel: catalogLabel(override.activeCatalogLimit),
+    });
+  }
 };
 
 export const formatKyrubPlanMonthlyPrice = (price: number): string =>
