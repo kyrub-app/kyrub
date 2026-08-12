@@ -20,6 +20,7 @@ import {
   upsertKyrubiaObjective,
   type KyrubiaActiveObjective,
 } from './objectiveStore';
+import { resolveKyrubiaTrustedReadRuntime } from './trustedReadRuntime';
 
 export type KyrubiaObjectiveRuntimeResult = {
   reply: string;
@@ -35,6 +36,12 @@ export const resolveKyrubiaObjectiveRuntime = (
   conversationId: string,
   message: string
 ): KyrubiaObjectiveRuntimeResult | null => {
+  // consultantClient already enters this local deterministic stage before any
+  // network/provider call. Trusted reads live here temporarily so observed
+  // context and official product facts can answer without granting any action.
+  const trustedRead = resolveKyrubiaTrustedReadRuntime(storage, uid, message);
+  if (trustedRead) return { reply: trustedRead.reply };
+
   const command = resolveKyrubiaObjectiveCommand(message);
   if (!command) return null;
 
