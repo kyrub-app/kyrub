@@ -57,6 +57,17 @@ export const isKyrubAiActionProposal = (
         typeof value.isComplimentary === 'boolean' &&
         value.requiresConfirmation === true
       );
+    case 'update_product':
+      return (
+        typeof value.productId === 'string' &&
+        value.productId.trim().length > 0 &&
+        typeof value.expectedCurrentName === 'string' &&
+        value.expectedCurrentName.trim().length > 0 &&
+        isRecord(value.patch) &&
+        typeof value.patch.name === 'string' &&
+        value.patch.name.trim().length > 0 &&
+        value.requiresConfirmation === true
+      );
     default:
       return false;
   }
@@ -71,7 +82,10 @@ const prepareProposalForConfirmation = (
   inputProvenance: proposal.inputProvenance ?? 'ai_generated_content',
   impact: proposal.impact ?? {
     entityCount: 1,
-    reversibility: proposal.type === 'create_product' ? 'limited' : 'easy',
+    reversibility:
+      proposal.type === 'create_product' || proposal.type === 'update_product'
+        ? 'limited'
+        : 'easy',
   },
 });
 
