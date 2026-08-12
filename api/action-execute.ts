@@ -1,7 +1,7 @@
 import {
   executeAuthorizedKyrubAction,
   mapKyrubActionExecutionError,
-} from '../server/actions/actionExecutionService.js';
+} from '../server/actions/actionExecutionFacade.js';
 import { hydrateExecutablePlanCatalog } from '../server/admin/executablePlanCatalogService.js';
 import { reconcileStoreEntitlementFromAuthorization } from '../server/admin/storeEntitlementLifecycleService.js';
 
