@@ -164,7 +164,7 @@ service cloud.firestore {
             && data.status is string
             && data.createdAt is timestamp
             && data.updatedAt is timestamp
-            && data.plan in ['free', 'business']
+            && data.plan in ['free', 'pro', 'business']
             && data.status in ['open', 'delayed', 'closed']
             && hasValidUserStoreCoordinates(data);
         }
