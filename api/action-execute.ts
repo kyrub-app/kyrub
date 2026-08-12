@@ -2,6 +2,7 @@ import {
   executeAuthorizedKyrubAction,
   mapKyrubActionExecutionError,
 } from '../server/actions/actionExecutionService.js';
+import { hydrateExecutablePlanCatalog } from '../server/admin/executablePlanCatalogService.js';
 
 type HeaderValue = string | string[] | undefined;
 
@@ -39,6 +40,7 @@ export default async function handler(
     const authorization = headerValue(
       request.headers.authorization ?? request.headers.Authorization
     );
+    await hydrateExecutablePlanCatalog();
     const result = await executeAuthorizedKyrubAction(
       authorization,
       request.body
