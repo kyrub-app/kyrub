@@ -34,6 +34,12 @@ const normalize = (value: string): string =>
     .replace(/\s+/g, ' ')
     .trim();
 
+const isExplicitProductCreationIntent = (message: string): boolean => {
+  const intent = normalize(message);
+  return /\b(cadastre|cadastrar|crie|criar|adicione|adicionar|inclua|incluir)\b/.test(intent) &&
+    /\b(produto|produtos|item|itens|servico|servicos)\b/.test(intent);
+};
+
 const parseRequestedCount = (message: string): number => {
   const intent = normalize(message);
   const numeric = /\b(\d{1,2})\s+(?:novos?\s+)?(?:produtos?|itens?|servicos?)\b/.exec(intent);
@@ -84,6 +90,13 @@ export const resolveActivePlanProductCapacity = (
   context: KyrubErpContextSnapshot | undefined,
   workflow: KyrubiaOperationalWorkflow | null
 ): ActivePlanCapacityResolution => {
+  if (
+    workflow?.objective !== 'create_product' &&
+    !isExplicitProductCreationIntent(message)
+  ) {
+    return { reply: null, bypassLegacyFreeCapacity: false };
+  }
+
   if (!context?.store || context.availability.products !== true) {
     return { reply: null, bypassLegacyFreeCapacity: false };
   }

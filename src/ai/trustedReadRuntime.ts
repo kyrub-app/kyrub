@@ -31,6 +31,7 @@ const actionLabel = (actionId: string | undefined): string => {
   const labels: Record<string, string> = {
     'store.settings.save': 'salvar as configurações da Loja Kyrub',
     create_product: 'cadastrar um produto pela Kyrubia',
+    update_product: 'alterar um produto pela Kyrubia',
     create_note: 'criar uma nota pela Kyrubia',
     start_store_activation: 'autorizar a ativação da Loja Kyrub pela Kyrubia',
     update_store_profile: 'atualizar o perfil da Loja Kyrub pela Kyrubia',

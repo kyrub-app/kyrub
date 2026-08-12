@@ -72,9 +72,12 @@ const shouldDeferToOperationalOrErp = (
   intent: string,
   directPlans: KyrubCommercialPlanId[]
 ): boolean => {
-  if (/\b(cadastre|cadastrar|crie|criar|adicione|adicionar|inclua|incluir|remova|remover|exclua|excluir)\b/.test(intent)) {
-    return true;
-  }
+  const hasProductTarget =
+    /\b(produto|produtos|item|itens|servico|servicos|catalogo)\b/.test(intent);
+  const hasProductMutation =
+    /\b(cadastre|cadastrar|crie|criar|adicione|adicionar|inclua|incluir|remova|remover|exclua|excluir|altere|alterar|atualize|atualizar|mude|mudar|troque|trocar|renomeie|renomear|edite|editar)\b/.test(intent);
+  if (hasProductTarget && hasProductMutation) return true;
+
   return directPlans.length === 0 &&
     /\b(eu tenho|tenho agora|cadastrados|cadastradas|meu catalogo|minha loja)\b/.test(intent) &&
     /\b(quantos|quantas|quantidade|total|produto|produtos|item|itens)\b/.test(intent);
