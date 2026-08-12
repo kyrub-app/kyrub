@@ -141,8 +141,16 @@ test('structured offered intent makes “Então explica” resolve the explicit 
   assert.match(result.reply, /100 produtos ou serviços ativos/i);
   assert.match(result.reply, /300 Créditos Kyrubia/i);
   assert.equal(
-    result.turnContext.offeredIntents?.some(item => item.intent === 'plan.price'),
+    result.turnContext.offeredIntents?.some(item => item.intent === 'plan.compare'),
     true
+  );
+  assert.equal(
+    result.turnContext.offeredIntents?.some(item => item.intent === 'plan.continue_free'),
+    true
+  );
+  assert.equal(
+    result.turnContext.offeredIntents?.some(item => item.intent === 'plan.explain'),
+    false
   );
   assert.equal(
     result.turnContext.offeredIntents?.some(item => item.primary === true),
@@ -177,7 +185,7 @@ test('ambiguous generic acceptance after a plan explanation stays deterministic 
 
   assert.ok(second);
   assert.match(second.reply, /Escolha uma opção abaixo/i);
-  assert.equal(second.turnContext.offeredIntents?.length, 3);
+  assert.equal(second.turnContext.offeredIntents?.length, 2);
 });
 
 test('chip selection carries an exact structured intent instead of relying on button label parsing', () => {
@@ -190,13 +198,13 @@ test('chip selection carries an exact structured intent instead of relying on bu
   );
   assert.ok(explained);
 
-  const creditsIntent = explained.turnContext.offeredIntents?.find(
-    item => item.intent === 'plan.credits'
+  const compareIntent = explained.turnContext.offeredIntents?.find(
+    item => item.intent === 'plan.compare'
   );
-  assert.ok(creditsIntent);
-  assert.equal(creditsIntent.authorization, 'intent_only');
+  assert.ok(compareIntent);
+  assert.equal(compareIntent.authorization, 'intent_only');
 
-  const credits = resolveKyrubiaOfferedIntentContinuation(
+  const compared = resolveKyrubiaOfferedIntentContinuation(
     [
       ...baseConversation(),
       { role: 'user', content: 'Então explica' },
@@ -204,12 +212,20 @@ test('chip selection carries an exact structured intent instead of relying on bu
       { role: 'user', content: 'texto visual pode mudar sem quebrar o roteamento' },
     ],
     explained.turnContext,
-    creditsIntent.id,
+    compareIntent.id,
     erpContext()
   );
 
-  assert.ok(credits);
-  assert.match(credits.reply, /300 Créditos Kyrubia/i);
+  assert.ok(compared);
+  assert.match(compared.reply, /Referência V1/i);
+  assert.equal(
+    compared.turnContext.offeredIntents?.some(item => item.intent === 'plan.compare'),
+    false
+  );
+  assert.equal(
+    compared.turnContext.offeredIntents?.some(item => item.intent === 'plan.continue_free'),
+    true
+  );
 });
 
 test('capacity handoff exposes suggested next steps without granting action authority', () => {
