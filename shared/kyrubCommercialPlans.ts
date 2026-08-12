@@ -23,7 +23,7 @@ export const KYRUB_COMMERCIAL_PLAN_BILLING_AVAILABLE = false;
 export const KYRUB_COMMERCIAL_PLAN_REFERENCE_NOTICE =
   'Valores, franquias e comissões são referências comerciais V1 sujeitas a validação antes de cobrança real.';
 
-export const KYRUB_COMMERCIAL_PLANS_V1: Record<
+const COMPILED_PLAN_REFERENCE: Record<
   KyrubCommercialPlanId,
   KyrubCommercialPlanReference
 > = {
@@ -60,10 +60,30 @@ export const KYRUB_COMMERCIAL_PLANS_V1: Record<
   },
 };
 
+export const KYRUB_COMMERCIAL_PLANS_V1: Record<
+  KyrubCommercialPlanId,
+  KyrubCommercialPlanReference
+> = {
+  free: { ...COMPILED_PLAN_REFERENCE.free },
+  pro: { ...COMPILED_PLAN_REFERENCE.pro },
+  business: { ...COMPILED_PLAN_REFERENCE.business },
+};
+
 const catalogLabel = (limit: number | null): string =>
   limit === null
     ? 'catálogo comercialmente ilimitado, sujeito a uso justo'
     : `até ${limit.toLocaleString('pt-BR')} produtos ou serviços ativos`;
+
+export const resetKyrubCommercialPlanRuntimeOverrides = (): void => {
+  for (const planId of Object.keys(
+    COMPILED_PLAN_REFERENCE
+  ) as KyrubCommercialPlanId[]) {
+    Object.assign(
+      KYRUB_COMMERCIAL_PLANS_V1[planId],
+      COMPILED_PLAN_REFERENCE[planId]
+    );
+  }
+};
 
 // Server entrypoints can hydrate the commercial contract from the active,
 // versioned Control Plane catalog before executing an operation. Browser builds
