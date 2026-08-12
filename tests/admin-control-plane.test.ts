@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync, statSync } from 'node:fs';
 import test from 'node:test';
+import { join } from 'node:path';
 import {
   getAdminPermissions,
   hasAdminPermission,
@@ -44,7 +45,24 @@ const executableCatalogSource = readFileSync(
   'server/admin/executablePlanCatalogService.ts',
   'utf8'
 );
+const publicCatalogSource = readFileSync(
+  'server/admin/publicPlanCatalogService.ts',
+  'utf8'
+);
+const activePlanClientSource = readFileSync(
+  'src/utils/activePlanCatalog.ts',
+  'utf8'
+);
+const activePlanKnowledgeSource = readFileSync(
+  'src/ai/activePlanKnowledgeRuntime.ts',
+  'utf8'
+);
+const consultantPlansSource = readFileSync(
+  'src/ai/consultantClientWithPlans.ts',
+  'utf8'
+);
 const actionExecuteSource = readFileSync('api/action-execute.ts', 'utf8');
+const planGatewaySource = readFileSync('api/plan-control.ts', 'utf8');
 const promotionalServiceSource = readFileSync(
   'server/admin/promotionalPlanService.ts',
   'utf8'
@@ -53,18 +71,16 @@ const promotionalEndpointSource = readFileSync(
   'api/admin/store-entitlements/promotional-pro.ts',
   'utf8'
 );
-const planEndpointSource = readFileSync(
-  'api/admin/plans/catalog.ts',
-  'utf8'
-);
-const couponEndpointSource = readFileSync(
-  'api/admin/coupons/index.ts',
-  'utf8'
-);
-const couponRedemptionEndpointSource = readFileSync(
-  'api/coupons/redeem.ts',
-  'utf8'
-);
+
+const collectApiFunctions = (directory: string): string[] =>
+  readdirSync(directory).flatMap(name => {
+    const path = join(directory, name);
+    return statSync(path).isDirectory()
+      ? collectApiFunctions(path)
+      : path.endsWith('.ts')
+        ? [path]
+        : [];
+  });
 
 test('parses only known administrative roles and matching identities', () => {
   const profile = parseAdminProfile(
@@ -144,6 +160,8 @@ test('groups active and future control plane modules for mobile', () => {
   assert.match(modulesSource, /Áreas do Control Plane/);
   assert.match(modulesSource, /Saúde do sistema/);
   assert.match(modulesSource, /status: 'available'/);
+  assert.match(modulesSource, /Planos & Cupons/);
+  assert.match(modulesSource, /admin-plans-coupons/);
   assert.match(modulesSource, /Recursos em preparação/);
   assert.match(modulesSource, /<details/);
   assert.match(modulesSource, /admin-directory/);
@@ -178,10 +196,12 @@ test('Plans & Coupons replaces the one-off courtesy UI while preserving server-s
   assert.match(planManagementSource, /admin\.coupon\.status_changed/);
   assert.match(planManagementSource, /runTransaction/);
 
-  assert.match(planEndpointSource, /publishPlanVersion/);
-  assert.match(couponEndpointSource, /createCouponCampaign/);
-  assert.match(planEndpointSource, /authorization/);
-  assert.match(couponEndpointSource, /authorization/);
+  assert.match(planGatewaySource, /admin\.snapshot/);
+  assert.match(planGatewaySource, /admin\.plan\.publish/);
+  assert.match(planGatewaySource, /admin\.coupon\.create/);
+  assert.match(planGatewaySource, /admin\.coupon\.status/);
+  assert.match(planGatewaySource, /admin\.entitlement\.grant/);
+  assert.match(planGatewaySource, /authorization/);
 });
 
 test('coupon redemption and direct grants converge on authoritative entitlement without fake billing', () => {
@@ -196,8 +216,25 @@ test('coupon redemption and direct grants converge on authoritative entitlement 
   assert.match(entitlementSource, /store\.coupon\.redeemed/);
   assert.match(entitlementSource, /admin\.store_plan\.complimentary\.granted/);
 
-  assert.match(couponRedemptionEndpointSource, /redeemCouponForOwnStore/);
-  assert.match(couponRedemptionEndpointSource, /toUpperCase\(\) !== 'POST'/);
+  assert.match(planGatewaySource, /store\.coupon\.redeem/);
+  assert.match(planGatewaySource, /redeemCouponForOwnStore/);
+});
+
+test('active plan catalog is a read-only public projection and Kyrubia hydrates it before plan facts', () => {
+  assert.match(publicCatalogSource, /plan_catalog/);
+  assert.doesNotMatch(publicCatalogSource, /coupon_campaigns|store_entitlements|audit_logs/);
+  assert.match(planGatewaySource, /plans\.active/);
+  assert.match(planGatewaySource, /method !== 'GET'/);
+  assert.match(activePlanClientSource, /op=plans\.active/);
+  assert.match(activePlanKnowledgeSource, /Segundo o Manual KYRUB — catálogo oficial ativo/);
+  const hydrationCall = consultantPlansSource.indexOf(
+    'await hydrateActivePlanCatalog(signal)'
+  );
+  const knowledgeCall = consultantPlansSource.indexOf(
+    'resolveKyrubiaActivePlanKnowledge(latestContent)'
+  );
+  assert.ok(hydrationCall >= 0);
+  assert.ok(knowledgeCall > hydrationCall);
 });
 
 test('active plan versions hydrate the action executor with a safe V1 fallback', () => {
@@ -213,6 +250,17 @@ test('active plan versions hydrate the action executor with a safe V1 fallback',
   );
   assert.ok(hydrationCall >= 0);
   assert.ok(executionCall > hydrationCall);
+});
+
+test('plans and coupons stay within the current Vercel Hobby serverless function budget', () => {
+  const apiFunctions = collectApiFunctions('api');
+  assert.ok(
+    apiFunctions.length <= 12,
+    `Expected at most 12 Vercel functions, found ${apiFunctions.length}: ${apiFunctions.join(', ')}`
+  );
+  assert.ok(apiFunctions.includes('api/plan-control.ts'));
+  assert.equal(apiFunctions.some(path => path.startsWith('api/coupons/')), false);
+  assert.equal(apiFunctions.some(path => path.startsWith('api/plans/')), false);
 });
 
 test('legacy founding Pro endpoint remains a fixed compatibility path, not the new plan authority', () => {
