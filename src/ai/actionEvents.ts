@@ -41,9 +41,11 @@ export const isKyrubAiActionProposal = (
       );
     case 'update_store_profile':
       return (
-        typeof value.activationGrantId === 'string' &&
         isRecord(value.patch) &&
-        value.requiresConfirmation === false
+        (value.requiresConfirmation === true ||
+          (value.requiresConfirmation === false &&
+            typeof value.activationGrantId === 'string' &&
+            value.activationGrantId.trim().length > 0))
       );
     case 'create_product':
       return (
