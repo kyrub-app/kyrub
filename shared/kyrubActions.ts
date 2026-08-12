@@ -221,9 +221,9 @@ export type KyrubStoreProfilePatch = {
 export type KyrubAiUpdateStoreProfileProposal = KyrubActionProposalMetadata & {
   id: string;
   type: typeof KYRUB_ACTION_TYPES.UPDATE_STORE_PROFILE;
-  activationGrantId: string;
+  activationGrantId?: string;
   patch: KyrubStoreProfilePatch;
-  requiresConfirmation: false;
+  requiresConfirmation: boolean;
 };
 
 export type KyrubAiCreateProductProposal = KyrubActionProposalMetadata & {
