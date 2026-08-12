@@ -136,7 +136,7 @@ export const resolveActivePlanProductCapacity = (
         reply:
           `Sua loja já está usando os 5 produtos incluídos no plano atual (Free). Você quer continuar ampliando o catálogo, mas o plano chegou ao limite. ` +
           `Para cadastrar mais ${requestedCount === 1 ? 'um produto' : `${requestedCount} produtos`}, o próximo passo é fazer upgrade para o plano Pro. ` +
-          `Não recomendo upgrade para o plano Business, porque o Pro já atende essa necessidade.${billingNote} Nenhum produto foi criado agora.`,
+          `Não recomendo upgrade para o plano Business, porque o Pro já atende essa necessidade.${billingNote} Por enquanto posso te explicar o que ele libera. Nenhum produto foi criado agora.`,
         bypassLegacyFreeCapacity: false,
       };
     }
