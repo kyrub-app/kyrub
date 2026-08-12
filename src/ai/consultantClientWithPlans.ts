@@ -2,8 +2,17 @@ import type {
   KyrubAiConsultantRequest,
   KyrubAiConsultantResponse,
 } from '../../shared/aiConsultant';
+import type { KyrubErpContextSnapshot } from '../../shared/kyrubErpContext';
 import { readKyrubErpContext } from '../actions/erpReadActionService';
+import { hydrateActivePlanCatalog } from '../utils/activePlanCatalog';
 import { auth } from '../utils/firebase';
+import {
+  resolveKyrubiaActivePlanKnowledge,
+} from './activePlanKnowledgeRuntime';
+import {
+  bypassLegacyFreeCapacityContext,
+  resolveActivePlanProductCapacity,
+} from './activePlanProductCapacity';
 import {
   KyrubAiClientError,
   requestKyrubAiConsultant as requestLegacyKyrubAiConsultant,
@@ -16,6 +25,9 @@ import {
   createKyrubiaPlanFollowUpTurnContext,
   resolveKyrubiaOfferedIntentContinuation,
 } from './offeredIntentRuntime';
+import {
+  loadKyrubiaOperationalWorkflow,
+} from './operationalWorkflowStore';
 import {
   describeKyrubiaPlanContextForGenerative,
   resolveKyrubiaPlanConversation,
@@ -93,6 +105,19 @@ const trustedReadResponse = (
   capabilities: capabilities(),
 });
 
+const readErpContextSafely = async (
+  user: NonNullable<typeof auth.currentUser>,
+  signal?: AbortSignal
+): Promise<KyrubErpContextSnapshot | undefined> => {
+  try {
+    return await readKyrubErpContext(user);
+  } catch (error) {
+    if (signal?.aborted) throw error;
+    console.warn('[Kyrubia] ERP context unavailable during plan runtime.', error);
+    return undefined;
+  }
+};
+
 export const requestKyrubAiConsultant = async (
   payload: KyrubAiConsultantRequest,
   signal?: AbortSignal
@@ -105,15 +130,35 @@ export const requestKyrubAiConsultant = async (
     );
   }
 
+  // Active commercial facts are read-only context. Hydrating them changes no
+  // entitlement and grants no action authority; it only keeps the Kyrubia,
+  // plan conversation and client preflight aligned with the Control Plane.
+  await hydrateActivePlanCatalog(signal);
+
   const latestUserMessage = payload.messages.at(-1);
+  const latestContent = latestUserMessage?.role === 'user'
+    ? latestUserMessage.content
+    : '';
+  const defersToOperational = latestUserMessage?.role === 'user'
+    ? shouldDeferTrustedReadToOperationalWorkflow(latestContent)
+    : false;
+
+  const activePlanKnowledge =
+    latestUserMessage?.role === 'user' && !defersToOperational
+      ? resolveKyrubiaActivePlanKnowledge(latestContent)
+      : null;
+  if (activePlanKnowledge) {
+    return trustedReadResponse(activePlanKnowledge);
+  }
+
   const trustedRead =
     latestUserMessage?.role === 'user' &&
     typeof localStorage !== 'undefined' &&
-    !shouldDeferTrustedReadToOperationalWorkflow(latestUserMessage.content)
+    !defersToOperational
       ? resolveKyrubiaTrustedReadRuntime(
           localStorage,
           user.uid,
-          latestUserMessage.content
+          latestContent
         )
       : null;
 
@@ -138,46 +183,72 @@ export const requestKyrubAiConsultant = async (
     );
   }
 
+  const storedWorkflow =
+    typeof localStorage !== 'undefined'
+      ? loadKyrubiaOperationalWorkflow(
+          localStorage,
+          user.uid,
+          payload.conversationId
+        )
+      : null;
+  const productOperationalTurn =
+    latestUserMessage?.role === 'user' &&
+    (defersToOperational || storedWorkflow?.objective === 'create_product');
+
+  let erpContext = payload.erpContext;
+  let legacyErpContext = erpContext;
+  if (productOperationalTurn) {
+    erpContext ??= await readErpContextSafely(user, signal);
+    const capacity = resolveActivePlanProductCapacity(
+      latestContent,
+      erpContext,
+      storedWorkflow
+    );
+    if (capacity.reply) {
+      return attachKyrubiaCapacityPlanSuggestions(
+        trustedReadResponse(capacity.reply),
+        erpContext?.store?.id ?? null
+      );
+    }
+    legacyErpContext = bypassLegacyFreeCapacityContext(
+      erpContext,
+      capacity.bypassLegacyFreeCapacity
+    );
+  }
+
   const planContext = describeKyrubiaPlanContextForGenerative(payload.messages);
   if (!planContext) {
     const legacyResult = await requestLegacyKyrubAiConsultant(
-      withoutOfferedIntentSelection(payload),
+      {
+        ...withoutOfferedIntentSelection(payload),
+        ...(legacyErpContext ? { erpContext: legacyErpContext } : {}),
+      },
       signal
     );
     return attachKyrubiaCapacityPlanSuggestions(
       legacyResult,
-      payload.erpContext?.store?.id ?? null
+      erpContext?.store?.id ?? payload.erpContext?.store?.id ?? null
     );
   }
 
-  let erpContext = payload.erpContext;
   if (!erpContext) {
-    try {
-      erpContext = await readKyrubErpContext(user);
-    } catch (error) {
-      if (signal?.aborted) throw error;
-      console.warn(
-        '[Kyrubia] ERP context unavailable during plan conversation.',
-        error
-      );
-    }
+    erpContext = await readErpContextSafely(user, signal);
   }
 
   const resolved = resolveKyrubiaPlanConversation(payload.messages, erpContext);
   if (resolved) {
-    const latestUserMessageContent = payload.messages.at(-1)?.content ?? '';
     return deterministicResponse(
       resolved.reply,
       createKyrubiaPlanFollowUpTurnContext(
         resolved.focusPlan,
-        latestUserMessageContent,
+        latestContent,
         erpContext?.store?.id ?? null
       )
     );
   }
 
-  // Open strategic/judgment questions still go to Gemini, but with the
-  // commercial V1 facts attached so the model does not invent plan data.
+  // Open strategic/judgment questions still go to Gemini, but with the active
+  // commercial facts attached so the model does not invent plan data.
   return requestLegacyKyrubAiConsultant(
     {
       ...withoutOfferedIntentSelection(payload),
