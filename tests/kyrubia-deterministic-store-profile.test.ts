@@ -96,7 +96,7 @@ test('standalone profile writes are routed locally but remain confirmation-bound
   assert.match(workflowSource, /resolveKyrubiaDeterministicStoreProfileUpdate/);
   assert.match(workflowSource, /requiresConfirmation:\s*true/);
   assert.match(workflowSource, /inputProvenance:\s*'user_intent'/);
-  assert.match(workflowSource, /store\.configured/);
+  assert.match(workflowSource, /store\?\.configured/);
 
   assert.match(actionProtocolSource, /activationGrantId\?: string/);
   assert.match(actionProtocolSource, /requiresConfirmation:\s*boolean/);
