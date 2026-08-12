@@ -179,8 +179,13 @@ export const executeKyrubAction = async (
   const result = body as unknown as KyrubActionExecutionResult;
   recordConfirmedKyrubiaActionResult(proposal, result, confirmed);
 
-  if (proposal.type === 'create_product') {
+  if (
+    proposal.type === 'create_product' ||
+    proposal.type === 'update_store_profile'
+  ) {
     invalidateKyrubErpContext(user.uid);
+  }
+  if (proposal.type === 'create_product') {
     advanceProductSequenceAfterExecution(user, proposal);
   }
 
@@ -190,5 +195,9 @@ export const executeKyrubAction = async (
 export const executePreauthorizedStoreProfileAction = async (
   user: User,
   proposal: KyrubAiUpdateStoreProfileProposal
-): Promise<KyrubActionExecutionResult> =>
-  executeKyrubAction(user, proposal, false);
+): Promise<KyrubActionExecutionResult> => {
+  if (proposal.requiresConfirmation) {
+    throw new Error('Esta atualização da loja exige confirmação humana.');
+  }
+  return executeKyrubAction(user, proposal, false);
+};
