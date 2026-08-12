@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { StoreCouponRedemptionBridge } from './store/StoreCouponRedemptionBridge';
 
 const TEXT_REPLACEMENTS = new Map<string, string>([
   ['Consultor Kyrub', 'Kyrubia'],
@@ -93,5 +94,5 @@ export function KyrubiaNamingBridge() {
     };
   }, []);
 
-  return null;
+  return <StoreCouponRedemptionBridge />;
 }
