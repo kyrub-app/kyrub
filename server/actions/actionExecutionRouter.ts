@@ -2,7 +2,7 @@ import { Router, type Request, type Response } from 'express';
 import {
   executeAuthorizedKyrubAction,
   mapKyrubActionExecutionError,
-} from './actionExecutionService';
+} from './actionExecutionFacade';
 
 const handleExecutionError = (response: Response, error: unknown): void => {
   const mapped = mapKyrubActionExecutionError(error);
