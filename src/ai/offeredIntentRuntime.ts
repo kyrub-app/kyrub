@@ -104,17 +104,6 @@ const followUpsFor = (
   const name = planName(planId);
   const intent = normalize(latestMessage);
 
-  // Choosing to stay on Free is a completed decision, not another invitation
-  // to make the same choice. Consume this conversational branch so the UI does
-  // not keep re-offering “Continuar no Free” after it was already selected.
-  if (
-    focusPlan === 'free' &&
-    (/\b(continuar|ficar|permanecer)\b.*\bfree\b/.test(intent) ||
-      /\bsem upgrade\b/.test(intent))
-  ) {
-    return [];
-  }
-
   if (/\b(quanto custa|preco|valor|mensal|mensalidade)\b/.test(intent)) {
     return [
       offer(`plan-credits-${planId}`, 'plan.credits', 'E os Créditos Kyrubia?', planId),
@@ -220,6 +209,18 @@ const genericNeedsDisambiguation = (
   (turnContext.offeredIntents?.length ?? 0) > 0 &&
   (turnContext.offeredIntents?.filter(item => item.primary === true).length ?? 0) !== 1;
 
+const consumeOfferedIntent = (
+  turnContext: KyrubiaTurnContext,
+  offeredIntent: KyrubiaOfferedIntent
+): KyrubiaTurnContext => ({
+  ...turnContext,
+  id: createTurnId(),
+  generatedAt: new Date().toISOString(),
+  offeredIntents: (turnContext.offeredIntents ?? []).filter(
+    item => item.id !== offeredIntent.id
+  ),
+});
+
 export const resolveKyrubiaOfferedIntentContinuation = (
   messages: KyrubAiConversationMessage[],
   turnContext: KyrubiaTurnContext | undefined,
@@ -271,11 +272,7 @@ export const resolveKyrubiaOfferedIntentContinuation = (
 
   return {
     reply: resolved.reply,
-    turnContext: createKyrubiaPlanFollowUpTurnContext(
-      resolved.focusPlan,
-      syntheticContent,
-      erpContext?.store?.id ?? turnContext.scope.storeId
-    ),
+    turnContext: consumeOfferedIntent(turnContext, offeredIntent),
   };
 };
 
