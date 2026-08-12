@@ -94,6 +94,19 @@ test('store save confirmation is emitted only after full cloud sync', () => {
   assert.ok(save < guard && guard < confirmed);
 });
 
+test('confirmed Kyrubia actions record an attempt before execution and authority only after a valid receipt', () => {
+  const source = readFileSync(new URL('../src/actions/kyrubActionService.ts', import.meta.url), 'utf8');
+  const attempt = source.indexOf('recordConfirmedKyrubiaActionAttempt(proposal, confirmed);');
+  const receiptGuard = source.indexOf('if (!validReceipt(body, proposal))');
+  const result = source.indexOf('const result = body as unknown as KyrubActionExecutionResult;');
+  const confirmed = source.indexOf('recordConfirmedKyrubiaActionResult(proposal, result, confirmed);');
+
+  assert.ok(attempt >= 0);
+  assert.ok(receiptGuard > attempt);
+  assert.ok(result > receiptGuard);
+  assert.ok(confirmed > result);
+});
+
 test('trusted read normalizes common q abbreviation without provider fallback', () => {
   const storage = new MemoryStorage();
   recordKyrubActivityEvent(storage, 'user-1', {
@@ -123,6 +136,27 @@ test('trusted read says success only when the same action has a session-authorit
   assert.equal(result?.kind, 'recent_result');
   assert.match(result?.reply ?? '', /confirmação autoritativa/);
   assert.match(result?.reply ?? '', /não estou inferindo sucesso/i);
+  clearAuthoritativeActivityRuntimeEvents();
+});
+
+test('trusted read recognizes an authoritative Kyrubia product receipt from the same session', () => {
+  clearAuthoritativeActivityRuntimeEvents();
+  const storage = new MemoryStorage();
+  recordKyrubActivityEvent(storage, 'user-1', {
+    type: 'interaction.action_attempted', domain: 'kyrubia', source: 'client_observation',
+    screenId: 'home:kyrub', actionId: 'create_product', entityType: 'product',
+  }, new Date('2026-08-12T21:30:00.000Z'));
+  const confirmed = recordKyrubActivityEvent(storage, 'user-1', {
+    type: 'result.action_succeeded', domain: 'kyrubia', source: 'authoritative_write_ack',
+    screenId: 'home:kyrub', actionId: 'create_product', entityType: 'product', entityId: 'product-pro-6',
+  }, new Date('2026-08-12T21:30:01.000Z'));
+  rememberAuthoritativeActivityRuntimeEvent(confirmed);
+
+  const result = resolveKyrubiaTrustedReadRuntime(storage, 'user-1', 'Deu certo?');
+  assert.equal(result?.kind, 'recent_result');
+  assert.match(result?.reply ?? '', /^Sim\./);
+  assert.match(result?.reply ?? '', /cadastrar um produto pela Kyrubia/i);
+  assert.match(result?.reply ?? '', /confirmação autoritativa/i);
   clearAuthoritativeActivityRuntimeEvents();
 });
 
