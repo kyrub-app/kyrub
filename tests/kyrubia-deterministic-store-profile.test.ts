@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
+import { isKyrubAiActionProposal } from '../src/ai/actionEvents';
 import { resolveKyrubiaDeterministicStoreProfileUpdate } from '../src/ai/deterministicStoreProfileUpdate';
 
 test('explicit store name update is parsed without generative AI', () => {
@@ -76,6 +77,44 @@ test('ambiguous or creative profile requests are not guessed locally', () => {
   );
 });
 
+test('browser confirmation gate accepts standalone store profile writes', () => {
+  assert.equal(
+    isKyrubAiActionProposal({
+      id: 'update-store-name',
+      type: 'update_store_profile',
+      patch: { name: 'Casa Aurora' },
+      requiresConfirmation: true,
+      origin: 'kyrubia',
+      risk: 'low',
+      inputProvenance: 'user_intent',
+      impact: { entityCount: 1, reversibility: 'easy' },
+    }),
+    true
+  );
+});
+
+test('preauthorized store profile writes still require a valid activation grant', () => {
+  assert.equal(
+    isKyrubAiActionProposal({
+      id: 'activation-profile-update',
+      type: 'update_store_profile',
+      activationGrantId: 'grant-1',
+      patch: { name: 'Casa Aurora' },
+      requiresConfirmation: false,
+    }),
+    true
+  );
+  assert.equal(
+    isKyrubAiActionProposal({
+      id: 'invalid-preauthorized-profile-update',
+      type: 'update_store_profile',
+      patch: { name: 'Casa Aurora' },
+      requiresConfirmation: false,
+    }),
+    false
+  );
+});
+
 test('standalone profile writes are routed locally but remain confirmation-bound on the server', async () => {
   const [
     workflowSource,
@@ -84,6 +123,7 @@ test('standalone profile writes are routed locally but remain confirmation-bound
     executionSource,
     bridgeSource,
     actionClientSource,
+    actionEventsSource,
   ] = await Promise.all([
     readFile(new URL('../src/ai/operationalWorkflowRuntime.ts', import.meta.url), 'utf8'),
     readFile(new URL('../shared/kyrubActions.ts', import.meta.url), 'utf8'),
@@ -91,6 +131,7 @@ test('standalone profile writes are routed locally but remain confirmation-bound
     readFile(new URL('../server/actions/actionExecutionService.ts', import.meta.url), 'utf8'),
     readFile(new URL('../src/components/KyrubAiNoteActionBridge.tsx', import.meta.url), 'utf8'),
     readFile(new URL('../src/actions/kyrubActionService.ts', import.meta.url), 'utf8'),
+    readFile(new URL('../src/ai/actionEvents.ts', import.meta.url), 'utf8'),
   ]);
 
   assert.match(workflowSource, /resolveKyrubiaDeterministicStoreProfileUpdate/);
@@ -110,6 +151,8 @@ test('standalone profile writes are routed locally but remain confirmation-bound
   assert.match(executionSource, /STORE_ACTIVATION_REQUIRED/);
   assert.match(executionSource, /proposal\.requiresConfirmation === false/);
 
+  assert.match(actionEventsSource, /case 'update_store_profile'/);
+  assert.match(actionEventsSource, /value\.requiresConfirmation === true/);
   assert.match(bridgeSource, /KyrubAiUpdateStoreProfileProposal/);
   assert.match(bridgeSource, /detail\.proposal\.type !== 'update_store_profile'/);
   assert.match(actionClientSource, /proposal\.type === 'update_store_profile'/);
