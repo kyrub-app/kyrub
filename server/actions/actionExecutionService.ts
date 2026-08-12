@@ -16,6 +16,10 @@ import {
   type KyrubPolicyDecision,
   type KyrubStoreProfilePatch,
 } from '../../shared/kyrubActions.js';
+import {
+  KYRUB_COMMERCIAL_PLANS_V1,
+  type KyrubCommercialPlanId,
+} from '../../shared/kyrubCommercialPlans.js';
 import { verifyFirebaseIdToken } from '../ai/consultantAuth.js';
 import { adminDb } from '../firebaseAdmin.js';
 import { evaluateKyrubActionPolicy } from './kyrubiaPolicyEngine.js';
@@ -35,7 +39,6 @@ const MAX_PRODUCT_DESCRIPTION_CHARACTERS = 4_000;
 const MAX_PRODUCT_CATEGORY_CHARACTERS = 240;
 const MAX_PRODUCT_IMAGE_CHARACTERS = 2_000;
 const MAX_PRODUCTS_PER_TENANT = 200;
-const FREE_PLAN_PRODUCT_LIMIT = 5;
 const EXECUTION_ENVELOPE_TTL_MS = 5 * 60 * 1_000;
 const STORE_ACTIVATION_GRANT_TTL_MS = 30 * 60 * 1_000;
 
@@ -71,6 +74,9 @@ const cleanText = (value: unknown, maximum: number): string =>
   typeof value === 'string'
     ? value.replace(/\s+/g, ' ').trim().slice(0, maximum)
     : '';
+
+const normalizeExecutableStorePlan = (value: unknown): KyrubCommercialPlanId =>
+  value === 'pro' || value === 'business' ? value : 'free';
 
 const safeActionId = (value: unknown): string => {
   const normalized = cleanText(value, 120)
@@ -739,13 +745,14 @@ const deterministicCanonicalStoreId = (uid: string): string =>
 const ensureCanonicalStore = async (
   uid: string,
   name: string,
-  plan: 'free' | 'business'
+  plan: KyrubCommercialPlanId
 ): Promise<{ id: string; name: string }> => {
   const existing = await findCanonicalStoreForOwner(uid);
   if (existing) {
     const reference = adminDb.doc(`stores/${existing.id}`);
     await reference.set({
       name,
+      plan,
       legacyTenantId: uid,
       updatedAt: FieldValue.serverTimestamp(),
     }, { merge: true });
@@ -776,7 +783,7 @@ const executeUpdateStoreProfile = async (
   const receiptReference = receiptReferenceFor(envelope);
   const patch = proposal.patch;
   let configuredStoreName = '';
-  let configuredPlan: 'free' | 'business' = 'free';
+  let configuredPlan: KyrubCommercialPlanId = 'free';
 
   const status = await adminDb.runTransaction(async transaction => {
     const [existingStore, existingReceipt] = await Promise.all([
@@ -789,7 +796,7 @@ const executeUpdateStoreProfile = async (
       if (receiptMatches(data, envelope)) {
         const current = existingStore.data() as Record<string, unknown> | undefined;
         configuredStoreName = cleanText(current?.name, MAX_STORE_NAME_CHARACTERS);
-        configuredPlan = current?.plan === 'business' ? 'business' : 'free';
+        configuredPlan = normalizeExecutableStorePlan(current?.plan);
         return 'already_applied' as const;
       }
       throw new KyrubActionExecutionError(
@@ -803,7 +810,7 @@ const executeUpdateStoreProfile = async (
     const currentName = cleanText(current?.name, MAX_STORE_NAME_CHARACTERS);
     const nextName = patch.name ?? currentName;
     configuredStoreName = nextName;
-    configuredPlan = current?.plan === 'business' ? 'business' : 'free';
+    configuredPlan = normalizeExecutableStorePlan(current?.plan);
 
     const storeData: Record<string, unknown> = {
       ...(existingStore.exists ? {} : {
@@ -938,7 +945,7 @@ const executeCreateProduct = async (
       'Ative sua loja antes de cadastrar produtos.'
     );
   }
-  const plan: 'free' | 'business' = storeData?.plan === 'business' ? 'business' : 'free';
+  const plan = normalizeExecutableStorePlan(storeData?.plan);
   const canonicalStore = await ensureCanonicalStore(actor.uid, storeName, plan);
   const productId = deterministicProductId(actor.uid, proposal.id);
   const tenantReference = adminDb.doc(`tenants/${actor.uid}`);
@@ -1001,11 +1008,16 @@ const executeCreateProduct = async (
       ? tenantData.publicProducts.filter(productRecordIsUsable)
       : [];
     const alreadyExists = existingProducts.some(product => product.id === productId);
-    if (!alreadyExists && plan === 'free' && existingProducts.length >= FREE_PLAN_PRODUCT_LIMIT) {
+    const catalogLimit = KYRUB_COMMERCIAL_PLANS_V1[plan].activeCatalogLimit;
+    if (
+      !alreadyExists &&
+      catalogLimit !== null &&
+      existingProducts.length >= catalogLimit
+    ) {
       throw new KyrubActionExecutionError(
         409,
         'PLAN_PRODUCT_LIMIT_REACHED',
-        'O plano gratuito permite até 5 produtos ou serviços por loja.'
+        `O plano ${KYRUB_COMMERCIAL_PLANS_V1[plan].name} permite até ${catalogLimit} produtos ou serviços ativos por loja.`
       );
     }
 
