@@ -9,8 +9,10 @@ import { KyrubAiNoteActionBridge } from './components/KyrubAiNoteActionBridge';
 import { KyrubAiWorkspaceBridge } from './components/KyrubAiWorkspaceBridge';
 import { KyrubiaNamingBridge } from './components/KyrubiaNamingBridge';
 import { NoteInvitationOutboxBridge } from './components/NoteInvitationOutboxBridge';
+import { PlanCenterApp } from './components/plans/PlanCenterApp';
 import { ProfileIdentityRecoveryBridge } from './components/ProfileIdentityRecoveryBridge';
 import { ProfilePasskeyBridge } from './components/ProfilePasskeyBridge';
+import { ProfilePlanCenterBridge } from './components/ProfilePlanCenterBridge';
 import { ProfilePostInteractionsBridge } from './components/ProfilePostInteractionsBridge';
 import { ProfileRecoveredActionsBridge } from './components/ProfileRecoveredActionsBridge';
 import { ProfileSocialHubNative } from './components/ProfileSocialHubNative';
@@ -34,6 +36,7 @@ import { resolveKyrubAppRoute } from './utils/appRoutes';
 import { isAdminControlPlaneLocation } from './utils/adminControlPlane';
 import { auth, db } from './utils/firebase';
 import { identityVerificationEnabled } from './utils/featureFlags';
+import { isPlanCenterLocation } from './utils/planCenter';
 import {
   hasPendingUserStoreSync,
   loadCachedUserStore,
@@ -152,6 +155,7 @@ function AuthenticatedKyrubApp({ operational }: { operational: boolean }) {
       <ProfileSocialHubNative />
       <ProfilePostInteractionsBridge />
       <ProfileRecoveredActionsBridge />
+      <ProfilePlanCenterBridge />
       {identityVerificationEnabled && (
         <>
           <ProfileVerificationBridge />
@@ -178,8 +182,14 @@ export default function App() {
     window.location.hostname,
     window.location.pathname
   );
+  const planCenter = isPlanCenterLocation(
+    window.location.hostname,
+    window.location.pathname,
+    window.location.search
+  );
 
   if (adminControlPlane) return <AdminControlPlaneRoot />;
+  if (planCenter) return <PlanCenterApp />;
 
   const route = resolveKyrubAppRoute(window.location.pathname);
 
