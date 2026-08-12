@@ -11,33 +11,67 @@ export type CouponRedemptionResult = {
   discountValue: number;
 };
 
-export const redeemKyrubCoupon = async (
+export type StoreEntitlementReconciliationResult = {
+  status: 'none' | 'active' | 'expired';
+  changed: boolean;
+  plan: 'free' | 'pro' | 'business' | null;
+  benefitEndsAt: string | null;
+};
+
+const authorizedPlanPost = async (
   user: Pick<User, 'getIdToken'>,
-  code: string
-): Promise<CouponRedemptionResult> => {
+  operation: string,
+  body: Record<string, unknown> = {}
+): Promise<Response> => {
   const token = await user.getIdToken(true);
-  const response = await fetch('/api/plan-control?op=store.coupon.redeem', {
+  return fetch(`/api/plan-control?op=${encodeURIComponent(operation)}`, {
     method: 'POST',
     headers: {
       authorization: `Bearer ${token}`,
       'content-type': 'application/json',
     },
-    body: JSON.stringify({ code }),
+    body: JSON.stringify(body),
   });
+};
+
+const apiError = async (response: Response, fallback: string): Promise<Error> => {
   const body = await response.json().catch(() => null) as
-    | CouponRedemptionResult
     | { error?: unknown; code?: unknown }
     | null;
+  const error = new Error(
+    typeof body?.error === 'string' ? body.error : fallback
+  ) as Error & { code?: string };
+  if (typeof body?.code === 'string') error.code = body.code;
+  return error;
+};
+
+export const redeemKyrubCoupon = async (
+  user: Pick<User, 'getIdToken'>,
+  code: string
+): Promise<CouponRedemptionResult> => {
+  const response = await authorizedPlanPost(
+    user,
+    'store.coupon.redeem',
+    { code }
+  );
   if (!response.ok) {
-    const error = new Error(
-      body && 'error' in body && typeof body.error === 'string'
-        ? body.error
-        : 'Não foi possível resgatar este cupom.'
-    ) as Error & { code?: string };
-    if (body && 'code' in body && typeof body.code === 'string') {
-      error.code = body.code;
-    }
-    throw error;
+    throw await apiError(response, 'Não foi possível resgatar este cupom.');
   }
-  return body as CouponRedemptionResult;
+  return response.json() as Promise<CouponRedemptionResult>;
+};
+
+export const reconcileOwnStoreEntitlement = async (
+  user: Pick<User, 'getIdToken'>
+): Promise<StoreEntitlementReconciliationResult> => {
+  const response = await authorizedPlanPost(
+    user,
+    'store.entitlement.reconcile'
+  );
+  if (!response.ok) {
+    throw await apiError(
+      response,
+      'Não foi possível atualizar o benefício do plano agora.'
+    );
+  }
+  return response.json() as Promise<StoreEntitlementReconciliationResult>;
 };
