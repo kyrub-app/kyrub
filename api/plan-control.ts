@@ -7,10 +7,11 @@ import {
 } from '../server/admin/planManagementService.js';
 import { loadPublicActivePlanCatalog } from '../server/admin/publicPlanCatalogService.js';
 import {
-  grantComplimentaryPlanByAdmin,
-  mapStoreEntitlementError,
-  redeemCouponForOwnStore,
-} from '../server/admin/storeEntitlementService.js';
+  grantComplimentaryPlanWithLifecycle,
+  reconcileStoreEntitlementFromAuthorization,
+  redeemCouponWithLifecycle,
+} from '../server/admin/storeEntitlementLifecycleService.js';
+import { mapStoreEntitlementError } from '../server/admin/storeEntitlementService.js';
 
 type HeaderValue = string | string[] | undefined;
 type QueryValue = string | string[] | undefined;
@@ -127,7 +128,10 @@ export default async function handler(
           return;
         }
         response.status(201).json(
-          await grantComplimentaryPlanByAdmin(authorization, request.body)
+          await grantComplimentaryPlanWithLifecycle(
+            authorization,
+            request.body
+          )
         );
         return;
       }
@@ -137,7 +141,17 @@ export default async function handler(
           return;
         }
         response.status(200).json(
-          await redeemCouponForOwnStore(authorization, body.code)
+          await redeemCouponWithLifecycle(authorization, body.code)
+        );
+        return;
+      }
+      case 'store.entitlement.reconcile': {
+        if (method !== 'POST') {
+          methodNotAllowed(response);
+          return;
+        }
+        response.status(200).json(
+          await reconcileStoreEntitlementFromAuthorization(authorization)
         );
         return;
       }
