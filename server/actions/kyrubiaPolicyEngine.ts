@@ -79,7 +79,7 @@ export const evaluateKyrubActionPolicy = (
     ) {
       reasons.push('UNTRUSTED_INPUT_REQUIRES_CONFIRMATION');
     }
-    if (definition.requiresConfirmation) {
+    if (definition.requiresConfirmation || proposal.requiresConfirmation) {
       reasons.push('CONFIRMATION_REQUIRED');
     }
   }
