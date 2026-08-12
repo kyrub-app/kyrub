@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { describe, test } from 'node:test';
 import {
   buildPublicStorefrontPath,
@@ -6,6 +7,10 @@ import {
   normalizeStorefrontSlug,
   resolveKyrubAppRoute,
 } from '../src/utils/appRoutes';
+import {
+  getPlanCenterUrl,
+  isPlanCenterLocation,
+} from '../src/utils/planCenter';
 
 describe('Kyrub public and operational routes', () => {
   test('normalizes public store slugs for stable sharing', () => {
@@ -69,5 +74,62 @@ describe('Kyrub public and operational routes', () => {
       canonicalPath: '/',
     });
     assert.equal(resolveKyrubAppRoute('/ajuda').kind, 'default');
+  });
+
+  test('keeps the user Plan Center on its own host and safe preview route', () => {
+    assert.equal(isPlanCenterLocation('planos.kyrub.com', '/'), true);
+    assert.equal(isPlanCenterLocation('planos.localhost', '/'), true);
+    assert.equal(isPlanCenterLocation('localhost', '/planos'), true);
+    assert.equal(
+      isPlanCenterLocation(
+        'kyrub-branch.vercel.app',
+        '/',
+        '?kyrub_plans_preview=1'
+      ),
+      true
+    );
+    assert.equal(
+      isPlanCenterLocation('www.kyrub.com', '/', '?kyrub_plans_preview=1'),
+      false
+    );
+    assert.equal(isPlanCenterLocation('admin.kyrub.com', '/'), false);
+  });
+
+  test('builds Plan Center links without sending Preview users to production', () => {
+    assert.equal(
+      getPlanCenterUrl({
+        hostname: 'www.kyrub.com',
+        origin: 'https://www.kyrub.com',
+      } as Location),
+      'https://planos.kyrub.com'
+    );
+    assert.equal(
+      getPlanCenterUrl({
+        hostname: 'kyrub-branch.vercel.app',
+        origin: 'https://kyrub-branch.vercel.app',
+      } as Location),
+      'https://kyrub-branch.vercel.app/?kyrub_plans_preview=1'
+    );
+  });
+
+  test('mounts Plan Center outside ERP and reuses the existing coupon authority', () => {
+    const appSource = readFileSync('src/App.tsx', 'utf8');
+    const planCenterSource = readFileSync(
+      'src/components/plans/PlanCenterApp.tsx',
+      'utf8'
+    );
+    const profileBridgeSource = readFileSync(
+      'src/components/ProfilePlanCenterBridge.tsx',
+      'utf8'
+    );
+
+    assert.match(appSource, /if \(planCenter\) return <PlanCenterApp \/>/);
+    assert.match(appSource, /<ProfilePlanCenterBridge \/>/);
+    assert.doesNotMatch(appSource, /<StoreCouponRedemptionBridge \/>/);
+    assert.match(planCenterSource, /redeemKyrubCoupon/);
+    assert.match(planCenterSource, /KYRUB_COMMERCIAL_PLAN_BILLING_AVAILABLE/);
+    assert.match(planCenterSource, /Contratação paga em breve/);
+    assert.match(profileBridgeSource, /Plano e faturamento/);
+    assert.match(profileBridgeSource, /Abrir Central de Planos/);
   });
 });
