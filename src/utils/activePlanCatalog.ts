@@ -105,7 +105,7 @@ export const hydrateActivePlanCatalog = async (
 
   const load = async (): Promise<KyrubActivePlanCatalogSnapshot | null> => {
     try {
-      const response = await fetch('/api/plans/active', {
+      const response = await fetch('/api/plan-control?op=plans.active', {
         method: 'GET',
         headers: { accept: 'application/json' },
         cache: 'no-store',
