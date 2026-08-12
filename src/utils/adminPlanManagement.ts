@@ -12,6 +12,10 @@ export type AdminPlanManagementSnapshot = {
   coupons: KyrubCouponCampaign[];
 };
 
+const PLAN_CONTROL = '/api/plan-control';
+const operationUrl = (operation: string): string =>
+  `${PLAN_CONTROL}?op=${encodeURIComponent(operation)}`;
+
 const responseError = async (response: Response, fallback: string): Promise<Error> => {
   const body = await response.json().catch(() => null) as
     | { error?: unknown; code?: unknown }
@@ -24,11 +28,11 @@ const responseError = async (response: Response, fallback: string): Promise<Erro
 
 const authorizedFetch = async (
   user: Pick<User, 'getIdToken'>,
-  url: string,
+  operation: string,
   init: RequestInit = {}
 ): Promise<Response> => {
   const token = await user.getIdToken(true);
-  return fetch(url, {
+  return fetch(operationUrl(operation), {
     ...init,
     headers: {
       authorization: `Bearer ${token}`,
@@ -41,7 +45,7 @@ const authorizedFetch = async (
 export const loadAdminPlanManagement = async (
   user: Pick<User, 'getIdToken'>
 ): Promise<AdminPlanManagementSnapshot> => {
-  const response = await authorizedFetch(user, '/api/admin/plans/catalog');
+  const response = await authorizedFetch(user, 'admin.snapshot');
   if (!response.ok) {
     throw await responseError(response, 'Não foi possível carregar Planos & Cupons.');
   }
@@ -61,7 +65,7 @@ export const publishAdminPlanVersion = async (
   user: Pick<User, 'getIdToken'>,
   input: PublishAdminPlanInput
 ): Promise<KyrubPlanCatalogEntry> => {
-  const response = await authorizedFetch(user, '/api/admin/plans/catalog', {
+  const response = await authorizedFetch(user, 'admin.plan.publish', {
     method: 'POST',
     body: JSON.stringify(input),
   });
@@ -86,7 +90,7 @@ export const createAdminCoupon = async (
   user: Pick<User, 'getIdToken'>,
   input: CreateAdminCouponInput
 ): Promise<KyrubCouponCampaign> => {
-  const response = await authorizedFetch(user, '/api/admin/coupons', {
+  const response = await authorizedFetch(user, 'admin.coupon.create', {
     method: 'POST',
     body: JSON.stringify(input),
   });
@@ -101,7 +105,7 @@ export const setAdminCouponStatus = async (
   code: string,
   status: KyrubCouponStatus
 ): Promise<void> => {
-  const response = await authorizedFetch(user, '/api/admin/coupons/status', {
+  const response = await authorizedFetch(user, 'admin.coupon.status', {
     method: 'POST',
     body: JSON.stringify({ code, status }),
   });
@@ -132,7 +136,7 @@ export const grantAdminComplimentaryPlan = async (
   user: Pick<User, 'getIdToken'>,
   input: AdminComplimentaryGrantInput
 ): Promise<AdminComplimentaryGrantResult> => {
-  const response = await authorizedFetch(user, '/api/admin/store-entitlements/grant', {
+  const response = await authorizedFetch(user, 'admin.entitlement.grant', {
     method: 'POST',
     body: JSON.stringify(input),
   });
