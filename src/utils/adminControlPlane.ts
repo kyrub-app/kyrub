@@ -156,7 +156,9 @@ export const getAdminAuditDocumentPath = (auditId: string): string =>
 export const isAdminControlPlaneLocation = (
   hostname: string,
   pathname: string,
-  search = ''
+  search = typeof globalThis.location !== 'undefined'
+    ? globalThis.location.search
+    : ''
 ): boolean => {
   const normalizedHost = hostname.trim().toLowerCase();
   const normalizedPath = pathname.trim().toLowerCase();
