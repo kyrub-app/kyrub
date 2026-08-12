@@ -4,7 +4,7 @@ export type KyrubErpStoreSummary = {
   id: string;
   name: string;
   description: string;
-  plan: 'free' | 'business';
+  plan: 'free' | 'pro' | 'business';
   status: 'open' | 'delayed' | 'closed';
   address: string;
   keywords: string[];
