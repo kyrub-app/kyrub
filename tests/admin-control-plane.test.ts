@@ -28,12 +28,41 @@ const promotionalWorkspaceSource = readFileSync(
   'src/components/admin/AdminPromotionalPlanWorkspace.tsx',
   'utf8'
 );
+const plansWorkspaceSource = readFileSync(
+  'src/components/admin/AdminPlansCouponsWorkspace.tsx',
+  'utf8'
+);
+const planManagementSource = readFileSync(
+  'server/admin/planManagementService.ts',
+  'utf8'
+);
+const entitlementSource = readFileSync(
+  'server/admin/storeEntitlementService.ts',
+  'utf8'
+);
+const executableCatalogSource = readFileSync(
+  'server/admin/executablePlanCatalogService.ts',
+  'utf8'
+);
+const actionExecuteSource = readFileSync('api/action-execute.ts', 'utf8');
 const promotionalServiceSource = readFileSync(
   'server/admin/promotionalPlanService.ts',
   'utf8'
 );
 const promotionalEndpointSource = readFileSync(
   'api/admin/store-entitlements/promotional-pro.ts',
+  'utf8'
+);
+const planEndpointSource = readFileSync(
+  'api/admin/plans/catalog.ts',
+  'utf8'
+);
+const couponEndpointSource = readFileSync(
+  'api/admin/coupons/index.ts',
+  'utf8'
+);
+const couponRedemptionEndpointSource = readFileSync(
+  'api/coupons/redeem.ts',
   'utf8'
 );
 
@@ -132,23 +161,64 @@ test('directory exposes explicit searching, empty and error feedback', () => {
   assert.match(directorySource, /aria-live="polite"/);
 });
 
-test('founding Pro courtesy is a fixed super-admin promotional entitlement with authoritative audit', () => {
+test('Plans & Coupons replaces the one-off courtesy UI while preserving server-side authority', () => {
   assert.match(appSource, /profile\.role === 'super_admin'/);
   assert.match(appSource, /AdminPromotionalPlanWorkspace/);
-  assert.match(promotionalWorkspaceSource, /founding_pro_001/);
-  assert.match(promotionalWorkspaceSource, /Conceder Pro cortesia/);
-  assert.match(promotionalWorkspaceSource, /window\.confirm/);
+  assert.match(promotionalWorkspaceSource, /AdminPlansCouponsWorkspace/);
+  assert.match(plansWorkspaceSource, /Planos & Cupons/);
+  assert.match(plansWorkspaceSource, /Salvar como nova versão/);
+  assert.match(plansWorkspaceSource, /createAdminCoupon/);
+  assert.match(plansWorkspaceSource, /grantAdminComplimentaryPlan/);
+  assert.match(plansWorkspaceSource, /window\.confirm/);
 
+  assert.match(planManagementSource, /admin\.role !== 'super_admin'/);
+  assert.match(planManagementSource, /PLAN_VERSIONS_COLLECTION/);
+  assert.match(planManagementSource, /admin\.plan\.version\.published/);
+  assert.match(planManagementSource, /admin\.coupon\.created/);
+  assert.match(planManagementSource, /admin\.coupon\.status_changed/);
+  assert.match(planManagementSource, /runTransaction/);
+
+  assert.match(planEndpointSource, /publishPlanVersion/);
+  assert.match(couponEndpointSource, /createCouponCampaign/);
+  assert.match(planEndpointSource, /authorization/);
+  assert.match(couponEndpointSource, /authorization/);
+});
+
+test('coupon redemption and direct grants converge on authoritative entitlement without fake billing', () => {
+  assert.match(entitlementSource, /redeemCouponForOwnStore/);
+  assert.match(entitlementSource, /grantComplimentaryPlanByAdmin/);
+  assert.match(entitlementSource, /source: 'promotion'/);
+  assert.match(entitlementSource, /source: 'admin_grant'/);
+  assert.match(entitlementSource, /coupon_redemptions/);
+  assert.match(entitlementSource, /BILLING_REQUIRED_FOR_PARTIAL_DISCOUNT/);
+  assert.match(entitlementSource, /discountValue === 100/);
+  assert.match(entitlementSource, /admin\.role !== 'super_admin'/);
+  assert.match(entitlementSource, /store\.coupon\.redeemed/);
+  assert.match(entitlementSource, /admin\.store_plan\.complimentary\.granted/);
+
+  assert.match(couponRedemptionEndpointSource, /redeemCouponForOwnStore/);
+  assert.match(couponRedemptionEndpointSource, /toUpperCase\(\) !== 'POST'/);
+});
+
+test('active plan versions hydrate the action executor with a safe V1 fallback', () => {
+  assert.match(executableCatalogSource, /plan_catalog/);
+  assert.match(executableCatalogSource, /compiled V1 fallback remains in force/);
+  assert.match(executableCatalogSource, /features\.catalog !== false/);
+  assert.match(executableCatalogSource, /features\.kyrubia_intelligence !== false/);
+  assert.match(actionExecuteSource, /await hydrateExecutablePlanCatalog\(\)/);
+  assert.ok(
+    actionExecuteSource.indexOf('hydrateExecutablePlanCatalog') <
+      actionExecuteSource.indexOf('executeAuthorizedKyrubAction')
+  );
+});
+
+test('legacy founding Pro endpoint remains a fixed compatibility path, not the new plan authority', () => {
   assert.match(promotionalServiceSource, /FOUNDING_PRO_PROMOTION_ID = 'founding_pro_001'/);
   assert.match(promotionalServiceSource, /admin\.role !== 'super_admin'/);
-  assert.match(promotionalServiceSource, /plan: 'pro'/);
   assert.match(promotionalServiceSource, /source: 'promotional'/);
   assert.match(promotionalServiceSource, /benefitType: 'complimentary'/);
   assert.match(promotionalServiceSource, /expiresAt: null/);
-  assert.match(promotionalServiceSource, /admin\.store_plan\.promotional_pro\.granted/);
-  assert.match(promotionalServiceSource, /kyrub_admin\/control_plane\/store_entitlements/);
   assert.doesNotMatch(promotionalServiceSource, /checkout|subscription|payment/i);
-
   assert.match(promotionalEndpointSource, /toUpperCase\(\) !== 'POST'/);
   assert.match(promotionalEndpointSource, /grantFoundingProPromotion/);
 });
