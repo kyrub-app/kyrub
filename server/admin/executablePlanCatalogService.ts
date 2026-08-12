@@ -1,6 +1,7 @@
 import {
   KYRUB_COMMERCIAL_PLANS_V1,
   applyKyrubCommercialPlanRuntimeOverrides,
+  resetKyrubCommercialPlanRuntimeOverrides,
   type KyrubCommercialPlanId,
   type KyrubCommercialPlanRuntimeOverride,
 } from '../../shared/kyrubCommercialPlans.js';
@@ -47,11 +48,11 @@ const overrideFromDefinition = (
   };
 };
 
-// This is intentionally fail-safe: if the administrative catalog is
-// unavailable, execution keeps the compiled V1 limits instead of granting more
-// capacity. Persisted versions are authoritative only when they can be read and
-// validated successfully.
+// This is intentionally fail-safe: every hydration starts from the immutable
+// compiled V1 reference. If the administrative catalog is unavailable, no
+// override from an older request remains resident in the process.
 export const hydrateExecutablePlanCatalog = async (): Promise<void> => {
+  resetKyrubCommercialPlanRuntimeOverrides();
   try {
     const snapshots = await Promise.all(
       PLAN_IDS.map(planId =>
