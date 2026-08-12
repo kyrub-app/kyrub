@@ -3,6 +3,7 @@ export const KYRUB_ACTION_TYPES = {
   START_STORE_ACTIVATION: 'start_store_activation',
   UPDATE_STORE_PROFILE: 'update_store_profile',
   CREATE_PRODUCT: 'create_product',
+  UPDATE_PRODUCT: 'update_product',
   READ_STORE_SUMMARY: 'read_store_summary',
   LIST_PRODUCTS: 'list_products',
   LIST_LOW_STOCK_PRODUCTS: 'list_low_stock_products',
@@ -96,7 +97,8 @@ export type KyrubWriteActionType =
   | typeof KYRUB_ACTION_TYPES.CREATE_NOTE
   | typeof KYRUB_ACTION_TYPES.START_STORE_ACTIVATION
   | typeof KYRUB_ACTION_TYPES.UPDATE_STORE_PROFILE
-  | typeof KYRUB_ACTION_TYPES.CREATE_PRODUCT;
+  | typeof KYRUB_ACTION_TYPES.CREATE_PRODUCT
+  | typeof KYRUB_ACTION_TYPES.UPDATE_PRODUCT;
 
 export type KyrubReadActionType = Exclude<
   KyrubActiveActionType,
@@ -142,6 +144,14 @@ export const KYRUB_ACTION_REGISTRY: Record<
   },
   create_product: {
     type: 'create_product',
+    mode: 'write',
+    risk: 'medium',
+    requiresConfirmation: true,
+    permission: 'products.write',
+    maxAffectedEntities: 1,
+  },
+  update_product: {
+    type: 'update_product',
     mode: 'write',
     risk: 'medium',
     requiresConfirmation: true,
@@ -240,11 +250,25 @@ export type KyrubAiCreateProductProposal = KyrubActionProposalMetadata & {
   requiresConfirmation: true;
 };
 
+export type KyrubProductPatch = {
+  name?: string;
+};
+
+export type KyrubAiUpdateProductProposal = KyrubActionProposalMetadata & {
+  id: string;
+  type: typeof KYRUB_ACTION_TYPES.UPDATE_PRODUCT;
+  productId: string;
+  expectedCurrentName: string;
+  patch: KyrubProductPatch;
+  requiresConfirmation: true;
+};
+
 export type KyrubActionProposal =
   | KyrubAiCreateNoteProposal
   | KyrubAiStartStoreActivationProposal
   | KyrubAiUpdateStoreProfileProposal
-  | KyrubAiCreateProductProposal;
+  | KyrubAiCreateProductProposal
+  | KyrubAiUpdateProductProposal;
 
 export type KyrubActionExecutionStatus =
   | 'success'
