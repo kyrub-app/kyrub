@@ -16,7 +16,7 @@ import {
   type Timestamp,
 } from 'firebase/firestore';
 import type { User } from 'firebase/auth';
-import type { Store } from '../types';
+import type { Store, StorePlan } from '../types';
 import { db } from './firebase';
 import {
   canAssignStoreRole,
@@ -39,7 +39,7 @@ export interface CanonicalStoreRecord {
   ownerId: string;
   name: string;
   publicationStatus: 'paused' | 'published';
-  plan: 'free' | 'business';
+  plan: StorePlan;
   legacyTenantId: string;
   migrationStatus: CanonicalStoreMigrationStatus;
   createdAt: string;
@@ -81,7 +81,7 @@ export interface KyrubDirectoryUser {
 export interface CreateCanonicalStoreInput {
   name: string;
   legacyTenantId?: string;
-  plan?: 'free' | 'business';
+  plan?: StorePlan;
   publicationStatus?: 'paused' | 'published';
 }
 
@@ -141,7 +141,7 @@ export const parseCanonicalStore = (value: unknown): CanonicalStoreRecord | null
     !ownerId ||
     !name ||
     (publicationStatus !== 'paused' && publicationStatus !== 'published') ||
-    (plan !== 'free' && plan !== 'business') ||
+    (plan !== 'free' && plan !== 'pro' && plan !== 'business') ||
     (migrationStatus !== 'registry_only' &&
       migrationStatus !== 'dual_write' &&
       migrationStatus !== 'canonical')
