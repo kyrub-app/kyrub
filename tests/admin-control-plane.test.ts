@@ -205,11 +205,14 @@ test('active plan versions hydrate the action executor with a safe V1 fallback',
   assert.match(executableCatalogSource, /compiled V1 fallback remains in force/);
   assert.match(executableCatalogSource, /features\.catalog !== false/);
   assert.match(executableCatalogSource, /features\.kyrubia_intelligence !== false/);
-  assert.match(actionExecuteSource, /await hydrateExecutablePlanCatalog\(\)/);
-  assert.ok(
-    actionExecuteSource.indexOf('hydrateExecutablePlanCatalog') <
-      actionExecuteSource.indexOf('executeAuthorizedKyrubAction')
+  const hydrationCall = actionExecuteSource.indexOf(
+    'await hydrateExecutablePlanCatalog()'
   );
+  const executionCall = actionExecuteSource.lastIndexOf(
+    'executeAuthorizedKyrubAction('
+  );
+  assert.ok(hydrationCall >= 0);
+  assert.ok(executionCall > hydrationCall);
 });
 
 test('legacy founding Pro endpoint remains a fixed compatibility path, not the new plan authority', () => {
