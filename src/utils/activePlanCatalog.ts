@@ -4,6 +4,7 @@ import type {
 } from '../../shared/kyrubActivePlanCatalog';
 import {
   applyKyrubCommercialPlanRuntimeOverrides,
+  resetKyrubCommercialPlanRuntimeOverrides,
   type KyrubCommercialPlanId,
 } from '../../shared/kyrubCommercialPlans';
 
@@ -62,6 +63,7 @@ const parseSnapshot = (value: unknown): KyrubActivePlanCatalogSnapshot | null =>
 };
 
 const applySnapshot = (snapshot: KyrubActivePlanCatalogSnapshot): void => {
+  resetKyrubCommercialPlanRuntimeOverrides();
   applyKyrubCommercialPlanRuntimeOverrides(
     Object.fromEntries(
       snapshot.plans.map(plan => [
@@ -103,6 +105,12 @@ export const hydrateActivePlanCatalog = async (
   }
   if (!force && pending) return pending;
 
+  // Once the local snapshot is stale, remove both its metadata and runtime
+  // overrides before attempting refresh. A failed refresh therefore falls back
+  // to the immutable compiled V1 reference instead of an old admin version.
+  cached = null;
+  resetKyrubCommercialPlanRuntimeOverrides();
+
   const load = async (): Promise<KyrubActivePlanCatalogSnapshot | null> => {
     try {
       const response = await fetch('/api/plan-control?op=plans.active', {
@@ -136,4 +144,5 @@ export const hydrateActivePlanCatalog = async (
 
 export const invalidateActivePlanCatalog = (): void => {
   cached = null;
+  resetKyrubCommercialPlanRuntimeOverrides();
 };
