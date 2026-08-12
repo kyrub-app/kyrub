@@ -86,13 +86,29 @@ test('derives permissions from role and blocks suspended profiles', () => {
   assert.equal(superPermissions.includes('manage_compliance'), true);
 });
 
-test('routes only the administrative hostname and explicit local development path', () => {
+test('routes only the administrative hostname, local path, or explicit Vercel preview flag', () => {
   assert.equal(isAdminControlPlaneLocation('admin.kyrub.com', '/'), true);
   assert.equal(isAdminControlPlaneLocation('admin.localhost', '/'), true);
   assert.equal(isAdminControlPlaneLocation('localhost', '/admin'), true);
   assert.equal(isAdminControlPlaneLocation('localhost', '/admin/users'), true);
   assert.equal(isAdminControlPlaneLocation('kyrub.com', '/admin'), false);
   assert.equal(isAdminControlPlaneLocation('kyrub.com', '/'), false);
+  assert.equal(
+    isAdminControlPlaneLocation(
+      'kyrub-preview.vercel.app',
+      '/',
+      '?kyrub_admin_preview=1'
+    ),
+    true
+  );
+  assert.equal(
+    isAdminControlPlaneLocation('kyrub-preview.vercel.app', '/', ''),
+    false
+  );
+  assert.equal(
+    isAdminControlPlaneLocation('kyrub.com', '/', '?kyrub_admin_preview=1'),
+    false
+  );
 });
 
 test('groups active and future control plane modules for mobile', () => {
