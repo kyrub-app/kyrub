@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import type { KyrubErpContextSnapshot } from '../shared/kyrubErpContext';
 import { resolveActivePlanProductCapacity } from '../src/ai/activePlanProductCapacity';
+import { isKyrubAiActionProposal } from '../src/ai/actionEvents';
 import {
   parseKyrubiaProductNameUpdate,
   resolveKyrubiaDeterministicProductUpdate,
@@ -80,6 +81,24 @@ test('explicit product rename resolves the authoritative item and proposes only 
   assert.match(result?.reply ?? '', /Revise e confirme/i);
 });
 
+test('browser confirmation gate accepts update_product proposals', () => {
+  assert.equal(
+    isKyrubAiActionProposal({
+      id: 'rename-product-pro-test',
+      type: 'update_product',
+      productId: 'product-pro-test',
+      expectedCurrentName: 'Produto Pro de Teste',
+      patch: { name: 'testando alteração pela kyrubia' },
+      requiresConfirmation: true,
+      origin: 'kyrubia',
+      risk: 'medium',
+      inputProvenance: 'user_intent',
+      impact: { entityCount: 1, reversibility: 'limited' },
+    }),
+    true
+  );
+});
+
 test('a product named Pro never turns a rename into a plan conversation', () => {
   const messages = [
     {
@@ -113,6 +132,7 @@ test('product update contract stays confirmation-bound and server-authoritative'
     apiSource,
     routerSource,
     bridgeSource,
+    actionEventsSource,
     appSource,
   ] = await Promise.all([
     readFile(new URL('../shared/kyrubActions.ts', import.meta.url), 'utf8'),
@@ -122,6 +142,7 @@ test('product update contract stays confirmation-bound and server-authoritative'
     readFile(new URL('../api/action-execute.ts', import.meta.url), 'utf8'),
     readFile(new URL('../server/actions/actionExecutionRouter.ts', import.meta.url), 'utf8'),
     readFile(new URL('../src/components/KyrubAiProductUpdateActionBridge.tsx', import.meta.url), 'utf8'),
+    readFile(new URL('../src/ai/actionEvents.ts', import.meta.url), 'utf8'),
     readFile(new URL('../src/App.tsx', import.meta.url), 'utf8'),
   ]);
 
@@ -147,6 +168,9 @@ test('product update contract stays confirmation-bound and server-authoritative'
   assert.match(apiSource, /actionExecutionFacade/);
   assert.match(routerSource, /actionExecutionFacade/);
 
+  assert.match(actionEventsSource, /case 'update_product'/);
+  assert.match(actionEventsSource, /typeof value\.expectedCurrentName === 'string'/);
+  assert.match(actionEventsSource, /typeof value\.patch\.name === 'string'/);
   assert.match(bridgeSource, /detail\.proposal\.type !== 'update_product'/);
   assert.match(bridgeSource, /executeKyrubAction\(user, pending\.proposal, true\)/);
   assert.match(bridgeSource, /invalidateKyrubErpContext/);
