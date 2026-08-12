@@ -191,7 +191,13 @@ export const resolveKyrubiaPlanConversation = (
   }
 
   if (/\b(meu plano|plano atual|qual plano eu tenho|em qual plano)\b/.test(intent)) {
-    const current = context?.store?.plan === 'business' ? 'Business' : context?.store ? 'Free' : null;
+    const current = context?.store?.plan === 'business'
+      ? 'Business'
+      : context?.store?.plan === 'pro'
+        ? 'Pro'
+        : context?.store
+          ? 'Free'
+          : null;
     return {
       reply: current
         ? `O plano registrado atualmente para sua Loja Kyrub é ${current}.`
