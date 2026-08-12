@@ -11,6 +11,7 @@ import type {
   KyrubAiCreateNoteProposal,
   KyrubAiCreateProductProposal,
   KyrubAiStartStoreActivationProposal,
+  KyrubAiUpdateStoreProfileProposal,
 } from '../../shared/kyrubActions';
 import { executeKyrubAction } from '../actions/kyrubActionService';
 import {
@@ -34,6 +35,7 @@ type ConfirmationState =
 type ConfirmableProposal =
   | KyrubAiCreateNoteProposal
   | KyrubAiStartStoreActivationProposal
+  | KyrubAiUpdateStoreProfileProposal
   | KyrubAiCreateProductProposal;
 
 type PendingAction = {
@@ -64,6 +66,9 @@ const actionTitle = (
   if (proposal.type === 'start_store_activation') {
     return success ? 'Ativação autorizada' : 'Ativar sua loja';
   }
+  if (proposal.type === 'update_store_profile') {
+    return success ? 'Perfil atualizado' : 'Confirmar alteração da loja';
+  }
   if (proposal.type === 'create_product') {
     return success ? 'Produto criado' : 'Confirmar novo produto';
   }
@@ -72,6 +77,7 @@ const actionTitle = (
 
 const workingLabel = (proposal: ConfirmableProposal): string => {
   if (proposal.type === 'start_store_activation') return 'Ativando...';
+  if (proposal.type === 'update_store_profile') return 'Salvando...';
   if (proposal.type === 'create_product') return 'Cadastrando...';
   return 'Criando...';
 };
@@ -84,7 +90,10 @@ const actionIcon = (
   success: boolean
 ) => {
   if (success) return <CheckCircle2 className="h-6 w-6" />;
-  if (proposal.type === 'start_store_activation') {
+  if (
+    proposal.type === 'start_store_activation' ||
+    proposal.type === 'update_store_profile'
+  ) {
     return <Store className="h-6 w-6" />;
   }
   if (proposal.type === 'create_product') {
@@ -118,6 +127,11 @@ const successMessage = (pending: PendingAction): string => {
       ? 'A autorização de ativação já estava válida. Feche esta janela e continue informando os dados da loja na conversa.'
       : 'Ativação autorizada. A Kyrubia poderá configurar somente o perfil da sua própria loja durante este fluxo. A loja não foi publicada no marketplace. Feche esta janela e informe o nome da loja na conversa.';
   }
+  if (pending.proposal.type === 'update_store_profile') {
+    return pending.alreadyApplied
+      ? 'Essa alteração do perfil já havia sido aplicada. Nenhuma mudança duplicada foi executada.'
+      : 'A alteração foi salva pelo executor oficial do Kyrub no perfil da sua loja.';
+  }
   if (pending.proposal.type === 'create_product') {
     const continuation = nextProductMessage(pending) ?? '';
     return pending.alreadyApplied
@@ -132,6 +146,9 @@ const successMessage = (pending: PendingAction): string => {
 const reviewHint = (proposal: ConfirmableProposal): string => {
   if (proposal.type === 'start_store_activation') {
     return 'Esta confirmação autoriza somente a configuração do perfil da sua loja durante o fluxo atual. Não publica a loja no marketplace e não a marca como aberta.';
+  }
+  if (proposal.type === 'update_store_profile') {
+    return 'Nada será alterado antes da confirmação. Somente os campos mostrados acima serão salvos na sua própria loja.';
   }
   if (proposal.type === 'create_product') {
     return 'Nada será cadastrado antes da confirmação. O produto será criado na sua própria loja e respeitará os limites do seu plano.';
@@ -154,6 +171,48 @@ const ReviewContent = ({ proposal }: { proposal: ConfirmableProposal }) => {
           endereço, contato e palavras-chave da sua própria loja. A autorização é
           temporária e vinculada à sua conta.
         </p>
+      </div>
+    );
+  }
+
+  if (proposal.type === 'update_store_profile') {
+    return (
+      <div className="rounded-2xl border border-slate-800 bg-slate-900 p-4">
+        <span className="text-[11px] font-black uppercase text-slate-500">
+          Alteração do perfil
+        </span>
+        <dl className="mt-3 space-y-3 text-sm">
+          {proposal.patch.name !== undefined && (
+            <div>
+              <dt className="text-[10px] font-black uppercase text-slate-500">Nome da loja</dt>
+              <dd className="mt-1 text-slate-200">{proposal.patch.name}</dd>
+            </div>
+          )}
+          {proposal.patch.description !== undefined && (
+            <div>
+              <dt className="text-[10px] font-black uppercase text-slate-500">Descrição</dt>
+              <dd className="mt-1 whitespace-pre-wrap text-slate-200">{proposal.patch.description}</dd>
+            </div>
+          )}
+          {proposal.patch.address !== undefined && (
+            <div>
+              <dt className="text-[10px] font-black uppercase text-slate-500">Endereço</dt>
+              <dd className="mt-1 text-slate-200">{proposal.patch.address}</dd>
+            </div>
+          )}
+          {proposal.patch.contact !== undefined && (
+            <div>
+              <dt className="text-[10px] font-black uppercase text-slate-500">Contato</dt>
+              <dd className="mt-1 text-slate-200">{proposal.patch.contact}</dd>
+            </div>
+          )}
+          {proposal.patch.keywords !== undefined && (
+            <div>
+              <dt className="text-[10px] font-black uppercase text-slate-500">Palavras-chave</dt>
+              <dd className="mt-1 text-slate-200">{proposal.patch.keywords.join(', ')}</dd>
+            </div>
+          )}
+        </dl>
       </div>
     );
   }
@@ -256,6 +315,7 @@ export function KyrubAiNoteActionBridge() {
       if (
         detail.proposal.type !== 'create_note' &&
         detail.proposal.type !== 'start_store_activation' &&
+        detail.proposal.type !== 'update_store_profile' &&
         detail.proposal.type !== 'create_product'
       ) {
         return;
@@ -282,7 +342,8 @@ export function KyrubAiNoteActionBridge() {
     if (pending.state === 'executing') return;
     if (
       pending.state !== 'success' &&
-      pending.proposal.type !== 'create_note' &&
+      (pending.proposal.type === 'start_store_activation' ||
+        pending.proposal.type === 'create_product') &&
       auth.currentUser &&
       typeof localStorage !== 'undefined'
     ) {

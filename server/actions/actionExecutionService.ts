@@ -261,13 +261,16 @@ const normalizeStorePatch = (value: unknown): KyrubStoreProfilePatch => {
 const normalizeUpdateStoreProfileProposal = (
   candidate: Record<string, unknown>
 ): KyrubAiUpdateStoreProfileProposal => {
-  const activationGrantId = safeActionId(candidate.activationGrantId);
+  const requiresConfirmation = candidate.requiresConfirmation === true;
+  const activationGrantId = requiresConfirmation
+    ? ''
+    : safeActionId(candidate.activationGrantId);
   return metadataFor(candidate, {
     id: safeActionId(candidate.id),
     type: 'update_store_profile',
-    activationGrantId,
+    ...(activationGrantId ? { activationGrantId } : {}),
     patch: normalizeStorePatch(candidate.patch),
-    requiresConfirmation: false,
+    requiresConfirmation,
   });
 };
 
@@ -808,6 +811,16 @@ const executeUpdateStoreProfile = async (
 
     const current = existingStore.data() as Record<string, unknown> | undefined;
     const currentName = cleanText(current?.name, MAX_STORE_NAME_CHARACTERS);
+    if (
+      envelope.authorizationMode === 'human_confirmation' &&
+      (!existingStore.exists || !currentName)
+    ) {
+      throw new KyrubActionExecutionError(
+        409,
+        'STORE_ACTIVATION_REQUIRED',
+        'Ative sua loja antes de alterar o perfil pela Kyrubia.'
+      );
+    }
     const nextName = patch.name ?? currentName;
     configuredStoreName = nextName;
     configuredPlan = normalizeExecutableStorePlan(current?.plan);
@@ -1114,10 +1127,23 @@ const permissionsAndAuthorizationFor = async (
   authorizationMode: KyrubAuthorizationMode;
 }> => {
   if (proposal.type === 'update_store_profile') {
-    await assertActiveStoreActivationGrant(actorUid, proposal.activationGrantId);
+    if (proposal.requiresConfirmation === false) {
+      if (!proposal.activationGrantId) {
+        throw new KyrubActionExecutionError(
+          403,
+          'AUTHORIZATION_REQUIRED',
+          'Confirme a ativação da loja novamente antes desta atualização.'
+        );
+      }
+      await assertActiveStoreActivationGrant(actorUid, proposal.activationGrantId);
+      return {
+        permissions: ['store.profile.write'],
+        authorizationMode: 'preauthorized',
+      };
+    }
     return {
       permissions: ['store.profile.write'],
-      authorizationMode: 'preauthorized',
+      authorizationMode: 'human_confirmation',
     };
   }
 

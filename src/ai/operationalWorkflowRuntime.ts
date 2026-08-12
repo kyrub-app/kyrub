@@ -5,9 +5,11 @@ import type {
   KyrubAiCreateProductProposal,
   KyrubAiStartStoreActivationProposal,
   KyrubAiUpdateStoreProfileProposal,
+  KyrubStoreProfilePatch,
 } from '../../shared/kyrubActions';
 import { executePreauthorizedStoreProfileAction } from '../actions/kyrubActionService';
 import { invalidateKyrubErpContext } from '../actions/erpReadActionService';
+import { resolveKyrubiaDeterministicStoreProfileUpdate } from './deterministicStoreProfileUpdate';
 import {
   clearKyrubiaOperationalWorkflow,
   discardKyrubiaOperationalWorkflow,
@@ -211,6 +213,28 @@ const activationProposal = (
   id: createRequestId(),
   type: 'start_store_activation',
   purpose: objective === 'create_product' ? 'create_product' : 'store_setup',
+  requiresConfirmation: true,
+  origin: 'kyrubia',
+  risk: 'low',
+  inputProvenance: 'user_intent',
+  impact: { entityCount: 1, reversibility: 'easy' },
+});
+
+const profilePatchSummary = (patch: KyrubStoreProfilePatch): string => {
+  if (patch.name !== undefined) return `Nome da loja: ${patch.name}`;
+  if (patch.description !== undefined) return `Descrição: ${patch.description}`;
+  if (patch.address !== undefined) return `Endereço: ${patch.address}`;
+  if (patch.contact !== undefined) return `Contato: ${patch.contact}`;
+  if (patch.keywords !== undefined) return `Palavras-chave: ${patch.keywords.join(', ')}`;
+  return 'Perfil da loja';
+};
+
+const standaloneStoreProfileProposal = (
+  patch: KyrubStoreProfilePatch
+): KyrubAiUpdateStoreProfileProposal => ({
+  id: createRequestId(),
+  type: 'update_store_profile',
+  patch,
   requiresConfirmation: true,
   origin: 'kyrubia',
   risk: 'low',
@@ -551,9 +575,24 @@ export const resolveKyrubiaOperationalWorkflow = async (
     );
   }
 
+  const profileUpdate = resolveKyrubiaDeterministicStoreProfileUpdate(input.message);
   const productDraft = parseInitialProductDraft(input.message);
   const activationRequest = asksToActivateStore(input.message);
-  if (!productDraft && !activationRequest) return null;
+  if (!profileUpdate && !productDraft && !activationRequest) return null;
+
+  const storeConfigured = input.erpContext?.store?.configured === true;
+  if (profileUpdate) {
+    if (!storeConfigured) {
+      return response(
+        'Sua loja ainda não está ativada. Ative a loja primeiro; depois eu consigo alterar nome, descrição, endereço, contato ou palavras-chave sem depender da IA generativa.'
+      );
+    }
+    const proposal = standaloneStoreProfileProposal(profileUpdate.patch);
+    return response(
+      `Tudo pronto para alterar o perfil da sua loja:\n- ${profilePatchSummary(profileUpdate.patch)}\n\nRevise e confirme antes de eu salvar essa mudança.`,
+      proposal
+    );
+  }
 
   const objective: KyrubiaOperationalWorkflow['objective'] = productDraft
     ? 'create_product'
@@ -566,7 +605,6 @@ export const resolveKyrubiaOperationalWorkflow = async (
       ? { isService: productDraft.isService === true }
       : productDraft
     : {};
-  const storeConfigured = input.erpContext?.store?.configured === true;
 
   if (!storeConfigured) {
     const workflow: KyrubiaOperationalWorkflow = {
