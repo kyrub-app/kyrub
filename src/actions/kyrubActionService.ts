@@ -2,6 +2,7 @@ import type { User } from 'firebase/auth';
 import type {
   KyrubActionExecutionResult,
   KyrubActionProposal,
+  KyrubAiPrepareProductDraftProposal,
   KyrubAiUpdateStoreProfileProposal,
 } from '../../shared/kyrubActions';
 import { completeKyrubiaProductAndAdvance } from '../ai/operationalWorkflowStore';
@@ -70,12 +71,12 @@ const activityEntityType = (
   return undefined;
 };
 
-const recordAuthorizedKyrubiaActionAttempt = (
+const recordConfirmedKyrubiaActionAttempt = (
   actorUid: string,
   proposal: KyrubActionProposal,
-  authorized: boolean
+  confirmed: boolean
 ): void => {
-  if (!authorized) return;
+  if (!confirmed) return;
   recordUserActivityEvent(actorUid, {
     type: 'interaction.action_attempted',
     domain: 'kyrubia',
@@ -100,13 +101,13 @@ const receiptReferenceMetadata = (
     : undefined;
 };
 
-const recordAuthorizedKyrubiaActionResult = (
+const recordConfirmedKyrubiaActionResult = (
   actorUid: string,
   proposal: KyrubActionProposal,
   result: KyrubActionExecutionResult,
-  authorized: boolean
+  confirmed: boolean
 ): void => {
-  if (!authorized) return;
+  if (!confirmed) return;
   recordUserActivityEvent(actorUid, {
     type: 'result.action_succeeded',
     domain: 'kyrubia',
@@ -152,11 +153,7 @@ export const executeKyrubAction = async (
   proposal: KyrubActionProposal,
   confirmed: boolean
 ): Promise<KyrubActionExecutionResult> => {
-  // Some low-risk writes are explicitly preauthorized by contract. Recording
-  // their attempt does not make it authoritative; only the validated backend
-  // receipt below can record a confirmed result.
-  const authorized = confirmed || proposal.requiresConfirmation === false;
-  recordAuthorizedKyrubiaActionAttempt(user.uid, proposal, authorized);
+  recordConfirmedKyrubiaActionAttempt(user.uid, proposal, confirmed);
 
   let token = '';
   try {
@@ -203,7 +200,7 @@ export const executeKyrubAction = async (
   }
 
   const result = body as unknown as KyrubActionExecutionResult;
-  recordAuthorizedKyrubiaActionResult(user.uid, proposal, result, authorized);
+  recordConfirmedKyrubiaActionResult(user.uid, proposal, result, confirmed);
 
   if (
     proposal.type === 'create_product' ||
@@ -227,4 +224,20 @@ export const executePreauthorizedStoreProfileAction = async (
     throw new Error('Esta atualização da loja exige confirmação humana.');
   }
   return executeKyrubAction(user, proposal, false);
+};
+
+export const executePreauthorizedProductDraftAction = async (
+  user: User,
+  proposal: KyrubAiPrepareProductDraftProposal
+): Promise<KyrubActionExecutionResult> => {
+  if (proposal.requiresConfirmation !== false) {
+    throw new Error('Este rascunho está marcado como uma ação que exige confirmação.');
+  }
+
+  // The local attempt is context only. A confirmed result is recorded only
+  // after executeKyrubAction validates the server receipt returned below.
+  recordConfirmedKyrubiaActionAttempt(user.uid, proposal, true);
+  const result = await executeKyrubAction(user, proposal, false);
+  recordConfirmedKyrubiaActionResult(user.uid, proposal, result, true);
+  return result;
 };
