@@ -105,7 +105,7 @@ test('policy refuses task creation before confirmation and allows the same user-
   assert.deepEqual(afterConfirmation.reasons, []);
 });
 
-test('consultant client resolves explicit tasks before ERP reads, auth token and provider fetch', () => {
+test('consultant clients resolve explicit tasks before ERP, plan hydration, auth token and provider fetch', () => {
   const client = source('../src/ai/consultantClient.ts');
   const resolver = client.indexOf('resolveKyrubiaDeterministicTask(');
   const erpRead = client.indexOf('readKyrubErpContext(currentUser)');
@@ -119,6 +119,15 @@ test('consultant client resolves explicit tasks before ERP reads, auth token and
   assert.match(client, /type: 'create_task'/);
   assert.match(client, /inputProvenance: 'user_intent'/);
   assert.match(client, /kyrub-task-runtime-v1/);
+
+  const planClient = source('../src/ai/consultantClientWithPlans.ts');
+  const planResolver = planClient.indexOf('resolveKyrubiaDeterministicTask(');
+  const planHydration = planClient.indexOf('hydrateActivePlanCatalog(signal)');
+  const planKnowledge = planClient.indexOf('resolveKyrubiaActivePlanKnowledge(latestContent)');
+  assert.ok(planResolver >= 0);
+  assert.ok(planResolver < planHydration);
+  assert.ok(planResolver < planKnowledge);
+  assert.match(planClient, /'create_task'/);
 });
 
 test('proposal gate and dedicated bridge preserve review before execution', () => {
