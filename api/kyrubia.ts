@@ -21,6 +21,7 @@ import {
   KyrubiaAttachmentValidationError,
   loadKyrubiaInlineAttachmentParts,
 } from '../server/kyrubiaAttachmentStorage.js';
+import { recordKyrubiaAiUsage } from '../server/kyrubiaUsageMetering.js';
 
 type HeaderValue = string | string[] | undefined;
 
@@ -232,6 +233,29 @@ const createRequestId = (): string => {
     return globalThis.crypto.randomUUID();
   } catch {
     return `kyrubia-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  }
+};
+
+const recordUsageSafely = async (
+  input: Parameters<typeof recordKyrubiaAiUsage>[0]
+): Promise<void> => {
+  try {
+    const result = await recordKyrubiaAiUsage(input);
+    if (!result.recorded && !result.replay) {
+      console.warn('[Kyrubia] Usage metadata was not recorded.', {
+        requestId: input.requestId,
+        callIndex: input.callIndex,
+        model: input.model,
+        pricingStatus: result.pricingStatus,
+      });
+    }
+  } catch (error) {
+    console.warn('[Kyrubia] Usage metering write failed.', {
+      requestId: input.requestId,
+      callIndex: input.callIndex,
+      model: input.model,
+      message: error instanceof Error ? error.message : 'unknown_error',
+    });
   }
 };
 
@@ -910,12 +934,12 @@ const executeGenericProductQuery = (
         }
       : undefined;
 
-  const query = createKyrubiaProductQuery({
+  const productQuery = createKyrubiaProductQuery({
     filters,
     sort,
     limit: clampInteger(call.args.limit, 20, 1, MAX_TOOL_ITEMS),
   });
-  const result = executeKyrubiaProductQuery(context, query);
+  const result = executeKyrubiaProductQuery(context, productQuery);
 
   return {
     available: result.available,
@@ -1267,7 +1291,8 @@ const latestAttachmentMessageIndex = (messages: ConversationMessage[]): number =
 
 const generateReply = async (
   user: AuthenticatedUser,
-  conversation: ReturnType<typeof normalizeConversation>
+  conversation: ReturnType<typeof normalizeConversation>,
+  requestId: string
 ) => {
   const apiKey = process.env.GEMINI_API_KEY?.trim() ?? '';
   if (!apiKey) {
@@ -1297,6 +1322,11 @@ const generateReply = async (
     primaryModel,
     economyModel,
   });
+  const firstOperation = attachmentIndex < 0
+    ? 'conversation_text' as const
+    : modelSelection.route === 'economy'
+      ? 'conversation_multimodal_simple' as const
+      : 'conversation_multimodal_complex' as const;
   let inlineAttachmentParts: Array<Record<string, unknown>> = [];
 
   if (attachmentIndex >= 0) {
@@ -1346,6 +1376,17 @@ const generateReply = async (
       ALL_TOOLS,
       controller
     );
+    await recordUsageSafely({
+      uid: user.uid,
+      requestId,
+      callIndex: 1,
+      operation: firstOperation,
+      model: firstCall.model,
+      route: modelSelection.route,
+      fallbackUsed: firstCall.fallbackUsed,
+      payload: firstCall.payload,
+    });
+
     const firstParts = candidateParts(firstCall.payload);
     const noteResult = resultWithNoteProposal(
       conversation,
@@ -1391,6 +1432,17 @@ const generateReply = async (
         MUTATION_TOOL,
         controller
       );
+      await recordUsageSafely({
+        uid: user.uid,
+        requestId,
+        callIndex: 2,
+        operation: 'erp_read_followup',
+        model: secondCall.model,
+        route: 'followup',
+        fallbackUsed: secondCall.fallbackUsed,
+        payload: secondCall.payload,
+      });
+
       const secondParts = candidateParts(secondCall.payload);
       const secondNoteResult = resultWithNoteProposal(
         conversation,
@@ -1474,6 +1526,7 @@ export default async function handler(
       enabledReadActions: ERP_READ_ACTIONS,
       opportunityLensEnabled: true,
       multimodalAttachmentsEnabled: true,
+      usageMeteringEnabled: true,
     });
     return;
   }
@@ -1487,16 +1540,17 @@ export default async function handler(
   }
 
   try {
+    const requestId = createRequestId();
     const user = await verifyFirebaseSession(authorizationHeader(request));
     const conversation = normalizeConversation(requestBody(request.body), user.uid);
-    const generated = await generateReply(user, conversation);
+    const generated = await generateReply(user, conversation, requestId);
 
     response.status(200).json({
       reply: generated.reply,
       provider: 'gemini',
       model: generated.model,
       mode: 'conversation',
-      requestId: createRequestId(),
+      requestId,
       actionProposal: generated.actionProposal,
       capabilities: {
         actionsEnabled: true,
@@ -1506,6 +1560,7 @@ export default async function handler(
         persistentCloudHistoryEnabled: false,
         multimodalAttachmentsEnabled: true,
         providerResilienceEnabled: true,
+        usageMeteringEnabled: true,
       },
     });
   } catch (error) {
