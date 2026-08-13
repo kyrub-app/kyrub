@@ -41,6 +41,10 @@ export const findKyrubReceiptVerificationCandidate = (
 ): KyrubReceiptVerificationCandidate | null => {
   const attempt = latestAttempt(events);
   if (!attempt?.actionId) return null;
+  const attemptProposalId = typeof attempt.metadata?.proposal_id === 'string'
+    ? attempt.metadata.proposal_id.trim()
+    : '';
+  if (!attemptProposalId) return null;
   const attemptTime = eventTime(attempt);
 
   for (let index = events.length - 1; index >= 0; index -= 1) {
@@ -61,7 +65,13 @@ export const findKyrubReceiptVerificationCandidate = (
     const proposalId = typeof event.metadata?.proposal_id === 'string'
       ? event.metadata.proposal_id.trim()
       : '';
-    if (!EXECUTION_ID_PATTERN.test(executionId) || !proposalId) continue;
+    if (
+      !EXECUTION_ID_PATTERN.test(executionId) ||
+      !proposalId ||
+      proposalId !== attemptProposalId
+    ) {
+      continue;
+    }
 
     return {
       attempt,
@@ -81,6 +91,7 @@ const alreadyAuthoritativeInRuntime = (
   const attemptTime = eventTime(candidate.attempt);
   return readAuthoritativeActivityRuntimeEvents(uid, 12).some(event =>
     event.actionId === candidate.attempt.actionId &&
+    event.entityId === candidate.storedResult.entityId &&
     event.type === 'result.action_succeeded' &&
     event.authority === 'confirmed_result' &&
     eventTime(event) >= attemptTime
