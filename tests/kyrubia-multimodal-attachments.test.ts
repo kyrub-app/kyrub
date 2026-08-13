@@ -2,6 +2,13 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { KYRUB_AI_ATTACHMENT_LIMITS } from '../shared/aiConsultant';
+import {
+  KYRUBIA_DEFAULT_ECONOMY_MODEL,
+  KYRUBIA_DEFAULT_PRIMARY_MODEL,
+  alternateGeminiModel,
+  selectKyrubiaGeminiModel,
+  shouldPreferEconomyModel,
+} from '../shared/kyrubiaProviderResilience';
 
 const read = (path: string): string => readFileSync(path, 'utf8');
 
@@ -90,4 +97,49 @@ test('Storage rules keep Kyrubia attachments private and immutable after create'
   assert.match(storageRules, /request\.resource\.metadata\.attachmentId == attachmentId/);
   assert.match(storageRules, /allow update: if false/);
   assert.match(storageRules, /allow delete: if isSignedIn\(\)\s*&& request\.auth\.uid == userId/);
+});
+
+test('simple multimodal inspection uses the economical Gemini route first', () => {
+  assert.equal(KYRUBIA_DEFAULT_PRIMARY_MODEL, 'gemini-3.6-flash');
+  assert.equal(KYRUBIA_DEFAULT_ECONOMY_MODEL, 'gemini-3.5-flash-lite');
+  assert.equal(shouldPreferEconomyModel('O que aparece nesta imagem?', true), true);
+  assert.deepEqual(
+    selectKyrubiaGeminiModel({
+      latestUserText: 'O que aparece nesta imagem?',
+      hasMultimodalContext: true,
+    }),
+    {
+      preferredModel: 'gemini-3.5-flash-lite',
+      fallbackModel: 'gemini-3.6-flash',
+      route: 'economy',
+    }
+  );
+});
+
+test('text-only and complex multimodal requests preserve the primary route', () => {
+  assert.equal(shouldPreferEconomyModel('O que aparece nesta imagem?', false), false);
+  assert.equal(
+    shouldPreferEconomyModel(
+      'Compare estes documentos e recomende uma estratégia financeira.',
+      true
+    ),
+    false
+  );
+});
+
+test('provider resilience is a single alternate model on quota, never a retry loop', () => {
+  const selection = selectKyrubiaGeminiModel({
+    latestUserText: 'Leia este PDF.',
+    hasMultimodalContext: true,
+  });
+  assert.equal(
+    alternateGeminiModel(selection.preferredModel, selection),
+    selection.fallbackModel
+  );
+  assert.match(api, /GEMINI_ECONOMY_MODEL/);
+  assert.match(api, /callGeminiWithFallback/);
+  assert.match(api, /Gemini quota exhausted/);
+  assert.match(api, /Gemini fallback activated/);
+  assert.match(api, /fallbackUsed/);
+  assert.doesNotMatch(api, /for\s*\(;;\)|while\s*\(true\)/);
 });
