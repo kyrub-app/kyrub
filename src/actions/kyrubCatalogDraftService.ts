@@ -1,7 +1,7 @@
 import type { User } from 'firebase/auth';
 import type {
+  KyrubCatalogDraftListItem,
   KyrubCatalogDraftListResponse,
-  KyrubCatalogProductDraft,
 } from '../../shared/kyrubCatalogDrafts';
 
 const SAFE_ACTION_ENDPOINT = '/api/action-execute';
@@ -60,12 +60,13 @@ export const listKyrubCatalogDrafts = async (
 
   return {
     drafts: body.drafts.filter(
-      (item): item is KyrubCatalogProductDraft =>
+      (item): item is KyrubCatalogDraftListItem =>
         isRecord(item) &&
         typeof item.id === 'string' &&
         item.status === 'draft' &&
         isRecord(item.product) &&
-        typeof item.product.name === 'string'
+        typeof item.product.name === 'string' &&
+        Array.isArray(item.issues)
     ),
   };
 };
