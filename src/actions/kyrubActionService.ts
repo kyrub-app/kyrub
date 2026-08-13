@@ -2,6 +2,7 @@ import type { User } from 'firebase/auth';
 import type {
   KyrubActionExecutionResult,
   KyrubActionProposal,
+  KyrubAiPrepareProductDraftProposal,
   KyrubAiUpdateStoreProfileProposal,
 } from '../../shared/kyrubActions';
 import { completeKyrubiaProductAndAdvance } from '../ai/operationalWorkflowStore';
@@ -58,6 +59,7 @@ const activityEntityType = (
     proposal.type === 'create_product' ||
     proposal.type === 'update_product'
   ) return 'product';
+  if (proposal.type === 'prepare_product_draft') return 'product_draft';
   if (proposal.type === 'create_note') return 'note';
   if (proposal.type === 'create_task') return 'task';
   if (
@@ -222,4 +224,20 @@ export const executePreauthorizedStoreProfileAction = async (
     throw new Error('Esta atualização da loja exige confirmação humana.');
   }
   return executeKyrubAction(user, proposal, false);
+};
+
+export const executePreauthorizedProductDraftAction = async (
+  user: User,
+  proposal: KyrubAiPrepareProductDraftProposal
+): Promise<KyrubActionExecutionResult> => {
+  if (proposal.requiresConfirmation !== false) {
+    throw new Error('Este rascunho está marcado como uma ação que exige confirmação.');
+  }
+
+  // The local attempt is context only. A confirmed result is recorded only
+  // after executeKyrubAction validates the server receipt returned below.
+  recordConfirmedKyrubiaActionAttempt(user.uid, proposal, true);
+  const result = await executeKyrubAction(user, proposal, false);
+  recordConfirmedKyrubiaActionResult(user.uid, proposal, result, true);
+  return result;
 };

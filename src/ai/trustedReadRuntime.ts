@@ -32,6 +32,7 @@ const actionLabel = (actionId: string | undefined): string => {
     'store.settings.save': 'salvar as configurações da Loja Kyrub',
     create_product: 'cadastrar um produto pela Kyrubia',
     update_product: 'alterar um produto pela Kyrubia',
+    prepare_product_draft: 'preparar um rascunho de produto pela Kyrubia',
     create_note: 'criar uma nota pela Kyrubia',
     create_task: 'criar uma tarefa pela Kyrubia',
     start_store_activation: 'autorizar a ativação da Loja Kyrub pela Kyrubia',

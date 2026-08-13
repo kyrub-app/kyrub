@@ -1,8 +1,17 @@
+import type {
+  KyrubCatalogDraftField,
+  KyrubCatalogDraftFieldProvenance,
+  KyrubCatalogDraftIssue,
+  KyrubCatalogDraftProductInput,
+  KyrubCatalogDraftSource,
+} from './kyrubCatalogDrafts';
+
 export const KYRUB_ACTION_TYPES = {
   CREATE_NOTE: 'create_note',
   CREATE_TASK: 'create_task',
   START_STORE_ACTIVATION: 'start_store_activation',
   UPDATE_STORE_PROFILE: 'update_store_profile',
+  PREPARE_PRODUCT_DRAFT: 'prepare_product_draft',
   CREATE_PRODUCT: 'create_product',
   UPDATE_PRODUCT: 'update_product',
   READ_STORE_SUMMARY: 'read_store_summary',
@@ -98,6 +107,7 @@ export type KyrubWriteActionType =
   | typeof KYRUB_ACTION_TYPES.CREATE_TASK
   | typeof KYRUB_ACTION_TYPES.START_STORE_ACTIVATION
   | typeof KYRUB_ACTION_TYPES.UPDATE_STORE_PROFILE
+  | typeof KYRUB_ACTION_TYPES.PREPARE_PRODUCT_DRAFT
   | typeof KYRUB_ACTION_TYPES.CREATE_PRODUCT
   | typeof KYRUB_ACTION_TYPES.UPDATE_PRODUCT;
 
@@ -149,6 +159,14 @@ export const KYRUB_ACTION_REGISTRY: Record<
     risk: 'low',
     requiresConfirmation: false,
     permission: 'store.profile.write',
+    maxAffectedEntities: 1,
+  },
+  prepare_product_draft: {
+    type: 'prepare_product_draft',
+    mode: 'write',
+    risk: 'low',
+    requiresConfirmation: false,
+    permission: 'products.drafts.write',
     maxAffectedEntities: 1,
   },
   create_product: {
@@ -254,6 +272,18 @@ export type KyrubAiUpdateStoreProfileProposal = KyrubActionProposalMetadata & {
   requiresConfirmation: boolean;
 };
 
+export type KyrubAiPrepareProductDraftProposal = KyrubActionProposalMetadata & {
+  id: string;
+  type: typeof KYRUB_ACTION_TYPES.PREPARE_PRODUCT_DRAFT;
+  product: KyrubCatalogDraftProductInput;
+  source: KyrubCatalogDraftSource;
+  fieldProvenance: Partial<
+    Record<KyrubCatalogDraftField, KyrubCatalogDraftFieldProvenance>
+  >;
+  issues: KyrubCatalogDraftIssue[];
+  requiresConfirmation: false;
+};
+
 export type KyrubAiCreateProductProposal = KyrubActionProposalMetadata & {
   id: string;
   type: typeof KYRUB_ACTION_TYPES.CREATE_PRODUCT;
@@ -286,6 +316,7 @@ export type KyrubActionProposal =
   | KyrubAiCreateTaskProposal
   | KyrubAiStartStoreActivationProposal
   | KyrubAiUpdateStoreProfileProposal
+  | KyrubAiPrepareProductDraftProposal
   | KyrubAiCreateProductProposal
   | KyrubAiUpdateProductProposal;
 

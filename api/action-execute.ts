@@ -1,6 +1,12 @@
 import { executeAuthorizedKyrubAction } from '../server/actions/actionExecutionFacade.js';
 import { mapKyrubActionExecutionError } from '../server/actions/actionExecutionService.js';
 import {
+  executeAuthorizedKyrubCatalogDraft,
+  isKyrubCatalogDraftExecutionRequest,
+  isKyrubCatalogDraftListRequest,
+  listAuthorizedKyrubCatalogDrafts,
+} from '../server/actions/catalogDraftExecutionService.js';
+import {
   isKyrubActionReceiptVerificationRequest,
   verifyAuthorizedKyrubActionReceipt,
 } from '../server/actions/actionReceiptVerificationService.js';
@@ -55,9 +61,27 @@ export default async function handler(
       return;
     }
 
+    // Catalog drafts are private staging data. Preparing or listing one never
+    // publishes a product and therefore must not consume or reconcile product
+    // entitlement capacity. The draft executor still authenticates the actor,
+    // evaluates policy, enforces idempotency and writes an authoritative receipt.
+    if (isKyrubCatalogDraftListRequest(request.body)) {
+      const drafts = await listAuthorizedKyrubCatalogDrafts(authorization);
+      response.status(200).json(drafts);
+      return;
+    }
+    if (isKyrubCatalogDraftExecutionRequest(request.body)) {
+      const draft = await executeAuthorizedKyrubCatalogDraft(
+        authorization,
+        request.body
+      );
+      response.status(200).json(draft);
+      return;
+    }
+
     // Benefit expiry is an already-agreed entitlement boundary, not a new
     // discretionary action. Reconcile it before loading plan capacity so an
-    // expired Pro/Business benefit can never authorize a write.
+    // expired Pro/Business benefit can never authorize a published write.
     await reconcileStoreEntitlementFromAuthorization(authorization);
     await hydrateExecutablePlanCatalog();
     const result = await executeAuthorizedKyrubAction(

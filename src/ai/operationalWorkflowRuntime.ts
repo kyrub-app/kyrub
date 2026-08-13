@@ -9,6 +9,7 @@ import type {
 } from '../../shared/kyrubActions';
 import { executePreauthorizedStoreProfileAction } from '../actions/kyrubActionService';
 import { invalidateKyrubErpContext } from '../actions/erpReadActionService';
+import { resolveKyrubiaCatalogDraftRuntime } from './catalogDraftRuntime';
 import { resolveKyrubiaDeterministicStoreProfileUpdate } from './deterministicStoreProfileUpdate';
 import {
   clearKyrubiaOperationalWorkflow,
@@ -61,6 +62,7 @@ const response = (
       'create_note',
       'start_store_activation',
       'update_store_profile',
+      'prepare_product_draft',
       'create_product',
     ],
     enabledReadActions: [
@@ -558,6 +560,21 @@ export const resolveKyrubiaOperationalWorkflow = async (
     erpContext?: KyrubErpContextSnapshot;
   }
 ): Promise<KyrubAiConsultantResponse | null> => {
+  // Draft staging is a separate low-risk operation. Resolve it before any live
+  // product workflow, capacity check or publication proposal. The draft runtime
+  // authenticates its own backend write/read and never grants publication authority.
+  const catalogDraft = await resolveKyrubiaCatalogDraftRuntime(
+    input.user,
+    input.conversationId,
+    input.message
+  );
+  if (catalogDraft) {
+    return {
+      ...response(catalogDraft.reply),
+      model: catalogDraft.model,
+    };
+  }
+
   if (typeof localStorage === 'undefined') return null;
   const storage = localStorage;
   const existing = loadKyrubiaOperationalWorkflow(
