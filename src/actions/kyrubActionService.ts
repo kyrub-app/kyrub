@@ -58,6 +58,7 @@ const activityEntityType = (
     proposal.type === 'create_product' ||
     proposal.type === 'update_product'
   ) return 'product';
+  if (proposal.type === 'prepare_product_draft') return 'product_draft';
   if (proposal.type === 'create_note') return 'note';
   if (proposal.type === 'create_task') return 'task';
   if (
@@ -69,12 +70,12 @@ const activityEntityType = (
   return undefined;
 };
 
-const recordConfirmedKyrubiaActionAttempt = (
+const recordAuthorizedKyrubiaActionAttempt = (
   actorUid: string,
   proposal: KyrubActionProposal,
-  confirmed: boolean
+  authorized: boolean
 ): void => {
-  if (!confirmed) return;
+  if (!authorized) return;
   recordUserActivityEvent(actorUid, {
     type: 'interaction.action_attempted',
     domain: 'kyrubia',
@@ -99,13 +100,13 @@ const receiptReferenceMetadata = (
     : undefined;
 };
 
-const recordConfirmedKyrubiaActionResult = (
+const recordAuthorizedKyrubiaActionResult = (
   actorUid: string,
   proposal: KyrubActionProposal,
   result: KyrubActionExecutionResult,
-  confirmed: boolean
+  authorized: boolean
 ): void => {
-  if (!confirmed) return;
+  if (!authorized) return;
   recordUserActivityEvent(actorUid, {
     type: 'result.action_succeeded',
     domain: 'kyrubia',
@@ -151,7 +152,11 @@ export const executeKyrubAction = async (
   proposal: KyrubActionProposal,
   confirmed: boolean
 ): Promise<KyrubActionExecutionResult> => {
-  recordConfirmedKyrubiaActionAttempt(user.uid, proposal, confirmed);
+  // Some low-risk writes are explicitly preauthorized by contract. Recording
+  // their attempt does not make it authoritative; only the validated backend
+  // receipt below can record a confirmed result.
+  const authorized = confirmed || proposal.requiresConfirmation === false;
+  recordAuthorizedKyrubiaActionAttempt(user.uid, proposal, authorized);
 
   let token = '';
   try {
@@ -198,7 +203,7 @@ export const executeKyrubAction = async (
   }
 
   const result = body as unknown as KyrubActionExecutionResult;
-  recordConfirmedKyrubiaActionResult(user.uid, proposal, result, confirmed);
+  recordAuthorizedKyrubiaActionResult(user.uid, proposal, result, authorized);
 
   if (
     proposal.type === 'create_product' ||
