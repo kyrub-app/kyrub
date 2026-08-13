@@ -256,7 +256,10 @@ test('phase one is wired to Express, both Vercel routes and the Kyrub AI workspa
   assert.doesNotMatch(clientSource, /throw new Error\([^)]*Failed to fetch/);
   assert.match(workspaceSource, /Em que posso ajudar hoje\?/);
   assert.match(workspaceSource, /requestKyrubAiConsultant/);
-  assert.match(workspaceSource, /Histórico salvo somente neste dispositivo/);
+  assert.match(
+    workspaceSource,
+    /Histórico textual e referências de anexos ficam neste dispositivo/
+  );
   assert.match(constitutionSource, /O modo manual nunca será removido/);
   assert.match(authSource, /securetoken@system\.gserviceaccount\.com/);
   assert.match(authSource, /verifySignature/);
