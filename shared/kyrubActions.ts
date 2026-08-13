@@ -1,5 +1,6 @@
 export const KYRUB_ACTION_TYPES = {
   CREATE_NOTE: 'create_note',
+  CREATE_TASK: 'create_task',
   START_STORE_ACTIVATION: 'start_store_activation',
   UPDATE_STORE_PROFILE: 'update_store_profile',
   CREATE_PRODUCT: 'create_product',
@@ -11,7 +12,6 @@ export const KYRUB_ACTION_TYPES = {
 } as const;
 
 export const KYRUB_PLANNED_ERP_ACTION_TYPES = {
-  CREATE_TASK: 'create_task',
   UPDATE_PRODUCT_DRAFT: 'update_product_draft',
   ADJUST_INVENTORY: 'adjust_inventory',
   ANALYZE_CATALOG: 'analyze_catalog',
@@ -95,6 +95,7 @@ export type KyrubActiveActionType =
 
 export type KyrubWriteActionType =
   | typeof KYRUB_ACTION_TYPES.CREATE_NOTE
+  | typeof KYRUB_ACTION_TYPES.CREATE_TASK
   | typeof KYRUB_ACTION_TYPES.START_STORE_ACTIVATION
   | typeof KYRUB_ACTION_TYPES.UPDATE_STORE_PROFILE
   | typeof KYRUB_ACTION_TYPES.CREATE_PRODUCT
@@ -124,6 +125,14 @@ export const KYRUB_ACTION_REGISTRY: Record<
     risk: 'low',
     requiresConfirmation: true,
     permission: 'notes.write',
+    maxAffectedEntities: 1,
+  },
+  create_task: {
+    type: 'create_task',
+    mode: 'write',
+    risk: 'low',
+    requiresConfirmation: true,
+    permission: 'tasks.write',
     maxAffectedEntities: 1,
   },
   start_store_activation: {
@@ -209,6 +218,15 @@ export type KyrubAiCreateNoteProposal = KyrubActionProposalMetadata & {
   requiresConfirmation: true;
 };
 
+export type KyrubAiCreateTaskProposal = KyrubActionProposalMetadata & {
+  id: string;
+  type: typeof KYRUB_ACTION_TYPES.CREATE_TASK;
+  title: string;
+  content: string;
+  reminderDateTime: string | null;
+  requiresConfirmation: true;
+};
+
 export type KyrubStoreActivationPurpose =
   | 'store_setup'
   | 'create_product';
@@ -265,6 +283,7 @@ export type KyrubAiUpdateProductProposal = KyrubActionProposalMetadata & {
 
 export type KyrubActionProposal =
   | KyrubAiCreateNoteProposal
+  | KyrubAiCreateTaskProposal
   | KyrubAiStartStoreActivationProposal
   | KyrubAiUpdateStoreProfileProposal
   | KyrubAiCreateProductProposal
