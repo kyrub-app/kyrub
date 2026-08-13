@@ -19,4 +19,5 @@ export type RecordKyrubiaAiUsageInput = {
   payload: Record<string, unknown>;
 };
 
-export const kyrubiaUsageMeteringDb = adminDb;
+export const kyrubiaUsageAccountsCollection = () =>
+  adminDb.collection('kyrub_usage_accounts');
