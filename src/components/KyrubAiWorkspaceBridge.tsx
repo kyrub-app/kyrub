@@ -33,6 +33,7 @@ import {
   deleteKyrubiaAttachments,
   uploadKyrubiaAttachments,
 } from '../ai/kyrubiaAttachmentService';
+import { requestKyrubAiMultimodalConsultant } from '../ai/multimodalConsultantClient';
 import {
   createKyrubAiConversation,
   createKyrubAiMessage,
@@ -273,16 +274,19 @@ export function KyrubAiWorkspaceBridge() {
     setFailedConversationId('');
 
     try {
-      const result = await requestKyrubAiConsultant(
-        {
-          conversationId: conversation.id,
-          topic: conversation.topic,
-          messages,
-          turnContext: conversation.lastTurnContext,
-          ...(selectedOfferedIntentId ? { selectedOfferedIntentId } : {}),
-        },
-        controller.signal
+      const request = {
+        conversationId: conversation.id,
+        topic: conversation.topic,
+        messages,
+        turnContext: conversation.lastTurnContext,
+        ...(selectedOfferedIntentId ? { selectedOfferedIntentId } : {}),
+      };
+      const hasMultimodalHistory = messages.some(
+        message => message.role === 'user' && (message.attachments?.length ?? 0) > 0
       );
+      const result = hasMultimodalHistory
+        ? await requestKyrubAiMultimodalConsultant(request, controller.signal)
+        : await requestKyrubAiConsultant(request, controller.signal);
       const assistantMessage = createKyrubAiMessage('assistant', result.reply);
       updateConversation(conversation.id, current => ({
         ...current,
