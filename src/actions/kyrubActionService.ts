@@ -81,6 +81,7 @@ const recordConfirmedKyrubiaActionAttempt = (
     screenId: 'home:kyrub',
     actionId: proposal.type,
     entityType: activityEntityType(proposal),
+    metadata: { proposal_id: proposal.id },
   });
 };
 
