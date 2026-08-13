@@ -21,3 +21,7 @@ export type RecordKyrubiaAiUsageInput = {
 
 export const kyrubiaUsageAccountsCollection = () =>
   adminDb.collection('kyrub_usage_accounts');
+
+export const createUsageEvent = async (eventId: string, data: Record<string, unknown>) => {
+  await adminDb.collection('kyrub_usage_events').doc(eventId).create(data);
+};
