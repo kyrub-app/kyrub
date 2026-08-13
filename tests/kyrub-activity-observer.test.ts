@@ -8,6 +8,7 @@ import {
   getOfficialKnowledgeRuntimeSnapshot,
   setOfficialKnowledgeRuntimeSnapshot,
 } from '../src/knowledge/officialKnowledgeRuntimeCache';
+import { findKyrubReceiptVerificationCandidate } from '../src/observability/kyrubAuthoritativeReceiptRehydration';
 import {
   clearAuthoritativeActivityRuntimeEvents,
   rememberAuthoritativeActivityRuntimeEvent,
@@ -94,17 +95,21 @@ test('store save confirmation is emitted only after full cloud sync', () => {
   assert.ok(save < guard && guard < confirmed);
 });
 
-test('confirmed Kyrubia actions record an attempt before execution and authority only after a valid receipt', () => {
+test('confirmed Kyrubia actions bind activity to the executing uid and record authority only after a valid receipt', () => {
   const source = readFileSync(new URL('../src/actions/kyrubActionService.ts', import.meta.url), 'utf8');
-  const attempt = source.indexOf('recordConfirmedKyrubiaActionAttempt(proposal, confirmed);');
+  const attempt = source.indexOf('recordConfirmedKyrubiaActionAttempt(user.uid, proposal, confirmed);');
   const receiptGuard = source.indexOf('if (!validReceipt(body, proposal))');
   const result = source.indexOf('const result = body as unknown as KyrubActionExecutionResult;');
-  const confirmed = source.indexOf('recordConfirmedKyrubiaActionResult(proposal, result, confirmed);');
+  const confirmed = source.indexOf('recordConfirmedKyrubiaActionResult(user.uid, proposal, result, confirmed);');
 
   assert.ok(attempt >= 0);
   assert.ok(receiptGuard > attempt);
   assert.ok(result > receiptGuard);
   assert.ok(confirmed > result);
+  assert.match(source, /metadata: \{ proposal_id: proposal\.id \}/);
+  assert.match(source, /execution_id: executionId/);
+  assert.match(source, /proposal_id: proposalId/);
+  assert.match(source, /recordUserActivityEvent\(actorUid/);
 });
 
 test('trusted read normalizes common q abbreviation without provider fallback', () => {
@@ -178,6 +183,78 @@ test('forged or rehydrated local confirmed_result cannot become Kyrubia authorit
   assert.doesNotMatch(result?.reply ?? '', /^Sim\./);
 });
 
+test('receipt verification candidate is only a pointer and must bind the same proposal and result', () => {
+  const attempt = recordKyrubActivityEvent(new MemoryStorage(), 'user-1', {
+    type: 'interaction.action_attempted',
+    domain: 'kyrubia',
+    source: 'client_observation',
+    actionId: 'update_product',
+    entityType: 'product',
+    metadata: { proposal_id: 'proposal-123' },
+  }, new Date('2026-08-13T00:10:00.000Z'));
+  const result = recordKyrubActivityEvent(new MemoryStorage(), 'user-1', {
+    type: 'result.action_succeeded',
+    domain: 'kyrubia',
+    source: 'authoritative_write_ack',
+    actionId: 'update_product',
+    entityType: 'product',
+    entityId: 'product-pro-test',
+    metadata: {
+      execution_id: `exec_${'a'.repeat(40)}`,
+      proposal_id: 'proposal-123',
+    },
+  }, new Date('2026-08-13T00:10:01.000Z'));
+
+  const candidate = findKyrubReceiptVerificationCandidate([attempt, result]);
+  assert.equal(candidate?.executionId, `exec_${'a'.repeat(40)}`);
+  assert.equal(candidate?.proposalId, 'proposal-123');
+  assert.equal(candidate?.storedResult.entityId, 'product-pro-test');
+
+  const mismatched = {
+    ...result,
+    metadata: {
+      ...result.metadata,
+      proposal_id: 'different-proposal',
+    },
+  };
+  assert.equal(
+    findKyrubReceiptVerificationCandidate([attempt, mismatched]),
+    null
+  );
+});
+
+test('server receipt rehydration verifies actor, action, proposal and entity before rebuilding session authority', () => {
+  const server = readFileSync(new URL('../server/actions/actionReceiptVerificationService.ts', import.meta.url), 'utf8');
+  const api = readFileSync(new URL('../api/action-execute.ts', import.meta.url), 'utf8');
+  const rehydration = readFileSync(new URL('../src/observability/kyrubAuthoritativeReceiptRehydration.ts', import.meta.url), 'utf8');
+  const client = readFileSync(new URL('../src/actions/kyrubActionReceiptService.ts', import.meta.url), 'utf8');
+  const wrapper = readFileSync(new URL('../src/ai/consultantClientWithPlans.ts', import.meta.url), 'utf8');
+  const bridge = readFileSync(new URL('../src/observability/KyrubAuthoritativeReceiptBridge.tsx', import.meta.url), 'utf8');
+  const app = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8');
+
+  assert.match(server, /data\.actorUid !== actor\.uid/);
+  assert.match(server, /data\.actionType !== request\.actionType/);
+  assert.match(server, /data\.actionId !== request\.proposalId/);
+  assert.match(server, /data\.targetId !== request\.entityId/);
+  assert.match(server, /kyrub_action_receipts\/\$\{request\.executionId\}/);
+
+  const verifyGate = api.indexOf('if (isKyrubActionReceiptVerificationRequest(request.body))');
+  const entitlementReconcile = api.indexOf('await reconcileStoreEntitlementFromAuthorization(authorization);');
+  assert.ok(verifyGate >= 0 && verifyGate < entitlementReconcile);
+  assert.match(api, /verifyAuthorizedKyrubActionReceipt/);
+
+  assert.match(client, /operation: 'verify_receipt'/);
+  assert.match(client, /cache: 'no-store'/);
+  assert.match(rehydration, /verifyKyrubActionReceipt/);
+  assert.match(rehydration, /source: 'server_confirmed'/);
+  assert.match(rehydration, /proposalId !== attemptProposalId/);
+  assert.match(wrapper, /isRecentActionResultQuestion/);
+  assert.match(wrapper, /await rehydrateKyrubiaAuthoritativeReceipt\(localStorage, user\)/);
+  assert.match(bridge, /onAuthStateChanged/);
+  assert.match(bridge, /KYRUB_ACTIVITY_UPDATED_EVENT/);
+  assert.match(app, /<KyrubAuthoritativeReceiptBridge \/>/);
+});
+
 test('official runtime truth is in-memory, expires, and answers only sufficient lexical matches', () => {
   clearOfficialKnowledgeRuntimeSnapshot();
   setOfficialKnowledgeRuntimeSnapshot(officialSnapshot(), new Date('2026-08-10T23:00:00.000Z'));
@@ -217,6 +294,7 @@ test('trusted read wiring refreshes official truth and clears session authority 
   assert.match(trusted, /getOfficialKnowledgeRuntimeSnapshot/);
   assert.doesNotMatch(trusted, /@google\/genai|GEMINI_API_KEY|fetch\(/);
   assert.match(browser, /rememberAuthoritativeActivityRuntimeEvent/);
+  assert.match(browser, /recordUserActivityEvent/);
   assert.match(observer, /clearAuthoritativeActivityRuntimeEvents/);
   assert.match(objective, /resolveKyrubiaTrustedReadRuntime/);
 });
