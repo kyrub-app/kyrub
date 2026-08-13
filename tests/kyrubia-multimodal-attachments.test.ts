@@ -3,6 +3,10 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { KYRUB_AI_ATTACHMENT_LIMITS } from '../shared/aiConsultant';
 import {
+  authorityForKyrubAnalyticsSource,
+  validateKyrubAnalyticsEventInput,
+} from '../shared/kyrubAnalyticsEvents';
+import {
   KYRUBIA_DEFAULT_ECONOMY_MODEL,
   KYRUBIA_DEFAULT_PRIMARY_MODEL,
   alternateGeminiModel,
@@ -24,6 +28,7 @@ const conversationStore = read('src/ai/conversationStore.ts');
 const api = read('api/kyrubia.ts');
 const serverStorage = read('server/kyrubiaAttachmentStorage.ts');
 const usageMetering = read('server/kyrubiaUsageMetering.ts');
+const adminDirectory = read('src/utils/adminDirectory.ts');
 const storageRules = read('storage.rules');
 
 test('Kyrubia attachment limits stay deliberately bounded', () => {
@@ -218,4 +223,48 @@ test('metering ledger is immutable, server-owned and stores technical usage rath
   assert.match(usageMetering, /estimatedCostMicrousd/);
   assert.match(usageMetering, /promptTokensDetails/);
   assert.doesNotMatch(usageMetering, /promptText|responseText|conversationContent/);
+});
+
+test('Kyrubia runtime meters the first provider call and any ERP follow-up with one request identity', () => {
+  assert.match(api, /recordKyrubiaAiUsage/);
+  assert.match(api, /recordUsageSafely/);
+  assert.match(api, /callIndex:\s*1/);
+  assert.match(api, /callIndex:\s*2/);
+  assert.match(api, /operation:\s*'erp_read_followup'/);
+  assert.match(api, /usageMeteringEnabled:\s*true/);
+  assert.match(api, /const requestId = createRequestId\(\)/);
+  assert.match(api, /generateReply\(user, conversation, requestId\)/);
+});
+
+test('metering failure remains isolated from the Kyrubia response path', () => {
+  assert.match(api, /Usage metering write failed/);
+  assert.match(api, /await recordKyrubiaAiUsage\(input\)/);
+  assert.match(api, /recordUsageSafely/);
+});
+
+test('admin usage summary marks bounded reads as partial instead of claiming a lifetime total', () => {
+  assert.match(adminDirectory, /AI_USAGE_SUMMARY_LIMIT = 500/);
+  assert.match(adminDirectory, /limit\(AI_USAGE_SUMMARY_LIMIT \+ 1\)/);
+  assert.match(adminDirectory, /partial = snapshots\.size > AI_USAGE_SUMMARY_LIMIT/);
+  assert.match(adminDirectory, /documents = snapshots\.docs\.slice\(0, AI_USAGE_SUMMARY_LIMIT\)/);
+});
+
+test('client observations cannot become authoritative Kyrub economics', () => {
+  assert.equal(
+    authorityForKyrubAnalyticsSource('client_observation'),
+    'behavior_only'
+  );
+
+  const errors = validateKyrubAnalyticsEventInput({
+    name: 'order.completed',
+    layer: 'economics',
+    domain: 'order',
+    source: 'client_observation',
+    actorUid: 'uid-1',
+    amountMinor: 12_990,
+    currency: 'BRL',
+  });
+
+  assert.ok(errors.includes('economics_requires_authoritative_source'));
+  assert.ok(errors.includes('money_requires_authoritative_economics'));
 });
