@@ -1,9 +1,13 @@
 import { useState, type ChangeEvent, type FormEvent } from 'react';
 import {
   BadgeCheck,
+  BrainCircuit,
   Building2,
   CircleAlert,
+  Coins,
   Database,
+  Gauge,
+  HardDrive,
   LoaderCircle,
   Search,
   ShieldCheck,
@@ -38,6 +42,29 @@ const statusClass = (value: string): string => {
     return 'border-amber-500/25 bg-amber-500/10 text-amber-300';
   }
   return 'border-slate-700 bg-slate-800 text-slate-300';
+};
+
+const formatCount = (value: number | null): string =>
+  value === null ? '—' : new Intl.NumberFormat('pt-BR').format(value);
+
+const formatMicrousd = (value: number | null): string => {
+  if (value === null) return '—';
+  return new Intl.NumberFormat('pt-BR', {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: 4,
+    maximumFractionDigits: 6,
+  }).format(value / 1_000_000);
+};
+
+const formatDateTime = (value: string): string => {
+  if (!value) return '—';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat('pt-BR', {
+    dateStyle: 'short',
+    timeStyle: 'short',
+  }).format(date);
 };
 
 const EmptyResult = ({ lookup }: { lookup: string }) => (
@@ -132,10 +159,10 @@ export default function AdminDirectoryWorkspace({
             </span>
           </div>
           <h2 id="admin-directory-title" className="mt-2 text-lg font-black text-white">
-            Usuários e lojas vinculadas
+            Usuários, lojas e consumo
           </h2>
           <p className="mt-2 text-xs leading-relaxed text-slate-400">
-            Consulte somente por e-mail completo ou UID. Esta área não lista pessoas indiscriminadamente e não oferece ações de bloqueio, plano ou edição.
+            Consulte somente por e-mail completo ou UID. Esta área reúne vínculos e métricas autoritativas disponíveis sem oferecer ações de bloqueio, plano ou edição.
           </p>
         </div>
 
@@ -255,6 +282,181 @@ export default function AdminDirectoryWorkspace({
               </div>
             </div>
           </article>
+
+          <section className="rounded-3xl border border-cyan-500/15 bg-slate-950/70 p-4 sm:p-5">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div className="flex items-start gap-3">
+                <div className="rounded-2xl bg-cyan-500/10 p-2.5 text-cyan-300">
+                  <Gauge className="h-5 w-5" />
+                </div>
+                <div>
+                  <span className="text-[9px] font-black uppercase tracking-[0.18em] text-cyan-300">
+                    Usage / Metering
+                  </span>
+                  <h3 className="mt-1 text-sm font-black text-white">
+                    Uso e custo da Kyrubia
+                  </h3>
+                  <p className="mt-1 text-[10px] leading-relaxed text-slate-500">
+                    Custo do fornecedor é separado de Créditos Kyrubia e não altera saldo, plano ou cobrança.
+                  </p>
+                </div>
+              </div>
+
+              {result.aiUsage.state === 'available' && (
+                <span className="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-1 text-[8px] font-black uppercase text-emerald-300">
+                  Medição autoritativa
+                </span>
+              )}
+            </div>
+
+            {result.aiUsage.state === 'available' ? (
+              <div className="mt-4 space-y-3">
+                {result.aiUsage.partial && (
+                  <div className="flex gap-2 rounded-2xl border border-amber-500/20 bg-amber-500/5 p-3 text-[10px] leading-relaxed text-amber-200">
+                    <CircleAlert className="mt-0.5 h-4 w-4 shrink-0" />
+                    <span>
+                      Resumo parcial V1: esta conta ultrapassou o limite de 500 eventos consultados. Os números abaixo representam somente o recorte medido e não o histórico total.
+                    </span>
+                  </div>
+                )}
+
+                <div className="grid gap-2 sm:grid-cols-3">
+                  <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-3">
+                    <BrainCircuit className="h-4 w-4 text-cyan-300" />
+                    <span className="mt-2 block text-[9px] uppercase tracking-wider text-slate-600">
+                      Chamadas
+                    </span>
+                    <strong className="mt-1 block text-lg text-white">
+                      {result.aiUsage.partial
+                        ? `${formatCount(result.aiUsage.calls)}+`
+                        : formatCount(result.aiUsage.calls)}
+                    </strong>
+                  </div>
+                  <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-3">
+                    <Gauge className="h-4 w-4 text-violet-300" />
+                    <span className="mt-2 block text-[9px] uppercase tracking-wider text-slate-600">
+                      Tokens totais
+                    </span>
+                    <strong className="mt-1 block text-lg text-white">
+                      {formatCount(result.aiUsage.totalTokens)}
+                    </strong>
+                  </div>
+                  <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-3">
+                    <Coins className="h-4 w-4 text-emerald-300" />
+                    <span className="mt-2 block text-[9px] uppercase tracking-wider text-slate-600">
+                      Custo estimado
+                    </span>
+                    <strong className="mt-1 block text-lg text-white">
+                      {formatMicrousd(result.aiUsage.estimatedCostMicrousd)}
+                    </strong>
+                  </div>
+                </div>
+
+                <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                  <div className="rounded-xl bg-slate-900/70 p-3 text-[9px]">
+                    <span className="block text-slate-600">Entrada</span>
+                    <strong className="mt-1 block text-slate-300">
+                      {formatCount(result.aiUsage.promptTokens)} tokens
+                    </strong>
+                  </div>
+                  <div className="rounded-xl bg-slate-900/70 p-3 text-[9px]">
+                    <span className="block text-slate-600">Saída</span>
+                    <strong className="mt-1 block text-slate-300">
+                      {formatCount(result.aiUsage.outputTokens)} tokens
+                    </strong>
+                  </div>
+                  <div className="rounded-xl bg-slate-900/70 p-3 text-[9px]">
+                    <span className="block text-slate-600">Pensamento</span>
+                    <strong className="mt-1 block text-slate-300">
+                      {formatCount(result.aiUsage.thinkingTokens)} tokens
+                    </strong>
+                  </div>
+                  <div className="rounded-xl bg-slate-900/70 p-3 text-[9px]">
+                    <span className="block text-slate-600">Precificação</span>
+                    <strong className="mt-1 block text-slate-300">
+                      {formatCount(result.aiUsage.pricedCalls)} prec. / {formatCount(result.aiUsage.unpricedCalls)} pend.
+                    </strong>
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-3">
+                  <div className="grid gap-3 text-[9px] sm:grid-cols-2 lg:grid-cols-5">
+                    <div>
+                      <span className="block text-slate-600">Fornecedor</span>
+                      <strong className="mt-1 block break-all text-slate-300">
+                        {valueOrFallback(result.aiUsage.lastProvider, '—')}
+                      </strong>
+                    </div>
+                    <div>
+                      <span className="block text-slate-600">Último modelo</span>
+                      <strong className="mt-1 block break-all text-slate-300">
+                        {valueOrFallback(result.aiUsage.lastModel, '—')}
+                      </strong>
+                    </div>
+                    <div>
+                      <span className="block text-slate-600">Operação</span>
+                      <strong className="mt-1 block break-all text-slate-300">
+                        {valueOrFallback(result.aiUsage.lastOperation, '—')}
+                      </strong>
+                    </div>
+                    <div>
+                      <span className="block text-slate-600">Rota</span>
+                      <strong className="mt-1 block break-all text-slate-300">
+                        {valueOrFallback(result.aiUsage.lastRoute, '—')}
+                      </strong>
+                    </div>
+                    <div>
+                      <span className="block text-slate-600">Último uso medido</span>
+                      <strong className="mt-1 block text-slate-300">
+                        {formatDateTime(result.aiUsage.lastUsedAt)}
+                      </strong>
+                    </div>
+                  </div>
+                </div>
+
+                {(result.aiUsage.unpricedCalls ?? 0) > 0 && (
+                  <p className="text-[9px] leading-relaxed text-amber-300/80">
+                    O custo soma somente chamadas cuja tabela de preço pôde ser aplicada com segurança. Chamadas não precificadas preservam os tokens brutos e não recebem custo inventado.
+                  </p>
+                )}
+              </div>
+            ) : (
+              <div className="mt-4 rounded-2xl border border-dashed border-slate-800 bg-slate-900/40 p-4 text-[10px] leading-relaxed text-slate-500">
+                {result.aiUsage.state === 'not_measured' && (
+                  <span>
+                    Nenhuma chamada foi medida por esta fundação ainda. Isso não deve ser interpretado como zero uso histórico.
+                  </span>
+                )}
+                {result.aiUsage.state === 'restricted' && (
+                  <span>
+                    Consumo financeiro restrito ao papel administrativo autorizado.
+                  </span>
+                )}
+                {result.aiUsage.state === 'unavailable' && (
+                  <span>
+                    O resumo de consumo está temporariamente indisponível. Nenhum valor foi inferido.
+                  </span>
+                )}
+              </div>
+            )}
+
+            <div className="mt-3 grid gap-2 sm:grid-cols-2">
+              <div className="flex items-center gap-3 rounded-2xl border border-slate-800 bg-slate-900/60 p-3">
+                <Database className="h-4 w-4 shrink-0 text-amber-300" />
+                <div className="text-[9px]">
+                  <strong className="block text-slate-300">Firestore</strong>
+                  <span className="text-slate-600">Medição por UID pendente</span>
+                </div>
+              </div>
+              <div className="flex items-center gap-3 rounded-2xl border border-slate-800 bg-slate-900/60 p-3">
+                <HardDrive className="h-4 w-4 shrink-0 text-amber-300" />
+                <div className="text-[9px]">
+                  <strong className="block text-slate-300">Storage</strong>
+                  <span className="text-slate-600">Medição por UID pendente</span>
+                </div>
+              </div>
+            </div>
+          </section>
 
           <div className="grid gap-4 xl:grid-cols-2">
             <section className="rounded-3xl border border-slate-800 bg-slate-950/60 p-4">
@@ -405,7 +607,7 @@ export default function AdminDirectoryWorkspace({
           <div className="flex items-start gap-3 rounded-2xl border border-slate-800 bg-slate-950/50 p-3 text-[10px] leading-relaxed text-slate-500">
             <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" />
             <p>
-              “Cadastrado” confirma apenas a existência do documento de usuário. Bloqueio, KYC, assinatura, entregador e freelancer precisam de fontes administrativas próprias antes de aparecer como estados confirmados.
+              “Cadastrado” confirma apenas a existência do documento de usuário. Bloqueio, KYC, assinatura, entregador, freelancer e métricas econômicas precisam de fontes administrativas próprias antes de aparecer como estados confirmados.
             </p>
           </div>
         </div>
