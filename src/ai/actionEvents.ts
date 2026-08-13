@@ -34,6 +34,16 @@ export const isKyrubAiActionProposal = (
         value.checklist.every(item => typeof item === 'string') &&
         value.requiresConfirmation === true
       );
+    case 'create_task':
+      return (
+        typeof value.title === 'string' &&
+        value.title.trim().length > 0 &&
+        typeof value.content === 'string' &&
+        value.content.trim().length > 0 &&
+        (value.reminderDateTime === null ||
+          typeof value.reminderDateTime === 'string') &&
+        value.requiresConfirmation === true
+      );
     case 'start_store_activation':
       return (
         (value.purpose === 'store_setup' || value.purpose === 'create_product') &&
