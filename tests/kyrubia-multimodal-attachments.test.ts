@@ -9,6 +9,10 @@ import {
   selectKyrubiaGeminiModel,
   shouldPreferEconomyModel,
 } from '../shared/kyrubiaProviderResilience';
+import {
+  estimateGeminiUsageCost,
+  parseGeminiUsageMetadata,
+} from '../shared/kyrubiaUsageMetering';
 
 const read = (path: string): string => readFileSync(path, 'utf8');
 
@@ -19,6 +23,7 @@ const multimodalClient = read('src/ai/multimodalConsultantClient.ts');
 const conversationStore = read('src/ai/conversationStore.ts');
 const api = read('api/kyrubia.ts');
 const serverStorage = read('server/kyrubiaAttachmentStorage.ts');
+const usageMetering = read('server/kyrubiaUsageMetering.ts');
 const storageRules = read('storage.rules');
 
 test('Kyrubia attachment limits stay deliberately bounded', () => {
@@ -142,4 +147,75 @@ test('provider resilience is a single alternate model on quota, never a retry lo
   assert.match(api, /Gemini fallback activated/);
   assert.match(api, /fallbackUsed/);
   assert.doesNotMatch(api, /for\s*\(;;\)|while\s*\(true\)/);
+});
+
+test('Gemini usage metadata is normalized without retaining prompt or response content', () => {
+  const usage = parseGeminiUsageMetadata({
+    usageMetadata: {
+      promptTokenCount: 1_000,
+      cachedContentTokenCount: 0,
+      candidatesTokenCount: 100,
+      toolUsePromptTokenCount: 12,
+      thoughtsTokenCount: 50,
+      totalTokenCount: 1_150,
+      promptTokensDetails: [
+        { modality: 'TEXT', tokenCount: 700 },
+        { modality: 'IMAGE', tokenCount: 300 },
+      ],
+      candidatesTokensDetails: [{ modality: 'TEXT', tokenCount: 100 }],
+      serviceTier: 'STANDARD',
+    },
+  });
+
+  assert.ok(usage);
+  assert.equal(usage.promptTokenCount, 1_000);
+  assert.equal(usage.candidatesTokenCount, 100);
+  assert.equal(usage.thoughtsTokenCount, 50);
+  assert.equal(usage.promptTokensDetails[1]?.modality, 'IMAGE');
+  assert.equal(usage.promptTokensDetails[1]?.tokenCount, 300);
+});
+
+test('current Gemini standard price snapshots produce integer micro-USD estimates', () => {
+  const usage = parseGeminiUsageMetadata({
+    usageMetadata: {
+      promptTokenCount: 1_000,
+      candidatesTokenCount: 100,
+      thoughtsTokenCount: 50,
+      totalTokenCount: 1_150,
+      serviceTier: 'STANDARD',
+    },
+  });
+  assert.ok(usage);
+
+  assert.deepEqual(
+    estimateGeminiUsageCost('gemini-3.5-flash-lite', usage),
+    {
+      estimatedCostMicrousd: 675,
+      pricingStatus: 'priced',
+      pricing: {
+        provider: 'google-gemini',
+        model: 'gemini-3.5-flash-lite',
+        serviceTier: 'standard',
+        currency: 'USD',
+        unit: 'per_1m_tokens',
+        inputUsdPerMillion: 0.3,
+        outputUsdPerMillion: 2.5,
+        effectiveFrom: '2026-07-21',
+        source: 'Google AI for Developers — Latest Gemini models / pricing',
+      },
+    }
+  );
+  assert.equal(
+    estimateGeminiUsageCost('gemini-3.6-flash', usage).estimatedCostMicrousd,
+    2_625
+  );
+});
+
+test('metering ledger is immutable, server-owned and stores technical usage rather than conversation content', () => {
+  assert.match(usageMetering, /kyrub_usage_events/);
+  assert.match(usageMetering, /\.create\(\{/);
+  assert.match(usageMetering, /FieldValue\.serverTimestamp\(\)/);
+  assert.match(usageMetering, /estimatedCostMicrousd/);
+  assert.match(usageMetering, /promptTokensDetails/);
+  assert.doesNotMatch(usageMetering, /promptText|responseText|conversationContent/);
 });
