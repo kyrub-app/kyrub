@@ -67,6 +67,7 @@ export const recordKyrubiaAiUsage = async (
     : 1;
   const cost = estimateGeminiUsageCost(model, usage);
   const eventId = `${requestId}_${callIndex}`;
+  const priced = cost.estimatedCostMicrousd !== null;
 
   try {
     await adminDb.collection('kyrub_usage_events').doc(eventId).create({
@@ -94,6 +95,8 @@ export const recordKyrubiaAiUsage = async (
       serviceTier: usage.serviceTier,
       pricing: cost.pricing,
       pricingStatus: cost.pricingStatus,
+      pricedCallCount: priced ? 1 : 0,
+      unpricedCallCount: priced ? 0 : 1,
       estimatedCostMicrousd: cost.estimatedCostMicrousd,
       createdAt: FieldValue.serverTimestamp(),
     });
