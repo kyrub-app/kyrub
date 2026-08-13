@@ -3,6 +3,7 @@ import type {
   KyrubAiConsultantResponse,
 } from '../../shared/aiConsultant';
 import type { KyrubErpContextSnapshot } from '../../shared/kyrubErpContext';
+import { resolveKyrubiaDeterministicTask } from '../../shared/kyrubiaDeterministicTask';
 import { readKyrubErpContext } from '../actions/erpReadActionService';
 import { rehydrateKyrubiaAuthoritativeReceipt } from '../observability/kyrubAuthoritativeReceiptRehydration';
 import { hydrateActivePlanCatalog } from '../utils/activePlanCatalog';
@@ -54,6 +55,7 @@ const capabilities = (): KyrubAiConsultantResponse['capabilities'] => ({
   actionsEnabled: true,
   enabledActions: [
     'create_note',
+    'create_task',
     'start_store_activation',
     'update_store_profile',
     'create_product',
@@ -147,15 +149,48 @@ export const requestKyrubAiConsultant = async (
     );
   }
 
+  const latestUserMessage = payload.messages.at(-1);
+  const latestContent = latestUserMessage?.role === 'user'
+    ? latestUserMessage.content
+    : '';
+
+  // Fully explicit personal tasks are local deterministic operations. Resolve
+  // them before plan hydration/knowledge so words such as “Pro” inside the task
+  // can never be reinterpreted as commercial intent and no AI credit/provider
+  // dependency is introduced for a supported local action.
+  const deterministicTask = latestUserMessage?.role === 'user'
+    ? resolveKyrubiaDeterministicTask(latestContent)
+    : null;
+  if (deterministicTask) {
+    const result: KyrubAiConsultantResponse = {
+      reply: deterministicTask.reply,
+      provider: 'kyrub',
+      model: 'kyrub-task-runtime-v1',
+      mode: 'deterministic',
+      requestId: createRequestId(),
+      actionProposal: {
+        id: createRequestId(),
+        type: 'create_task',
+        title: deterministicTask.taskDraft.title,
+        content: deterministicTask.taskDraft.content,
+        reminderDateTime: deterministicTask.taskDraft.reminderDateTime,
+        requiresConfirmation: true,
+        origin: 'kyrubia',
+        risk: 'low',
+        inputProvenance: 'user_intent',
+        impact: { entityCount: 1, reversibility: 'easy' },
+      },
+      capabilities: capabilities(),
+    };
+    emitKyrubAiActionProposal(payload.conversationId, result);
+    return result;
+  }
+
   // Active commercial facts are read-only context. Hydrating them changes no
   // entitlement and grants no action authority; it only keeps the Kyrubia,
   // plan conversation and client preflight aligned with the Control Plane.
   await hydrateActivePlanCatalog(signal);
 
-  const latestUserMessage = payload.messages.at(-1);
-  const latestContent = latestUserMessage?.role === 'user'
-    ? latestUserMessage.content
-    : '';
   let erpContext = payload.erpContext;
 
   // A persisted browser event is only a pointer to a receipt, never authority.

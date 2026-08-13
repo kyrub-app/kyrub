@@ -9,6 +9,7 @@ import {
 } from '../../shared/aiConsultant';
 import { resolveKyrubiaDeterministicErpRead } from '../../shared/kyrubiaDeterministicErp';
 import { resolveKyrubiaDeterministicNote } from '../../shared/kyrubiaDeterministicNote';
+import { resolveKyrubiaDeterministicTask } from '../../shared/kyrubiaDeterministicTask';
 import {
   describeKyrubiaTurnSelection,
   resolveKyrubiaContextualRecall,
@@ -99,6 +100,7 @@ const runtimeCapabilities = (): KyrubAiConsultantResponse['capabilities'] => ({
   actionsEnabled: true,
   enabledActions: [
     'create_note',
+    'create_task',
     'start_store_activation',
     'update_store_profile',
     'create_product',
@@ -357,6 +359,36 @@ export const requestKyrubAiConsultant = async (
       historicalLink: resolvedHistoricalLink,
       capabilities: runtimeCapabilities(),
     };
+  }
+
+  const deterministicTask = latestUserMessage?.role === 'user'
+    ? resolveKyrubiaDeterministicTask(latestUserMessage.content)
+    : null;
+
+  if (deterministicTask) {
+    const result: KyrubAiConsultantResponse = {
+      reply: deterministicTask.reply,
+      provider: 'kyrub',
+      model: 'kyrub-task-runtime-v1',
+      mode: 'deterministic',
+      requestId: createRuntimeRequestId(),
+      actionProposal: {
+        id: createRuntimeRequestId(),
+        type: 'create_task',
+        title: deterministicTask.taskDraft.title,
+        content: deterministicTask.taskDraft.content,
+        reminderDateTime: deterministicTask.taskDraft.reminderDateTime,
+        requiresConfirmation: true,
+        origin: 'kyrubia',
+        risk: 'low',
+        inputProvenance: 'user_intent',
+        impact: { entityCount: 1, reversibility: 'easy' },
+      },
+      historicalLink: resolvedHistoricalLink,
+      capabilities: runtimeCapabilities(),
+    };
+    emitKyrubAiActionProposal(requestPayload.conversationId, result);
+    return result;
   }
 
   const deterministicNote = latestUserMessage?.role === 'user'
