@@ -2,6 +2,7 @@ import { createRequire } from 'node:module';
 import { applicationDefault, cert, getApps, initializeApp } from 'firebase-admin/app';
 import type { Auth } from 'firebase-admin/auth';
 import { getFirestore, type Firestore } from 'firebase-admin/firestore';
+import { getStorage, type Storage } from 'firebase-admin/storage';
 
 const require = createRequire(import.meta.url);
 
@@ -80,3 +81,4 @@ const getLegacyAdminAuth = (): Auth => {
 // public-certificate Firebase token verifier and avoid jwks-rsa/jose at startup.
 export const adminAuth = lazyService<Auth>(() => getLegacyAdminAuth());
 export const adminDb = lazyService<Firestore>(() => getFirestore(getAdminApp()));
+export const adminStorage = lazyService<Storage>(() => getStorage(getAdminApp()));
