@@ -83,6 +83,19 @@ const recordConfirmedKyrubiaActionAttempt = (
   });
 };
 
+const receiptReferenceMetadata = (
+  result: KyrubActionExecutionResult
+): Record<string, string> | undefined => {
+  const executionId = result.executionEnvelope?.executionId?.trim();
+  const proposalId = result.actionId?.trim();
+  return executionId && proposalId
+    ? {
+        execution_id: executionId,
+        proposal_id: proposalId,
+      }
+    : undefined;
+};
+
 const recordConfirmedKyrubiaActionResult = (
   proposal: KyrubActionProposal,
   result: KyrubActionExecutionResult,
@@ -97,6 +110,7 @@ const recordConfirmedKyrubiaActionResult = (
     actionId: proposal.type,
     entityType: activityEntityType(proposal),
     entityId: result.entityId,
+    metadata: receiptReferenceMetadata(result),
   });
 };
 
