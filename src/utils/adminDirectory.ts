@@ -58,6 +58,7 @@ export interface AdminDirectoryLegacyTenant {
 
 export interface AdminDirectoryAiUsageSummary {
   state: 'available' | 'not_measured' | 'restricted' | 'unavailable';
+  partial: boolean;
   calls: number | null;
   totalTokens: number | null;
   promptTokens: number | null;
@@ -89,6 +90,8 @@ interface MembershipRecord {
   status: string;
 }
 
+const AI_USAGE_SUMMARY_LIMIT = 500;
+
 const cleanString = (value: unknown): string =>
   typeof value === 'string' ? value.trim() : '';
 
@@ -109,6 +112,7 @@ const emptyAiUsageSummary = (
   state: AdminDirectoryAiUsageSummary['state']
 ): AdminDirectoryAiUsageSummary => ({
   state,
+  partial: false,
   calls: null,
   totalTokens: null,
   promptTokens: null,
@@ -337,12 +341,14 @@ const loadAiUsageSummary = async (
       query(
         collection(db, 'kyrub_usage_events'),
         where('uid', '==', userId),
-        limit(500)
+        limit(AI_USAGE_SUMMARY_LIMIT + 1)
       )
     );
 
     if (snapshots.empty) return emptyAiUsageSummary('not_measured');
 
+    const partial = snapshots.size > AI_USAGE_SUMMARY_LIMIT;
+    const documents = snapshots.docs.slice(0, AI_USAGE_SUMMARY_LIMIT);
     let promptTokens = 0;
     let outputTokens = 0;
     let thinkingTokens = 0;
@@ -356,7 +362,7 @@ const loadAiUsageSummary = async (
     let lastRoute = '';
     let lastUsedAt = '';
 
-    snapshots.docs.forEach(snapshot => {
+    documents.forEach(snapshot => {
       const value = snapshot.data();
       promptTokens += finiteNonNegativeInteger(value.promptTokenCount);
       outputTokens += finiteNonNegativeInteger(value.candidatesTokenCount);
@@ -384,7 +390,8 @@ const loadAiUsageSummary = async (
 
     return {
       state: 'available',
-      calls: snapshots.size,
+      partial,
+      calls: documents.length,
       totalTokens,
       promptTokens,
       outputTokens,
