@@ -64,11 +64,6 @@ const asksWhetherRecentActionSucceeded = (message: string): boolean => {
   return /\b(deu certo|funcionou|foi salvo|salvou mesmo|conseguiu salvar|a gravacao deu certo|a alteracao deu certo)\b/.test(intent);
 };
 
-export const isKyrubiaRecentActionContextQuestion = (
-  message: string
-): boolean =>
-  asksWhetherRecentActionSucceeded(message) || asksAboutRecentActivity(message);
-
 const latestAttempt = (events: KyrubActivityEvent[]): KyrubActivityEvent | null => {
   for (let index = events.length - 1; index >= 0; index -= 1) {
     const event = events[index];
@@ -153,9 +148,12 @@ const recentActivityReply = (
     };
   }
 
-  const trustedIds = new Set(
-    readAuthoritativeActivityRuntimeEvents(uid, 12).map(event => event.id)
-  );
+  const authoritativeEvents = readAuthoritativeActivityRuntimeEvents(uid, 12);
+  const attempt = latestAttempt(events);
+  const outcome = attempt
+    ? confirmedOutcomeAfter(authoritativeEvents, attempt)
+    : null;
+
   const lines = events.flatMap(event => {
     if (event.type === 'navigation.screen_viewed') {
       return [`- Você esteve em ${screenLabel(event.screenId)}.`];
@@ -163,20 +161,15 @@ const recentActivityReply = (
     if (event.type === 'interaction.action_attempted') {
       return [`- Você tentou ${actionLabel(event.actionId)}.`];
     }
-    if (
-      event.type === 'result.action_succeeded' &&
-      trustedIds.has(event.id)
-    ) {
-      return [`- O Kyrub confirmou nesta sessão ${actionLabel(event.actionId)}.`];
-    }
-    if (
-      event.type === 'result.action_failed' &&
-      trustedIds.has(event.id)
-    ) {
-      return [`- O Kyrub confirmou nesta sessão uma falha ao ${actionLabel(event.actionId)}.`];
-    }
     return [];
   });
+
+  if (attempt && outcome?.type === 'result.action_succeeded') {
+    lines.push(`- O Kyrub confirmou nesta sessão ${actionLabel(attempt.actionId)}.`);
+  }
+  if (attempt && outcome?.type === 'result.action_failed') {
+    lines.push(`- O Kyrub confirmou nesta sessão uma falha ao ${actionLabel(attempt.actionId)}.`);
+  }
 
   return {
     kind: 'recent_activity',
