@@ -59,6 +59,7 @@ const activityEntityType = (
     proposal.type === 'update_product'
   ) return 'product';
   if (proposal.type === 'create_note') return 'note';
+  if (proposal.type === 'create_task') return 'task';
   if (
     proposal.type === 'start_store_activation' ||
     proposal.type === 'update_store_profile'
