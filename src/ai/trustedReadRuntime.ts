@@ -33,6 +33,7 @@ const actionLabel = (actionId: string | undefined): string => {
     create_product: 'cadastrar um produto pela Kyrubia',
     update_product: 'alterar um produto pela Kyrubia',
     create_note: 'criar uma nota pela Kyrubia',
+    create_task: 'criar uma tarefa pela Kyrubia',
     start_store_activation: 'autorizar a ativação da Loja Kyrub pela Kyrubia',
     update_store_profile: 'atualizar o perfil da Loja Kyrub pela Kyrubia',
   };
@@ -55,13 +56,18 @@ const screenLabel = (screenId: string | undefined): string => {
 
 const asksAboutRecentActivity = (message: string): boolean => {
   const intent = normalize(message);
-  return /\b(o que eu acabei de fazer|o que acabei de fazer|que eu acabei de fazer|o que eu fiz agora|o que fiz agora|qual foi a ultima coisa que eu fiz|o que eu fiz por ultimo)\b/.test(intent);
+  return /\b(o que eu acabei de fazer|o que acabei de fazer|que eu acabei de fazer|o que acabamos de fazer|o que eu fiz agora|o que fiz agora|o que fizemos agora|o que nos fizemos agora|o que a gente fez agora|qual foi a ultima coisa que eu fiz|o que eu fiz por ultimo)\b/.test(intent);
 };
 
 const asksWhetherRecentActionSucceeded = (message: string): boolean => {
   const intent = normalize(message);
   return /\b(deu certo|funcionou|foi salvo|salvou mesmo|conseguiu salvar|a gravacao deu certo|a alteracao deu certo)\b/.test(intent);
 };
+
+export const isKyrubiaRecentActionContextQuestion = (
+  message: string
+): boolean =>
+  asksWhetherRecentActionSucceeded(message) || asksAboutRecentActivity(message);
 
 const latestAttempt = (events: KyrubActivityEvent[]): KyrubActivityEvent | null => {
   for (let index = events.length - 1; index >= 0; index -= 1) {
