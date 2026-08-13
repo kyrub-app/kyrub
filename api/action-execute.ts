@@ -1,5 +1,9 @@
 import { executeAuthorizedKyrubAction } from '../server/actions/actionExecutionFacade.js';
 import { mapKyrubActionExecutionError } from '../server/actions/actionExecutionService.js';
+import {
+  isKyrubActionReceiptVerificationRequest,
+  verifyAuthorizedKyrubActionReceipt,
+} from '../server/actions/actionReceiptVerificationService.js';
 import { hydrateExecutablePlanCatalog } from '../server/admin/executablePlanCatalogService.js';
 import { reconcileStoreEntitlementFromAuthorization } from '../server/admin/storeEntitlementLifecycleService.js';
 
@@ -39,6 +43,18 @@ export default async function handler(
     const authorization = headerValue(
       request.headers.authorization ?? request.headers.Authorization
     );
+
+    // Receipt verification is an authenticated read. It must not trigger plan
+    // reconciliation or gain write authority from the execution gateway.
+    if (isKyrubActionReceiptVerificationRequest(request.body)) {
+      const verification = await verifyAuthorizedKyrubActionReceipt(
+        authorization,
+        request.body
+      );
+      response.status(200).json(verification);
+      return;
+    }
+
     // Benefit expiry is an already-agreed entitlement boundary, not a new
     // discretionary action. Reconcile it before loading plan capacity so an
     // expired Pro/Business benefit can never authorize a write.

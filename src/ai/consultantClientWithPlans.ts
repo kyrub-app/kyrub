@@ -4,6 +4,7 @@ import type {
 } from '../../shared/aiConsultant';
 import type { KyrubErpContextSnapshot } from '../../shared/kyrubErpContext';
 import { readKyrubErpContext } from '../actions/erpReadActionService';
+import { rehydrateKyrubiaAuthoritativeReceipt } from '../observability/kyrubAuthoritativeReceiptRehydration';
 import { hydrateActivePlanCatalog } from '../utils/activePlanCatalog';
 import { auth } from '../utils/firebase';
 import {
@@ -124,6 +125,16 @@ const readErpContextSafely = async (
   }
 };
 
+const isRecentActionResultQuestion = (message: string): boolean => {
+  const intent = message
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLocaleLowerCase('pt-BR')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return /\b(deu certo|funcionou|foi salvo|salvou mesmo|conseguiu salvar|a gravacao deu certo|a alteracao deu certo)\b/.test(intent);
+};
+
 export const requestKyrubAiConsultant = async (
   payload: KyrubAiConsultantRequest,
   signal?: AbortSignal
@@ -146,6 +157,18 @@ export const requestKyrubAiConsultant = async (
     ? latestUserMessage.content
     : '';
   let erpContext = payload.erpContext;
+
+  // A persisted browser event is only a pointer to a receipt, never authority.
+  // Before answering a recent-result question, revalidate that exact receipt
+  // with the authenticated backend and rebuild session authority only if the
+  // server confirms actor, action, proposal and entity.
+  if (
+    latestUserMessage?.role === 'user' &&
+    typeof localStorage !== 'undefined' &&
+    isRecentActionResultQuestion(latestContent)
+  ) {
+    await rehydrateKyrubiaAuthoritativeReceipt(localStorage, user);
+  }
 
   // An explicit rename is an operational mutation even when the product name
   // itself contains commercial words such as “Pro”, “Free” or “Business”. It

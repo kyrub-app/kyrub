@@ -33,6 +33,7 @@ import { StoreRestartLandingBridge } from './components/store/StoreRestartLandin
 import { StoreSharingPortalBridge } from './components/store/StoreSharingPortalBridge';
 import { UnifiedProductCreateModalBridge } from './components/store/UnifiedProductCreateModalBridge';
 import { useFontSizeAccessibility } from './hooks/useFontSizeAccessibility';
+import { KyrubAuthoritativeReceiptBridge } from './observability/KyrubAuthoritativeReceiptBridge';
 import { resolveKyrubAppRoute } from './utils/appRoutes';
 import { isAdminControlPlaneLocation } from './utils/adminControlPlane';
 import { auth, db } from './utils/firebase';
@@ -137,6 +138,7 @@ function AuthenticatedKyrubApp({ operational }: { operational: boolean }) {
       <AppModalLayoutBridge />
       <KyrubAiConversationHeaderGuard />
       <StorePersistenceBridge />
+      <KyrubAuthoritativeReceiptBridge />
       <ProductCrossDeviceSyncBridge
         onCloudProductsApplied={refreshLegacyCache}
       />

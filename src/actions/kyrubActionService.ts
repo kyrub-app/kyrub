@@ -5,7 +5,7 @@ import type {
   KyrubAiUpdateStoreProfileProposal,
 } from '../../shared/kyrubActions';
 import { completeKyrubiaProductAndAdvance } from '../ai/operationalWorkflowStore';
-import { recordCurrentUserActivityEvent } from '../observability/kyrubActivityBrowser';
+import { recordUserActivityEvent } from '../observability/kyrubActivityBrowser';
 import { invalidateKyrubErpContext } from './erpReadActionService';
 
 const SAFE_ACTION_ENDPOINT = '/api/action-execute';
@@ -69,27 +69,43 @@ const activityEntityType = (
 };
 
 const recordConfirmedKyrubiaActionAttempt = (
+  actorUid: string,
   proposal: KyrubActionProposal,
   confirmed: boolean
 ): void => {
   if (!confirmed) return;
-  recordCurrentUserActivityEvent({
+  recordUserActivityEvent(actorUid, {
     type: 'interaction.action_attempted',
     domain: 'kyrubia',
     source: 'client_observation',
     screenId: 'home:kyrub',
     actionId: proposal.type,
     entityType: activityEntityType(proposal),
+    metadata: { proposal_id: proposal.id },
   });
 };
 
+const receiptReferenceMetadata = (
+  result: KyrubActionExecutionResult
+): Record<string, string> | undefined => {
+  const executionId = result.executionEnvelope?.executionId?.trim();
+  const proposalId = result.actionId?.trim();
+  return executionId && proposalId
+    ? {
+        execution_id: executionId,
+        proposal_id: proposalId,
+      }
+    : undefined;
+};
+
 const recordConfirmedKyrubiaActionResult = (
+  actorUid: string,
   proposal: KyrubActionProposal,
   result: KyrubActionExecutionResult,
   confirmed: boolean
 ): void => {
   if (!confirmed) return;
-  recordCurrentUserActivityEvent({
+  recordUserActivityEvent(actorUid, {
     type: 'result.action_succeeded',
     domain: 'kyrubia',
     source: 'authoritative_write_ack',
@@ -97,6 +113,7 @@ const recordConfirmedKyrubiaActionResult = (
     actionId: proposal.type,
     entityType: activityEntityType(proposal),
     entityId: result.entityId,
+    metadata: receiptReferenceMetadata(result),
   });
 };
 
@@ -133,7 +150,7 @@ export const executeKyrubAction = async (
   proposal: KyrubActionProposal,
   confirmed: boolean
 ): Promise<KyrubActionExecutionResult> => {
-  recordConfirmedKyrubiaActionAttempt(proposal, confirmed);
+  recordConfirmedKyrubiaActionAttempt(user.uid, proposal, confirmed);
 
   let token = '';
   try {
@@ -180,7 +197,7 @@ export const executeKyrubAction = async (
   }
 
   const result = body as unknown as KyrubActionExecutionResult;
-  recordConfirmedKyrubiaActionResult(proposal, result, confirmed);
+  recordConfirmedKyrubiaActionResult(user.uid, proposal, result, confirmed);
 
   if (
     proposal.type === 'create_product' ||
