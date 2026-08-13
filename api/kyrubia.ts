@@ -4,6 +4,14 @@ import {
   type KyrubAiAttachmentRef,
 } from '../shared/aiConsultant.js';
 import {
+  KYRUBIA_DEFAULT_ECONOMY_MODEL,
+  KYRUBIA_DEFAULT_PRIMARY_MODEL,
+  alternateGeminiModel,
+  extractGeminiQuotaDiagnostic,
+  isGeminiQuotaErrorCode,
+  selectKyrubiaGeminiModel,
+} from '../shared/kyrubiaProviderResilience.js';
+import {
   createKyrubiaProductQuery,
   executeKyrubiaProductQuery,
   type KyrubiaProductQueryFilter,
@@ -106,8 +114,13 @@ type GeminiFunctionCall = {
   args: Record<string, unknown>;
 };
 
+type GeminiCallResult = {
+  payload: Record<string, unknown>;
+  model: string;
+  fallbackUsed: boolean;
+};
+
 const DEFAULT_FIREBASE_WEB_API_KEY = 'AIzaSyCgWDortDA5DYjx4xIlC9YjKH3ZNIrv99U';
-const DEFAULT_GEMINI_MODEL = 'gemini-3.6-flash';
 const MAX_MESSAGES = 24;
 const MAX_MESSAGE_CHARACTERS = 4_000;
 const MAX_TOTAL_CHARACTERS = 16_000;
@@ -1073,6 +1086,16 @@ const mapGeminiFailure = (
     response.status === 429 ||
     /RESOURCE_EXHAUSTED|quota|rate.?limit|too many requests/i.test(searchable)
   ) {
+    const diagnostic = extractGeminiQuotaDiagnostic(payload);
+    console.warn('[Kyrubia] Gemini quota exhausted.', {
+      model,
+      status: response.status,
+      providerStatus: diagnostic.status,
+      quotaMetrics: diagnostic.quotaMetrics,
+      quotaIds: diagnostic.quotaIds,
+      retryAfter: response.headers.get('retry-after') || diagnostic.retryDelay,
+      message: diagnostic.message || message,
+    });
     return new KyrubiaRouteError(
       429,
       'AI_QUOTA_EXCEEDED',
@@ -1156,6 +1179,59 @@ const callGemini = async (
   return payload;
 };
 
+const callGeminiWithFallback = async (
+  apiKey: string,
+  preferredModel: string,
+  fallbackModel: string,
+  systemText: string,
+  contents: Array<Record<string, unknown>>,
+  tools: Record<string, unknown>,
+  controller: AbortController
+): Promise<GeminiCallResult> => {
+  try {
+    return {
+      payload: await callGemini(
+        apiKey,
+        preferredModel,
+        systemText,
+        contents,
+        tools,
+        controller
+      ),
+      model: preferredModel,
+      fallbackUsed: false,
+    };
+  } catch (error) {
+    if (
+      !(error instanceof KyrubiaRouteError) ||
+      !isGeminiQuotaErrorCode(error.code) ||
+      !fallbackModel ||
+      fallbackModel === preferredModel
+    ) {
+      throw error;
+    }
+
+    console.warn('[Kyrubia] Gemini fallback activated.', {
+      fromModel: preferredModel,
+      toModel: fallbackModel,
+      reason: 'quota',
+    });
+
+    return {
+      payload: await callGemini(
+        apiKey,
+        fallbackModel,
+        systemText,
+        contents,
+        tools,
+        controller
+      ),
+      model: fallbackModel,
+      fallbackUsed: true,
+    };
+  }
+};
+
 const resultWithNoteProposal = (
   conversation: ReturnType<typeof normalizeConversation>,
   parts: unknown[],
@@ -1202,7 +1278,10 @@ const generateReply = async (
     );
   }
 
-  const model = process.env.GEMINI_MODEL?.trim() || DEFAULT_GEMINI_MODEL;
+  const primaryModel =
+    process.env.GEMINI_MODEL?.trim() || KYRUBIA_DEFAULT_PRIMARY_MODEL;
+  const economyModel =
+    process.env.GEMINI_ECONOMY_MODEL?.trim() || KYRUBIA_DEFAULT_ECONOMY_MODEL;
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 27_000);
   const systemText = systemInstruction(
@@ -1211,6 +1290,13 @@ const generateReply = async (
     conversation.screenContext
   );
   const attachmentIndex = latestAttachmentMessageIndex(conversation.messages);
+  const latestUserText = conversation.messages.at(-1)?.content ?? '';
+  const modelSelection = selectKyrubiaGeminiModel({
+    latestUserText,
+    hasMultimodalContext: attachmentIndex >= 0,
+    primaryModel,
+    economyModel,
+  });
   let inlineAttachmentParts: Array<Record<string, unknown>> = [];
 
   if (attachmentIndex >= 0) {
@@ -1251,16 +1337,21 @@ const generateReply = async (
     });
 
   try {
-    const firstPayload = await callGemini(
+    const firstCall = await callGeminiWithFallback(
       apiKey,
-      model,
+      modelSelection.preferredModel,
+      modelSelection.fallbackModel,
       systemText,
       baseContents,
       ALL_TOOLS,
       controller
     );
-    const firstParts = candidateParts(firstPayload);
-    const noteResult = resultWithNoteProposal(conversation, firstParts, model);
+    const firstParts = candidateParts(firstCall.payload);
+    const noteResult = resultWithNoteProposal(
+      conversation,
+      firstParts,
+      firstCall.model
+    );
     if (noteResult) return noteResult;
 
     const readCall = functionCallsFromParts(firstParts)
@@ -1291,19 +1382,20 @@ const generateReply = async (
           }],
         },
       ];
-      const secondPayload = await callGemini(
+      const secondCall = await callGeminiWithFallback(
         apiKey,
-        model,
+        firstCall.model,
+        alternateGeminiModel(firstCall.model, modelSelection),
         systemText,
         secondContents,
         MUTATION_TOOL,
         controller
       );
-      const secondParts = candidateParts(secondPayload);
+      const secondParts = candidateParts(secondCall.payload);
       const secondNoteResult = resultWithNoteProposal(
         conversation,
         secondParts,
-        model
+        secondCall.model
       );
       if (secondNoteResult) return secondNoteResult;
 
@@ -1315,7 +1407,11 @@ const generateReply = async (
           'A Kyrubia consultou o ERP, mas não conseguiu concluir a resposta.'
         );
       }
-      return { reply: secondReply, model, actionProposal: undefined };
+      return {
+        reply: secondReply,
+        model: secondCall.model,
+        actionProposal: undefined,
+      };
     }
 
     const textReply = textFromParts(firstParts);
@@ -1327,7 +1423,11 @@ const generateReply = async (
       );
     }
 
-    return { reply: textReply, model, actionProposal: undefined };
+    return {
+      reply: textReply,
+      model: firstCall.model,
+      actionProposal: undefined,
+    };
   } finally {
     clearTimeout(timeout);
   }
@@ -1356,13 +1456,19 @@ export default async function handler(
   response.setHeader('content-type', 'application/json; charset=utf-8');
 
   if (request.method === 'GET') {
+    const primaryModel =
+      process.env.GEMINI_MODEL?.trim() || KYRUBIA_DEFAULT_PRIMARY_MODEL;
+    const economyModel =
+      process.env.GEMINI_ECONOMY_MODEL?.trim() || KYRUBIA_DEFAULT_ECONOMY_MODEL;
     response.status(200).json({
       status: 'ok',
       service: 'kyrubia',
       persona: 'Kyrubia',
       runtime: 'self-contained-rest',
       configured: Boolean(process.env.GEMINI_API_KEY?.trim()),
-      model: process.env.GEMINI_MODEL?.trim() || DEFAULT_GEMINI_MODEL,
+      model: primaryModel,
+      economyModel,
+      quotaFallbackEnabled: primaryModel !== economyModel,
       actionsEnabled: true,
       enabledActions: ['create_note'],
       enabledReadActions: ERP_READ_ACTIONS,
@@ -1399,6 +1505,7 @@ export default async function handler(
         voiceEnabled: false,
         persistentCloudHistoryEnabled: false,
         multimodalAttachmentsEnabled: true,
+        providerResilienceEnabled: true,
       },
     });
   } catch (error) {
