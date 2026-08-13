@@ -123,6 +123,34 @@ service firebase.storage {
       allow update, delete: if false;
     }
 
+    match /kyrubia-attachments/{userId}/{conversationId}/{attachmentId} {
+      allow read: if isSignedIn()
+        && request.auth.uid == userId;
+
+      allow create: if isSignedIn()
+        && request.auth.uid == userId
+        && resource == null
+        && request.resource.size > 0
+        && (
+          (
+            request.resource.size <= 8 * 1024 * 1024
+            && request.resource.contentType.matches('image/(jpeg|png|webp)')
+          )
+          || (
+            request.resource.size <= 10 * 1024 * 1024
+            && request.resource.contentType == 'application/pdf'
+          )
+        )
+        && request.resource.metadata.ownerId == userId
+        && request.resource.metadata.conversationId == conversationId
+        && request.resource.metadata.attachmentId == attachmentId
+        && request.resource.metadata.purpose == 'kyrubia-conversation';
+
+      allow update: if false;
+      allow delete: if isSignedIn()
+        && request.auth.uid == userId;
+    }
+
     match /{allPaths=**} {
       allow read, write: if false;
     }

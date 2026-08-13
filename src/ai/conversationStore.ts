@@ -1,6 +1,9 @@
-import type {
-  KyrubAiConversationMessage,
-  KyrubAiHistoricalLink,
+import {
+  KYRUB_AI_ATTACHMENT_LIMITS,
+  type KyrubAiAttachmentMimeType,
+  type KyrubAiAttachmentRef,
+  type KyrubAiConversationMessage,
+  type KyrubAiHistoricalLink,
 } from '../../shared/aiConsultant';
 import type { KyrubiaTurnContext } from '../../shared/kyrubiaContext';
 
@@ -9,6 +12,12 @@ const HISTORICAL_LINKS_PREFIX = 'kyrub_ai_historical_links_v1';
 const MAX_CONVERSATIONS = 20;
 const MAX_MESSAGES_PER_CONVERSATION = 100;
 const MAX_HISTORICAL_LINKS = 40;
+const ACCEPTED_ATTACHMENT_TYPES = new Set<KyrubAiAttachmentMimeType>([
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'application/pdf',
+]);
 
 export type KyrubAiLocalConversation = {
   id: string;
@@ -32,12 +41,44 @@ const storageKey = (uid: string): string =>
 const historicalLinksKey = (uid: string): string =>
   `${HISTORICAL_LINKS_PREFIX}:${uid || 'guest'}`;
 
+const isAttachment = (value: unknown): value is KyrubAiAttachmentRef => {
+  if (!value || typeof value !== 'object') return false;
+  const candidate = value as Record<string, unknown>;
+  return (
+    typeof candidate.id === 'string' &&
+    candidate.id.length > 0 &&
+    typeof candidate.name === 'string' &&
+    candidate.name.length > 0 &&
+    candidate.name.length <= KYRUB_AI_ATTACHMENT_LIMITS.maxNameCharacters &&
+    typeof candidate.mimeType === 'string' &&
+    ACCEPTED_ATTACHMENT_TYPES.has(candidate.mimeType as KyrubAiAttachmentMimeType) &&
+    typeof candidate.size === 'number' &&
+    Number.isFinite(candidate.size) &&
+    candidate.size > 0 &&
+    typeof candidate.storagePath === 'string' &&
+    candidate.storagePath.startsWith('kyrubia-attachments/')
+  );
+};
+
+const sanitizeAttachments = (value: unknown): KyrubAiAttachmentRef[] => {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter(isAttachment)
+    .slice(0, KYRUB_AI_ATTACHMENT_LIMITS.maxFilesPerMessage)
+    .map(attachment => ({
+      ...attachment,
+      name: attachment.name.trim().slice(0, KYRUB_AI_ATTACHMENT_LIMITS.maxNameCharacters),
+    }));
+};
+
 const isMessage = (value: unknown): value is KyrubAiConversationMessage => {
   if (!value || typeof value !== 'object') return false;
   const candidate = value as Record<string, unknown>;
   return (
     (candidate.role === 'user' || candidate.role === 'assistant') &&
-    typeof candidate.content === 'string'
+    typeof candidate.content === 'string' &&
+    (candidate.attachments === undefined ||
+      (Array.isArray(candidate.attachments) && candidate.attachments.every(isAttachment)))
   );
 };
 
@@ -124,6 +165,13 @@ export const loadKyrubAiConversations = (
     if (!Array.isArray(parsed)) return [];
     const conversations = parsed
       .filter(isConversation)
+      .map(conversation => ({
+        ...conversation,
+        messages: conversation.messages.map(message => ({
+          ...message,
+          attachments: sanitizeAttachments(message.attachments),
+        })),
+      }))
       .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
       .slice(0, MAX_CONVERSATIONS);
     return removeDanglingHistoricalLinks(conversations);
@@ -144,7 +192,11 @@ export const saveKyrubAiConversations = (
       topic: conversation.topic.trim().slice(0, 80) || 'Nova solicitação',
       messages: conversation.messages
         .filter(isMessage)
-        .slice(-MAX_MESSAGES_PER_CONVERSATION),
+        .slice(-MAX_MESSAGES_PER_CONVERSATION)
+        .map(message => ({
+          ...message,
+          attachments: sanitizeAttachments(message.attachments),
+        })),
       lastTurnContext: conversation.lastTurnContext && isTurnContext(conversation.lastTurnContext)
         ? conversation.lastTurnContext
         : undefined,
@@ -254,12 +306,14 @@ export const createKyrubAiConversation = (
 
 export const createKyrubAiMessage = (
   role: KyrubAiConversationMessage['role'],
-  content: string
+  content: string,
+  attachments: KyrubAiAttachmentRef[] = []
 ): KyrubAiConversationMessage => ({
   id: createId(),
   role,
   content: content.trim(),
   createdAt: new Date().toISOString(),
+  attachments: sanitizeAttachments(attachments),
 });
 
 export const titleFromFirstRequest = (content: string): string => {

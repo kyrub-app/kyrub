@@ -30,6 +30,11 @@ import type { KyrubiaOfferedIntent } from '../../shared/kyrubiaContext';
 import { auth } from '../utils/firebase';
 import { requestKyrubAiConsultant } from '../ai/consultantClient';
 import {
+  deleteKyrubiaAttachments,
+  uploadKyrubiaAttachments,
+} from '../ai/kyrubiaAttachmentService';
+import { requestKyrubAiMultimodalConsultant } from '../ai/multimodalConsultantClient';
+import {
   createKyrubAiConversation,
   createKyrubAiMessage,
   loadKyrubAiConversations,
@@ -37,6 +42,10 @@ import {
   titleFromFirstRequest,
   type KyrubAiLocalConversation,
 } from '../ai/conversationStore';
+import {
+  KyrubAiAttachmentPicker,
+  KyrubAiAttachmentSummary,
+} from './KyrubAiAttachmentPicker';
 
 const MAX_VISIBLE_RECENT_CONVERSATIONS = 6;
 
@@ -120,6 +129,11 @@ const relativeConversationDate = (value: string): string => {
   return `${days} d`;
 };
 
+const attachmentOnlyPrompt = (names: string[]): string => {
+  if (names.length === 1) return `Analise o anexo “${names[0]}”.`;
+  return `Analise estes ${names.length} anexos e considere-os juntos na resposta.`;
+};
+
 export function KyrubAiWorkspaceBridge() {
   const [host, setHost] = useState<HTMLElement | null>(null);
   const [user, setUser] = useState<User | null>(auth.currentUser);
@@ -127,12 +141,15 @@ export function KyrubAiWorkspaceBridge() {
   const [conversations, setConversations] = useState<KyrubAiLocalConversation[]>([]);
   const [activeConversationId, setActiveConversationId] = useState('');
   const [draft, setDraft] = useState('');
+  const [pendingAttachmentFiles, setPendingAttachmentFiles] = useState<File[]>([]);
+  const [uploadingAttachments, setUploadingAttachments] = useState(false);
   const [sending, setSending] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [failedConversationId, setFailedConversationId] = useState('');
 
   const abortControllerRef = useRef<AbortController | null>(null);
   const messagesViewportRef = useRef<HTMLDivElement | null>(null);
+  const busy = sending || uploadingAttachments;
 
   useEffect(() => onAuthStateChanged(auth, setUser), []);
 
@@ -188,6 +205,8 @@ export function KyrubAiWorkspaceBridge() {
   useEffect(() => {
     abortControllerRef.current?.abort();
     setSending(false);
+    setUploadingAttachments(false);
+    setPendingAttachmentFiles([]);
     setErrorMessage('');
     setFailedConversationId('');
     setActiveConversationId('');
@@ -224,7 +243,7 @@ export function KyrubAiWorkspaceBridge() {
       top: viewport.scrollHeight,
       behavior: 'smooth',
     });
-  }, [activeConversation?.messages.length, sending]);
+  }, [activeConversation?.messages.length, sending, uploadingAttachments]);
 
   const updateConversation = (
     conversationId: string,
@@ -255,16 +274,19 @@ export function KyrubAiWorkspaceBridge() {
     setFailedConversationId('');
 
     try {
-      const result = await requestKyrubAiConsultant(
-        {
-          conversationId: conversation.id,
-          topic: conversation.topic,
-          messages,
-          turnContext: conversation.lastTurnContext,
-          ...(selectedOfferedIntentId ? { selectedOfferedIntentId } : {}),
-        },
-        controller.signal
+      const request = {
+        conversationId: conversation.id,
+        topic: conversation.topic,
+        messages,
+        turnContext: conversation.lastTurnContext,
+        ...(selectedOfferedIntentId ? { selectedOfferedIntentId } : {}),
+      };
+      const hasMultimodalHistory = messages.some(
+        message => message.role === 'user' && (message.attachments?.length ?? 0) > 0
       );
+      const result = hasMultimodalHistory
+        ? await requestKyrubAiMultimodalConsultant(request, controller.signal)
+        : await requestKyrubAiConsultant(request, controller.signal);
       const assistantMessage = createKyrubAiMessage('assistant', result.reply);
       updateConversation(conversation.id, current => ({
         ...current,
@@ -295,6 +317,7 @@ export function KyrubAiWorkspaceBridge() {
     setConversations(current => [conversation, ...current]);
     setActiveConversationId(conversation.id);
     setDraft(template?.starterPrompt ?? '');
+    setPendingAttachmentFiles([]);
     setErrorMessage('');
     setFailedConversationId('');
   };
@@ -304,7 +327,7 @@ export function KyrubAiWorkspaceBridge() {
     selectedOfferedIntentId?: string
   ) => {
     const cleanContent = content.trim();
-    if (!cleanContent || sending) return;
+    if ((!cleanContent && pendingAttachmentFiles.length === 0) || busy) return;
     if (!user) {
       setErrorMessage('Faça login para conversar com o Consultor Kyrub.');
       return;
@@ -313,22 +336,52 @@ export function KyrubAiWorkspaceBridge() {
     let conversation = activeConversation;
     if (!conversation) {
       conversation = createKyrubAiConversation('Nova solicitação');
-      setConversations(current => [conversation as KyrubAiLocalConversation, ...current]);
-      setActiveConversationId(conversation.id);
     }
 
-    const userMessage = createKyrubAiMessage('user', cleanContent);
+    let attachments = [] as Awaited<ReturnType<typeof uploadKyrubiaAttachments>>;
+    if (pendingAttachmentFiles.length > 0) {
+      setUploadingAttachments(true);
+      setErrorMessage('');
+      try {
+        attachments = await uploadKyrubiaAttachments(
+          user,
+          conversation.id,
+          pendingAttachmentFiles
+        );
+      } catch (error) {
+        setErrorMessage(
+          error instanceof Error
+            ? error.message
+            : 'Não foi possível enviar os anexos. Tente novamente.'
+        );
+        setUploadingAttachments(false);
+        return;
+      }
+      setUploadingAttachments(false);
+    }
+
+    const messageContent = cleanContent || attachmentOnlyPrompt(
+      attachments.map(attachment => attachment.name)
+    );
+    const userMessage = createKyrubAiMessage('user', messageContent, attachments);
     const firstUserMessage = !conversation.messages.some(message => message.role === 'user');
     const nextConversation: KyrubAiLocalConversation = {
       ...conversation,
       title: firstUserMessage
-        ? titleFromFirstRequest(cleanContent)
+        ? titleFromFirstRequest(
+            cleanContent ||
+              (attachments.length === 1
+                ? `Analisar ${attachments[0].name}`
+                : `Analisar ${attachments.length} anexos`)
+          )
         : conversation.title,
       updatedAt: new Date().toISOString(),
       messages: [...conversation.messages, userMessage],
     };
 
     setDraft('');
+    setPendingAttachmentFiles([]);
+    setActiveConversationId(nextConversation.id);
     setConversations(current => {
       const withoutCurrent = current.filter(item => item.id !== nextConversation.id);
       return [nextConversation, ...withoutCurrent];
@@ -346,23 +399,32 @@ export function KyrubAiWorkspaceBridge() {
   };
 
   const chooseOfferedIntent = (offeredIntent: KyrubiaOfferedIntent) => {
-    if (sending || draft.trim()) return;
+    if (busy || draft.trim() || pendingAttachmentFiles.length > 0) return;
     void submitContent(offeredIntent.label, offeredIntent.id);
   };
 
   const retryLastRequest = () => {
-    if (!activeConversation || sending) return;
+    if (!activeConversation || busy) return;
     void requestReply(activeConversation, activeConversation.messages);
   };
 
   const deleteActiveConversation = () => {
     if (!activeConversation) return;
     abortControllerRef.current?.abort();
+    const attachments = activeConversation.messages.flatMap(
+      message => message.attachments ?? []
+    );
+    if (user && attachments.length > 0) {
+      void deleteKyrubiaAttachments(user, attachments).catch(error => {
+        console.warn('[Kyrubia] Could not clean up conversation attachments.', error);
+      });
+    }
     setConversations(current =>
       current.filter(item => item.id !== activeConversation.id)
     );
     setActiveConversationId('');
     setDraft('');
+    setPendingAttachmentFiles([]);
     setErrorMessage('');
     setFailedConversationId('');
   };
@@ -403,16 +465,26 @@ export function KyrubAiWorkspaceBridge() {
                 rows={4}
                 className="w-full resize-none rounded-2xl border border-slate-700 bg-slate-950/80 px-4 py-4 text-base leading-relaxed text-white outline-none placeholder:text-slate-600 focus:border-violet-500/60"
               />
+              <KyrubAiAttachmentPicker
+                files={pendingAttachmentFiles}
+                onChange={setPendingAttachmentFiles}
+                onError={setErrorMessage}
+                disabled={busy || !user}
+              />
               <div className="mt-3 flex items-center justify-between gap-3">
                 <span className="text-xs text-slate-500">
-                  Histórico salvo somente neste dispositivo nesta fase.
+                  Histórico textual e referências de anexos ficam neste dispositivo; os arquivos são privados no Storage.
                 </span>
                 <button
                   type="submit"
-                  disabled={!draft.trim() || sending || !user}
+                  disabled={(!draft.trim() && pendingAttachmentFiles.length === 0) || busy || !user}
                   className="flex shrink-0 items-center gap-2 rounded-xl bg-violet-500 px-5 py-3 text-sm font-black text-white disabled:opacity-50"
                 >
-                  <Send className="h-4 w-4" />
+                  {busy ? (
+                    <LoaderCircle className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Send className="h-4 w-4" />
+                  )}
                   Enviar
                 </button>
               </div>
@@ -428,7 +500,7 @@ export function KyrubAiWorkspaceBridge() {
           <section className="grid grid-cols-3 gap-2" aria-label="Capacidades atuais da Kyrub I.A">
             <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-3 text-center">
               <MessageSquareText className="mx-auto h-5 w-5 text-emerald-300" />
-              <strong className="mt-2 block text-xs text-white">Texto ativo</strong>
+              <strong className="mt-2 block text-xs text-white">Texto + anexos</strong>
             </div>
             <div className="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-3 text-center">
               <ShieldCheck className="mx-auto h-5 w-5 text-amber-300" />
@@ -466,6 +538,7 @@ export function KyrubAiWorkspaceBridge() {
                     onClick={() => {
                       setActiveConversationId(conversation.id);
                       setDraft('');
+                      setPendingAttachmentFiles([]);
                       setErrorMessage('');
                       setFailedConversationId('');
                     }}
@@ -526,6 +599,7 @@ export function KyrubAiWorkspaceBridge() {
                 abortControllerRef.current?.abort();
                 setActiveConversationId('');
                 setDraft('');
+                setPendingAttachmentFiles([]);
                 setErrorMessage('');
                 setFailedConversationId('');
               }}
@@ -583,11 +657,12 @@ export function KyrubAiWorkspaceBridge() {
                   }`}
                 >
                   {message.content}
+                  <KyrubAiAttachmentSummary attachments={message.attachments ?? []} />
                 </div>
               </div>
             ))}
 
-            {visibleOfferedIntents.length > 0 && !sending && !draft.trim() && (
+            {visibleOfferedIntents.length > 0 && !busy && !draft.trim() && pendingAttachmentFiles.length === 0 && (
               <div
                 className="ml-11 flex max-w-[84%] flex-wrap gap-2"
                 aria-label="Próximos passos sugeridos pela Kyrubia"
@@ -605,14 +680,14 @@ export function KyrubAiWorkspaceBridge() {
               </div>
             )}
 
-            {sending && (
+            {busy && (
               <div className="flex items-start gap-3">
                 <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl bg-violet-500/15 text-violet-300">
                   <Bot className="h-5 w-5" />
                 </div>
                 <div className="flex items-center gap-2 rounded-2xl rounded-tl-md border border-slate-800 bg-slate-900 px-4 py-3 text-sm text-slate-400">
                   <LoaderCircle className="h-4 w-4 animate-spin text-violet-300" />
-                  Pensando...
+                  {uploadingAttachments ? 'Enviando anexos...' : 'Pensando...'}
                 </div>
               </div>
             )}
@@ -624,7 +699,7 @@ export function KyrubAiWorkspaceBridge() {
                   <button
                     type="button"
                     onClick={retryLastRequest}
-                    disabled={sending}
+                    disabled={busy}
                     className="mt-3 rounded-xl border border-red-400/30 bg-red-500/10 px-3 py-2 text-xs font-black text-red-100 disabled:opacity-50"
                   >
                     Tentar novamente
@@ -635,7 +710,13 @@ export function KyrubAiWorkspaceBridge() {
           </div>
 
           <form onSubmit={sendMessage} className="border-t border-slate-800 p-3 sm:p-4">
-            <div className="flex items-end gap-2 rounded-2xl border border-slate-700 bg-slate-900 p-2 focus-within:border-violet-500/60">
+            <KyrubAiAttachmentPicker
+              files={pendingAttachmentFiles}
+              onChange={setPendingAttachmentFiles}
+              onError={setErrorMessage}
+              disabled={busy || !user}
+            />
+            <div className="mt-2 flex items-end gap-2 rounded-2xl border border-slate-700 bg-slate-900 p-2 focus-within:border-violet-500/60">
               <textarea
                 value={draft}
                 onChange={event => setDraft(event.target.value.slice(0, 4_000))}
@@ -651,11 +732,11 @@ export function KyrubAiWorkspaceBridge() {
               />
               <button
                 type="submit"
-                disabled={!draft.trim() || sending}
+                disabled={(!draft.trim() && pendingAttachmentFiles.length === 0) || busy}
                 className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-violet-500 text-white disabled:opacity-40"
                 aria-label="Enviar mensagem"
               >
-                {sending ? (
+                {busy ? (
                   <LoaderCircle className="h-5 w-5 animate-spin" />
                 ) : (
                   <Send className="h-5 w-5" />
@@ -663,7 +744,7 @@ export function KyrubAiWorkspaceBridge() {
               </button>
             </div>
             <p className="mt-2 text-center text-xs text-slate-600">
-              Ações no aplicativo passam por confirmação quando necessário.
+              Anexos são contexto da conversa. Ações no aplicativo continuam passando por confirmação quando necessário.
             </p>
           </form>
         </section>

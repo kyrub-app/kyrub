@@ -28,6 +28,28 @@ export const KYRUB_AI_LIMITS = {
   maxScreenContextCharacters: 240,
 } as const;
 
+export const KYRUB_AI_ATTACHMENT_LIMITS = {
+  maxFilesPerMessage: 4,
+  maxImageBytes: 8 * 1024 * 1024,
+  maxPdfBytes: 10 * 1024 * 1024,
+  maxTotalBytesPerMessage: 16 * 1024 * 1024,
+  maxNameCharacters: 160,
+} as const;
+
+export type KyrubAiAttachmentMimeType =
+  | 'image/jpeg'
+  | 'image/png'
+  | 'image/webp'
+  | 'application/pdf';
+
+export type KyrubAiAttachmentRef = {
+  id: string;
+  name: string;
+  mimeType: KyrubAiAttachmentMimeType;
+  size: number;
+  storagePath: string;
+};
+
 export type KyrubAiMessageRole = 'user' | 'assistant';
 
 export type KyrubAiConversationMessage = {
@@ -35,6 +57,11 @@ export type KyrubAiConversationMessage = {
   role: KyrubAiMessageRole;
   content: string;
   createdAt?: string;
+  /**
+   * Private Firebase Storage references owned by the authenticated user.
+   * Bytes are never persisted in conversation localStorage.
+   */
+  attachments?: KyrubAiAttachmentRef[];
 };
 
 export type KyrubAiHistoricalLink = {
@@ -67,6 +94,7 @@ export type KyrubAiConsultantCapabilities = {
   enabledReadActions?: KyrubReadActionType[];
   voiceEnabled: boolean;
   persistentCloudHistoryEnabled: boolean;
+  multimodalAttachmentsEnabled?: boolean;
 };
 
 export type KyrubAiConsultantResponse = {
