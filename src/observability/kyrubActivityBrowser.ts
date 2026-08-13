@@ -15,16 +15,17 @@ import {
 
 export const KYRUB_ACTIVITY_UPDATED_EVENT = 'kyrub-activity-updated';
 
-export const recordCurrentUserActivityEvent = (
+export const recordUserActivityEvent = (
+  actorUid: string,
   input: KyrubActivityEventInput
 ): KyrubActivityEvent | null => {
   if (typeof window === 'undefined') return null;
-  const actorUid = auth.currentUser?.uid?.trim() ?? '';
-  if (!actorUid) return null;
+  const normalizedUid = actorUid.trim();
+  if (!normalizedUid) return null;
 
   const event = recordKyrubActivityEvent(
     window.localStorage,
-    actorUid,
+    normalizedUid,
     input
   );
   rememberAuthoritativeActivityRuntimeEvent(event);
@@ -32,13 +33,20 @@ export const recordCurrentUserActivityEvent = (
   window.dispatchEvent(
     new CustomEvent(KYRUB_ACTIVITY_UPDATED_EVENT, {
       detail: {
-        actorUid,
+        actorUid: normalizedUid,
         eventId: event.id,
       },
     })
   );
 
   return event;
+};
+
+export const recordCurrentUserActivityEvent = (
+  input: KyrubActivityEventInput
+): KyrubActivityEvent | null => {
+  const actorUid = auth.currentUser?.uid?.trim() ?? '';
+  return actorUid ? recordUserActivityEvent(actorUid, input) : null;
 };
 
 export const readCurrentUserActivityEvents = (
