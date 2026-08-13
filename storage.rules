@@ -129,6 +129,7 @@ service firebase.storage {
 
       allow create: if isSignedIn()
         && request.auth.uid == userId
+        && resource == null
         && request.resource.size > 0
         && (
           (
