@@ -33,6 +33,7 @@ const actionLabel = (actionId: string | undefined): string => {
     create_product: 'cadastrar um produto pela Kyrubia',
     update_product: 'alterar um produto pela Kyrubia',
     create_note: 'criar uma nota pela Kyrubia',
+    create_task: 'criar uma tarefa pela Kyrubia',
     start_store_activation: 'autorizar a ativação da Loja Kyrub pela Kyrubia',
     update_store_profile: 'atualizar o perfil da Loja Kyrub pela Kyrubia',
   };
@@ -55,7 +56,7 @@ const screenLabel = (screenId: string | undefined): string => {
 
 const asksAboutRecentActivity = (message: string): boolean => {
   const intent = normalize(message);
-  return /\b(o que eu acabei de fazer|o que acabei de fazer|que eu acabei de fazer|o que eu fiz agora|o que fiz agora|qual foi a ultima coisa que eu fiz|o que eu fiz por ultimo)\b/.test(intent);
+  return /\b(o que eu acabei de fazer|o que acabei de fazer|que eu acabei de fazer|o que acabamos de fazer|o que eu fiz agora|o que fiz agora|o que fizemos agora|o que nos fizemos agora|o que a gente fez agora|qual foi a ultima coisa que eu fiz|o que eu fiz por ultimo)\b/.test(intent);
 };
 
 const asksWhetherRecentActionSucceeded = (message: string): boolean => {
@@ -147,9 +148,12 @@ const recentActivityReply = (
     };
   }
 
-  const trustedIds = new Set(
-    readAuthoritativeActivityRuntimeEvents(uid, 12).map(event => event.id)
-  );
+  const authoritativeEvents = readAuthoritativeActivityRuntimeEvents(uid, 12);
+  const attempt = latestAttempt(events);
+  const outcome = attempt
+    ? confirmedOutcomeAfter(authoritativeEvents, attempt)
+    : null;
+
   const lines = events.flatMap(event => {
     if (event.type === 'navigation.screen_viewed') {
       return [`- Você esteve em ${screenLabel(event.screenId)}.`];
@@ -157,20 +161,15 @@ const recentActivityReply = (
     if (event.type === 'interaction.action_attempted') {
       return [`- Você tentou ${actionLabel(event.actionId)}.`];
     }
-    if (
-      event.type === 'result.action_succeeded' &&
-      trustedIds.has(event.id)
-    ) {
-      return [`- O Kyrub confirmou nesta sessão ${actionLabel(event.actionId)}.`];
-    }
-    if (
-      event.type === 'result.action_failed' &&
-      trustedIds.has(event.id)
-    ) {
-      return [`- O Kyrub confirmou nesta sessão uma falha ao ${actionLabel(event.actionId)}.`];
-    }
     return [];
   });
+
+  if (attempt && outcome?.type === 'result.action_succeeded') {
+    lines.push(`- O Kyrub confirmou nesta sessão ${actionLabel(attempt.actionId)}.`);
+  }
+  if (attempt && outcome?.type === 'result.action_failed') {
+    lines.push(`- O Kyrub confirmou nesta sessão uma falha ao ${actionLabel(attempt.actionId)}.`);
+  }
 
   return {
     kind: 'recent_activity',
