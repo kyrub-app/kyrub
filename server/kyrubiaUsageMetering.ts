@@ -65,7 +65,15 @@ export const recordKyrubiaAiUsage = async (
   const callIndex = Number.isSafeInteger(input.callIndex) && input.callIndex > 0
     ? input.callIndex
     : 1;
-  const cost = estimateGeminiUsageCost(model, usage);
+  const baseCost = estimateGeminiUsageCost(model, usage);
+  const hasSeparateToolUse = usage.toolUsePromptTokenCount > 0;
+  const cost = hasSeparateToolUse
+    ? {
+        pricing: baseCost.pricing,
+        pricingStatus: 'tool_use_unpriced',
+        estimatedCostMicrousd: null,
+      }
+    : baseCost;
   const eventId = `${requestId}_${callIndex}`;
   const priced = cost.estimatedCostMicrousd !== null;
 
