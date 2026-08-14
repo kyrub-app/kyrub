@@ -10,6 +10,8 @@ import {
   isKyrubiaCatalogAnalysisText,
   shouldUseKyrubiaCatalogAnalysis,
 } from '../shared/kyrubiaCatalogAnalysisIntent';
+import { prepareKyrubAiCatalogAnalysisContext } from '../src/ai/catalogAnalysisContext';
+import { saveKyrubiaCatalogAnalysis } from '../src/ai/catalogAnalysisStore';
 
 test('catalog analysis intent is explicit and contextual follow-up requires stored analysis', () => {
   assert.equal(
@@ -35,6 +37,56 @@ test('catalog analysis intent is explicit and contextual follow-up requires stor
   ];
   assert.equal(shouldUseKyrubiaCatalogAnalysis(followup), false);
   assert.equal(shouldUseKyrubiaCatalogAnalysis(followup, true), true);
+});
+
+test('catalog analysis context hydration is scoped to the same UID and conversation', () => {
+  const values = new Map<string, string>();
+  const storage = {
+    getItem: (key: string) => values.get(key) ?? null,
+    setItem: (key: string, value: string) => void values.set(key, value),
+    removeItem: (key: string) => void values.delete(key),
+  } as unknown as Storage;
+  const analysis = normalizeKyrubCatalogAnalysis({
+    summary: 'Catálogo de teste.',
+    segment: 'Mercearia',
+    segmentConfidence: 'high',
+    categories: ['Bebidas'],
+    items: [{
+      ref: 'item-1',
+      kind: 'product',
+      name: 'Suco',
+      category: 'Bebidas',
+      price: 12.5,
+      priceStatus: 'observed',
+      stockStatus: 'missing',
+      issues: [],
+    }],
+    conflicts: [],
+    duplicates: [],
+    warnings: [],
+  }, { sourceKind: 'multimodal', attachmentCount: 1 });
+  assert.ok(analysis);
+  saveKyrubiaCatalogAnalysis(storage, 'uid-a', 'conv-a', analysis);
+
+  const payload = {
+    conversationId: 'conv-a',
+    topic: 'Catálogo',
+    messages: [{ role: 'user' as const, content: 'Dessa lista, quais são os primeiros?' }],
+  };
+  const hydrated = prepareKyrubAiCatalogAnalysisContext(payload, storage, 'uid-a');
+  assert.equal(hydrated.catalogAnalysisContext?.items[0]?.name, 'Suco');
+  assert.equal(
+    prepareKyrubAiCatalogAnalysisContext(payload, storage, 'uid-b').catalogAnalysisContext,
+    undefined
+  );
+  assert.equal(
+    prepareKyrubAiCatalogAnalysisContext(
+      { ...payload, conversationId: 'conv-b' },
+      storage,
+      'uid-a'
+    ).catalogAnalysisContext,
+    undefined
+  );
 });
 
 test('catalog normalizer keeps only explicitly observed values and aligns draft readiness', () => {
@@ -143,7 +195,9 @@ test('catalog analysis service is forced structured read-only output and metered
 test('existing consultor function dispatches analysis and re-normalizes same-conversation structured context', () => {
   const router = readFileSync(new URL('../api/consultor-kyrub.ts', import.meta.url), 'utf8');
   const contract = readFileSync(new URL('../shared/aiConsultant.ts', import.meta.url), 'utf8');
+  const context = readFileSync(new URL('../src/ai/catalogAnalysisContext.ts', import.meta.url), 'utf8');
   const continuation = readFileSync(new URL('../src/ai/opportunityContinuation.ts', import.meta.url), 'utf8');
+  const multimodal = readFileSync(new URL('../src/ai/multimodalConsultantClient.ts', import.meta.url), 'utf8');
   const server = readFileSync(new URL('../server.ts', import.meta.url), 'utf8');
 
   assert.match(router, /shouldUseKyrubiaCatalogAnalysis/);
@@ -153,9 +207,13 @@ test('existing consultor function dispatches analysis and re-normalizes same-con
   assert.match(router, /Boolean\(analysisContext\)/);
   assert.match(router, /handleKyrubia/);
   assert.match(contract, /catalogAnalysisContext\?: KyrubCatalogAnalysis/);
-  assert.match(continuation, /loadKyrubiaCatalogAnalysis/);
-  assert.match(continuation, /payload\.conversationId/);
-  assert.match(continuation, /catalogAnalysisContext/);
+  assert.match(context, /loadKyrubiaCatalogAnalysis/);
+  assert.match(context, /payload\.conversationId/);
+  assert.match(context, /uid/);
+  assert.match(continuation, /prepareKyrubAiCatalogAnalysisContext/);
+  assert.match(multimodal, /prepareKyrubAiCatalogAnalysisContext/);
+  assert.match(multimodal, /JSON\.stringify\(requestPayload\)/);
+  assert.doesNotMatch(multimodal, /JSON\.stringify\(payload\)/);
   assert.match(contract, /KYRUB_AI_CONSULTANT_ENDPOINT = '\/api\/consultor-kyrub'/);
   assert.match(contract, /KYRUB_AI_CONSULTANT_COMPAT_ENDPOINT = '\/api\/kyrubia'/);
   assert.match(server, /"\/api\/consultor-kyrub"/);
