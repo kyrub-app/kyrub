@@ -3,7 +3,7 @@ import type {
   KyrubAiConversationMessage,
 } from '../../shared/aiConsultant';
 import { auth } from '../utils/firebase';
-import { loadKyrubiaCatalogAnalysis } from './catalogAnalysisStore';
+import { prepareKyrubAiCatalogAnalysisContext } from './catalogAnalysisContext';
 
 const OPPORTUNITY_OFFER_PATTERN =
   /(?:caminhos? pr[aá]ticos?|desenvolvimento|renda|comercializ|neg[oó]cio|oportunidad|monetiz|explor(?:ar|asse|e)|aprofundar|possibilidades|mais simples ao mais estrutural)/i;
@@ -28,23 +28,6 @@ const opportunityAssistantMessage = (
   return null;
 };
 
-const withCatalogAnalysisContext = (
-  payload: KyrubAiConsultantRequest
-): KyrubAiConsultantRequest => {
-  if (payload.catalogAnalysisContext) return payload;
-  if (typeof localStorage === 'undefined') return payload;
-  const uid = auth.currentUser?.uid ?? '';
-  if (!uid) return payload;
-  const analysis = loadKyrubiaCatalogAnalysis(
-    localStorage,
-    uid,
-    payload.conversationId
-  );
-  return analysis
-    ? { ...payload, catalogAnalysisContext: analysis }
-    : payload;
-};
-
 export const isKyrubAiOpportunityContinuation = (
   payload: KyrubAiConsultantRequest
 ): boolean => {
@@ -58,7 +41,11 @@ export const isKyrubAiOpportunityContinuation = (
 export const prepareKyrubAiOpportunityContinuation = (
   payload: KyrubAiConsultantRequest
 ): KyrubAiConsultantRequest => {
-  const contextualPayload = withCatalogAnalysisContext(payload);
+  const contextualPayload = prepareKyrubAiCatalogAnalysisContext(
+    payload,
+    typeof localStorage === 'undefined' ? undefined : localStorage,
+    auth.currentUser?.uid ?? ''
+  );
   if (!isKyrubAiOpportunityContinuation(contextualPayload)) {
     return contextualPayload;
   }
