@@ -10,6 +10,7 @@ export type KyrubiaAiUsageOperation =
   | 'conversation_text'
   | 'conversation_multimodal_simple'
   | 'conversation_multimodal_complex'
+  | 'catalog_analysis'
   | 'erp_read_followup';
 
 export type KyrubiaAiUsageRoute = 'primary' | 'economy' | 'followup';
