@@ -156,6 +156,16 @@ const withCatalogAnalysisContext = (
   return { ...body, messages };
 };
 
+const withRequestBody = (
+  request: VercelRequestLike,
+  body: Record<string, unknown>
+): VercelRequestLike => ({
+  ...request,
+  method: request.method,
+  headers: request.headers,
+  body,
+});
+
 export const maxDuration = 60;
 
 export default async function handler(
@@ -205,7 +215,7 @@ export default async function handler(
     if (routeToCatalogAnalysis) {
       await handleKyrubiaCatalogAnalysis(
         analysisContext
-          ? { ...request, body: withCatalogAnalysisContext(body, analysisContext) }
+          ? withRequestBody(request, withCatalogAnalysisContext(body, analysisContext))
           : request,
         response
       );
