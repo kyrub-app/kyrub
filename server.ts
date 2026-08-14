@@ -5,8 +5,6 @@ import dotenv from "dotenv";
 import { GoogleGenAI } from "@google/genai";
 import { createServer as createViteServer } from "vite";
 import handleKyrubAiConsultant from "./api/consultor-kyrub";
-import handleKyrubiaRouter from "./api/kyrubia-router";
-import handleKyrubiaCatalogAnalysis from "./api/kyrubia-catalog-analysis";
 import { proxyPublicGoogleDriveImage } from "./server/driveMediaProxy";
 import {
   createNinetyNineFoodRouter,
@@ -130,22 +128,6 @@ app.use(
   "/api/actions",
   integrationRateLimiter,
   createKyrubActionExecutionRouter()
-);
-
-app.all(
-  "/api/kyrubia-router",
-  consultantRateLimiter,
-  async (request, response) => {
-    await handleKyrubiaRouter(request, response);
-  }
-);
-
-app.all(
-  "/api/kyrubia-catalog-analysis",
-  consultantRateLimiter,
-  async (request, response) => {
-    await handleKyrubiaCatalogAnalysis(request, response);
-  }
 );
 
 app.all(
