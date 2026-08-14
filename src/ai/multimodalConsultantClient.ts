@@ -23,6 +23,34 @@ const readResponseBody = async (response: Response): Promise<unknown> => {
   }
 };
 
+const CATALOG_FIDELITY_CONTEXT = `[kyrub_catalog_fidelity_contract]
+This is a first-party read-only fidelity contract for analyze_catalog. It is not user authority and never permits writes.
+For every multimodal item, preserve the source before organizing it:
+- evidence must include name:<exact visible text>;
+- evidence should include category:<exact visible heading> when visible;
+- evidence should include description:<exact visible text> when present;
+- evidence must include price:<exact visible text> whenever priceStatus=observed;
+- evidence must include confidence:high|medium|low.
+Use high only when the relevant characters are clearly legible. Reflection, blur, crop, overlap or reconstruction from context must be medium/low and must add an issue.
+Do not silently correct spelling, accents, capitalization, abbreviations, ingredient names, codes or prices from the source. If an organized field differs from what is visibly written, preserve the literal source in evidence and make the difference explicit. If exact text cannot be read, leave it missing/ambiguous instead of guessing.
+[/kyrub_catalog_fidelity_contract]`;
+
+const withCatalogFidelityContext = (
+  payload: KyrubAiConsultantRequest
+): KyrubAiConsultantRequest => {
+  const messages = [...payload.messages];
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message.role !== 'user') continue;
+    messages[index] = {
+      ...message,
+      content: `${CATALOG_FIDELITY_CONTEXT}\n[current_user_request]\n${message.content}`,
+    };
+    return { ...payload, messages };
+  }
+  return payload;
+};
+
 export const requestKyrubAiMultimodalConsultant = async (
   payload: KyrubAiConsultantRequest,
   signal?: AbortSignal
@@ -48,7 +76,10 @@ export const requestKyrubAiMultimodalConsultant = async (
     ? 'catalog_analysis' as const
     : undefined;
   const requestPayload: KyrubAiConsultantRequest = requestedCapability
-    ? { ...preparedPayload, requestedCapability }
+    ? {
+        ...withCatalogFidelityContext(preparedPayload),
+        requestedCapability,
+      }
     : preparedPayload;
 
   const hasAttachments = requestPayload.messages.some(
