@@ -56,11 +56,30 @@ export interface AdminDirectoryLegacyTenant {
   status: string;
 }
 
+export interface AdminDirectoryAiUsageSummary {
+  state: 'available' | 'not_measured' | 'restricted' | 'unavailable';
+  partial: boolean;
+  calls: number | null;
+  totalTokens: number | null;
+  promptTokens: number | null;
+  outputTokens: number | null;
+  thinkingTokens: number | null;
+  estimatedCostMicrousd: number | null;
+  pricedCalls: number | null;
+  unpricedCalls: number | null;
+  lastModel: string;
+  lastProvider: string;
+  lastOperation: string;
+  lastRoute: string;
+  lastUsedAt: string;
+}
+
 export interface AdminDirectoryResult {
   lookup: AdminDirectoryLookup;
   user: AdminDirectoryUserRecord | null;
   stores: AdminDirectoryStoreLink[];
   legacyTenants: AdminDirectoryLegacyTenant[];
+  aiUsage: AdminDirectoryAiUsageSummary;
 }
 
 interface MembershipRecord {
@@ -71,8 +90,15 @@ interface MembershipRecord {
   status: string;
 }
 
+const AI_USAGE_SUMMARY_LIMIT = 500;
+
 const cleanString = (value: unknown): string =>
   typeof value === 'string' ? value.trim() : '';
+
+const finiteNonNegativeInteger = (value: unknown): number =>
+  typeof value === 'number' && Number.isFinite(value) && value >= 0
+    ? Math.trunc(value)
+    : 0;
 
 const timestampToIso = (value: unknown): string => {
   if (typeof value === 'string') return value;
@@ -81,6 +107,26 @@ const timestampToIso = (value: unknown): string => {
   }
   return '';
 };
+
+const emptyAiUsageSummary = (
+  state: AdminDirectoryAiUsageSummary['state']
+): AdminDirectoryAiUsageSummary => ({
+  state,
+  partial: false,
+  calls: null,
+  totalTokens: null,
+  promptTokens: null,
+  outputTokens: null,
+  thinkingTokens: null,
+  estimatedCostMicrousd: null,
+  pricedCalls: null,
+  unpricedCalls: null,
+  lastModel: '',
+  lastProvider: '',
+  lastOperation: '',
+  lastRoute: '',
+  lastUsedAt: '',
+});
 
 export const parseAdminDirectoryLookup = (
   rawValue: string
@@ -287,6 +333,84 @@ const loadLegacyTenants = async (
     .filter((tenant): tenant is AdminDirectoryLegacyTenant => Boolean(tenant));
 };
 
+const loadAiUsageSummary = async (
+  userId: string
+): Promise<AdminDirectoryAiUsageSummary> => {
+  try {
+    const snapshots = await getDocs(
+      query(
+        collection(db, 'kyrub_usage_events'),
+        where('uid', '==', userId),
+        limit(AI_USAGE_SUMMARY_LIMIT + 1)
+      )
+    );
+
+    if (snapshots.empty) return emptyAiUsageSummary('not_measured');
+
+    const partial = snapshots.size > AI_USAGE_SUMMARY_LIMIT;
+    const documents = snapshots.docs.slice(0, AI_USAGE_SUMMARY_LIMIT);
+    let promptTokens = 0;
+    let outputTokens = 0;
+    let thinkingTokens = 0;
+    let totalTokens = 0;
+    let estimatedCostMicrousd = 0;
+    let pricedCalls = 0;
+    let unpricedCalls = 0;
+    let lastModel = '';
+    let lastProvider = '';
+    let lastOperation = '';
+    let lastRoute = '';
+    let lastUsedAt = '';
+
+    documents.forEach(snapshot => {
+      const value = snapshot.data();
+      promptTokens += finiteNonNegativeInteger(value.promptTokenCount);
+      outputTokens += finiteNonNegativeInteger(value.candidatesTokenCount);
+      thinkingTokens += finiteNonNegativeInteger(value.thoughtsTokenCount);
+      totalTokens += finiteNonNegativeInteger(value.totalTokenCount);
+      pricedCalls += finiteNonNegativeInteger(value.pricedCallCount);
+      unpricedCalls += finiteNonNegativeInteger(value.unpricedCallCount);
+      if (
+        typeof value.estimatedCostMicrousd === 'number' &&
+        Number.isFinite(value.estimatedCostMicrousd) &&
+        value.estimatedCostMicrousd >= 0
+      ) {
+        estimatedCostMicrousd += Math.trunc(value.estimatedCostMicrousd);
+      }
+
+      const createdAt = timestampToIso(value.createdAt);
+      if (createdAt && createdAt >= lastUsedAt) {
+        lastUsedAt = createdAt;
+        lastModel = cleanString(value.model);
+        lastProvider = cleanString(value.provider);
+        lastOperation = cleanString(value.operation);
+        lastRoute = cleanString(value.route);
+      }
+    });
+
+    return {
+      state: 'available',
+      partial,
+      calls: documents.length,
+      totalTokens,
+      promptTokens,
+      outputTokens,
+      thinkingTokens,
+      estimatedCostMicrousd,
+      pricedCalls,
+      unpricedCalls,
+      lastModel,
+      lastProvider,
+      lastOperation,
+      lastRoute,
+      lastUsedAt,
+    };
+  } catch (error) {
+    console.warn('Administrative AI usage summary unavailable.', error);
+    return emptyAiUsageSummary('unavailable');
+  }
+};
+
 export const mergeAdminDirectoryStoreLinks = (
   owned: AdminDirectoryStoreLink[],
   memberships: AdminDirectoryStoreLink[]
@@ -323,7 +447,15 @@ export const lookupAdminDirectory = async (
 
   const user = await findUser(lookup);
   if (!user) {
-    return { lookup, user: null, stores: [], legacyTenants: [] };
+    return {
+      lookup,
+      user: null,
+      stores: [],
+      legacyTenants: [],
+      aiUsage: emptyAiUsageSummary(
+        hasAdminPermission(profile, 'read_finance') ? 'not_measured' : 'restricted'
+      ),
+    };
   }
 
   let stores: AdminDirectoryStoreLink[] = [];
@@ -339,9 +471,13 @@ export const lookupAdminDirectory = async (
     legacyTenants = tenants;
   }
 
+  const aiUsage = hasAdminPermission(profile, 'read_finance')
+    ? await loadAiUsageSummary(user.uid)
+    : emptyAiUsageSummary('restricted');
+
   void recordAdminDirectorySearch(authenticatedUser, profile, user.uid).catch(
     error => console.warn('Administrative directory audit unavailable.', error)
   );
 
-  return { lookup, user, stores, legacyTenants };
+  return { lookup, user, stores, legacyTenants, aiUsage };
 };

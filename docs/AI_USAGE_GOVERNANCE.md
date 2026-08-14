@@ -6,6 +6,76 @@ Kyrub não vende uma chave, uma conta ou uma quantidade bruta de tokens de terce
 
 A infraestrutura pode utilizar Gemini, OpenAI ou outros fornecedores no futuro, desde que o Kyrub preserve segurança, contexto, confirmação e qualidade.
 
+## #169 — Usage/Metering Engine
+
+A primeira implementação de metering deve ser independente de fornecedor e registrar somente metadados técnicos/contábeis necessários para entender custo e capacidade.
+
+O ledger V1 usa eventos imutáveis em `kyrub_usage_events`. Cada chamada generativa bem-sucedida pode gerar um evento próprio, inclusive quando um único pedido da Kyrubia exige uma segunda chamada após uma leitura do ERP.
+
+O identificador do evento deve ser determinístico por request + índice da chamada. Repetir a mesma gravação não pode duplicar consumo.
+
+O navegador não pode criar, editar nem apagar eventos de metering. A gravação pertence ao backend/Admin SDK. A leitura administrativa de custos fica restrita a papéis explicitamente autorizados no Control Plane.
+
+### Separação obrigatória
+
+Estes conceitos são diferentes e nunca devem ser fundidos no mesmo saldo:
+
+1. **Custo do fornecedor** — o que Gemini/OpenAI/outro fornecedor custa ao Kyrub.
+2. **Créditos Kyrubia** — unidade comercial do produto, definida pelo Kyrub.
+
+Medir custo do fornecedor não debita Créditos Kyrubia, não cria cobrança, não muda plano e não autoriza upgrade.
+
+### Dados registrados por chamada generativa
+
+- UID interno do usuário;
+- `requestId` e índice da chamada;
+- operação lógica;
+- fornecedor e modelo que efetivamente responderam;
+- rota principal/econômica/follow-up;
+- indicação de fallback;
+- tokens de entrada;
+- tokens de conteúdo em cache quando existirem;
+- tokens de saída;
+- tokens de pensamento;
+- tokens de uso de ferramenta quando fornecidos;
+- total de tokens;
+- decomposição por modalidade quando fornecida;
+- service tier quando fornecido;
+- snapshot de preço aplicável;
+- custo estimado em micro-USD;
+- timestamp server-side.
+
+Não registrar no ledger o prompt integral, resposta integral, bytes de imagem/PDF, transcrição ou conteúdo da conversa.
+
+### Fonte de verdade de tokens
+
+Para Gemini `generateContent`, usar o `usageMetadata` devolvido pelo próprio provedor. O contrato contempla `promptTokenCount`, `cachedContentTokenCount`, `candidatesTokenCount`, `toolUsePromptTokenCount`, `thoughtsTokenCount`, `totalTokenCount` e detalhes por modalidade quando disponíveis.
+
+Tokens de pensamento entram no lado de saída para cálculo de preço quando o modelo cobra pensamento como saída.
+
+### Snapshot de preço V1
+
+Preços verificados na documentação oficial Google AI for Developers em 13/08/2026 para o tier Standard usado pela rota atual:
+
+- `gemini-3.6-flash`: US$ 1,50 / 1M tokens de entrada e US$ 7,50 / 1M tokens de saída;
+- `gemini-3.5-flash-lite`: US$ 0,30 / 1M tokens de entrada e US$ 2,50 / 1M tokens de saída.
+
+O snapshot inclui data de vigência e valores utilizados. Se o modelo/tier não tiver preço conhecido, a chamada continua sendo medida em tokens, mas o custo fica `unpriced` em vez de ser inventado.
+
+Context caching possui preço próprio. Se aparecer `cachedContentTokenCount > 0` antes de termos uma tabela específica de cache, o custo deve ficar não precificado, preservando os tokens brutos para cálculo futuro.
+
+### Observabilidade administrativa
+
+O objetivo do Control Plane é permitir que o owner/financeiro enxergue, com fonte autoritativa:
+
+- chamadas generativas por usuário;
+- tokens por categoria;
+- custo estimado do fornecedor;
+- chamadas precificadas e não precificadas;
+- último fornecedor/modelo/operação quando houver índice de consulta apropriado.
+
+Storage e Firestore pertencem ao mesmo programa de metering, mas não devem aparecer como `0` antes de terem atribuição real por UID. Enquanto não instrumentados, a UI deve mostrar `medição pendente`/`não medido`.
+
 ## O que medir antes de definir planos
 
 Por solicitação:

@@ -131,6 +131,17 @@ beforeEach(async () => {
         plan: 'free',
         status: 'open',
       }),
+      setDoc(doc(firestore, 'kyrub_usage_events', 'usage-a'), {
+        schemaVersion: 1,
+        id: 'usage-a',
+        uid: 'target-user',
+        resource: 'ai',
+        provider: 'google-gemini',
+        model: 'gemini-test',
+        totalTokenCount: 123,
+        estimatedCostMicrousd: 45,
+        createdAt: Timestamp.fromMillis(1_700_000_000_000),
+      }),
     ]);
   });
 });
@@ -213,6 +224,47 @@ test('operations and compliance read store directory while finance is denied', a
         limit(100)
       )
     )
+  );
+});
+
+test('usage metering ledger is readable only by finance-oriented admin roles', async () => {
+  const finance = environment.authenticatedContext('finance-a').firestore();
+  const support = environment.authenticatedContext('support-a').firestore();
+  const operations = environment.authenticatedContext('operations-a').firestore();
+  const compliance = environment.authenticatedContext('compliance-a').firestore();
+  const user = environment.authenticatedContext('target-user').firestore();
+
+  await assertSucceeds(getDoc(doc(finance, 'kyrub_usage_events', 'usage-a')));
+  await assertSucceeds(
+    getDocs(
+      query(
+        collection(finance, 'kyrub_usage_events'),
+        where('uid', '==', 'target-user'),
+        limit(50)
+      )
+    )
+  );
+
+  await assertFails(getDoc(doc(support, 'kyrub_usage_events', 'usage-a')));
+  await assertFails(getDoc(doc(operations, 'kyrub_usage_events', 'usage-a')));
+  await assertFails(getDoc(doc(compliance, 'kyrub_usage_events', 'usage-a')));
+  await assertFails(getDoc(doc(user, 'kyrub_usage_events', 'usage-a')));
+});
+
+test('usage metering ledger cannot be forged or mutated from the browser', async () => {
+  const finance = environment.authenticatedContext('finance-a').firestore();
+
+  await assertFails(
+    setDoc(doc(finance, 'kyrub_usage_events', 'forged-usage'), {
+      uid: 'target-user',
+      totalTokenCount: 999999,
+      estimatedCostMicrousd: 1,
+    })
+  );
+  await assertFails(
+    updateDoc(doc(finance, 'kyrub_usage_events', 'usage-a'), {
+      estimatedCostMicrousd: 0,
+    })
   );
 });
 

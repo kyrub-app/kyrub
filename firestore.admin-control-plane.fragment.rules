@@ -39,6 +39,13 @@
       ]);
     }
 
+    function canReadUsageMetering() {
+      return hasControlPlaneRole([
+        'super_admin',
+        'finance'
+      ]);
+    }
+
     match /kyrub_admin/control_plane {
       allow read, write: if false;
 
@@ -99,6 +106,13 @@
           && hasValidClientAudit(request.resource.data);
         allow update, delete: if false;
       }
+    }
+
+    // Immutable provider-usage ledger. Runtime writes use the Admin SDK and
+    // bypass client rules; the browser can never forge, edit or delete usage.
+    match /kyrub_usage_events/{eventId} {
+      allow get, list: if canReadUsageMetering();
+      allow create, update, delete: if false;
     }
 
     // Read-only directory and aggregate access. Client code uses exact e-mail or
