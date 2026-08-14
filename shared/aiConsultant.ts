@@ -18,7 +18,7 @@ export type {
   KyrubiaTurnContext,
 } from './kyrubiaContext';
 
-export const KYRUB_AI_CONSULTANT_ENDPOINT = '/api/kyrubia';
+export const KYRUB_AI_CONSULTANT_ENDPOINT = '/api/kyrubia-router';
 export const KYRUB_AI_CATALOG_ANALYSIS_ENDPOINT = '/api/kyrubia-catalog-analysis';
 export const KYRUB_AI_CONSULTANT_COMPAT_ENDPOINT = '/api/consultor-kyrub';
 export const KYRUB_AI_CONSULTANT_LEGACY_ENDPOINT = '/api/ai/consultant';
