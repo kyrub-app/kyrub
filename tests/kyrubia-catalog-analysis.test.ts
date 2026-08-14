@@ -185,6 +185,7 @@ test('catalog analysis service is forced structured read-only output and metered
   assert.match(service, /allowedFunctionNames: \['present_catalog_analysis'\]/);
   assert.match(service, /operation: 'catalog_analysis'/);
   assert.match(service, /MAX_ANALYSIS_ITEMS = 60/);
+  assert.match(service, /controller\.abort\(\), 50_000/);
   assert.match(service, /actionsEnabled: false/);
   assert.match(service, /writesEnabled: false/);
   assert.match(service, /normalizeKyrubCatalogAnalysis/);
@@ -207,6 +208,7 @@ test('existing consultor function dispatches analysis and re-normalizes same-con
   assert.match(router, /client_context_untrusted/);
   assert.match(router, /Boolean\(analysisContext\)/);
   assert.match(router, /handleKyrubia/);
+  assert.match(router, /export const maxDuration = 60/);
   assert.match(contract, /catalogAnalysisContext\?: KyrubCatalogAnalysis/);
   assert.match(context, /loadKyrubiaCatalogAnalysis/);
   assert.match(context, /payload\.conversationId/);

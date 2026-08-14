@@ -584,7 +584,7 @@ export const handleKyrubiaCatalogAnalysis = async (
     const economyModel = process.env.GEMINI_ECONOMY_MODEL?.trim() || KYRUBIA_DEFAULT_ECONOMY_MODEL;
     const systemInstruction = analysisSystemInstruction(user, conversation.topic);
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 27_000);
+    const timeout = setTimeout(() => controller.abort(), 50_000);
     let generated: GeminiCallResult;
     try {
       generated = await callGeminiWithFallback(

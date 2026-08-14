@@ -151,7 +151,7 @@ const withCatalogAnalysisContext = (
   return { ...body, messages };
 };
 
-export const maxDuration = 30;
+export const maxDuration = 60;
 
 export default async function handler(
   request: VercelRequestLike,
