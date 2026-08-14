@@ -5,6 +5,7 @@ import {
 } from '../../shared/aiConsultant';
 import { auth } from '../utils/firebase';
 import { emitKyrubAiActionProposal } from './actionEvents';
+import { prepareKyrubAiCatalogAnalysisContext } from './catalogAnalysisContext';
 import { KyrubAiClientError } from './consultantClient';
 import { normalizeConsultantError } from './consultantError';
 
@@ -34,7 +35,12 @@ export const requestKyrubAiMultimodalConsultant = async (
     );
   }
 
-  const hasAttachments = payload.messages.some(
+  const requestPayload = prepareKyrubAiCatalogAnalysisContext(
+    payload,
+    typeof localStorage === 'undefined' ? undefined : localStorage,
+    currentUser.uid
+  );
+  const hasAttachments = requestPayload.messages.some(
     message => message.role === 'user' && (message.attachments?.length ?? 0) > 0
   );
   if (!hasAttachments) {
@@ -66,7 +72,7 @@ export const requestKyrubAiMultimodalConsultant = async (
         'content-type': 'application/json',
         accept: 'application/json',
       },
-      body: JSON.stringify(payload),
+      body: JSON.stringify(requestPayload),
       cache: 'no-store',
       credentials: 'same-origin',
       signal,
@@ -99,6 +105,6 @@ export const requestKyrubAiMultimodalConsultant = async (
   }
 
   const result = body as KyrubAiConsultantResponse;
-  emitKyrubAiActionProposal(payload.conversationId, result);
+  emitKyrubAiActionProposal(requestPayload.conversationId, result);
   return result;
 };
