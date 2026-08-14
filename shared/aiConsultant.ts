@@ -2,6 +2,7 @@ import type {
   KyrubActionProposal,
   KyrubReadActionType,
 } from './kyrubActions';
+import type { KyrubCatalogAnalysis } from './kyrubCatalogAnalysis';
 import type { KyrubErpContextSnapshot } from './kyrubErpContext';
 import type { KyrubiaTurnContext } from './kyrubiaContext';
 
@@ -9,6 +10,7 @@ export type {
   KyrubActionProposal as KyrubAiActionProposal,
   KyrubAiCreateNoteProposal,
 } from './kyrubActions';
+export type { KyrubCatalogAnalysis } from './kyrubCatalogAnalysis';
 export type { KyrubErpContextSnapshot } from './kyrubErpContext';
 export type {
   KyrubiaOfferedIntent,
@@ -17,6 +19,7 @@ export type {
 } from './kyrubiaContext';
 
 export const KYRUB_AI_CONSULTANT_ENDPOINT = '/api/kyrubia';
+export const KYRUB_AI_CATALOG_ANALYSIS_ENDPOINT = '/api/kyrubia-catalog-analysis';
 export const KYRUB_AI_CONSULTANT_COMPAT_ENDPOINT = '/api/consultor-kyrub';
 export const KYRUB_AI_CONSULTANT_LEGACY_ENDPOINT = '/api/ai/consultant';
 
@@ -62,6 +65,11 @@ export type KyrubAiConversationMessage = {
    * Bytes are never persisted in conversation localStorage.
    */
   attachments?: KyrubAiAttachmentRef[];
+  /**
+   * Read-only structured interpretation produced by analyze_catalog.
+   * It is conversational context, never mutation authority.
+   */
+  catalogAnalysis?: KyrubCatalogAnalysis;
 };
 
 export type KyrubAiHistoricalLink = {
@@ -95,6 +103,9 @@ export type KyrubAiConsultantCapabilities = {
   voiceEnabled: boolean;
   persistentCloudHistoryEnabled: boolean;
   multimodalAttachmentsEnabled?: boolean;
+  catalogAnalysisEnabled?: boolean;
+  providerResilienceEnabled?: boolean;
+  usageMeteringEnabled?: boolean;
 };
 
 export type KyrubAiConsultantResponse = {
@@ -104,6 +115,7 @@ export type KyrubAiConsultantResponse = {
   mode: 'conversation' | 'deterministic';
   requestId: string;
   actionProposal?: KyrubActionProposal;
+  catalogAnalysis?: KyrubCatalogAnalysis;
   turnContext?: KyrubiaTurnContext;
   historicalLink?: KyrubAiHistoricalLink;
   capabilities: KyrubAiConsultantCapabilities;
