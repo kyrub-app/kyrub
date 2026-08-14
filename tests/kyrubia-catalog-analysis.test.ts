@@ -198,6 +198,7 @@ test('existing consultor function dispatches analysis and re-normalizes same-con
   const context = readFileSync(new URL('../src/ai/catalogAnalysisContext.ts', import.meta.url), 'utf8');
   const continuation = readFileSync(new URL('../src/ai/opportunityContinuation.ts', import.meta.url), 'utf8');
   const multimodal = readFileSync(new URL('../src/ai/multimodalConsultantClient.ts', import.meta.url), 'utf8');
+  const workspace = readFileSync(new URL('../src/components/KyrubAiWorkspaceBridge.tsx', import.meta.url), 'utf8');
   const server = readFileSync(new URL('../server.ts', import.meta.url), 'utf8');
 
   assert.match(router, /shouldUseKyrubiaCatalogAnalysis/);
@@ -214,6 +215,8 @@ test('existing consultor function dispatches analysis and re-normalizes same-con
   assert.match(multimodal, /prepareKyrubAiCatalogAnalysisContext/);
   assert.match(multimodal, /JSON\.stringify\(requestPayload\)/);
   assert.doesNotMatch(multimodal, /JSON\.stringify\(payload\)/);
+  assert.match(workspace, /retryLastRequest/);
+  assert.match(workspace, /requestReply\(activeConversation, activeConversation\.messages\)/);
   assert.match(contract, /KYRUB_AI_CONSULTANT_ENDPOINT = '\/api\/consultor-kyrub'/);
   assert.match(contract, /KYRUB_AI_CONSULTANT_COMPAT_ENDPOINT = '\/api\/kyrubia'/);
   assert.match(server, /"\/api\/consultor-kyrub"/);
