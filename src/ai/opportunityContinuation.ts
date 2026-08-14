@@ -2,6 +2,8 @@ import type {
   KyrubAiConsultantRequest,
   KyrubAiConversationMessage,
 } from '../../shared/aiConsultant';
+import { auth } from '../utils/firebase';
+import { loadKyrubiaCatalogAnalysis } from './catalogAnalysisStore';
 
 const OPPORTUNITY_OFFER_PATTERN =
   /(?:caminhos? pr[aá]ticos?|desenvolvimento|renda|comercializ|neg[oó]cio|oportunidad|monetiz|explor(?:ar|asse|e)|aprofundar|possibilidades|mais simples ao mais estrutural)/i;
@@ -26,6 +28,23 @@ const opportunityAssistantMessage = (
   return null;
 };
 
+const withCatalogAnalysisContext = (
+  payload: KyrubAiConsultantRequest
+): KyrubAiConsultantRequest => {
+  if (payload.catalogAnalysisContext) return payload;
+  if (typeof localStorage === 'undefined') return payload;
+  const uid = auth.currentUser?.uid ?? '';
+  if (!uid) return payload;
+  const analysis = loadKyrubiaCatalogAnalysis(
+    localStorage,
+    uid,
+    payload.conversationId
+  );
+  return analysis
+    ? { ...payload, catalogAnalysisContext: analysis }
+    : payload;
+};
+
 export const isKyrubAiOpportunityContinuation = (
   payload: KyrubAiConsultantRequest
 ): boolean => {
@@ -39,18 +58,21 @@ export const isKyrubAiOpportunityContinuation = (
 export const prepareKyrubAiOpportunityContinuation = (
   payload: KyrubAiConsultantRequest
 ): KyrubAiConsultantRequest => {
-  if (!isKyrubAiOpportunityContinuation(payload)) return payload;
+  const contextualPayload = withCatalogAnalysisContext(payload);
+  if (!isKyrubAiOpportunityContinuation(contextualPayload)) {
+    return contextualPayload;
+  }
 
-  const previousAssistant = opportunityAssistantMessage(payload.messages);
-  const latest = payload.messages.at(-1);
-  if (!previousAssistant || !latest) return payload;
+  const previousAssistant = opportunityAssistantMessage(contextualPayload.messages);
+  const latest = contextualPayload.messages.at(-1);
+  if (!previousAssistant || !latest) return contextualPayload;
 
   const continuationInstruction =
     'O usuário aceitou a pergunta de expansão feita pela Kyrubia. Responda em texto, explorando agora caminhos práticos, pessoais, profissionais ou de renda em camadas, do mais simples ao mais estrutural. Não prepare, recrie nem proponha nota ou checklist nesta resposta e não repita a resposta anterior.';
 
   return {
-    ...payload,
-    screenContext: [payload.screenContext, continuationInstruction]
+    ...contextualPayload,
+    screenContext: [contextualPayload.screenContext, continuationInstruction]
       .filter(Boolean)
       .join(' '),
     messages: [
@@ -58,7 +80,7 @@ export const prepareKyrubAiOpportunityContinuation = (
       {
         ...latest,
         content:
-          `Sim. Estou aceitando sua pergunta para explorar as possibilidades relacionadas ao assunto “${payload.topic}”. ` +
+          `Sim. Estou aceitando sua pergunta para explorar as possibilidades relacionadas ao assunto “${contextualPayload.topic}”. ` +
           'Continue a partir do contexto da sua resposta anterior, apresente os caminhos em camadas e não crie novamente a nota ou o checklist.',
       },
     ],

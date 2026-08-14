@@ -2,6 +2,7 @@ import type {
   KyrubActionProposal,
   KyrubReadActionType,
 } from './kyrubActions';
+import type { KyrubCatalogAnalysis } from './kyrubCatalogAnalysis';
 import type { KyrubErpContextSnapshot } from './kyrubErpContext';
 import type { KyrubiaTurnContext } from './kyrubiaContext';
 
@@ -9,6 +10,7 @@ export type {
   KyrubActionProposal as KyrubAiActionProposal,
   KyrubAiCreateNoteProposal,
 } from './kyrubActions';
+export type { KyrubCatalogAnalysis } from './kyrubCatalogAnalysis';
 export type { KyrubErpContextSnapshot } from './kyrubErpContext';
 export type {
   KyrubiaOfferedIntent,
@@ -16,8 +18,9 @@ export type {
   KyrubiaTurnContext,
 } from './kyrubiaContext';
 
-export const KYRUB_AI_CONSULTANT_ENDPOINT = '/api/kyrubia';
-export const KYRUB_AI_CONSULTANT_COMPAT_ENDPOINT = '/api/consultor-kyrub';
+export const KYRUB_AI_CONSULTANT_ENDPOINT = '/api/consultor-kyrub';
+export const KYRUB_AI_CATALOG_ANALYSIS_ENDPOINT = '/api/consultor-kyrub';
+export const KYRUB_AI_CONSULTANT_COMPAT_ENDPOINT = '/api/kyrubia';
 export const KYRUB_AI_CONSULTANT_LEGACY_ENDPOINT = '/api/ai/consultant';
 
 export const KYRUB_AI_LIMITS = {
@@ -62,6 +65,11 @@ export type KyrubAiConversationMessage = {
    * Bytes are never persisted in conversation localStorage.
    */
   attachments?: KyrubAiAttachmentRef[];
+  /**
+   * Read-only structured interpretation produced by analyze_catalog.
+   * It is conversational context, never mutation authority.
+   */
+  catalogAnalysis?: KyrubCatalogAnalysis;
 };
 
 export type KyrubAiHistoricalLink = {
@@ -81,6 +89,12 @@ export type KyrubAiConsultantRequest = {
   erpContext?: KyrubErpContextSnapshot;
   turnContext?: KyrubiaTurnContext;
   /**
+   * Latest structured catalog analysis rehydrated only for the authenticated
+   * UID + current conversation. The server treats it as untrusted context,
+   * never as authorization, receipt or proof of a write.
+   */
+  catalogAnalysisContext?: KyrubCatalogAnalysis;
+  /**
    * ID of a structured option displayed by Kyrub. Selecting it expresses
    * conversational intent only and never grants mutation authority.
    */
@@ -95,6 +109,9 @@ export type KyrubAiConsultantCapabilities = {
   voiceEnabled: boolean;
   persistentCloudHistoryEnabled: boolean;
   multimodalAttachmentsEnabled?: boolean;
+  catalogAnalysisEnabled?: boolean;
+  providerResilienceEnabled?: boolean;
+  usageMeteringEnabled?: boolean;
 };
 
 export type KyrubAiConsultantResponse = {
@@ -104,6 +121,7 @@ export type KyrubAiConsultantResponse = {
   mode: 'conversation' | 'deterministic';
   requestId: string;
   actionProposal?: KyrubActionProposal;
+  catalogAnalysis?: KyrubCatalogAnalysis;
   turnContext?: KyrubiaTurnContext;
   historicalLink?: KyrubAiHistoricalLink;
   capabilities: KyrubAiConsultantCapabilities;

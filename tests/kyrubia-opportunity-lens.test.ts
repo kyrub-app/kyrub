@@ -38,7 +38,8 @@ test('Kyrubia is the named AI persona and uses a restrained opportunity lens', (
   const appSource = readFileSync('src/App.tsx', 'utf8');
   const constitution = readFileSync('docs/KYRUBIA.md', 'utf8');
 
-  assert.match(sharedSource, /KYRUB_AI_CONSULTANT_ENDPOINT = '\/api\/kyrubia'/);
+  assert.match(sharedSource, /KYRUB_AI_CONSULTANT_ENDPOINT = '\/api\/consultor-kyrub'/);
+  assert.match(sharedSource, /KYRUB_AI_CONSULTANT_COMPAT_ENDPOINT = '\/api\/kyrubia'/);
   assert.match(sharedSource, /KYRUB_AI_CONSULTANT_LEGACY_ENDPOINT = '\/api\/ai\/consultant'/);
   assert.match(routeSource, /Você é Kyrubia, a inteligência artificial de Kyrub/);
   assert.match(routeSource, /Resolva primeiro o pedido real do usuário/);
