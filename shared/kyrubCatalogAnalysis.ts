@@ -5,6 +5,14 @@ export type KyrubCatalogAnalysisItemKind = 'product' | 'service' | 'unknown';
 export type KyrubCatalogObservedFieldStatus = 'observed' | 'ambiguous' | 'missing';
 export type KyrubCatalogAnalysisSourceKind = 'text' | 'multimodal';
 
+export type KyrubCatalogObservedEvidence = {
+  nameText: string;
+  categoryText: string;
+  descriptionText: string;
+  priceText: string;
+  confidence: KyrubCatalogAnalysisConfidence;
+};
+
 export type KyrubCatalogAnalysisItem = {
   ref: string;
   kind: KyrubCatalogAnalysisItemKind;
@@ -18,6 +26,7 @@ export type KyrubCatalogAnalysisItem = {
   variations: string[];
   addOns: string[];
   evidence: string[];
+  observed: KyrubCatalogObservedEvidence;
   issues: string[];
 };
 
@@ -74,9 +83,19 @@ const itemKind = (value: unknown): KyrubCatalogAnalysisItemKind =>
 const confidence = (value: unknown): KyrubCatalogAnalysisConfidence =>
   value === 'high' || value === 'medium' ? value : 'low';
 
+const evidenceValue = (evidence: string[], key: string, maximum: number): string => {
+  const prefix = `${key.toLowerCase()}:`;
+  const match = evidence.find(item => item.toLowerCase().startsWith(prefix));
+  return match ? cleanText(match.slice(prefix.length), maximum) : '';
+};
+
+const evidenceConfidence = (evidence: string[]): KyrubCatalogAnalysisConfidence =>
+  confidence(evidenceValue(evidence, 'confidence', 16).toLowerCase());
+
 const normalizeItem = (
   value: unknown,
-  index: number
+  index: number,
+  sourceKind: KyrubCatalogAnalysisSourceKind
 ): KyrubCatalogAnalysisItem | null => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   const candidate = value as Record<string, unknown>;
@@ -89,6 +108,33 @@ const normalizeItem = (
   const observedStock = stockStatus === 'observed'
     ? cleanNonNegativeInteger(candidate.stock)
     : null;
+  const evidence = cleanStringList(candidate.evidence, 12, 240);
+  const observed: KyrubCatalogObservedEvidence = sourceKind === 'multimodal'
+    ? {
+        nameText: evidenceValue(evidence, 'name', 180),
+        categoryText: evidenceValue(evidence, 'category', 120),
+        descriptionText: evidenceValue(evidence, 'description', 600),
+        priceText: evidenceValue(evidence, 'price', 80),
+        confidence: evidenceConfidence(evidence),
+      }
+    : {
+        nameText: name,
+        categoryText: cleanText(candidate.category, 120),
+        descriptionText: cleanText(candidate.description, 600),
+        priceText: observedPrice === null ? '' : String(observedPrice),
+        confidence: 'high',
+      };
+  const issues = cleanStringList(candidate.issues, 12, 180);
+
+  if (sourceKind === 'multimodal') {
+    if (!observed.nameText) issues.push('Nome sem transcrição-fonte verificável.');
+    if (priceStatus === 'observed' && !observed.priceText) {
+      issues.push('Preço marcado como observado sem transcrição-fonte verificável.');
+    }
+    if (observed.confidence !== 'high') {
+      issues.push('Leitura do material requer confirmação humana.');
+    }
+  }
 
   return {
     ref: cleanText(candidate.ref, 48) || `item-${index + 1}`,
@@ -106,8 +152,9 @@ const normalizeItem = (
       : stockStatus,
     variations: cleanStringList(candidate.variations, 20, 120),
     addOns: cleanStringList(candidate.addOns, 20, 120),
-    evidence: cleanStringList(candidate.evidence, 8, 180),
-    issues: cleanStringList(candidate.issues, 12, 180),
+    evidence,
+    observed,
+    issues: [...new Set(issues)].slice(0, 12),
   };
 };
 
@@ -126,7 +173,7 @@ export const normalizeKyrubCatalogAnalysis = (
   const candidate = value as Record<string, unknown>;
   const rawItems = Array.isArray(candidate.items) ? candidate.items : [];
   const normalizedItems = rawItems
-    .map((item, index) => normalizeItem(item, index))
+    .map((item, index) => normalizeItem(item, index, source.sourceKind))
     .filter((item): item is KyrubCatalogAnalysisItem => Boolean(item));
   const truncated = rawItems.length > KYRUB_CATALOG_ANALYSIS_MAX_ITEMS;
   const items = normalizedItems.slice(0, KYRUB_CATALOG_ANALYSIS_MAX_ITEMS);
@@ -158,6 +205,9 @@ export const normalizeKyrubCatalogAnalysis = (
   };
 };
 
+const money = (value: number): string =>
+  `R$ ${value.toFixed(2).replace('.', ',')}`;
+
 export const summarizeKyrubCatalogAnalysis = (
   analysis: KyrubCatalogAnalysis
 ): string => {
@@ -171,19 +221,27 @@ export const summarizeKyrubCatalogAnalysis = (
   if (analysis.categories.length > 0) {
     lines.push(`Categorias: ${analysis.categories.slice(0, 8).join(', ')}${analysis.categories.length > 8 ? '…' : ''}`);
   }
-  const preview = analysis.items.slice(0, 10).map(item => {
-    const name = item.name || item.ref;
-    const price = item.priceStatus === 'observed' && item.price !== null
-      ? `R$ ${item.price.toFixed(2).replace('.', ',')}`
-      : item.priceStatus === 'ambiguous'
-        ? 'preço ambíguo'
-        : 'preço não identificado';
-    return `• ${name} — ${price}${item.issues.length ? ` — revisar: ${item.issues[0]}` : ''}`;
-  });
-  if (preview.length > 0) lines.push('', ...preview);
-  if (analysis.items.length > preview.length) {
-    lines.push(`…e mais ${analysis.items.length - preview.length} item(ns) estruturado(s).`);
+
+  if (analysis.items.length > 0) {
+    lines.push('', 'Transcrição estruturada do material:');
+    for (const item of analysis.items) {
+      const observedName = item.observed.nameText || item.name || item.ref;
+      const price = item.observed.priceText || (
+        item.priceStatus === 'observed' && item.price !== null
+          ? money(item.price)
+          : item.priceStatus === 'ambiguous'
+            ? 'preço ambíguo'
+            : 'preço não identificado'
+      );
+      const organizedDiffers = Boolean(item.name && item.observed.nameText && item.name !== item.observed.nameText);
+      const review = item.issues.length ? ` — revisar: ${item.issues[0]}` : '';
+      lines.push(`• ${observedName} — ${price}${organizedDiffers ? ` — organizado como: ${item.name}` : ''}${review}`);
+      if (item.observed.descriptionText) {
+        lines.push(`  ↳ ${item.observed.descriptionText}`);
+      }
+    }
   }
+
   if (analysis.conflicts.length > 0) {
     lines.push('', `Conflitos: ${analysis.conflicts.slice(0, 3).join(' | ')}`);
   }
