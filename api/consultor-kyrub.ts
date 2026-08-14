@@ -78,6 +78,11 @@ const catalogAnalysisContext = (
   });
 };
 
+const hasMultimodalAttachment = (messages: KyrubAiConversationMessage[]): boolean =>
+  messages.some(
+    message => message.role === 'user' && (message.attachments?.length ?? 0) > 0
+  );
+
 const compactText = (value: string, maximum: number): string =>
   value.replace(/[|\r\n]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, maximum);
 
@@ -178,7 +183,26 @@ export default async function handler(
     const body = readBody(request.body);
     const messages = conversationMessages(body);
     const analysisContext = catalogAnalysisContext(body);
-    if (shouldUseKyrubiaCatalogAnalysis(messages, Boolean(analysisContext))) {
+    const semanticCatalogIntent = shouldUseKyrubiaCatalogAnalysis(
+      messages,
+      Boolean(analysisContext)
+    );
+    const requestedCatalogCapability = body.requestedCapability === 'catalog_analysis';
+    const safeCatalogHint = requestedCatalogCapability &&
+      (hasMultimodalAttachment(messages) || Boolean(analysisContext));
+    const routeToCatalogAnalysis = semanticCatalogIntent || safeCatalogHint;
+
+    if (requestedCatalogCapability) {
+      console.info('[Kyrubia] Catalog router decision.', {
+        semanticCatalogIntent,
+        safeCatalogHint,
+        hasCatalogAnalysisContext: Boolean(analysisContext),
+        hasMultimodalAttachment: hasMultimodalAttachment(messages),
+        routedToCatalogAnalysis: routeToCatalogAnalysis,
+      });
+    }
+
+    if (routeToCatalogAnalysis) {
       await handleKyrubiaCatalogAnalysis(
         analysisContext
           ? { ...request, body: withCatalogAnalysisContext(body, analysisContext) }
