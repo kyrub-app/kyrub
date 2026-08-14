@@ -41,9 +41,6 @@ jobs:
       - name: Validate Firestore community rules
         run: npm run test:rules
 
-      - name: Validate Storage community covers
-        run: npm run test:identity-security
-
       - name: Compose production rules
         run: npm run firestore:compose
 
@@ -69,20 +66,20 @@ jobs:
             exit 1
           fi
 
-      - name: Deploy Firestore and Storage rules
+      - name: Deploy Firestore rules
         shell: bash
         run: |
           set -euo pipefail
           if [ "$FIREBASE_AUTH_MODE" = 'token' ]; then
             npx --yes firebase-tools deploy \
-              --only firestore:rules,storage \
+              --only firestore:rules \
               --project kyrub-b8d0e \
               --config firebase.json \
               --non-interactive \
               --token "$FIREBASE_CI_TOKEN"
           else
             npx --yes firebase-tools deploy \
-              --only firestore:rules,storage \
+              --only firestore:rules \
               --project kyrub-b8d0e \
               --config firebase.json \
               --non-interactive
