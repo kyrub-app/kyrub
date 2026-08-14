@@ -207,14 +207,23 @@ test('existing consultor function dispatches analysis and re-normalizes same-con
   assert.match(router, /normalizeKyrubCatalogAnalysis/);
   assert.match(router, /client_context_untrusted/);
   assert.match(router, /Boolean\(analysisContext\)/);
+  assert.match(router, /requestedCatalogCapability/);
+  assert.match(router, /safeCatalogHint/);
+  assert.match(router, /hasMultimodalAttachment/);
+  assert.match(router, /routeToCatalogAnalysis/);
+  assert.match(router, /Catalog router decision/);
   assert.match(router, /handleKyrubia/);
   assert.match(router, /export const maxDuration = 60/);
+  assert.match(contract, /requestedCapability\?: KyrubAiRequestedCapability/);
+  assert.match(contract, /Non-authoritative routing hint/);
   assert.match(contract, /catalogAnalysisContext\?: KyrubCatalogAnalysis/);
   assert.match(context, /loadKyrubiaCatalogAnalysis/);
   assert.match(context, /payload\.conversationId/);
   assert.match(context, /uid/);
   assert.match(continuation, /prepareKyrubAiCatalogAnalysisContext/);
   assert.match(multimodal, /prepareKyrubAiCatalogAnalysisContext/);
+  assert.match(multimodal, /shouldUseKyrubiaCatalogAnalysis/);
+  assert.match(multimodal, /requestedCapability/);
   assert.match(multimodal, /JSON\.stringify\(requestPayload\)/);
   assert.doesNotMatch(multimodal, /JSON\.stringify\(payload\)/);
   assert.match(workspace, /retryLastRequest/);
@@ -224,6 +233,22 @@ test('existing consultor function dispatches analysis and re-normalizes same-con
   assert.match(server, /"\/api\/consultor-kyrub"/);
   assert.doesNotMatch(server, /"\/api\/kyrubia-router"/);
   assert.doesNotMatch(server, /"\/api\/kyrubia-catalog-analysis"/);
+});
+
+test('multimodal retry carries only a read-only catalog routing hint and cannot grant mutation authority', () => {
+  const contract = readFileSync(new URL('../shared/aiConsultant.ts', import.meta.url), 'utf8');
+  const multimodal = readFileSync(new URL('../src/ai/multimodalConsultantClient.ts', import.meta.url), 'utf8');
+  const router = readFileSync(new URL('../api/consultor-kyrub.ts', import.meta.url), 'utf8');
+  const workspace = readFileSync(new URL('../src/components/KyrubAiWorkspaceBridge.tsx', import.meta.url), 'utf8');
+
+  assert.match(workspace, /retryLastRequest/);
+  assert.match(workspace, /requestReply\(activeConversation, activeConversation\.messages\)/);
+  assert.match(multimodal, /requestedCapability/);
+  assert.match(multimodal, /'catalog_analysis'/);
+  assert.match(router, /requestedCapability === 'catalog_analysis'/);
+  assert.match(router, /hasMultimodalAttachment\(messages\) \|\| Boolean\(analysisContext\)/);
+  assert.match(contract, /never treat it\s*\n\s*\* as confirmation, mutation authority, receipt or proof of a write/);
+  assert.doesNotMatch(multimodal, /actionExecution|confirmedAt|receipt|writesPerformed\s*:\s*true/);
 });
 
 test('latest catalog analysis context stays local and explicitly non-authoritative', () => {
