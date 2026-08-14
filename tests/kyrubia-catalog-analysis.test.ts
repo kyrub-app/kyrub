@@ -44,7 +44,7 @@ test('catalog analysis context hydration is scoped to the same UID and conversat
   const storage = {
     getItem: (key: string) => values.get(key) ?? null,
     setItem: (key: string, value: string) => void values.set(key, value),
-    removeItem: (key: string) => void values.delete(key),
+    removeItem: (key: string, value?: string) => void values.delete(key),
   } as unknown as Storage;
   const analysis = normalizeKyrubCatalogAnalysis({
     summary: 'Catálogo de teste.',
@@ -59,6 +59,7 @@ test('catalog analysis context hydration is scoped to the same UID and conversat
       price: 12.5,
       priceStatus: 'observed',
       stockStatus: 'missing',
+      evidence: ['name:Suco', 'category:Bebidas', 'price:R$ 12,50', 'confidence:high'],
       issues: [],
     }],
     conflicts: [],
@@ -75,6 +76,7 @@ test('catalog analysis context hydration is scoped to the same UID and conversat
   };
   const hydrated = prepareKyrubAiCatalogAnalysisContext(payload, storage, 'uid-a');
   assert.equal(hydrated.catalogAnalysisContext?.items[0]?.name, 'Suco');
+  assert.equal(hydrated.catalogAnalysisContext?.items[0]?.observed.nameText, 'Suco');
   assert.equal(
     prepareKyrubAiCatalogAnalysisContext(payload, storage, 'uid-b').catalogAnalysisContext,
     undefined
@@ -105,6 +107,13 @@ test('catalog normalizer keeps only explicitly observed values and aligns draft 
         priceStatus: 'observed',
         stock: 8,
         stockStatus: 'observed',
+        evidence: [
+          'name:Suco',
+          'category:Bebidas',
+          'description:Suco integral',
+          'price:R$ 12,50',
+          'confidence:high',
+        ],
         issues: [],
       },
       {
@@ -116,6 +125,7 @@ test('catalog normalizer keeps only explicitly observed values and aligns draft 
         priceStatus: 'missing',
         stock: 999,
         stockStatus: 'ambiguous',
+        evidence: ['name:Bolo', 'category:Doces', 'confidence:medium'],
         issues: ['Preço não legível'],
       },
     ],
@@ -130,11 +140,44 @@ test('catalog normalizer keeps only explicitly observed values and aligns draft 
   assert.equal(analysis.publicationStatus, 'analysis_only');
   assert.equal(analysis.items[0].price, 12.5);
   assert.equal(analysis.items[0].stock, 8);
+  assert.equal(analysis.items[0].observed.priceText, 'R$ 12,50');
+  assert.equal(analysis.items[0].observed.confidence, 'high');
   assert.equal(analysis.items[1].price, null);
   assert.equal(analysis.items[1].stock, null);
   assert.equal(analysis.readyForDraftCount, 1);
   assert.equal(analysis.needsReviewCount, 1);
+  assert.match(summarizeKyrubCatalogAnalysis(analysis), /Transcrição estruturada do material/i);
+  assert.match(summarizeKyrubCatalogAnalysis(analysis), /Suco — R\$ 12,50/i);
   assert.match(summarizeKyrubCatalogAnalysis(analysis), /Nenhum produto, rascunho ou publicação foi criado/i);
+});
+
+test('multimodal item without source evidence can never be ready for draft', () => {
+  const analysis = normalizeKyrubCatalogAnalysis({
+    items: [{
+      ref: 'item-1', kind: 'product', name: 'X-Burger', category: 'Burgers',
+      price: 29.5, priceStatus: 'observed', stockStatus: 'missing', evidence: [], issues: [],
+    }],
+  }, { sourceKind: 'multimodal', attachmentCount: 1 });
+  assert.ok(analysis);
+  assert.equal(analysis.readyForDraftCount, 0);
+  assert.equal(analysis.needsReviewCount, 1);
+  assert.match(analysis.items[0].issues.join(' '), /transcrição-fonte/i);
+});
+
+test('medium-confidence multimodal reading remains explicit review even with name and price evidence', () => {
+  const analysis = normalizeKyrubCatalogAnalysis({
+    items: [{
+      ref: 'item-1', kind: 'product', name: 'X-Burger', category: 'Burgers',
+      price: 29.5, priceStatus: 'observed', stockStatus: 'missing',
+      evidence: ['name:002 X-BURGER', 'category:BURGERS ARTESANAIS', 'price:29,50', 'confidence:medium'],
+      issues: [],
+    }],
+  }, { sourceKind: 'multimodal', attachmentCount: 1 });
+  assert.ok(analysis);
+  assert.equal(analysis.items[0].observed.nameText, '002 X-BURGER');
+  assert.equal(analysis.readyForDraftCount, 0);
+  assert.equal(analysis.needsReviewCount, 1);
+  assert.match(analysis.items[0].issues.join(' '), /confirmação humana/i);
 });
 
 test('missing category needs review while service does not require stock for draft readiness', () => {
@@ -224,6 +267,9 @@ test('existing consultor function dispatches analysis and re-normalizes same-con
   assert.match(multimodal, /prepareKyrubAiCatalogAnalysisContext/);
   assert.match(multimodal, /shouldUseKyrubiaCatalogAnalysis/);
   assert.match(multimodal, /requestedCapability/);
+  assert.match(multimodal, /CATALOG_FIDELITY_CONTEXT/);
+  assert.match(multimodal, /name:<exact visible text>/);
+  assert.match(multimodal, /confidence:high\|medium\|low/);
   assert.match(multimodal, /JSON\.stringify\(requestPayload\)/);
   assert.doesNotMatch(multimodal, /JSON\.stringify\(payload\)/);
   assert.match(workspace, /retryLastRequest/);
