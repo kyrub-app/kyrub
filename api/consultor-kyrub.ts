@@ -17,6 +17,19 @@ type VercelResponseLike = {
   json(body: unknown): void;
 };
 
+/**
+ * Compatibility description for the historical /api/consultor-kyrub route.
+ * The actual create_note behavior lives in the canonical Kyrubia route; this
+ * descriptor keeps the public capability contract visible without duplicating
+ * provider or write logic here.
+ */
+const CONSULTOR_KYRUB_COMPATIBILITY = {
+  service: 'consultor-kyrub',
+  functionDeclarations: [
+    { name: 'create_note' },
+  ],
+} as const;
+
 const readBody = (value: unknown): Record<string, unknown> => {
   if (value && typeof value === 'object') return value as Record<string, unknown>;
   if (typeof value !== 'string') return {};
@@ -53,6 +66,23 @@ export default async function handler(
   request: VercelRequestLike,
   response: VercelResponseLike
 ): Promise<void> {
+  response.setHeader('cache-control', 'no-store');
+
+  if (request.method === 'GET') {
+    response.status(200).json({
+      status: 'ok',
+      service: CONSULTOR_KYRUB_COMPATIBILITY.service,
+      persona: 'Kyrubia',
+      actionsEnabled: true,
+      enabledActions: CONSULTOR_KYRUB_COMPATIBILITY.functionDeclarations.map(
+        declaration => declaration.name
+      ),
+      catalogAnalysisEnabled: true,
+      routerEnabled: true,
+    });
+    return;
+  }
+
   if (request.method === 'POST') {
     const messages = conversationMessages(readBody(request.body));
     if (shouldUseKyrubiaCatalogAnalysis(messages)) {
