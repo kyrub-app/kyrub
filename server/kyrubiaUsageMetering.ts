@@ -66,6 +66,10 @@ export const recordKyrubiaAiUsage = async (
   const callIndex = Number.isSafeInteger(input.callIndex) && input.callIndex > 0
     ? input.callIndex
     : 1;
+  const effectiveRoute: KyrubiaAiUsageRoute =
+    input.fallbackUsed === true && input.route === 'primary'
+      ? 'economy'
+      : input.route;
   const baseCost = estimateGeminiUsageCost(model, usage);
   const hasSeparateToolUse = usage.toolUsePromptTokenCount > 0;
   const cost = hasSeparateToolUse
@@ -89,7 +93,7 @@ export const recordKyrubiaAiUsage = async (
       callIndex,
       operation: input.operation,
       model,
-      route: input.route,
+      route: effectiveRoute,
       fallbackUsed: input.fallbackUsed === true,
       promptTokenCount: usage.promptTokenCount,
       cachedContentTokenCount: usage.cachedContentTokenCount,

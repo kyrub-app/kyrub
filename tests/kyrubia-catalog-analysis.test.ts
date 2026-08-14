@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import {
+  KYRUB_CATALOG_ANALYSIS_MAX_ITEMS,
   normalizeKyrubCatalogAnalysis,
   summarizeKyrubCatalogAnalysis,
 } from '../shared/kyrubCatalogAnalysis';
@@ -10,7 +11,7 @@ import {
   shouldUseKyrubiaCatalogAnalysis,
 } from '../shared/kyrubiaCatalogAnalysisIntent';
 
-test('catalog analysis intent is explicit and does not hijack ordinary image questions', () => {
+test('catalog analysis intent is explicit and contextual follow-up requires stored analysis', () => {
   assert.equal(
     isKyrubiaCatalogAnalysisText('Analise este catálogo e organize os produtos.'),
     true
@@ -29,9 +30,14 @@ test('catalog analysis intent is explicit and does not hijack ordinary image que
     ]),
     true
   );
+  const followup = [
+    { role: 'user' as const, content: 'Dessa lista, quais são os três primeiros e quais precisam de revisão?' },
+  ];
+  assert.equal(shouldUseKyrubiaCatalogAnalysis(followup), false);
+  assert.equal(shouldUseKyrubiaCatalogAnalysis(followup, true), true);
 });
 
-test('catalog normalizer keeps only explicitly observed price and stock values', () => {
+test('catalog normalizer keeps only explicitly observed values and aligns draft readiness', () => {
   const analysis = normalizeKyrubCatalogAnalysis({
     summary: 'Tabela de produtos.',
     segment: 'Mercearia',
@@ -42,6 +48,7 @@ test('catalog normalizer keeps only explicitly observed price and stock values',
         ref: 'item-1',
         kind: 'product',
         name: 'Suco',
+        category: 'Bebidas',
         price: 12.5,
         priceStatus: 'observed',
         stock: 8,
@@ -52,6 +59,7 @@ test('catalog normalizer keeps only explicitly observed price and stock values',
         ref: 'item-2',
         kind: 'product',
         name: 'Bolo',
+        category: 'Doces',
         price: 999,
         priceStatus: 'missing',
         stock: 999,
@@ -77,6 +85,44 @@ test('catalog normalizer keeps only explicitly observed price and stock values',
   assert.match(summarizeKyrubCatalogAnalysis(analysis), /Nenhum produto, rascunho ou publicação foi criado/i);
 });
 
+test('missing category needs review while service does not require stock for draft readiness', () => {
+  const analysis = normalizeKyrubCatalogAnalysis({
+    items: [
+      {
+        ref: 'item-1', kind: 'product', name: 'Produto sem categoria',
+        category: '', price: 10, priceStatus: 'observed', stockStatus: 'missing', issues: [],
+      },
+      {
+        ref: 'item-2', kind: 'service', name: 'Corte',
+        category: 'Serviços', price: 35, priceStatus: 'observed', stockStatus: 'missing', issues: [],
+      },
+    ],
+  }, { sourceKind: 'text', attachmentCount: 0 });
+  assert.ok(analysis);
+  assert.equal(analysis.readyForDraftCount, 1);
+  assert.equal(analysis.needsReviewCount, 1);
+});
+
+test('catalog normalizer enforces the server-facing 60 item hard cap and deterministic warning', () => {
+  const items = Array.from({ length: KYRUB_CATALOG_ANALYSIS_MAX_ITEMS + 1 }, (_, index) => ({
+    ref: `item-${index + 1}`,
+    kind: 'product',
+    name: `Produto ${index + 1}`,
+    category: 'Teste',
+    price: index + 1,
+    priceStatus: 'observed',
+    stockStatus: 'missing',
+    issues: [],
+  }));
+  const analysis = normalizeKyrubCatalogAnalysis({ items, warnings: [] }, {
+    sourceKind: 'text',
+    attachmentCount: 0,
+  });
+  assert.ok(analysis);
+  assert.equal(analysis.items.length, KYRUB_CATALOG_ANALYSIS_MAX_ITEMS);
+  assert.match(analysis.warnings.at(-1) ?? '', /truncada.*60 itens/i);
+});
+
 test('catalog analysis service is forced structured read-only output and metered separately', () => {
   const service = readFileSync(
     new URL('../server/kyrubiaCatalogAnalysisRoute.ts', import.meta.url),
@@ -86,6 +132,7 @@ test('catalog analysis service is forced structured read-only output and metered
   assert.match(service, /mode: 'ANY'/);
   assert.match(service, /allowedFunctionNames: \['present_catalog_analysis'\]/);
   assert.match(service, /operation: 'catalog_analysis'/);
+  assert.match(service, /MAX_ANALYSIS_ITEMS = 60/);
   assert.match(service, /actionsEnabled: false/);
   assert.match(service, /writesEnabled: false/);
   assert.match(service, /normalizeKyrubCatalogAnalysis/);
@@ -93,14 +140,22 @@ test('catalog analysis service is forced structured read-only output and metered
   assert.doesNotMatch(service, /actionExecution|prepare_product_draft|create_product|publicProducts/);
 });
 
-test('existing consultor function dispatches analysis while canonical Kyrubia remains compatibility fallback', () => {
+test('existing consultor function dispatches analysis and re-normalizes same-conversation structured context', () => {
   const router = readFileSync(new URL('../api/consultor-kyrub.ts', import.meta.url), 'utf8');
   const contract = readFileSync(new URL('../shared/aiConsultant.ts', import.meta.url), 'utf8');
+  const continuation = readFileSync(new URL('../src/ai/opportunityContinuation.ts', import.meta.url), 'utf8');
   const server = readFileSync(new URL('../server.ts', import.meta.url), 'utf8');
 
   assert.match(router, /shouldUseKyrubiaCatalogAnalysis/);
   assert.match(router, /handleKyrubiaCatalogAnalysis/);
+  assert.match(router, /normalizeKyrubCatalogAnalysis/);
+  assert.match(router, /client_context_untrusted/);
+  assert.match(router, /Boolean\(analysisContext\)/);
   assert.match(router, /handleKyrubia/);
+  assert.match(contract, /catalogAnalysisContext\?: KyrubCatalogAnalysis/);
+  assert.match(continuation, /loadKyrubiaCatalogAnalysis/);
+  assert.match(continuation, /payload\.conversationId/);
+  assert.match(continuation, /catalogAnalysisContext/);
   assert.match(contract, /KYRUB_AI_CONSULTANT_ENDPOINT = '\/api\/consultor-kyrub'/);
   assert.match(contract, /KYRUB_AI_CONSULTANT_COMPAT_ENDPOINT = '\/api\/kyrubia'/);
   assert.match(server, /"\/api\/consultor-kyrub"/);
@@ -121,12 +176,14 @@ test('latest catalog analysis context stays local and explicitly non-authoritati
   assert.doesNotMatch(store, /firebase|firestore|actionExecution|receipt/i);
 });
 
-test('usage ledger accepts catalog_analysis without changing credit semantics', () => {
+test('usage ledger records economy route when a primary call finishes through fallback', () => {
   const metering = readFileSync(
     new URL('../server/kyrubiaUsageMetering.ts', import.meta.url),
     'utf8'
   );
   assert.match(metering, /\| 'catalog_analysis'/);
+  assert.match(metering, /input\.fallbackUsed === true && input\.route === 'primary'/);
+  assert.match(metering, /route: effectiveRoute/);
   assert.match(metering, /resource: 'ai'/);
   assert.doesNotMatch(metering, /credit|entitlement|plan/i);
 });

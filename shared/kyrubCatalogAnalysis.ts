@@ -1,3 +1,5 @@
+export const KYRUB_CATALOG_ANALYSIS_MAX_ITEMS = 60 as const;
+
 export type KyrubCatalogAnalysisConfidence = 'low' | 'medium' | 'high';
 export type KyrubCatalogAnalysisItemKind = 'product' | 'service' | 'unknown';
 export type KyrubCatalogObservedFieldStatus = 'observed' | 'ambiguous' | 'missing';
@@ -111,6 +113,7 @@ const normalizeItem = (
 
 const itemNeedsReview = (item: KyrubCatalogAnalysisItem): boolean =>
   !item.name ||
+  !item.category ||
   item.kind === 'unknown' ||
   item.priceStatus !== 'observed' ||
   item.issues.length > 0;
@@ -121,13 +124,19 @@ export const normalizeKyrubCatalogAnalysis = (
 ): KyrubCatalogAnalysis | null => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   const candidate = value as Record<string, unknown>;
-  const items = Array.isArray(candidate.items)
-    ? candidate.items
-        .map((item, index) => normalizeItem(item, index))
-        .filter((item): item is KyrubCatalogAnalysisItem => Boolean(item))
-        .slice(0, 120)
-    : [];
+  const rawItems = Array.isArray(candidate.items) ? candidate.items : [];
+  const normalizedItems = rawItems
+    .map((item, index) => normalizeItem(item, index))
+    .filter((item): item is KyrubCatalogAnalysisItem => Boolean(item));
+  const truncated = rawItems.length > KYRUB_CATALOG_ANALYSIS_MAX_ITEMS;
+  const items = normalizedItems.slice(0, KYRUB_CATALOG_ANALYSIS_MAX_ITEMS);
   const needsReviewCount = items.filter(itemNeedsReview).length;
+  const warnings = cleanStringList(candidate.warnings, truncated ? 29 : 30, 220);
+  if (truncated) {
+    warnings.push(
+      `A análise foi truncada pelo Kyrub ao limite de ${KYRUB_CATALOG_ANALYSIS_MAX_ITEMS} itens.`
+    );
+  }
 
   return {
     schemaVersion: 1,
@@ -140,7 +149,7 @@ export const normalizeKyrubCatalogAnalysis = (
     items,
     conflicts: cleanStringList(candidate.conflicts, 30, 220),
     duplicates: cleanStringList(candidate.duplicates, 30, 220),
-    warnings: cleanStringList(candidate.warnings, 30, 220),
+    warnings,
     readyForDraftCount: items.length - needsReviewCount,
     needsReviewCount,
     authoritative: false,

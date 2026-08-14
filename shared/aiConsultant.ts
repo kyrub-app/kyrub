@@ -89,6 +89,12 @@ export type KyrubAiConsultantRequest = {
   erpContext?: KyrubErpContextSnapshot;
   turnContext?: KyrubiaTurnContext;
   /**
+   * Latest structured catalog analysis rehydrated only for the authenticated
+   * UID + current conversation. The server treats it as untrusted context,
+   * never as authorization, receipt or proof of a write.
+   */
+  catalogAnalysisContext?: KyrubCatalogAnalysis;
+  /**
    * ID of a structured option displayed by Kyrub. Selecting it expresses
    * conversational intent only and never grants mutation authority.
    */
