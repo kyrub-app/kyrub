@@ -3,6 +3,7 @@ import {
   type KyrubAiConsultantRequest,
   type KyrubAiConsultantResponse,
 } from '../../shared/aiConsultant';
+import { shouldUseKyrubiaCatalogAnalysis } from '../../shared/kyrubiaCatalogAnalysisIntent';
 import { auth } from '../utils/firebase';
 import { emitKyrubAiActionProposal } from './actionEvents';
 import { prepareKyrubAiCatalogAnalysisContext } from './catalogAnalysisContext';
@@ -35,11 +36,21 @@ export const requestKyrubAiMultimodalConsultant = async (
     );
   }
 
-  const requestPayload = prepareKyrubAiCatalogAnalysisContext(
+  const preparedPayload = prepareKyrubAiCatalogAnalysisContext(
     payload,
     typeof localStorage === 'undefined' ? undefined : localStorage,
     currentUser.uid
   );
+  const requestedCapability = shouldUseKyrubiaCatalogAnalysis(
+    preparedPayload.messages,
+    Boolean(preparedPayload.catalogAnalysisContext)
+  )
+    ? 'catalog_analysis' as const
+    : undefined;
+  const requestPayload: KyrubAiConsultantRequest = requestedCapability
+    ? { ...preparedPayload, requestedCapability }
+    : preparedPayload;
+
   const hasAttachments = requestPayload.messages.some(
     message => message.role === 'user' && (message.attachments?.length ?? 0) > 0
   );
