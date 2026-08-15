@@ -78,6 +78,11 @@ const catalogAnalysisContext = (
   });
 };
 
+const hasMultimodalAttachment = (messages: KyrubAiConversationMessage[]): boolean =>
+  messages.some(
+    message => message.role === 'user' && (message.attachments?.length ?? 0) > 0
+  );
+
 const compactText = (value: string, maximum: number): string =>
   value.replace(/[|\r\n]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, maximum);
 
@@ -105,9 +110,12 @@ const describeCatalogAnalysisContext = (analysis: KyrubCatalogAnalysis): string 
       index + 1,
       compactText(item.ref, 14),
       kind,
-      compactText(item.name, 28) || '-',
+      `obs:${compactText(item.observed.nameText, 28) || '-'}`,
+      `norm:${compactText(item.name, 28) || '-'}`,
       compactText(item.category, 14) || '-',
       `p:${price}`,
+      `pt:${compactText(item.observed.priceText, 14) || '-'}`,
+      `c:${item.observed.confidence}`,
       `s:${stock}`,
       `r:${itemNeedsReview(item) ? 1 : 0}`,
       `i:${item.issues.length}`,
@@ -151,7 +159,17 @@ const withCatalogAnalysisContext = (
   return { ...body, messages };
 };
 
-export const maxDuration = 30;
+const withRequestBody = (
+  request: VercelRequestLike,
+  body: Record<string, unknown>
+): VercelRequestLike => ({
+  ...request,
+  method: request.method,
+  headers: request.headers,
+  body,
+});
+
+export const maxDuration = 60;
 
 export default async function handler(
   request: VercelRequestLike,
@@ -178,10 +196,29 @@ export default async function handler(
     const body = readBody(request.body);
     const messages = conversationMessages(body);
     const analysisContext = catalogAnalysisContext(body);
-    if (shouldUseKyrubiaCatalogAnalysis(messages, Boolean(analysisContext))) {
+    const semanticCatalogIntent = shouldUseKyrubiaCatalogAnalysis(
+      messages,
+      Boolean(analysisContext)
+    );
+    const requestedCatalogCapability = body.requestedCapability === 'catalog_analysis';
+    const safeCatalogHint = requestedCatalogCapability &&
+      (hasMultimodalAttachment(messages) || Boolean(analysisContext));
+    const routeToCatalogAnalysis = semanticCatalogIntent || safeCatalogHint;
+
+    if (requestedCatalogCapability) {
+      console.info('[Kyrubia] Catalog router decision.', {
+        semanticCatalogIntent,
+        safeCatalogHint,
+        hasCatalogAnalysisContext: Boolean(analysisContext),
+        hasMultimodalAttachment: hasMultimodalAttachment(messages),
+        routedToCatalogAnalysis: routeToCatalogAnalysis,
+      });
+    }
+
+    if (routeToCatalogAnalysis) {
       await handleKyrubiaCatalogAnalysis(
         analysisContext
-          ? { ...request, body: withCatalogAnalysisContext(body, analysisContext) }
+          ? withRequestBody(request, withCatalogAnalysisContext(body, analysisContext))
           : request,
         response
       );

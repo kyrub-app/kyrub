@@ -10,6 +10,8 @@ import {
   isKyrubiaCatalogAnalysisText,
   shouldUseKyrubiaCatalogAnalysis,
 } from '../shared/kyrubiaCatalogAnalysisIntent';
+import { prepareKyrubAiCatalogAnalysisContext } from '../src/ai/catalogAnalysisContext';
+import { saveKyrubiaCatalogAnalysis } from '../src/ai/catalogAnalysisStore';
 
 test('catalog analysis intent is explicit and contextual follow-up requires stored analysis', () => {
   assert.equal(
@@ -37,6 +39,58 @@ test('catalog analysis intent is explicit and contextual follow-up requires stor
   assert.equal(shouldUseKyrubiaCatalogAnalysis(followup, true), true);
 });
 
+test('catalog analysis context hydration is scoped to the same UID and conversation', () => {
+  const values = new Map<string, string>();
+  const storage = {
+    getItem: (key: string) => values.get(key) ?? null,
+    setItem: (key: string, value: string) => void values.set(key, value),
+    removeItem: (key: string, value?: string) => void values.delete(key),
+  } as unknown as Storage;
+  const analysis = normalizeKyrubCatalogAnalysis({
+    summary: 'Catálogo de teste.',
+    segment: 'Mercearia',
+    segmentConfidence: 'high',
+    categories: ['Bebidas'],
+    items: [{
+      ref: 'item-1',
+      kind: 'product',
+      name: 'Suco',
+      category: 'Bebidas',
+      price: 12.5,
+      priceStatus: 'observed',
+      stockStatus: 'missing',
+      evidence: ['name:Suco', 'category:Bebidas', 'price:R$ 12,50', 'confidence:high'],
+      issues: [],
+    }],
+    conflicts: [],
+    duplicates: [],
+    warnings: [],
+  }, { sourceKind: 'multimodal', attachmentCount: 1 });
+  assert.ok(analysis);
+  saveKyrubiaCatalogAnalysis(storage, 'uid-a', 'conv-a', analysis);
+
+  const payload = {
+    conversationId: 'conv-a',
+    topic: 'Catálogo',
+    messages: [{ role: 'user' as const, content: 'Dessa lista, quais são os primeiros?' }],
+  };
+  const hydrated = prepareKyrubAiCatalogAnalysisContext(payload, storage, 'uid-a');
+  assert.equal(hydrated.catalogAnalysisContext?.items[0]?.name, 'Suco');
+  assert.equal(hydrated.catalogAnalysisContext?.items[0]?.observed.nameText, 'Suco');
+  assert.equal(
+    prepareKyrubAiCatalogAnalysisContext(payload, storage, 'uid-b').catalogAnalysisContext,
+    undefined
+  );
+  assert.equal(
+    prepareKyrubAiCatalogAnalysisContext(
+      { ...payload, conversationId: 'conv-b' },
+      storage,
+      'uid-a'
+    ).catalogAnalysisContext,
+    undefined
+  );
+});
+
 test('catalog normalizer keeps only explicitly observed values and aligns draft readiness', () => {
   const analysis = normalizeKyrubCatalogAnalysis({
     summary: 'Tabela de produtos.',
@@ -53,6 +107,13 @@ test('catalog normalizer keeps only explicitly observed values and aligns draft 
         priceStatus: 'observed',
         stock: 8,
         stockStatus: 'observed',
+        evidence: [
+          'name:Suco',
+          'category:Bebidas',
+          'description:Suco integral',
+          'price:R$ 12,50',
+          'confidence:high',
+        ],
         issues: [],
       },
       {
@@ -64,6 +125,7 @@ test('catalog normalizer keeps only explicitly observed values and aligns draft 
         priceStatus: 'missing',
         stock: 999,
         stockStatus: 'ambiguous',
+        evidence: ['name:Bolo', 'category:Doces', 'confidence:medium'],
         issues: ['Preço não legível'],
       },
     ],
@@ -78,11 +140,44 @@ test('catalog normalizer keeps only explicitly observed values and aligns draft 
   assert.equal(analysis.publicationStatus, 'analysis_only');
   assert.equal(analysis.items[0].price, 12.5);
   assert.equal(analysis.items[0].stock, 8);
+  assert.equal(analysis.items[0].observed.priceText, 'R$ 12,50');
+  assert.equal(analysis.items[0].observed.confidence, 'high');
   assert.equal(analysis.items[1].price, null);
   assert.equal(analysis.items[1].stock, null);
   assert.equal(analysis.readyForDraftCount, 1);
   assert.equal(analysis.needsReviewCount, 1);
+  assert.match(summarizeKyrubCatalogAnalysis(analysis), /Transcrição estruturada do material/i);
+  assert.match(summarizeKyrubCatalogAnalysis(analysis), /Suco — R\$ 12,50/i);
   assert.match(summarizeKyrubCatalogAnalysis(analysis), /Nenhum produto, rascunho ou publicação foi criado/i);
+});
+
+test('multimodal item without source evidence can never be ready for draft', () => {
+  const analysis = normalizeKyrubCatalogAnalysis({
+    items: [{
+      ref: 'item-1', kind: 'product', name: 'X-Burger', category: 'Burgers',
+      price: 29.5, priceStatus: 'observed', stockStatus: 'missing', evidence: [], issues: [],
+    }],
+  }, { sourceKind: 'multimodal', attachmentCount: 1 });
+  assert.ok(analysis);
+  assert.equal(analysis.readyForDraftCount, 0);
+  assert.equal(analysis.needsReviewCount, 1);
+  assert.match(analysis.items[0].issues.join(' '), /transcrição-fonte/i);
+});
+
+test('medium-confidence multimodal reading remains explicit review even with name and price evidence', () => {
+  const analysis = normalizeKyrubCatalogAnalysis({
+    items: [{
+      ref: 'item-1', kind: 'product', name: 'X-Burger', category: 'Burgers',
+      price: 29.5, priceStatus: 'observed', stockStatus: 'missing',
+      evidence: ['name:002 X-BURGER', 'category:BURGERS ARTESANAIS', 'price:29,50', 'confidence:medium'],
+      issues: [],
+    }],
+  }, { sourceKind: 'multimodal', attachmentCount: 1 });
+  assert.ok(analysis);
+  assert.equal(analysis.items[0].observed.nameText, '002 X-BURGER');
+  assert.equal(analysis.readyForDraftCount, 0);
+  assert.equal(analysis.needsReviewCount, 1);
+  assert.match(analysis.items[0].issues.join(' '), /confirmação humana/i);
 });
 
 test('missing category needs review while service does not require stock for draft readiness', () => {
@@ -133,6 +228,7 @@ test('catalog analysis service is forced structured read-only output and metered
   assert.match(service, /allowedFunctionNames: \['present_catalog_analysis'\]/);
   assert.match(service, /operation: 'catalog_analysis'/);
   assert.match(service, /MAX_ANALYSIS_ITEMS = 60/);
+  assert.match(service, /controller\.abort\(\), 50_000/);
   assert.match(service, /actionsEnabled: false/);
   assert.match(service, /writesEnabled: false/);
   assert.match(service, /normalizeKyrubCatalogAnalysis/);
@@ -143,7 +239,10 @@ test('catalog analysis service is forced structured read-only output and metered
 test('existing consultor function dispatches analysis and re-normalizes same-conversation structured context', () => {
   const router = readFileSync(new URL('../api/consultor-kyrub.ts', import.meta.url), 'utf8');
   const contract = readFileSync(new URL('../shared/aiConsultant.ts', import.meta.url), 'utf8');
+  const context = readFileSync(new URL('../src/ai/catalogAnalysisContext.ts', import.meta.url), 'utf8');
   const continuation = readFileSync(new URL('../src/ai/opportunityContinuation.ts', import.meta.url), 'utf8');
+  const multimodal = readFileSync(new URL('../src/ai/multimodalConsultantClient.ts', import.meta.url), 'utf8');
+  const workspace = readFileSync(new URL('../src/components/KyrubAiWorkspaceBridge.tsx', import.meta.url), 'utf8');
   const server = readFileSync(new URL('../server.ts', import.meta.url), 'utf8');
 
   assert.match(router, /shouldUseKyrubiaCatalogAnalysis/);
@@ -151,16 +250,55 @@ test('existing consultor function dispatches analysis and re-normalizes same-con
   assert.match(router, /normalizeKyrubCatalogAnalysis/);
   assert.match(router, /client_context_untrusted/);
   assert.match(router, /Boolean\(analysisContext\)/);
+  assert.match(router, /requestedCatalogCapability/);
+  assert.match(router, /safeCatalogHint/);
+  assert.match(router, /hasMultimodalAttachment/);
+  assert.match(router, /routeToCatalogAnalysis/);
+  assert.match(router, /Catalog router decision/);
   assert.match(router, /handleKyrubia/);
+  assert.match(router, /export const maxDuration = 60/);
+  assert.match(contract, /requestedCapability\?: KyrubAiRequestedCapability/);
+  assert.match(contract, /Non-authoritative routing hint/);
   assert.match(contract, /catalogAnalysisContext\?: KyrubCatalogAnalysis/);
-  assert.match(continuation, /loadKyrubiaCatalogAnalysis/);
-  assert.match(continuation, /payload\.conversationId/);
-  assert.match(continuation, /catalogAnalysisContext/);
+  assert.match(context, /loadKyrubiaCatalogAnalysis/);
+  assert.match(context, /payload\.conversationId/);
+  assert.match(context, /uid/);
+  assert.match(continuation, /prepareKyrubAiCatalogAnalysisContext/);
+  assert.match(multimodal, /prepareKyrubAiCatalogAnalysisContext/);
+  assert.match(multimodal, /shouldUseKyrubiaCatalogAnalysis/);
+  assert.match(multimodal, /requestedCapability/);
+  assert.match(multimodal, /CATALOG_FIDELITY_CONTEXT/);
+  assert.match(multimodal, /code:<exact visible text>/);
+  assert.match(multimodal, /code_confidence:high\|medium\|low/);
+  assert.match(multimodal, /name:<exact visible name text>/);
+  assert.match(multimodal, /name_confidence:high\|medium\|low/);
+  assert.match(multimodal, /price_confidence:high\|medium\|low/);
+  assert.match(multimodal, /confidence:high\|medium\|low/);
+  assert.match(multimodal, /JSON\.stringify\(requestPayload\)/);
+  assert.doesNotMatch(multimodal, /JSON\.stringify\(payload\)/);
+  assert.match(workspace, /retryLastRequest/);
+  assert.match(workspace, /requestReply\(activeConversation, activeConversation\.messages\)/);
   assert.match(contract, /KYRUB_AI_CONSULTANT_ENDPOINT = '\/api\/consultor-kyrub'/);
   assert.match(contract, /KYRUB_AI_CONSULTANT_COMPAT_ENDPOINT = '\/api\/kyrubia'/);
   assert.match(server, /"\/api\/consultor-kyrub"/);
   assert.doesNotMatch(server, /"\/api\/kyrubia-router"/);
   assert.doesNotMatch(server, /"\/api\/kyrubia-catalog-analysis"/);
+});
+
+test('multimodal retry carries only a read-only catalog routing hint and cannot grant mutation authority', () => {
+  const contract = readFileSync(new URL('../shared/aiConsultant.ts', import.meta.url), 'utf8');
+  const multimodal = readFileSync(new URL('../src/ai/multimodalConsultantClient.ts', import.meta.url), 'utf8');
+  const router = readFileSync(new URL('../api/consultor-kyrub.ts', import.meta.url), 'utf8');
+  const workspace = readFileSync(new URL('../src/components/KyrubAiWorkspaceBridge.tsx', import.meta.url), 'utf8');
+
+  assert.match(workspace, /retryLastRequest/);
+  assert.match(workspace, /requestReply\(activeConversation, activeConversation\.messages\)/);
+  assert.match(multimodal, /requestedCapability/);
+  assert.match(multimodal, /'catalog_analysis'/);
+  assert.match(router, /requestedCapability === 'catalog_analysis'/);
+  assert.match(router, /hasMultimodalAttachment\(messages\) \|\| Boolean\(analysisContext\)/);
+  assert.match(contract, /never treat it\s*\n\s*\* as confirmation, mutation authority, receipt or proof of a write/);
+  assert.doesNotMatch(multimodal, /actionExecution|confirmedAt|receipt|writesPerformed\s*:\s*true/);
 });
 
 test('latest catalog analysis context stays local and explicitly non-authoritative', () => {

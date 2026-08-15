@@ -81,6 +81,8 @@ export type KyrubAiHistoricalLink = {
   memoryContext: string;
 };
 
+export type KyrubAiRequestedCapability = 'catalog_analysis';
+
 export type KyrubAiConsultantRequest = {
   conversationId: string;
   topic: string;
@@ -88,6 +90,12 @@ export type KyrubAiConsultantRequest = {
   screenContext?: string;
   erpContext?: KyrubErpContextSnapshot;
   turnContext?: KyrubiaTurnContext;
+  /**
+   * Non-authoritative routing hint emitted by first-party clients. The server
+   * may use it only to select a read-only capability and must never treat it
+   * as confirmation, mutation authority, receipt or proof of a write.
+   */
+  requestedCapability?: KyrubAiRequestedCapability;
   /**
    * Latest structured catalog analysis rehydrated only for the authenticated
    * UID + current conversation. The server treats it as untrusted context,
