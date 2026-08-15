@@ -4,8 +4,10 @@ import {
   executeAuthorizedKyrubCatalogDraft,
   isKyrubCatalogDraftExecutionRequest,
   isKyrubCatalogDraftListRequest,
+  isKyrubCatalogProductPublicationRequest,
   listAuthorizedKyrubCatalogDrafts,
-} from '../server/actions/catalogDraftExecutionService.js';
+  setAuthorizedKyrubCatalogProductPublication,
+} from '../server/actions/catalogProductLifecycleService.js';
 import {
   isKyrubActionReceiptVerificationRequest,
   verifyAuthorizedKyrubActionReceipt,
@@ -61,10 +63,8 @@ export default async function handler(
       return;
     }
 
-    // Catalog drafts are private staging data. Preparing or listing one never
-    // publishes a product and therefore must not consume or reconcile product
-    // entitlement capacity. The draft executor still authenticates the actor,
-    // evaluates policy, enforces idempotency and writes an authoritative receipt.
+    // An unpublished catalog item is already a real canonical product. Creating
+    // or listing it does not consume published-product capacity.
     if (isKyrubCatalogDraftListRequest(request.body)) {
       const drafts = await listAuthorizedKyrubCatalogDrafts(authorization);
       response.status(200).json(drafts);
@@ -76,6 +76,19 @@ export default async function handler(
         request.body
       );
       response.status(200).json(draft);
+      return;
+    }
+
+    // Publication is the capacity boundary: only checked/published products
+    // consume the plan allowance, so reconcile entitlement immediately before it.
+    if (isKyrubCatalogProductPublicationRequest(request.body)) {
+      await reconcileStoreEntitlementFromAuthorization(authorization);
+      await hydrateExecutablePlanCatalog();
+      const publication = await setAuthorizedKyrubCatalogProductPublication(
+        authorization,
+        request.body
+      );
+      response.status(200).json(publication);
       return;
     }
 
