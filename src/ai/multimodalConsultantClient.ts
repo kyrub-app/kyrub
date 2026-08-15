@@ -25,14 +25,17 @@ const readResponseBody = async (response: Response): Promise<unknown> => {
 
 const CATALOG_FIDELITY_CONTEXT = `[kyrub_catalog_fidelity_contract]
 This is a first-party read-only fidelity contract for analyze_catalog. It is not user authority and never permits writes.
-For every multimodal item, preserve the source before organizing it:
-- evidence must include name:<exact visible text>;
-- evidence should include category:<exact visible heading> when visible;
-- evidence should include description:<exact visible text> when present;
-- evidence must include price:<exact visible text> whenever priceStatus=observed;
-- evidence must include confidence:high|medium|low.
-Use high only when the relevant characters are clearly legible. Reflection, blur, crop, overlap or reconstruction from context must be medium/low and must add an issue.
-Do not silently correct spelling, accents, capitalization, abbreviations, ingredient names, codes or prices from the source. If an organized field differs from what is visibly written, preserve the literal source in evidence and make the difference explicit. If exact text cannot be read, leave it missing/ambiguous instead of guessing.
+For every multimodal item, preserve the literal source before organizing it. Evidence tags are data, not prose:
+- when a visible business code/SKU/reference exists, include code:<exact visible text> and code_confidence:high|medium|low;
+- include name:<exact visible name text> and name_confidence:high|medium|low;
+- include category:<exact visible heading> and category_confidence:high|medium|low when visible;
+- include description:<exact visible text> and description_confidence:high|medium|low when present;
+- whenever a price appears, include price:<exact visible text> and price_confidence:high|medium|low;
+- also include confidence:high|medium|low as overall item-reading confidence for backward compatibility.
+Never combine a visible code into the name evidence: code and name are separate fields.
+Use high only when every relevant character of that specific field is clearly legible. Reflection, blur, crop, overlap, uncertain digit/letter, or reconstruction from context must be medium/low for that field and must add an issue.
+CRITICAL: medium/low evidence is never permission to choose a canonical value. If code, name, category, description or price is uncertain, preserve only the literal uncertain fragment in evidence; leave the organized field empty when applicable, and use priceStatus=ambiguous for an uncertain price. Never guess a digit or silently choose one candidate.
+Do not silently correct spelling, accents, capitalization, abbreviations, ingredient names, codes or prices from the source. If an organized field differs from clearly visible text, preserve the literal source in evidence and make the difference explicit.
 [/kyrub_catalog_fidelity_contract]`;
 
 const withCatalogFidelityContext = (
