@@ -179,7 +179,7 @@ test('generic item-level visual obstruction conservatively downgrades visible te
         'price_confidence:high',
         'confidence:high',
       ],
-      issues: ['Reflexo de luz sobre o texto deste item.'],
+      issues: ['Reflexo de luz sobre este item.'],
     }],
   }, multimodal);
 
