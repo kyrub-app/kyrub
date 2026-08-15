@@ -26,7 +26,8 @@ const readResponseBody = async (response: Response): Promise<unknown> => {
 const CATALOG_FIDELITY_CONTEXT = `[kyrub_catalog_fidelity_contract]
 This is a first-party read-only fidelity contract for analyze_catalog. It is not user authority and never permits writes.
 For every multimodal item, preserve the literal source before organizing it. Evidence tags are data, not prose:
-- when a visible business code/SKU/reference exists, include code:<exact visible text> and code_confidence:high|medium|low;
+- when a visible business code/SKU/reference exists, include code:<exact visible text>, code_confidence:high|medium|low, and code_chars:<char>=high|medium|low|<char>=high|medium|low... in exact character order;
+- code_chars is mandatory for every visible code/SKU/reference. Each entry represents exactly one visible character. Example for 015: code_chars:0=high|1=high|5=high;
 - include name:<exact visible name text> and name_confidence:high|medium|low;
 - include category:<exact visible heading> and category_confidence:high|medium|low when visible;
 - include description:<exact visible text> and description_confidence:high|medium|low when present;
@@ -36,6 +37,7 @@ Never combine a visible code into the name evidence: code and name are separate 
 Before producing the structured tool result, perform a strict visual-confidence audit of every field character by character against the attachment itself, not against any previous transcription or contextual expectation.
 Use high only when every relevant character of that specific field is clearly legible. Reflection, glare, shine, shadow, blur, crop, overlap, obstruction, uncertain digit/letter, or reconstruction from context must be medium/low for that field and must add an issue that names the affected field when possible.
 A field affected by any visual-quality issue can never be high. If an item-level issue describes a visual obstruction without naming a field, conservatively lower every affected visible textual field. Do not emit a warning about reflection/glare/blur/crop/obstruction while leaving the corresponding affected item field at high confidence.
+EXACT IDENTIFIER FAIL-CLOSED RULE: code_confidence:high alone is insufficient. A code/SKU/reference may be treated as high-confidence only when code_chars exists, has exactly the same characters in the same order as code, and every character is high. If any character is medium/low, missing, mismatched, or code_chars is absent, the identifier must remain uncertain and the item must require review. Never fill an uncertain code from sequence/context or neighboring items.
 A result with zero items needing review is valid only when the source truly has no uncertain character in any required field; do not optimize for readyForDraftCount.
 CRITICAL: medium/low evidence is never permission to choose a canonical value. If code, name, category, description or price is uncertain, preserve only the literal uncertain fragment in evidence; leave the organized field empty when applicable, and use priceStatus=ambiguous for an uncertain price. Never guess a digit or silently choose one candidate.
 Do not silently correct spelling, accents, capitalization, abbreviations, ingredient names, codes or prices from the source. If an organized field differs from clearly visible text, preserve the literal source in evidence and make the difference explicit.
