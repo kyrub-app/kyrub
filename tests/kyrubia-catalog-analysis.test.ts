@@ -268,7 +268,11 @@ test('existing consultor function dispatches analysis and re-normalizes same-con
   assert.match(multimodal, /shouldUseKyrubiaCatalogAnalysis/);
   assert.match(multimodal, /requestedCapability/);
   assert.match(multimodal, /CATALOG_FIDELITY_CONTEXT/);
-  assert.match(multimodal, /name:<exact visible text>/);
+  assert.match(multimodal, /code:<exact visible text>/);
+  assert.match(multimodal, /code_confidence:high\|medium\|low/);
+  assert.match(multimodal, /name:<exact visible name text>/);
+  assert.match(multimodal, /name_confidence:high\|medium\|low/);
+  assert.match(multimodal, /price_confidence:high\|medium\|low/);
   assert.match(multimodal, /confidence:high\|medium\|low/);
   assert.match(multimodal, /JSON\.stringify\(requestPayload\)/);
   assert.doesNotMatch(multimodal, /JSON\.stringify\(payload\)/);
