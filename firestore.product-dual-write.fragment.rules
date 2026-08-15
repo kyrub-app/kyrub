@@ -15,7 +15,63 @@
     }
 
     function canonicalProductFieldsAreValid(storeId, productId) {
-      return incoming().keys().size() == 24
+      return incoming().keys().hasAll([
+          'id',
+          'storeId',
+          'supplierId',
+          'name',
+          'description',
+          'price',
+          'image',
+          'stock',
+          'category',
+          'isService',
+          'publicationStatus',
+          'createdByUserId',
+          'createdByRole',
+          'updatedByUserId',
+          'updatedByRole',
+          'legacyStoreId',
+          'legacyProductId',
+          'legacySupplierId',
+          'legacyUpdatedAt',
+          'migratedFromPath',
+          'archivedAt',
+          'migration',
+          'createdAt',
+          'updatedAt'
+        ])
+        && incoming().keys().hasOnly([
+          'id',
+          'storeId',
+          'supplierId',
+          'name',
+          'description',
+          'price',
+          'image',
+          'stock',
+          'category',
+          'isService',
+          'publicationStatus',
+          'createdByUserId',
+          'createdByRole',
+          'updatedByUserId',
+          'updatedByRole',
+          'legacyStoreId',
+          'legacyProductId',
+          'legacySupplierId',
+          'legacyUpdatedAt',
+          'migratedFromPath',
+          'archivedAt',
+          'migration',
+          'createdAt',
+          'updatedAt',
+          'kyrubiaActionExecutionId'
+        ])
+        && (
+          !incoming().keys().hasAny(['kyrubiaActionExecutionId'])
+          || incoming().kyrubiaActionExecutionId is string
+        )
         && incoming().id == productId
         && incoming().storeId == storeId
         && incoming().supplierId == storeId
