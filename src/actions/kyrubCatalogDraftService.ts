@@ -6,6 +6,9 @@ import type {
 
 const SAFE_ACTION_ENDPOINT = '/api/action-execute';
 
+export const KYRUB_CATALOG_PRODUCT_CHANGED_EVENT =
+  'kyrub-catalog-product-changed';
+
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 
@@ -19,14 +22,16 @@ const readBody = async (response: Response): Promise<unknown> => {
   }
 };
 
-export const listKyrubCatalogDrafts = async (
-  user: User
-): Promise<KyrubCatalogDraftListResponse> => {
+const authenticatedPost = async (
+  user: User,
+  payload: Record<string, unknown>,
+  fallbackError: string
+): Promise<unknown> => {
   let token = '';
   try {
     token = await user.getIdToken();
   } catch {
-    throw new Error('Não foi possível validar sua sessão para listar os rascunhos.');
+    throw new Error('Não foi possível validar sua sessão para alterar o catálogo.');
   }
 
   let response: Response;
@@ -38,12 +43,12 @@ export const listKyrubCatalogDrafts = async (
         'content-type': 'application/json',
         accept: 'application/json',
       },
-      body: JSON.stringify({ operation: 'list_catalog_drafts' }),
+      body: JSON.stringify(payload),
       cache: 'no-store',
       credentials: 'same-origin',
     });
   } catch {
-    throw new Error('Não foi possível consultar os rascunhos do catálogo agora.');
+    throw new Error(fallbackError);
   }
 
   const body = await readBody(response);
@@ -51,11 +56,23 @@ export const listKyrubCatalogDrafts = async (
     const error = isRecord(body) && typeof body.error === 'string'
       ? body.error.trim()
       : '';
-    throw new Error(error || 'Não foi possível consultar os rascunhos do catálogo agora.');
+    throw new Error(error || fallbackError);
   }
 
+  return body;
+};
+
+export const listKyrubCatalogDrafts = async (
+  user: User
+): Promise<KyrubCatalogDraftListResponse> => {
+  const body = await authenticatedPost(
+    user,
+    { operation: 'list_catalog_drafts' },
+    'Não foi possível consultar os produtos não publicados agora.'
+  );
+
   if (!isRecord(body) || !Array.isArray(body.drafts)) {
-    throw new Error('O Kyrub respondeu sem uma lista válida de rascunhos.');
+    throw new Error('O Kyrub respondeu sem uma lista válida de produtos não publicados.');
   }
 
   return {
@@ -69,4 +86,41 @@ export const listKyrubCatalogDrafts = async (
         Array.isArray(item.issues)
     ),
   };
+};
+
+export const setKyrubCatalogProductPublished = async (
+  user: User,
+  productId: string,
+  published: boolean
+): Promise<void> => {
+  const normalizedId = productId.trim();
+  if (!normalizedId) throw new Error('O produto não foi identificado.');
+
+  const body = await authenticatedPost(
+    user,
+    {
+      operation: 'set_catalog_product_publication',
+      productId: normalizedId,
+      published,
+    },
+    published
+      ? 'Não foi possível publicar o produto agora.'
+      : 'Não foi possível retirar o produto da vitrine agora.'
+  );
+
+  if (
+    !isRecord(body) ||
+    body.productId !== normalizedId ||
+    body.publicationStatus !== (published ? 'published' : 'draft')
+  ) {
+    throw new Error('O Kyrub não confirmou a alteração de publicação do produto.');
+  }
+
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(
+      new CustomEvent(KYRUB_CATALOG_PRODUCT_CHANGED_EVENT, {
+        detail: { productId: normalizedId, published },
+      })
+    );
+  }
 };

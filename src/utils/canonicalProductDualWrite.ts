@@ -243,12 +243,14 @@ export const getCanonicalProductIdsToArchive = (
     const belongsToLegacyStore =
       cleanString(product.data.legacyStoreId) === legacyStoreId.trim() &&
       cleanString(migration?.mode) === 'dual_write';
-    const isAlreadyArchived =
-      cleanString(product.data.publicationStatus) === 'archived';
+    const publicationStatus = cleanString(product.data.publicationStatus);
+    const isAlreadyArchived = publicationStatus === 'archived';
+    const isUnpublishedDraft = publicationStatus === 'draft';
 
     return belongsToLegacyStore &&
       !currentProductIds.has(product.id) &&
-      !isAlreadyArchived
+      !isAlreadyArchived &&
+      !isUnpublishedDraft
       ? [product.id]
       : [];
   });

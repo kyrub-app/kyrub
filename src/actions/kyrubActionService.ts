@@ -8,6 +8,7 @@ import type {
 import { completeKyrubiaProductAndAdvance } from '../ai/operationalWorkflowStore';
 import { recordUserActivityEvent } from '../observability/kyrubActivityBrowser';
 import { invalidateKyrubErpContext } from './erpReadActionService';
+import { KYRUB_CATALOG_PRODUCT_CHANGED_EVENT } from './kyrubCatalogDraftService';
 
 const SAFE_ACTION_ENDPOINT = '/api/action-execute';
 
@@ -239,5 +240,14 @@ export const executePreauthorizedProductDraftAction = async (
   recordConfirmedKyrubiaActionAttempt(user.uid, proposal, true);
   const result = await executeKyrubAction(user, proposal, false);
   recordConfirmedKyrubiaActionResult(user.uid, proposal, result, true);
+
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(
+      new CustomEvent(KYRUB_CATALOG_PRODUCT_CHANGED_EVENT, {
+        detail: { productId: result.entityId, published: false },
+      })
+    );
+  }
+
   return result;
 };
