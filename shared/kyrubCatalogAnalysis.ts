@@ -5,8 +5,15 @@ export type KyrubCatalogAnalysisItemKind = 'product' | 'service' | 'unknown';
 export type KyrubCatalogObservedFieldStatus = 'observed' | 'ambiguous' | 'missing';
 export type KyrubCatalogAnalysisSourceKind = 'text' | 'multimodal';
 
+export type KyrubCatalogObservedCharacterEvidence = {
+  char: string;
+  confidence: KyrubCatalogAnalysisConfidence;
+};
+
 export type KyrubCatalogObservedEvidence = {
   sourceRefText: string;
+  sourceRefCharacters: KyrubCatalogObservedCharacterEvidence[];
+  sourceRefCharacterProofValid: boolean;
   nameText: string;
   categoryText: string;
   descriptionText: string;
@@ -106,6 +113,35 @@ const evidenceFieldConfidence = (
   return explicit ? confidence(explicit) : evidenceConfidence(evidence);
 };
 
+const parseSourceRefCharacters = (
+  evidence: string[]
+): KyrubCatalogObservedCharacterEvidence[] => {
+  const raw = evidenceValue(evidence, 'code_chars', 320);
+  if (!raw) return [];
+  return raw
+    .split('|')
+    .map(part => {
+      const match = part.trim().match(/^(.*)=(high|medium|low)$/i);
+      if (!match) return null;
+      const char = match[1];
+      if (!char || Array.from(char).length !== 1) return null;
+      return { char, confidence: confidence(match[2].toLowerCase()) };
+    })
+    .filter((entry): entry is KyrubCatalogObservedCharacterEvidence => Boolean(entry));
+};
+
+const hasValidSourceRefCharacterProof = (
+  sourceRefText: string,
+  characters: KyrubCatalogObservedCharacterEvidence[]
+): boolean => {
+  if (!sourceRefText) return false;
+  const sourceCharacters = Array.from(sourceRefText);
+  return sourceCharacters.length === characters.length &&
+    sourceCharacters.every((char, index) =>
+      characters[index]?.char === char && characters[index]?.confidence === 'high'
+    );
+};
+
 const VISUAL_RISK_PATTERN = /(reflex|reflection|glare|brilho|shine|sombra|shadow|blur|borrad|desfoc|crop|cortad|overlap|sobrepos|obstru|incert|ambigu|ileg[ií]vel|unclear|uncertain)/i;
 
 const VISUAL_FIELD_PATTERNS = {
@@ -172,17 +208,34 @@ const normalizeItem = (
   const observedStock = stockStatus === 'observed'
     ? cleanNonNegativeInteger(candidate.stock)
     : null;
-  const evidence = cleanStringList(candidate.evidence, 20, 240);
+  const evidence = cleanStringList(candidate.evidence, 20, 320);
   const overallConfidence = evidenceConfidence(evidence);
   const issues = cleanStringList(candidate.issues, 12, 180);
+  const sourceRefText = sourceKind === 'multimodal'
+    ? evidenceValue(evidence, 'code', 80) || evidenceValue(evidence, 'source_ref', 80)
+    : '';
+  const sourceRefCharacters = sourceKind === 'multimodal'
+    ? parseSourceRefCharacters(evidence)
+    : [];
+  const sourceRefCharacterProofValid = sourceKind === 'multimodal'
+    ? hasValidSourceRefCharacterProof(sourceRefText, sourceRefCharacters)
+    : true;
+  const declaredSourceRefConfidence = evidenceFieldConfidence(evidence, 'code');
+  const failClosedSourceRefConfidence: KyrubCatalogAnalysisConfidence =
+    sourceKind === 'multimodal' && sourceRefText && !sourceRefCharacterProofValid
+      ? downgradeHighConfidence(declaredSourceRefConfidence)
+      : declaredSourceRefConfidence;
+
   const initialObserved: KyrubCatalogObservedEvidence = sourceKind === 'multimodal'
     ? {
-        sourceRefText: evidenceValue(evidence, 'code', 80) || evidenceValue(evidence, 'source_ref', 80),
+        sourceRefText,
+        sourceRefCharacters,
+        sourceRefCharacterProofValid,
         nameText: evidenceValue(evidence, 'name', 180),
         categoryText: evidenceValue(evidence, 'category', 120),
         descriptionText: evidenceValue(evidence, 'description', 600),
         priceText: evidenceValue(evidence, 'price', 80),
-        sourceRefConfidence: evidenceFieldConfidence(evidence, 'code'),
+        sourceRefConfidence: failClosedSourceRefConfidence,
         nameConfidence: evidenceFieldConfidence(evidence, 'name'),
         categoryConfidence: evidenceFieldConfidence(evidence, 'category'),
         descriptionConfidence: evidenceFieldConfidence(evidence, 'description'),
@@ -191,6 +244,8 @@ const normalizeItem = (
       }
     : {
         sourceRefText: '',
+        sourceRefCharacters: [],
+        sourceRefCharacterProofValid: true,
         nameText: candidateName,
         categoryText: candidateCategory,
         descriptionText: candidateDescription,
@@ -232,7 +287,9 @@ const normalizeItem = (
     } else if (observed.nameConfidence !== 'high') {
       issues.push('Nome visual ambíguo; confirme na fonte antes de usar.');
     }
-    if (observed.sourceRefText && observed.sourceRefConfidence !== 'high') {
+    if (observed.sourceRefText && !observed.sourceRefCharacterProofValid) {
+      issues.push('Código/referência visual sem prova completa por caractere; confirme na fonte antes de usar.');
+    } else if (observed.sourceRefText && observed.sourceRefConfidence !== 'high') {
       issues.push('Código/referência visual ambíguo; confirme na fonte antes de usar.');
     }
     if (candidateCategory && (!observed.categoryText || observed.categoryConfidence !== 'high')) {
@@ -341,7 +398,7 @@ export const summarizeKyrubCatalogAnalysis = (
     lines.push('', 'Transcrição estruturada do material:');
     for (const item of analysis.items) {
       const code = item.observed.sourceRefText
-        ? item.observed.sourceRefConfidence === 'high'
+        ? item.observed.sourceRefConfidence === 'high' && item.observed.sourceRefCharacterProofValid
           ? item.observed.sourceRefText
           : uncertain('código', item.observed.sourceRefText)
         : '';
