@@ -106,6 +106,54 @@ const evidenceFieldConfidence = (
   return explicit ? confidence(explicit) : evidenceConfidence(evidence);
 };
 
+const VISUAL_RISK_PATTERN = /(reflex|reflection|glare|brilho|shine|sombra|shadow|blur|borrad|desfoc|crop|cortad|overlap|sobrepos|obstru|incert|ambigu|ileg[ií]vel|unclear|uncertain)/i;
+
+const VISUAL_FIELD_PATTERNS = {
+  sourceRef: /(c[oó]digo|sku|refer[eê]ncia|numera|d[ií]gito|code|reference|digit)/i,
+  name: /(nome|name|t[ií]tulo|title)/i,
+  category: /(categoria|category|se[cç][aã]o|heading)/i,
+  description: /(descri[cç][aã]o|description|texto|text|ingrediente)/i,
+  price: /(pre[cç]o|valor|price|amount|r\$)/i,
+} as const;
+
+const downgradeHighConfidence = (
+  value: KyrubCatalogAnalysisConfidence
+): KyrubCatalogAnalysisConfidence => value === 'high' ? 'medium' : value;
+
+const calibrateObservedConfidenceFromIssues = (
+  observed: KyrubCatalogObservedEvidence,
+  issues: string[]
+): KyrubCatalogObservedEvidence => {
+  const riskIssues = issues.filter(issue => VISUAL_RISK_PATTERN.test(issue));
+  if (riskIssues.length === 0) return observed;
+
+  const riskText = riskIssues.join(' | ');
+  const mentionsSpecificField = Object.values(VISUAL_FIELD_PATTERNS)
+    .some(pattern => pattern.test(riskText));
+  const affects = (pattern: RegExp): boolean =>
+    !mentionsSpecificField || pattern.test(riskText);
+
+  return {
+    ...observed,
+    sourceRefConfidence: observed.sourceRefText && affects(VISUAL_FIELD_PATTERNS.sourceRef)
+      ? downgradeHighConfidence(observed.sourceRefConfidence)
+      : observed.sourceRefConfidence,
+    nameConfidence: observed.nameText && affects(VISUAL_FIELD_PATTERNS.name)
+      ? downgradeHighConfidence(observed.nameConfidence)
+      : observed.nameConfidence,
+    categoryConfidence: observed.categoryText && affects(VISUAL_FIELD_PATTERNS.category)
+      ? downgradeHighConfidence(observed.categoryConfidence)
+      : observed.categoryConfidence,
+    descriptionConfidence: observed.descriptionText && affects(VISUAL_FIELD_PATTERNS.description)
+      ? downgradeHighConfidence(observed.descriptionConfidence)
+      : observed.descriptionConfidence,
+    priceConfidence: observed.priceText && affects(VISUAL_FIELD_PATTERNS.price)
+      ? downgradeHighConfidence(observed.priceConfidence)
+      : observed.priceConfidence,
+    confidence: downgradeHighConfidence(observed.confidence),
+  };
+};
+
 const normalizeItem = (
   value: unknown,
   index: number,
@@ -126,7 +174,8 @@ const normalizeItem = (
     : null;
   const evidence = cleanStringList(candidate.evidence, 20, 240);
   const overallConfidence = evidenceConfidence(evidence);
-  const observed: KyrubCatalogObservedEvidence = sourceKind === 'multimodal'
+  const issues = cleanStringList(candidate.issues, 12, 180);
+  const initialObserved: KyrubCatalogObservedEvidence = sourceKind === 'multimodal'
     ? {
         sourceRefText: evidenceValue(evidence, 'code', 80) || evidenceValue(evidence, 'source_ref', 80),
         nameText: evidenceValue(evidence, 'name', 180),
@@ -153,7 +202,9 @@ const normalizeItem = (
         priceConfidence: 'high',
         confidence: 'high',
       };
-  const issues = cleanStringList(candidate.issues, 12, 180);
+  const observed = sourceKind === 'multimodal'
+    ? calibrateObservedConfidenceFromIssues(initialObserved, issues)
+    : initialObserved;
 
   const name = sourceKind === 'multimodal'
     ? observed.nameText && observed.nameConfidence === 'high' ? candidateName : ''
@@ -194,7 +245,7 @@ const normalizeItem = (
         issues.push('Preço visual ambíguo; confirme na fonte antes de usar.');
       }
     }
-    if (overallConfidence !== 'high') {
+    if (observed.confidence !== 'high') {
       issues.push('Leitura do material requer confirmação humana.');
     }
   }
