@@ -19,6 +19,7 @@ test('ambiguous source code is preserved as uncertain evidence and blocks draft 
       stockStatus: 'missing',
       evidence: [
         'code:005',
+        'code_chars:0=high|0=medium|5=high',
         'code_confidence:medium',
         'name:X-SALADA',
         'name_confidence:high',
@@ -36,13 +37,88 @@ test('ambiguous source code is preserved as uncertain evidence and blocks draft 
   const item = analysis.items[0];
   assert.equal(item.ref, 'item-2');
   assert.equal(item.observed.sourceRefText, '005');
+  assert.equal(item.observed.sourceRefCharacterProofValid, false);
   assert.equal(item.observed.sourceRefConfidence, 'medium');
   assert.equal(item.name, 'X-SALADA');
   assert.equal(item.price, 35.5);
   assert.equal(analysis.readyForDraftCount, 0);
   assert.equal(analysis.needsReviewCount, 1);
-  assert.match(item.issues.join(' '), /Código\/referência visual ambíguo/i);
+  assert.match(item.issues.join(' '), /prova completa por caractere/i);
   assert.match(summarizeKyrubCatalogAnalysis(analysis), /\[código incerto: 005\] X-SALADA/);
+});
+
+test('high visual code without character proof fails closed and requires review', () => {
+  const analysis = normalizeKyrubCatalogAnalysis({
+    items: [{
+      ref: 'item-xsalada',
+      kind: 'product',
+      name: 'X-SALADA',
+      category: 'BURGERS ARTESANAIS',
+      price: 35.5,
+      priceStatus: 'observed',
+      stockStatus: 'missing',
+      evidence: [
+        'code:005',
+        'code_confidence:high',
+        'name:X-SALADA',
+        'name_confidence:high',
+        'category:BURGERS ARTESANAIS',
+        'category_confidence:high',
+        'price:35,50',
+        'price_confidence:high',
+        'confidence:high',
+      ],
+      issues: [],
+    }],
+  }, multimodal);
+
+  assert.ok(analysis);
+  const item = analysis.items[0];
+  assert.equal(item.observed.sourceRefText, '005');
+  assert.deepEqual(item.observed.sourceRefCharacters, []);
+  assert.equal(item.observed.sourceRefCharacterProofValid, false);
+  assert.equal(item.observed.sourceRefConfidence, 'medium');
+  assert.equal(item.name, 'X-SALADA');
+  assert.equal(item.price, 35.5);
+  assert.equal(analysis.readyForDraftCount, 0);
+  assert.equal(analysis.needsReviewCount, 1);
+  assert.match(item.issues.join(' '), /prova completa por caractere/i);
+  assert.match(summarizeKyrubCatalogAnalysis(analysis), /\[código incerto: 005\] X-SALADA/);
+});
+
+test('exact visual identifier is factual only with matching all-high character proof', () => {
+  const analysis = normalizeKyrubCatalogAnalysis({
+    items: [{
+      ref: 'item-xburger',
+      kind: 'product',
+      name: 'X-BURGER',
+      category: 'BURGERS ARTESANAIS',
+      price: 29.5,
+      priceStatus: 'observed',
+      stockStatus: 'missing',
+      evidence: [
+        'code:002',
+        'code_chars:0=high|0=high|2=high',
+        'code_confidence:high',
+        'name:X-BURGER',
+        'name_confidence:high',
+        'category:BURGERS ARTESANAIS',
+        'category_confidence:high',
+        'price:29,50',
+        'price_confidence:high',
+        'confidence:high',
+      ],
+      issues: [],
+    }],
+  }, multimodal);
+
+  assert.ok(analysis);
+  const item = analysis.items[0];
+  assert.equal(item.observed.sourceRefCharacterProofValid, true);
+  assert.equal(item.observed.sourceRefConfidence, 'high');
+  assert.equal(analysis.readyForDraftCount, 1);
+  assert.equal(analysis.needsReviewCount, 0);
+  assert.match(summarizeKyrubCatalogAnalysis(analysis), /• 002 X-BURGER — 29,50/);
 });
 
 test('ambiguous name evidence cannot populate the canonical name', () => {
@@ -57,6 +133,7 @@ test('ambiguous name evidence cannot populate the canonical name', () => {
       stockStatus: 'missing',
       evidence: [
         'code:015',
+        'code_chars:0=high|1=high|5=high',
         'code_confidence:high',
         'name:X-SALADA',
         'name_confidence:medium',
@@ -92,6 +169,7 @@ test('ambiguous price evidence cannot remain observed or populate canonical pric
       stockStatus: 'missing',
       evidence: [
         'code:015',
+        'code_chars:0=high|1=high|5=high',
         'code_confidence:high',
         'name:X-SALADA',
         'name_confidence:high',
@@ -128,6 +206,7 @@ test('visual glare on a code deterministically downgrades contradictory high cod
       stockStatus: 'missing',
       evidence: [
         'code:003',
+        'code_chars:0=high|0=high|3=high',
         'code_confidence:high',
         'name:X-SALADA',
         'name_confidence:high',
@@ -144,6 +223,7 @@ test('visual glare on a code deterministically downgrades contradictory high cod
   assert.ok(analysis);
   const item = analysis.items[0];
   assert.equal(item.observed.sourceRefText, '003');
+  assert.equal(item.observed.sourceRefCharacterProofValid, true);
   assert.equal(item.observed.sourceRefConfidence, 'medium');
   assert.equal(item.observed.nameConfidence, 'high');
   assert.equal(item.observed.priceConfidence, 'high');
@@ -168,6 +248,7 @@ test('generic item-level visual obstruction conservatively downgrades visible te
       stockStatus: 'missing',
       evidence: [
         'code:016',
+        'code_chars:0=high|1=high|6=high',
         'code_confidence:high',
         'name:X-EGG',
         'name_confidence:high',
