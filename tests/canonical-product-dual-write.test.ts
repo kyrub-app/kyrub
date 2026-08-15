@@ -113,7 +113,7 @@ test('detects updates without rewriting an unchanged canonical product', () => {
   );
 });
 
-test('archives only missing products that belong to the same legacy migration', () => {
+test('archives only missing published products and preserves unpublished drafts', () => {
   const products = [
     {
       id: 'keep',
@@ -128,6 +128,14 @@ test('archives only missing products that belong to the same legacy migration', 
       data: {
         legacyStoreId: 'owner-a',
         publicationStatus: 'published',
+        migration: { mode: 'dual_write' },
+      },
+    },
+    {
+      id: 'unpublished-draft',
+      data: {
+        legacyStoreId: 'owner-a',
+        publicationStatus: 'draft',
         migration: { mode: 'dual_write' },
       },
     },
