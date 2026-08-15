@@ -6,10 +6,16 @@ export type KyrubCatalogObservedFieldStatus = 'observed' | 'ambiguous' | 'missin
 export type KyrubCatalogAnalysisSourceKind = 'text' | 'multimodal';
 
 export type KyrubCatalogObservedEvidence = {
+  sourceRefText: string;
   nameText: string;
   categoryText: string;
   descriptionText: string;
   priceText: string;
+  sourceRefConfidence: KyrubCatalogAnalysisConfidence;
+  nameConfidence: KyrubCatalogAnalysisConfidence;
+  categoryConfidence: KyrubCatalogAnalysisConfidence;
+  descriptionConfidence: KyrubCatalogAnalysisConfidence;
+  priceConfidence: KyrubCatalogAnalysisConfidence;
   confidence: KyrubCatalogAnalysisConfidence;
 };
 
@@ -92,6 +98,14 @@ const evidenceValue = (evidence: string[], key: string, maximum: number): string
 const evidenceConfidence = (evidence: string[]): KyrubCatalogAnalysisConfidence =>
   confidence(evidenceValue(evidence, 'confidence', 16).toLowerCase());
 
+const evidenceFieldConfidence = (
+  evidence: string[],
+  key: string
+): KyrubCatalogAnalysisConfidence => {
+  const explicit = evidenceValue(evidence, `${key}_confidence`, 16).toLowerCase();
+  return explicit ? confidence(explicit) : evidenceConfidence(evidence);
+};
+
 const normalizeItem = (
   value: unknown,
   index: number,
@@ -99,39 +113,88 @@ const normalizeItem = (
 ): KyrubCatalogAnalysisItem | null => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   const candidate = value as Record<string, unknown>;
-  const name = cleanText(candidate.name, 180);
-  const priceStatus = fieldStatus(candidate.priceStatus);
+  const candidateName = cleanText(candidate.name, 180);
+  const candidateCategory = cleanText(candidate.category, 120);
+  const candidateDescription = cleanText(candidate.description, 600);
+  const requestedPriceStatus = fieldStatus(candidate.priceStatus);
   const stockStatus = fieldStatus(candidate.stockStatus);
-  const observedPrice = priceStatus === 'observed'
+  const candidatePrice = requestedPriceStatus === 'observed'
     ? cleanNonNegativeNumber(candidate.price)
     : null;
   const observedStock = stockStatus === 'observed'
     ? cleanNonNegativeInteger(candidate.stock)
     : null;
-  const evidence = cleanStringList(candidate.evidence, 12, 240);
+  const evidence = cleanStringList(candidate.evidence, 20, 240);
+  const overallConfidence = evidenceConfidence(evidence);
   const observed: KyrubCatalogObservedEvidence = sourceKind === 'multimodal'
     ? {
+        sourceRefText: evidenceValue(evidence, 'code', 80) || evidenceValue(evidence, 'source_ref', 80),
         nameText: evidenceValue(evidence, 'name', 180),
         categoryText: evidenceValue(evidence, 'category', 120),
         descriptionText: evidenceValue(evidence, 'description', 600),
         priceText: evidenceValue(evidence, 'price', 80),
-        confidence: evidenceConfidence(evidence),
+        sourceRefConfidence: evidenceFieldConfidence(evidence, 'code'),
+        nameConfidence: evidenceFieldConfidence(evidence, 'name'),
+        categoryConfidence: evidenceFieldConfidence(evidence, 'category'),
+        descriptionConfidence: evidenceFieldConfidence(evidence, 'description'),
+        priceConfidence: evidenceFieldConfidence(evidence, 'price'),
+        confidence: overallConfidence,
       }
     : {
-        nameText: name,
-        categoryText: cleanText(candidate.category, 120),
-        descriptionText: cleanText(candidate.description, 600),
-        priceText: observedPrice === null ? '' : String(observedPrice),
+        sourceRefText: '',
+        nameText: candidateName,
+        categoryText: candidateCategory,
+        descriptionText: candidateDescription,
+        priceText: candidatePrice === null ? '' : String(candidatePrice),
+        sourceRefConfidence: 'high',
+        nameConfidence: 'high',
+        categoryConfidence: 'high',
+        descriptionConfidence: 'high',
+        priceConfidence: 'high',
         confidence: 'high',
       };
   const issues = cleanStringList(candidate.issues, 12, 180);
 
+  const name = sourceKind === 'multimodal'
+    ? observed.nameText && observed.nameConfidence === 'high' ? candidateName : ''
+    : candidateName;
+  const category = sourceKind === 'multimodal'
+    ? observed.categoryText && observed.categoryConfidence === 'high' ? candidateCategory : ''
+    : candidateCategory;
+  const description = sourceKind === 'multimodal'
+    ? observed.descriptionText && observed.descriptionConfidence === 'high' ? candidateDescription : ''
+    : candidateDescription;
+  const observedPrice = sourceKind === 'multimodal'
+    ? requestedPriceStatus === 'observed' &&
+      observed.priceText &&
+      observed.priceConfidence === 'high'
+        ? candidatePrice
+        : null
+    : candidatePrice;
+  const priceStatus: KyrubCatalogObservedFieldStatus = requestedPriceStatus === 'observed'
+    ? observedPrice === null ? 'ambiguous' : 'observed'
+    : requestedPriceStatus;
+
   if (sourceKind === 'multimodal') {
-    if (!observed.nameText) issues.push('Nome sem transcrição-fonte verificável.');
-    if (priceStatus === 'observed' && !observed.priceText) {
-      issues.push('Preço marcado como observado sem transcrição-fonte verificável.');
+    if (!observed.nameText) {
+      issues.push('Nome sem transcrição-fonte verificável.');
+    } else if (observed.nameConfidence !== 'high') {
+      issues.push('Nome visual ambíguo; confirme na fonte antes de usar.');
     }
-    if (observed.confidence !== 'high') {
+    if (observed.sourceRefText && observed.sourceRefConfidence !== 'high') {
+      issues.push('Código/referência visual ambíguo; confirme na fonte antes de usar.');
+    }
+    if (candidateCategory && (!observed.categoryText || observed.categoryConfidence !== 'high')) {
+      issues.push('Categoria organizada sem evidência visual de alta confiança.');
+    }
+    if (requestedPriceStatus === 'observed') {
+      if (!observed.priceText) {
+        issues.push('Preço marcado como observado sem transcrição-fonte verificável.');
+      } else if (observed.priceConfidence !== 'high') {
+        issues.push('Preço visual ambíguo; confirme na fonte antes de usar.');
+      }
+    }
+    if (overallConfidence !== 'high') {
       issues.push('Leitura do material requer confirmação humana.');
     }
   }
@@ -140,12 +203,10 @@ const normalizeItem = (
     ref: cleanText(candidate.ref, 48) || `item-${index + 1}`,
     kind: itemKind(candidate.kind),
     name,
-    category: cleanText(candidate.category, 120),
-    description: cleanText(candidate.description, 600),
+    category,
+    description,
     price: observedPrice,
-    priceStatus: observedPrice === null && priceStatus === 'observed'
-      ? 'ambiguous'
-      : priceStatus,
+    priceStatus,
     stock: observedStock,
     stockStatus: observedStock === null && stockStatus === 'observed'
       ? 'ambiguous'
@@ -208,6 +269,9 @@ export const normalizeKyrubCatalogAnalysis = (
 const money = (value: number): string =>
   `R$ ${value.toFixed(2).replace('.', ',')}`;
 
+const uncertain = (label: string, value: string): string =>
+  `[${label} incerto: ${value}]`;
+
 export const summarizeKyrubCatalogAnalysis = (
   analysis: KyrubCatalogAnalysis
 ): string => {
@@ -225,19 +289,39 @@ export const summarizeKyrubCatalogAnalysis = (
   if (analysis.items.length > 0) {
     lines.push('', 'Transcrição estruturada do material:');
     for (const item of analysis.items) {
-      const observedName = item.observed.nameText || item.name || item.ref;
-      const price = item.observed.priceText || (
-        item.priceStatus === 'observed' && item.price !== null
+      const code = item.observed.sourceRefText
+        ? item.observed.sourceRefConfidence === 'high'
+          ? item.observed.sourceRefText
+          : uncertain('código', item.observed.sourceRefText)
+        : '';
+      const nameSource = item.observed.nameText || item.name || item.ref;
+      const observedName = item.observed.nameText && item.observed.nameConfidence !== 'high'
+        ? uncertain('nome', item.observed.nameText)
+        : nameSource;
+      const price = item.observed.priceText
+        ? item.observed.priceConfidence === 'high'
+          ? item.observed.priceText
+          : uncertain('preço', item.observed.priceText)
+        : item.priceStatus === 'observed' && item.price !== null
           ? money(item.price)
           : item.priceStatus === 'ambiguous'
             ? 'preço ambíguo'
-            : 'preço não identificado'
+            : 'preço não identificado';
+      const organizedDiffers = Boolean(
+        item.name &&
+        item.observed.nameText &&
+        item.observed.nameConfidence === 'high' &&
+        item.name !== item.observed.nameText
       );
-      const organizedDiffers = Boolean(item.name && item.observed.nameText && item.name !== item.observed.nameText);
       const review = item.issues.length ? ` — revisar: ${item.issues[0]}` : '';
-      lines.push(`• ${observedName} — ${price}${organizedDiffers ? ` — organizado como: ${item.name}` : ''}${review}`);
+      lines.push(
+        `• ${code ? `${code} ` : ''}${observedName} — ${price}${organizedDiffers ? ` — organizado como: ${item.name}` : ''}${review}`
+      );
       if (item.observed.descriptionText) {
-        lines.push(`  ↳ ${item.observed.descriptionText}`);
+        const description = item.observed.descriptionConfidence === 'high'
+          ? item.observed.descriptionText
+          : uncertain('descrição', item.observed.descriptionText);
+        lines.push(`  ↳ ${description}`);
       }
     }
   }
