@@ -33,7 +33,10 @@ For every multimodal item, preserve the literal source before organizing it. Evi
 - whenever a price appears, include price:<exact visible text> and price_confidence:high|medium|low;
 - also include confidence:high|medium|low as overall item-reading confidence for backward compatibility.
 Never combine a visible code into the name evidence: code and name are separate fields.
-Use high only when every relevant character of that specific field is clearly legible. Reflection, blur, crop, overlap, uncertain digit/letter, or reconstruction from context must be medium/low for that field and must add an issue.
+Before producing the structured tool result, perform a strict visual-confidence audit of every field character by character against the attachment itself, not against any previous transcription or contextual expectation.
+Use high only when every relevant character of that specific field is clearly legible. Reflection, glare, shine, shadow, blur, crop, overlap, obstruction, uncertain digit/letter, or reconstruction from context must be medium/low for that field and must add an issue that names the affected field when possible.
+A field affected by any visual-quality issue can never be high. If an item-level issue describes a visual obstruction without naming a field, conservatively lower every affected visible textual field. Do not emit a warning about reflection/glare/blur/crop/obstruction while leaving the corresponding affected item field at high confidence.
+A result with zero items needing review is valid only when the source truly has no uncertain character in any required field; do not optimize for readyForDraftCount.
 CRITICAL: medium/low evidence is never permission to choose a canonical value. If code, name, category, description or price is uncertain, preserve only the literal uncertain fragment in evidence; leave the organized field empty when applicable, and use priceStatus=ambiguous for an uncertain price. Never guess a digit or silently choose one candidate.
 Do not silently correct spelling, accents, capitalization, abbreviations, ingredient names, codes or prices from the source. If an organized field differs from clearly visible text, preserve the literal source in evidence and make the difference explicit.
 [/kyrub_catalog_fidelity_contract]`;
