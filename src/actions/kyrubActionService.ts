@@ -58,7 +58,8 @@ const activityEntityType = (
 ): string | undefined => {
   if (
     proposal.type === 'create_product' ||
-    proposal.type === 'update_product'
+    proposal.type === 'update_product' ||
+    proposal.type === 'import_catalog_draft'
   ) return 'product';
   if (proposal.type === 'prepare_product_draft') return 'product_draft';
   if (proposal.type === 'create_note') return 'note';
@@ -149,6 +150,15 @@ const advanceProductSequenceAfterExecution = (
   );
 };
 
+const emitCatalogChanged = (productId: string): void => {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(
+    new CustomEvent(KYRUB_CATALOG_PRODUCT_CHANGED_EVENT, {
+      detail: { productId, published: false },
+    })
+  );
+};
+
 export const executeKyrubAction = async (
   user: User,
   proposal: KyrubActionProposal,
@@ -206,12 +216,16 @@ export const executeKyrubAction = async (
   if (
     proposal.type === 'create_product' ||
     proposal.type === 'update_product' ||
-    proposal.type === 'update_store_profile'
+    proposal.type === 'update_store_profile' ||
+    proposal.type === 'import_catalog_draft'
   ) {
     invalidateKyrubErpContext(user.uid);
   }
   if (proposal.type === 'create_product') {
     advanceProductSequenceAfterExecution(user, proposal);
+  }
+  if (proposal.type === 'import_catalog_draft') {
+    emitCatalogChanged(result.entityId);
   }
 
   return result;
@@ -235,19 +249,9 @@ export const executePreauthorizedProductDraftAction = async (
     throw new Error('Este rascunho está marcado como uma ação que exige confirmação.');
   }
 
-  // The local attempt is context only. A confirmed result is recorded only
-  // after executeKyrubAction validates the server receipt returned below.
   recordConfirmedKyrubiaActionAttempt(user.uid, proposal, true);
   const result = await executeKyrubAction(user, proposal, false);
   recordConfirmedKyrubiaActionResult(user.uid, proposal, result, true);
-
-  if (typeof window !== 'undefined') {
-    window.dispatchEvent(
-      new CustomEvent(KYRUB_CATALOG_PRODUCT_CHANGED_EVENT, {
-        detail: { productId: result.entityId, published: false },
-      })
-    );
-  }
-
+  emitCatalogChanged(result.entityId);
   return result;
 };
