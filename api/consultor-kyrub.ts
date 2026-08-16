@@ -29,12 +29,6 @@ type VercelResponseLike = {
   json(body: unknown): void;
 };
 
-/**
- * Compatibility description for the historical /api/consultor-kyrub route.
- * The actual create_note behavior lives in the canonical Kyrubia route; this
- * descriptor keeps the public capability contract visible without duplicating
- * provider or write logic here.
- */
 const CONSULTOR_KYRUB_COMPATIBILITY = {
   service: 'consultor-kyrub',
   functionDeclarations: [
@@ -42,6 +36,9 @@ const CONSULTOR_KYRUB_COMPATIBILITY = {
     { name: 'import_catalog_draft' },
   ],
 } as const;
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 
 const readBody = (value: unknown): Record<string, unknown> => {
   if (value && typeof value === 'object') return value as Record<string, unknown>;
@@ -217,6 +214,37 @@ const catalogImportResponse = (
   };
 };
 
+const hasAttachmentHistory = (messages: KyrubAiConversationMessage[]): boolean =>
+  messages.some(
+    message => message.role === 'user' && (message.attachments?.length ?? 0) > 0
+  );
+
+const latestUserRequestsCatalogImport = (
+  messages: KyrubAiConversationMessage[]
+): boolean => {
+  const latestUser = [...messages].reverse().find(message => message.role === 'user');
+  return Boolean(latestUser && isKyrubiaCatalogImportText(latestUser.content));
+};
+
+const analyzeCatalogForImmediateImport = async (
+  request: VercelRequestLike
+): Promise<{ statusCode: number; body: unknown }> => {
+  let statusCode = 200;
+  let body: unknown = null;
+  const capture: VercelResponseLike = {
+    setHeader: () => undefined,
+    status: code => {
+      statusCode = code;
+      return capture;
+    },
+    json: value => {
+      body = value;
+    },
+  };
+  await handleKyrubiaCatalogAnalysis(request, capture);
+  return { statusCode, body };
+};
+
 export const maxDuration = 30;
 
 export default async function handler(
@@ -244,6 +272,7 @@ export default async function handler(
     const body = readBody(request.body);
     const messages = conversationMessages(body);
     const analysisContext = catalogAnalysisContext(body);
+    const importRequested = latestUserRequestsCatalogImport(messages);
 
     if (analysisContext) {
       const importResponse = catalogImportResponse(body, messages, analysisContext);
@@ -251,6 +280,43 @@ export default async function handler(
         response.status(200).json(importResponse);
         return;
       }
+    }
+
+    if (!analysisContext && importRequested && hasAttachmentHistory(messages)) {
+      const captured = await analyzeCatalogForImmediateImport(request);
+      if (captured.statusCode !== 200 || !isRecord(captured.body)) {
+        response.status(captured.statusCode).json(captured.body);
+        return;
+      }
+
+      const generatedAnalysis = catalogAnalysisContext({
+        catalogAnalysisContext: captured.body.catalogAnalysis,
+      });
+      if (!generatedAnalysis) {
+        response.status(503).json({
+          error: 'A Kyrubia não conseguiu estruturar o cardápio para cadastrar os produtos.',
+          code: 'AI_UNAVAILABLE',
+        });
+        return;
+      }
+
+      const importResponse = catalogImportResponse(body, messages, generatedAnalysis);
+      if (!importResponse) {
+        response.status(409).json({
+          error: 'O pedido de cadastro não pôde ser convertido em uma importação segura.',
+          code: 'INVALID_REQUEST',
+        });
+        return;
+      }
+
+      response.status(200).json({
+        ...importResponse,
+        catalogAnalysis: generatedAnalysis,
+        model: typeof captured.body.model === 'string'
+          ? captured.body.model
+          : importResponse.model,
+      });
+      return;
     }
 
     if (shouldUseKyrubiaCatalogAnalysis(messages, Boolean(analysisContext))) {
