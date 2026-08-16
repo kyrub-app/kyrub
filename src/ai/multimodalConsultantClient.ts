@@ -5,9 +5,9 @@ import {
 } from '../../shared/aiConsultant';
 import { auth } from '../utils/firebase';
 import { emitKyrubAiActionProposal } from './actionEvents';
+import { loadKyrubiaCatalogAnalysis } from './catalogAnalysisStore';
 import { KyrubAiClientError } from './consultantClient';
 import { normalizeConsultantError } from './consultantError';
-import { prepareKyrubAiOpportunityContinuation } from './opportunityContinuation';
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   Boolean(value) && typeof value === 'object' && !Array.isArray(value);
@@ -20,6 +20,21 @@ const readResponseBody = async (response: Response): Promise<unknown> => {
   } catch {
     return text;
   }
+};
+
+const withCatalogAnalysisContext = (
+  payload: KyrubAiConsultantRequest,
+  uid: string
+): KyrubAiConsultantRequest => {
+  if (payload.catalogAnalysisContext || typeof localStorage === 'undefined') {
+    return payload;
+  }
+  const analysis = loadKyrubiaCatalogAnalysis(
+    localStorage,
+    uid,
+    payload.conversationId
+  );
+  return analysis ? { ...payload, catalogAnalysisContext: analysis } : payload;
 };
 
 export const requestKyrubAiMultimodalConsultant = async (
@@ -35,11 +50,8 @@ export const requestKyrubAiMultimodalConsultant = async (
     );
   }
 
-  // Rehydrate the latest structured catalog analysis for follow-up requests in
-  // the same UID + conversation. This is context only; it never authorizes a
-  // write by itself.
-  const contextualPayload = prepareKyrubAiOpportunityContinuation(payload);
-  const hasAttachments = contextualPayload.messages.some(
+  const contextualPayload = withCatalogAnalysisContext(payload, currentUser.uid);
+  const hasAttachments = payload.messages.some(
     message => message.role === 'user' && (message.attachments?.length ?? 0) > 0
   );
   if (!hasAttachments) {
