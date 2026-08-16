@@ -10,6 +10,7 @@ import {
 import type {
   KyrubAiCreateNoteProposal,
   KyrubAiCreateProductProposal,
+  KyrubAiImportCatalogDraftProposal,
   KyrubAiStartStoreActivationProposal,
   KyrubAiUpdateStoreProfileProposal,
 } from '../../shared/kyrubActions';
@@ -36,6 +37,7 @@ type ConfirmableProposal =
   | KyrubAiCreateNoteProposal
   | KyrubAiStartStoreActivationProposal
   | KyrubAiUpdateStoreProfileProposal
+  | KyrubAiImportCatalogDraftProposal
   | KyrubAiCreateProductProposal;
 
 type PendingAction = {
@@ -69,6 +71,9 @@ const actionTitle = (
   if (proposal.type === 'update_store_profile') {
     return success ? 'Perfil atualizado' : 'Confirmar alteração da loja';
   }
+  if (proposal.type === 'import_catalog_draft') {
+    return success ? 'Produtos adicionados' : 'Confirmar produtos do cardápio';
+  }
   if (proposal.type === 'create_product') {
     return success ? 'Produto criado' : 'Confirmar novo produto';
   }
@@ -78,7 +83,10 @@ const actionTitle = (
 const workingLabel = (proposal: ConfirmableProposal): string => {
   if (proposal.type === 'start_store_activation') return 'Ativando...';
   if (proposal.type === 'update_store_profile') return 'Salvando...';
-  if (proposal.type === 'create_product') return 'Cadastrando...';
+  if (
+    proposal.type === 'create_product' ||
+    proposal.type === 'import_catalog_draft'
+  ) return 'Cadastrando...';
   return 'Criando...';
 };
 
@@ -96,7 +104,10 @@ const actionIcon = (
   ) {
     return <Store className="h-6 w-6" />;
   }
-  if (proposal.type === 'create_product') {
+  if (
+    proposal.type === 'create_product' ||
+    proposal.type === 'import_catalog_draft'
+  ) {
     return <PackagePlus className="h-6 w-6" />;
   }
   return <FileText className="h-6 w-6" />;
@@ -132,6 +143,12 @@ const successMessage = (pending: PendingAction): string => {
       ? 'Essa alteração do perfil já havia sido aplicada. Nenhuma mudança duplicada foi executada.'
       : 'A alteração foi salva pelo executor oficial do Kyrub no perfil da sua loja.';
   }
+  if (pending.proposal.type === 'import_catalog_draft') {
+    const count = pending.proposal.items.length;
+    return pending.alreadyApplied
+      ? `Esses ${count} item(ns) já haviam sido adicionados ao catálogo. Nenhuma duplicata foi criada.`
+      : `${count} item(ns) foram adicionados como produtos não publicados. Revise-os em Produtos e serviços e marque “Publicado” somente nos que quiser colocar na vitrine.`;
+  }
   if (pending.proposal.type === 'create_product') {
     const continuation = nextProductMessage(pending) ?? '';
     return pending.alreadyApplied
@@ -149,6 +166,9 @@ const reviewHint = (proposal: ConfirmableProposal): string => {
   }
   if (proposal.type === 'update_store_profile') {
     return 'Nada será alterado antes da confirmação. Somente os campos mostrados acima serão salvos na sua própria loja.';
+  }
+  if (proposal.type === 'import_catalog_draft') {
+    return 'Nada irá automaticamente para a vitrine. A confirmação cria somente produtos não publicados; depois você escolhe quais marcar como “Publicado”.';
   }
   if (proposal.type === 'create_product') {
     return 'Nada será cadastrado antes da confirmação. O produto será criado na sua própria loja e respeitará os limites do seu plano.';
@@ -213,6 +233,54 @@ const ReviewContent = ({ proposal }: { proposal: ConfirmableProposal }) => {
             </div>
           )}
         </dl>
+      </div>
+    );
+  }
+
+  if (proposal.type === 'import_catalog_draft') {
+    const visibleItems = proposal.items.slice(0, 20);
+    const remaining = proposal.items.length - visibleItems.length;
+    return (
+      <div className="rounded-2xl border border-slate-800 bg-slate-900 p-4">
+        <span className="text-[11px] font-black uppercase text-slate-500">
+          Produtos não publicados
+        </span>
+        <h3 className="mt-1 text-lg font-black text-white">
+          {proposal.items.length} item(ns) para adicionar
+        </h3>
+        <div className="mt-4 max-h-80 space-y-2 overflow-y-auto pr-1">
+          {visibleItems.map(item => (
+            <div
+              key={`${proposal.id}-${item.ref}`}
+              className="rounded-xl border border-slate-800 bg-slate-950 px-3 py-2.5"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <strong className="text-sm text-slate-100">
+                  {item.product.name}
+                </strong>
+                <span className="shrink-0 text-xs font-black text-emerald-300">
+                  {(item.product.price ?? 0).toLocaleString('pt-BR', {
+                    style: 'currency',
+                    currency: 'BRL',
+                  })}
+                </span>
+              </div>
+              <p className="mt-1 text-[11px] text-slate-500">
+                {item.product.category}
+                {item.product.isService
+                  ? ' · Serviço'
+                  : item.product.stock !== undefined
+                    ? ` · Estoque ${item.product.stock}`
+                    : ' · Estoque não informado'}
+              </p>
+            </div>
+          ))}
+        </div>
+        {remaining > 0 && (
+          <p className="mt-3 text-xs text-slate-500">
+            + {remaining} item(ns) na mesma importação.
+          </p>
+        )}
       </div>
     );
   }
@@ -316,6 +384,7 @@ export function KyrubAiNoteActionBridge() {
         detail.proposal.type !== 'create_note' &&
         detail.proposal.type !== 'start_store_activation' &&
         detail.proposal.type !== 'update_store_profile' &&
+        detail.proposal.type !== 'import_catalog_draft' &&
         detail.proposal.type !== 'create_product'
       ) {
         return;
