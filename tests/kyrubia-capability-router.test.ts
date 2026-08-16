@@ -78,3 +78,17 @@ test('central consultant enforces capability policy around generic Kyrubia fallb
   assert.match(router, /server_capability_policy/);
   assert.match(router, /decision\.primary === 'create_products'/);
 });
+
+test('consultant forwarding keeps request headers as explicit own data', () => {
+  const forwarded = readFileSync(
+    new URL('../api/consultor-kyrub-forwarded.ts', import.meta.url),
+    'utf8'
+  );
+  const vercel = readFileSync(new URL('../vercel.json', import.meta.url), 'utf8');
+
+  assert.match(forwarded, /headers: request\.headers \?\? \{\}/);
+  assert.match(forwarded, /method: request\.method/);
+  assert.match(forwarded, /body: request\.body/);
+  assert.match(vercel, /"source": "\/api\/consultor-kyrub"/);
+  assert.match(vercel, /"destination": "\/api\/consultor-kyrub-forwarded"/);
+});
