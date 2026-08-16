@@ -5,6 +5,7 @@ import {
 } from '../../shared/aiConsultant';
 import { auth } from '../utils/firebase';
 import { emitKyrubAiActionProposal } from './actionEvents';
+import { loadKyrubiaCatalogAnalysis } from './catalogAnalysisStore';
 import { KyrubAiClientError } from './consultantClient';
 import { normalizeConsultantError } from './consultantError';
 
@@ -21,6 +22,21 @@ const readResponseBody = async (response: Response): Promise<unknown> => {
   }
 };
 
+const withCatalogAnalysisContext = (
+  payload: KyrubAiConsultantRequest,
+  uid: string
+): KyrubAiConsultantRequest => {
+  if (payload.catalogAnalysisContext || typeof localStorage === 'undefined') {
+    return payload;
+  }
+  const analysis = loadKyrubiaCatalogAnalysis(
+    localStorage,
+    uid,
+    payload.conversationId
+  );
+  return analysis ? { ...payload, catalogAnalysisContext: analysis } : payload;
+};
+
 export const requestKyrubAiMultimodalConsultant = async (
   payload: KyrubAiConsultantRequest,
   signal?: AbortSignal
@@ -34,6 +50,7 @@ export const requestKyrubAiMultimodalConsultant = async (
     );
   }
 
+  const contextualPayload = withCatalogAnalysisContext(payload, currentUser.uid);
   const hasAttachments = payload.messages.some(
     message => message.role === 'user' && (message.attachments?.length ?? 0) > 0
   );
@@ -66,7 +83,7 @@ export const requestKyrubAiMultimodalConsultant = async (
         'content-type': 'application/json',
         accept: 'application/json',
       },
-      body: JSON.stringify(payload),
+      body: JSON.stringify(contextualPayload),
       cache: 'no-store',
       credentials: 'same-origin',
       signal,
@@ -99,6 +116,6 @@ export const requestKyrubAiMultimodalConsultant = async (
   }
 
   const result = body as KyrubAiConsultantResponse;
-  emitKyrubAiActionProposal(payload.conversationId, result);
+  emitKyrubAiActionProposal(contextualPayload.conversationId, result);
   return result;
 };

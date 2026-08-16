@@ -10,6 +10,10 @@ import {
   isKyrubiaCatalogAnalysisText,
   shouldUseKyrubiaCatalogAnalysis,
 } from '../shared/kyrubiaCatalogAnalysisIntent';
+import {
+  buildKyrubiaCatalogImportProposal,
+  isKyrubiaCatalogImportText,
+} from '../shared/kyrubiaCatalogImportIntent';
 
 test('catalog analysis intent is explicit and contextual follow-up requires stored analysis', () => {
   assert.equal(
@@ -121,6 +125,84 @@ test('catalog normalizer enforces the server-facing 60 item hard cap and determi
   assert.ok(analysis);
   assert.equal(analysis.items.length, KYRUB_CATALOG_ANALYSIS_MAX_ITEMS);
   assert.match(analysis.warnings.at(-1) ?? '', /truncada.*60 itens/i);
+});
+
+test('catalog write intent routes analyzed items into unpublished products instead of notes', () => {
+  assert.equal(
+    isKyrubiaCatalogImportText('Cadastre os produtos dessa imagem na minha loja.'),
+    true
+  );
+  assert.equal(
+    isKyrubiaCatalogImportText('Recadastre os itens desse cardápio.'),
+    true
+  );
+  assert.equal(
+    isKyrubiaCatalogImportText('Crie uma nota chamada Cardápio com o texto lanches.'),
+    false
+  );
+
+  const analysis = normalizeKyrubCatalogAnalysis({
+    items: [
+      {
+        ref: 'burger', kind: 'product', name: 'X-Burger', description: 'Hambúrguer',
+        category: 'Burgers Artesanais', price: 29.5, priceStatus: 'observed',
+        stockStatus: 'missing', issues: [],
+      },
+      {
+        ref: 'salada', kind: 'product', name: 'X-Salada', description: 'Com salada',
+        category: 'Burgers Artesanais', price: 35.5, priceStatus: 'observed',
+        stockStatus: 'missing', issues: [],
+      },
+      {
+        ref: 'duvidoso', kind: 'product', name: 'Item ilegível', description: '',
+        category: 'Burgers Artesanais', priceStatus: 'ambiguous',
+        stockStatus: 'missing', issues: ['Preço ilegível'],
+      },
+    ],
+  }, { sourceKind: 'multimodal', attachmentCount: 1 });
+  assert.ok(analysis);
+
+  const proposal = buildKyrubiaCatalogImportProposal(analysis, 'conversation-burgers');
+  assert.ok(proposal);
+  assert.equal(proposal.type, 'import_catalog_draft');
+  assert.equal(proposal.requiresConfirmation, true);
+  assert.equal(proposal.inputProvenance, 'document_content');
+  assert.equal(proposal.items.length, 2);
+  assert.deepEqual(
+    proposal.items.map(item => item.product.name),
+    ['X-Burger', 'X-Salada']
+  );
+
+  const router = readFileSync(new URL('../api/consultor-kyrub.ts', import.meta.url), 'utf8');
+  const importRoute = router.indexOf('const importResponse = catalogImportResponse');
+  const analysisRoute = router.indexOf('shouldUseKyrubiaCatalogAnalysis(messages');
+  const genericRoute = router.lastIndexOf('await handleKyrubia(request, response)');
+  assert.ok(importRoute >= 0);
+  assert.ok(importRoute < analysisRoute);
+  assert.ok(importRoute < genericRoute);
+  assert.match(router, /actionProposal: proposal/);
+
+  const executor = readFileSync(
+    new URL('../server/actions/catalogImportExecutionService.ts', import.meta.url),
+    'utf8'
+  );
+  assert.match(executor, /executeAuthorizedKyrubCatalogDraft/);
+  assert.match(executor, /inputProvenance: 'document_content'/);
+  assert.match(executor, /confirmed: true/);
+
+  const gateway = readFileSync(new URL('../api/action-execute.ts', import.meta.url), 'utf8');
+  assert.ok(
+    gateway.indexOf('isKyrubCatalogImportExecutionRequest') <
+    gateway.indexOf('await reconcileStoreEntitlementFromAuthorization')
+  );
+
+  const bridge = readFileSync(
+    new URL('../src/components/KyrubAiNoteActionBridge.tsx', import.meta.url),
+    'utf8'
+  );
+  assert.match(bridge, /Confirmar produtos do cardápio/);
+  assert.match(bridge, /proposal\.type === 'import_catalog_draft'/);
+  assert.match(bridge, /produtos não publicados/i);
 });
 
 test('catalog analysis service is forced structured read-only output and metered separately', () => {

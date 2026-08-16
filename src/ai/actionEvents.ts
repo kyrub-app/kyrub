@@ -68,6 +68,32 @@ export const isKyrubAiActionProposal = (
             typeof value.activationGrantId === 'string' &&
             value.activationGrantId.trim().length > 0))
       );
+    case 'import_catalog_draft':
+      return (
+        typeof value.conversationId === 'string' &&
+        value.conversationId.trim().length > 0 &&
+        isRecord(value.source) &&
+        value.source.kind === 'catalog_analysis' &&
+        Array.isArray(value.items) &&
+        value.items.length > 0 &&
+        value.items.length <= 60 &&
+        value.items.every(item =>
+          isRecord(item) &&
+          typeof item.ref === 'string' &&
+          item.ref.trim().length > 0 &&
+          isRecord(item.product) &&
+          typeof item.product.name === 'string' &&
+          item.product.name.trim().length > 0 &&
+          typeof item.product.category === 'string' &&
+          item.product.category.trim().length > 0 &&
+          typeof item.product.price === 'number' &&
+          Number.isFinite(item.product.price) &&
+          item.product.price >= 0 &&
+          isRecord(item.fieldProvenance) &&
+          Array.isArray(item.issues)
+        ) &&
+        value.requiresConfirmation === true
+      );
     case 'create_product':
       return (
         typeof value.name === 'string' &&
@@ -104,7 +130,9 @@ const prepareProposalForConfirmation = (
   risk: proposal.risk ?? KYRUB_ACTION_REGISTRY[proposal.type].risk,
   inputProvenance: proposal.inputProvenance ?? 'ai_generated_content',
   impact: proposal.impact ?? {
-    entityCount: 1,
+    entityCount: proposal.type === 'import_catalog_draft'
+      ? proposal.items.length
+      : 1,
     reversibility:
       proposal.type === 'create_product' || proposal.type === 'update_product'
         ? 'limited'

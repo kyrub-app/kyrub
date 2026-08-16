@@ -9,6 +9,7 @@ import type { KyrubiaTurnContext } from './kyrubiaContext';
 export type {
   KyrubActionProposal as KyrubAiActionProposal,
   KyrubAiCreateNoteProposal,
+  KyrubAiImportCatalogDraftProposal,
 } from './kyrubActions';
 export type { KyrubCatalogAnalysis } from './kyrubCatalogAnalysis';
 export type { KyrubErpContextSnapshot } from './kyrubErpContext';

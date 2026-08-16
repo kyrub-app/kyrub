@@ -12,6 +12,7 @@ export const KYRUB_ACTION_TYPES = {
   START_STORE_ACTIVATION: 'start_store_activation',
   UPDATE_STORE_PROFILE: 'update_store_profile',
   PREPARE_PRODUCT_DRAFT: 'prepare_product_draft',
+  IMPORT_CATALOG_DRAFT: 'import_catalog_draft',
   CREATE_PRODUCT: 'create_product',
   UPDATE_PRODUCT: 'update_product',
   READ_STORE_SUMMARY: 'read_store_summary',
@@ -24,7 +25,6 @@ export const KYRUB_PLANNED_ERP_ACTION_TYPES = {
   UPDATE_PRODUCT_DRAFT: 'update_product_draft',
   ADJUST_INVENTORY: 'adjust_inventory',
   ANALYZE_CATALOG: 'analyze_catalog',
-  IMPORT_CATALOG_DRAFT: 'import_catalog_draft',
 } as const;
 
 export type KyrubActionOrigin =
@@ -108,6 +108,7 @@ export type KyrubWriteActionType =
   | typeof KYRUB_ACTION_TYPES.START_STORE_ACTIVATION
   | typeof KYRUB_ACTION_TYPES.UPDATE_STORE_PROFILE
   | typeof KYRUB_ACTION_TYPES.PREPARE_PRODUCT_DRAFT
+  | typeof KYRUB_ACTION_TYPES.IMPORT_CATALOG_DRAFT
   | typeof KYRUB_ACTION_TYPES.CREATE_PRODUCT
   | typeof KYRUB_ACTION_TYPES.UPDATE_PRODUCT;
 
@@ -168,6 +169,14 @@ export const KYRUB_ACTION_REGISTRY: Record<
     requiresConfirmation: false,
     permission: 'products.drafts.write',
     maxAffectedEntities: 1,
+  },
+  import_catalog_draft: {
+    type: 'import_catalog_draft',
+    mode: 'write',
+    risk: 'low',
+    requiresConfirmation: true,
+    permission: 'products.drafts.write',
+    maxAffectedEntities: 60,
   },
   create_product: {
     type: 'create_product',
@@ -284,6 +293,24 @@ export type KyrubAiPrepareProductDraftProposal = KyrubActionProposalMetadata & {
   requiresConfirmation: false;
 };
 
+export type KyrubCatalogDraftImportItem = {
+  ref: string;
+  product: KyrubCatalogDraftProductInput;
+  fieldProvenance: Partial<
+    Record<KyrubCatalogDraftField, KyrubCatalogDraftFieldProvenance>
+  >;
+  issues: KyrubCatalogDraftIssue[];
+};
+
+export type KyrubAiImportCatalogDraftProposal = KyrubActionProposalMetadata & {
+  id: string;
+  type: typeof KYRUB_ACTION_TYPES.IMPORT_CATALOG_DRAFT;
+  conversationId: string;
+  source: KyrubCatalogDraftSource;
+  items: KyrubCatalogDraftImportItem[];
+  requiresConfirmation: true;
+};
+
 export type KyrubAiCreateProductProposal = KyrubActionProposalMetadata & {
   id: string;
   type: typeof KYRUB_ACTION_TYPES.CREATE_PRODUCT;
@@ -317,6 +344,7 @@ export type KyrubActionProposal =
   | KyrubAiStartStoreActivationProposal
   | KyrubAiUpdateStoreProfileProposal
   | KyrubAiPrepareProductDraftProposal
+  | KyrubAiImportCatalogDraftProposal
   | KyrubAiCreateProductProposal
   | KyrubAiUpdateProductProposal;
 
