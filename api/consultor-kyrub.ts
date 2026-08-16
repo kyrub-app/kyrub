@@ -12,6 +12,11 @@ import {
   isKyrubiaCatalogImportText,
 } from '../shared/kyrubiaCatalogImportIntent.js';
 import { shouldUseKyrubiaCatalogAnalysis } from '../shared/kyrubiaCatalogAnalysisIntent.js';
+import {
+  classifyKyrubiaCapability,
+  kyrubiaIntentAllowsAction,
+  type KyrubiaCapabilityDecision,
+} from '../shared/kyrubiaCapabilityRouter.js';
 import { handleKyrubiaCatalogAnalysis } from '../server/kyrubiaCatalogAnalysisRoute.js';
 import handleKyrubia from './kyrubia.js';
 
@@ -69,6 +74,16 @@ const conversationMessages = (body: Record<string, unknown>): KyrubAiConversatio
         }];
       })
     : [];
+
+const latestUserMessage = (
+  messages: KyrubAiConversationMessage[]
+): KyrubAiConversationMessage | null =>
+  [...messages].reverse().find(message => message.role === 'user') ?? null;
+
+const capabilityDecision = (
+  messages: KyrubAiConversationMessage[]
+): KyrubiaCapabilityDecision =>
+  classifyKyrubiaCapability(latestUserMessage(messages)?.content ?? '');
 
 const catalogAnalysisContext = (
   body: Record<string, unknown>
@@ -157,12 +172,36 @@ const withCatalogAnalysisContext = (
   return { ...body, messages };
 };
 
+const withCapabilityPolicy = (
+  body: Record<string, unknown>,
+  decision: KyrubiaCapabilityDecision
+): Record<string, unknown> => {
+  if (!Array.isArray(body.messages)) return body;
+  const messages = [...body.messages];
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const item = messages[index];
+    if (!isRecord(item) || item.role !== 'user') continue;
+    const content = typeof item.content === 'string' ? item.content : '';
+    messages[index] = {
+      ...item,
+      content:
+        '[server_capability_policy]\n' +
+        `intent=${decision.primary};mutation=${decision.mutation}.\n` +
+        'Use somente capacidades compatíveis com essa intenção. Não substitua uma ação por outra.\n' +
+        '[/server_capability_policy]\n[current_user_request]\n' +
+        content,
+    };
+    break;
+  }
+  return { ...body, messages };
+};
+
 const catalogImportResponse = (
   body: Record<string, unknown>,
   messages: KyrubAiConversationMessage[],
   analysis: KyrubCatalogAnalysis
 ): KyrubAiConsultantResponse | null => {
-  const latestUser = [...messages].reverse().find(message => message.role === 'user');
+  const latestUser = latestUserMessage(messages);
   if (!latestUser || !isKyrubiaCatalogImportText(latestUser.content)) return null;
 
   const conversationId = typeof body.conversationId === 'string'
@@ -222,7 +261,7 @@ const hasAttachmentHistory = (messages: KyrubAiConversationMessage[]): boolean =
 const latestUserRequestsCatalogImport = (
   messages: KyrubAiConversationMessage[]
 ): boolean => {
-  const latestUser = [...messages].reverse().find(message => message.role === 'user');
+  const latestUser = latestUserMessage(messages);
   return Boolean(latestUser && isKyrubiaCatalogImportText(latestUser.content));
 };
 
@@ -245,6 +284,76 @@ const analyzeCatalogForImmediateImport = async (
   return { statusCode, body };
 };
 
+const actionTypeFromBody = (body: unknown): string => {
+  if (!isRecord(body) || !isRecord(body.actionProposal)) return '';
+  return typeof body.actionProposal.type === 'string'
+    ? body.actionProposal.type
+    : '';
+};
+
+const runGenericWithCapabilityGuard = async (
+  request: VercelRequestLike,
+  response: VercelResponseLike,
+  body: Record<string, unknown>,
+  decision: KyrubiaCapabilityDecision
+): Promise<void> => {
+  if (decision.primary === 'generate_image') {
+    response.status(200).json({
+      reply:
+        'Entendi que você quer gerar uma imagem. Essa é uma capacidade diferente de criar nota, cadastrar produto ou transcrever texto. A geração de imagens ainda não está habilitada neste runtime da Kyrubia; nenhuma nota ou outro dado foi criado.',
+      provider: 'kyrub',
+      model: 'kyrub-capability-router-v1',
+      mode: 'deterministic',
+      requestId: `capability-image-${Date.now()}`,
+      capabilities: {
+        actionsEnabled: false,
+        enabledActions: [],
+        enabledReadActions: [],
+        voiceEnabled: false,
+        persistentCloudHistoryEnabled: false,
+      },
+    });
+    return;
+  }
+
+  let statusCode = 200;
+  let capturedBody: unknown = null;
+  const capture: VercelResponseLike = {
+    setHeader: (name, value) => response.setHeader(name, value),
+    status: code => {
+      statusCode = code;
+      return capture;
+    },
+    json: value => {
+      capturedBody = value;
+    },
+  };
+
+  await handleKyrubia(
+    { ...request, body: withCapabilityPolicy(body, decision) },
+    capture
+  );
+
+  const returnedAction = actionTypeFromBody(capturedBody);
+  if (returnedAction && !kyrubiaIntentAllowsAction(decision, returnedAction)) {
+    console.warn('[Kyrubia] Blocked action outside classified intent.', {
+      intent: decision.primary,
+      allowedMutation: decision.mutation,
+      returnedAction,
+    });
+    response.status(409).json({
+      error:
+        `A Kyrubia reconheceu a intenção “${decision.primary}”, mas tentou preparar a ação incompatível “${returnedAction}”. A ação foi bloqueada e nada foi gravado.`,
+      code: 'INTENT_ACTION_MISMATCH',
+      intent: decision.primary,
+      blockedAction: returnedAction,
+    });
+    return;
+  }
+
+  response.status(statusCode).json(capturedBody);
+};
+
 export const maxDuration = 30;
 
 export default async function handler(
@@ -264,6 +373,7 @@ export default async function handler(
       ),
       catalogAnalysisEnabled: true,
       routerEnabled: true,
+      capabilityRouterEnabled: true,
     });
     return;
   }
@@ -271,10 +381,13 @@ export default async function handler(
   if (request.method === 'POST') {
     const body = readBody(request.body);
     const messages = conversationMessages(body);
+    const decision = capabilityDecision(messages);
     const analysisContext = catalogAnalysisContext(body);
-    const importRequested = latestUserRequestsCatalogImport(messages);
+    const importRequested =
+      decision.primary === 'create_products' &&
+      latestUserRequestsCatalogImport(messages);
 
-    if (analysisContext) {
+    if (analysisContext && importRequested) {
       const importResponse = catalogImportResponse(body, messages, analysisContext);
       if (importResponse) {
         response.status(200).json(importResponse);
@@ -319,7 +432,10 @@ export default async function handler(
       return;
     }
 
-    if (shouldUseKyrubiaCatalogAnalysis(messages, Boolean(analysisContext))) {
+    if (
+      decision.primary === 'analyze_catalog' ||
+      shouldUseKyrubiaCatalogAnalysis(messages, Boolean(analysisContext))
+    ) {
       await handleKyrubiaCatalogAnalysis(
         analysisContext
           ? { ...request, body: withCatalogAnalysisContext(body, analysisContext) }
@@ -328,6 +444,9 @@ export default async function handler(
       );
       return;
     }
+
+    await runGenericWithCapabilityGuard(request, response, body, decision);
+    return;
   }
 
   await handleKyrubia(request, response);
