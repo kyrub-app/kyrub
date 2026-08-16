@@ -1,6 +1,7 @@
 import type {
   KyrubAiActionProposal,
   KyrubAiConsultantResponse,
+  KyrubCatalogImportDraftProposal,
 } from '../../shared/aiConsultant';
 import type { KyrubCatalogAnalysis } from '../../shared/kyrubCatalogAnalysis';
 import { KYRUB_ACTION_REGISTRY } from '../../shared/kyrubActions';
@@ -11,6 +12,8 @@ export const KYRUB_AI_ACTION_PROPOSAL_EVENT =
   'kyrub-ai-action-proposal';
 export const KYRUB_CATALOG_ANALYSIS_EVENT =
   'kyrub-catalog-analysis';
+export const KYRUB_CATALOG_IMPORT_PROPOSAL_EVENT =
+  'kyrub-catalog-import-proposal';
 
 export type KyrubAiActionProposalEventDetail = {
   conversationId: string;
@@ -22,6 +25,12 @@ export type KyrubCatalogAnalysisEventDetail = {
   conversationId: string;
   requestId: string;
   analysis: KyrubCatalogAnalysis;
+};
+
+export type KyrubCatalogImportProposalEventDetail = {
+  conversationId: string;
+  requestId: string;
+  proposal: KyrubCatalogImportDraftProposal;
 };
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -140,11 +149,38 @@ const emitCatalogAnalysis = (
   );
 };
 
+const emitCatalogImportProposal = (
+  conversationId: string,
+  response: KyrubAiConsultantResponse
+): void => {
+  if (
+    typeof window === 'undefined' ||
+    !response.catalogImportProposal ||
+    response.catalogImportProposal.requiresConfirmation !== true ||
+    response.catalogImportProposal.items.length === 0
+  ) {
+    return;
+  }
+  window.dispatchEvent(
+    new CustomEvent<KyrubCatalogImportProposalEventDetail>(
+      KYRUB_CATALOG_IMPORT_PROPOSAL_EVENT,
+      {
+        detail: {
+          conversationId,
+          requestId: response.requestId,
+          proposal: response.catalogImportProposal,
+        },
+      }
+    )
+  );
+};
+
 export const emitKyrubAiActionProposal = (
   conversationId: string,
   response: KyrubAiConsultantResponse
 ): void => {
   emitCatalogAnalysis(conversationId, response);
+  emitCatalogImportProposal(conversationId, response);
 
   if (
     typeof window === 'undefined' ||
