@@ -29,10 +29,18 @@ test('Kyrubia keeps note, product, transcription and image intents distinct', ()
   );
 });
 
-test('explicit artifact noun wins over broad create verb', () => {
+test('explicit artifact target wins over embedded vocabulary', () => {
   assert.deepEqual(
     classifyKyrubiaCapability('Crie uma nota sobre os produtos desse cardápio.'),
     { primary: 'create_note', mutation: 'note' }
+  );
+  assert.deepEqual(
+    classifyKyrubiaCapability('Crie uma nota para comprar embalagens e inclua um checklist.'),
+    { primary: 'create_note', mutation: 'note' }
+  );
+  assert.deepEqual(
+    classifyKyrubiaCapability('Crie uma tarefa com checklist para comprar embalagens.'),
+    { primary: 'create_task', mutation: 'task' }
   );
   assert.deepEqual(
     classifyKyrubiaCapability('Crie os produtos desse cardápio na loja.'),
