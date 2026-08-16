@@ -15,11 +15,13 @@ const normalize = (value: string): string =>
 const IMPORT_VERB = /\b(cadastre|cadastrar|cadastro|adicione|adicionar|inclua|incluir|importe|importar|crie|criar|recadastre|recadastrar)\b/;
 const PRODUCT_SIGNAL = /\b(produto|produtos|item|itens|cardapio|catalogo|menu|lista|vitrine)\b/;
 const CONTEXT_SIGNAL = /\b(esse|esses|essa|essas|deste|destes|dessa|dessas|imagem|foto|anexo|analise|lista|cardapio|catalogo|menu)\b/;
+const EXPLICIT_OTHER_ARTIFACT = /\b(?:nota|notas|tarefa|tarefas|lembrete|lembretes|checklist)\b/;
 
 export const isKyrubiaCatalogImportText = (message: string): boolean => {
   const intent = normalize(message);
   return Boolean(
     intent &&
+    !EXPLICIT_OTHER_ARTIFACT.test(intent) &&
     IMPORT_VERB.test(intent) &&
     PRODUCT_SIGNAL.test(intent) &&
     CONTEXT_SIGNAL.test(intent)
