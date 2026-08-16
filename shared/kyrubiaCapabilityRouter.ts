@@ -39,13 +39,14 @@ export const classifyKyrubiaCapability = (
 ): KyrubiaCapabilityDecision => {
   const text = normalize(message);
 
-  // Explicit target nouns outrank broad verbs such as “crie”. This keeps
-  // “crie uma nota sobre o cardápio” distinct from “cadastre o cardápio”.
-  if (TASK_NOUN.test(text) && TASK_WRITE.test(text)) {
-    return { primary: 'create_task', mutation: 'task' };
-  }
+  // The explicitly named artifact is the primary target. A checklist can be
+  // content inside a note, so an explicit note request must be recognized
+  // before the broader task/checklist vocabulary.
   if (NOTE_NOUN.test(text) && NOTE_WRITE.test(text)) {
     return { primary: 'create_note', mutation: 'note' };
+  }
+  if (TASK_NOUN.test(text) && TASK_WRITE.test(text)) {
+    return { primary: 'create_task', mutation: 'task' };
   }
   if (PRODUCT_NOUN.test(text) && PRODUCT_WRITE.test(text)) {
     return { primary: 'create_products', mutation: 'products' };
