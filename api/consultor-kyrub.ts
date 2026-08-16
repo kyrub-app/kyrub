@@ -330,7 +330,11 @@ const runGenericWithCapabilityGuard = async (
   };
 
   await handleKyrubia(
-    { ...request, body: withCapabilityPolicy(body, decision) },
+    {
+      method: request.method,
+      headers: request.headers ?? {},
+      body: withCapabilityPolicy(body, decision),
+    },
     capture
   );
 

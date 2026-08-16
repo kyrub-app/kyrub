@@ -78,3 +78,18 @@ test('central consultant enforces capability policy around generic Kyrubia fallb
   assert.match(router, /server_capability_policy/);
   assert.match(router, /decision\.primary === 'create_products'/);
 });
+
+test('capability guard forwards method, headers and body explicitly', () => {
+  const router = readFileSync(
+    new URL('../api/consultor-kyrub.ts', import.meta.url),
+    'utf8'
+  );
+
+  assert.match(router, /method: request\.method/);
+  assert.match(router, /headers: request\.headers \?\? \{\}/);
+  assert.match(router, /body: withCapabilityPolicy\(body, decision\)/);
+  assert.doesNotMatch(
+    router,
+    /\{ \.\.\.request, body: withCapabilityPolicy\(body, decision\) \}/
+  );
+});
