@@ -3,6 +3,7 @@ import type {
   KyrubReadActionType,
 } from './kyrubActions';
 import type { KyrubCatalogAnalysis } from './kyrubCatalogAnalysis';
+import type { KyrubCatalogImportDraftProposal } from './kyrubCatalogImport';
 import type { KyrubErpContextSnapshot } from './kyrubErpContext';
 import type { KyrubiaTurnContext } from './kyrubiaContext';
 
@@ -11,6 +12,11 @@ export type {
   KyrubAiCreateNoteProposal,
 } from './kyrubActions';
 export type { KyrubCatalogAnalysis } from './kyrubCatalogAnalysis';
+export type {
+  KyrubCatalogImportDraftItem,
+  KyrubCatalogImportDraftProposal,
+  KyrubCatalogImportDraftResult,
+} from './kyrubCatalogImport';
 export type { KyrubErpContextSnapshot } from './kyrubErpContext';
 export type {
   KyrubiaOfferedIntent,
@@ -121,6 +127,7 @@ export type KyrubAiConsultantResponse = {
   mode: 'conversation' | 'deterministic';
   requestId: string;
   actionProposal?: KyrubActionProposal;
+  catalogImportProposal?: KyrubCatalogImportDraftProposal;
   catalogAnalysis?: KyrubCatalogAnalysis;
   turnContext?: KyrubiaTurnContext;
   historicalLink?: KyrubAiHistoricalLink;
