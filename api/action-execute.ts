@@ -9,6 +9,10 @@ import {
   setAuthorizedKyrubCatalogProductPublication,
 } from '../server/actions/catalogProductLifecycleService.js';
 import {
+  executeAuthorizedKyrubCatalogImport,
+  isKyrubCatalogImportExecutionRequest,
+} from '../server/actions/catalogImportExecutionService.js';
+import {
   isKyrubActionReceiptVerificationRequest,
   verifyAuthorizedKyrubActionReceipt,
 } from '../server/actions/actionReceiptVerificationService.js';
@@ -52,8 +56,6 @@ export default async function handler(
       request.headers.authorization ?? request.headers.Authorization
     );
 
-    // Receipt verification is an authenticated read. It must not trigger plan
-    // reconciliation or gain write authority from the execution gateway.
     if (isKyrubActionReceiptVerificationRequest(request.body)) {
       const verification = await verifyAuthorizedKyrubActionReceipt(
         authorization,
@@ -63,8 +65,17 @@ export default async function handler(
       return;
     }
 
-    // An unpublished catalog item is already a real canonical product. Creating
-    // or listing it does not consume published-product capacity.
+    // Unpublished products do not consume published-product capacity. Catalog
+    // analysis imports therefore execute before entitlement reconciliation.
+    if (isKyrubCatalogImportExecutionRequest(request.body)) {
+      const imported = await executeAuthorizedKyrubCatalogImport(
+        authorization,
+        request.body
+      );
+      response.status(200).json(imported);
+      return;
+    }
+
     if (isKyrubCatalogDraftListRequest(request.body)) {
       const drafts = await listAuthorizedKyrubCatalogDrafts(authorization);
       response.status(200).json(drafts);
@@ -79,8 +90,6 @@ export default async function handler(
       return;
     }
 
-    // Publication is the capacity boundary: only checked/published products
-    // consume the plan allowance, so reconcile entitlement immediately before it.
     if (isKyrubCatalogProductPublicationRequest(request.body)) {
       await reconcileStoreEntitlementFromAuthorization(authorization);
       await hydrateExecutablePlanCatalog();
@@ -92,9 +101,6 @@ export default async function handler(
       return;
     }
 
-    // Benefit expiry is an already-agreed entitlement boundary, not a new
-    // discretionary action. Reconcile it before loading plan capacity so an
-    // expired Pro/Business benefit can never authorize a published write.
     await reconcileStoreEntitlementFromAuthorization(authorization);
     await hydrateExecutablePlanCatalog();
     const result = await executeAuthorizedKyrubAction(
