@@ -1,8 +1,16 @@
-import type { KyrubAiConversationMessage } from '../shared/aiConsultant.js';
+import type {
+  KyrubAiConsultantResponse,
+  KyrubAiConversationMessage,
+} from '../shared/aiConsultant.js';
 import {
   normalizeKyrubCatalogAnalysis,
   type KyrubCatalogAnalysis,
 } from '../shared/kyrubCatalogAnalysis.js';
+import {
+  buildKyrubiaCatalogImportProposal,
+  isKyrubCatalogAnalysisItemReadyForImport,
+  isKyrubiaCatalogImportText,
+} from '../shared/kyrubiaCatalogImportIntent.js';
 import { shouldUseKyrubiaCatalogAnalysis } from '../shared/kyrubiaCatalogAnalysisIntent.js';
 import { handleKyrubiaCatalogAnalysis } from '../server/kyrubiaCatalogAnalysisRoute.js';
 import handleKyrubia from './kyrubia.js';
@@ -31,6 +39,7 @@ const CONSULTOR_KYRUB_COMPATIBILITY = {
   service: 'consultor-kyrub',
   functionDeclarations: [
     { name: 'create_note' },
+    { name: 'import_catalog_draft' },
   ],
 } as const;
 
@@ -151,6 +160,63 @@ const withCatalogAnalysisContext = (
   return { ...body, messages };
 };
 
+const catalogImportResponse = (
+  body: Record<string, unknown>,
+  messages: KyrubAiConversationMessage[],
+  analysis: KyrubCatalogAnalysis
+): KyrubAiConsultantResponse | null => {
+  const latestUser = [...messages].reverse().find(message => message.role === 'user');
+  if (!latestUser || !isKyrubiaCatalogImportText(latestUser.content)) return null;
+
+  const conversationId = typeof body.conversationId === 'string'
+    ? body.conversationId.trim()
+    : '';
+  const proposal = buildKyrubiaCatalogImportProposal(analysis, conversationId);
+  const readyCount = analysis.items.filter(isKyrubCatalogAnalysisItemReadyForImport).length;
+  const reviewCount = analysis.items.length - readyCount;
+  const requestId = proposal?.id ?? `catalog-import-review-${Date.now()}`;
+
+  if (!proposal) {
+    return {
+      reply:
+        'Eu reconheci que você quer cadastrar os itens desta análise, mas nenhum deles está seguro para gravação ainda. ' +
+        'Revise preço, categoria ou identificação dos itens pendentes antes de eu criar os produtos.',
+      provider: 'kyrub',
+      model: 'kyrub-catalog-import-runtime-v1',
+      mode: 'deterministic',
+      requestId,
+      capabilities: {
+        actionsEnabled: true,
+        enabledActions: ['import_catalog_draft'],
+        enabledReadActions: [],
+        voiceEnabled: false,
+        persistentCloudHistoryEnabled: false,
+      },
+    };
+  }
+
+  return {
+    reply:
+      `Tenho ${readyCount} item(ns) prontos para cadastro a partir desta análise.` +
+      (reviewCount > 0
+        ? ` ${reviewCount} item(ns) precisam de revisão e ficarão de fora por enquanto.`
+        : '') +
+      ' Vou criar os itens confirmados como produtos não publicados. Revise e confirme; nada será enviado automaticamente para a vitrine.',
+    provider: 'kyrub',
+    model: 'kyrub-catalog-import-runtime-v1',
+    mode: 'deterministic',
+    requestId,
+    actionProposal: proposal,
+    capabilities: {
+      actionsEnabled: true,
+      enabledActions: ['import_catalog_draft'],
+      enabledReadActions: [],
+      voiceEnabled: false,
+      persistentCloudHistoryEnabled: false,
+    },
+  };
+};
+
 export const maxDuration = 30;
 
 export default async function handler(
@@ -178,6 +244,15 @@ export default async function handler(
     const body = readBody(request.body);
     const messages = conversationMessages(body);
     const analysisContext = catalogAnalysisContext(body);
+
+    if (analysisContext) {
+      const importResponse = catalogImportResponse(body, messages, analysisContext);
+      if (importResponse) {
+        response.status(200).json(importResponse);
+        return;
+      }
+    }
+
     if (shouldUseKyrubiaCatalogAnalysis(messages, Boolean(analysisContext))) {
       await handleKyrubiaCatalogAnalysis(
         analysisContext
