@@ -77,6 +77,25 @@ export const isKyrubAiActionProposal = (
             typeof value.activationGrantId === 'string' &&
             value.activationGrantId.trim().length > 0))
       );
+    case 'import_catalog_draft':
+      return (
+        typeof value.conversationId === 'string' &&
+        isRecord(value.source) &&
+        Array.isArray(value.items) &&
+        value.items.length > 0 &&
+        value.items.length <= 60 &&
+        value.items.every(item =>
+          isRecord(item) &&
+          typeof item.ref === 'string' &&
+          isRecord(item.product) &&
+          typeof item.product.name === 'string' &&
+          typeof item.product.category === 'string' &&
+          typeof item.product.price === 'number' &&
+          isRecord(item.fieldProvenance) &&
+          Array.isArray(item.issues)
+        ) &&
+        value.requiresConfirmation === true
+      );
     case 'create_product':
       return (
         typeof value.name === 'string' &&
