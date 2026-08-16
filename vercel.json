@@ -1,10 +1,6 @@
 {
   "rewrites": [
     {
-      "source": "/api/consultor-kyrub",
-      "destination": "/api/consultor-kyrub-forwarded"
-    },
-    {
       "source": "/staff",
       "destination": "/index.html"
     },
