@@ -6,6 +6,7 @@ import {
 import { auth } from '../utils/firebase';
 import { emitKyrubAiActionProposal } from './actionEvents';
 import { loadKyrubiaCatalogAnalysis } from './catalogAnalysisStore';
+import './catalogImportConfirmationBridge';
 import { KyrubAiClientError } from './consultantClient';
 import { normalizeConsultantError } from './consultantError';
 
