@@ -1,7 +1,6 @@
 import type {
   KyrubAiActionProposal,
   KyrubAiConsultantResponse,
-  KyrubCatalogImportDraftProposal,
 } from '../../shared/aiConsultant';
 import type { KyrubCatalogAnalysis } from '../../shared/kyrubCatalogAnalysis';
 import { KYRUB_ACTION_REGISTRY } from '../../shared/kyrubActions';
@@ -12,8 +11,6 @@ export const KYRUB_AI_ACTION_PROPOSAL_EVENT =
   'kyrub-ai-action-proposal';
 export const KYRUB_CATALOG_ANALYSIS_EVENT =
   'kyrub-catalog-analysis';
-export const KYRUB_CATALOG_IMPORT_PROPOSAL_EVENT =
-  'kyrub-catalog-import-proposal';
 
 export type KyrubAiActionProposalEventDetail = {
   conversationId: string;
@@ -25,12 +22,6 @@ export type KyrubCatalogAnalysisEventDetail = {
   conversationId: string;
   requestId: string;
   analysis: KyrubCatalogAnalysis;
-};
-
-export type KyrubCatalogImportProposalEventDetail = {
-  conversationId: string;
-  requestId: string;
-  proposal: KyrubCatalogImportDraftProposal;
 };
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -80,17 +71,24 @@ export const isKyrubAiActionProposal = (
     case 'import_catalog_draft':
       return (
         typeof value.conversationId === 'string' &&
+        value.conversationId.trim().length > 0 &&
         isRecord(value.source) &&
+        value.source.kind === 'catalog_analysis' &&
         Array.isArray(value.items) &&
         value.items.length > 0 &&
         value.items.length <= 60 &&
         value.items.every(item =>
           isRecord(item) &&
           typeof item.ref === 'string' &&
+          item.ref.trim().length > 0 &&
           isRecord(item.product) &&
           typeof item.product.name === 'string' &&
+          item.product.name.trim().length > 0 &&
           typeof item.product.category === 'string' &&
+          item.product.category.trim().length > 0 &&
           typeof item.product.price === 'number' &&
+          Number.isFinite(item.product.price) &&
+          item.product.price >= 0 &&
           isRecord(item.fieldProvenance) &&
           Array.isArray(item.issues)
         ) &&
@@ -132,7 +130,9 @@ const prepareProposalForConfirmation = (
   risk: proposal.risk ?? KYRUB_ACTION_REGISTRY[proposal.type].risk,
   inputProvenance: proposal.inputProvenance ?? 'ai_generated_content',
   impact: proposal.impact ?? {
-    entityCount: 1,
+    entityCount: proposal.type === 'import_catalog_draft'
+      ? proposal.items.length
+      : 1,
     reversibility:
       proposal.type === 'create_product' || proposal.type === 'update_product'
         ? 'limited'
@@ -168,38 +168,11 @@ const emitCatalogAnalysis = (
   );
 };
 
-const emitCatalogImportProposal = (
-  conversationId: string,
-  response: KyrubAiConsultantResponse
-): void => {
-  if (
-    typeof window === 'undefined' ||
-    !response.catalogImportProposal ||
-    response.catalogImportProposal.requiresConfirmation !== true ||
-    response.catalogImportProposal.items.length === 0
-  ) {
-    return;
-  }
-  window.dispatchEvent(
-    new CustomEvent<KyrubCatalogImportProposalEventDetail>(
-      KYRUB_CATALOG_IMPORT_PROPOSAL_EVENT,
-      {
-        detail: {
-          conversationId,
-          requestId: response.requestId,
-          proposal: response.catalogImportProposal,
-        },
-      }
-    )
-  );
-};
-
 export const emitKyrubAiActionProposal = (
   conversationId: string,
   response: KyrubAiConsultantResponse
 ): void => {
   emitCatalogAnalysis(conversationId, response);
-  emitCatalogImportProposal(conversationId, response);
 
   if (
     typeof window === 'undefined' ||
