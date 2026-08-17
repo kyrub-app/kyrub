@@ -74,6 +74,35 @@ export const parseInventorySelectedOptions = (
   });
 };
 
+export const parseConfiguredLineSelectedOptions = (
+  value: unknown
+): InventorySelectedOptionRef[] => {
+  const lineKey = clean(value);
+  const separatorIndex = lineKey.indexOf('::');
+  if (separatorIndex < 0) return [];
+  const configuration = lineKey.slice(separatorIndex + 2);
+  const optionsEntry = configuration
+    .split('&')
+    .find(entry => entry.startsWith('options='));
+  if (!optionsEntry) return [];
+
+  const seen = new Set<string>();
+  return optionsEntry
+    .slice('options='.length)
+    .split('|')
+    .slice(0, 30)
+    .flatMap(entry => {
+      const separator = entry.indexOf(':');
+      if (separator <= 0) return [];
+      const groupId = entry.slice(0, separator).trim();
+      const choiceId = entry.slice(separator + 1).trim();
+      const key = `${groupId}:${choiceId}`;
+      if (!validId(groupId) || !validId(choiceId) || seen.has(key)) return [];
+      seen.add(key);
+      return [{ groupId, choiceId }];
+    });
+};
+
 export const parseOptionInventoryImpacts = (
   value: unknown
 ): OptionInventoryImpactRecord[] => {
