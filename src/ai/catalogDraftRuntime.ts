@@ -9,14 +9,10 @@ import {
 import { readKyrubErpContext } from '../actions/erpReadActionService';
 import { executePreauthorizedProductDraftAction } from '../actions/kyrubActionService';
 import { listKyrubCatalogDrafts } from '../actions/kyrubCatalogDraftService';
-
-export const KYRUBIA_STOREFRONT_TEST_PROPOSAL_EVENT =
-  'kyrubia-storefront-test-proposal';
-
-export type KyrubiaStorefrontTestProposalEventDetail = {
-  conversationId: string;
-  items: [KyrubiaStorefrontTestCandidate, KyrubiaStorefrontTestCandidate];
-};
+import {
+  KYRUBIA_STOREFRONT_TEST_PROPOSAL_EVENT,
+  type KyrubiaStorefrontTestProposalEventDetail,
+} from './storefrontTestEvents';
 
 export type KyrubiaCatalogDraftRuntimeResult = {
   reply: string;
