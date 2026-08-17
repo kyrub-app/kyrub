@@ -172,7 +172,10 @@ test('product update contract stays confirmation-bound and server-authoritative'
   assert.match(actionEventsSource, /typeof value\.expectedCurrentName === 'string'/);
   assert.match(actionEventsSource, /typeof value\.patch\.name === 'string'/);
   assert.match(bridgeSource, /detail\.proposal\.type !== 'update_product'/);
-  assert.match(bridgeSource, /executeKyrubAction\(user, pending\.proposal, true\)/);
+  assert.match(
+    bridgeSource,
+    /executeKyrubAction\(user,\s*current\.proposal,\s*true\)/
+  );
   assert.match(bridgeSource, /invalidateKyrubErpContext/);
   assert.match(appSource, /<KyrubAiProductUpdateActionBridge \/>/);
 });
