@@ -7,7 +7,6 @@ import {
 import { adminDb } from '../firebaseAdmin';
 import {
   applyInventoryConsumptionLines,
-  buildOrderInventoryConsumption,
   calculateCompositionAvailableStock,
   isInventoryTerminalCancellation,
   parseInventoryCatalogRecords,
@@ -16,9 +15,15 @@ import {
   shouldConsumeInventory,
   type InventoryCatalogRecord,
   type InventoryConsumptionLine,
-  type InventoryOrderItemRecord,
   type InventoryOrderStatus,
 } from '../../shared/inventoryConsumption';
+import {
+  buildOrderInventoryConsumptionWithOptions,
+  parseConfiguredLineSelectedOptions,
+  parseInventorySelectedOptions,
+  parseOptionInventoryImpacts,
+  type OptionAwareInventoryOrderItem,
+} from '../../shared/optionInventoryImpact';
 
 const INVENTORY_LEDGER_COLLECTION = 'inventoryOrderConsumptions';
 
@@ -61,7 +66,7 @@ interface ParsedOrder {
   id: string;
   status: InventoryOrderStatus;
   customerNote: string;
-  items: InventoryOrderItemRecord[];
+  items: OptionAwareInventoryOrderItem[];
   integration: Record<string, unknown>;
 }
 
@@ -88,6 +93,11 @@ const ledgerId = (tenantId: string, orderId: string): string =>
 const ledgerPath = (tenantId: string, orderId: string): string =>
   `${INVENTORY_LEDGER_COLLECTION}/${ledgerId(tenantId, orderId)}`;
 
+const sourceProductId = (configuredProductId: string, explicitSource: unknown): string =>
+  clean(explicitSource) ||
+  configuredProductId.split('::', 1)[0]?.trim() ||
+  configuredProductId;
+
 const parseOrder = (value: unknown): ParsedOrder | null => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   const record = value as Record<string, unknown>;
@@ -101,17 +111,23 @@ const parseOrder = (value: unknown): ParsedOrder | null => {
       return [];
     }
     const item = candidate as Record<string, unknown>;
-    const productId = clean(item.productId);
+    const configuredProductId = clean(item.productId);
+    const productId = sourceProductId(configuredProductId, item.sourceProductId);
     const name = clean(item.name);
     const quantity = finiteInteger(item.quantity);
     const transferredQuantity = finiteInteger(item.transferredQuantity) ?? 0;
     if (!productId || !name || quantity === null || quantity <= 0) return [];
+    const explicitSelectedOptions = parseInventorySelectedOptions(item.selectedOptions);
+    const selectedOptions = explicitSelectedOptions.length > 0
+      ? explicitSelectedOptions
+      : parseConfiguredLineSelectedOptions(configuredProductId);
     return [{
       productId,
       name,
       quantity,
       transferredQuantity,
-    } satisfies InventoryOrderItemRecord];
+      ...(selectedOptions.length > 0 ? { selectedOptions } : {}),
+    } satisfies OptionAwareInventoryOrderItem];
   });
 
   if (items.length !== record.items.length) return null;
@@ -137,6 +153,23 @@ const decisionText = (decision: OrderStatusDecisionInput): string =>
 
 const mergeCustomerNote = (current: string, extra: string): string =>
   [clean(current), clean(extra)].filter(Boolean).join('\n');
+
+const productCategoriesFromTenant = (
+  tenantData: DocumentData | undefined
+): Record<string, string> => {
+  if (!Array.isArray(tenantData?.publicProducts)) return {};
+  const categories: Record<string, string> = {};
+  for (const candidate of tenantData.publicProducts) {
+    if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) {
+      continue;
+    }
+    const product = candidate as Record<string, unknown>;
+    const id = clean(product.id);
+    const category = clean(product.category);
+    if (id && category) categories[id] = category;
+  }
+  return categories;
+};
 
 const publicProductsWithCalculatedStock = (
   tenantData: DocumentData | undefined,
@@ -212,8 +245,15 @@ const applyInventoryForStatus = (input: {
   const tenantReference = adminDb.doc(`tenants/${tenantId}`);
   const ledgerStatus = clean(ledgerData?.status);
   const trigger = parseInventoryConsumptionTrigger(inventoryData?.consumptionTrigger);
-  const catalog = parseInventoryCatalogRecords(inventoryData?.catalog);
-  const compositions = parseInventoryCompositionRecords(inventoryData?.compositions);
+  const catalog = parseInventoryCatalogRecords(
+    inventoryData?.catalog ?? inventoryData?.inventoryCatalog
+  );
+  const compositions = parseInventoryCompositionRecords(
+    inventoryData?.compositions ?? inventoryData?.productCompositions
+  );
+  const optionImpacts = parseOptionInventoryImpacts(
+    inventoryData?.optionInventoryImpacts
+  );
 
   if (isInventoryTerminalCancellation(effectiveStatus)) {
     if (ledgerStatus !== 'consumed') {
@@ -230,6 +270,7 @@ const applyInventoryForStatus = (input: {
       inventoryReference,
       {
         catalog: restoredCatalog,
+        inventoryCatalog: restoredCatalog,
         updatedAt: FieldValue.serverTimestamp(),
       },
       { merge: true }
@@ -259,7 +300,13 @@ const applyInventoryForStatus = (input: {
     return 'duplicate';
   }
 
-  const lines = buildOrderInventoryConsumption(order.items, catalog, compositions);
+  const lines = buildOrderInventoryConsumptionWithOptions(
+    order.items,
+    catalog,
+    compositions,
+    productCategoriesFromTenant(tenantData),
+    optionImpacts
+  );
   if (lines.length === 0) {
     transaction.set(
       ledgerReference,
@@ -290,6 +337,7 @@ const applyInventoryForStatus = (input: {
     inventoryReference,
     {
       catalog: consumedCatalog,
+      inventoryCatalog: consumedCatalog,
       updatedAt: FieldValue.serverTimestamp(),
     },
     { merge: true }
