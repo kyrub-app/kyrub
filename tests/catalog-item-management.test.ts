@@ -35,6 +35,11 @@ const mutationSource = readFileSync(
   'src/utils/publicProductMutations.ts',
   'utf8'
 );
+const canonicalRepairSource = readFileSync(
+  'server/actions/canonicalStoreRepairService.ts',
+  'utf8'
+);
+const actionExecuteSource = readFileSync('api/action-execute.ts', 'utf8');
 const appSource = readFileSync('src/App.tsx', 'utf8');
 
 test('product cards expose edit, delete and publication actions', () => {
@@ -86,4 +91,17 @@ test('product deletion removes only the authenticated store item', () => {
   assert.match(mutationSource, /product\.supplierId !== user\.uid/);
   assert.match(mutationSource, /currentProducts\.filter/);
   assert.match(mutationSource, /updatedAt: serverTimestamp\(\)/);
+});
+
+test('catalog actions self-heal a configured legacy store without resurrecting a reset store', () => {
+  assert.match(actionExecuteSource, /ensureCanonicalStoreForCatalog\(authorization\)/);
+  assert.match(canonicalRepairSource, /hasMeaningfulPrivateStoreSetup/);
+  assert.match(canonicalRepairSource, /where\('ownerId', '==', uid\)/);
+  assert.match(canonicalRepairSource, /legacyTenantId.*uid/s);
+  assert.match(canonicalRepairSource, /canonicalStoreId/);
+  assert.match(canonicalRepairSource, /canonicalStoreLinkedAt/);
+  assert.match(canonicalRepairSource, /migrationStatus: 'registry_only'/);
+  assert.match(canonicalRepairSource, /Ative novamente sua Loja Kyrub/);
+  assert.match(canonicalRepairSource, /store-recovered-/);
+  assert.doesNotMatch(canonicalRepairSource, /canonicalStoreId\s*=\s*uid/);
 });
