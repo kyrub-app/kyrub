@@ -113,6 +113,7 @@ type GeminiFunctionCall = {
   id: string;
   name: string;
   args: Record<string, unknown>;
+  part: Record<string, unknown>;
 };
 
 type GeminiCallResult = {
@@ -814,7 +815,8 @@ const normalizeFunctionArguments = (value: unknown): Record<string, unknown> => 
 const functionCallsFromParts = (parts: unknown[]): GeminiFunctionCall[] =>
   parts.flatMap(part => {
     if (!part || typeof part !== 'object') return [];
-    const functionCall = (part as Record<string, unknown>).functionCall;
+    const rawPart = part as Record<string, unknown>;
+    const functionCall = rawPart.functionCall;
     if (!functionCall || typeof functionCall !== 'object') return [];
     const call = functionCall as Record<string, unknown>;
     const name = cleanText(call.name, 120);
@@ -823,6 +825,7 @@ const functionCallsFromParts = (parts: unknown[]): GeminiFunctionCall[] =>
       id: cleanText(call.id, 120) || createRequestId(),
       name,
       args: normalizeFunctionArguments(call.args),
+      part: rawPart,
     }];
   });
 
@@ -1404,13 +1407,7 @@ const generateReply = async (
         ...baseContents,
         {
           role: 'model',
-          parts: [{
-            functionCall: {
-              id: readCall.id,
-              name: readCall.name,
-              args: readCall.args,
-            },
-          }],
+          parts: [readCall.part],
         },
         {
           role: 'user',

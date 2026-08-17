@@ -265,6 +265,73 @@ const latestUserRequestsCatalogImport = (
   return Boolean(latestUser && isKyrubiaCatalogImportText(latestUser.content));
 };
 
+const normalizeIntentText = (value: string): string =>
+  value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLocaleLowerCase('pt-BR')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+const stockPreparationResponse = (
+  body: Record<string, unknown>,
+  messages: KyrubAiConversationMessage[]
+): KyrubAiConsultantResponse | null => {
+  const latest = latestUserMessage(messages);
+  if (!latest) return null;
+  const intent = normalizeIntentText(latest.content);
+  const asksHowToRestoreAvailability =
+    /\b(estoque|falta de estoque|sem estoque)\b/.test(intent) &&
+    /\b(indisponivel|indisponiveis|disponibilizar|disponiveis|venda)\b/.test(intent) &&
+    /\b(o que precisamos fazer|o que preciso fazer|como|disponibilizar|corrigir|resolver)\b/.test(intent);
+  if (!asksHowToRestoreAvailability) return null;
+
+  const erpContext = isRecord(body.erpContext) ? body.erpContext : null;
+  const products = erpContext && Array.isArray(erpContext.products)
+    ? erpContext.products.filter(isRecord)
+    : [];
+  if (!erpContext || products.length === 0) return null;
+
+  const mentioned = products.filter(product => {
+    const name = typeof product.name === 'string' ? product.name : '';
+    const normalizedName = normalizeIntentText(name);
+    const labelWithoutCode = normalizedName.replace(/^\d+\s+/, '');
+    return Boolean(labelWithoutCode && intent.includes(labelWithoutCode));
+  });
+  const targets = mentioned.length > 0 ? mentioned : products.filter(product => product.stock === 0);
+  if (targets.length === 0) return null;
+
+  const zeroStockTargets = targets.filter(product =>
+    typeof product.stock === 'number' && product.stock <= 0 && product.isService !== true
+  );
+  if (zeroStockTargets.length === 0) return null;
+
+  const names = zeroStockTargets
+    .map(product => typeof product.name === 'string' ? product.name.trim() : '')
+    .filter(Boolean)
+    .slice(0, 6);
+  const list = names.length > 0 ? names.join(' e ') : 'os produtos citados';
+
+  return {
+    reply:
+      `Conferi o estado atual do catálogo: ${list} estão com estoque 0, então a trava da vitrine está funcionando corretamente. ` +
+      'Para disponibilizá-los sem contornar essa proteção, precisamos registrar estoque real. Nos itens preparados a partir de ingredientes, o caminho correto é cadastrar os insumos disponíveis e montar a ficha técnica de cada produto; assim o Kyrub pode relacionar uma venda ao consumo desses insumos e bloquear novamente quando faltar algum componente. ' +
+      'Não vou inventar quantidades, ingredientes ou rendimentos que não estejam cadastrados. Para continuar, me informe as quantidades reais dos insumos que você tem — ou, se preferir, começamos pelo X-Burger e eu te conduzo ingrediente por ingrediente para montar a ficha técnica. Depois fazemos o mesmo com a Taça Simples.',
+    provider: 'kyrub',
+    model: 'kyrub-stock-preparation-runtime-v1',
+    mode: 'deterministic',
+    requestId: `stock-preparation-${Date.now()}`,
+    capabilities: {
+      actionsEnabled: true,
+      enabledActions: [],
+      enabledReadActions: ['list_products', 'list_low_stock_products'],
+      voiceEnabled: false,
+      persistentCloudHistoryEnabled: false,
+    },
+  };
+};
+
 const analyzeCatalogForImmediateImport = async (
   request: VercelRequestLike
 ): Promise<{ statusCode: number; body: unknown }> => {
@@ -386,6 +453,12 @@ export default async function handler(
     const body = readBody(request.body);
     const messages = conversationMessages(body);
     const decision = capabilityDecision(messages);
+    const deterministicStockPreparation = stockPreparationResponse(body, messages);
+    if (deterministicStockPreparation) {
+      response.status(200).json(deterministicStockPreparation);
+      return;
+    }
+
     const analysisContext = catalogAnalysisContext(body);
     const importRequested =
       decision.primary === 'create_products' &&
