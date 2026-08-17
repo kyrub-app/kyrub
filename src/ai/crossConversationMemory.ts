@@ -31,6 +31,9 @@ const CONTINUATION_PATTERN =
 const DOWNSTREAM_ACTION_PATTERN =
   /\b(crie|criar|salve|salvar|adicione|adicionar|liste|listar|mostre|mostrar|analise|analisar|compare|comparar|aplique|aplicar|altere|alterar|mude|mudar|compre|comprar|exclua|excluir|edite|editar|cadastre|cadastrar|calcule|calcular|gere|gerar)\b/i;
 
+const SUBSTANTIVE_FOLLOW_UP_PATTERN =
+  /\b(o que (?:eu )?(?:preciso|precisamos|devemos|devo) fazer|qual (?:e|seria) o proximo passo|proximo passo|como (?:faco|fazer|resolvo|resolver|corrijo|corrigir|atualizo|atualizar|configuro|configurar|disponibilizo|disponibilizar)|preciso fazer|precisamos fazer|devemos fazer|disponibilizar|resolver|corrigir|atualizar|configurar|preparar)\b/i;
+
 const HISTORICAL_LINK_RECALL_PATTERN =
   /\b(qual|que)\s+(conversa|chat|assunto|contexto)\b.{0,50}\b(retomou|retomamos|retomei|vinculou|vinculado|continuando|continuamos)\b/i;
 
@@ -180,8 +183,11 @@ const ambiguousReply = (candidates: KyrubiaCrossChatCandidate[]): string => {
   return `Encontrei mais de uma conversa que pode ser essa:\n${options}\nDiga o assunto com mais detalhe ou responda “a primeira”, “a segunda” ou “a terceira”.`;
 };
 
-export const isKyrubiaPureContinuationRequest = (message: string): boolean =>
-  CONTINUATION_PATTERN.test(message) && !DOWNSTREAM_ACTION_PATTERN.test(message);
+export const isKyrubiaPureContinuationRequest = (message: string): boolean => {
+  if (!CONTINUATION_PATTERN.test(message)) return false;
+  if (DOWNSTREAM_ACTION_PATTERN.test(message)) return false;
+  return !SUBSTANTIVE_FOLLOW_UP_PATTERN.test(normalize(message));
+};
 
 export const resolveKyrubiaHistoricalLinkRecall = (
   message: string,
