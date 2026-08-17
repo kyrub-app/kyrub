@@ -592,7 +592,10 @@ export const SharedPdvCatalog: React.FC<SharedPdvCatalogProps> = ({
               id={`${idPrefix}-pdv-products-grid`}
             >
               {filteredProducts.map(product => {
-                const isUnavailable = !product.isService && product.stock <= 0;
+                const isUnavailable =
+                  !product.isService &&
+                  (product as Product & { stockTracked?: boolean }).stockTracked === true &&
+                  product.stock <= 0;
                 const productCategorySegments = splitCategoryPath(product.category);
                 const productLeafCategory =
                   productCategorySegments.at(-1) || product.category || 'Produto';
@@ -662,7 +665,9 @@ export const SharedPdvCatalog: React.FC<SharedPdvCatalogProps> = ({
                             <span className="mt-1 block text-[8px] text-slate-500 sm:text-[9px]">
                               {isUnavailable
                                 ? 'Indisponível'
-                                : `${product.stock} em estoque`}
+                                : product.stock <= 0
+                                  ? 'Estoque não informado'
+                                  : `${product.stock} em estoque`}
                             </span>
                           )}
                         </div>
@@ -788,7 +793,9 @@ export const SharedPdvCatalog: React.FC<SharedPdvCatalogProps> = ({
                     </div>
                     {!customizingProduct.isService && (
                       <span className="text-[9px] text-slate-500">
-                        {customizingProduct.stock} em estoque
+                        {customizingProduct.stock <= 0
+                          ? 'Estoque não informado'
+                          : `${customizingProduct.stock} em estoque`}
                       </span>
                     )}
                   </div>
