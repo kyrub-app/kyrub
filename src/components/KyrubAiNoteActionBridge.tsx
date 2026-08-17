@@ -168,7 +168,7 @@ const reviewHint = (proposal: ConfirmableProposal): string => {
     return 'Nada será alterado antes da confirmação. Somente os campos mostrados acima serão salvos na sua própria loja.';
   }
   if (proposal.type === 'import_catalog_draft') {
-    return 'Nada irá automaticamente para a vitrine. A confirmação cria somente produtos não publicados; depois você escolhe quais marcar como “Publicado”.';
+    return 'Revise nome, preço, categoria, estoque e descrição dos itens antes de confirmar. Nada irá automaticamente para a vitrine: a confirmação cria somente produtos não publicados.';
   }
   if (proposal.type === 'create_product') {
     return 'Nada será cadastrado antes da confirmação. O produto será criado na sua própria loja e respeitará os limites do seu plano.';
@@ -238,8 +238,6 @@ const ReviewContent = ({ proposal }: { proposal: ConfirmableProposal }) => {
   }
 
   if (proposal.type === 'import_catalog_draft') {
-    const visibleItems = proposal.items.slice(0, 20);
-    const remaining = proposal.items.length - visibleItems.length;
     return (
       <div className="rounded-2xl border border-slate-800 bg-slate-900 p-4">
         <span className="text-[11px] font-black uppercase text-slate-500">
@@ -249,7 +247,7 @@ const ReviewContent = ({ proposal }: { proposal: ConfirmableProposal }) => {
           {proposal.items.length} item(ns) para adicionar
         </h3>
         <div className="mt-4 max-h-80 space-y-2 overflow-y-auto pr-1">
-          {visibleItems.map(item => (
+          {proposal.items.map(item => (
             <div
               key={`${proposal.id}-${item.ref}`}
               className="rounded-xl border border-slate-800 bg-slate-950 px-3 py-2.5"
@@ -273,14 +271,19 @@ const ReviewContent = ({ proposal }: { proposal: ConfirmableProposal }) => {
                     ? ` · Estoque ${item.product.stock}`
                     : ' · Estoque não informado'}
               </p>
+              {item.product.description && (
+                <div className="mt-2 border-t border-slate-800/80 pt-2">
+                  <span className="text-[10px] font-black uppercase tracking-wide text-slate-600">
+                    Descrição
+                  </span>
+                  <p className="mt-1 whitespace-pre-wrap text-xs leading-relaxed text-slate-300">
+                    {item.product.description}
+                  </p>
+                </div>
+              )}
             </div>
           ))}
         </div>
-        {remaining > 0 && (
-          <p className="mt-3 text-xs text-slate-500">
-            + {remaining} item(ns) na mesma importação.
-          </p>
-        )}
       </div>
     );
   }
