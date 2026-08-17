@@ -1,0 +1,73 @@
+name: Apply storefront stock semantics
+
+on:
+  push:
+    branches:
+      - fix/storefront-untracked-stock
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/storefront-untracked-stock
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Patch storefront stock semantics
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('src/components/pdv/SharedPdvCatalog.tsx')
+          text = path.read_text()
+          old = "const isUnavailable = !product.isService && product.stock <= 0;"
+          new = "const isUnavailable =\n                  !product.isService &&\n                  (product as Product & { stockTracked?: boolean }).stockTracked === true &&\n                  product.stock <= 0;"
+          if old not in text:
+              raise SystemExit('availability guard not found')
+          text = text.replace(old, new, 1)
+
+          old_label = "{isUnavailable\n                                ? 'Indisponível'\n                                : `${product.stock} em estoque`}"
+          new_label = "{isUnavailable\n                                ? 'Indisponível'\n                                : product.stock <= 0\n                                  ? 'Estoque não informado'\n                                  : `${product.stock} em estoque`}"
+          if old_label not in text:
+              raise SystemExit('card stock label not found')
+          text = text.replace(old_label, new_label, 1)
+
+          old_modal = "{customizingProduct.stock} em estoque"
+          new_modal = "{customizingProduct.stock <= 0\n                          ? 'Estoque não informado'\n                          : `${customizingProduct.stock} em estoque`}"
+          if old_modal not in text:
+              raise SystemExit('modal stock label not found')
+          text = text.replace(old_modal, new_modal, 1)
+          path.write_text(text)
+          PY
+      - name: Add regression contract
+        run: |
+          cat > tests/storefront-untracked-stock.test.ts <<'EOF'
+          import assert from 'node:assert/strict';
+          import { readFileSync } from 'node:fs';
+          import test from 'node:test';
+
+          test('storefront does not confuse untracked zero stock with sold out', () => {
+            const source = readFileSync('src/components/pdv/SharedPdvCatalog.tsx', 'utf8');
+            assert.match(source, /stockTracked\?: boolean/);
+            assert.match(source, /stockTracked === true/);
+            assert.match(source, /Estoque não informado/);
+            assert.doesNotMatch(
+              source,
+              /const isUnavailable = !product\.isService && product\.stock <= 0;/
+            );
+          });
+          EOF
+      - name: Remove one-off patch workflow
+        run: git rm .github/workflows/apply-storefront-stock-semantics.yml
+      - name: Commit patch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/components/pdv/SharedPdvCatalog.tsx tests/storefront-untracked-stock.test.ts
+          git commit -m "Fix untracked stock availability in storefront"
+          git push origin HEAD:fix/storefront-untracked-stock
