@@ -118,6 +118,7 @@ export function ProductInventoryWorkspace({
 }: ProductInventoryWorkspaceProps) {
   const categoryOptions = useMemo(() => uniqueKeywords(keywords), [keywords]);
   const [selectedKeyword, setSelectedKeyword] = useState('');
+  const [showUnpublishedOnly, setShowUnpublishedOnly] = useState(false);
   const [unpublishedProducts, setUnpublishedProducts] = useState<
     KyrubCatalogDraftListItem[]
   >([]);
@@ -183,14 +184,20 @@ export function ProductInventoryWorkspace({
     ];
   }, [products, unpublishedProducts]);
 
-  const visibleProducts = useMemo(() => {
-    if (!selectedKeyword) return inventoryItems;
+  const unpublishedCount = useMemo(
+    () => inventoryItems.filter(item => !item.published).length,
+    [inventoryItems]
+  );
 
-    return inventoryItems.filter(
-      product =>
+  const visibleProducts = useMemo(() => {
+    return inventoryItems.filter(product => {
+      if (showUnpublishedOnly && product.published) return false;
+      if (!selectedKeyword) return true;
+      return (
         normalizeCategoryValue(categoryRoot(product.category)) === selectedKeyword
-    );
-  }, [inventoryItems, selectedKeyword]);
+      );
+    });
+  }, [inventoryItems, selectedKeyword, showUnpublishedOnly]);
 
   const handlePublicationChange = async (
     item: InventoryItem,
@@ -237,7 +244,9 @@ export function ProductInventoryWorkspace({
     try {
       const status = await updateKyrubCatalogProduct(user, product);
       if (status !== 'draft') {
-        throw new Error('O item mudou de estado durante a edição. Atualize a lista e tente novamente.');
+        throw new Error(
+          'O item mudou de estado durante a edição. Atualize a lista e tente novamente.'
+        );
       }
       setEditingDraftProduct(null);
       await loadUnpublishedProducts();
@@ -271,6 +280,21 @@ export function ProductInventoryWorkspace({
             Novo item
           </button>
         </header>
+
+        <div className="flex justify-end" id="erp-product-status-filters">
+          <button
+            type="button"
+            onClick={() => setShowUnpublishedOnly(current => !current)}
+            aria-pressed={showUnpublishedOnly}
+            className={`inline-flex min-h-9 items-center justify-center rounded-xl border px-3 text-[9px] font-black uppercase tracking-wide transition-colors ${
+              showUnpublishedOnly
+                ? 'border-amber-400/45 bg-amber-400/15 text-amber-200'
+                : 'border-amber-400/20 bg-slate-950 text-amber-300 hover:border-amber-400/40 hover:bg-amber-400/10'
+            }`}
+          >
+            Não publicados · {unpublishedCount}
+          </button>
+        </div>
 
         <div
           className="flex max-w-full items-center gap-2 overflow-x-auto pb-1"
@@ -380,9 +404,13 @@ export function ProductInventoryWorkspace({
                       <p className="mt-1 line-clamp-2 text-[9px] leading-relaxed text-slate-500">
                         {item.category || 'Categoria não informada'}
                       </p>
-                      <p className={`mt-1 line-clamp-2 text-[9px] leading-relaxed ${
-                        item.description ? 'text-slate-500' : 'text-amber-300/70'
-                      }`}>
+                      <p
+                        className={`mt-1 line-clamp-2 text-[9px] leading-relaxed ${
+                          item.description
+                            ? 'text-slate-500'
+                            : 'text-amber-300/70'
+                        }`}
+                      >
                         {item.description || 'Descrição não informada'}
                       </p>
                     </div>
@@ -457,7 +485,9 @@ export function ProductInventoryWorkspace({
             <p className="mt-3 text-xs text-slate-500">
               {inventoryItems.length === 0
                 ? 'Nenhum produto ou serviço cadastrado.'
-                : 'Nenhum item encontrado nesta categoria.'}
+                : showUnpublishedOnly
+                  ? 'Nenhum produto não publicado neste filtro.'
+                  : 'Nenhum item encontrado nesta categoria.'}
             </p>
           </div>
         )}
