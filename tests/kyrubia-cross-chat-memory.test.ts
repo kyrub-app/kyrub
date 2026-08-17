@@ -133,6 +133,12 @@ test('pure continuation can be acknowledged by Kyrub runtime without generative 
     ),
     false
   );
+  assert.equal(
+    isKyrubiaPureContinuationRequest(
+      'Quero continuar o teste de compra do X-Burger e da Taça Simples, mas eles estão indisponíveis por falta de estoque. O que precisamos fazer para disponibilizá-los corretamente para venda?'
+    ),
+    false
+  );
 });
 
 test('persisted historical link can identify which conversation is being continued without generative AI', () => {
