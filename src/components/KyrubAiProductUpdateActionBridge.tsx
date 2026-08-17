@@ -17,7 +17,7 @@ import {
 import {
   KYRUBIA_STOREFRONT_TEST_PROPOSAL_EVENT,
   type KyrubiaStorefrontTestProposalEventDetail,
-} from '../ai/catalogDraftRuntime';
+} from '../ai/storefrontTestEvents';
 import { auth } from '../utils/firebase';
 
 type ConfirmationState = 'reviewing' | 'executing' | 'success' | 'error';
