@@ -109,30 +109,47 @@ const requestRecord = (value: unknown): Record<string, unknown> => {
   return value as Record<string, unknown>;
 };
 
-const proposalProduct = (rawRequest: unknown): KyrubCatalogDraftProductInput => {
-  const body = requestRecord(rawRequest);
-  const proposal = requestRecord(body.proposal);
-  const product = requestRecord(proposal.product);
+const normalizeEditableProduct = (
+  value: unknown
+): KyrubCatalogDraftProductInput => {
+  const product = requestRecord(value);
   const name = cleanText(product.name, 120);
   const category = cleanText(product.category, 120);
   const price = finiteNonNegative(product.price);
+  const isService = product.isService === true;
+  const stock = isService ? 0 : integerNonNegative(product.stock);
 
   if (!name) {
     throw new KyrubActionExecutionError(
       400,
-      'INVALID_PRODUCT_DRAFT',
-      'Informe o nome do produto antes de adicioná-lo ao catálogo.'
+      'INVALID_PRODUCT',
+      'Informe o nome do produto antes de salvar.'
     );
   }
-  if (!category || price === null) {
+  if (!category || price === null || stock === null) {
     throw new KyrubActionExecutionError(
       409,
-      'INCOMPLETE_PRODUCT_DRAFT',
-      'Antes de adicionar o produto ao catálogo, confirme pelo menos o preço e a categoria.'
+      'INCOMPLETE_PRODUCT',
+      'Confirme preço, categoria e estoque antes de salvar o produto.'
     );
   }
 
-  return product as KyrubCatalogDraftProductInput;
+  return {
+    name,
+    description: cleanText(product.description, 2_000),
+    price: product.isComplimentary === true ? 0 : price,
+    image: cleanText(product.image, 2_000),
+    stock,
+    category,
+    isService,
+    isComplimentary: product.isComplimentary === true,
+  };
+};
+
+const proposalProduct = (rawRequest: unknown): KyrubCatalogDraftProductInput => {
+  const body = requestRecord(rawRequest);
+  const proposal = requestRecord(body.proposal);
+  return normalizeEditableProduct(proposal.product);
 };
 
 const canonicalProductData = (
@@ -224,8 +241,6 @@ export const executeAuthorizedKyrubCatalogDraft = async (
   const actor = await verifyActor(authorization);
   const { canonicalStoreId } = await privateStoreForActor(actor.uid);
 
-  // Reuse the mature policy/idempotency executor, then immediately promote the
-  // temporary record into the one canonical product entity with status=draft.
   const result = await executeStagedCatalogDraft(authorization, rawRequest);
   const productId = cleanText(result.entityId, 160);
   if (!productId) {
@@ -303,6 +318,14 @@ export const listAuthorizedKyrubCatalogDrafts = async (
   };
 };
 
+export const isKyrubCatalogProductUpdateRequest = (value: unknown): boolean =>
+  Boolean(
+    value &&
+    typeof value === 'object' &&
+    !Array.isArray(value) &&
+    (value as Record<string, unknown>).operation === 'update_catalog_product'
+  );
+
 export const isKyrubCatalogProductPublicationRequest = (value: unknown): boolean =>
   Boolean(
     value &&
@@ -329,6 +352,117 @@ const legacyProductFromCanonical = (
   isService: canonical.isService === true,
   updatedAt,
 });
+
+export const updateAuthorizedKyrubCatalogProduct = async (
+  authorization: string,
+  rawRequest: unknown
+): Promise<{ productId: string; publicationStatus: 'draft' | 'published' }> => {
+  const actor = await verifyActor(authorization);
+  const body = requestRecord(rawRequest);
+  const productId = cleanText(body.productId, 160);
+  const product = normalizeEditableProduct(body.product);
+  if (!productId) {
+    throw new KyrubActionExecutionError(
+      400,
+      'INVALID_PRODUCT_UPDATE',
+      'O produto não foi identificado para edição.'
+    );
+  }
+
+  const { canonicalStoreId } = await privateStoreForActor(actor.uid);
+  const canonicalReference = adminDb.doc(
+    `stores/${canonicalStoreId}/products/${productId}`
+  );
+  const tenantReference = adminDb.doc(`tenants/${actor.uid}`);
+  const nowIso = new Date().toISOString();
+  let publicationStatus: 'draft' | 'published' = 'draft';
+
+  await adminDb.runTransaction(async transaction => {
+    const [canonicalSnapshot, tenantSnapshot] = await Promise.all([
+      transaction.get(canonicalReference),
+      transaction.get(tenantReference),
+    ]);
+    if (!canonicalSnapshot.exists) {
+      throw new KyrubActionExecutionError(
+        404,
+        'PRODUCT_NOT_FOUND',
+        'Este produto não foi encontrado no catálogo da loja.'
+      );
+    }
+
+    const canonical = canonicalSnapshot.data() as Record<string, unknown>;
+    if (
+      cleanText(canonical.storeId, 160) !== canonicalStoreId ||
+      cleanText(canonical.legacyStoreId, 160) !== actor.uid
+    ) {
+      throw new KyrubActionExecutionError(
+        403,
+        'PRODUCT_FORBIDDEN',
+        'Este produto não pertence à loja autenticada.'
+      );
+    }
+
+    const currentStatus = cleanText(canonical.publicationStatus, 20);
+    if (currentStatus !== 'draft' && currentStatus !== 'published') {
+      throw new KyrubActionExecutionError(
+        409,
+        'PRODUCT_NOT_EDITABLE',
+        'Este produto não está disponível para edição agora.'
+      );
+    }
+    publicationStatus = currentStatus;
+
+    const canonicalPatch = {
+      name: cleanText(product.name, 120),
+      description: cleanText(product.description, 2_000),
+      price: product.isComplimentary === true
+        ? 0
+        : finiteNonNegative(product.price) ?? 0,
+      image: cleanText(product.image, 2_000),
+      stock: product.isService === true
+        ? 0
+        : integerNonNegative(product.stock) ?? 0,
+      category: cleanText(product.category, 120),
+      isService: product.isService === true,
+      updatedByUserId: actor.uid,
+      updatedByRole: 'owner',
+      archivedAt: '',
+      updatedAt: FieldValue.serverTimestamp(),
+    };
+
+    transaction.update(canonicalReference, canonicalPatch);
+
+    if (currentStatus === 'published') {
+      const tenant = tenantSnapshot.data() as Record<string, unknown> | undefined;
+      const currentProducts = Array.isArray(tenant?.publicProducts)
+        ? tenant.publicProducts.filter(
+            item => item && typeof item === 'object' && !Array.isArray(item)
+          ) as Record<string, unknown>[]
+        : [];
+      const nextCanonical = { ...canonical, ...canonicalPatch };
+      const publicProduct = legacyProductFromCanonical(
+        actor.uid,
+        productId,
+        nextCanonical,
+        nowIso
+      );
+      transaction.set(
+        tenantReference,
+        {
+          publicProducts: [
+            publicProduct,
+            ...currentProducts.filter(item => cleanText(item.id, 160) !== productId),
+          ].slice(0, MAX_PRODUCTS),
+          updatedAt: FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      );
+      transaction.update(canonicalReference, { legacyUpdatedAt: nowIso });
+    }
+  });
+
+  return { productId, publicationStatus };
+};
 
 export const setAuthorizedKyrubCatalogProductPublication = async (
   authorization: string,

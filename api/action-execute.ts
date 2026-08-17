@@ -5,8 +5,10 @@ import {
   isKyrubCatalogDraftExecutionRequest,
   isKyrubCatalogDraftListRequest,
   isKyrubCatalogProductPublicationRequest,
+  isKyrubCatalogProductUpdateRequest,
   listAuthorizedKyrubCatalogDrafts,
   setAuthorizedKyrubCatalogProductPublication,
+  updateAuthorizedKyrubCatalogProduct,
 } from '../server/actions/catalogProductLifecycleService.js';
 import {
   executeAuthorizedKyrubCatalogImport,
@@ -66,21 +68,16 @@ export default async function handler(
       return;
     }
 
-    // Catalog operations repair the private -> canonical store link first. This
-    // keeps configured legacy stores usable without resurrecting a store that
-    // was intentionally reset, because the repair service requires meaningful
-    // private store setup before linking or creating a canonical registry.
     if (
       isKyrubCatalogImportExecutionRequest(request.body) ||
       isKyrubCatalogDraftListRequest(request.body) ||
       isKyrubCatalogDraftExecutionRequest(request.body) ||
+      isKyrubCatalogProductUpdateRequest(request.body) ||
       isKyrubCatalogProductPublicationRequest(request.body)
     ) {
       await ensureCanonicalStoreForCatalog(authorization);
     }
 
-    // Unpublished products do not consume published-product capacity. Catalog
-    // analysis imports therefore execute before entitlement reconciliation.
     if (isKyrubCatalogImportExecutionRequest(request.body)) {
       const imported = await executeAuthorizedKyrubCatalogImport(
         authorization,
@@ -95,12 +92,22 @@ export default async function handler(
       response.status(200).json(drafts);
       return;
     }
+
     if (isKyrubCatalogDraftExecutionRequest(request.body)) {
       const draft = await executeAuthorizedKyrubCatalogDraft(
         authorization,
         request.body
       );
       response.status(200).json(draft);
+      return;
+    }
+
+    if (isKyrubCatalogProductUpdateRequest(request.body)) {
+      const updated = await updateAuthorizedKyrubCatalogProduct(
+        authorization,
+        request.body
+      );
+      response.status(200).json(updated);
       return;
     }
 
