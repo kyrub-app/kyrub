@@ -2,13 +2,18 @@ import { FieldValue, type DocumentData } from 'firebase-admin/firestore';
 import { adminDb } from '../firebaseAdmin';
 import {
   applyInventoryConsumptionLines,
-  buildOrderInventoryConsumption,
   calculateCompositionAvailableStock,
   parseInventoryCatalogRecords,
   parseInventoryCompositionRecords,
   type InventoryConsumptionLine,
-  type InventoryOrderItemRecord,
 } from '../../shared/inventoryConsumption';
+import {
+  buildOrderInventoryConsumptionWithOptions,
+  parseConfiguredLineSelectedOptions,
+  parseInventorySelectedOptions,
+  parseOptionInventoryImpacts,
+  type OptionAwareInventoryOrderItem,
+} from '../../shared/optionInventoryImpact';
 import { reconcilePersistedOrderInventory } from './orderInventoryService';
 import { createHash } from 'node:crypto';
 
@@ -38,7 +43,7 @@ const sourceProductId = (value: unknown, explicitSource: unknown): string => {
   return configured.split('::', 1)[0]?.trim() || configured;
 };
 
-const parseOrderItems = (value: unknown): InventoryOrderItemRecord[] => {
+const parseOrderItems = (value: unknown): OptionAwareInventoryOrderItem[] => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return [];
   const record = value as Record<string, unknown>;
   if (!Array.isArray(record.items)) return [];
@@ -47,13 +52,41 @@ const parseOrderItems = (value: unknown): InventoryOrderItemRecord[] => {
       return [];
     }
     const item = candidate as Record<string, unknown>;
-    const productId = sourceProductId(item.productId, item.sourceProductId);
+    const configuredProductId = clean(item.productId);
+    const productId = sourceProductId(configuredProductId, item.sourceProductId);
     const name = clean(item.name);
     const quantity = finiteInteger(item.quantity);
     const transferredQuantity = finiteInteger(item.transferredQuantity) ?? 0;
     if (!productId || !name || quantity === null || quantity <= 0) return [];
-    return [{ productId, name, quantity, transferredQuantity }];
+    const explicitSelectedOptions = parseInventorySelectedOptions(item.selectedOptions);
+    const selectedOptions = explicitSelectedOptions.length > 0
+      ? explicitSelectedOptions
+      : parseConfiguredLineSelectedOptions(configuredProductId);
+    return [{
+      productId,
+      name,
+      quantity,
+      transferredQuantity,
+      ...(selectedOptions.length > 0 ? { selectedOptions } : {}),
+    }];
   });
+};
+
+const productCategoriesFromTenant = (
+  tenantData: DocumentData | undefined
+): Record<string, string> => {
+  if (!Array.isArray(tenantData?.publicProducts)) return {};
+  const categories: Record<string, string> = {};
+  for (const candidate of tenantData.publicProducts) {
+    if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) {
+      continue;
+    }
+    const product = candidate as Record<string, unknown>;
+    const id = clean(product.id);
+    const category = clean(product.category);
+    if (id && category) categories[id] = category;
+  }
+  return categories;
 };
 
 const parseLedgerLines = (value: unknown): InventoryConsumptionLine[] => {
@@ -148,18 +181,28 @@ export const adjustConsumedOrderInventoryQuantities = async (
     }
 
     const inventoryData = inventorySnapshot.data();
-    const catalog = parseInventoryCatalogRecords(inventoryData?.catalog);
-    const compositions = parseInventoryCompositionRecords(inventoryData?.compositions);
+    const tenantData = tenantSnapshot.data();
+    const catalog = parseInventoryCatalogRecords(
+      inventoryData?.catalog ?? inventoryData?.inventoryCatalog
+    );
+    const compositions = parseInventoryCompositionRecords(
+      inventoryData?.compositions ?? inventoryData?.productCompositions
+    );
+    const optionImpacts = parseOptionInventoryImpacts(
+      inventoryData?.optionInventoryImpacts
+    );
     const previousLines = parseLedgerLines(ledgerData?.lines);
     const restoredCatalog = applyInventoryConsumptionLines(
       catalog,
       previousLines,
       'restore'
     );
-    const desiredLines = buildOrderInventoryConsumption(
+    const desiredLines = buildOrderInventoryConsumptionWithOptions(
       parseOrderItems(orderSnapshot.data()),
       restoredCatalog,
-      compositions
+      compositions,
+      productCategoriesFromTenant(tenantData),
+      optionImpacts
     );
 
     if (comparableLines(previousLines) === comparableLines(desiredLines)) {
@@ -172,7 +215,7 @@ export const adjustConsumedOrderInventoryQuantities = async (
       'consume'
     );
     const publicProducts = projectPublicStocks(
-      tenantSnapshot.data(),
+      tenantData,
       adjustedCatalog,
       compositions
     );
@@ -180,6 +223,7 @@ export const adjustConsumedOrderInventoryQuantities = async (
       inventoryReference,
       {
         catalog: adjustedCatalog,
+        inventoryCatalog: adjustedCatalog,
         updatedAt: FieldValue.serverTimestamp(),
       },
       { merge: true }
