@@ -15,11 +15,19 @@ import {
 } from './catalogCategoryTree';
 import { parsePublicProducts } from './publicProducts';
 
+/**
+ * Commercial hierarchy used for new catalog organization.
+ *
+ * The category root is owned by the store profile. Products can then be
+ * organized into an optional Group and optional Subgroup:
+ * Category > Group > Subgroup > Product.
+ *
+ * catalogCategoryTree intentionally still accepts deeper historical paths so
+ * existing products remain readable/editable without destructive migration.
+ */
 export const CATALOG_HIERARCHY_TIERS = [
-  'Subcategoria',
   'Grupo',
   'Subgrupo',
-  'Pasta',
 ] as const;
 
 export const MAX_CATALOG_HIERARCHY_CHILDREN = 5;
@@ -81,7 +89,7 @@ export const addCatalogHierarchyTreePath = (
     throw new Error('Selecione primeiro a categoria da loja.');
   }
   if (parentSegments.length >= MAX_CATALOG_HIERARCHY_SEGMENTS) {
-    throw new Error('A hierarquia já chegou ao nível de pasta.');
+    throw new Error('A hierarquia comercial já chegou ao nível de subgrupo.');
   }
   if (!cleanName || /[>/]/.test(cleanName)) {
     throw new Error('Informe um nome válido, sem “>” ou “/”.');
@@ -95,7 +103,7 @@ export const addCatalogHierarchyTreePath = (
   if (existing) return paths;
   if (children.length >= MAX_CATALOG_HIERARCHY_CHILDREN) {
     throw new Error(
-      `Cada nível aceita até ${MAX_CATALOG_HIERARCHY_CHILDREN} opções dentro da mesma pasta.`
+      `Cada nível aceita até ${MAX_CATALOG_HIERARCHY_CHILDREN} opções dentro do mesmo grupo.`
     );
   }
 
@@ -121,7 +129,7 @@ export const createCatalogHierarchyPath = async (
   return runTransaction(db, async transaction => {
     const snapshot = await transaction.get(tenantReference);
     if (!snapshot.exists()) {
-      throw new Error('A loja não foi encontrada para criar esta pasta.');
+      throw new Error('A loja não foi encontrada para criar este nível.');
     }
 
     const products = parsePublicProducts(snapshot.data().publicProducts);

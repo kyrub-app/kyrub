@@ -48,11 +48,12 @@ test('folder removal promotes products instead of deleting them', () => {
   assert.match(treeUtility, /publicProducts: result\.products/);
 });
 
-test('semantic hierarchy has four reusable levels and five children per parent', () => {
+test('commercial hierarchy has group and subgroup with five children per parent', () => {
   assert.match(
     hierarchyUtility,
-    /'Subcategoria',[\s\S]*'Grupo',[\s\S]*'Subgrupo',[\s\S]*'Pasta'/
+    /'Grupo',[\s\S]*'Subgrupo'/
   );
+  assert.doesNotMatch(hierarchyUtility, /'Pasta'/);
   assert.match(hierarchyUtility, /MAX_CATALOG_HIERARCHY_CHILDREN = 5/);
   assert.match(hierarchySelector, /children\.length >= MAX_CATALOG_HIERARCHY_CHILDREN/);
   assert.match(hierarchySelector, /getDirectCatalogHierarchyChildren/);

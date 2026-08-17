@@ -16,76 +16,69 @@ const add = (
 ): ProductCategoryCollection[] =>
   addCatalogHierarchyTreePath(paths, parent, name);
 
-describe('semantic catalog hierarchy', () => {
-  test('uses category, subcategory, group, subgroup and folder', () => {
+describe('commercial catalog hierarchy', () => {
+  test('uses category, group and subgroup for new organization', () => {
     assert.deepEqual(CATALOG_HIERARCHY_TIERS, [
-      'Subcategoria',
       'Grupo',
       'Subgrupo',
-      'Pasta',
     ]);
-    assert.equal(MAX_CATALOG_HIERARCHY_SEGMENTS, 5);
+    assert.equal(MAX_CATALOG_HIERARCHY_SEGMENTS, 3);
   });
 
-  test('creates reusable direct children below their selected parent', () => {
+  test('creates reusable groups and subgroups below their selected parent', () => {
     let paths: ProductCategoryCollection[] = [];
-    paths = add(paths, 'Alimentação', 'Restaurante');
-    paths = add(paths, 'Alimentação', 'Pizzaria');
-    paths = add(paths, 'Alimentação > Restaurante', 'Rodízio');
-    paths = add(
-      paths,
-      'Alimentação > Restaurante > Rodízio',
-      'Repetição'
-    );
+    paths = add(paths, 'Alimentação', 'Lanches');
+    paths = add(paths, 'Alimentação', 'Sobremesas');
+    paths = add(paths, 'Alimentação > Lanches', 'Burgers Artesanais');
 
     assert.deepEqual(
       getDirectCatalogHierarchyChildren(paths, 'Alimentação').map(
         child => child.name
       ),
-      ['Pizzaria', 'Restaurante']
+      ['Lanches', 'Sobremesas']
     );
     assert.deepEqual(
       getDirectCatalogHierarchyChildren(
         paths,
-        'Alimentação > Restaurante'
+        'Alimentação > Lanches'
       ).map(child => child.name),
-      ['Rodízio']
+      ['Burgers Artesanais']
     );
   });
 
   test('does not duplicate an existing sibling', () => {
-    const paths = add([], 'Alimentação', 'Restaurante');
-    const duplicate = add(paths, 'Alimentação', ' restaurante ');
+    const paths = add([], 'Alimentação', 'Lanches');
+    const duplicate = add(paths, 'Alimentação', ' lanches ');
     assert.deepEqual(duplicate, paths);
   });
 
   test('limits each parent to five child options', () => {
     let paths: ProductCategoryCollection[] = [];
     for (let index = 1; index <= MAX_CATALOG_HIERARCHY_CHILDREN; index += 1) {
-      paths = add(paths, 'Alimentação', `Subcategoria ${index}`);
+      paths = add(paths, 'Alimentação', `Grupo ${index}`);
     }
 
     assert.throws(
-      () => add(paths, 'Alimentação', 'Subcategoria 6'),
+      () => add(paths, 'Alimentação', 'Grupo 6'),
       /até 5 opções/
     );
   });
 
-  test('stops creation after the folder tier', () => {
+  test('stops new hierarchy creation after subgroup', () => {
     assert.throws(
       () =>
         add(
           [],
-          'Alimentação > Restaurante > Rodízio > Repetição > Mesa 1',
+          'Alimentação > Lanches > Burgers Artesanais',
           'Nível extra'
         ),
-      /nível de pasta/
+      /nível de subgrupo/
     );
   });
 
-  test('rejects invalid folder names', () => {
+  test('rejects invalid group names', () => {
     assert.throws(
-      () => add([], 'Alimentação', 'Restaurante > Rodízio'),
+      () => add([], 'Alimentação', 'Lanches > Burgers'),
       /sem “>” ou “\/”/
     );
   });
