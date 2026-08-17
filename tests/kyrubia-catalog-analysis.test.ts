@@ -137,6 +137,10 @@ test('catalog write intent routes analyzed items into unpublished products inste
     true
   );
   assert.equal(
+    isKyrubiaCatalogImportText('Cadastre os itens da img anexada na minha loja Kyrub'),
+    true
+  );
+  assert.equal(
     isKyrubiaCatalogImportText('Crie uma nota chamada Cardápio com o texto lanches.'),
     false
   );
