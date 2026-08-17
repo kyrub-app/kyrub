@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { Check, Layers3, Save } from 'lucide-react';
 import { onAuthStateChanged } from 'firebase/auth';
 import { doc, onSnapshot } from 'firebase/firestore';
+import type { OptionInventoryImpactRecord } from '../../../shared/optionInventoryImpact';
 import type { ProductOptionGroup } from '../../types';
 import {
   parseCatalogCustomizationDefaults,
@@ -15,7 +16,14 @@ import {
   normalizeCatalogCategoryValue,
 } from '../../utils/catalogCategoryTree';
 import { auth, db } from '../../utils/firebase';
+import {
+  getProductInventoryDocumentPath,
+  readProductInventorySettings,
+  type InventoryCatalogItem,
+} from '../../utils/productInventory';
+import { readOptionInventoryImpacts } from '../../utils/productOptionInventory';
 import { parseProductQuickNotes } from '../../utils/productCustomization';
+import { OptionInventoryImpactEditor } from './OptionInventoryImpactEditor';
 import {
   buildProductOptionGroups,
   ProductOptionGroupsEditor,
@@ -62,6 +70,10 @@ const exactDefaultsFor = (
 export function CatalogCustomizationInheritanceBridge() {
   const [host, setHost] = useState<HTMLElement | null>(null);
   const [defaults, setDefaults] = useState<CatalogCustomizationDefaults[]>([]);
+  const [inventoryCatalog, setInventoryCatalog] = useState<InventoryCatalogItem[]>([]);
+  const [inventoryImpacts, setInventoryImpacts] = useState<
+    OptionInventoryImpactRecord[]
+  >([]);
   const [paths, setPaths] = useState<string[]>([]);
   const [targetPath, setTargetPath] = useState('');
   const [quickNotes, setQuickNotes] = useState<string[]>([]);
@@ -71,11 +83,17 @@ export function CatalogCustomizationInheritanceBridge() {
 
   useEffect(() => {
     let unsubscribeTenant = () => undefined;
+    let unsubscribeInventory = () => undefined;
     const unsubscribeAuth = onAuthStateChanged(auth, user => {
       unsubscribeTenant();
+      unsubscribeInventory();
       unsubscribeTenant = () => undefined;
+      unsubscribeInventory = () => undefined;
       setDefaults([]);
+      setInventoryCatalog([]);
+      setInventoryImpacts([]);
       if (!user) return;
+
       unsubscribeTenant = onSnapshot(
         doc(db, 'tenants', user.uid),
         snapshot => {
@@ -89,10 +107,24 @@ export function CatalogCustomizationInheritanceBridge() {
           console.warn('Padrões herdáveis do catálogo indisponíveis.', error);
         }
       );
+
+      unsubscribeInventory = onSnapshot(
+        doc(db, getProductInventoryDocumentPath(user.uid)),
+        snapshot => {
+          setInventoryCatalog(readProductInventorySettings(snapshot.data()).catalog);
+          setInventoryImpacts(readOptionInventoryImpacts(snapshot.data()));
+        },
+        error => {
+          console.warn('Impactos privados das opções indisponíveis.', error);
+          setInventoryCatalog([]);
+          setInventoryImpacts([]);
+        }
+      );
     });
     return () => {
       unsubscribeAuth();
       unsubscribeTenant();
+      unsubscribeInventory();
     };
   }, []);
 
@@ -257,6 +289,14 @@ export function CatalogCustomizationInheritanceBridge() {
           <ProductOptionGroupsEditor
             value={optionGroups}
             onChange={setOptionGroups}
+            disabled={isSaving}
+          />
+          <OptionInventoryImpactEditor
+            path={targetPath}
+            groups={optionGroups}
+            inventoryCatalog={inventoryCatalog}
+            impacts={inventoryImpacts}
+            onImpactsChange={setInventoryImpacts}
             disabled={isSaving}
           />
 
