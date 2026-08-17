@@ -1,4 +1,5 @@
 import type { User } from 'firebase/auth';
+import type { Product } from '../types';
 import type {
   KyrubCatalogDraftListItem,
   KyrubCatalogDraftListResponse,
@@ -62,6 +63,18 @@ const authenticatedPost = async (
   return body;
 };
 
+const dispatchCatalogProductChanged = (
+  productId: string,
+  detail: Record<string, unknown> = {}
+): void => {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(
+    new CustomEvent(KYRUB_CATALOG_PRODUCT_CHANGED_EVENT, {
+      detail: { productId, ...detail },
+    })
+  );
+};
+
 export const listKyrubCatalogDrafts = async (
   user: User
 ): Promise<KyrubCatalogDraftListResponse> => {
@@ -86,6 +99,48 @@ export const listKyrubCatalogDrafts = async (
         Array.isArray(item.issues)
     ),
   };
+};
+
+export const updateKyrubCatalogProduct = async (
+  user: User,
+  product: Product
+): Promise<'draft' | 'published'> => {
+  const productId = product.id.trim();
+  if (!productId) throw new Error('O produto não foi identificado.');
+
+  const body = await authenticatedPost(
+    user,
+    {
+      operation: 'update_catalog_product',
+      productId,
+      product: {
+        name: product.name,
+        description: product.description,
+        price: product.price,
+        image: product.image,
+        stock: product.stock,
+        category: product.category,
+        isService: product.isService === true,
+        isComplimentary: product.isComplimentary === true,
+      },
+    },
+    'Não foi possível salvar as alterações do produto.'
+  );
+
+  if (
+    !isRecord(body) ||
+    body.productId !== productId ||
+    (body.publicationStatus !== 'draft' && body.publicationStatus !== 'published')
+  ) {
+    throw new Error('O Kyrub não confirmou a atualização do produto.');
+  }
+
+  const publicationStatus = body.publicationStatus as 'draft' | 'published';
+  dispatchCatalogProductChanged(productId, {
+    publicationStatus,
+    updated: true,
+  });
+  return publicationStatus;
 };
 
 export const setKyrubCatalogProductPublished = async (
@@ -116,11 +171,5 @@ export const setKyrubCatalogProductPublished = async (
     throw new Error('O Kyrub não confirmou a alteração de publicação do produto.');
   }
 
-  if (typeof window !== 'undefined') {
-    window.dispatchEvent(
-      new CustomEvent(KYRUB_CATALOG_PRODUCT_CHANGED_EVENT, {
-        detail: { productId: normalizedId, published },
-      })
-    );
-  }
+  dispatchCatalogProductChanged(normalizedId, { published });
 };
