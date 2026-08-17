@@ -12,6 +12,7 @@ import {
   executeAuthorizedKyrubCatalogImport,
   isKyrubCatalogImportExecutionRequest,
 } from '../server/actions/catalogImportExecutionService.js';
+import { ensureCanonicalStoreForCatalog } from '../server/actions/canonicalStoreRepairService.js';
 import {
   isKyrubActionReceiptVerificationRequest,
   verifyAuthorizedKyrubActionReceipt,
@@ -63,6 +64,19 @@ export default async function handler(
       );
       response.status(200).json(verification);
       return;
+    }
+
+    // Catalog operations repair the private -> canonical store link first. This
+    // keeps configured legacy stores usable without resurrecting a store that
+    // was intentionally reset, because the repair service requires meaningful
+    // private store setup before linking or creating a canonical registry.
+    if (
+      isKyrubCatalogImportExecutionRequest(request.body) ||
+      isKyrubCatalogDraftListRequest(request.body) ||
+      isKyrubCatalogDraftExecutionRequest(request.body) ||
+      isKyrubCatalogProductPublicationRequest(request.body)
+    ) {
+      await ensureCanonicalStoreForCatalog(authorization);
     }
 
     // Unpublished products do not consume published-product capacity. Catalog
