@@ -21,6 +21,7 @@ import { ProfileSocialHubNative } from './components/ProfileSocialHubNative';
 import { ProfileVerificationBridge } from './components/ProfileVerificationBridge';
 import { PublicStorefrontApp } from './components/PublicStorefrontApp';
 import { SocialPublishingBridge } from './components/SocialPublishingBridge';
+import { CatalogCustomizationInheritanceBridge } from './components/store/CatalogCustomizationInheritanceBridge';
 import { IntegrationTestOrderBridge } from './components/store/IntegrationTestOrderBridge';
 import { KyrubDeliveryOpportunityBridge } from './components/store/KyrubDeliveryOpportunityBridge';
 import { KyrubDeliveryStatusSyncBridge } from './components/store/KyrubDeliveryStatusSyncBridge';
@@ -174,6 +175,7 @@ function AuthenticatedKyrubApp({ operational }: { operational: boolean }) {
       <StoreSharingPortalBridge />
       <StoreRestartLandingBridge />
       <UnifiedProductCreateModalBridge />
+      <CatalogCustomizationInheritanceBridge />
       <ProductWorkspaceLayoutBridge />
       {operational && <OperationalAppEntryBridge />}
       <LegacyApp key={`legacy-cache-${legacyCacheRevision}`} />

@@ -117,7 +117,8 @@ test('ERP-native filters precede optional keyword filters in the shared PDV', ()
   assert.match(sharedPdvSource, /filter-best-sellers/);
   assert.match(sharedPdvSource, /getProductRecency/);
   assert.match(wrapperSource, /CONFIRMED_SALE_STATUSES/);
-  assert.match(wrapperSource, /nextSalesByProductId\[item\.productId\]/);
+  assert.match(wrapperSource, /const productId = sourceProductId\(item\.productId\)/);
+  assert.match(wrapperSource, /nextSalesByProductId\[productId\]/);
   assert.match(sharedPdvSource, /salesByProductId\[right\.id\]/);
 });
 

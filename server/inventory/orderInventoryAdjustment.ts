@@ -31,6 +31,13 @@ const ledgerPath = (tenantId: string, orderId: string): string =>
     .update(`${tenantId}:${orderId}`)
     .digest('hex')}`;
 
+const sourceProductId = (value: unknown, explicitSource: unknown): string => {
+  const explicit = clean(explicitSource);
+  if (explicit) return explicit;
+  const configured = clean(value);
+  return configured.split('::', 1)[0]?.trim() || configured;
+};
+
 const parseOrderItems = (value: unknown): InventoryOrderItemRecord[] => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return [];
   const record = value as Record<string, unknown>;
@@ -40,7 +47,7 @@ const parseOrderItems = (value: unknown): InventoryOrderItemRecord[] => {
       return [];
     }
     const item = candidate as Record<string, unknown>;
-    const productId = clean(item.productId);
+    const productId = sourceProductId(item.productId, item.sourceProductId);
     const name = clean(item.name);
     const quantity = finiteInteger(item.quantity);
     const transferredQuantity = finiteInteger(item.transferredQuantity) ?? 0;
