@@ -61,6 +61,7 @@ const activityEntityType = (
     proposal.type === 'update_product' ||
     proposal.type === 'import_catalog_draft'
   ) return 'product';
+  if (proposal.type === 'adjust_inventory') return 'inventory';
   if (proposal.type === 'prepare_product_draft') return 'product_draft';
   if (proposal.type === 'create_note') return 'note';
   if (proposal.type === 'create_task') return 'task';
@@ -217,7 +218,8 @@ export const executeKyrubAction = async (
     proposal.type === 'create_product' ||
     proposal.type === 'update_product' ||
     proposal.type === 'update_store_profile' ||
-    proposal.type === 'import_catalog_draft'
+    proposal.type === 'import_catalog_draft' ||
+    proposal.type === 'adjust_inventory'
   ) {
     invalidateKyrubErpContext(user.uid);
   }
