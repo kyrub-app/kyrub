@@ -9,6 +9,7 @@ import {
   type ProductFiscalEditorState,
 } from '../../utils/productFiscal';
 import { ProductFiscalFieldsBridge } from './ProductFiscalFieldsBridge';
+import { ProductPricingFieldsBridge } from './ProductPricingFieldsBridge';
 import {
   UnifiedProductModal,
   type ProductModalMode,
@@ -96,6 +97,11 @@ export const ProductEditorModal: React.FC<ProductEditorModalProps> = ({
         product={product}
         isSaving={isSaving}
         onStateChange={setFiscalState}
+      />
+      <ProductPricingFieldsBridge
+        isOpen={resolvedOpen}
+        product={product}
+        isSaving={isSaving}
       />
     </>
   );

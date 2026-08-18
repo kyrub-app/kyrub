@@ -31,6 +31,22 @@ const hasCommonProposalFields = (value: Record<string, unknown>): boolean =>
   typeof value.id === 'string' &&
   value.id.trim().length > 0;
 
+const isInventoryEntry = (value: unknown): boolean => {
+  if (!isRecord(value)) return false;
+  return (
+    typeof value.name === 'string' &&
+    value.name.trim().length > 0 &&
+    typeof value.quantity === 'number' &&
+    Number.isFinite(value.quantity) &&
+    value.quantity > 0 &&
+    ['un', 'kg', 'g', 'l', 'ml'].includes(String(value.unit)) &&
+    (value.purchaseCost === undefined ||
+      (typeof value.purchaseCost === 'number' &&
+        Number.isFinite(value.purchaseCost) &&
+        value.purchaseCost >= 0))
+  );
+};
+
 export const isKyrubAiActionProposal = (
   value: unknown
 ): value is KyrubAiActionProposal => {
@@ -117,6 +133,18 @@ export const isKyrubAiActionProposal = (
         value.patch.name.trim().length > 0 &&
         value.requiresConfirmation === true
       );
+    case 'adjust_inventory':
+      return (
+        value.mode === 'increment' &&
+        Array.isArray(value.entries) &&
+        value.entries.length > 0 &&
+        value.entries.length <= 60 &&
+        value.entries.every(isInventoryEntry) &&
+        isRecord(value.source) &&
+        (value.source.kind === 'supplier_invoice' ||
+          value.source.kind === 'inventory_intake_text') &&
+        value.requiresConfirmation === true
+      );
     default:
       return false;
   }
@@ -132,9 +160,13 @@ const prepareProposalForConfirmation = (
   impact: proposal.impact ?? {
     entityCount: proposal.type === 'import_catalog_draft'
       ? proposal.items.length
-      : 1,
+      : proposal.type === 'adjust_inventory'
+        ? proposal.entries.length
+        : 1,
     reversibility:
-      proposal.type === 'create_product' || proposal.type === 'update_product'
+      proposal.type === 'create_product' ||
+      proposal.type === 'update_product' ||
+      proposal.type === 'adjust_inventory'
         ? 'limited'
         : 'easy',
   },
