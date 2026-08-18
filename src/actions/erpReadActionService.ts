@@ -16,6 +16,7 @@ import type {
   KyrubErpProductSummary,
   KyrubErpStoreSummary,
 } from '../../shared/kyrubErpContext';
+import { buildKyrubiaInventoryReadHints } from '../../shared/kyrubiaInventoryRead';
 import { db } from '../utils/firebase';
 import {
   getCustomerOrdersCollectionPath,
@@ -143,12 +144,6 @@ const readPrivateInventory = async (
     itemCount: Math.max(rawCount, allItems.length),
   };
 };
-
-const inventoryCompatibilityHints = (
-  items: KyrubErpInventoryItemSummary[]
-): string[] => items.slice(0, 6).map(item =>
-  `Inventário privado (insumo; não é produto do catálogo): ${item.name} — ${item.currentQuantity.toLocaleString('pt-BR')} ${item.unit}.`
-);
 
 const storeSummaryFrom = (
   user: Pick<User, 'uid' | 'email'>,
@@ -287,7 +282,7 @@ export const readKyrubErpContext = async (
     inventoryItems = inventoryResult.value.items;
     inventoryItemCount = inventoryResult.value.itemCount;
     inventoryTruncated = inventoryItemCount > inventoryItems.length;
-    warnings.push(...inventoryCompatibilityHints(inventoryItems));
+    warnings.push(...buildKyrubiaInventoryReadHints(inventoryItems, inventoryItemCount));
   } else {
     warnings.push('Não foi possível consultar o inventário privado de insumos.');
   }
