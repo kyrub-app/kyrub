@@ -23,7 +23,7 @@ interface ProductPricingPanelProps {
   composition: ProductComposition;
   currentSalePrice: number | null;
   disabled?: boolean;
-  onApplySuggestedPrice: (price: number) => void;
+  onApplySuggestedPrice?: (price: number) => void;
 }
 
 const currency = new Intl.NumberFormat('pt-BR', {
@@ -163,7 +163,7 @@ export function ProductPricingPanel({
         </div>
       </div>
 
-      <div className="mt-3 grid gap-3 sm:grid-cols-[1fr_auto_auto] sm:items-end">
+      <div className={`mt-3 grid gap-3 ${onApplySuggestedPrice ? 'sm:grid-cols-[1fr_auto_auto]' : 'sm:grid-cols-[1fr_auto]'} sm:items-end`}>
         <label className="text-[9px] font-black uppercase text-slate-500">
           Margem desejada (%)
           <input
@@ -190,17 +190,24 @@ export function ProductPricingPanel({
           {saving ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
           Salvar margem
         </button>
-        <button
-          type="button"
-          onClick={() => suggestedPrice !== null && onApplySuggestedPrice(roundCurrency(suggestedPrice))}
-          disabled={disabled || suggestedPrice === null}
-          className="flex min-h-10 items-center justify-center gap-1.5 rounded-xl bg-emerald-500 px-3 text-[9px] font-black uppercase text-slate-950 disabled:opacity-35"
-        >
-          <CircleDollarSign className="h-3.5 w-3.5" />
-          Aplicar preço sugerido
-        </button>
+        {onApplySuggestedPrice && (
+          <button
+            type="button"
+            onClick={() => suggestedPrice !== null && onApplySuggestedPrice(roundCurrency(suggestedPrice))}
+            disabled={disabled || suggestedPrice === null}
+            className="flex min-h-10 items-center justify-center gap-1.5 rounded-xl bg-emerald-500 px-3 text-[9px] font-black uppercase text-slate-950 disabled:opacity-35"
+          >
+            <CircleDollarSign className="h-3.5 w-3.5" />
+            Aplicar preço sugerido
+          </button>
+        )}
       </div>
 
+      {suggestedPrice !== null && !onApplySuggestedPrice && (
+        <p className="mt-3 rounded-xl border border-emerald-500/15 bg-slate-950 px-3 py-2 text-[9px] leading-relaxed text-slate-400">
+          Use o preço sugerido como referência no campo “Preço de venda”. A alteração pública continua sendo feita pelo salvamento normal do item.
+        </p>
+      )}
       {unitCost === null && composition.lines.length > 0 && (
         <p className="mt-3 rounded-xl border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-[9px] leading-relaxed text-amber-200">
           Informe um custo de compra maior que zero para todos os componentes da ficha técnica. A entrada de estoque sem valor fiscal não será tratada como custo zero.
