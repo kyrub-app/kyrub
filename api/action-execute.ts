@@ -14,6 +14,10 @@ import {
   executeAuthorizedKyrubCatalogImport,
   isKyrubCatalogImportExecutionRequest,
 } from '../server/actions/catalogImportExecutionService.js';
+import {
+  executeAuthorizedKyrubInventoryAdjustment,
+  isKyrubInventoryAdjustmentExecutionRequest,
+} from '../server/actions/inventoryAdjustmentExecutionService.js';
 import { ensureCanonicalStoreForCatalog } from '../server/actions/canonicalStoreRepairService.js';
 import {
   isKyrubActionReceiptVerificationRequest,
@@ -65,6 +69,15 @@ export default async function handler(
         request.body
       );
       response.status(200).json(verification);
+      return;
+    }
+
+    if (isKyrubInventoryAdjustmentExecutionRequest(request.body)) {
+      const inventory = await executeAuthorizedKyrubInventoryAdjustment(
+        authorization,
+        request.body
+      );
+      response.status(200).json(inventory);
       return;
     }
 
