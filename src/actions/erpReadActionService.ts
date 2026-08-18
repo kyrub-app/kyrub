@@ -30,7 +30,7 @@ const LOW_STOCK_THRESHOLD = 5;
 const MAX_PRODUCTS_IN_CONTEXT = 120;
 const MAX_INVENTORY_ITEMS_IN_CONTEXT = 120;
 const MAX_PENDING_ORDERS_IN_CONTEXT = 30;
-const INVENTORY_CONTEXT_ENDPOINT = '/api/inventory-context';
+const INVENTORY_CONTEXT_ENDPOINT = '/api/ai/consultant?resource=inventory';
 const PENDING_ORDER_STATUSES = [
   'pending',
   'accepted',
