@@ -15,6 +15,7 @@ export const KYRUB_ACTION_TYPES = {
   IMPORT_CATALOG_DRAFT: 'import_catalog_draft',
   CREATE_PRODUCT: 'create_product',
   UPDATE_PRODUCT: 'update_product',
+  ADJUST_INVENTORY: 'adjust_inventory',
   READ_STORE_SUMMARY: 'read_store_summary',
   LIST_PRODUCTS: 'list_products',
   LIST_LOW_STOCK_PRODUCTS: 'list_low_stock_products',
@@ -23,7 +24,6 @@ export const KYRUB_ACTION_TYPES = {
 
 export const KYRUB_PLANNED_ERP_ACTION_TYPES = {
   UPDATE_PRODUCT_DRAFT: 'update_product_draft',
-  ADJUST_INVENTORY: 'adjust_inventory',
   ANALYZE_CATALOG: 'analyze_catalog',
 } as const;
 
@@ -110,7 +110,8 @@ export type KyrubWriteActionType =
   | typeof KYRUB_ACTION_TYPES.PREPARE_PRODUCT_DRAFT
   | typeof KYRUB_ACTION_TYPES.IMPORT_CATALOG_DRAFT
   | typeof KYRUB_ACTION_TYPES.CREATE_PRODUCT
-  | typeof KYRUB_ACTION_TYPES.UPDATE_PRODUCT;
+  | typeof KYRUB_ACTION_TYPES.UPDATE_PRODUCT
+  | typeof KYRUB_ACTION_TYPES.ADJUST_INVENTORY;
 
 export type KyrubReadActionType = Exclude<
   KyrubActiveActionType,
@@ -193,6 +194,14 @@ export const KYRUB_ACTION_REGISTRY: Record<
     requiresConfirmation: true,
     permission: 'products.write',
     maxAffectedEntities: 1,
+  },
+  adjust_inventory: {
+    type: 'adjust_inventory',
+    mode: 'write',
+    risk: 'medium',
+    requiresConfirmation: true,
+    permission: 'inventory.write',
+    maxAffectedEntities: 60,
   },
   read_store_summary: {
     type: 'read_store_summary',
@@ -338,6 +347,27 @@ export type KyrubAiUpdateProductProposal = KyrubActionProposalMetadata & {
   requiresConfirmation: true;
 };
 
+export type KyrubInventoryUnit = 'un' | 'kg' | 'g' | 'l' | 'ml';
+
+export type KyrubInventoryAdjustmentEntry = {
+  name: string;
+  quantity: number;
+  unit: KyrubInventoryUnit;
+  purchaseCost?: number;
+};
+
+export type KyrubAiAdjustInventoryProposal = KyrubActionProposalMetadata & {
+  id: string;
+  type: typeof KYRUB_ACTION_TYPES.ADJUST_INVENTORY;
+  mode: 'increment';
+  entries: KyrubInventoryAdjustmentEntry[];
+  source: {
+    kind: 'supplier_invoice' | 'inventory_intake_text';
+    label?: string;
+  };
+  requiresConfirmation: true;
+};
+
 export type KyrubActionProposal =
   | KyrubAiCreateNoteProposal
   | KyrubAiCreateTaskProposal
@@ -346,7 +376,8 @@ export type KyrubActionProposal =
   | KyrubAiPrepareProductDraftProposal
   | KyrubAiImportCatalogDraftProposal
   | KyrubAiCreateProductProposal
-  | KyrubAiUpdateProductProposal;
+  | KyrubAiUpdateProductProposal
+  | KyrubAiAdjustInventoryProposal;
 
 export type KyrubActionExecutionStatus =
   | 'success'
