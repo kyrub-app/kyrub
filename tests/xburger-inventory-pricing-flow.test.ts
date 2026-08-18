@@ -160,26 +160,30 @@ test('Kyrubia inventory hints expose the four confirmed inputs without turning t
 });
 
 test('Kyrubia reads confirmed inventory separately from products and refreshes it immediately', async () => {
-  const [contextType, inventoryRoute, erpReader, actionService] = await Promise.all([
+  const [contextType, consultantRoute, erpReader, actionService, clientRuntime] = await Promise.all([
     readFile(new URL('../shared/kyrubErpContext.ts', import.meta.url), 'utf8'),
-    readFile(new URL('../api/inventory-context.ts', import.meta.url), 'utf8'),
+    readFile(new URL('../api/ai/consultant.ts', import.meta.url), 'utf8'),
     readFile(new URL('../src/actions/erpReadActionService.ts', import.meta.url), 'utf8'),
     readFile(new URL('../src/actions/kyrubActionService.ts', import.meta.url), 'utf8'),
+    readFile(new URL('../src/ai/consultantClientWithPlans.ts', import.meta.url), 'utf8'),
   ]);
 
   assert.match(contextType, /KyrubErpInventoryItemSummary/);
   assert.match(contextType, /inventoryItems\?:\s*KyrubErpInventoryItemSummary\[\]/);
   assert.match(contextType, /inventory\?:\s*boolean/);
 
-  assert.match(inventoryRoute, /users\/\$\{actor\.uid\}\/private_store\/inventory/);
-  assert.match(inventoryRoute, /inventoryCatalog/);
-  assert.match(inventoryRoute, /candidate\.currentQuantity/);
-  assert.match(inventoryRoute, /Cache-Control/);
+  assert.match(consultantRoute, /users\/\$\{uid\}\/private_store\/inventory/);
+  assert.match(consultantRoute, /inventoryCatalog/);
+  assert.match(consultantRoute, /candidate\.currentQuantity/);
+  assert.match(consultantRoute, /resource === 'inventory'/);
 
-  assert.match(erpReader, /INVENTORY_CONTEXT_ENDPOINT\s*=\s*'\/api\/inventory-context'/);
+  assert.match(erpReader, /INVENTORY_CONTEXT_ENDPOINT\s*=\s*'\/api\/ai\/consultant\?resource=inventory'/);
   assert.match(erpReader, /authorization:\s*`Bearer \$\{token\}`/);
   assert.match(erpReader, /inventoryItems/);
   assert.match(erpReader, /buildKyrubiaInventoryReadHints/);
+
+  assert.match(clientRuntime, /resolveKyrubiaInventoryRead/);
+  assert.match(clientRuntime, /inventoryIntent/);
 
   assert.match(actionService, /proposal\.type === 'adjust_inventory'/);
   assert.match(
