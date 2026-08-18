@@ -2,6 +2,7 @@ export type KyrubiaCapabilityIntent =
   | 'create_note'
   | 'create_task'
   | 'create_products'
+  | 'adjust_inventory'
   | 'analyze_catalog'
   | 'transcribe_text'
   | 'generate_image'
@@ -10,7 +11,7 @@ export type KyrubiaCapabilityIntent =
 
 export type KyrubiaCapabilityDecision = {
   primary: KyrubiaCapabilityIntent;
-  mutation: 'none' | 'note' | 'task' | 'products';
+  mutation: 'none' | 'note' | 'task' | 'products' | 'inventory';
 };
 
 const normalize = (value: string): string =>
@@ -27,6 +28,9 @@ const TASK_NOUN = /\b(tarefa|tarefas|lembrete|lembretes|checklist)\b/;
 const TASK_WRITE = /\b(crie|criar|cria|adicione|adicionar|agende|agendar|lembre|lembrar|registre|registrar)\b/;
 const PRODUCT_NOUN = /\b(produto|produtos|item|itens|cardapio|catalogo|menu|vitrine)\b/;
 const PRODUCT_WRITE = /\b(cadastre|cadastrar|cadastro|recadastre|recadastrar|adicione|adicionar|inclua|incluir|importe|importar|crie|criar|publique|publicar|atualize|atualizar)\b/;
+const INVENTORY_DOCUMENT = /\b(nota fiscal|nf\b|fornecedor|entrada de estoque|dar entrada|recebi essa nota)\b/;
+const INVENTORY_WRITE = /\b(entrada|dar entrada|atualize|atualizar|registre|registrar|estoque|recebi)\b/;
+const INVENTORY_QUANTITY = /\b\d+[\d.,]*\s*(un|und|unid|unidade|unidades|kg|g|l|ml)\b/;
 const TRANSCRIBE = /\b(transcreva|transcrever|transcricao|copie o texto|copiar o texto|extraia o texto|extrair o texto|leia o texto|ler o texto)\b/;
 const IMAGE_NOUN = /\b(imagem|foto|ilustracao|arte|banner|logo|logotipo|icone)\b/;
 const IMAGE_GENERATE = /\b(gere|gerar|crie|criar|desenhe|desenhar|produza|produzir)\b/;
@@ -38,6 +42,16 @@ export const classifyKyrubiaCapability = (
   message: string
 ): KyrubiaCapabilityDecision => {
   const text = normalize(message);
+
+  // Documento de compra + quantidades representa entrada operacional, nunca
+  // cadastro de item de vitrine. Esta checagem precisa preceder produto/catálogo.
+  if (
+    INVENTORY_DOCUMENT.test(text) &&
+    INVENTORY_QUANTITY.test(text) &&
+    INVENTORY_WRITE.test(text)
+  ) {
+    return { primary: 'adjust_inventory', mutation: 'inventory' };
+  }
 
   // The explicitly named artifact is the primary target. A checklist can be
   // content inside a note, so an explicit note request must be recognized
@@ -76,6 +90,7 @@ export const kyrubiaIntentAllowsAction = (
 ): boolean => {
   if (actionType === 'create_note') return decision.mutation === 'note';
   if (actionType === 'create_task') return decision.mutation === 'task';
+  if (actionType === 'adjust_inventory') return decision.mutation === 'inventory';
   if (
     actionType === 'create_product' ||
     actionType === 'prepare_product_draft' ||
