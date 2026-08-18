@@ -196,8 +196,16 @@ export const parseProductCompositions = (
 export const readProductInventorySettings = (
   value: DocumentData | undefined
 ): ProductInventorySettings => ({
-  catalog: parseInventoryCatalog(value?.inventoryCatalog),
-  compositions: parseProductCompositions(value?.productCompositions),
+  catalog: parseInventoryCatalog(
+    Array.isArray(value?.inventoryCatalog)
+      ? value.inventoryCatalog
+      : value?.catalog
+  ),
+  compositions: parseProductCompositions(
+    value?.productCompositions && typeof value.productCompositions === 'object'
+      ? value.productCompositions
+      : value?.compositions
+  ),
 });
 
 export const calculateProductAvailableStock = (
@@ -320,8 +328,13 @@ export const persistProductInventorySettings = async (
       inventoryReference,
       {
         ownerId: user.uid,
+        // Keep both names synchronized while the order pipeline still accepts
+        // the legacy aliases. This prevents a stale legacy array/object from
+        // shadowing the freshly edited canonical inventory data.
         inventoryCatalog: nextSettings.catalog,
+        catalog: nextSettings.catalog,
         productCompositions: nextSettings.compositions,
+        compositions: nextSettings.compositions,
         updatedAt: serverTimestamp(),
         ...(snapshot.exists() ? {} : { createdAt: serverTimestamp() }),
       },
