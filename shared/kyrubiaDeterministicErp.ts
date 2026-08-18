@@ -95,7 +95,7 @@ const inventoryAvailabilityReply = (
   if (!context) {
     return 'Não consegui consultar o estoque de insumos nesta solicitação. Tente novamente em instantes.';
   }
-  if (!context.availability.inventory) {
+  if (context.availability.inventory !== true) {
     return 'O estoque privado de insumos está temporariamente indisponível para consulta.';
   }
   return null;
@@ -210,10 +210,11 @@ const resolveInventoryRead = (
   intent: string,
   context: KyrubErpContextSnapshot | undefined
 ): KyrubiaDeterministicErpResult | null => {
-  const normalizedInventoryNames = context?.inventory.map(item => ({
+  const inventory = context?.inventory ?? [];
+  const normalizedInventoryNames = inventory.map(item => ({
     item,
     normalizedName: normalizeKyrubiaIntentText(item.name),
-  })) ?? [];
+  }));
   const namedMatches = normalizedInventoryNames
     .filter(({ normalizedName }) => normalizedName.length > 0 && intent.includes(normalizedName))
     .map(({ item }) => item);
@@ -227,18 +228,18 @@ const resolveInventoryRead = (
     return { action: 'read_store_summary', reply: unavailable ?? 'Não consegui consultar os insumos.' };
   }
 
-  if (context.inventory.length === 0) {
+  if (inventory.length === 0) {
     return {
       action: 'read_store_summary',
       reply: 'Não encontrei insumos cadastrados no estoque privado da sua loja.',
     };
   }
 
-  const items = namedMatches.length > 0 ? namedMatches : context.inventory;
+  const items = namedMatches.length > 0 ? namedMatches : inventory;
   const list = items
     .map(item => `- ${item.name} — ${formatInventoryQuantity(item)}`)
     .join('\n');
-  const truncation = context.inventoryTruncated && namedMatches.length === 0
+  const truncation = context.inventoryTruncated === true && namedMatches.length === 0
     ? '\n\nA leitura do estoque de insumos está limitada, então podem existir outros itens além dos mostrados aqui.'
     : '';
 
