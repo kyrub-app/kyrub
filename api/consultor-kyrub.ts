@@ -17,6 +17,7 @@ import {
   kyrubiaIntentAllowsAction,
   type KyrubiaCapabilityDecision,
 } from '../shared/kyrubiaCapabilityRouter.js';
+import { buildKyrubInventoryIntakeProposal } from '../shared/kyrubInventoryIntake.js';
 import { handleKyrubiaCatalogAnalysis } from '../server/kyrubiaCatalogAnalysisRoute.js';
 import handleKyrubia from './kyrubia.js';
 
@@ -39,6 +40,7 @@ const CONSULTOR_KYRUB_COMPATIBILITY = {
   functionDeclarations: [
     { name: 'create_note' },
     { name: 'import_catalog_draft' },
+    { name: 'adjust_inventory' },
   ],
 } as const;
 
@@ -196,6 +198,45 @@ const withCapabilityPolicy = (
   return { ...body, messages };
 };
 
+const inventoryIntakeResponse = (
+  body: Record<string, unknown>,
+  messages: KyrubAiConversationMessage[]
+): KyrubAiConsultantResponse | null => {
+  const latest = latestUserMessage(messages);
+  if (!latest) return null;
+  const conversationId = typeof body.conversationId === 'string'
+    ? body.conversationId.trim()
+    : '';
+  const proposal = buildKyrubInventoryIntakeProposal(latest.content, conversationId);
+  if (!proposal) return null;
+
+  const lines = proposal.entries
+    .map(entry => `• ${entry.name} — ${entry.quantity.toLocaleString('pt-BR')} ${entry.unit}`)
+    .join('\n');
+  const supplier = proposal.source.label
+    ? `\nFornecedor informado: ${proposal.source.label}.`
+    : '';
+
+  return {
+    reply:
+      `Identifiquei uma entrada de estoque com ${proposal.entries.length} insumo(s).${supplier}\n\n${lines}\n\n` +
+      'Vou somar essas quantidades ao estoque privado, criando o insumo se ele ainda não existir. ' +
+      'Nenhum produto será criado ou publicado e nenhum preço de venda será alterado. Revise e confirme a entrada.',
+    provider: 'kyrub',
+    model: 'kyrub-inventory-intake-runtime-v1',
+    mode: 'deterministic',
+    requestId: proposal.id,
+    actionProposal: proposal,
+    capabilities: {
+      actionsEnabled: true,
+      enabledActions: ['adjust_inventory'],
+      enabledReadActions: [],
+      voiceEnabled: false,
+      persistentCloudHistoryEnabled: false,
+    },
+  };
+};
+
 const catalogImportResponse = (
   body: Record<string, unknown>,
   messages: KyrubAiConversationMessage[],
@@ -317,7 +358,7 @@ const stockPreparationResponse = (
     reply:
       `Conferi o estado atual do catálogo: ${list} estão com estoque 0, então a trava da vitrine está funcionando corretamente. ` +
       'Para disponibilizá-los sem contornar essa proteção, precisamos registrar estoque real. Nos itens preparados a partir de ingredientes, o caminho correto é cadastrar os insumos disponíveis e montar a ficha técnica de cada produto; assim o Kyrub pode relacionar uma venda ao consumo desses insumos e bloquear novamente quando faltar algum componente. ' +
-      'Não vou inventar quantidades, ingredientes ou rendimentos que não estejam cadastrados. Para continuar, me informe as quantidades reais dos insumos que você tem — ou, se preferir, começamos pelo X-Burger e eu te conduzo ingrediente por ingrediente para montar a ficha técnica. Depois fazemos o mesmo com a Taça Simples.',
+      'Não vou inventar quantidades, ingredientes ou rendimentos que não estejam cadastrados. Para continuar, me informe as quantidades reais dos insumos que você tem — ou, se preferir, começamos pelo X-Burger e eu te conduzo ingrediente por ingrediente para montar a ficha técnica.',
     provider: 'kyrub',
     model: 'kyrub-stock-preparation-runtime-v1',
     mode: 'deterministic',
@@ -453,6 +494,15 @@ export default async function handler(
     const body = readBody(request.body);
     const messages = conversationMessages(body);
     const decision = capabilityDecision(messages);
+
+    if (decision.primary === 'adjust_inventory') {
+      const stockIntake = inventoryIntakeResponse(body, messages);
+      if (stockIntake) {
+        response.status(200).json(stockIntake);
+        return;
+      }
+    }
+
     const deterministicStockPreparation = stockPreparationResponse(body, messages);
     if (deterministicStockPreparation) {
       response.status(200).json(deterministicStockPreparation);
