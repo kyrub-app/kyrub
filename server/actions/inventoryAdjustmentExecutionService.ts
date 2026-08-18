@@ -12,11 +12,12 @@ import { KyrubActionExecutionError } from './actionExecutionService.js';
 type InventoryItemRecord = {
   id: string;
   name: string;
-  sku: string;
   unit: KyrubInventoryUnit;
-  quantity: number;
+  currentQuantity: number;
   minimumQuantity: number;
   purchaseCost: number;
+  supplier: string;
+  updatedAt: string;
 };
 
 const MAX_ENTRIES = 60;
@@ -100,21 +101,26 @@ const normalizeInventoryItem = (value: unknown): InventoryItemRecord | null => {
   const id = cleanText(value.id, 180);
   const name = cleanText(value.name, MAX_NAME);
   const unit = value.unit;
-  if (!id || !name || !isUnit(unit)) return null;
+  const currentQuantity = typeof value.currentQuantity === 'number' && Number.isFinite(value.currentQuantity)
+    ? Math.max(0, value.currentQuantity)
+    : null;
+  const minimumQuantity = typeof value.minimumQuantity === 'number' && Number.isFinite(value.minimumQuantity)
+    ? Math.max(0, value.minimumQuantity)
+    : null;
+  if (!id || !name || !isUnit(unit) || currentQuantity === null || minimumQuantity === null) {
+    return null;
+  }
   return {
     id,
     name,
-    sku: cleanText(value.sku, 120),
     unit,
-    quantity: typeof value.quantity === 'number' && Number.isFinite(value.quantity)
-      ? Math.max(0, value.quantity)
-      : 0,
-    minimumQuantity: typeof value.minimumQuantity === 'number' && Number.isFinite(value.minimumQuantity)
-      ? Math.max(0, value.minimumQuantity)
-      : 0,
+    currentQuantity,
+    minimumQuantity,
     purchaseCost: typeof value.purchaseCost === 'number' && Number.isFinite(value.purchaseCost)
       ? Math.max(0, value.purchaseCost)
       : 0,
+    supplier: cleanText(value.supplier, 160),
+    updatedAt: cleanText(value.updatedAt, 80),
   };
 };
 
@@ -170,6 +176,7 @@ export const executeAuthorizedKyrubInventoryAdjustment = async (
     const catalog = (rawCatalog as unknown[])
       .map(normalizeInventoryItem)
       .filter((item): item is InventoryItemRecord => Boolean(item));
+    const now = new Date().toISOString();
 
     for (const entry of proposal.entries) {
       const key = `${normalizeName(entry.name)}::${entry.unit}`;
@@ -180,23 +187,29 @@ export const executeAuthorizedKyrubInventoryAdjustment = async (
         const existing = catalog[existingIndex];
         catalog[existingIndex] = {
           ...existing,
-          quantity: existing.quantity + entry.quantity,
+          currentQuantity: existing.currentQuantity + entry.quantity,
           ...(entry.purchaseCost !== undefined ? { purchaseCost: entry.purchaseCost } : {}),
+          ...(proposal.source.label && !existing.supplier
+            ? { supplier: proposal.source.label }
+            : {}),
+          updatedAt: now,
         };
       } else {
         catalog.push({
           id: deterministicItemId(actor.uid, entry),
           name: entry.name,
-          sku: '',
           unit: entry.unit,
-          quantity: entry.quantity,
+          currentQuantity: entry.quantity,
           minimumQuantity: 0,
           purchaseCost: entry.purchaseCost ?? 0,
+          supplier: proposal.source.label ?? '',
+          updatedAt: now,
         });
       }
     }
 
     transaction.set(inventoryRef, {
+      ownerId: actor.uid,
       inventoryCatalog: catalog,
       catalog,
       updatedAt: FieldValue.serverTimestamp(),
