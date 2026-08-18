@@ -4,6 +4,7 @@ import type {
 } from '../../shared/aiConsultant';
 import type { KyrubErpContextSnapshot } from '../../shared/kyrubErpContext';
 import { resolveKyrubiaDeterministicTask } from '../../shared/kyrubiaDeterministicTask';
+import { resolveKyrubiaInventoryRead } from '../../shared/kyrubiaInventoryRead';
 import { readKyrubErpContext } from '../actions/erpReadActionService';
 import { rehydrateKyrubiaAuthoritativeReceipt } from '../observability/kyrubAuthoritativeReceiptRehydration';
 import { hydrateActivePlanCatalog } from '../utils/activePlanCatalog';
@@ -230,6 +231,17 @@ export const requestKyrubAiConsultant = async (
       };
       emitKyrubAiActionProposal(payload.conversationId, result);
       return result;
+    }
+  }
+
+  if (latestUserMessage?.role === 'user') {
+    const inventoryIntent = /\b(insumo|insumos|ingrediente|ingredientes|mat[eé]ria[- ]prima|mat[eé]rias[- ]primas|invent[aá]rio)\b/i.test(latestContent);
+    if (inventoryIntent) {
+      erpContext ??= await readErpContextSafely(user, signal);
+      const inventoryRead = resolveKyrubiaInventoryRead(latestContent, erpContext);
+      if (inventoryRead) {
+        return trustedReadResponse(inventoryRead.reply);
+      }
     }
   }
 
