@@ -2,6 +2,13 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import {
+  applyInventoryConsumptionLines,
+  buildOrderInventoryConsumption,
+  calculateCompositionAvailableStock,
+  type InventoryCatalogRecord,
+  type InventoryCompositionRecord,
+} from '../shared/inventoryConsumption';
+import {
   buildKyrubInventoryIntakeProposal,
   parseBrazilianFiscalNumber,
   parseKyrubInventoryIntakeEntries,
@@ -73,6 +80,43 @@ test('X-Burger recipe supports ten units and calculates margin without confusing
   assert.equal(roundCurrency(cost ?? -1), 7.7);
   assert.equal(roundCurrency(calculateSuggestedPrice(cost, 40) ?? -1), 12.83);
   assert.equal(roundCurrency(calculateSaleMarginPercent(cost, 29.5) ?? -1), 73.9);
+});
+
+test('one X-Burger sale consumes the recipe and reduces sellable capacity from 10 to 9', () => {
+  const now = '2026-08-18T00:00:00.000Z';
+  const catalog: InventoryCatalogRecord[] = [
+    { id: 'pao', name: 'Pão para hambúrguer', unit: 'un', currentQuantity: 10, minimumQuantity: 0, purchaseCost: 1.2, supplier: 'Distribuidora Teste Kyrub', updatedAt: now },
+    { id: 'carne', name: 'Carne bovina Premium', unit: 'kg', currentQuantity: 1.4, minimumQuantity: 0, purchaseCost: 30, supplier: 'Distribuidora Teste Kyrub', updatedAt: now },
+    { id: 'queijo', name: 'Queijo para hambúrguer', unit: 'un', currentQuantity: 10, minimumQuantity: 0, purchaseCost: 1.5, supplier: 'Distribuidora Teste Kyrub', updatedAt: now },
+    { id: 'batata', name: 'Batata frita', unit: 'kg', currentQuantity: 1, minimumQuantity: 0, purchaseCost: 8, supplier: 'Distribuidora Teste Kyrub', updatedAt: now },
+  ];
+  const composition: InventoryCompositionRecord = {
+    kind: 'recipe',
+    yieldQuantity: 1,
+    lines: [
+      { inventoryItemId: 'pao', quantity: 1 },
+      { inventoryItemId: 'carne', quantity: 0.14 },
+      { inventoryItemId: 'queijo', quantity: 1 },
+      { inventoryItemId: 'batata', quantity: 0.1 },
+    ],
+    updatedAt: now,
+  };
+  const compositions = { xburger: composition };
+
+  assert.equal(calculateCompositionAvailableStock(catalog, composition), 10);
+
+  const lines = buildOrderInventoryConsumption(
+    [{ productId: 'xburger', name: '002 - X-Burger', quantity: 1 }],
+    catalog,
+    compositions
+  );
+  assert.deepEqual(
+    Object.fromEntries(lines.map(line => [line.inventoryItemId, line.quantity])),
+    { batata: 0.1, carne: 0.14, pao: 1, queijo: 1 }
+  );
+
+  const afterSale = applyInventoryConsumptionLines(catalog, lines, 'consume');
+  assert.equal(calculateCompositionAvailableStock(afterSale, composition), 9);
 });
 
 test('missing purchase cost blocks a false price suggestion', () => {
