@@ -22,6 +22,16 @@ export type KyrubErpProductSummary = {
   hasImage: boolean;
 };
 
+export type KyrubErpInventoryItemSummary = {
+  id: string;
+  name: string;
+  unit: 'un' | 'kg' | 'g' | 'l' | 'ml';
+  currentQuantity: number;
+  minimumQuantity: number;
+  purchaseCost: number;
+  supplier: string;
+};
+
 export type KyrubErpOrderSummary = {
   id: string;
   status: string;
@@ -35,6 +45,7 @@ export type KyrubErpOrderSummary = {
 export type KyrubErpReadAvailability = {
   store: boolean;
   products: boolean;
+  inventory: boolean;
   orders: boolean;
 };
 
@@ -45,6 +56,9 @@ export type KyrubErpContextSnapshot = {
   products: KyrubErpProductSummary[];
   productCount: number;
   productsTruncated: boolean;
+  inventoryItems: KyrubErpInventoryItemSummary[];
+  inventoryItemCount: number;
+  inventoryTruncated: boolean;
   pendingOrders: KyrubErpOrderSummary[];
   pendingOrderCount: number;
   ordersTruncated: boolean;
