@@ -14,6 +14,7 @@ import {
   parseKyrubInventoryIntakeEntries,
 } from '../shared/kyrubInventoryIntake';
 import { classifyKyrubiaCapability } from '../shared/kyrubiaCapabilityRouter';
+import { buildKyrubiaInventoryReadHints } from '../shared/kyrubiaInventoryRead';
 import {
   calculateCompositionUnitCost,
   calculateSaleMarginPercent,
@@ -142,6 +143,22 @@ test('private inventory editor keeps canonical and legacy aliases synchronized',
   assert.match(source, /value\?\.catalog/);
 });
 
+test('Kyrubia inventory hints expose the four confirmed inputs without turning them into products', () => {
+  const hints = buildKyrubiaInventoryReadHints([
+    { id: 'pao', name: 'Pão para hambúrguer', unit: 'un', currentQuantity: 10, minimumQuantity: 0, purchaseCost: 0, supplier: '' },
+    { id: 'carne', name: 'Carne bovina Premium', unit: 'kg', currentQuantity: 1.4, minimumQuantity: 0, purchaseCost: 0, supplier: '' },
+    { id: 'queijo', name: 'Queijo para hambúrguer', unit: 'un', currentQuantity: 10, minimumQuantity: 0, purchaseCost: 0, supplier: '' },
+    { id: 'batata', name: 'Batata frita', unit: 'kg', currentQuantity: 1, minimumQuantity: 0, purchaseCost: 0, supplier: '' },
+  ]);
+
+  assert.match(hints[0] ?? '', /4 insumos/);
+  assert.match(hints.join('\n'), /Pão para hambúrguer — 10 un/);
+  assert.match(hints.join('\n'), /Carne bovina Premium — 1,4 kg/);
+  assert.match(hints.join('\n'), /Queijo para hambúrguer — 10 un/);
+  assert.match(hints.join('\n'), /Batata frita — 1 kg/);
+  assert.match(hints.join('\n'), /não é produto do catálogo/);
+});
+
 test('Kyrubia reads confirmed inventory separately from products and refreshes it immediately', async () => {
   const [contextType, inventoryRoute, erpReader, actionService] = await Promise.all([
     readFile(new URL('../shared/kyrubErpContext.ts', import.meta.url), 'utf8'),
@@ -162,7 +179,7 @@ test('Kyrubia reads confirmed inventory separately from products and refreshes i
   assert.match(erpReader, /INVENTORY_CONTEXT_ENDPOINT\s*=\s*'\/api\/inventory-context'/);
   assert.match(erpReader, /authorization:\s*`Bearer \$\{token\}`/);
   assert.match(erpReader, /inventoryItems/);
-  assert.match(erpReader, /Inventário privado \(insumo; não é produto do catálogo\)/);
+  assert.match(erpReader, /buildKyrubiaInventoryReadHints/);
 
   assert.match(actionService, /proposal\.type === 'adjust_inventory'/);
   assert.match(
