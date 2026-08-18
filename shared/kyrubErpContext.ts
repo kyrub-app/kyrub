@@ -45,7 +45,7 @@ export type KyrubErpOrderSummary = {
 export type KyrubErpReadAvailability = {
   store: boolean;
   products: boolean;
-  inventory: boolean;
+  inventory?: boolean;
   orders: boolean;
 };
 
@@ -56,9 +56,9 @@ export type KyrubErpContextSnapshot = {
   products: KyrubErpProductSummary[];
   productCount: number;
   productsTruncated: boolean;
-  inventoryItems: KyrubErpInventoryItemSummary[];
-  inventoryItemCount: number;
-  inventoryTruncated: boolean;
+  inventoryItems?: KyrubErpInventoryItemSummary[];
+  inventoryItemCount?: number;
+  inventoryTruncated?: boolean;
   pendingOrders: KyrubErpOrderSummary[];
   pendingOrderCount: number;
   ordersTruncated: boolean;
