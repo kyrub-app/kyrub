@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import {
   buildKyrubInventoryIntakeProposal,
@@ -81,4 +82,18 @@ test('missing purchase cost blocks a false price suggestion', () => {
   );
   assert.equal(cost, null);
   assert.equal(calculateSuggestedPrice(cost, 40), null);
+});
+
+test('private inventory editor keeps canonical and legacy aliases synchronized', async () => {
+  const source = await readFile(
+    new URL('../src/utils/productInventory.ts', import.meta.url),
+    'utf8'
+  );
+
+  assert.match(source, /inventoryCatalog:\s*nextSettings\.catalog/);
+  assert.match(source, /catalog:\s*nextSettings\.catalog/);
+  assert.match(source, /productCompositions:\s*nextSettings\.compositions/);
+  assert.match(source, /compositions:\s*nextSettings\.compositions/);
+  assert.match(source, /Array\.isArray\(value\?\.inventoryCatalog\)/);
+  assert.match(source, /value\?\.catalog/);
 });
