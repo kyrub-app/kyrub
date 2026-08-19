@@ -4,6 +4,11 @@ import type {
   KyrubOrderStatus,
 } from '../../shared/kyrubActions';
 import {
+  isKyrubOrderDetailReadIntent,
+  resolveKyrubOrderDetailRead,
+  type KyrubOrderReadFocus,
+} from '../../shared/kyrubOrderReadIntent';
+import {
   buildKyrubOrderStatusProposal,
   isKyrubOrderStatusIntent,
 } from '../../shared/kyrubOrderStatusProposal';
@@ -20,6 +25,10 @@ import {
 import { readKyrubErpContext } from '../actions/erpReadActionService';
 import { executePreauthorizedProductDraftAction } from '../actions/kyrubActionService';
 import { listKyrubCatalogDrafts } from '../actions/kyrubCatalogDraftService';
+import {
+  readKyrubOrderDetails,
+  type KyrubOrderDetails,
+} from '../actions/orderReadActionService';
 import { emitKyrubAiActionProposal } from './actionEvents';
 import {
   KYRUBIA_STOREFRONT_TEST_PROPOSAL_EVENT,
@@ -320,6 +329,102 @@ const orderStatusReply = async (
   );
 };
 
+const paymentLabel = (status: KyrubOrderDetails['paymentStatus']): string => {
+  if (status === 'paid') return 'Pago';
+  if (status === 'partial') return 'Parcialmente pago';
+  return 'Não pago';
+};
+
+const fulfillmentLabel = (order: KyrubOrderDetails, includeLocation: boolean): string => {
+  if (order.fulfillmentType === 'delivery') {
+    return includeLocation && order.deliveryAddress.trim()
+      ? `Entrega — ${order.deliveryAddress.trim()}`
+      : 'Entrega';
+  }
+  if (order.fulfillmentType === 'pickup') return 'Retirada';
+  return includeLocation && order.tableCode.trim()
+    ? `Consumo no local — mesa/código ${order.tableCode.trim()}`
+    : 'Consumo no local';
+};
+
+const formatOrderItems = (order: KyrubOrderDetails): string =>
+  order.items.map(item => {
+    const note = item.note.trim() ? ` · Obs.: ${item.note.trim()}` : '';
+    return `- ${item.quantity}x ${item.name} — ${priceLabel(item.price)}${note}`;
+  }).join('\n');
+
+const formatOrderDetailReply = (
+  order: KyrubOrderDetails,
+  focus: KyrubOrderReadFocus
+): string => {
+  if (focus === 'items') {
+    return `Itens do pedido ${order.id}:\n${formatOrderItems(order)}\n\nTotal: ${priceLabel(order.total)}.`;
+  }
+  if (focus === 'payment') {
+    return `Pedido ${order.id}: pagamento “${paymentLabel(order.paymentStatus)}”. Total: ${priceLabel(order.total)}.`;
+  }
+  if (focus === 'fulfillment') {
+    return `Pedido ${order.id}: ${fulfillmentLabel(order, true)}.`;
+  }
+  if (focus === 'customer_note') {
+    return order.customerNote.trim()
+      ? `Observação do pedido ${order.id}: ${order.customerNote.trim()}`
+      : `O pedido ${order.id} não possui observação geral do cliente.`;
+  }
+
+  const buyer = order.buyerName.trim() ? `Cliente: ${order.buyerName.trim()}.\n` : '';
+  return (
+    `Pedido ${order.id}\n` +
+    `${buyer}` +
+    `Status: ${ORDER_STATUS_LABELS[order.status] ?? order.status}.\n` +
+    `Pagamento: ${paymentLabel(order.paymentStatus)}.\n` +
+    `Atendimento: ${fulfillmentLabel(order, false)}.\n` +
+    `Total: ${priceLabel(order.total)}.\n` +
+    `Itens: ${order.items.reduce((sum, item) => sum + item.quantity, 0)} unidade(s) em ${order.items.length} linha(s).` +
+    (order.customerNote.trim() ? `\nObservação: ${order.customerNote.trim()}` : '')
+  );
+};
+
+const orderDetailReply = async (
+  user: User,
+  message: string
+): Promise<string> => {
+  let erpContext;
+  try {
+    erpContext = await readKyrubErpContext(user, { force: true });
+  } catch {
+    erpContext = undefined;
+  }
+
+  const resolution = resolveKyrubOrderDetailRead(message, erpContext);
+  if (resolution.kind === 'needs_context') {
+    return 'Não consegui consultar a lista de pedidos agora. Se você tiver o código exato do pedido, pode informá-lo para uma leitura direta.';
+  }
+  if (resolution.kind === 'needs_order') {
+    if (resolution.orders.length === 0) {
+      return 'Não encontrei pedidos em andamento nesta leitura. Para consultar um pedido já concluído ou cancelado, informe o código exato dele.';
+    }
+    const visible = resolution.orders.slice(0, 6)
+      .map((order, index) => `${index + 1}. ${order.id} — ${ORDER_STATUS_LABELS[order.status as KyrubOrderStatus] ?? order.status}`)
+      .join('\n');
+    return `Há mais de um pedido em andamento. Informe o código do pedido que deseja consultar:\n${visible}`;
+  }
+  if (resolution.kind !== 'resolved') {
+    return 'Não consegui identificar qual pedido você quer consultar.';
+  }
+
+  let details: KyrubOrderDetails | null = null;
+  try {
+    details = await readKyrubOrderDetails(user, resolution.orderId);
+  } catch {
+    return 'O pedido foi identificado, mas não consegui reler os detalhes autoritativos agora. Tente novamente em instantes.';
+  }
+  if (!details) {
+    return `Não encontrei o pedido ${resolution.orderId} nos pedidos desta loja. Nenhum dado foi inferido.`;
+  }
+  return formatOrderDetailReply(details, resolution.focus);
+};
+
 export const resolveKyrubiaCatalogDraftRuntime = async (
   user: User,
   conversationId: string,
@@ -328,6 +433,13 @@ export const resolveKyrubiaCatalogDraftRuntime = async (
   if (isKyrubOrderStatusIntent(message)) {
     return {
       reply: await orderStatusReply(user, conversationId, message),
+      model: 'kyrub-catalog-draft-runtime-v1',
+    };
+  }
+
+  if (isKyrubOrderDetailReadIntent(message)) {
+    return {
+      reply: await orderDetailReply(user, message),
       model: 'kyrub-catalog-draft-runtime-v1',
     };
   }
