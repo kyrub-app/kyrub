@@ -173,7 +173,10 @@ describe('operational test bench', () => {
   });
 
   test('rejection contracts require reason and preserve an alternative', () => {
-    const workflowSource = readFileSync('src/utils/orderWorkflow.ts', 'utf8');
+    const attendanceReviewSource = readFileSync(
+      'server/inventory/attendanceReviewService.ts',
+      'utf8'
+    );
     const approvalSource = readFileSync(
       'src/components/customer/AttendanceOrderApproval.tsx',
       'utf8'
@@ -183,8 +186,8 @@ describe('operational test bench', () => {
       'utf8'
     );
 
-    assert.match(workflowSource, /Explique o motivo da recusa/);
-    assert.match(workflowSource, /Alternativa sugerida/);
+    assert.match(attendanceReviewSource, /Explique o motivo da recusa/);
+    assert.match(attendanceReviewSource, /Alternativa sugerida/);
     assert.match(approvalSource, /Motivo obrigatório/);
     assert.match(inboxSource, /suggestedAlternative/);
   });

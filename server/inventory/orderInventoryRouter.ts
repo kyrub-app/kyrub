@@ -2,6 +2,7 @@ import { Router, type Request, type Response } from 'express';
 import { FieldValue } from 'firebase-admin/firestore';
 import { adminAuth, adminDb } from '../firebaseAdmin';
 import { sendNinetyNineFoodOrderStatus } from '../integrations/ninetyNineFoodService';
+import { reviewAttendanceOrderAuthoritatively } from './attendanceReviewService';
 import { reconcileOrderInventoryAfterMutation } from './orderInventoryAdjustment';
 import {
   transitionOrderStatusWithInventory,
@@ -51,12 +52,16 @@ const errorResponse = (response: Response, error: unknown): void => {
     response.status(404).json({ error: message });
     return;
   }
-  if (/não permitida|inválid|explique|identificado/i.test(message)) {
+  if (/não permitida|inválid|explique|identificado|Revise os dados|Revise os itens|Revise as quantidades/i.test(message)) {
     response.status(400).json({ error: message });
     return;
   }
   if (/Estoque insuficiente|componente removido/i.test(message)) {
     response.status(409).json({ error: message, code: 'INVENTORY_BLOCKED' });
+    return;
+  }
+  if (/não está mais aguardando revisão|mudou desde que foi aberta|Mantenha ao menos um item/i.test(message)) {
+    response.status(409).json({ error: message, code: 'ATTENDANCE_REVIEW_STALE' });
     return;
   }
   console.error('[Order Inventory]', error);
@@ -101,6 +106,21 @@ export const createOrderInventoryRouter = (): Router => {
         await reconcileOrderInventoryAfterMutation(
           tenantId,
           request.params.orderId
+        )
+      );
+    } catch (error) {
+      errorResponse(response, error);
+    }
+  });
+
+  router.post('/:orderId/attendance-review', async (request, response) => {
+    try {
+      const tenantId = await authenticatedTenantId(request);
+      response.json(
+        await reviewAttendanceOrderAuthoritatively(
+          tenantId,
+          request.params.orderId,
+          request.body
         )
       );
     } catch (error) {
