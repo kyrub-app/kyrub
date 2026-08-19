@@ -11,6 +11,8 @@ import {
 } from 'firebase/firestore';
 import type {
   KyrubErpContextSnapshot,
+  KyrubErpInventoryMovementLine,
+  KyrubErpInventoryMovementSummary,
   KyrubErpInventorySummary,
   KyrubErpOrderSummary,
   KyrubErpProductSummary,
@@ -28,6 +30,7 @@ import { normalizeCachedStore } from '../utils/storePersistence';
 const LOW_STOCK_THRESHOLD = 5;
 const MAX_PRODUCTS_IN_CONTEXT = 120;
 const MAX_INVENTORY_IN_CONTEXT = 200;
+const MAX_INVENTORY_MOVEMENTS_IN_CONTEXT = 20;
 const MAX_PENDING_ORDERS_IN_CONTEXT = 30;
 const PENDING_ORDER_STATUSES = [
   'pending',
@@ -48,6 +51,9 @@ const cleanText = (value: unknown, maximum: number): string =>
     ? value.replace(/\s+/g, ' ').trim().slice(0, maximum)
     : '';
 
+const finiteNumber = (value: unknown): number | null =>
+  typeof value === 'number' && Number.isFinite(value) ? value : null;
+
 const isInventoryUnit = (
   value: unknown
 ): value is KyrubErpInventorySummary['unit'] =>
@@ -59,12 +65,8 @@ const inventorySummaryFrom = (value: unknown): KyrubErpInventorySummary | null =
   const id = cleanText(candidate.id, 180);
   const name = cleanText(candidate.name, 180);
   const unit = candidate.unit;
-  const currentQuantity = typeof candidate.currentQuantity === 'number' && Number.isFinite(candidate.currentQuantity)
-    ? Math.max(0, candidate.currentQuantity)
-    : null;
-  const minimumQuantity = typeof candidate.minimumQuantity === 'number' && Number.isFinite(candidate.minimumQuantity)
-    ? Math.max(0, candidate.minimumQuantity)
-    : 0;
+  const currentQuantity = finiteNumber(candidate.currentQuantity);
+  const minimumQuantity = finiteNumber(candidate.minimumQuantity);
 
   if (!id || !name || !isInventoryUnit(unit) || currentQuantity === null) return null;
 
@@ -72,13 +74,70 @@ const inventorySummaryFrom = (value: unknown): KyrubErpInventorySummary | null =
     id,
     name,
     unit,
-    currentQuantity,
-    minimumQuantity,
-    purchaseCost: typeof candidate.purchaseCost === 'number' && Number.isFinite(candidate.purchaseCost)
-      ? Math.max(0, candidate.purchaseCost)
-      : 0,
+    currentQuantity: Math.max(0, currentQuantity),
+    minimumQuantity: Math.max(0, minimumQuantity ?? 0),
+    purchaseCost: Math.max(0, finiteNumber(candidate.purchaseCost) ?? 0),
     supplier: cleanText(candidate.supplier, 160),
     updatedAt: cleanText(candidate.updatedAt, 80),
+  };
+};
+
+const inventoryMovementLineFrom = (
+  value: unknown
+): KyrubErpInventoryMovementLine | null => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const candidate = value as Record<string, unknown>;
+  const itemId = cleanText(candidate.itemId, 180);
+  const name = cleanText(candidate.name, 180);
+  const unit = candidate.unit;
+  const quantityDelta = finiteNumber(candidate.quantityDelta);
+  const previousQuantity = finiteNumber(candidate.previousQuantity);
+  const resultingQuantity = finiteNumber(candidate.resultingQuantity);
+  if (
+    !itemId || !name || !isInventoryUnit(unit) || quantityDelta === null ||
+    previousQuantity === null || resultingQuantity === null
+  ) return null;
+  return {
+    itemId,
+    name,
+    unit,
+    quantityDelta,
+    previousQuantity: Math.max(0, previousQuantity),
+    resultingQuantity: Math.max(0, resultingQuantity),
+  };
+};
+
+const inventoryMovementSummaryFrom = (
+  value: unknown
+): KyrubErpInventoryMovementSummary | null => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const candidate = value as Record<string, unknown>;
+  const id = cleanText(candidate.id, 180);
+  const kind = candidate.kind;
+  const mode = candidate.mode;
+  const createdAt = cleanText(candidate.createdAt, 80);
+  if (
+    !id || !createdAt ||
+    (kind !== 'intake' && kind !== 'outflow' && kind !== 'loss' && kind !== 'correction') ||
+    (mode !== 'increment' && mode !== 'decrement' && mode !== 'set')
+  ) return null;
+  const lines = Array.isArray(candidate.lines)
+    ? candidate.lines
+        .map(inventoryMovementLineFrom)
+        .filter((line): line is KyrubErpInventoryMovementLine => Boolean(line))
+        .slice(0, 12)
+    : [];
+  const entryCount = finiteNumber(candidate.entryCount);
+  return {
+    id,
+    kind,
+    mode,
+    sourceKind: cleanText(candidate.sourceKind, 80),
+    sourceLabel: cleanText(candidate.sourceLabel, 180),
+    entryCount: Math.max(0, Math.trunc(entryCount ?? lines.length)),
+    createdAt,
+    lines,
+    linesTruncated: candidate.linesTruncated === true,
   };
 };
 
@@ -154,12 +213,16 @@ export const readKyrubErpContext = async (
   let inventory: KyrubErpInventorySummary[] = [];
   let inventoryCount = 0;
   let inventoryTruncated = false;
+  let inventoryMovements: KyrubErpInventoryMovementSummary[] = [];
+  let inventoryMovementCount = 0;
+  let inventoryMovementsTruncated = false;
   let pendingOrders: KyrubErpOrderSummary[] = [];
   let pendingOrderCount = 0;
   let ordersTruncated = false;
   let storeAvailable = false;
   let productsAvailable = false;
   let inventoryAvailable = false;
+  let inventoryMovementsAvailable = false;
   let ordersAvailable = false;
 
   const storePromise = getDoc(
@@ -216,6 +279,7 @@ export const readKyrubErpContext = async (
 
   if (inventoryResult.status === 'fulfilled') {
     inventoryAvailable = true;
+    inventoryMovementsAvailable = true;
     const inventoryData = inventoryResult.value.data() as Record<string, unknown> | undefined;
     const rawInventory = Array.isArray(inventoryData?.inventoryCatalog)
       ? inventoryData.inventoryCatalog
@@ -229,8 +293,22 @@ export const readKyrubErpContext = async (
     inventoryCount = parsedInventory.length;
     inventoryTruncated = inventoryCount > MAX_INVENTORY_IN_CONTEXT;
     inventory = parsedInventory.slice(0, MAX_INVENTORY_IN_CONTEXT);
+
+    const rawMovements = Array.isArray(inventoryData?.recentInventoryMovements)
+      ? inventoryData.recentInventoryMovements
+      : [];
+    inventoryMovements = rawMovements
+      .map(inventoryMovementSummaryFrom)
+      .filter((movement): movement is KyrubErpInventoryMovementSummary => Boolean(movement))
+      .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
+      .slice(0, MAX_INVENTORY_MOVEMENTS_IN_CONTEXT);
+    inventoryMovementCount = inventoryMovements.length;
+    inventoryMovementsTruncated =
+      inventoryData?.recentInventoryMovementsTruncated === true ||
+      rawMovements.length > MAX_INVENTORY_MOVEMENTS_IN_CONTEXT;
   } else {
     warnings.push('Não foi possível consultar o estoque privado de insumos.');
+    warnings.push('Não foi possível consultar o histórico recente do estoque.');
   }
 
   if (ordersResult.status === 'fulfilled') {
@@ -266,6 +344,9 @@ export const readKyrubErpContext = async (
     inventory,
     inventoryCount,
     inventoryTruncated,
+    inventoryMovements,
+    inventoryMovementCount,
+    inventoryMovementsTruncated,
     pendingOrders,
     pendingOrderCount,
     ordersTruncated,
@@ -274,6 +355,7 @@ export const readKyrubErpContext = async (
       store: storeAvailable,
       products: productsAvailable,
       inventory: inventoryAvailable,
+      inventoryMovements: inventoryMovementsAvailable,
       orders: ordersAvailable,
     },
     warnings,
