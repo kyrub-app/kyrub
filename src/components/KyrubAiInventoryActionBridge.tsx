@@ -6,7 +6,10 @@ import {
   PackagePlus,
   X,
 } from 'lucide-react';
-import type { KyrubAiAdjustInventoryProposal } from '../../shared/kyrubActions';
+import type {
+  KyrubAiAdjustInventoryProposal,
+  KyrubInventoryMovementKind,
+} from '../../shared/kyrubActions';
 import { executeKyrubAction } from '../actions/kyrubActionService';
 import { invalidateKyrubErpContext } from '../actions/erpReadActionService';
 import {
@@ -41,6 +44,76 @@ const quantity = new Intl.NumberFormat('pt-BR', {
   maximumFractionDigits: 3,
 });
 
+const movementKindFor = (
+  proposal: KyrubAiAdjustInventoryProposal
+): KyrubInventoryMovementKind => {
+  if (proposal.movementKind) return proposal.movementKind;
+  if (proposal.mode === 'set') return 'correction';
+  if (proposal.mode === 'decrement') {
+    return proposal.source.kind === 'loss_report' ? 'loss' : 'outflow';
+  }
+  return 'intake';
+};
+
+const movementCopy = (kind: KyrubInventoryMovementKind) => {
+  if (kind === 'loss') {
+    return {
+      noun: 'perda/desperdício',
+      title: 'Confirmar perda de estoque',
+      successTitle: 'Perda registrada',
+      action: 'Registrar perda',
+      working: 'Registrando...',
+      explanation:
+        'A confirmação reduz as quantidades informadas do estoque privado. O Kyrub recusará a movimentação se algum insumo não existir ou se o saldo for insuficiente.',
+      success: 'A perda foi registrada e o saldo dos insumos foi atualizado.',
+    };
+  }
+  if (kind === 'outflow') {
+    return {
+      noun: 'saída de estoque',
+      title: 'Confirmar saída de estoque',
+      successTitle: 'Saída registrada',
+      action: 'Confirmar saída',
+      working: 'Registrando...',
+      explanation:
+        'A confirmação reduz as quantidades informadas do estoque privado. O Kyrub recusará a movimentação se algum insumo não existir ou se o saldo for insuficiente.',
+      success: 'A saída foi registrada e o saldo dos insumos foi atualizado.',
+    };
+  }
+  if (kind === 'correction') {
+    return {
+      noun: 'correção física',
+      title: 'Confirmar correção de estoque',
+      successTitle: 'Estoque corrigido',
+      action: 'Aplicar correção',
+      working: 'Corrigindo...',
+      explanation:
+        'A confirmação substitui o saldo atual pelos valores contados informados. O Kyrub recusará a correção se algum insumo não existir no estoque privado.',
+      success: 'A contagem física foi aplicada e os saldos foram corrigidos.',
+    };
+  }
+  return {
+    noun: 'entrada de estoque',
+    title: 'Confirmar entrada de estoque',
+    successTitle: 'Estoque atualizado',
+    action: 'Confirmar entrada',
+    working: 'Registrando...',
+    explanation:
+      'A confirmação soma estas quantidades ao estoque privado. Se um insumo ainda não existir, ele será criado.',
+    success: 'A entrada foi registrada e o saldo dos insumos foi atualizado.',
+  };
+};
+
+const entryQuantityLabel = (
+  proposal: KyrubAiAdjustInventoryProposal,
+  entry: KyrubAiAdjustInventoryProposal['entries'][number]
+): string => {
+  const formatted = `${quantity.format(entry.quantity)} ${entry.unit}`;
+  if (proposal.mode === 'decrement') return `−${formatted}`;
+  if (proposal.mode === 'increment') return `+${formatted}`;
+  return `Saldo: ${formatted}`;
+};
+
 export function KyrubAiInventoryActionBridge() {
   const [pending, setPending] = useState<PendingInventory | null>(null);
 
@@ -67,6 +140,8 @@ export function KyrubAiInventoryActionBridge() {
   const isWorking = pending.state === 'executing';
   const isSuccess = pending.state === 'success';
   const supplier = pending.proposal.source.label?.trim() ?? '';
+  const movementKind = movementKindFor(pending.proposal);
+  const copy = movementCopy(movementKind);
 
   const close = () => {
     if (isWorking) return;
@@ -81,7 +156,7 @@ export function KyrubAiInventoryActionBridge() {
       setPending(value => value ? {
         ...value,
         state: 'error',
-        errorMessage: 'Faça login novamente antes de confirmar esta entrada.',
+        errorMessage: 'Faça login novamente antes de confirmar esta movimentação.',
       } : value);
       return;
     }
@@ -107,7 +182,7 @@ export function KyrubAiInventoryActionBridge() {
         state: 'error',
         errorMessage: error instanceof Error
           ? error.message
-          : 'Não foi possível registrar a entrada de estoque.',
+          : 'Não foi possível registrar esta movimentação de estoque.',
       } : value);
     }
   };
@@ -117,7 +192,7 @@ export function KyrubAiInventoryActionBridge() {
       <section
         role="dialog"
         aria-modal="true"
-        aria-label={isSuccess ? 'Entrada de estoque registrada' : 'Confirmar entrada de estoque'}
+        aria-label={isSuccess ? copy.successTitle : copy.title}
         className="w-full max-w-md overflow-hidden rounded-3xl border border-violet-500/25 bg-slate-950 shadow-2xl"
       >
         <header className="flex items-start gap-3 border-b border-slate-800 p-4">
@@ -128,14 +203,16 @@ export function KyrubAiInventoryActionBridge() {
           }`}>
             {isSuccess
               ? <CheckCircle2 className="h-6 w-6" />
-              : <PackagePlus className="h-6 w-6" />}
+              : movementKind === 'intake'
+                ? <PackagePlus className="h-6 w-6" />
+                : <Boxes className="h-6 w-6" />}
           </div>
           <div className="min-w-0 flex-1">
             <span className="text-xs font-black uppercase tracking-wider text-violet-300">
               Kyrubia
             </span>
             <h2 className="mt-1 text-xl font-black text-white">
-              {isSuccess ? 'Estoque atualizado' : 'Confirmar entrada de estoque'}
+              {isSuccess ? copy.successTitle : copy.title}
             </h2>
           </div>
           <button
@@ -153,8 +230,8 @@ export function KyrubAiInventoryActionBridge() {
           {isSuccess ? (
             <p className="rounded-2xl border border-emerald-500/25 bg-emerald-500/10 px-4 py-4 text-sm leading-relaxed text-emerald-100">
               {pending.alreadyApplied
-                ? 'Esta mesma entrada já havia sido registrada. O Kyrub não duplicou as quantidades.'
-                : `${pending.proposal.entries.length} insumo(s) foram registrados no estoque privado. Agora eles podem ser ligados à ficha técnica do X-Burger.`}
+                ? `Esta mesma ${copy.noun} já havia sido registrada. O Kyrub não duplicou a movimentação.`
+                : copy.success}
             </p>
           ) : (
             <>
@@ -162,10 +239,10 @@ export function KyrubAiInventoryActionBridge() {
                 <div className="flex items-center gap-2 text-violet-300">
                   <Boxes className="h-4 w-4" />
                   <span className="text-[11px] font-black uppercase tracking-wider">
-                    Entrada de estoque
+                    {copy.noun}
                   </span>
                 </div>
-                {supplier && (
+                {movementKind === 'intake' && supplier && (
                   <p className="mt-2 text-xs text-slate-400">
                     Fornecedor: <span className="font-bold text-slate-200">{supplier}</span>
                   </p>
@@ -180,7 +257,7 @@ export function KyrubAiInventoryActionBridge() {
                         {entry.name}
                       </span>
                       <span className="shrink-0 text-sm font-black text-emerald-300">
-                        {quantity.format(entry.quantity)} {entry.unit}
+                        {entryQuantityLabel(pending.proposal, entry)}
                       </span>
                     </div>
                   ))}
@@ -188,7 +265,7 @@ export function KyrubAiInventoryActionBridge() {
               </div>
 
               <p className="text-xs leading-relaxed text-slate-500">
-                A confirmação soma estas quantidades ao estoque privado. Se um insumo ainda não existir, ele será criado. Nenhum produto será criado ou publicado e nenhum preço de venda será alterado.
+                {copy.explanation} Nenhum produto será criado ou publicado e nenhum preço de venda será alterado.
               </p>
 
               {pending.state === 'error' && (
@@ -228,9 +305,9 @@ export function KyrubAiInventoryActionBridge() {
                 {isWorking ? (
                   <>
                     <LoaderCircle className="h-4 w-4 animate-spin" />
-                    Registrando...
+                    {copy.working}
                   </>
-                ) : 'Confirmar entrada'}
+                ) : copy.action}
               </button>
             </>
           )}
