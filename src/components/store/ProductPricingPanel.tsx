@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Calculator, Check, CircleDollarSign, LoaderCircle } from 'lucide-react';
+import { Calculator, Check, CircleDollarSign, FlaskConical, LoaderCircle } from 'lucide-react';
 import { doc, onSnapshot } from 'firebase/firestore';
 import {
   calculateCompositionUnitCost,
+  calculateProductCostImpact,
   calculateSaleMarginPercent,
   calculateSuggestedPrice,
   parseProductPricingSettings,
@@ -54,6 +55,8 @@ export function ProductPricingPanel({
   const [savedMargin, setSavedMargin] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState('');
+  const [impactItemId, setImpactItemId] = useState('');
+  const [projectedCost, setProjectedCost] = useState('');
 
   useEffect(() => {
     if (!userId || !productId) return;
@@ -77,6 +80,22 @@ export function ProductPricingPanel({
     );
   }, [productId, userId]);
 
+  const compositionItems = useMemo(
+    () => composition.lines.flatMap(line => {
+      const item = catalog.find(candidate => candidate.id === line.inventoryItemId);
+      return item ? [item] : [];
+    }),
+    [catalog, composition.lines]
+  );
+
+  useEffect(() => {
+    const selected = compositionItems.find(item => item.id === impactItemId);
+    if (selected) return;
+    const first = compositionItems[0];
+    setImpactItemId(first?.id ?? '');
+    setProjectedCost(first?.purchaseCost ? String(first.purchaseCost) : '');
+  }, [compositionItems, impactItemId, productId]);
+
   const unitCost = useMemo(
     () => calculateCompositionUnitCost(catalog, composition),
     [catalog, composition]
@@ -90,6 +109,26 @@ export function ProductPricingPanel({
   const currentMargin = calculateSaleMarginPercent(unitCost, currentSalePrice);
   const marginChanged = validTargetMargin !== null &&
     (savedMargin === null || Math.abs(validTargetMargin - savedMargin) > 0.000001);
+  const impactItem = compositionItems.find(item => item.id === impactItemId) ?? null;
+  const projectedPurchaseCost = numberFromInput(projectedCost);
+  const costImpact = useMemo(
+    () => calculateProductCostImpact(
+      catalog,
+      composition,
+      impactItemId,
+      projectedPurchaseCost,
+      currentSalePrice,
+      validTargetMargin
+    ),
+    [
+      catalog,
+      composition,
+      impactItemId,
+      projectedPurchaseCost,
+      currentSalePrice,
+      validTargetMargin,
+    ]
+  );
 
   const saveMargin = async (): Promise<void> => {
     const user = auth.currentUser;
@@ -202,6 +241,98 @@ export function ProductPricingPanel({
           </button>
         )}
       </div>
+
+      {compositionItems.length > 0 && (
+        <div className="mt-4 rounded-2xl border border-cyan-500/15 bg-slate-950/70 p-3">
+          <div className="flex items-start gap-2">
+            <FlaskConical className="mt-0.5 h-4 w-4 shrink-0 text-cyan-300" />
+            <div>
+              <strong className="block text-[10px] font-black uppercase text-cyan-200">
+                Simular impacto de custo
+              </strong>
+              <p className="mt-1 text-[9px] leading-relaxed text-slate-500">
+                Teste um novo custo de compra para um insumo. Esta simulação não salva o custo, não altera estoque e não muda o preço de venda.
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-3 grid gap-2 sm:grid-cols-2">
+            <label className="text-[8px] font-black uppercase text-slate-500">
+              Insumo da ficha
+              <select
+                value={impactItemId}
+                onChange={event => {
+                  const nextId = event.target.value;
+                  setImpactItemId(nextId);
+                  const nextItem = compositionItems.find(item => item.id === nextId);
+                  setProjectedCost(nextItem?.purchaseCost ? String(nextItem.purchaseCost) : '');
+                }}
+                disabled={disabled}
+                className="mt-1.5 w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2.5 text-xs text-white"
+              >
+                {compositionItems.map(item => (
+                  <option key={item.id} value={item.id}>
+                    {item.name} — {currency.format(item.purchaseCost)} / {item.unit}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="text-[8px] font-black uppercase text-slate-500">
+              Custo hipotético por {impactItem?.unit ?? 'unidade'}
+              <input
+                type="number"
+                min="0.01"
+                step="0.01"
+                value={projectedCost}
+                onChange={event => setProjectedCost(event.target.value)}
+                disabled={disabled}
+                placeholder="Ex.: 35,00"
+                className="mt-1.5 w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2.5 text-xs text-white"
+              />
+            </label>
+          </div>
+
+          {costImpact ? (
+            <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="rounded-xl border border-slate-800 bg-slate-950 p-2.5">
+                <span className="block text-[8px] uppercase text-slate-500">Novo custo unitário</span>
+                <strong className="mt-1 block text-xs text-white">
+                  {currency.format(roundCurrency(costImpact.projectedUnitCost))}
+                </strong>
+              </div>
+              <div className="rounded-xl border border-slate-800 bg-slate-950 p-2.5">
+                <span className="block text-[8px] uppercase text-slate-500">Variação do custo</span>
+                <strong className="mt-1 block text-xs text-cyan-200">
+                  {costImpact.unitCostDelta >= 0 ? '+' : ''}{currency.format(roundCurrency(costImpact.unitCostDelta))}
+                  {costImpact.unitCostDeltaPercent === null
+                    ? ''
+                    : ` (${costImpact.unitCostDeltaPercent >= 0 ? '+' : ''}${percent.format(costImpact.unitCostDeltaPercent)}%)`}
+                </strong>
+              </div>
+              <div className="rounded-xl border border-slate-800 bg-slate-950 p-2.5">
+                <span className="block text-[8px] uppercase text-slate-500">Margem projetada</span>
+                <strong className="mt-1 block text-xs text-white">
+                  {costImpact.projectedMarginPercent === null
+                    ? '—'
+                    : `${percent.format(costImpact.projectedMarginPercent)}%`}
+                </strong>
+              </div>
+              <div className="rounded-xl border border-slate-800 bg-slate-950 p-2.5">
+                <span className="block text-[8px] uppercase text-slate-500">Preço sugerido projetado</span>
+                <strong className="mt-1 block text-xs text-emerald-300">
+                  {costImpact.projectedSuggestedPrice === null
+                    ? 'Defina a margem desejada'
+                    : currency.format(roundCurrency(costImpact.projectedSuggestedPrice))}
+                </strong>
+              </div>
+            </div>
+          ) : (
+            <p className="mt-3 text-[9px] text-slate-500">
+              Informe um custo hipotético maior que zero e mantenha custos válidos em todos os componentes para calcular o impacto.
+            </p>
+          )}
+        </div>
+      )}
 
       {suggestedPrice !== null && !onApplySuggestedPrice && (
         <p className="mt-3 rounded-xl border border-emerald-500/15 bg-slate-950 px-3 py-2 text-[9px] leading-relaxed text-slate-400">

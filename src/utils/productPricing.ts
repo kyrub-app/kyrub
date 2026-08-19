@@ -2,6 +2,7 @@ import type { User } from 'firebase/auth';
 import { doc, runTransaction, serverTimestamp } from 'firebase/firestore';
 import {
   calculateCompositionUnitCost,
+  calculateProductCostImpact,
   calculateSaleMarginPercent,
   calculateSuggestedPrice,
   roundCurrency,
@@ -11,6 +12,7 @@ import { getProductInventoryDocumentPath } from './productInventory';
 
 export {
   calculateCompositionUnitCost,
+  calculateProductCostImpact,
   calculateSaleMarginPercent,
   calculateSuggestedPrice,
   roundCurrency,
