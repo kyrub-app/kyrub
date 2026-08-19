@@ -7,6 +7,7 @@ import { AppModalLayoutBridge } from './components/AppModalLayoutBridge';
 import { KyrubAiConversationHeaderGuard } from './components/KyrubAiConversationHeaderGuard';
 import { KyrubAiInventoryActionBridge } from './components/KyrubAiInventoryActionBridge';
 import { KyrubAiNoteActionBridge } from './components/KyrubAiNoteActionBridge';
+import { KyrubAiOrderStatusActionBridge } from './components/KyrubAiOrderStatusActionBridge';
 import { KyrubAiProductCompositionActionBridge } from './components/KyrubAiProductCompositionActionBridge';
 import { KyrubAiProductUpdateActionBridge } from './components/KyrubAiProductUpdateActionBridge';
 import { KyrubAiTaskActionBridge } from './components/KyrubAiTaskActionBridge';
@@ -176,6 +177,7 @@ function AuthenticatedKyrubApp({ operational }: { operational: boolean }) {
       <KyrubAiProductUpdateActionBridge />
       <KyrubAiInventoryActionBridge />
       <KyrubAiProductCompositionActionBridge />
+      <KyrubAiOrderStatusActionBridge />
       <StoreSharingPortalBridge />
       <StoreRestartLandingBridge />
       <UnifiedProductCreateModalBridge />

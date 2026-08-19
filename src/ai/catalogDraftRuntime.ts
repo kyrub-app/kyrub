@@ -1,5 +1,12 @@
 import type { User } from 'firebase/auth';
-import type { KyrubAiPrepareProductDraftProposal } from '../../shared/kyrubActions';
+import type {
+  KyrubAiPrepareProductDraftProposal,
+  KyrubOrderStatus,
+} from '../../shared/kyrubActions';
+import {
+  buildKyrubOrderStatusProposal,
+  isKyrubOrderStatusIntent,
+} from '../../shared/kyrubOrderStatusProposal';
 import {
   buildKyrubProductCompositionProposal,
   isKyrubProductCompositionIntent,
@@ -236,11 +243,95 @@ const productCompositionReply = async (
   );
 };
 
+const ORDER_STATUS_LABELS: Record<KyrubOrderStatus, string> = {
+  pending: 'Pendente',
+  accepted: 'Aceito',
+  preparing: 'Em preparo',
+  ready: 'Pronto',
+  out_for_delivery: 'Saiu para entrega',
+  completed: 'Concluído',
+  rejected: 'Recusado',
+  cancelled: 'Cancelado',
+};
+
+const orderStatusReply = async (
+  user: User,
+  conversationId: string,
+  message: string
+): Promise<string> => {
+  let erpContext;
+  try {
+    erpContext = await readKyrubErpContext(user, { force: true });
+  } catch {
+    return 'Reconheci que você quer alterar um pedido, mas não consegui consultar os pedidos atuais agora. Nada foi alterado.';
+  }
+
+  const result = buildKyrubOrderStatusProposal(message, conversationId, erpContext);
+  if (result.kind === 'needs_context') {
+    return 'Reconheci a alteração do pedido, mas a leitura de pedidos não está disponível agora. Nada foi alterado.';
+  }
+  if (result.kind === 'needs_order') {
+    if (result.orders.length === 0) {
+      return 'Não encontrei pedidos operacionais pendentes para essa alteração. Nada foi modificado.';
+    }
+    const visible = result.orders.slice(0, 6)
+      .map((order, index) => `${index + 1}. ${order.id} — ${ORDER_STATUS_LABELS[order.status as KyrubOrderStatus] ?? order.status}`)
+      .join('\n');
+    return `Há mais de um pedido que pode ser o alvo. Informe o código do pedido para eu não alterar o pedido errado:\n${visible}`;
+  }
+  if (result.kind === 'needs_reason') {
+    const verb = result.nextStatus === 'cancelled' ? 'cancelar' : 'recusar';
+    return `Posso ${verb} o pedido ${result.order.id}, mas preciso registrar o motivo. Diga, por exemplo: “${verb} o pedido ${result.order.id} porque cliente solicitou”.`;
+  }
+  if (result.kind === 'already_current') {
+    return `O pedido ${result.order.id} já está com status “${ORDER_STATUS_LABELS[result.status]}”. Nenhuma alteração é necessária.`;
+  }
+  if (result.kind === 'invalid_transition') {
+    return `O pedido ${result.order.id} está “${ORDER_STATUS_LABELS[result.order.status as KyrubOrderStatus] ?? result.order.status}” e não pode ir diretamente para “${ORDER_STATUS_LABELS[result.nextStatus]}”. Não alterei nada.`;
+  }
+  if (result.kind !== 'proposal') {
+    return 'Não consegui preparar a alteração do pedido com segurança. Nada foi modificado.';
+  }
+
+  const proposal = result.proposal;
+  emitKyrubAiActionProposal(conversationId, {
+    reply: '',
+    provider: 'kyrub',
+    model: 'kyrub-order-runtime-v1',
+    mode: 'deterministic',
+    requestId: proposal.id,
+    actionProposal: proposal,
+    capabilities: {
+      actionsEnabled: true,
+      enabledActions: ['update_order_status'],
+      enabledReadActions: ['list_pending_orders'],
+      voiceEnabled: false,
+      persistentCloudHistoryEnabled: false,
+    },
+  });
+
+  const reason = proposal.decision?.reason
+    ? `\nMotivo: ${proposal.decision.reason}`
+    : '';
+  return (
+    `Preparei a alteração do pedido ${proposal.orderId}: ` +
+    `“${ORDER_STATUS_LABELS[proposal.expectedCurrentStatus]}” → “${ORDER_STATUS_LABELS[proposal.nextStatus]}”.${reason}\n\n` +
+    'Nada foi alterado ainda. Revise e confirme na janela do pedido.'
+  );
+};
+
 export const resolveKyrubiaCatalogDraftRuntime = async (
   user: User,
   conversationId: string,
   message: string
 ): Promise<KyrubiaCatalogDraftRuntimeResult | null> => {
+  if (isKyrubOrderStatusIntent(message)) {
+    return {
+      reply: await orderStatusReply(user, conversationId, message),
+      model: 'kyrub-catalog-draft-runtime-v1',
+    };
+  }
+
   if (isKyrubProductCompositionIntent(message)) {
     return {
       reply: await productCompositionReply(user, conversationId, message),

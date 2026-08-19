@@ -17,6 +17,7 @@ export const KYRUB_ACTION_TYPES = {
   UPDATE_PRODUCT: 'update_product',
   ADJUST_INVENTORY: 'adjust_inventory',
   SET_PRODUCT_COMPOSITION: 'set_product_composition',
+  UPDATE_ORDER_STATUS: 'update_order_status',
   READ_STORE_SUMMARY: 'read_store_summary',
   LIST_PRODUCTS: 'list_products',
   LIST_LOW_STOCK_PRODUCTS: 'list_low_stock_products',
@@ -113,7 +114,8 @@ export type KyrubWriteActionType =
   | typeof KYRUB_ACTION_TYPES.CREATE_PRODUCT
   | typeof KYRUB_ACTION_TYPES.UPDATE_PRODUCT
   | typeof KYRUB_ACTION_TYPES.ADJUST_INVENTORY
-  | typeof KYRUB_ACTION_TYPES.SET_PRODUCT_COMPOSITION;
+  | typeof KYRUB_ACTION_TYPES.SET_PRODUCT_COMPOSITION
+  | typeof KYRUB_ACTION_TYPES.UPDATE_ORDER_STATUS;
 
 export type KyrubReadActionType = Exclude<
   KyrubActiveActionType,
@@ -212,6 +214,14 @@ export const KYRUB_ACTION_REGISTRY: Record<
     requiresConfirmation: true,
     permission: 'inventory.composition.write',
     maxAffectedEntities: 40,
+  },
+  update_order_status: {
+    type: 'update_order_status',
+    mode: 'write',
+    risk: 'medium',
+    requiresConfirmation: true,
+    permission: 'orders.write',
+    maxAffectedEntities: 1,
   },
   read_store_summary: {
     type: 'read_store_summary',
@@ -407,6 +417,31 @@ export type KyrubAiSetProductCompositionProposal = KyrubActionProposalMetadata &
   requiresConfirmation: true;
 };
 
+export type KyrubOrderStatus =
+  | 'pending'
+  | 'accepted'
+  | 'preparing'
+  | 'ready'
+  | 'out_for_delivery'
+  | 'completed'
+  | 'rejected'
+  | 'cancelled';
+
+export type KyrubOrderMutableStatus = Exclude<KyrubOrderStatus, 'pending'>;
+
+export type KyrubAiUpdateOrderStatusProposal = KyrubActionProposalMetadata & {
+  id: string;
+  type: typeof KYRUB_ACTION_TYPES.UPDATE_ORDER_STATUS;
+  orderId: string;
+  expectedCurrentStatus: KyrubOrderStatus;
+  nextStatus: KyrubOrderMutableStatus;
+  decision?: {
+    reason?: string;
+    alternative?: string;
+  };
+  requiresConfirmation: true;
+};
+
 export type KyrubActionProposal =
   | KyrubAiCreateNoteProposal
   | KyrubAiCreateTaskProposal
@@ -417,7 +452,8 @@ export type KyrubActionProposal =
   | KyrubAiCreateProductProposal
   | KyrubAiUpdateProductProposal
   | KyrubAiAdjustInventoryProposal
-  | KyrubAiSetProductCompositionProposal;
+  | KyrubAiSetProductCompositionProposal
+  | KyrubAiUpdateOrderStatusProposal;
 
 export type KyrubActionExecutionStatus =
   | 'success'
