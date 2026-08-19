@@ -20,6 +20,16 @@ type InventoryItemRecord = {
   updatedAt: string;
 };
 
+type InventoryMovementLine = {
+  itemId: string;
+  name: string;
+  unit: KyrubInventoryUnit;
+  quantityDelta: number;
+  previousQuantity: number;
+  resultingQuantity: number;
+  purchaseCost?: number;
+};
+
 const MAX_ENTRIES = 60;
 const MAX_NAME = 180;
 
@@ -136,6 +146,12 @@ const receiptIdFor = (uid: string, proposalId: string): string =>
     .digest('hex')
     .slice(0, 40)}`;
 
+const movementIdFor = (uid: string, proposalId: string): string =>
+  `movement-${createHash('sha256')
+    .update(`${uid}:${proposalId}:inventory_intake`)
+    .digest('hex')
+    .slice(0, 40)}`;
+
 export const isKyrubInventoryAdjustmentExecutionRequest = (value: unknown): boolean => {
   if (!isRecord(value) || value.confirmed !== true || !isRecord(value.proposal)) return false;
   return value.proposal.type === 'adjust_inventory';
@@ -158,6 +174,8 @@ export const executeAuthorizedKyrubInventoryAdjustment = async (
   const inventoryRef = adminDb.doc(`users/${actor.uid}/private_store/inventory`);
   const receiptId = receiptIdFor(actor.uid, proposal.id);
   const receiptRef = adminDb.doc(`kyrub_action_receipts/${receiptId}`);
+  const movementId = movementIdFor(actor.uid, proposal.id);
+  const movementRef = inventoryRef.collection('movements').doc(movementId);
 
   const status = await adminDb.runTransaction(async transaction => {
     const [inventorySnapshot, receiptSnapshot] = await Promise.all([
@@ -177,6 +195,7 @@ export const executeAuthorizedKyrubInventoryAdjustment = async (
       .map(normalizeInventoryItem)
       .filter((item): item is InventoryItemRecord => Boolean(item));
     const now = new Date().toISOString();
+    const movementLines: InventoryMovementLine[] = [];
 
     for (const entry of proposal.entries) {
       const key = `${normalizeName(entry.name)}::${entry.unit}`;
@@ -185,18 +204,29 @@ export const executeAuthorizedKyrubInventoryAdjustment = async (
       );
       if (existingIndex >= 0) {
         const existing = catalog[existingIndex];
+        const resultingQuantity = existing.currentQuantity + entry.quantity;
         catalog[existingIndex] = {
           ...existing,
-          currentQuantity: existing.currentQuantity + entry.quantity,
+          currentQuantity: resultingQuantity,
           ...(entry.purchaseCost !== undefined ? { purchaseCost: entry.purchaseCost } : {}),
           ...(proposal.source.label && !existing.supplier
             ? { supplier: proposal.source.label }
             : {}),
           updatedAt: now,
         };
+        movementLines.push({
+          itemId: existing.id,
+          name: existing.name,
+          unit: existing.unit,
+          quantityDelta: entry.quantity,
+          previousQuantity: existing.currentQuantity,
+          resultingQuantity,
+          ...(entry.purchaseCost !== undefined ? { purchaseCost: entry.purchaseCost } : {}),
+        });
       } else {
+        const itemId = deterministicItemId(actor.uid, entry);
         catalog.push({
-          id: deterministicItemId(actor.uid, entry),
+          id: itemId,
           name: entry.name,
           unit: entry.unit,
           currentQuantity: entry.quantity,
@@ -204,6 +234,15 @@ export const executeAuthorizedKyrubInventoryAdjustment = async (
           purchaseCost: entry.purchaseCost ?? 0,
           supplier: proposal.source.label ?? '',
           updatedAt: now,
+        });
+        movementLines.push({
+          itemId,
+          name: entry.name,
+          unit: entry.unit,
+          quantityDelta: entry.quantity,
+          previousQuantity: 0,
+          resultingQuantity: entry.quantity,
+          ...(entry.purchaseCost !== undefined ? { purchaseCost: entry.purchaseCost } : {}),
         });
       }
     }
@@ -215,12 +254,28 @@ export const executeAuthorizedKyrubInventoryAdjustment = async (
       updatedAt: FieldValue.serverTimestamp(),
       lastInventoryIntake: {
         id: proposal.id,
+        movementId,
         sourceKind: proposal.source.kind,
         sourceLabel: proposal.source.label ?? '',
         entryCount: proposal.entries.length,
         confirmedAt: FieldValue.serverTimestamp(),
       },
     }, { merge: true });
+
+    transaction.set(movementRef, {
+      schemaVersion: 1,
+      id: movementId,
+      ownerId: actor.uid,
+      proposalId: proposal.id,
+      actionType: 'adjust_inventory',
+      kind: 'intake',
+      reason: proposal.source.kind,
+      sourceLabel: proposal.source.label ?? '',
+      origin: 'kyrubia',
+      lines: movementLines,
+      entryCount: movementLines.length,
+      createdAt: FieldValue.serverTimestamp(),
+    });
 
     transaction.set(receiptRef, {
       schemaVersion: 1,
@@ -232,6 +287,7 @@ export const executeAuthorizedKyrubInventoryAdjustment = async (
       inputProvenance: 'document_content',
       targetType: 'inventory',
       targetId: actor.uid,
+      movementId,
       result: 'success',
       createdAt: FieldValue.serverTimestamp(),
     });
