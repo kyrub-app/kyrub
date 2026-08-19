@@ -82,7 +82,7 @@ test('X-Burger recipe supports ten units and calculates margin without confusing
   assert.equal(roundCurrency(calculateSaleMarginPercent(cost, 29.5) ?? -1), 73.9);
 });
 
-test('one X-Burger sale consumes the recipe and reduces sellable capacity from 10 to 9', () => {
+test('one X-Burger sale consumes the recipe and cancellation restores capacity from 10 to 9 to 10', () => {
   const now = '2026-08-18T00:00:00.000Z';
   const catalog: InventoryCatalogRecord[] = [
     { id: 'pao', name: 'Pão para hambúrguer', unit: 'un', currentQuantity: 10, minimumQuantity: 0, purchaseCost: 1.2, supplier: 'Distribuidora Teste Kyrub', updatedAt: now },
@@ -117,6 +117,17 @@ test('one X-Burger sale consumes the recipe and reduces sellable capacity from 1
 
   const afterSale = applyInventoryConsumptionLines(catalog, lines, 'consume');
   assert.equal(calculateCompositionAvailableStock(afterSale, composition), 9);
+  assert.deepEqual(
+    Object.fromEntries(afterSale.map(item => [item.id, item.currentQuantity])),
+    { pao: 9, carne: 1.26, queijo: 9, batata: 0.9 }
+  );
+
+  const afterCancellation = applyInventoryConsumptionLines(afterSale, lines, 'restore');
+  assert.equal(calculateCompositionAvailableStock(afterCancellation, composition), 10);
+  assert.deepEqual(
+    Object.fromEntries(afterCancellation.map(item => [item.id, item.currentQuantity])),
+    { pao: 10, carne: 1.4, queijo: 10, batata: 1 }
+  );
 });
 
 test('missing purchase cost blocks a false price suggestion', () => {
