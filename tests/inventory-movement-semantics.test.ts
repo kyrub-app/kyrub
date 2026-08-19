@@ -127,3 +127,18 @@ test('consultor route exposes semantic movements and history before generic AI f
   assert.match(source, /enabledActions: \['adjust_inventory'\]/);
   assert.match(source, /Revise e confirme a movimentação/);
 });
+
+test('inventory confirmation modal distinguishes intake, outflow, loss and correction', () => {
+  const source = readFileSync(
+    new URL('../src/components/KyrubAiInventoryActionBridge.tsx', import.meta.url),
+    'utf8'
+  );
+
+  assert.match(source, /Confirmar entrada de estoque/);
+  assert.match(source, /Confirmar saída de estoque/);
+  assert.match(source, /Confirmar perda de estoque/);
+  assert.match(source, /Confirmar correção de estoque/);
+  assert.match(source, /proposal\.mode === 'decrement'/);
+  assert.match(source, /proposal\.mode === 'set'/);
+  assert.match(source, /O Kyrub não duplicou a movimentação/);
+});
