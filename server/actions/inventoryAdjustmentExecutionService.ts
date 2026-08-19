@@ -3,6 +3,9 @@ import { FieldValue } from 'firebase-admin/firestore';
 import type {
   KyrubAiAdjustInventoryProposal,
   KyrubInventoryAdjustmentEntry,
+  KyrubInventoryAdjustmentMode,
+  KyrubInventoryAdjustmentSourceKind,
+  KyrubInventoryMovementKind,
   KyrubInventoryUnit,
 } from '../../shared/kyrubActions.js';
 import { verifyFirebaseIdToken } from '../ai/consultantAuth.js';
@@ -30,8 +33,22 @@ type InventoryMovementLine = {
   purchaseCost?: number;
 };
 
+type RecentInventoryMovement = {
+  id: string;
+  kind: KyrubInventoryMovementKind;
+  mode: KyrubInventoryAdjustmentMode;
+  sourceKind: KyrubInventoryAdjustmentSourceKind;
+  sourceLabel: string;
+  entryCount: number;
+  createdAt: string;
+  lines: InventoryMovementLine[];
+  linesTruncated: boolean;
+};
+
 const MAX_ENTRIES = 60;
 const MAX_NAME = 180;
+const MAX_RECENT_MOVEMENTS = 20;
+const MAX_RECENT_MOVEMENT_LINES = 12;
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   Boolean(value) && typeof value === 'object' && !Array.isArray(value);
@@ -56,52 +73,125 @@ const normalizeName = (value: string): string =>
 const isUnit = (value: unknown): value is KyrubInventoryUnit =>
   value === 'un' || value === 'kg' || value === 'g' || value === 'l' || value === 'ml';
 
-const normalizeEntry = (value: unknown): KyrubInventoryAdjustmentEntry => {
+const isMode = (value: unknown): value is KyrubInventoryAdjustmentMode =>
+  value === 'increment' || value === 'decrement' || value === 'set';
+
+const isMovementKind = (value: unknown): value is KyrubInventoryMovementKind =>
+  value === 'intake' || value === 'outflow' || value === 'loss' || value === 'correction';
+
+const normalizeSourceKind = (
+  value: unknown,
+  mode: KyrubInventoryAdjustmentMode
+): KyrubInventoryAdjustmentSourceKind => {
+  if (
+    value === 'supplier_invoice' ||
+    value === 'inventory_intake_text' ||
+    value === 'manual_outflow' ||
+    value === 'loss_report' ||
+    value === 'physical_count'
+  ) return value;
+  if (mode === 'set') return 'physical_count';
+  if (mode === 'decrement') return 'manual_outflow';
+  return 'inventory_intake_text';
+};
+
+const movementKindFor = (
+  mode: KyrubInventoryAdjustmentMode,
+  sourceKind: KyrubInventoryAdjustmentSourceKind
+): KyrubInventoryMovementKind => {
+  if (mode === 'set') return 'correction';
+  if (mode === 'decrement') {
+    return sourceKind === 'loss_report' ? 'loss' : 'outflow';
+  }
+  return 'intake';
+};
+
+const normalizeEntry = (
+  value: unknown,
+  mode: KyrubInventoryAdjustmentMode
+): KyrubInventoryAdjustmentEntry => {
   if (!isRecord(value)) {
-    throw new KyrubActionExecutionError(400, 'INVALID_INVENTORY_ENTRY', 'Um dos itens da entrada de estoque é inválido.');
+    throw new KyrubActionExecutionError(
+      400,
+      'INVALID_INVENTORY_ENTRY',
+      'Um dos itens da movimentação de estoque é inválido.'
+    );
   }
   const name = cleanText(value.name, MAX_NAME);
   const quantity = typeof value.quantity === 'number' && Number.isFinite(value.quantity)
     ? value.quantity
-    : 0;
+    : Number.NaN;
   const unit = value.unit;
   const purchaseCost = typeof value.purchaseCost === 'number' && Number.isFinite(value.purchaseCost)
     ? Math.max(0, value.purchaseCost)
     : undefined;
+  const quantityValid = mode === 'set' ? quantity >= 0 : quantity > 0;
 
-  if (!name || quantity <= 0 || !isUnit(unit)) {
-    throw new KyrubActionExecutionError(400, 'INVALID_INVENTORY_ENTRY', 'Revise nome, quantidade e unidade dos itens antes de confirmar.');
+  if (!name || !quantityValid || !isUnit(unit)) {
+    throw new KyrubActionExecutionError(
+      400,
+      'INVALID_INVENTORY_ENTRY',
+      mode === 'set'
+        ? 'Revise nome, saldo contado e unidade antes de confirmar a correção.'
+        : 'Revise nome, quantidade e unidade antes de confirmar a movimentação.'
+    );
   }
-  return { name, quantity, unit, ...(purchaseCost !== undefined ? { purchaseCost } : {}) };
+
+  return {
+    name,
+    quantity,
+    unit,
+    ...(mode === 'increment' && purchaseCost !== undefined ? { purchaseCost } : {}),
+  };
 };
 
 const normalizeProposal = (value: unknown): KyrubAiAdjustInventoryProposal => {
   if (!isRecord(value) || value.type !== 'adjust_inventory') {
-    throw new KyrubActionExecutionError(400, 'UNSUPPORTED_ACTION', 'Esta solicitação não é uma entrada de estoque válida.');
+    throw new KyrubActionExecutionError(
+      400,
+      'UNSUPPORTED_ACTION',
+      'Esta solicitação não é uma movimentação de estoque válida.'
+    );
   }
   const id = cleanText(value.id, 120);
-  const entries = Array.isArray(value.entries)
-    ? value.entries.slice(0, MAX_ENTRIES).map(normalizeEntry)
-    : [];
-  if (!id || value.mode !== 'increment' || entries.length === 0 || value.requiresConfirmation !== true) {
-    throw new KyrubActionExecutionError(400, 'INVALID_ACTION', 'A entrada de estoque precisa ser revisada antes da confirmação.');
+  const mode = value.mode;
+  if (!id || !isMode(mode) || value.requiresConfirmation !== true) {
+    throw new KyrubActionExecutionError(
+      400,
+      'INVALID_ACTION',
+      'A movimentação de estoque precisa ser revisada antes da confirmação.'
+    );
   }
+  const entries = Array.isArray(value.entries)
+    ? value.entries.slice(0, MAX_ENTRIES).map(entry => normalizeEntry(entry, mode))
+    : [];
+  if (entries.length === 0) {
+    throw new KyrubActionExecutionError(
+      400,
+      'INVALID_ACTION',
+      'Inclua pelo menos um insumo válido antes de confirmar a movimentação.'
+    );
+  }
+
   const source = isRecord(value.source) ? value.source : {};
-  const kind = source.kind === 'supplier_invoice'
-    ? 'supplier_invoice'
-    : 'inventory_intake_text';
+  const sourceKind = normalizeSourceKind(source.kind, mode);
+  const movementKind = movementKindFor(mode, sourceKind);
   const label = cleanText(source.label, 180);
+  const inputProvenance = sourceKind === 'supplier_invoice'
+    ? 'document_content' as const
+    : 'user_intent' as const;
 
   return {
     id,
     type: 'adjust_inventory',
-    mode: 'increment',
+    mode,
+    movementKind,
     entries,
-    source: { kind, ...(label ? { label } : {}) },
+    source: { kind: sourceKind, ...(label ? { label } : {}) },
     requiresConfirmation: true,
     origin: 'kyrubia',
     risk: 'medium',
-    inputProvenance: 'document_content',
+    inputProvenance,
     impact: { entityCount: entries.length, reversibility: 'limited' },
   };
 };
@@ -134,6 +224,64 @@ const normalizeInventoryItem = (value: unknown): InventoryItemRecord | null => {
   };
 };
 
+const normalizeMovementLine = (value: unknown): InventoryMovementLine | null => {
+  if (!isRecord(value)) return null;
+  const itemId = cleanText(value.itemId, 180);
+  const name = cleanText(value.name, MAX_NAME);
+  const unit = value.unit;
+  const quantityDelta = typeof value.quantityDelta === 'number' && Number.isFinite(value.quantityDelta)
+    ? value.quantityDelta
+    : null;
+  const previousQuantity = typeof value.previousQuantity === 'number' && Number.isFinite(value.previousQuantity)
+    ? Math.max(0, value.previousQuantity)
+    : null;
+  const resultingQuantity = typeof value.resultingQuantity === 'number' && Number.isFinite(value.resultingQuantity)
+    ? Math.max(0, value.resultingQuantity)
+    : null;
+  if (
+    !itemId || !name || !isUnit(unit) || quantityDelta === null ||
+    previousQuantity === null || resultingQuantity === null
+  ) return null;
+  return {
+    itemId,
+    name,
+    unit,
+    quantityDelta,
+    previousQuantity,
+    resultingQuantity,
+  };
+};
+
+const normalizeRecentMovement = (value: unknown): RecentInventoryMovement | null => {
+  if (!isRecord(value)) return null;
+  const id = cleanText(value.id, 180);
+  const kind = value.kind;
+  const mode = value.mode;
+  const sourceKind = value.sourceKind;
+  const createdAt = cleanText(value.createdAt, 80);
+  if (!id || !isMovementKind(kind) || !isMode(mode) || !createdAt) return null;
+  const normalizedSourceKind = normalizeSourceKind(sourceKind, mode);
+  const lines = Array.isArray(value.lines)
+    ? value.lines
+        .map(normalizeMovementLine)
+        .filter((line): line is InventoryMovementLine => Boolean(line))
+        .slice(0, MAX_RECENT_MOVEMENT_LINES)
+    : [];
+  return {
+    id,
+    kind,
+    mode,
+    sourceKind: normalizedSourceKind,
+    sourceLabel: cleanText(value.sourceLabel, 180),
+    entryCount: typeof value.entryCount === 'number' && Number.isFinite(value.entryCount)
+      ? Math.max(0, Math.trunc(value.entryCount))
+      : lines.length,
+    createdAt,
+    lines,
+    linesTruncated: value.linesTruncated === true,
+  };
+};
+
 const deterministicItemId = (uid: string, entry: KyrubInventoryAdjustmentEntry): string =>
   `inv-${createHash('sha256')
     .update(`${uid}:${normalizeName(entry.name)}:${entry.unit}`)
@@ -146,11 +294,33 @@ const receiptIdFor = (uid: string, proposalId: string): string =>
     .digest('hex')
     .slice(0, 40)}`;
 
-const movementIdFor = (uid: string, proposalId: string): string =>
+const movementIdFor = (
+  uid: string,
+  proposalId: string,
+  movementKind: KyrubInventoryMovementKind
+): string =>
   `movement-${createHash('sha256')
-    .update(`${uid}:${proposalId}:inventory_intake`)
+    .update(`${uid}:${proposalId}:${movementKind}`)
     .digest('hex')
     .slice(0, 40)}`;
+
+const resultingQuantityFor = (
+  mode: KyrubInventoryAdjustmentMode,
+  currentQuantity: number,
+  requestedQuantity: number,
+  name: string
+): number => {
+  if (mode === 'increment') return currentQuantity + requestedQuantity;
+  if (mode === 'set') return requestedQuantity;
+  if (requestedQuantity > currentQuantity) {
+    throw new KyrubActionExecutionError(
+      409,
+      'INSUFFICIENT_INVENTORY',
+      `Não há saldo suficiente de ${name} para essa saída. Estoque atual: ${currentQuantity}.`
+    );
+  }
+  return currentQuantity - requestedQuantity;
+};
 
 export const isKyrubInventoryAdjustmentExecutionRequest = (value: unknown): boolean => {
   if (!isRecord(value) || value.confirmed !== true || !isRecord(value.proposal)) return false;
@@ -163,18 +333,27 @@ export const executeAuthorizedKyrubInventoryAdjustment = async (
 ) => {
   const token = bearerToken(authorization);
   if (!token) {
-    throw new KyrubActionExecutionError(401, 'AUTH_REQUIRED', 'Faça login novamente antes de confirmar a entrada de estoque.');
+    throw new KyrubActionExecutionError(
+      401,
+      'AUTH_REQUIRED',
+      'Faça login novamente antes de confirmar a movimentação de estoque.'
+    );
   }
   const actor = await verifyFirebaseIdToken(token);
   if (!isRecord(rawRequest) || rawRequest.confirmed !== true) {
-    throw new KyrubActionExecutionError(409, 'CONFIRMATION_REQUIRED', 'Revise e confirme a entrada antes de alterar o estoque.');
+    throw new KyrubActionExecutionError(
+      409,
+      'CONFIRMATION_REQUIRED',
+      'Revise e confirme a movimentação antes de alterar o estoque.'
+    );
   }
 
   const proposal = normalizeProposal(rawRequest.proposal);
+  const movementKind = proposal.movementKind ?? movementKindFor(proposal.mode, proposal.source.kind);
   const inventoryRef = adminDb.doc(`users/${actor.uid}/private_store/inventory`);
   const receiptId = receiptIdFor(actor.uid, proposal.id);
   const receiptRef = adminDb.doc(`kyrub_action_receipts/${receiptId}`);
-  const movementId = movementIdFor(actor.uid, proposal.id);
+  const movementId = movementIdFor(actor.uid, proposal.id, movementKind);
   const movementRef = inventoryRef.collection('movements').doc(movementId);
 
   const status = await adminDb.runTransaction(async transaction => {
@@ -187,13 +366,18 @@ export const executeAuthorizedKyrubInventoryAdjustment = async (
 
     const current = inventorySnapshot.data() as Record<string, unknown> | undefined;
     const rawCatalog = Array.isArray(current?.inventoryCatalog)
-      ? current?.inventoryCatalog
+      ? current.inventoryCatalog
       : Array.isArray(current?.catalog)
-        ? current?.catalog
+        ? current.catalog
         : [];
     const catalog = (rawCatalog as unknown[])
       .map(normalizeInventoryItem)
       .filter((item): item is InventoryItemRecord => Boolean(item));
+    const recentMovements = Array.isArray(current?.recentInventoryMovements)
+      ? current.recentInventoryMovements
+          .map(normalizeRecentMovement)
+          .filter((movement): movement is RecentInventoryMovement => Boolean(movement))
+      : [];
     const now = new Date().toISOString();
     const movementLines: InventoryMovementLine[] = [];
 
@@ -202,28 +386,15 @@ export const executeAuthorizedKyrubInventoryAdjustment = async (
       const existingIndex = catalog.findIndex(item =>
         `${normalizeName(item.name)}::${item.unit}` === key
       );
-      if (existingIndex >= 0) {
-        const existing = catalog[existingIndex];
-        const resultingQuantity = existing.currentQuantity + entry.quantity;
-        catalog[existingIndex] = {
-          ...existing,
-          currentQuantity: resultingQuantity,
-          ...(entry.purchaseCost !== undefined ? { purchaseCost: entry.purchaseCost } : {}),
-          ...(proposal.source.label && !existing.supplier
-            ? { supplier: proposal.source.label }
-            : {}),
-          updatedAt: now,
-        };
-        movementLines.push({
-          itemId: existing.id,
-          name: existing.name,
-          unit: existing.unit,
-          quantityDelta: entry.quantity,
-          previousQuantity: existing.currentQuantity,
-          resultingQuantity,
-          ...(entry.purchaseCost !== undefined ? { purchaseCost: entry.purchaseCost } : {}),
-        });
-      } else {
+
+      if (existingIndex < 0) {
+        if (proposal.mode !== 'increment') {
+          throw new KyrubActionExecutionError(
+            409,
+            'INVENTORY_ITEM_NOT_FOUND',
+            `${entry.name} não está cadastrado no estoque privado para essa movimentação.`
+          );
+        }
         const itemId = deterministicItemId(actor.uid, entry);
         catalog.push({
           id: itemId,
@@ -244,23 +415,80 @@ export const executeAuthorizedKyrubInventoryAdjustment = async (
           resultingQuantity: entry.quantity,
           ...(entry.purchaseCost !== undefined ? { purchaseCost: entry.purchaseCost } : {}),
         });
+        continue;
       }
+
+      const existing = catalog[existingIndex];
+      const resultingQuantity = resultingQuantityFor(
+        proposal.mode,
+        existing.currentQuantity,
+        entry.quantity,
+        existing.name
+      );
+      const quantityDelta = resultingQuantity - existing.currentQuantity;
+      catalog[existingIndex] = {
+        ...existing,
+        currentQuantity: resultingQuantity,
+        ...(proposal.mode === 'increment' && entry.purchaseCost !== undefined
+          ? { purchaseCost: entry.purchaseCost }
+          : {}),
+        ...(proposal.mode === 'increment' && proposal.source.label && !existing.supplier
+          ? { supplier: proposal.source.label }
+          : {}),
+        updatedAt: now,
+      };
+      movementLines.push({
+        itemId: existing.id,
+        name: existing.name,
+        unit: existing.unit,
+        quantityDelta,
+        previousQuantity: existing.currentQuantity,
+        resultingQuantity,
+        ...(proposal.mode === 'increment' && entry.purchaseCost !== undefined
+          ? { purchaseCost: entry.purchaseCost }
+          : {}),
+      });
     }
 
-    transaction.set(inventoryRef, {
+    const recentMovement: RecentInventoryMovement = {
+      id: movementId,
+      kind: movementKind,
+      mode: proposal.mode,
+      sourceKind: proposal.source.kind,
+      sourceLabel: proposal.source.label ?? '',
+      entryCount: movementLines.length,
+      createdAt: now,
+      lines: movementLines.slice(0, MAX_RECENT_MOVEMENT_LINES),
+      linesTruncated: movementLines.length > MAX_RECENT_MOVEMENT_LINES,
+    };
+    const nextRecentMovements = [
+      recentMovement,
+      ...recentMovements.filter(movement => movement.id !== movementId),
+    ].slice(0, MAX_RECENT_MOVEMENTS);
+
+    const lastMovement = {
+      id: proposal.id,
+      movementId,
+      kind: movementKind,
+      sourceKind: proposal.source.kind,
+      sourceLabel: proposal.source.label ?? '',
+      entryCount: proposal.entries.length,
+      confirmedAt: FieldValue.serverTimestamp(),
+    };
+    const inventoryPatch: Record<string, unknown> = {
       ownerId: actor.uid,
       inventoryCatalog: catalog,
       catalog,
+      recentInventoryMovements: nextRecentMovements,
+      recentInventoryMovementCount: nextRecentMovements.length,
       updatedAt: FieldValue.serverTimestamp(),
-      lastInventoryIntake: {
-        id: proposal.id,
-        movementId,
-        sourceKind: proposal.source.kind,
-        sourceLabel: proposal.source.label ?? '',
-        entryCount: proposal.entries.length,
-        confirmedAt: FieldValue.serverTimestamp(),
-      },
-    }, { merge: true });
+      lastInventoryMovement: lastMovement,
+    };
+    if (movementKind === 'intake') {
+      inventoryPatch.lastInventoryIntake = lastMovement;
+    }
+
+    transaction.set(inventoryRef, inventoryPatch, { merge: true });
 
     transaction.set(movementRef, {
       schemaVersion: 1,
@@ -268,7 +496,8 @@ export const executeAuthorizedKyrubInventoryAdjustment = async (
       ownerId: actor.uid,
       proposalId: proposal.id,
       actionType: 'adjust_inventory',
-      kind: 'intake',
+      mode: proposal.mode,
+      kind: movementKind,
       reason: proposal.source.kind,
       sourceLabel: proposal.source.label ?? '',
       origin: 'kyrubia',
@@ -284,10 +513,11 @@ export const executeAuthorizedKyrubInventoryAdjustment = async (
       actionType: 'adjust_inventory',
       actorUid: actor.uid,
       origin: 'kyrubia',
-      inputProvenance: 'document_content',
+      inputProvenance: proposal.inputProvenance ?? 'user_intent',
       targetType: 'inventory',
       targetId: actor.uid,
       movementId,
+      movementKind,
       result: 'success',
       createdAt: FieldValue.serverTimestamp(),
     });
