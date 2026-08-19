@@ -1,12 +1,21 @@
 import type { KyrubErpContextSnapshot } from '../../shared/kyrubErpContext';
-import type { KyrubAiUpdateProductProposal } from '../../shared/kyrubActions';
+import type {
+  KyrubAiUpdateProductProposal,
+  KyrubProductPatch,
+} from '../../shared/kyrubActions';
 
 export type KyrubiaDeterministicProductUpdateResolution = {
   reply: string;
   actionProposal?: KyrubAiUpdateProductProposal;
 };
 
-type ProductNameUpdateIntent = {
+type ProductUpdateIntent = {
+  currentName: string;
+  field: keyof KyrubProductPatch;
+  value: string | number;
+};
+
+export type ProductNameUpdateIntent = {
   currentName: string;
   nextName: string;
 };
@@ -34,14 +43,28 @@ const stripOuterQuotes = (value: string): string =>
     .replace(/["“”']+$/, '')
     .trim();
 
+const parseMoney = (value: string): number | null => {
+  const cleaned = value
+    .replace(/R\$/gi, '')
+    .replace(/\s+/g, '')
+    .replace(/\.(?=\d{3}(?:\D|$))/g, '')
+    .replace(',', '.')
+    .replace(/[^0-9.-]/g, '');
+  const parsed = Number(cleaned);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+};
+
+const updateVerb = '(?:altere|alterar|mude|mudar|troque|trocar|renomeie|renomear|atualize|atualizar)';
+const productKind = '(?:produto|item|servi[cç]o)';
+
 export const parseKyrubiaProductNameUpdate = (
   message: string
 ): ProductNameUpdateIntent | null => {
   const intent = message.trim();
   if (!intent) return null;
 
-  const quoted = /\b(?:altere|alterar|mude|mudar|troque|trocar|renomeie|renomear|atualize|atualizar)\s+(?:o\s+)?nome\s+(?:do|da)\s+(?:produto|item|servi[cç]o)\s+["“]([^"”]+)["”]\s+para\s+["“]?(.+?)["”]?\s*$/i.exec(intent);
-  const fallback = /\b(?:altere|alterar|mude|mudar|troque|trocar|renomeie|renomear|atualize|atualizar)\s+(?:o\s+)?nome\s+(?:do|da)\s+(?:produto|item|servi[cç]o)\s+(.+?)\s+para\s+(.+?)\s*$/i.exec(intent);
+  const quoted = new RegExp(`\\b${updateVerb}\\s+(?:o\\s+)?nome\\s+(?:do|da)\\s+${productKind}\\s+["“]([^"”]+)["”]\\s+para\\s+["“]?(.+?)["”]?\\s*$`, 'i').exec(intent);
+  const fallback = new RegExp(`\\b${updateVerb}\\s+(?:o\\s+)?nome\\s+(?:do|da)\\s+${productKind}\\s+(.+?)\\s+para\\s+(.+?)\\s*$`, 'i').exec(intent);
   const match = quoted ?? fallback;
   if (!match?.[1] || !match[2]) return null;
 
@@ -53,21 +76,85 @@ export const parseKyrubiaProductNameUpdate = (
   return { currentName, nextName };
 };
 
+const parseFieldUpdate = (message: string): ProductUpdateIntent | null => {
+  const intent = message.trim();
+  if (!intent) return null;
+  const match = new RegExp(
+    `\\b${updateVerb}\\s+(?:o|a)?\\s*(pre[cç]o|categoria|descri[cç][aã]o|imagem)\\s+(?:do|da)\\s+${productKind}\\s+(?:["“]([^"”]+)["”]|(.+?))\\s+para\\s+(.+?)\\s*$`,
+    'i'
+  ).exec(intent);
+  if (!match) return null;
+
+  const currentName = stripOuterQuotes(match[2] || match[3] || '');
+  const rawValue = stripOuterQuotes(match[4] || '');
+  if (!currentName || !rawValue || currentName.length > 160) return null;
+
+  const fieldLabel = normalize(match[1] || '');
+  if (fieldLabel === 'preco') {
+    const price = parseMoney(rawValue);
+    return price === null ? null : { currentName, field: 'price', value: price };
+  }
+  if (fieldLabel === 'categoria') {
+    return rawValue.length <= 120
+      ? { currentName, field: 'category', value: rawValue }
+      : null;
+  }
+  if (fieldLabel === 'descricao') {
+    return rawValue.length <= 2_000
+      ? { currentName, field: 'description', value: rawValue }
+      : null;
+  }
+  if (fieldLabel === 'imagem') {
+    return rawValue.length <= 2_000
+      ? { currentName, field: 'image', value: rawValue }
+      : null;
+  }
+  return null;
+};
+
+export const parseKyrubiaProductUpdate = (
+  message: string
+): ProductUpdateIntent | null => {
+  const rename = parseKyrubiaProductNameUpdate(message);
+  if (rename) {
+    return { currentName: rename.currentName, field: 'name', value: rename.nextName };
+  }
+  return parseFieldUpdate(message);
+};
+
 export const isKyrubiaDeterministicProductUpdateIntent = (
   message: string
-): boolean => parseKyrubiaProductNameUpdate(message) !== null;
+): boolean => parseKyrubiaProductUpdate(message) !== null;
+
+const describeValue = (field: keyof KyrubProductPatch, value: string | number): string => {
+  if (field === 'price' && typeof value === 'number') {
+    return new Intl.NumberFormat('pt-BR', {
+      style: 'currency',
+      currency: 'BRL',
+    }).format(value);
+  }
+  return `“${String(value)}”`;
+};
+
+const fieldLabel = (field: keyof KyrubProductPatch): string => ({
+  name: 'nome',
+  description: 'descrição',
+  price: 'preço',
+  category: 'categoria',
+  image: 'imagem',
+}[field]);
 
 export const resolveKyrubiaDeterministicProductUpdate = (
   message: string,
   context?: KyrubErpContextSnapshot
 ): KyrubiaDeterministicProductUpdateResolution | null => {
-  const intent = parseKyrubiaProductNameUpdate(message);
+  const intent = parseKyrubiaProductUpdate(message);
   if (!intent) return null;
 
   if (!context || context.availability.products !== true) {
     return {
       reply:
-        'Entendi que você quer alterar o nome de um produto, mas não consegui confirmar o catálogo da sua loja nesta leitura. Nenhuma alteração foi proposta para evitar editar o item errado.',
+        'Entendi que você quer alterar um produto, mas não consegui confirmar o catálogo da sua loja nesta leitura. Nenhuma alteração foi proposta para evitar editar o item errado.',
     };
   }
 
@@ -87,23 +174,28 @@ export const resolveKyrubiaDeterministicProductUpdate = (
   if (matches.length > 1) {
     return {
       reply:
-        `Encontrei mais de um item chamado “${intent.currentName}”. Não vou escolher um deles por suposição. Faça a alteração manualmente no ERP por enquanto ou identifique o item de forma mais específica.`,
+        `Encontrei mais de um item chamado “${intent.currentName}”. Não vou escolher um deles por suposição. Identifique o item de forma mais específica.`,
     };
   }
 
   const product = matches[0];
-  if (normalize(product.name) === normalize(intent.nextName)) {
+  if (
+    (intent.field === 'name' && normalize(product.name) === normalize(String(intent.value))) ||
+    (intent.field === 'price' && product.price === intent.value) ||
+    (intent.field === 'category' && normalize(product.category) === normalize(String(intent.value)))
+  ) {
     return {
-      reply: `O produto “${product.name}” já está com esse nome. Nenhuma alteração é necessária.`,
+      reply: `O ${fieldLabel(intent.field)} de “${product.name}” já está com esse valor. Nenhuma alteração é necessária.`,
     };
   }
 
+  const patch: KyrubProductPatch = { [intent.field]: intent.value } as KyrubProductPatch;
   const actionProposal: KyrubAiUpdateProductProposal = {
     id: createRequestId(),
     type: 'update_product',
     productId: product.id,
     expectedCurrentName: product.name,
-    patch: { name: intent.nextName },
+    patch,
     requiresConfirmation: true,
     origin: 'kyrubia',
     risk: 'medium',
@@ -113,7 +205,7 @@ export const resolveKyrubiaDeterministicProductUpdate = (
 
   return {
     reply:
-      `Encontrei o produto “${product.name}”. Vou alterar somente o nome para “${intent.nextName}”. Revise e confirme antes de eu salvar essa mudança no catálogo da sua loja.`,
+      `Encontrei o produto “${product.name}”. Vou alterar somente ${fieldLabel(intent.field)} para ${describeValue(intent.field, intent.value)}. Revise e confirme antes de eu salvar essa mudança no catálogo da sua loja.`,
     actionProposal,
   };
 };
