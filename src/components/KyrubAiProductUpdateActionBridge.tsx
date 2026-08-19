@@ -6,7 +6,10 @@ import {
   ShoppingBag,
   X,
 } from 'lucide-react';
-import type { KyrubAiUpdateProductProposal } from '../../shared/kyrubActions';
+import type {
+  KyrubAiUpdateProductProposal,
+  KyrubProductPatch,
+} from '../../shared/kyrubActions';
 import { executeKyrubAction } from '../actions/kyrubActionService';
 import { invalidateKyrubErpContext } from '../actions/erpReadActionService';
 import { setKyrubCatalogProductPublished } from '../actions/kyrubCatalogDraftService';
@@ -56,6 +59,29 @@ const currency = new Intl.NumberFormat('pt-BR', {
   style: 'currency',
   currency: 'BRL',
 });
+
+const PRODUCT_FIELD_LABELS: Record<keyof KyrubProductPatch, string> = {
+  name: 'Nome',
+  description: 'Descrição',
+  price: 'Preço',
+  category: 'Categoria',
+  image: 'Imagem',
+};
+
+const productPatchRows = (patch: KyrubProductPatch) =>
+  (Object.entries(patch) as Array<[keyof KyrubProductPatch, string | number]>).map(
+    ([field, value]) => ({
+      field,
+      label: PRODUCT_FIELD_LABELS[field],
+      value: field === 'price' && typeof value === 'number'
+        ? currency.format(value)
+        : field === 'image' && String(value).trim() === ''
+          ? 'Remover imagem atual'
+          : field === 'description' && String(value).trim() === ''
+            ? 'Remover descrição atual'
+            : String(value),
+    })
+  );
 
 export function KyrubAiProductUpdateActionBridge() {
   const [pending, setPending] = useState<PendingConfirmation | null>(null);
@@ -137,9 +163,6 @@ export function KyrubAiProductUpdateActionBridge() {
         publishedIds.push(item.id);
       }
     } catch (error) {
-      // A compra de teste é uma intenção única. Se o segundo item falhar,
-      // desfazemos qualquer publicação feita nesta confirmação para não deixar
-      // metade do plano aplicada sem o consentimento esperado.
       await Promise.allSettled(
         publishedIds.map(productId =>
           setKyrubCatalogProductPublished(user, productId, false)
@@ -187,9 +210,9 @@ export function KyrubAiProductUpdateActionBridge() {
   const isWorking = pending.state === 'executing';
   const isSuccess = pending.state === 'success';
   const storefrontTest = pending.kind === 'storefront_test';
-  const nextName = pending.kind === 'product_update'
-    ? pending.proposal.patch.name ?? ''
-    : '';
+  const changes = pending.kind === 'product_update'
+    ? productPatchRows(pending.proposal.patch)
+    : [];
 
   return (
     <div className="fixed inset-0 z-[121] flex items-start justify-center overflow-y-auto bg-slate-950/85 p-3 pt-[max(12px,env(safe-area-inset-top))] backdrop-blur-sm sm:p-6">
@@ -251,7 +274,7 @@ export function KyrubAiProductUpdateActionBridge() {
                 ? `Somente “${pending.detail.items[0].name}” e “${pending.detail.items[1].name}” foram publicados para o teste. Os demais rascunhos continuam não publicados.`
                 : pending.alreadyApplied
                   ? 'Essa alteração já havia sido aplicada. Nenhuma mudança duplicada foi executada.'
-                  : 'O produto foi atualizado pelo executor oficial do Kyrub e será sincronizado no catálogo da sua loja.'}
+                  : 'O produto foi atualizado pelo executor oficial do Kyrub e sincronizado no catálogo da sua loja.'}
             </p>
           ) : pending.kind === 'storefront_test' ? (
             <>
@@ -308,16 +331,30 @@ export function KyrubAiProductUpdateActionBridge() {
                 <span className="text-[11px] font-black uppercase text-slate-500">
                   Produto identificado
                 </span>
-                <p className="mt-1 text-sm text-slate-300">
+                <p className="mt-1 text-sm font-bold text-slate-200">
                   {pending.proposal.expectedCurrentName}
                 </p>
                 <span className="mt-4 block text-[11px] font-black uppercase text-slate-500">
-                  Novo nome
+                  Alterações propostas
                 </span>
-                <p className="mt-1 text-lg font-black text-white">{nextName}</p>
+                <div className="mt-2 space-y-2">
+                  {changes.map(change => (
+                    <div
+                      key={change.field}
+                      className="rounded-xl border border-slate-800 bg-slate-950 px-3 py-2"
+                    >
+                      <span className="text-[10px] font-black uppercase text-violet-300">
+                        {change.label}
+                      </span>
+                      <p className="mt-1 break-words text-sm text-white">
+                        {change.value}
+                      </p>
+                    </div>
+                  ))}
+                </div>
               </div>
               <p className="text-xs leading-relaxed text-slate-500">
-                Nada será alterado antes da confirmação. O servidor revalidará que este identificador ainda pertence à sua loja e que o nome atual continua sendo o mostrado acima.
+                Somente os campos listados acima serão alterados. Estoque e status de publicação não fazem parte desta ação. O servidor revalidará o produto e a propriedade da loja antes de salvar.
               </p>
               {pending.state === 'error' && (
                 <p className="rounded-2xl border border-red-500/25 bg-red-500/10 px-4 py-3 text-sm text-red-200">
