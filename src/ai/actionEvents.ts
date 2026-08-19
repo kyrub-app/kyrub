@@ -31,19 +31,38 @@ const hasCommonProposalFields = (value: Record<string, unknown>): boolean =>
   typeof value.id === 'string' &&
   value.id.trim().length > 0;
 
-const isInventoryEntry = (value: unknown): boolean => {
+const isInventoryUnit = (value: unknown): boolean =>
+  ['un', 'kg', 'g', 'l', 'ml'].includes(String(value));
+
+const isInventoryEntry = (value: unknown, allowZero = false): boolean => {
   if (!isRecord(value)) return false;
+  const quantityValid =
+    typeof value.quantity === 'number' &&
+    Number.isFinite(value.quantity) &&
+    (allowZero ? value.quantity >= 0 : value.quantity > 0);
   return (
     typeof value.name === 'string' &&
     value.name.trim().length > 0 &&
-    typeof value.quantity === 'number' &&
-    Number.isFinite(value.quantity) &&
-    value.quantity > 0 &&
-    ['un', 'kg', 'g', 'l', 'ml'].includes(String(value.unit)) &&
+    quantityValid &&
+    isInventoryUnit(value.unit) &&
     (value.purchaseCost === undefined ||
       (typeof value.purchaseCost === 'number' &&
         Number.isFinite(value.purchaseCost) &&
         value.purchaseCost >= 0))
+  );
+};
+
+const isCompositionLine = (value: unknown): boolean => {
+  if (!isRecord(value)) return false;
+  return (
+    typeof value.inventoryItemId === 'string' &&
+    /^[a-zA-Z0-9_-]{1,128}$/.test(value.inventoryItemId) &&
+    typeof value.inventoryItemName === 'string' &&
+    value.inventoryItemName.trim().length > 0 &&
+    typeof value.quantity === 'number' &&
+    Number.isFinite(value.quantity) &&
+    value.quantity > 0 &&
+    isInventoryUnit(value.unit)
   );
 };
 
@@ -133,16 +152,45 @@ export const isKyrubAiActionProposal = (
         value.patch.name.trim().length > 0 &&
         value.requiresConfirmation === true
       );
-    case 'adjust_inventory':
+    case 'adjust_inventory': {
+      const validMode =
+        value.mode === 'increment' ||
+        value.mode === 'decrement' ||
+        value.mode === 'set';
+      const validSource =
+        isRecord(value.source) &&
+        [
+          'supplier_invoice',
+          'inventory_intake_text',
+          'manual_outflow',
+          'loss_report',
+          'physical_count',
+        ].includes(String(value.source.kind));
       return (
-        value.mode === 'increment' &&
+        validMode &&
         Array.isArray(value.entries) &&
         value.entries.length > 0 &&
         value.entries.length <= 60 &&
-        value.entries.every(isInventoryEntry) &&
-        isRecord(value.source) &&
-        (value.source.kind === 'supplier_invoice' ||
-          value.source.kind === 'inventory_intake_text') &&
+        value.entries.every(entry => isInventoryEntry(entry, value.mode === 'set')) &&
+        validSource &&
+        value.requiresConfirmation === true
+      );
+    }
+    case 'set_product_composition':
+      return (
+        typeof value.productId === 'string' &&
+        /^[a-zA-Z0-9_-]{1,128}$/.test(value.productId) &&
+        typeof value.productName === 'string' &&
+        value.productName.trim().length > 0 &&
+        (value.kind === 'recipe' || value.kind === 'bundle') &&
+        typeof value.yieldQuantity === 'number' &&
+        Number.isFinite(value.yieldQuantity) &&
+        value.yieldQuantity > 0 &&
+        Array.isArray(value.lines) &&
+        value.lines.length > 0 &&
+        value.lines.length <= 40 &&
+        value.lines.every(isCompositionLine) &&
+        new Set(value.lines.map(line => isRecord(line) ? line.inventoryItemId : '')).size === value.lines.length &&
         value.requiresConfirmation === true
       );
     default:
@@ -162,11 +210,14 @@ const prepareProposalForConfirmation = (
       ? proposal.items.length
       : proposal.type === 'adjust_inventory'
         ? proposal.entries.length
-        : 1,
+        : proposal.type === 'set_product_composition'
+          ? proposal.lines.length
+          : 1,
     reversibility:
       proposal.type === 'create_product' ||
       proposal.type === 'update_product' ||
-      proposal.type === 'adjust_inventory'
+      proposal.type === 'adjust_inventory' ||
+      proposal.type === 'set_product_composition'
         ? 'limited'
         : 'easy',
   },
