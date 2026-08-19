@@ -348,6 +348,14 @@ export type KyrubAiUpdateProductProposal = KyrubActionProposalMetadata & {
 };
 
 export type KyrubInventoryUnit = 'un' | 'kg' | 'g' | 'l' | 'ml';
+export type KyrubInventoryAdjustmentMode = 'increment' | 'decrement' | 'set';
+export type KyrubInventoryMovementKind = 'intake' | 'outflow' | 'loss' | 'correction';
+export type KyrubInventoryAdjustmentSourceKind =
+  | 'supplier_invoice'
+  | 'inventory_intake_text'
+  | 'manual_outflow'
+  | 'loss_report'
+  | 'physical_count';
 
 export type KyrubInventoryAdjustmentEntry = {
   name: string;
@@ -359,10 +367,11 @@ export type KyrubInventoryAdjustmentEntry = {
 export type KyrubAiAdjustInventoryProposal = KyrubActionProposalMetadata & {
   id: string;
   type: typeof KYRUB_ACTION_TYPES.ADJUST_INVENTORY;
-  mode: 'increment';
+  mode: KyrubInventoryAdjustmentMode;
+  movementKind?: KyrubInventoryMovementKind;
   entries: KyrubInventoryAdjustmentEntry[];
   source: {
-    kind: 'supplier_invoice' | 'inventory_intake_text';
+    kind: KyrubInventoryAdjustmentSourceKind;
     label?: string;
   };
   requiresConfirmation: true;
