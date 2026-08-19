@@ -3,6 +3,10 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
 const workflowSource = readFileSync('src/utils/orderWorkflow.ts', 'utf8');
+const attendanceReviewSource = readFileSync(
+  'server/inventory/attendanceReviewService.ts',
+  'utf8'
+);
 const approvalSource = readFileSync(
   'src/components/customer/AttendanceOrderApproval.tsx',
   'utf8'
@@ -27,19 +31,20 @@ test('staff approval releases the order but leaves KDS acceptance pending', () =
   assert.match(approvalSource, /updateQuantity/);
   assert.match(approvalSource, /Aprovar e enviar ao KDS/);
   assert.match(workflowSource, /reviewAttendanceOrder/);
-  assert.match(workflowSource, /status: 'pending'/);
-  assert.match(workflowSource, /operatorId: user\.uid/);
+  assert.match(workflowSource, /attendance-review/);
+  assert.match(attendanceReviewSource, /status: 'pending'/);
+  assert.match(attendanceReviewSource, /operatorId: normalizedTenantId/);
 });
 
 test('attendance and KDS rejection require reason and support alternatives', () => {
   assert.match(approvalSource, /Motivo obrigatório/);
   assert.match(approvalSource, /Alternativa sugerida/);
-  assert.match(workflowSource, /status: 'rejected'/);
+  assert.match(attendanceReviewSource, /status: 'rejected'/);
   assert.match(inboxSource, /confirmRejection/);
   assert.match(inboxSource, /rejectionReason/);
   assert.match(inboxSource, /suggestedAlternative/);
-  assert.match(workflowSource, /Motivo da recusa/);
-  assert.match(workflowSource, /Alternativa sugerida/);
+  assert.match(attendanceReviewSource, /Motivo da recusa/);
+  assert.match(attendanceReviewSource, /Alternativa sugerida/);
 });
 
 test('KDS exposes origin filter above production stage filters', () => {
