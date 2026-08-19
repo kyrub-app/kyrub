@@ -97,6 +97,17 @@ test('composition builder refuses to invent a missing product or ingredient', ()
   );
 });
 
+test('composition builder rejects the whole recipe when any ingredient line is unresolved', () => {
+  assert.equal(
+    buildKyrubProductCompositionProposal(
+      'Crie a ficha técnica do X-Burger\n1 un Pão para hambúrguer\n140 g Carne bovina Premium\n1 un Molho inexistente',
+      'conversation-partial',
+      context
+    ).kind,
+    'needs_lines'
+  );
+});
+
 test('central proposal validator accepts semantic inventory modes and product composition', () => {
   assert.equal(isKyrubAiActionProposal({
     id: 'loss-1',
@@ -140,4 +151,16 @@ test('composition confirmation bridge is mounted in authenticated app', () => {
   assert.match(bridge, /set_product_composition/);
   assert.match(bridge, /Salvar ficha/);
   assert.match(bridge, /saldo dos insumos não é alterado/i);
+});
+
+test('catalog draft runtime routes composition intent through authoritative ERP and official action event', () => {
+  const runtime = readFileSync(
+    new URL('../src/ai/catalogDraftRuntime.ts', import.meta.url),
+    'utf8'
+  );
+  assert.match(runtime, /isKyrubProductCompositionIntent/);
+  assert.match(runtime, /buildKyrubProductCompositionProposal/);
+  assert.match(runtime, /readKyrubErpContext\(user, \{ force: true \}\)/);
+  assert.match(runtime, /emitKyrubAiActionProposal/);
+  assert.match(runtime, /enabledActions: \['set_product_composition'\]/);
 });
