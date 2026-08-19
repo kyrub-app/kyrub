@@ -3,6 +3,7 @@ import type {
   KyrubAiConsultantResponse,
 } from '../../shared/aiConsultant';
 import type { KyrubErpContextSnapshot } from '../../shared/kyrubErpContext';
+import { isKyrubProductPublicationIntent } from '../../shared/kyrubProductPublicationIntent';
 import { resolveKyrubiaDeterministicTask } from '../../shared/kyrubiaDeterministicTask';
 import { readKyrubErpContext } from '../actions/erpReadActionService';
 import { rehydrateKyrubiaAuthoritativeReceipt } from '../observability/kyrubAuthoritativeReceiptRehydration';
@@ -39,6 +40,7 @@ import {
   describeKyrubiaPlanContextForGenerative,
   resolveKyrubiaPlanConversation,
 } from './planConversationRuntime';
+import { resolveKyrubProductPublication } from './productPublicationRuntime';
 import { resolveKyrubiaTrustedReadRuntime } from './trustedReadRuntime';
 
 export { KyrubAiClientError };
@@ -60,6 +62,7 @@ const capabilities = (): KyrubAiConsultantResponse['capabilities'] => ({
     'update_store_profile',
     'create_product',
     'update_product',
+    'set_product_publication',
   ],
   enabledReadActions: [
     'read_store_summary',
@@ -154,10 +157,6 @@ export const requestKyrubAiConsultant = async (
     ? latestUserMessage.content
     : '';
 
-  // Fully explicit personal tasks are local deterministic operations. Resolve
-  // them before plan hydration/knowledge so words such as “Pro” inside the task
-  // can never be reinterpreted as commercial intent and no AI credit/provider
-  // dependency is introduced for a supported local action.
   const deterministicTask = latestUserMessage?.role === 'user'
     ? resolveKyrubiaDeterministicTask(latestContent)
     : null;
@@ -186,17 +185,10 @@ export const requestKyrubAiConsultant = async (
     return result;
   }
 
-  // Active commercial facts are read-only context. Hydrating them changes no
-  // entitlement and grants no action authority; it only keeps the Kyrubia,
-  // plan conversation and client preflight aligned with the Control Plane.
   await hydrateActivePlanCatalog(signal);
 
   let erpContext = payload.erpContext;
 
-  // A persisted browser event is only a pointer to a receipt, never authority.
-  // Before answering a recent-result question, revalidate that exact receipt
-  // with the authenticated backend and rebuild session authority only if the
-  // server confirms actor, action, proposal and entity.
   if (
     latestUserMessage?.role === 'user' &&
     typeof localStorage !== 'undefined' &&
@@ -205,10 +197,6 @@ export const requestKyrubAiConsultant = async (
     await rehydrateKyrubiaAuthoritativeReceipt(localStorage, user);
   }
 
-  // An explicit rename is an operational mutation even when the product name
-  // itself contains commercial words such as “Pro”, “Free” or “Business”. It
-  // must be resolved before plan knowledge so a catalog entity can never be
-  // reinterpreted as a subscription plan merely because of its name.
   if (
     latestUserMessage?.role === 'user' &&
     isKyrubiaDeterministicProductUpdateIntent(latestContent)
@@ -226,6 +214,30 @@ export const requestKyrubAiConsultant = async (
         mode: 'deterministic',
         requestId: createRequestId(),
         actionProposal: productUpdate.actionProposal,
+        capabilities: capabilities(),
+      };
+      emitKyrubAiActionProposal(payload.conversationId, result);
+      return result;
+    }
+  }
+
+  // Publication is a distinct catalog lifecycle mutation. It must resolve
+  // against canonical drafts for publish and the authoritative public ERP
+  // snapshot for unpublish, before plan/knowledge routing can reinterpret
+  // commercial words inside a product name.
+  if (
+    latestUserMessage?.role === 'user' &&
+    isKyrubProductPublicationIntent(latestContent)
+  ) {
+    const publication = await resolveKyrubProductPublication(user, latestContent);
+    if (publication) {
+      const result: KyrubAiConsultantResponse = {
+        reply: publication.reply,
+        provider: 'kyrub',
+        model: 'kyrub-product-publication-runtime-v1',
+        mode: 'deterministic',
+        requestId: createRequestId(),
+        actionProposal: publication.actionProposal,
         capabilities: capabilities(),
       };
       emitKyrubAiActionProposal(payload.conversationId, result);
@@ -256,10 +268,6 @@ export const requestKyrubAiConsultant = async (
         )
       : null;
 
-  // Trusted product truth and recent authoritative context must win over the
-  // commercial plan wrapper. Explicit mutation intent is deliberately excluded
-  // above so it can continue to the operational workflow, which still performs
-  // preflight/review/confirmation and never receives authority from context.
   if (trustedRead) {
     return trustedReadResponse(trustedRead.reply);
   }
@@ -340,8 +348,6 @@ export const requestKyrubAiConsultant = async (
     );
   }
 
-  // Open strategic/judgment questions still go to Gemini, but with the active
-  // commercial facts attached so the model does not invent plan data.
   return requestLegacyKyrubAiConsultant(
     {
       ...withoutOfferedIntentSelection(payload),

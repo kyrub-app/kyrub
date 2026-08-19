@@ -6,6 +6,7 @@ import { resolveActivePlanProductCapacity } from '../src/ai/activePlanProductCap
 import { isKyrubAiActionProposal } from '../src/ai/actionEvents';
 import {
   parseKyrubiaProductNameUpdate,
+  parseKyrubiaProductUpdate,
   resolveKyrubiaDeterministicProductUpdate,
 } from '../src/ai/deterministicProductUpdate';
 import {
@@ -81,30 +82,61 @@ test('explicit product rename resolves the authoritative item and proposes only 
   assert.match(result?.reply ?? '', /Revise e confirme/i);
 });
 
-test('browser confirmation gate accepts update_product proposals', () => {
-  assert.equal(
-    isKyrubAiActionProposal({
-      id: 'rename-product-pro-test',
-      type: 'update_product',
-      productId: 'product-pro-test',
-      expectedCurrentName: 'Produto Pro de Teste',
-      patch: { name: 'testando alteração pela kyrubia' },
-      requiresConfirmation: true,
-      origin: 'kyrubia',
-      risk: 'medium',
-      inputProvenance: 'user_intent',
-      impact: { entityCount: 1, reversibility: 'limited' },
-    }),
-    true
+test('explicit product price edit is deterministic and converts BRL decimal notation', () => {
+  assert.deepEqual(
+    parseKyrubiaProductUpdate(
+      'Altere o preço do produto "Produto Pro de Teste" para R$ 39,90'
+    ),
+    {
+      currentName: 'Produto Pro de Teste',
+      field: 'price',
+      value: 39.9,
+    }
   );
+  const result = resolveKyrubiaDeterministicProductUpdate(
+    'Altere o preço do produto "Produto Pro de Teste" para R$ 39,90',
+    context('pro')
+  );
+  assert.deepEqual(result?.actionProposal?.patch, { price: 39.9 });
+  assert.match(result?.reply ?? '', /preço/i);
+  assert.match(result?.reply ?? '', /39,90/);
 });
 
-test('a product named Pro never turns a rename into a plan conversation', () => {
+test('explicit product category edit targets only the requested field', () => {
+  const result = resolveKyrubiaDeterministicProductUpdate(
+    'Atualize a categoria do produto "Produto Pro de Teste" para Promoções',
+    context('pro')
+  );
+  assert.deepEqual(result?.actionProposal?.patch, { category: 'Promoções' });
+});
+
+test('browser confirmation gate accepts rich update_product proposals and rejects inventory leakage', () => {
+  const base = {
+    id: 'update-product-pro-test',
+    type: 'update_product',
+    productId: 'product-pro-test',
+    expectedCurrentName: 'Produto Pro de Teste',
+    requiresConfirmation: true,
+    origin: 'kyrubia',
+    risk: 'medium',
+    inputProvenance: 'user_intent',
+    impact: { entityCount: 1, reversibility: 'limited' },
+  } as const;
+
+  assert.equal(isKyrubAiActionProposal({ ...base, patch: { price: 39.9 } }), true);
+  assert.equal(isKyrubAiActionProposal({ ...base, patch: { description: '' } }), true);
+  assert.equal(isKyrubAiActionProposal({ ...base, patch: { category: 'Promoções' } }), true);
+  assert.equal(isKyrubAiActionProposal({ ...base, patch: { image: '' } }), true);
+  assert.equal(isKyrubAiActionProposal({ ...base, patch: { stock: 99 } }), false);
+  assert.equal(isKyrubAiActionProposal({ ...base, patch: { price: -1 } }), false);
+});
+
+test('a product named Pro never turns a product edit into a plan conversation', () => {
   const messages = [
     {
       role: 'user' as const,
       content:
-        'Altere o nome do produto "Produto Pro de Teste" para "testando alteração pela kyrubia"',
+        'Altere o preço do produto "Produto Pro de Teste" para R$ 39,90',
     },
   ];
 
@@ -123,7 +155,7 @@ test('catalog capacity does not block editing an existing product even when Free
   assert.equal(result.bypassLegacyFreeCapacity, false);
 });
 
-test('product update contract stays confirmation-bound and server-authoritative', async () => {
+test('product update contract stays confirmation-bound, rich and server-authoritative', async () => {
   const [
     sharedSource,
     wrapperSource,
@@ -147,6 +179,7 @@ test('product update contract stays confirmation-bound and server-authoritative'
   ]);
 
   assert.match(sharedSource, /UPDATE_PRODUCT:\s*'update_product'/);
+  assert.match(sharedSource, /export type KyrubProductPatch = \{[\s\S]*description\?: string[\s\S]*price\?: number[\s\S]*category\?: string[\s\S]*image\?: string/);
   assert.match(sharedSource, /update_product:\s*\{[\s\S]*requiresConfirmation:\s*true/);
   assert.match(sharedSource, /permission:\s*'products\.write'/);
 
@@ -156,7 +189,9 @@ test('product update contract stays confirmation-bound and server-authoritative'
 
   assert.match(executionSource, /PRODUCT_OWNERSHIP_REQUIRED/);
   assert.match(executionSource, /PRODUCT_CHANGED/);
-  assert.match(executionSource, /expectedCurrentName/);
+  assert.match(executionSource, /normalizeProductPatch/);
+  assert.match(executionSource, /PRODUCT_PATCH_KEYS/);
+  assert.doesNotMatch(executionSource, /PRODUCT_PATCH_KEYS[^\n]*stock/);
   assert.match(executionSource, /permissions:\s*\['products\.write'\]/);
   assert.match(executionSource, /authorizationMode:\s*'human_confirmation'/);
   assert.match(executionSource, /kyrub_action_receipts/);
@@ -169,9 +204,9 @@ test('product update contract stays confirmation-bound and server-authoritative'
   assert.match(routerSource, /actionExecutionFacade/);
 
   assert.match(actionEventsSource, /case 'update_product'/);
-  assert.match(actionEventsSource, /typeof value\.expectedCurrentName === 'string'/);
-  assert.match(actionEventsSource, /typeof value\.patch\.name === 'string'/);
-  assert.match(bridgeSource, /detail\.proposal\.type !== 'update_product'/);
+  assert.match(actionEventsSource, /isProductPatch\(value\.patch\)/);
+  assert.match(bridgeSource, /Alterações propostas/);
+  assert.match(bridgeSource, /Estoque e status de publicação não fazem parte desta ação/);
   assert.match(
     bridgeSource,
     /executeKyrubAction\(user,\s*current\.proposal,\s*true\)/

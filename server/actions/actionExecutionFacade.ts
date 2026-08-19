@@ -8,6 +8,10 @@ import {
   isKyrubOrderStatusExecutionRequest,
 } from './orderStatusExecutionService.js';
 import {
+  executeAuthorizedKyrubProductPublication,
+  isKyrubProductPublicationExecutionRequest,
+} from './productPublicationExecutionService.js';
+import {
   executeAuthorizedKyrubProductUpdate,
   isKyrubProductUpdateExecutionRequest,
 } from './productUpdateExecutionService.js';
@@ -27,6 +31,9 @@ export const executeAuthorizedKyrubAction = async (
   }
   if (isKyrubProductUpdateExecutionRequest(rawRequest)) {
     return executeAuthorizedKyrubProductUpdate(authorization, rawRequest);
+  }
+  if (isKyrubProductPublicationExecutionRequest(rawRequest)) {
+    return executeAuthorizedKyrubProductPublication(authorization, rawRequest);
   }
   if (isKyrubOrderStatusExecutionRequest(rawRequest)) {
     return executeAuthorizedKyrubOrderStatus(authorization, rawRequest);

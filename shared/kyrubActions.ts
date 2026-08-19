@@ -15,6 +15,7 @@ export const KYRUB_ACTION_TYPES = {
   IMPORT_CATALOG_DRAFT: 'import_catalog_draft',
   CREATE_PRODUCT: 'create_product',
   UPDATE_PRODUCT: 'update_product',
+  SET_PRODUCT_PUBLICATION: 'set_product_publication',
   ADJUST_INVENTORY: 'adjust_inventory',
   SET_PRODUCT_COMPOSITION: 'set_product_composition',
   UPDATE_ORDER_STATUS: 'update_order_status',
@@ -113,6 +114,7 @@ export type KyrubWriteActionType =
   | typeof KYRUB_ACTION_TYPES.IMPORT_CATALOG_DRAFT
   | typeof KYRUB_ACTION_TYPES.CREATE_PRODUCT
   | typeof KYRUB_ACTION_TYPES.UPDATE_PRODUCT
+  | typeof KYRUB_ACTION_TYPES.SET_PRODUCT_PUBLICATION
   | typeof KYRUB_ACTION_TYPES.ADJUST_INVENTORY
   | typeof KYRUB_ACTION_TYPES.SET_PRODUCT_COMPOSITION
   | typeof KYRUB_ACTION_TYPES.UPDATE_ORDER_STATUS;
@@ -193,6 +195,14 @@ export const KYRUB_ACTION_REGISTRY: Record<
   },
   update_product: {
     type: 'update_product',
+    mode: 'write',
+    risk: 'medium',
+    requiresConfirmation: true,
+    permission: 'products.write',
+    maxAffectedEntities: 1,
+  },
+  set_product_publication: {
+    type: 'set_product_publication',
     mode: 'write',
     risk: 'medium',
     requiresConfirmation: true,
@@ -356,6 +366,10 @@ export type KyrubAiCreateProductProposal = KyrubActionProposalMetadata & {
 
 export type KyrubProductPatch = {
   name?: string;
+  description?: string;
+  price?: number;
+  category?: string;
+  image?: string;
 };
 
 export type KyrubAiUpdateProductProposal = KyrubActionProposalMetadata & {
@@ -364,6 +378,18 @@ export type KyrubAiUpdateProductProposal = KyrubActionProposalMetadata & {
   productId: string;
   expectedCurrentName: string;
   patch: KyrubProductPatch;
+  requiresConfirmation: true;
+};
+
+export type KyrubProductPublicationStatus = 'draft' | 'published';
+
+export type KyrubAiSetProductPublicationProposal = KyrubActionProposalMetadata & {
+  id: string;
+  type: typeof KYRUB_ACTION_TYPES.SET_PRODUCT_PUBLICATION;
+  productId: string;
+  productName: string;
+  expectedCurrentStatus: KyrubProductPublicationStatus;
+  published: boolean;
   requiresConfirmation: true;
 };
 
@@ -451,6 +477,7 @@ export type KyrubActionProposal =
   | KyrubAiImportCatalogDraftProposal
   | KyrubAiCreateProductProposal
   | KyrubAiUpdateProductProposal
+  | KyrubAiSetProductPublicationProposal
   | KyrubAiAdjustInventoryProposal
   | KyrubAiSetProductCompositionProposal
   | KyrubAiUpdateOrderStatusProposal;

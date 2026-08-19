@@ -6,6 +6,7 @@ import type {
   KyrubInputProvenance,
   KyrubPolicyDecision,
   KyrubAiUpdateProductProposal,
+  KyrubProductPatch,
 } from '../../shared/kyrubActions.js';
 import { verifyFirebaseIdToken } from '../ai/consultantAuth.js';
 import { adminDb } from '../firebaseAdmin.js';
@@ -16,7 +17,11 @@ import { evaluateKyrubActionPolicy } from './kyrubiaPolicyEngine.js';
 
 const MAX_PRODUCT_ID_CHARACTERS = 180;
 const MAX_PRODUCT_NAME_CHARACTERS = 160;
+const MAX_PRODUCT_CATEGORY_CHARACTERS = 120;
+const MAX_PRODUCT_DESCRIPTION_CHARACTERS = 2_000;
+const MAX_PRODUCT_IMAGE_CHARACTERS = 2_000;
 const EXECUTION_ENVELOPE_TTL_MS = 5 * 60 * 1_000;
+const PRODUCT_PATCH_KEYS = new Set(['name', 'description', 'price', 'category', 'image']);
 
 const INPUT_PROVENANCE = new Set<KyrubInputProvenance>([
   'user_intent',
@@ -83,6 +88,57 @@ const normalizeProductId = (value: unknown): string => {
   return productId;
 };
 
+const normalizeProductPatch = (value: unknown): KyrubProductPatch => {
+  const candidate = requestRecord(value);
+  const keys = Object.keys(candidate);
+  if (keys.length === 0 || keys.some(key => !PRODUCT_PATCH_KEYS.has(key))) {
+    throw new KyrubActionExecutionError(
+      400,
+      'INVALID_PRODUCT_PATCH',
+      'Informe ao menos um campo editável do produto.'
+    );
+  }
+
+  const patch: KyrubProductPatch = {};
+  if ('name' in candidate) {
+    const name = cleanText(candidate.name, MAX_PRODUCT_NAME_CHARACTERS);
+    if (!name) {
+      throw new KyrubActionExecutionError(400, 'INVALID_PRODUCT_PATCH', 'O nome do produto não pode ficar vazio.');
+    }
+    patch.name = name;
+  }
+  if ('description' in candidate) {
+    if (typeof candidate.description !== 'string') {
+      throw new KyrubActionExecutionError(400, 'INVALID_PRODUCT_PATCH', 'A descrição do produto é inválida.');
+    }
+    patch.description = cleanText(candidate.description, MAX_PRODUCT_DESCRIPTION_CHARACTERS);
+  }
+  if ('category' in candidate) {
+    const category = cleanText(candidate.category, MAX_PRODUCT_CATEGORY_CHARACTERS);
+    if (!category) {
+      throw new KyrubActionExecutionError(400, 'INVALID_PRODUCT_PATCH', 'A categoria do produto não pode ficar vazia.');
+    }
+    patch.category = category;
+  }
+  if ('image' in candidate) {
+    if (typeof candidate.image !== 'string') {
+      throw new KyrubActionExecutionError(400, 'INVALID_PRODUCT_PATCH', 'A imagem do produto é inválida.');
+    }
+    patch.image = cleanText(candidate.image, MAX_PRODUCT_IMAGE_CHARACTERS);
+  }
+  if ('price' in candidate) {
+    if (
+      typeof candidate.price !== 'number' ||
+      !Number.isFinite(candidate.price) ||
+      candidate.price < 0
+    ) {
+      throw new KyrubActionExecutionError(400, 'INVALID_PRODUCT_PATCH', 'O preço do produto precisa ser zero ou maior.');
+    }
+    patch.price = candidate.price;
+  }
+  return patch;
+};
+
 const normalizeProposal = (value: unknown): KyrubAiUpdateProductProposal => {
   const candidate = requestRecord(value);
   if (candidate.type !== 'update_product') {
@@ -93,17 +149,15 @@ const normalizeProposal = (value: unknown): KyrubAiUpdateProductProposal => {
     );
   }
 
-  const patchCandidate = requestRecord(candidate.patch);
-  const nextName = cleanText(patchCandidate.name, MAX_PRODUCT_NAME_CHARACTERS);
   const expectedCurrentName = cleanText(
     candidate.expectedCurrentName,
     MAX_PRODUCT_NAME_CHARACTERS
   );
-  if (!nextName || !expectedCurrentName) {
+  if (!expectedCurrentName) {
     throw new KyrubActionExecutionError(
       400,
       'INVALID_PRODUCT',
-      'A alteração precisa informar o nome atual esperado e o novo nome.'
+      'A alteração precisa informar o nome atual esperado do produto.'
     );
   }
 
@@ -112,7 +166,7 @@ const normalizeProposal = (value: unknown): KyrubAiUpdateProductProposal => {
     type: 'update_product',
     productId: normalizeProductId(candidate.productId),
     expectedCurrentName,
-    patch: { name: nextName },
+    patch: normalizeProductPatch(candidate.patch),
     requiresConfirmation: true,
     origin: 'kyrubia',
     risk: 'medium',
@@ -317,6 +371,18 @@ const recordValue = (value: unknown): Record<string, unknown> | null =>
     ? value as Record<string, unknown>
     : null;
 
+const applyProductPatch = (
+  current: Record<string, unknown>,
+  patch: KyrubProductPatch
+): Record<string, unknown> => ({
+  ...current,
+  ...('name' in patch ? { name: patch.name } : {}),
+  ...('description' in patch ? { description: patch.description } : {}),
+  ...('price' in patch ? { price: patch.price } : {}),
+  ...('category' in patch ? { category: patch.category } : {}),
+  ...('image' in patch ? { image: patch.image } : {}),
+});
+
 const executeProductUpdate = async (
   actor: { uid: string },
   proposal: KyrubAiUpdateProductProposal,
@@ -365,7 +431,7 @@ const executeProductUpdate = async (
       throw new KyrubActionExecutionError(
         404,
         'PRODUCT_NOT_FOUND',
-        'Esse produto não foi encontrado na sua loja. Atualize a conversa e tente novamente.'
+        'Esse produto publicado não foi encontrado na sua loja. Atualize a conversa e tente novamente.'
       );
     }
 
@@ -403,10 +469,8 @@ const executeProductUpdate = async (
       );
     }
 
-    const nextName = proposal.patch.name ?? '';
     const updatedLegacy: Record<string, unknown> = {
-      ...currentProduct,
-      name: nextName,
+      ...applyProductPatch(currentProduct, proposal.patch),
       updatedAt: envelope.authorizedAt,
       actionOrigin: envelope.origin,
       actionType: proposal.type,
@@ -448,7 +512,7 @@ const executeProductUpdate = async (
 
     transaction.set(canonicalReference, {
       ...canonicalSeed,
-      name: nextName,
+      ...proposal.patch,
       updatedByUserId: actor.uid,
       updatedByRole: 'owner',
       legacyUpdatedAt: envelope.authorizedAt,
