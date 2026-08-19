@@ -165,7 +165,7 @@ export const executeAuthorizedKyrubProductComposition = async (
     const inventoryData = inventorySnapshot.data() as Record<string, unknown> | undefined;
     const catalog = parseInventoryCatalogRecords(
       Array.isArray(inventoryData?.inventoryCatalog)
-        ? inventoryData?.inventoryCatalog
+        ? inventoryData.inventoryCatalog
         : inventoryData?.catalog
     );
     const catalogById = new Map(catalog.map(item => [item.id, item]));
@@ -198,8 +198,8 @@ export const executeAuthorizedKyrubProductComposition = async (
       [proposal.productId]: composition,
     };
     const availableStock = calculateCompositionAvailableStock(
-      composition,
-      catalog
+      catalog,
+      composition
     );
 
     transaction.set(inventoryRef, {
