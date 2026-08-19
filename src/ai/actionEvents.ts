@@ -66,6 +66,27 @@ const isCompositionLine = (value: unknown): boolean => {
   );
 };
 
+const isProductPatch = (value: unknown): boolean => {
+  if (!isRecord(value)) return false;
+  const supportedKeys = ['name', 'description', 'price', 'category', 'image'] as const;
+  const supplied = supportedKeys.filter(key => value[key] !== undefined);
+  if (supplied.length === 0) return false;
+  if (value.name !== undefined && (
+    typeof value.name !== 'string' || value.name.trim().length === 0
+  )) return false;
+  if (value.description !== undefined && typeof value.description !== 'string') return false;
+  if (value.category !== undefined && (
+    typeof value.category !== 'string' || value.category.trim().length === 0
+  )) return false;
+  if (value.image !== undefined && typeof value.image !== 'string') return false;
+  if (value.price !== undefined && (
+    typeof value.price !== 'number' ||
+    !Number.isFinite(value.price) ||
+    value.price < 0
+  )) return false;
+  return Object.keys(value).every(key => supportedKeys.includes(key as typeof supportedKeys[number]));
+};
+
 const ORDER_STATUSES = [
   'pending',
   'accepted',
@@ -159,9 +180,7 @@ export const isKyrubAiActionProposal = (
         value.productId.trim().length > 0 &&
         typeof value.expectedCurrentName === 'string' &&
         value.expectedCurrentName.trim().length > 0 &&
-        isRecord(value.patch) &&
-        typeof value.patch.name === 'string' &&
-        value.patch.name.trim().length > 0 &&
+        isProductPatch(value.patch) &&
         value.requiresConfirmation === true
       );
     case 'adjust_inventory': {
