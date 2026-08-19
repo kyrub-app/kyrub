@@ -1,12 +1,15 @@
 import { useEffect, useState } from 'react';
 import {
   CheckCircle2,
+  Eye,
+  EyeOff,
   LoaderCircle,
   Pencil,
   ShoppingBag,
   X,
 } from 'lucide-react';
 import type {
+  KyrubAiSetProductPublicationProposal,
   KyrubAiUpdateProductProposal,
   KyrubProductPatch,
 } from '../../shared/kyrubActions';
@@ -34,6 +37,15 @@ type PendingProductUpdate = {
   alreadyApplied: boolean;
 };
 
+type PendingProductPublication = {
+  kind: 'product_publication';
+  conversationId: string;
+  proposal: KyrubAiSetProductPublicationProposal;
+  state: ConfirmationState;
+  errorMessage: string;
+  alreadyApplied: boolean;
+};
+
 type PendingStorefrontTest = {
   kind: 'storefront_test';
   detail: KyrubiaStorefrontTestProposalEventDetail;
@@ -41,12 +53,15 @@ type PendingStorefrontTest = {
   errorMessage: string;
 };
 
-type PendingConfirmation = PendingProductUpdate | PendingStorefrontTest;
+type PendingConfirmation =
+  | PendingProductUpdate
+  | PendingProductPublication
+  | PendingStorefrontTest;
 
-const withIdempotency = (
+const withIdempotency = <T extends KyrubAiUpdateProductProposal | KyrubAiSetProductPublicationProposal>(
   conversationId: string,
-  proposal: KyrubAiUpdateProductProposal
-): KyrubAiUpdateProductProposal => ({
+  proposal: T
+): T => ({
   ...proposal,
   origin: proposal.origin ?? 'kyrubia',
   risk: proposal.risk ?? 'medium',
@@ -89,16 +104,28 @@ export function KyrubAiProductUpdateActionBridge() {
   useEffect(() => {
     const handleProposal = (event: Event) => {
       const detail = (event as CustomEvent<KyrubAiActionProposalEventDetail>).detail;
-      if (!detail || detail.proposal.type !== 'update_product') return;
-
-      setPending({
-        kind: 'product_update',
-        conversationId: detail.conversationId,
-        proposal: withIdempotency(detail.conversationId, detail.proposal),
-        state: 'reviewing',
-        errorMessage: '',
-        alreadyApplied: false,
-      });
+      if (!detail) return;
+      if (detail.proposal.type === 'update_product') {
+        setPending({
+          kind: 'product_update',
+          conversationId: detail.conversationId,
+          proposal: withIdempotency(detail.conversationId, detail.proposal),
+          state: 'reviewing',
+          errorMessage: '',
+          alreadyApplied: false,
+        });
+        return;
+      }
+      if (detail.proposal.type === 'set_product_publication') {
+        setPending({
+          kind: 'product_publication',
+          conversationId: detail.conversationId,
+          proposal: withIdempotency(detail.conversationId, detail.proposal),
+          state: 'reviewing',
+          errorMessage: '',
+          alreadyApplied: false,
+        });
+      }
     };
 
     const handleStorefrontTest = (event: Event) => {
@@ -135,14 +162,16 @@ export function KyrubAiProductUpdateActionBridge() {
     setPending(null);
   };
 
-  const confirmProductUpdate = async (current: PendingProductUpdate) => {
+  const confirmOfficialAction = async (
+    current: PendingProductUpdate | PendingProductPublication
+  ) => {
     const user = auth.currentUser;
     if (!user) {
       throw new Error('Faça login novamente antes de confirmar esta alteração.');
     }
     const result = await executeKyrubAction(user, current.proposal, true);
     invalidateKyrubErpContext(user.uid);
-    setPending(value => value?.kind === 'product_update' ? {
+    setPending(value => value && value.kind === current.kind ? {
       ...value,
       state: 'success',
       errorMessage: '',
@@ -192,7 +221,7 @@ export function KyrubAiProductUpdateActionBridge() {
       if (current.kind === 'storefront_test') {
         await confirmStorefrontTest(current);
       } else {
-        await confirmProductUpdate(current);
+        await confirmOfficialAction(current);
       }
     } catch (error) {
       setPending(value => value ? {
@@ -202,7 +231,9 @@ export function KyrubAiProductUpdateActionBridge() {
           ? error.message
           : current.kind === 'storefront_test'
             ? 'Não foi possível preparar os dois itens para a vitrine.'
-            : 'Não foi possível atualizar o produto.',
+            : current.kind === 'product_publication'
+              ? 'Não foi possível alterar a publicação do produto.'
+              : 'Não foi possível atualizar o produto.',
       } : value);
     }
   };
@@ -210,9 +241,13 @@ export function KyrubAiProductUpdateActionBridge() {
   const isWorking = pending.state === 'executing';
   const isSuccess = pending.state === 'success';
   const storefrontTest = pending.kind === 'storefront_test';
+  const publication = pending.kind === 'product_publication';
   const changes = pending.kind === 'product_update'
     ? productPatchRows(pending.proposal.patch)
     : [];
+  const publicationVerb = publication
+    ? pending.proposal.published ? 'Publicar' : 'Despublicar'
+    : '';
 
   return (
     <div className="fixed inset-0 z-[121] flex items-start justify-center overflow-y-auto bg-slate-950/85 p-3 pt-[max(12px,env(safe-area-inset-top))] backdrop-blur-sm sm:p-6">
@@ -223,10 +258,14 @@ export function KyrubAiProductUpdateActionBridge() {
           isSuccess
             ? storefrontTest
               ? 'Itens preparados para o teste'
-              : 'Produto atualizado'
+              : publication
+                ? 'Publicação do produto atualizada'
+                : 'Produto atualizado'
             : storefrontTest
               ? 'Confirmar itens do teste de compra'
-              : 'Confirmar alteração do produto'
+              : publication
+                ? 'Confirmar publicação do produto'
+                : 'Confirmar alteração do produto'
         }
         className="w-full max-w-md overflow-hidden rounded-3xl border border-violet-500/25 bg-slate-950 shadow-2xl"
       >
@@ -240,7 +279,11 @@ export function KyrubAiProductUpdateActionBridge() {
               ? <CheckCircle2 className="h-6 w-6" />
               : storefrontTest
                 ? <ShoppingBag className="h-6 w-6" />
-                : <Pencil className="h-6 w-6" />}
+                : publication
+                  ? pending.proposal.published
+                    ? <Eye className="h-6 w-6" />
+                    : <EyeOff className="h-6 w-6" />
+                  : <Pencil className="h-6 w-6" />}
           </div>
           <div className="min-w-0 flex-1">
             <span className="text-xs font-black uppercase tracking-wider text-violet-300">
@@ -250,10 +293,14 @@ export function KyrubAiProductUpdateActionBridge() {
               {isSuccess
                 ? storefrontTest
                   ? 'Teste preparado'
-                  : 'Produto atualizado'
+                  : publication
+                    ? 'Publicação atualizada'
+                    : 'Produto atualizado'
                 : storefrontTest
                   ? 'Confirmar produtos do teste'
-                  : 'Confirmar alteração do produto'}
+                  : publication
+                    ? `${publicationVerb} produto`
+                    : 'Confirmar alteração do produto'}
             </h2>
           </div>
           <button
@@ -274,7 +321,11 @@ export function KyrubAiProductUpdateActionBridge() {
                 ? `Somente “${pending.detail.items[0].name}” e “${pending.detail.items[1].name}” foram publicados para o teste. Os demais rascunhos continuam não publicados.`
                 : pending.alreadyApplied
                   ? 'Essa alteração já havia sido aplicada. Nenhuma mudança duplicada foi executada.'
-                  : 'O produto foi atualizado pelo executor oficial do Kyrub e sincronizado no catálogo da sua loja.'}
+                  : pending.kind === 'product_publication'
+                    ? pending.proposal.published
+                      ? 'O produto foi publicado pelo lifecycle oficial do Kyrub.'
+                      : 'O produto voltou para rascunho e saiu da vitrine pelo lifecycle oficial do Kyrub.'
+                    : 'O produto foi atualizado pelo executor oficial do Kyrub e sincronizado no catálogo da sua loja.'}
             </p>
           ) : pending.kind === 'storefront_test' ? (
             <>
@@ -284,21 +335,14 @@ export function KyrubAiProductUpdateActionBridge() {
                 </span>
                 <div className="mt-3 space-y-3">
                   {pending.detail.items.map((item, index) => (
-                    <article
-                      key={item.id}
-                      className="rounded-2xl border border-slate-800 bg-slate-950 p-3"
-                    >
+                    <article key={item.id} className="rounded-2xl border border-slate-800 bg-slate-950 p-3">
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
                           <span className="text-[10px] font-black uppercase text-violet-300">
                             {index === 0 ? 'Lanche' : 'Sobremesa'}
                           </span>
-                          <p className="mt-1 text-sm font-black text-white">
-                            {item.name}
-                          </p>
-                          <p className="mt-1 text-xs text-slate-500">
-                            {item.category}
-                          </p>
+                          <p className="mt-1 text-sm font-black text-white">{item.name}</p>
+                          <p className="mt-1 text-xs text-slate-500">{item.category}</p>
                         </div>
                         <span className="shrink-0 text-sm font-black text-emerald-300">
                           {currency.format(item.price)}
@@ -319,36 +363,37 @@ export function KyrubAiProductUpdateActionBridge() {
               <p className="text-xs leading-relaxed text-slate-500">
                 A confirmação publica somente estes dois produtos. A Kyrubia não inventará ficha técnica, ingredientes, imagens ou descrições ausentes. O servidor ainda revalidará propriedade e limite do plano antes de cada publicação.
               </p>
-              {pending.state === 'error' && (
-                <p className="rounded-2xl border border-red-500/25 bg-red-500/10 px-4 py-3 text-sm text-red-200">
-                  {pending.errorMessage}
-                </p>
-              )}
+            </>
+          ) : pending.kind === 'product_publication' ? (
+            <>
+              <div className="rounded-2xl border border-slate-800 bg-slate-900 p-4">
+                <span className="text-[11px] font-black uppercase text-slate-500">Produto</span>
+                <p className="mt-1 text-sm font-black text-white">{pending.proposal.productName}</p>
+                <div className="mt-4 grid grid-cols-[1fr_auto_1fr] items-center gap-2 text-center">
+                  <div className="rounded-xl border border-slate-800 bg-slate-950 p-2 text-xs text-slate-300">
+                    {pending.proposal.expectedCurrentStatus === 'published' ? 'Publicado' : 'Rascunho'}
+                  </div>
+                  <span className="text-slate-600">→</span>
+                  <div className="rounded-xl border border-violet-500/25 bg-violet-500/10 p-2 text-xs font-black text-violet-200">
+                    {pending.proposal.published ? 'Publicado' : 'Rascunho'}
+                  </div>
+                </div>
+              </div>
+              <p className="text-xs leading-relaxed text-slate-500">
+                Nada será alterado antes da confirmação. Para publicar, o servidor revalidará os campos obrigatórios e o limite do seu plano. Para despublicar, o produto sai da vitrine mas permanece salvo como rascunho.
+              </p>
             </>
           ) : (
             <>
               <div className="rounded-2xl border border-slate-800 bg-slate-900 p-4">
-                <span className="text-[11px] font-black uppercase text-slate-500">
-                  Produto identificado
-                </span>
-                <p className="mt-1 text-sm font-bold text-slate-200">
-                  {pending.proposal.expectedCurrentName}
-                </p>
-                <span className="mt-4 block text-[11px] font-black uppercase text-slate-500">
-                  Alterações propostas
-                </span>
+                <span className="text-[11px] font-black uppercase text-slate-500">Produto identificado</span>
+                <p className="mt-1 text-sm font-bold text-slate-200">{pending.proposal.expectedCurrentName}</p>
+                <span className="mt-4 block text-[11px] font-black uppercase text-slate-500">Alterações propostas</span>
                 <div className="mt-2 space-y-2">
                   {changes.map(change => (
-                    <div
-                      key={change.field}
-                      className="rounded-xl border border-slate-800 bg-slate-950 px-3 py-2"
-                    >
-                      <span className="text-[10px] font-black uppercase text-violet-300">
-                        {change.label}
-                      </span>
-                      <p className="mt-1 break-words text-sm text-white">
-                        {change.value}
-                      </p>
+                    <div key={change.field} className="rounded-xl border border-slate-800 bg-slate-950 px-3 py-2">
+                      <span className="text-[10px] font-black uppercase text-violet-300">{change.label}</span>
+                      <p className="mt-1 break-words text-sm text-white">{change.value}</p>
                     </div>
                   ))}
                 </div>
@@ -356,12 +401,13 @@ export function KyrubAiProductUpdateActionBridge() {
               <p className="text-xs leading-relaxed text-slate-500">
                 Somente os campos listados acima serão alterados. Estoque e status de publicação não fazem parte desta ação. O servidor revalidará o produto e a propriedade da loja antes de salvar.
               </p>
-              {pending.state === 'error' && (
-                <p className="rounded-2xl border border-red-500/25 bg-red-500/10 px-4 py-3 text-sm text-red-200">
-                  {pending.errorMessage}
-                </p>
-              )}
             </>
+          )}
+
+          {pending.state === 'error' && (
+            <p className="rounded-2xl border border-red-500/25 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+              {pending.errorMessage}
+            </p>
           )}
         </div>
 
@@ -395,7 +441,11 @@ export function KyrubAiProductUpdateActionBridge() {
                     <LoaderCircle className="h-4 w-4 animate-spin" />
                     {storefrontTest ? 'Preparando...' : 'Salvando...'}
                   </>
-                ) : storefrontTest ? 'Confirmar 2 itens' : 'Confirmar'}
+                ) : storefrontTest
+                  ? 'Confirmar 2 itens'
+                  : publication
+                    ? publicationVerb
+                    : 'Confirmar'}
               </button>
             </>
           )}
