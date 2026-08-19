@@ -101,3 +101,29 @@ test('server execution protects negative inventory and records semantic movement
   assert.match(source, /kind: movementKind/);
   assert.doesNotMatch(source, /Math\.max\(0,\s*existing\.currentQuantity\s*-\s*entry\.quantity\)/);
 });
+
+test('local ERP reads do not swallow inventory mutations or history requests', () => {
+  const source = readFileSync(
+    new URL('../shared/kyrubiaDeterministicErp.ts', import.meta.url),
+    'utf8'
+  );
+
+  assert.match(
+    source,
+    /KYRUBIA_MUTATION_VERBS\.test\(intent\) \|\| isKyrubInventoryHistoryReadIntent\(intent\)/
+  );
+});
+
+test('consultor route exposes semantic movements and history before generic AI fallback', () => {
+  const source = readFileSync(
+    new URL('../api/consultor-kyrub.ts', import.meta.url),
+    'utf8'
+  );
+
+  assert.match(source, /buildKyrubInventoryMovementProposal/);
+  assert.match(source, /resolveKyrubInventoryHistoryRead/);
+  assert.match(source, /const history = inventoryHistoryResponse\(body, messages\)/);
+  assert.match(source, /const movement = inventoryMovementResponse\(body, messages\)/);
+  assert.match(source, /enabledActions: \['adjust_inventory'\]/);
+  assert.match(source, /Revise e confirme a movimentação/);
+});
