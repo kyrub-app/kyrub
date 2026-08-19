@@ -61,10 +61,10 @@ const paramsRecord = (value: unknown): Record<string, unknown> =>
     ? value as Record<string, unknown>
     : {};
 
-const normalizeId = (value: unknown): JsonRpcId =>
-  typeof value === 'string' || typeof value === 'number' || value === null
-    ? value
-    : null;
+const normalizeId = (value: unknown): JsonRpcId => {
+  if (typeof value === 'string' || typeof value === 'number') return value;
+  return null;
+};
 
 const toolResult = (value: Record<string, unknown>) => ({
   content: [{ type: 'text', text: JSON.stringify(value) }],
