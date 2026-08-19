@@ -8,6 +8,17 @@ export type ProductCostComposition = {
   lines: Array<{ inventoryItemId: string; quantity: number }>;
 };
 
+export type ProductCostImpact = {
+  currentUnitCost: number;
+  projectedUnitCost: number;
+  unitCostDelta: number;
+  unitCostDeltaPercent: number | null;
+  currentMarginPercent: number | null;
+  projectedMarginPercent: number | null;
+  currentSuggestedPrice: number | null;
+  projectedSuggestedPrice: number | null;
+};
+
 export const calculateCompositionUnitCost = (
   catalog: PricedInventoryItem[],
   composition: ProductCostComposition
@@ -67,6 +78,64 @@ export const calculateSaleMarginPercent = (
     salePrice <= 0
   ) return null;
   return ((salePrice - unitCost) / salePrice) * 100;
+};
+
+export const calculateProductCostImpact = (
+  catalog: PricedInventoryItem[],
+  composition: ProductCostComposition,
+  inventoryItemId: string,
+  projectedPurchaseCost: number | null,
+  currentSalePrice: number | null,
+  targetMarginPercent: number | null
+): ProductCostImpact | null => {
+  const normalizedId = inventoryItemId.trim();
+  if (
+    !normalizedId ||
+    projectedPurchaseCost === null ||
+    !Number.isFinite(projectedPurchaseCost) ||
+    projectedPurchaseCost <= 0 ||
+    !composition.lines.some(line => line.inventoryItemId === normalizedId)
+  ) return null;
+
+  const currentUnitCost = calculateCompositionUnitCost(catalog, composition);
+  if (currentUnitCost === null) return null;
+
+  const projectedCatalog = catalog.map(item =>
+    item.id === normalizedId
+      ? { ...item, purchaseCost: projectedPurchaseCost }
+      : item
+  );
+  const projectedUnitCost = calculateCompositionUnitCost(
+    projectedCatalog,
+    composition
+  );
+  if (projectedUnitCost === null) return null;
+
+  const unitCostDelta = projectedUnitCost - currentUnitCost;
+  return {
+    currentUnitCost,
+    projectedUnitCost,
+    unitCostDelta,
+    unitCostDeltaPercent: currentUnitCost > 0
+      ? (unitCostDelta / currentUnitCost) * 100
+      : null,
+    currentMarginPercent: calculateSaleMarginPercent(
+      currentUnitCost,
+      currentSalePrice
+    ),
+    projectedMarginPercent: calculateSaleMarginPercent(
+      projectedUnitCost,
+      currentSalePrice
+    ),
+    currentSuggestedPrice: calculateSuggestedPrice(
+      currentUnitCost,
+      targetMarginPercent
+    ),
+    projectedSuggestedPrice: calculateSuggestedPrice(
+      projectedUnitCost,
+      targetMarginPercent
+    ),
+  };
 };
 
 export const roundCurrency = (value: number): number =>
