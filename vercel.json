@@ -1,6 +1,10 @@
 {
   "rewrites": [
     {
+      "source": "/api/mcp",
+      "destination": "/api/health?transport=mcp"
+    },
+    {
       "source": "/staff",
       "destination": "/index.html"
     },
