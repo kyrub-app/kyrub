@@ -1,5 +1,9 @@
 import type { User } from 'firebase/auth';
 import type { KyrubAiPrepareProductDraftProposal } from '../../shared/kyrubActions';
+import {
+  buildKyrubProductCompositionProposal,
+  isKyrubProductCompositionIntent,
+} from '../../shared/kyrubProductCompositionProposal';
 import { resolveKyrubiaDeterministicProductDraft } from '../../shared/kyrubiaDeterministicProductDraft';
 import {
   isKyrubiaStorefrontTestRequest,
@@ -9,6 +13,7 @@ import {
 import { readKyrubErpContext } from '../actions/erpReadActionService';
 import { executePreauthorizedProductDraftAction } from '../actions/kyrubActionService';
 import { listKyrubCatalogDrafts } from '../actions/kyrubCatalogDraftService';
+import { emitKyrubAiActionProposal } from './actionEvents';
 import {
   KYRUBIA_STOREFRONT_TEST_PROPOSAL_EVENT,
   type KyrubiaStorefrontTestProposalEventDetail,
@@ -167,11 +172,82 @@ const storefrontTestReply = async (
   );
 };
 
+const productCompositionReply = async (
+  user: User,
+  conversationId: string,
+  message: string
+): Promise<string> => {
+  let erpContext;
+  try {
+    erpContext = await readKyrubErpContext(user, { force: true });
+  } catch {
+    return 'Reconheci que você quer criar uma ficha técnica, mas não consegui consultar o catálogo e o estoque privado agora. Nada foi alterado. Tente novamente em instantes.';
+  }
+
+  const result = buildKyrubProductCompositionProposal(
+    message,
+    conversationId,
+    erpContext
+  );
+
+  if (result.kind === 'needs_context') {
+    return result.reason === 'inventory'
+      ? 'Reconheci a ficha técnica, mas o estoque privado não está disponível para vincular os insumos com segurança. Nada foi salvo.'
+      : 'Reconheci a ficha técnica, mas o catálogo da loja não está disponível para identificar o produto com segurança. Nada foi salvo.';
+  }
+
+  if (result.kind === 'needs_product') {
+    return 'Reconheci que você quer criar uma ficha técnica, mas não consegui identificar um único produto real do seu catálogo na mensagem. Informe o nome exato do produto e repita os componentes; não vou inventar esse vínculo.';
+  }
+
+  if (result.kind === 'needs_lines') {
+    return 'Identifiquei o produto, mas uma ou mais linhas da ficha técnica não puderam ser vinculadas com segurança aos insumos reais do estoque ou às unidades cadastradas. Revise os nomes e quantidades; nenhuma composição foi salva.';
+  }
+
+  if (result.kind !== 'proposal') {
+    return 'Não consegui montar a ficha técnica com segurança. Nada foi alterado.';
+  }
+
+  const proposal = result.proposal;
+  const lines = proposal.lines
+    .map(line => `• ${line.inventoryItemName} — ${line.quantity.toLocaleString('pt-BR')} ${line.unit}`)
+    .join('\n');
+
+  emitKyrubAiActionProposal(conversationId, {
+    reply: '',
+    provider: 'kyrub',
+    model: 'kyrub-product-composition-runtime-v1',
+    mode: 'deterministic',
+    requestId: proposal.id,
+    actionProposal: proposal,
+    capabilities: {
+      actionsEnabled: true,
+      enabledActions: ['set_product_composition'],
+      enabledReadActions: [],
+      voiceEnabled: false,
+      persistentCloudHistoryEnabled: false,
+    },
+  });
+
+  return (
+    `Tudo pronto para revisar a ficha técnica de “${proposal.productName}”.\n` +
+    `Rendimento: ${proposal.yieldQuantity.toLocaleString('pt-BR')} unidade(s).\n\n${lines}\n\n` +
+    'Os componentes foram vinculados aos insumos reais do seu estoque. Salvar a ficha não altera o saldo agora; o consumo continua acontecendo pelo motor de pedidos. Revise e confirme na janela de ficha técnica.'
+  );
+};
+
 export const resolveKyrubiaCatalogDraftRuntime = async (
   user: User,
   conversationId: string,
   message: string
 ): Promise<KyrubiaCatalogDraftRuntimeResult | null> => {
+  if (isKyrubProductCompositionIntent(message)) {
+    return {
+      reply: await productCompositionReply(user, conversationId, message),
+      model: 'kyrub-catalog-draft-runtime-v1',
+    };
+  }
+
   // Compound business goals must win over isolated keywords such as
   // “configure” + “loja”. This runs before store-activation routing so the
   // object of the request (existing products) remains authoritative.
