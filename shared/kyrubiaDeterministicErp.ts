@@ -1,6 +1,7 @@
 import type { KyrubReadActionType } from './kyrubActions';
 import type {
   KyrubErpContextSnapshot,
+  KyrubErpInventorySummary,
   KyrubErpProductSummary,
 } from './kyrubErpContext';
 import type {
@@ -84,6 +85,18 @@ const productAvailabilityReply = (
   }
   if (!context.availability.products) {
     return 'O catálogo da sua loja está temporariamente indisponível para consulta.';
+  }
+  return null;
+};
+
+const inventoryAvailabilityReply = (
+  context: KyrubErpContextSnapshot | undefined
+): string | null => {
+  if (!context) {
+    return 'Não consegui consultar o estoque de insumos nesta solicitação. Tente novamente em instantes.';
+  }
+  if (context.availability.inventory !== true) {
+    return 'O estoque privado de insumos está temporariamente indisponível para consulta.';
   }
   return null;
 };
@@ -187,6 +200,52 @@ const resolveProductCount = (
     reply: count === 1
       ? 'Você tem 1 item cadastrado no catálogo da sua loja.'
       : `Você tem ${count} itens cadastrados no catálogo da sua loja.`,
+  };
+};
+
+const formatInventoryQuantity = (item: KyrubErpInventorySummary): string =>
+  `${item.currentQuantity.toLocaleString('pt-BR', { maximumFractionDigits: 3 })} ${item.unit}`;
+
+const resolveInventoryRead = (
+  intent: string,
+  context: KyrubErpContextSnapshot | undefined
+): KyrubiaDeterministicErpResult | null => {
+  const inventory = context?.inventory ?? [];
+  const normalizedInventoryNames = inventory.map(item => ({
+    item,
+    normalizedName: normalizeKyrubiaIntentText(item.name),
+  }));
+  const namedMatches = normalizedInventoryNames
+    .filter(({ normalizedName }) => normalizedName.length > 0 && intent.includes(normalizedName))
+    .map(({ item }) => item);
+  const mentionsInventoryNoun = /\b(insumo|insumos|ingrediente|ingredientes|materia prima|materias primas)\b/.test(intent);
+  const asksStock = /\b(estoque|quantidade|quanto tenho|quanto tem|saldo)\b/.test(intent);
+
+  if (!mentionsInventoryNoun && !(asksStock && namedMatches.length > 0)) return null;
+
+  const unavailable = inventoryAvailabilityReply(context);
+  if (unavailable || !context) {
+    return { action: 'read_store_summary', reply: unavailable ?? 'Não consegui consultar os insumos.' };
+  }
+
+  if (inventory.length === 0) {
+    return {
+      action: 'read_store_summary',
+      reply: 'Não encontrei insumos cadastrados no estoque privado da sua loja.',
+    };
+  }
+
+  const items = namedMatches.length > 0 ? namedMatches : inventory;
+  const list = items
+    .map(item => `- ${item.name} — ${formatInventoryQuantity(item)}`)
+    .join('\n');
+  const truncation = context.inventoryTruncated === true && namedMatches.length === 0
+    ? '\n\nA leitura do estoque de insumos está limitada, então podem existir outros itens além dos mostrados aqui.'
+    : '';
+
+  return {
+    action: 'read_store_summary',
+    reply: `Estoque atual de insumos:\n${list}${truncation}`,
   };
 };
 
@@ -381,6 +440,9 @@ export const resolveKyrubiaDeterministicErpRead = (
     /\bpedido|pedidos\b/.test(intent) &&
     /\bpendente|pendentes|andamento|aberto|abertos|aguardando\b/.test(intent);
   if (asksPendingOrders) return resolvePendingOrders(context);
+
+  const inventoryRead = resolveInventoryRead(intent, context);
+  if (inventoryRead) return inventoryRead;
 
   const asksProductCount =
     /\b(quantos|quantas|quantidade|total)\b/.test(intent) &&
