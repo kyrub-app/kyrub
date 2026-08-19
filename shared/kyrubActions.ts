@@ -356,6 +356,10 @@ export type KyrubAiCreateProductProposal = KyrubActionProposalMetadata & {
 
 export type KyrubProductPatch = {
   name?: string;
+  description?: string;
+  price?: number;
+  category?: string;
+  image?: string;
 };
 
 export type KyrubAiUpdateProductProposal = KyrubActionProposalMetadata & {
