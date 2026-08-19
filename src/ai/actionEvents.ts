@@ -66,6 +66,18 @@ const isCompositionLine = (value: unknown): boolean => {
   );
 };
 
+const ORDER_STATUSES = [
+  'pending',
+  'accepted',
+  'preparing',
+  'ready',
+  'out_for_delivery',
+  'completed',
+  'rejected',
+  'cancelled',
+] as const;
+const MUTABLE_ORDER_STATUSES = ORDER_STATUSES.filter(status => status !== 'pending');
+
 export const isKyrubAiActionProposal = (
   value: unknown
 ): value is KyrubAiActionProposal => {
@@ -193,6 +205,26 @@ export const isKyrubAiActionProposal = (
         new Set(value.lines.map(line => isRecord(line) ? line.inventoryItemId : '')).size === value.lines.length &&
         value.requiresConfirmation === true
       );
+    case 'update_order_status': {
+      const decision = value.decision;
+      const validDecision = decision === undefined || (
+        isRecord(decision) &&
+        (decision.reason === undefined || typeof decision.reason === 'string') &&
+        (decision.alternative === undefined || typeof decision.alternative === 'string')
+      );
+      const nextStatus = String(value.nextStatus);
+      const needsReason = nextStatus === 'rejected' || nextStatus === 'cancelled';
+      return (
+        typeof value.orderId === 'string' &&
+        value.orderId.trim().length > 0 &&
+        !value.orderId.includes('/') &&
+        ORDER_STATUSES.includes(value.expectedCurrentStatus as typeof ORDER_STATUSES[number]) &&
+        MUTABLE_ORDER_STATUSES.includes(value.nextStatus as typeof MUTABLE_ORDER_STATUSES[number]) &&
+        validDecision &&
+        (!needsReason || (isRecord(decision) && typeof decision.reason === 'string' && decision.reason.trim().length > 0)) &&
+        value.requiresConfirmation === true
+      );
+    }
     default:
       return false;
   }
@@ -217,7 +249,8 @@ const prepareProposalForConfirmation = (
       proposal.type === 'create_product' ||
       proposal.type === 'update_product' ||
       proposal.type === 'adjust_inventory' ||
-      proposal.type === 'set_product_composition'
+      proposal.type === 'set_product_composition' ||
+      proposal.type === 'update_order_status'
         ? 'limited'
         : 'easy',
   },
