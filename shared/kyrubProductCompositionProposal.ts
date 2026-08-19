@@ -67,6 +67,10 @@ const parseYield = (message: string): number => {
   return match?.[1] ? parseNumber(match[1]) ?? 1 : 1;
 };
 
+const looksLikeCompositionLine = (line: string): boolean =>
+  /^\s*[-•]?\s*\d[\d.,]*\s*(?:un(?:d|id)?|unidade(?:s)?|kg|g|l|ml)\b/i.test(line) &&
+  !/^\s*[-•]?\s*\d[\d.,]*\s*(?:un(?:d|id)?|unidade(?:s)?)?\s*(?:[-–—:;]|\s+)?\s*(?:rendimento|rende|produz)\b/i.test(line);
+
 const parseCompositionLine = (
   line: string,
   inventory: KyrubErpInventorySummary[]
@@ -140,12 +144,19 @@ export const buildKyrubProductCompositionProposal = (
   if (!product) return { kind: 'needs_product' };
 
   const inventory = context.inventory ?? [];
-  const lines = message
+  const candidateLines = message
     .split(/\r?\n/)
-    .map(line => parseCompositionLine(line, inventory))
-    .filter((line): line is KyrubProductCompositionLine => Boolean(line));
+    .filter(looksLikeCompositionLine);
+  if (candidateLines.length === 0) return { kind: 'needs_lines' };
+
+  const parsedLines = candidateLines.map(line => parseCompositionLine(line, inventory));
+  if (parsedLines.some(line => line === null)) return { kind: 'needs_lines' };
+
+  const lines = parsedLines.filter(
+    (line): line is KyrubProductCompositionLine => Boolean(line)
+  );
   const unique = new Map(lines.map(line => [line.inventoryItemId, line]));
-  if (unique.size === 0) return { kind: 'needs_lines' };
+  if (unique.size === 0 || unique.size !== lines.length) return { kind: 'needs_lines' };
 
   const compactConversationId = conversationId.replace(/[^a-zA-Z0-9_-]/g, '-').slice(0, 48);
   const proposal: KyrubAiSetProductCompositionProposal = {
