@@ -16,6 +16,7 @@ export const KYRUB_ACTION_TYPES = {
   CREATE_PRODUCT: 'create_product',
   UPDATE_PRODUCT: 'update_product',
   ADJUST_INVENTORY: 'adjust_inventory',
+  SET_PRODUCT_COMPOSITION: 'set_product_composition',
   READ_STORE_SUMMARY: 'read_store_summary',
   LIST_PRODUCTS: 'list_products',
   LIST_LOW_STOCK_PRODUCTS: 'list_low_stock_products',
@@ -111,7 +112,8 @@ export type KyrubWriteActionType =
   | typeof KYRUB_ACTION_TYPES.IMPORT_CATALOG_DRAFT
   | typeof KYRUB_ACTION_TYPES.CREATE_PRODUCT
   | typeof KYRUB_ACTION_TYPES.UPDATE_PRODUCT
-  | typeof KYRUB_ACTION_TYPES.ADJUST_INVENTORY;
+  | typeof KYRUB_ACTION_TYPES.ADJUST_INVENTORY
+  | typeof KYRUB_ACTION_TYPES.SET_PRODUCT_COMPOSITION;
 
 export type KyrubReadActionType = Exclude<
   KyrubActiveActionType,
@@ -202,6 +204,14 @@ export const KYRUB_ACTION_REGISTRY: Record<
     requiresConfirmation: true,
     permission: 'inventory.write',
     maxAffectedEntities: 60,
+  },
+  set_product_composition: {
+    type: 'set_product_composition',
+    mode: 'write',
+    risk: 'medium',
+    requiresConfirmation: true,
+    permission: 'inventory.composition.write',
+    maxAffectedEntities: 40,
   },
   read_store_summary: {
     type: 'read_store_summary',
@@ -377,6 +387,26 @@ export type KyrubAiAdjustInventoryProposal = KyrubActionProposalMetadata & {
   requiresConfirmation: true;
 };
 
+export type KyrubProductCompositionKind = 'recipe' | 'bundle';
+
+export type KyrubProductCompositionLine = {
+  inventoryItemId: string;
+  inventoryItemName: string;
+  quantity: number;
+  unit: KyrubInventoryUnit;
+};
+
+export type KyrubAiSetProductCompositionProposal = KyrubActionProposalMetadata & {
+  id: string;
+  type: typeof KYRUB_ACTION_TYPES.SET_PRODUCT_COMPOSITION;
+  productId: string;
+  productName: string;
+  kind: KyrubProductCompositionKind;
+  yieldQuantity: number;
+  lines: KyrubProductCompositionLine[];
+  requiresConfirmation: true;
+};
+
 export type KyrubActionProposal =
   | KyrubAiCreateNoteProposal
   | KyrubAiCreateTaskProposal
@@ -386,7 +416,8 @@ export type KyrubActionProposal =
   | KyrubAiImportCatalogDraftProposal
   | KyrubAiCreateProductProposal
   | KyrubAiUpdateProductProposal
-  | KyrubAiAdjustInventoryProposal;
+  | KyrubAiAdjustInventoryProposal
+  | KyrubAiSetProductCompositionProposal;
 
 export type KyrubActionExecutionStatus =
   | 'success'
