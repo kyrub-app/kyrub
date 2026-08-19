@@ -183,6 +183,18 @@ export const isKyrubAiActionProposal = (
         isProductPatch(value.patch) &&
         value.requiresConfirmation === true
       );
+    case 'set_product_publication':
+      return (
+        typeof value.productId === 'string' &&
+        value.productId.trim().length > 0 &&
+        !value.productId.includes('/') &&
+        typeof value.productName === 'string' &&
+        value.productName.trim().length > 0 &&
+        (value.expectedCurrentStatus === 'draft' || value.expectedCurrentStatus === 'published') &&
+        typeof value.published === 'boolean' &&
+        value.published !== (value.expectedCurrentStatus === 'published') &&
+        value.requiresConfirmation === true
+      );
     case 'adjust_inventory': {
       const validMode =
         value.mode === 'increment' ||
