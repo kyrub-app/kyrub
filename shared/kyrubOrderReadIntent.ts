@@ -35,6 +35,13 @@ export const resolveKyrubOrderReadFocus = (message: string): KyrubOrderReadFocus
   return 'overview';
 };
 
+const explicitOrderId = (message: string): string | null => {
+  const match = message.match(/\b(?:pedido|comanda)\s*(?:n[º°o.]?\s*)?([a-zA-Z0-9_-]{4,180})/i);
+  const candidate = match?.[1]?.trim() ?? '';
+  if (!candidate || !/[0-9_-]/.test(candidate)) return null;
+  return candidate;
+};
+
 const resolveOrder = (
   message: string,
   orders: KyrubErpOrderSummary[]
@@ -60,18 +67,29 @@ export type KyrubOrderReadResolution =
   | { kind: 'not_requested' }
   | { kind: 'needs_context' }
   | { kind: 'needs_order'; orders: KyrubErpOrderSummary[] }
-  | { kind: 'resolved'; order: KyrubErpOrderSummary; focus: KyrubOrderReadFocus };
+  | { kind: 'resolved'; orderId: string; order?: KyrubErpOrderSummary; focus: KyrubOrderReadFocus };
 
 export const resolveKyrubOrderDetailRead = (
   message: string,
   context?: KyrubErpContextSnapshot
 ): KyrubOrderReadResolution => {
   if (!isKyrubOrderDetailReadIntent(message)) return { kind: 'not_requested' };
+  const explicit = explicitOrderId(message);
+  if (explicit) {
+    const summarized = context?.pendingOrders.find(order => order.id === explicit);
+    return {
+      kind: 'resolved',
+      orderId: explicit,
+      ...(summarized ? { order: summarized } : {}),
+      focus: resolveKyrubOrderReadFocus(message),
+    };
+  }
   if (!context || context.availability.orders !== true) return { kind: 'needs_context' };
   const order = resolveOrder(message, context.pendingOrders);
   if (!order) return { kind: 'needs_order', orders: context.pendingOrders };
   return {
     kind: 'resolved',
+    orderId: order.id,
     order,
     focus: resolveKyrubOrderReadFocus(message),
   };
