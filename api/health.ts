@@ -1,12 +1,14 @@
-type RequestLike = {
-  method?: string;
+import {
+  handleKyrubMcpRequest,
+  type KyrubMcpHttpRequest,
+  type KyrubMcpHttpResponse,
+} from '../server/mcp/kyrubiaMcpServer.js';
+
+type RequestLike = KyrubMcpHttpRequest & {
+  query?: Record<string, string | string[] | undefined>;
 };
 
-type ResponseLike = {
-  status: (code: number) => ResponseLike;
-  json: (value: unknown) => void;
-  setHeader?: (name: string, value: string) => void;
-};
+type ResponseLike = KyrubMcpHttpResponse;
 
 export type KyrubHealthPayload = {
   status: 'ok';
@@ -42,14 +44,22 @@ export const buildKyrubHealthPayload = (
   },
 });
 
-export default function handler(
+const queryValue = (value: string | string[] | undefined): string =>
+  Array.isArray(value) ? value[0] ?? '' : value ?? '';
+
+export default async function handler(
   request: RequestLike,
   response: ResponseLike
-): void {
+): Promise<void> {
+  if (queryValue(request.query?.transport) === 'mcp') {
+    await handleKyrubMcpRequest(request, response);
+    return;
+  }
+
   const method = request.method?.toUpperCase() || 'GET';
 
-  response.setHeader?.('Cache-Control', 'no-store, max-age=0');
-  response.setHeader?.('Content-Type', 'application/json; charset=utf-8');
+  response.setHeader('Cache-Control', 'no-store, max-age=0');
+  response.setHeader('Content-Type', 'application/json; charset=utf-8');
 
   if (method !== 'GET') {
     response.status(405).json({
