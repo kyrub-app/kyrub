@@ -16,6 +16,7 @@ import {
   routeKyrubiaLocalProductIntent,
   type KyrubiaLocalProductIntentKind,
 } from './kyrubiaIntentRouter';
+import { isKyrubInventoryHistoryReadIntent } from './kyrubiaInventoryHistory';
 import {
   createKyrubiaProductQuery,
   executeKyrubiaProductQuery,
@@ -210,6 +211,10 @@ const resolveInventoryRead = (
   intent: string,
   context: KyrubErpContextSnapshot | undefined
 ): KyrubiaDeterministicErpResult | null => {
+  if (KYRUBIA_MUTATION_VERBS.test(intent) || isKyrubInventoryHistoryReadIntent(intent)) {
+    return null;
+  }
+
   const inventory = context?.inventory ?? [];
   const normalizedInventoryNames = inventory.map(item => ({
     item,
