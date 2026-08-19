@@ -33,6 +33,27 @@ export type KyrubErpInventorySummary = {
   updatedAt: string;
 };
 
+export type KyrubErpInventoryMovementLine = {
+  itemId: string;
+  name: string;
+  unit: KyrubErpInventorySummary['unit'];
+  quantityDelta: number;
+  previousQuantity: number;
+  resultingQuantity: number;
+};
+
+export type KyrubErpInventoryMovementSummary = {
+  id: string;
+  kind: 'intake' | 'outflow' | 'loss' | 'correction';
+  mode: 'increment' | 'decrement' | 'set';
+  sourceKind: string;
+  sourceLabel: string;
+  entryCount: number;
+  createdAt: string;
+  lines: KyrubErpInventoryMovementLine[];
+  linesTruncated: boolean;
+};
+
 export type KyrubErpOrderSummary = {
   id: string;
   status: string;
@@ -47,6 +68,7 @@ export type KyrubErpReadAvailability = {
   store: boolean;
   products: boolean;
   inventory?: boolean;
+  inventoryMovements?: boolean;
   orders: boolean;
 };
 
@@ -60,6 +82,9 @@ export type KyrubErpContextSnapshot = {
   inventory?: KyrubErpInventorySummary[];
   inventoryCount?: number;
   inventoryTruncated?: boolean;
+  inventoryMovements?: KyrubErpInventoryMovementSummary[];
+  inventoryMovementCount?: number;
+  inventoryMovementsTruncated?: boolean;
   pendingOrders: KyrubErpOrderSummary[];
   pendingOrderCount: number;
   ordersTruncated: boolean;
