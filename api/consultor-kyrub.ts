@@ -2,6 +2,7 @@ import type {
   KyrubAiConsultantResponse,
   KyrubAiConversationMessage,
 } from '../shared/aiConsultant.js';
+import type { KyrubErpContextSnapshot } from '../shared/kyrubErpContext.js';
 import {
   normalizeKyrubCatalogAnalysis,
   type KyrubCatalogAnalysis,
@@ -18,6 +19,8 @@ import {
   type KyrubiaCapabilityDecision,
 } from '../shared/kyrubiaCapabilityRouter.js';
 import { buildKyrubInventoryIntakeProposal } from '../shared/kyrubInventoryIntake.js';
+import { buildKyrubInventoryMovementProposal } from '../shared/kyrubInventoryMovements.js';
+import { resolveKyrubInventoryHistoryRead } from '../shared/kyrubiaInventoryHistory.js';
 import { handleKyrubiaCatalogAnalysis } from '../server/kyrubiaCatalogAnalysisRoute.js';
 import handleKyrubia from './kyrubia.js';
 
@@ -231,6 +234,80 @@ const inventoryIntakeResponse = (
       actionsEnabled: true,
       enabledActions: ['adjust_inventory'],
       enabledReadActions: [],
+      voiceEnabled: false,
+      persistentCloudHistoryEnabled: false,
+    },
+  };
+};
+
+const inventoryMovementResponse = (
+  body: Record<string, unknown>,
+  messages: KyrubAiConversationMessage[]
+): KyrubAiConsultantResponse | null => {
+  const latest = latestUserMessage(messages);
+  if (!latest) return null;
+  const conversationId = typeof body.conversationId === 'string'
+    ? body.conversationId.trim()
+    : '';
+  const proposal = buildKyrubInventoryMovementProposal(latest.content, conversationId);
+  if (!proposal) return null;
+
+  const lines = proposal.entries
+    .map(entry => `• ${entry.name} — ${entry.quantity.toLocaleString('pt-BR')} ${entry.unit}`)
+    .join('\n');
+  const title = proposal.movementKind === 'loss'
+    ? 'perda/desperdício'
+    : proposal.movementKind === 'outflow'
+      ? 'saída de estoque'
+      : 'correção por inventário físico';
+  const operation = proposal.mode === 'set'
+    ? 'definir o saldo contado desses insumos como os valores abaixo'
+    : 'reduzir do estoque privado as quantidades abaixo';
+  const guard = proposal.mode === 'decrement'
+    ? ' A confirmação será recusada se algum insumo não existir ou se a quantidade informada for maior que o saldo disponível.'
+    : ' A confirmação será recusada se algum insumo não existir no estoque privado.';
+
+  return {
+    reply:
+      `Identifiquei uma ${title} com ${proposal.entries.length} insumo(s).\n\n${lines}\n\n` +
+      `Vou ${operation}.${guard} Nenhum produto, preço de venda ou publicação será alterado. Revise e confirme a movimentação.`,
+    provider: 'kyrub',
+    model: 'kyrub-inventory-movement-runtime-v1',
+    mode: 'deterministic',
+    requestId: proposal.id,
+    actionProposal: proposal,
+    capabilities: {
+      actionsEnabled: true,
+      enabledActions: ['adjust_inventory'],
+      enabledReadActions: [],
+      voiceEnabled: false,
+      persistentCloudHistoryEnabled: false,
+    },
+  };
+};
+
+const inventoryHistoryResponse = (
+  body: Record<string, unknown>,
+  messages: KyrubAiConversationMessage[]
+): KyrubAiConsultantResponse | null => {
+  const latest = latestUserMessage(messages);
+  if (!latest) return null;
+  const context = isRecord(body.erpContext)
+    ? body.erpContext as unknown as KyrubErpContextSnapshot
+    : undefined;
+  const result = resolveKyrubInventoryHistoryRead(latest.content, context);
+  if (!result) return null;
+
+  return {
+    reply: result.reply,
+    provider: 'kyrub',
+    model: 'kyrub-inventory-history-runtime-v1',
+    mode: 'deterministic',
+    requestId: `inventory-history-${Date.now()}`,
+    capabilities: {
+      actionsEnabled: true,
+      enabledActions: [],
+      enabledReadActions: ['read_store_summary'],
       voiceEnabled: false,
       persistentCloudHistoryEnabled: false,
     },
@@ -494,6 +571,18 @@ export default async function handler(
     const body = readBody(request.body);
     const messages = conversationMessages(body);
     const decision = capabilityDecision(messages);
+
+    const history = inventoryHistoryResponse(body, messages);
+    if (history) {
+      response.status(200).json(history);
+      return;
+    }
+
+    const movement = inventoryMovementResponse(body, messages);
+    if (movement) {
+      response.status(200).json(movement);
+      return;
+    }
 
     if (decision.primary === 'adjust_inventory') {
       const stockIntake = inventoryIntakeResponse(body, messages);
