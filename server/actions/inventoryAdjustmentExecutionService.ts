@@ -33,8 +33,22 @@ type InventoryMovementLine = {
   purchaseCost?: number;
 };
 
+type RecentInventoryMovement = {
+  id: string;
+  kind: KyrubInventoryMovementKind;
+  mode: KyrubInventoryAdjustmentMode;
+  sourceKind: KyrubInventoryAdjustmentSourceKind;
+  sourceLabel: string;
+  entryCount: number;
+  createdAt: string;
+  lines: InventoryMovementLine[];
+  linesTruncated: boolean;
+};
+
 const MAX_ENTRIES = 60;
 const MAX_NAME = 180;
+const MAX_RECENT_MOVEMENTS = 20;
+const MAX_RECENT_MOVEMENT_LINES = 12;
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   Boolean(value) && typeof value === 'object' && !Array.isArray(value);
@@ -61,6 +75,9 @@ const isUnit = (value: unknown): value is KyrubInventoryUnit =>
 
 const isMode = (value: unknown): value is KyrubInventoryAdjustmentMode =>
   value === 'increment' || value === 'decrement' || value === 'set';
+
+const isMovementKind = (value: unknown): value is KyrubInventoryMovementKind =>
+  value === 'intake' || value === 'outflow' || value === 'loss' || value === 'correction';
 
 const normalizeSourceKind = (
   value: unknown,
@@ -207,6 +224,64 @@ const normalizeInventoryItem = (value: unknown): InventoryItemRecord | null => {
   };
 };
 
+const normalizeMovementLine = (value: unknown): InventoryMovementLine | null => {
+  if (!isRecord(value)) return null;
+  const itemId = cleanText(value.itemId, 180);
+  const name = cleanText(value.name, MAX_NAME);
+  const unit = value.unit;
+  const quantityDelta = typeof value.quantityDelta === 'number' && Number.isFinite(value.quantityDelta)
+    ? value.quantityDelta
+    : null;
+  const previousQuantity = typeof value.previousQuantity === 'number' && Number.isFinite(value.previousQuantity)
+    ? Math.max(0, value.previousQuantity)
+    : null;
+  const resultingQuantity = typeof value.resultingQuantity === 'number' && Number.isFinite(value.resultingQuantity)
+    ? Math.max(0, value.resultingQuantity)
+    : null;
+  if (
+    !itemId || !name || !isUnit(unit) || quantityDelta === null ||
+    previousQuantity === null || resultingQuantity === null
+  ) return null;
+  return {
+    itemId,
+    name,
+    unit,
+    quantityDelta,
+    previousQuantity,
+    resultingQuantity,
+  };
+};
+
+const normalizeRecentMovement = (value: unknown): RecentInventoryMovement | null => {
+  if (!isRecord(value)) return null;
+  const id = cleanText(value.id, 180);
+  const kind = value.kind;
+  const mode = value.mode;
+  const sourceKind = value.sourceKind;
+  const createdAt = cleanText(value.createdAt, 80);
+  if (!id || !isMovementKind(kind) || !isMode(mode) || !createdAt) return null;
+  const normalizedSourceKind = normalizeSourceKind(sourceKind, mode);
+  const lines = Array.isArray(value.lines)
+    ? value.lines
+        .map(normalizeMovementLine)
+        .filter((line): line is InventoryMovementLine => Boolean(line))
+        .slice(0, MAX_RECENT_MOVEMENT_LINES)
+    : [];
+  return {
+    id,
+    kind,
+    mode,
+    sourceKind: normalizedSourceKind,
+    sourceLabel: cleanText(value.sourceLabel, 180),
+    entryCount: typeof value.entryCount === 'number' && Number.isFinite(value.entryCount)
+      ? Math.max(0, Math.trunc(value.entryCount))
+      : lines.length,
+    createdAt,
+    lines,
+    linesTruncated: value.linesTruncated === true,
+  };
+};
+
 const deterministicItemId = (uid: string, entry: KyrubInventoryAdjustmentEntry): string =>
   `inv-${createHash('sha256')
     .update(`${uid}:${normalizeName(entry.name)}:${entry.unit}`)
@@ -298,6 +373,11 @@ export const executeAuthorizedKyrubInventoryAdjustment = async (
     const catalog = (rawCatalog as unknown[])
       .map(normalizeInventoryItem)
       .filter((item): item is InventoryItemRecord => Boolean(item));
+    const recentMovements = Array.isArray(current?.recentInventoryMovements)
+      ? current.recentInventoryMovements
+          .map(normalizeRecentMovement)
+          .filter((movement): movement is RecentInventoryMovement => Boolean(movement))
+      : [];
     const now = new Date().toISOString();
     const movementLines: InventoryMovementLine[] = [];
 
@@ -370,6 +450,22 @@ export const executeAuthorizedKyrubInventoryAdjustment = async (
       });
     }
 
+    const recentMovement: RecentInventoryMovement = {
+      id: movementId,
+      kind: movementKind,
+      mode: proposal.mode,
+      sourceKind: proposal.source.kind,
+      sourceLabel: proposal.source.label ?? '',
+      entryCount: movementLines.length,
+      createdAt: now,
+      lines: movementLines.slice(0, MAX_RECENT_MOVEMENT_LINES),
+      linesTruncated: movementLines.length > MAX_RECENT_MOVEMENT_LINES,
+    };
+    const nextRecentMovements = [
+      recentMovement,
+      ...recentMovements.filter(movement => movement.id !== movementId),
+    ].slice(0, MAX_RECENT_MOVEMENTS);
+
     const lastMovement = {
       id: proposal.id,
       movementId,
@@ -383,6 +479,8 @@ export const executeAuthorizedKyrubInventoryAdjustment = async (
       ownerId: actor.uid,
       inventoryCatalog: catalog,
       catalog,
+      recentInventoryMovements: nextRecentMovements,
+      recentInventoryMovementCount: nextRecentMovements.length,
       updatedAt: FieldValue.serverTimestamp(),
       lastInventoryMovement: lastMovement,
     };
