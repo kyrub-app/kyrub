@@ -11,6 +11,7 @@ import {
   type RawBodyRequest,
 } from "./server/integrations/ninetyNineFoodRouter";
 import { createDeliveryOpportunityRouter } from "./server/delivery/deliveryOpportunityRouter";
+import { createDeliveryTrackingRouter } from "./server/delivery/deliveryTrackingRouter";
 import { createOperationsHealthRouter } from "./server/admin/operationsHealthRouter";
 import { createOrderInventoryRouter } from "./server/inventory/orderInventoryRouter";
 import { createKyrubAiConsultantRouter } from "./server/ai/consultantRouter";
@@ -116,6 +117,13 @@ app.use(
   integrationRateLimiter,
   enforceDeliveryWorkEligibility,
   createDeliveryOpportunityRouter()
+);
+
+app.use(
+  "/api/delivery-tracking",
+  integrationRateLimiter,
+  enforceDeliveryWorkEligibility,
+  createDeliveryTrackingRouter()
 );
 
 app.use(
