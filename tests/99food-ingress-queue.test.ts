@@ -25,6 +25,10 @@ const cursorSource = readFileSync(
   'server/integrations/omnichannelSyncCursorService.ts',
   'utf8'
 );
+const divergenceSource = readFileSync(
+  'server/integrations/omnichannelDivergenceService.ts',
+  'utf8'
+);
 
 test('webhook validates, persists and returns before business processing', () => {
   assert.match(queueSource, /verifyOpenDeliverySignature/);
@@ -55,6 +59,16 @@ test('sync cursor storage is internal, scoped and transactionally monotonic', ()
   assert.match(cursorSource, /adminDb\.runTransaction/);
   assert.match(cursorSource, /advanceOmnichannelCursor/);
   assert.doesNotMatch(routerSource, /integrationSyncCursors/);
+});
+
+test('divergence observability records only unresolved conflicts server-side', () => {
+  assert.match(divergenceSource, /integrationSyncDivergences/);
+  assert.match(divergenceSource, /decideOmnichannelReconciliation/);
+  assert.match(divergenceSource, /action !== 'conflict'/);
+  assert.match(divergenceSource, /status: 'open'/);
+  assert.match(divergenceSource, /FieldValue\.increment\(1\)/);
+  assert.match(divergenceSource, /adminDb\.runTransaction/);
+  assert.doesNotMatch(routerSource, /integrationSyncDivergences/);
 });
 
 test('OAuth client requests the Open Delivery scope', () => {
