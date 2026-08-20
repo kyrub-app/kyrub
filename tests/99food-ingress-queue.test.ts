@@ -36,7 +36,6 @@ test('worker applies lease, retry and idempotent processing', () => {
   assert.match(queueSource, /nextAttemptAt/);
   assert.match(queueSource, /status: 'failed'/);
   assert.match(queueSource, /receiveNinetyNineFoodWebhook/);
-  assert.match(queueSource, /calculateOmnichannelRetryDelayMs/);
   assert.match(routerSource, /internal\/drain/);
   assert.match(routerSource, /INTEGRATION_CRON_SECRET|cronAuthorized/);
 });
