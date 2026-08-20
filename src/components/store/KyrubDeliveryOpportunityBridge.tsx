@@ -7,6 +7,12 @@ import { auth, db } from '../../utils/firebase';
 const DELIVERY_STORAGE_KEY = 'kyrub_deliveries';
 const DELIVERY_COLLECTION_PATH = 'hub/renda/deliveries';
 
+type OperationalDeliveryJob = DeliveryJob & {
+  source?: string;
+  sourceOrderId?: string;
+  orderStatus?: string;
+};
+
 interface KyrubDeliveryOpportunityBridgeProps {
   onOpportunitiesChanged: () => void;
 }
@@ -60,16 +66,19 @@ export function KyrubDeliveryOpportunityBridge({
         snapshot => {
           for (const document of snapshot.docs) {
             const data = document.data() as Record<string, unknown>;
+            const status = clean(data.status);
+            const attemptKey = `${document.id}:${status}`;
             if (
               data.fulfillmentType !== 'delivery' ||
-              !['ready', 'out_for_delivery'].includes(clean(data.status)) ||
-              publicationAttempts.current.has(document.id)
+              clean(data.deliveryProvider) !== 'kyrub' ||
+              !['preparing', 'ready', 'out_for_delivery'].includes(status) ||
+              publicationAttempts.current.has(attemptKey)
             ) {
               continue;
             }
-            publicationAttempts.current.add(document.id);
+            publicationAttempts.current.add(attemptKey);
             void publishOpportunity(document.id).catch(error => {
-              publicationAttempts.current.delete(document.id);
+              publicationAttempts.current.delete(attemptKey);
               console.warn('Oportunidade Kyrub Entregas ainda não publicada.', error);
             });
           }
@@ -99,7 +108,10 @@ export function KyrubDeliveryOpportunityBridge({
               requestedBy: clean(data.requestedBy),
               acceptedBy:
                 clean(data.acceptedByName) || clean(data.acceptedBy) || undefined,
-            } satisfies DeliveryJob];
+              source: clean(data.source),
+              sourceOrderId: clean(data.sourceOrderId),
+              orderStatus: clean(data.orderStatus),
+            } satisfies OperationalDeliveryJob];
           });
           localStorage.setItem(DELIVERY_STORAGE_KEY, JSON.stringify(jobs));
           onOpportunitiesChanged();

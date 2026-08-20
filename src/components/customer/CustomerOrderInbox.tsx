@@ -25,6 +25,7 @@ import {
   buildOrderOriginOptions,
   getOrderOrigin,
   type OrderDecision,
+  type OrderDeliveryProvider,
 } from '../../utils/orderWorkflow';
 import {
   getProductionStationOptions,
@@ -114,6 +115,7 @@ export const CustomerOrderInbox = ({
     loadCachedProductPreparationStations
   );
   const [rejectingOrder, setRejectingOrder] = useState<CustomerOrder | null>(null);
+  const [routingOrder, setRoutingOrder] = useState<CustomerOrder | null>(null);
   const [rejectionReason, setRejectionReason] = useState('');
   const [suggestedAlternative, setSuggestedAlternative] = useState('');
 
@@ -188,6 +190,16 @@ export const CustomerOrderInbox = ({
     setSuggestedAlternative('');
   };
 
+  const confirmDeliveryProvider = async (
+    provider: OrderDeliveryProvider
+  ): Promise<void> => {
+    if (!routingOrder) return;
+    await onChangeStatus(routingOrder, 'accepted', {
+      deliveryProvider: provider,
+    });
+    setRoutingOrder(null);
+  };
+
   return (
     <section className="space-y-4 rounded-3xl border border-slate-800 bg-slate-900/70 p-4 sm:p-5">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -213,30 +225,9 @@ export const CustomerOrderInbox = ({
           <Filter className="h-3.5 w-3.5" /> Origem do pedido
         </div>
         <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none">
-          <button
-            type="button"
-            onClick={() => setOriginFilter('all')}
-            className={`whitespace-nowrap rounded-xl px-3 py-2 text-[9px] font-black uppercase ${
-              originFilter === 'all'
-                ? 'bg-cyan-500 text-slate-950'
-                : 'border border-slate-800 bg-slate-950 text-slate-400'
-            }`}
-          >
-            Todas as origens
-          </button>
+          <button type="button" onClick={() => setOriginFilter('all')} className={`whitespace-nowrap rounded-xl px-3 py-2 text-[9px] font-black uppercase ${originFilter === 'all' ? 'bg-cyan-500 text-slate-950' : 'border border-slate-800 bg-slate-950 text-slate-400'}`}>Todas as origens</button>
           {originOptions.map(option => (
-            <button
-              key={option.id}
-              type="button"
-              onClick={() => setOriginFilter(option.id)}
-              className={`whitespace-nowrap rounded-xl px-3 py-2 text-[9px] font-black uppercase ${
-                originFilter === option.id
-                  ? 'bg-cyan-500 text-slate-950'
-                  : 'border border-slate-800 bg-slate-950 text-slate-400'
-              }`}
-            >
-              {option.label}
-            </button>
+            <button key={option.id} type="button" onClick={() => setOriginFilter(option.id)} className={`whitespace-nowrap rounded-xl px-3 py-2 text-[9px] font-black uppercase ${originFilter === option.id ? 'bg-cyan-500 text-slate-950' : 'border border-slate-800 bg-slate-950 text-slate-400'}`}>{option.label}</button>
           ))}
         </div>
       </div>
@@ -246,60 +237,24 @@ export const CustomerOrderInbox = ({
           <ChefHat className="h-3.5 w-3.5" /> Estação de preparo
         </div>
         <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none">
-          <button
-            type="button"
-            onClick={() => setStationFilter('all')}
-            className={`whitespace-nowrap rounded-xl px-3 py-2 text-[9px] font-black uppercase ${
-              stationFilter === 'all'
-                ? 'bg-violet-500 text-white'
-                : 'border border-slate-800 bg-slate-950 text-slate-400'
-            }`}
-          >
-            Todas as estações
-          </button>
+          <button type="button" onClick={() => setStationFilter('all')} className={`whitespace-nowrap rounded-xl px-3 py-2 text-[9px] font-black uppercase ${stationFilter === 'all' ? 'bg-violet-500 text-white' : 'border border-slate-800 bg-slate-950 text-slate-400'}`}>Todas as estações</button>
           {stationOptions.map(station => (
-            <button
-              key={station}
-              type="button"
-              onClick={() => setStationFilter(station)}
-              className={`whitespace-nowrap rounded-xl px-3 py-2 text-[9px] font-black uppercase ${
-                stationFilter === station
-                  ? 'bg-violet-500 text-white'
-                  : 'border border-slate-800 bg-slate-950 text-slate-400'
-              }`}
-            >
-              {station}
-            </button>
+            <button key={station} type="button" onClick={() => setStationFilter(station)} className={`whitespace-nowrap rounded-xl px-3 py-2 text-[9px] font-black uppercase ${stationFilter === station ? 'bg-violet-500 text-white' : 'border border-slate-800 bg-slate-950 text-slate-400'}`}>{station}</button>
           ))}
         </div>
       </div>
 
       <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none">
         {filterOptions.map(option => (
-          <button
-            key={option.id}
-            type="button"
-            onClick={() => setFilter(option.id)}
-            className={`whitespace-nowrap rounded-xl px-3 py-2 text-[10px] font-black uppercase tracking-wide transition-colors ${
-              filter === option.id
-                ? 'bg-orange-500 text-slate-950'
-                : 'border border-slate-800 bg-slate-950 text-slate-400 hover:text-white'
-            }`}
-          >
-            {option.label}
-          </button>
+          <button key={option.id} type="button" onClick={() => setFilter(option.id)} className={`whitespace-nowrap rounded-xl px-3 py-2 text-[10px] font-black uppercase tracking-wide transition-colors ${filter === option.id ? 'bg-orange-500 text-slate-950' : 'border border-slate-800 bg-slate-950 text-slate-400 hover:text-white'}`}>{option.label}</button>
         ))}
       </div>
 
       {filteredOrders.length === 0 ? (
         <div className="rounded-3xl border border-dashed border-slate-800 bg-slate-950/50 px-5 py-12 text-center">
           <PackageCheck className="mx-auto h-10 w-10 text-slate-700" />
-          <p className="mt-3 text-xs font-black uppercase text-slate-500">
-            Nenhum pedido nesta combinação
-          </p>
-          <p className="mt-1 text-[11px] text-slate-600">
-            Altere a origem, a estação ou a etapa para consultar outros pedidos.
-          </p>
+          <p className="mt-3 text-xs font-black uppercase text-slate-500">Nenhum pedido nesta combinação</p>
+          <p className="mt-1 text-[11px] text-slate-600">Altere a origem, a estação ou a etapa para consultar outros pedidos.</p>
         </div>
       ) : (
         <div className="grid gap-4 lg:grid-cols-2">
@@ -309,35 +264,20 @@ export const CustomerOrderInbox = ({
             const outstandingTotal = getCustomerOrderOutstandingTotal(order);
             const visibleItems = order.items.filter(item => {
               const operational = item.quantity - item.transferredQuantity > 0;
-              const matchesStation =
-                stationFilter === 'all' ||
-                resolveProductPreparationStation(item.productId, stationRoutes) ===
-                  stationFilter;
+              const matchesStation = stationFilter === 'all' || resolveProductPreparationStation(item.productId, stationRoutes) === stationFilter;
               return operational && matchesStation;
             });
             const origin = getOrderOrigin(order, attendanceSpaces);
 
             return (
-              <article
-                key={order.id}
-                className="flex flex-col overflow-hidden rounded-3xl border border-slate-800 bg-slate-950"
-              >
+              <article key={order.id} className="flex flex-col overflow-hidden rounded-3xl border border-slate-800 bg-slate-950">
                 <div className="flex items-start justify-between gap-3 border-b border-slate-800 p-4">
                   <div className="min-w-0">
-                    <span className="font-mono text-[9px] font-bold uppercase tracking-wide text-orange-400">
-                      {origin.label} · {getFulfillmentLabel(order.fulfillmentType)}
-                    </span>
-                    <h4 className="mt-1 truncate text-sm font-black text-white">
-                      {order.buyerName}
-                    </h4>
-                    <span className="mt-1 flex items-center gap-1.5 text-[10px] text-slate-500">
-                      <Clock3 className="h-3 w-3" />
-                      {formatDateTime(order.createdAt)}
-                    </span>
+                    <span className="font-mono text-[9px] font-bold uppercase tracking-wide text-orange-400">{origin.label} · {getFulfillmentLabel(order.fulfillmentType)}</span>
+                    <h4 className="mt-1 truncate text-sm font-black text-white">{order.buyerName}</h4>
+                    <span className="mt-1 flex items-center gap-1.5 text-[10px] text-slate-500"><Clock3 className="h-3 w-3" />{formatDateTime(order.createdAt)}</span>
                   </div>
-                  <span className="max-w-[46%] rounded-full border border-slate-700 bg-slate-900 px-2.5 py-1 text-center text-[9px] font-black uppercase text-slate-300">
-                    {getCustomerOrderStatusLabel(order.status)}
-                  </span>
+                  <span className="max-w-[46%] rounded-full border border-slate-700 bg-slate-900 px-2.5 py-1 text-center text-[9px] font-black uppercase text-slate-300">{getCustomerOrderStatusLabel(order.status)}</span>
                 </div>
 
                 <div className="flex-1 space-y-4 p-4">
@@ -345,38 +285,18 @@ export const CustomerOrderInbox = ({
                     {visibleItems.map(item => {
                       const operationalQuantity = item.quantity - item.transferredQuantity;
                       const openQuantity = getCustomerOrderItemOpenQuantity(item);
-                      const station = resolveProductPreparationStation(
-                        item.productId,
-                        stationRoutes
-                      );
+                      const station = resolveProductPreparationStation(item.productId, stationRoutes);
                       return (
-                        <div
-                          key={item.lineId}
-                          className="rounded-2xl border border-slate-800 bg-slate-900/70 p-3"
-                        >
+                        <div key={item.lineId} className="rounded-2xl border border-slate-800 bg-slate-900/70 p-3">
                           <div className="flex items-start justify-between gap-3">
                             <div>
-                              <span className="mb-1 inline-flex rounded-full bg-violet-500/10 px-2 py-0.5 text-[8px] font-black uppercase text-violet-300">
-                                {station}
-                              </span>
-                              <strong className="block text-xs text-slate-200">
-                                {operationalQuantity}× {item.name}
-                              </strong>
-                              {item.note && (
-                                <p className="mt-1 text-[10px] italic text-amber-300">
-                                  Obs.: {item.note}
-                                </p>
-                              )}
+                              <span className="mb-1 inline-flex rounded-full bg-violet-500/10 px-2 py-0.5 text-[8px] font-black uppercase text-violet-300">{station}</span>
+                              <strong className="block text-xs text-slate-200">{operationalQuantity}× {item.name}</strong>
+                              {item.note && <p className="mt-1 text-[10px] italic text-amber-300">Obs.: {item.note}</p>}
                             </div>
                             <div className="text-right">
-                              <span className="block font-mono text-[10px] font-bold text-slate-400">
-                                {currency.format(item.price * operationalQuantity)}
-                              </span>
-                              {openQuantity > 0 && (
-                                <span className="text-[8px] text-slate-600">
-                                  {openQuantity} em aberto
-                                </span>
-                              )}
+                              <span className="block font-mono text-[10px] font-bold text-slate-400">{currency.format(item.price * operationalQuantity)}</span>
+                              {openQuantity > 0 && <span className="text-[8px] text-slate-600">{openQuantity} em aberto</span>}
                             </div>
                           </div>
                         </div>
@@ -385,55 +305,19 @@ export const CustomerOrderInbox = ({
                   </div>
 
                   <div className="space-y-2 rounded-2xl border border-slate-800 bg-slate-900/50 p-3 text-[10px] text-slate-400">
-                    {order.buyerEmail && (
-                      <p className="flex items-center gap-2">
-                        <UserRound className="h-3.5 w-3.5 text-slate-500" />
-                        {order.buyerEmail}
-                      </p>
-                    )}
-                    {order.deliveryAddress && (
-                      <p className="flex items-start gap-2">
-                        <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-500" />
-                        {order.deliveryAddress}
-                      </p>
-                    )}
-                    {order.tableCode && (
-                      <p className="flex items-center gap-2">
-                        <ChefHat className="h-3.5 w-3.5 text-slate-500" />
-                        Mesa/código: {order.tableCode}
-                      </p>
-                    )}
-                    {order.operatorName && (
-                      <p className="flex items-center gap-2">
-                        <UserRound className="h-3.5 w-3.5 text-slate-500" />
-                        Operador: {order.operatorName}
-                      </p>
-                    )}
-                    {order.customerNote && (
-                      <p className="border-t border-slate-800 pt-2 text-amber-200">
-                        Observação geral: {order.customerNote}
-                      </p>
-                    )}
+                    {order.buyerEmail && <p className="flex items-center gap-2"><UserRound className="h-3.5 w-3.5 text-slate-500" />{order.buyerEmail}</p>}
+                    {order.deliveryAddress && <p className="flex items-start gap-2"><MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-500" />{order.deliveryAddress}</p>}
+                    {order.tableCode && <p className="flex items-center gap-2"><ChefHat className="h-3.5 w-3.5 text-slate-500" />Mesa/código: {order.tableCode}</p>}
+                    {order.operatorName && <p className="flex items-center gap-2"><UserRound className="h-3.5 w-3.5 text-slate-500" />Operador: {order.operatorName}</p>}
+                    {order.customerNote && <p className="border-t border-slate-800 pt-2 text-amber-200">Observação geral: {order.customerNote}</p>}
                   </div>
 
                   <div className="flex items-end justify-between gap-3 border-t border-slate-800 pt-3">
                     <div>
-                      <span className="block font-mono text-[8px] uppercase text-slate-600">
-                        Saldo do pedido
-                      </span>
-                      <strong className="font-mono text-base text-white">
-                        {currency.format(outstandingTotal)}
-                      </strong>
+                      <span className="block font-mono text-[8px] uppercase text-slate-600">Saldo do pedido</span>
+                      <strong className="font-mono text-base text-white">{currency.format(outstandingTotal)}</strong>
                     </div>
-                    <span className={`rounded-lg px-2.5 py-1 text-[9px] font-bold uppercase ${
-                      order.paymentStatus === 'paid'
-                        ? 'bg-emerald-500/10 text-emerald-300'
-                        : order.paymentStatus === 'partial'
-                          ? 'bg-blue-500/10 text-blue-300'
-                          : 'bg-amber-500/10 text-amber-300'
-                    }`}>
-                      {getCustomerOrderPaymentStatusLabel(order.paymentStatus)}
-                    </span>
+                    <span className={`rounded-lg px-2.5 py-1 text-[9px] font-bold uppercase ${order.paymentStatus === 'paid' ? 'bg-emerald-500/10 text-emerald-300' : order.paymentStatus === 'partial' ? 'bg-blue-500/10 text-blue-300' : 'bg-amber-500/10 text-amber-300'}`}>{getCustomerOrderPaymentStatusLabel(order.paymentStatus)}</span>
                   </div>
                 </div>
 
@@ -451,23 +335,15 @@ export const CustomerOrderInbox = ({
                             setSuggestedAlternative('');
                             return;
                           }
+                          if (action.status === 'accepted' && order.fulfillmentType === 'delivery') {
+                            setRoutingOrder(order);
+                            return;
+                          }
                           void onChangeStatus(order, action.status);
                         }}
-                        className={`flex min-h-10 flex-1 items-center justify-center gap-1.5 rounded-xl px-3 py-2 text-[10px] font-black uppercase tracking-wide disabled:cursor-not-allowed disabled:opacity-50 ${
-                          action.emphasis
-                            ? 'bg-emerald-600 text-white hover:bg-emerald-500'
-                            : 'border border-red-500/25 bg-red-500/10 text-red-300 hover:bg-red-500/20'
-                        }`}
+                        className={`flex min-h-10 flex-1 items-center justify-center gap-1.5 rounded-xl px-3 py-2 text-[10px] font-black uppercase tracking-wide disabled:cursor-not-allowed disabled:opacity-50 ${action.emphasis ? 'bg-emerald-600 text-white hover:bg-emerald-500' : 'border border-red-500/25 bg-red-500/10 text-red-300 hover:bg-red-500/20'}`}
                       >
-                        {action.status === 'rejected' ? (
-                          <XCircle className="h-3.5 w-3.5" />
-                        ) : action.status === 'completed' ? (
-                          <CheckCircle2 className="h-3.5 w-3.5" />
-                        ) : action.status === 'out_for_delivery' ? (
-                          <Truck className="h-3.5 w-3.5" />
-                        ) : (
-                          <PackageCheck className="h-3.5 w-3.5" />
-                        )}
+                        {action.status === 'rejected' ? <XCircle className="h-3.5 w-3.5" /> : action.status === 'completed' ? <CheckCircle2 className="h-3.5 w-3.5" /> : action.status === 'out_for_delivery' ? <Truck className="h-3.5 w-3.5" /> : <PackageCheck className="h-3.5 w-3.5" />}
                         {isBusy ? 'Atualizando...' : action.label}
                       </button>
                     ))}
@@ -479,54 +355,50 @@ export const CustomerOrderInbox = ({
         </div>
       )}
 
+      {routingOrder && (
+        <div className="fixed inset-0 z-[146] flex items-end justify-center bg-slate-950/85 backdrop-blur-sm sm:items-center sm:p-5">
+          <section className="w-full max-w-lg rounded-t-3xl border border-cyan-500/25 bg-slate-900 p-5 shadow-2xl sm:rounded-3xl">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <span className="font-mono text-[9px] font-black uppercase tracking-wide text-cyan-300">Logística do pedido</span>
+                <h3 className="mt-1 text-lg font-black text-white">Como deseja realizar a entrega?</h3>
+                <p className="mt-2 text-[11px] leading-relaxed text-slate-400">A escolha é feita agora. Se você escolher Kyrub, a oportunidade será publicada para os entregadores quando clicar em “Iniciar preparo”.</p>
+              </div>
+              <button type="button" onClick={() => setRoutingOrder(null)} className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-800 bg-slate-950 text-slate-500"><X className="h-4 w-4" /></button>
+            </div>
+            <div className="mt-5 grid gap-3 sm:grid-cols-2">
+              <button type="button" disabled={busyOrderId === routingOrder.id} onClick={() => void confirmDeliveryProvider('kyrub')} className="rounded-2xl border border-orange-500/30 bg-orange-500/10 p-4 text-left transition hover:bg-orange-500/20 disabled:opacity-40">
+                <Truck className="h-5 w-5 text-orange-400" />
+                <strong className="mt-2 block text-sm text-white">Solicitar entregador Kyrub</strong>
+                <span className="mt-1 block text-[10px] leading-relaxed text-slate-400">Vai para o mural de entregas ao iniciar o preparo.</span>
+              </button>
+              <button type="button" disabled={busyOrderId === routingOrder.id} onClick={() => void confirmDeliveryProvider('merchant')} className="rounded-2xl border border-slate-700 bg-slate-950 p-4 text-left transition hover:border-slate-500 disabled:opacity-40">
+                <UserRound className="h-5 w-5 text-cyan-300" />
+                <strong className="mt-2 block text-sm text-white">Usar entregador próprio</strong>
+                <span className="mt-1 block text-[10px] leading-relaxed text-slate-400">O pedido continua no KDS, sem publicar corrida no Kyrub.</span>
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+
       {rejectingOrder && (
         <div className="fixed inset-0 z-[145] flex items-end justify-center bg-slate-950/85 backdrop-blur-sm sm:items-center sm:p-5">
           <section className="w-full max-w-lg rounded-t-3xl border border-red-500/25 bg-slate-900 p-5 shadow-2xl sm:rounded-3xl">
             <div className="flex items-start justify-between gap-3">
               <div>
-                <span className="font-mono text-[9px] font-black uppercase tracking-wide text-red-300">
-                  Recusar pedido
-                </span>
-                <h3 className="mt-1 text-lg font-black text-white">
-                  Explique e sugira uma alternativa
-                </h3>
+                <span className="font-mono text-[9px] font-black uppercase tracking-wide text-red-300">Recusar pedido</span>
+                <h3 className="mt-1 text-lg font-black text-white">Explique e sugira uma alternativa</h3>
               </div>
-              <button
-                type="button"
-                onClick={() => setRejectingOrder(null)}
-                className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-800 bg-slate-950 text-slate-500"
-              >
-                <X className="h-4 w-4" />
-              </button>
+              <button type="button" onClick={() => setRejectingOrder(null)} className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-800 bg-slate-950 text-slate-500"><X className="h-4 w-4" /></button>
             </div>
-            <label className="mt-4 block text-[9px] font-black uppercase text-red-200">
-              Motivo obrigatório
-              <textarea
-                value={rejectionReason}
-                onChange={event => setRejectionReason(event.target.value)}
-                rows={3}
-                className="mt-1.5 w-full rounded-xl border border-red-500/20 bg-slate-950 px-3 py-2 text-[10px] normal-case text-white outline-none focus:border-red-400"
-              />
+            <label className="mt-4 block text-[9px] font-black uppercase text-red-200">Motivo obrigatório
+              <textarea value={rejectionReason} onChange={event => setRejectionReason(event.target.value)} rows={3} className="mt-1.5 w-full rounded-xl border border-red-500/20 bg-slate-950 px-3 py-2 text-[10px] normal-case text-white outline-none focus:border-red-400" />
             </label>
-            <label className="mt-3 block text-[9px] font-black uppercase text-slate-500">
-              Alternativa sugerida
-              <input
-                type="text"
-                value={suggestedAlternative}
-                onChange={event => setSuggestedAlternative(event.target.value)}
-                placeholder="Ex.: trocar por um item semelhante disponível"
-                className="mt-1.5 w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 text-[10px] normal-case text-white outline-none focus:border-orange-500"
-              />
+            <label className="mt-3 block text-[9px] font-black uppercase text-slate-500">Alternativa sugerida
+              <input type="text" value={suggestedAlternative} onChange={event => setSuggestedAlternative(event.target.value)} placeholder="Ex.: trocar por um item semelhante disponível" className="mt-1.5 w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 text-[10px] normal-case text-white outline-none focus:border-orange-500" />
             </label>
-            <button
-              type="button"
-              onClick={() => void confirmRejection()}
-              disabled={!rejectionReason.trim() || busyOrderId === rejectingOrder.id}
-              className="mt-5 flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-red-600 px-4 text-[10px] font-black uppercase text-white disabled:opacity-40"
-            >
-              <XCircle className="h-4 w-4" />
-              Confirmar recusa
-            </button>
+            <button type="button" onClick={() => void confirmRejection()} disabled={!rejectionReason.trim() || busyOrderId === rejectingOrder.id} className="mt-5 flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-red-600 px-4 text-[10px] font-black uppercase text-white disabled:opacity-40"><XCircle className="h-4 w-4" />Confirmar recusa</button>
           </section>
         </div>
       )}

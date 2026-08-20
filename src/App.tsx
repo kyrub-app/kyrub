@@ -132,12 +132,53 @@ function StorePersistenceBridge() {
   return null;
 }
 
+function KyrubBootstrapScreen() {
+  return (
+    <div
+      id="kyrub-bootstrap-screen"
+      className="fixed inset-0 z-[250] flex min-h-screen items-center justify-center bg-slate-950 text-white"
+      aria-live="polite"
+      aria-label="Carregando Kyrub"
+    >
+      <div className="flex flex-col items-center gap-3">
+        <div className="h-10 w-10 animate-pulse rounded-2xl border-2 border-orange-500/80 bg-orange-500/10" />
+        <strong className="text-sm font-black uppercase tracking-[0.22em]">Kyrub</strong>
+        <span className="font-mono text-[9px] uppercase tracking-widest text-slate-500">
+          Restaurando sua sessão
+        </span>
+      </div>
+    </div>
+  );
+}
+
 function AuthenticatedKyrubApp({ operational }: { operational: boolean }) {
   const [legacyCacheRevision, setLegacyCacheRevision] = useState(0);
-  const refreshLegacyCache = useCallback(
-    () => setLegacyCacheRevision(current => current + 1),
-    []
-  );
+  const [authResolved, setAuthResolved] = useState(false);
+  const [legacyRefreshing, setLegacyRefreshing] = useState(true);
+
+  const settleVisualBootstrap = useCallback(() => {
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        window.setTimeout(() => setLegacyRefreshing(false), 120);
+      });
+    });
+  }, []);
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, () => {
+      setAuthResolved(true);
+      settleVisualBootstrap();
+    });
+    return unsubscribe;
+  }, [settleVisualBootstrap]);
+
+  const refreshLegacyCache = useCallback(() => {
+    setLegacyRefreshing(true);
+    setLegacyCacheRevision(current => current + 1);
+    settleVisualBootstrap();
+  }, [settleVisualBootstrap]);
+
+  if (!authResolved) return <KyrubBootstrapScreen />;
 
   return (
     <>
@@ -187,6 +228,7 @@ function AuthenticatedKyrubApp({ operational }: { operational: boolean }) {
       <ProductWorkspaceLayoutBridge />
       {operational && <OperationalAppEntryBridge />}
       <LegacyApp key={`legacy-cache-${legacyCacheRevision}`} />
+      {legacyRefreshing && <KyrubBootstrapScreen />}
     </>
   );
 }
