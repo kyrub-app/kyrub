@@ -23,6 +23,11 @@ import {
   buildStoreActivationPlan,
   getStoreActivationWarnings,
 } from '../src/utils/storeActivationPlan';
+import {
+  buildStoreChannelRegistry,
+  findStoreChannel,
+  getConfiguredStoreChannels,
+} from '../src/utils/channelRegistry';
 
 class MemoryStorage {
   private values = new Map<string, string>();
@@ -216,5 +221,75 @@ describe('store activation plan', () => {
     const warnings = getStoreActivationWarnings(buildStoreActivationPlan(integrations));
     assert.equal(warnings.length, 1);
     assert.match(warnings[0], /Mais de um canal/);
+  });
+});
+
+describe('store channel registry', () => {
+  test('always includes Kyrub Shop as the native canonical channel', () => {
+    const registry = buildStoreChannelRegistry(
+      'store-1',
+      createEmptyStoreIntegrationPlans()
+    );
+
+    assert.deepEqual(
+      getConfiguredStoreChannels(registry).map(channel => channel.channelId),
+      ['kyrub-shop']
+    );
+    assert.equal(
+      findStoreChannel(registry, 'kyrub-shop')?.sourceChannel,
+      'kyrub-shop'
+    );
+  });
+
+  test('derives external channel capabilities from configured integration plans', () => {
+    const integrations = createEmptyStoreIntegrationPlans();
+    integrations.ifood = {
+      ...integrations.ifood,
+      status: 'draft',
+      receiveOrders: true,
+      syncCatalog: true,
+      syncInventory: true,
+    };
+
+    const ifood = findStoreChannel(
+      buildStoreChannelRegistry('store-1', integrations),
+      'ifood'
+    );
+
+    assert.equal(ifood?.configured, true);
+    assert.deepEqual(ifood?.capabilities, {
+      orders: true,
+      catalog: true,
+      inventory: true,
+    });
+    assert.equal(ifood?.sourceChannel, 'ifood');
+  });
+
+  test('does not expose capabilities for an unconfigured adapter', () => {
+    const integrations = createEmptyStoreIntegrationPlans();
+    integrations.shopee = {
+      ...integrations.shopee,
+      receiveOrders: true,
+      syncCatalog: true,
+      syncInventory: true,
+    };
+
+    const shopee = findStoreChannel(
+      buildStoreChannelRegistry('store-1', integrations),
+      'shopee'
+    );
+
+    assert.deepEqual(shopee?.capabilities, {
+      orders: false,
+      catalog: false,
+      inventory: false,
+    });
+  });
+
+  test('rejects a registry without store identity', () => {
+    assert.throws(
+      () => buildStoreChannelRegistry(' ', createEmptyStoreIntegrationPlans()),
+      /store id/i
+    );
   });
 });
