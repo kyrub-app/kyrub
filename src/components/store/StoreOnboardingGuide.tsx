@@ -14,12 +14,24 @@ import {
 
 interface StoreOnboardingGuideProps {
   profile: StoreOnboardingProfile;
-  onFocusField: (field: StoreOnboardingField) => void;
 }
+
+const FIELD_SELECTORS: Record<StoreOnboardingField, string> = {
+  name: '[data-store-profile-field="name"]',
+  description: '[data-store-profile-field="description"]',
+  address: '[data-store-profile-field="address"]',
+  contact: '[data-store-profile-field="contact"]',
+  keywords: '[data-store-profile-field="keywords"]',
+};
+
+const focusProfileField = (field: StoreOnboardingField): void => {
+  const target = document.querySelector<HTMLElement>(FIELD_SELECTORS[field]);
+  target?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  window.setTimeout(() => target?.focus(), 250);
+};
 
 export const StoreOnboardingGuide: React.FC<StoreOnboardingGuideProps> = ({
   profile,
-  onFocusField,
 }) => {
   const progress = useMemo(() => getStoreOnboardingProgress(profile), [profile]);
   const [expanded, setExpanded] = useState(false);
@@ -51,7 +63,7 @@ export const StoreOnboardingGuide: React.FC<StoreOnboardingGuideProps> = ({
       );
     }
     setExpanded(true);
-    onFocusField(field);
+    focusProfileField(field);
   };
 
   return (
