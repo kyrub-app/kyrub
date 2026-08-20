@@ -39,6 +39,7 @@ import {
   resolveKyrubiaHistoricalLinkRecall,
   type KyrubiaCrossChatCandidate,
 } from './crossConversationMemory';
+import { resolveKyrubiaDeterministicStoreOperation } from './deterministicStoreOperation';
 import {
   describeKyrubiaConversationObjective,
   inheritKyrubiaConversationObjective,
@@ -47,6 +48,7 @@ import {
 } from './objectiveRuntimeService';
 import { resolveKyrubiaOperationalWorkflow } from './operationalWorkflowRuntime';
 import { prepareKyrubAiOpportunityContinuation } from './opportunityContinuation';
+import { emitKyrubStoreOperationProposal } from './storeOperationEvents';
 
 export class KyrubAiClientError extends Error {
   constructor(
@@ -437,6 +439,32 @@ export const requestKyrubAiConsultant = async (
         error
       );
     }
+  }
+
+  const storeOperation =
+    latestUserMessage?.role === 'user' && erpContext?.store?.configured === true
+      ? resolveKyrubiaDeterministicStoreOperation(
+          latestUserMessage.content,
+          erpContext.store.status
+        )
+      : null;
+
+  if (storeOperation) {
+    const requestId = createRuntimeRequestId();
+    emitKyrubStoreOperationProposal(
+      requestPayload.conversationId,
+      requestId,
+      storeOperation.proposal
+    );
+    return {
+      reply: storeOperation.reply,
+      provider: 'kyrub',
+      model: 'kyrub-store-operation-runtime-v1',
+      mode: 'deterministic',
+      requestId,
+      historicalLink: resolvedHistoricalLink,
+      capabilities: runtimeCapabilities(),
+    };
   }
 
   const operational = latestUserMessage?.role === 'user'

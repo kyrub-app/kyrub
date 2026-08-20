@@ -16,6 +16,14 @@ import {
   isKyrubProductUpdateExecutionRequest,
 } from './productUpdateExecutionService.js';
 import {
+  executeAuthorizedKyrubStoreOperation,
+  isKyrubStoreOperationExecutionRequest,
+} from './storeOperationExecutionService.js';
+import {
+  executeAuthorizedKyrubStoreProfileUpdate,
+  isKyrubStoreProfileExecutionRequest,
+} from './storeProfileCanonicalSyncService.js';
+import {
   executeAuthorizedKyrubTaskCreation,
   isKyrubTaskCreationExecutionRequest,
 } from './taskCreationExecutionService.js';
@@ -28,6 +36,12 @@ export const executeAuthorizedKyrubAction = async (
 ): Promise<KyrubActionExecutionResult> => {
   if (isKyrubTaskCreationExecutionRequest(rawRequest)) {
     return executeAuthorizedKyrubTaskCreation(authorization, rawRequest);
+  }
+  if (isKyrubStoreOperationExecutionRequest(rawRequest)) {
+    return executeAuthorizedKyrubStoreOperation(authorization, rawRequest) as Promise<KyrubActionExecutionResult>;
+  }
+  if (isKyrubStoreProfileExecutionRequest(rawRequest)) {
+    return executeAuthorizedKyrubStoreProfileUpdate(authorization, rawRequest);
   }
   if (isKyrubProductUpdateExecutionRequest(rawRequest)) {
     return executeAuthorizedKyrubProductUpdate(authorization, rawRequest);
