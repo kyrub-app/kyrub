@@ -16,6 +16,13 @@ import {
   saveStoreOnboardingDraft,
   shouldOfferStoreOnboarding,
 } from '../src/utils/smartStoreOnboarding';
+import {
+  createEmptyStoreIntegrationPlans,
+} from '../src/utils/storeOperationalSettings';
+import {
+  buildStoreActivationPlan,
+  getStoreActivationWarnings,
+} from '../src/utils/storeActivationPlan';
 
 class MemoryStorage {
   private values = new Map<string, string>();
@@ -153,5 +160,61 @@ describe('smart store onboarding', () => {
     assert.deepEqual(loadStoreOnboardingDraft(storage, 'user-1'), draft);
     assert.equal(serialized.includes('City Chopperia'), false);
     assert.equal(serialized.includes('profile'), false);
+  });
+});
+
+describe('store activation plan', () => {
+  test('defaults catalog origin to Kyrub without inventing an external source', () => {
+    const integrations = createEmptyStoreIntegrationPlans();
+    const plan = buildStoreActivationPlan(integrations);
+
+    assert.equal(plan.catalogOrigin, 'kyrub');
+    assert.deepEqual(plan.configuredChannelIds, []);
+    assert.equal(plan.hasOmnichannelPlan, false);
+    assert.equal(getStoreActivationWarnings(plan).length, 1);
+  });
+
+  test('derives channels and external catalog origin from the actual integration plans', () => {
+    const integrations = createEmptyStoreIntegrationPlans();
+    integrations.ifood = {
+      ...integrations.ifood,
+      status: 'draft',
+      receiveOrders: true,
+      syncCatalog: true,
+      syncInventory: true,
+    };
+    integrations['99food'] = {
+      ...integrations['99food'],
+      status: 'draft',
+      receiveOrders: true,
+    };
+
+    const plan = buildStoreActivationPlan(integrations);
+
+    assert.equal(plan.catalogOrigin, 'integration');
+    assert.deepEqual(plan.configuredChannelIds, ['ifood', '99food']);
+    assert.deepEqual(plan.orderChannelIds, ['ifood', '99food']);
+    assert.deepEqual(plan.catalogChannelIds, ['ifood']);
+    assert.deepEqual(plan.inventoryChannelIds, ['ifood']);
+    assert.equal(plan.hasOmnichannelPlan, true);
+    assert.deepEqual(getStoreActivationWarnings(plan), []);
+  });
+
+  test('warns when multiple channels compete to be catalog source', () => {
+    const integrations = createEmptyStoreIntegrationPlans();
+    integrations.ifood = {
+      ...integrations.ifood,
+      status: 'draft',
+      syncCatalog: true,
+    };
+    integrations.shopee = {
+      ...integrations.shopee,
+      status: 'draft',
+      syncCatalog: true,
+    };
+
+    const warnings = getStoreActivationWarnings(buildStoreActivationPlan(integrations));
+    assert.equal(warnings.length, 1);
+    assert.match(warnings[0], /Mais de um canal/);
   });
 });
