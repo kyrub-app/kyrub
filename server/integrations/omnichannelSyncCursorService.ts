@@ -22,6 +22,7 @@ interface StoredOmnichannelSyncCursor extends OmnichannelSyncCursor {
   channelId: string;
   direction: OmnichannelSyncDirection;
   entityType: OmnichannelSyncEntityType;
+  createdAt?: unknown;
 }
 
 const required = (label: string, value: string): string => {
