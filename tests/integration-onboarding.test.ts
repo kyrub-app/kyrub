@@ -28,6 +28,14 @@ import {
   findStoreChannel,
   getConfiguredStoreChannels,
 } from '../src/utils/channelRegistry';
+import {
+  buildExternalIdentityMapping,
+  getExternalIdentityMappingKey,
+  resolveCanonicalIdByExternalId,
+  resolveExternalIdByCanonicalId,
+  upsertExternalIdentityMapping,
+  type ExternalIdentityMapping,
+} from '../src/utils/externalIdentityMapping';
 
 class MemoryStorage {
   private values = new Map<string, string>();
@@ -291,5 +299,83 @@ describe('store channel registry', () => {
       () => buildStoreChannelRegistry(' ', createEmptyStoreIntegrationPlans()),
       /store id/i
     );
+  });
+});
+
+describe('external identity mapping', () => {
+  const base: ExternalIdentityMapping = {
+    storeId: 'store-1',
+    channelId: 'ifood',
+    entityType: 'product',
+    canonicalId: 'product-1',
+    externalId: 'ifood-product-99',
+  };
+
+  test('normalizes ids and creates a deterministic canonical key', () => {
+    const mapping = buildExternalIdentityMapping({
+      ...base,
+      storeId: ' store-1 ',
+      externalId: ' ifood-product-99 ',
+    });
+
+    assert.equal(mapping.storeId, 'store-1');
+    assert.equal(mapping.externalId, 'ifood-product-99');
+    assert.equal(
+      getExternalIdentityMappingKey(mapping),
+      'store-1::ifood::product::product-1'
+    );
+  });
+
+  test('resolves canonical and external ids in both directions', () => {
+    const mappings = [base];
+
+    assert.equal(
+      resolveCanonicalIdByExternalId(mappings, {
+        storeId: 'store-1',
+        channelId: 'ifood',
+        entityType: 'product',
+        externalId: 'ifood-product-99',
+      }),
+      'product-1'
+    );
+    assert.equal(
+      resolveExternalIdByCanonicalId(mappings, {
+        storeId: 'store-1',
+        channelId: 'ifood',
+        entityType: 'product',
+        canonicalId: 'product-1',
+      }),
+      'ifood-product-99'
+    );
+  });
+
+  test('updates one canonical mapping without creating a duplicate', () => {
+    const mappings = upsertExternalIdentityMapping([base], {
+      ...base,
+      externalId: 'ifood-product-100',
+    });
+
+    assert.equal(mappings.length, 1);
+    assert.equal(mappings[0].externalId, 'ifood-product-100');
+  });
+
+  test('rejects an external id collision in the same store/channel/type', () => {
+    assert.throws(
+      () => upsertExternalIdentityMapping([base], {
+        ...base,
+        canonicalId: 'product-2',
+      }),
+      /collision/i
+    );
+  });
+
+  test('allows the same external text in another channel because scope differs', () => {
+    const mappings = upsertExternalIdentityMapping([base], {
+      ...base,
+      channelId: '99food',
+      canonicalId: 'product-2',
+    });
+
+    assert.equal(mappings.length, 2);
   });
 });
