@@ -12,6 +12,10 @@ import {
   encryptIntegrationSecret,
   verifyOpenDeliverySignature,
 } from '../server/integrations/secretVault';
+import {
+  normalizeCanonicalSourceChannel,
+  withCanonicalSourceChannel,
+} from '../src/utils/sourceChannel';
 
 test('validates Open Delivery event identity and type', () => {
   assert.deepEqual(
@@ -130,6 +134,19 @@ test('normalizes a 99Food Open Delivery order into the existing KDS order shape'
   assert.equal(order.paymentStatus, 'paid');
   assert.equal(order.integration.provider, '99food');
   assert.equal(order.integration.routingTarget, 'COZINHA');
+});
+
+test('canonical source channel is independent from the legacy order source', () => {
+  assert.equal(normalizeCanonicalSourceChannel('99food'), '99food');
+  assert.equal(normalizeCanonicalSourceChannel('open_delivery'), 'open-delivery');
+  assert.equal(normalizeCanonicalSourceChannel('unknown-marketplace'), 'external');
+
+  const tagged = withCanonicalSourceChannel(
+    { id: 'order-1', source: 'transfer' },
+    '99food'
+  );
+  assert.equal(tagged.source, 'transfer');
+  assert.equal(tagged.sourceChannel, '99food');
 });
 
 test('prevents a webhook order URL from redirecting credentials to another origin', () => {
