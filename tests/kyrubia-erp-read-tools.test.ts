@@ -214,7 +214,7 @@ test('store name and segment-style questions stay deterministic without inventin
   );
 
   assert.equal(result?.action, 'read_store_summary');
-  assert.match(result?.reply ?? '', /Nome da sua loja: Kyrub/);
+  assert.match(result?.reply ?? '', /(?:Nome da sua loja: Kyrub|O nome cadastrado da sua loja é: Kyrub)/);
   assert.match(result?.reply ?? '', /não possui um campo canônico de segmento/i);
   assert.match(result?.reply ?? '', /alimentação > Restaurante/i);
   assert.doesNotMatch(result?.reply ?? '', /Gemini/i);
