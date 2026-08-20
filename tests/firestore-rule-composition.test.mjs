@@ -99,3 +99,18 @@ test('the composer inserts fragments through a callback so dollar anchors stay l
   assert.match(verificationRules, /matches\('\^\[0-9\]\{11\}\$'\)/);
   assert.doesNotMatch(composer, /replace\(\s*marker,\s*`\$\{composedFragment\}/);
 });
+
+test('omnichannel identity mappings are composed as server-authoritative private data', () => {
+  const composer = readFileSync('scripts/compose-firestore-rules.mjs', 'utf8');
+  const rules = readFileSync('firestore.omnichannel.fragment.rules', 'utf8');
+
+  assert.match(composer, /firestore\.omnichannel\.fragment\.rules/);
+  assert.match(
+    rules,
+    /match \/stores\/\{storeId\}\/externalIdentityMappings\/\{mappingId\}/
+  );
+  assert.match(rules, /allow get, list: if storeSecOwnerOrManager\(storeId\);/);
+  assert.match(rules, /allow create, update, delete: if false;/);
+  assert.match(rules, /match \/externalIdentityLookup\/\{lookupId\}/);
+  assert.match(rules, /allow read, write: if false;/);
+});

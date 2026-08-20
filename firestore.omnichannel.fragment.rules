@@ -1,0 +1,12 @@
+    // --- Omnichannel private identity mappings ---
+    // Canonical mappings are visible only to owners/managers for diagnostics.
+    // All writes are server-side so reverse-id uniqueness is enforced transactionally.
+    match /stores/{storeId}/externalIdentityMappings/{mappingId} {
+      allow get, list: if storeSecOwnerOrManager(storeId);
+      allow create, update, delete: if false;
+    }
+
+    // Reverse lookup documents are an internal server index. No client access.
+    match /externalIdentityLookup/{lookupId} {
+      allow read, write: if false;
+    }
