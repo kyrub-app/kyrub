@@ -45,6 +45,14 @@ type ProductQueryPlan = {
   kind: KyrubiaLocalProductIntentKind;
 };
 
+type StoreAwarenessKind =
+  | 'address'
+  | 'name'
+  | 'status'
+  | 'description'
+  | 'keywords'
+  | 'profile';
+
 // Compatibility contract markers during the query-language migration:
 // NEEDS_REASONING_OR_MUTATION, resolveLowStockNote, resolveContextualCatalogFilter.
 
@@ -151,6 +159,119 @@ const commonCatalogCategory = (
   }
 
   return prefix.join(' > ') || null;
+};
+
+const detectStoreAwarenessKind = (intent: string): StoreAwarenessKind | null => {
+  if (KYRUBIA_MUTATION_VERBS.test(intent)) return null;
+
+  const storeScope = /\b(minha loja|meu estabelecimento|meu negocio|loja|estabelecimento)\b/.test(intent);
+  const deliveryPickupScope =
+    /\b(entregador|motoboy|coleta|retirada|retirar|buscar pedido|pegar pedido)\b/.test(intent) &&
+    /\b(endereco|local|onde|coleta|retirada)\b/.test(intent);
+
+  if (
+    (storeScope && /\b(endereco|localizacao|onde fica|onde esta|local de coleta|local da coleta)\b/.test(intent)) ||
+    deliveryPickupScope
+  ) {
+    return 'address';
+  }
+
+  if (storeScope && /\b(nome|como chama|chama-se)\b/.test(intent)) return 'name';
+  if (storeScope && /\b(status|aberta|aberto|fechada|fechado|atrasada|atrasado)\b/.test(intent)) {
+    return 'status';
+  }
+  if (storeScope && /\b(descricao|sobre a loja|descricao cadastrada)\b/.test(intent)) {
+    return 'description';
+  }
+  if (storeScope && /\b(palavra chave|palavras chave|keyword|keywords|tags)\b/.test(intent)) {
+    return 'keywords';
+  }
+  if (
+    storeScope &&
+    /\b(dados|informacoes|perfil|cadastro|configuracao basica|configuracoes basicas)\b/.test(intent)
+  ) {
+    return 'profile';
+  }
+
+  return null;
+};
+
+const storeStatusLabel = (status: 'open' | 'delayed' | 'closed'): string => {
+  if (status === 'open') return 'aberta';
+  if (status === 'delayed') return 'com operação atrasada';
+  return 'fechada';
+};
+
+const resolveStoreAwareness = (
+  kind: StoreAwarenessKind,
+  context: KyrubErpContextSnapshot | undefined
+): KyrubiaDeterministicErpResult => {
+  const unavailable = storeAvailabilityReply(context);
+  if (unavailable || !context) {
+    return {
+      action: 'read_store_summary',
+      reply: unavailable ?? 'Não consegui consultar sua loja.',
+    };
+  }
+  if (!context.store) {
+    return {
+      action: 'read_store_summary',
+      reply: 'Não encontrei uma loja ativada para este usuário. Você pode ativar sua loja pelo Kyrub ou pedir para eu ajudar no processo de ativação.',
+    };
+  }
+
+  const store = context.store;
+  if (kind === 'address') {
+    return {
+      action: 'read_store_summary',
+      reply: store.address.trim()
+        ? `O endereço cadastrado atualmente na sua loja é: ${store.address.trim()}.`
+        : 'Sua loja ainda não possui endereço cadastrado. Se quiser, diga o endereço correto e eu preparo a atualização para sua confirmação.',
+    };
+  }
+  if (kind === 'name') {
+    return {
+      action: 'read_store_summary',
+      reply: store.name.trim()
+        ? `O nome cadastrado da sua loja é: ${store.name.trim()}.`
+        : 'Sua loja ainda não possui nome cadastrado.',
+    };
+  }
+  if (kind === 'status') {
+    return {
+      action: 'read_store_summary',
+      reply: `Sua loja está marcada atualmente como ${storeStatusLabel(store.status)} no Kyrub.`,
+    };
+  }
+  if (kind === 'description') {
+    return {
+      action: 'read_store_summary',
+      reply: store.description.trim()
+        ? `A descrição cadastrada da sua loja é: ${store.description.trim()}`
+        : 'Sua loja ainda não possui descrição cadastrada.',
+    };
+  }
+  if (kind === 'keywords') {
+    return {
+      action: 'read_store_summary',
+      reply: store.keywords.length > 0
+        ? `As palavras-chave cadastradas da sua loja são: ${store.keywords.join(', ')}.`
+        : 'Sua loja ainda não possui palavras-chave cadastradas.',
+    };
+  }
+
+  const lines = [
+    `Nome: ${store.name.trim() || 'não informado'}`,
+    `Endereço: ${store.address.trim() || 'não cadastrado'}`,
+    `Status: ${storeStatusLabel(store.status)}`,
+    `Descrição: ${store.description.trim() || 'não cadastrada'}`,
+    `Palavras-chave: ${store.keywords.length > 0 ? store.keywords.join(', ') : 'não cadastradas'}`,
+    `Plano: ${store.plan}`,
+  ];
+  return {
+    action: 'read_store_summary',
+    reply: `Estes são os dados que consegui confirmar diretamente no Kyrub:\n${lines.map(line => `- ${line}`).join('\n')}`,
+  };
 };
 
 const resolveStoreIdentity = (
@@ -435,6 +556,9 @@ export const resolveKyrubiaDeterministicErpRead = (
   const intent = normalizeKyrubiaIntentText(message);
   if (!intent) return null;
   if (KYRUBIA_OPEN_REASONING.test(intent)) return null;
+
+  const storeAwarenessKind = detectStoreAwarenessKind(intent);
+  if (storeAwarenessKind) return resolveStoreAwareness(storeAwarenessKind, context);
 
   const asksStoreIdentity =
     /\b(loja|estabelecimento|negocio)\b/.test(intent) &&
