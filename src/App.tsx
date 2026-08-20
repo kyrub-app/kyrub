@@ -26,6 +26,7 @@ import { ProfileVerificationBridge } from './components/ProfileVerificationBridg
 import { PublicStorefrontApp } from './components/PublicStorefrontApp';
 import { SocialPublishingBridge } from './components/SocialPublishingBridge';
 import { CatalogCustomizationInheritanceBridge } from './components/store/CatalogCustomizationInheritanceBridge';
+import { CourierLiveTrackingBridge } from './components/store/CourierLiveTrackingBridge';
 import { IntegrationTestOrderBridge } from './components/store/IntegrationTestOrderBridge';
 import { KyrubDeliveryOpportunityBridge } from './components/store/KyrubDeliveryOpportunityBridge';
 import { KyrubDeliveryStatusSyncBridge } from './components/store/KyrubDeliveryStatusSyncBridge';
@@ -197,6 +198,7 @@ function AuthenticatedKyrubApp({ operational }: { operational: boolean }) {
         onOpportunitiesChanged={refreshLegacyCache}
       />
       <KyrubDeliveryStatusSyncBridge />
+      <CourierLiveTrackingBridge />
       <NinetyNineFoodConnectionBridge />
       <NinetyNineFoodOrderStatusBridge />
       <NoteInvitationOutboxBridge />
