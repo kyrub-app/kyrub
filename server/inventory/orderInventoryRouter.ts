@@ -20,6 +20,11 @@ const SUPPORTED_STATUSES = new Set<InventoryOrderStatus>([
   'cancelled',
 ]);
 
+type DeliveryProvider = 'kyrub' | 'merchant';
+type ParsedOrderDecision = OrderStatusDecisionInput & {
+  deliveryProvider?: DeliveryProvider;
+};
+
 const bearerToken = (request: Request): string => {
   const authorization = request.get('authorization') ?? '';
   return /^Bearer\s+(.+)$/i.exec(authorization)?.[1]?.trim() ?? '';
@@ -31,7 +36,7 @@ const authenticatedTenantId = async (request: Request): Promise<string> => {
   return (await adminAuth.verifyIdToken(token, true)).uid;
 };
 
-const parseDecision = (value: unknown): OrderStatusDecisionInput => {
+const parseDecision = (value: unknown): ParsedOrderDecision => {
   const candidate = value && typeof value === 'object'
     ? value as Record<string, unknown>
     : {};
@@ -46,6 +51,9 @@ const parseDecision = (value: unknown): OrderStatusDecisionInput => {
     ...(deliveryProvider ? { deliveryProvider } : {}),
   };
 };
+
+const clean = (value: unknown): string =>
+  typeof value === 'string' ? value.trim() : '';
 
 const errorResponse = (response: Response, error: unknown): void => {
   const message = error instanceof Error ? error.message : String(error);
@@ -77,6 +85,31 @@ const errorResponse = (response: Response, error: unknown): void => {
 
 const orderReference = (tenantId: string, orderId: string) =>
   adminDb.doc(`artifacts/${tenantId}/public/data/customerOrders/${orderId}`);
+
+const persistDeliveryProvider = async (
+  tenantId: string,
+  orderId: string,
+  deliveryProvider: DeliveryProvider
+): Promise<void> => {
+  const tenantSnapshot = await adminDb.doc(`tenants/${tenantId}`).get();
+  const canonicalStoreId = clean(tenantSnapshot.data()?.canonicalStoreId);
+  const updatedAt = new Date().toISOString();
+  const payload = {
+    deliveryProvider,
+    deliveryProviderChosenAt: updatedAt,
+    updatedAt,
+  };
+  const batch = adminDb.batch();
+  batch.set(orderReference(tenantId, orderId), payload, { merge: true });
+  if (canonicalStoreId) {
+    batch.set(
+      adminDb.doc(`stores/${canonicalStoreId}/orders/${orderId}`),
+      payload,
+      { merge: true }
+    );
+  }
+  await batch.commit();
+};
 
 const markPartnerSyncError = async (
   tenantId: string,
@@ -136,6 +169,7 @@ export const createOrderInventoryRouter = (): Router => {
   router.post('/:orderId/status', async (request, response) => {
     try {
       const tenantId = await authenticatedTenantId(request);
+      const orderId = request.params.orderId;
       const status = typeof request.body?.status === 'string'
         ? request.body.status as InventoryOrderStatus
         : 'pending';
@@ -144,12 +178,32 @@ export const createOrderInventoryRouter = (): Router => {
         return;
       }
 
+      const decision = parseDecision(request.body?.decision);
+      if (status === 'accepted') {
+        const snapshot = await orderReference(tenantId, orderId).get();
+        const data = snapshot.data() as Record<string, unknown> | undefined;
+        if (snapshot.exists && data?.fulfillmentType === 'delivery' && !decision.deliveryProvider) {
+          throw new Error('Escolha como a entrega será realizada: Kyrub ou entregador próprio.');
+        }
+      }
+
       const result = await transitionOrderStatusWithInventory(
         tenantId,
-        request.params.orderId,
+        orderId,
         status,
-        parseDecision(request.body?.decision)
+        {
+          reason: decision.reason,
+          alternative: decision.alternative,
+        }
       );
+
+      if (status === 'accepted' && decision.deliveryProvider) {
+        await persistDeliveryProvider(
+          tenantId,
+          result.orderId,
+          decision.deliveryProvider
+        );
+      }
 
       let partnerSync: 'not-applicable' | 'sent' | 'attention' = 'not-applicable';
       let partnerWarning = '';
