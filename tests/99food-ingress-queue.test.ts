@@ -21,6 +21,10 @@ const protocolSource = readFileSync(
   'server/integrations/openDelivery.ts',
   'utf8'
 );
+const cursorSource = readFileSync(
+  'server/integrations/omnichannelSyncCursorService.ts',
+  'utf8'
+);
 
 test('webhook validates, persists and returns before business processing', () => {
   assert.match(queueSource, /verifyOpenDeliverySignature/);
@@ -31,13 +35,26 @@ test('webhook validates, persists and returns before business processing', () =>
   assert.doesNotMatch(routerSource, /receiveNinetyNineFoodWebhook\(\{/);
 });
 
-test('worker applies lease, retry and idempotent processing', () => {
+test('worker applies lease, shared retry policy and idempotent processing', () => {
   assert.match(queueSource, /leaseExpiresAt/);
   assert.match(queueSource, /nextAttemptAt/);
   assert.match(queueSource, /status: 'failed'/);
   assert.match(queueSource, /receiveNinetyNineFoodWebhook/);
+  assert.match(queueSource, /calculateOmnichannelRetryDelayMs\(attempts\)/);
+  assert.doesNotMatch(queueSource, /15_000 \* 2 \*\*/);
   assert.match(routerSource, /internal\/drain/);
   assert.match(routerSource, /INTEGRATION_CRON_SECRET|cronAuthorized/);
+});
+
+test('sync cursor storage is internal, scoped and transactionally monotonic', () => {
+  assert.match(cursorSource, /integrationSyncCursors/);
+  assert.match(cursorSource, /storeId/);
+  assert.match(cursorSource, /channelId/);
+  assert.match(cursorSource, /entityType/);
+  assert.match(cursorSource, /direction/);
+  assert.match(cursorSource, /adminDb\.runTransaction/);
+  assert.match(cursorSource, /advanceOmnichannelCursor/);
+  assert.doesNotMatch(routerSource, /integrationSyncCursors/);
 });
 
 test('OAuth client requests the Open Delivery scope', () => {
