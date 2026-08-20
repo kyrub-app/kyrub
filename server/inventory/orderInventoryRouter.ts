@@ -35,10 +35,15 @@ const parseDecision = (value: unknown): OrderStatusDecisionInput => {
   const candidate = value && typeof value === 'object'
     ? value as Record<string, unknown>
     : {};
+  const deliveryProvider =
+    candidate.deliveryProvider === 'kyrub' || candidate.deliveryProvider === 'merchant'
+      ? candidate.deliveryProvider
+      : undefined;
   return {
     reason: typeof candidate.reason === 'string' ? candidate.reason : '',
     alternative:
       typeof candidate.alternative === 'string' ? candidate.alternative : '',
+    ...(deliveryProvider ? { deliveryProvider } : {}),
   };
 };
 
@@ -52,7 +57,7 @@ const errorResponse = (response: Response, error: unknown): void => {
     response.status(404).json({ error: message });
     return;
   }
-  if (/não permitida|inválid|explique|identificado|Revise os dados|Revise os itens|Revise as quantidades/i.test(message)) {
+  if (/não permitida|inválid|explique|identificado|Revise os dados|Revise os itens|Revise as quantidades|Escolha como a entrega/i.test(message)) {
     response.status(400).json({ error: message });
     return;
   }
