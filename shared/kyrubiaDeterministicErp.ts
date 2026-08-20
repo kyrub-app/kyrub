@@ -176,7 +176,14 @@ const detectStoreAwarenessKind = (intent: string): StoreAwarenessKind | null => 
     return 'address';
   }
 
-  if (storeScope && /\b(nome|como chama|chama-se)\b/.test(intent)) return 'name';
+  const asksCompoundIdentity = /\b(segmento|ramo|categoria)\b/.test(intent);
+  if (
+    storeScope &&
+    !asksCompoundIdentity &&
+    /\b(nome|como chama|chama-se)\b/.test(intent)
+  ) {
+    return 'name';
+  }
   if (storeScope && /\b(status|aberta|aberto|fechada|fechado|atrasada|atrasado)\b/.test(intent)) {
     return 'status';
   }
