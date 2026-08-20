@@ -10,6 +10,7 @@ import { KyrubAiNoteActionBridge } from './components/KyrubAiNoteActionBridge';
 import { KyrubAiOrderStatusActionBridge } from './components/KyrubAiOrderStatusActionBridge';
 import { KyrubAiProductCompositionActionBridge } from './components/KyrubAiProductCompositionActionBridge';
 import { KyrubAiProductUpdateActionBridge } from './components/KyrubAiProductUpdateActionBridge';
+import { KyrubAiStoreOperationActionBridge } from './components/KyrubAiStoreOperationActionBridge';
 import { KyrubAiTaskActionBridge } from './components/KyrubAiTaskActionBridge';
 import { KyrubAiWorkspaceBridge } from './components/KyrubAiWorkspaceBridge';
 import { KyrubiaNamingBridge } from './components/KyrubiaNamingBridge';
@@ -78,10 +79,6 @@ function StorePersistenceBridge() {
         getPrimaryUserStoreDocumentPath(user.uid)
       );
 
-      // LegacyApp owns the initial create/read bootstrap for the private store.
-      // Wait until that document is confirmed by the server before replaying an
-      // offline pending update. This prevents two clients in the same page from
-      // both observing a missing document and racing to create it.
       unsubscribeStore = onSnapshot(
         storeReference,
         { includeMetadataChanges: true },
@@ -178,6 +175,7 @@ function AuthenticatedKyrubApp({ operational }: { operational: boolean }) {
       <KyrubAiInventoryActionBridge />
       <KyrubAiProductCompositionActionBridge />
       <KyrubAiOrderStatusActionBridge />
+      <KyrubAiStoreOperationActionBridge />
       <StoreSharingPortalBridge />
       <StoreRestartLandingBridge />
       <UnifiedProductCreateModalBridge />
