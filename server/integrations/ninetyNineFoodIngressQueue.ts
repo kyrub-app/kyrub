@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { FieldValue, Timestamp } from 'firebase-admin/firestore';
+import { calculateOmnichannelRetryDelayMs } from '../../src/utils/omnichannelSyncEngine';
 import { adminDb } from '../firebaseAdmin';
 import { reconcilePersistedOrderInventory } from '../inventory/orderInventoryService';
 import { parseOpenDeliveryEvent } from './openDelivery';
@@ -239,7 +240,7 @@ export const drainNinetyNineFoodIngressQueue = async (
     } catch (error) {
       failed += 1;
       const attempts = Number(reserved.attempts ?? 0) + 1;
-      const backoffMs = Math.min(15 * 60_000, 15_000 * 2 ** Math.min(6, attempts));
+      const backoffMs = calculateOmnichannelRetryDelayMs(attempts);
       const nextAttemptAt = Timestamp.fromMillis(Date.now() + backoffMs);
       await document.ref.update({
         status: 'failed',
