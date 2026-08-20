@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { PlugZap, Store as StoreIcon } from 'lucide-react';
+import { StoreOnboardingGuide } from '../store/StoreOnboardingGuide';
 
 interface StoreConfigModalProps {
   isOpen: boolean;
@@ -124,10 +125,21 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = ({
         <div className="p-6 overflow-y-auto max-h-[65vh] space-y-5">
           {configActiveTab === 'perfil' && (
             <div className="space-y-4 animate-fade-in">
+              <StoreOnboardingGuide
+                profile={{
+                  name: configStoreName,
+                  description: configStoreBio,
+                  address: configStoreAddress,
+                  contact: configStoreContact,
+                  keywords: configStoreKeywords,
+                }}
+              />
+
               <div className="space-y-1">
                 <label className="text-[10px] font-mono text-slate-400 uppercase font-black">Nome da Loja</label>
                 <input
                   type="text"
+                  data-store-profile-field="name"
                   value={configStoreName}
                   onChange={event => setConfigStoreName(event.target.value)}
                   className="w-full bg-slate-950 border border-slate-850 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-slate-750"
@@ -138,6 +150,7 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = ({
               <div className="space-y-1">
                 <label className="text-[10px] font-mono text-slate-400 uppercase font-black">Biografia (Descrição)</label>
                 <textarea
+                  data-store-profile-field="description"
                   value={configStoreBio}
                   onChange={event => setConfigStoreBio(event.target.value)}
                   className="w-full bg-slate-950 border border-slate-850 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-slate-750 h-20 resize-none"
@@ -151,6 +164,7 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = ({
                 <label className="text-[10px] font-mono text-slate-400 uppercase font-black">Endereço</label>
                 <input
                   type="text"
+                  data-store-profile-field="address"
                   value={configStoreAddress}
                   onChange={event => setConfigStoreAddress(event.target.value)}
                   className="w-full bg-slate-950 border border-slate-850 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-slate-750"
@@ -162,6 +176,7 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = ({
                 <label className="text-[10px] font-mono text-slate-400 uppercase font-black">Contato</label>
                 <input
                   type="text"
+                  data-store-profile-field="contact"
                   value={configStoreContact}
                   onChange={event => setConfigStoreContact(event.target.value)}
                   className="w-full bg-slate-950 border border-slate-850 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-slate-750"
@@ -173,6 +188,7 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = ({
                 <label className="text-[10px] font-mono text-slate-400 uppercase font-black">Palavras-chave de SEO Local (Separadas por vírgula)</label>
                 <input
                   type="text"
+                  data-store-profile-field="keywords"
                   value={configStoreKeywords}
                   onChange={event => setConfigStoreKeywords(event.target.value)}
                   className="w-full bg-slate-950 border border-slate-850 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-slate-750"
