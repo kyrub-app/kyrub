@@ -95,7 +95,7 @@ const errorResponse = (response: Response, error: unknown): void => {
     return;
   }
   if (
-    /não encontrado|não está pronto|não é uma entrega|já aceitou|já foi aceita|somente o entregador|precisa estar aceita|confirme a coleta/i.test(
+    /não encontrado|não está pronto|não é uma entrega|entregador próprio|já aceitou|já foi aceita|somente o entregador|precisa estar aceita|confirme a coleta/i.test(
       message
     )
   ) {
@@ -118,8 +118,12 @@ export const publishKyrubDeliveryOpportunity = async (
   if (order.fulfillmentType !== 'delivery') {
     throw new Error('Este pedido não é uma entrega.');
   }
-  if (!['ready', 'out_for_delivery'].includes(clean(order.status))) {
-    throw new Error('O pedido ainda não está pronto para entrega.');
+  if (clean(order.deliveryProvider) !== 'kyrub') {
+    throw new Error('Este pedido está configurado para entregador próprio.');
+  }
+  const orderStatus = clean(order.status);
+  if (!['preparing', 'ready', 'out_for_delivery'].includes(orderStatus)) {
+    throw new Error('O pedido ainda não iniciou o preparo para entrega.');
   }
 
   const storeSnapshot = await adminDb.doc(`users/${tenantId}/stores/${tenantId}`).get();
@@ -140,6 +144,7 @@ export const publishKyrubDeliveryOpportunity = async (
     source: 'kyrub-order',
     sourceOrderId: orderId,
     storeId: tenantId,
+    orderStatus,
     from: clean(store?.address) || clean(store?.name) || 'Estabelecimento Kyrub',
     to: deliveryAddress,
     distance: finite(order.distance),
@@ -252,6 +257,23 @@ export const updateKyrubDeliveryStatus = async (
       if (currentStatus === 'delivering') return;
       if (currentStatus !== 'accepted') {
         throw new Error('A entrega precisa estar aceita antes da coleta.');
+      }
+      if (clean(delivery.source) === 'kyrub-order') {
+        const storeId = clean(delivery.storeId);
+        const sourceOrderId = clean(delivery.sourceOrderId);
+        if (!storeId || !sourceOrderId) {
+          throw new Error('O pedido vinculado à entrega não foi encontrado.');
+        }
+        const orderSnapshot = await transaction.get(
+          adminDb.doc(orderPath(storeId, sourceOrderId))
+        );
+        const liveOrderStatus = clean(orderSnapshot.data()?.status);
+        if (!['ready', 'out_for_delivery'].includes(liveOrderStatus)) {
+          throw new Error('O pedido ainda não está pronto para coleta.');
+        }
+        transaction.update(deliveryReference, {
+          orderStatus: liveOrderStatus,
+        });
       }
       transaction.update(claimReference, {
         status: 'delivering',
