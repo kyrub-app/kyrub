@@ -12,34 +12,44 @@ interface CourierGoogleMapProps {
   destination: string;
 }
 
-declare global {
-  interface Window {
-    google?: {
-      maps?: {
-        importLibrary?: (library: string) => Promise<Record<string, unknown>>;
-      };
-    };
-    __kyrubGoogleMapsPromise?: Promise<void>;
-  }
-}
+type GoogleMapsImportLibrary = (
+  library: string
+) => Promise<Record<string, unknown>>;
+
+type KyrubMapsWindow = Window & {
+  __kyrubGoogleMapsPromise?: Promise<void>;
+  [key: string]: unknown;
+};
 
 const mapsApiKey = (): string =>
   String(import.meta.env.VITE_GOOGLE_MAPS_API_KEY ?? '').trim();
 
+const googleMapsImportLibrary = (): GoogleMapsImportLibrary | null => {
+  const google = (window as unknown as { google?: unknown }).google;
+  if (!google || typeof google !== 'object') return null;
+  const maps = (google as { maps?: unknown }).maps;
+  if (!maps || typeof maps !== 'object') return null;
+  const importLibrary = (maps as { importLibrary?: unknown }).importLibrary;
+  return typeof importLibrary === 'function'
+    ? importLibrary as GoogleMapsImportLibrary
+    : null;
+};
+
 const loadGoogleMaps = async (): Promise<boolean> => {
   const key = mapsApiKey();
   if (!key) return false;
-  if (window.google?.maps?.importLibrary) return true;
-  if (window.__kyrubGoogleMapsPromise) {
-    await window.__kyrubGoogleMapsPromise;
-    return Boolean(window.google?.maps?.importLibrary);
+  if (googleMapsImportLibrary()) return true;
+
+  const kyrubWindow = window as unknown as KyrubMapsWindow;
+  if (kyrubWindow.__kyrubGoogleMapsPromise) {
+    await kyrubWindow.__kyrubGoogleMapsPromise;
+    return Boolean(googleMapsImportLibrary());
   }
 
-  window.__kyrubGoogleMapsPromise = new Promise<void>((resolve, reject) => {
+  kyrubWindow.__kyrubGoogleMapsPromise = new Promise<void>((resolve, reject) => {
     const callbackName = `__kyrubMapsReady_${Date.now()}`;
-    const callbackWindow = window as Window & Record<string, unknown>;
-    callbackWindow[callbackName] = () => {
-      delete callbackWindow[callbackName];
+    kyrubWindow[callbackName] = () => {
+      delete kyrubWindow[callbackName];
       resolve();
     };
 
@@ -48,17 +58,17 @@ const loadGoogleMaps = async (): Promise<boolean> => {
     script.async = true;
     script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(key)}&v=weekly&loading=async&callback=${encodeURIComponent(callbackName)}`;
     script.onerror = () => {
-      delete callbackWindow[callbackName];
+      delete kyrubWindow[callbackName];
       reject(new Error('Google Maps não pôde ser carregado.'));
     };
     document.head.appendChild(script);
   });
 
   try {
-    await window.__kyrubGoogleMapsPromise;
-    return Boolean(window.google?.maps?.importLibrary);
+    await kyrubWindow.__kyrubGoogleMapsPromise;
+    return Boolean(googleMapsImportLibrary());
   } catch {
-    window.__kyrubGoogleMapsPromise = undefined;
+    kyrubWindow.__kyrubGoogleMapsPromise = undefined;
     return false;
   }
 };
@@ -89,10 +99,10 @@ export function CourierGoogleMap({
     void loadGoogleMaps().then(async loaded => {
       if (cancelled) return;
       setMapsAvailable(loaded);
-      if (!loaded || !window.google?.maps?.importLibrary || !containerRef.current) {
-        return;
-      }
-      const library = await window.google.maps.importLibrary('maps') as {
+      const importLibrary = googleMapsImportLibrary();
+      if (!loaded || !importLibrary || !containerRef.current) return;
+
+      const library = await importLibrary('maps') as {
         Map?: new (element: HTMLElement, options: Record<string, unknown>) => any;
       };
       if (cancelled || !library.Map || !containerRef.current) return;
