@@ -5,9 +5,12 @@ import type {
   CustomerOrderStatus,
 } from './customerOrders';
 
+export type OrderDeliveryProvider = 'kyrub' | 'merchant';
+
 export interface OrderDecision {
   reason?: string;
   alternative?: string;
+  deliveryProvider?: OrderDeliveryProvider;
 }
 
 export interface AttendanceReviewItem {
