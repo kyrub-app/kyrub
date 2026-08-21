@@ -33,6 +33,10 @@ import {
   createMarketplacePaymentIntent,
   mapMarketplaceCheckoutError,
 } from '../server/payments/paymentIntentRouter.js';
+import {
+  mapMercadoPagoWebhookError,
+  processMercadoPagoWebhook,
+} from '../server/payments/mercadoPagoWebhook.js';
 
 type HeaderValue = string | string[] | undefined;
 type QueryValue = string | string[] | undefined;
@@ -52,6 +56,9 @@ type ResponseLike = {
 
 const headerValue = (value: HeaderValue | QueryValue): string =>
   Array.isArray(value) ? value[0] ?? '' : value ?? '';
+
+const clean = (value: unknown): string =>
+  typeof value === 'string' ? value.trim() : String(value ?? '').trim();
 
 export default async function handler(
   request: RequestLike,
@@ -82,6 +89,23 @@ export default async function handler(
       response.status(result.status).json(result.body);
     } catch (error) {
       const mapped = mapMarketplaceCheckoutError(error);
+      response.status(mapped.status).json(mapped.body);
+    }
+    return;
+  }
+
+  if (transport === 'mercado-pago-webhook') {
+    try {
+      const body = request.body as { data?: { id?: unknown } } | undefined;
+      const dataId =
+        headerValue(request.query?.['data.id']) || clean(body?.data?.id);
+      const result = await processMercadoPagoWebhook({
+        headers: request.headers,
+        dataId,
+      });
+      response.status(200).json(result);
+    } catch (error) {
+      const mapped = mapMercadoPagoWebhookError(error);
       response.status(mapped.status).json(mapped.body);
     }
     return;
