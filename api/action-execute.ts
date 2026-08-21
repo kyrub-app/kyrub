@@ -29,12 +29,18 @@ import {
 } from '../server/actions/actionReceiptVerificationService.js';
 import { hydrateExecutablePlanCatalog } from '../server/admin/executablePlanCatalogService.js';
 import { reconcileStoreEntitlementFromAuthorization } from '../server/admin/storeEntitlementLifecycleService.js';
+import {
+  createMarketplacePaymentIntent,
+  mapMarketplaceCheckoutError,
+} from '../server/payments/paymentIntentRouter.js';
 
 type HeaderValue = string | string[] | undefined;
+type QueryValue = string | string[] | undefined;
 
 type RequestLike = {
   method?: string;
   headers: Record<string, HeaderValue>;
+  query?: Record<string, QueryValue>;
   body?: unknown;
 };
 
@@ -44,7 +50,7 @@ type ResponseLike = {
   json(body: unknown): void;
 };
 
-const headerValue = (value: HeaderValue): string =>
+const headerValue = (value: HeaderValue | QueryValue): string =>
   Array.isArray(value) ? value[0] ?? '' : value ?? '';
 
 export default async function handler(
@@ -62,11 +68,26 @@ export default async function handler(
     return;
   }
 
-  try {
-    const authorization = headerValue(
-      request.headers.authorization ?? request.headers.Authorization
-    );
+  const authorization = headerValue(
+    request.headers.authorization ?? request.headers.Authorization
+  );
+  const transport = headerValue(request.query?.transport);
 
+  if (transport === 'marketplace-payment-intent') {
+    try {
+      const result = await createMarketplacePaymentIntent(
+        authorization,
+        request.body
+      );
+      response.status(result.status).json(result.body);
+    } catch (error) {
+      const mapped = mapMarketplaceCheckoutError(error);
+      response.status(mapped.status).json(mapped.body);
+    }
+    return;
+  }
+
+  try {
     if (isKyrubActionReceiptVerificationRequest(request.body)) {
       const verification = await verifyAuthorizedKyrubActionReceipt(
         authorization,
