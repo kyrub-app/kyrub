@@ -1,6 +1,9 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import type { CanonicalPaymentIntent } from '../../src/utils/canonicalPaymentIntent';
-import type { PaymentProviderEventType, VerifiedPaymentProviderEvent } from '../../src/utils/paymentProvider';
+import type {
+  PaymentProviderEventType,
+  VerifiedPaymentProviderEvent,
+} from '../../src/utils/paymentProvider';
 
 const MERCADO_PAGO_API_BASE = 'https://api.mercadopago.com';
 
@@ -34,6 +37,12 @@ interface MercadoPagoPayment {
   };
 }
 
+export interface VerifiedMercadoPagoPaymentEvent
+  extends VerifiedPaymentProviderEvent {
+  kyrubStoreId: string;
+  kyrubPaymentId: string;
+}
+
 const clean = (value: unknown): string =>
   typeof value === 'string' ? value.trim() : String(value ?? '').trim();
 
@@ -41,7 +50,8 @@ const accessToken = (): string => clean(process.env.MERCADO_PAGO_ACCESS_TOKEN);
 const webhookSecret = (): string => clean(process.env.MERCADO_PAGO_WEBHOOK_SECRET);
 
 export const isMercadoPagoPixConfigured = (): boolean => Boolean(accessToken());
-export const isMercadoPagoWebhookConfigured = (): boolean => Boolean(webhookSecret() && accessToken());
+export const isMercadoPagoWebhookConfigured = (): boolean =>
+  Boolean(webhookSecret() && accessToken());
 
 const mercadoPagoRequest = async <T>(
   path: string,
@@ -60,9 +70,11 @@ const mercadoPagoRequest = async <T>(
     },
   });
 
-  const payload = await response.json().catch(() => ({})) as T & Record<string, unknown>;
+  const payload = (await response.json().catch(() => ({}))) as T &
+    Record<string, unknown>;
   if (!response.ok) {
-    const message = clean(payload.message) || clean(payload.error) || `HTTP_${response.status}`;
+    const message =
+      clean(payload.message) || clean(payload.error) || `HTTP_${response.status}`;
     throw new Error(`MERCADO_PAGO_API_ERROR:${message}`);
   }
   return payload;
@@ -101,14 +113,18 @@ export const createMercadoPagoPixPayment = async (input: {
 export const getMercadoPagoPayment = async (
   providerPaymentId: string
 ): Promise<MercadoPagoPayment> =>
-  mercadoPagoRequest<MercadoPagoPayment>(`/v1/payments/${encodeURIComponent(providerPaymentId)}`);
+  mercadoPagoRequest<MercadoPagoPayment>(
+    `/v1/payments/${encodeURIComponent(providerPaymentId)}`
+  );
 
 export const getMercadoPagoPixCheckout = async (
   providerPaymentId: string
 ): Promise<MercadoPagoPixCheckout> =>
   normalizePixCheckout(await getMercadoPagoPayment(providerPaymentId));
 
-const normalizePixCheckout = (payment: MercadoPagoPayment): MercadoPagoPixCheckout => {
+const normalizePixCheckout = (
+  payment: MercadoPagoPayment
+): MercadoPagoPixCheckout => {
   const providerPaymentId = clean(payment.id);
   if (!providerPaymentId) throw new Error('MERCADO_PAGO_PAYMENT_ID_MISSING');
   const transactionData = payment.point_of_interaction?.transaction_data;
@@ -127,7 +143,8 @@ const headerValue = (
   headers: Record<string, string | string[] | undefined>,
   name: string
 ): string => {
-  const found = headers[name] ?? headers[name.toLowerCase()] ?? headers[name.toUpperCase()];
+  const found =
+    headers[name] ?? headers[name.toLowerCase()] ?? headers[name.toUpperCase()];
   return Array.isArray(found) ? found[0] ?? '' : found ?? '';
 };
 
@@ -145,7 +162,12 @@ export const verifyMercadoPagoWebhookSignature = (input: {
     xSignature.split(',').flatMap(part => {
       const separator = part.indexOf('=');
       if (separator < 0) return [];
-      return [[part.slice(0, separator).trim(), part.slice(separator + 1).trim()] as const];
+      return [
+        [
+          part.slice(0, separator).trim(),
+          part.slice(separator + 1).trim(),
+        ] as const,
+      ];
     })
   );
   const timestamp = parts.get('ts') ?? '';
@@ -160,15 +182,22 @@ export const verifyMercadoPagoWebhookSignature = (input: {
     xRequestId ? `request-id:${xRequestId};` : '',
     `ts:${timestamp};`,
   ].join('');
-  const expectedHash = createHmac('sha256', secret).update(manifest).digest('hex');
+  const expectedHash = createHmac('sha256', secret)
+    .update(manifest)
+    .digest('hex');
   const expected = Buffer.from(expectedHash, 'hex');
   const provided = Buffer.from(providedHash, 'hex');
-  if (expected.length !== provided.length || !timingSafeEqual(expected, provided)) {
+  if (
+    expected.length !== provided.length ||
+    !timingSafeEqual(expected, provided)
+  ) {
     throw new Error('MERCADO_PAGO_SIGNATURE_INVALID');
   }
 };
 
-const eventTypeForPayment = (payment: MercadoPagoPayment): PaymentProviderEventType | null => {
+const eventTypeForPayment = (
+  payment: MercadoPagoPayment
+): PaymentProviderEventType | null => {
   const status = clean(payment.status).toLowerCase();
   const detail = clean(payment.status_detail).toLowerCase();
   if (status === 'approved') return 'payment.paid';
@@ -176,25 +205,40 @@ const eventTypeForPayment = (payment: MercadoPagoPayment): PaymentProviderEventT
   if (status === 'cancelled') {
     return detail.includes('expired') ? 'payment.expired' : 'payment.failed';
   }
-  if (status === 'refunded' || status === 'charged_back') return 'refund.succeeded';
+  if (status === 'refunded' || status === 'charged_back') {
+    return 'refund.succeeded';
+  }
   return null;
 };
 
 export const verifiedMercadoPagoPaymentEvent = async (input: {
   headers: Record<string, string | string[] | undefined>;
   dataId: string;
-}): Promise<VerifiedPaymentProviderEvent | null> => {
+}): Promise<VerifiedMercadoPagoPaymentEvent | null> => {
   verifyMercadoPagoWebhookSignature(input);
   const payment = await getMercadoPagoPayment(input.dataId);
   const eventType = eventTypeForPayment(payment);
   if (!eventType) return null;
 
   const metadata = payment.metadata ?? {};
-  const paymentIntentId = clean(metadata.kyrub_payment_intent_id) || clean(payment.external_reference);
+  const paymentIntentId =
+    clean(metadata.kyrub_payment_intent_id) || clean(payment.external_reference);
+  const kyrubStoreId = clean(metadata.kyrub_store_id);
+  const kyrubPaymentId = clean(metadata.kyrub_payment_id);
   const providerPaymentId = clean(payment.id);
   const amount = Number(payment.transaction_amount);
-  const occurredAt = clean(payment.date_last_updated) || clean(payment.date_created) || new Date().toISOString();
-  if (!paymentIntentId || !providerPaymentId || !Number.isFinite(amount) || amount <= 0) {
+  const occurredAt =
+    clean(payment.date_last_updated) ||
+    clean(payment.date_created) ||
+    new Date().toISOString();
+  if (
+    !paymentIntentId ||
+    !kyrubStoreId ||
+    !kyrubPaymentId ||
+    !providerPaymentId ||
+    !Number.isFinite(amount) ||
+    amount <= 0
+  ) {
     throw new Error('MERCADO_PAGO_PAYMENT_METADATA_INVALID');
   }
 
@@ -209,18 +253,7 @@ export const verifiedMercadoPagoPaymentEvent = async (input: {
     method: 'pix',
     occurredAt,
     signatureVerified: true,
-  };
-};
-
-export const mercadoPagoKyrubMetadata = (payment: MercadoPagoPayment): {
-  storeId: string;
-  paymentId: string;
-  paymentIntentId: string;
-} => {
-  const metadata = payment.metadata ?? {};
-  return {
-    storeId: clean(metadata.kyrub_store_id),
-    paymentId: clean(metadata.kyrub_payment_id),
-    paymentIntentId: clean(metadata.kyrub_payment_intent_id) || clean(payment.external_reference),
+    kyrubStoreId,
+    kyrubPaymentId,
   };
 };
