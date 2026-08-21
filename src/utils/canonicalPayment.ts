@@ -88,13 +88,16 @@ export const assertPaymentStatusTransition = (
 
 export const isPaymentAuthoritativelyPaid = (
   status: PaymentStatus
-): boolean => status === 'paid' || status === 'refund_requested' || status === 'refund_processing';
+): boolean =>
+  status === 'paid' ||
+  status === 'refund_requested' ||
+  status === 'refund_processing';
 
 export const shouldReleaseMarketplaceOrder = (input: {
   context: PaymentContext;
   status: PaymentStatus;
 }): boolean =>
-  input.context !== 'marketplace' || isPaymentAuthoritativelyPaid(input.status);
+  input.context !== 'marketplace' || input.status === 'paid';
 
 export const isPaymentTerminal = (status: PaymentStatus): boolean =>
   ['failed', 'expired', 'refunded'].includes(status);
