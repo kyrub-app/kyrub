@@ -11,6 +11,7 @@ import { CashWorkspace } from './store/CashWorkspace';
 import { OperationalDualWriteBridge } from './store/OperationalDualWriteBridge';
 import { ProductEditorModal } from './store/ProductEditorModal';
 import { ProductInventoryWorkspace } from './store/ProductInventoryWorkspace';
+import { StoreDeliveryTrackingBridge } from './store/StoreDeliveryTrackingBridge';
 import type { Product } from '../types';
 import { auth } from '../utils/firebase';
 import {
@@ -509,12 +510,15 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = props => {
         )}
       {ordersHost &&
         createPortal(
-          <CustomerOrderInbox
-            orders={kdsOrders}
-            busyOrderId={busyOrderId}
-            attendanceSpaces={atendimentoSpaces}
-            onChangeStatus={handleChangeOrderStatus}
-          />,
+          <>
+            <StoreDeliveryTrackingBridge storeId={activeRetailerId} />
+            <CustomerOrderInbox
+              orders={kdsOrders}
+              busyOrderId={busyOrderId}
+              attendanceSpaces={atendimentoSpaces}
+              onChangeStatus={handleChangeOrderStatus}
+            />
+          </>,
           ordersHost
         )}
       {selectedTableCode && (

@@ -144,6 +144,7 @@ export const publishKyrubDeliveryOpportunity = async (
     source: 'kyrub-order',
     sourceOrderId: orderId,
     storeId: tenantId,
+    buyerId: clean(order.buyerId),
     orderStatus,
     from: clean(store?.address) || clean(store?.name) || 'Estabelecimento Kyrub',
     to: deliveryAddress,
