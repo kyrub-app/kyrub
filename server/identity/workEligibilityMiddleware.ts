@@ -50,6 +50,12 @@ const requiredProfile = (request: Request): ServerWorkProfile | null => {
   ) {
     return 'courier';
   }
+  if (
+    request.method === 'POST'
+    && /^\/[^/]+\/(?:location|stop)\/?$/.test(request.path)
+  ) {
+    return 'courier';
+  }
   return null;
 };
 
