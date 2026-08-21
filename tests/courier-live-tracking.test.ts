@@ -3,6 +3,10 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
 const serverSource = readFileSync('server.ts', 'utf8');
+const eligibilitySource = readFileSync(
+  'server/identity/workEligibilityMiddleware.ts',
+  'utf8'
+);
 const trackingRouterSource = readFileSync(
   'server/delivery/deliveryTrackingRouter.ts',
   'utf8'
@@ -17,9 +21,11 @@ const mapSource = readFileSync(
 );
 const appSource = readFileSync('src/App.tsx', 'utf8');
 
-test('courier location endpoint is mounted behind delivery work eligibility', () => {
+test('courier tracking router is mounted and tracking writes require approved courier identity', () => {
   assert.match(serverSource, /\/api\/delivery-tracking/);
   assert.match(serverSource, /enforceDeliveryWorkEligibility,[\s\S]*createDeliveryTrackingRouter/);
+  assert.match(eligibilitySource, /\(\?:location\|stop\)/);
+  assert.match(eligibilitySource, /return 'courier'/);
 });
 
 test('precise courier position is written to a private tracking collection', () => {
@@ -28,6 +34,32 @@ test('precise courier position is written to a private tracking collection', () 
   assert.match(trackingRouterSource, /Este entregador não é o responsável/);
   assert.match(trackingRouterSource, /\['accepted', 'delivering'\]/);
   assert.doesNotMatch(trackingRouterSource, /hub\/renda\/deliveries.*latitude/);
+});
+
+test('buyer, merchant and assigned courier can read active tracking while strangers are forbidden', () => {
+  assert.match(trackingRouterSource, /router\.get\('\/:deliveryId\/location'/);
+  assert.match(trackingRouterSource, /order\.buyerId/);
+  assert.match(
+    trackingRouterSource,
+    /actorId === storeId \|\| actorId === buyerId \|\| actorId === courierId/
+  );
+  assert.match(trackingRouterSource, /TRACKING_FORBIDDEN/);
+  assert.match(trackingRouterSource, /response\.status\(403\)/);
+});
+
+test('inactive tracking never returns stale coordinates', () => {
+  assert.match(
+    trackingRouterSource,
+    /deliveryInProgress[\s\S]*tracking\?\.active === true/
+  );
+  assert.match(
+    trackingRouterSource,
+    /if \(!active\) \{[\s\S]*json\(\{ deliveryId, active: false \}\)/
+  );
+  const inactiveBranch = trackingRouterSource.match(
+    /if \(!active\) \{[\s\S]*?return;\n\s*\}/
+  )?.[0] ?? '';
+  assert.doesNotMatch(inactiveBranch, /latitude|longitude/);
 });
 
 test('tracking requires explicit browser geolocation permission and opt-in', () => {
