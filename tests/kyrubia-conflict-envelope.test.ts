@@ -9,6 +9,7 @@ import './kyrubia-preview-authorization.test';
 import './kyrubia-bounded-autonomy-lease.test';
 import './kyrubia-correlation-spine.test';
 import './kyrubia-reconciliation-recovery.test';
+import './kyrubia-autonomy-control-plane.test';
 import {
   assertKyrubExpectedState,
   buildKyrubConflictEnvelope,
@@ -22,7 +23,6 @@ test('matching expected fields do not produce a conflict', () => {
     observed: { name: 'X-Burger', stock: 8, privateField: 'not-projected' },
     detectedAt: new Date('2026-08-21T12:00:00.000Z'),
   });
-
   assert.equal(conflict, null);
 });
 
@@ -30,14 +30,9 @@ test('state changes produce a bounded STALE_PROPOSAL envelope', () => {
   const conflict = buildKyrubConflictEnvelope({
     target: { entityType: 'product', entityId: 'product-1' },
     expected: { name: 'X-Burger', stock: 8 },
-    observed: {
-      name: 'X-Burger Especial',
-      stock: 7,
-      supplierSecret: 'must-never-leak',
-    },
+    observed: { name: 'X-Burger Especial', stock: 7, supplierSecret: 'must-never-leak' },
     detectedAt: new Date('2026-08-21T12:01:00.000Z'),
   });
-
   assert.ok(conflict);
   assert.equal(conflict.code, 'STALE_PROPOSAL');
   assert.equal(conflict.reason, 'STATE_CHANGED');
@@ -56,7 +51,6 @@ test('missing entities use the same conflict contract', () => {
     observed: null,
     detectedAt: new Date('2026-08-21T12:02:00.000Z'),
   });
-
   assert.ok(conflict);
   assert.equal(conflict.reason, 'ENTITY_MISSING');
   assert.deepEqual(conflict.observed, { status: null });
