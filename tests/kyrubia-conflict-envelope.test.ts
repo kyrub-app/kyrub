@@ -6,6 +6,7 @@ import './kyrubia-domain-event-ledger.test';
 import './kyrubia-observe-explain.test';
 import './kyrubia-proposal-preview.test';
 import './kyrubia-preview-authorization.test';
+import './kyrubia-bounded-autonomy-lease.test';
 import {
   assertKyrubExpectedState,
   buildKyrubConflictEnvelope,
