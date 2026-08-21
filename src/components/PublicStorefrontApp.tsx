@@ -23,6 +23,7 @@ import { subscribeToPublishedStorefrontBySlug } from '../utils/publicStorefront'
 import { OPEN_PUBLIC_STOREFRONT_INFO_EVENT } from '../utils/storefrontEvents';
 import { StorefrontPanel } from './StorefrontPanel';
 import { B2CCartDrawer } from './modals/B2CCartDrawer';
+import { BuyerDeliveryTrackingBridge } from './store/BuyerDeliveryTrackingBridge';
 
 interface PublicStorefrontAppProps {
   slug: string;
@@ -378,6 +379,8 @@ export function PublicStorefrontApp({ slug }: PublicStorefrontAppProps) {
           </button>
         </div>
       </header>
+
+      <BuyerDeliveryTrackingBridge storeId={store.id} buyerId={user.uid} />
 
       <main className="mx-auto w-full max-w-5xl p-3 pb-10 sm:p-5">
         <StorefrontPanel
