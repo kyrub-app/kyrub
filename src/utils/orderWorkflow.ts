@@ -36,6 +36,10 @@ export interface OrderOriginOption {
 const normalize = (value: string): string =>
   value.trim().toLocaleUpperCase('pt-BR');
 
+const isNinetyNineFoodOrder = (order: CustomerOrder): boolean =>
+  order.buyerId.toLocaleLowerCase('pt-BR').startsWith('99food:') ||
+  order.operatorName.toLocaleLowerCase('pt-BR').includes('99food');
+
 export const isPendingAttendanceApproval = (order: CustomerOrder): boolean =>
   order.source === 'customer' &&
   order.fulfillmentType === 'dine_in' &&
@@ -43,8 +47,22 @@ export const isPendingAttendanceApproval = (order: CustomerOrder): boolean =>
   order.status === 'pending' &&
   !order.operatorId.trim();
 
-export const isOrderVisibleInKds = (order: CustomerOrder): boolean =>
-  !isPendingAttendanceApproval(order);
+/**
+ * The KDS is an operational surface, not a payment decision-maker.
+ *
+ * - Dine-in self-service keeps its existing staff-approval gate.
+ * - Staff/internal and externally-ingested 99Food orders retain their own
+ *   authoritative ingestion/payment semantics.
+ * - Kyrub marketplace delivery/pickup orders are only operationally visible
+ *   after the backend has materialized them as paid.
+ */
+export const isOrderVisibleInKds = (order: CustomerOrder): boolean => {
+  if (isPendingAttendanceApproval(order)) return false;
+  if (order.source !== 'customer') return true;
+  if (order.fulfillmentType === 'dine_in') return true;
+  if (isNinetyNineFoodOrder(order)) return true;
+  return order.paymentStatus === 'paid';
+};
 
 export const getPendingAttendanceOrders = (
   orders: CustomerOrder[],
@@ -75,10 +93,7 @@ export const getOrderOrigin = (
   order: CustomerOrder,
   attendanceSpaces: string[] = []
 ): OrderOriginOption => {
-  const buyerId = order.buyerId.toLocaleLowerCase('pt-BR');
-  const operatorName = order.operatorName.toLocaleLowerCase('pt-BR');
-
-  if (buyerId.startsWith('99food:') || operatorName.includes('99food')) {
+  if (isNinetyNineFoodOrder(order)) {
     return { id: 'marketplace:99food', label: '99Food', group: 'marketplace' };
   }
 
