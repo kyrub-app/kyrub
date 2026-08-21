@@ -11,10 +11,31 @@ const trackingRouterSource = readFileSync(
   'server/delivery/deliveryTrackingRouter.ts',
   'utf8'
 );
+const opportunitySource = readFileSync(
+  'server/delivery/deliveryOpportunityRouter.ts',
+  'utf8'
+);
 const trackingBridgeSource = readFileSync(
   'src/components/store/CourierLiveTrackingBridge.tsx',
   'utf8'
 );
+const viewerSource = readFileSync(
+  'src/components/store/AuthorizedDeliveryTrackingViewer.tsx',
+  'utf8'
+);
+const buyerViewerSource = readFileSync(
+  'src/components/store/BuyerDeliveryTrackingBridge.tsx',
+  'utf8'
+);
+const merchantViewerSource = readFileSync(
+  'src/components/store/StoreDeliveryTrackingBridge.tsx',
+  'utf8'
+);
+const storefrontSource = readFileSync(
+  'src/components/PublicStorefrontApp.tsx',
+  'utf8'
+);
+const retailerSource = readFileSync('src/components/RetailerPanel.tsx', 'utf8');
 const mapSource = readFileSync(
   'src/components/store/CourierGoogleMap.tsx',
   'utf8'
@@ -74,6 +95,23 @@ test('tracking bridge stops when assigned delivery is no longer active', () => {
   assert.match(trackingBridgeSource, /assignedDeliveries\.some/);
   assert.match(trackingBridgeSource, /clearWatch/);
   assert.match(trackingBridgeSource, /stopRemoteTracking/);
+});
+
+test('buyer identity is attached to the delivery opportunity without exposing precise GPS', () => {
+  assert.match(opportunitySource, /buyerId: clean\(order\.buyerId\)/);
+  assert.doesNotMatch(opportunitySource, /latitude:|longitude:/);
+});
+
+test('buyer and merchant viewers consume only the authorized tracking endpoint', () => {
+  assert.match(viewerSource, /\/api\/delivery-tracking\/\$\{encodeURIComponent\(deliveryId\)\}\/location/);
+  assert.match(viewerSource, /authorization: `Bearer \$\{token\}`/);
+  assert.match(viewerSource, /REFRESH_INTERVAL_MS = 5_000/);
+  assert.match(viewerSource, /CourierGoogleMap/);
+  assert.doesNotMatch(viewerSource, /deliveryTracking/);
+  assert.match(buyerViewerSource, /data\.buyerId/);
+  assert.match(merchantViewerSource, /data\.storeId/);
+  assert.match(storefrontSource, /<BuyerDeliveryTrackingBridge storeId=\{store\.id\} buyerId=\{user\.uid\} \/>/);
+  assert.match(retailerSource, /<StoreDeliveryTrackingBridge storeId=\{activeRetailerId\} \/>/);
 });
 
 test('Google Maps is optional and only loads from configured environment key', () => {
