@@ -1,7 +1,7 @@
 import type { CanonicalPayment, PaymentStatus } from './canonicalPayment';
 import type { CanonicalPaymentIntent } from './canonicalPaymentIntent';
-import type { CanonicalRefundRequest } from './canonicalRefund';
-import type { SettlementPlan } from './canonicalSettlement';
+import type { PaymentRefundRequest } from './paymentRefund';
+import type { CanonicalSettlementPlan } from './paymentSettlement';
 
 export type PaymentHealthIssueCode =
   | 'payment_pending_too_long'
@@ -27,8 +27,8 @@ export const inspectPaymentHealth = (input: {
   payment: CanonicalPayment;
   intent?: CanonicalPaymentIntent | null;
   orderExists?: boolean;
-  refund?: CanonicalRefundRequest | null;
-  settlement?: SettlementPlan | null;
+  refund?: PaymentRefundRequest | null;
+  settlement?: CanonicalSettlementPlan | null;
   deliveryCompleted?: boolean;
   now?: number;
   pendingThresholdMs?: number;
@@ -61,7 +61,7 @@ export const inspectPaymentHealth = (input: {
   }
 
   if (input.refund) {
-    if (input.refund.status === 'failed') {
+    if (input.payment.status === 'refund_failed') {
       issues.push({
         code: 'refund_failed',
         severity: 'critical',
@@ -69,7 +69,7 @@ export const inspectPaymentHealth = (input: {
         entityId: input.refund.id,
       });
     } else if (
-      input.refund.status === 'requested' &&
+      input.payment.status === 'refund_requested' &&
       ageMs(input.refund.createdAt, now) > refundThresholdMs
     ) {
       issues.push({
@@ -82,15 +82,15 @@ export const inspectPaymentHealth = (input: {
   }
 
   if (input.deliveryCompleted && input.settlement) {
-    const courier = input.settlement.allocations.find(
-      allocation => allocation.recipientType === 'courier'
+    const courier = input.settlement.entries.find(
+      entry => entry.recipientType === 'courier'
     );
     if (courier && courier.status === 'blocked') {
       issues.push({
         code: 'courier_still_blocked_after_delivery',
         severity: 'critical',
         message: 'Parcela do entregador segue bloqueada após entrega concluída.',
-        entityId: input.settlement.id,
+        entityId: `${input.settlement.paymentId}:${input.settlement.orderId}`,
       });
     }
   }
