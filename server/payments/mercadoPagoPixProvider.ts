@@ -98,6 +98,7 @@ export const createMercadoPagoPixPayment = async (input: {
       description: `Pedido Kyrub ${intent.orderDraft.draftId}`,
       payment_method_id: 'pix',
       payer: { email: payerEmail },
+      date_of_expiration: intent.expiresAt,
       external_reference: intent.id,
       metadata: {
         kyrub_store_id: intent.storeId,
