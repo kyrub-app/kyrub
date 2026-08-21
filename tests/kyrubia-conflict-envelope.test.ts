@@ -4,6 +4,7 @@ import './kyrubia-evidence-provenance.test';
 import './kyrubia-autonomy-registry.test';
 import './kyrubia-domain-event-ledger.test';
 import './kyrubia-observe-explain.test';
+import './kyrubia-proposal-preview.test';
 import {
   assertKyrubExpectedState,
   buildKyrubConflictEnvelope,
