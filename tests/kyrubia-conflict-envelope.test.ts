@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import './kyrubia-evidence-provenance.test';
 import {
   assertKyrubExpectedState,
   buildKyrubConflictEnvelope,
