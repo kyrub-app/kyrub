@@ -144,6 +144,7 @@ export const publishKyrubDeliveryOpportunity = async (
     source: 'kyrub-order',
     sourceOrderId: orderId,
     storeId: tenantId,
+    buyerId: clean(order.buyerId),
     orderStatus,
     from: clean(store?.address) || clean(store?.name) || 'Estabelecimento Kyrub',
     to: deliveryAddress,
@@ -219,29 +220,23 @@ export const updateKyrubDeliveryStatus = async (
       if (currentStatus !== 'available') {
         throw new Error('Esta entrega já foi aceita.');
       }
-
       transaction.create(claimReference, {
-        id: normalizedId,
-        deliveryJobId: normalizedId,
+        deliveryId: normalizedId,
         courierId: actor.uid,
         courierName: actor.name,
-        status: 'accepted',
         acceptedAt: FieldValue.serverTimestamp(),
-        updatedAt: FieldValue.serverTimestamp(),
       });
       transaction.update(deliveryReference, {
         status: 'accepted',
         acceptedBy: actor.uid,
         acceptedByName: actor.name,
         acceptedAt: FieldValue.serverTimestamp(),
-        fallbackStatus: 'accepted_by_kyrub',
         updatedAt: FieldValue.serverTimestamp(),
       });
       if (scheduleSnapshot.exists) {
         transaction.update(scheduleReference, {
           status: 'cancelled',
           cancelledReason: 'accepted_by_kyrub',
-          acceptedBy: actor.uid,
           availableAt: FieldValue.delete(),
           updatedAt: FieldValue.serverTimestamp(),
         });
@@ -250,36 +245,12 @@ export const updateKyrubDeliveryStatus = async (
     }
 
     if (!claimSnapshot.exists || courierId !== actor.uid) {
-      throw new Error('Somente o entregador responsável pode atualizar a entrega.');
+      throw new Error('Somente o entregador responsável pode atualizar esta entrega.');
     }
-
     if (status === 'delivering') {
-      if (currentStatus === 'delivering') return;
-      if (currentStatus !== 'accepted') {
+      if (currentStatus !== 'accepted' && currentStatus !== 'delivering') {
         throw new Error('A entrega precisa estar aceita antes da coleta.');
       }
-      if (clean(delivery.source) === 'kyrub-order') {
-        const storeId = clean(delivery.storeId);
-        const sourceOrderId = clean(delivery.sourceOrderId);
-        if (!storeId || !sourceOrderId) {
-          throw new Error('O pedido vinculado à entrega não foi encontrado.');
-        }
-        const orderSnapshot = await transaction.get(
-          adminDb.doc(orderPath(storeId, sourceOrderId))
-        );
-        const liveOrderStatus = clean(orderSnapshot.data()?.status);
-        if (!['ready', 'out_for_delivery'].includes(liveOrderStatus)) {
-          throw new Error('O pedido ainda não está pronto para coleta.');
-        }
-        transaction.update(deliveryReference, {
-          orderStatus: liveOrderStatus,
-        });
-      }
-      transaction.update(claimReference, {
-        status: 'delivering',
-        collectedAt: FieldValue.serverTimestamp(),
-        updatedAt: FieldValue.serverTimestamp(),
-      });
       transaction.update(deliveryReference, {
         status: 'delivering',
         collectedAt: FieldValue.serverTimestamp(),
@@ -288,15 +259,9 @@ export const updateKyrubDeliveryStatus = async (
       return;
     }
 
-    if (currentStatus === 'done') return;
-    if (currentStatus !== 'delivering') {
+    if (currentStatus !== 'delivering' && currentStatus !== 'done') {
       throw new Error('Confirme a coleta antes de concluir a entrega.');
     }
-    transaction.update(claimReference, {
-      status: 'done',
-      deliveredAt: FieldValue.serverTimestamp(),
-      updatedAt: FieldValue.serverTimestamp(),
-    });
     transaction.update(deliveryReference, {
       status: 'done',
       deliveredAt: FieldValue.serverTimestamp(),
