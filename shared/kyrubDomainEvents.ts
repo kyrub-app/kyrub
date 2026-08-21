@@ -44,9 +44,14 @@ export const normalizeKyrubDomainEventAttributes = (
   value: Record<string, unknown> = {}
 ): Record<string, KyrubDomainEventScalar> => Object.fromEntries(
   Object.entries(value)
-    .filter(([key, fieldValue]) => clean(key, 80) && scalar(fieldValue))
+    .filter((entry): entry is [string, KyrubDomainEventScalar] =>
+      Boolean(clean(entry[0], 80)) && scalar(entry[1])
+    )
     .slice(0, 32)
-    .map(([key, fieldValue]) => [clean(key, 80), fieldValue])
+    .map(([key, fieldValue]): [string, KyrubDomainEventScalar] => [
+      clean(key, 80),
+      fieldValue,
+    ])
     .sort(([left], [right]) => left.localeCompare(right))
 ) as Record<string, KyrubDomainEventScalar>;
 
