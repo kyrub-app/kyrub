@@ -1,5 +1,7 @@
 import type { User } from 'firebase/auth';
 import type { CartItem } from '../types';
+import { saveLastCustomerOrderId } from './customerOrders';
+import { dispatchMarketplacePixReady } from './marketplacePaymentEvents';
 
 export interface MarketplaceCheckoutIntentResult {
   paymentIntentId: string;
@@ -90,5 +92,13 @@ export const initiateMarketplaceCheckout = async (
     );
   }
 
-  return payload as unknown as MarketplaceCheckoutIntentResult;
+  const checkout = payload as unknown as MarketplaceCheckoutIntentResult;
+  if (typeof window !== 'undefined' && checkout.orderId) {
+    saveLastCustomerOrderId(localStorage, user.uid, storeId, checkout.orderId);
+  }
+  if (checkout.providerReady) {
+    dispatchMarketplacePixReady(checkout);
+  }
+
+  return checkout;
 };
