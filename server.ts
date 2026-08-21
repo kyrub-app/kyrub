@@ -16,6 +16,7 @@ import { createOperationsHealthRouter } from "./server/admin/operationsHealthRou
 import { createOrderInventoryRouter } from "./server/inventory/orderInventoryRouter";
 import { createKyrubAiConsultantRouter } from "./server/ai/consultantRouter";
 import { createKyrubActionExecutionRouter } from "./server/actions/actionExecutionRouter";
+import { createPaymentIntentRouter } from "./server/payments/paymentIntentRouter";
 import { enforceDeliveryWorkEligibility } from "./server/identity/workEligibilityMiddleware";
 
 // Load environment variables
@@ -110,6 +111,12 @@ app.use(
   "/api/orders",
   integrationRateLimiter,
   createOrderInventoryRouter()
+);
+
+app.use(
+  "/api/payments",
+  integrationRateLimiter,
+  createPaymentIntentRouter()
 );
 
 app.use(
