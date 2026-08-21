@@ -8,6 +8,7 @@ import './kyrubia-proposal-preview.test';
 import './kyrubia-preview-authorization.test';
 import './kyrubia-bounded-autonomy-lease.test';
 import './kyrubia-correlation-spine.test';
+import './kyrubia-reconciliation-recovery.test';
 import {
   assertKyrubExpectedState,
   buildKyrubConflictEnvelope,
