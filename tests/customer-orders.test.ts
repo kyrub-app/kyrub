@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import './payment-ux-policy.test';
 import './marketplace-payment-intent-checkout.test';
+import './customer-storefront-order-e2e-contract.test';
 import type { CartItem, Product } from '../src/types';
 import {
   buildCustomerOrder,
