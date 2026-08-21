@@ -7,6 +7,10 @@ const attendanceReviewSource = readFileSync(
   'server/inventory/attendanceReviewService.ts',
   'utf8'
 );
+const paymentWebhookSource = readFileSync(
+  'server/payments/paymentWebhookProcessor.ts',
+  'utf8'
+);
 const approvalSource = readFileSync(
   'src/components/customer/AttendanceOrderApproval.tsx',
   'utf8'
@@ -24,6 +28,24 @@ test('self-service dine-in orders require staff approval before KDS', () => {
   assert.match(workflowSource, /!order\.operatorId\.trim\(\)/);
   assert.match(retailerSource, /isOrderVisibleInKds/);
   assert.match(retailerSource, /orders=\{kdsOrders\}/);
+});
+
+test('Kyrub marketplace delivery and pickup require paid status before KDS', () => {
+  assert.match(workflowSource, /order\.source !== 'customer'/);
+  assert.match(workflowSource, /order\.fulfillmentType === 'dine_in'/);
+  assert.match(workflowSource, /isNinetyNineFoodOrder\(order\)/);
+  assert.match(workflowSource, /order\.paymentStatus === 'paid'/);
+});
+
+test('authoritative paid webhook materializes the marketplace order transactionally', () => {
+  assert.match(paymentWebhookSource, /current\.context === 'marketplace'/);
+  assert.match(paymentWebhookSource, /PAYMENT_INTENT_NOT_FOUND/);
+  assert.match(paymentWebhookSource, /assertMarketplacePaymentIntentMatchesPayment/);
+  assert.match(paymentWebhookSource, /materializePaidMarketplaceOrder/);
+  assert.match(paymentWebhookSource, /effectiveStatus === 'paid'/);
+  assert.match(paymentWebhookSource, /transaction\.get\(orderRef\)/);
+  assert.match(paymentWebhookSource, /transaction\.set\(orderRef, operationalOrder\)/);
+  assert.match(paymentWebhookSource, /orderMaterialized/);
 });
 
 test('staff approval releases the order but leaves KDS acceptance pending', () => {
