@@ -13,6 +13,7 @@ import './financial-action-safety.test';
 import './kyrub-financial-profile.test';
 import './kyrub-payment-allocations.test';
 import './kyrub-delivery-completion.test';
+import './kyrub-omnichannel-source-registry.test';
 import {
   assertKyrubExpectedState,
   buildKyrubConflictEnvelope,
