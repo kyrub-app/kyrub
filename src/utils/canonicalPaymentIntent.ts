@@ -8,6 +8,9 @@ export interface PaymentIntentItem {
   quantity: number;
   unitPrice: number;
   total: number;
+  note?: string;
+  image?: string;
+  isService?: boolean;
 }
 
 export interface PaymentIntentOrderDraft {
@@ -74,6 +77,9 @@ export const normalizePaymentIntentItem = (
     quantity: item.quantity,
     unitPrice,
     total,
+    note: item.note?.trim() ?? '',
+    image: item.image?.trim() ?? '',
+    isService: item.isService === true,
   };
 };
 
