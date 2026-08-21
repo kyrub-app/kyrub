@@ -11,6 +11,7 @@ import './kyrubia-correlation-spine.test';
 import './kyrubia-reconciliation-recovery.test';
 import './financial-action-safety.test';
 import './kyrub-financial-profile.test';
+import './kyrub-payment-allocations.test';
 import {
   assertKyrubExpectedState,
   buildKyrubConflictEnvelope,
