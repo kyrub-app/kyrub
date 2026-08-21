@@ -23,6 +23,7 @@ import { subscribeToPublishedStorefrontBySlug } from '../utils/publicStorefront'
 import { OPEN_PUBLIC_STOREFRONT_INFO_EVENT } from '../utils/storefrontEvents';
 import { StorefrontPanel } from './StorefrontPanel';
 import { B2CCartDrawer } from './modals/B2CCartDrawer';
+import { PixPaymentOverlay } from './modals/PixPaymentOverlay';
 
 interface PublicStorefrontAppProps {
   slug: string;
@@ -405,6 +406,8 @@ export function PublicStorefrontApp({ slug }: PublicStorefrontAppProps) {
         buyerAddress={buyerAddress}
         setBuyerAddress={setBuyerAddress}
       />
+
+      <PixPaymentOverlay />
     </div>
   );
 }
