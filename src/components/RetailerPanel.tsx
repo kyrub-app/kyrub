@@ -11,6 +11,7 @@ import { CashWorkspace } from './store/CashWorkspace';
 import { OperationalDualWriteBridge } from './store/OperationalDualWriteBridge';
 import { ProductEditorModal } from './store/ProductEditorModal';
 import { ProductInventoryWorkspace } from './store/ProductInventoryWorkspace';
+import { StoreDeliveryTrackingBridge } from './store/StoreDeliveryTrackingBridge';
 import type { Product } from '../types';
 import { auth } from '../utils/firebase';
 import {
@@ -509,12 +510,15 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = props => {
         )}
       {ordersHost &&
         createPortal(
-          <CustomerOrderInbox
-            orders={kdsOrders}
-            busyOrderId={busyOrderId}
-            attendanceSpaces={atendimentoSpaces}
-            onChangeStatus={handleChangeOrderStatus}
-          />,
+          <>
+            <StoreDeliveryTrackingBridge storeId={activeRetailerId} />
+            <CustomerOrderInbox
+              orders={kdsOrders}
+              busyOrderId={busyOrderId}
+              attendanceSpaces={atendimentoSpaces}
+              onChangeStatus={handleChangeOrderStatus}
+            />
+          </>,
           ordersHost
         )}
       {selectedTableCode && (
@@ -558,40 +562,38 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = props => {
                     Excluir item
                   </span>
                   <h3 className="mt-1 text-lg font-black text-white">
-                    Remover “{deletingProduct.name}”?
+                    Excluir “{deletingProduct.name}”?
                   </h3>
+                  <p className="mt-2 text-[11px] leading-relaxed text-slate-400">
+                    O item deixará de aparecer no catálogo e na vitrine pública.
+                  </p>
                 </div>
               </div>
               <button
                 type="button"
-                onClick={() => setDeletingProduct(null)}
                 disabled={Boolean(busyProductId)}
-                className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-800 bg-slate-950 text-slate-500 disabled:opacity-40"
+                onClick={() => setDeletingProduct(null)}
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-800 bg-slate-950 text-slate-500 disabled:opacity-40"
                 aria-label="Fechar confirmação"
               >
                 <X className="h-4 w-4" />
               </button>
             </div>
 
-            <p className="mt-4 rounded-2xl border border-red-500/20 bg-red-500/[0.07] p-4 text-[10px] leading-relaxed text-red-100">
-              O item deixará de aparecer no estoque e na vitrine. Pedidos antigos continuarão preservando o nome, o preço e as quantidades registrados no momento da venda.
-            </p>
-
-            <div className="mt-5 grid grid-cols-2 gap-3">
+            <div className="mt-5 flex gap-2">
               <button
                 type="button"
-                onClick={() => setDeletingProduct(null)}
                 disabled={Boolean(busyProductId)}
-                className="min-h-11 rounded-xl border border-slate-700 bg-slate-950 px-4 text-[10px] font-black uppercase text-slate-300 disabled:opacity-40"
+                onClick={() => setDeletingProduct(null)}
+                className="min-h-11 flex-1 rounded-xl border border-slate-700 bg-slate-950 px-4 text-[10px] font-black uppercase text-slate-300 disabled:opacity-40"
               >
                 Cancelar
               </button>
               <button
                 type="button"
-                onClick={() => void handleConfirmDeleteProduct()}
                 disabled={Boolean(busyProductId)}
-                className="flex min-h-11 items-center justify-center gap-2 rounded-xl bg-red-500 px-4 text-[10px] font-black uppercase text-white disabled:opacity-40"
-                id="confirm-delete-product-button"
+                onClick={() => void handleConfirmDeleteProduct()}
+                className="flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-red-600 px-4 text-[10px] font-black uppercase text-white disabled:opacity-40"
               >
                 <Trash2 className="h-4 w-4" />
                 {busyProductId ? 'Excluindo...' : 'Excluir item'}
