@@ -562,38 +562,40 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = props => {
                     Excluir item
                   </span>
                   <h3 className="mt-1 text-lg font-black text-white">
-                    Excluir “{deletingProduct.name}”?
+                    Remover “{deletingProduct.name}”?
                   </h3>
-                  <p className="mt-2 text-[11px] leading-relaxed text-slate-400">
-                    O item deixará de aparecer no catálogo e na vitrine pública.
-                  </p>
                 </div>
               </div>
               <button
                 type="button"
-                disabled={Boolean(busyProductId)}
                 onClick={() => setDeletingProduct(null)}
-                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-800 bg-slate-950 text-slate-500 disabled:opacity-40"
+                disabled={Boolean(busyProductId)}
+                className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-800 bg-slate-950 text-slate-500 disabled:opacity-40"
                 aria-label="Fechar confirmação"
               >
                 <X className="h-4 w-4" />
               </button>
             </div>
 
-            <div className="mt-5 flex gap-2">
+            <p className="mt-4 rounded-2xl border border-red-500/20 bg-red-500/[0.07] p-4 text-[10px] leading-relaxed text-red-100">
+              O item deixará de aparecer no estoque e na vitrine. Pedidos antigos continuarão preservando o nome, o preço e as quantidades registrados no momento da venda.
+            </p>
+
+            <div className="mt-5 grid grid-cols-2 gap-3">
               <button
                 type="button"
-                disabled={Boolean(busyProductId)}
                 onClick={() => setDeletingProduct(null)}
-                className="min-h-11 flex-1 rounded-xl border border-slate-700 bg-slate-950 px-4 text-[10px] font-black uppercase text-slate-300 disabled:opacity-40"
+                disabled={Boolean(busyProductId)}
+                className="min-h-11 rounded-xl border border-slate-700 bg-slate-950 px-4 text-[10px] font-black uppercase text-slate-300 disabled:opacity-40"
               >
                 Cancelar
               </button>
               <button
                 type="button"
-                disabled={Boolean(busyProductId)}
                 onClick={() => void handleConfirmDeleteProduct()}
-                className="flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-red-600 px-4 text-[10px] font-black uppercase text-white disabled:opacity-40"
+                disabled={Boolean(busyProductId)}
+                className="flex min-h-11 items-center justify-center gap-2 rounded-xl bg-red-500 px-4 text-[10px] font-black uppercase text-white disabled:opacity-40"
+                id="confirm-delete-product-button"
               >
                 <Trash2 className="h-4 w-4" />
                 {busyProductId ? 'Excluindo...' : 'Excluir item'}
