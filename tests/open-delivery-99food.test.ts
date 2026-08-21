@@ -132,6 +132,8 @@ test('normalizes a 99Food Open Delivery order into the existing KDS order shape'
   assert.match(order.items[0]?.note ?? '', /Arroz integral/);
   assert.equal(order.total, 54.8);
   assert.equal(order.paymentStatus, 'paid');
+  assert.equal(order.source, 'transfer');
+  assert.equal(order.sourceChannel, '99food');
   assert.equal(order.integration.provider, '99food');
   assert.equal(order.integration.routingTarget, 'COZINHA');
 });
