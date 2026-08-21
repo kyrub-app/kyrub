@@ -2,8 +2,10 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import {
+  ARTIFACT_SECTION_HEADER,
   DELIVERY_SECTION_HEADER,
   FREELANCE_SECTION_HEADER,
+  hardenKyrubArtifactRules,
   hardenKyrubDeliveryRules,
   hardenKyrubFreelanceRules,
 } from '../scripts/firestore-rule-composition.mjs';
@@ -41,6 +43,30 @@ ${FREELANCE_SECTION_HEADER}
 
     match /artifacts { allow list: if isSignedIn(); }
     match /tenants { allow list: if isSignedIn(); }
+  }
+}`;
+
+const legacyArtifactRules = `rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() { return request.auth != null; }
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+
+${ARTIFACT_SECTION_HEADER}
+    match /artifacts/{tenantId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn();
+      match /{allData=**} {
+        allow read: if isSignedIn();
+        allow write: if isSignedIn();
+      }
+    }
+
+    // --- Kyrub Social Connections & Feed ---
+    match /connections/{connectionId} {
+      allow read: if isSignedIn();
+    }
   }
 }`;
 
@@ -88,6 +114,23 @@ test('freelance composition is idempotent', () => {
   assert.equal(hardenKyrubFreelanceRules(secured), secured);
 });
 
+test('artifact composition removes recursive cross-tenant writes', () => {
+  const result = hardenKyrubArtifactRules(legacyArtifactRules);
+
+  assert.doesNotMatch(result, /allow write: if isSignedIn\(\);/);
+  assert.match(result, /request\.auth\.uid == tenantId/);
+  assert.match(result, /match \/public\/data\/customerOrders\/\{orderId\}/);
+  assert.match(result, /incoming\(\)\.fulfillmentType == 'dine_in'/);
+  assert.match(result, /incoming\(\)\.paymentStatus == 'unpaid'/);
+  assert.match(result, /incoming\(\)\.status == 'cancelled'/);
+  assert.match(result, /allow delete: if false;/);
+});
+
+test('artifact composition is idempotent', () => {
+  const secured = hardenKyrubArtifactRules(legacyArtifactRules);
+  assert.equal(hardenKyrubArtifactRules(secured), secured);
+});
+
 test('the composer inserts fragments through a callback so dollar anchors stay literal', () => {
   const composer = readFileSync('scripts/compose-firestore-rules.mjs', 'utf8');
   const verificationRules = readFileSync(
@@ -96,6 +139,7 @@ test('the composer inserts fragments through a callback so dollar anchors stay l
   );
 
   assert.match(composer, /replace\(\s*marker,\s*\(\) =>/);
+  assert.match(composer, /hardenKyrubArtifactRules/);
   assert.match(verificationRules, /matches\('\^\[0-9\]\{11\}\$'\)/);
   assert.doesNotMatch(composer, /replace\(\s*marker,\s*`\$\{composedFragment\}/);
 });
