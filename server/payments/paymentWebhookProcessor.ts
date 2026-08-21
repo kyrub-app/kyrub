@@ -136,30 +136,19 @@ export const processVerifiedPaymentWebhook = async (input: {
 
     let orderId = '';
     let orderMaterialized = false;
+    let intent: CanonicalPaymentIntent | null = null;
+    let operationalOrder: ReturnType<typeof materializePaidMarketplaceOrder> | null = null;
+    let operationalOrderExists = false;
     const intentStatus = intentStatusForPaymentStatus(effectiveStatus);
 
+    // Firestore transactions require every read to happen before any write.
+    // Resolve and read the operational order before scheduling intent/payment mutations.
     if (current.context === 'marketplace') {
       if (!intentSnapshot.exists) throw new Error('PAYMENT_INTENT_NOT_FOUND');
-      const intent = normalizeCanonicalPaymentIntent(
+      intent = normalizeCanonicalPaymentIntent(
         intentSnapshot.data() as CanonicalPaymentIntent
       );
       assertMarketplacePaymentIntentMatchesPayment(current, intent, event);
-
-      if (intentStatus && intent.status !== intentStatus) {
-        if (intent.status !== 'pending') {
-          throw new Error(`PAYMENT_INTENT_STATUS_CONFLICT:${intent.status}->${intentStatus}`);
-        }
-        transaction.update(intentRef, {
-          status: intentStatus,
-          updatedAt: event.occurredAt,
-          ...(intentStatus === 'paid'
-            ? {
-                provider: event.provider,
-                providerIntentId: event.paymentIntentId,
-              }
-            : {}),
-        });
-      }
 
       if (effectiveStatus === 'paid') {
         const paidIntent: CanonicalPaymentIntent = {
@@ -169,20 +158,40 @@ export const processVerifiedPaymentWebhook = async (input: {
           providerIntentId: event.paymentIntentId,
           updatedAt: event.occurredAt,
         };
-        const operationalOrder = materializePaidMarketplaceOrder({
+        operationalOrder = materializePaidMarketplaceOrder({
           intent: paidIntent,
           now: event.occurredAt,
         });
         const orderRef = adminDb.doc(
           operationalOrderPath(operationalOrder.storeId, operationalOrder.id)
         );
-        const orderSnapshot = await transaction.get(orderRef);
+        operationalOrderExists = (await transaction.get(orderRef)).exists;
         orderId = operationalOrder.id;
-        if (!orderSnapshot.exists) {
-          transaction.set(orderRef, operationalOrder);
-          orderMaterialized = true;
-        }
       }
+    }
+
+    if (intent && intentStatus && intent.status !== intentStatus) {
+      if (intent.status !== 'pending') {
+        throw new Error(`PAYMENT_INTENT_STATUS_CONFLICT:${intent.status}->${intentStatus}`);
+      }
+      transaction.update(intentRef, {
+        status: intentStatus,
+        updatedAt: event.occurredAt,
+        ...(intentStatus === 'paid'
+          ? {
+              provider: event.provider,
+              providerIntentId: event.paymentIntentId,
+            }
+          : {}),
+      });
+    }
+
+    if (operationalOrder && !operationalOrderExists) {
+      const orderRef = adminDb.doc(
+        operationalOrderPath(operationalOrder.storeId, operationalOrder.id)
+      );
+      transaction.set(orderRef, operationalOrder);
+      orderMaterialized = true;
     }
 
     if (!duplicate) {
