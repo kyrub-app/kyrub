@@ -24,6 +24,7 @@ on:
       - 'firebase.security.json'
       - 'package.json'
       - 'scripts/compose-firestore-rules.mjs'
+      - 'scripts/firestore-rule-composition.mjs'
       - 'src/utils/adminControlPlane.ts'
       - 'src/utils/adminDirectory.ts'
       - 'src/utils/storeSecurity.ts'
@@ -90,10 +91,19 @@ jobs:
           set -o pipefail
           npm run test:rules 2>&1 | tee firestore-rules.log
 
+      - name: Run tenant artifact hardening emulator suite
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run firestore:compose
+          npx --yes firebase-tools emulators:exec --config firebase.security.json --project kyrub-security-test --only firestore "node --test --test-concurrency=1 --import tsx tests/firestore-artifacts-hardening.test.ts" 2>&1 | tee artifacts-hardening.log
+
       - name: Upload Firestore rules failure log
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: firestore-rules-failure-log
-          path: firestore-rules.log
+          path: |
+            firestore-rules.log
+            artifacts-hardening.log
           if-no-files-found: ignore
