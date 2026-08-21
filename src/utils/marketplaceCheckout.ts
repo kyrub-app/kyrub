@@ -11,6 +11,11 @@ export interface MarketplaceCheckoutIntentResult {
   method: 'pix';
   expiresAt: string;
   providerReady: boolean;
+  provider: string;
+  providerPaymentId: string;
+  pixQrCode: string;
+  pixQrCodeBase64: string;
+  pixTicketUrl: string;
   duplicate: boolean;
 }
 
@@ -27,7 +32,8 @@ export interface InitiateMarketplaceCheckoutInput {
 }
 
 const createIdempotencyKey = (userId: string, storeId: string): string => {
-  const randomId = globalThis.crypto?.randomUUID?.() ??
+  const randomId =
+    globalThis.crypto?.randomUUID?.() ??
     `${Date.now()}-${Math.random().toString(36).slice(2)}`;
   return `checkout:${userId}:${storeId}:${randomId}`;
 };
@@ -67,11 +73,15 @@ export const initiateMarketplaceCheckout = async (
       })),
       method: 'pix',
       idempotencyKey:
-        input.idempotencyKey?.trim() || createIdempotencyKey(user.uid, storeId),
+        input.idempotencyKey?.trim() ||
+        createIdempotencyKey(user.uid, storeId),
     }),
   });
 
-  const payload = await response.json().catch(() => ({})) as Record<string, unknown>;
+  const payload = (await response.json().catch(() => ({}))) as Record<
+    string,
+    unknown
+  >;
   if (!response.ok) {
     throw new Error(
       typeof payload.error === 'string'
