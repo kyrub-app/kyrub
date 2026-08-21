@@ -5,6 +5,10 @@
       "destination": "/api/health?transport=mcp"
     },
     {
+      "source": "/api/payments/intents",
+      "destination": "/api/action-execute?transport=marketplace-payment-intent"
+    },
+    {
       "source": "/staff",
       "destination": "/index.html"
     },
