@@ -1,4 +1,4 @@
-import { Router, type Request, type Response } from 'express';
+import { Router } from 'express';
 import { adminAuth, adminDb } from '../firebaseAdmin';
 import {
   normalizeCanonicalPaymentIntent,
@@ -37,13 +37,34 @@ interface CatalogProduct {
   isService: boolean;
 }
 
-const bearerToken = (request: Request): string => {
-  const authorization = request.get('authorization') ?? '';
-  return /^Bearer\s+(.+)$/i.exec(authorization)?.[1]?.trim() ?? '';
-};
+export interface MarketplacePaymentIntentResponse {
+  paymentIntentId: string;
+  paymentId: string;
+  orderId: string;
+  status: 'pending';
+  amount: number;
+  currency: 'BRL';
+  method: PaymentMethod;
+  expiresAt: string;
+  providerReady: false;
+  duplicate: boolean;
+}
+
+export interface MarketplacePaymentIntentHttpResult {
+  status: 200 | 201;
+  body: MarketplacePaymentIntentResponse;
+}
+
+export interface MarketplaceCheckoutErrorResult {
+  status: number;
+  body: { error: string };
+}
 
 const clean = (value: unknown): string =>
   typeof value === 'string' ? value.trim() : '';
+
+const bearerToken = (authorization: string): string =>
+  /^Bearer\s+(.+)$/i.exec(authorization)?.[1]?.trim() ?? '';
 
 const parseCheckout = (value: unknown): MarketplaceCheckoutInput => {
   const candidate = value && typeof value === 'object'
@@ -127,30 +148,180 @@ const catalogProducts = (value: unknown): CatalogProduct[] => {
 const documentToken = (idempotencyKey: string): string =>
   Buffer.from(idempotencyKey).toString('base64url').slice(0, 160);
 
-const checkoutError = (response: Response, error: unknown): void => {
+export const mapMarketplaceCheckoutError = (
+  error: unknown
+): MarketplaceCheckoutErrorResult => {
   const message = error instanceof Error ? error.message : String(error);
   if (message === 'AUTH_REQUIRED' || /id-token|expired|revoked/i.test(message)) {
-    response.status(401).json({ error: 'Faça login novamente.' });
-    return;
+    return { status: 401, body: { error: 'Faça login novamente.' } };
   }
   if (message === 'CHECKOUT_STORE_NOT_AVAILABLE') {
-    response.status(404).json({ error: 'A loja não está disponível para checkout.' });
-    return;
+    return { status: 404, body: { error: 'A loja não está disponível para checkout.' } };
   }
   if (message === 'CHECKOUT_PRODUCT_NOT_AVAILABLE') {
-    response.status(409).json({ error: 'Um item do carrinho não está mais disponível. Revise o carrinho.' });
-    return;
+    return {
+      status: 409,
+      body: { error: 'Um item do carrinho não está mais disponível. Revise o carrinho.' },
+    };
   }
   if (message === 'CHECKOUT_TOTAL_MUST_BE_POSITIVE') {
-    response.status(409).json({ error: 'Este checkout ainda não suporta pedidos com total zero.' });
-    return;
+    return {
+      status: 409,
+      body: { error: 'Este checkout ainda não suporta pedidos com total zero.' },
+    };
   }
   if (/^CHECKOUT_/.test(message)) {
-    response.status(400).json({ error: 'Revise os dados do checkout antes de continuar.' });
-    return;
+    return {
+      status: 400,
+      body: { error: 'Revise os dados do checkout antes de continuar.' },
+    };
   }
   console.error('[Marketplace Checkout]', error);
-  response.status(503).json({ error: 'Não foi possível iniciar o pagamento agora.' });
+  return {
+    status: 503,
+    body: { error: 'Não foi possível iniciar o pagamento agora.' },
+  };
+};
+
+export const createMarketplacePaymentIntent = async (
+  authorization: string,
+  body: unknown
+): Promise<MarketplacePaymentIntentHttpResult> => {
+  const token = bearerToken(authorization);
+  if (!token) throw new Error('AUTH_REQUIRED');
+  const identity = await adminAuth.verifyIdToken(token, true);
+  const input = parseCheckout(body);
+  const tenantRef = adminDb.doc(`tenants/${input.storeId}`);
+  const tenantSnapshot = await tenantRef.get();
+  const tenant = tenantSnapshot.data() as Record<string, unknown> | undefined;
+  if (!tenantSnapshot.exists || tenant?.publicationStatus !== 'published') {
+    throw new Error('CHECKOUT_STORE_NOT_AVAILABLE');
+  }
+
+  const catalog = catalogProducts(tenant?.publicProducts);
+  const productMap = new Map(catalog.map(product => [product.id, product]));
+  const intentItems = input.items.map(item => {
+    const product = productMap.get(item.productId);
+    if (!product) throw new Error('CHECKOUT_PRODUCT_NOT_AVAILABLE');
+    const total = Number((product.price * item.quantity).toFixed(2));
+    return {
+      productId: product.id,
+      name: product.name,
+      quantity: item.quantity,
+      unitPrice: product.price,
+      total,
+      note: item.note ?? '',
+      image: product.image,
+      isService: product.isService,
+    };
+  });
+  const subtotal = Number(
+    intentItems.reduce((sum, item) => sum + item.total, 0).toFixed(2)
+  );
+  if (subtotal <= 0) throw new Error('CHECKOUT_TOTAL_MUST_BE_POSITIVE');
+
+  const suffix = documentToken(`${identity.uid}|${input.storeId}|${input.idempotencyKey}`);
+  const intentId = `pi_${suffix}`;
+  const paymentId = `pay_${suffix}`;
+  const orderId = `customer-order-${identity.uid}-${suffix.slice(0, 48)}`;
+  const now = new Date().toISOString();
+  const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+  const orderDraft: PaymentIntentOrderDraft = {
+    draftId: orderId,
+    storeId: input.storeId,
+    buyerId: identity.uid,
+    buyerName: input.buyerName,
+    buyerEmail: input.buyerEmail,
+    fulfillmentType: input.fulfillmentType,
+    deliveryAddress: input.fulfillmentType === 'delivery' ? input.deliveryAddress : '',
+    customerNote: input.customerNote,
+    items: intentItems,
+    subtotal,
+    deliveryFee: 0,
+    total: subtotal,
+  };
+  const intent = normalizeCanonicalPaymentIntent({
+    id: intentId,
+    storeId: input.storeId,
+    buyerId: identity.uid,
+    method: input.method,
+    status: 'pending',
+    amount: subtotal,
+    currency: 'BRL',
+    provider: '',
+    providerIntentId: '',
+    idempotencyKey: input.idempotencyKey,
+    orderDraft,
+    createdAt: now,
+    updatedAt: now,
+    expiresAt,
+  });
+  const payment = normalizeCanonicalPayment({
+    id: paymentId,
+    storeId: input.storeId,
+    orderId,
+    buyerId: identity.uid,
+    amount: subtotal,
+    currency: 'BRL',
+    method: input.method,
+    context: 'marketplace',
+    status: 'pending',
+    provider: '',
+    providerPaymentId: '',
+    idempotencyKey: input.idempotencyKey,
+    createdAt: now,
+    updatedAt: now,
+    paidAt: '',
+    refundedAt: '',
+  });
+
+  const intentRef = adminDb.doc(`stores/${input.storeId}/paymentIntents/${intentId}`);
+  const paymentRef = adminDb.doc(`stores/${input.storeId}/payments/${paymentId}`);
+  const result = await adminDb.runTransaction(async transaction => {
+    const [existingIntent, existingPayment] = await Promise.all([
+      transaction.get(intentRef),
+      transaction.get(paymentRef),
+    ]);
+    if (existingIntent.exists || existingPayment.exists) {
+      if (!existingIntent.exists || !existingPayment.exists) {
+        throw new Error('CHECKOUT_IDEMPOTENCY_CONFLICT');
+      }
+      const savedIntent = normalizeCanonicalPaymentIntent(
+        existingIntent.data() as CanonicalPaymentIntent
+      );
+      const savedPayment = normalizeCanonicalPayment(
+        existingPayment.data() as CanonicalPayment
+      );
+      if (
+        savedIntent.buyerId !== identity.uid ||
+        savedIntent.storeId !== input.storeId ||
+        savedIntent.idempotencyKey !== input.idempotencyKey ||
+        savedPayment.idempotencyKey !== input.idempotencyKey
+      ) {
+        throw new Error('CHECKOUT_IDEMPOTENCY_CONFLICT');
+      }
+      return { intent: savedIntent, payment: savedPayment, duplicate: true };
+    }
+    transaction.set(intentRef, intent);
+    transaction.set(paymentRef, payment);
+    return { intent, payment, duplicate: false };
+  });
+
+  return {
+    status: result.duplicate ? 200 : 201,
+    body: {
+      paymentIntentId: result.intent.id,
+      paymentId: result.payment.id,
+      orderId: result.intent.orderDraft.draftId,
+      status: 'pending',
+      amount: result.intent.amount,
+      currency: result.intent.currency,
+      method: result.intent.method,
+      expiresAt: result.intent.expiresAt,
+      providerReady: false,
+      duplicate: result.duplicate,
+    },
+  };
 };
 
 export const createPaymentIntentRouter = (): Router => {
@@ -158,140 +329,14 @@ export const createPaymentIntentRouter = (): Router => {
 
   router.post('/intents', async (request, response) => {
     try {
-      const token = bearerToken(request);
-      if (!token) throw new Error('AUTH_REQUIRED');
-      const identity = await adminAuth.verifyIdToken(token, true);
-      const input = parseCheckout(request.body);
-      const tenantRef = adminDb.doc(`tenants/${input.storeId}`);
-      const tenantSnapshot = await tenantRef.get();
-      const tenant = tenantSnapshot.data() as Record<string, unknown> | undefined;
-      if (!tenantSnapshot.exists || tenant?.publicationStatus !== 'published') {
-        throw new Error('CHECKOUT_STORE_NOT_AVAILABLE');
-      }
-
-      const catalog = catalogProducts(tenant?.publicProducts);
-      const productMap = new Map(catalog.map(product => [product.id, product]));
-      const intentItems = input.items.map(item => {
-        const product = productMap.get(item.productId);
-        if (!product) throw new Error('CHECKOUT_PRODUCT_NOT_AVAILABLE');
-        const total = Number((product.price * item.quantity).toFixed(2));
-        return {
-          productId: product.id,
-          name: product.name,
-          quantity: item.quantity,
-          unitPrice: product.price,
-          total,
-          note: item.note ?? '',
-          image: product.image,
-          isService: product.isService,
-        };
-      });
-      const subtotal = Number(
-        intentItems.reduce((sum, item) => sum + item.total, 0).toFixed(2)
+      const result = await createMarketplacePaymentIntent(
+        request.get('authorization') ?? '',
+        request.body
       );
-      if (subtotal <= 0) throw new Error('CHECKOUT_TOTAL_MUST_BE_POSITIVE');
-
-      const suffix = documentToken(`${identity.uid}|${input.storeId}|${input.idempotencyKey}`);
-      const intentId = `pi_${suffix}`;
-      const paymentId = `pay_${suffix}`;
-      const orderId = `customer-order-${identity.uid}-${suffix.slice(0, 48)}`;
-      const now = new Date().toISOString();
-      const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
-      const orderDraft: PaymentIntentOrderDraft = {
-        draftId: orderId,
-        storeId: input.storeId,
-        buyerId: identity.uid,
-        buyerName: input.buyerName,
-        buyerEmail: input.buyerEmail,
-        fulfillmentType: input.fulfillmentType,
-        deliveryAddress: input.fulfillmentType === 'delivery' ? input.deliveryAddress : '',
-        customerNote: input.customerNote,
-        items: intentItems,
-        subtotal,
-        deliveryFee: 0,
-        total: subtotal,
-      };
-      const intent = normalizeCanonicalPaymentIntent({
-        id: intentId,
-        storeId: input.storeId,
-        buyerId: identity.uid,
-        method: input.method,
-        status: 'pending',
-        amount: subtotal,
-        currency: 'BRL',
-        provider: '',
-        providerIntentId: '',
-        idempotencyKey: input.idempotencyKey,
-        orderDraft,
-        createdAt: now,
-        updatedAt: now,
-        expiresAt,
-      });
-      const payment = normalizeCanonicalPayment({
-        id: paymentId,
-        storeId: input.storeId,
-        orderId,
-        buyerId: identity.uid,
-        amount: subtotal,
-        currency: 'BRL',
-        method: input.method,
-        context: 'marketplace',
-        status: 'pending',
-        provider: '',
-        providerPaymentId: '',
-        idempotencyKey: input.idempotencyKey,
-        createdAt: now,
-        updatedAt: now,
-        paidAt: '',
-        refundedAt: '',
-      });
-
-      const intentRef = adminDb.doc(`stores/${input.storeId}/paymentIntents/${intentId}`);
-      const paymentRef = adminDb.doc(`stores/${input.storeId}/payments/${paymentId}`);
-      const result = await adminDb.runTransaction(async transaction => {
-        const [existingIntent, existingPayment] = await Promise.all([
-          transaction.get(intentRef),
-          transaction.get(paymentRef),
-        ]);
-        if (existingIntent.exists || existingPayment.exists) {
-          if (!existingIntent.exists || !existingPayment.exists) {
-            throw new Error('CHECKOUT_IDEMPOTENCY_CONFLICT');
-          }
-          const savedIntent = normalizeCanonicalPaymentIntent(
-            existingIntent.data() as CanonicalPaymentIntent
-          );
-          const savedPayment = normalizeCanonicalPayment(
-            existingPayment.data() as CanonicalPayment
-          );
-          if (
-            savedIntent.buyerId !== identity.uid ||
-            savedIntent.storeId !== input.storeId ||
-            savedIntent.idempotencyKey !== input.idempotencyKey ||
-            savedPayment.idempotencyKey !== input.idempotencyKey
-          ) {
-            throw new Error('CHECKOUT_IDEMPOTENCY_CONFLICT');
-          }
-          return { intent: savedIntent, payment: savedPayment, duplicate: true };
-        }
-        transaction.set(intentRef, intent);
-        transaction.set(paymentRef, payment);
-        return { intent, payment, duplicate: false };
-      });
-
-      response.status(result.duplicate ? 200 : 201).json({
-        paymentIntentId: result.intent.id,
-        paymentId: result.payment.id,
-        orderId: result.intent.orderDraft.draftId,
-        status: result.intent.status,
-        amount: result.intent.amount,
-        currency: result.intent.currency,
-        method: result.intent.method,
-        expiresAt: result.intent.expiresAt,
-        providerReady: false,
-        duplicate: result.duplicate,
-      });
+      response.status(result.status).json(result.body);
     } catch (error) {
-      checkoutError(response, error);
+      const mapped = mapMarketplaceCheckoutError(error);
+      response.status(mapped.status).json(mapped.body);
     }
   });
 
