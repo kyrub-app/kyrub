@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { B2CCartDrawer as LegacyB2CCartDrawer } from './LegacyB2CCartDrawer';
 import { auth } from '../../utils/firebase';
+import { initiateMarketplaceCheckout } from '../../utils/marketplaceCheckout';
 import {
   buildCustomerOrder,
   getCustomerOrderItemOpenQuantity,
@@ -112,6 +113,7 @@ export const B2CCartDrawer: React.FC<B2CCartDrawerProps> = props => {
   const [currentOrder, setCurrentOrder] = useState<CustomerOrder | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formError, setFormError] = useState('');
+  const [checkoutNotice, setCheckoutNotice] = useState('');
 
   const cartItemsCount = cart.reduce((sum, item) => sum + item.quantity, 0);
   const subtotal = useMemo(
@@ -172,6 +174,7 @@ export const B2CCartDrawer: React.FC<B2CCartDrawerProps> = props => {
     );
     setTrackedOrderId(previousOrderId);
     setCurrentOrder(null);
+    setCheckoutNotice('');
     setView(previousOrderId && cart.length === 0 ? 'order' : 'cart');
   }, [isOpen, visitingStore?.id]);
 
@@ -199,6 +202,7 @@ export const B2CCartDrawer: React.FC<B2CCartDrawerProps> = props => {
   const handleCreateOrder = async (event: React.FormEvent): Promise<void> => {
     event.preventDefault();
     setFormError('');
+    setCheckoutNotice('');
 
     const user = auth.currentUser;
     if (!user) {
@@ -209,6 +213,26 @@ export const B2CCartDrawer: React.FC<B2CCartDrawerProps> = props => {
     setIsSubmitting(true);
 
     try {
+      if (fulfillmentType === 'delivery' || fulfillmentType === 'pickup') {
+        const checkout = await initiateMarketplaceCheckout(user, {
+          storeId: visitingStore.id,
+          buyerName,
+          buyerEmail,
+          fulfillmentType,
+          deliveryAddress: buyerAddress,
+          customerNote,
+          cart,
+          itemNotes,
+        });
+
+        setCheckoutNotice(
+          checkout.providerReady
+            ? 'Pagamento iniciado. O pedido só será enviado à loja depois da confirmação do provedor.'
+            : 'Intenção de pagamento criada com segurança. O provedor Pix ainda não está habilitado neste ambiente; nenhum pedido foi enviado à loja.'
+        );
+        return;
+      }
+
       const order = buildCustomerOrder(user, {
         storeId: visitingStore.id,
         buyerName,
@@ -455,7 +479,10 @@ export const B2CCartDrawer: React.FC<B2CCartDrawerProps> = props => {
                         <button
                           key={option.id}
                           type="button"
-                          onClick={() => setFulfillmentType(option.id)}
+                          onClick={() => {
+                            setFulfillmentType(option.id);
+                            setCheckoutNotice('');
+                          }}
                           className={`flex items-center gap-3 rounded-2xl border p-3 text-left transition-colors ${
                             fulfillmentType === option.id
                               ? 'border-orange-500/50 bg-orange-500/10'
@@ -553,10 +580,17 @@ export const B2CCartDrawer: React.FC<B2CCartDrawerProps> = props => {
                       </span>
                     </div>
                     <p className="mt-3 text-[10px] leading-relaxed text-slate-600">
-                      O pedido será enviado sem cobrança. Pagamento e entrega serão
-                      confirmados pela loja em uma etapa posterior.
+                      {fulfillmentType === 'dine_in'
+                        ? 'O pedido no local será enviado para aprovação do atendimento, sem cobrança automática.'
+                        : 'Entrega e retirada exigem pagamento confirmado. O pedido só será criado e enviado à loja depois da confirmação autoritativa do provedor.'}
                     </p>
                   </section>
+
+                  {checkoutNotice && (
+                    <p className="rounded-xl border border-amber-500/25 bg-amber-500/10 px-3 py-2.5 text-xs leading-relaxed text-amber-200">
+                      {checkoutNotice}
+                    </p>
+                  )}
 
                   {formError && (
                     <p className="rounded-xl border border-red-500/25 bg-red-500/10 px-3 py-2.5 text-xs text-red-300">
@@ -575,7 +609,13 @@ export const B2CCartDrawer: React.FC<B2CCartDrawerProps> = props => {
                   className="w-full rounded-xl py-3 text-xs font-black uppercase tracking-wider text-white shadow-lg disabled:cursor-not-allowed disabled:opacity-50"
                   style={{ backgroundColor: accentColor }}
                 >
-                  {isSubmitting ? 'Enviando pedido...' : 'Enviar pedido à loja'}
+                  {isSubmitting
+                    ? fulfillmentType === 'dine_in'
+                      ? 'Enviando pedido...'
+                      : 'Preparando pagamento...'
+                    : fulfillmentType === 'dine_in'
+                      ? 'Enviar pedido à loja'
+                      : 'Continuar para pagamento Pix'}
                 </button>
               </footer>
             )}
