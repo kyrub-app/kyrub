@@ -10,6 +10,16 @@ import {
   type CanonicalPayment,
   type PaymentMethod,
 } from '../../src/utils/canonicalPayment';
+import {
+  createMercadoPagoPixPayment,
+  getMercadoPagoPixCheckout,
+  isMercadoPagoPixConfigured,
+  type MercadoPagoPixCheckout,
+} from './mercadoPagoPixProvider';
+import {
+  mapMercadoPagoWebhookError,
+  processMercadoPagoWebhook,
+} from './mercadoPagoWebhook';
 
 interface MarketplaceCheckoutItemInput {
   productId: string;
@@ -46,7 +56,12 @@ export interface MarketplacePaymentIntentResponse {
   currency: 'BRL';
   method: PaymentMethod;
   expiresAt: string;
-  providerReady: false;
+  providerReady: boolean;
+  provider: string;
+  providerPaymentId: string;
+  pixQrCode: string;
+  pixQrCodeBase64: string;
+  pixTicketUrl: string;
   duplicate: boolean;
 }
 
@@ -67,9 +82,10 @@ const bearerToken = (authorization: string): string =>
   /^Bearer\s+(.+)$/i.exec(authorization)?.[1]?.trim() ?? '';
 
 const parseCheckout = (value: unknown): MarketplaceCheckoutInput => {
-  const candidate = value && typeof value === 'object'
-    ? value as Record<string, unknown>
-    : {};
+  const candidate =
+    value && typeof value === 'object'
+      ? (value as Record<string, unknown>)
+      : {};
   const fulfillmentType = candidate.fulfillmentType;
   const method = candidate.method;
   if (fulfillmentType !== 'delivery' && fulfillmentType !== 'pickup') {
@@ -83,9 +99,10 @@ const parseCheckout = (value: unknown): MarketplaceCheckoutInput => {
   }
 
   const items = candidate.items.map(item => {
-    const record = item && typeof item === 'object'
-      ? item as Record<string, unknown>
-      : {};
+    const record =
+      item && typeof item === 'object'
+        ? (item as Record<string, unknown>)
+        : {};
     const productId = clean(record.productId);
     const quantity = record.quantity;
     if (!productId || !Number.isInteger(quantity) || Number(quantity) <= 0) {
@@ -106,7 +123,9 @@ const parseCheckout = (value: unknown): MarketplaceCheckoutInput => {
   if (!storeId || !buyerName || !buyerEmail || !idempotencyKey) {
     throw new Error('CHECKOUT_REQUIRED_FIELDS_MISSING');
   }
-  if (idempotencyKey.length > 180) throw new Error('CHECKOUT_IDEMPOTENCY_KEY_INVALID');
+  if (idempotencyKey.length > 180) {
+    throw new Error('CHECKOUT_IDEMPOTENCY_KEY_INVALID');
+  }
   if (fulfillmentType === 'delivery' && !deliveryAddress) {
     throw new Error('CHECKOUT_DELIVERY_ADDRESS_REQUIRED');
   }
@@ -131,17 +150,20 @@ const catalogProducts = (value: unknown): CatalogProduct[] => {
     const record = entry as Record<string, unknown>;
     const id = clean(record.id);
     const name = clean(record.name);
-    const price = typeof record.price === 'number' && Number.isFinite(record.price)
-      ? Number(record.price.toFixed(2))
-      : -1;
+    const price =
+      typeof record.price === 'number' && Number.isFinite(record.price)
+        ? Number(record.price.toFixed(2))
+        : -1;
     if (!id || !name || price < 0) return [];
-    return [{
-      id,
-      name,
-      price: record.isComplimentary === true ? 0 : price,
-      image: clean(record.image),
-      isService: record.isService === true,
-    }];
+    return [
+      {
+        id,
+        name,
+        price: record.isComplimentary === true ? 0 : price,
+        image: clean(record.image),
+        isService: record.isService === true,
+      },
+    ];
   });
 };
 
@@ -156,18 +178,30 @@ export const mapMarketplaceCheckoutError = (
     return { status: 401, body: { error: 'Faça login novamente.' } };
   }
   if (message === 'CHECKOUT_STORE_NOT_AVAILABLE') {
-    return { status: 404, body: { error: 'A loja não está disponível para checkout.' } };
+    return {
+      status: 404,
+      body: { error: 'A loja não está disponível para checkout.' },
+    };
   }
   if (message === 'CHECKOUT_PRODUCT_NOT_AVAILABLE') {
     return {
       status: 409,
-      body: { error: 'Um item do carrinho não está mais disponível. Revise o carrinho.' },
+      body: {
+        error: 'Um item do carrinho não está mais disponível. Revise o carrinho.',
+      },
     };
   }
   if (message === 'CHECKOUT_TOTAL_MUST_BE_POSITIVE') {
     return {
       status: 409,
       body: { error: 'Este checkout ainda não suporta pedidos com total zero.' },
+    };
+  }
+  if (message.startsWith('MERCADO_PAGO_API_ERROR:')) {
+    console.error('[Marketplace Checkout] Mercado Pago', message);
+    return {
+      status: 502,
+      body: { error: 'O Mercado Pago não conseguiu gerar o Pix agora.' },
     };
   }
   if (/^CHECKOUT_/.test(message)) {
@@ -181,6 +215,68 @@ export const mapMarketplaceCheckoutError = (
     status: 503,
     body: { error: 'Não foi possível iniciar o pagamento agora.' },
   };
+};
+
+const attachMercadoPagoPix = async (input: {
+  intent: CanonicalPaymentIntent;
+  payment: CanonicalPayment;
+}): Promise<MercadoPagoPixCheckout | null> => {
+  if (input.intent.method !== 'pix' || !isMercadoPagoPixConfigured()) {
+    return null;
+  }
+
+  const pix = input.intent.providerIntentId
+    ? await getMercadoPagoPixCheckout(input.intent.providerIntentId)
+    : await createMercadoPagoPixPayment({
+        intent: input.intent,
+        paymentId: input.payment.id,
+      });
+
+  const intentRef = adminDb.doc(
+    `stores/${input.intent.storeId}/paymentIntents/${input.intent.id}`
+  );
+  const paymentRef = adminDb.doc(
+    `stores/${input.payment.storeId}/payments/${input.payment.id}`
+  );
+  await adminDb.runTransaction(async transaction => {
+    const [intentSnapshot, paymentSnapshot] = await Promise.all([
+      transaction.get(intentRef),
+      transaction.get(paymentRef),
+    ]);
+    if (!intentSnapshot.exists || !paymentSnapshot.exists) {
+      throw new Error('CHECKOUT_PAYMENT_STATE_MISSING');
+    }
+    const currentIntent = normalizeCanonicalPaymentIntent(
+      intentSnapshot.data() as CanonicalPaymentIntent
+    );
+    const currentPayment = normalizeCanonicalPayment(
+      paymentSnapshot.data() as CanonicalPayment
+    );
+    if (
+      currentIntent.providerIntentId &&
+      currentIntent.providerIntentId !== pix.providerPaymentId
+    ) {
+      throw new Error('CHECKOUT_PROVIDER_PAYMENT_CONFLICT');
+    }
+    if (
+      currentPayment.providerPaymentId &&
+      currentPayment.providerPaymentId !== pix.providerPaymentId
+    ) {
+      throw new Error('CHECKOUT_PROVIDER_PAYMENT_CONFLICT');
+    }
+    transaction.update(intentRef, {
+      provider: pix.provider,
+      providerIntentId: pix.providerPaymentId,
+      updatedAt: new Date().toISOString(),
+    });
+    transaction.update(paymentRef, {
+      provider: pix.provider,
+      providerPaymentId: pix.providerPaymentId,
+      updatedAt: new Date().toISOString(),
+    });
+  });
+
+  return pix;
 };
 
 export const createMarketplacePaymentIntent = async (
@@ -220,12 +316,14 @@ export const createMarketplacePaymentIntent = async (
   );
   if (subtotal <= 0) throw new Error('CHECKOUT_TOTAL_MUST_BE_POSITIVE');
 
-  const suffix = documentToken(`${identity.uid}|${input.storeId}|${input.idempotencyKey}`);
+  const suffix = documentToken(
+    `${identity.uid}|${input.storeId}|${input.idempotencyKey}`
+  );
   const intentId = `pi_${suffix}`;
   const paymentId = `pay_${suffix}`;
   const orderId = `customer-order-${identity.uid}-${suffix.slice(0, 48)}`;
   const now = new Date().toISOString();
-  const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+  const expiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
   const orderDraft: PaymentIntentOrderDraft = {
     draftId: orderId,
     storeId: input.storeId,
@@ -233,7 +331,8 @@ export const createMarketplacePaymentIntent = async (
     buyerName: input.buyerName,
     buyerEmail: input.buyerEmail,
     fulfillmentType: input.fulfillmentType,
-    deliveryAddress: input.fulfillmentType === 'delivery' ? input.deliveryAddress : '',
+    deliveryAddress:
+      input.fulfillmentType === 'delivery' ? input.deliveryAddress : '',
     customerNote: input.customerNote,
     items: intentItems,
     subtotal,
@@ -275,7 +374,9 @@ export const createMarketplacePaymentIntent = async (
     refundedAt: '',
   });
 
-  const intentRef = adminDb.doc(`stores/${input.storeId}/paymentIntents/${intentId}`);
+  const intentRef = adminDb.doc(
+    `stores/${input.storeId}/paymentIntents/${intentId}`
+  );
   const paymentRef = adminDb.doc(`stores/${input.storeId}/payments/${paymentId}`);
   const result = await adminDb.runTransaction(async transaction => {
     const [existingIntent, existingPayment] = await Promise.all([
@@ -300,11 +401,20 @@ export const createMarketplacePaymentIntent = async (
       ) {
         throw new Error('CHECKOUT_IDEMPOTENCY_CONFLICT');
       }
-      return { intent: savedIntent, payment: savedPayment, duplicate: true };
+      return {
+        intent: savedIntent,
+        payment: savedPayment,
+        duplicate: true,
+      };
     }
     transaction.set(intentRef, intent);
     transaction.set(paymentRef, payment);
     return { intent, payment, duplicate: false };
+  });
+
+  const pix = await attachMercadoPagoPix({
+    intent: result.intent,
+    payment: result.payment,
   });
 
   return {
@@ -317,8 +427,13 @@ export const createMarketplacePaymentIntent = async (
       amount: result.intent.amount,
       currency: result.intent.currency,
       method: result.intent.method,
-      expiresAt: result.intent.expiresAt,
-      providerReady: false,
+      expiresAt: pix?.expiresAt || result.intent.expiresAt,
+      providerReady: Boolean(pix && (pix.qrCode || pix.ticketUrl)),
+      provider: pix?.provider ?? '',
+      providerPaymentId: pix?.providerPaymentId ?? '',
+      pixQrCode: pix?.qrCode ?? '',
+      pixQrCodeBase64: pix?.qrCodeBase64 ?? '',
+      pixTicketUrl: pix?.ticketUrl ?? '',
       duplicate: result.duplicate,
     },
   };
@@ -336,6 +451,21 @@ export const createPaymentIntentRouter = (): Router => {
       response.status(result.status).json(result.body);
     } catch (error) {
       const mapped = mapMarketplaceCheckoutError(error);
+      response.status(mapped.status).json(mapped.body);
+    }
+  });
+
+  router.post('/webhooks/mercado-pago', async (request, response) => {
+    try {
+      const dataId = clean(request.query['data.id']) ||
+        clean((request.body as { data?: { id?: unknown } } | undefined)?.data?.id);
+      const result = await processMercadoPagoWebhook({
+        headers: request.headers,
+        dataId,
+      });
+      response.status(200).json(result);
+    } catch (error) {
+      const mapped = mapMercadoPagoWebhookError(error);
       response.status(mapped.status).json(mapped.body);
     }
   });
