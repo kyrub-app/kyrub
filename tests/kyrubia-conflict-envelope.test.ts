@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import './kyrubia-evidence-provenance.test';
 import './kyrubia-autonomy-registry.test';
+import './kyrubia-domain-event-ledger.test';
 import {
   assertKyrubExpectedState,
   buildKyrubConflictEnvelope,
