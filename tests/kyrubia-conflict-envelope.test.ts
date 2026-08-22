@@ -23,6 +23,7 @@ import './kyrub-integration-credentials.test';
 import './google-secret-manager-vault.test';
 import './kyrub-credential-vault-factory.test';
 import './credential-authority-migration.test';
+import './admin-integration-readiness.test';
 import './rc1-system-level-qa.test';
 import {
   assertKyrubExpectedState,
