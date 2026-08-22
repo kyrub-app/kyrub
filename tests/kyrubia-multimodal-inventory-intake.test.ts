@@ -65,6 +65,25 @@ test('explicit stock intake request allows strict attachment proposal building',
   });
 });
 
+test('follow-up mutation can reuse the latest attachment without requiring re-upload', () => {
+  assert.equal(
+    isKyrubInventoryAttachmentIntakeIntent(
+      'Agora atualize o estoque com essa nota.'
+    ),
+    true
+  );
+  assert.match(multimodalClient, /latestAttachmentMessage/);
+  assert.match(multimodalClient, /latestUserMessage/);
+  assert.match(
+    multimodalClient,
+    /buildKyrubInventoryAttachmentIntakeProposal\(\s*intentMessage\.content/
+  );
+  assert.match(
+    multimodalClient,
+    /attachmentMessage\.attachments/
+  );
+});
+
 test('same observed invoice and attachment identity produce the same idempotent proposal id', () => {
   const message = 'Atualize o estoque com esta nota fiscal.';
   const observed = '20 UN Pão\n5 KG Carne';
