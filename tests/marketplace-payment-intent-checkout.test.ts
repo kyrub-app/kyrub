@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
+import './mercado-pago-current-main-contract.test';
 
 const drawerSource = readFileSync(
   'src/components/modals/B2CCartDrawer.tsx',
@@ -74,7 +75,7 @@ test('backend atomically creates pending PaymentIntent and Payment with idempote
   assert.doesNotMatch(intentRouterSource, /simulat|mock.*success|isMockGatewaySuccessful/i);
 });
 
-test('Express and Vercel expose the same marketplace intent core without adding a function', () => {
+test('Express and Vercel expose payment intent plus Mercado Pago webhook without adding a function', () => {
   assert.match(serverSource, /createPaymentIntentRouter/);
   assert.match(serverSource, /"\/api\/payments"/);
 
@@ -86,9 +87,18 @@ test('Express and Vercel expose the same marketplace intent core without adding 
     destination: '/api/action-execute?transport=marketplace-payment-intent',
   });
 
+  const mercadoPagoWebhookRewrite = vercelConfig.rewrites?.find(
+    rewrite => rewrite.source === '/api/payments/webhooks/mercado-pago'
+  );
+  assert.deepEqual(mercadoPagoWebhookRewrite, {
+    source: '/api/payments/webhooks/mercado-pago',
+    destination: '/api/action-execute?transport=mercado-pago-webhook',
+  });
+
   assert.match(vercelActionSource, /transport === 'marketplace-payment-intent'/);
-  assert.match(vercelActionSource, /createMarketplacePaymentIntent/);
-  assert.match(vercelActionSource, /mapMarketplaceCheckoutError/);
+  assert.match(vercelActionSource, /attachMercadoPagoPixToExistingIntent/);
+  assert.match(vercelActionSource, /transport === 'mercado-pago-webhook'/);
+  assert.match(vercelActionSource, /processMercadoPagoWebhook/);
 });
 
 test('paid materialization preserves checkout item metadata', () => {
