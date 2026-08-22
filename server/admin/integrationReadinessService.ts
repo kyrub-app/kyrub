@@ -1,5 +1,4 @@
 import { randomUUID } from 'node:crypto';
-import { Router } from 'express';
 import { FieldValue } from 'firebase-admin/firestore';
 import { verifyFirebaseIdToken } from '../ai/consultantAuth.js';
 import { adminDb } from '../firebaseAdmin.js';
@@ -61,16 +60,22 @@ export const authorizeIntegrationReadiness = async (
   return { uid: decoded.uid, role: 'super_admin' };
 };
 
-const providerCount = async (
-  provider: string,
-  status?: string
-): Promise<number> => {
-  let query = adminDb
+const loadProviderStatuses = async (
+  provider: string
+): Promise<{ total: number; connected: number; attention: number }> => {
+  const snapshot = await adminDb
     .collection('integrationConnections')
-    .where('provider', '==', provider);
-  if (status) query = query.where('status', '==', status);
-  const result = await query.count().get();
-  return result.data().count;
+    .where('provider', '==', provider)
+    .select('status')
+    .get();
+  let connected = 0;
+  let attention = 0;
+  for (const document of snapshot.docs) {
+    const status = clean(document.data().status);
+    if (status === 'connected') connected += 1;
+    if (status === 'attention') attention += 1;
+  }
+  return { total: snapshot.size, connected, attention };
 };
 
 const recordIntegrationReadinessAudit = async (
@@ -92,11 +97,7 @@ const recordIntegrationReadinessAudit = async (
 };
 
 export const loadIntegrationReadinessSnapshot = async (): Promise<AdminIntegrationReadinessSnapshot> => {
-  const [ninetyNineConnected, ninetyNineAttention, ninetyNineTotal] = await Promise.all([
-    providerCount('99food', 'connected'),
-    providerCount('99food', 'attention'),
-    providerCount('99food'),
-  ]);
+  const ninetyNine = await loadProviderStatuses('99food');
   const vault = kyrubCredentialVaultConfig();
   const mercadoPagoCheckout = isMercadoPagoPixConfigured();
   const mercadoPagoWebhook = isMercadoPagoWebhookConfigured();
@@ -132,16 +133,16 @@ export const loadIntegrationReadinessSnapshot = async (): Promise<AdminIntegrati
         id: '99food',
         title: '99Food / Open Delivery',
         category: 'orders',
-        state: ninetyNineTotal > 0
-          ? ninetyNineAttention > 0
+        state: ninetyNine.total > 0
+          ? ninetyNine.attention > 0
             ? 'partial'
             : 'configured'
           : 'not-configured',
-        credentialAuthority: ninetyNineTotal > 0 ? 'legacy_envelope' : 'none',
+        credentialAuthority: ninetyNine.total > 0 ? 'legacy_envelope' : 'none',
         details: {
-          connections: ninetyNineTotal,
-          connected: ninetyNineConnected,
-          attention: ninetyNineAttention,
+          connections: ninetyNine.total,
+          connected: ninetyNine.connected,
+          attention: ninetyNine.attention,
         },
       },
       {
@@ -191,20 +192,4 @@ export const mapIntegrationReadinessError = (error: unknown): {
   }
   console.error('[Admin Integrations Readiness]', error);
   return { status: 503, body: { error: 'Não foi possível consultar as integrações agora.', code: 'INTEGRATIONS_UNAVAILABLE' } };
-};
-
-export const createIntegrationReadinessRouter = (): Router => {
-  const router = Router();
-  router.get('/status', async (request, response) => {
-    try {
-      const snapshot = await loadAuthorizedIntegrationReadiness(
-        request.get('authorization') ?? ''
-      );
-      response.status(200).json(snapshot);
-    } catch (error) {
-      const mapped = mapIntegrationReadinessError(error);
-      response.status(mapped.status).json(mapped.body);
-    }
-  });
-  return router;
 };
