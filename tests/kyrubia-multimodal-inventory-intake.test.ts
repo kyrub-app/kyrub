@@ -6,6 +6,10 @@ import {
   isKyrubInventoryAttachmentIntakeIntent,
   parseKyrubInventoryIntakeEntries,
 } from '../shared/kyrubInventoryIntake';
+import {
+  buildGuidedPurchaseIntakeReply,
+  shouldGuidePurchaseIntake,
+} from '../shared/kyrubPurchaseIntakeGuidance';
 
 const multimodalClient = readFileSync(
   'src/ai/multimodalConsultantClient.ts',
@@ -22,6 +26,45 @@ test('attachment analysis alone never becomes an inventory mutation', () => {
   assert.equal(
     isKyrubInventoryAttachmentIntakeIntent(
       'O que aparece nesta nota fiscal?'
+    ),
+    false
+  );
+});
+
+test('invoice-first flow guides the merchant before any stock mutation', () => {
+  const observed = [
+    '10 UN Pão para hambúrguer',
+    'Carne bovina Premium — 10 KG',
+    '10 UN Queijo para hambúrguer',
+    'Batata frita  1 KG',
+  ].join('\n');
+
+  assert.equal(
+    shouldGuidePurchaseIntake('Leia esta nota fiscal para mim.', observed),
+    true
+  );
+  const reply = buildGuidedPurchaseIntakeReply('Itens identificados:', observed);
+  assert.match(reply, /Ainda não alterei seu estoque/);
+  assert.match(reply, /Dar entrada como chegaram/);
+  assert.match(reply, /Transformar ou porcionar algum item/);
+  assert.match(reply, /Dividir um item entre destinos diferentes/);
+  assert.match(reply, /Não controlar algum item no estoque/);
+  assert.match(reply, /Carne bovina Premium — 10 kg/);
+});
+
+test('explicit inventory intent bypasses receiving guidance and keeps confirmation flow', () => {
+  const observed = '10 KG Carne bovina Premium';
+  assert.equal(
+    shouldGuidePurchaseIntake(
+      'Atualize meu estoque com esta nota fiscal.',
+      observed
+    ),
+    false
+  );
+  assert.equal(
+    shouldGuidePurchaseIntake(
+      'Transforme os itens desta nota fiscal.',
+      observed
     ),
     false
   );
@@ -131,6 +174,8 @@ test('multimodal client enriches only proposal-free responses and reuses standar
   assert.match(multimodalClient, /if \(result\.actionProposal\) return result/);
   assert.match(multimodalClient, /latestAttachmentMessage/);
   assert.match(multimodalClient, /actionProposal: proposal/);
+  assert.match(multimodalClient, /buildGuidedPurchaseIntakeReply/);
+  assert.match(multimodalClient, /shouldGuidePurchaseIntake/);
   assert.match(multimodalClient, /emitKyrubAiActionProposal/);
   assert.doesNotMatch(multimodalClient, /firebase\/firestore|setDoc\(|updateDoc\(|runTransaction\(/);
 });
