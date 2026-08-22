@@ -123,3 +123,30 @@ export const reconcileDerivedProductStockInTransaction = (input: {
 
   return patches;
 };
+
+export const reconcileDerivedProductStockForTenant = async (
+  tenantIdValue: string
+): Promise<DerivedProductStockPatch[]> => {
+  const tenantId = clean(tenantIdValue);
+  if (!tenantId) return [];
+
+  return adminDb.runTransaction(async transaction => {
+    const tenantReference = adminDb.doc(`tenants/${tenantId}`);
+    const inventoryReference = adminDb.doc(
+      `users/${tenantId}/private_store/inventory`
+    );
+    const [tenantSnapshot, inventorySnapshot] = await Promise.all([
+      transaction.get(tenantReference),
+      transaction.get(inventoryReference),
+    ]);
+
+    if (!tenantSnapshot.exists || !inventorySnapshot.exists) return [];
+
+    return reconcileDerivedProductStockInTransaction({
+      transaction,
+      tenantId,
+      tenantData: tenantSnapshot.data(),
+      inventoryData: inventorySnapshot.data(),
+    });
+  });
+};
