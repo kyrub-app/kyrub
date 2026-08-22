@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import test from 'node:test';
 
-const agents = readFileSync(new URL('../AGENTS.md', import.meta.url), 'utf8');
-const controlPlane = readFileSync(new URL('../docs/AI_AGENT_CONTROL_PLANE.md', import.meta.url), 'utf8');
+const agents = readFileSync(resolve(process.cwd(), 'AGENTS.md'), 'utf8');
+const controlPlane = readFileSync(resolve(process.cwd(), 'docs/AI_AGENT_CONTROL_PLANE.md'), 'utf8');
 
 test('repository defines bounded agent workstreams and forbids direct main writes', () => {
   for (const heading of [
