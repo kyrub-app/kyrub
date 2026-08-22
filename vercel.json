@@ -13,6 +13,10 @@
       "destination": "/api/action-execute?transport=mercado-pago-webhook"
     },
     {
+      "source": "/api/admin/integrations/status",
+      "destination": "/api/admin/operations/health?transport=integration-readiness"
+    },
+    {
       "source": "/staff",
       "destination": "/index.html"
     },

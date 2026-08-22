@@ -3,6 +3,10 @@ import { Router, type Request, type Response } from 'express';
 import { FieldValue } from 'firebase-admin/firestore';
 import { verifyFirebaseIdToken } from '../ai/consultantAuth.js';
 import { adminDb } from '../firebaseAdmin.js';
+import {
+  loadAuthorizedIntegrationReadiness,
+  mapIntegrationReadinessError,
+} from './integrationReadinessService.js';
 
 const SYSTEM_HEALTH_ROLES = new Set(['super_admin', 'operations']);
 
@@ -223,6 +227,19 @@ export const createOperationsHealthRouter = (): Router => {
   const router = Router();
 
   router.get('/', async (request: Request, response: Response) => {
+    if (clean(request.query.transport) === 'integration-readiness') {
+      try {
+        const snapshot = await loadAuthorizedIntegrationReadiness(
+          request.get('authorization') ?? ''
+        );
+        response.json(snapshot);
+      } catch (error) {
+        const mapped = mapIntegrationReadinessError(error);
+        response.status(mapped.status).json(mapped.body);
+      }
+      return;
+    }
+
     try {
       const snapshot = await loadAuthorizedOperationsHealth(
         request.get('authorization') ?? ''
