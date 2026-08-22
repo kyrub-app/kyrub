@@ -67,6 +67,7 @@ test('Vercel payment and credential runtimes use explicit ESM extensions', () =>
     'server/payments/paymentWebhookProcessor.ts',
     'server/integrations/providerCredentialResolver.ts',
     'server/integrations/platformCredentialStore.ts',
+    'server/integrations/kyrubCredentialVault.ts',
     'src/utils/paymentOrderMaterialization.ts',
   ];
 
@@ -102,4 +103,16 @@ test('payment transports do not statically initialize the legacy action graph', 
   assert.match(source, /import\('\.\.\/server\/payments\/paymentIntentRouter\.js'\)/);
   assert.match(source, /import\('\.\.\/server\/payments\/mercadoPagoWebhook\.js'\)/);
   assert.match(source, /import\('\.\.\/server\/actions\/actionExecutionFacade\.js'\)/);
+});
+
+test('admin integration transports do not statically initialize operations health', () => {
+  const source = readFileSync('api/admin/operations/health.ts', 'utf8');
+
+  assert.doesNotMatch(source, /^import\s.+from\s+['"]\.\.\/\.\.\/\.\.\/server\//m);
+  assert.match(source, /transport === 'integration-readiness'/);
+  assert.match(source, /transport === 'mercado-pago-credentials'/);
+  assert.match(source, /transport === 'mercado-pago-test'/);
+  assert.match(source, /import\('\.\.\/\.\.\/\.\.\/server\/admin\/integrationReadinessService\.js'\)/);
+  assert.match(source, /import\('\.\.\/\.\.\/\.\.\/server\/admin\/integrationCredentialService\.js'\)/);
+  assert.match(source, /import\('\.\.\/\.\.\/\.\.\/server\/admin\/operationsHealthRouter\.js'\)/);
 });
