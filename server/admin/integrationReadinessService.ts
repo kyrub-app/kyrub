@@ -107,14 +107,17 @@ export const loadIntegrationReadinessSnapshot = async (): Promise<AdminIntegrati
   const envWebhook = isMercadoPagoWebhookConfigured();
   const vaultCheckout = Boolean(mercadoPagoVault?.credentials.access_token);
   const vaultWebhook = Boolean(mercadoPagoVault?.credentials.webhook_secret);
-  const mercadoPagoCheckout = vaultCheckout || envCheckout;
-  const mercadoPagoWebhook = (vaultCheckout && vaultWebhook) || (!vaultCheckout && envWebhook);
+  const vaultAuthority = vaultCheckout || vaultWebhook;
+  const mercadoPagoCheckout = vaultAuthority ? vaultCheckout : envCheckout;
+  const mercadoPagoWebhook = vaultAuthority
+    ? vaultCheckout && vaultWebhook
+    : envWebhook;
   const mercadoPagoState = mercadoPagoCheckout && mercadoPagoWebhook
     ? 'configured'
     : mercadoPagoCheckout
       ? 'partial'
       : 'not-configured';
-  const mercadoPagoAuthority = vaultCheckout || vaultWebhook
+  const mercadoPagoAuthority = vaultAuthority
     ? 'legacy_envelope'
     : envCheckout || envWebhook
       ? 'environment'
