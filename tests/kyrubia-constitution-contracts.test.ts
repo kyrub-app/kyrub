@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
+import './kyrubia-user-ai-provider-vault.test';
 import { decideKyrubiaAiRoute } from '../shared/kyrubiaAiRouting';
 
 const read = (path: string): string =>
