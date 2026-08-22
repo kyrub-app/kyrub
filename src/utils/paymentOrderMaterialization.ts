@@ -1,9 +1,9 @@
-import type { CustomerOrder } from './customerOrders';
+import type { CustomerOrder } from './customerOrders.js';
 import {
   canMaterializeOperationalOrder,
   normalizeCanonicalPaymentIntent,
   type CanonicalPaymentIntent,
-} from './canonicalPaymentIntent';
+} from './canonicalPaymentIntent.js';
 
 export const materializePaidMarketplaceOrder = (input: {
   intent: CanonicalPaymentIntent;
