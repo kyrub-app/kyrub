@@ -36,6 +36,12 @@ test('readiness reports booleans/counts without returning credential material', 
   assert.doesNotMatch(serverSource, /ciphertext\s*:/);
 });
 
+test('99food is configured only when every discovered connection is connected', () => {
+  assert.match(serverSource, /ninetyNine\.connected === ninetyNine\.total/);
+  assert.match(serverSource, /ninetyNine\.attention === 0/);
+  assert.match(serverSource, /: 'partial'/);
+});
+
 test('client parser allowlists public detail fields and drops secret-shaped extras', () => {
   const parsed = parseAdminIntegrationReadiness({
     generatedAt: '2026-08-22T00:00:00.000Z',
