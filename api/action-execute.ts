@@ -180,6 +180,10 @@ export default async function handler(
         authorization,
         request.body
       );
+      const { reconcileDerivedProductStockForTenant } = await import(
+        '../server/inventory/productStockReconciliationService.js'
+      );
+      await reconcileDerivedProductStockForTenant(clean(inventory.entityId));
       response.status(200).json(inventory);
       return;
     }
