@@ -3,6 +3,7 @@ import { FieldValue } from 'firebase-admin/firestore';
 import { verifyFirebaseIdToken } from '../ai/consultantAuth.js';
 import { adminDb } from '../firebaseAdmin.js';
 import { kyrubCredentialVaultConfig } from '../integrations/kyrubCredentialVault.js';
+import { loadPlatformCredentialMetadata } from '../integrations/platformCredentialStore.js';
 import {
   isMercadoPagoPixConfigured,
   isMercadoPagoWebhookConfigured,
@@ -97,15 +98,27 @@ const recordIntegrationReadinessAudit = async (
 };
 
 export const loadIntegrationReadinessSnapshot = async (): Promise<AdminIntegrationReadinessSnapshot> => {
-  const ninetyNine = await loadProviderStatuses('99food');
+  const [ninetyNine, mercadoPagoVault] = await Promise.all([
+    loadProviderStatuses('99food'),
+    loadPlatformCredentialMetadata('mercado_pago', 'production'),
+  ]);
   const vault = kyrubCredentialVaultConfig();
-  const mercadoPagoCheckout = isMercadoPagoPixConfigured();
-  const mercadoPagoWebhook = isMercadoPagoWebhookConfigured();
+  const envCheckout = isMercadoPagoPixConfigured();
+  const envWebhook = isMercadoPagoWebhookConfigured();
+  const vaultCheckout = Boolean(mercadoPagoVault?.credentials.access_token);
+  const vaultWebhook = Boolean(mercadoPagoVault?.credentials.webhook_secret);
+  const mercadoPagoCheckout = vaultCheckout || envCheckout;
+  const mercadoPagoWebhook = (vaultCheckout && vaultWebhook) || (!vaultCheckout && envWebhook);
   const mercadoPagoState = mercadoPagoCheckout && mercadoPagoWebhook
     ? 'configured'
     : mercadoPagoCheckout
       ? 'partial'
       : 'not-configured';
+  const mercadoPagoAuthority = vaultCheckout || vaultWebhook
+    ? 'legacy_envelope'
+    : envCheckout || envWebhook
+      ? 'environment'
+      : 'none';
 
   return {
     generatedAt: new Date().toISOString(),
@@ -122,11 +135,11 @@ export const loadIntegrationReadinessSnapshot = async (): Promise<AdminIntegrati
         title: 'Mercado Pago',
         category: 'payments',
         state: mercadoPagoState,
-        credentialAuthority: mercadoPagoCheckout ? 'environment' : 'none',
+        credentialAuthority: mercadoPagoAuthority,
         details: {
           pixCheckoutConfigured: mercadoPagoCheckout,
           webhookConfigured: mercadoPagoWebhook,
-          productionActivatedByVault: false,
+          productionActivatedByVault: vaultCheckout,
         },
       },
       {
