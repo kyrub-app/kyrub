@@ -39,10 +39,6 @@ const transformationSource = readFileSync(
   'server/inventory/inventoryTransformationExecutionService.ts',
   'utf8'
 );
-const transformationEndpointSource = readFileSync(
-  'api/inventory-transform.ts',
-  'utf8'
-);
 const actionExecuteSource = readFileSync('api/action-execute.ts', 'utf8');
 
 const catalog: InventoryCatalogItem[] = [
@@ -190,7 +186,7 @@ describe('product inventory and composition', () => {
         { name: 'Aparas aproveitáveis', quantity: 0.2, unit: 'kg', kind: 'byproduct' },
       ],
       losses: [
-        { name: 'Gordura e limpeza', quantity: 0.3, unit: 'kg', reason: 'descarte' },
+        { name: 'Gordura e limpeza', quantity: 300, unit: 'g', reason: 'descarte' },
       ],
       source: { kind: 'processing', label: 'Porcionamento de carne' },
       requiresConfirmation: true,
@@ -200,7 +196,20 @@ describe('product inventory and composition', () => {
     assert.equal(proposal.inputs[0]?.quantity, 5);
     assert.equal(proposal.outputs[0]?.kind, 'intermediate');
     assert.equal(proposal.outputs[1]?.kind, 'byproduct');
-    assert.equal(proposal.losses[0]?.quantity, 0.3);
+    assert.equal(proposal.losses[0]?.quantity, 300);
+
+    assert.equal(
+      normalizeKyrubInventoryTransformationProposal({
+        id: 'impossible-loss',
+        type: 'transform_inventory',
+        inputs: [{ name: 'Carne bovina', quantity: 5, unit: 'kg' }],
+        outputs: [{ name: 'Hambúrguer', quantity: 1, unit: 'un', kind: 'intermediate' }],
+        losses: [{ name: 'Perda', quantity: 6, unit: 'kg' }],
+        source: { kind: 'processing' },
+        requiresConfirmation: true,
+      }),
+      null
+    );
   });
 
   test('transformation executor consumes inputs once, produces outputs atomically and never double-decrements losses', () => {
@@ -215,12 +224,13 @@ describe('product inventory and composition', () => {
     assert.match(transformationSource, /collection\('transformations'\)/);
   });
 
-  test('confirmed transformation endpoint reuses sellable-stock reconciliation', () => {
-    assert.match(transformationEndpointSource, /confirmed/);
-    assert.match(transformationEndpointSource, /executeAuthorizedInventoryTransformation/);
+  test('transformations share the existing action runtime and reconcile sellable stock', () => {
+    assert.match(actionExecuteSource, /rawProposal\?\.type === 'transform_inventory'/);
+    assert.match(actionExecuteSource, /executeAuthorizedInventoryTransformation/);
     assert.match(
-      transformationEndpointSource,
+      actionExecuteSource,
       /reconcileDerivedProductStockForTenant\(result\.entityId\)/
     );
+    assert.doesNotMatch(actionExecuteSource, /inventory-transform\.ts/);
   });
 });
