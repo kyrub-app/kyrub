@@ -9,7 +9,7 @@ import {
 } from '../../src/utils/canonicalPayment';
 import {
   createMercadoPagoPixPayment,
-  isMercadoPagoPixConfigured,
+  isMercadoPagoPixRuntimeConfigured,
   type MercadoPagoPixCheckout,
 } from './mercadoPagoPixProvider';
 
@@ -39,7 +39,7 @@ export const attachMercadoPagoPixToExistingIntent = async (input: {
   paymentId: string;
   expiresAt: string;
 }): Promise<MercadoPagoCheckoutBridgeResult> => {
-  if (!isMercadoPagoPixConfigured()) return emptyBridge(input.expiresAt);
+  if (!(await isMercadoPagoPixRuntimeConfigured())) return emptyBridge(input.expiresAt);
 
   const intentRef = adminDb.doc(
     `stores/${input.storeId}/paymentIntents/${input.paymentIntentId}`
