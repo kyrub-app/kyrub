@@ -50,6 +50,16 @@ const latestAttachmentMessage = (
   return null;
 };
 
+const latestUserMessage = (
+  payload: KyrubAiConsultantRequest
+) => {
+  for (let index = payload.messages.length - 1; index >= 0; index -= 1) {
+    const message = payload.messages[index];
+    if (message.role === 'user') return message;
+  }
+  return null;
+};
+
 const withDeterministicInventoryProposal = (
   payload: KyrubAiConsultantRequest,
   result: KyrubAiConsultantResponse
@@ -57,10 +67,11 @@ const withDeterministicInventoryProposal = (
   if (result.actionProposal) return result;
 
   const attachmentMessage = latestAttachmentMessage(payload);
-  if (!attachmentMessage) return result;
+  const intentMessage = latestUserMessage(payload);
+  if (!attachmentMessage || !intentMessage) return result;
 
   const proposal = buildKyrubInventoryAttachmentIntakeProposal(
-    attachmentMessage.content,
+    intentMessage.content,
     result.reply,
     payload.conversationId,
     (attachmentMessage.attachments ?? []).map(attachment => attachment.id)
