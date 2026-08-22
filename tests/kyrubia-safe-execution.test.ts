@@ -242,7 +242,7 @@ test('safe executor pins a Firebase Admin compatible Node runtime', () => {
   assert.equal(packageJson.engines?.node, '22.x');
 });
 
-test('root Vercel safe executor statically bundles the execution service', () => {
+test('root Vercel safe executor lazily loads the action graph outside payment transports', () => {
   const executeRoute = readFileSync(
     new URL('../api/action-execute.ts', import.meta.url),
     'utf8'
@@ -250,9 +250,15 @@ test('root Vercel safe executor statically bundles the execution service', () =>
 
   assert.match(
     executeRoute,
-    /from '\.\.\/server\/actions\/actionExecutionService\.js'/
+    /import\('\.\.\/server\/actions\/actionExecutionService\.js'\)/
   );
-  assert.doesNotMatch(executeRoute, /import\(/);
+  assert.match(
+    executeRoute,
+    /import\('\.\.\/server\/actions\/actionExecutionFacade\.js'\)/
+  );
+  assert.match(executeRoute, /transport === 'marketplace-payment-intent'/);
+  assert.match(executeRoute, /transport === 'mercado-pago-webhook'/);
+  assert.doesNotMatch(executeRoute, /^import\s.+from\s+['"]\.\.\/server\//m);
 });
 
 test('serverless dependency chains use ESM-resolvable relative imports where runtime resolution remains necessary', () => {
