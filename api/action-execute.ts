@@ -50,6 +50,58 @@ export default async function handler(
   );
   const transport = headerValue(request.query?.transport);
 
+  if (transport === 'kyrubia-user-ai-provider') {
+    const body = request.body && typeof request.body === 'object' && !Array.isArray(request.body)
+      ? request.body as Record<string, unknown>
+      : {};
+    try {
+      const vault = await import('../server/ai/userAiProviderCredentialService.js');
+      const operation = clean(body.operation);
+      if (operation === 'list') {
+        response.status(200).json(
+          await vault.listAuthorizedUserAiProviderCredentials(authorization)
+        );
+        return;
+      }
+      if (operation === 'save') {
+        response.status(200).json(
+          await vault.saveAuthorizedUserAiProviderCredential(authorization, {
+            provider: body.provider,
+            apiKey: body.apiKey,
+          })
+        );
+        return;
+      }
+      if (operation === 'test') {
+        response.status(200).json(
+          await vault.testAuthorizedUserAiProviderCredential(
+            authorization,
+            body.provider
+          )
+        );
+        return;
+      }
+      if (operation === 'delete') {
+        response.status(200).json(
+          await vault.deleteAuthorizedUserAiProviderCredential(
+            authorization,
+            body.provider
+          )
+        );
+        return;
+      }
+      response.status(400).json({
+        error: 'Operação de integração de IA inválida.',
+        code: 'AI_PROVIDER_OPERATION_INVALID',
+      });
+    } catch (error) {
+      const vault = await import('../server/ai/userAiProviderCredentialService.js');
+      const mapped = vault.mapUserAiProviderCredentialError(error);
+      response.status(mapped.status).json(mapped.body);
+    }
+    return;
+  }
+
   if (transport === 'marketplace-payment-intent') {
     let mapError: ((error: unknown) => HttpErrorResult) | null = null;
     try {
