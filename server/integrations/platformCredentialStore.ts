@@ -3,14 +3,14 @@ import type {
   KyrubIntegrationCredentialRecord,
   KyrubIntegrationEnvironment,
   KyrubIntegrationProviderId,
-} from '../../shared/integrationCredentials';
-import { adminDb } from '../firebaseAdmin';
+} from '../../shared/integrationCredentials.js';
+import { adminDb } from '../firebaseAdmin.js';
 import {
   decryptIntegrationSecret,
   encryptIntegrationSecret,
   getIntegrationMasterKey,
   type EncryptedSecretEnvelope,
-} from './secretVault';
+} from './secretVault.js';
 
 const COLLECTION = 'platformIntegrationCredentials';
 
