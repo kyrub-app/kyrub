@@ -20,6 +20,7 @@ import {
 } from '../shared/kyrubiaCapabilityRouter.js';
 import { buildKyrubInventoryIntakeProposal } from '../shared/kyrubInventoryIntake.js';
 import { buildKyrubInventoryMovementProposal } from '../shared/kyrubInventoryMovements.js';
+import { buildKyrubInventoryTransformationProposal } from '../shared/kyrubInventoryTransformationIntent.js';
 import { resolveKyrubInventoryHistoryRead } from '../shared/kyrubiaInventoryHistory.js';
 import { handleKyrubiaCatalogAnalysis } from '../server/kyrubiaCatalogAnalysisRoute.js';
 import handleKyrubia from './kyrubia.js';
@@ -44,6 +45,7 @@ const CONSULTOR_KYRUB_COMPATIBILITY = {
     { name: 'create_note' },
     { name: 'import_catalog_draft' },
     { name: 'adjust_inventory' },
+    { name: 'transform_inventory' },
   ],
 } as const;
 
@@ -199,6 +201,64 @@ const withCapabilityPolicy = (
     break;
   }
   return { ...body, messages };
+};
+
+const inventoryTransformationResponse = (
+  body: Record<string, unknown>,
+  messages: KyrubAiConversationMessage[]
+): KyrubAiConsultantResponse | null => {
+  const latest = latestUserMessage(messages);
+  if (!latest) return null;
+  const conversationId = typeof body.conversationId === 'string'
+    ? body.conversationId.trim()
+    : '';
+  const proposal = buildKyrubInventoryTransformationProposal(
+    latest.content,
+    conversationId
+  );
+  if (!proposal) return null;
+
+  const consumed = proposal.inputs
+    .map(item => `• ${item.name} — ${item.quantity.toLocaleString('pt-BR')} ${item.unit}`)
+    .join('\n');
+  const produced = proposal.outputs
+    .filter(item => item.kind !== 'byproduct')
+    .map(item => `• ${item.name} — ${item.quantity.toLocaleString('pt-BR')} ${item.unit}`)
+    .join('\n');
+  const byproducts = proposal.outputs
+    .filter(item => item.kind === 'byproduct')
+    .map(item => `• ${item.name} — ${item.quantity.toLocaleString('pt-BR')} ${item.unit}`)
+    .join('\n');
+  const losses = proposal.losses
+    .map(item => `• ${item.name} — ${item.quantity.toLocaleString('pt-BR')} ${item.unit}`)
+    .join('\n');
+
+  const sections = [
+    `Consome:\n${consumed}`,
+    `Produz:\n${produced}`,
+    byproducts ? `Subprodutos aproveitáveis:\n${byproducts}` : '',
+    losses ? `Perdas / descarte:\n${losses}` : '',
+  ].filter(Boolean).join('\n\n');
+
+  return {
+    reply:
+      `Preparei uma transformação de estoque para revisão.\n\n${sections}\n\n` +
+      'A confirmação baixa os insumos e adiciona os itens produzidos na mesma transação. ' +
+      'Perdas são auditadas sem baixar o estoque duas vezes; subprodutos aproveitáveis permanecem como saldo. ' +
+      'Nada será executado antes da sua confirmação.',
+    provider: 'kyrub',
+    model: 'kyrub-inventory-transformation-runtime-v1',
+    mode: 'deterministic',
+    requestId: proposal.id,
+    actionProposal: proposal,
+    capabilities: {
+      actionsEnabled: true,
+      enabledActions: ['transform_inventory'],
+      enabledReadActions: [],
+      voiceEnabled: false,
+      persistentCloudHistoryEnabled: false,
+    },
+  };
 };
 
 const inventoryIntakeResponse = (
@@ -575,6 +635,12 @@ export default async function handler(
     const history = inventoryHistoryResponse(body, messages);
     if (history) {
       response.status(200).json(history);
+      return;
+    }
+
+    const transformation = inventoryTransformationResponse(body, messages);
+    if (transformation) {
+      response.status(200).json(transformation);
       return;
     }
 
