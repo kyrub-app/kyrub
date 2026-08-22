@@ -1,14 +1,14 @@
 import { randomUUID } from 'node:crypto';
 import { FieldValue } from 'firebase-admin/firestore';
-import { publicIntegrationCredentialView } from '../../shared/integrationCredentials';
-import { adminDb } from '../firebaseAdmin';
+import { publicIntegrationCredentialView } from '../../shared/integrationCredentials.js';
+import { adminDb } from '../firebaseAdmin.js';
 import {
   loadPlatformCredentialMetadata,
   markPlatformCredentialValidation,
   savePlatformCredentials,
-} from '../integrations/platformCredentialStore';
-import { testMercadoPagoConnection } from '../payments/mercadoPagoPixProvider';
-import { authorizeIntegrationReadiness } from './integrationReadinessService';
+} from '../integrations/platformCredentialStore.js';
+import { testMercadoPagoConnection } from '../payments/mercadoPagoPixProvider.js';
+import { authorizeIntegrationReadiness } from './integrationReadinessService.js';
 
 const clean = (value: unknown): string =>
   typeof value === 'string' ? value.trim() : '';
