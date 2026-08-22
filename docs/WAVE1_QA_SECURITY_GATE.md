@@ -4,13 +4,13 @@ This document is the independent merge gate for the first parallel Kyrub enginee
 
 ## Scope
 
-Wave 1 reviews these sibling workstreams:
+Wave 1 reviews these implementation workstreams:
 
-- Payments / Mercado Pago Pix E2E (`#275`)
-- Platform / integration credential metadata boundary (`#276`)
-- Gamification / reward ledger foundation (`#274`)
+- Payments / Mercado Pago Pix E2E (`#275`, integrated)
+- Platform / integration credential metadata boundary (`#278`, rebased after sibling integration; supersedes `#276`)
+- Gamification / reward ledger foundation (`#274`, integrated)
 
-All three workstreams originated from the same validated Control Plane base. QA must review the resulting behavior independently rather than assuming that a green implementation test suite proves the cross-domain contract.
+The initial workstreams originated from the same validated Control Plane base. QA must review the resulting behavior independently rather than assuming that a green implementation test suite proves the cross-domain contract. When one sibling changes `main`, remaining work must be reconciled explicitly against the new base before integration.
 
 ## Payment authority gate
 
@@ -71,4 +71,4 @@ Do not merge sibling branches merely because they were created in parallel. Befo
 
 ## Exit condition
 
-Wave 1 is complete only when the three implementation PRs have passed their own CI plus this cross-domain review, and the resulting `main` still passes the full Kyrub validation/build gates after integration.
+Wave 1 is complete only when the three implementation workstreams have passed their own CI plus this cross-domain review, and the resulting `main` still passes the full Kyrub validation/build gates after integration.
