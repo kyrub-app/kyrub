@@ -1,17 +1,17 @@
-import { adminDb } from '../firebaseAdmin';
+import { adminDb } from '../firebaseAdmin.js';
 import {
   normalizeCanonicalPaymentIntent,
   type CanonicalPaymentIntent,
-} from '../../src/utils/canonicalPaymentIntent';
+} from '../../src/utils/canonicalPaymentIntent.js';
 import {
   normalizeCanonicalPayment,
   type CanonicalPayment,
-} from '../../src/utils/canonicalPayment';
+} from '../../src/utils/canonicalPayment.js';
 import {
   createMercadoPagoPixPayment,
   isMercadoPagoPixRuntimeConfigured,
   type MercadoPagoPixCheckout,
-} from './mercadoPagoPixProvider';
+} from './mercadoPagoPixProvider.js';
 
 export interface MercadoPagoCheckoutBridgeResult {
   providerReady: boolean;
