@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 import type { KyrubiaAiProviderId } from '../../shared/kyrubiaAiRouting.js';
 import { verifyFirebaseIdToken } from './consultantAuth.js';
+import { ConsultantHttpError } from './types.js';
 import { adminDb } from '../firebaseAdmin.js';
 import {
   decryptIntegrationSecret,
@@ -56,6 +57,12 @@ export const mapUserAiProviderCredentialError = (
   error: unknown
 ): { status: number; body: { error: string; code: string } } => {
   if (error instanceof UserAiProviderCredentialError) {
+    return {
+      status: error.status,
+      body: { error: error.message, code: error.code },
+    };
+  }
+  if (error instanceof ConsultantHttpError) {
     return {
       status: error.status,
       body: { error: error.message, code: error.code },
