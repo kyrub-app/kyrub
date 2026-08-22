@@ -4,7 +4,7 @@ import {
   type KyrubInventoryTransformationOutput,
   type KyrubInventoryTransformationProposal,
   type KyrubInventoryTransformationUnit,
-} from './kyrubInventoryTransformation';
+} from './kyrubInventoryTransformation.js';
 
 const normalizeText = (value: string): string =>
   value
