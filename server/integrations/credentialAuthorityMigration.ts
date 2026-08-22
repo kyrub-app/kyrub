@@ -29,8 +29,8 @@ export interface StagedCredentialMigration {
   readyForAtomicCutover: true;
 }
 
-const required = (value: string, code: string): string => {
-  const normalized = value.trim();
+const required = (value: unknown, code: string): string => {
+  const normalized = typeof value === 'string' ? value.trim() : '';
   if (!normalized) throw new Error(code);
   return normalized;
 };
@@ -50,15 +50,22 @@ export const assertSingleCredentialAuthority = (
     ) {
       throw new Error('KYRUB_CREDENTIAL_LEGACY_ENVELOPE_REQUIRED');
     }
-    required(candidate.associatedData as string, 'KYRUB_CREDENTIAL_LEGACY_AAD_REQUIRED');
+    const associatedData = required(
+      candidate.associatedData,
+      'KYRUB_CREDENTIAL_LEGACY_AAD_REQUIRED'
+    );
     if ('secretRef' in candidate) {
       throw new Error('KYRUB_CREDENTIAL_MULTIPLE_AUTHORITIES');
     }
-    return candidate as unknown as KyrubCredentialAuthority;
+    return {
+      kind: 'legacy_envelope',
+      encryptedCredentials: candidate.encryptedCredentials as EncryptedSecretEnvelope,
+      associatedData,
+    };
   }
   if (candidate.kind === 'google_secret_manager') {
     const secretRef = required(
-      candidate.secretRef as string,
+      candidate.secretRef,
       'KYRUB_CREDENTIAL_SECRET_REF_REQUIRED'
     );
     parseGoogleSecretManagerRef(secretRef);
@@ -83,17 +90,24 @@ export const stageLegacyCredentialMigration = async <T>(input: {
   targetSecretRef: string;
   vault: Pick<GoogleSecretManagerVault, 'addVersion'>;
 }): Promise<StagedCredentialMigration> => {
-  required(input.associatedData, 'KYRUB_CREDENTIAL_LEGACY_AAD_REQUIRED');
-  parseGoogleSecretManagerRef(input.targetSecretRef);
+  const associatedData = required(
+    input.associatedData,
+    'KYRUB_CREDENTIAL_LEGACY_AAD_REQUIRED'
+  );
+  const targetSecretRef = required(
+    input.targetSecretRef,
+    'KYRUB_CREDENTIAL_SECRET_REF_REQUIRED'
+  );
+  parseGoogleSecretManagerRef(targetSecretRef);
 
   const plaintext = decryptIntegrationSecret<T>(
     input.envelope,
     input.masterKey,
-    input.associatedData
+    associatedData
   );
   const serialized = JSON.stringify(plaintext);
   const written: KyrubVaultWriteResult = await input.vault.addVersion(
-    input.targetSecretRef,
+    targetSecretRef,
     serialized
   );
 
@@ -101,7 +115,7 @@ export const stageLegacyCredentialMigration = async <T>(input: {
     sourceAuthority: 'legacy_envelope',
     nextAuthority: {
       kind: 'google_secret_manager',
-      secretRef: input.targetSecretRef,
+      secretRef: targetSecretRef,
       version: written.version,
     },
     resourceName: written.resourceName,
