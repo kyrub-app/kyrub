@@ -27,6 +27,14 @@ test('Mercado Pago bridge is a no-op only when no runtime credential can be reso
   assert.match(bridgeSource, /adminDb\.runTransaction/);
 });
 
+test('Mercado Pago webhook gate resolves both runtime credentials through Vault-aware resolver', () => {
+  assert.match(providerSource, /isMercadoPagoWebhookRuntimeConfigured/);
+  assert.match(providerSource, /resolveMercadoPagoAccessToken\(\)/);
+  assert.match(providerSource, /resolveMercadoPagoWebhookSecret\(\)/);
+  assert.match(webhookSource, /await isMercadoPagoWebhookRuntimeConfigured\(\)/);
+  assert.doesNotMatch(webhookSource, /isMercadoPagoWebhookConfigured/);
+});
+
 test('Mercado Pago signed webhook remains the only payment authority', () => {
   assert.match(providerSource, /createHmac\('sha256', normalizedSecret\)/);
   assert.match(providerSource, /timingSafeEqual/);
