@@ -2,12 +2,18 @@ import {
   loadAuthorizedOperationsHealth,
   mapOperationsHealthError,
 } from '../../../server/admin/operationsHealthRouter.js';
+import {
+  loadAuthorizedIntegrationReadiness,
+  mapIntegrationReadinessError,
+} from '../../../server/admin/integrationReadinessService.js';
 
 type HeaderValue = string | string[] | undefined;
+type QueryValue = string | string[] | undefined;
 
 type RequestLike = {
   method?: string;
   headers: Record<string, HeaderValue>;
+  query?: Record<string, QueryValue>;
 };
 
 type ResponseLike = {
@@ -16,7 +22,7 @@ type ResponseLike = {
   json(body: unknown): void;
 };
 
-const headerValue = (value: HeaderValue): string =>
+const headerValue = (value: HeaderValue | QueryValue): string =>
   Array.isArray(value) ? value[0] ?? '' : value ?? '';
 
 export default async function handler(
@@ -34,10 +40,23 @@ export default async function handler(
     return;
   }
 
+  const authorization = headerValue(
+    request.headers.authorization ?? request.headers.Authorization
+  );
+  const transport = headerValue(request.query?.transport);
+
+  if (transport === 'integration-readiness') {
+    try {
+      const snapshot = await loadAuthorizedIntegrationReadiness(authorization);
+      response.status(200).json(snapshot);
+    } catch (error) {
+      const mapped = mapIntegrationReadinessError(error);
+      response.status(mapped.status).json(mapped.body);
+    }
+    return;
+  }
+
   try {
-    const authorization = headerValue(
-      request.headers.authorization ?? request.headers.Authorization
-    );
     const snapshot = await loadAuthorizedOperationsHealth(authorization);
     response.status(200).json(snapshot);
   } catch (error) {
