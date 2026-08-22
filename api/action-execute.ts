@@ -131,10 +131,43 @@ export default async function handler(
       import('../server/admin/executablePlanCatalogService.js'),
       import('../server/admin/storeEntitlementLifecycleService.js'),
     ]);
-    mapActionError = actionService.mapKyrubActionExecutionError;
 
-    if (receiptVerification.isKyrubActionReceiptVerificationRequest(request.body)) {
-      const verification = await receiptVerification.verifyAuthorizedKyrubActionReceipt(
+    const { executeAuthorizedKyrubAction } = actionFacade;
+    const { mapKyrubActionExecutionError } = actionService;
+    const {
+      executeAuthorizedKyrubCatalogDraft,
+      isKyrubCatalogDraftExecutionRequest,
+      isKyrubCatalogDraftListRequest,
+      isKyrubCatalogProductPublicationRequest,
+      isKyrubCatalogProductUpdateRequest,
+      listAuthorizedKyrubCatalogDrafts,
+      setAuthorizedKyrubCatalogProductPublication,
+      updateAuthorizedKyrubCatalogProduct,
+    } = catalogLifecycle;
+    const {
+      executeAuthorizedKyrubCatalogImport,
+      isKyrubCatalogImportExecutionRequest,
+    } = catalogImport;
+    const {
+      executeAuthorizedKyrubInventoryAdjustment,
+      isKyrubInventoryAdjustmentExecutionRequest,
+    } = inventoryAdjustment;
+    const {
+      executeAuthorizedKyrubProductComposition,
+      isKyrubProductCompositionExecutionRequest,
+    } = productComposition;
+    const { ensureCanonicalStoreForCatalog } = canonicalStoreRepair;
+    const {
+      isKyrubActionReceiptVerificationRequest,
+      verifyAuthorizedKyrubActionReceipt,
+    } = receiptVerification;
+    const { hydrateExecutablePlanCatalog } = executablePlanCatalog;
+    const { reconcileStoreEntitlementFromAuthorization } = entitlementLifecycle;
+
+    mapActionError = mapKyrubActionExecutionError;
+
+    if (isKyrubActionReceiptVerificationRequest(request.body)) {
+      const verification = await verifyAuthorizedKyrubActionReceipt(
         authorization,
         request.body
       );
@@ -142,8 +175,8 @@ export default async function handler(
       return;
     }
 
-    if (inventoryAdjustment.isKyrubInventoryAdjustmentExecutionRequest(request.body)) {
-      const inventory = await inventoryAdjustment.executeAuthorizedKyrubInventoryAdjustment(
+    if (isKyrubInventoryAdjustmentExecutionRequest(request.body)) {
+      const inventory = await executeAuthorizedKyrubInventoryAdjustment(
         authorization,
         request.body
       );
@@ -151,8 +184,8 @@ export default async function handler(
       return;
     }
 
-    if (productComposition.isKyrubProductCompositionExecutionRequest(request.body)) {
-      const composition = await productComposition.executeAuthorizedKyrubProductComposition(
+    if (isKyrubProductCompositionExecutionRequest(request.body)) {
+      const composition = await executeAuthorizedKyrubProductComposition(
         authorization,
         request.body
       );
@@ -161,17 +194,17 @@ export default async function handler(
     }
 
     if (
-      catalogImport.isKyrubCatalogImportExecutionRequest(request.body) ||
-      catalogLifecycle.isKyrubCatalogDraftListRequest(request.body) ||
-      catalogLifecycle.isKyrubCatalogDraftExecutionRequest(request.body) ||
-      catalogLifecycle.isKyrubCatalogProductUpdateRequest(request.body) ||
-      catalogLifecycle.isKyrubCatalogProductPublicationRequest(request.body)
+      isKyrubCatalogImportExecutionRequest(request.body) ||
+      isKyrubCatalogDraftListRequest(request.body) ||
+      isKyrubCatalogDraftExecutionRequest(request.body) ||
+      isKyrubCatalogProductUpdateRequest(request.body) ||
+      isKyrubCatalogProductPublicationRequest(request.body)
     ) {
-      await canonicalStoreRepair.ensureCanonicalStoreForCatalog(authorization);
+      await ensureCanonicalStoreForCatalog(authorization);
     }
 
-    if (catalogImport.isKyrubCatalogImportExecutionRequest(request.body)) {
-      const imported = await catalogImport.executeAuthorizedKyrubCatalogImport(
+    if (isKyrubCatalogImportExecutionRequest(request.body)) {
+      const imported = await executeAuthorizedKyrubCatalogImport(
         authorization,
         request.body
       );
@@ -179,14 +212,14 @@ export default async function handler(
       return;
     }
 
-    if (catalogLifecycle.isKyrubCatalogDraftListRequest(request.body)) {
-      const drafts = await catalogLifecycle.listAuthorizedKyrubCatalogDrafts(authorization);
+    if (isKyrubCatalogDraftListRequest(request.body)) {
+      const drafts = await listAuthorizedKyrubCatalogDrafts(authorization);
       response.status(200).json(drafts);
       return;
     }
 
-    if (catalogLifecycle.isKyrubCatalogDraftExecutionRequest(request.body)) {
-      const draft = await catalogLifecycle.executeAuthorizedKyrubCatalogDraft(
+    if (isKyrubCatalogDraftExecutionRequest(request.body)) {
+      const draft = await executeAuthorizedKyrubCatalogDraft(
         authorization,
         request.body
       );
@@ -194,8 +227,8 @@ export default async function handler(
       return;
     }
 
-    if (catalogLifecycle.isKyrubCatalogProductUpdateRequest(request.body)) {
-      const updated = await catalogLifecycle.updateAuthorizedKyrubCatalogProduct(
+    if (isKyrubCatalogProductUpdateRequest(request.body)) {
+      const updated = await updateAuthorizedKyrubCatalogProduct(
         authorization,
         request.body
       );
@@ -203,10 +236,10 @@ export default async function handler(
       return;
     }
 
-    if (catalogLifecycle.isKyrubCatalogProductPublicationRequest(request.body)) {
-      await entitlementLifecycle.reconcileStoreEntitlementFromAuthorization(authorization);
-      await executablePlanCatalog.hydrateExecutablePlanCatalog();
-      const publication = await catalogLifecycle.setAuthorizedKyrubCatalogProductPublication(
+    if (isKyrubCatalogProductPublicationRequest(request.body)) {
+      await reconcileStoreEntitlementFromAuthorization(authorization);
+      await hydrateExecutablePlanCatalog();
+      const publication = await setAuthorizedKyrubCatalogProductPublication(
         authorization,
         request.body
       );
@@ -214,9 +247,9 @@ export default async function handler(
       return;
     }
 
-    await entitlementLifecycle.reconcileStoreEntitlementFromAuthorization(authorization);
-    await executablePlanCatalog.hydrateExecutablePlanCatalog();
-    const result = await actionFacade.executeAuthorizedKyrubAction(
+    await reconcileStoreEntitlementFromAuthorization(authorization);
+    await hydrateExecutablePlanCatalog();
+    const result = await executeAuthorizedKyrubAction(
       authorization,
       request.body
     );
