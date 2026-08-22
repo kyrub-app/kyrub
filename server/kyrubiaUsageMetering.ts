@@ -1,4 +1,8 @@
 import { FieldValue } from 'firebase-admin/firestore';
+import type {
+  KyrubiaAiFundingSource,
+  KyrubiaAiProviderId,
+} from '../shared/kyrubiaAiRouting.js';
 import {
   estimateGeminiUsageCost,
   parseGeminiUsageMetadata,
@@ -24,6 +28,8 @@ export type RecordKyrubiaAiUsageInput = {
   route: KyrubiaAiUsageRoute;
   fallbackUsed: boolean;
   payload: Record<string, unknown>;
+  provider?: KyrubiaAiProviderId;
+  fundingSource?: KyrubiaAiFundingSource;
 };
 
 export type RecordKyrubiaAiUsageResult = {
@@ -70,6 +76,8 @@ export const recordKyrubiaAiUsage = async (
     input.fallbackUsed === true && input.route === 'primary'
       ? 'economy'
       : input.route;
+  const provider = input.provider ?? 'google-gemini';
+  const fundingSource = input.fundingSource ?? 'platform_legacy';
   const baseCost = estimateGeminiUsageCost(model, usage);
   const hasSeparateToolUse = usage.toolUsePromptTokenCount > 0;
   const cost = hasSeparateToolUse
@@ -84,11 +92,12 @@ export const recordKyrubiaAiUsage = async (
 
   try {
     await adminDb.collection('kyrub_usage_events').doc(eventId).create({
-      schemaVersion: 1,
+      schemaVersion: 2,
       id: eventId,
       uid,
       resource: 'ai',
-      provider: 'google-gemini',
+      provider,
+      fundingSource,
       requestId,
       callIndex,
       operation: input.operation,
