@@ -1,17 +1,3 @@
-import {
-  loadAuthorizedOperationsHealth,
-  mapOperationsHealthError,
-} from '../../../server/admin/operationsHealthRouter.js';
-import {
-  loadAuthorizedIntegrationReadiness,
-  mapIntegrationReadinessError,
-} from '../../../server/admin/integrationReadinessService.js';
-import {
-  mapIntegrationCredentialError,
-  saveAuthorizedMercadoPagoCredentials,
-  testAuthorizedMercadoPagoConnection,
-} from '../../../server/admin/integrationCredentialService.js';
-
 type HeaderValue = string | string[] | undefined;
 type QueryValue = string | string[] | undefined;
 
@@ -28,6 +14,11 @@ type ResponseLike = {
   json(body: unknown): void;
 };
 
+type HttpErrorResult = {
+  status: number;
+  body: unknown;
+};
+
 const headerValue = (value: HeaderValue | QueryValue): string =>
   Array.isArray(value) ? value[0] ?? '' : value ?? '';
 
@@ -35,6 +26,11 @@ const bodyRecord = (value: unknown): Record<string, unknown> =>
   value && typeof value === 'object' && !Array.isArray(value)
     ? value as Record<string, unknown>
     : {};
+
+const unavailable = (message: string): HttpErrorResult => ({
+  status: 503,
+  body: { error: message, code: 'ADMIN_RUNTIME_UNAVAILABLE' },
+});
 
 export default async function handler(
   request: RequestLike,
@@ -54,11 +50,16 @@ export default async function handler(
       response.status(405).json({ error: 'Método não permitido.', code: 'METHOD_NOT_ALLOWED' });
       return;
     }
+    let mapError: ((error: unknown) => HttpErrorResult) | null = null;
     try {
-      const snapshot = await loadAuthorizedIntegrationReadiness(authorization);
+      const readiness = await import('../../../server/admin/integrationReadinessService.js');
+      mapError = readiness.mapIntegrationReadinessError;
+      const snapshot = await readiness.loadAuthorizedIntegrationReadiness(authorization);
       response.status(200).json(snapshot);
     } catch (error) {
-      const mapped = mapIntegrationReadinessError(error);
+      const mapped = mapError
+        ? mapError(error)
+        : unavailable('Não foi possível consultar as integrações agora.');
       response.status(mapped.status).json(mapped.body);
     }
     return;
@@ -70,15 +71,20 @@ export default async function handler(
       return;
     }
     const body = bodyRecord(request.body);
+    let mapError: ((error: unknown) => HttpErrorResult) | null = null;
     try {
-      const credential = await saveAuthorizedMercadoPagoCredentials({
+      const credentials = await import('../../../server/admin/integrationCredentialService.js');
+      mapError = credentials.mapIntegrationCredentialError;
+      const credential = await credentials.saveAuthorizedMercadoPagoCredentials({
         authorization,
         accessToken: body.accessToken,
         webhookSecret: body.webhookSecret,
       });
       response.status(200).json({ ok: true, credential });
     } catch (error) {
-      const mapped = mapIntegrationCredentialError(error);
+      const mapped = mapError
+        ? mapError(error)
+        : unavailable('Não foi possível salvar a credencial agora.');
       response.status(mapped.status).json(mapped.body);
     }
     return;
@@ -89,11 +95,16 @@ export default async function handler(
       response.status(405).json({ error: 'Método não permitido.', code: 'METHOD_NOT_ALLOWED' });
       return;
     }
+    let mapError: ((error: unknown) => HttpErrorResult) | null = null;
     try {
-      const result = await testAuthorizedMercadoPagoConnection(authorization);
+      const credentials = await import('../../../server/admin/integrationCredentialService.js');
+      mapError = credentials.mapIntegrationCredentialError;
+      const result = await credentials.testAuthorizedMercadoPagoConnection(authorization);
       response.status(result.ok ? 200 : 422).json(result);
     } catch (error) {
-      const mapped = mapIntegrationCredentialError(error);
+      const mapped = mapError
+        ? mapError(error)
+        : unavailable('Não foi possível testar a integração agora.');
       response.status(mapped.status).json(mapped.body);
     }
     return;
@@ -107,11 +118,16 @@ export default async function handler(
     return;
   }
 
+  let mapError: ((error: unknown) => HttpErrorResult) | null = null;
   try {
-    const snapshot = await loadAuthorizedOperationsHealth(authorization);
+    const operations = await import('../../../server/admin/operationsHealthRouter.js');
+    mapError = operations.mapOperationsHealthError;
+    const snapshot = await operations.loadAuthorizedOperationsHealth(authorization);
     response.status(200).json(snapshot);
   } catch (error) {
-    const mapped = mapOperationsHealthError(error);
+    const mapped = mapError
+      ? mapError(error)
+      : unavailable('Não foi possível consultar a saúde operacional agora.');
     response.status(mapped.status).json(mapped.body);
   }
 }
