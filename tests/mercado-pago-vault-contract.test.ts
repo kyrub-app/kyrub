@@ -10,6 +10,10 @@ const resolverSource = readFileSync(
   'server/integrations/providerCredentialResolver.ts',
   'utf8'
 );
+const readinessSource = readFileSync(
+  'server/admin/integrationReadinessService.ts',
+  'utf8'
+);
 const credentialServiceSource = readFileSync(
   'server/admin/integrationCredentialService.ts',
   'utf8'
@@ -32,6 +36,22 @@ test('Mercado Pago resolver checks Vault before controlled environment fallback'
   );
   assert.match(resolverSource, /authority: 'vault_v1'/);
   assert.match(resolverSource, /authority: accessToken \|\| webhookSecret \? 'environment' : 'none'/);
+});
+
+test('readiness never combines partial Vault credentials with legacy ENV credentials', () => {
+  assert.match(readinessSource, /const vaultAuthority = vaultCheckout \|\| vaultWebhook/);
+  assert.match(
+    readinessSource,
+    /const mercadoPagoCheckout = vaultAuthority \? vaultCheckout : envCheckout/
+  );
+  assert.match(
+    readinessSource,
+    /const mercadoPagoWebhook = vaultAuthority\s*\? vaultCheckout && vaultWebhook\s*:\s*envWebhook/
+  );
+  assert.match(
+    readinessSource,
+    /const mercadoPagoAuthority = vaultAuthority\s*\? 'legacy_envelope'/
+  );
 });
 
 test('public credential view strips secretRef while preserving masked metadata', () => {
