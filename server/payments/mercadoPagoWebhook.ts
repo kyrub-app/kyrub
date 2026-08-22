@@ -1,8 +1,8 @@
-import { processVerifiedPaymentWebhook } from './paymentWebhookProcessor';
+import { processVerifiedPaymentWebhook } from './paymentWebhookProcessor.js';
 import {
   isMercadoPagoWebhookRuntimeConfigured,
   verifiedMercadoPagoPaymentEvent,
-} from './mercadoPagoPixProvider';
+} from './mercadoPagoPixProvider.js';
 
 export interface MercadoPagoWebhookResult {
   accepted: true;
