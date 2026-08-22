@@ -16,6 +16,7 @@ import './kyrub-delivery-completion.test';
 import './kyrub-omnichannel-source-registry.test';
 import './kyrub-inventory-ingredients.test';
 import './kyrubia-opportunity-engine.test';
+import './kyrubia-runtime-regressions.test';
 import './rc1-system-level-qa.test';
 import {
   assertKyrubExpectedState,
