@@ -137,12 +137,15 @@ const headerValue = (
   return Array.isArray(found) ? found[0] ?? '' : found ?? '';
 };
 
-export const verifyMercadoPagoWebhookSignature = async (input: {
-  headers: Record<string, string | string[] | undefined>;
-  dataId: string;
-}): Promise<void> => {
-  const secret = await resolveMercadoPagoWebhookSecret();
-  if (!secret) throw new Error('MERCADO_PAGO_WEBHOOK_NOT_CONFIGURED');
+export const verifyMercadoPagoWebhookSignatureWithSecret = (
+  input: {
+    headers: Record<string, string | string[] | undefined>;
+    dataId: string;
+  },
+  secret: string
+): void => {
+  const normalizedSecret = clean(secret);
+  if (!normalizedSecret) throw new Error('MERCADO_PAGO_WEBHOOK_NOT_CONFIGURED');
   const xSignature = headerValue(input.headers, 'x-signature');
   const xRequestId = headerValue(input.headers, 'x-request-id');
   if (!xSignature) throw new Error('MERCADO_PAGO_SIGNATURE_MISSING');
@@ -166,12 +169,20 @@ export const verifyMercadoPagoWebhookSignature = async (input: {
     xRequestId ? `request-id:${xRequestId};` : '',
     `ts:${timestamp};`,
   ].join('');
-  const expectedHash = createHmac('sha256', secret).update(manifest).digest('hex');
+  const expectedHash = createHmac('sha256', normalizedSecret).update(manifest).digest('hex');
   const expected = Buffer.from(expectedHash, 'hex');
   const provided = Buffer.from(providedHash, 'hex');
   if (expected.length !== provided.length || !timingSafeEqual(expected, provided)) {
     throw new Error('MERCADO_PAGO_SIGNATURE_INVALID');
   }
+};
+
+export const verifyMercadoPagoWebhookSignature = async (input: {
+  headers: Record<string, string | string[] | undefined>;
+  dataId: string;
+}): Promise<void> => {
+  const secret = await resolveMercadoPagoWebhookSecret();
+  verifyMercadoPagoWebhookSignatureWithSecret(input, secret);
 };
 
 const eventTypeForPayment = (payment: MercadoPagoPayment): PaymentProviderEventType | null => {
