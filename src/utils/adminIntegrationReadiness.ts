@@ -54,8 +54,9 @@ export const parseAdminIntegrationReadiness = (
   const vault = candidate.vault as Record<string, unknown> | undefined;
   if (!vault || !Array.isArray(candidate.providers)) return null;
 
-  const providers = candidate.providers.flatMap(item => {
-    if (!item || typeof item !== 'object' || Array.isArray(item)) return [];
+  const providers: AdminIntegrationReadinessSnapshot['providers'] = [];
+  for (const item of candidate.providers) {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) continue;
     const provider = item as Record<string, unknown>;
     const id = provider.id;
     const category = provider.category;
@@ -65,7 +66,7 @@ export const parseAdminIntegrationReadiness = (
       (category !== 'payments' && category !== 'orders' && category !== 'logistics') ||
       (authority !== 'environment' && authority !== 'legacy_envelope' && authority !== 'none')
     ) {
-      return [];
+      continue;
     }
     const rawDetails = provider.details && typeof provider.details === 'object' && !Array.isArray(provider.details)
       ? provider.details as Record<string, unknown>
@@ -79,15 +80,15 @@ export const parseAdminIntegrationReadiness = (
           : []
       )
     ) as Record<string, boolean | number>;
-    return [{
+    providers.push({
       id,
       title: safeString(provider.title),
       category,
       state: parseProviderState(provider.state),
       credentialAuthority: authority,
       details,
-    }];
-  });
+    });
+  }
 
   return {
     generatedAt: safeString(candidate.generatedAt),
