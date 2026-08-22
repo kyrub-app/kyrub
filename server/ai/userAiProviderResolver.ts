@@ -6,11 +6,10 @@ import {
 
 export type UserAiProviderPreference = SupportedUserAiProvider | null;
 
-export type UserAiProviderResolution =
+export type UserAiProviderSelection =
   | {
-      status: 'available';
+      status: 'selected';
       provider: SupportedUserAiProvider;
-      apiKey: string;
       selection: 'explicit' | 'single_available';
     }
   | {
@@ -21,6 +20,15 @@ export type UserAiProviderResolution =
       status: 'unavailable';
       availableProviders: [];
     };
+
+export type UserAiProviderResolution =
+  | {
+      status: 'available';
+      provider: SupportedUserAiProvider;
+      apiKey: string;
+      selection: 'explicit' | 'single_available';
+    }
+  | Extract<UserAiProviderSelection, { status: 'selection_required' | 'unavailable' }>;
 
 const supportedProviders: readonly SupportedUserAiProvider[] = [
   'google-gemini',
@@ -39,6 +47,40 @@ export const providerDisplayName = (provider: KyrubiaAiProviderId): string => {
   if (provider === 'openai') return 'OpenAI';
   if (provider === 'anthropic') return 'Anthropic';
   return 'Provedor personalizado';
+};
+
+export const decideUserAiProviderSelection = (input: {
+  availableProviders: SupportedUserAiProvider[];
+  preferredProvider?: UserAiProviderPreference;
+}): UserAiProviderSelection => {
+  const availableProviders = [...new Set(input.availableProviders)].filter(
+    isSupportedUserAiProvider
+  );
+  if (availableProviders.length === 0) {
+    return { status: 'unavailable', availableProviders: [] };
+  }
+
+  const preferred = input.preferredProvider ?? null;
+  if (preferred && availableProviders.includes(preferred)) {
+    return {
+      status: 'selected',
+      provider: preferred,
+      selection: 'explicit',
+    };
+  }
+
+  if (availableProviders.length === 1) {
+    return {
+      status: 'selected',
+      provider: availableProviders[0],
+      selection: 'single_available',
+    };
+  }
+
+  return {
+    status: 'selection_required',
+    availableProviders,
+  };
 };
 
 const availableSecretsFor = async (
@@ -65,35 +107,23 @@ export const resolveUserAiProvider = async (input: {
   }
 
   const available = await availableSecretsFor(uid);
-  if (available.length === 0) {
+  const selection = decideUserAiProviderSelection({
+    availableProviders: available.map(candidate => candidate.provider),
+    preferredProvider: input.preferredProvider,
+  });
+  if (selection.status !== 'selected') return selection;
+
+  const secret = available.find(
+    candidate => candidate.provider === selection.provider
+  );
+  if (!secret) {
     return { status: 'unavailable', availableProviders: [] };
   }
 
-  const preferred = input.preferredProvider ?? null;
-  if (preferred) {
-    const selected = available.find(candidate => candidate.provider === preferred);
-    if (selected) {
-      return {
-        status: 'available',
-        provider: selected.provider,
-        apiKey: selected.apiKey,
-        selection: 'explicit',
-      };
-    }
-  }
-
-  if (available.length === 1) {
-    const selected = available[0];
-    return {
-      status: 'available',
-      provider: selected.provider,
-      apiKey: selected.apiKey,
-      selection: 'single_available',
-    };
-  }
-
   return {
-    status: 'selection_required',
-    availableProviders: available.map(candidate => candidate.provider),
+    status: 'available',
+    provider: secret.provider,
+    apiKey: secret.apiKey,
+    selection: selection.selection,
   };
 };
