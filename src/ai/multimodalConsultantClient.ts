@@ -4,6 +4,10 @@ import {
   type KyrubAiConsultantResponse,
 } from '../../shared/aiConsultant';
 import { buildKyrubInventoryAttachmentIntakeProposal } from '../../shared/kyrubInventoryIntake';
+import {
+  buildGuidedPurchaseIntakeReply,
+  shouldGuidePurchaseIntake,
+} from '../../shared/kyrubPurchaseIntakeGuidance';
 import { auth } from '../utils/firebase';
 import { emitKyrubAiActionProposal } from './actionEvents';
 import { loadKyrubiaCatalogAnalysis } from './catalogAnalysisStore';
@@ -58,6 +62,26 @@ const latestUserMessage = (
     if (message.role === 'user') return message;
   }
   return null;
+};
+
+const withGuidedPurchaseIntake = (
+  payload: KyrubAiConsultantRequest,
+  result: KyrubAiConsultantResponse
+): KyrubAiConsultantResponse => {
+  if (result.actionProposal) return result;
+
+  const attachmentMessage = latestAttachmentMessage(payload);
+  const intentMessage = latestUserMessage(payload);
+  if (!attachmentMessage || !intentMessage) return result;
+
+  if (!shouldGuidePurchaseIntake(intentMessage.content, result.reply)) {
+    return result;
+  }
+
+  return {
+    ...result,
+    reply: buildGuidedPurchaseIntakeReply(result.reply, result.reply),
+  };
 };
 
 const withDeterministicInventoryProposal = (
@@ -157,10 +181,11 @@ export const requestKyrubAiMultimodalConsultant = async (
     );
   }
 
-  const result = withDeterministicInventoryProposal(
+  const proposedResult = withDeterministicInventoryProposal(
     contextualPayload,
     body as KyrubAiConsultantResponse
   );
+  const result = withGuidedPurchaseIntake(contextualPayload, proposedResult);
   emitKyrubAiActionProposal(contextualPayload.conversationId, result);
   return result;
 };
