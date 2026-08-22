@@ -73,11 +73,14 @@ test('client parser allowlists public detail fields and drops secret-shaped extr
   assert.equal('secretRef' in parsed.vault, false);
 });
 
-test('admin workspace is status-only and contains no credential persistence form', () => {
-  assert.match(workspaceSource, /Nenhum token, chave/);
-  assert.doesNotMatch(workspaceSource, /type=["']password["']/i);
+test('admin workspace submits Mercado Pago credentials one-way through server operations', () => {
+  assert.match(workspaceSource, /type=["']password["']/i);
+  assert.match(workspaceSource, /saveAdminMercadoPagoCredentials/);
+  assert.match(workspaceSource, /testAdminMercadoPagoConnection/);
+  assert.match(workspaceSource, /setAccessToken\(''\)/);
+  assert.match(workspaceSource, /setWebhookSecret\(''\)/);
+  assert.match(workspaceSource, /metadados mascarados/);
   assert.doesNotMatch(workspaceSource, /setDoc\(|addDoc\(|updateDoc\(/);
-  assert.doesNotMatch(workspaceSource, /accessToken|clientSecret|apiSecret/);
   assert.match(clientSource, /profile\.role !== 'super_admin'/);
 });
 
