@@ -24,6 +24,14 @@ export interface AdminIntegrationReadinessSnapshot {
   }>;
 }
 
+export interface AdminMercadoPagoCredentialStatus {
+  accessTokenLast4: string;
+  webhookSecretLast4: string;
+  status: string;
+  lastValidatedAt: string;
+  lastValidationCode: string;
+}
+
 const PUBLIC_DETAIL_KEYS = new Set([
   'pixCheckoutConfigured',
   'webhookConfigured',
@@ -103,13 +111,44 @@ export const parseAdminIntegrationReadiness = (
   };
 };
 
+const requireSuperAdmin = (
+  profile: Pick<AdminProfile, 'role' | 'status'>
+): void => {
+  if (profile.status !== 'active' || profile.role !== 'super_admin') {
+    throw new Error('Somente Super Admin pode alterar integrações da plataforma.');
+  }
+};
+
+const credentialStatus = (value: unknown): AdminMercadoPagoCredentialStatus => {
+  const candidate = value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+  const credential = candidate.credential && typeof candidate.credential === 'object' && !Array.isArray(candidate.credential)
+    ? candidate.credential as Record<string, unknown>
+    : {};
+  const credentials = credential.credentials && typeof credential.credentials === 'object' && !Array.isArray(credential.credentials)
+    ? credential.credentials as Record<string, unknown>
+    : {};
+  const access = credentials.access_token && typeof credentials.access_token === 'object'
+    ? credentials.access_token as Record<string, unknown>
+    : {};
+  const webhook = credentials.webhook_secret && typeof credentials.webhook_secret === 'object'
+    ? credentials.webhook_secret as Record<string, unknown>
+    : {};
+  return {
+    accessTokenLast4: safeString(access.last4),
+    webhookSecretLast4: safeString(webhook.last4),
+    status: safeString(credential.status),
+    lastValidatedAt: safeString(credential.lastValidatedAt),
+    lastValidationCode: safeString(credential.lastValidationCode),
+  };
+};
+
 export const loadAdminIntegrationReadiness = async (
   user: Pick<User, 'getIdToken'>,
   profile: Pick<AdminProfile, 'role' | 'status'>
 ): Promise<AdminIntegrationReadinessSnapshot> => {
-  if (profile.status !== 'active' || profile.role !== 'super_admin') {
-    throw new Error('Somente Super Admin pode consultar integrações da plataforma.');
-  }
+  requireSuperAdmin(profile);
   const token = await user.getIdToken();
   const response = await fetch(
     '/api/admin/operations/health?transport=integration-readiness',
@@ -126,4 +165,62 @@ export const loadAdminIntegrationReadiness = async (
   const parsed = parseAdminIntegrationReadiness(payload);
   if (!parsed) throw new Error('O servidor retornou um estado de integrações inválido.');
   return parsed;
+};
+
+export const saveAdminMercadoPagoCredentials = async (
+  user: Pick<User, 'getIdToken'>,
+  profile: Pick<AdminProfile, 'role' | 'status'>,
+  input: { accessToken: string; webhookSecret: string }
+): Promise<AdminMercadoPagoCredentialStatus> => {
+  requireSuperAdmin(profile);
+  const token = await user.getIdToken();
+  const response = await fetch(
+    '/api/admin/operations/health?transport=mercado-pago-credentials',
+    {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${token}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify(input),
+    }
+  );
+  const payload = await response.json().catch(() => ({})) as Record<string, unknown>;
+  if (!response.ok) {
+    throw new Error(
+      typeof payload.error === 'string'
+        ? payload.error
+        : 'Não foi possível salvar a credencial.'
+    );
+  }
+  return credentialStatus(payload);
+};
+
+export const testAdminMercadoPagoConnection = async (
+  user: Pick<User, 'getIdToken'>,
+  profile: Pick<AdminProfile, 'role' | 'status'>
+): Promise<{ ok: boolean; code: string; credential: AdminMercadoPagoCredentialStatus }> => {
+  requireSuperAdmin(profile);
+  const token = await user.getIdToken();
+  const response = await fetch(
+    '/api/admin/operations/health?transport=mercado-pago-test',
+    {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token}` },
+    }
+  );
+  const payload = await response.json().catch(() => ({})) as Record<string, unknown>;
+  const result = {
+    ok: payload.ok === true,
+    code: safeString(payload.code),
+    credential: credentialStatus(payload),
+  };
+  if (!response.ok && response.status !== 422) {
+    throw new Error(
+      typeof payload.error === 'string'
+        ? payload.error
+        : 'Não foi possível testar a conexão.'
+    );
+  }
+  return result;
 };

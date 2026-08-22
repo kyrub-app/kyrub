@@ -11,8 +11,11 @@ import type { User } from 'firebase/auth';
 import type { AdminProfile } from '../../utils/adminControlPlane';
 import {
   loadAdminIntegrationReadiness,
+  saveAdminMercadoPagoCredentials,
+  testAdminMercadoPagoConnection,
   type AdminIntegrationProviderState,
   type AdminIntegrationReadinessSnapshot,
+  type AdminMercadoPagoCredentialStatus,
 } from '../../utils/adminIntegrationReadiness';
 
 const STATE_LABEL: Record<AdminIntegrationProviderState, string> = {
@@ -53,6 +56,12 @@ export default function AdminIntegrationsWorkspace({
   const [snapshot, setSnapshot] = useState<AdminIntegrationReadinessSnapshot | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [accessToken, setAccessToken] = useState('');
+  const [webhookSecret, setWebhookSecret] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [credentialStatus, setCredentialStatus] = useState<AdminMercadoPagoCredentialStatus | null>(null);
+  const [credentialMessage, setCredentialMessage] = useState('');
 
   const refresh = async (): Promise<void> => {
     setLoading(true);
@@ -71,12 +80,62 @@ export default function AdminIntegrationsWorkspace({
     }
   };
 
+  const saveMercadoPago = async (): Promise<void> => {
+    if (!accessToken.trim()) {
+      setCredentialMessage('Informe o Access Token antes de salvar.');
+      return;
+    }
+    setSaving(true);
+    setCredentialMessage('');
+    try {
+      const status = await saveAdminMercadoPagoCredentials(
+        authenticatedUser,
+        profile,
+        { accessToken, webhookSecret }
+      );
+      setCredentialStatus(status);
+      setAccessToken('');
+      setWebhookSecret('');
+      setCredentialMessage('Credencial protegida no cofre. O valor completo não será exibido novamente.');
+      await refresh();
+    } catch (caught) {
+      setCredentialMessage(
+        caught instanceof Error ? caught.message : 'Não foi possível salvar a credencial.'
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const testMercadoPago = async (): Promise<void> => {
+    setTesting(true);
+    setCredentialMessage('');
+    try {
+      const result = await testAdminMercadoPagoConnection(authenticatedUser, profile);
+      setCredentialStatus(result.credential);
+      setCredentialMessage(
+        result.ok
+          ? 'Conexão com o Mercado Pago validada pelo backend.'
+          : `A conexão não foi validada (${result.code || 'erro desconhecido'}).`
+      );
+      await refresh();
+    } catch (caught) {
+      setCredentialMessage(
+        caught instanceof Error ? caught.message : 'Não foi possível testar a conexão.'
+      );
+    } finally {
+      setTesting(false);
+    }
+  };
+
   useEffect(() => {
     if (profile.role !== 'super_admin' || profile.status !== 'active') return;
     void refresh();
   }, [authenticatedUser.uid, profile.role, profile.status]);
 
   if (profile.role !== 'super_admin' || profile.status !== 'active') return null;
+
+  const mercadoPago = snapshot?.providers.find(provider => provider.id === 'mercado_pago');
 
   return (
     <section
@@ -96,8 +155,7 @@ export default function AdminIntegrationsWorkspace({
               Providers e cofre de credenciais
             </h2>
             <p className="mt-2 max-w-3xl text-xs leading-relaxed text-slate-400">
-              Esta visão mostra apenas readiness autoritativo do servidor. Nenhum token, chave,
-              ciphertext ou referência privada é devolvido ao navegador.
+              Readiness autoritativo do servidor. Segredos enviados por este painel são processados no backend e nunca devolvidos integralmente ao navegador.
             </p>
           </div>
         </div>
@@ -126,7 +184,7 @@ export default function AdminIntegrationsWorkspace({
             <strong className="text-xs">Vault v1 — envelopes AES</strong>
           </div>
           <p className="mt-2 text-[11px] leading-relaxed text-slate-500">
-            Compatibilidade necessária para integrações legadas, incluindo 99Food, enquanto a migração controlada não termina.
+            Autoridade criptográfica ativa para integrações enquanto a migração controlada ao Secret Manager não termina.
           </p>
           <span className="mt-3 inline-flex rounded-full border border-slate-700 px-2.5 py-1 text-[9px] font-black uppercase tracking-wider text-slate-300">
             {snapshot?.vault.legacyEnvelopeConfigured ? 'Chave mestre disponível' : 'Chave mestre indisponível'}
@@ -139,7 +197,7 @@ export default function AdminIntegrationsWorkspace({
             <strong className="text-xs">Vault v2 — Google Secret Manager</strong>
           </div>
           <p className="mt-2 text-[11px] leading-relaxed text-slate-500">
-            Adapter seguro disponível no código, mas API, IAM, recursos e migrações reais são etapas separadas.
+            Adapter disponível no código; API, IAM e migração de secrets reais continuam sendo etapas separadas.
           </p>
           <span className="mt-3 inline-flex rounded-full border border-slate-700 px-2.5 py-1 text-[9px] font-black uppercase tracking-wider text-slate-300">
             {snapshot?.vault.googleSecretManagerAdapterEnabled
@@ -148,6 +206,71 @@ export default function AdminIntegrationsWorkspace({
           </span>
         </article>
       </div>
+
+      <article className="mt-5 rounded-2xl border border-cyan-500/20 bg-cyan-500/5 p-4">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <span className="text-[9px] font-black uppercase tracking-wider text-cyan-400">Mercado Pago · produção</span>
+            <h3 className="mt-1 text-sm font-black text-white">Configurar credenciais</h3>
+            <p className="mt-1 max-w-2xl text-[10px] leading-relaxed text-slate-500">
+              Cole os valores somente aqui. Após salvar, os campos são limpos e o navegador recebe apenas metadados mascarados.
+            </p>
+          </div>
+          <span className="rounded-full border border-slate-700 px-2.5 py-1 text-[9px] font-black uppercase text-slate-300">
+            {mercadoPago ? STATE_LABEL[mercadoPago.state] : 'Aguardando leitura'}
+          </span>
+        </div>
+
+        <div className="mt-4 grid gap-3 lg:grid-cols-2">
+          <label className="text-[10px] font-bold text-slate-400">
+            Access Token
+            <input
+              type="password"
+              autoComplete="off"
+              value={accessToken}
+              onChange={event => setAccessToken(event.target.value)}
+              placeholder={credentialStatus?.accessTokenLast4 ? `Salvo ·••••${credentialStatus.accessTokenLast4}` : 'Cole o Access Token'}
+              className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950/70 px-3 py-2.5 text-xs text-white outline-none focus:border-cyan-500"
+            />
+          </label>
+          <label className="text-[10px] font-bold text-slate-400">
+            Webhook Secret
+            <input
+              type="password"
+              autoComplete="off"
+              value={webhookSecret}
+              onChange={event => setWebhookSecret(event.target.value)}
+              placeholder={credentialStatus?.webhookSecretLast4 ? `Salvo ·••••${credentialStatus.webhookSecretLast4}` : 'Opcional nesta primeira gravação'}
+              className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950/70 px-3 py-2.5 text-xs text-white outline-none focus:border-cyan-500"
+            />
+          </label>
+        </div>
+
+        <div className="mt-4 flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => void saveMercadoPago()}
+            disabled={saving || testing || !snapshot?.vault.legacyEnvelopeConfigured}
+            className="rounded-xl bg-cyan-500 px-4 py-2 text-[10px] font-black uppercase tracking-wider text-slate-950 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            {saving ? 'Salvando…' : 'Salvar no cofre'}
+          </button>
+          <button
+            type="button"
+            onClick={() => void testMercadoPago()}
+            disabled={saving || testing || mercadoPago?.state === 'not-configured'}
+            className="rounded-xl border border-slate-700 bg-slate-900 px-4 py-2 text-[10px] font-black uppercase tracking-wider text-slate-200 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            {testing ? 'Testando…' : 'Testar conexão'}
+          </button>
+        </div>
+
+        {credentialMessage && (
+          <p className="mt-3 rounded-xl border border-slate-800 bg-slate-950/50 p-3 text-[10px] leading-relaxed text-slate-300" aria-live="polite">
+            {credentialMessage}
+          </p>
+        )}
+      </article>
 
       <div className="mt-5 grid gap-3 lg:grid-cols-3">
         {(snapshot?.providers ?? []).map(provider => (
@@ -190,7 +313,7 @@ export default function AdminIntegrationsWorkspace({
       )}
 
       <p className="mt-4 text-[10px] leading-relaxed text-slate-600">
-        Última leitura: {formatUpdatedAt(snapshot?.generatedAt ?? '')}. Salvar uma credencial e ativar processamento real continuarão sendo operações distintas.
+        Última leitura: {formatUpdatedAt(snapshot?.generatedAt ?? '')}. Salvar uma credencial e ativar processamento real continuam sendo operações distintas.
       </p>
     </section>
   );
