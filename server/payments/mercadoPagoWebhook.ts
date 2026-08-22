@@ -1,6 +1,6 @@
 import { processVerifiedPaymentWebhook } from './paymentWebhookProcessor';
 import {
-  isMercadoPagoWebhookConfigured,
+  isMercadoPagoWebhookRuntimeConfigured,
   verifiedMercadoPagoPaymentEvent,
 } from './mercadoPagoPixProvider';
 
@@ -22,7 +22,7 @@ export const processMercadoPagoWebhook = async (input: {
   headers: Record<string, string | string[] | undefined>;
   dataId: string;
 }): Promise<MercadoPagoWebhookResult> => {
-  if (!isMercadoPagoWebhookConfigured()) {
+  if (!(await isMercadoPagoWebhookRuntimeConfigured())) {
     throw new Error('MERCADO_PAGO_WEBHOOK_NOT_CONFIGURED');
   }
   const dataId = input.dataId.trim();
