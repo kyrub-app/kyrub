@@ -168,14 +168,18 @@ test('routes only the administrative hostname, local path, or explicit Vercel pr
   );
 });
 
-test('groups active and future control plane modules for mobile', () => {
-  assert.match(modulesSource, /Áreas do Control Plane/);
+test('groups control plane modules into operational folders for mobile', () => {
+  assert.match(modulesSource, /Pessoas & Tenants/);
+  assert.match(modulesSource, /Comercial & Financeiro/);
+  assert.match(modulesSource, /Operações & Infraestrutura/);
+  assert.match(modulesSource, /Governança & IA/);
   assert.match(modulesSource, /Saúde do sistema/);
   assert.match(modulesSource, /status: 'available'/);
   assert.match(modulesSource, /Planos & Cupons/);
   assert.match(modulesSource, /admin-plans-coupons/);
-  assert.match(modulesSource, /Recursos em preparação/);
+  assert.match(modulesSource, /Em preparação/);
   assert.match(modulesSource, /<details/);
+  assert.match(modulesSource, /AdminAiOperationsDashboard/);
   assert.match(modulesSource, /admin-directory/);
   assert.match(modulesSource, /admin-system-health/);
   assert.match(rootSource, /id="admin-system-health"/);
