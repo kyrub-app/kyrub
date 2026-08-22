@@ -183,9 +183,10 @@ test('confirmed create-note crosses the authenticated safe executor instead of D
   assert.match(policyEngineSource, /BLAST_RADIUS_EXCEEDED/);
   assert.match(
     actionExecutionRouteSource,
-    /from '\.\.\/server\/actions\/actionExecutionService\.js'/
+    /import\('\.\.\/server\/actions\/actionExecutionService\.js'\)/
   );
-  assert.doesNotMatch(actionExecutionRouteSource, /await import\(/);
+  assert.match(actionExecutionRouteSource, /mapKyrubActionExecutionError/);
+  assert.match(actionExecutionRouteSource, /executeAuthorizedKyrubAction/);
   assert.doesNotMatch(actionExecutionRouteSource, /EXECUTOR_BOOT_FAILED/);
 
   assert.match(manualNotesSource, /onSubmit=\{handleCreateNote\}/);

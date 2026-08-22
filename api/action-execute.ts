@@ -1,44 +1,3 @@
-import { executeAuthorizedKyrubAction } from '../server/actions/actionExecutionFacade.js';
-import { mapKyrubActionExecutionError } from '../server/actions/actionExecutionService.js';
-import {
-  executeAuthorizedKyrubCatalogDraft,
-  isKyrubCatalogDraftExecutionRequest,
-  isKyrubCatalogDraftListRequest,
-  isKyrubCatalogProductPublicationRequest,
-  isKyrubCatalogProductUpdateRequest,
-  listAuthorizedKyrubCatalogDrafts,
-  setAuthorizedKyrubCatalogProductPublication,
-  updateAuthorizedKyrubCatalogProduct,
-} from '../server/actions/catalogProductLifecycleService.js';
-import {
-  executeAuthorizedKyrubCatalogImport,
-  isKyrubCatalogImportExecutionRequest,
-} from '../server/actions/catalogImportExecutionService.js';
-import {
-  executeAuthorizedKyrubInventoryAdjustment,
-  isKyrubInventoryAdjustmentExecutionRequest,
-} from '../server/actions/inventoryAdjustmentExecutionService.js';
-import {
-  executeAuthorizedKyrubProductComposition,
-  isKyrubProductCompositionExecutionRequest,
-} from '../server/actions/productCompositionExecutionService.js';
-import { ensureCanonicalStoreForCatalog } from '../server/actions/canonicalStoreRepairService.js';
-import {
-  isKyrubActionReceiptVerificationRequest,
-  verifyAuthorizedKyrubActionReceipt,
-} from '../server/actions/actionReceiptVerificationService.js';
-import { hydrateExecutablePlanCatalog } from '../server/admin/executablePlanCatalogService.js';
-import { reconcileStoreEntitlementFromAuthorization } from '../server/admin/storeEntitlementLifecycleService.js';
-import {
-  createMarketplacePaymentIntent,
-  mapMarketplaceCheckoutError,
-} from '../server/payments/paymentIntentRouter.js';
-import { attachMercadoPagoPixToExistingIntent } from '../server/payments/mercadoPagoCheckoutBridge.js';
-import {
-  mapMercadoPagoWebhookError,
-  processMercadoPagoWebhook,
-} from '../server/payments/mercadoPagoWebhook.js';
-
 type HeaderValue = string | string[] | undefined;
 type QueryValue = string | string[] | undefined;
 
@@ -55,11 +14,21 @@ type ResponseLike = {
   json(body: unknown): void;
 };
 
+type HttpErrorResult = {
+  status: number;
+  body: unknown;
+};
+
 const headerValue = (value: HeaderValue | QueryValue): string =>
   Array.isArray(value) ? value[0] ?? '' : value ?? '';
 
 const clean = (value: unknown): string =>
   typeof value === 'string' ? value.trim() : String(value ?? '').trim();
+
+const genericUnavailable = (message: string): HttpErrorResult => ({
+  status: 503,
+  body: { error: message },
+});
 
 export default async function handler(
   request: RequestLike,
@@ -82,15 +51,21 @@ export default async function handler(
   const transport = headerValue(request.query?.transport);
 
   if (transport === 'marketplace-payment-intent') {
+    let mapError: ((error: unknown) => HttpErrorResult) | null = null;
     try {
-      const result = await createMarketplacePaymentIntent(
+      const [paymentRouter, checkoutBridge] = await Promise.all([
+        import('../server/payments/paymentIntentRouter.js'),
+        import('../server/payments/mercadoPagoCheckoutBridge.js'),
+      ]);
+      mapError = paymentRouter.mapMarketplaceCheckoutError;
+      const result = await paymentRouter.createMarketplacePaymentIntent(
         authorization,
         request.body
       );
       const body = request.body && typeof request.body === 'object'
         ? request.body as Record<string, unknown>
         : {};
-      const pix = await attachMercadoPagoPixToExistingIntent({
+      const pix = await checkoutBridge.attachMercadoPagoPixToExistingIntent({
         storeId: clean(body.storeId),
         paymentIntentId: result.body.paymentIntentId,
         paymentId: result.body.paymentId,
@@ -101,30 +76,96 @@ export default async function handler(
         ...pix,
       });
     } catch (error) {
-      const mapped = mapMarketplaceCheckoutError(error);
+      const mapped = mapError
+        ? mapError(error)
+        : genericUnavailable('Não foi possível iniciar o pagamento agora.');
       response.status(mapped.status).json(mapped.body);
     }
     return;
   }
 
   if (transport === 'mercado-pago-webhook') {
+    let mapError: ((error: unknown) => HttpErrorResult) | null = null;
     try {
+      const webhook = await import('../server/payments/mercadoPagoWebhook.js');
+      mapError = webhook.mapMercadoPagoWebhookError;
       const body = request.body as { data?: { id?: unknown } } | undefined;
       const dataId =
         headerValue(request.query?.['data.id']) || clean(body?.data?.id);
-      const result = await processMercadoPagoWebhook({
+      const result = await webhook.processMercadoPagoWebhook({
         headers: request.headers,
         dataId,
       });
       response.status(200).json(result);
     } catch (error) {
-      const mapped = mapMercadoPagoWebhookError(error);
+      const mapped = mapError
+        ? mapError(error)
+        : genericUnavailable('Não foi possível processar a notificação.');
       response.status(mapped.status).json(mapped.body);
     }
     return;
   }
 
+  let mapActionError: ((error: unknown) => HttpErrorResult) | null = null;
   try {
+    const [
+      actionFacade,
+      actionService,
+      catalogLifecycle,
+      catalogImport,
+      inventoryAdjustment,
+      productComposition,
+      canonicalStoreRepair,
+      receiptVerification,
+      executablePlanCatalog,
+      entitlementLifecycle,
+    ] = await Promise.all([
+      import('../server/actions/actionExecutionFacade.js'),
+      import('../server/actions/actionExecutionService.js'),
+      import('../server/actions/catalogProductLifecycleService.js'),
+      import('../server/actions/catalogImportExecutionService.js'),
+      import('../server/actions/inventoryAdjustmentExecutionService.js'),
+      import('../server/actions/productCompositionExecutionService.js'),
+      import('../server/actions/canonicalStoreRepairService.js'),
+      import('../server/actions/actionReceiptVerificationService.js'),
+      import('../server/admin/executablePlanCatalogService.js'),
+      import('../server/admin/storeEntitlementLifecycleService.js'),
+    ]);
+
+    const { executeAuthorizedKyrubAction } = actionFacade;
+    const { mapKyrubActionExecutionError } = actionService;
+    const {
+      executeAuthorizedKyrubCatalogDraft,
+      isKyrubCatalogDraftExecutionRequest,
+      isKyrubCatalogDraftListRequest,
+      isKyrubCatalogProductPublicationRequest,
+      isKyrubCatalogProductUpdateRequest,
+      listAuthorizedKyrubCatalogDrafts,
+      setAuthorizedKyrubCatalogProductPublication,
+      updateAuthorizedKyrubCatalogProduct,
+    } = catalogLifecycle;
+    const {
+      executeAuthorizedKyrubCatalogImport,
+      isKyrubCatalogImportExecutionRequest,
+    } = catalogImport;
+    const {
+      executeAuthorizedKyrubInventoryAdjustment,
+      isKyrubInventoryAdjustmentExecutionRequest,
+    } = inventoryAdjustment;
+    const {
+      executeAuthorizedKyrubProductComposition,
+      isKyrubProductCompositionExecutionRequest,
+    } = productComposition;
+    const { ensureCanonicalStoreForCatalog } = canonicalStoreRepair;
+    const {
+      isKyrubActionReceiptVerificationRequest,
+      verifyAuthorizedKyrubActionReceipt,
+    } = receiptVerification;
+    const { hydrateExecutablePlanCatalog } = executablePlanCatalog;
+    const { reconcileStoreEntitlementFromAuthorization } = entitlementLifecycle;
+
+    mapActionError = mapKyrubActionExecutionError;
+
     if (isKyrubActionReceiptVerificationRequest(request.body)) {
       const verification = await verifyAuthorizedKyrubActionReceipt(
         authorization,
@@ -214,7 +255,9 @@ export default async function handler(
     );
     response.status(200).json(result);
   } catch (error) {
-    const mapped = mapKyrubActionExecutionError(error);
+    const mapped = mapActionError
+      ? mapActionError(error)
+      : genericUnavailable('Não foi possível executar a ação agora.');
     response.status(mapped.status).json(mapped.body);
   }
 }

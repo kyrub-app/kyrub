@@ -1,8 +1,8 @@
-import { getFirebaseAdminAccessToken } from '../firebaseAdmin';
+import { getFirebaseAdminAccessToken } from '../firebaseAdmin.js';
 import {
   GoogleSecretManagerVault,
   type KyrubVaultAccessTokenProvider,
-} from './googleSecretManagerVault';
+} from './googleSecretManagerVault.js';
 
 export interface KyrubCredentialVaultConfig {
   enabled: boolean;
