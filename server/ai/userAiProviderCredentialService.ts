@@ -52,6 +52,35 @@ export class UserAiProviderCredentialError extends Error {
   }
 }
 
+export const mapUserAiProviderCredentialError = (
+  error: unknown
+): { status: number; body: { error: string; code: string } } => {
+  if (error instanceof UserAiProviderCredentialError) {
+    return {
+      status: error.status,
+      body: { error: error.message, code: error.code },
+    };
+  }
+  const message = error instanceof Error ? error.message : String(error ?? '');
+  if (/INTEGRATION_MASTER_KEY/i.test(message)) {
+    return {
+      status: 503,
+      body: {
+        error: 'O cofre seguro de integrações não está disponível agora.',
+        code: 'AI_PROVIDER_VAULT_UNAVAILABLE',
+      },
+    };
+  }
+  console.error('[Kyrubia AI Provider Vault]', error);
+  return {
+    status: 503,
+    body: {
+      error: 'Não foi possível atualizar esta integração de IA agora.',
+      code: 'AI_PROVIDER_CONFIGURATION_UNAVAILABLE',
+    },
+  };
+};
+
 const providerSet = new Set<SupportedUserAiProvider>([
   'google-gemini',
   'openai',
@@ -110,10 +139,8 @@ const cleanApiKey = (value: unknown): string => {
 const credentialFingerprint = (apiKey: string): string =>
   createHash('sha256').update(apiKey).digest('hex').slice(0, 16);
 
-const maskedCredential = (apiKey: string): string => {
-  const suffix = apiKey.slice(-4);
-  return `••••••••${suffix}`;
-};
+const maskedCredential = (apiKey: string): string =>
+  `••••••••${apiKey.slice(-4)}`;
 
 const isoTimestamp = (value: unknown): string | undefined =>
   value instanceof Timestamp ? value.toDate().toISOString() : undefined;
@@ -129,6 +156,7 @@ const metadataFrom = (
       status: 'not_configured',
     };
   }
+  const testedAt = isoTimestamp(data.testedAt);
   return {
     provider,
     configured: true,
@@ -138,7 +166,7 @@ const metadataFrom = (
         : 'saved',
     ...(data.masked ? { masked: data.masked } : {}),
     ...(data.fingerprint ? { fingerprint: data.fingerprint } : {}),
-    ...(isoTimestamp(data.testedAt) ? { testedAt: isoTimestamp(data.testedAt) } : {}),
+    ...(testedAt ? { testedAt } : {}),
   };
 };
 
@@ -206,7 +234,7 @@ const verifyProviderCredential = async (
     throw new UserAiProviderCredentialError(
       409,
       'AI_PROVIDER_LIMIT_REACHED',
-      'O provedor aceitou a requisição, mas a conta está limitada no momento.'
+      'A credencial foi reconhecida, mas a conta está limitada no momento.'
     );
   }
   throw new UserAiProviderCredentialError(
@@ -329,8 +357,7 @@ export const testAuthorizedUserAiProviderCredential = async (
   } catch (error) {
     if (
       error instanceof UserAiProviderCredentialError &&
-      (error.code === 'AI_PROVIDER_CREDENTIAL_REJECTED' ||
-        error.code === 'AI_PROVIDER_LIMIT_REACHED')
+      error.code === 'AI_PROVIDER_CREDENTIAL_REJECTED'
     ) {
       await reference.set(
         {
