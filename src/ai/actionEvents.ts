@@ -4,6 +4,7 @@ import type {
 } from '../../shared/aiConsultant';
 import type { KyrubCatalogAnalysis } from '../../shared/kyrubCatalogAnalysis';
 import { KYRUB_ACTION_REGISTRY } from '../../shared/kyrubActions';
+import { normalizeKyrubInventoryTransformationProposal } from '../../shared/kyrubInventoryTransformation';
 import { auth } from '../utils/firebase';
 import { saveKyrubiaCatalogAnalysis } from './catalogAnalysisStore';
 
@@ -219,6 +220,8 @@ export const isKyrubAiActionProposal = (
         value.requiresConfirmation === true
       );
     }
+    case 'transform_inventory':
+      return normalizeKyrubInventoryTransformationProposal(value) !== null;
     case 'set_product_composition':
       return (
         typeof value.productId === 'string' &&
@@ -263,29 +266,36 @@ export const isKyrubAiActionProposal = (
 
 const prepareProposalForConfirmation = (
   proposal: KyrubAiActionProposal
-): KyrubAiActionProposal => ({
-  ...proposal,
-  origin: proposal.origin ?? 'kyrubia',
-  risk: proposal.risk ?? KYRUB_ACTION_REGISTRY[proposal.type].risk,
-  inputProvenance: proposal.inputProvenance ?? 'ai_generated_content',
-  impact: proposal.impact ?? {
-    entityCount: proposal.type === 'import_catalog_draft'
-      ? proposal.items.length
-      : proposal.type === 'adjust_inventory'
-        ? proposal.entries.length
-        : proposal.type === 'set_product_composition'
-          ? proposal.lines.length
-          : 1,
-    reversibility:
-      proposal.type === 'create_product' ||
-      proposal.type === 'update_product' ||
-      proposal.type === 'adjust_inventory' ||
-      proposal.type === 'set_product_composition' ||
-      proposal.type === 'update_order_status'
-        ? 'limited'
-        : 'easy',
-  },
-});
+): KyrubAiActionProposal => {
+  if (proposal.type === 'transform_inventory') {
+    const normalized = normalizeKyrubInventoryTransformationProposal(proposal);
+    return normalized ?? proposal;
+  }
+
+  return {
+    ...proposal,
+    origin: proposal.origin ?? 'kyrubia',
+    risk: proposal.risk ?? KYRUB_ACTION_REGISTRY[proposal.type].risk,
+    inputProvenance: proposal.inputProvenance ?? 'ai_generated_content',
+    impact: proposal.impact ?? {
+      entityCount: proposal.type === 'import_catalog_draft'
+        ? proposal.items.length
+        : proposal.type === 'adjust_inventory'
+          ? proposal.entries.length
+          : proposal.type === 'set_product_composition'
+            ? proposal.lines.length
+            : 1,
+      reversibility:
+        proposal.type === 'create_product' ||
+        proposal.type === 'update_product' ||
+        proposal.type === 'adjust_inventory' ||
+        proposal.type === 'set_product_composition' ||
+        proposal.type === 'update_order_status'
+          ? 'limited'
+          : 'easy',
+    },
+  };
+};
 
 const emitCatalogAnalysis = (
   conversationId: string,
