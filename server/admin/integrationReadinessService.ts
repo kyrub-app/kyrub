@@ -1,0 +1,210 @@
+import { randomUUID } from 'node:crypto';
+import { Router } from 'express';
+import { FieldValue } from 'firebase-admin/firestore';
+import { verifyFirebaseIdToken } from '../ai/consultantAuth.js';
+import { adminDb } from '../firebaseAdmin.js';
+import { kyrubCredentialVaultConfig } from '../integrations/kyrubCredentialVault.js';
+import {
+  isMercadoPagoPixConfigured,
+  isMercadoPagoWebhookConfigured,
+} from '../payments/mercadoPagoPixProvider.js';
+
+interface AuthorizedIntegrationAdmin {
+  uid: string;
+  role: 'super_admin';
+}
+
+const bearerToken = (authorization: string): string =>
+  /^Bearer\s+(.+)$/i.exec(authorization)?.[1]?.trim() ?? '';
+
+const clean = (value: unknown): string =>
+  typeof value === 'string' ? value.trim() : '';
+
+export interface AdminIntegrationReadinessSnapshot {
+  generatedAt: string;
+  vault: {
+    legacyEnvelopeConfigured: boolean;
+    googleSecretManagerAdapterEnabled: boolean;
+    googleSecretManagerState: 'disabled' | 'adapter-enabled-unverified';
+  };
+  providers: Array<{
+    id: 'mercado_pago' | '99food' | 'lalamove';
+    title: string;
+    category: 'payments' | 'orders' | 'logistics';
+    state: 'configured' | 'partial' | 'not-configured' | 'contract-only';
+    credentialAuthority: 'environment' | 'legacy_envelope' | 'none';
+    details: Record<string, boolean | number | string>;
+  }>;
+}
+
+export const authorizeIntegrationReadiness = async (
+  authorization: string
+): Promise<AuthorizedIntegrationAdmin> => {
+  const token = bearerToken(authorization);
+  if (!token) throw new Error('AUTH_REQUIRED');
+  const decoded = await verifyFirebaseIdToken(token);
+  if (decoded.emailVerified !== true) throw new Error('EMAIL_NOT_VERIFIED');
+
+  const profileSnapshot = await adminDb
+    .doc(`kyrub_admin/control_plane/admins/${decoded.uid}`)
+    .get();
+  const profile = profileSnapshot.data() as Record<string, unknown> | undefined;
+  if (
+    !profileSnapshot.exists ||
+    clean(profile?.uid) !== decoded.uid ||
+    clean(profile?.status) !== 'active' ||
+    clean(profile?.role) !== 'super_admin'
+  ) {
+    throw new Error('FORBIDDEN');
+  }
+
+  return { uid: decoded.uid, role: 'super_admin' };
+};
+
+const providerCount = async (
+  provider: string,
+  status?: string
+): Promise<number> => {
+  let query = adminDb
+    .collection('integrationConnections')
+    .where('provider', '==', provider);
+  if (status) query = query.where('status', '==', status);
+  const result = await query.count().get();
+  return result.data().count;
+};
+
+const recordIntegrationReadinessAudit = async (
+  admin: AuthorizedIntegrationAdmin
+): Promise<void> => {
+  const auditId = randomUUID().replaceAll('-', '_');
+  await adminDb
+    .doc(`kyrub_admin/control_plane/audit_logs/${auditId}`)
+    .set({
+      id: auditId,
+      action: 'admin.integrations.readiness.viewed',
+      actorId: admin.uid,
+      actorRole: admin.role,
+      targetType: 'control_plane',
+      targetId: 'integrations',
+      source: 'server',
+      createdAt: FieldValue.serverTimestamp(),
+    });
+};
+
+export const loadIntegrationReadinessSnapshot = async (): Promise<AdminIntegrationReadinessSnapshot> => {
+  const [ninetyNineConnected, ninetyNineAttention, ninetyNineTotal] = await Promise.all([
+    providerCount('99food', 'connected'),
+    providerCount('99food', 'attention'),
+    providerCount('99food'),
+  ]);
+  const vault = kyrubCredentialVaultConfig();
+  const mercadoPagoCheckout = isMercadoPagoPixConfigured();
+  const mercadoPagoWebhook = isMercadoPagoWebhookConfigured();
+  const mercadoPagoState = mercadoPagoCheckout && mercadoPagoWebhook
+    ? 'configured'
+    : mercadoPagoCheckout
+      ? 'partial'
+      : 'not-configured';
+
+  return {
+    generatedAt: new Date().toISOString(),
+    vault: {
+      legacyEnvelopeConfigured: Boolean(process.env.INTEGRATION_MASTER_KEY?.trim()),
+      googleSecretManagerAdapterEnabled: vault.enabled,
+      googleSecretManagerState: vault.enabled
+        ? 'adapter-enabled-unverified'
+        : 'disabled',
+    },
+    providers: [
+      {
+        id: 'mercado_pago',
+        title: 'Mercado Pago',
+        category: 'payments',
+        state: mercadoPagoState,
+        credentialAuthority: mercadoPagoCheckout ? 'environment' : 'none',
+        details: {
+          pixCheckoutConfigured: mercadoPagoCheckout,
+          webhookConfigured: mercadoPagoWebhook,
+          productionActivatedByVault: false,
+        },
+      },
+      {
+        id: '99food',
+        title: '99Food / Open Delivery',
+        category: 'orders',
+        state: ninetyNineTotal > 0
+          ? ninetyNineAttention > 0
+            ? 'partial'
+            : 'configured'
+          : 'not-configured',
+        credentialAuthority: ninetyNineTotal > 0 ? 'legacy_envelope' : 'none',
+        details: {
+          connections: ninetyNineTotal,
+          connected: ninetyNineConnected,
+          attention: ninetyNineAttention,
+        },
+      },
+      {
+        id: 'lalamove',
+        title: 'Lalamove',
+        category: 'logistics',
+        state: 'contract-only',
+        credentialAuthority: 'none',
+        details: {
+          runtimeConfigured: false,
+          fallbackActivated: false,
+        },
+      },
+    ],
+  };
+};
+
+export const loadAuthorizedIntegrationReadiness = async (
+  authorization: string
+): Promise<AdminIntegrationReadinessSnapshot> => {
+  const admin = await authorizeIntegrationReadiness(authorization);
+  const snapshot = await loadIntegrationReadinessSnapshot();
+  await recordIntegrationReadinessAudit(admin);
+  return snapshot;
+};
+
+export const mapIntegrationReadinessError = (error: unknown): {
+  status: number;
+  body: { error: string; code: string };
+} => {
+  const message = error instanceof Error ? error.message : String(error);
+  const code = error && typeof error === 'object' && 'code' in error
+    ? String((error as { code?: unknown }).code ?? '')
+    : '';
+  if (
+    message === 'AUTH_REQUIRED' ||
+    code === 'AUTH_REQUIRED' ||
+    /id-token|expired|revoked/i.test(message)
+  ) {
+    return { status: 401, body: { error: 'Faça login novamente.', code: 'AUTH_REQUIRED' } };
+  }
+  if (message === 'EMAIL_NOT_VERIFIED') {
+    return { status: 403, body: { error: 'Verifique seu e-mail antes de continuar.', code: 'EMAIL_NOT_VERIFIED' } };
+  }
+  if (message === 'FORBIDDEN') {
+    return { status: 403, body: { error: 'Somente Super Admin pode consultar integrações da plataforma.', code: 'FORBIDDEN' } };
+  }
+  console.error('[Admin Integrations Readiness]', error);
+  return { status: 503, body: { error: 'Não foi possível consultar as integrações agora.', code: 'INTEGRATIONS_UNAVAILABLE' } };
+};
+
+export const createIntegrationReadinessRouter = (): Router => {
+  const router = Router();
+  router.get('/status', async (request, response) => {
+    try {
+      const snapshot = await loadAuthorizedIntegrationReadiness(
+        request.get('authorization') ?? ''
+      );
+      response.status(200).json(snapshot);
+    } catch (error) {
+      const mapped = mapIntegrationReadinessError(error);
+      response.status(mapped.status).json(mapped.body);
+    }
+  });
+  return router;
+};
