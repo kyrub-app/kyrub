@@ -76,6 +76,15 @@ const getLegacyAdminAuth = (): Auth => {
   return authModule.getAuth(getAdminApp());
 };
 
+export const getFirebaseAdminAccessToken = async (): Promise<string> => {
+  const credential = getAdminApp().options.credential;
+  if (!credential) throw new Error('FIREBASE_ADMIN_CREDENTIAL_UNAVAILABLE');
+  const token = await credential.getAccessToken();
+  const value = token.access_token?.trim() ?? '';
+  if (!value) throw new Error('FIREBASE_ADMIN_ACCESS_TOKEN_UNAVAILABLE');
+  return value;
+};
+
 // Keep the Firestore-only bootstrap free from firebase-admin/auth. Legacy routes
 // can still resolve Admin Auth lazily, while new Vercel execution paths use the
 // public-certificate Firebase token verifier and avoid jwks-rsa/jose at startup.
