@@ -101,6 +101,12 @@ const integerAtLeast = (value: number, minimum: number, label: string): number =
   return value;
 };
 
+const assertSingleUser = (expectedUserId: string, candidateUserId: string, ledger: string): void => {
+  if (candidateUserId !== expectedUserId) {
+    throw new Error(`${ledger} não pode agregar lançamentos de usuários diferentes.`);
+  }
+};
+
 export const assertKyrubChallengeDefinition = (
   challenge: KyrubChallengeDefinition
 ): KyrubChallengeDefinition => {
@@ -137,6 +143,7 @@ export const assertKyrubRewardLedgerEntry = (
   nonEmpty(entry.sourceId, 'ledger.sourceId');
   nonEmpty(entry.correlationId, 'ledger.correlationId');
   nonEmpty(entry.idempotencyKey, 'ledger.idempotencyKey');
+  nonEmpty(entry.occurredAt, 'ledger.occurredAt');
   if (!Number.isSafeInteger(entry.deltaKCoins) || entry.deltaKCoins === 0) {
     throw new Error('ledger.deltaKCoins deve ser um inteiro diferente de zero.');
   }
@@ -150,8 +157,11 @@ export const assertKyrubRewardLedgerEntry = (
 
 export const kyrubKCoinBalance = (entries: KyrubRewardLedgerEntry[]): number => {
   const seen = new Set<string>();
+  let ledgerUserId = '';
   return entries.reduce((balance, candidate) => {
     const entry = assertKyrubRewardLedgerEntry(candidate);
+    if (!ledgerUserId) ledgerUserId = entry.userId;
+    else assertSingleUser(ledgerUserId, entry.userId, 'Reward Ledger');
     if (seen.has(entry.idempotencyKey)) {
       throw new Error(`Lançamento duplicado: ${entry.idempotencyKey}.`);
     }
@@ -164,10 +174,16 @@ export const kyrubKCoinBalance = (entries: KyrubRewardLedgerEntry[]): number => 
 
 export const kyrubXpTotal = (entries: KyrubXpEntry[]): number => {
   const seen = new Set<string>();
+  let ledgerUserId = '';
   return entries.reduce((total, entry) => {
     nonEmpty(entry.id, 'xp.id');
     nonEmpty(entry.userId, 'xp.userId');
+    nonEmpty(entry.sourceId, 'xp.sourceId');
+    nonEmpty(entry.correlationId, 'xp.correlationId');
     nonEmpty(entry.idempotencyKey, 'xp.idempotencyKey');
+    nonEmpty(entry.occurredAt, 'xp.occurredAt');
+    if (!ledgerUserId) ledgerUserId = entry.userId;
+    else assertSingleUser(ledgerUserId, entry.userId, 'XP Ledger');
     if (!Number.isSafeInteger(entry.deltaXp)) throw new Error('xp.deltaXp deve ser inteiro.');
     if (seen.has(entry.idempotencyKey)) throw new Error(`Lançamento XP duplicado: ${entry.idempotencyKey}.`);
     seen.add(entry.idempotencyKey);
