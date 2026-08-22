@@ -31,7 +31,8 @@ test('control plane requires task envelopes, handoffs and authoritative receipts
 });
 
 test('high-risk domain boundaries remain explicit', () => {
-  assert.match(agents, /UI state never becomes payment authority/);
+  assert.match(agents, /Never infer financial truth from browser\/UI state/);
+  assert.match(agents, /PSP\/webhook\/server-authoritative state owns payment confirmation/);
   assert.match(agents, /raw secrets must not be persisted in ordinary Firestore documents/);
   assert.match(agents, /K-Coins are not money/);
   assert.match(agents, /external agents never receive direct arbitrary Firestore access/);
