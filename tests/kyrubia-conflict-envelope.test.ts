@@ -17,6 +17,7 @@ import './kyrub-omnichannel-source-registry.test';
 import './kyrub-inventory-ingredients.test';
 import './kyrubia-opportunity-engine.test';
 import './kyrubia-runtime-regressions.test';
+import './ai-agent-control-plane.test';
 import './rc1-system-level-qa.test';
 import {
   assertKyrubExpectedState,
