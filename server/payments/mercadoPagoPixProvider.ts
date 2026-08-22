@@ -60,6 +60,14 @@ export const isMercadoPagoWebhookConfigured = (): boolean =>
 export const isMercadoPagoPixRuntimeConfigured = async (): Promise<boolean> =>
   Boolean(await resolveMercadoPagoAccessToken());
 
+export const isMercadoPagoWebhookRuntimeConfigured = async (): Promise<boolean> => {
+  const [accessToken, webhookSecret] = await Promise.all([
+    resolveMercadoPagoAccessToken(),
+    resolveMercadoPagoWebhookSecret(),
+  ]);
+  return Boolean(accessToken && webhookSecret);
+};
+
 const mercadoPagoRequest = async <T>(path: string, init: RequestInit = {}): Promise<T> => {
   const token = await resolveMercadoPagoAccessToken();
   if (!token) throw new Error('MERCADO_PAGO_NOT_CONFIGURED');
