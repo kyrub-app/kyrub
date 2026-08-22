@@ -30,6 +30,11 @@ const publicProductsSource = readFileSync(
   'src/utils/publicProducts.ts',
   'utf8'
 );
+const reconciliationSource = readFileSync(
+  'server/inventory/productStockReconciliationService.ts',
+  'utf8'
+);
+const actionExecuteSource = readFileSync('api/action-execute.ts', 'utf8');
 
 const catalog: InventoryCatalogItem[] = [
   {
@@ -147,5 +152,22 @@ describe('product inventory and composition', () => {
     assert.doesNotMatch(publicProductsSource, /inventoryCatalog/);
     assert.doesNotMatch(publicProductsSource, /productCompositions/);
     assert.match(purchaseSource, /Reposição sugerida pelo estoque mínimo/);
+  });
+
+  test('authoritative inventory adjustments reconcile sellable stock without publishing recipes', () => {
+    assert.match(reconciliationSource, /calculateCompositionAvailableStock/);
+    assert.match(reconciliationSource, /available === null\s*\? \[\]/);
+    assert.match(reconciliationSource, /tenants\/\$\{tenantId\}/);
+    assert.match(
+      reconciliationSource,
+      /stores\/\$\{canonicalStoreId\}\/products\/\$\{patch\.productId\}/
+    );
+    assert.match(reconciliationSource, /\{ \.\.\.product, stock \}/);
+    assert.doesNotMatch(reconciliationSource, /productCompositions\s*:/);
+    assert.doesNotMatch(reconciliationSource, /inventoryCatalog\s*:/);
+    assert.match(
+      actionExecuteSource,
+      /executeAuthorizedKyrubInventoryAdjustment[\s\S]*reconcileDerivedProductStockForTenant/
+    );
   });
 });
