@@ -1,5 +1,5 @@
-import type { KyrubIntegrationEnvironment } from '../../shared/integrationCredentials';
-import { resolvePlatformCredentials } from './platformCredentialStore';
+import type { KyrubIntegrationEnvironment } from '../../shared/integrationCredentials.js';
+import { resolvePlatformCredentials } from './platformCredentialStore.js';
 
 export type MercadoPagoCredentialAuthority = 'vault_v1' | 'environment' | 'none';
 
