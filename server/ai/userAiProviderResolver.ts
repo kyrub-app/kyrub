@@ -3,6 +3,7 @@ import {
   resolveAuthorizedUserAiProviderSecret,
   type SupportedUserAiProvider,
 } from './userAiProviderCredentialService.js';
+import { adminDb } from '../firebaseAdmin.js';
 
 export type UserAiProviderPreference = SupportedUserAiProvider | null;
 
@@ -83,18 +84,18 @@ export const decideUserAiProviderSelection = (input: {
   };
 };
 
-const availableSecretsFor = async (
+const availableProvidersFor = async (
   uid: string
-): Promise<Array<{ provider: SupportedUserAiProvider; apiKey: string }>> => {
-  const resolved = await Promise.all(
+): Promise<SupportedUserAiProvider[]> => {
+  const snapshots = await Promise.all(
     supportedProviders.map(provider =>
-      resolveAuthorizedUserAiProviderSecret(uid, provider)
+      adminDb.doc(`users/${uid}/server_private_ai/${provider}`).get()
     )
   );
-  return resolved.filter(
-    (candidate): candidate is { provider: SupportedUserAiProvider; apiKey: string } =>
-      Boolean(candidate)
-  );
+  return supportedProviders.filter((provider, index) => {
+    const snapshot = snapshots[index];
+    return snapshot?.exists && snapshot.data()?.status === 'available';
+  });
 };
 
 export const resolveUserAiProvider = async (input: {
@@ -106,15 +107,16 @@ export const resolveUserAiProvider = async (input: {
     return { status: 'unavailable', availableProviders: [] };
   }
 
-  const available = await availableSecretsFor(uid);
+  const availableProviders = await availableProvidersFor(uid);
   const selection = decideUserAiProviderSelection({
-    availableProviders: available.map(candidate => candidate.provider),
+    availableProviders,
     preferredProvider: input.preferredProvider,
   });
   if (selection.status !== 'selected') return selection;
 
-  const secret = available.find(
-    candidate => candidate.provider === selection.provider
+  const secret = await resolveAuthorizedUserAiProviderSecret(
+    uid,
+    selection.provider
   );
   if (!secret) {
     return { status: 'unavailable', availableProviders: [] };
