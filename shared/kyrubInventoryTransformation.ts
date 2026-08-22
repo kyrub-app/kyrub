@@ -133,6 +133,41 @@ const normalizeLoss = (
   return { ...base, ...(reason ? { reason } : {}) };
 };
 
+type UnitFamily = 'count' | 'mass' | 'volume';
+
+const baseQuantity = (
+  quantity: number,
+  unit: KyrubInventoryTransformationUnit
+): { family: UnitFamily; quantity: number } => {
+  if (unit === 'un') return { family: 'count', quantity };
+  if (unit === 'kg') return { family: 'mass', quantity: quantity * 1000 };
+  if (unit === 'g') return { family: 'mass', quantity };
+  if (unit === 'l') return { family: 'volume', quantity: quantity * 1000 };
+  return { family: 'volume', quantity };
+};
+
+const lossesFitConsumedMaterial = (
+  inputs: KyrubInventoryTransformationInput[],
+  losses: KyrubInventoryTransformationLoss[]
+): boolean => {
+  const consumed = new Map<UnitFamily, number>();
+  const lost = new Map<UnitFamily, number>();
+
+  for (const input of inputs) {
+    const base = baseQuantity(input.quantity, input.unit);
+    consumed.set(base.family, (consumed.get(base.family) ?? 0) + base.quantity);
+  }
+  for (const loss of losses) {
+    const base = baseQuantity(loss.quantity, loss.unit);
+    lost.set(base.family, (lost.get(base.family) ?? 0) + base.quantity);
+  }
+
+  for (const [family, quantity] of lost) {
+    if (quantity > (consumed.get(family) ?? 0) + Number.EPSILON) return false;
+  }
+  return true;
+};
+
 export const normalizeKyrubInventoryTransformationProposal = (
   value: unknown
 ): KyrubInventoryTransformationProposal | null => {
@@ -168,6 +203,11 @@ export const normalizeKyrubInventoryTransformationProposal = (
     losses.some(item => item === null)
   ) return null;
 
+  const normalizedInputs = inputs as KyrubInventoryTransformationInput[];
+  const normalizedOutputs = outputs as KyrubInventoryTransformationOutput[];
+  const normalizedLosses = losses as KyrubInventoryTransformationLoss[];
+  if (!lossesFitConsumedMaterial(normalizedInputs, normalizedLosses)) return null;
+
   const sourceValue = candidate.source && typeof candidate.source === 'object' && !Array.isArray(candidate.source)
     ? candidate.source as Record<string, unknown>
     : {};
@@ -183,9 +223,9 @@ export const normalizeKyrubInventoryTransformationProposal = (
   return {
     id,
     type: 'transform_inventory',
-    inputs: inputs as KyrubInventoryTransformationInput[],
-    outputs: outputs as KyrubInventoryTransformationOutput[],
-    losses: losses as KyrubInventoryTransformationLoss[],
+    inputs: normalizedInputs,
+    outputs: normalizedOutputs,
+    losses: normalizedLosses,
     source: { kind: sourceKind, ...(label ? { label } : {}) },
     requiresConfirmation: true,
     origin: 'kyrubia',
