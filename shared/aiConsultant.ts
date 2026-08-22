@@ -4,13 +4,16 @@ import type {
 } from './kyrubActions';
 import type { KyrubCatalogAnalysis } from './kyrubCatalogAnalysis';
 import type { KyrubErpContextSnapshot } from './kyrubErpContext';
+import type { KyrubInventoryTransformationProposal } from './kyrubInventoryTransformation';
 import type { KyrubiaTurnContext } from './kyrubiaContext';
 
 export type {
-  KyrubActionProposal as KyrubAiActionProposal,
+  KyrubActionProposal,
+  KyrubActionProposal as KyrubRegisteredAiActionProposal,
   KyrubAiCreateNoteProposal,
   KyrubAiImportCatalogDraftProposal,
 } from './kyrubActions';
+export type { KyrubInventoryTransformationProposal } from './kyrubInventoryTransformation';
 export type { KyrubCatalogAnalysis } from './kyrubCatalogAnalysis';
 export type { KyrubErpContextSnapshot } from './kyrubErpContext';
 export type {
@@ -18,6 +21,10 @@ export type {
   KyrubiaOfferedIntentKind,
   KyrubiaTurnContext,
 } from './kyrubiaContext';
+
+export type KyrubAiActionProposal =
+  | KyrubActionProposal
+  | KyrubInventoryTransformationProposal;
 
 export const KYRUB_AI_CONSULTANT_ENDPOINT = '/api/consultor-kyrub';
 export const KYRUB_AI_CATALOG_ANALYSIS_ENDPOINT = '/api/consultor-kyrub';
@@ -105,7 +112,9 @@ export type KyrubAiConsultantRequest = {
 
 export type KyrubAiConsultantCapabilities = {
   actionsEnabled: boolean;
-  enabledActions?: Array<KyrubActionProposal['type']>;
+  enabledActions?: Array<
+    KyrubActionProposal['type'] | KyrubInventoryTransformationProposal['type']
+  >;
   enabledReadActions?: KyrubReadActionType[];
   voiceEnabled: boolean;
   persistentCloudHistoryEnabled: boolean;
@@ -121,7 +130,7 @@ export type KyrubAiConsultantResponse = {
   model: string;
   mode: 'conversation' | 'deterministic';
   requestId: string;
-  actionProposal?: KyrubActionProposal;
+  actionProposal?: KyrubAiActionProposal;
   catalogAnalysis?: KyrubCatalogAnalysis;
   turnContext?: KyrubiaTurnContext;
   historicalLink?: KyrubAiHistoricalLink;

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { describe, test } from 'node:test';
 import { normalizeKyrubInventoryTransformationProposal } from '../shared/kyrubInventoryTransformation';
+import { buildKyrubInventoryTransformationProposal } from '../shared/kyrubInventoryTransformationIntent';
 import {
   buildInventoryPurchaseList,
   calculateProductAvailableStock,
@@ -39,6 +40,16 @@ const transformationSource = readFileSync(
   'server/inventory/inventoryTransformationExecutionService.ts',
   'utf8'
 );
+const transformationClientSource = readFileSync(
+  'src/actions/inventoryTransformationActionService.ts',
+  'utf8'
+);
+const actionEventsSource = readFileSync('src/ai/actionEvents.ts', 'utf8');
+const inventoryBridgeSource = readFileSync(
+  'src/components/KyrubAiInventoryActionBridge.tsx',
+  'utf8'
+);
+const consultantRouteSource = readFileSync('api/consultor-kyrub.ts', 'utf8');
 const actionExecuteSource = readFileSync('api/action-execute.ts', 'utf8');
 
 const catalog: InventoryCatalogItem[] = [
@@ -212,6 +223,47 @@ describe('product inventory and composition', () => {
     );
   });
 
+  test('natural language creates a deterministic transformation without inferring missing values', () => {
+    const proposal = buildKyrubInventoryTransformationProposal(
+      'Transforme 5 kg de Carne bovina em 50 un de Hambúrguer 100g, com perda de 300 g de gordura e limpeza.',
+      'conversation-meat'
+    );
+    assert.ok(proposal);
+    assert.deepEqual(proposal.inputs[0], {
+      name: 'Carne bovina', quantity: 5, unit: 'kg',
+    });
+    assert.deepEqual(proposal.outputs[0], {
+      name: 'Hambúrguer 100g', quantity: 50, unit: 'un', kind: 'intermediate',
+    });
+    assert.equal(proposal.losses[0]?.quantity, 300);
+    assert.equal(
+      buildKyrubInventoryTransformationProposal(
+        'Transforme carne em hambúrguer.',
+        'conversation-ambiguous'
+      ),
+      null
+    );
+  });
+
+  test('structured transformation syntax supports reusable byproducts', () => {
+    const proposal = buildKyrubInventoryTransformationProposal([
+      'Transformar estoque',
+      'Consome:',
+      '5 kg Carne bovina',
+      'Produz:',
+      '45 un Hambúrguer 100g',
+      'Subproduto:',
+      '200 g Aparas aproveitáveis',
+      'Perda:',
+      '300 g Gordura e limpeza',
+    ].join('\n'), 'conversation-structured');
+    assert.ok(proposal);
+    assert.equal(
+      proposal.outputs.find(item => item.kind === 'byproduct')?.name,
+      'Aparas aproveitáveis'
+    );
+  });
+
   test('transformation executor consumes inputs once, produces outputs atomically and never double-decrements losses', () => {
     assert.match(transformationSource, /runTransaction/);
     assert.match(transformationSource, /INSUFFICIENT_INVENTORY/);
@@ -232,5 +284,32 @@ describe('product inventory and composition', () => {
       /reconcileDerivedProductStockForTenant\(result\.entityId\)/
     );
     assert.doesNotMatch(actionExecuteSource, /inventory-transform\.ts/);
+  });
+
+  test('Kyrubia routes transformation before simpler inventory movements', () => {
+    const transformationIndex = consultantRouteSource.indexOf(
+      'const transformation = inventoryTransformationResponse'
+    );
+    const movementIndex = consultantRouteSource.indexOf(
+      'const movement = inventoryMovementResponse'
+    );
+    assert.ok(transformationIndex >= 0);
+    assert.ok(movementIndex > transformationIndex);
+    assert.match(consultantRouteSource, /enabledActions: \['transform_inventory'\]/);
+  });
+
+  test('browser validates, reviews and confirms transformations through the safe executor', () => {
+    assert.match(actionEventsSource, /case 'transform_inventory'/);
+    assert.match(actionEventsSource, /normalizeKyrubInventoryTransformationProposal/);
+    assert.match(inventoryBridgeSource, /Consome/);
+    assert.match(inventoryBridgeSource, /Subprodutos aproveitáveis/);
+    assert.match(inventoryBridgeSource, /Perdas \/ descarte/);
+    assert.match(inventoryBridgeSource, /executeInventoryTransformation/);
+    assert.match(transformationClientSource, /\/api\/action-execute/);
+    assert.match(transformationClientSource, /confirmed: true/);
+    assert.doesNotMatch(
+      transformationClientSource,
+      /firebase\/firestore|setDoc\(|updateDoc\(|runTransaction\(/
+    );
   });
 });

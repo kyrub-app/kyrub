@@ -1,17 +1,23 @@
 import { useEffect, useState } from 'react';
 import {
+  ArrowDownToLine,
+  ArrowUpFromLine,
   Boxes,
   CheckCircle2,
   LoaderCircle,
   PackagePlus,
+  Recycle,
+  TriangleAlert,
   X,
 } from 'lucide-react';
 import type {
   KyrubAiAdjustInventoryProposal,
   KyrubInventoryMovementKind,
 } from '../../shared/kyrubActions';
-import { executeKyrubAction } from '../actions/kyrubActionService';
+import type { KyrubInventoryTransformationProposal } from '../../shared/kyrubInventoryTransformation';
 import { invalidateKyrubErpContext } from '../actions/erpReadActionService';
+import { executeInventoryTransformation } from '../actions/inventoryTransformationActionService';
+import { executeKyrubAction } from '../actions/kyrubActionService';
 import {
   KYRUB_AI_ACTION_PROPOSAL_EVENT,
   type KyrubAiActionProposalEventDetail,
@@ -20,13 +26,25 @@ import { auth } from '../utils/firebase';
 
 type ConfirmationState = 'reviewing' | 'executing' | 'success' | 'error';
 
-type PendingInventory = {
+type PendingMovement = {
+  kind: 'movement';
   conversationId: string;
   proposal: KyrubAiAdjustInventoryProposal;
   state: ConfirmationState;
   errorMessage: string;
   alreadyApplied: boolean;
 };
+
+type PendingTransformation = {
+  kind: 'transformation';
+  conversationId: string;
+  proposal: KyrubInventoryTransformationProposal;
+  state: ConfirmationState;
+  errorMessage: string;
+  alreadyApplied: boolean;
+};
+
+type PendingInventory = PendingMovement | PendingTransformation;
 
 const withIdempotency = (
   conversationId: string,
@@ -35,6 +53,18 @@ const withIdempotency = (
   ...proposal,
   origin: proposal.origin ?? 'kyrubia',
   risk: proposal.risk ?? 'medium',
+  idempotencyKey:
+    proposal.idempotencyKey ??
+    `kyrubia:${proposal.type}:${conversationId}:${proposal.id}`,
+});
+
+const withTransformationIdempotency = (
+  conversationId: string,
+  proposal: KyrubInventoryTransformationProposal
+): KyrubInventoryTransformationProposal => ({
+  ...proposal,
+  origin: proposal.origin ?? 'kyrubia',
+  risk: 'medium',
   idempotencyKey:
     proposal.idempotencyKey ??
     `kyrubia:${proposal.type}:${conversationId}:${proposal.id}`,
@@ -114,21 +144,80 @@ const entryQuantityLabel = (
   return `Saldo: ${formatted}`;
 };
 
+const transformationSection = (
+  title: string,
+  tone: 'consume' | 'produce' | 'byproduct' | 'loss',
+  items: Array<{ name: string; quantity: number; unit: string }>
+) => {
+  if (items.length === 0) return null;
+  const icon = tone === 'consume'
+    ? <ArrowUpFromLine className="h-4 w-4" />
+    : tone === 'produce'
+      ? <ArrowDownToLine className="h-4 w-4" />
+      : tone === 'byproduct'
+        ? <Recycle className="h-4 w-4" />
+        : <TriangleAlert className="h-4 w-4" />;
+  const quantityClass = tone === 'consume'
+    ? 'text-amber-300'
+    : tone === 'loss'
+      ? 'text-red-300'
+      : 'text-emerald-300';
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-2 text-[11px] font-black uppercase tracking-wider text-slate-400">
+        {icon}
+        {title}
+      </div>
+      {items.map((item, index) => (
+        <div
+          key={`${tone}-${item.name}-${item.unit}-${index}`}
+          className="flex items-center justify-between gap-3 rounded-xl border border-slate-800 bg-slate-950 px-3 py-2.5"
+        >
+          <span className="min-w-0 text-sm font-bold text-white">{item.name}</span>
+          <span className={`shrink-0 text-sm font-black ${quantityClass}`}>
+            {tone === 'consume' || tone === 'loss' ? '−' : '+'}
+            {quantity.format(item.quantity)} {item.unit}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+};
+
 export function KyrubAiInventoryActionBridge() {
   const [pending, setPending] = useState<PendingInventory | null>(null);
 
   useEffect(() => {
     const handleProposal = (event: Event) => {
       const detail = (event as CustomEvent<KyrubAiActionProposalEventDetail>).detail;
-      if (!detail || detail.proposal.type !== 'adjust_inventory') return;
+      if (!detail) return;
 
-      setPending({
-        conversationId: detail.conversationId,
-        proposal: withIdempotency(detail.conversationId, detail.proposal),
-        state: 'reviewing',
-        errorMessage: '',
-        alreadyApplied: false,
-      });
+      if (detail.proposal.type === 'adjust_inventory') {
+        setPending({
+          kind: 'movement',
+          conversationId: detail.conversationId,
+          proposal: withIdempotency(detail.conversationId, detail.proposal),
+          state: 'reviewing',
+          errorMessage: '',
+          alreadyApplied: false,
+        });
+        return;
+      }
+
+      if (detail.proposal.type === 'transform_inventory') {
+        setPending({
+          kind: 'transformation',
+          conversationId: detail.conversationId,
+          proposal: withTransformationIdempotency(
+            detail.conversationId,
+            detail.proposal
+          ),
+          state: 'reviewing',
+          errorMessage: '',
+          alreadyApplied: false,
+        });
+      }
     };
 
     window.addEventListener(KYRUB_AI_ACTION_PROPOSAL_EVENT, handleProposal);
@@ -139,9 +228,23 @@ export function KyrubAiInventoryActionBridge() {
 
   const isWorking = pending.state === 'executing';
   const isSuccess = pending.state === 'success';
-  const supplier = pending.proposal.source.label?.trim() ?? '';
-  const movementKind = movementKindFor(pending.proposal);
-  const copy = movementCopy(movementKind);
+  const transformation = pending.kind === 'transformation';
+  const movementKind = pending.kind === 'movement'
+    ? movementKindFor(pending.proposal)
+    : null;
+  const copy = movementKind
+    ? movementCopy(movementKind)
+    : {
+        noun: 'transformação de estoque',
+        title: 'Confirmar transformação de estoque',
+        successTitle: 'Transformação registrada',
+        action: 'Confirmar transformação',
+        working: 'Transformando...',
+        explanation:
+          'A confirmação baixa os insumos consumidos e adiciona os itens produzidos na mesma transação. Perdas são registradas para auditoria e não baixam o estoque uma segunda vez.',
+        success:
+          'A transformação foi registrada, os saldos foram atualizados e os produtos dependentes foram recalculados.',
+      };
 
   const close = () => {
     if (isWorking) return;
@@ -156,7 +259,7 @@ export function KyrubAiInventoryActionBridge() {
       setPending(value => value ? {
         ...value,
         state: 'error',
-        errorMessage: 'Faça login novamente antes de confirmar esta movimentação.',
+        errorMessage: 'Faça login novamente antes de confirmar esta operação de estoque.',
       } : value);
       return;
     }
@@ -168,7 +271,9 @@ export function KyrubAiInventoryActionBridge() {
     } : value);
 
     try {
-      const result = await executeKyrubAction(user, current.proposal, true);
+      const result = current.kind === 'transformation'
+        ? await executeInventoryTransformation(user, current.proposal, true)
+        : await executeKyrubAction(user, current.proposal, true);
       invalidateKyrubErpContext(user.uid);
       setPending(value => value ? {
         ...value,
@@ -182,10 +287,14 @@ export function KyrubAiInventoryActionBridge() {
         state: 'error',
         errorMessage: error instanceof Error
           ? error.message
-          : 'Não foi possível registrar esta movimentação de estoque.',
+          : 'Não foi possível registrar esta operação de estoque.',
       } : value);
     }
   };
+
+  const supplier = pending.kind === 'movement'
+    ? pending.proposal.source.label?.trim() ?? ''
+    : pending.proposal.source.label?.trim() ?? '';
 
   return (
     <div className="fixed inset-0 z-[122] flex items-start justify-center overflow-y-auto bg-slate-950/85 p-3 pt-[max(12px,env(safe-area-inset-top))] backdrop-blur-sm sm:p-6">
@@ -203,9 +312,11 @@ export function KyrubAiInventoryActionBridge() {
           }`}>
             {isSuccess
               ? <CheckCircle2 className="h-6 w-6" />
-              : movementKind === 'intake'
-                ? <PackagePlus className="h-6 w-6" />
-                : <Boxes className="h-6 w-6" />}
+              : transformation
+                ? <Recycle className="h-6 w-6" />
+                : movementKind === 'intake'
+                  ? <PackagePlus className="h-6 w-6" />
+                  : <Boxes className="h-6 w-6" />}
           </div>
           <div className="min-w-0 flex-1">
             <span className="text-xs font-black uppercase tracking-wider text-violet-300">
@@ -230,9 +341,39 @@ export function KyrubAiInventoryActionBridge() {
           {isSuccess ? (
             <p className="rounded-2xl border border-emerald-500/25 bg-emerald-500/10 px-4 py-4 text-sm leading-relaxed text-emerald-100">
               {pending.alreadyApplied
-                ? `Esta mesma ${copy.noun} já havia sido registrada. O Kyrub não duplicou a movimentação.`
+                ? `Esta mesma ${copy.noun} já havia sido registrada. O Kyrub não duplicou a operação.`
                 : copy.success}
             </p>
+          ) : transformation ? (
+            <>
+              <div className="space-y-4 rounded-2xl border border-slate-800 bg-slate-900 p-4">
+                {supplier && (
+                  <p className="text-xs text-slate-400">
+                    Lote: <span className="font-bold text-slate-200">{supplier}</span>
+                  </p>
+                )}
+                {transformationSection('Consome', 'consume', pending.proposal.inputs)}
+                {transformationSection(
+                  'Produz',
+                  'produce',
+                  pending.proposal.outputs.filter(item => item.kind !== 'byproduct')
+                )}
+                {transformationSection(
+                  'Subprodutos aproveitáveis',
+                  'byproduct',
+                  pending.proposal.outputs.filter(item => item.kind === 'byproduct')
+                )}
+                {transformationSection('Perdas / descarte', 'loss', pending.proposal.losses)}
+              </div>
+              <p className="text-xs leading-relaxed text-slate-500">
+                {copy.explanation} Itens intermediários permanecem no estoque privado e não são publicados automaticamente na vitrine.
+              </p>
+              {pending.state === 'error' && (
+                <p className="rounded-2xl border border-red-500/25 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+                  {pending.errorMessage}
+                </p>
+              )}
+            </>
           ) : (
             <>
               <div className="rounded-2xl border border-slate-800 bg-slate-900 p-4">
