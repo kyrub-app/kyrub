@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
+import './kyrubia-user-ai-provider-resolver.test';
 
 const service = readFileSync(
   'server/ai/userAiProviderCredentialService.ts',
