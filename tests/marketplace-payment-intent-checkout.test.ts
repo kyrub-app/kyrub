@@ -15,7 +15,9 @@ const intentRouterSource = readFileSync(
   'utf8'
 );
 const vercelActionSource = readFileSync('api/action-execute.ts', 'utf8');
-const vercelConfigSource = readFileSync('vercel.json', 'utf8');
+const vercelConfig = JSON.parse(readFileSync('vercel.json', 'utf8')) as {
+  rewrites?: Array<{ source?: string; destination?: string }>;
+};
 const serverSource = readFileSync('server.ts', 'utf8');
 const materializationSource = readFileSync(
   'src/utils/paymentOrderMaterialization.ts',
@@ -75,11 +77,15 @@ test('backend atomically creates pending PaymentIntent and Payment with idempote
 test('Express and Vercel expose the same marketplace intent core without adding a function', () => {
   assert.match(serverSource, /createPaymentIntentRouter/);
   assert.match(serverSource, /"\/api\/payments"/);
-  assert.match(vercelConfigSource, /"source": "\/api\/payments\/intents"/);
-  assert.match(
-    vercelConfigSource,
-    /"destination": "\/api\/action-execute\?transport=marketplace-payment-intent"/
+
+  const paymentIntentRewrite = vercelConfig.rewrites?.find(
+    rewrite => rewrite.source === '/api/payments/intents'
   );
+  assert.deepEqual(paymentIntentRewrite, {
+    source: '/api/payments/intents',
+    destination: '/api/action-execute?transport=marketplace-payment-intent',
+  });
+
   assert.match(vercelActionSource, /transport === 'marketplace-payment-intent'/);
   assert.match(vercelActionSource, /createMarketplacePaymentIntent/);
   assert.match(vercelActionSource, /mapMarketplaceCheckoutError/);
