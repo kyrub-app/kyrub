@@ -33,6 +33,11 @@ import {
   createMarketplacePaymentIntent,
   mapMarketplaceCheckoutError,
 } from '../server/payments/paymentIntentRouter.js';
+import { attachMercadoPagoPixToExistingIntent } from '../server/payments/mercadoPagoCheckoutBridge.js';
+import {
+  mapMercadoPagoWebhookError,
+  processMercadoPagoWebhook,
+} from '../server/payments/mercadoPagoWebhook.js';
 
 type HeaderValue = string | string[] | undefined;
 type QueryValue = string | string[] | undefined;
@@ -52,6 +57,9 @@ type ResponseLike = {
 
 const headerValue = (value: HeaderValue | QueryValue): string =>
   Array.isArray(value) ? value[0] ?? '' : value ?? '';
+
+const clean = (value: unknown): string =>
+  typeof value === 'string' ? value.trim() : String(value ?? '').trim();
 
 export default async function handler(
   request: RequestLike,
@@ -79,9 +87,38 @@ export default async function handler(
         authorization,
         request.body
       );
-      response.status(result.status).json(result.body);
+      const body = request.body && typeof request.body === 'object'
+        ? request.body as Record<string, unknown>
+        : {};
+      const pix = await attachMercadoPagoPixToExistingIntent({
+        storeId: clean(body.storeId),
+        paymentIntentId: result.body.paymentIntentId,
+        paymentId: result.body.paymentId,
+        expiresAt: result.body.expiresAt,
+      });
+      response.status(result.status).json({
+        ...result.body,
+        ...pix,
+      });
     } catch (error) {
       const mapped = mapMarketplaceCheckoutError(error);
+      response.status(mapped.status).json(mapped.body);
+    }
+    return;
+  }
+
+  if (transport === 'mercado-pago-webhook') {
+    try {
+      const body = request.body as { data?: { id?: unknown } } | undefined;
+      const dataId =
+        headerValue(request.query?.['data.id']) || clean(body?.data?.id);
+      const result = await processMercadoPagoWebhook({
+        headers: request.headers,
+        dataId,
+      });
+      response.status(200).json(result);
+    } catch (error) {
+      const mapped = mapMercadoPagoWebhookError(error);
       response.status(mapped.status).json(mapped.body);
     }
     return;

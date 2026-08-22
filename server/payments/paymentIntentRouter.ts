@@ -10,6 +10,11 @@ import {
   type CanonicalPayment,
   type PaymentMethod,
 } from '../../src/utils/canonicalPayment';
+import { attachMercadoPagoPixToExistingIntent } from './mercadoPagoCheckoutBridge';
+import {
+  mapMercadoPagoWebhookError,
+  processMercadoPagoWebhook,
+} from './mercadoPagoWebhook';
 
 interface MarketplaceCheckoutItemInput {
   productId: string;
@@ -333,9 +338,36 @@ export const createPaymentIntentRouter = (): Router => {
         request.get('authorization') ?? '',
         request.body
       );
-      response.status(result.status).json(result.body);
+      const body = request.body && typeof request.body === 'object'
+        ? request.body as Record<string, unknown>
+        : {};
+      const pix = await attachMercadoPagoPixToExistingIntent({
+        storeId: clean(body.storeId),
+        paymentIntentId: result.body.paymentIntentId,
+        paymentId: result.body.paymentId,
+        expiresAt: result.body.expiresAt,
+      });
+      response.status(result.status).json({
+        ...result.body,
+        ...pix,
+      });
     } catch (error) {
       const mapped = mapMarketplaceCheckoutError(error);
+      response.status(mapped.status).json(mapped.body);
+    }
+  });
+
+  router.post('/webhooks/mercado-pago', async (request, response) => {
+    try {
+      const body = request.body as { data?: { id?: unknown } } | undefined;
+      const dataId = clean(request.query['data.id']) || clean(body?.data?.id);
+      const result = await processMercadoPagoWebhook({
+        headers: request.headers,
+        dataId,
+      });
+      response.status(200).json(result);
+    } catch (error) {
+      const mapped = mapMercadoPagoWebhookError(error);
       response.status(mapped.status).json(mapped.body);
     }
   });

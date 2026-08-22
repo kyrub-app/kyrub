@@ -9,6 +9,10 @@
       "destination": "/api/action-execute?transport=marketplace-payment-intent"
     },
     {
+      "source": "/api/payments/webhooks/mercado-pago",
+      "destination": "/api/action-execute?transport=mercado-pago-webhook"
+    },
+    {
       "source": "/staff",
       "destination": "/index.html"
     },
