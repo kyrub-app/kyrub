@@ -3,6 +3,7 @@ import {
   type KyrubAiConsultantRequest,
   type KyrubAiConsultantResponse,
 } from '../../shared/aiConsultant';
+import { buildKyrubInventoryAttachmentIntakeProposal } from '../../shared/kyrubInventoryIntake';
 import { auth } from '../utils/firebase';
 import { emitKyrubAiActionProposal } from './actionEvents';
 import { loadKyrubiaCatalogAnalysis } from './catalogAnalysisStore';
@@ -35,6 +36,36 @@ const withCatalogAnalysisContext = (
     payload.conversationId
   );
   return analysis ? { ...payload, catalogAnalysisContext: analysis } : payload;
+};
+
+const latestAttachmentMessage = (
+  payload: KyrubAiConsultantRequest
+) => {
+  for (let index = payload.messages.length - 1; index >= 0; index -= 1) {
+    const message = payload.messages[index];
+    if (message.role === 'user' && (message.attachments?.length ?? 0) > 0) {
+      return message;
+    }
+  }
+  return null;
+};
+
+const withDeterministicInventoryProposal = (
+  payload: KyrubAiConsultantRequest,
+  result: KyrubAiConsultantResponse
+): KyrubAiConsultantResponse => {
+  if (result.actionProposal) return result;
+
+  const attachmentMessage = latestAttachmentMessage(payload);
+  if (!attachmentMessage) return result;
+
+  const proposal = buildKyrubInventoryAttachmentIntakeProposal(
+    attachmentMessage.content,
+    result.reply,
+    payload.conversationId,
+    (attachmentMessage.attachments ?? []).map(attachment => attachment.id)
+  );
+  return proposal ? { ...result, actionProposal: proposal } : result;
 };
 
 export const requestKyrubAiMultimodalConsultant = async (
@@ -115,7 +146,10 @@ export const requestKyrubAiMultimodalConsultant = async (
     );
   }
 
-  const result = body as KyrubAiConsultantResponse;
+  const result = withDeterministicInventoryProposal(
+    contextualPayload,
+    body as KyrubAiConsultantResponse
+  );
   emitKyrubAiActionProposal(contextualPayload.conversationId, result);
   return result;
 };
