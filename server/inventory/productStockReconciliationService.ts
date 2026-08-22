@@ -32,11 +32,7 @@ export const deriveProductStockPatches = (
     }
     const product = candidate as Record<string, unknown>;
     const productId = clean(product.id);
-    if (!productId) return [];
-
-    if (product.isService === true) {
-      return [{ productId, stock: 0 } satisfies DerivedProductStockPatch];
-    }
+    if (!productId || product.isService === true) return [];
 
     const available = calculateCompositionAvailableStock(
       catalog,
@@ -110,13 +106,12 @@ export const reconcileDerivedProductStockInTransaction = (input: {
   const canonicalStoreId = clean(input.tenantData?.canonicalStoreId);
   if (canonicalStoreId) {
     for (const patch of patches) {
-      input.transaction.set(
+      input.transaction.update(
         adminDb.doc(`stores/${canonicalStoreId}/products/${patch.productId}`),
         {
           stock: patch.stock,
           updatedAt: FieldValue.serverTimestamp(),
-        },
-        { merge: true }
+        }
       );
     }
   }
