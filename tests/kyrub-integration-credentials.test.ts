@@ -48,6 +48,25 @@ test('raw token-like fields are rejected before persistence', () => {
   assert.throws(() => assertNoRawIntegrationSecrets({
     nested: { api_key: 'real-provider-key' },
   }), /Segredo bruto proibido/);
+  assert.throws(() => assertNoRawIntegrationSecrets({
+    nested: { api_secret: 'real-provider-secret' },
+  }), /Segredo bruto proibido/);
+  assert.throws(() => assertNoRawIntegrationSecrets({
+    refresh_token: 'refresh-value',
+  }), /Segredo bruto proibido/);
+});
+
+test('credential slots reject malformed runtime payloads instead of trusting TypeScript casts', () => {
+  const malformed = {
+    ...record,
+    credentials: {
+      access_token: 'raw-value',
+    },
+  } as unknown as KyrubIntegrationCredentialRecord;
+  assert.throws(
+    () => assertIntegrationCredentialRecord(malformed),
+    /somente metadados de referência/
+  );
 });
 
 test('saving credentials does not imply production activation', () => {
