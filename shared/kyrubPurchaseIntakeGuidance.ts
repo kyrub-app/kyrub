@@ -20,7 +20,10 @@ export const shouldGuidePurchaseIntake = (
   userMessage: string,
   observedDocumentText: string
 ): boolean => {
-  if (!hasPurchaseDocumentContext(userMessage)) return false;
+  const purchaseContext =
+    hasPurchaseDocumentContext(userMessage) ||
+    hasPurchaseDocumentContext(observedDocumentText);
+  if (!purchaseContext) return false;
   if (hasExplicitInventoryMutation(userMessage)) return false;
   return parseKyrubInventoryIntakeEntries(observedDocumentText).length > 0;
 };
