@@ -54,9 +54,12 @@ test('manual Kyrub remains healthy when Kyrubia is not configured', () => {
   }
 });
 
-test('Vercel payment runtime uses explicit ESM extensions across its server graph', () => {
+test('Vercel payment and credential runtimes use explicit ESM extensions', () => {
   const runtimeFiles = [
     'api/action-execute.ts',
+    'api/admin/operations/health.ts',
+    'server/admin/integrationCredentialService.ts',
+    'server/admin/integrationReadinessService.ts',
     'server/payments/paymentIntentRouter.ts',
     'server/payments/mercadoPagoCheckoutBridge.ts',
     'server/payments/mercadoPagoPixProvider.ts',
