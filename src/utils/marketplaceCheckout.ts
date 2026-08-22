@@ -40,6 +40,8 @@ interface PendingMarketplacePixSession {
   checkout: MarketplaceCheckoutIntentResult;
 }
 
+let activePixOverlayCleanup: (() => void) | null = null;
+
 const createIdempotencyKey = (userId: string, storeId: string): string => {
   const randomId = globalThis.crypto?.randomUUID?.() ??
     `${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -54,6 +56,8 @@ const checkoutFingerprint = (
   input: InitiateMarketplaceCheckoutInput
 ): string => JSON.stringify({
   storeId,
+  buyerName: input.buyerName.trim(),
+  buyerEmail: input.buyerEmail.trim().toLowerCase(),
   fulfillmentType: input.fulfillmentType,
   deliveryAddress:
     input.fulfillmentType === 'delivery' ? input.deliveryAddress.trim() : '',
@@ -132,9 +136,9 @@ const safeExternalUrl = (value: string | undefined): string => {
 const pixImageSource = (value: string | undefined): string => {
   const candidate = value?.trim() ?? '';
   if (!candidate) return '';
-  return candidate.startsWith('data:image/')
-    ? candidate
-    : `data:image/png;base64,${candidate}`;
+  if (candidate.startsWith('data:image/png;base64,')) return candidate;
+  if (!/^[A-Za-z0-9+/=\r\n]+$/.test(candidate)) return '';
+  return `data:image/png;base64,${candidate}`;
 };
 
 const presentMarketplacePixCheckout = (
@@ -144,6 +148,7 @@ const presentMarketplacePixCheckout = (
 ): void => {
   if (typeof document === 'undefined') return;
 
+  activePixOverlayCleanup?.();
   document.getElementById('kyrub-marketplace-pix-overlay')?.remove();
 
   const overlay = document.createElement('div');
@@ -271,10 +276,18 @@ const presentMarketplacePixCheckout = (
     () => undefined
   );
 
+  let removed = false;
   const removeOverlay = (): void => {
+    if (removed) return;
+    removed = true;
     unsubscribe();
     overlay.remove();
+    if (activePixOverlayCleanup === removeOverlay) {
+      activePixOverlayCleanup = null;
+    }
   };
+  activePixOverlayCleanup = removeOverlay;
+
   close.addEventListener('click', removeOverlay);
   overlay.addEventListener('click', event => {
     if (event.target === overlay) removeOverlay();
