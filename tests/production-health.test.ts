@@ -72,10 +72,16 @@ test('Vercel payment and credential runtimes use explicit ESM extensions', () =>
 
   for (const file of runtimeFiles) {
     const source = readFileSync(file, 'utf8');
-    const relativeSpecifiers = Array.from(
-      source.matchAll(/\bfrom\s+['"](\.{1,2}\/[^'"]+)['"]/g),
-      match => match[1]
-    );
+    const relativeSpecifiers = [
+      ...Array.from(
+        source.matchAll(/\bfrom\s+['"](\.{1,2}\/[^'"]+)['"]/g),
+        match => match[1]
+      ),
+      ...Array.from(
+        source.matchAll(/\bimport\(\s*['"](\.{1,2}\/[^'"]+)['"]\s*\)/g),
+        match => match[1]
+      ),
+    ];
 
     for (const specifier of relativeSpecifiers) {
       assert.match(
@@ -85,4 +91,15 @@ test('Vercel payment and credential runtimes use explicit ESM extensions', () =>
       );
     }
   }
+});
+
+test('payment transports do not statically initialize the legacy action graph', () => {
+  const source = readFileSync('api/action-execute.ts', 'utf8');
+
+  assert.doesNotMatch(source, /^import\s.+from\s+['"]\.\.\/server\//m);
+  assert.match(source, /transport === 'marketplace-payment-intent'/);
+  assert.match(source, /transport === 'mercado-pago-webhook'/);
+  assert.match(source, /import\('\.\.\/server\/payments\/paymentIntentRouter\.js'\)/);
+  assert.match(source, /import\('\.\.\/server\/payments\/mercadoPagoWebhook\.js'\)/);
+  assert.match(source, /import\('\.\.\/server\/actions\/actionExecutionFacade\.js'\)/);
 });
