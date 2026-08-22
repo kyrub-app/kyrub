@@ -38,6 +38,52 @@ test('Reward Ledger rejects duplicate idempotency keys and negative balances', (
   ]), /saldo negativo/);
 });
 
+test('Reward and XP ledgers never aggregate entries from different users', () => {
+  assert.throws(() => kyrubKCoinBalance([
+    entry({}),
+    entry({ id: 'entry-2', userId: 'user-2', idempotencyKey: 'reward:challenge-1:user-2' }),
+  ]), /usuários diferentes/);
+
+  assert.throws(() => kyrubXpTotal([
+    {
+      id: 'xp-1',
+      userId: 'user-1',
+      deltaXp: 100,
+      sourceType: 'achievement',
+      sourceId: 'achievement-1',
+      correlationId: 'corr-xp-1',
+      idempotencyKey: 'xp:achievement-1:user-1',
+      occurredAt: '2026-08-22T00:00:00.000Z',
+    },
+    {
+      id: 'xp-2',
+      userId: 'user-2',
+      deltaXp: 50,
+      sourceType: 'achievement',
+      sourceId: 'achievement-1',
+      correlationId: 'corr-xp-2',
+      idempotencyKey: 'xp:achievement-1:user-2',
+      occurredAt: '2026-08-22T00:01:00.000Z',
+    },
+  ]), /usuários diferentes/);
+});
+
+test('ledger entries require minimum audit metadata', () => {
+  assert.throws(() => kyrubKCoinBalance([
+    entry({ occurredAt: '' }),
+  ]), /ledger\.occurredAt/);
+  assert.throws(() => kyrubXpTotal([{
+    id: 'xp-1',
+    userId: 'user-1',
+    deltaXp: 10,
+    sourceType: 'achievement',
+    sourceId: '',
+    correlationId: 'corr-xp',
+    idempotencyKey: 'xp:achievement-1:user-1',
+    occurredAt: '2026-08-22T00:00:00.000Z',
+  }]), /xp\.sourceId/);
+});
+
 test('XP remains a separate progression ledger from redeemable K-Coins', () => {
   const xp = kyrubXpTotal([{
     id: 'xp-1',
