@@ -19,6 +19,7 @@ import './kyrubia-opportunity-engine.test';
 import './kyrubia-runtime-regressions.test';
 import './ai-agent-control-plane.test';
 import './kyrub-gamification-foundation.test';
+import './kyrub-integration-credentials.test';
 import './rc1-system-level-qa.test';
 import {
   assertKyrubExpectedState,
