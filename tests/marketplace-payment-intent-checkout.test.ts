@@ -53,6 +53,20 @@ test('checkout client sends only item identity and quantity, not authoritative p
   assert.match(checkoutClientSource, /method: 'pix'/);
 });
 
+test('pending Pix stays inside Kyrub and reuses the same session instead of redirecting or duplicating', () => {
+  assert.match(checkoutClientSource, /Pagamento Pix pendente/);
+  assert.match(checkoutClientSource, /QR Code Pix/);
+  assert.match(checkoutClientSource, /Pix copia e cola/);
+  assert.match(checkoutClientSource, /Copiar código Pix/);
+  assert.match(checkoutClientSource, /Aguardando confirmação do pagamento/);
+  assert.match(checkoutClientSource, /sessionStorage\.setItem/);
+  assert.match(checkoutClientSource, /readPendingPixSession/);
+  assert.match(checkoutClientSource, /if \(pendingCheckout\)/);
+  assert.match(checkoutClientSource, /subscribeToCustomerOrder/);
+  assert.match(checkoutClientSource, /Pagamento confirmado pelo backend/);
+  assert.doesNotMatch(checkoutClientSource, /window\.location\.assign/);
+});
+
 test('backend reconstructs marketplace totals from the published store catalog', () => {
   assert.match(intentRouterSource, /adminDb\.doc\(`tenants\/\$\{input\.storeId\}`\)/);
   assert.match(intentRouterSource, /tenant\?\.publicationStatus !== 'published'/);
