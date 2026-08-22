@@ -21,6 +21,7 @@ import './ai-agent-control-plane.test';
 import './kyrub-gamification-foundation.test';
 import './kyrub-integration-credentials.test';
 import './google-secret-manager-vault.test';
+import './kyrub-credential-vault-factory.test';
 import './rc1-system-level-qa.test';
 import {
   assertKyrubExpectedState,
