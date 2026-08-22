@@ -47,10 +47,10 @@ export interface KyrubIntegrationProviderDefinition {
   }>;
 }
 
-const forbiddenRawCredentialKeys = /^(access[_-]?token|api[_-]?key|secret|client[_-]?secret|password|private[_-]?key|webhook[_-]?secret)$/i;
+const forbiddenRawCredentialKeys = /^(access[_-]?token|refresh[_-]?token|token|api[_-]?key|api[_-]?secret|secret|client[_-]?secret|consumer[_-]?secret|password|private[_-]?key|webhook[_-]?secret)$/i;
 
-const requiredText = (value: string, label: string): string => {
-  const cleaned = value.trim();
+const requiredText = (value: unknown, label: string): string => {
+  const cleaned = typeof value === 'string' ? value.trim() : '';
   if (!cleaned) throw new Error(`${label} é obrigatório.`);
   return cleaned;
 };
@@ -103,8 +103,12 @@ export const assertIntegrationCredentialRecord = (
   if (provider && !provider.supportedEnvironments.includes(record.environment)) {
     throw new Error(`Ambiente ${record.environment} não suportado por ${record.providerId}.`);
   }
-  for (const [slot, metadata] of Object.entries(record.credentials)) {
+  for (const [slot, candidate] of Object.entries(record.credentials)) {
     requiredText(slot, 'credential.slot');
+    if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) {
+      throw new Error(`credential.${slot} deve conter somente metadados de referência.`);
+    }
+    const metadata = candidate as KyrubSecretReferenceMetadata;
     requiredText(metadata.secretRef, `credential.${slot}.secretRef`);
     requiredText(metadata.updatedAt, `credential.${slot}.updatedAt`);
     if (metadata.last4 !== undefined && !/^[A-Za-z0-9_-]{1,4}$/.test(metadata.last4)) {
