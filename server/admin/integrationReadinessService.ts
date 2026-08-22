@@ -133,11 +133,11 @@ export const loadIntegrationReadinessSnapshot = async (): Promise<AdminIntegrati
         id: '99food',
         title: '99Food / Open Delivery',
         category: 'orders',
-        state: ninetyNine.total > 0
-          ? ninetyNine.attention > 0
-            ? 'partial'
-            : 'configured'
-          : 'not-configured',
+        state: ninetyNine.total === 0
+          ? 'not-configured'
+          : ninetyNine.connected === ninetyNine.total && ninetyNine.attention === 0
+            ? 'configured'
+            : 'partial',
         credentialAuthority: ninetyNine.total > 0 ? 'legacy_envelope' : 'none',
         details: {
           connections: ninetyNine.total,
