@@ -1,5 +1,6 @@
 import type { User } from 'firebase/auth';
 import type { CartItem } from '../types';
+import { saveLastCustomerOrderId } from './customerOrders';
 
 export interface MarketplaceCheckoutIntentResult {
   paymentIntentId: string;
@@ -11,6 +12,11 @@ export interface MarketplaceCheckoutIntentResult {
   method: 'pix';
   expiresAt: string;
   providerReady: boolean;
+  provider?: string;
+  providerPaymentId?: string;
+  pixQrCode?: string;
+  pixQrCodeBase64?: string;
+  pixTicketUrl?: string;
   duplicate: boolean;
 }
 
@@ -80,5 +86,20 @@ export const initiateMarketplaceCheckout = async (
     );
   }
 
-  return payload as unknown as MarketplaceCheckoutIntentResult;
+  const checkout = payload as unknown as MarketplaceCheckoutIntentResult;
+  if (typeof window !== 'undefined' && checkout.orderId) {
+    saveLastCustomerOrderId(localStorage, user.uid, storeId, checkout.orderId);
+  }
+
+  // A navegação apenas abre a experiência do PSP. O navegador nunca marca
+  // o pagamento como concluído; somente o webhook autoritativo materializa o pedido.
+  if (
+    typeof window !== 'undefined' &&
+    checkout.providerReady &&
+    checkout.pixTicketUrl
+  ) {
+    window.location.assign(checkout.pixTicketUrl);
+  }
+
+  return checkout;
 };
