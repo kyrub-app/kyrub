@@ -1,13 +1,13 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
-import type { CanonicalPaymentIntent } from '../../src/utils/canonicalPaymentIntent';
+import type { CanonicalPaymentIntent } from '../../src/utils/canonicalPaymentIntent.js';
 import type {
   PaymentProviderEventType,
   VerifiedPaymentProviderEvent,
-} from '../../src/utils/paymentProvider';
+} from '../../src/utils/paymentProvider.js';
 import {
   resolveMercadoPagoAccessToken,
   resolveMercadoPagoWebhookSecret,
-} from '../integrations/providerCredentialResolver';
+} from '../integrations/providerCredentialResolver.js';
 
 const MERCADO_PAGO_API_BASE = 'https://api.mercadopago.com';
 

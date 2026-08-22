@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import {
   buildKyrubHealthPayload,
@@ -50,5 +51,38 @@ test('manual Kyrub remains healthy when Kyrubia is not configured', () => {
     assert.equal(payload.capabilities.kyrubia, 'unconfigured');
   } finally {
     if (previousKey !== undefined) process.env.GEMINI_API_KEY = previousKey;
+  }
+});
+
+test('Vercel payment and credential runtimes use explicit ESM extensions', () => {
+  const runtimeFiles = [
+    'api/action-execute.ts',
+    'api/admin/operations/health.ts',
+    'server/admin/integrationCredentialService.ts',
+    'server/admin/integrationReadinessService.ts',
+    'server/payments/paymentIntentRouter.ts',
+    'server/payments/mercadoPagoCheckoutBridge.ts',
+    'server/payments/mercadoPagoPixProvider.ts',
+    'server/payments/mercadoPagoWebhook.ts',
+    'server/payments/paymentWebhookProcessor.ts',
+    'server/integrations/providerCredentialResolver.ts',
+    'server/integrations/platformCredentialStore.ts',
+    'src/utils/paymentOrderMaterialization.ts',
+  ];
+
+  for (const file of runtimeFiles) {
+    const source = readFileSync(file, 'utf8');
+    const relativeSpecifiers = Array.from(
+      source.matchAll(/\bfrom\s+['"](\.{1,2}\/[^'"]+)['"]/g),
+      match => match[1]
+    );
+
+    for (const specifier of relativeSpecifiers) {
+      assert.match(
+        specifier,
+        /\.js$/,
+        `${file} must use an explicit .js ESM specifier for ${specifier}`
+      );
+    }
   }
 });

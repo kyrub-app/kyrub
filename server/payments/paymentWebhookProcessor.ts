@@ -1,22 +1,22 @@
 import { FieldValue } from 'firebase-admin/firestore';
-import { adminDb } from '../firebaseAdmin';
+import { adminDb } from '../firebaseAdmin.js';
 import {
   assertPaymentStatusTransition,
   normalizeCanonicalPayment,
   type CanonicalPayment,
-} from '../../src/utils/canonicalPayment';
+} from '../../src/utils/canonicalPayment.js';
 import {
   normalizeCanonicalPaymentIntent,
   type CanonicalPaymentIntent,
   type PaymentIntentStatus,
-} from '../../src/utils/canonicalPaymentIntent';
-import { materializePaidMarketplaceOrder } from '../../src/utils/paymentOrderMaterialization';
+} from '../../src/utils/canonicalPaymentIntent.js';
+import { materializePaidMarketplaceOrder } from '../../src/utils/paymentOrderMaterialization.js';
 import {
   buildPaymentWebhookIdempotencyKey,
   normalizeVerifiedProviderEvent,
   paymentStatusFromProviderEvent,
   type VerifiedPaymentProviderEvent,
-} from '../../src/utils/paymentProvider';
+} from '../../src/utils/paymentProvider.js';
 
 interface ProcessPaymentWebhookResult {
   duplicate: boolean;

@@ -1,20 +1,20 @@
 import { Router } from 'express';
-import { adminAuth, adminDb } from '../firebaseAdmin';
+import { adminAuth, adminDb } from '../firebaseAdmin.js';
 import {
   normalizeCanonicalPaymentIntent,
   type CanonicalPaymentIntent,
   type PaymentIntentOrderDraft,
-} from '../../src/utils/canonicalPaymentIntent';
+} from '../../src/utils/canonicalPaymentIntent.js';
 import {
   normalizeCanonicalPayment,
   type CanonicalPayment,
   type PaymentMethod,
-} from '../../src/utils/canonicalPayment';
-import { attachMercadoPagoPixToExistingIntent } from './mercadoPagoCheckoutBridge';
+} from '../../src/utils/canonicalPayment.js';
+import { attachMercadoPagoPixToExistingIntent } from './mercadoPagoCheckoutBridge.js';
 import {
   mapMercadoPagoWebhookError,
   processMercadoPagoWebhook,
-} from './mercadoPagoWebhook';
+} from './mercadoPagoWebhook.js';
 
 interface MarketplaceCheckoutItemInput {
   productId: string;
