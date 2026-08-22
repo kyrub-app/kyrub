@@ -78,6 +78,9 @@ test('backend atomically creates pending PaymentIntent and Payment with idempote
 test('Express and Vercel expose payment intent plus Mercado Pago webhook without adding a function', () => {
   assert.match(serverSource, /createPaymentIntentRouter/);
   assert.match(serverSource, /"\/api\/payments"/);
+  assert.match(intentRouterSource, /attachMercadoPagoPixToExistingIntent/);
+  assert.match(intentRouterSource, /router\.post\('\/webhooks\/mercado-pago'/);
+  assert.match(intentRouterSource, /processMercadoPagoWebhook/);
 
   const paymentIntentRewrite = vercelConfig.rewrites?.find(
     rewrite => rewrite.source === '/api/payments/intents'
