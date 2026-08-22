@@ -20,9 +20,20 @@ export interface AdminIntegrationReadinessSnapshot {
     category: 'payments' | 'orders' | 'logistics';
     state: AdminIntegrationProviderState;
     credentialAuthority: 'environment' | 'legacy_envelope' | 'none';
-    details: Record<string, boolean | number | string>;
+    details: Record<string, boolean | number>;
   }>;
 }
+
+const PUBLIC_DETAIL_KEYS = new Set([
+  'pixCheckoutConfigured',
+  'webhookConfigured',
+  'productionActivatedByVault',
+  'connections',
+  'connected',
+  'attention',
+  'runtimeConfigured',
+  'fallbackActivated',
+]);
 
 const safeBoolean = (value: unknown): boolean => value === true;
 const safeString = (value: unknown): string =>
@@ -61,11 +72,13 @@ export const parseAdminIntegrationReadiness = (
       : {};
     const details = Object.fromEntries(
       Object.entries(rawDetails).flatMap(([key, detail]) =>
-        typeof detail === 'boolean' || typeof detail === 'string' || typeof detail === 'number'
+        PUBLIC_DETAIL_KEYS.has(key) &&
+        (typeof detail === 'boolean' ||
+          (typeof detail === 'number' && Number.isFinite(detail)))
           ? [[key, detail]]
           : []
       )
-    ) as Record<string, boolean | number | string>;
+    ) as Record<string, boolean | number>;
     return [{
       id,
       title: safeString(provider.title),
