@@ -18,6 +18,7 @@ import './kyrub-inventory-ingredients.test';
 import './kyrubia-opportunity-engine.test';
 import './kyrubia-runtime-regressions.test';
 import './ai-agent-control-plane.test';
+import './ai-development-team-phase0.test';
 import './kyrub-gamification-foundation.test';
 import './kyrub-integration-credentials.test';
 import './google-secret-manager-vault.test';
