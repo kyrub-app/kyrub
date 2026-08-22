@@ -4,6 +4,10 @@ import type {
   PaymentProviderEventType,
   VerifiedPaymentProviderEvent,
 } from '../../src/utils/paymentProvider';
+import {
+  resolveMercadoPagoAccessToken,
+  resolveMercadoPagoWebhookSecret,
+} from '../integrations/providerCredentialResolver';
 
 const MERCADO_PAGO_API_BASE = 'https://api.mercadopago.com';
 
@@ -45,15 +49,16 @@ export interface VerifiedMercadoPagoPaymentEvent
 const clean = (value: unknown): string =>
   typeof value === 'string' ? value.trim() : String(value ?? '').trim();
 
-const accessToken = (): string => clean(process.env.MERCADO_PAGO_ACCESS_TOKEN);
-const webhookSecret = (): string => clean(process.env.MERCADO_PAGO_WEBHOOK_SECRET);
-
-export const isMercadoPagoPixConfigured = (): boolean => Boolean(accessToken());
+export const isMercadoPagoPixConfigured = (): boolean =>
+  Boolean(clean(process.env.MERCADO_PAGO_ACCESS_TOKEN));
 export const isMercadoPagoWebhookConfigured = (): boolean =>
-  Boolean(webhookSecret() && accessToken());
+  Boolean(
+    clean(process.env.MERCADO_PAGO_WEBHOOK_SECRET) &&
+    clean(process.env.MERCADO_PAGO_ACCESS_TOKEN)
+  );
 
 const mercadoPagoRequest = async <T>(path: string, init: RequestInit = {}): Promise<T> => {
-  const token = accessToken();
+  const token = await resolveMercadoPagoAccessToken();
   if (!token) throw new Error('MERCADO_PAGO_NOT_CONFIGURED');
 
   const response = await fetch(`${MERCADO_PAGO_API_BASE}${path}`, {
@@ -105,6 +110,10 @@ export const createMercadoPagoPixPayment = async (input: {
 export const getMercadoPagoPayment = async (providerPaymentId: string): Promise<MercadoPagoPayment> =>
   mercadoPagoRequest<MercadoPagoPayment>(`/v1/payments/${encodeURIComponent(providerPaymentId)}`);
 
+export const testMercadoPagoConnection = async (): Promise<void> => {
+  await mercadoPagoRequest<Record<string, unknown>>('/users/me');
+};
+
 const normalizePixCheckout = (payment: MercadoPagoPayment): MercadoPagoPixCheckout => {
   const providerPaymentId = clean(payment.id);
   if (!providerPaymentId) throw new Error('MERCADO_PAGO_PAYMENT_ID_MISSING');
@@ -128,11 +137,11 @@ const headerValue = (
   return Array.isArray(found) ? found[0] ?? '' : found ?? '';
 };
 
-export const verifyMercadoPagoWebhookSignature = (input: {
+export const verifyMercadoPagoWebhookSignature = async (input: {
   headers: Record<string, string | string[] | undefined>;
   dataId: string;
-}): void => {
-  const secret = webhookSecret();
+}): Promise<void> => {
+  const secret = await resolveMercadoPagoWebhookSecret();
   if (!secret) throw new Error('MERCADO_PAGO_WEBHOOK_NOT_CONFIGURED');
   const xSignature = headerValue(input.headers, 'x-signature');
   const xRequestId = headerValue(input.headers, 'x-request-id');
@@ -179,7 +188,7 @@ export const verifiedMercadoPagoPaymentEvent = async (input: {
   headers: Record<string, string | string[] | undefined>;
   dataId: string;
 }): Promise<VerifiedMercadoPagoPaymentEvent | null> => {
-  verifyMercadoPagoWebhookSignature(input);
+  await verifyMercadoPagoWebhookSignature(input);
   const payment = await getMercadoPagoPayment(input.dataId);
   const eventType = eventTypeForPayment(payment);
   if (!eventType) return null;
