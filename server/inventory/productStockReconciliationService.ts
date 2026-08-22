@@ -1,8 +1,4 @@
-import {
-  FieldValue,
-  type DocumentData,
-  type Transaction,
-} from 'firebase-admin/firestore';
+import { FieldValue } from 'firebase-admin/firestore';
 import {
   calculateCompositionAvailableStock,
   parseInventoryCatalogRecords,
@@ -65,60 +61,6 @@ export const applyDerivedStockToPublicProducts = (
   });
 };
 
-export const reconcileDerivedProductStockInTransaction = (input: {
-  transaction: Transaction;
-  tenantId: string;
-  tenantData: DocumentData | undefined;
-  inventoryData: DocumentData | undefined;
-  catalog?: InventoryCatalogRecord[];
-}): DerivedProductStockPatch[] => {
-  const tenantId = clean(input.tenantId);
-  if (!tenantId) return [];
-
-  const catalog = input.catalog ?? parseInventoryCatalogRecords(
-    input.inventoryData?.catalog ?? input.inventoryData?.inventoryCatalog
-  );
-  const compositions = parseInventoryCompositionRecords(
-    input.inventoryData?.compositions ?? input.inventoryData?.productCompositions
-  );
-  const patches = deriveProductStockPatches(
-    input.tenantData?.publicProducts,
-    catalog,
-    compositions
-  );
-  if (patches.length === 0) return [];
-
-  const publicProducts = applyDerivedStockToPublicProducts(
-    input.tenantData?.publicProducts,
-    patches
-  );
-  if (publicProducts) {
-    input.transaction.set(
-      adminDb.doc(`tenants/${tenantId}`),
-      {
-        publicProducts,
-        updatedAt: FieldValue.serverTimestamp(),
-      },
-      { merge: true }
-    );
-  }
-
-  const canonicalStoreId = clean(input.tenantData?.canonicalStoreId);
-  if (canonicalStoreId) {
-    for (const patch of patches) {
-      input.transaction.update(
-        adminDb.doc(`stores/${canonicalStoreId}/products/${patch.productId}`),
-        {
-          stock: patch.stock,
-          updatedAt: FieldValue.serverTimestamp(),
-        }
-      );
-    }
-  }
-
-  return patches;
-};
-
 export const reconcileDerivedProductStockForTenant = async (
   tenantIdValue: string
 ): Promise<DerivedProductStockPatch[]> => {
@@ -137,11 +79,56 @@ export const reconcileDerivedProductStockForTenant = async (
 
     if (!tenantSnapshot.exists || !inventorySnapshot.exists) return [];
 
-    return reconcileDerivedProductStockInTransaction({
-      transaction,
-      tenantId,
-      tenantData: tenantSnapshot.data(),
-      inventoryData: inventorySnapshot.data(),
+    const tenantData = tenantSnapshot.data();
+    const inventoryData = inventorySnapshot.data();
+    const catalog = parseInventoryCatalogRecords(
+      inventoryData?.catalog ?? inventoryData?.inventoryCatalog
+    );
+    const compositions = parseInventoryCompositionRecords(
+      inventoryData?.compositions ?? inventoryData?.productCompositions
+    );
+    const patches = deriveProductStockPatches(
+      tenantData?.publicProducts,
+      catalog,
+      compositions
+    );
+    if (patches.length === 0) return [];
+
+    const canonicalStoreId = clean(tenantData?.canonicalStoreId);
+    const canonicalReferences = canonicalStoreId
+      ? patches.map(patch =>
+          adminDb.doc(`stores/${canonicalStoreId}/products/${patch.productId}`)
+        )
+      : [];
+    const canonicalSnapshots = await Promise.all(
+      canonicalReferences.map(reference => transaction.get(reference))
+    );
+
+    const publicProducts = applyDerivedStockToPublicProducts(
+      tenantData?.publicProducts,
+      patches
+    );
+    if (publicProducts) {
+      transaction.set(
+        tenantReference,
+        {
+          publicProducts,
+          updatedAt: FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      );
+    }
+
+    canonicalSnapshots.forEach((snapshot, index) => {
+      if (!snapshot.exists) return;
+      const patch = patches[index];
+      if (!patch) return;
+      transaction.update(snapshot.ref, {
+        stock: patch.stock,
+        updatedAt: FieldValue.serverTimestamp(),
+      });
     });
+
+    return patches;
   });
 };
