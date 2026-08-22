@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { describe, test } from 'node:test';
+import { normalizeKyrubInventoryTransformationProposal } from '../shared/kyrubInventoryTransformation';
 import {
   buildInventoryPurchaseList,
   calculateProductAvailableStock,
@@ -32,6 +33,10 @@ const publicProductsSource = readFileSync(
 );
 const reconciliationSource = readFileSync(
   'server/inventory/productStockReconciliationService.ts',
+  'utf8'
+);
+const transformationSource = readFileSync(
+  'server/inventory/inventoryTransformationExecutionService.ts',
   'utf8'
 );
 const actionExecuteSource = readFileSync('api/action-execute.ts', 'utf8');
@@ -169,5 +174,63 @@ describe('product inventory and composition', () => {
       actionExecuteSource,
       /executeAuthorizedKyrubInventoryAdjustment[\s\S]*reconcileDerivedProductStockForTenant/
     );
+  });
+
+  test('universal transformation contract supports raw material, intermediates, byproducts and audited losses', () => {
+    const proposal = normalizeKyrubInventoryTransformationProposal({
+      id: 'batch-beef-001',
+      type: 'transform_inventory',
+      inputs: [{ name: 'Carne bovina', quantity: 5, unit: 'kg' }],
+      outputs: [
+        { name: 'Hambúrguer 100g', quantity: 45, unit: 'un', kind: 'intermediate' },
+        { name: 'Aparas aproveitáveis', quantity: 0.2, unit: 'kg', kind: 'byproduct' },
+      ],
+      losses: [
+        { name: 'Gordura e limpeza', quantity: 300, unit: 'g', reason: 'descarte' },
+      ],
+      source: { kind: 'processing', label: 'Porcionamento de carne' },
+      requiresConfirmation: true,
+    });
+
+    assert.ok(proposal);
+    assert.equal(proposal.inputs[0]?.quantity, 5);
+    assert.equal(proposal.outputs[0]?.kind, 'intermediate');
+    assert.equal(proposal.outputs[1]?.kind, 'byproduct');
+    assert.equal(proposal.losses[0]?.quantity, 300);
+
+    assert.equal(
+      normalizeKyrubInventoryTransformationProposal({
+        id: 'impossible-loss',
+        type: 'transform_inventory',
+        inputs: [{ name: 'Carne bovina', quantity: 5, unit: 'kg' }],
+        outputs: [{ name: 'Hambúrguer', quantity: 1, unit: 'un', kind: 'intermediate' }],
+        losses: [{ name: 'Perda', quantity: 6, unit: 'kg' }],
+        source: { kind: 'processing' },
+        requiresConfirmation: true,
+      }),
+      null
+    );
+  });
+
+  test('transformation executor consumes inputs once, produces outputs atomically and never double-decrements losses', () => {
+    assert.match(transformationSource, /runTransaction/);
+    assert.match(transformationSource, /INSUFFICIENT_INVENTORY/);
+    assert.match(transformationSource, /receiptSnapshot\.exists/);
+    assert.match(transformationSource, /currentQuantity - requiredQuantity/);
+    assert.match(transformationSource, /currentQuantity \+ aggregated\.quantity/);
+    assert.match(transformationSource, /losses: proposal\.losses/);
+    assert.doesNotMatch(transformationSource, /loss.*currentQuantity\s*-/i);
+    assert.match(transformationSource, /totalConsumedCost/);
+    assert.match(transformationSource, /collection\('transformations'\)/);
+  });
+
+  test('transformations share the existing action runtime and reconcile sellable stock', () => {
+    assert.match(actionExecuteSource, /rawProposal\?\.type === 'transform_inventory'/);
+    assert.match(actionExecuteSource, /executeAuthorizedInventoryTransformation/);
+    assert.match(
+      actionExecuteSource,
+      /reconcileDerivedProductStockForTenant\(result\.entityId\)/
+    );
+    assert.doesNotMatch(actionExecuteSource, /inventory-transform\.ts/);
   });
 });

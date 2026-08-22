@@ -106,6 +106,44 @@ export default async function handler(
     return;
   }
 
+  const rawBody = request.body && typeof request.body === 'object' && !Array.isArray(request.body)
+    ? request.body as Record<string, unknown>
+    : null;
+  const rawProposal = rawBody?.proposal && typeof rawBody.proposal === 'object' && !Array.isArray(rawBody.proposal)
+    ? rawBody.proposal as Record<string, unknown>
+    : null;
+
+  if (rawProposal?.type === 'transform_inventory') {
+    try {
+      const transformation = await import(
+        '../server/inventory/inventoryTransformationExecutionService.js'
+      );
+      if (!transformation.isInventoryTransformationExecutionRequest(request.body)) {
+        response.status(400).json({
+          error: 'A transformação de estoque precisa ser revisada e confirmada.',
+          code: 'INVALID_TRANSFORMATION_REQUEST',
+        });
+        return;
+      }
+      const result = await transformation.executeAuthorizedInventoryTransformation(
+        authorization,
+        request.body
+      );
+      const { reconcileDerivedProductStockForTenant } = await import(
+        '../server/inventory/productStockReconciliationService.js'
+      );
+      await reconcileDerivedProductStockForTenant(result.entityId);
+      response.status(200).json(result);
+    } catch (error) {
+      const transformation = await import(
+        '../server/inventory/inventoryTransformationExecutionService.js'
+      );
+      const mapped = transformation.mapInventoryTransformationExecutionError(error);
+      response.status(mapped.status).json(mapped.body);
+    }
+    return;
+  }
+
   let mapActionError: ((error: unknown) => HttpErrorResult) | null = null;
   try {
     const [
