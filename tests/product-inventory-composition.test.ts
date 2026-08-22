@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { describe, test } from 'node:test';
+import { normalizeKyrubInventoryTransformationProposal } from '../shared/kyrubInventoryTransformation';
 import {
   buildInventoryPurchaseList,
   calculateProductAvailableStock,
@@ -32,6 +33,14 @@ const publicProductsSource = readFileSync(
 );
 const reconciliationSource = readFileSync(
   'server/inventory/productStockReconciliationService.ts',
+  'utf8'
+);
+const transformationSource = readFileSync(
+  'server/inventory/inventoryTransformationExecutionService.ts',
+  'utf8'
+);
+const transformationEndpointSource = readFileSync(
+  'api/inventory-transform.ts',
   'utf8'
 );
 const actionExecuteSource = readFileSync('api/action-execute.ts', 'utf8');
@@ -168,6 +177,50 @@ describe('product inventory and composition', () => {
     assert.match(
       actionExecuteSource,
       /executeAuthorizedKyrubInventoryAdjustment[\s\S]*reconcileDerivedProductStockForTenant/
+    );
+  });
+
+  test('universal transformation contract supports raw material, intermediates, byproducts and audited losses', () => {
+    const proposal = normalizeKyrubInventoryTransformationProposal({
+      id: 'batch-beef-001',
+      type: 'transform_inventory',
+      inputs: [{ name: 'Carne bovina', quantity: 5, unit: 'kg' }],
+      outputs: [
+        { name: 'Hambúrguer 100g', quantity: 45, unit: 'un', kind: 'intermediate' },
+        { name: 'Aparas aproveitáveis', quantity: 0.2, unit: 'kg', kind: 'byproduct' },
+      ],
+      losses: [
+        { name: 'Gordura e limpeza', quantity: 0.3, unit: 'kg', reason: 'descarte' },
+      ],
+      source: { kind: 'processing', label: 'Porcionamento de carne' },
+      requiresConfirmation: true,
+    });
+
+    assert.ok(proposal);
+    assert.equal(proposal.inputs[0]?.quantity, 5);
+    assert.equal(proposal.outputs[0]?.kind, 'intermediate');
+    assert.equal(proposal.outputs[1]?.kind, 'byproduct');
+    assert.equal(proposal.losses[0]?.quantity, 0.3);
+  });
+
+  test('transformation executor consumes inputs once, produces outputs atomically and never double-decrements losses', () => {
+    assert.match(transformationSource, /runTransaction/);
+    assert.match(transformationSource, /INSUFFICIENT_INVENTORY/);
+    assert.match(transformationSource, /receiptSnapshot\.exists/);
+    assert.match(transformationSource, /currentQuantity - requiredQuantity/);
+    assert.match(transformationSource, /currentQuantity \+ aggregated\.quantity/);
+    assert.match(transformationSource, /losses: proposal\.losses/);
+    assert.doesNotMatch(transformationSource, /loss.*currentQuantity\s*-/i);
+    assert.match(transformationSource, /totalConsumedCost/);
+    assert.match(transformationSource, /collection\('transformations'\)/);
+  });
+
+  test('confirmed transformation endpoint reuses sellable-stock reconciliation', () => {
+    assert.match(transformationEndpointSource, /confirmed/);
+    assert.match(transformationEndpointSource, /executeAuthorizedInventoryTransformation/);
+    assert.match(
+      transformationEndpointSource,
+      /reconcileDerivedProductStockForTenant\(result\.entityId\)/
     );
   });
 });
