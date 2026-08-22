@@ -25,7 +25,7 @@ export const isKyrubInventoryAttachmentIntakeIntent = (
 ): boolean => {
   const normalized = normalizeText(message);
   const hasMutationRequest =
-    /\b(atualiz\w*|ajust\w*|dar entrada|de entrada|registre\w*|adicione\w*|inclua\w*|lance\w*|som\w*|reponha\w*|repor|coloque\w*)\b/.test(normalized);
+    /\b(atualiz\w*|ajust\w*|dar entrada|de entrada|registre\w*|adicione\w*|inclua\w*|lance\w*|reponha\w*|repor|coloque\w*)\b/.test(normalized);
   return hasInventoryContext(message) && hasMutationRequest;
 };
 
