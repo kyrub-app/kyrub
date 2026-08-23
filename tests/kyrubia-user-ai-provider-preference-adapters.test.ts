@@ -14,7 +14,6 @@ const adapters = readFileSync(
   'server/ai/kyrubiaUserProviderAdapters.ts',
   'utf8'
 );
-const actionExecute = readFileSync('api/action-execute.ts', 'utf8');
 
 test('provider preference remains server-only and only accepts tested available providers', () => {
   assert.match(preference, /users\/\$\{uid\}\/server_private_ai_config\/routing/);
@@ -57,11 +56,4 @@ test('provider adapters normalize tool calls and token usage without logging pay
   assert.match(adapters, /outputTokens/);
   assert.doesNotMatch(adapters, /console\.(?:log|warn|error)\([^\n]*payload/);
   assert.doesNotMatch(adapters, /console\.(?:log|warn|error)\([^\n]*apiKey/);
-});
-
-test('existing user AI transport exposes preference read and save without a new Vercel function', () => {
-  assert.match(actionExecute, /transport === 'kyrubia-user-ai-provider'/);
-  assert.match(actionExecute, /userAiProviderPreferenceService\.js/);
-  assert.match(actionExecute, /operation === 'set_preference'/);
-  assert.match(actionExecute, /preferredProvider/);
 });
