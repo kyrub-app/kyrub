@@ -2,6 +2,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App.tsx';
 import { AppErrorBoundary } from './components/AppErrorBoundary';
+import { KyrubAiConversationCloudSyncGate } from './components/KyrubAiConversationCloudSyncGate';
 import { OfficialKnowledgeSemanticSetupBridge } from './components/OfficialKnowledgeSemanticSetupBridge';
 import { OfficialKnowledgeSetupBridge } from './components/OfficialKnowledgeSetupBridge';
 import { ProfileCommunitiesCloudBridge } from './components/ProfileCommunitiesCloudBridge';
@@ -29,21 +30,23 @@ if (!rootElement) {
 createRoot(rootElement).render(
   <StrictMode>
     <AppErrorBoundary>
-      <>
-        <ProfileNextPolishBridge />
-        <ProfileConnectedCardsPolishBridge />
-        <ProfileConnectedImageFitBridge />
-        <ProfileContactGroupsPolishBridge />
-        <ProfileOffersFiltersBridge />
-        <ProfilePublishingDestinationsCloudBridge />
-        <ProfileCommunitiesCloudBridge />
-        <KyrubOfficialKnowledgeRuntimeBridge />
-        <KyrubActivityObserverBridge />
-        <KyrubActivityLogSetupBridge />
-        <OfficialKnowledgeSetupBridge />
-        <OfficialKnowledgeSemanticSetupBridge />
-        <App />
-      </>
+      <KyrubAiConversationCloudSyncGate>
+        <>
+          <ProfileNextPolishBridge />
+          <ProfileConnectedCardsPolishBridge />
+          <ProfileConnectedImageFitBridge />
+          <ProfileContactGroupsPolishBridge />
+          <ProfileOffersFiltersBridge />
+          <ProfilePublishingDestinationsCloudBridge />
+          <ProfileCommunitiesCloudBridge />
+          <KyrubOfficialKnowledgeRuntimeBridge />
+          <KyrubActivityObserverBridge />
+          <KyrubActivityLogSetupBridge />
+          <OfficialKnowledgeSetupBridge />
+          <OfficialKnowledgeSemanticSetupBridge />
+          <App />
+        </>
+      </KyrubAiConversationCloudSyncGate>
     </AppErrorBoundary>
   </StrictMode>
 );
