@@ -2,6 +2,10 @@ name: Deploy community security
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'firestore.kyrubia-conversations.fragment.rules'
 
 permissions:
   contents: read
@@ -40,6 +44,13 @@ jobs:
 
       - name: Validate Firestore community rules
         run: npm run test:rules
+
+      - name: Validate private Kyrubia conversation rules
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run firestore:compose
+          npx --yes firebase-tools emulators:exec --config firebase.security.json --project kyrub-security-test --only firestore "node --test --test-concurrency=1 --import tsx tests/firestore-kyrubia-conversations.test.ts"
 
       - name: Compose production rules
         run: npm run firestore:compose
