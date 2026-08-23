@@ -14,6 +14,10 @@ import {
 import { loadKyrubAiConversations } from '../ai/conversationStore';
 
 const MIRROR_INTERVAL_MS = 1_500;
+const LEGACY_HISTORY_COPY =
+  'Histórico textual e referências de anexos ficam neste dispositivo; os arquivos são privados no Storage.';
+const CLOUD_HISTORY_COPY =
+  'Seu histórico é sincronizado com sua conta entre dispositivos; os arquivos de anexo continuam privados no Storage.';
 
 const signature = (value: unknown): string => JSON.stringify(value);
 
@@ -105,6 +109,33 @@ export function KyrubAiConversationCloudSyncGate({
       unsubscribe();
     };
   }, []);
+
+  useEffect(() => {
+    if (!ready) return;
+
+    const syncCopy = () => {
+      document
+        .querySelectorAll<HTMLElement>('#kyrub-ai-workspace span')
+        .forEach(element => {
+          if (element.textContent?.trim() === LEGACY_HISTORY_COPY) {
+            element.textContent = CLOUD_HISTORY_COPY;
+          }
+        });
+
+      document
+        .querySelectorAll<HTMLButtonElement>(
+          '#kyrub-ai-workspace button[title="Excluir conversa deste dispositivo"]'
+        )
+        .forEach(button => {
+          button.title = 'Excluir conversa da sua conta';
+        });
+    };
+
+    syncCopy();
+    const observer = new MutationObserver(syncCopy);
+    observer.observe(document.body, { childList: true, subtree: true });
+    return () => observer.disconnect();
+  }, [ready]);
 
   if (!ready) {
     return (
