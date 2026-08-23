@@ -18,6 +18,22 @@ const MAX_SCREEN_CONTEXT_CHARACTERS = 240;
 const MAX_ERP_PRODUCTS = 120;
 const MAX_ERP_ORDERS = 30;
 
+const byoCapabilities = {
+  actionsEnabled: true,
+  enabledActions: ['create_note'] as const,
+  enabledReadActions: [
+    'read_store_summary',
+    'list_products',
+    'list_low_stock_products',
+    'list_pending_orders',
+  ] as const,
+  voiceEnabled: false,
+  persistentCloudHistoryEnabled: false,
+  multimodalAttachmentsEnabled: false,
+  providerResilienceEnabled: false,
+  usageMeteringEnabled: true,
+};
+
 export type KyrubiaUserProviderChatBody =
   | {
       status: 'user_provider';
@@ -34,6 +50,7 @@ export type KyrubiaUserProviderChatBody =
         checklist: string[];
         requiresConfirmation: true;
       };
+      capabilities: typeof byoCapabilities;
       funding: 'user_provider';
       usage: {
         inputTokens?: number;
@@ -222,7 +239,7 @@ export const executeAuthorizedKyrubiaUserProviderChat = async (
 
   if (result.status === 'legacy_allowed') {
     return {
-      httpStatus: 200,
+      httpStatus: 404,
       body: { status: 'legacy_allowed', reason: result.reason, requestId },
     };
   }
@@ -261,6 +278,7 @@ export const executeAuthorizedKyrubiaUserProviderChat = async (
       mode: 'conversation',
       requestId,
       ...(result.actionProposal ? { actionProposal: result.actionProposal } : {}),
+      capabilities: byoCapabilities,
       funding: 'user_provider',
       usage: result.usage,
     },
