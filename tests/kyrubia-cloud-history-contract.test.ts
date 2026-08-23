@@ -75,11 +75,12 @@ test('startup gate hydrates before App and falls back to local cache when cloud 
   assert.match(gate, /Seu histórico é sincronizado com sua conta entre dispositivos/);
 });
 
-test('roadmap is versioned with open owner gates and current cloud-history block', () => {
+test('official 67-point battery is versioned with release rules and open owner gates', () => {
   const roadmap = readFileSync('ROADMAP_PROXIMOS_AJUSTES.md', 'utf8');
-  assert.match(roadmap, /Roadmap Canônico/);
-  assert.match(roadmap, /Histórico da Kyrubia sincronizado por UID entre dispositivos/);
-  assert.match(roadmap, /Teste de chave BYO-AI/);
-  assert.match(roadmap, /Primeiro Pix real/);
-  assert.match(roadmap, /timer somente em `ready`/);
+  assert.match(roadmap, /Bateria de Desenvolvimento — Pós AI Team \/ E2E & Product Expansion/);
+  assert.match(roadmap, /## 1\. ✅ Resolver #284 — PRODUCTION_BEHIND_MAIN/);
+  assert.match(roadmap, /## 67\. ⬜ Phase Closeout/);
+  assert.match(roadmap, /Nenhum agente pode considerar merge = produção/);
+  assert.match(roadmap, /Teste real BYO-AI/);
+  assert.match(roadmap, /primeiro E2E Pix real do X-Burger/);
 });
