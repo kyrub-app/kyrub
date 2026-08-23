@@ -4,14 +4,12 @@ import { buildKyrubRedemptionPlan } from '../shared/gamificationRedemption';
 
 const reward = {
   id: 'reward-1',
-  name: 'Voucher Loja X',
+  title: 'Voucher Loja X',
   description: 'Benefício de teste',
   costKCoins: 100,
-  benefitType: 'voucher' as const,
-  fundingAuthority: 'store' as const,
-  status: 'active' as const,
-  startsAt: '2026-08-01T00:00:00.000Z',
-  endsAt: '2026-12-31T23:59:59.000Z',
+  fundingType: 'store' as const,
+  storeId: 'store-1',
+  benefit: { type: 'voucher' as const, voucherTemplateId: 'voucher-template-1' },
 };
 
 test('redemption plan produces stable identities for atomic persistence', () => {
