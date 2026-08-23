@@ -54,6 +54,7 @@ test('nontechnical users see Kyrubia Credits before advanced API-key configurati
   assert.ok(keyInput > advanced);
   assert.match(bridge, /sem chave, sem console de desenvolvedor e sem configuração técnica/i);
   assert.match(bridge, /Em preparação/);
+  assert.match(bridge, /Quando estiver disponível, você poderá comprar Créditos Kyrubia/i);
   assert.match(bridge, /Nada será cobrado nesta tela agora/);
 });
 
@@ -75,5 +76,10 @@ test('advanced provider cards link to official help and keep credentials protect
 test('UI states that own-provider inference avoids Kyrubia Credits and paid fallback is not silent', () => {
   assert.match(bridge, /não consome Créditos Kyrubia/);
   assert.match(bridge, /Fallback pago não acontece silenciosamente/);
-  assert.match(bridge, /anexos continuam fora do roteamento da IA própria/);
+});
+
+test('attachment message stays plain-language and does not expose routing jargon', () => {
+  assert.match(bridge, /Anexos continuam funcionando normalmente na Kyrubia/);
+  assert.match(bridge, /imagens e PDFs usam o serviço de IA do Kyrub/i);
+  assert.doesNotMatch(bridge, /roteamento da IA própria|normalização multimodal/i);
 });
