@@ -319,10 +319,10 @@ export function KyrubAiProviderSettingsBridge() {
                 </div>
                 <h3 className="mt-3 text-sm font-black text-white">Usar Créditos Kyrubia</h3>
                 <p className="mt-1 text-xs leading-relaxed text-slate-300">
-                  Caminho simples: sem chave, sem console de desenvolvedor e sem configuração técnica. Você compra créditos e a Kyrubia cuida da IA por você.
+                  Caminho simples: sem chave, sem console de desenvolvedor e sem configuração técnica. Quando estiver disponível, você poderá comprar Créditos Kyrubia e a Kyrubia cuidará da IA por você.
                 </p>
                 <p className="mt-2 text-[10px] leading-relaxed text-slate-500">
-                  O saldo e a cobrança por Créditos Kyrubia ainda serão ativados em uma próxima etapa. Nada será cobrado nesta tela agora.
+                  Este recurso ainda está em preparação. Saldo, compra e cobrança serão ativados em uma próxima etapa. Nada será cobrado nesta tela agora.
                 </p>
               </section>
 
@@ -489,7 +489,7 @@ export function KyrubAiProviderSettingsBridge() {
 
             <div className="mt-4 flex items-center justify-between gap-3 border-t border-slate-800 pt-4">
               <p className="text-[10px] leading-relaxed text-slate-500">
-                Por enquanto, anexos continuam fora do roteamento da IA própria até a normalização multimodal ficar pronta.
+                Anexos continuam funcionando normalmente na Kyrubia. Por enquanto, imagens e PDFs usam o serviço de IA do Kyrub, e não a IA própria conectada.
               </p>
               <button
                 type="button"
