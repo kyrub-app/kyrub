@@ -1,5 +1,5 @@
 import {
-  KYRUB_AI_CONSULTANT_ENDPOINT,
+  KYRUB_AI_PLATFORM_CONSULTANT_ENDPOINT,
   type KyrubAiConsultantRequest,
   type KyrubAiConsultantResponse,
 } from '../../shared/aiConsultant';
@@ -142,7 +142,7 @@ export const requestKyrubAiMultimodalConsultant = async (
 
   let response: Response;
   try {
-    response = await fetch(KYRUB_AI_CONSULTANT_ENDPOINT, {
+    response = await fetch(KYRUB_AI_PLATFORM_CONSULTANT_ENDPOINT, {
       method: 'POST',
       headers: {
         authorization: `Bearer ${token}`,
