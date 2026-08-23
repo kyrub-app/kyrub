@@ -93,7 +93,9 @@ export const normalizeKyrubiaProviderTools = (
       }) as Record<string, unknown>,
     }));
 
-const textTurns = (messages: KyrubiaTextRuntimeMessage[]): KyrubiaProviderTurn[] =>
+export const messagesToKyrubiaProviderTurns = (
+  messages: KyrubiaTextRuntimeMessage[]
+): KyrubiaProviderTurn[] =>
   messages
     .filter(message => message.content.trim())
     .map(message => ({
@@ -112,6 +114,7 @@ export const runKyrubiaUserProviderText = async (input: {
   uid: string;
   systemText: string;
   messages: KyrubiaTextRuntimeMessage[];
+  turns?: KyrubiaProviderTurn[];
   tools: KyrubiaTextRuntimeToolDeclaration[];
   hasAttachments: boolean;
   signal?: AbortSignal;
@@ -141,7 +144,7 @@ export const runKyrubiaUserProviderText = async (input: {
       apiKey: resolved.apiKey,
       model,
       systemText: input.systemText,
-      turns: textTurns(input.messages),
+      turns: input.turns ?? messagesToKyrubiaProviderTurns(input.messages),
       tools: normalizeKyrubiaProviderTools(input.tools),
       maxOutputTokens: 1_800,
       signal: input.signal,
