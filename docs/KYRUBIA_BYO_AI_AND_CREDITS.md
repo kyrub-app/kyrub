@@ -22,6 +22,21 @@ Sistema separado de gamificação/recompensas. K-Coins não são Créditos Kyrub
 
 O termo **"moedas Kyrubia"** fica descontinuado por ser ambíguo.
 
+## Princípio de UX para usuários comuns
+
+A configuração de API é uma opção avançada, não o caminho padrão da experiência.
+
+A interface deve apresentar primeiro duas rotas compreensíveis:
+
+1. **Usar Créditos Kyrubia** — experiência simples, sem chave de API, console de desenvolvedor ou configuração técnica;
+2. **Usar minha própria IA (avançado)** — para usuários que já possuem ou desejam criar acesso de API em um provedor suportado.
+
+Enquanto o ledger comercial de Créditos Kyrubia não estiver ativo, a interface pode apresentar essa modalidade como **em preparação**, mas nunca deve simular saldo, preço, cobrança ou disponibilidade que ainda não existam.
+
+A tela não deve sugerir que uma assinatura de consumidor do ChatGPT, Gemini ou Claude equivale automaticamente a acesso de API. API pode exigir cadastro, limites, projeto e cobrança próprios do respectivo provedor.
+
+Para a opção avançada, cada provedor deve oferecer ajuda oficial para obtenção da chave antes do campo de credencial. A linguagem pública deve privilegiar “chave de API” e explicações em português; siglas internas como BYO-AI podem permanecer na documentação técnica, mas não devem ser requisito para o usuário compreender a tela.
+
 ## Ordem de roteamento
 
 Para uma solicitação que exige LLM:
