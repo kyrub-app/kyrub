@@ -15,6 +15,7 @@ on:
       - 'firestore.contact-groups.fragment.rules'
       - 'firestore.communities.fragment.rules'
       - 'firestore.social-feed.fragment.rules'
+      - 'firestore.kyrubia-conversations.fragment.rules'
       - 'firestore.operational-dual-write.fragment.rules'
       - 'firestore.product-dual-write.fragment.rules'
       - 'firestore.cash-ledger.fragment.rules'
@@ -91,6 +92,13 @@ jobs:
           set -o pipefail
           npm run test:rules 2>&1 | tee firestore-rules.log
 
+      - name: Run Kyrubia conversation history authorization suite
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run firestore:compose
+          npx --yes firebase-tools emulators:exec --config firebase.security.json --project kyrub-security-test --only firestore "node --test --test-concurrency=1 --import tsx tests/firestore-kyrubia-conversations.test.ts" 2>&1 | tee kyrubia-conversations-rules.log
+
       - name: Run tenant artifact hardening emulator suite
         shell: bash
         run: |
@@ -105,5 +113,6 @@ jobs:
           name: firestore-rules-failure-log
           path: |
             firestore-rules.log
+            kyrubia-conversations-rules.log
             artifacts-hardening.log
           if-no-files-found: ignore
