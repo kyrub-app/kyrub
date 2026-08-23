@@ -3,6 +3,7 @@ import {
   resolveAuthorizedUserAiProviderSecret,
   type SupportedUserAiProvider,
 } from './userAiProviderCredentialService.js';
+import { loadUserAiProviderPreference } from './userAiProviderPreferenceService.js';
 import { adminDb } from '../firebaseAdmin.js';
 
 export type UserAiProviderPreference = SupportedUserAiProvider | null;
@@ -108,9 +109,12 @@ export const resolveUserAiProvider = async (input: {
   }
 
   const availableProviders = await availableProvidersFor(uid);
+  const preferredProvider = input.preferredProvider === undefined
+    ? await loadUserAiProviderPreference(uid)
+    : input.preferredProvider;
   const selection = decideUserAiProviderSelection({
     availableProviders,
-    preferredProvider: input.preferredProvider,
+    preferredProvider,
   });
   if (selection.status !== 'selected') return selection;
 
