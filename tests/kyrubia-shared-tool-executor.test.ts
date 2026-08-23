@@ -10,8 +10,18 @@ import {
 } from '../server/ai/kyrubiaSharedToolExecutor.js';
 
 const snapshot: KyrubiaErpSnapshot = {
+  source: 'authenticated_client_snapshot',
   generatedAt: '2026-08-23T00:00:00.000Z',
-  store: { id: 'store-1', name: 'Loja' },
+  store: {
+    id: 'store-1',
+    name: 'Loja',
+    description: '',
+    plan: 'free',
+    status: 'open',
+    address: '',
+    keywords: [],
+    configured: true,
+  },
   products: [
     {
       id: 'p1',
@@ -36,7 +46,17 @@ const snapshot: KyrubiaErpSnapshot = {
   ],
   productCount: 2,
   productsTruncated: false,
-  pendingOrders: [{ id: 'o1', status: 'pending' }],
+  pendingOrders: [
+    {
+      id: 'o1',
+      status: 'pending',
+      paymentStatus: 'pending',
+      fulfillmentType: 'pickup',
+      total: 29.5,
+      itemCount: 1,
+      createdAt: '2026-08-23T00:00:00.000Z',
+    },
+  ],
   pendingOrderCount: 1,
   ordersTruncated: false,
   lowStockThreshold: 5,
