@@ -1,3 +1,4 @@
+import type { KyrubErpContextSnapshot } from '../../shared/kyrubErpContext.js';
 import {
   createKyrubiaProductQuery,
   executeKyrubiaProductQuery,
@@ -19,34 +20,7 @@ const MAX_NOTE_CONTENT_CHARACTERS = 10_000;
 const MAX_NOTE_CHECKLIST_ITEMS = 24;
 const MAX_NOTE_CHECKLIST_ITEM_CHARACTERS = 180;
 
-export type KyrubiaErpProductSummary = {
-  id: string;
-  name: string;
-  category: string;
-  price: number;
-  stock: number;
-  isService: boolean;
-  hasDescription: boolean;
-  hasImage: boolean;
-};
-
-export type KyrubiaErpSnapshot = {
-  generatedAt: string;
-  store: Record<string, unknown> | null;
-  products: KyrubiaErpProductSummary[];
-  productCount: number;
-  productsTruncated: boolean;
-  pendingOrders: Array<Record<string, unknown>>;
-  pendingOrderCount: number;
-  ordersTruncated: boolean;
-  lowStockThreshold: number;
-  availability: {
-    store: boolean;
-    products: boolean;
-    orders: boolean;
-  };
-  warnings: string[];
-};
+export type KyrubiaErpSnapshot = KyrubErpContextSnapshot;
 
 export type KyrubiaNormalizedToolCall = {
   id: string;
@@ -65,10 +39,7 @@ export type KyrubiaCreateNoteProposal = {
 };
 
 export class KyrubiaSharedToolError extends Error {
-  constructor(
-    readonly code: string,
-    message: string
-  ) {
+  constructor(readonly code: string, message: string) {
     super(message);
     this.name = 'KyrubiaSharedToolError';
   }
@@ -99,10 +70,7 @@ export const KYRUBIA_CREATE_NOTE_DECLARATION = {
   parameters: {
     type: 'OBJECT',
     properties: {
-      title: {
-        type: 'STRING',
-        description: 'Título curto e objetivo da nota.',
-      },
+      title: { type: 'STRING', description: 'Título curto e objetivo da nota.' },
       content: {
         type: 'STRING',
         description:
@@ -135,14 +103,8 @@ export const KYRUBIA_QUERY_PRODUCTS_DECLARATION = {
       stockMax: { type: 'NUMBER' },
       priceMin: { type: 'NUMBER' },
       priceMax: { type: 'NUMBER' },
-      sortBy: {
-        type: 'STRING',
-        enum: ['name', 'category', 'price', 'stock'],
-      },
-      sortDirection: {
-        type: 'STRING',
-        enum: ['asc', 'desc'],
-      },
+      sortBy: { type: 'STRING', enum: ['name', 'category', 'price', 'stock'] },
+      sortDirection: { type: 'STRING', enum: ['asc', 'desc'] },
       limit: { type: 'INTEGER' },
     },
   },
@@ -170,8 +132,7 @@ export const KYRUBIA_ERP_READ_DECLARATIONS = [
   },
   {
     name: 'list_low_stock_products',
-    description:
-      'Alias legado para produtos físicos com estoque baixo. Somente leitura.',
+    description: 'Alias legado para produtos físicos com estoque baixo. Somente leitura.',
     parameters: {
       type: 'OBJECT',
       properties: {
@@ -252,14 +213,12 @@ export const kyrubiaCreateNoteProposalFromCall = (
         .filter(Boolean)
         .slice(0, MAX_NOTE_CHECKLIST_ITEMS)
     : [];
-
   if (!title || !content) {
     throw new KyrubiaSharedToolError(
       'AI_UNAVAILABLE',
       'A Kyrubia não conseguiu preparar todos os dados da nota. Reformule o pedido e tente novamente.'
     );
   }
-
   return {
     id: call.id,
     type: 'create_note',
@@ -276,7 +235,7 @@ export const isKyrubiaErpReadTool = (name: string): boolean =>
 
 const executeGenericProductQuery = (
   call: KyrubiaNormalizedToolCall,
-  context: KyrubiaErpSnapshot
+  context: KyrubErpContextSnapshot
 ): Record<string, unknown> => {
   if (!context.availability.products) {
     return {
@@ -289,9 +248,7 @@ const executeGenericProductQuery = (
   const filters: KyrubiaProductQueryFilter[] = [];
   const nameContains = cleanText(call.args.nameContains, 120);
   const categoryContains = cleanText(call.args.categoryContains, 120);
-  if (nameContains) {
-    filters.push({ field: 'name', operator: 'contains', value: nameContains });
-  }
+  if (nameContains) filters.push({ field: 'name', operator: 'contains', value: nameContains });
   if (categoryContains) {
     filters.push({ field: 'category', operator: 'contains', value: categoryContains });
   }
@@ -305,32 +262,41 @@ const executeGenericProductQuery = (
     filters.push({ field: 'isService', operator: 'eq', value: call.args.isService });
   }
 
-  const stockMin = optionalFiniteNumber(call.args.stockMin);
-  const stockMax = optionalFiniteNumber(call.args.stockMax);
-  const priceMin = optionalFiniteNumber(call.args.priceMin);
-  const priceMax = optionalFiniteNumber(call.args.priceMax);
-  if (stockMin !== undefined) filters.push({ field: 'stock', operator: 'gte', value: Math.max(0, stockMin) });
-  if (stockMax !== undefined) filters.push({ field: 'stock', operator: 'lte', value: Math.max(0, stockMax) });
-  if (priceMin !== undefined) filters.push({ field: 'price', operator: 'gte', value: Math.max(0, priceMin) });
-  if (priceMax !== undefined) filters.push({ field: 'price', operator: 'lte', value: Math.max(0, priceMax) });
+  const numericFilters: Array<[
+    'stock' | 'price',
+    'gte' | 'lte',
+    unknown
+  ]> = [
+    ['stock', 'gte', call.args.stockMin],
+    ['stock', 'lte', call.args.stockMax],
+    ['price', 'gte', call.args.priceMin],
+    ['price', 'lte', call.args.priceMax],
+  ];
+  for (const [field, operator, rawValue] of numericFilters) {
+    const value = optionalFiniteNumber(rawValue);
+    if (value !== undefined) {
+      filters.push({ field, operator, value: Math.max(0, value) });
+    }
+  }
 
   const sortBy = cleanText(call.args.sortBy, 24);
-  const sortDirection = cleanText(call.args.sortDirection, 8);
   const allowedSortFields = ['name', 'category', 'price', 'stock'] as const;
   const sort: KyrubiaProductQuerySort | undefined =
     (allowedSortFields as readonly string[]).includes(sortBy)
       ? {
           field: sortBy as KyrubiaProductQuerySort['field'],
-          direction: sortDirection === 'desc' ? 'desc' : 'asc',
+          direction: cleanText(call.args.sortDirection, 8) === 'desc' ? 'desc' : 'asc',
         }
       : undefined;
 
-  const productQuery = createKyrubiaProductQuery({
-    filters,
-    sort,
-    limit: clampInteger(call.args.limit, 20, 1, MAX_TOOL_ITEMS),
-  });
-  const result = executeKyrubiaProductQuery(context, productQuery);
+  const result = executeKyrubiaProductQuery(
+    context,
+    createKyrubiaProductQuery({
+      filters,
+      sort,
+      limit: clampInteger(call.args.limit, 20, 1, MAX_TOOL_ITEMS),
+    })
+  );
 
   return {
     available: result.available,
@@ -347,7 +313,7 @@ const executeGenericProductQuery = (
 
 export const executeKyrubiaSharedReadTool = (
   call: KyrubiaNormalizedToolCall,
-  context: KyrubiaErpSnapshot | null
+  context: KyrubErpContextSnapshot | null
 ): Record<string, unknown> => {
   if (!isKyrubiaErpReadTool(call.name)) {
     return { available: false, reason: 'unknown_read_action' };
@@ -405,7 +371,9 @@ export const executeKyrubiaSharedReadTool = (
     const requestedLimit = clampInteger(call.args.limit, 20, 1, MAX_TOOL_ITEMS);
     const lowStock = context.products
       .filter(product => !product.isService && product.stock <= threshold)
-      .sort((left, right) => left.stock - right.stock || left.name.localeCompare(right.name, 'pt-BR'));
+      .sort((left, right) =>
+        left.stock - right.stock || left.name.localeCompare(right.name, 'pt-BR')
+      );
     return {
       available: true,
       generatedAt: context.generatedAt,
