@@ -2,10 +2,9 @@ import {
   collection,
   deleteDoc,
   doc,
-  onSnapshot,
+  getDocs,
   serverTimestamp,
   writeBatch,
-  type Unsubscribe,
 } from 'firebase/firestore';
 import { db } from '../utils/firebase';
 import {
@@ -38,11 +37,7 @@ export const sanitizeKyrubAiCloudConversations = (
   conversations: KyrubAiLocalConversation[]
 ): KyrubAiLocalConversation[] => {
   const memory = createMemoryStorage();
-  saveKyrubAiConversations(
-    memory as Storage,
-    'cloud-sanitizer',
-    conversations
-  );
+  saveKyrubAiConversations(memory as Storage, 'cloud-sanitizer', conversations);
   return loadKyrubAiConversations(memory as Storage, 'cloud-sanitizer');
 };
 
@@ -84,17 +79,12 @@ const parseCloudSnapshot = (snapshot: { docs: Array<{ data: () => unknown }> }) 
   return sanitizeKyrubAiCloudConversations(candidates);
 };
 
-export const subscribeKyrubAiCloudConversations = (
-  uid: string,
-  onChange: (conversations: KyrubAiLocalConversation[]) => void,
-  onError?: (error: Error) => void
-): Unsubscribe => {
-  if (!uid) return () => undefined;
-  return onSnapshot(
-    collectionRef(uid),
-    snapshot => onChange(parseCloudSnapshot(snapshot)),
-    error => onError?.(error instanceof Error ? error : new Error(String(error)))
-  );
+export const loadKyrubAiCloudConversations = async (
+  uid: string
+): Promise<KyrubAiLocalConversation[]> => {
+  if (!uid) return [];
+  const snapshot = await getDocs(collectionRef(uid));
+  return parseCloudSnapshot(snapshot);
 };
 
 export const persistKyrubAiCloudConversations = async (
@@ -129,4 +119,16 @@ export const deleteKyrubAiCloudConversation = async (
 ): Promise<void> => {
   if (!uid || !conversationId) return;
   await deleteDoc(doc(db, 'users', uid, CLOUD_COLLECTION, conversationId));
+};
+
+export const hydrateKyrubAiConversationHistory = async (
+  storage: Storage,
+  uid: string
+): Promise<KyrubAiLocalConversation[]> => {
+  const local = loadKyrubAiConversations(storage, uid);
+  const cloud = await loadKyrubAiCloudConversations(uid);
+  const merged = mergeKyrubAiConversationHistories(local, cloud);
+  saveKyrubAiConversations(storage, uid, merged);
+  await persistKyrubAiCloudConversations(uid, merged);
+  return merged;
 };
