@@ -457,7 +457,7 @@ test('ERP reads are bounded, sanitized and remain separate from mutations', asyn
   assert.doesNotMatch(routeSource, /deleteDoc\(/);
 
   assert.match(sharedSource, /erpContext\?: KyrubErpContextSnapshot/);
-  assert.match(sharedSource, /provider: 'kyrub' \| 'gemini'/);
+  assert.match(sharedSource, /provider:\s*[\s\S]*'kyrub'[\s\S]*'gemini'[\s\S]*'google-gemini'[\s\S]*'openai'[\s\S]*'anthropic'/);
   assert.match(sharedSource, /mode: 'conversation' \| 'deterministic'/);
   assert.match(sharedSource, /enabledReadActions\?: KyrubReadActionType\[\]/);
 
