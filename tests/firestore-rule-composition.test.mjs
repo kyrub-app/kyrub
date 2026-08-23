@@ -158,3 +158,25 @@ test('omnichannel identity mappings are composed as server-authoritative private
   assert.match(rules, /match \/externalIdentityLookup\/\{lookupId\}/);
   assert.match(rules, /allow read, write: if false;/);
 });
+
+test('Kyrubia conversation history is composed as UID-private cloud data', () => {
+  const composer = readFileSync('scripts/compose-firestore-rules.mjs', 'utf8');
+  const rules = readFileSync('firestore.kyrubia-conversations.fragment.rules', 'utf8');
+  const sync = readFileSync('src/ai/kyrubiaConversationCloudSync.ts', 'utf8');
+  const gate = readFileSync('src/components/KyrubAiConversationCloudSyncGate.tsx', 'utf8');
+
+  assert.match(composer, /firestore\.kyrubia-conversations\.fragment\.rules/);
+  assert.match(rules, /match \/users\/\{userId\}\/kyrubiaConversations\/\{conversationId\}/);
+  assert.match(rules, /request\.auth\.uid == userId/);
+  assert.match(rules, /data\.uid == userId/);
+  assert.match(rules, /data\.conversationId == conversationId/);
+  assert.match(rules, /data\.syncedAt == request\.time/);
+  assert.match(sync, /mergeKyrubAiConversationHistories/);
+  assert.match(sync, /conversation\.updatedAt > current\.updatedAt/);
+  assert.match(sync, /saveKyrubAiConversations\(storage, uid, merged\)/);
+  assert.match(sync, /serverTimestamp\(\)/);
+  assert.match(gate, /hydrateKyrubAiConversationHistory/);
+  assert.match(gate, /deleteKyrubAiCloudConversation/);
+  assert.match(gate, /Using local conversation cache until cloud sync returns/);
+  assert.doesNotMatch(sync, /addDoc\(/);
+});
