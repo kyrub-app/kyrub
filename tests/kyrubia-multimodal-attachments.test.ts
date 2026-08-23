@@ -66,7 +66,7 @@ test('attachment bytes stay out of localStorage and uploads have private binding
 test('any conversation containing attachments bypasses local deterministic action routing', () => {
   assert.match(workspace, /hasMultimodalHistory/);
   assert.match(workspace, /requestKyrubAiMultimodalConsultant/);
-  assert.match(multimodalClient, /KYRUB_AI_CONSULTANT_ENDPOINT/);
+  assert.match(multimodalClient, /KYRUB_AI_PLATFORM_CONSULTANT_ENDPOINT/);
   assert.doesNotMatch(multimodalClient, /CONSULTANT_COMPAT|LEGACY_ENDPOINT/);
   assert.match(multimodalClient, /hasAttachments/);
 });
