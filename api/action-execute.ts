@@ -50,6 +50,22 @@ export default async function handler(
   );
   const transport = headerValue(request.query?.transport);
 
+  if (transport === 'kyrubia-user-ai-chat') {
+    try {
+      const chat = await import('../server/ai/kyrubiaUserProviderChatService.js');
+      const result = await chat.executeAuthorizedKyrubiaUserProviderChat(
+        authorization,
+        request.body
+      );
+      response.status(result.httpStatus).json(result.body);
+    } catch (error) {
+      const vault = await import('../server/ai/userAiProviderCredentialService.js');
+      const mapped = vault.mapUserAiProviderCredentialError(error);
+      response.status(mapped.status).json(mapped.body);
+    }
+    return;
+  }
+
   if (transport === 'kyrubia-user-ai-provider') {
     const body = request.body && typeof request.body === 'object' && !Array.isArray(request.body)
       ? request.body as Record<string, unknown>
