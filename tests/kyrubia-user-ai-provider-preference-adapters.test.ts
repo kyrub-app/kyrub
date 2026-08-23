@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
+import './kyrubia-user-ai-settings-ui.test';
 
 const preference = readFileSync(
   'server/ai/userAiProviderPreferenceService.ts',
