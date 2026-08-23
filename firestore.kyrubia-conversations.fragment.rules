@@ -1,0 +1,43 @@
+    // --- Private Kyrubia Conversation History ---
+    match /users/{userId}/kyrubiaConversations/{conversationId} {
+      function isConversationOwner() {
+        return isSignedIn() && request.auth.uid == userId;
+      }
+
+      function hasValidConversationEnvelope(data) {
+        return data.keys().hasAll([
+          'uid',
+          'conversationId',
+          'updatedAt',
+          'conversation',
+          'syncedAt'
+        ])
+        && data.keys().hasOnly([
+          'uid',
+          'conversationId',
+          'updatedAt',
+          'conversation',
+          'syncedAt'
+        ])
+        && data.uid == userId
+        && data.conversationId == conversationId
+        && data.updatedAt is string
+        && data.updatedAt.size() <= 64
+        && data.conversation is map
+        && data.conversation.id == conversationId
+        && data.conversation.title is string
+        && data.conversation.title.size() <= 80
+        && data.conversation.topic is string
+        && data.conversation.topic.size() <= 80
+        && data.conversation.createdAt is string
+        && data.conversation.updatedAt == data.updatedAt
+        && data.conversation.messages is list
+        && data.conversation.messages.size() <= 100
+        && data.syncedAt == request.time;
+      }
+
+      allow get, list: if isConversationOwner();
+      allow create, update: if isConversationOwner()
+        && hasValidConversationEnvelope(request.resource.data);
+      allow delete: if isConversationOwner();
+    }
