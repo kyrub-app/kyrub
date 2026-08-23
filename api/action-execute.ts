@@ -55,12 +55,21 @@ export default async function handler(
       ? request.body as Record<string, unknown>
       : {};
     try {
-      const vault = await import('../server/ai/userAiProviderCredentialService.js');
+      const [vault, preference] = await Promise.all([
+        import('../server/ai/userAiProviderCredentialService.js'),
+        import('../server/ai/userAiProviderPreferenceService.js'),
+      ]);
       const operation = clean(body.operation);
       if (operation === 'list') {
-        response.status(200).json(
-          await vault.listAuthorizedUserAiProviderCredentials(authorization)
-        );
+        const [providers, routing] = await Promise.all([
+          vault.listAuthorizedUserAiProviderCredentials(authorization),
+          preference.getAuthorizedUserAiProviderPreference(authorization),
+        ]);
+        response.status(200).json({
+          ...providers,
+          preferredProvider: routing.preferredProvider,
+          ...(routing.updatedAt ? { preferenceUpdatedAt: routing.updatedAt } : {}),
+        });
         return;
       }
       if (operation === 'save') {
@@ -77,6 +86,15 @@ export default async function handler(
           await vault.testAuthorizedUserAiProviderCredential(
             authorization,
             body.provider
+          )
+        );
+        return;
+      }
+      if (operation === 'set_preference') {
+        response.status(200).json(
+          await preference.saveAuthorizedUserAiProviderPreference(
+            authorization,
+            body.preferredProvider
           )
         );
         return;
