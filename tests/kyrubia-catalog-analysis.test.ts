@@ -242,8 +242,8 @@ test('existing consultor function dispatches analysis and re-normalizes same-con
   assert.match(continuation, /loadKyrubiaCatalogAnalysis/);
   assert.match(continuation, /payload\.conversationId/);
   assert.match(continuation, /catalogAnalysisContext/);
-  assert.match(contract, /KYRUB_AI_CONSULTANT_ENDPOINT = '\/api\/consultor-kyrub'/);
-  assert.match(contract, /KYRUB_AI_CONSULTANT_COMPAT_ENDPOINT = '\/api\/kyrubia'/);
+  assert.match(contract, /KYRUB_AI_PLATFORM_CONSULTANT_ENDPOINT = '\/api\/consultor-kyrub'/);
+  assert.match(contract, /KYRUB_AI_CATALOG_ANALYSIS_ENDPOINT = KYRUB_AI_PLATFORM_CONSULTANT_ENDPOINT/);
   assert.match(server, /"\/api\/consultor-kyrub"/);
   assert.doesNotMatch(server, /"\/api\/kyrubia-router"/);
   assert.doesNotMatch(server, /"\/api\/kyrubia-catalog-analysis"/);

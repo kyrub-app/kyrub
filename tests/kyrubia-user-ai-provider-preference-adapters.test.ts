@@ -5,6 +5,7 @@ import './kyrubia-user-ai-settings-ui.test';
 import './kyrubia-text-byo-ai-runtime.test';
 import './kyrubia-shared-tool-executor.test';
 import './kyrubia-user-provider-tool-loop.test';
+import './kyrubia-text-byo-ai-cutover.test';
 
 const preference = readFileSync(
   'server/ai/userAiProviderPreferenceService.ts',

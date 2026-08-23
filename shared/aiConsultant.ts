@@ -26,9 +26,11 @@ export type KyrubAiActionProposal =
   | KyrubActionProposal
   | KyrubInventoryTransformationProposal;
 
-export const KYRUB_AI_CONSULTANT_ENDPOINT = '/api/consultor-kyrub';
-export const KYRUB_AI_CATALOG_ANALYSIS_ENDPOINT = '/api/consultor-kyrub';
-export const KYRUB_AI_CONSULTANT_COMPAT_ENDPOINT = '/api/kyrubia';
+export const KYRUB_AI_PLATFORM_CONSULTANT_ENDPOINT = '/api/consultor-kyrub';
+export const KYRUB_AI_CONSULTANT_ENDPOINT =
+  '/api/action-execute?transport=kyrubia-user-ai-chat';
+export const KYRUB_AI_CATALOG_ANALYSIS_ENDPOINT = KYRUB_AI_PLATFORM_CONSULTANT_ENDPOINT;
+export const KYRUB_AI_CONSULTANT_COMPAT_ENDPOINT = KYRUB_AI_PLATFORM_CONSULTANT_ENDPOINT;
 export const KYRUB_AI_CONSULTANT_LEGACY_ENDPOINT = '/api/ai/consultant';
 
 export const KYRUB_AI_LIMITS = {
@@ -126,7 +128,12 @@ export type KyrubAiConsultantCapabilities = {
 
 export type KyrubAiConsultantResponse = {
   reply: string;
-  provider: 'kyrub' | 'gemini';
+  provider:
+    | 'kyrub'
+    | 'gemini'
+    | 'google-gemini'
+    | 'openai'
+    | 'anthropic';
   model: string;
   mode: 'conversation' | 'deterministic';
   requestId: string;
@@ -145,6 +152,11 @@ export type KyrubAiConsultantErrorCode =
   | 'AI_MODEL_UNAVAILABLE'
   | 'AI_QUOTA_EXCEEDED'
   | 'AI_UNAVAILABLE'
+  | 'AI_PROVIDER_SELECTION_REQUIRED'
+  | 'AI_PROVIDER_CREDENTIAL_REJECTED'
+  | 'AI_PROVIDER_LIMIT_REACHED'
+  | 'AI_PROVIDER_MODEL_UNAVAILABLE'
+  | 'AI_PROVIDER_UNAVAILABLE'
   | 'METHOD_NOT_ALLOWED';
 
 export type KyrubAiConsultantErrorResponse = {
