@@ -6,7 +6,7 @@ import type {
 import {
   normalizeKyrubInventoryTransformationProposal,
   type KyrubInventoryTransformationProposal,
-} from './kyrubInventoryTransformation';
+} from './kyrubInventoryTransformation.js';
 
 export type KyrubInventorySetupRecipeLine = {
   name: string;
