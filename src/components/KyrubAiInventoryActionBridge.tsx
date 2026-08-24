@@ -15,7 +15,12 @@ import type {
   KyrubInventoryMovementKind,
 } from '../../shared/kyrubActions';
 import type { KyrubInventoryTransformationProposal } from '../../shared/kyrubInventoryTransformation';
-import { invalidateKyrubErpContext } from '../actions/erpReadActionService';
+import { readKyrubInventorySetupWorkflow } from '../../shared/kyrubInventorySetupWorkflow';
+import { buildKyrubProductCompositionProposal } from '../../shared/kyrubProductCompositionProposal';
+import {
+  invalidateKyrubErpContext,
+  readKyrubErpContext,
+} from '../actions/erpReadActionService';
 import { executeInventoryTransformation } from '../actions/inventoryTransformationActionService';
 import { executeKyrubAction } from '../actions/kyrubActionService';
 import {
@@ -229,22 +234,37 @@ export function KyrubAiInventoryActionBridge() {
   const isWorking = pending.state === 'executing';
   const isSuccess = pending.state === 'success';
   const transformation = pending.kind === 'transformation';
+  const setupWorkflow = pending.kind === 'movement'
+    ? readKyrubInventorySetupWorkflow(pending.proposal)
+    : null;
   const movementKind = pending.kind === 'movement'
     ? movementKindFor(pending.proposal)
     : null;
-  const copy = movementKind
-    ? movementCopy(movementKind)
-    : {
-        noun: 'transformação de estoque',
-        title: 'Confirmar transformação de estoque',
-        successTitle: 'Transformação registrada',
-        action: 'Confirmar transformação',
-        working: 'Transformando...',
+  const copy = setupWorkflow
+    ? {
+        noun: 'preparo de estoque e ficha técnica',
+        title: `Confirmar preparo de ${setupWorkflow.targetProductName}`,
+        successTitle: 'Estoque e ficha técnica atualizados',
+        action: 'Confirmar tudo',
+        working: 'Executando etapas...',
         explanation:
-          'A confirmação baixa os insumos consumidos e adiciona os itens produzidos na mesma transação. Perdas são registradas para auditoria e não baixam o estoque uma segunda vez.',
+          'A confirmação executa, nesta ordem, a entrada recebida, a produção do componente intermediário e a ficha técnica do produto usando referências reais do estoque.',
         success:
-          'A transformação foi registrada, os saldos foram atualizados e os produtos dependentes foram recalculados.',
-      };
+          `A entrada, a produção de ${setupWorkflow.componentName} e a ficha técnica de ${setupWorkflow.targetProductName} foram concluídas.`,
+      }
+    : movementKind
+      ? movementCopy(movementKind)
+      : {
+          noun: 'transformação de estoque',
+          title: 'Confirmar transformação de estoque',
+          successTitle: 'Transformação registrada',
+          action: 'Confirmar transformação',
+          working: 'Transformando...',
+          explanation:
+            'A confirmação baixa os insumos consumidos e adiciona os itens produzidos na mesma transação. Perdas são registradas para auditoria e não baixam o estoque uma segunda vez.',
+          success:
+            'A transformação foi registrada, os saldos foram atualizados e os produtos dependentes foram recalculados.',
+        };
 
   const close = () => {
     if (isWorking) return;
@@ -271,15 +291,58 @@ export function KyrubAiInventoryActionBridge() {
     } : value);
 
     try {
-      const result = current.kind === 'transformation'
-        ? await executeInventoryTransformation(user, current.proposal, true)
-        : await executeKyrubAction(user, current.proposal, true);
+      let alreadyApplied = false;
+
+      if (current.kind === 'transformation') {
+        const result = await executeInventoryTransformation(user, current.proposal, true);
+        alreadyApplied = result.status === 'already_applied';
+      } else {
+        const intakeResult = await executeKyrubAction(user, current.proposal, true);
+        const workflow = readKyrubInventorySetupWorkflow(current.proposal);
+        alreadyApplied = intakeResult.status === 'already_applied';
+
+        if (workflow) {
+          const transformationResult = await executeInventoryTransformation(
+            user,
+            withTransformationIdempotency(current.conversationId, workflow.transformation),
+            true
+          );
+
+          const erpContext = await readKyrubErpContext(user, { force: true });
+          const compositionBuild = buildKyrubProductCompositionProposal(
+            workflow.compositionMessage,
+            current.conversationId,
+            erpContext
+          );
+          if (compositionBuild.kind !== 'proposal') {
+            throw new Error(
+              'A entrada e a produção foram registradas, mas a ficha técnica não pôde ser vinculada com segurança. Revise os insumos antes de tentar novamente.'
+            );
+          }
+
+          const compositionProposal = {
+            ...compositionBuild.proposal,
+            id: `${workflow.id}-composition`,
+            idempotencyKey: `kyrubia:set_product_composition:${workflow.id}`,
+          };
+          const compositionResult = await executeKyrubAction(
+            user,
+            compositionProposal,
+            true
+          );
+          alreadyApplied =
+            alreadyApplied &&
+            transformationResult.status === 'already_applied' &&
+            compositionResult.status === 'already_applied';
+        }
+      }
+
       invalidateKyrubErpContext(user.uid);
       setPending(value => value ? {
         ...value,
         state: 'success',
         errorMessage: '',
-        alreadyApplied: result.status === 'already_applied',
+        alreadyApplied,
       } : value);
     } catch (error) {
       setPending(value => value ? {
@@ -292,9 +355,7 @@ export function KyrubAiInventoryActionBridge() {
     }
   };
 
-  const supplier = pending.kind === 'movement'
-    ? pending.proposal.source.label?.trim() ?? ''
-    : pending.proposal.source.label?.trim() ?? '';
+  const supplier = pending.proposal.source.label?.trim() ?? '';
 
   return (
     <div className="fixed inset-0 z-[122] flex items-start justify-center overflow-y-auto bg-slate-950/85 p-3 pt-[max(12px,env(safe-area-inset-top))] backdrop-blur-sm sm:p-6">
@@ -341,7 +402,7 @@ export function KyrubAiInventoryActionBridge() {
           {isSuccess ? (
             <p className="rounded-2xl border border-emerald-500/25 bg-emerald-500/10 px-4 py-4 text-sm leading-relaxed text-emerald-100">
               {pending.alreadyApplied
-                ? `Esta mesma ${copy.noun} já havia sido registrada. O Kyrub não duplicou a operação.`
+                ? `Este mesmo ${copy.noun} já havia sido registrado. O Kyrub não duplicou as operações.`
                 : copy.success}
             </p>
           ) : transformation ? (
@@ -380,7 +441,7 @@ export function KyrubAiInventoryActionBridge() {
                 <div className="flex items-center gap-2 text-violet-300">
                   <Boxes className="h-4 w-4" />
                   <span className="text-[11px] font-black uppercase tracking-wider">
-                    {copy.noun}
+                    {setupWorkflow ? '1. Entrada recebida' : copy.noun}
                   </span>
                 </div>
                 {movementKind === 'intake' && supplier && (
@@ -405,8 +466,59 @@ export function KyrubAiInventoryActionBridge() {
                 </div>
               </div>
 
+              {setupWorkflow && (
+                <>
+                  <div className="space-y-3 rounded-2xl border border-slate-800 bg-slate-900 p-4">
+                    <div className="flex items-center gap-2 text-violet-300">
+                      <Recycle className="h-4 w-4" />
+                      <span className="text-[11px] font-black uppercase tracking-wider">
+                        2. Produção do componente
+                      </span>
+                    </div>
+                    {transformationSection(
+                      'Consome',
+                      'consume',
+                      setupWorkflow.transformation.inputs
+                    )}
+                    {transformationSection(
+                      'Produz',
+                      'produce',
+                      setupWorkflow.transformation.outputs
+                    )}
+                    <p className="text-xs leading-relaxed text-slate-400">
+                      Dos {quantity.format(setupWorkflow.preview.receivedSourceQuantity)} {setupWorkflow.preview.receivedSourceUnit} recebidos,
+                      {' '}{quantity.format(setupWorkflow.preview.allocatedSourceQuantity)} {setupWorkflow.preview.receivedSourceUnit} foram destinados ao preparo.
+                      O Kyrub usará {quantity.format(setupWorkflow.preview.consumedSourceQuantity)} {setupWorkflow.preview.receivedSourceUnit} e manterá
+                      {' '}{quantity.format(setupWorkflow.preview.allocatedRemainderQuantity)} {setupWorkflow.preview.receivedSourceUnit} como matéria-prima, sem perda implícita.
+                    </p>
+                  </div>
+
+                  <div className="rounded-2xl border border-slate-800 bg-slate-900 p-4">
+                    <div className="flex items-center gap-2 text-violet-300">
+                      <Boxes className="h-4 w-4" />
+                      <span className="text-[11px] font-black uppercase tracking-wider">
+                        3. Ficha técnica de {setupWorkflow.targetProductName}
+                      </span>
+                    </div>
+                    <div className="mt-3 space-y-2">
+                      {setupWorkflow.recipeLines.map((line, index) => (
+                        <div
+                          key={`${line.name}-${line.unit}-${index}`}
+                          className="flex items-center justify-between gap-3 rounded-xl border border-slate-800 bg-slate-950 px-3 py-2.5"
+                        >
+                          <span className="min-w-0 text-sm font-bold text-white">{line.name}</span>
+                          <span className="shrink-0 text-sm font-black text-violet-200">
+                            {quantity.format(line.quantity)} {line.unit}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </>
+              )}
+
               <p className="text-xs leading-relaxed text-slate-500">
-                {copy.explanation} Nenhum produto será criado ou publicado e nenhum preço de venda será alterado.
+                {copy.explanation} Nenhum item intermediário será publicado automaticamente e nenhum preço de venda será alterado.
               </p>
 
               {pending.state === 'error' && (
