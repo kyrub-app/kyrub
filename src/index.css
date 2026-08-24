@@ -80,6 +80,26 @@ body {
   white-space: nowrap;
 }
 
+/* The composed inventory setup review can be taller than a phone viewport.
+   Keep its header/actions reachable and scroll only the review body. */
+[role="dialog"][aria-label^="Confirmar preparo de"] {
+  display: flex;
+  max-height: calc(100dvh - 24px - env(safe-area-inset-top));
+  flex-direction: column;
+}
+
+[role="dialog"][aria-label^="Confirmar preparo de"] > header,
+[role="dialog"][aria-label^="Confirmar preparo de"] > footer {
+  flex-shrink: 0;
+}
+
+[role="dialog"][aria-label^="Confirmar preparo de"] > div {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
 /* On phones, keep the active Kyrubia chat inside its own viewport-sized frame. */
 @media (max-width: 640px) {
   #kyrub-ai-workspace > section {
