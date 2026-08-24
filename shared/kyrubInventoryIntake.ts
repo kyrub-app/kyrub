@@ -6,7 +6,7 @@ import type {
 import {
   buildKyrubInventorySetupWorkflow,
   type KyrubInventorySetupCarrier,
-} from './kyrubInventorySetupWorkflow';
+} from './kyrubInventorySetupWorkflow.js';
 
 const normalizeText = (value: string): string =>
   value
