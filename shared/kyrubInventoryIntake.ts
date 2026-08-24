@@ -3,6 +3,10 @@ import type {
   KyrubInventoryAdjustmentEntry,
   KyrubInventoryUnit,
 } from './kyrubActions';
+import {
+  buildKyrubInventorySetupWorkflow,
+  type KyrubInventorySetupCarrier,
+} from './kyrubInventorySetupWorkflow';
 
 const normalizeText = (value: string): string =>
   value
@@ -11,13 +15,14 @@ const normalizeText = (value: string): string =>
     .toLocaleLowerCase('pt-BR');
 
 const hasInventoryContext = (message: string): boolean =>
-  /\b(nota fiscal|nf\b|fornecedor|entrada de estoque|dar entrada|recebi essa nota|estoque)\b/.test(
+  /\b(nota fiscal|nf\b|fornecedor|entrada de estoque|dar entrada|recebi essa nota|recebi|estoque)\b/.test(
     normalizeText(message)
   );
 
 export const isKyrubInventoryIntakeIntent = (message: string): boolean => {
   const hasQuantityLine = /\b\d+[\d.,]*\s*(un|und|unid|unidade|unidades|kg|g|l|ml)\b/i.test(message);
-  return hasInventoryContext(message) && hasQuantityLine;
+  const hasNaturalCount = /\brecebi\s+\d+[\d.,]*\s+[a-záàâãéêíóôõúç]/i.test(message);
+  return hasInventoryContext(message) && (hasQuantityLine || hasNaturalCount);
 };
 
 export const isKyrubInventoryAttachmentIntakeIntent = (
@@ -58,9 +63,20 @@ const cleanItemName = (value: string): string =>
   value
     .replace(/^[-–—:;*•\s]+/, '')
     .replace(/[-–—:;*•\s]+$/, '')
+    .replace(/^\s*(?:de|do|da|dos|das)\s+/i, '')
     .replace(/\s+/g, ' ')
     .trim()
     .slice(0, 180);
+
+const singularizeCountName = (value: string): string => {
+  const name = cleanItemName(value);
+  const normalized = normalizeText(name).trim();
+  if (normalized === 'paes') return 'Pão';
+  if (normalized === 'hamburgueres') return 'Hambúrguer';
+  if (/ões$/i.test(name)) return name.replace(/ões$/i, 'ão');
+  if (/s$/i.test(name) && name.length > 3) return name.slice(0, -1);
+  return name;
+};
 
 const stripListMarker = (value: string): string =>
   value.replace(/^\s*(?:[-*•]|\d+[.)])\s+/, '').trim();
@@ -89,23 +105,66 @@ const parsedEntryFromLine = (
   return quantity && unit && name ? { name, quantity, unit } : null;
 };
 
+const intakeClauseFrom = (message: string): string => {
+  const received = message.match(
+    /\brecebi\s+(.+?)(?=\.\s*(?:d[eê]|separe|separar|monte|crie|fa[cç]a)|;\s*(?:d[eê]|separe|separar|monte|crie|fa[cç]a)|$)/i
+  );
+  return received?.[1]?.trim() ?? '';
+};
+
+const parsedInlineEntry = (raw: string): KyrubInventoryAdjustmentEntry | null => {
+  const term = raw.trim().replace(/^[,;\s]+|[,;.\s]+$/g, '');
+  if (!term) return null;
+
+  const explicit = term.match(
+    /^(\d[\d.,]*)\s*(un(?:d|id)?|unidade(?:s)?|kg|g|l|ml)\s+(?:de\s+)?(.+)$/i
+  );
+  if (explicit) {
+    const quantity = parseBrazilianFiscalNumber(explicit[1]);
+    const unit = normalizeUnit(explicit[2]);
+    const name = cleanItemName(explicit[3]);
+    return quantity && unit && name ? { name, quantity, unit } : null;
+  }
+
+  const count = term.match(/^(\d[\d.,]*)\s+(.+)$/i);
+  if (!count) return null;
+  const quantity = parseBrazilianFiscalNumber(count[1]);
+  const name = singularizeCountName(count[2]);
+  return quantity && name ? { name, quantity, unit: 'un' } : null;
+};
+
+const parseInlineIntakeEntries = (message: string): KyrubInventoryAdjustmentEntry[] => {
+  const clause = intakeClauseFrom(message);
+  if (!clause) return [];
+  return clause
+    .split(/\s*,\s*|\s+e\s+(?=\d)/i)
+    .map(parsedInlineEntry)
+    .filter((entry): entry is KyrubInventoryAdjustmentEntry => Boolean(entry));
+};
+
+const dedupeEntries = (
+  entries: KyrubInventoryAdjustmentEntry[]
+): KyrubInventoryAdjustmentEntry[] => {
+  const result: KyrubInventoryAdjustmentEntry[] = [];
+  const seen = new Set<string>();
+  for (const entry of entries) {
+    const key = `${normalizeText(entry.name).replace(/\s+/g, ' ').trim()}::${entry.unit}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(entry);
+  }
+  return result.slice(0, 60);
+};
+
 export const parseKyrubInventoryIntakeEntries = (
   message: string
 ): KyrubInventoryAdjustmentEntry[] => {
-  const entries: KyrubInventoryAdjustmentEntry[] = [];
-  const seen = new Set<string>();
-
-  for (const line of message.split(/\r?\n/)) {
-    const entry = parsedEntryFromLine(line);
-    if (!entry) continue;
-
-    const key = `${normalizeText(entry.name)}::${entry.unit}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    entries.push(entry);
-  }
-
-  return entries.slice(0, 60);
+  const lineEntries = message
+    .split(/\r?\n/)
+    .map(parsedEntryFromLine)
+    .filter((entry): entry is KyrubInventoryAdjustmentEntry => Boolean(entry));
+  const inlineEntries = parseInlineIntakeEntries(message);
+  return dedupeEntries([...lineEntries, ...inlineEntries]);
 };
 
 const actionIdFor = (conversationId: string): string => {
@@ -149,15 +208,14 @@ const supplierLabelFrom = (message: string): string => {
 export const buildKyrubInventoryIntakeProposal = (
   message: string,
   conversationId: string
-): KyrubAiAdjustInventoryProposal | null => {
+): KyrubInventorySetupCarrier | null => {
   if (!isKyrubInventoryIntakeIntent(message)) return null;
   const entries = parseKyrubInventoryIntakeEntries(message);
   if (entries.length === 0) return null;
 
   const normalized = normalizeText(message);
   const label = supplierLabelFrom(message);
-
-  return {
+  const proposal: KyrubAiAdjustInventoryProposal = {
     id: actionIdFor(conversationId),
     type: 'adjust_inventory',
     mode: 'increment',
@@ -171,12 +229,21 @@ export const buildKyrubInventoryIntakeProposal = (
     requiresConfirmation: true,
     origin: 'kyrubia',
     risk: 'medium',
-    inputProvenance: 'document_content',
+    inputProvenance: /\b(nota fiscal|nf\b)\b/.test(normalized)
+      ? 'document_content'
+      : 'user_intent',
     impact: {
       entityCount: entries.length,
       reversibility: 'limited',
     },
   };
+
+  const setupWorkflow = buildKyrubInventorySetupWorkflow(
+    message,
+    conversationId,
+    proposal
+  );
+  return setupWorkflow ? { ...proposal, setupWorkflow } : proposal;
 };
 
 export const buildKyrubInventoryAttachmentIntakeProposal = (

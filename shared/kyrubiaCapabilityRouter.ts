@@ -28,8 +28,8 @@ const TASK_NOUN = /\b(tarefa|tarefas|lembrete|lembretes|checklist)\b/;
 const TASK_WRITE = /\b(crie|criar|cria|adicione|adicionar|agende|agendar|lembre|lembrar|registre|registrar)\b/;
 const PRODUCT_NOUN = /\b(produto|produtos|item|itens|cardapio|catalogo|menu|vitrine)\b/;
 const PRODUCT_WRITE = /\b(cadastre|cadastrar|cadastro|recadastre|recadastrar|adicione|adicionar|inclua|incluir|importe|importar|crie|criar|publique|publicar|atualize|atualizar)\b/;
-const INVENTORY_DOCUMENT = /\b(nota fiscal|nf\b|fornecedor|entrada de estoque|dar entrada|recebi essa nota)\b/;
-const INVENTORY_WRITE = /\b(entrada|dar entrada|atualize|atualizar|registre|registrar|estoque|recebi)\b/;
+const INVENTORY_DOCUMENT = /\b(nota fiscal|nf\b|fornecedor|entrada de estoque|entrada no estoque|dar entrada|de entrada|recebi essa nota|recebi)\b/;
+const INVENTORY_WRITE = /\b(entrada|dar entrada|de entrada|atualize|atualizar|registre|registrar|estoque|recebi)\b/;
 const INVENTORY_QUANTITY = /\b\d+[\d.,]*\s*(un|und|unid|unidade|unidades|kg|g|l|ml)\b/;
 const TRANSCRIBE = /\b(transcreva|transcrever|transcricao|copie o texto|copiar o texto|extraia o texto|extrair o texto|leia o texto|ler o texto)\b/;
 const IMAGE_NOUN = /\b(imagem|foto|ilustracao|arte|banner|logo|logotipo|icone)\b/;
@@ -43,8 +43,10 @@ export const classifyKyrubiaCapability = (
 ): KyrubiaCapabilityDecision => {
   const text = normalize(message);
 
-  // Documento de compra + quantidades representa entrada operacional, nunca
-  // cadastro de item de vitrine. Esta checagem precisa preceder produto/catálogo.
+  // Recebimento/compra + quantidades representa entrada operacional, mesmo
+  // quando a mesma frase também pede transformação ou ficha técnica. Esta
+  // checagem precisa preceder produto/catálogo e leitura de ERP para que o
+  // fluxo composto possa ser orquestrado pelas ações oficiais na ordem certa.
   if (
     INVENTORY_DOCUMENT.test(text) &&
     INVENTORY_QUANTITY.test(text) &&
