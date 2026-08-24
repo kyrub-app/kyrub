@@ -4,6 +4,7 @@ import type {
   KyrubInventoryUnit,
   KyrubProductCompositionLine,
 } from './kyrubActions';
+import { isKyrubInventorySetupWorkflowIntent } from './kyrubInventorySetupWorkflow';
 
 const normalize = (value: string): string =>
   value
@@ -119,6 +120,7 @@ const resolveTargetProduct = (
 };
 
 export const isKyrubProductCompositionIntent = (message: string): boolean => {
+  if (isKyrubInventorySetupWorkflowIntent(message)) return false;
   const intent = normalize(message);
   return /\b(ficha tecnica|receita|composicao)\b/.test(intent) &&
     /\b(crie|criar|cadastre|cadastrar|monte|montar|defina|definir|configure|configurar|faca|fazer)\b/.test(intent);
