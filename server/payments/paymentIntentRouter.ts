@@ -11,11 +11,16 @@ import {
   type CanonicalPayment,
   type PaymentMethod,
 } from '../../src/utils/canonicalPayment.js';
+import { normalizePromotionCode } from '../../src/utils/storePromotions.js';
 import { attachMercadoPagoPixToExistingIntent } from './mercadoPagoCheckoutBridge.js';
 import {
   mapMercadoPagoWebhookError,
   processMercadoPagoWebhook,
 } from './mercadoPagoWebhook.js';
+import {
+  listPublicStorePromotions,
+  resolveStorePromotionForCheckout,
+} from './storePromotionService.js';
 
 interface MarketplaceCheckoutItemInput {
   productId: string;
@@ -33,6 +38,7 @@ interface MarketplaceCheckoutInput {
   items: MarketplaceCheckoutItemInput[];
   method: PaymentMethod;
   idempotencyKey: string;
+  couponCode: string;
 }
 
 interface CatalogProduct {
@@ -48,6 +54,9 @@ export interface MarketplacePaymentIntentResponse {
   paymentId: string;
   orderId: string;
   status: 'pending';
+  subtotal: number;
+  discountTotal: number;
+  couponCode: string;
   amount: number;
   currency: 'BRL';
   method: PaymentMethod;
@@ -72,23 +81,11 @@ const clean = (value: unknown): string =>
 const bearerToken = (authorization: string): string =>
   /^Bearer\s+(.+)$/i.exec(authorization)?.[1]?.trim() ?? '';
 
-const parseCheckout = (value: unknown): MarketplaceCheckoutInput => {
-  const candidate = value && typeof value === 'object'
-    ? value as Record<string, unknown>
-    : {};
-  const fulfillmentType = candidate.fulfillmentType;
-  const method = candidate.method;
-  if (fulfillmentType !== 'delivery' && fulfillmentType !== 'pickup') {
-    throw new Error('CHECKOUT_FULFILLMENT_INVALID');
-  }
-  if (method !== 'pix' && method !== 'card') {
-    throw new Error('CHECKOUT_PAYMENT_METHOD_INVALID');
-  }
-  if (!Array.isArray(candidate.items) || candidate.items.length === 0) {
+const parseCheckoutItems = (value: unknown): MarketplaceCheckoutItemInput[] => {
+  if (!Array.isArray(value) || value.length === 0) {
     throw new Error('CHECKOUT_ITEMS_REQUIRED');
   }
-
-  const items = candidate.items.map(item => {
+  return value.map(item => {
     const record = item && typeof item === 'object'
       ? item as Record<string, unknown>
       : {};
@@ -103,6 +100,20 @@ const parseCheckout = (value: unknown): MarketplaceCheckoutInput => {
       note: clean(record.note),
     };
   });
+};
+
+const parseCheckout = (value: unknown): MarketplaceCheckoutInput => {
+  const candidate = value && typeof value === 'object'
+    ? value as Record<string, unknown>
+    : {};
+  const fulfillmentType = candidate.fulfillmentType;
+  const method = candidate.method;
+  if (fulfillmentType !== 'delivery' && fulfillmentType !== 'pickup') {
+    throw new Error('CHECKOUT_FULFILLMENT_INVALID');
+  }
+  if (method !== 'pix' && method !== 'card') {
+    throw new Error('CHECKOUT_PAYMENT_METHOD_INVALID');
+  }
 
   const storeId = clean(candidate.storeId);
   const buyerName = clean(candidate.buyerName);
@@ -124,9 +135,10 @@ const parseCheckout = (value: unknown): MarketplaceCheckoutInput => {
     fulfillmentType,
     deliveryAddress,
     customerNote: clean(candidate.customerNote),
-    items,
+    items: parseCheckoutItems(candidate.items),
     method,
     idempotencyKey,
+    couponCode: normalizePromotionCode(candidate.couponCode),
   };
 };
 
@@ -148,6 +160,37 @@ const catalogProducts = (value: unknown): CatalogProduct[] => {
       image: clean(record.image),
       isService: record.isService === true,
     }];
+  });
+};
+
+const loadPublishedCatalog = async (storeId: string): Promise<CatalogProduct[]> => {
+  const tenantSnapshot = await adminDb.doc(`tenants/${storeId}`).get();
+  const tenant = tenantSnapshot.data() as Record<string, unknown> | undefined;
+  if (!tenantSnapshot.exists || tenant?.publicationStatus !== 'published') {
+    throw new Error('CHECKOUT_STORE_NOT_AVAILABLE');
+  }
+  return catalogProducts(tenant?.publicProducts);
+};
+
+const buildIntentItems = (
+  catalog: CatalogProduct[],
+  items: MarketplaceCheckoutItemInput[]
+) => {
+  const productMap = new Map(catalog.map(product => [product.id, product]));
+  return items.map(item => {
+    const product = productMap.get(item.productId);
+    if (!product) throw new Error('CHECKOUT_PRODUCT_NOT_AVAILABLE');
+    const total = Number((product.price * item.quantity).toFixed(2));
+    return {
+      productId: product.id,
+      name: product.name,
+      quantity: item.quantity,
+      unitPrice: product.price,
+      total,
+      note: item.note ?? '',
+      image: product.image,
+      isService: product.isService,
+    };
   });
 };
 
@@ -175,6 +218,21 @@ export const mapMarketplaceCheckoutError = (
       status: 409,
       body: { error: 'Este checkout ainda não suporta pedidos com total zero.' },
     };
+  }
+  if (message === 'CHECKOUT_COUPON_NOT_FOUND') {
+    return { status: 404, body: { error: 'Cupom não encontrado nesta loja.' } };
+  }
+  if (message === 'CHECKOUT_COUPON_NOT_AVAILABLE') {
+    return { status: 409, body: { error: 'Este cupom não está mais disponível.' } };
+  }
+  if (message === 'CHECKOUT_COUPON_NOT_ELIGIBLE') {
+    return { status: 403, body: { error: 'Este cupom não está disponível para este perfil.' } };
+  }
+  if (message === 'CHECKOUT_COUPON_BUYER_LIMIT_REACHED') {
+    return { status: 409, body: { error: 'Você já utilizou o limite permitido deste cupom.' } };
+  }
+  if (message === 'PROMOTION_NOT_APPLICABLE') {
+    return { status: 409, body: { error: 'O cupom não se aplica aos itens deste carrinho.' } };
   }
   if (/Collector user without key enabled for QR render/i.test(message)) {
     return {
@@ -205,34 +263,28 @@ export const createMarketplacePaymentIntent = async (
   if (!token) throw new Error('AUTH_REQUIRED');
   const identity = await verifyFirebaseIdToken(token);
   const input = parseCheckout(body);
-  const tenantRef = adminDb.doc(`tenants/${input.storeId}`);
-  const tenantSnapshot = await tenantRef.get();
-  const tenant = tenantSnapshot.data() as Record<string, unknown> | undefined;
-  if (!tenantSnapshot.exists || tenant?.publicationStatus !== 'published') {
-    throw new Error('CHECKOUT_STORE_NOT_AVAILABLE');
-  }
-
-  const catalog = catalogProducts(tenant?.publicProducts);
-  const productMap = new Map(catalog.map(product => [product.id, product]));
-  const intentItems = input.items.map(item => {
-    const product = productMap.get(item.productId);
-    if (!product) throw new Error('CHECKOUT_PRODUCT_NOT_AVAILABLE');
-    const total = Number((product.price * item.quantity).toFixed(2));
-    return {
-      productId: product.id,
-      name: product.name,
-      quantity: item.quantity,
-      unitPrice: product.price,
-      total,
-      note: item.note ?? '',
-      image: product.image,
-      isService: product.isService,
-    };
-  });
+  const catalog = await loadPublishedCatalog(input.storeId);
+  const intentItems = buildIntentItems(catalog, input.items);
   const subtotal = Number(
     intentItems.reduce((sum, item) => sum + item.total, 0).toFixed(2)
   );
   if (subtotal <= 0) throw new Error('CHECKOUT_TOTAL_MUST_BE_POSITIVE');
+
+  const resolvedPromotion = input.couponCode
+    ? await resolveStorePromotionForCheckout({
+        storeId: input.storeId,
+        buyerId: identity.uid,
+        couponCode: input.couponCode,
+        lines: intentItems.map(item => ({
+          productId: item.productId,
+          unitPrice: item.unitPrice,
+          quantity: item.quantity,
+        })),
+      })
+    : null;
+  const discountTotal = resolvedPromotion?.quote.discountTotal ?? 0;
+  const amount = Number((subtotal - discountTotal).toFixed(2));
+  if (amount <= 0) throw new Error('CHECKOUT_TOTAL_MUST_BE_POSITIVE');
 
   const suffix = documentToken(`${identity.uid}|${input.storeId}|${input.idempotencyKey}`);
   const intentId = `pi_${suffix}`;
@@ -251,8 +303,19 @@ export const createMarketplacePaymentIntent = async (
     customerNote: input.customerNote,
     items: intentItems,
     subtotal,
+    discountTotal,
+    couponCode: resolvedPromotion?.quote.code ?? '',
+    promotionSnapshot: resolvedPromotion ? {
+      promotionId: resolvedPromotion.promotion.id,
+      code: resolvedPromotion.quote.code,
+      title: resolvedPromotion.quote.title,
+      badge: resolvedPromotion.quote.badge,
+      discountType: resolvedPromotion.quote.discountType,
+      discountValue: resolvedPromotion.quote.discountValue,
+      eligibleProductIds: resolvedPromotion.quote.eligibleProductIds,
+    } : null,
     deliveryFee: 0,
-    total: subtotal,
+    total: amount,
   };
   const intent = normalizeCanonicalPaymentIntent({
     id: intentId,
@@ -260,7 +323,7 @@ export const createMarketplacePaymentIntent = async (
     buyerId: identity.uid,
     method: input.method,
     status: 'pending',
-    amount: subtotal,
+    amount,
     currency: 'BRL',
     provider: '',
     providerIntentId: '',
@@ -275,7 +338,7 @@ export const createMarketplacePaymentIntent = async (
     storeId: input.storeId,
     orderId,
     buyerId: identity.uid,
-    amount: subtotal,
+    amount,
     currency: 'BRL',
     method: input.method,
     context: 'marketplace',
@@ -328,6 +391,9 @@ export const createMarketplacePaymentIntent = async (
       paymentId: result.payment.id,
       orderId: result.intent.orderDraft.draftId,
       status: 'pending',
+      subtotal: result.intent.orderDraft.subtotal,
+      discountTotal: result.intent.orderDraft.discountTotal ?? 0,
+      couponCode: result.intent.orderDraft.couponCode ?? '',
       amount: result.intent.amount,
       currency: result.intent.currency,
       method: result.intent.method,
@@ -340,6 +406,54 @@ export const createMarketplacePaymentIntent = async (
 
 export const createPaymentIntentRouter = (): Router => {
   const router = Router();
+
+  router.get('/promotions', async (request, response) => {
+    try {
+      const storeId = clean(request.query.storeId);
+      if (!storeId) {
+        response.status(400).json({ error: 'Loja não identificada.' });
+        return;
+      }
+      await loadPublishedCatalog(storeId);
+      response.status(200).json({
+        promotions: await listPublicStorePromotions(storeId),
+      });
+    } catch (error) {
+      const mapped = mapMarketplaceCheckoutError(error);
+      response.status(mapped.status).json(mapped.body);
+    }
+  });
+
+  router.post('/coupons/quote', async (request, response) => {
+    try {
+      const token = bearerToken(request.get('authorization') ?? '');
+      if (!token) throw new Error('AUTH_REQUIRED');
+      const identity = await verifyFirebaseIdToken(token);
+      const body = request.body && typeof request.body === 'object'
+        ? request.body as Record<string, unknown>
+        : {};
+      const storeId = clean(body.storeId);
+      const couponCode = normalizePromotionCode(body.couponCode);
+      if (!storeId || !couponCode) throw new Error('CHECKOUT_REQUIRED_FIELDS_MISSING');
+      const items = parseCheckoutItems(body.items);
+      const catalog = await loadPublishedCatalog(storeId);
+      const intentItems = buildIntentItems(catalog, items);
+      const resolved = await resolveStorePromotionForCheckout({
+        storeId,
+        buyerId: identity.uid,
+        couponCode,
+        lines: intentItems.map(item => ({
+          productId: item.productId,
+          unitPrice: item.unitPrice,
+          quantity: item.quantity,
+        })),
+      });
+      response.status(200).json(resolved.quote);
+    } catch (error) {
+      const mapped = mapMarketplaceCheckoutError(error);
+      response.status(mapped.status).json(mapped.body);
+    }
+  });
 
   router.post('/intents', async (request, response) => {
     try {
