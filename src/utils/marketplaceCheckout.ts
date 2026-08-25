@@ -348,9 +348,11 @@ export const listMarketplacePromotions = async (
 ): Promise<PublicMarketplacePromotion[]> => {
   const normalizedStoreId = storeId.trim();
   if (!normalizedStoreId) return [];
-  const response = await fetch(
-    `/api/payments/promotions?storeId=${encodeURIComponent(normalizedStoreId)}`
-  );
+  const response = await fetch('/api/payments/promotions', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ storeId: normalizedStoreId }),
+  });
   const payload = await responsePayload(response);
   if (!response.ok) return [];
   return Array.isArray(payload.promotions)
