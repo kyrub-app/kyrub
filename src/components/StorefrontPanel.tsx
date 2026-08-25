@@ -161,10 +161,14 @@ export const StorefrontPanel: React.FC<StorefrontPanelProps> = props => {
     const loadAvailability = async (): Promise<void> => {
       try {
         const response = await fetch(
-          `/api/storefront-availability?storeId=${encodeURIComponent(storeId)}`,
+          '/api/action-execute?transport=storefront-availability',
           {
-            method: 'GET',
-            headers: { accept: 'application/json' },
+            method: 'POST',
+            headers: {
+              accept: 'application/json',
+              'content-type': 'application/json',
+            },
+            body: JSON.stringify({ storeId }),
             cache: 'no-store',
           }
         );
