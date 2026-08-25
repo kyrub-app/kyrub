@@ -176,6 +176,14 @@ export const mapMarketplaceCheckoutError = (
       body: { error: 'Este checkout ainda não suporta pedidos com total zero.' },
     };
   }
+  if (/Collector user without key enabled for QR render/i.test(message)) {
+    return {
+      status: 503,
+      body: {
+        error: 'O recebimento por Pix ainda não está habilitado na conta Mercado Pago desta loja. Cadastre ou ative uma chave Pix na conta recebedora e tente novamente.',
+      },
+    };
+  }
   if (/^CHECKOUT_/.test(message)) {
     return {
       status: 400,
