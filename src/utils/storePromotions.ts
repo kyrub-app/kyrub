@@ -220,10 +220,23 @@ export const quoteStorePromotion = (
   );
   if (eligibleSubtotalCents <= 0) throw new Error('PROMOTION_NOT_APPLICABLE');
 
-  const rawDiscountCents = promotion.discountType === 'percentage'
-    ? Math.round(eligibleSubtotalCents * promotion.discountValue / 100)
-    : Math.round(promotion.discountValue * 100);
-  const discountCents = Math.min(eligibleSubtotalCents, rawDiscountCents);
+  let discountCents: number;
+  if (promotion.discountType === 'percentage') {
+    // Round the amount the buyer actually pays, not the discount itself. This
+    // avoids the one-cent inversion produced by 29.50 * 95% = 28.025: a 95%
+    // coupon means the customer pays the rounded 5% remainder (R$ 1.48), and
+    // the discount is then the exact cent difference (R$ 28.02).
+    const remainingPercentage = 100 - promotion.discountValue;
+    const payableEligibleCents = Math.round(
+      eligibleSubtotalCents * remainingPercentage / 100
+    );
+    discountCents = eligibleSubtotalCents - payableEligibleCents;
+  } else {
+    discountCents = Math.min(
+      eligibleSubtotalCents,
+      Math.round(promotion.discountValue * 100)
+    );
+  }
   const totalCents = subtotalCents - discountCents;
 
   return {
