@@ -199,6 +199,68 @@ export default async function handler(
     ? rawBody.proposal as Record<string, unknown>
     : null;
 
+  if (rawProposal?.type === 'adjust_inventory') {
+    let mapError: ((error: unknown) => HttpErrorResult) | null = null;
+    try {
+      const [inventoryAdjustment, actionService] = await Promise.all([
+        import('../server/actions/inventoryAdjustmentExecutionService.js'),
+        import('../server/actions/actionExecutionService.js'),
+      ]);
+      mapError = actionService.mapKyrubActionExecutionError;
+      if (!inventoryAdjustment.isKyrubInventoryAdjustmentExecutionRequest(request.body)) {
+        response.status(400).json({
+          error: 'A movimentação de estoque precisa ser revisada e confirmada.',
+          code: 'INVALID_INVENTORY_ADJUSTMENT_REQUEST',
+        });
+        return;
+      }
+      const inventory = await inventoryAdjustment.executeAuthorizedKyrubInventoryAdjustment(
+        authorization,
+        request.body
+      );
+      const { reconcileDerivedProductStockForTenant } = await import(
+        '../server/inventory/productStockReconciliationService.js'
+      );
+      await reconcileDerivedProductStockForTenant(clean(inventory.entityId));
+      response.status(200).json(inventory);
+    } catch (error) {
+      const mapped = mapError
+        ? mapError(error)
+        : genericUnavailable('Não foi possível registrar a entrada de estoque agora.');
+      response.status(mapped.status).json(mapped.body);
+    }
+    return;
+  }
+
+  if (rawProposal?.type === 'set_product_composition') {
+    let mapError: ((error: unknown) => HttpErrorResult) | null = null;
+    try {
+      const [productComposition, actionService] = await Promise.all([
+        import('../server/actions/productCompositionExecutionService.js'),
+        import('../server/actions/actionExecutionService.js'),
+      ]);
+      mapError = actionService.mapKyrubActionExecutionError;
+      if (!productComposition.isKyrubProductCompositionExecutionRequest(request.body)) {
+        response.status(400).json({
+          error: 'A ficha técnica precisa ser revisada e confirmada.',
+          code: 'INVALID_PRODUCT_COMPOSITION_REQUEST',
+        });
+        return;
+      }
+      const composition = await productComposition.executeAuthorizedKyrubProductComposition(
+        authorization,
+        request.body
+      );
+      response.status(200).json(composition);
+    } catch (error) {
+      const mapped = mapError
+        ? mapError(error)
+        : genericUnavailable('Não foi possível salvar a ficha técnica agora.');
+      response.status(mapped.status).json(mapped.body);
+    }
+    return;
+  }
+
   if (rawProposal?.type === 'transform_inventory') {
     try {
       const transformation = await import(
