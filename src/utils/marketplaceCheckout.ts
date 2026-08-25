@@ -10,6 +10,9 @@ export interface MarketplaceCheckoutIntentResult {
   paymentId: string;
   orderId: string;
   status: 'pending';
+  subtotal: number;
+  discountTotal: number;
+  couponCode: string;
   amount: number;
   currency: 'BRL';
   method: 'pix';
@@ -23,6 +26,31 @@ export interface MarketplaceCheckoutIntentResult {
   duplicate: boolean;
 }
 
+export interface MarketplaceCouponQuote {
+  promotionId: string;
+  code: string;
+  title: string;
+  badge: string;
+  discountType: 'percentage' | 'fixed';
+  discountValue: number;
+  eligibleProductIds: string[];
+  eligibleSubtotal: number;
+  subtotal: number;
+  discountTotal: number;
+  total: number;
+}
+
+export interface PublicMarketplacePromotion {
+  id: string;
+  code: string;
+  title: string;
+  badge: string;
+  discountType: 'percentage' | 'fixed';
+  discountValue: number;
+  productIds: string[];
+  endsAt: string;
+}
+
 export interface InitiateMarketplaceCheckoutInput {
   storeId: string;
   buyerName: string;
@@ -32,6 +60,7 @@ export interface InitiateMarketplaceCheckoutInput {
   customerNote: string;
   cart: CartItem[];
   itemNotes: Record<string, string>;
+  couponCode?: string;
   idempotencyKey?: string;
 }
 
@@ -51,6 +80,15 @@ const createIdempotencyKey = (userId: string, storeId: string): string => {
 const pendingPixStorageKey = (userId: string, storeId: string): string =>
   `kyrub_pending_pix_${userId}_${storeId}`;
 
+const cartRequestItems = (
+  cart: CartItem[],
+  itemNotes: Record<string, string> = {}
+) => cart.map(item => ({
+  productId: item.product.id,
+  quantity: item.quantity,
+  note: itemNotes[item.product.id]?.trim() ?? '',
+}));
+
 const checkoutFingerprint = (
   storeId: string,
   input: InitiateMarketplaceCheckoutInput
@@ -62,11 +100,8 @@ const checkoutFingerprint = (
   deliveryAddress:
     input.fulfillmentType === 'delivery' ? input.deliveryAddress.trim() : '',
   customerNote: input.customerNote.trim(),
-  items: input.cart.map(item => ({
-    productId: item.product.id,
-    quantity: item.quantity,
-    note: input.itemNotes[item.product.id]?.trim() ?? '',
-  })),
+  couponCode: input.couponCode?.trim().toUpperCase() ?? '',
+  items: cartRequestItems(input.cart, input.itemNotes),
 });
 
 const hasUsablePixInstructions = (
@@ -168,6 +203,17 @@ const presentMarketplacePixCheckout = (
   title.className = 'text-lg font-black text-white';
   title.textContent = 'Pagamento Pix pendente';
   card.appendChild(title);
+
+  if (checkout.discountTotal > 0 && checkout.couponCode) {
+    const discount = document.createElement('p');
+    discount.className =
+      'mt-3 rounded-xl border border-emerald-500/25 bg-emerald-500/10 px-3 py-2 text-xs font-bold text-emerald-200';
+    discount.textContent = `Cupom ${checkout.couponCode}: -${new Intl.NumberFormat('pt-BR', {
+      style: 'currency',
+      currency: 'BRL',
+    }).format(checkout.discountTotal)}`;
+    card.appendChild(discount);
+  }
 
   const amount = document.createElement('p');
   amount.className = 'mt-2 text-sm font-black text-cyan-300';
@@ -294,6 +340,54 @@ const presentMarketplacePixCheckout = (
   });
 };
 
+const responsePayload = async (response: Response): Promise<Record<string, unknown>> =>
+  response.json().catch(() => ({})) as Promise<Record<string, unknown>>;
+
+export const listMarketplacePromotions = async (
+  storeId: string
+): Promise<PublicMarketplacePromotion[]> => {
+  const normalizedStoreId = storeId.trim();
+  if (!normalizedStoreId) return [];
+  const response = await fetch(
+    `/api/payments/promotions?storeId=${encodeURIComponent(normalizedStoreId)}`
+  );
+  const payload = await responsePayload(response);
+  if (!response.ok) return [];
+  return Array.isArray(payload.promotions)
+    ? payload.promotions as unknown as PublicMarketplacePromotion[]
+    : [];
+};
+
+export const quoteMarketplaceCoupon = async (
+  user: Pick<User, 'getIdToken'>,
+  input: {
+    storeId: string;
+    couponCode: string;
+    cart: CartItem[];
+  }
+): Promise<MarketplaceCouponQuote> => {
+  const token = await user.getIdToken();
+  const response = await fetch('/api/payments/coupons/quote', {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${token}`,
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({
+      storeId: input.storeId.trim(),
+      couponCode: input.couponCode.trim(),
+      items: cartRequestItems(input.cart),
+    }),
+  });
+  const payload = await responsePayload(response);
+  if (!response.ok) {
+    throw new Error(
+      typeof payload.error === 'string' ? payload.error : 'Não foi possível validar o cupom.'
+    );
+  }
+  return payload as unknown as MarketplaceCouponQuote;
+};
+
 export const initiateMarketplaceCheckout = async (
   user: Pick<User, 'uid' | 'getIdToken'>,
   input: InitiateMarketplaceCheckoutInput
@@ -329,18 +423,15 @@ export const initiateMarketplaceCheckout = async (
       deliveryAddress:
         input.fulfillmentType === 'delivery' ? input.deliveryAddress.trim() : '',
       customerNote: input.customerNote.trim(),
-      items: input.cart.map(item => ({
-        productId: item.product.id,
-        quantity: item.quantity,
-        note: input.itemNotes[item.product.id]?.trim() ?? '',
-      })),
+      couponCode: input.couponCode?.trim() ?? '',
+      items: cartRequestItems(input.cart, input.itemNotes),
       method: 'pix',
       idempotencyKey:
         input.idempotencyKey?.trim() || createIdempotencyKey(user.uid, storeId),
     }),
   });
 
-  const payload = await response.json().catch(() => ({})) as Record<string, unknown>;
+  const payload = await responsePayload(response);
   if (!response.ok) {
     throw new Error(
       typeof payload.error === 'string'
