@@ -68,12 +68,24 @@ test('pending Pix stays inside Kyrub and reuses the same session instead of redi
 });
 
 test('backend reconstructs marketplace totals from the published store catalog', () => {
-  assert.match(intentRouterSource, /adminDb\.doc\(`tenants\/\$\{input\.storeId\}`\)/);
+  assert.match(intentRouterSource, /const loadPublishedCatalog = async/);
+  assert.match(intentRouterSource, /adminDb\.doc\(`tenants\/\$\{storeId\}`\)/);
   assert.match(intentRouterSource, /tenant\?\.publicationStatus !== 'published'/);
   assert.match(intentRouterSource, /catalogProducts\(tenant\?\.publicProducts\)/);
+  assert.match(intentRouterSource, /const catalog = await loadPublishedCatalog\(input\.storeId\)/);
   assert.match(intentRouterSource, /product\.price \* item\.quantity/);
   assert.match(intentRouterSource, /unitPrice: product\.price/);
   assert.match(intentRouterSource, /CHECKOUT_PRODUCT_NOT_AVAILABLE/);
+});
+
+test('coupon pricing is reconstructed on the backend and snapshotted before Pix creation', () => {
+  assert.match(intentRouterSource, /resolveStorePromotionForCheckout/);
+  assert.match(intentRouterSource, /couponCode: normalizePromotionCode/);
+  assert.match(intentRouterSource, /discountTotal = resolvedPromotion\?\.quote\.discountTotal/);
+  assert.match(intentRouterSource, /promotionSnapshot: resolvedPromotion/);
+  assert.match(intentRouterSource, /amount = Number\(\(subtotal - discountTotal\)\.toFixed\(2\)\)/);
+  assert.match(checkoutClientSource, /couponCode: input\.couponCode\?\.trim\(\) \?\? ''/);
+  assert.doesNotMatch(checkoutClientSource, /discountTotal:\s*input/);
 });
 
 test('backend atomically creates pending PaymentIntent and Payment with idempotency', () => {
