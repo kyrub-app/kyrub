@@ -1,5 +1,6 @@
 import { Router } from 'express';
-import { adminAuth, adminDb } from '../firebaseAdmin.js';
+import { adminDb } from '../firebaseAdmin.js';
+import { verifyFirebaseIdToken } from '../ai/consultantAuth.js';
 import {
   normalizeCanonicalPaymentIntent,
   type CanonicalPaymentIntent,
@@ -194,7 +195,7 @@ export const createMarketplacePaymentIntent = async (
 ): Promise<MarketplacePaymentIntentHttpResult> => {
   const token = bearerToken(authorization);
   if (!token) throw new Error('AUTH_REQUIRED');
-  const identity = await adminAuth.verifyIdToken(token, true);
+  const identity = await verifyFirebaseIdToken(token);
   const input = parseCheckout(body);
   const tenantRef = adminDb.doc(`tenants/${input.storeId}`);
   const tenantSnapshot = await tenantRef.get();
