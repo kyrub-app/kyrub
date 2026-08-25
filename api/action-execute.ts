@@ -30,6 +30,14 @@ const genericUnavailable = (message: string): HttpErrorResult => ({
   body: { error: message },
 });
 
+const bearerToken = (authorization: string): string =>
+  /^Bearer\s+(.+)$/i.exec(authorization)?.[1]?.trim() ?? '';
+
+const safePublicId = (value: unknown): string => {
+  const id = clean(value);
+  return /^[a-zA-Z0-9_-]{1,128}$/.test(id) ? id : '';
+};
+
 export default async function handler(
   request: RequestLike,
   response: ResponseLike
@@ -192,6 +200,85 @@ export default async function handler(
     return;
   }
 
+  if (transport === 'storefront-availability') {
+    const body = request.body && typeof request.body === 'object' && !Array.isArray(request.body)
+      ? request.body as Record<string, unknown>
+      : {};
+    const storeId = safePublicId(body.storeId);
+    if (!storeId) {
+      response.status(400).json({
+        error: 'Loja inválida.',
+        code: 'INVALID_STORE_ID',
+      });
+      return;
+    }
+
+    try {
+      const [firebaseAdmin, inventory] = await Promise.all([
+        import('../server/firebaseAdmin.js'),
+        import('../shared/inventoryConsumption.js'),
+      ]);
+      const tenantRef = firebaseAdmin.adminDb.doc(`tenants/${storeId}`);
+      const inventoryRef = firebaseAdmin.adminDb.doc(
+        `users/${storeId}/private_store/inventory`
+      );
+      const [tenantSnapshot, inventorySnapshot] = await Promise.all([
+        tenantRef.get(),
+        inventoryRef.get(),
+      ]);
+
+      if (!tenantSnapshot.exists) {
+        response.status(404).json({
+          error: 'Loja não encontrada.',
+          code: 'STORE_NOT_FOUND',
+        });
+        return;
+      }
+
+      const tenantData = tenantSnapshot.data();
+      const inventoryData = inventorySnapshot.data();
+      const publicProducts = Array.isArray(tenantData?.publicProducts)
+        ? tenantData.publicProducts
+        : [];
+      const stockByProductId: Record<string, number> = {};
+
+      if (inventorySnapshot.exists && publicProducts.length > 0) {
+        const catalog = inventory.parseInventoryCatalogRecords(
+          inventoryData?.inventoryCatalog ?? inventoryData?.catalog
+        );
+        const compositions = inventory.parseInventoryCompositionRecords(
+          inventoryData?.compositions ?? inventoryData?.productCompositions
+        );
+
+        for (const candidate of publicProducts) {
+          if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) {
+            continue;
+          }
+          const product = candidate as Record<string, unknown>;
+          if (product.isService === true) continue;
+          const productId = safePublicId(product.id);
+          if (!productId) continue;
+          const available = inventory.calculateCompositionAvailableStock(
+            catalog,
+            compositions[productId]
+          );
+          if (available !== null) {
+            stockByProductId[productId] = available;
+          }
+        }
+      }
+
+      response.status(200).json({ storeId, stockByProductId });
+    } catch (error) {
+      console.error('[StorefrontAvailability] read failed.', error);
+      response.status(503).json({
+        error: 'Não foi possível consultar a disponibilidade da vitrine agora.',
+        code: 'STOREFRONT_AVAILABILITY_UNAVAILABLE',
+      });
+    }
+    return;
+  }
+
   const rawBody = request.body && typeof request.body === 'object' && !Array.isArray(request.body)
     ? request.body as Record<string, unknown>
     : null;
@@ -251,6 +338,15 @@ export default async function handler(
         authorization,
         request.body
       );
+      const token = bearerToken(authorization);
+      if (token) {
+        const [{ verifyFirebaseIdToken }, { reconcileDerivedProductStockForTenant }] = await Promise.all([
+          import('../server/ai/consultantAuth.js'),
+          import('../server/inventory/productStockReconciliationService.js'),
+        ]);
+        const actor = await verifyFirebaseIdToken(token);
+        await reconcileDerivedProductStockForTenant(actor.uid);
+      }
       response.status(200).json(composition);
     } catch (error) {
       const mapped = mapError
@@ -379,6 +475,15 @@ export default async function handler(
         authorization,
         request.body
       );
+      const token = bearerToken(authorization);
+      if (token) {
+        const [{ verifyFirebaseIdToken }, { reconcileDerivedProductStockForTenant }] = await Promise.all([
+          import('../server/ai/consultantAuth.js'),
+          import('../server/inventory/productStockReconciliationService.js'),
+        ]);
+        const actor = await verifyFirebaseIdToken(token);
+        await reconcileDerivedProductStockForTenant(actor.uid);
+      }
       response.status(200).json(composition);
       return;
     }
