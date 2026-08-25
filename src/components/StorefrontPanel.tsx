@@ -37,8 +37,32 @@ type StorefrontPanelProps = Omit<
   'activeKdsOrderCount' | 'salesByProductId'
 >;
 
+type AvailabilityResponse = {
+  stockByProductId?: Record<string, unknown>;
+};
+
 const sourceProductId = (value: string): string =>
   value.split('::', 1)[0]?.trim() || value.trim();
+
+const parseDerivedStock = (value: unknown): Record<string, number> => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  const response = value as AvailabilityResponse;
+  const source = response.stockByProductId;
+  if (!source || typeof source !== 'object' || Array.isArray(source)) return {};
+
+  const next: Record<string, number> = {};
+  for (const [productId, stock] of Object.entries(source)) {
+    if (
+      productId.trim() &&
+      typeof stock === 'number' &&
+      Number.isFinite(stock) &&
+      stock >= 0
+    ) {
+      next[productId] = Math.floor(stock);
+    }
+  }
+  return next;
+};
 
 export const StorefrontPanel: React.FC<StorefrontPanelProps> = props => {
   const storeId = props.activeConsumerStore?.id ?? '';
@@ -52,6 +76,9 @@ export const StorefrontPanel: React.FC<StorefrontPanelProps> = props => {
   const [salesByProductId, setSalesByProductId] = useState<Record<string, number>>(
     {}
   );
+  const [derivedStockByProductId, setDerivedStockByProductId] = useState<
+    Record<string, number>
+  >({});
 
   useEffect(() => {
     setPublicProducts(null);
@@ -126,6 +153,45 @@ export const StorefrontPanel: React.FC<StorefrontPanelProps> = props => {
     );
   }, [storeId]);
 
+  useEffect(() => {
+    let cancelled = false;
+    setDerivedStockByProductId({});
+    if (!storeId) return;
+
+    const loadAvailability = async (): Promise<void> => {
+      try {
+        const response = await fetch(
+          `/api/storefront-availability?storeId=${encodeURIComponent(storeId)}`,
+          {
+            method: 'GET',
+            headers: { accept: 'application/json' },
+            cache: 'no-store',
+          }
+        );
+        if (!response.ok) {
+          throw new Error(`Disponibilidade HTTP ${response.status}`);
+        }
+        const payload = await response.json() as unknown;
+        if (!cancelled) {
+          setDerivedStockByProductId(parseDerivedStock(payload));
+        }
+      } catch (error) {
+        if (!cancelled) {
+          console.warn(
+            'Disponibilidade derivada do estoque indisponível; usando o saldo público atual.',
+            error
+          );
+          setDerivedStockByProductId({});
+        }
+      }
+    };
+
+    void loadAvailability();
+    return () => {
+      cancelled = true;
+    };
+  }, [storeId, salesByProductId]);
+
   const localStoreProducts = useMemo(
     () =>
       props.products.filter(
@@ -142,8 +208,12 @@ export const StorefrontPanel: React.FC<StorefrontPanelProps> = props => {
           product,
           customizationDefaults
         );
+        const derivedStock = derivedStockByProductId[product.id];
         return {
           ...product,
+          ...(typeof derivedStock === 'number' && !product.isService
+            ? { stock: derivedStock }
+            : {}),
           ...(resolved.quickNotes.length > 0
             ? { quickNotes: resolved.quickNotes }
             : { quickNotes: undefined }),
@@ -152,7 +222,12 @@ export const StorefrontPanel: React.FC<StorefrontPanelProps> = props => {
             : { optionGroups: undefined }),
         };
       }),
-    [customizationDefaults, localStoreProducts, publicProducts]
+    [
+      customizationDefaults,
+      derivedStockByProductId,
+      localStoreProducts,
+      publicProducts,
+    ]
   );
 
   return (
