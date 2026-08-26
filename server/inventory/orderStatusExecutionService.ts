@@ -1,7 +1,6 @@
 import { FieldValue } from 'firebase-admin/firestore';
 import { verifyFirebaseIdToken } from '../ai/consultantAuth.js';
 import { adminDb } from '../firebaseAdmin.js';
-import { sendNinetyNineFoodOrderStatus } from '../integrations/ninetyNineFoodService.js';
 import {
   transitionOrderStatusWithInventory,
   type OrderStatusDecisionInput,
@@ -186,6 +185,12 @@ export const executeAuthorizedOrderStatusTransition = async (
     let partnerWarning = '';
     if (result.provider === '99food' && result.externalOrderId) {
       try {
+        // 99Food is an optional integration. Keep its module graph outside the
+        // native-order hot path so a partner packaging/runtime issue can never
+        // prevent a Kyrub order from being accepted and reconciled atomically.
+        const { sendNinetyNineFoodOrderStatus } = await import(
+          '../integrations/ninetyNineFoodService.js'
+        );
         await sendNinetyNineFoodOrderStatus(
           identity.uid,
           result.externalOrderId,
