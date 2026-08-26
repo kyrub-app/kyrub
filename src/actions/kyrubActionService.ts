@@ -68,7 +68,6 @@ const activityEntityType = (
   if (proposal.type === 'adjust_inventory') return 'inventory';
   if (proposal.type === 'set_product_composition') return 'product_composition';
   if (proposal.type === 'update_order_status') return 'order';
-  if (proposal.type === 'create_store_promotion') return 'promotion';
   if (
     proposal.type === 'start_store_activation' ||
     proposal.type === 'update_store_profile'
@@ -180,7 +179,12 @@ export const executeKyrubAction = async (
     );
   }
 
-  const endpoint = proposal.type === 'create_store_promotion'
+  // Promoções ainda não fazem parte do registro canônico genérico de ações.
+  // Mantemos esse limite intacto e apenas roteamos a proposta já validada pelo
+  // bridge especializado para seu executor dedicado.
+  const isStorePromotion =
+    (proposal as unknown as { type?: string }).type === 'create_store_promotion';
+  const endpoint = isStorePromotion
     ? STORE_PROMOTION_ACTION_ENDPOINT
     : SAFE_ACTION_ENDPOINT;
 
@@ -230,7 +234,7 @@ export const executeKyrubAction = async (
     proposal.type === 'adjust_inventory' ||
     proposal.type === 'set_product_composition' ||
     proposal.type === 'update_order_status' ||
-    proposal.type === 'create_store_promotion'
+    isStorePromotion
   ) {
     invalidateKyrubErpContext(user.uid);
   }
