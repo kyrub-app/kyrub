@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { KyrubErpContextSnapshot } from '../shared/kyrubErpContext.js';
-import { resolveKyrubiaDeterministicStorePromotion } from '../src/ai/deterministicStorePromotion.js';
+import {
+  isKyrubiaStorePromotionIntent,
+  KYRUBIA_UNLIMITED_PROMOTION_ENDS_AT,
+  resolveKyrubiaDeterministicStorePromotion,
+} from '../src/ai/deterministicStorePromotion.js';
 
 const context: KyrubErpContextSnapshot = {
   source: 'authenticated_client_snapshot',
@@ -54,6 +58,16 @@ const context: KyrubErpContextSnapshot = {
 
 const now = new Date('2026-08-26T05:00:00.000Z');
 
+test('detects a store promotion request before the generic AI route', () => {
+  assert.equal(
+    isKyrubiaStorePromotionIntent(
+      'Kyrubia, libera um cupom de desconto de 95% para o X-Burger.'
+    ),
+    true
+  );
+  assert.equal(isKyrubiaStorePromotionIntent('Quanto tenho de estoque?'), false);
+});
+
 test('turns a natural 95% X-Burger request into a governed promotion proposal', () => {
   const result = resolveKyrubiaDeterministicStorePromotion(
     'Kyrubia, libera um cupom de desconto de 95% para o X-Burger.',
@@ -82,6 +96,18 @@ test('understands cheeseburger as an alias for X-Burger in this catalog', () => 
   assert.ok(result);
   assert.deepEqual(result.proposal.productIds, ['xburger']);
   assert.equal(result.proposal.endsAt, '2026-08-27T05:00:00.000Z');
+});
+
+test('honors an explicit unlimited promotion request without silently changing it to 24 hours', () => {
+  const result = resolveKyrubiaDeterministicStorePromotion(
+    'Kyrubia, libera um cupom de desconto de 95% para o X-Burger por tempo ilimitado.',
+    context,
+    now
+  );
+
+  assert.ok(result);
+  assert.equal(result.proposal.endsAt, KYRUBIA_UNLIMITED_PROMOTION_ENDS_AT);
+  assert.match(result.reply, /sem data final/i);
 });
 
 test('reads a global redemption limit without changing the per-buyer default', () => {
