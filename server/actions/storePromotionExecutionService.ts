@@ -1,7 +1,8 @@
 import type { CreateStorePromotionProposal } from '../../shared/storePromotionAction.js';
 import { normalizeCreateStorePromotionProposal } from '../../shared/storePromotionAction.js';
 import { normalizeStorePromotion, type StorePromotion } from '../../src/utils/storePromotions.js';
-import { adminAuth, adminDb } from '../firebaseAdmin.js';
+import { verifyFirebaseIdToken } from '../ai/consultantAuth.js';
+import { adminDb } from '../firebaseAdmin.js';
 import { KyrubActionExecutionError } from './actionExecutionService.js';
 
 const bearer = (authorization: string): string =>
@@ -57,7 +58,7 @@ export const executeAuthorizedKyrubStorePromotion = async (
     throw new KyrubActionExecutionError(401, 'AUTH_REQUIRED', 'Autenticação obrigatória.');
   }
 
-  const actor = await adminAuth.verifyIdToken(token);
+  const actor = await verifyFirebaseIdToken(token);
   let proposal: CreateStorePromotionProposal;
   try {
     proposal = normalizeCreateStorePromotionProposal(
