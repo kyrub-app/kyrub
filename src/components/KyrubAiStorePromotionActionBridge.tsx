@@ -1,10 +1,12 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { BadgePercent, CheckCircle2, Clock3, LoaderCircle, TicketPercent, X } from 'lucide-react';
 import type { KyrubActionProposal } from '../../shared/kyrubActions';
 import type { CreateStorePromotionProposal } from '../../shared/storePromotionAction';
 import { executeKyrubAction } from '../actions/kyrubActionService';
-import { invalidateKyrubErpContext } from '../actions/erpReadActionService';
+import { invalidateKyrubErpContext, readKyrubErpContext } from '../actions/erpReadActionService';
+import { resolveKyrubiaDeterministicStorePromotion } from '../ai/deterministicStorePromotion';
 import {
+  emitKyrubStorePromotionProposal,
   KYRUB_STORE_PROMOTION_PROPOSAL_EVENT,
   type KyrubStorePromotionProposalEventDetail,
 } from '../ai/storePromotionEvents';
@@ -30,6 +32,14 @@ const dateTimeFormatter = new Intl.DateTimeFormat('pt-BR', {
   timeStyle: 'short',
 });
 
+const runtimeId = (prefix: string): string => {
+  try {
+    return `${prefix}:${globalThis.crypto.randomUUID()}`;
+  } catch {
+    return `${prefix}:${Date.now()}:${Math.random().toString(36).slice(2, 10)}`;
+  }
+};
+
 const withIdempotency = (
   conversationId: string,
   proposal: CreateStorePromotionProposal
@@ -47,6 +57,7 @@ const discountLabel = (proposal: CreateStorePromotionProposal): string =>
 
 export function KyrubAiStorePromotionActionBridge() {
   const [pending, setPending] = useState<PendingStorePromotion | null>(null);
+  const lastCapturedIntent = useRef<{ message: string; capturedAt: number } | null>(null);
 
   useEffect(() => {
     const handleProposal = (event: Event) => {
@@ -64,6 +75,49 @@ export function KyrubAiStorePromotionActionBridge() {
     window.addEventListener(KYRUB_STORE_PROMOTION_PROPOSAL_EVENT, handleProposal);
     return () =>
       window.removeEventListener(KYRUB_STORE_PROMOTION_PROPOSAL_EVENT, handleProposal);
+  }, []);
+
+  useEffect(() => {
+    const capturePromotionIntent = (event: Event): void => {
+      const form = event.target;
+      if (!(form instanceof HTMLFormElement) || !form.closest('#kyrub-ai-workspace')) return;
+
+      const textarea = form.querySelector('textarea');
+      if (!(textarea instanceof HTMLTextAreaElement)) return;
+      const message = textarea.value.trim();
+      if (!message) return;
+
+      const user = auth.currentUser;
+      if (!user) return;
+
+      const now = Date.now();
+      const last = lastCapturedIntent.current;
+      if (last?.message === message && now - last.capturedAt < 2_000) return;
+      lastCapturedIntent.current = { message, capturedAt: now };
+
+      void readKyrubErpContext(user)
+        .then(context => {
+          const resolution = resolveKyrubiaDeterministicStorePromotion(
+            message,
+            context
+          );
+          if (!resolution) return;
+
+          const requestId = runtimeId('promotion-request');
+          const conversationId = runtimeId(`promotion-chat:${user.uid}`);
+          emitKyrubStorePromotionProposal(
+            conversationId,
+            requestId,
+            resolution.proposal
+          );
+        })
+        .catch(error => {
+          console.warn('[Kyrubia] Não foi possível preparar a promoção solicitada.', error);
+        });
+    };
+
+    document.addEventListener('submit', capturePromotionIntent, true);
+    return () => document.removeEventListener('submit', capturePromotionIntent, true);
   }, []);
 
   if (!pending) return null;
