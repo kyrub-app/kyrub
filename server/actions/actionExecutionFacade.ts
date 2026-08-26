@@ -20,6 +20,10 @@ import {
   isKyrubStoreOperationExecutionRequest,
 } from './storeOperationExecutionService.js';
 import {
+  executeAuthorizedKyrubStorePromotion,
+  isKyrubStorePromotionExecutionRequest,
+} from './storePromotionExecutionService.js';
+import {
   executeAuthorizedKyrubStoreProfileUpdate,
   isKyrubStoreProfileExecutionRequest,
 } from './storeProfileCanonicalSyncService.js';
@@ -39,6 +43,9 @@ export const executeAuthorizedKyrubAction = async (
   }
   if (isKyrubStoreOperationExecutionRequest(rawRequest)) {
     return executeAuthorizedKyrubStoreOperation(authorization, rawRequest) as Promise<KyrubActionExecutionResult>;
+  }
+  if (isKyrubStorePromotionExecutionRequest(rawRequest)) {
+    return executeAuthorizedKyrubStorePromotion(authorization, rawRequest) as Promise<KyrubActionExecutionResult>;
   }
   if (isKyrubStoreProfileExecutionRequest(rawRequest)) {
     return executeAuthorizedKyrubStoreProfileUpdate(authorization, rawRequest);
