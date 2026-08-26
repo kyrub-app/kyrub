@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { onAuthStateChanged } from 'firebase/auth';
 import { BadgePercent, CheckCircle2, Clock3, LoaderCircle, TicketPercent, X } from 'lucide-react';
 import type { KyrubActionProposal } from '../../shared/kyrubActions';
 import type { CreateStorePromotionProposal } from '../../shared/storePromotionAction';
@@ -20,6 +21,15 @@ type PendingStorePromotion = {
   errorMessage: string;
   alreadyApplied: boolean;
 };
+
+type PersistedStorePromotion = {
+  conversationId: string;
+  proposal: CreateStorePromotionProposal;
+};
+
+const STORAGE_PREFIX = 'kyrubia_pending_store_promotion_v1';
+
+const storageKey = (uid: string): string => `${STORAGE_PREFIX}:${uid}`;
 
 const currencyFormatter = new Intl.NumberFormat('pt-BR', {
   style: 'currency',
@@ -46,20 +56,87 @@ const discountLabel = (proposal: CreateStorePromotionProposal): string =>
     ? `${proposal.discountValue}% de desconto`
     : `${currencyFormatter.format(proposal.discountValue)} de desconto`;
 
+const isPersistedStorePromotion = (value: unknown): value is PersistedStorePromotion => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const candidate = value as Record<string, unknown>;
+  const proposal = candidate.proposal;
+  return (
+    typeof candidate.conversationId === 'string' &&
+    candidate.conversationId.length > 0 &&
+    proposal !== null &&
+    typeof proposal === 'object' &&
+    !Array.isArray(proposal) &&
+    (proposal as Record<string, unknown>).type === 'create_store_promotion' &&
+    (proposal as Record<string, unknown>).requiresConfirmation === true
+  );
+};
+
+const loadPersistedPromotion = (uid: string): PendingStorePromotion | null => {
+  if (!uid || typeof localStorage === 'undefined') return null;
+  try {
+    const parsed = JSON.parse(localStorage.getItem(storageKey(uid)) ?? 'null');
+    if (!isPersistedStorePromotion(parsed)) return null;
+    return {
+      conversationId: parsed.conversationId,
+      proposal: withIdempotency(parsed.conversationId, parsed.proposal),
+      state: 'reviewing',
+      errorMessage: '',
+      alreadyApplied: false,
+    };
+  } catch {
+    return null;
+  }
+};
+
+const persistPromotion = (uid: string, value: PendingStorePromotion): void => {
+  if (!uid || typeof localStorage === 'undefined') return;
+  localStorage.setItem(
+    storageKey(uid),
+    JSON.stringify({
+      conversationId: value.conversationId,
+      proposal: value.proposal,
+    } satisfies PersistedStorePromotion)
+  );
+};
+
+const clearPersistedPromotion = (uid: string): void => {
+  if (!uid || typeof localStorage === 'undefined') return;
+  localStorage.removeItem(storageKey(uid));
+};
+
 export function KyrubAiStorePromotionActionBridge() {
   const [pending, setPending] = useState<PendingStorePromotion | null>(null);
+  const [modalOpen, setModalOpen] = useState(false);
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, user => {
+      if (!user) {
+        setPending(null);
+        setModalOpen(false);
+        return;
+      }
+      const restored = loadPersistedPromotion(user.uid);
+      setPending(restored);
+      setModalOpen(Boolean(restored));
+    });
+    return unsubscribe;
+  }, []);
 
   useEffect(() => {
     const handleProposal = (event: Event) => {
       const detail = (event as CustomEvent<KyrubStorePromotionProposalEventDetail>).detail;
       if (!detail || detail.proposal.type !== 'create_store_promotion') return;
-      setPending({
+      const nextPending: PendingStorePromotion = {
         conversationId: detail.conversationId,
         proposal: withIdempotency(detail.conversationId, detail.proposal),
         state: 'reviewing',
         errorMessage: '',
         alreadyApplied: false,
-      });
+      };
+      const uid = auth.currentUser?.uid ?? '';
+      if (uid) persistPromotion(uid, nextPending);
+      setPending(nextPending);
+      setModalOpen(true);
     };
 
     window.addEventListener(KYRUB_STORE_PROMOTION_PROPOSAL_EVENT, handleProposal);
@@ -74,7 +151,14 @@ export function KyrubAiStorePromotionActionBridge() {
   const unlimited = pending.proposal.endsAt === KYRUBIA_UNLIMITED_PROMOTION_ENDS_AT;
 
   const close = () => {
-    if (!working) setPending(null);
+    if (!working) setModalOpen(false);
+  };
+
+  const finish = () => {
+    const uid = auth.currentUser?.uid ?? '';
+    if (uid) clearPersistedPromotion(uid);
+    setPending(null);
+    setModalOpen(false);
   };
 
   const confirm = async () => {
@@ -105,6 +189,7 @@ export function KyrubAiStorePromotionActionBridge() {
         true
       );
       invalidateKyrubErpContext(user.uid);
+      clearPersistedPromotion(user.uid);
       setPending(value =>
         value
           ? {
@@ -116,20 +201,35 @@ export function KyrubAiStorePromotionActionBridge() {
           : value
       );
     } catch (error) {
-      setPending(value =>
-        value
-          ? {
-              ...value,
-              state: 'error',
-              errorMessage:
-                error instanceof Error
-                  ? error.message
-                  : 'Não foi possível publicar a promoção.',
-            }
-          : value
-      );
+      setPending(value => {
+        if (!value) return value;
+        const nextValue = {
+          ...value,
+          state: 'error' as const,
+          errorMessage:
+            error instanceof Error
+              ? error.message
+              : 'Não foi possível publicar a promoção.',
+        };
+        persistPromotion(user.uid, nextValue);
+        return nextValue;
+      });
     }
   };
+
+  if (!modalOpen) {
+    return (
+      <button
+        type="button"
+        onClick={() => setModalOpen(true)}
+        className="fixed bottom-24 right-4 z-[125] flex items-center gap-2 rounded-2xl border border-emerald-500/30 bg-slate-950 px-4 py-3 text-sm font-black text-emerald-200 shadow-2xl"
+        aria-label="Reabrir confirmação da promoção"
+      >
+        <TicketPercent className="h-4 w-4" />
+        Revisar e confirmar promoção
+      </button>
+    );
+  }
 
   return (
     <div className="fixed inset-0 z-[126] flex items-start justify-center overflow-y-auto bg-slate-950/85 p-3 pt-[max(12px,env(safe-area-inset-top))] backdrop-blur-sm sm:p-6">
@@ -181,7 +281,7 @@ export function KyrubAiStorePromotionActionBridge() {
 
         <footer className="flex gap-3 border-t border-slate-800 p-4">
           {success ? (
-            <button type="button" onClick={() => setPending(null)} className="w-full rounded-xl bg-emerald-500 px-4 py-3 text-sm font-black text-slate-950">Concluído</button>
+            <button type="button" onClick={finish} className="w-full rounded-xl bg-emerald-500 px-4 py-3 text-sm font-black text-slate-950">Concluído</button>
           ) : (
             <>
               <button type="button" onClick={close} disabled={working} className="flex-1 rounded-xl border border-slate-700 bg-slate-900 px-4 py-3 text-sm font-black text-slate-300 disabled:opacity-40">Cancelar</button>
