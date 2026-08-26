@@ -4,6 +4,8 @@ import {
   type CreateStorePromotionProposal,
 } from '../../shared/storePromotionAction';
 
+export const KYRUBIA_UNLIMITED_PROMOTION_ENDS_AT = '9999-12-31T23:59:59.999Z';
+
 const normalize = (value: string): string =>
   value
     .normalize('NFD')
@@ -19,7 +21,7 @@ const localizedNumber = (value: string | undefined): number | undefined => {
   return Number.isFinite(parsed) ? parsed : undefined;
 };
 
-const promotionIntent = (message: string): boolean => {
+export const isKyrubiaStorePromotionIntent = (message: string): boolean => {
   const intent = normalize(message);
   const action = /\b(?:libera|libere|cria|crie|ative|ativar|coloca|coloque|aplica|aplique|ofereca|oferecer|da|de|gera|gere)\b/.test(intent);
   const benefit = /\b(?:cupom|desconto|promocao|oferta|off)\b/.test(intent) || /\d+(?:[.,]\d+)?\s*%/.test(intent);
@@ -75,8 +77,18 @@ const resolveProduct = (
   return null;
 };
 
+const isUnlimitedDuration = (message: string): boolean => {
+  const intent = normalize(message);
+  return /\b(?:tempo\s+)?ilimitad[oa]\b/.test(intent) ||
+    /\bsem\s+(?:prazo|validade|data\s+final|vencimento)\b/.test(intent) ||
+    /\bnao\s+expira\b/.test(intent);
+};
+
 const parseEndsAt = (message: string, startsAt: Date): Date => {
   const normalizedMessage = normalize(message);
+  if (isUnlimitedDuration(message)) {
+    return new Date(KYRUBIA_UNLIMITED_PROMOTION_ENDS_AT);
+  }
   if (/\bate\s+(?:a\s+)?meia noite\b/.test(normalizedMessage)) {
     const end = new Date(startsAt);
     end.setHours(24, 0, 0, 0);
@@ -131,7 +143,7 @@ export const resolveKyrubiaDeterministicStorePromotion = (
   context: KyrubErpContextSnapshot | undefined,
   now = new Date()
 ): DeterministicStorePromotionResolution | null => {
-  if (!promotionIntent(message) || context?.store?.configured !== true) return null;
+  if (!isKyrubiaStorePromotionIntent(message) || context?.store?.configured !== true) return null;
 
   const discount = parseDiscount(message);
   if (!discount) return null;
@@ -166,9 +178,12 @@ export const resolveKyrubiaDeterministicStorePromotion = (
   const globalLimit = proposal.maxRedemptions > 0
     ? `, limitado a ${proposal.maxRedemptions} resgates`
     : '';
+  const validity = proposal.endsAt === KYRUBIA_UNLIMITED_PROMOTION_ENDS_AT
+    ? ', sem data final'
+    : '';
 
   return {
-    reply: `Preparei uma promoção pública de ${benefit} para “${product.name}”, com cupom ${proposal.code}${globalLimit}. Revise e confirme antes de eu publicar na vitrine.`,
+    reply: `Preparei uma promoção pública de ${benefit} para “${product.name}”, com cupom ${proposal.code}${globalLimit}${validity}. Revise e confirme antes de eu publicar na vitrine.`,
     proposal,
   };
 };
