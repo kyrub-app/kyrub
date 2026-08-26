@@ -32,6 +32,7 @@ import { CourierLiveTrackingBridge } from './components/store/CourierLiveTrackin
 import { IntegrationTestOrderBridge } from './components/store/IntegrationTestOrderBridge';
 import { KyrubDeliveryOpportunityBridge } from './components/store/KyrubDeliveryOpportunityBridge';
 import { KyrubDeliveryStatusSyncBridge } from './components/store/KyrubDeliveryStatusSyncBridge';
+import { ManualStorePromotionBridge } from './components/store/ManualStorePromotionBridge';
 import { NinetyNineFoodConnectionBridge } from './components/store/NinetyNineFoodConnectionBridge';
 import { NinetyNineFoodOrderStatusBridge } from './components/store/NinetyNineFoodOrderStatusBridge';
 import { OperationalAppEntryBridge } from './components/store/OperationalAppEntryBridge';
@@ -227,6 +228,7 @@ function AuthenticatedKyrubApp({ operational }: { operational: boolean }) {
       <KyrubAiOrderStatusActionBridge />
       <KyrubAiStoreOperationActionBridge />
       <KyrubAiStorePromotionActionBridge />
+      <ManualStorePromotionBridge />
       <StoreSharingPortalBridge />
       <StoreRestartLandingBridge />
       <UnifiedProductCreateModalBridge />
