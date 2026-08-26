@@ -4,7 +4,7 @@ import {
   type DocumentData,
   type Transaction,
 } from 'firebase-admin/firestore';
-import { adminDb } from '../firebaseAdmin';
+import { adminDb } from '../firebaseAdmin.js';
 import {
   applyInventoryConsumptionLines,
   calculateCompositionAvailableStock,
@@ -16,14 +16,14 @@ import {
   type InventoryCatalogRecord,
   type InventoryConsumptionLine,
   type InventoryOrderStatus,
-} from '../../shared/inventoryConsumption';
+} from '../../shared/inventoryConsumption.js';
 import {
   buildOrderInventoryConsumptionWithOptions,
   parseConfiguredLineSelectedOptions,
   parseInventorySelectedOptions,
   parseOptionInventoryImpacts,
   type OptionAwareInventoryOrderItem,
-} from '../../shared/optionInventoryImpact';
+} from '../../shared/optionInventoryImpact.js';
 
 const INVENTORY_LEDGER_COLLECTION = 'inventoryOrderConsumptions';
 
