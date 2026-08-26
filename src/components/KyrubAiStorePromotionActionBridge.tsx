@@ -1,16 +1,11 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { BadgePercent, CheckCircle2, Clock3, LoaderCircle, TicketPercent, X } from 'lucide-react';
 import type { KyrubActionProposal } from '../../shared/kyrubActions';
 import type { CreateStorePromotionProposal } from '../../shared/storePromotionAction';
 import { executeKyrubAction } from '../actions/kyrubActionService';
-import { invalidateKyrubErpContext, readKyrubErpContext } from '../actions/erpReadActionService';
+import { invalidateKyrubErpContext } from '../actions/erpReadActionService';
+import { KYRUBIA_UNLIMITED_PROMOTION_ENDS_AT } from '../ai/deterministicStorePromotion';
 import {
-  isKyrubiaStorePromotionIntent,
-  KYRUBIA_UNLIMITED_PROMOTION_ENDS_AT,
-  resolveKyrubiaDeterministicStorePromotion,
-} from '../ai/deterministicStorePromotion';
-import {
-  emitKyrubStorePromotionProposal,
   KYRUB_STORE_PROMOTION_PROPOSAL_EVENT,
   type KyrubStorePromotionProposalEventDetail,
 } from '../ai/storePromotionEvents';
@@ -36,14 +31,6 @@ const dateTimeFormatter = new Intl.DateTimeFormat('pt-BR', {
   timeStyle: 'short',
 });
 
-const runtimeId = (prefix: string): string => {
-  try {
-    return `${prefix}:${globalThis.crypto.randomUUID()}`;
-  } catch {
-    return `${prefix}:${Date.now()}:${Math.random().toString(36).slice(2, 10)}`;
-  }
-};
-
 const withIdempotency = (
   conversationId: string,
   proposal: CreateStorePromotionProposal
@@ -61,7 +48,6 @@ const discountLabel = (proposal: CreateStorePromotionProposal): string =>
 
 export function KyrubAiStorePromotionActionBridge() {
   const [pending, setPending] = useState<PendingStorePromotion | null>(null);
-  const lastCapturedIntent = useRef<{ message: string; capturedAt: number } | null>(null);
 
   useEffect(() => {
     const handleProposal = (event: Event) => {
@@ -79,63 +65,6 @@ export function KyrubAiStorePromotionActionBridge() {
     window.addEventListener(KYRUB_STORE_PROMOTION_PROPOSAL_EVENT, handleProposal);
     return () =>
       window.removeEventListener(KYRUB_STORE_PROMOTION_PROPOSAL_EVENT, handleProposal);
-  }, []);
-
-  useEffect(() => {
-    const preparePromotion = (message: string): void => {
-      const normalizedMessage = message.trim();
-      if (!normalizedMessage || !isKyrubiaStorePromotionIntent(normalizedMessage)) return;
-
-      const user = auth.currentUser;
-      if (!user) return;
-
-      const now = Date.now();
-      const last = lastCapturedIntent.current;
-      if (last?.message === normalizedMessage && now - last.capturedAt < 2_000) return;
-      lastCapturedIntent.current = { message: normalizedMessage, capturedAt: now };
-
-      void readKyrubErpContext(user)
-        .then(context => {
-          const resolution = resolveKyrubiaDeterministicStorePromotion(
-            normalizedMessage,
-            context
-          );
-          if (!resolution) return;
-
-          emitKyrubStorePromotionProposal(
-            runtimeId(`promotion-chat:${user.uid}`),
-            runtimeId('promotion-request'),
-            resolution.proposal
-          );
-        })
-        .catch(error => {
-          console.warn('[Kyrubia] Não foi possível preparar a promoção solicitada.', error);
-        });
-    };
-
-    const captureSubmit = (event: Event): void => {
-      const form = event.target;
-      if (!(form instanceof HTMLFormElement) || !form.closest('#kyrub-ai-workspace')) return;
-      const textarea = form.querySelector('textarea');
-      if (textarea instanceof HTMLTextAreaElement) preparePromotion(textarea.value);
-      // Deliberately do not prevent/stop the event. React still owns sending,
-      // clearing the composer and rendering the user's message.
-    };
-
-    const captureEnter = (event: KeyboardEvent): void => {
-      if (event.key !== 'Enter' || event.shiftKey || event.isComposing) return;
-      const textarea = event.target;
-      if (!(textarea instanceof HTMLTextAreaElement) || !textarea.closest('#kyrub-ai-workspace')) return;
-      preparePromotion(textarea.value);
-      // Do not prevent/stop: the workspace's React handler must continue normally.
-    };
-
-    document.addEventListener('submit', captureSubmit, true);
-    document.addEventListener('keydown', captureEnter, true);
-    return () => {
-      document.removeEventListener('submit', captureSubmit, true);
-      document.removeEventListener('keydown', captureEnter, true);
-    };
   }, []);
 
   if (!pending) return null;
