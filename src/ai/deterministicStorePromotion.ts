@@ -30,7 +30,7 @@ const parseDiscount = (message: string): {
   discountType: 'percentage' | 'fixed';
   discountValue: number;
 } | null => {
-  const percentageMatch = /(\d{1,3}(?:[.,]\d{1,2})?)\s*(?:%|por\s+cento)\b/i.exec(message);
+  const percentageMatch = /(\d{1,3}(?:[.,]\d{1,2})?)\s*(?:%|por\s+cento)/i.exec(message);
   const percentage = localizedNumber(percentageMatch?.[1]);
   if (percentage !== undefined && percentage > 0 && percentage < 100) {
     return { discountType: 'percentage', discountValue: percentage };
@@ -141,13 +141,14 @@ export const resolveKyrubiaDeterministicStorePromotion = (
 
   const startsAt = now;
   const endsAt = parseEndsAt(message, startsAt);
+  const explicitCode = parseCode(message);
   const proposal = normalizeCreateStorePromotionProposal({
     id: `promotion-intent:${context.store.id}:${product.id}:${now.getTime()}`,
     type: 'create_store_promotion',
     storeId: context.store.id,
     productIds: [product.id],
     productLabel: product.name,
-    ...(parseCode(message) ? { code: parseCode(message) } : {}),
+    ...(explicitCode ? { code: explicitCode } : {}),
     discountType: discount.discountType,
     discountValue: discount.discountValue,
     eligibilityMode: 'public',
