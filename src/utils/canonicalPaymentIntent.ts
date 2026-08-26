@@ -1,4 +1,5 @@
 import type { PaymentMethod } from './canonicalPayment';
+import type { StorePromotionDiscountType } from './storePromotions';
 
 export type PaymentIntentStatus = 'pending' | 'paid' | 'failed' | 'expired';
 
@@ -13,6 +14,16 @@ export interface PaymentIntentItem {
   isService?: boolean;
 }
 
+export interface PaymentIntentPromotionSnapshot {
+  promotionId: string;
+  code: string;
+  title: string;
+  badge: string;
+  discountType: StorePromotionDiscountType;
+  discountValue: number;
+  eligibleProductIds: string[];
+}
+
 export interface PaymentIntentOrderDraft {
   draftId: string;
   storeId: string;
@@ -24,6 +35,9 @@ export interface PaymentIntentOrderDraft {
   customerNote: string;
   items: PaymentIntentItem[];
   subtotal: number;
+  discountTotal?: number;
+  couponCode?: string;
+  promotionSnapshot?: PaymentIntentPromotionSnapshot | null;
   deliveryFee: number;
   total: number;
 }
@@ -83,24 +97,63 @@ export const normalizePaymentIntentItem = (
   };
 };
 
+const normalizePromotionSnapshot = (
+  value: PaymentIntentPromotionSnapshot | null | undefined
+): PaymentIntentPromotionSnapshot | null => {
+  if (!value) return null;
+  if (value.discountType !== 'percentage' && value.discountType !== 'fixed') {
+    throw new Error('Payment intent promotion discount type is invalid.');
+  }
+  if (!Number.isFinite(value.discountValue) || value.discountValue <= 0) {
+    throw new Error('Payment intent promotion discount value is invalid.');
+  }
+  const eligibleProductIds = Array.from(
+    new Set(value.eligibleProductIds.map(productId => productId.trim()).filter(Boolean))
+  );
+  if (!eligibleProductIds.length) {
+    throw new Error('Payment intent promotion requires eligible products.');
+  }
+  return {
+    promotionId: required('promotion id', value.promotionId),
+    code: required('promotion code', value.code),
+    title: required('promotion title', value.title),
+    badge: value.badge.trim(),
+    discountType: value.discountType,
+    discountValue: value.discountValue,
+    eligibleProductIds,
+  };
+};
+
 export const normalizePaymentIntentOrderDraft = (
   draft: PaymentIntentOrderDraft
 ): PaymentIntentOrderDraft => {
   if (!draft.items.length) throw new Error('Payment intent requires at least one item.');
   const items = draft.items.map(normalizePaymentIntentItem);
   const subtotal = money('subtotal', draft.subtotal);
+  const discountTotal = money('discount total', draft.discountTotal ?? 0);
   const deliveryFee = money('delivery fee', draft.deliveryFee);
   const total = money('total', draft.total);
   const expectedSubtotal = Number(
     items.reduce((sum, item) => sum + item.total, 0).toFixed(2)
   );
-  const expectedTotal = Number((subtotal + deliveryFee).toFixed(2));
+  const expectedTotal = Number((subtotal - discountTotal + deliveryFee).toFixed(2));
+  const promotionSnapshot = normalizePromotionSnapshot(draft.promotionSnapshot);
+  const couponCode = draft.couponCode?.trim() ?? '';
 
   if (subtotal !== expectedSubtotal) {
     throw new Error('Payment intent subtotal does not match item totals.');
   }
+  if (discountTotal > subtotal) {
+    throw new Error('Payment intent discount cannot exceed subtotal.');
+  }
   if (total !== expectedTotal) {
-    throw new Error('Payment intent total does not match subtotal + delivery fee.');
+    throw new Error('Payment intent total does not match subtotal - discount + delivery fee.');
+  }
+  if (discountTotal > 0 && (!promotionSnapshot || !couponCode)) {
+    throw new Error('Discounted payment intent requires an immutable promotion snapshot.');
+  }
+  if (discountTotal === 0 && (promotionSnapshot || couponCode)) {
+    throw new Error('Payment intent cannot snapshot a promotion without a discount.');
   }
   if (draft.fulfillmentType === 'delivery' && !draft.deliveryAddress.trim()) {
     throw new Error('Delivery payment intent requires a delivery address.');
@@ -117,6 +170,9 @@ export const normalizePaymentIntentOrderDraft = (
     customerNote: draft.customerNote.trim(),
     items,
     subtotal,
+    discountTotal,
+    couponCode,
+    promotionSnapshot,
     deliveryFee,
     total,
   };

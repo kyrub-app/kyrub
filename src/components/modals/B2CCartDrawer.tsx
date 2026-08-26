@@ -18,7 +18,13 @@ import {
 } from 'lucide-react';
 import { B2CCartDrawer as LegacyB2CCartDrawer } from './LegacyB2CCartDrawer';
 import { auth } from '../../utils/firebase';
-import { initiateMarketplaceCheckout } from '../../utils/marketplaceCheckout';
+import {
+  initiateMarketplaceCheckout,
+  listMarketplacePromotions,
+  quoteMarketplaceCoupon,
+  type MarketplaceCouponQuote,
+  type PublicMarketplacePromotion,
+} from '../../utils/marketplaceCheckout';
 import {
   buildCustomerOrder,
   getCustomerOrderItemOpenQuantity,
@@ -114,6 +120,11 @@ export const B2CCartDrawer: React.FC<B2CCartDrawerProps> = props => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formError, setFormError] = useState('');
   const [checkoutNotice, setCheckoutNotice] = useState('');
+  const [couponCode, setCouponCode] = useState('');
+  const [couponQuote, setCouponQuote] = useState<MarketplaceCouponQuote | null>(null);
+  const [couponError, setCouponError] = useState('');
+  const [isValidatingCoupon, setIsValidatingCoupon] = useState(false);
+  const [publicPromotions, setPublicPromotions] = useState<PublicMarketplacePromotion[]>([]);
 
   const cartItemsCount = cart.reduce((sum, item) => sum + item.quantity, 0);
   const subtotal = useMemo(
@@ -124,6 +135,22 @@ export const B2CCartDrawer: React.FC<B2CCartDrawerProps> = props => {
       ),
     [cart]
   );
+  const cartFingerprint = useMemo(
+    () => cart.map(item => `${item.product.id}:${item.quantity}`).sort().join('|'),
+    [cart]
+  );
+  const cartProductIds = useMemo(
+    () => new Set(cart.map(item => item.product.id)),
+    [cartFingerprint]
+  );
+  const applicablePublicPromotions = useMemo(
+    () => publicPromotions.filter(promotion =>
+      promotion.productIds.some(productId => cartProductIds.has(productId))
+    ),
+    [publicPromotions, cartProductIds]
+  );
+  const discountTotal = couponQuote?.discountTotal ?? 0;
+  const checkoutTotal = couponQuote?.total ?? subtotal;
 
   const accountTotals = useMemo(() => {
     if (!currentOrder) {
@@ -175,8 +202,30 @@ export const B2CCartDrawer: React.FC<B2CCartDrawerProps> = props => {
     setTrackedOrderId(previousOrderId);
     setCurrentOrder(null);
     setCheckoutNotice('');
+    setCouponCode('');
+    setCouponQuote(null);
+    setCouponError('');
     setView(previousOrderId && cart.length === 0 ? 'order' : 'cart');
   }, [isOpen, visitingStore?.id]);
+
+  useEffect(() => {
+    if (!isOpen || !visitingStore) {
+      setPublicPromotions([]);
+      return;
+    }
+    let cancelled = false;
+    void listMarketplacePromotions(visitingStore.id).then(promotions => {
+      if (!cancelled) setPublicPromotions(promotions);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, visitingStore?.id]);
+
+  useEffect(() => {
+    setCouponQuote(null);
+    setCouponError('');
+  }, [cartFingerprint]);
 
   useEffect(() => {
     if (!isOpen || !visitingStore || !trackedOrderId) {
@@ -198,6 +247,37 @@ export const B2CCartDrawer: React.FC<B2CCartDrawerProps> = props => {
   const currentPaymentPresentation = currentOrder
     ? paymentPresentation(currentOrder.paymentStatus)
     : null;
+
+  const handleApplyCoupon = async (): Promise<void> => {
+    setCouponError('');
+    setCouponQuote(null);
+    const normalizedCode = couponCode.trim();
+    if (!normalizedCode) {
+      setCouponError('Informe um cupom para validar.');
+      return;
+    }
+    const user = auth.currentUser;
+    if (!user) {
+      setCouponError('Faça login novamente para validar o cupom.');
+      return;
+    }
+    setIsValidatingCoupon(true);
+    try {
+      const quote = await quoteMarketplaceCoupon(user, {
+        storeId: visitingStore.id,
+        couponCode: normalizedCode,
+        cart,
+      });
+      setCouponQuote(quote);
+      setCouponCode(quote.code);
+    } catch (error) {
+      setCouponError(
+        error instanceof Error ? error.message : 'Não foi possível validar o cupom.'
+      );
+    } finally {
+      setIsValidatingCoupon(false);
+    }
+  };
 
   const handleCreateOrder = async (event: React.FormEvent): Promise<void> => {
     event.preventDefault();
@@ -223,6 +303,7 @@ export const B2CCartDrawer: React.FC<B2CCartDrawerProps> = props => {
           customerNote,
           cart,
           itemNotes,
+          couponCode: couponQuote?.code ?? '',
         });
 
         setCheckoutNotice(
@@ -566,6 +647,74 @@ export const B2CCartDrawer: React.FC<B2CCartDrawerProps> = props => {
                     />
                   </section>
 
+                  {(fulfillmentType === 'delivery' || fulfillmentType === 'pickup') && (
+                    <section className="space-y-3 rounded-2xl border border-cyan-500/20 bg-cyan-500/5 p-4" id="marketplace-coupon-panel">
+                      <div>
+                        <h4 className="text-xs font-black uppercase text-white">
+                          Cupom de desconto
+                        </h4>
+                        <p className="mt-1 text-[10px] text-slate-500">
+                          O desconto é validado pelo Kyrub com os preços publicados pela loja.
+                        </p>
+                      </div>
+
+                      {applicablePublicPromotions.length > 0 && (
+                        <div className="flex flex-wrap gap-2">
+                          {applicablePublicPromotions.slice(0, 4).map(promotion => (
+                            <button
+                              key={promotion.id}
+                              type="button"
+                              onClick={() => {
+                                setCouponCode(promotion.code);
+                                setCouponQuote(null);
+                                setCouponError('');
+                              }}
+                              className="rounded-full border border-cyan-500/30 bg-slate-950 px-3 py-1.5 text-[9px] font-black uppercase text-cyan-200"
+                              title={promotion.title}
+                            >
+                              {promotion.badge} · {promotion.code}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          value={couponCode}
+                          onChange={event => {
+                            setCouponCode(event.target.value.toUpperCase());
+                            setCouponQuote(null);
+                            setCouponError('');
+                          }}
+                          placeholder="CUPOM"
+                          autoComplete="off"
+                          className="min-w-0 flex-1 rounded-xl border border-slate-700 bg-slate-950 px-3 py-2.5 font-mono text-xs uppercase text-white focus:border-cyan-500 focus:outline-none"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => void handleApplyCoupon()}
+                          disabled={isValidatingCoupon || !couponCode.trim()}
+                          className="rounded-xl bg-cyan-500 px-4 py-2.5 text-[10px] font-black uppercase text-slate-950 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          {isValidatingCoupon ? 'Validando...' : 'Aplicar'}
+                        </button>
+                      </div>
+
+                      {couponQuote && (
+                        <div className="rounded-xl border border-emerald-500/25 bg-emerald-500/10 px-3 py-2.5 text-xs text-emerald-200">
+                          <strong>{couponQuote.code}</strong> aplicado: você economiza{' '}
+                          <strong>{currencyFormatter.format(couponQuote.discountTotal)}</strong>.
+                        </div>
+                      )}
+                      {couponError && (
+                        <p className="rounded-xl border border-red-500/20 bg-red-500/10 px-3 py-2 text-[11px] text-red-300">
+                          {couponError}
+                        </p>
+                      )}
+                    </section>
+                  )}
+
                   <section className="rounded-2xl border border-slate-800 bg-slate-950 p-4">
                     <div className="flex justify-between text-xs text-slate-400">
                       <span>Subtotal</span>
@@ -573,10 +722,16 @@ export const B2CCartDrawer: React.FC<B2CCartDrawerProps> = props => {
                         {currencyFormatter.format(subtotal)}
                       </span>
                     </div>
+                    {discountTotal > 0 && (
+                      <div className="mt-2 flex justify-between text-xs text-emerald-300">
+                        <span>Desconto {couponQuote?.code ? `(${couponQuote.code})` : ''}</span>
+                        <span className="font-mono">-{currencyFormatter.format(discountTotal)}</span>
+                      </div>
+                    )}
                     <div className="mt-2 flex justify-between border-t border-slate-800 pt-2 text-sm font-black text-white">
                       <span>Total do pedido</span>
                       <span className="font-mono" style={{ color: accentColor }}>
-                        {currencyFormatter.format(subtotal)}
+                        {currencyFormatter.format(checkoutTotal)}
                       </span>
                     </div>
                     <p className="mt-3 text-[10px] leading-relaxed text-slate-600">

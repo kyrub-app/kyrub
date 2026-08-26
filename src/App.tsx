@@ -12,6 +12,7 @@ import { KyrubAiProductCompositionActionBridge } from './components/KyrubAiProdu
 import { KyrubAiProviderSettingsBridge } from './components/KyrubAiProviderSettingsBridge';
 import { KyrubAiProductUpdateActionBridge } from './components/KyrubAiProductUpdateActionBridge';
 import { KyrubAiStoreOperationActionBridge } from './components/KyrubAiStoreOperationActionBridge';
+import { KyrubAiStorePromotionActionBridge } from './components/KyrubAiStorePromotionActionBridge';
 import { KyrubAiTaskActionBridge } from './components/KyrubAiTaskActionBridge';
 import { KyrubAiWorkspaceBridge } from './components/KyrubAiWorkspaceBridge';
 import { KyrubiaNamingBridge } from './components/KyrubiaNamingBridge';
@@ -225,6 +226,7 @@ function AuthenticatedKyrubApp({ operational }: { operational: boolean }) {
       <KyrubAiProductCompositionActionBridge />
       <KyrubAiOrderStatusActionBridge />
       <KyrubAiStoreOperationActionBridge />
+      <KyrubAiStorePromotionActionBridge />
       <StoreSharingPortalBridge />
       <StoreRestartLandingBridge />
       <UnifiedProductCreateModalBridge />

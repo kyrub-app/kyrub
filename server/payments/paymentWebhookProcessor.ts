@@ -37,6 +37,15 @@ const paymentIntentPath = (storeId: string, paymentIntentId: string): string =>
 const operationalOrderPath = (storeId: string, orderId: string): string =>
   `artifacts/${storeId}/public/data/customerOrders/${orderId}`;
 
+const promotionPath = (storeId: string, promotionId: string): string =>
+  `stores/${storeId}/promotions/${promotionId}`;
+
+const promotionRedemptionPath = (
+  storeId: string,
+  promotionId: string,
+  paymentId: string
+): string => `stores/${storeId}/promotions/${promotionId}/redemptions/${paymentId}`;
+
 const eventPath = (key: string): string =>
   `${EVENT_COLLECTION}/${Buffer.from(key).toString('base64url')}`;
 
@@ -139,10 +148,14 @@ export const processVerifiedPaymentWebhook = async (input: {
     let intent: CanonicalPaymentIntent | null = null;
     let operationalOrder: ReturnType<typeof materializePaidMarketplaceOrder> | null = null;
     let operationalOrderExists = false;
+    let promotionRef: ReturnType<typeof adminDb.doc> | null = null;
+    let promotionExists = false;
+    let redemptionRef: ReturnType<typeof adminDb.doc> | null = null;
+    let redemptionExists = false;
     const intentStatus = intentStatusForPaymentStatus(effectiveStatus);
 
     // Firestore transactions require every read to happen before any write.
-    // Resolve and read the operational order before scheduling intent/payment mutations.
+    // Resolve order and optional coupon redemption documents first.
     if (current.context === 'marketplace') {
       if (!intentSnapshot.exists) throw new Error('PAYMENT_INTENT_NOT_FOUND');
       intent = normalizeCanonicalPaymentIntent(
@@ -167,6 +180,20 @@ export const processVerifiedPaymentWebhook = async (input: {
         );
         operationalOrderExists = (await transaction.get(orderRef)).exists;
         orderId = operationalOrder.id;
+
+        const promotion = intent.orderDraft.promotionSnapshot;
+        if (promotion && (intent.orderDraft.discountTotal ?? 0) > 0) {
+          promotionRef = adminDb.doc(promotionPath(storeId, promotion.promotionId));
+          redemptionRef = adminDb.doc(
+            promotionRedemptionPath(storeId, promotion.promotionId, paymentId)
+          );
+          const [promotionSnapshot, redemptionSnapshot] = await Promise.all([
+            transaction.get(promotionRef),
+            transaction.get(redemptionRef),
+          ]);
+          promotionExists = promotionSnapshot.exists;
+          redemptionExists = redemptionSnapshot.exists;
+        }
       }
     }
 
@@ -192,6 +219,39 @@ export const processVerifiedPaymentWebhook = async (input: {
       );
       transaction.set(orderRef, operationalOrder);
       orderMaterialized = true;
+    }
+
+    if (
+      intent &&
+      effectiveStatus === 'paid' &&
+      redemptionRef &&
+      !redemptionExists
+    ) {
+      const promotion = intent.orderDraft.promotionSnapshot!;
+      transaction.set(redemptionRef, {
+        promotionId: promotion.promotionId,
+        code: promotion.code,
+        storeId,
+        buyerId: intent.buyerId,
+        paymentIntentId: intent.id,
+        paymentId,
+        orderId: intent.orderDraft.draftId,
+        subtotal: intent.orderDraft.subtotal,
+        discountTotal: intent.orderDraft.discountTotal ?? 0,
+        paidTotal: intent.orderDraft.total,
+        redeemedAt: event.occurredAt,
+        provider: event.provider,
+        providerPaymentId: event.providerPaymentId,
+      });
+      // A promotion may be administratively removed after a Pix was issued.
+      // The immutable payment snapshot still honors the paid order; only update
+      // the live aggregate when the original promotion document remains.
+      if (promotionRef && promotionExists) {
+        transaction.update(promotionRef, {
+          redemptionCount: FieldValue.increment(1),
+          updatedAt: event.occurredAt,
+        });
+      }
     }
 
     if (!duplicate) {

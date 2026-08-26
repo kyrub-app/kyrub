@@ -178,6 +178,106 @@ export default async function handler(
     return;
   }
 
+  if (transport === 'marketplace-promotions') {
+    const body = request.body && typeof request.body === 'object' && !Array.isArray(request.body)
+      ? request.body as Record<string, unknown>
+      : {};
+    const storeId = safePublicId(body.storeId);
+    if (!storeId) {
+      response.status(400).json({ error: 'Loja não identificada.' });
+      return;
+    }
+    try {
+      const [{ adminDb }, promotions] = await Promise.all([
+        import('../server/firebaseAdmin.js'),
+        import('../server/payments/storePromotionService.js'),
+      ]);
+      const tenantSnapshot = await adminDb.doc(`tenants/${storeId}`).get();
+      const tenant = tenantSnapshot.data() as Record<string, unknown> | undefined;
+      if (!tenantSnapshot.exists || tenant?.publicationStatus !== 'published') {
+        response.status(404).json({ error: 'A loja não está disponível.' });
+        return;
+      }
+      response.status(200).json({
+        promotions: await promotions.listPublicStorePromotions(storeId),
+      });
+    } catch (error) {
+      console.error('[Marketplace Promotions]', error);
+      response.status(503).json({
+        error: 'Não foi possível consultar as promoções agora.',
+      });
+    }
+    return;
+  }
+
+  if (transport === 'marketplace-coupon-quote') {
+    let mapError: ((error: unknown) => HttpErrorResult) | null = null;
+    try {
+      const [paymentRouter, promotions, promotionUtils, { adminDb }, auth] = await Promise.all([
+        import('../server/payments/paymentIntentRouter.js'),
+        import('../server/payments/storePromotionService.js'),
+        import('../src/utils/storePromotions.js'),
+        import('../server/firebaseAdmin.js'),
+        import('../server/ai/consultantAuth.js'),
+      ]);
+      mapError = paymentRouter.mapMarketplaceCheckoutError;
+      const token = bearerToken(authorization);
+      if (!token) throw new Error('AUTH_REQUIRED');
+      const identity = await auth.verifyFirebaseIdToken(token);
+      const body = request.body && typeof request.body === 'object' && !Array.isArray(request.body)
+        ? request.body as Record<string, unknown>
+        : {};
+      const storeId = safePublicId(body.storeId);
+      const couponCode = promotionUtils.normalizePromotionCode(body.couponCode);
+      if (!storeId || !couponCode || !Array.isArray(body.items) || body.items.length === 0) {
+        throw new Error('CHECKOUT_REQUIRED_FIELDS_MISSING');
+      }
+
+      const tenantSnapshot = await adminDb.doc(`tenants/${storeId}`).get();
+      const tenant = tenantSnapshot.data() as Record<string, unknown> | undefined;
+      if (!tenantSnapshot.exists || tenant?.publicationStatus !== 'published') {
+        throw new Error('CHECKOUT_STORE_NOT_AVAILABLE');
+      }
+      const publicProducts = Array.isArray(tenant.publicProducts) ? tenant.publicProducts : [];
+      const productMap = new Map<string, number>();
+      for (const candidate of publicProducts) {
+        if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) continue;
+        const product = candidate as Record<string, unknown>;
+        const productId = safePublicId(product.id);
+        const rawPrice = product.isComplimentary === true ? 0 : product.price;
+        const price = typeof rawPrice === 'number' && Number.isFinite(rawPrice)
+          ? Math.round(rawPrice * 100) / 100
+          : -1;
+        if (productId && price >= 0) productMap.set(productId, price);
+      }
+      const lines = body.items.map(candidate => {
+        const item = candidate && typeof candidate === 'object' && !Array.isArray(candidate)
+          ? candidate as Record<string, unknown>
+          : {};
+        const productId = safePublicId(item.productId);
+        const quantity = item.quantity;
+        const price = productMap.get(productId);
+        if (price === undefined || !Number.isInteger(quantity) || Number(quantity) <= 0) {
+          throw new Error('CHECKOUT_PRODUCT_NOT_AVAILABLE');
+        }
+        return { productId, unitPrice: price, quantity: Number(quantity) };
+      });
+      const resolved = await promotions.resolveStorePromotionForCheckout({
+        storeId,
+        buyerId: identity.uid,
+        couponCode,
+        lines,
+      });
+      response.status(200).json(resolved.quote);
+    } catch (error) {
+      const mapped = mapError
+        ? mapError(error)
+        : genericUnavailable('Não foi possível validar o cupom agora.');
+      response.status(mapped.status).json(mapped.body);
+    }
+    return;
+  }
+
   if (transport === 'mercado-pago-webhook') {
     let mapError: ((error: unknown) => HttpErrorResult) | null = null;
     try {

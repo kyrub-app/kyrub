@@ -15,6 +15,10 @@ import {
   resolveCatalogCustomization,
   type CatalogCustomizationDefaults,
 } from '../utils/catalogCustomizationInheritance';
+import {
+  listMarketplacePromotions,
+  type PublicMarketplacePromotion,
+} from '../utils/marketplaceCheckout';
 import { db } from '../utils/firebase';
 
 const KDS_ACTIVE_STATUSES = new Set<CustomerOrderStatus>([
@@ -64,11 +68,27 @@ const parseDerivedStock = (value: unknown): Record<string, number> => {
   return next;
 };
 
+const promotionPriority = (
+  left: PublicMarketplacePromotion,
+  right: PublicMarketplacePromotion
+): number => {
+  if (left.discountType !== right.discountType) {
+    return left.discountType === 'percentage' ? -1 : 1;
+  }
+  if (left.discountValue !== right.discountValue) {
+    return right.discountValue - left.discountValue;
+  }
+  return left.code.localeCompare(right.code);
+};
+
 export const StorefrontPanel: React.FC<StorefrontPanelProps> = props => {
   const storeId = props.activeConsumerStore?.id ?? '';
   const [publicProducts, setPublicProducts] = useState<PublicProduct[] | null>(
     null
   );
+  const [publicPromotions, setPublicPromotions] = useState<
+    PublicMarketplacePromotion[]
+  >([]);
   const [customizationDefaults, setCustomizationDefaults] = useState<
     CatalogCustomizationDefaults[]
   >([]);
@@ -98,6 +118,27 @@ export const StorefrontPanel: React.FC<StorefrontPanelProps> = props => {
         );
       }
     );
+  }, [storeId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setPublicPromotions([]);
+    if (!storeId) return;
+
+    void listMarketplacePromotions(storeId)
+      .then(promotions => {
+        if (!cancelled) setPublicPromotions(promotions);
+      })
+      .catch(error => {
+        if (!cancelled) {
+          console.warn('Promoções públicas indisponíveis na vitrine.', error);
+          setPublicPromotions([]);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [storeId]);
 
   useEffect(() => {
@@ -233,6 +274,60 @@ export const StorefrontPanel: React.FC<StorefrontPanelProps> = props => {
       publicProducts,
     ]
   );
+
+  const promotionByProductId = useMemo(() => {
+    const next = new Map<string, PublicMarketplacePromotion>();
+    const orderedPromotions = [...publicPromotions].sort(promotionPriority);
+    for (const promotion of orderedPromotions) {
+      for (const productId of promotion.productIds) {
+        if (!next.has(productId)) next.set(productId, promotion);
+      }
+    }
+    return next;
+  }, [publicPromotions]);
+
+  useEffect(() => {
+    const cleanup = (): void => {
+      document
+        .querySelectorAll('.kyrub-storefront-promotion-badge')
+        .forEach(node => node.remove());
+    };
+
+    cleanup();
+
+    for (const product of storefrontProducts) {
+      const promotion = promotionByProductId.get(product.id);
+      if (!promotion) continue;
+
+      const article = document.getElementById(`storefront-prod-${product.id}`);
+      const imageContainer = article?.firstElementChild;
+      if (!(imageContainer instanceof HTMLElement)) continue;
+
+      const badge = document.createElement('span');
+      badge.className =
+        'kyrub-storefront-promotion-badge absolute right-2 top-2 z-10 max-w-[62%] rounded-lg border border-emerald-300/40 bg-emerald-500 px-2 py-1 text-right text-[8px] font-black uppercase leading-tight text-slate-950 shadow-lg sm:right-3 sm:top-3 sm:px-2.5 sm:text-[9px]';
+      badge.dataset.promotionId = promotion.id;
+      badge.dataset.couponCode = promotion.code;
+      badge.title = `${promotion.title} · Cupom ${promotion.code}`;
+      badge.setAttribute(
+        'aria-label',
+        `${promotion.badge}. Cupom ${promotion.code} disponível.`
+      );
+
+      const discountLine = document.createElement('strong');
+      discountLine.className = 'block';
+      discountLine.textContent = promotion.badge;
+
+      const couponLine = document.createElement('span');
+      couponLine.className = 'mt-0.5 block text-[7px] font-black sm:text-[8px]';
+      couponLine.textContent = 'Cupom disponível';
+
+      badge.append(discountLine, couponLine);
+      imageContainer.appendChild(badge);
+    }
+
+    return cleanup;
+  }, [promotionByProductId, storefrontProducts]);
 
   return (
     <LegacyStorefrontPanel
