@@ -47,12 +47,42 @@ export const buildKyrubHealthPayload = (
 const queryValue = (value: string | string[] | undefined): string =>
   Array.isArray(value) ? value[0] ?? '' : value ?? '';
 
+const headerValue = (value: string | string[] | undefined): string =>
+  Array.isArray(value) ? value[0] ?? '' : value ?? '';
+
 export default async function handler(
   request: RequestLike,
   response: ResponseLike
 ): Promise<void> {
-  if (queryValue(request.query?.transport) === 'mcp') {
+  const transport = queryValue(request.query?.transport);
+  if (transport === 'mcp') {
     await handleKyrubMcpRequest(request, response);
+    return;
+  }
+
+  if (transport === 'order-status-execute') {
+    response.setHeader('Cache-Control', 'no-store, max-age=0');
+    response.setHeader('Content-Type', 'application/json; charset=utf-8');
+    if ((request.method?.toUpperCase() || 'GET') !== 'POST') {
+      response.status(405).json({
+        error: 'Método não permitido.',
+        code: 'METHOD_NOT_ALLOWED',
+      });
+      return;
+    }
+
+    const execution = await import(
+      '../server/inventory/orderStatusExecutionService.js'
+    );
+    const body = request.body && typeof request.body === 'object' && !Array.isArray(request.body)
+      ? { ...(request.body as Record<string, unknown>) }
+      : {};
+    body.orderId = queryValue(request.query?.orderId) || body.orderId;
+    const result = await execution.executeAuthorizedOrderStatusTransition(
+      headerValue(request.headers.authorization ?? request.headers.Authorization),
+      body
+    );
+    response.status(result.status).json(result.body);
     return;
   }
 
