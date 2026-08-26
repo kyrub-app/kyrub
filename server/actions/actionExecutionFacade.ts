@@ -20,10 +20,6 @@ import {
   isKyrubStoreOperationExecutionRequest,
 } from './storeOperationExecutionService.js';
 import {
-  executeAuthorizedKyrubStorePromotion,
-  isKyrubStorePromotionExecutionRequest,
-} from './storePromotionExecutionService.js';
-import {
   executeAuthorizedKyrubStoreProfileUpdate,
   isKyrubStoreProfileExecutionRequest,
 } from './storeProfileCanonicalSyncService.js';
@@ -33,6 +29,19 @@ import {
 } from './taskCreationExecutionService.js';
 
 export { mapKyrubActionExecutionError };
+
+const isStorePromotionRequest = (rawRequest: unknown): boolean => {
+  if (!rawRequest || typeof rawRequest !== 'object' || Array.isArray(rawRequest)) {
+    return false;
+  }
+  const proposal = (rawRequest as Record<string, unknown>).proposal;
+  return Boolean(
+    proposal &&
+    typeof proposal === 'object' &&
+    !Array.isArray(proposal) &&
+    (proposal as Record<string, unknown>).type === 'create_store_promotion'
+  );
+};
 
 export const executeAuthorizedKyrubAction = async (
   authorization: string,
@@ -44,8 +53,15 @@ export const executeAuthorizedKyrubAction = async (
   if (isKyrubStoreOperationExecutionRequest(rawRequest)) {
     return executeAuthorizedKyrubStoreOperation(authorization, rawRequest) as Promise<KyrubActionExecutionResult>;
   }
-  if (isKyrubStorePromotionExecutionRequest(rawRequest)) {
-    return executeAuthorizedKyrubStorePromotion(authorization, rawRequest) as Promise<KyrubActionExecutionResult>;
+  if (isStorePromotionRequest(rawRequest)) {
+    const promotion = await import('./storePromotionExecutionService.js');
+    if (!promotion.isKyrubStorePromotionExecutionRequest(rawRequest)) {
+      return executeLegacyAuthorizedKyrubAction(authorization, rawRequest);
+    }
+    return promotion.executeAuthorizedKyrubStorePromotion(
+      authorization,
+      rawRequest
+    ) as Promise<KyrubActionExecutionResult>;
   }
   if (isKyrubStoreProfileExecutionRequest(rawRequest)) {
     return executeAuthorizedKyrubStoreProfileUpdate(authorization, rawRequest);
