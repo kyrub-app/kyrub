@@ -13,6 +13,10 @@
       "destination": "/api/health?transport=mcp"
     },
     {
+      "source": "/api/orders/:orderId/status",
+      "destination": "/api/health?transport=order-status-execute&orderId=:orderId"
+    },
+    {
       "source": "/api/payments/intents",
       "destination": "/api/action-execute?transport=marketplace-payment-intent"
     },
