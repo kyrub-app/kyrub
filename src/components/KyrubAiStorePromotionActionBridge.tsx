@@ -1,16 +1,11 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { BadgePercent, CheckCircle2, Clock3, LoaderCircle, TicketPercent, X } from 'lucide-react';
 import type { KyrubActionProposal } from '../../shared/kyrubActions';
 import type { CreateStorePromotionProposal } from '../../shared/storePromotionAction';
 import { executeKyrubAction } from '../actions/kyrubActionService';
-import { invalidateKyrubErpContext, readKyrubErpContext } from '../actions/erpReadActionService';
+import { invalidateKyrubErpContext } from '../actions/erpReadActionService';
+import { KYRUBIA_UNLIMITED_PROMOTION_ENDS_AT } from '../ai/deterministicStorePromotion';
 import {
-  isKyrubiaStorePromotionIntent,
-  KYRUBIA_UNLIMITED_PROMOTION_ENDS_AT,
-  resolveKyrubiaDeterministicStorePromotion,
-} from '../ai/deterministicStorePromotion';
-import {
-  emitKyrubStorePromotionProposal,
   KYRUB_STORE_PROMOTION_PROPOSAL_EVENT,
   type KyrubStorePromotionProposalEventDetail,
 } from '../ai/storePromotionEvents';
@@ -36,14 +31,6 @@ const dateTimeFormatter = new Intl.DateTimeFormat('pt-BR', {
   timeStyle: 'short',
 });
 
-const runtimeId = (prefix: string): string => {
-  try {
-    return `${prefix}:${globalThis.crypto.randomUUID()}`;
-  } catch {
-    return `${prefix}:${Date.now()}:${Math.random().toString(36).slice(2, 10)}`;
-  }
-};
-
 const withIdempotency = (
   conversationId: string,
   proposal: CreateStorePromotionProposal
@@ -59,12 +46,8 @@ const discountLabel = (proposal: CreateStorePromotionProposal): string =>
     ? `${proposal.discountValue}% de desconto`
     : `${currencyFormatter.format(proposal.discountValue)} de desconto`;
 
-const isWorkspaceForm = (form: HTMLFormElement): boolean =>
-  Boolean(form.closest('#kyrub-ai-workspace'));
-
 export function KyrubAiStorePromotionActionBridge() {
   const [pending, setPending] = useState<PendingStorePromotion | null>(null);
-  const lastCapturedIntent = useRef<{ message: string; capturedAt: number } | null>(null);
 
   useEffect(() => {
     const handleProposal = (event: Event) => {
@@ -84,91 +67,12 @@ export function KyrubAiStorePromotionActionBridge() {
       window.removeEventListener(KYRUB_STORE_PROMOTION_PROPOSAL_EVENT, handleProposal);
   }, []);
 
-  useEffect(() => {
-    const preparePromotion = (message: string): boolean => {
-      const normalizedMessage = message.trim();
-      if (!normalizedMessage || !isKyrubiaStorePromotionIntent(normalizedMessage)) {
-        return false;
-      }
-
-      const user = auth.currentUser;
-      if (!user) return false;
-
-      const now = Date.now();
-      const last = lastCapturedIntent.current;
-      if (last?.message === normalizedMessage && now - last.capturedAt < 2_000) {
-        return true;
-      }
-      lastCapturedIntent.current = { message: normalizedMessage, capturedAt: now };
-
-      void readKyrubErpContext(user)
-        .then(context => {
-          const resolution = resolveKyrubiaDeterministicStorePromotion(
-            normalizedMessage,
-            context
-          );
-          if (!resolution) {
-            console.warn('[Kyrubia] A intenção de promoção foi detectada, mas produto/desconto não puderam ser resolvidos com segurança.');
-            return;
-          }
-
-          const requestId = runtimeId('promotion-request');
-          const conversationId = runtimeId(`promotion-chat:${user.uid}`);
-          emitKyrubStorePromotionProposal(
-            conversationId,
-            requestId,
-            resolution.proposal
-          );
-        })
-        .catch(error => {
-          console.warn('[Kyrubia] Não foi possível preparar a promoção solicitada.', error);
-        });
-
-      return true;
-    };
-
-    const capturePromotionSubmit = (event: Event): void => {
-      const form = event.target;
-      if (!(form instanceof HTMLFormElement) || !isWorkspaceForm(form)) return;
-
-      const textarea = form.querySelector('textarea');
-      if (!(textarea instanceof HTMLTextAreaElement)) return;
-      if (!preparePromotion(textarea.value)) return;
-
-      // Governed promotion intents are resolved locally against the authenticated
-      // ERP snapshot before the generic AI route can answer with stale capability
-      // text. The modal remains the only path that can execute the mutation.
-      event.preventDefault();
-      event.stopImmediatePropagation();
-    };
-
-    const capturePromotionEnter = (event: KeyboardEvent): void => {
-      if (event.key !== 'Enter' || event.shiftKey || event.isComposing) return;
-      const textarea = event.target;
-      if (!(textarea instanceof HTMLTextAreaElement)) return;
-      const workspace = textarea.closest('#kyrub-ai-workspace');
-      if (!workspace) return;
-      if (!preparePromotion(textarea.value)) return;
-
-      // The workspace sends Enter directly from React without dispatching a
-      // native submit event, so capture this path too.
-      event.preventDefault();
-      event.stopImmediatePropagation();
-    };
-
-    document.addEventListener('submit', capturePromotionSubmit, true);
-    document.addEventListener('keydown', capturePromotionEnter, true);
-    return () => {
-      document.removeEventListener('submit', capturePromotionSubmit, true);
-      document.removeEventListener('keydown', capturePromotionEnter, true);
-    };
-  }, []);
-
   if (!pending) return null;
 
   const working = pending.state === 'executing';
   const success = pending.state === 'success';
   const unlimited = pending.proposal.endsAt === KYRUBIA_UNLIMITED_PROMOTION_ENDS_AT;
+
   const close = () => {
     if (!working) setPending(null);
   };
