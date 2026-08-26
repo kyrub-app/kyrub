@@ -1,9 +1,6 @@
 import type {
   KyrubAiConsultantErrorResponse,
 } from '../../shared/aiConsultant';
-import { authenticateConsultantRequest } from '../../server/ai/consultantAuth';
-import { runKyrubConsultant } from '../../server/ai/consultantService';
-import { ConsultantHttpError } from '../../server/ai/types';
 
 const json = (body: unknown, status = 200): Response =>
   Response.json(body, {
@@ -14,7 +11,8 @@ const json = (body: unknown, status = 200): Response =>
     },
   });
 
-const errorResponse = (error: unknown): Response => {
+const errorResponse = async (error: unknown): Promise<Response> => {
+  const { ConsultantHttpError } = await import('../../server/ai/types.js');
   if (error instanceof ConsultantHttpError) {
     const payload: KyrubAiConsultantErrorResponse = {
       error: error.message,
@@ -83,6 +81,10 @@ export default {
     }
 
     try {
+      const [{ authenticateConsultantRequest }, { runKyrubConsultant }] = await Promise.all([
+        import('../../server/ai/consultantAuth.js'),
+        import('../../server/ai/consultantService.js'),
+      ]);
       const user = await authenticateConsultantRequest(
         request.headers.get('authorization')
       );
