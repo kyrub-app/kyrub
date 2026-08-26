@@ -25,6 +25,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Normalize Vercel serverless ESM dependency graph
+        run: node scripts/normalize-serverless-esm-imports.mjs
+
       - name: Validate TypeScript, tests and bundle
         run: npm run build > build.log 2>&1
 
