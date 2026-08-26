@@ -4,7 +4,11 @@ import type { KyrubActionProposal } from '../../shared/kyrubActions';
 import type { CreateStorePromotionProposal } from '../../shared/storePromotionAction';
 import { executeKyrubAction } from '../actions/kyrubActionService';
 import { invalidateKyrubErpContext, readKyrubErpContext } from '../actions/erpReadActionService';
-import { resolveKyrubiaDeterministicStorePromotion } from '../ai/deterministicStorePromotion';
+import {
+  isKyrubiaStorePromotionIntent,
+  KYRUBIA_UNLIMITED_PROMOTION_ENDS_AT,
+  resolveKyrubiaDeterministicStorePromotion,
+} from '../ai/deterministicStorePromotion';
 import {
   emitKyrubStorePromotionProposal,
   KYRUB_STORE_PROMOTION_PROPOSAL_EVENT,
@@ -55,6 +59,9 @@ const discountLabel = (proposal: CreateStorePromotionProposal): string =>
     ? `${proposal.discountValue}% de desconto`
     : `${currencyFormatter.format(proposal.discountValue)} de desconto`;
 
+const isWorkspaceForm = (form: HTMLFormElement): boolean =>
+  Boolean(form.closest('#kyrub-ai-workspace'));
+
 export function KyrubAiStorePromotionActionBridge() {
   const [pending, setPending] = useState<PendingStorePromotion | null>(null);
   const lastCapturedIntent = useRef<{ message: string; capturedAt: number } | null>(null);
@@ -78,30 +85,32 @@ export function KyrubAiStorePromotionActionBridge() {
   }, []);
 
   useEffect(() => {
-    const capturePromotionIntent = (event: Event): void => {
-      const form = event.target;
-      if (!(form instanceof HTMLFormElement) || !form.closest('#kyrub-ai-workspace')) return;
-
-      const textarea = form.querySelector('textarea');
-      if (!(textarea instanceof HTMLTextAreaElement)) return;
-      const message = textarea.value.trim();
-      if (!message) return;
+    const preparePromotion = (message: string): boolean => {
+      const normalizedMessage = message.trim();
+      if (!normalizedMessage || !isKyrubiaStorePromotionIntent(normalizedMessage)) {
+        return false;
+      }
 
       const user = auth.currentUser;
-      if (!user) return;
+      if (!user) return false;
 
       const now = Date.now();
       const last = lastCapturedIntent.current;
-      if (last?.message === message && now - last.capturedAt < 2_000) return;
-      lastCapturedIntent.current = { message, capturedAt: now };
+      if (last?.message === normalizedMessage && now - last.capturedAt < 2_000) {
+        return true;
+      }
+      lastCapturedIntent.current = { message: normalizedMessage, capturedAt: now };
 
       void readKyrubErpContext(user)
         .then(context => {
           const resolution = resolveKyrubiaDeterministicStorePromotion(
-            message,
+            normalizedMessage,
             context
           );
-          if (!resolution) return;
+          if (!resolution) {
+            console.warn('[Kyrubia] A intenção de promoção foi detectada, mas produto/desconto não puderam ser resolvidos com segurança.');
+            return;
+          }
 
           const requestId = runtimeId('promotion-request');
           const conversationId = runtimeId(`promotion-chat:${user.uid}`);
@@ -114,16 +123,52 @@ export function KyrubAiStorePromotionActionBridge() {
         .catch(error => {
           console.warn('[Kyrubia] Não foi possível preparar a promoção solicitada.', error);
         });
+
+      return true;
     };
 
-    document.addEventListener('submit', capturePromotionIntent, true);
-    return () => document.removeEventListener('submit', capturePromotionIntent, true);
+    const capturePromotionSubmit = (event: Event): void => {
+      const form = event.target;
+      if (!(form instanceof HTMLFormElement) || !isWorkspaceForm(form)) return;
+
+      const textarea = form.querySelector('textarea');
+      if (!(textarea instanceof HTMLTextAreaElement)) return;
+      if (!preparePromotion(textarea.value)) return;
+
+      // Governed promotion intents are resolved locally against the authenticated
+      // ERP snapshot before the generic AI route can answer with stale capability
+      // text. The modal remains the only path that can execute the mutation.
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    };
+
+    const capturePromotionEnter = (event: KeyboardEvent): void => {
+      if (event.key !== 'Enter' || event.shiftKey || event.isComposing) return;
+      const textarea = event.target;
+      if (!(textarea instanceof HTMLTextAreaElement)) return;
+      const workspace = textarea.closest('#kyrub-ai-workspace');
+      if (!workspace) return;
+      if (!preparePromotion(textarea.value)) return;
+
+      // The workspace sends Enter directly from React without dispatching a
+      // native submit event, so capture this path too.
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    };
+
+    document.addEventListener('submit', capturePromotionSubmit, true);
+    document.addEventListener('keydown', capturePromotionEnter, true);
+    return () => {
+      document.removeEventListener('submit', capturePromotionSubmit, true);
+      document.removeEventListener('keydown', capturePromotionEnter, true);
+    };
   }, []);
 
   if (!pending) return null;
 
   const working = pending.state === 'executing';
   const success = pending.state === 'success';
+  const unlimited = pending.proposal.endsAt === KYRUBIA_UNLIMITED_PROMOTION_ENDS_AT;
   const close = () => {
     if (!working) setPending(null);
   };
@@ -191,13 +236,7 @@ export function KyrubAiStorePromotionActionBridge() {
         className="w-full max-w-md overflow-hidden rounded-3xl border border-emerald-500/25 bg-slate-950 shadow-2xl"
       >
         <header className="flex items-start gap-3 border-b border-slate-800 p-4">
-          <div
-            className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl ${
-              success
-                ? 'bg-emerald-500/15 text-emerald-300'
-                : 'bg-emerald-500/15 text-emerald-300'
-            }`}
-          >
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-emerald-500/15 text-emerald-300">
             {success ? (
               <CheckCircle2 className="h-6 w-6" />
             ) : (
@@ -268,8 +307,9 @@ export function KyrubAiStorePromotionActionBridge() {
                   <span className="text-xs font-black uppercase tracking-wider">Validade</span>
                 </div>
                 <p className="mt-2 text-sm text-slate-300">
-                  {dateTimeFormatter.format(new Date(pending.proposal.startsAt))} até{' '}
-                  {dateTimeFormatter.format(new Date(pending.proposal.endsAt))}
+                  {unlimited
+                    ? `A partir de ${dateTimeFormatter.format(new Date(pending.proposal.startsAt))}, sem data final.`
+                    : `${dateTimeFormatter.format(new Date(pending.proposal.startsAt))} até ${dateTimeFormatter.format(new Date(pending.proposal.endsAt))}`}
                 </p>
                 <p className="mt-1 text-xs text-slate-500">
                   {pending.proposal.maxRedemptions === 0
