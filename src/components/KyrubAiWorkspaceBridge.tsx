@@ -34,6 +34,7 @@ import {
   uploadKyrubiaAttachments,
 } from '../ai/kyrubiaAttachmentService';
 import { requestKyrubAiMultimodalConsultant } from '../ai/multimodalConsultantClient';
+import { routeKyrubiaStorePromotionFromWorkspace } from '../ai/storePromotionWorkspaceRouter';
 import {
   createKyrubAiConversation,
   createKyrubAiMessage,
@@ -386,6 +387,37 @@ export function KyrubAiWorkspaceBridge() {
       const withoutCurrent = current.filter(item => item.id !== nextConversation.id);
       return [nextConversation, ...withoutCurrent];
     });
+
+    if (attachments.length === 0) {
+      try {
+        const promotionRoute = await routeKyrubiaStorePromotionFromWorkspace(
+          user,
+          nextConversation.id,
+          messageContent
+        );
+        if (promotionRoute.handled) {
+          const assistantMessage = createKyrubAiMessage(
+            'assistant',
+            promotionRoute.reply ?? 'Preparei a promoção para sua confirmação.'
+          );
+          updateConversation(nextConversation.id, current => ({
+            ...current,
+            updatedAt: new Date().toISOString(),
+            messages: [...current.messages, assistantMessage],
+          }));
+          return;
+        }
+      } catch (error) {
+        setErrorMessage(
+          error instanceof Error
+            ? `Não foi possível consultar o catálogo para preparar a promoção: ${error.message}`
+            : 'Não foi possível consultar o catálogo para preparar a promoção.'
+        );
+        setFailedConversationId(nextConversation.id);
+        return;
+      }
+    }
+
     await requestReply(
       nextConversation,
       nextConversation.messages,
@@ -452,7 +484,7 @@ export function KyrubAiWorkspaceBridge() {
                   Em que posso ajudar hoje?
                 </h2>
                 <p className="mt-2 text-sm leading-relaxed text-slate-400">
-                  Faça sua solicitação em linguagem natural. Nesta primeira fase, o Consultor conversa, orienta e prepara planos sem alterar dados do aplicativo.
+                  Faça sua solicitação em linguagem natural. Ações habilitadas pela Kyrubia continuam passando por confirmação e backend autoritativo.
                 </p>
               </div>
             </div>
