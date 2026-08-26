@@ -11,6 +11,7 @@ import { invalidateKyrubErpContext } from './erpReadActionService';
 import { KYRUB_CATALOG_PRODUCT_CHANGED_EVENT } from './kyrubCatalogDraftService';
 
 const SAFE_ACTION_ENDPOINT = '/api/action-execute';
+const STORE_PROMOTION_ACTION_ENDPOINT = '/api/store-promotion-execute';
 
 const readJson = async (response: Response): Promise<Record<string, unknown>> => {
   const text = await response.text().catch(() => '');
@@ -67,6 +68,7 @@ const activityEntityType = (
   if (proposal.type === 'adjust_inventory') return 'inventory';
   if (proposal.type === 'set_product_composition') return 'product_composition';
   if (proposal.type === 'update_order_status') return 'order';
+  if (proposal.type === 'create_store_promotion') return 'promotion';
   if (
     proposal.type === 'start_store_activation' ||
     proposal.type === 'update_store_profile'
@@ -178,9 +180,13 @@ export const executeKyrubAction = async (
     );
   }
 
+  const endpoint = proposal.type === 'create_store_promotion'
+    ? STORE_PROMOTION_ACTION_ENDPOINT
+    : SAFE_ACTION_ENDPOINT;
+
   let response: Response;
   try {
-    response = await fetch(SAFE_ACTION_ENDPOINT, {
+    response = await fetch(endpoint, {
       method: 'POST',
       headers: {
         authorization: `Bearer ${token}`,
@@ -223,7 +229,8 @@ export const executeKyrubAction = async (
     proposal.type === 'import_catalog_draft' ||
     proposal.type === 'adjust_inventory' ||
     proposal.type === 'set_product_composition' ||
-    proposal.type === 'update_order_status'
+    proposal.type === 'update_order_status' ||
+    proposal.type === 'create_store_promotion'
   ) {
     invalidateKyrubErpContext(user.uid);
   }
