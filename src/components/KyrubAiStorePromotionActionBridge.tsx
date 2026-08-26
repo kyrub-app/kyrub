@@ -1,11 +1,16 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { BadgePercent, CheckCircle2, Clock3, LoaderCircle, TicketPercent, X } from 'lucide-react';
 import type { KyrubActionProposal } from '../../shared/kyrubActions';
 import type { CreateStorePromotionProposal } from '../../shared/storePromotionAction';
 import { executeKyrubAction } from '../actions/kyrubActionService';
-import { invalidateKyrubErpContext } from '../actions/erpReadActionService';
-import { KYRUBIA_UNLIMITED_PROMOTION_ENDS_AT } from '../ai/deterministicStorePromotion';
+import { invalidateKyrubErpContext, readKyrubErpContext } from '../actions/erpReadActionService';
 import {
+  isKyrubiaStorePromotionIntent,
+  KYRUBIA_UNLIMITED_PROMOTION_ENDS_AT,
+  resolveKyrubiaDeterministicStorePromotion,
+} from '../ai/deterministicStorePromotion';
+import {
+  emitKyrubStorePromotionProposal,
   KYRUB_STORE_PROMOTION_PROPOSAL_EVENT,
   type KyrubStorePromotionProposalEventDetail,
 } from '../ai/storePromotionEvents';
@@ -31,6 +36,14 @@ const dateTimeFormatter = new Intl.DateTimeFormat('pt-BR', {
   timeStyle: 'short',
 });
 
+const runtimeId = (prefix: string): string => {
+  try {
+    return `${prefix}:${globalThis.crypto.randomUUID()}`;
+  } catch {
+    return `${prefix}:${Date.now()}:${Math.random().toString(36).slice(2, 10)}`;
+  }
+};
+
 const withIdempotency = (
   conversationId: string,
   proposal: CreateStorePromotionProposal
@@ -48,6 +61,7 @@ const discountLabel = (proposal: CreateStorePromotionProposal): string =>
 
 export function KyrubAiStorePromotionActionBridge() {
   const [pending, setPending] = useState<PendingStorePromotion | null>(null);
+  const lastCapturedIntent = useRef<{ message: string; capturedAt: number } | null>(null);
 
   useEffect(() => {
     const handleProposal = (event: Event) => {
@@ -65,6 +79,63 @@ export function KyrubAiStorePromotionActionBridge() {
     window.addEventListener(KYRUB_STORE_PROMOTION_PROPOSAL_EVENT, handleProposal);
     return () =>
       window.removeEventListener(KYRUB_STORE_PROMOTION_PROPOSAL_EVENT, handleProposal);
+  }, []);
+
+  useEffect(() => {
+    const preparePromotion = (message: string): void => {
+      const normalizedMessage = message.trim();
+      if (!normalizedMessage || !isKyrubiaStorePromotionIntent(normalizedMessage)) return;
+
+      const user = auth.currentUser;
+      if (!user) return;
+
+      const now = Date.now();
+      const last = lastCapturedIntent.current;
+      if (last?.message === normalizedMessage && now - last.capturedAt < 2_000) return;
+      lastCapturedIntent.current = { message: normalizedMessage, capturedAt: now };
+
+      void readKyrubErpContext(user)
+        .then(context => {
+          const resolution = resolveKyrubiaDeterministicStorePromotion(
+            normalizedMessage,
+            context
+          );
+          if (!resolution) return;
+
+          emitKyrubStorePromotionProposal(
+            runtimeId(`promotion-chat:${user.uid}`),
+            runtimeId('promotion-request'),
+            resolution.proposal
+          );
+        })
+        .catch(error => {
+          console.warn('[Kyrubia] Não foi possível preparar a promoção solicitada.', error);
+        });
+    };
+
+    const captureSubmit = (event: Event): void => {
+      const form = event.target;
+      if (!(form instanceof HTMLFormElement) || !form.closest('#kyrub-ai-workspace')) return;
+      const textarea = form.querySelector('textarea');
+      if (textarea instanceof HTMLTextAreaElement) preparePromotion(textarea.value);
+      // Deliberately do not prevent/stop the event. React still owns sending,
+      // clearing the composer and rendering the user's message.
+    };
+
+    const captureEnter = (event: KeyboardEvent): void => {
+      if (event.key !== 'Enter' || event.shiftKey || event.isComposing) return;
+      const textarea = event.target;
+      if (!(textarea instanceof HTMLTextAreaElement) || !textarea.closest('#kyrub-ai-workspace')) return;
+      preparePromotion(textarea.value);
+      // Do not prevent/stop: the workspace's React handler must continue normally.
+    };
+
+    document.addEventListener('submit', captureSubmit, true);
+    document.addEventListener('keydown', captureEnter, true);
+    return () => {
+      document.removeEventListener('submit', captureSubmit, true);
+      document.removeEventListener('keydown', captureEnter, true);
+    };
   }, []);
 
   if (!pending) return null;
@@ -141,27 +212,13 @@ export function KyrubAiStorePromotionActionBridge() {
       >
         <header className="flex items-start gap-3 border-b border-slate-800 p-4">
           <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-emerald-500/15 text-emerald-300">
-            {success ? (
-              <CheckCircle2 className="h-6 w-6" />
-            ) : (
-              <TicketPercent className="h-6 w-6" />
-            )}
+            {success ? <CheckCircle2 className="h-6 w-6" /> : <TicketPercent className="h-6 w-6" />}
           </div>
           <div className="min-w-0 flex-1">
-            <span className="text-xs font-black uppercase tracking-wider text-emerald-300">
-              Kyrubia · Promoção
-            </span>
-            <h2 className="mt-1 text-xl font-black text-white">
-              {success ? 'Promoção publicada' : 'Confirmar promoção'}
-            </h2>
+            <span className="text-xs font-black uppercase tracking-wider text-emerald-300">Kyrubia · Promoção</span>
+            <h2 className="mt-1 text-xl font-black text-white">{success ? 'Promoção publicada' : 'Confirmar promoção'}</h2>
           </div>
-          <button
-            type="button"
-            onClick={close}
-            disabled={working}
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-slate-800 bg-slate-900 text-slate-400 disabled:opacity-40"
-            aria-label="Fechar confirmação"
-          >
+          <button type="button" onClick={close} disabled={working} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-slate-800 bg-slate-900 text-slate-400 disabled:opacity-40" aria-label="Fechar confirmação">
             <X className="h-4 w-4" />
           </button>
         </header>
@@ -169,105 +226,38 @@ export function KyrubAiStorePromotionActionBridge() {
         <div className="space-y-4 p-4">
           {success ? (
             <p className="rounded-2xl border border-emerald-500/25 bg-emerald-500/10 px-4 py-4 text-sm leading-relaxed text-emerald-100">
-              {pending.alreadyApplied
-                ? 'Esta mesma promoção já havia sido publicada. O Kyrub não duplicou a ação.'
-                : `A promoção “${pending.proposal.badge}” foi publicada pelo backend autenticado.`}
+              {pending.alreadyApplied ? 'Esta mesma promoção já havia sido publicada. O Kyrub não duplicou a ação.' : `A promoção “${pending.proposal.badge}” foi publicada pelo backend autenticado.`}
             </p>
           ) : (
             <>
               <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/10 p-4">
-                <div className="flex items-center gap-2 text-emerald-300">
-                  <BadgePercent className="h-4 w-4" />
-                  <span className="text-xs font-black uppercase tracking-wider">Benefício</span>
-                </div>
-                <strong className="mt-2 block text-lg text-white">
-                  {discountLabel(pending.proposal)}
-                </strong>
-                <span className="mt-1 block text-sm text-slate-300">
-                  {pending.proposal.productLabel}
-                </span>
+                <div className="flex items-center gap-2 text-emerald-300"><BadgePercent className="h-4 w-4" /><span className="text-xs font-black uppercase tracking-wider">Benefício</span></div>
+                <strong className="mt-2 block text-lg text-white">{discountLabel(pending.proposal)}</strong>
+                <span className="mt-1 block text-sm text-slate-300">{pending.proposal.productLabel}</span>
               </div>
-
               <div className="grid grid-cols-2 gap-2">
-                <div className="rounded-xl border border-slate-800 bg-slate-900 px-3 py-3">
-                  <span className="block text-[9px] font-black uppercase text-slate-500">Cupom</span>
-                  <strong className="mt-1 block break-all text-sm text-slate-200">
-                    {pending.proposal.code}
-                  </strong>
-                </div>
-                <div className="rounded-xl border border-slate-800 bg-slate-900 px-3 py-3">
-                  <span className="block text-[9px] font-black uppercase text-slate-500">Uso por cliente</span>
-                  <strong className="mt-1 block text-sm text-slate-200">
-                    {pending.proposal.maxRedemptionsPerBuyer === 0
-                      ? 'Sem limite'
-                      : `${pending.proposal.maxRedemptionsPerBuyer}×`}
-                  </strong>
-                </div>
+                <div className="rounded-xl border border-slate-800 bg-slate-900 px-3 py-3"><span className="block text-[9px] font-black uppercase text-slate-500">Cupom</span><strong className="mt-1 block break-all text-sm text-slate-200">{pending.proposal.code}</strong></div>
+                <div className="rounded-xl border border-slate-800 bg-slate-900 px-3 py-3"><span className="block text-[9px] font-black uppercase text-slate-500">Uso por cliente</span><strong className="mt-1 block text-sm text-slate-200">{pending.proposal.maxRedemptionsPerBuyer === 0 ? 'Sem limite' : `${pending.proposal.maxRedemptionsPerBuyer}×`}</strong></div>
               </div>
-
               <div className="rounded-2xl border border-slate-800 bg-slate-900 p-4">
-                <div className="flex items-center gap-2 text-emerald-300">
-                  <Clock3 className="h-4 w-4" />
-                  <span className="text-xs font-black uppercase tracking-wider">Validade</span>
-                </div>
-                <p className="mt-2 text-sm text-slate-300">
-                  {unlimited
-                    ? `A partir de ${dateTimeFormatter.format(new Date(pending.proposal.startsAt))}, sem data final.`
-                    : `${dateTimeFormatter.format(new Date(pending.proposal.startsAt))} até ${dateTimeFormatter.format(new Date(pending.proposal.endsAt))}`}
-                </p>
-                <p className="mt-1 text-xs text-slate-500">
-                  {pending.proposal.maxRedemptions === 0
-                    ? 'Sem limite global de resgates.'
-                    : `Limite global: ${pending.proposal.maxRedemptions} resgates.`}
-                </p>
+                <div className="flex items-center gap-2 text-emerald-300"><Clock3 className="h-4 w-4" /><span className="text-xs font-black uppercase tracking-wider">Validade</span></div>
+                <p className="mt-2 text-sm text-slate-300">{unlimited ? `A partir de ${dateTimeFormatter.format(new Date(pending.proposal.startsAt))}, sem data final.` : `${dateTimeFormatter.format(new Date(pending.proposal.startsAt))} até ${dateTimeFormatter.format(new Date(pending.proposal.endsAt))}`}</p>
+                <p className="mt-1 text-xs text-slate-500">{pending.proposal.maxRedemptions === 0 ? 'Sem limite global de resgates.' : `Limite global: ${pending.proposal.maxRedemptions} resgates.`}</p>
               </div>
-
-              <p className="text-xs leading-relaxed text-slate-500">
-                A confirmação publica o cupom para os produtos indicados. O desconto continua sendo calculado pelo backend e só é consumido depois da confirmação autoritativa do pagamento.
-              </p>
-
-              {pending.state === 'error' && (
-                <p className="rounded-2xl border border-red-500/25 bg-red-500/10 px-4 py-3 text-sm text-red-200">
-                  {pending.errorMessage}
-                </p>
-              )}
+              <p className="text-xs leading-relaxed text-slate-500">A confirmação publica o cupom para os produtos indicados. O desconto continua sendo calculado pelo backend e só é consumido depois da confirmação autoritativa do pagamento.</p>
+              {pending.state === 'error' && <p className="rounded-2xl border border-red-500/25 bg-red-500/10 px-4 py-3 text-sm text-red-200">{pending.errorMessage}</p>}
             </>
           )}
         </div>
 
         <footer className="flex gap-3 border-t border-slate-800 p-4">
           {success ? (
-            <button
-              type="button"
-              onClick={() => setPending(null)}
-              className="w-full rounded-xl bg-emerald-500 px-4 py-3 text-sm font-black text-slate-950"
-            >
-              Concluído
-            </button>
+            <button type="button" onClick={() => setPending(null)} className="w-full rounded-xl bg-emerald-500 px-4 py-3 text-sm font-black text-slate-950">Concluído</button>
           ) : (
             <>
-              <button
-                type="button"
-                onClick={close}
-                disabled={working}
-                className="flex-1 rounded-xl border border-slate-700 bg-slate-900 px-4 py-3 text-sm font-black text-slate-300 disabled:opacity-40"
-              >
-                Cancelar
-              </button>
-              <button
-                type="button"
-                onClick={() => void confirm()}
-                disabled={working}
-                className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-emerald-500 px-4 py-3 text-sm font-black text-slate-950 disabled:opacity-60"
-              >
-                {working ? (
-                  <>
-                    <LoaderCircle className="h-4 w-4 animate-spin" />
-                    Publicando...
-                  </>
-                ) : (
-                  'Confirmar'
-                )}
+              <button type="button" onClick={close} disabled={working} className="flex-1 rounded-xl border border-slate-700 bg-slate-900 px-4 py-3 text-sm font-black text-slate-300 disabled:opacity-40">Cancelar</button>
+              <button type="button" onClick={() => void confirm()} disabled={working} className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-emerald-500 px-4 py-3 text-sm font-black text-slate-950 disabled:opacity-60">
+                {working ? <><LoaderCircle className="h-4 w-4 animate-spin" />Publicando...</> : 'Confirmar'}
               </button>
             </>
           )}
