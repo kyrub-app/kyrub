@@ -49,11 +49,22 @@ const parseDiscount = (message: string): {
 
 const productAliases = (product: KyrubErpProductSummary): string[] => {
   const name = normalize(product.name);
-  const aliases = new Set([name]);
-  if (/\bx\s*burger\b/.test(name) || /\bxburger\b/.test(name)) {
+  const aliases = new Set<string>();
+  if (name) aliases.add(name);
+
+  // Public catalog names may be prefixed by a numeric SKU, e.g. "002 X-BURGER".
+  // Users naturally refer to the sellable name ("X-Burger"), so keep both forms.
+  const withoutNumericPrefix = name.replace(/^\d{1,12}\s+/, '').trim();
+  if (withoutNumericPrefix) aliases.add(withoutNumericPrefix);
+
+  const burgerCandidate = withoutNumericPrefix || name;
+  if (/\bx\s*burger\b/.test(burgerCandidate) || /\bxburger\b/.test(burgerCandidate)) {
+    aliases.add('x burger');
+    aliases.add('xburger');
     aliases.add('cheeseburger');
     aliases.add('cheese burger');
   }
+
   return [...aliases].filter(Boolean);
 };
 
@@ -63,11 +74,13 @@ const resolveProduct = (
 ): KyrubErpProductSummary | null => {
   const intent = normalize(message);
   const matches = products
-    .flatMap(product =>
-      productAliases(product).some(alias => intent.includes(alias))
-        ? [{ product, score: Math.max(...productAliases(product).map(alias => alias.length)) }]
-        : []
-    )
+    .flatMap(product => {
+      const aliases = productAliases(product);
+      const matchingAliases = aliases.filter(alias => intent.includes(alias));
+      return matchingAliases.length > 0
+        ? [{ product, score: Math.max(...matchingAliases.map(alias => alias.length)) }]
+        : [];
+    })
     .sort((left, right) => right.score - left.score);
 
   if (matches.length === 1) return matches[0]?.product ?? null;
