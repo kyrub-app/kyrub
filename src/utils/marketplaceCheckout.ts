@@ -71,10 +71,10 @@ interface PendingMarketplacePixSession {
 
 let activePixOverlayCleanup: (() => void) | null = null;
 
-const createIdempotencyKey = (userId: string, storeId: string): string => {
+const createIdempotencyKey = (): string => {
   const randomId = globalThis.crypto?.randomUUID?.() ??
     `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-  return `checkout:${userId}:${storeId}:${randomId}`;
+  return `checkout:${randomId}`;
 };
 
 const pendingPixStorageKey = (userId: string, storeId: string): string =>
@@ -429,7 +429,7 @@ export const initiateMarketplaceCheckout = async (
       items: cartRequestItems(input.cart, input.itemNotes),
       method: 'pix',
       idempotencyKey:
-        input.idempotencyKey?.trim() || createIdempotencyKey(user.uid, storeId),
+        input.idempotencyKey?.trim() || createIdempotencyKey(),
     }),
   });
 
