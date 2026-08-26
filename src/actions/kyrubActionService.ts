@@ -11,6 +11,7 @@ import { invalidateKyrubErpContext } from './erpReadActionService';
 import { KYRUB_CATALOG_PRODUCT_CHANGED_EVENT } from './kyrubCatalogDraftService';
 
 const SAFE_ACTION_ENDPOINT = '/api/action-execute';
+const STORE_PROMOTION_ACTION_ENDPOINT = '/api/ai/consultant?transport=store-promotion-execute';
 
 const readJson = async (response: Response): Promise<Record<string, unknown>> => {
   const text = await response.text().catch(() => '');
@@ -178,9 +179,18 @@ export const executeKyrubAction = async (
     );
   }
 
+  // Promoções ainda não fazem parte do registro canônico genérico de ações.
+  // Mantemos esse limite intacto e apenas roteamos a proposta já validada pelo
+  // bridge especializado para um transport explícito em função já existente.
+  const isStorePromotion =
+    (proposal as unknown as { type?: string }).type === 'create_store_promotion';
+  const endpoint = isStorePromotion
+    ? STORE_PROMOTION_ACTION_ENDPOINT
+    : SAFE_ACTION_ENDPOINT;
+
   let response: Response;
   try {
-    response = await fetch(SAFE_ACTION_ENDPOINT, {
+    response = await fetch(endpoint, {
       method: 'POST',
       headers: {
         authorization: `Bearer ${token}`,
@@ -223,7 +233,8 @@ export const executeKyrubAction = async (
     proposal.type === 'import_catalog_draft' ||
     proposal.type === 'adjust_inventory' ||
     proposal.type === 'set_product_composition' ||
-    proposal.type === 'update_order_status'
+    proposal.type === 'update_order_status' ||
+    isStorePromotion
   ) {
     invalidateKyrubErpContext(user.uid);
   }

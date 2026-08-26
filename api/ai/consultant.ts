@@ -31,6 +31,40 @@ const errorResponse = (error: unknown): Response => {
   return json(payload, 503);
 };
 
+const storePromotionResponse = async (request: Request): Promise<Response> => {
+  let mapError: ((error: unknown) => { status: number; body: unknown }) | null = null;
+  try {
+    const [promotion, actionService] = await Promise.all([
+      import('../../server/actions/storePromotionExecutionService.js'),
+      import('../../server/actions/actionExecutionService.js'),
+    ]);
+    mapError = actionService.mapKyrubActionExecutionError;
+    const body = await request.json().catch(() => ({}));
+    if (!promotion.isKyrubStorePromotionExecutionRequest(body)) {
+      return json({
+        error: 'A promoção precisa ser revisada e confirmada.',
+        code: 'INVALID_STORE_PROMOTION_REQUEST',
+      }, 400);
+    }
+    return json(await promotion.executeAuthorizedKyrubStorePromotion(
+      request.headers.get('authorization') ?? '',
+      body
+    ));
+  } catch (error) {
+    console.error('[StorePromotionExecution]', error);
+    const mapped = mapError
+      ? mapError(error)
+      : {
+          status: 503,
+          body: {
+            error: 'Não foi possível publicar a promoção agora.',
+            code: 'STORE_PROMOTION_EXECUTION_UNAVAILABLE',
+          },
+        };
+    return json(mapped.body, mapped.status);
+  }
+};
+
 export const maxDuration = 30;
 
 export default {
@@ -41,6 +75,11 @@ export default {
         code: 'METHOD_NOT_ALLOWED',
       };
       return json(payload, 405);
+    }
+
+    const transport = new URL(request.url).searchParams.get('transport');
+    if (transport === 'store-promotion-execute') {
+      return storePromotionResponse(request);
     }
 
     try {
