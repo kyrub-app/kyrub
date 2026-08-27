@@ -5,6 +5,7 @@ import { AppErrorBoundary } from './components/AppErrorBoundary';
 import { KyrubAiConversationCloudSyncGate } from './components/KyrubAiConversationCloudSyncGate';
 import { OfficialKnowledgeSemanticSetupBridge } from './components/OfficialKnowledgeSemanticSetupBridge';
 import { OfficialKnowledgeSetupBridge } from './components/OfficialKnowledgeSetupBridge';
+import { PickupHandoffBridge } from './components/store/PickupHandoffBridge';
 import { ProfileCommunitiesCloudBridge } from './components/ProfileCommunitiesCloudBridge';
 import { ProfileConnectedCardsPolishBridge } from './components/ProfileConnectedCardsPolishBridge';
 import { ProfileConnectedImageFitBridge } from './components/ProfileConnectedImageFitBridge';
@@ -39,6 +40,7 @@ createRoot(rootElement).render(
           <ProfileOffersFiltersBridge />
           <ProfilePublishingDestinationsCloudBridge />
           <ProfileCommunitiesCloudBridge />
+          <PickupHandoffBridge />
           <KyrubOfficialKnowledgeRuntimeBridge />
           <KyrubActivityObserverBridge />
           <KyrubActivityLogSetupBridge />
