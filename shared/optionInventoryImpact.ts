@@ -5,7 +5,7 @@ import {
   type InventoryCompositionRecord,
   type InventoryConsumptionLine,
   type InventoryOrderItemRecord,
-} from './inventoryConsumption';
+} from './inventoryConsumption.js';
 
 export interface InventorySelectedOptionRef {
   groupId: string;
