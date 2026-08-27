@@ -62,3 +62,9 @@ jobs:
 
       - name: Build
         run: npm run build
+
+      - name: Normalize Vercel serverless ESM dependency graph
+        run: node scripts/normalize-serverless-esm-imports.mjs
+
+      - name: Validate normalized serverless TypeScript graph
+        run: npm run lint
