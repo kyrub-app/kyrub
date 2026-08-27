@@ -1,0 +1,64 @@
+/* Compact social-gallery cards must opt out of the legacy full-bleed contact-card treatment. */
+#profile-social-hub-modal article.kyrub-profile-person-card {
+  min-height: 0 !important;
+  overflow: visible !important;
+  background: transparent !important;
+}
+
+#profile-social-hub-modal article.kyrub-profile-person-card > [data-profile-connected-media='true'] {
+  position: relative !important;
+  inset: auto !important;
+  width: 100% !important;
+  height: auto !important;
+  overflow: visible !important;
+}
+
+#profile-social-hub-modal article.kyrub-profile-person-card > [data-profile-connected-media='true']::after {
+  display: none !important;
+  content: none !important;
+}
+
+#profile-social-hub-modal article.kyrub-profile-person-card > [data-profile-connected-media='true'] > img,
+#profile-social-hub-modal article.kyrub-profile-person-card > [data-profile-connected-media='true'] > span[role='img'] {
+  display: block !important;
+  width: clamp(78px, 24vw, 108px) !important;
+  min-width: clamp(78px, 24vw, 108px) !important;
+  max-width: clamp(78px, 24vw, 108px) !important;
+  height: clamp(78px, 24vw, 108px) !important;
+  min-height: clamp(78px, 24vw, 108px) !important;
+  max-height: clamp(78px, 24vw, 108px) !important;
+  aspect-ratio: 1 / 1 !important;
+  margin: 0 auto !important;
+  flex: 0 0 auto !important;
+  border-radius: 9999px !important;
+  object-fit: cover !important;
+}
+
+#profile-social-hub-modal article.kyrub-profile-person-card > [data-profile-connected-content='true'] {
+  position: relative !important;
+  inset: auto !important;
+  z-index: auto !important;
+  width: 100% !important;
+  min-height: 0 !important;
+  padding: 0 !important;
+  text-align: center !important;
+}
+
+#profile-social-hub-modal article.kyrub-profile-person-card > [data-profile-connected-footer='true'] {
+  position: relative !important;
+  inset: auto !important;
+  z-index: auto !important;
+  margin-top: 0 !important;
+}
+
+@media (max-width: 359px) {
+  #profile-social-hub-modal article.kyrub-profile-person-card > [data-profile-connected-media='true'] > img,
+  #profile-social-hub-modal article.kyrub-profile-person-card > [data-profile-connected-media='true'] > span[role='img'] {
+    width: 96px !important;
+    min-width: 96px !important;
+    max-width: 96px !important;
+    height: 96px !important;
+    min-height: 96px !important;
+    max-height: 96px !important;
+  }
+}
