@@ -11,6 +11,7 @@ export interface OrderDecision {
   reason?: string;
   alternative?: string;
   deliveryProvider?: OrderDeliveryProvider;
+  handoffCode?: string;
 }
 
 export interface AttendanceReviewItem {
