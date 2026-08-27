@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import type {
   KyrubActivityEventAuthority,
   KyrubActivityEventDomain,
@@ -45,6 +46,9 @@ const asRecord = (value: unknown): Record<string, unknown> | null =>
     ? value as Record<string, unknown>
     : null;
 
+const actorReference = (uid: string): string =>
+  createHash('sha256').update(uid).digest('hex').slice(0, 16);
+
 export const receiveAuthorizedKyrubActivityEvents = async (
   authorization: string,
   body: unknown
@@ -81,7 +85,7 @@ export const receiveAuthorizedKyrubActivityEvents = async (
     const safeEvent = {
       schemaVersion: 1,
       id,
-      actorUid: identity.uid,
+      actorRef: actorReference(identity.uid),
       type,
       domain,
       source,
