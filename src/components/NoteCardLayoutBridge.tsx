@@ -79,11 +79,11 @@ const ensurePreviewStyles = (): void => {
     #notes-grid .${PREVIEW_BUTTON_CLASS} {
       display: block;
       width: 100%;
-      margin: 0.8rem 0 -0.15rem;
+      margin: 0;
       border: 0;
       border-top: 1px solid rgb(30 41 59);
-      background: transparent;
-      padding: 0.8rem 0 0.25rem;
+      background: rgb(15 23 42 / 0.72);
+      padding: 0.8rem 0.75rem 0.85rem;
       color: rgb(45 212 191);
       cursor: pointer;
       font-size: 0.625rem;
@@ -91,6 +91,10 @@ const ensurePreviewStyles = (): void => {
       letter-spacing: 0.05em;
       text-align: center;
       text-transform: uppercase;
+    }
+
+    #notes-grid > article > .${PREVIEW_BUTTON_CLASS} {
+      border-radius: 0 0 0.9rem 0.9rem;
     }
 
     #notes-grid .${PREVIEW_BUTTON_CLASS}:hover,
@@ -229,7 +233,7 @@ export function NoteCardLayoutBridge() {
           progress = null;
         }
 
-        let button = contentRoot.querySelector<HTMLButtonElement>(`.${PREVIEW_BUTTON_CLASS}`);
+        let button = card.querySelector<HTMLButtonElement>(`.${PREVIEW_BUTTON_CLASS}`);
         const needsFullView = bodyIsOverflowing || checklistHasHiddenContent;
 
         if (!needsFullView) {
@@ -257,8 +261,8 @@ export function NoteCardLayoutBridge() {
           });
         }
 
-        // O CTA fecha visualmente o card: ele deve ficar abaixo inclusive da faixa de ações.
-        if (contentRoot.lastElementChild !== button) contentRoot.appendChild(button);
+        // O CTA deve ser o último elemento do article, abaixo de todo o conteúdo e da faixa de ações.
+        if (card.lastElementChild !== button) card.appendChild(button);
       });
     };
 
