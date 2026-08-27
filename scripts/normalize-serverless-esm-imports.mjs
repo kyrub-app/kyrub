@@ -92,7 +92,7 @@ for (const file of [...reachable].sort()) {
       const quote = args[2];
       const specifier = args[3];
       const closingQuote = args[4];
-      const suffix = args[5] ?? '';
+      const suffix = typeof args[5] === 'string' ? args[5] : '';
 
       if (RUNTIME_EXTENSIONS.has(path.extname(specifier))) return fullMatch;
       const resolved = resolveRelativeSource(file, specifier);
