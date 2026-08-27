@@ -12,6 +12,7 @@ import {
   clearAuthoritativeActivityRuntimeEvents,
   rememberAuthoritativeActivityRuntimeEvent,
 } from './kyrubAuthoritativeActivityRuntime';
+import { enqueueKyrubActivityEvent } from './kyrubActivityRemote';
 
 export const KYRUB_ACTIVITY_UPDATED_EVENT = 'kyrub-activity-updated';
 
@@ -29,6 +30,7 @@ export const recordUserActivityEvent = (
     input
   );
   rememberAuthoritativeActivityRuntimeEvent(event);
+  enqueueKyrubActivityEvent(event);
 
   window.dispatchEvent(
     new CustomEvent(KYRUB_ACTIVITY_UPDATED_EVENT, {

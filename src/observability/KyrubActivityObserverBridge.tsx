@@ -141,7 +141,25 @@ export function KyrubActivityObserverBridge() {
         return;
       }
 
+      if (button.id === 'kyrub-pdv-pickup-tab') {
+        emitSelection('erp-operation', 'erp:retirada', 'order');
+        return;
+      }
+
+      if (button.id === 'kyrub-pdv-scheduled-filter') {
+        emitSelection('erp-operation', 'erp:agendados', 'order');
+        return;
+      }
+
       const label = compactLabel(button);
+      if (
+        label === 'entregar pedido' &&
+        button.closest('#kyrub-pdv-pickup-queue')
+      ) {
+        emit(eventForScreen('erp:retirada:handoff', 'order'));
+        return;
+      }
+
       const mainNav = button.closest('nav');
       if (
         mainNav &&
