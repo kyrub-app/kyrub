@@ -80,6 +80,22 @@ body {
   white-space: nowrap;
 }
 
+/* Full-note CTA is a uniform card footer: one line, compact and readable on mobile. */
+#notes-grid > article > .kyrub-note-preview-open {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 2.25rem;
+  padding: 0.65rem 0.45rem 0.7rem;
+  overflow: hidden;
+  font-size: clamp(0.5rem, 2.25vw, 0.625rem);
+  line-height: 1;
+  letter-spacing: 0.03em;
+  text-overflow: clip;
+  white-space: nowrap;
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
 /* The composed inventory setup review can be taller than a phone viewport.
    Keep its header/actions reachable and scroll only the review body. */
 [role="dialog"][aria-label^="Confirmar preparo de"] {
