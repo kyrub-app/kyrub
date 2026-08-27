@@ -4,6 +4,7 @@ import type {
   CustomerOrder,
   CustomerOrderStatus,
 } from './customerOrders';
+import { recordCurrentUserActivityEvent } from '../observability/kyrubActivityBrowser';
 
 export type OrderDeliveryProvider = 'kyrub' | 'merchant';
 
@@ -48,15 +49,6 @@ export const isPendingAttendanceApproval = (order: CustomerOrder): boolean =>
   order.status === 'pending' &&
   !order.operatorId.trim();
 
-/**
- * The KDS is an operational surface, not a payment decision-maker.
- *
- * - Dine-in self-service keeps its existing staff-approval gate.
- * - Staff/internal and externally-ingested 99Food orders retain their own
- *   authoritative ingestion/payment semantics.
- * - Kyrub marketplace delivery/pickup orders are only operationally visible
- *   after the backend has materialized them as paid.
- */
 export const isOrderVisibleInKds = (order: CustomerOrder): boolean => {
   if (isPendingAttendanceApproval(order)) return false;
   if (order.source !== 'customer') return true;
@@ -132,6 +124,29 @@ export const buildOrderOriginOptions = (
   );
 };
 
+const orderActivityAction = (
+  nextStatus: CustomerOrderStatus,
+  decision: OrderDecision
+): string => decision.handoffCode ? 'pickup.handoff' : `order.status.${nextStatus}`;
+
+const recordOrderActivity = (
+  type: 'interaction.action_attempted' | 'result.action_succeeded' | 'result.action_failed',
+  orderId: string,
+  nextStatus: CustomerOrderStatus,
+  decision: OrderDecision,
+  source: 'client_observation' | 'authoritative_write_ack'
+): void => {
+  recordCurrentUserActivityEvent({
+    type,
+    domain: 'order',
+    source,
+    screenId: decision.handoffCode ? 'erp:retirada' : 'erp:pedidos',
+    actionId: orderActivityAction(nextStatus, decision),
+    entityType: 'order',
+    entityId: orderId,
+  });
+};
+
 export const updateOrderStatusWithDecision = async (
   storeId: string,
   orderId: string,
@@ -142,25 +157,63 @@ export const updateOrderStatusWithDecision = async (
   if (!user || user.uid !== storeId.trim()) {
     throw new Error('Faça login novamente para atualizar o pedido.');
   }
-  const token = await user.getIdToken();
-  const response = await fetch(
-    `/api/orders/${encodeURIComponent(orderId.trim())}/status`,
-    {
-      method: 'POST',
-      headers: {
-        authorization: `Bearer ${token}`,
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({ status: nextStatus, decision }),
+
+  recordOrderActivity(
+    'interaction.action_attempted',
+    orderId,
+    nextStatus,
+    decision,
+    'client_observation'
+  );
+
+  try {
+    const token = await user.getIdToken();
+    const response = await fetch(
+      `/api/orders/${encodeURIComponent(orderId.trim())}/status`,
+      {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${token}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({ status: nextStatus, decision }),
+      }
+    );
+    if (response.ok) {
+      recordOrderActivity(
+        'result.action_succeeded',
+        orderId,
+        nextStatus,
+        decision,
+        'authoritative_write_ack'
+      );
+      return;
     }
-  );
-  if (response.ok) return;
-  const payload = await response.json().catch(() => ({})) as Record<string, unknown>;
-  throw new Error(
-    typeof payload.error === 'string'
-      ? payload.error
-      : 'Não foi possível atualizar o pedido e o estoque.'
-  );
+    const payload = await response.json().catch(() => ({})) as Record<string, unknown>;
+    recordOrderActivity(
+      'result.action_failed',
+      orderId,
+      nextStatus,
+      decision,
+      'client_observation'
+    );
+    throw new Error(
+      typeof payload.error === 'string'
+        ? payload.error
+        : 'Não foi possível atualizar o pedido e o estoque.'
+    );
+  } catch (error) {
+    if (!(error instanceof Error) || !error.message.includes('Não foi possível atualizar')) {
+      recordOrderActivity(
+        'result.action_failed',
+        orderId,
+        nextStatus,
+        decision,
+        'client_observation'
+      );
+    }
+    throw error;
+  }
 };
 
 export const reviewAttendanceOrder = async (
