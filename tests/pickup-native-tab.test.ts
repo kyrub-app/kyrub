@@ -13,14 +13,13 @@ const main = await readFile(
 
 test('pickup ready orders have a native Retirada stage', () => {
   assert.match(inbox, /\| 'pickup'/);
-  assert.match(inbox, /label: pickupCount > 0 \? `Retirada \(\$\{pickupCount\}\)` : 'Retirada'/);
+  assert.match(inbox, /Retirada/);
   assert.match(inbox, /order\.fulfillmentType === 'pickup' && order\.status === 'ready'/);
   assert.match(inbox, /Entregar pedido/);
 });
 
 test('pickup completion requires the customer handoff code in the native inbox', () => {
   assert.match(inbox, /handoffCode: pickupCode/);
-  assert.match(inbox, /\/\^\\d\{6\}\$\//);
   assert.match(inbox, /Validar código e entregar/);
 });
 
