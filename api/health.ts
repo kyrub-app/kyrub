@@ -60,7 +60,7 @@ export default async function handler(
     return;
   }
 
-  if (transport === 'order-status-execute') {
+  if (transport === 'order-status-execute' || transport === 'pickup-code-read') {
     response.setHeader('Cache-Control', 'no-store, max-age=0');
     response.setHeader('Content-Type', 'application/json; charset=utf-8');
     if ((request.method?.toUpperCase() || 'GET') !== 'POST') {
@@ -78,6 +78,17 @@ export default async function handler(
       ? { ...(request.body as Record<string, unknown>) }
       : {};
     body.orderId = queryValue(request.query?.orderId) || body.orderId;
+
+    if (transport === 'pickup-code-read') {
+      body.storeId = queryValue(request.query?.storeId) || body.storeId;
+      const result = await execution.executeAuthorizedPickupCodeRead(
+        headerValue(request.headers.authorization ?? request.headers.Authorization),
+        body
+      );
+      response.status(result.status).json(result.body);
+      return;
+    }
+
     const result = await execution.executeAuthorizedOrderStatusTransition(
       headerValue(request.headers.authorization ?? request.headers.Authorization),
       body
