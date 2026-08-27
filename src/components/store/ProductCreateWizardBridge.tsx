@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Check, ChevronLeft, ChevronRight, Sparkles } from 'lucide-react';
+import { Check, ChevronLeft, ChevronRight, Sparkles, X } from 'lucide-react';
 import type { GuidedWizardStep } from '../wizard/GuidedWizard';
 
 interface ProductCreateWizardBridgeProps {
@@ -209,6 +209,12 @@ export function ProductCreateWizardBridge({ isOpen, isSaving }: ProductCreateWiz
 
   if (!isOpen || !topHost || !reviewHost || !footerHost) return null;
 
+  const closeWizard = (): void => {
+    if (isSaving) return;
+    const modal = document.getElementById('unified-product-modal');
+    modal?.querySelector<HTMLButtonElement>('button[aria-label="Fechar produto"]')?.click();
+  };
+
   const goNext = (): void => {
     if (!canContinue || isSaving) return;
     if (activeIndex < STEPS.length - 1) {
@@ -228,6 +234,9 @@ export function ProductCreateWizardBridge({ isOpen, isSaving }: ProductCreateWiz
             <span className="font-mono text-[9px] font-black uppercase tracking-[0.16em] text-violet-300">Kyrubia · Cadastro guiado</span>
             <h2 className="mt-1 text-xl font-black text-white">Cadastrar novo item</h2>
           </div>
+          <button type="button" onClick={closeWizard} disabled={isSaving} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-slate-800 bg-slate-900 text-slate-400 disabled:opacity-40" aria-label="Fechar cadastro guiado">
+            <X className="h-4 w-4" />
+          </button>
         </div>
         <div className="mt-4 flex items-center gap-2">
           <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-800"><div className="h-full rounded-full bg-violet-500 transition-all" style={{ width: `${progress}%` }} /></div>
