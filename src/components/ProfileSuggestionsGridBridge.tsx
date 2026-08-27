@@ -3,14 +3,12 @@ import { useEffect } from 'react';
 const STYLE_ID = 'kyrub-profile-suggestions-grid-style';
 const GRID_CLASS = 'kyrub-profile-suggestions-grid';
 const CARD_CLASS = 'kyrub-profile-suggestion-card';
-const PROFILE_CLASS = 'kyrub-profile-suggestion-profile';
-const ACTIONS_CLASS = 'kyrub-profile-suggestion-actions';
 
 const css = `
 .${GRID_CLASS} {
   display: grid !important;
   grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
-  gap: 18px 12px !important;
+  gap: 20px 12px !important;
   align-items: start !important;
 }
 
@@ -22,89 +20,65 @@ const css = `
   align-items: center !important;
   justify-content: flex-start !important;
   gap: 8px !important;
+  overflow: visible !important;
   border: 0 !important;
   border-radius: 0 !important;
   background: transparent !important;
   padding: 0 !important;
-  overflow: visible !important;
 }
 
-.${PROFILE_CLASS} {
-  display: flex !important;
-  width: 100% !important;
-  min-width: 0 !important;
-  flex-direction: column !important;
-  align-items: center !important;
-  gap: 8px !important;
-  text-align: center !important;
-}
-
-.${PROFILE_CLASS} > img,
-.${PROFILE_CLASS} > span[role='img'] {
-  width: clamp(74px, 24vw, 108px) !important;
-  height: clamp(74px, 24vw, 108px) !important;
+.${CARD_CLASS} > img,
+.${CARD_CLASS} > span[role='img'] {
+  width: clamp(78px, 24vw, 108px) !important;
+  height: clamp(78px, 24vw, 108px) !important;
+  aspect-ratio: 1 / 1 !important;
   flex: none !important;
   border-radius: 9999px !important;
   border: 2px solid rgb(30 41 59) !important;
   object-fit: cover !important;
-  box-shadow: 0 8px 28px rgb(2 6 23 / .28) !important;
+  box-shadow: 0 8px 24px rgb(2 6 23 / .28) !important;
 }
 
-.${PROFILE_CLASS} > span:last-child {
+.${CARD_CLASS} > div:not(.absolute) {
   width: 100% !important;
-  min-width: 0 !important;
+  min-height: 0 !important;
+  padding: 0 !important;
+  text-align: center !important;
 }
 
-.${PROFILE_CLASS} strong {
+.${CARD_CLASS} h4 {
   display: block !important;
+  width: 100% !important;
   overflow: hidden !important;
   text-overflow: ellipsis !important;
   white-space: nowrap !important;
   font-size: 11px !important;
   line-height: 1.25 !important;
+  text-align: center !important;
   text-transform: none !important;
   color: rgb(241 245 249) !important;
 }
 
-.${PROFILE_CLASS} strong + span {
+.${CARD_CLASS} p,
+.${CARD_CLASS} div:not(.absolute) > span {
   display: none !important;
 }
 
-.${ACTIONS_CLASS} {
-  display: flex !important;
+.${CARD_CLASS} > button {
+  margin: 0 !important;
   width: 100% !important;
-  align-items: center !important;
-  justify-content: center !important;
-  gap: 4px !important;
-}
-
-.${ACTIONS_CLASS} > button:first-child {
   min-width: 0 !important;
-  flex: 1 1 auto !important;
+  height: 32px !important;
   border-radius: 9999px !important;
-  padding: 7px 7px !important;
+  padding: 0 7px !important;
   font-size: 8px !important;
   line-height: 1 !important;
   white-space: nowrap !important;
 }
 
-.${ACTIONS_CLASS} > button:last-child {
-  position: absolute !important;
-  top: 2px !important;
-  right: 2px !important;
-  width: 28px !important;
-  height: 28px !important;
-  border-radius: 9999px !important;
-  border-color: rgb(255 255 255 / .12) !important;
-  background: rgb(2 6 23 / .72) !important;
-  color: rgb(226 232 240) !important;
-  backdrop-filter: blur(8px) !important;
-}
-
-.${CARD_CLASS} > div.absolute {
-  top: 30px !important;
-  right: 0 !important;
-  z-index: 50 !important;
+.${CARD_CLASS} > button svg {
+  width: 13px !important;
+  height: 13px !important;
 }
 
 @media (max-width: 359px) {
@@ -112,8 +86,8 @@ const css = `
     grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
   }
 
-  .${PROFILE_CLASS} > img,
-  .${PROFILE_CLASS} > span[role='img'] {
+  .${CARD_CLASS} > img,
+  .${CARD_CLASS} > span[role='img'] {
     width: 96px !important;
     height: 96px !important;
   }
@@ -122,47 +96,37 @@ const css = `
 @media (min-width: 640px) {
   .${GRID_CLASS} {
     grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
-    gap: 22px 16px !important;
+    gap: 24px 16px !important;
   }
 }
 `;
 
 function applySuggestionsGrid() {
   const titles = Array.from(document.querySelectorAll('h3'));
-  const title = titles.find(node => node.textContent?.trim() === 'Sugestões');
+  const title = titles.find(node => node.textContent?.trim() === 'Novos contatos');
   if (!title) return;
 
   const modal = title.closest('section');
   if (!modal) return;
 
-  const scroller = Array.from(modal.children).find(child =>
-    child instanceof HTMLElement && child.classList.contains('overflow-y-auto')
-  ) as HTMLElement | undefined;
-  if (!scroller) return;
+  const grids = Array.from(modal.querySelectorAll('div.grid.grid-cols-2')) as HTMLElement[];
+  const suggestionsGrid = grids.find(grid => {
+    const articles = Array.from(grid.querySelectorAll(':scope > article'));
+    if (articles.length === 0) return false;
+    return articles.some(article =>
+      Array.from(article.querySelectorAll('button')).some(button => {
+        const text = button.textContent?.trim().toLocaleLowerCase('pt-BR') ?? '';
+        return text.includes('conectar') || text.includes('cancelar');
+      })
+    );
+  });
 
-  const grid = Array.from(scroller.children).find(child => {
-    if (!(child instanceof HTMLElement)) return false;
-    return child.querySelector(':scope > article') !== null;
-  }) as HTMLElement | undefined;
-  if (!grid) return;
+  if (!suggestionsGrid) return;
 
-  grid.classList.add(GRID_CLASS);
-
-  Array.from(grid.children).forEach(child => {
+  suggestionsGrid.classList.add(GRID_CLASS);
+  Array.from(suggestionsGrid.children).forEach(child => {
     if (!(child instanceof HTMLElement) || child.tagName !== 'ARTICLE') return;
     child.classList.add(CARD_CLASS);
-
-    const directButtons = Array.from(child.children).filter(
-      node => node instanceof HTMLButtonElement
-    ) as HTMLButtonElement[];
-    const profileButton = directButtons[0];
-    profileButton?.classList.add(PROFILE_CLASS);
-
-    const actions = Array.from(child.children).find(node => {
-      if (!(node instanceof HTMLElement) || node.tagName !== 'DIV') return false;
-      return node.querySelector(':scope > button') !== null && !node.classList.contains('absolute');
-    }) as HTMLElement | undefined;
-    actions?.classList.add(ACTIONS_CLASS);
   });
 }
 
