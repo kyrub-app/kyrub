@@ -59,11 +59,14 @@ const pickupSecretReference = (tenantId: string, orderId: string) =>
 const pickupCodeHash = (orderId: string, code: string): string =>
   createHash('sha256').update(`${orderId}:${code}`).digest('hex');
 
-const safeEqualHex = (left: string, right: string): boolean => {
-  if (!/^[a-f0-9]{64}$/i.test(left) || !/^[a-f0-9]{64}$/i.test(right)) {
-    return false;
-  }
-  return timingSafeEqual(Buffer.from(left, 'hex'), Buffer.from(right, 'hex'));
+const safeEqualCode = (
+  orderId: string,
+  expectedCode: string,
+  suppliedCode: string
+): boolean => {
+  const expected = pickupCodeHash(orderId, expectedCode);
+  const supplied = pickupCodeHash(orderId, suppliedCode);
+  return timingSafeEqual(Buffer.from(expected, 'hex'), Buffer.from(supplied, 'hex'));
 };
 
 const handoffRecord = (value: unknown): Record<string, unknown> =>
@@ -159,7 +162,10 @@ const ensurePickupHandoff = async (
   if (data.fulfillmentType !== 'pickup' || data.status !== 'ready') return;
 
   const currentHandoff = handoffRecord(data.handoff);
-  if (clean(currentHandoff.codeHash)) return;
+  const existingSecret = await pickupSecretReference(tenantId, orderId).get();
+  if (existingSecret.exists && clean(currentHandoff.status) === 'awaiting_pickup') {
+    return;
+  }
 
   const buyerId = clean(data.buyerId);
   if (!buyerId) throw new Error('Comprador do pedido não identificado.');
@@ -168,11 +174,10 @@ const ensurePickupHandoff = async (
   const handoff = {
     status: 'awaiting_pickup',
     method: 'pickup_code',
-    codeHash: pickupCodeHash(orderId, code),
     codeHint: code.slice(-2),
     attempts: 0,
     maxAttempts: PICKUP_MAX_ATTEMPTS,
-    readyAt: now,
+    readyAt: clean(currentHandoff.readyAt) || now,
   };
 
   const canonicalStoreId = await canonicalStoreIdFor(tenantId);
@@ -190,7 +195,9 @@ const ensurePickupHandoff = async (
     orderId,
     buyerId,
     code,
-    createdAt: FieldValue.serverTimestamp(),
+    createdAt: existingSecret.exists
+      ? existingSecret.data()?.createdAt ?? FieldValue.serverTimestamp()
+      : FieldValue.serverTimestamp(),
     updatedAt: FieldValue.serverTimestamp(),
   });
   await batch.commit();
@@ -211,12 +218,10 @@ const verifyPickupHandoff = async (
   }
 
   const handoff = handoffRecord(data.handoff);
-  const expectedHash = clean(handoff.codeHash);
   const attempts = typeof handoff.attempts === 'number' && Number.isFinite(handoff.attempts)
     ? Math.max(0, Math.trunc(handoff.attempts))
     : 0;
 
-  if (!expectedHash) throw new Error('Código de retirada ainda não foi emitido. Marque o pedido como pronto novamente.');
   if (attempts >= PICKUP_MAX_ATTEMPTS || clean(handoff.lockedAt)) {
     const error = new Error('Código de retirada bloqueado após muitas tentativas.');
     Object.assign(error, { code: 'PICKUP_CODE_LOCKED' });
@@ -226,7 +231,17 @@ const verifyPickupHandoff = async (
     throw new Error('Informe o código de retirada de 6 dígitos.');
   }
 
-  const valid = safeEqualHex(expectedHash, pickupCodeHash(orderId, suppliedCode));
+  let secretSnapshot = await pickupSecretReference(tenantId, orderId).get();
+  if (!secretSnapshot.exists) {
+    await ensurePickupHandoff(tenantId, orderId);
+    secretSnapshot = await pickupSecretReference(tenantId, orderId).get();
+  }
+  const expectedCode = clean(secretSnapshot.data()?.code);
+  if (!/^\d{6}$/.test(expectedCode)) {
+    throw new Error('Código de retirada ainda não foi emitido.');
+  }
+
+  const valid = safeEqualCode(orderId, expectedCode, suppliedCode);
   if (!valid) {
     const nextAttempts = attempts + 1;
     const now = new Date().toISOString();
@@ -337,7 +352,7 @@ export const mapOrderStatusExecutionError = (
   if (/não encontrado/i.test(message)) {
     return { status: 404, body: { error: message } };
   }
-  if (/não permitida|inválid|não suportado|explique|identificado|Escolha como a entrega|código de retirada|pedido precisa estar pronto|Comprador/i.test(message)) {
+  if (/não permitida|inválid|não suportado|explique|identificado|Escolha como a entrega|código de retirada|pedido precisa estar pronto|Comprador|aguardando retirada/i.test(message)) {
     return { status: 400, body: { error: message } };
   }
   if (/Estoque insuficiente|componente removido/i.test(message)) {
@@ -359,22 +374,31 @@ export const executeAuthorizedPickupCodeRead = async (
     if (!token) throw new Error('AUTH_REQUIRED');
     const identity = await verifyFirebaseIdToken(token);
     const input = parsePickupCodeReadInput(body);
-    const secretSnapshot = await pickupSecretReference(input.storeId, input.orderId).get();
-    if (!secretSnapshot.exists) throw new Error('Código de retirada não encontrado.');
-    const secret = secretSnapshot.data() as Record<string, unknown>;
-    if (clean(secret.buyerId) !== identity.uid) {
-      return { status: 403, body: { error: 'Este código pertence a outro comprador.' } };
-    }
+
     const orderSnapshot = await orderReference(input.storeId, input.orderId).get();
     const order = orderSnapshot.data() as Record<string, unknown> | undefined;
     if (!orderSnapshot.exists || order?.status !== 'ready' || order?.fulfillmentType !== 'pickup') {
       throw new Error('Este pedido não está aguardando retirada.');
     }
+    if (clean(order?.buyerId) !== identity.uid) {
+      return { status: 403, body: { error: 'Este código pertence a outro comprador.' } };
+    }
+
+    let secretSnapshot = await pickupSecretReference(input.storeId, input.orderId).get();
+    if (!secretSnapshot.exists) {
+      await ensurePickupHandoff(input.storeId, input.orderId);
+      secretSnapshot = await pickupSecretReference(input.storeId, input.orderId).get();
+    }
+    const secret = secretSnapshot.data() as Record<string, unknown> | undefined;
+    if (!secretSnapshot.exists || clean(secret?.buyerId) !== identity.uid) {
+      throw new Error('Código de retirada não encontrado.');
+    }
+
     return {
       status: 200,
       body: {
         orderId: input.orderId,
-        code: clean(secret.code),
+        code: clean(secret?.code),
         readyAt: clean(handoffRecord(order?.handoff).readyAt),
       },
     };
