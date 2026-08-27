@@ -12,6 +12,7 @@ import { DeliveryJob, FreelanceJob } from '../../types';
 import { auth, db } from '../../utils/firebase';
 import { loadCachedUserStore } from '../../utils/storePersistence';
 import { getPrimaryUserStoreDocumentPath } from '../../utils/storePaths';
+import { StoreActivationWizard } from '../store/StoreActivationWizard';
 
 interface RendaTabProps {
   deliveries: DeliveryJob[];
@@ -55,6 +56,7 @@ export function RendaTab({
     useState(false);
   const [isCheckingStore, setIsCheckingStore] =
     useState(true);
+  const [activationWizardOpen, setActivationWizardOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -87,8 +89,6 @@ export function RendaTab({
       setHasConfiguredStore(cachedConfigured);
       setIsCheckingStore(!cachedConfigured);
 
-      // A leitura canônica continua sendo feita para atualizar a verdade atual,
-      // mas uma falha ou lentidão do Firestore não pode bloquear a entrada da loja.
       checkTimeout = window.setTimeout(() => {
         if (!cancelled) setIsCheckingStore(false);
       }, STORE_CHECK_TIMEOUT_MS);
@@ -111,8 +111,6 @@ export function RendaTab({
             'Não foi possível verificar a loja do usuário.',
             error
           );
-          // Preserve uma loja já conhecida localmente. A falha da validação
-          // remota não transforma uma loja configurada em loja inexistente.
           if (!cancelled && cachedConfigured) {
             setHasConfiguredStore(true);
           }
@@ -132,182 +130,205 @@ export function RendaTab({
   }, []);
 
   const openRetailerWorkspace = () => {
+    if (!hasConfiguredStore) {
+      setActivationWizardOpen(true);
+      triggerToast('A Kyrubia vai guiar a ativação da sua loja.', 'info');
+      return;
+    }
+
     setIsGestaoOpen(true);
     setGestaoRole('retailer');
+    triggerToast('Abrindo a gestão da sua loja.', 'success');
+  };
+
+  const finishActivation = (_store: unknown, published: boolean) => {
+    setActivationWizardOpen(false);
+    setHasConfiguredStore(true);
+    setGestaoRole('retailer');
+    setIsGestaoOpen(true);
     triggerToast(
-      hasConfiguredStore
-        ? 'Abrindo a gestão da sua loja.'
-        : 'Vamos ativar sua loja no Kyrub Ofertas.',
+      published
+        ? 'Loja ativada e publicada nas Ofertas.'
+        : 'Loja ativada. Você pode publicar a vitrine quando quiser.',
       'success'
     );
   };
 
   return (
-    <div
-      className="space-y-6 animate-fade-in"
-      id="renda-tab-container"
-    >
-      <div className="grid grid-cols-2 gap-4">
-        <div className="flex flex-col justify-between space-y-3 rounded-3xl border border-slate-800 bg-slate-900 p-4">
-          <div className="space-y-3">
-            <div className="flex items-center gap-1.5">
-              <MapPin className="h-4 w-4 text-orange-500" />
-              <h3 className="text-xs font-black uppercase tracking-wider text-white">
-                Kyrub Entregas
-              </h3>
+    <>
+      <div
+        className="space-y-6 animate-fade-in"
+        id="renda-tab-container"
+      >
+        <div className="grid grid-cols-2 gap-4">
+          <div className="flex flex-col justify-between space-y-3 rounded-3xl border border-slate-800 bg-slate-900 p-4">
+            <div className="space-y-3">
+              <div className="flex items-center gap-1.5">
+                <MapPin className="h-4 w-4 text-orange-500" />
+                <h3 className="text-xs font-black uppercase tracking-wider text-white">
+                  Kyrub Entregas
+                </h3>
+              </div>
+              <p className="text-[10px] leading-relaxed text-slate-400">
+                Gerencie entregas locais do seu negócio ou faça
+                fretes sob demanda para faturar no ecossistema.
+              </p>
             </div>
-            <p className="text-[10px] leading-relaxed text-slate-400">
-              Gerencie entregas locais do seu negócio ou faça
-              fretes sob demanda para faturar no ecossistema.
-            </p>
+
+            <div className="space-y-2 pt-1">
+              <button
+                type="button"
+                onClick={() => setShowDeliveryModal(true)}
+                className="w-full rounded-xl bg-orange-600 py-2 text-[10px] font-black uppercase tracking-wider text-white transition-all hover:bg-orange-500"
+                id="btn-solicitar-entrega"
+              >
+                Solicitar entrega
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  setShowFazerEntregasModal(true)
+                }
+                className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-slate-800 bg-slate-950 py-2 text-[10px] font-black uppercase tracking-wider text-orange-400 transition-all hover:text-orange-300"
+                id="btn-fazer-entregas"
+              >
+                <span>Fazer entregas</span>
+                {deliveries.filter(
+                  delivery => delivery.status === 'available'
+                ).length > 0 && (
+                  <span className="rounded-full bg-orange-500 px-1.5 text-[8px] font-bold font-mono text-slate-950">
+                    {
+                      deliveries.filter(
+                        delivery =>
+                          delivery.status === 'available'
+                      ).length
+                    }
+                  </span>
+                )}
+              </button>
+            </div>
           </div>
 
-          <div className="space-y-2 pt-1">
-            <button
-              type="button"
-              onClick={() => setShowDeliveryModal(true)}
-              className="w-full rounded-xl bg-orange-600 py-2 text-[10px] font-black uppercase tracking-wider text-white transition-all hover:bg-orange-500"
-              id="btn-solicitar-entrega"
-            >
-              Solicitar entrega
-            </button>
-            <button
-              type="button"
-              onClick={() =>
-                setShowFazerEntregasModal(true)
-              }
-              className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-slate-800 bg-slate-950 py-2 text-[10px] font-black uppercase tracking-wider text-orange-400 transition-all hover:text-orange-300"
-              id="btn-fazer-entregas"
-            >
-              <span>Fazer entregas</span>
-              {deliveries.filter(
-                delivery => delivery.status === 'available'
-              ).length > 0 && (
-                <span className="rounded-full bg-orange-500 px-1.5 text-[8px] font-bold font-mono text-slate-950">
-                  {
-                    deliveries.filter(
-                      delivery =>
-                        delivery.status === 'available'
-                    ).length
-                  }
-                </span>
-              )}
-            </button>
+          <div className="flex flex-col justify-between space-y-3 rounded-3xl border border-slate-800 bg-slate-900 p-4">
+            <div className="space-y-3">
+              <div className="flex items-center gap-1.5">
+                <Briefcase className="h-4 w-4 text-teal-400" />
+                <h3 className="text-xs font-black uppercase tracking-wider text-white">
+                  Kyrub Freelas
+                </h3>
+              </div>
+              <p className="text-[10px] leading-relaxed text-slate-400">
+                Contrate profissionais para sua loja ou preste
+                serviços especializados para negócios locais.
+              </p>
+            </div>
+
+            <div className="space-y-2 pt-1">
+              <button
+                type="button"
+                onClick={() => setShowFreelaModal(true)}
+                className="w-full rounded-xl bg-teal-500 py-2 text-[10px] font-black uppercase tracking-wider text-slate-950 transition-all hover:bg-teal-400"
+                id="btn-solicitar-freela"
+              >
+                Solicitar freela
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  setShowFazerFreelasModal(true)
+                }
+                className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-slate-800 bg-slate-950 py-2 text-[10px] font-black uppercase tracking-wider text-teal-400 transition-all hover:text-teal-300"
+                id="btn-fazer-freela"
+              >
+                <span>Fazer freela</span>
+                {freelanceJobs.filter(
+                  job => job.status === 'open'
+                ).length > 0 && (
+                  <span className="rounded-full bg-teal-500 px-1.5 text-[8px] font-bold font-mono text-slate-950">
+                    {
+                      freelanceJobs.filter(
+                        job =>
+                          job.status === 'open'
+                      ).length
+                    }
+                  </span>
+                )}
+              </button>
+            </div>
           </div>
         </div>
 
-        <div className="flex flex-col justify-between space-y-3 rounded-3xl border border-slate-800 bg-slate-900 p-4">
-          <div className="space-y-3">
-            <div className="flex items-center gap-1.5">
-              <Briefcase className="h-4 w-4 text-teal-400" />
-              <h3 className="text-xs font-black uppercase tracking-wider text-white">
-                Kyrub Freelas
-              </h3>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <section
+            className="flex flex-col justify-between space-y-4 rounded-3xl border border-slate-800 bg-slate-900 p-5"
+            id="user-store-card"
+          >
+            <div className="space-y-3">
+              <div className="flex items-center gap-1.5">
+                <ShoppingBag className="h-4 w-4 text-orange-500" />
+                <h3 className="text-xs font-black uppercase tracking-wider text-white">
+                  Kyrub Ofertas
+                </h3>
+              </div>
+              <p className="text-[10px] leading-relaxed text-slate-400">
+                {hasConfiguredStore
+                  ? 'Gerencie seus produtos, configurações e a loja exibida na guia Ofertas do Kyrub.'
+                  : 'Cadastre seus produtos, configure e publique sua loja na guia Ofertas do Kyrub.'}
+              </p>
             </div>
-            <p className="text-[10px] leading-relaxed text-slate-400">
-              Contrate profissionais para sua loja ou preste
-              serviços especializados para negócios locais.
-            </p>
-          </div>
 
-          <div className="space-y-2 pt-1">
             <button
               type="button"
-              onClick={() => setShowFreelaModal(true)}
-              className="w-full rounded-xl bg-teal-500 py-2 text-[10px] font-black uppercase tracking-wider text-slate-950 transition-all hover:bg-teal-400"
-              id="btn-solicitar-freela"
+              onClick={openRetailerWorkspace}
+              disabled={isCheckingStore}
+              className="w-full rounded-xl bg-orange-600 py-2.5 text-[10px] font-black uppercase tracking-wider text-slate-950 transition-all hover:bg-orange-500 disabled:cursor-wait disabled:opacity-60"
+              id="btn-criar-loja-ofertas"
             >
-              Solicitar freela
+              {isCheckingStore
+                ? 'Verificando loja...'
+                : hasConfiguredStore
+                  ? 'Acessar loja'
+                  : 'Ativar loja'}
             </button>
+          </section>
+
+          <section className="flex flex-col justify-between space-y-4 rounded-3xl border border-teal-500/20 bg-slate-900 p-5">
+            <div className="space-y-3">
+              <div className="flex items-center gap-1.5">
+                <BadgeCheck className="h-4 w-4 text-teal-400" />
+                <h3 className="text-xs font-black uppercase tracking-wider text-white">
+                  Kyrub Formaliza
+                </h3>
+              </div>
+              <p className="text-[10px] leading-relaxed text-slate-400">
+                Acesse nossas ferramentas auxiliadoras para
+                formalizar seu negócio.
+              </p>
+            </div>
+
             <button
               type="button"
               onClick={() =>
-                setShowFazerFreelasModal(true)
+                triggerToast(
+                  'As ferramentas do Kyrub Formaliza serão disponibilizadas nesta área.',
+                  'info'
+                )
               }
-              className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-slate-800 bg-slate-950 py-2 text-[10px] font-black uppercase tracking-wider text-teal-400 transition-all hover:text-teal-300"
-              id="btn-fazer-freela"
+              className="flex w-full items-center justify-center gap-2 rounded-xl border border-teal-500/30 bg-teal-500/10 py-2.5 text-[10px] font-black uppercase tracking-wider text-teal-300 transition-all hover:bg-teal-500/20"
+              id="btn-kyrub-formaliza"
             >
-              <span>Fazer freela</span>
-              {freelanceJobs.filter(
-                job => job.status === 'open'
-              ).length > 0 && (
-                <span className="rounded-full bg-teal-500 px-1.5 text-[8px] font-bold font-mono text-slate-950">
-                  {
-                    freelanceJobs.filter(
-                      job => job.status === 'open'
-                    ).length
-                  }
-                </span>
-              )}
+              <FileCheck2 className="h-3.5 w-3.5" />
+              <span>Acessar ferramentas</span>
             </button>
-          </div>
+          </section>
         </div>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2">
-        <section
-          className="flex flex-col justify-between space-y-4 rounded-3xl border border-slate-800 bg-slate-900 p-5"
-          id="user-store-card"
-        >
-          <div className="space-y-3">
-            <div className="flex items-center gap-1.5">
-              <ShoppingBag className="h-4 w-4 text-orange-500" />
-              <h3 className="text-xs font-black uppercase tracking-wider text-white">
-                Kyrub Ofertas
-              </h3>
-            </div>
-            <p className="text-[10px] leading-relaxed text-slate-400">
-              {hasConfiguredStore
-                ? 'Gerencie seus produtos, configurações e a loja exibida na guia Ofertas do Kyrub.'
-                : 'Cadastre seus produtos, configure e publique sua loja na guia Ofertas do Kyrub.'}
-            </p>
-          </div>
-
-          <button
-            type="button"
-            onClick={openRetailerWorkspace}
-            disabled={isCheckingStore}
-            className="w-full rounded-xl bg-orange-600 py-2.5 text-[10px] font-black uppercase tracking-wider text-slate-950 transition-all hover:bg-orange-500 disabled:cursor-wait disabled:opacity-60"
-            id="btn-criar-loja-ofertas"
-          >
-            {isCheckingStore
-              ? 'Verificando loja...'
-              : hasConfiguredStore
-                ? 'Acessar loja'
-                : 'Ativar loja'}
-          </button>
-        </section>
-
-        <section className="flex flex-col justify-between space-y-4 rounded-3xl border border-teal-500/20 bg-slate-900 p-5">
-          <div className="space-y-3">
-            <div className="flex items-center gap-1.5">
-              <BadgeCheck className="h-4 w-4 text-teal-400" />
-              <h3 className="text-xs font-black uppercase tracking-wider text-white">
-                Kyrub Formaliza
-              </h3>
-            </div>
-            <p className="text-[10px] leading-relaxed text-slate-400">
-              Acesse nossas ferramentas auxiliadoras para
-              formalizar seu negócio.
-            </p>
-          </div>
-
-          <button
-            type="button"
-            onClick={() =>
-              triggerToast(
-                'As ferramentas do Kyrub Formaliza serão disponibilizadas nesta área.',
-                'info'
-              )
-            }
-            className="flex w-full items-center justify-center gap-2 rounded-xl border border-teal-500/30 bg-teal-500/10 py-2.5 text-[10px] font-black uppercase tracking-wider text-teal-300 transition-all hover:bg-teal-500/20"
-            id="btn-kyrub-formaliza"
-          >
-            <FileCheck2 className="h-3.5 w-3.5" />
-            <span>Acessar ferramentas</span>
-          </button>
-        </section>
-      </div>
-    </div>
+      <StoreActivationWizard
+        open={activationWizardOpen}
+        onClose={() => setActivationWizardOpen(false)}
+        onActivated={finishActivation}
+      />
+    </>
   );
 }
