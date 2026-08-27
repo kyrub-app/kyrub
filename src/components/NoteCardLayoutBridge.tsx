@@ -16,6 +16,29 @@ const ensurePreviewStyles = (): void => {
   const style = document.createElement('style');
   style.id = STYLE_ELEMENT_ID;
   style.textContent = `
+    #notes-grid {
+      display: block !important;
+      column-count: 2;
+      column-gap: 0.9rem;
+    }
+
+    #notes-grid > article {
+      display: inline-block !important;
+      width: 100% !important;
+      height: auto !important;
+      min-height: 0 !important;
+      margin: 0 0 0.9rem !important;
+      vertical-align: top;
+      break-inside: avoid;
+      -webkit-column-break-inside: avoid;
+      page-break-inside: avoid;
+    }
+
+    #notes-grid > article > :first-child {
+      height: auto !important;
+      min-height: 0 !important;
+    }
+
     #notes-grid > article [${PREVIEW_CONTENT_ATTRIBUTE}="true"] {
       max-height: 11rem;
       overflow: hidden;
@@ -49,9 +72,32 @@ const ensurePreviewStyles = (): void => {
       text-underline-offset: 0.2rem;
     }
 
+    @media (max-width: 359px) {
+      #notes-grid {
+        column-count: 1;
+      }
+    }
+
     @media (min-width: 640px) {
       #notes-grid > article [${PREVIEW_CONTENT_ATTRIBUTE}="true"] {
         max-height: 14rem;
+      }
+    }
+
+    @media (min-width: 768px) {
+      #notes-grid {
+        column-count: 3;
+        column-gap: 1rem;
+      }
+
+      #notes-grid > article {
+        margin-bottom: 1rem !important;
+      }
+    }
+
+    @media (min-width: 1200px) {
+      #notes-grid {
+        column-count: 4;
       }
     }
   `;
