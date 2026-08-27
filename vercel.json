@@ -1,6 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "buildCommand": "node scripts/normalize-serverless-esm-imports.mjs && npm run build",
+  "buildCommand": "npm run build && node scripts/normalize-serverless-esm-imports.mjs && npm run lint",
   "git": {
     "deploymentEnabled": {
       "main": true,
