@@ -6,6 +6,7 @@ import { KyrubAiConversationCloudSyncGate } from './components/KyrubAiConversati
 import { OfficialKnowledgeSemanticSetupBridge } from './components/OfficialKnowledgeSemanticSetupBridge';
 import { OfficialKnowledgeSetupBridge } from './components/OfficialKnowledgeSetupBridge';
 import { BuyerPickupCodeBridge } from './components/store/BuyerPickupCodeBridge';
+import { PickupPdvNavigationBridge } from './components/store/PickupPdvNavigationBridge';
 import { ProfileCommunitiesCloudBridge } from './components/ProfileCommunitiesCloudBridge';
 import { ProfileConnectedCardsPolishBridge } from './components/ProfileConnectedCardsPolishBridge';
 import { ProfileConnectedImageFitBridge } from './components/ProfileConnectedImageFitBridge';
@@ -41,6 +42,7 @@ createRoot(rootElement).render(
           <ProfilePublishingDestinationsCloudBridge />
           <ProfileCommunitiesCloudBridge />
           <BuyerPickupCodeBridge />
+          <PickupPdvNavigationBridge />
           <KyrubOfficialKnowledgeRuntimeBridge />
           <KyrubActivityObserverBridge />
           <KyrubActivityLogSetupBridge />
