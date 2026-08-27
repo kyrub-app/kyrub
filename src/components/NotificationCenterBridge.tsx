@@ -15,9 +15,10 @@ export interface KyrubNotificationPayload {
   sourceId?: string;
 }
 
-interface KyrubNotification extends KyrubNotificationPayload {
+interface KyrubNotification extends Omit<KyrubNotificationPayload, 'sourceId'> {
   id: string;
   createdAt: string;
+  sourceId: string | undefined;
   readAt: string | null;
 }
 
@@ -143,6 +144,7 @@ export function NotificationCenterBridge() {
         const next: KyrubNotification[] = [
           {
             ...payload,
+            sourceId: payload.sourceId,
             id: payload.id ?? crypto.randomUUID(),
             createdAt: payload.createdAt ?? new Date().toISOString(),
             readAt: null,
