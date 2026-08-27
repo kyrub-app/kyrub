@@ -9,48 +9,13 @@ interface ProductCreateWizardBridgeProps {
 }
 
 const STEPS: GuidedWizardStep[] = [
-  {
-    id: 'identity',
-    label: 'Etapa 1',
-    title: 'Identificação',
-    prompt: 'Vamos começar pelo básico: nome do item e onde ele ficará organizado no seu catálogo.',
-  },
-  {
-    id: 'presentation',
-    label: 'Etapa 2',
-    title: 'Apresentação',
-    prompt: 'Agora deixe o item fácil de reconhecer: imagem e uma descrição curta para a vitrine.',
-  },
-  {
-    id: 'sales',
-    label: 'Etapa 3',
-    title: 'Preço e venda',
-    prompt: 'Defina como este item será vendido, incluindo preço, observações e opcionais.',
-  },
-  {
-    id: 'production',
-    label: 'Etapa 4',
-    title: 'Produção',
-    prompt: 'Escolha para qual estação de preparo este item deve ser encaminhado quando houver um pedido.',
-  },
-  {
-    id: 'inventory',
-    label: 'Etapa 5',
-    title: 'Estoque e ficha técnica',
-    prompt: 'Se o item consumir insumos, monte aqui a composição. Para serviços ou itens sem composição, você pode apenas continuar.',
-  },
-  {
-    id: 'fiscal',
-    label: 'Etapa 6',
-    title: 'Dados fiscais',
-    prompt: 'Esta etapa é opcional. Preencha a classificação fiscal se quiser preparar este item para emissão de documentos no futuro.',
-  },
-  {
-    id: 'review',
-    label: 'Etapa 7',
-    title: 'Revisão',
-    prompt: 'Confira o essencial antes de cadastrar. Você pode voltar a qualquer etapa para ajustar alguma informação.',
-  },
+  { id: 'identity', label: 'Etapa 1', title: 'Identificação', prompt: 'Vamos começar pelo básico: nome do item e onde ele ficará organizado no seu catálogo.' },
+  { id: 'presentation', label: 'Etapa 2', title: 'Apresentação', prompt: 'Agora deixe o item fácil de reconhecer: imagem e uma descrição curta para a vitrine.' },
+  { id: 'sales', label: 'Etapa 3', title: 'Preço e venda', prompt: 'Defina como este item será vendido, incluindo preço, observações e opcionais.' },
+  { id: 'production', label: 'Etapa 4', title: 'Produção', prompt: 'Escolha para qual estação de preparo este item deve ser encaminhado quando houver um pedido.' },
+  { id: 'inventory', label: 'Etapa 5', title: 'Estoque e ficha técnica', prompt: 'Se o item consumir insumos, monte aqui a composição. Para serviços ou itens sem composição, você pode apenas continuar.' },
+  { id: 'fiscal', label: 'Etapa 6', title: 'Dados fiscais', prompt: 'Esta etapa é opcional. Preencha a classificação fiscal se quiser preparar este item para emissão de documentos no futuro.' },
+  { id: 'review', label: 'Etapa 7', title: 'Revisão', prompt: 'Confira o essencial antes de cadastrar. Você pode voltar a qualquer etapa para ajustar alguma informação.' },
 ];
 
 const setElementVisible = (element: Element | null, visible: boolean): void => {
@@ -65,21 +30,10 @@ const setElementVisible = (element: Element | null, visible: boolean): void => {
 };
 
 const findTabButton = (modal: HTMLElement, label: string): HTMLButtonElement | null =>
-  Array.from(
-    modal.querySelectorAll<HTMLButtonElement>('#unified-product-modal-tabs button')
-  ).find(button =>
-    button.textContent?.toLocaleLowerCase('pt-BR').includes(label)
-  ) ?? null;
+  Array.from(modal.querySelectorAll<HTMLButtonElement>('#unified-product-modal-tabs button'))
+    .find(button => button.textContent?.toLocaleLowerCase('pt-BR').includes(label)) ?? null;
 
-const readValue = (root: ParentNode, selector: string): string => {
-  const field = root.querySelector<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>(selector);
-  return field?.value?.trim() ?? '';
-};
-
-export function ProductCreateWizardBridge({
-  isOpen,
-  isSaving,
-}: ProductCreateWizardBridgeProps) {
+export function ProductCreateWizardBridge({ isOpen, isSaving }: ProductCreateWizardBridgeProps) {
   const [activeIndex, setActiveIndex] = useState(0);
   const [topHost, setTopHost] = useState<HTMLElement | null>(null);
   const [reviewHost, setReviewHost] = useState<HTMLElement | null>(null);
@@ -177,21 +131,16 @@ export function ProductCreateWizardBridge({
     if (!modal) return;
 
     const needsInventory = activeStep.id === 'inventory';
-    const tabButton = findTabButton(modal, needsInventory ? 'estoque' : 'itens da vitrine');
-    tabButton?.click();
+    findTabButton(modal, needsInventory ? 'estoque' : 'itens da vitrine')?.click();
 
     window.setTimeout(() => {
       const showcase = modal.querySelector<HTMLElement>('#product-showcase-tab');
       const inventory = modal.querySelector<HTMLElement>('#product-inventory-tab');
-      const fiscal = modal.querySelector<HTMLElement>('#product-fiscal-data-section');
+      const fiscal = modal.querySelector<HTMLDetailsElement>('#product-fiscal-data-section');
       const review = modal.querySelector<HTMLElement>('[data-product-create-wizard-review]');
 
-      if (inventory) {
-        setElementVisible(inventory, activeStep.id === 'inventory');
-      }
-      if (review) {
-        setElementVisible(review, activeStep.id === 'review');
-      }
+      if (inventory) setElementVisible(inventory, activeStep.id === 'inventory');
+      if (review) setElementVisible(review, activeStep.id === 'review');
       if (!showcase) return;
 
       const children = Array.from(showcase.children).filter(
@@ -216,8 +165,7 @@ export function ProductCreateWizardBridge({
   const reviewData = useMemo(() => {
     void revision;
     const modal = document.getElementById('unified-product-modal');
-    if (!modal) return { name: '', price: '', category: '', description: '', station: '' };
-    const showcase = modal.querySelector<HTMLElement>('#product-showcase-tab');
+    const showcase = modal?.querySelector<HTMLElement>('#product-showcase-tab');
     if (!showcase) return { name: '', price: '', category: '', description: '', station: '' };
     const inputs = Array.from(showcase.querySelectorAll<HTMLInputElement>('input'));
     const name = inputs.find(input => input.placeholder?.includes('Nome do produto'))?.value.trim() ?? '';
@@ -239,8 +187,7 @@ export function ProductCreateWizardBridge({
     void revision;
     if (!isOpen) return false;
     const modal = document.getElementById('unified-product-modal');
-    if (!modal) return false;
-    const showcase = modal.querySelector<HTMLElement>('#product-showcase-tab');
+    const showcase = modal?.querySelector<HTMLElement>('#product-showcase-tab');
     if (!showcase) return activeStep.id === 'inventory';
 
     if (activeStep.id === 'identity') {
@@ -252,8 +199,7 @@ export function ProductCreateWizardBridge({
 
     if (activeStep.id === 'sales') {
       const complimentary = showcase.querySelector<HTMLInputElement>('#product-complimentary-control input[type="checkbox"]')?.checked === true;
-      const priceInput = Array.from(showcase.querySelectorAll<HTMLInputElement>('input'))
-        .find(input => input.type === 'number');
+      const priceInput = Array.from(showcase.querySelectorAll<HTMLInputElement>('input')).find(input => input.type === 'number');
       const parsedPrice = Number.parseFloat((priceInput?.value ?? '').replace(',', '.'));
       return complimentary || (Number.isFinite(parsedPrice) && parsedPrice >= 0);
     }
@@ -269,8 +215,7 @@ export function ProductCreateWizardBridge({
       setActiveIndex(current => current + 1);
       return;
     }
-    document
-      .getElementById('save-unified-product-button')
+    document.getElementById('save-unified-product-button')
       ?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
   };
 
@@ -278,20 +223,14 @@ export function ProductCreateWizardBridge({
     <div className="mb-4 overflow-hidden rounded-3xl border border-violet-500/20 bg-slate-950">
       <div className="border-b border-slate-800 p-4">
         <div className="flex items-start gap-3">
-          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-violet-500/10 text-violet-300">
-            <Sparkles className="h-5 w-5" />
-          </span>
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-violet-500/10 text-violet-300"><Sparkles className="h-5 w-5" /></span>
           <div className="min-w-0 flex-1">
-            <span className="font-mono text-[9px] font-black uppercase tracking-[0.16em] text-violet-300">
-              Kyrubia · Cadastro guiado
-            </span>
+            <span className="font-mono text-[9px] font-black uppercase tracking-[0.16em] text-violet-300">Kyrubia · Cadastro guiado</span>
             <h2 className="mt-1 text-xl font-black text-white">Cadastrar novo item</h2>
           </div>
         </div>
         <div className="mt-4 flex items-center gap-2">
-          <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-800">
-            <div className="h-full rounded-full bg-violet-500 transition-all" style={{ width: `${progress}%` }} />
-          </div>
+          <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-800"><div className="h-full rounded-full bg-violet-500 transition-all" style={{ width: `${progress}%` }} /></div>
           <span className="font-mono text-[9px] font-black text-slate-500">{activeIndex + 1}/{STEPS.length}</span>
         </div>
       </div>
@@ -325,38 +264,19 @@ export function ProductCreateWizardBridge({
           <p className="mt-1 text-xs leading-relaxed text-slate-300">{reviewData.description}</p>
         </div>
       )}
-      <p className="text-[10px] leading-relaxed text-slate-500">
-        Estoque, ficha técnica, opcionais e dados fiscais permanecem no mesmo cadastro e serão validados pela rotina original ao concluir.
-      </p>
+      <p className="text-[10px] leading-relaxed text-slate-500">Estoque, ficha técnica, opcionais e dados fiscais permanecem no mesmo cadastro e serão validados pela rotina original ao concluir.</p>
     </div>,
     reviewHost
   );
 
   const footer = createPortal(
     <div className="mt-4 grid grid-cols-[auto_1fr] gap-3 border-t border-slate-800 pt-4">
-      <button
-        type="button"
-        onClick={() => setActiveIndex(current => Math.max(0, current - 1))}
-        disabled={activeIndex === 0 || isSaving}
-        className="flex min-h-12 items-center justify-center gap-2 rounded-2xl border border-slate-700 bg-slate-950 px-4 text-xs font-black uppercase text-slate-300 disabled:opacity-35"
-      >
-        <ChevronLeft className="h-4 w-4" />
-        Voltar
+      <button type="button" onClick={() => setActiveIndex(current => Math.max(0, current - 1))} disabled={activeIndex === 0 || isSaving} className="flex min-h-12 items-center justify-center gap-2 rounded-2xl border border-slate-700 bg-slate-950 px-4 text-xs font-black uppercase text-slate-300 disabled:opacity-35">
+        <ChevronLeft className="h-4 w-4" />Voltar
       </button>
-      <button
-        type="button"
-        onClick={goNext}
-        disabled={!canContinue || isSaving}
-        className="flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-violet-500 px-4 text-xs font-black uppercase text-white disabled:opacity-40"
-      >
-        {isSaving
-          ? 'Salvando...'
-          : activeIndex === STEPS.length - 1
-            ? 'Cadastrar item'
-            : 'Continuar'}
-        {activeIndex === STEPS.length - 1
-          ? <Check className="h-4 w-4" />
-          : <ChevronRight className="h-4 w-4" />}
+      <button type="button" onClick={goNext} disabled={!canContinue || isSaving} className="flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-violet-500 px-4 text-xs font-black uppercase text-white disabled:opacity-40">
+        {isSaving ? 'Salvando...' : activeIndex === STEPS.length - 1 ? 'Cadastrar item' : 'Continuar'}
+        {activeIndex === STEPS.length - 1 ? <Check className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
       </button>
     </div>,
     footerHost
