@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { KeyRound, LoaderCircle } from 'lucide-react';
 import { onAuthStateChanged, type User } from 'firebase/auth';
 import { auth } from '../../utils/firebase';
+import { recordCurrentUserActivityEvent } from '../../observability/kyrubActivityBrowser';
 import { resolveKyrubAppRoute } from '../../utils/appRoutes';
 import { subscribeToPublishedStorefrontBySlug } from '../../utils/publicStorefront';
 import {
@@ -72,6 +73,7 @@ const BuyerPickupCode = ({ user, slug }: { user: User; slug: string }) => {
   const [codes, setCodes] = useState<Record<string, PickupCodePayload>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [host, setHost] = useState<HTMLElement | null>(null);
+  const requestedOrderIds = useRef(new Set<string>());
 
   useEffect(() =>
     subscribeToPublishedStorefrontBySlug(
@@ -82,6 +84,9 @@ const BuyerPickupCode = ({ user, slug }: { user: User; slug: string }) => {
 
   useEffect(() => {
     setOrders([]);
+    requestedOrderIds.current.clear();
+    setCodes({});
+    setErrors({});
     if (!storeId) return;
     return subscribeToStoreCustomerOrders(
       storeId,
@@ -94,23 +99,58 @@ const BuyerPickupCode = ({ user, slug }: { user: User; slug: string }) => {
 
   useEffect(() => {
     const activeIds = new Set(orders.map(order => order.id));
-    setCodes(current => Object.fromEntries(
-      Object.entries(current).filter(([id]) => activeIds.has(id))
-    ));
-    setErrors(current => Object.fromEntries(
-      Object.entries(current).filter(([id]) => activeIds.has(id))
-    ));
-
-    for (const order of orders) {
-      if (codes[order.id] || errors[order.id] || !storeId) continue;
-      void readPickupCode(user, storeId, order.id)
-        .then(payload => setCodes(current => ({ ...current, [order.id]: payload })))
-        .catch(error => setErrors(current => ({
-          ...current,
-          [order.id]: error instanceof Error ? error.message : 'Código indisponível.',
-        })));
+    for (const id of [...requestedOrderIds.current]) {
+      if (!activeIds.has(id)) requestedOrderIds.current.delete(id);
     }
-  }, [codes, errors, orders, storeId, user]);
+    setCodes(current => {
+      const entries = Object.entries(current).filter(([id]) => activeIds.has(id));
+      return entries.length === Object.keys(current).length
+        ? current
+        : Object.fromEntries(entries);
+    });
+    setErrors(current => {
+      const entries = Object.entries(current).filter(([id]) => activeIds.has(id));
+      return entries.length === Object.keys(current).length
+        ? current
+        : Object.fromEntries(entries);
+    });
+  }, [orders]);
+
+  useEffect(() => {
+    if (!storeId) return;
+    for (const order of orders) {
+      if (requestedOrderIds.current.has(order.id)) continue;
+      requestedOrderIds.current.add(order.id);
+      void readPickupCode(user, storeId, order.id)
+        .then(payload => {
+          setCodes(current => ({ ...current, [order.id]: payload }));
+          recordCurrentUserActivityEvent({
+            type: 'result.action_succeeded',
+            domain: 'order',
+            source: 'authoritative_write_ack',
+            screenId: 'storefront:pickup',
+            actionId: 'pickup.code_read',
+            entityType: 'order',
+            entityId: order.id,
+          });
+        })
+        .catch(error => {
+          setErrors(current => ({
+            ...current,
+            [order.id]: error instanceof Error ? error.message : 'Código indisponível.',
+          }));
+          recordCurrentUserActivityEvent({
+            type: 'result.action_failed',
+            domain: 'order',
+            source: 'client_observation',
+            screenId: 'storefront:pickup',
+            actionId: 'pickup.code_read',
+            entityType: 'order',
+            entityId: order.id,
+          });
+        });
+    }
+  }, [orders, storeId, user]);
 
   useEffect(() => {
     let cancelled = false;
