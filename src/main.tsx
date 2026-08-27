@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import App from './App.tsx';
 import { AppErrorBoundary } from './components/AppErrorBoundary';
 import { KyrubAiConversationCloudSyncGate } from './components/KyrubAiConversationCloudSyncGate';
+import { LegacyKdsStationFilterCleanupBridge } from './components/LegacyKdsStationFilterCleanupBridge';
 import { NotificationCenterBridge } from './components/NotificationCenterBridge';
 import { OfficialKnowledgeSemanticSetupBridge } from './components/OfficialKnowledgeSemanticSetupBridge';
 import { OfficialKnowledgeSetupBridge } from './components/OfficialKnowledgeSetupBridge';
@@ -46,6 +47,7 @@ createRoot(rootElement).render(
           <ProfileCommunitiesCloudBridge />
           <ProfileSuggestionsGridBridge />
           <NotificationCenterBridge />
+          <LegacyKdsStationFilterCleanupBridge />
           <BuyerPickupCodeBridge />
           <PickupPdvNavigationBridge />
           <KyrubOfficialKnowledgeRuntimeBridge />
