@@ -8,6 +8,7 @@ import {
   persistProductFiscalProfile,
   type ProductFiscalEditorState,
 } from '../../utils/productFiscal';
+import { ProductCreateWizardBridge } from './ProductCreateWizardBridge';
 import { ProductFiscalFieldsBridge } from './ProductFiscalFieldsBridge';
 import { ProductPricingFieldsBridge } from './ProductPricingFieldsBridge';
 import {
@@ -92,6 +93,12 @@ export const ProductEditorModal: React.FC<ProductEditorModalProps> = ({
         isSaving={isSaving}
         onSave={handleSave}
       />
+      {mode === 'create' && (
+        <ProductCreateWizardBridge
+          isOpen={resolvedOpen}
+          isSaving={isSaving}
+        />
+      )}
       <ProductFiscalFieldsBridge
         isOpen={resolvedOpen}
         product={product}
