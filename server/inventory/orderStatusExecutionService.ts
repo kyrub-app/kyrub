@@ -66,6 +66,11 @@ const safeEqualHex = (left: string, right: string): boolean => {
   return timingSafeEqual(Buffer.from(left, 'hex'), Buffer.from(right, 'hex'));
 };
 
+const handoffRecord = (value: unknown): Record<string, unknown> =>
+  value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+
 const parseInput = (body: unknown): OrderStatusExecutionInput => {
   const candidate = body && typeof body === 'object' && !Array.isArray(body)
     ? body as Record<string, unknown>
@@ -153,9 +158,7 @@ const ensurePickupHandoff = async (
   const data = snapshot.data() as Record<string, unknown>;
   if (data.fulfillmentType !== 'pickup' || data.status !== 'ready') return;
 
-  const currentHandoff = data.handoff && typeof data.handoff === 'object' && !Array.isArray(data.handoff)
-    ? data.handoff as Record<string, unknown>
-    : {};
+  const currentHandoff = handoffRecord(data.handoff);
   if (clean(currentHandoff.codeHash)) return;
 
   const buyerId = clean(data.buyerId);
@@ -207,9 +210,7 @@ const verifyPickupHandoff = async (
     throw new Error('O pedido precisa estar pronto antes da retirada.');
   }
 
-  const handoff = data.handoff && typeof data.handoff === 'object' && !Array.isArray(data.handoff)
-    ? data.handoff as Record<string, unknown>
-    : {};
+  const handoff = handoffRecord(data.handoff);
   const expectedHash = clean(handoff.codeHash);
   const attempts = typeof handoff.attempts === 'number' && Number.isFinite(handoff.attempts)
     ? Math.max(0, Math.trunc(handoff.attempts))
@@ -229,15 +230,16 @@ const verifyPickupHandoff = async (
   if (!valid) {
     const nextAttempts = attempts + 1;
     const now = new Date().toISOString();
-    const payload: Record<string, unknown> = {
-      'handoff.attempts': nextAttempts,
-      'handoff.lastFailedAt': now,
-      updatedAt: now,
+    const nextHandoff: Record<string, unknown> = {
+      ...handoff,
+      attempts: nextAttempts,
+      lastFailedAt: now,
+      ...(nextAttempts >= PICKUP_MAX_ATTEMPTS ? { lockedAt: now } : {}),
     };
-    if (nextAttempts >= PICKUP_MAX_ATTEMPTS) {
-      payload['handoff.lockedAt'] = now;
-    }
-    await persistOrderPayload(tenantId, orderId, payload);
+    await persistOrderPayload(tenantId, orderId, {
+      handoff: nextHandoff,
+      updatedAt: now,
+    });
     const error = new Error(
       nextAttempts >= PICKUP_MAX_ATTEMPTS
         ? 'Código incorreto. A retirada foi bloqueada após 5 tentativas.'
@@ -249,10 +251,13 @@ const verifyPickupHandoff = async (
 
   const now = new Date().toISOString();
   await persistOrderPayload(tenantId, orderId, {
-    'handoff.status': 'verified',
-    'handoff.verifiedAt': now,
-    'handoff.verifiedBy': actorId,
-    'handoff.method': 'pickup_code',
+    handoff: {
+      ...handoff,
+      status: 'verified',
+      verifiedAt: now,
+      verifiedBy: actorId,
+      method: 'pickup_code',
+    },
     updatedAt: now,
   });
 };
@@ -267,18 +272,22 @@ const finalizePickupHandoff = async (
   if (!snapshot.exists || data?.fulfillmentType !== 'pickup') return;
   const now = new Date().toISOString();
   const canonicalStoreId = await canonicalStoreIdFor(tenantId);
-  const batch = adminDb.batch();
-  const payload = {
-    'handoff.status': 'handed_over',
-    'handoff.handedOverAt': now,
-    'handoff.handedOverBy': actorId,
-    updatedAt: now,
+  const handoff = {
+    ...handoffRecord(data.handoff),
+    status: 'handed_over',
+    handedOverAt: now,
+    handedOverBy: actorId,
   };
-  batch.set(orderReference(tenantId, orderId), payload, { merge: true });
+  const batch = adminDb.batch();
+  batch.set(
+    orderReference(tenantId, orderId),
+    { handoff, updatedAt: now },
+    { merge: true }
+  );
   if (canonicalStoreId) {
     batch.set(
       adminDb.doc(`stores/${canonicalStoreId}/orders/${orderId}`),
-      payload,
+      { handoff, updatedAt: now },
       { merge: true }
     );
   }
@@ -366,7 +375,7 @@ export const executeAuthorizedPickupCodeRead = async (
       body: {
         orderId: input.orderId,
         code: clean(secret.code),
-        readyAt: clean((order?.handoff as Record<string, unknown> | undefined)?.readyAt),
+        readyAt: clean(handoffRecord(order?.handoff).readyAt),
       },
     };
   } catch (error) {
