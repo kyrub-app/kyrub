@@ -32,9 +32,6 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Normalize Vercel serverless ESM dependency graph
-        run: node scripts/normalize-serverless-esm-imports.mjs
-
       - name: Compose Firestore rules
         run: npm run firestore:compose
 
@@ -65,3 +62,9 @@ jobs:
 
       - name: Build
         run: npm run build
+
+      - name: Normalize Vercel serverless ESM dependency graph
+        run: node scripts/normalize-serverless-esm-imports.mjs
+
+      - name: Validate normalized serverless TypeScript graph
+        run: npm run lint
