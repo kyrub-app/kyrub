@@ -8,7 +8,7 @@ import type { User } from 'firebase/auth';
 import type { CustomerOrder } from './customerOrders';
 import { db } from './firebase';
 import {
-  getPersonalizedBenefitsCollectionPath,
+  getUserPersonalizedBenefitsCollectionPath,
   type PersonalizedBenefitType,
 } from './personalizedBenefits';
 import { getUserRelationshipNotificationsCollectionPath } from './relationshipNotifications';
@@ -110,7 +110,7 @@ export const buildCrmSegmentRecipients = (
 };
 
 const safeIdentity = (recipient: CrmCampaignRecipient): string =>
-  (recipient.buyerId || recipient.buyerEmail)
+  recipient.buyerId
     .replace(/[^a-zA-Z0-9_-]/g, '_')
     .slice(0, 72);
 
@@ -125,14 +125,19 @@ export const createCrmSegmentCampaign = async (
   if (draft.startsAt && draft.endsAt && draft.endsAt < draft.startsAt) {
     throw new Error('O fim da campanha não pode ser anterior ao início.');
   }
-  const audience = recipients.filter(item => item.segment === draft.segment);
-  if (audience.length === 0) throw new Error('Este segmento não possui clientes elegíveis agora.');
+
+  const segmentAudience = recipients.filter(item => item.segment === draft.segment);
+  if (segmentAudience.length === 0) {
+    throw new Error('Este segmento não possui clientes elegíveis agora.');
+  }
+  const audience = segmentAudience.filter(item => item.buyerId.trim());
+  if (audience.length === 0) {
+    throw new Error('Este segmento ainda não possui clientes com conta Kyrub para receber benefícios privados.');
+  }
 
   const campaignRef = doc(collection(db, getCrmCampaignsCollectionPath(storeId)));
   const now = new Date().toISOString();
   const normalizedCode = draft.code.trim().toLocaleUpperCase('pt-BR');
-  const benefitCollection = getPersonalizedBenefitsCollectionPath(storeId);
-  let notifiedRecipientCount = 0;
 
   const writes: Array<(batch: ReturnType<typeof writeBatch>) => void> = [];
   writes.push(batch => batch.set(campaignRef, {
@@ -147,23 +152,29 @@ export const createCrmSegmentCampaign = async (
     code: normalizedCode,
     startsAt: draft.startsAt,
     endsAt: draft.endsAt,
+    segmentRecipientCount: segmentAudience.length,
     recipientCount: audience.length,
-    notifiedRecipientCount: audience.filter(item => item.buyerId.trim()).length,
+    notifiedRecipientCount: audience.length,
     status: 'published',
     createdAt: now,
     updatedAt: now,
     recordedAt: serverTimestamp(),
-    schemaVersion: 2,
+    schemaVersion: 3,
   }));
 
   audience.forEach(recipient => {
+    const buyerId = recipient.buyerId.trim();
     const identity = safeIdentity(recipient);
     const benefitId = `campaign-${campaignRef.id}-${identity}`;
-    const benefitRef = doc(db, benefitCollection, benefitId);
+    const benefitRef = doc(
+      db,
+      getUserPersonalizedBenefitsCollectionPath(buyerId),
+      benefitId
+    );
     writes.push(batch => batch.set(benefitRef, {
       id: benefitId,
       storeId,
-      buyerId: recipient.buyerId,
+      buyerId,
       buyerEmail: recipient.buyerEmail,
       title: draft.title.trim(),
       description: draft.description.trim(),
@@ -179,12 +190,9 @@ export const createCrmSegmentCampaign = async (
       createdAt: now,
       updatedAt: now,
       recordedAt: serverTimestamp(),
-      schemaVersion: 1,
+      schemaVersion: 2,
     }));
 
-    const buyerId = recipient.buyerId.trim();
-    if (!buyerId) return;
-    notifiedRecipientCount += 1;
     const notificationId = `crm-campaign-${campaignRef.id}-${identity}`;
     const notificationRef = doc(
       db,
@@ -213,5 +221,9 @@ export const createCrmSegmentCampaign = async (
     await batch.commit();
   }
 
-  return { campaignId: campaignRef.id, recipientCount: audience.length, notifiedRecipientCount };
+  return {
+    campaignId: campaignRef.id,
+    recipientCount: audience.length,
+    notifiedRecipientCount: audience.length,
+  };
 };
