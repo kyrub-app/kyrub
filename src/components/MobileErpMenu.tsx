@@ -3,6 +3,7 @@ import {
   ArrowLeft,
   Calendar,
   ClipboardList,
+  Crown,
   DollarSign,
   Fingerprint,
   LayoutGrid,
@@ -11,6 +12,7 @@ import {
   Users,
   X,
 } from 'lucide-react';
+import { getPlanCenterUrl } from '../utils/planCenter';
 
 export type ErpSubTab =
   | 'clientes'
@@ -22,7 +24,7 @@ export type ErpSubTab =
 
 type MenuItem =
   | {
-      id: 'loja';
+      id: 'loja' | 'plano';
       label: string;
       icon: typeof StoreIcon;
     }
@@ -34,6 +36,7 @@ type MenuItem =
 
 const MENU_ITEMS: readonly MenuItem[] = [
   { id: 'loja', label: 'Loja', icon: StoreIcon },
+  { id: 'plano', label: 'Plano', icon: Crown },
   { id: 'clientes', label: 'PDV', icon: Users },
   { id: 'caixa', label: 'Caixa', icon: DollarSign },
   { id: 'pedidos', label: 'Pedidos', icon: ClipboardList },
@@ -82,6 +85,8 @@ export function MobileErpMenu({
   const handleSelect = (itemId: MenuItem['id']) => {
     if (itemId === 'loja') {
       onOpenStoreConfig();
+    } else if (itemId === 'plano') {
+      window.location.assign(getPlanCenterUrl());
     } else {
       onSelectTab(itemId);
     }
@@ -152,7 +157,7 @@ export function MobileErpMenu({
             <nav className="space-y-2 overflow-y-auto p-4" aria-label="Seções do painel">
               {MENU_ITEMS.map(item => {
                 const Icon = item.icon;
-                const isSelected = item.id !== 'loja' && item.id === activeSubTab;
+                const isSelected = item.id !== 'loja' && item.id !== 'plano' && item.id === activeSubTab;
 
                 return (
                   <button
