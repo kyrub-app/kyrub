@@ -1,4 +1,13 @@
-import { auth } from './firebase';
+import { onAuthStateChanged } from 'firebase/auth';
+import {
+  collection,
+  doc,
+  onSnapshot,
+  serverTimestamp,
+  setDoc,
+  type Unsubscribe,
+} from 'firebase/firestore';
+import { auth, db } from './firebase';
 
 export interface RelationshipNotificationPreference {
   storeId: string;
@@ -10,6 +19,9 @@ const STORAGE_PREFIX = 'kyrub_relationship_notification_preferences_';
 const EVENT_NAME = 'kyrub:relationship-notification-preference-changed';
 
 const storageKey = (userId: string): string => `${STORAGE_PREFIX}${userId.trim()}`;
+
+export const getRelationshipNotificationPreferencesCollectionPath = (userId: string): string =>
+  `users/${userId.trim()}/relationshipNotificationPreferences`;
 
 const readAll = (userId: string): Record<string, RelationshipNotificationPreference> => {
   try {
@@ -33,6 +45,23 @@ const readAll = (userId: string): Record<string, RelationshipNotificationPrefere
   }
 };
 
+const persistLocal = (
+  userId: string,
+  preferences: Record<string, RelationshipNotificationPreference>
+): void => {
+  try {
+    localStorage.setItem(storageKey(userId), JSON.stringify(preferences));
+  } catch {
+    // Cloud synchronization remains authoritative when local storage is unavailable.
+  }
+};
+
+const announceChange = (storeId = '', enabled = true): void => {
+  window.dispatchEvent(new CustomEvent(EVENT_NAME, {
+    detail: { storeId, enabled },
+  }));
+};
+
 export const isRelationshipNotificationEnabled = (
   storeId: string,
   userId = auth.currentUser?.uid ?? ''
@@ -43,38 +72,96 @@ export const isRelationshipNotificationEnabled = (
   return readAll(normalizedUserId)[normalizedStoreId]?.enabled !== false;
 };
 
-export const setRelationshipNotificationEnabled = (
+export const setRelationshipNotificationEnabled = async (
   storeId: string,
   enabled: boolean,
   userId = auth.currentUser?.uid ?? ''
-): void => {
+): Promise<void> => {
   const normalizedUserId = userId.trim();
   const normalizedStoreId = storeId.trim();
-  if (!normalizedUserId || !normalizedStoreId) return;
+  if (!normalizedUserId || !normalizedStoreId || normalizedStoreId.includes('/')) return;
+  if (auth.currentUser?.uid !== normalizedUserId) {
+    throw new Error('Preferência só pode ser alterada pelo próprio usuário.');
+  }
+
+  const updatedAt = new Date().toISOString();
   const current = readAll(normalizedUserId);
   current[normalizedStoreId] = {
     storeId: normalizedStoreId,
     enabled,
-    updatedAt: new Date().toISOString(),
+    updatedAt,
   };
-  try {
-    localStorage.setItem(storageKey(normalizedUserId), JSON.stringify(current));
-  } catch {
-    // Preferences are best-effort until the owner-scoped cloud model is enabled.
-  }
-  window.dispatchEvent(new CustomEvent(EVENT_NAME, {
-    detail: { storeId: normalizedStoreId, enabled },
-  }));
+  persistLocal(normalizedUserId, current);
+  announceChange(normalizedStoreId, enabled);
+
+  await setDoc(
+    doc(
+      db,
+      getRelationshipNotificationPreferencesCollectionPath(normalizedUserId),
+      normalizedStoreId
+    ),
+    {
+      storeId: normalizedStoreId,
+      enabled,
+      updatedAt,
+      recordedAt: serverTimestamp(),
+      schemaVersion: 1,
+    },
+    { merge: true }
+  );
 };
 
 export const subscribeToRelationshipNotificationPreferences = (
   listener: () => void
 ): (() => void) => {
-  const handler = () => listener();
-  window.addEventListener(EVENT_NAME, handler);
-  window.addEventListener('storage', handler);
+  let unsubscribeCloud: Unsubscribe | null = null;
+  let activeUserId = '';
+
+  const localHandler = () => listener();
+  window.addEventListener(EVENT_NAME, localHandler);
+  window.addEventListener('storage', localHandler);
+
+  const connectCloud = (userId: string): void => {
+    unsubscribeCloud?.();
+    unsubscribeCloud = null;
+    activeUserId = userId.trim();
+    if (!activeUserId) {
+      listener();
+      return;
+    }
+
+    unsubscribeCloud = onSnapshot(
+      collection(db, getRelationshipNotificationPreferencesCollectionPath(activeUserId)),
+      snapshot => {
+        const next = readAll(activeUserId);
+        snapshot.docs.forEach(item => {
+          const data = item.data() as Record<string, unknown>;
+          const storeId = typeof data.storeId === 'string' ? data.storeId.trim() : item.id;
+          if (!storeId) return;
+          next[storeId] = {
+            storeId,
+            enabled: data.enabled !== false,
+            updatedAt: typeof data.updatedAt === 'string' ? data.updatedAt : '',
+          };
+        });
+        persistLocal(activeUserId, next);
+        announceChange();
+        listener();
+      },
+      error => {
+        console.warn('Preferências de relacionamento na nuvem indisponíveis.', error);
+        listener();
+      }
+    );
+  };
+
+  const unsubscribeAuth = onAuthStateChanged(auth, user => connectCloud(user?.uid ?? ''));
+  connectCloud(auth.currentUser?.uid ?? '');
+
   return () => {
-    window.removeEventListener(EVENT_NAME, handler);
-    window.removeEventListener('storage', handler);
+    unsubscribeAuth();
+    unsubscribeCloud?.();
+    window.removeEventListener(EVENT_NAME, localHandler);
+    window.removeEventListener('storage', localHandler);
   };
 };
