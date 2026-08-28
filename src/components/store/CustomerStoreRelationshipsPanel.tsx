@@ -15,8 +15,10 @@ import {
 } from 'lucide-react';
 import type { Order, Store } from '../../types';
 import { auth } from '../../utils/firebase';
-import { CustomerLoyaltyChallengesSection } from './CustomerLoyaltyChallengesSection';
-import { CustomerLoyaltyRewardsSection } from './CustomerLoyaltyRewardsSection';
+import {
+  CustomerPersonalBenefitsGroup,
+  CustomerPublicPromotionsGroupHeader,
+} from './CustomerRelationshipBenefitGroups';
 import {
   subscribeToPreferredPublicProducts,
   type PublicProduct,
@@ -183,31 +185,31 @@ export function CustomerStoreRelationshipsPanel({ stores, orders, onEnterStore }
           </div>
         </div>
 
-        <CustomerLoyaltyChallengesSection storeId={selected.store.id} />
-        <CustomerLoyaltyRewardsSection storeId={selected.store.id} />
+        <CustomerPersonalBenefitsGroup storeId={selected.store.id} />
+        <CustomerPublicPromotionsGroupHeader />
 
         <section className="rounded-3xl border border-slate-800 bg-slate-900 p-4">
-          <div className="flex items-center justify-between gap-3"><div><div className="flex items-center gap-2 text-emerald-300"><Ticket className="h-4 w-4" /><h4 className="text-xs font-black uppercase text-white">Vouchers & cupons</h4></div><p className="mt-1 text-[9px] text-slate-500">Benefícios públicos disponíveis agora nesta loja.</p></div><span className="rounded-full border border-emerald-400/20 bg-emerald-400/10 px-2 py-1 text-[8px] font-black text-emerald-300">{activePromotions.length}</span></div>
+          <div className="flex items-center justify-between gap-3"><div><div className="flex items-center gap-2 text-emerald-300"><Ticket className="h-4 w-4" /><h4 className="text-xs font-black uppercase text-white">Cupons públicos</h4></div><p className="mt-1 text-[9px] text-slate-500">Campanhas promocionais publicadas pela loja para a vitrine.</p></div><span className="rounded-full border border-emerald-400/20 bg-emerald-400/10 px-2 py-1 text-[8px] font-black text-emerald-300">{activePromotions.length}</span></div>
           <div className="mt-3 space-y-2">
             {activePromotions.length > 0 ? activePromotions.map(promotion => (
               <article key={promotion.id} className="rounded-2xl border border-slate-800 bg-slate-950 p-3">
                 <div className="flex items-start justify-between gap-3"><div className="min-w-0"><strong className="block text-xs text-white">{promotion.title}</strong><span className="mt-1 block font-mono text-[9px] font-black text-emerald-300">CÓDIGO: {promotion.code}</span></div><span className="shrink-0 rounded-full border border-emerald-400/20 bg-emerald-400/10 px-2 py-1 text-[8px] font-black text-emerald-300">{promotion.badge}</span></div>
                 {validDate(promotion.endsAt) && <span className="mt-2 flex items-center gap-1 text-[8px] text-slate-500"><CalendarDays className="h-3 w-3" /> válido até {shortDate.format(validDate(promotion.endsAt)!)}</span>}
               </article>
-            )) : <p className="rounded-2xl border border-dashed border-slate-800 bg-slate-950/50 px-3 py-5 text-center text-[10px] text-slate-500">Nenhum voucher público disponível agora.</p>}
+            )) : <p className="rounded-2xl border border-dashed border-slate-800 bg-slate-950/50 px-3 py-5 text-center text-[10px] text-slate-500">Nenhum cupom público disponível agora.</p>}
           </div>
         </section>
 
         <section className="rounded-3xl border border-slate-800 bg-slate-900 p-4">
-          <div className="flex items-center gap-2 text-orange-300"><BadgePercent className="h-4 w-4" /><h4 className="text-xs font-black uppercase text-white">Itens em promoção</h4></div>
-          <p className="mt-1 text-[9px] text-slate-500">Promoções publicadas na vitrine da loja, refletidas automaticamente aqui.</p>
+          <div className="flex items-center gap-2 text-orange-300"><BadgePercent className="h-4 w-4" /><h4 className="text-xs font-black uppercase text-white">Produtos em promoção</h4></div>
+          <p className="mt-1 text-[9px] text-slate-500">Preços promocionais publicados na vitrine da loja e disponíveis publicamente.</p>
           <div className="mt-3 grid grid-cols-2 gap-2">
             {promotedProducts.length > 0 ? promotedProducts.map(({ product, promotion }) => (
               <article key={`${promotion.id}-${product.id}`} className="min-w-0 overflow-hidden rounded-2xl border border-slate-800 bg-slate-950">
                 <div className="aspect-square bg-slate-900">{product.image ? <img src={product.image} alt={product.name} className="h-full w-full object-cover" referrerPolicy="no-referrer" /> : <div className="flex h-full items-center justify-center text-slate-700"><Gift className="h-7 w-7" /></div>}</div>
                 <div className="p-3"><span className="rounded-full border border-orange-400/20 bg-orange-400/10 px-2 py-1 text-[8px] font-black text-orange-300">{promotion.badge}</span><h5 className="mt-2 line-clamp-2 text-[10px] font-black text-white">{product.name}</h5><div className="mt-2"><span className="block text-[8px] text-slate-600 line-through">{money.format(product.price)}</span><strong className="text-[11px] text-emerald-400">{money.format(discountedPrice(product, promotion))}</strong></div></div>
               </article>
-            )) : <div className="col-span-2 rounded-2xl border border-dashed border-slate-800 bg-slate-950/50 px-3 py-5 text-center text-[10px] text-slate-500">{benefitsLoading ? 'Carregando ofertas da vitrine…' : 'Nenhum item em promoção agora.'}</div>}
+            )) : <div className="col-span-2 rounded-2xl border border-dashed border-slate-800 bg-slate-950/50 px-3 py-5 text-center text-[10px] text-slate-500">{benefitsLoading ? 'Carregando ofertas da vitrine…' : 'Nenhum produto em promoção agora.'}</div>}
           </div>
         </section>
 
