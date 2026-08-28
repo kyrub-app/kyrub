@@ -14,6 +14,7 @@ const fragmentPaths = [
   resolve(root, 'firestore.identity-eligibility.fragment.rules'),
   resolve(root, 'firestore.identity-verification.fragment.rules'),
   resolve(root, 'firestore.store-security.fragment.rules'),
+  resolve(root, 'firestore.economic-ledger.fragment.rules'),
   resolve(root, 'firestore.omnichannel.fragment.rules'),
   resolve(root, 'firestore.store-directory-query.fragment.rules'),
   resolve(root, 'firestore.marketplace.fragment.rules'),
