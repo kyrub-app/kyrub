@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import {
   deriveKyrubEconomicPositions,
   moneyToMinorUnits,
   normalizeKyrubEconomicLedger,
+  type KyrubEconomicLedger,
 } from '../shared/kyrubEconomicLedger.js';
 import { buildMarketplaceEconomicLedger } from '../server/payments/economicLedgerService.js';
 import type { CanonicalPaymentIntent } from '../src/utils/canonicalPaymentIntent.js';
@@ -181,4 +183,46 @@ test('future subsidies and incentives stay explicit instead of changing another 
   );
   assert.equal(courier?.creditsMinor, 1100);
   assert.equal(courier?.netMinor, 1100);
+});
+
+test('persisted ledger rejects an unknown source at the trust boundary', () => {
+  const invalid = {
+    id: 'ledger-invalid-source',
+    transactionId: 'tx-invalid-source',
+    storeId: 'store-1',
+    orderId: 'order-1',
+    paymentId: 'payment-1',
+    currency: 'BRL',
+    source: 'browser_override',
+    status: 'posted',
+    entries: [
+      {
+        id: 'sale',
+        kind: 'sale',
+        amountMinor: 100,
+        fundedBy: { id: 'buyer-1', role: 'buyer' },
+        owedTo: { id: 'store-1', role: 'merchant' },
+      },
+    ],
+    createdAt: '2026-08-28T20:00:00.000Z',
+    schemaVersion: 1,
+  } as unknown as KyrubEconomicLedger;
+
+  assert.throws(
+    () => normalizeKyrubEconomicLedger(invalid),
+    /source is invalid/
+  );
+});
+
+test('economic ledgers are composed into Firestore rules as server-only documents', () => {
+  const baseRules = readFileSync('firestore.rules', 'utf8');
+  const economicRules = readFileSync('firestore.economic-ledger.fragment.rules', 'utf8');
+  const composer = readFileSync('scripts/compose-firestore-rules.mjs', 'utf8');
+  const storeSecurity = readFileSync('firestore.store-security.fragment.rules', 'utf8');
+
+  assert.match(baseRules, /match \/\{document=\*\*\} \{\s*allow read, write: if false;/s);
+  assert.match(economicRules, /match \/stores\/\{storeId\}\/economicLedgers\/\{ledgerId\}/);
+  assert.match(economicRules, /allow read, create, update, delete: if false;/);
+  assert.match(composer, /firestore\.economic-ledger\.fragment\.rules/);
+  assert.doesNotMatch(storeSecurity, /match \/stores\/\{storeId\}\/\{[^}]*=\*\*\}/);
 });
