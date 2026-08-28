@@ -1,5 +1,6 @@
 import type { PaymentMethod } from './canonicalPayment';
 import type { StorePromotionDiscountType } from './storePromotions';
+import { normalizeStorePointsPerUnit } from '../../shared/storePoints';
 
 export type PaymentIntentStatus = 'pending' | 'paid' | 'failed' | 'expired';
 
@@ -12,6 +13,7 @@ export interface PaymentIntentItem {
   note?: string;
   image?: string;
   isService?: boolean;
+  storePointsPerUnit?: number;
 }
 
 export interface PaymentIntentPromotionSnapshot {
@@ -94,6 +96,7 @@ export const normalizePaymentIntentItem = (
     note: item.note?.trim() ?? '',
     image: item.image?.trim() ?? '',
     isService: item.isService === true,
+    storePointsPerUnit: normalizeStorePointsPerUnit(item.storePointsPerUnit),
   };
 };
 
