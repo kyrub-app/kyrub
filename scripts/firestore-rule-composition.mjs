@@ -54,17 +54,23 @@ const SECURE_FREELANCE_RULES = `${FREELANCE_SECTION_HEADER}
     }`;
 
 const SECURE_ARTIFACT_RULES = `${ARTIFACT_SECTION_HEADER}
-    // Legacy artifact reads stay compatible while write authority is reduced.
+    // Legacy artifacts are now owner-private by default. Only datasets that are
+    // intentionally customer-facing receive explicit read exceptions below.
     // Server-side Admin SDK flows bypass these client rules.
     match /artifacts/{tenantId} {
-      allow read: if isSignedIn();
-      allow create, update, delete: if isSignedIn()
+      allow read, create, update, delete: if isSignedIn()
         && request.auth.uid == tenantId;
 
-      // Direct browser creation remains only for the legacy dine-in flow.
-      // Delivery/pickup orders are server-authoritative via PaymentIntent.
+      // Customer orders contain buyer identity, address and purchase history.
+      // They are visible only to the responsible store and the order buyer.
+      // Direct browser creation remains only for the legacy dine-in flow;
+      // delivery/pickup orders are server-authoritative via PaymentIntent.
       match /public/data/customerOrders/{orderId} {
-        allow read: if isSignedIn();
+        allow read: if isSignedIn()
+          && (
+            request.auth.uid == tenantId
+            || existing().buyerId == request.auth.uid
+          );
         allow create: if isSignedIn()
           && (
             request.auth.uid == tenantId
@@ -97,9 +103,31 @@ const SECURE_ARTIFACT_RULES = `${ARTIFACT_SECTION_HEADER}
         allow delete: if false;
       }
 
-      match /{allData=**} {
+      // Public loyalty configuration is intentionally readable by signed-in
+      // customers so Meu relacionamento can render points, challenges and rewards.
+      // Mutations remain exclusive to the store tenant.
+      match /public/data/loyalty/{documentId} {
         allow read: if isSignedIn();
         allow create, update, delete: if isSignedIn()
+          && request.auth.uid == tenantId;
+      }
+
+      match /public/data/loyaltyChallenges/{challengeId} {
+        allow read: if isSignedIn();
+        allow create, update, delete: if isSignedIn()
+          && request.auth.uid == tenantId;
+      }
+
+      match /public/data/loyaltyRewards/{rewardId} {
+        allow read: if isSignedIn();
+        allow create, update, delete: if isSignedIn()
+          && request.auth.uid == tenantId;
+      }
+
+      // Everything else under the legacy artifact tree is private to its tenant
+      // until it is explicitly classified or migrated to a canonical collection.
+      match /{allData=**} {
+        allow read, create, update, delete: if isSignedIn()
           && request.auth.uid == tenantId;
       }
     }`;
