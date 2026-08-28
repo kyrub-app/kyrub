@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import type { Order, Store } from '../../types';
 import { auth } from '../../utils/firebase';
+import { CustomerLoyaltyChallengesSection } from './CustomerLoyaltyChallengesSection';
 import { CustomerLoyaltyRewardsSection } from './CustomerLoyaltyRewardsSection';
 import {
   subscribeToPreferredPublicProducts,
@@ -72,6 +73,7 @@ export function CustomerStoreRelationshipsPanel({ stores, orders, onEnterStore }
     const publishedStoreIds = new Set(stores.map(store => store.id));
     return Array.from(new Set(orders.map(order => order.storeId?.trim() ?? '').filter(storeId => storeId && publishedStoreIds.has(storeId))));
   }, [orders, stores]);
+  const relationshipStoreKey = useMemo(() => relationshipStoreIds.join('|'), [relationshipStoreIds]);
 
   useEffect(() => {
     const user = auth.currentUser;
@@ -93,7 +95,7 @@ export function CustomerStoreRelationshipsPanel({ stores, orders, onEnterStore }
       )
     );
     return () => unsubscribers.forEach(unsubscribe => unsubscribe());
-  }, [relationshipStoreIds.join('|')]);
+  }, [relationshipStoreKey]);
 
   const relationships = useMemo<StoreRelationship[]>(() => {
     const storesById = new Map(stores.map(store => [store.id, store]));
@@ -153,8 +155,6 @@ export function CustomerStoreRelationshipsPanel({ stores, orders, onEnterStore }
   if (selected) {
     const level = relationshipLevel(selected.points);
     const progress = Math.min(100, Math.round((selected.points / level.next) * 100));
-    const challengeTarget = 3;
-    const challengeProgress = Math.min(selected.purchaseCount, challengeTarget);
 
     return (
       <section className="space-y-4" id="customer-store-relationship-detail">
@@ -175,23 +175,15 @@ export function CustomerStoreRelationshipsPanel({ stores, orders, onEnterStore }
               <p className="mt-1 text-[10px] text-slate-500">{selected.purchaseCount} compra(s) concluída(s) · {money.format(selected.totalSpent)} em compras</p>
             </div>
           </div>
-          <div className="mt-4 grid grid-cols-2 gap-2">
-            <div className="rounded-2xl border border-amber-400/20 bg-amber-400/5 p-3">
-              <div className="flex items-center gap-2 text-amber-300"><Trophy className="h-4 w-4" /><span className="text-[9px] font-black uppercase">{level.label}</span></div>
-              <strong className="mt-2 block text-lg font-black text-white">{selected.points} pts</strong>
-              <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-800"><div className="h-full rounded-full bg-amber-400" style={{ width: `${progress}%` }} /></div>
-              <span className="mt-1 block text-[8px] text-slate-500">{Math.max(0, level.next - selected.points)} pts até o próximo marco</span>
-            </div>
-            <div className="rounded-2xl border border-teal-400/20 bg-teal-400/5 p-3">
-              <div className="flex items-center gap-2 text-teal-300"><Target className="h-4 w-4" /><span className="text-[9px] font-black uppercase">Desafio</span></div>
-              <strong className="mt-2 block text-xs font-black text-white">Cliente recorrente</strong>
-              <span className="mt-1 block text-[9px] text-slate-500">Complete {challengeTarget} compras nesta loja</span>
-              <div className="mt-2 flex gap-1">{Array.from({ length: challengeTarget }, (_, index) => <span key={index} className={`h-2 flex-1 rounded-full ${index < challengeProgress ? 'bg-teal-400' : 'bg-slate-800'}`} />)}</div>
-              <span className="mt-1 block text-[8px] text-slate-500">{challengeProgress}/{challengeTarget} concluídas</span>
-            </div>
+          <div className="mt-4 rounded-2xl border border-amber-400/20 bg-amber-400/5 p-3">
+            <div className="flex items-center gap-2 text-amber-300"><Trophy className="h-4 w-4" /><span className="text-[9px] font-black uppercase">{level.label}</span></div>
+            <strong className="mt-2 block text-lg font-black text-white">{selected.points} pts</strong>
+            <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-800"><div className="h-full rounded-full bg-amber-400" style={{ width: `${progress}%` }} /></div>
+            <span className="mt-1 block text-[8px] text-slate-500">{Math.max(0, level.next - selected.points)} pts até o próximo marco</span>
           </div>
         </div>
 
+        <CustomerLoyaltyChallengesSection storeId={selected.store.id} />
         <CustomerLoyaltyRewardsSection storeId={selected.store.id} />
 
         <section className="rounded-3xl border border-slate-800 bg-slate-900 p-4">
@@ -243,14 +235,13 @@ export function CustomerStoreRelationshipsPanel({ stores, orders, onEnterStore }
         <div className="grid grid-cols-2 gap-2 sm:gap-3">
           {relationships.map(item => {
             const level = relationshipLevel(item.points);
-            const challengeProgress = Math.min(item.purchaseCount, 3);
             const last = validDate(item.lastOrderAt);
             return (
               <button key={item.store.id} type="button" onClick={() => setSelectedStoreId(item.store.id)} className="min-w-0 overflow-hidden rounded-3xl border border-slate-800 bg-slate-900 text-left transition-colors hover:border-orange-500/30">
                 <div className="aspect-[4/3] bg-slate-950">{item.store.banner || item.store.logo ? <img src={item.store.banner || item.store.logo} alt={item.store.name} className="h-full w-full object-cover" referrerPolicy="no-referrer" /> : <div className="flex h-full items-center justify-center text-slate-700"><StoreIcon className="h-8 w-8" /></div>}</div>
                 <div className="space-y-3 p-3">
                   <div><h4 className="truncate text-xs font-black uppercase text-white">{item.store.name}</h4><span className="mt-1 block text-[8px] text-slate-500">{item.purchaseCount} compra(s){last ? ` · última ${shortDate.format(last)}` : ''}</span></div>
-                  <div className="grid grid-cols-2 gap-1.5"><div className="rounded-xl border border-amber-400/15 bg-amber-400/5 p-2"><Star className="h-3 w-3 text-amber-300" /><strong className="mt-1 block text-[9px] text-white">{item.points} pts</strong><span className="text-[7px] uppercase text-slate-600">{level.label}</span></div><div className="rounded-xl border border-teal-400/15 bg-teal-400/5 p-2"><Target className="h-3 w-3 text-teal-300" /><strong className="mt-1 block text-[9px] text-white">{challengeProgress}/3</strong><span className="text-[7px] uppercase text-slate-600">Desafio</span></div></div>
+                  <div className="grid grid-cols-2 gap-1.5"><div className="rounded-xl border border-amber-400/15 bg-amber-400/5 p-2"><Star className="h-3 w-3 text-amber-300" /><strong className="mt-1 block text-[9px] text-white">{item.points} pts</strong><span className="text-[7px] uppercase text-slate-600">{level.label}</span></div><div className="rounded-xl border border-teal-400/15 bg-teal-400/5 p-2"><Target className="h-3 w-3 text-teal-300" /><strong className="mt-1 block text-[9px] text-white">Ver</strong><span className="text-[7px] uppercase text-slate-600">Desafios</span></div></div>
                   <span className="flex items-center gap-1 text-[8px] font-black uppercase text-orange-300"><CheckCircle2 className="h-3 w-3" /> Meu relacionamento →</span>
                 </div>
               </button>
