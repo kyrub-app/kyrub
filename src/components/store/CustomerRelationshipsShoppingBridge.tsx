@@ -92,6 +92,29 @@ export function CustomerRelationshipsShoppingBridge({
     };
   }, [enabled]);
 
+  useEffect(() => {
+    if (!host || !enabled || !initialStoreId) return;
+    const targetStore = stores.find(store => store.id === initialStoreId);
+    if (!targetStore) return;
+    let attempts = 0;
+    let timer = 0;
+    const openTarget = () => {
+      attempts += 1;
+      const heading = Array.from(host.querySelectorAll('h4')).find(
+        item => normalizedText(item.textContent) === normalizedText(targetStore.name)
+      );
+      const button = heading?.closest('button');
+      if (button instanceof HTMLButtonElement) {
+        button.click();
+        onInitialStoreHandled?.();
+        return;
+      }
+      if (attempts < 25) timer = window.setTimeout(openTarget, 100);
+    };
+    openTarget();
+    return () => window.clearTimeout(timer);
+  }, [enabled, host, initialStoreId, onInitialStoreHandled, stores]);
+
   if (!host || !enabled) return null;
 
   return createPortal(
@@ -99,8 +122,6 @@ export function CustomerRelationshipsShoppingBridge({
       stores={stores}
       orders={orders}
       onEnterStore={onEnterStore}
-      initialStoreId={initialStoreId}
-      onInitialStoreHandled={onInitialStoreHandled}
     />,
     host
   );
