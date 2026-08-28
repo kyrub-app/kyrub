@@ -78,6 +78,8 @@ test('every economic transfer balances participant rights and obligations', () =
     storeId: 'store-1',
     orderId: 'order-1',
     paymentId: 'payment-1',
+    paymentMethod: 'pix',
+    paymentProvider: 'mercado_pago',
     currency: 'BRL',
     source: 'marketplace_payment',
     status: 'posted',
@@ -112,7 +114,7 @@ test('every economic transfer balances participant rights and obligations', () =
   assert.equal(positions.reduce((sum, position) => sum + position.netMinor, 0), 0);
 });
 
-test('marketplace payment snapshots sale and merchant-funded promotion without recalculating history', () => {
+test('marketplace payment snapshots sale, promotion and payment channel without recalculating history', () => {
   const ledger = buildMarketplaceEconomicLedger({
     paymentId: 'pay-1',
     intent: marketplaceIntent(),
@@ -121,6 +123,8 @@ test('marketplace payment snapshots sale and merchant-funded promotion without r
   });
 
   assert.equal(ledger.storeId, 'canonical-store');
+  assert.equal(ledger.paymentMethod, 'pix');
+  assert.equal(ledger.paymentProvider, 'mercado_pago');
   assert.equal(ledger.entries.length, 2);
   assert.deepEqual(
     ledger.entries.map(entry => [entry.kind, entry.amountMinor, entry.fundedBy.role, entry.owedTo.role]),
@@ -169,7 +173,9 @@ test('future subsidies and incentives stay explicit instead of changing another 
     transactionId: 'tx-incentive',
     storeId: 'store-1',
     orderId: 'order-1',
-    paymentId: 'payment-1',
+    paymentId: '',
+    paymentMethod: null,
+    paymentProvider: '',
     currency: 'BRL',
     source: 'manual_adjustment',
     status: 'posted',
@@ -205,7 +211,9 @@ test('persisted ledger rejects an unknown source at the trust boundary', () => {
     transactionId: 'tx-invalid-source',
     storeId: 'store-1',
     orderId: 'order-1',
-    paymentId: 'payment-1',
+    paymentId: '',
+    paymentMethod: null,
+    paymentProvider: '',
     currency: 'BRL',
     source: 'browser_override',
     status: 'posted',
@@ -225,6 +233,37 @@ test('persisted ledger rejects an unknown source at the trust boundary', () => {
   assert.throws(
     () => normalizeKyrubEconomicLedger(invalid),
     /source is invalid/
+  );
+});
+
+test('payment-backed ledgers require an authoritative method and provider snapshot', () => {
+  const invalid = {
+    id: 'ledger-no-provider',
+    transactionId: 'tx-no-provider',
+    storeId: 'store-1',
+    orderId: 'order-1',
+    paymentId: 'payment-1',
+    paymentMethod: 'pix',
+    paymentProvider: '',
+    currency: 'BRL',
+    source: 'marketplace_payment',
+    status: 'posted',
+    entries: [
+      {
+        id: 'sale',
+        kind: 'sale',
+        amountMinor: 100,
+        fundedBy: { id: 'buyer-1', role: 'buyer' },
+        owedTo: { id: 'store-1', role: 'merchant' },
+      },
+    ],
+    createdAt: '2026-08-28T20:00:00.000Z',
+    schemaVersion: 1,
+  } as KyrubEconomicLedger;
+
+  assert.throws(
+    () => normalizeKyrubEconomicLedger(invalid),
+    /payment provider is required/
   );
 });
 
