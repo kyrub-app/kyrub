@@ -17,6 +17,10 @@ import {
   paymentStatusFromProviderEvent,
   type VerifiedPaymentProviderEvent,
 } from '../../src/utils/paymentProvider.js';
+import {
+  buildStorePointPurchaseEntry,
+  type StorePointLedgerEntry,
+} from '../../shared/storePoints.js';
 
 interface ProcessPaymentWebhookResult {
   duplicate: boolean;
@@ -45,6 +49,9 @@ const promotionRedemptionPath = (
   promotionId: string,
   paymentId: string
 ): string => `stores/${storeId}/promotions/${promotionId}/redemptions/${paymentId}`;
+
+const storePointLedgerPath = (storeId: string, entryId: string): string =>
+  `stores/${storeId}/storePointLedger/${Buffer.from(entryId).toString('base64url')}`;
 
 const eventPath = (key: string): string =>
   `${EVENT_COLLECTION}/${Buffer.from(key).toString('base64url')}`;
@@ -152,10 +159,13 @@ export const processVerifiedPaymentWebhook = async (input: {
     let promotionExists = false;
     let redemptionRef: ReturnType<typeof adminDb.doc> | null = null;
     let redemptionExists = false;
+    let pointLedgerEntry: StorePointLedgerEntry | null = null;
+    let pointLedgerRef: ReturnType<typeof adminDb.doc> | null = null;
+    let pointLedgerExists = false;
     const intentStatus = intentStatusForPaymentStatus(effectiveStatus);
 
     // Firestore transactions require every read to happen before any write.
-    // Resolve order and optional coupon redemption documents first.
+    // Resolve order, optional coupon redemption and immutable points ledger first.
     if (current.context === 'marketplace') {
       if (!intentSnapshot.exists) throw new Error('PAYMENT_INTENT_NOT_FOUND');
       intent = normalizeCanonicalPaymentIntent(
@@ -194,6 +204,22 @@ export const processVerifiedPaymentWebhook = async (input: {
           promotionExists = promotionSnapshot.exists;
           redemptionExists = redemptionSnapshot.exists;
         }
+
+        pointLedgerEntry = buildStorePointPurchaseEntry({
+          storeId,
+          customerId: intent.buyerId,
+          orderId: intent.orderDraft.draftId,
+          paymentId,
+          paymentIntentId: intent.id,
+          occurredAt: event.occurredAt,
+          items: intent.orderDraft.items,
+        });
+        if (pointLedgerEntry) {
+          pointLedgerRef = adminDb.doc(
+            storePointLedgerPath(storeId, pointLedgerEntry.id)
+          );
+          pointLedgerExists = (await transaction.get(pointLedgerRef)).exists;
+        }
       }
     }
 
@@ -219,6 +245,10 @@ export const processVerifiedPaymentWebhook = async (input: {
       );
       transaction.set(orderRef, operationalOrder);
       orderMaterialized = true;
+    }
+
+    if (pointLedgerEntry && pointLedgerRef && !pointLedgerExists) {
+      transaction.set(pointLedgerRef, pointLedgerEntry);
     }
 
     if (
