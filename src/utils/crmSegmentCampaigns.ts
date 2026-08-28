@@ -1,5 +1,4 @@
 import {
-  collection,
   doc,
   serverTimestamp,
   writeBatch,
@@ -49,7 +48,7 @@ const customerKey = (order: CustomerOrder): string =>
   order.buyerId.trim() || normalizeEmail(order.buyerEmail);
 
 export const getCrmCampaignsCollectionPath = (storeId: string): string =>
-  `artifacts/${storeId.trim()}/public/data/crmCampaigns`;
+  `storeCrmCampaigns/${storeId.trim()}/campaigns`;
 
 export const buildCrmSegmentRecipients = (
   orders: CustomerOrder[],
@@ -114,8 +113,32 @@ const safeIdentity = (recipient: CrmCampaignRecipient): string =>
     .replace(/[^a-zA-Z0-9_-]/g, '_')
     .slice(0, 72);
 
+const campaignApi = async (
+  user: Pick<User, 'getIdToken'>,
+  body: Record<string, unknown>
+): Promise<Record<string, unknown>> => {
+  const token = await user.getIdToken();
+  const response = await fetch('/api/crm-campaign', {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${token}`,
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify(body),
+  });
+  const payload = await response.json().catch(() => ({})) as Record<string, unknown>;
+  if (!response.ok) {
+    throw new Error(
+      typeof payload.error === 'string'
+        ? payload.error
+        : 'Não foi possível registrar a campanha.'
+    );
+  }
+  return payload;
+};
+
 export const createCrmSegmentCampaign = async (
-  user: Pick<User, 'uid'>,
+  user: Pick<User, 'uid' | 'getIdToken'>,
   draft: CrmSegmentCampaignDraft,
   recipients: CrmCampaignRecipient[]
 ): Promise<{ campaignId: string; recipientCount: number; notifiedRecipientCount: number }> => {
@@ -135,14 +158,9 @@ export const createCrmSegmentCampaign = async (
     throw new Error('Este segmento ainda não possui clientes com conta Kyrub para receber benefícios privados.');
   }
 
-  const campaignRef = doc(collection(db, getCrmCampaignsCollectionPath(storeId)));
-  const now = new Date().toISOString();
   const normalizedCode = draft.code.trim().toLocaleUpperCase('pt-BR');
-
-  const writes: Array<(batch: ReturnType<typeof writeBatch>) => void> = [];
-  writes.push(batch => batch.set(campaignRef, {
-    id: campaignRef.id,
-    storeId,
+  const campaignPayload = await campaignApi(user, {
+    operation: 'create',
     segment: draft.segment,
     title: draft.title.trim(),
     description: draft.description.trim(),
@@ -154,76 +172,96 @@ export const createCrmSegmentCampaign = async (
     endsAt: draft.endsAt,
     segmentRecipientCount: segmentAudience.length,
     recipientCount: audience.length,
-    notifiedRecipientCount: audience.length,
-    status: 'published',
-    createdAt: now,
-    updatedAt: now,
-    recordedAt: serverTimestamp(),
-    schemaVersion: 3,
-  }));
+  });
+  const campaignId = typeof campaignPayload.campaignId === 'string'
+    ? campaignPayload.campaignId.trim()
+    : '';
+  if (!campaignId) throw new Error('A campanha não recebeu uma identificação válida.');
 
-  audience.forEach(recipient => {
+  const now = new Date().toISOString();
+  const recipientWrites = audience.map(recipient => {
     const buyerId = recipient.buyerId.trim();
     const identity = safeIdentity(recipient);
-    const benefitId = `campaign-${campaignRef.id}-${identity}`;
-    const benefitRef = doc(
-      db,
-      getUserPersonalizedBenefitsCollectionPath(buyerId),
-      benefitId
-    );
-    writes.push(batch => batch.set(benefitRef, {
-      id: benefitId,
-      storeId,
-      buyerId,
-      buyerEmail: recipient.buyerEmail,
-      title: draft.title.trim(),
-      description: draft.description.trim(),
-      type: draft.type,
-      value: Math.max(0, Number(draft.value) || 0),
-      productName: draft.type === 'free_product' ? draft.productName.trim() : '',
-      code: normalizedCode,
-      startsAt: draft.startsAt,
-      endsAt: draft.endsAt,
-      active: true,
-      campaignId: campaignRef.id,
-      audienceSegment: draft.segment,
-      createdAt: now,
-      updatedAt: now,
-      recordedAt: serverTimestamp(),
-      schemaVersion: 2,
-    }));
+    const benefitId = `campaign-${campaignId}-${identity}`;
+    const notificationId = `crm-campaign-${campaignId}-${identity}`;
+    return (batch: ReturnType<typeof writeBatch>) => {
+      const benefitRef = doc(
+        db,
+        getUserPersonalizedBenefitsCollectionPath(buyerId),
+        benefitId
+      );
+      batch.set(benefitRef, {
+        id: benefitId,
+        storeId,
+        buyerId,
+        buyerEmail: recipient.buyerEmail,
+        title: draft.title.trim(),
+        description: draft.description.trim(),
+        type: draft.type,
+        value: Math.max(0, Number(draft.value) || 0),
+        productName: draft.type === 'free_product' ? draft.productName.trim() : '',
+        code: normalizedCode,
+        startsAt: draft.startsAt,
+        endsAt: draft.endsAt,
+        active: true,
+        campaignId,
+        audienceSegment: draft.segment,
+        createdAt: now,
+        updatedAt: now,
+        recordedAt: serverTimestamp(),
+        schemaVersion: 2,
+      });
 
-    const notificationId = `crm-campaign-${campaignRef.id}-${identity}`;
-    const notificationRef = doc(
-      db,
-      getUserRelationshipNotificationsCollectionPath(buyerId),
-      notificationId
-    );
-    writes.push(batch => batch.set(notificationRef, {
-      id: notificationId,
-      kind: 'relationship',
-      recipientId: buyerId,
-      senderStoreId: storeId,
-      title: draft.title.trim(),
-      body: draft.description.trim() || 'Você recebeu um novo benefício desta loja.',
-      campaignId: campaignRef.id,
-      benefitId,
-      createdAt: now,
-      readAt: '',
-      recordedAt: serverTimestamp(),
-      schemaVersion: 1,
-    }));
+      const notificationRef = doc(
+        db,
+        getUserRelationshipNotificationsCollectionPath(buyerId),
+        notificationId
+      );
+      batch.set(notificationRef, {
+        id: notificationId,
+        kind: 'relationship',
+        recipientId: buyerId,
+        senderStoreId: storeId,
+        title: draft.title.trim(),
+        body: draft.description.trim() || 'Você recebeu um novo benefício desta loja.',
+        campaignId,
+        benefitId,
+        createdAt: now,
+        readAt: '',
+        recordedAt: serverTimestamp(),
+        schemaVersion: 1,
+      });
+    };
   });
 
-  for (let index = 0; index < writes.length; index += 450) {
-    const batch = writeBatch(db);
-    writes.slice(index, index + 450).forEach(apply => apply(batch));
-    await batch.commit();
+  let notifiedRecipientCount = 0;
+  try {
+    // Two Firestore documents per recipient. 225 recipients keeps each batch under 500 writes.
+    for (let index = 0; index < recipientWrites.length; index += 225) {
+      const batch = writeBatch(db);
+      const slice = recipientWrites.slice(index, index + 225);
+      slice.forEach(apply => apply(batch));
+      await batch.commit();
+      notifiedRecipientCount += slice.length;
+    }
+  } catch (error) {
+    await campaignApi(user, {
+      operation: 'finalize',
+      campaignId,
+      notifiedRecipientCount,
+    }).catch(() => undefined);
+    throw error;
   }
 
+  await campaignApi(user, {
+    operation: 'finalize',
+    campaignId,
+    notifiedRecipientCount,
+  });
+
   return {
-    campaignId: campaignRef.id,
+    campaignId,
     recipientCount: audience.length,
-    notifiedRecipientCount: audience.length,
+    notifiedRecipientCount,
   };
 };
