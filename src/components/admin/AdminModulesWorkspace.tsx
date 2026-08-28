@@ -86,11 +86,12 @@ const MODULES: AdminModuleDefinition[] = [
     folder: 'business',
   },
   {
-    label: 'Financeiro e BaaS',
-    description: 'Onboarding, taxas, splits, settlement e conciliação.',
+    label: 'Economia da Plataforma',
+    description: 'GMV, receita Kyrub, custos, meios de pagamento e direitos econômicos.',
     permission: 'read_finance',
     icon: Banknote,
-    status: 'planned',
+    status: 'available',
+    anchor: 'admin-platform-economics',
     folder: 'business',
   },
   {
