@@ -9,6 +9,7 @@ service cloud.firestore {
 
     // --- Helpers ---
     function isValidId(id) { return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
+    function isValidLedgerId(id) { return id is string && id.size() > 0 && id.size() <= 240 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
     function incoming() { return request.resource.data; }
     function existing() { return resource.data; }
     function isSignedIn() { return request.auth != null; }
@@ -65,7 +66,6 @@ service cloud.firestore {
               && incoming().photoUrl is string
               && incoming().isProfileVisible is bool;
 
-      // Coleção interna de Notas / Tarefas individuais e compartilhadas
       match /tasks/{taskId} {
         allow read: if isSignedIn() && (
           userId == request.auth.uid ||
@@ -85,7 +85,6 @@ service cloud.firestore {
         allow read, write: if isSignedIn() && request.auth.uid == userId;
       }
 
-      // Preferências privadas de comunicação por loja: somente o próprio usuário.
       match /relationshipNotificationPreferences/{storeId} {
         allow read: if isSignedIn() && request.auth.uid == userId;
         allow create, update: if isSignedIn()
@@ -96,24 +95,11 @@ service cloud.firestore {
           && incoming().updatedAt is string
           && incoming().recordedAt == request.time
           && incoming().schemaVersion == 1
-          && incoming().keys().hasAll([
-            'storeId',
-            'enabled',
-            'updatedAt',
-            'recordedAt',
-            'schemaVersion'
-          ])
-          && incoming().keys().hasOnly([
-            'storeId',
-            'enabled',
-            'updatedAt',
-            'recordedAt',
-            'schemaVersion'
-          ]);
+          && incoming().keys().hasAll(['storeId','enabled','updatedAt','recordedAt','schemaVersion'])
+          && incoming().keys().hasOnly(['storeId','enabled','updatedAt','recordedAt','schemaVersion']);
         allow delete: if isSignedIn() && request.auth.uid == userId;
       }
 
-      // Notificações de relacionamento: destinatário lê; remetente só cria em nome da própria loja.
       match /notifications/{notificationId} {
         allow read: if isSignedIn() && request.auth.uid == userId;
         allow create: if isSignedIn()
@@ -134,34 +120,8 @@ service cloud.firestore {
           && incoming().readAt == ''
           && incoming().recordedAt == request.time
           && incoming().schemaVersion == 1
-          && incoming().keys().hasAll([
-            'id',
-            'kind',
-            'recipientId',
-            'senderStoreId',
-            'title',
-            'body',
-            'campaignId',
-            'benefitId',
-            'createdAt',
-            'readAt',
-            'recordedAt',
-            'schemaVersion'
-          ])
-          && incoming().keys().hasOnly([
-            'id',
-            'kind',
-            'recipientId',
-            'senderStoreId',
-            'title',
-            'body',
-            'campaignId',
-            'benefitId',
-            'createdAt',
-            'readAt',
-            'recordedAt',
-            'schemaVersion'
-          ]);
+          && incoming().keys().hasAll(['id','kind','recipientId','senderStoreId','title','body','campaignId','benefitId','createdAt','readAt','recordedAt','schemaVersion'])
+          && incoming().keys().hasOnly(['id','kind','recipientId','senderStoreId','title','body','campaignId','benefitId','createdAt','readAt','recordedAt','schemaVersion']);
         allow update: if isSignedIn()
           && request.auth.uid == userId
           && incoming().id == existing().id
@@ -178,15 +138,10 @@ service cloud.firestore {
           && incoming().readAt is string
           && incoming().readAt.size() > 0
           && incoming().readRecordedAt == request.time
-          && incoming().diff(existing()).affectedKeys().hasOnly([
-            'readAt',
-            'readRecordedAt'
-          ]);
+          && incoming().diff(existing()).affectedKeys().hasOnly(['readAt','readRecordedAt']);
         allow delete: if isSignedIn() && request.auth.uid == userId;
       }
 
-      // Benefícios personalizados ficam no cofre privado do destinatário.
-      // A loja autenticada pode criar um benefício somente em seu próprio nome.
       match /personalizedBenefits/{benefitId} {
         allow read: if isSignedIn() && request.auth.uid == userId;
         allow create: if isSignedIn()
@@ -212,141 +167,60 @@ service cloud.firestore {
           && incoming().updatedAt is string
           && incoming().recordedAt == request.time
           && incoming().schemaVersion == 2
-          && incoming().keys().hasAll([
-            'id',
-            'storeId',
-            'buyerId',
-            'buyerEmail',
-            'title',
-            'description',
-            'type',
-            'value',
-            'productName',
-            'code',
-            'startsAt',
-            'endsAt',
-            'active',
-            'createdAt',
-            'updatedAt',
-            'recordedAt',
-            'schemaVersion'
-          ])
-          && incoming().keys().hasOnly([
-            'id',
-            'storeId',
-            'buyerId',
-            'buyerEmail',
-            'title',
-            'description',
-            'type',
-            'value',
-            'productName',
-            'code',
-            'startsAt',
-            'endsAt',
-            'active',
-            'campaignId',
-            'audienceSegment',
-            'createdAt',
-            'updatedAt',
-            'recordedAt',
-            'schemaVersion'
-          ]);
+          && incoming().keys().hasAll(['id','storeId','buyerId','buyerEmail','title','description','type','value','productName','code','startsAt','endsAt','active','createdAt','updatedAt','recordedAt','schemaVersion'])
+          && incoming().keys().hasOnly(['id','storeId','buyerId','buyerEmail','title','description','type','value','productName','code','startsAt','endsAt','active','campaignId','audienceSegment','createdAt','updatedAt','recordedAt','schemaVersion']);
         allow update: if false;
         allow delete: if isSignedIn() && (
-          request.auth.uid == userId ||
-          request.auth.uid == existing().storeId ||
-          isAdmin()
+          request.auth.uid == userId || request.auth.uid == existing().storeId || isAdmin()
         );
+      }
+
+      // Buyer-private loyalty mirror. Only the account owner can read it.
+      // The responsible store can issue entries; the buyer may only create negative adjustments (redemptions).
+      match /loyaltyLedger/{eventId} {
+        allow read: if isSignedIn() && request.auth.uid == userId;
+        allow create: if isSignedIn()
+          && isValidLedgerId(eventId)
+          && incoming().buyerId == userId
+          && incoming().storeId is string
+          && incoming().storeId.size() > 0
+          && incoming().id is string
+          && incoming().type in ['earn', 'reversal', 'adjustment']
+          && incoming().points is number
+          && incoming().buyerEmail is string
+          && incoming().orderId is string
+          && incoming().reason is string
+          && incoming().lines is list
+          && incoming().sourceEventId is string
+          && incoming().createdAt is string
+          && incoming().recordedAt == request.time
+          && incoming().schemaVersion == 2
+          && (
+            request.auth.uid == incoming().storeId ||
+            (request.auth.uid == userId && incoming().type == 'adjustment' && incoming().points < 0)
+          )
+          && incoming().keys().hasAll(['id','storeId','buyerId','buyerEmail','orderId','type','points','reason','lines','sourceEventId','createdAt','recordedAt','schemaVersion'])
+          && incoming().keys().hasOnly(['id','storeId','buyerId','buyerEmail','orderId','type','points','reason','lines','sourceEventId','createdAt','recordedAt','schemaVersion']);
+        allow update, delete: if false;
       }
 
       match /stores/{storeId} {
         function isUserStoreOwner(userId, storeId) {
-          return request.auth != null
-            && request.auth.uid == userId
-            && storeId == userId;
+          return request.auth != null && request.auth.uid == userId && storeId == userId;
         }
-
         function hasValidUserStoreKeys(data) {
-          return data.keys().hasAll([
-            'id',
-            'ownerId',
-            'ownerEmail',
-            'name',
-            'slug',
-            'description',
-            'logo',
-            'banner',
-            'primaryColor',
-            'plan',
-            'keywords',
-            'offerImages',
-            'address',
-            'contact',
-            'status',
-            'createdAt',
-            'updatedAt'
-          ]) && data.keys().hasOnly([
-            'id',
-            'ownerId',
-            'ownerEmail',
-            'name',
-            'slug',
-            'description',
-            'logo',
-            'banner',
-            'primaryColor',
-            'plan',
-            'keywords',
-            'offerImages',
-            'address',
-            'contact',
-            'status',
-            'createdAt',
-            'updatedAt',
-            'lat',
-            'lng'
-          ]);
+          return data.keys().hasAll(['id','ownerId','ownerEmail','name','slug','description','logo','banner','primaryColor','plan','keywords','offerImages','address','contact','status','createdAt','updatedAt']) && data.keys().hasOnly(['id','ownerId','ownerEmail','name','slug','description','logo','banner','primaryColor','plan','keywords','offerImages','address','contact','status','createdAt','updatedAt','lat','lng']);
         }
-
         function hasValidUserStoreCoordinates(data) {
           return !data.keys().hasAny(['lat', 'lng']) || (
-            data.keys().hasAll(['lat', 'lng'])
-              && data.lat is number
-              && data.lng is number
-              && data.lat >= -90
-              && data.lat <= 90
-              && data.lng >= -180
-              && data.lng <= 180
+            data.keys().hasAll(['lat', 'lng']) && data.lat is number && data.lng is number && data.lat >= -90 && data.lat <= 90 && data.lng >= -180 && data.lng <= 180
           );
         }
-
         function hasValidUserStoreTypes(data) {
-          return data.id is string
-            && data.ownerId is string
-            && data.ownerEmail is string
-            && data.name is string
-            && data.slug is string
-            && data.description is string
-            && data.logo is string
-            && data.banner is string
-            && data.primaryColor is string
-            && data.plan is string
-            && data.keywords is list
-            && data.offerImages is list
-            && data.address is string
-            && data.contact is string
-            && data.status is string
-            && data.createdAt is timestamp
-            && data.updatedAt is timestamp
-            && data.plan in ['free', 'pro', 'business']
-            && data.status in ['open', 'delayed', 'closed']
-            && hasValidUserStoreCoordinates(data);
+          return data.id is string && data.ownerId is string && data.ownerEmail is string && data.name is string && data.slug is string && data.description is string && data.logo is string && data.banner is string && data.primaryColor is string && data.plan is string && data.keywords is list && data.offerImages is list && data.address is string && data.contact is string && data.status is string && data.createdAt is timestamp && data.updatedAt is timestamp && data.plan in ['free', 'pro', 'business'] && data.status in ['open', 'delayed', 'closed'] && hasValidUserStoreCoordinates(data);
         }
-
         allow get: if isUserStoreOwner(userId, storeId);
         allow list: if false;
-
         allow create: if isUserStoreOwner(userId, storeId)
           && hasValidUserStoreKeys(request.resource.data)
           && hasValidUserStoreTypes(request.resource.data)
@@ -355,7 +229,6 @@ service cloud.firestore {
           && request.resource.data.plan == 'free'
           && request.resource.data.createdAt == request.time
           && request.resource.data.updatedAt == request.time;
-
         allow update: if isUserStoreOwner(userId, storeId)
           && resource.data.id == userId
           && resource.data.ownerId == userId
@@ -366,232 +239,119 @@ service cloud.firestore {
           && request.resource.data.createdAt == resource.data.createdAt
           && request.resource.data.plan == resource.data.plan
           && request.resource.data.updatedAt == request.time
-          && request.resource.data
-            .diff(resource.data)
-            .affectedKeys()
-            .hasOnly([
-              'ownerEmail',
-              'name',
-              'slug',
-              'description',
-              'logo',
-              'banner',
-              'primaryColor',
-              'keywords',
-              'offerImages',
-              'address',
-              'contact',
-              'status',
-              'lat',
-              'lng',
-              'updatedAt'
-            ]);
-
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['ownerEmail','name','slug','description','logo','banner','primaryColor','keywords','offerImages','address','contact','status','lat','lng','updatedAt']);
         allow delete: if false;
       }
     }
 
-    // --- Collection Group Match para permitir leitura de notas compartilhadas ---
     match /{path=**}/tasks/{taskId} {
       allow read: if isSignedIn() && (
         resource != null && 'sharedWith' in resource.data && resource.data.sharedWith is list && request.auth.uid in resource.data.sharedWith
       );
     }
 
-    // --- Tenants (Store Directory) ---
     match /tenants/{tenantId} {
       allow read: if isSignedIn();
       allow create: if isSignedIn() && incoming().ownerId == request.auth.uid;
       allow update, delete: if isSignedIn() && (existing().ownerId == request.auth.uid || isAdmin());
     }
 
-    // --- Tenant Artifacts (Multi-tenant) ---
+    // Merchant-private canonical loyalty ledger.
+    // Store owner reads/writes its own ledger; buyers can only append a negative redemption adjustment.
+    match /storeLoyaltyLedgers/{storeId} {
+      allow read, write: if false;
+      match /events/{eventId} {
+        allow read: if isSignedIn() && (request.auth.uid == storeId || isAdmin());
+        allow create: if isSignedIn()
+          && isValidLedgerId(eventId)
+          && incoming().storeId == storeId
+          && incoming().buyerId is string
+          && incoming().buyerId.size() > 0
+          && incoming().buyerEmail is string
+          && incoming().id is string
+          && incoming().orderId is string
+          && incoming().type in ['earn', 'reversal', 'adjustment']
+          && incoming().points is number
+          && incoming().reason is string
+          && incoming().lines is list
+          && incoming().sourceEventId is string
+          && incoming().createdAt is string
+          && incoming().recordedAt == request.time
+          && incoming().schemaVersion == 2
+          && (
+            request.auth.uid == storeId ||
+            (request.auth.uid == incoming().buyerId && incoming().type == 'adjustment' && incoming().points < 0)
+          )
+          && incoming().keys().hasAll(['id','storeId','buyerId','buyerEmail','orderId','type','points','reason','lines','sourceEventId','createdAt','recordedAt','schemaVersion'])
+          && incoming().keys().hasOnly(['id','storeId','buyerId','buyerEmail','orderId','type','points','reason','lines','sourceEventId','createdAt','recordedAt','schemaVersion']);
+        allow update, delete: if false;
+      }
+    }
+
+    // Legacy multi-tenant artifacts. This broad rule remains temporarily for modules not yet migrated.
     match /artifacts/{tenantId} {
       allow read: if isSignedIn();
       allow write: if isSignedIn();
-
       match /{allData=**} {
         allow read: if isSignedIn();
         allow write: if isSignedIn();
       }
     }
 
-    // --- Kyrub Social Connections & Feed ---
-match /connections/{connectionId} {
-  function hasValidConnectionId() {
-    return connectionId.size() > 0
-      && connectionId.size() <= 128
-      && connectionId.matches('^[a-zA-Z0-9_-]+$');
-  }
-
-  function hasValidParticipants(data) {
-    return data.senderId is string
-      && data.receiverId is string
-      && data.senderId.size() > 0
-      && data.senderId.size() <= 128
-      && data.receiverId.size() > 0
-      && data.receiverId.size() <= 128
-      && data.senderId.matches('^[a-zA-Z0-9_-]+$')
-      && data.receiverId.matches('^[a-zA-Z0-9_-]+$')
-      && data.senderId != data.receiverId
-      && data.participantIds is list
-      && data.participantIds.size() == 2
-      && data.participantIds.hasAll([
-        data.senderId,
-        data.receiverId
-      ])
-      && (
-        connectionId == data.senderId + '_' + data.receiverId
-        || connectionId == data.receiverId + '_' + data.senderId
+    match /connections/{connectionId} {
+      function hasValidConnectionId() {
+        return connectionId.size() > 0 && connectionId.size() <= 128 && connectionId.matches('^[a-zA-Z0-9_-]+$');
+      }
+      function hasValidParticipants(data) {
+        return data.senderId is string && data.receiverId is string && data.senderId.size() > 0 && data.senderId.size() <= 128 && data.receiverId.size() > 0 && data.receiverId.size() <= 128 && data.senderId.matches('^[a-zA-Z0-9_-]+$') && data.receiverId.matches('^[a-zA-Z0-9_-]+$') && data.senderId != data.receiverId && data.participantIds is list && data.participantIds.size() == 2 && data.participantIds.hasAll([data.senderId,data.receiverId]) && (connectionId == data.senderId + '_' + data.receiverId || connectionId == data.receiverId + '_' + data.senderId);
+      }
+      function hasImmutableParticipants() {
+        return incoming().senderId == existing().senderId && incoming().receiverId == existing().receiverId && incoming().participantIds == existing().participantIds;
+      }
+      allow read: if isSignedIn() && (request.auth.uid in existing().participantIds || isAdmin());
+      allow create: if isSignedIn()
+        && hasValidConnectionId()
+        && hasValidParticipants(incoming())
+        && incoming().senderId == request.auth.uid
+        && incoming().status == 'pending'
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && incoming().keys().hasAll(['senderId','receiverId','participantIds','status','createdAt','updatedAt'])
+        && incoming().keys().hasOnly(['senderId','receiverId','participantIds','status','senderName','senderRole','senderAvatar','senderBio','receiverName','receiverRole','receiverAvatar','receiverBio','createdAt','updatedAt']);
+      allow update: if isSignedIn()
+        && request.auth.uid == existing().receiverId
+        && existing().status == 'pending'
+        && incoming().status == 'accepted'
+        && hasImmutableParticipants()
+        && incoming().diff(existing()).affectedKeys().hasOnly(['status','acceptedAt','updatedAt'])
+        && incoming().createdAt == existing().createdAt
+        && incoming().acceptedAt == request.time
+        && incoming().updatedAt == request.time
+        && incoming().keys().hasOnly(['senderId','receiverId','participantIds','status','senderName','senderRole','senderAvatar','senderBio','receiverName','receiverRole','receiverAvatar','receiverBio','createdAt','acceptedAt','updatedAt']);
+      allow delete: if isSignedIn() && (
+        isAdmin() ||
+        (existing().status == 'pending' && (request.auth.uid == existing().senderId || request.auth.uid == existing().receiverId)) ||
+        (existing().status == 'accepted' && request.auth.uid in existing().participantIds)
       );
-  }
-
-  function hasImmutableParticipants() {
-    return incoming().senderId == existing().senderId
-      && incoming().receiverId == existing().receiverId
-      && incoming().participantIds == existing().participantIds;
-  }
-
-  allow read: if isSignedIn()
-    && (
-      request.auth.uid in existing().participantIds
-      || isAdmin()
-    );
-
-  allow create: if isSignedIn()
-    && hasValidConnectionId()
-    && hasValidParticipants(incoming())
-    && incoming().senderId == request.auth.uid
-    && incoming().status == 'pending'
-    && incoming().createdAt == request.time
-    && incoming().updatedAt == request.time
-    && incoming().keys().hasAll([
-      'senderId',
-      'receiverId',
-      'participantIds',
-      'status',
-      'createdAt',
-      'updatedAt'
-    ])
-    && incoming().keys().hasOnly([
-      'senderId',
-      'receiverId',
-      'participantIds',
-      'status',
-      'senderName',
-      'senderRole',
-      'senderAvatar',
-      'senderBio',
-      'receiverName',
-      'receiverRole',
-      'receiverAvatar',
-      'receiverBio',
-      'createdAt',
-      'updatedAt'
-    ]);
-
-  allow update: if isSignedIn()
-    && request.auth.uid == existing().receiverId
-    && existing().status == 'pending'
-    && incoming().status == 'accepted'
-    && hasImmutableParticipants()
-    && incoming().diff(existing()).affectedKeys().hasOnly([
-  'status',
-  'acceptedAt',
-  'updatedAt'
-])
-    && incoming().createdAt == existing().createdAt
-    && incoming().acceptedAt == request.time
-    && incoming().updatedAt == request.time
-    && incoming().keys().hasOnly([
-      'senderId',
-      'receiverId',
-      'participantIds',
-      'status',
-      'senderName',
-      'senderRole',
-      'senderAvatar',
-      'senderBio',
-      'receiverName',
-      'receiverRole',
-      'receiverAvatar',
-      'receiverBio',
-      'createdAt',
-      'acceptedAt',
-      'updatedAt'
-    ]);
-
-  allow delete: if isSignedIn()
-    && (
-      isAdmin()
-      || (
-        existing().status == 'pending'
-        && (
-          request.auth.uid == existing().senderId
-          || request.auth.uid == existing().receiverId
-        )
-      )
-      || (
-        existing().status == 'accepted'
-        && request.auth.uid in existing().participantIds
-      )
-    );
-}
+    }
 
     match /social_chats/{connectionId} {
-      function connectionExists() {
-        return exists(
-          /databases/$(database)/documents/connections/$(connectionId)
-        );
-      }
-
-      function connectionData() {
-        return get(
-          /databases/$(database)/documents/connections/$(connectionId)
-        ).data;
-      }
-
+      function connectionExists() { return exists(/databases/$(database)/documents/connections/$(connectionId)); }
+      function connectionData() { return get(/databases/$(database)/documents/connections/$(connectionId)).data; }
       function canAccessMessages() {
-        return isSignedIn()
-          && isValidId(connectionId)
-          && connectionExists()
-          && connectionData().status == 'accepted'
-          && request.auth.uid in connectionData().participantIds;
+        return isSignedIn() && isValidId(connectionId) && connectionExists() && connectionData().status == 'accepted' && request.auth.uid in connectionData().participantIds;
       }
-
       function hasValidReceiver() {
-        return (
-          request.auth.uid == connectionData().senderId
-          && incoming().receiverId == connectionData().receiverId
-        ) || (
-          request.auth.uid == connectionData().receiverId
-          && incoming().receiverId == connectionData().senderId
-        );
+        return (request.auth.uid == connectionData().senderId && incoming().receiverId == connectionData().receiverId) || (request.auth.uid == connectionData().receiverId && incoming().receiverId == connectionData().senderId);
       }
-
       allow read, write: if false;
-
       match /messages/{messageId} {
-        allow get: if canAccessMessages()
-          && isValidId(messageId);
-
-        allow list: if canAccessMessages()
-          && request.query.limit <= 100;
-
+        allow get: if canAccessMessages() && isValidId(messageId);
+        allow list: if canAccessMessages() && request.query.limit <= 100;
         allow create: if canAccessMessages()
           && isValidId(messageId)
-          && incoming().keys().hasAll([
-            'senderId',
-            'receiverId',
-            'text',
-            'createdAt'
-          ])
-          && incoming().keys().hasOnly([
-            'senderId',
-            'receiverId',
-            'text',
-            'createdAt'
-          ])
+          && incoming().keys().hasAll(['senderId','receiverId','text','createdAt'])
+          && incoming().keys().hasOnly(['senderId','receiverId','text','createdAt'])
           && incoming().senderId == request.auth.uid
           && isValidId(incoming().senderId)
           && isValidId(incoming().receiverId)
@@ -600,13 +360,10 @@ match /connections/{connectionId} {
           && incoming().text.size() >= 1
           && incoming().text.size() <= 4000
           && incoming().createdAt == request.time;
-
-        allow update: if false;
-        allow delete: if false;
+        allow update, delete: if false;
       }
     }
 
-    // --- Reviews ---
     match /reviews/{reviewId} {
       allow read: if isSignedIn();
       allow create: if isSignedIn() && incoming().userId == request.auth.uid;
@@ -614,21 +371,17 @@ match /connections/{connectionId} {
       allow delete: if isSignedIn() && (existing().userId == request.auth.uid || isAdmin());
     }
 
-    // --- Guia Renda: Entregas Solicitadas/Disponíveis ---
     match /hub/renda/deliveries/{deliveryId} {
       allow read: if isSignedIn();
-      allow create: if isSignedIn(); // Qualquer usuário ou lojista logado pode solicitar
+      allow create: if isSignedIn();
       allow update, delete: if isSignedIn();
     }
 
-    // --- Guia Renda: Vagas de Freela (Otimizado com Custom Claims) ---
     match /vagas/{vagaId} {
       allow read: if isSignedIn();
-      // Apenas contratantes (owner, manager, staff) ou admin podem criar e gerenciar vagas
       allow create, update, delete: if isAdmin() || hasRole(['owner', 'manager', 'staff']);
     }
 
-    // --- Candidaturas (Prestar o serviço de Freela) ---
     match /candidaturas/{candiId} {
       allow read: if isSignedIn();
       allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
