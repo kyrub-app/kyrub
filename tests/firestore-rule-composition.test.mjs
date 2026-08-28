@@ -114,16 +114,31 @@ test('freelance composition is idempotent', () => {
   assert.equal(hardenKyrubFreelanceRules(secured), secured);
 });
 
-test('artifact composition removes recursive cross-tenant writes', () => {
+test('artifact composition removes recursive cross-tenant writes and reads', () => {
   const result = hardenKyrubArtifactRules(legacyArtifactRules);
 
   assert.doesNotMatch(result, /allow write: if isSignedIn\(\);/);
+  assert.doesNotMatch(result, /match \/\{allData=\*\*\} \{\s*allow read: if isSignedIn\(\);/s);
   assert.match(result, /request\.auth\.uid == tenantId/);
   assert.match(result, /match \/public\/data\/customerOrders\/\{orderId\}/);
+  assert.match(result, /existing\(\)\.buyerId == request\.auth\.uid/);
   assert.match(result, /incoming\(\)\.fulfillmentType == 'dine_in'/);
   assert.match(result, /incoming\(\)\.paymentStatus == 'unpaid'/);
   assert.match(result, /incoming\(\)\.status == 'cancelled'/);
+  assert.match(result, /match \/public\/data\/loyalty\/\{documentId\}/);
+  assert.match(result, /match \/public\/data\/loyaltyChallenges\/\{challengeId\}/);
+  assert.match(result, /match \/public\/data\/loyaltyRewards\/\{rewardId\}/);
+  assert.match(result, /Everything else under the legacy artifact tree is private to its tenant/);
   assert.match(result, /allow delete: if false;/);
+});
+
+test('artifact composition keeps only intentional loyalty datasets customer-readable', () => {
+  const result = hardenKyrubArtifactRules(legacyArtifactRules);
+  const publicReadMatches = result.match(/allow read: if isSignedIn\(\);/g) ?? [];
+
+  assert.equal(publicReadMatches.length, 3);
+  assert.doesNotMatch(result, /Legacy artifact reads stay compatible/);
+  assert.match(result, /Customer orders contain buyer identity/);
 });
 
 test('artifact composition is idempotent', () => {
