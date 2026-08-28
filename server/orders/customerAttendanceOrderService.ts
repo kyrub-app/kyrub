@@ -54,6 +54,14 @@ type AttendanceOrder = {
   updatedAt: string;
 };
 
+type CatalogProduct = {
+  id: string;
+  name: string;
+  price: number;
+  image: string;
+  isService: boolean;
+};
+
 const parseAttendanceOrder = (
   value: unknown,
   authenticatedBuyerId: string
@@ -144,6 +152,62 @@ const parseAttendanceOrder = (
   };
 };
 
+const catalogProducts = (value: unknown): CatalogProduct[] => {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap(entry => {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return [];
+    const record = entry as Record<string, unknown>;
+    const id = safeId(record.id);
+    const name = clean(record.name);
+    const price = finiteMoney(record.price);
+    if (!id || !name || price === null) return [];
+    return [{
+      id,
+      name,
+      price: record.isComplimentary === true ? 0 : price,
+      image: clean(record.image),
+      isService: record.isService === true,
+    }];
+  });
+};
+
+const rebuildAttendanceOrderFromCatalog = (
+  order: AttendanceOrder,
+  catalog: CatalogProduct[]
+): AttendanceOrder => {
+  const productMap = new Map(catalog.map(product => [product.id, product]));
+  const items = order.items.map(item => {
+    const product = productMap.get(item.productId);
+    if (!product) {
+      throw new Error('ATTENDANCE_ORDER_PRODUCT_NOT_AVAILABLE');
+    }
+    if (item.price !== product.price) {
+      throw new Error('ATTENDANCE_ORDER_CATALOG_CHANGED');
+    }
+    return {
+      ...item,
+      name: product.name,
+      price: product.price,
+      image: product.image,
+      isService: product.isService,
+      paidQuantity: 0,
+      transferredQuantity: 0,
+    };
+  });
+  const subtotal = Math.round(
+    items.reduce((sum, item) => sum + item.price * item.quantity, 0) * 100
+  ) / 100;
+  if (order.subtotal !== subtotal || order.total !== subtotal) {
+    throw new Error('ATTENDANCE_ORDER_CATALOG_CHANGED');
+  }
+  return {
+    ...order,
+    items,
+    subtotal,
+    total: subtotal,
+  };
+};
+
 const legacyOrderPath = (legacyStoreId: string, orderId: string): string =>
   `artifacts/${legacyStoreId}/public/data/customerOrders/${orderId}`;
 
@@ -174,9 +238,39 @@ export const createAuthorizedCustomerAttendanceOrder = async (
   if (tenant.publicationStatus !== 'published') {
     return { status: 409, body: { error: 'A loja não está disponível para novos pedidos.', code: 'STORE_NOT_AVAILABLE' } };
   }
-  const canonicalStoreId = safeId(tenant.canonicalStoreId) || order.storeId;
-  const canonicalRef = adminDb.doc(canonicalOrderPath(canonicalStoreId, order.id));
-  const legacyRef = adminDb.doc(legacyOrderPath(order.storeId, order.id));
+
+  let authoritativeOrder: AttendanceOrder;
+  try {
+    authoritativeOrder = rebuildAttendanceOrderFromCatalog(
+      order,
+      catalogProducts(tenant.publicProducts)
+    );
+  } catch (error) {
+    const code = error instanceof Error ? error.message : '';
+    if (code === 'ATTENDANCE_ORDER_PRODUCT_NOT_AVAILABLE') {
+      return {
+        status: 409,
+        body: {
+          error: 'Um item do pedido não está mais disponível. Atualize o cardápio e revise o pedido.',
+          code,
+        },
+      };
+    }
+    if (code === 'ATTENDANCE_ORDER_CATALOG_CHANGED') {
+      return {
+        status: 409,
+        body: {
+          error: 'O preço de um item foi atualizado. Atualize o cardápio e revise o pedido.',
+          code,
+        },
+      };
+    }
+    throw error;
+  }
+
+  const canonicalStoreId = safeId(tenant.canonicalStoreId) || authoritativeOrder.storeId;
+  const canonicalRef = adminDb.doc(canonicalOrderPath(canonicalStoreId, authoritativeOrder.id));
+  const legacyRef = adminDb.doc(legacyOrderPath(authoritativeOrder.storeId, authoritativeOrder.id));
 
   await adminDb.runTransaction(async transaction => {
     const [canonicalSnapshot, legacySnapshot] = await Promise.all([
@@ -186,18 +280,18 @@ export const createAuthorizedCustomerAttendanceOrder = async (
 
     if (canonicalSnapshot.exists) {
       const existing = canonicalSnapshot.data() as Record<string, unknown>;
-      if (existing.buyerId !== identity.uid || existing.legacyStoreId !== order.storeId) {
+      if (existing.buyerId !== identity.uid || existing.legacyStoreId !== authoritativeOrder.storeId) {
         throw new Error('ATTENDANCE_ORDER_ID_CONFLICT');
       }
     } else {
       transaction.create(canonicalRef, {
-        ...order,
+        ...authoritativeOrder,
         storeId: canonicalStoreId,
         createdByUserId: identity.uid,
         createdByRole: 'customer',
-        legacyStoreId: order.storeId,
-        legacyCreatedAt: order.createdAt,
-        legacyUpdatedAt: order.updatedAt,
+        legacyStoreId: authoritativeOrder.storeId,
+        legacyCreatedAt: authoritativeOrder.createdAt,
+        legacyUpdatedAt: authoritativeOrder.updatedAt,
         canonicalAuthority: true,
         schemaVersion: 2,
       });
@@ -205,17 +299,19 @@ export const createAuthorizedCustomerAttendanceOrder = async (
 
     // Temporary compatibility copy until every ERP/KDS reader is on canonical orders.
     if (!legacySnapshot.exists) {
-      transaction.create(legacyRef, order);
+      transaction.create(legacyRef, authoritativeOrder);
     }
   });
 
   return {
     status: 201,
     body: {
-      orderId: order.id,
-      legacyStoreId: order.storeId,
+      orderId: authoritativeOrder.id,
+      legacyStoreId: authoritativeOrder.storeId,
       canonicalStoreId,
       canonicalAuthority: true,
+      subtotal: authoritativeOrder.subtotal,
+      total: authoritativeOrder.total,
     },
   };
 };
