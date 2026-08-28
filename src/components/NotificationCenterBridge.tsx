@@ -7,6 +7,10 @@ import {
   openCustomerRelationship,
   subscribeToUserRelationshipNotifications,
 } from '../utils/relationshipNotifications';
+import {
+  isRelationshipNotificationEnabled,
+  subscribeToRelationshipNotificationPreferences,
+} from '../utils/relationshipNotificationPreferences';
 
 type NotificationKind = 'message' | 'sale' | 'relationship';
 type NotificationFilter = 'all' | NotificationKind;
@@ -102,6 +106,7 @@ export function NotificationCenterBridge() {
   const [open, setOpen] = useState(false);
   const [filter, setFilter] = useState<NotificationFilter>('all');
   const [notifications, setNotifications] = useState<KyrubNotification[]>([]);
+  const [preferenceVersion, setPreferenceVersion] = useState(0);
 
   useEffect(() => {
     let frame = 0;
@@ -134,6 +139,10 @@ export function NotificationCenterBridge() {
     };
   }, []);
 
+  useEffect(() => subscribeToRelationshipNotificationPreferences(
+    () => setPreferenceVersion(current => current + 1)
+  ), []);
+
   useEffect(() => {
     let unsubscribeCloud: (() => void) | null = null;
     const reload = () => setNotifications(readStoredNotifications());
@@ -144,6 +153,7 @@ export function NotificationCenterBridge() {
       unsubscribeCloud = null;
       const user = auth.currentUser;
       reload();
+      setPreferenceVersion(current => current + 1);
       if (!user) return;
       unsubscribeCloud = subscribeToUserRelationshipNotifications(
         user.uid,
@@ -216,10 +226,15 @@ export function NotificationCenterBridge() {
     };
   }, [open]);
 
-  const unreadCount = notifications.filter(item => !item.readAt).length;
+  const allowedNotifications = useMemo(() => notifications.filter(item =>
+    item.kind !== 'relationship' ||
+    !item.storeId ||
+    isRelationshipNotificationEnabled(item.storeId)
+  ), [notifications, preferenceVersion]);
+  const unreadCount = allowedNotifications.filter(item => !item.readAt).length;
   const visibleNotifications = useMemo(
-    () => notifications.filter(item => filter === 'all' || item.kind === filter),
-    [filter, notifications]
+    () => allowedNotifications.filter(item => filter === 'all' || item.kind === filter),
+    [allowedNotifications, filter]
   );
 
   const markRead = (item: KyrubNotification) => {
@@ -250,16 +265,15 @@ export function NotificationCenterBridge() {
 
   const markAllRead = () => {
     const now = new Date().toISOString();
-    const unreadCloud = notifications.filter(item => item.cloudRelationship && !item.readAt);
+    const visibleIds = new Set(allowedNotifications.filter(item => !item.readAt).map(item => item.id));
+    const unreadCloud = allowedNotifications.filter(item => item.cloudRelationship && !item.readAt);
     setNotifications(previous => {
-      const next = previous.map(item => item.readAt ? item : { ...item, readAt: now });
+      const next = previous.map(item => visibleIds.has(item.id) ? { ...item, readAt: now } : item);
       persistNotifications(next);
       return next;
     });
     const user = auth.currentUser;
-    if (user) {
-      unreadCloud.forEach(item => void markRelationshipNotificationRead(user.uid, item.id).catch(() => undefined));
-    }
+    if (user) unreadCloud.forEach(item => void markRelationshipNotificationRead(user.uid, item.id).catch(() => undefined));
   };
 
   if (!host) return null;
