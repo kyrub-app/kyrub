@@ -1,6 +1,7 @@
 import { BadgePercent, Sparkles } from 'lucide-react';
 import { CustomerLoyaltyChallengesSection } from './CustomerLoyaltyChallengesSection';
 import { CustomerLoyaltyRewardsSection } from './CustomerLoyaltyRewardsSection';
+import { CustomerPersonalizedBenefitsSection } from './CustomerPersonalizedBenefitsSection';
 
 export function CustomerPersonalBenefitsGroup({ storeId }: { storeId: string }) {
   return (
@@ -14,9 +15,10 @@ export function CustomerPersonalBenefitsGroup({ storeId }: { storeId: string }) 
           Benefícios do seu relacionamento
         </h4>
         <p className="mt-1 text-[9px] leading-relaxed text-slate-500">
-          Esta área depende do seu histórico, saldo e progresso nesta loja. Não é a mesma coisa que uma promoção pública da vitrine.
+          Esta área depende do seu histórico, saldo, progresso e benefícios direcionados pela loja. Não é a mesma coisa que uma promoção pública da vitrine.
         </p>
       </div>
+      <CustomerPersonalizedBenefitsSection storeId={storeId} />
       <CustomerLoyaltyChallengesSection storeId={storeId} />
       <CustomerLoyaltyRewardsSection storeId={storeId} />
     </section>
