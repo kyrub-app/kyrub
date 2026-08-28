@@ -10,6 +10,7 @@ import {
 import { ConnectedContactsPanel } from '../ConnectedContactsPanel';
 import { PublicSocialFeedPanel } from '../PublicSocialFeedPanel';
 import { StoreOfferCardPresentationBridge } from '../StoreOfferCardPresentationBridge';
+import { CustomerRelationshipsShoppingBridge } from '../store/CustomerRelationshipsShoppingBridge';
 import { KyrubTab as LegacyKyrubTab } from './LegacyKyrubTab';
 import { usePublicSocialFeed } from '../../hooks/usePublicSocialFeed';
 import type {
@@ -204,12 +205,15 @@ export function KyrubTab(props: KyrubTabProps) {
     props.socialSubTab === 'usuarios' &&
     (props.pracaFilter === 'recentes' ||
       props.pracaFilter === 'favoritos');
+  const isCustomerRelationshipsActive =
+    props.socialSubTab === 'lojas' && props.ofertasFilter === 'cliente';
 
   const wrapperClassName = [
     isConnectedContactsActive
       ? 'connected-contacts-redesign-active'
       : '',
     isPublicFeedActive ? 'public-social-feed-active' : '',
+    isCustomerRelationshipsActive ? 'customer-relationships-active' : '',
   ]
     .filter(Boolean)
     .join(' ');
@@ -224,7 +228,14 @@ export function KyrubTab(props: KyrubTabProps) {
 
       <StoreOfferCardPresentationBridge
         stores={publishedStores}
-        enabled={props.socialSubTab === 'lojas'}
+        enabled={props.socialSubTab === 'lojas' && !isCustomerRelationshipsActive}
+      />
+
+      <CustomerRelationshipsShoppingBridge
+        enabled={isCustomerRelationshipsActive}
+        stores={publishedStores}
+        orders={props.orders}
+        onEnterStore={props.setVisitingStore}
       />
 
       {isPublicFeedActive && (
