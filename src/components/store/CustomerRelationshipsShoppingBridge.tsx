@@ -8,6 +8,8 @@ type Props = {
   stores: Store[];
   orders: Order[];
   onEnterStore: (store: Store) => void;
+  initialStoreId?: string;
+  onInitialStoreHandled?: () => void;
 };
 
 const normalizedText = (value: string | null | undefined): string =>
@@ -18,6 +20,8 @@ export function CustomerRelationshipsShoppingBridge({
   stores,
   orders,
   onEnterStore,
+  initialStoreId = '',
+  onInitialStoreHandled,
 }: Props) {
   const [host, setHost] = useState<HTMLElement | null>(null);
 
@@ -56,10 +60,7 @@ export function CustomerRelationshipsShoppingBridge({
       }
 
       const grids = Array.from(section.children).filter(
-        child =>
-          child instanceof HTMLElement &&
-          child.classList.contains('grid') &&
-          child.classList.contains('grid-cols-2')
+        child => child instanceof HTMLElement && child.classList.contains('grid') && child.classList.contains('grid-cols-2')
       ) as HTMLElement[];
       const storeGrid = grids[0] ?? null;
 
@@ -98,6 +99,8 @@ export function CustomerRelationshipsShoppingBridge({
       stores={stores}
       orders={orders}
       onEnterStore={onEnterStore}
+      initialStoreId={initialStoreId}
+      onInitialStoreHandled={onInitialStoreHandled}
     />,
     host
   );
