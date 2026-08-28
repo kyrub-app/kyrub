@@ -18,6 +18,12 @@ const cartDrawer = readFileSync(
   'utf8'
 );
 const checkoutClient = readFileSync('src/utils/marketplaceCheckout.ts', 'utf8');
+const customerOrders = readFileSync('src/utils/customerOrders.ts', 'utf8');
+const attendanceAuthority = readFileSync(
+  'server/orders/customerAttendanceOrderService.ts',
+  'utf8'
+);
+const crmTransport = readFileSync('server/crmCampaignService.ts', 'utf8');
 const paymentIntentRouter = readFileSync(
   'server/payments/paymentIntentRouter.ts',
   'utf8'
@@ -84,7 +90,7 @@ test('delivery and pickup create a server-side pending PaymentIntent instead of 
   assert.match(paymentIntentRouter, /context: 'marketplace'/);
 });
 
-test('dine-in remains an attendance order and does not inherit the marketplace payment gate', () => {
+test('dine-in remains an attendance order but is created by canonical server authority', () => {
   assert.match(cartDrawer, /const order = buildCustomerOrder\(user/);
   assert.match(cartDrawer, /await persistCustomerOrder\(order\)/);
   const marketplaceBranch = cartDrawer.indexOf("fulfillmentType === 'delivery'");
@@ -92,6 +98,13 @@ test('dine-in remains an attendance order and does not inherit the marketplace p
   assert.ok(marketplaceBranch >= 0);
   assert.ok(directOrderBuild > marketplaceBranch);
   assert.match(cartDrawer.slice(marketplaceBranch, directOrderBuild), /return;/);
+  assert.match(customerOrders, /operation: 'create_attendance_order'/);
+  assert.match(customerOrders, /\/api\/action-execute\?transport=crm-campaign/);
+  assert.match(crmTransport, /create_attendance_order/);
+  assert.match(attendanceAuthority, /verifyFirebaseIdToken/);
+  assert.match(attendanceAuthority, /stores\/\$\{canonicalStoreId\}\/orders\/\$\{orderId\}/);
+  assert.match(attendanceAuthority, /canonicalAuthority: true/);
+  assert.match(attendanceAuthority, /Temporary compatibility copy/);
 });
 
 test('only an authoritative paid provider event materializes the marketplace CustomerOrder', () => {
