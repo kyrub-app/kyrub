@@ -176,24 +176,22 @@ export const isLoyaltyRewardAvailable = (reward: LoyaltyReward, at = new Date())
 };
 
 export const redeemLoyaltyReward = async (
-  user: Pick<User, 'uid'>,
+  user: Pick<User, 'uid' | 'email'>,
   reward: LoyaltyReward,
-  buyerId: string,
-  buyerEmail: string,
   ledgerEvents: LoyaltyLedgerEvent[]
 ): Promise<{ created: boolean; redemptionId: string }> => {
-  if (reward.storeId !== user.uid) throw new Error('Recompensa pertence a outra loja.');
   if (!isLoyaltyRewardAvailable(reward)) throw new Error('Esta recompensa não está disponível agora.');
-  const normalizedBuyerId = buyerId.trim();
-  const normalizedEmail = buyerEmail.trim().toLocaleLowerCase('pt-BR');
-  if (!normalizedBuyerId && !normalizedEmail) throw new Error('Cliente não identificado.');
-  const balance = getBuyerLoyaltyBalance(ledgerEvents, normalizedBuyerId, normalizedEmail);
+  const buyerId = user.uid.trim();
+  const buyerEmail = (user.email ?? '').trim().toLocaleLowerCase('pt-BR');
+  if (!buyerId) throw new Error('Cliente não identificado.');
+  const balance = getBuyerLoyaltyBalance(ledgerEvents, buyerId, buyerEmail);
   if (balance < reward.pointsCost) throw new Error('Saldo de pontos insuficiente.');
 
-  const customerKey = (normalizedBuyerId || normalizedEmail).replace(/[^a-zA-Z0-9_-]/g, '_');
-  const redemptionId = `reward-${reward.id}-${customerKey}-${Date.now()}`;
+  const customerKey = buyerId.replace(/[^a-zA-Z0-9_-]/g, '_');
+  const redemptionId = `reward-${reward.id}-${customerKey}`;
   const redemptionReference = doc(db, getLoyaltyRewardRedemptionsCollectionPath(reward.storeId), redemptionId);
   const ledgerReference = doc(db, getLoyaltyLedgerEventPath(reward.storeId, redemptionId));
+  let created = false;
 
   await runTransaction(db, async transaction => {
     const existing = await transaction.get(redemptionReference);
@@ -205,8 +203,8 @@ export const redeemLoyaltyReward = async (
       rewardId: reward.id,
       rewardTitle: reward.title,
       rewardType: reward.type,
-      buyerId: normalizedBuyerId,
-      buyerEmail: normalizedEmail,
+      buyerId,
+      buyerEmail,
       pointsCost: reward.pointsCost,
       benefitValue: reward.benefitValue,
       productId: reward.productId,
@@ -219,8 +217,8 @@ export const redeemLoyaltyReward = async (
     transaction.set(ledgerReference, {
       id: redemptionId,
       storeId: reward.storeId,
-      buyerId: normalizedBuyerId,
-      buyerEmail: normalizedEmail,
+      buyerId,
+      buyerEmail,
       orderId: '',
       type: 'adjustment',
       points: -Math.abs(reward.pointsCost),
@@ -231,6 +229,7 @@ export const redeemLoyaltyReward = async (
       recordedAt: serverTimestamp(),
       schemaVersion: 1,
     });
+    created = true;
   });
-  return { created: true, redemptionId };
+  return { created, redemptionId };
 };
