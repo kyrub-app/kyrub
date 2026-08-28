@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ComponentType } from 'react';
 import { createPortal } from 'react-dom';
 import { onAuthStateChanged, type User } from 'firebase/auth';
 import {
@@ -186,7 +186,7 @@ export function StoreLoyaltyCenterBridge() {
   const tabs: Array<{
     id: LoyaltyTab;
     label: string;
-    icon: React.ComponentType<{ className?: string }>;
+    icon: ComponentType<{ className?: string }>;
   }> = [
     { id: 'coupons', label: 'Cupons', icon: BadgePercent },
     { id: 'points', label: 'Pontos', icon: Award },
