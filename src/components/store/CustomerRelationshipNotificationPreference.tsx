@@ -11,6 +11,8 @@ import {
 export function CustomerRelationshipNotificationPreference({ storeId }: { storeId: string }) {
   const [enabled, setEnabled] = useState(true);
   const [ready, setReady] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
 
   useEffect(() => {
     const synchronize = () => {
@@ -27,12 +29,22 @@ export function CustomerRelationshipNotificationPreference({ storeId }: { storeI
     };
   }, [storeId]);
 
-  const toggle = () => {
+  const toggle = async () => {
     const user = auth.currentUser;
-    if (!user) return;
-    const next = !enabled;
-    setRelationshipNotificationEnabled(storeId, next, user.uid);
+    if (!user || busy) return;
+    const previous = enabled;
+    const next = !previous;
+    setBusy(true);
+    setErrorMessage('');
     setEnabled(next);
+    try {
+      await setRelationshipNotificationEnabled(storeId, next, user.uid);
+    } catch (error) {
+      setEnabled(previous);
+      setErrorMessage(error instanceof Error ? error.message : 'Não foi possível sincronizar esta preferência.');
+    } finally {
+      setBusy(false);
+    }
   };
 
   const Icon = enabled ? Bell : BellOff;
@@ -51,16 +63,17 @@ export function CustomerRelationshipNotificationPreference({ storeId }: { storeI
               : 'Benefícios continuam em “Para você”, mas os avisos promocionais desta loja ficam silenciados.'}
           </p>
           <p className="mt-1 text-[8px] font-bold text-slate-600">
-            Atualizações de pedidos e outras mensagens transacionais não são afetadas.
+            Atualizações de pedidos e outras mensagens transacionais não são afetadas. A preferência é sincronizada entre seus dispositivos.
           </p>
+          {errorMessage && <p className="mt-1 text-[8px] font-bold text-rose-300">{errorMessage}</p>}
         </div>
         <button
           type="button"
           role="switch"
           aria-checked={enabled}
           aria-label="Receber avisos de relacionamento desta loja"
-          disabled={!ready}
-          onClick={toggle}
+          disabled={!ready || busy}
+          onClick={() => void toggle()}
           className={`relative h-7 w-12 shrink-0 rounded-full border transition-colors disabled:opacity-40 ${enabled ? 'border-violet-400/30 bg-violet-400/20' : 'border-slate-700 bg-slate-900'}`}
         >
           <span className={`absolute top-1 h-5 w-5 rounded-full bg-white transition-all ${enabled ? 'left-6' : 'left-1'}`} />
