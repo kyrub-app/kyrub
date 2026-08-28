@@ -11,6 +11,7 @@ import {
   getPersonalizedBenefitsCollectionPath,
   type PersonalizedBenefitType,
 } from './personalizedBenefits';
+import { getUserRelationshipNotificationsCollectionPath } from './relationshipNotifications';
 
 export type CrmSegment = 'new' | 'recurring' | 'vip' | 'inactive';
 
@@ -117,7 +118,7 @@ export const createCrmSegmentCampaign = async (
   user: Pick<User, 'uid'>,
   draft: CrmSegmentCampaignDraft,
   recipients: CrmCampaignRecipient[]
-): Promise<{ campaignId: string; recipientCount: number }> => {
+): Promise<{ campaignId: string; recipientCount: number; notifiedRecipientCount: number }> => {
   const storeId = user.uid.trim();
   if (!storeId) throw new Error('Loja não identificada.');
   if (!draft.title.trim()) throw new Error('Informe o título da campanha.');
@@ -131,6 +132,7 @@ export const createCrmSegmentCampaign = async (
   const now = new Date().toISOString();
   const normalizedCode = draft.code.trim().toLocaleUpperCase('pt-BR');
   const benefitCollection = getPersonalizedBenefitsCollectionPath(storeId);
+  let notifiedRecipientCount = 0;
 
   const writes: Array<(batch: ReturnType<typeof writeBatch>) => void> = [];
   writes.push(batch => batch.set(campaignRef, {
@@ -146,15 +148,17 @@ export const createCrmSegmentCampaign = async (
     startsAt: draft.startsAt,
     endsAt: draft.endsAt,
     recipientCount: audience.length,
+    notifiedRecipientCount: audience.filter(item => item.buyerId.trim()).length,
     status: 'published',
     createdAt: now,
     updatedAt: now,
     recordedAt: serverTimestamp(),
-    schemaVersion: 1,
+    schemaVersion: 2,
   }));
 
   audience.forEach(recipient => {
-    const benefitId = `campaign-${campaignRef.id}-${safeIdentity(recipient)}`;
+    const identity = safeIdentity(recipient);
+    const benefitId = `campaign-${campaignRef.id}-${identity}`;
     const benefitRef = doc(db, benefitCollection, benefitId);
     writes.push(batch => batch.set(benefitRef, {
       id: benefitId,
@@ -177,6 +181,30 @@ export const createCrmSegmentCampaign = async (
       recordedAt: serverTimestamp(),
       schemaVersion: 1,
     }));
+
+    const buyerId = recipient.buyerId.trim();
+    if (!buyerId) return;
+    notifiedRecipientCount += 1;
+    const notificationId = `crm-campaign-${campaignRef.id}-${identity}`;
+    const notificationRef = doc(
+      db,
+      getUserRelationshipNotificationsCollectionPath(buyerId),
+      notificationId
+    );
+    writes.push(batch => batch.set(notificationRef, {
+      id: notificationId,
+      kind: 'relationship',
+      recipientId: buyerId,
+      senderStoreId: storeId,
+      title: draft.title.trim(),
+      body: draft.description.trim() || 'Você recebeu um novo benefício desta loja.',
+      campaignId: campaignRef.id,
+      benefitId,
+      createdAt: now,
+      readAt: '',
+      recordedAt: serverTimestamp(),
+      schemaVersion: 1,
+    }));
   });
 
   for (let index = 0; index < writes.length; index += 450) {
@@ -185,5 +213,5 @@ export const createCrmSegmentCampaign = async (
     await batch.commit();
   }
 
-  return { campaignId: campaignRef.id, recipientCount: audience.length };
+  return { campaignId: campaignRef.id, recipientCount: audience.length, notifiedRecipientCount };
 };
