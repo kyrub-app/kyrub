@@ -2,69 +2,41 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // 0. Global Safety Net
     match /{document=**} {
       allow read, write: if false;
     }
 
-    // --- Helpers ---
     function isValidId(id) { return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
     function isValidLedgerId(id) { return id is string && id.size() > 0 && id.size() <= 240 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
     function incoming() { return request.resource.data; }
     function existing() { return resource.data; }
     function isSignedIn() { return request.auth != null; }
-
-    // Otimizado: Verificação de papéis usando Custom Claims do Auth (sem custo de leitura de banco)
     function hasRole(roleList) { return isSignedIn() && request.auth.token.role in roleList; }
     function isAdmin() { return isSignedIn() && request.auth.token.role == 'admin'; }
 
-    // --- Global User Directory ---
     match /users/{userId} {
       allow read: if isSignedIn();
       allow create: if isSignedIn()
-              && request.auth.uid == userId
-              && incoming().keys().hasAll([
-                'uid',
-                'name',
-                'email',
-                'photoUrl',
-                'isProfileVisible',
-                'createdAt',
-                'updatedAt'
-              ])
-              && incoming().keys().hasOnly([
-                'uid',
-                'name',
-                'email',
-                'photoUrl',
-                'isProfileVisible',
-                'createdAt',
-                'updatedAt'
-              ])
-              && incoming().uid == userId
-              && incoming().name is string
-              && incoming().email is string
-              && incoming().photoUrl is string
-              && incoming().isProfileVisible is bool
-              && incoming().createdAt == request.time
-              && incoming().updatedAt == request.time;
-
+        && request.auth.uid == userId
+        && incoming().keys().hasAll(['uid','name','email','photoUrl','isProfileVisible','createdAt','updatedAt'])
+        && incoming().keys().hasOnly(['uid','name','email','photoUrl','isProfileVisible','createdAt','updatedAt'])
+        && incoming().uid == userId
+        && incoming().name is string
+        && incoming().email is string
+        && incoming().photoUrl is string
+        && incoming().isProfileVisible is bool
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
       allow update: if isSignedIn()
-              && request.auth.uid == userId
-              && incoming().uid == existing().uid
-              && incoming().createdAt == existing().createdAt
-              && incoming().updatedAt == request.time
-              && incoming().diff(existing()).affectedKeys().hasOnly([
-                'name',
-                'email',
-                'photoUrl',
-                'isProfileVisible',
-                'updatedAt'
-              ])
-              && incoming().name is string
-              && incoming().email is string
-              && incoming().photoUrl is string
-              && incoming().isProfileVisible is bool;
+        && request.auth.uid == userId
+        && incoming().uid == existing().uid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly(['name','email','photoUrl','isProfileVisible','updatedAt'])
+        && incoming().name is string
+        && incoming().email is string
+        && incoming().photoUrl is string
+        && incoming().isProfileVisible is bool;
 
       match /tasks/{taskId} {
         allow read: if isSignedIn() && (
@@ -175,8 +147,6 @@ service cloud.firestore {
         );
       }
 
-      // Buyer-private loyalty mirror. Only the account owner can read it.
-      // The responsible store can issue entries; the buyer may only create negative adjustments (redemptions).
       match /loyaltyLedger/{eventId} {
         allow read: if isSignedIn() && request.auth.uid == userId;
         allow create: if isSignedIn()
@@ -201,6 +171,55 @@ service cloud.firestore {
           )
           && incoming().keys().hasAll(['id','storeId','buyerId','buyerEmail','orderId','type','points','reason','lines','sourceEventId','createdAt','recordedAt','schemaVersion'])
           && incoming().keys().hasOnly(['id','storeId','buyerId','buyerEmail','orderId','type','points','reason','lines','sourceEventId','createdAt','recordedAt','schemaVersion']);
+        allow update, delete: if false;
+      }
+
+      match /loyaltyChallengeCompletions/{completionId} {
+        allow read: if isSignedIn() && request.auth.uid == userId;
+        allow create: if isSignedIn()
+          && isValidLedgerId(completionId)
+          && incoming().id == completionId
+          && incoming().buyerId == userId
+          && incoming().storeId == request.auth.uid
+          && incoming().challengeId is string
+          && incoming().challengeTitle is string
+          && incoming().buyerEmail is string
+          && incoming().metric in ['paid_orders','points_earned']
+          && incoming().achievedValue is number
+          && incoming().target is number
+          && incoming().rewardPoints is number
+          && incoming().completedAt is string
+          && incoming().recordedAt == request.time
+          && incoming().schemaVersion == 2
+          && incoming().keys().hasAll(['id','storeId','challengeId','challengeTitle','buyerId','buyerEmail','metric','achievedValue','target','rewardPoints','completedAt','recordedAt','schemaVersion'])
+          && incoming().keys().hasOnly(['id','storeId','challengeId','challengeTitle','buyerId','buyerEmail','metric','achievedValue','target','rewardPoints','completedAt','recordedAt','schemaVersion']);
+        allow update, delete: if false;
+      }
+
+      match /loyaltyRewardRedemptions/{redemptionId} {
+        allow read: if isSignedIn() && request.auth.uid == userId;
+        allow create: if isSignedIn()
+          && request.auth.uid == userId
+          && isValidLedgerId(redemptionId)
+          && incoming().id == redemptionId
+          && incoming().buyerId == userId
+          && incoming().storeId is string
+          && incoming().storeId.size() > 0
+          && incoming().rewardId is string
+          && incoming().rewardTitle is string
+          && incoming().rewardType in ['discount','free_product','voucher']
+          && incoming().buyerEmail is string
+          && incoming().pointsCost is number
+          && incoming().pointsCost > 0
+          && incoming().benefitValue is number
+          && incoming().productId is string
+          && incoming().productName is string
+          && incoming().status == 'issued'
+          && incoming().createdAt is string
+          && incoming().recordedAt == request.time
+          && incoming().schemaVersion == 2
+          && incoming().keys().hasAll(['id','storeId','rewardId','rewardTitle','rewardType','buyerId','buyerEmail','pointsCost','benefitValue','productId','productName','status','createdAt','recordedAt','schemaVersion'])
+          && incoming().keys().hasOnly(['id','storeId','rewardId','rewardTitle','rewardType','buyerId','buyerEmail','pointsCost','benefitValue','productId','productName','status','createdAt','recordedAt','schemaVersion']);
         allow update, delete: if false;
       }
 
@@ -256,8 +275,6 @@ service cloud.firestore {
       allow update, delete: if isSignedIn() && (existing().ownerId == request.auth.uid || isAdmin());
     }
 
-    // Merchant-private canonical loyalty ledger.
-    // Store owner reads/writes its own ledger; buyers can only append a negative redemption adjustment.
     match /storeLoyaltyLedgers/{storeId} {
       allow read, write: if false;
       match /events/{eventId} {
@@ -284,6 +301,60 @@ service cloud.firestore {
           )
           && incoming().keys().hasAll(['id','storeId','buyerId','buyerEmail','orderId','type','points','reason','lines','sourceEventId','createdAt','recordedAt','schemaVersion'])
           && incoming().keys().hasOnly(['id','storeId','buyerId','buyerEmail','orderId','type','points','reason','lines','sourceEventId','createdAt','recordedAt','schemaVersion']);
+        allow update, delete: if false;
+      }
+    }
+
+    match /storeLoyaltyChallengeCompletions/{storeId} {
+      allow read, write: if false;
+      match /completions/{completionId} {
+        allow read: if isSignedIn() && (request.auth.uid == storeId || isAdmin());
+        allow create: if isSignedIn()
+          && request.auth.uid == storeId
+          && isValidLedgerId(completionId)
+          && incoming().id == completionId
+          && incoming().storeId == storeId
+          && incoming().challengeId is string
+          && incoming().challengeTitle is string
+          && incoming().buyerId is string
+          && incoming().buyerEmail is string
+          && incoming().metric in ['paid_orders','points_earned']
+          && incoming().achievedValue is number
+          && incoming().target is number
+          && incoming().rewardPoints is number
+          && incoming().completedAt is string
+          && incoming().recordedAt == request.time
+          && incoming().schemaVersion == 2
+          && incoming().keys().hasAll(['id','storeId','challengeId','challengeTitle','buyerId','buyerEmail','metric','achievedValue','target','rewardPoints','completedAt','recordedAt','schemaVersion'])
+          && incoming().keys().hasOnly(['id','storeId','challengeId','challengeTitle','buyerId','buyerEmail','metric','achievedValue','target','rewardPoints','completedAt','recordedAt','schemaVersion']);
+        allow update, delete: if false;
+      }
+    }
+
+    match /storeLoyaltyRewardRedemptions/{storeId} {
+      allow read, write: if false;
+      match /redemptions/{redemptionId} {
+        allow read: if isSignedIn() && (request.auth.uid == storeId || isAdmin());
+        allow create: if isSignedIn()
+          && isValidLedgerId(redemptionId)
+          && incoming().id == redemptionId
+          && incoming().storeId == storeId
+          && incoming().buyerId == request.auth.uid
+          && incoming().rewardId is string
+          && incoming().rewardTitle is string
+          && incoming().rewardType in ['discount','free_product','voucher']
+          && incoming().buyerEmail is string
+          && incoming().pointsCost is number
+          && incoming().pointsCost > 0
+          && incoming().benefitValue is number
+          && incoming().productId is string
+          && incoming().productName is string
+          && incoming().status == 'issued'
+          && incoming().createdAt is string
+          && incoming().recordedAt == request.time
+          && incoming().schemaVersion == 2
+          && incoming().keys().hasAll(['id','storeId','rewardId','rewardTitle','rewardType','buyerId','buyerEmail','pointsCost','benefitValue','productId','productName','status','createdAt','recordedAt','schemaVersion'])
+          && incoming().keys().hasOnly(['id','storeId','rewardId','rewardTitle','rewardType','buyerId','buyerEmail','pointsCost','benefitValue','productId','productName','status','createdAt','recordedAt','schemaVersion']);
         allow update, delete: if false;
       }
     }
