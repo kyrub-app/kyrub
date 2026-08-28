@@ -144,6 +144,24 @@ export default async function handler(
     return;
   }
 
+  if (transport === 'crm-campaign') {
+    try {
+      const campaigns = await import('../server/crmCampaignService.js');
+      const result = await campaigns.executeCrmCampaignTransport(
+        authorization,
+        request.body
+      );
+      response.status(result.status).json(result.body);
+    } catch (error) {
+      console.error('[CRM Campaign]', error);
+      response.status(500).json({
+        error: 'Não foi possível registrar a campanha agora.',
+        code: 'CRM_CAMPAIGN_FAILED',
+      });
+    }
+    return;
+  }
+
   if (transport === 'marketplace-payment-intent') {
     let mapError: ((error: unknown) => HttpErrorResult) | null = null;
     try {
