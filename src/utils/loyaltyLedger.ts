@@ -101,9 +101,7 @@ export const persistPaidOrderLoyaltyEarn = async (
   if (order.storeId.trim() !== user.uid) {
     throw new Error('Somente a loja responsável pode registrar pontos deste pedido.');
   }
-  if (order.paymentStatus !== 'paid') {
-    return { created: false, points: 0 };
-  }
+  if (order.paymentStatus !== 'paid') return { created: false, points: 0 };
   if (order.status === 'cancelled' || order.status === 'rejected') {
     return { created: false, points: 0 };
   }
@@ -116,10 +114,8 @@ export const persistPaidOrderLoyaltyEarn = async (
   return runTransaction(db, async transaction => {
     const existing = await transaction.get(reference);
     if (existing.exists()) {
-      const existingPoints = cleanInteger(existing.data()?.points);
-      return { created: false, points: existingPoints };
+      return { created: false, points: cleanInteger(existing.data()?.points) };
     }
-
     transaction.set(reference, {
       id: eventId,
       storeId: order.storeId,
@@ -135,7 +131,6 @@ export const persistPaidOrderLoyaltyEarn = async (
       recordedAt: serverTimestamp(),
       schemaVersion: 1,
     });
-
     return { created: true, points };
   });
 };
@@ -148,7 +143,6 @@ export const persistOrderLoyaltyReversal = async (
   if (order.storeId.trim() !== user.uid) {
     throw new Error('Somente a loja responsável pode estornar pontos deste pedido.');
   }
-
   const earnId = getOrderLoyaltyEarnEventId(order.id);
   const reversalId = getOrderLoyaltyReversalEventId(order.id);
   const earnReference = doc(db, getLoyaltyLedgerEventPath(order.storeId, earnId));
@@ -159,15 +153,12 @@ export const persistOrderLoyaltyReversal = async (
       transaction.get(earnReference),
       transaction.get(reversalReference),
     ]);
-
     if (reversalSnapshot.exists()) {
       return { created: false, points: cleanInteger(reversalSnapshot.data()?.points) };
     }
     if (!earnSnapshot.exists()) return { created: false, points: 0 };
-
     const earn = parseLoyaltyLedgerEvent(earnSnapshot.data());
     if (!earn || earn.type !== 'earn') return { created: false, points: 0 };
-
     const points = -Math.abs(earn.points);
     const lines = earn.lines.map(line => ({
       ...line,
@@ -175,7 +166,6 @@ export const persistOrderLoyaltyReversal = async (
       bonusPoints: -Math.abs(line.bonusPoints),
       totalPoints: -Math.abs(line.totalPoints),
     }));
-
     transaction.set(reversalReference, {
       id: reversalId,
       storeId: earn.storeId,
@@ -191,7 +181,6 @@ export const persistOrderLoyaltyReversal = async (
       recordedAt: serverTimestamp(),
       schemaVersion: 1,
     });
-
     return { created: true, points };
   });
 };
@@ -221,13 +210,9 @@ export const parseLoyaltyLedgerEvent = (value: unknown): LoyaltyLedgerEvent | nu
   const orderId = cleanString(record.orderId);
   const type = record.type;
   const points = cleanInteger(record.points);
-  if (
-    !id ||
-    !storeId ||
-    !buyerId ||
-    !orderId ||
-    (type !== 'earn' && type !== 'reversal' && type !== 'adjustment')
-  ) return null;
+  if (!id || !storeId || !buyerId) return null;
+  if (type !== 'earn' && type !== 'reversal' && type !== 'adjustment') return null;
+  if ((type === 'earn' || type === 'reversal') && !orderId) return null;
 
   const lines = Array.isArray(record.lines)
     ? record.lines.flatMap(value => {
