@@ -152,4 +152,32 @@ body {
   #kyrub-ai-workspace > section > form {
     flex-shrink: 0;
   }
+
+  /* Gerencial follows the app's established two-column mobile card pattern. */
+  #erp-gerencial-tab > .grid:first-child {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.75rem;
+  }
+
+  #erp-gerencial-tab > .grid:first-child > button {
+    min-width: 0;
+    padding: 0.875rem;
+    border-radius: 1.25rem;
+  }
+
+  #erp-gerencial-tab > .grid:first-child > button > div:first-child {
+    width: 2.25rem;
+    height: 2.25rem;
+    border-radius: 0.875rem;
+  }
+
+  #erp-gerencial-tab > .grid:first-child > button h4 {
+    font-size: 0.625rem;
+    line-height: 0.9rem;
+  }
+
+  #erp-gerencial-tab > .grid:first-child > button p {
+    font-size: 0.5625rem;
+    line-height: 0.8rem;
+  }
 }
