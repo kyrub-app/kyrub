@@ -99,11 +99,21 @@ test('only an authoritative paid provider event materializes the marketplace Cus
   assert.match(webhookProcessor, /buildPaymentWebhookIdempotencyKey/);
   assert.match(webhookProcessor, /effectiveStatus === 'paid'/);
   assert.match(webhookProcessor, /materializePaidMarketplaceOrder/);
-  assert.match(webhookProcessor, /operationalOrderExists/);
+  assert.match(webhookProcessor, /legacyOrderExists/);
   assert.match(materialization, /canMaterializeOperationalOrder/);
   assert.match(materialization, /PAYMENT_REQUIRED_BEFORE_ORDER_MATERIALIZATION/);
   assert.match(materialization, /paymentStatus: 'paid'/);
   assert.match(materialization, /source: 'customer'/);
+});
+
+test('paid marketplace orders are born in the canonical store and keep a temporary legacy compatibility copy', () => {
+  assert.match(webhookProcessor, /tenants\/\$\{legacyStoreId\}/);
+  assert.match(webhookProcessor, /tenantSnapshot\.data\(\)\?\.canonicalStoreId/);
+  assert.match(webhookProcessor, /stores\/\$\{canonicalStoreId\}\/orders\/\$\{orderId\}/);
+  assert.match(webhookProcessor, /createdByRole: 'customer'/);
+  assert.match(webhookProcessor, /canonicalAuthority: true/);
+  assert.match(webhookProcessor, /legacyOperationalOrderPath/);
+  assert.match(webhookProcessor, /Compatibility copy while older ERP readers are still being cut over/);
 });
 
 test('the materialized paid order feeds the seller inbox and KDS without a second payment truth', () => {
