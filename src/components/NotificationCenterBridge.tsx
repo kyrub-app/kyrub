@@ -49,26 +49,26 @@ const readStoredNotifications = (): KyrubNotification[] => {
     if (!raw) return [];
     const parsed = JSON.parse(raw) as unknown;
     if (!Array.isArray(parsed)) return [];
-    return parsed
-      .filter(item => item && typeof item === 'object')
-      .map(item => {
-        const row = item as Partial<KyrubNotification>;
-        if ((row.kind !== 'message' && row.kind !== 'sale' && row.kind !== 'relationship') || !row.title || !row.body) return null;
-        return {
-          id: typeof row.id === 'string' ? row.id : crypto.randomUUID(),
-          kind: row.kind,
-          title: row.title,
-          body: row.body,
-          sourceId: typeof row.sourceId === 'string' ? row.sourceId : undefined,
-          storeId: typeof row.storeId === 'string' ? row.storeId : undefined,
-          benefitId: typeof row.benefitId === 'string' ? row.benefitId : undefined,
-          campaignId: typeof row.campaignId === 'string' ? row.campaignId : undefined,
-          createdAt: typeof row.createdAt === 'string' ? row.createdAt : new Date().toISOString(),
-          readAt: typeof row.readAt === 'string' ? row.readAt : null,
-          cloudRelationship: row.cloudRelationship === true,
-        } satisfies KyrubNotification;
-      })
-      .filter((item): item is KyrubNotification => Boolean(item));
+    const items: KyrubNotification[] = [];
+    parsed.forEach(item => {
+      if (!item || typeof item !== 'object') return;
+      const row = item as Partial<KyrubNotification>;
+      if ((row.kind !== 'message' && row.kind !== 'sale' && row.kind !== 'relationship') || !row.title || !row.body) return;
+      items.push({
+        id: typeof row.id === 'string' ? row.id : crypto.randomUUID(),
+        kind: row.kind,
+        title: row.title,
+        body: row.body,
+        sourceId: typeof row.sourceId === 'string' ? row.sourceId : undefined,
+        storeId: typeof row.storeId === 'string' ? row.storeId : undefined,
+        benefitId: typeof row.benefitId === 'string' ? row.benefitId : undefined,
+        campaignId: typeof row.campaignId === 'string' ? row.campaignId : undefined,
+        createdAt: typeof row.createdAt === 'string' ? row.createdAt : new Date().toISOString(),
+        readAt: typeof row.readAt === 'string' ? row.readAt : null,
+        cloudRelationship: row.cloudRelationship === true,
+      });
+    });
+    return items;
   } catch {
     return [];
   }
