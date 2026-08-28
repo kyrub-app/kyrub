@@ -27,7 +27,7 @@ const cleanString = (value: unknown): string =>
   typeof value === 'string' ? value.trim() : '';
 
 export const getUserRelationshipNotificationsCollectionPath = (userId: string): string =>
-  `artifacts/${userId.trim()}/private/data/relationshipNotifications`;
+  `relationshipNotifications/${userId.trim()}/items`;
 
 const parseNotification = (value: unknown): RelationshipNotification | null => {
   if (!value || typeof value !== 'object') return null;
