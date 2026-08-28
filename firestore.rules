@@ -185,6 +185,81 @@ service cloud.firestore {
         allow delete: if isSignedIn() && request.auth.uid == userId;
       }
 
+      // Benefícios personalizados ficam no cofre privado do destinatário.
+      // A loja autenticada pode criar um benefício somente em seu próprio nome.
+      match /personalizedBenefits/{benefitId} {
+        allow read: if isSignedIn() && request.auth.uid == userId;
+        allow create: if isSignedIn()
+          && isValidId(benefitId)
+          && incoming().id == benefitId
+          && incoming().buyerId == userId
+          && incoming().storeId == request.auth.uid
+          && incoming().buyerEmail is string
+          && incoming().title is string
+          && incoming().title.size() > 0
+          && incoming().title.size() <= 180
+          && incoming().description is string
+          && incoming().description.size() <= 2000
+          && incoming().type in ['discount', 'voucher', 'free_product']
+          && incoming().value is number
+          && incoming().value >= 0
+          && incoming().productName is string
+          && incoming().code is string
+          && incoming().startsAt is string
+          && incoming().endsAt is string
+          && incoming().active is bool
+          && incoming().createdAt is string
+          && incoming().updatedAt is string
+          && incoming().recordedAt == request.time
+          && incoming().schemaVersion == 2
+          && incoming().keys().hasAll([
+            'id',
+            'storeId',
+            'buyerId',
+            'buyerEmail',
+            'title',
+            'description',
+            'type',
+            'value',
+            'productName',
+            'code',
+            'startsAt',
+            'endsAt',
+            'active',
+            'createdAt',
+            'updatedAt',
+            'recordedAt',
+            'schemaVersion'
+          ])
+          && incoming().keys().hasOnly([
+            'id',
+            'storeId',
+            'buyerId',
+            'buyerEmail',
+            'title',
+            'description',
+            'type',
+            'value',
+            'productName',
+            'code',
+            'startsAt',
+            'endsAt',
+            'active',
+            'campaignId',
+            'audienceSegment',
+            'createdAt',
+            'updatedAt',
+            'recordedAt',
+            'schemaVersion'
+          ]);
+        allow update: if false;
+        allow delete: if isSignedIn() && (
+          request.auth.uid == userId ||
+          request.auth.uid == existing().storeId ||
+          isAdmin()
+        );
+      }
+
       match /stores/{storeId} {
         function isUserStoreOwner(userId, storeId) {
           return request.auth != null
