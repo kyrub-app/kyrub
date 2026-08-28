@@ -45,22 +45,23 @@ const cleanNumber = (value: unknown): number => {
 const normalizeEmail = (value: string): string =>
   value.trim().toLocaleLowerCase('pt-BR');
 
-export const getPersonalizedBenefitsCollectionPath = (storeId: string): string =>
-  `artifacts/${storeId.trim()}/public/data/personalizedBenefits`;
+export const getUserPersonalizedBenefitsCollectionPath = (userId: string): string =>
+  `users/${userId.trim()}/personalizedBenefits`;
 
 const parseBenefit = (value: unknown): PersonalizedBenefit | null => {
   if (!value || typeof value !== 'object') return null;
   const record = value as Record<string, unknown>;
   const id = cleanString(record.id);
   const storeId = cleanString(record.storeId);
+  const buyerId = cleanString(record.buyerId);
   const title = cleanString(record.title);
   const type = record.type;
-  if (!id || !storeId || !title) return null;
+  if (!id || !storeId || !buyerId || !title) return null;
   if (type !== 'discount' && type !== 'voucher' && type !== 'free_product') return null;
   return {
     id,
     storeId,
-    buyerId: cleanString(record.buyerId),
+    buyerId,
     buyerEmail: normalizeEmail(cleanString(record.buyerEmail)),
     title,
     description: cleanString(record.description),
@@ -100,22 +101,24 @@ export const benefitMatchesBuyer = (
 };
 
 export const subscribeToPersonalizedBenefits = (
+  buyerId: string,
   storeId: string,
   onBenefits: (benefits: PersonalizedBenefit[]) => void,
   onError?: (error: Error) => void
 ): Unsubscribe => {
-  const normalized = storeId.trim();
-  if (!normalized) {
+  const normalizedBuyerId = buyerId.trim();
+  const normalizedStoreId = storeId.trim();
+  if (!normalizedBuyerId || !normalizedStoreId) {
     onBenefits([]);
     return () => undefined;
   }
   return onSnapshot(
-    collection(db, getPersonalizedBenefitsCollectionPath(normalized)),
+    collection(db, getUserPersonalizedBenefitsCollectionPath(normalizedBuyerId)),
     snapshot => {
       const benefits = snapshot.docs
         .flatMap(item => {
           const parsed = parseBenefit(item.data());
-          return parsed ? [parsed] : [];
+          return parsed && parsed.storeId === normalizedStoreId ? [parsed] : [];
         })
         .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
       onBenefits(benefits);
@@ -136,12 +139,14 @@ export const savePersonalizedBenefit = async (
   if (!draft.title.trim()) throw new Error('Informe o nome do benefício.');
   const buyerId = draft.buyerId.trim();
   const buyerEmail = normalizeEmail(draft.buyerEmail);
-  if (!buyerId && !buyerEmail) throw new Error('Cliente não identificado.');
+  if (!buyerId) {
+    throw new Error('O cliente precisa ter uma conta Kyrub para receber um benefício privado.');
+  }
   if (draft.startsAt && draft.endsAt && draft.endsAt < draft.startsAt) {
     throw new Error('O fim do benefício não pode ser anterior ao início.');
   }
 
-  const reference = doc(collection(db, getPersonalizedBenefitsCollectionPath(storeId)));
+  const reference = doc(collection(db, getUserPersonalizedBenefitsCollectionPath(buyerId)));
   const now = new Date().toISOString();
   await setDoc(reference, {
     id: reference.id,
@@ -160,7 +165,7 @@ export const savePersonalizedBenefit = async (
     createdAt: now,
     updatedAt: now,
     recordedAt: serverTimestamp(),
-    schemaVersion: 1,
+    schemaVersion: 2,
   });
   return reference.id;
 };
