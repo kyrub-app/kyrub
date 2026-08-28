@@ -48,7 +48,7 @@ service cloud.firestore {
               && incoming().createdAt == request.time
               && incoming().updatedAt == request.time;
 
-			allow update: if isSignedIn()
+      allow update: if isSignedIn()
               && request.auth.uid == userId
               && incoming().uid == existing().uid
               && incoming().createdAt == existing().createdAt
@@ -83,6 +83,106 @@ service cloud.firestore {
       }
       match /skills/{skillId} {
         allow read, write: if isSignedIn() && request.auth.uid == userId;
+      }
+
+      // Preferências privadas de comunicação por loja: somente o próprio usuário.
+      match /relationshipNotificationPreferences/{storeId} {
+        allow read: if isSignedIn() && request.auth.uid == userId;
+        allow create, update: if isSignedIn()
+          && request.auth.uid == userId
+          && isValidId(storeId)
+          && incoming().storeId == storeId
+          && incoming().enabled is bool
+          && incoming().updatedAt is string
+          && incoming().recordedAt == request.time
+          && incoming().schemaVersion == 1
+          && incoming().keys().hasAll([
+            'storeId',
+            'enabled',
+            'updatedAt',
+            'recordedAt',
+            'schemaVersion'
+          ])
+          && incoming().keys().hasOnly([
+            'storeId',
+            'enabled',
+            'updatedAt',
+            'recordedAt',
+            'schemaVersion'
+          ]);
+        allow delete: if isSignedIn() && request.auth.uid == userId;
+      }
+
+      // Notificações de relacionamento: destinatário lê; remetente só cria em nome da própria loja.
+      match /notifications/{notificationId} {
+        allow read: if isSignedIn() && request.auth.uid == userId;
+        allow create: if isSignedIn()
+          && isValidId(notificationId)
+          && incoming().id == notificationId
+          && incoming().kind == 'relationship'
+          && incoming().recipientId == userId
+          && incoming().senderStoreId == request.auth.uid
+          && incoming().title is string
+          && incoming().title.size() > 0
+          && incoming().title.size() <= 180
+          && incoming().body is string
+          && incoming().body.size() > 0
+          && incoming().body.size() <= 2000
+          && incoming().campaignId is string
+          && incoming().benefitId is string
+          && incoming().createdAt is string
+          && incoming().readAt == ''
+          && incoming().recordedAt == request.time
+          && incoming().schemaVersion == 1
+          && incoming().keys().hasAll([
+            'id',
+            'kind',
+            'recipientId',
+            'senderStoreId',
+            'title',
+            'body',
+            'campaignId',
+            'benefitId',
+            'createdAt',
+            'readAt',
+            'recordedAt',
+            'schemaVersion'
+          ])
+          && incoming().keys().hasOnly([
+            'id',
+            'kind',
+            'recipientId',
+            'senderStoreId',
+            'title',
+            'body',
+            'campaignId',
+            'benefitId',
+            'createdAt',
+            'readAt',
+            'recordedAt',
+            'schemaVersion'
+          ]);
+        allow update: if isSignedIn()
+          && request.auth.uid == userId
+          && incoming().id == existing().id
+          && incoming().kind == existing().kind
+          && incoming().recipientId == existing().recipientId
+          && incoming().senderStoreId == existing().senderStoreId
+          && incoming().title == existing().title
+          && incoming().body == existing().body
+          && incoming().campaignId == existing().campaignId
+          && incoming().benefitId == existing().benefitId
+          && incoming().createdAt == existing().createdAt
+          && incoming().recordedAt == existing().recordedAt
+          && incoming().schemaVersion == existing().schemaVersion
+          && incoming().readAt is string
+          && incoming().readAt.size() > 0
+          && incoming().readRecordedAt == request.time
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'readAt',
+            'readRecordedAt'
+          ]);
+        allow delete: if isSignedIn() && request.auth.uid == userId;
       }
 
       match /stores/{storeId} {
