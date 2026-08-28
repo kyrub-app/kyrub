@@ -110,10 +110,10 @@ test('bonuses are separate entries and reversals are compensating movements', ()
     occurredAt: '2026-08-28T18:01:00.000Z',
   });
   const reversal = buildStorePointReversalEntry({
-    reversalId: 'refund-payment-1',
+    reversalId: 'manual-adjustment-payment-1',
     original: purchase,
     amount: 10,
-    reason: 'partial_refund',
+    reason: 'manual_adjustment',
     occurredAt: '2026-08-28T18:02:00.000Z',
   });
 
@@ -123,6 +123,29 @@ test('bonuses are separate entries and reversals are compensating movements', ()
   assert.equal(reversal.amount, -10);
   assert.equal(reversal.reversalOf, purchase.id);
   assert.equal(deriveStorePointBalance([purchase, bonus, reversal]), 40);
+});
+
+test('a completed full refund reverses the immutable purchase amount exactly once', () => {
+  const purchase = buildStorePointPurchaseEntry(purchaseInput());
+  assert.ok(purchase);
+  const first = buildStorePointReversalEntry({
+    reversalId: `refund:${purchase.paymentId}`,
+    original: purchase,
+    reason: 'payment_refunded',
+    occurredAt: '2026-08-28T19:00:00.000Z',
+  });
+  const retry = buildStorePointReversalEntry({
+    reversalId: `refund:${purchase.paymentId}`,
+    original: purchase,
+    reason: 'payment_refunded',
+    occurredAt: '2026-08-28T19:00:00.000Z',
+  });
+
+  assert.equal(first.id, 'reversal:refund:payment-1');
+  assert.equal(first.idempotencyKey, retry.idempotencyKey);
+  assert.equal(first.amount, -38);
+  assert.equal(first.reversalOf, purchase.id);
+  assert.equal(deriveStorePointBalance([purchase, first]), 0);
 });
 
 test('checkout snapshots points server-side and browser never declares the award', () => {
@@ -137,4 +160,14 @@ test('checkout snapshots points server-side and browser never declares the award
   assert.match(webhook, /storePointLedgerPath/);
   assert.match(webhook, /pointLedgerExists/);
   assert.match(webhook, /effectiveStatus === 'paid'/);
+});
+
+test('automatic points reversal only runs at terminal refunded status', () => {
+  const webhook = readFileSync('server/payments/paymentWebhookProcessor.ts', 'utf8');
+
+  assert.match(webhook, /effectiveStatus === 'refunded'/);
+  assert.match(webhook, /reversalId: `refund:\$\{paymentId\}`/);
+  assert.match(webhook, /reason: 'payment_refunded'/);
+  assert.match(webhook, /pointReversalExists/);
+  assert.doesNotMatch(webhook, /effectiveStatus === 'refund_processing'/);
 });
