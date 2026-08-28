@@ -34,8 +34,16 @@ const paymentPath = (storeId: string, paymentId: string): string =>
 const paymentIntentPath = (storeId: string, paymentIntentId: string): string =>
   `stores/${storeId}/paymentIntents/${paymentIntentId}`;
 
-const operationalOrderPath = (storeId: string, orderId: string): string =>
+const legacyOperationalOrderPath = (storeId: string, orderId: string): string =>
   `artifacts/${storeId}/public/data/customerOrders/${orderId}`;
+
+const canonicalOperationalOrderPath = (
+  canonicalStoreId: string,
+  orderId: string
+): string => `stores/${canonicalStoreId}/orders/${orderId}`;
+
+const tenantPath = (legacyStoreId: string): string =>
+  `tenants/${legacyStoreId}`;
 
 const promotionPath = (storeId: string, promotionId: string): string =>
   `stores/${storeId}/promotions/${promotionId}`;
@@ -48,6 +56,9 @@ const promotionRedemptionPath = (
 
 const eventPath = (key: string): string =>
   `${EVENT_COLLECTION}/${Buffer.from(key).toString('base64url')}`;
+
+const cleanString = (value: unknown): string =>
+  typeof value === 'string' ? value.trim() : '';
 
 const intentStatusForPaymentStatus = (
   status: CanonicalPayment['status']
@@ -102,11 +113,13 @@ export const processVerifiedPaymentWebhook = async (input: {
     const paymentRef = adminDb.doc(paymentPath(storeId, paymentId));
     const eventRef = adminDb.doc(eventPath(idempotencyKey));
     const intentRef = adminDb.doc(paymentIntentPath(storeId, event.paymentIntentId));
+    const tenantRef = adminDb.doc(tenantPath(storeId));
 
-    const [paymentSnapshot, eventSnapshot, intentSnapshot] = await Promise.all([
+    const [paymentSnapshot, eventSnapshot, intentSnapshot, tenantSnapshot] = await Promise.all([
       transaction.get(paymentRef),
       transaction.get(eventRef),
       transaction.get(intentRef),
+      transaction.get(tenantRef),
     ]);
 
     if (!paymentSnapshot.exists) throw new Error('PAYMENT_NOT_FOUND');
@@ -147,7 +160,9 @@ export const processVerifiedPaymentWebhook = async (input: {
     let orderMaterialized = false;
     let intent: CanonicalPaymentIntent | null = null;
     let operationalOrder: ReturnType<typeof materializePaidMarketplaceOrder> | null = null;
-    let operationalOrderExists = false;
+    let legacyOrderExists = false;
+    let canonicalStoreId = '';
+    let canonicalOrderExists = false;
     let promotionRef: ReturnType<typeof adminDb.doc> | null = null;
     let promotionExists = false;
     let redemptionRef: ReturnType<typeof adminDb.doc> | null = null;
@@ -175,11 +190,19 @@ export const processVerifiedPaymentWebhook = async (input: {
           intent: paidIntent,
           now: event.occurredAt,
         });
-        const orderRef = adminDb.doc(
-          operationalOrderPath(operationalOrder.storeId, operationalOrder.id)
+        const legacyOrderRef = adminDb.doc(
+          legacyOperationalOrderPath(operationalOrder.storeId, operationalOrder.id)
         );
-        operationalOrderExists = (await transaction.get(orderRef)).exists;
+        legacyOrderExists = (await transaction.get(legacyOrderRef)).exists;
         orderId = operationalOrder.id;
+
+        canonicalStoreId = cleanString(tenantSnapshot.data()?.canonicalStoreId);
+        if (canonicalStoreId && canonicalStoreId !== storeId) {
+          const canonicalOrderRef = adminDb.doc(
+            canonicalOperationalOrderPath(canonicalStoreId, operationalOrder.id)
+          );
+          canonicalOrderExists = (await transaction.get(canonicalOrderRef)).exists;
+        }
 
         const promotion = intent.orderDraft.promotionSnapshot;
         if (promotion && (intent.orderDraft.discountTotal ?? 0) > 0) {
@@ -213,12 +236,37 @@ export const processVerifiedPaymentWebhook = async (input: {
       });
     }
 
-    if (operationalOrder && !operationalOrderExists) {
-      const orderRef = adminDb.doc(
-        operationalOrderPath(operationalOrder.storeId, operationalOrder.id)
-      );
-      transaction.set(orderRef, operationalOrder);
-      orderMaterialized = true;
+    if (operationalOrder) {
+      if (canonicalStoreId && canonicalStoreId !== storeId && !canonicalOrderExists) {
+        const canonicalOrderRef = adminDb.doc(
+          canonicalOperationalOrderPath(canonicalStoreId, operationalOrder.id)
+        );
+        transaction.set(canonicalOrderRef, {
+          ...operationalOrder,
+          storeId: canonicalStoreId,
+          createdByUserId: operationalOrder.buyerId,
+          createdByRole: 'customer',
+          legacyStoreId: storeId,
+          legacyCreatedAt: operationalOrder.createdAt,
+          legacyUpdatedAt: operationalOrder.updatedAt,
+          materializedFromPaymentId: paymentId,
+          materializedFromPaymentIntentId: event.paymentIntentId,
+          migratedFromPath: legacyOperationalOrderPath(storeId, operationalOrder.id),
+          canonicalAuthority: true,
+          schemaVersion: 2,
+        });
+        orderMaterialized = true;
+      }
+
+      // Compatibility copy while older ERP readers are still being cut over.
+      // The canonical order above is the target authority whenever the tenant mapping exists.
+      if (!legacyOrderExists) {
+        const legacyOrderRef = adminDb.doc(
+          legacyOperationalOrderPath(operationalOrder.storeId, operationalOrder.id)
+        );
+        transaction.set(legacyOrderRef, operationalOrder);
+        orderMaterialized = true;
+      }
     }
 
     if (
