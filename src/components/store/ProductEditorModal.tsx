@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type React from 'react';
 import type { Product } from '../../types';
 import { auth } from '../../utils/firebase';
@@ -8,8 +8,13 @@ import {
   persistProductFiscalProfile,
   type ProductFiscalEditorState,
 } from '../../utils/productFiscal';
+import {
+  persistProductLoyaltyPoints,
+  subscribeToProductLoyalty,
+} from '../../utils/productLoyalty';
 import { ProductCreateWizardBridge } from './ProductCreateWizardBridge';
 import { ProductFiscalFieldsBridge } from './ProductFiscalFieldsBridge';
+import { ProductLoyaltyFieldsBridge } from './ProductLoyaltyFieldsBridge';
 import { ProductPricingFieldsBridge } from './ProductPricingFieldsBridge';
 import {
   UnifiedProductModal,
@@ -40,12 +45,44 @@ export const ProductEditorModal: React.FC<ProductEditorModalProps> = ({
     ),
     initialProfile: null,
   });
+  const [loyaltyPoints, setLoyaltyPoints] = useState(0);
+  const [initialLoyaltyPoints, setInitialLoyaltyPoints] = useState(0);
+  const [loyaltyReady, setLoyaltyReady] = useState(mode === 'create');
+
+  useEffect(() => {
+    if (!resolvedOpen) return;
+    if (mode === 'create' || !product?.id) {
+      setLoyaltyPoints(0);
+      setInitialLoyaltyPoints(0);
+      setLoyaltyReady(true);
+      return;
+    }
+    const user = auth.currentUser;
+    if (!user) {
+      setLoyaltyReady(false);
+      return;
+    }
+    setLoyaltyReady(false);
+    return subscribeToProductLoyalty(
+      user.uid,
+      rules => {
+        const next = rules[product.id] ?? 0;
+        setLoyaltyPoints(next);
+        setInitialLoyaltyPoints(next);
+        setLoyaltyReady(true);
+      },
+      () => setLoyaltyReady(true)
+    );
+  }, [mode, product?.id, resolvedOpen]);
 
   const handleSave = async (nextProduct: Product): Promise<void> => {
     if (!fiscalState.ready) {
       throw new Error(
         'Aguarde os dados fiscais terminarem de carregar antes de salvar.'
       );
+    }
+    if (!loyaltyReady) {
+      throw new Error('Aguarde a regra de fidelidade terminar de carregar.');
     }
 
     const user = auth.currentUser;
@@ -65,9 +102,11 @@ export const ProductEditorModal: React.FC<ProductEditorModalProps> = ({
       nextProduct.id,
       nextFiscalProfile
     );
+    await persistProductLoyaltyPoints(user, nextProduct.id, loyaltyPoints);
 
     try {
       await onSave(nextProduct);
+      setInitialLoyaltyPoints(loyaltyPoints);
     } catch (error) {
       void persistProductFiscalProfile(
         user,
@@ -76,6 +115,16 @@ export const ProductEditorModal: React.FC<ProductEditorModalProps> = ({
       ).catch(rollbackError => {
         console.error(
           'Não foi possível reverter os dados fiscais após a falha do item.',
+          rollbackError
+        );
+      });
+      void persistProductLoyaltyPoints(
+        user,
+        nextProduct.id,
+        initialLoyaltyPoints
+      ).catch(rollbackError => {
+        console.error(
+          'Não foi possível reverter os pontos de fidelidade após a falha do item.',
           rollbackError
         );
       });
@@ -104,6 +153,12 @@ export const ProductEditorModal: React.FC<ProductEditorModalProps> = ({
         product={product}
         isSaving={isSaving}
         onStateChange={setFiscalState}
+      />
+      <ProductLoyaltyFieldsBridge
+        isOpen={resolvedOpen}
+        points={loyaltyPoints}
+        disabled={isSaving || !loyaltyReady}
+        onChange={setLoyaltyPoints}
       />
       <ProductPricingFieldsBridge
         isOpen={resolvedOpen}
