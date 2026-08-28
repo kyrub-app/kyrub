@@ -275,7 +275,6 @@ service cloud.firestore {
       allow update, delete: if isSignedIn() && (existing().ownerId == request.auth.uid || isAdmin());
     }
 
-    // Public loyalty economics, but only the responsible store may mutate them.
     match /storeLoyaltyConfigs/{storeId} {
       allow read: if isSignedIn();
       allow create, update: if isSignedIn()
@@ -287,6 +286,70 @@ service cloud.firestore {
         && incoming().keys().hasAll(['storeId','productPoints','updatedAt','schemaVersion'])
         && incoming().keys().hasOnly(['storeId','productPoints','updatedAt','schemaVersion']);
       allow delete: if isSignedIn() && (request.auth.uid == storeId || isAdmin());
+    }
+
+    match /storeLoyaltyChallenges/{storeId} {
+      allow read, write: if false;
+      match /items/{challengeId} {
+        allow read: if isSignedIn();
+        allow create, update: if isSignedIn()
+          && request.auth.uid == storeId
+          && isValidId(challengeId)
+          && incoming().id == challengeId
+          && incoming().storeId == storeId
+          && incoming().title is string
+          && incoming().title.size() > 0
+          && incoming().title.size() <= 180
+          && incoming().description is string
+          && incoming().metric in ['paid_orders','points_earned']
+          && incoming().target is number
+          && incoming().target >= 1
+          && incoming().rewardPoints is number
+          && incoming().rewardPoints >= 0
+          && incoming().startsAt is string
+          && incoming().endsAt is string
+          && incoming().active is bool
+          && incoming().createdAt is string
+          && incoming().updatedAt is string
+          && incoming().recordedAt == request.time
+          && incoming().schemaVersion == 2
+          && incoming().keys().hasAll(['id','storeId','title','description','metric','target','rewardPoints','startsAt','endsAt','active','createdAt','updatedAt','recordedAt','schemaVersion'])
+          && incoming().keys().hasOnly(['id','storeId','title','description','metric','target','rewardPoints','startsAt','endsAt','active','createdAt','updatedAt','recordedAt','schemaVersion']);
+        allow delete: if isSignedIn() && (request.auth.uid == storeId || isAdmin());
+      }
+    }
+
+    match /storeLoyaltyRewards/{storeId} {
+      allow read, write: if false;
+      match /items/{rewardId} {
+        allow read: if isSignedIn();
+        allow create, update: if isSignedIn()
+          && request.auth.uid == storeId
+          && isValidId(rewardId)
+          && incoming().id == rewardId
+          && incoming().storeId == storeId
+          && incoming().title is string
+          && incoming().title.size() > 0
+          && incoming().title.size() <= 180
+          && incoming().description is string
+          && incoming().type in ['discount','free_product','voucher']
+          && incoming().pointsCost is number
+          && incoming().pointsCost >= 1
+          && incoming().benefitValue is number
+          && incoming().benefitValue >= 0
+          && incoming().productId is string
+          && incoming().productName is string
+          && incoming().active is bool
+          && incoming().startsAt is string
+          && incoming().endsAt is string
+          && incoming().createdAt is string
+          && incoming().updatedAt is string
+          && incoming().recordedAt == request.time
+          && incoming().schemaVersion == 2
+          && incoming().keys().hasAll(['id','storeId','title','description','type','pointsCost','benefitValue','productId','productName','active','startsAt','endsAt','createdAt','updatedAt','recordedAt','schemaVersion'])
+          && incoming().keys().hasOnly(['id','storeId','title','description','type','pointsCost','benefitValue','productId','productName','active','startsAt','endsAt','createdAt','updatedAt','recordedAt','schemaVersion']);
+        allow delete: if isSignedIn() && (request.auth.uid == storeId || isAdmin());
+      }
     }
 
     match /storeLoyaltyLedgers/{storeId} {
