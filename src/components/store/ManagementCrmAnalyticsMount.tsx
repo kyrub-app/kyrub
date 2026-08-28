@@ -11,20 +11,68 @@ import {
   subscribeToProductLoyalty,
   type ProductLoyaltyMap,
 } from '../../utils/productLoyalty';
-import { reconcileOrderLoyalty } from '../../utils/loyaltyLedger';
+import {
+  reconcileOrderLoyalty,
+  subscribeToStoreLoyaltyLedger,
+  type LoyaltyLedgerEvent,
+} from '../../utils/loyaltyLedger';
+import {
+  subscribeToLoyaltyChallenges,
+  type LoyaltyChallenge,
+} from '../../utils/loyaltyChallenges';
+import { reconcileActiveLoyaltyChallenges } from '../../utils/loyaltyChallengeEngine';
 
 export function ManagementCrmAnalyticsMount() {
   const [orders, setOrders] = useState<CustomerOrder[]>([]);
   const loyaltyRef = useRef<ProductLoyaltyMap>({});
   const loyaltyReadyRef = useRef(false);
   const ordersRef = useRef<CustomerOrder[]>([]);
+  const challengesRef = useRef<LoyaltyChallenge[]>([]);
+  const ledgerRef = useRef<LoyaltyLedgerEvent[]>([]);
+  const challengesReadyRef = useRef(false);
+  const ledgerReadyRef = useRef(false);
+  const challengeReconcilingRef = useRef(false);
+  const challengeReconcileQueuedRef = useRef(false);
   const reconciliationRef = useRef(new Set<string>());
 
   useEffect(() => {
     let unsubscribeOrders: (() => void) | null = null;
     let unsubscribeLoyalty: (() => void) | null = null;
+    let unsubscribeChallenges: (() => void) | null = null;
+    let unsubscribeLedger: (() => void) | null = null;
     let lastUid = '';
     let timer = 0;
+
+    const reconcileChallenges = (uid: string): void => {
+      const user = auth.currentUser;
+      if (
+        !user ||
+        user.uid !== uid ||
+        !challengesReadyRef.current ||
+        !ledgerReadyRef.current
+      ) return;
+
+      if (challengeReconcilingRef.current) {
+        challengeReconcileQueuedRef.current = true;
+        return;
+      }
+
+      challengeReconcilingRef.current = true;
+      challengeReconcileQueuedRef.current = false;
+      void reconcileActiveLoyaltyChallenges(
+        user,
+        challengesRef.current,
+        ordersRef.current,
+        ledgerRef.current
+      )
+        .catch(error => {
+          console.warn('Fidelidade: não foi possível reconciliar desafios.', error);
+        })
+        .finally(() => {
+          challengeReconcilingRef.current = false;
+          if (challengeReconcileQueuedRef.current) reconcileChallenges(uid);
+        });
+    };
 
     const reconcileOrders = (uid: string): void => {
       const user = auth.currentUser;
@@ -39,6 +87,7 @@ export function ManagementCrmAnalyticsMount() {
           console.warn('Fidelidade: não foi possível reconciliar pontos do pedido.', error);
         });
       });
+      reconcileChallenges(uid);
     };
 
     const synchronize = (): void => {
@@ -48,13 +97,23 @@ export function ManagementCrmAnalyticsMount() {
       if (uid !== lastUid) {
         unsubscribeOrders?.();
         unsubscribeLoyalty?.();
+        unsubscribeChallenges?.();
+        unsubscribeLedger?.();
         unsubscribeOrders = null;
         unsubscribeLoyalty = null;
+        unsubscribeChallenges = null;
+        unsubscribeLedger = null;
         lastUid = uid;
         setOrders([]);
         ordersRef.current = [];
         loyaltyRef.current = {};
+        challengesRef.current = [];
+        ledgerRef.current = [];
         loyaltyReadyRef.current = false;
+        challengesReadyRef.current = false;
+        ledgerReadyRef.current = false;
+        challengeReconcilingRef.current = false;
+        challengeReconcileQueuedRef.current = false;
         reconciliationRef.current.clear();
 
         if (uid) {
@@ -68,6 +127,32 @@ export function ManagementCrmAnalyticsMount() {
             error => {
               loyaltyReadyRef.current = false;
               console.warn('Fidelidade: regras de pontos indisponíveis.', error);
+            }
+          );
+
+          unsubscribeChallenges = subscribeToLoyaltyChallenges(
+            uid,
+            challenges => {
+              challengesRef.current = challenges;
+              challengesReadyRef.current = true;
+              reconcileChallenges(uid);
+            },
+            error => {
+              challengesReadyRef.current = false;
+              console.warn('Fidelidade: desafios indisponíveis.', error);
+            }
+          );
+
+          unsubscribeLedger = subscribeToStoreLoyaltyLedger(
+            uid,
+            ledger => {
+              ledgerRef.current = ledger;
+              ledgerReadyRef.current = true;
+              reconcileChallenges(uid);
+            },
+            error => {
+              ledgerReadyRef.current = false;
+              console.warn('Fidelidade: ledger indisponível.', error);
             }
           );
 
@@ -95,6 +180,8 @@ export function ManagementCrmAnalyticsMount() {
       window.clearTimeout(timer);
       unsubscribeOrders?.();
       unsubscribeLoyalty?.();
+      unsubscribeChallenges?.();
+      unsubscribeLedger?.();
     };
   }, []);
 
