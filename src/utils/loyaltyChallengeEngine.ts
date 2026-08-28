@@ -30,11 +30,14 @@ const inChallengeWindow = (value: string, challenge: LoyaltyChallenge): boolean 
   return true;
 };
 
-export const getLoyaltyChallengeCompletionsCollectionPath = (storeId: string): string =>
-  `artifacts/${storeId.trim()}/public/data/loyaltyChallengeCompletions`;
+export const getStoreLoyaltyChallengeCompletionsCollectionPath = (storeId: string): string =>
+  `storeLoyaltyChallengeCompletions/${storeId.trim()}/completions`;
+
+export const getBuyerLoyaltyChallengeCompletionsCollectionPath = (buyerId: string): string =>
+  `users/${buyerId.trim()}/loyaltyChallengeCompletions`;
 
 export const getLoyaltyChallengeCompletionId = (challengeId: string, buyerId: string, buyerEmail: string): string => {
-  const identity = customerKey(buyerId, buyerEmail).replace(/[^a-zA-Z0-9_-]+/g, '_').slice(0, 120);
+  const identity = customerKey(buyerId, buyerEmail).replace(/[^a-zA-Z0-9_-]+/g, '_').slice(0, 96);
   return `${challengeId.trim()}__${identity}`;
 };
 
@@ -73,7 +76,10 @@ export const reconcileLoyaltyChallengeCompletion = async (
   if (!progress.completed || !isLoyaltyChallengeAvailable(challenge)) return { created: false, rewardPoints: 0 };
 
   const completionId = getLoyaltyChallengeCompletionId(challenge.id, progress.buyerId, progress.buyerEmail);
-  const completionReference = doc(db, getLoyaltyChallengeCompletionsCollectionPath(user.uid), completionId);
+  const storeCompletionReference = doc(db, getStoreLoyaltyChallengeCompletionsCollectionPath(user.uid), completionId);
+  const buyerCompletionReference = progress.buyerId
+    ? doc(db, getBuyerLoyaltyChallengeCompletionsCollectionPath(progress.buyerId), completionId)
+    : null;
   const adjustmentId = `challenge-${completionId}-reward`;
   const storeAdjustmentReference = doc(db, getLoyaltyLedgerEventPath(user.uid, adjustmentId));
   const buyerAdjustmentReference = progress.buyerId
@@ -82,14 +88,14 @@ export const reconcileLoyaltyChallengeCompletion = async (
 
   return runTransaction(db, async transaction => {
     const [completionSnapshot, adjustmentSnapshot] = await Promise.all([
-      transaction.get(completionReference),
+      transaction.get(storeCompletionReference),
       transaction.get(storeAdjustmentReference),
     ]);
     if (completionSnapshot.exists()) {
       return { created: false, rewardPoints: Number(completionSnapshot.data()?.rewardPoints) || 0 };
     }
     const completedAt = new Date().toISOString();
-    transaction.set(completionReference, {
+    const completion = {
       id: completionId,
       storeId: user.uid,
       challengeId: challenge.id,
@@ -102,8 +108,11 @@ export const reconcileLoyaltyChallengeCompletion = async (
       rewardPoints: challenge.rewardPoints,
       completedAt,
       recordedAt: serverTimestamp(),
-      schemaVersion: 1,
-    });
+      schemaVersion: 2,
+    };
+    transaction.set(storeCompletionReference, completion);
+    if (buyerCompletionReference) transaction.set(buyerCompletionReference, completion);
+
     if (challenge.rewardPoints > 0 && !adjustmentSnapshot.exists()) {
       const adjustment = {
         id: adjustmentId,
