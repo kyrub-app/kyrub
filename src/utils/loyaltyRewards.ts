@@ -34,8 +34,12 @@ const cleanInteger = (value: unknown): number => {
 
 export const getLoyaltyRewardsCollectionPath = (storeId: string): string =>
   `artifacts/${storeId.trim()}/public/data/loyaltyRewards`;
-export const getLoyaltyRewardRedemptionsCollectionPath = (storeId: string): string =>
-  `artifacts/${storeId.trim()}/public/data/loyaltyRewardRedemptions`;
+
+export const getStoreLoyaltyRewardRedemptionsCollectionPath = (storeId: string): string =>
+  `storeLoyaltyRewardRedemptions/${storeId.trim()}/redemptions`;
+
+export const getBuyerLoyaltyRewardRedemptionsCollectionPath = (buyerId: string): string =>
+  `users/${buyerId.trim()}/loyaltyRewardRedemptions`;
 
 const parseReward = (value: unknown): LoyaltyReward | null => {
   if (!value || typeof value !== 'object') return null;
@@ -109,20 +113,36 @@ export const redeemLoyaltyReward = async (
 
   const customerKey = buyerId.replace(/[^a-zA-Z0-9_-]/g, '_');
   const redemptionId = `reward-${reward.id}-${customerKey}`;
-  const redemptionReference = doc(db, getLoyaltyRewardRedemptionsCollectionPath(reward.storeId), redemptionId);
+  const storeRedemptionReference = doc(db, getStoreLoyaltyRewardRedemptionsCollectionPath(reward.storeId), redemptionId);
+  const buyerRedemptionReference = doc(db, getBuyerLoyaltyRewardRedemptionsCollectionPath(buyerId), redemptionId);
   const storeLedgerReference = doc(db, getLoyaltyLedgerEventPath(reward.storeId, redemptionId));
   const buyerLedgerReference = doc(db, getBuyerLoyaltyLedgerEventPath(buyerId, reward.storeId, redemptionId));
   let created = false;
 
   await runTransaction(db, async transaction => {
-    const existing = await transaction.get(redemptionReference);
+    const existing = await transaction.get(storeRedemptionReference);
     if (existing.exists()) return;
     const createdAt = new Date().toISOString();
-    transaction.set(redemptionReference, {
-      id: redemptionId, storeId: reward.storeId, rewardId: reward.id, rewardTitle: reward.title, rewardType: reward.type,
-      buyerId, buyerEmail, pointsCost: reward.pointsCost, benefitValue: reward.benefitValue, productId: reward.productId,
-      productName: reward.productName, status: 'issued', createdAt, recordedAt: serverTimestamp(), schemaVersion: 1,
-    });
+    const redemption = {
+      id: redemptionId,
+      storeId: reward.storeId,
+      rewardId: reward.id,
+      rewardTitle: reward.title,
+      rewardType: reward.type,
+      buyerId,
+      buyerEmail,
+      pointsCost: reward.pointsCost,
+      benefitValue: reward.benefitValue,
+      productId: reward.productId,
+      productName: reward.productName,
+      status: 'issued',
+      createdAt,
+      recordedAt: serverTimestamp(),
+      schemaVersion: 2,
+    };
+    transaction.set(storeRedemptionReference, redemption);
+    transaction.set(buyerRedemptionReference, redemption);
+
     const adjustment = {
       id: redemptionId, storeId: reward.storeId, buyerId, buyerEmail, orderId: '', type: 'adjustment',
       points: -Math.abs(reward.pointsCost), reason: `Resgate: ${reward.title}`, lines: [], sourceEventId: reward.id,
