@@ -74,6 +74,8 @@ export const buildMarketplaceEconomicLedger = (input: {
     storeId: economicStoreId,
     orderId: draft.draftId,
     paymentId,
+    paymentMethod: input.intent.method,
+    paymentProvider: input.intent.provider,
     currency: 'BRL',
     source: 'marketplace_payment',
     status: 'posted',
