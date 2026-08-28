@@ -102,6 +102,10 @@ test('dine-in remains an attendance order but is created by canonical server aut
   assert.match(customerOrders, /\/api\/action-execute\?transport=crm-campaign/);
   assert.match(crmTransport, /create_attendance_order/);
   assert.match(attendanceAuthority, /verifyFirebaseIdToken/);
+  assert.match(attendanceAuthority, /tenant\.publicProducts/);
+  assert.match(attendanceAuthority, /product\.price/);
+  assert.match(attendanceAuthority, /ATTENDANCE_ORDER_CATALOG_CHANGED/);
+  assert.match(attendanceAuthority, /\.\.\.authoritativeOrder/);
   assert.match(attendanceAuthority, /stores\/\$\{canonicalStoreId\}\/orders\/\$\{orderId\}/);
   assert.match(attendanceAuthority, /canonicalAuthority: true/);
   assert.match(attendanceAuthority, /Temporary compatibility copy/);
