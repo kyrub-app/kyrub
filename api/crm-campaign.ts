@@ -42,9 +42,10 @@ export default async function handler(request: RequestLike, response: ResponseLi
       return;
     }
 
-    const [{ verifyFirebaseIdToken }, { adminDb, adminFieldValue }] = await Promise.all([
+    const [{ verifyFirebaseIdToken }, { adminDb }, { FieldValue }] = await Promise.all([
       import('../server/ai/consultantAuth.js'),
       import('../server/firebaseAdmin.js'),
+      import('firebase-admin/firestore'),
     ]);
     const identity = await verifyFirebaseIdToken(token);
     const body = request.body && typeof request.body === 'object' && !Array.isArray(request.body)
@@ -103,7 +104,7 @@ export default async function handler(request: RequestLike, response: ResponseLi
         status: 'publishing',
         createdAt: now,
         updatedAt: now,
-        recordedAt: adminFieldValue.serverTimestamp(),
+        recordedAt: FieldValue.serverTimestamp(),
         schemaVersion: 4,
       });
       response.status(201).json({ campaignId: reference.id });
@@ -134,7 +135,7 @@ export default async function handler(request: RequestLike, response: ResponseLi
         status: notifiedRecipientCount === expectedRecipients ? 'published' : 'partial',
         updatedAt: now,
         publishedAt: now,
-        recordedAt: adminFieldValue.serverTimestamp(),
+        recordedAt: FieldValue.serverTimestamp(),
       }, { merge: true });
       response.status(200).json({ campaignId, status: notifiedRecipientCount === expectedRecipients ? 'published' : 'partial' });
       return;
