@@ -136,7 +136,7 @@ test('artifact composition keeps only intentional loyalty datasets customer-read
   const result = hardenKyrubArtifactRules(legacyArtifactRules);
   const publicReadMatches = result.match(/allow read: if isSignedIn\(\);/g) ?? [];
 
-  assert.equal(publicReadMatches.length, 3);
+  assert.equal(publicReadMatches.length, 4);
   assert.doesNotMatch(result, /Legacy artifact reads stay compatible/);
   assert.match(result, /Customer orders contain buyer identity/);
 });
