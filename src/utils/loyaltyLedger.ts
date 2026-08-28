@@ -58,6 +58,9 @@ export const getLoyaltyLedgerEventPath = (
 export const getOrderLoyaltyEarnEventId = (orderId: string): string =>
   `order-${orderId.trim()}-earn`;
 
+export const getOrderLoyaltyReversalEventId = (orderId: string): string =>
+  `order-${orderId.trim()}-reversal`;
+
 export const buildOrderLoyaltyLines = (
   order: Pick<CustomerOrder, 'items'>,
   loyalty: ProductLoyaltyMap
@@ -135,6 +138,78 @@ export const persistPaidOrderLoyaltyEarn = async (
 
     return { created: true, points };
   });
+};
+
+export const persistOrderLoyaltyReversal = async (
+  user: Pick<User, 'uid'>,
+  order: CustomerOrder,
+  reason = 'Estorno dos pontos da compra'
+): Promise<{ created: boolean; points: number }> => {
+  if (order.storeId.trim() !== user.uid) {
+    throw new Error('Somente a loja responsável pode estornar pontos deste pedido.');
+  }
+
+  const earnId = getOrderLoyaltyEarnEventId(order.id);
+  const reversalId = getOrderLoyaltyReversalEventId(order.id);
+  const earnReference = doc(db, getLoyaltyLedgerEventPath(order.storeId, earnId));
+  const reversalReference = doc(db, getLoyaltyLedgerEventPath(order.storeId, reversalId));
+
+  return runTransaction(db, async transaction => {
+    const [earnSnapshot, reversalSnapshot] = await Promise.all([
+      transaction.get(earnReference),
+      transaction.get(reversalReference),
+    ]);
+
+    if (reversalSnapshot.exists()) {
+      return { created: false, points: cleanInteger(reversalSnapshot.data()?.points) };
+    }
+    if (!earnSnapshot.exists()) return { created: false, points: 0 };
+
+    const earn = parseLoyaltyLedgerEvent(earnSnapshot.data());
+    if (!earn || earn.type !== 'earn') return { created: false, points: 0 };
+
+    const points = -Math.abs(earn.points);
+    const lines = earn.lines.map(line => ({
+      ...line,
+      basePoints: -Math.abs(line.basePoints),
+      bonusPoints: -Math.abs(line.bonusPoints),
+      totalPoints: -Math.abs(line.totalPoints),
+    }));
+
+    transaction.set(reversalReference, {
+      id: reversalId,
+      storeId: earn.storeId,
+      buyerId: earn.buyerId,
+      buyerEmail: earn.buyerEmail,
+      orderId: earn.orderId,
+      type: 'reversal' satisfies LoyaltyLedgerEventType,
+      points,
+      reason: reason.trim() || 'Estorno dos pontos da compra',
+      lines,
+      sourceEventId: earn.id,
+      createdAt: order.updatedAt || new Date().toISOString(),
+      recordedAt: serverTimestamp(),
+      schemaVersion: 1,
+    });
+
+    return { created: true, points };
+  });
+};
+
+export const reconcileOrderLoyalty = async (
+  user: Pick<User, 'uid'>,
+  order: CustomerOrder,
+  loyalty: ProductLoyaltyMap
+): Promise<{ action: 'earned' | 'reversed' | 'none'; points: number }> => {
+  if (order.status === 'cancelled' || order.status === 'rejected') {
+    const result = await persistOrderLoyaltyReversal(user, order, 'Pedido cancelado ou recusado');
+    return { action: result.created ? 'reversed' : 'none', points: result.points };
+  }
+  if (order.paymentStatus === 'paid') {
+    const result = await persistPaidOrderLoyaltyEarn(user, order, loyalty);
+    return { action: result.created ? 'earned' : 'none', points: result.points };
+  }
+  return { action: 'none', points: 0 };
 };
 
 export const parseLoyaltyLedgerEvent = (value: unknown): LoyaltyLedgerEvent | null => {
