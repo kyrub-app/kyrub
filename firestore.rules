@@ -275,6 +275,20 @@ service cloud.firestore {
       allow update, delete: if isSignedIn() && (existing().ownerId == request.auth.uid || isAdmin());
     }
 
+    // Public loyalty economics, but only the responsible store may mutate them.
+    match /storeLoyaltyConfigs/{storeId} {
+      allow read: if isSignedIn();
+      allow create, update: if isSignedIn()
+        && request.auth.uid == storeId
+        && incoming().storeId == storeId
+        && incoming().productPoints is map
+        && incoming().updatedAt == request.time
+        && incoming().schemaVersion == 2
+        && incoming().keys().hasAll(['storeId','productPoints','updatedAt','schemaVersion'])
+        && incoming().keys().hasOnly(['storeId','productPoints','updatedAt','schemaVersion']);
+      allow delete: if isSignedIn() && (request.auth.uid == storeId || isAdmin());
+    }
+
     match /storeLoyaltyLedgers/{storeId} {
       allow read, write: if false;
       match /events/{eventId} {
