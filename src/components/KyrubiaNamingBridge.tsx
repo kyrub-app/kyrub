@@ -1,5 +1,4 @@
 import { useEffect } from 'react';
-import { StoreCouponRedemptionBridge } from './store/StoreCouponRedemptionBridge';
 import { StoreEntitlementLifecycleBridge } from './store/StoreEntitlementLifecycleBridge';
 
 const TEXT_REPLACEMENTS = new Map<string, string>([
@@ -95,10 +94,5 @@ export function KyrubiaNamingBridge() {
     };
   }, []);
 
-  return (
-    <>
-      <StoreEntitlementLifecycleBridge />
-      <StoreCouponRedemptionBridge />
-    </>
-  );
+  return <StoreEntitlementLifecycleBridge />;
 }
