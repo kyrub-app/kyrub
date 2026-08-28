@@ -8,6 +8,7 @@ import { NotificationCenterBridge } from './components/NotificationCenterBridge'
 import { OfficialKnowledgeSemanticSetupBridge } from './components/OfficialKnowledgeSemanticSetupBridge';
 import { OfficialKnowledgeSetupBridge } from './components/OfficialKnowledgeSetupBridge';
 import { BuyerPickupCodeBridge } from './components/store/BuyerPickupCodeBridge';
+import { ManagementCrmAnalyticsMount } from './components/store/ManagementCrmAnalyticsMount';
 import { PickupPdvNavigationBridge } from './components/store/PickupPdvNavigationBridge';
 import { ProfileCommunitiesCloudBridge } from './components/ProfileCommunitiesCloudBridge';
 import { ProfileConnectedCardsPolishBridge } from './components/ProfileConnectedCardsPolishBridge';
@@ -50,6 +51,7 @@ createRoot(rootElement).render(
           <LegacyKdsStationFilterCleanupBridge />
           <BuyerPickupCodeBridge />
           <PickupPdvNavigationBridge />
+          <ManagementCrmAnalyticsMount />
           <KyrubOfficialKnowledgeRuntimeBridge />
           <KyrubActivityObserverBridge />
           <KyrubActivityLogSetupBridge />
