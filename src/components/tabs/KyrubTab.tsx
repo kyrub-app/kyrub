@@ -20,18 +20,14 @@ import type {
 } from '../../types';
 import { auth, db } from '../../utils/firebase';
 import { getMarketplaceListingsCollectionPath } from '../../utils/marketplacePaths';
+import type { OpenCustomerRelationshipDetail } from '../../utils/relationshipNotifications';
 
-type KyrubTabProps = React.ComponentProps<
-  typeof LegacyKyrubTab
->;
+type KyrubTabProps = React.ComponentProps<typeof LegacyKyrubTab>;
 
 const CANONICAL_MARKETPLACE_READ_ENABLED =
-  import.meta.env.VITE_ENABLE_CANONICAL_MARKETPLACE_READ ===
-  'true';
+  import.meta.env.VITE_ENABLE_CANONICAL_MARKETPLACE_READ === 'true';
 
-const canonicalListingToStore = (
-  listing: MarketplaceStoreListingDocument
-): Store => ({
+const canonicalListingToStore = (listing: MarketplaceStoreListingDocument): Store => ({
   id: listing.storeId,
   name: listing.name,
   slug: listing.slug,
@@ -51,60 +47,27 @@ const canonicalListingToStore = (
   isNew: false,
 });
 
-const tenantListingToStore = (
-  data: Record<string, unknown>
-): Store | null => {
-  if (
-    data.publicationStatus !== 'published' ||
-    typeof data.id !== 'string' ||
-    typeof data.name !== 'string'
-  ) {
-    return null;
-  }
-
+const tenantListingToStore = (data: Record<string, unknown>): Store | null => {
+  if (data.publicationStatus !== 'published' || typeof data.id !== 'string' || typeof data.name !== 'string') return null;
   return {
     id: data.id,
     name: data.name,
     slug: typeof data.slug === 'string' ? data.slug : '',
-    description:
-      typeof data.description === 'string'
-        ? data.description
-        : '',
+    description: typeof data.description === 'string' ? data.description : '',
     logo: typeof data.logo === 'string' ? data.logo : '',
-    banner:
-      typeof data.banner === 'string' ? data.banner : '',
-    primaryColor:
-      typeof data.primaryColor === 'string'
-        ? data.primaryColor
-        : '',
+    banner: typeof data.banner === 'string' ? data.banner : '',
+    primaryColor: typeof data.primaryColor === 'string' ? data.primaryColor : '',
     plan: data.plan === 'business' ? 'business' : 'free',
     ownerEmail: '',
-    address:
-      typeof data.address === 'string' ? data.address : '',
+    address: typeof data.address === 'string' ? data.address : '',
     contact: '',
     keywords: Array.isArray(data.keywords)
-      ? data.keywords.filter(
-          (keyword): keyword is string =>
-            typeof keyword === 'string'
-        )
+      ? data.keywords.filter((keyword): keyword is string => typeof keyword === 'string')
       : [],
     offerImages: [],
-    status:
-      data.status === 'open' ||
-      data.status === 'delayed' ||
-      data.status === 'closed'
-        ? data.status
-        : 'closed',
-    lat:
-      typeof data.lat === 'number' &&
-      Number.isFinite(data.lat)
-        ? data.lat
-        : undefined,
-    lng:
-      typeof data.lng === 'number' &&
-      Number.isFinite(data.lng)
-        ? data.lng
-        : undefined,
+    status: data.status === 'open' || data.status === 'delayed' || data.status === 'closed' ? data.status : 'closed',
+    lat: typeof data.lat === 'number' && Number.isFinite(data.lat) ? data.lat : undefined,
+    lng: typeof data.lng === 'number' && Number.isFinite(data.lng) ? data.lng : undefined,
     isNew: false,
   };
 };
@@ -112,11 +75,24 @@ const tenantListingToStore = (
 export function KyrubTab(props: KyrubTabProps) {
   const [canonicalStores, setCanonicalStores] = useState<Store[]>([]);
   const [fallbackStores, setFallbackStores] = useState<Store[]>([]);
+  const [relationshipTargetStoreId, setRelationshipTargetStoreId] = useState('');
   const socialFeed = usePublicSocialFeed();
 
   useEffect(() => {
     props.setPosts(socialFeed.posts);
   }, [props.setPosts, socialFeed.posts]);
+
+  useEffect(() => {
+    const openRelationship = (event: Event) => {
+      const detail = (event as CustomEvent<OpenCustomerRelationshipDetail>).detail;
+      if (!detail?.storeId) return;
+      setRelationshipTargetStoreId(detail.storeId);
+      props.setSocialSubTab('lojas');
+      props.setOfertasFilter('cliente');
+    };
+    window.addEventListener('kyrub:open-customer-relationship', openRelationship);
+    return () => window.removeEventListener('kyrub:open-customer-relationship', openRelationship);
+  }, [props.setOfertasFilter, props.setSocialSubTab]);
 
   useEffect(() => {
     let unsubscribeCanonical = () => undefined;
@@ -127,7 +103,6 @@ export function KyrubTab(props: KyrubTabProps) {
       unsubscribeFallback();
       setCanonicalStores([]);
       setFallbackStores([]);
-
       if (!user) return;
 
       if (CANONICAL_MARKETPLACE_READ_ENABLED) {
@@ -138,21 +113,13 @@ export function KyrubTab(props: KyrubTabProps) {
         unsubscribeCanonical = onSnapshot(
           canonicalQuery,
           snapshot => {
-            setCanonicalStores(
-              snapshot.docs.flatMap(snapshotDocument => {
-                const listing =
-                  snapshotDocument.data() as MarketplaceListingDocument;
-                return listing.listingType === 'store'
-                  ? [canonicalListingToStore(listing)]
-                  : [];
-              })
-            );
+            setCanonicalStores(snapshot.docs.flatMap(snapshotDocument => {
+              const listing = snapshotDocument.data() as MarketplaceListingDocument;
+              return listing.listingType === 'store' ? [canonicalListingToStore(listing)] : [];
+            }));
           },
           error => {
-            console.warn(
-              'Canonical marketplace listings are unavailable.',
-              error
-            );
+            console.warn('Canonical marketplace listings are unavailable.', error);
             setCanonicalStores([]);
           }
         );
@@ -165,20 +132,13 @@ export function KyrubTab(props: KyrubTabProps) {
       unsubscribeFallback = onSnapshot(
         fallbackQuery,
         snapshot => {
-          setFallbackStores(
-            snapshot.docs.flatMap(snapshotDocument => {
-              const store = tenantListingToStore(
-                snapshotDocument.data() as Record<string, unknown>
-              );
-              return store ? [store] : [];
-            })
-          );
+          setFallbackStores(snapshot.docs.flatMap(snapshotDocument => {
+            const store = tenantListingToStore(snapshotDocument.data() as Record<string, unknown>);
+            return store ? [store] : [];
+          }));
         },
         error => {
-          console.warn(
-            'Marketplace fallback listings are unavailable.',
-            error
-          );
+          console.warn('Marketplace fallback listings are unavailable.', error);
           setFallbackStores([]);
         }
       );
@@ -198,33 +158,19 @@ export function KyrubTab(props: KyrubTabProps) {
     return Array.from(storesById.values());
   }, [canonicalStores, fallbackStores]);
 
-  const isConnectedContactsActive =
-    props.socialSubTab === 'usuarios' &&
-    props.pracaFilter === 'conectados';
-  const isPublicFeedActive =
-    props.socialSubTab === 'usuarios' &&
-    (props.pracaFilter === 'recentes' ||
-      props.pracaFilter === 'favoritos');
-  const isCustomerRelationshipsActive =
-    props.socialSubTab === 'lojas' && props.ofertasFilter === 'cliente';
+  const isConnectedContactsActive = props.socialSubTab === 'usuarios' && props.pracaFilter === 'conectados';
+  const isPublicFeedActive = props.socialSubTab === 'usuarios' && (props.pracaFilter === 'recentes' || props.pracaFilter === 'favoritos');
+  const isCustomerRelationshipsActive = props.socialSubTab === 'lojas' && props.ofertasFilter === 'cliente';
 
   const wrapperClassName = [
-    isConnectedContactsActive
-      ? 'connected-contacts-redesign-active'
-      : '',
+    isConnectedContactsActive ? 'connected-contacts-redesign-active' : '',
     isPublicFeedActive ? 'public-social-feed-active' : '',
     isCustomerRelationshipsActive ? 'customer-relationships-active' : '',
-  ]
-    .filter(Boolean)
-    .join(' ');
+  ].filter(Boolean).join(' ');
 
   return (
     <div className={wrapperClassName || undefined}>
-      <LegacyKyrubTab
-        {...props}
-        posts={socialFeed.posts}
-        storesWithCoords={publishedStores}
-      />
+      <LegacyKyrubTab {...props} posts={socialFeed.posts} storesWithCoords={publishedStores} />
 
       <StoreOfferCardPresentationBridge
         stores={publishedStores}
@@ -236,6 +182,8 @@ export function KyrubTab(props: KyrubTabProps) {
         stores={publishedStores}
         orders={props.orders}
         onEnterStore={props.setVisitingStore}
+        initialStoreId={relationshipTargetStoreId}
+        onInitialStoreHandled={() => setRelationshipTargetStoreId('')}
       />
 
       {isPublicFeedActive && (
