@@ -33,11 +33,11 @@ const cleanInteger = (value: unknown): number => {
 };
 
 export const getLoyaltyRewardsCollectionPath = (storeId: string): string =>
+  `storeLoyaltyRewards/${storeId.trim()}/items`;
+export const getLegacyLoyaltyRewardsCollectionPath = (storeId: string): string =>
   `artifacts/${storeId.trim()}/public/data/loyaltyRewards`;
-
 export const getStoreLoyaltyRewardRedemptionsCollectionPath = (storeId: string): string =>
   `storeLoyaltyRewardRedemptions/${storeId.trim()}/redemptions`;
-
 export const getBuyerLoyaltyRewardRedemptionsCollectionPath = (buyerId: string): string =>
   `users/${buyerId.trim()}/loyaltyRewardRedemptions`;
 
@@ -57,15 +57,40 @@ const parseReward = (value: unknown): LoyaltyReward | null => {
   };
 };
 
+const parseSnapshot = (docs: Array<{ data: () => unknown }>): LoyaltyReward[] =>
+  docs.flatMap(item => { const parsed = parseReward(item.data()); return parsed ? [parsed] : []; })
+    .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+
 export const subscribeToLoyaltyRewards = (
   storeId: string, onRewards: (rewards: LoyaltyReward[]) => void, onError?: (error: Error) => void
 ): Unsubscribe => {
   const normalized = storeId.trim();
   if (!normalized) { onRewards([]); return () => undefined; }
-  return onSnapshot(collection(db, getLoyaltyRewardsCollectionPath(normalized)), snapshot =>
-    onRewards(snapshot.docs.flatMap(item => { const parsed = parseReward(item.data()); return parsed ? [parsed] : []; })
-      .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))),
-  error => { onRewards([]); onError?.(error); });
+
+  let unsubscribeLegacy: Unsubscribe | null = null;
+  const unsubscribeCanonical = onSnapshot(
+    collection(db, getLoyaltyRewardsCollectionPath(normalized)),
+    snapshot => {
+      const canonical = parseSnapshot(snapshot.docs);
+      unsubscribeLegacy?.();
+      unsubscribeLegacy = null;
+      if (canonical.length > 0) {
+        onRewards(canonical);
+        return;
+      }
+      unsubscribeLegacy = onSnapshot(
+        collection(db, getLegacyLoyaltyRewardsCollectionPath(normalized)),
+        legacySnapshot => onRewards(parseSnapshot(legacySnapshot.docs)),
+        error => { onRewards([]); onError?.(error); }
+      );
+    },
+    error => { onRewards([]); onError?.(error); }
+  );
+
+  return () => {
+    unsubscribeCanonical();
+    unsubscribeLegacy?.();
+  };
 };
 
 export const saveLoyaltyReward = async (user: Pick<User, 'uid'>, draft: LoyaltyRewardDraft, rewardId = ''): Promise<string> => {
@@ -81,7 +106,7 @@ export const saveLoyaltyReward = async (user: Pick<User, 'uid'>, draft: LoyaltyR
     id: reference.id, storeId, title, description: draft.description.trim(), type: draft.type, pointsCost,
     benefitValue: Math.max(0, Math.trunc(Number(draft.benefitValue) || 0)), productId: draft.productId.trim(),
     productName: draft.productName.trim(), active: draft.active, startsAt: draft.startsAt, endsAt: draft.endsAt,
-    ...(rewardId.trim() ? {} : { createdAt: now }), updatedAt: now, recordedAt: serverTimestamp(), schemaVersion: 1,
+    ...(rewardId.trim() ? {} : { createdAt: now }), updatedAt: now, recordedAt: serverTimestamp(), schemaVersion: 2,
   }, { merge: true });
   return reference.id;
 };
@@ -96,7 +121,9 @@ export const deleteLoyaltyReward = async (user: Pick<User, 'uid'>, reward: Loyal
 };
 export const isLoyaltyRewardAvailable = (reward: LoyaltyReward, at = new Date()): boolean => {
   if (!reward.active) return false;
-  const time = at.getTime(); const starts = reward.startsAt ? new Date(reward.startsAt).getTime() : 0; const ends = reward.endsAt ? new Date(reward.endsAt).getTime() : 0;
+  const time = at.getTime();
+  const starts = reward.startsAt ? new Date(`${reward.startsAt}T00:00:00`).getTime() : 0;
+  const ends = reward.endsAt ? new Date(`${reward.endsAt}T23:59:59.999`).getTime() : 0;
   return !(starts && Number.isFinite(starts) && time < starts) && !(ends && Number.isFinite(ends) && time > ends);
 };
 
@@ -124,25 +151,12 @@ export const redeemLoyaltyReward = async (
     if (existing.exists()) return;
     const createdAt = new Date().toISOString();
     const redemption = {
-      id: redemptionId,
-      storeId: reward.storeId,
-      rewardId: reward.id,
-      rewardTitle: reward.title,
-      rewardType: reward.type,
-      buyerId,
-      buyerEmail,
-      pointsCost: reward.pointsCost,
-      benefitValue: reward.benefitValue,
-      productId: reward.productId,
-      productName: reward.productName,
-      status: 'issued',
-      createdAt,
-      recordedAt: serverTimestamp(),
-      schemaVersion: 2,
+      id: redemptionId, storeId: reward.storeId, rewardId: reward.id, rewardTitle: reward.title, rewardType: reward.type,
+      buyerId, buyerEmail, pointsCost: reward.pointsCost, benefitValue: reward.benefitValue, productId: reward.productId,
+      productName: reward.productName, status: 'issued', createdAt, recordedAt: serverTimestamp(), schemaVersion: 2,
     };
     transaction.set(storeRedemptionReference, redemption);
     transaction.set(buyerRedemptionReference, redemption);
-
     const adjustment = {
       id: redemptionId, storeId: reward.storeId, buyerId, buyerEmail, orderId: '', type: 'adjustment',
       points: -Math.abs(reward.pointsCost), reason: `Resgate: ${reward.title}`, lines: [], sourceEventId: reward.id,
