@@ -38,99 +38,100 @@ export interface LoyaltyLedgerEvent {
   createdAt: string;
 }
 
-const cleanString = (value: unknown): string =>
-  typeof value === 'string' ? value.trim() : '';
-
+const cleanString = (value: unknown): string => typeof value === 'string' ? value.trim() : '';
 const cleanInteger = (value: unknown): number => {
   const parsed = typeof value === 'number' ? value : Number(value);
-  if (!Number.isFinite(parsed)) return 0;
-  return Math.trunc(parsed);
+  return Number.isFinite(parsed) ? Math.trunc(parsed) : 0;
 };
+const safeId = (value: string): string => value.trim().replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 120);
 
+// Merchant-private canonical ledger. Never place buyer identity in the public artifacts tree.
 export const getLoyaltyLedgerCollectionPath = (storeId: string): string =>
-  `artifacts/${storeId.trim()}/public/data/loyaltyLedger`;
+  `storeLoyaltyLedgers/${storeId.trim()}/events`;
 
-export const getLoyaltyLedgerEventPath = (
+export const getLoyaltyLedgerEventPath = (storeId: string, eventId: string): string =>
+  `${getLoyaltyLedgerCollectionPath(storeId)}/${eventId.trim()}`;
+
+// Buyer-private mirror used by Meu relacionamento. A buyer only reads their own collection.
+export const getBuyerLoyaltyLedgerCollectionPath = (buyerId: string): string =>
+  `users/${buyerId.trim()}/loyaltyLedger`;
+
+export const getBuyerLoyaltyLedgerEventId = (storeId: string, eventId: string): string =>
+  `${safeId(storeId)}__${safeId(eventId)}`.slice(0, 240);
+
+export const getBuyerLoyaltyLedgerEventPath = (
+  buyerId: string,
   storeId: string,
   eventId: string
-): string => `${getLoyaltyLedgerCollectionPath(storeId)}/${eventId.trim()}`;
+): string => `${getBuyerLoyaltyLedgerCollectionPath(buyerId)}/${getBuyerLoyaltyLedgerEventId(storeId, eventId)}`;
 
-export const getOrderLoyaltyEarnEventId = (orderId: string): string =>
-  `order-${orderId.trim()}-earn`;
-
-export const getOrderLoyaltyReversalEventId = (orderId: string): string =>
-  `order-${orderId.trim()}-reversal`;
+export const getOrderLoyaltyEarnEventId = (orderId: string): string => `order-${orderId.trim()}-earn`;
+export const getOrderLoyaltyReversalEventId = (orderId: string): string => `order-${orderId.trim()}-reversal`;
 
 export const buildOrderLoyaltyLines = (
   order: Pick<CustomerOrder, 'items'>,
   loyalty: ProductLoyaltyMap
-): LoyaltyLedgerLine[] =>
-  order.items.map(item => {
-    const eligibleQuantity = Math.max(
-      0,
-      Math.min(item.quantity, item.paidQuantity || item.quantity)
-    );
-    const basePointsPerUnit = getProductBasePoints(loyalty, item.productId);
-    const basePoints = eligibleQuantity * basePointsPerUnit;
-    return {
-      lineId: item.lineId,
-      productId: item.productId,
-      productName: item.name,
-      quantity: eligibleQuantity,
-      basePointsPerUnit,
-      basePoints,
-      bonusPoints: 0,
-      totalPoints: basePoints,
-    };
-  });
+): LoyaltyLedgerLine[] => order.items.map(item => {
+  const eligibleQuantity = Math.max(0, Math.min(item.quantity, item.paidQuantity || item.quantity));
+  const basePointsPerUnit = getProductBasePoints(loyalty, item.productId);
+  const basePoints = eligibleQuantity * basePointsPerUnit;
+  return {
+    lineId: item.lineId,
+    productId: item.productId,
+    productName: item.name,
+    quantity: eligibleQuantity,
+    basePointsPerUnit,
+    basePoints,
+    bonusPoints: 0,
+    totalPoints: basePoints,
+  };
+});
 
 export const calculateOrderLoyaltyPoints = (
   order: Pick<CustomerOrder, 'items'>,
   loyalty: ProductLoyaltyMap
-): number =>
-  buildOrderLoyaltyLines(order, loyalty).reduce(
-    (total, line) => total + line.totalPoints,
-    0
-  );
+): number => buildOrderLoyaltyLines(order, loyalty).reduce((total, line) => total + line.totalPoints, 0);
+
+const eventPayload = (event: LoyaltyLedgerEvent) => ({
+  ...event,
+  recordedAt: serverTimestamp(),
+  schemaVersion: 2,
+});
 
 export const persistPaidOrderLoyaltyEarn = async (
   user: Pick<User, 'uid'>,
   order: CustomerOrder,
   loyalty: ProductLoyaltyMap
 ): Promise<{ created: boolean; points: number }> => {
-  if (order.storeId.trim() !== user.uid) {
-    throw new Error('Somente a loja responsável pode registrar pontos deste pedido.');
-  }
-  if (order.paymentStatus !== 'paid') return { created: false, points: 0 };
-  if (order.status === 'cancelled' || order.status === 'rejected') {
+  if (order.storeId.trim() !== user.uid) throw new Error('Somente a loja responsável pode registrar pontos deste pedido.');
+  if (order.paymentStatus !== 'paid' || order.status === 'cancelled' || order.status === 'rejected') {
     return { created: false, points: 0 };
   }
-
   const lines = buildOrderLoyaltyLines(order, loyalty);
   const points = lines.reduce((total, line) => total + line.totalPoints, 0);
   const eventId = getOrderLoyaltyEarnEventId(order.id);
-  const reference = doc(db, getLoyaltyLedgerEventPath(order.storeId, eventId));
+  const storeReference = doc(db, getLoyaltyLedgerEventPath(order.storeId, eventId));
+  const buyerId = order.buyerId.trim();
+  const buyerReference = buyerId ? doc(db, getBuyerLoyaltyLedgerEventPath(buyerId, order.storeId, eventId)) : null;
 
   return runTransaction(db, async transaction => {
-    const existing = await transaction.get(reference);
-    if (existing.exists()) {
-      return { created: false, points: cleanInteger(existing.data()?.points) };
-    }
-    transaction.set(reference, {
+    const existing = await transaction.get(storeReference);
+    if (existing.exists()) return { created: false, points: cleanInteger(existing.data()?.points) };
+    const event: LoyaltyLedgerEvent = {
       id: eventId,
       storeId: order.storeId,
-      buyerId: order.buyerId,
+      buyerId,
       buyerEmail: order.buyerEmail.trim().toLocaleLowerCase('pt-BR'),
       orderId: order.id,
-      type: 'earn' satisfies LoyaltyLedgerEventType,
+      type: 'earn',
       points,
       reason: 'Pontos-base da compra paga',
       lines,
       sourceEventId: order.id,
       createdAt: order.updatedAt || order.createdAt || new Date().toISOString(),
-      recordedAt: serverTimestamp(),
-      schemaVersion: 1,
-    });
+    };
+    transaction.set(storeReference, eventPayload(event));
+    if (buyerReference) transaction.set(buyerReference, eventPayload(event));
     return { created: true, points };
   });
 };
@@ -140,9 +141,7 @@ export const persistOrderLoyaltyReversal = async (
   order: CustomerOrder,
   reason = 'Estorno dos pontos da compra'
 ): Promise<{ created: boolean; points: number }> => {
-  if (order.storeId.trim() !== user.uid) {
-    throw new Error('Somente a loja responsável pode estornar pontos deste pedido.');
-  }
+  if (order.storeId.trim() !== user.uid) throw new Error('Somente a loja responsável pode estornar pontos deste pedido.');
   const earnId = getOrderLoyaltyEarnEventId(order.id);
   const reversalId = getOrderLoyaltyReversalEventId(order.id);
   const earnReference = doc(db, getLoyaltyLedgerEventPath(order.storeId, earnId));
@@ -153,34 +152,33 @@ export const persistOrderLoyaltyReversal = async (
       transaction.get(earnReference),
       transaction.get(reversalReference),
     ]);
-    if (reversalSnapshot.exists()) {
-      return { created: false, points: cleanInteger(reversalSnapshot.data()?.points) };
-    }
+    if (reversalSnapshot.exists()) return { created: false, points: cleanInteger(reversalSnapshot.data()?.points) };
     if (!earnSnapshot.exists()) return { created: false, points: 0 };
     const earn = parseLoyaltyLedgerEvent(earnSnapshot.data());
     if (!earn || earn.type !== 'earn') return { created: false, points: 0 };
     const points = -Math.abs(earn.points);
-    const lines = earn.lines.map(line => ({
-      ...line,
-      basePoints: -Math.abs(line.basePoints),
-      bonusPoints: -Math.abs(line.bonusPoints),
-      totalPoints: -Math.abs(line.totalPoints),
-    }));
-    transaction.set(reversalReference, {
+    const event: LoyaltyLedgerEvent = {
+      ...earn,
       id: reversalId,
-      storeId: earn.storeId,
-      buyerId: earn.buyerId,
-      buyerEmail: earn.buyerEmail,
-      orderId: earn.orderId,
-      type: 'reversal' satisfies LoyaltyLedgerEventType,
+      type: 'reversal',
       points,
       reason: reason.trim() || 'Estorno dos pontos da compra',
-      lines,
+      lines: earn.lines.map(line => ({
+        ...line,
+        basePoints: -Math.abs(line.basePoints),
+        bonusPoints: -Math.abs(line.bonusPoints),
+        totalPoints: -Math.abs(line.totalPoints),
+      })),
       sourceEventId: earn.id,
       createdAt: order.updatedAt || new Date().toISOString(),
-      recordedAt: serverTimestamp(),
-      schemaVersion: 1,
-    });
+    };
+    transaction.set(reversalReference, eventPayload(event));
+    if (earn.buyerId) {
+      transaction.set(
+        doc(db, getBuyerLoyaltyLedgerEventPath(earn.buyerId, earn.storeId, reversalId)),
+        eventPayload(event)
+      );
+    }
     return { created: true, points };
   });
 };
@@ -209,31 +207,26 @@ export const parseLoyaltyLedgerEvent = (value: unknown): LoyaltyLedgerEvent | nu
   const buyerId = cleanString(record.buyerId);
   const orderId = cleanString(record.orderId);
   const type = record.type;
-  const points = cleanInteger(record.points);
   if (!id || !storeId || !buyerId) return null;
   if (type !== 'earn' && type !== 'reversal' && type !== 'adjustment') return null;
   if ((type === 'earn' || type === 'reversal') && !orderId) return null;
-
-  const lines = Array.isArray(record.lines)
-    ? record.lines.flatMap(value => {
-        if (!value || typeof value !== 'object') return [];
-        const line = value as Record<string, unknown>;
-        const lineId = cleanString(line.lineId);
-        const productId = cleanString(line.productId);
-        if (!lineId || !productId) return [];
-        return [{
-          lineId,
-          productId,
-          productName: cleanString(line.productName),
-          quantity: cleanInteger(line.quantity),
-          basePointsPerUnit: cleanInteger(line.basePointsPerUnit),
-          basePoints: cleanInteger(line.basePoints),
-          bonusPoints: cleanInteger(line.bonusPoints),
-          totalPoints: cleanInteger(line.totalPoints),
-        } satisfies LoyaltyLedgerLine];
-      })
-    : [];
-
+  const lines = Array.isArray(record.lines) ? record.lines.flatMap(value => {
+    if (!value || typeof value !== 'object') return [];
+    const line = value as Record<string, unknown>;
+    const lineId = cleanString(line.lineId);
+    const productId = cleanString(line.productId);
+    if (!lineId || !productId) return [];
+    return [{
+      lineId,
+      productId,
+      productName: cleanString(line.productName),
+      quantity: cleanInteger(line.quantity),
+      basePointsPerUnit: cleanInteger(line.basePointsPerUnit),
+      basePoints: cleanInteger(line.basePoints),
+      bonusPoints: cleanInteger(line.bonusPoints),
+      totalPoints: cleanInteger(line.totalPoints),
+    } satisfies LoyaltyLedgerLine];
+  }) : [];
   return {
     id,
     storeId,
@@ -241,7 +234,7 @@ export const parseLoyaltyLedgerEvent = (value: unknown): LoyaltyLedgerEvent | nu
     buyerEmail: cleanString(record.buyerEmail),
     orderId,
     type,
-    points,
+    points: cleanInteger(record.points),
     reason: cleanString(record.reason),
     lines,
     sourceEventId: cleanString(record.sourceEventId),
@@ -249,31 +242,51 @@ export const parseLoyaltyLedgerEvent = (value: unknown): LoyaltyLedgerEvent | nu
   };
 };
 
+const subscribeToLedgerCollection = (
+  path: string,
+  onEvents: (events: LoyaltyLedgerEvent[]) => void,
+  onError?: (error: Error) => void,
+  storeIdFilter = ''
+): Unsubscribe => onSnapshot(
+  collection(db, path),
+  snapshot => {
+    const events = snapshot.docs.flatMap(document => {
+      const event = parseLoyaltyLedgerEvent(document.data());
+      if (!event || (storeIdFilter && event.storeId !== storeIdFilter)) return [];
+      return [event];
+    }).sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+    onEvents(events);
+  },
+  error => {
+    onEvents([]);
+    onError?.(error);
+  }
+);
+
 export const subscribeToStoreLoyaltyLedger = (
   storeId: string,
   onEvents: (events: LoyaltyLedgerEvent[]) => void,
   onError?: (error: Error) => void
 ): Unsubscribe => {
   const normalized = storeId.trim();
-  if (!normalized) {
-    onEvents([]);
-    return () => undefined;
-  }
-  return onSnapshot(
-    collection(db, getLoyaltyLedgerCollectionPath(normalized)),
-    snapshot => {
-      const events = snapshot.docs
-        .flatMap(document => {
-          const event = parseLoyaltyLedgerEvent(document.data());
-          return event ? [event] : [];
-        })
-        .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
-      onEvents(events);
-    },
-    error => {
-      onEvents([]);
-      onError?.(error);
-    }
+  if (!normalized) { onEvents([]); return () => undefined; }
+  return subscribeToLedgerCollection(getLoyaltyLedgerCollectionPath(normalized), onEvents, onError);
+};
+
+export const subscribeToBuyerLoyaltyLedger = (
+  buyerId: string,
+  storeId: string,
+  onEvents: (events: LoyaltyLedgerEvent[]) => void,
+  onError?: (error: Error) => void
+): Unsubscribe => {
+  const normalizedBuyerId = buyerId.trim();
+  const normalizedStoreId = storeId.trim();
+  if (!normalizedBuyerId || !normalizedStoreId) { onEvents([]); return () => undefined; }
+  return subscribeToLedgerCollection(
+    getBuyerLoyaltyLedgerCollectionPath(normalizedBuyerId),
+    onEvents,
+    onError,
+    normalizedStoreId
   );
 };
 
