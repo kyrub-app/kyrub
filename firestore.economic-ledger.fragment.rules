@@ -1,0 +1,6 @@
+    // --- Immutable Economic Ledgers ---
+    // Economic history is posted only by trusted server authority (Admin SDK).
+    // Clients, including store owners and staff, cannot create, edit or delete it.
+    match /stores/{storeId}/economicLedgers/{ledgerId} {
+      allow read, create, update, delete: if false;
+    }
