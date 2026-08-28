@@ -8,7 +8,7 @@ import {
 } from 'firebase/firestore';
 import type { User } from 'firebase/auth';
 import type { CartItem } from '../types';
-import { db } from './firebase';
+import { auth, db } from './firebase';
 import {
   chooseCanonicalReadSource,
   parseCanonicalReadConfig,
@@ -440,6 +440,35 @@ const mapCanonicalOrderToLegacyStore = (
 export const persistCustomerOrder = async (
   order: CustomerOrder
 ): Promise<void> => {
+  if (order.source === 'customer' && order.fulfillmentType === 'dine_in') {
+    const user = auth.currentUser;
+    if (!user || user.uid !== order.buyerId) {
+      throw new Error('Faça login novamente para enviar o pedido.');
+    }
+    const token = await user.getIdToken();
+    const response = await fetch('/api/action-execute?transport=crm-campaign', {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${token}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        operation: 'create_attendance_order',
+        order,
+      }),
+    });
+    const payload = await response.json().catch(() => ({})) as Record<string, unknown>;
+    if (!response.ok) {
+      throw new Error(
+        typeof payload.error === 'string'
+          ? payload.error
+          : 'Não foi possível enviar o pedido agora.'
+      );
+    }
+    return;
+  }
+
+  // Transitional legacy writer for non-customer flows that have not been cut over yet.
   await setDoc(
     doc(db, getCustomerOrderDocumentPath(order.storeId, order.id)),
     order
