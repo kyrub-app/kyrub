@@ -14,6 +14,7 @@ import {
   Trophy,
 } from 'lucide-react';
 import type { Order, Store } from '../../types';
+import { auth } from '../../utils/firebase';
 import {
   subscribeToPreferredPublicProducts,
   type PublicProduct,
@@ -22,6 +23,10 @@ import {
   listMarketplacePromotions,
   type PublicMarketplacePromotion,
 } from '../../utils/marketplaceCheckout';
+import {
+  getBuyerLoyaltyBalance,
+  subscribeToStoreLoyaltyLedger,
+} from '../../utils/loyaltyLedger';
 
 type Props = {
   stores: Store[];
@@ -82,6 +87,44 @@ export function CustomerStoreRelationshipsPanel({
   const [products, setProducts] = useState<PublicProduct[]>([]);
   const [promotions, setPromotions] = useState<PublicMarketplacePromotion[]>([]);
   const [benefitsLoading, setBenefitsLoading] = useState(false);
+  const [pointsByStoreId, setPointsByStoreId] = useState<Record<string, number>>({});
+
+  const relationshipStoreIds = useMemo(() => {
+    const publishedStoreIds = new Set(stores.map(store => store.id));
+    return Array.from(new Set(
+      orders
+        .map(order => order.storeId?.trim() ?? '')
+        .filter(storeId => storeId && publishedStoreIds.has(storeId))
+    ));
+  }, [orders, stores]);
+
+  useEffect(() => {
+    const user = auth.currentUser;
+    if (!user || relationshipStoreIds.length === 0) {
+      setPointsByStoreId({});
+      return;
+    }
+
+    const unsubscribers = relationshipStoreIds.map(storeId =>
+      subscribeToStoreLoyaltyLedger(
+        storeId,
+        events => {
+          const points = getBuyerLoyaltyBalance(
+            events,
+            user.uid,
+            user.email ?? ''
+          );
+          setPointsByStoreId(current => ({ ...current, [storeId]: points }));
+        },
+        error => {
+          console.warn('Relacionamento: ledger de fidelidade indisponível.', error);
+          setPointsByStoreId(current => ({ ...current, [storeId]: 0 }));
+        }
+      )
+    );
+
+    return () => unsubscribers.forEach(unsubscribe => unsubscribe());
+  }, [relationshipStoreIds.join('|')]);
 
   const relationships = useMemo<StoreRelationship[]>(() => {
     const storesById = new Map(stores.map(store => [store.id, store]));
@@ -107,7 +150,7 @@ export function CustomerStoreRelationshipsPanel({
           orders: ordered,
           purchaseCount: eligibleOrders.length,
           totalSpent,
-          points: Math.floor(totalSpent),
+          points: pointsByStoreId[storeId] ?? 0,
           lastOrderAt: ordered[0]?.createdAt ?? '',
         };
       })
@@ -115,7 +158,7 @@ export function CustomerStoreRelationshipsPanel({
         (validDate(right.lastOrderAt)?.getTime() ?? 0) -
         (validDate(left.lastOrderAt)?.getTime() ?? 0)
       );
-  }, [orders, stores]);
+  }, [orders, pointsByStoreId, stores]);
 
   const selected = relationships.find(item => item.store.id === selectedStoreId) ?? null;
 
