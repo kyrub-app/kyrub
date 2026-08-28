@@ -23,6 +23,11 @@ export type KyrubEconomicEntryKind =
   | 'cancellation_compensation'
   | 'adjustment';
 
+export type KyrubEconomicLedgerSource =
+  | 'marketplace_payment'
+  | 'attendance_payment'
+  | 'manual_adjustment';
+
 export interface KyrubEconomicParticipantRef {
   id: string;
   role: KyrubEconomicParticipantRole;
@@ -50,7 +55,7 @@ export interface KyrubEconomicLedger {
   orderId: string;
   paymentId: string;
   currency: 'BRL';
-  source: 'marketplace_payment' | 'attendance_payment' | 'manual_adjustment';
+  source: KyrubEconomicLedgerSource;
   status: 'posted';
   entries: KyrubEconomicLedgerEntry[];
   createdAt: string;
@@ -90,6 +95,12 @@ const ENTRY_KINDS = new Set<KyrubEconomicEntryKind>([
   'chargeback',
   'cancellation_compensation',
   'adjustment',
+]);
+
+const LEDGER_SOURCES = new Set<KyrubEconomicLedgerSource>([
+  'marketplace_payment',
+  'attendance_payment',
+  'manual_adjustment',
 ]);
 
 const required = (label: string, value: string): string => {
@@ -215,6 +226,9 @@ export const normalizeKyrubEconomicLedger = (
   }
   if (ledger.currency !== 'BRL') {
     throw new Error('Economic ledger currency must be BRL.');
+  }
+  if (!LEDGER_SOURCES.has(ledger.source)) {
+    throw new Error('Economic ledger source is invalid.');
   }
   if (ledger.status !== 'posted') {
     throw new Error('Economic ledger must be posted and immutable.');
