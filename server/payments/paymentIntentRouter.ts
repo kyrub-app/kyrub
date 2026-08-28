@@ -12,6 +12,7 @@ import {
   type PaymentMethod,
 } from '../../src/utils/canonicalPayment.js';
 import { normalizePromotionCode } from '../../src/utils/storePromotions.js';
+import { normalizeStorePointsPerUnit } from '../../shared/storePoints.js';
 import { attachMercadoPagoPixToExistingIntent } from './mercadoPagoCheckoutBridge.js';
 import {
   mapMercadoPagoWebhookError,
@@ -47,6 +48,7 @@ interface CatalogProduct {
   price: number;
   image: string;
   isService: boolean;
+  storePointsPerUnit: number;
 }
 
 export interface MarketplacePaymentIntentResponse {
@@ -159,6 +161,7 @@ const catalogProducts = (value: unknown): CatalogProduct[] => {
       price: record.isComplimentary === true ? 0 : price,
       image: clean(record.image),
       isService: record.isService === true,
+      storePointsPerUnit: normalizeStorePointsPerUnit(record.storePointsPerUnit),
     }];
   });
 };
@@ -190,6 +193,7 @@ const buildIntentItems = (
       note: item.note ?? '',
       image: product.image,
       isService: product.isService,
+      storePointsPerUnit: product.storePointsPerUnit,
     };
   });
 };
