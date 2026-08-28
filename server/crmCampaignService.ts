@@ -23,6 +23,22 @@ export const executeCrmCampaignTransport = async (
   authorization: string,
   rawBody: unknown
 ): Promise<CrmCampaignTransportResult> => {
+  const body = rawBody && typeof rawBody === 'object' && !Array.isArray(rawBody)
+    ? rawBody as Record<string, unknown>
+    : {};
+  const operation = clean(body.operation) || 'create';
+
+  // Reuse the existing authenticated action-execute transport while the
+  // project is constrained by the Vercel Hobby serverless-function budget.
+  // Order business logic stays isolated in its own server service.
+  if (operation === 'create_attendance_order') {
+    const attendance = await import('./orders/customerAttendanceOrderService.js');
+    return attendance.createAuthorizedCustomerAttendanceOrder(
+      authorization,
+      body
+    );
+  }
+
   const token = bearerToken(authorization);
   if (!token) {
     return {
@@ -32,10 +48,6 @@ export const executeCrmCampaignTransport = async (
   }
 
   const identity = await verifyFirebaseIdToken(token);
-  const body = rawBody && typeof rawBody === 'object' && !Array.isArray(rawBody)
-    ? rawBody as Record<string, unknown>
-    : {};
-  const operation = clean(body.operation) || 'create';
   const storeId = identity.uid.trim();
 
   if (operation === 'create') {
