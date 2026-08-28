@@ -43,8 +43,10 @@ test('authoritative paid webhook materializes the marketplace order transactiona
   assert.match(paymentWebhookSource, /assertMarketplacePaymentIntentMatchesPayment/);
   assert.match(paymentWebhookSource, /materializePaidMarketplaceOrder/);
   assert.match(paymentWebhookSource, /effectiveStatus === 'paid'/);
-  assert.match(paymentWebhookSource, /transaction\.get\(orderRef\)/);
-  assert.match(paymentWebhookSource, /transaction\.set\(orderRef, operationalOrder\)/);
+  assert.match(paymentWebhookSource, /transaction\.get\(legacyOrderRef\)/);
+  assert.match(paymentWebhookSource, /transaction\.get\(canonicalOrderRef\)/);
+  assert.match(paymentWebhookSource, /transaction\.set\(canonicalOrderRef/);
+  assert.match(paymentWebhookSource, /transaction\.set\(legacyOrderRef, operationalOrder\)/);
   assert.match(paymentWebhookSource, /orderMaterialized/);
 });
 
