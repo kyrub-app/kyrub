@@ -17,14 +17,19 @@ const cleanPoints = (value: unknown): number => {
 };
 
 /**
- * Public canonical loyalty configuration for a store.
+ * Canonical store-owned loyalty configuration.
  *
- * Product base points must be readable by customers (Meu relacionamento) as
- * well as editable by the store owner. Keeping the rule inside the existing
- * artifacts tree also follows the repository's canonical tenant data layout
- * and its current Firestore security model.
+ * New writes live outside the legacy /artifacts tree so another signed-in
+ * account cannot mutate a store's product-point rules through the old broad
+ * artifact rule. Read access remains available to signed-in customers because
+ * these rules describe public loyalty economics, not buyer-private data.
  */
 export const getProductLoyaltyDocumentPath = (storeId: string): string =>
+  `storeLoyaltyConfigs/${storeId.trim()}`;
+
+/** Transitional legacy path used only as a read fallback while staging data is
+ * backfilled naturally by the next merchant edit. No new writes go here. */
+export const getLegacyProductLoyaltyDocumentPath = (storeId: string): string =>
   `artifacts/${storeId.trim()}/public/data/loyalty/config`;
 
 export const parseProductLoyaltyMap = (value: unknown): ProductLoyaltyMap => {
@@ -53,14 +58,36 @@ export const subscribeToProductLoyalty = (
     onValue({});
     return () => undefined;
   }
-  return onSnapshot(
+
+  let unsubscribeLegacy: Unsubscribe | null = null;
+  const unsubscribeCanonical = onSnapshot(
     doc(db, getProductLoyaltyDocumentPath(normalized)),
-    snapshot => onValue(parseProductLoyaltyMap(snapshot.data())),
+    snapshot => {
+      unsubscribeLegacy?.();
+      unsubscribeLegacy = null;
+      if (snapshot.exists()) {
+        onValue(parseProductLoyaltyMap(snapshot.data()));
+        return;
+      }
+      unsubscribeLegacy = onSnapshot(
+        doc(db, getLegacyProductLoyaltyDocumentPath(normalized)),
+        legacySnapshot => onValue(parseProductLoyaltyMap(legacySnapshot.data())),
+        error => {
+          onValue({});
+          onError?.(error);
+        }
+      );
+    },
     error => {
       onValue({});
       onError?.(error);
     }
   );
+
+  return () => {
+    unsubscribeCanonical();
+    unsubscribeLegacy?.();
+  };
 };
 
 export const persistProductLoyaltyPoints = async (
@@ -69,18 +96,29 @@ export const persistProductLoyaltyPoints = async (
   points: number
 ): Promise<void> => {
   const id = productId.trim();
+  const storeId = user.uid.trim();
+  if (!storeId) throw new Error('Loja não identificada.');
   if (!id) throw new Error('O item não foi identificado para configurar pontos.');
   const normalizedPoints = cleanPoints(points);
-  const reference = doc(db, getProductLoyaltyDocumentPath(user.uid));
+  const canonicalReference = doc(db, getProductLoyaltyDocumentPath(storeId));
+  const legacyReference = doc(db, getLegacyProductLoyaltyDocumentPath(storeId));
+
   await runTransaction(db, async transaction => {
-    const snapshot = await transaction.get(reference);
-    const current = parseProductLoyaltyMap(snapshot.data());
+    const [canonicalSnapshot, legacySnapshot] = await Promise.all([
+      transaction.get(canonicalReference),
+      transaction.get(legacyReference),
+    ]);
+    const current = canonicalSnapshot.exists()
+      ? parseProductLoyaltyMap(canonicalSnapshot.data())
+      : parseProductLoyaltyMap(legacySnapshot.data());
+
     transaction.set(
-      reference,
+      canonicalReference,
       {
-        storeId: user.uid,
+        storeId,
         productPoints: { ...current, [id]: normalizedPoints },
         updatedAt: serverTimestamp(),
+        schemaVersion: 2,
       },
       { merge: true }
     );
