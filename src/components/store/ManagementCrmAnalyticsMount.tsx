@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { CrmLoyaltyBalanceBridge } from './CrmLoyaltyBalanceBridge';
 import { LoyaltyPromotionCenterBridge } from './LoyaltyPromotionCenterBridge';
 import { ManagementCrmAnalyticsBridge } from './ManagementCrmAnalyticsBridge';
 import { auth } from '../../utils/firebase';
@@ -100,6 +101,7 @@ export function ManagementCrmAnalyticsMount() {
   return (
     <>
       <ManagementCrmAnalyticsBridge orders={orders} />
+      <CrmLoyaltyBalanceBridge orders={orders} />
       <LoyaltyPromotionCenterBridge />
     </>
   );
