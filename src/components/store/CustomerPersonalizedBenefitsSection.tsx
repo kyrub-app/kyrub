@@ -30,16 +30,17 @@ export function CustomerPersonalizedBenefitsSection({ storeId }: Props) {
   useEffect(() => onAuthStateChanged(auth, setUser), []);
 
   useEffect(() => {
-    if (!storeId) {
+    if (!storeId || !user) {
       setBenefits([]);
       return;
     }
     return subscribeToPersonalizedBenefits(
+      user.uid,
       storeId,
       setBenefits,
       error => console.warn('Relacionamento: benefícios personalizados indisponíveis.', error)
     );
-  }, [storeId]);
+  }, [storeId, user?.uid]);
 
   const visible = useMemo(() => {
     if (!user) return [];
@@ -56,7 +57,7 @@ export function CustomerPersonalizedBenefitsSection({ storeId }: Props) {
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="flex items-center gap-2 text-fuchsia-300"><Sparkles className="h-4 w-4" /><h4 className="text-xs font-black uppercase text-white">Exclusivos para você</h4></div>
-          <p className="mt-1 text-[9px] text-slate-500">Benefícios que esta loja direcionou especificamente ao seu relacionamento.</p>
+          <p className="mt-1 text-[9px] text-slate-500">Benefícios privados que esta loja direcionou especificamente ao seu relacionamento.</p>
         </div>
         <span className="rounded-full border border-fuchsia-400/20 bg-fuchsia-400/10 px-2 py-1 text-[8px] font-black text-fuchsia-300">{visible.length}</span>
       </div>
