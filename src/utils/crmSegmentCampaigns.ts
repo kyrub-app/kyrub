@@ -112,7 +112,7 @@ export const buildCrmSegmentRecipients = (
 const safeIdentity = (recipient: CrmCampaignRecipient): string =>
   (recipient.buyerId || recipient.buyerEmail)
     .replace(/[^a-zA-Z0-9_-]/g, '_')
-    .slice(0, 120);
+    .slice(0, 72);
 
 export const createCrmSegmentCampaign = async (
   user: Pick<User, 'uid'>,
