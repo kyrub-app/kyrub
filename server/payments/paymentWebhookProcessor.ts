@@ -17,6 +17,11 @@ import {
   paymentStatusFromProviderEvent,
   type VerifiedPaymentProviderEvent,
 } from '../../src/utils/paymentProvider.js';
+import { normalizeKyrubEconomicLedger, type KyrubEconomicLedger } from '../../shared/kyrubEconomicLedger.js';
+import {
+  buildMarketplaceEconomicLedger,
+  economicLedgerPath,
+} from './economicLedgerService.js';
 
 interface ProcessPaymentWebhookResult {
   duplicate: boolean;
@@ -24,6 +29,8 @@ interface ProcessPaymentWebhookResult {
   status: CanonicalPayment['status'];
   orderId: string;
   orderMaterialized: boolean;
+  economicLedgerId: string;
+  economicLedgerPosted: boolean;
 }
 
 const EVENT_COLLECTION = 'paymentWebhookEvents';
@@ -167,10 +174,14 @@ export const processVerifiedPaymentWebhook = async (input: {
     let promotionExists = false;
     let redemptionRef: ReturnType<typeof adminDb.doc> | null = null;
     let redemptionExists = false;
+    let economicLedger: KyrubEconomicLedger | null = null;
+    let economicLedgerRef: ReturnType<typeof adminDb.doc> | null = null;
+    let economicLedgerExists = false;
+    let economicLedgerPosted = false;
     const intentStatus = intentStatusForPaymentStatus(effectiveStatus);
 
     // Firestore transactions require every read to happen before any write.
-    // Resolve order and optional coupon redemption documents first.
+    // Resolve order, ledger and optional coupon redemption documents first.
     if (current.context === 'marketplace') {
       if (!intentSnapshot.exists) throw new Error('PAYMENT_INTENT_NOT_FOUND');
       intent = normalizeCanonicalPaymentIntent(
@@ -202,6 +213,31 @@ export const processVerifiedPaymentWebhook = async (input: {
             canonicalOperationalOrderPath(canonicalStoreId, operationalOrder.id)
           );
           canonicalOrderExists = (await transaction.get(canonicalOrderRef)).exists;
+        }
+
+        const economicStoreId = canonicalStoreId || storeId;
+        economicLedger = buildMarketplaceEconomicLedger({
+          paymentId,
+          intent: paidIntent,
+          economicStoreId,
+          occurredAt: event.occurredAt,
+        });
+        economicLedgerRef = adminDb.doc(
+          economicLedgerPath(economicStoreId, economicLedger.id)
+        );
+        const economicLedgerSnapshot = await transaction.get(economicLedgerRef);
+        economicLedgerExists = economicLedgerSnapshot.exists;
+        if (economicLedgerExists) {
+          const existingLedger = normalizeKyrubEconomicLedger(
+            economicLedgerSnapshot.data() as KyrubEconomicLedger
+          );
+          if (
+            existingLedger.paymentId !== paymentId ||
+            existingLedger.transactionId !== paidIntent.id ||
+            existingLedger.storeId !== economicStoreId
+          ) {
+            throw new Error('ECONOMIC_LEDGER_ID_CONFLICT');
+          }
         }
 
         const promotion = intent.orderDraft.promotionSnapshot;
@@ -269,6 +305,13 @@ export const processVerifiedPaymentWebhook = async (input: {
       }
     }
 
+    if (economicLedger && economicLedgerRef && !economicLedgerExists) {
+      // Economic history is append-only. Corrections must be new compensating ledgers,
+      // never edits to a posted transaction.
+      transaction.create(economicLedgerRef, economicLedger);
+      economicLedgerPosted = true;
+    }
+
     if (
       intent &&
       effectiveStatus === 'paid' &&
@@ -333,6 +376,8 @@ export const processVerifiedPaymentWebhook = async (input: {
       status: effectiveStatus,
       orderId,
       orderMaterialized,
+      economicLedgerId: economicLedger?.id ?? '',
+      economicLedgerPosted,
     };
   });
 };
