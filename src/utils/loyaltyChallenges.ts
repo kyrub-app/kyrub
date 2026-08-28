@@ -41,6 +41,9 @@ const cleanInteger = (value: unknown): number => {
 };
 
 export const getLoyaltyChallengesCollectionPath = (storeId: string): string =>
+  `storeLoyaltyChallenges/${storeId.trim()}/items`;
+
+export const getLegacyLoyaltyChallengesCollectionPath = (storeId: string): string =>
   `artifacts/${storeId.trim()}/public/data/loyaltyChallenges`;
 
 const parseChallenge = (value: unknown): LoyaltyChallenge | null => {
@@ -69,6 +72,12 @@ const parseChallenge = (value: unknown): LoyaltyChallenge | null => {
   };
 };
 
+const parseSnapshot = (docs: Array<{ data: () => unknown }>): LoyaltyChallenge[] =>
+  docs.flatMap(item => {
+    const parsed = parseChallenge(item.data());
+    return parsed ? [parsed] : [];
+  }).sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+
 export const subscribeToLoyaltyChallenges = (
   storeId: string,
   onChallenges: (challenges: LoyaltyChallenge[]) => void,
@@ -79,22 +88,37 @@ export const subscribeToLoyaltyChallenges = (
     onChallenges([]);
     return () => undefined;
   }
-  return onSnapshot(
+
+  let unsubscribeLegacy: Unsubscribe | null = null;
+  const unsubscribeCanonical = onSnapshot(
     collection(db, getLoyaltyChallengesCollectionPath(normalized)),
     snapshot => {
-      const challenges = snapshot.docs
-        .flatMap(item => {
-          const parsed = parseChallenge(item.data());
-          return parsed ? [parsed] : [];
-        })
-        .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
-      onChallenges(challenges);
+      const canonical = parseSnapshot(snapshot.docs);
+      unsubscribeLegacy?.();
+      unsubscribeLegacy = null;
+      if (canonical.length > 0) {
+        onChallenges(canonical);
+        return;
+      }
+      unsubscribeLegacy = onSnapshot(
+        collection(db, getLegacyLoyaltyChallengesCollectionPath(normalized)),
+        legacySnapshot => onChallenges(parseSnapshot(legacySnapshot.docs)),
+        error => {
+          onChallenges([]);
+          onError?.(error);
+        }
+      );
     },
     error => {
       onChallenges([]);
       onError?.(error);
     }
   );
+
+  return () => {
+    unsubscribeCanonical();
+    unsubscribeLegacy?.();
+  };
 };
 
 export const saveLoyaltyChallenge = async (
@@ -126,10 +150,10 @@ export const saveLoyaltyChallenge = async (
     startsAt: draft.startsAt,
     endsAt: draft.endsAt,
     active: draft.active,
-    createdAt: challengeId.trim() ? undefined : now,
+    ...(challengeId.trim() ? {} : { createdAt: now }),
     updatedAt: now,
     recordedAt: serverTimestamp(),
-    schemaVersion: 1,
+    schemaVersion: 2,
   }, { merge: true });
   return reference.id;
 };
