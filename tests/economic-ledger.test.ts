@@ -10,6 +10,11 @@ import {
 import { buildMarketplaceEconomicLedger } from '../server/payments/economicLedgerService.js';
 import type { CanonicalPaymentIntent } from '../src/utils/canonicalPaymentIntent.js';
 
+const paymentWebhookSource = readFileSync(
+  'server/payments/paymentWebhookProcessor.ts',
+  'utf8'
+);
+
 const marketplaceIntent = (overrides: Partial<CanonicalPaymentIntent> = {}): CanonicalPaymentIntent => ({
   id: 'pi_test',
   storeId: 'legacy-store',
@@ -126,6 +131,15 @@ test('marketplace payment snapshots sale and merchant-funded promotion without r
   );
   assert.equal(ledger.entries[1]?.reference?.type, 'promotion');
   assert.equal(ledger.entries[1]?.reference?.id, 'promo-1');
+});
+
+test('paid marketplace webhook posts the immutable ledger in the same transaction boundary', () => {
+  assert.match(paymentWebhookSource, /effectiveStatus === 'paid'/);
+  assert.match(paymentWebhookSource, /buildMarketplaceEconomicLedger\(/);
+  assert.match(paymentWebhookSource, /economicLedgerPath\(/);
+  assert.match(paymentWebhookSource, /transaction\.get\(economicLedgerRef\)/);
+  assert.match(paymentWebhookSource, /transaction\.create\(economicLedgerRef, economicLedger\)/);
+  assert.match(paymentWebhookSource, /Corrections must be new compensating ledgers/);
 });
 
 test('marketplace ledger fails closed when freight economics have not assigned a beneficiary', () => {
