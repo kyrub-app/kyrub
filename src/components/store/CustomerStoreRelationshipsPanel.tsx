@@ -29,7 +29,7 @@ import {
 } from '../../utils/marketplaceCheckout';
 import {
   getBuyerLoyaltyBalance,
-  subscribeToStoreLoyaltyLedger,
+  subscribeToBuyerLoyaltyLedger,
 } from '../../utils/loyaltyLedger';
 
 type Props = {
@@ -84,14 +84,15 @@ export function CustomerStoreRelationshipsPanel({ stores, orders, onEnterStore }
       return;
     }
     const unsubscribers = relationshipStoreIds.map(storeId =>
-      subscribeToStoreLoyaltyLedger(
+      subscribeToBuyerLoyaltyLedger(
+        user.uid,
         storeId,
         events => setPointsByStoreId(current => ({
           ...current,
           [storeId]: getBuyerLoyaltyBalance(events, user.uid, user.email ?? ''),
         })),
         error => {
-          console.warn('Relacionamento: ledger de fidelidade indisponível.', error);
+          console.warn('Relacionamento: ledger privado de fidelidade indisponível.', error);
           setPointsByStoreId(current => ({ ...current, [storeId]: 0 }));
         }
       )
