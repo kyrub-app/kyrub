@@ -36,11 +36,13 @@ A nested restrictive rule does not neutralize the current broad `allow` on `/art
 
 This is the highest-priority remaining artifact because the document contains customer identity and operational order data, including buyer id/name/e-mail, delivery/table context, notes, items, totals and payment state.
 
-Canonical mirror already exists at `stores/{canonicalStoreId}/orders`. The repository already has migration reconciliation and preferred-read cutover logic. However, current legacy order persistence/dual-write paths still depend on the artifact collection, so the wildcard cannot be removed yet.
+Canonical mirror already exists at `stores/{canonicalStoreId}/orders`. The repository already has migration reconciliation and preferred-read cutover logic.
+
+**Current staging progress:** marketplace delivery/pickup orders that cross the authoritative paid-provider webhook now materialize into `stores/{canonicalStoreId}/orders/{orderId}` whenever the tenant has a canonical mapping. The same Firestore transaction still writes the legacy `customerOrders` document as a temporary compatibility copy for ERP readers that have not completed cutover. Direct dine-in persistence and some operational mutations still use the legacy utility path, so `/artifacts/**` cannot be restricted yet.
 
 **Exit criteria:**
 
-1. New order authority writes to the canonical store collection.
+1. New order authority writes to the canonical store collection. **Marketplace paid materialization: done in staging; direct dine-in/remaining writers: pending.**
 2. Merchant/KDS reads use the canonical source after reconciliation.
 3. Customer order access receives a buyer-scoped projection or rules that prove buyer/store membership.
 4. Legacy artifact becomes read-only migration fallback.
