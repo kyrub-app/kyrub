@@ -28,6 +28,8 @@ export type KyrubEconomicLedgerSource =
   | 'attendance_payment'
   | 'manual_adjustment';
 
+export type KyrubEconomicPaymentMethod = 'pix' | 'card' | 'cash' | 'other';
+
 export interface KyrubEconomicParticipantRef {
   id: string;
   role: KyrubEconomicParticipantRole;
@@ -54,6 +56,8 @@ export interface KyrubEconomicLedger {
   storeId: string;
   orderId: string;
   paymentId: string;
+  paymentMethod: KyrubEconomicPaymentMethod | null;
+  paymentProvider: string;
   currency: 'BRL';
   source: KyrubEconomicLedgerSource;
   status: 'posted';
@@ -101,6 +105,13 @@ const LEDGER_SOURCES = new Set<KyrubEconomicLedgerSource>([
   'marketplace_payment',
   'attendance_payment',
   'manual_adjustment',
+]);
+
+const PAYMENT_METHODS = new Set<KyrubEconomicPaymentMethod>([
+  'pix',
+  'card',
+  'cash',
+  'other',
 ]);
 
 const required = (label: string, value: string): string => {
@@ -230,6 +241,15 @@ export const normalizeKyrubEconomicLedger = (
   if (!LEDGER_SOURCES.has(ledger.source)) {
     throw new Error('Economic ledger source is invalid.');
   }
+  const paymentBacked = ledger.source === 'marketplace_payment' || ledger.source === 'attendance_payment';
+  if (paymentBacked) {
+    if (!ledger.paymentMethod || !PAYMENT_METHODS.has(ledger.paymentMethod)) {
+      throw new Error('Payment-backed economic ledger method is invalid.');
+    }
+    required('economic ledger payment provider', ledger.paymentProvider);
+  } else if (ledger.paymentMethod !== null && !PAYMENT_METHODS.has(ledger.paymentMethod)) {
+    throw new Error('Economic ledger payment method is invalid.');
+  }
   if (ledger.status !== 'posted') {
     throw new Error('Economic ledger must be posted and immutable.');
   }
@@ -242,6 +262,8 @@ export const normalizeKyrubEconomicLedger = (
     storeId: required('economic ledger store id', ledger.storeId),
     orderId: ledger.orderId.trim(),
     paymentId: ledger.paymentId.trim(),
+    paymentMethod: ledger.paymentMethod,
+    paymentProvider: ledger.paymentProvider.trim(),
     currency: 'BRL',
     source: ledger.source,
     status: 'posted',
