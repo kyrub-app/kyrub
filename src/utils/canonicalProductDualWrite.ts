@@ -21,6 +21,7 @@ import {
 } from './operationalDualWrite';
 import type { CanonicalStoreRecord } from './storeDirectory';
 import type { StoreRole } from './storeSecurity';
+import { normalizeStorePointsPerUnit } from '../../shared/storePoints';
 
 export type CanonicalProductPublicationStatus =
   | 'draft'
@@ -39,6 +40,7 @@ export interface CanonicalProductMirrorData {
   stock: number;
   category: string;
   isService: boolean;
+  storePointsPerUnit: number;
   publicationStatus: CanonicalProductPublicationStatus;
   createdByUserId: string;
   createdByRole: StoreRole;
@@ -169,6 +171,7 @@ export const buildCanonicalProductMirrorData = (
     stock: product.isService ? 0 : product.stock,
     category: product.category.trim(),
     isService: product.isService === true,
+    storePointsPerUnit: normalizeStorePointsPerUnit(product.storePointsPerUnit),
     publicationStatus: 'published',
     createdByUserId: actorUserId,
     createdByRole: migratedByRole,
@@ -201,6 +204,7 @@ const comparableProductFields = (
   stock: finiteNumber(value.stock),
   category: cleanString(value.category),
   isService: value.isService === true,
+  storePointsPerUnit: normalizeStorePointsPerUnit(value.storePointsPerUnit),
   publicationStatus: cleanString(value.publicationStatus),
   legacyUpdatedAt: cleanString(value.legacyUpdatedAt),
   archivedAt: cleanString(value.archivedAt),
@@ -350,6 +354,7 @@ export const syncLegacyProductsToCanonical = async (
         stock: next.stock,
         category: next.category,
         isService: next.isService,
+        storePointsPerUnit: next.storePointsPerUnit,
         publicationStatus: 'published',
         updatedByUserId: user.uid,
         updatedByRole: 'owner',
