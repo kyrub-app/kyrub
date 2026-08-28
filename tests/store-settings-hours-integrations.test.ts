@@ -29,16 +29,17 @@ const settingsSource = readFileSync(
 );
 const resetSource = readFileSync('src/utils/storeReset.ts', 'utf8');
 
-test('store settings places integrations after environments', () => {
-  const profileIndex = legacyModalSource.indexOf('Perfil');
-  const environmentsIndex = legacyModalSource.indexOf('Ambientes');
-  const integrationsIndex = legacyModalSource.indexOf('Integrações');
-
-  assert.ok(profileIndex >= 0);
-  assert.ok(environmentsIndex > profileIndex);
-  assert.ok(integrationsIndex > environmentsIndex);
-  assert.match(legacyModalSource, /store-config-integrations-tab/);
+test('store settings use the permanent guided wizard flow', () => {
+  assert.match(legacyModalSource, /Kyrubia · Configuração guiada/);
+  assert.match(legacyModalSource, /Identidade/);
+  assert.match(legacyModalSource, /Visual/);
+  assert.match(legacyModalSource, /Contato e localização/);
+  assert.match(legacyModalSource, /Funcionamento/);
+  assert.match(legacyModalSource, /Ambientes e estações/);
+  assert.match(legacyModalSource, /Integrações/);
+  assert.match(legacyModalSource, /Revisão/);
   assert.match(legacyModalSource, /integrationsControls/);
+  assert.doesNotMatch(legacyModalSource, /store-config-integrations-tab/);
 });
 
 test('profile receives an editable seven-day opening schedule', () => {
