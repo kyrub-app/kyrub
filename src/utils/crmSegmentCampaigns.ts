@@ -118,7 +118,7 @@ const campaignApi = async (
   body: Record<string, unknown>
 ): Promise<Record<string, unknown>> => {
   const token = await user.getIdToken();
-  const response = await fetch('/api/crm-campaign', {
+  const response = await fetch('/api/action-execute?transport=crm-campaign', {
     method: 'POST',
     headers: {
       authorization: `Bearer ${token}`,
@@ -236,7 +236,6 @@ export const createCrmSegmentCampaign = async (
 
   let notifiedRecipientCount = 0;
   try {
-    // Two Firestore documents per recipient. 225 recipients keeps each batch under 500 writes.
     for (let index = 0; index < recipientWrites.length; index += 225) {
       const batch = writeBatch(db);
       const slice = recipientWrites.slice(index, index + 225);
