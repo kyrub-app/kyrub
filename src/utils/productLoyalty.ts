@@ -16,8 +16,16 @@ const cleanPoints = (value: unknown): number => {
   return Math.min(1_000_000, Math.floor(parsed));
 };
 
+/**
+ * Public canonical loyalty configuration for a store.
+ *
+ * Product base points must be readable by customers (Meu relacionamento) as
+ * well as editable by the store owner. Keeping the rule inside the existing
+ * artifacts tree also follows the repository's canonical tenant data layout
+ * and its current Firestore security model.
+ */
 export const getProductLoyaltyDocumentPath = (storeId: string): string =>
-  `stores/${storeId.trim()}/settings/loyalty`;
+  `artifacts/${storeId.trim()}/public/data/loyalty/config`;
 
 export const parseProductLoyaltyMap = (value: unknown): ProductLoyaltyMap => {
   if (!value || typeof value !== 'object') return {};
