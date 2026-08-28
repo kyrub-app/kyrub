@@ -19,6 +19,8 @@ import {
 } from '../../src/utils/paymentProvider.js';
 import {
   buildStorePointPurchaseEntry,
+  buildStorePointPurchaseEntryId,
+  buildStorePointReversalEntry,
   type StorePointLedgerEntry,
 } from '../../shared/storePoints.js';
 
@@ -93,6 +95,24 @@ const assertMarketplacePaymentIntentMatchesPayment = (
   }
 };
 
+const assertStorePointPurchaseMatchesPayment = (
+  entry: StorePointLedgerEntry,
+  payment: CanonicalPayment,
+  intent: CanonicalPaymentIntent
+): void => {
+  if (
+    entry.kind !== 'purchase_base' ||
+    entry.amount <= 0 ||
+    entry.storeId !== payment.storeId ||
+    entry.customerId !== payment.buyerId ||
+    entry.orderId !== payment.orderId ||
+    entry.paymentId !== payment.id ||
+    entry.paymentIntentId !== intent.id
+  ) {
+    throw new Error('STORE_POINTS_PURCHASE_LEDGER_MISMATCH');
+  }
+};
+
 export const processVerifiedPaymentWebhook = async (input: {
   storeId: string;
   paymentId: string;
@@ -162,10 +182,13 @@ export const processVerifiedPaymentWebhook = async (input: {
     let pointLedgerEntry: StorePointLedgerEntry | null = null;
     let pointLedgerRef: ReturnType<typeof adminDb.doc> | null = null;
     let pointLedgerExists = false;
+    let pointReversalEntry: StorePointLedgerEntry | null = null;
+    let pointReversalRef: ReturnType<typeof adminDb.doc> | null = null;
+    let pointReversalExists = false;
     const intentStatus = intentStatusForPaymentStatus(effectiveStatus);
 
     // Firestore transactions require every read to happen before any write.
-    // Resolve order, optional coupon redemption and immutable points ledger first.
+    // Resolve order, optional coupon redemption and immutable points movements first.
     if (current.context === 'marketplace') {
       if (!intentSnapshot.exists) throw new Error('PAYMENT_INTENT_NOT_FOUND');
       intent = normalizeCanonicalPaymentIntent(
@@ -220,6 +243,26 @@ export const processVerifiedPaymentWebhook = async (input: {
           );
           pointLedgerExists = (await transaction.get(pointLedgerRef)).exists;
         }
+      } else if (effectiveStatus === 'refunded') {
+        const purchaseEntryId = buildStorePointPurchaseEntryId(paymentId);
+        const purchaseLedgerRef = adminDb.doc(
+          storePointLedgerPath(storeId, purchaseEntryId)
+        );
+        const purchaseLedgerSnapshot = await transaction.get(purchaseLedgerRef);
+        if (purchaseLedgerSnapshot.exists) {
+          const purchaseEntry = purchaseLedgerSnapshot.data() as StorePointLedgerEntry;
+          assertStorePointPurchaseMatchesPayment(purchaseEntry, current, intent);
+          pointReversalEntry = buildStorePointReversalEntry({
+            reversalId: `refund:${paymentId}`,
+            original: purchaseEntry,
+            reason: 'payment_refunded',
+            occurredAt: event.occurredAt,
+          });
+          pointReversalRef = adminDb.doc(
+            storePointLedgerPath(storeId, pointReversalEntry.id)
+          );
+          pointReversalExists = (await transaction.get(pointReversalRef)).exists;
+        }
       }
     }
 
@@ -249,6 +292,10 @@ export const processVerifiedPaymentWebhook = async (input: {
 
     if (pointLedgerEntry && pointLedgerRef && !pointLedgerExists) {
       transaction.set(pointLedgerRef, pointLedgerEntry);
+    }
+
+    if (pointReversalEntry && pointReversalRef && !pointReversalExists) {
+      transaction.set(pointReversalRef, pointReversalEntry);
     }
 
     if (
