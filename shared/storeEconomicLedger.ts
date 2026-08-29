@@ -46,6 +46,7 @@ export interface StoreEconomicLedgerSummary {
   currency: typeof STORE_ECONOMIC_LEDGER_CURRENCY;
   capturedMinor: number;
   refundedMinor: number;
+  grossAfterRefundsMinor: number;
   chargedBackMinor: number;
   chargebackReversedMinor: number;
   economicNetMinor: number;
@@ -54,32 +55,22 @@ export interface StoreEconomicLedgerSummary {
 
 const clean = (value: unknown): string =>
   typeof value === 'string' ? value.trim() : '';
-
 const validIso = (value: string): boolean =>
   Boolean(value) && Number.isFinite(Date.parse(value));
-
 const validPathId = (value: string): boolean =>
   Boolean(value) && value.length <= 240 && value !== '.' && value !== '..';
 
 export const brlToMinor = (amount: number): number => {
-  if (!Number.isFinite(amount) || amount <= 0) {
-    throw new Error('STORE_ECONOMIC_LEDGER_AMOUNT_INVALID');
-  }
+  if (!Number.isFinite(amount) || amount <= 0) throw new Error('STORE_ECONOMIC_LEDGER_AMOUNT_INVALID');
   const minor = Math.round(amount * 100);
-  if (!Number.isSafeInteger(minor) || minor <= 0) {
-    throw new Error('STORE_ECONOMIC_LEDGER_AMOUNT_INVALID');
-  }
+  if (!Number.isSafeInteger(minor) || minor <= 0) throw new Error('STORE_ECONOMIC_LEDGER_AMOUNT_INVALID');
   return minor;
 };
 
 export const brlNonNegativeToMinor = (amount: number): number => {
-  if (!Number.isFinite(amount) || amount < 0) {
-    throw new Error('STORE_ECONOMIC_LEDGER_AMOUNT_INVALID');
-  }
+  if (!Number.isFinite(amount) || amount < 0) throw new Error('STORE_ECONOMIC_LEDGER_AMOUNT_INVALID');
   const minor = Math.round(amount * 100);
-  if (!Number.isSafeInteger(minor) || minor < 0) {
-    throw new Error('STORE_ECONOMIC_LEDGER_AMOUNT_INVALID');
-  }
+  if (!Number.isSafeInteger(minor) || minor < 0) throw new Error('STORE_ECONOMIC_LEDGER_AMOUNT_INVALID');
   return minor;
 };
 
@@ -88,45 +79,26 @@ const paymentEntryId = (kind: string, paymentIdInput: string): string => {
   if (!paymentId) throw new Error('STORE_ECONOMIC_LEDGER_PAYMENT_REQUIRED');
   return `payment:${kind}:${paymentId}`;
 };
+export const buildPaymentCaptureEconomicEntryId = (paymentId: string): string => paymentEntryId('capture', paymentId);
+export const buildPaymentRefundEconomicEntryId = (paymentId: string): string => paymentEntryId('refund', paymentId);
+export const buildPaymentChargebackEconomicEntryId = (paymentId: string): string => paymentEntryId('chargeback', paymentId);
+export const buildPaymentChargebackReversalEconomicEntryId = (paymentId: string): string => paymentEntryId('chargeback_reversal', paymentId);
 
-export const buildPaymentCaptureEconomicEntryId = (paymentId: string): string =>
-  paymentEntryId('capture', paymentId);
-export const buildPaymentRefundEconomicEntryId = (paymentId: string): string =>
-  paymentEntryId('refund', paymentId);
-export const buildPaymentChargebackEconomicEntryId = (paymentId: string): string =>
-  paymentEntryId('chargeback', paymentId);
-export const buildPaymentChargebackReversalEconomicEntryId = (paymentId: string): string =>
-  paymentEntryId('chargeback_reversal', paymentId);
-
-export const storeEconomicLedgerEntryPath = (
-  storeIdInput: string,
-  entryIdInput: string
-): string => {
+export const storeEconomicLedgerEntryPath = (storeIdInput: string, entryIdInput: string): string => {
   const storeId = clean(storeIdInput);
   const entryId = clean(entryIdInput);
-  if (!storeId || storeId.includes('/') || !validPathId(entryId)) {
-    throw new Error('STORE_ECONOMIC_LEDGER_PATH_INVALID');
-  }
+  if (!storeId || storeId.includes('/') || !validPathId(entryId)) throw new Error('STORE_ECONOMIC_LEDGER_PATH_INVALID');
   return `stores/${storeId}/economicLedger/${encodeURIComponent(entryId)}`;
 };
 
-const assertPaymentEventMatch = (
-  payment: CanonicalPayment,
-  event: VerifiedPaymentProviderEvent
-): void => {
+const assertPaymentEventMatch = (payment: CanonicalPayment, event: VerifiedPaymentProviderEvent): void => {
   if (
-    payment.storeId !== clean(payment.storeId) ||
-    !payment.storeId ||
-    !payment.id ||
-    payment.currency !== STORE_ECONOMIC_LEDGER_CURRENCY ||
-    event.currency !== STORE_ECONOMIC_LEDGER_CURRENCY ||
-    brlToMinor(payment.amount) !== brlToMinor(event.amount) ||
-    payment.method !== event.method ||
+    payment.storeId !== clean(payment.storeId) || !payment.storeId || !payment.id ||
+    payment.currency !== STORE_ECONOMIC_LEDGER_CURRENCY || event.currency !== STORE_ECONOMIC_LEDGER_CURRENCY ||
+    brlToMinor(payment.amount) !== brlToMinor(event.amount) || payment.method !== event.method ||
     (payment.provider && payment.provider !== event.provider) ||
     (payment.providerPaymentId && payment.providerPaymentId !== event.providerPaymentId)
-  ) {
-    throw new Error('STORE_ECONOMIC_LEDGER_PAYMENT_EVENT_MISMATCH');
-  }
+  ) throw new Error('STORE_ECONOMIC_LEDGER_PAYMENT_EVENT_MISMATCH');
 };
 
 const baseFromPayment = (input: {
@@ -159,12 +131,9 @@ const baseFromPayment = (input: {
 };
 
 const assertCapture = (capture: StoreEconomicLedgerEntry, payment: CanonicalPayment): void => {
-  if (
-    capture.kind !== 'payment_capture' ||
-    capture.storeId !== payment.storeId ||
-    capture.paymentId !== payment.id ||
-    capture.amountMinor !== brlToMinor(payment.amount)
-  ) throw new Error('STORE_ECONOMIC_LEDGER_CAPTURE_MISMATCH');
+  if (capture.kind !== 'payment_capture' || capture.storeId !== payment.storeId || capture.paymentId !== payment.id || capture.amountMinor !== brlToMinor(payment.amount)) {
+    throw new Error('STORE_ECONOMIC_LEDGER_CAPTURE_MISMATCH');
+  }
 };
 
 export const buildPaymentCaptureEconomicEntry = (input: {
@@ -176,10 +145,7 @@ export const buildPaymentCaptureEconomicEntry = (input: {
   if (input.event.eventType !== 'payment.paid') throw new Error('STORE_ECONOMIC_LEDGER_CAPTURE_EVENT_INVALID');
   return {
     ...baseFromPayment({ payment: input.payment, paymentIntentId: input.event.paymentIntentId, occurredAt: input.event.occurredAt, provider: input.event.provider, providerPaymentId: input.event.providerPaymentId, providerEventId: input.event.eventId, sourceAuthority: 'provider_webhook' }),
-    id: buildPaymentCaptureEconomicEntryId(input.payment.id),
-    kind: 'payment_capture',
-    amountMinor: brlToMinor(input.payment.amount),
-    reversalOfEntryId: '',
+    id: buildPaymentCaptureEconomicEntryId(input.payment.id), kind: 'payment_capture', amountMinor: brlToMinor(input.payment.amount), reversalOfEntryId: '',
     ...(input.economicAllocation ? { economicAllocation: input.economicAllocation } : {}),
   };
 };
@@ -192,76 +158,47 @@ export const buildRecoveredPaymentCaptureEconomicEntry = (input: {
   if (!validIso(clean(input.payment.paidAt))) throw new Error('STORE_ECONOMIC_LEDGER_CAPTURE_SNAPSHOT_INVALID');
   return {
     ...baseFromPayment({ payment: input.payment, paymentIntentId: input.paymentIntentId, occurredAt: input.payment.paidAt, provider: input.payment.provider, providerPaymentId: input.payment.providerPaymentId, providerEventId: '', sourceAuthority: 'canonical_payment_snapshot' }),
-    id: buildPaymentCaptureEconomicEntryId(input.payment.id),
-    kind: 'payment_capture',
-    amountMinor: brlToMinor(input.payment.amount),
-    reversalOfEntryId: '',
+    id: buildPaymentCaptureEconomicEntryId(input.payment.id), kind: 'payment_capture', amountMinor: brlToMinor(input.payment.amount), reversalOfEntryId: '',
     ...(input.economicAllocation ? { economicAllocation: input.economicAllocation } : {}),
   };
 };
 
-export const buildPaymentRefundEconomicEntry = (input: {
-  payment: CanonicalPayment;
-  event: VerifiedPaymentProviderEvent;
-  capture: StoreEconomicLedgerEntry;
-}): StoreEconomicLedgerEntry => {
+export const buildPaymentRefundEconomicEntry = (input: { payment: CanonicalPayment; event: VerifiedPaymentProviderEvent; capture: StoreEconomicLedgerEntry }): StoreEconomicLedgerEntry => {
   assertPaymentEventMatch(input.payment, input.event);
   if (input.event.eventType !== 'refund.succeeded') throw new Error('STORE_ECONOMIC_LEDGER_REFUND_EVENT_INVALID');
   assertCapture(input.capture, input.payment);
   return {
     ...baseFromPayment({ payment: input.payment, paymentIntentId: input.event.paymentIntentId, occurredAt: input.event.occurredAt, provider: input.event.provider, providerPaymentId: input.event.providerPaymentId, providerEventId: input.event.eventId, sourceAuthority: 'provider_webhook' }),
-    id: buildPaymentRefundEconomicEntryId(input.payment.id),
-    kind: 'payment_refund',
-    amountMinor: -input.capture.amountMinor,
-    reversalOfEntryId: input.capture.id,
+    id: buildPaymentRefundEconomicEntryId(input.payment.id), kind: 'payment_refund', amountMinor: -input.capture.amountMinor, reversalOfEntryId: input.capture.id,
     ...(input.capture.economicAllocation ? { economicAllocation: input.capture.economicAllocation } : {}),
   };
 };
 
-export const buildPaymentChargebackEconomicEntry = (input: {
-  payment: CanonicalPayment;
-  event: VerifiedPaymentProviderEvent;
-  capture: StoreEconomicLedgerEntry;
-}): StoreEconomicLedgerEntry => {
+export const buildPaymentChargebackEconomicEntry = (input: { payment: CanonicalPayment; event: VerifiedPaymentProviderEvent; capture: StoreEconomicLedgerEntry }): StoreEconomicLedgerEntry => {
   assertPaymentEventMatch(input.payment, input.event);
   if (input.event.eventType !== 'chargeback.debited') throw new Error('STORE_ECONOMIC_LEDGER_CHARGEBACK_EVENT_INVALID');
   assertCapture(input.capture, input.payment);
   return {
     ...baseFromPayment({ payment: input.payment, paymentIntentId: input.event.paymentIntentId, occurredAt: input.event.occurredAt, provider: input.event.provider, providerPaymentId: input.event.providerPaymentId, providerEventId: input.event.eventId, sourceAuthority: 'provider_webhook' }),
-    id: buildPaymentChargebackEconomicEntryId(input.payment.id),
-    kind: 'payment_chargeback',
-    amountMinor: -input.capture.amountMinor,
-    reversalOfEntryId: input.capture.id,
+    id: buildPaymentChargebackEconomicEntryId(input.payment.id), kind: 'payment_chargeback', amountMinor: -input.capture.amountMinor, reversalOfEntryId: input.capture.id,
     ...(input.capture.economicAllocation ? { economicAllocation: input.capture.economicAllocation } : {}),
   };
 };
 
-export const buildPaymentChargebackReversalEconomicEntry = (input: {
-  payment: CanonicalPayment;
-  event: VerifiedPaymentProviderEvent;
-  chargeback: StoreEconomicLedgerEntry;
-}): StoreEconomicLedgerEntry => {
+export const buildPaymentChargebackReversalEconomicEntry = (input: { payment: CanonicalPayment; event: VerifiedPaymentProviderEvent; chargeback: StoreEconomicLedgerEntry }): StoreEconomicLedgerEntry => {
   assertPaymentEventMatch(input.payment, input.event);
   if (input.event.eventType !== 'chargeback.reversed') throw new Error('STORE_ECONOMIC_LEDGER_CHARGEBACK_REVERSAL_EVENT_INVALID');
-  if (
-    input.chargeback.kind !== 'payment_chargeback' ||
-    input.chargeback.storeId !== input.payment.storeId ||
-    input.chargeback.paymentId !== input.payment.id ||
-    input.chargeback.amountMinor !== -brlToMinor(input.payment.amount)
-  ) throw new Error('STORE_ECONOMIC_LEDGER_CHARGEBACK_MISMATCH');
+  if (input.chargeback.kind !== 'payment_chargeback' || input.chargeback.storeId !== input.payment.storeId || input.chargeback.paymentId !== input.payment.id || input.chargeback.amountMinor !== -brlToMinor(input.payment.amount)) {
+    throw new Error('STORE_ECONOMIC_LEDGER_CHARGEBACK_MISMATCH');
+  }
   return {
     ...baseFromPayment({ payment: input.payment, paymentIntentId: input.event.paymentIntentId, occurredAt: input.event.occurredAt, provider: input.event.provider, providerPaymentId: input.event.providerPaymentId, providerEventId: input.event.eventId, sourceAuthority: 'provider_webhook' }),
-    id: buildPaymentChargebackReversalEconomicEntryId(input.payment.id),
-    kind: 'payment_chargeback_reversal',
-    amountMinor: Math.abs(input.chargeback.amountMinor),
-    reversalOfEntryId: input.chargeback.id,
+    id: buildPaymentChargebackReversalEconomicEntryId(input.payment.id), kind: 'payment_chargeback_reversal', amountMinor: Math.abs(input.chargeback.amountMinor), reversalOfEntryId: input.chargeback.id,
     ...(input.chargeback.economicAllocation ? { economicAllocation: input.chargeback.economicAllocation } : {}),
   };
 };
 
-export const deriveStoreEconomicLedgerSummary = (
-  entries: readonly StoreEconomicLedgerEntry[]
-): StoreEconomicLedgerSummary => {
+export const deriveStoreEconomicLedgerSummary = (entries: readonly StoreEconomicLedgerEntry[]): StoreEconomicLedgerSummary => {
   let capturedMinor = 0;
   let refundedMinor = 0;
   let chargedBackMinor = 0;
@@ -282,7 +219,10 @@ export const deriveStoreEconomicLedgerSummary = (
       chargebackReversedMinor += entry.amountMinor;
     }
   }
-  const economicNetMinor = capturedMinor - refundedMinor - chargedBackMinor + chargebackReversedMinor;
-  if ([capturedMinor, refundedMinor, chargedBackMinor, chargebackReversedMinor, economicNetMinor].some(value => !Number.isSafeInteger(value))) throw new Error('STORE_ECONOMIC_LEDGER_SUMMARY_OVERFLOW');
-  return { currency: STORE_ECONOMIC_LEDGER_CURRENCY, capturedMinor, refundedMinor, chargedBackMinor, chargebackReversedMinor, economicNetMinor, entryCount: entries.length };
+  const grossAfterRefundsMinor = capturedMinor - refundedMinor;
+  const economicNetMinor = grossAfterRefundsMinor - chargedBackMinor + chargebackReversedMinor;
+  if ([capturedMinor, refundedMinor, grossAfterRefundsMinor, chargedBackMinor, chargebackReversedMinor, economicNetMinor].some(value => !Number.isSafeInteger(value))) {
+    throw new Error('STORE_ECONOMIC_LEDGER_SUMMARY_OVERFLOW');
+  }
+  return { currency: STORE_ECONOMIC_LEDGER_CURRENCY, capturedMinor, refundedMinor, grossAfterRefundsMinor, chargedBackMinor, chargebackReversedMinor, economicNetMinor, entryCount: entries.length };
 };
