@@ -10,6 +10,7 @@ import {
   type StoreCustomerConversation,
 } from '../../shared/storeCustomerChat.js';
 import { buildStoreInstitutionalPrincipalId } from '../../shared/storeInstitutionalIdentity.js';
+import { getPrimaryUserStoreDocumentPath } from '../../src/utils/storePaths.js';
 
 export type StoreCustomerChatPublicMessage = Omit<
   StoreCustomerChatMessage,
@@ -32,6 +33,18 @@ const clean = (value: unknown): string =>
 const finiteIso = (value: unknown): string => {
   const normalized = clean(value);
   return normalized && Number.isFinite(Date.parse(normalized)) ? normalized : '';
+};
+
+const assertCanonicalStoreExists = async (storeId: string): Promise<void> => {
+  const snapshot = await adminDb.doc(getPrimaryUserStoreDocumentPath(storeId)).get();
+  const data = snapshot.data() as Record<string, unknown> | undefined;
+  if (
+    !snapshot.exists ||
+    clean(data?.id) !== storeId ||
+    clean(data?.ownerId) !== storeId
+  ) {
+    throw new Error('STORE_CUSTOMER_CHAT_STORE_NOT_FOUND');
+  }
 };
 
 const parseConversation = (
@@ -124,6 +137,7 @@ export const sendStoreCustomerChatMessage = async (input: {
   if (Number.isNaN(now.getTime())) {
     throw new Error('STORE_CUSTOMER_CHAT_TIME_INVALID');
   }
+  await assertCanonicalStoreExists(storeId);
   const createdAt = now.toISOString();
   const conversationRef = adminDb.doc(
     storeCustomerConversationPath(storeId, customerId)
