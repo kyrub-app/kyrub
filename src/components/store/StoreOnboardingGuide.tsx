@@ -25,6 +25,7 @@ const FIELD_SELECTORS: Record<StoreOnboardingField, string> = {
   name: '[data-store-profile-field="name"]',
   description: '[data-store-profile-field="description"]',
   address: '[data-store-profile-field="address"]',
+  coordinates: '[data-store-profile-field="latitude"]',
   contact: '[data-store-profile-field="contact"]',
   keywords: '[data-store-profile-field="keywords"]',
 };
@@ -67,16 +68,12 @@ export const StoreOnboardingGuide: React.FC<StoreOnboardingGuideProps> = ({
   useEffect(() => {
     if (!userId) return;
     const draft = loadStoreOnboardingDraft(localStorage, userId);
-    if (draft?.lastField && shouldOfferStoreOnboarding(profile)) {
-      setExpanded(true);
-    }
+    if (draft?.lastField && shouldOfferStoreOnboarding(profile)) setExpanded(true);
   }, [userId]);
 
   useEffect(() => {
     if (!userId) return;
-    if (!shouldOfferStoreOnboarding(profile)) {
-      clearStoreOnboardingDraft(localStorage, userId);
-    }
+    if (!shouldOfferStoreOnboarding(profile)) clearStoreOnboardingDraft(localStorage, userId);
   }, [profile, userId]);
 
   if (!shouldOfferStoreOnboarding(profile)) return null;
@@ -94,10 +91,7 @@ export const StoreOnboardingGuide: React.FC<StoreOnboardingGuideProps> = ({
   };
 
   return (
-    <section
-      id="store-smart-onboarding"
-      className="rounded-2xl border border-orange-500/20 bg-orange-500/5 p-4 space-y-3"
-    >
+    <section id="store-smart-onboarding" className="rounded-2xl border border-orange-500/20 bg-orange-500/5 p-4 space-y-3">
       <div className="flex items-start justify-between gap-3">
         <div>
           <span className="flex items-center gap-2 text-[10px] font-black uppercase tracking-wide text-orange-300">
@@ -108,16 +102,11 @@ export const StoreOnboardingGuide: React.FC<StoreOnboardingGuideProps> = ({
             A Kyrub aproveita o que já está preenchido e mostra somente o que falta. Você pode sair e continuar depois.
           </p>
         </div>
-        <span className="shrink-0 rounded-full border border-slate-700 bg-slate-950 px-2 py-1 text-[9px] font-black text-slate-300">
-          {progress.percent}%
-        </span>
+        <span className="shrink-0 rounded-full border border-slate-700 bg-slate-950 px-2 py-1 text-[9px] font-black text-slate-300">{progress.percent}%</span>
       </div>
 
       <div className="h-1.5 overflow-hidden rounded-full bg-slate-800">
-        <div
-          className="h-full rounded-full bg-orange-500 transition-all"
-          style={{ width: `${progress.percent}%` }}
-        />
+        <div className="h-full rounded-full bg-orange-500 transition-all" style={{ width: `${progress.percent}%` }} />
       </div>
 
       {!expanded ? (
@@ -140,21 +129,10 @@ export const StoreOnboardingGuide: React.FC<StoreOnboardingGuideProps> = ({
               type="button"
               disabled={step.complete}
               onClick={() => continueWith(step.id)}
-              className={`flex min-h-10 items-center justify-between rounded-xl border px-3 text-left text-[10px] font-bold transition ${
-                step.complete
-                  ? 'cursor-default border-emerald-500/15 bg-emerald-500/5 text-emerald-300'
-                  : 'border-slate-800 bg-slate-950/70 text-slate-300 hover:border-orange-500/30 hover:text-white'
-              }`}
+              className={`flex min-h-10 items-center justify-between rounded-xl border px-3 text-left text-[10px] font-bold transition ${step.complete ? 'cursor-default border-emerald-500/15 bg-emerald-500/5 text-emerald-300' : 'border-slate-800 bg-slate-950/70 text-slate-300 hover:border-orange-500/30 hover:text-white'}`}
             >
-              <span>
-                {step.label}
-                {step.required && !step.complete ? ' · necessário' : ''}
-              </span>
-              {step.complete ? (
-                <Check className="h-3.5 w-3.5" />
-              ) : (
-                <ChevronRight className="h-3.5 w-3.5" />
-              )}
+              <span>{step.label}{step.required && !step.complete ? ' · necessário' : ''}</span>
+              {step.complete ? <Check className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
             </button>
           ))}
         </div>
@@ -163,9 +141,7 @@ export const StoreOnboardingGuide: React.FC<StoreOnboardingGuideProps> = ({
       {progress.readyForReview && (
         <div className="space-y-2 rounded-xl border border-teal-500/20 bg-teal-500/5 p-3">
           <div className="flex items-center justify-between gap-3">
-            <p className="text-[9px] font-bold uppercase tracking-wide text-teal-300">
-              Dados mínimos prontos. Revise a ativação antes de publicar.
-            </p>
+            <p className="text-[9px] font-bold uppercase tracking-wide text-teal-300">Dados mínimos prontos. Revise a ativação antes de publicar.</p>
             <button
               type="button"
               onClick={() => setShowActivationReview(current => !current)}
@@ -180,31 +156,20 @@ export const StoreOnboardingGuide: React.FC<StoreOnboardingGuideProps> = ({
               <div className="grid gap-2 sm:grid-cols-2">
                 <div className="rounded-lg border border-slate-800 bg-slate-950/70 p-2.5">
                   <span className="block text-[8px] font-black uppercase text-slate-500">Origem do catálogo salva</span>
-                  <strong className="mt-1 block text-slate-200">
-                    {activationPlan.catalogOrigin === 'integration'
-                      ? 'Integração externa'
-                      : 'Kyrub'}
-                  </strong>
+                  <strong className="mt-1 block text-slate-200">{activationPlan.catalogOrigin === 'integration' ? 'Integração externa' : 'Kyrub'}</strong>
                 </div>
                 <div className="rounded-lg border border-slate-800 bg-slate-950/70 p-2.5">
                   <span className="block text-[8px] font-black uppercase text-slate-500">Canais configurados</span>
                   <strong className="mt-1 block text-slate-200">
-                    {activationPlan.configuredChannelIds.length > 0
-                      ? activationPlan.configuredChannelIds.map(id => CHANNEL_LABELS[id] ?? id).join(', ')
-                      : 'Nenhum canal externo'}
+                    {activationPlan.configuredChannelIds.length > 0 ? activationPlan.configuredChannelIds.map(id => CHANNEL_LABELS[id] ?? id).join(', ') : 'Nenhum canal externo'}
                   </strong>
                 </div>
               </div>
 
-              <p className="text-[9px] leading-relaxed text-slate-500">
-                Esta revisão usa o último plano operacional salvo. Alterações ainda não salvas nas integrações só entram aqui depois de salvar.
-              </p>
+              <p className="text-[9px] leading-relaxed text-slate-500">Esta revisão usa o último plano operacional salvo. Alterações ainda não salvas nas integrações só entram aqui depois de salvar.</p>
 
               {activationWarnings.map(warning => (
-                <div
-                  key={warning}
-                  className="flex items-start gap-2 rounded-lg border border-amber-500/20 bg-amber-500/5 p-2.5 text-amber-200"
-                >
+                <div key={warning} className="flex items-start gap-2 rounded-lg border border-amber-500/20 bg-amber-500/5 p-2.5 text-amber-200">
                   <CircleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                   <span>{warning}</span>
                 </div>
