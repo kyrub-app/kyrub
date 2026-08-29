@@ -21,6 +21,7 @@ permissions:
 jobs:
   cross-domain-contract:
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -36,6 +37,7 @@ jobs:
 
   production-dependency-security:
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@v4
