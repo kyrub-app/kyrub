@@ -22,11 +22,12 @@ const parsePreferences = (
   if (
     data.schemaVersion !== 1 ||
     data.userId !== userId ||
-    browser?.enabled !== true && browser?.enabled !== false ||
-    categories?.store_chat !== true && categories?.store_chat !== false ||
-    categories?.order !== true && categories?.order !== false ||
-    categories?.loyalty !== true && categories?.loyalty !== false ||
-    categories?.system !== true && categories?.system !== false ||
+    (browser?.enabled !== true && browser?.enabled !== false) ||
+    (categories?.store_chat !== true && categories?.store_chat !== false) ||
+    (categories?.order !== true && categories?.order !== false) ||
+    (categories?.loyalty !== true && categories?.loyalty !== false) ||
+    (categories?.marketing !== true && categories?.marketing !== false) ||
+    (categories?.system !== true && categories?.system !== false) ||
     typeof data.updatedAt !== 'string' ||
     !Number.isFinite(Date.parse(data.updatedAt))
   ) {
