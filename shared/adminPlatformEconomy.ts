@@ -1,4 +1,5 @@
 import type { EconomicAllocationSnapshot } from './economicFeesSubsidies.js';
+import type { KyrubCommercialPlanId } from './kyrubCommercialPlans.js';
 import type {
   StoreEconomicLedgerKind,
   StoreEconomicLedgerSourceAuthority,
@@ -6,6 +7,13 @@ import type {
 
 export const ADMIN_PLATFORM_ECONOMY_SCHEMA_VERSION = 1 as const;
 export const ADMIN_PLATFORM_ECONOMY_RECENT_LIMIT = 100 as const;
+export const ADMIN_PLATFORM_ECONOMY_CONTEXTS = ['marketplace', 'table', 'pos'] as const;
+export const ADMIN_PLATFORM_ECONOMY_PLAN_BUCKETS = ['free', 'pro', 'business', 'unsnapshotted'] as const;
+
+export type AdminPlatformEconomyPaymentContext =
+  (typeof ADMIN_PLATFORM_ECONOMY_CONTEXTS)[number];
+export type AdminPlatformEconomyPlanBucket =
+  (typeof ADMIN_PLATFORM_ECONOMY_PLAN_BUCKETS)[number];
 
 export interface AdminPlatformEconomyTotals {
   currency: 'BRL';
@@ -23,13 +31,36 @@ export interface AdminPlatformEconomyTotals {
   refundShareBps: number;
 }
 
+export interface AdminPlatformEconomyContextTotal {
+  paymentContext: AdminPlatformEconomyPaymentContext;
+  eventCount: number;
+  economicNetMinor: number;
+}
+
+export interface AdminPlatformEconomyPlanTotal {
+  plan: AdminPlatformEconomyPlanBucket;
+  eventCount: number;
+  economicNetMinor: number;
+}
+
+export interface AdminPlatformEconomyAiUsageTotals {
+  costCurrency: 'USD';
+  costUnit: 'microusd';
+  callCount: number;
+  pricedCallCount: number;
+  unpricedCallCount: number;
+  totalTokenCount: number;
+  estimatedCostMicrousd: number;
+}
+
 export interface AdminPlatformEconomyRecentEntry {
   id: string;
   storeId: string;
   kind: StoreEconomicLedgerKind;
   amountMinor: number;
   paymentId: string;
-  paymentContext: 'marketplace' | 'table' | 'pos';
+  paymentContext: AdminPlatformEconomyPaymentContext;
+  storePlan?: KyrubCommercialPlanId;
   provider: string;
   sourceAuthority: StoreEconomicLedgerSourceAuthority;
   occurredAt: string;
@@ -41,6 +72,16 @@ export interface AdminPlatformEconomyAllocationWindow {
   allocatedRefundCount: number;
   allocatedChargebackCount: number;
   allocatedChargebackReversalCount: number;
+  deliveryFeeMinor: number;
+  courierRemunerationMinor: number;
+  storeSubsidyMinor: number;
+  kyrubIncentiveMinor: number;
+  partnerSubsidyMinor: number;
+  observedCostsMinor: number;
+}
+
+export interface AdminPlatformEconomyAllocationAggregate {
+  count: number;
   deliveryFeeMinor: number;
   courierRemunerationMinor: number;
   storeSubsidyMinor: number;
@@ -65,6 +106,10 @@ export interface AdminPlatformEconomySnapshot {
   schemaVersion: typeof ADMIN_PLATFORM_ECONOMY_SCHEMA_VERSION;
   generatedAt: string;
   totals: AdminPlatformEconomyTotals;
+  contextTotals: AdminPlatformEconomyContextTotal[];
+  planTotals: AdminPlatformEconomyPlanTotal[];
+  allocationTotals: AdminPlatformEconomyAllocationWindow;
+  aiUsageTotals: AdminPlatformEconomyAiUsageTotals;
   recentWindow: {
     limit: number;
     entryCount: number;
@@ -94,6 +139,89 @@ export const deriveRefundShareBps = (capturedMinorInput: number, refundedMinorIn
 
 const allocationSign = (kind: StoreEconomicLedgerKind): number =>
   kind === 'payment_capture' || kind === 'payment_chargeback_reversal' ? 1 : -1;
+
+const normalizedAllocationAggregate = (
+  aggregate: AdminPlatformEconomyAllocationAggregate,
+  label: string
+): AdminPlatformEconomyAllocationAggregate => ({
+  count: safeNonNegative(aggregate.count, `${label}_COUNT`),
+  deliveryFeeMinor: safeNonNegative(aggregate.deliveryFeeMinor, `${label}_DELIVERY_FEE`),
+  courierRemunerationMinor: safeNonNegative(
+    aggregate.courierRemunerationMinor,
+    `${label}_COURIER_REMUNERATION`
+  ),
+  storeSubsidyMinor: safeNonNegative(aggregate.storeSubsidyMinor, `${label}_STORE_SUBSIDY`),
+  kyrubIncentiveMinor: safeNonNegative(aggregate.kyrubIncentiveMinor, `${label}_KYRUB_INCENTIVE`),
+  partnerSubsidyMinor: safeNonNegative(aggregate.partnerSubsidyMinor, `${label}_PARTNER_SUBSIDY`),
+  observedCostsMinor: safeNonNegative(aggregate.observedCostsMinor, `${label}_OBSERVED_COSTS`),
+});
+
+export const combineEconomicAllocationLifecycleTotals = (input: {
+  captures: AdminPlatformEconomyAllocationAggregate;
+  refunds: AdminPlatformEconomyAllocationAggregate;
+  chargebacks: AdminPlatformEconomyAllocationAggregate;
+  chargebackReversals: AdminPlatformEconomyAllocationAggregate;
+}): AdminPlatformEconomyAllocationWindow => {
+  const captures = normalizedAllocationAggregate(input.captures, 'ALLOCATED_CAPTURE');
+  const refunds = normalizedAllocationAggregate(input.refunds, 'ALLOCATED_REFUND');
+  const chargebacks = normalizedAllocationAggregate(input.chargebacks, 'ALLOCATED_CHARGEBACK');
+  const chargebackReversals = normalizedAllocationAggregate(
+    input.chargebackReversals,
+    'ALLOCATED_CHARGEBACK_REVERSAL'
+  );
+  const lifecycle = [
+    { kind: 'payment_capture' as const, aggregate: captures },
+    { kind: 'payment_refund' as const, aggregate: refunds },
+    { kind: 'payment_chargeback' as const, aggregate: chargebacks },
+    { kind: 'payment_chargeback_reversal' as const, aggregate: chargebackReversals },
+  ];
+  const result: AdminPlatformEconomyAllocationWindow = {
+    allocatedCaptureCount: captures.count,
+    allocatedRefundCount: refunds.count,
+    allocatedChargebackCount: chargebacks.count,
+    allocatedChargebackReversalCount: chargebackReversals.count,
+    deliveryFeeMinor: 0,
+    courierRemunerationMinor: 0,
+    storeSubsidyMinor: 0,
+    kyrubIncentiveMinor: 0,
+    partnerSubsidyMinor: 0,
+    observedCostsMinor: 0,
+  };
+  for (const item of lifecycle) {
+    const sign = allocationSign(item.kind);
+    result.deliveryFeeMinor = addSignedSafe(
+      result.deliveryFeeMinor,
+      sign * item.aggregate.deliveryFeeMinor,
+      'ALLOCATED_TOTAL_DELIVERY_FEE'
+    );
+    result.courierRemunerationMinor = addSignedSafe(
+      result.courierRemunerationMinor,
+      sign * item.aggregate.courierRemunerationMinor,
+      'ALLOCATED_TOTAL_COURIER_REMUNERATION'
+    );
+    result.storeSubsidyMinor = addSignedSafe(
+      result.storeSubsidyMinor,
+      sign * item.aggregate.storeSubsidyMinor,
+      'ALLOCATED_TOTAL_STORE_SUBSIDY'
+    );
+    result.kyrubIncentiveMinor = addSignedSafe(
+      result.kyrubIncentiveMinor,
+      sign * item.aggregate.kyrubIncentiveMinor,
+      'ALLOCATED_TOTAL_KYRUB_INCENTIVE'
+    );
+    result.partnerSubsidyMinor = addSignedSafe(
+      result.partnerSubsidyMinor,
+      sign * item.aggregate.partnerSubsidyMinor,
+      'ALLOCATED_TOTAL_PARTNER_SUBSIDY'
+    );
+    result.observedCostsMinor = addSignedSafe(
+      result.observedCostsMinor,
+      sign * item.aggregate.observedCostsMinor,
+      'ALLOCATED_TOTAL_OBSERVED_COSTS'
+    );
+  }
+  return result;
+};
 
 export const deriveRecentEconomicAllocationWindow = (
   entries: readonly AdminPlatformEconomyRecentEntry[]

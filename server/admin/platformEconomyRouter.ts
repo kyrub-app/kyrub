@@ -3,6 +3,7 @@ import { Router, type Request, type Response } from 'express';
 import { FieldValue } from 'firebase-admin/firestore';
 import { verifyFirebaseIdToken } from '../ai/consultantAuth.js';
 import { adminDb } from '../firebaseAdmin.js';
+import { parseAdminPlatformEconomyPeriod } from '../../shared/adminPlatformEconomyPeriod.js';
 import { loadAdminPlatformEconomySnapshot } from './platformEconomyService.js';
 
 const PLATFORM_ECONOMY_ROLES = new Set(['super_admin', 'finance']);
@@ -22,6 +23,15 @@ const bearerToken = (authorization: string): string =>
 
 const clean = (value: unknown): string =>
   typeof value === 'string' ? value.trim() : '';
+
+const parseStoreId = (value: unknown): string => {
+  const storeId = clean(value);
+  if (!storeId) return '';
+  if (storeId.length > 160 || storeId.includes('/')) {
+    throw new Error('ADMIN_PLATFORM_ECONOMY_STORE_SCOPE_INVALID');
+  }
+  return storeId;
+};
 
 export const authorizePlatformEconomy = async (
   authorization: string
@@ -52,7 +62,8 @@ export const authorizePlatformEconomy = async (
 };
 
 const recordPlatformEconomyAudit = async (
-  admin: AuthorizedFinanceAdmin
+  admin: AuthorizedFinanceAdmin,
+  storeId: string
 ): Promise<void> => {
   const auditId = randomUUID().replaceAll('-', '_');
   await adminDb
@@ -62,8 +73,8 @@ const recordPlatformEconomyAudit = async (
       action: 'admin.platform_economy.viewed',
       actorId: admin.uid,
       actorRole: admin.role,
-      targetType: 'control_plane',
-      targetId: 'platform_economy',
+      targetType: storeId ? 'store' : 'control_plane',
+      targetId: storeId || 'platform_economy',
       source: 'server',
       createdAt: FieldValue.serverTimestamp(),
     });
@@ -105,6 +116,15 @@ export const mapPlatformEconomyError = (
       },
     };
   }
+  if (message === 'ADMIN_PLATFORM_ECONOMY_STORE_SCOPE_INVALID') {
+    return {
+      status: 400,
+      body: {
+        error: 'Escopo de loja inválido.',
+        code: 'STORE_SCOPE_INVALID',
+      },
+    };
+  }
   if (/default credentials|credential implementation|could not load/i.test(message)) {
     return {
       status: 503,
@@ -126,11 +146,15 @@ export const mapPlatformEconomyError = (
 };
 
 export const loadAuthorizedPlatformEconomySnapshot = async (
-  authorization: string
+  authorization: string,
+  periodInput: unknown = 'all',
+  storeIdInput: unknown = ''
 ) => {
   const admin = await authorizePlatformEconomy(authorization);
-  const snapshot = await loadAdminPlatformEconomySnapshot();
-  await recordPlatformEconomyAudit(admin);
+  const period = parseAdminPlatformEconomyPeriod(periodInput);
+  const storeId = parseStoreId(storeIdInput);
+  const snapshot = await loadAdminPlatformEconomySnapshot(period, storeId);
+  await recordPlatformEconomyAudit(admin, storeId);
   return snapshot;
 };
 
@@ -140,7 +164,9 @@ export const createPlatformEconomyRouter = (): Router => {
   router.get('/', async (request: Request, response: Response) => {
     try {
       const snapshot = await loadAuthorizedPlatformEconomySnapshot(
-        request.get('authorization') ?? ''
+        request.get('authorization') ?? '',
+        request.query.period,
+        request.query.storeId
       );
       response.json(snapshot);
     } catch (error) {

@@ -5,6 +5,7 @@ import type {
 } from '../src/utils/canonicalPayment.js';
 import type { VerifiedPaymentProviderEvent } from '../src/utils/paymentProvider.js';
 import type { EconomicAllocationSnapshot } from './economicFeesSubsidies.js';
+import type { KyrubCommercialPlanId } from './kyrubCommercialPlans.js';
 
 export const STORE_ECONOMIC_LEDGER_SCHEMA_VERSION = 1 as const;
 export const STORE_ECONOMIC_LEDGER_CURRENCY = 'BRL' as const;
@@ -39,6 +40,7 @@ export interface StoreEconomicLedgerEntry {
   sourceAuthority: StoreEconomicLedgerSourceAuthority;
   reversalOfEntryId: string;
   occurredAt: string;
+  storePlan?: KyrubCommercialPlanId;
   economicAllocation?: EconomicAllocationSnapshot;
 }
 
@@ -139,6 +141,7 @@ const assertCapture = (capture: StoreEconomicLedgerEntry, payment: CanonicalPaym
 export const buildPaymentCaptureEconomicEntry = (input: {
   payment: CanonicalPayment;
   event: VerifiedPaymentProviderEvent;
+  storePlan?: KyrubCommercialPlanId;
   economicAllocation?: EconomicAllocationSnapshot;
 }): StoreEconomicLedgerEntry => {
   assertPaymentEventMatch(input.payment, input.event);
@@ -146,6 +149,7 @@ export const buildPaymentCaptureEconomicEntry = (input: {
   return {
     ...baseFromPayment({ payment: input.payment, paymentIntentId: input.event.paymentIntentId, occurredAt: input.event.occurredAt, provider: input.event.provider, providerPaymentId: input.event.providerPaymentId, providerEventId: input.event.eventId, sourceAuthority: 'provider_webhook' }),
     id: buildPaymentCaptureEconomicEntryId(input.payment.id), kind: 'payment_capture', amountMinor: brlToMinor(input.payment.amount), reversalOfEntryId: '',
+    ...(input.storePlan ? { storePlan: input.storePlan } : {}),
     ...(input.economicAllocation ? { economicAllocation: input.economicAllocation } : {}),
   };
 };
@@ -170,6 +174,7 @@ export const buildPaymentRefundEconomicEntry = (input: { payment: CanonicalPayme
   return {
     ...baseFromPayment({ payment: input.payment, paymentIntentId: input.event.paymentIntentId, occurredAt: input.event.occurredAt, provider: input.event.provider, providerPaymentId: input.event.providerPaymentId, providerEventId: input.event.eventId, sourceAuthority: 'provider_webhook' }),
     id: buildPaymentRefundEconomicEntryId(input.payment.id), kind: 'payment_refund', amountMinor: -input.capture.amountMinor, reversalOfEntryId: input.capture.id,
+    ...(input.capture.storePlan ? { storePlan: input.capture.storePlan } : {}),
     ...(input.capture.economicAllocation ? { economicAllocation: input.capture.economicAllocation } : {}),
   };
 };
@@ -181,6 +186,7 @@ export const buildPaymentChargebackEconomicEntry = (input: { payment: CanonicalP
   return {
     ...baseFromPayment({ payment: input.payment, paymentIntentId: input.event.paymentIntentId, occurredAt: input.event.occurredAt, provider: input.event.provider, providerPaymentId: input.event.providerPaymentId, providerEventId: input.event.eventId, sourceAuthority: 'provider_webhook' }),
     id: buildPaymentChargebackEconomicEntryId(input.payment.id), kind: 'payment_chargeback', amountMinor: -input.capture.amountMinor, reversalOfEntryId: input.capture.id,
+    ...(input.capture.storePlan ? { storePlan: input.capture.storePlan } : {}),
     ...(input.capture.economicAllocation ? { economicAllocation: input.capture.economicAllocation } : {}),
   };
 };
@@ -194,6 +200,7 @@ export const buildPaymentChargebackReversalEconomicEntry = (input: { payment: Ca
   return {
     ...baseFromPayment({ payment: input.payment, paymentIntentId: input.event.paymentIntentId, occurredAt: input.event.occurredAt, provider: input.event.provider, providerPaymentId: input.event.providerPaymentId, providerEventId: input.event.eventId, sourceAuthority: 'provider_webhook' }),
     id: buildPaymentChargebackReversalEconomicEntryId(input.payment.id), kind: 'payment_chargeback_reversal', amountMinor: Math.abs(input.chargeback.amountMinor), reversalOfEntryId: input.chargeback.id,
+    ...(input.chargeback.storePlan ? { storePlan: input.chargeback.storePlan } : {}),
     ...(input.chargeback.economicAllocation ? { economicAllocation: input.chargeback.economicAllocation } : {}),
   };
 };

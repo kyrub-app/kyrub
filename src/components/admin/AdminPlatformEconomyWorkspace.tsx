@@ -4,6 +4,7 @@ import {
   ArrowDownLeft,
   ArrowUpRight,
   CircleAlert,
+  Cpu,
   Landmark,
   RefreshCw,
   RotateCcw,
@@ -11,9 +12,16 @@ import {
   Store,
 } from 'lucide-react';
 import type {
+  AdminPlatformEconomyAllocationWindow,
+  AdminPlatformEconomyPaymentContext,
+  AdminPlatformEconomyPlanBucket,
   AdminPlatformEconomyRecentEntry,
   AdminPlatformEconomySnapshot,
 } from '../../../shared/adminPlatformEconomy';
+import {
+  ADMIN_PLATFORM_ECONOMY_PERIODS,
+  type AdminPlatformEconomyPeriod,
+} from '../../../shared/adminPlatformEconomyPeriod';
 import { auth } from '../../utils/firebase';
 import {
   hasAdminPermission,
@@ -28,6 +36,17 @@ const money = (minor: number): string =>
     currency: 'BRL',
   }).format(minor / 100);
 
+const usdFromMicrousd = (microusd: number): string =>
+  new Intl.NumberFormat('pt-BR', {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: 6,
+    maximumFractionDigits: 6,
+  }).format(microusd / 1_000_000);
+
+const integer = (value: number): string =>
+  new Intl.NumberFormat('pt-BR').format(value);
+
 const when = (value: string): string => {
   if (!value || !Number.isFinite(Date.parse(value))) return '—';
   return new Intl.DateTimeFormat('pt-BR', {
@@ -38,25 +57,59 @@ const when = (value: string): string => {
   }).format(new Date(value));
 };
 
+const periodLabel = (period: AdminPlatformEconomyPeriod): string => {
+  switch (period) {
+    case '7d': return '7 dias';
+    case '30d': return '30 dias';
+    case '90d': return '90 dias';
+    case 'all': return 'Todo período';
+  }
+};
+
+const contextLabel = (context: AdminPlatformEconomyPaymentContext): string => {
+  switch (context) {
+    case 'marketplace': return 'Marketplace';
+    case 'table': return 'Mesa';
+    case 'pos': return 'PDV';
+  }
+};
+
+const planLabel = (plan: AdminPlatformEconomyPlanBucket): string => {
+  switch (plan) {
+    case 'free': return 'Free';
+    case 'pro': return 'Pro';
+    case 'business': return 'Business';
+    case 'unsnapshotted': return 'Sem snapshot';
+  }
+};
+
 const eventPresentation = (
   entry: AdminPlatformEconomyRecentEntry
 ): { label: string; positive: boolean } => {
   switch (entry.kind) {
-    case 'payment_capture':
-      return { label: 'Captura', positive: true };
-    case 'payment_refund':
-      return { label: 'Refund', positive: false };
-    case 'payment_chargeback':
-      return { label: 'Chargeback debitado', positive: false };
-    case 'payment_chargeback_reversal':
-      return { label: 'Chargeback revertido', positive: true };
+    case 'payment_capture': return { label: 'Captura', positive: true };
+    case 'payment_refund': return { label: 'Refund', positive: false };
+    case 'payment_chargeback': return { label: 'Chargeback debitado', positive: false };
+    case 'payment_chargeback_reversal': return { label: 'Chargeback revertido', positive: true };
   }
 };
+
+const AllocationCards = ({ allocation }: { allocation: AdminPlatformEconomyAllocationWindow }) => (
+  <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
+    <div className="rounded-xl border border-slate-800 bg-slate-950/55 p-3"><span className="text-[8px] font-black uppercase tracking-wider text-slate-600">Entrega → entregador</span><strong className="mt-1 block text-sm text-white">{money(allocation.courierRemunerationMinor)}</strong></div>
+    <div className="rounded-xl border border-slate-800 bg-slate-950/55 p-3"><span className="text-[8px] font-black uppercase tracking-wider text-slate-600">Subsídio da loja</span><strong className="mt-1 block text-sm text-white">{money(allocation.storeSubsidyMinor)}</strong></div>
+    <div className="rounded-xl border border-slate-800 bg-slate-950/55 p-3"><span className="text-[8px] font-black uppercase tracking-wider text-slate-600">Incentivo Kyrub</span><strong className="mt-1 block text-sm text-white">{money(allocation.kyrubIncentiveMinor)}</strong></div>
+    <div className="rounded-xl border border-slate-800 bg-slate-950/55 p-3"><span className="text-[8px] font-black uppercase tracking-wider text-slate-600">Subsídio parceiro</span><strong className="mt-1 block text-sm text-white">{money(allocation.partnerSubsidyMinor)}</strong></div>
+    <div className="rounded-xl border border-slate-800 bg-slate-950/55 p-3"><span className="text-[8px] font-black uppercase tracking-wider text-slate-600">Custos observados</span><strong className="mt-1 block text-sm text-white">{money(allocation.observedCostsMinor)}</strong></div>
+  </div>
+);
 
 export default function AdminPlatformEconomyWorkspace() {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<AdminProfile | null>(null);
   const [snapshot, setSnapshot] = useState<AdminPlatformEconomySnapshot | null>(null);
+  const [period, setPeriod] = useState<AdminPlatformEconomyPeriod>('all');
+  const [storeId, setStoreId] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -68,40 +121,28 @@ export default function AdminPlatformEconomyWorkspace() {
       setUser(nextUser);
       setProfile(null);
       setSnapshot(null);
+      setStoreId('');
       setError('');
       if (!nextUser) return;
-      unsubscribeProfile = subscribeToAdminProfile(
-        nextUser,
-        setProfile,
-        () => setError('Não foi possível validar o perfil administrativo.')
-      );
+      unsubscribeProfile = subscribeToAdminProfile(nextUser, setProfile, () => setError('Não foi possível validar o perfil administrativo.'));
     });
-    return () => {
-      unsubscribeProfile();
-      unsubscribeAuth();
-    };
+    return () => { unsubscribeProfile(); unsubscribeAuth(); };
   }, []);
 
-  const authorized = Boolean(
-    user && profile && hasAdminPermission(profile, 'read_finance')
-  );
+  const authorized = Boolean(user && profile && hasAdminPermission(profile, 'read_finance'));
 
   const refresh = useCallback(async () => {
     if (!user || !authorized) return;
     setLoading(true);
     setError('');
     try {
-      setSnapshot(await loadAdminPlatformEconomy(user));
+      setSnapshot(await loadAdminPlatformEconomy(user, period, storeId));
     } catch (caught) {
-      setError(
-        caught instanceof Error
-          ? caught.message
-          : 'Não foi possível consultar a economia da plataforma.'
-      );
+      setError(caught instanceof Error ? caught.message : 'Não foi possível consultar a economia da plataforma.');
     } finally {
       setLoading(false);
     }
-  }, [authorized, user]);
+  }, [authorized, period, storeId, user]);
 
   useEffect(() => {
     if (!authorized) return;
@@ -109,174 +150,77 @@ export default function AdminPlatformEconomyWorkspace() {
   }, [authorized, refresh]);
 
   if (!authorized || !user || !profile) return null;
+  const storeScopeLabel = storeId ? `Loja ${storeId}` : 'Todas as lojas';
 
   return (
     <section className="bg-slate-950 px-4 pb-10 text-slate-100 sm:px-6">
-      <div
-        id="admin-platform-economy-workspace"
-        className="mx-auto max-w-7xl rounded-[2rem] border border-slate-800 bg-slate-900/65 p-5 sm:p-6"
-        aria-labelledby="admin-platform-economy-title"
-      >
+      <div id="admin-platform-economy-workspace" className="mx-auto max-w-7xl rounded-[2rem] border border-slate-800 bg-slate-900/65 p-5 sm:p-6" aria-labelledby="admin-platform-economy-title">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="flex items-start gap-3">
-            <div className="rounded-2xl bg-emerald-500/10 p-3 text-emerald-300">
-              <Landmark className="h-5 w-5" />
-            </div>
+            <div className="rounded-2xl bg-emerald-500/10 p-3 text-emerald-300"><Landmark className="h-5 w-5" /></div>
             <div>
-              <span className="text-[9px] font-black uppercase tracking-[0.2em] text-emerald-400">
-                Platform Economy
-              </span>
-              <h2 id="admin-platform-economy-title" className="mt-1 text-lg font-black text-white">
-                Economia canônica da plataforma
-              </h2>
-              <p className="mt-1 max-w-3xl text-[10px] leading-relaxed text-slate-500">
-                Capturas, refunds e chargebacks são fatos econômicos distintos. Esta visão não representa saldo disponível, custódia, imposto calculado ou settlement financeiro.
-              </p>
+              <span className="text-[9px] font-black uppercase tracking-[0.2em] text-emerald-400">Platform Economy</span>
+              <h2 id="admin-platform-economy-title" className="mt-1 text-lg font-black text-white">Economia canônica da plataforma</h2>
+              <p className="mt-1 max-w-3xl text-[10px] leading-relaxed text-slate-500">Fatos econômicos em BRL e custo de fornecedor de IA em USD permanecem separados. Esta visão não representa saldo disponível, custódia, imposto calculado ou settlement financeiro.</p>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={() => void refresh()}
-            disabled={loading}
-            className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 text-[10px] font-black uppercase tracking-wider text-slate-400 hover:text-white disabled:opacity-50"
-          >
-            <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
-            Atualizar
-          </button>
+          <button type="button" onClick={() => void refresh()} disabled={loading} className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 text-[10px] font-black uppercase tracking-wider text-slate-400 hover:text-white disabled:opacity-50"><RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />Atualizar</button>
         </div>
 
-        {error && (
-          <div className="mt-4 flex gap-3 rounded-2xl border border-red-500/25 bg-red-500/10 p-3 text-xs text-red-200" role="alert">
-            <CircleAlert className="mt-0.5 h-4 w-4 shrink-0" />
-            <span>{error}</span>
-          </div>
-        )}
+        <div className="mt-4 flex flex-wrap items-center gap-2" aria-label="Período da economia da plataforma">
+          <span className="mr-1 text-[9px] font-black uppercase tracking-wider text-slate-600">Período</span>
+          {ADMIN_PLATFORM_ECONOMY_PERIODS.map(candidate => {
+            const selected = candidate === period;
+            return <button key={candidate} type="button" onClick={() => setPeriod(candidate)} disabled={loading && !selected} aria-pressed={selected} className={`rounded-xl border px-3 py-2 text-[9px] font-black uppercase tracking-wider transition ${selected ? 'border-emerald-500/35 bg-emerald-500/10 text-emerald-300' : 'border-slate-800 bg-slate-950 text-slate-500 hover:text-white'} disabled:opacity-50`}>{periodLabel(candidate)}</button>;
+          })}
+          {storeId && <button type="button" onClick={() => setStoreId('')} disabled={loading} className="rounded-xl border border-violet-500/25 bg-violet-500/10 px-3 py-2 text-[9px] font-black uppercase tracking-wider text-violet-300 disabled:opacity-50">Todas as lojas</button>}
+          <span className="ml-auto text-[9px] text-slate-600">{storeScopeLabel} · {periodLabel(period)}</span>
+        </div>
+
+        {error && <div className="mt-4 flex gap-3 rounded-2xl border border-red-500/25 bg-red-500/10 p-3 text-xs text-red-200" role="alert"><CircleAlert className="mt-0.5 h-4 w-4 shrink-0" /><span>{error}</span></div>}
 
         {!snapshot && loading ? (
-          <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            {[0, 1, 2, 3].map(item => (
-              <div key={item} className="h-24 animate-pulse rounded-2xl bg-slate-950/70" />
-            ))}
-          </div>
+          <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{[0, 1, 2, 3].map(item => <div key={item} className="h-24 animate-pulse rounded-2xl bg-slate-950/70" />)}</div>
         ) : snapshot ? (
           <>
             <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-              <article className="rounded-2xl border border-emerald-500/15 bg-emerald-500/5 p-4">
-                <ArrowUpRight className="h-4 w-4 text-emerald-400" />
-                <span className="mt-3 block text-[9px] font-black uppercase tracking-wider text-slate-500">Capturado bruto</span>
-                <strong className="mt-1 block text-xl text-white">{money(snapshot.totals.capturedMinor)}</strong>
-                <span className="text-[9px] text-slate-600">{snapshot.totals.captureCount} captura(s)</span>
-              </article>
-              <article className="rounded-2xl border border-rose-500/15 bg-rose-500/5 p-4">
-                <ArrowDownLeft className="h-4 w-4 text-rose-400" />
-                <span className="mt-3 block text-[9px] font-black uppercase tracking-wider text-slate-500">Refundado</span>
-                <strong className="mt-1 block text-xl text-white">{money(snapshot.totals.refundedMinor)}</strong>
-                <span className="text-[9px] text-slate-600">{snapshot.totals.refundCount} refund(s)</span>
-              </article>
-              <article className="rounded-2xl border border-orange-500/15 bg-orange-500/5 p-4">
-                <ShieldAlert className="h-4 w-4 text-orange-400" />
-                <span className="mt-3 block text-[9px] font-black uppercase tracking-wider text-slate-500">Chargebacks</span>
-                <strong className="mt-1 block text-xl text-white">{money(snapshot.totals.chargedBackMinor)}</strong>
-                <span className="text-[9px] text-slate-600">{snapshot.totals.chargebackCount} débito(s) · {snapshot.totals.chargebackReversalCount} revertido(s)</span>
-              </article>
-              <article className="rounded-2xl border border-cyan-500/15 bg-cyan-500/5 p-4">
-                <Landmark className="h-4 w-4 text-cyan-400" />
-                <span className="mt-3 block text-[9px] font-black uppercase tracking-wider text-slate-500">Econômico líquido</span>
-                <strong className="mt-1 block text-xl text-white">{money(snapshot.totals.economicNetMinor)}</strong>
-                <span className="text-[9px] text-slate-600">capturas − refunds − chargebacks + reversões</span>
-              </article>
-              <article className="rounded-2xl border border-amber-500/15 bg-amber-500/5 p-4">
-                <RotateCcw className="h-4 w-4 text-amber-400" />
-                <span className="mt-3 block text-[9px] font-black uppercase tracking-wider text-slate-500">Parcela refundada</span>
-                <strong className="mt-1 block text-xl text-white">{(snapshot.totals.refundShareBps / 100).toFixed(2)}%</strong>
-                <span className="text-[9px] text-slate-600">bruto após refunds: {money(snapshot.totals.grossAfterRefundsMinor)}</span>
-              </article>
+              <article className="rounded-2xl border border-emerald-500/15 bg-emerald-500/5 p-4"><ArrowUpRight className="h-4 w-4 text-emerald-400" /><span className="mt-3 block text-[9px] font-black uppercase tracking-wider text-slate-500">Capturado bruto</span><strong className="mt-1 block text-xl text-white">{money(snapshot.totals.capturedMinor)}</strong><span className="text-[9px] text-slate-600">{snapshot.totals.captureCount} captura(s)</span></article>
+              <article className="rounded-2xl border border-rose-500/15 bg-rose-500/5 p-4"><ArrowDownLeft className="h-4 w-4 text-rose-400" /><span className="mt-3 block text-[9px] font-black uppercase tracking-wider text-slate-500">Refundado</span><strong className="mt-1 block text-xl text-white">{money(snapshot.totals.refundedMinor)}</strong><span className="text-[9px] text-slate-600">{snapshot.totals.refundCount} refund(s)</span></article>
+              <article className="rounded-2xl border border-orange-500/15 bg-orange-500/5 p-4"><ShieldAlert className="h-4 w-4 text-orange-400" /><span className="mt-3 block text-[9px] font-black uppercase tracking-wider text-slate-500">Chargebacks</span><strong className="mt-1 block text-xl text-white">{money(snapshot.totals.chargedBackMinor)}</strong><span className="text-[9px] text-slate-600">{snapshot.totals.chargebackCount} débito(s) · {snapshot.totals.chargebackReversalCount} revertido(s)</span></article>
+              <article className="rounded-2xl border border-cyan-500/15 bg-cyan-500/5 p-4"><Landmark className="h-4 w-4 text-cyan-400" /><span className="mt-3 block text-[9px] font-black uppercase tracking-wider text-slate-500">Econômico líquido</span><strong className="mt-1 block text-xl text-white">{money(snapshot.totals.economicNetMinor)}</strong><span className="text-[9px] text-slate-600">capturas − refunds − chargebacks + reversões</span></article>
+              <article className="rounded-2xl border border-amber-500/15 bg-amber-500/5 p-4"><RotateCcw className="h-4 w-4 text-amber-400" /><span className="mt-3 block text-[9px] font-black uppercase tracking-wider text-slate-500">Parcela refundada</span><strong className="mt-1 block text-xl text-white">{(snapshot.totals.refundShareBps / 100).toFixed(2)}%</strong><span className="text-[9px] text-slate-600">bruto após refunds: {money(snapshot.totals.grossAfterRefundsMinor)}</span></article>
+            </div>
+
+            <div className="mt-4 rounded-2xl border border-cyan-500/15 bg-cyan-500/5 p-4">
+              <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between"><div><span className="text-[9px] font-black uppercase tracking-wider text-cyan-300">Economia por canal</span><p className="mt-1 text-[9px] text-slate-500">{storeScopeLabel} · {periodLabel(period)}. Cada bucket soma os próprios fatos assinados do ledger; não usa o plano atual da loja para reclassificar o passado.</p></div><span className="text-[8px] text-slate-600">Marketplace · Mesa · PDV</span></div>
+              <div className="mt-3 grid gap-2 sm:grid-cols-3">{snapshot.contextTotals.map(context => <div key={context.paymentContext} className="rounded-xl border border-slate-800 bg-slate-950/55 p-3"><span className="text-[8px] font-black uppercase tracking-wider text-slate-600">{contextLabel(context.paymentContext)}</span><strong className="mt-1 block text-sm text-white">{money(context.economicNetMinor)}</strong><span className="text-[8px] text-slate-600">{integer(context.eventCount)} evento(s) econômicos</span></div>)}</div>
+            </div>
+
+            <div className="mt-4 rounded-2xl border border-amber-500/15 bg-amber-500/5 p-4">
+              <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+                <div><span className="text-[9px] font-black uppercase tracking-wider text-amber-300">Economia por plano histórico</span><p className="mt-1 text-[9px] text-slate-500">{storeScopeLabel} · {periodLabel(period)}. Usa somente o plano congelado no fato econômico. “Sem snapshot” identifica legado anterior a essa autoridade e nunca é preenchido com o plano atual.</p></div>
+                <span className="text-[8px] text-slate-600">Free · Pro · Business · Sem snapshot</span>
+              </div>
+              <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+                {snapshot.planTotals.map(plan => <div key={plan.plan} className="rounded-xl border border-slate-800 bg-slate-950/55 p-3"><span className="text-[8px] font-black uppercase tracking-wider text-slate-600">{planLabel(plan.plan)}</span><strong className="mt-1 block text-sm text-white">{money(plan.economicNetMinor)}</strong><span className="text-[8px] text-slate-600">{integer(plan.eventCount)} evento(s) econômicos</span></div>)}
+              </div>
             </div>
 
             <div className="mt-4 rounded-2xl border border-violet-500/15 bg-violet-500/5 p-4">
-              <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
-                <div>
-                  <span className="text-[9px] font-black uppercase tracking-wider text-violet-300">Taxas e subsídios · janela recente</span>
-                  <p className="mt-1 text-[9px] text-slate-500">
-                    Refunds e chargebacks debitam a fotografia econômica original; uma reversão de chargeback a recompõe sem recalcular regras atuais.
-                  </p>
-                </div>
-                <span className="text-[8px] text-slate-600">
-                  {snapshot.recentWindow.allocation.allocatedCaptureCount} captura(s) · {snapshot.recentWindow.allocation.allocatedRefundCount} refund(s) · {snapshot.recentWindow.allocation.allocatedChargebackCount} chargeback(s) · {snapshot.recentWindow.allocation.allocatedChargebackReversalCount} reversão(ões)
-                </span>
-              </div>
-              <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
-                <div className="rounded-xl border border-slate-800 bg-slate-950/55 p-3"><span className="text-[8px] font-black uppercase tracking-wider text-slate-600">Entrega → entregador</span><strong className="mt-1 block text-sm text-white">{money(snapshot.recentWindow.allocation.courierRemunerationMinor)}</strong></div>
-                <div className="rounded-xl border border-slate-800 bg-slate-950/55 p-3"><span className="text-[8px] font-black uppercase tracking-wider text-slate-600">Subsídio da loja</span><strong className="mt-1 block text-sm text-white">{money(snapshot.recentWindow.allocation.storeSubsidyMinor)}</strong></div>
-                <div className="rounded-xl border border-slate-800 bg-slate-950/55 p-3"><span className="text-[8px] font-black uppercase tracking-wider text-slate-600">Incentivo Kyrub</span><strong className="mt-1 block text-sm text-white">{money(snapshot.recentWindow.allocation.kyrubIncentiveMinor)}</strong></div>
-                <div className="rounded-xl border border-slate-800 bg-slate-950/55 p-3"><span className="text-[8px] font-black uppercase tracking-wider text-slate-600">Subsídio parceiro</span><strong className="mt-1 block text-sm text-white">{money(snapshot.recentWindow.allocation.partnerSubsidyMinor)}</strong></div>
-                <div className="rounded-xl border border-slate-800 bg-slate-950/55 p-3"><span className="text-[8px] font-black uppercase tracking-wider text-slate-600">Custos observados</span><strong className="mt-1 block text-sm text-white">{money(snapshot.recentWindow.allocation.observedCostsMinor)}</strong></div>
-              </div>
+              <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between"><div><span className="text-[9px] font-black uppercase tracking-wider text-violet-300">Destinações econômicas · {periodLabel(period)}</span><p className="mt-1 text-[9px] text-slate-500">{storeScopeLabel}. Totais derivados dos snapshots imutáveis do ledger; refunds e chargebacks debitam a fotografia original.</p></div><span className="text-[8px] text-slate-600">{snapshot.allocationTotals.allocatedCaptureCount} captura(s) · {snapshot.allocationTotals.allocatedRefundCount} refund(s) · {snapshot.allocationTotals.allocatedChargebackCount} chargeback(s) · {snapshot.allocationTotals.allocatedChargebackReversalCount} reversão(ões)</span></div>
+              <AllocationCards allocation={snapshot.allocationTotals} />
             </div>
 
-            <div className="mt-5 grid gap-4 xl:grid-cols-[1fr_1.35fr]">
-              <div className="rounded-2xl border border-slate-800 bg-slate-950/55 p-4">
-                <div className="flex items-center gap-2">
-                  <Store className="h-4 w-4 text-violet-400" />
-                  <h3 className="text-[10px] font-black uppercase tracking-wider text-white">Atividade recente por loja</h3>
-                </div>
-                <p className="mt-1 text-[9px] text-slate-600">
-                  Janela dos últimos {snapshot.recentWindow.limit} eventos; não é ranking vitalício.
-                </p>
-                <div className="mt-3 space-y-2">
-                  {snapshot.recentWindow.stores.length === 0 ? (
-                    <p className="rounded-xl border border-dashed border-slate-800 p-5 text-center text-[10px] text-slate-600">Nenhuma atividade econômica registrada.</p>
-                  ) : snapshot.recentWindow.stores.slice(0, 12).map(store => (
-                    <div key={store.storeId} className="rounded-xl border border-slate-800 bg-slate-900/60 p-3">
-                      <div className="flex items-center justify-between gap-3">
-                        <strong className="truncate font-mono text-[9px] text-slate-300">{store.storeId}</strong>
-                        <span className="text-[8px] text-slate-600">{when(store.lastOccurredAt)}</span>
-                      </div>
-                      <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[9px] text-slate-500">
-                        <span>capturado {money(store.capturedMinor)}</span>
-                        <span>refundado {money(store.refundedMinor)}</span>
-                        <span>chargeback {money(store.chargedBackMinor)}</span>
-                        <span>revertido {money(store.chargebackReversedMinor)}</span>
-                        <span>líquido {money(store.economicNetMinor)}</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
+            <div className="mt-4 rounded-2xl border border-sky-500/15 bg-sky-500/5 p-4">
+              <div className="flex items-start gap-3"><div className="rounded-xl bg-sky-500/10 p-2 text-sky-300"><Cpu className="h-4 w-4" /></div><div className="min-w-0 flex-1"><span className="text-[9px] font-black uppercase tracking-wider text-sky-300">Custo de IA · {periodLabel(period)}</span><p className="mt-1 text-[9px] text-slate-500">Medição autoritativa do ledger de uso. USD não é convertido nem somado aos fatos em BRL.{storeId ? ' O metering de IA ainda não possui atribuição canônica por loja; estes números permanecem globais da plataforma.' : ''}</p><div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4"><div className="rounded-xl border border-slate-800 bg-slate-950/55 p-3"><span className="text-[8px] font-black uppercase tracking-wider text-slate-600">Custo estimado</span><strong className="mt-1 block text-sm text-white">{usdFromMicrousd(snapshot.aiUsageTotals.estimatedCostMicrousd)}</strong><span className="text-[8px] text-slate-600">{integer(snapshot.aiUsageTotals.estimatedCostMicrousd)} micro-USD</span></div><div className="rounded-xl border border-slate-800 bg-slate-950/55 p-3"><span className="text-[8px] font-black uppercase tracking-wider text-slate-600">Chamadas</span><strong className="mt-1 block text-sm text-white">{integer(snapshot.aiUsageTotals.callCount)}</strong><span className="text-[8px] text-slate-600">{integer(snapshot.aiUsageTotals.pricedCallCount)} precificada(s)</span></div><div className="rounded-xl border border-slate-800 bg-slate-950/55 p-3"><span className="text-[8px] font-black uppercase tracking-wider text-slate-600">Não precificadas</span><strong className="mt-1 block text-sm text-white">{integer(snapshot.aiUsageTotals.unpricedCallCount)}</strong><span className="text-[8px] text-slate-600">preservadas sem inventar custo</span></div><div className="rounded-xl border border-slate-800 bg-slate-950/55 p-3"><span className="text-[8px] font-black uppercase tracking-wider text-slate-600">Tokens</span><strong className="mt-1 block text-sm text-white">{integer(snapshot.aiUsageTotals.totalTokenCount)}</strong><span className="text-[8px] text-slate-600">uso medido no período</span></div></div></div></div>
+            </div>
 
-              <div className="rounded-2xl border border-slate-800 bg-slate-950/55 p-4">
-                <h3 className="text-[10px] font-black uppercase tracking-wider text-white">Eventos econômicos recentes</h3>
-                <p className="mt-1 text-[9px] text-slate-600">
-                  {snapshot.recentWindow.entryCount} evento(s), {snapshot.recentWindow.representedStoreCount} loja(s) representada(s) nesta janela.
-                </p>
-                <div className="mt-3 max-h-96 space-y-2 overflow-y-auto pr-1">
-                  {snapshot.recentWindow.entries.length === 0 ? (
-                    <p className="rounded-xl border border-dashed border-slate-800 p-5 text-center text-[10px] text-slate-600">Ledger ainda sem eventos.</p>
-                  ) : snapshot.recentWindow.entries.map(entry => {
-                    const presentation = eventPresentation(entry);
-                    return (
-                      <div key={`${entry.storeId}:${entry.id}`} className="flex items-start gap-3 rounded-xl border border-slate-800 bg-slate-900/60 p-3">
-                        <div className={`mt-0.5 rounded-lg p-1.5 ${presentation.positive ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'}`}>
-                          {presentation.positive ? <ArrowUpRight className="h-3.5 w-3.5" /> : <ArrowDownLeft className="h-3.5 w-3.5" />}
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-start justify-between gap-3">
-                            <strong className="text-[10px] text-white">{presentation.label} · {money(Math.abs(entry.amountMinor))}</strong>
-                            <span className="shrink-0 text-[8px] text-slate-600">{when(entry.occurredAt)}</span>
-                          </div>
-                          <p className="mt-1 truncate font-mono text-[8px] text-slate-600">loja {entry.storeId} · pagamento {entry.paymentId}</p>
-                          <p className="mt-1 text-[8px] text-slate-700">{entry.paymentContext} · {entry.provider} · {entry.sourceAuthority}</p>
-                          {entry.economicAllocation && (
-                            <p className="mt-1 text-[8px] text-slate-600">
-                              entrega {money(entry.economicAllocation.courierRemunerationMinor)} · subsídio loja {money(entry.economicAllocation.storeSubsidyMinor)} · custos observados {money(entry.economicAllocation.observedCostsMinor)}
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
+            <div className="mt-4 rounded-2xl border border-violet-500/15 bg-violet-500/5 p-4"><div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between"><div><span className="text-[9px] font-black uppercase tracking-wider text-violet-300">Taxas e subsídios · janela recente</span><p className="mt-1 text-[9px] text-slate-500">Recorte operacional dos últimos {snapshot.recentWindow.limit} eventos dentro do período e escopo de loja selecionados.</p></div><span className="text-[8px] text-slate-600">{snapshot.recentWindow.allocation.allocatedCaptureCount} captura(s) · {snapshot.recentWindow.allocation.allocatedRefundCount} refund(s) · {snapshot.recentWindow.allocation.allocatedChargebackCount} chargeback(s) · {snapshot.recentWindow.allocation.allocatedChargebackReversalCount} reversão(ões)</span></div><AllocationCards allocation={snapshot.recentWindow.allocation} /></div>
+
+            <div className="mt-5 grid gap-4 xl:grid-cols-[1fr_1.35fr]">
+              <div className="rounded-2xl border border-slate-800 bg-slate-950/55 p-4"><div className="flex items-center gap-2"><Store className="h-4 w-4 text-violet-400" /><h3 className="text-[10px] font-black uppercase tracking-wider text-white">Atividade recente por loja</h3></div><p className="mt-1 text-[9px] text-slate-600">Até {snapshot.recentWindow.limit} eventos dentro de {periodLabel(period)}. Selecione uma loja para recalcular o ledger econômico somente naquele tenant.</p><div className="mt-3 space-y-2">{snapshot.recentWindow.stores.length === 0 ? <p className="rounded-xl border border-dashed border-slate-800 p-5 text-center text-[10px] text-slate-600">Nenhuma atividade econômica registrada.</p> : snapshot.recentWindow.stores.slice(0, 12).map(store => <button key={store.storeId} type="button" onClick={() => setStoreId(store.storeId)} disabled={loading || store.storeId === storeId} className={`w-full rounded-xl border p-3 text-left transition disabled:opacity-70 ${store.storeId === storeId ? 'border-violet-500/35 bg-violet-500/10' : 'border-slate-800 bg-slate-900/60 hover:border-slate-700'}`}><div className="flex items-center justify-between gap-3"><strong className="truncate font-mono text-[9px] text-slate-300">{store.storeId}</strong><span className="text-[8px] text-slate-600">{when(store.lastOccurredAt)}</span></div><div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[9px] text-slate-500"><span>capturado {money(store.capturedMinor)}</span><span>refundado {money(store.refundedMinor)}</span><span>chargeback {money(store.chargedBackMinor)}</span><span>revertido {money(store.chargebackReversedMinor)}</span><span>líquido {money(store.economicNetMinor)}</span></div></button>)}</div></div>
+
+              <div className="rounded-2xl border border-slate-800 bg-slate-950/55 p-4"><h3 className="text-[10px] font-black uppercase tracking-wider text-white">Eventos econômicos recentes</h3><p className="mt-1 text-[9px] text-slate-600">{snapshot.recentWindow.entryCount} evento(s), {snapshot.recentWindow.representedStoreCount} loja(s) representada(s) nesta janela.</p><div className="mt-3 max-h-96 space-y-2 overflow-y-auto pr-1">{snapshot.recentWindow.entries.length === 0 ? <p className="rounded-xl border border-dashed border-slate-800 p-5 text-center text-[10px] text-slate-600">Ledger ainda sem eventos.</p> : snapshot.recentWindow.entries.map(entry => { const presentation = eventPresentation(entry); return <div key={`${entry.storeId}:${entry.id}`} className="flex items-start gap-3 rounded-xl border border-slate-800 bg-slate-900/60 p-3"><div className={`mt-0.5 rounded-lg p-1.5 ${presentation.positive ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'}`}>{presentation.positive ? <ArrowUpRight className="h-3.5 w-3.5" /> : <ArrowDownLeft className="h-3.5 w-3.5" />}</div><div className="min-w-0 flex-1"><div className="flex items-start justify-between gap-3"><strong className="text-[10px] text-white">{presentation.label} · {money(Math.abs(entry.amountMinor))}</strong><span className="shrink-0 text-[8px] text-slate-600">{when(entry.occurredAt)}</span></div><p className="mt-1 truncate font-mono text-[8px] text-slate-600">loja {entry.storeId} · pagamento {entry.paymentId}</p><p className="mt-1 text-[8px] text-slate-700">{entry.paymentContext} · plano {entry.storePlan ? planLabel(entry.storePlan) : 'Sem snapshot'} · {entry.provider} · {entry.sourceAuthority}</p>{entry.economicAllocation && <p className="mt-1 text-[8px] text-slate-600">entrega {money(entry.economicAllocation.courierRemunerationMinor)} · subsídio loja {money(entry.economicAllocation.storeSubsidyMinor)} · custos observados {money(entry.economicAllocation.observedCostsMinor)}</p>}</div></div>; })}</div></div>
             </div>
           </>
         ) : null}
