@@ -15,6 +15,7 @@ const parsePreferences = (
   userId: string
 ): UserCommunicationPreferences => {
   const data = value as Partial<UserCommunicationPreferences>;
+  const marketing = data.marketing as Partial<UserCommunicationPreferences['marketing']> | undefined;
   const browser = data.browser as Partial<UserCommunicationPreferences['browser']> | undefined;
   const categories = browser?.categories as
     | Partial<UserCommunicationCategoryPreferences>
@@ -22,6 +23,7 @@ const parsePreferences = (
   if (
     data.schemaVersion !== 1 ||
     data.userId !== userId ||
+    (marketing?.enabled !== true && marketing?.enabled !== false) ||
     (browser?.enabled !== true && browser?.enabled !== false) ||
     (categories?.store_chat !== true && categories?.store_chat !== false) ||
     (categories?.order !== true && categories?.order !== false) ||
@@ -32,6 +34,9 @@ const parsePreferences = (
     !Number.isFinite(Date.parse(data.updatedAt))
   ) {
     throw new Error('USER_COMMUNICATION_PREFERENCES_INVALID');
+  }
+  if (!marketing.enabled && categories.marketing) {
+    throw new Error('USER_COMMUNICATION_PREFERENCES_MARKETING_CHANNEL_INVALID');
   }
   return data as UserCommunicationPreferences;
 };
@@ -48,6 +53,7 @@ export const loadUserCommunicationPreferences = async (
 
 export const saveUserCommunicationPreferences = async (input: {
   userId: string;
+  marketingEnabled: boolean;
   browserEnabled: boolean;
   categories: UserCommunicationCategoryPreferences;
   now?: Date;
@@ -60,6 +66,7 @@ export const saveUserCommunicationPreferences = async (input: {
   }
   const preferences = buildUserCommunicationPreferences({
     userId,
+    marketingEnabled: input.marketingEnabled,
     browserEnabled: input.browserEnabled,
     categories: input.categories,
     updatedAt: now.toISOString(),
