@@ -187,6 +187,22 @@ describe('admin platform economy', () => {
     assert.doesNotMatch(service, /exchangeRate|usdToBrl|convertedCostMinor/i);
   });
 
+  test('historical plan analysis can only use immutable ledger snapshots', () => {
+    const ledger = readFileSync('shared/storeEconomicLedger.ts', 'utf8');
+    const service = readFileSync('server/payments/storeEconomicLedgerService.ts', 'utf8');
+    assert.match(ledger, /storePlan\?: KyrubCommercialPlanId/);
+    assert.match(service, /parseStorePlan/);
+    assert.match(service, /input\.event\.eventType === 'payment\.paid'/);
+    assert.match(service, /captureSnapshot\.exists/);
+    assert.match(service, /storeSnapshot/);
+    assert.match(ledger, /input\.capture\.storePlan/);
+    assert.match(ledger, /input\.chargeback\.storePlan/);
+    assert.doesNotMatch(
+      service,
+      /buildRecoveredPaymentCaptureEconomicEntry\([\s\S]{0,300}storePlan/
+    );
+  });
+
   test('finance endpoint is server-authorized and audited', () => {
     const router = readFileSync('server/admin/platformEconomyRouter.ts', 'utf8');
     assert.match(router, /new Set\(\['super_admin', 'finance'\]\)/);
