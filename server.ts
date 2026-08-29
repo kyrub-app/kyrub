@@ -18,6 +18,7 @@ import { createKyrubAiConsultantRouter } from "./server/ai/consultantRouter";
 import { createKyrubActionExecutionRouter } from "./server/actions/actionExecutionRouter";
 import { createPaymentIntentRouter } from "./server/payments/paymentIntentRouter";
 import { createStoreRewardRouter } from "./server/payments/storeRewardRouter";
+import { createStoreRelationshipRouter } from "./server/payments/storeRelationshipRouter";
 import { enforceDeliveryWorkEligibility } from "./server/identity/workEligibilityMiddleware";
 
 dotenv.config();
@@ -118,6 +119,12 @@ app.use(
   "/api/store-rewards",
   integrationRateLimiter,
   createStoreRewardRouter()
+);
+
+app.use(
+  "/api/store-relationship",
+  integrationRateLimiter,
+  createStoreRelationshipRouter()
 );
 
 app.use(
