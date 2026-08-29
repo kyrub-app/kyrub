@@ -6,6 +6,7 @@ import {
   serverTimestamp,
   type Unsubscribe,
 } from 'firebase/firestore';
+import { STORE_CHALLENGE_MAX_DEFINITIONS } from '../../shared/storeChallengeLimits';
 import {
   normalizeStoreChallengeDefinition,
   normalizeStoreChallengeDefinitions,
@@ -103,8 +104,13 @@ export const persistStoreChallenge = async (
     const previous = currentChallenges.find(item => item.id === challenge.id);
 
     if (previous) assertChallengeUpdateAllowed(previous, challenge);
-    if (!previous && currentChallenges.length >= 50) {
-      throw new Error('A loja atingiu o limite de 50 desafios registrados.');
+    if (
+      !previous &&
+      currentChallenges.length >= STORE_CHALLENGE_MAX_DEFINITIONS
+    ) {
+      throw new Error(
+        `A loja atingiu o limite de ${STORE_CHALLENGE_MAX_DEFINITIONS} desafios registrados.`
+      );
     }
 
     const nextChallenges = [
