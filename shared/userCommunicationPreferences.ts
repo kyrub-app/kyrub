@@ -9,6 +9,7 @@ export interface UserCommunicationCategoryPreferences {
   store_chat: boolean;
   order: boolean;
   loyalty: boolean;
+  marketing: boolean;
   system: boolean;
 }
 
@@ -44,6 +45,7 @@ export const buildDefaultUserCommunicationPreferences = (
         store_chat: true,
         order: true,
         loyalty: true,
+        marketing: false,
         system: true,
       },
     },
@@ -70,6 +72,7 @@ export const buildUserCommunicationPreferences = (input: {
         store_chat: input.categories.store_chat === true,
         order: input.categories.order === true,
         loyalty: input.categories.loyalty === true,
+        marketing: input.categories.marketing === true,
         system: input.categories.system === true,
       },
     },
