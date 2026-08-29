@@ -4,9 +4,12 @@ export type PaymentProviderEventType =
   | 'payment.paid'
   | 'payment.failed'
   | 'payment.expired'
+  | 'payment.cancelled'
   | 'refund.processing'
   | 'refund.succeeded'
-  | 'refund.failed';
+  | 'refund.failed'
+  | 'chargeback.debited'
+  | 'chargeback.reversed';
 
 export interface VerifiedPaymentProviderEvent {
   provider: string;
@@ -81,11 +84,17 @@ export const paymentStatusFromProviderEvent = (
       return 'failed';
     case 'payment.expired':
       return 'expired';
+    case 'payment.cancelled':
+      return 'cancelled';
     case 'refund.processing':
       return 'refund_processing';
     case 'refund.succeeded':
       return 'refunded';
     case 'refund.failed':
       return 'refund_failed';
+    case 'chargeback.debited':
+      return 'charged_back';
+    case 'chargeback.reversed':
+      return 'chargeback_reversed';
   }
 };
