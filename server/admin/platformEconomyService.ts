@@ -4,8 +4,10 @@ import {
   ADMIN_PLATFORM_ECONOMY_RECENT_LIMIT,
   ADMIN_PLATFORM_ECONOMY_SCHEMA_VERSION,
   buildRecentStoreEconomyActivity,
+  combineEconomicAllocationLifecycleTotals,
   deriveRecentEconomicAllocationWindow,
   deriveRefundShareBps,
+  type AdminPlatformEconomyAllocationAggregate,
   type AdminPlatformEconomyRecentEntry,
   type AdminPlatformEconomySnapshot,
 } from '../../shared/adminPlatformEconomy.js';
@@ -20,6 +22,32 @@ const safeAggregateInteger = (value: unknown, label: string): number => {
   if (!Number.isSafeInteger(numeric)) throw new Error(`ADMIN_PLATFORM_ECONOMY_${label}_INVALID`);
   return numeric;
 };
+
+const parseAllocationAggregate = (
+  data: Record<string, unknown>,
+  label: string
+): AdminPlatformEconomyAllocationAggregate => ({
+  count: safeAggregateInteger(data.allocationCount ?? 0, `${label}_ALLOCATION_COUNT`),
+  deliveryFeeMinor: safeAggregateInteger(data.deliveryFeeMinor ?? 0, `${label}_DELIVERY_FEE`),
+  courierRemunerationMinor: safeAggregateInteger(
+    data.courierRemunerationMinor ?? 0,
+    `${label}_COURIER_REMUNERATION`
+  ),
+  storeSubsidyMinor: safeAggregateInteger(data.storeSubsidyMinor ?? 0, `${label}_STORE_SUBSIDY`),
+  kyrubIncentiveMinor: safeAggregateInteger(data.kyrubIncentiveMinor ?? 0, `${label}_KYRUB_INCENTIVE`),
+  partnerSubsidyMinor: safeAggregateInteger(data.partnerSubsidyMinor ?? 0, `${label}_PARTNER_SUBSIDY`),
+  observedCostsMinor: safeAggregateInteger(data.observedCostsMinor ?? 0, `${label}_OBSERVED_COSTS`),
+});
+
+const allocationAggregateFields = () => ({
+  allocationCount: AggregateField.sum('economicAllocation.schemaVersion'),
+  deliveryFeeMinor: AggregateField.sum('economicAllocation.deliveryFeeMinor'),
+  courierRemunerationMinor: AggregateField.sum('economicAllocation.courierRemunerationMinor'),
+  storeSubsidyMinor: AggregateField.sum('economicAllocation.storeSubsidyMinor'),
+  kyrubIncentiveMinor: AggregateField.sum('economicAllocation.kyrubIncentiveMinor'),
+  partnerSubsidyMinor: AggregateField.sum('economicAllocation.partnerSubsidyMinor'),
+  observedCostsMinor: AggregateField.sum('economicAllocation.observedCostsMinor'),
+});
 
 const parseAllocation = (
   value: EconomicAllocationSnapshot | undefined
@@ -99,6 +127,10 @@ export const loadAdminPlatformEconomySnapshot = async (): Promise<AdminPlatformE
     chargebackCountSnapshot,
     chargebackReversalCountSnapshot,
     recoveredCountSnapshot,
+    captureAllocationSnapshot,
+    refundAllocationSnapshot,
+    chargebackAllocationSnapshot,
+    chargebackReversalAllocationSnapshot,
     recentSnapshot,
   ] = await Promise.all([
     captures.aggregate({ amountMinor: AggregateField.sum('amountMinor') }).get(),
@@ -110,6 +142,10 @@ export const loadAdminPlatformEconomySnapshot = async (): Promise<AdminPlatformE
     chargebacks.count().get(),
     chargebackReversals.count().get(),
     recovered.count().get(),
+    captures.aggregate(allocationAggregateFields()).get(),
+    refunds.aggregate(allocationAggregateFields()).get(),
+    chargebacks.aggregate(allocationAggregateFields()).get(),
+    chargebackReversals.aggregate(allocationAggregateFields()).get(),
     ledger.orderBy('occurredAt', 'desc').limit(ADMIN_PLATFORM_ECONOMY_RECENT_LIMIT).get(),
   ]);
 
@@ -133,6 +169,15 @@ export const loadAdminPlatformEconomySnapshot = async (): Promise<AdminPlatformE
   const chargebackCount = safeAggregateInteger(chargebackCountSnapshot.data().count, 'CHARGEBACK_COUNT');
   const chargebackReversalCount = safeAggregateInteger(chargebackReversalCountSnapshot.data().count, 'CHARGEBACK_REVERSAL_COUNT');
   const recoveredCaptureCount = safeAggregateInteger(recoveredCountSnapshot.data().count, 'RECOVERED_COUNT');
+  const allocationTotals = combineEconomicAllocationLifecycleTotals({
+    captures: parseAllocationAggregate(captureAllocationSnapshot.data(), 'CAPTURE'),
+    refunds: parseAllocationAggregate(refundAllocationSnapshot.data(), 'REFUND'),
+    chargebacks: parseAllocationAggregate(chargebackAllocationSnapshot.data(), 'CHARGEBACK'),
+    chargebackReversals: parseAllocationAggregate(
+      chargebackReversalAllocationSnapshot.data(),
+      'CHARGEBACK_REVERSAL'
+    ),
+  });
   const entries = recentSnapshot.docs.map(document => parseRecentEntry(document.data()));
   const stores = buildRecentStoreEconomyActivity(entries);
   const allocation = deriveRecentEconomicAllocationWindow(entries);
@@ -155,6 +200,7 @@ export const loadAdminPlatformEconomySnapshot = async (): Promise<AdminPlatformE
       recoveredCaptureCount,
       refundShareBps: deriveRefundShareBps(capturedMinor, refundedMinor),
     },
+    allocationTotals,
     recentWindow: {
       limit: ADMIN_PLATFORM_ECONOMY_RECENT_LIMIT,
       entryCount: entries.length,
