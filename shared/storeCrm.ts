@@ -15,15 +15,20 @@ export interface StoreCrmCustomer {
   customerId: string;
   name: string;
   email: string;
+  avatarUrl: string;
   confirmedPurchases: number;
   totalPaid: number;
+  averageTicket: number;
   lastPurchaseAt: string;
+  lastActivityAt: string;
   lastOrderId: string;
   pointsBalance: number;
   relationshipLevel: StoreRelationshipLevel;
   challengeProgressCount: number;
   completedChallengeCount: number;
+  availableRewardCount: number;
   rewardRedemptionCount: number;
+  availableVoucherCount: number;
   segments: StoreCrmSegment[];
 }
 
