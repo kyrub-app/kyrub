@@ -8,6 +8,7 @@ import {
   where,
 } from 'firebase/firestore';
 import { ConnectedContactsPanel } from '../ConnectedContactsPanel';
+import { MarketplaceOfferFilterLabelBridge } from '../MarketplaceOfferFilterLabelBridge';
 import { PublicSocialFeedPanel } from '../PublicSocialFeedPanel';
 import { StoreOfferCardPresentationBridge } from '../StoreOfferCardPresentationBridge';
 import { KyrubTab as LegacyKyrubTab } from './LegacyKyrubTab';
@@ -15,10 +16,12 @@ import { usePublicSocialFeed } from '../../hooks/usePublicSocialFeed';
 import type {
   MarketplaceListingDocument,
   MarketplaceStoreListingDocument,
+  Order,
   Store,
 } from '../../types';
 import { auth, db } from '../../utils/firebase';
 import { getMarketplaceListingsCollectionPath } from '../../utils/marketplacePaths';
+import { loadMarketplaceOfferSegments } from '../../utils/marketplaceOfferSegments';
 
 type KyrubTabProps = React.ComponentProps<
   typeof LegacyKyrubTab
@@ -27,6 +30,8 @@ type KyrubTabProps = React.ComponentProps<
 const CANONICAL_MARKETPLACE_READ_ENABLED =
   import.meta.env.VITE_ENABLE_CANONICAL_MARKETPLACE_READ ===
   'true';
+
+const SEGMENT_BATCH_SIZE = 100;
 
 const canonicalListingToStore = (
   listing: MarketplaceStoreListingDocument
@@ -108,9 +113,23 @@ const tenantListingToStore = (
   };
 };
 
+const segmentPlaceholderOrder = (storeId: string): Order => ({
+  id: `marketplace-segment:${storeId}`,
+  storeId,
+  buyerName: '',
+  buyerEmail: '',
+  items: [],
+  total: 0,
+  status: 'delivered',
+  createdAt: '',
+  type: 'retail',
+});
+
 export function KyrubTab(props: KyrubTabProps) {
   const [canonicalStores, setCanonicalStores] = useState<Store[]>([]);
   const [fallbackStores, setFallbackStores] = useState<Store[]>([]);
+  const [promotionStoreIds, setPromotionStoreIds] = useState<string[]>([]);
+  const [forYouStoreIds, setForYouStoreIds] = useState<string[]>([]);
   const socialFeed = usePublicSocialFeed();
 
   useEffect(() => {
@@ -126,6 +145,8 @@ export function KyrubTab(props: KyrubTabProps) {
       unsubscribeFallback();
       setCanonicalStores([]);
       setFallbackStores([]);
+      setPromotionStoreIds([]);
+      setForYouStoreIds([]);
 
       if (!user) return;
 
@@ -197,6 +218,69 @@ export function KyrubTab(props: KyrubTabProps) {
     return Array.from(storesById.values());
   }, [canonicalStores, fallbackStores]);
 
+  const storeIdFingerprint = useMemo(
+    () => publishedStores.map(store => store.id).sort().join('|'),
+    [publishedStores]
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    const storeIds = storeIdFingerprint ? storeIdFingerprint.split('|') : [];
+    if (!auth.currentUser || storeIds.length === 0) {
+      setPromotionStoreIds([]);
+      setForYouStoreIds([]);
+      return;
+    }
+
+    const batches: string[][] = [];
+    for (let index = 0; index < storeIds.length; index += SEGMENT_BATCH_SIZE) {
+      batches.push(storeIds.slice(index, index + SEGMENT_BATCH_SIZE));
+    }
+
+    void Promise.all(batches.map(batch => loadMarketplaceOfferSegments(batch)))
+      .then(results => {
+        if (cancelled) return;
+        setPromotionStoreIds(
+          Array.from(new Set(results.flatMap(result => result.promotionStoreIds)))
+        );
+        setForYouStoreIds(
+          Array.from(new Set(results.flatMap(result => result.forYouStoreIds)))
+        );
+      })
+      .catch(error => {
+        if (cancelled) return;
+        console.warn('Marketplace offer segmentation is unavailable.', error);
+        setPromotionStoreIds([]);
+        setForYouStoreIds([]);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [storeIdFingerprint]);
+
+  const segmentedStores = useMemo(() => {
+    const promotionSet = new Set(promotionStoreIds);
+    return publishedStores.map(store => ({
+      ...store,
+      // Legacy filter id `novas` is now a compatibility slot for `Em promoção`.
+      // `isNew` is not otherwise consumed by LegacyKyrubTab.
+      isNew: promotionSet.has(store.id),
+    }));
+  }, [promotionStoreIds, publishedStores]);
+
+  const legacyForYouOrders = useMemo(() => {
+    const forYouSet = new Set(forYouStoreIds);
+    const existingByStoreId = new Map(
+      props.orders
+        .filter(order => order.storeId && forYouSet.has(order.storeId))
+        .map(order => [order.storeId as string, order])
+    );
+    return forYouStoreIds.map(
+      storeId => existingByStoreId.get(storeId) ?? segmentPlaceholderOrder(storeId)
+    );
+  }, [forYouStoreIds, props.orders]);
+
   const isConnectedContactsActive =
     props.socialSubTab === 'usuarios' &&
     props.pracaFilter === 'conectados';
@@ -219,7 +303,12 @@ export function KyrubTab(props: KyrubTabProps) {
       <LegacyKyrubTab
         {...props}
         posts={socialFeed.posts}
-        storesWithCoords={publishedStores}
+        storesWithCoords={segmentedStores}
+        orders={legacyForYouOrders}
+      />
+
+      <MarketplaceOfferFilterLabelBridge
+        enabled={props.socialSubTab === 'lojas'}
       />
 
       <StoreOfferCardPresentationBridge
