@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { describe, test } from 'node:test';
 import './economic-fees-subsidies.test';
 import './economic-chargebacks-cancellations.test';
+import './economic-obligations.test';
 import type { CanonicalPayment } from '../src/utils/canonicalPayment';
 import type { VerifiedPaymentProviderEvent } from '../src/utils/paymentProvider';
 import {
