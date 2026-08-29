@@ -16,6 +16,7 @@ import { createOperationsHealthRouter } from "./server/admin/operationsHealthRou
 import { createOrderInventoryRouter } from "./server/inventory/orderInventoryRouter";
 import { createKyrubAiConsultantRouter } from "./server/ai/consultantRouter";
 import { createKyrubActionExecutionRouter } from "./server/actions/actionExecutionRouter";
+import { createLocalAttendanceRouter } from "./server/attendance/localAttendanceRouter";
 import { createStoreCustomerChatRouter } from "./server/chat/storeCustomerChatRouter";
 import { createStoreCampaignRouter } from "./server/campaigns/storeCampaignRouter";
 import { createUserCommunicationPreferenceRouter } from "./server/notifications/userCommunicationPreferenceRouter";
@@ -150,6 +151,12 @@ app.use(
   "/api/store-campaigns",
   integrationRateLimiter,
   createStoreCampaignRouter()
+);
+
+app.use(
+  "/api/local-attendance",
+  integrationRateLimiter,
+  createLocalAttendanceRouter()
 );
 
 app.use(
