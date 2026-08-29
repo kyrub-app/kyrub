@@ -101,13 +101,17 @@ describe('admin platform economy', () => {
     assert.doesNotMatch(client, /firebase\/firestore|collectionGroup|collection\(db/);
   });
 
-  test('Vercel transport exposes the same server authority instead of duplicating finance rules', () => {
-    const transport = readFileSync('api/admin/platform-economy.ts', 'utf8');
+  test('Vercel rewrites platform economy into the existing admin function budget', () => {
+    const config = readFileSync('vercel.json', 'utf8');
+    const transport = readFileSync('api/admin/operations/health.ts', 'utf8');
+    assert.match(config, /"source": "\/api\/admin\/platform-economy"/);
+    assert.match(
+      config,
+      /"destination": "\/api\/admin\/operations\/health\?transport=platform-economy"/
+    );
+    assert.match(transport, /transport === 'platform-economy'/);
     assert.match(transport, /loadAuthorizedPlatformEconomySnapshot/);
     assert.match(transport, /mapPlatformEconomyError/);
-    assert.match(transport, /request\.headers\.authorization/);
-    assert.match(transport, /METHOD_NOT_ALLOWED/);
-    assert.match(transport, /cache-control/);
     assert.doesNotMatch(
       transport,
       /verifyFirebaseIdToken|collectionGroup\(|admin\.platform_economy\.viewed/
