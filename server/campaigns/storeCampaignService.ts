@@ -63,6 +63,7 @@ const parseCampaign = (
     data.id !== campaignId ||
     data.storeId !== storeId ||
     !clean(data.actorPrincipalId) ||
+    !clean(data.actorUserId) ||
     !clean(data.title) ||
     typeof data.body !== 'string' ||
     data.status !== 'sent' ||
@@ -143,6 +144,7 @@ export const previewStoreCampaignAudience = async (input: {
 export const sendStoreCampaign = async (input: {
   storeId: string;
   actorPrincipalId: string;
+  actorUserId: string;
   segment: unknown;
   title: unknown;
   body: unknown;
@@ -151,8 +153,9 @@ export const sendStoreCampaign = async (input: {
 }): Promise<SendStoreCampaignResult> => {
   const storeId = clean(input.storeId);
   const actorPrincipalId = clean(input.actorPrincipalId);
+  const actorUserId = clean(input.actorUserId);
   if (!storeId) throw new Error('STORE_CAMPAIGN_STORE_REQUIRED');
-  if (!actorPrincipalId) throw new Error('STORE_CAMPAIGN_ACTOR_REQUIRED');
+  if (!actorPrincipalId || !actorUserId) throw new Error('STORE_CAMPAIGN_ACTOR_REQUIRED');
   const segment = normalizeStoreCampaignSegment(input.segment);
   const title = normalizeStoreCampaignTitle(input.title);
   const body = normalizeStoreCampaignBody(input.body);
@@ -199,6 +202,7 @@ export const sendStoreCampaign = async (input: {
       id,
       storeId,
       actorPrincipalId,
+      actorUserId,
       segment,
       title,
       body,
