@@ -2,6 +2,7 @@ import { createHash, randomInt, timingSafeEqual } from 'node:crypto';
 import { FieldValue } from 'firebase-admin/firestore';
 import { verifyFirebaseIdToken } from '../ai/consultantAuth.js';
 import { adminDb } from '../firebaseAdmin.js';
+import { finalizePickupHandoffWithEconomicEligibility } from '../payments/economicObligationEligibilityService.js';
 import {
   transitionOrderStatusWithInventory,
   type OrderStatusDecisionInput,
@@ -277,39 +278,6 @@ const verifyPickupHandoff = async (
   });
 };
 
-const finalizePickupHandoff = async (
-  tenantId: string,
-  orderId: string,
-  actorId: string
-): Promise<void> => {
-  const snapshot = await orderReference(tenantId, orderId).get();
-  const data = snapshot.data() as Record<string, unknown> | undefined;
-  if (!snapshot.exists || data?.fulfillmentType !== 'pickup') return;
-  const now = new Date().toISOString();
-  const canonicalStoreId = await canonicalStoreIdFor(tenantId);
-  const handoff = {
-    ...handoffRecord(data.handoff),
-    status: 'handed_over',
-    handedOverAt: now,
-    handedOverBy: actorId,
-  };
-  const batch = adminDb.batch();
-  batch.set(
-    orderReference(tenantId, orderId),
-    { handoff, updatedAt: now },
-    { merge: true }
-  );
-  if (canonicalStoreId) {
-    batch.set(
-      adminDb.doc(`stores/${canonicalStoreId}/orders/${orderId}`),
-      { handoff, updatedAt: now },
-      { merge: true }
-    );
-  }
-  batch.delete(pickupSecretReference(tenantId, orderId));
-  await batch.commit();
-};
-
 const markPartnerSyncError = async (
   tenantId: string,
   orderId: string,
@@ -462,7 +430,11 @@ export const executeAuthorizedOrderStatusTransition = async (
     }
 
     if (input.status === 'completed' && data?.fulfillmentType === 'pickup') {
-      await finalizePickupHandoff(identity.uid, result.orderId, identity.uid);
+      await finalizePickupHandoffWithEconomicEligibility({
+        tenantId: identity.uid,
+        orderId: result.orderId,
+        actorId: identity.uid,
+      });
     }
 
     let partnerSync: 'not-applicable' | 'sent' | 'attention' = 'not-applicable';

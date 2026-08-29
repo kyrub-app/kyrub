@@ -65,13 +65,19 @@ test('PDV overview reuses canonical customer orders and existing pickup navigati
 test('secure pickup remains the only completion path for ready pickup in the local PDV', () => {
   const pickup = readFileSync('src/components/store/PickupPdvNavigationBridge.tsx', 'utf8');
   const execution = readFileSync('server/inventory/orderStatusExecutionService.ts', 'utf8');
+  const eligibility = readFileSync(
+    'server/payments/economicObligationEligibilityService.ts',
+    'utf8'
+  );
 
   assert.match(pickup, /order\.fulfillmentType === 'pickup' && order\.status === 'ready'/);
   assert.match(pickup, /handoffCode: pickupCode/);
   assert.match(pickup, /'completed'/);
   assert.match(execution, /data\.fulfillmentType !== 'pickup' \|\| data\.status !== 'ready'/);
   assert.match(execution, /safeEqualCode\(/);
-  assert.match(execution, /status: 'handed_over'/);
+  assert.match(execution, /finalizePickupHandoffWithEconomicEligibility/);
+  assert.match(eligibility, /status: 'handed_over'/);
+  assert.match(eligibility, /currentHandoffStatus !== 'verified'/);
 });
 
 test('local service bridge is mounted next to existing pickup authority', () => {
