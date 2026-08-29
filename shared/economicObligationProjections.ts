@@ -15,6 +15,7 @@ export type EconomicProjectionState =
 
 export type EconomicProjectionIntegrityError =
   | 'duplicate_settlement_records'
+  | 'lifecycle_snapshot_inconsistent'
   | 'settlement_mismatch'
   | 'settlement_without_settled_obligation'
   | 'settled_obligation_without_settlement';
@@ -55,6 +56,48 @@ const projectionKindFor = (
 ): EconomicProjectionKind =>
   obligationKind === 'store_receivable' ? 'receivable' : 'payable';
 
+const validIso = (value: string): boolean =>
+  Boolean(value) && Number.isFinite(Date.parse(value));
+
+const obligationLifecycleIsConsistent = (
+  obligation: EconomicObligation
+): boolean => {
+  if (!validIso(obligation.createdAt)) return false;
+  const createdAt = Date.parse(obligation.createdAt);
+
+  if (obligation.status === 'pending') {
+    return !obligation.eligibleAt && !obligation.settledAt && !obligation.reversedAt;
+  }
+
+  if (obligation.status === 'eligible') {
+    return (
+      validIso(obligation.eligibleAt) &&
+      Date.parse(obligation.eligibleAt) >= createdAt &&
+      !obligation.settledAt &&
+      !obligation.reversedAt
+    );
+  }
+
+  if (obligation.status === 'settled') {
+    return (
+      validIso(obligation.eligibleAt) &&
+      validIso(obligation.settledAt) &&
+      Date.parse(obligation.eligibleAt) >= createdAt &&
+      Date.parse(obligation.settledAt) >= Date.parse(obligation.eligibleAt) &&
+      !obligation.reversedAt
+    );
+  }
+
+  if (!validIso(obligation.reversedAt) || obligation.settledAt) return false;
+  if (Date.parse(obligation.reversedAt) < createdAt) return false;
+  if (!obligation.eligibleAt) return true;
+  return (
+    validIso(obligation.eligibleAt) &&
+    Date.parse(obligation.eligibleAt) >= createdAt &&
+    Date.parse(obligation.reversedAt) >= Date.parse(obligation.eligibleAt)
+  );
+};
+
 const settlementMatchesObligation = (
   obligation: EconomicObligation,
   settlement: EconomicSettlementRecord
@@ -64,7 +107,12 @@ const settlementMatchesObligation = (
   settlement.currency === obligation.currency &&
   settlement.amountMinor === obligation.amountMinor &&
   settlement.beneficiaryType === obligation.beneficiaryType &&
-  settlement.beneficiaryPrincipalId === obligation.beneficiaryPrincipalId;
+  settlement.beneficiaryPrincipalId === obligation.beneficiaryPrincipalId &&
+  validIso(settlement.occurredAt) &&
+  validIso(settlement.observedAt) &&
+  Date.parse(settlement.observedAt) >= Date.parse(settlement.occurredAt) &&
+  (settlement.authority === 'provider_webhook' ||
+    settlement.authority === 'provider_statement');
 
 const integrityProjection = (
   obligation: EconomicObligation,
@@ -95,6 +143,14 @@ export const deriveEconomicObligationProjection = (input: {
     settlement => settlement.obligationId === input.obligation.id
   );
 
+  if (!obligationLifecycleIsConsistent(input.obligation)) {
+    return integrityProjection(
+      input.obligation,
+      'lifecycle_snapshot_inconsistent',
+      relatedSettlements[0]
+    );
+  }
+
   if (relatedSettlements.length > 1) {
     return integrityProjection(
       input.obligation,
@@ -114,6 +170,9 @@ export const deriveEconomicObligationProjection = (input: {
         input.obligation,
         'settled_obligation_without_settlement'
       );
+    }
+    if (input.obligation.settledAt !== settlement.occurredAt) {
+      return integrityProjection(input.obligation, 'settlement_mismatch', settlement);
     }
     return {
       projectionKind: projectionKindFor(input.obligation.kind),
