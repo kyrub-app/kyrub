@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { onAuthStateChanged, type User } from 'firebase/auth';
 import {
@@ -7,16 +7,24 @@ import {
   LoaderCircle,
   MessageSquareText,
   RefreshCw,
+  Settings2,
   X,
 } from 'lucide-react';
+import {
+  buildDefaultUserCommunicationPreferences,
+  shouldDeliverUserNotificationToBrowser,
+  type UserCommunicationPreferences,
+} from '../../shared/userCommunicationPreferences';
 import type { UserNotification } from '../../shared/userNotifications';
 import { auth } from '../utils/firebase';
 import { openStoreCustomerChat } from '../utils/storeCustomerChatEvents';
+import { loadUserCommunicationPreferences } from '../utils/userCommunicationPreferences';
 import {
   loadUserNotificationInbox,
   markAllUserNotificationsRead,
   markUserNotificationRead,
 } from '../utils/userNotifications';
+import { UserCommunicationPreferencesModal } from './UserCommunicationPreferencesModal';
 
 const formatTime = (value: string): string => {
   if (!value || !Number.isFinite(Date.parse(value))) return '';
@@ -28,16 +36,93 @@ const formatTime = (value: string): string => {
   }).format(new Date(value));
 };
 
+const openNotificationTarget = (
+  notification: UserNotification,
+  user: User
+): boolean => {
+  if (notification.target.kind !== 'store_chat') return false;
+  const perspective = notification.target.customerId === user.uid
+    ? 'customer'
+    : notification.target.storeId === user.uid
+      ? 'store'
+      : null;
+  if (!perspective) return false;
+  openStoreCustomerChat({
+    perspective,
+    storeId: notification.target.storeId,
+    ...(perspective === 'store'
+      ? { customerId: notification.target.customerId }
+      : {}),
+  });
+  return true;
+};
+
+const showBrowserNotification = (
+  notification: UserNotification,
+  user: User
+): void => {
+  if (
+    typeof window === 'undefined' ||
+    !('Notification' in window) ||
+    Notification.permission !== 'granted'
+  ) {
+    return;
+  }
+  const browserNotification = new Notification(notification.title, {
+    body: notification.body || undefined,
+    icon: '/favicon.ico',
+    tag: notification.id,
+  });
+  browserNotification.onclick = () => {
+    window.focus();
+    void markUserNotificationRead(notification.id).catch(error =>
+      console.warn('Não foi possível marcar a notificação do navegador como lida.', error)
+    );
+    openNotificationTarget(notification, user);
+    browserNotification.close();
+  };
+};
+
 export function UserNotificationCenterBridge() {
   const [user, setUser] = useState<User | null>(auth.currentUser);
   const [host, setHost] = useState<HTMLElement | null>(null);
   const [open, setOpen] = useState(false);
+  const [preferencesOpen, setPreferencesOpen] = useState(false);
+  const [preferences, setPreferences] = useState<UserCommunicationPreferences | null>(null);
   const [notifications, setNotifications] = useState<UserNotification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const notificationBaselineRef = useRef<Set<string> | null>(null);
+  const preferencesRef = useRef<UserCommunicationPreferences | null>(null);
 
   useEffect(() => onAuthStateChanged(auth, setUser), []);
+
+  useEffect(() => {
+    preferencesRef.current = preferences;
+  }, [preferences]);
+
+  useEffect(() => {
+    notificationBaselineRef.current = null;
+    setNotifications([]);
+    setUnreadCount(0);
+    setPreferences(null);
+    if (!user) return;
+    let cancelled = false;
+    void loadUserCommunicationPreferences()
+      .then(value => {
+        if (!cancelled) setPreferences(value);
+      })
+      .catch(error => {
+        if (!cancelled) {
+          console.warn('Preferências de comunicação indisponíveis.', error);
+          setPreferences(buildDefaultUserCommunicationPreferences(user.uid));
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
 
   useEffect(() => {
     let cancelled = false;
@@ -75,11 +160,30 @@ export function UserNotificationCenterBridge() {
     if (!user) {
       setNotifications([]);
       setUnreadCount(0);
+      notificationBaselineRef.current = null;
       return;
     }
     if (!silent) setLoading(true);
     try {
       const inbox = await loadUserNotificationInbox(60);
+      const nextIds = new Set(inbox.notifications.map(item => item.id));
+      const baseline = notificationBaselineRef.current;
+      const currentPreferences = preferencesRef.current;
+      if (baseline && currentPreferences) {
+        for (const notification of inbox.notifications) {
+          if (
+            !baseline.has(notification.id) &&
+            !notification.readAt &&
+            shouldDeliverUserNotificationToBrowser(
+              currentPreferences,
+              notification
+            )
+          ) {
+            showBrowserNotification(notification, user);
+          }
+        }
+      }
+      notificationBaselineRef.current = nextIds;
       setNotifications(inbox.notifications);
       setUnreadCount(inbox.unreadCount);
       setErrorMessage('');
@@ -112,6 +216,11 @@ export function UserNotificationCenterBridge() {
     [notifications]
   );
 
+  const effectivePreferences = useMemo(
+    () => preferences ?? (user ? buildDefaultUserCommunicationPreferences(user.uid) : null),
+    [preferences, user]
+  );
+
   const readOne = async (notification: UserNotification): Promise<void> => {
     if (!notification.readAt) {
       try {
@@ -132,22 +241,8 @@ export function UserNotificationCenterBridge() {
       }
     }
 
-    if (notification.target.kind === 'store_chat' && user) {
-      const perspective = notification.target.customerId === user.uid
-        ? 'customer'
-        : notification.target.storeId === user.uid
-          ? 'store'
-          : null;
-      if (perspective) {
-        openStoreCustomerChat({
-          perspective,
-          storeId: notification.target.storeId,
-          ...(perspective === 'store'
-            ? { customerId: notification.target.customerId }
-            : {}),
-        });
-        setOpen(false);
-      }
+    if (user && openNotificationTarget(notification, user)) {
+      setOpen(false);
     }
   };
 
@@ -167,7 +262,7 @@ export function UserNotificationCenterBridge() {
     }
   };
 
-  if (!user || !host) return null;
+  if (!user || !host || !effectivePreferences) return null;
 
   const trigger = createPortal(
     <button
@@ -206,6 +301,17 @@ export function UserNotificationCenterBridge() {
                 </span>
               </div>
               <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOpen(false);
+                    setPreferencesOpen(true);
+                  }}
+                  className="flex h-8 w-8 items-center justify-center rounded-xl border border-slate-800 text-slate-500 hover:text-orange-300"
+                  aria-label="Preferências de comunicação"
+                >
+                  <Settings2 className="h-3.5 w-3.5" />
+                </button>
                 <button
                   type="button"
                   onClick={() => void refresh()}
@@ -260,7 +366,7 @@ export function UserNotificationCenterBridge() {
                       onClick={() => void readOne(notification)}
                       className={`mb-1 flex w-full items-start gap-3 rounded-2xl border px-3 py-3 text-left transition-colors ${
                         unread
-                          ? 'border-orange-500/25 bg-orange-500/8'
+                          ? 'border-orange-500/25 bg-orange-500/10'
                           : 'border-transparent bg-slate-900/50 hover:border-slate-800'
                       }`}
                     >
@@ -296,5 +402,19 @@ export function UserNotificationCenterBridge() {
       )
     : null;
 
-  return <>{trigger}{panel}</>;
+  return (
+    <>
+      {trigger}
+      {panel}
+      <UserCommunicationPreferencesModal
+        open={preferencesOpen}
+        preferences={effectivePreferences}
+        onClose={() => setPreferencesOpen(false)}
+        onSaved={next => {
+          setPreferences(next);
+          preferencesRef.current = next;
+        }}
+      />
+    </>
+  );
 }
