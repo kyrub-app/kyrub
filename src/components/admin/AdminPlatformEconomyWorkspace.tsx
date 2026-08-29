@@ -16,6 +16,10 @@ import type {
   AdminPlatformEconomyRecentEntry,
   AdminPlatformEconomySnapshot,
 } from '../../../shared/adminPlatformEconomy';
+import {
+  ADMIN_PLATFORM_ECONOMY_PERIODS,
+  type AdminPlatformEconomyPeriod,
+} from '../../../shared/adminPlatformEconomyPeriod';
 import { auth } from '../../utils/firebase';
 import {
   hasAdminPermission,
@@ -49,6 +53,19 @@ const when = (value: string): string => {
     hour: '2-digit',
     minute: '2-digit',
   }).format(new Date(value));
+};
+
+const periodLabel = (period: AdminPlatformEconomyPeriod): string => {
+  switch (period) {
+    case '7d':
+      return '7 dias';
+    case '30d':
+      return '30 dias';
+    case '90d':
+      return '90 dias';
+    case 'all':
+      return 'Todo período';
+  }
 };
 
 const eventPresentation = (
@@ -99,6 +116,7 @@ export default function AdminPlatformEconomyWorkspace() {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<AdminProfile | null>(null);
   const [snapshot, setSnapshot] = useState<AdminPlatformEconomySnapshot | null>(null);
+  const [period, setPeriod] = useState<AdminPlatformEconomyPeriod>('all');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -133,7 +151,7 @@ export default function AdminPlatformEconomyWorkspace() {
     setLoading(true);
     setError('');
     try {
-      setSnapshot(await loadAdminPlatformEconomy(user));
+      setSnapshot(await loadAdminPlatformEconomy(user, period));
     } catch (caught) {
       setError(
         caught instanceof Error
@@ -143,7 +161,7 @@ export default function AdminPlatformEconomyWorkspace() {
     } finally {
       setLoading(false);
     }
-  }, [authorized, user]);
+  }, [authorized, period, user]);
 
   useEffect(() => {
     if (!authorized) return;
@@ -181,6 +199,32 @@ export default function AdminPlatformEconomyWorkspace() {
             <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
             Atualizar
           </button>
+        </div>
+
+        <div className="mt-4 flex flex-wrap items-center gap-2" aria-label="Período da economia da plataforma">
+          <span className="mr-1 text-[9px] font-black uppercase tracking-wider text-slate-600">Período</span>
+          {ADMIN_PLATFORM_ECONOMY_PERIODS.map(candidate => {
+            const selected = candidate === period;
+            return (
+              <button
+                key={candidate}
+                type="button"
+                onClick={() => setPeriod(candidate)}
+                disabled={loading && !selected}
+                aria-pressed={selected}
+                className={`rounded-xl border px-3 py-2 text-[9px] font-black uppercase tracking-wider transition ${
+                  selected
+                    ? 'border-emerald-500/35 bg-emerald-500/10 text-emerald-300'
+                    : 'border-slate-800 bg-slate-950 text-slate-500 hover:text-white'
+                } disabled:opacity-50`}
+              >
+                {periodLabel(candidate)}
+              </button>
+            );
+          })}
+          <span className="ml-auto text-[9px] text-slate-600">
+            Totais e IA: {periodLabel(period)}
+          </span>
         </div>
 
         {error && (
@@ -234,8 +278,8 @@ export default function AdminPlatformEconomyWorkspace() {
             <div className="mt-4 rounded-2xl border border-violet-500/15 bg-violet-500/5 p-4">
               <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
                 <div>
-                  <span className="text-[9px] font-black uppercase tracking-wider text-violet-300">Destinações econômicas · acumulado</span>
-                  <p className="mt-1 text-[9px] text-slate-500">Totais vitalícios derivados dos snapshots imutáveis do ledger; refunds e chargebacks debitam a fotografia original.</p>
+                  <span className="text-[9px] font-black uppercase tracking-wider text-violet-300">Destinações econômicas · {periodLabel(period)}</span>
+                  <p className="mt-1 text-[9px] text-slate-500">Totais derivados dos snapshots imutáveis do ledger; refunds e chargebacks debitam a fotografia original.</p>
                 </div>
                 <span className="text-[8px] text-slate-600">
                   {snapshot.allocationTotals.allocatedCaptureCount} captura(s) · {snapshot.allocationTotals.allocatedRefundCount} refund(s) · {snapshot.allocationTotals.allocatedChargebackCount} chargeback(s) · {snapshot.allocationTotals.allocatedChargebackReversalCount} reversão(ões)
@@ -248,7 +292,7 @@ export default function AdminPlatformEconomyWorkspace() {
               <div className="flex items-start gap-3">
                 <div className="rounded-xl bg-sky-500/10 p-2 text-sky-300"><Cpu className="h-4 w-4" /></div>
                 <div className="min-w-0 flex-1">
-                  <span className="text-[9px] font-black uppercase tracking-wider text-sky-300">Custo de IA · fornecedor</span>
+                  <span className="text-[9px] font-black uppercase tracking-wider text-sky-300">Custo de IA · {periodLabel(period)}</span>
                   <p className="mt-1 text-[9px] text-slate-500">Medição autoritativa do ledger de uso. USD não é convertido nem somado aos fatos em BRL.</p>
                   <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
                     <div className="rounded-xl border border-slate-800 bg-slate-950/55 p-3">
@@ -269,7 +313,7 @@ export default function AdminPlatformEconomyWorkspace() {
                     <div className="rounded-xl border border-slate-800 bg-slate-950/55 p-3">
                       <span className="text-[8px] font-black uppercase tracking-wider text-slate-600">Tokens</span>
                       <strong className="mt-1 block text-sm text-white">{integer(snapshot.aiUsageTotals.totalTokenCount)}</strong>
-                      <span className="text-[8px] text-slate-600">uso acumulado medido</span>
+                      <span className="text-[8px] text-slate-600">uso medido no período</span>
                     </div>
                   </div>
                 </div>
@@ -280,7 +324,7 @@ export default function AdminPlatformEconomyWorkspace() {
               <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
                 <div>
                   <span className="text-[9px] font-black uppercase tracking-wider text-violet-300">Taxas e subsídios · janela recente</span>
-                  <p className="mt-1 text-[9px] text-slate-500">Recorte operacional dos últimos {snapshot.recentWindow.limit} eventos para inspeção rápida.</p>
+                  <p className="mt-1 text-[9px] text-slate-500">Recorte operacional dos últimos {snapshot.recentWindow.limit} eventos dentro do período selecionado para inspeção rápida.</p>
                 </div>
                 <span className="text-[8px] text-slate-600">
                   {snapshot.recentWindow.allocation.allocatedCaptureCount} captura(s) · {snapshot.recentWindow.allocation.allocatedRefundCount} refund(s) · {snapshot.recentWindow.allocation.allocatedChargebackCount} chargeback(s) · {snapshot.recentWindow.allocation.allocatedChargebackReversalCount} reversão(ões)
@@ -295,7 +339,7 @@ export default function AdminPlatformEconomyWorkspace() {
                   <Store className="h-4 w-4 text-violet-400" />
                   <h3 className="text-[10px] font-black uppercase tracking-wider text-white">Atividade recente por loja</h3>
                 </div>
-                <p className="mt-1 text-[9px] text-slate-600">Janela dos últimos {snapshot.recentWindow.limit} eventos; não é ranking vitalício.</p>
+                <p className="mt-1 text-[9px] text-slate-600">Até {snapshot.recentWindow.limit} eventos dentro de {periodLabel(period)}; não é ranking vitalício.</p>
                 <div className="mt-3 space-y-2">
                   {snapshot.recentWindow.stores.length === 0 ? (
                     <p className="rounded-xl border border-dashed border-slate-800 p-5 text-center text-[10px] text-slate-600">Nenhuma atividade econômica registrada.</p>
