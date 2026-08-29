@@ -196,3 +196,64 @@ describe('economic obligations foundation', () => {
     assert.match(source, /courier_payable/);
   });
 });
+
+describe('economic obligations persistence', () => {
+  test('persistence is forward-only from a new pending-to-paid capture', () => {
+    const service = readFileSync('server/payments/economicObligationsService.ts', 'utf8');
+    assert.match(service, /input\.duplicate/);
+    assert.match(service, /input\.eventType !== 'payment\.paid'/);
+    assert.match(service, /input\.previousPaymentStatus !== 'pending'/);
+    assert.match(service, /input\.economicLedgerPlan\.writes/);
+    assert.match(service, /entry\.kind === 'payment_capture'/);
+    assert.doesNotMatch(service, /buildRecoveredPaymentCaptureEconomicEntry/);
+  });
+
+  test('new capture persists only store receivable and never infers courier from payment', () => {
+    const service = readFileSync('server/payments/economicObligationsService.ts', 'utf8');
+    assert.match(service, /buildStoreReceivableObligationFromCapture/);
+    assert.match(service, /economicObligationPath/);
+    assert.doesNotMatch(service, /buildCourierPayableObligationFromCapture/);
+    assert.doesNotMatch(service, /courierUserId|assignedCourier|acceptedBy/);
+  });
+
+  test('missing economic allocation does not create an inferred receivable', () => {
+    const service = readFileSync('server/payments/economicObligationsService.ts', 'utf8');
+    assert.match(service, /if \(!capture\.economicAllocation\)/);
+    assert.match(service, /return null;/);
+  });
+
+  test('deterministic document is read before writes and an equivalent existing obligation is idempotent', () => {
+    const service = readFileSync('server/payments/economicObligationsService.ts', 'utf8');
+    const getAt = service.indexOf('input.transaction.get(ref)');
+    const setAt = service.indexOf('transaction.set(write.ref, write.obligation)');
+    assert.ok(getAt >= 0);
+    assert.ok(setAt > getAt);
+    assert.match(service, /if \(snapshot\.exists\)/);
+    assert.match(service, /assertObligationEquivalent/);
+    assert.match(service, /return \{ writes: \[\] \};/);
+    assert.match(service, /ECONOMIC_OBLIGATION_CONFLICT:/);
+  });
+
+  test('webhook prepares obligation reads before first write and applies them in the same transaction', () => {
+    const processor = readFileSync('server/payments/paymentWebhookProcessor.ts', 'utf8');
+    const prepareAt = processor.indexOf('prepareEconomicObligationsPaymentPlan');
+    const firstWriteAt = processor.indexOf('transaction.update(intentRef');
+    const applyAt = processor.indexOf('applyEconomicObligationsPaymentPlan(transaction');
+    assert.ok(prepareAt >= 0);
+    assert.ok(firstWriteAt > prepareAt);
+    assert.ok(applyAt > firstWriteAt);
+    assert.match(processor, /economicLedgerPlan,\s*eventType: event\.eventType,\s*previousPaymentStatus: current\.status,\s*duplicate,/);
+  });
+
+  test('obligations remain server-only and do not introduce wallet, payout or settlement execution', () => {
+    const service = readFileSync('server/payments/economicObligationsService.ts', 'utf8');
+    const rules = readFileSync('firestore.rules', 'utf8');
+    assert.match(service, /adminDb/);
+    assert.doesNotMatch(rules, /match \/economicObligations\//);
+    assert.match(rules, /match \/\{document=\*\*\} \{\s*allow read, write: if false;/);
+    assert.doesNotMatch(
+      service,
+      /walletBalance|custodialBalance|payoutInstruction|settlementAdapter|application_fee_amount|splitRecipient/i
+    );
+  });
+});

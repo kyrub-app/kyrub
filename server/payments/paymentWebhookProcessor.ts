@@ -33,6 +33,11 @@ import {
   prepareStoreEconomicLedgerPaymentPlan,
   type StoreEconomicLedgerPaymentPlan,
 } from './storeEconomicLedgerService.js';
+import {
+  applyEconomicObligationsPaymentPlan,
+  prepareEconomicObligationsPaymentPlan,
+  type EconomicObligationsPaymentPlan,
+} from './economicObligationsService.js';
 
 interface ProcessPaymentWebhookResult {
   duplicate: boolean;
@@ -197,10 +202,11 @@ export const processVerifiedPaymentWebhook = async (input: {
     let pointReversalExists = false;
     let challengePlan: StoreChallengePaymentPlan | null = null;
     let economicLedgerPlan: StoreEconomicLedgerPaymentPlan | null = null;
+    let economicObligationsPlan: EconomicObligationsPaymentPlan | null = null;
     const intentStatus = intentStatusForPaymentStatus(effectiveStatus);
 
     // Firestore transactions require every read to happen before any write.
-    // Resolve order, coupon, points, challenges and economic ledger first.
+    // Resolve order, coupon, points, challenges, economic ledger and obligations first.
     if (current.context === 'marketplace') {
       if (!intentSnapshot.exists) throw new Error('PAYMENT_INTENT_NOT_FOUND');
       intent = normalizeCanonicalPaymentIntent(
@@ -295,6 +301,14 @@ export const processVerifiedPaymentWebhook = async (input: {
       event,
     });
 
+    economicObligationsPlan = await prepareEconomicObligationsPaymentPlan({
+      transaction,
+      economicLedgerPlan,
+      eventType: event.eventType,
+      previousPaymentStatus: current.status,
+      duplicate,
+    });
+
     if (intent && intentStatus && intent.status !== intentStatus) {
       if (intent.status !== 'pending') {
         throw new Error(`PAYMENT_INTENT_STATUS_CONFLICT:${intent.status}->${intentStatus}`);
@@ -332,6 +346,7 @@ export const processVerifiedPaymentWebhook = async (input: {
     }
 
     applyStoreEconomicLedgerPaymentPlan(transaction, economicLedgerPlan);
+    applyEconomicObligationsPaymentPlan(transaction, economicObligationsPlan);
 
     if (
       intent &&
