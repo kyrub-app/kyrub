@@ -22,6 +22,7 @@ import { createStoreRelationshipRouter } from "./server/payments/storeRelationsh
 import { createMarketplaceDiscoveryRouter } from "./server/payments/marketplaceDiscoveryRouter";
 import { createStoreCrmRouter } from "./server/payments/storeCrmRouter";
 import { enforceDeliveryWorkEligibility } from "./server/identity/workEligibilityMiddleware";
+import { createStoreInstitutionalIdentityRouter } from "./server/store/storeInstitutionalIdentityRouter";
 
 dotenv.config();
 
@@ -139,6 +140,12 @@ app.use(
   "/api/store-crm",
   integrationRateLimiter,
   createStoreCrmRouter()
+);
+
+app.use(
+  "/api/store-identity",
+  integrationRateLimiter,
+  createStoreInstitutionalIdentityRouter()
 );
 
 app.use(
