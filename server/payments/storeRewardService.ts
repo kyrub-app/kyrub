@@ -1,3 +1,7 @@
+import type {
+  DocumentData,
+  QueryDocumentSnapshot,
+} from 'firebase-admin/firestore';
 import { adminDb } from '../firebaseAdmin.js';
 import {
   isStoreRewardAvailableAt,
@@ -59,11 +63,14 @@ const redemptionId = (rewardId: string, customerId: string): string =>
 const redemptionPath = (storeId: string, id: string): string =>
   `stores/${storeId}/rewardRedemptions/${token(id)}`;
 
+const rewardVoucherPromotionId = (id: string): string =>
+  `reward-voucher-${token(id).slice(0, 80)}`;
+
 const promotionPath = (storeId: string, id: string): string =>
-  `stores/${storeId}/promotions/${token(id)}`;
+  `stores/${storeId}/promotions/${id}`;
 
 const rewardVoucherCode = (rewardId: string, customerId: string): string =>
-  `RWD-${token(`${rewardId}:${customerId}`).slice(0, 32).toUpperCase()}`;
+  `RWD-${token(`${rewardId}:${customerId}`).slice(0, 44).toUpperCase()}`;
 
 const readRewardFromTenant = (
   value: unknown,
@@ -77,7 +84,7 @@ const readRewardFromTenant = (
 const readLedgerEntries = (
   storeId: string,
   customerId: string,
-  docs: Array<{ data(): FirebaseFirestore.DocumentData }>
+  docs: readonly QueryDocumentSnapshot<DocumentData>[]
 ): Pick<StorePointLedgerEntry, 'amount'>[] =>
   docs.map(document => {
     const data = document.data() as Partial<StorePointLedgerEntry>;
@@ -100,7 +107,7 @@ const buildVoucherPromotion = (input: {
 }): StorePromotion => {
   const endsAt = storeRewardVoucherEndsAt(input.reward, input.redeemedAt);
   return normalizeStorePromotion({
-    id: `reward-voucher:${input.redemptionId}`,
+    id: rewardVoucherPromotionId(input.redemptionId),
     storeId: input.reward.storeId,
     code: rewardVoucherCode(input.reward.id, input.customerId),
     title: input.reward.title,
