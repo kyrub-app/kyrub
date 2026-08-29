@@ -102,13 +102,17 @@ describe('admin platform economy', () => {
   });
 
   test('Vercel rewrites platform economy into the existing admin function budget', () => {
-    const config = readFileSync('vercel.json', 'utf8');
+    const config = JSON.parse(readFileSync('vercel.json', 'utf8')) as {
+      rewrites?: Array<{ source?: string; destination?: string }>;
+    };
     const transport = readFileSync('api/admin/operations/health.ts', 'utf8');
-    assert.match(config, /"source": "\/api\/admin\/platform-economy"/);
-    assert.match(
-      config,
-      /"destination": "\/api\/admin\/operations\/health\?transport=platform-economy"/
+    const rewrite = config.rewrites?.find(
+      candidate => candidate.source === '/api/admin/platform-economy'
     );
+    assert.deepEqual(rewrite, {
+      source: '/api/admin/platform-economy',
+      destination: '/api/admin/operations/health?transport=platform-economy',
+    });
     assert.match(transport, /transport === 'platform-economy'/);
     assert.match(transport, /loadAuthorizedPlatformEconomySnapshot/);
     assert.match(transport, /mapPlatformEconomyError/);
