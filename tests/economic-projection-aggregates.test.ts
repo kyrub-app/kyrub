@@ -71,6 +71,22 @@ describe('economic projection aggregate read model', () => {
     assert.equal(totals.settledMinor, 0);
   });
 
+  test('duplicate obligation projections fail closed instead of double counting', () => {
+    const duplicate = projection({ state: 'eligible' });
+    assert.throws(
+      () => deriveEconomicProjectionAggregateTotals([duplicate, { ...duplicate }]),
+      /ECONOMIC_PROJECTION_AGGREGATE_DUPLICATE_OBLIGATION/
+    );
+
+    assert.throws(
+      () => deriveEconomicProjectionAggregatesByStore([
+        duplicate,
+        { ...duplicate, storeId: 'store-other' },
+      ]),
+      /ECONOMIC_PROJECTION_AGGREGATE_DUPLICATE_OBLIGATION/
+    );
+  });
+
   test('store aggregation keeps tenants separate and can represent mixed receivable/payable activity', () => {
     const receivable = projection({ amountMinor: 2500, state: 'eligible' });
     const payable = projection({
@@ -105,7 +121,7 @@ describe('economic projection aggregate read model', () => {
     assert.equal(stores[1].settledMinor, 7000);
   });
 
-  test('beneficiary aggregation never merges store receivable with courier payable identity', () => {
+  test('beneficiary aggregation is tenant scoped and never merges the same principal across stores', () => {
     const rows = deriveEconomicProjectionAggregatesByBeneficiary([
       projection({ state: 'eligible' }),
       projection({
@@ -117,11 +133,31 @@ describe('economic projection aggregate read model', () => {
         amountMinor: 450,
         state: 'eligible',
       } as Partial<EconomicObligationProjection>),
+      projection({
+        projectionKind: 'payable',
+        obligationKind: 'courier_payable',
+        obligationId: 'courier-payable-2',
+        storeId: 'store-2',
+        beneficiaryPrincipalId: 'courier-1',
+        fulfillmentId: 'f-2',
+        amountMinor: 600,
+        state: 'eligible',
+      } as Partial<EconomicObligationProjection>),
     ]);
 
-    assert.equal(rows.length, 2);
-    assert.equal(rows.find(row => row.key === 'store:store-1')?.eligibleMinor, 2500);
-    assert.equal(rows.find(row => row.key === 'courier-1')?.eligibleMinor, 450);
+    assert.equal(rows.length, 3);
+    assert.equal(
+      rows.find(row => row.key === 'store:store-1:beneficiary:store%3Astore-1')?.eligibleMinor,
+      2500
+    );
+    assert.equal(
+      rows.find(row => row.key === 'store:store-1:beneficiary:courier-1')?.eligibleMinor,
+      450
+    );
+    assert.equal(
+      rows.find(row => row.key === 'store:store-2:beneficiary:courier-1')?.eligibleMinor,
+      600
+    );
   });
 
   test('state aggregation makes eligibility and settlement independently readable', () => {
@@ -150,7 +186,7 @@ describe('economic projection aggregate read model', () => {
     assert.equal(invalid?.settledMinor, 0);
   });
 
-  test('invalid amounts and empty grouping identities fail closed', () => {
+  test('invalid amounts and empty identities fail closed', () => {
     assert.throws(
       () => deriveEconomicProjectionAggregateTotals([
         projection({ amountMinor: 0 }),
@@ -158,8 +194,20 @@ describe('economic projection aggregate read model', () => {
       /ECONOMIC_PROJECTION_AGGREGATE_AMOUNT_INVALID/
     );
     assert.throws(
+      () => deriveEconomicProjectionAggregateTotals([
+        projection({ obligationId: '' }),
+      ]),
+      /ECONOMIC_PROJECTION_AGGREGATE_ID_INVALID/
+    );
+    assert.throws(
       () => deriveEconomicProjectionAggregatesByStore([
         projection({ storeId: '' }),
+      ]),
+      /ECONOMIC_PROJECTION_AGGREGATE_KEY_INVALID/
+    );
+    assert.throws(
+      () => deriveEconomicProjectionAggregatesByBeneficiary([
+        projection({ beneficiaryPrincipalId: '' }),
       ]),
       /ECONOMIC_PROJECTION_AGGREGATE_KEY_INVALID/
     );
