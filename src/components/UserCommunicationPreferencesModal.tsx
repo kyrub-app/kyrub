@@ -52,7 +52,7 @@ const CATEGORY_ITEMS: Array<{
   {
     key: 'marketing',
     label: 'Ofertas e campanhas',
-    description: 'Comunicações promocionais das lojas. Este alerta externo começa desativado por padrão.',
+    description: 'Alerta do navegador para promoções já autorizadas por você.',
     icon: Megaphone,
   },
   {
@@ -76,6 +76,7 @@ export function UserCommunicationPreferencesModal({
   onClose,
   onSaved,
 }: UserCommunicationPreferencesModalProps) {
+  const [marketingEnabled, setMarketingEnabled] = useState(false);
   const [browserEnabled, setBrowserEnabled] = useState(false);
   const [categories, setCategories] = useState<UserCommunicationCategoryPreferences>(
     preferences.browser.categories
@@ -88,6 +89,7 @@ export function UserCommunicationPreferencesModal({
 
   useEffect(() => {
     if (!open) return;
+    setMarketingEnabled(preferences.marketing.enabled);
     setBrowserEnabled(preferences.browser.enabled);
     setCategories(preferences.browser.categories);
     setPermission(browserPermission());
@@ -95,6 +97,19 @@ export function UserCommunicationPreferencesModal({
   }, [open, preferences]);
 
   if (!open) return null;
+
+  const toggleMarketing = (): void => {
+    setMarketingEnabled(current => {
+      const next = !current;
+      if (!next) {
+        setCategories(categoriesCurrent => ({
+          ...categoriesCurrent,
+          marketing: false,
+        }));
+      }
+      return next;
+    });
+  };
 
   const toggleBrowser = async (): Promise<void> => {
     if (browserEnabled) {
@@ -120,7 +135,7 @@ export function UserCommunicationPreferencesModal({
     setBrowserEnabled(nextPermission === 'granted');
     if (nextPermission !== 'granted') {
       setErrorMessage(
-        'Sem permissão do navegador, os alertas externos ficam desligados. As notificações continuam dentro do Kyrub.'
+        'Sem permissão do navegador, os alertas externos ficam desligados. As notificações operacionais continuam dentro do Kyrub.'
       );
     } else {
       setErrorMessage('');
@@ -133,8 +148,12 @@ export function UserCommunicationPreferencesModal({
     setErrorMessage('');
     try {
       const saved = await saveUserCommunicationPreferences({
+        marketingEnabled,
         browserEnabled: browserEnabled && permission === 'granted',
-        categories,
+        categories: {
+          ...categories,
+          marketing: marketingEnabled && categories.marketing,
+        },
       });
       onSaved(saved);
       onClose();
@@ -165,13 +184,13 @@ export function UserCommunicationPreferencesModal({
             </div>
             <div>
               <h2 className="text-sm font-black text-white">Preferências de comunicação</h2>
-              <p className="text-[9px] text-slate-500">Escolha como o Kyrub chama sua atenção.</p>
+              <p className="text-[9px] text-slate-500">Escolha o que pode ser promocional e como o Kyrub chama sua atenção.</p>
             </div>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-800 text-slate-500 hover:text-white"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-800 text-slate-500 hover:text-white"
             aria-label="Fechar preferências"
           >
             <X className="h-4 w-4" />
@@ -185,9 +204,37 @@ export function UserCommunicationPreferencesModal({
               <div>
                 <strong className="text-[10px] uppercase text-emerald-300">Caixa interna do Kyrub</strong>
                 <p className="mt-1 text-[9px] leading-relaxed text-slate-500">
-                  Eventos canônicos continuam registrados na central interna. Estas preferências não apagam histórico nem silenciam a fonte de verdade.
+                  Eventos operacionais canônicos continuam registrados na central interna. Campanhas promocionais só são entregues a você quando “Ofertas e campanhas” estiver habilitado.
                 </p>
               </div>
+            </div>
+          </section>
+
+          <section className="rounded-2xl border border-slate-800 bg-slate-900 p-4">
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex min-w-0 items-start gap-3">
+                <Megaphone className="mt-0.5 h-4 w-4 shrink-0 text-violet-400" />
+                <div>
+                  <strong className="text-xs text-white">Ofertas e campanhas</strong>
+                  <p className="mt-1 text-[9px] leading-relaxed text-slate-500">
+                    Autoriza comunicações promocionais das lojas dentro do Kyrub. Começa desativado por padrão e pode ser desligado novamente a qualquer momento.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={toggleMarketing}
+                className={`relative inline-flex h-7 w-12 shrink-0 items-center rounded-full border transition-colors ${
+                  marketingEnabled
+                    ? 'border-violet-400/50 bg-violet-500'
+                    : 'border-slate-700 bg-slate-800'
+                }`}
+                aria-pressed={marketingEnabled}
+                aria-label="Autorizar ofertas e campanhas"
+                id="marketing-communication-consent"
+              >
+                <span className={`h-5 w-5 rounded-full bg-slate-950 transition-transform ${marketingEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
+              </button>
             </div>
           </section>
 
@@ -224,23 +271,24 @@ export function UserCommunicationPreferencesModal({
           <section className={`space-y-2 rounded-2xl border border-slate-800 bg-slate-900 p-4 ${browserEnabled ? '' : 'opacity-60'}`}>
             <div>
               <strong className="text-[10px] uppercase text-slate-300">Categorias no navegador</strong>
-              <p className="mt-1 text-[9px] text-slate-600">A caixa interna continua recebendo os eventos mesmo se uma categoria for desmarcada aqui.</p>
+              <p className="mt-1 text-[9px] text-slate-600">Aqui você escolhe quais eventos já autorizados também podem aparecer fora da tela do Kyrub.</p>
             </div>
             {CATEGORY_ITEMS.map(item => {
               const Icon = item.icon;
               const active = categories[item.key];
+              const disabled = !browserEnabled || (item.key === 'marketing' && !marketingEnabled);
               return (
                 <button
                   type="button"
                   key={item.key}
-                  disabled={!browserEnabled}
+                  disabled={disabled}
                   onClick={() =>
                     setCategories(current => ({
                       ...current,
                       [item.key]: !current[item.key],
                     }))
                   }
-                  className="flex w-full items-start justify-between gap-3 rounded-xl border border-slate-800 bg-slate-950 p-3 text-left disabled:cursor-not-allowed"
+                  className="flex w-full items-start justify-between gap-3 rounded-xl border border-slate-800 bg-slate-950 p-3 text-left disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <div className="flex min-w-0 items-start gap-2.5">
                     <Icon className="mt-0.5 h-4 w-4 shrink-0 text-slate-500" />
