@@ -1,7 +1,17 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Award, Coins, Gift, RefreshCw, Search, ShoppingBag, Users } from 'lucide-react';
+import {
+  Award,
+  Coins,
+  Gift,
+  MessageSquareText,
+  RefreshCw,
+  Search,
+  ShoppingBag,
+  Users,
+} from 'lucide-react';
 import { auth } from '../../utils/firebase';
 import { loadStoreCrm } from '../../utils/storeCrm';
+import { openStoreCustomerChat } from '../../utils/storeCustomerChatEvents';
 import type { StoreCrmSummary } from '../../../shared/storeCrm';
 
 export const StoreCrmRelationshipPanel = ({ storeId }: { storeId: string }) => {
@@ -69,7 +79,23 @@ export const StoreCrmRelationshipPanel = ({ storeId }: { storeId: string }) => {
                   <strong className="block truncate text-xs text-white">{customer.displayName}</strong>
                   <span className="text-[9px] font-mono text-slate-600">{customer.level.label}</span>
                 </div>
-                <span className="rounded-full border border-orange-500/20 bg-orange-500/10 px-2 py-1 text-[8px] font-black uppercase text-orange-300">{customer.confirmedPurchases} compras</span>
+                <div className="flex shrink-0 items-center gap-1.5">
+                  <span className="rounded-full border border-orange-500/20 bg-orange-500/10 px-2 py-1 text-[8px] font-black uppercase text-orange-300">{customer.confirmedPurchases} compras</span>
+                  <button
+                    type="button"
+                    onClick={() => openStoreCustomerChat({
+                      perspective: 'store',
+                      storeId,
+                      customerId: customer.customerId,
+                      customerName: customer.displayName,
+                    })}
+                    className="flex h-8 w-8 items-center justify-center rounded-xl border border-orange-500/25 bg-orange-500/10 text-orange-300 hover:bg-orange-500/15"
+                    aria-label={`Conversar com ${customer.displayName}`}
+                    title={`Conversar com ${customer.displayName}`}
+                  >
+                    <MessageSquareText className="h-3.5 w-3.5" />
+                  </button>
+                </div>
               </div>
               <div className="mt-3 grid grid-cols-2 gap-2 text-[9px]">
                 <div className="rounded-xl bg-slate-900 p-2"><ShoppingBag className="mb-1 h-3.5 w-3.5 text-teal-400" />R$ {(customer.confirmedSpentMinor / 100).toFixed(2)}</div>
