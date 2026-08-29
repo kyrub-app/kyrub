@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import type {
   AdminPlatformEconomyAllocationWindow,
+  AdminPlatformEconomyPaymentContext,
   AdminPlatformEconomyRecentEntry,
   AdminPlatformEconomySnapshot,
 } from '../../../shared/adminPlatformEconomy';
@@ -65,6 +66,17 @@ const periodLabel = (period: AdminPlatformEconomyPeriod): string => {
       return '90 dias';
     case 'all':
       return 'Todo período';
+  }
+};
+
+const contextLabel = (context: AdminPlatformEconomyPaymentContext): string => {
+  switch (context) {
+    case 'marketplace':
+      return 'Marketplace';
+    case 'table':
+      return 'Mesa';
+    case 'pos':
+      return 'PDV';
   }
 };
 
@@ -287,6 +299,25 @@ export default function AdminPlatformEconomyWorkspace() {
                 <strong className="mt-1 block text-xl text-white">{(snapshot.totals.refundShareBps / 100).toFixed(2)}%</strong>
                 <span className="text-[9px] text-slate-600">bruto após refunds: {money(snapshot.totals.grossAfterRefundsMinor)}</span>
               </article>
+            </div>
+
+            <div className="mt-4 rounded-2xl border border-cyan-500/15 bg-cyan-500/5 p-4">
+              <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+                <div>
+                  <span className="text-[9px] font-black uppercase tracking-wider text-cyan-300">Economia por canal</span>
+                  <p className="mt-1 text-[9px] text-slate-500">{storeScopeLabel} · {periodLabel(period)}. Cada bucket soma os próprios fatos assinados do ledger; não usa o plano atual da loja para reclassificar o passado.</p>
+                </div>
+                <span className="text-[8px] text-slate-600">Marketplace · Mesa · PDV</span>
+              </div>
+              <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                {snapshot.contextTotals.map(context => (
+                  <div key={context.paymentContext} className="rounded-xl border border-slate-800 bg-slate-950/55 p-3">
+                    <span className="text-[8px] font-black uppercase tracking-wider text-slate-600">{contextLabel(context.paymentContext)}</span>
+                    <strong className="mt-1 block text-sm text-white">{money(context.economicNetMinor)}</strong>
+                    <span className="text-[8px] text-slate-600">{integer(context.eventCount)} evento(s) econômicos</span>
+                  </div>
+                ))}
+              </div>
             </div>
 
             <div className="mt-4 rounded-2xl border border-violet-500/15 bg-violet-500/5 p-4">
