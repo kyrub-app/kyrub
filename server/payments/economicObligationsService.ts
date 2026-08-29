@@ -5,9 +5,11 @@ import type { VerifiedPaymentProviderEvent } from '../../src/utils/paymentProvid
 import {
   ECONOMIC_OBLIGATION_SCHEMA_VERSION,
   buildStoreReceivableObligationFromCapture,
+  buildStoreReceivableObligationId,
   economicObligationPath,
   type EconomicObligation,
 } from '../../shared/economicObligations.js';
+import { reverseEconomicObligationBeforeSettlement } from '../../shared/economicObligationLifecycle.js';
 import type { StoreEconomicLedgerPaymentPlan } from './storeEconomicLedgerService.js';
 
 export interface EconomicObligationsPaymentPlan {
@@ -20,6 +22,31 @@ export interface EconomicObligationsPaymentPlan {
 const clean = (value: unknown): string =>
   typeof value === 'string' ? value.trim() : '';
 
+const validIso = (value: string): boolean =>
+  Boolean(value) && Number.isFinite(Date.parse(value));
+
+const validLifecycleState = (obligation: Partial<EconomicObligation>): boolean => {
+  if (obligation.status === 'pending') {
+    return obligation.eligibleAt === '' && obligation.settledAt === '' && obligation.reversedAt === '';
+  }
+  if (obligation.status === 'eligible') {
+    return Boolean(obligation.eligibleAt && validIso(obligation.eligibleAt)) &&
+      obligation.settledAt === '' &&
+      obligation.reversedAt === '';
+  }
+  if (obligation.status === 'settled') {
+    return Boolean(obligation.eligibleAt && validIso(obligation.eligibleAt)) &&
+      Boolean(obligation.settledAt && validIso(obligation.settledAt)) &&
+      obligation.reversedAt === '';
+  }
+  if (obligation.status === 'reversed') {
+    return obligation.settledAt === '' &&
+      Boolean(obligation.reversedAt && validIso(obligation.reversedAt)) &&
+      (obligation.eligibleAt === '' || Boolean(obligation.eligibleAt && validIso(obligation.eligibleAt)));
+  }
+  return false;
+};
+
 const parseStoredObligation = (
   value: unknown,
   expectedStoreId: string,
@@ -31,7 +58,7 @@ const parseStoredObligation = (
     obligation.id !== expectedId ||
     obligation.storeId !== expectedStoreId ||
     obligation.kind !== 'store_receivable' ||
-    obligation.status !== 'pending' ||
+    !validLifecycleState(obligation) ||
     obligation.currency !== 'BRL' ||
     !Number.isSafeInteger(obligation.amountMinor) ||
     Number(obligation.amountMinor) <= 0 ||
@@ -52,10 +79,7 @@ const parseStoredObligation = (
     !Number.isSafeInteger(obligation.funding.storeFundedDiscountMinor) ||
     obligation.funding.storeFundedDiscountMinor < 0 ||
     !clean(obligation.createdAt) ||
-    !Number.isFinite(Date.parse(obligation.createdAt)) ||
-    obligation.eligibleAt !== '' ||
-    obligation.settledAt !== '' ||
-    obligation.reversedAt !== ''
+    !validIso(obligation.createdAt)
   ) {
     throw new Error('ECONOMIC_OBLIGATION_STORED_DOCUMENT_INVALID');
   }
@@ -95,21 +119,15 @@ const assertObligationEquivalent = (
   }
 };
 
-export const prepareEconomicObligationsPaymentPlan = async (input: {
+const prepareStoreReceivableCreation = async (input: {
   transaction: Transaction;
-  economicLedgerPlan: StoreEconomicLedgerPaymentPlan | null;
+  economicLedgerPlan: StoreEconomicLedgerPaymentPlan;
   eventType: VerifiedPaymentProviderEvent['eventType'];
   previousPaymentStatus: PaymentStatus;
-  duplicate: boolean;
 }): Promise<EconomicObligationsPaymentPlan | null> => {
-  // Forward-only V1: obligations are created only while a genuinely new
-  // pending payment transitions to paid. Replayed or historical captures are
-  // intentionally not backfilled by this path.
   if (
-    input.duplicate ||
     input.eventType !== 'payment.paid' ||
-    input.previousPaymentStatus !== 'pending' ||
-    !input.economicLedgerPlan
+    input.previousPaymentStatus !== 'pending'
   ) {
     return null;
   }
@@ -143,6 +161,81 @@ export const prepareEconomicObligationsPaymentPlan = async (input: {
   }
 
   return { writes: [{ ref, obligation }] };
+};
+
+const prepareStoreReceivableRefundReversal = async (input: {
+  transaction: Transaction;
+  economicLedgerPlan: StoreEconomicLedgerPaymentPlan;
+  eventType: VerifiedPaymentProviderEvent['eventType'];
+  previousPaymentStatus: PaymentStatus;
+}): Promise<EconomicObligationsPaymentPlan | null> => {
+  // Forward-only V1: only the first authoritative full-refund transition is
+  // allowed to reverse an obligation. Historical refunds are not backfilled.
+  if (
+    input.eventType !== 'refund.succeeded' ||
+    input.previousPaymentStatus !== 'refund_processing'
+  ) {
+    return null;
+  }
+
+  const plannedRefunds = input.economicLedgerPlan.writes
+    .map(write => write.entry)
+    .filter(entry => entry.kind === 'payment_refund');
+  if (plannedRefunds.length === 0) return null;
+  if (plannedRefunds.length !== 1) {
+    throw new Error('ECONOMIC_OBLIGATION_REFUND_PLAN_INVALID');
+  }
+
+  const refund = plannedRefunds[0];
+  const obligationId = buildStoreReceivableObligationId(refund.paymentId);
+  const ref = adminDb.doc(economicObligationPath(refund.storeId, obligationId));
+  const snapshot = await input.transaction.get(ref);
+
+  // Payments captured before obligation persistence was introduced remain
+  // historical. A refund must not manufacture a receivable only to reverse it.
+  if (!snapshot.exists) return null;
+
+  const obligation = parseStoredObligation(snapshot.data(), refund.storeId, obligationId);
+  if (obligation.paymentId !== refund.paymentId) {
+    throw new Error('ECONOMIC_OBLIGATION_REFUND_PAYMENT_MISMATCH');
+  }
+  if (refund.reversalOfEntryId !== obligation.sourceEconomicEntryId) {
+    throw new Error('ECONOMIC_OBLIGATION_REFUND_CAPTURE_MISMATCH');
+  }
+  if (obligation.status === 'reversed') {
+    return { writes: [] };
+  }
+
+  const reversed = reverseEconomicObligationBeforeSettlement({
+    obligation,
+    occurredAt: refund.occurredAt,
+  });
+  return { writes: [{ ref, obligation: reversed }] };
+};
+
+export const prepareEconomicObligationsPaymentPlan = async (input: {
+  transaction: Transaction;
+  economicLedgerPlan: StoreEconomicLedgerPaymentPlan | null;
+  eventType: VerifiedPaymentProviderEvent['eventType'];
+  previousPaymentStatus: PaymentStatus;
+  duplicate: boolean;
+}): Promise<EconomicObligationsPaymentPlan | null> => {
+  if (input.duplicate || !input.economicLedgerPlan) return null;
+
+  const creation = await prepareStoreReceivableCreation({
+    transaction: input.transaction,
+    economicLedgerPlan: input.economicLedgerPlan,
+    eventType: input.eventType,
+    previousPaymentStatus: input.previousPaymentStatus,
+  });
+  if (creation) return creation;
+
+  return prepareStoreReceivableRefundReversal({
+    transaction: input.transaction,
+    economicLedgerPlan: input.economicLedgerPlan,
+    eventType: input.eventType,
+    previousPaymentStatus: input.previousPaymentStatus,
+  });
 };
 
 export const applyEconomicObligationsPaymentPlan = (
