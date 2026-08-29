@@ -182,7 +182,7 @@ test('economic and loyalty facts retain deterministic audit correlation instead 
   assert.ok(points);
   assert.equal(capture.id, `payment:capture:${paymentId}`);
   assert.equal(capture.providerEventId, providerEvent.eventId);
-  assert.equal(points.idempotencyKey, `store_points:purchase:${paymentId}`);
+  assert.equal(points.idempotencyKey, `purchase_base:${paymentId}`);
   assert.equal(points.orderId, orderId);
   assert.equal(points.paymentId, paymentId);
 });
