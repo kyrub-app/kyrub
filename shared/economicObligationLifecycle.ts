@@ -2,6 +2,7 @@ import {
   canTransitionEconomicObligationStatus,
   type EconomicObligation,
 } from './economicObligations.js';
+import type { EconomicSettlementRecord } from './economicSettlements.js';
 
 const clean = (value: unknown): string =>
   typeof value === 'string' ? value.trim() : '';
@@ -48,5 +49,47 @@ export const reverseEconomicObligationBeforeSettlement = (input: {
     ...input.obligation,
     status: 'reversed',
     reversedAt: occurredAt,
+  };
+};
+
+export const settleEconomicObligationFromEvidence = (input: {
+  obligation: EconomicObligation;
+  settlement: EconomicSettlementRecord;
+}): EconomicObligation => {
+  const { obligation, settlement } = input;
+  const createdAt = requireIso(obligation.createdAt, 'CREATED_TIME');
+  const eligibleAt = requireIso(obligation.eligibleAt, 'ELIGIBLE_TIME');
+  const settledAt = requireIso(settlement.occurredAt, 'SETTLEMENT_TIME');
+
+  if (!canTransitionEconomicObligationStatus(obligation.status, 'settled')) {
+    throw new Error(`ECONOMIC_OBLIGATION_SETTLEMENT_STATUS_INVALID:${obligation.status}`);
+  }
+  if (obligation.status !== 'eligible') {
+    throw new Error(`ECONOMIC_OBLIGATION_SETTLEMENT_STATUS_INVALID:${obligation.status}`);
+  }
+  if (obligation.settledAt || obligation.reversedAt) {
+    throw new Error('ECONOMIC_OBLIGATION_SETTLEMENT_LIFECYCLE_CONFLICT');
+  }
+  if (Date.parse(eligibleAt) < Date.parse(createdAt)) {
+    throw new Error('ECONOMIC_OBLIGATION_ELIGIBILITY_BEFORE_CREATION');
+  }
+  if (Date.parse(settledAt) < Date.parse(eligibleAt)) {
+    throw new Error('ECONOMIC_OBLIGATION_SETTLEMENT_BEFORE_ELIGIBILITY');
+  }
+  if (
+    settlement.storeId !== obligation.storeId ||
+    settlement.obligationId !== obligation.id ||
+    settlement.amountMinor !== obligation.amountMinor ||
+    settlement.currency !== obligation.currency ||
+    settlement.beneficiaryType !== obligation.beneficiaryType ||
+    settlement.beneficiaryPrincipalId !== obligation.beneficiaryPrincipalId
+  ) {
+    throw new Error('ECONOMIC_OBLIGATION_SETTLEMENT_MISMATCH');
+  }
+
+  return {
+    ...obligation,
+    status: 'settled',
+    settledAt,
   };
 };
