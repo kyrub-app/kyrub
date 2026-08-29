@@ -84,12 +84,11 @@ const validateLocationInput = (input: {
   const hasLng = input.lng !== undefined;
   const hasRadius = input.geofenceRadiusMeters !== undefined;
   if (hasLat !== hasLng) throw new Error('Invalid store coordinates.');
-  if (hasRadius && (!hasLat || !hasLng)) throw new Error('Store geofence requires coordinates.');
-  if (hasLat && hasLng) {
-    validateStoreCoordinates(input.lat!, input.lng!);
-    if (!hasRadius) throw new Error('Store coordinates require geofence radius.');
-    validateStoreGeofenceRadius(input.geofenceRadiusMeters!);
+  if (hasRadius && (!hasLat || !hasLng)) {
+    throw new Error('Store geofence requires coordinates.');
   }
+  if (hasLat && hasLng) validateStoreCoordinates(input.lat!, input.lng!);
+  if (hasRadius) validateStoreGeofenceRadius(input.geofenceRadiusMeters!);
 };
 
 export const buildUserStoreCreateData = (
@@ -124,7 +123,9 @@ export const buildUserStoreCreateData = (
       ...data,
       lat: input.lat,
       lng: input.lng,
-      geofenceRadiusMeters: input.geofenceRadiusMeters,
+      ...(input.geofenceRadiusMeters !== undefined
+        ? { geofenceRadiusMeters: input.geofenceRadiusMeters }
+        : {}),
     };
   }
 
@@ -176,9 +177,13 @@ export const buildUserStoreUpdateData = (
         : undefined,
     };
     validateLocationInput(location);
-    data.lat = location.lat;
-    data.lng = location.lng;
-    data.geofenceRadiusMeters = location.geofenceRadiusMeters;
+    if (location.lat !== undefined && location.lng !== undefined) {
+      data.lat = location.lat;
+      data.lng = location.lng;
+    }
+    if (location.geofenceRadiusMeters !== undefined) {
+      data.geofenceRadiusMeters = location.geofenceRadiusMeters;
+    }
     hasEditableField = true;
   }
 
