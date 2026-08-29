@@ -1,6 +1,7 @@
 import { AggregateField, Timestamp } from 'firebase-admin/firestore';
 import { adminDb } from '../firebaseAdmin.js';
 import {
+  ADMIN_PLATFORM_ECONOMY_CONTEXTS,
   ADMIN_PLATFORM_ECONOMY_RECENT_LIMIT,
   ADMIN_PLATFORM_ECONOMY_SCHEMA_VERSION,
   buildRecentStoreEconomyActivity,
@@ -9,6 +10,7 @@ import {
   deriveRefundShareBps,
   type AdminPlatformEconomyAiUsageTotals,
   type AdminPlatformEconomyAllocationAggregate,
+  type AdminPlatformEconomyContextTotal,
   type AdminPlatformEconomyRecentEntry,
   type AdminPlatformEconomySnapshot,
 } from '../../shared/adminPlatformEconomy.js';
@@ -180,6 +182,28 @@ export const loadAdminPlatformEconomySnapshot = async (
   const chargebackReversals = ledger.where('kind', '==', 'payment_chargeback_reversal');
   const recovered = ledger.where('sourceAuthority', '==', 'canonical_payment_snapshot');
 
+  const contextTotalsPromise = Promise.all(
+    ADMIN_PLATFORM_ECONOMY_CONTEXTS.map(async paymentContext => {
+      const contextQuery = ledger.where('paymentContext', '==', paymentContext);
+      const [amountSnapshot, countSnapshot] = await Promise.all([
+        contextQuery.aggregate({ amountMinor: AggregateField.sum('amountMinor') }).get(),
+        contextQuery.count().get(),
+      ]);
+      const total: AdminPlatformEconomyContextTotal = {
+        paymentContext,
+        eventCount: safeNonNegativeAggregateInteger(
+          countSnapshot.data().count,
+          `CONTEXT_${paymentContext.toUpperCase()}_COUNT`
+        ),
+        economicNetMinor: safeAggregateInteger(
+          amountSnapshot.data().amountMinor ?? 0,
+          `CONTEXT_${paymentContext.toUpperCase()}_NET`
+        ),
+      };
+      return total;
+    })
+  );
+
   const [
     captureAmountSnapshot,
     refundAmountSnapshot,
@@ -197,6 +221,7 @@ export const loadAdminPlatformEconomySnapshot = async (
     aiUsageCountSnapshot,
     aiUsageAggregateSnapshot,
     recentSnapshot,
+    contextTotals,
   ] = await Promise.all([
     captures.aggregate({ amountMinor: AggregateField.sum('amountMinor') }).get(),
     refunds.aggregate({ amountMinor: AggregateField.sum('amountMinor') }).get(),
@@ -219,6 +244,7 @@ export const loadAdminPlatformEconomySnapshot = async (
       estimatedCostMicrousd: AggregateField.sum('estimatedCostMicrousd'),
     }).get(),
     ledger.orderBy('occurredAt', 'desc').limit(ADMIN_PLATFORM_ECONOMY_RECENT_LIMIT).get(),
+    contextTotalsPromise,
   ]);
 
   const capturedMinor = safeAggregateInteger(captureAmountSnapshot.data().amountMinor ?? 0, 'CAPTURED');
@@ -276,6 +302,7 @@ export const loadAdminPlatformEconomySnapshot = async (
       recoveredCaptureCount,
       refundShareBps: deriveRefundShareBps(capturedMinor, refundedMinor),
     },
+    contextTotals,
     allocationTotals,
     aiUsageTotals,
     recentWindow: {
