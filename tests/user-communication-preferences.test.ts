@@ -25,6 +25,22 @@ const notification = buildUserNotification({
   createdAt: '2026-08-29T12:00:00.000Z',
 });
 
+const marketingNotification = buildUserNotification({
+  recipientUserId: 'user-1',
+  category: 'marketing',
+  eventType: 'campaign_message',
+  sourceId: 'campaign-1_user-1',
+  actorPrincipalId: 'store:store-1',
+  title: 'Oferta da loja',
+  body: 'Uma novidade para você.',
+  target: {
+    kind: 'storefront',
+    storeId: 'store-1',
+    customerId: 'user-1',
+  },
+  createdAt: '2026-08-29T12:00:00.000Z',
+});
+
 describe('user communication preferences', () => {
   test('defaults preserve canonical inbox while browser alerts start opt-in', () => {
     const defaults = buildDefaultUserCommunicationPreferences('user-1');
@@ -33,9 +49,14 @@ describe('user communication preferences', () => {
       store_chat: true,
       order: true,
       loyalty: true,
+      marketing: false,
       system: true,
     });
     assert.equal(shouldDeliverUserNotificationToBrowser(defaults, notification), false);
+    assert.equal(
+      shouldDeliverUserNotificationToBrowser(defaults, marketingNotification),
+      false
+    );
   });
 
   test('browser delivery requires channel, category and recipient match', () => {
@@ -46,11 +67,16 @@ describe('user communication preferences', () => {
         store_chat: true,
         order: false,
         loyalty: false,
+        marketing: false,
         system: false,
       },
       updatedAt: '2026-08-29T12:01:00.000Z',
     });
     assert.equal(shouldDeliverUserNotificationToBrowser(enabled, notification), true);
+    assert.equal(
+      shouldDeliverUserNotificationToBrowser(enabled, marketingNotification),
+      false
+    );
     assert.equal(
       shouldDeliverUserNotificationToBrowser(enabled, {
         recipientUserId: 'other-user',
@@ -64,6 +90,25 @@ describe('user communication preferences', () => {
         category: 'order',
       }),
       false
+    );
+  });
+
+  test('marketing browser alerts require explicit category opt-in', () => {
+    const enabled = buildUserCommunicationPreferences({
+      userId: 'user-1',
+      browserEnabled: true,
+      categories: {
+        store_chat: true,
+        order: true,
+        loyalty: true,
+        marketing: true,
+        system: true,
+      },
+      updatedAt: '2026-08-29T12:01:00.000Z',
+    });
+    assert.equal(
+      shouldDeliverUserNotificationToBrowser(enabled, marketingNotification),
+      true
     );
   });
 
@@ -145,6 +190,8 @@ describe('user communication preferences', () => {
     assert.match(modal, /Mensagens de lojas e clientes/);
     assert.match(modal, /Pedidos/);
     assert.match(modal, /Fidelidade/);
+    assert.match(modal, /Ofertas e campanhas/);
+    assert.match(modal, /desativado por padrão/);
     assert.match(modal, /Sistema/);
   });
 
