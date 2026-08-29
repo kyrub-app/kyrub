@@ -238,7 +238,7 @@ describe('economic obligations persistence', () => {
     const processor = readFileSync('server/payments/paymentWebhookProcessor.ts', 'utf8');
     const prepareAt = processor.indexOf('prepareEconomicObligationsPaymentPlan');
     const firstWriteAt = processor.indexOf('transaction.update(intentRef');
-    const applyAt = processor.indexOf('applyEconomicObligationsPaymentPlan');
+    const applyAt = processor.indexOf('applyEconomicObligationsPaymentPlan(transaction');
     assert.ok(prepareAt >= 0);
     assert.ok(firstWriteAt > prepareAt);
     assert.ok(applyAt > firstWriteAt);
