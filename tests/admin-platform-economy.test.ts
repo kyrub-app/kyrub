@@ -197,10 +197,11 @@ describe('admin platform economy', () => {
     assert.match(service, /storeSnapshot/);
     assert.match(ledger, /input\.capture\.storePlan/);
     assert.match(ledger, /input\.chargeback\.storePlan/);
-    assert.doesNotMatch(
-      service,
-      /buildRecoveredPaymentCaptureEconomicEntry\([\s\S]{0,300}storePlan/
+    const recoveredBuilder = ledger.slice(
+      ledger.indexOf('export const buildRecoveredPaymentCaptureEconomicEntry'),
+      ledger.indexOf('export const buildPaymentRefundEconomicEntry')
     );
+    assert.doesNotMatch(recoveredBuilder, /storePlan/);
   });
 
   test('finance endpoint is server-authorized and audited', () => {
