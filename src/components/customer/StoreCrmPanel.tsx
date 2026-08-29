@@ -9,6 +9,7 @@ import {
   TicketCheck,
   Trophy,
   Users,
+  type LucideIcon,
 } from 'lucide-react';
 import type {
   StoreCrmCustomer,
@@ -20,7 +21,6 @@ type CrmFilter = 'all' | 'recurring' | 'points' | 'challenges' | 'rewards';
 
 interface StoreCrmPanelProps {
   storeId: string;
-  notify: (message: string, type?: 'success' | 'error' | 'info') => void;
 }
 
 const money = new Intl.NumberFormat('pt-BR', {
@@ -46,27 +46,28 @@ const matchesFilter = (customer: StoreCrmCustomer, filter: CrmFilter): boolean =
   return true;
 };
 
-export function StoreCrmPanel({ storeId, notify }: StoreCrmPanelProps) {
+export function StoreCrmPanel({ storeId }: StoreCrmPanelProps) {
   const [summary, setSummary] = useState<StoreCrmSummary | null>(null);
   const [loading, setLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<CrmFilter>('all');
 
   const load = useCallback(async () => {
     if (!storeId) return;
     setLoading(true);
+    setErrorMessage('');
     try {
       setSummary(await loadStoreCrmForCurrentOwner(storeId));
     } catch (error) {
       console.error('Falha ao carregar CRM canônico:', error);
-      notify(
-        error instanceof Error ? error.message : 'Não foi possível carregar o CRM.',
-        'error'
+      setErrorMessage(
+        error instanceof Error ? error.message : 'Não foi possível carregar o CRM.'
       );
     } finally {
       setLoading(false);
     }
-  }, [notify, storeId]);
+  }, [storeId]);
 
   useEffect(() => {
     void load();
@@ -113,6 +114,15 @@ export function StoreCrmPanel({ storeId, notify }: StoreCrmPanelProps) {
           Atualizar
         </button>
       </div>
+
+      {errorMessage && (
+        <div
+          role="alert"
+          className="mt-4 rounded-2xl border border-red-500/30 bg-red-500/10 px-3 py-2.5 text-[10px] font-bold text-red-300"
+        >
+          {errorMessage}
+        </div>
+      )}
 
       <div className="mt-4 grid grid-cols-2 gap-2 lg:grid-cols-5">
         <MetricCard
@@ -200,7 +210,7 @@ function MetricCard({
   label,
   value,
 }: {
-  icon: typeof Users;
+  icon: LucideIcon;
   label: string;
   value: string;
 }) {
@@ -294,7 +304,7 @@ function SmallStat({
   label,
   value,
 }: {
-  icon: typeof Users;
+  icon: LucideIcon;
   label: string;
   value: string;
 }) {
