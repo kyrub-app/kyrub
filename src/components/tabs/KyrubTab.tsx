@@ -169,7 +169,7 @@ export function KyrubTab(props: KyrubTabProps) {
     };
   }, []);
 
-  const publishedStores = useMemo(() => {
+  const allPublishedStores = useMemo(() => {
     const storesById = new Map<string, Store>();
     for (const store of fallbackStores) storesById.set(store.id, store);
     for (const store of canonicalStores) storesById.set(store.id, store);
@@ -179,7 +179,7 @@ export function KyrubTab(props: KyrubTabProps) {
   useEffect(() => {
     let cancelled = false;
     const user = auth.currentUser;
-    const storeIds = publishedStores.slice(0, 24).map(store => store.id);
+    const storeIds = allPublishedStores.slice(0, 24).map(store => store.id);
     setDiscoverySignals([]);
     if (!user || storeIds.length === 0) return;
 
@@ -201,7 +201,7 @@ export function KyrubTab(props: KyrubTabProps) {
     return () => {
       cancelled = true;
     };
-  }, [publishedStores]);
+  }, [allPublishedStores]);
 
   useEffect(() => {
     if (props.ofertasFilter !== 'todas') setDiscoveryFilter('none');
@@ -212,26 +212,34 @@ export function KyrubTab(props: KyrubTabProps) {
     [discoverySignals]
   );
 
-  const marketplaceStores = useMemo(() => {
+  const publishedStores = useMemo(() => {
     if (discoveryFilter === 'promotion') {
-      return publishedStores.filter(store => signalByStoreId.get(store.id)?.inPromotion === true);
+      return allPublishedStores.filter(
+        store => signalByStoreId.get(store.id)?.inPromotion === true
+      );
     }
     if (discoveryFilter === 'for_you') {
-      return publishedStores
+      return allPublishedStores
         .filter(store => signalByStoreId.get(store.id)?.forYou === true)
         .sort((left, right) => {
           const leftSignal = signalByStoreId.get(left.id);
           const rightSignal = signalByStoreId.get(right.id);
-          return (rightSignal?.confirmedPurchases ?? 0) - (leftSignal?.confirmedPurchases ?? 0) ||
-            (rightSignal?.pointsBalance ?? 0) - (leftSignal?.pointsBalance ?? 0);
+          return (
+            (rightSignal?.confirmedPurchases ?? 0) -
+              (leftSignal?.confirmedPurchases ?? 0) ||
+            (rightSignal?.pointsBalance ?? 0) -
+              (leftSignal?.pointsBalance ?? 0)
+          );
         });
     }
-    return publishedStores;
-  }, [discoveryFilter, publishedStores, signalByStoreId]);
+    return allPublishedStores;
+  }, [allPublishedStores, discoveryFilter, signalByStoreId]);
 
-  const selectDiscoveryFilter = (next: Exclude<DiscoveryFilter, 'none'>): void => {
+  const selectDiscoveryFilter = (
+    next: Exclude<DiscoveryFilter, 'none'>
+  ): void => {
     props.setOfertasFilter('todas');
-    setDiscoveryFilter(current => current === next ? 'none' : next);
+    setDiscoveryFilter(current => (current === next ? 'none' : next));
   };
 
   const isConnectedContactsActive =
@@ -243,12 +251,17 @@ export function KyrubTab(props: KyrubTabProps) {
   const wrapperClassName = [
     isConnectedContactsActive ? 'connected-contacts-redesign-active' : '',
     isPublicFeedActive ? 'public-social-feed-active' : '',
-  ].filter(Boolean).join(' ');
+  ]
+    .filter(Boolean)
+    .join(' ');
 
   return (
     <div className={wrapperClassName || undefined}>
       {props.socialSubTab === 'lojas' && (
-        <div className="mb-3 grid grid-cols-2 gap-2" id="marketplace-discovery-filters">
+        <div
+          className="mb-3 grid grid-cols-2 gap-2"
+          id="marketplace-discovery-filters"
+        >
           <button
             type="button"
             onClick={() => selectDiscoveryFilter('promotion')}
@@ -279,11 +292,11 @@ export function KyrubTab(props: KyrubTabProps) {
       <LegacyKyrubTab
         {...props}
         posts={socialFeed.posts}
-        storesWithCoords={marketplaceStores}
+        storesWithCoords={publishedStores}
       />
 
       <StoreOfferCardPresentationBridge
-        stores={marketplaceStores}
+        stores={publishedStores}
         enabled={props.socialSubTab === 'lojas'}
       />
 
