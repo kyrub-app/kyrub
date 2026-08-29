@@ -28,6 +28,11 @@ import {
   prepareStoreChallengePaymentPlan,
   type StoreChallengePaymentPlan,
 } from './storeChallengeProcessor.js';
+import {
+  applyStoreEconomicLedgerPaymentPlan,
+  prepareStoreEconomicLedgerPaymentPlan,
+  type StoreEconomicLedgerPaymentPlan,
+} from './storeEconomicLedgerService.js';
 
 interface ProcessPaymentWebhookResult {
   duplicate: boolean;
@@ -191,10 +196,11 @@ export const processVerifiedPaymentWebhook = async (input: {
     let pointReversalRef: ReturnType<typeof adminDb.doc> | null = null;
     let pointReversalExists = false;
     let challengePlan: StoreChallengePaymentPlan | null = null;
+    let economicLedgerPlan: StoreEconomicLedgerPaymentPlan | null = null;
     const intentStatus = intentStatusForPaymentStatus(effectiveStatus);
 
     // Firestore transactions require every read to happen before any write.
-    // Resolve order, coupon, points and challenge documents first.
+    // Resolve order, coupon, points, challenges and economic ledger first.
     if (current.context === 'marketplace') {
       if (!intentSnapshot.exists) throw new Error('PAYMENT_INTENT_NOT_FOUND');
       intent = normalizeCanonicalPaymentIntent(
@@ -283,6 +289,12 @@ export const processVerifiedPaymentWebhook = async (input: {
       }
     }
 
+    economicLedgerPlan = await prepareStoreEconomicLedgerPaymentPlan({
+      transaction,
+      payment: current,
+      event,
+    });
+
     if (intent && intentStatus && intent.status !== intentStatus) {
       if (intent.status !== 'pending') {
         throw new Error(`PAYMENT_INTENT_STATUS_CONFLICT:${intent.status}->${intentStatus}`);
@@ -318,6 +330,8 @@ export const processVerifiedPaymentWebhook = async (input: {
     if (challengePlan) {
       applyStoreChallengePaymentPlan(transaction, challengePlan);
     }
+
+    applyStoreEconomicLedgerPaymentPlan(transaction, economicLedgerPlan);
 
     if (
       intent &&
