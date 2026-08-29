@@ -65,6 +65,28 @@ export default async function handler(
     return;
   }
 
+  if (transport === 'platform-economy') {
+    if (method !== 'GET') {
+      response.status(405).json({ error: 'Método não permitido.', code: 'METHOD_NOT_ALLOWED' });
+      return;
+    }
+    let mapError: ((error: unknown) => HttpErrorResult) | null = null;
+    try {
+      const economy = await import('../../../server/admin/platformEconomyRouter.js');
+      mapError = economy.mapPlatformEconomyError;
+      const snapshot = await economy.loadAuthorizedPlatformEconomySnapshot(
+        authorization
+      );
+      response.status(200).json(snapshot);
+    } catch (error) {
+      const mapped = mapError
+        ? mapError(error)
+        : unavailable('Não foi possível consultar a economia da plataforma agora.');
+      response.status(mapped.status).json(mapped.body);
+    }
+    return;
+  }
+
   if (transport === 'mercado-pago-credentials') {
     if (method !== 'POST') {
       response.status(405).json({ error: 'Método não permitido.', code: 'METHOD_NOT_ALLOWED' });
