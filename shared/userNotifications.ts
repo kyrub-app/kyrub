@@ -6,6 +6,7 @@ export type UserNotificationCategory =
   | 'store_chat'
   | 'order'
   | 'loyalty'
+  | 'marketing'
   | 'system';
 
 export type UserNotificationTargetKind =
