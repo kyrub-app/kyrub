@@ -31,6 +31,7 @@ const categoriesFromBody = (
     store_chat: boolean(data.store_chat),
     order: boolean(data.order),
     loyalty: boolean(data.loyalty),
+    marketing: boolean(data.marketing),
     system: boolean(data.system),
   };
 };
