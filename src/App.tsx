@@ -39,6 +39,7 @@ import { OperationalAppEntryBridge } from './components/store/OperationalAppEntr
 import { OrderInventoryReconciliationBridge } from './components/store/OrderInventoryReconciliationBridge';
 import { ProductCrossDeviceSyncBridge } from './components/store/ProductCrossDeviceSyncBridge';
 import { ProductWorkspaceLayoutBridge } from './components/store/ProductWorkspaceLayoutBridge';
+import { StoreCrmBridge } from './components/store/StoreCrmBridge';
 import { StoreLoyaltyCenterBridge } from './components/store/StoreLoyaltyCenterBridge';
 import { StoreRestartLandingBridge } from './components/store/StoreRestartLandingBridge';
 import { StoreSharingPortalBridge } from './components/store/StoreSharingPortalBridge';
@@ -231,6 +232,7 @@ function AuthenticatedKyrubApp({ operational }: { operational: boolean }) {
       <KyrubAiStorePromotionActionBridge />
       <ManualStorePromotionBridge />
       <StoreLoyaltyCenterBridge />
+      <StoreCrmBridge />
       <StoreSharingPortalBridge />
       <StoreRestartLandingBridge />
       <UnifiedProductCreateModalBridge />
