@@ -113,6 +113,7 @@ export const createStoreCampaignRouter = (): Router => {
       const result = await sendStoreCampaign({
         storeId,
         actorPrincipalId: representation.identity.principalId,
+        actorUserId: representation.authenticatedUserId,
         segment: request.body?.segment,
         title: request.body?.title,
         body: request.body?.body,
