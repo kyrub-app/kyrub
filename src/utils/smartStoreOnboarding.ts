@@ -4,7 +4,7 @@ export type StoreOnboardingProfile = {
   name: string;
   description: string;
   address: string;
-  coordinates: string;
+  coordinates?: string;
   contact: string;
   keywords: string;
 };
@@ -52,7 +52,8 @@ const STEP_DEFINITIONS: ReadonlyArray<{
   { id: 'keywords', label: 'Palavras-chave', required: false },
 ];
 
-const hasValue = (value: string): boolean => value.trim().length > 0;
+const hasValue = (value: string | undefined): boolean =>
+  typeof value === 'string' && value.trim().length > 0;
 
 export const getStoreOnboardingDraftKey = (uid: string): string =>
   `kyrub_store_onboarding_${uid}`;
