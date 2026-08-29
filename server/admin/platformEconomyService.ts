@@ -151,17 +151,29 @@ const parseRecentEntry = (value: unknown): AdminPlatformEconomyRecentEntry => {
 };
 
 export const loadAdminPlatformEconomySnapshot = async (
-  periodInput: AdminPlatformEconomyPeriod = 'all'
+  periodInput: AdminPlatformEconomyPeriod = 'all',
+  storeIdInput = ''
 ): Promise<AdminPlatformEconomySnapshot> => {
   const scope = resolveAdminPlatformEconomyPeriodScope(periodInput);
-  const ledgerRoot = adminDb.collectionGroup('economicLedger');
+  const storeId = clean(storeIdInput);
+  if (storeId && (storeId.length > 160 || storeId.includes('/'))) {
+    throw new Error('ADMIN_PLATFORM_ECONOMY_STORE_SCOPE_INVALID');
+  }
+
+  const ledgerRoot = storeId
+    ? adminDb.collection(`stores/${storeId}/economicLedger`)
+    : adminDb.collectionGroup('economicLedger');
   const ledger = scope.since
     ? ledgerRoot.where('occurredAt', '>=', scope.since)
     : ledgerRoot;
+
+  // AI usage currently has no canonical store attribution. Keep this projection
+  // platform-wide even when the economic ledger is scoped to a specific store.
   const aiUsageRoot = adminDb.collection('kyrub_usage_events').where('resource', '==', 'ai');
   const aiUsage = scope.since
     ? aiUsageRoot.where('createdAt', '>=', Timestamp.fromDate(new Date(scope.since)))
     : aiUsageRoot;
+
   const captures = ledger.where('kind', '==', 'payment_capture');
   const refunds = ledger.where('kind', '==', 'payment_refund');
   const chargebacks = ledger.where('kind', '==', 'payment_chargeback');
