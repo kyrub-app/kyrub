@@ -96,6 +96,9 @@ const requireCaptureAllocation = (
   if (capture.economicAllocation.currency !== ECONOMIC_OBLIGATION_CURRENCY) {
     throw new Error('ECONOMIC_OBLIGATION_CURRENCY_INVALID');
   }
+  if (capture.amountMinor !== capture.economicAllocation.customerPaidMinor) {
+    throw new Error('ECONOMIC_OBLIGATION_CAPTURE_ALLOCATION_MISMATCH');
+  }
   return capture.economicAllocation;
 };
 
