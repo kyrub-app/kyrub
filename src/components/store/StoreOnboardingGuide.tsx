@@ -12,13 +12,14 @@ import {
   type StoreOnboardingProfile,
 } from '../../utils/smartStoreOnboarding';
 import { loadCachedStoreOperationalSettings } from '../../utils/storeOperationalSettings';
+import { loadCachedUserStore } from '../../utils/storePersistence';
 import {
   buildStoreActivationPlan,
   getStoreActivationWarnings,
 } from '../../utils/storeActivationPlan';
 
 interface StoreOnboardingGuideProps {
-  profile: StoreOnboardingProfile;
+  profile: Omit<StoreOnboardingProfile, 'coordinates'>;
 }
 
 const FIELD_SELECTORS: Record<StoreOnboardingField, string> = {
@@ -48,10 +49,36 @@ const focusProfileField = (field: StoreOnboardingField): void => {
 export const StoreOnboardingGuide: React.FC<StoreOnboardingGuideProps> = ({
   profile,
 }) => {
-  const progress = useMemo(() => getStoreOnboardingProgress(profile), [profile]);
+  const userId = auth.currentUser?.uid ?? '';
+  const savedStore = userId
+    ? loadCachedUserStore(
+        localStorage,
+        userId,
+        auth.currentUser?.email ?? ''
+      )
+    : null;
+  const resolvedProfile: StoreOnboardingProfile = {
+    ...profile,
+    coordinates:
+      typeof savedStore?.lat === 'number' &&
+      typeof savedStore?.lng === 'number' &&
+      typeof savedStore?.geofenceRadiusMeters === 'number'
+        ? `${savedStore.lat},${savedStore.lng}:${savedStore.geofenceRadiusMeters}`
+        : '',
+  };
+  const progress = useMemo(
+    () => getStoreOnboardingProgress(resolvedProfile),
+    [
+      profile.name,
+      profile.description,
+      profile.address,
+      profile.contact,
+      profile.keywords,
+      resolvedProfile.coordinates,
+    ]
+  );
   const [expanded, setExpanded] = useState(false);
   const [showActivationReview, setShowActivationReview] = useState(false);
-  const userId = auth.currentUser?.uid ?? '';
 
   const activationPlan = useMemo(() => {
     if (!userId) return null;
@@ -68,15 +95,19 @@ export const StoreOnboardingGuide: React.FC<StoreOnboardingGuideProps> = ({
   useEffect(() => {
     if (!userId) return;
     const draft = loadStoreOnboardingDraft(localStorage, userId);
-    if (draft?.lastField && shouldOfferStoreOnboarding(profile)) setExpanded(true);
+    if (draft?.lastField && shouldOfferStoreOnboarding(resolvedProfile)) {
+      setExpanded(true);
+    }
   }, [userId]);
 
   useEffect(() => {
     if (!userId) return;
-    if (!shouldOfferStoreOnboarding(profile)) clearStoreOnboardingDraft(localStorage, userId);
-  }, [profile, userId]);
+    if (!shouldOfferStoreOnboarding(resolvedProfile)) {
+      clearStoreOnboardingDraft(localStorage, userId);
+    }
+  }, [progress.completed, userId]);
 
-  if (!shouldOfferStoreOnboarding(profile)) return null;
+  if (!shouldOfferStoreOnboarding(resolvedProfile)) return null;
 
   const continueWith = (field: StoreOnboardingField): void => {
     if (userId) {
