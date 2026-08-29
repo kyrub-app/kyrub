@@ -3,6 +3,7 @@ import { describe, test } from 'node:test';
 import './payment-ux-policy.test';
 import './marketplace-payment-intent-checkout.test';
 import './customer-storefront-order-e2e-contract.test';
+import './local-service-pos.test';
 import type { CartItem, Product } from '../src/types';
 import {
   buildCanonicalCustomerOrderWriteData,
