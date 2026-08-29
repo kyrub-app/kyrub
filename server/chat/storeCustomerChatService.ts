@@ -10,6 +10,10 @@ import {
   type StoreCustomerConversation,
 } from '../../shared/storeCustomerChat.js';
 import { buildStoreInstitutionalPrincipalId } from '../../shared/storeInstitutionalIdentity.js';
+import {
+  buildUserNotification,
+  userNotificationPath,
+} from '../../shared/userNotifications.js';
 import { getPrimaryUserStoreDocumentPath } from '../../src/utils/storePaths.js';
 
 export type StoreCustomerChatPublicMessage = Omit<
@@ -154,6 +158,29 @@ export const sendStoreCustomerChatMessage = async (input: {
     text: input.text,
     createdAt,
   });
+  const notificationRecipientUserId =
+    message.senderKind === 'customer' ? storeId : customerId;
+  const notification = buildUserNotification({
+    recipientUserId: notificationRecipientUserId,
+    category: 'store_chat',
+    eventType: 'message_received',
+    sourceId: message.id,
+    actorPrincipalId: message.senderPrincipalId,
+    title:
+      message.senderKind === 'customer'
+        ? 'Nova mensagem de cliente'
+        : 'Nova mensagem da loja',
+    body: message.text,
+    target: {
+      kind: 'store_chat',
+      storeId,
+      customerId,
+    },
+    createdAt,
+  });
+  const notificationRef = adminDb.doc(
+    userNotificationPath(notificationRecipientUserId, notification.id)
+  );
 
   await adminDb.runTransaction(async transaction => {
     const conversationSnapshot = await transaction.get(conversationRef);
@@ -176,6 +203,7 @@ export const sendStoreCustomerChatMessage = async (input: {
     };
     transaction.set(conversationRef, next);
     transaction.set(messageRef, message);
+    transaction.set(notificationRef, notification);
   });
 
   return message;
