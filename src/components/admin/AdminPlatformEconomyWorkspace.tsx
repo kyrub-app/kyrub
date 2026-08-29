@@ -4,6 +4,7 @@ import {
   ArrowDownLeft,
   ArrowUpRight,
   CircleAlert,
+  Cpu,
   Landmark,
   RefreshCw,
   RotateCcw,
@@ -11,6 +12,7 @@ import {
   Store,
 } from 'lucide-react';
 import type {
+  AdminPlatformEconomyAllocationWindow,
   AdminPlatformEconomyRecentEntry,
   AdminPlatformEconomySnapshot,
 } from '../../../shared/adminPlatformEconomy';
@@ -27,6 +29,17 @@ const money = (minor: number): string =>
     style: 'currency',
     currency: 'BRL',
   }).format(minor / 100);
+
+const usdFromMicrousd = (microusd: number): string =>
+  new Intl.NumberFormat('pt-BR', {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: 6,
+    maximumFractionDigits: 6,
+  }).format(microusd / 1_000_000);
+
+const integer = (value: number): string =>
+  new Intl.NumberFormat('pt-BR').format(value);
 
 const when = (value: string): string => {
   if (!value || !Number.isFinite(Date.parse(value))) return '—';
@@ -52,6 +65,35 @@ const eventPresentation = (
       return { label: 'Chargeback revertido', positive: true };
   }
 };
+
+const AllocationCards = ({
+  allocation,
+}: {
+  allocation: AdminPlatformEconomyAllocationWindow;
+}) => (
+  <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
+    <div className="rounded-xl border border-slate-800 bg-slate-950/55 p-3">
+      <span className="text-[8px] font-black uppercase tracking-wider text-slate-600">Entrega → entregador</span>
+      <strong className="mt-1 block text-sm text-white">{money(allocation.courierRemunerationMinor)}</strong>
+    </div>
+    <div className="rounded-xl border border-slate-800 bg-slate-950/55 p-3">
+      <span className="text-[8px] font-black uppercase tracking-wider text-slate-600">Subsídio da loja</span>
+      <strong className="mt-1 block text-sm text-white">{money(allocation.storeSubsidyMinor)}</strong>
+    </div>
+    <div className="rounded-xl border border-slate-800 bg-slate-950/55 p-3">
+      <span className="text-[8px] font-black uppercase tracking-wider text-slate-600">Incentivo Kyrub</span>
+      <strong className="mt-1 block text-sm text-white">{money(allocation.kyrubIncentiveMinor)}</strong>
+    </div>
+    <div className="rounded-xl border border-slate-800 bg-slate-950/55 p-3">
+      <span className="text-[8px] font-black uppercase tracking-wider text-slate-600">Subsídio parceiro</span>
+      <strong className="mt-1 block text-sm text-white">{money(allocation.partnerSubsidyMinor)}</strong>
+    </div>
+    <div className="rounded-xl border border-slate-800 bg-slate-950/55 p-3">
+      <span className="text-[8px] font-black uppercase tracking-wider text-slate-600">Custos observados</span>
+      <strong className="mt-1 block text-sm text-white">{money(allocation.observedCostsMinor)}</strong>
+    </div>
+  </div>
+);
 
 export default function AdminPlatformEconomyWorkspace() {
   const [user, setUser] = useState<User | null>(null);
@@ -123,14 +165,10 @@ export default function AdminPlatformEconomyWorkspace() {
               <Landmark className="h-5 w-5" />
             </div>
             <div>
-              <span className="text-[9px] font-black uppercase tracking-[0.2em] text-emerald-400">
-                Platform Economy
-              </span>
-              <h2 id="admin-platform-economy-title" className="mt-1 text-lg font-black text-white">
-                Economia canônica da plataforma
-              </h2>
+              <span className="text-[9px] font-black uppercase tracking-[0.2em] text-emerald-400">Platform Economy</span>
+              <h2 id="admin-platform-economy-title" className="mt-1 text-lg font-black text-white">Economia canônica da plataforma</h2>
               <p className="mt-1 max-w-3xl text-[10px] leading-relaxed text-slate-500">
-                Capturas, refunds e chargebacks são fatos econômicos distintos. Esta visão não representa saldo disponível, custódia, imposto calculado ou settlement financeiro.
+                Fatos econômicos em BRL e custo de fornecedor de IA em USD permanecem separados. Esta visão não representa saldo disponível, custódia, imposto calculado ou settlement financeiro.
               </p>
             </div>
           </div>
@@ -196,22 +234,59 @@ export default function AdminPlatformEconomyWorkspace() {
             <div className="mt-4 rounded-2xl border border-violet-500/15 bg-violet-500/5 p-4">
               <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
                 <div>
+                  <span className="text-[9px] font-black uppercase tracking-wider text-violet-300">Destinações econômicas · acumulado</span>
+                  <p className="mt-1 text-[9px] text-slate-500">Totais vitalícios derivados dos snapshots imutáveis do ledger; refunds e chargebacks debitam a fotografia original.</p>
+                </div>
+                <span className="text-[8px] text-slate-600">
+                  {snapshot.allocationTotals.allocatedCaptureCount} captura(s) · {snapshot.allocationTotals.allocatedRefundCount} refund(s) · {snapshot.allocationTotals.allocatedChargebackCount} chargeback(s) · {snapshot.allocationTotals.allocatedChargebackReversalCount} reversão(ões)
+                </span>
+              </div>
+              <AllocationCards allocation={snapshot.allocationTotals} />
+            </div>
+
+            <div className="mt-4 rounded-2xl border border-sky-500/15 bg-sky-500/5 p-4">
+              <div className="flex items-start gap-3">
+                <div className="rounded-xl bg-sky-500/10 p-2 text-sky-300"><Cpu className="h-4 w-4" /></div>
+                <div className="min-w-0 flex-1">
+                  <span className="text-[9px] font-black uppercase tracking-wider text-sky-300">Custo de IA · fornecedor</span>
+                  <p className="mt-1 text-[9px] text-slate-500">Medição autoritativa do ledger de uso. USD não é convertido nem somado aos fatos em BRL.</p>
+                  <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+                    <div className="rounded-xl border border-slate-800 bg-slate-950/55 p-3">
+                      <span className="text-[8px] font-black uppercase tracking-wider text-slate-600">Custo estimado</span>
+                      <strong className="mt-1 block text-sm text-white">{usdFromMicrousd(snapshot.aiUsageTotals.estimatedCostMicrousd)}</strong>
+                      <span className="text-[8px] text-slate-600">{integer(snapshot.aiUsageTotals.estimatedCostMicrousd)} micro-USD</span>
+                    </div>
+                    <div className="rounded-xl border border-slate-800 bg-slate-950/55 p-3">
+                      <span className="text-[8px] font-black uppercase tracking-wider text-slate-600">Chamadas</span>
+                      <strong className="mt-1 block text-sm text-white">{integer(snapshot.aiUsageTotals.callCount)}</strong>
+                      <span className="text-[8px] text-slate-600">{integer(snapshot.aiUsageTotals.pricedCallCount)} precificada(s)</span>
+                    </div>
+                    <div className="rounded-xl border border-slate-800 bg-slate-950/55 p-3">
+                      <span className="text-[8px] font-black uppercase tracking-wider text-slate-600">Não precificadas</span>
+                      <strong className="mt-1 block text-sm text-white">{integer(snapshot.aiUsageTotals.unpricedCallCount)}</strong>
+                      <span className="text-[8px] text-slate-600">preservadas sem inventar custo</span>
+                    </div>
+                    <div className="rounded-xl border border-slate-800 bg-slate-950/55 p-3">
+                      <span className="text-[8px] font-black uppercase tracking-wider text-slate-600">Tokens</span>
+                      <strong className="mt-1 block text-sm text-white">{integer(snapshot.aiUsageTotals.totalTokenCount)}</strong>
+                      <span className="text-[8px] text-slate-600">uso acumulado medido</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-4 rounded-2xl border border-violet-500/15 bg-violet-500/5 p-4">
+              <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+                <div>
                   <span className="text-[9px] font-black uppercase tracking-wider text-violet-300">Taxas e subsídios · janela recente</span>
-                  <p className="mt-1 text-[9px] text-slate-500">
-                    Refunds e chargebacks debitam a fotografia econômica original; uma reversão de chargeback a recompõe sem recalcular regras atuais.
-                  </p>
+                  <p className="mt-1 text-[9px] text-slate-500">Recorte operacional dos últimos {snapshot.recentWindow.limit} eventos para inspeção rápida.</p>
                 </div>
                 <span className="text-[8px] text-slate-600">
                   {snapshot.recentWindow.allocation.allocatedCaptureCount} captura(s) · {snapshot.recentWindow.allocation.allocatedRefundCount} refund(s) · {snapshot.recentWindow.allocation.allocatedChargebackCount} chargeback(s) · {snapshot.recentWindow.allocation.allocatedChargebackReversalCount} reversão(ões)
                 </span>
               </div>
-              <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
-                <div className="rounded-xl border border-slate-800 bg-slate-950/55 p-3"><span className="text-[8px] font-black uppercase tracking-wider text-slate-600">Entrega → entregador</span><strong className="mt-1 block text-sm text-white">{money(snapshot.recentWindow.allocation.courierRemunerationMinor)}</strong></div>
-                <div className="rounded-xl border border-slate-800 bg-slate-950/55 p-3"><span className="text-[8px] font-black uppercase tracking-wider text-slate-600">Subsídio da loja</span><strong className="mt-1 block text-sm text-white">{money(snapshot.recentWindow.allocation.storeSubsidyMinor)}</strong></div>
-                <div className="rounded-xl border border-slate-800 bg-slate-950/55 p-3"><span className="text-[8px] font-black uppercase tracking-wider text-slate-600">Incentivo Kyrub</span><strong className="mt-1 block text-sm text-white">{money(snapshot.recentWindow.allocation.kyrubIncentiveMinor)}</strong></div>
-                <div className="rounded-xl border border-slate-800 bg-slate-950/55 p-3"><span className="text-[8px] font-black uppercase tracking-wider text-slate-600">Subsídio parceiro</span><strong className="mt-1 block text-sm text-white">{money(snapshot.recentWindow.allocation.partnerSubsidyMinor)}</strong></div>
-                <div className="rounded-xl border border-slate-800 bg-slate-950/55 p-3"><span className="text-[8px] font-black uppercase tracking-wider text-slate-600">Custos observados</span><strong className="mt-1 block text-sm text-white">{money(snapshot.recentWindow.allocation.observedCostsMinor)}</strong></div>
-              </div>
+              <AllocationCards allocation={snapshot.recentWindow.allocation} />
             </div>
 
             <div className="mt-5 grid gap-4 xl:grid-cols-[1fr_1.35fr]">
@@ -220,9 +295,7 @@ export default function AdminPlatformEconomyWorkspace() {
                   <Store className="h-4 w-4 text-violet-400" />
                   <h3 className="text-[10px] font-black uppercase tracking-wider text-white">Atividade recente por loja</h3>
                 </div>
-                <p className="mt-1 text-[9px] text-slate-600">
-                  Janela dos últimos {snapshot.recentWindow.limit} eventos; não é ranking vitalício.
-                </p>
+                <p className="mt-1 text-[9px] text-slate-600">Janela dos últimos {snapshot.recentWindow.limit} eventos; não é ranking vitalício.</p>
                 <div className="mt-3 space-y-2">
                   {snapshot.recentWindow.stores.length === 0 ? (
                     <p className="rounded-xl border border-dashed border-slate-800 p-5 text-center text-[10px] text-slate-600">Nenhuma atividade econômica registrada.</p>
@@ -246,9 +319,7 @@ export default function AdminPlatformEconomyWorkspace() {
 
               <div className="rounded-2xl border border-slate-800 bg-slate-950/55 p-4">
                 <h3 className="text-[10px] font-black uppercase tracking-wider text-white">Eventos econômicos recentes</h3>
-                <p className="mt-1 text-[9px] text-slate-600">
-                  {snapshot.recentWindow.entryCount} evento(s), {snapshot.recentWindow.representedStoreCount} loja(s) representada(s) nesta janela.
-                </p>
+                <p className="mt-1 text-[9px] text-slate-600">{snapshot.recentWindow.entryCount} evento(s), {snapshot.recentWindow.representedStoreCount} loja(s) representada(s) nesta janela.</p>
                 <div className="mt-3 max-h-96 space-y-2 overflow-y-auto pr-1">
                   {snapshot.recentWindow.entries.length === 0 ? (
                     <p className="rounded-xl border border-dashed border-slate-800 p-5 text-center text-[10px] text-slate-600">Ledger ainda sem eventos.</p>
@@ -267,9 +338,7 @@ export default function AdminPlatformEconomyWorkspace() {
                           <p className="mt-1 truncate font-mono text-[8px] text-slate-600">loja {entry.storeId} · pagamento {entry.paymentId}</p>
                           <p className="mt-1 text-[8px] text-slate-700">{entry.paymentContext} · {entry.provider} · {entry.sourceAuthority}</p>
                           {entry.economicAllocation && (
-                            <p className="mt-1 text-[8px] text-slate-600">
-                              entrega {money(entry.economicAllocation.courierRemunerationMinor)} · subsídio loja {money(entry.economicAllocation.storeSubsidyMinor)} · custos observados {money(entry.economicAllocation.observedCostsMinor)}
-                            </p>
+                            <p className="mt-1 text-[8px] text-slate-600">entrega {money(entry.economicAllocation.courierRemunerationMinor)} · subsídio loja {money(entry.economicAllocation.storeSubsidyMinor)} · custos observados {money(entry.economicAllocation.observedCostsMinor)}</p>
                           )}
                         </div>
                       </div>
