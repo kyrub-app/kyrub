@@ -1,7 +1,11 @@
 export const STORE_POINTS_CURRENCY = 'store_points' as const;
 export const STORE_POINTS_LEDGER_SCHEMA_VERSION = 1 as const;
 
-export type StorePointLedgerKind = 'purchase_base' | 'bonus' | 'reversal';
+export type StorePointLedgerKind =
+  | 'purchase_base'
+  | 'bonus'
+  | 'redemption'
+  | 'reversal';
 
 export interface StorePointPurchaseItemSnapshot {
   productId: string;
@@ -156,6 +160,43 @@ export const buildStorePointBonusEntry = (input: {
   };
 };
 
+export const buildStorePointRedemptionEntry = (input: {
+  redemptionId: string;
+  rewardId: string;
+  storeId: string;
+  customerId: string;
+  costPoints: number;
+  occurredAt: string;
+}): StorePointLedgerEntry => {
+  if (!Number.isSafeInteger(input.costPoints) || input.costPoints <= 0) {
+    throw new Error('STORE_POINTS_REDEMPTION_COST_INVALID');
+  }
+  const redemptionId = required(
+    input.redemptionId,
+    'STORE_POINTS_REDEMPTION_ID_REQUIRED'
+  );
+  const rewardId = required(input.rewardId, 'STORE_POINTS_REWARD_ID_REQUIRED');
+  const id = `redemption:${redemptionId}`;
+  return {
+    schemaVersion: STORE_POINTS_LEDGER_SCHEMA_VERSION,
+    id,
+    idempotencyKey: id,
+    currency: STORE_POINTS_CURRENCY,
+    kind: 'redemption',
+    storeId: required(input.storeId, 'STORE_POINTS_STORE_REQUIRED'),
+    customerId: required(input.customerId, 'STORE_POINTS_CUSTOMER_REQUIRED'),
+    amount: -input.costPoints,
+    reason: `reward_redemption:${rewardId}`,
+    correlationId: redemptionId,
+    orderId: '',
+    paymentId: '',
+    paymentIntentId: '',
+    occurredAt: required(input.occurredAt, 'STORE_POINTS_OCCURRED_AT_REQUIRED'),
+    purchaseItems: [],
+    reversalOf: '',
+  };
+};
+
 export const buildStorePointReversalEntry = (input: {
   reversalId: string;
   original: StorePointLedgerEntry;
@@ -167,6 +208,7 @@ export const buildStorePointReversalEntry = (input: {
   const requestedAmount = input.amount ?? originalAmount;
   if (
     input.original.kind === 'reversal' ||
+    originalAmount === 0 ||
     !Number.isSafeInteger(requestedAmount) ||
     requestedAmount <= 0 ||
     requestedAmount > originalAmount
@@ -186,7 +228,7 @@ export const buildStorePointReversalEntry = (input: {
     kind: 'reversal',
     storeId: input.original.storeId,
     customerId: input.original.customerId,
-    amount: -requestedAmount,
+    amount: input.original.amount > 0 ? -requestedAmount : requestedAmount,
     reason: required(input.reason, 'STORE_POINTS_REASON_REQUIRED'),
     correlationId: input.original.correlationId,
     orderId: input.original.orderId,
