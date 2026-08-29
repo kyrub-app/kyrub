@@ -1,4 +1,4 @@
-import type { DocumentData, QueryDocumentSnapshot } from 'firebase-admin/firestore';
+import type { DocumentData } from 'firebase-admin/firestore';
 import { adminDb } from '../firebaseAdmin.js';
 import {
   userNotificationPath,
@@ -11,6 +11,11 @@ export interface UserNotificationInbox {
   notifications: UserNotification[];
   unreadCount: number;
 }
+
+type NotificationDocument = {
+  id: string;
+  data(): DocumentData;
+};
 
 const clean = (value: unknown): string =>
   typeof value === 'string' ? value.trim() : '';
@@ -34,7 +39,7 @@ const TARGET_KINDS = new Set<UserNotificationTargetKind>([
 ]);
 
 const parseNotification = (
-  document: QueryDocumentSnapshot<DocumentData> | { id: string; data(): DocumentData },
+  document: NotificationDocument,
   recipientUserId: string
 ): UserNotification => {
   const value = document.data() as Partial<UserNotification>;
