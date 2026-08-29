@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { describe, test } from 'node:test';
+import './admin-platform-economy-plan-ui.test';
 import {
   buildRecentStoreEconomyActivity,
   combineEconomicAllocationLifecycleTotals,
@@ -92,42 +93,10 @@ describe('admin platform economy', () => {
 
   test('lifetime allocation totals preserve immutable lifecycle snapshots', () => {
     const totals = combineEconomicAllocationLifecycleTotals({
-      captures: allocationAggregate({
-        count: 3,
-        deliveryFeeMinor: 1200,
-        courierRemunerationMinor: 1200,
-        storeSubsidyMinor: 500,
-        kyrubIncentiveMinor: 200,
-        partnerSubsidyMinor: 100,
-        observedCostsMinor: 90,
-      }),
-      refunds: allocationAggregate({
-        count: 1,
-        deliveryFeeMinor: 300,
-        courierRemunerationMinor: 300,
-        storeSubsidyMinor: 100,
-        kyrubIncentiveMinor: 50,
-        partnerSubsidyMinor: 25,
-        observedCostsMinor: 20,
-      }),
-      chargebacks: allocationAggregate({
-        count: 1,
-        deliveryFeeMinor: 400,
-        courierRemunerationMinor: 400,
-        storeSubsidyMinor: 200,
-        kyrubIncentiveMinor: 75,
-        partnerSubsidyMinor: 30,
-        observedCostsMinor: 25,
-      }),
-      chargebackReversals: allocationAggregate({
-        count: 1,
-        deliveryFeeMinor: 400,
-        courierRemunerationMinor: 400,
-        storeSubsidyMinor: 200,
-        kyrubIncentiveMinor: 75,
-        partnerSubsidyMinor: 30,
-        observedCostsMinor: 25,
-      }),
+      captures: allocationAggregate({ count: 3, deliveryFeeMinor: 1200, courierRemunerationMinor: 1200, storeSubsidyMinor: 500, kyrubIncentiveMinor: 200, partnerSubsidyMinor: 100, observedCostsMinor: 90 }),
+      refunds: allocationAggregate({ count: 1, deliveryFeeMinor: 300, courierRemunerationMinor: 300, storeSubsidyMinor: 100, kyrubIncentiveMinor: 50, partnerSubsidyMinor: 25, observedCostsMinor: 20 }),
+      chargebacks: allocationAggregate({ count: 1, deliveryFeeMinor: 400, courierRemunerationMinor: 400, storeSubsidyMinor: 200, kyrubIncentiveMinor: 75, partnerSubsidyMinor: 30, observedCostsMinor: 25 }),
+      chargebackReversals: allocationAggregate({ count: 1, deliveryFeeMinor: 400, courierRemunerationMinor: 400, storeSubsidyMinor: 200, kyrubIncentiveMinor: 75, partnerSubsidyMinor: 30, observedCostsMinor: 25 }),
     });
     assert.deepEqual(totals, {
       allocatedCaptureCount: 3,
@@ -141,12 +110,7 @@ describe('admin platform economy', () => {
       partnerSubsidyMinor: 75,
       observedCostsMinor: 70,
     });
-    assert.throws(() => combineEconomicAllocationLifecycleTotals({
-      captures: allocationAggregate({ count: -1 }),
-      refunds: allocationAggregate(),
-      chargebacks: allocationAggregate(),
-      chargebackReversals: allocationAggregate(),
-    }));
+    assert.throws(() => combineEconomicAllocationLifecycleTotals({ captures: allocationAggregate({ count: -1 }), refunds: allocationAggregate(), chargebacks: allocationAggregate(), chargebackReversals: allocationAggregate() }));
   });
 
   test('backend aggregates capture, refund and chargeback lifecycle independently', () => {
@@ -197,10 +161,7 @@ describe('admin platform economy', () => {
     assert.match(service, /storeSnapshot/);
     assert.match(ledger, /input\.capture\.storePlan/);
     assert.match(ledger, /input\.chargeback\.storePlan/);
-    const recoveredBuilder = ledger.slice(
-      ledger.indexOf('export const buildRecoveredPaymentCaptureEconomicEntry'),
-      ledger.indexOf('export const buildPaymentRefundEconomicEntry')
-    );
+    const recoveredBuilder = ledger.slice(ledger.indexOf('export const buildRecoveredPaymentCaptureEconomicEntry'), ledger.indexOf('export const buildPaymentRefundEconomicEntry'));
     assert.doesNotMatch(recoveredBuilder, /storePlan/);
   });
 
@@ -224,24 +185,14 @@ describe('admin platform economy', () => {
   });
 
   test('Vercel rewrites platform economy into the existing admin function budget', () => {
-    const config = JSON.parse(readFileSync('vercel.json', 'utf8')) as {
-      rewrites?: Array<{ source?: string; destination?: string }>;
-    };
+    const config = JSON.parse(readFileSync('vercel.json', 'utf8')) as { rewrites?: Array<{ source?: string; destination?: string }> };
     const transport = readFileSync('api/admin/operations/health.ts', 'utf8');
-    const rewrite = config.rewrites?.find(
-      candidate => candidate.source === '/api/admin/platform-economy'
-    );
-    assert.deepEqual(rewrite, {
-      source: '/api/admin/platform-economy',
-      destination: '/api/admin/operations/health?transport=platform-economy',
-    });
+    const rewrite = config.rewrites?.find(candidate => candidate.source === '/api/admin/platform-economy');
+    assert.deepEqual(rewrite, { source: '/api/admin/platform-economy', destination: '/api/admin/operations/health?transport=platform-economy' });
     assert.match(transport, /transport === 'platform-economy'/);
     assert.match(transport, /loadAuthorizedPlatformEconomySnapshot/);
     assert.match(transport, /mapPlatformEconomyError/);
-    assert.doesNotMatch(
-      transport,
-      /verifyFirebaseIdToken|collectionGroup\(|admin\.platform_economy\.viewed/
-    );
+    assert.doesNotMatch(transport, /verifyFirebaseIdToken|collectionGroup\(|admin\.platform_economy\.viewed/);
   });
 
   test('workspace remains read-only and separate from settlement', () => {
@@ -265,6 +216,7 @@ describe('admin platform economy', () => {
     assert.match(indexes, /"fieldPath": "amountMinor"/);
     assert.match(indexes, /"fieldPath": "sourceAuthority"/);
     assert.match(indexes, /"fieldPath": "occurredAt"/);
+    assert.match(indexes, /"fieldPath": "storePlan"/);
     assert.match(indexes, /"fieldPath": "economicAllocation\.schemaVersion"/);
     assert.match(indexes, /"fieldPath": "economicAllocation\.courierRemunerationMinor"/);
     assert.match(indexes, /"fieldPath": "economicAllocation\.storeSubsidyMinor"/);
