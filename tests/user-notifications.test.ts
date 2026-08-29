@@ -119,10 +119,11 @@ describe('canonical user notifications', () => {
 
   test('store chat notification opens the same customer-store thread', () => {
     const bridge = readFileSync('src/components/UserNotificationCenterBridge.tsx', 'utf8');
-    assert.match(bridge, /notification\.target\.kind === 'store_chat'/);
+    assert.match(bridge, /const openNotificationTarget =/);
+    assert.match(bridge, /notification\.target\.kind !== 'store_chat'/);
     assert.match(bridge, /openStoreCustomerChat\(/);
-    assert.match(bridge, /notification\.target\.storeId/);
-    assert.match(bridge, /notification\.target\.customerId/);
+    assert.match(bridge, /storeId: notification\.target\.storeId/);
+    assert.match(bridge, /customerId: notification\.target\.customerId/);
   });
 
   test('browser Web Notification remains a channel, not the canonical inbox', () => {
