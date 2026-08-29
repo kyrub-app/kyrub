@@ -44,6 +44,7 @@ export interface StoreCampaignRecord {
   id: string;
   storeId: string;
   actorPrincipalId: string;
+  actorUserId: string;
   segment: StoreCampaignSegment;
   title: string;
   body: string;
