@@ -15,6 +15,7 @@ import {
   deriveStoreReceivableMinor,
   economicObligationPath,
 } from '../shared/economicObligations';
+import { reverseEconomicObligationBeforeSettlement } from '../shared/economicObligationLifecycle';
 import type { StoreEconomicLedgerEntry } from '../shared/storeEconomicLedger';
 
 const capture = (
@@ -170,6 +171,51 @@ describe('economic obligations foundation', () => {
     assert.equal(canTransitionEconomicObligationStatus('settled', 'settled'), true);
   });
 
+  test('authoritative reversal is allowed only before settlement and preserves prior eligibility evidence', () => {
+    const allocation = buildMarketplaceEconomicAllocationSnapshot({
+      subtotal: 30,
+      discountTotal: 5,
+      deliveryFee: 4.5,
+      total: 29.5,
+    });
+    const pending = buildStoreReceivableObligationFromCapture(capture(allocation));
+    assert.ok(pending);
+
+    const reversed = reverseEconomicObligationBeforeSettlement({
+      obligation: pending,
+      occurredAt: '2026-08-29T10:05:00.000Z',
+    });
+    assert.equal(reversed.status, 'reversed');
+    assert.equal(reversed.reversedAt, '2026-08-29T10:05:00.000Z');
+    assert.equal(pending.status, 'pending', 'reversal must not mutate the original snapshot');
+
+    const eligible = {
+      ...pending,
+      status: 'eligible' as const,
+      eligibleAt: '2026-08-29T10:03:00.000Z',
+    };
+    const reversedEligible = reverseEconomicObligationBeforeSettlement({
+      obligation: eligible,
+      occurredAt: '2026-08-29T10:06:00.000Z',
+    });
+    assert.equal(reversedEligible.status, 'reversed');
+    assert.equal(reversedEligible.eligibleAt, eligible.eligibleAt);
+
+    const settled = {
+      ...eligible,
+      status: 'settled' as const,
+      settledAt: '2026-08-29T10:04:00.000Z',
+    };
+    assert.throws(() => reverseEconomicObligationBeforeSettlement({
+      obligation: settled,
+      occurredAt: '2026-08-29T10:06:00.000Z',
+    }), /REVERSAL_REQUIRES_COMPENSATION/);
+    assert.throws(() => reverseEconomicObligationBeforeSettlement({
+      obligation: pending,
+      occurredAt: '2026-08-29T09:59:00.000Z',
+    }), /REVERSAL_BEFORE_CREATION/);
+  });
+
   test('obligation source must match the immutable captured economic allocation', () => {
     const allocation = buildMarketplaceEconomicAllocationSnapshot({
       subtotal: 30,
@@ -234,6 +280,23 @@ describe('economic obligations persistence', () => {
     assert.match(service, /ECONOMIC_OBLIGATION_CONFLICT:/);
   });
 
+  test('authoritative full refund reverses an existing receivable without backfilling historical obligations', () => {
+    const service = readFileSync('server/payments/economicObligationsService.ts', 'utf8');
+    assert.match(service, /input\.eventType !== 'refund\.succeeded'/);
+    assert.match(service, /input\.previousPaymentStatus !== 'refund_processing'/);
+    assert.match(service, /entry\.kind === 'payment_refund'/);
+    assert.match(service, /buildStoreReceivableObligationId\(refund\.paymentId\)/);
+    assert.match(service, /if \(!snapshot\.exists\) return null;/);
+    assert.match(service, /refund\.reversalOfEntryId !== obligation\.sourceEconomicEntryId/);
+    assert.match(service, /reverseEconomicObligationBeforeSettlement/);
+  });
+
+  test('chargeback is not collapsed into refund reversal because it may later be reversed', () => {
+    const service = readFileSync('server/payments/economicObligationsService.ts', 'utf8');
+    assert.doesNotMatch(service, /eventType !== 'chargeback\.debited'/);
+    assert.doesNotMatch(service, /eventType === 'chargeback\.debited'/);
+  });
+
   test('webhook prepares obligation reads before first write and applies them in the same transaction', () => {
     const processor = readFileSync('server/payments/paymentWebhookProcessor.ts', 'utf8');
     const prepareAt = processor.indexOf('prepareEconomicObligationsPaymentPlan');
@@ -247,12 +310,13 @@ describe('economic obligations persistence', () => {
 
   test('obligations remain server-only and do not introduce wallet, payout or settlement execution', () => {
     const service = readFileSync('server/payments/economicObligationsService.ts', 'utf8');
+    const lifecycle = readFileSync('shared/economicObligationLifecycle.ts', 'utf8');
     const rules = readFileSync('firestore.rules', 'utf8');
     assert.match(service, /adminDb/);
     assert.doesNotMatch(rules, /match \/economicObligations\//);
     assert.match(rules, /match \/\{document=\*\*\} \{\s*allow read, write: if false;/);
     assert.doesNotMatch(
-      service,
+      `${service}\n${lifecycle}`,
       /walletBalance|custodialBalance|payoutInstruction|settlementAdapter|application_fee_amount|splitRecipient/i
     );
   });
