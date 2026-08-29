@@ -66,7 +66,7 @@ describe('marketplace offer segmentation', () => {
     assert.match(wrapper, /isNew: promotionSet\.has\(store\.id\)/);
     assert.match(wrapper, /legacyForYouOrders/);
     assert.match(wrapper, /forYouStoreIds\.map/);
-    assert.match(wrapper, /storesWithCoords=\{segmentedStores\}/);
+    assert.match(wrapper, /storesWithCoords=\{publishedStores\}/);
     assert.match(wrapper, /orders=\{legacyForYouOrders\}/);
 
     assert.match(legacy, /ofertasFilter === 'novas'/);
