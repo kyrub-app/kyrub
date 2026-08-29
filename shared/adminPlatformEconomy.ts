@@ -23,6 +23,16 @@ export interface AdminPlatformEconomyTotals {
   refundShareBps: number;
 }
 
+export interface AdminPlatformEconomyAiUsageTotals {
+  costCurrency: 'USD';
+  costUnit: 'microusd';
+  callCount: number;
+  pricedCallCount: number;
+  unpricedCallCount: number;
+  totalTokenCount: number;
+  estimatedCostMicrousd: number;
+}
+
 export interface AdminPlatformEconomyRecentEntry {
   id: string;
   storeId: string;
@@ -76,6 +86,7 @@ export interface AdminPlatformEconomySnapshot {
   generatedAt: string;
   totals: AdminPlatformEconomyTotals;
   allocationTotals: AdminPlatformEconomyAllocationWindow;
+  aiUsageTotals: AdminPlatformEconomyAiUsageTotals;
   recentWindow: {
     limit: number;
     entryCount: number;
