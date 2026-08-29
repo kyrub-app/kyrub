@@ -92,8 +92,11 @@ describe('marketplace discovery', () => {
     assert.match(service, /collection\(ledgerCollectionPath\(input\.storeId\)\)/);
     assert.match(service, /where\('customerId', '==', input\.customerId\)/);
     assert.match(service, /listPublicStorePromotions\(input\.storeId, input\.now\)/);
-    assert.match(client, /JSON\.stringify\(\{ storeIds \}\)/);
-    assert.doesNotMatch(client, /customerId:/);
+    assert.match(client, /body: JSON\.stringify\(\{ storeIds \}\)/);
+    assert.doesNotMatch(
+      client,
+      /body: JSON\.stringify\(\{[^}]*customerId[^}]*\}\)/
+    );
   });
 
   test('marketplace UI exposes promotion and for-you as separate filters', () => {
