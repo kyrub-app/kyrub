@@ -3,10 +3,13 @@ export type PaymentStatus =
   | 'paid'
   | 'failed'
   | 'expired'
+  | 'cancelled'
   | 'refund_requested'
   | 'refund_processing'
   | 'refunded'
-  | 'refund_failed';
+  | 'refund_failed'
+  | 'charged_back'
+  | 'chargeback_reversed';
 
 export type PaymentMethod = 'pix' | 'card' | 'cash' | 'other';
 export type PaymentContext = 'marketplace' | 'table' | 'pos';
@@ -31,14 +34,17 @@ export interface CanonicalPayment {
 }
 
 const REQUIRED_TRANSITIONS: Record<PaymentStatus, readonly PaymentStatus[]> = {
-  pending: ['paid', 'failed', 'expired'],
-  paid: ['refund_requested'],
+  pending: ['paid', 'failed', 'expired', 'cancelled'],
+  paid: ['refund_requested', 'charged_back'],
   failed: [],
   expired: [],
+  cancelled: [],
   refund_requested: ['refund_processing', 'refund_failed'],
   refund_processing: ['refunded', 'refund_failed'],
   refunded: [],
-  refund_failed: ['refund_requested'],
+  refund_failed: ['refund_requested', 'charged_back'],
+  charged_back: ['chargeback_reversed'],
+  chargeback_reversed: ['refund_requested', 'charged_back'],
 };
 
 const required = (label: string, value: string): string => {
@@ -91,7 +97,9 @@ export const isPaymentAuthoritativelyPaid = (
 ): boolean =>
   status === 'paid' ||
   status === 'refund_requested' ||
-  status === 'refund_processing';
+  status === 'refund_processing' ||
+  status === 'refund_failed' ||
+  status === 'chargeback_reversed';
 
 export const shouldReleaseMarketplaceOrder = (input: {
   context: PaymentContext;
@@ -100,4 +108,4 @@ export const shouldReleaseMarketplaceOrder = (input: {
   input.context !== 'marketplace' || input.status === 'paid';
 
 export const isPaymentTerminal = (status: PaymentStatus): boolean =>
-  ['failed', 'expired', 'refunded'].includes(status);
+  ['failed', 'expired', 'cancelled', 'refunded'].includes(status);
