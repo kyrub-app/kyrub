@@ -28,7 +28,7 @@ jobs:
       - name: Install dependencies
         run: npm ci
       - name: Apply safe npm audit fixes to lockfile
-        run: npm audit fix --package-lock-only
+        run: npm audit fix --package-lock-only || true
       - name: Commit lockfile fixes when needed
         run: |
           if git diff --quiet -- package-lock.json; then
