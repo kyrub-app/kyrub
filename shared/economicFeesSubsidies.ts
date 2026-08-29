@@ -31,6 +31,14 @@ export interface EconomicAllocationInput {
   observedCosts?: readonly EconomicObservedCost[];
 }
 
+export interface MarketplaceEconomicFacts {
+  subtotal: number;
+  discountTotal: number;
+  deliveryFee: number;
+  total: number;
+  observedCosts?: readonly EconomicObservedCost[];
+}
+
 export interface EconomicBurdenTotals {
   customerMinor: number;
   storeMinor: number;
@@ -61,6 +69,20 @@ const nonNegativeMinor = (value: number, label: string): number => {
     throw new Error(`ECONOMIC_ALLOCATION_${label}_INVALID`);
   }
   return value;
+};
+
+export const brlNonNegativeToEconomicMinor = (
+  amount: number,
+  label = 'AMOUNT'
+): number => {
+  if (!Number.isFinite(amount) || amount < 0) {
+    throw new Error(`ECONOMIC_ALLOCATION_${label}_INVALID`);
+  }
+  const minor = Math.round(amount * 100);
+  if (!Number.isSafeInteger(minor) || minor < 0) {
+    throw new Error(`ECONOMIC_ALLOCATION_${label}_INVALID`);
+  }
+  return minor;
 };
 
 const addSafe = (left: number, right: number, label: string): number => {
@@ -187,15 +209,35 @@ export const buildEconomicAllocationSnapshot = (
   };
 };
 
-export const reverseEconomicAllocationSnapshot = (
-  snapshot: EconomicAllocationSnapshot
-): EconomicAllocationSnapshot =>
-  buildEconomicAllocationSnapshot({
-    merchandiseGrossMinor: snapshot.merchandiseGrossMinor,
-    customerPaidMinor: snapshot.customerPaidMinor,
-    deliveryFeeMinor: snapshot.deliveryFeeMinor,
-    storeSubsidyMinor: snapshot.storeSubsidyMinor,
-    kyrubIncentiveMinor: snapshot.kyrubIncentiveMinor,
-    partnerSubsidyMinor: snapshot.partnerSubsidyMinor,
-    observedCosts: snapshot.observedCosts,
+export const buildMarketplaceEconomicAllocationSnapshot = (
+  facts: MarketplaceEconomicFacts
+): EconomicAllocationSnapshot => {
+  const merchandiseGrossMinor = brlNonNegativeToEconomicMinor(
+    facts.subtotal,
+    'MARKETPLACE_SUBTOTAL'
+  );
+  const storeSubsidyMinor = brlNonNegativeToEconomicMinor(
+    facts.discountTotal,
+    'MARKETPLACE_DISCOUNT'
+  );
+  const deliveryFeeMinor = brlNonNegativeToEconomicMinor(
+    facts.deliveryFee,
+    'MARKETPLACE_DELIVERY_FEE'
+  );
+  const customerPaidMinor = brlNonNegativeToEconomicMinor(
+    facts.total,
+    'MARKETPLACE_TOTAL'
+  );
+
+  return buildEconomicAllocationSnapshot({
+    merchandiseGrossMinor,
+    customerPaidMinor,
+    deliveryFeeMinor,
+    // Current store promotions are store-funded. Kyrub and partner incentives
+    // remain explicit zero until their own immutable funding snapshots exist.
+    storeSubsidyMinor,
+    kyrubIncentiveMinor: 0,
+    partnerSubsidyMinor: 0,
+    observedCosts: facts.observedCosts,
   });
+};
