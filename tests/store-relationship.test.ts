@@ -37,20 +37,31 @@ describe('customer store relationship', () => {
     );
   });
 
-  test('relationship service derives balance and purchase level from canonical ledger', () => {
+  test('relationship balance comes from points ledger while level comes from canonical payments', () => {
     const source = readFileSync(
       'server/payments/storeRelationshipService.ts',
       'utf8'
     );
 
     assert.match(source, /storePointLedger/);
-    assert.match(source, /\.where\('customerId', '==', customerId\)/);
     assert.match(source, /deriveStorePointBalance\(entries\)/);
-    assert.match(source, /fullyReversedPurchaseIds\(entries\)/);
-    assert.match(source, /entry\.kind === 'purchase_base'/);
+    assert.match(source, /paymentCollectionPath/);
+    assert.match(source, /\.where\('buyerId', '==', customerId\)/);
+    assert.match(source, /isPaymentAuthoritativelyPaid\(payment\.status\)/);
     assert.match(source, /deriveStoreRelationshipLevel\(confirmedPurchases\)/);
     assert.doesNotMatch(source, /pointsPerReal|pontosPorReal|points_per_real/i);
     assert.doesNotMatch(source, /orderDraft\.total|paidTotalMinor/);
+  });
+
+  test('zero-point purchases still count for relationship level because payments are authoritative', () => {
+    const source = readFileSync(
+      'server/payments/storeRelationshipService.ts',
+      'utf8'
+    );
+
+    assert.match(source, /countConfirmedPurchases/);
+    assert.match(source, /paymentSnapshot\.docs/);
+    assert.doesNotMatch(source, /confirmedPurchases = entries\.filter/);
   });
 
   test('relationship projection includes challenges, rewards, vouchers, coupons and ledger history', () => {
