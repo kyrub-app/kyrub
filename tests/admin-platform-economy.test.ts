@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { describe, test } from 'node:test';
 import {
   buildRecentStoreEconomyActivity,
+  combineEconomicAllocationLifecycleTotals,
   deriveRecentEconomicAllocationWindow,
   deriveRefundShareBps,
   type AdminPlatformEconomyRecentEntry,
@@ -21,6 +22,25 @@ const entry = (
   provider: 'mercado_pago',
   sourceAuthority: 'provider_webhook',
   occurredAt: '2026-08-29T10:00:00.000Z',
+  ...overrides,
+});
+
+const allocationAggregate = (overrides: Partial<{
+  count: number;
+  deliveryFeeMinor: number;
+  courierRemunerationMinor: number;
+  storeSubsidyMinor: number;
+  kyrubIncentiveMinor: number;
+  partnerSubsidyMinor: number;
+  observedCostsMinor: number;
+}> = {}) => ({
+  count: 0,
+  deliveryFeeMinor: 0,
+  courierRemunerationMinor: 0,
+  storeSubsidyMinor: 0,
+  kyrubIncentiveMinor: 0,
+  partnerSubsidyMinor: 0,
+  observedCostsMinor: 0,
   ...overrides,
 });
 
@@ -70,6 +90,65 @@ describe('admin platform economy', () => {
     assert.equal(projection.storeSubsidyMinor, 500);
   });
 
+  test('lifetime allocation totals preserve immutable lifecycle snapshots', () => {
+    const totals = combineEconomicAllocationLifecycleTotals({
+      captures: allocationAggregate({
+        count: 3,
+        deliveryFeeMinor: 1200,
+        courierRemunerationMinor: 1200,
+        storeSubsidyMinor: 500,
+        kyrubIncentiveMinor: 200,
+        partnerSubsidyMinor: 100,
+        observedCostsMinor: 90,
+      }),
+      refunds: allocationAggregate({
+        count: 1,
+        deliveryFeeMinor: 300,
+        courierRemunerationMinor: 300,
+        storeSubsidyMinor: 100,
+        kyrubIncentiveMinor: 50,
+        partnerSubsidyMinor: 25,
+        observedCostsMinor: 20,
+      }),
+      chargebacks: allocationAggregate({
+        count: 1,
+        deliveryFeeMinor: 400,
+        courierRemunerationMinor: 400,
+        storeSubsidyMinor: 200,
+        kyrubIncentiveMinor: 75,
+        partnerSubsidyMinor: 30,
+        observedCostsMinor: 25,
+      }),
+      chargebackReversals: allocationAggregate({
+        count: 1,
+        deliveryFeeMinor: 400,
+        courierRemunerationMinor: 400,
+        storeSubsidyMinor: 200,
+        kyrubIncentiveMinor: 75,
+        partnerSubsidyMinor: 30,
+        observedCostsMinor: 25,
+      }),
+    });
+    assert.deepEqual(totals, {
+      allocatedCaptureCount: 3,
+      allocatedRefundCount: 1,
+      allocatedChargebackCount: 1,
+      allocatedChargebackReversalCount: 1,
+      deliveryFeeMinor: 900,
+      courierRemunerationMinor: 900,
+      storeSubsidyMinor: 400,
+      kyrubIncentiveMinor: 150,
+      partnerSubsidyMinor: 75,
+      observedCostsMinor: 70,
+    });
+    assert.throws(() => combineEconomicAllocationLifecycleTotals({
+      captures: allocationAggregate({ count: -1 }),
+      refunds: allocationAggregate(),
+      chargebacks: allocationAggregate(),
+      chargebackReversals: allocationAggregate(),
+    }));
+  });
+
   test('backend aggregates capture, refund and chargeback lifecycle independently', () => {
     const service = readFileSync('server/admin/platformEconomyService.ts', 'utf8');
     assert.match(service, /collectionGroup\('economicLedger'\)/);
@@ -80,6 +159,18 @@ describe('admin platform economy', () => {
     assert.match(service, /chargebackReversals\.count\(\)\.get\(\)/);
     assert.match(service, /economicNetMinor/);
     assert.match(service, /orderBy\('occurredAt', 'desc'\)/);
+  });
+
+  test('backend exposes lifetime delivery, subsidy, incentive and observed-cost allocation totals', () => {
+    const service = readFileSync('server/admin/platformEconomyService.ts', 'utf8');
+    assert.match(service, /economicAllocation\.schemaVersion/);
+    assert.match(service, /economicAllocation\.courierRemunerationMinor/);
+    assert.match(service, /economicAllocation\.storeSubsidyMinor/);
+    assert.match(service, /economicAllocation\.kyrubIncentiveMinor/);
+    assert.match(service, /economicAllocation\.partnerSubsidyMinor/);
+    assert.match(service, /economicAllocation\.observedCostsMinor/);
+    assert.match(service, /combineEconomicAllocationLifecycleTotals/);
+    assert.match(service, /allocationTotals/);
   });
 
   test('finance endpoint is server-authorized and audited', () => {
@@ -136,13 +227,19 @@ describe('admin platform economy', () => {
     assert.match(root, /<AdminControlPlaneApp \/>/);
   });
 
-  test('economic collection-group indexes are explicit', () => {
+  test('economic collection-group indexes include lifetime allocation dimensions', () => {
     const indexes = readFileSync('firestore.indexes.json', 'utf8');
     assert.match(indexes, /"collectionGroup": "economicLedger"/);
     assert.match(indexes, /"fieldPath": "kind"/);
     assert.match(indexes, /"fieldPath": "amountMinor"/);
     assert.match(indexes, /"fieldPath": "sourceAuthority"/);
     assert.match(indexes, /"fieldPath": "occurredAt"/);
+    assert.match(indexes, /"fieldPath": "economicAllocation\.schemaVersion"/);
+    assert.match(indexes, /"fieldPath": "economicAllocation\.courierRemunerationMinor"/);
+    assert.match(indexes, /"fieldPath": "economicAllocation\.storeSubsidyMinor"/);
+    assert.match(indexes, /"fieldPath": "economicAllocation\.kyrubIncentiveMinor"/);
+    assert.match(indexes, /"fieldPath": "economicAllocation\.partnerSubsidyMinor"/);
+    assert.match(indexes, /"fieldPath": "economicAllocation\.observedCostsMinor"/);
     assert.match(indexes, /"queryScope": "COLLECTION_GROUP"/);
   });
 
