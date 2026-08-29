@@ -86,11 +86,12 @@ export const resolveStorePromotionForCheckout = async (input: {
     throw new Error('CHECKOUT_COUPON_NOT_AVAILABLE');
   }
 
-  // V1 executes public coupons. The same canonical contract already carries the
-  // future Club/CRM modes, but those modes stay closed until authoritative
-  // membership/segment resolvers are connected.
+  // Public coupons and reward vouchers scoped to the authenticated buyer are
+  // executable in V1. Club/CRM modes remain closed until their authoritative
+  // membership and segment resolvers are connected.
   if (
-    promotion.eligibility.mode !== 'public' ||
+    (promotion.eligibility.mode !== 'public' &&
+      promotion.eligibility.mode !== 'specific_user') ||
     !isPromotionEligibleForBuyer(promotion, input.buyerId)
   ) {
     throw new Error('CHECKOUT_COUPON_NOT_ELIGIBLE');
