@@ -90,6 +90,8 @@ describe('admin platform economy', () => {
     assert.match(router, /clean\(profile\?\.status\) !== 'active'/);
     assert.match(router, /admin\.platform_economy\.viewed/);
     assert.match(router, /source: 'server'/);
+    assert.match(router, /loadAuthorizedPlatformEconomySnapshot/);
+    assert.match(router, /mapPlatformEconomyError/);
   });
 
   test('browser client only calls authenticated API and does not query Firestore', () => {
@@ -97,6 +99,23 @@ describe('admin platform economy', () => {
     assert.match(client, /user\.getIdToken\(\)/);
     assert.match(client, /\/api\/admin\/platform-economy/);
     assert.doesNotMatch(client, /firebase\/firestore|collectionGroup|collection\(db/);
+  });
+
+  test('Vercel rewrites platform economy into the existing admin function budget', () => {
+    const config = readFileSync('vercel.json', 'utf8');
+    const transport = readFileSync('api/admin/operations/health.ts', 'utf8');
+    assert.match(config, /"source": "\/api\/admin\/platform-economy"/);
+    assert.match(
+      config,
+      /"destination": "\/api\/admin\/operations\/health\?transport=platform-economy"/
+    );
+    assert.match(transport, /transport === 'platform-economy'/);
+    assert.match(transport, /loadAuthorizedPlatformEconomySnapshot/);
+    assert.match(transport, /mapPlatformEconomyError/);
+    assert.doesNotMatch(
+      transport,
+      /verifyFirebaseIdToken|collectionGroup\(|admin\.platform_economy\.viewed/
+    );
   });
 
   test('workspace remains read-only and separate from settlement', () => {

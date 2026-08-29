@@ -38,6 +38,10 @@
       "destination": "/api/admin/operations/health?transport=integration-readiness"
     },
     {
+      "source": "/api/admin/platform-economy",
+      "destination": "/api/admin/operations/health?transport=platform-economy"
+    },
+    {
       "source": "/staff",
       "destination": "/index.html"
     },

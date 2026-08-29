@@ -12,6 +12,11 @@ interface AuthorizedFinanceAdmin {
   role: 'super_admin' | 'finance';
 }
 
+export interface PlatformEconomyHttpErrorResult {
+  status: number;
+  body: { error: string; code: string };
+}
+
 const bearerToken = (authorization: string): string =>
   /^Bearer\s+(.+)$/i.exec(authorization)?.[1]?.trim() ?? '';
 
@@ -64,7 +69,9 @@ const recordPlatformEconomyAudit = async (
     });
 };
 
-const mapError = (error: unknown): { status: number; body: { error: string; code: string } } => {
+export const mapPlatformEconomyError = (
+  error: unknown
+): PlatformEconomyHttpErrorResult => {
   const message = error instanceof Error ? error.message : String(error);
   const code = error && typeof error === 'object' && 'code' in error
     ? String((error as { code?: unknown }).code ?? '')
@@ -118,19 +125,26 @@ const mapError = (error: unknown): { status: number; body: { error: string; code
   };
 };
 
+export const loadAuthorizedPlatformEconomySnapshot = async (
+  authorization: string
+) => {
+  const admin = await authorizePlatformEconomy(authorization);
+  const snapshot = await loadAdminPlatformEconomySnapshot();
+  await recordPlatformEconomyAudit(admin);
+  return snapshot;
+};
+
 export const createPlatformEconomyRouter = (): Router => {
   const router = Router();
 
   router.get('/', async (request: Request, response: Response) => {
     try {
-      const admin = await authorizePlatformEconomy(
+      const snapshot = await loadAuthorizedPlatformEconomySnapshot(
         request.get('authorization') ?? ''
       );
-      const snapshot = await loadAdminPlatformEconomySnapshot();
-      await recordPlatformEconomyAudit(admin);
       response.json(snapshot);
     } catch (error) {
-      const mapped = mapError(error);
+      const mapped = mapPlatformEconomyError(error);
       response.status(mapped.status).json(mapped.body);
     }
   });
