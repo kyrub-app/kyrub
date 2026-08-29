@@ -15,6 +15,13 @@ export interface AdminPlatformEconomyTotals {
   refundCount: number;
   recoveredCaptureCount: number;
   refundShareBps: number;
+  platformFeesAssessedMinor: number;
+  platformFeesReversedMinor: number;
+  platformFeesNetMinor: number;
+  platformSubsidiesGrantedMinor: number;
+  platformSubsidiesReversedMinor: number;
+  platformSubsidiesNetMinor: number;
+  storePositionAfterPolicyMinor: number;
 }
 
 export interface AdminPlatformEconomyRecentEntry {
@@ -34,6 +41,9 @@ export interface AdminPlatformEconomyStoreActivity {
   capturedMinor: number;
   refundedMinor: number;
   grossAfterRefundsMinor: number;
+  platformFeesNetMinor: number;
+  platformSubsidiesNetMinor: number;
+  storePositionAfterPolicyMinor: number;
   eventCount: number;
   lastOccurredAt: string;
 }
@@ -78,16 +88,31 @@ export const buildRecentStoreEconomyActivity = (
       capturedMinor: 0,
       refundedMinor: 0,
       grossAfterRefundsMinor: 0,
+      platformFeesNetMinor: 0,
+      platformSubsidiesNetMinor: 0,
+      storePositionAfterPolicyMinor: 0,
       eventCount: 0,
       lastOccurredAt: '',
     };
     if (entry.kind === 'payment_capture') {
       current.capturedMinor += entry.amountMinor;
-    } else {
+    } else if (entry.kind === 'payment_refund') {
       current.refundedMinor += Math.abs(entry.amountMinor);
+    } else if (entry.kind === 'platform_fee_assessed') {
+      current.platformFeesNetMinor += Math.abs(entry.amountMinor);
+    } else if (entry.kind === 'platform_fee_reversed') {
+      current.platformFeesNetMinor -= entry.amountMinor;
+    } else if (entry.kind === 'platform_subsidy_granted') {
+      current.platformSubsidiesNetMinor += entry.amountMinor;
+    } else if (entry.kind === 'platform_subsidy_reversed') {
+      current.platformSubsidiesNetMinor -= Math.abs(entry.amountMinor);
     }
     current.grossAfterRefundsMinor =
       current.capturedMinor - current.refundedMinor;
+    current.storePositionAfterPolicyMinor =
+      current.grossAfterRefundsMinor -
+      current.platformFeesNetMinor +
+      current.platformSubsidiesNetMinor;
     current.eventCount += 1;
     if (!current.lastOccurredAt || entry.occurredAt > current.lastOccurredAt) {
       current.lastOccurredAt = entry.occurredAt;
