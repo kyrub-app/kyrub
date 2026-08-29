@@ -27,6 +27,7 @@ import { ProfileSocialHubNative } from './components/ProfileSocialHubNative';
 import { ProfileVerificationBridge } from './components/ProfileVerificationBridge';
 import { PublicStorefrontApp } from './components/PublicStorefrontApp';
 import { SocialPublishingBridge } from './components/SocialPublishingBridge';
+import { UserNotificationCenterBridge } from './components/UserNotificationCenterBridge';
 import { CatalogCustomizationInheritanceBridge } from './components/store/CatalogCustomizationInheritanceBridge';
 import { CourierLiveTrackingBridge } from './components/store/CourierLiveTrackingBridge';
 import { IntegrationTestOrderBridge } from './components/store/IntegrationTestOrderBridge';
@@ -237,6 +238,7 @@ function AuthenticatedKyrubApp({ operational }: { operational: boolean }) {
       <StoreCrmRelationshipBridge />
       <StoreInstitutionalIdentityBridge />
       <StoreCustomerChatBridge />
+      <UserNotificationCenterBridge />
       <StoreSharingPortalBridge />
       <StoreRestartLandingBridge />
       <UnifiedProductCreateModalBridge />
