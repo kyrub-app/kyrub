@@ -69,6 +69,7 @@ export const createUserCommunicationPreferenceRouter = (): Router => {
       const identity = await requireIdentity(request.get('authorization') ?? '');
       const preferences = await saveUserCommunicationPreferences({
         userId: identity.uid,
+        marketingEnabled: boolean(request.body?.marketingEnabled),
         browserEnabled: boolean(request.body?.browserEnabled),
         categories: categoriesFromBody(request.body?.categories),
       });
