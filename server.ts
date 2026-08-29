@@ -17,6 +17,7 @@ import { createOrderInventoryRouter } from "./server/inventory/orderInventoryRou
 import { createKyrubAiConsultantRouter } from "./server/ai/consultantRouter";
 import { createKyrubActionExecutionRouter } from "./server/actions/actionExecutionRouter";
 import { createStoreCustomerChatRouter } from "./server/chat/storeCustomerChatRouter";
+import { createUserNotificationRouter } from "./server/notifications/userNotificationRouter";
 import { createPaymentIntentRouter } from "./server/payments/paymentIntentRouter";
 import { createStoreRewardRouter } from "./server/payments/storeRewardRouter";
 import { createStoreRelationshipRouter } from "./server/payments/storeRelationshipRouter";
@@ -153,6 +154,12 @@ app.use(
   "/api/store-chat",
   integrationRateLimiter,
   createStoreCustomerChatRouter()
+);
+
+app.use(
+  "/api/notifications",
+  integrationRateLimiter,
+  createUserNotificationRouter()
 );
 
 app.use(
