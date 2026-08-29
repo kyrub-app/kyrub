@@ -4,7 +4,7 @@
 
 Kyrub é o aplicativo, o centro onde vivem os dados, as ações e a experiência do usuário.
 
-Kyrubia é a inteligência artificial de Kyrub. Ela conversa, organiza, orienta e, quando autorizada, usa as mesmas ações já disponíveis no modo manual.
+Kyrubia é a inteligência artificial de Kyrub. Ela conversa, organiza, orienta e, quando autorizada, usa a mesma camada oficial de ações disponível ao produto. Ela não recebe permissão privilegiada para contornar autenticação, policy, confirmação ou auditoria.
 
 ## Princípio central
 
@@ -53,11 +53,41 @@ Ela não força monetização em conversas de luto, crise, emergência, sofrimen
 
 Ela não sugere caminhos ilegais, perigosos, exploratórios ou incompatíveis com a realidade apresentada.
 
-## Notas
+## Camada oficial de ações
 
-A primeira ação habilitada continua sendo `create_note`.
+`create_note` foi o primeiro gate de escrita, mas não é mais a única capacidade da Kyrubia.
 
-Kyrubia pode gerar o conteúdo completo que será salvo, incluindo receitas, planos, estudos, procedimentos e listas. A gravação só acontece depois da confirmação explícita do usuário.
+A fundação atual inclui, conforme ação registrada e autorização aplicável:
+
+- leituras determinísticas do ERP e contexto do usuário;
+- criação de notas e tarefas;
+- propostas e ações determinísticas de loja/produto;
+- preparação e consulta de rascunhos de catálogo;
+- fluxos multimodais privados;
+- recibos autoritativos e revalidação de resultado;
+- contexto e continuidade sem transformar observação em autorização.
+
+Novas capacidades devem reutilizar o mesmo Action/Policy Engine, em vez de criar endpoints privilegiados exclusivos para a IA.
+
+## Confirmação e autoridade
+
+Uma resposta da Kyrubia não prova que uma escrita ocorreu.
+
+Quando a ação exige confirmação, o fluxo é:
+
+1. interpretar o pedido;
+2. produzir proposta estruturada;
+3. mostrar conteúdo/impacto;
+4. obter confirmação humana conforme policy;
+5. executar no backend oficial;
+6. validar o receipt/resultado autoritativo;
+7. somente então afirmar sucesso.
+
+Contexto observado, clique, navegação ou texto produzido pelo modelo não substituem receipt autoritativo.
+
+## Notas e tarefas
+
+Kyrubia pode gerar conteúdo completo para notas e tarefas, incluindo receitas, planos, estudos, procedimentos e listas. A persistência segue a policy da ação e os mesmos mecanismos oficiais de confirmação, autorização, idempotência e auditoria.
 
 Uma receita pode incluir:
 
@@ -69,6 +99,28 @@ Uma receita pode incluir:
 - conservação;
 - finalização e momento de servir;
 - checklist de etapas acionáveis.
+
+## Multimodalidade
+
+Anexos suportados permanecem privados e associados ao usuário/conversa. O backend revalida propriedade, caminho, tipo e metadados antes de fornecer conteúdo ao modelo.
+
+Uma imagem, PDF ou outro anexo é **contexto observado**. Ele nunca preautoriza alterações no ERP.
+
+## Relação com a identidade institucional
+
+Quando uma capacidade futura precisar agir em nome da loja, a execução deve preservar:
+
+- o usuário humano autenticado;
+- o principal institucional da loja;
+- o vínculo/role/capability que permitiu a representação.
+
+Kyrubia não transforma a loja em um segundo login nem mascara o ator humano responsável.
+
+## MCP e agentes externos
+
+MCP é outra porta para capacidades do Kyrub, não outra autoridade. Ferramentas externas devem ser autenticadas, tenant-scoped e, para escritas, reutilizar policy, confirmação, idempotência e receipts oficiais.
+
+O estado específico do MCP e suas limitações permanece documentado em `docs/KYRUBIA_EXTERNAL_MCP.md`.
 
 ## Relação com o modo manual
 
