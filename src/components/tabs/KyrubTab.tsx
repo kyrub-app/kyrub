@@ -313,7 +313,7 @@ export function KyrubTab(props: KyrubTabProps) {
       />
 
       <StoreOfferCardPresentationBridge
-        stores={marketplaceStores}
+        stores={publishedStores}
         enabled={props.socialSubTab === 'lojas'}
       />
 
