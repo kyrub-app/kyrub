@@ -7,6 +7,7 @@ import {
   combineEconomicAllocationLifecycleTotals,
   deriveRecentEconomicAllocationWindow,
   deriveRefundShareBps,
+  type AdminPlatformEconomyAiUsageTotals,
   type AdminPlatformEconomyAllocationAggregate,
   type AdminPlatformEconomyRecentEntry,
   type AdminPlatformEconomySnapshot,
@@ -20,6 +21,12 @@ const clean = (value: unknown): string =>
 const safeAggregateInteger = (value: unknown, label: string): number => {
   const numeric = typeof value === 'number' ? value : Number(value ?? 0);
   if (!Number.isSafeInteger(numeric)) throw new Error(`ADMIN_PLATFORM_ECONOMY_${label}_INVALID`);
+  return numeric;
+};
+
+const safeNonNegativeAggregateInteger = (value: unknown, label: string): number => {
+  const numeric = safeAggregateInteger(value, label);
+  if (numeric < 0) throw new Error(`ADMIN_PLATFORM_ECONOMY_${label}_NEGATIVE`);
   return numeric;
 };
 
@@ -48,6 +55,36 @@ const allocationAggregateFields = () => ({
   partnerSubsidyMinor: AggregateField.sum('economicAllocation.partnerSubsidyMinor'),
   observedCostsMinor: AggregateField.sum('economicAllocation.observedCostsMinor'),
 });
+
+const parseAiUsageTotals = (
+  callCountValue: unknown,
+  data: Record<string, unknown>
+): AdminPlatformEconomyAiUsageTotals => {
+  const callCount = safeNonNegativeAggregateInteger(callCountValue, 'AI_CALL_COUNT');
+  const pricedCallCount = safeNonNegativeAggregateInteger(
+    data.pricedCallCount ?? 0,
+    'AI_PRICED_CALL_COUNT'
+  );
+  const unpricedCallCount = safeNonNegativeAggregateInteger(
+    data.unpricedCallCount ?? 0,
+    'AI_UNPRICED_CALL_COUNT'
+  );
+  if (pricedCallCount + unpricedCallCount !== callCount) {
+    throw new Error('ADMIN_PLATFORM_ECONOMY_AI_CALL_CONSERVATION_INVALID');
+  }
+  return {
+    costCurrency: 'USD',
+    costUnit: 'microusd',
+    callCount,
+    pricedCallCount,
+    unpricedCallCount,
+    totalTokenCount: safeNonNegativeAggregateInteger(data.totalTokenCount ?? 0, 'AI_TOTAL_TOKEN_COUNT'),
+    estimatedCostMicrousd: safeNonNegativeAggregateInteger(
+      data.estimatedCostMicrousd ?? 0,
+      'AI_ESTIMATED_COST_MICROUSD'
+    ),
+  };
+};
 
 const parseAllocation = (
   value: EconomicAllocationSnapshot | undefined
@@ -111,6 +148,7 @@ const parseRecentEntry = (value: unknown): AdminPlatformEconomyRecentEntry => {
 
 export const loadAdminPlatformEconomySnapshot = async (): Promise<AdminPlatformEconomySnapshot> => {
   const ledger = adminDb.collectionGroup('economicLedger');
+  const aiUsage = adminDb.collection('kyrub_usage_events').where('resource', '==', 'ai');
   const captures = ledger.where('kind', '==', 'payment_capture');
   const refunds = ledger.where('kind', '==', 'payment_refund');
   const chargebacks = ledger.where('kind', '==', 'payment_chargeback');
@@ -131,6 +169,8 @@ export const loadAdminPlatformEconomySnapshot = async (): Promise<AdminPlatformE
     refundAllocationSnapshot,
     chargebackAllocationSnapshot,
     chargebackReversalAllocationSnapshot,
+    aiUsageCountSnapshot,
+    aiUsageAggregateSnapshot,
     recentSnapshot,
   ] = await Promise.all([
     captures.aggregate({ amountMinor: AggregateField.sum('amountMinor') }).get(),
@@ -146,6 +186,13 @@ export const loadAdminPlatformEconomySnapshot = async (): Promise<AdminPlatformE
     refunds.aggregate(allocationAggregateFields()).get(),
     chargebacks.aggregate(allocationAggregateFields()).get(),
     chargebackReversals.aggregate(allocationAggregateFields()).get(),
+    aiUsage.count().get(),
+    aiUsage.aggregate({
+      pricedCallCount: AggregateField.sum('pricedCallCount'),
+      unpricedCallCount: AggregateField.sum('unpricedCallCount'),
+      totalTokenCount: AggregateField.sum('totalTokenCount'),
+      estimatedCostMicrousd: AggregateField.sum('estimatedCostMicrousd'),
+    }).get(),
     ledger.orderBy('occurredAt', 'desc').limit(ADMIN_PLATFORM_ECONOMY_RECENT_LIMIT).get(),
   ]);
 
@@ -178,6 +225,10 @@ export const loadAdminPlatformEconomySnapshot = async (): Promise<AdminPlatformE
       'CHARGEBACK_REVERSAL'
     ),
   });
+  const aiUsageTotals = parseAiUsageTotals(
+    aiUsageCountSnapshot.data().count,
+    aiUsageAggregateSnapshot.data()
+  );
   const entries = recentSnapshot.docs.map(document => parseRecentEntry(document.data()));
   const stores = buildRecentStoreEconomyActivity(entries);
   const allocation = deriveRecentEconomicAllocationWindow(entries);
@@ -201,6 +252,7 @@ export const loadAdminPlatformEconomySnapshot = async (): Promise<AdminPlatformE
       refundShareBps: deriveRefundShareBps(capturedMinor, refundedMinor),
     },
     allocationTotals,
+    aiUsageTotals,
     recentWindow: {
       limit: ADMIN_PLATFORM_ECONOMY_RECENT_LIMIT,
       entryCount: entries.length,
