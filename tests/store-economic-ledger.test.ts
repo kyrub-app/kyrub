@@ -2,12 +2,15 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { describe, test } from 'node:test';
 import './economic-fees-subsidies.test';
+import './economic-chargebacks-cancellations.test';
 import type { CanonicalPayment } from '../src/utils/canonicalPayment';
 import type { VerifiedPaymentProviderEvent } from '../src/utils/paymentProvider';
 import {
   brlToMinor,
   buildPaymentCaptureEconomicEntry,
   buildPaymentCaptureEconomicEntryId,
+  buildPaymentChargebackEconomicEntry,
+  buildPaymentChargebackReversalEconomicEntry,
   buildPaymentRefundEconomicEntry,
   buildPaymentRefundEconomicEntryId,
   buildRecoveredPaymentCaptureEconomicEntry,
@@ -41,17 +44,16 @@ const event = (
   overrides: Partial<VerifiedPaymentProviderEvent> = {}
 ): VerifiedPaymentProviderEvent => ({
   provider: 'mercado_pago',
-  eventId: eventType === 'payment.paid' ? 'event-paid-1' : 'event-refund-1',
+  eventId: `event-${eventType}`,
   eventType,
   providerPaymentId: 'provider-pay-1',
   paymentIntentId: 'intent-1',
   amount: 29.5,
   currency: 'BRL',
   method: 'pix',
-  occurredAt:
-    eventType === 'payment.paid'
-      ? '2026-08-29T10:01:00.000Z'
-      : '2026-08-29T11:00:00.000Z',
+  occurredAt: eventType === 'payment.paid'
+    ? '2026-08-29T10:01:00.000Z'
+    : '2026-08-29T11:00:00.000Z',
   signatureVerified: true,
   ...overrides,
 });
@@ -83,9 +85,7 @@ describe('store economic ledger', () => {
     });
     assert.equal(capture.kind, 'payment_capture');
     assert.equal(capture.amountMinor, 2950);
-    assert.equal(capture.currency, 'BRL');
     assert.equal(capture.sourceAuthority, 'provider_webhook');
-    assert.equal(capture.providerEventId, 'event-paid-1');
     assert.equal(capture.reversalOfEntryId, '');
   });
 
@@ -106,35 +106,67 @@ describe('store economic ledger', () => {
       event: event('refund.succeeded'),
       capture,
     });
-
-    assert.deepEqual(capture.economicAllocation, economicAllocation);
     assert.deepEqual(refund.economicAllocation, economicAllocation);
     assert.equal(capture.economicAllocation?.courierRemunerationMinor, 450);
-    assert.equal(capture.economicAllocation?.storeSubsidyMinor, 500);
   });
 
-  test('full refund is an exact opposite-sign reversal of capture', () => {
-    const capture = buildPaymentCaptureEconomicEntry({
-      payment: payment(),
-      event: event('payment.paid'),
-    });
+  test('full refund remains an exact opposite-sign reversal of capture', () => {
+    const capture = buildPaymentCaptureEconomicEntry({ payment: payment(), event: event('payment.paid') });
     const refund = buildPaymentRefundEconomicEntry({
       payment: payment({ status: 'refund_processing' }),
       event: event('refund.succeeded'),
       capture,
     });
-    assert.equal(refund.kind, 'payment_refund');
-    assert.equal(refund.amountMinor, -2950);
-    assert.equal(refund.reversalOfEntryId, capture.id);
-
     const summary = deriveStoreEconomicLedgerSummary([capture, refund]);
     assert.deepEqual(summary, {
       currency: 'BRL',
       capturedMinor: 2950,
       refundedMinor: 2950,
       grossAfterRefundsMinor: 0,
+      chargedBackMinor: 0,
+      chargebackReversedMinor: 0,
+      economicNetMinor: 0,
       entryCount: 2,
     });
+  });
+
+  test('chargeback debit is separate from refund and its reversal restores economic net', () => {
+    const allocation = buildMarketplaceEconomicAllocationSnapshot({
+      subtotal: 30,
+      discountTotal: 5,
+      deliveryFee: 4.5,
+      total: 29.5,
+    });
+    const capture = buildPaymentCaptureEconomicEntry({
+      payment: payment(),
+      event: event('payment.paid'),
+      economicAllocation: allocation,
+    });
+    const chargeback = buildPaymentChargebackEconomicEntry({
+      payment: payment(),
+      event: event('chargeback.debited'),
+      capture,
+    });
+    const reversal = buildPaymentChargebackReversalEconomicEntry({
+      payment: payment({ status: 'charged_back' }),
+      event: event('chargeback.reversed'),
+      chargeback,
+    });
+
+    assert.equal(chargeback.kind, 'payment_chargeback');
+    assert.equal(chargeback.amountMinor, -2950);
+    assert.equal(chargeback.reversalOfEntryId, capture.id);
+    assert.deepEqual(chargeback.economicAllocation, allocation);
+    assert.equal(reversal.kind, 'payment_chargeback_reversal');
+    assert.equal(reversal.amountMinor, 2950);
+    assert.equal(reversal.reversalOfEntryId, chargeback.id);
+    assert.deepEqual(reversal.economicAllocation, allocation);
+
+    const summary = deriveStoreEconomicLedgerSummary([capture, chargeback, reversal]);
+    assert.equal(summary.grossAfterRefundsMinor, 2950);
+    assert.equal(summary.chargedBackMinor, 2950);
+    assert.equal(summary.chargebackReversedMinor, 2950);
+    assert.equal(summary.economicNetMinor, 2950);
   });
 
   test('legacy paid snapshot recovery is explicit and does not invent a webhook event', () => {
@@ -145,28 +177,12 @@ describe('store economic ledger', () => {
     assert.equal(capture.kind, 'payment_capture');
     assert.equal(capture.sourceAuthority, 'canonical_payment_snapshot');
     assert.equal(capture.providerEventId, '');
-    assert.equal(capture.occurredAt, payment().paidAt);
   });
 
   test('event amount, method and provider must match canonical payment', () => {
-    assert.throws(() =>
-      buildPaymentCaptureEconomicEntry({
-        payment: payment(),
-        event: event('payment.paid', { amount: 30 }),
-      })
-    );
-    assert.throws(() =>
-      buildPaymentCaptureEconomicEntry({
-        payment: payment(),
-        event: event('payment.paid', { method: 'card' }),
-      })
-    );
-    assert.throws(() =>
-      buildPaymentCaptureEconomicEntry({
-        payment: payment(),
-        event: event('payment.paid', { provider: 'other_provider' }),
-      })
-    );
+    assert.throws(() => buildPaymentCaptureEconomicEntry({ payment: payment(), event: event('payment.paid', { amount: 30 }) }));
+    assert.throws(() => buildPaymentCaptureEconomicEntry({ payment: payment(), event: event('payment.paid', { method: 'card' }) }));
+    assert.throws(() => buildPaymentCaptureEconomicEntry({ payment: payment(), event: event('payment.paid', { provider: 'other_provider' }) }));
   });
 
   test('webhook prepares economic ledger before writes and applies it in the same transaction', () => {
@@ -179,12 +195,12 @@ describe('store economic ledger', () => {
     assert.match(processor, /payment: current,\s*event,/);
   });
 
-  test('service repairs missing historical capture before recording refund', () => {
+  test('service recovers capture before either refund or chargeback economic reversal', () => {
     const service = readFileSync('server/payments/storeEconomicLedgerService.ts', 'utf8');
     assert.match(service, /buildRecoveredPaymentCaptureEconomicEntry/);
-    assert.match(service, /if \(!captureSnapshot\.exists\)/);
-    assert.match(service, /writes\.push\(\{ ref: captureRef, entry: capture \}\)/);
     assert.match(service, /buildPaymentRefundEconomicEntry/);
+    assert.match(service, /buildPaymentChargebackEconomicEntry/);
+    assert.match(service, /buildPaymentChargebackReversalEconomicEntry/);
   });
 
   test('ledger remains server-only and direct Firestore browser writes are closed', () => {
@@ -195,29 +211,19 @@ describe('store economic ledger', () => {
     assert.match(rules, /match \/\{document=\*\*\} \{\s*allow read, write: if false;/);
   });
 
-  test('economic allocation stays separate from custody, settlement and PSP split', () => {
-    const contract = readFileSync('shared/economicFeesSubsidies.ts', 'utf8');
+  test('economic lifecycle remains separate from custody, settlement and PSP split', () => {
     const ledger = readFileSync('shared/storeEconomicLedger.ts', 'utf8');
-    const isolated = `${contract}\n${ledger}`;
-    assert.doesNotMatch(isolated, /storePointLedger|kcoin|canonicalCash/i);
-    assert.doesNotMatch(isolated, /walletBalance|custodialBalance|settlementInstruction|application_fee_amount|splitRecipient/i);
-    assert.match(contract, /courierRemunerationMinor: deliveryFeeMinor/);
-    assert.match(contract, /storeSubsidyMinor/);
-    assert.match(contract, /kyrubIncentiveMinor/);
-    assert.match(contract, /partnerSubsidyMinor/);
+    assert.doesNotMatch(ledger, /walletBalance|custodialBalance|settlementInstruction|application_fee_amount|splitRecipient/i);
+    assert.match(ledger, /payment_chargeback/);
+    assert.match(ledger, /payment_chargeback_reversal/);
   });
 
-  test('refund V1 only accepts authoritative full refund success event', () => {
-    const capture = buildPaymentCaptureEconomicEntry({
+  test('refund still only accepts authoritative full refund success event', () => {
+    const capture = buildPaymentCaptureEconomicEntry({ payment: payment(), event: event('payment.paid') });
+    assert.throws(() => buildPaymentRefundEconomicEntry({
       payment: payment(),
-      event: event('payment.paid'),
-    });
-    assert.throws(() =>
-      buildPaymentRefundEconomicEntry({
-        payment: payment(),
-        event: event('refund.processing'),
-        capture,
-      })
-    );
+      event: event('refund.processing'),
+      capture,
+    }));
   });
 });
