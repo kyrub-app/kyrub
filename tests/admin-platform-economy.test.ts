@@ -35,66 +35,32 @@ describe('admin platform economy', () => {
   test('recent store activity separates refunds and chargebacks', () => {
     const stores = buildRecentStoreEconomyActivity([
       entry(),
-      entry({
-        id: 'payment:chargeback:pay-1',
-        kind: 'payment_chargeback',
-        amountMinor: -2950,
-        occurredAt: '2026-08-29T11:00:00.000Z',
-      }),
-      entry({
-        id: 'payment:chargeback_reversal:pay-1',
-        kind: 'payment_chargeback_reversal',
-        amountMinor: 2950,
-        occurredAt: '2026-08-29T11:30:00.000Z',
-      }),
-      entry({
-        id: 'payment:capture:pay-2',
-        storeId: 'store-2',
-        paymentId: 'pay-2',
-        amountMinor: 5000,
-        occurredAt: '2026-08-29T12:00:00.000Z',
-      }),
+      entry({ id: 'payment:chargeback:pay-1', kind: 'payment_chargeback', amountMinor: -2950, occurredAt: '2026-08-29T11:00:00.000Z' }),
+      entry({ id: 'payment:chargeback_reversal:pay-1', kind: 'payment_chargeback_reversal', amountMinor: 2950, occurredAt: '2026-08-29T11:30:00.000Z' }),
+      entry({ id: 'payment:capture:pay-2', storeId: 'store-2', paymentId: 'pay-2', amountMinor: 5000, occurredAt: '2026-08-29T12:00:00.000Z' }),
     ]);
     assert.equal(stores.length, 2);
     assert.equal(stores[0]?.storeId, 'store-2');
-    assert.deepEqual(
-      stores.find(store => store.storeId === 'store-1'),
-      {
-        storeId: 'store-1',
-        capturedMinor: 2950,
-        refundedMinor: 0,
-        chargedBackMinor: 2950,
-        chargebackReversedMinor: 2950,
-        economicNetMinor: 2950,
-        eventCount: 3,
-        lastOccurredAt: '2026-08-29T11:30:00.000Z',
-      }
-    );
+    assert.deepEqual(stores.find(store => store.storeId === 'store-1'), {
+      storeId: 'store-1',
+      capturedMinor: 2950,
+      refundedMinor: 0,
+      grossAfterRefundsMinor: 2950,
+      chargedBackMinor: 2950,
+      chargebackReversedMinor: 2950,
+      economicNetMinor: 2950,
+      eventCount: 3,
+      lastOccurredAt: '2026-08-29T11:30:00.000Z',
+    });
   });
 
-  test('recent allocation projection nets refund and chargeback reversals without recomputing policy', () => {
-    const allocation = buildMarketplaceEconomicAllocationSnapshot({
-      subtotal: 30,
-      discountTotal: 5,
-      deliveryFee: 4.5,
-      total: 29.5,
-    });
+  test('recent allocation projection nets chargeback and reversal without recomputing policy', () => {
+    const allocation = buildMarketplaceEconomicAllocationSnapshot({ subtotal: 30, discountTotal: 5, deliveryFee: 4.5, total: 29.5 });
     const projection = deriveRecentEconomicAllocationWindow([
       entry({ economicAllocation: allocation }),
-      entry({
-        id: 'payment:chargeback:pay-1',
-        kind: 'payment_chargeback',
-        amountMinor: -2950,
-        economicAllocation: allocation,
-      }),
-      entry({
-        id: 'payment:chargeback_reversal:pay-1',
-        kind: 'payment_chargeback_reversal',
-        amountMinor: 2950,
-        economicAllocation: allocation,
-      }),
+      entry({ id: 'payment:chargeback:pay-1', kind: 'payment_chargeback', amountMinor: -2950, economicAllocation: allocation }),
+      entry({ id: 'payment:chargeback_reversal:pay-1', kind: 'payment_chargeback_reversal', amountMinor: 2950, economicAllocation: allocation }),
     ]);
-
     assert.equal(projection.allocatedCaptureCount, 1);
     assert.equal(projection.allocatedRefundCount, 0);
     assert.equal(projection.allocatedChargebackCount, 1);
