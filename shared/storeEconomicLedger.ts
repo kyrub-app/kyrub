@@ -11,11 +11,16 @@ export const STORE_ECONOMIC_LEDGER_MAX_ENTRIES = 100 as const;
 
 export type StoreEconomicLedgerKind =
   | 'payment_capture'
-  | 'payment_refund';
+  | 'payment_refund'
+  | 'platform_fee_assessed'
+  | 'platform_fee_reversed'
+  | 'platform_subsidy_granted'
+  | 'platform_subsidy_reversed';
 
 export type StoreEconomicLedgerSourceAuthority =
   | 'provider_webhook'
-  | 'canonical_payment_snapshot';
+  | 'canonical_payment_snapshot'
+  | 'platform_policy_snapshot';
 
 export interface StoreEconomicLedgerEntry {
   schemaVersion: typeof STORE_ECONOMIC_LEDGER_SCHEMA_VERSION;
@@ -113,7 +118,7 @@ const assertPaymentEventMatch = (
   }
 };
 
-const baseFromPayment = (input: {
+export const buildStoreEconomicLedgerPaymentBase = (input: {
   payment: CanonicalPayment;
   paymentIntentId: string;
   occurredAt: string;
@@ -153,7 +158,7 @@ export const buildPaymentCaptureEconomicEntry = (input: {
   if (input.event.eventType !== 'payment.paid') {
     throw new Error('STORE_ECONOMIC_LEDGER_CAPTURE_EVENT_INVALID');
   }
-  const base = baseFromPayment({
+  const base = buildStoreEconomicLedgerPaymentBase({
     payment: input.payment,
     paymentIntentId: input.event.paymentIntentId,
     occurredAt: input.event.occurredAt,
@@ -178,7 +183,7 @@ export const buildRecoveredPaymentCaptureEconomicEntry = (input: {
   if (!validIso(clean(input.payment.paidAt))) {
     throw new Error('STORE_ECONOMIC_LEDGER_CAPTURE_SNAPSHOT_INVALID');
   }
-  const base = baseFromPayment({
+  const base = buildStoreEconomicLedgerPaymentBase({
     payment: input.payment,
     paymentIntentId: input.paymentIntentId,
     occurredAt: input.payment.paidAt,
@@ -213,7 +218,7 @@ export const buildPaymentRefundEconomicEntry = (input: {
   ) {
     throw new Error('STORE_ECONOMIC_LEDGER_CAPTURE_MISMATCH');
   }
-  const base = baseFromPayment({
+  const base = buildStoreEconomicLedgerPaymentBase({
     payment: input.payment,
     paymentIntentId: input.event.paymentIntentId,
     occurredAt: input.event.occurredAt,
@@ -243,7 +248,7 @@ export const deriveStoreEconomicLedgerSummary = (
     if (entry.kind === 'payment_capture') {
       if (entry.amountMinor <= 0) throw new Error('STORE_ECONOMIC_LEDGER_CAPTURE_INVALID');
       capturedMinor += entry.amountMinor;
-    } else {
+    } else if (entry.kind === 'payment_refund') {
       if (entry.amountMinor >= 0) throw new Error('STORE_ECONOMIC_LEDGER_REFUND_INVALID');
       refundedMinor += Math.abs(entry.amountMinor);
     }
