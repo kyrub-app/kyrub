@@ -16,6 +16,9 @@ export interface UserCommunicationCategoryPreferences {
 export interface UserCommunicationPreferences {
   schemaVersion: typeof USER_COMMUNICATION_PREFERENCES_SCHEMA_VERSION;
   userId: string;
+  marketing: {
+    enabled: boolean;
+  };
   browser: {
     enabled: boolean;
     categories: UserCommunicationCategoryPreferences;
@@ -39,6 +42,9 @@ export const buildDefaultUserCommunicationPreferences = (
   return {
     schemaVersion: USER_COMMUNICATION_PREFERENCES_SCHEMA_VERSION,
     userId,
+    marketing: {
+      enabled: false,
+    },
     browser: {
       enabled: false,
       categories: {
@@ -55,6 +61,7 @@ export const buildDefaultUserCommunicationPreferences = (
 
 export const buildUserCommunicationPreferences = (input: {
   userId: string;
+  marketingEnabled: boolean;
   browserEnabled: boolean;
   categories: UserCommunicationCategoryPreferences;
   updatedAt: string;
@@ -64,15 +71,20 @@ export const buildUserCommunicationPreferences = (input: {
   if (!updatedAt || !Number.isFinite(Date.parse(updatedAt))) {
     throw new Error('USER_COMMUNICATION_PREFERENCES_TIME_INVALID');
   }
+  const marketingEnabled = input.marketingEnabled === true;
   return {
     ...defaults,
+    marketing: {
+      enabled: marketingEnabled,
+    },
     browser: {
       enabled: input.browserEnabled === true,
       categories: {
         store_chat: input.categories.store_chat === true,
         order: input.categories.order === true,
         loyalty: input.categories.loyalty === true,
-        marketing: input.categories.marketing === true,
+        marketing:
+          marketingEnabled && input.categories.marketing === true,
         system: input.categories.system === true,
       },
     },
@@ -90,12 +102,19 @@ export const userCommunicationPreferencesPath = (
   return `users/${userId}/communicationPreferences/current`;
 };
 
+export const shouldReceiveUserNotificationInApp = (
+  preferences: UserCommunicationPreferences,
+  category: UserNotificationCategory
+): boolean => category !== 'marketing' || preferences.marketing.enabled;
+
 export const shouldDeliverUserNotificationToBrowser = (
   preferences: UserCommunicationPreferences,
   notification: Pick<UserNotification, 'recipientUserId' | 'category'>
 ): boolean => {
   if (notification.recipientUserId !== preferences.userId) return false;
+  if (!shouldReceiveUserNotificationInApp(preferences, notification.category)) {
+    return false;
+  }
   if (!preferences.browser.enabled) return false;
-  const category = notification.category as UserNotificationCategory;
-  return preferences.browser.categories[category] === true;
+  return preferences.browser.categories[notification.category] === true;
 };
