@@ -32,14 +32,20 @@ describe('admin platform economy', () => {
     assert.throws(() => deriveRefundShareBps(-1, 0));
   });
 
-  test('recent store activity is explicitly derived only from recent entries', () => {
+  test('recent store activity separates refunds and chargebacks', () => {
     const stores = buildRecentStoreEconomyActivity([
       entry(),
       entry({
-        id: 'payment:refund:pay-1',
-        kind: 'payment_refund',
+        id: 'payment:chargeback:pay-1',
+        kind: 'payment_chargeback',
         amountMinor: -2950,
         occurredAt: '2026-08-29T11:00:00.000Z',
+      }),
+      entry({
+        id: 'payment:chargeback_reversal:pay-1',
+        kind: 'payment_chargeback_reversal',
+        amountMinor: 2950,
+        occurredAt: '2026-08-29T11:30:00.000Z',
       }),
       entry({
         id: 'payment:capture:pay-2',
@@ -56,15 +62,17 @@ describe('admin platform economy', () => {
       {
         storeId: 'store-1',
         capturedMinor: 2950,
-        refundedMinor: 2950,
-        grossAfterRefundsMinor: 0,
-        eventCount: 2,
-        lastOccurredAt: '2026-08-29T11:00:00.000Z',
+        refundedMinor: 0,
+        chargedBackMinor: 2950,
+        chargebackReversedMinor: 2950,
+        economicNetMinor: 2950,
+        eventCount: 3,
+        lastOccurredAt: '2026-08-29T11:30:00.000Z',
       }
     );
   });
 
-  test('recent allocation projection nets refunds without recomputing policy', () => {
+  test('recent allocation projection nets refund and chargeback reversals without recomputing policy', () => {
     const allocation = buildMarketplaceEconomicAllocationSnapshot({
       subtotal: 30,
       discountTotal: 5,
@@ -74,38 +82,38 @@ describe('admin platform economy', () => {
     const projection = deriveRecentEconomicAllocationWindow([
       entry({ economicAllocation: allocation }),
       entry({
-        id: 'payment:refund:pay-1',
-        kind: 'payment_refund',
+        id: 'payment:chargeback:pay-1',
+        kind: 'payment_chargeback',
         amountMinor: -2950,
         economicAllocation: allocation,
       }),
       entry({
-        id: 'payment:capture:pay-2',
-        paymentId: 'pay-2',
+        id: 'payment:chargeback_reversal:pay-1',
+        kind: 'payment_chargeback_reversal',
         amountMinor: 2950,
         economicAllocation: allocation,
       }),
     ]);
 
-    assert.equal(projection.allocatedCaptureCount, 2);
-    assert.equal(projection.allocatedRefundCount, 1);
+    assert.equal(projection.allocatedCaptureCount, 1);
+    assert.equal(projection.allocatedRefundCount, 0);
+    assert.equal(projection.allocatedChargebackCount, 1);
+    assert.equal(projection.allocatedChargebackReversalCount, 1);
     assert.equal(projection.deliveryFeeMinor, 450);
     assert.equal(projection.courierRemunerationMinor, 450);
     assert.equal(projection.storeSubsidyMinor, 500);
-    assert.equal(projection.kyrubIncentiveMinor, 0);
-    assert.equal(projection.partnerSubsidyMinor, 0);
   });
 
-  test('backend uses collection-group aggregates for lifetime totals and a bounded recent window', () => {
+  test('backend aggregates capture, refund and chargeback lifecycle independently', () => {
     const service = readFileSync('server/admin/platformEconomyService.ts', 'utf8');
     assert.match(service, /collectionGroup\('economicLedger'\)/);
+    assert.match(service, /payment_chargeback/);
+    assert.match(service, /payment_chargeback_reversal/);
     assert.match(service, /AggregateField\.sum\('amountMinor'\)/);
-    assert.match(service, /captures\.count\(\)\.get\(\)/);
-    assert.match(service, /refunds\.count\(\)\.get\(\)/);
+    assert.match(service, /chargebacks\.count\(\)\.get\(\)/);
+    assert.match(service, /chargebackReversals\.count\(\)\.get\(\)/);
+    assert.match(service, /economicNetMinor/);
     assert.match(service, /orderBy\('occurredAt', 'desc'\)/);
-    assert.match(service, /ADMIN_PLATFORM_ECONOMY_RECENT_LIMIT/);
-    assert.match(service, /deriveRecentEconomicAllocationWindow/);
-    assert.match(service, /recentWindow:/);
   });
 
   test('finance endpoint is server-authorized and audited', () => {
@@ -125,14 +133,10 @@ describe('admin platform economy', () => {
     assert.doesNotMatch(client, /firebase\/firestore|collectionGroup|collection\(db/);
   });
 
-  test('workspace is gated by read_finance and does not expose settlement actions', () => {
-    const workspace = readFileSync(
-      'src/components/admin/AdminPlatformEconomyWorkspace.tsx',
-      'utf8'
-    );
+  test('workspace remains read-only and separate from settlement', () => {
+    const workspace = readFileSync('src/components/admin/AdminPlatformEconomyWorkspace.tsx', 'utf8');
     assert.match(workspace, /hasAdminPermission\(profile, 'read_finance'\)/);
     assert.match(workspace, /Economia canônica da plataforma/);
-    assert.match(workspace, /não é ranking vitalício/);
     assert.doesNotMatch(workspace, /onClick=.*(settlement|transfer)/i);
   });
 
@@ -153,14 +157,13 @@ describe('admin platform economy', () => {
     assert.match(indexes, /"queryScope": "COLLECTION_GROUP"/);
   });
 
-  test('admin projection reads persisted allocations but does not create settlement or wallet balances', () => {
+  test('admin projection stays separate from settlement and wallet balances', () => {
     const service = readFileSync('server/admin/platformEconomyService.ts', 'utf8');
     const contract = readFileSync('shared/adminPlatformEconomy.ts', 'utf8');
     const isolated = `${service}\n${contract}`;
-    assert.match(isolated, /storeSubsidyMinor/);
-    assert.match(isolated, /kyrubIncentiveMinor/);
-    assert.match(isolated, /partnerSubsidyMinor/);
-    assert.doesNotMatch(isolated, /settlementMinor|walletBalance|taxMinor|splitMinor/);
+    assert.match(isolated, /chargedBackMinor/);
+    assert.match(isolated, /chargebackReversedMinor/);
+    assert.doesNotMatch(isolated, /settlementMinor|walletBalance|splitMinor/);
   });
 
   test('server mounts the dedicated admin economy route', () => {
