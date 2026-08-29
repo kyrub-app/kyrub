@@ -1,3 +1,4 @@
+import type { EconomicAllocationSnapshot } from './economicFeesSubsidies.js';
 import type {
   StoreEconomicLedgerKind,
   StoreEconomicLedgerSourceAuthority,
@@ -27,6 +28,18 @@ export interface AdminPlatformEconomyRecentEntry {
   provider: string;
   sourceAuthority: StoreEconomicLedgerSourceAuthority;
   occurredAt: string;
+  economicAllocation?: EconomicAllocationSnapshot;
+}
+
+export interface AdminPlatformEconomyAllocationWindow {
+  allocatedCaptureCount: number;
+  allocatedRefundCount: number;
+  deliveryFeeMinor: number;
+  courierRemunerationMinor: number;
+  storeSubsidyMinor: number;
+  kyrubIncentiveMinor: number;
+  partnerSubsidyMinor: number;
+  observedCostsMinor: number;
 }
 
 export interface AdminPlatformEconomyStoreActivity {
@@ -46,6 +59,7 @@ export interface AdminPlatformEconomySnapshot {
     limit: number;
     entryCount: number;
     representedStoreCount: number;
+    allocation: AdminPlatformEconomyAllocationWindow;
     entries: AdminPlatformEconomyRecentEntry[];
     stores: AdminPlatformEconomyStoreActivity[];
   };
@@ -58,6 +72,14 @@ const safeNonNegative = (value: number, label: string): number => {
   return value;
 };
 
+const addSignedSafe = (left: number, right: number, label: string): number => {
+  const value = left + right;
+  if (!Number.isSafeInteger(value)) {
+    throw new Error(`ADMIN_PLATFORM_ECONOMY_${label}_OVERFLOW`);
+  }
+  return value;
+};
+
 export const deriveRefundShareBps = (
   capturedMinorInput: number,
   refundedMinorInput: number
@@ -66,6 +88,61 @@ export const deriveRefundShareBps = (
   const refundedMinor = safeNonNegative(refundedMinorInput, 'REFUNDED');
   if (capturedMinor === 0) return 0;
   return Math.min(10000, Math.round((refundedMinor * 10000) / capturedMinor));
+};
+
+export const deriveRecentEconomicAllocationWindow = (
+  entries: readonly AdminPlatformEconomyRecentEntry[]
+): AdminPlatformEconomyAllocationWindow => {
+  const result: AdminPlatformEconomyAllocationWindow = {
+    allocatedCaptureCount: 0,
+    allocatedRefundCount: 0,
+    deliveryFeeMinor: 0,
+    courierRemunerationMinor: 0,
+    storeSubsidyMinor: 0,
+    kyrubIncentiveMinor: 0,
+    partnerSubsidyMinor: 0,
+    observedCostsMinor: 0,
+  };
+
+  for (const entry of entries) {
+    const allocation = entry.economicAllocation;
+    if (!allocation) continue;
+    const sign = entry.kind === 'payment_capture' ? 1 : -1;
+    if (entry.kind === 'payment_capture') result.allocatedCaptureCount += 1;
+    else result.allocatedRefundCount += 1;
+
+    result.deliveryFeeMinor = addSignedSafe(
+      result.deliveryFeeMinor,
+      sign * allocation.deliveryFeeMinor,
+      'DELIVERY_FEE'
+    );
+    result.courierRemunerationMinor = addSignedSafe(
+      result.courierRemunerationMinor,
+      sign * allocation.courierRemunerationMinor,
+      'COURIER_REMUNERATION'
+    );
+    result.storeSubsidyMinor = addSignedSafe(
+      result.storeSubsidyMinor,
+      sign * allocation.storeSubsidyMinor,
+      'STORE_SUBSIDY'
+    );
+    result.kyrubIncentiveMinor = addSignedSafe(
+      result.kyrubIncentiveMinor,
+      sign * allocation.kyrubIncentiveMinor,
+      'KYRUB_INCENTIVE'
+    );
+    result.partnerSubsidyMinor = addSignedSafe(
+      result.partnerSubsidyMinor,
+      sign * allocation.partnerSubsidyMinor,
+      'PARTNER_SUBSIDY'
+    );
+    result.observedCostsMinor = addSignedSafe(
+      result.observedCostsMinor,
+      sign * allocation.observedCostsMinor,
+      'OBSERVED_COSTS'
+    );
+  }
+  return result;
 };
 
 export const buildRecentStoreEconomyActivity = (
