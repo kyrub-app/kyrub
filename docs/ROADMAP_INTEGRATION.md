@@ -33,11 +33,11 @@ Experiences must project these shared authorities instead of creating parallel t
 9. No feature may invent an unavailable provider capability, settlement, wallet balance, split or external delivery state.
 10. No roadmap item is considered production-complete only because a preview deploy exists; integration, regression and production validation are separate gates.
 
-## Canonical feature ancestry already built
+## Canonical release-candidate ancestry
 
-The current integration head contains this stacked ancestry:
+The current integration release candidate contains this functional ancestry:
 
-`#378 -> #379 -> #380 -> #381 -> #383 -> #386 -> #387 -> #388 -> #389 -> #390 -> #391 -> #392 -> #394 -> #395 -> #397 -> #398`
+`#378 -> #379 -> #380 -> #381 -> #383 -> #386 -> #387 -> #388 -> #389 -> #390 -> #391 -> #392 -> #394 -> #395 -> #397 -> #398 -> #399 -> #400`
 
 Functional sequence:
 
@@ -57,34 +57,36 @@ Functional sequence:
 14. Admin Platform Economy — #395
 15. Fees and subsidies facts — #397
 16. Chargebacks and cancellations economics — #398
+17. Canonical-first customer orders — #399
+18. Local Service PDV projection on the same customer-order authority — #400
 
-`integration/roadmap-v1` starts from the validated #398 head.
+The integrated head after #399/#400 is represented by `integration/roadmap-v1`; the umbrella release PR is #401 (`integration/roadmap-v1 -> main`).
 
-## Reconciliation queue
+## Reconciliation status — complete
 
-Two useful features were originally developed on parallel branches and are being reincorporated deliberately:
+Two useful features had originally been developed on parallel branches. Their old PRs were retired and their validated functionality was reincorporated into the canonical integration line.
 
-### R1 — Canonical-first customer orders
+### R1 — Canonical-first customer orders — ✅ integrated
 
-PR #399, branch `reconcile/canonical-customer-orders-v1`, targets `integration/roadmap-v1`.
+Former parallel work #396 was ported and validated as #399, then merged into `integration/roadmap-v1`.
 
-Purpose:
-- new customer orders canonical-first in `/stores/{storeId}/orders/{orderId}`;
+Preserved behavior:
+- new customer orders canonical-first in `/stores/{storeId}/orders/{orderId}` when canonical mapping exists;
 - temporary legacy mirror preserved;
-- legacy watcher cannot overwrite equal/newer canonical state;
-- same stable order id across both representations.
+- same stable order id across canonical and legacy representations;
+- legacy fallback remains available during migration;
+- legacy watcher cannot overwrite equal/newer canonical state.
 
-This is foundational and must enter before the local-service projection.
+### R2 — Local Service PDV — ✅ integrated
 
-### R2 — Local Service PDV projection
+Former parallel work #393 was ported and validated as #400 after R1, then merged into `integration/roadmap-v1`.
 
-PR #400, branch `reconcile/local-service-pos-v1`, is stacked on R1.
-
-Purpose:
-- project `dine_in` + `pickup` from canonical customer orders;
-- reuse table/pickup authorities;
-- keep delivery out of this local-service view;
-- preserve secure six-digit pickup handoff.
+Preserved behavior:
+- `dine_in` + `pickup` projected from canonical customer orders;
+- table/pickup authorities reused;
+- delivery excluded from this local-service projection;
+- secure six-digit pickup handoff preserved;
+- no second local-order persistence introduced.
 
 ## Superseded PRs
 
@@ -97,7 +99,7 @@ These PRs are historical only and must not be merged:
 - #393 — reconciled as #400
 - #396 — reconciled as #399
 
-Their branches may remain as historical references/backups, but they are not part of the merge path.
+Their branches may remain as historical references/backups, but they are not part of the release path.
 
 ## Independent work not part of this release train
 
@@ -105,44 +107,86 @@ Their branches may remain as historical references/backups, but they are not par
 
 ## Integration release strategy
 
-Do not merge the long stack one PR at a time into `main`.
+Do not merge the historical stack one PR at a time into `main`.
 
-The intended release flow is:
+Current release flow:
 
-1. Validate #399 completely.
-2. Validate #400 completely.
-3. With explicit authorization, integrate #399 into `integration/roadmap-v1`.
-4. Rebase/retarget the reconciled local-service result onto the updated integration head and validate again.
-5. With explicit authorization, integrate the local-service reconciliation.
-6. Open/refresh a single release-candidate PR: `integration/roadmap-v1 -> main`.
-7. Run the full integrated validation suite on that release candidate.
-8. Run the old 67-point Phase 10 closure (items 63–67) against the integrated release candidate, not against old `main`.
-9. Only after all gates are green, request explicit authorization to merge the release candidate into `main`.
-10. Run production smoke/E2E on the resulting production commit.
+1. ✅ #399 integrated into `integration/roadmap-v1`.
+2. ✅ #400 integrated after #399.
+3. ✅ Umbrella release candidate #401 exists as draft (`integration/roadmap-v1 -> main`).
+4. ✅ Baseline integrated head after #400 passed Application Build, Validate Kyrub, Store Security Rules and Identity Security Rules.
+5. 🟡 PR #403 executes the formal Phase 10 pre-release validation against this integrated candidate.
+6. ⏳ When #403 is fully green, integrate its validation gates/fixes/docs into `integration/roadmap-v1`.
+7. ⏳ Re-run #401 checks on the resulting final release-candidate head.
+8. ⏸️ Merge #401 into `main` only after explicit owner authorization.
+9. ⏳ After the authorized release, verify deployed SHA and run production smoke/E2E before declaring the old 67-point roadmap formally closed.
 
-## Phase 10 / 67-point final closure
+## Phase 10 / 67-point closure
 
-The historical 67-point roadmap is not considered formally closed until these final cross-domain gates run against the integrated release candidate:
+The historical 67-point roadmap remains a **coverage checklist**, not the priority engine for new product work. Current architectural priority is tracked by issue #402 — Kyrub Operation Engine.
 
-- integrated cross-domain validation;
-- security regression;
-- production/readiness verification;
-- documentation/architecture drift check;
-- final closure report with explicit unresolved exceptions, if any.
+The final historical gates are:
 
-## Roadmap after integration
+### #63 — Cross-domain E2E
 
-Only after the release candidate is coherent should development resume for the remaining product roadmap. Priority must follow architecture dependencies, not PR numbering.
+Pre-release evidence is now provided by an integrated contract that follows one authoritative paid purchase through payment/provider authority, CustomerOrder materialization, economic ledger, delivery allocation, Store Points, seller/KDS, delivery opportunity and inventory lineage.
 
-The next economic layers must not jump directly to a consumer wallet. The safe dependency order is:
+This automated contract is not falsely labeled as a real Pix transaction in production. Production smoke/E2E remains coupled to #65.
 
-1. complete economic lifecycle facts and reconciliation;
-2. define payable/receivable obligations and settlement eligibility;
-3. provider-backed settlement execution and reconciliation;
-4. only then expose wallet/balance experiences backed by authoritative obligations/settlements;
-5. complete delivery economics/dispatch on the same order/fulfillment engine;
-6. extend staff membership/roles so authorized humans can operate as the institutional store principal;
-7. connect Kyrubia to these canonical actions through the same policy/audit layer.
+### #64 — Security Regression
+
+Current release gates include:
+- Store Security Rules;
+- Identity Security Rules;
+- broad application/regression suite;
+- serverless ESM graph validation;
+- production dependency audit.
+
+Safe dependency fixes removed all discovered HIGH/CRITICAL production advisories. A remaining moderate transitive `uuid` advisory in the Firebase Admin/Google Cloud Storage chain is tracked explicitly in issue #404 instead of forcing a breaking downgrade.
+
+### #65 — Production Verification
+
+Cannot be completed before the release exists.
+
+Required after authorized #401 merge:
+- expected release SHA equals deployed production SHA;
+- production health/smoke checks;
+- critical flow verification;
+- production E2E where appropriate and explicitly authorized.
+
+### #66 — Documentation Drift
+
+Phase 10 compares code against architecture and product documentation. Material drift already found and corrected includes:
+- canonical Operation Engine domains;
+- institutional store identity vs human actor;
+- canonical-first customer orders and legacy compatibility;
+- provider-webhook payment authority;
+- economic ledger vs settlement/wallet;
+- Store Points separation;
+- current Kyrubia Action/Policy/Receipt architecture.
+
+### #67 — Phase Closeout
+
+A pre-release closeout is generated by Phase 10. The final 67/67 closeout remains conditional on #65 because production verification cannot be inferred from CI or a merge.
+
+## Product roadmap after this release
+
+New work follows **architectural dependencies**, not historical item numbering. Issue #402 is the roadmap master.
+
+Recommended dependency order:
+
+1. Payments, obligations and settlements:
+   `Payment -> Allocation -> Obligation -> Settlement -> Reconciliation`;
+2. real staff memberships, roles and institutional capabilities;
+3. omnichannel/store connections as adapters over canonical domains;
+4. fulfillment/delivery on the same canonical order engine;
+5. dispute/resolution domain with compensating facts;
+6. remaining Loyalty/Gamification/Clubs gaps;
+7. Governance/Legal/Trust completion;
+8. Kyrubia and external agents over the same Policy/Action Engine;
+9. expansion experiences such as Freelas, Agenda and additional income/financial services only when their underlying rails exist.
+
+A wallet must not appear before authoritative obligations/settlements exist. A marketplace must not become a second catalog/order authority. A new AI action must not bypass the same authorization and audit layer used by the product.
 
 ## Definition of done
 
@@ -150,4 +194,4 @@ A feature is done only when all applicable layers agree:
 
 `canonical model -> authorization -> server authority -> persistence -> projection/UI -> tests -> integration -> production validation`
 
-A green isolated PR is implementation-ready, not production-complete.
+A green isolated PR is implementation-ready, not production-complete. A green release candidate is release-ready, not production-verified.

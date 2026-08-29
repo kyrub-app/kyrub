@@ -2,147 +2,258 @@
 
 ## Visão geral
 
-Kyrub é uma aplicação React/TypeScript com três superfícies principais:
+Kyrub é uma plataforma operacional única, implementada em React/TypeScript no cliente, Node/Express no desenvolvimento e funções serverless em produção. As experiências de vitrine, ERP/PDV, CRM, fidelidade, atendimento local, retirada, delivery, pagamentos, comunicação, social e Kyrubia devem reutilizar as mesmas autoridades canônicas em vez de criar estados paralelos.
 
-1. aplicativo autenticado do usuário;
-2. vitrines públicas de lojas;
-3. Control Plane administrativo em domínio separado.
+A direção arquitetural é o **Kyrub Operation Engine**, organizado em domínios compartilhados:
 
-O cliente é servido por Vite. O desenvolvimento local usa Express com middleware do Vite; a produção web utiliza o bundle estático e funções em `api/` para rotas serverless.
+1. Identity & Relationships;
+2. Catalog & Resources;
+3. Commitments / Orders;
+4. Fulfillment;
+5. Payments & Settlements;
+6. Domain Events & Receipts;
+7. Policy & Permissions;
+8. Communication & Social;
+9. Kyrubia / Trusted Actions.
+
+Uma experiência de produto é uma projeção desses domínios. Ela não recebe autorização para inventar uma nova fonte de verdade só porque precisa de uma nova tela.
+
+## Superfícies principais
+
+### Aplicativo autenticado
+
+É a superfície pessoal do usuário Kyrub. A mesma identidade humana pode comprar, operar a própria loja e, quando houver vínculo autorizado, atuar em outra loja.
+
+### Loja / vitrine pública
+
+A loja é uma identidade institucional e comercial. Ela possui apresentação pública própria, mas **não é um segundo login compartilhado**. Uma ação institucional preserva simultaneamente:
+
+- o principal da loja;
+- o usuário humano autenticado;
+- o papel/capability que autorizou a representação.
+
+### Control Plane administrativo
+
+O Admin é uma superfície separada, com autorização administrativa adicional. Finance, operações, credenciais, governança e observabilidade não são liberados apenas porque o usuário está autenticado no Kyrub comum.
 
 ## Entradas da aplicação
 
 ### `src/main.tsx`
 
-Monta a aplicação React e envolve todas as superfícies em uma barreira de recuperação de erros. Uma falha fatal de renderização gera um código de incidente e oferece recarga ou retorno ao início.
+Monta a árvore React, bridges transversais e a barreira de recuperação de erros.
 
 ### `src/App.tsx`
 
-Resolve a superfície atual:
-
-- `admin.kyrub.com` ou rota administrativa → `AdminControlPlaneRoot`;
-- rota de vitrine pública → `PublicStorefrontApp`;
-- aplicativo autenticado → `LegacyApp` com bridges modulares;
-- rota operacional de equipe → aplicativo autenticado com bridges de operação.
+Resolve as superfícies administrativas, públicas e autenticadas e mantém a composição compatível com a aplicação histórica.
 
 ### `src/LegacyApp.tsx`
 
-Ainda concentra parte relevante da composição histórica e do estado da interface. Recursos mais novos são adicionados por componentes, hooks, utilitários e bridges externos para reduzir risco de regressão.
+Ainda concentra parte relevante da composição legada. A estratégia de migração é extrair regras e capacidades para módulos, serviços, contratos compartilhados e bridges testáveis, sem reescrever o produto inteiro de uma vez.
 
-Essa estrutura é transitória. Novas funcionalidades não devem ampliar o monólito sem necessidade; prefira módulos pequenos com testes de contrato.
+Nova regra de desenvolvimento: **não ampliar o monólito quando a capacidade puder viver no domínio compartilhado**.
 
-## Camadas do cliente
+## Identity & Relationships
 
-### Componentes
+Firebase Authentication identifica a pessoa. O documento `users/{uid}` mantém o perfil mínimo necessário ao produto e aos diretórios sujeitos às regras de visibilidade.
 
-- `src/components/admin/`: Control Plane, diretório e saúde operacional;
-- `src/components/store/`: operação, catálogo, pedidos, integrações e loja;
-- `src/components/modals/`: conversas, perfil, configurações e fluxos auxiliares;
-- `src/components/tabs/`: áreas principais do aplicativo;
-- bridges: conectam capacidades novas à interface histórica sem duplicar regras de negócio.
+A loja é um principal institucional derivado da loja canônica. Representar uma loja exige uma identidade humana autenticada e uma autorização válida. A evolução de staff deve usar membership/vínculo + role + capability, nunca credenciais compartilhadas de estabelecimento.
 
-### Hooks
+Relacionamento cliente ↔ loja é derivado de fatos canônicos — compras confirmadas, Pontos da Loja, desafios, recompensas e outras interações autorizadas. CRM é uma **projeção operacional**, não uma coleção em que o operador pode editar manualmente saldo, número de compras ou histórico econômico.
 
-Hooks encapsulam sincronização, notas, mensagens, carteira, diretório social e comportamentos reutilizáveis. Um hook não deve contornar regras do Firestore nem armazenar segredos.
+## Catalog & Resources
 
-### Utilitários
+O catálogo canônico é reutilizado por vitrine, PDV e integrações. Produtos preservam regras de estoque, customizações, composição e, quando configurado, a pontuação de fidelidade que será fotografada no momento da compra.
 
-`src/utils/` contém resolução de rotas, persistência, caminhos canônicos do Firestore, composição de documentos, segurança administrativa e adaptação de dados.
+Canais externos devem ser tratados como `StoreConnection`/adapters. Marketplaces não se tornam autoridade interna por acidente. Importação e sincronização precisam declarar provenance e sync authority.
 
-## Dados e sincronização
+## Commitments / Orders
 
-### Firebase Authentication
+O caminho canônico de pedidos operacionais é store-scoped:
 
-Google Sign-In identifica o usuário. O documento `users/{uid}` registra o perfil mínimo e alimenta diretórios sociais conforme visibilidade e regras.
+`/stores/{storeId}/orders/{orderId}`
 
-### Firestore
+Durante a migração ainda existe compatibilidade com caminhos legados em `/artifacts`. Para pedidos novos de clientes, quando o mapeamento canônico existe, a gravação nasce canônica e mantém o espelho legado temporário com o mesmo `orderId`.
 
-Firestore é a fonte compartilhada para dados entre dispositivos. As regras são compostas por scripts e testadas no emulador.
+A leitura prefere o registro canônico e usa legado somente como fallback/reconciliação enquanto a migração não for encerrada. O watcher legado não pode sobrescrever um estado canônico igual ou mais novo.
+
+Pedidos de consumo local (`dine_in`), retirada (`pickup`) e entrega (`delivery`) compartilham o mesmo domínio de compromisso, ainda que cada modalidade possua regras de fulfillment diferentes.
+
+## Atendimento local e retirada
+
+Atendimento Local é uma projeção de pedidos canônicos `dine_in` e `pickup`; não mantém uma segunda coleção de pedidos.
+
+Retirada segura preserva a regra:
+
+1. produção pode marcar o pedido como pronto;
+2. `ready` não significa entregue;
+3. a conclusão de pickup exige o handoff autorizado;
+4. o servidor valida o código de segurança;
+5. somente então o handoff é confirmado.
+
+## Payments
+
+O navegador nunca é autoridade para declarar `paid`.
+
+Fluxo marketplace simplificado:
+
+`checkout -> PaymentIntent pending -> PSP -> evento verificado -> webhook Kyrub -> pagamento canônico -> materialização operacional`
+
+Delivery/pickup online criam primeiro um `PaymentIntent` server-side. O valor e os itens relevantes são validados pelo servidor contra o catálogo; o browser não pode declarar preço autoritativo.
+
+Somente um evento de provedor verificado e normalizado pode promover o pagamento conforme o contrato do provider. O webhook usa idempotência e é a fronteira compartilhada para efeitos derivados de um pagamento realmente confirmado.
+
+## Economic Ledger
+
+Pagamento e economia são conceitos relacionados, mas distintos.
+
+O ledger econômico canônico registra fatos imutáveis como:
+
+- captura;
+- refund;
+- chargeback debitado;
+- reversão de chargeback;
+- fotografia econômica de taxas e subsídios quando aplicável.
+
+Refund, cancelamento e chargeback não são sinônimos e não reescrevem lançamentos históricos. Reversões criam fatos compensatórios.
+
+A taxa de entrega paga pelo cliente é economicamente destinada 100% ao entregador. Subsídio da loja, incentivo Kyrub, subsídio de parceiro, custos observados/PSP e margem Kyrub permanecem fatos separados.
+
+**Ledger econômico não é wallet, custódia nem settlement.** O próximo domínio financeiro deve evoluir explicitamente por:
+
+`Payment -> Allocation -> Obligation -> Settlement -> Reconciliation`
+
+Até existir um rail autorizado, uma obrigação de pagamento não pode ser apresentada como dinheiro liquidado.
+
+## Store Points, desafios e recompensas
+
+Pontos da Loja são uma economia própria. Eles não são K-Coins, XP nem saldo financeiro.
+
+No pagamento confirmado:
+
+- a regra `storePointsPerUnit` já foi fotografada pelo servidor no contexto da compra;
+- quantidade × regra fotografada gera o lançamento base;
+- bônus são lançamentos separados;
+- estornos são movimentos compensatórios;
+- mudança posterior na regra do produto não recalcula compra antiga.
+
+Desafios e recompensas da loja reutilizam esse relacionamento sem converter automaticamente Store Points em K-Coins ou XP.
+
+## CRM, comunicação e campanhas
+
+CRM deriva seus números das fontes canônicas. Comunicação possui preferências/consentimentos próprios; uma campanha não pode ignorar opt-out só porque um cliente aparece no CRM.
+
+Chat cliente ↔ loja e notificações preservam autoria, identidade institucional e identidade humana quando necessário.
+
+## Fulfillment & Delivery
+
+Delivery é um fulfillment do pedido canônico, não um sistema de pedidos independente.
+
+O domínio de entrega prepara oportunidades/jobs ligados ao `sourceOrderId`, claims idempotentes e tracking sujeito à autorização. Localização em tempo real só pode ser exposta a participantes autorizados enquanto o tracking estiver ativo.
+
+Providers externos de entrega devem entrar por adapter e nunca substituir o pedido Kyrub como fonte de verdade.
+
+## Estoque e produção
+
+Depois da fronteira de pagamento/pedido, o mesmo pedido alimenta inbox/KDS e reconciliação de estoque. Customizações e impactos de opções devem chegar ao consumo de inventário sem perder a linhagem do item vendido.
+
+A interface não pode concluir pagamento, inventário ou entrega por inferência visual.
+
+## Firestore e migração
+
+Firestore é a persistência compartilhada entre dispositivos. As rules são compostas por scripts e testadas com Firebase Emulator.
 
 Princípios:
 
-- documentos privados pertencem ao usuário ou à loja autorizada;
-- diretórios públicos expõem apenas campos permitidos;
-- operações administrativas exigem perfil administrativo separado;
-- mudanças críticas não dependem apenas de verificações no navegador;
-- caminhos canônicos e migrações são protegidos por testes.
+- caminhos privados exigem ator autorizado;
+- diretórios públicos expõem somente campos permitidos;
+- Admin SDK existe apenas no servidor;
+- cliente não recebe permissão implícita para escrever ledgers server-only;
+- paths legados permanecem somente enquanto a estratégia de cutover exigir;
+- decisões de leitura canônica/fallback e reconciliação são testadas.
 
-### Offline-first
+Offline cache melhora continuidade, mas nunca concede autorização nem vira fonte canônica.
 
-A aplicação usa persistência local do Firestore e, em fluxos específicos, Dexie. O cache melhora continuidade, mas não concede autorização nem substitui a fonte do servidor.
+## Servidor e funções de produção
 
-Conflitos utilizam timestamps e políticas explícitas. Escritas pendentes devem preservar a capacidade de reconciliação após reconexão.
+`server.ts` compõe o servidor Node usado localmente e os routers compartilhados. `api/` contém handlers adequados à Vercel.
 
-## Servidor Node local
+O projeto normaliza e valida o grafo ESM serverless antes do deploy para impedir que imports relativos válidos no TypeScript quebrem no runtime Node da Vercel.
 
-`server.ts` concentra:
+Segredos são resolvidos no servidor/Vault. Token, chave ou credencial integral não deve retornar ao browser, log ou Firestore comum.
 
-- Express e Vite em desenvolvimento;
-- limites de taxa;
-- rotas de integração;
-- saúde operacional;
-- endpoints de compatibilidade da inteligência artificial;
-- assets estáticos no modo Node de produção.
+## Kyrubia / Trusted Actions
 
-Segredos são lidos exclusivamente por `process.env`.
+Kyrubia é uma camada operacional sobre o mesmo produto; ela não possui um backend privilegiado paralelo.
 
-## Funções de produção
+Capacidades já evoluíram além de `create_note` e incluem leituras determinísticas, notas/tarefas, ações de catálogo/produto, preparação de rascunhos, contexto multimodal, recibos autoritativos e outras ações registradas no Action Engine.
 
-A pasta `api/` contém handlers autossuficientes adequados à Vercel.
+Invariantes:
 
-Rotas relevantes:
+1. contexto observado não concede permissão de escrita;
+2. ações passam por registro/contrato conhecido;
+3. backend autentica e autoriza o ator;
+4. confirmação humana é aplicada quando a policy exige;
+5. execução usa idempotência;
+6. resultado relevante produz receipt/evidência autoritativa;
+7. a Kyrubia só afirma sucesso quando há confirmação suficiente, não porque viu um clique;
+8. UI manual continua disponível.
 
-- `/api/health`: metadados operacionais seguros do Kyrub;
-- `/api/kyrubia`: diagnóstico e conversa da Kyrubia;
-- `/api/consultor-kyrub`: compatibilidade;
-- demais handlers de integração conforme implantação.
+A evolução para Operations API/MCP deve expor somente as mesmas capacidades permissionadas e auditáveis.
 
-Nenhum endpoint de diagnóstico pode devolver chaves, tokens, credenciais ou conteúdo privado.
+## Observabilidade e receipts
 
-## Kyrubia
+Eventos observados no cliente são contexto, não prova de resultado. Ações confirmadas preservam outra autoridade (`authoritative_write_ack`/`server_confirmed`) e podem ser revalidadas por receipt associado ao ator, ação, proposta e entidade corretos.
 
-Kyrubia chama modelos pelo servidor. O navegador envia token Firebase para autenticação, histórico limitado e a mensagem atual.
+Pagamentos e ledgers preservam IDs determinísticos, provider event e correlation/idempotency keys para permitir auditoria e replay seguro.
 
-Fluxo de ação:
+## Control Plane / Platform Economy
 
-1. Kyrubia interpreta o pedido;
-2. o servidor devolve uma proposta estruturada;
-3. o cliente mostra conteúdo e impacto;
-4. o usuário confirma;
-5. o Kyrub executa pelo mesmo fluxo manual existente.
+O painel econômico administrativo é uma projeção server-authorized do ledger econômico. Ele distingue captura, refund, chargeback e reversão e não apresenta esses números como wallet ou settlement.
 
-A primeira ação habilitada é `create_note`. O modelo não grava diretamente no Firestore.
-
-## Control Plane
-
-O painel administrativo tem autenticação Google e autorização adicional em perfil administrativo. Papéis concedem permissões derivadas; o navegador não pode promover uma conta comum.
-
-Métricas devem vir de consultas reais. Valores de receita, conversão, infraestrutura ou plano não devem ser inventados para preencher a interface.
+Acesso financeiro depende de permissão administrativa apropriada e deve gerar auditoria.
 
 ## Segurança
 
-- regras do Firestore são a fronteira principal de autorização de dados;
-- Firebase Admin executa somente no servidor;
-- chaves do Gemini e segredos de integrações permanecem no servidor;
-- limites de taxa reduzem abuso e custo acidental;
-- ações administrativas e operacionais relevantes devem gerar trilha de auditoria;
-- mensagens de erro ao usuário não exibem stack, segredo ou payload interno.
+Fronteiras obrigatórias:
 
-## Testes
+- Firebase Auth para identidade;
+- membership/roles/capabilities para autorização institucional;
+- Firestore/Storage Rules para acesso direto permitido;
+- Admin SDK somente em backend confiável;
+- provider webhook verificado para autoridade financeira;
+- idempotência/replay protection em efeitos críticos;
+- Vault/ENV para segredos;
+- rate limits e gates de entitlement quando aplicáveis;
+- dependency audit como parte da regressão de release.
+
+## Testes e release
+
+A definição de pronto é:
+
+`canonical model -> authorization -> server authority -> persistence -> projection/UI -> tests -> integration -> production validation`
 
 A suíte combina:
 
-- TypeScript com `tsc --noEmit`;
-- testes Node de comportamento e contrato;
-- testes de regras com Firebase Emulator;
-- validações de migração, operação e prontidão;
-- builds separados do cliente e do servidor.
+- `tsc --noEmit`;
+- testes Node de domínio/contrato;
+- contratos cross-domain;
+- Firebase Emulator para Firestore/Storage Rules;
+- validações de migração/cutover;
+- build cliente + servidor;
+- normalização e validação do grafo ESM serverless;
+- dependency security audit;
+- release gate que diferencia PR verde, merge e produção real.
 
-## Evolução recomendada
+Um PR verde significa **implementation-ready**, não `production-complete`.
 
-1. continuar extraindo responsabilidades do `LegacyApp`;
-2. manter regras de negócio fora de bridges DOM quando houver alternativa modular;
-3. criar módulos de domínio para perfil, loja, social, produtividade e faturamento;
-4. medir custos e falhas de IA antes de definir franquias comerciais;
-5. habilitar integrações por feature flag e ambiente;
-6. manter todo novo fluxo crítico coberto por teste de contrato e regra de segurança.
+## Direção de evolução
+
+1. concluir a validação integrada antes de promover a grande onda atual;
+2. fechar o domínio de obligations/settlements antes de criar wallet autoritativa;
+3. consolidar memberships e capacidades de staff;
+4. manter omnichannel como adapters sobre catálogo/pedidos canônicos;
+5. evoluir delivery sobre o mesmo order/fulfillment engine;
+6. centralizar disputas e resolução em fatos compensatórios;
+7. completar governance/legal e gates de compliance;
+8. conectar Kyrubia e agentes externos ao mesmo Policy/Action Engine;
+9. continuar reduzindo responsabilidades do `LegacyApp` sem quebrar contratos existentes.
