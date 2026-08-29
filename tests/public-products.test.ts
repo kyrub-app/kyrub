@@ -29,6 +29,47 @@ describe('public marketplace products', () => {
     assert.equal(product.image, '');
     assert.equal(product.stock, 0);
     assert.equal(product.category, 'Categoria própria');
+    assert.equal(product.storePointsPerUnit, 0);
+  });
+
+  test('keeps store points on the same canonical product round trip', () => {
+    const product = buildPublicProduct(
+      { uid: 'user-a' },
+      {
+        name: 'Produto pontuado',
+        description: '',
+        price: '20',
+        stock: '5',
+        category: 'Categoria própria',
+        image: '',
+        isService: false,
+        storePointsPerUnit: 25,
+      },
+      1_700_000_000_001
+    );
+
+    assert.equal(product.storePointsPerUnit, 25);
+    const [parsed] = parsePublicProducts([product]);
+    assert.equal(parsed?.id, product.id);
+    assert.equal(parsed?.storePointsPerUnit, 25);
+
+    assert.throws(
+      () =>
+        buildPublicProduct(
+          { uid: 'user-a' },
+          {
+            name: 'Pontuação inválida',
+            description: '',
+            price: '20',
+            stock: '5',
+            category: 'Categoria própria',
+            image: '',
+            isService: false,
+            storePointsPerUnit: -1,
+          }
+        ),
+      /STORE_POINTS_PER_UNIT_INVALID/
+    );
   });
 
   test('services do not receive fictitious stock', () => {
@@ -157,6 +198,7 @@ describe('public marketplace products', () => {
 
     assert.equal(parsed.length, 1);
     assert.equal(parsed[0]?.name, 'Produto A');
+    assert.equal(parsed[0]?.storePointsPerUnit, 0);
     assert.deepEqual(parsed[0]?.categoryCollections, [
       {
         path: 'Local > Artesanal',

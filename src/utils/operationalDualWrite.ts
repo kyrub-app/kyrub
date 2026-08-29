@@ -359,11 +359,23 @@ const assertMigrationContext = (
   }
 };
 
+export const shouldApplyLegacyOrderMirrorUpdate = (
+  currentData: Record<string, unknown> | null | undefined,
+  order: CustomerOrder
+): boolean => {
+  const currentLegacyUpdatedAt = cleanString(currentData?.legacyUpdatedAt);
+  const incomingLegacyUpdatedAt = cleanString(order.updatedAt);
+
+  if (!currentLegacyUpdatedAt) return true;
+  if (!incomingLegacyUpdatedAt) return false;
+  return incomingLegacyUpdatedAt > currentLegacyUpdatedAt;
+};
+
 export const mirrorLegacyOrderToCanonical = async (
   user: Pick<User, 'uid'>,
   canonicalStore: CanonicalStoreRecord,
   order: CustomerOrder
-): Promise<'created' | 'updated'> => {
+): Promise<'created' | 'updated' | 'unchanged'> => {
   assertMigrationContext(user, canonicalStore, order.storeId);
   const reference = doc(db, getStoreOrderDocumentPath(canonicalStore.id, order.id));
   const snapshot = await getDoc(reference);
@@ -381,6 +393,15 @@ export const mirrorLegacyOrderToCanonical = async (
       updatedAt: serverTimestamp(),
     });
     return 'created';
+  }
+
+  if (
+    !shouldApplyLegacyOrderMirrorUpdate(
+      snapshot.data() as Record<string, unknown>,
+      order
+    )
+  ) {
+    return 'unchanged';
   }
 
   await updateDoc(reference, {

@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import type React from 'react';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { StorefrontPanel as LegacyStorefrontPanel } from './LegacyStorefrontPanel';
+import { CustomerStoreRelationshipPanel } from './CustomerStoreRelationshipPanel';
+import { StoreCustomerChatLauncher } from './store/StoreCustomerChatLauncher';
 import {
   subscribeToPreferredPublicProducts,
   type PublicProduct,
@@ -330,11 +332,25 @@ export const StorefrontPanel: React.FC<StorefrontPanelProps> = props => {
   }, [promotionByProductId, storefrontProducts]);
 
   return (
-    <LegacyStorefrontPanel
-      {...props}
-      products={storefrontProducts}
-      activeKdsOrderCount={activeKdsOrderCount}
-      salesByProductId={salesByProductId}
-    />
+    <>
+      {storeId && (
+        <div className="mb-6 space-y-2">
+          <CustomerStoreRelationshipPanel
+            storeId={storeId}
+            storeName={props.activeConsumerStore?.name ?? ''}
+          />
+          <StoreCustomerChatLauncher
+            storeId={storeId}
+            storeName={props.activeConsumerStore?.name ?? ''}
+          />
+        </div>
+      )}
+      <LegacyStorefrontPanel
+        {...props}
+        products={storefrontProducts}
+        activeKdsOrderCount={activeKdsOrderCount}
+        salesByProductId={salesByProductId}
+      />
+    </>
   );
 };

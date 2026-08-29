@@ -39,6 +39,7 @@ export interface Product {
   supplierId?: string;
   isService?: boolean;
   isComplimentary?: boolean;
+  storePointsPerUnit?: number;
   category: string;
   categoryCollections?: ProductCategoryCollection[];
   optionGroups?: ProductOptionGroup[];

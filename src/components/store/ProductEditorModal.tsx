@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type React from 'react';
 import type { Product } from '../../types';
+import { normalizeStorePointsPerUnit } from '../../../shared/storePoints';
 import { auth } from '../../utils/firebase';
 import {
   createEmptyProductFiscalProfile,
@@ -10,6 +11,7 @@ import {
 } from '../../utils/productFiscal';
 import { ProductFiscalFieldsBridge } from './ProductFiscalFieldsBridge';
 import { ProductPricingFieldsBridge } from './ProductPricingFieldsBridge';
+import { ProductStorePointsFieldBridge } from './ProductStorePointsFieldBridge';
 import {
   UnifiedProductModal,
   type ProductModalMode,
@@ -32,6 +34,9 @@ export const ProductEditorModal: React.FC<ProductEditorModalProps> = ({
   ...props
 }) => {
   const resolvedOpen = isOpen ?? Boolean(product);
+  const [storePointsPerUnit, setStorePointsPerUnit] = useState(
+    normalizeStorePointsPerUnit(product?.storePointsPerUnit)
+  );
   const [fiscalState, setFiscalState] = useState<ProductFiscalEditorState>({
     ready: false,
     draft: createEmptyProductFiscalProfile(
@@ -39,6 +44,13 @@ export const ProductEditorModal: React.FC<ProductEditorModalProps> = ({
     ),
     initialProfile: null,
   });
+
+  useEffect(() => {
+    if (!resolvedOpen) return;
+    setStorePointsPerUnit(
+      normalizeStorePointsPerUnit(product?.storePointsPerUnit)
+    );
+  }, [resolvedOpen, product?.id, product?.storePointsPerUnit]);
 
   const handleSave = async (nextProduct: Product): Promise<void> => {
     if (!fiscalState.ready) {
@@ -52,7 +64,11 @@ export const ProductEditorModal: React.FC<ProductEditorModalProps> = ({
       throw new Error('Faça login novamente para salvar os dados fiscais.');
     }
 
-    const kind = nextProduct.isService === true ? 'service' : 'goods';
+    const productWithStorePoints: Product = {
+      ...nextProduct,
+      storePointsPerUnit: normalizeStorePointsPerUnit(storePointsPerUnit),
+    };
+    const kind = productWithStorePoints.isService === true ? 'service' : 'goods';
     const nextFiscalProfile = normalizeProductFiscalProfile(
       fiscalState.draft,
       kind
@@ -61,16 +77,16 @@ export const ProductEditorModal: React.FC<ProductEditorModalProps> = ({
 
     await persistProductFiscalProfile(
       user,
-      nextProduct.id,
+      productWithStorePoints.id,
       nextFiscalProfile
     );
 
     try {
-      await onSave(nextProduct);
+      await onSave(productWithStorePoints);
     } catch (error) {
       void persistProductFiscalProfile(
         user,
-        nextProduct.id,
+        productWithStorePoints.id,
         previousFiscalProfile
       ).catch(rollbackError => {
         console.error(
@@ -102,6 +118,12 @@ export const ProductEditorModal: React.FC<ProductEditorModalProps> = ({
         isOpen={resolvedOpen}
         product={product}
         isSaving={isSaving}
+      />
+      <ProductStorePointsFieldBridge
+        isOpen={resolvedOpen}
+        value={storePointsPerUnit}
+        disabled={isSaving}
+        onChange={setStorePointsPerUnit}
       />
     </>
   );

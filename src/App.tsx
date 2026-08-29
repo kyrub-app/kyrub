@@ -27,11 +27,13 @@ import { ProfileSocialHubNative } from './components/ProfileSocialHubNative';
 import { ProfileVerificationBridge } from './components/ProfileVerificationBridge';
 import { PublicStorefrontApp } from './components/PublicStorefrontApp';
 import { SocialPublishingBridge } from './components/SocialPublishingBridge';
+import { UserNotificationCenterBridge } from './components/UserNotificationCenterBridge';
 import { CatalogCustomizationInheritanceBridge } from './components/store/CatalogCustomizationInheritanceBridge';
 import { CourierLiveTrackingBridge } from './components/store/CourierLiveTrackingBridge';
 import { IntegrationTestOrderBridge } from './components/store/IntegrationTestOrderBridge';
 import { KyrubDeliveryOpportunityBridge } from './components/store/KyrubDeliveryOpportunityBridge';
 import { KyrubDeliveryStatusSyncBridge } from './components/store/KyrubDeliveryStatusSyncBridge';
+import { LocalAttendanceBridge } from './components/store/LocalAttendanceBridge';
 import { ManualStorePromotionBridge } from './components/store/ManualStorePromotionBridge';
 import { NinetyNineFoodConnectionBridge } from './components/store/NinetyNineFoodConnectionBridge';
 import { NinetyNineFoodOrderStatusBridge } from './components/store/NinetyNineFoodOrderStatusBridge';
@@ -39,6 +41,10 @@ import { OperationalAppEntryBridge } from './components/store/OperationalAppEntr
 import { OrderInventoryReconciliationBridge } from './components/store/OrderInventoryReconciliationBridge';
 import { ProductCrossDeviceSyncBridge } from './components/store/ProductCrossDeviceSyncBridge';
 import { ProductWorkspaceLayoutBridge } from './components/store/ProductWorkspaceLayoutBridge';
+import { StoreCrmRelationshipBridge } from './components/store/StoreCrmRelationshipBridge';
+import { StoreCustomerChatBridge } from './components/store/StoreCustomerChatBridge';
+import { StoreInstitutionalIdentityBridge } from './components/store/StoreInstitutionalIdentityBridge';
+import { StoreLoyaltyCenterBridge } from './components/store/StoreLoyaltyCenterBridge';
 import { StoreRestartLandingBridge } from './components/store/StoreRestartLandingBridge';
 import { StoreSharingPortalBridge } from './components/store/StoreSharingPortalBridge';
 import { UnifiedProductCreateModalBridge } from './components/store/UnifiedProductCreateModalBridge';
@@ -229,6 +235,12 @@ function AuthenticatedKyrubApp({ operational }: { operational: boolean }) {
       <KyrubAiStoreOperationActionBridge />
       <KyrubAiStorePromotionActionBridge />
       <ManualStorePromotionBridge />
+      <StoreLoyaltyCenterBridge />
+      <StoreCrmRelationshipBridge />
+      <LocalAttendanceBridge />
+      <StoreInstitutionalIdentityBridge />
+      <StoreCustomerChatBridge />
+      <UserNotificationCenterBridge />
       <StoreSharingPortalBridge />
       <StoreRestartLandingBridge />
       <UnifiedProductCreateModalBridge />

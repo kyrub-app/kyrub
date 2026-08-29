@@ -3,8 +3,10 @@ import { describe, test } from 'node:test';
 import './payment-ux-policy.test';
 import './marketplace-payment-intent-checkout.test';
 import './customer-storefront-order-e2e-contract.test';
+import './local-service-pos.test';
 import type { CartItem, Product } from '../src/types';
 import {
+  buildCanonicalCustomerOrderWriteData,
   buildCustomerOrder,
   canTransitionCustomerOrderStatus,
   getLastCustomerOrderStorageKey,
@@ -70,6 +72,71 @@ describe('customer orders', () => {
     assert.equal(order.total, 25);
     assert.equal(order.status, 'pending');
     assert.equal(order.paymentStatus, 'unpaid');
+  });
+
+  test('builds the canonical-first payload without losing legacy lineage', () => {
+    const order = buildCustomerOrder(
+      { uid: 'buyer-a' },
+      {
+        storeId: 'legacy-store-a',
+        buyerName: 'Ana',
+        buyerEmail: 'ana@example.com',
+        fulfillmentType: 'pickup',
+        deliveryAddress: '',
+        tableCode: '',
+        customerNote: '',
+        cart: cart(1),
+        itemNotes: {},
+      },
+      1_700_000_000_000
+    );
+
+    const canonical = buildCanonicalCustomerOrderWriteData(
+      order,
+      'canonical-store-a'
+    );
+
+    assert.equal(canonical.storeId, 'canonical-store-a');
+    assert.equal(canonical.createdByUserId, 'buyer-a');
+    assert.equal(canonical.createdByRole, 'customer');
+    assert.equal(canonical.legacyStoreId, 'legacy-store-a');
+    assert.equal(canonical.legacyCreatedAt, order.createdAt);
+    assert.equal(canonical.legacyUpdatedAt, order.updatedAt);
+    assert.equal(
+      (canonical.migration as Record<string, unknown>).mode,
+      'canonical_first'
+    );
+    assert.match(String(canonical.migratedFromPath), /artifacts\/legacy-store-a/);
+  });
+
+  test('parses canonical server timestamps through preserved legacy timestamps', () => {
+    const order = buildCustomerOrder(
+      { uid: 'buyer-a' },
+      {
+        storeId: 'legacy-store-a',
+        buyerName: 'Ana',
+        buyerEmail: 'ana@example.com',
+        fulfillmentType: 'pickup',
+        deliveryAddress: '',
+        tableCode: '',
+        customerNote: '',
+        cart: cart(1),
+        itemNotes: {},
+      },
+      1_700_000_000_000
+    );
+
+    const parsed = parseCustomerOrder({
+      ...order,
+      storeId: 'canonical-store-a',
+      createdAt: { seconds: 1 },
+      updatedAt: { seconds: 1 },
+      legacyCreatedAt: order.createdAt,
+      legacyUpdatedAt: order.updatedAt,
+    });
+
+    assert.equal(parsed?.createdAt, order.createdAt);
+    assert.equal(parsed?.updatedAt, order.updatedAt);
   });
 
   test('does not invent address, table or payment for pickup', () => {

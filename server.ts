@@ -13,13 +13,23 @@ import {
 import { createDeliveryOpportunityRouter } from "./server/delivery/deliveryOpportunityRouter";
 import { createDeliveryTrackingRouter } from "./server/delivery/deliveryTrackingRouter";
 import { createOperationsHealthRouter } from "./server/admin/operationsHealthRouter";
+import { createPlatformEconomyRouter } from "./server/admin/platformEconomyRouter";
 import { createOrderInventoryRouter } from "./server/inventory/orderInventoryRouter";
 import { createKyrubAiConsultantRouter } from "./server/ai/consultantRouter";
 import { createKyrubActionExecutionRouter } from "./server/actions/actionExecutionRouter";
+import { createLocalAttendanceRouter } from "./server/attendance/localAttendanceRouter";
+import { createStoreCustomerChatRouter } from "./server/chat/storeCustomerChatRouter";
+import { createStoreCampaignRouter } from "./server/campaigns/storeCampaignRouter";
+import { createUserCommunicationPreferenceRouter } from "./server/notifications/userCommunicationPreferenceRouter";
+import { createUserNotificationRouter } from "./server/notifications/userNotificationRouter";
 import { createPaymentIntentRouter } from "./server/payments/paymentIntentRouter";
+import { createStoreRewardRouter } from "./server/payments/storeRewardRouter";
+import { createStoreRelationshipRouter } from "./server/payments/storeRelationshipRouter";
+import { createMarketplaceDiscoveryRouter } from "./server/payments/marketplaceDiscoveryRouter";
+import { createStoreCrmRouter } from "./server/payments/storeCrmRouter";
 import { enforceDeliveryWorkEligibility } from "./server/identity/workEligibilityMiddleware";
+import { createStoreInstitutionalIdentityRouter } from "./server/store/storeInstitutionalIdentityRouter";
 
-// Load environment variables
 dotenv.config();
 
 const app = express();
@@ -35,8 +45,6 @@ app.use(
   })
 );
 
-// Initialize the legacy server-side Gemini endpoint.
-// Never expose process.env.GEMINI_API_KEY to the client/browser bundle.
 const apiKey = process.env.GEMINI_API_KEY || "";
 let ai: GoogleGenAI | null = null;
 
@@ -54,9 +62,6 @@ if (apiKey) {
   console.warn("[Kyrub Server] WARNING: GEMINI_API_KEY environment variable is not set. AI features are unavailable until it is configured.");
 }
 
-// ==========================================
-// 5. RATE LIMITING & API PROTECTION
-// ==========================================
 const geminiRateLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 20,
@@ -120,6 +125,66 @@ app.use(
 );
 
 app.use(
+  "/api/store-rewards",
+  integrationRateLimiter,
+  createStoreRewardRouter()
+);
+
+app.use(
+  "/api/store-relationship",
+  integrationRateLimiter,
+  createStoreRelationshipRouter()
+);
+
+app.use(
+  "/api/marketplace-discovery",
+  integrationRateLimiter,
+  createMarketplaceDiscoveryRouter()
+);
+
+app.use(
+  "/api/store-crm",
+  integrationRateLimiter,
+  createStoreCrmRouter()
+);
+
+app.use(
+  "/api/store-campaigns",
+  integrationRateLimiter,
+  createStoreCampaignRouter()
+);
+
+app.use(
+  "/api/local-attendance",
+  integrationRateLimiter,
+  createLocalAttendanceRouter()
+);
+
+app.use(
+  "/api/store-identity",
+  integrationRateLimiter,
+  createStoreInstitutionalIdentityRouter()
+);
+
+app.use(
+  "/api/store-chat",
+  integrationRateLimiter,
+  createStoreCustomerChatRouter()
+);
+
+app.use(
+  "/api/notifications",
+  integrationRateLimiter,
+  createUserNotificationRouter()
+);
+
+app.use(
+  "/api/communication-preferences",
+  integrationRateLimiter,
+  createUserCommunicationPreferenceRouter()
+);
+
+app.use(
   "/api/delivery-opportunities",
   integrationRateLimiter,
   enforceDeliveryWorkEligibility,
@@ -137,6 +202,12 @@ app.use(
   "/api/admin/operations/health",
   integrationRateLimiter,
   createOperationsHealthRouter()
+);
+
+app.use(
+  "/api/admin/platform-economy",
+  integrationRateLimiter,
+  createPlatformEconomyRouter()
 );
 
 app.use(
@@ -159,7 +230,6 @@ app.use(
   createKyrubAiConsultantRouter()
 );
 
-// Legacy Gemini Assistant Endpoint kept for compatibility with older screens.
 app.post("/api/gemini/generate", geminiRateLimiter, async (req: express.Request, res: express.Response) => {
   const { prompt } = req.body;
 
@@ -197,12 +267,10 @@ app.get(
     proxyPublicGoogleDriveImage(req.query.fileId, res)
 );
 
-// Simple health check
 app.get("/api/health", (_req, res) => {
   res.json({ status: "ok", app: "Kyrub", version: "1.5.0" });
 });
 
-// Serve static assets in production, hook Vite dev server in development
 async function bootstrap() {
   if (process.env.NODE_ENV !== "production") {
     console.log("[Kyrub Server] Running in DEVELOPMENT mode. Initializing Vite middleware...");

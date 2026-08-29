@@ -17,6 +17,7 @@ import type {
   ProductCategoryCollection,
   ProductOptionGroup,
 } from '../types';
+import { normalizeStorePointsPerUnit } from '../../shared/storePoints';
 import { db } from './firebase';
 import {
   chooseCanonicalReadSource,
@@ -47,6 +48,7 @@ export interface PublicProductDraft {
   image: string;
   isService: boolean;
   isComplimentary?: boolean;
+  storePointsPerUnit?: number;
   categoryCollections?: ProductCategoryCollection[];
   optionGroups?: ProductOptionGroup[];
   quickNotes?: string[];
@@ -122,6 +124,7 @@ export const buildPublicProduct = (
   const parsedStock = draft.isService
     ? 0
     : Number.parseInt(draft.stock || '0', 10);
+  const storePointsPerUnit = normalizeStorePointsPerUnit(draft.storePointsPerUnit);
   const categoryCollections = parseProductCategoryCollections(
     draft.categoryCollections
   );
@@ -159,6 +162,7 @@ export const buildPublicProduct = (
     category,
     isService: draft.isService,
     isComplimentary,
+    storePointsPerUnit,
     ...(categoryCollections.length > 0 ? { categoryCollections } : {}),
     ...(optionGroups.length > 0 ? { optionGroups } : {}),
     ...(quickNotes.length > 0 ? { quickNotes } : {}),
@@ -180,6 +184,12 @@ export const parsePublicProducts = (value: unknown): PublicProduct[] => {
     const category = cleanString(product.category);
     const price = finiteNumber(product.price);
     const stock = finiteNumber(product.stock);
+    let storePointsPerUnit = 0;
+    try {
+      storePointsPerUnit = normalizeStorePointsPerUnit(product.storePointsPerUnit);
+    } catch {
+      return [];
+    }
     const categoryCollections = parseProductCategoryCollections(
       product.categoryCollections
     );
@@ -215,6 +225,7 @@ export const parsePublicProducts = (value: unknown): PublicProduct[] => {
       category,
       isService: product.isService === true,
       isComplimentary: product.isComplimentary === true,
+      storePointsPerUnit,
       ...(categoryCollections.length > 0 ? { categoryCollections } : {}),
       ...(optionGroups.length > 0 ? { optionGroups } : {}),
       ...(quickNotes.length > 0 ? { quickNotes } : {}),
@@ -233,6 +244,12 @@ const parseCanonicalPublicProduct = (
   const category = cleanString(value.category);
   const price = finiteNumber(value.price);
   const stock = finiteNumber(value.stock);
+  let storePointsPerUnit = 0;
+  try {
+    storePointsPerUnit = normalizeStorePointsPerUnit(value.storePointsPerUnit);
+  } catch {
+    return null;
+  }
   const categoryCollections = parseProductCategoryCollections(
     value.categoryCollections
   );
@@ -267,6 +284,7 @@ const parseCanonicalPublicProduct = (
     category,
     isService: value.isService === true,
     isComplimentary: value.isComplimentary === true,
+    storePointsPerUnit,
     ...(categoryCollections.length > 0 ? { categoryCollections } : {}),
     ...(optionGroups.length > 0 ? { optionGroups } : {}),
     ...(quickNotes.length > 0 ? { quickNotes } : {}),
@@ -293,6 +311,7 @@ const comparableProduct = (product: PublicProduct) => ({
   quickNotes: parseProductQuickNotes(product.quickNotes),
   isService: product.isService === true,
   isComplimentary: product.isComplimentary === true,
+  storePointsPerUnit: normalizeStorePointsPerUnit(product.storePointsPerUnit),
 });
 
 export const publicProductCollectionsEquivalent = (
@@ -329,6 +348,7 @@ export const persistPublicProduct = async (
     );
     const normalizedProduct: PublicProduct = {
       ...product,
+      storePointsPerUnit: normalizeStorePointsPerUnit(product.storePointsPerUnit),
       quickNotes,
       optionGroups,
     };
