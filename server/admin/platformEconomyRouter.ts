@@ -4,6 +4,10 @@ import { FieldValue } from 'firebase-admin/firestore';
 import { verifyFirebaseIdToken } from '../ai/consultantAuth.js';
 import { adminDb } from '../firebaseAdmin.js';
 import { loadAdminPlatformEconomySnapshot } from './platformEconomyService.js';
+import {
+  getPlatformFeeSubsidyPolicyForAdmin,
+  publishPlatformFeeSubsidyPolicy,
+} from './platformFeeSubsidyAdminService.js';
 
 const PLATFORM_ECONOMY_ROLES = new Set(['super_admin', 'finance']);
 
@@ -89,13 +93,23 @@ const mapError = (error: unknown): { status: number; body: { error: string; code
       },
     };
   }
-  if (message === 'EMAIL_NOT_VERIFIED' || message === 'FORBIDDEN') {
+  if (
+    message === 'EMAIL_NOT_VERIFIED' ||
+    message === 'FORBIDDEN' ||
+    message === 'PLATFORM_POLICY_FORBIDDEN'
+  ) {
     return {
       status: 403,
       body: {
         error: 'Acesso à economia da plataforma não autorizado.',
         code: 'FORBIDDEN',
       },
+    };
+  }
+  if (message.startsWith('PLATFORM_POLICY_')) {
+    return {
+      status: 400,
+      body: { error: 'A política econômica informada é inválida.', code: message },
     };
   }
   if (/default credentials|credential implementation|could not load/i.test(message)) {
@@ -129,6 +143,35 @@ export const createPlatformEconomyRouter = (): Router => {
       const snapshot = await loadAdminPlatformEconomySnapshot();
       await recordPlatformEconomyAudit(admin);
       response.json(snapshot);
+    } catch (error) {
+      const mapped = mapError(error);
+      response.status(mapped.status).json(mapped.body);
+    }
+  });
+
+  router.get('/policy', async (request: Request, response: Response) => {
+    try {
+      await authorizePlatformEconomy(request.get('authorization') ?? '');
+      response.json(await getPlatformFeeSubsidyPolicyForAdmin());
+    } catch (error) {
+      const mapped = mapError(error);
+      response.status(mapped.status).json(mapped.body);
+    }
+  });
+
+  router.post('/policy', async (request: Request, response: Response) => {
+    try {
+      const admin = await authorizePlatformEconomy(
+        request.get('authorization') ?? ''
+      );
+      const policy = await publishPlatformFeeSubsidyPolicy({
+        actorUserId: admin.uid,
+        actorRole: admin.role,
+        platformFeeBps: request.body?.platformFeeBps,
+        platformSubsidyBps: request.body?.platformSubsidyBps,
+        contexts: request.body?.contexts,
+      });
+      response.status(201).json(policy);
     } catch (error) {
       const mapped = mapError(error);
       response.status(mapped.status).json(mapped.body);
