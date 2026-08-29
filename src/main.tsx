@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import App from './App.tsx';
 import { AppErrorBoundary } from './components/AppErrorBoundary';
 import { KyrubAiConversationCloudSyncGate } from './components/KyrubAiConversationCloudSyncGate';
+import { NotificationCenterBridge } from './components/NotificationCenterBridge';
 import { OfficialKnowledgeSemanticSetupBridge } from './components/OfficialKnowledgeSemanticSetupBridge';
 import { OfficialKnowledgeSetupBridge } from './components/OfficialKnowledgeSetupBridge';
 import { BuyerPickupCodeBridge } from './components/store/BuyerPickupCodeBridge';
@@ -15,6 +16,7 @@ import { ProfileContactGroupsPolishBridge } from './components/ProfileContactGro
 import { ProfileNextPolishBridge } from './components/ProfileNextPolishBridge';
 import { ProfileOffersFiltersBridge } from './components/ProfileOffersFiltersBridge';
 import { ProfilePublishingDestinationsCloudBridge } from './components/ProfilePublishingDestinationsCloudBridge';
+import { ProfileSuggestionsGridBridge } from './components/ProfileSuggestionsGridBridge';
 import { KyrubOfficialKnowledgeRuntimeBridge } from './knowledge/KyrubOfficialKnowledgeRuntimeBridge';
 import { KyrubActivityLogSetupBridge } from './observability/KyrubActivityLogSetupBridge';
 import { KyrubActivityObserverBridge } from './observability/KyrubActivityObserverBridge';
@@ -42,6 +44,8 @@ createRoot(rootElement).render(
           <ProfileOffersFiltersBridge />
           <ProfilePublishingDestinationsCloudBridge />
           <ProfileCommunitiesCloudBridge />
+          <ProfileSuggestionsGridBridge />
+          <NotificationCenterBridge />
           <BuyerPickupCodeBridge />
           <LocalServicePdvBridge />
           <PickupPdvNavigationBridge />

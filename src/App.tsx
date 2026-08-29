@@ -16,6 +16,7 @@ import { KyrubAiStorePromotionActionBridge } from './components/KyrubAiStoreProm
 import { KyrubAiTaskActionBridge } from './components/KyrubAiTaskActionBridge';
 import { KyrubAiWorkspaceBridge } from './components/KyrubAiWorkspaceBridge';
 import { KyrubiaNamingBridge } from './components/KyrubiaNamingBridge';
+import { NoteCardLayoutBridge } from './components/NoteCardLayoutBridge';
 import { NoteInvitationOutboxBridge } from './components/NoteInvitationOutboxBridge';
 import { PlanCenterApp } from './components/plans/PlanCenterApp';
 import { ProfileIdentityRecoveryBridge } from './components/ProfileIdentityRecoveryBridge';
@@ -211,6 +212,7 @@ function AuthenticatedKyrubApp({ operational }: { operational: boolean }) {
       <NinetyNineFoodConnectionBridge />
       <NinetyNineFoodOrderStatusBridge />
       <NoteInvitationOutboxBridge />
+      <NoteCardLayoutBridge />
       <SocialPublishingBridge />
       <ProfileIdentityRecoveryBridge />
       <ProfileSocialHubNative />
