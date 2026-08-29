@@ -71,7 +71,7 @@ describe('canonical local attendance', () => {
   test('browser client sends operational fields only and never writes Firestore/localStorage', () => {
     const client = readFileSync('src/utils/localAttendance.ts', 'utf8');
     assert.match(client, /\/api\/local-attendance/);
-    assert.match(client, /user\.getIdToken\(\)/);
+    assert.match(client, /currentUser\(\)\.getIdToken\(\)/);
     assert.doesNotMatch(client, /setDoc|addDoc|collection\(db|doc\(db/);
     assert.doesNotMatch(client, /localStorage/);
     assert.doesNotMatch(client, /actorUserId/);
