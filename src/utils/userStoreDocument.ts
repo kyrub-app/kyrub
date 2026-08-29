@@ -1,6 +1,10 @@
 import { serverTimestamp } from 'firebase/firestore';
 import type { FieldValue, WithFieldValue } from 'firebase/firestore';
 import type { UserStoreDocument } from '../types';
+import {
+  validateStoreCoordinates,
+  validateStoreGeofenceRadius,
+} from './storeLocation';
 import { getPrimaryUserStoreId } from './storePaths';
 
 export interface BuildUserStoreCreateInput {
@@ -19,6 +23,7 @@ export interface BuildUserStoreCreateInput {
   status: 'open' | 'delayed' | 'closed';
   lat?: number;
   lng?: number;
+  geofenceRadiusMeters?: number;
 }
 
 export interface BuildUserStoreUpdateInput {
@@ -36,6 +41,7 @@ export interface BuildUserStoreUpdateInput {
   status?: 'open' | 'delayed' | 'closed';
   lat?: number;
   lng?: number;
+  geofenceRadiusMeters?: number;
 }
 
 export type UserStoreUpdateData = Partial<
@@ -55,6 +61,7 @@ export type UserStoreUpdateData = Partial<
     | 'status'
     | 'lat'
     | 'lng'
+    | 'geofenceRadiusMeters'
   >
 > & {
   updatedAt: FieldValue;
@@ -64,11 +71,25 @@ const hasOwn = (object: object, key: PropertyKey): boolean =>
   Object.prototype.hasOwnProperty.call(object, key);
 
 const requireDefined = <Value>(value: Value | undefined): Value => {
-  if (value === undefined) {
-    throw new Error('Invalid store update.');
-  }
-
+  if (value === undefined) throw new Error('Invalid store update.');
   return value;
+};
+
+const validateLocationInput = (input: {
+  lat?: number;
+  lng?: number;
+  geofenceRadiusMeters?: number;
+}): void => {
+  const hasLat = input.lat !== undefined;
+  const hasLng = input.lng !== undefined;
+  const hasRadius = input.geofenceRadiusMeters !== undefined;
+  if (hasLat !== hasLng) throw new Error('Invalid store coordinates.');
+  if (hasRadius && (!hasLat || !hasLng)) throw new Error('Store geofence requires coordinates.');
+  if (hasLat && hasLng) {
+    validateStoreCoordinates(input.lat!, input.lng!);
+    if (!hasRadius) throw new Error('Store coordinates require geofence radius.');
+    validateStoreGeofenceRadius(input.geofenceRadiusMeters!);
+  }
 };
 
 export const buildUserStoreCreateData = (
@@ -76,20 +97,7 @@ export const buildUserStoreCreateData = (
 ): WithFieldValue<UserStoreDocument> => {
   const uid = getPrimaryUserStoreId(input.uid);
   const timestamp = serverTimestamp();
-  const hasLat = input.lat !== undefined;
-  const hasLng = input.lng !== undefined;
-
-  if (hasLat !== hasLng) {
-    throw new Error('Invalid store coordinates.');
-  }
-
-  if (
-    hasLat &&
-    hasLng &&
-    (!Number.isFinite(input.lat) || !Number.isFinite(input.lng))
-  ) {
-    throw new Error('Invalid store coordinates.');
-  }
+  validateLocationInput(input);
 
   const data: WithFieldValue<UserStoreDocument> = {
     id: uid,
@@ -108,14 +116,15 @@ export const buildUserStoreCreateData = (
     contact: input.contact,
     status: input.status,
     createdAt: timestamp,
-    updatedAt: timestamp
+    updatedAt: timestamp,
   };
 
-  if (hasLat && hasLng) {
+  if (input.lat !== undefined && input.lng !== undefined) {
     return {
       ...data,
       lat: input.lat,
-      lng: input.lng
+      lng: input.lng,
+      geofenceRadiusMeters: input.geofenceRadiusMeters,
     };
   }
 
@@ -125,39 +134,27 @@ export const buildUserStoreCreateData = (
 export const buildUserStoreUpdateData = (
   input: BuildUserStoreUpdateInput
 ): UserStoreUpdateData => {
-  const data: UserStoreUpdateData = {
-    updatedAt: serverTimestamp()
-  };
+  const data: UserStoreUpdateData = { updatedAt: serverTimestamp() };
   let hasEditableField = false;
 
-  if (hasOwn(input, 'ownerEmail')) {
-    data.ownerEmail = requireDefined(input.ownerEmail);
-    hasEditableField = true;
+  for (const key of [
+    'ownerEmail',
+    'name',
+    'slug',
+    'description',
+    'logo',
+    'banner',
+    'primaryColor',
+    'address',
+    'contact',
+    'status',
+  ] as const) {
+    if (hasOwn(input, key)) {
+      (data as Record<string, unknown>)[key] = requireDefined(input[key]);
+      hasEditableField = true;
+    }
   }
-  if (hasOwn(input, 'name')) {
-    data.name = requireDefined(input.name);
-    hasEditableField = true;
-  }
-  if (hasOwn(input, 'slug')) {
-    data.slug = requireDefined(input.slug);
-    hasEditableField = true;
-  }
-  if (hasOwn(input, 'description')) {
-    data.description = requireDefined(input.description);
-    hasEditableField = true;
-  }
-  if (hasOwn(input, 'logo')) {
-    data.logo = requireDefined(input.logo);
-    hasEditableField = true;
-  }
-  if (hasOwn(input, 'banner')) {
-    data.banner = requireDefined(input.banner);
-    hasEditableField = true;
-  }
-  if (hasOwn(input, 'primaryColor')) {
-    data.primaryColor = requireDefined(input.primaryColor);
-    hasEditableField = true;
-  }
+
   if (hasOwn(input, 'keywords')) {
     data.keywords = [...requireDefined(input.keywords)];
     hasEditableField = true;
@@ -166,42 +163,25 @@ export const buildUserStoreUpdateData = (
     data.offerImages = [...requireDefined(input.offerImages)];
     hasEditableField = true;
   }
-  if (hasOwn(input, 'address')) {
-    data.address = requireDefined(input.address);
-    hasEditableField = true;
-  }
-  if (hasOwn(input, 'contact')) {
-    data.contact = requireDefined(input.contact);
-    hasEditableField = true;
-  }
-  if (hasOwn(input, 'status')) {
-    data.status = requireDefined(input.status);
-    hasEditableField = true;
-  }
 
   const hasLat = hasOwn(input, 'lat');
   const hasLng = hasOwn(input, 'lng');
-
-  if (hasLat !== hasLng) {
-    throw new Error('Invalid store coordinates.');
-  }
-
-  if (hasLat && hasLng) {
-    const lat = requireDefined(input.lat);
-    const lng = requireDefined(input.lng);
-
-    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
-      throw new Error('Invalid store coordinates.');
-    }
-
-    data.lat = lat;
-    data.lng = lng;
+  const hasRadius = hasOwn(input, 'geofenceRadiusMeters');
+  if (hasLat || hasLng || hasRadius) {
+    const location = {
+      lat: hasLat ? requireDefined(input.lat) : undefined,
+      lng: hasLng ? requireDefined(input.lng) : undefined,
+      geofenceRadiusMeters: hasRadius
+        ? requireDefined(input.geofenceRadiusMeters)
+        : undefined,
+    };
+    validateLocationInput(location);
+    data.lat = location.lat;
+    data.lng = location.lng;
+    data.geofenceRadiusMeters = location.geofenceRadiusMeters;
     hasEditableField = true;
   }
 
-  if (!hasEditableField) {
-    throw new Error('Store update requires an editable field.');
-  }
-
+  if (!hasEditableField) throw new Error('Store update requires an editable field.');
   return data;
 };
