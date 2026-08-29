@@ -4,10 +4,12 @@ import {
   ADMIN_PLATFORM_ECONOMY_RECENT_LIMIT,
   ADMIN_PLATFORM_ECONOMY_SCHEMA_VERSION,
   buildRecentStoreEconomyActivity,
+  deriveRecentEconomicAllocationWindow,
   deriveRefundShareBps,
   type AdminPlatformEconomyRecentEntry,
   type AdminPlatformEconomySnapshot,
 } from '../../shared/adminPlatformEconomy.js';
+import type { EconomicAllocationSnapshot } from '../../shared/economicFeesSubsidies.js';
 import type { StoreEconomicLedgerEntry } from '../../shared/storeEconomicLedger.js';
 
 const clean = (value: unknown): string =>
@@ -19,6 +21,32 @@ const safeAggregateInteger = (value: unknown, label: string): number => {
     throw new Error(`ADMIN_PLATFORM_ECONOMY_${label}_INVALID`);
   }
   return numeric;
+};
+
+const parseAllocation = (
+  value: EconomicAllocationSnapshot | undefined
+): EconomicAllocationSnapshot | undefined => {
+  if (!value) return undefined;
+  const integerFields = [
+    value.merchandiseGrossMinor,
+    value.customerPaidMinor,
+    value.deliveryFeeMinor,
+    value.courierRemunerationMinor,
+    value.storeSubsidyMinor,
+    value.kyrubIncentiveMinor,
+    value.partnerSubsidyMinor,
+    value.observedCostsMinor,
+  ];
+  if (
+    value.schemaVersion !== 1 ||
+    value.currency !== 'BRL' ||
+    integerFields.some(amount => !Number.isSafeInteger(amount) || amount < 0) ||
+    value.courierRemunerationMinor !== value.deliveryFeeMinor ||
+    !Array.isArray(value.observedCosts)
+  ) {
+    throw new Error('ADMIN_PLATFORM_ECONOMY_ALLOCATION_INVALID');
+  }
+  return value;
 };
 
 const parseRecentEntry = (value: unknown): AdminPlatformEconomyRecentEntry => {
@@ -42,6 +70,7 @@ const parseRecentEntry = (value: unknown): AdminPlatformEconomyRecentEntry => {
   ) {
     throw new Error('ADMIN_PLATFORM_ECONOMY_ENTRY_INVALID');
   }
+  const economicAllocation = parseAllocation(entry.economicAllocation);
   return {
     id: entry.id,
     storeId: entry.storeId,
@@ -52,6 +81,7 @@ const parseRecentEntry = (value: unknown): AdminPlatformEconomyRecentEntry => {
     provider: entry.provider,
     sourceAuthority: entry.sourceAuthority,
     occurredAt: entry.occurredAt,
+    ...(economicAllocation ? { economicAllocation } : {}),
   };
 };
 
@@ -117,6 +147,7 @@ export const loadAdminPlatformEconomySnapshot = async (): Promise<AdminPlatformE
     parseRecentEntry(document.data())
   );
   const stores = buildRecentStoreEconomyActivity(entries);
+  const allocation = deriveRecentEconomicAllocationWindow(entries);
 
   return {
     schemaVersion: ADMIN_PLATFORM_ECONOMY_SCHEMA_VERSION,
@@ -135,6 +166,7 @@ export const loadAdminPlatformEconomySnapshot = async (): Promise<AdminPlatformE
       limit: ADMIN_PLATFORM_ECONOMY_RECENT_LIMIT,
       entryCount: entries.length,
       representedStoreCount: stores.length,
+      allocation,
       entries,
       stores,
     },
