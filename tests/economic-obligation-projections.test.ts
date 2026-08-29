@@ -162,7 +162,7 @@ describe('economic obligation read projections', () => {
     assert.equal(projection.integrityError, 'settlement_without_settled_obligation');
   });
 
-  test('amount, currency, tenant or beneficiary mismatch fails closed', () => {
+  test('amount, tenant, beneficiary or settlement evidence mismatch fails closed', () => {
     const settledObligation = obligation({
       status: 'settled',
       eligibleAt: '2026-08-29T11:00:00.000Z',
@@ -173,6 +173,7 @@ describe('economic obligation read projections', () => {
       settlement(settledObligation, { amountMinor: 2499 }),
       settlement(settledObligation, { storeId: 'store-other' }),
       settlement(settledObligation, { beneficiaryPrincipalId: 'store:other' }),
+      settlement(settledObligation, { observedAt: '2026-08-29T11:59:59.000Z' }),
     ]) {
       const projection = deriveEconomicObligationProjection({
         obligation: settledObligation,
@@ -180,6 +181,41 @@ describe('economic obligation read projections', () => {
       });
       assert.equal(projection.state, 'integrity_error');
       assert.equal(projection.integrityError, 'settlement_mismatch');
+    }
+  });
+
+  test('settled timestamp must be the authoritative settlement occurrence time', () => {
+    const settledObligation = obligation({
+      status: 'settled',
+      eligibleAt: '2026-08-29T11:00:00.000Z',
+      settledAt: '2026-08-29T12:00:01.000Z',
+    });
+    const projection = deriveEconomicObligationProjection({
+      obligation: settledObligation,
+      settlements: [settlement(settledObligation)],
+    });
+
+    assert.equal(projection.state, 'integrity_error');
+    assert.equal(projection.integrityError, 'settlement_mismatch');
+  });
+
+  test('impossible obligation lifecycle snapshots fail closed before projection', () => {
+    for (const inconsistent of [
+      obligation({ settledAt: '2026-08-29T12:00:00.000Z' }),
+      obligation({ status: 'eligible', eligibleAt: '' }),
+      obligation({
+        status: 'settled',
+        eligibleAt: '2026-08-29T11:00:00.000Z',
+        settledAt: '2026-08-29T10:59:59.000Z',
+      }),
+      obligation({ status: 'reversed', reversedAt: '' }),
+    ]) {
+      const projection = deriveEconomicObligationProjection({
+        obligation: inconsistent,
+        settlements: [],
+      });
+      assert.equal(projection.state, 'integrity_error');
+      assert.equal(projection.integrityError, 'lifecycle_snapshot_inconsistent');
     }
   });
 
