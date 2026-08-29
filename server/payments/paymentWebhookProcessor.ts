@@ -23,6 +23,11 @@ import {
   buildStorePointReversalEntry,
   type StorePointLedgerEntry,
 } from '../../shared/storePoints.js';
+import {
+  applyStoreChallengePaymentPlan,
+  prepareStoreChallengePaymentPlan,
+  type StoreChallengePaymentPlan,
+} from './storeChallengeProcessor.js';
 
 interface ProcessPaymentWebhookResult {
   duplicate: boolean;
@@ -185,10 +190,11 @@ export const processVerifiedPaymentWebhook = async (input: {
     let pointReversalEntry: StorePointLedgerEntry | null = null;
     let pointReversalRef: ReturnType<typeof adminDb.doc> | null = null;
     let pointReversalExists = false;
+    let challengePlan: StoreChallengePaymentPlan | null = null;
     const intentStatus = intentStatusForPaymentStatus(effectiveStatus);
 
     // Firestore transactions require every read to happen before any write.
-    // Resolve order, optional coupon redemption and immutable points movements first.
+    // Resolve order, coupon, points and challenge documents first.
     if (current.context === 'marketplace') {
       if (!intentSnapshot.exists) throw new Error('PAYMENT_INTENT_NOT_FOUND');
       intent = normalizeCanonicalPaymentIntent(
@@ -264,6 +270,17 @@ export const processVerifiedPaymentWebhook = async (input: {
           pointReversalExists = (await transaction.get(pointReversalRef)).exists;
         }
       }
+
+      if (effectiveStatus === 'paid' || effectiveStatus === 'refunded') {
+        challengePlan = await prepareStoreChallengePaymentPlan({
+          transaction,
+          storeId,
+          paymentId,
+          status: effectiveStatus,
+          intent,
+          occurredAt: event.occurredAt,
+        });
+      }
     }
 
     if (intent && intentStatus && intent.status !== intentStatus) {
@@ -296,6 +313,10 @@ export const processVerifiedPaymentWebhook = async (input: {
 
     if (pointReversalEntry && pointReversalRef && !pointReversalExists) {
       transaction.set(pointReversalRef, pointReversalEntry);
+    }
+
+    if (challengePlan) {
+      applyStoreChallengePaymentPlan(transaction, challengePlan);
     }
 
     if (
