@@ -25,6 +25,11 @@ import {
   type StoreRelationshipSummary,
   type StoreRelationshipVoucherSummary,
 } from '../../shared/storeRelationship.js';
+import {
+  isPaymentAuthoritativelyPaid,
+  normalizeCanonicalPayment,
+  type CanonicalPayment,
+} from '../../src/utils/canonicalPayment.js';
 import { listPublicStorePromotions } from './storePromotionService.js';
 
 const clean = (value: unknown): string =>
@@ -37,6 +42,9 @@ const finiteIso = (value: unknown): string => {
 
 const ledgerCollectionPath = (storeId: string): string =>
   `stores/${storeId}/storePointLedger`;
+
+const paymentCollectionPath = (storeId: string): string =>
+  `stores/${storeId}/payments`;
 
 const challengeProgressCollectionPath = (storeId: string): string =>
   `stores/${storeId}/challengeProgress`;
@@ -88,6 +96,27 @@ const parseLedgerEntries = (
     return entry as StorePointLedgerEntry;
   });
 
+const countConfirmedPurchases = (
+  docs: readonly QueryDocumentSnapshot<DocumentData>[],
+  storeId: string,
+  customerId: string
+): number => {
+  let count = 0;
+  for (const document of docs) {
+    let payment: CanonicalPayment;
+    try {
+      payment = normalizeCanonicalPayment(document.data() as CanonicalPayment);
+    } catch {
+      throw new Error('STORE_RELATIONSHIP_PAYMENT_INVALID');
+    }
+    if (payment.storeId !== storeId || payment.buyerId !== customerId) {
+      throw new Error('STORE_RELATIONSHIP_PAYMENT_SCOPE_INVALID');
+    }
+    if (isPaymentAuthoritativelyPaid(payment.status)) count += 1;
+  }
+  return count;
+};
+
 const parseRewardRedemptions = (
   docs: readonly QueryDocumentSnapshot<DocumentData>[],
   storeId: string,
@@ -114,24 +143,6 @@ const parseRewardRedemptions = (
       debitEntryId: clean(value.debitEntryId),
     } as RewardRedemptionRecord;
   });
-
-const fullyReversedPurchaseIds = (
-  entries: StorePointLedgerEntry[]
-): Set<string> => {
-  const byId = new Map(entries.map(entry => [entry.id, entry]));
-  const reversed = new Set<string>();
-  for (const entry of entries) {
-    if (entry.kind !== 'reversal' || !entry.reversalOf) continue;
-    const original = byId.get(entry.reversalOf);
-    if (
-      original?.kind === 'purchase_base' &&
-      entry.amount === -Math.abs(original.amount)
-    ) {
-      reversed.add(original.id);
-    }
-  }
-  return reversed;
-};
 
 const qualifiedEarnedPoints = (entries: StorePointLedgerEntry[]): number => {
   const byId = new Map(entries.map(entry => [entry.id, entry]));
@@ -315,6 +326,9 @@ export const loadStoreRelationshipSummary = async (input: {
   const ledgerQuery = adminDb
     .collection(ledgerCollectionPath(storeId))
     .where('customerId', '==', customerId);
+  const paymentQuery = adminDb
+    .collection(paymentCollectionPath(storeId))
+    .where('buyerId', '==', customerId);
   const challengeProgressQuery = adminDb
     .collection(challengeProgressCollectionPath(storeId))
     .where('customerId', '==', customerId);
@@ -322,21 +336,29 @@ export const loadStoreRelationshipSummary = async (input: {
     .collection(rewardRedemptionCollectionPath(storeId))
     .where('customerId', '==', customerId);
 
-  const [tenantSnapshot, ledgerSnapshot, progressSnapshot, redemptionSnapshot, coupons] =
-    await Promise.all([
-      tenantRef.get(),
-      ledgerQuery.get(),
-      challengeProgressQuery.get(),
-      rewardRedemptionQuery.get(),
-      listPublicStorePromotions(storeId, now),
-    ]);
+  const [
+    tenantSnapshot,
+    ledgerSnapshot,
+    paymentSnapshot,
+    progressSnapshot,
+    redemptionSnapshot,
+    coupons,
+  ] = await Promise.all([
+    tenantRef.get(),
+    ledgerQuery.get(),
+    paymentQuery.get(),
+    challengeProgressQuery.get(),
+    rewardRedemptionQuery.get(),
+    listPublicStorePromotions(storeId, now),
+  ]);
 
   const entries = parseLedgerEntries(ledgerSnapshot.docs, storeId, customerId);
   const pointsBalance = deriveStorePointBalance(entries);
-  const reversedPurchases = fullyReversedPurchaseIds(entries);
-  const confirmedPurchases = entries.filter(
-    entry => entry.kind === 'purchase_base' && !reversedPurchases.has(entry.id)
-  ).length;
+  const confirmedPurchases = countConfirmedPurchases(
+    paymentSnapshot.docs,
+    storeId,
+    customerId
+  );
   const redemptions = parseRewardRedemptions(
     redemptionSnapshot.docs,
     storeId,
