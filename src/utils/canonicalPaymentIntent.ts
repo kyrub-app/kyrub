@@ -2,7 +2,12 @@ import type { PaymentMethod } from './canonicalPayment';
 import type { StorePromotionDiscountType } from './storePromotions';
 import { normalizeStorePointsPerUnit } from '../../shared/storePoints';
 
-export type PaymentIntentStatus = 'pending' | 'paid' | 'failed' | 'expired';
+export type PaymentIntentStatus =
+  | 'pending'
+  | 'paid'
+  | 'failed'
+  | 'expired'
+  | 'cancelled';
 
 export interface PaymentIntentItem {
   productId: string;
