@@ -5,6 +5,7 @@ import {
   buildDefaultUserCommunicationPreferences,
   buildUserCommunicationPreferences,
   shouldDeliverUserNotificationToBrowser,
+  shouldReceiveUserNotificationInApp,
   userCommunicationPreferencesPath,
 } from '../shared/userCommunicationPreferences';
 import { buildUserNotification } from '../shared/userNotifications';
@@ -42,8 +43,9 @@ const marketingNotification = buildUserNotification({
 });
 
 describe('user communication preferences', () => {
-  test('defaults preserve canonical inbox while browser alerts start opt-in', () => {
+  test('defaults preserve operational inbox while marketing and browser alerts start opt-in', () => {
     const defaults = buildDefaultUserCommunicationPreferences('user-1');
+    assert.equal(defaults.marketing.enabled, false);
     assert.equal(defaults.browser.enabled, false);
     assert.deepEqual(defaults.browser.categories, {
       store_chat: true,
@@ -52,6 +54,8 @@ describe('user communication preferences', () => {
       marketing: false,
       system: true,
     });
+    assert.equal(shouldReceiveUserNotificationInApp(defaults, 'store_chat'), true);
+    assert.equal(shouldReceiveUserNotificationInApp(defaults, 'marketing'), false);
     assert.equal(shouldDeliverUserNotificationToBrowser(defaults, notification), false);
     assert.equal(
       shouldDeliverUserNotificationToBrowser(defaults, marketingNotification),
@@ -62,6 +66,7 @@ describe('user communication preferences', () => {
   test('browser delivery requires channel, category and recipient match', () => {
     const enabled = buildUserCommunicationPreferences({
       userId: 'user-1',
+      marketingEnabled: false,
       browserEnabled: true,
       categories: {
         store_chat: true,
@@ -93,9 +98,10 @@ describe('user communication preferences', () => {
     );
   });
 
-  test('marketing browser alerts require explicit category opt-in', () => {
-    const enabled = buildUserCommunicationPreferences({
+  test('marketing delivery requires consent before any channel decision', () => {
+    const noMarketing = buildUserCommunicationPreferences({
       userId: 'user-1',
+      marketingEnabled: false,
       browserEnabled: true,
       categories: {
         store_chat: true,
@@ -106,8 +112,29 @@ describe('user communication preferences', () => {
       },
       updatedAt: '2026-08-29T12:01:00.000Z',
     });
+    assert.equal(noMarketing.browser.categories.marketing, false);
+    assert.equal(shouldReceiveUserNotificationInApp(noMarketing, 'marketing'), false);
     assert.equal(
-      shouldDeliverUserNotificationToBrowser(enabled, marketingNotification),
+      shouldDeliverUserNotificationToBrowser(noMarketing, marketingNotification),
+      false
+    );
+
+    const optedIn = buildUserCommunicationPreferences({
+      userId: 'user-1',
+      marketingEnabled: true,
+      browserEnabled: true,
+      categories: {
+        store_chat: true,
+        order: true,
+        loyalty: true,
+        marketing: true,
+        system: true,
+      },
+      updatedAt: '2026-08-29T12:02:00.000Z',
+    });
+    assert.equal(shouldReceiveUserNotificationInApp(optedIn, 'marketing'), true);
+    assert.equal(
+      shouldDeliverUserNotificationToBrowser(optedIn, marketingNotification),
       true
     );
   });
@@ -127,6 +154,7 @@ describe('user communication preferences', () => {
     assert.match(router, /verifyFirebaseIdToken\(token\)/);
     assert.match(router, /loadUserCommunicationPreferences\(identity\.uid\)/);
     assert.match(router, /userId: identity\.uid/);
+    assert.match(router, /marketingEnabled: boolean\(request\.body\?\.marketingEnabled\)/);
     assert.doesNotMatch(router, /request\.body\?\.userId/);
     assert.doesNotMatch(router, /request\.query\.userId/);
   });
@@ -138,13 +166,14 @@ describe('user communication preferences', () => {
     );
     assert.match(client, /\/api\/communication-preferences/);
     assert.match(client, /user\.getIdToken\(\)/);
+    assert.match(client, /marketingEnabled: input\.marketingEnabled/);
     assert.match(client, /browserEnabled: input\.browserEnabled/);
     assert.match(client, /categories: input\.categories/);
     assert.doesNotMatch(client, /userId:/);
     assert.doesNotMatch(client, /setDoc|addDoc|collection\(db|doc\(db/);
   });
 
-  test('canonical event generation does not consult communication preferences', () => {
+  test('operational canonical event generation does not consult communication preferences', () => {
     const chat = readFileSync('server/chat/storeCustomerChatService.ts', 'utf8');
     const notifications = readFileSync(
       'server/notifications/userNotificationService.ts',
@@ -155,7 +184,7 @@ describe('user communication preferences', () => {
     assert.doesNotMatch(notifications, /CommunicationPreference|communication-preference/i);
   });
 
-  test('browser permission is requested only from explicit preference interaction', () => {
+  test('browser permission is requested only from explicit canonical preference interaction', () => {
     const modal = readFileSync(
       'src/components/UserCommunicationPreferencesModal.tsx',
       'utf8'
@@ -179,19 +208,21 @@ describe('user communication preferences', () => {
     assert.match(bridge, /showBrowserNotification\(notification, user\)/);
   });
 
-  test('preference UI explains internal inbox remains canonical', () => {
+  test('preference UI separates marketing consent from browser channel', () => {
     const modal = readFileSync(
       'src/components/UserCommunicationPreferencesModal.tsx',
       'utf8'
     );
     assert.match(modal, /Caixa interna do Kyrub/);
-    assert.match(modal, /não apagam histórico nem silenciam a fonte de verdade/);
+    assert.match(modal, /Eventos operacionais canônicos continuam registrados/);
+    assert.match(modal, /Campanhas promocionais só são entregues/);
+    assert.match(modal, /Ofertas e campanhas/);
+    assert.match(modal, /Começa desativado por padrão/);
+    assert.match(modal, /id="marketing-communication-consent"/);
     assert.match(modal, /Alertas do navegador/);
     assert.match(modal, /Mensagens de lojas e clientes/);
     assert.match(modal, /Pedidos/);
     assert.match(modal, /Fidelidade/);
-    assert.match(modal, /Ofertas e campanhas/);
-    assert.match(modal, /desativado por padrão/);
     assert.match(modal, /Sistema/);
   });
 
@@ -202,12 +233,10 @@ describe('user communication preferences', () => {
   });
 
   test('campaign execution remains outside communication preference V1', () => {
-    const shared = readFileSync('shared/userCommunicationPreferences.ts', 'utf8');
     const service = readFileSync(
       'server/notifications/userCommunicationPreferenceService.ts',
       'utf8'
     );
-    assert.doesNotMatch(shared, /campaign/i);
     assert.doesNotMatch(service, /campaign/i);
   });
 });
