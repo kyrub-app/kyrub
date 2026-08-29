@@ -19,6 +19,7 @@ import { createKyrubActionExecutionRouter } from "./server/actions/actionExecuti
 import { createPaymentIntentRouter } from "./server/payments/paymentIntentRouter";
 import { createStoreRewardRouter } from "./server/payments/storeRewardRouter";
 import { createStoreRelationshipRouter } from "./server/payments/storeRelationshipRouter";
+import { createMarketplaceDiscoveryRouter } from "./server/payments/marketplaceDiscoveryRouter";
 import { enforceDeliveryWorkEligibility } from "./server/identity/workEligibilityMiddleware";
 
 dotenv.config();
@@ -125,6 +126,12 @@ app.use(
   "/api/store-relationship",
   integrationRateLimiter,
   createStoreRelationshipRouter()
+);
+
+app.use(
+  "/api/marketplace-discovery",
+  integrationRateLimiter,
+  createMarketplaceDiscoveryRouter()
 );
 
 app.use(
