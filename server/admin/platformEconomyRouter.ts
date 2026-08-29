@@ -3,6 +3,7 @@ import { Router, type Request, type Response } from 'express';
 import { FieldValue } from 'firebase-admin/firestore';
 import { verifyFirebaseIdToken } from '../ai/consultantAuth.js';
 import { adminDb } from '../firebaseAdmin.js';
+import { parseAdminPlatformEconomyPeriod } from '../../shared/adminPlatformEconomyPeriod.js';
 import { loadAdminPlatformEconomySnapshot } from './platformEconomyService.js';
 
 const PLATFORM_ECONOMY_ROLES = new Set(['super_admin', 'finance']);
@@ -126,10 +127,12 @@ export const mapPlatformEconomyError = (
 };
 
 export const loadAuthorizedPlatformEconomySnapshot = async (
-  authorization: string
+  authorization: string,
+  periodInput: unknown = 'all'
 ) => {
   const admin = await authorizePlatformEconomy(authorization);
-  const snapshot = await loadAdminPlatformEconomySnapshot();
+  const period = parseAdminPlatformEconomyPeriod(periodInput);
+  const snapshot = await loadAdminPlatformEconomySnapshot(period);
   await recordPlatformEconomyAudit(admin);
   return snapshot;
 };
@@ -140,7 +143,8 @@ export const createPlatformEconomyRouter = (): Router => {
   router.get('/', async (request: Request, response: Response) => {
     try {
       const snapshot = await loadAuthorizedPlatformEconomySnapshot(
-        request.get('authorization') ?? ''
+        request.get('authorization') ?? '',
+        request.query.period
       );
       response.json(snapshot);
     } catch (error) {
