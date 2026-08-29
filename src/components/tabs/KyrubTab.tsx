@@ -211,7 +211,7 @@ export function KyrubTab(props: KyrubTabProps) {
     };
   }, []);
 
-  const publishedStores = useMemo(() => {
+  const marketplaceStores = useMemo(() => {
     const storesById = new Map<string, Store>();
     for (const store of fallbackStores) storesById.set(store.id, store);
     for (const store of canonicalStores) storesById.set(store.id, store);
@@ -219,8 +219,8 @@ export function KyrubTab(props: KyrubTabProps) {
   }, [canonicalStores, fallbackStores]);
 
   const storeIdFingerprint = useMemo(
-    () => publishedStores.map(store => store.id).sort().join('|'),
-    [publishedStores]
+    () => marketplaceStores.map(store => store.id).sort().join('|'),
+    [marketplaceStores]
   );
 
   useEffect(() => {
@@ -259,15 +259,16 @@ export function KyrubTab(props: KyrubTabProps) {
     };
   }, [storeIdFingerprint]);
 
-  const segmentedStores = useMemo(() => {
+  const publishedStores = useMemo(() => {
     const promotionSet = new Set(promotionStoreIds);
-    return publishedStores.map(store => ({
+    return marketplaceStores.map(store => ({
       ...store,
-      // Legacy filter id `novas` is now a compatibility slot for `Em promoção`.
-      // `isNew` is not otherwise consumed by LegacyKyrubTab.
+      // Compatibility: LegacyKyrubTab's internal `novas` filter reads only
+      // `isNew`. The visible label is `Em promoção`, and this marker comes
+      // exclusively from the canonical public-promotion segment.
       isNew: promotionSet.has(store.id),
     }));
-  }, [promotionStoreIds, publishedStores]);
+  }, [promotionStoreIds, marketplaceStores]);
 
   const legacyForYouOrders = useMemo(() => {
     const forYouSet = new Set(forYouStoreIds);
@@ -303,7 +304,7 @@ export function KyrubTab(props: KyrubTabProps) {
       <LegacyKyrubTab
         {...props}
         posts={socialFeed.posts}
-        storesWithCoords={segmentedStores}
+        storesWithCoords={publishedStores}
         orders={legacyForYouOrders}
       />
 
@@ -312,7 +313,7 @@ export function KyrubTab(props: KyrubTabProps) {
       />
 
       <StoreOfferCardPresentationBridge
-        stores={publishedStores}
+        stores={marketplaceStores}
         enabled={props.socialSubTab === 'lojas'}
       />
 
