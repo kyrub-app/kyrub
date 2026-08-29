@@ -53,6 +53,7 @@ export interface AdminPlatformEconomyStoreActivity {
   storeId: string;
   capturedMinor: number;
   refundedMinor: number;
+  grossAfterRefundsMinor: number;
   chargedBackMinor: number;
   chargebackReversedMinor: number;
   economicNetMinor: number;
@@ -138,6 +139,7 @@ export const buildRecentStoreEconomyActivity = (
       storeId: entry.storeId,
       capturedMinor: 0,
       refundedMinor: 0,
+      grossAfterRefundsMinor: 0,
       chargedBackMinor: 0,
       chargebackReversedMinor: 0,
       economicNetMinor: 0,
@@ -148,7 +150,8 @@ export const buildRecentStoreEconomyActivity = (
     else if (entry.kind === 'payment_refund') current.refundedMinor += Math.abs(entry.amountMinor);
     else if (entry.kind === 'payment_chargeback') current.chargedBackMinor += Math.abs(entry.amountMinor);
     else current.chargebackReversedMinor += entry.amountMinor;
-    current.economicNetMinor = current.capturedMinor - current.refundedMinor - current.chargedBackMinor + current.chargebackReversedMinor;
+    current.grossAfterRefundsMinor = current.capturedMinor - current.refundedMinor;
+    current.economicNetMinor = current.grossAfterRefundsMinor - current.chargedBackMinor + current.chargebackReversedMinor;
     current.eventCount += 1;
     if (!current.lastOccurredAt || entry.occurredAt > current.lastOccurredAt) current.lastOccurredAt = entry.occurredAt;
     byStore.set(entry.storeId, current);
