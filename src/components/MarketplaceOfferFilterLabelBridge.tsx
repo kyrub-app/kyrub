@@ -5,25 +5,35 @@ const normalized = (value: string | null): string =>
 
 const replaceFilterLabels = (): void => {
   const buttons = Array.from(document.querySelectorAll<HTMLButtonElement>('button'));
-  for (const novas of buttons) {
-    if (normalized(novas.textContent) !== 'NOVAS' && normalized(novas.textContent) !== 'EM PROMOÇÃO') {
+  for (const promotionButton of buttons) {
+    const promotionText = normalized(promotionButton.textContent);
+    if (promotionText !== 'NOVAS' && promotionText !== 'EM PROMOÇÃO') {
       continue;
     }
-    const parent = novas.parentElement;
+    const parent = promotionButton.parentElement;
     if (!parent) continue;
-    const siblings = Array.from(parent.querySelectorAll<HTMLButtonElement>(':scope > button'));
-    const favorite = siblings.find(button => normalized(button.textContent) === 'FAVORITAS');
-    const customer = siblings.find(button => {
+    const siblings = Array.from(
+      parent.querySelectorAll<HTMLButtonElement>(':scope > button')
+    );
+    const favorite = siblings.find(
+      button => normalized(button.textContent) === 'FAVORITAS'
+    );
+    const forYouButton = siblings.find(button => {
       const text = normalized(button.textContent);
       return text === 'CLIENTE' || text === 'PARA VOCÊ';
     });
-    if (!favorite || !customer) continue;
-    novas.textContent = 'Em promoção';
-    customer.textContent = 'Para você';
-    novas.title = 'Lojas com promoção pública ativa';
-    customer.title = 'Lojas em que você já tem histórico de compra confirmado';
-    novas.setAttribute('aria-label', 'Filtrar lojas em promoção');
-    customer.setAttribute('aria-label', 'Filtrar lojas para você');
+    if (!favorite || !forYouButton) continue;
+
+    if (promotionText !== 'EM PROMOÇÃO') {
+      promotionButton.textContent = 'Em promoção';
+    }
+    if (normalized(forYouButton.textContent) !== 'PARA VOCÊ') {
+      forYouButton.textContent = 'Para você';
+    }
+    promotionButton.title = 'Lojas com promoção pública ativa';
+    forYouButton.title = 'Lojas em que você já tem histórico de compra confirmado';
+    promotionButton.setAttribute('aria-label', 'Filtrar lojas em promoção');
+    forYouButton.setAttribute('aria-label', 'Filtrar lojas para você');
     return;
   }
 };
