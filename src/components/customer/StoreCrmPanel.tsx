@@ -3,6 +3,7 @@ import {
   Coins,
   Crown,
   Gift,
+  MessageSquareText,
   RefreshCw,
   Search,
   ShoppingBag,
@@ -16,6 +17,7 @@ import type {
   StoreCrmSummary,
 } from '../../../shared/storeCrm';
 import { loadStoreCrmForCurrentOwner } from '../../utils/storeCrm';
+import { openStoreCustomerChat } from '../../utils/storeCustomerChatEvents';
 
 type CrmFilter = 'all' | 'recurring' | 'points' | 'challenges' | 'rewards';
 
@@ -125,31 +127,11 @@ export function StoreCrmPanel({ storeId }: StoreCrmPanelProps) {
       )}
 
       <div className="mt-4 grid grid-cols-2 gap-2 lg:grid-cols-5">
-        <MetricCard
-          icon={Users}
-          label="Clientes"
-          value={String(summary?.totals.customers ?? 0)}
-        />
-        <MetricCard
-          icon={ShoppingBag}
-          label="Recorrentes"
-          value={String(summary?.totals.recurringCustomers ?? 0)}
-        />
-        <MetricCard
-          icon={Crown}
-          label="Fiéis"
-          value={String(summary?.totals.loyalCustomers ?? 0)}
-        />
-        <MetricCard
-          icon={Coins}
-          label="Pontos em aberto"
-          value={String(summary?.totals.outstandingStorePoints ?? 0)}
-        />
-        <MetricCard
-          icon={Gift}
-          label="Receita confirmada"
-          value={money.format(summary?.totals.confirmedRevenue ?? 0)}
-        />
+        <MetricCard icon={Users} label="Clientes" value={String(summary?.totals.customers ?? 0)} />
+        <MetricCard icon={ShoppingBag} label="Recorrentes" value={String(summary?.totals.recurringCustomers ?? 0)} />
+        <MetricCard icon={Crown} label="Fiéis" value={String(summary?.totals.loyalCustomers ?? 0)} />
+        <MetricCard icon={Coins} label="Pontos em aberto" value={String(summary?.totals.outstandingStorePoints ?? 0)} />
+        <MetricCard icon={Gift} label="Receita confirmada" value={money.format(summary?.totals.confirmedRevenue ?? 0)} />
       </div>
 
       <div className="mt-4 flex flex-col gap-2 lg:flex-row lg:items-center">
@@ -197,7 +179,11 @@ export function StoreCrmPanel({ storeId }: StoreCrmPanelProps) {
           </div>
         ) : (
           visibleCustomers.map(customer => (
-            <CustomerCard key={customer.customerId} customer={customer} />
+            <CustomerCard
+              key={customer.customerId}
+              storeId={storeId}
+              customer={customer}
+            />
           ))
         )}
       </div>
@@ -225,7 +211,13 @@ function MetricCard({
   );
 }
 
-function CustomerCard({ customer }: { customer: StoreCrmCustomer }) {
+function CustomerCard({
+  storeId,
+  customer,
+}: {
+  storeId: string;
+  customer: StoreCrmCustomer;
+}) {
   return (
     <article className="rounded-2xl border border-slate-800 bg-slate-900/75 p-3">
       <div className="flex items-start gap-3">
@@ -252,29 +244,29 @@ function CustomerCard({ customer }: { customer: StoreCrmCustomer }) {
             {customer.email || customer.customerId}
           </span>
         </div>
+        <button
+          type="button"
+          onClick={() =>
+            openStoreCustomerChat({
+              perspective: 'store',
+              storeId,
+              customerId: customer.customerId,
+              customerName: customer.name,
+            })
+          }
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-orange-500/25 bg-orange-500/10 text-orange-300 hover:bg-orange-500/15"
+          aria-label={`Conversar com ${customer.name}`}
+          title={`Conversar com ${customer.name}`}
+        >
+          <MessageSquareText className="h-4 w-4" />
+        </button>
       </div>
 
       <div className="mt-3 grid grid-cols-2 gap-2 md:grid-cols-4">
-        <SmallStat
-          icon={ShoppingBag}
-          label="Compras"
-          value={String(customer.confirmedPurchases)}
-        />
-        <SmallStat
-          icon={Gift}
-          label="Total confirmado"
-          value={money.format(customer.totalPaid)}
-        />
-        <SmallStat
-          icon={Coins}
-          label="Pontos"
-          value={String(customer.pointsBalance)}
-        />
-        <SmallStat
-          icon={Trophy}
-          label="Desafios"
-          value={`${customer.completedChallengeCount}/${customer.challengeProgressCount}`}
-        />
+        <SmallStat icon={ShoppingBag} label="Compras" value={String(customer.confirmedPurchases)} />
+        <SmallStat icon={Gift} label="Total confirmado" value={money.format(customer.totalPaid)} />
+        <SmallStat icon={Coins} label="Pontos" value={String(customer.pointsBalance)} />
+        <SmallStat icon={Trophy} label="Desafios" value={`${customer.completedChallengeCount}/${customer.challengeProgressCount}`} />
       </div>
 
       <div className="mt-2 flex flex-wrap gap-2 text-[9px] text-slate-500">
