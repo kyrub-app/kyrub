@@ -2,7 +2,7 @@ import {
   buildStorePointBonusEntry,
   buildStorePointReversalEntry,
   type StorePointLedgerEntry,
-} from './storePoints';
+} from './storePoints.js';
 
 export const STORE_CHALLENGE_SCHEMA_VERSION = 1 as const;
 
