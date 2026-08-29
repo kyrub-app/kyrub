@@ -173,6 +173,20 @@ describe('admin platform economy', () => {
     assert.match(service, /allocationTotals/);
   });
 
+  test('backend projects authoritative AI usage cost without mixing USD into BRL', () => {
+    const service = readFileSync('server/admin/platformEconomyService.ts', 'utf8');
+    const contract = readFileSync('shared/adminPlatformEconomy.ts', 'utf8');
+    assert.match(service, /collection\('kyrub_usage_events'\)/);
+    assert.match(service, /where\('resource', '==', 'ai'\)/);
+    assert.match(service, /AggregateField\.sum\('estimatedCostMicrousd'\)/);
+    assert.match(service, /AggregateField\.sum\('totalTokenCount'\)/);
+    assert.match(service, /AI_CALL_CONSERVATION_INVALID/);
+    assert.match(contract, /costCurrency: 'USD'/);
+    assert.match(contract, /costUnit: 'microusd'/);
+    assert.match(contract, /aiUsageTotals/);
+    assert.doesNotMatch(service, /exchangeRate|usdToBrl|convertedCostMinor/i);
+  });
+
   test('finance endpoint is server-authorized and audited', () => {
     const router = readFileSync('server/admin/platformEconomyRouter.ts', 'utf8');
     assert.match(router, /new Set\(\['super_admin', 'finance'\]\)/);
