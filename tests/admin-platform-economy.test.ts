@@ -90,6 +90,8 @@ describe('admin platform economy', () => {
     assert.match(router, /clean\(profile\?\.status\) !== 'active'/);
     assert.match(router, /admin\.platform_economy\.viewed/);
     assert.match(router, /source: 'server'/);
+    assert.match(router, /loadAuthorizedPlatformEconomySnapshot/);
+    assert.match(router, /mapPlatformEconomyError/);
   });
 
   test('browser client only calls authenticated API and does not query Firestore', () => {
@@ -97,6 +99,19 @@ describe('admin platform economy', () => {
     assert.match(client, /user\.getIdToken\(\)/);
     assert.match(client, /\/api\/admin\/platform-economy/);
     assert.doesNotMatch(client, /firebase\/firestore|collectionGroup|collection\(db/);
+  });
+
+  test('Vercel transport exposes the same server authority instead of duplicating finance rules', () => {
+    const transport = readFileSync('api/admin/platform-economy.ts', 'utf8');
+    assert.match(transport, /loadAuthorizedPlatformEconomySnapshot/);
+    assert.match(transport, /mapPlatformEconomyError/);
+    assert.match(transport, /request\.headers\.authorization/);
+    assert.match(transport, /METHOD_NOT_ALLOWED/);
+    assert.match(transport, /cache-control/);
+    assert.doesNotMatch(
+      transport,
+      /verifyFirebaseIdToken|collectionGroup\(|admin\.platform_economy\.viewed/
+    );
   });
 
   test('workspace remains read-only and separate from settlement', () => {
