@@ -19,8 +19,23 @@ export interface PlatformPolicyEconomicEntry extends StoreEconomicLedgerEntry {
 const clean = (value: unknown): string =>
   typeof value === 'string' ? value.trim() : '';
 
-const id = (kind: string, paymentId: string): string =>
-  `platform:${kind}:${clean(paymentId)}`;
+const policyEntryId = (kind: string, paymentIdInput: string): string => {
+  const paymentId = clean(paymentIdInput);
+  if (!paymentId) throw new Error('PLATFORM_POLICY_PAYMENT_REQUIRED');
+  return `platform:${kind}:${paymentId}`;
+};
+
+export const buildPlatformFeeEntryId = (paymentId: string): string =>
+  policyEntryId('fee', paymentId);
+
+export const buildPlatformFeeReversalEntryId = (paymentId: string): string =>
+  policyEntryId('fee-reversal', paymentId);
+
+export const buildPlatformSubsidyEntryId = (paymentId: string): string =>
+  policyEntryId('subsidy', paymentId);
+
+export const buildPlatformSubsidyReversalEntryId = (paymentId: string): string =>
+  policyEntryId('subsidy-reversal', paymentId);
 
 const assertAssessment = (
   assessment: PlatformFeeSubsidyAssessment,
@@ -69,7 +84,7 @@ export const buildPlatformPolicyCaptureEntries = (input: {
   if (input.assessment.platformFeeMinor > 0) {
     entries.push({
       ...common,
-      id: id('fee', input.payment.id),
+      id: buildPlatformFeeEntryId(input.payment.id),
       kind: 'platform_fee_assessed',
       amountMinor: -input.assessment.platformFeeMinor,
       reversalOfEntryId: '',
@@ -83,7 +98,7 @@ export const buildPlatformPolicyCaptureEntries = (input: {
   if (input.assessment.platformSubsidyMinor > 0) {
     entries.push({
       ...common,
-      id: id('subsidy', input.payment.id),
+      id: buildPlatformSubsidyEntryId(input.payment.id),
       kind: 'platform_subsidy_granted',
       amountMinor: input.assessment.platformSubsidyMinor,
       reversalOfEntryId: '',
@@ -117,7 +132,9 @@ export const buildPlatformPolicyRefundReversals = (input: {
     const reversingFee = original.kind === 'platform_fee_assessed';
     return {
       ...common,
-      id: id(reversingFee ? 'fee-reversal' : 'subsidy-reversal', input.payment.id),
+      id: reversingFee
+        ? buildPlatformFeeReversalEntryId(input.payment.id)
+        : buildPlatformSubsidyReversalEntryId(input.payment.id),
       kind: reversingFee ? 'platform_fee_reversed' : 'platform_subsidy_reversed',
       amountMinor: -original.amountMinor,
       reversalOfEntryId: original.id,
