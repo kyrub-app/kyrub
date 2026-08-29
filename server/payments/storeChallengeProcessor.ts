@@ -1,6 +1,7 @@
 import type { Transaction } from 'firebase-admin/firestore';
 import { adminDb } from '../firebaseAdmin.js';
 import type { CanonicalPaymentIntent } from '../../src/utils/canonicalPaymentIntent.js';
+import { STORE_CHALLENGE_MAX_DEFINITIONS } from '../../shared/storeChallengeLimits.js';
 import {
   applyPaidStoreChallengeContribution,
   applyRefundedStoreChallengeContribution,
@@ -151,7 +152,7 @@ export const prepareStoreChallengePaymentPlan = async (input: {
     tenantSnapshot.data()?.storeChallenges
   )
     .filter(challenge => challenge.storeId === storeId)
-    .slice(0, 20);
+    .slice(0, STORE_CHALLENGE_MAX_DEFINITIONS);
   if (challenges.length === 0) return EMPTY_PLAN();
 
   const plan = EMPTY_PLAN();
@@ -210,6 +211,35 @@ export const prepareStoreChallengePaymentPlan = async (input: {
         continue;
       }
 
+      if (result.rewardEntry) {
+        const rewardRef = adminDb.doc(
+          storePointLedgerPath(storeId, result.rewardEntry.id)
+        );
+        const rewardSnapshot = await transaction.get(rewardRef);
+        if (rewardSnapshot.exists) {
+          const existingReward = safeRewardEntry(
+            rewardSnapshot.data(),
+            result.rewardEntry.id,
+            storeId,
+            customerId
+          );
+          if (!existingReward) {
+            console.warn('Store challenge reward id conflicts with another ledger entry.', {
+              storeId,
+              challengeId: challenge.id,
+              rewardEntryId: result.rewardEntry.id,
+            });
+            continue;
+          }
+        } else {
+          plan.writes.push({
+            ref: rewardRef,
+            data: result.rewardEntry as unknown as Record<string, unknown>,
+          });
+          plan.rewards += 1;
+        }
+      }
+
       plan.writes.push(
         {
           ref: progressRef,
@@ -221,33 +251,6 @@ export const prepareStoreChallengePaymentPlan = async (input: {
         }
       );
       plan.contributions += 1;
-
-      if (result.rewardEntry) {
-        const rewardRef = adminDb.doc(
-          storePointLedgerPath(storeId, result.rewardEntry.id)
-        );
-        const rewardSnapshot = await transaction.get(rewardRef);
-        if (!rewardSnapshot.exists) {
-          plan.writes.push({
-            ref: rewardRef,
-            data: result.rewardEntry as unknown as Record<string, unknown>,
-          });
-          plan.rewards += 1;
-        } else if (
-          !safeRewardEntry(
-            rewardSnapshot.data(),
-            result.rewardEntry.id,
-            storeId,
-            customerId
-          )
-        ) {
-          console.warn('Store challenge reward id conflicts with another ledger entry.', {
-            storeId,
-            challengeId: challenge.id,
-            rewardEntryId: result.rewardEntry.id,
-          });
-        }
-      }
       continue;
     }
 
@@ -316,17 +319,6 @@ export const prepareStoreChallengePaymentPlan = async (input: {
       continue;
     }
 
-    plan.writes.push(
-      {
-        ref: progressRef,
-        data: result.progress as unknown as Record<string, unknown>,
-      },
-      {
-        ref: contributionRef,
-        data: result.contribution as unknown as Record<string, unknown>,
-      }
-    );
-
     if (result.rewardReversal) {
       const reversalRef = adminDb.doc(
         storePointLedgerPath(storeId, result.rewardReversal.id)
@@ -340,6 +332,17 @@ export const prepareStoreChallengePaymentPlan = async (input: {
         plan.reversals += 1;
       }
     }
+
+    plan.writes.push(
+      {
+        ref: progressRef,
+        data: result.progress as unknown as Record<string, unknown>,
+      },
+      {
+        ref: contributionRef,
+        data: result.contribution as unknown as Record<string, unknown>,
+      }
+    );
   }
 
   return plan;
