@@ -4,10 +4,13 @@ import type { AdminPlatformEconomyPeriod } from '../../shared/adminPlatformEcono
 
 export const loadAdminPlatformEconomy = async (
   user: Pick<User, 'getIdToken'>,
-  period: AdminPlatformEconomyPeriod = 'all'
+  period: AdminPlatformEconomyPeriod = 'all',
+  storeId = ''
 ): Promise<AdminPlatformEconomySnapshot> => {
   const token = await user.getIdToken();
   const query = new URLSearchParams({ period });
+  const normalizedStoreId = storeId.trim();
+  if (normalizedStoreId) query.set('storeId', normalizedStoreId);
   const response = await fetch(`/api/admin/platform-economy?${query.toString()}`, {
     headers: {
       accept: 'application/json',
