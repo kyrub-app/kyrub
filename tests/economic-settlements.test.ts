@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { describe, test } from 'node:test';
 import type { EconomicObligation } from '../shared/economicObligations';
+import { settleEconomicObligationFromEvidence } from '../shared/economicObligationLifecycle';
 import {
   buildEconomicSettlementRecord,
   buildEconomicSettlementRecordId,
@@ -148,6 +149,81 @@ describe('economic settlement evidence foundation', () => {
     assert.doesNotMatch(
       source,
       /initiateSettlement|initiateTransfer|createPayout|walletBalance|custodialBalance|application_fee_amount|splitRecipient|fetch\(|axios|firebase|firestore/i
+    );
+  });
+});
+
+describe('economic settlement persistence', () => {
+  test('eligible obligation becomes settled only from its matching normalized settlement record', () => {
+    const receivable = obligation();
+    const settlement = buildEconomicSettlementRecord({
+      obligation: receivable,
+      evidence: evidence(),
+    });
+    const settled = settleEconomicObligationFromEvidence({
+      obligation: receivable,
+      settlement,
+    });
+
+    assert.equal(settled.status, 'settled');
+    assert.equal(settled.settledAt, settlement.occurredAt);
+    assert.equal(settled.eligibleAt, receivable.eligibleAt);
+    assert.equal(settled.amountMinor, receivable.amountMinor);
+  });
+
+  test('settlement cannot predate eligibility or point to another obligation', () => {
+    const receivable = obligation();
+    const validSettlement = buildEconomicSettlementRecord({
+      obligation: receivable,
+      evidence: evidence(),
+    });
+
+    assert.throws(() => settleEconomicObligationFromEvidence({
+      obligation: receivable,
+      settlement: { ...validSettlement, occurredAt: '2026-08-29T10:59:59.000Z' },
+    }), /ECONOMIC_OBLIGATION_SETTLEMENT_BEFORE_ELIGIBILITY/);
+
+    assert.throws(() => settleEconomicObligationFromEvidence({
+      obligation: receivable,
+      settlement: { ...validSettlement, obligationId: 'obligation:other' },
+    }), /ECONOMIC_OBLIGATION_SETTLEMENT_MISMATCH/);
+  });
+
+  test('server persists evidence and lifecycle transition in one Firestore transaction after all reads', () => {
+    const service = readFileSync('server/payments/economicSettlementsService.ts', 'utf8');
+    const obligationRead = service.indexOf('transaction.get(obligationRef)');
+    const settlementRead = service.indexOf('transaction.get(settlementRef)');
+    const settlementWrite = service.indexOf('transaction.set(settlementRef, settlement)');
+    const obligationWrite = service.indexOf('transaction.update(obligationRef');
+
+    assert.match(service, /adminDb\.runTransaction/);
+    assert.ok(obligationRead >= 0);
+    assert.ok(settlementRead >= 0);
+    assert.ok(settlementWrite > obligationRead && settlementWrite > settlementRead);
+    assert.ok(obligationWrite > settlementWrite);
+    assert.match(service, /buildEconomicSettlementRecord/);
+    assert.match(service, /settleEconomicObligationFromEvidence/);
+  });
+
+  test('replayed evidence is idempotent and conflicting settlement identity fails closed', () => {
+    const service = readFileSync('server/payments/economicSettlementsService.ts', 'utf8');
+    assert.match(service, /if \(settlementSnapshot\.exists\)/);
+    assert.match(service, /duplicate: true/);
+    assert.match(service, /ECONOMIC_SETTLEMENT_CONFLICT/);
+    assert.match(service, /ECONOMIC_SETTLEMENT_STATE_INCONSISTENT/);
+    assert.match(service, /obligation\.status !== 'settled'/);
+  });
+
+  test('persistence remains server-only and never initiates payout, transfer, custody or PSP calls', () => {
+    const service = readFileSync('server/payments/economicSettlementsService.ts', 'utf8');
+    const rules = readFileSync('firestore.rules', 'utf8');
+
+    assert.match(service, /adminDb/);
+    assert.doesNotMatch(rules, /match \/economicSettlements\//);
+    assert.match(rules, /match \/\{document=\*\*\} \{\s*allow read, write: if false;/);
+    assert.doesNotMatch(
+      service,
+      /initiateSettlement|initiateTransfer|createPayout|walletBalance|custodialBalance|application_fee_amount|splitRecipient|fetch\(|axios/i
     );
   });
 });
