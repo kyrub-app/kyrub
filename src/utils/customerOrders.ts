@@ -1,9 +1,12 @@
 import {
   collection,
   doc,
+  getDoc,
   onSnapshot,
   runTransaction,
+  serverTimestamp,
   setDoc,
+  writeBatch,
   type Unsubscribe,
 } from 'firebase/firestore';
 import type { User } from 'firebase/auth';
@@ -384,8 +387,10 @@ export const parseCustomerOrder = (value: unknown): CustomerOrder | null => {
     source,
     operatorId: cleanString(candidate.operatorId),
     operatorName: cleanString(candidate.operatorName),
-    createdAt: cleanString(candidate.createdAt),
-    updatedAt: cleanString(candidate.updatedAt),
+    createdAt:
+      cleanString(candidate.createdAt) || cleanString(candidate.legacyCreatedAt),
+    updatedAt:
+      cleanString(candidate.updatedAt) || cleanString(candidate.legacyUpdatedAt),
   };
 };
 
@@ -437,13 +442,78 @@ const mapCanonicalOrderToLegacyStore = (
   legacyStoreId: string
 ): CustomerOrder | null => order ? { ...order, storeId: legacyStoreId } : null;
 
+export const buildCanonicalCustomerOrderWriteData = (
+  order: CustomerOrder,
+  canonicalStoreId: string
+): Record<string, unknown> => ({
+  ...order,
+  storeId: canonicalStoreId.trim(),
+  createdByUserId: order.buyerId,
+  createdByRole: 'customer',
+  legacyStoreId: order.storeId,
+  legacyCreatedAt: order.createdAt,
+  legacyUpdatedAt: order.updatedAt,
+  createdAt: serverTimestamp(),
+  updatedAt: serverTimestamp(),
+});
+
+export const resolveCanonicalCustomerOrderStoreId = async (
+  legacyStoreId: string
+): Promise<string> => {
+  const normalizedStoreId = legacyStoreId.trim();
+  if (!normalizedStoreId) return '';
+
+  try {
+    const snapshot = await getDoc(doc(db, 'tenants', normalizedStoreId));
+    if (!snapshot.exists()) return '';
+    return parseCanonicalReadConfig(snapshot.data()).canonicalStoreId;
+  } catch (error) {
+    console.warn(
+      '[customer-orders] Não foi possível resolver a loja canônica; mantendo fallback legado.',
+      error
+    );
+    return '';
+  }
+};
+
 export const persistCustomerOrder = async (
   order: CustomerOrder
 ): Promise<void> => {
-  await setDoc(
-    doc(db, getCustomerOrderDocumentPath(order.storeId, order.id)),
-    order
+  if (!order.id.trim()) throw new Error('Pedido inválido.');
+
+  const legacyReference = doc(
+    db,
+    getCustomerOrderDocumentPath(order.storeId, order.id)
   );
+  const canonicalStoreId = await resolveCanonicalCustomerOrderStoreId(order.storeId);
+
+  if (!canonicalStoreId) {
+    await setDoc(legacyReference, order);
+    return;
+  }
+
+  const canonicalReference = doc(
+    db,
+    getCanonicalOrderDocumentPath(canonicalStoreId, order.id)
+  );
+  const existingCanonical = await getDoc(canonicalReference);
+
+  if (existingCanonical.exists()) {
+    const existingOrder = parseCustomerOrder(existingCanonical.data());
+    if (!existingOrder || existingOrder.buyerId !== order.buyerId) {
+      throw new Error('Já existe um pedido canônico incompatível com este identificador.');
+    }
+    await setDoc(legacyReference, order);
+    return;
+  }
+
+  const batch = writeBatch(db);
+  batch.set(
+    canonicalReference,
+    buildCanonicalCustomerOrderWriteData(order, canonicalStoreId)
+  );
+  batch.set(legacyReference, order);
+  await batch.commit();
 };
 
 export const subscribeToPreferredCustomerOrder = (
