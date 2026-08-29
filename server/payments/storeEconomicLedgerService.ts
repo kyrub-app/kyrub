@@ -10,6 +10,7 @@ import {
   buildMarketplaceEconomicAllocationSnapshot,
   type EconomicAllocationSnapshot,
 } from '../../shared/economicFeesSubsidies.js';
+import type { KyrubCommercialPlanId } from '../../shared/kyrubCommercialPlans.js';
 import {
   STORE_ECONOMIC_LEDGER_SCHEMA_VERSION,
   buildPaymentCaptureEconomicEntry,
@@ -34,6 +35,11 @@ export interface StoreEconomicLedgerPaymentPlan {
 
 const clean = (value: unknown): string =>
   typeof value === 'string' ? value.trim() : '';
+
+const parseStorePlan = (value: unknown): KyrubCommercialPlanId | undefined =>
+  value === 'free' || value === 'pro' || value === 'business'
+    ? value
+    : undefined;
 
 const allocationFromIntent = (
   payment: CanonicalPayment,
@@ -86,12 +92,18 @@ const parseEntry = (
     entry.kind === 'payment_refund' ||
     entry.kind === 'payment_chargeback' ||
     entry.kind === 'payment_chargeback_reversal';
+  const validStorePlan =
+    entry.storePlan === undefined ||
+    entry.storePlan === 'free' ||
+    entry.storePlan === 'pro' ||
+    entry.storePlan === 'business';
   if (
     entry.schemaVersion !== STORE_ECONOMIC_LEDGER_SCHEMA_VERSION ||
     entry.id !== expectedEntryId ||
     entry.storeId !== expectedStoreId ||
     entry.currency !== 'BRL' ||
     !validKind ||
+    !validStorePlan ||
     !Number.isSafeInteger(entry.amountMinor) ||
     entry.amountMinor === 0 ||
     !clean(entry.paymentId) ||
@@ -134,6 +146,11 @@ const assertEntryEquivalent = (
     }
   }
   if (
+    existing.storePlan !== undefined &&
+    expected.storePlan !== undefined &&
+    existing.storePlan !== expected.storePlan
+  ) throw new Error('STORE_ECONOMIC_LEDGER_ENTRY_CONFLICT:storePlan');
+  if (
     existing.economicAllocation && expected.economicAllocation &&
     JSON.stringify(existing.economicAllocation) !== JSON.stringify(expected.economicAllocation)
   ) throw new Error('STORE_ECONOMIC_LEDGER_ENTRY_CONFLICT:economicAllocation');
@@ -165,12 +182,30 @@ export const prepareStoreEconomicLedgerPaymentPlan = async (input: {
   const captureRef = refFor(storeId, captureId);
 
   if (input.event.eventType === 'payment.paid') {
-    const capture = buildPaymentCaptureEconomicEntry({ payment: input.payment, event: input.event, economicAllocation });
-    const snapshot = await input.transaction.get(captureRef);
-    if (snapshot.exists) {
-      assertEntryEquivalent(parseEntry(snapshot.data(), storeId, captureId), capture);
+    const captureSnapshot = await input.transaction.get(captureRef);
+    if (captureSnapshot.exists) {
+      const expectedWithoutPlan = buildPaymentCaptureEconomicEntry({
+        payment: input.payment,
+        event: input.event,
+        economicAllocation,
+      });
+      assertEntryEquivalent(
+        parseEntry(captureSnapshot.data(), storeId, captureId),
+        expectedWithoutPlan
+      );
       return { writes: [] };
     }
+
+    const storeSnapshot = await input.transaction.get(adminDb.doc(`stores/${storeId}`));
+    const storePlan = storeSnapshot.exists
+      ? parseStorePlan(storeSnapshot.data()?.plan)
+      : undefined;
+    const capture = buildPaymentCaptureEconomicEntry({
+      payment: input.payment,
+      event: input.event,
+      storePlan,
+      economicAllocation,
+    });
     return { writes: [{ ref: captureRef, entry: capture }] };
   }
 
