@@ -4,6 +4,7 @@ import {
   BellRing,
   CheckCircle2,
   LoaderCircle,
+  Megaphone,
   MessageSquareText,
   PackageCheck,
   Settings2,
@@ -47,6 +48,12 @@ const CATEGORY_ITEMS: Array<{
     label: 'Fidelidade',
     description: 'Pontos, desafios e recompensas quando esses eventos forem conectados à central.',
     icon: Sparkles,
+  },
+  {
+    key: 'marketing',
+    label: 'Ofertas e campanhas',
+    description: 'Comunicações promocionais das lojas. Este alerta externo começa desativado por padrão.',
+    icon: Megaphone,
   },
   {
     key: 'system',
