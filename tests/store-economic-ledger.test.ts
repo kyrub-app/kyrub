@@ -9,6 +9,7 @@ import './economic-settlements.test';
 import './economic-reconciliation.test';
 import './economic-obligation-projections.test';
 import './economic-projection-aggregates.test';
+import './admin-economic-obligation-snapshot.test';
 import type { CanonicalPayment } from '../src/utils/canonicalPayment';
 import type { VerifiedPaymentProviderEvent } from '../src/utils/paymentProvider';
 import {
