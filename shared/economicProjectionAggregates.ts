@@ -1,7 +1,6 @@
 import type {
   EconomicObligationProjection,
   EconomicProjectionKind,
-  EconomicProjectionState,
 } from './economicObligationProjections.js';
 
 export type EconomicProjectionAggregateDimension =
@@ -152,8 +151,4 @@ export const deriveEconomicProjectionAggregatesByBeneficiary = (
 export const deriveEconomicProjectionAggregatesByState = (
   projections: readonly EconomicObligationProjection[]
 ): EconomicProjectionAggregateBucket[] =>
-  bucketBy(
-    projections,
-    'state',
-    projection => projection.state satisfies EconomicProjectionState
-  );
+  bucketBy(projections, 'state', projection => projection.state);
