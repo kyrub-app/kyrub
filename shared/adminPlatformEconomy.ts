@@ -6,6 +6,10 @@ import type {
 
 export const ADMIN_PLATFORM_ECONOMY_SCHEMA_VERSION = 1 as const;
 export const ADMIN_PLATFORM_ECONOMY_RECENT_LIMIT = 100 as const;
+export const ADMIN_PLATFORM_ECONOMY_CONTEXTS = ['marketplace', 'table', 'pos'] as const;
+
+export type AdminPlatformEconomyPaymentContext =
+  (typeof ADMIN_PLATFORM_ECONOMY_CONTEXTS)[number];
 
 export interface AdminPlatformEconomyTotals {
   currency: 'BRL';
@@ -21,6 +25,12 @@ export interface AdminPlatformEconomyTotals {
   chargebackReversalCount: number;
   recoveredCaptureCount: number;
   refundShareBps: number;
+}
+
+export interface AdminPlatformEconomyContextTotal {
+  paymentContext: AdminPlatformEconomyPaymentContext;
+  eventCount: number;
+  economicNetMinor: number;
 }
 
 export interface AdminPlatformEconomyAiUsageTotals {
@@ -39,7 +49,7 @@ export interface AdminPlatformEconomyRecentEntry {
   kind: StoreEconomicLedgerKind;
   amountMinor: number;
   paymentId: string;
-  paymentContext: 'marketplace' | 'table' | 'pos';
+  paymentContext: AdminPlatformEconomyPaymentContext;
   provider: string;
   sourceAuthority: StoreEconomicLedgerSourceAuthority;
   occurredAt: string;
@@ -85,6 +95,7 @@ export interface AdminPlatformEconomySnapshot {
   schemaVersion: typeof ADMIN_PLATFORM_ECONOMY_SCHEMA_VERSION;
   generatedAt: string;
   totals: AdminPlatformEconomyTotals;
+  contextTotals: AdminPlatformEconomyContextTotal[];
   allocationTotals: AdminPlatformEconomyAllocationWindow;
   aiUsageTotals: AdminPlatformEconomyAiUsageTotals;
   recentWindow: {
