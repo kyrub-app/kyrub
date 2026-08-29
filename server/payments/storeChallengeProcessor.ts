@@ -3,6 +3,7 @@ import { adminDb } from '../firebaseAdmin.js';
 import type { CanonicalPaymentIntent } from '../../src/utils/canonicalPaymentIntent.js';
 import { STORE_CHALLENGE_MAX_DEFINITIONS } from '../../shared/storeChallengeLimits.js';
 import {
+  STORE_CHALLENGE_SCHEMA_VERSION,
   applyPaidStoreChallengeContribution,
   applyRefundedStoreChallengeContribution,
   isStoreChallengeActiveAt,
@@ -17,6 +18,16 @@ type ChallengeWrite = {
   ref: ReturnType<typeof adminDb.doc>;
   data: Record<string, unknown>;
 };
+
+interface StoreChallengePaymentIndex {
+  schemaVersion: typeof STORE_CHALLENGE_SCHEMA_VERSION;
+  storeId: string;
+  paymentId: string;
+  customerId: string;
+  orderId: string;
+  challenges: StoreChallengeDefinition[];
+  occurredAt: string;
+}
 
 export interface StoreChallengePaymentPlan {
   writes: ChallengeWrite[];
@@ -50,6 +61,12 @@ const contributionPath = (
 ): string =>
   `${progressPath(storeId, challengeId, customerId)}/contributions/${token(paymentId)}`;
 
+const challengePaymentIndexPath = (
+  storeId: string,
+  paymentId: string
+): string =>
+  `stores/${storeId}/challengePaymentIndex/${token(paymentId)}`;
+
 const storePointLedgerPath = (storeId: string, entryId: string): string =>
   `stores/${storeId}/storePointLedger/${token(entryId)}`;
 
@@ -61,7 +78,7 @@ const safeProgress = (
   if (!value || typeof value !== 'object') return null;
   const candidate = value as Partial<StoreChallengeProgress>;
   if (
-    candidate.schemaVersion !== 1 ||
+    candidate.schemaVersion !== STORE_CHALLENGE_SCHEMA_VERSION ||
     candidate.storeId !== challenge.storeId ||
     candidate.challengeId !== challenge.id ||
     candidate.customerId !== customerId ||
@@ -89,7 +106,7 @@ const safeContribution = (
   if (!value || typeof value !== 'object') return null;
   const candidate = value as Partial<StoreChallengeContribution>;
   if (
-    candidate.schemaVersion !== 1 ||
+    candidate.schemaVersion !== STORE_CHALLENGE_SCHEMA_VERSION ||
     candidate.storeId !== challenge.storeId ||
     candidate.challengeId !== challenge.id ||
     candidate.customerId !== customerId ||
@@ -126,6 +143,44 @@ const safeRewardEntry = (
   return candidate;
 };
 
+const safePaymentIndex = (
+  value: unknown,
+  input: {
+    storeId: string;
+    paymentId: string;
+    customerId: string;
+    orderId: string;
+  }
+): StoreChallengePaymentIndex | null => {
+  if (!value || typeof value !== 'object') return null;
+  const candidate = value as Partial<StoreChallengePaymentIndex>;
+  const challenges = normalizeStoreChallengeDefinitions(candidate.challenges);
+  if (
+    candidate.schemaVersion !== STORE_CHALLENGE_SCHEMA_VERSION ||
+    candidate.storeId !== input.storeId ||
+    candidate.paymentId !== input.paymentId ||
+    candidate.customerId !== input.customerId ||
+    candidate.orderId !== input.orderId ||
+    typeof candidate.occurredAt !== 'string' ||
+    !candidate.occurredAt ||
+    !Array.isArray(candidate.challenges) ||
+    challenges.length !== candidate.challenges.length ||
+    challenges.length > STORE_CHALLENGE_MAX_DEFINITIONS ||
+    challenges.some(challenge => challenge.storeId !== input.storeId)
+  ) {
+    return null;
+  }
+  return {
+    schemaVersion: STORE_CHALLENGE_SCHEMA_VERSION,
+    storeId: input.storeId,
+    paymentId: input.paymentId,
+    customerId: input.customerId,
+    orderId: input.orderId,
+    challenges,
+    occurredAt: candidate.occurredAt,
+  };
+};
+
 const paidTotalMinor = (intent: CanonicalPaymentIntent): number => {
   const minor = Math.round(intent.orderDraft.total * 100);
   if (!Number.isSafeInteger(minor) || minor <= 0) {
@@ -147,25 +202,67 @@ export const prepareStoreChallengePaymentPlan = async (input: {
   const paymentId = input.paymentId.trim();
   if (!storeId || !paymentId) return EMPTY_PLAN();
 
-  const tenantSnapshot = await transaction.get(adminDb.doc(`tenants/${storeId}`));
-  const challenges = normalizeStoreChallengeDefinitions(
-    tenantSnapshot.data()?.storeChallenges
-  )
-    .filter(challenge => challenge.storeId === storeId)
-    .slice(0, STORE_CHALLENGE_MAX_DEFINITIONS);
+  const customerId = intent.buyerId;
+  const orderId = intent.orderDraft.draftId;
+  const paymentIndexRef = adminDb.doc(
+    challengePaymentIndexPath(storeId, paymentId)
+  );
+  const paymentIndexSnapshot = await transaction.get(paymentIndexRef);
+  let challenges: StoreChallengeDefinition[] = [];
+
+  if (input.status === 'paid') {
+    if (paymentIndexSnapshot.exists) {
+      const existingIndex = safePaymentIndex(paymentIndexSnapshot.data(), {
+        storeId,
+        paymentId,
+        customerId,
+        orderId,
+      });
+      if (!existingIndex) {
+        console.warn('Store challenge payment index is malformed.', {
+          storeId,
+          paymentId,
+        });
+      }
+      return EMPTY_PLAN();
+    }
+
+    const tenantSnapshot = await transaction.get(
+      adminDb.doc(`tenants/${storeId}`)
+    );
+    challenges = normalizeStoreChallengeDefinitions(
+      tenantSnapshot.data()?.storeChallenges
+    )
+      .filter(
+        challenge =>
+          challenge.storeId === storeId &&
+          isStoreChallengeActiveAt(challenge, input.occurredAt)
+      )
+      .slice(0, STORE_CHALLENGE_MAX_DEFINITIONS);
+  } else {
+    if (!paymentIndexSnapshot.exists) return EMPTY_PLAN();
+    const index = safePaymentIndex(paymentIndexSnapshot.data(), {
+      storeId,
+      paymentId,
+      customerId,
+      orderId,
+    });
+    if (!index) {
+      console.warn('Skipping malformed store challenge payment index on refund.', {
+        storeId,
+        paymentId,
+      });
+      return EMPTY_PLAN();
+    }
+    challenges = index.challenges;
+  }
+
   if (challenges.length === 0) return EMPTY_PLAN();
 
   const plan = EMPTY_PLAN();
-  const customerId = intent.buyerId;
+  const contributedChallenges: StoreChallengeDefinition[] = [];
 
   for (const challenge of challenges) {
-    if (
-      input.status === 'paid' &&
-      !isStoreChallengeActiveAt(challenge, input.occurredAt)
-    ) {
-      continue;
-    }
-
     const progressRef = adminDb.doc(
       progressPath(storeId, challenge.id, customerId)
     );
@@ -197,7 +294,7 @@ export const prepareStoreChallengePaymentPlan = async (input: {
           challenge,
           customerId,
           paymentId,
-          orderId: intent.orderDraft.draftId,
+          orderId,
           paidTotalMinor: paidTotalMinor(intent),
           occurredAt: input.occurredAt,
           currentProgress,
@@ -250,6 +347,7 @@ export const prepareStoreChallengePaymentPlan = async (input: {
           data: result.contribution as unknown as Record<string, unknown>,
         }
       );
+      contributedChallenges.push(challenge);
       plan.contributions += 1;
       continue;
     }
@@ -343,6 +441,21 @@ export const prepareStoreChallengePaymentPlan = async (input: {
         data: result.contribution as unknown as Record<string, unknown>,
       }
     );
+  }
+
+  if (input.status === 'paid' && contributedChallenges.length > 0) {
+    plan.writes.push({
+      ref: paymentIndexRef,
+      data: {
+        schemaVersion: STORE_CHALLENGE_SCHEMA_VERSION,
+        storeId,
+        paymentId,
+        customerId,
+        orderId,
+        challenges: contributedChallenges,
+        occurredAt: input.occurredAt,
+      } satisfies StoreChallengePaymentIndex as unknown as Record<string, unknown>,
+    });
   }
 
   return plan;
