@@ -3,9 +3,11 @@ import { readFileSync } from 'node:fs';
 import { describe, test } from 'node:test';
 import {
   buildRecentStoreEconomyActivity,
+  deriveRecentEconomicAllocationWindow,
   deriveRefundShareBps,
   type AdminPlatformEconomyRecentEntry,
 } from '../shared/adminPlatformEconomy';
+import { buildMarketplaceEconomicAllocationSnapshot } from '../shared/economicFeesSubsidies';
 
 const entry = (
   overrides: Partial<AdminPlatformEconomyRecentEntry> = {}
@@ -62,6 +64,38 @@ describe('admin platform economy', () => {
     );
   });
 
+  test('recent allocation projection nets refunds without recomputing policy', () => {
+    const allocation = buildMarketplaceEconomicAllocationSnapshot({
+      subtotal: 30,
+      discountTotal: 5,
+      deliveryFee: 4.5,
+      total: 29.5,
+    });
+    const projection = deriveRecentEconomicAllocationWindow([
+      entry({ economicAllocation: allocation }),
+      entry({
+        id: 'payment:refund:pay-1',
+        kind: 'payment_refund',
+        amountMinor: -2950,
+        economicAllocation: allocation,
+      }),
+      entry({
+        id: 'payment:capture:pay-2',
+        paymentId: 'pay-2',
+        amountMinor: 2950,
+        economicAllocation: allocation,
+      }),
+    ]);
+
+    assert.equal(projection.allocatedCaptureCount, 2);
+    assert.equal(projection.allocatedRefundCount, 1);
+    assert.equal(projection.deliveryFeeMinor, 450);
+    assert.equal(projection.courierRemunerationMinor, 450);
+    assert.equal(projection.storeSubsidyMinor, 500);
+    assert.equal(projection.kyrubIncentiveMinor, 0);
+    assert.equal(projection.partnerSubsidyMinor, 0);
+  });
+
   test('backend uses collection-group aggregates for lifetime totals and a bounded recent window', () => {
     const service = readFileSync('server/admin/platformEconomyService.ts', 'utf8');
     assert.match(service, /collectionGroup\('economicLedger'\)/);
@@ -70,6 +104,7 @@ describe('admin platform economy', () => {
     assert.match(service, /refunds\.count\(\)\.get\(\)/);
     assert.match(service, /orderBy\('occurredAt', 'desc'\)/);
     assert.match(service, /ADMIN_PLATFORM_ECONOMY_RECENT_LIMIT/);
+    assert.match(service, /deriveRecentEconomicAllocationWindow/);
     assert.match(service, /recentWindow:/);
   });
 
@@ -90,16 +125,15 @@ describe('admin platform economy', () => {
     assert.doesNotMatch(client, /firebase\/firestore|collectionGroup|collection\(db/);
   });
 
-  test('workspace is gated by read_finance and states economic limits plainly', () => {
+  test('workspace is gated by read_finance and does not expose settlement actions', () => {
     const workspace = readFileSync(
       'src/components/admin/AdminPlatformEconomyWorkspace.tsx',
       'utf8'
     );
     assert.match(workspace, /hasAdminPermission\(profile, 'read_finance'\)/);
     assert.match(workspace, /Economia canônica da plataforma/);
-    assert.match(workspace, /Não representa saldo disponível, receita líquida, taxas, impostos ou settlement/);
     assert.match(workspace, /não é ranking vitalício/);
-    assert.doesNotMatch(workspace, /onClick=.*(fee|settlement|refund|transfer)/i);
+    assert.doesNotMatch(workspace, /onClick=.*(settlement|transfer)/i);
   });
 
   test('control plane root mounts economy workspace without changing main admin app', () => {
@@ -119,11 +153,14 @@ describe('admin platform economy', () => {
     assert.match(indexes, /"queryScope": "COLLECTION_GROUP"/);
   });
 
-  test('admin projection does not calculate fees, subsidies, settlement or wallet balances', () => {
+  test('admin projection reads persisted allocations but does not create settlement or wallet balances', () => {
     const service = readFileSync('server/admin/platformEconomyService.ts', 'utf8');
     const contract = readFileSync('shared/adminPlatformEconomy.ts', 'utf8');
     const isolated = `${service}\n${contract}`;
-    assert.doesNotMatch(isolated, /platformFeeMinor|subsidyMinor|settlementMinor|walletBalance|taxMinor|splitMinor/);
+    assert.match(isolated, /storeSubsidyMinor/);
+    assert.match(isolated, /kyrubIncentiveMinor/);
+    assert.match(isolated, /partnerSubsidyMinor/);
+    assert.doesNotMatch(isolated, /settlementMinor|walletBalance|taxMinor|splitMinor/);
   });
 
   test('server mounts the dedicated admin economy route', () => {
