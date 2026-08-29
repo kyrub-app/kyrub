@@ -96,6 +96,48 @@ describe('store economic ledger', () => {
     assert.equal(capture.reversalOfEntryId, '');
   });
 
+  test('capture freezes store plan and lifecycle reversals preserve the original snapshot', () => {
+    const capture = buildPaymentCaptureEconomicEntry({
+      payment: payment(),
+      event: event('payment.paid'),
+      storePlan: 'pro',
+    });
+    const refund = buildPaymentRefundEconomicEntry({
+      payment: payment({ status: 'refund_processing' }),
+      event: event('refund.succeeded'),
+      capture,
+    });
+    const chargeback = buildPaymentChargebackEconomicEntry({
+      payment: payment(),
+      event: event('chargeback.debited'),
+      capture,
+    });
+    const reversal = buildPaymentChargebackReversalEconomicEntry({
+      payment: payment({ status: 'charged_back' }),
+      event: event('chargeback.reversed'),
+      chargeback,
+    });
+    assert.equal(capture.storePlan, 'pro');
+    assert.equal(refund.storePlan, 'pro');
+    assert.equal(chargeback.storePlan, 'pro');
+    assert.equal(reversal.storePlan, 'pro');
+  });
+
+  test('recovered historical capture never invents the current store plan', () => {
+    const capture = buildRecoveredPaymentCaptureEconomicEntry({
+      payment: payment(),
+      paymentIntentId: 'intent-1',
+    });
+    assert.equal(capture.storePlan, undefined);
+    const service = readFileSync('server/payments/storeEconomicLedgerService.ts', 'utf8');
+    assert.match(service, /if \(input\.event\.eventType === 'payment\.paid'\)/);
+    assert.match(service, /stores\/\$\{storeId\}/);
+    assert.doesNotMatch(
+      service,
+      /buildRecoveredPaymentCaptureEconomicEntry\([\s\S]{0,300}storePlan/
+    );
+  });
+
   test('capture persists immutable economic allocation and refund references the same facts', () => {
     const economicAllocation = buildMarketplaceEconomicAllocationSnapshot({
       subtotal: 30,
