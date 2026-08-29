@@ -13,6 +13,7 @@ import { auth } from '../../utils/firebase';
 import { loadStoreCrm } from '../../utils/storeCrm';
 import { openStoreCustomerChat } from '../../utils/storeCustomerChatEvents';
 import type { StoreCrmSummary } from '../../../shared/storeCrm';
+import { StoreCampaignManager } from './StoreCampaignManager';
 
 export const StoreCrmRelationshipPanel = ({ storeId }: { storeId: string }) => {
   const [summary, setSummary] = useState<StoreCrmSummary | null>(null);
@@ -60,6 +61,8 @@ export const StoreCrmRelationshipPanel = ({ storeId }: { storeId: string }) => {
           <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
         </button>
       </div>
+
+      <StoreCampaignManager storeId={storeId} />
 
       <div className="flex items-center gap-2 rounded-xl border border-slate-800 bg-slate-950 px-3">
         <Search className="h-3.5 w-3.5 text-slate-600" />
