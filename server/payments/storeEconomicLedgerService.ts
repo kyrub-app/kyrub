@@ -1,7 +1,12 @@
 import type { Transaction } from 'firebase-admin/firestore';
 import { adminDb } from '../firebaseAdmin.js';
 import type { CanonicalPayment } from '../../src/utils/canonicalPayment.js';
+import type { CanonicalPaymentIntent } from '../../src/utils/canonicalPaymentIntent.js';
 import type { VerifiedPaymentProviderEvent } from '../../src/utils/paymentProvider.js';
+import {
+  buildMarketplaceEconomicAllocationSnapshot,
+  type EconomicAllocationSnapshot,
+} from '../../shared/economicFeesSubsidies.js';
 import {
   STORE_ECONOMIC_LEDGER_SCHEMA_VERSION,
   buildPaymentCaptureEconomicEntry,
@@ -22,6 +27,28 @@ export interface StoreEconomicLedgerPaymentPlan {
 
 const clean = (value: unknown): string =>
   typeof value === 'string' ? value.trim() : '';
+
+const allocationFromIntent = (
+  payment: CanonicalPayment,
+  intent: CanonicalPaymentIntent | null | undefined
+): EconomicAllocationSnapshot | undefined => {
+  if (payment.context !== 'marketplace' || !intent) return undefined;
+  if (
+    intent.id.trim() === '' ||
+    intent.storeId !== payment.storeId ||
+    intent.buyerId !== payment.buyerId ||
+    intent.orderDraft.draftId !== payment.orderId ||
+    Number(intent.amount.toFixed(2)) !== Number(payment.amount.toFixed(2))
+  ) {
+    throw new Error('STORE_ECONOMIC_LEDGER_INTENT_MISMATCH');
+  }
+  return buildMarketplaceEconomicAllocationSnapshot({
+    subtotal: intent.orderDraft.subtotal,
+    discountTotal: intent.orderDraft.discountTotal ?? 0,
+    deliveryFee: intent.orderDraft.deliveryFee,
+    total: intent.orderDraft.total,
+  });
+};
 
 const parseEntry = (
   value: unknown,
@@ -87,12 +114,21 @@ const assertEntryEquivalent = (
       throw new Error(`STORE_ECONOMIC_LEDGER_ENTRY_CONFLICT:${String(key)}`);
     }
   }
+  if (
+    existing.economicAllocation &&
+    expected.economicAllocation &&
+    JSON.stringify(existing.economicAllocation) !==
+      JSON.stringify(expected.economicAllocation)
+  ) {
+    throw new Error('STORE_ECONOMIC_LEDGER_ENTRY_CONFLICT:economicAllocation');
+  }
 };
 
 export const prepareStoreEconomicLedgerPaymentPlan = async (input: {
   transaction: Transaction;
   payment: CanonicalPayment;
   event: VerifiedPaymentProviderEvent;
+  paymentIntent?: CanonicalPaymentIntent | null;
 }): Promise<StoreEconomicLedgerPaymentPlan | null> => {
   if (
     input.event.eventType !== 'payment.paid' &&
@@ -103,6 +139,10 @@ export const prepareStoreEconomicLedgerPaymentPlan = async (input: {
 
   const storeId = clean(input.payment.storeId);
   if (!storeId) throw new Error('STORE_ECONOMIC_LEDGER_STORE_REQUIRED');
+  const economicAllocation = allocationFromIntent(
+    input.payment,
+    input.paymentIntent
+  );
 
   const captureId = buildPaymentCaptureEconomicEntryId(input.payment.id);
   const captureRef = adminDb.doc(
@@ -113,6 +153,7 @@ export const prepareStoreEconomicLedgerPaymentPlan = async (input: {
     const capture = buildPaymentCaptureEconomicEntry({
       payment: input.payment,
       event: input.event,
+      economicAllocation,
     });
     const snapshot = await input.transaction.get(captureRef);
     if (snapshot.exists) {
@@ -138,6 +179,7 @@ export const prepareStoreEconomicLedgerPaymentPlan = async (input: {
     : buildRecoveredPaymentCaptureEconomicEntry({
         payment: input.payment,
         paymentIntentId: input.event.paymentIntentId,
+        economicAllocation,
       });
 
   if (!captureSnapshot.exists) {
