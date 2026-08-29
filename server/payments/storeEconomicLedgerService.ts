@@ -1,7 +1,10 @@
 import type { Transaction } from 'firebase-admin/firestore';
 import { adminDb } from '../firebaseAdmin.js';
 import type { CanonicalPayment } from '../../src/utils/canonicalPayment.js';
-import type { CanonicalPaymentIntent } from '../../src/utils/canonicalPaymentIntent.js';
+import {
+  normalizeCanonicalPaymentIntent,
+  type CanonicalPaymentIntent,
+} from '../../src/utils/canonicalPaymentIntent.js';
 import type { VerifiedPaymentProviderEvent } from '../../src/utils/paymentProvider.js';
 import {
   buildMarketplaceEconomicAllocationSnapshot,
@@ -48,6 +51,28 @@ const allocationFromIntent = (
     deliveryFee: intent.orderDraft.deliveryFee,
     total: intent.orderDraft.total,
   });
+};
+
+const resolvePaymentIntent = async (input: {
+  transaction: Transaction;
+  payment: CanonicalPayment;
+  event: VerifiedPaymentProviderEvent;
+  paymentIntent?: CanonicalPaymentIntent | null;
+}): Promise<CanonicalPaymentIntent | null> => {
+  if (input.payment.context !== 'marketplace') return null;
+  if (input.paymentIntent) return input.paymentIntent;
+
+  const snapshot = await input.transaction.get(
+    adminDb.doc(
+      `stores/${input.payment.storeId}/paymentIntents/${input.event.paymentIntentId}`
+    )
+  );
+  if (!snapshot.exists) {
+    throw new Error('STORE_ECONOMIC_LEDGER_INTENT_NOT_FOUND');
+  }
+  return normalizeCanonicalPaymentIntent(
+    snapshot.data() as CanonicalPaymentIntent
+  );
 };
 
 const parseEntry = (
@@ -139,9 +164,10 @@ export const prepareStoreEconomicLedgerPaymentPlan = async (input: {
 
   const storeId = clean(input.payment.storeId);
   if (!storeId) throw new Error('STORE_ECONOMIC_LEDGER_STORE_REQUIRED');
+  const paymentIntent = await resolvePaymentIntent(input);
   const economicAllocation = allocationFromIntent(
     input.payment,
-    input.paymentIntent
+    paymentIntent
   );
 
   const captureId = buildPaymentCaptureEconomicEntryId(input.payment.id);
