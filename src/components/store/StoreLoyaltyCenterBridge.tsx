@@ -17,6 +17,7 @@ import {
   subscribeToPreferredPublicProducts,
   type PublicProduct,
 } from '../../utils/publicProducts';
+import { StoreChallengeManager } from './StoreChallengeManager';
 
 type LoyaltyTab = 'coupons' | 'points' | 'challenges' | 'rewards';
 type DraftMap = Record<string, string>;
@@ -312,19 +313,7 @@ export function StoreLoyaltyCenterBridge() {
         </section>
       )}
 
-      {activeTab === 'challenges' && (
-        <section className="rounded-3xl border border-slate-800 bg-slate-900 p-5">
-          <div className="flex items-start gap-3">
-            <Target className="mt-0.5 h-5 w-5 text-violet-300" />
-            <div>
-              <h4 className="text-sm font-black uppercase text-white">Desafios</h4>
-              <p className="mt-1 text-[10px] leading-relaxed text-slate-500">
-                O contrato de desafios já existe. Publicação, progresso e concessão de benefício entram no próximo bloco funcional, sobre o ledger real de pontos.
-              </p>
-            </div>
-          </div>
-        </section>
-      )}
+      {activeTab === 'challenges' && <StoreChallengeManager />}
 
       {activeTab === 'rewards' && (
         <section className="rounded-3xl border border-slate-800 bg-slate-900 p-5">
@@ -333,7 +322,7 @@ export function StoreLoyaltyCenterBridge() {
             <div>
               <h4 className="text-sm font-black uppercase text-white">Recompensas</h4>
               <p className="mt-1 text-[10px] leading-relaxed text-slate-500">
-                Recompensas continuam separadas de K-Coins. Resgate e consumo serão ligados ao saldo real da loja depois do fluxo funcional de desafios.
+                Recompensas continuam separadas de K-Coins. Resgate e consumo serão ligados ao saldo real da loja no próximo bloco da lista.
               </p>
             </div>
           </div>
