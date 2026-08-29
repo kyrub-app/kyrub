@@ -33,6 +33,7 @@ import { CourierLiveTrackingBridge } from './components/store/CourierLiveTrackin
 import { IntegrationTestOrderBridge } from './components/store/IntegrationTestOrderBridge';
 import { KyrubDeliveryOpportunityBridge } from './components/store/KyrubDeliveryOpportunityBridge';
 import { KyrubDeliveryStatusSyncBridge } from './components/store/KyrubDeliveryStatusSyncBridge';
+import { LocalAttendanceBridge } from './components/store/LocalAttendanceBridge';
 import { ManualStorePromotionBridge } from './components/store/ManualStorePromotionBridge';
 import { NinetyNineFoodConnectionBridge } from './components/store/NinetyNineFoodConnectionBridge';
 import { NinetyNineFoodOrderStatusBridge } from './components/store/NinetyNineFoodOrderStatusBridge';
@@ -88,10 +89,6 @@ function StorePersistenceBridge() {
         getPrimaryUserStoreDocumentPath(user.uid)
       );
 
-      // LegacyApp owns the initial create/read bootstrap for the private store.
-      // Wait until that document is confirmed by the server before replaying an
-      // offline pending update. This prevents two clients in the same page from
-      // both observing a missing document and racing to create it.
       unsubscribeStore = onSnapshot(
         storeReference,
         { includeMetadataChanges: true },
@@ -236,6 +233,7 @@ function AuthenticatedKyrubApp({ operational }: { operational: boolean }) {
       <ManualStorePromotionBridge />
       <StoreLoyaltyCenterBridge />
       <StoreCrmRelationshipBridge />
+      <LocalAttendanceBridge />
       <StoreInstitutionalIdentityBridge />
       <StoreCustomerChatBridge />
       <UserNotificationCenterBridge />
