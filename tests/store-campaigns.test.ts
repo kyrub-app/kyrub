@@ -76,12 +76,15 @@ describe('store CRM campaigns', () => {
     assert.doesNotMatch(client, /customerIds/);
   });
 
-  test('campaign authority requires institutional notification capability', () => {
+  test('campaign authority requires institutional notification capability and audits human actor', () => {
     const router = readFileSync('server/campaigns/storeCampaignRouter.ts', 'utf8');
+    const service = readFileSync('server/campaigns/storeCampaignService.ts', 'utf8');
     assert.match(router, /verifyFirebaseIdToken\(token\)/);
     assert.match(router, /loadOwnerStoreInstitutionalRepresentation/);
     assert.match(router, /capabilities\.includes\('notification_act'\)/);
     assert.match(router, /actorPrincipalId: representation\.identity\.principalId/);
+    assert.match(router, /actorUserId: representation\.authenticatedUserId/);
+    assert.match(service, /actorUserId,/);
   });
 
   test('marketing consent is checked again inside send transaction before delivery', () => {
@@ -89,8 +92,10 @@ describe('store CRM campaigns', () => {
     const transactionStart = service.indexOf('return adminDb.runTransaction');
     const transactionBlock = service.slice(transactionStart);
 
+    assert.match(service, /const hasMarketingConsent =/);
+    assert.match(service, /marketing\?\.enabled === true/);
     assert.match(transactionBlock, /transaction\.getAll\(\.\.\.preferenceRefs\)/);
-    assert.match(transactionBlock, /marketing\?\.enabled === true/);
+    assert.match(transactionBlock, /hasMarketingConsent\(snapshot, customerId\)/);
     assert.match(transactionBlock, /skipped_no_marketing_consent/);
     assert.match(transactionBlock, /category: 'marketing'/);
   });
