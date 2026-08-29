@@ -39,6 +39,7 @@ import { OperationalAppEntryBridge } from './components/store/OperationalAppEntr
 import { OrderInventoryReconciliationBridge } from './components/store/OrderInventoryReconciliationBridge';
 import { ProductCrossDeviceSyncBridge } from './components/store/ProductCrossDeviceSyncBridge';
 import { ProductWorkspaceLayoutBridge } from './components/store/ProductWorkspaceLayoutBridge';
+import { StoreCrmRelationshipBridge } from './components/store/StoreCrmRelationshipBridge';
 import { StoreLoyaltyCenterBridge } from './components/store/StoreLoyaltyCenterBridge';
 import { StoreRestartLandingBridge } from './components/store/StoreRestartLandingBridge';
 import { StoreSharingPortalBridge } from './components/store/StoreSharingPortalBridge';
@@ -84,10 +85,6 @@ function StorePersistenceBridge() {
         getPrimaryUserStoreDocumentPath(user.uid)
       );
 
-      // LegacyApp owns the initial create/read bootstrap for the private store.
-      // Wait until that document is confirmed by the server before replaying an
-      // offline pending update. This prevents two clients in the same page from
-      // both observing a missing document and racing to create it.
       unsubscribeStore = onSnapshot(
         storeReference,
         { includeMetadataChanges: true },
@@ -231,6 +228,7 @@ function AuthenticatedKyrubApp({ operational }: { operational: boolean }) {
       <KyrubAiStorePromotionActionBridge />
       <ManualStorePromotionBridge />
       <StoreLoyaltyCenterBridge />
+      <StoreCrmRelationshipBridge />
       <StoreSharingPortalBridge />
       <StoreRestartLandingBridge />
       <UnifiedProductCreateModalBridge />
