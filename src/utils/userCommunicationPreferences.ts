@@ -46,6 +46,7 @@ export const loadUserCommunicationPreferences = async (): Promise<UserCommunicat
   );
 
 export const saveUserCommunicationPreferences = async (input: {
+  marketingEnabled: boolean;
   browserEnabled: boolean;
   categories: UserCommunicationCategoryPreferences;
 }): Promise<UserCommunicationPreferences> =>
@@ -53,6 +54,7 @@ export const saveUserCommunicationPreferences = async (input: {
     await authorizedFetch('/api/communication-preferences', {
       method: 'PUT',
       body: JSON.stringify({
+        marketingEnabled: input.marketingEnabled,
         browserEnabled: input.browserEnabled,
         categories: input.categories,
       }),
