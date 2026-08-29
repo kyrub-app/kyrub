@@ -89,9 +89,13 @@ describe('canonical user notifications', () => {
     const allStart = service.indexOf('export const markAllUserNotificationsRead');
     const singleBlock = service.slice(singleStart, allStart);
     const allBlock = service.slice(allStart);
+    const singleUpdates = singleBlock.match(/transaction\.update\([^;]+;/g) ?? [];
 
-    assert.match(singleBlock, /transaction\.update\(reference, \{ readAt:/);
-    assert.doesNotMatch(singleBlock, /title:|body:|recipientUserId:/);
+    assert.equal(singleUpdates.length, 1);
+    assert.match(
+      singleUpdates[0],
+      /transaction\.update\(reference, \{ readAt: now\.toISOString\(\) \}\);/
+    );
     assert.match(allBlock, /batch\.update\(document\.ref, \{ readAt \}\)/);
   });
 
