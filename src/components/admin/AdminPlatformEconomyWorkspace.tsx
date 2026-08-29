@@ -117,6 +117,7 @@ export default function AdminPlatformEconomyWorkspace() {
   const [profile, setProfile] = useState<AdminProfile | null>(null);
   const [snapshot, setSnapshot] = useState<AdminPlatformEconomySnapshot | null>(null);
   const [period, setPeriod] = useState<AdminPlatformEconomyPeriod>('all');
+  const [storeId, setStoreId] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -128,6 +129,7 @@ export default function AdminPlatformEconomyWorkspace() {
       setUser(nextUser);
       setProfile(null);
       setSnapshot(null);
+      setStoreId('');
       setError('');
       if (!nextUser) return;
       unsubscribeProfile = subscribeToAdminProfile(
@@ -151,7 +153,7 @@ export default function AdminPlatformEconomyWorkspace() {
     setLoading(true);
     setError('');
     try {
-      setSnapshot(await loadAdminPlatformEconomy(user, period));
+      setSnapshot(await loadAdminPlatformEconomy(user, period, storeId));
     } catch (caught) {
       setError(
         caught instanceof Error
@@ -161,7 +163,7 @@ export default function AdminPlatformEconomyWorkspace() {
     } finally {
       setLoading(false);
     }
-  }, [authorized, period, user]);
+  }, [authorized, period, storeId, user]);
 
   useEffect(() => {
     if (!authorized) return;
@@ -169,6 +171,8 @@ export default function AdminPlatformEconomyWorkspace() {
   }, [authorized, refresh]);
 
   if (!authorized || !user || !profile) return null;
+
+  const storeScopeLabel = storeId ? `Loja ${storeId}` : 'Todas as lojas';
 
   return (
     <section className="bg-slate-950 px-4 pb-10 text-slate-100 sm:px-6">
@@ -222,8 +226,18 @@ export default function AdminPlatformEconomyWorkspace() {
               </button>
             );
           })}
+          {storeId && (
+            <button
+              type="button"
+              onClick={() => setStoreId('')}
+              disabled={loading}
+              className="rounded-xl border border-violet-500/25 bg-violet-500/10 px-3 py-2 text-[9px] font-black uppercase tracking-wider text-violet-300 disabled:opacity-50"
+            >
+              Todas as lojas
+            </button>
+          )}
           <span className="ml-auto text-[9px] text-slate-600">
-            Totais e IA: {periodLabel(period)}
+            {storeScopeLabel} · {periodLabel(period)}
           </span>
         </div>
 
@@ -279,7 +293,7 @@ export default function AdminPlatformEconomyWorkspace() {
               <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
                 <div>
                   <span className="text-[9px] font-black uppercase tracking-wider text-violet-300">Destinações econômicas · {periodLabel(period)}</span>
-                  <p className="mt-1 text-[9px] text-slate-500">Totais derivados dos snapshots imutáveis do ledger; refunds e chargebacks debitam a fotografia original.</p>
+                  <p className="mt-1 text-[9px] text-slate-500">{storeScopeLabel}. Totais derivados dos snapshots imutáveis do ledger; refunds e chargebacks debitam a fotografia original.</p>
                 </div>
                 <span className="text-[8px] text-slate-600">
                   {snapshot.allocationTotals.allocatedCaptureCount} captura(s) · {snapshot.allocationTotals.allocatedRefundCount} refund(s) · {snapshot.allocationTotals.allocatedChargebackCount} chargeback(s) · {snapshot.allocationTotals.allocatedChargebackReversalCount} reversão(ões)
@@ -293,7 +307,9 @@ export default function AdminPlatformEconomyWorkspace() {
                 <div className="rounded-xl bg-sky-500/10 p-2 text-sky-300"><Cpu className="h-4 w-4" /></div>
                 <div className="min-w-0 flex-1">
                   <span className="text-[9px] font-black uppercase tracking-wider text-sky-300">Custo de IA · {periodLabel(period)}</span>
-                  <p className="mt-1 text-[9px] text-slate-500">Medição autoritativa do ledger de uso. USD não é convertido nem somado aos fatos em BRL.</p>
+                  <p className="mt-1 text-[9px] text-slate-500">
+                    Medição autoritativa do ledger de uso. USD não é convertido nem somado aos fatos em BRL.{storeId ? ' O metering de IA ainda não possui atribuição canônica por loja; estes números permanecem globais da plataforma.' : ''}
+                  </p>
                   <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
                     <div className="rounded-xl border border-slate-800 bg-slate-950/55 p-3">
                       <span className="text-[8px] font-black uppercase tracking-wider text-slate-600">Custo estimado</span>
@@ -324,7 +340,7 @@ export default function AdminPlatformEconomyWorkspace() {
               <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
                 <div>
                   <span className="text-[9px] font-black uppercase tracking-wider text-violet-300">Taxas e subsídios · janela recente</span>
-                  <p className="mt-1 text-[9px] text-slate-500">Recorte operacional dos últimos {snapshot.recentWindow.limit} eventos dentro do período selecionado para inspeção rápida.</p>
+                  <p className="mt-1 text-[9px] text-slate-500">Recorte operacional dos últimos {snapshot.recentWindow.limit} eventos dentro do período e escopo de loja selecionados.</p>
                 </div>
                 <span className="text-[8px] text-slate-600">
                   {snapshot.recentWindow.allocation.allocatedCaptureCount} captura(s) · {snapshot.recentWindow.allocation.allocatedRefundCount} refund(s) · {snapshot.recentWindow.allocation.allocatedChargebackCount} chargeback(s) · {snapshot.recentWindow.allocation.allocatedChargebackReversalCount} reversão(ões)
@@ -339,12 +355,18 @@ export default function AdminPlatformEconomyWorkspace() {
                   <Store className="h-4 w-4 text-violet-400" />
                   <h3 className="text-[10px] font-black uppercase tracking-wider text-white">Atividade recente por loja</h3>
                 </div>
-                <p className="mt-1 text-[9px] text-slate-600">Até {snapshot.recentWindow.limit} eventos dentro de {periodLabel(period)}; não é ranking vitalício.</p>
+                <p className="mt-1 text-[9px] text-slate-600">Até {snapshot.recentWindow.limit} eventos dentro de {periodLabel(period)}. Selecione uma loja para recalcular o ledger econômico somente naquele tenant.</p>
                 <div className="mt-3 space-y-2">
                   {snapshot.recentWindow.stores.length === 0 ? (
                     <p className="rounded-xl border border-dashed border-slate-800 p-5 text-center text-[10px] text-slate-600">Nenhuma atividade econômica registrada.</p>
                   ) : snapshot.recentWindow.stores.slice(0, 12).map(store => (
-                    <div key={store.storeId} className="rounded-xl border border-slate-800 bg-slate-900/60 p-3">
+                    <button
+                      key={store.storeId}
+                      type="button"
+                      onClick={() => setStoreId(store.storeId)}
+                      disabled={loading || store.storeId === storeId}
+                      className={`w-full rounded-xl border p-3 text-left transition disabled:opacity-70 ${store.storeId === storeId ? 'border-violet-500/35 bg-violet-500/10' : 'border-slate-800 bg-slate-900/60 hover:border-slate-700'}`}
+                    >
                       <div className="flex items-center justify-between gap-3">
                         <strong className="truncate font-mono text-[9px] text-slate-300">{store.storeId}</strong>
                         <span className="text-[8px] text-slate-600">{when(store.lastOccurredAt)}</span>
@@ -356,7 +378,7 @@ export default function AdminPlatformEconomyWorkspace() {
                         <span>revertido {money(store.chargebackReversedMinor)}</span>
                         <span>líquido {money(store.economicNetMinor)}</span>
                       </div>
-                    </div>
+                    </button>
                   ))}
                 </div>
               </div>
