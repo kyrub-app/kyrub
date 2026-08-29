@@ -7,6 +7,7 @@ import './economic-obligations.test';
 import './economic-obligation-eligibility.test';
 import './economic-settlements.test';
 import './economic-reconciliation.test';
+import './economic-obligation-projections.test';
 import type { CanonicalPayment } from '../src/utils/canonicalPayment';
 import type { VerifiedPaymentProviderEvent } from '../src/utils/paymentProvider';
 import {
