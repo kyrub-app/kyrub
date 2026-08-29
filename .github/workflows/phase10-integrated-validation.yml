@@ -1,0 +1,53 @@
+name: Phase 10 integrated validation
+
+on:
+  pull_request:
+    branches:
+      - integration/roadmap-v1
+      - main
+    paths:
+      - 'src/**'
+      - 'server/**'
+      - 'shared/**'
+      - 'tests/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/phase10-integrated-validation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  cross-domain-contract:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Run Phase 10 cross-domain contract
+        run: node --test --import tsx tests/phase-10-cross-domain-contract.test.ts
+
+  production-dependency-security:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Audit production dependency graph for high or critical vulnerabilities
+        run: npm audit --omit=dev --audit-level=high
+      - name: Report complete dependency audit for triage
+        if: always()
+        run: npm audit --audit-level=moderate || true
