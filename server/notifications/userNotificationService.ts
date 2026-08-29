@@ -29,6 +29,7 @@ const CATEGORIES = new Set<UserNotificationCategory>([
   'store_chat',
   'order',
   'loyalty',
+  'marketing',
   'system',
 ]);
 const TARGET_KINDS = new Set<UserNotificationTargetKind>([
