@@ -111,7 +111,7 @@ export default function AdminPlatformEconomyWorkspace() {
                 Economia canônica da plataforma
               </h2>
               <p className="mt-1 max-w-3xl text-[10px] leading-relaxed text-slate-500">
-                Projeção somente leitura do ledger econômico bruto. Não representa saldo disponível, receita líquida, taxas, impostos ou settlement.
+                Ledger bruto com fatos econômicos imutáveis quando conhecidos. Não representa saldo disponível, custódia, imposto calculado ou settlement financeiro.
               </p>
             </div>
           </div>
@@ -158,7 +158,7 @@ export default function AdminPlatformEconomyWorkspace() {
                 <Landmark className="h-4 w-4 text-cyan-400" />
                 <span className="mt-3 block text-[9px] font-black uppercase tracking-wider text-slate-500">Bruto após refunds</span>
                 <strong className="mt-1 block text-xl text-white">{money(snapshot.totals.grossAfterRefundsMinor)}</strong>
-                <span className="text-[9px] text-slate-600">antes de taxas, impostos e settlement</span>
+                <span className="text-[9px] text-slate-600">antes de settlement e obrigações não observadas</span>
               </article>
               <article className="rounded-2xl border border-amber-500/15 bg-amber-500/5 p-4">
                 <RotateCcw className="h-4 w-4 text-amber-400" />
@@ -166,6 +166,47 @@ export default function AdminPlatformEconomyWorkspace() {
                 <strong className="mt-1 block text-xl text-white">{(snapshot.totals.refundShareBps / 100).toFixed(2)}%</strong>
                 <span className="text-[9px] text-slate-600">{snapshot.totals.recoveredCaptureCount} captura(s) recuperada(s) de snapshot</span>
               </article>
+            </div>
+
+            <div className="mt-4 rounded-2xl border border-violet-500/15 bg-violet-500/5 p-4">
+              <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+                <div>
+                  <span className="text-[9px] font-black uppercase tracking-wider text-violet-300">Taxas e subsídios · janela recente</span>
+                  <p className="mt-1 text-[9px] text-slate-500">
+                    Somente fatos persistidos no momento da transação. Refunds revertem a mesma fotografia econômica; regras atuais não recalculam o passado.
+                  </p>
+                </div>
+                <span className="text-[8px] text-slate-600">
+                  {snapshot.recentWindow.allocation.allocatedCaptureCount} captura(s) alocada(s) · {snapshot.recentWindow.allocation.allocatedRefundCount} refund(s)
+                </span>
+              </div>
+              <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
+                <div className="rounded-xl border border-slate-800 bg-slate-950/55 p-3">
+                  <span className="text-[8px] font-black uppercase tracking-wider text-slate-600">Entrega → entregador</span>
+                  <strong className="mt-1 block text-sm text-white">{money(snapshot.recentWindow.allocation.courierRemunerationMinor)}</strong>
+                  <span className="text-[8px] text-slate-600">100% da taxa de entrega registrada</span>
+                </div>
+                <div className="rounded-xl border border-slate-800 bg-slate-950/55 p-3">
+                  <span className="text-[8px] font-black uppercase tracking-wider text-slate-600">Subsídio da loja</span>
+                  <strong className="mt-1 block text-sm text-white">{money(snapshot.recentWindow.allocation.storeSubsidyMinor)}</strong>
+                  <span className="text-[8px] text-slate-600">desconto financiado pela própria loja</span>
+                </div>
+                <div className="rounded-xl border border-slate-800 bg-slate-950/55 p-3">
+                  <span className="text-[8px] font-black uppercase tracking-wider text-slate-600">Incentivo Kyrub</span>
+                  <strong className="mt-1 block text-sm text-white">{money(snapshot.recentWindow.allocation.kyrubIncentiveMinor)}</strong>
+                  <span className="text-[8px] text-slate-600">separado de promoção da loja</span>
+                </div>
+                <div className="rounded-xl border border-slate-800 bg-slate-950/55 p-3">
+                  <span className="text-[8px] font-black uppercase tracking-wider text-slate-600">Subsídio parceiro</span>
+                  <strong className="mt-1 block text-sm text-white">{money(snapshot.recentWindow.allocation.partnerSubsidyMinor)}</strong>
+                  <span className="text-[8px] text-slate-600">financiamento externo identificado</span>
+                </div>
+                <div className="rounded-xl border border-slate-800 bg-slate-950/55 p-3">
+                  <span className="text-[8px] font-black uppercase tracking-wider text-slate-600">Custos observados</span>
+                  <strong className="mt-1 block text-sm text-white">{money(snapshot.recentWindow.allocation.observedCostsMinor)}</strong>
+                  <span className="text-[8px] text-slate-600">sem estimar custo ausente do provedor</span>
+                </div>
+              </div>
             </div>
 
             <div className="mt-5 grid gap-4 xl:grid-cols-[1fr_1.35fr]">
@@ -216,6 +257,11 @@ export default function AdminPlatformEconomyWorkspace() {
                         </div>
                         <p className="mt-1 truncate font-mono text-[8px] text-slate-600">loja {entry.storeId} · pagamento {entry.paymentId}</p>
                         <p className="mt-1 text-[8px] text-slate-700">{entry.paymentContext} · {entry.provider} · {entry.sourceAuthority}</p>
+                        {entry.economicAllocation && (
+                          <p className="mt-1 text-[8px] text-slate-600">
+                            entrega {money(entry.economicAllocation.courierRemunerationMinor)} · subsídio loja {money(entry.economicAllocation.storeSubsidyMinor)} · custos observados {money(entry.economicAllocation.observedCostsMinor)}
+                          </p>
+                        )}
                       </div>
                     </div>
                   ))}
