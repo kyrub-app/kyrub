@@ -13,6 +13,7 @@ import {
 import { createDeliveryOpportunityRouter } from "./server/delivery/deliveryOpportunityRouter";
 import { createDeliveryTrackingRouter } from "./server/delivery/deliveryTrackingRouter";
 import { createOperationsHealthRouter } from "./server/admin/operationsHealthRouter";
+import { createPlatformEconomyRouter } from "./server/admin/platformEconomyRouter";
 import { createOrderInventoryRouter } from "./server/inventory/orderInventoryRouter";
 import { createKyrubAiConsultantRouter } from "./server/ai/consultantRouter";
 import { createKyrubActionExecutionRouter } from "./server/actions/actionExecutionRouter";
@@ -201,6 +202,12 @@ app.use(
   "/api/admin/operations/health",
   integrationRateLimiter,
   createOperationsHealthRouter()
+);
+
+app.use(
+  "/api/admin/platform-economy",
+  integrationRateLimiter,
+  createPlatformEconomyRouter()
 );
 
 app.use(
