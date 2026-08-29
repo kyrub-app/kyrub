@@ -6,6 +6,7 @@ import {
   buildCanonicalPaymentMirrorData,
   parseLegacyTablePayment,
   selectCanonicalStoreForLegacyTenant,
+  shouldApplyLegacyOrderMirrorUpdate,
 } from '../src/utils/operationalDualWrite';
 import type { CanonicalStoreRecord } from '../src/utils/storeDirectory';
 
@@ -95,6 +96,40 @@ test('builds a customer order mirror without replacing the original buyer actor'
   assert.equal(mirrored.migration.migratedByUserId, 'owner-a');
   assert.equal(mirrored.migration.migratedByRole, 'owner');
   assert.match(mirrored.migratedFromPath, /artifacts\/owner-a/);
+});
+
+test('does not let the legacy watcher overwrite an equally fresh canonical order', () => {
+  assert.equal(
+    shouldApplyLegacyOrderMirrorUpdate(
+      { legacyUpdatedAt: legacyOrder.updatedAt },
+      legacyOrder
+    ),
+    false
+  );
+});
+
+test('does not let a stale legacy snapshot overwrite a newer canonical order', () => {
+  assert.equal(
+    shouldApplyLegacyOrderMirrorUpdate(
+      { legacyUpdatedAt: '2026-07-22T10:05:00.000Z' },
+      legacyOrder
+    ),
+    false
+  );
+});
+
+test('allows a newer legacy operational update to reconcile into canonical', () => {
+  assert.equal(
+    shouldApplyLegacyOrderMirrorUpdate(
+      { legacyUpdatedAt: '2026-07-22T09:55:00.000Z' },
+      legacyOrder
+    ),
+    true
+  );
+});
+
+test('keeps backward compatibility with canonical mirrors missing legacyUpdatedAt', () => {
+  assert.equal(shouldApplyLegacyOrderMirrorUpdate({}, legacyOrder), true);
 });
 
 test('requires an independent canonical store id', () => {
