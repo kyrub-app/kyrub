@@ -1,4 +1,4 @@
-import { AggregateField } from 'firebase-admin/firestore';
+import { AggregateField, Timestamp } from 'firebase-admin/firestore';
 import { adminDb } from '../firebaseAdmin.js';
 import {
   ADMIN_PLATFORM_ECONOMY_RECENT_LIMIT,
@@ -12,6 +12,10 @@ import {
   type AdminPlatformEconomyRecentEntry,
   type AdminPlatformEconomySnapshot,
 } from '../../shared/adminPlatformEconomy.js';
+import {
+  resolveAdminPlatformEconomyPeriodScope,
+  type AdminPlatformEconomyPeriod,
+} from '../../shared/adminPlatformEconomyPeriod.js';
 import type { EconomicAllocationSnapshot } from '../../shared/economicFeesSubsidies.js';
 import type { StoreEconomicLedgerEntry } from '../../shared/storeEconomicLedger.js';
 
@@ -146,9 +150,18 @@ const parseRecentEntry = (value: unknown): AdminPlatformEconomyRecentEntry => {
   };
 };
 
-export const loadAdminPlatformEconomySnapshot = async (): Promise<AdminPlatformEconomySnapshot> => {
-  const ledger = adminDb.collectionGroup('economicLedger');
-  const aiUsage = adminDb.collection('kyrub_usage_events').where('resource', '==', 'ai');
+export const loadAdminPlatformEconomySnapshot = async (
+  periodInput: AdminPlatformEconomyPeriod = 'all'
+): Promise<AdminPlatformEconomySnapshot> => {
+  const scope = resolveAdminPlatformEconomyPeriodScope(periodInput);
+  const ledgerRoot = adminDb.collectionGroup('economicLedger');
+  const ledger = scope.since
+    ? ledgerRoot.where('occurredAt', '>=', scope.since)
+    : ledgerRoot;
+  const aiUsageRoot = adminDb.collection('kyrub_usage_events').where('resource', '==', 'ai');
+  const aiUsage = scope.since
+    ? aiUsageRoot.where('createdAt', '>=', Timestamp.fromDate(new Date(scope.since)))
+    : aiUsageRoot;
   const captures = ledger.where('kind', '==', 'payment_capture');
   const refunds = ledger.where('kind', '==', 'payment_refund');
   const chargebacks = ledger.where('kind', '==', 'payment_chargeback');
