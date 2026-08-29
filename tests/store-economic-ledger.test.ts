@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { describe, test } from 'node:test';
+import './economic-fees-subsidies.test';
 import type { CanonicalPayment } from '../src/utils/canonicalPayment';
 import type { VerifiedPaymentProviderEvent } from '../src/utils/paymentProvider';
 import {
@@ -13,6 +14,7 @@ import {
   deriveStoreEconomicLedgerSummary,
   storeEconomicLedgerEntryPath,
 } from '../shared/storeEconomicLedger';
+import { buildMarketplaceEconomicAllocationSnapshot } from '../shared/economicFeesSubsidies';
 
 const payment = (overrides: Partial<CanonicalPayment> = {}): CanonicalPayment => ({
   id: 'pay-1',
@@ -85,6 +87,30 @@ describe('store economic ledger', () => {
     assert.equal(capture.sourceAuthority, 'provider_webhook');
     assert.equal(capture.providerEventId, 'event-paid-1');
     assert.equal(capture.reversalOfEntryId, '');
+  });
+
+  test('capture persists immutable economic allocation and refund references the same facts', () => {
+    const economicAllocation = buildMarketplaceEconomicAllocationSnapshot({
+      subtotal: 30,
+      discountTotal: 5,
+      deliveryFee: 4.5,
+      total: 29.5,
+    });
+    const capture = buildPaymentCaptureEconomicEntry({
+      payment: payment(),
+      event: event('payment.paid'),
+      economicAllocation,
+    });
+    const refund = buildPaymentRefundEconomicEntry({
+      payment: payment({ status: 'refund_processing' }),
+      event: event('refund.succeeded'),
+      capture,
+    });
+
+    assert.deepEqual(capture.economicAllocation, economicAllocation);
+    assert.deepEqual(refund.economicAllocation, economicAllocation);
+    assert.equal(capture.economicAllocation?.courierRemunerationMinor, 450);
+    assert.equal(capture.economicAllocation?.storeSubsidyMinor, 500);
   });
 
   test('full refund is an exact opposite-sign reversal of capture', () => {
@@ -169,12 +195,16 @@ describe('store economic ledger', () => {
     assert.match(rules, /match \/\{document=\*\*\} \{\s*allow read, write: if false;/);
   });
 
-  test('V1 ledger does not claim fees, settlement, wallet, cash, points or KCoins', () => {
-    const contract = readFileSync('shared/storeEconomicLedger.ts', 'utf8');
-    const service = readFileSync('server/payments/storeEconomicLedgerService.ts', 'utf8');
-    const isolated = `${contract}\n${service}`;
-    assert.doesNotMatch(isolated, /storePointLedger|kcoin|wallet|canonicalCash/i);
-    assert.doesNotMatch(isolated, /platformFee|subsidy|settlementAmount|taxAmount|splitAmount/i);
+  test('economic allocation stays separate from custody, settlement and PSP split', () => {
+    const contract = readFileSync('shared/economicFeesSubsidies.ts', 'utf8');
+    const ledger = readFileSync('shared/storeEconomicLedger.ts', 'utf8');
+    const isolated = `${contract}\n${ledger}`;
+    assert.doesNotMatch(isolated, /storePointLedger|kcoin|canonicalCash/i);
+    assert.doesNotMatch(isolated, /walletBalance|custodialBalance|settlementInstruction|application_fee_amount|splitRecipient/i);
+    assert.match(contract, /courierRemunerationMinor: deliveryFeeMinor/);
+    assert.match(contract, /storeSubsidyMinor/);
+    assert.match(contract, /kyrubIncentiveMinor/);
+    assert.match(contract, /partnerSubsidyMinor/);
   });
 
   test('refund V1 only accepts authoritative full refund success event', () => {
