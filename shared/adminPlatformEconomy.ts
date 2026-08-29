@@ -1,4 +1,5 @@
 import type { EconomicAllocationSnapshot } from './economicFeesSubsidies.js';
+import type { KyrubCommercialPlanId } from './kyrubCommercialPlans.js';
 import type {
   StoreEconomicLedgerKind,
   StoreEconomicLedgerSourceAuthority,
@@ -7,9 +8,12 @@ import type {
 export const ADMIN_PLATFORM_ECONOMY_SCHEMA_VERSION = 1 as const;
 export const ADMIN_PLATFORM_ECONOMY_RECENT_LIMIT = 100 as const;
 export const ADMIN_PLATFORM_ECONOMY_CONTEXTS = ['marketplace', 'table', 'pos'] as const;
+export const ADMIN_PLATFORM_ECONOMY_PLAN_BUCKETS = ['free', 'pro', 'business', 'unsnapshotted'] as const;
 
 export type AdminPlatformEconomyPaymentContext =
   (typeof ADMIN_PLATFORM_ECONOMY_CONTEXTS)[number];
+export type AdminPlatformEconomyPlanBucket =
+  (typeof ADMIN_PLATFORM_ECONOMY_PLAN_BUCKETS)[number];
 
 export interface AdminPlatformEconomyTotals {
   currency: 'BRL';
@@ -33,6 +37,12 @@ export interface AdminPlatformEconomyContextTotal {
   economicNetMinor: number;
 }
 
+export interface AdminPlatformEconomyPlanTotal {
+  plan: AdminPlatformEconomyPlanBucket;
+  eventCount: number;
+  economicNetMinor: number;
+}
+
 export interface AdminPlatformEconomyAiUsageTotals {
   costCurrency: 'USD';
   costUnit: 'microusd';
@@ -50,6 +60,7 @@ export interface AdminPlatformEconomyRecentEntry {
   amountMinor: number;
   paymentId: string;
   paymentContext: AdminPlatformEconomyPaymentContext;
+  storePlan?: KyrubCommercialPlanId;
   provider: string;
   sourceAuthority: StoreEconomicLedgerSourceAuthority;
   occurredAt: string;
@@ -96,6 +107,7 @@ export interface AdminPlatformEconomySnapshot {
   generatedAt: string;
   totals: AdminPlatformEconomyTotals;
   contextTotals: AdminPlatformEconomyContextTotal[];
+  planTotals: AdminPlatformEconomyPlanTotal[];
   allocationTotals: AdminPlatformEconomyAllocationWindow;
   aiUsageTotals: AdminPlatformEconomyAiUsageTotals;
   recentWindow: {
