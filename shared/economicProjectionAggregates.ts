@@ -60,6 +60,22 @@ const assertProjectionAmount = (projection: EconomicObligationProjection): void 
   }
 };
 
+const assertUniqueProjectionIds = (
+  projections: readonly EconomicObligationProjection[]
+): void => {
+  const seen = new Set<string>();
+  for (const projection of projections) {
+    const obligationId = projection.obligationId.trim();
+    if (!obligationId) {
+      throw new Error('ECONOMIC_PROJECTION_AGGREGATE_ID_INVALID');
+    }
+    if (seen.has(obligationId)) {
+      throw new Error('ECONOMIC_PROJECTION_AGGREGATE_DUPLICATE_OBLIGATION');
+    }
+    seen.add(obligationId);
+  }
+};
+
 const addProjection = (
   totals: EconomicProjectionAggregateTotals,
   projection: EconomicObligationProjection
@@ -95,6 +111,7 @@ const addProjection = (
 export const deriveEconomicProjectionAggregateTotals = (
   projections: readonly EconomicObligationProjection[]
 ): EconomicProjectionAggregateTotals => {
+  assertUniqueProjectionIds(projections);
   const totals = emptyTotals();
   for (const projection of projections) addProjection(totals, projection);
   return totals;
@@ -115,6 +132,7 @@ const bucketBy = (
   dimension: EconomicProjectionAggregateDimension,
   keyFor: (projection: EconomicObligationProjection) => string
 ): EconomicProjectionAggregateBucket[] => {
+  assertUniqueProjectionIds(projections);
   const grouped = new Map<string, EconomicObligationProjection[]>();
   for (const projection of projections) {
     const key = keyFor(projection).trim();
@@ -139,14 +157,21 @@ export const deriveEconomicProjectionAggregatesByStore = (
 ): EconomicProjectionAggregateBucket[] =>
   bucketBy(projections, 'store', projection => projection.storeId);
 
+const beneficiaryAggregateKey = (
+  projection: EconomicObligationProjection
+): string => {
+  const storeId = projection.storeId.trim();
+  const beneficiaryPrincipalId = projection.beneficiaryPrincipalId.trim();
+  if (!storeId || !beneficiaryPrincipalId) {
+    throw new Error('ECONOMIC_PROJECTION_AGGREGATE_KEY_INVALID');
+  }
+  return `store:${encodeURIComponent(storeId)}:beneficiary:${encodeURIComponent(beneficiaryPrincipalId)}`;
+};
+
 export const deriveEconomicProjectionAggregatesByBeneficiary = (
   projections: readonly EconomicObligationProjection[]
 ): EconomicProjectionAggregateBucket[] =>
-  bucketBy(
-    projections,
-    'beneficiary',
-    projection => projection.beneficiaryPrincipalId
-  );
+  bucketBy(projections, 'beneficiary', beneficiaryAggregateKey);
 
 export const deriveEconomicProjectionAggregatesByState = (
   projections: readonly EconomicObligationProjection[]
