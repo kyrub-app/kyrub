@@ -4,6 +4,7 @@ import type {
   PaymentMethod,
 } from '../src/utils/canonicalPayment.js';
 import type { VerifiedPaymentProviderEvent } from '../src/utils/paymentProvider.js';
+import type { EconomicAllocationSnapshot } from './economicFeesSubsidies.js';
 
 export const STORE_ECONOMIC_LEDGER_SCHEMA_VERSION = 1 as const;
 export const STORE_ECONOMIC_LEDGER_CURRENCY = 'BRL' as const;
@@ -36,6 +37,7 @@ export interface StoreEconomicLedgerEntry {
   sourceAuthority: StoreEconomicLedgerSourceAuthority;
   reversalOfEntryId: string;
   occurredAt: string;
+  economicAllocation?: EconomicAllocationSnapshot;
 }
 
 export interface StoreEconomicLedgerSummary {
@@ -61,6 +63,17 @@ export const brlToMinor = (amount: number): number => {
   }
   const minor = Math.round(amount * 100);
   if (!Number.isSafeInteger(minor) || minor <= 0) {
+    throw new Error('STORE_ECONOMIC_LEDGER_AMOUNT_INVALID');
+  }
+  return minor;
+};
+
+export const brlNonNegativeToMinor = (amount: number): number => {
+  if (!Number.isFinite(amount) || amount < 0) {
+    throw new Error('STORE_ECONOMIC_LEDGER_AMOUNT_INVALID');
+  }
+  const minor = Math.round(amount * 100);
+  if (!Number.isSafeInteger(minor) || minor < 0) {
     throw new Error('STORE_ECONOMIC_LEDGER_AMOUNT_INVALID');
   }
   return minor;
@@ -148,6 +161,7 @@ const baseFromPayment = (input: {
 export const buildPaymentCaptureEconomicEntry = (input: {
   payment: CanonicalPayment;
   event: VerifiedPaymentProviderEvent;
+  economicAllocation?: EconomicAllocationSnapshot;
 }): StoreEconomicLedgerEntry => {
   assertPaymentEventMatch(input.payment, input.event);
   if (input.event.eventType !== 'payment.paid') {
@@ -168,12 +182,16 @@ export const buildPaymentCaptureEconomicEntry = (input: {
     kind: 'payment_capture',
     amountMinor: brlToMinor(input.payment.amount),
     reversalOfEntryId: '',
+    ...(input.economicAllocation
+      ? { economicAllocation: input.economicAllocation }
+      : {}),
   };
 };
 
 export const buildRecoveredPaymentCaptureEconomicEntry = (input: {
   payment: CanonicalPayment;
   paymentIntentId: string;
+  economicAllocation?: EconomicAllocationSnapshot;
 }): StoreEconomicLedgerEntry => {
   if (!validIso(clean(input.payment.paidAt))) {
     throw new Error('STORE_ECONOMIC_LEDGER_CAPTURE_SNAPSHOT_INVALID');
@@ -193,6 +211,9 @@ export const buildRecoveredPaymentCaptureEconomicEntry = (input: {
     kind: 'payment_capture',
     amountMinor: brlToMinor(input.payment.amount),
     reversalOfEntryId: '',
+    ...(input.economicAllocation
+      ? { economicAllocation: input.economicAllocation }
+      : {}),
   };
 };
 
@@ -228,6 +249,9 @@ export const buildPaymentRefundEconomicEntry = (input: {
     kind: 'payment_refund',
     amountMinor: -input.capture.amountMinor,
     reversalOfEntryId: input.capture.id,
+    ...(input.capture.economicAllocation
+      ? { economicAllocation: input.capture.economicAllocation }
+      : {}),
   };
 };
 
