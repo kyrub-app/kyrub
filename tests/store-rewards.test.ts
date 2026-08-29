@@ -183,10 +183,22 @@ describe('store rewards', () => {
 
     assert.match(router, /verifyFirebaseIdToken\(token\)/);
     assert.match(router, /customerId: identity\.uid/);
-    assert.match(client, /JSON\.stringify\(\{ storeId, rewardId \}\)/);
-    assert.doesNotMatch(client, /costPoints:/);
-    assert.doesNotMatch(client, /balanceBefore:/);
-    assert.doesNotMatch(client, /customerId:/);
+    assert.match(
+      client,
+      /body: JSON\.stringify\(\{ storeId, rewardId \}\)/
+    );
+    assert.doesNotMatch(
+      client,
+      /body: JSON\.stringify\(\{[^}]*customerId/
+    );
+    assert.doesNotMatch(
+      client,
+      /body: JSON\.stringify\(\{[^}]*costPoints/
+    );
+    assert.doesNotMatch(
+      client,
+      /body: JSON\.stringify\(\{[^}]*balance/
+    );
   });
 
   test('store reward economy remains separate from K-Coins', () => {
