@@ -17,9 +17,7 @@ const clean = (value: unknown): string =>
 
 const safeAggregateInteger = (value: unknown, label: string): number => {
   const numeric = typeof value === 'number' ? value : Number(value ?? 0);
-  if (!Number.isSafeInteger(numeric)) {
-    throw new Error(`ADMIN_PLATFORM_ECONOMY_${label}_INVALID`);
-  }
+  if (!Number.isSafeInteger(numeric)) throw new Error(`ADMIN_PLATFORM_ECONOMY_${label}_INVALID`);
   return numeric;
 };
 
@@ -43,33 +41,31 @@ const parseAllocation = (
     integerFields.some(amount => !Number.isSafeInteger(amount) || amount < 0) ||
     value.courierRemunerationMinor !== value.deliveryFeeMinor ||
     !Array.isArray(value.observedCosts)
-  ) {
-    throw new Error('ADMIN_PLATFORM_ECONOMY_ALLOCATION_INVALID');
-  }
+  ) throw new Error('ADMIN_PLATFORM_ECONOMY_ALLOCATION_INVALID');
   return value;
 };
 
 const parseRecentEntry = (value: unknown): AdminPlatformEconomyRecentEntry => {
   const entry = value as Partial<StoreEconomicLedgerEntry>;
+  const validKind =
+    entry.kind === 'payment_capture' ||
+    entry.kind === 'payment_refund' ||
+    entry.kind === 'payment_chargeback' ||
+    entry.kind === 'payment_chargeback_reversal';
   if (
     entry.schemaVersion !== 1 ||
     !clean(entry.id) ||
     !clean(entry.storeId) ||
-    (entry.kind !== 'payment_capture' && entry.kind !== 'payment_refund') ||
+    !validKind ||
     !Number.isSafeInteger(entry.amountMinor) ||
     entry.amountMinor === 0 ||
     !clean(entry.paymentId) ||
-    (entry.paymentContext !== 'marketplace' &&
-      entry.paymentContext !== 'table' &&
-      entry.paymentContext !== 'pos') ||
+    (entry.paymentContext !== 'marketplace' && entry.paymentContext !== 'table' && entry.paymentContext !== 'pos') ||
     !clean(entry.provider) ||
-    (entry.sourceAuthority !== 'provider_webhook' &&
-      entry.sourceAuthority !== 'canonical_payment_snapshot') ||
+    (entry.sourceAuthority !== 'provider_webhook' && entry.sourceAuthority !== 'canonical_payment_snapshot') ||
     !clean(entry.occurredAt) ||
     !Number.isFinite(Date.parse(entry.occurredAt))
-  ) {
-    throw new Error('ADMIN_PLATFORM_ECONOMY_ENTRY_INVALID');
-  }
+  ) throw new Error('ADMIN_PLATFORM_ECONOMY_ENTRY_INVALID');
   const economicAllocation = parseAllocation(entry.economicAllocation);
   return {
     id: entry.id,
@@ -89,63 +85,55 @@ export const loadAdminPlatformEconomySnapshot = async (): Promise<AdminPlatformE
   const ledger = adminDb.collectionGroup('economicLedger');
   const captures = ledger.where('kind', '==', 'payment_capture');
   const refunds = ledger.where('kind', '==', 'payment_refund');
-  const recovered = ledger.where(
-    'sourceAuthority',
-    '==',
-    'canonical_payment_snapshot'
-  );
+  const chargebacks = ledger.where('kind', '==', 'payment_chargeback');
+  const chargebackReversals = ledger.where('kind', '==', 'payment_chargeback_reversal');
+  const recovered = ledger.where('sourceAuthority', '==', 'canonical_payment_snapshot');
 
   const [
     captureAmountSnapshot,
     refundAmountSnapshot,
+    chargebackAmountSnapshot,
+    chargebackReversalAmountSnapshot,
     captureCountSnapshot,
     refundCountSnapshot,
+    chargebackCountSnapshot,
+    chargebackReversalCountSnapshot,
     recoveredCountSnapshot,
     recentSnapshot,
   ] = await Promise.all([
     captures.aggregate({ amountMinor: AggregateField.sum('amountMinor') }).get(),
     refunds.aggregate({ amountMinor: AggregateField.sum('amountMinor') }).get(),
+    chargebacks.aggregate({ amountMinor: AggregateField.sum('amountMinor') }).get(),
+    chargebackReversals.aggregate({ amountMinor: AggregateField.sum('amountMinor') }).get(),
     captures.count().get(),
     refunds.count().get(),
+    chargebacks.count().get(),
+    chargebackReversals.count().get(),
     recovered.count().get(),
-    ledger
-      .orderBy('occurredAt', 'desc')
-      .limit(ADMIN_PLATFORM_ECONOMY_RECENT_LIMIT)
-      .get(),
+    ledger.orderBy('occurredAt', 'desc').limit(ADMIN_PLATFORM_ECONOMY_RECENT_LIMIT).get(),
   ]);
 
-  const capturedMinor = safeAggregateInteger(
-    captureAmountSnapshot.data().amountMinor ?? 0,
-    'CAPTURED'
-  );
-  const refundSignedMinor = safeAggregateInteger(
-    refundAmountSnapshot.data().amountMinor ?? 0,
-    'REFUNDED'
-  );
-  if (capturedMinor < 0 || refundSignedMinor > 0) {
+  const capturedMinor = safeAggregateInteger(captureAmountSnapshot.data().amountMinor ?? 0, 'CAPTURED');
+  const refundSignedMinor = safeAggregateInteger(refundAmountSnapshot.data().amountMinor ?? 0, 'REFUNDED');
+  const chargebackSignedMinor = safeAggregateInteger(chargebackAmountSnapshot.data().amountMinor ?? 0, 'CHARGEDBACK');
+  const chargebackReversedMinor = safeAggregateInteger(chargebackReversalAmountSnapshot.data().amountMinor ?? 0, 'CHARGEBACK_REVERSED');
+  if (capturedMinor < 0 || refundSignedMinor > 0 || chargebackSignedMinor > 0 || chargebackReversedMinor < 0) {
     throw new Error('ADMIN_PLATFORM_ECONOMY_SIGN_INVARIANT_INVALID');
   }
   const refundedMinor = Math.abs(refundSignedMinor);
+  const chargedBackMinor = Math.abs(chargebackSignedMinor);
   const grossAfterRefundsMinor = capturedMinor - refundedMinor;
-  if (!Number.isSafeInteger(grossAfterRefundsMinor)) {
+  const economicNetMinor = grossAfterRefundsMinor - chargedBackMinor + chargebackReversedMinor;
+  if (![grossAfterRefundsMinor, economicNetMinor].every(Number.isSafeInteger)) {
     throw new Error('ADMIN_PLATFORM_ECONOMY_GROSS_INVALID');
   }
 
-  const captureCount = safeAggregateInteger(
-    captureCountSnapshot.data().count,
-    'CAPTURE_COUNT'
-  );
-  const refundCount = safeAggregateInteger(
-    refundCountSnapshot.data().count,
-    'REFUND_COUNT'
-  );
-  const recoveredCaptureCount = safeAggregateInteger(
-    recoveredCountSnapshot.data().count,
-    'RECOVERED_COUNT'
-  );
-  const entries = recentSnapshot.docs.map(document =>
-    parseRecentEntry(document.data())
-  );
+  const captureCount = safeAggregateInteger(captureCountSnapshot.data().count, 'CAPTURE_COUNT');
+  const refundCount = safeAggregateInteger(refundCountSnapshot.data().count, 'REFUND_COUNT');
+  const chargebackCount = safeAggregateInteger(chargebackCountSnapshot.data().count, 'CHARGEBACK_COUNT');
+  const chargebackReversalCount = safeAggregateInteger(chargebackReversalCountSnapshot.data().count, 'CHARGEBACK_REVERSAL_COUNT');
+  const recoveredCaptureCount = safeAggregateInteger(recoveredCountSnapshot.data().count, 'RECOVERED_COUNT');
+  const entries = recentSnapshot.docs.map(document => parseRecentEntry(document.data()));
   const stores = buildRecentStoreEconomyActivity(entries);
   const allocation = deriveRecentEconomicAllocationWindow(entries);
 
@@ -157,8 +145,13 @@ export const loadAdminPlatformEconomySnapshot = async (): Promise<AdminPlatformE
       capturedMinor,
       refundedMinor,
       grossAfterRefundsMinor,
+      chargedBackMinor,
+      chargebackReversedMinor,
+      economicNetMinor,
       captureCount,
       refundCount,
+      chargebackCount,
+      chargebackReversalCount,
       recoveredCaptureCount,
       refundShareBps: deriveRefundShareBps(capturedMinor, refundedMinor),
     },
