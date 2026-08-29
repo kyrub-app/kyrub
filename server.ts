@@ -20,6 +20,7 @@ import { createPaymentIntentRouter } from "./server/payments/paymentIntentRouter
 import { createStoreRewardRouter } from "./server/payments/storeRewardRouter";
 import { createStoreRelationshipRouter } from "./server/payments/storeRelationshipRouter";
 import { createMarketplaceDiscoveryRouter } from "./server/payments/marketplaceDiscoveryRouter";
+import { createStoreCrmRouter } from "./server/payments/storeCrmRouter";
 import { enforceDeliveryWorkEligibility } from "./server/identity/workEligibilityMiddleware";
 
 dotenv.config();
@@ -132,6 +133,12 @@ app.use(
   "/api/marketplace-discovery",
   integrationRateLimiter,
   createMarketplaceDiscoveryRouter()
+);
+
+app.use(
+  "/api/store-crm",
+  integrationRateLimiter,
+  createStoreCrmRouter()
 );
 
 app.use(
