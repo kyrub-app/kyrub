@@ -44,7 +44,6 @@ export const loadCourierEarningsProjection = async (
     adminDb
       .collectionGroup('economicObligations')
       .where('beneficiaryPrincipalId', '==', courierUserId)
-      .where('kind', '==', 'courier_payable')
       .limit(250)
       .get(),
     adminDb
@@ -54,9 +53,9 @@ export const loadCourierEarningsProjection = async (
       .get(),
   ]);
 
-  const obligations = obligationsSnapshot.docs.map(
-    document => document.data() as EconomicObligation
-  );
+  const obligations = obligationsSnapshot.docs
+    .map(document => document.data() as EconomicObligation)
+    .filter(obligation => obligation.kind === 'courier_payable');
   const settlements = settlementsSnapshot.docs.map(
     document => document.data() as EconomicSettlementRecord
   );
