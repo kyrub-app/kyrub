@@ -63,7 +63,8 @@ describe('secure courier pickup handoff', () => {
     assert.doesNotMatch(cloudStatuses, /'delivering'/);
   });
 
-  test('pickup handoff does not create economic eligibility, settlement, payout or wallet state', () => {
+  test('pickup handoff remains operational only and cannot complete delivery or move money', () => {
     assert.doesNotMatch(service, /economicObligation|eligibleAt|settlement|payout|transfer|wallet|custodial/i);
+    assert.doesNotMatch(service, /status:\s*'done'|deliveredAt|buyerConfirmed/i);
   });
 });
