@@ -160,10 +160,12 @@ describe('courier store arrival geofence', () => {
 
     assert.match(router, /users\/\$\{storeId\}\/stores\/\$\{storeId\}/);
     assert.match(router, /assessCourierStoreArrival/);
-    assert.match(router, /assessment\.configured && assessment\.insideGeofence && !existingEvidence/);
+    assert.match(router, /storeAssessment\.configured/);
+    assert.match(router, /storeAssessment\.insideGeofence/);
+    assert.match(router, /!existingStoreEvidence/);
     assert.match(router, /payload\.storeArrivalEvidence/);
     assert.match(router, /kind: 'courier_inside_store_geofence'/);
-    assert.match(router, /newlyDetected: shouldRecordArrival/);
+    assert.match(router, /newlyDetected: shouldRecordStoreArrival/);
   });
 
   test('arrival evidence stays observational and does not perform handoff or economic release', () => {
