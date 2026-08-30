@@ -97,9 +97,10 @@ test('tracking bridge stops when assigned delivery is no longer active', () => {
   assert.match(trackingBridgeSource, /stopRemoteTracking/);
 });
 
-test('buyer identity is attached to the delivery opportunity without exposing precise GPS', () => {
+test('buyer identity is attached to the delivery opportunity and precise destination coordinates remain server-authoritative', () => {
   assert.match(opportunitySource, /buyerId: clean\(order\.buyerId\)/);
-  assert.doesNotMatch(opportunitySource, /latitude:|longitude:/);
+  assert.match(opportunitySource, /buildDeliveryCustomerDestinationSnapshot/);
+  assert.doesNotMatch(opportunitySource, /request\.body\?\.latitude|request\.body\?\.longitude/);
 });
 
 test('buyer and merchant viewers consume only the authorized tracking endpoint', () => {
