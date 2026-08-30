@@ -46,7 +46,7 @@ const requiredProfile = (request: Request): ServerWorkProfile | null => {
   }
   if (
     request.method === 'POST'
-    && /^\/[^/]+\/status\/?$/.test(request.path)
+    && /^\/[^/]+\/(?:status|secure-pickup)\/?$/.test(request.path)
   ) {
     return 'courier';
   }

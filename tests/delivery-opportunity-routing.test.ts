@@ -2,10 +2,15 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import './courier-live-tracking.test';
+import './delivery-pickup-handoff.test';
 
 const serverSource = readFileSync('server.ts', 'utf8');
 const routerSource = readFileSync(
   'server/delivery/deliveryOpportunityRouter.ts',
+  'utf8'
+);
+const pickupHandoffSource = readFileSync(
+  'server/delivery/deliveryPickupHandoffService.ts',
   'utf8'
 );
 const bridgeSource = readFileSync(
@@ -25,11 +30,17 @@ const appSource = readFileSync('src/App.tsx', 'utf8');
 test('ready delivery orders publish idempotent Kyrub Entregas jobs', () => {
   assert.match(serverSource, /createDeliveryOpportunityRouter/);
   assert.match(routerSource, /fulfillmentType !== 'delivery'/);
-  assert.match(routerSource, /\['ready', 'out_for_delivery'\]/);
+  assert.match(routerSource, /\['preparing', 'ready', 'out_for_delivery'\]/);
   assert.match(routerSource, /hub\/renda\/deliveries/);
   assert.match(routerSource, /deliveryEscalationQueue/);
   assert.match(routerSource, /sourceOrderId/);
   assert.match(bridgeSource, /orders\/:orderId\/publish|delivery-opportunities\/orders/);
+});
+
+test('secure courier pickup, not generic delivering, owns route-start readiness', () => {
+  assert.match(pickupHandoffSource, /liveOrderStatus !== 'ready'/);
+  assert.match(pickupHandoffSource, /courier_inside_store_geofence/);
+  assert.match(routerSource, /Confirme a coleta segura antes de iniciar a rota/);
 });
 
 test('unaccepted jobs escalate after three minutes to admin control plane', () => {

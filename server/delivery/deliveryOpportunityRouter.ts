@@ -3,6 +3,10 @@ import { Router, type Request, type Response } from 'express';
 import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 import type { DecodedIdToken } from 'firebase-admin/auth';
 import { adminAuth, adminDb } from '../firebaseAdmin';
+import {
+  confirmSecureCourierPickupAndStartRoute,
+  readOrCreateDeliveryPickupCodeForStore,
+} from './deliveryPickupHandoffService.js';
 
 const DELIVERY_COLLECTION = 'hub/renda/deliveries';
 const DELIVERY_CLAIM_COLLECTION = 'deliveryClaims';
@@ -90,12 +94,16 @@ const errorResponse = (response: Response, error: unknown): void => {
     response.status(401).json({ error: 'Faça login novamente.' });
     return;
   }
+  if (message === 'DELIVERY_PICKUP_FORBIDDEN') {
+    response.status(403).json({ error: 'Somente a loja desta entrega pode consultar o código de coleta.' });
+    return;
+  }
   if (/não identificado|inválido/i.test(message)) {
     response.status(400).json({ error: message });
     return;
   }
   if (
-    /não encontrado|não está pronto|não é uma entrega|entregador próprio|já aceitou|já foi aceita|somente o entregador|precisa estar aceita|confirme a coleta/i.test(
+    /não encontrado|não está pronto|não é uma entrega|entregador próprio|já aceitou|já foi aceita|somente o entregador|precisa estar aceita|confirme a coleta|código|geofence|rastreio|chegue à loja|coleta segura/i.test(
       message
     )
   ) {
@@ -256,25 +264,11 @@ export const updateKyrubDeliveryStatus = async (
 
     if (status === 'delivering') {
       if (currentStatus === 'delivering') return;
+      if (clean(delivery.source) === 'kyrub-order') {
+        throw new Error('Confirme a coleta segura antes de iniciar a rota.');
+      }
       if (currentStatus !== 'accepted') {
         throw new Error('A entrega precisa estar aceita antes da coleta.');
-      }
-      if (clean(delivery.source) === 'kyrub-order') {
-        const storeId = clean(delivery.storeId);
-        const sourceOrderId = clean(delivery.sourceOrderId);
-        if (!storeId || !sourceOrderId) {
-          throw new Error('O pedido vinculado à entrega não foi encontrado.');
-        }
-        const orderSnapshot = await transaction.get(
-          adminDb.doc(orderPath(storeId, sourceOrderId))
-        );
-        const liveOrderStatus = clean(orderSnapshot.data()?.status);
-        if (!['ready', 'out_for_delivery'].includes(liveOrderStatus)) {
-          throw new Error('O pedido ainda não está pronto para coleta.');
-        }
-        transaction.update(deliveryReference, {
-          orderStatus: liveOrderStatus,
-        });
       }
       transaction.update(claimReference, {
         status: 'delivering',
@@ -399,6 +393,33 @@ export const createDeliveryOpportunityRouter = (): Router => {
       response.json(
         await publishKyrubDeliveryOpportunity(tenantId, request.params.orderId)
       );
+    } catch (error) {
+      errorResponse(response, error);
+    }
+  });
+
+  router.get('/:deliveryId/pickup-code', async (request, response) => {
+    try {
+      const storeId = await authenticatedTenantId(request);
+      response.setHeader('Cache-Control', 'no-store, max-age=0');
+      response.json(await readOrCreateDeliveryPickupCodeForStore({
+        deliveryId: request.params.deliveryId,
+        storeId,
+      }));
+    } catch (error) {
+      errorResponse(response, error);
+    }
+  });
+
+  router.post('/:deliveryId/secure-pickup', async (request, response) => {
+    try {
+      const actor = await authenticatedActor(request);
+      response.setHeader('Cache-Control', 'no-store, max-age=0');
+      response.json(await confirmSecureCourierPickupAndStartRoute({
+        deliveryId: request.params.deliveryId,
+        courierId: actor.uid,
+        handoffCode: clean(request.body?.handoffCode),
+      }));
     } catch (error) {
       errorResponse(response, error);
     }
