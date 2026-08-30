@@ -8,6 +8,9 @@ const DELIVERY_OPERATIONAL_EVENT_COLLECTION = 'deliveryOperationalEvents';
 const clean = (value: unknown): string =>
   typeof value === 'string' ? value.trim() : '';
 
+const orderPath = (tenantId: string, orderId: string): string =>
+  `artifacts/${tenantId}/public/data/customerOrders/${orderId}`;
+
 export const kyrubDeliveryIdForOrder = (tenantId: string, orderId: string): string =>
   `order-${createHash('sha256').update(`${tenantId}:${orderId}`).digest('hex')}`;
 
@@ -29,15 +32,19 @@ export interface PersistStoreMarkedReadyOperationalEventInput {
 }
 
 /**
- * Persists the store's "ready" declaration as operational evidence.
+ * Completes the server-authoritative side of a store "ready" action.
  *
- * The caller cannot supply occurredAt/recordedAt. Both timestamps are minted by
- * the server when this function executes. This event is evidence of a store
- * action only; it does not assign responsibility or economic billability.
+ * The caller cannot supply readyAt/occurredAt/recordedAt. The order must
+ * already be in the canonical `ready` state. For Kyrub delivery orders, the
+ * same transaction that stamps readyAt also creates the immutable,
+ * deterministic `store_marked_ready` operational event.
+ *
+ * This is evidence of a store action only. It never assigns responsibility,
+ * economic billability, obligation, settlement or payout.
  */
 export const persistStoreMarkedReadyOperationalEvent = async (
   input: PersistStoreMarkedReadyOperationalEventInput
-): Promise<DeliveryOperationalEvent> => {
+): Promise<DeliveryOperationalEvent | null> => {
   const tenantId = clean(input.tenantId);
   const orderId = clean(input.orderId);
   const actorUid = clean(input.actorUid);
@@ -47,12 +54,52 @@ export const persistStoreMarkedReadyOperationalEvent = async (
 
   const deliveryId = kyrubDeliveryIdForOrder(tenantId, orderId);
   const eventId = storeMarkedReadyEventIdForOrder(tenantId, orderId);
-  const reference = adminDb.doc(eventPath(eventId));
+  const orderReference = adminDb.doc(orderPath(tenantId, orderId));
+  const tenantReference = adminDb.doc(`tenants/${tenantId}`);
+  const eventReference = adminDb.doc(eventPath(eventId));
 
   return adminDb.runTransaction(async transaction => {
-    const existing = await transaction.get(reference);
-    if (existing.exists) {
-      const data = existing.data() as DeliveryOperationalEvent;
+    const [orderSnapshot, tenantSnapshot, existingEvent] = await Promise.all([
+      transaction.get(orderReference),
+      transaction.get(tenantReference),
+      transaction.get(eventReference),
+    ]);
+    if (!orderSnapshot.exists) throw new Error('STORE_READY_ORDER_NOT_FOUND');
+
+    const order = orderSnapshot.data() as Record<string, unknown>;
+    if (clean(order.status) !== 'ready') {
+      throw new Error('STORE_READY_ORDER_STATE_CONFLICT');
+    }
+
+    const canonicalStoreId = clean(tenantSnapshot.data()?.canonicalStoreId);
+    if (order.readyAt == null) {
+      transaction.set(
+        orderReference,
+        {
+          readyAt: FieldValue.serverTimestamp(),
+          readyAtAuthority: 'kyrub_server',
+        },
+        { merge: true }
+      );
+      if (canonicalStoreId) {
+        transaction.set(
+          adminDb.doc(`stores/${canonicalStoreId}/orders/${orderId}`),
+          {
+            readyAt: FieldValue.serverTimestamp(),
+            readyAtAuthority: 'kyrub_server',
+          },
+          { merge: true }
+        );
+      }
+    }
+
+    const isKyrubDelivery =
+      clean(order.fulfillmentType) === 'delivery' &&
+      clean(order.deliveryProvider) === 'kyrub';
+    if (!isKyrubDelivery) return null;
+
+    if (existingEvent.exists) {
+      const data = existingEvent.data() as DeliveryOperationalEvent;
       if (
         data.schemaVersion !== 1 ||
         data.id !== eventId ||
@@ -84,7 +131,7 @@ export const persistStoreMarkedReadyOperationalEvent = async (
       referenceId: actorUid,
     };
 
-    transaction.create(reference, {
+    transaction.create(eventReference, {
       ...event,
       recordedAtServer: FieldValue.serverTimestamp(),
       createdAt: FieldValue.serverTimestamp(),
