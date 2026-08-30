@@ -27,7 +27,9 @@ const eligibleWaitingObligation = (payer: 'store' | 'kyrub'): EconomicObligation
     payer,
     policyId: 'waiting-v1',
     policyVersion: 1,
-    collectedAt: '2026-08-30T10:00:00.000Z',
+    responsibilityPolicyId: 'responsibility-v1',
+    responsibilityPolicyVersion: 1,
+    decidedAt: '2026-08-30T10:00:00.000Z',
   });
   return {
     ...pending,
