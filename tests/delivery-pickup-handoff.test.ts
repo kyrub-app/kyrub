@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { describe, test } from 'node:test';
+import './delivery-paid-waiting.test';
 
 describe('secure courier pickup handoff', () => {
   const service = readFileSync('server/delivery/deliveryPickupHandoffService.ts', 'utf8');
@@ -32,7 +33,8 @@ describe('secure courier pickup handoff', () => {
     assert.match(service, /status: 'handed_over'/);
     assert.match(service, /status: 'delivering'/);
     assert.match(service, /pickupHandoff: handoff/);
-    assert.match(service, /collectedAt: FieldValue\.serverTimestamp\(\)/);
+    assert.match(service, /const collectedAt = Timestamp\.now\(\)/);
+    assert.match(service, /paidWaitingEvidence/);
     assert.match(service, /transaction\.delete\(secretRef\)/);
   });
 
@@ -63,8 +65,8 @@ describe('secure courier pickup handoff', () => {
     assert.doesNotMatch(cloudStatuses, /'done'/);
   });
 
-  test('pickup handoff remains operational only and cannot complete delivery or move money', () => {
-    assert.doesNotMatch(service, /economicObligation|eligibleAt|settlement|payout|transfer|wallet|custodial/i);
+  test('pickup handoff remains operational only and cannot complete delivery or settle money', () => {
+    assert.doesNotMatch(service, /economicObligationPath|eligibleAt|economicSettlements|status:\s*'settled'|payout|transfer|wallet|custodial/i);
     assert.doesNotMatch(service, /status:\s*'done'|deliveredAt|buyerConfirmed/i);
   });
 });
