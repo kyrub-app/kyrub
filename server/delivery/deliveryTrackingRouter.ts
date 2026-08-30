@@ -1,6 +1,7 @@
 import { Router, type Request, type Response } from 'express';
 import { FieldValue } from 'firebase-admin/firestore';
 import { adminAuth, adminDb } from '../firebaseAdmin';
+import { assessCourierStoreArrival } from './storeArrivalEvidence';
 
 const DELIVERY_COLLECTION = 'hub/renda/deliveries';
 const DELIVERY_CLAIM_COLLECTION = 'deliveryClaims';
@@ -23,16 +24,22 @@ const clean = (value: unknown): string =>
 const finite = (value: unknown): number | null =>
   typeof value === 'number' && Number.isFinite(value) ? value : null;
 
+const validateFirestoreId = (value: string, label: string): string => {
+  const id = value.trim();
+  if (!id || !/^[a-zA-Z0-9_-]{1,128}$/.test(id)) {
+    throw new Error(`${label} não foi identificado.`);
+  }
+  return id;
+};
+
 const orderPath = (storeId: string, orderId: string): string =>
   `artifacts/${storeId}/public/data/customerOrders/${orderId}`;
 
-const validateDeliveryId = (value: string): string => {
-  const deliveryId = value.trim();
-  if (!deliveryId || !/^[a-zA-Z0-9_-]{1,128}$/.test(deliveryId)) {
-    throw new Error('A entrega não foi identificada.');
-  }
-  return deliveryId;
-};
+const privateStorePath = (storeId: string): string =>
+  `users/${storeId}/stores/${storeId}`;
+
+const validateDeliveryId = (value: string): string =>
+  validateFirestoreId(value, 'A entrega');
 
 const parseLocation = (value: unknown): {
   latitude: number;
@@ -87,6 +94,23 @@ const serializeTimestamp = (value: unknown): string => {
     : '';
 };
 
+const serializeArrivalEvidence = (
+  tracking: Record<string, unknown> | undefined
+): Record<string, unknown> | null => {
+  const raw = tracking?.storeArrivalEvidence;
+  if (!raw || typeof raw !== 'object') return null;
+  const evidence = raw as Record<string, unknown>;
+  if (clean(evidence.kind) !== 'courier_inside_store_geofence') return null;
+  return {
+    kind: 'courier_inside_store_geofence',
+    distanceMeters: finite(evidence.distanceMeters),
+    radiusMeters: finite(evidence.radiusMeters),
+    accuracyMeters: finite(evidence.accuracyMeters),
+    clientCapturedAt: finite(evidence.clientCapturedAt),
+    detectedAt: serializeTimestamp(evidence.detectedAt),
+  };
+};
+
 const errorResponse = (response: Response, error: unknown): void => {
   const message = error instanceof Error ? error.message : String(error);
   if (message === 'AUTH_REQUIRED' || /id-token|expired|revoked/i.test(message)) {
@@ -100,7 +124,7 @@ const errorResponse = (response: Response, error: unknown): void => {
     });
     return;
   }
-  if (/não identificada|inválid/i.test(message)) {
+  if (/não identificad|inválid/i.test(message)) {
     response.status(400).json({ error: message });
     return;
   }
@@ -136,12 +160,12 @@ export const createDeliveryTrackingRouter = (): Router => {
 
       const delivery = deliverySnapshot.data() as Record<string, unknown>;
       const claim = claimSnapshot.data() as Record<string, unknown> | undefined;
-      const storeId = clean(delivery.storeId);
-      const sourceOrderId = clean(delivery.sourceOrderId);
+      const storeId = validateFirestoreId(clean(delivery.storeId), 'A loja');
+      const sourceOrderId = validateFirestoreId(
+        clean(delivery.sourceOrderId),
+        'O pedido'
+      );
       const courierId = clean(claim?.courierId);
-      if (!storeId || !sourceOrderId) {
-        throw new Error('A entrega não foi encontrada.');
-      }
 
       const orderSnapshot = await adminDb.doc(orderPath(storeId, sourceOrderId)).get();
       if (!orderSnapshot.exists) {
@@ -161,7 +185,11 @@ export const createDeliveryTrackingRouter = (): Router => {
       );
 
       if (!active) {
-        response.status(200).json({ deliveryId, active: false });
+        response.status(200).json({
+          deliveryId,
+          active: false,
+          storeArrivalEvidence: serializeArrivalEvidence(tracking),
+        });
         return;
       }
 
@@ -169,7 +197,11 @@ export const createDeliveryTrackingRouter = (): Router => {
       const longitude = finite(tracking?.longitude);
       const accuracy = finite(tracking?.accuracy);
       if (latitude === null || longitude === null || accuracy === null) {
-        response.status(200).json({ deliveryId, active: false });
+        response.status(200).json({
+          deliveryId,
+          active: false,
+          storeArrivalEvidence: serializeArrivalEvidence(tracking),
+        });
         return;
       }
 
@@ -183,6 +215,7 @@ export const createDeliveryTrackingRouter = (): Router => {
         speed: finite(tracking?.speed),
         clientCapturedAt: finite(tracking?.clientCapturedAt),
         updatedAt: serializeTimestamp(tracking?.updatedAt),
+        storeArrivalEvidence: serializeArrivalEvidence(tracking),
       });
     } catch (error) {
       errorResponse(response, error);
@@ -198,14 +231,16 @@ export const createDeliveryTrackingRouter = (): Router => {
       const claimReference = adminDb.doc(`${DELIVERY_CLAIM_COLLECTION}/${deliveryId}`);
       const trackingReference = adminDb.doc(`${DELIVERY_TRACKING_COLLECTION}/${deliveryId}`);
 
-      await adminDb.runTransaction(async transaction => {
-        const [deliverySnapshot, claimSnapshot] = await Promise.all([
+      const result = await adminDb.runTransaction(async transaction => {
+        const [deliverySnapshot, claimSnapshot, trackingSnapshot] = await Promise.all([
           transaction.get(deliveryReference),
           transaction.get(claimReference),
+          transaction.get(trackingReference),
         ]);
         if (!deliverySnapshot.exists || !claimSnapshot.exists) {
           throw new Error('A entrega não foi encontrada.');
         }
+
         const delivery = deliverySnapshot.data() as Record<string, unknown>;
         const claim = claimSnapshot.data() as Record<string, unknown>;
         if (clean(claim.courierId) !== courierId) {
@@ -215,22 +250,64 @@ export const createDeliveryTrackingRouter = (): Router => {
           throw new Error('Esta entrega não está em andamento.');
         }
 
-        transaction.set(
-          trackingReference,
-          {
-            deliveryId,
-            courierId,
-            storeId: clean(delivery.storeId),
-            sourceOrderId: clean(delivery.sourceOrderId),
-            active: true,
-            ...location,
-            updatedAt: FieldValue.serverTimestamp(),
-          },
-          { merge: true }
+        const storeId = validateFirestoreId(clean(delivery.storeId), 'A loja');
+        const sourceOrderId = validateFirestoreId(
+          clean(delivery.sourceOrderId),
+          'O pedido'
         );
+        const storeSnapshot = await transaction.get(
+          adminDb.doc(privateStorePath(storeId))
+        );
+        const assessment = assessCourierStoreArrival(
+          storeSnapshot.exists
+            ? storeSnapshot.data() as Record<string, unknown>
+            : undefined,
+          location
+        );
+        const tracking = trackingSnapshot.data() as Record<string, unknown> | undefined;
+        const existingEvidence = serializeArrivalEvidence(tracking);
+        const shouldRecordArrival = assessment.configured && assessment.insideGeofence && !existingEvidence;
+        const payload: Record<string, unknown> = {
+          deliveryId,
+          courierId,
+          storeId,
+          sourceOrderId,
+          active: true,
+          ...location,
+          storeArrivalAssessment: {
+            configured: assessment.configured,
+            insideGeofence: assessment.insideGeofence,
+            distanceMeters: assessment.distanceMeters,
+            radiusMeters: assessment.radiusMeters,
+            accuracyMeters: assessment.accuracyMeters,
+            evaluatedAt: FieldValue.serverTimestamp(),
+          },
+          updatedAt: FieldValue.serverTimestamp(),
+        };
+
+        if (shouldRecordArrival) {
+          payload.storeArrivalEvidence = {
+            kind: 'courier_inside_store_geofence',
+            distanceMeters: assessment.distanceMeters,
+            radiusMeters: assessment.radiusMeters,
+            accuracyMeters: assessment.accuracyMeters,
+            clientCapturedAt: location.clientCapturedAt,
+            detectedAt: FieldValue.serverTimestamp(),
+          };
+        }
+
+        transaction.set(trackingReference, payload, { merge: true });
+        return {
+          assessment,
+          arrivalDetected: Boolean(existingEvidence) || shouldRecordArrival,
+          newlyDetected: shouldRecordArrival,
+        };
       });
 
-      response.status(204).end();
+      response.status(200).json({
+        deliveryId,
+        storeArrival: result,
+      });
     } catch (error) {
       errorResponse(response, error);
     }
