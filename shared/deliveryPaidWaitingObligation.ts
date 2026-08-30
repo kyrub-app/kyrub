@@ -24,6 +24,9 @@ export interface DeliveryPaidWaitingCourierObligation {
   payer: DeliveryPaidWaitingObligationPayer;
   payerPrincipalId: string;
   waitingEvidenceRef: string;
+  billableWaitingDecisionRef: string;
+  responsibilityPolicyId: string;
+  responsibilityPolicyVersion: number;
   policyId: string;
   policyVersion: number;
   createdAt: string;
@@ -67,23 +70,29 @@ export const buildDeliveryPaidWaitingCourierObligation = (input: {
   payer: DeliveryPaidWaitingObligationPayer;
   policyId: string;
   policyVersion: number;
-  collectedAt: string;
+  responsibilityPolicyId: string;
+  responsibilityPolicyVersion: number;
+  decidedAt: string;
 }): DeliveryPaidWaitingCourierObligation => {
   const canonicalStoreId = clean(input.canonicalStoreId);
   const orderId = clean(input.orderId);
   const deliveryId = clean(input.deliveryId);
   const courierId = clean(input.courierId);
   const policyId = clean(input.policyId);
+  const responsibilityPolicyId = clean(input.responsibilityPolicyId);
   if (
     !validIdentity(canonicalStoreId) ||
     !validIdentity(orderId) ||
     !validIdentity(deliveryId) ||
     !validIdentity(courierId) ||
     !validIdentity(policyId) ||
+    !validIdentity(responsibilityPolicyId) ||
     !Number.isSafeInteger(input.policyVersion) ||
     input.policyVersion <= 0 ||
-    !input.collectedAt ||
-    Number.isNaN(Date.parse(input.collectedAt)) ||
+    !Number.isSafeInteger(input.responsibilityPolicyVersion) ||
+    input.responsibilityPolicyVersion <= 0 ||
+    !input.decidedAt ||
+    Number.isNaN(Date.parse(input.decidedAt)) ||
     (input.payer !== 'store' && input.payer !== 'kyrub')
   ) {
     throw new Error('DELIVERY_WAITING_OBLIGATION_INPUT_INVALID');
@@ -117,9 +126,12 @@ export const buildDeliveryPaidWaitingCourierObligation = (input: {
     payer: input.payer,
     payerPrincipalId,
     waitingEvidenceRef: `delivery:${deliveryId}:paidWaitingEvidence`,
+    billableWaitingDecisionRef: `delivery:${deliveryId}:billableWaitingDecision`,
+    responsibilityPolicyId,
+    responsibilityPolicyVersion: input.responsibilityPolicyVersion,
     policyId,
     policyVersion: input.policyVersion,
-    createdAt: new Date(input.collectedAt).toISOString(),
+    createdAt: new Date(input.decidedAt).toISOString(),
     eligibleAt: '',
     settledAt: '',
     reversedAt: '',
