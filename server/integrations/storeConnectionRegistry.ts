@@ -45,6 +45,18 @@ const assertCredentialReference = (value: string): string => {
   return normalized;
 };
 
+export const parseStoreConnectionSyncAuthority = (
+  value: unknown
+): KyrubSyncAuthority => {
+  if (
+    value === 'external_to_kyrub' ||
+    value === 'kyrub_to_external' ||
+    value === 'bidirectional' ||
+    value === 'manual_review'
+  ) return value;
+  throw new Error('STORE_CONNECTION_SYNC_AUTHORITY_INVALID');
+};
+
 const publicProjection = (
   expectedStoreId: string,
   record: StoreConnectionRegistryRecord
@@ -118,4 +130,30 @@ export const listPublicStoreConnectionRegistry = async (
   return snapshot.docs.map(document =>
     publicProjection(storeId, document.data() as StoreConnectionRegistryRecord)
   );
+};
+
+export const updateStoreConnectionSyncAuthority = async (input: {
+  storeId: string;
+  connectionId: string;
+  syncAuthority: unknown;
+}): Promise<PublicStoreConnectionRecord> => {
+  const storeId = input.storeId.trim();
+  const connectionId = input.connectionId.trim();
+  if (!storeId || !connectionId) throw new Error('STORE_CONNECTION_TARGET_REQUIRED');
+  const syncAuthority = parseStoreConnectionSyncAuthority(input.syncAuthority);
+  const reference = adminDb.doc(storeConnectionPath(storeId, connectionId));
+  const updatedAt = new Date().toISOString();
+  await adminDb.runTransaction(async transaction => {
+    const snapshot = await transaction.get(reference);
+    if (!snapshot.exists) throw new Error('STORE_CONNECTION_NOT_FOUND');
+    assertStoreConnectionTenant(storeId, snapshot.data() as StoreConnectionRegistryRecord);
+    transaction.update(reference, {
+      syncAuthority,
+      updatedAt,
+      serverUpdatedAt: FieldValue.serverTimestamp(),
+    });
+  });
+  const updated = await getStoreConnectionRegistryRecord({ storeId, connectionId });
+  if (!updated) throw new Error('STORE_CONNECTION_NOT_FOUND');
+  return publicProjection(storeId, updated);
 };
