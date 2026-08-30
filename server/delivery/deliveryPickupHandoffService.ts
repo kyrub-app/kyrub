@@ -146,7 +146,7 @@ export const confirmSecureCourierPickupAndStartRoute = async (input: { deliveryI
     return { ok: true, deliveryId, status: 'delivering' };
   });
 
-  if (!result.ok) {
+  if (result.ok === false) {
     throw new Error(result.locked
       ? 'Código incorreto. A coleta foi bloqueada após 5 tentativas.'
       : `Código incorreto. Restam ${DELIVERY_PICKUP_MAX_ATTEMPTS - result.nextAttempts} tentativas.`);
