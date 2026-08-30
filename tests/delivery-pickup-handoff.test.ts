@@ -21,7 +21,7 @@ describe('secure courier pickup handoff', () => {
   });
 
   test('invalid attempts commit before the user-facing error and can lock at five', () => {
-    const transactionEnd = service.indexOf('if (!result.ok)');
+    const transactionEnd = service.indexOf('if (result.ok === false)');
     assert.match(service, /return \{ ok: false, nextAttempts, locked \}/);
     assert.match(service, /pickupHandoff\.status': 'locked'/);
     assert.ok(transactionEnd > service.indexOf('return { ok: false, nextAttempts, locked }'));
