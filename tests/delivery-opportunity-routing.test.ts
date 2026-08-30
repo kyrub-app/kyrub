@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import './courier-live-tracking.test';
+import './delivery-pickup-handoff.test';
 
 const serverSource = readFileSync('server.ts', 'utf8');
 const routerSource = readFileSync(
