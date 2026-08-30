@@ -16,6 +16,11 @@ import {
   DELIVERY_PAID_WAITING_POLICY_PATH,
   loadAuthoritativeDeliveryPaidWaitingPolicy,
 } from './deliveryPaidWaitingPolicyService.js';
+import {
+  DELIVERY_RESPONSIBILITY_POLICY_PATH,
+  loadAuthoritativeDeliveryResponsibilityPolicy,
+} from './deliveryResponsibilityPolicyService.js';
+import { materializeDeliveryResponsibilityAndWaitingDecision } from './deliveryResponsibilityDecisionOrchestrator.js';
 
 const DELIVERY_COLLECTION = 'hub/renda/deliveries';
 const DELIVERY_CLAIM_COLLECTION = 'deliveryClaims';
@@ -160,11 +165,15 @@ export const publishKyrubDeliveryOpportunity = async (
     scheduleReference.get(),
   ]);
   const now = Timestamp.now();
+  const nowIso = now.toDate().toISOString();
   const escalationAt = Timestamp.fromMillis(now.toMillis() + ESCALATION_DELAY_MS);
   const deliveryAddress = clean(order.deliveryAddress);
-  const waitingPolicySnapshot = existing.exists
-    ? null
-    : await loadAuthoritativeDeliveryPaidWaitingPolicy();
+  const [waitingPolicySnapshot, responsibilityPolicySnapshot] = existing.exists
+    ? [null, null]
+    : await Promise.all([
+        loadAuthoritativeDeliveryPaidWaitingPolicy(),
+        loadAuthoritativeDeliveryResponsibilityPolicy(nowIso),
+      ]);
 
   const payload = {
     id,
@@ -203,6 +212,13 @@ export const publishKyrubDeliveryOpportunity = async (
           waitingPolicySnapshotAuthority: 'kyrub_platform',
           waitingPolicySnapshotSource: DELIVERY_PAID_WAITING_POLICY_PATH,
           waitingPolicySnapshottedAt: now,
+          responsibilityPolicySnapshot,
+          responsibilityPolicySnapshotStatus: responsibilityPolicySnapshot
+            ? 'captured'
+            : 'unavailable_or_disabled',
+          responsibilityPolicySnapshotAuthority: 'kyrub_platform',
+          responsibilityPolicySnapshotSource: DELIVERY_RESPONSIBILITY_POLICY_PATH,
+          responsibilityPolicySnapshottedAt: now,
         }),
     updatedAt: FieldValue.serverTimestamp(),
   };
@@ -458,11 +474,19 @@ export const createDeliveryOpportunityRouter = (): Router => {
     try {
       const actor = await authenticatedActor(request);
       response.setHeader('Cache-Control', 'no-store, max-age=0');
-      response.json(await confirmSecureCourierPickupAndStartRoute({
+      const pickupResult = await confirmSecureCourierPickupAndStartRoute({
         deliveryId: request.params.deliveryId,
         courierId: actor.uid,
         handoffCode: clean(request.body?.handoffCode),
-      }));
+      });
+      try {
+        await materializeDeliveryResponsibilityAndWaitingDecision({
+          deliveryId: request.params.deliveryId,
+        });
+      } catch (orchestrationError) {
+        console.error('[Delivery Responsibility Orchestrator]', orchestrationError);
+      }
+      response.json(pickupResult);
     } catch (error) {
       errorResponse(response, error);
     }
