@@ -5,6 +5,7 @@ import { describe, test } from 'node:test';
 describe('secure courier pickup handoff', () => {
   const service = readFileSync('server/delivery/deliveryPickupHandoffService.ts', 'utf8');
   const router = readFileSync('server/delivery/deliveryOpportunityRouter.ts', 'utf8');
+  const eligibility = readFileSync('server/identity/workEligibilityMiddleware.ts', 'utf8');
   const courier = readFileSync('src/components/store/CourierLiveTrackingBridge.tsx', 'utf8');
   const store = readFileSync('src/components/store/StoreDeliveryTrackingBridge.tsx', 'utf8');
   const sync = readFileSync('src/components/store/KyrubDeliveryStatusSyncBridge.tsx', 'utf8');
@@ -20,7 +21,7 @@ describe('secure courier pickup handoff', () => {
   });
 
   test('invalid attempts commit before the user-facing error and can lock at five', () => {
-    const transactionEnd = service.indexOf("if (!result.ok)");
+    const transactionEnd = service.indexOf('if (!result.ok)');
     assert.match(service, /return \{ ok: false, nextAttempts, locked \}/);
     assert.match(service, /pickupHandoff\.status': 'locked'/);
     assert.ok(transactionEnd > service.indexOf('return { ok: false, nextAttempts, locked }'));
@@ -40,6 +41,8 @@ describe('secure courier pickup handoff', () => {
     assert.match(router, /Confirme a coleta segura antes de iniciar a rota/);
     assert.match(router, /:deliveryId\/secure-pickup/);
     assert.match(router, /:deliveryId\/pickup-code/);
+    assert.match(eligibility, /\(\?:status\|secure-pickup\)/);
+    assert.match(eligibility, /return 'courier'/);
   });
 
   test('store owns code display and courier enters it only after geofence arrival', () => {
