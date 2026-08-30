@@ -27,6 +27,10 @@ export interface DeliveryPickupCodeResult {
   maxAttempts: number;
 }
 
+type PickupAttemptResult =
+  | { ok: true; deliveryId: string; status: 'delivering' }
+  | { ok: false; nextAttempts: number; locked: boolean };
+
 export const readOrCreateDeliveryPickupCodeForStore = async (input: { deliveryId: string; storeId: string }): Promise<DeliveryPickupCodeResult> => {
   const deliveryId = validId(input.deliveryId, 'A entrega');
   const storeId = validId(input.storeId, 'A loja');
@@ -78,7 +82,7 @@ export const confirmSecureCourierPickupAndStartRoute = async (input: { deliveryI
   const trackingRef = adminDb.doc(`${DELIVERY_TRACKING_COLLECTION}/${deliveryId}`);
   const secretRef = adminDb.doc(`${DELIVERY_PICKUP_SECRET_COLLECTION}/${deliveryId}`);
 
-  return adminDb.runTransaction(async transaction => {
+  const result = await adminDb.runTransaction<PickupAttemptResult>(async transaction => {
     const [deliverySnapshot, claimSnapshot, trackingSnapshot, secretSnapshot] = await Promise.all([
       transaction.get(deliveryRef), transaction.get(claimRef), transaction.get(trackingRef), transaction.get(secretRef),
     ]);
@@ -86,7 +90,7 @@ export const confirmSecureCourierPickupAndStartRoute = async (input: { deliveryI
     const delivery = deliverySnapshot.data() as Record<string, unknown>;
     const claim = claimSnapshot.data() as Record<string, unknown>;
     if (clean(claim.courierId) !== courierId) throw new Error('Somente o entregador responsável pode confirmar a coleta.');
-    if (clean(delivery.status) === 'delivering') return { deliveryId, status: 'delivering' as const };
+    if (clean(delivery.status) === 'delivering') return { ok: true, deliveryId, status: 'delivering' };
     if (clean(delivery.status) !== 'accepted') throw new Error('A entrega precisa estar aceita antes da coleta.');
     if (clean(delivery.source) !== 'kyrub-order') throw new Error('A coleta segura só se aplica a entregas Kyrub de pedidos.');
 
@@ -111,18 +115,19 @@ export const confirmSecureCourierPickupAndStartRoute = async (input: { deliveryI
 
     if (!safeCodeEqual(deliveryId, expectedCode, handoffCode)) {
       const nextAttempts = attempts + 1;
+      const locked = nextAttempts >= DELIVERY_PICKUP_MAX_ATTEMPTS;
       transaction.update(secretRef, {
         attempts: nextAttempts,
         lastFailedAt: FieldValue.serverTimestamp(),
-        ...(nextAttempts >= DELIVERY_PICKUP_MAX_ATTEMPTS ? { lockedAt: FieldValue.serverTimestamp() } : {}),
+        ...(locked ? { lockedAt: FieldValue.serverTimestamp() } : {}),
         updatedAt: FieldValue.serverTimestamp(),
       });
       transaction.update(deliveryRef, {
         'pickupHandoff.attempts': nextAttempts,
-        ...(nextAttempts >= DELIVERY_PICKUP_MAX_ATTEMPTS ? { 'pickupHandoff.status': 'locked', 'pickupHandoff.lockedAt': FieldValue.serverTimestamp() } : {}),
+        ...(locked ? { 'pickupHandoff.status': 'locked', 'pickupHandoff.lockedAt': FieldValue.serverTimestamp() } : {}),
         updatedAt: FieldValue.serverTimestamp(),
       });
-      throw new Error(nextAttempts >= DELIVERY_PICKUP_MAX_ATTEMPTS ? 'Código incorreto. A coleta foi bloqueada após 5 tentativas.' : `Código incorreto. Restam ${DELIVERY_PICKUP_MAX_ATTEMPTS - nextAttempts} tentativas.`);
+      return { ok: false, nextAttempts, locked };
     }
 
     const handoff = {
@@ -138,6 +143,13 @@ export const confirmSecureCourierPickupAndStartRoute = async (input: { deliveryI
     transaction.update(claimRef, { status: 'delivering', pickupHandoff: handoff, collectedAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp() });
     transaction.update(deliveryRef, { status: 'delivering', orderStatus: liveOrderStatus, pickupHandoff: handoff, collectedAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp() });
     transaction.delete(secretRef);
-    return { deliveryId, status: 'delivering' as const };
+    return { ok: true, deliveryId, status: 'delivering' };
   });
+
+  if (!result.ok) {
+    throw new Error(result.locked
+      ? 'Código incorreto. A coleta foi bloqueada após 5 tentativas.'
+      : `Código incorreto. Restam ${DELIVERY_PICKUP_MAX_ATTEMPTS - result.nextAttempts} tentativas.`);
+  }
+  return { deliveryId: result.deliveryId, status: result.status };
 };
