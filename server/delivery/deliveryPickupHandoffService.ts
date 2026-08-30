@@ -6,7 +6,6 @@ import {
   type DeliveryPaidWaitingPolicySnapshot,
 } from '../../shared/deliveryPaidWaiting.js';
 import type { DeliveryOperationalEvent } from '../../shared/deliveryOperationalResponsibility.js';
-import { createPaidWaitingObligationFromApprovedDecision } from './deliveryPaidWaitingObligationService.js';
 
 const DELIVERY_COLLECTION = 'hub/renda/deliveries';
 const DELIVERY_CLAIM_COLLECTION = 'deliveryClaims';
@@ -264,17 +263,8 @@ export const confirmSecureCourierPickupAndStartRoute = async (input: { deliveryI
       collectedAt,
     });
 
-    // Physical waiting evidence is always preserved. Economic obligation is fail-closed:
-    // it may only be created from a separately persisted, approved billable waiting decision.
-    await createPaidWaitingObligationFromApprovedDecision({
-      transaction,
-      operationalStoreId: storeId,
-      orderId: sourceOrderId,
-      deliveryId,
-      courierId,
-      decision: delivery.billableWaitingDecision,
-    });
-
+    // Secure pickup only commits physical/operational facts. Responsibility, billability
+    // and any economic obligation are materialized later by the post-event orchestrator.
     if (!pickupEventSnapshot.exists) {
       const occurredAt = collectedAt.toDate().toISOString();
       const pickupEvent: DeliveryOperationalEvent = {
