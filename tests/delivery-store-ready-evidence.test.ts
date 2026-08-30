@@ -10,6 +10,10 @@ const manualOrderRouter = readFileSync(
   'server/inventory/orderInventoryRouter.ts',
   'utf8'
 );
+const inventoryService = readFileSync(
+  'server/inventory/orderInventoryService.ts',
+  'utf8'
+);
 const browserWorkflow = readFileSync(
   'src/utils/orderWorkflow.ts',
   'utf8'
@@ -19,12 +23,22 @@ const readyEvidenceService = readFileSync(
   'utf8'
 );
 
-test('manual KDS and Kyrubia ready transitions invoke server-side evidence persistence', () => {
-  assert.match(actionService, /normalizedProposal\.nextStatus === 'ready'/);
-  assert.match(actionService, /persistStoreMarkedReadyOperationalEvent/);
-  assert.match(actionService, /actorUid: actor\.uid/);
-  assert.match(manualOrderRouter, /status === 'ready'/);
-  assert.match(manualOrderRouter, /persistStoreMarkedReadyOperationalEvent/);
+test('manual KDS and Kyrubia share the same atomic ready transition path', () => {
+  assert.match(manualOrderRouter, /transitionOrderStatusWithInventory/);
+  assert.match(actionService, /transitionOrderStatusWithInventory/);
+  assert.match(inventoryService, /nextStatus === 'ready'/);
+  assert.match(inventoryService, /writeStoreMarkedReadyEvidenceInTransaction/);
+  assert.doesNotMatch(manualOrderRouter, /persistStoreMarkedReadyOperationalEvent/);
+  assert.doesNotMatch(actionService, /persistStoreMarkedReadyOperationalEvent/);
+});
+
+test('status inventory readyAt and ready evidence are committed by one Firestore transaction', () => {
+  assert.match(inventoryService, /adminDb\.runTransaction/);
+  assert.match(inventoryService, /await writeStoreMarkedReadyEvidenceInTransaction\(\{/);
+  assert.match(inventoryService, /applyInventoryForStatus\(\{/);
+  assert.match(readyEvidenceService, /transaction: Transaction/);
+  assert.match(readyEvidenceService, /input\.transaction\.set/);
+  assert.match(readyEvidenceService, /input\.transaction\.create/);
 });
 
 test('browser workflow sends status intent to backend instead of writing Firestore directly', () => {
@@ -53,7 +67,15 @@ test('store ready evidence is deterministic, idempotent and non-economic', () =>
 });
 
 test('operational event is only emitted for Kyrub delivery orders already in ready state', () => {
-  assert.match(readyEvidenceService, /clean\(order\.status\) !== 'ready'/);
-  assert.match(readyEvidenceService, /clean\(order\.fulfillmentType\) === 'delivery'/);
-  assert.match(readyEvidenceService, /clean\(order\.deliveryProvider\) === 'kyrub'/);
+  assert.match(readyEvidenceService, /clean\(input\.order\.status\) !== 'ready'/);
+  assert.match(readyEvidenceService, /clean\(input\.order\.fulfillmentType\) === 'delivery'/);
+  assert.match(readyEvidenceService, /clean\(input\.order\.deliveryProvider\) === 'kyrub'/);
+});
+
+test('ready event read happens before ready timestamp writes inside transaction helper', () => {
+  const eventRead = readyEvidenceService.indexOf('await input.transaction.get(eventReference)');
+  const readyWrite = readyEvidenceService.indexOf('input.transaction.set(');
+  assert.ok(eventRead >= 0);
+  assert.ok(readyWrite >= 0);
+  assert.ok(eventRead < readyWrite);
 });
