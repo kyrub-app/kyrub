@@ -5,6 +5,8 @@ import {
 
 export const PICKUP_HANDOFF_ELIGIBILITY_AUTHORITY =
   'pickup_handoff_handed_over' as const;
+export const DELIVERY_COMPLETION_ELIGIBILITY_AUTHORITY =
+  'buyer_confirmed_delivery' as const;
 
 export interface PickupHandoffEligibilityEvidence {
   storeId: string;
@@ -13,6 +15,15 @@ export interface PickupHandoffEligibilityEvidence {
   verifiedBy: string;
   handedOverAt: string;
   handedOverBy: string;
+}
+
+export interface DeliveryCompletionEligibilityEvidence {
+  storeId: string;
+  orderId: string;
+  deliveryId: string;
+  courierId: string;
+  buyerId: string;
+  confirmedAt: string;
 }
 
 export interface StoreReceivableEligibilityUpdate {
@@ -25,6 +36,18 @@ export interface StoreReceivableEligibilityUpdate {
     verifiedBy: string;
     handedOverAt: string;
     handedOverBy: string;
+  };
+}
+
+export interface CourierPayableEligibilityUpdate {
+  status: 'eligible';
+  eligibleAt: string;
+  eligibility: {
+    authority: typeof DELIVERY_COMPLETION_ELIGIBILITY_AUTHORITY;
+    reference: string;
+    buyerId: string;
+    courierId: string;
+    confirmedAt: string;
   };
 }
 
@@ -81,9 +104,6 @@ export const buildStoreReceivablePickupEligibilityUpdate = (input: {
     throw new Error('ECONOMIC_OBLIGATION_ELIGIBILITY_HANDOFF_ORDER_INVALID');
   }
 
-  // A future post-paid flow may create the economic obligation after the
-  // physical handoff. In that case eligibility starts when the obligation
-  // itself exists, while preserving the earlier handoff evidence.
   const eligibleAt = Date.parse(handedOverAt) >= Date.parse(createdAt)
     ? handedOverAt
     : createdAt;
@@ -98,6 +118,61 @@ export const buildStoreReceivablePickupEligibilityUpdate = (input: {
       verifiedBy,
       handedOverAt,
       handedOverBy,
+    },
+  };
+};
+
+export const buildCourierPayableDeliveryEligibilityUpdate = (input: {
+  obligation: EconomicObligation;
+  evidence: DeliveryCompletionEligibilityEvidence;
+}): CourierPayableEligibilityUpdate => {
+  const { obligation } = input;
+  const storeId = clean(input.evidence.storeId);
+  const orderId = clean(input.evidence.orderId);
+  const deliveryId = clean(input.evidence.deliveryId);
+  const courierId = clean(input.evidence.courierId);
+  const buyerId = clean(input.evidence.buyerId);
+  const confirmedAt = requireIso(input.evidence.confirmedAt, 'DELIVERY_CONFIRMED_AT');
+  const createdAt = requireIso(obligation.createdAt, 'OBLIGATION_CREATED_AT');
+
+  if (
+    obligation.schemaVersion !== ECONOMIC_OBLIGATION_SCHEMA_VERSION ||
+    obligation.kind !== 'courier_payable' ||
+    obligation.beneficiaryType !== 'courier' ||
+    obligation.beneficiaryPrincipalId !== courierId ||
+    obligation.currency !== 'BRL' ||
+    !Number.isSafeInteger(obligation.amountMinor) ||
+    obligation.amountMinor <= 0 ||
+    obligation.storeId !== storeId ||
+    obligation.orderId !== orderId ||
+    obligation.fulfillmentId !== deliveryId
+  ) {
+    throw new Error('ECONOMIC_OBLIGATION_ELIGIBILITY_COURIER_PAYABLE_MISMATCH');
+  }
+  if (obligation.status !== 'pending') {
+    throw new Error(
+      `ECONOMIC_OBLIGATION_ELIGIBILITY_STATUS_INVALID:${obligation.status}`
+    );
+  }
+  if (obligation.eligibleAt || obligation.settledAt || obligation.reversedAt) {
+    throw new Error('ECONOMIC_OBLIGATION_ELIGIBILITY_LIFECYCLE_CONFLICT');
+  }
+  if (!buyerId || !courierId || !deliveryId) {
+    throw new Error('ECONOMIC_OBLIGATION_ELIGIBILITY_DELIVERY_ACTOR_REQUIRED');
+  }
+  if (Date.parse(confirmedAt) < Date.parse(createdAt)) {
+    throw new Error('ECONOMIC_OBLIGATION_ELIGIBILITY_BEFORE_CREATION');
+  }
+
+  return {
+    status: 'eligible',
+    eligibleAt: confirmedAt,
+    eligibility: {
+      authority: DELIVERY_COMPLETION_ELIGIBILITY_AUTHORITY,
+      reference: `delivery:${deliveryId}:buyer_confirmation`,
+      buyerId,
+      courierId,
+      confirmedAt,
     },
   };
 };
