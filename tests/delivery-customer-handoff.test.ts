@@ -14,6 +14,14 @@ const eligibility = readFileSync(
   'shared/economicObligationEligibility.ts',
   'utf8'
 );
+const obligations = readFileSync(
+  'shared/economicObligations.ts',
+  'utf8'
+);
+const waitingObligation = readFileSync(
+  'shared/deliveryPaidWaitingObligation.ts',
+  'utf8'
+);
 const router = readFileSync(
   'server/delivery/deliveryOpportunityRouter.ts',
   'utf8'
@@ -84,6 +92,31 @@ describe('buyer-confirmed customer delivery handoff', () => {
     assert.match(eligibility, /kind !== 'courier_payable'/);
     assert.match(eligibility, /status: 'eligible'/);
     assert.match(eligibility, /eligibleAt: confirmedAt/);
+  });
+
+  test('paid waiting is a canonical courier obligation with its own source authority', () => {
+    assert.match(obligations, /'delivery_paid_waiting'/);
+    assert.match(waitingObligation, /kind: 'courier_payable'/);
+    assert.match(waitingObligation, /sourceAuthority: 'delivery_paid_waiting'/);
+    assert.match(waitingObligation, /status: 'pending'/);
+  });
+
+  test('buyer confirmation resolves waiting payable deterministically and makes it eligible atomically', () => {
+    assert.match(service, /buildDeliveryPaidWaitingObligationId/);
+    assert.match(service, /economicObligationPath\(canonicalStoreId, waitingObligationId\)/);
+    assert.match(service, /assertPaidWaitingPayableMatchesDelivery/);
+    assert.match(service, /sourceAuthority !== 'delivery_paid_waiting'/);
+    assert.match(service, /existingWaitingPayable\.status !== 'pending'/);
+    assert.match(service, /transaction\.update\(\s*waitingPayableRef,[\s\S]*?buildCourierPayableDeliveryEligibilityUpdate/);
+    assert.match(service, /buyerId,\s*confirmedAt/);
+  });
+
+  test('waiting payable cannot be made eligible for another delivery or courier', () => {
+    assert.match(service, /obligation\.fulfillmentId !== input\.deliveryId/);
+    assert.match(service, /obligation\.beneficiaryPrincipalId !== input\.courierId/);
+    assert.match(service, /obligation\.orderId !== input\.orderId/);
+    assert.match(service, /obligation\.storeId !== input\.canonicalStoreId/);
+    assert.match(service, /DELIVERY_WAITING_PAYABLE_CONFLICT/);
   });
 
   test('completion eligibility is not settlement, payout, transfer or wallet custody', () => {
