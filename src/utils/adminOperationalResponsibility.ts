@@ -93,7 +93,7 @@ export const loadAdminOperationalResponsibilityReview = async (
     throw new Error('Seu papel não possui acesso à responsabilidade operacional.');
   }
   const token = await user.getIdToken();
-  const response = await fetch('/api/admin/operational-responsibility/review-queue', {
+  const response = await fetch('/api/admin/operations/health?transport=operational-responsibility-review', {
     headers: { authorization: `Bearer ${token}` },
   });
   const payload = await response.json().catch(() => ({})) as Record<string, unknown>;
