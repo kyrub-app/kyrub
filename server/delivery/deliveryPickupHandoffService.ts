@@ -1,6 +1,10 @@
 import { createHash, randomInt, timingSafeEqual } from 'node:crypto';
-import { FieldValue } from 'firebase-admin/firestore';
+import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { adminDb } from '../firebaseAdmin.js';
+import {
+  calculateDeliveryPaidWaiting,
+  type DeliveryPaidWaitingPolicySnapshot,
+} from '../../shared/deliveryPaidWaiting.js';
 
 const DELIVERY_COLLECTION = 'hub/renda/deliveries';
 const DELIVERY_CLAIM_COLLECTION = 'deliveryClaims';
@@ -18,6 +22,93 @@ const orderPath = (storeId: string, orderId: string): string => `artifacts/${sto
 const codeHash = (deliveryId: string, code: string): Buffer => createHash('sha256').update(`${deliveryId}:${code}`).digest();
 const safeCodeEqual = (deliveryId: string, expected: string, supplied: string): boolean => timingSafeEqual(codeHash(deliveryId, expected), codeHash(deliveryId, supplied));
 const evidenceKind = (value: unknown): string => !value || typeof value !== 'object' || Array.isArray(value) ? '' : clean((value as Record<string, unknown>).kind);
+const record = (value: unknown): Record<string, unknown> => value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
+const serverTimestampMillis = (value: unknown): number | null => {
+  if (value && typeof value === 'object' && 'toMillis' in value && typeof (value as { toMillis?: unknown }).toMillis === 'function') {
+    const millis = (value as { toMillis: () => number }).toMillis();
+    return Number.isFinite(millis) ? millis : null;
+  }
+  return null;
+};
+const nonNegativeSafeInteger = (value: unknown): number | null => Number.isSafeInteger(value) && Number(value) >= 0 ? Number(value) : null;
+const positiveSafeInteger = (value: unknown): number | null => Number.isSafeInteger(value) && Number(value) > 0 ? Number(value) : null;
+
+const parsePaidWaitingPolicy = (value: unknown): DeliveryPaidWaitingPolicySnapshot | null => {
+  const raw = record(value);
+  const policyId = clean(raw.policyId);
+  const version = positiveSafeInteger(raw.version);
+  const freeMinutes = nonNegativeSafeInteger(raw.freeMinutes);
+  const billingIncrementMinutes = positiveSafeInteger(raw.billingIncrementMinutes);
+  const amountPerIncrementMinor = positiveSafeInteger(raw.amountPerIncrementMinor);
+  const maxAmountMinor = nonNegativeSafeInteger(raw.maxAmountMinor);
+  const payer = raw.payer === 'store' || raw.payer === 'kyrub' ? raw.payer : null;
+  if (
+    raw.enabled !== true ||
+    !policyId ||
+    version === null ||
+    freeMinutes === null ||
+    billingIncrementMinutes === null ||
+    amountPerIncrementMinor === null ||
+    maxAmountMinor === null ||
+    payer === null
+  ) {
+    return null;
+  }
+  return {
+    policyId,
+    version,
+    enabled: true,
+    freeMinutes,
+    billingIncrementMinutes,
+    amountPerIncrementMinor,
+    maxAmountMinor,
+    payer,
+  };
+};
+
+const buildPaidWaitingEvidence = (input: {
+  tracking: Record<string, unknown>;
+  delivery: Record<string, unknown>;
+  collectedAt: Timestamp;
+}): Record<string, unknown> => {
+  const arrival = record(input.tracking.storeArrivalEvidence);
+  const arrivedAtMs = serverTimestampMillis(arrival.detectedAt);
+  const policyRaw = input.delivery.waitingPolicySnapshot;
+  const policy = parsePaidWaitingPolicy(policyRaw);
+  if (arrivedAtMs === null) {
+    return {
+      status: 'not_chargeable',
+      reason: 'arrival_server_timestamp_missing',
+      source: 'store_geofence_to_secure_pickup',
+      amountMinor: 0,
+      currency: 'BRL',
+      policyApplied: false,
+      policySnapshotPresent: Object.keys(record(policyRaw)).length > 0,
+      collectedAt: input.collectedAt,
+    };
+  }
+
+  const result = calculateDeliveryPaidWaiting({
+    arrivedAtMs,
+    collectedAtMs: input.collectedAt.toMillis(),
+    policy,
+  });
+  return {
+    status: result.policyApplied ? 'calculated' : 'not_chargeable',
+    reason: result.policyApplied ? 'policy_applied' : 'policy_missing_or_invalid',
+    source: 'store_geofence_to_secure_pickup',
+    arrivedAt: arrival.detectedAt,
+    collectedAt: input.collectedAt,
+    totalWaitSeconds: result.totalWaitSeconds,
+    freeSeconds: result.freeSeconds,
+    billableSeconds: result.billableSeconds,
+    billedIncrements: result.billedIncrements,
+    amountMinor: result.amountMinor,
+    currency: 'BRL',
+    policyApplied: result.policyApplied,
+    policySnapshot: policy,
+  };
+};
 
 export interface DeliveryPickupCodeResult {
   deliveryId: string;
@@ -130,6 +221,12 @@ export const confirmSecureCourierPickupAndStartRoute = async (input: { deliveryI
       return { ok: false, nextAttempts, locked };
     }
 
+    const collectedAt = Timestamp.now();
+    const paidWaitingEvidence = buildPaidWaitingEvidence({
+      tracking: tracking ?? {},
+      delivery,
+      collectedAt,
+    });
     const handoff = {
       status: 'handed_over',
       method: 'delivery_pickup_code',
@@ -137,11 +234,11 @@ export const confirmSecureCourierPickupAndStartRoute = async (input: { deliveryI
       verifiedByCourierId: courierId,
       storeArrivalEvidenceKind: 'courier_inside_store_geofence',
       attempts,
-      verifiedAt: FieldValue.serverTimestamp(),
-      handedOverAt: FieldValue.serverTimestamp(),
+      verifiedAt: collectedAt,
+      handedOverAt: collectedAt,
     };
-    transaction.update(claimRef, { status: 'delivering', pickupHandoff: handoff, collectedAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp() });
-    transaction.update(deliveryRef, { status: 'delivering', orderStatus: liveOrderStatus, pickupHandoff: handoff, collectedAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp() });
+    transaction.update(claimRef, { status: 'delivering', pickupHandoff: handoff, paidWaitingEvidence, collectedAt, updatedAt: FieldValue.serverTimestamp() });
+    transaction.update(deliveryRef, { status: 'delivering', orderStatus: liveOrderStatus, pickupHandoff: handoff, paidWaitingEvidence, collectedAt, updatedAt: FieldValue.serverTimestamp() });
     transaction.delete(secretRef);
     return { ok: true, deliveryId, status: 'delivering' };
   });
