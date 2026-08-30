@@ -7,6 +7,10 @@ import {
   confirmSecureCourierPickupAndStartRoute,
   readOrCreateDeliveryPickupCodeForStore,
 } from './deliveryPickupHandoffService.js';
+import {
+  confirmBuyerReceivedDelivery,
+  markCourierArrivedAtCustomer,
+} from './deliveryCustomerHandoffService.js';
 
 const DELIVERY_COLLECTION = 'hub/renda/deliveries';
 const DELIVERY_CLAIM_COLLECTION = 'deliveryClaims';
@@ -98,12 +102,19 @@ const errorResponse = (response: Response, error: unknown): void => {
     response.status(403).json({ error: 'Somente a loja desta entrega pode consultar o código de coleta.' });
     return;
   }
+  if (message === 'DELIVERY_BUYER_CONFIRMATION_FORBIDDEN') {
+    response.status(403).json({
+      error: 'Somente o comprador deste pedido pode confirmar o recebimento.',
+      code: 'DELIVERY_BUYER_CONFIRMATION_FORBIDDEN',
+    });
+    return;
+  }
   if (/não identificado|inválido/i.test(message)) {
     response.status(400).json({ error: message });
     return;
   }
   if (
-    /não encontrado|não está pronto|não é uma entrega|entregador próprio|já aceitou|já foi aceita|somente o entregador|precisa estar aceita|confirme a coleta|código|geofence|rastreio|chegue à loja|coleta segura/i.test(
+    /não encontrado|não está pronto|não é uma entrega|entregador próprio|já aceitou|já foi aceita|somente o entregador|precisa estar aceita|confirme a coleta|código|geofence|rastreio|chegue à loja|coleta segura|rota precisa|chegada ao cliente|ainda não informou|confirmação do cliente|completion|payable|capture/i.test(
       message
     )
   ) {
@@ -284,6 +295,9 @@ export const updateKyrubDeliveryStatus = async (
     }
 
     if (currentStatus === 'done') return;
+    if (clean(delivery.source) === 'kyrub-order') {
+      throw new Error('A conclusão da entrega Kyrub depende da confirmação do cliente.');
+    }
     if (currentStatus !== 'delivering') {
       throw new Error('Confirme a coleta antes de concluir a entrega.');
     }
@@ -419,6 +433,32 @@ export const createDeliveryOpportunityRouter = (): Router => {
         deliveryId: request.params.deliveryId,
         courierId: actor.uid,
         handoffCode: clean(request.body?.handoffCode),
+      }));
+    } catch (error) {
+      errorResponse(response, error);
+    }
+  });
+
+  router.post('/:deliveryId/customer-arrival', async (request, response) => {
+    try {
+      const actor = await authenticatedActor(request);
+      response.setHeader('Cache-Control', 'no-store, max-age=0');
+      response.json(await markCourierArrivedAtCustomer({
+        deliveryId: request.params.deliveryId,
+        courierId: actor.uid,
+      }));
+    } catch (error) {
+      errorResponse(response, error);
+    }
+  });
+
+  router.post('/:deliveryId/buyer-confirmation', async (request, response) => {
+    try {
+      const buyerId = await authenticatedTenantId(request);
+      response.setHeader('Cache-Control', 'no-store, max-age=0');
+      response.json(await confirmBuyerReceivedDelivery({
+        deliveryId: request.params.deliveryId,
+        buyerId,
       }));
     } catch (error) {
       errorResponse(response, error);
