@@ -62,10 +62,10 @@ test('earnings endpoint derives courier identity from auth instead of request in
 test('Renda shows economic states without calling them balance or offering payout actions', () => {
   assert.match(renda, /CourierEarningsProjectionCard/);
   assert.match(card, /Ganhos em entregas/);
-  assert.match(card, />Previsto</);
-  assert.match(card, />Elegível</);
-  assert.match(card, />Liquidado</);
-  assert.match(card, />Revertido</);
+  assert.match(card, /'Previsto'/);
+  assert.match(card, /'Elegível'/);
+  assert.match(card, /'Liquidado'/);
+  assert.match(card, /'Revertido'/);
   assert.match(card, /\/api\/delivery-opportunities\/earnings/);
   assert.doesNotMatch(card, /saldo disponível|sacar|saque|payout|transferir/i);
 });
