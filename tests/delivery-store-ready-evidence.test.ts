@@ -6,15 +6,31 @@ const actionService = readFileSync(
   'server/actions/orderStatusExecutionService.ts',
   'utf8'
 );
+const manualOrderRouter = readFileSync(
+  'server/inventory/orderInventoryRouter.ts',
+  'utf8'
+);
+const browserWorkflow = readFileSync(
+  'src/utils/orderWorkflow.ts',
+  'utf8'
+);
 const readyEvidenceService = readFileSync(
   'server/delivery/deliveryStoreReadyOperationalEventService.ts',
   'utf8'
 );
 
-test('ready transition invokes server-side operational evidence persistence', () => {
+test('manual KDS and Kyrubia ready transitions invoke server-side evidence persistence', () => {
   assert.match(actionService, /normalizedProposal\.nextStatus === 'ready'/);
   assert.match(actionService, /persistStoreMarkedReadyOperationalEvent/);
   assert.match(actionService, /actorUid: actor\.uid/);
+  assert.match(manualOrderRouter, /status === 'ready'/);
+  assert.match(manualOrderRouter, /persistStoreMarkedReadyOperationalEvent/);
+});
+
+test('browser workflow sends status intent to backend instead of writing Firestore directly', () => {
+  assert.match(browserWorkflow, /\/api\/orders\/\$\{encodeURIComponent\(orderId\.trim\(\)\)\}\/status/);
+  assert.match(browserWorkflow, /body: JSON\.stringify\(\{ status: nextStatus, decision \}\)/);
+  assert.doesNotMatch(browserWorkflow, /updateDoc\(|setDoc\(|writeBatch\(/);
 });
 
 test('client cannot provide historical ready evidence timestamps', () => {
