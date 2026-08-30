@@ -35,6 +35,10 @@ const deliveryOpportunity = readFileSync(
   'server/delivery/deliveryOpportunityRouter.ts',
   'utf8'
 );
+const deliveryPickupHandoff = readFileSync(
+  'server/delivery/deliveryPickupHandoffService.ts',
+  'utf8'
+);
 const deliveryTracking = readFileSync(
   'server/delivery/deliveryTrackingRouter.ts',
   'utf8'
@@ -114,12 +118,15 @@ test('the materialized paid order feeds the seller inbox and KDS without a secon
   assert.doesNotMatch(retailer, /setPaymentIntent.*paid|isPaid\s*=\s*true/i);
 });
 
-test('a ready delivery order can become a courier opportunity tied to the source order', () => {
+test('a ready delivery order can become a courier opportunity and secure pickup owns route start', () => {
   assert.match(deliveryOpportunity, /fulfillmentType !== 'delivery'/);
-  assert.match(deliveryOpportunity, /\['ready', 'out_for_delivery'\]/);
+  assert.match(deliveryOpportunity, /\['preparing', 'ready', 'out_for_delivery'\]/);
   assert.match(deliveryOpportunity, /sourceOrderId/);
   assert.match(deliveryOpportunity, /deliveryClaims/);
   assert.match(deliveryOpportunity, /transaction\.create\(claimReference/);
+  assert.match(deliveryPickupHandoff, /liveOrderStatus !== 'ready'/);
+  assert.match(deliveryPickupHandoff, /courier_inside_store_geofence/);
+  assert.match(deliveryOpportunity, /Confirme a coleta segura antes de iniciar a rota/);
 });
 
 test('live GPS stays private and can be read only by buyer, merchant or assigned courier while active', () => {
