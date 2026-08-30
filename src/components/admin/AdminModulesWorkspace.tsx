@@ -8,6 +8,7 @@ import {
   Flag,
   Folder,
   Settings2,
+  ShieldAlert,
   ShieldCheck,
   Users,
 } from 'lucide-react';
@@ -19,6 +20,7 @@ import {
 import { auth } from '../../utils/firebase';
 import AdminAiOperationsDashboard from './AdminAiOperationsDashboard';
 import AdminIntegrationsWorkspace from './AdminIntegrationsWorkspace';
+import AdminOperationalResponsibilityWorkspace from './AdminOperationalResponsibilityWorkspace';
 
 interface AdminModuleDefinition {
   label: string;
@@ -159,8 +161,11 @@ export default function AdminModulesWorkspace({ profile }: { profile: AdminProfi
   const visibleModules = MODULES.filter(module => hasAdminPermission(profile, module.permission));
   const authenticatedUser = auth.currentUser;
   const superAdmin = profile.role === 'super_admin';
+  const canReviewResponsibility = profile.role === 'super_admin' || profile.role === 'operations';
 
-  if (visibleModules.length === 0 && !superAdmin) return null;
+  if (visibleModules.length === 0 && !superAdmin && !canReviewResponsibility) return null;
+
+  const specialModules = (superAdmin ? 2 : 0) + (canReviewResponsibility ? 1 : 0);
 
   return (
     <>
@@ -178,7 +183,7 @@ export default function AdminModulesWorkspace({ profile }: { profile: AdminProfi
             </p>
           </div>
           <span className="shrink-0 rounded-full border border-slate-800 bg-slate-900 px-2.5 py-1 text-[9px] font-black text-slate-400">
-            {visibleModules.filter(module => module.status === 'available').length + (superAdmin ? 2 : 0)} ativa(s)
+            {visibleModules.filter(module => module.status === 'available').length + specialModules} ativa(s)
           </span>
         </div>
 
@@ -187,8 +192,9 @@ export default function AdminModulesWorkspace({ profile }: { profile: AdminProfi
             const folderModules = visibleModules.filter(module => module.folder === folder.id);
             const FolderIcon = folder.icon;
             const hasIntegrations = superAdmin && folder.id === 'operations';
+            const hasResponsibility = canReviewResponsibility && folder.id === 'operations';
             const hasAiOps = superAdmin && folder.id === 'governance';
-            if (folderModules.length === 0 && !hasIntegrations && !hasAiOps) return null;
+            if (folderModules.length === 0 && !hasIntegrations && !hasResponsibility && !hasAiOps) return null;
 
             return (
               <article key={folder.id} className="rounded-[1.5rem] border border-slate-800 bg-slate-900/55 p-4">
@@ -218,6 +224,22 @@ export default function AdminModulesWorkspace({ profile }: { profile: AdminProfi
                       </div>
                       <h4 className="mt-2 text-[11px] font-black text-slate-200">Integrações & Vault</h4>
                       <p className="mt-1 text-[9px] leading-relaxed text-slate-600">Providers, credenciais protegidas e readiness das integrações.</p>
+                    </a>
+                  )}
+
+                  {hasResponsibility && (
+                    <a
+                      href="#admin-operational-responsibility"
+                      className="group rounded-xl border border-amber-500/20 bg-amber-500/5 p-3 transition hover:border-amber-400/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="rounded-lg bg-amber-500/10 p-2 text-amber-300">
+                          <ShieldAlert className="h-3.5 w-3.5" />
+                        </div>
+                        <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-[7px] font-black uppercase text-amber-300">Somente leitura</span>
+                      </div>
+                      <h4 className="mt-2 text-[11px] font-black text-slate-200">Responsabilidade Operacional</h4>
+                      <p className="mt-1 text-[9px] leading-relaxed text-slate-600">Casos ambíguos, incidentes externos e evidências que exigem revisão humana.</p>
                     </a>
                   )}
 
@@ -257,6 +279,10 @@ export default function AdminModulesWorkspace({ profile }: { profile: AdminProfi
       </section>
 
       {superAdmin && <AdminAiOperationsDashboard profile={profile} />}
+
+      {canReviewResponsibility && authenticatedUser && (
+        <AdminOperationalResponsibilityWorkspace authenticatedUser={authenticatedUser} profile={profile} />
+      )}
 
       {superAdmin && authenticatedUser && (
         <div id="admin-integrations">

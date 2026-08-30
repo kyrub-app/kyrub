@@ -19,6 +19,7 @@ import {
   mapCustomerArrivalPolicyAdminError,
   saveAuthorizedCustomerArrivalPolicy,
 } from './customerArrivalPolicyAdminService.js';
+import { loadOperationalResponsibilityReviewQueue } from './operationalResponsibilityRouter.js';
 
 const SYSTEM_HEALTH_ROLES = new Set(['super_admin', 'operations']);
 
@@ -67,6 +68,20 @@ const recordHealthAudit = async (admin: AuthorizedAdmin): Promise<void> => {
     actorRole: admin.role,
     targetType: 'control_plane',
     targetId: 'system_health',
+    source: 'server',
+    createdAt: FieldValue.serverTimestamp(),
+  });
+};
+
+const recordResponsibilityReviewAudit = async (admin: AuthorizedAdmin): Promise<void> => {
+  const auditId = randomUUID().replaceAll('-', '_');
+  await adminDb.doc(`kyrub_admin/control_plane/audit_logs/${auditId}`).set({
+    id: auditId,
+    action: 'admin.operational_responsibility.review_queue_viewed',
+    actorId: admin.uid,
+    actorRole: admin.role,
+    targetType: 'operational_responsibility',
+    targetId: 'review_queue',
     source: 'server',
     createdAt: FieldValue.serverTimestamp(),
   });
@@ -158,6 +173,18 @@ export const createOperationsHealthRouter = (): Router => {
       } catch (error) {
         const mapped = mapCustomerArrivalPolicyAdminError(error);
         response.status(mapped.status).json(mapped.body);
+      }
+      return;
+    }
+    if (transport === 'operational-responsibility-review') {
+      try {
+        const admin = await authorizeOperationsHealth(request.get('authorization') ?? '');
+        const snapshot = await loadOperationalResponsibilityReviewQueue();
+        await recordResponsibilityReviewAudit(admin);
+        response.setHeader('Cache-Control', 'no-store, max-age=0');
+        response.json(snapshot);
+      } catch (error) {
+        errorResponse(response, error);
       }
       return;
     }
