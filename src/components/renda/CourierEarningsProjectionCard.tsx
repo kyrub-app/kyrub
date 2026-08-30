@@ -10,11 +10,14 @@ type EarningsState =
   | 'reversed'
   | 'integrity_error';
 
+type EarningType = 'delivery_fee' | 'paid_waiting';
+
 interface EarningsEntry {
   obligationId: string;
   storeId: string;
   orderId: string;
   deliveryId: string;
+  earningType: EarningType;
   amountMinor: number;
   state: EarningsState;
   createdAt: string;
@@ -69,6 +72,11 @@ const STATE_LABEL: Record<EarningsState, string> = {
   settled: 'Liquidado',
   reversed: 'Revertido',
   integrity_error: 'Em análise',
+};
+
+const EARNING_LABEL: Record<EarningType, string> = {
+  delivery_fee: 'Frete da entrega',
+  paid_waiting: 'Espera remunerada',
 };
 
 const load = async (): Promise<EarningsSnapshot> => {
@@ -145,7 +153,7 @@ export function CourierEarningsProjectionCard() {
             </h3>
           </div>
           <p className="mt-2 text-[10px] leading-relaxed text-slate-400">
-            Projeção econômica das suas entregas Kyrub. Elegível e liquidado são estados diferentes.
+            Projeção econômica das suas entregas Kyrub. Frete e espera remunerada aparecem como lançamentos separados. Elegível e liquidado são estados diferentes.
           </p>
         </div>
         <button
@@ -198,6 +206,9 @@ export function CourierEarningsProjectionCard() {
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <p className="text-[9px] font-black text-white">
+                      {EARNING_LABEL[entry.earningType]}
+                    </p>
+                    <p className="mt-0.5 text-[8px] font-bold uppercase tracking-wide text-slate-400">
                       {STATE_LABEL[entry.state]}
                     </p>
                     <p className="mt-1 truncate font-mono text-[8px] text-slate-500">

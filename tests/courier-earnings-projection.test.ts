@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
+import { buildDeliveryPaidWaitingCourierObligation } from '../shared/deliveryPaidWaitingObligation';
+import { derivePayableProjections } from '../shared/economicObligationProjections';
 
 const service = readFileSync(
   'server/delivery/courierEarningsProjectionService.ts',
@@ -22,6 +24,39 @@ test('courier earnings are derived from payable projections scoped to authentica
   assert.match(service, /obligation\.kind === 'courier_payable'/);
   assert.match(service, /derivePayableProjections/);
   assert.match(service, /projection\.beneficiaryPrincipalId !== courierUserId/);
+});
+
+test('paid waiting obligation participates in the canonical payable projection as its own line', () => {
+  const waiting = buildDeliveryPaidWaitingCourierObligation({
+    canonicalStoreId: 'store-1',
+    orderId: 'order-1',
+    deliveryId: 'delivery-1',
+    courierId: 'courier-1',
+    amountMinor: 300,
+    payer: 'store',
+    policyId: 'wait-v1',
+    policyVersion: 1,
+    collectedAt: '2026-08-30T10:00:00.000Z',
+  });
+  const projections = derivePayableProjections({
+    obligations: [waiting],
+    settlements: [],
+  });
+  assert.equal(projections.length, 1);
+  assert.equal(projections[0].obligationId, waiting.id);
+  assert.equal(projections[0].amountMinor, 300);
+  assert.equal(projections[0].state, 'projected');
+  assert.equal(projections[0].fulfillmentId, 'delivery-1');
+});
+
+test('freight and paid waiting are classified by canonical source authority without netting', () => {
+  assert.match(service, /CourierEarningType = 'delivery_fee' \| 'paid_waiting'/);
+  assert.match(service, /sourceAuthority === 'delivery_paid_waiting'/);
+  assert.match(service, /sourceAuthority === 'economic_allocation_snapshot'/);
+  assert.match(service, /earningType: earningTypeFor\(obligation\)/);
+  assert.match(card, /delivery_fee: 'Frete da entrega'/);
+  assert.match(card, /paid_waiting: 'Espera remunerada'/);
+  assert.match(card, /Frete e espera remunerada aparecem como lançamentos separados/);
 });
 
 test('projected eligible settled and reversed remain separate economic states', () => {

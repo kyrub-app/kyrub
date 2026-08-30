@@ -3,6 +3,8 @@ import { derivePayableProjections } from '../../shared/economicObligationProject
 import type { EconomicObligation } from '../../shared/economicObligations.js';
 import type { EconomicSettlementRecord } from '../../shared/economicSettlements.js';
 
+export type CourierEarningType = 'delivery_fee' | 'paid_waiting';
+
 export interface CourierEarningsProjectionSnapshot {
   currency: 'BRL';
   totals: {
@@ -17,6 +19,7 @@ export interface CourierEarningsProjectionSnapshot {
     storeId: string;
     orderId: string;
     deliveryId: string;
+    earningType: CourierEarningType;
     amountMinor: number;
     state: 'projected' | 'eligible' | 'settled' | 'reversed' | 'integrity_error';
     createdAt: string;
@@ -35,6 +38,12 @@ const addSafe = (left: number, right: number): number => {
   const total = left + right;
   if (!Number.isSafeInteger(total)) throw new Error('COURIER_EARNINGS_TOTAL_OVERFLOW');
   return total;
+};
+
+const earningTypeFor = (obligation: EconomicObligation): CourierEarningType => {
+  if (obligation.sourceAuthority === 'delivery_paid_waiting') return 'paid_waiting';
+  if (obligation.sourceAuthority === 'economic_allocation_snapshot') return 'delivery_fee';
+  throw new Error('COURIER_EARNINGS_SOURCE_AUTHORITY_UNSUPPORTED');
 };
 
 export const loadCourierEarningsProjection = async (
@@ -126,6 +135,7 @@ export const loadCourierEarningsProjection = async (
           storeId: projection.storeId,
           orderId: projection.orderId,
           deliveryId: projection.fulfillmentId,
+          earningType: earningTypeFor(obligation),
           amountMinor: projection.amountMinor,
           state: projection.state,
           createdAt: obligation.createdAt,
