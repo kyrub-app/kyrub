@@ -2,9 +2,17 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { calculateDeliveryPaidWaiting } from '../shared/deliveryPaidWaiting';
+import {
+  buildDeliveryPaidWaitingCourierObligation,
+  buildDeliveryPaidWaitingObligationId,
+} from '../shared/deliveryPaidWaitingObligation';
 
 const pickup = readFileSync(
   'server/delivery/deliveryPickupHandoffService.ts',
+  'utf8'
+);
+const obligationService = readFileSync(
+  'server/delivery/deliveryPaidWaitingObligationService.ts',
   'utf8'
 );
 
@@ -77,11 +85,57 @@ test('invalid or missing economic policy cannot block physical pickup or invent 
   assert.match(pickup, /policy_missing_or_invalid/);
   assert.match(pickup, /amountMinor: 0/);
   assert.match(pickup, /status: 'not_chargeable'/);
+  assert.match(obligationService, /return null/);
 });
 
-test('waiting evidence does not create or settle economic obligations in pickup authority', () => {
+test('paid waiting obligation is deterministic, pending and explicit about payer and courier beneficiary', () => {
+  assert.equal(
+    buildDeliveryPaidWaitingObligationId({ deliveryId: 'delivery-1', courierId: 'courier-1' }),
+    'obligation:courier_payable:waiting:delivery-1:courier-1'
+  );
+  const obligation = buildDeliveryPaidWaitingCourierObligation({
+    canonicalStoreId: 'store-1',
+    orderId: 'order-1',
+    deliveryId: 'delivery-1',
+    courierId: 'courier-1',
+    amountMinor: 300,
+    payer: 'store',
+    policyId: 'pickup-wait-v1',
+    policyVersion: 1,
+    collectedAt: '2026-08-30T05:30:00.000Z',
+  });
+  assert.equal(obligation.kind, 'courier_payable');
+  assert.equal(obligation.status, 'pending');
+  assert.equal(obligation.beneficiaryPrincipalId, 'courier-1');
+  assert.equal(obligation.payer, 'store');
+  assert.equal(obligation.payerPrincipalId, 'store:store-1');
+  assert.equal(obligation.sourceAuthority, 'delivery_paid_waiting');
+  assert.equal(obligation.amountMinor, 300);
+  assert.equal(obligation.eligibleAt, '');
+});
+
+test('kyrub-funded waiting is explicit funding and is not charged to customer', () => {
+  const obligation = buildDeliveryPaidWaitingCourierObligation({
+    canonicalStoreId: 'store-1',
+    orderId: 'order-1',
+    deliveryId: 'delivery-1',
+    courierId: 'courier-1',
+    amountMinor: 450,
+    payer: 'kyrub',
+    policyId: 'pickup-wait-v2',
+    policyVersion: 2,
+    collectedAt: '2026-08-30T05:30:00.000Z',
+  });
+  assert.equal(obligation.funding.customerMinor, 0);
+  assert.equal(obligation.funding.kyrubMinor, 450);
+  assert.equal(obligation.payerPrincipalId, 'kyrub:platform');
+});
+
+test('secure pickup creates only pending paid-waiting obligation and never settles or pays out', () => {
+  assert.match(pickup, /createPaidWaitingObligationIfAuthoritative/);
+  assert.match(obligationService, /economicObligations/);
   assert.doesNotMatch(
-    pickup,
-    /economicObligationPath|economicSettlements|buildEconomicSettlement|status:\s*'settled'|payout|transfer|wallet|custod/i
+    `${pickup}\n${obligationService}`,
+    /economicSettlements|buildEconomicSettlement|status:\s*'settled'|payout|transfer|wallet|custod/i
   );
 });
