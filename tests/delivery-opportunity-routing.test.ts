@@ -5,6 +5,7 @@ import './courier-live-tracking.test';
 import './delivery-pickup-handoff.test';
 import './delivery-customer-handoff.test';
 import './courier-earnings-projection.test';
+import './paid-waiting-funding-responsibility-surfaces.test';
 
 const serverSource = readFileSync('server.ts', 'utf8');
 const routerSource = readFileSync(
