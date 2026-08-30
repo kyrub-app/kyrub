@@ -10,6 +10,10 @@ const opportunity = readFileSync(
   'server/delivery/deliveryOpportunityRouter.ts',
   'utf8'
 );
+const pickup = readFileSync(
+  'server/delivery/deliveryPickupHandoffService.ts',
+  'utf8'
+);
 const orchestrator = readFileSync(
   'server/delivery/deliveryResponsibilityDecisionOrchestrator.ts',
   'utf8'
@@ -38,6 +42,13 @@ test('secure pickup triggers post-event responsibility materialization', () => {
   assert.match(opportunity, /confirmSecureCourierPickupAndStartRoute/);
   assert.match(opportunity, /materializeDeliveryResponsibilityAndWaitingDecision/);
   assert.match(opportunity, /catch \(orchestrationError\)/);
+});
+
+test('secure pickup does not materialize an economic obligation directly', () => {
+  assert.doesNotMatch(pickup, /createPaidWaitingObligationFromApprovedDecision/);
+  assert.doesNotMatch(pickup, /deliveryPaidWaitingObligationService/);
+  assert.match(pickup, /post-event orchestrator/);
+  assert.match(pickup, /type: 'pickup_confirmed'/);
 });
 
 test('runtime materialization consumes canonical events before economic decision', () => {
