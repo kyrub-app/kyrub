@@ -15,7 +15,9 @@ export type EconomicObligationStatus =
   | 'reversed';
 
 export type EconomicObligationBeneficiaryType = 'store' | 'courier';
-export type EconomicObligationSourceAuthority = 'economic_allocation_snapshot';
+export type EconomicObligationSourceAuthority =
+  | 'economic_allocation_snapshot'
+  | 'delivery_paid_waiting';
 
 export interface EconomicObligationFundingSnapshot {
   customerMinor: number;
