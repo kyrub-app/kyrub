@@ -1,6 +1,4 @@
-import { Router, type Request, type Response } from 'express';
 import { adminDb } from '../firebaseAdmin.js';
-import { authorizeOperationsHealth } from './operationsHealthRouter.js';
 
 const DELIVERY_COLLECTION = 'hub/renda/deliveries';
 const REVIEW_LIMIT = 100;
@@ -11,14 +9,14 @@ const clean = (value: unknown): string =>
 const finiteInt = (value: unknown): number =>
   Number.isSafeInteger(value) ? Number(value) : 0;
 
-interface ResponsibilityReviewInterval {
+export interface ResponsibilityReviewInterval {
   responsibleActor: string;
   reasonCode: string;
   evidenceStatus: string;
   durationSeconds: number;
 }
 
-interface ResponsibilityReviewItem {
+export interface ResponsibilityReviewItem {
   deliveryId: string;
   orderId: string;
   storeId: string;
@@ -100,31 +98,4 @@ export const loadOperationalResponsibilityReviewQueue = async () => {
     },
     items,
   };
-};
-
-const mapError = (error: unknown): { status: number; body: { error: string; code: string } } => {
-  const message = error instanceof Error ? error.message : String(error);
-  if (message === 'AUTH_REQUIRED' || /id-token|expired|revoked/i.test(message)) {
-    return { status: 401, body: { error: 'Faça login novamente.', code: 'AUTH_REQUIRED' } };
-  }
-  if (message === 'EMAIL_NOT_VERIFIED' || message === 'FORBIDDEN') {
-    return { status: 403, body: { error: 'Acesso à responsabilidade operacional não autorizado.', code: 'FORBIDDEN' } };
-  }
-  console.error('[Admin Operational Responsibility]', error);
-  return { status: 503, body: { error: 'Não foi possível consultar a fila de responsabilidade agora.', code: 'RESPONSIBILITY_REVIEW_UNAVAILABLE' } };
-};
-
-export const createOperationalResponsibilityRouter = (): Router => {
-  const router = Router();
-  router.get('/review-queue', async (request: Request, response: Response) => {
-    try {
-      await authorizeOperationsHealth(request.get('authorization') ?? '');
-      response.setHeader('Cache-Control', 'no-store, max-age=0');
-      response.json(await loadOperationalResponsibilityReviewQueue());
-    } catch (error) {
-      const mapped = mapError(error);
-      response.status(mapped.status).json(mapped.body);
-    }
-  });
-  return router;
 };
