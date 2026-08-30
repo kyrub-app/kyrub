@@ -7,6 +7,7 @@ import {
   type EconomicObligation,
 } from '../../shared/economicObligations.js';
 import { buildCourierPayableDeliveryEligibilityUpdate } from '../../shared/economicObligationEligibility.js';
+import { buildDeliveryPaidWaitingObligationId } from '../../shared/deliveryPaidWaitingObligation.js';
 import type { StoreEconomicLedgerEntry } from '../../shared/storeEconomicLedger.js';
 
 const DELIVERY_COLLECTION = 'hub/renda/deliveries';
@@ -56,6 +57,30 @@ const assertExistingCourierPayableEquivalent = (
     if (existing[key] !== expected[key]) {
       throw new Error(`DELIVERY_COURIER_PAYABLE_CONFLICT:${String(key)}`);
     }
+  }
+};
+
+const assertPaidWaitingPayableMatchesDelivery = (input: {
+  obligation: EconomicObligation;
+  canonicalStoreId: string;
+  orderId: string;
+  deliveryId: string;
+  courierId: string;
+}): void => {
+  const { obligation } = input;
+  if (
+    obligation.kind !== 'courier_payable' ||
+    obligation.sourceAuthority !== 'delivery_paid_waiting' ||
+    obligation.storeId !== input.canonicalStoreId ||
+    obligation.orderId !== input.orderId ||
+    obligation.fulfillmentId !== input.deliveryId ||
+    obligation.beneficiaryType !== 'courier' ||
+    obligation.beneficiaryPrincipalId !== input.courierId ||
+    obligation.currency !== 'BRL' ||
+    !Number.isSafeInteger(obligation.amountMinor) ||
+    obligation.amountMinor <= 0
+  ) {
+    throw new Error('DELIVERY_WAITING_PAYABLE_CONFLICT');
   }
 };
 
@@ -204,12 +229,24 @@ export const confirmBuyerReceivedDelivery = async (input: {
     let courierPayable: EconomicObligation | null = null;
     let courierPayableRef: ReturnType<typeof adminDb.doc> | null = null;
     let existingCourierPayable: EconomicObligation | null = null;
+    let waitingPayableRef: ReturnType<typeof adminDb.doc> | null = null;
+    let existingWaitingPayable: EconomicObligation | null = null;
 
     if (canonicalStoreId) {
       const captureQuery = adminDb
         .collection(`stores/${canonicalStoreId}/economicLedger`)
         .where('orderId', '==', orderId);
-      const captureSnapshot = await transaction.get(captureQuery);
+      const waitingObligationId = buildDeliveryPaidWaitingObligationId({
+        deliveryId,
+        courierId,
+      });
+      waitingPayableRef = adminDb.doc(
+        economicObligationPath(canonicalStoreId, waitingObligationId)
+      );
+      const [captureSnapshot, waitingSnapshot] = await Promise.all([
+        transaction.get(captureQuery),
+        transaction.get(waitingPayableRef),
+      ]);
       const captures = captureSnapshot.docs
         .map(document => document.data() as StoreEconomicLedgerEntry)
         .filter(entry => entry.kind === 'payment_capture');
@@ -232,6 +269,16 @@ export const confirmBuyerReceivedDelivery = async (input: {
             assertExistingCourierPayableEquivalent(existingCourierPayable, courierPayable);
           }
         }
+      }
+      if (waitingSnapshot.exists) {
+        existingWaitingPayable = waitingSnapshot.data() as EconomicObligation;
+        assertPaidWaitingPayableMatchesDelivery({
+          obligation: existingWaitingPayable,
+          canonicalStoreId,
+          orderId,
+          deliveryId,
+          courierId,
+        });
       }
     }
 
@@ -311,11 +358,31 @@ export const confirmBuyerReceivedDelivery = async (input: {
       }
     }
 
+    if (existingWaitingPayable && waitingPayableRef) {
+      if (existingWaitingPayable.status !== 'pending') {
+        throw new Error(`DELIVERY_WAITING_PAYABLE_STATUS_INVALID:${existingWaitingPayable.status}`);
+      }
+      transaction.update(
+        waitingPayableRef,
+        buildCourierPayableDeliveryEligibilityUpdate({
+          obligation: existingWaitingPayable,
+          evidence: {
+            storeId: canonicalStoreId,
+            orderId,
+            deliveryId,
+            courierId,
+            buyerId,
+            confirmedAt,
+          },
+        })
+      );
+    }
+
     return {
       deliveryId,
       status: 'done' as const,
       settlementEligible: true as const,
-      courierPayableEligible: Boolean(courierPayable),
+      courierPayableEligible: Boolean(courierPayable || existingWaitingPayable),
     };
   });
 };
