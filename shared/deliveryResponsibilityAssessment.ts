@@ -5,20 +5,16 @@ import type {
 } from './deliveryOperationalResponsibility.js';
 
 export type DeliveryResponsibilityAssessmentStatus =
-  | 'billable_store_waiting'
-  | 'billable_customer_waiting'
-  | 'courier_delay'
-  | 'external_delay'
+  | 'attributed'
+  | 'external'
   | 'review_required'
-  | 'no_billable_delay';
+  | 'no_attributable_delay';
 
 export interface DeliveryResponsibilityAssessment {
   schemaVersion: 1;
   deliveryId: string;
   status: DeliveryResponsibilityAssessmentStatus;
   intervals: DeliveryResponsibilityInterval[];
-  billableStoreWaitingSeconds: number;
-  billableCustomerWaitingSeconds: number;
   assessedAt: string;
   policyId: string;
   policyVersion: number;
@@ -35,23 +31,17 @@ const eventOf = (
   type: DeliveryOperationalEvent['type']
 ): DeliveryOperationalEvent | null => events.find(event => event.type === type) ?? null;
 
-const interval = (input: {
-  startsAt: string;
-  endsAt: string;
-  responsibleActor: DeliveryResponsibilityInterval['responsibleActor'];
-  reasonCode: DeliveryResponsibilityInterval['reasonCode'];
-  confidence: DeliveryResponsibilityInterval['confidence'];
-  evidenceEventIds: string[];
-  economicallyBillable: boolean;
-}): DeliveryResponsibilityInterval | null => {
+const interval = (input: Omit<DeliveryResponsibilityInterval, 'durationSeconds'>): DeliveryResponsibilityInterval | null => {
   const start = millis(input.startsAt);
   const end = millis(input.endsAt);
   if (start === null || end === null || end < start) return null;
-  return {
-    ...input,
-    durationSeconds: Math.floor((end - start) / 1000),
-  };
+  return { ...input, durationSeconds: Math.floor((end - start) / 1000) };
 };
+
+const customerArrivalIsAuthoritative = (event: DeliveryOperationalEvent): boolean =>
+  event.type === 'courier_entered_customer_geofence' ||
+  event.authority === 'geofence' ||
+  event.authority === 'server';
 
 export const assessDeliveryOperationalResponsibility = (input: {
   deliveryId: string;
@@ -66,8 +56,6 @@ export const assessDeliveryOperationalResponsibility = (input: {
 
   const relevant = input.events.filter(event => event.deliveryId === deliveryId);
   const intervals: DeliveryResponsibilityInterval[] = [];
-  let billableStoreWaitingSeconds = 0;
-  let billableCustomerWaitingSeconds = 0;
 
   const storeArrival = eventOf(relevant, 'courier_entered_store_geofence');
   const storeReady = eventOf(relevant, 'store_marked_ready');
@@ -80,24 +68,29 @@ export const assessDeliveryOperationalResponsibility = (input: {
     if (arrivalMs !== null && pickupMs !== null && pickupMs >= arrivalMs) {
       const freeEndsMs = arrivalMs + input.policy.storeFreeWaitingSeconds * 1000;
       if (pickupMs > freeEndsMs) {
-        if (readyMs === null || readyMs > freeEndsMs) {
-          const storeResponsibleEndMs = readyMs === null ? pickupMs : Math.min(readyMs, pickupMs);
-          if (storeResponsibleEndMs > freeEndsMs) {
-            const candidate = interval({
-              startsAt: new Date(freeEndsMs).toISOString(),
-              endsAt: new Date(storeResponsibleEndMs).toISOString(),
-              responsibleActor: 'store',
-              reasonCode: 'store_not_ready_after_free_window',
-              confidence: readyMs === null ? 'low' : 'high',
-              evidenceEventIds: [storeArrival.id, ...(storeReady ? [storeReady.id] : []), pickup.id],
-              economicallyBillable: readyMs !== null,
-            });
-            if (candidate) {
-              intervals.push(candidate);
-              if (candidate.economicallyBillable) billableStoreWaitingSeconds += candidate.durationSeconds;
-            }
-          }
+        if (readyMs === null) {
+          const candidate = interval({
+            startsAt: new Date(freeEndsMs).toISOString(),
+            endsAt: pickup.occurredAt,
+            responsibleActor: 'undetermined',
+            reasonCode: 'insufficient_evidence',
+            evidenceStatus: 'review_required',
+            evidenceEventIds: [storeArrival.id, pickup.id],
+          });
+          if (candidate?.durationSeconds) intervals.push(candidate);
+        } else if (readyMs > freeEndsMs) {
+          const storeEndMs = Math.min(readyMs, pickupMs);
+          const candidate = interval({
+            startsAt: new Date(freeEndsMs).toISOString(),
+            endsAt: new Date(storeEndMs).toISOString(),
+            responsibleActor: 'store',
+            reasonCode: 'store_not_ready_after_free_window',
+            evidenceStatus: 'corroborated',
+            evidenceEventIds: [storeArrival.id, storeReady!.id, pickup.id],
+          });
+          if (candidate?.durationSeconds) intervals.push(candidate);
         }
+
         if (readyMs !== null && pickupMs > Math.max(readyMs, freeEndsMs)) {
           const courierStartMs = Math.max(readyMs, freeEndsMs);
           const candidate = interval({
@@ -105,9 +98,8 @@ export const assessDeliveryOperationalResponsibility = (input: {
             endsAt: pickup.occurredAt,
             responsibleActor: 'courier',
             reasonCode: 'courier_delayed_pickup_after_ready',
-            confidence: 'high',
+            evidenceStatus: 'corroborated',
             evidenceEventIds: [storeReady!.id, pickup.id],
-            economicallyBillable: false,
           });
           if (candidate?.durationSeconds) intervals.push(candidate);
         }
@@ -115,9 +107,12 @@ export const assessDeliveryOperationalResponsibility = (input: {
     }
   }
 
-  const customerArrival = eventOf(relevant, 'courier_arrived_customer');
+  const customerGeofenceArrival = eventOf(relevant, 'courier_entered_customer_geofence');
+  const customerDeclaredArrival = eventOf(relevant, 'courier_arrived_customer');
+  const customerArrival = customerGeofenceArrival ?? customerDeclaredArrival;
   const customerAvailable = eventOf(relevant, 'customer_available');
   const confirmed = eventOf(relevant, 'delivery_confirmed');
+
   if (customerArrival && confirmed) {
     const arrivalMs = millis(customerArrival.occurredAt);
     const confirmedMs = millis(confirmed.occurredAt);
@@ -125,30 +120,28 @@ export const assessDeliveryOperationalResponsibility = (input: {
     if (arrivalMs !== null && confirmedMs !== null && confirmedMs >= arrivalMs) {
       const freeEndsMs = arrivalMs + input.policy.customerFreeWaitingSeconds * 1000;
       if (confirmedMs > freeEndsMs && availableMs !== null && availableMs > freeEndsMs) {
-        const customerResponsibleEndMs = Math.min(availableMs, confirmedMs);
+        const customerEndMs = Math.min(availableMs, confirmedMs);
+        const authoritativeArrival = customerArrivalIsAuthoritative(customerArrival);
         const candidate = interval({
           startsAt: new Date(freeEndsMs).toISOString(),
-          endsAt: new Date(customerResponsibleEndMs).toISOString(),
-          responsibleActor: 'customer',
-          reasonCode: 'customer_not_available_after_free_window',
-          confidence: 'high',
+          endsAt: new Date(customerEndMs).toISOString(),
+          responsibleActor: authoritativeArrival ? 'customer' : 'undetermined',
+          reasonCode: authoritativeArrival
+            ? 'customer_not_available_after_free_window'
+            : 'location_evidence_conflict',
+          evidenceStatus: authoritativeArrival ? 'corroborated' : 'review_required',
           evidenceEventIds: [customerArrival.id, customerAvailable!.id, confirmed.id],
-          economicallyBillable: true,
         });
-        if (candidate) {
-          intervals.push(candidate);
-          billableCustomerWaitingSeconds += candidate.durationSeconds;
-        }
+        if (candidate?.durationSeconds) intervals.push(candidate);
       }
     }
   }
 
   const incident = eventOf(relevant, 'incident_reported');
-  let status: DeliveryResponsibilityAssessmentStatus = 'no_billable_delay';
-  if (incident) status = 'external_delay';
-  else if (billableStoreWaitingSeconds > 0) status = 'billable_store_waiting';
-  else if (billableCustomerWaitingSeconds > 0) status = 'billable_customer_waiting';
-  else if (intervals.some(item => item.responsibleActor === 'courier')) status = 'courier_delay';
+  let status: DeliveryResponsibilityAssessmentStatus = 'no_attributable_delay';
+  if (incident) status = 'external';
+  else if (intervals.some(item => item.evidenceStatus === 'review_required')) status = 'review_required';
+  else if (intervals.length > 0) status = 'attributed';
   else if ((storeArrival && !pickup) || (customerArrival && !confirmed)) status = 'review_required';
 
   return {
@@ -156,8 +149,6 @@ export const assessDeliveryOperationalResponsibility = (input: {
     deliveryId,
     status,
     intervals,
-    billableStoreWaitingSeconds,
-    billableCustomerWaitingSeconds,
     assessedAt: input.assessedAt,
     policyId: input.policy.policyId,
     policyVersion: input.policy.version,
