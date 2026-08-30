@@ -5,7 +5,7 @@ import {
   calculateDeliveryPaidWaiting,
   type DeliveryPaidWaitingPolicySnapshot,
 } from '../../shared/deliveryPaidWaiting.js';
-import { createPaidWaitingObligationIfAuthoritative } from './deliveryPaidWaitingObligationService.js';
+import { createPaidWaitingObligationFromApprovedDecision } from './deliveryPaidWaitingObligationService.js';
 
 const DELIVERY_COLLECTION = 'hub/renda/deliveries';
 const DELIVERY_CLAIM_COLLECTION = 'deliveryClaims';
@@ -228,14 +228,18 @@ export const confirmSecureCourierPickupAndStartRoute = async (input: { deliveryI
       delivery,
       collectedAt,
     });
-    await createPaidWaitingObligationIfAuthoritative({
+
+    // Physical waiting evidence is always preserved. Economic obligation is fail-closed:
+    // it may only be created from a separately persisted, approved billable waiting decision.
+    await createPaidWaitingObligationFromApprovedDecision({
       transaction,
       operationalStoreId: storeId,
       orderId: sourceOrderId,
       deliveryId,
       courierId,
-      evidence: paidWaitingEvidence,
+      decision: delivery.billableWaitingDecision,
     });
+
     const handoff = {
       status: 'handed_over',
       method: 'delivery_pickup_code',

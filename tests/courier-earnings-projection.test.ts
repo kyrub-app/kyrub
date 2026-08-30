@@ -26,6 +26,21 @@ const card = readFileSync(
 );
 const renda = readFileSync('src/components/tabs/RendaTab.tsx', 'utf8');
 
+const waitingObligation = (input: { amountMinor: number; payer: 'store' | 'kyrub' }) =>
+  buildDeliveryPaidWaitingCourierObligation({
+    canonicalStoreId: 'store-1',
+    orderId: 'order-1',
+    deliveryId: 'delivery-1',
+    courierId: 'courier-1',
+    amountMinor: input.amountMinor,
+    payer: input.payer,
+    policyId: 'wait-v1',
+    policyVersion: 1,
+    responsibilityPolicyId: 'responsibility-v1',
+    responsibilityPolicyVersion: 1,
+    decidedAt: '2026-08-30T10:00:00.000Z',
+  });
+
 test('courier earnings are derived from payable projections scoped to authenticated beneficiary', () => {
   assert.match(service, /collectionGroup\('economicObligations'\)/);
   assert.match(service, /beneficiaryPrincipalId', '==', courierUserId/);
@@ -35,21 +50,8 @@ test('courier earnings are derived from payable projections scoped to authentica
 });
 
 test('paid waiting obligation participates in the canonical payable projection as its own line', () => {
-  const waiting = buildDeliveryPaidWaitingCourierObligation({
-    canonicalStoreId: 'store-1',
-    orderId: 'order-1',
-    deliveryId: 'delivery-1',
-    courierId: 'courier-1',
-    amountMinor: 300,
-    payer: 'store',
-    policyId: 'wait-v1',
-    policyVersion: 1,
-    collectedAt: '2026-08-30T10:00:00.000Z',
-  });
-  const projections = derivePayableProjections({
-    obligations: [waiting],
-    settlements: [],
-  });
+  const waiting = waitingObligation({ amountMinor: 300, payer: 'store' });
+  const projections = derivePayableProjections({ obligations: [waiting], settlements: [] });
   assert.equal(projections.length, 1);
   assert.equal(projections[0].obligationId, waiting.id);
   assert.equal(projections[0].amountMinor, 300);
@@ -58,17 +60,7 @@ test('paid waiting obligation participates in the canonical payable projection a
 });
 
 test('store-paid waiting projects explicit store funding responsibility without claiming a debit', () => {
-  const waiting = buildDeliveryPaidWaitingCourierObligation({
-    canonicalStoreId: 'store-1',
-    orderId: 'order-1',
-    deliveryId: 'delivery-1',
-    courierId: 'courier-1',
-    amountMinor: 300,
-    payer: 'store',
-    policyId: 'wait-v1',
-    policyVersion: 1,
-    collectedAt: '2026-08-30T10:00:00.000Z',
-  });
+  const waiting = waitingObligation({ amountMinor: 300, payer: 'store' });
   const projection = deriveEconomicFundingResponsibilityProjection(waiting);
   assert.ok(projection);
   assert.equal(projection.payer, 'store');
@@ -82,17 +74,7 @@ test('store-paid waiting projects explicit store funding responsibility without 
 });
 
 test('Kyrub-paid waiting projects platform funding responsibility separately from store', () => {
-  const waiting = buildDeliveryPaidWaitingCourierObligation({
-    canonicalStoreId: 'store-1',
-    orderId: 'order-1',
-    deliveryId: 'delivery-1',
-    courierId: 'courier-1',
-    amountMinor: 450,
-    payer: 'kyrub',
-    policyId: 'wait-v1',
-    policyVersion: 1,
-    collectedAt: '2026-08-30T10:00:00.000Z',
-  });
+  const waiting = waitingObligation({ amountMinor: 450, payer: 'kyrub' });
   const projection = deriveEconomicFundingResponsibilityProjection(waiting);
   assert.ok(projection);
   assert.equal(projection.payer, 'kyrub');
@@ -101,22 +83,9 @@ test('Kyrub-paid waiting projects platform funding responsibility separately fro
 });
 
 test('funding responsibility fails closed when payer identity conflicts with frozen policy evidence', () => {
-  const waiting = buildDeliveryPaidWaitingCourierObligation({
-    canonicalStoreId: 'store-1',
-    orderId: 'order-1',
-    deliveryId: 'delivery-1',
-    courierId: 'courier-1',
-    amountMinor: 300,
-    payer: 'store',
-    policyId: 'wait-v1',
-    policyVersion: 1,
-    collectedAt: '2026-08-30T10:00:00.000Z',
-  });
+  const waiting = waitingObligation({ amountMinor: 300, payer: 'store' });
   assert.throws(
-    () => deriveEconomicFundingResponsibilityProjection({
-      ...waiting,
-      payerPrincipalId: 'kyrub:platform',
-    }),
+    () => deriveEconomicFundingResponsibilityProjection({ ...waiting, payerPrincipalId: 'kyrub:platform' }),
     /ECONOMIC_FUNDING_RESPONSIBILITY_WAITING_OBLIGATION_INVALID/
   );
 });

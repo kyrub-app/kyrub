@@ -27,13 +27,23 @@ const policy = {
   payer: 'store' as const,
 };
 
+const obligationInput = (payer: 'store' | 'kyrub', amountMinor: number, policyVersion = 1) => ({
+  canonicalStoreId: 'store-1',
+  orderId: 'order-1',
+  deliveryId: 'delivery-1',
+  courierId: 'courier-1',
+  amountMinor,
+  payer,
+  policyId: `pickup-wait-v${policyVersion}`,
+  policyVersion,
+  responsibilityPolicyId: 'delivery-responsibility-v1',
+  responsibilityPolicyVersion: 1,
+  decidedAt: '2026-08-30T05:30:00.000Z',
+});
+
 test('waiting without an explicit policy never creates a charge', () => {
   assert.deepEqual(
-    calculateDeliveryPaidWaiting({
-      arrivedAtMs: 0,
-      collectedAtMs: 15 * 60_000,
-      policy: null,
-    }),
+    calculateDeliveryPaidWaiting({ arrivedAtMs: 0, collectedAtMs: 15 * 60_000, policy: null }),
     {
       totalWaitSeconds: 900,
       freeSeconds: 900,
@@ -46,30 +56,18 @@ test('waiting without an explicit policy never creates a charge', () => {
 });
 
 test('waiting applies free time, rounds billable time by increment and caps amount', () => {
-  const sevenMinutes = calculateDeliveryPaidWaiting({
-    arrivedAtMs: 0,
-    collectedAtMs: 7 * 60_000,
-    policy,
-  });
+  const sevenMinutes = calculateDeliveryPaidWaiting({ arrivedAtMs: 0, collectedAtMs: 7 * 60_000, policy });
   assert.equal(sevenMinutes.billableSeconds, 120);
   assert.equal(sevenMinutes.billedIncrements, 1);
   assert.equal(sevenMinutes.amountMinor, 150);
 
-  const longWait = calculateDeliveryPaidWaiting({
-    arrivedAtMs: 0,
-    collectedAtMs: 30 * 60_000,
-    policy,
-  });
+  const longWait = calculateDeliveryPaidWaiting({ arrivedAtMs: 0, collectedAtMs: 30 * 60_000, policy });
   assert.equal(longWait.amountMinor, 600);
 });
 
 test('negative waiting duration is rejected', () => {
   assert.throws(
-    () => calculateDeliveryPaidWaiting({
-      arrivedAtMs: 2_000,
-      collectedAtMs: 1_000,
-      policy,
-    }),
+    () => calculateDeliveryPaidWaiting({ arrivedAtMs: 2_000, collectedAtMs: 1_000, policy }),
     /DELIVERY_WAITING_NEGATIVE_DURATION/
   );
 });
@@ -88,22 +86,12 @@ test('invalid or missing economic policy cannot block physical pickup or invent 
   assert.match(obligationService, /return null/);
 });
 
-test('paid waiting obligation is deterministic, pending and explicit about payer and courier beneficiary', () => {
+test('paid waiting obligation is deterministic, pending and references its approved decision', () => {
   assert.equal(
     buildDeliveryPaidWaitingObligationId({ deliveryId: 'delivery-1', courierId: 'courier-1' }),
     'obligation:courier_payable:waiting:delivery-1:courier-1'
   );
-  const obligation = buildDeliveryPaidWaitingCourierObligation({
-    canonicalStoreId: 'store-1',
-    orderId: 'order-1',
-    deliveryId: 'delivery-1',
-    courierId: 'courier-1',
-    amountMinor: 300,
-    payer: 'store',
-    policyId: 'pickup-wait-v1',
-    policyVersion: 1,
-    collectedAt: '2026-08-30T05:30:00.000Z',
-  });
+  const obligation = buildDeliveryPaidWaitingCourierObligation(obligationInput('store', 300));
   assert.equal(obligation.kind, 'courier_payable');
   assert.equal(obligation.status, 'pending');
   assert.equal(obligation.beneficiaryPrincipalId, 'courier-1');
@@ -111,28 +99,23 @@ test('paid waiting obligation is deterministic, pending and explicit about payer
   assert.equal(obligation.payerPrincipalId, 'store:store-1');
   assert.equal(obligation.sourceAuthority, 'delivery_paid_waiting');
   assert.equal(obligation.amountMinor, 300);
+  assert.equal(obligation.billableWaitingDecisionRef, 'delivery:delivery-1:billableWaitingDecision');
+  assert.equal(obligation.responsibilityPolicyId, 'delivery-responsibility-v1');
   assert.equal(obligation.eligibleAt, '');
 });
 
 test('kyrub-funded waiting is explicit funding and is not charged to customer', () => {
-  const obligation = buildDeliveryPaidWaitingCourierObligation({
-    canonicalStoreId: 'store-1',
-    orderId: 'order-1',
-    deliveryId: 'delivery-1',
-    courierId: 'courier-1',
-    amountMinor: 450,
-    payer: 'kyrub',
-    policyId: 'pickup-wait-v2',
-    policyVersion: 2,
-    collectedAt: '2026-08-30T05:30:00.000Z',
-  });
+  const obligation = buildDeliveryPaidWaitingCourierObligation(obligationInput('kyrub', 450, 2));
   assert.equal(obligation.funding.customerMinor, 0);
   assert.equal(obligation.funding.kyrubMinor, 450);
   assert.equal(obligation.payerPrincipalId, 'kyrub:platform');
 });
 
-test('secure pickup creates only pending paid-waiting obligation and never settles or pays out', () => {
-  assert.match(pickup, /createPaidWaitingObligationIfAuthoritative/);
+test('secure pickup only materializes paid-waiting obligation from an approved decision', () => {
+  assert.match(pickup, /createPaidWaitingObligationFromApprovedDecision/);
+  assert.match(pickup, /decision: delivery\.billableWaitingDecision/);
+  assert.match(obligationService, /raw\.status !== 'approved'/);
+  assert.match(obligationService, /kyrub_billable_waiting_decision_engine/);
   assert.match(obligationService, /economicObligations/);
   assert.doesNotMatch(
     `${pickup}\n${obligationService}`,

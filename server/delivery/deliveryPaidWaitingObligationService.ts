@@ -11,52 +11,70 @@ const record = (value: unknown): Record<string, unknown> =>
     ? value as Record<string, unknown>
     : {};
 
-const timestampIso = (value: unknown): string => {
+const positiveSafeInteger = (value: unknown): number | null =>
+  Number.isSafeInteger(value) && Number(value) > 0 ? Number(value) : null;
+
+const parseApprovedDecision = (value: unknown, deliveryId: string): {
+  amountMinor: number;
+  payer: 'store' | 'kyrub';
+  policyId: string;
+  policyVersion: number;
+  responsibilityPolicyId: string;
+  responsibilityPolicyVersion: number;
+  decidedAt: string;
+} | null => {
+  const raw = record(value);
+  const sourceInterval = record(raw.sourceInterval);
+  const amountMinor = positiveSafeInteger(raw.amountMinor);
+  const policyId = clean(raw.economicPolicyId);
+  const policyVersion = positiveSafeInteger(raw.economicPolicyVersion);
+  const responsibilityPolicyId = clean(raw.responsibilityPolicyId);
+  const responsibilityPolicyVersion = positiveSafeInteger(raw.responsibilityPolicyVersion);
+  const decidedAt = clean(raw.decidedAt);
+  const payer = raw.payer === 'store' || raw.payer === 'kyrub' ? raw.payer : null;
+
   if (
-    value &&
-    typeof value === 'object' &&
-    'toDate' in value &&
-    typeof (value as { toDate?: unknown }).toDate === 'function'
+    raw.schemaVersion !== 1 ||
+    raw.status !== 'approved' ||
+    raw.authority !== 'kyrub_billable_waiting_decision_engine' ||
+    clean(raw.deliveryId) !== deliveryId ||
+    raw.currency !== 'BRL' ||
+    raw.responsibleActor !== 'store' ||
+    payer === null ||
+    amountMinor === null ||
+    !policyId ||
+    policyVersion === null ||
+    !responsibilityPolicyId ||
+    responsibilityPolicyVersion === null ||
+    !decidedAt ||
+    Number.isNaN(Date.parse(decidedAt)) ||
+    sourceInterval.reasonCode !== 'store_not_ready_after_free_window' ||
+    (sourceInterval.evidenceStatus !== 'authoritative' && sourceInterval.evidenceStatus !== 'corroborated')
   ) {
-    return (value as { toDate: () => Date }).toDate().toISOString();
+    return null;
   }
-  return '';
+
+  return {
+    amountMinor,
+    payer,
+    policyId,
+    policyVersion,
+    responsibilityPolicyId,
+    responsibilityPolicyVersion,
+    decidedAt,
+  };
 };
 
-export const createPaidWaitingObligationIfAuthoritative = async (input: {
+export const createPaidWaitingObligationFromApprovedDecision = async (input: {
   transaction: Transaction;
   operationalStoreId: string;
   orderId: string;
   deliveryId: string;
   courierId: string;
-  evidence: Record<string, unknown>;
+  decision: unknown;
 }): Promise<DeliveryPaidWaitingCourierObligation | null> => {
-  const amountMinor = Number(input.evidence.amountMinor);
-  if (
-    input.evidence.status !== 'calculated' ||
-    input.evidence.policyApplied !== true ||
-    !Number.isSafeInteger(amountMinor) ||
-    amountMinor <= 0
-  ) {
-    return null;
-  }
-
-  const policy = record(input.evidence.policySnapshot);
-  const payer = policy.payer === 'store' || policy.payer === 'kyrub'
-    ? policy.payer
-    : null;
-  const policyId = clean(policy.policyId);
-  const policyVersion = Number(policy.version);
-  const collectedAt = timestampIso(input.evidence.collectedAt);
-  if (
-    !payer ||
-    !policyId ||
-    !Number.isSafeInteger(policyVersion) ||
-    policyVersion <= 0 ||
-    !collectedAt
-  ) {
-    return null;
-  }
+  const decision = parseApprovedDecision(input.decision, input.deliveryId);
+  if (!decision) return null;
 
   const tenantSnapshot = await input.transaction.get(
     adminDb.doc(`tenants/${input.operationalStoreId}`)
@@ -69,11 +87,13 @@ export const createPaidWaitingObligationIfAuthoritative = async (input: {
     orderId: input.orderId,
     deliveryId: input.deliveryId,
     courierId: input.courierId,
-    amountMinor,
-    payer,
-    policyId,
-    policyVersion,
-    collectedAt,
+    amountMinor: decision.amountMinor,
+    payer: decision.payer,
+    policyId: decision.policyId,
+    policyVersion: decision.policyVersion,
+    responsibilityPolicyId: decision.responsibilityPolicyId,
+    responsibilityPolicyVersion: decision.responsibilityPolicyVersion,
+    decidedAt: decision.decidedAt,
   });
   const obligationRef = adminDb.doc(
     `stores/${canonicalStoreId}/economicObligations/${encodeURIComponent(obligation.id)}`
@@ -92,7 +112,10 @@ export const createPaidWaitingObligationIfAuthoritative = async (input: {
       existing.sourceAuthority === obligation.sourceAuthority &&
       existing.payer === obligation.payer &&
       clean(existing.policyId) === obligation.policyId &&
-      Number(existing.policyVersion) === obligation.policyVersion;
+      Number(existing.policyVersion) === obligation.policyVersion &&
+      clean(existing.responsibilityPolicyId) === obligation.responsibilityPolicyId &&
+      Number(existing.responsibilityPolicyVersion) === obligation.responsibilityPolicyVersion &&
+      clean(existing.billableWaitingDecisionRef) === obligation.billableWaitingDecisionRef;
     return same ? obligation : null;
   }
 
