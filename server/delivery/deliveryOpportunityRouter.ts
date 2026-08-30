@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { Router, type Request, type Response } from 'express';
 import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 import type { DecodedIdToken } from 'firebase-admin/auth';
+import { buildDeliveryCustomerDestinationSnapshot } from '../../shared/deliveryCustomerDestination.js';
 import { adminAuth, adminDb } from '../firebaseAdmin';
 import {
   confirmSecureCourierPickupAndStartRoute,
@@ -22,6 +23,10 @@ import {
 } from './deliveryResponsibilityPolicyService.js';
 import { materializeDeliveryResponsibilityAndWaitingDecision } from './deliveryResponsibilityDecisionOrchestrator.js';
 import { buildDeliveryDestinationResolutionSnapshotFields } from './deliveryDestinationResolutionSnapshotService.js';
+import {
+  DELIVERY_CUSTOMER_ARRIVAL_POLICY_PATH,
+  loadAuthoritativeDeliveryCustomerArrivalPolicy,
+} from './deliveryCustomerArrivalPolicyService.js';
 
 const DELIVERY_COLLECTION = 'hub/renda/deliveries';
 const DELIVERY_CLAIM_COLLECTION = 'deliveryClaims';
@@ -125,7 +130,7 @@ const errorResponse = (response: Response, error: unknown): void => {
     return;
   }
   if (
-    /não encontrado|não está pronto|não é uma entrega|entregador próprio|já aceitou|já foi aceita|somente o entregador|precisa estar aceita|confirme a coleta|código|geofence|rastreio|chegue à loja|coleta segura|rota precisa|chegada ao cliente|ainda não informou|confirmação do cliente|completion|payable|capture|DELIVERY_DESTINATION_RESOLUTION_/i.test(
+    /não encontrado|não está pronto|não é uma entrega|entregador próprio|já aceitou|já foi aceita|somente o entregador|precisa estar aceita|confirme a coleta|código|geofence|rastreio|chegue à loja|coleta segura|rota precisa|chegada ao cliente|ainda não informou|confirmação do cliente|completion|payable|capture|DELIVERY_DESTINATION_RESOLUTION_|DELIVERY_CUSTOMER_ARRIVAL_POLICY_/i.test(
       message
     )
   ) {
@@ -172,12 +177,24 @@ export const publishKyrubDeliveryOpportunity = async (
   const destinationResolutionSnapshot = existing.exists
     ? null
     : buildDeliveryDestinationResolutionSnapshotFields(order);
-  const [waitingPolicySnapshot, responsibilityPolicySnapshot] = existing.exists
-    ? [null, null]
+  const [waitingPolicySnapshot, responsibilityPolicySnapshot, customerArrivalPolicySnapshot] = existing.exists
+    ? [null, null, null]
     : await Promise.all([
         loadAuthoritativeDeliveryPaidWaitingPolicy(),
         loadAuthoritativeDeliveryResponsibilityPolicy(nowIso),
+        loadAuthoritativeDeliveryCustomerArrivalPolicy(nowIso),
       ]);
+  const customerGeofenceSnapshot =
+    destinationResolutionSnapshot?.customerDestinationResolutionSnapshotStatus === 'resolved' &&
+    destinationResolutionSnapshot.customerDestinationResolutionSnapshot &&
+    customerArrivalPolicySnapshot
+      ? buildDeliveryCustomerDestinationSnapshot({
+          latitude: destinationResolutionSnapshot.customerDestinationResolutionSnapshot.latitude,
+          longitude: destinationResolutionSnapshot.customerDestinationResolutionSnapshot.longitude,
+          radiusMeters: customerArrivalPolicySnapshot.radiusMeters,
+          snapshottedAt: nowIso,
+        })
+      : null;
 
   const payload = {
     id,
@@ -211,6 +228,24 @@ export const publishKyrubDeliveryOpportunity = async (
       : {
           ...destinationResolutionSnapshot,
           customerDestinationResolutionSnapshottedAt: now,
+          customerArrivalPolicySnapshot,
+          customerArrivalPolicySnapshotStatus: customerArrivalPolicySnapshot
+            ? 'captured'
+            : 'unavailable_or_disabled',
+          customerArrivalPolicySnapshotAuthority: 'kyrub_platform',
+          customerArrivalPolicySnapshotSource: DELIVERY_CUSTOMER_ARRIVAL_POLICY_PATH,
+          customerArrivalPolicySnapshottedAt: now,
+          ...(customerGeofenceSnapshot ? { customerGeofenceSnapshot } : {}),
+          customerGeofenceSnapshotStatus: customerGeofenceSnapshot
+            ? 'captured'
+            : destinationResolutionSnapshot?.customerDestinationResolutionSnapshotStatus === 'review_required'
+              ? 'destination_review_required'
+              : customerArrivalPolicySnapshot
+                ? 'destination_unavailable'
+                : 'policy_unavailable_or_disabled',
+          customerGeofenceSnapshotAuthority: customerGeofenceSnapshot
+            ? 'kyrub_server'
+            : 'none',
           waitingPolicySnapshot,
           waitingPolicySnapshotStatus: waitingPolicySnapshot
             ? 'captured'
