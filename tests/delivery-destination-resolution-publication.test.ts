@@ -4,6 +4,9 @@ import test from 'node:test';
 import {
   buildDeliveryDestinationResolutionSnapshotFields,
 } from '../server/delivery/deliveryDestinationResolutionSnapshotService.js';
+import {
+  buildDeliveryCustomerArrivalPolicySnapshot,
+} from '../shared/deliveryCustomerArrivalPolicy.js';
 
 const resolution = {
   schemaVersion: 1 as const,
@@ -65,14 +68,46 @@ test('legacy orders without destination resolution are marked missing, not guess
   assert.equal(fields.customerDestinationResolutionSnapshot, undefined);
 });
 
-test('delivery opportunity publication freezes destination metadata only on first creation and does not mint a geofence', async () => {
+test('customer arrival policy requires an explicit positive radius and has no default', () => {
+  assert.throws(
+    () => buildDeliveryCustomerArrivalPolicySnapshot({
+      policyId: 'customer-arrival-v1',
+      version: 1,
+      radiusMeters: 0,
+      snapshottedAt: '2026-08-30T20:00:00.000Z',
+    }),
+    /DELIVERY_CUSTOMER_ARRIVAL_POLICY_INVALID/
+  );
+  const policy = buildDeliveryCustomerArrivalPolicySnapshot({
+    policyId: 'customer-arrival-v1',
+    version: 1,
+    radiusMeters: 80,
+    snapshottedAt: '2026-08-30T20:00:00.000Z',
+  });
+  assert.equal(policy.radiusMeters, 80);
+  assert.equal(policy.authority, 'kyrub_platform');
+});
+
+test('delivery opportunity creates geofence only from resolved destination plus explicit versioned policy', async () => {
   const source = await readFile(
     new URL('../server/delivery/deliveryOpportunityRouter.ts', import.meta.url),
     'utf8'
   );
   assert.match(source, /buildDeliveryDestinationResolutionSnapshotFields\(order\)/);
-  assert.match(source, /const destinationResolutionSnapshot = existing\.exists\s*\? null\s*:\s*buildDeliveryDestinationResolutionSnapshotFields\(order\)/);
+  assert.match(source, /loadAuthoritativeDeliveryCustomerArrivalPolicy\(nowIso\)/);
+  assert.match(source, /customerDestinationResolutionSnapshotStatus === 'resolved'/);
+  assert.match(source, /radiusMeters: customerArrivalPolicySnapshot\.radiusMeters/);
+  assert.match(source, /buildDeliveryCustomerDestinationSnapshot\(/);
+  assert.match(source, /customerGeofenceSnapshotStatus:/);
+  assert.doesNotMatch(source, /radiusMeters:\s*\d+/);
+});
+
+test('delivery publication freezes destination and arrival policy only on first creation', async () => {
+  const source = await readFile(
+    new URL('../server/delivery/deliveryOpportunityRouter.ts', import.meta.url),
+    'utf8'
+  );
+  assert.match(source, /const destinationResolutionSnapshot = existing\.exists\s*\? null/);
+  assert.match(source, /const \[waitingPolicySnapshot, responsibilityPolicySnapshot, customerArrivalPolicySnapshot\] = existing\.exists\s*\? \[null, null, null\]/);
   assert.match(source, /\.\.\.destinationResolutionSnapshot/);
-  assert.doesNotMatch(source, /customerGeofenceSnapshot\s*:/);
-  assert.doesNotMatch(source, /radiusMeters\s*:/);
 });
