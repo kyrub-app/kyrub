@@ -1,5 +1,10 @@
 import { createHash } from 'node:crypto';
-import { FieldValue, Timestamp } from 'firebase-admin/firestore';
+import {
+  FieldValue,
+  Timestamp,
+  type DocumentData,
+  type Transaction,
+} from 'firebase-admin/firestore';
 import { adminDb } from '../firebaseAdmin.js';
 import type { DeliveryOperationalEvent } from '../../shared/deliveryOperationalResponsibility.js';
 
@@ -31,16 +36,126 @@ export interface PersistStoreMarkedReadyOperationalEventInput {
   actorUid: string;
 }
 
+export interface WriteStoreMarkedReadyEvidenceInTransactionInput
+  extends PersistStoreMarkedReadyOperationalEventInput {
+  transaction: Transaction;
+  order: DocumentData;
+  canonicalStoreId?: string;
+}
+
+const assertExistingEvent = (input: {
+  event: DeliveryOperationalEvent;
+  eventId: string;
+  deliveryId: string;
+  tenantId: string;
+  orderId: string;
+}): DeliveryOperationalEvent => {
+  const { event, eventId, deliveryId, tenantId, orderId } = input;
+  if (
+    event.schemaVersion !== 1 ||
+    event.id !== eventId ||
+    event.deliveryId !== deliveryId ||
+    event.orderId !== orderId ||
+    event.storeId !== tenantId ||
+    event.type !== 'store_marked_ready' ||
+    event.authority !== 'store_action' ||
+    event.actor !== 'store'
+  ) {
+    throw new Error('STORE_READY_OPERATIONAL_EVENT_CONFLICT');
+  }
+  return event;
+};
+
 /**
- * Completes the server-authoritative side of a store "ready" action.
+ * Writes the ready timestamp and, for Kyrub deliveries, the immutable
+ * `store_marked_ready` event inside a caller-owned Firestore transaction.
  *
- * The caller cannot supply readyAt/occurredAt/recordedAt. The order must
- * already be in the canonical `ready` state. For Kyrub delivery orders, the
- * same transaction that stamps readyAt also creates the immutable,
- * deterministic `store_marked_ready` operational event.
- *
- * This is evidence of a store action only. It never assigns responsibility,
- * economic billability, obligation, settlement or payout.
+ * The caller cannot supply any timestamp. This helper only records operational
+ * evidence; it never assigns responsibility or economic billability.
+ */
+export const writeStoreMarkedReadyEvidenceInTransaction = async (
+  input: WriteStoreMarkedReadyEvidenceInTransactionInput
+): Promise<DeliveryOperationalEvent | null> => {
+  const tenantId = clean(input.tenantId);
+  const orderId = clean(input.orderId);
+  const actorUid = clean(input.actorUid);
+  const canonicalStoreId = clean(input.canonicalStoreId);
+  if (!tenantId || !orderId || !actorUid) {
+    throw new Error('STORE_READY_OPERATIONAL_EVENT_IDENTITY_INVALID');
+  }
+  if (clean(input.order.status) !== 'ready') {
+    throw new Error('STORE_READY_ORDER_STATE_CONFLICT');
+  }
+
+  const orderReference = adminDb.doc(orderPath(tenantId, orderId));
+  if (input.order.readyAt == null) {
+    input.transaction.set(
+      orderReference,
+      {
+        readyAt: FieldValue.serverTimestamp(),
+        readyAtAuthority: 'kyrub_server',
+      },
+      { merge: true }
+    );
+    if (canonicalStoreId) {
+      input.transaction.set(
+        adminDb.doc(`stores/${canonicalStoreId}/orders/${orderId}`),
+        {
+          readyAt: FieldValue.serverTimestamp(),
+          readyAtAuthority: 'kyrub_server',
+        },
+        { merge: true }
+      );
+    }
+  }
+
+  const isKyrubDelivery =
+    clean(input.order.fulfillmentType) === 'delivery' &&
+    clean(input.order.deliveryProvider) === 'kyrub';
+  if (!isKyrubDelivery) return null;
+
+  const deliveryId = kyrubDeliveryIdForOrder(tenantId, orderId);
+  const eventId = storeMarkedReadyEventIdForOrder(tenantId, orderId);
+  const eventReference = adminDb.doc(eventPath(eventId));
+  const existingEvent = await input.transaction.get(eventReference);
+  if (existingEvent.exists) {
+    return assertExistingEvent({
+      event: existingEvent.data() as DeliveryOperationalEvent,
+      eventId,
+      deliveryId,
+      tenantId,
+      orderId,
+    });
+  }
+
+  const now = Timestamp.now().toDate().toISOString();
+  const event: DeliveryOperationalEvent = {
+    schemaVersion: 1,
+    id: eventId,
+    deliveryId,
+    orderId,
+    storeId: tenantId,
+    courierId: '',
+    type: 'store_marked_ready',
+    occurredAt: now,
+    recordedAt: now,
+    authority: 'store_action',
+    actor: 'store',
+    referenceId: actorUid,
+  };
+
+  input.transaction.create(eventReference, {
+    ...event,
+    recordedAtServer: FieldValue.serverTimestamp(),
+    createdAt: FieldValue.serverTimestamp(),
+  });
+  return event;
+};
+
+/**
+ * Retry/recovery facade for callers that already committed the canonical
+ * order status. New authoritative ready transitions should prefer the helper
+ * above so status, inventory, readyAt and evidence share one transaction.
  */
 export const persistStoreMarkedReadyOperationalEvent = async (
   input: PersistStoreMarkedReadyOperationalEventInput
@@ -52,90 +167,23 @@ export const persistStoreMarkedReadyOperationalEvent = async (
     throw new Error('STORE_READY_OPERATIONAL_EVENT_IDENTITY_INVALID');
   }
 
-  const deliveryId = kyrubDeliveryIdForOrder(tenantId, orderId);
-  const eventId = storeMarkedReadyEventIdForOrder(tenantId, orderId);
   const orderReference = adminDb.doc(orderPath(tenantId, orderId));
   const tenantReference = adminDb.doc(`tenants/${tenantId}`);
-  const eventReference = adminDb.doc(eventPath(eventId));
 
   return adminDb.runTransaction(async transaction => {
-    const [orderSnapshot, tenantSnapshot, existingEvent] = await Promise.all([
+    const [orderSnapshot, tenantSnapshot] = await Promise.all([
       transaction.get(orderReference),
       transaction.get(tenantReference),
-      transaction.get(eventReference),
     ]);
     if (!orderSnapshot.exists) throw new Error('STORE_READY_ORDER_NOT_FOUND');
 
-    const order = orderSnapshot.data() as Record<string, unknown>;
-    if (clean(order.status) !== 'ready') {
-      throw new Error('STORE_READY_ORDER_STATE_CONFLICT');
-    }
-
-    const canonicalStoreId = clean(tenantSnapshot.data()?.canonicalStoreId);
-    if (order.readyAt == null) {
-      transaction.set(
-        orderReference,
-        {
-          readyAt: FieldValue.serverTimestamp(),
-          readyAtAuthority: 'kyrub_server',
-        },
-        { merge: true }
-      );
-      if (canonicalStoreId) {
-        transaction.set(
-          adminDb.doc(`stores/${canonicalStoreId}/orders/${orderId}`),
-          {
-            readyAt: FieldValue.serverTimestamp(),
-            readyAtAuthority: 'kyrub_server',
-          },
-          { merge: true }
-        );
-      }
-    }
-
-    const isKyrubDelivery =
-      clean(order.fulfillmentType) === 'delivery' &&
-      clean(order.deliveryProvider) === 'kyrub';
-    if (!isKyrubDelivery) return null;
-
-    if (existingEvent.exists) {
-      const data = existingEvent.data() as DeliveryOperationalEvent;
-      if (
-        data.schemaVersion !== 1 ||
-        data.id !== eventId ||
-        data.deliveryId !== deliveryId ||
-        data.orderId !== orderId ||
-        data.storeId !== tenantId ||
-        data.type !== 'store_marked_ready' ||
-        data.authority !== 'store_action' ||
-        data.actor !== 'store'
-      ) {
-        throw new Error('STORE_READY_OPERATIONAL_EVENT_CONFLICT');
-      }
-      return data;
-    }
-
-    const now = Timestamp.now().toDate().toISOString();
-    const event: DeliveryOperationalEvent = {
-      schemaVersion: 1,
-      id: eventId,
-      deliveryId,
+    return writeStoreMarkedReadyEvidenceInTransaction({
+      transaction,
+      tenantId,
       orderId,
-      storeId: tenantId,
-      courierId: '',
-      type: 'store_marked_ready',
-      occurredAt: now,
-      recordedAt: now,
-      authority: 'store_action',
-      actor: 'store',
-      referenceId: actorUid,
-    };
-
-    transaction.create(eventReference, {
-      ...event,
-      recordedAtServer: FieldValue.serverTimestamp(),
-      createdAt: FieldValue.serverTimestamp(),
+      actorUid,
+      order: orderSnapshot.data() as DocumentData,
+      canonicalStoreId: clean(tenantSnapshot.data()?.canonicalStoreId),
     });
-    return event;
   });
 };
