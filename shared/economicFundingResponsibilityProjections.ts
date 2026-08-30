@@ -29,7 +29,7 @@ export interface EconomicFundingResponsibilityTotals {
   entryCount: number;
 }
 
-type FundingAwareObligation = EconomicObligation & {
+export type FundingAwareEconomicObligation = EconomicObligation & {
   payer?: unknown;
   payerPrincipalId?: unknown;
   waitingEvidenceRef?: unknown;
@@ -82,10 +82,9 @@ const lifecycleIsConsistent = (obligation: EconomicObligation): boolean => {
 };
 
 export const deriveEconomicFundingResponsibilityProjection = (
-  obligationInput: EconomicObligation
+  obligation: FundingAwareEconomicObligation
 ): EconomicFundingResponsibilityProjection | null => {
-  if (obligationInput.sourceAuthority !== 'delivery_paid_waiting') return null;
-  const obligation = obligationInput as FundingAwareObligation;
+  if (obligation.sourceAuthority !== 'delivery_paid_waiting') return null;
   const payer = obligation.payer;
   const payerPrincipalId = clean(obligation.payerPrincipalId);
   const storeId = clean(obligation.storeId);
