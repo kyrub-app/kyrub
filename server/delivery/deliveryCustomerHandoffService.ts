@@ -1,6 +1,7 @@
-import { FieldValue } from 'firebase-admin/firestore';
+import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { adminDb } from '../firebaseAdmin.js';
 import { evaluateKyrubDeliveryCompletion } from './deliveryCompletionService.js';
+import { persistDeliveryOperationalEvent } from './deliveryOperationalEventService.js';
 import {
   buildCourierPayableObligationFromCapture,
   economicObligationPath,
@@ -33,6 +34,22 @@ const record = (value: unknown): Record<string, unknown> =>
   value && typeof value === 'object' && !Array.isArray(value)
     ? value as Record<string, unknown>
     : {};
+
+const timestampIso = (value: unknown): string => {
+  if (
+    value &&
+    typeof value === 'object' &&
+    'toDate' in value &&
+    typeof (value as { toDate?: unknown }).toDate === 'function'
+  ) {
+    const date = (value as { toDate: () => Date }).toDate();
+    return Number.isNaN(date.getTime()) ? '' : date.toISOString();
+  }
+  if (typeof value === 'string' && !Number.isNaN(Date.parse(value))) {
+    return new Date(value).toISOString();
+  }
+  return '';
+};
 
 const assertExistingCourierPayableEquivalent = (
   existing: EconomicObligation,
@@ -117,13 +134,31 @@ export const markCourierArrivedAtCustomer = async (input: {
       throw new Error('O rastreio precisa estar ativo no momento da chegada ao cliente.');
     }
 
+    const storeId = validId(clean(delivery.storeId), 'A loja');
+    const orderId = validId(clean(delivery.sourceOrderId), 'O pedido');
     const currentHandoff = record(delivery.customerHandoff);
+    const existingArrivedAt = timestampIso(currentHandoff.arrivedAt);
+    const arrivedAt = existingArrivedAt || Timestamp.now().toDate().toISOString();
+    const arrivalEvent = await persistDeliveryOperationalEvent({
+      transaction,
+      deliveryId,
+      orderId,
+      storeId,
+      courierId,
+      type: 'courier_arrived_customer',
+      occurredAt: arrivedAt,
+      authority: 'courier_action',
+      actor: 'courier',
+      referenceId: `${DELIVERY_COLLECTION}/${deliveryId}:customerHandoff`,
+    });
+    if (!arrivalEvent) throw new Error('DELIVERY_CUSTOMER_ARRIVAL_EVENT_CONFLICT');
+
     if (clean(currentHandoff.status) === 'awaiting_buyer_confirmation') return;
 
     const customerHandoff = {
       status: 'awaiting_buyer_confirmation',
       arrivedByCourierId: courierId,
-      arrivedAt: FieldValue.serverTimestamp(),
+      arrivedAt: Timestamp.fromDate(new Date(arrivedAt)),
       trackingWasActive: true,
     };
     transaction.update(deliveryRef, {
@@ -281,6 +316,34 @@ export const confirmBuyerReceivedDelivery = async (input: {
         });
       }
     }
+
+    const customerAvailableEvent = await persistDeliveryOperationalEvent({
+      transaction,
+      deliveryId,
+      orderId,
+      storeId,
+      courierId,
+      type: 'customer_available',
+      occurredAt: confirmedAt,
+      authority: 'customer_action',
+      actor: 'customer',
+      referenceId: `${DELIVERY_COMPLETION_COLLECTION}/${deliveryId}:buyer_confirmation`,
+    });
+    if (!customerAvailableEvent) throw new Error('DELIVERY_CUSTOMER_AVAILABLE_EVENT_CONFLICT');
+
+    const confirmedEvent = await persistDeliveryOperationalEvent({
+      transaction,
+      deliveryId,
+      orderId,
+      storeId,
+      courierId,
+      type: 'delivery_confirmed',
+      occurredAt: confirmedAt,
+      authority: 'customer_action',
+      actor: 'customer',
+      referenceId: `${DELIVERY_COMPLETION_COLLECTION}/${deliveryId}:buyer_confirmation`,
+    });
+    if (!confirmedEvent) throw new Error('DELIVERY_CONFIRMED_EVENT_CONFLICT');
 
     const customerHandoff = {
       ...handoff,
