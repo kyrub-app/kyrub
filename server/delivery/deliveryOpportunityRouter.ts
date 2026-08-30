@@ -12,6 +12,10 @@ import {
   markCourierArrivedAtCustomer,
 } from './deliveryCustomerHandoffService.js';
 import { loadCourierEarningsProjection } from './courierEarningsProjectionService.js';
+import {
+  DELIVERY_PAID_WAITING_POLICY_PATH,
+  loadAuthoritativeDeliveryPaidWaitingPolicy,
+} from './deliveryPaidWaitingPolicyService.js';
 
 const DELIVERY_COLLECTION = 'hub/renda/deliveries';
 const DELIVERY_CLAIM_COLLECTION = 'deliveryClaims';
@@ -158,6 +162,9 @@ export const publishKyrubDeliveryOpportunity = async (
   const now = Timestamp.now();
   const escalationAt = Timestamp.fromMillis(now.toMillis() + ESCALATION_DELAY_MS);
   const deliveryAddress = clean(order.deliveryAddress);
+  const waitingPolicySnapshot = existing.exists
+    ? null
+    : await loadAuthoritativeDeliveryPaidWaitingPolicy();
 
   const payload = {
     id,
@@ -186,6 +193,17 @@ export const publishKyrubDeliveryOpportunity = async (
       ? existing.data()?.escalationAt ?? escalationAt
       : escalationAt,
     fallbackStatus: clean(existing.data()?.fallbackStatus) || 'waiting_kyrub',
+    ...(existing.exists
+      ? {}
+      : {
+          waitingPolicySnapshot,
+          waitingPolicySnapshotStatus: waitingPolicySnapshot
+            ? 'captured'
+            : 'unavailable_or_disabled',
+          waitingPolicySnapshotAuthority: 'kyrub_platform',
+          waitingPolicySnapshotSource: DELIVERY_PAID_WAITING_POLICY_PATH,
+          waitingPolicySnapshottedAt: now,
+        }),
     updatedAt: FieldValue.serverTimestamp(),
   };
 
