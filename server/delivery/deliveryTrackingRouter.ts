@@ -1,7 +1,8 @@
 import { Router, type Request, type Response } from 'express';
-import { FieldValue } from 'firebase-admin/firestore';
+import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { adminAuth, adminDb } from '../firebaseAdmin';
 import { assessCourierStoreArrival } from './storeArrivalEvidence';
+import { persistDeliveryOperationalEvent } from './deliveryOperationalEventService.js';
 
 const DELIVERY_COLLECTION = 'hub/renda/deliveries';
 const DELIVERY_CLAIM_COLLECTION = 'deliveryClaims';
@@ -69,14 +70,7 @@ const parseLocation = (value: unknown): {
     throw new Error('Precisão da localização inválida.');
   }
 
-  return {
-    latitude,
-    longitude,
-    accuracy,
-    heading,
-    speed,
-    clientCapturedAt,
-  };
+  return { latitude, longitude, accuracy, heading, speed, clientCapturedAt };
 };
 
 const serializeTimestamp = (value: unknown): string => {
@@ -154,23 +148,16 @@ export const createDeliveryTrackingRouter = (): Router => {
         claimReference.get(),
         trackingReference.get(),
       ]);
-      if (!deliverySnapshot.exists) {
-        throw new Error('A entrega não foi encontrada.');
-      }
+      if (!deliverySnapshot.exists) throw new Error('A entrega não foi encontrada.');
 
       const delivery = deliverySnapshot.data() as Record<string, unknown>;
       const claim = claimSnapshot.data() as Record<string, unknown> | undefined;
       const storeId = validateFirestoreId(clean(delivery.storeId), 'A loja');
-      const sourceOrderId = validateFirestoreId(
-        clean(delivery.sourceOrderId),
-        'O pedido'
-      );
+      const sourceOrderId = validateFirestoreId(clean(delivery.sourceOrderId), 'O pedido');
       const courierId = clean(claim?.courierId);
 
       const orderSnapshot = await adminDb.doc(orderPath(storeId, sourceOrderId)).get();
-      if (!orderSnapshot.exists) {
-        throw new Error('A entrega não foi encontrada.');
-      }
+      if (!orderSnapshot.exists) throw new Error('A entrega não foi encontrada.');
       const order = orderSnapshot.data() as Record<string, unknown>;
       const buyerId = clean(order.buyerId);
       const authorized = actorId === storeId || actorId === buyerId || actorId === courierId;
@@ -178,11 +165,7 @@ export const createDeliveryTrackingRouter = (): Router => {
 
       const tracking = trackingSnapshot.data() as Record<string, unknown> | undefined;
       const deliveryInProgress = ['accepted', 'delivering'].includes(clean(delivery.status));
-      const active = Boolean(
-        deliveryInProgress &&
-        trackingSnapshot.exists &&
-        tracking?.active === true
-      );
+      const active = Boolean(deliveryInProgress && trackingSnapshot.exists && tracking?.active === true);
 
       if (!active) {
         response.status(200).json({ deliveryId, active: false });
@@ -229,31 +212,18 @@ export const createDeliveryTrackingRouter = (): Router => {
           transaction.get(claimReference),
           transaction.get(trackingReference),
         ]);
-        if (!deliverySnapshot.exists || !claimSnapshot.exists) {
-          throw new Error('A entrega não foi encontrada.');
-        }
+        if (!deliverySnapshot.exists || !claimSnapshot.exists) throw new Error('A entrega não foi encontrada.');
 
         const delivery = deliverySnapshot.data() as Record<string, unknown>;
         const claim = claimSnapshot.data() as Record<string, unknown>;
-        if (clean(claim.courierId) !== courierId) {
-          throw new Error('Este entregador não é o responsável pela corrida.');
-        }
-        if (!['accepted', 'delivering'].includes(clean(delivery.status))) {
-          throw new Error('Esta entrega não está em andamento.');
-        }
+        if (clean(claim.courierId) !== courierId) throw new Error('Este entregador não é o responsável pela corrida.');
+        if (!['accepted', 'delivering'].includes(clean(delivery.status))) throw new Error('Esta entrega não está em andamento.');
 
         const storeId = validateFirestoreId(clean(delivery.storeId), 'A loja');
-        const sourceOrderId = validateFirestoreId(
-          clean(delivery.sourceOrderId),
-          'O pedido'
-        );
-        const storeSnapshot = await transaction.get(
-          adminDb.doc(privateStorePath(storeId))
-        );
+        const sourceOrderId = validateFirestoreId(clean(delivery.sourceOrderId), 'O pedido');
+        const storeSnapshot = await transaction.get(adminDb.doc(privateStorePath(storeId)));
         const assessment = assessCourierStoreArrival(
-          storeSnapshot.exists
-            ? storeSnapshot.data() as Record<string, unknown>
-            : undefined,
+          storeSnapshot.exists ? storeSnapshot.data() as Record<string, unknown> : undefined,
           location
         );
         const tracking = trackingSnapshot.data() as Record<string, unknown> | undefined;
@@ -278,14 +248,30 @@ export const createDeliveryTrackingRouter = (): Router => {
         };
 
         if (shouldRecordArrival) {
+          const arrivalAt = Timestamp.now();
           payload.storeArrivalEvidence = {
             kind: 'courier_inside_store_geofence',
             distanceMeters: assessment.distanceMeters,
             radiusMeters: assessment.radiusMeters,
             accuracyMeters: assessment.accuracyMeters,
             clientCapturedAt: location.clientCapturedAt,
-            detectedAt: FieldValue.serverTimestamp(),
+            detectedAt: arrivalAt,
           };
+          const operationalEvent = await persistDeliveryOperationalEvent({
+            transaction,
+            deliveryId,
+            orderId: sourceOrderId,
+            storeId,
+            courierId,
+            type: 'courier_entered_store_geofence',
+            occurredAt: arrivalAt.toDate().toISOString(),
+            authority: 'geofence',
+            actor: 'courier',
+            referenceId: `${DELIVERY_TRACKING_COLLECTION}/${deliveryId}`,
+          });
+          if (!operationalEvent) {
+            throw new Error('DELIVERY_OPERATIONAL_EVENT_CONFLICT');
+          }
         }
 
         transaction.set(trackingReference, payload, { merge: true });
@@ -296,10 +282,7 @@ export const createDeliveryTrackingRouter = (): Router => {
         };
       });
 
-      response.status(200).json({
-        deliveryId,
-        storeArrival: result,
-      });
+      response.status(200).json({ deliveryId, storeArrival: result });
     } catch (error) {
       errorResponse(response, error);
     }
@@ -309,14 +292,10 @@ export const createDeliveryTrackingRouter = (): Router => {
     try {
       const courierId = await authenticatedUserId(request);
       const deliveryId = validateDeliveryId(request.params.deliveryId);
-      const claimSnapshot = await adminDb
-        .doc(`${DELIVERY_CLAIM_COLLECTION}/${deliveryId}`)
-        .get();
+      const claimSnapshot = await adminDb.doc(`${DELIVERY_CLAIM_COLLECTION}/${deliveryId}`).get();
       if (!claimSnapshot.exists) throw new Error('A entrega não foi encontrada.');
       const claim = claimSnapshot.data() as Record<string, unknown>;
-      if (clean(claim.courierId) !== courierId) {
-        throw new Error('Este entregador não é o responsável pela corrida.');
-      }
+      if (clean(claim.courierId) !== courierId) throw new Error('Este entregador não é o responsável pela corrida.');
       await adminDb.doc(`${DELIVERY_TRACKING_COLLECTION}/${deliveryId}`).set(
         {
           deliveryId,
