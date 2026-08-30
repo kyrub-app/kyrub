@@ -41,7 +41,7 @@ describe('secure courier pickup handoff', () => {
     assert.match(router, /Confirme a coleta segura antes de iniciar a rota/);
     assert.match(router, /:deliveryId\/secure-pickup/);
     assert.match(router, /:deliveryId\/pickup-code/);
-    assert.match(eligibility, /\(\?:status\|secure-pickup\)/);
+    assert.match(eligibility, /status\|secure-pickup\|customer-arrival/);
     assert.match(eligibility, /return 'courier'/);
   });
 
@@ -56,11 +56,11 @@ describe('secure courier pickup handoff', () => {
     assert.match(courier, /secure-pickup/);
   });
 
-  test('background status sync no longer sends delivering and cannot bypass the code', () => {
+  test('background status sync cannot bypass route start or buyer-confirmed completion', () => {
     const cloudStatuses = sync.match(/CLOUD_STATUSES[\s\S]*?\]\);/)?.[0] ?? '';
     assert.match(cloudStatuses, /'accepted'/);
-    assert.match(cloudStatuses, /'done'/);
     assert.doesNotMatch(cloudStatuses, /'delivering'/);
+    assert.doesNotMatch(cloudStatuses, /'done'/);
   });
 
   test('pickup handoff remains operational only and cannot complete delivery or move money', () => {
