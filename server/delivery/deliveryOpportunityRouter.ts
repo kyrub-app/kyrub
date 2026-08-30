@@ -11,6 +11,7 @@ import {
   confirmBuyerReceivedDelivery,
   markCourierArrivedAtCustomer,
 } from './deliveryCustomerHandoffService.js';
+import { loadCourierEarningsProjection } from './courierEarningsProjectionService.js';
 
 const DELIVERY_COLLECTION = 'hub/renda/deliveries';
 const DELIVERY_CLAIM_COLLECTION = 'deliveryClaims';
@@ -407,6 +408,16 @@ export const createDeliveryOpportunityRouter = (): Router => {
       response.json(
         await publishKyrubDeliveryOpportunity(tenantId, request.params.orderId)
       );
+    } catch (error) {
+      errorResponse(response, error);
+    }
+  });
+
+  router.get('/earnings', async (request, response) => {
+    try {
+      const courierId = await authenticatedTenantId(request);
+      response.setHeader('Cache-Control', 'no-store, max-age=0');
+      response.json(await loadCourierEarningsProjection(courierId));
     } catch (error) {
       errorResponse(response, error);
     }

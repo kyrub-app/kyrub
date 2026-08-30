@@ -12,6 +12,7 @@ import { DeliveryJob, FreelanceJob } from '../../types';
 import { auth, db } from '../../utils/firebase';
 import { loadCachedUserStore } from '../../utils/storePersistence';
 import { getPrimaryUserStoreDocumentPath } from '../../utils/storePaths';
+import { CourierEarningsProjectionCard } from '../renda/CourierEarningsProjectionCard';
 
 interface RendaTabProps {
   deliveries: DeliveryJob[];
@@ -87,8 +88,6 @@ export function RendaTab({
       setHasConfiguredStore(cachedConfigured);
       setIsCheckingStore(!cachedConfigured);
 
-      // A leitura canônica continua sendo feita para atualizar a verdade atual,
-      // mas uma falha ou lentidão do Firestore não pode bloquear a entrada da loja.
       checkTimeout = window.setTimeout(() => {
         if (!cancelled) setIsCheckingStore(false);
       }, STORE_CHECK_TIMEOUT_MS);
@@ -111,8 +110,6 @@ export function RendaTab({
             'Não foi possível verificar a loja do usuário.',
             error
           );
-          // Preserve uma loja já conhecida localmente. A falha da validação
-          // remota não transforma uma loja configurada em loja inexistente.
           if (!cancelled && cachedConfigured) {
             setHasConfiguredStore(true);
           }
@@ -243,6 +240,8 @@ export function RendaTab({
           </div>
         </div>
       </div>
+
+      <CourierEarningsProjectionCard />
 
       <div className="grid gap-4 sm:grid-cols-2">
         <section
