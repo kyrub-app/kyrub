@@ -185,11 +185,7 @@ export const createDeliveryTrackingRouter = (): Router => {
       );
 
       if (!active) {
-        response.status(200).json({
-          deliveryId,
-          active: false,
-          storeArrivalEvidence: serializeArrivalEvidence(tracking),
-        });
+        response.status(200).json({ deliveryId, active: false });
         return;
       }
 
@@ -197,11 +193,7 @@ export const createDeliveryTrackingRouter = (): Router => {
       const longitude = finite(tracking?.longitude);
       const accuracy = finite(tracking?.accuracy);
       if (latitude === null || longitude === null || accuracy === null) {
-        response.status(200).json({
-          deliveryId,
-          active: false,
-          storeArrivalEvidence: serializeArrivalEvidence(tracking),
-        });
+        response.status(200).json({ deliveryId, active: false });
         return;
       }
 
