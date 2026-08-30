@@ -14,6 +14,11 @@ import {
   testAuthorizedGoogleMapsConnection,
   testAuthorizedMercadoPagoConnection,
 } from './integrationCredentialService.js';
+import {
+  loadAuthorizedCustomerArrivalPolicy,
+  mapCustomerArrivalPolicyAdminError,
+  saveAuthorizedCustomerArrivalPolicy,
+} from './customerArrivalPolicyAdminService.js';
 
 const SYSTEM_HEALTH_ROLES = new Set(['super_admin', 'operations']);
 
@@ -137,11 +142,21 @@ export const createOperationsHealthRouter = (): Router => {
   const router = Router();
 
   router.get('/', async (request: Request, response: Response) => {
-    if (clean(request.query.transport) === 'integration-readiness') {
+    const transport = clean(request.query.transport);
+    if (transport === 'integration-readiness') {
       try {
         response.json(await loadAuthorizedIntegrationReadiness(request.get('authorization') ?? ''));
       } catch (error) {
         const mapped = mapIntegrationReadinessError(error);
+        response.status(mapped.status).json(mapped.body);
+      }
+      return;
+    }
+    if (transport === 'customer-arrival-policy') {
+      try {
+        response.json(await loadAuthorizedCustomerArrivalPolicy(request.get('authorization') ?? ''));
+      } catch (error) {
+        const mapped = mapCustomerArrivalPolicyAdminError(error);
         response.status(mapped.status).json(mapped.body);
       }
       return;
@@ -184,8 +199,23 @@ export const createOperationsHealthRouter = (): Router => {
         response.status(result.ok ? 200 : 422).json(result);
         return;
       }
+      if (transport === 'customer-arrival-policy') {
+        response.json(await saveAuthorizedCustomerArrivalPolicy({
+          authorization,
+          policyId: request.body?.policyId,
+          version: request.body?.version,
+          radiusMeters: request.body?.radiusMeters,
+          enabled: request.body?.enabled,
+        }));
+        return;
+      }
       response.status(400).json({ error: 'Operação de integração inválida.', code: 'INVALID_INTEGRATION_TRANSPORT' });
     } catch (error) {
+      if (transport === 'customer-arrival-policy') {
+        const mapped = mapCustomerArrivalPolicyAdminError(error);
+        response.status(mapped.status).json(mapped.body);
+        return;
+      }
       const mapped = mapIntegrationCredentialError(error);
       response.status(mapped.status).json(mapped.body);
     }

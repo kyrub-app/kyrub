@@ -39,6 +39,15 @@ export interface AdminGoogleMapsCredentialStatus {
   lastValidationCode: string;
 }
 
+export interface AdminCustomerArrivalPolicy {
+  configured: boolean;
+  policyId: string;
+  version: number;
+  enabled: boolean;
+  radiusMeters: number;
+  updatedAt: string;
+}
+
 const PUBLIC_DETAIL_KEYS = new Set([
   'pixCheckoutConfigured',
   'webhookConfigured',
@@ -55,6 +64,10 @@ const PUBLIC_DETAIL_KEYS = new Set([
 const safeBoolean = (value: unknown): boolean => value === true;
 const safeString = (value: unknown): string =>
   typeof value === 'string' ? value.trim() : '';
+const safePositiveInteger = (value: unknown): number =>
+  typeof value === 'number' && Number.isSafeInteger(value) && value > 0
+    ? value
+    : 0;
 
 const parseProviderState = (value: unknown): AdminIntegrationProviderState =>
   value === 'configured' ||
@@ -169,6 +182,20 @@ const googleMapsCredentialStatus = (value: unknown): AdminGoogleMapsCredentialSt
   };
 };
 
+const customerArrivalPolicy = (value: unknown): AdminCustomerArrivalPolicy => {
+  const candidate = value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+  return {
+    configured: candidate.configured === true,
+    policyId: safeString(candidate.policyId),
+    version: safePositiveInteger(candidate.version),
+    enabled: candidate.enabled === true,
+    radiusMeters: safePositiveInteger(candidate.radiusMeters),
+    updatedAt: safeString(candidate.updatedAt),
+  };
+};
+
 export const loadAdminIntegrationReadiness = async (
   user: Pick<User, 'getIdToken'>,
   profile: Pick<AdminProfile, 'role' | 'status'>
@@ -183,6 +210,22 @@ export const loadAdminIntegrationReadiness = async (
   const parsed = parseAdminIntegrationReadiness(payload);
   if (!parsed) throw new Error('O servidor retornou um estado de integrações inválido.');
   return parsed;
+};
+
+export const loadAdminCustomerArrivalPolicy = async (
+  user: Pick<User, 'getIdToken'>,
+  profile: Pick<AdminProfile, 'role' | 'status'>
+): Promise<AdminCustomerArrivalPolicy> => {
+  requireSuperAdmin(profile);
+  const token = await user.getIdToken();
+  const response = await fetch('/api/admin/operations/health?transport=customer-arrival-policy', {
+    headers: { authorization: `Bearer ${token}` },
+  });
+  const payload = await response.json().catch(() => ({})) as Record<string, unknown>;
+  if (!response.ok) {
+    throw new Error(typeof payload.error === 'string' ? payload.error : 'Não foi possível consultar a política de chegada.');
+  }
+  return customerArrivalPolicy(payload);
 };
 
 const postAdminIntegration = async (
@@ -240,4 +283,13 @@ export const testAdminGoogleMapsConnection = async (
   requireSuperAdmin(profile);
   const payload = await postAdminIntegration(user, 'google-maps-test');
   return { ok: payload.ok === true, code: safeString(payload.code), credential: googleMapsCredentialStatus(payload) };
+};
+
+export const saveAdminCustomerArrivalPolicy = async (
+  user: Pick<User, 'getIdToken'>,
+  profile: Pick<AdminProfile, 'role' | 'status'>,
+  input: { policyId: string; version: number; radiusMeters: number; enabled: boolean }
+): Promise<AdminCustomerArrivalPolicy> => {
+  requireSuperAdmin(profile);
+  return customerArrivalPolicy(await postAdminIntegration(user, 'customer-arrival-policy', input));
 };
