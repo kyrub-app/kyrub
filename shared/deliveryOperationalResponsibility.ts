@@ -73,15 +73,19 @@ export type DeliveryResponsibilityReasonCode =
   | 'location_evidence_conflict'
   | 'insufficient_evidence';
 
+export type DeliveryResponsibilityEvidenceStatus =
+  | 'authoritative'
+  | 'corroborated'
+  | 'review_required';
+
 export interface DeliveryResponsibilityInterval {
   startsAt: string;
   endsAt: string;
   durationSeconds: number;
   responsibleActor: DeliveryOperationalActor;
   reasonCode: DeliveryResponsibilityReasonCode;
-  confidence: 'high' | 'medium' | 'low';
+  evidenceStatus: DeliveryResponsibilityEvidenceStatus;
   evidenceEventIds: string[];
-  economicallyBillable: boolean;
 }
 
 const clean = (value: string): string => value.trim();
@@ -111,20 +115,9 @@ export const buildDeliveryOperationalResponsibilityPolicySnapshot = (input: {
     policyId,
     version: input.version,
     enabled: input.enabled === true,
-    storeFreeWaitingSeconds: nonNegativeSafeInteger(
-      input.storeFreeWaitingSeconds,
-      'STORE_FREE_WAITING'
-    ),
-    customerFreeWaitingSeconds: nonNegativeSafeInteger(
-      input.customerFreeWaitingSeconds,
-      'CUSTOMER_FREE_WAITING'
-    ),
+    storeFreeWaitingSeconds: nonNegativeSafeInteger(input.storeFreeWaitingSeconds, 'STORE_FREE_WAITING'),
+    customerFreeWaitingSeconds: nonNegativeSafeInteger(input.customerFreeWaitingSeconds, 'CUSTOMER_FREE_WAITING'),
     snapshottedAt,
     authority: 'kyrub_platform',
   };
 };
-
-export const DEFAULT_DELIVERY_RESPONSIBILITY_FREE_WINDOWS = Object.freeze({
-  storeFreeWaitingSeconds: 7 * 60,
-  customerFreeWaitingSeconds: 2 * 60,
-});
