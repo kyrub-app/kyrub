@@ -1,6 +1,7 @@
 import { Router, type Request, type Response } from 'express';
 import { FieldValue } from 'firebase-admin/firestore';
 import { adminAuth, adminDb } from '../firebaseAdmin';
+import { persistStoreMarkedReadyOperationalEvent } from '../delivery/deliveryStoreReadyOperationalEventService';
 import { sendNinetyNineFoodOrderStatus } from '../integrations/ninetyNineFoodService';
 import { reviewAttendanceOrderAuthoritatively } from './attendanceReviewService';
 import { reconcileOrderInventoryAfterMutation } from './orderInventoryAdjustment';
@@ -203,6 +204,14 @@ export const createOrderInventoryRouter = (): Router => {
           result.orderId,
           decision.deliveryProvider
         );
+      }
+
+      if (status === 'ready') {
+        await persistStoreMarkedReadyOperationalEvent({
+          tenantId,
+          orderId: result.orderId,
+          actorUid: tenantId,
+        });
       }
 
       let partnerSync: 'not-applicable' | 'sent' | 'attention' = 'not-applicable';
