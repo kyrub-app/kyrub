@@ -7,6 +7,7 @@ import { createPaidWaitingObligationFromApprovedDecision } from './deliveryPaidW
 
 const EVENT_COLLECTION = 'deliveryOperationalEvents';
 const DELIVERY_COLLECTION = 'hub/renda/deliveries';
+const DELIVERY_CLAIM_COLLECTION = 'deliveryClaims';
 
 const clean = (value: unknown): string => typeof value === 'string' ? value.trim() : '';
 
@@ -52,20 +53,23 @@ export const materializeDeliveryResponsibilityAndWaitingDecision = async (input:
   if (!deliveryId) throw new Error('DELIVERY_RESPONSIBILITY_ORCHESTRATOR_ID_INVALID');
 
   const deliveryRef = adminDb.doc(`${DELIVERY_COLLECTION}/${deliveryId}`);
+  const claimRef = adminDb.doc(`${DELIVERY_CLAIM_COLLECTION}/${deliveryId}`);
   return adminDb.runTransaction(async transaction => {
-    const deliverySnapshot = await transaction.get(deliveryRef);
-    if (!deliverySnapshot.exists) return null;
+    const [deliverySnapshot, claimSnapshot] = await Promise.all([
+      transaction.get(deliveryRef),
+      transaction.get(claimRef),
+    ]);
+    if (!deliverySnapshot.exists || !claimSnapshot.exists) return null;
     const delivery = deliverySnapshot.data() as Record<string, unknown>;
+    const claim = claimSnapshot.data() as Record<string, unknown>;
     const orderId = clean(delivery.sourceOrderId);
     const storeId = clean(delivery.storeId);
-    const courierId = clean(delivery.courierId) || clean(delivery.assignedCourierId);
+    const courierId = clean(claim.courierId);
     if (!orderId || !storeId || !courierId) return null;
 
     const responsibilityPolicy = parseResponsibilityPolicy(delivery.responsibilityPolicySnapshot);
     const economicPolicy = parseEconomicPolicy(delivery.waitingPolicySnapshot);
-    if (!responsibilityPolicy || !economicPolicy) {
-      return null;
-    }
+    if (!responsibilityPolicy || !economicPolicy) return null;
 
     const eventQuery = adminDb.collection(EVENT_COLLECTION)
       .where('deliveryId', '==', deliveryId);
