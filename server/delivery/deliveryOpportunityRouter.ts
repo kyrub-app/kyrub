@@ -21,6 +21,7 @@ import {
   loadAuthoritativeDeliveryResponsibilityPolicy,
 } from './deliveryResponsibilityPolicyService.js';
 import { materializeDeliveryResponsibilityAndWaitingDecision } from './deliveryResponsibilityDecisionOrchestrator.js';
+import { buildDeliveryDestinationResolutionSnapshotFields } from './deliveryDestinationResolutionSnapshotService.js';
 
 const DELIVERY_COLLECTION = 'hub/renda/deliveries';
 const DELIVERY_CLAIM_COLLECTION = 'deliveryClaims';
@@ -124,7 +125,7 @@ const errorResponse = (response: Response, error: unknown): void => {
     return;
   }
   if (
-    /não encontrado|não está pronto|não é uma entrega|entregador próprio|já aceitou|já foi aceita|somente o entregador|precisa estar aceita|confirme a coleta|código|geofence|rastreio|chegue à loja|coleta segura|rota precisa|chegada ao cliente|ainda não informou|confirmação do cliente|completion|payable|capture/i.test(
+    /não encontrado|não está pronto|não é uma entrega|entregador próprio|já aceitou|já foi aceita|somente o entregador|precisa estar aceita|confirme a coleta|código|geofence|rastreio|chegue à loja|coleta segura|rota precisa|chegada ao cliente|ainda não informou|confirmação do cliente|completion|payable|capture|DELIVERY_DESTINATION_RESOLUTION_/i.test(
       message
     )
   ) {
@@ -168,6 +169,9 @@ export const publishKyrubDeliveryOpportunity = async (
   const nowIso = now.toDate().toISOString();
   const escalationAt = Timestamp.fromMillis(now.toMillis() + ESCALATION_DELAY_MS);
   const deliveryAddress = clean(order.deliveryAddress);
+  const destinationResolutionSnapshot = existing.exists
+    ? null
+    : buildDeliveryDestinationResolutionSnapshotFields(order);
   const [waitingPolicySnapshot, responsibilityPolicySnapshot] = existing.exists
     ? [null, null]
     : await Promise.all([
@@ -205,6 +209,8 @@ export const publishKyrubDeliveryOpportunity = async (
     ...(existing.exists
       ? {}
       : {
+          ...destinationResolutionSnapshot,
+          customerDestinationResolutionSnapshottedAt: now,
           waitingPolicySnapshot,
           waitingPolicySnapshotStatus: waitingPolicySnapshot
             ? 'captured'
