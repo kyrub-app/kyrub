@@ -5,7 +5,7 @@ import {
   calculateDeliveryPaidWaiting,
   type DeliveryPaidWaitingPolicySnapshot,
 } from '../../shared/deliveryPaidWaiting.js';
-import { createPaidWaitingObligationFromApprovedDecision } from './deliveryPaidWaitingObligationService.js';
+import { persistDeliveryOperationalEvent } from './deliveryOperationalEventService.js';
 
 const DELIVERY_COLLECTION = 'hub/renda/deliveries';
 const DELIVERY_CLAIM_COLLECTION = 'deliveryClaims';
@@ -223,23 +223,28 @@ export const confirmSecureCourierPickupAndStartRoute = async (input: { deliveryI
     }
 
     const collectedAt = Timestamp.now();
+    const pickupEvent = await persistDeliveryOperationalEvent({
+      transaction,
+      deliveryId,
+      orderId: sourceOrderId,
+      storeId,
+      courierId,
+      type: 'pickup_confirmed',
+      occurredAt: collectedAt.toDate().toISOString(),
+      authority: 'server',
+      actor: 'courier',
+      referenceId: `${DELIVERY_CLAIM_COLLECTION}/${deliveryId}:pickupHandoff`,
+    });
+    if (!pickupEvent) throw new Error('DELIVERY_OPERATIONAL_EVENT_CONFLICT');
+
     const paidWaitingEvidence = buildPaidWaitingEvidence({
       tracking: tracking ?? {},
       delivery,
       collectedAt,
     });
 
-    // Physical waiting evidence is always preserved. Economic obligation is fail-closed:
-    // it may only be created from a separately persisted, approved billable waiting decision.
-    await createPaidWaitingObligationFromApprovedDecision({
-      transaction,
-      operationalStoreId: storeId,
-      orderId: sourceOrderId,
-      deliveryId,
-      courierId,
-      decision: delivery.billableWaitingDecision,
-    });
-
+    // Economic materialization intentionally happens after operational facts are persisted
+    // and responsibility/billable-decision layers have had a chance to evaluate them.
     const handoff = {
       status: 'handed_over',
       method: 'delivery_pickup_code',
