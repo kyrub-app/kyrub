@@ -5,6 +5,7 @@ import {
   calculateDeliveryPaidWaiting,
   type DeliveryPaidWaitingPolicySnapshot,
 } from '../../shared/deliveryPaidWaiting.js';
+import { createPaidWaitingObligationIfAuthoritative } from './deliveryPaidWaitingObligationService.js';
 
 const DELIVERY_COLLECTION = 'hub/renda/deliveries';
 const DELIVERY_CLAIM_COLLECTION = 'deliveryClaims';
@@ -226,6 +227,14 @@ export const confirmSecureCourierPickupAndStartRoute = async (input: { deliveryI
       tracking: tracking ?? {},
       delivery,
       collectedAt,
+    });
+    await createPaidWaitingObligationIfAuthoritative({
+      transaction,
+      operationalStoreId: storeId,
+      orderId: sourceOrderId,
+      deliveryId,
+      courierId,
+      evidence: paidWaitingEvidence,
     });
     const handoff = {
       status: 'handed_over',
