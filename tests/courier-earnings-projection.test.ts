@@ -3,9 +3,17 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { buildDeliveryPaidWaitingCourierObligation } from '../shared/deliveryPaidWaitingObligation';
 import { derivePayableProjections } from '../shared/economicObligationProjections';
+import {
+  deriveEconomicFundingResponsibilityProjection,
+  deriveEconomicFundingResponsibilityTotals,
+} from '../shared/economicFundingResponsibilityProjections';
 
 const service = readFileSync(
   'server/delivery/courierEarningsProjectionService.ts',
+  'utf8'
+);
+const fundingService = readFileSync(
+  'server/delivery/paidWaitingFundingResponsibilityService.ts',
   'utf8'
 );
 const router = readFileSync(
@@ -47,6 +55,83 @@ test('paid waiting obligation participates in the canonical payable projection a
   assert.equal(projections[0].amountMinor, 300);
   assert.equal(projections[0].state, 'projected');
   assert.equal(projections[0].fulfillmentId, 'delivery-1');
+});
+
+test('store-paid waiting projects explicit store funding responsibility without claiming a debit', () => {
+  const waiting = buildDeliveryPaidWaitingCourierObligation({
+    canonicalStoreId: 'store-1',
+    orderId: 'order-1',
+    deliveryId: 'delivery-1',
+    courierId: 'courier-1',
+    amountMinor: 300,
+    payer: 'store',
+    policyId: 'wait-v1',
+    policyVersion: 1,
+    collectedAt: '2026-08-30T10:00:00.000Z',
+  });
+  const projection = deriveEconomicFundingResponsibilityProjection(waiting);
+  assert.ok(projection);
+  assert.equal(projection.payer, 'store');
+  assert.equal(projection.payerPrincipalId, 'store:store-1');
+  assert.equal(projection.amountMinor, 300);
+  assert.equal(projection.obligationStatus, 'pending');
+  const totals = deriveEconomicFundingResponsibilityTotals([projection]);
+  assert.equal(totals.pendingMinor, 300);
+  assert.equal(totals.eligibleMinor, 0);
+  assert.equal(totals.settledObligationMinor, 0);
+});
+
+test('Kyrub-paid waiting projects platform funding responsibility separately from store', () => {
+  const waiting = buildDeliveryPaidWaitingCourierObligation({
+    canonicalStoreId: 'store-1',
+    orderId: 'order-1',
+    deliveryId: 'delivery-1',
+    courierId: 'courier-1',
+    amountMinor: 450,
+    payer: 'kyrub',
+    policyId: 'wait-v1',
+    policyVersion: 1,
+    collectedAt: '2026-08-30T10:00:00.000Z',
+  });
+  const projection = deriveEconomicFundingResponsibilityProjection(waiting);
+  assert.ok(projection);
+  assert.equal(projection.payer, 'kyrub');
+  assert.equal(projection.payerPrincipalId, 'kyrub:platform');
+  assert.equal(projection.amountMinor, 450);
+});
+
+test('funding responsibility fails closed when payer identity conflicts with frozen policy evidence', () => {
+  const waiting = buildDeliveryPaidWaitingCourierObligation({
+    canonicalStoreId: 'store-1',
+    orderId: 'order-1',
+    deliveryId: 'delivery-1',
+    courierId: 'courier-1',
+    amountMinor: 300,
+    payer: 'store',
+    policyId: 'wait-v1',
+    policyVersion: 1,
+    collectedAt: '2026-08-30T10:00:00.000Z',
+  });
+  assert.throws(
+    () => deriveEconomicFundingResponsibilityProjection({
+      ...waiting,
+      payerPrincipalId: 'kyrub:platform',
+    }),
+    /ECONOMIC_FUNDING_RESPONSIBILITY_WAITING_OBLIGATION_INVALID/
+  );
+});
+
+test('funding responsibility reads are payer-scoped and never execute charging or money movement', () => {
+  assert.match(fundingService, /stores\/\$\{canonicalStoreId\}\/economicObligations/);
+  assert.match(fundingService, /collectionGroup\('economicObligations'\)/);
+  assert.match(fundingService, /sourceAuthority', '==', 'delivery_paid_waiting'/);
+  assert.match(fundingService, /payerPrincipalId', '==', payerPrincipalId/);
+  assert.match(fundingService, /store:\$\{canonicalStoreId\}/);
+  assert.match(fundingService, /kyrub:platform/);
+  assert.doesNotMatch(
+    fundingService,
+    /transaction\.|\.set\(|\.create\(|\.update\(|\.delete\(|charge|debit|payout|transfer|wallet|custod/i
+  );
 });
 
 test('freight and paid waiting are classified by canonical source authority without netting', () => {
