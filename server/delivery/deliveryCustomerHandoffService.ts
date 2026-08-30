@@ -89,7 +89,7 @@ export const markCourierArrivedAtCustomer = async (input: {
     }
     const tracking = trackingSnapshot.data() as Record<string, unknown> | undefined;
     if (!trackingSnapshot.exists || tracking?.active !== true) {
-      throw new Error('O rastreio precisa permanecer ativo até a chegada ao cliente.');
+      throw new Error('O rastreio precisa estar ativo no momento da chegada ao cliente.');
     }
 
     const currentHandoff = record(delivery.customerHandoff);
@@ -180,9 +180,8 @@ export const confirmBuyerReceivedDelivery = async (input: {
     if (clean(handoff.status) !== 'awaiting_buyer_confirmation') {
       throw new Error('O entregador ainda não informou a chegada ao cliente.');
     }
-    const tracking = trackingSnapshot.data() as Record<string, unknown> | undefined;
-    if (!trackingSnapshot.exists || tracking?.active !== true) {
-      throw new Error('O rastreio da entrega não está ativo para concluir o handoff.');
+    if (handoff.trackingWasActive !== true) {
+      throw new Error('A chegada ao cliente não possui evidência de rastreio ativo.');
     }
 
     const confirmedAt = new Date().toISOString();
