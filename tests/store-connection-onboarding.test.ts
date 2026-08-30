@@ -4,6 +4,7 @@ import test from 'node:test';
 import {
   buildStoreCommerceChannelDeclarationFromAnswer,
 } from '../shared/storeConnectionOnboarding.js';
+import { parseStoreConnectionSyncAuthority } from '../server/integrations/storeConnectionRegistry.js';
 
 test('merchant answer deterministically declares existing commerce channels without connecting them', () => {
   const declaration = buildStoreCommerceChannelDeclarationFromAnswer({
@@ -55,4 +56,24 @@ test('onboarding reads only the tenant-scoped registry and does not create exter
   assert.match(source, /loadOwnerStoreInstitutionalRepresentation/);
   assert.doesNotMatch(source, /saveStoreConnectionRegistryRecord/);
   assert.doesNotMatch(source, /accessToken|refreshToken|clientSecret/);
+});
+
+test('sync authority accepts only the explicit shared authority modes', () => {
+  assert.equal(parseStoreConnectionSyncAuthority('external_to_kyrub'), 'external_to_kyrub');
+  assert.equal(parseStoreConnectionSyncAuthority('manual_review'), 'manual_review');
+  assert.throws(
+    () => parseStoreConnectionSyncAuthority('automatic'),
+    /STORE_CONNECTION_SYNC_AUTHORITY_INVALID/
+  );
+});
+
+test('sync authority route is owner scoped and changes no credentials', () => {
+  const router = readFileSync('server/integrations/storeConnectionOnboardingRouter.ts', 'utf8');
+  const registry = readFileSync('server/integrations/storeConnectionRegistry.ts', 'utf8');
+  assert.match(router, /\/:storeId\/:connectionId\/sync-authority/);
+  assert.match(router, /authenticatedOwner/);
+  const updater = registry.match(/export const updateStoreConnectionSyncAuthority[\s\S]*$/)?.[0] ?? '';
+  assert.match(updater, /syncAuthority/);
+  assert.doesNotMatch(updater, /credentialReference\s*:/);
+  assert.doesNotMatch(updater, /accessToken|refreshToken|clientSecret/);
 });
