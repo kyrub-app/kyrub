@@ -26,6 +26,10 @@ interface CourierPosition {
   clientCapturedAt: number;
 }
 
+interface LocationUpdateResult {
+  arrivalDetected: boolean;
+}
+
 const clean = (value: unknown): string =>
   typeof value === 'string' ? value.trim() : '';
 
@@ -61,7 +65,7 @@ const parseStoredPosition = (): CourierPosition | null => {
 const postLocation = async (
   deliveryId: string,
   position: CourierPosition
-): Promise<void> => {
+): Promise<LocationUpdateResult> => {
   const user = auth.currentUser;
   if (!user) throw new Error('Faça login novamente.');
   const token = await user.getIdToken();
@@ -76,8 +80,16 @@ const postLocation = async (
       body: JSON.stringify(position),
     }
   );
-  if (response.ok) return;
   const payload = await response.json().catch(() => ({})) as Record<string, unknown>;
+  if (response.ok) {
+    const storeArrival =
+      payload.storeArrival && typeof payload.storeArrival === 'object'
+        ? payload.storeArrival as Record<string, unknown>
+        : null;
+    return {
+      arrivalDetected: storeArrival?.arrivalDetected === true,
+    };
+  }
   throw new Error(
     typeof payload.error === 'string'
       ? payload.error
@@ -103,6 +115,7 @@ export function CourierLiveTrackingBridge() {
   const [position, setPosition] = useState<CourierPosition | null>(parseStoredPosition);
   const [trackingError, setTrackingError] = useState('');
   const [panelDismissed, setPanelDismissed] = useState(false);
+  const [storeArrivalDetected, setStoreArrivalDetected] = useState(false);
   const watchIdRef = useRef<number | null>(null);
   const lastSentAtRef = useRef(0);
   const sendingRef = useRef(false);
@@ -157,6 +170,10 @@ export function CourierLiveTrackingBridge() {
   );
 
   useEffect(() => {
+    setStoreArrivalDetected(false);
+  }, [activeDelivery?.id]);
+
+  useEffect(() => {
     if (
       trackingDeliveryId &&
       !assignedDeliveries.some(delivery => delivery.id === trackingDeliveryId)
@@ -164,6 +181,7 @@ export function CourierLiveTrackingBridge() {
       const completedTrackingId = trackingDeliveryId;
       localStorage.removeItem(TRACKING_STORAGE_KEY);
       setTrackingDeliveryId('');
+      setStoreArrivalDetected(false);
       if (watchIdRef.current !== null) {
         navigator.geolocation?.clearWatch(watchIdRef.current);
         watchIdRef.current = null;
@@ -209,6 +227,11 @@ export function CourierLiveTrackingBridge() {
         sendingRef.current = true;
         lastSentAtRef.current = now;
         void postLocation(trackingDeliveryId, next)
+          .then(result => {
+            if (result.arrivalDetected) {
+              setStoreArrivalDetected(true);
+            }
+          })
           .catch(error => {
             setTrackingError(
               error instanceof Error
@@ -254,6 +277,7 @@ export function CourierLiveTrackingBridge() {
     const deliveryId = trackingDeliveryId;
     localStorage.removeItem(TRACKING_STORAGE_KEY);
     setTrackingDeliveryId('');
+    setStoreArrivalDetected(false);
     if (watchIdRef.current !== null && navigator.geolocation) {
       navigator.geolocation.clearWatch(watchIdRef.current);
       watchIdRef.current = null;
@@ -299,6 +323,17 @@ export function CourierLiveTrackingBridge() {
             origin={activeDelivery.from}
             destination={activeDelivery.to}
           />
+          {storeArrivalDetected && (
+            <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-[9px] text-emerald-200">
+              <p className="flex items-center gap-2 font-black">
+                <MapPin className="h-3.5 w-3.5" />
+                Você chegou à loja
+              </p>
+              <p className="mt-1 leading-relaxed text-emerald-300/80">
+                Chegada detectada por geofence. A retirada continua dependendo da confirmação segura.
+              </p>
+            </div>
+          )}
           <div className="flex items-center gap-2 rounded-xl bg-emerald-500/10 px-3 py-2 text-[9px] font-bold text-emerald-300">
             <Crosshair className="h-3.5 w-3.5" />
             Localização compartilhada somente durante esta entrega.
