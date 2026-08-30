@@ -87,6 +87,22 @@ export const writeStoreMarkedReadyEvidenceInTransaction = async (
     throw new Error('STORE_READY_ORDER_STATE_CONFLICT');
   }
 
+  const isKyrubDelivery =
+    clean(input.order.fulfillmentType) === 'delivery' &&
+    clean(input.order.deliveryProvider) === 'kyrub';
+  const deliveryId = isKyrubDelivery
+    ? kyrubDeliveryIdForOrder(tenantId, orderId)
+    : '';
+  const eventId = isKyrubDelivery
+    ? storeMarkedReadyEventIdForOrder(tenantId, orderId)
+    : '';
+  const eventReference = isKyrubDelivery
+    ? adminDb.doc(eventPath(eventId))
+    : null;
+  const existingEvent = eventReference
+    ? await input.transaction.get(eventReference)
+    : null;
+
   const orderReference = adminDb.doc(orderPath(tenantId, orderId));
   if (input.order.readyAt == null) {
     input.transaction.set(
@@ -109,15 +125,7 @@ export const writeStoreMarkedReadyEvidenceInTransaction = async (
     }
   }
 
-  const isKyrubDelivery =
-    clean(input.order.fulfillmentType) === 'delivery' &&
-    clean(input.order.deliveryProvider) === 'kyrub';
-  if (!isKyrubDelivery) return null;
-
-  const deliveryId = kyrubDeliveryIdForOrder(tenantId, orderId);
-  const eventId = storeMarkedReadyEventIdForOrder(tenantId, orderId);
-  const eventReference = adminDb.doc(eventPath(eventId));
-  const existingEvent = await input.transaction.get(eventReference);
+  if (!eventReference || !existingEvent) return null;
   if (existingEvent.exists) {
     return assertExistingEvent({
       event: existingEvent.data() as DeliveryOperationalEvent,
