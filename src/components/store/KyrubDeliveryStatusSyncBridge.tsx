@@ -13,7 +13,6 @@ const SYNC_INTERVAL_MS = 1_000;
 const RETRY_DELAY_MS = 10_000;
 const CLOUD_STATUSES = new Set<KyrubDeliveryOperationalStatus>([
   'accepted',
-  'delivering',
   'done',
 ]);
 
