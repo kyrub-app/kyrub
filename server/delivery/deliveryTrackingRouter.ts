@@ -2,6 +2,7 @@ import { Router, type Request, type Response } from 'express';
 import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { adminAuth, adminDb } from '../firebaseAdmin';
 import { assessCourierStoreArrival } from './storeArrivalEvidence';
+import { assessCourierCustomerArrival } from './customerArrivalEvidence.js';
 import { persistDeliveryOperationalEvent } from './deliveryOperationalEventService.js';
 
 const DELIVERY_COLLECTION = 'hub/renda/deliveries';
@@ -88,7 +89,7 @@ const serializeTimestamp = (value: unknown): string => {
     : '';
 };
 
-const serializeArrivalEvidence = (
+const serializeStoreArrivalEvidence = (
   tracking: Record<string, unknown> | undefined
 ): Record<string, unknown> | null => {
   const raw = tracking?.storeArrivalEvidence;
@@ -102,6 +103,24 @@ const serializeArrivalEvidence = (
     accuracyMeters: finite(evidence.accuracyMeters),
     clientCapturedAt: finite(evidence.clientCapturedAt),
     detectedAt: serializeTimestamp(evidence.detectedAt),
+  };
+};
+
+const serializeCustomerArrivalEvidence = (
+  tracking: Record<string, unknown> | undefined
+): Record<string, unknown> | null => {
+  const raw = tracking?.customerArrivalEvidence;
+  if (!raw || typeof raw !== 'object') return null;
+  const evidence = raw as Record<string, unknown>;
+  if (clean(evidence.kind) !== 'courier_inside_customer_geofence') return null;
+  return {
+    kind: 'courier_inside_customer_geofence',
+    distanceMeters: finite(evidence.distanceMeters),
+    radiusMeters: finite(evidence.radiusMeters),
+    accuracyMeters: finite(evidence.accuracyMeters),
+    clientCapturedAt: finite(evidence.clientCapturedAt),
+    detectedAt: serializeTimestamp(evidence.detectedAt),
+    destinationAuthority: clean(evidence.destinationAuthority),
   };
 };
 
@@ -190,7 +209,8 @@ export const createDeliveryTrackingRouter = (): Router => {
         speed: finite(tracking?.speed),
         clientCapturedAt: finite(tracking?.clientCapturedAt),
         updatedAt: serializeTimestamp(tracking?.updatedAt),
-        storeArrivalEvidence: serializeArrivalEvidence(tracking),
+        storeArrivalEvidence: serializeStoreArrivalEvidence(tracking),
+        customerArrivalEvidence: serializeCustomerArrivalEvidence(tracking),
       });
     } catch (error) {
       errorResponse(response, error);
@@ -217,18 +237,34 @@ export const createDeliveryTrackingRouter = (): Router => {
         const delivery = deliverySnapshot.data() as Record<string, unknown>;
         const claim = claimSnapshot.data() as Record<string, unknown>;
         if (clean(claim.courierId) !== courierId) throw new Error('Este entregador não é o responsável pela corrida.');
-        if (!['accepted', 'delivering'].includes(clean(delivery.status))) throw new Error('Esta entrega não está em andamento.');
+        const deliveryStatus = clean(delivery.status);
+        if (!['accepted', 'delivering'].includes(deliveryStatus)) throw new Error('Esta entrega não está em andamento.');
 
         const storeId = validateFirestoreId(clean(delivery.storeId), 'A loja');
         const sourceOrderId = validateFirestoreId(clean(delivery.sourceOrderId), 'O pedido');
         const storeSnapshot = await transaction.get(adminDb.doc(privateStorePath(storeId)));
-        const assessment = assessCourierStoreArrival(
+        const storeAssessment = assessCourierStoreArrival(
           storeSnapshot.exists ? storeSnapshot.data() as Record<string, unknown> : undefined,
           location
         );
+        const customerAssessment = assessCourierCustomerArrival(
+          delivery.customerGeofenceSnapshot,
+          location
+        );
         const tracking = trackingSnapshot.data() as Record<string, unknown> | undefined;
-        const existingEvidence = serializeArrivalEvidence(tracking);
-        const shouldRecordArrival = assessment.configured && assessment.insideGeofence && !existingEvidence;
+        const existingStoreEvidence = serializeStoreArrivalEvidence(tracking);
+        const existingCustomerEvidence = serializeCustomerArrivalEvidence(tracking);
+        const shouldRecordStoreArrival =
+          deliveryStatus === 'accepted' &&
+          storeAssessment.configured &&
+          storeAssessment.insideGeofence &&
+          !existingStoreEvidence;
+        const shouldRecordCustomerArrival =
+          deliveryStatus === 'delivering' &&
+          customerAssessment.configured &&
+          customerAssessment.authoritativeDestination &&
+          customerAssessment.insideGeofence &&
+          !existingCustomerEvidence;
         const payload: Record<string, unknown> = {
           deliveryId,
           courierId,
@@ -237,23 +273,32 @@ export const createDeliveryTrackingRouter = (): Router => {
           active: true,
           ...location,
           storeArrivalAssessment: {
-            configured: assessment.configured,
-            insideGeofence: assessment.insideGeofence,
-            distanceMeters: assessment.distanceMeters,
-            radiusMeters: assessment.radiusMeters,
-            accuracyMeters: assessment.accuracyMeters,
+            configured: storeAssessment.configured,
+            insideGeofence: storeAssessment.insideGeofence,
+            distanceMeters: storeAssessment.distanceMeters,
+            radiusMeters: storeAssessment.radiusMeters,
+            accuracyMeters: storeAssessment.accuracyMeters,
+            evaluatedAt: FieldValue.serverTimestamp(),
+          },
+          customerArrivalAssessment: {
+            configured: customerAssessment.configured,
+            authoritativeDestination: customerAssessment.authoritativeDestination,
+            insideGeofence: customerAssessment.insideGeofence,
+            distanceMeters: customerAssessment.distanceMeters,
+            radiusMeters: customerAssessment.radiusMeters,
+            accuracyMeters: customerAssessment.accuracyMeters,
             evaluatedAt: FieldValue.serverTimestamp(),
           },
           updatedAt: FieldValue.serverTimestamp(),
         };
 
-        if (shouldRecordArrival) {
+        if (shouldRecordStoreArrival) {
           const arrivalAt = Timestamp.now();
           payload.storeArrivalEvidence = {
             kind: 'courier_inside_store_geofence',
-            distanceMeters: assessment.distanceMeters,
-            radiusMeters: assessment.radiusMeters,
-            accuracyMeters: assessment.accuracyMeters,
+            distanceMeters: storeAssessment.distanceMeters,
+            radiusMeters: storeAssessment.radiusMeters,
+            accuracyMeters: storeAssessment.accuracyMeters,
             clientCapturedAt: location.clientCapturedAt,
             detectedAt: arrivalAt,
           };
@@ -267,7 +312,35 @@ export const createDeliveryTrackingRouter = (): Router => {
             occurredAt: arrivalAt.toDate().toISOString(),
             authority: 'geofence',
             actor: 'courier',
-            referenceId: `${DELIVERY_TRACKING_COLLECTION}/${deliveryId}`,
+            referenceId: `${DELIVERY_TRACKING_COLLECTION}/${deliveryId}:store`,
+          });
+          if (!operationalEvent) {
+            throw new Error('DELIVERY_OPERATIONAL_EVENT_CONFLICT');
+          }
+        }
+
+        if (shouldRecordCustomerArrival) {
+          const arrivalAt = Timestamp.now();
+          payload.customerArrivalEvidence = {
+            kind: 'courier_inside_customer_geofence',
+            distanceMeters: customerAssessment.distanceMeters,
+            radiusMeters: customerAssessment.radiusMeters,
+            accuracyMeters: customerAssessment.accuracyMeters,
+            clientCapturedAt: location.clientCapturedAt,
+            detectedAt: arrivalAt,
+            destinationAuthority: 'kyrub_server',
+          };
+          const operationalEvent = await persistDeliveryOperationalEvent({
+            transaction,
+            deliveryId,
+            orderId: sourceOrderId,
+            storeId,
+            courierId,
+            type: 'courier_entered_customer_geofence',
+            occurredAt: arrivalAt.toDate().toISOString(),
+            authority: 'geofence',
+            actor: 'courier',
+            referenceId: `${DELIVERY_TRACKING_COLLECTION}/${deliveryId}:customer`,
           });
           if (!operationalEvent) {
             throw new Error('DELIVERY_OPERATIONAL_EVENT_CONFLICT');
@@ -276,13 +349,20 @@ export const createDeliveryTrackingRouter = (): Router => {
 
         transaction.set(trackingReference, payload, { merge: true });
         return {
-          assessment,
-          arrivalDetected: Boolean(existingEvidence) || shouldRecordArrival,
-          newlyDetected: shouldRecordArrival,
+          storeArrival: {
+            assessment: storeAssessment,
+            arrivalDetected: Boolean(existingStoreEvidence) || shouldRecordStoreArrival,
+            newlyDetected: shouldRecordStoreArrival,
+          },
+          customerArrival: {
+            assessment: customerAssessment,
+            arrivalDetected: Boolean(existingCustomerEvidence) || shouldRecordCustomerArrival,
+            newlyDetected: shouldRecordCustomerArrival,
+          },
         };
       });
 
-      response.status(200).json({ deliveryId, storeArrival: result });
+      response.status(200).json({ deliveryId, ...result });
     } catch (error) {
       errorResponse(response, error);
     }
