@@ -11,6 +11,11 @@ interface TrackingPosition {
   accuracy: number;
 }
 
+interface StoreArrivalEvidence {
+  kind: 'courier_inside_store_geofence';
+  detectedAt: string;
+}
+
 interface AuthorizedDeliveryTrackingViewerProps {
   deliveryId: string;
   origin: string;
@@ -24,12 +29,37 @@ interface TrackingResponse {
   longitude?: number;
   accuracy?: number;
   updatedAt?: string;
+  storeArrivalEvidence?: {
+    kind?: string;
+    detectedAt?: string;
+  } | null;
   error?: string;
 }
 
+const parseStoreArrivalEvidence = (
+  payload: TrackingResponse
+): StoreArrivalEvidence | null => {
+  const evidence = payload.storeArrivalEvidence;
+  if (
+    payload.active !== true ||
+    evidence?.kind !== 'courier_inside_store_geofence'
+  ) {
+    return null;
+  }
+  return {
+    kind: 'courier_inside_store_geofence',
+    detectedAt: evidence.detectedAt ?? '',
+  };
+};
+
 const fetchAuthorizedPosition = async (
   deliveryId: string
-): Promise<{ position: TrackingPosition | null; active: boolean; updatedAt: string }> => {
+): Promise<{
+  position: TrackingPosition | null;
+  active: boolean;
+  updatedAt: string;
+  storeArrivalEvidence: StoreArrivalEvidence | null;
+}> => {
   const user = auth.currentUser;
   if (!user) throw new Error('Faça login novamente.');
   const token = await user.getIdToken();
@@ -53,7 +83,12 @@ const fetchAuthorizedPosition = async (
           accuracy: payload.accuracy,
         }
       : null;
-  return { position, active, updatedAt: payload.updatedAt ?? '' };
+  return {
+    position,
+    active,
+    updatedAt: payload.updatedAt ?? '',
+    storeArrivalEvidence: parseStoreArrivalEvidence(payload),
+  };
 };
 
 export function AuthorizedDeliveryTrackingViewer({
@@ -67,6 +102,8 @@ export function AuthorizedDeliveryTrackingViewer({
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState('');
   const [updatedAt, setUpdatedAt] = useState('');
+  const [storeArrivalEvidence, setStoreArrivalEvidence] =
+    useState<StoreArrivalEvidence | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -79,11 +116,13 @@ export function AuthorizedDeliveryTrackingViewer({
         setPosition(next.position);
         setActive(next.active);
         setUpdatedAt(next.updatedAt);
+        setStoreArrivalEvidence(next.storeArrivalEvidence);
         setErrorMessage('');
       } catch (error) {
         if (cancelled) return;
         setPosition(null);
         setActive(false);
+        setStoreArrivalEvidence(null);
         setErrorMessage(
           error instanceof Error ? error.message : 'Rastreio indisponível.'
         );
@@ -135,10 +174,31 @@ export function AuthorizedDeliveryTrackingViewer({
         origin={origin}
         destination={destination}
       />
+      {storeArrivalEvidence && (
+        <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-[9px] text-emerald-200">
+          <div className="flex items-center justify-between gap-3">
+            <span className="flex items-center gap-2 font-black">
+              <MapPin className="h-3.5 w-3.5" />
+              Entregador chegou à loja
+            </span>
+            {storeArrivalEvidence.detectedAt && (
+              <span className="font-mono text-[8px] text-emerald-400/70">
+                {new Date(storeArrivalEvidence.detectedAt).toLocaleTimeString('pt-BR', {
+                  hour: '2-digit',
+                  minute: '2-digit',
+                })}
+              </span>
+            )}
+          </div>
+          <p className="mt-1 leading-relaxed text-emerald-300/80">
+            Chegada detectada por geofence. A retirada ainda exige a confirmação segura separada.
+          </p>
+        </div>
+      )}
       <div className="flex items-center justify-between gap-3 rounded-xl bg-emerald-500/10 px-3 py-2 text-[9px] text-emerald-300">
         <span className="flex items-center gap-2 font-bold">
           <Crosshair className="h-3.5 w-3.5" />
-          Entregador em deslocamento
+          {storeArrivalEvidence ? 'Rastreio ativo' : 'Entregador em deslocamento'}
         </span>
         {updatedAt && (
           <span className="font-mono text-[8px] text-emerald-400/70">
