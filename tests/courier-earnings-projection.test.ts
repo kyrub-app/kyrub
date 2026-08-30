@@ -6,6 +6,15 @@ const service = readFileSync(
   'server/delivery/courierEarningsProjectionService.ts',
   'utf8'
 );
+const router = readFileSync(
+  'server/delivery/deliveryOpportunityRouter.ts',
+  'utf8'
+);
+const card = readFileSync(
+  'src/components/renda/CourierEarningsProjectionCard.tsx',
+  'utf8'
+);
+const renda = readFileSync('src/components/tabs/RendaTab.tsx', 'utf8');
 
 test('courier earnings are derived from payable projections scoped to authenticated beneficiary', () => {
   assert.match(service, /collectionGroup\('economicObligations'\)/);
@@ -40,4 +49,23 @@ test('earnings projection is read-only and does not execute money movement', () 
     service,
     /transaction\.|\.set\(|\.create\(|\.update\(|\.delete\(|payout|transfer|wallet|custod/i
   );
+});
+
+test('earnings endpoint derives courier identity from auth instead of request input', () => {
+  assert.match(router, /router\.get\('\/earnings'/);
+  assert.match(router, /const courierId = await authenticatedTenantId\(request\)/);
+  assert.match(router, /loadCourierEarningsProjection\(courierId\)/);
+  const route = router.slice(router.indexOf("router.get('/earnings'"), router.indexOf("router.get('/:deliveryId/pickup-code'"));
+  assert.doesNotMatch(route, /request\.query|request\.body|request\.params/);
+});
+
+test('Renda shows economic states without calling them balance or offering payout actions', () => {
+  assert.match(renda, /CourierEarningsProjectionCard/);
+  assert.match(card, /Ganhos em entregas/);
+  assert.match(card, />Previsto</);
+  assert.match(card, />Elegível</);
+  assert.match(card, />Liquidado</);
+  assert.match(card, />Revertido</);
+  assert.match(card, /\/api\/delivery-opportunities\/earnings/);
+  assert.doesNotMatch(card, /saldo disponível|sacar|saque|payout|transferir/i);
 });
