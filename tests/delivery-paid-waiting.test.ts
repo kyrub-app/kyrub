@@ -15,6 +15,10 @@ const obligationService = readFileSync(
   'server/delivery/deliveryPaidWaitingObligationService.ts',
   'utf8'
 );
+const orchestrator = readFileSync(
+  'server/delivery/deliveryResponsibilityDecisionOrchestrator.ts',
+  'utf8'
+);
 
 const policy = {
   policyId: 'pickup-wait-v1',
@@ -111,14 +115,17 @@ test('kyrub-funded waiting is explicit funding and is not charged to customer', 
   assert.equal(obligation.payerPrincipalId, 'kyrub:platform');
 });
 
-test('secure pickup only materializes paid-waiting obligation from an approved decision', () => {
-  assert.match(pickup, /createPaidWaitingObligationFromApprovedDecision/);
-  assert.match(pickup, /decision: delivery\.billableWaitingDecision/);
+test('paid-waiting obligation materializes only after an approved responsibility decision', () => {
+  assert.doesNotMatch(pickup, /createPaidWaitingObligationFromApprovedDecision/);
+  assert.doesNotMatch(pickup, /decision:\s*delivery\.billableWaitingDecision/);
+  assert.match(orchestrator, /decision\.status === 'approved'/);
+  assert.match(orchestrator, /createPaidWaitingObligationFromApprovedDecision/);
+  assert.match(orchestrator, /decision,/);
   assert.match(obligationService, /raw\.status !== 'approved'/);
   assert.match(obligationService, /kyrub_billable_waiting_decision_engine/);
   assert.match(obligationService, /economicObligations/);
   assert.doesNotMatch(
-    `${pickup}\n${obligationService}`,
+    `${pickup}\n${orchestrator}\n${obligationService}`,
     /economicSettlements|buildEconomicSettlement|status:\s*'settled'|payout|transfer|wallet|custod/i
   );
 });
