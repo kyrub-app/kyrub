@@ -5,12 +5,14 @@ import {
   calculateDeliveryPaidWaiting,
   type DeliveryPaidWaitingPolicySnapshot,
 } from '../../shared/deliveryPaidWaiting.js';
+import type { DeliveryOperationalEvent } from '../../shared/deliveryOperationalResponsibility.js';
 import { createPaidWaitingObligationFromApprovedDecision } from './deliveryPaidWaitingObligationService.js';
 
 const DELIVERY_COLLECTION = 'hub/renda/deliveries';
 const DELIVERY_CLAIM_COLLECTION = 'deliveryClaims';
 const DELIVERY_TRACKING_COLLECTION = 'deliveryTracking';
 const DELIVERY_PICKUP_SECRET_COLLECTION = 'deliveryPickupSecrets';
+const DELIVERY_OPERATIONAL_EVENT_COLLECTION = 'deliveryOperationalEvents';
 const DELIVERY_PICKUP_MAX_ATTEMPTS = 5;
 
 const clean = (value: unknown): string => typeof value === 'string' ? value.trim() : '';
@@ -33,6 +35,26 @@ const serverTimestampMillis = (value: unknown): number | null => {
 };
 const nonNegativeSafeInteger = (value: unknown): number | null => Number.isSafeInteger(value) && Number(value) >= 0 ? Number(value) : null;
 const positiveSafeInteger = (value: unknown): number | null => Number.isSafeInteger(value) && Number(value) > 0 ? Number(value) : null;
+
+export const pickupConfirmedOperationalEventId = (deliveryId: string): string =>
+  `evt-${createHash('sha256').update(`${deliveryId}:pickup_confirmed:v1`).digest('hex')}`;
+
+const operationalEventPath = (eventId: string): string =>
+  `${DELIVERY_OPERATIONAL_EVENT_COLLECTION}/${eventId}`;
+
+const pickupEventMatches = (
+  event: Record<string, unknown>,
+  expected: { eventId: string; deliveryId: string; orderId: string; storeId: string; courierId: string }
+): boolean =>
+  event.schemaVersion === 1 &&
+  clean(event.id) === expected.eventId &&
+  clean(event.deliveryId) === expected.deliveryId &&
+  clean(event.orderId) === expected.orderId &&
+  clean(event.storeId) === expected.storeId &&
+  clean(event.courierId) === expected.courierId &&
+  event.type === 'pickup_confirmed' &&
+  event.authority === 'server' &&
+  event.actor === 'courier';
 
 const parsePaidWaitingPolicy = (value: unknown): DeliveryPaidWaitingPolicySnapshot | null => {
   const raw = record(value);
@@ -173,10 +195,16 @@ export const confirmSecureCourierPickupAndStartRoute = async (input: { deliveryI
   const claimRef = adminDb.doc(`${DELIVERY_CLAIM_COLLECTION}/${deliveryId}`);
   const trackingRef = adminDb.doc(`${DELIVERY_TRACKING_COLLECTION}/${deliveryId}`);
   const secretRef = adminDb.doc(`${DELIVERY_PICKUP_SECRET_COLLECTION}/${deliveryId}`);
+  const pickupEventId = pickupConfirmedOperationalEventId(deliveryId);
+  const pickupEventRef = adminDb.doc(operationalEventPath(pickupEventId));
 
   const result = await adminDb.runTransaction<PickupAttemptResult>(async transaction => {
-    const [deliverySnapshot, claimSnapshot, trackingSnapshot, secretSnapshot] = await Promise.all([
-      transaction.get(deliveryRef), transaction.get(claimRef), transaction.get(trackingRef), transaction.get(secretRef),
+    const [deliverySnapshot, claimSnapshot, trackingSnapshot, secretSnapshot, pickupEventSnapshot] = await Promise.all([
+      transaction.get(deliveryRef),
+      transaction.get(claimRef),
+      transaction.get(trackingRef),
+      transaction.get(secretRef),
+      transaction.get(pickupEventRef),
     ]);
     if (!deliverySnapshot.exists || !claimSnapshot.exists) throw new Error('A entrega não foi encontrada.');
     const delivery = deliverySnapshot.data() as Record<string, unknown>;
@@ -197,6 +225,13 @@ export const confirmSecureCourierPickupAndStartRoute = async (input: { deliveryI
     if (!orderSnapshot.exists) throw new Error('O pedido vinculado à entrega não foi encontrado.');
     const liveOrderStatus = clean(orderSnapshot.data()?.status);
     if (liveOrderStatus !== 'ready') throw new Error('O pedido ainda não está pronto para coleta segura.');
+
+    if (pickupEventSnapshot.exists && !pickupEventMatches(
+      pickupEventSnapshot.data() as Record<string, unknown>,
+      { eventId: pickupEventId, deliveryId, orderId: sourceOrderId, storeId, courierId }
+    )) {
+      throw new Error('DELIVERY_PICKUP_OPERATIONAL_EVENT_CONFLICT');
+    }
 
     if (!secretSnapshot.exists) throw new Error('O código de coleta ainda não foi emitido pela loja.');
     const secret = secretSnapshot.data() as Record<string, unknown>;
@@ -240,6 +275,29 @@ export const confirmSecureCourierPickupAndStartRoute = async (input: { deliveryI
       decision: delivery.billableWaitingDecision,
     });
 
+    if (!pickupEventSnapshot.exists) {
+      const occurredAt = collectedAt.toDate().toISOString();
+      const pickupEvent: DeliveryOperationalEvent = {
+        schemaVersion: 1,
+        id: pickupEventId,
+        deliveryId,
+        orderId: sourceOrderId,
+        storeId,
+        courierId,
+        type: 'pickup_confirmed',
+        occurredAt,
+        recordedAt: occurredAt,
+        authority: 'server',
+        actor: 'courier',
+        referenceId: `delivery_pickup_code:${deliveryId}`,
+      };
+      transaction.create(pickupEventRef, {
+        ...pickupEvent,
+        recordedAtServer: FieldValue.serverTimestamp(),
+        createdAt: FieldValue.serverTimestamp(),
+      });
+    }
+
     const handoff = {
       status: 'handed_over',
       method: 'delivery_pickup_code',
@@ -251,7 +309,7 @@ export const confirmSecureCourierPickupAndStartRoute = async (input: { deliveryI
       handedOverAt: collectedAt,
     };
     transaction.update(claimRef, { status: 'delivering', pickupHandoff: handoff, paidWaitingEvidence, collectedAt, updatedAt: FieldValue.serverTimestamp() });
-    transaction.update(deliveryRef, { status: 'delivering', orderStatus: liveOrderStatus, pickupHandoff: handoff, paidWaitingEvidence, collectedAt, updatedAt: FieldValue.serverTimestamp() });
+    transaction.update(deliveryRef, { status: 'delivering', orderStatus: liveOrderStatus, pickupHandoff: handoff, paidWaitingEvidence, collectedAt, pickupConfirmedOperationalEventId: pickupEventId, updatedAt: FieldValue.serverTimestamp() });
     transaction.delete(secretRef);
     return { ok: true, deliveryId, status: 'delivering' };
   });
