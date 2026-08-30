@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import type { EconomicObligation } from '../shared/economicObligations';
 import { buildDeliveryPaidWaitingCourierObligation } from '../shared/deliveryPaidWaitingObligation';
@@ -6,6 +7,15 @@ import {
   buildEconomicSettlementFundingRecord,
   deriveEconomicSettlementFundingRequirement,
 } from '../shared/economicSettlementFunding';
+
+const settlementServiceSource = readFileSync(
+  'server/payments/economicSettlementsService.ts',
+  'utf8'
+);
+const reconciliationSource = readFileSync(
+  'shared/economicReconciliation.ts',
+  'utf8'
+);
 
 const eligibleWaitingObligation = (payer: 'store' | 'kyrub'): EconomicObligation => {
   const pending = buildDeliveryPaidWaitingCourierObligation({
@@ -152,4 +162,15 @@ test('payment-derived obligations do not get retrofitted into the paid-waiting f
     sourceEconomicEntryId: 'entry-1',
   } as EconomicObligation;
   assert.equal(deriveEconomicSettlementFundingRequirement(obligation), null);
+});
+
+test('legacy settlement and reconciliation remain closed to paid waiting until funding is integrated', () => {
+  assert.match(settlementServiceSource, /!clean\(obligation\.paymentId\)/);
+  assert.match(settlementServiceSource, /!clean\(obligation\.sourceEconomicEntryId\)/);
+  assert.match(
+    settlementServiceSource,
+    /obligation\.sourceAuthority !== 'economic_allocation_snapshot'/
+  );
+  assert.doesNotMatch(settlementServiceSource, /economicSettlementFunding/);
+  assert.match(reconciliationSource, /!clean\(obligation\.paymentId\)/);
 });
