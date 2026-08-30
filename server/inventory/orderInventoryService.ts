@@ -5,6 +5,7 @@ import {
   type Transaction,
 } from 'firebase-admin/firestore';
 import { adminDb } from '../firebaseAdmin.js';
+import { writeStoreMarkedReadyEvidenceInTransaction } from '../delivery/deliveryStoreReadyOperationalEventService.js';
 import {
   applyInventoryConsumptionLines,
   calculateCompositionAvailableStock,
@@ -412,6 +413,21 @@ export const transitionOrderStatusWithInventory = async (
       throw new Error('Explique o motivo da recusa ou cancelamento.');
     }
 
+    const canonicalStoreId = clean(tenantSnapshot.data()?.canonicalStoreId);
+    if (nextStatus === 'ready') {
+      await writeStoreMarkedReadyEvidenceInTransaction({
+        transaction,
+        tenantId: normalizedTenantId,
+        orderId: normalizedOrderId,
+        actorUid: normalizedTenantId,
+        order: {
+          ...(orderSnapshot.data() ?? {}),
+          status: 'ready',
+        },
+        canonicalStoreId,
+      });
+    }
+
     const extra = decisionText(decision);
     const nextNote = extra
       ? mergeCustomerNote(order.customerNote, extra)
@@ -445,7 +461,6 @@ export const transitionOrderStatusWithInventory = async (
       { merge: true }
     );
 
-    const canonicalStoreId = clean(tenantSnapshot.data()?.canonicalStoreId);
     if (canonicalStoreId) {
       transaction.set(
         adminDb.doc(`stores/${canonicalStoreId}/orders/${normalizedOrderId}`),
