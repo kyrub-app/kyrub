@@ -10,7 +10,6 @@ import type {
   KyrubPolicyDecision,
 } from '../../shared/kyrubActions.js';
 import { verifyFirebaseIdToken } from '../ai/consultantAuth.js';
-import { persistStoreMarkedReadyOperationalEvent } from '../delivery/deliveryStoreReadyOperationalEventService.js';
 import { adminDb } from '../firebaseAdmin.js';
 import { sendNinetyNineFoodOrderStatus } from '../integrations/ninetyNineFoodService.js';
 import {
@@ -377,14 +376,6 @@ export const executeAuthorizedKyrubOrderStatus = async (
     normalizedProposal.nextStatus,
     normalizedProposal.decision ?? {}
   );
-
-  if (normalizedProposal.nextStatus === 'ready') {
-    await persistStoreMarkedReadyOperationalEvent({
-      tenantId: actor.uid,
-      orderId: normalizedProposal.orderId,
-      actorUid: actor.uid,
-    });
-  }
 
   let partnerSync = 'not-applicable';
   let partnerWarning = '';
