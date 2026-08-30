@@ -11,8 +11,11 @@ import type { User } from 'firebase/auth';
 import type { AdminProfile } from '../../utils/adminControlPlane';
 import {
   loadAdminIntegrationReadiness,
+  saveAdminGoogleMapsCredentials,
   saveAdminMercadoPagoCredentials,
+  testAdminGoogleMapsConnection,
   testAdminMercadoPagoConnection,
+  type AdminGoogleMapsCredentialStatus,
   type AdminIntegrationProviderState,
   type AdminIntegrationReadinessSnapshot,
   type AdminMercadoPagoCredentialStatus,
@@ -36,6 +39,8 @@ const detailLabel = (key: string): string => ({
   pixCheckoutConfigured: 'Checkout Pix',
   webhookConfigured: 'Webhook',
   productionActivatedByVault: 'Ativação via Vault',
+  apiKeyConfigured: 'API Key',
+  geocodingConfigured: 'Geocoding',
   connections: 'Conexões',
   connected: 'Conectadas',
   attention: 'Com atenção',
@@ -62,6 +67,11 @@ export default function AdminIntegrationsWorkspace({
   const [testing, setTesting] = useState(false);
   const [credentialStatus, setCredentialStatus] = useState<AdminMercadoPagoCredentialStatus | null>(null);
   const [credentialMessage, setCredentialMessage] = useState('');
+  const [googleMapsApiKey, setGoogleMapsApiKey] = useState('');
+  const [googleMapsSaving, setGoogleMapsSaving] = useState(false);
+  const [googleMapsTesting, setGoogleMapsTesting] = useState(false);
+  const [googleMapsStatus, setGoogleMapsStatus] = useState<AdminGoogleMapsCredentialStatus | null>(null);
+  const [googleMapsMessage, setGoogleMapsMessage] = useState('');
 
   const refresh = async (): Promise<void> => {
     setLoading(true);
@@ -128,6 +138,53 @@ export default function AdminIntegrationsWorkspace({
     }
   };
 
+  const saveGoogleMaps = async (): Promise<void> => {
+    if (!googleMapsApiKey.trim()) {
+      setGoogleMapsMessage('Informe a API Key do Google Maps antes de salvar.');
+      return;
+    }
+    setGoogleMapsSaving(true);
+    setGoogleMapsMessage('');
+    try {
+      const status = await saveAdminGoogleMapsCredentials(
+        authenticatedUser,
+        profile,
+        { apiKey: googleMapsApiKey }
+      );
+      setGoogleMapsStatus(status);
+      setGoogleMapsApiKey('');
+      setGoogleMapsMessage('API Key protegida no cofre. O valor completo não será exibido novamente.');
+      await refresh();
+    } catch (caught) {
+      setGoogleMapsMessage(
+        caught instanceof Error ? caught.message : 'Não foi possível salvar a API Key.'
+      );
+    } finally {
+      setGoogleMapsSaving(false);
+    }
+  };
+
+  const testGoogleMaps = async (): Promise<void> => {
+    setGoogleMapsTesting(true);
+    setGoogleMapsMessage('');
+    try {
+      const result = await testAdminGoogleMapsConnection(authenticatedUser, profile);
+      setGoogleMapsStatus(result.credential);
+      setGoogleMapsMessage(
+        result.ok
+          ? 'Google Maps Geocoding validado pelo backend.'
+          : `A conexão não foi validada (${result.code || 'erro desconhecido'}).`
+      );
+      await refresh();
+    } catch (caught) {
+      setGoogleMapsMessage(
+        caught instanceof Error ? caught.message : 'Não foi possível testar o Google Maps.'
+      );
+    } finally {
+      setGoogleMapsTesting(false);
+    }
+  };
+
   useEffect(() => {
     if (profile.role !== 'super_admin' || profile.status !== 'active') return;
     void refresh();
@@ -136,6 +193,7 @@ export default function AdminIntegrationsWorkspace({
   if (profile.role !== 'super_admin' || profile.status !== 'active') return null;
 
   const mercadoPago = snapshot?.providers.find(provider => provider.id === 'mercado_pago');
+  const googleMaps = snapshot?.providers.find(provider => provider.id === 'google_maps');
 
   return (
     <section
@@ -268,6 +326,58 @@ export default function AdminIntegrationsWorkspace({
         {credentialMessage && (
           <p className="mt-3 rounded-xl border border-slate-800 bg-slate-950/50 p-3 text-[10px] leading-relaxed text-slate-300" aria-live="polite">
             {credentialMessage}
+          </p>
+        )}
+      </article>
+
+      <article className="mt-5 rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-4">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <span className="text-[9px] font-black uppercase tracking-wider text-emerald-400">Google Maps Platform · produção</span>
+            <h3 className="mt-1 text-sm font-black text-white">Geocodificação e destino canônico</h3>
+            <p className="mt-1 max-w-2xl text-[10px] leading-relaxed text-slate-500">
+              A chave fica no backend e será usada para resolver endereços do checkout em coordenadas/Place ID. Abrir o Maps por URL continua independente desta chave.
+            </p>
+          </div>
+          <span className="rounded-full border border-slate-700 px-2.5 py-1 text-[9px] font-black uppercase text-slate-300">
+            {googleMaps ? STATE_LABEL[googleMaps.state] : 'Aguardando leitura'}
+          </span>
+        </div>
+
+        <label className="mt-4 block text-[10px] font-bold text-slate-400">
+          Google Maps API Key
+          <input
+            type="password"
+            autoComplete="off"
+            value={googleMapsApiKey}
+            onChange={event => setGoogleMapsApiKey(event.target.value)}
+            placeholder={googleMapsStatus?.apiKeyLast4 ? `Salva ·••••${googleMapsStatus.apiKeyLast4}` : 'Cole a API Key do projeto Google Cloud'}
+            className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950/70 px-3 py-2.5 text-xs text-white outline-none focus:border-emerald-500"
+          />
+        </label>
+
+        <div className="mt-4 flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => void saveGoogleMaps()}
+            disabled={googleMapsSaving || googleMapsTesting || !snapshot?.vault.legacyEnvelopeConfigured}
+            className="rounded-xl bg-emerald-500 px-4 py-2 text-[10px] font-black uppercase tracking-wider text-slate-950 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            {googleMapsSaving ? 'Salvando…' : 'Salvar no cofre'}
+          </button>
+          <button
+            type="button"
+            onClick={() => void testGoogleMaps()}
+            disabled={googleMapsSaving || googleMapsTesting || googleMaps?.state === 'not-configured'}
+            className="rounded-xl border border-slate-700 bg-slate-900 px-4 py-2 text-[10px] font-black uppercase tracking-wider text-slate-200 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            {googleMapsTesting ? 'Testando…' : 'Testar Geocoding'}
+          </button>
+        </div>
+
+        {googleMapsMessage && (
+          <p className="mt-3 rounded-xl border border-slate-800 bg-slate-950/50 p-3 text-[10px] leading-relaxed text-slate-300" aria-live="polite">
+            {googleMapsMessage}
           </p>
         )}
       </article>
