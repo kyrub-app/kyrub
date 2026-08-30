@@ -69,3 +69,15 @@ test('Renda shows economic states without calling them balance or offering payou
   assert.match(card, /\/api\/delivery-opportunities\/earnings/);
   assert.doesNotMatch(card, /saldo disponível|sacar|saque|payout|transferir/i);
 });
+
+test('statement exposes lifecycle timestamps and only settled entries receive settlement evidence', () => {
+  assert.match(service, /createdAt: obligation\.createdAt/);
+  assert.match(service, /eligibleAt: obligation\.eligibleAt/);
+  assert.match(service, /reversedAt: obligation\.reversedAt/);
+  assert.match(service, /settlementProvider: settlement\?\.provider \?\? ''/);
+  assert.match(service, /projection\.state === 'settled' && !settlement/);
+  assert.match(card, /Extrato por entrega/);
+  assert.match(card, /entry\.state === 'settled' && entry\.settlementId/);
+  assert.match(card, /Liquidação confirmada por evidência autoritativa/);
+  assert.match(card, /entry\.settlementProvider/);
+});

@@ -3,6 +3,28 @@ import { CircleDollarSign, RefreshCw } from 'lucide-react';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth } from '../../utils/firebase';
 
+type EarningsState =
+  | 'projected'
+  | 'eligible'
+  | 'settled'
+  | 'reversed'
+  | 'integrity_error';
+
+interface EarningsEntry {
+  obligationId: string;
+  storeId: string;
+  orderId: string;
+  deliveryId: string;
+  amountMinor: number;
+  state: EarningsState;
+  createdAt: string;
+  eligibleAt: string;
+  settledAt: string;
+  reversedAt: string;
+  settlementId: string;
+  settlementProvider: string;
+}
+
 interface EarningsSnapshot {
   currency: 'BRL';
   totals: {
@@ -12,6 +34,7 @@ interface EarningsSnapshot {
     reversedMinor: number;
   };
   integrityErrorCount: number;
+  entries: EarningsEntry[];
 }
 
 const EMPTY: EarningsSnapshot = {
@@ -23,6 +46,7 @@ const EMPTY: EarningsSnapshot = {
     reversedMinor: 0,
   },
   integrityErrorCount: 0,
+  entries: [],
 };
 
 const money = (minor: number): string =>
@@ -30,6 +54,22 @@ const money = (minor: number): string =>
     style: 'currency',
     currency: 'BRL',
   }).format(minor / 100);
+
+const dateTime = (value: string): string => {
+  if (!value || Number.isNaN(Date.parse(value))) return '';
+  return new Intl.DateTimeFormat('pt-BR', {
+    dateStyle: 'short',
+    timeStyle: 'short',
+  }).format(new Date(value));
+};
+
+const STATE_LABEL: Record<EarningsState, string> = {
+  projected: 'Previsto',
+  eligible: 'Elegível',
+  settled: 'Liquidado',
+  reversed: 'Revertido',
+  integrity_error: 'Em análise',
+};
 
 const load = async (): Promise<EarningsSnapshot> => {
   const user = auth.currentUser;
@@ -54,6 +94,7 @@ const load = async (): Promise<EarningsSnapshot> => {
       reversedMinor: Number(payload.totals?.reversedMinor ?? 0),
     },
     integrityErrorCount: Number(payload.integrityErrorCount ?? 0),
+    entries: Array.isArray(payload.entries) ? payload.entries : [],
   };
 };
 
@@ -131,6 +172,68 @@ export function CourierEarningsProjectionCard() {
           </div>
         ))}
       </div>
+
+      {snapshot.entries.length > 0 && (
+        <div className="mt-4 space-y-2" id="courier-earnings-statement">
+          <div className="flex items-center justify-between gap-3">
+            <h4 className="text-[9px] font-black uppercase tracking-wider text-slate-300">
+              Extrato por entrega
+            </h4>
+            <span className="text-[8px] text-slate-500">até 50 lançamentos</span>
+          </div>
+          {snapshot.entries.map(entry => {
+            const evidenceTime =
+              entry.state === 'settled'
+                ? entry.settledAt
+                : entry.state === 'eligible'
+                  ? entry.eligibleAt
+                  : entry.state === 'reversed'
+                    ? entry.reversedAt
+                    : entry.createdAt;
+            return (
+              <article
+                key={entry.obligationId}
+                className="rounded-2xl border border-slate-800 bg-slate-950 p-3"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-[9px] font-black text-white">
+                      {STATE_LABEL[entry.state]}
+                    </p>
+                    <p className="mt-1 truncate font-mono text-[8px] text-slate-500">
+                      entrega {entry.deliveryId || '—'}
+                    </p>
+                    <p className="truncate font-mono text-[8px] text-slate-600">
+                      pedido {entry.orderId || '—'}
+                    </p>
+                  </div>
+                  <p className="shrink-0 text-sm font-black text-white">
+                    {money(entry.amountMinor)}
+                  </p>
+                </div>
+                {evidenceTime && (
+                  <p className="mt-2 text-[8px] text-slate-500">
+                    {dateTime(evidenceTime)}
+                  </p>
+                )}
+                {entry.state === 'settled' && entry.settlementId && (
+                  <div className="mt-2 rounded-xl border border-emerald-500/15 bg-emerald-500/[0.06] px-2.5 py-2 text-[8px] text-emerald-200">
+                    <p>Liquidação confirmada por evidência autoritativa.</p>
+                    {entry.settlementProvider && (
+                      <p className="mt-1 font-mono text-emerald-300/70">
+                        provedor {entry.settlementProvider}
+                      </p>
+                    )}
+                    <p className="mt-1 truncate font-mono text-emerald-300/60">
+                      {entry.settlementId}
+                    </p>
+                  </div>
+                )}
+              </article>
+            );
+          })}
+        </div>
+      )}
 
       {!loading && !error && !hasAny && (
         <p className="mt-3 text-[9px] text-slate-500">

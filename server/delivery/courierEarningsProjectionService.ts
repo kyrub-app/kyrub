@@ -19,7 +19,12 @@ export interface CourierEarningsProjectionSnapshot {
     deliveryId: string;
     amountMinor: number;
     state: 'projected' | 'eligible' | 'settled' | 'reversed' | 'integrity_error';
+    createdAt: string;
+    eligibleAt: string;
     settledAt: string;
+    reversedAt: string;
+    settlementId: string;
+    settlementProvider: string;
   }>;
 }
 
@@ -60,6 +65,8 @@ export const loadCourierEarningsProjection = async (
     document => document.data() as EconomicSettlementRecord
   );
   const projections = derivePayableProjections({ obligations, settlements });
+  const obligationById = new Map(obligations.map(obligation => [obligation.id, obligation]));
+  const settlementById = new Map(settlements.map(settlement => [settlement.id, settlement]));
 
   let projectedMinor = 0;
   let eligibleMinor = 0;
@@ -97,16 +104,37 @@ export const loadCourierEarningsProjection = async (
     integrityErrorCount,
     entries: projections
       .slice()
-      .sort((left, right) => right.settledAt.localeCompare(left.settledAt))
+      .sort((left, right) => {
+        const leftObligation = obligationById.get(left.obligationId);
+        const rightObligation = obligationById.get(right.obligationId);
+        const leftTime = left.settledAt || leftObligation?.eligibleAt || leftObligation?.createdAt || '';
+        const rightTime = right.settledAt || rightObligation?.eligibleAt || rightObligation?.createdAt || '';
+        return rightTime.localeCompare(leftTime);
+      })
       .slice(0, 50)
-      .map(projection => ({
-        obligationId: projection.obligationId,
-        storeId: projection.storeId,
-        orderId: projection.orderId,
-        deliveryId: projection.fulfillmentId,
-        amountMinor: projection.amountMinor,
-        state: projection.state,
-        settledAt: projection.settledAt,
-      })),
+      .map(projection => {
+        const obligation = obligationById.get(projection.obligationId);
+        if (!obligation) throw new Error('COURIER_EARNINGS_OBLIGATION_MISSING');
+        const settlement = projection.settlementId
+          ? settlementById.get(projection.settlementId)
+          : undefined;
+        if (projection.state === 'settled' && !settlement) {
+          throw new Error('COURIER_EARNINGS_SETTLEMENT_MISSING');
+        }
+        return {
+          obligationId: projection.obligationId,
+          storeId: projection.storeId,
+          orderId: projection.orderId,
+          deliveryId: projection.fulfillmentId,
+          amountMinor: projection.amountMinor,
+          state: projection.state,
+          createdAt: obligation.createdAt,
+          eligibleAt: obligation.eligibleAt,
+          settledAt: projection.settledAt,
+          reversedAt: obligation.reversedAt,
+          settlementId: projection.settlementId,
+          settlementProvider: settlement?.provider ?? '',
+        };
+      }),
   };
 };
