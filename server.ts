@@ -12,6 +12,7 @@ import {
 } from "./server/integrations/ninetyNineFoodRouter";
 import { createDeliveryOpportunityRouter } from "./server/delivery/deliveryOpportunityRouter";
 import { createDeliveryTrackingRouter } from "./server/delivery/deliveryTrackingRouter";
+import { createPaidWaitingFundingResponsibilityRouter } from "./server/delivery/paidWaitingFundingResponsibilityRouter";
 import { createOperationsHealthRouter } from "./server/admin/operationsHealthRouter";
 import { createPlatformEconomyRouter } from "./server/admin/platformEconomyRouter";
 import { createOrderInventoryRouter } from "./server/inventory/orderInventoryRouter";
@@ -196,6 +197,12 @@ app.use(
   integrationRateLimiter,
   enforceDeliveryWorkEligibility,
   createDeliveryTrackingRouter()
+);
+
+app.use(
+  "/api/paid-waiting-funding-responsibility",
+  integrationRateLimiter,
+  createPaidWaitingFundingResponsibilityRouter()
 );
 
 app.use(
