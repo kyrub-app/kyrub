@@ -10,6 +10,7 @@ import {
   createNinetyNineFoodRouter,
   type RawBodyRequest,
 } from "./server/integrations/ninetyNineFoodRouter";
+import { createStoreConnectionOnboardingRouter } from "./server/integrations/storeConnectionOnboardingRouter";
 import { createDeliveryOpportunityRouter } from "./server/delivery/deliveryOpportunityRouter";
 import { createDeliveryTrackingRouter } from "./server/delivery/deliveryTrackingRouter";
 import { createPaidWaitingFundingResponsibilityRouter } from "./server/delivery/paidWaitingFundingResponsibilityRouter";
@@ -111,6 +112,12 @@ app.use(
   "/api/integrations/99food",
   integrationRateLimiter,
   createNinetyNineFoodRouter()
+);
+
+app.use(
+  "/api/store-connections",
+  integrationRateLimiter,
+  createStoreConnectionOnboardingRouter()
 );
 
 app.use(
