@@ -9,6 +9,7 @@ import {
   previewMercadoLivreCatalog,
 } from './mercadoLivreCatalogImportService.js';
 import { ingestMercadoLivreNotification } from './mercadoLivreNotificationInboxService.js';
+import { processMercadoLivreNotificationInboxItem } from './mercadoLivreNotificationProcessor.js';
 
 const clean = (value: unknown): string =>
   typeof value === 'string' ? value.trim() : '';
@@ -48,6 +49,15 @@ const mapError = (error: unknown): { status: number; message: string; code: stri
   if (code.includes('SELECTION') || code.includes('STATE_REQUIRED') || code.includes('CODE_REQUIRED')) {
     return { status: 400, message: 'A solicitação de integração é inválida.', code };
   }
+  if (code.includes('INBOX_ID_INVALID') || code.includes('RESOURCE_UNSUPPORTED')) {
+    return { status: 400, message: 'A notificação selecionada não pode ser processada.', code };
+  }
+  if (code.includes('INBOX_NOT_FOUND')) {
+    return { status: 404, message: 'A notificação selecionada não foi encontrada.', code };
+  }
+  if (code.includes('NOT_PENDING')) {
+    return { status: 409, message: 'A notificação não está pendente de processamento.', code };
+  }
   if (code.includes('NOT_CONNECTED') || code.includes('CONNECTION_INVALID')) {
     return { status: 409, message: 'Conecte sua conta do Mercado Livre antes de continuar.', code };
   }
@@ -85,6 +95,22 @@ export const createMercadoLivreRouter = (): Router => {
       }
       console.error('[Mercado Livre notification inbox]', code);
       response.status(503).json({ received: false });
+    }
+  });
+
+  router.post('/:storeId/notifications/:inboxId/process', async (request, response) => {
+    try {
+      const storeId = clean(request.params.storeId);
+      const inboxId = clean(request.params.inboxId);
+      await authenticatedOwner(request.get('authorization') ?? '', storeId);
+      response.setHeader('Cache-Control', 'no-store, max-age=0');
+      response.json(await processMercadoLivreNotificationInboxItem({
+        inboxId,
+        expectedStoreId: storeId,
+      }));
+    } catch (error) {
+      const mapped = mapError(error);
+      response.status(mapped.status).json({ error: mapped.message, code: mapped.code });
     }
   });
 
