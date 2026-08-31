@@ -19,6 +19,15 @@ test('outbound publication starts as a non-executable owner-reviewed proposal', 
   assert.doesNotMatch(source, /mercadoLivrePostJson|\/items['"`]/);
 });
 
+test('outbound proposal resolves the canonical store instead of assuming owner store identity', async () => {
+  const source = await readFile(servicePath, 'utf8');
+  assert.match(source, /users\/\$\{storeId\}\/stores\/\$\{storeId\}/);
+  assert.match(source, /canonicalStoreId/);
+  assert.match(source, /stores\/\$\{canonicalStoreId\}\/products\/\$\{canonicalProductId\}/);
+  assert.doesNotMatch(source, /stores\/\$\{storeId\}\/products\/\$\{canonicalProductId\}/);
+  assert.match(source, /proposalIdFor\(storeId, connectionId, canonicalStoreId, canonicalProductId, baselineHash\)/);
+});
+
 test('outbound proposal routes remain owner authenticated and do not publish', async () => {
   const source = await readFile(routerPath, 'utf8');
   assert.match(source, /outbound-publication-proposals/);
