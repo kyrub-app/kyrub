@@ -1,6 +1,7 @@
 import { FieldValue } from 'firebase-admin/firestore';
 import { adminDb } from '../firebaseAdmin.js';
 import { mercadoLivreValidateJson } from './mercadoLivreOauthService.js';
+import { mercadoLivrePublicationCorrelationMarker } from './mercadoLivrePublicationCorrelation.js';
 
 interface ProposalRecord {
   id: string;
@@ -178,6 +179,7 @@ export const validateMercadoLivreOutboundListing = async (input: {
     throw new Error('MERCADO_LIVRE_OUTBOUND_PROPOSAL_STALE');
   }
 
+  const publicationCorrelationMarker = mercadoLivrePublicationCorrelationMarker(storeId, proposalId);
   const itemPayload = {
     title: proposal.canonical.name,
     category_id: proposal.providerCategoryId,
@@ -187,6 +189,7 @@ export const validateMercadoLivreOutboundListing = async (input: {
     buying_mode: 'buy_it_now',
     listing_type_id: proposal.providerListingTypeId,
     condition: proposal.providerCondition,
+    seller_custom_field: publicationCorrelationMarker,
     ...(proposal.canonical.image ? { pictures: [{ source: proposal.canonical.image }] } : {}),
     attributes: configuration.attributes.map(attribute => ({
       id: attribute.id,
@@ -237,6 +240,7 @@ export const validateMercadoLivreOutboundListing = async (input: {
       requirementConfiguredAt: configuration.configuredAt,
       conditionalRequirementValidatedAt: conditionalValidation.validatedAt,
       validatedByUserId,
+      publicationCorrelationMarker,
       providerPayload: itemPayload,
       serverValidatedAt: FieldValue.serverTimestamp(),
     });
@@ -245,6 +249,7 @@ export const validateMercadoLivreOutboundListing = async (input: {
       publicationReadinessAuthority: 'provider_items_validate',
       publicationValidatedAt: validatedAt,
       publicationValidationCauses: causes,
+      publicationCorrelationMarker,
       executionStatus: 'not_authorized',
       serverPublicationValidatedAt: FieldValue.serverTimestamp(),
     });
