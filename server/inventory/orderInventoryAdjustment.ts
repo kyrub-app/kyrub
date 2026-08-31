@@ -14,6 +14,10 @@ import {
   parseOptionInventoryImpacts,
   type OptionAwareInventoryOrderItem,
 } from '../../shared/optionInventoryImpact';
+import {
+  inventoryAuthorityFromLedger,
+  legacyTenantInventoryAuthority,
+} from './canonicalInventoryAuthorityService';
 import { reconcilePersistedOrderInventory } from './orderInventoryService';
 import { createHash } from 'node:crypto';
 
@@ -27,9 +31,6 @@ const finiteInteger = (value: unknown): number | null =>
 
 const orderPath = (tenantId: string, orderId: string): string =>
   `artifacts/${tenantId}/public/data/customerOrders/${orderId}`;
-
-const inventoryPath = (tenantId: string): string =>
-  `users/${tenantId}/private_store/inventory`;
 
 const ledgerPath = (tenantId: string, orderId: string): string =>
   `inventoryOrderConsumptions/${createHash('sha256')
@@ -165,20 +166,26 @@ export const adjustConsumedOrderInventoryQuantities = async (
 ): Promise<InventoryQuantityReconciliationAction> =>
   adminDb.runTransaction(async transaction => {
     const orderReference = adminDb.doc(orderPath(tenantId, orderId));
-    const inventoryReference = adminDb.doc(inventoryPath(tenantId));
     const tenantReference = adminDb.doc(`tenants/${tenantId}`);
     const ledgerReference = adminDb.doc(ledgerPath(tenantId, orderId));
-    const [orderSnapshot, inventorySnapshot, tenantSnapshot, ledgerSnapshot] =
-      await Promise.all([
-        transaction.get(orderReference),
-        transaction.get(inventoryReference),
-        transaction.get(tenantReference),
-        transaction.get(ledgerReference),
-      ]);
+    const [orderSnapshot, tenantSnapshot, ledgerSnapshot] = await Promise.all([
+      transaction.get(orderReference),
+      transaction.get(tenantReference),
+      transaction.get(ledgerReference),
+    ]);
     const ledgerData = ledgerSnapshot.data() as Record<string, unknown> | undefined;
     if (!ledgerSnapshot.exists || clean(ledgerData?.status) !== 'consumed') {
       return 'not-consumed';
     }
+
+    const canonicalStoreId = clean(tenantSnapshot.data()?.canonicalStoreId);
+    const inventoryAuthority = inventoryAuthorityFromLedger({
+      tenantId,
+      canonicalStoreId,
+      ledgerData,
+    }) ?? legacyTenantInventoryAuthority(tenantId, canonicalStoreId);
+    const inventoryReference = adminDb.doc(inventoryAuthority.inventoryDocumentPath);
+    const inventorySnapshot = await transaction.get(inventoryReference);
 
     const inventoryData = inventorySnapshot.data();
     const tenantData = tenantSnapshot.data();
@@ -241,6 +248,10 @@ export const adjustConsumedOrderInventoryQuantities = async (
     transaction.set(
       ledgerReference,
       {
+        inventoryAuthorityOwnerUserId: inventoryAuthority.ownerUserId,
+        inventoryAuthority: inventoryAuthority.authority,
+        inventoryDocumentPath: inventoryAuthority.inventoryDocumentPath,
+        canonicalStoreId: inventoryAuthority.canonicalStoreId,
         lines: desiredLines,
         adjustedAt: FieldValue.serverTimestamp(),
         adjustmentReason: 'order_items_changed',
@@ -253,6 +264,8 @@ export const adjustConsumedOrderInventoryQuantities = async (
       {
         inventory: {
           lastAction: 'adjusted',
+          authorityOwnerUserId: inventoryAuthority.ownerUserId,
+          authority: inventoryAuthority.authority,
           reconciledAt: new Date().toISOString(),
         },
       },

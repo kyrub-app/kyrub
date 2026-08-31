@@ -21,6 +21,7 @@ import {
   type AdminProfile,
 } from '../../utils/adminControlPlane';
 import { loadAdminPlatformEconomy } from '../../utils/adminPlatformEconomy';
+import { AdminPaidWaitingFundingResponsibilityCard } from './AdminPaidWaitingFundingResponsibilityCard';
 
 const money = (minor: number): string =>
   new Intl.NumberFormat('pt-BR', {
@@ -192,6 +193,8 @@ export default function AdminPlatformEconomyWorkspace() {
                 <span className="text-[9px] text-slate-600">bruto após refunds: {money(snapshot.totals.grossAfterRefundsMinor)}</span>
               </article>
             </div>
+
+            <AdminPaidWaitingFundingResponsibilityCard user={user} />
 
             <div className="mt-4 rounded-2xl border border-violet-500/15 bg-violet-500/5 p-4">
               <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">

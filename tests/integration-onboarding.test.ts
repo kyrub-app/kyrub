@@ -140,7 +140,7 @@ describe('smart store onboarding', () => {
     });
 
     assert.equal(progress.completed, 3);
-    assert.equal(progress.percent, 60);
+    assert.equal(progress.percent, 50);
     assert.equal(progress.nextField, 'contact');
     assert.equal(progress.readyForReview, false);
   });

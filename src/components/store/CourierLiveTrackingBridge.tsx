@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
 import { collection, onSnapshot } from 'firebase/firestore';
-import { Crosshair, LocateFixed, MapPin, X } from 'lucide-react';
+import { Crosshair, KeyRound, LocateFixed, MapPin, X } from 'lucide-react';
 import { auth, db } from '../../utils/firebase';
 import { CourierGoogleMap } from './CourierGoogleMap';
 
@@ -24,6 +24,10 @@ interface CourierPosition {
   heading: number | null;
   speed: number | null;
   clientCapturedAt: number;
+}
+
+interface LocationUpdateResult {
+  arrivalDetected: boolean;
 }
 
 const clean = (value: unknown): string =>
@@ -61,7 +65,7 @@ const parseStoredPosition = (): CourierPosition | null => {
 const postLocation = async (
   deliveryId: string,
   position: CourierPosition
-): Promise<void> => {
+): Promise<LocationUpdateResult> => {
   const user = auth.currentUser;
   if (!user) throw new Error('Faça login novamente.');
   const token = await user.getIdToken();
@@ -76,12 +80,47 @@ const postLocation = async (
       body: JSON.stringify(position),
     }
   );
+  const payload = await response.json().catch(() => ({})) as Record<string, unknown>;
+  if (response.ok) {
+    const storeArrival =
+      payload.storeArrival && typeof payload.storeArrival === 'object'
+        ? payload.storeArrival as Record<string, unknown>
+        : null;
+    return {
+      arrivalDetected: storeArrival?.arrivalDetected === true,
+    };
+  }
+  throw new Error(
+    typeof payload.error === 'string'
+      ? payload.error
+      : 'Não foi possível atualizar sua localização.'
+  );
+};
+
+const confirmSecurePickup = async (
+  deliveryId: string,
+  handoffCode: string
+): Promise<void> => {
+  const user = auth.currentUser;
+  if (!user) throw new Error('Faça login novamente.');
+  const token = await user.getIdToken();
+  const response = await fetch(
+    `/api/delivery-opportunities/${encodeURIComponent(deliveryId)}/secure-pickup`,
+    {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${token}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ handoffCode }),
+    }
+  );
   if (response.ok) return;
   const payload = await response.json().catch(() => ({})) as Record<string, unknown>;
   throw new Error(
     typeof payload.error === 'string'
       ? payload.error
-      : 'Não foi possível atualizar sua localização.'
+      : 'Não foi possível confirmar a coleta segura.'
   );
 };
 
@@ -103,6 +142,10 @@ export function CourierLiveTrackingBridge() {
   const [position, setPosition] = useState<CourierPosition | null>(parseStoredPosition);
   const [trackingError, setTrackingError] = useState('');
   const [panelDismissed, setPanelDismissed] = useState(false);
+  const [storeArrivalDetected, setStoreArrivalDetected] = useState(false);
+  const [pickupCode, setPickupCode] = useState('');
+  const [pickupBusy, setPickupBusy] = useState(false);
+  const [pickupError, setPickupError] = useState('');
   const watchIdRef = useRef<number | null>(null);
   const lastSentAtRef = useRef(0);
   const sendingRef = useRef(false);
@@ -157,6 +200,12 @@ export function CourierLiveTrackingBridge() {
   );
 
   useEffect(() => {
+    setStoreArrivalDetected(false);
+    setPickupCode('');
+    setPickupError('');
+  }, [activeDelivery?.id]);
+
+  useEffect(() => {
     if (
       trackingDeliveryId &&
       !assignedDeliveries.some(delivery => delivery.id === trackingDeliveryId)
@@ -164,6 +213,7 @@ export function CourierLiveTrackingBridge() {
       const completedTrackingId = trackingDeliveryId;
       localStorage.removeItem(TRACKING_STORAGE_KEY);
       setTrackingDeliveryId('');
+      setStoreArrivalDetected(false);
       if (watchIdRef.current !== null) {
         navigator.geolocation?.clearWatch(watchIdRef.current);
         watchIdRef.current = null;
@@ -209,6 +259,11 @@ export function CourierLiveTrackingBridge() {
         sendingRef.current = true;
         lastSentAtRef.current = now;
         void postLocation(trackingDeliveryId, next)
+          .then(result => {
+            if (result.arrivalDetected) {
+              setStoreArrivalDetected(true);
+            }
+          })
           .catch(error => {
             setTrackingError(
               error instanceof Error
@@ -254,6 +309,7 @@ export function CourierLiveTrackingBridge() {
     const deliveryId = trackingDeliveryId;
     localStorage.removeItem(TRACKING_STORAGE_KEY);
     setTrackingDeliveryId('');
+    setStoreArrivalDetected(false);
     if (watchIdRef.current !== null && navigator.geolocation) {
       navigator.geolocation.clearWatch(watchIdRef.current);
       watchIdRef.current = null;
@@ -261,9 +317,31 @@ export function CourierLiveTrackingBridge() {
     if (deliveryId) void stopRemoteTracking(deliveryId);
   };
 
+  const handleSecurePickup = async (): Promise<void> => {
+    if (!activeDelivery || !/^\d{6}$/.test(pickupCode)) return;
+    setPickupBusy(true);
+    setPickupError('');
+    try {
+      await confirmSecurePickup(activeDelivery.id, pickupCode);
+      setPickupCode('');
+    } catch (error) {
+      setPickupError(
+        error instanceof Error
+          ? error.message
+          : 'Não foi possível confirmar a coleta segura.'
+      );
+    } finally {
+      setPickupBusy(false);
+    }
+  };
+
   if (!activeDelivery || panelDismissed) return null;
 
   const trackingActive = trackingDeliveryId === activeDelivery.id;
+  const awaitingSecurePickup =
+    trackingActive &&
+    storeArrivalDetected &&
+    activeDelivery.status === 'accepted';
 
   return (
     <aside className="fixed bottom-20 right-3 z-[190] w-[min(92vw,360px)] rounded-3xl border border-cyan-500/25 bg-slate-900/95 p-4 text-white shadow-2xl backdrop-blur-xl sm:bottom-5 sm:right-5">
@@ -274,7 +352,11 @@ export function CourierLiveTrackingBridge() {
           </span>
           <h3 className="mt-1 flex items-center gap-2 text-sm font-black">
             <MapPin className="h-4 w-4 text-orange-400" />
-            {trackingActive ? 'Rastreio ao vivo' : 'Entrega aceita'}
+            {activeDelivery.status === 'delivering'
+              ? 'Em rota para o cliente'
+              : trackingActive
+                ? 'Rastreio ao vivo'
+                : 'Entrega aceita'}
           </h3>
         </div>
         <button
@@ -299,6 +381,62 @@ export function CourierLiveTrackingBridge() {
             origin={activeDelivery.from}
             destination={activeDelivery.to}
           />
+          {storeArrivalDetected && (
+            <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-[9px] text-emerald-200">
+              <p className="flex items-center gap-2 font-black">
+                <MapPin className="h-3.5 w-3.5" />
+                Você chegou à loja
+              </p>
+              <p className="mt-1 leading-relaxed text-emerald-300/80">
+                Chegada detectada por geofence. A rota só começa após a coleta segura.
+              </p>
+            </div>
+          )}
+
+          {awaitingSecurePickup && (
+            <div className="space-y-2 rounded-2xl border border-orange-500/25 bg-orange-500/[0.06] p-3">
+              <label className="flex items-center gap-2 text-[9px] font-black uppercase text-orange-300">
+                <KeyRound className="h-3.5 w-3.5" />
+                Código de coleta
+              </label>
+              <input
+                value={pickupCode}
+                onChange={event => {
+                  setPickupCode(event.target.value.replace(/\D/g, '').slice(0, 6));
+                  setPickupError('');
+                }}
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                maxLength={6}
+                placeholder="000000"
+                className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-3 text-center font-mono text-xl tracking-[0.3em] text-white outline-none focus:border-orange-400"
+                aria-label="Código seguro de coleta"
+              />
+              <p className="text-[9px] leading-relaxed text-orange-100/70">
+                Peça o código à loja somente depois de receber fisicamente o pedido.
+              </p>
+              {pickupError && (
+                <p className="rounded-xl border border-red-500/20 bg-red-500/10 px-3 py-2 text-[9px] text-red-300">
+                  {pickupError}
+                </p>
+              )}
+              <button
+                type="button"
+                disabled={pickupBusy || !/^\d{6}$/.test(pickupCode)}
+                onClick={() => void handleSecurePickup()}
+                className="w-full rounded-xl bg-orange-500 py-3 text-[9px] font-black uppercase text-slate-950 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {pickupBusy ? 'Confirmando coleta…' : 'Confirmar coleta e iniciar rota'}
+              </button>
+            </div>
+          )}
+
+          {activeDelivery.status === 'delivering' && (
+            <div className="rounded-xl border border-cyan-500/20 bg-cyan-500/10 px-3 py-2 text-[9px] font-bold text-cyan-200">
+              Coleta confirmada. Rota para o cliente iniciada.
+            </div>
+          )}
+
           <div className="flex items-center gap-2 rounded-xl bg-emerald-500/10 px-3 py-2 text-[9px] font-bold text-emerald-300">
             <Crosshair className="h-3.5 w-3.5" />
             Localização compartilhada somente durante esta entrega.

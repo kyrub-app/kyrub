@@ -10,10 +10,16 @@ import {
   createNinetyNineFoodRouter,
   type RawBodyRequest,
 } from "./server/integrations/ninetyNineFoodRouter";
+import { createStoreConnectionOnboardingRouter } from "./server/integrations/storeConnectionOnboardingRouter";
+import { createMercadoLivreRouter } from "./server/integrations/mercadoLivreRouter";
+import { createMercadoLivreStockExecutionRouter } from "./server/integrations/mercadoLivreStockExecutionRouter";
+import { createMercadoLivreE2ETestRouter } from "./server/integrations/mercadoLivreE2ETestRouter";
 import { createDeliveryOpportunityRouter } from "./server/delivery/deliveryOpportunityRouter";
 import { createDeliveryTrackingRouter } from "./server/delivery/deliveryTrackingRouter";
+import { createPaidWaitingFundingResponsibilityRouter } from "./server/delivery/paidWaitingFundingResponsibilityRouter";
 import { createOperationsHealthRouter } from "./server/admin/operationsHealthRouter";
 import { createPlatformEconomyRouter } from "./server/admin/platformEconomyRouter";
+import { createMercadoLivrePlatformCredentialRouter } from "./server/admin/mercadoLivrePlatformCredentialRouter";
 import { createOrderInventoryRouter } from "./server/inventory/orderInventoryRouter";
 import { createKyrubAiConsultantRouter } from "./server/ai/consultantRouter";
 import { createKyrubActionExecutionRouter } from "./server/actions/actionExecutionRouter";
@@ -113,6 +119,30 @@ app.use(
 );
 
 app.use(
+  "/api/store-connections/mercado-livre",
+  integrationRateLimiter,
+  createMercadoLivreRouter()
+);
+
+app.use(
+  "/api/store-connections/mercado-livre",
+  integrationRateLimiter,
+  createMercadoLivreStockExecutionRouter()
+);
+
+app.use(
+  "/api/store-connections/mercado-livre",
+  integrationRateLimiter,
+  createMercadoLivreE2ETestRouter()
+);
+
+app.use(
+  "/api/store-connections",
+  integrationRateLimiter,
+  createStoreConnectionOnboardingRouter()
+);
+
+app.use(
   "/api/orders",
   integrationRateLimiter,
   createOrderInventoryRouter()
@@ -199,6 +229,12 @@ app.use(
 );
 
 app.use(
+  "/api/paid-waiting-funding-responsibility",
+  integrationRateLimiter,
+  createPaidWaitingFundingResponsibilityRouter()
+);
+
+app.use(
   "/api/admin/operations/health",
   integrationRateLimiter,
   createOperationsHealthRouter()
@@ -208,6 +244,12 @@ app.use(
   "/api/admin/platform-economy",
   integrationRateLimiter,
   createPlatformEconomyRouter()
+);
+
+app.use(
+  "/api/admin/integrations/mercado-livre",
+  integrationRateLimiter,
+  createMercadoLivrePlatformCredentialRouter()
 );
 
 app.use(

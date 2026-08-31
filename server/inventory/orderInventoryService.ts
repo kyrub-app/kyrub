@@ -5,6 +5,7 @@ import {
   type Transaction,
 } from 'firebase-admin/firestore';
 import { adminDb } from '../firebaseAdmin.js';
+import { writeStoreMarkedReadyEvidenceInTransaction } from '../delivery/deliveryStoreReadyOperationalEventService.js';
 import {
   applyInventoryConsumptionLines,
   calculateCompositionAvailableStock,
@@ -24,6 +25,12 @@ import {
   parseOptionInventoryImpacts,
   type OptionAwareInventoryOrderItem,
 } from '../../shared/optionInventoryImpact.js';
+import {
+  inventoryAuthorityFromLedger,
+  legacyTenantInventoryAuthority,
+  resolveCanonicalInventoryAuthorityInTransaction,
+  type CanonicalInventoryAuthority,
+} from './canonicalInventoryAuthorityService.js';
 
 const INVENTORY_LEDGER_COLLECTION = 'inventoryOrderConsumptions';
 
@@ -80,9 +87,6 @@ const finiteInteger = (value: unknown): number | null =>
 
 const isOrderStatus = (value: unknown): value is InventoryOrderStatus =>
   typeof value === 'string' && value in STATUS_TRANSITIONS;
-
-const privateInventoryPath = (tenantId: string): string =>
-  `users/${tenantId}/private_store/inventory`;
 
 const orderPath = (tenantId: string, orderId: string): string =>
   `artifacts/${tenantId}/public/data/customerOrders/${orderId}`;
@@ -222,9 +226,31 @@ const readLedgerLines = (value: unknown): InventoryConsumptionLine[] => {
   });
 };
 
+const resolvePhysicalInventoryAuthority = async (input: {
+  transaction: Transaction;
+  tenantId: string;
+  canonicalStoreId: string;
+  ledgerData: DocumentData | undefined;
+}): Promise<CanonicalInventoryAuthority> => {
+  const frozen = inventoryAuthorityFromLedger({
+    tenantId: input.tenantId,
+    canonicalStoreId: input.canonicalStoreId,
+    ledgerData: input.ledgerData as Record<string, unknown> | undefined,
+  });
+  if (frozen) return frozen;
+  if (!input.canonicalStoreId) {
+    return legacyTenantInventoryAuthority(input.tenantId);
+  }
+  return resolveCanonicalInventoryAuthorityInTransaction(
+    input.transaction,
+    input.canonicalStoreId
+  );
+};
+
 const applyInventoryForStatus = (input: {
   transaction: Transaction;
   tenantId: string;
+  inventoryAuthority: CanonicalInventoryAuthority;
   order: ParsedOrder;
   effectiveStatus: InventoryOrderStatus;
   tenantData: DocumentData | undefined;
@@ -234,13 +260,14 @@ const applyInventoryForStatus = (input: {
   const {
     transaction,
     tenantId,
+    inventoryAuthority,
     order,
     effectiveStatus,
     tenantData,
     inventoryData,
     ledgerData,
   } = input;
-  const inventoryReference = adminDb.doc(privateInventoryPath(tenantId));
+  const inventoryReference = adminDb.doc(inventoryAuthority.inventoryDocumentPath);
   const ledgerReference = adminDb.doc(ledgerPath(tenantId, order.id));
   const tenantReference = adminDb.doc(`tenants/${tenantId}`);
   const ledgerStatus = clean(ledgerData?.status);
@@ -286,6 +313,10 @@ const applyInventoryForStatus = (input: {
       ledgerReference,
       {
         status: 'reversed',
+        inventoryAuthorityOwnerUserId: inventoryAuthority.ownerUserId,
+        inventoryAuthority: inventoryAuthority.authority,
+        inventoryDocumentPath: inventoryAuthority.inventoryDocumentPath,
+        canonicalStoreId: inventoryAuthority.canonicalStoreId,
         reversedForStatus: effectiveStatus,
         reversedAt: FieldValue.serverTimestamp(),
         updatedAt: FieldValue.serverTimestamp(),
@@ -313,6 +344,10 @@ const applyInventoryForStatus = (input: {
       {
         tenantId,
         orderId: order.id,
+        canonicalStoreId: inventoryAuthority.canonicalStoreId,
+        inventoryAuthorityOwnerUserId: inventoryAuthority.ownerUserId,
+        inventoryAuthority: inventoryAuthority.authority,
+        inventoryDocumentPath: inventoryAuthority.inventoryDocumentPath,
         trigger,
         status: 'skipped',
         skippedReason: catalog.length === 0
@@ -352,6 +387,10 @@ const applyInventoryForStatus = (input: {
   transaction.create(ledgerReference, {
     tenantId,
     orderId: order.id,
+    canonicalStoreId: inventoryAuthority.canonicalStoreId,
+    inventoryAuthorityOwnerUserId: inventoryAuthority.ownerUserId,
+    inventoryAuthority: inventoryAuthority.authority,
+    inventoryDocumentPath: inventoryAuthority.inventoryDocumentPath,
     trigger,
     status: 'consumed',
     orderStatusAtConsumption: effectiveStatus,
@@ -387,15 +426,12 @@ export const transitionOrderStatusWithInventory = async (
   return adminDb.runTransaction(async transaction => {
     const orderReference = adminDb.doc(orderPath(normalizedTenantId, normalizedOrderId));
     const tenantReference = adminDb.doc(`tenants/${normalizedTenantId}`);
-    const inventoryReference = adminDb.doc(privateInventoryPath(normalizedTenantId));
     const ledgerReference = adminDb.doc(ledgerPath(normalizedTenantId, normalizedOrderId));
-    const [orderSnapshot, tenantSnapshot, inventorySnapshot, ledgerSnapshot] =
-      await Promise.all([
-        transaction.get(orderReference),
-        transaction.get(tenantReference),
-        transaction.get(inventoryReference),
-        transaction.get(ledgerReference),
-      ]);
+    const [orderSnapshot, tenantSnapshot, ledgerSnapshot] = await Promise.all([
+      transaction.get(orderReference),
+      transaction.get(tenantReference),
+      transaction.get(ledgerReference),
+    ]);
     const order = parseOrder(orderSnapshot.data());
     if (!order) throw new Error('Pedido não encontrado.');
 
@@ -412,6 +448,31 @@ export const transitionOrderStatusWithInventory = async (
       throw new Error('Explique o motivo da recusa ou cancelamento.');
     }
 
+    const canonicalStoreId = clean(tenantSnapshot.data()?.canonicalStoreId);
+    const inventoryAuthority = await resolvePhysicalInventoryAuthority({
+      transaction,
+      tenantId: normalizedTenantId,
+      canonicalStoreId,
+      ledgerData: ledgerSnapshot.data(),
+    });
+    const inventorySnapshot = await transaction.get(
+      adminDb.doc(inventoryAuthority.inventoryDocumentPath)
+    );
+
+    if (nextStatus === 'ready') {
+      await writeStoreMarkedReadyEvidenceInTransaction({
+        transaction,
+        tenantId: normalizedTenantId,
+        orderId: normalizedOrderId,
+        actorUid: normalizedTenantId,
+        order: {
+          ...(orderSnapshot.data() ?? {}),
+          status: 'ready',
+        },
+        canonicalStoreId,
+      });
+    }
+
     const extra = decisionText(decision);
     const nextNote = extra
       ? mergeCustomerNote(order.customerNote, extra)
@@ -424,6 +485,7 @@ export const transitionOrderStatusWithInventory = async (
     const inventoryAction = applyInventoryForStatus({
       transaction,
       tenantId: normalizedTenantId,
+      inventoryAuthority,
       order: effectiveOrder,
       effectiveStatus: nextStatus,
       tenantData: tenantSnapshot.data(),
@@ -439,13 +501,14 @@ export const transitionOrderStatusWithInventory = async (
         updatedAt,
         inventory: {
           lastAction: inventoryAction,
+          authorityOwnerUserId: inventoryAuthority.ownerUserId,
+          authority: inventoryAuthority.authority,
           reconciledAt: updatedAt,
         },
       },
       { merge: true }
     );
 
-    const canonicalStoreId = clean(tenantSnapshot.data()?.canonicalStoreId);
     if (canonicalStoreId) {
       transaction.set(
         adminDb.doc(`stores/${canonicalStoreId}/orders/${normalizedOrderId}`),
@@ -455,6 +518,8 @@ export const transitionOrderStatusWithInventory = async (
           updatedAt,
           inventory: {
             lastAction: inventoryAction,
+            authorityOwnerUserId: inventoryAuthority.ownerUserId,
+            authority: inventoryAuthority.authority,
             reconciledAt: updatedAt,
           },
         },
@@ -491,17 +556,24 @@ export const updateIntegratedOrderStatusWithInventory = async (
   adminDb.runTransaction(async transaction => {
     const orderReference = adminDb.doc(orderPath(tenantId, orderId));
     const tenantReference = adminDb.doc(`tenants/${tenantId}`);
-    const inventoryReference = adminDb.doc(privateInventoryPath(tenantId));
     const ledgerReference = adminDb.doc(ledgerPath(tenantId, orderId));
-    const [orderSnapshot, tenantSnapshot, inventorySnapshot, ledgerSnapshot] =
-      await Promise.all([
-        transaction.get(orderReference),
-        transaction.get(tenantReference),
-        transaction.get(inventoryReference),
-        transaction.get(ledgerReference),
-      ]);
+    const [orderSnapshot, tenantSnapshot, ledgerSnapshot] = await Promise.all([
+      transaction.get(orderReference),
+      transaction.get(tenantReference),
+      transaction.get(ledgerReference),
+    ]);
     const order = parseOrder(orderSnapshot.data());
     if (!order) throw new Error('Pedido integrado não encontrado.');
+    const canonicalStoreId = clean(tenantSnapshot.data()?.canonicalStoreId);
+    const inventoryAuthority = await resolvePhysicalInventoryAuthority({
+      transaction,
+      tenantId,
+      canonicalStoreId,
+      ledgerData: ledgerSnapshot.data(),
+    });
+    const inventorySnapshot = await transaction.get(
+      adminDb.doc(inventoryAuthority.inventoryDocumentPath)
+    );
     const effectiveStatus = resolveExternalEffectiveStatus(
       order.status,
       requestedStatus
@@ -510,6 +582,7 @@ export const updateIntegratedOrderStatusWithInventory = async (
     const inventoryAction = applyInventoryForStatus({
       transaction,
       tenantId,
+      inventoryAuthority,
       order: effectiveOrder,
       effectiveStatus,
       tenantData: tenantSnapshot.data(),
@@ -528,12 +601,13 @@ export const updateIntegratedOrderStatusWithInventory = async (
         },
         inventory: {
           lastAction: inventoryAction,
+          authorityOwnerUserId: inventoryAuthority.ownerUserId,
+          authority: inventoryAuthority.authority,
           reconciledAt: updatedAt,
         },
       },
       { merge: true }
     );
-    const canonicalStoreId = clean(tenantSnapshot.data()?.canonicalStoreId);
     if (canonicalStoreId) {
       transaction.set(
         adminDb.doc(`stores/${canonicalStoreId}/orders/${orderId}`),
@@ -546,6 +620,8 @@ export const updateIntegratedOrderStatusWithInventory = async (
           },
           inventory: {
             lastAction: inventoryAction,
+            authorityOwnerUserId: inventoryAuthority.ownerUserId,
+            authority: inventoryAuthority.authority,
             reconciledAt: updatedAt,
           },
         },
@@ -567,20 +643,28 @@ export const reconcilePersistedOrderInventory = async (
   adminDb.runTransaction(async transaction => {
     const orderReference = adminDb.doc(orderPath(tenantId, orderId));
     const tenantReference = adminDb.doc(`tenants/${tenantId}`);
-    const inventoryReference = adminDb.doc(privateInventoryPath(tenantId));
     const ledgerReference = adminDb.doc(ledgerPath(tenantId, orderId));
-    const [orderSnapshot, tenantSnapshot, inventorySnapshot, ledgerSnapshot] =
-      await Promise.all([
-        transaction.get(orderReference),
-        transaction.get(tenantReference),
-        transaction.get(inventoryReference),
-        transaction.get(ledgerReference),
-      ]);
+    const [orderSnapshot, tenantSnapshot, ledgerSnapshot] = await Promise.all([
+      transaction.get(orderReference),
+      transaction.get(tenantReference),
+      transaction.get(ledgerReference),
+    ]);
     const order = parseOrder(orderSnapshot.data());
     if (!order) throw new Error('Pedido não encontrado para conciliação de estoque.');
+    const canonicalStoreId = clean(tenantSnapshot.data()?.canonicalStoreId);
+    const inventoryAuthority = await resolvePhysicalInventoryAuthority({
+      transaction,
+      tenantId,
+      canonicalStoreId,
+      ledgerData: ledgerSnapshot.data(),
+    });
+    const inventorySnapshot = await transaction.get(
+      adminDb.doc(inventoryAuthority.inventoryDocumentPath)
+    );
     const inventoryAction = applyInventoryForStatus({
       transaction,
       tenantId,
+      inventoryAuthority,
       order,
       effectiveStatus: order.status,
       tenantData: tenantSnapshot.data(),
@@ -592,6 +676,8 @@ export const reconcilePersistedOrderInventory = async (
       {
         inventory: {
           lastAction: inventoryAction,
+          authorityOwnerUserId: inventoryAuthority.ownerUserId,
+          authority: inventoryAuthority.authority,
           reconciledAt: new Date().toISOString(),
         },
       },

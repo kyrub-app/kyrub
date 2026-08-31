@@ -1,0 +1,191 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+
+const servicePath = new URL('../server/integrations/mercadoLivreBoundListingUpdateProposalService.ts', import.meta.url);
+const stockServicePath = new URL('../server/integrations/mercadoLivreStockUpdateProposalService.ts', import.meta.url);
+const stockAuthorizationPath = new URL('../server/integrations/mercadoLivreStockUpdateAuthorizationService.ts', import.meta.url);
+const stockExecutionPath = new URL('../server/integrations/mercadoLivreStockUpdateExecutionService.ts', import.meta.url);
+const stockReconciliationPath = new URL('../server/integrations/mercadoLivreStockUpdateReconciliationService.ts', import.meta.url);
+const stockExecutionRouterPath = new URL('../server/integrations/mercadoLivreStockExecutionRouter.ts', import.meta.url);
+const serverPath = new URL('../server.ts', import.meta.url);
+const routerPath = new URL('../server/integrations/mercadoLivreRouter.ts', import.meta.url);
+
+test('bound update proposal re-fetches provider item and verifies seller identity', async () => {
+  const source = await readFile(servicePath, 'utf8');
+  assert.match(source, /mercadoLivreGetJson<unknown>/);
+  assert.match(source, /sellerId !== externalAccountId/);
+  assert.match(source, /id !== binding\.externalItemId/);
+  assert.match(source, /canonical_kyrub_and_provider_api_refetch/);
+});
+
+test('bound update proposal only proposes local name and price changes', async () => {
+  const source = await readFile(servicePath, 'utf8');
+  assert.match(source, /type UpdatableField = 'name' \| 'price'/);
+  assert.match(source, /for \(const field of \['name', 'price'\] as UpdatableField\[\]\)/);
+  assert.match(source, /proposedChanges\[field\] = current\[field\]/);
+  assert.match(source, /protectedFields: \['stock', 'category', 'image', 'publicationStatus'\]/);
+  assert.doesNotMatch(source, /proposedChanges\.stock|proposedChanges\.category|proposedChanges\.image/);
+});
+
+test('bound update proposal uses detailed binding baseline and permits local divergence', async () => {
+  const source = await readFile(servicePath, 'utf8');
+  assert.match(source, /externalCatalogBindingBaselines/);
+  assert.match(source, /canonicalTargetHash/);
+  assert.match(source, /localChanged = current\[field\] !== baseline\[field\]/);
+  assert.doesNotMatch(source, /currentCanonicalHash !== binding\.canonicalBaselineHash/);
+});
+
+test('bound update proposal blocks same-field concurrent provider divergence', async () => {
+  const source = await readFile(servicePath, 'utf8');
+  assert.match(source, /providerChanged = observed\[field\] !== baseline\[field\]/);
+  assert.match(source, /localChanged && providerChanged && current\[field\] !== observed\[field\]/);
+  assert.match(source, /MERCADO_LIVRE_BOUND_LISTING_UPDATE_FIELD_CONFLICT/);
+});
+
+test('bound update proposal is deterministic over baseline, canonical target and provider observations', async () => {
+  const source = await readFile(servicePath, 'utf8');
+  assert.match(source, /providerObservedHash/);
+  assert.match(source, /canonicalTargetHash/);
+  assert.match(source, /binding\.canonicalBaselineHash/);
+  assert.match(source, /mlupd_/);
+  assert.match(source, /executionStatus: 'not_authorized'/);
+});
+
+test('owner-authenticated routes expose creation and review queue without provider write', async () => {
+  const service = await readFile(servicePath, 'utf8');
+  const router = await readFile(routerPath, 'utf8');
+  assert.match(router, /outbound-update-proposals/);
+  assert.match(router, /external-catalog-bindings\/:bindingId\/update-proposals/);
+  assert.match(router, /proposeMercadoLivreBoundListingUpdate/);
+  assert.match(router, /authenticatedOwner/);
+  assert.doesNotMatch(service, /mercadoLivrePutJson|method:\s*'PUT'|\/items\/.+PUT/);
+});
+
+test('stock proposal consumes only a frozen Mercado Livre availability snapshot', async () => {
+  const source = await readFile(stockServicePath, 'utf8');
+  assert.match(source, /channelAvailabilitySnapshots/);
+  assert.match(source, /record\.channel !== 'mercado_livre'/);
+  assert.match(source, /kyrub_inventory_reservation_policy_snapshot/);
+  assert.match(source, /targetAvailableQuantity: availability\.publishableUnits/);
+  assert.match(source, /channelAvailabilitySourceFingerprint/);
+  assert.match(source, /channelAvailabilityPolicyRevision/);
+});
+
+test('stock proposal re-fetches provider inventory mode and verifies item seller identity', async () => {
+  const source = await readFile(stockServicePath, 'utf8');
+  assert.match(source, /`\/items\/\$\{encodeURIComponent\(binding\.externalItemId\)\}`/);
+  assert.match(source, /sellerId !== connection\.externalAccountId/);
+  assert.match(source, /user_product_id/);
+  assert.match(source, /`\/user-products\/\$\{encodeURIComponent\(userProductId\)\}\/stock`/);
+  assert.match(source, /providerObservedHash/);
+});
+
+test('multi-origin and provider-managed stock stay blocked instead of guessing allocation', async () => {
+  const source = await readFile(stockServicePath, 'utf8');
+  assert.match(source, /seller_warehouse/);
+  assert.match(source, /warehouse_allocation_policy_required/);
+  assert.match(source, /meli_facility/);
+  assert.match(source, /provider_managed_inventory/);
+  assert.match(source, /blocked_provider_stock_mode/);
+});
+
+test('simple stock proposal is review-only and cannot write available quantity', async () => {
+  const source = await readFile(stockServicePath, 'utf8');
+  assert.match(source, /item_available_quantity/);
+  assert.match(source, /review_required/);
+  assert.match(source, /executionStatus: 'not_authorized'/);
+  assert.match(source, /catalogOutboundStockProposals/);
+  assert.doesNotMatch(source, /mercadoLivrePutJson|method:\s*['"]PUT['"]/);
+  assert.doesNotMatch(source, /available_quantity\s*:/);
+});
+
+test('stock authorization rematerializes availability and rejects stale projection', async () => {
+  const source = await readFile(stockAuthorizationPath, 'utf8');
+  assert.match(source, /createChannelAvailabilitySnapshot/);
+  assert.match(source, /snapshotId !== proposal\.channelAvailabilitySnapshotId/);
+  assert.match(source, /sourceFingerprint !== proposal\.channelAvailabilitySourceFingerprint/);
+  assert.match(source, /publishableUnits !== proposal\.targetAvailableQuantity/);
+  assert.match(source, /MERCADO_LIVRE_STOCK_UPDATE_AVAILABILITY_STALE/);
+});
+
+test('stock authorization re-fetches provider mode and only permits simple item inventory', async () => {
+  const source = await readFile(stockAuthorizationPath, 'utf8');
+  assert.match(source, /providerObservation/);
+  assert.match(source, /observed\.mode !== 'item_available_quantity'/);
+  assert.match(source, /observed\.hash !== proposal\.providerObservedHash/);
+  assert.match(source, /MERCADO_LIVRE_STOCK_UPDATE_PROVIDER_STALE/);
+});
+
+test('stock authorization freezes exact one-time available_quantity payload', async () => {
+  const source = await readFile(stockAuthorizationPath, 'utf8');
+  assert.match(source, /const payload = \{ available_quantity: proposal\.targetAvailableQuantity \}/);
+  assert.match(source, /randomBytes\(32\)/);
+  assert.match(source, /tokenHash = sha256\(authorizationToken\)/);
+  assert.match(source, /useCount: 0/);
+  assert.match(source, /consumptionStatus: 'available'/);
+  assert.match(source, /Date\.now\(\) \+ 15 \* 60 \* 1000/);
+  assert.match(source, /store_owner_stock_projection_authorization/);
+  assert.doesNotMatch(source, /mercadoLivrePutJson|method:\s*['"]PUT['"]/);
+});
+
+test('stock executor revalidates availability and provider observation before reserving the write', async () => {
+  const source = await readFile(stockExecutionPath, 'utf8');
+  assert.match(source, /createChannelAvailabilitySnapshot/);
+  assert.match(source, /MERCADO_LIVRE_STOCK_UPDATE_AVAILABILITY_STALE/);
+  assert.match(source, /providerObservationHash/);
+  assert.match(source, /MERCADO_LIVRE_STOCK_UPDATE_PROVIDER_STALE/);
+  assert.match(source, /providerStockMode: 'item_available_quantity'/);
+});
+
+test('stock executor consumes authorization atomically before one provider PUT', async () => {
+  const source = await readFile(stockExecutionPath, 'utf8');
+  assert.match(source, /timingSafeEqual/);
+  assert.match(source, /useCount: 1/);
+  assert.match(source, /consumptionStatus: 'executing'/);
+  assert.match(source, /catalogOutboundStockExecutions/);
+  assert.match(source, /consumed_store_owner_stock_projection_authorization/);
+  assert.match(source, /mercadoLivrePutJson<ProviderItem>/);
+  assert.match(source, /authorization\.payload/);
+});
+
+test('stock executor never retries ambiguous writes and distinguishes definite provider rejection', async () => {
+  const source = await readFile(stockExecutionPath, 'utf8');
+  assert.match(source, /isDefiniteProviderRejection/);
+  assert.match(source, /provider_rejected/);
+  assert.match(source, /reconciliation_required/);
+  assert.match(source, /MERCADO_LIVRE_STOCK_UPDATE_RECONCILIATION_REQUIRED/);
+  const putCalls = source.match(/mercadoLivrePutJson<ProviderItem>/g) ?? [];
+  assert.equal(putCalls.length, 1);
+});
+
+test('stock reconciliation accepts successful or ambiguous executions and requires target quantity from provider GET', async () => {
+  const source = await readFile(stockReconciliationPath, 'utf8');
+  assert.match(source, /provider_write_succeeded/);
+  assert.match(source, /reconciliation_required/);
+  assert.match(source, /mercadoLivreGetJson<unknown>/);
+  assert.match(source, /observedAvailableQuantity !== execution\.targetAvailableQuantity/);
+  assert.match(source, /MERCADO_LIVRE_STOCK_UPDATE_TARGET_NOT_OBSERVED/);
+});
+
+test('stock reconciliation persists provider evidence and immutable audit without mutating canonical inventory', async () => {
+  const source = await readFile(stockReconciliationPath, 'utf8');
+  assert.match(source, /externalStockSnapshots/);
+  assert.match(source, /catalogOutboundStockReconciliations/);
+  assert.match(source, /provider_api_refetch_stock_reconciliation/);
+  assert.match(source, /consumptionStatus: 'consumed'/);
+  assert.match(source, /executionStatus: 'reconciled'/);
+  assert.doesNotMatch(source, /private_store\/inventory|currentQuantity\s*:|createChannelAvailabilitySnapshot/);
+});
+
+test('stock execute and reconcile routes are exposed together through the same Mercado Livre prefix', async () => {
+  const sidecar = await readFile(stockExecutionRouterPath, 'utf8');
+  const server = await readFile(serverPath, 'utf8');
+  assert.match(sidecar, /outbound-stock-authorizations\/:authorizationId\/execute/);
+  assert.match(sidecar, /executeAuthorizedMercadoLivreStockUpdate/);
+  assert.match(sidecar, /outbound-stock-executions\/:executionId\/reconcile/);
+  assert.match(sidecar, /reconcileMercadoLivreStockUpdate/);
+  assert.match(sidecar, /authenticatedOwner/);
+  assert.match(server, /createMercadoLivreStockExecutionRouter/);
+  assert.match(server, /"\/api\/store-connections\/mercado-livre"[\s\S]*createMercadoLivreStockExecutionRouter\(\)/);
+});

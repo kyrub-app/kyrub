@@ -4,6 +4,7 @@ export type StoreOnboardingProfile = {
   name: string;
   description: string;
   address: string;
+  coordinates?: string;
   contact: string;
   keywords: string;
 };
@@ -46,11 +47,13 @@ const STEP_DEFINITIONS: ReadonlyArray<{
   { id: 'name', label: 'Nome da loja', required: true },
   { id: 'description', label: 'Descrição', required: false },
   { id: 'address', label: 'Endereço', required: false },
+  { id: 'coordinates', label: 'Localização GPS', required: false },
   { id: 'contact', label: 'Contato', required: true },
   { id: 'keywords', label: 'Palavras-chave', required: false },
 ];
 
-const hasValue = (value: string): boolean => value.trim().length > 0;
+const hasValue = (value: string | undefined): boolean =>
+  typeof value === 'string' && value.trim().length > 0;
 
 export const getStoreOnboardingDraftKey = (uid: string): string =>
   `kyrub_store_onboarding_${uid}`;
@@ -105,9 +108,7 @@ export const loadStoreOnboardingDraft = (
     const value = JSON.parse(serialized) as Partial<StoreOnboardingDraft>;
     if (value.version !== STORE_ONBOARDING_DRAFT_VERSION) return null;
     if (value.lastField !== null && !isStoreOnboardingField(value.lastField)) return null;
-    if (typeof value.updatedAt !== 'string' || !Number.isFinite(Date.parse(value.updatedAt))) {
-      return null;
-    }
+    if (typeof value.updatedAt !== 'string' || !Number.isFinite(Date.parse(value.updatedAt))) return null;
     return value as StoreOnboardingDraft;
   } catch {
     return null;

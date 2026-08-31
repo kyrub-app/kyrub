@@ -1,5 +1,6 @@
 export type KyrubIntegrationProviderId =
   | 'mercado_pago'
+  | 'mercado_livre'
   | 'lalamove'
   | 'pagbank'
   | 'pagarme'
@@ -64,6 +65,17 @@ export const KYRUB_INTEGRATION_PROVIDERS: KyrubIntegrationProviderDefinition[] =
     credentialSlots: [
       { key: 'access_token', label: 'Access Token', required: true },
       { key: 'webhook_secret', label: 'Webhook Secret', required: false },
+    ],
+  },
+  {
+    providerId: 'mercado_livre',
+    title: 'Mercado Livre Platform',
+    category: 'other',
+    supportedEnvironments: ['production'],
+    credentialSlots: [
+      { key: 'client_id', label: 'Client ID', required: true },
+      { key: 'client_secret', label: 'Client Secret', required: true },
+      { key: 'redirect_uri', label: 'Redirect URI', required: true },
     ],
   },
   {

@@ -3,6 +3,7 @@ import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { calculateOmnichannelRetryDelayMs } from '../../src/utils/omnichannelSyncEngine';
 import { adminDb } from '../firebaseAdmin';
 import { reconcilePersistedOrderInventory } from '../inventory/orderInventoryService';
+import { reconcileNinetyNineFoodOrderReservation } from '../inventory/ninetyNineFoodReservationLifecycle';
 import { parseOpenDeliveryEvent } from './openDelivery';
 import { receiveNinetyNineFoodWebhook } from './ninetyNineFoodService';
 import {
@@ -213,16 +214,15 @@ export const drainNinetyNineFoodIngressQueue = async (
       ) {
         throw new Error('Evento de entrada 99Food incompleto.');
       }
+      const orderId = internalOrderId(externalOrderId);
       await receiveNinetyNineFoodWebhook({
         externalStoreId,
         signature,
         rawBody: Buffer.from(rawBodyBase64, 'base64'),
         payload: reserved.payload,
       });
-      await reconcilePersistedOrderInventory(
-        tenantId,
-        internalOrderId(externalOrderId)
-      );
+      await reconcilePersistedOrderInventory(tenantId, orderId);
+      await reconcileNinetyNineFoodOrderReservation(tenantId, orderId);
       await document.ref.update({
         status: 'processed',
         processedAt: FieldValue.serverTimestamp(),

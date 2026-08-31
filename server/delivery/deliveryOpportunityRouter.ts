@@ -2,7 +2,31 @@ import { createHash } from 'node:crypto';
 import { Router, type Request, type Response } from 'express';
 import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 import type { DecodedIdToken } from 'firebase-admin/auth';
+import { buildDeliveryCustomerDestinationSnapshot } from '../../shared/deliveryCustomerDestination.js';
 import { adminAuth, adminDb } from '../firebaseAdmin';
+import {
+  confirmSecureCourierPickupAndStartRoute,
+  readOrCreateDeliveryPickupCodeForStore,
+} from './deliveryPickupHandoffService.js';
+import {
+  confirmBuyerReceivedDelivery,
+  markCourierArrivedAtCustomer,
+} from './deliveryCustomerHandoffService.js';
+import { loadCourierEarningsProjection } from './courierEarningsProjectionService.js';
+import {
+  DELIVERY_PAID_WAITING_POLICY_PATH,
+  loadAuthoritativeDeliveryPaidWaitingPolicy,
+} from './deliveryPaidWaitingPolicyService.js';
+import {
+  DELIVERY_RESPONSIBILITY_POLICY_PATH,
+  loadAuthoritativeDeliveryResponsibilityPolicy,
+} from './deliveryResponsibilityPolicyService.js';
+import { materializeDeliveryResponsibilityAndWaitingDecision } from './deliveryResponsibilityDecisionOrchestrator.js';
+import { buildDeliveryDestinationResolutionSnapshotFields } from './deliveryDestinationResolutionSnapshotService.js';
+import {
+  DELIVERY_CUSTOMER_ARRIVAL_POLICY_PATH,
+  loadAuthoritativeDeliveryCustomerArrivalPolicy,
+} from './deliveryCustomerArrivalPolicyService.js';
 
 const DELIVERY_COLLECTION = 'hub/renda/deliveries';
 const DELIVERY_CLAIM_COLLECTION = 'deliveryClaims';
@@ -90,12 +114,23 @@ const errorResponse = (response: Response, error: unknown): void => {
     response.status(401).json({ error: 'Faça login novamente.' });
     return;
   }
+  if (message === 'DELIVERY_PICKUP_FORBIDDEN') {
+    response.status(403).json({ error: 'Somente a loja desta entrega pode consultar o código de coleta.' });
+    return;
+  }
+  if (message === 'DELIVERY_BUYER_CONFIRMATION_FORBIDDEN') {
+    response.status(403).json({
+      error: 'Somente o comprador deste pedido pode confirmar o recebimento.',
+      code: 'DELIVERY_BUYER_CONFIRMATION_FORBIDDEN',
+    });
+    return;
+  }
   if (/não identificado|inválido/i.test(message)) {
     response.status(400).json({ error: message });
     return;
   }
   if (
-    /não encontrado|não está pronto|não é uma entrega|entregador próprio|já aceitou|já foi aceita|somente o entregador|precisa estar aceita|confirme a coleta/i.test(
+    /não encontrado|não está pronto|não é uma entrega|entregador próprio|já aceitou|já foi aceita|somente o entregador|precisa estar aceita|confirme a coleta|código|geofence|rastreio|chegue à loja|coleta segura|rota precisa|chegada ao cliente|ainda não informou|confirmação do cliente|completion|payable|capture|DELIVERY_DESTINATION_RESOLUTION_|DELIVERY_CUSTOMER_ARRIVAL_POLICY_/i.test(
       message
     )
   ) {
@@ -136,8 +171,30 @@ export const publishKyrubDeliveryOpportunity = async (
     scheduleReference.get(),
   ]);
   const now = Timestamp.now();
+  const nowIso = now.toDate().toISOString();
   const escalationAt = Timestamp.fromMillis(now.toMillis() + ESCALATION_DELAY_MS);
   const deliveryAddress = clean(order.deliveryAddress);
+  const destinationResolutionSnapshot = existing.exists
+    ? null
+    : buildDeliveryDestinationResolutionSnapshotFields(order);
+  const [waitingPolicySnapshot, responsibilityPolicySnapshot, customerArrivalPolicySnapshot] = existing.exists
+    ? [null, null, null]
+    : await Promise.all([
+        loadAuthoritativeDeliveryPaidWaitingPolicy(),
+        loadAuthoritativeDeliveryResponsibilityPolicy(nowIso),
+        loadAuthoritativeDeliveryCustomerArrivalPolicy(nowIso),
+      ]);
+  const customerGeofenceSnapshot =
+    destinationResolutionSnapshot?.customerDestinationResolutionSnapshotStatus === 'resolved' &&
+    destinationResolutionSnapshot.customerDestinationResolutionSnapshot &&
+    customerArrivalPolicySnapshot
+      ? buildDeliveryCustomerDestinationSnapshot({
+          latitude: destinationResolutionSnapshot.customerDestinationResolutionSnapshot.latitude,
+          longitude: destinationResolutionSnapshot.customerDestinationResolutionSnapshot.longitude,
+          radiusMeters: customerArrivalPolicySnapshot.radiusMeters,
+          snapshottedAt: nowIso,
+        })
+      : null;
 
   const payload = {
     id,
@@ -166,6 +223,44 @@ export const publishKyrubDeliveryOpportunity = async (
       ? existing.data()?.escalationAt ?? escalationAt
       : escalationAt,
     fallbackStatus: clean(existing.data()?.fallbackStatus) || 'waiting_kyrub',
+    ...(existing.exists
+      ? {}
+      : {
+          ...destinationResolutionSnapshot,
+          customerDestinationResolutionSnapshottedAt: now,
+          customerArrivalPolicySnapshot,
+          customerArrivalPolicySnapshotStatus: customerArrivalPolicySnapshot
+            ? 'captured'
+            : 'unavailable_or_disabled',
+          customerArrivalPolicySnapshotAuthority: 'kyrub_platform',
+          customerArrivalPolicySnapshotSource: DELIVERY_CUSTOMER_ARRIVAL_POLICY_PATH,
+          customerArrivalPolicySnapshottedAt: now,
+          ...(customerGeofenceSnapshot ? { customerGeofenceSnapshot } : {}),
+          customerGeofenceSnapshotStatus: customerGeofenceSnapshot
+            ? 'captured'
+            : destinationResolutionSnapshot?.customerDestinationResolutionSnapshotStatus === 'review_required'
+              ? 'destination_review_required'
+              : customerArrivalPolicySnapshot
+                ? 'destination_unavailable'
+                : 'policy_unavailable_or_disabled',
+          customerGeofenceSnapshotAuthority: customerGeofenceSnapshot
+            ? 'kyrub_server'
+            : 'none',
+          waitingPolicySnapshot,
+          waitingPolicySnapshotStatus: waitingPolicySnapshot
+            ? 'captured'
+            : 'unavailable_or_disabled',
+          waitingPolicySnapshotAuthority: 'kyrub_platform',
+          waitingPolicySnapshotSource: DELIVERY_PAID_WAITING_POLICY_PATH,
+          waitingPolicySnapshottedAt: now,
+          responsibilityPolicySnapshot,
+          responsibilityPolicySnapshotStatus: responsibilityPolicySnapshot
+            ? 'captured'
+            : 'unavailable_or_disabled',
+          responsibilityPolicySnapshotAuthority: 'kyrub_platform',
+          responsibilityPolicySnapshotSource: DELIVERY_RESPONSIBILITY_POLICY_PATH,
+          responsibilityPolicySnapshottedAt: now,
+        }),
     updatedAt: FieldValue.serverTimestamp(),
   };
 
@@ -256,25 +351,11 @@ export const updateKyrubDeliveryStatus = async (
 
     if (status === 'delivering') {
       if (currentStatus === 'delivering') return;
+      if (clean(delivery.source) === 'kyrub-order') {
+        throw new Error('Confirme a coleta segura antes de iniciar a rota.');
+      }
       if (currentStatus !== 'accepted') {
         throw new Error('A entrega precisa estar aceita antes da coleta.');
-      }
-      if (clean(delivery.source) === 'kyrub-order') {
-        const storeId = clean(delivery.storeId);
-        const sourceOrderId = clean(delivery.sourceOrderId);
-        if (!storeId || !sourceOrderId) {
-          throw new Error('O pedido vinculado à entrega não foi encontrado.');
-        }
-        const orderSnapshot = await transaction.get(
-          adminDb.doc(orderPath(storeId, sourceOrderId))
-        );
-        const liveOrderStatus = clean(orderSnapshot.data()?.status);
-        if (!['ready', 'out_for_delivery'].includes(liveOrderStatus)) {
-          throw new Error('O pedido ainda não está pronto para coleta.');
-        }
-        transaction.update(deliveryReference, {
-          orderStatus: liveOrderStatus,
-        });
       }
       transaction.update(claimReference, {
         status: 'delivering',
@@ -290,6 +371,9 @@ export const updateKyrubDeliveryStatus = async (
     }
 
     if (currentStatus === 'done') return;
+    if (clean(delivery.source) === 'kyrub-order') {
+      throw new Error('A conclusão da entrega Kyrub depende da confirmação do cliente.');
+    }
     if (currentStatus !== 'delivering') {
       throw new Error('Confirme a coleta antes de concluir a entrega.');
     }
@@ -399,6 +483,77 @@ export const createDeliveryOpportunityRouter = (): Router => {
       response.json(
         await publishKyrubDeliveryOpportunity(tenantId, request.params.orderId)
       );
+    } catch (error) {
+      errorResponse(response, error);
+    }
+  });
+
+  router.get('/earnings', async (request, response) => {
+    try {
+      const courierId = await authenticatedTenantId(request);
+      response.setHeader('Cache-Control', 'no-store, max-age=0');
+      response.json(await loadCourierEarningsProjection(courierId));
+    } catch (error) {
+      errorResponse(response, error);
+    }
+  });
+
+  router.get('/:deliveryId/pickup-code', async (request, response) => {
+    try {
+      const storeId = await authenticatedTenantId(request);
+      response.setHeader('Cache-Control', 'no-store, max-age=0');
+      response.json(await readOrCreateDeliveryPickupCodeForStore({
+        deliveryId: request.params.deliveryId,
+        storeId,
+      }));
+    } catch (error) {
+      errorResponse(response, error);
+    }
+  });
+
+  router.post('/:deliveryId/secure-pickup', async (request, response) => {
+    try {
+      const actor = await authenticatedActor(request);
+      response.setHeader('Cache-Control', 'no-store, max-age=0');
+      const pickupResult = await confirmSecureCourierPickupAndStartRoute({
+        deliveryId: request.params.deliveryId,
+        courierId: actor.uid,
+        handoffCode: clean(request.body?.handoffCode),
+      });
+      try {
+        await materializeDeliveryResponsibilityAndWaitingDecision({
+          deliveryId: request.params.deliveryId,
+        });
+      } catch (orchestrationError) {
+        console.error('[Delivery Responsibility Orchestrator]', orchestrationError);
+      }
+      response.json(pickupResult);
+    } catch (error) {
+      errorResponse(response, error);
+    }
+  });
+
+  router.post('/:deliveryId/customer-arrival', async (request, response) => {
+    try {
+      const actor = await authenticatedActor(request);
+      response.setHeader('Cache-Control', 'no-store, max-age=0');
+      response.json(await markCourierArrivedAtCustomer({
+        deliveryId: request.params.deliveryId,
+        courierId: actor.uid,
+      }));
+    } catch (error) {
+      errorResponse(response, error);
+    }
+  });
+
+  router.post('/:deliveryId/buyer-confirmation', async (request, response) => {
+    try {
+      const buyerId = await authenticatedTenantId(request);
+      response.setHeader('Cache-Control', 'no-store, max-age=0');
+      response.json(await confirmBuyerReceivedDelivery({
+        deliveryId: request.params.deliveryId,
+        buyerId,
+      }));
     } catch (error) {
       errorResponse(response, error);
     }

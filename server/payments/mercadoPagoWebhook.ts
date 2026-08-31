@@ -3,6 +3,10 @@ import {
   isMercadoPagoWebhookRuntimeConfigured,
   verifiedMercadoPagoPaymentEvent,
 } from './mercadoPagoPixProvider.js';
+import {
+  attachPreparedCustomerDestinationResolutionToOperationalOrder,
+  prepareCustomerDestinationResolutionForPaymentIntent,
+} from '../delivery/customerDestinationOrderResolutionService.js';
 
 export interface MercadoPagoWebhookResult {
   accepted: true;
@@ -44,11 +48,20 @@ export const processMercadoPagoWebhook = async (input: {
     };
   }
 
+  const preparedDestination = await prepareCustomerDestinationResolutionForPaymentIntent({
+    storeId: event.kyrubStoreId,
+    paymentIntentId: event.paymentIntentId,
+  });
+
   const result = await processVerifiedPaymentWebhook({
     storeId: event.kyrubStoreId,
     paymentId: event.kyrubPaymentId,
     event,
   });
+
+  await attachPreparedCustomerDestinationResolutionToOperationalOrder(
+    preparedDestination
+  );
 
   return {
     accepted: true,
@@ -79,7 +92,8 @@ export const mapMercadoPagoWebhookError = (
   if (
     message.startsWith('MERCADO_PAGO_') ||
     message.startsWith('PAYMENT_') ||
-    message.startsWith('PROVIDER_')
+    message.startsWith('PROVIDER_') ||
+    message.startsWith('CUSTOMER_DESTINATION_')
   ) {
     console.warn('[Mercado Pago Webhook]', message);
     return { status: 409, body: { error: 'Notificação de pagamento inconsistente.' } };

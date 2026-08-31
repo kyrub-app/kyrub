@@ -19,10 +19,12 @@ import {
   buildMarketplaceStoreUpdateData,
   type BuildMarketplaceStoreCreateInput,
 } from './marketplaceDocuments';
-import {
-  getMarketplaceStoreListingDocumentPath,
-} from './marketplacePaths';
+import { getMarketplaceStoreListingDocumentPath } from './marketplacePaths';
 import { getPrimaryUserStoreDocumentPath } from './storePaths';
+import {
+  hasStoreCoordinates,
+  validateStoreGeofenceRadius,
+} from './storeLocation';
 
 export interface StorageLike {
   getItem(key: string): string | null;
@@ -55,6 +57,16 @@ const stringArray = (value: unknown): string[] =>
     ? value.filter((item): item is string => typeof item === 'string')
     : [];
 
+const normalizedGeofenceRadius = (value: unknown): number | undefined => {
+  if (typeof value !== 'number') return undefined;
+  try {
+    validateStoreGeofenceRadius(value);
+    return value;
+  } catch {
+    return undefined;
+  }
+};
+
 export const normalizeCachedStore = (
   candidate: Partial<Store>,
   uid: string,
@@ -84,6 +96,9 @@ export const normalizeCachedStore = (
     typeof candidate.lng === 'number' && Number.isFinite(candidate.lng)
       ? candidate.lng
       : undefined,
+  geofenceRadiusMeters: normalizedGeofenceRadius(
+    candidate.geofenceRadiusMeters
+  ),
 });
 
 export const loadCachedUserStore = (
@@ -165,11 +180,24 @@ export const buildConfiguredStore = (
   };
 };
 
+const attachPrivateLocation = <T extends BuildUserStoreCreateInput | BuildUserStoreUpdateInput>(
+  input: T,
+  store: Store
+): T => {
+  if (!hasStoreCoordinates(store)) return input;
+  if (typeof store.geofenceRadiusMeters !== 'number') return input;
+  return Object.assign(input, {
+    lat: store.lat,
+    lng: store.lng,
+    geofenceRadiusMeters: store.geofenceRadiusMeters,
+  });
+};
+
 const getCreateInput = (
   store: Store,
   user: Pick<User, 'uid' | 'email'>
-): BuildUserStoreCreateInput => {
-  const input: BuildUserStoreCreateInput = {
+): BuildUserStoreCreateInput =>
+  attachPrivateLocation({
     uid: user.uid,
     ownerEmail: user.email ?? '',
     name: store.name,
@@ -183,26 +211,13 @@ const getCreateInput = (
     address: store.address ?? '',
     contact: store.contact ?? '',
     status: store.status ?? 'closed',
-  };
-
-  if (
-    typeof store.lat === 'number' &&
-    typeof store.lng === 'number' &&
-    Number.isFinite(store.lat) &&
-    Number.isFinite(store.lng)
-  ) {
-    input.lat = store.lat;
-    input.lng = store.lng;
-  }
-
-  return input;
-};
+  }, store);
 
 const getUpdateInput = (
   store: Store,
   user: Pick<User, 'uid' | 'email'>
-): BuildUserStoreUpdateInput => {
-  const input: BuildUserStoreUpdateInput = {
+): BuildUserStoreUpdateInput =>
+  attachPrivateLocation({
     ownerEmail: user.email ?? '',
     name: store.name,
     slug: store.slug,
@@ -215,20 +230,7 @@ const getUpdateInput = (
     address: store.address ?? '',
     contact: store.contact ?? '',
     status: store.status ?? 'closed',
-  };
-
-  if (
-    typeof store.lat === 'number' &&
-    typeof store.lng === 'number' &&
-    Number.isFinite(store.lat) &&
-    Number.isFinite(store.lng)
-  ) {
-    input.lat = store.lat;
-    input.lng = store.lng;
-  }
-
-  return input;
-};
+  }, store);
 
 export const persistPrivateUserStore = async (
   user: Pick<User, 'uid' | 'email'>,
@@ -264,12 +266,7 @@ const marketplaceInput = (
     status: store.status ?? 'closed',
   };
 
-  if (
-    typeof store.lat === 'number' &&
-    typeof store.lng === 'number' &&
-    Number.isFinite(store.lat) &&
-    Number.isFinite(store.lng)
-  ) {
+  if (hasStoreCoordinates(store)) {
     publicStore.lat = store.lat;
     publicStore.lng = store.lng;
   }
@@ -322,16 +319,8 @@ const persistTenantMarketplaceFallback = async (
     updatedAt: serverTimestamp(),
   };
 
-  if (!snapshot.exists()) {
-    payload.createdAt = serverTimestamp();
-  }
-
-  if (
-    typeof store.lat === 'number' &&
-    typeof store.lng === 'number' &&
-    Number.isFinite(store.lat) &&
-    Number.isFinite(store.lng)
-  ) {
+  if (!snapshot.exists()) payload.createdAt = serverTimestamp();
+  if (hasStoreCoordinates(store)) {
     payload.lat = store.lat;
     payload.lng = store.lng;
   }
@@ -348,22 +337,14 @@ export const setStoreMarketplacePublication = async (
   let canonicalError: unknown = null;
 
   try {
-    await persistCanonicalMarketplaceListing(
-      user,
-      store,
-      publicationStatus
-    );
+    await persistCanonicalMarketplaceListing(user, store, publicationStatus);
   } catch (error) {
     canonicalError = error;
     console.warn('Canonical marketplace publication is unavailable.', error);
   }
 
   try {
-    await persistTenantMarketplaceFallback(
-      user,
-      store,
-      publicationStatus
-    );
+    await persistTenantMarketplaceFallback(user, store, publicationStatus);
   } catch (fallbackError) {
     if (canonicalError) throw canonicalError;
     throw fallbackError;

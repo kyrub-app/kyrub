@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
+import './store-location-settings.test';
 
 const appSource = readFileSync('src/App.tsx', 'utf8');
 const legacyModalSource = readFileSync(

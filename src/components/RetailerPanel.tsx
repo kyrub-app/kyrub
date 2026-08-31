@@ -8,6 +8,7 @@ import { AttendanceOrderApproval } from './customer/AttendanceOrderApproval';
 import { CustomerTableBoard } from './customer/CustomerTableBoard';
 import { TableServiceWorkspace } from './customer/TableServiceWorkspace';
 import { CashWorkspace } from './store/CashWorkspace';
+import { StorePaidWaitingFundingResponsibilityCard } from './store/StorePaidWaitingFundingResponsibilityCard';
 import { OperationalDualWriteBridge } from './store/OperationalDualWriteBridge';
 import { ProductEditorModal } from './store/ProductEditorModal';
 import { ProductInventoryWorkspace } from './store/ProductInventoryWorkspace';
@@ -490,10 +491,13 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = props => {
         )}
       {cashHost &&
         createPortal(
-          <CashWorkspace
-            legacyStoreId={activeRetailerId}
-            notify={triggerToast}
-          />,
+          <div>
+            <StorePaidWaitingFundingResponsibilityCard />
+            <CashWorkspace
+              legacyStoreId={activeRetailerId}
+              notify={triggerToast}
+            />
+          </div>,
           cashHost
         )}
       {productsHost &&

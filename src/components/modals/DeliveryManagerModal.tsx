@@ -3,6 +3,7 @@ import { MapPin } from 'lucide-react';
 import { db } from '../../utils/firebase';
 import { deleteDoc, doc } from 'firebase/firestore';
 import { DeliveryJob } from '../../types';
+import { openGoogleMapsDirections } from '../../utils/googleMapsDirections';
 
 interface DeliveryManagerModalProps {
   isOpen: boolean;
@@ -116,6 +117,18 @@ export const DeliveryManagerModal: React.FC<DeliveryManagerModalProps> = ({
         return { ...d, status: 'accepted', acceptedBy: profileName || 'Você', updatedAt: new Date().toISOString() };
       })
     );
+  };
+
+  const handleStartPickup = (job: DeliveryJob): void => {
+    try {
+      openGoogleMapsDirections({ destination: job.from, travelMode: 'driving' });
+      triggerToast('Google Maps aberto com a rota para o ponto de coleta.', 'info');
+    } catch (error) {
+      triggerToast(
+        error instanceof Error ? error.message : 'Não foi possível abrir a rota para a coleta.',
+        'error'
+      );
+    }
   };
 
   const handleAdvanceDelivery = (jobId: string, nextStatus: 'delivering' | 'done') => {
@@ -345,7 +358,11 @@ export const DeliveryManagerModal: React.FC<DeliveryManagerModalProps> = ({
                         </div>
                         <div>
                           {job.status === 'accepted' ? (
-                            <button type="button" onClick={() => handleAdvanceDelivery(job.id, 'delivering')} disabled={waitingForKitchen} className="px-3.5 py-1.5 bg-teal-500 hover:bg-teal-400 disabled:bg-slate-800 disabled:text-slate-500 disabled:cursor-not-allowed text-slate-950 font-black rounded-lg text-[10px] uppercase tracking-wider transition-all cursor-pointer font-mono">{waitingForKitchen ? 'Aguardar pronto' : 'Coletar Pacote'}</button>
+                            operational.source === 'kyrub-order' ? (
+                              <button type="button" onClick={() => handleStartPickup(job)} className="px-3.5 py-1.5 bg-teal-500 hover:bg-teal-400 text-slate-950 font-black rounded-lg text-[10px] uppercase tracking-wider transition-all cursor-pointer font-mono">Iniciar coleta</button>
+                            ) : (
+                              <button type="button" onClick={() => handleAdvanceDelivery(job.id, 'delivering')} disabled={waitingForKitchen} className="px-3.5 py-1.5 bg-teal-500 hover:bg-teal-400 disabled:bg-slate-800 disabled:text-slate-500 disabled:cursor-not-allowed text-slate-950 font-black rounded-lg text-[10px] uppercase tracking-wider transition-all cursor-pointer font-mono">{waitingForKitchen ? 'Aguardar pronto' : 'Coletar Pacote'}</button>
+                            )
                           ) : (
                             <button type="button" onClick={() => handleAdvanceDelivery(job.id, 'done')} className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-black rounded-lg text-[10px] uppercase tracking-wider transition-all cursor-pointer font-mono">Concluir Entrega</button>
                           )}

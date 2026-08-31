@@ -68,6 +68,7 @@ export interface Store {
   offerImages?: string[];
   lat?: number;
   lng?: number;
+  geofenceRadiusMeters?: number;
   isNew?: boolean;
   status?: 'open' | 'delayed' | 'closed';
 }

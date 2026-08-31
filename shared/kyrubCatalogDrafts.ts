@@ -7,7 +7,8 @@ export type KyrubCatalogDraftSourceKind =
   | 'manual'
   | 'image'
   | 'pdf'
-  | 'catalog_analysis';
+  | 'catalog_analysis'
+  | 'mercado_livre';
 
 export type KyrubCatalogDraftField =
   | 'name'

@@ -15,9 +15,9 @@ export interface AdminIntegrationReadinessSnapshot {
     googleSecretManagerState: 'disabled' | 'adapter-enabled-unverified';
   };
   providers: Array<{
-    id: 'mercado_pago' | '99food' | 'lalamove';
+    id: 'mercado_pago' | 'google_maps' | '99food' | 'lalamove';
     title: string;
-    category: 'payments' | 'orders' | 'logistics';
+    category: 'payments' | 'maps' | 'orders' | 'logistics';
     state: AdminIntegrationProviderState;
     credentialAuthority: 'environment' | 'legacy_envelope' | 'none';
     details: Record<string, boolean | number>;
@@ -32,10 +32,28 @@ export interface AdminMercadoPagoCredentialStatus {
   lastValidationCode: string;
 }
 
+export interface AdminGoogleMapsCredentialStatus {
+  apiKeyLast4: string;
+  status: string;
+  lastValidatedAt: string;
+  lastValidationCode: string;
+}
+
+export interface AdminCustomerArrivalPolicy {
+  configured: boolean;
+  policyId: string;
+  version: number;
+  enabled: boolean;
+  radiusMeters: number;
+  updatedAt: string;
+}
+
 const PUBLIC_DETAIL_KEYS = new Set([
   'pixCheckoutConfigured',
   'webhookConfigured',
   'productionActivatedByVault',
+  'apiKeyConfigured',
+  'geocodingConfigured',
   'connections',
   'connected',
   'attention',
@@ -46,6 +64,10 @@ const PUBLIC_DETAIL_KEYS = new Set([
 const safeBoolean = (value: unknown): boolean => value === true;
 const safeString = (value: unknown): string =>
   typeof value === 'string' ? value.trim() : '';
+const safePositiveInteger = (value: unknown): number =>
+  typeof value === 'number' && Number.isSafeInteger(value) && value > 0
+    ? value
+    : 0;
 
 const parseProviderState = (value: unknown): AdminIntegrationProviderState =>
   value === 'configured' ||
@@ -70,20 +92,17 @@ export const parseAdminIntegrationReadiness = (
     const category = provider.category;
     const authority = provider.credentialAuthority;
     if (
-      (id !== 'mercado_pago' && id !== '99food' && id !== 'lalamove') ||
-      (category !== 'payments' && category !== 'orders' && category !== 'logistics') ||
+      (id !== 'mercado_pago' && id !== 'google_maps' && id !== '99food' && id !== 'lalamove') ||
+      (category !== 'payments' && category !== 'maps' && category !== 'orders' && category !== 'logistics') ||
       (authority !== 'environment' && authority !== 'legacy_envelope' && authority !== 'none')
-    ) {
-      continue;
-    }
+    ) continue;
     const rawDetails = provider.details && typeof provider.details === 'object' && !Array.isArray(provider.details)
       ? provider.details as Record<string, unknown>
       : {};
     const details = Object.fromEntries(
       Object.entries(rawDetails).flatMap(([key, detail]) =>
         PUBLIC_DETAIL_KEYS.has(key) &&
-        (typeof detail === 'boolean' ||
-          (typeof detail === 'number' && Number.isFinite(detail)))
+        (typeof detail === 'boolean' || (typeof detail === 'number' && Number.isFinite(detail)))
           ? [[key, detail]]
           : []
       )
@@ -111,24 +130,29 @@ export const parseAdminIntegrationReadiness = (
   };
 };
 
-const requireSuperAdmin = (
-  profile: Pick<AdminProfile, 'role' | 'status'>
-): void => {
+const requireSuperAdmin = (profile: Pick<AdminProfile, 'role' | 'status'>): void => {
   if (profile.status !== 'active' || profile.role !== 'super_admin') {
     throw new Error('Somente Super Admin pode alterar integrações da plataforma.');
   }
 };
 
-const credentialStatus = (value: unknown): AdminMercadoPagoCredentialStatus => {
+const credentialRecord = (value: unknown): Record<string, unknown> => {
   const candidate = value && typeof value === 'object' && !Array.isArray(value)
     ? value as Record<string, unknown>
     : {};
-  const credential = candidate.credential && typeof candidate.credential === 'object' && !Array.isArray(candidate.credential)
+  return candidate.credential && typeof candidate.credential === 'object' && !Array.isArray(candidate.credential)
     ? candidate.credential as Record<string, unknown>
     : {};
-  const credentials = credential.credentials && typeof credential.credentials === 'object' && !Array.isArray(credential.credentials)
+};
+
+const credentialSlots = (credential: Record<string, unknown>): Record<string, unknown> =>
+  credential.credentials && typeof credential.credentials === 'object' && !Array.isArray(credential.credentials)
     ? credential.credentials as Record<string, unknown>
     : {};
+
+const credentialStatus = (value: unknown): AdminMercadoPagoCredentialStatus => {
+  const credential = credentialRecord(value);
+  const credentials = credentialSlots(credential);
   const access = credentials.access_token && typeof credentials.access_token === 'object'
     ? credentials.access_token as Record<string, unknown>
     : {};
@@ -144,27 +168,85 @@ const credentialStatus = (value: unknown): AdminMercadoPagoCredentialStatus => {
   };
 };
 
+const googleMapsCredentialStatus = (value: unknown): AdminGoogleMapsCredentialStatus => {
+  const credential = credentialRecord(value);
+  const credentials = credentialSlots(credential);
+  const apiKey = credentials.api_key && typeof credentials.api_key === 'object'
+    ? credentials.api_key as Record<string, unknown>
+    : {};
+  return {
+    apiKeyLast4: safeString(apiKey.last4),
+    status: safeString(credential.status),
+    lastValidatedAt: safeString(credential.lastValidatedAt),
+    lastValidationCode: safeString(credential.lastValidationCode),
+  };
+};
+
+const customerArrivalPolicy = (value: unknown): AdminCustomerArrivalPolicy => {
+  const candidate = value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+  return {
+    configured: candidate.configured === true,
+    policyId: safeString(candidate.policyId),
+    version: safePositiveInteger(candidate.version),
+    enabled: candidate.enabled === true,
+    radiusMeters: safePositiveInteger(candidate.radiusMeters),
+    updatedAt: safeString(candidate.updatedAt),
+  };
+};
+
 export const loadAdminIntegrationReadiness = async (
   user: Pick<User, 'getIdToken'>,
   profile: Pick<AdminProfile, 'role' | 'status'>
 ): Promise<AdminIntegrationReadinessSnapshot> => {
   requireSuperAdmin(profile);
   const token = await user.getIdToken();
-  const response = await fetch(
-    '/api/admin/operations/health?transport=integration-readiness',
-    { headers: { authorization: `Bearer ${token}` } }
-  );
+  const response = await fetch('/api/admin/operations/health?transport=integration-readiness', {
+    headers: { authorization: `Bearer ${token}` },
+  });
   const payload = await response.json().catch(() => ({})) as Record<string, unknown>;
-  if (!response.ok) {
-    throw new Error(
-      typeof payload.error === 'string'
-        ? payload.error
-        : 'Não foi possível consultar as integrações.'
-    );
-  }
+  if (!response.ok) throw new Error(typeof payload.error === 'string' ? payload.error : 'Não foi possível consultar as integrações.');
   const parsed = parseAdminIntegrationReadiness(payload);
   if (!parsed) throw new Error('O servidor retornou um estado de integrações inválido.');
   return parsed;
+};
+
+export const loadAdminCustomerArrivalPolicy = async (
+  user: Pick<User, 'getIdToken'>,
+  profile: Pick<AdminProfile, 'role' | 'status'>
+): Promise<AdminCustomerArrivalPolicy> => {
+  requireSuperAdmin(profile);
+  const token = await user.getIdToken();
+  const response = await fetch('/api/admin/operations/health?transport=customer-arrival-policy', {
+    headers: { authorization: `Bearer ${token}` },
+  });
+  const payload = await response.json().catch(() => ({})) as Record<string, unknown>;
+  if (!response.ok) {
+    throw new Error(typeof payload.error === 'string' ? payload.error : 'Não foi possível consultar a política de chegada.');
+  }
+  return customerArrivalPolicy(payload);
+};
+
+const postAdminIntegration = async (
+  user: Pick<User, 'getIdToken'>,
+  transport: string,
+  body?: unknown
+): Promise<Record<string, unknown>> => {
+  const token = await user.getIdToken();
+  const response = await fetch(`/api/admin/operations/health?transport=${encodeURIComponent(transport)}`, {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${token}`,
+      ...(body === undefined ? {} : { 'content-type': 'application/json' }),
+    },
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  });
+  const payload = await response.json().catch(() => ({})) as Record<string, unknown>;
+  if (!response.ok && response.status !== 422) {
+    throw new Error(typeof payload.error === 'string' ? payload.error : 'Não foi possível concluir a operação de integração.');
+  }
+  return payload;
 };
 
 export const saveAdminMercadoPagoCredentials = async (
@@ -173,27 +255,7 @@ export const saveAdminMercadoPagoCredentials = async (
   input: { accessToken: string; webhookSecret: string }
 ): Promise<AdminMercadoPagoCredentialStatus> => {
   requireSuperAdmin(profile);
-  const token = await user.getIdToken();
-  const response = await fetch(
-    '/api/admin/operations/health?transport=mercado-pago-credentials',
-    {
-      method: 'POST',
-      headers: {
-        authorization: `Bearer ${token}`,
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify(input),
-    }
-  );
-  const payload = await response.json().catch(() => ({})) as Record<string, unknown>;
-  if (!response.ok) {
-    throw new Error(
-      typeof payload.error === 'string'
-        ? payload.error
-        : 'Não foi possível salvar a credencial.'
-    );
-  }
-  return credentialStatus(payload);
+  return credentialStatus(await postAdminIntegration(user, 'mercado-pago-credentials', input));
 };
 
 export const testAdminMercadoPagoConnection = async (
@@ -201,26 +263,33 @@ export const testAdminMercadoPagoConnection = async (
   profile: Pick<AdminProfile, 'role' | 'status'>
 ): Promise<{ ok: boolean; code: string; credential: AdminMercadoPagoCredentialStatus }> => {
   requireSuperAdmin(profile);
-  const token = await user.getIdToken();
-  const response = await fetch(
-    '/api/admin/operations/health?transport=mercado-pago-test',
-    {
-      method: 'POST',
-      headers: { authorization: `Bearer ${token}` },
-    }
-  );
-  const payload = await response.json().catch(() => ({})) as Record<string, unknown>;
-  const result = {
-    ok: payload.ok === true,
-    code: safeString(payload.code),
-    credential: credentialStatus(payload),
-  };
-  if (!response.ok && response.status !== 422) {
-    throw new Error(
-      typeof payload.error === 'string'
-        ? payload.error
-        : 'Não foi possível testar a conexão.'
-    );
-  }
-  return result;
+  const payload = await postAdminIntegration(user, 'mercado-pago-test');
+  return { ok: payload.ok === true, code: safeString(payload.code), credential: credentialStatus(payload) };
+};
+
+export const saveAdminGoogleMapsCredentials = async (
+  user: Pick<User, 'getIdToken'>,
+  profile: Pick<AdminProfile, 'role' | 'status'>,
+  input: { apiKey: string }
+): Promise<AdminGoogleMapsCredentialStatus> => {
+  requireSuperAdmin(profile);
+  return googleMapsCredentialStatus(await postAdminIntegration(user, 'google-maps-credentials', input));
+};
+
+export const testAdminGoogleMapsConnection = async (
+  user: Pick<User, 'getIdToken'>,
+  profile: Pick<AdminProfile, 'role' | 'status'>
+): Promise<{ ok: boolean; code: string; credential: AdminGoogleMapsCredentialStatus }> => {
+  requireSuperAdmin(profile);
+  const payload = await postAdminIntegration(user, 'google-maps-test');
+  return { ok: payload.ok === true, code: safeString(payload.code), credential: googleMapsCredentialStatus(payload) };
+};
+
+export const saveAdminCustomerArrivalPolicy = async (
+  user: Pick<User, 'getIdToken'>,
+  profile: Pick<AdminProfile, 'role' | 'status'>,
+  input: { policyId: string; version: number; radiusMeters: number; enabled: boolean }
+): Promise<AdminCustomerArrivalPolicy> => {
+  requireSuperAdmin(profile);
+  return customerArrivalPolicy(await postAdminIntegration(user, 'customer-arrival-policy', input));
 };

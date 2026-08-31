@@ -7,10 +7,15 @@ import { StoreConfigModal as LegacyStoreConfigModal } from './LegacyStoreConfigM
 import { GoogleDriveImagePickerButton } from '../GoogleDriveImagePickerButton';
 import { GooglePhotosImagePickerButton } from '../GooglePhotosImagePickerButton';
 import { StoreIntegrationsPanel } from '../store/StoreIntegrationsPanel';
+import { StoreLocationEditor } from '../store/StoreLocationEditor';
 import { StoreOpeningHoursEditor } from '../store/StoreOpeningHoursEditor';
-import type { MarketplaceListingDocument } from '../../types';
+import type { MarketplaceListingDocument, Store } from '../../types';
 import { auth, db } from '../../utils/firebase';
 import { getMarketplaceStoreListingDocumentPath } from '../../utils/marketplacePaths';
+import {
+  parseStoreLocationDraft,
+  type StoreLocationDraft,
+} from '../../utils/storeLocation';
 import {
   createEmptyStoreOperationalSettings,
   loadCachedStoreOperationalSettings,
@@ -33,9 +38,7 @@ import {
   recordStoreSettingsSaveConfirmed,
 } from '../../observability/kyrubActivityOutcomes';
 
-type StoreConfigModalProps = React.ComponentProps<
-  typeof LegacyStoreConfigModal
->;
+type StoreConfigModalProps = React.ComponentProps<typeof LegacyStoreConfigModal>;
 
 type ToastState = {
   message: string;
@@ -46,7 +49,14 @@ type SaveStoreResult = {
   localSaved: boolean;
   cloudSynced: boolean;
   marketplaceSynced: boolean;
+  store?: Store;
 };
+
+const emptyLocationDraft = (): StoreLocationDraft => ({
+  latitude: '',
+  longitude: '',
+  geofenceRadiusMeters: '',
+});
 
 export const StoreConfigModal: React.FC<StoreConfigModalProps> = props => {
   const [actionsHost, setActionsHost] = useState<HTMLElement | null>(null);
@@ -58,6 +68,7 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = props => {
   const [pendingSync, setPendingSync] = useState(false);
   const [configStoreLogo, setConfigStoreLogo] = useState('');
   const [configStoreBanner, setConfigStoreBanner] = useState('');
+  const [locationDraft, setLocationDraft] = useState<StoreLocationDraft>(emptyLocationDraft);
   const [operationalSettings, setOperationalSettings] =
     useState<StoreOperationalSettings>(createEmptyStoreOperationalSettings);
 
@@ -83,7 +94,6 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = props => {
 
     const mountActions = (): void => {
       if (cancelled) return;
-
       originalSaveButton = Array.from(
         document.querySelectorAll<HTMLButtonElement>('button')
       ).find(button =>
@@ -108,9 +118,7 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = props => {
 
     return () => {
       cancelled = true;
-      if (originalSaveButton) {
-        originalSaveButton.style.display = '';
-      }
+      if (originalSaveButton) originalSaveButton.style.display = '';
       host?.remove();
       setActionsHost(null);
     };
@@ -129,12 +137,19 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = props => {
     setPendingSync(hasPendingUserStoreSync(localStorage, user.uid));
     setConfigStoreLogo(cachedStore?.logo ?? '');
     setConfigStoreBanner(cachedStore?.banner ?? '');
+    setLocationDraft({
+      latitude: typeof cachedStore?.lat === 'number' ? String(cachedStore.lat) : '',
+      longitude: typeof cachedStore?.lng === 'number' ? String(cachedStore.lng) : '',
+      geofenceRadiusMeters:
+        typeof cachedStore?.geofenceRadiusMeters === 'number'
+          ? String(cachedStore.geofenceRadiusMeters)
+          : '',
+    });
     setOperationalSettings(
       loadCachedStoreOperationalSettings(localStorage, user.uid)
     );
 
     if (!cachedStore) return;
-
     window.setTimeout(() => {
       props.setConfigStoreName(cachedStore.name);
       props.setConfigStoreBio(cachedStore.description);
@@ -181,9 +196,7 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = props => {
     const unsubscribeFallback = onSnapshot(
       doc(db, 'tenants', user.uid),
       snapshot => {
-        setFallbackPublished(
-          snapshot.data()?.publicationStatus === 'published'
-        );
+        setFallbackPublished(snapshot.data()?.publicationStatus === 'published');
       },
       () => setFallbackPublished(false)
     );
@@ -225,6 +238,12 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = props => {
     configStoreBanner,
   ]);
 
+  const resolveConfiguredStore = (): Store | null => {
+    if (!configuredStore) return null;
+    const location = parseStoreLocationDraft(locationDraft);
+    return { ...configuredStore, ...location };
+  };
+
   const resolvePublishedState = async (uid: string): Promise<boolean> => {
     if (isPublished) return true;
 
@@ -250,45 +269,28 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = props => {
     const user = auth.currentUser;
     if (!user || !configuredStore) {
       notify('Faça login novamente para salvar sua loja.', 'error');
-      return {
-        localSaved: false,
-        cloudSynced: false,
-        marketplaceSynced: false,
-      };
+      return { localSaved: false, cloudSynced: false, marketplaceSynced: false };
     }
 
+    let storeToSave: Store;
     try {
       validateStoreOpeningHours(operationalSettings.openingHours);
+      storeToSave = resolveConfiguredStore()!;
     } catch (error) {
       notify(
-        error instanceof Error
-          ? error.message
-          : 'Revise o horário de funcionamento.',
+        error instanceof Error ? error.message : 'Revise a localização e o horário de funcionamento.',
         'error'
       );
-      return {
-        localSaved: false,
-        cloudSynced: false,
-        marketplaceSynced: false,
-      };
+      return { localSaved: false, cloudSynced: false, marketplaceSynced: false };
     }
 
-    saveCachedUserStore(
-      localStorage,
-      user.uid,
-      configuredStore,
-      true
-    );
-    saveCachedStoreOperationalSettings(
-      localStorage,
-      user.uid,
-      operationalSettings
-    );
+    saveCachedUserStore(localStorage, user.uid, storeToSave, true);
+    saveCachedStoreOperationalSettings(localStorage, user.uid, operationalSettings);
     setPendingSync(true);
 
     window.dispatchEvent(
       new CustomEvent('kyrub-user-store-saved', {
-        detail: { store: configuredStore },
+        detail: { store: storeToSave },
       })
     );
 
@@ -296,13 +298,8 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = props => {
     let operationalSettingsSynced = false;
 
     try {
-      await persistPrivateUserStore(user, configuredStore);
-      saveCachedUserStore(
-        localStorage,
-        user.uid,
-        configuredStore,
-        false
-      );
+      await persistPrivateUserStore(user, storeToSave);
+      saveCachedUserStore(localStorage, user.uid, storeToSave, false);
       privateProfileSynced = true;
     } catch (error) {
       console.warn('Store kept locally while cloud sync is pending.', error);
@@ -321,7 +318,7 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = props => {
     let marketplaceSynced = true;
     if (refreshPublishedMarketplace && await resolvePublishedState(user.uid)) {
       try {
-        await setStoreMarketplacePublication(user, configuredStore, true);
+        await setStoreMarketplacePublication(user, storeToSave, true);
         setCanonicalPublished(true);
         setFallbackPublished(true);
       } catch (error) {
@@ -334,6 +331,7 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = props => {
       localSaved: true,
       cloudSynced,
       marketplaceSynced,
+      store: storeToSave,
     };
   };
 
@@ -342,16 +340,14 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = props => {
     setIsSaving(true);
     const result = await saveStore(true);
 
-    if (result.cloudSynced) {
-      recordStoreSettingsSaveConfirmed();
-    }
+    if (result.cloudSynced) recordStoreSettingsSaveConfirmed();
 
     if (result.localSaved) {
       notify(
         !result.marketplaceSynced
           ? 'Configurações salvas. A atualização da vitrine pública ficou pendente.'
           : result.cloudSynced
-            ? 'Perfil, horários e plano de integrações atualizados com sucesso!'
+            ? 'Perfil, localização, horários e integrações atualizados com sucesso!'
             : 'Configurações salvas neste dispositivo. A sincronização ficou pendente.',
         result.marketplaceSynced && result.cloudSynced ? 'success' : 'warning'
       );
@@ -369,7 +365,6 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = props => {
     }
 
     const targetPublished = !isPublished;
-
     if (targetPublished && !configuredStore.name) {
       notify('Informe o nome da loja antes de publicar.', 'error');
       return;
@@ -378,7 +373,7 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = props => {
     setIsPublishing(true);
     const saveResult = await saveStore(false);
 
-    if (!saveResult.localSaved) {
+    if (!saveResult.localSaved || !saveResult.store) {
       setIsPublishing(false);
       return;
     }
@@ -386,7 +381,7 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = props => {
     try {
       await setStoreMarketplacePublication(
         user,
-        configuredStore,
+        saveResult.store,
         targetPublished
       );
 
@@ -431,31 +426,16 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = props => {
           <span className="text-[9px] font-black uppercase text-slate-400">Logo</span>
           <div className="flex h-24 items-center justify-center overflow-hidden rounded-xl border border-slate-800 bg-slate-950">
             {configStoreLogo ? (
-              <img
-                src={configStoreLogo}
-                alt="Prévia do logo da loja"
-                className="h-full w-full object-contain"
-                referrerPolicy="no-referrer"
-              />
+              <img src={configStoreLogo} alt="Prévia do logo da loja" className="h-full w-full object-contain" referrerPolicy="no-referrer" />
             ) : (
               <ImageIcon className="h-7 w-7 text-slate-700" />
             )}
           </div>
           <div className="flex flex-wrap items-start gap-2">
-            <GooglePhotosImagePickerButton
-              label="Logo no Google Fotos"
-              onSelect={selection => setConfigStoreLogo(selection.url)}
-            />
-            <GoogleDriveImagePickerButton
-              label="Escolher logo no Drive"
-              onSelect={selection => setConfigStoreLogo(selection.url)}
-            />
+            <GooglePhotosImagePickerButton label="Logo no Google Fotos" onSelect={selection => setConfigStoreLogo(selection.url)} />
+            <GoogleDriveImagePickerButton label="Escolher logo no Drive" onSelect={selection => setConfigStoreLogo(selection.url)} />
             {configStoreLogo && (
-              <button
-                type="button"
-                onClick={() => setConfigStoreLogo('')}
-                className="flex min-h-10 items-center gap-1.5 rounded-xl border border-red-500/20 bg-red-500/10 px-3 text-[9px] font-black uppercase text-red-300"
-              >
+              <button type="button" onClick={() => setConfigStoreLogo('')} className="flex min-h-10 items-center gap-1.5 rounded-xl border border-red-500/20 bg-red-500/10 px-3 text-[9px] font-black uppercase text-red-300">
                 <Trash2 className="h-3.5 w-3.5" />
                 Remover
               </button>
@@ -467,31 +447,16 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = props => {
           <span className="text-[9px] font-black uppercase text-slate-400">Banner</span>
           <div className="flex h-24 items-center justify-center overflow-hidden rounded-xl border border-slate-800 bg-slate-950">
             {configStoreBanner ? (
-              <img
-                src={configStoreBanner}
-                alt="Prévia do banner da loja"
-                className="h-full w-full object-cover"
-                referrerPolicy="no-referrer"
-              />
+              <img src={configStoreBanner} alt="Prévia do banner da loja" className="h-full w-full object-cover" referrerPolicy="no-referrer" />
             ) : (
               <ImageIcon className="h-7 w-7 text-slate-700" />
             )}
           </div>
           <div className="flex flex-wrap items-start gap-2">
-            <GooglePhotosImagePickerButton
-              label="Banner no Google Fotos"
-              onSelect={selection => setConfigStoreBanner(selection.url)}
-            />
-            <GoogleDriveImagePickerButton
-              label="Escolher banner no Drive"
-              onSelect={selection => setConfigStoreBanner(selection.url)}
-            />
+            <GooglePhotosImagePickerButton label="Banner no Google Fotos" onSelect={selection => setConfigStoreBanner(selection.url)} />
+            <GoogleDriveImagePickerButton label="Escolher banner no Drive" onSelect={selection => setConfigStoreBanner(selection.url)} />
             {configStoreBanner && (
-              <button
-                type="button"
-                onClick={() => setConfigStoreBanner('')}
-                className="flex min-h-10 items-center gap-1.5 rounded-xl border border-red-500/20 bg-red-500/10 px-3 text-[9px] font-black uppercase text-red-300"
-              >
+              <button type="button" onClick={() => setConfigStoreBanner('')} className="flex min-h-10 items-center gap-1.5 rounded-xl border border-red-500/20 bg-red-500/10 px-3 text-[9px] font-black uppercase text-red-300">
                 <Trash2 className="h-3.5 w-3.5" />
                 Remover
               </button>
@@ -503,13 +468,20 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = props => {
   );
 
   const profileOperationalControls = (
-    <StoreOpeningHoursEditor
-      value={operationalSettings.openingHours}
-      onChange={openingHours =>
-        setOperationalSettings(current => ({ ...current, openingHours }))
-      }
-      disabled={isSaving || isPublishing}
-    />
+    <div className="space-y-4">
+      <StoreLocationEditor
+        value={locationDraft}
+        onChange={setLocationDraft}
+        disabled={isSaving || isPublishing}
+      />
+      <StoreOpeningHoursEditor
+        value={operationalSettings.openingHours}
+        onChange={openingHours =>
+          setOperationalSettings(current => ({ ...current, openingHours }))
+        }
+        disabled={isSaving || isPublishing}
+      />
+    </div>
   );
 
   const integrationsControls = (
@@ -535,9 +507,7 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = props => {
         createPortal(
           <>
             {pendingSync && (
-              <span className="hidden sm:inline text-[9px] font-mono uppercase text-amber-400">
-                Sincronização pendente
-              </span>
+              <span className="hidden sm:inline text-[9px] font-mono uppercase text-amber-400">Sincronização pendente</span>
             )}
             <button
               type="button"
@@ -551,17 +521,9 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = props => {
               type="button"
               onClick={() => void handlePublication()}
               disabled={isSaving || isPublishing}
-              className={`font-black px-5 py-2 rounded-xl text-xs uppercase tracking-wider cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
-                isPublished
-                  ? 'bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-500/30'
-                  : 'bg-teal-500 hover:bg-teal-600 text-slate-950'
-              }`}
+              className={`font-black px-5 py-2 rounded-xl text-xs uppercase tracking-wider cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${isPublished ? 'bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-500/30' : 'bg-teal-500 hover:bg-teal-600 text-slate-950'}`}
             >
-              {isPublishing
-                ? 'Processando...'
-                : isPublished
-                  ? 'Ocultar'
-                  : 'Publicar'}
+              {isPublishing ? 'Processando...' : isPublished ? 'Ocultar' : 'Publicar'}
             </button>
           </>,
           actionsHost
@@ -570,15 +532,7 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = props => {
       {toast &&
         createPortal(
           <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-[90] bg-slate-900 border border-slate-700 text-white px-5 py-3.5 rounded-2xl shadow-2xl max-w-sm text-center">
-            <span
-              className={`text-[11px] font-bold font-mono uppercase tracking-wide ${
-                toast.type === 'success'
-                  ? 'text-emerald-300'
-                  : toast.type === 'warning'
-                    ? 'text-amber-300'
-                    : 'text-red-300'
-              }`}
-            >
+            <span className={`text-[11px] font-bold font-mono uppercase tracking-wide ${toast.type === 'success' ? 'text-emerald-300' : toast.type === 'warning' ? 'text-amber-300' : 'text-red-300'}`}>
               {toast.message}
             </span>
           </div>,
