@@ -18,6 +18,10 @@ import {
   applyApprovedMercadoLivreProposalToDraft,
   listMercadoLivreApprovedSyncProposals,
 } from './mercadoLivreApprovedProposalApplyService.js';
+import {
+  listMercadoLivreImportDraftsForPreparation,
+  prepareMercadoLivreImportAsKyrubCatalogDraft,
+} from './mercadoLivreCatalogDraftPromotionService.js';
 
 const clean = (value: unknown): string =>
   typeof value === 'string' ? value.trim() : '';
@@ -60,14 +64,19 @@ const mapError = (error: unknown): { status: number; message: string; code: stri
     code.includes('CODE_REQUIRED') ||
     code.includes('REVIEW_DECISION_INVALID') ||
     code.includes('REVIEW_TARGET_INVALID') ||
-    code.includes('APPLY_TARGET_INVALID')
+    code.includes('APPLY_TARGET_INVALID') ||
+    code.includes('PREPARATION_TARGET_INVALID')
   ) {
     return { status: 400, message: 'A solicitação de integração é inválida.', code };
   }
   if (code.includes('INBOX_ID_INVALID') || code.includes('RESOURCE_UNSUPPORTED')) {
     return { status: 400, message: 'A notificação selecionada não pode ser processada.', code };
   }
-  if (code.includes('INBOX_NOT_FOUND') || code.includes('SYNC_PROPOSAL_NOT_FOUND')) {
+  if (
+    code.includes('INBOX_NOT_FOUND') ||
+    code.includes('SYNC_PROPOSAL_NOT_FOUND') ||
+    code.includes('IMPORT_DRAFT_NOT_FOUND')
+  ) {
     return { status: 404, message: 'O registro selecionado não foi encontrado.', code };
   }
   if (
@@ -75,9 +84,11 @@ const mapError = (error: unknown): { status: number; message: string; code: stri
     code.includes('ALREADY_DECIDED') ||
     code.includes('NOT_APPROVED') ||
     code.includes('DRAFT_CONFLICT') ||
-    code.includes('PROPOSAL_STALE')
+    code.includes('PROPOSAL_STALE') ||
+    code.includes('PREPARATION_CONFLICT') ||
+    code === 'STORE_REQUIRED'
   ) {
-    return { status: 409, message: 'A proposta não pode ser aplicada ao estado atual do rascunho.', code };
+    return { status: 409, message: 'O registro não pode avançar no estado atual.', code };
   }
   if (code.includes('NOT_CONNECTED') || code.includes('CONNECTION_INVALID')) {
     return { status: 409, message: 'Conecte sua conta do Mercado Livre antes de continuar.', code };
@@ -174,6 +185,38 @@ export const createMercadoLivreRouter = (): Router => {
         storeId,
         proposalId,
         appliedByUserId: identity.uid,
+      }));
+    } catch (error) {
+      const mapped = mapError(error);
+      response.status(mapped.status).json({ error: mapped.message, code: mapped.code });
+    }
+  });
+
+  router.get('/:storeId/catalog-import-drafts', async (request, response) => {
+    try {
+      const storeId = clean(request.params.storeId);
+      await authenticatedOwner(request.get('authorization') ?? '', storeId);
+      response.setHeader('Cache-Control', 'no-store, max-age=0');
+      response.json(await listMercadoLivreImportDraftsForPreparation({
+        storeId,
+        limit: Number(request.query.limit ?? 50),
+      }));
+    } catch (error) {
+      const mapped = mapError(error);
+      response.status(mapped.status).json({ error: mapped.message, code: mapped.code });
+    }
+  });
+
+  router.post('/:storeId/catalog-import-drafts/:draftId/prepare-kyrub-draft', async (request, response) => {
+    try {
+      const storeId = clean(request.params.storeId);
+      const importDraftId = clean(request.params.draftId);
+      const identity = await authenticatedOwner(request.get('authorization') ?? '', storeId);
+      response.setHeader('Cache-Control', 'no-store, max-age=0');
+      response.status(201).json(await prepareMercadoLivreImportAsKyrubCatalogDraft({
+        storeId,
+        importDraftId,
+        preparedByUserId: identity.uid,
       }));
     } catch (error) {
       const mapped = mapError(error);
