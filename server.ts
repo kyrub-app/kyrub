@@ -17,6 +17,7 @@ import { createDeliveryTrackingRouter } from "./server/delivery/deliveryTracking
 import { createPaidWaitingFundingResponsibilityRouter } from "./server/delivery/paidWaitingFundingResponsibilityRouter";
 import { createOperationsHealthRouter } from "./server/admin/operationsHealthRouter";
 import { createPlatformEconomyRouter } from "./server/admin/platformEconomyRouter";
+import { createMercadoLivrePlatformCredentialRouter } from "./server/admin/mercadoLivrePlatformCredentialRouter";
 import { createOrderInventoryRouter } from "./server/inventory/orderInventoryRouter";
 import { createKyrubAiConsultantRouter } from "./server/ai/consultantRouter";
 import { createKyrubActionExecutionRouter } from "./server/actions/actionExecutionRouter";
@@ -229,6 +230,12 @@ app.use(
   "/api/admin/platform-economy",
   integrationRateLimiter,
   createPlatformEconomyRouter()
+);
+
+app.use(
+  "/api/admin/integrations/mercado-livre",
+  integrationRateLimiter,
+  createMercadoLivrePlatformCredentialRouter()
 );
 
 app.use(
