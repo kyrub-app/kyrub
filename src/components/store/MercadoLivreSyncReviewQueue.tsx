@@ -1,11 +1,14 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { User } from 'firebase/auth';
-import { Check, FileDown, RefreshCw, X } from 'lucide-react';
+import { Check, FileDown, Link2, RefreshCw, X } from 'lucide-react';
 import {
   applyApprovedMercadoLivreSyncProposalToDraft,
+  applyMercadoLivreSnapshotToBoundCanonicalProduct,
   decideMercadoLivreSyncProposal,
   loadApprovedMercadoLivreSyncProposals,
+  loadMercadoLivreBoundProductSyncQueue,
   loadMercadoLivreSyncReviewQueue,
+  type MercadoLivreBoundProductSyncItem,
   type MercadoLivreSyncReviewItem,
 } from '../../utils/storeConnections';
 
@@ -25,21 +28,25 @@ export default function MercadoLivreSyncReviewQueue({
 }) {
   const [items, setItems] = useState<MercadoLivreSyncReviewItem[]>([]);
   const [approvedItems, setApprovedItems] = useState<MercadoLivreSyncReviewItem[]>([]);
+  const [boundItems, setBoundItems] = useState<MercadoLivreBoundProductSyncItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [decidingId, setDecidingId] = useState('');
   const [applyingId, setApplyingId] = useState('');
+  const [canonicalApplyingId, setCanonicalApplyingId] = useState('');
   const [error, setError] = useState('');
 
   const load = useCallback(async (): Promise<void> => {
     setLoading(true);
     setError('');
     try {
-      const [review, approved] = await Promise.all([
+      const [review, approved, bound] = await Promise.all([
         loadMercadoLivreSyncReviewQueue(user, storeId, 50),
         loadApprovedMercadoLivreSyncProposals(user, storeId, 50),
+        loadMercadoLivreBoundProductSyncQueue(user, storeId, 50),
       ]);
       setItems(review.items);
       setApprovedItems(approved.items);
+      setBoundItems(bound.items);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Não foi possível carregar as propostas de sincronização.');
     } finally {
@@ -60,12 +67,10 @@ export default function MercadoLivreSyncReviewQueue({
     try {
       await decideMercadoLivreSyncProposal(user, storeId, item.proposal.id, decision);
       setItems(current => current.filter(entry => entry.proposal.id !== item.proposal.id));
-      if (decision === 'approve') {
-        await load();
-      }
+      if (decision === 'approve') await load();
       notify(
         decision === 'approve'
-          ? 'Proposta aprovada. Ela ainda precisa ser aplicada ao rascunho antes de qualquer promoção a produto Kyrub.'
+          ? 'Proposta aprovada. Ela ainda precisa ser aplicada ao rascunho antes de qualquer atualização canônica.'
           : 'Proposta rejeitada. Nenhuma alteração foi aplicada ao catálogo Kyrub.',
         'success'
       );
@@ -85,9 +90,9 @@ export default function MercadoLivreSyncReviewQueue({
         storeId,
         item.proposal.id
       );
-      setApprovedItems(current => current.filter(entry => entry.proposal.id !== item.proposal.id));
+      await load();
       notify(
-        `Mudança aplicada ao rascunho ${result.draftId}. Produto, estoque e publicação canônicos continuam inalterados.`,
+        `Mudança aplicada ao rascunho ${result.draftId}. O produto canônico continua inalterado até a próxima confirmação.`,
         'success'
       );
     } catch (cause) {
@@ -97,7 +102,33 @@ export default function MercadoLivreSyncReviewQueue({
     }
   };
 
-  const busy = Boolean(decidingId || applyingId);
+  const applyToCanonical = async (item: MercadoLivreBoundProductSyncItem): Promise<void> => {
+    if (item.baselineStatus === 'conflict') {
+      setError('O produto Kyrub mudou depois do último baseline. A sincronização foi bloqueada para evitar sobrescrita silenciosa.');
+      return;
+    }
+    setCanonicalApplyingId(item.proposalId);
+    setError('');
+    try {
+      const result = await applyMercadoLivreSnapshotToBoundCanonicalProduct(
+        user,
+        storeId,
+        item.proposalId
+      );
+      await load();
+      const fields = result.changedFields.length ? result.changedFields.join(', ') : 'nenhum campo';
+      notify(
+        `Produto Kyrub atualizado com revisão humana (${fields}). Estoque, categoria e publicação não foram alterados.`,
+        'success'
+      );
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Não foi possível aplicar a mudança ao produto vinculado.');
+    } finally {
+      setCanonicalApplyingId('');
+    }
+  };
+
+  const busy = Boolean(decidingId || applyingId || canonicalApplyingId);
 
   return (
     <div className="space-y-4">
@@ -197,6 +228,58 @@ export default function MercadoLivreSyncReviewQueue({
                 </button>
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {boundItems.length > 0 && (
+        <div className="rounded-3xl border border-yellow-500/20 bg-yellow-500/5 p-5">
+          <span className="text-[9px] font-black uppercase tracking-wider text-yellow-300">Produto já vinculado</span>
+          <h4 className="mt-1 text-sm font-black text-white">Aplicar mudança ao produto canônico</h4>
+          <p className="mt-1 max-w-2xl text-[10px] leading-relaxed text-slate-500">
+            Neste corte, somente nome e preço podem ser atualizados. Estoque, categoria e publicação ficam fora da sincronização. Se o produto Kyrub mudou desde o último baseline, a aplicação é bloqueada.
+          </p>
+          <div className="mt-4 grid gap-3">
+            {boundItems.map(item => {
+              const conflict = item.baselineStatus === 'conflict';
+              return (
+                <div key={item.proposalId} className="rounded-2xl border border-slate-800 bg-slate-950/50 p-4">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="min-w-0 flex-1">
+                      <p className="inline-flex items-center gap-1.5 text-xs font-black text-white">
+                        <Link2 className="h-3.5 w-3.5" /> Produto {item.canonicalProductId}
+                      </p>
+                      <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                        <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-3">
+                          <p className="text-[9px] font-black uppercase text-slate-500">Kyrub atual</p>
+                          <p className="mt-1 text-[10px] font-bold text-white">{item.current.name}</p>
+                          <p className="mt-1 text-[10px] text-slate-400">{money(item.current.price)}</p>
+                        </div>
+                        <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-3">
+                          <p className="text-[9px] font-black uppercase text-slate-500">Mercado Livre aprovado</p>
+                          <p className="mt-1 text-[10px] font-bold text-white">{item.incoming.name}</p>
+                          <p className="mt-1 text-[10px] text-slate-400">{money(item.incoming.price)}</p>
+                        </div>
+                      </div>
+                      <p className={`mt-2 text-[9px] leading-relaxed ${conflict ? 'text-rose-300' : 'text-slate-600'}`}>
+                        {conflict
+                          ? 'Conflito: o produto Kyrub divergiu do baseline. Nenhuma sobrescrita será permitida.'
+                          : `Campos autorizados com mudança: ${item.changedFields.join(', ')}. Estoque e categoria do ML não serão aplicados.`}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => void applyToCanonical(item)}
+                      disabled={busy || conflict}
+                      className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-yellow-400 px-3 py-2 text-[9px] font-black uppercase tracking-wider text-slate-950 disabled:opacity-40"
+                    >
+                      <Check className="h-3.5 w-3.5" />
+                      {canonicalApplyingId === item.proposalId ? 'Aplicando…' : conflict ? 'Conflito detectado' : 'Aplicar nome/preço'}
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
