@@ -56,6 +56,8 @@ export interface MercadoLivreSyncReviewItem {
     authority: 'provider_api_refetch';
     proposedAt: string;
     proposal: 'external_change_detected';
+    decisionAuthority?: 'store_owner_review';
+    applyStatus?: 'not_applied' | 'applied';
   };
   snapshot: {
     id: string;
@@ -167,6 +169,16 @@ export const loadMercadoLivreSyncReviewQueue = async (
     `/api/store-connections/mercado-livre/${encoded(storeId)}/sync-proposals?limit=${Math.max(1, Math.min(100, Math.trunc(limit)))}`
   );
 
+export const loadApprovedMercadoLivreSyncProposals = async (
+  user: User,
+  storeId: string,
+  limit = 50
+): Promise<{ items: MercadoLivreSyncReviewItem[] }> =>
+  authorizedFetch<{ items: MercadoLivreSyncReviewItem[] }>(
+    user,
+    `/api/store-connections/mercado-livre/${encoded(storeId)}/sync-proposals-approved?limit=${Math.max(1, Math.min(100, Math.trunc(limit)))}`
+  );
+
 export const decideMercadoLivreSyncProposal = async (
   user: User,
   storeId: string,
@@ -180,6 +192,23 @@ export const decideMercadoLivreSyncProposal = async (
       method: 'POST',
       body: JSON.stringify({ decision }),
     }
+  );
+
+export const applyApprovedMercadoLivreSyncProposalToDraft = async (
+  user: User,
+  storeId: string,
+  proposalId: string
+): Promise<{
+  proposalId: string;
+  draftId: string;
+  applyStatus: 'applied';
+  target: 'catalog_import_draft';
+  alreadyApplied: boolean;
+}> =>
+  authorizedFetch(
+    user,
+    `/api/store-connections/mercado-livre/${encoded(storeId)}/sync-proposals/${encoded(proposalId)}/apply-to-draft`,
+    { method: 'POST' }
   );
 
 export const updateStoreConnectionSyncAuthority = async (
