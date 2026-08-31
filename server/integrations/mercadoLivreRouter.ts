@@ -23,6 +23,10 @@ import {
   listMercadoLivreImportDraftsForPreparation,
   prepareMercadoLivreImportAsKyrubCatalogDraft,
 } from './mercadoLivreCatalogDraftPromotionService.js';
+import {
+  applyMercadoLivreSnapshotToBoundCanonicalProduct,
+  listMercadoLivreBoundProductSyncQueue,
+} from './mercadoLivreBoundProductSyncService.js';
 
 const clean = (value: unknown): string =>
   typeof value === 'string' ? value.trim() : '';
@@ -67,7 +71,8 @@ const mapError = (error: unknown): { status: number; message: string; code: stri
     code.includes('REVIEW_TARGET_INVALID') ||
     code.includes('APPLY_TARGET_INVALID') ||
     code.includes('PREPARATION_TARGET_INVALID') ||
-    code.includes('CANONICAL_PRODUCT_INPUT_INVALID')
+    code.includes('CANONICAL_PRODUCT_INPUT_INVALID') ||
+    code.includes('BOUND_SYNC_TARGET_INVALID')
   ) {
     return { status: 400, message: 'A solicitação de integração é inválida.', code };
   }
@@ -93,8 +98,12 @@ const mapError = (error: unknown): { status: number; message: string; code: stri
     code.includes('PREPARATION_REQUIRED') ||
     code.includes('ALREADY_BOUND') ||
     code.includes('EXTERNAL_BINDING_CONFLICT') ||
+    code.includes('EXTERNAL_BINDING_NOT_FOUND') ||
     code.includes('CANONICAL_PRODUCT_ID_CONFLICT') ||
     code.includes('CANONICAL_PRODUCT_PRICE_REQUIRED') ||
+    code.includes('BOUND_CANONICAL_PRODUCT') ||
+    code.includes('BOUND_SYNC_BASELINE_CONFLICT') ||
+    code.includes('BOUND_SYNC_APPLICATION_CONFLICT') ||
     code === 'STORE_REQUIRED' ||
     code === 'CANONICAL_STORE_REQUIRED'
   ) {
@@ -167,6 +176,21 @@ export const createMercadoLivreRouter = (): Router => {
     }
   });
 
+  router.get('/:storeId/bound-product-sync', async (request, response) => {
+    try {
+      const storeId = clean(request.params.storeId);
+      await authenticatedOwner(request.get('authorization') ?? '', storeId);
+      response.setHeader('Cache-Control', 'no-store, max-age=0');
+      response.json(await listMercadoLivreBoundProductSyncQueue({
+        storeId,
+        limit: Number(request.query.limit ?? 50),
+      }));
+    } catch (error) {
+      const mapped = mapError(error);
+      response.status(mapped.status).json({ error: mapped.message, code: mapped.code });
+    }
+  });
+
   router.post('/:storeId/sync-proposals/:proposalId/decision', async (request, response) => {
     try {
       const storeId = clean(request.params.storeId);
@@ -192,6 +216,23 @@ export const createMercadoLivreRouter = (): Router => {
       const identity = await authenticatedOwner(request.get('authorization') ?? '', storeId);
       response.setHeader('Cache-Control', 'no-store, max-age=0');
       response.json(await applyApprovedMercadoLivreProposalToDraft({
+        storeId,
+        proposalId,
+        appliedByUserId: identity.uid,
+      }));
+    } catch (error) {
+      const mapped = mapError(error);
+      response.status(mapped.status).json({ error: mapped.message, code: mapped.code });
+    }
+  });
+
+  router.post('/:storeId/sync-proposals/:proposalId/apply-to-canonical', async (request, response) => {
+    try {
+      const storeId = clean(request.params.storeId);
+      const proposalId = clean(request.params.proposalId);
+      const identity = await authenticatedOwner(request.get('authorization') ?? '', storeId);
+      response.setHeader('Cache-Control', 'no-store, max-age=0');
+      response.json(await applyMercadoLivreSnapshotToBoundCanonicalProduct({
         storeId,
         proposalId,
         appliedByUserId: identity.uid,
