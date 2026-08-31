@@ -13,6 +13,7 @@ import { listMercadoLivreOutboundPublicationProposals, proposeMercadoLivreExtern
 import { configureMercadoLivreOutboundRequirements, inspectMercadoLivreOutboundRequirements } from './mercadoLivreOutboundRequirementsService.js';
 import { validateMercadoLivreOutboundConditionalRequirements } from './mercadoLivreOutboundConditionalValidationService.js';
 import { validateMercadoLivreOutboundListing } from './mercadoLivreOutboundListingValidationService.js';
+import { authorizeMercadoLivreOutboundPublication } from './mercadoLivreOutboundPublicationAuthorizationService.js';
 
 const clean = (value: unknown): string => typeof value === 'string' ? value.trim() : '';
 const bearerToken = (authorization: string): string => /^Bearer\s+(.+)$/i.exec(authorization)?.[1]?.trim() ?? '';
@@ -40,7 +41,7 @@ const mapError = (error: unknown): { status: number; message: string; code: stri
   if (code.includes('INVALID') || code.includes('SELECTION') || code.includes('STATE_REQUIRED') || code.includes('CODE_REQUIRED')) return { status: 400, message: 'A solicitação de integração é inválida.', code };
   if (code.includes('NOT_FOUND')) return { status: 404, message: 'O registro selecionado não foi encontrado.', code };
   if (code.includes('NOT_CONNECTED') || code.includes('CONNECTION_INVALID')) return { status: 409, message: 'Conecte sua conta do Mercado Livre antes de continuar.', code };
-  if (code.includes('CONFLICT') || code.includes('REQUIRED') || code.includes('ALREADY') || code.includes('STALE') || code.includes('NOT_APPROVED') || code.includes('UNAVAILABLE') || code.includes('NOT_LISTABLE') || code.includes('NOT_PREDICTED')) return { status: 409, message: 'O registro não pode avançar no estado atual.', code };
+  if (code.includes('CONFLICT') || code.includes('REQUIRED') || code.includes('ALREADY') || code.includes('STALE') || code.includes('NOT_APPROVED') || code.includes('UNAVAILABLE') || code.includes('NOT_LISTABLE') || code.includes('NOT_PREDICTED') || code.includes('NOT_READY')) return { status: 409, message: 'O registro não pode avançar no estado atual.', code };
   if (code.includes('CONFIG_MISSING')) return { status: 503, message: 'A integração Mercado Livre ainda não foi configurada pela plataforma.', code };
   console.error('[Mercado Livre Integration]', code);
   return { status: 503, message: 'A integração Mercado Livre está temporariamente indisponível.', code };
@@ -100,11 +101,7 @@ export const createMercadoLivreRouter = (): Router => {
       const storeId = clean(request.params.storeId);
       const identity = await authenticatedOwner(request.get('authorization') ?? '', storeId);
       response.setHeader('Cache-Control', 'no-store, max-age=0');
-      response.json(await inspectMercadoLivreOutboundRequirements({
-        storeId,
-        proposalId: clean(request.params.proposalId),
-        inspectedByUserId: identity.uid,
-      }));
+      response.json(await inspectMercadoLivreOutboundRequirements({ storeId, proposalId: clean(request.params.proposalId), inspectedByUserId: identity.uid }));
     } catch (error) { const mapped = mapError(error); response.status(mapped.status).json({ error: mapped.message, code: mapped.code }); }
   });
 
@@ -130,11 +127,7 @@ export const createMercadoLivreRouter = (): Router => {
       const storeId = clean(request.params.storeId);
       const identity = await authenticatedOwner(request.get('authorization') ?? '', storeId);
       response.setHeader('Cache-Control', 'no-store, max-age=0');
-      response.json(await validateMercadoLivreOutboundConditionalRequirements({
-        storeId,
-        proposalId: clean(request.params.proposalId),
-        validatedByUserId: identity.uid,
-      }));
+      response.json(await validateMercadoLivreOutboundConditionalRequirements({ storeId, proposalId: clean(request.params.proposalId), validatedByUserId: identity.uid }));
     } catch (error) { const mapped = mapError(error); response.status(mapped.status).json({ error: mapped.message, code: mapped.code }); }
   });
 
@@ -143,10 +136,19 @@ export const createMercadoLivreRouter = (): Router => {
       const storeId = clean(request.params.storeId);
       const identity = await authenticatedOwner(request.get('authorization') ?? '', storeId);
       response.setHeader('Cache-Control', 'no-store, max-age=0');
-      response.json(await validateMercadoLivreOutboundListing({
+      response.json(await validateMercadoLivreOutboundListing({ storeId, proposalId: clean(request.params.proposalId), validatedByUserId: identity.uid }));
+    } catch (error) { const mapped = mapError(error); response.status(mapped.status).json({ error: mapped.message, code: mapped.code }); }
+  });
+
+  router.post('/:storeId/outbound-publication-proposals/:proposalId/authorize-publication', async (request, response) => {
+    try {
+      const storeId = clean(request.params.storeId);
+      const identity = await authenticatedOwner(request.get('authorization') ?? '', storeId);
+      response.setHeader('Cache-Control', 'no-store, max-age=0');
+      response.status(201).json(await authorizeMercadoLivreOutboundPublication({
         storeId,
         proposalId: clean(request.params.proposalId),
-        validatedByUserId: identity.uid,
+        authorizedByUserId: identity.uid,
       }));
     } catch (error) { const mapped = mapError(error); response.status(mapped.status).json({ error: mapped.message, code: mapped.code }); }
   });
