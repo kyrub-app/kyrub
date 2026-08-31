@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import {
   buildInventoryReservationLines,
@@ -146,4 +147,39 @@ test('goods services and mixed orders remain separated before fiscal emission po
   assert.equal(service.documentFamily, 'nfse');
   assert.equal(mixed.documentFamily, 'mixed_operation_review_required');
   assert.equal(goods.status, 'ready_for_fiscal_policy');
+});
+
+const reservationServiceSource = readFileSync(
+  'server/inventory/canonicalInventoryReservationService.ts',
+  'utf8'
+);
+
+test('server reservation authority resolves exactly one active canonical store owner', () => {
+  assert.match(reservationServiceSource, /stores\/\$\{storeId\}\/members/);
+  assert.match(reservationServiceSource, /where\('role', '==', 'owner'\)/);
+  assert.match(reservationServiceSource, /data\.status === 'active'/);
+  assert.match(reservationServiceSource, /activeOwners\.length !== 1/);
+  assert.match(reservationServiceSource, /users\/\$\{ownerUserId\}\/private_store\/inventory/);
+  assert.match(reservationServiceSource, /inventoryAuthority: 'active_store_owner_member'/);
+});
+
+test('server reservation is transactional, component-based and idempotent per order channel', () => {
+  assert.match(reservationServiceSource, /createHash\('sha256'\)/);
+  assert.match(reservationServiceSource, /where\('status', '==', 'active'\)/);
+  assert.match(reservationServiceSource, /buildInventoryReservationLines/);
+  assert.match(reservationServiceSource, /INVENTORY_AVAILABLE_TO_PROMISE_EXCEEDED/);
+  assert.match(reservationServiceSource, /transaction\.create\(reservationReference/);
+  assert.match(reservationServiceSource, /alreadyReserved: true/);
+});
+
+test('consumed reservation requires physical consumption evidence before releasing ATP', () => {
+  assert.match(reservationServiceSource, /input\.nextStatus === 'consumed' && !evidenceId/);
+  assert.match(reservationServiceSource, /INVENTORY_PHYSICAL_CONSUMPTION_EVIDENCE_REQUIRED/);
+  assert.match(reservationServiceSource, /physicalConsumptionEvidenceId/);
+});
+
+test('reservation persistence does not publish marketplace stock or emit fiscal documents', () => {
+  assert.doesNotMatch(reservationServiceSource, /available_quantity/);
+  assert.doesNotMatch(reservationServiceSource, /mercadoLivrePutJson/);
+  assert.doesNotMatch(reservationServiceSource, /emit.*(?:nfe|nfce|nfse)/i);
 });
