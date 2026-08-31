@@ -23,12 +23,17 @@ test('bound sync checks canonical baseline before any canonical mutation', () =>
 
 test('bound sync permits only name and price while preserving inventory category image and publication', () => {
   const source = readFileSync('server/integrations/mercadoLivreBoundProductSyncService.ts', 'utf8');
+  const start = source.indexOf('transaction.update(canonicalReference');
+  const end = source.indexOf('transaction.update(bindingReference', start);
+  assert.ok(start >= 0 && end > start);
+  const canonicalMutation = source.slice(start, end);
   assert.match(source, /Array<'name' \| 'price'>/);
-  assert.match(source, /changedFields\.includes\('name'\)/);
-  assert.match(source, /changedFields\.includes\('price'\)/);
-  assert.doesNotMatch(source, /transaction\.update\(canonicalReference,[\s\S]{0,500}stock:/);
-  assert.doesNotMatch(source, /transaction\.update\(canonicalReference,[\s\S]{0,500}category:/);
-  assert.doesNotMatch(source, /transaction\.update\(canonicalReference,[\s\S]{0,500}publicationStatus:/);
+  assert.match(canonicalMutation, /changedFields\.includes\('name'\)/);
+  assert.match(canonicalMutation, /changedFields\.includes\('price'\)/);
+  assert.doesNotMatch(canonicalMutation, /stock:/);
+  assert.doesNotMatch(canonicalMutation, /category:/);
+  assert.doesNotMatch(canonicalMutation, /publicationStatus:/);
+  assert.doesNotMatch(canonicalMutation, /image:/);
   assert.match(source, /availableQuantity: snapshot\.item\.availableQuantity/);
   assert.match(source, /categoryId: snapshot\.item\.categoryId/);
 });
