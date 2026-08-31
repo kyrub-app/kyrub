@@ -34,6 +34,14 @@ test('required attributes, listing type and condition must match current provide
   assert.match(source, /listing_allowed !== true/);
 });
 
+test('configuration re-reads canonical product and blocks a stale outbound proposal', async () => {
+  const source = await readFile(servicePath, 'utf8');
+  assert.match(source, /stores\/\$\{proposal\.canonicalStoreId\}\/products\/\$\{proposal\.canonicalProductId\}/);
+  assert.match(source, /canonicalMatchesProposal/);
+  assert.match(source, /currentCanonicalDoc/);
+  assert.match(source, /MERCADO_LIVRE_OUTBOUND_PROPOSAL_STALE/);
+});
+
 test('conditional required attributes keep the proposal non-ready until separately validated', async () => {
   const source = await readFile(servicePath, 'utf8');
   assert.match(source, /conditionalAttributeIds\.length === 0/);
