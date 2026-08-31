@@ -7,6 +7,7 @@ import { getStoreConnectionRegistryRecord } from './storeConnectionRegistry.js';
 type UpdatableField = 'name' | 'price';
 
 interface ProposalRecord {
+  schemaVersion: 2;
   id: string;
   storeId: string;
   provider: 'mercado_livre';
@@ -19,6 +20,7 @@ interface ProposalRecord {
   status: 'review_required';
   executionStatus: 'not_authorized' | 'authorized';
   canonicalBaselineHash: string;
+  canonicalTargetHash: string;
   providerObservedHash: string;
   currentCanonical: { name: string; price: number; stock: number; category: string; image: string };
   proposedChanges: Partial<Record<UpdatableField, string | number>>;
@@ -65,12 +67,12 @@ const assertProposal = (storeId: string, proposalId: string, value: unknown): Pr
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('MERCADO_LIVRE_BOUND_LISTING_UPDATE_PROPOSAL_NOT_FOUND');
   const record = value as Record<string, unknown>;
   if (
-    clean(record.id, 160) !== proposalId || clean(record.storeId, 160) !== storeId ||
+    Number(record.schemaVersion) !== 2 || clean(record.id, 160) !== proposalId || clean(record.storeId, 160) !== storeId ||
     record.provider !== 'mercado_livre' || record.authority !== 'canonical_kyrub_and_provider_api_refetch' ||
     record.status !== 'review_required' || (record.executionStatus !== 'not_authorized' && record.executionStatus !== 'authorized') ||
     !clean(record.connectionId, 200) || !clean(record.bindingId, 160) || !clean(record.externalItemId, 160) ||
     !clean(record.canonicalStoreId, 160) || !clean(record.canonicalProductId, 160) ||
-    !clean(record.canonicalBaselineHash, 80) || !clean(record.providerObservedHash, 80) ||
+    !clean(record.canonicalBaselineHash, 80) || !clean(record.canonicalTargetHash, 80) || !clean(record.providerObservedHash, 80) ||
     !record.currentCanonical || typeof record.currentCanonical !== 'object' || Array.isArray(record.currentCanonical) ||
     !record.proposedChanges || typeof record.proposedChanges !== 'object' || Array.isArray(record.proposedChanges) ||
     !Array.isArray(record.changedFields) || record.changedFields.length === 0 ||
@@ -92,7 +94,7 @@ const assertBinding = (proposal: ProposalRecord, value: unknown): BindingRecord 
   return record as unknown as BindingRecord;
 };
 
-const canonicalMatchesProposal = (proposal: ProposalRecord, value: unknown): boolean => {
+const canonicalMatchesProposalTarget = (proposal: ProposalRecord, value: unknown): boolean => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const record = value as Record<string, unknown>;
   const state = {
@@ -105,7 +107,7 @@ const canonicalMatchesProposal = (proposal: ProposalRecord, value: unknown): boo
   if (!state.name || state.price === null || state.stock === null || !state.category || record.isService !== false) return false;
   return clean(record.id, 160) === proposal.canonicalProductId &&
     clean(record.storeId, 160) === proposal.canonicalStoreId &&
-    canonicalHash(state as ProposalRecord['currentCanonical']) === proposal.canonicalBaselineHash;
+    canonicalHash(state as ProposalRecord['currentCanonical']) === proposal.canonicalTargetHash;
 };
 
 const observedProviderHash = (proposal: ProposalRecord, externalAccountId: string, value: unknown): string => {
@@ -175,7 +177,9 @@ export const authorizeMercadoLivreBoundListingUpdate = async (input: {
   const canonicalRef = adminDb.doc(`stores/${proposal.canonicalStoreId}/products/${proposal.canonicalProductId}`);
   const [bindingDoc, canonicalDoc] = await Promise.all([bindingRef.get(), canonicalRef.get()]);
   assertBinding(proposal, bindingDoc.data());
-  if (!canonicalDoc.exists || !canonicalMatchesProposal(proposal, canonicalDoc.data())) throw new Error('MERCADO_LIVRE_BOUND_LISTING_UPDATE_PROPOSAL_STALE');
+  if (!canonicalDoc.exists || !canonicalMatchesProposalTarget(proposal, canonicalDoc.data())) {
+    throw new Error('MERCADO_LIVRE_BOUND_LISTING_UPDATE_PROPOSAL_STALE');
+  }
 
   const connection = await getStoreConnectionRegistryRecord({ storeId, connectionId: proposal.connectionId });
   if (!connection || connection.provider !== 'mercado_livre' || connection.status !== 'connected' || connection.syncAuthority !== 'manual_review') {
@@ -205,8 +209,9 @@ export const authorizeMercadoLivreBoundListingUpdate = async (input: {
       currentProposal.executionStatus !== 'not_authorized' ||
       currentProposal.providerObservedHash !== currentProviderHash ||
       currentProposal.canonicalBaselineHash !== proposal.canonicalBaselineHash ||
+      currentProposal.canonicalTargetHash !== proposal.canonicalTargetHash ||
       stablePayloadHash(updatePayload(currentProposal)) !== payloadHash ||
-      !currentCanonicalDoc.exists || !canonicalMatchesProposal(currentProposal, currentCanonicalDoc.data()) ||
+      !currentCanonicalDoc.exists || !canonicalMatchesProposalTarget(currentProposal, currentCanonicalDoc.data()) ||
       existingAuthorizationDoc.exists
     ) throw new Error('MERCADO_LIVRE_BOUND_LISTING_UPDATE_AUTHORIZATION_CONFLICT');
 
@@ -222,6 +227,7 @@ export const authorizeMercadoLivreBoundListingUpdate = async (input: {
       canonicalStoreId: proposal.canonicalStoreId,
       canonicalProductId: proposal.canonicalProductId,
       canonicalBaselineHash: proposal.canonicalBaselineHash,
+      canonicalTargetHash: proposal.canonicalTargetHash,
       providerObservedHash: proposal.providerObservedHash,
       payload,
       payloadHash,
