@@ -14,6 +14,10 @@ import {
   decideMercadoLivreSyncProposal,
   listMercadoLivreSyncReviewQueue,
 } from './mercadoLivreSyncReviewService.js';
+import {
+  applyApprovedMercadoLivreProposalToDraft,
+  listMercadoLivreApprovedSyncProposals,
+} from './mercadoLivreApprovedProposalApplyService.js';
 
 const clean = (value: unknown): string =>
   typeof value === 'string' ? value.trim() : '';
@@ -55,7 +59,8 @@ const mapError = (error: unknown): { status: number; message: string; code: stri
     code.includes('STATE_REQUIRED') ||
     code.includes('CODE_REQUIRED') ||
     code.includes('REVIEW_DECISION_INVALID') ||
-    code.includes('REVIEW_TARGET_INVALID')
+    code.includes('REVIEW_TARGET_INVALID') ||
+    code.includes('APPLY_TARGET_INVALID')
   ) {
     return { status: 400, message: 'A solicitação de integração é inválida.', code };
   }
@@ -65,8 +70,14 @@ const mapError = (error: unknown): { status: number; message: string; code: stri
   if (code.includes('INBOX_NOT_FOUND') || code.includes('SYNC_PROPOSAL_NOT_FOUND')) {
     return { status: 404, message: 'O registro selecionado não foi encontrado.', code };
   }
-  if (code.includes('NOT_PENDING') || code.includes('ALREADY_DECIDED')) {
-    return { status: 409, message: 'Este registro já não está pendente de revisão.', code };
+  if (
+    code.includes('NOT_PENDING') ||
+    code.includes('ALREADY_DECIDED') ||
+    code.includes('NOT_APPROVED') ||
+    code.includes('DRAFT_CONFLICT') ||
+    code.includes('PROPOSAL_STALE')
+  ) {
+    return { status: 409, message: 'A proposta não pode ser aplicada ao estado atual do rascunho.', code };
   }
   if (code.includes('NOT_CONNECTED') || code.includes('CONNECTION_INVALID')) {
     return { status: 409, message: 'Conecte sua conta do Mercado Livre antes de continuar.', code };
@@ -120,6 +131,21 @@ export const createMercadoLivreRouter = (): Router => {
     }
   });
 
+  router.get('/:storeId/sync-proposals-approved', async (request, response) => {
+    try {
+      const storeId = clean(request.params.storeId);
+      await authenticatedOwner(request.get('authorization') ?? '', storeId);
+      response.setHeader('Cache-Control', 'no-store, max-age=0');
+      response.json(await listMercadoLivreApprovedSyncProposals({
+        storeId,
+        limit: Number(request.query.limit ?? 50),
+      }));
+    } catch (error) {
+      const mapped = mapError(error);
+      response.status(mapped.status).json({ error: mapped.message, code: mapped.code });
+    }
+  });
+
   router.post('/:storeId/sync-proposals/:proposalId/decision', async (request, response) => {
     try {
       const storeId = clean(request.params.storeId);
@@ -131,6 +157,23 @@ export const createMercadoLivreRouter = (): Router => {
         proposalId,
         decision: request.body?.decision,
         decidedByUserId: identity.uid,
+      }));
+    } catch (error) {
+      const mapped = mapError(error);
+      response.status(mapped.status).json({ error: mapped.message, code: mapped.code });
+    }
+  });
+
+  router.post('/:storeId/sync-proposals/:proposalId/apply-to-draft', async (request, response) => {
+    try {
+      const storeId = clean(request.params.storeId);
+      const proposalId = clean(request.params.proposalId);
+      const identity = await authenticatedOwner(request.get('authorization') ?? '', storeId);
+      response.setHeader('Cache-Control', 'no-store, max-age=0');
+      response.json(await applyApprovedMercadoLivreProposalToDraft({
+        storeId,
+        proposalId,
+        appliedByUserId: identity.uid,
       }));
     } catch (error) {
       const mapped = mapError(error);
