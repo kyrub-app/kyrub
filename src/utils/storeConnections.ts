@@ -138,6 +138,35 @@ export interface MercadoLivreBoundProductSyncItem {
   baselineStatus: 'clean' | 'conflict';
 }
 
+export interface MercadoLivreConflictResolutionItem {
+  proposalId: string;
+  bindingId: string;
+  canonicalProductId: string;
+  canonicalStoreId: string;
+  baselineStatus: 'conflict' | 'baseline_unavailable';
+  baseline: {
+    name: string;
+    price: number;
+    stock: number;
+    category: string;
+    image: string;
+  } | null;
+  current: {
+    name: string;
+    price: number;
+    stock: number;
+    category: string;
+    image: string;
+  };
+  incoming: {
+    name: string;
+    price: number | null;
+  };
+  localChangedFields: Array<'name' | 'price' | 'stock' | 'category' | 'image'>;
+  incomingChangedFields: Array<'name' | 'price'>;
+  resolvableFields: Array<'name' | 'price'>;
+}
+
 const authorizedFetch = async <T>(
   user: User,
   input: RequestInfo | URL,
@@ -146,14 +175,8 @@ const authorizedFetch = async <T>(
   const token = await user.getIdToken();
   const headers = new Headers(init.headers);
   headers.set('authorization', `Bearer ${token}`);
-  if (init.body && !headers.has('content-type')) {
-    headers.set('content-type', 'application/json');
-  }
-  const response = await fetch(input, {
-    ...init,
-    headers,
-    cache: 'no-store',
-  });
+  if (init.body && !headers.has('content-type')) headers.set('content-type', 'application/json');
+  const response = await fetch(input, { ...init, headers, cache: 'no-store' });
   const payload = await response.json().catch(() => ({})) as Record<string, unknown>;
   if (!response.ok) {
     const message = typeof payload.error === 'string' && payload.error.trim()
@@ -170,23 +193,15 @@ export const loadStoreConnectionOnboarding = async (
   user: User,
   storeId: string
 ): Promise<StoreConnectionOnboardingSnapshot> =>
-  authorizedFetch<StoreConnectionOnboardingSnapshot>(
-    user,
-    `/api/store-connections/${encoded(storeId)}`
-  );
+  authorizedFetch<StoreConnectionOnboardingSnapshot>(user, `/api/store-connections/${encoded(storeId)}`);
 
-export const beginMercadoLivreConnection = async (
-  user: User,
-  storeId: string
-): Promise<string> => {
+export const beginMercadoLivreConnection = async (user: User, storeId: string): Promise<string> => {
   const payload = await authorizedFetch<{ authorizationUrl: string }>(
     user,
     `/api/store-connections/mercado-livre/${encoded(storeId)}/authorize`,
     { method: 'POST' }
   );
-  if (!payload.authorizationUrl?.startsWith('https://')) {
-    throw new Error('O backend não retornou uma autorização segura do Mercado Livre.');
-  }
+  if (!payload.authorizationUrl?.startsWith('https://')) throw new Error('O backend não retornou uma autorização segura do Mercado Livre.');
   return payload.authorizationUrl;
 };
 
@@ -208,10 +223,7 @@ export const confirmMercadoLivreCatalogImport = async (
   authorizedFetch<{ imported: number }>(
     user,
     `/api/store-connections/mercado-livre/${encoded(storeId)}/catalog-import`,
-    {
-      method: 'POST',
-      body: JSON.stringify({ itemIds }),
-    }
+    { method: 'POST', body: JSON.stringify({ itemIds }) }
   );
 
 export const loadMercadoLivreImportDraftsForPreparation = async (
@@ -256,10 +268,7 @@ export const createCanonicalKyrubProductFromMercadoLivreDraft = async (
   authorizedFetch(
     user,
     `/api/store-connections/mercado-livre/${encoded(storeId)}/catalog-import-drafts/${encoded(draftId)}/create-kyrub-product`,
-    {
-      method: 'POST',
-      body: JSON.stringify(input),
-    }
+    { method: 'POST', body: JSON.stringify(input) }
   );
 
 export const loadMercadoLivreSyncReviewQueue = async (
@@ -292,6 +301,16 @@ export const loadMercadoLivreBoundProductSyncQueue = async (
     `/api/store-connections/mercado-livre/${encoded(storeId)}/bound-product-sync?limit=${Math.max(1, Math.min(100, Math.trunc(limit)))}`
   );
 
+export const loadMercadoLivreConflictResolutionQueue = async (
+  user: User,
+  storeId: string,
+  limit = 50
+): Promise<{ items: MercadoLivreConflictResolutionItem[] }> =>
+  authorizedFetch<{ items: MercadoLivreConflictResolutionItem[] }>(
+    user,
+    `/api/store-connections/mercado-livre/${encoded(storeId)}/conflict-resolutions?limit=${Math.max(1, Math.min(100, Math.trunc(limit)))}`
+  );
+
 export const decideMercadoLivreSyncProposal = async (
   user: User,
   storeId: string,
@@ -301,10 +320,7 @@ export const decideMercadoLivreSyncProposal = async (
   authorizedFetch<{ proposalId: string; status: 'approved' | 'rejected' }>(
     user,
     `/api/store-connections/mercado-livre/${encoded(storeId)}/sync-proposals/${encoded(proposalId)}/decision`,
-    {
-      method: 'POST',
-      body: JSON.stringify({ decision }),
-    }
+    { method: 'POST', body: JSON.stringify({ decision }) }
   );
 
 export const applyApprovedMercadoLivreSyncProposalToDraft = async (
@@ -342,6 +358,23 @@ export const applyMercadoLivreSnapshotToBoundCanonicalProduct = async (
     { method: 'POST' }
   );
 
+export const resolveMercadoLivreBoundProductConflict = async (
+  user: User,
+  storeId: string,
+  proposalId: string,
+  choices: Partial<Record<'name' | 'price', 'kyrub' | 'mercado_livre'>>
+): Promise<{
+  proposalId: string;
+  canonicalProductId: string;
+  resolvedFields: Array<'name' | 'price'>;
+  canonicalApplyStatus: 'applied';
+}> =>
+  authorizedFetch(
+    user,
+    `/api/store-connections/mercado-livre/${encoded(storeId)}/sync-proposals/${encoded(proposalId)}/resolve-conflict`,
+    { method: 'POST', body: JSON.stringify({ choices }) }
+  );
+
 export const updateStoreConnectionSyncAuthority = async (
   user: User,
   storeId: string,
@@ -351,8 +384,5 @@ export const updateStoreConnectionSyncAuthority = async (
   authorizedFetch<PublicStoreConnectionRecord>(
     user,
     `/api/store-connections/${encoded(storeId)}/${encoded(connectionId)}/sync-authority`,
-    {
-      method: 'PATCH',
-      body: JSON.stringify({ syncAuthority }),
-    }
+    { method: 'PATCH', body: JSON.stringify({ syncAuthority }) }
   );

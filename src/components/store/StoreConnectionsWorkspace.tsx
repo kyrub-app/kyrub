@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import type { KyrubSyncAuthority } from '../../../shared/storeConnections';
 import type { MercadoLivreCatalogPreviewItem } from '../../../shared/mercadoLivreIntegration';
+import MercadoLivreConflictResolutionQueue from './MercadoLivreConflictResolutionQueue';
 import MercadoLivreImportDraftQueue from './MercadoLivreImportDraftQueue';
 import MercadoLivreSyncReviewQueue from './MercadoLivreSyncReviewQueue';
 import {
@@ -185,12 +186,7 @@ export default function StoreConnectionsWorkspace({
     setSyncing(true);
     setMessage('');
     try {
-      const updated = await updateStoreConnectionSyncAuthority(
-        user,
-        storeId,
-        connection.id,
-        syncAuthority
-      );
+      const updated = await updateStoreConnectionSyncAuthority(user, storeId, connection.id, syncAuthority);
       setSnapshot(previous => previous ? {
         ...previous,
         connections: previous.connections.map(item => item.id === updated.id ? updated : item),
@@ -272,16 +268,15 @@ export default function StoreConnectionsWorkspace({
       </div>
 
       {mercadoLivre?.status === 'connected' && (
-        <MercadoLivreImportDraftQueue
-          user={user}
-          storeId={storeId}
-          refreshKey={importDraftRefreshKey}
-          notify={notify}
-        />
+        <MercadoLivreImportDraftQueue user={user} storeId={storeId} refreshKey={importDraftRefreshKey} notify={notify} />
       )}
 
       {mercadoLivre?.status === 'connected' && (
         <MercadoLivreSyncReviewQueue user={user} storeId={storeId} notify={notify} />
+      )}
+
+      {mercadoLivre?.status === 'connected' && (
+        <MercadoLivreConflictResolutionQueue user={user} storeId={storeId} notify={notify} />
       )}
 
       {preview.length > 0 && (
