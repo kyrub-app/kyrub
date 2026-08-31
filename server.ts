@@ -13,6 +13,7 @@ import {
 import { createStoreConnectionOnboardingRouter } from "./server/integrations/storeConnectionOnboardingRouter";
 import { createMercadoLivreRouter } from "./server/integrations/mercadoLivreRouter";
 import { createMercadoLivreStockExecutionRouter } from "./server/integrations/mercadoLivreStockExecutionRouter";
+import { createMercadoLivreE2ETestRouter } from "./server/integrations/mercadoLivreE2ETestRouter";
 import { createDeliveryOpportunityRouter } from "./server/delivery/deliveryOpportunityRouter";
 import { createDeliveryTrackingRouter } from "./server/delivery/deliveryTrackingRouter";
 import { createPaidWaitingFundingResponsibilityRouter } from "./server/delivery/paidWaitingFundingResponsibilityRouter";
@@ -127,6 +128,12 @@ app.use(
   "/api/store-connections/mercado-livre",
   integrationRateLimiter,
   createMercadoLivreStockExecutionRouter()
+);
+
+app.use(
+  "/api/store-connections/mercado-livre",
+  integrationRateLimiter,
+  createMercadoLivreE2ETestRouter()
 );
 
 app.use(
