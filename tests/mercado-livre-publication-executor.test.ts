@@ -47,6 +47,6 @@ test('execution endpoint remains owner authenticated and requires the raw one-ti
   const source = await readFile(routerPath, 'utf8');
   assert.match(source, /outbound-publication-authorizations\/:authorizationId\/execute/);
   assert.match(source, /authenticatedOwner/);
-  assert.match(source, /authorizationToken: clean\(request\.body\?\.authorizationToken\)/);
+  assert.match(source, /authorizationToken:\s*clean\(request\.body\?\.authorizationToken\)/);
   assert.match(source, /executeAuthorizedMercadoLivrePublication/);
 });
