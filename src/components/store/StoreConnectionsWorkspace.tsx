@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import type { KyrubSyncAuthority } from '../../../shared/storeConnections';
 import type { MercadoLivreCatalogPreviewItem } from '../../../shared/mercadoLivreIntegration';
+import MercadoLivreImportDraftQueue from './MercadoLivreImportDraftQueue';
 import MercadoLivreSyncReviewQueue from './MercadoLivreSyncReviewQueue';
 import {
   beginMercadoLivreConnection,
@@ -73,6 +74,7 @@ export default function StoreConnectionsWorkspace({
   const [loadingPreview, setLoadingPreview] = useState(false);
   const [importing, setImporting] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [importDraftRefreshKey, setImportDraftRefreshKey] = useState(0);
   const [message, setMessage] = useState('');
 
   const mercadoLivre = useMemo(
@@ -165,6 +167,7 @@ export default function StoreConnectionsWorkspace({
     try {
       const result = await confirmMercadoLivreCatalogImport(user, storeId, Array.from(selected));
       setSelected(new Set());
+      setImportDraftRefreshKey(current => current + 1);
       setMessage(`${result.imported} item(ns) importado(s) como rascunho. Nada foi publicado automaticamente.`);
       notify(`${result.imported} item(ns) do Mercado Livre chegaram como rascunho.`, 'success');
     } catch (error) {
@@ -267,6 +270,15 @@ export default function StoreConnectionsWorkspace({
           </div>
         )}
       </div>
+
+      {mercadoLivre?.status === 'connected' && (
+        <MercadoLivreImportDraftQueue
+          user={user}
+          storeId={storeId}
+          refreshKey={importDraftRefreshKey}
+          notify={notify}
+        />
+      )}
 
       {mercadoLivre?.status === 'connected' && (
         <MercadoLivreSyncReviewQueue user={user} storeId={storeId} notify={notify} />
