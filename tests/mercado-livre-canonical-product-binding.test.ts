@@ -43,8 +43,8 @@ test('owner route requires explicit category and stock payload and does not publ
   const router = readFileSync('server/integrations/mercadoLivreRouter.ts', 'utf8');
   assert.match(router, /create-kyrub-product/);
   assert.match(router, /authenticatedOwner/);
-  assert.match(router, /kyrubCategory: request\.body\?\.category/);
-  assert.match(router, /kyrubStock: request\.body\?\.stock/);
+  assert.match(router, /kyrubCategory:\s*request\.body\?\.category/);
+  assert.match(router, /kyrubStock:\s*request\.body\?\.stock/);
   assert.doesNotMatch(router, /setAuthorizedKyrubCatalogProductPublication/);
 });
 
