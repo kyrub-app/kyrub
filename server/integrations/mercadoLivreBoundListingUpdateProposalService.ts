@@ -16,7 +16,6 @@ interface BindingRecord {
   canonicalProductId: string;
   status: 'active';
   canonicalBaselineHash: string;
-  reconciliationStatus?: 'reconciled';
 }
 
 interface CanonicalState {
@@ -25,6 +24,15 @@ interface CanonicalState {
   stock: number;
   category: string;
   image: string;
+}
+
+interface BaselineRecord {
+  id: string;
+  bindingId: string;
+  canonicalStoreId: string;
+  canonicalProductId: string;
+  baselineHash: string;
+  baseline: CanonicalState;
 }
 
 interface ProviderItem {
@@ -38,7 +46,7 @@ interface ProviderItem {
 }
 
 export interface MercadoLivreBoundListingUpdateProposal {
-  schemaVersion: 1;
+  schemaVersion: 2;
   id: string;
   storeId: string;
   provider: 'mercado_livre';
@@ -51,8 +59,10 @@ export interface MercadoLivreBoundListingUpdateProposal {
   status: 'review_required' | 'no_changes';
   executionStatus: 'not_authorized';
   canonicalBaselineHash: string;
+  canonicalTargetHash: string;
   providerObservedHash: string;
   createdAt: string;
+  baseline: CanonicalState;
   currentCanonical: CanonicalState;
   observedExternal: {
     name: string;
@@ -92,16 +102,14 @@ const assertBinding = (storeId: string, bindingId: string, value: unknown): Bind
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('MERCADO_LIVRE_EXTERNAL_BINDING_NOT_FOUND');
   const record = value as Record<string, unknown>;
   if (
-    clean(record.id, 160) !== bindingId || clean(record.storeId, 160) !== storeId ||
-    record.provider !== 'mercado_livre' || record.status !== 'active' ||
-    !clean(record.connectionId, 200) || !clean(record.externalItemId, 160) ||
-    !clean(record.canonicalStoreId, 160) || !clean(record.canonicalProductId, 160) ||
-    !clean(record.canonicalBaselineHash, 80)
+    clean(record.id, 160) !== bindingId || clean(record.storeId, 160) !== storeId || record.provider !== 'mercado_livre' ||
+    record.status !== 'active' || !clean(record.connectionId, 200) || !clean(record.externalItemId, 160) ||
+    !clean(record.canonicalStoreId, 160) || !clean(record.canonicalProductId, 160) || !clean(record.canonicalBaselineHash, 80)
   ) throw new Error('MERCADO_LIVRE_EXTERNAL_BINDING_CONFLICT');
   return record as unknown as BindingRecord;
 };
 
-const canonicalState = (binding: BindingRecord, value: unknown): CanonicalState => {
+const parseCanonicalState = (expectedStoreId: string, expectedProductId: string, value: unknown): CanonicalState => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('MERCADO_LIVRE_BOUND_CANONICAL_PRODUCT_NOT_FOUND');
   const record = value as Record<string, unknown>;
   const name = clean(record.name, 120);
@@ -109,10 +117,27 @@ const canonicalState = (binding: BindingRecord, value: unknown): CanonicalState 
   const stock = integerNonNegative(record.stock);
   const category = clean(record.category, 160);
   if (
-    clean(record.id, 160) !== binding.canonicalProductId || clean(record.storeId, 160) !== binding.canonicalStoreId ||
+    clean(record.id, 160) !== expectedProductId || clean(record.storeId, 160) !== expectedStoreId ||
     !name || price === null || stock === null || !category || record.isService !== false
   ) throw new Error('MERCADO_LIVRE_BOUND_CANONICAL_PRODUCT_INVALID');
   return { name, price, stock, category, image: clean(record.image, 2_000) };
+};
+
+const assertBaseline = (binding: BindingRecord, value: unknown): BaselineRecord => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('MERCADO_LIVRE_BOUND_LISTING_UPDATE_BASELINE_REQUIRED');
+  const record = value as Record<string, unknown>;
+  const baseline = parseCanonicalState(binding.canonicalStoreId, binding.canonicalProductId, {
+    id: binding.canonicalProductId,
+    storeId: binding.canonicalStoreId,
+    ...(record.baseline && typeof record.baseline === 'object' && !Array.isArray(record.baseline) ? record.baseline as Record<string, unknown> : {}),
+    isService: false,
+  });
+  if (
+    clean(record.id, 160) !== binding.id || clean(record.bindingId, 160) !== binding.id ||
+    clean(record.canonicalStoreId, 160) !== binding.canonicalStoreId || clean(record.canonicalProductId, 160) !== binding.canonicalProductId ||
+    clean(record.baselineHash, 80) !== binding.canonicalBaselineHash || canonicalHash(baseline) !== binding.canonicalBaselineHash
+  ) throw new Error('MERCADO_LIVRE_BOUND_LISTING_UPDATE_BASELINE_CONFLICT');
+  return { ...(record as unknown as BaselineRecord), baseline };
 };
 
 const observedProviderState = (binding: BindingRecord, externalAccountId: string, value: unknown) => {
@@ -134,6 +159,26 @@ const observedProviderState = (binding: BindingRecord, externalAccountId: string
   };
 };
 
+const outboundChanges = (baseline: CanonicalState, current: CanonicalState, observed: { name: string; price: number }): {
+  changedFields: UpdatableField[];
+  proposedChanges: Partial<Record<UpdatableField, string | number>>;
+} => {
+  const changedFields: UpdatableField[] = [];
+  const proposedChanges: Partial<Record<UpdatableField, string | number>> = {};
+  for (const field of ['name', 'price'] as UpdatableField[]) {
+    const localChanged = current[field] !== baseline[field];
+    const providerChanged = observed[field] !== baseline[field];
+    if (localChanged && providerChanged && current[field] !== observed[field]) {
+      throw new Error('MERCADO_LIVRE_BOUND_LISTING_UPDATE_FIELD_CONFLICT');
+    }
+    if (localChanged && current[field] !== observed[field]) {
+      changedFields.push(field);
+      proposedChanges[field] = current[field];
+    }
+  }
+  return { changedFields, proposedChanges };
+};
+
 export const proposeMercadoLivreBoundListingUpdate = async (input: {
   storeId: string;
   bindingId: string;
@@ -145,9 +190,11 @@ export const proposeMercadoLivreBoundListingUpdate = async (input: {
   if (!storeId || !bindingId || proposedByUserId !== storeId) throw new Error('MERCADO_LIVRE_BOUND_LISTING_UPDATE_TARGET_INVALID');
 
   const bindingRef = adminDb.doc(`stores/${storeId}/externalCatalogBindings/${bindingId}`);
-  const bindingDoc = await bindingRef.get();
+  const baselineRef = adminDb.doc(`stores/${storeId}/externalCatalogBindingBaselines/${bindingId}`);
+  const [bindingDoc, baselineDoc] = await Promise.all([bindingRef.get(), baselineRef.get()]);
   if (!bindingDoc.exists) throw new Error('MERCADO_LIVRE_EXTERNAL_BINDING_NOT_FOUND');
   const binding = assertBinding(storeId, bindingId, bindingDoc.data());
+  const baseline = assertBaseline(binding, baselineDoc.data()).baseline;
   const connection = await getStoreConnectionRegistryRecord({ storeId, connectionId: binding.connectionId });
   if (!connection || connection.provider !== 'mercado_livre' || connection.status !== 'connected' || connection.syncAuthority !== 'manual_review') {
     throw new Error('MERCADO_LIVRE_CONNECTION_INVALID');
@@ -156,28 +203,22 @@ export const proposeMercadoLivreBoundListingUpdate = async (input: {
   const canonicalRef = adminDb.doc(`stores/${binding.canonicalStoreId}/products/${binding.canonicalProductId}`);
   const canonicalDoc = await canonicalRef.get();
   if (!canonicalDoc.exists) throw new Error('MERCADO_LIVRE_BOUND_CANONICAL_PRODUCT_NOT_FOUND');
-  const canonical = canonicalState(binding, canonicalDoc.data());
-  const currentCanonicalHash = canonicalHash(canonical);
-  if (currentCanonicalHash !== binding.canonicalBaselineHash) {
-    throw new Error('MERCADO_LIVRE_BOUND_LISTING_UPDATE_BASELINE_CONFLICT');
-  }
+  const canonical = parseCanonicalState(binding.canonicalStoreId, binding.canonicalProductId, canonicalDoc.data());
+  const canonicalTargetHash = canonicalHash(canonical);
 
   const providerRaw = await mercadoLivreGetJson<unknown>(storeId, `/items/${encodeURIComponent(binding.externalItemId)}`);
   const observed = observedProviderState(binding, connection.externalAccountId, providerRaw);
-  const changedFields: UpdatableField[] = [];
-  const proposedChanges: Partial<Record<UpdatableField, string | number>> = {};
-  if (canonical.name !== observed.name) { changedFields.push('name'); proposedChanges.name = canonical.name; }
-  if (canonical.price !== observed.price) { changedFields.push('price'); proposedChanges.price = canonical.price; }
+  const { changedFields, proposedChanges } = outboundChanges(baseline, canonical, observed);
 
   const providerObservedHash = providerHash(observed);
-  const proposalId = `mlupd_${sha256([storeId, bindingId, currentCanonicalHash, providerObservedHash].join(':')).slice(0, 32)}`;
+  const proposalId = `mlupd_${sha256([storeId, bindingId, binding.canonicalBaselineHash, canonicalTargetHash, providerObservedHash].join(':')).slice(0, 32)}`;
   const proposalRef = adminDb.doc(`stores/${storeId}/catalogOutboundUpdateProposals/${proposalId}`);
   const existing = await proposalRef.get();
   if (existing.exists) return existing.data() as MercadoLivreBoundListingUpdateProposal;
 
   const createdAt = new Date().toISOString();
   const proposal: MercadoLivreBoundListingUpdateProposal = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     id: proposalId,
     storeId,
     provider: 'mercado_livre',
@@ -189,9 +230,11 @@ export const proposeMercadoLivreBoundListingUpdate = async (input: {
     authority: 'canonical_kyrub_and_provider_api_refetch',
     status: changedFields.length ? 'review_required' : 'no_changes',
     executionStatus: 'not_authorized',
-    canonicalBaselineHash: currentCanonicalHash,
+    canonicalBaselineHash: binding.canonicalBaselineHash,
+    canonicalTargetHash,
     providerObservedHash,
     createdAt,
+    baseline,
     currentCanonical: canonical,
     observedExternal: observed,
     proposedChanges,
