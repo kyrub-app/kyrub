@@ -10,6 +10,10 @@ import {
 } from './mercadoLivreCatalogImportService.js';
 import { ingestMercadoLivreNotification } from './mercadoLivreNotificationInboxService.js';
 import { processMercadoLivreNotificationInboxItem } from './mercadoLivreNotificationProcessor.js';
+import {
+  decideMercadoLivreSyncProposal,
+  listMercadoLivreSyncReviewQueue,
+} from './mercadoLivreSyncReviewService.js';
 
 const clean = (value: unknown): string =>
   typeof value === 'string' ? value.trim() : '';
@@ -46,17 +50,23 @@ const mapError = (error: unknown): { status: number; message: string; code: stri
   if (code === 'STORE_CONNECTION_FORBIDDEN') {
     return { status: 403, message: 'Você não pode administrar conexões desta loja.', code };
   }
-  if (code.includes('SELECTION') || code.includes('STATE_REQUIRED') || code.includes('CODE_REQUIRED')) {
+  if (
+    code.includes('SELECTION') ||
+    code.includes('STATE_REQUIRED') ||
+    code.includes('CODE_REQUIRED') ||
+    code.includes('REVIEW_DECISION_INVALID') ||
+    code.includes('REVIEW_TARGET_INVALID')
+  ) {
     return { status: 400, message: 'A solicitação de integração é inválida.', code };
   }
   if (code.includes('INBOX_ID_INVALID') || code.includes('RESOURCE_UNSUPPORTED')) {
     return { status: 400, message: 'A notificação selecionada não pode ser processada.', code };
   }
-  if (code.includes('INBOX_NOT_FOUND')) {
-    return { status: 404, message: 'A notificação selecionada não foi encontrada.', code };
+  if (code.includes('INBOX_NOT_FOUND') || code.includes('SYNC_PROPOSAL_NOT_FOUND')) {
+    return { status: 404, message: 'O registro selecionado não foi encontrado.', code };
   }
-  if (code.includes('NOT_PENDING')) {
-    return { status: 409, message: 'A notificação não está pendente de processamento.', code };
+  if (code.includes('NOT_PENDING') || code.includes('ALREADY_DECIDED')) {
+    return { status: 409, message: 'Este registro já não está pendente de revisão.', code };
   }
   if (code.includes('NOT_CONNECTED') || code.includes('CONNECTION_INVALID')) {
     return { status: 409, message: 'Conecte sua conta do Mercado Livre antes de continuar.', code };
@@ -75,9 +85,6 @@ const isNonRetryableNotificationError = (code: string): boolean =>
 export const createMercadoLivreRouter = (): Router => {
   const router = Router();
 
-  // Provider notification callback. The payload is only a trigger; it is never
-  // treated as canonical catalog state. A later processor must re-fetch the
-  // referenced resource with the tenant-scoped Mercado Livre access token.
   router.post('/notifications', async (request, response) => {
     try {
       const result = await ingestMercadoLivreNotification(request.body);
@@ -95,6 +102,39 @@ export const createMercadoLivreRouter = (): Router => {
       }
       console.error('[Mercado Livre notification inbox]', code);
       response.status(503).json({ received: false });
+    }
+  });
+
+  router.get('/:storeId/sync-proposals', async (request, response) => {
+    try {
+      const storeId = clean(request.params.storeId);
+      await authenticatedOwner(request.get('authorization') ?? '', storeId);
+      response.setHeader('Cache-Control', 'no-store, max-age=0');
+      response.json(await listMercadoLivreSyncReviewQueue({
+        storeId,
+        limit: Number(request.query.limit ?? 50),
+      }));
+    } catch (error) {
+      const mapped = mapError(error);
+      response.status(mapped.status).json({ error: mapped.message, code: mapped.code });
+    }
+  });
+
+  router.post('/:storeId/sync-proposals/:proposalId/decision', async (request, response) => {
+    try {
+      const storeId = clean(request.params.storeId);
+      const proposalId = clean(request.params.proposalId);
+      const identity = await authenticatedOwner(request.get('authorization') ?? '', storeId);
+      response.setHeader('Cache-Control', 'no-store, max-age=0');
+      response.json(await decideMercadoLivreSyncProposal({
+        storeId,
+        proposalId,
+        decision: request.body?.decision,
+        decidedByUserId: identity.uid,
+      }));
+    } catch (error) {
+      const mapped = mapError(error);
+      response.status(mapped.status).json({ error: mapped.message, code: mapped.code });
     }
   });
 
@@ -127,7 +167,6 @@ export const createMercadoLivreRouter = (): Router => {
     }
   });
 
-  // OAuth provider callback. Tenant authority comes only from the one-time server state.
   router.get('/callback', async (request, response) => {
     try {
       const code = clean(request.query.code);

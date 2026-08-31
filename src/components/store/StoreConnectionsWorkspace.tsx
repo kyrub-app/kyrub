@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import type { KyrubSyncAuthority } from '../../../shared/storeConnections';
 import type { MercadoLivreCatalogPreviewItem } from '../../../shared/mercadoLivreIntegration';
+import MercadoLivreSyncReviewQueue from './MercadoLivreSyncReviewQueue';
 import {
   beginMercadoLivreConnection,
   confirmMercadoLivreCatalogImport,
@@ -266,6 +267,10 @@ export default function StoreConnectionsWorkspace({
           </div>
         )}
       </div>
+
+      {mercadoLivre?.status === 'connected' && (
+        <MercadoLivreSyncReviewQueue user={user} storeId={storeId} notify={notify} />
+      )}
 
       {preview.length > 0 && (
         <div className="rounded-3xl border border-slate-800 bg-slate-900 p-5">

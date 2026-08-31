@@ -43,6 +43,44 @@ export interface MercadoLivreCatalogPreview {
   items: MercadoLivreCatalogPreviewItem[];
 }
 
+export interface MercadoLivreSyncReviewItem {
+  proposal: {
+    id: string;
+    provider: 'mercado_livre';
+    storeId: string;
+    connectionId: string;
+    externalItemId: string;
+    snapshotId: string;
+    sourceNotificationId: string;
+    status: 'review_required' | 'approved' | 'rejected';
+    authority: 'provider_api_refetch';
+    proposedAt: string;
+    proposal: 'external_change_detected';
+  };
+  snapshot: {
+    id: string;
+    provider: 'mercado_livre';
+    storeId: string;
+    connectionId: string;
+    externalAccountId: string;
+    externalItemId: string;
+    sourceNotificationId: string;
+    sourceTopic: string;
+    sourceResource: string;
+    authority: 'provider_api_refetch';
+    fetchedAt: string;
+    item: {
+      externalId: string;
+      title: string;
+      price: number | null;
+      availableQuantity: number | null;
+      status: string;
+      categoryId: string;
+      sellerSku?: string;
+    };
+  };
+}
+
 const authorizedFetch = async <T>(
   user: User,
   input: RequestInfo | URL,
@@ -116,6 +154,31 @@ export const confirmMercadoLivreCatalogImport = async (
     {
       method: 'POST',
       body: JSON.stringify({ itemIds }),
+    }
+  );
+
+export const loadMercadoLivreSyncReviewQueue = async (
+  user: User,
+  storeId: string,
+  limit = 50
+): Promise<{ items: MercadoLivreSyncReviewItem[] }> =>
+  authorizedFetch<{ items: MercadoLivreSyncReviewItem[] }>(
+    user,
+    `/api/store-connections/mercado-livre/${encoded(storeId)}/sync-proposals?limit=${Math.max(1, Math.min(100, Math.trunc(limit)))}`
+  );
+
+export const decideMercadoLivreSyncProposal = async (
+  user: User,
+  storeId: string,
+  proposalId: string,
+  decision: 'approve' | 'reject'
+): Promise<{ proposalId: string; status: 'approved' | 'rejected' }> =>
+  authorizedFetch<{ proposalId: string; status: 'approved' | 'rejected' }>(
+    user,
+    `/api/store-connections/mercado-livre/${encoded(storeId)}/sync-proposals/${encoded(proposalId)}/decision`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ decision }),
     }
   );
 
