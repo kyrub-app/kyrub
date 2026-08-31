@@ -13,25 +13,35 @@ test('bound update proposal re-fetches provider item and verifies seller identit
   assert.match(source, /canonical_kyrub_and_provider_api_refetch/);
 });
 
-test('bound update proposal only proposes name and price', async () => {
+test('bound update proposal only proposes local name and price changes', async () => {
   const source = await readFile(servicePath, 'utf8');
   assert.match(source, /type UpdatableField = 'name' \| 'price'/);
-  assert.match(source, /proposedChanges\.name = canonical\.name/);
-  assert.match(source, /proposedChanges\.price = canonical\.price/);
+  assert.match(source, /for \(const field of \['name', 'price'\] as UpdatableField\[\]\)/);
+  assert.match(source, /proposedChanges\[field\] = current\[field\]/);
   assert.match(source, /protectedFields: \['stock', 'category', 'image', 'publicationStatus'\]/);
   assert.doesNotMatch(source, /proposedChanges\.stock|proposedChanges\.category|proposedChanges\.image/);
 });
 
-test('bound update proposal refuses local baseline divergence', async () => {
+test('bound update proposal uses detailed binding baseline and permits local divergence', async () => {
   const source = await readFile(servicePath, 'utf8');
-  assert.match(source, /currentCanonicalHash !== binding\.canonicalBaselineHash/);
-  assert.match(source, /MERCADO_LIVRE_BOUND_LISTING_UPDATE_BASELINE_CONFLICT/);
+  assert.match(source, /externalCatalogBindingBaselines/);
+  assert.match(source, /canonicalTargetHash/);
+  assert.match(source, /localChanged = current\[field\] !== baseline\[field\]/);
+  assert.doesNotMatch(source, /currentCanonicalHash !== binding\.canonicalBaselineHash/);
 });
 
-test('bound update proposal is deterministic over canonical and provider observations', async () => {
+test('bound update proposal blocks same-field concurrent provider divergence', async () => {
+  const source = await readFile(servicePath, 'utf8');
+  assert.match(source, /providerChanged = observed\[field\] !== baseline\[field\]/);
+  assert.match(source, /localChanged && providerChanged && current\[field\] !== observed\[field\]/);
+  assert.match(source, /MERCADO_LIVRE_BOUND_LISTING_UPDATE_FIELD_CONFLICT/);
+});
+
+test('bound update proposal is deterministic over baseline, canonical target and provider observations', async () => {
   const source = await readFile(servicePath, 'utf8');
   assert.match(source, /providerObservedHash/);
-  assert.match(source, /currentCanonicalHash/);
+  assert.match(source, /canonicalTargetHash/);
+  assert.match(source, /binding\.canonicalBaselineHash/);
   assert.match(source, /mlupd_/);
   assert.match(source, /executionStatus: 'not_authorized'/);
 });
