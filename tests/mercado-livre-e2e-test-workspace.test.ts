@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
+// This regression file is intentionally part of prebuild so every preview contains the complete merchant E2E bench.
 const servicePath = new URL('../server/integrations/mercadoLivreE2ETestService.ts', import.meta.url);
 const routerPath = new URL('../server/integrations/mercadoLivreE2ETestRouter.ts', import.meta.url);
 const componentPath = new URL('../src/components/store/MercadoLivreE2ETestWorkspace.tsx', import.meta.url);
