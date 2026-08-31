@@ -1,7 +1,8 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { auth } from '../../utils/firebase';
 import { subscribeToOperationalDualWrite } from '../../utils/operationalDualWrite';
 import { subscribeToCanonicalProductDualWrite } from '../../utils/canonicalProductDualWrite';
+import StoreConnectionsPortalBridge from './StoreConnectionsPortalBridge';
 
 interface OperationalDualWriteBridgeProps {
   legacyStoreId: string;
@@ -33,7 +34,10 @@ export const OperationalDualWriteBridge = ({
   notify,
 }: OperationalDualWriteBridgeProps) => {
   const notifyRef = useRef(notify);
+  const [currentUser, setCurrentUser] = useState(auth.currentUser);
   notifyRef.current = notify;
+
+  useEffect(() => auth.onAuthStateChanged(setCurrentUser), []);
 
   useEffect(() => {
     const user = auth.currentUser;
@@ -158,5 +162,13 @@ export const OperationalDualWriteBridge = ({
     };
   }, [legacyStoreId]);
 
-  return null;
+  if (!currentUser || currentUser.uid !== legacyStoreId) return null;
+
+  return (
+    <StoreConnectionsPortalBridge
+      user={currentUser}
+      storeId={legacyStoreId}
+      notify={(message, type) => notifyRef.current(message, type)}
+    />
+  );
 };
