@@ -200,8 +200,10 @@ const inventorySweepSource = readFileSync(
 test('99Food reserves canonical inventory from the first live order state', () => {
   assert.match(ninetyNineLifecycleSource, /reserveCanonicalOrderInventory/);
   assert.match(ninetyNineLifecycleSource, /sourceChannel: '99food'/);
-  assert.match(ninetyNineLifecycleSource, /state: 'reserved'/);
-  assert.match(ninetyNineLifecycleSource, /status === 'pending' \|\| status === 'accepted'/);
+  assert.match(
+    ninetyNineLifecycleSource,
+    /status === 'pending' \|\| status === 'accepted'[\s\S]*\? 'reserved'[\s\S]*: 'waiting_physical_consumption'/
+  );
 });
 
 test('99Food cancellation releases a reservation instead of mutating physical inventory', () => {
