@@ -29,6 +29,12 @@ const mapError = (error: unknown): { status: number; message: string } => {
   if (message === 'STORE_INSTITUTIONAL_NOT_FOUND' || message === 'STORE_CONNECTION_NOT_FOUND') {
     return { status: 404, message: 'A loja ou conexão ainda não foi encontrada.' };
   }
+  if (message === 'STORE_CONNECTION_SYNC_AUTHORITY_UNAVAILABLE') {
+    return {
+      status: 409,
+      message: 'A sincronização automática deste canal ainda não está habilitada. Use revisão manual por enquanto.',
+    };
+  }
   if (
     message.includes('TARGET_REQUIRED') ||
     message.includes('SCOPE_INVALID') ||
