@@ -124,3 +124,14 @@ test('stock authorization freezes exact one-time available_quantity payload', as
   assert.match(source, /store_owner_stock_projection_authorization/);
   assert.doesNotMatch(source, /mercadoLivrePutJson|method:\s*['"]PUT['"]/);
 });
+
+test('owner routes expose stock proposal queue, creation and authorization only', async () => {
+  const router = await readFile(routerPath, 'utf8');
+  assert.match(router, /outbound-stock-proposals/);
+  assert.match(router, /external-catalog-bindings\/:bindingId\/stock-proposals/);
+  assert.match(router, /proposeMercadoLivreStockUpdate/);
+  assert.match(router, /outbound-stock-proposals\/:proposalId\/authorize/);
+  assert.match(router, /authorizeMercadoLivreStockUpdate/);
+  assert.match(router, /authenticatedOwner/);
+  assert.doesNotMatch(router, /outbound-stock-authorizations\/:authorizationId\/execute/);
+});
