@@ -27,6 +27,11 @@ import {
   applyMercadoLivreSnapshotToBoundCanonicalProduct,
   listMercadoLivreBoundProductSyncQueue,
 } from './mercadoLivreBoundProductSyncService.js';
+import {
+  captureMercadoLivreBindingBaseline,
+  listMercadoLivreConflictResolutionQueue,
+  resolveMercadoLivreBoundProductConflict,
+} from './mercadoLivreConflictResolutionService.js';
 
 const clean = (value: unknown): string =>
   typeof value === 'string' ? value.trim() : '';
@@ -72,7 +77,9 @@ const mapError = (error: unknown): { status: number; message: string; code: stri
     code.includes('APPLY_TARGET_INVALID') ||
     code.includes('PREPARATION_TARGET_INVALID') ||
     code.includes('CANONICAL_PRODUCT_INPUT_INVALID') ||
-    code.includes('BOUND_SYNC_TARGET_INVALID')
+    code.includes('BOUND_SYNC_TARGET_INVALID') ||
+    code.includes('CONFLICT_RESOLUTION_INPUT_INVALID') ||
+    code.includes('CONFLICT_BASELINE_TARGET_INVALID')
   ) {
     return { status: 400, message: 'A solicitação de integração é inválida.', code };
   }
@@ -104,6 +111,11 @@ const mapError = (error: unknown): { status: number; message: string; code: stri
     code.includes('BOUND_CANONICAL_PRODUCT') ||
     code.includes('BOUND_SYNC_BASELINE_CONFLICT') ||
     code.includes('BOUND_SYNC_APPLICATION_CONFLICT') ||
+    code.includes('CONFLICT_BASELINE') ||
+    code.includes('CONFLICT_ALREADY_RESOLVED') ||
+    code.includes('CONFLICT_NO_LONGER_PRESENT') ||
+    code.includes('CONFLICT_RESOLUTION_CHOICE_REQUIRED') ||
+    code.includes('CONFLICT_RESOLUTION_ALREADY_RECORDED') ||
     code === 'STORE_REQUIRED' ||
     code === 'CANONICAL_STORE_REQUIRED'
   ) {
@@ -129,9 +141,7 @@ export const createMercadoLivreRouter = (): Router => {
   router.post('/notifications', async (request, response) => {
     try {
       const result = await ingestMercadoLivreNotification(request.body);
-      if (!result.accepted) {
-        console.warn('[Mercado Livre notification ignored]', result.disposition);
-      }
+      if (!result.accepted) console.warn('[Mercado Livre notification ignored]', result.disposition);
       response.setHeader('Cache-Control', 'no-store, max-age=0');
       response.status(200).json({ received: true });
     } catch (error) {
@@ -151,10 +161,7 @@ export const createMercadoLivreRouter = (): Router => {
       const storeId = clean(request.params.storeId);
       await authenticatedOwner(request.get('authorization') ?? '', storeId);
       response.setHeader('Cache-Control', 'no-store, max-age=0');
-      response.json(await listMercadoLivreSyncReviewQueue({
-        storeId,
-        limit: Number(request.query.limit ?? 50),
-      }));
+      response.json(await listMercadoLivreSyncReviewQueue({ storeId, limit: Number(request.query.limit ?? 50) }));
     } catch (error) {
       const mapped = mapError(error);
       response.status(mapped.status).json({ error: mapped.message, code: mapped.code });
@@ -166,10 +173,7 @@ export const createMercadoLivreRouter = (): Router => {
       const storeId = clean(request.params.storeId);
       await authenticatedOwner(request.get('authorization') ?? '', storeId);
       response.setHeader('Cache-Control', 'no-store, max-age=0');
-      response.json(await listMercadoLivreApprovedSyncProposals({
-        storeId,
-        limit: Number(request.query.limit ?? 50),
-      }));
+      response.json(await listMercadoLivreApprovedSyncProposals({ storeId, limit: Number(request.query.limit ?? 50) }));
     } catch (error) {
       const mapped = mapError(error);
       response.status(mapped.status).json({ error: mapped.message, code: mapped.code });
@@ -181,10 +185,19 @@ export const createMercadoLivreRouter = (): Router => {
       const storeId = clean(request.params.storeId);
       await authenticatedOwner(request.get('authorization') ?? '', storeId);
       response.setHeader('Cache-Control', 'no-store, max-age=0');
-      response.json(await listMercadoLivreBoundProductSyncQueue({
-        storeId,
-        limit: Number(request.query.limit ?? 50),
-      }));
+      response.json(await listMercadoLivreBoundProductSyncQueue({ storeId, limit: Number(request.query.limit ?? 50) }));
+    } catch (error) {
+      const mapped = mapError(error);
+      response.status(mapped.status).json({ error: mapped.message, code: mapped.code });
+    }
+  });
+
+  router.get('/:storeId/conflict-resolutions', async (request, response) => {
+    try {
+      const storeId = clean(request.params.storeId);
+      await authenticatedOwner(request.get('authorization') ?? '', storeId);
+      response.setHeader('Cache-Control', 'no-store, max-age=0');
+      response.json(await listMercadoLivreConflictResolutionQueue({ storeId, limit: Number(request.query.limit ?? 50) }));
     } catch (error) {
       const mapped = mapError(error);
       response.status(mapped.status).json({ error: mapped.message, code: mapped.code });
@@ -197,12 +210,7 @@ export const createMercadoLivreRouter = (): Router => {
       const proposalId = clean(request.params.proposalId);
       const identity = await authenticatedOwner(request.get('authorization') ?? '', storeId);
       response.setHeader('Cache-Control', 'no-store, max-age=0');
-      response.json(await decideMercadoLivreSyncProposal({
-        storeId,
-        proposalId,
-        decision: request.body?.decision,
-        decidedByUserId: identity.uid,
-      }));
+      response.json(await decideMercadoLivreSyncProposal({ storeId, proposalId, decision: request.body?.decision, decidedByUserId: identity.uid }));
     } catch (error) {
       const mapped = mapError(error);
       response.status(mapped.status).json({ error: mapped.message, code: mapped.code });
@@ -215,11 +223,7 @@ export const createMercadoLivreRouter = (): Router => {
       const proposalId = clean(request.params.proposalId);
       const identity = await authenticatedOwner(request.get('authorization') ?? '', storeId);
       response.setHeader('Cache-Control', 'no-store, max-age=0');
-      response.json(await applyApprovedMercadoLivreProposalToDraft({
-        storeId,
-        proposalId,
-        appliedByUserId: identity.uid,
-      }));
+      response.json(await applyApprovedMercadoLivreProposalToDraft({ storeId, proposalId, appliedByUserId: identity.uid }));
     } catch (error) {
       const mapped = mapError(error);
       response.status(mapped.status).json({ error: mapped.message, code: mapped.code });
@@ -231,11 +235,27 @@ export const createMercadoLivreRouter = (): Router => {
       const storeId = clean(request.params.storeId);
       const proposalId = clean(request.params.proposalId);
       const identity = await authenticatedOwner(request.get('authorization') ?? '', storeId);
+      const applied = await applyMercadoLivreSnapshotToBoundCanonicalProduct({ storeId, proposalId, appliedByUserId: identity.uid });
+      await captureMercadoLivreBindingBaseline({ storeId, bindingId: applied.bindingId, capturedByUserId: identity.uid });
       response.setHeader('Cache-Control', 'no-store, max-age=0');
-      response.json(await applyMercadoLivreSnapshotToBoundCanonicalProduct({
+      response.json(applied);
+    } catch (error) {
+      const mapped = mapError(error);
+      response.status(mapped.status).json({ error: mapped.message, code: mapped.code });
+    }
+  });
+
+  router.post('/:storeId/sync-proposals/:proposalId/resolve-conflict', async (request, response) => {
+    try {
+      const storeId = clean(request.params.storeId);
+      const proposalId = clean(request.params.proposalId);
+      const identity = await authenticatedOwner(request.get('authorization') ?? '', storeId);
+      response.setHeader('Cache-Control', 'no-store, max-age=0');
+      response.json(await resolveMercadoLivreBoundProductConflict({
         storeId,
         proposalId,
-        appliedByUserId: identity.uid,
+        choices: request.body?.choices,
+        resolvedByUserId: identity.uid,
       }));
     } catch (error) {
       const mapped = mapError(error);
@@ -248,10 +268,7 @@ export const createMercadoLivreRouter = (): Router => {
       const storeId = clean(request.params.storeId);
       await authenticatedOwner(request.get('authorization') ?? '', storeId);
       response.setHeader('Cache-Control', 'no-store, max-age=0');
-      response.json(await listMercadoLivreImportDraftsForPreparation({
-        storeId,
-        limit: Number(request.query.limit ?? 50),
-      }));
+      response.json(await listMercadoLivreImportDraftsForPreparation({ storeId, limit: Number(request.query.limit ?? 50) }));
     } catch (error) {
       const mapped = mapError(error);
       response.status(mapped.status).json({ error: mapped.message, code: mapped.code });
@@ -264,11 +281,7 @@ export const createMercadoLivreRouter = (): Router => {
       const importDraftId = clean(request.params.draftId);
       const identity = await authenticatedOwner(request.get('authorization') ?? '', storeId);
       response.setHeader('Cache-Control', 'no-store, max-age=0');
-      response.status(201).json(await prepareMercadoLivreImportAsKyrubCatalogDraft({
-        storeId,
-        importDraftId,
-        preparedByUserId: identity.uid,
-      }));
+      response.status(201).json(await prepareMercadoLivreImportAsKyrubCatalogDraft({ storeId, importDraftId, preparedByUserId: identity.uid }));
     } catch (error) {
       const mapped = mapError(error);
       response.status(mapped.status).json({ error: mapped.message, code: mapped.code });
@@ -280,15 +293,17 @@ export const createMercadoLivreRouter = (): Router => {
       const storeId = clean(request.params.storeId);
       const importDraftId = clean(request.params.draftId);
       const identity = await authenticatedOwner(request.get('authorization') ?? '', storeId);
-      response.setHeader('Cache-Control', 'no-store, max-age=0');
-      response.status(201).json(await finalizeMercadoLivreImportAsCanonicalKyrubProduct({
+      const created = await finalizeMercadoLivreImportAsCanonicalKyrubProduct({
         storeId,
         importDraftId,
         kyrubCategory: request.body?.category,
         kyrubStock: request.body?.stock,
         kyrubPrice: request.body?.price,
         finalizedByUserId: identity.uid,
-      }));
+      });
+      await captureMercadoLivreBindingBaseline({ storeId, bindingId: created.bindingId, capturedByUserId: identity.uid });
+      response.setHeader('Cache-Control', 'no-store, max-age=0');
+      response.status(201).json(created);
     } catch (error) {
       const mapped = mapError(error);
       response.status(mapped.status).json({ error: mapped.message, code: mapped.code });
@@ -301,10 +316,7 @@ export const createMercadoLivreRouter = (): Router => {
       const inboxId = clean(request.params.inboxId);
       await authenticatedOwner(request.get('authorization') ?? '', storeId);
       response.setHeader('Cache-Control', 'no-store, max-age=0');
-      response.json(await processMercadoLivreNotificationInboxItem({
-        inboxId,
-        expectedStoreId: storeId,
-      }));
+      response.json(await processMercadoLivreNotificationInboxItem({ inboxId, expectedStoreId: storeId }));
     } catch (error) {
       const mapped = mapError(error);
       response.status(mapped.status).json({ error: mapped.message, code: mapped.code });
@@ -341,9 +353,8 @@ export const createMercadoLivreRouter = (): Router => {
     try {
       const storeId = clean(request.params.storeId);
       await authenticatedOwner(request.get('authorization') ?? '', storeId);
-      const limit = Number(request.query.limit ?? 50);
       response.setHeader('Cache-Control', 'no-store, max-age=0');
-      response.json(await previewMercadoLivreCatalog({ storeId, limit }));
+      response.json(await previewMercadoLivreCatalog({ storeId, limit: Number(request.query.limit ?? 50) }));
     } catch (error) {
       const mapped = mapError(error);
       response.status(mapped.status).json({ error: mapped.message, code: mapped.code });
@@ -355,10 +366,7 @@ export const createMercadoLivreRouter = (): Router => {
       const storeId = clean(request.params.storeId);
       await authenticatedOwner(request.get('authorization') ?? '', storeId);
       response.setHeader('Cache-Control', 'no-store, max-age=0');
-      response.status(201).json(await confirmMercadoLivreCatalogImport({
-        storeId,
-        itemIds: request.body?.itemIds,
-      }));
+      response.status(201).json(await confirmMercadoLivreCatalogImport({ storeId, itemIds: request.body?.itemIds }));
     } catch (error) {
       const mapped = mapError(error);
       response.status(mapped.status).json({ error: mapped.message, code: mapped.code });
