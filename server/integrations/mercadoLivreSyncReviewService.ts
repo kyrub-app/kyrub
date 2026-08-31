@@ -44,7 +44,7 @@ const assertProposalForStore = (
   if (record.status !== 'review_required' && record.status !== 'approved' && record.status !== 'rejected') {
     throw new Error('MERCADO_LIVRE_SYNC_PROPOSAL_INVALID');
   }
-  return record as MercadoLivreSyncReviewItem['proposal'];
+  return record as unknown as MercadoLivreSyncReviewItem['proposal'];
 };
 
 const assertSnapshotForProposal = (
