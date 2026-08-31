@@ -28,7 +28,7 @@ import {
 } from './secretVault.js';
 
 interface MercadoLivreOAuthStateDocument {
-  state: string;
+  stateHash: string;
   storeId: string;
   encryptedVerifier: EncryptedSecretEnvelope;
   expiresAtMillis: number;
@@ -43,8 +43,14 @@ interface MercadoLivreTokenResponse {
   user_id?: unknown;
 }
 
-const statePath = (state: string): string => `integrationOauthStates/mercado_livre__${state}`;
-const stateAad = (state: string): string => `oauth:mercado_livre:${state}`;
+const hashOAuthState = (state: string): string =>
+  createHash('sha256').update(state).digest('hex');
+
+const statePath = (stateHash: string): string =>
+  `integrationOauthStates/mercado_livre__${stateHash}`;
+
+const stateAad = (stateHash: string): string =>
+  `oauth:mercado_livre:${stateHash}`;
 
 const oauthConfig = async () => {
   const stored = await resolvePlatformCredentials(
@@ -108,17 +114,18 @@ export const beginMercadoLivreAuthorization = async (storeIdInput: string): Prom
   if (!storeId) throw new Error('STORE_CONNECTION_STORE_REQUIRED');
   const config = await oauthConfig();
   const state = randomBytes(32).toString('base64url');
+  const stateHash = hashOAuthState(state);
   const verifier = randomBytes(64).toString('base64url');
   const challenge = createHash('sha256').update(verifier).digest('base64url');
   const expiresAtMillis = Date.now() + 10 * 60 * 1000;
 
-  await adminDb.doc(statePath(state)).create({
-    state,
+  await adminDb.doc(statePath(stateHash)).create({
+    stateHash,
     storeId,
     encryptedVerifier: encryptIntegrationSecret(
       { verifier },
       getIntegrationMasterKey(),
-      stateAad(state)
+      stateAad(stateHash)
     ),
     expiresAtMillis,
     createdAt: FieldValue.serverTimestamp(),
@@ -137,12 +144,13 @@ export const beginMercadoLivreAuthorization = async (storeIdInput: string): Prom
 const consumeOAuthState = async (stateInput: string): Promise<{ storeId: string; verifier: string }> => {
   const state = stateInput.trim();
   if (!state) throw new Error('MERCADO_LIVRE_OAUTH_STATE_REQUIRED');
+  const stateHash = hashOAuthState(state);
   return adminDb.runTransaction(async transaction => {
-    const reference = adminDb.doc(statePath(state));
+    const reference = adminDb.doc(statePath(stateHash));
     const snapshot = await transaction.get(reference);
     if (!snapshot.exists) throw new Error('MERCADO_LIVRE_OAUTH_STATE_INVALID');
     const data = snapshot.data() as MercadoLivreOAuthStateDocument;
-    if (data.state !== state || !data.storeId || !data.encryptedVerifier) {
+    if (data.stateHash !== stateHash || !data.storeId || !data.encryptedVerifier) {
       throw new Error('MERCADO_LIVRE_OAUTH_STATE_INVALID');
     }
     if (!Number.isFinite(data.expiresAtMillis) || data.expiresAtMillis < Date.now()) {
@@ -152,7 +160,7 @@ const consumeOAuthState = async (stateInput: string): Promise<{ storeId: string;
     const decrypted = decryptIntegrationSecret<{ verifier: string }>(
       data.encryptedVerifier,
       getIntegrationMasterKey(),
-      stateAad(state)
+      stateAad(stateHash)
     );
     if (!decrypted.verifier?.trim()) throw new Error('MERCADO_LIVRE_PKCE_VERIFIER_INVALID');
     transaction.delete(reference);
