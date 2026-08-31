@@ -239,3 +239,54 @@ test('insufficient ATP is recorded for operator action without inventing marketp
   assert.match(ninetyNineLifecycleSource, /INVENTORY_AVAILABLE_TO_PROMISE_EXCEEDED/);
   assert.doesNotMatch(ninetyNineLifecycleSource, /available_quantity|mercadoLivrePutJson/);
 });
+
+const channelAvailabilityPolicySource = readFileSync(
+  'server/inventory/channelAvailabilityPolicyService.ts',
+  'utf8'
+);
+const channelAvailabilityRouterSource = readFileSync(
+  'server/inventory/channelAvailabilityPolicyRouter.ts',
+  'utf8'
+);
+const orderInventoryRouterSource = readFileSync(
+  'server/inventory/orderInventoryRouter.ts',
+  'utf8'
+);
+
+test('persisted channel policy is owner-authoritative and versioned', () => {
+  assert.match(channelAvailabilityPolicySource, /resolveCanonicalInventoryAuthorityInTransaction/);
+  assert.match(channelAvailabilityPolicySource, /authority: 'store_owner_channel_availability_policy'/);
+  assert.match(channelAvailabilityPolicySource, /authority\.ownerUserId !== configuredByUserId/);
+  assert.match(channelAvailabilityPolicySource, /revision = Math\.max/);
+  assert.match(channelAvailabilityPolicySource, /safetyStockUnits/);
+  assert.match(channelAvailabilityPolicySource, /allocationCapUnits/);
+});
+
+test('availability snapshot freezes inventory reservations composition and policy into one fingerprint', () => {
+  assert.match(channelAvailabilityPolicySource, /where\('status', '==', 'active'\)/);
+  assert.match(channelAvailabilityPolicySource, /projectChannelAvailability/);
+  assert.match(channelAvailabilityPolicySource, /activeReservations:/);
+  assert.match(channelAvailabilityPolicySource, /sourceFingerprint = hashValue\(source\)/);
+  assert.match(channelAvailabilityPolicySource, /snapshotId = `cavs_\$\{sourceFingerprint\.slice\(0, 40\)\}`/);
+  assert.match(channelAvailabilityPolicySource, /transaction\.create\(snapshotReference/);
+  assert.match(channelAvailabilityPolicySource, /latest_channel_availability_snapshot_pointer/);
+});
+
+test('availability snapshot preserves physical ATP and publishable quantity as separate facts', () => {
+  assert.match(channelAvailabilityPolicySource, /physicalCompositionUnits: projection\.physicalCompositionUnits/);
+  assert.match(channelAvailabilityPolicySource, /availableToPromiseUnits: projection\.availableToPromiseUnits/);
+  assert.match(channelAvailabilityPolicySource, /publishableUnits: projection\.publishableUnits/);
+  assert.match(channelAvailabilityPolicySource, /policyRevision/);
+});
+
+test('availability API is authenticated and mounted under inventory operations', () => {
+  assert.match(channelAvailabilityRouterSource, /verifyIdToken/);
+  assert.match(channelAvailabilityRouterSource, /setChannelAvailabilityPolicy/);
+  assert.match(channelAvailabilityRouterSource, /createChannelAvailabilitySnapshot/);
+  assert.match(orderInventoryRouterSource, /router\.use\('\/availability', createChannelAvailabilityPolicyRouter\(\)\)/);
+});
+
+test('availability persistence does not publish stock to Mercado Livre or 99Food', () => {
+  assert.doesNotMatch(channelAvailabilityPolicySource, /available_quantity|mercadoLivrePutJson|\/items\//);
+  assert.doesNotMatch(channelAvailabilityRouterSource, /available_quantity|mercadoLivrePutJson|sendNinetyNineFood/);
+});
