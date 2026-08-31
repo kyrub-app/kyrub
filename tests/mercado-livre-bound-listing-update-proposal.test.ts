@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 
 const servicePath = new URL('../server/integrations/mercadoLivreBoundListingUpdateProposalService.ts', import.meta.url);
 const stockServicePath = new URL('../server/integrations/mercadoLivreStockUpdateProposalService.ts', import.meta.url);
+const stockAuthorizationPath = new URL('../server/integrations/mercadoLivreStockUpdateAuthorizationService.ts', import.meta.url);
 const routerPath = new URL('../server/integrations/mercadoLivreRouter.ts', import.meta.url);
 
 test('bound update proposal re-fetches provider item and verifies seller identity', async () => {
@@ -93,4 +94,33 @@ test('simple stock proposal is review-only and cannot write available quantity',
   assert.match(source, /catalogOutboundStockProposals/);
   assert.doesNotMatch(source, /mercadoLivrePutJson|method:\s*['"]PUT['"]/);
   assert.doesNotMatch(source, /available_quantity\s*:/);
+});
+
+test('stock authorization rematerializes availability and rejects stale projection', async () => {
+  const source = await readFile(stockAuthorizationPath, 'utf8');
+  assert.match(source, /createChannelAvailabilitySnapshot/);
+  assert.match(source, /snapshotId !== proposal\.channelAvailabilitySnapshotId/);
+  assert.match(source, /sourceFingerprint !== proposal\.channelAvailabilitySourceFingerprint/);
+  assert.match(source, /publishableUnits !== proposal\.targetAvailableQuantity/);
+  assert.match(source, /MERCADO_LIVRE_STOCK_UPDATE_AVAILABILITY_STALE/);
+});
+
+test('stock authorization re-fetches provider mode and only permits simple item inventory', async () => {
+  const source = await readFile(stockAuthorizationPath, 'utf8');
+  assert.match(source, /providerObservation/);
+  assert.match(source, /observed\.mode !== 'item_available_quantity'/);
+  assert.match(source, /observed\.hash !== proposal\.providerObservedHash/);
+  assert.match(source, /MERCADO_LIVRE_STOCK_UPDATE_PROVIDER_STALE/);
+});
+
+test('stock authorization freezes exact one-time available_quantity payload', async () => {
+  const source = await readFile(stockAuthorizationPath, 'utf8');
+  assert.match(source, /const payload = \{ available_quantity: proposal\.targetAvailableQuantity \}/);
+  assert.match(source, /randomBytes\(32\)/);
+  assert.match(source, /tokenHash = sha256\(authorizationToken\)/);
+  assert.match(source, /useCount: 0/);
+  assert.match(source, /consumptionStatus: 'available'/);
+  assert.match(source, /Date\.now\(\) \+ 15 \* 60 \* 1000/);
+  assert.match(source, /store_owner_stock_projection_authorization/);
+  assert.doesNotMatch(source, /mercadoLivrePutJson|method:\s*['"]PUT['"]/);
 });
