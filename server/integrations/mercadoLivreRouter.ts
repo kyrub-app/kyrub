@@ -1,41 +1,16 @@
 import { Router } from 'express';
 import { verifyFirebaseIdToken } from '../ai/consultantAuth.js';
-import {
-  beginMercadoLivreAuthorization,
-  completeMercadoLivreAuthorization,
-} from './mercadoLivreOauthService.js';
-import {
-  confirmMercadoLivreCatalogImport,
-  previewMercadoLivreCatalog,
-} from './mercadoLivreCatalogImportService.js';
+import { beginMercadoLivreAuthorization, completeMercadoLivreAuthorization } from './mercadoLivreOauthService.js';
+import { confirmMercadoLivreCatalogImport, previewMercadoLivreCatalog } from './mercadoLivreCatalogImportService.js';
 import { ingestMercadoLivreNotification } from './mercadoLivreNotificationInboxService.js';
 import { processMercadoLivreNotificationInboxItem } from './mercadoLivreNotificationProcessor.js';
-import {
-  decideMercadoLivreSyncProposal,
-  listMercadoLivreSyncReviewQueue,
-} from './mercadoLivreSyncReviewService.js';
-import {
-  applyApprovedMercadoLivreProposalToDraft,
-  listMercadoLivreApprovedSyncProposals,
-} from './mercadoLivreApprovedProposalApplyService.js';
-import {
-  finalizeMercadoLivreImportAsCanonicalKyrubProduct,
-  listMercadoLivreImportDraftsForPreparation,
-  prepareMercadoLivreImportAsKyrubCatalogDraft,
-} from './mercadoLivreCatalogDraftPromotionService.js';
-import {
-  applyMercadoLivreSnapshotToBoundCanonicalProduct,
-  listMercadoLivreBoundProductSyncQueue,
-} from './mercadoLivreBoundProductSyncService.js';
-import {
-  captureMercadoLivreBindingBaseline,
-  listMercadoLivreConflictResolutionQueue,
-  resolveMercadoLivreBoundProductConflict,
-} from './mercadoLivreConflictResolutionService.js';
-import {
-  listMercadoLivreOutboundPublicationProposals,
-  proposeMercadoLivreExternalPublication,
-} from './mercadoLivreOutboundPublicationService.js';
+import { decideMercadoLivreSyncProposal, listMercadoLivreSyncReviewQueue } from './mercadoLivreSyncReviewService.js';
+import { applyApprovedMercadoLivreProposalToDraft, listMercadoLivreApprovedSyncProposals } from './mercadoLivreApprovedProposalApplyService.js';
+import { finalizeMercadoLivreImportAsCanonicalKyrubProduct, listMercadoLivreImportDraftsForPreparation, prepareMercadoLivreImportAsKyrubCatalogDraft } from './mercadoLivreCatalogDraftPromotionService.js';
+import { applyMercadoLivreSnapshotToBoundCanonicalProduct, listMercadoLivreBoundProductSyncQueue } from './mercadoLivreBoundProductSyncService.js';
+import { captureMercadoLivreBindingBaseline, listMercadoLivreConflictResolutionQueue, resolveMercadoLivreBoundProductConflict } from './mercadoLivreConflictResolutionService.js';
+import { listMercadoLivreOutboundPublicationProposals, proposeMercadoLivreExternalPublication } from './mercadoLivreOutboundPublicationService.js';
+import { configureMercadoLivreOutboundRequirements, inspectMercadoLivreOutboundRequirements } from './mercadoLivreOutboundRequirementsService.js';
 
 const clean = (value: unknown): string => typeof value === 'string' ? value.trim() : '';
 const bearerToken = (authorization: string): string => /^Bearer\s+(.+)$/i.exec(authorization)?.[1]?.trim() ?? '';
@@ -50,7 +25,8 @@ const callbackRedirect = (status: 'connected' | 'error', code = ''): string => {
   const configured = process.env.PUBLIC_APP_URL?.trim();
   const base = configured && /^https?:\/\//i.test(configured) ? configured : '/';
   const url = new URL(base, 'http://localhost');
-  url.searchParams.set('integration', 'mercado_livre'); url.searchParams.set('status', status);
+  url.searchParams.set('integration', 'mercado_livre');
+  url.searchParams.set('status', status);
   if (code) url.searchParams.set('code', code);
   return configured ? url.toString() : `${url.pathname}${url.search}`;
 };
@@ -62,7 +38,7 @@ const mapError = (error: unknown): { status: number; message: string; code: stri
   if (code.includes('INVALID') || code.includes('SELECTION') || code.includes('STATE_REQUIRED') || code.includes('CODE_REQUIRED')) return { status: 400, message: 'A solicitação de integração é inválida.', code };
   if (code.includes('NOT_FOUND')) return { status: 404, message: 'O registro selecionado não foi encontrado.', code };
   if (code.includes('NOT_CONNECTED') || code.includes('CONNECTION_INVALID')) return { status: 409, message: 'Conecte sua conta do Mercado Livre antes de continuar.', code };
-  if (code.includes('CONFLICT') || code.includes('REQUIRED') || code.includes('ALREADY') || code.includes('STALE') || code.includes('NOT_APPROVED')) return { status: 409, message: 'O registro não pode avançar no estado atual.', code };
+  if (code.includes('CONFLICT') || code.includes('REQUIRED') || code.includes('ALREADY') || code.includes('STALE') || code.includes('NOT_APPROVED') || code.includes('UNAVAILABLE') || code.includes('NOT_LISTABLE') || code.includes('NOT_PREDICTED')) return { status: 409, message: 'O registro não pode avançar no estado atual.', code };
   if (code.includes('CONFIG_MISSING')) return { status: 503, message: 'A integração Mercado Livre ainda não foi configurada pela plataforma.', code };
   console.error('[Mercado Livre Integration]', code);
   return { status: 503, message: 'A integração Mercado Livre está temporariamente indisponível.', code };
@@ -72,13 +48,28 @@ const isNonRetryableNotificationError = (code: string): boolean => code.startsWi
 export const createMercadoLivreRouter = (): Router => {
   const router = Router();
   const ownerGet = (path: string, handler: (storeId: string, request: any) => Promise<unknown>) => router.get(path, async (request, response) => {
-    try { const storeId = clean(request.params.storeId); await authenticatedOwner(request.get('authorization') ?? '', storeId); response.setHeader('Cache-Control','no-store, max-age=0'); response.json(await handler(storeId, request)); }
-    catch (error) { const mapped = mapError(error); response.status(mapped.status).json({ error: mapped.message, code: mapped.code }); }
+    try {
+      const storeId = clean(request.params.storeId);
+      await authenticatedOwner(request.get('authorization') ?? '', storeId);
+      response.setHeader('Cache-Control', 'no-store, max-age=0');
+      response.json(await handler(storeId, request));
+    } catch (error) {
+      const mapped = mapError(error);
+      response.status(mapped.status).json({ error: mapped.message, code: mapped.code });
+    }
   });
 
   router.post('/notifications', async (request, response) => {
-    try { const result = await ingestMercadoLivreNotification(request.body); if (!result.accepted) console.warn('[Mercado Livre notification ignored]', result.disposition); response.status(200).json({ received: true }); }
-    catch (error) { const code = errorCode(error); if (isNonRetryableNotificationError(code)) { response.status(200).json({ received: true }); return; } console.error('[Mercado Livre notification inbox]', code); response.status(503).json({ received: false }); }
+    try {
+      const result = await ingestMercadoLivreNotification(request.body);
+      if (!result.accepted) console.warn('[Mercado Livre notification ignored]', result.disposition);
+      response.status(200).json({ received: true });
+    } catch (error) {
+      const code = errorCode(error);
+      if (isNonRetryableNotificationError(code)) { response.status(200).json({ received: true }); return; }
+      console.error('[Mercado Livre notification inbox]', code);
+      response.status(503).json({ received: false });
+    }
   });
 
   ownerGet('/:storeId/sync-proposals', (storeId, request) => listMercadoLivreSyncReviewQueue({ storeId, limit: Number(request.query.limit ?? 50) }));
@@ -90,15 +81,54 @@ export const createMercadoLivreRouter = (): Router => {
   ownerGet('/:storeId/catalog-preview', (storeId, request) => previewMercadoLivreCatalog({ storeId, limit: Number(request.query.limit ?? 50) }));
 
   router.post('/:storeId/outbound-publication-proposals', async (request, response) => {
-    try { const storeId = clean(request.params.storeId); const identity = await authenticatedOwner(request.get('authorization') ?? '', storeId); response.status(201).json(await proposeMercadoLivreExternalPublication({ storeId, connectionId: clean(request.body?.connectionId), canonicalProductId: clean(request.body?.canonicalProductId), proposedByUserId: identity.uid })); }
-    catch (error) { const mapped = mapError(error); response.status(mapped.status).json({ error: mapped.message, code: mapped.code }); }
+    try {
+      const storeId = clean(request.params.storeId);
+      const identity = await authenticatedOwner(request.get('authorization') ?? '', storeId);
+      response.status(201).json(await proposeMercadoLivreExternalPublication({
+        storeId,
+        connectionId: clean(request.body?.connectionId),
+        canonicalProductId: clean(request.body?.canonicalProductId),
+        proposedByUserId: identity.uid,
+      }));
+    } catch (error) { const mapped = mapError(error); response.status(mapped.status).json({ error: mapped.message, code: mapped.code }); }
   });
+
+  router.post('/:storeId/outbound-publication-proposals/:proposalId/inspect-requirements', async (request, response) => {
+    try {
+      const storeId = clean(request.params.storeId);
+      const identity = await authenticatedOwner(request.get('authorization') ?? '', storeId);
+      response.setHeader('Cache-Control', 'no-store, max-age=0');
+      response.json(await inspectMercadoLivreOutboundRequirements({
+        storeId,
+        proposalId: clean(request.params.proposalId),
+        inspectedByUserId: identity.uid,
+      }));
+    } catch (error) { const mapped = mapError(error); response.status(mapped.status).json({ error: mapped.message, code: mapped.code }); }
+  });
+
+  router.post('/:storeId/outbound-publication-proposals/:proposalId/configure-requirements', async (request, response) => {
+    try {
+      const storeId = clean(request.params.storeId);
+      const identity = await authenticatedOwner(request.get('authorization') ?? '', storeId);
+      response.setHeader('Cache-Control', 'no-store, max-age=0');
+      response.json(await configureMercadoLivreOutboundRequirements({
+        storeId,
+        proposalId: clean(request.params.proposalId),
+        categoryId: request.body?.categoryId,
+        listingTypeId: request.body?.listingTypeId,
+        condition: request.body?.condition,
+        attributes: request.body?.attributes,
+        configuredByUserId: identity.uid,
+      }));
+    } catch (error) { const mapped = mapError(error); response.status(mapped.status).json({ error: mapped.message, code: mapped.code }); }
+  });
+
   router.post('/:storeId/sync-proposals/:proposalId/decision', async (request, response) => { try { const storeId=clean(request.params.storeId); const identity=await authenticatedOwner(request.get('authorization')??'',storeId); response.json(await decideMercadoLivreSyncProposal({storeId,proposalId:clean(request.params.proposalId),decision:request.body?.decision,decidedByUserId:identity.uid})); } catch(error){const mapped=mapError(error);response.status(mapped.status).json({error:mapped.message,code:mapped.code});} });
   router.post('/:storeId/sync-proposals/:proposalId/apply-to-draft', async (request,response)=>{try{const storeId=clean(request.params.storeId);const identity=await authenticatedOwner(request.get('authorization')??'',storeId);response.json(await applyApprovedMercadoLivreProposalToDraft({storeId,proposalId:clean(request.params.proposalId),appliedByUserId:identity.uid}));}catch(error){const mapped=mapError(error);response.status(mapped.status).json({error:mapped.message,code:mapped.code});}});
   router.post('/:storeId/sync-proposals/:proposalId/apply-to-canonical', async (request,response)=>{try{const storeId=clean(request.params.storeId);const identity=await authenticatedOwner(request.get('authorization')??'',storeId);const applied=await applyMercadoLivreSnapshotToBoundCanonicalProduct({storeId,proposalId:clean(request.params.proposalId),appliedByUserId:identity.uid});await captureMercadoLivreBindingBaseline({storeId,bindingId:applied.bindingId,capturedByUserId:identity.uid});response.json(applied);}catch(error){const mapped=mapError(error);response.status(mapped.status).json({error:mapped.message,code:mapped.code});}});
   router.post('/:storeId/sync-proposals/:proposalId/resolve-conflict', async (request,response)=>{try{const storeId=clean(request.params.storeId);const identity=await authenticatedOwner(request.get('authorization')??'',storeId);response.json(await resolveMercadoLivreBoundProductConflict({storeId,proposalId:clean(request.params.proposalId),choices:request.body?.choices,resolvedByUserId:identity.uid}));}catch(error){const mapped=mapError(error);response.status(mapped.status).json({error:mapped.message,code:mapped.code});}});
   router.post('/:storeId/catalog-import-drafts/:draftId/prepare-kyrub-draft', async(request,response)=>{try{const storeId=clean(request.params.storeId);const identity=await authenticatedOwner(request.get('authorization')??'',storeId);response.status(201).json(await prepareMercadoLivreImportAsKyrubCatalogDraft({storeId,importDraftId:clean(request.params.draftId),preparedByUserId:identity.uid}));}catch(error){const mapped=mapError(error);response.status(mapped.status).json({error:mapped.message,code:mapped.code});}});
-  router.post('/:storeId/catalog-import-drafts/:draftId/create-kyrub-product',async(request,response)=>{try{const storeId=clean(request.params.storeId);const identity=await authenticatedOwner(request.get('authorization')??'',storeId);const created=await finalizeMercadoLivreImportAsCanonicalKyrubProduct({storeId,importDraftId:clean(request.params.draftId),kyrubCategory:request.body?.category,kyrubStock:request.body?.stock,kyrubPrice:request.body?.price,finalizedByUserId:identity.uid});await captureMercadoLivreBindingBaseline({storeId,bindingId:created.bindingId,capturedByUserId:identity.uid});response.status(201).json(created);}catch(error){const mapped=mapError(error);response.status(mapped.status).json({error:mapped.message,code:mapped.code});}});
+  router.post('/:storeId/catalog-import-drafts/:draftId/create-kyrub-product',async(request,response)=>{try{const storeId=clean(request.params.storeId);const identity=await authenticatedOwner(request.get('authorization')??'',storeId);const created=await finalizeMercadoLivreImportAsCanonicalKyrubProduct({storeId,importDraftId:clean(request.params.draftId),kyrubCategory: request.body?.category,kyrubStock: request.body?.stock,kyrubPrice: request.body?.price,finalizedByUserId:identity.uid});await captureMercadoLivreBindingBaseline({storeId,bindingId:created.bindingId,capturedByUserId:identity.uid});response.status(201).json(created);}catch(error){const mapped=mapError(error);response.status(mapped.status).json({error:mapped.message,code:mapped.code});}});
   router.post('/:storeId/notifications/:inboxId/process',async(request,response)=>{try{const storeId=clean(request.params.storeId);await authenticatedOwner(request.get('authorization')??'',storeId);response.json(await processMercadoLivreNotificationInboxItem({inboxId:clean(request.params.inboxId),expectedStoreId:storeId}));}catch(error){const mapped=mapError(error);response.status(mapped.status).json({error:mapped.message,code:mapped.code});}});
   router.post('/:storeId/authorize',async(request,response)=>{try{const storeId=clean(request.params.storeId);await authenticatedOwner(request.get('authorization')??'',storeId);response.json({authorizationUrl:await beginMercadoLivreAuthorization(storeId)});}catch(error){const mapped=mapError(error);response.status(mapped.status).json({error:mapped.message,code:mapped.code});}});
   router.get('/callback',async(request,response)=>{try{await completeMercadoLivreAuthorization({code:clean(request.query.code),state:clean(request.query.state)});response.redirect(303,callbackRedirect('connected'));}catch(error){const code=errorCode(error);console.warn('[Mercado Livre OAuth callback]',code);response.redirect(303,callbackRedirect('error',code));}});
