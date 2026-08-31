@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
 const servicePath = new URL('../server/integrations/mercadoLivreBoundListingUpdateProposalService.ts', import.meta.url);
+const stockServicePath = new URL('../server/integrations/mercadoLivreStockUpdateProposalService.ts', import.meta.url);
 const routerPath = new URL('../server/integrations/mercadoLivreRouter.ts', import.meta.url);
 
 test('bound update proposal re-fetches provider item and verifies seller identity', async () => {
@@ -54,4 +55,42 @@ test('owner-authenticated routes expose creation and review queue without provid
   assert.match(router, /proposeMercadoLivreBoundListingUpdate/);
   assert.match(router, /authenticatedOwner/);
   assert.doesNotMatch(service, /mercadoLivrePutJson|method:\s*'PUT'|\/items\/.+PUT/);
+});
+
+test('stock proposal consumes only a frozen Mercado Livre availability snapshot', async () => {
+  const source = await readFile(stockServicePath, 'utf8');
+  assert.match(source, /channelAvailabilitySnapshots/);
+  assert.match(source, /record\.channel !== 'mercado_livre'/);
+  assert.match(source, /kyrub_inventory_reservation_policy_snapshot/);
+  assert.match(source, /targetAvailableQuantity: availability\.publishableUnits/);
+  assert.match(source, /channelAvailabilitySourceFingerprint/);
+  assert.match(source, /channelAvailabilityPolicyRevision/);
+});
+
+test('stock proposal re-fetches provider inventory mode and verifies item seller identity', async () => {
+  const source = await readFile(stockServicePath, 'utf8');
+  assert.match(source, /`\/items\/\$\{encodeURIComponent\(binding\.externalItemId\)\}`/);
+  assert.match(source, /sellerId !== connection\.externalAccountId/);
+  assert.match(source, /user_product_id/);
+  assert.match(source, /`\/user-products\/\$\{encodeURIComponent\(userProductId\)\}\/stock`/);
+  assert.match(source, /providerObservedHash/);
+});
+
+test('multi-origin and provider-managed stock stay blocked instead of guessing allocation', async () => {
+  const source = await readFile(stockServicePath, 'utf8');
+  assert.match(source, /seller_warehouse/);
+  assert.match(source, /warehouse_allocation_policy_required/);
+  assert.match(source, /meli_facility/);
+  assert.match(source, /provider_managed_inventory/);
+  assert.match(source, /blocked_provider_stock_mode/);
+});
+
+test('simple stock proposal is review-only and cannot write available quantity', async () => {
+  const source = await readFile(stockServicePath, 'utf8');
+  assert.match(source, /item_available_quantity/);
+  assert.match(source, /review_required/);
+  assert.match(source, /executionStatus: 'not_authorized'/);
+  assert.match(source, /catalogOutboundStockProposals/);
+  assert.doesNotMatch(source, /mercadoLivrePutJson|method:\s*['"]PUT['"]/);
+  assert.doesNotMatch(source, /available_quantity\s*:/);
 });
