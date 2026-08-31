@@ -6,6 +6,9 @@ const servicePath = new URL('../server/integrations/mercadoLivreBoundListingUpda
 const stockServicePath = new URL('../server/integrations/mercadoLivreStockUpdateProposalService.ts', import.meta.url);
 const stockAuthorizationPath = new URL('../server/integrations/mercadoLivreStockUpdateAuthorizationService.ts', import.meta.url);
 const stockExecutionPath = new URL('../server/integrations/mercadoLivreStockUpdateExecutionService.ts', import.meta.url);
+const stockReconciliationPath = new URL('../server/integrations/mercadoLivreStockUpdateReconciliationService.ts', import.meta.url);
+const stockExecutionRouterPath = new URL('../server/integrations/mercadoLivreStockExecutionRouter.ts', import.meta.url);
+const serverPath = new URL('../server.ts', import.meta.url);
 const routerPath = new URL('../server/integrations/mercadoLivreRouter.ts', import.meta.url);
 
 test('bound update proposal re-fetches provider item and verifies seller identity', async () => {
@@ -156,13 +159,33 @@ test('stock executor never retries ambiguous writes and distinguishes definite p
   assert.equal(putCalls.length, 1);
 });
 
-test('owner routes expose stock proposal queue, creation and authorization; execution route is deferred to reconciliation cut', async () => {
-  const router = await readFile(routerPath, 'utf8');
-  assert.match(router, /outbound-stock-proposals/);
-  assert.match(router, /external-catalog-bindings\/:bindingId\/stock-proposals/);
-  assert.match(router, /proposeMercadoLivreStockUpdate/);
-  assert.match(router, /outbound-stock-proposals\/:proposalId\/authorize/);
-  assert.match(router, /authorizeMercadoLivreStockUpdate/);
-  assert.match(router, /authenticatedOwner/);
-  assert.doesNotMatch(router, /outbound-stock-authorizations\/:authorizationId\/execute/);
+test('stock reconciliation accepts successful or ambiguous executions and requires target quantity from provider GET', async () => {
+  const source = await readFile(stockReconciliationPath, 'utf8');
+  assert.match(source, /provider_write_succeeded/);
+  assert.match(source, /reconciliation_required/);
+  assert.match(source, /mercadoLivreGetJson<unknown>/);
+  assert.match(source, /observedAvailableQuantity !== execution\.targetAvailableQuantity/);
+  assert.match(source, /MERCADO_LIVRE_STOCK_UPDATE_TARGET_NOT_OBSERVED/);
+});
+
+test('stock reconciliation persists provider evidence and immutable audit without mutating canonical inventory', async () => {
+  const source = await readFile(stockReconciliationPath, 'utf8');
+  assert.match(source, /externalStockSnapshots/);
+  assert.match(source, /catalogOutboundStockReconciliations/);
+  assert.match(source, /provider_api_refetch_stock_reconciliation/);
+  assert.match(source, /consumptionStatus: 'consumed'/);
+  assert.match(source, /executionStatus: 'reconciled'/);
+  assert.doesNotMatch(source, /private_store\/inventory|currentQuantity\s*:|createChannelAvailabilitySnapshot/);
+});
+
+test('stock execute and reconcile routes are exposed together through the same Mercado Livre prefix', async () => {
+  const sidecar = await readFile(stockExecutionRouterPath, 'utf8');
+  const server = await readFile(serverPath, 'utf8');
+  assert.match(sidecar, /outbound-stock-authorizations\/:authorizationId\/execute/);
+  assert.match(sidecar, /executeAuthorizedMercadoLivreStockUpdate/);
+  assert.match(sidecar, /outbound-stock-executions\/:executionId\/reconcile/);
+  assert.match(sidecar, /reconcileMercadoLivreStockUpdate/);
+  assert.match(sidecar, /authenticatedOwner/);
+  assert.match(server, /createMercadoLivreStockExecutionRouter/);
+  assert.match(server, /"\/api\/store-connections\/mercado-livre"[\s\S]*createMercadoLivreStockExecutionRouter\(\)/);
 });
