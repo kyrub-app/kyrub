@@ -21,6 +21,7 @@ import {
   type AdminMercadoPagoCredentialStatus,
 } from '../../utils/adminIntegrationReadiness';
 import AdminCustomerArrivalPolicyCard from './AdminCustomerArrivalPolicyCard';
+import AdminMercadoLivrePlatformCard from './AdminMercadoLivrePlatformCard';
 
 const STATE_LABEL: Record<AdminIntegrationProviderState, string> = {
   configured: 'Configurado',
@@ -227,6 +228,7 @@ export default function AdminIntegrationsWorkspace({
         {googleMapsMessage && <p className="mt-3 rounded-xl border border-slate-800 bg-slate-950/50 p-3 text-[10px] leading-relaxed text-slate-300" aria-live="polite">{googleMapsMessage}</p>}
       </article>
 
+      <AdminMercadoLivrePlatformCard authenticatedUser={authenticatedUser} profile={profile} />
       <AdminCustomerArrivalPolicyCard authenticatedUser={authenticatedUser} profile={profile} />
 
       <div className="mt-5 grid gap-3 lg:grid-cols-3">
