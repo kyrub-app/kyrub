@@ -240,3 +240,19 @@ export const mercadoLivreGetJson = async <T>(storeId: string, path: string): Pro
   if (!response.ok) throw new Error(`MERCADO_LIVRE_API_FAILED:HTTP_${response.status}`);
   return response.json() as Promise<T>;
 };
+
+export const mercadoLivrePostJson = async <T>(storeId: string, path: string, body: unknown): Promise<T> => {
+  const secret = await getValidMercadoLivreAccessToken(storeId);
+  const url = new URL(path, MERCADO_LIVRE_API_ORIGIN);
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      accept: 'application/json',
+      authorization: `Bearer ${secret.accessToken}`,
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) throw new Error(`MERCADO_LIVRE_API_FAILED:HTTP_${response.status}`);
+  return response.json() as Promise<T>;
+};
