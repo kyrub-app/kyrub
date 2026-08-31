@@ -11,6 +11,7 @@ import { applyMercadoLivreSnapshotToBoundCanonicalProduct, listMercadoLivreBound
 import { captureMercadoLivreBindingBaseline, listMercadoLivreConflictResolutionQueue, resolveMercadoLivreBoundProductConflict } from './mercadoLivreConflictResolutionService.js';
 import { listMercadoLivreOutboundPublicationProposals, proposeMercadoLivreExternalPublication } from './mercadoLivreOutboundPublicationService.js';
 import { configureMercadoLivreOutboundRequirements, inspectMercadoLivreOutboundRequirements } from './mercadoLivreOutboundRequirementsService.js';
+import { validateMercadoLivreOutboundConditionalRequirements } from './mercadoLivreOutboundConditionalValidationService.js';
 
 const clean = (value: unknown): string => typeof value === 'string' ? value.trim() : '';
 const bearerToken = (authorization: string): string => /^Bearer\s+(.+)$/i.exec(authorization)?.[1]?.trim() ?? '';
@@ -119,6 +120,19 @@ export const createMercadoLivreRouter = (): Router => {
         condition: request.body?.condition,
         attributes: request.body?.attributes,
         configuredByUserId: identity.uid,
+      }));
+    } catch (error) { const mapped = mapError(error); response.status(mapped.status).json({ error: mapped.message, code: mapped.code }); }
+  });
+
+  router.post('/:storeId/outbound-publication-proposals/:proposalId/validate-conditional-requirements', async (request, response) => {
+    try {
+      const storeId = clean(request.params.storeId);
+      const identity = await authenticatedOwner(request.get('authorization') ?? '', storeId);
+      response.setHeader('Cache-Control', 'no-store, max-age=0');
+      response.json(await validateMercadoLivreOutboundConditionalRequirements({
+        storeId,
+        proposalId: clean(request.params.proposalId),
+        validatedByUserId: identity.uid,
       }));
     } catch (error) { const mapped = mapError(error); response.status(mapped.status).json({ error: mapped.message, code: mapped.code }); }
   });
