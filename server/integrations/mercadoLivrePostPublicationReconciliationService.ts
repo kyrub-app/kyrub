@@ -3,6 +3,7 @@ import { FieldValue } from 'firebase-admin/firestore';
 import { adminDb } from '../firebaseAdmin.js';
 import { mercadoLivreGetJson } from './mercadoLivreOauthService.js';
 import { getStoreConnectionRegistryRecord } from './storeConnectionRegistry.js';
+import { recoverAmbiguousMercadoLivrePublication } from './mercadoLivreAmbiguousPublicationRecoveryService.js';
 
 interface ExecutionRecord {
   id: string;
@@ -168,6 +169,7 @@ export interface MercadoLivrePostPublicationReconciliationResult {
   snapshotId: string;
   reconciliationStatus: 'reconciled';
   alreadyReconciled: boolean;
+  recoveredFromAmbiguousExecution?: boolean;
 }
 
 export const reconcileMercadoLivrePublishedItem = async (input: {
@@ -183,8 +185,19 @@ export const reconcileMercadoLivrePublishedItem = async (input: {
   }
 
   const executionRef = adminDb.doc(`stores/${storeId}/catalogOutboundPublicationExecutions/${executionId}`);
-  const executionDoc = await executionRef.get();
+  let executionDoc = await executionRef.get();
   if (!executionDoc.exists) throw new Error('MERCADO_LIVRE_PUBLICATION_EXECUTION_NOT_FOUND');
+  const initialExecution = executionDoc.data() as Record<string, unknown>;
+  const recoveredFromAmbiguousExecution = clean(initialExecution.status, 80) === 'reconciliation_required';
+  if (recoveredFromAmbiguousExecution) {
+    await recoverAmbiguousMercadoLivrePublication({
+      storeId,
+      executionId,
+      recoveredByUserId: reconciledByUserId,
+    });
+    executionDoc = await executionRef.get();
+  }
+
   const execution = assertExecution(storeId, executionId, executionDoc.data());
   const authorizationRef = adminDb.doc(`stores/${storeId}/catalogOutboundPublicationAuthorizations/${execution.authorizationId}`);
   const bindingRef = adminDb.doc(`stores/${storeId}/externalCatalogBindings/${execution.bindingId}`);
@@ -197,7 +210,15 @@ export const reconcileMercadoLivrePublishedItem = async (input: {
 
   const existingReconciliation = await reconciliationRef.get();
   if (existingReconciliation.exists) {
-    return { executionId, bindingId: execution.bindingId, externalItemId: execution.externalItemId, snapshotId, reconciliationStatus: 'reconciled', alreadyReconciled: true };
+    return {
+      executionId,
+      bindingId: execution.bindingId,
+      externalItemId: execution.externalItemId,
+      snapshotId,
+      reconciliationStatus: 'reconciled',
+      alreadyReconciled: true,
+      ...(recoveredFromAmbiguousExecution ? { recoveredFromAmbiguousExecution: true } : {}),
+    };
   }
 
   const connection = await getStoreConnectionRegistryRecord({ storeId, connectionId: execution.connectionId });
@@ -314,9 +335,18 @@ export const reconcileMercadoLivrePublishedItem = async (input: {
       authority: 'provider_api_refetch_post_publication',
       reconciledByUserId,
       reconciledAt: fetchedAt,
+      ...(recoveredFromAmbiguousExecution ? { recoveredFromAmbiguousExecution: true } : {}),
       serverReconciledAt: FieldValue.serverTimestamp(),
     });
   });
 
-  return { executionId, bindingId: execution.bindingId, externalItemId: execution.externalItemId, snapshotId, reconciliationStatus: 'reconciled', alreadyReconciled: false };
+  return {
+    executionId,
+    bindingId: execution.bindingId,
+    externalItemId: execution.externalItemId,
+    snapshotId,
+    reconciliationStatus: 'reconciled',
+    alreadyReconciled: false,
+    ...(recoveredFromAmbiguousExecution ? { recoveredFromAmbiguousExecution: true } : {}),
+  };
 };
