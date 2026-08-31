@@ -5,6 +5,7 @@ import { readFile } from 'node:fs/promises';
 const servicePath = new URL('../server/integrations/mercadoLivreBoundListingUpdateProposalService.ts', import.meta.url);
 const stockServicePath = new URL('../server/integrations/mercadoLivreStockUpdateProposalService.ts', import.meta.url);
 const stockAuthorizationPath = new URL('../server/integrations/mercadoLivreStockUpdateAuthorizationService.ts', import.meta.url);
+const stockExecutionPath = new URL('../server/integrations/mercadoLivreStockUpdateExecutionService.ts', import.meta.url);
 const routerPath = new URL('../server/integrations/mercadoLivreRouter.ts', import.meta.url);
 
 test('bound update proposal re-fetches provider item and verifies seller identity', async () => {
@@ -125,7 +126,37 @@ test('stock authorization freezes exact one-time available_quantity payload', as
   assert.doesNotMatch(source, /mercadoLivrePutJson|method:\s*['"]PUT['"]/);
 });
 
-test('owner routes expose stock proposal queue, creation and authorization only', async () => {
+test('stock executor revalidates availability and provider observation before reserving the write', async () => {
+  const source = await readFile(stockExecutionPath, 'utf8');
+  assert.match(source, /createChannelAvailabilitySnapshot/);
+  assert.match(source, /MERCADO_LIVRE_STOCK_UPDATE_AVAILABILITY_STALE/);
+  assert.match(source, /providerObservationHash/);
+  assert.match(source, /MERCADO_LIVRE_STOCK_UPDATE_PROVIDER_STALE/);
+  assert.match(source, /providerStockMode: 'item_available_quantity'/);
+});
+
+test('stock executor consumes authorization atomically before one provider PUT', async () => {
+  const source = await readFile(stockExecutionPath, 'utf8');
+  assert.match(source, /timingSafeEqual/);
+  assert.match(source, /useCount: 1/);
+  assert.match(source, /consumptionStatus: 'executing'/);
+  assert.match(source, /catalogOutboundStockExecutions/);
+  assert.match(source, /consumed_store_owner_stock_projection_authorization/);
+  assert.match(source, /mercadoLivrePutJson<ProviderItem>/);
+  assert.match(source, /authorization\.payload/);
+});
+
+test('stock executor never retries ambiguous writes and distinguishes definite provider rejection', async () => {
+  const source = await readFile(stockExecutionPath, 'utf8');
+  assert.match(source, /isDefiniteProviderRejection/);
+  assert.match(source, /provider_rejected/);
+  assert.match(source, /reconciliation_required/);
+  assert.match(source, /MERCADO_LIVRE_STOCK_UPDATE_RECONCILIATION_REQUIRED/);
+  const putCalls = source.match(/mercadoLivrePutJson<ProviderItem>/g) ?? [];
+  assert.equal(putCalls.length, 1);
+});
+
+test('owner routes expose stock proposal queue, creation and authorization; execution route is deferred to reconciliation cut', async () => {
   const router = await readFile(routerPath, 'utf8');
   assert.match(router, /outbound-stock-proposals/);
   assert.match(router, /external-catalog-bindings\/:bindingId\/stock-proposals/);
