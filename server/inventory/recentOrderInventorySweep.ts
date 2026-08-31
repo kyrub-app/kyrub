@@ -2,6 +2,10 @@ import { createHash } from 'node:crypto';
 import { FieldValue } from 'firebase-admin/firestore';
 import { adminDb } from '../firebaseAdmin';
 import { reconcilePersistedOrderInventory } from './orderInventoryService';
+import {
+  markReservationSweepAttempt,
+  reconcileNinetyNineFoodOrderReservation,
+} from './ninetyNineFoodReservationLifecycle';
 
 const INVENTORY_RECONCILIATION_QUEUE = 'inventoryReconciliationQueue';
 
@@ -28,6 +32,21 @@ const queueReconciliation = async (
     },
     { merge: true }
   );
+};
+
+const reconcileInventoryAndReservation = async (
+  tenantId: string,
+  orderId: string
+): Promise<void> => {
+  const inventory = await reconcilePersistedOrderInventory(tenantId, orderId);
+  if (inventory.provider === '99food') {
+    try {
+      await reconcileNinetyNineFoodOrderReservation(tenantId, orderId);
+    } catch (error) {
+      await markReservationSweepAttempt({ tenantId, orderId, error });
+      throw error;
+    }
+  }
 };
 
 export interface InventorySweepResult {
@@ -60,7 +79,7 @@ export const drainInventoryReconciliationQueue = async (
       continue;
     }
     try {
-      await reconcilePersistedOrderInventory(tenantId, orderId);
+      await reconcileInventoryAndReservation(tenantId, orderId);
       await document.ref.delete();
       result.reconciled += 1;
     } catch (error) {
@@ -98,7 +117,7 @@ export const reconcileTenantOrdersUpdatedSince = async (
     if (!Number.isFinite(updatedAt) || updatedAt < sinceMs) continue;
     checked += 1;
     try {
-      await reconcilePersistedOrderInventory(tenantId, document.id);
+      await reconcileInventoryAndReservation(tenantId, document.id);
       reconciled += 1;
     } catch (error) {
       failed += 1;
