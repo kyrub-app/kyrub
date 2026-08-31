@@ -11,15 +11,13 @@ import {
   parseInventoryCatalogRecords,
   parseInventoryCompositionRecords,
 } from '../../shared/inventoryConsumption';
+import { resolveCanonicalInventoryAuthorityInTransaction } from './canonicalInventoryAuthorityService.js';
 
 const clean = (value: unknown): string =>
   typeof value === 'string' ? value.trim() : '';
 
 const roundQuantity = (value: number): number =>
   Math.round((value + Number.EPSILON) * 1_000_000) / 1_000_000;
-
-const inventoryPath = (ownerUserId: string): string =>
-  `users/${ownerUserId}/private_store/inventory`;
 
 const reservationsPath = (storeId: string): string =>
   `stores/${storeId}/inventoryReservations`;
@@ -51,26 +49,6 @@ export interface CanonicalInventoryReservationDocument {
   lines: InventoryReservationLine[];
   physicalConsumptionEvidenceId?: string;
 }
-
-const resolveInventoryAuthorityOwner = async (storeId: string): Promise<string> => {
-  const ownerMembers = await adminDb
-    .collection(`stores/${storeId}/members`)
-    .where('role', '==', 'owner')
-    .get();
-
-  const activeOwners = ownerMembers.docs.filter(document => {
-    const data = document.data();
-    return data.status === 'active' && clean(data.userId) === document.id;
-  });
-
-  if (activeOwners.length !== 1) {
-    throw new Error(
-      `INVENTORY_AUTHORITY_OWNER_UNRESOLVED: expected exactly one active owner for store ${storeId}`
-    );
-  }
-
-  return activeOwners[0].id;
-};
 
 const aggregateLines = (lines: InventoryReservationLine[]): InventoryReservationLine[] => {
   const totals = new Map<string, number>();
@@ -114,8 +92,6 @@ export const reserveCanonicalOrderInventory = async (input: {
   const orderId = clean(input.orderId);
   if (!storeId || !orderId) throw new Error('INVENTORY_RESERVATION_IDENTITY_REQUIRED');
 
-  const ownerUserId = await resolveInventoryAuthorityOwner(storeId);
-  const inventoryDocumentPath = inventoryPath(ownerUserId);
   const reservationId = reservationIdFor(storeId, orderId, input.sourceChannel);
   const reservationReference = adminDb.doc(`${reservationsPath(storeId)}/${reservationId}`);
   const activeReservationsQuery = adminDb
@@ -123,8 +99,13 @@ export const reserveCanonicalOrderInventory = async (input: {
     .where('status', '==', 'active');
 
   return adminDb.runTransaction(async transaction => {
+    const authority = await resolveCanonicalInventoryAuthorityInTransaction(
+      transaction,
+      storeId
+    );
+    const inventoryReference = adminDb.doc(authority.inventoryDocumentPath);
     const [inventorySnapshot, reservationSnapshot, activeReservationsSnapshot] = await Promise.all([
-      transaction.get(adminDb.doc(inventoryDocumentPath)),
+      transaction.get(inventoryReference),
       transaction.get(reservationReference),
       transaction.get(activeReservationsQuery),
     ]);
@@ -139,7 +120,7 @@ export const reserveCanonicalOrderInventory = async (input: {
         existing.storeId === storeId &&
         existing.orderId === orderId &&
         existing.sourceChannel === input.sourceChannel &&
-        existing.inventoryAuthorityOwnerUserId === ownerUserId &&
+        existing.inventoryAuthorityOwnerUserId === authority.ownerUserId &&
         existing.status === 'active'
       ) {
         return {
@@ -165,7 +146,7 @@ export const reserveCanonicalOrderInventory = async (input: {
     for (const document of activeReservationsSnapshot.docs) {
       if (document.id === reservationId) continue;
       const data = document.data() as Partial<CanonicalInventoryReservationDocument>;
-      if (data.inventoryAuthorityOwnerUserId !== ownerUserId || !Array.isArray(data.lines)) continue;
+      if (data.inventoryAuthorityOwnerUserId !== authority.ownerUserId || !Array.isArray(data.lines)) continue;
       for (const line of data.lines) {
         if (!line?.inventoryItemId || !Number.isFinite(line.quantity) || line.quantity <= 0) continue;
         activeTotals.set(
@@ -193,9 +174,9 @@ export const reserveCanonicalOrderInventory = async (input: {
       storeId,
       orderId,
       sourceChannel: input.sourceChannel,
-      inventoryAuthorityOwnerUserId: ownerUserId,
-      inventoryAuthority: 'active_store_owner_member',
-      inventoryDocumentPath,
+      inventoryAuthorityOwnerUserId: authority.ownerUserId,
+      inventoryAuthority: authority.authority,
+      inventoryDocumentPath: authority.inventoryDocumentPath,
       status: 'active',
       lines: requiredLines,
       authority: 'canonical_order_inventory_reservation',

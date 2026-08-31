@@ -51,22 +51,17 @@ const compositions: Record<string, InventoryCompositionRecord> = {
   },
 };
 
-const domainSource = readFileSync(
-  'shared/inventoryConsumption.ts',
-  'utf8'
-);
-const serviceSource = readFileSync(
-  'server/inventory/orderInventoryService.ts',
+const domainSource = readFileSync('shared/inventoryConsumption.ts', 'utf8');
+const serviceSource = readFileSync('server/inventory/orderInventoryService.ts', 'utf8');
+const authoritySource = readFileSync(
+  'server/inventory/canonicalInventoryAuthorityService.ts',
   'utf8'
 );
 const adjustmentSource = readFileSync(
   'server/inventory/orderInventoryAdjustment.ts',
   'utf8'
 );
-const routerSource = readFileSync(
-  'server/inventory/orderInventoryRouter.ts',
-  'utf8'
-);
+const routerSource = readFileSync('server/inventory/orderInventoryRouter.ts', 'utf8');
 const workflowSource = readFileSync('src/utils/orderWorkflow.ts', 'utf8');
 const bridgeSource = readFileSync(
   'src/components/store/OrderInventoryReconciliationBridge.tsx',
@@ -108,27 +103,19 @@ describe('order inventory consumption', () => {
     );
     assert.deepEqual(
       lines.map(line => [line.inventoryItemId, line.quantity]),
-      [
-        ['flour', 900],
-        ['cheese', 650],
-      ]
+      [['flour', 900], ['cheese', 650]]
     );
   });
 
   test('ignores transferred quantities to avoid double consumption', () => {
     const lines = buildOrderInventoryConsumption(
-      [
-        { productId: 'pizza', name: 'Pizza', quantity: 4, transferredQuantity: 2 },
-      ],
+      [{ productId: 'pizza', name: 'Pizza', quantity: 4, transferredQuantity: 2 }],
       catalog,
       compositions
     );
     assert.deepEqual(
       lines.map(line => [line.inventoryItemId, line.quantity]),
-      [
-        ['flour', 600],
-        ['cheese', 300],
-      ]
+      [['flour', 600], ['cheese', 300]]
     );
   });
 
@@ -163,9 +150,26 @@ describe('order inventory consumption', () => {
     assert.match(serviceSource, /ledgerStatus === 'consumed'/);
     assert.match(serviceSource, /status: 'reversed'/);
     assert.match(serviceSource, /transaction\.create\(ledgerReference/);
-    assert.match(serviceSource, /users\/\$\{tenantId\}\/private_store\/inventory/);
     assert.match(serviceSource, /publicProductsWithCalculatedStock/);
     assert.match(domainSource, /Estoque insuficiente/);
+  });
+
+  test('canonical stores resolve physical inventory through exactly one active owner', () => {
+    assert.match(authoritySource, /stores\/\$\{storeId\}\/members/);
+    assert.match(authoritySource, /where\('role', '==', 'owner'\)/);
+    assert.match(authoritySource, /data\.status === 'active'/);
+    assert.match(authoritySource, /activeOwners\.length !== 1/);
+    assert.match(authoritySource, /users\/\$\{ownerUserId\.trim\(\)\}\/private_store\/inventory/);
+    assert.match(serviceSource, /resolveCanonicalInventoryAuthorityInTransaction/);
+    assert.doesNotMatch(serviceSource, /const privateInventoryPath/);
+  });
+
+  test('physical ledger freezes authority so reversal survives later ownership changes', () => {
+    assert.match(serviceSource, /inventoryAuthorityOwnerUserId: inventoryAuthority\.ownerUserId/);
+    assert.match(serviceSource, /inventoryDocumentPath: inventoryAuthority\.inventoryDocumentPath/);
+    assert.match(serviceSource, /canonicalStoreId: inventoryAuthority\.canonicalStoreId/);
+    assert.match(serviceSource, /inventoryAuthorityFromLedger/);
+    assert.match(authoritySource, /legacy_tenant_inventory_authority/);
   });
 
   test('KDS changes use the authenticated backend instead of direct status writes', () => {
@@ -183,8 +187,10 @@ describe('order inventory consumption', () => {
     assert.match(serverSource, /createOrderInventoryRouter/);
   });
 
-  test('direct item transfers adjust the consumed ledger instead of charging twice', () => {
+  test('direct item transfers stay on the frozen consumed-ledger authority', () => {
     assert.match(adjustmentSource, /adjustConsumedOrderInventoryQuantities/);
+    assert.match(adjustmentSource, /inventoryAuthorityFromLedger/);
+    assert.match(adjustmentSource, /inventoryAuthority\.inventoryDocumentPath/);
     assert.match(adjustmentSource, /applyInventoryConsumptionLines\([\s\S]*'restore'/);
     assert.match(adjustmentSource, /buildOrderInventoryConsumption/);
     assert.match(adjustmentSource, /adjustmentReason: 'order_items_changed'/);
@@ -198,10 +204,7 @@ describe('order inventory consumption', () => {
     assert.match(ingressSource, /reconcilePersistedOrderInventory/);
     assert.match(ingressSource, /internalOrderId\(externalOrderId\)/);
     assert.match(pollingSource, /reconcileTenantOrdersUpdatedSince/);
-    assert.match(
-      pollingSource,
-      /reconcileConnectedNinetyNineFoodOrdersUpdatedSince/
-    );
+    assert.match(pollingSource, /reconcileConnectedNinetyNineFoodOrdersUpdatedSince/);
     assert.match(sweepSource, /inventoryReconciliationQueue/);
     assert.match(sweepSource, /drainInventoryReconciliationQueue/);
   });
