@@ -43,6 +43,37 @@ export interface MercadoLivreCatalogPreview {
   items: MercadoLivreCatalogPreviewItem[];
 }
 
+export interface MercadoLivreImportDraftPreparationItem {
+  draft: {
+    id: string;
+    storeId: string;
+    source: 'mercado_livre';
+    status: 'draft';
+    title: string;
+    price: number | null;
+    categoryId: string;
+    thumbnail?: string;
+    sellerSku?: string;
+    sourceAvailableQuantity?: number;
+    provenance: {
+      source: 'mercado_livre';
+      externalId: string;
+      connectionId: string;
+      importedAt: string;
+      lastSyncedAt: string;
+    };
+    createdAt: string;
+    updatedAt: string;
+    kyrubPreparationDraftId?: string;
+    preparedFromUpdatedAt?: string;
+    preparationStatus?: 'prepared';
+  };
+  preparation: {
+    status: 'not_prepared' | 'prepared' | 'stale';
+    kyrubDraftId?: string;
+  };
+}
+
 export interface MercadoLivreSyncReviewItem {
   proposal: {
     id: string;
@@ -157,6 +188,33 @@ export const confirmMercadoLivreCatalogImport = async (
       method: 'POST',
       body: JSON.stringify({ itemIds }),
     }
+  );
+
+export const loadMercadoLivreImportDraftsForPreparation = async (
+  user: User,
+  storeId: string,
+  limit = 50
+): Promise<{ items: MercadoLivreImportDraftPreparationItem[] }> =>
+  authorizedFetch<{ items: MercadoLivreImportDraftPreparationItem[] }>(
+    user,
+    `/api/store-connections/mercado-livre/${encoded(storeId)}/catalog-import-drafts?limit=${Math.max(1, Math.min(100, Math.trunc(limit)))}`
+  );
+
+export const prepareMercadoLivreImportAsKyrubCatalogDraft = async (
+  user: User,
+  storeId: string,
+  draftId: string
+): Promise<{
+  importDraftId: string;
+  kyrubDraftId: string;
+  status: 'prepared';
+  missingFields: Array<'price' | 'category' | 'stock'>;
+  alreadyPrepared: boolean;
+}> =>
+  authorizedFetch(
+    user,
+    `/api/store-connections/mercado-livre/${encoded(storeId)}/catalog-import-drafts/${encoded(draftId)}/prepare-kyrub-draft`,
+    { method: 'POST' }
   );
 
 export const loadMercadoLivreSyncReviewQueue = async (

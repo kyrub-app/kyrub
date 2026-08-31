@@ -35,7 +35,7 @@ test('merchant workspace mounts a visible Mercado Livre proposal queue', () => {
   assert.match(queue, /Mudanças detectadas no Mercado Livre/);
   assert.match(queue, /Aprovar/);
   assert.match(queue, /Rejeitar/);
-  assert.match(queue, /ainda não altera produto, preço, estoque ou publicação no Kyrub/);
+  assert.match(queue, /ainda não altera produto, preço, estoque ou publicação canônicos no Kyrub/);
 });
 
 test('client decision API sends only explicit approve or reject choice', () => {
