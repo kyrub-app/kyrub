@@ -4,6 +4,7 @@ import { adminAuth, adminDb } from '../firebaseAdmin';
 import { sendNinetyNineFoodOrderStatus } from '../integrations/ninetyNineFoodService';
 import { reviewAttendanceOrderAuthoritatively } from './attendanceReviewService';
 import { reconcileOrderInventoryAfterMutation } from './orderInventoryAdjustment';
+import { createChannelAvailabilityPolicyRouter } from './channelAvailabilityPolicyRouter';
 import {
   transitionOrderStatusWithInventory,
   type OrderStatusDecisionInput,
@@ -136,6 +137,8 @@ const markPartnerSyncSuccess = async (
 
 export const createOrderInventoryRouter = (): Router => {
   const router = Router();
+
+  router.use('/availability', createChannelAvailabilityPolicyRouter());
 
   router.post('/:orderId/reconcile-inventory', async (request, response) => {
     try {
