@@ -4,15 +4,16 @@ import test from 'node:test';
 
 test('Mercado Livre imports prepare existing Kyrub catalog drafts without inventing stock or category', () => {
   const source = readFileSync('server/integrations/mercadoLivreCatalogDraftPromotionService.ts', 'utf8');
-  assert.match(source, /kyrub_catalog_drafts\/\$\{storeId\}\/drafts/);
-  assert.match(source, /kind: 'mercado_livre'/);
-  assert.match(source, /field: 'category'/);
-  assert.match(source, /field: 'stock'/);
-  assert.match(source, /sourceAvailableQuantity/);
-  assert.doesNotMatch(source, /product\.stock\s*=/);
-  assert.doesNotMatch(source, /category:\s*draft\.categoryId/);
-  assert.doesNotMatch(source, /publicProducts/);
-  assert.doesNotMatch(source, /publicationStatus:\s*'published'/);
+  const preparationOnly = source.split('export const finalizeMercadoLivreImportAsCanonicalKyrubProduct')[0];
+  assert.match(preparationOnly, /kyrub_catalog_drafts\/\$\{storeId\}\/drafts/);
+  assert.match(preparationOnly, /kind: 'mercado_livre'/);
+  assert.match(preparationOnly, /field: 'category'/);
+  assert.match(preparationOnly, /field: 'stock'/);
+  assert.match(preparationOnly, /sourceAvailableQuantity/);
+  assert.doesNotMatch(preparationOnly, /product\.stock\s*=/);
+  assert.doesNotMatch(preparationOnly, /category:\s*draft\.categoryId/);
+  assert.doesNotMatch(preparationOnly, /publicProducts/);
+  assert.doesNotMatch(preparationOnly, /publicationStatus:\s*'published'/);
 });
 
 test('preparation preserves provider identity and version provenance', () => {
@@ -38,9 +39,9 @@ test('merchant workspace explains category and stock authority boundary', () => 
   const queue = readFileSync('src/components/store/MercadoLivreImportDraftQueue.tsx', 'utf8');
   assert.match(workspace, /MercadoLivreImportDraftQueue/);
   assert.match(queue, /Rascunhos importados do Mercado Livre/);
-  assert.match(queue, /não viram categoria ou estoque Kyrub automaticamente/);
+  assert.match(queue, /Categoria e estoque Kyrub só nascem após sua confirmação explícita/);
   assert.match(queue, /Preparar rascunho Kyrub/);
-  assert.match(queue, /nenhum produto foi publicado/);
+  assert.match(queue, /Nada foi publicado automaticamente/);
 });
 
 test('shared draft source contract records Mercado Livre explicitly', () => {

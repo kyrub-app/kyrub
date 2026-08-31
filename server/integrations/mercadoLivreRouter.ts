@@ -19,6 +19,7 @@ import {
   listMercadoLivreApprovedSyncProposals,
 } from './mercadoLivreApprovedProposalApplyService.js';
 import {
+  finalizeMercadoLivreImportAsCanonicalKyrubProduct,
   listMercadoLivreImportDraftsForPreparation,
   prepareMercadoLivreImportAsKyrubCatalogDraft,
 } from './mercadoLivreCatalogDraftPromotionService.js';
@@ -65,7 +66,8 @@ const mapError = (error: unknown): { status: number; message: string; code: stri
     code.includes('REVIEW_DECISION_INVALID') ||
     code.includes('REVIEW_TARGET_INVALID') ||
     code.includes('APPLY_TARGET_INVALID') ||
-    code.includes('PREPARATION_TARGET_INVALID')
+    code.includes('PREPARATION_TARGET_INVALID') ||
+    code.includes('CANONICAL_PRODUCT_INPUT_INVALID')
   ) {
     return { status: 400, message: 'A solicitação de integração é inválida.', code };
   }
@@ -75,7 +77,8 @@ const mapError = (error: unknown): { status: number; message: string; code: stri
   if (
     code.includes('INBOX_NOT_FOUND') ||
     code.includes('SYNC_PROPOSAL_NOT_FOUND') ||
-    code.includes('IMPORT_DRAFT_NOT_FOUND')
+    code.includes('IMPORT_DRAFT_NOT_FOUND') ||
+    code.includes('PREPARATION_NOT_FOUND')
   ) {
     return { status: 404, message: 'O registro selecionado não foi encontrado.', code };
   }
@@ -86,7 +89,14 @@ const mapError = (error: unknown): { status: number; message: string; code: stri
     code.includes('DRAFT_CONFLICT') ||
     code.includes('PROPOSAL_STALE') ||
     code.includes('PREPARATION_CONFLICT') ||
-    code === 'STORE_REQUIRED'
+    code.includes('PREPARATION_STALE') ||
+    code.includes('PREPARATION_REQUIRED') ||
+    code.includes('ALREADY_BOUND') ||
+    code.includes('EXTERNAL_BINDING_CONFLICT') ||
+    code.includes('CANONICAL_PRODUCT_ID_CONFLICT') ||
+    code.includes('CANONICAL_PRODUCT_PRICE_REQUIRED') ||
+    code === 'STORE_REQUIRED' ||
+    code === 'CANONICAL_STORE_REQUIRED'
   ) {
     return { status: 409, message: 'O registro não pode avançar no estado atual.', code };
   }
@@ -217,6 +227,26 @@ export const createMercadoLivreRouter = (): Router => {
         storeId,
         importDraftId,
         preparedByUserId: identity.uid,
+      }));
+    } catch (error) {
+      const mapped = mapError(error);
+      response.status(mapped.status).json({ error: mapped.message, code: mapped.code });
+    }
+  });
+
+  router.post('/:storeId/catalog-import-drafts/:draftId/create-kyrub-product', async (request, response) => {
+    try {
+      const storeId = clean(request.params.storeId);
+      const importDraftId = clean(request.params.draftId);
+      const identity = await authenticatedOwner(request.get('authorization') ?? '', storeId);
+      response.setHeader('Cache-Control', 'no-store, max-age=0');
+      response.status(201).json(await finalizeMercadoLivreImportAsCanonicalKyrubProduct({
+        storeId,
+        importDraftId,
+        kyrubCategory: request.body?.category,
+        kyrubStock: request.body?.stock,
+        kyrubPrice: request.body?.price,
+        finalizedByUserId: identity.uid,
       }));
     } catch (error) {
       const mapped = mapError(error);
