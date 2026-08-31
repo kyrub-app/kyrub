@@ -67,10 +67,14 @@ export interface MercadoLivreImportDraftPreparationItem {
     kyrubPreparationDraftId?: string;
     preparedFromUpdatedAt?: string;
     preparationStatus?: 'prepared';
+    promotionStatus?: 'promoted';
+    externalCatalogBindingId?: string;
+    canonicalProductId?: string;
   };
   preparation: {
-    status: 'not_prepared' | 'prepared' | 'stale';
+    status: 'not_prepared' | 'prepared' | 'stale' | 'bound';
     kyrubDraftId?: string;
+    canonicalProductId?: string;
   };
 }
 
@@ -215,6 +219,27 @@ export const prepareMercadoLivreImportAsKyrubCatalogDraft = async (
     user,
     `/api/store-connections/mercado-livre/${encoded(storeId)}/catalog-import-drafts/${encoded(draftId)}/prepare-kyrub-draft`,
     { method: 'POST' }
+  );
+
+export const createCanonicalKyrubProductFromMercadoLivreDraft = async (
+  user: User,
+  storeId: string,
+  draftId: string,
+  input: { category: string; stock: number; price?: number }
+): Promise<{
+  importDraftId: string;
+  bindingId: string;
+  canonicalProductId: string;
+  publicationStatus: 'draft';
+  alreadyBound: boolean;
+}> =>
+  authorizedFetch(
+    user,
+    `/api/store-connections/mercado-livre/${encoded(storeId)}/catalog-import-drafts/${encoded(draftId)}/create-kyrub-product`,
+    {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }
   );
 
 export const loadMercadoLivreSyncReviewQueue = async (
