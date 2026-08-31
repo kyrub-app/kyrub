@@ -8,6 +8,7 @@ import {
   confirmMercadoLivreCatalogImport,
   previewMercadoLivreCatalog,
 } from './mercadoLivreCatalogImportService.js';
+import { ingestMercadoLivreNotification } from './mercadoLivreNotificationInboxService.js';
 
 const clean = (value: unknown): string =>
   typeof value === 'string' ? value.trim() : '';
@@ -57,8 +58,35 @@ const mapError = (error: unknown): { status: number; message: string; code: stri
   return { status: 503, message: 'A integração Mercado Livre está temporariamente indisponível.', code };
 };
 
+const isNonRetryableNotificationError = (code: string): boolean =>
+  code.startsWith('MERCADO_LIVRE_NOTIFICATION_') &&
+  (code.endsWith('_INVALID') || code === 'MERCADO_LIVRE_NOTIFICATION_INVALID');
+
 export const createMercadoLivreRouter = (): Router => {
   const router = Router();
+
+  // Provider notification callback. The payload is only a trigger; it is never
+  // treated as canonical catalog state. A later processor must re-fetch the
+  // referenced resource with the tenant-scoped Mercado Livre access token.
+  router.post('/notifications', async (request, response) => {
+    try {
+      const result = await ingestMercadoLivreNotification(request.body);
+      if (!result.accepted) {
+        console.warn('[Mercado Livre notification ignored]', result.disposition);
+      }
+      response.setHeader('Cache-Control', 'no-store, max-age=0');
+      response.status(200).json({ received: true });
+    } catch (error) {
+      const code = errorCode(error);
+      if (isNonRetryableNotificationError(code)) {
+        console.warn('[Mercado Livre malformed notification]', code);
+        response.status(200).json({ received: true });
+        return;
+      }
+      console.error('[Mercado Livre notification inbox]', code);
+      response.status(503).json({ received: false });
+    }
+  });
 
   router.post('/:storeId/authorize', async (request, response) => {
     try {
