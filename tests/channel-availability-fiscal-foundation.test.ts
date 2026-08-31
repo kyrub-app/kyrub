@@ -153,14 +153,19 @@ const reservationServiceSource = readFileSync(
   'server/inventory/canonicalInventoryReservationService.ts',
   'utf8'
 );
+const inventoryAuthoritySource = readFileSync(
+  'server/inventory/canonicalInventoryAuthorityService.ts',
+  'utf8'
+);
 
 test('server reservation authority resolves exactly one active canonical store owner', () => {
-  assert.match(reservationServiceSource, /stores\/\$\{storeId\}\/members/);
-  assert.match(reservationServiceSource, /where\('role', '==', 'owner'\)/);
-  assert.match(reservationServiceSource, /data\.status === 'active'/);
-  assert.match(reservationServiceSource, /activeOwners\.length !== 1/);
-  assert.match(reservationServiceSource, /users\/\$\{ownerUserId\}\/private_store\/inventory/);
-  assert.match(reservationServiceSource, /inventoryAuthority: 'active_store_owner_member'/);
+  assert.match(reservationServiceSource, /resolveCanonicalInventoryAuthorityInTransaction/);
+  assert.match(inventoryAuthoritySource, /stores\/\$\{storeId\}\/members/);
+  assert.match(inventoryAuthoritySource, /where\('role', '==', 'owner'\)/);
+  assert.match(inventoryAuthoritySource, /data\.status === 'active'/);
+  assert.match(inventoryAuthoritySource, /activeOwners\.length !== 1/);
+  assert.match(inventoryAuthoritySource, /users\/\$\{ownerUserId\.trim\(\)\}\/private_store\/inventory/);
+  assert.match(reservationServiceSource, /inventoryAuthority: authority\.authority/);
 });
 
 test('server reservation is transactional, component-based and idempotent per order channel', () => {
