@@ -132,6 +132,15 @@ export const listPublicStoreConnectionRegistry = async (
   );
 };
 
+const assertSyncAuthorityAvailable = (
+  record: StoreConnectionRegistryRecord,
+  syncAuthority: KyrubSyncAuthority
+): void => {
+  if (record.provider === 'mercado_livre' && syncAuthority !== 'manual_review') {
+    throw new Error('STORE_CONNECTION_SYNC_AUTHORITY_UNAVAILABLE');
+  }
+};
+
 export const updateStoreConnectionSyncAuthority = async (input: {
   storeId: string;
   connectionId: string;
@@ -146,7 +155,9 @@ export const updateStoreConnectionSyncAuthority = async (input: {
   await adminDb.runTransaction(async transaction => {
     const snapshot = await transaction.get(reference);
     if (!snapshot.exists) throw new Error('STORE_CONNECTION_NOT_FOUND');
-    assertStoreConnectionTenant(storeId, snapshot.data() as StoreConnectionRegistryRecord);
+    const record = snapshot.data() as StoreConnectionRegistryRecord;
+    assertStoreConnectionTenant(storeId, record);
+    assertSyncAuthorityAvailable(record, syncAuthority);
     transaction.update(reference, {
       syncAuthority,
       updatedAt,
