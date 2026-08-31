@@ -39,10 +39,15 @@ test('OAuth callback cleanup preserves unrelated query state', async () => {
   assert.doesNotMatch(workspace, /params\.delete\('tab'\)/);
 });
 
-test('retailer management surface mounts the store connection workspace', async () => {
+test('retailer management surface mounts the store connection workspace through the existing bridge', async () => {
   const retailer = await read('src/components/RetailerPanel.tsx');
+  const dualWriteBridge = await read('src/components/store/OperationalDualWriteBridge.tsx');
+  const portalBridge = await read('src/components/store/StoreConnectionsPortalBridge.tsx');
 
-  assert.match(retailer, /StoreConnectionsWorkspace/);
-  assert.match(retailer, /authenticatedUser|user=/);
-  assert.match(retailer, /storeId=\{activeRetailerId\}/);
+  assert.match(retailer, /OperationalDualWriteBridge/);
+  assert.match(dualWriteBridge, /StoreConnectionsPortalBridge/);
+  assert.match(portalBridge, /StoreConnectionsWorkspace/);
+  assert.match(portalBridge, /kyrub-product-inventory-workspace-host/);
+  assert.match(portalBridge, /storeId=\{storeId\}/);
+  assert.match(portalBridge, /user=\{user\}/);
 });
