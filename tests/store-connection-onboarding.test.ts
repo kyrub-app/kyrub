@@ -77,3 +77,13 @@ test('sync authority route is owner scoped and changes no credentials', () => {
   assert.doesNotMatch(updater, /credentialReference\s*:/);
   assert.doesNotMatch(updater, /accessToken|refreshToken|clientSecret/);
 });
+
+test('Mercado Livre remains manual review until a real sync runtime exists', () => {
+  const registry = readFileSync('server/integrations/storeConnectionRegistry.ts', 'utf8');
+  const router = readFileSync('server/integrations/storeConnectionOnboardingRouter.ts', 'utf8');
+  assert.match(registry, /record\.provider === 'mercado_livre'/);
+  assert.match(registry, /syncAuthority !== 'manual_review'/);
+  assert.match(registry, /STORE_CONNECTION_SYNC_AUTHORITY_UNAVAILABLE/);
+  assert.match(router, /status: 409/);
+  assert.match(router, /sincronização automática deste canal ainda não está habilitada/);
+});
