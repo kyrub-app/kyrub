@@ -6,7 +6,13 @@ import {
   MERCADO_LIVRE_AUTHORIZATION_ENDPOINT,
   MERCADO_LIVRE_TOKEN_ENDPOINT,
 } from '../../shared/mercadoLivreIntegration.js';
+import {
+  assertMercadoLivrePlatformCredentialInput,
+  MERCADO_LIVRE_PLATFORM_ENVIRONMENT,
+  MERCADO_LIVRE_PLATFORM_PROVIDER_ID,
+} from '../../shared/mercadoLivrePlatformCredential.js';
 import type { KyrubStoreConnection } from '../../shared/storeConnections.js';
+import { resolvePlatformCredentials } from './platformCredentialStore.js';
 import { saveStoreConnectionRegistryRecord } from './storeConnectionRegistry.js';
 import {
   loadMercadoLivreTokenSecret,
@@ -40,17 +46,18 @@ interface MercadoLivreTokenResponse {
 const statePath = (state: string): string => `integrationOauthStates/mercado_livre__${state}`;
 const stateAad = (state: string): string => `oauth:mercado_livre:${state}`;
 
-const requiredEnv = (name: string): string => {
-  const value = process.env[name]?.trim() ?? '';
-  if (!value) throw new Error(`MERCADO_LIVRE_CONFIG_MISSING:${name}`);
-  return value;
+const oauthConfig = async () => {
+  const stored = await resolvePlatformCredentials(
+    MERCADO_LIVRE_PLATFORM_PROVIDER_ID,
+    MERCADO_LIVRE_PLATFORM_ENVIRONMENT
+  );
+  if (!stored) throw new Error('MERCADO_LIVRE_PLATFORM_NOT_CONFIGURED');
+  return assertMercadoLivrePlatformCredentialInput({
+    clientId: stored.client_id,
+    clientSecret: stored.client_secret,
+    redirectUri: stored.redirect_uri,
+  });
 };
-
-const oauthConfig = () => ({
-  clientId: requiredEnv('MERCADO_LIVRE_CLIENT_ID'),
-  clientSecret: requiredEnv('MERCADO_LIVRE_CLIENT_SECRET'),
-  redirectUri: requiredEnv('MERCADO_LIVRE_REDIRECT_URI'),
-});
 
 const text = (value: unknown): string =>
   typeof value === 'string' || typeof value === 'number' ? String(value).trim() : '';
@@ -99,7 +106,7 @@ const tokenRequest = async (body: URLSearchParams): Promise<MercadoLivreTokenRes
 export const beginMercadoLivreAuthorization = async (storeIdInput: string): Promise<string> => {
   const storeId = storeIdInput.trim();
   if (!storeId) throw new Error('STORE_CONNECTION_STORE_REQUIRED');
-  const config = oauthConfig();
+  const config = await oauthConfig();
   const state = randomBytes(32).toString('base64url');
   const verifier = randomBytes(64).toString('base64url');
   const challenge = createHash('sha256').update(verifier).digest('base64url');
@@ -160,7 +167,7 @@ export const completeMercadoLivreAuthorization = async (input: {
   const code = input.code.trim();
   if (!code) throw new Error('MERCADO_LIVRE_AUTHORIZATION_CODE_REQUIRED');
   const { storeId, verifier } = await consumeOAuthState(input.state);
-  const config = oauthConfig();
+  const config = await oauthConfig();
   const payload = await tokenRequest(new URLSearchParams({
     grant_type: 'authorization_code',
     client_id: config.clientId,
@@ -201,7 +208,7 @@ export const getValidMercadoLivreAccessToken = async (storeIdInput: string): Pro
   if (!current) throw new Error('MERCADO_LIVRE_NOT_CONNECTED');
   if (current.expiresAtMillis > Date.now() + 60_000) return current;
 
-  const config = oauthConfig();
+  const config = await oauthConfig();
   const payload = await tokenRequest(new URLSearchParams({
     grant_type: 'refresh_token',
     client_id: config.clientId,
