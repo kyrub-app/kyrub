@@ -183,3 +183,52 @@ test('reservation persistence does not publish marketplace stock or emit fiscal 
   assert.doesNotMatch(reservationServiceSource, /mercadoLivrePutJson/);
   assert.doesNotMatch(reservationServiceSource, /emit.*(?:nfe|nfce|nfse)/i);
 });
+
+const ninetyNineLifecycleSource = readFileSync(
+  'server/inventory/ninetyNineFoodReservationLifecycle.ts',
+  'utf8'
+);
+const ninetyNineIngressSource = readFileSync(
+  'server/integrations/ninetyNineFoodIngressQueue.ts',
+  'utf8'
+);
+const inventorySweepSource = readFileSync(
+  'server/inventory/recentOrderInventorySweep.ts',
+  'utf8'
+);
+
+test('99Food reserves canonical inventory from the first live order state', () => {
+  assert.match(ninetyNineLifecycleSource, /reserveCanonicalOrderInventory/);
+  assert.match(ninetyNineLifecycleSource, /sourceChannel: '99food'/);
+  assert.match(ninetyNineLifecycleSource, /state: 'reserved'/);
+  assert.match(ninetyNineLifecycleSource, /status === 'pending' \|\| status === 'accepted'/);
+});
+
+test('99Food cancellation releases a reservation instead of mutating physical inventory', () => {
+  assert.match(ninetyNineLifecycleSource, /status === 'cancelled' \|\| status === 'rejected'/);
+  assert.match(ninetyNineLifecycleSource, /nextStatus: 'released'/);
+  assert.match(ninetyNineLifecycleSource, /order_\$\{status\}/);
+});
+
+test('99Food reservation becomes consumed only after the physical inventory ledger proves consumption', () => {
+  assert.match(ninetyNineLifecycleSource, /ledgerStatus === 'consumed'/);
+  assert.match(ninetyNineLifecycleSource, /physicalConsumptionEvidenceId: ledgerReferencePath/);
+  assert.match(ninetyNineLifecycleSource, /inventoryOrderConsumptions/);
+});
+
+test('webhook and polling reconcile physical inventory before reservation lifecycle', () => {
+  assert.match(
+    ninetyNineIngressSource,
+    /reconcilePersistedOrderInventory\(tenantId, orderId\);[\s\S]*reconcileNinetyNineFoodOrderReservation\(tenantId, orderId\)/
+  );
+  assert.match(
+    inventorySweepSource,
+    /reconcilePersistedOrderInventory\(tenantId, orderId\);[\s\S]*reconcileNinetyNineFoodOrderReservation\(tenantId, orderId\)/
+  );
+});
+
+test('insufficient ATP is recorded for operator action without inventing marketplace stock', () => {
+  assert.match(ninetyNineLifecycleSource, /blocked_insufficient_atp/);
+  assert.match(ninetyNineLifecycleSource, /INVENTORY_AVAILABLE_TO_PROMISE_EXCEEDED/);
+  assert.doesNotMatch(ninetyNineLifecycleSource, /available_quantity|mercadoLivrePutJson/);
+});
