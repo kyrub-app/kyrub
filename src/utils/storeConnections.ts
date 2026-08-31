@@ -118,6 +118,26 @@ export interface MercadoLivreSyncReviewItem {
   };
 }
 
+export interface MercadoLivreBoundProductSyncItem {
+  proposalId: string;
+  snapshotId: string;
+  bindingId: string;
+  canonicalProductId: string;
+  canonicalStoreId: string;
+  externalItemId: string;
+  current: {
+    name: string;
+    price: number;
+    publicationStatus: string;
+  };
+  incoming: {
+    name: string;
+    price: number | null;
+  };
+  changedFields: Array<'name' | 'price'>;
+  baselineStatus: 'clean' | 'conflict';
+}
+
 const authorizedFetch = async <T>(
   user: User,
   input: RequestInfo | URL,
@@ -262,6 +282,16 @@ export const loadApprovedMercadoLivreSyncProposals = async (
     `/api/store-connections/mercado-livre/${encoded(storeId)}/sync-proposals-approved?limit=${Math.max(1, Math.min(100, Math.trunc(limit)))}`
   );
 
+export const loadMercadoLivreBoundProductSyncQueue = async (
+  user: User,
+  storeId: string,
+  limit = 50
+): Promise<{ items: MercadoLivreBoundProductSyncItem[] }> =>
+  authorizedFetch<{ items: MercadoLivreBoundProductSyncItem[] }>(
+    user,
+    `/api/store-connections/mercado-livre/${encoded(storeId)}/bound-product-sync?limit=${Math.max(1, Math.min(100, Math.trunc(limit)))}`
+  );
+
 export const decideMercadoLivreSyncProposal = async (
   user: User,
   storeId: string,
@@ -291,6 +321,24 @@ export const applyApprovedMercadoLivreSyncProposalToDraft = async (
   authorizedFetch(
     user,
     `/api/store-connections/mercado-livre/${encoded(storeId)}/sync-proposals/${encoded(proposalId)}/apply-to-draft`,
+    { method: 'POST' }
+  );
+
+export const applyMercadoLivreSnapshotToBoundCanonicalProduct = async (
+  user: User,
+  storeId: string,
+  proposalId: string
+): Promise<{
+  proposalId: string;
+  bindingId: string;
+  canonicalProductId: string;
+  changedFields: Array<'name' | 'price'>;
+  canonicalApplyStatus: 'applied';
+  alreadyApplied: boolean;
+}> =>
+  authorizedFetch(
+    user,
+    `/api/store-connections/mercado-livre/${encoded(storeId)}/sync-proposals/${encoded(proposalId)}/apply-to-canonical`,
     { method: 'POST' }
   );
 
