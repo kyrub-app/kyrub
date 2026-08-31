@@ -45,8 +45,37 @@ const clean = (value: unknown, maximum = 2_000): string =>
     ? String(value).replace(/\s+/g, ' ').trim().slice(0, maximum)
     : '';
 
+const finiteNonNegative = (value: unknown): number | null => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+};
+
+const integerNonNegative = (value: unknown): number | null => {
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : null;
+};
+
 const sha256 = (value: string): string => createHash('sha256').update(value).digest('hex');
 const payloadHash = (value: Record<string, unknown>): string => sha256(JSON.stringify(value));
+
+const canonicalHash = (value: unknown): string | null => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  const name = clean(record.name, 120);
+  const price = finiteNonNegative(record.price);
+  const stock = integerNonNegative(record.stock);
+  const publicationStatus = clean(record.publicationStatus, 80);
+  if (!name || price === null || stock === null || record.isService !== false || !publicationStatus) return null;
+  return sha256(JSON.stringify({
+    name,
+    price,
+    stock,
+    category: clean(record.category, 160),
+    image: clean(record.image, 2_000),
+    isService: false,
+    publicationStatus,
+  }));
+};
 
 const safeHashEquals = (expectedHex: string, actualHex: string): boolean => {
   if (!/^[a-f0-9]{64}$/i.test(expectedHex) || !/^[a-f0-9]{64}$/i.test(actualHex)) return false;
@@ -157,7 +186,7 @@ export const executeAuthorizedMercadoLivrePublication = async (input: {
     const currentAuthorization = assertAuthorization(storeId, authorizationId, currentAuthorizationDoc.data());
     const proposal = assertProposal(currentAuthorization, proposalDoc.data());
     const validation = validationDoc.data() as Record<string, unknown> | undefined;
-    const canonical = canonicalDoc.data() as Record<string, unknown> | undefined;
+    const currentCanonicalHash = canonicalHash(canonicalDoc.data());
     if (
       currentAuthorization.consumptionStatus !== 'available' || currentAuthorization.useCount !== 0 ||
       currentAuthorization.expiresAtMillis <= Date.now() || executionDoc.exists ||
@@ -165,8 +194,7 @@ export const executeAuthorizedMercadoLivrePublication = async (input: {
       clean(validation?.validatedAt, 80) !== currentAuthorization.listingValidatedAt ||
       !validation?.providerPayload || typeof validation.providerPayload !== 'object' || Array.isArray(validation.providerPayload) ||
       !safeHashEquals(currentAuthorization.payloadHash, payloadHash(validation.providerPayload as Record<string, unknown>)) ||
-      clean(canonical?.id, 160) !== currentAuthorization.canonicalProductId ||
-      clean(canonical?.storeId, 160) !== currentAuthorization.canonicalStoreId
+      !currentCanonicalHash || !safeHashEquals(currentAuthorization.canonicalBaselineHash, currentCanonicalHash)
     ) throw new Error('MERCADO_LIVRE_PUBLICATION_EXECUTION_STALE');
 
     transaction.update(authorizationRef, {
