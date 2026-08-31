@@ -92,7 +92,7 @@ export default function MercadoLivreSyncReviewQueue({
       );
       await load();
       notify(
-        `Mudança aplicada ao rascunho ${result.draftId}. O produto canônico continua inalterado até a próxima confirmação.`,
+        `Mudança aplicada ao rascunho ${result.draftId}. Produto, estoque e publicação canônicos continuam inalterados até uma confirmação separada.`,
         'success'
       );
     } catch (cause) {
