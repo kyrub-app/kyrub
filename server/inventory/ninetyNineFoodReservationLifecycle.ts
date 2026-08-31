@@ -128,6 +128,25 @@ export const reconcileNinetyNineFoodOrderReservation = async (
       });
       return 'not_applicable';
     }
+
+    const reservationSnapshot = await adminDb
+      .doc(`${reservationCollectionPath(storeId)}/${reservationId}`)
+      .get();
+    const reservationStatus = clean(reservationSnapshot.data()?.status);
+    if (reservationStatus === 'consumed') {
+      if (ledgerStatus !== 'reversed') {
+        throw new Error('INVENTORY_CONSUMED_RESERVATION_AWAITS_PHYSICAL_REVERSAL');
+      }
+      await writeOrderReservationState({
+        tenantId: normalizedTenantId,
+        storeId,
+        orderId: normalizedOrderId,
+        state: 'released',
+        detail: 'physical_consumption_reversed_after_reservation_consumed',
+      });
+      return 'released';
+    }
+
     await transitionCanonicalInventoryReservation({
       storeId,
       reservationId,
@@ -210,11 +229,16 @@ export const reconcileNinetyNineFoodOrderReservation = async (
   }
 
   if (ledgerStatus === 'reversed') {
-    await transitionCanonicalInventoryReservation({
-      storeId,
-      reservationId,
-      nextStatus: 'released',
-    });
+    const reservationSnapshot = await adminDb
+      .doc(`${reservationCollectionPath(storeId)}/${reservationId}`)
+      .get();
+    if (clean(reservationSnapshot.data()?.status) === 'active') {
+      await transitionCanonicalInventoryReservation({
+        storeId,
+        reservationId,
+        nextStatus: 'released',
+      });
+    }
     await writeOrderReservationState({
       tenantId: normalizedTenantId,
       storeId,
