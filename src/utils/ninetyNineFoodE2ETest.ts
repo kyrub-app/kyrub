@@ -43,6 +43,16 @@ export interface NinetyNineFoodE2ECatalogIdentity {
   capabilityManifestHash: string;
 }
 
+export interface NinetyNineFoodE2EReconciliation {
+  reconciliationId: string;
+  executionId: string;
+  targetAvailableQuantity: number;
+  observedQuantityAvailable: number;
+  status: 'reconciled' | 'reconciliation_required';
+  providerEvidenceHash: string;
+  authority: 'provider_merchant_snapshot_refetch_comparison';
+}
+
 export const listNinetyNineFoodE2EBindings = () =>
   authorizedRequest<{ canonicalStoreId: string; externalStoreId: string; items: NinetyNineFoodE2EBinding[] }>(
     '/api/integrations/99food/product-bindings'
@@ -137,15 +147,7 @@ export const executeNinetyNineFoodE2EAvailability = (
 );
 
 export const reconcileNinetyNineFoodE2EAvailability = (executionId: string) =>
-  authorizedRequest<{
-    reconciliation: {
-      id: string;
-      executionId: string;
-      targetAvailableQuantity: number;
-      observedQuantityAvailable: number;
-      status: 'reconciled' | 'reconciliation_required';
-    };
-  }>(
+  authorizedRequest<NinetyNineFoodE2EReconciliation>(
     `/api/integrations/99food/availability-executions/${encoded(executionId)}/reconcile`,
     { method: 'POST' }
   );
