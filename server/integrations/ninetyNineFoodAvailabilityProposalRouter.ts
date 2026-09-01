@@ -32,7 +32,7 @@ const errorResponse = (response: Response, error: unknown): void => {
     response.status(404).json({ error: message });
     return;
   }
-  if (/CONFLICT/.test(message)) {
+  if (/CONFLICT|BINDING_STALE/.test(message)) {
     response.status(409).json({ error: message });
     return;
   }
