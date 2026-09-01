@@ -93,9 +93,9 @@ test('99Food executor consumes the one-time authorization timing-safely before p
   assert.match(executorSource, /useCount !== 0/);
   assert.match(executorSource, /transaction\.update\(authorizationReference,[\s\S]*useCount: 1/);
   const reserveIndex = executorSource.indexOf('useCount: 1');
-  const patchIndex = executorSource.indexOf("method: 'PATCH'");
+  const providerWriteIndex = executorSource.indexOf('const response = await fetch(target.url');
   assert.ok(reserveIndex >= 0);
-  assert.ok(patchIndex > reserveIndex);
+  assert.ok(providerWriteIndex > reserveIndex);
 });
 
 test('99Food executor implements only Merchant V2 updateItemOffer quantityAvailable PATCH', () => {
