@@ -14,6 +14,11 @@ import {
   type NinetyNineFoodConnectInput,
 } from './ninetyNineFoodService';
 import {
+  bindNinetyNineFoodProduct,
+  deactivateNinetyNineFoodProductBinding,
+  listNinetyNineFoodProductBindings,
+} from './ninetyNineFoodProductBindingService';
+import {
   drainNinetyNineFoodIngressQueue,
   enqueueNinetyNineFoodWebhook,
 } from './ninetyNineFoodIngressQueue';
@@ -56,8 +61,24 @@ const errorResponse = (response: Response, error: unknown): void => {
     response.status(403).json({ error: message });
     return;
   }
+  if (/PRODUCT_BINDING_FORBIDDEN/.test(message)) {
+    response.status(403).json({ error: message });
+    return;
+  }
+  if (/PRODUCT_BINDING_NOT_FOUND|PRODUCT_BINDING_CANONICAL_PRODUCT_NOT_FOUND|PRODUCT_BINDING_CONNECTION_REQUIRED/.test(message)) {
+    response.status(404).json({ error: message });
+    return;
+  }
+  if (/PRODUCT_BINDING_ALREADY_ACTIVE|PRODUCT_BINDING_CONFLICT/.test(message)) {
+    response.status(409).json({ error: message });
+    return;
+  }
   if (/não está vinculado|não está configurada|não encontrado/i.test(message)) {
     response.status(404).json({ error: message });
+    return;
+  }
+  if (/PRODUCT_BINDING_INPUT_INVALID|PRODUCT_BINDING_CANONICAL_PRODUCT_INVALID|PRODUCT_BINDING_CANONICAL_STORE_REQUIRED|PRODUCT_BINDING_CONNECTION_INVALID/.test(message)) {
+    response.status(400).json({ error: message });
     return;
   }
   if (/inválid|informe|HTTPS|excede|incompleto/i.test(message)) {
@@ -120,6 +141,49 @@ export const createNinetyNineFoodRouter = (): Router => {
     try {
       const tenantId = await authenticatedTenantId(request);
       response.json(await getNinetyNineFoodStatus(tenantId));
+    } catch (error) {
+      errorResponse(response, error);
+    }
+  });
+
+  router.get('/product-bindings', async (request, response) => {
+    try {
+      const tenantId = await authenticatedTenantId(request);
+      response.json(await listNinetyNineFoodProductBindings({
+        tenantId,
+        requestedByUserId: tenantId,
+      }));
+    } catch (error) {
+      errorResponse(response, error);
+    }
+  });
+
+  router.put('/product-bindings/:externalProductId', async (request, response) => {
+    try {
+      const tenantId = await authenticatedTenantId(request);
+      const canonicalProductId = typeof request.body?.canonicalProductId === 'string'
+        ? request.body.canonicalProductId
+        : '';
+      const result = await bindNinetyNineFoodProduct({
+        tenantId,
+        externalProductId: request.params.externalProductId,
+        canonicalProductId,
+        boundByUserId: tenantId,
+      });
+      response.status(result.alreadyBound ? 200 : 201).json(result);
+    } catch (error) {
+      errorResponse(response, error);
+    }
+  });
+
+  router.delete('/product-bindings/:externalProductId', async (request, response) => {
+    try {
+      const tenantId = await authenticatedTenantId(request);
+      response.json(await deactivateNinetyNineFoodProductBinding({
+        tenantId,
+        externalProductId: request.params.externalProductId,
+        deactivatedByUserId: tenantId,
+      }));
     } catch (error) {
       errorResponse(response, error);
     }
