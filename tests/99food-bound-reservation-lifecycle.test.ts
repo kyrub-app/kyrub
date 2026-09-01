@@ -75,7 +75,7 @@ test('provider rejection requires explicit authenticated action and a non-empty 
 
 test('rejection is reserved before provider write and ambiguous failures are not blindly retried', () => {
   const reservationIndex = resolutionSource.indexOf("status: 'executing'");
-  const providerWriteIndex = resolutionSource.indexOf('sendNinetyNineFoodOrderStatus');
+  const providerWriteIndex = resolutionSource.indexOf('await sendNinetyNineFoodOrderStatus');
   assert.ok(reservationIndex >= 0);
   assert.ok(providerWriteIndex > reservationIndex);
   assert.match(resolutionSource, /NINETY_NINE_FOOD_BLOCK_REJECTION_ALREADY_RESERVED/);
