@@ -1,10 +1,9 @@
 import { Router, type Request, type Response } from 'express';
 import { adminAuth } from '../firebaseAdmin';
 import {
-  createNinetyNineFoodAvailabilityProposal,
-  listNinetyNineFoodAvailabilityProposals,
-} from './ninetyNineFoodAvailabilityProposalService';
-import { createNinetyNineFoodCatalogIdentityRouter } from './ninetyNineFoodCatalogIdentityRouter';
+  getCurrentNinetyNineFoodCatalogIdentity,
+  resolveNinetyNineFoodCatalogIdentity,
+} from './ninetyNineFoodCatalogIdentityService';
 
 const bearerToken = (request: Request): string => {
   const authorization = request.get('authorization') ?? '';
@@ -22,38 +21,42 @@ const authenticatedTenantId = async (request: Request): Promise<string> => {
 const errorResponse = (response: Response, error: unknown): void => {
   const message = error instanceof Error ? error.message : String(error);
   if (message === 'AUTH_REQUIRED' || /id-token|token has expired|revoked/i.test(message)) {
-    response.status(401).json({ error: message === 'AUTH_REQUIRED' ? 'Faça login novamente.' : 'Sua sessão expirou. Entre novamente.' });
+    response.status(401).json({ error: 'Faça login novamente.' });
     return;
   }
   if (/FORBIDDEN/.test(message)) {
     response.status(403).json({ error: message });
     return;
   }
-  if (/NOT_FOUND|ACTIVE_BINDING_REQUIRED/.test(message)) {
+  if (/REQUIRED|NOT_FOUND/.test(message)) {
     response.status(404).json({ error: message });
     return;
   }
-  if (/CONFLICT|BINDING_STALE/.test(message)) {
+  if (/STALE|MISMATCH|AMBIGUOUS/.test(message)) {
     response.status(409).json({ error: message });
     return;
   }
-  if (/INPUT_INVALID|SNAPSHOT_INVALID|CANONICAL_STORE_REQUIRED/.test(message)) {
+  if (/INPUT_INVALID|CONTEXT_INVALID|CONNECTION_INVALID|RESPONSE_INVALID|ENDPOINT_INVALID/.test(message)) {
     response.status(400).json({ error: message });
     return;
   }
-  console.error('[99Food Availability Proposal]', error);
-  response.status(503).json({ error: message || 'A proposta de disponibilidade 99Food está temporariamente indisponível.' });
+  if (/AUTHORIZATION_FLOW_REQUIRED|MERCHANT_GET_UNAVAILABLE/.test(message)) {
+    response.status(422).json({ error: message });
+    return;
+  }
+  console.error('[99Food Catalog Identity]', error);
+  response.status(503).json({ error: message || 'A identidade de catálogo 99Food está temporariamente indisponível.' });
 };
 
-export const createNinetyNineFoodAvailabilityProposalRouter = (): Router => {
+export const createNinetyNineFoodCatalogIdentityRouter = (): Router => {
   const router = Router();
-  router.use(createNinetyNineFoodCatalogIdentityRouter());
 
-  router.get('/availability-proposals', async (request, response) => {
+  router.get('/product-bindings/:externalProductId/catalog-identity', async (request, response) => {
     try {
       const tenantId = await authenticatedTenantId(request);
-      response.json(await listNinetyNineFoodAvailabilityProposals({
+      response.json(await getCurrentNinetyNineFoodCatalogIdentity({
         tenantId,
+        externalProductId: request.params.externalProductId,
         requestedByUserId: tenantId,
       }));
     } catch (error) {
@@ -61,19 +64,15 @@ export const createNinetyNineFoodAvailabilityProposalRouter = (): Router => {
     }
   });
 
-  router.post('/product-bindings/:externalProductId/availability-proposals', async (request, response) => {
+  router.post('/product-bindings/:externalProductId/catalog-identity/resolve', async (request, response) => {
     try {
       const tenantId = await authenticatedTenantId(request);
-      const channelAvailabilitySnapshotId = typeof request.body?.channelAvailabilitySnapshotId === 'string'
-        ? request.body.channelAvailabilitySnapshotId
-        : '';
-      const result = await createNinetyNineFoodAvailabilityProposal({
+      const result = await resolveNinetyNineFoodCatalogIdentity({
         tenantId,
         externalProductId: request.params.externalProductId,
-        channelAvailabilitySnapshotId,
-        proposedByUserId: tenantId,
+        requestedByUserId: tenantId,
       });
-      response.status(result.alreadyExisted ? 200 : 201).json(result);
+      response.status(result.status === 'resolved' ? 200 : 202).json(result);
     } catch (error) {
       errorResponse(response, error);
     }
