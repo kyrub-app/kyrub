@@ -22,6 +22,14 @@ const availabilityProposalRouterSource = readFileSync(
   'server/integrations/ninetyNineFoodAvailabilityProposalRouter.ts',
   'utf8'
 );
+const menuCapabilitySource = readFileSync(
+  'server/integrations/ninetyNineFoodMenuCapabilityService.ts',
+  'utf8'
+);
+const menuCapabilityRouterSource = readFileSync(
+  'server/integrations/ninetyNineFoodMenuCapabilityRouter.ts',
+  'utf8'
+);
 const routerSource = readFileSync(
   'server/integrations/ninetyNineFoodRouter.ts',
   'utf8'
@@ -124,11 +132,44 @@ test('99Food availability proposal API is authenticated and mounted under the in
   assert.match(routerSource, /router\.use\(createNinetyNineFoodAvailabilityProposalRouter\(\)\)/);
 });
 
-test('bound reservation block resolution and availability proposals do not publish provider stock or emit fiscal documents', () => {
+test('99Food menu capability discovery derives the well-known URL only from the configured connection host', () => {
+  assert.match(menuCapabilitySource, /new URL\('\/\.well-known\/opendelivery', parsed\.origin\)/);
+  assert.match(menuCapabilitySource, /connectionPath\(tenantId\)/);
+  assert.match(menuCapabilitySource, /clean\(current\?\.baseUrl[\s\S]*clean\(connection\.baseUrl/);
+  assert.doesNotMatch(menuCapabilityRouterSource, /discoveryUrl.*request\.body|request\.query.*discovery/i);
+});
+
+test('99Food menu capability discovery is public-read only at provider and blocks redirects', () => {
+  assert.match(menuCapabilitySource, /method: 'GET'/);
+  assert.match(menuCapabilitySource, /redirect: 'error'/);
+  assert.match(menuCapabilitySource, /accept: 'application\/json'/);
+  assert.doesNotMatch(menuCapabilitySource, /authorization|clientSecret|clientId|merchantApiKey/i);
+  assert.doesNotMatch(menuCapabilitySource, /method: 'POST'|method: 'PUT'|method: 'PATCH'|method: 'DELETE'/);
+});
+
+test('99Food menu capability discovery persists immutable provider evidence and classifies Merchant V2 conservatively', () => {
+  assert.match(menuCapabilitySource, /authority: DISCOVERY_AUTHORITY/);
+  assert.match(menuCapabilitySource, /provider_public_discovery/);
+  assert.match(menuCapabilitySource, /transaction\.create\(snapshotReference/);
+  assert.match(menuCapabilitySource, /merchant_v2_candidate/);
+  assert.match(menuCapabilitySource, /merchant_unavailable/);
+  assert.match(menuCapabilitySource, /supportsV2 && merchantSupported && Boolean\(merchantEndpoint\)/);
+});
+
+test('99Food menu capability discovery API is owner-authenticated and mounted under the integration router', () => {
+  assert.match(menuCapabilityRouterSource, /verifyIdToken/);
+  assert.match(menuCapabilityRouterSource, /\/capabilities\/menu/);
+  assert.match(menuCapabilityRouterSource, /\/capabilities\/menu\/discover/);
+  assert.match(routerSource, /createNinetyNineFoodMenuCapabilityRouter/);
+  assert.match(routerSource, /router\.use\(createNinetyNineFoodMenuCapabilityRouter\(\)\)/);
+});
+
+test('bound reservation block resolution availability proposal and discovery do not publish provider stock or emit fiscal documents', () => {
   assert.doesNotMatch(lifecycleSource, /available_quantity|mercadoLivrePutJson|sendNinetyNineFoodOrderStatus/);
   assert.doesNotMatch(lifecycleSource, /emit.*(?:nfe|nfce|nfse)/i);
   assert.doesNotMatch(resolutionSource, /available_quantity|mercadoLivrePutJson/);
   assert.doesNotMatch(resolutionSource, /emit.*(?:nfe|nfce|nfse)/i);
   assert.doesNotMatch(availabilityProposalSource, /sendAction|sendNinetyNineFoodOrderStatus|fetch\(|axios|available_quantity/);
   assert.doesNotMatch(availabilityProposalSource, /emit.*(?:nfe|nfce|nfse)/i);
+  assert.doesNotMatch(menuCapabilitySource, /sendNinetyNineFoodOrderStatus|sendAction|available_quantity|emit.*(?:nfe|nfce|nfse)/i);
 });
