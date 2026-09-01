@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { readFile } from 'node:fs/promises';
 import {
   buildOpenDeliveryAction,
   normalizeOpenDeliveryOrder,
@@ -16,6 +17,9 @@ import {
   normalizeCanonicalSourceChannel,
   withCanonicalSourceChannel,
 } from '../src/utils/sourceChannel';
+
+const bindingServicePath = new URL('../server/integrations/ninetyNineFoodProductBindingService.ts', import.meta.url);
+const routerPath = new URL('../server/integrations/ninetyNineFoodRouter.ts', import.meta.url);
 
 test('validates Open Delivery event identity and type', () => {
   assert.deepEqual(
@@ -193,4 +197,24 @@ test('maps Kyrub KDS actions to Open Delivery order endpoints', () => {
     }).path,
     '/v1/orders/order-1/requestCancellation'
   );
+});
+
+test('99Food product binding uses one deterministic external identity and explicit owner mapping', async () => {
+  const source = await readFile(bindingServicePath, 'utf8');
+  assert.match(source, /externalProductBindings/);
+  assert.match(source, /externalProductBindingAudits/);
+  assert.match(source, /store_owner_product_mapping/);
+  assert.match(source, /externalStoreId, externalProductId/);
+  assert.match(source, /NINETY_NINE_FOOD_PRODUCT_BINDING_ALREADY_ACTIVE/);
+  assert.match(source, /resolveActiveNinetyNineFoodProductBinding/);
+  assert.doesNotMatch(source, /mercadoLivre|available_quantity|reserveCanonicalOrderInventory|transitionCanonicalInventoryReservation/);
+});
+
+test('99Food binding routes are owner-authenticated and separate from provider writes', async () => {
+  const source = await readFile(routerPath, 'utf8');
+  assert.match(source, /router\.get\('\/product-bindings'/);
+  assert.match(source, /router\.put\('\/product-bindings\/:externalProductId'/);
+  assert.match(source, /router\.delete\('\/product-bindings\/:externalProductId'/);
+  assert.match(source, /authenticatedTenantId\(request\)/);
+  assert.match(source, /canonicalProductId/);
 });
