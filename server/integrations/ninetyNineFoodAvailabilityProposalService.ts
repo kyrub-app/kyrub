@@ -5,6 +5,7 @@ import { resolveActiveNinetyNineFoodProductBinding } from './ninetyNineFoodProdu
 
 const PROVIDER = '99food' as const;
 const SNAPSHOT_AUTHORITY = 'kyrub_inventory_reservation_policy_snapshot' as const;
+const BINDING_AUTHORITY = 'store_owner_product_mapping' as const;
 const PROPOSAL_AUTHORITY = 'kyrub_channel_availability_snapshot_and_store_owner_mapping' as const;
 
 const clean = (value: unknown, maximum = 500): string =>
@@ -21,6 +22,7 @@ const proposalIdFor = (input: {
   canonicalStoreId: string;
   externalStoreId: string;
   externalProductId: string;
+  bindingRevision: number;
   snapshotId: string;
   sourceFingerprint: string;
   targetAvailableQuantity: number;
@@ -29,6 +31,7 @@ const proposalIdFor = (input: {
     input.canonicalStoreId,
     input.externalStoreId,
     input.externalProductId,
+    String(input.bindingRevision),
     input.snapshotId,
     input.sourceFingerprint,
     String(input.targetAvailableQuantity),
@@ -49,6 +52,7 @@ export interface NinetyNineFoodAvailabilityProposal {
   externalProductId: string;
   canonicalProductId: string;
   bindingId: string;
+  bindingRevision: number;
   channelAvailabilitySnapshotId: string;
   channelAvailabilitySourceFingerprint: string;
   policyRevision: number;
@@ -104,6 +108,32 @@ const assertSnapshot = (input: {
   };
 };
 
+const bindingStillActive = (input: {
+  tenantId: string;
+  canonicalStoreId: string;
+  externalStoreId: string;
+  externalProductId: string;
+  canonicalProductId: string;
+  bindingId: string;
+  bindingRevision: number;
+  value: unknown;
+}): boolean => {
+  if (!input.value || typeof input.value !== 'object' || Array.isArray(input.value)) return false;
+  const binding = input.value as Record<string, unknown>;
+  return (
+    binding.provider === PROVIDER &&
+    binding.bindingAuthority === BINDING_AUTHORITY &&
+    binding.status === 'active' &&
+    clean(binding.id, 160) === input.bindingId &&
+    clean(binding.tenantId, 160) === input.tenantId &&
+    clean(binding.canonicalStoreId, 160) === input.canonicalStoreId &&
+    clean(binding.externalStoreId, 240) === input.externalStoreId &&
+    clean(binding.externalProductId, 500) === input.externalProductId &&
+    clean(binding.canonicalProductId, 160) === input.canonicalProductId &&
+    nonNegativeInteger(binding.revision) === input.bindingRevision
+  );
+};
+
 export const createNinetyNineFoodAvailabilityProposal = async (input: {
   tenantId: string;
   externalProductId: string;
@@ -140,22 +170,44 @@ export const createNinetyNineFoodAvailabilityProposal = async (input: {
     canonicalStoreId: binding.canonicalStoreId,
     externalStoreId: binding.externalStoreId,
     externalProductId: binding.externalProductId,
+    bindingRevision: binding.revision,
     snapshotId,
     sourceFingerprint: snapshot.sourceFingerprint,
     targetAvailableQuantity: snapshot.publishableUnits,
   });
   const reference = adminDb.doc(proposalPath(binding.canonicalStoreId, proposalId));
+  const bindingReference = adminDb.doc(
+    `stores/${binding.canonicalStoreId}/externalProductBindings/${binding.id}`
+  );
   let alreadyExisted = false;
   let proposal: NinetyNineFoodAvailabilityProposal | null = null;
 
   await adminDb.runTransaction(async transaction => {
-    const existing = await transaction.get(reference);
+    const [existing, currentBinding] = await Promise.all([
+      transaction.get(reference),
+      transaction.get(bindingReference),
+    ]);
+    if (!currentBinding.exists || !bindingStillActive({
+      tenantId,
+      canonicalStoreId: binding.canonicalStoreId,
+      externalStoreId: binding.externalStoreId,
+      externalProductId: binding.externalProductId,
+      canonicalProductId: binding.canonicalProductId,
+      bindingId: binding.id,
+      bindingRevision: binding.revision,
+      value: currentBinding.data(),
+    })) {
+      throw new Error('NINETY_NINE_FOOD_AVAILABILITY_BINDING_STALE');
+    }
+
     if (existing.exists) {
       const data = existing.data() as NinetyNineFoodAvailabilityProposal;
       if (
         data.provider !== PROVIDER ||
         data.tenantId !== tenantId ||
         data.externalProductId !== externalProductId ||
+        data.bindingId !== binding.id ||
+        data.bindingRevision !== binding.revision ||
         data.channelAvailabilitySnapshotId !== snapshotId ||
         data.channelAvailabilitySourceFingerprint !== snapshot.sourceFingerprint ||
         data.targetAvailableQuantity !== snapshot.publishableUnits
@@ -178,6 +230,7 @@ export const createNinetyNineFoodAvailabilityProposal = async (input: {
       externalProductId: binding.externalProductId,
       canonicalProductId: binding.canonicalProductId,
       bindingId: binding.id,
+      bindingRevision: binding.revision,
       channelAvailabilitySnapshotId: snapshotId,
       channelAvailabilitySourceFingerprint: snapshot.sourceFingerprint,
       policyRevision: snapshot.policyRevision,
