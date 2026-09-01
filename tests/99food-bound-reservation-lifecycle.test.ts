@@ -99,6 +99,15 @@ test('99Food availability proposal requires an active owner-mapped binding and f
   assert.match(availabilityProposalSource, /inventoryAuthorityOwnerUserId/);
 });
 
+test('99Food availability proposal freezes and revalidates the active product binding revision', () => {
+  assert.match(availabilityProposalSource, /bindingRevision: binding\.revision/);
+  assert.match(availabilityProposalSource, /transaction\.get\(bindingReference\)/);
+  assert.match(availabilityProposalSource, /binding\.bindingAuthority === BINDING_AUTHORITY/);
+  assert.match(availabilityProposalSource, /binding\.status === 'active'/);
+  assert.match(availabilityProposalSource, /NINETY_NINE_FOOD_AVAILABILITY_BINDING_STALE/);
+  assert.match(availabilityProposalRouterSource, /CONFLICT\|BINDING_STALE/);
+});
+
 test('99Food availability proposal target comes only from publishableUnits and remains review-only', () => {
   assert.match(availabilityProposalSource, /targetAvailableQuantity: snapshot\.publishableUnits/);
   assert.match(availabilityProposalSource, /status: 'review_required'/);
