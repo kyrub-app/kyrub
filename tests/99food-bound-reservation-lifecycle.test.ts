@@ -143,8 +143,15 @@ test('99Food menu capability discovery is public-read only at provider and block
   assert.match(menuCapabilitySource, /method: 'GET'/);
   assert.match(menuCapabilitySource, /redirect: 'error'/);
   assert.match(menuCapabilitySource, /accept: 'application\/json'/);
-  assert.doesNotMatch(menuCapabilitySource, /authorization|clientSecret|clientId|merchantApiKey/i);
+  assert.doesNotMatch(menuCapabilitySource, /authorization|clientSecret|merchantApiKey/i);
   assert.doesNotMatch(menuCapabilitySource, /method: 'POST'|method: 'PUT'|method: 'PATCH'|method: 'DELETE'/);
+});
+
+test('99Food menu capability discovery freezes provider-declared authentication authority', () => {
+  assert.match(menuCapabilitySource, /authenticationSupportedGrantTypes: supportedGrantTypes/);
+  assert.match(menuCapabilitySource, /authenticationClientIdGeneration: clientIdGeneration/);
+  assert.match(menuCapabilitySource, /authentication\.supportedGrantTypes/);
+  assert.match(menuCapabilitySource, /authentication\.clientIdGeneration/);
 });
 
 test('99Food menu capability discovery persists immutable provider evidence and classifies Merchant V2 conservatively', () => {
