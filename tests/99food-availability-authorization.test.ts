@@ -22,6 +22,10 @@ const executorRouterSource = readFileSync(
   'server/integrations/ninetyNineFoodAvailabilityExecutorRouter.ts',
   'utf8'
 );
+const reconciliationSource = readFileSync(
+  'server/integrations/ninetyNineFoodAvailabilityReconciliationService.ts',
+  'utf8'
+);
 
 test('99Food availability authorization freezes exact canonical and provider identity evidence', () => {
   assert.match(serviceSource, /channelAvailabilitySnapshotId: snapshotId/);
@@ -134,10 +138,43 @@ test('executor route is owner-authenticated and nested under the authorization r
   assert.match(routerSource, /router\.use\(createNinetyNineFoodAvailabilityExecutorRouter\(\)\)/);
 });
 
-test('authorization and provider execution do not mutate Kyrub canonical inventory reservations ATP or fiscal state', () => {
+test('99Food reconciliation refetches the exact Merchant menu snapshot without provider mutation', () => {
+  assert.match(reconciliationSource, /menus\/\$\{encodeURIComponent\(menuId\)\}\/snapshot/);
+  assert.match(reconciliationSource, /method: 'GET'/);
+  assert.match(reconciliationSource, /collectExactItemOffer/);
+  assert.match(reconciliationSource, /clean\(record\.id, 500\) === itemOfferId/);
+  assert.doesNotMatch(reconciliationSource, /method:\s*'PATCH'|method:\s*'PUT'/);
+});
+
+test('reconciliation closes only when observed quantity equals the frozen target', () => {
+  assert.match(reconciliationSource, /const reconciled = observedQuantity === targetQuantity/);
+  assert.match(reconciliationSource, /observedQuantityAvailable: observedQuantity/);
+  assert.match(reconciliationSource, /status: reconciled \? 'reconciled' : 'reconciliation_required'/);
+  assert.match(reconciliationSource, /provider_merchant_snapshot_refetch_comparison/);
+});
+
+test('reconciliation persists immutable external evidence and updates execution authorization and proposal together', () => {
+  assert.match(reconciliationSource, /ninetyNineFoodExternalAvailabilitySnapshots/);
+  assert.match(reconciliationSource, /ninetyNineFoodAvailabilityReconciliations/);
+  assert.match(reconciliationSource, /transaction\.create\(snapshotReference/);
+  assert.match(reconciliationSource, /transaction\.create\(reconciliationReference/);
+  assert.match(reconciliationSource, /transaction\.update\(executionReference/);
+  assert.match(reconciliationSource, /transaction\.update\(authorizationReference/);
+  assert.match(reconciliationSource, /transaction\.update\(proposalReference/);
+});
+
+test('reconciliation route is owner-authenticated and never reuses the write token', () => {
+  assert.match(executorRouterSource, /\/availability-executions\/:executionId\/reconcile/);
+  assert.match(executorRouterSource, /reconcileNinetyNineFoodAvailability/);
+  assert.doesNotMatch(reconciliationSource, /authorizationToken|tokenMatches|useCount:\s*0/);
+});
+
+test('authorization execution and reconciliation do not mutate Kyrub canonical inventory reservations ATP or fiscal state', () => {
   assert.doesNotMatch(serviceSource, /emit.*(?:nfe|nfce|nfse)/i);
   assert.doesNotMatch(serviceSource, /inventoryLedger|physicalQuantity\s*:|reservationStatus\s*:/);
   assert.doesNotMatch(executorSource, /inventoryLedger|physicalQuantity\s*:|reservationStatus\s*:|availableToPromiseUnits\s*:/);
   assert.doesNotMatch(executorSource, /emit.*(?:nfe|nfce|nfse)/i);
   assert.doesNotMatch(executorSource, /sendNinetyNineFoodOrderStatus|requestCancellation/);
+  assert.doesNotMatch(reconciliationSource, /inventoryLedger|physicalQuantity\s*:|reservationStatus\s*:|availableToPromiseUnits\s*:/);
+  assert.doesNotMatch(reconciliationSource, /emit.*(?:nfe|nfce|nfse)/i);
 });
