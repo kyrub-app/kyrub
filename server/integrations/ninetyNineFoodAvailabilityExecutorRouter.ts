@@ -1,7 +1,6 @@
 import { Router, type Request, type Response } from 'express';
 import { adminAuth } from '../firebaseAdmin';
-import { authorizeNinetyNineFoodAvailability } from './ninetyNineFoodAvailabilityAuthorizationService';
-import { createNinetyNineFoodAvailabilityExecutorRouter } from './ninetyNineFoodAvailabilityExecutorRouter';
+import { executeNinetyNineFoodAvailability } from './ninetyNineFoodAvailabilityExecutorService';
 
 const bearerToken = (request: Request): string => {
   const authorization = request.get('authorization') ?? '';
@@ -18,7 +17,7 @@ const authenticatedTenantId = async (request: Request): Promise<string> => {
 
 const errorResponse = (response: Response, error: unknown): void => {
   const message = error instanceof Error ? error.message : String(error);
-  if (message === 'AUTH_REQUIRED' || /id-token|token has expired|revoked/i.test(message)) {
+  if (message === 'AUTH_REQUIRED' || /id-token|expired|revoked/i.test(message)) {
     response.status(401).json({ error: 'Faça login novamente.' });
     return;
   }
@@ -26,29 +25,34 @@ const errorResponse = (response: Response, error: unknown): void => {
     response.status(404).json({ error: message });
     return;
   }
-  if (/STALE|CONFLICT/.test(message)) {
+  if (/STALE|CONFLICT|EXPIRED|AUTHORIZATION_INVALID/.test(message)) {
     response.status(409).json({ error: message });
     return;
   }
-  if (/INPUT_INVALID|REQUIRED|PROPOSAL_INVALID|CANONICAL_STORE_REQUIRED/.test(message)) {
+  if (/INPUT_INVALID|REQUIRED|CONTEXT_INVALID|CREDENTIALS_REQUIRED/.test(message)) {
     response.status(400).json({ error: message });
     return;
   }
-  console.error('[99Food Availability Authorization]', error);
-  response.status(503).json({ error: message || 'A autorização de disponibilidade 99Food está temporariamente indisponível.' });
+  console.error('[99Food Availability Executor]', error);
+  response.status(503).json({
+    error: message || 'A execução da disponibilidade 99Food está temporariamente indisponível.',
+  });
 };
 
-export const createNinetyNineFoodAvailabilityAuthorizationRouter = (): Router => {
+export const createNinetyNineFoodAvailabilityExecutorRouter = (): Router => {
   const router = Router();
-  router.use(createNinetyNineFoodAvailabilityExecutorRouter());
 
-  router.post('/availability-proposals/:proposalId/authorize', async (request, response) => {
+  router.post('/availability-authorizations/:authorizationId/execute', async (request, response) => {
     try {
       const tenantId = await authenticatedTenantId(request);
-      response.status(201).json(await authorizeNinetyNineFoodAvailability({
+      const authorizationToken = typeof request.body?.authorizationToken === 'string'
+        ? request.body.authorizationToken
+        : '';
+      response.json(await executeNinetyNineFoodAvailability({
         tenantId,
-        proposalId: request.params.proposalId,
-        authorizedByUserId: tenantId,
+        authorizationId: request.params.authorizationId,
+        authorizationToken,
+        attemptedByUserId: tenantId,
       }));
     } catch (error) {
       errorResponse(response, error);
