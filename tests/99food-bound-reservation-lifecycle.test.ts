@@ -14,6 +14,14 @@ const resolutionSource = readFileSync(
   'server/integrations/ninetyNineFoodOrderBlockResolutionService.ts',
   'utf8'
 );
+const availabilityProposalSource = readFileSync(
+  'server/integrations/ninetyNineFoodAvailabilityProposalService.ts',
+  'utf8'
+);
+const availabilityProposalRouterSource = readFileSync(
+  'server/integrations/ninetyNineFoodAvailabilityProposalRouter.ts',
+  'utf8'
+);
 const routerSource = readFileSync(
   'server/integrations/ninetyNineFoodRouter.ts',
   'utf8'
@@ -83,9 +91,44 @@ test('rejection is reserved before provider write and ambiguous failures are not
   assert.doesNotMatch(resolutionSource, /while\s*\(|setInterval|setTimeout/);
 });
 
-test('bound reservation and block resolution do not publish provider stock or emit fiscal documents', () => {
+test('99Food availability proposal requires an active owner-mapped binding and frozen channel snapshot', () => {
+  assert.match(availabilityProposalSource, /resolveActiveNinetyNineFoodProductBinding/);
+  assert.match(availabilityProposalSource, /channelAvailabilitySnapshots\/\$\{snapshotId\}/);
+  assert.match(availabilityProposalSource, /snapshot\.channel[\s\S]*PROVIDER/);
+  assert.match(availabilityProposalSource, /kyrub_inventory_reservation_policy_snapshot/);
+  assert.match(availabilityProposalSource, /inventoryAuthorityOwnerUserId/);
+});
+
+test('99Food availability proposal freezes and revalidates the active product binding revision', () => {
+  assert.match(availabilityProposalSource, /bindingRevision: binding\.revision/);
+  assert.match(availabilityProposalSource, /transaction\.get\(bindingReference\)/);
+  assert.match(availabilityProposalSource, /binding\.bindingAuthority === BINDING_AUTHORITY/);
+  assert.match(availabilityProposalSource, /binding\.status === 'active'/);
+  assert.match(availabilityProposalSource, /NINETY_NINE_FOOD_AVAILABILITY_BINDING_STALE/);
+  assert.match(availabilityProposalRouterSource, /CONFLICT\|BINDING_STALE/);
+});
+
+test('99Food availability proposal target comes only from publishableUnits and remains review-only', () => {
+  assert.match(availabilityProposalSource, /targetAvailableQuantity: snapshot\.publishableUnits/);
+  assert.match(availabilityProposalSource, /status: 'review_required'/);
+  assert.match(availabilityProposalSource, /executionStatus: 'not_authorized'/);
+  assert.match(availabilityProposalSource, /providerReadStatus: 'not_requested'/);
+  assert.match(availabilityProposalSource, /kyrub_channel_availability_snapshot_and_store_owner_mapping/);
+});
+
+test('99Food availability proposal API is authenticated and mounted under the integration router', () => {
+  assert.match(availabilityProposalRouterSource, /verifyIdToken/);
+  assert.match(availabilityProposalRouterSource, /\/availability-proposals/);
+  assert.match(availabilityProposalRouterSource, /\/product-bindings\/:externalProductId\/availability-proposals/);
+  assert.match(routerSource, /createNinetyNineFoodAvailabilityProposalRouter/);
+  assert.match(routerSource, /router\.use\(createNinetyNineFoodAvailabilityProposalRouter\(\)\)/);
+});
+
+test('bound reservation block resolution and availability proposals do not publish provider stock or emit fiscal documents', () => {
   assert.doesNotMatch(lifecycleSource, /available_quantity|mercadoLivrePutJson|sendNinetyNineFoodOrderStatus/);
   assert.doesNotMatch(lifecycleSource, /emit.*(?:nfe|nfce|nfse)/i);
   assert.doesNotMatch(resolutionSource, /available_quantity|mercadoLivrePutJson/);
   assert.doesNotMatch(resolutionSource, /emit.*(?:nfe|nfce|nfse)/i);
+  assert.doesNotMatch(availabilityProposalSource, /sendAction|sendNinetyNineFoodOrderStatus|fetch\(|axios|available_quantity/);
+  assert.doesNotMatch(availabilityProposalSource, /emit.*(?:nfe|nfce|nfse)/i);
 });
