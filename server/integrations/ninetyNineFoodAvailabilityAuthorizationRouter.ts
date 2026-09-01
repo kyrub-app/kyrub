@@ -1,6 +1,7 @@
 import { Router, type Request, type Response } from 'express';
 import { adminAuth } from '../firebaseAdmin';
 import { authorizeNinetyNineFoodAvailability } from './ninetyNineFoodAvailabilityAuthorizationService';
+import { createNinetyNineFoodAvailabilityExecutorRouter } from './ninetyNineFoodAvailabilityExecutorRouter';
 
 const bearerToken = (request: Request): string => {
   const authorization = request.get('authorization') ?? '';
@@ -39,6 +40,7 @@ const errorResponse = (response: Response, error: unknown): void => {
 
 export const createNinetyNineFoodAvailabilityAuthorizationRouter = (): Router => {
   const router = Router();
+  router.use(createNinetyNineFoodAvailabilityExecutorRouter());
 
   router.post('/availability-proposals/:proposalId/authorize', async (request, response) => {
     try {
