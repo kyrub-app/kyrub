@@ -30,6 +30,14 @@ const menuCapabilityRouterSource = readFileSync(
   'server/integrations/ninetyNineFoodMenuCapabilityRouter.ts',
   'utf8'
 );
+const catalogIdentitySource = readFileSync(
+  'server/integrations/ninetyNineFoodCatalogIdentityService.ts',
+  'utf8'
+);
+const catalogIdentityRouterSource = readFileSync(
+  'server/integrations/ninetyNineFoodCatalogIdentityRouter.ts',
+  'utf8'
+);
 const routerSource = readFileSync(
   'server/integrations/ninetyNineFoodRouter.ts',
   'utf8'
@@ -171,7 +179,38 @@ test('99Food menu capability discovery API is owner-authenticated and mounted un
   assert.match(routerSource, /router\.use\(createNinetyNineFoodMenuCapabilityRouter\(\)\)/);
 });
 
-test('bound reservation block resolution availability proposal and discovery do not publish provider stock or emit fiscal documents', () => {
+test('99Food catalog identity reads Merchant V2 and snapshots without provider mutation', () => {
+  assert.match(catalogIdentitySource, /merchants\/\$\{encodeURIComponent\(context\.merchantId\)\}/);
+  assert.match(catalogIdentitySource, /menus\/\$\{encodeURIComponent\(menuId\)\}\/snapshot/);
+  assert.match(catalogIdentitySource, /method: 'GET'/);
+  assert.match(catalogIdentitySource, /scope: 'od\.menu'/);
+  assert.doesNotMatch(catalogIdentitySource, /method: 'PUT'|method: 'PATCH'|method: 'DELETE'/);
+});
+
+test('99Food catalog identity accepts only exact ItemOffer id or externalCode matches', () => {
+  assert.match(catalogIdentitySource, /looksLikeItemOffer = Object\.prototype\.hasOwnProperty\.call\(candidate, 'unityPrice'\)/);
+  assert.match(catalogIdentitySource, /externalProductId === itemOfferId \|\| externalProductId === externalCode/);
+  assert.doesNotMatch(catalogIdentitySource, /name.*externalProductId|includes\(externalProductId\)|levenshtein|fuzzy/i);
+  assert.match(catalogIdentitySource, /'resolved' \| 'not_found' \| 'ambiguous'/);
+});
+
+test('99Food catalog identity freezes provider evidence and current binding revision', () => {
+  assert.match(catalogIdentitySource, /providerEvidenceHash/);
+  assert.match(catalogIdentitySource, /provider_merchant_snapshot_exact_identity_match/);
+  assert.match(catalogIdentitySource, /Number\(current\?\.revision\) !== binding\.revision/);
+  assert.match(catalogIdentitySource, /NINETY_NINE_FOOD_CATALOG_IDENTITY_BINDING_STALE/);
+  assert.match(catalogIdentitySource, /transaction\.create\(resolutionReference/);
+});
+
+test('99Food catalog identity API is owner-authenticated and nested under the 99Food integration router', () => {
+  assert.match(catalogIdentityRouterSource, /verifyIdToken/);
+  assert.match(catalogIdentityRouterSource, /\/product-bindings\/:externalProductId\/catalog-identity/);
+  assert.match(catalogIdentityRouterSource, /\/catalog-identity\/resolve/);
+  assert.match(availabilityProposalRouterSource, /createNinetyNineFoodCatalogIdentityRouter/);
+  assert.match(availabilityProposalRouterSource, /router\.use\(createNinetyNineFoodCatalogIdentityRouter\(\)\)/);
+});
+
+test('bound reservation block resolution availability proposal discovery and identity resolution do not publish provider stock or emit fiscal documents', () => {
   assert.doesNotMatch(lifecycleSource, /available_quantity|mercadoLivrePutJson|sendNinetyNineFoodOrderStatus/);
   assert.doesNotMatch(lifecycleSource, /emit.*(?:nfe|nfce|nfse)/i);
   assert.doesNotMatch(resolutionSource, /available_quantity|mercadoLivrePutJson/);
@@ -179,4 +218,5 @@ test('bound reservation block resolution availability proposal and discovery do 
   assert.doesNotMatch(availabilityProposalSource, /sendAction|sendNinetyNineFoodOrderStatus|fetch\(|axios|available_quantity/);
   assert.doesNotMatch(availabilityProposalSource, /emit.*(?:nfe|nfce|nfse)/i);
   assert.doesNotMatch(menuCapabilitySource, /sendNinetyNineFoodOrderStatus|sendAction|available_quantity|emit.*(?:nfe|nfce|nfse)/i);
+  assert.doesNotMatch(catalogIdentitySource, /quantityAvailable\s*:.*target|sendAction|sendNinetyNineFoodOrderStatus|emit.*(?:nfe|nfce|nfse)/i);
 });
