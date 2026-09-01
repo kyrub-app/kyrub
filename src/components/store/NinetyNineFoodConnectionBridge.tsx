@@ -10,11 +10,13 @@ import {
   Unplug,
 } from 'lucide-react';
 import {
-  connectNinetyNineFood,
+  connectNinetyNineFoodAdaptive,
   disconnectNinetyNineFood,
   getNinetyNineFoodConnectionStatus,
+  getNinetyNineFoodOnboardingPlan,
   pollNinetyNineFood,
   type NinetyNineFoodConnectionStatus,
+  type NinetyNineFoodOnboardingPlan,
 } from '../../utils/ninetyNineFoodIntegration';
 
 const emptyStatus: NinetyNineFoodConnectionStatus = {
@@ -33,6 +35,20 @@ const emptyStatus: NinetyNineFoodConnectionStatus = {
   lastPollAt: '',
 };
 
+const emptyPlan = (environment: 'sandbox' | 'production'): NinetyNineFoodOnboardingPlan => ({
+  provider: '99food',
+  environment,
+  mode: 'platform_not_ready',
+  platformConfigured: false,
+  discoveryVerified: false,
+  merchantMustProvideSecret: false,
+  merchantCanConnect: false,
+  supportedGrantTypes: [],
+  clientIdGeneration: [],
+  manifestHash: '',
+  message: 'Verificando como a 99Food deve ser conectada...',
+});
+
 const formatTimestamp = (value: string): string => {
   const timestamp = Date.parse(value);
   return Number.isFinite(timestamp)
@@ -44,15 +60,15 @@ export function NinetyNineFoodConnectionBridge() {
   const [host, setHost] = useState<HTMLElement | null>(null);
   const [status, setStatus] = useState(emptyStatus);
   const [loading, setLoading] = useState(false);
+  const [planLoading, setPlanLoading] = useState(false);
   const [feedback, setFeedback] = useState('');
   const [externalStoreId, setExternalStoreId] = useState('');
   const [accountLabel, setAccountLabel] = useState('');
   const [routingTarget, setRoutingTarget] = useState('');
   const [environment, setEnvironment] = useState<'sandbox' | 'production'>('sandbox');
-  const [baseUrl, setBaseUrl] = useState('');
-  const [tokenUrl, setTokenUrl] = useState('');
   const [clientId, setClientId] = useState('');
   const [clientSecret, setClientSecret] = useState('');
+  const [plan, setPlan] = useState<NinetyNineFoodOnboardingPlan>(emptyPlan('sandbox'));
 
   useEffect(() => {
     let portalHost: HTMLDivElement | null = null;
@@ -60,12 +76,8 @@ export function NinetyNineFoodConnectionBridge() {
     let originalWarning = '';
 
     const synchronize = (): void => {
-      const article = document.querySelector<HTMLElement>(
-        '[data-integration-id="99food"]'
-      );
-      const configured = article && !article.querySelector(
-        '#configure-store-integration-99food'
-      );
+      const article = document.querySelector<HTMLElement>('[data-integration-id="99food"]');
+      const configured = article && !article.querySelector('#configure-store-integration-99food');
 
       if (article && configured) {
         if (!portalHost || !portalHost.isConnected) {
@@ -77,18 +89,14 @@ export function NinetyNineFoodConnectionBridge() {
         }
 
         const warning = Array.from(
-          document.querySelectorAll<HTMLParagraphElement>(
-            '#store-integrations-tab-content p'
-          )
-        ).find(paragraph => paragraph.textContent?.includes(
-          'Senhas, tokens, certificados e chaves privadas'
-        ));
+          document.querySelectorAll<HTMLParagraphElement>('#store-integrations-tab-content p')
+        ).find(paragraph => paragraph.textContent?.includes('Senhas, tokens, certificados e chaves privadas'));
         if (warning && warning !== observedWarning) {
           if (observedWarning) observedWarning.textContent = originalWarning;
           observedWarning = warning;
           originalWarning = warning.textContent ?? '';
           warning.textContent =
-            'Dados públicos ficam nos campos de configuração. O clientSecret da 99Food deve ser informado somente na caixa segura abaixo: ele é enviado diretamente ao backend, criptografado e nunca salvo no navegador.';
+            'O Kyrub escolhe o método de conexão conforme o contrato oficial da 99Food. Na maioria dos casos a loja não precisa informar nenhuma chave privada.';
         }
       } else if (portalHost) {
         portalHost.remove();
@@ -118,57 +126,76 @@ export function NinetyNineFoodConnectionBridge() {
         setAccountLabel(nextStatus.accountLabel);
         setRoutingTarget(nextStatus.routingTarget);
         setEnvironment(nextStatus.environment);
-        setBaseUrl(nextStatus.baseUrl);
       }
     } catch (error) {
       setFeedback(error instanceof Error ? error.message : String(error));
     }
   };
 
+  const refreshPlan = async (nextEnvironment = environment): Promise<void> => {
+    setPlanLoading(true);
+    try {
+      const nextPlan = await getNinetyNineFoodOnboardingPlan(nextEnvironment);
+      setPlan(nextPlan);
+      if (!nextPlan.merchantMustProvideSecret) {
+        setClientId('');
+        setClientSecret('');
+      }
+    } catch (error) {
+      setPlan(emptyPlan(nextEnvironment));
+      setFeedback(error instanceof Error ? error.message : String(error));
+    } finally {
+      setPlanLoading(false);
+    }
+  };
+
   useEffect(() => {
     if (!host) return;
-    void refreshStatus();
+    void Promise.all([refreshStatus(), refreshPlan(environment)]);
   }, [host]);
 
   const importPublicFields = (): void => {
-    const article = document.querySelector<HTMLElement>(
-      '[data-integration-id="99food"]'
-    );
-    const inputs = Array.from(
-      article?.querySelectorAll<HTMLInputElement>('input[type="text"]') ?? []
-    );
+    const article = document.querySelector<HTMLElement>('[data-integration-id="99food"]');
+    const inputs = Array.from(article?.querySelectorAll<HTMLInputElement>('input[type="text"]') ?? []);
     const select = article?.querySelector<HTMLSelectElement>('select');
     setAccountLabel(inputs[0]?.value.trim() ?? accountLabel);
     setExternalStoreId(inputs[1]?.value.trim() ?? externalStoreId);
     setRoutingTarget(inputs[2]?.value.trim() ?? routingTarget);
-    setEnvironment(select?.value === 'production' ? 'production' : 'sandbox');
-    setFeedback('Dados públicos copiados. Informe agora as credenciais emitidas pela 99Food.');
+    const nextEnvironment = select?.value === 'production' ? 'production' : 'sandbox';
+    setEnvironment(nextEnvironment);
+    void refreshPlan(nextEnvironment);
+    setFeedback('Dados da loja copiados. O Kyrub está verificando o método de conexão da 99Food.');
+  };
+
+  const handleEnvironmentChange = (value: string): void => {
+    const next = value === 'production' ? 'production' : 'sandbox';
+    setEnvironment(next);
+    setPlan(emptyPlan(next));
+    void refreshPlan(next);
   };
 
   const handleConnect = async (): Promise<void> => {
     setLoading(true);
     setFeedback('');
     try {
-      const nextStatus = await connectNinetyNineFood({
+      const nextStatus = await connectNinetyNineFoodAdaptive({
         externalStoreId,
         accountLabel,
         routingTarget,
         environment,
-        baseUrl,
-        tokenUrl: tokenUrl || undefined,
-        clientId,
-        clientSecret,
+        ...(plan.merchantMustProvideSecret ? { clientId, clientSecret } : {}),
       });
       setStatus(nextStatus);
       setClientId('');
       setClientSecret('');
       setFeedback(
         nextStatus.status === 'connected'
-          ? 'Credenciais validadas e webhook registrado na 99Food.'
-          : 'Credenciais validadas, mas o registro automático do webhook requer atenção.'
+          ? '99Food conectada ao Kyrub. Os pedidos poderão entrar no mesmo fluxo operacional da loja.'
+          : 'A conexão foi criada, mas a 99Food informou uma etapa que requer atenção.'
       );
     } catch (error) {
       setFeedback(error instanceof Error ? error.message : String(error));
+      await refreshPlan(environment);
     } finally {
       setLoading(false);
     }
@@ -200,7 +227,7 @@ export function NinetyNineFoodConnectionBridge() {
       setStatus(emptyStatus);
       setClientId('');
       setClientSecret('');
-      setFeedback('Conexão removida do cofre do Kyrub.');
+      setFeedback('99Food desconectada desta loja no Kyrub.');
     } catch (error) {
       setFeedback(error instanceof Error ? error.message : String(error));
     } finally {
@@ -211,7 +238,7 @@ export function NinetyNineFoodConnectionBridge() {
   const statusMeta = useMemo(() => {
     if (status.status === 'connected') {
       return {
-        label: 'Conector ativo',
+        label: '99Food conectada',
         className: 'border-emerald-500/25 bg-emerald-500/10 text-emerald-300',
         icon: BadgeCheck,
       };
@@ -224,14 +251,30 @@ export function NinetyNineFoodConnectionBridge() {
       };
     }
     return {
-      label: 'Credenciais não configuradas',
+      label: '99Food não conectada',
       className: 'border-slate-700 bg-slate-900 text-slate-400',
-      icon: KeyRound,
+      icon: Link2,
     };
   }, [status.status]);
 
+  const planMeta = useMemo(() => {
+    switch (plan.mode) {
+      case 'platform_managed':
+        return { title: 'Conexão protegida pelo Kyrub', icon: ShieldCheck, tone: 'text-emerald-300' };
+      case 'authorization_required':
+        return { title: 'Autorização da loja necessária', icon: Link2, tone: 'text-cyan-300' };
+      case 'merchant_credentials_required':
+        return { title: 'Credencial específica da loja', icon: KeyRound, tone: 'text-amber-300' };
+      case 'provider_contract_unsupported':
+        return { title: 'Contrato ainda não suportado', icon: CircleAlert, tone: 'text-amber-300' };
+      default:
+        return { title: 'Integração aguardando plataforma', icon: CircleAlert, tone: 'text-slate-400' };
+    }
+  }, [plan.mode]);
+
   if (!host) return null;
   const StatusIcon = statusMeta.icon;
+  const PlanIcon = planMeta.icon;
 
   return createPortal(
     <section className="space-y-3 rounded-2xl border border-yellow-500/20 bg-yellow-500/[0.04] p-4">
@@ -242,10 +285,10 @@ export function NinetyNineFoodConnectionBridge() {
           </span>
           <div>
             <strong className="block text-[9px] font-black uppercase tracking-wide text-yellow-200">
-              Conexão real 99Food · Open Delivery
+              99Food · canal de vendas conectado ao Kyrub
             </strong>
             <p className="mt-1 text-[8px] leading-relaxed text-slate-400">
-              As credenciais seguem por HTTPS diretamente ao servidor. O clientSecret é criptografado com AES-256-GCM e não volta para esta tela.
+              O Kyrub verifica automaticamente como a 99Food exige a autenticação. Dados técnicos e segredos da plataforma não são expostos à loja.
             </p>
           </div>
         </div>
@@ -258,7 +301,7 @@ export function NinetyNineFoodConnectionBridge() {
       <button
         type="button"
         onClick={importPublicFields}
-        disabled={loading}
+        disabled={loading || planLoading}
         className="flex min-h-9 w-full items-center justify-center gap-1.5 rounded-xl border border-slate-700 bg-slate-900 px-3 text-[8px] font-black uppercase text-slate-300 disabled:opacity-40"
       >
         <Link2 className="h-3.5 w-3.5" />
@@ -286,7 +329,7 @@ export function NinetyNineFoodConnectionBridge() {
           />
         </label>
         <label className="text-[8px] font-black uppercase text-slate-500">
-          Destino no Kyrub
+          Destino dos pedidos no Kyrub
           <input
             value={routingTarget}
             onChange={event => setRoutingTarget(event.target.value)}
@@ -299,9 +342,7 @@ export function NinetyNineFoodConnectionBridge() {
           Ambiente
           <select
             value={environment}
-            onChange={event => setEnvironment(
-              event.target.value === 'production' ? 'production' : 'sandbox'
-            )}
+            onChange={event => handleEnvironmentChange(event.target.value)}
             disabled={loading}
             className="mt-1.5 w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 text-[10px] text-white outline-none focus:border-yellow-500 disabled:opacity-45"
           >
@@ -311,56 +352,48 @@ export function NinetyNineFoodConnectionBridge() {
         </label>
       </div>
 
-      <label className="block text-[8px] font-black uppercase text-slate-500">
-        URL base da API informada pela 99Food
-        <input
-          type="url"
-          value={baseUrl}
-          onChange={event => setBaseUrl(event.target.value)}
-          disabled={loading}
-          placeholder="https://api-sandbox.exemplo.99app.com"
-          autoComplete="off"
-          className="mt-1.5 w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 text-[10px] normal-case text-white outline-none focus:border-yellow-500 disabled:opacity-45"
-        />
-      </label>
-
-      <label className="block text-[8px] font-black uppercase text-slate-500">
-        URL do token, somente se for diferente
-        <input
-          type="url"
-          value={tokenUrl}
-          onChange={event => setTokenUrl(event.target.value)}
-          disabled={loading}
-          placeholder="Opcional: .../oauth/token"
-          autoComplete="off"
-          className="mt-1.5 w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 text-[10px] normal-case text-white outline-none focus:border-yellow-500 disabled:opacity-45"
-        />
-      </label>
-
-      <div className="grid gap-2 sm:grid-cols-2">
-        <label className="text-[8px] font-black uppercase text-slate-500">
-          Client ID
-          <input
-            type="password"
-            value={clientId}
-            onChange={event => setClientId(event.target.value)}
-            disabled={loading}
-            autoComplete="off"
-            className="mt-1.5 w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 text-[10px] normal-case text-white outline-none focus:border-yellow-500 disabled:opacity-45"
-          />
-        </label>
-        <label className="text-[8px] font-black uppercase text-slate-500">
-          Client Secret
-          <input
-            type="password"
-            value={clientSecret}
-            onChange={event => setClientSecret(event.target.value)}
-            disabled={loading}
-            autoComplete="new-password"
-            className="mt-1.5 w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 text-[10px] normal-case text-white outline-none focus:border-yellow-500 disabled:opacity-45"
-          />
-        </label>
+      <div className="rounded-xl border border-slate-800 bg-slate-950/70 p-3">
+        <div className="flex items-center gap-2">
+          <PlanIcon className={`h-4 w-4 ${planMeta.tone}`} />
+          <strong className={`text-[8px] font-black uppercase ${planMeta.tone}`}>
+            {planLoading ? 'Verificando contrato da 99Food...' : planMeta.title}
+          </strong>
+        </div>
+        <p className="mt-1.5 text-[8px] leading-relaxed text-slate-400">{plan.message}</p>
       </div>
+
+      {plan.mode === 'merchant_credentials_required' && (
+        <div className="grid gap-2 sm:grid-cols-2">
+          <label className="text-[8px] font-black uppercase text-slate-500">
+            Client ID da loja
+            <input
+              type="password"
+              value={clientId}
+              onChange={event => setClientId(event.target.value)}
+              disabled={loading}
+              autoComplete="off"
+              className="mt-1.5 w-full rounded-xl border border-amber-500/20 bg-slate-950 px-3 py-2 text-[10px] normal-case text-white outline-none focus:border-amber-500 disabled:opacity-45"
+            />
+          </label>
+          <label className="text-[8px] font-black uppercase text-slate-500">
+            Client Secret da loja
+            <input
+              type="password"
+              value={clientSecret}
+              onChange={event => setClientSecret(event.target.value)}
+              disabled={loading}
+              autoComplete="new-password"
+              className="mt-1.5 w-full rounded-xl border border-amber-500/20 bg-slate-950 px-3 py-2 text-[10px] normal-case text-white outline-none focus:border-amber-500 disabled:opacity-45"
+            />
+          </label>
+        </div>
+      )}
+
+      {plan.mode === 'authorization_required' && (
+        <div className="rounded-xl border border-cyan-500/20 bg-cyan-500/5 px-3 py-2.5 text-[8px] leading-relaxed text-cyan-200">
+          A 99Food declarou autorização delegada. O Kyrub não vai inventar uma URL de login: o botão será liberado quando o endpoint oficial de autorização estiver confirmado no contrato do provedor.
+        </div>
+      )}
 
       {status.configured && (
         <div className="grid gap-2 rounded-xl border border-slate-800 bg-slate-950/70 p-3 text-[8px] text-slate-400 sm:grid-cols-2">
@@ -385,35 +418,44 @@ export function NinetyNineFoodConnectionBridge() {
         <button
           type="button"
           onClick={() => void handleConnect()}
-          disabled={loading}
+          disabled={loading || planLoading || !plan.merchantCanConnect}
           className="flex min-h-10 items-center justify-center gap-1.5 rounded-xl bg-yellow-400 px-3 text-[8px] font-black uppercase text-slate-950 disabled:opacity-40"
-          id="connect-real-99food-button"
         >
-          <KeyRound className="h-3.5 w-3.5" />
-          {loading ? 'Processando...' : status.configured ? 'Atualizar credenciais' : 'Validar e conectar'}
+          {loading ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Link2 className="h-3.5 w-3.5" />}
+          Conectar 99Food
         </button>
         <button
           type="button"
-          onClick={() => void handlePoll()}
-          disabled={loading || !status.configured}
-          className="flex min-h-10 items-center justify-center gap-1.5 rounded-xl border border-cyan-500/25 bg-cyan-500/10 px-3 text-[8px] font-black uppercase text-cyan-300 disabled:opacity-40"
-          id="poll-99food-button"
+          onClick={() => void refreshPlan(environment)}
+          disabled={loading || planLoading}
+          className="flex min-h-10 items-center justify-center gap-1.5 rounded-xl border border-slate-700 bg-slate-900 px-3 text-[8px] font-black uppercase text-slate-300 disabled:opacity-40"
         >
-          <RefreshCw className="h-3.5 w-3.5" />
-          Reconciliar pedidos agora
+          <RefreshCw className={`h-3.5 w-3.5 ${planLoading ? 'animate-spin' : ''}`} />
+          Revalidar conexão disponível
         </button>
       </div>
 
       {status.configured && (
-        <button
-          type="button"
-          onClick={() => void handleDisconnect()}
-          disabled={loading}
-          className="flex min-h-9 w-full items-center justify-center gap-1.5 rounded-xl border border-red-500/20 bg-red-500/5 px-3 text-[8px] font-black uppercase text-red-300 disabled:opacity-40"
-        >
-          <Unplug className="h-3.5 w-3.5" />
-          Remover credenciais do Kyrub
-        </button>
+        <div className="grid gap-2 sm:grid-cols-2">
+          <button
+            type="button"
+            onClick={() => void handlePoll()}
+            disabled={loading}
+            className="flex min-h-9 items-center justify-center gap-1.5 rounded-xl border border-cyan-500/20 bg-cyan-500/5 px-3 text-[8px] font-black uppercase text-cyan-200 disabled:opacity-40"
+          >
+            <RefreshCw className="h-3.5 w-3.5" />
+            Reconciliar pedidos
+          </button>
+          <button
+            type="button"
+            onClick={() => void handleDisconnect()}
+            disabled={loading}
+            className="flex min-h-9 items-center justify-center gap-1.5 rounded-xl border border-rose-500/20 bg-rose-500/5 px-3 text-[8px] font-black uppercase text-rose-200 disabled:opacity-40"
+          >
+            <Unplug className="h-3.5 w-3.5" />
+            Desconectar 99Food
+          </button>
+        </div>
       )}
     </section>,
     host
