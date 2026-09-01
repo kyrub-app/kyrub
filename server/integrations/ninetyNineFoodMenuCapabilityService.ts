@@ -66,6 +66,8 @@ export interface NinetyNineFoodMenuCapabilitySnapshot {
   appId: string;
   openDeliveryCurrentVersion: string;
   openDeliverySupportedVersions: string[];
+  authenticationSupportedGrantTypes: string[];
+  authenticationClientIdGeneration: string[];
   merchantSupported: boolean;
   merchantVersion: string;
   merchantEndpoint: string;
@@ -134,10 +136,13 @@ export const discoverNinetyNineFoodMenuCapability = async (input: {
   const fetched = await fetchDiscovery(discoveryUrl);
   const manifest = fetched.json;
   const openDelivery = record(manifest.openDelivery);
+  const authentication = record(manifest.authentication);
   const capabilities = record(manifest.capabilities);
   const merchant = record(capabilities.merchant);
   const supportedVersions = stringArray(openDelivery.supportedVersions);
   const currentVersion = clean(openDelivery.currentVersion, 120);
+  const supportedGrantTypes = stringArray(authentication.supportedGrantTypes);
+  const clientIdGeneration = stringArray(authentication.clientIdGeneration);
   const merchantEndpoint = normalizeEndpoint(merchant.endpoint);
   const merchantSupported = Object.keys(merchant).length > 0 && merchant.supported !== false;
   const supportsV2 = supportedVersions.some(version => version === '2.0' || version.startsWith('2.0.')) ||
@@ -160,6 +165,8 @@ export const discoverNinetyNineFoodMenuCapability = async (input: {
     appId: clean(manifest.appId, 240),
     openDeliveryCurrentVersion: currentVersion,
     openDeliverySupportedVersions: supportedVersions,
+    authenticationSupportedGrantTypes: supportedGrantTypes,
+    authenticationClientIdGeneration: clientIdGeneration,
     merchantSupported,
     merchantVersion: clean(merchant.version, 120),
     merchantEndpoint,
