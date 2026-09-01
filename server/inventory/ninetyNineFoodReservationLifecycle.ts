@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { FieldValue } from 'firebase-admin/firestore';
 import { adminDb } from '../firebaseAdmin';
+import { resolveActiveNinetyNineFoodProductBinding } from '../integrations/ninetyNineFoodProductBindingService';
 import {
   reserveCanonicalOrderInventory,
   transitionCanonicalInventoryReservation,
@@ -58,12 +59,67 @@ const findReservationId = async (
   return matches[0]?.id ?? null;
 };
 
+interface ExternalOrderLine {
+  externalProductId: string;
+  quantity: number;
+  transferredQuantity: number;
+}
+
+const extractExternalOrderLines = (order: Record<string, unknown>): ExternalOrderLine[] =>
+  Array.isArray(order.items)
+    ? order.items.flatMap(candidate => {
+        if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return [];
+        const item = candidate as Record<string, unknown>;
+        const externalProductId = clean(item.sourceProductId) || clean(item.productId);
+        const quantity = typeof item.quantity === 'number' && Number.isFinite(item.quantity)
+          ? Math.max(0, Math.trunc(item.quantity))
+          : 0;
+        const transferredQuantity = typeof item.transferredQuantity === 'number' && Number.isFinite(item.transferredQuantity)
+          ? Math.max(0, Math.trunc(item.transferredQuantity))
+          : 0;
+        return externalProductId && quantity > 0
+          ? [{ externalProductId, quantity, transferredQuantity }]
+          : [];
+      })
+    : [];
+
+const resolveBoundOrderLines = async (
+  tenantId: string,
+  externalLines: ExternalOrderLine[]
+): Promise<{
+  orderLines: Array<{ productId: string; quantity: number; transferredQuantity: number }>;
+  unresolvedExternalProductIds: string[];
+}> => {
+  const resolved = await Promise.all(externalLines.map(async line => ({
+    line,
+    binding: await resolveActiveNinetyNineFoodProductBinding({
+      tenantId,
+      externalProductId: line.externalProductId,
+    }),
+  })));
+
+  const unresolvedExternalProductIds = Array.from(new Set(
+    resolved.flatMap(entry => entry.binding ? [] : [entry.line.externalProductId])
+  )).sort();
+
+  const orderLines = resolved.flatMap(entry => entry.binding
+    ? [{
+        productId: entry.binding.canonicalProductId,
+        quantity: entry.line.quantity,
+        transferredQuantity: entry.line.transferredQuantity,
+      }]
+    : []);
+
+  return { orderLines, unresolvedExternalProductIds };
+};
+
 export type NinetyNineFoodReservationReconciliationState =
   | 'reserved'
   | 'released'
   | 'consumed'
   | 'waiting_physical_consumption'
   | 'not_applicable'
+  | 'blocked_product_binding_unresolved'
   | 'blocked_insufficient_atp'
   | 'blocked_authority_unresolved';
 
@@ -95,23 +151,6 @@ export const reconcileNinetyNineFoodOrderReservation = async (
   }
 
   const status = clean(order.status);
-  const items = Array.isArray(order.items)
-    ? order.items.flatMap(candidate => {
-        if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return [];
-        const item = candidate as Record<string, unknown>;
-        const productId = clean(item.sourceProductId) || clean(item.productId).split('::', 1)[0]?.trim();
-        const quantity = typeof item.quantity === 'number' && Number.isFinite(item.quantity)
-          ? Math.max(0, Math.trunc(item.quantity))
-          : 0;
-        const transferredQuantity = typeof item.transferredQuantity === 'number' && Number.isFinite(item.transferredQuantity)
-          ? Math.max(0, Math.trunc(item.transferredQuantity))
-          : 0;
-        return productId && quantity > 0
-          ? [{ productId, quantity, transferredQuantity }]
-          : [];
-      })
-    : [];
-
   const ledgerReferencePath = inventoryLedgerPath(normalizedTenantId, normalizedOrderId);
   const ledgerSnapshot = await adminDb.doc(ledgerReferencePath).get();
   const ledgerStatus = clean(ledgerSnapshot.data()?.status);
@@ -164,12 +203,29 @@ export const reconcileNinetyNineFoodOrderReservation = async (
 
   let reservationId = await findReservationId(storeId, normalizedOrderId);
   if (!reservationId) {
+    const externalLines = extractExternalOrderLines(order);
+    const { orderLines, unresolvedExternalProductIds } = await resolveBoundOrderLines(
+      normalizedTenantId,
+      externalLines
+    );
+
+    if (unresolvedExternalProductIds.length > 0) {
+      await writeOrderReservationState({
+        tenantId: normalizedTenantId,
+        storeId,
+        orderId: normalizedOrderId,
+        state: 'blocked_product_binding_unresolved',
+        detail: `unmapped_99food_products:${unresolvedExternalProductIds.join(',')}`.slice(0, 500),
+      });
+      return 'blocked_product_binding_unresolved';
+    }
+
     try {
       const reserved = await reserveCanonicalOrderInventory({
         storeId,
         orderId: normalizedOrderId,
         sourceChannel: '99food',
-        orderLines: items,
+        orderLines,
       });
       reservationId = reserved.reservationId;
     } catch (error) {
@@ -180,7 +236,7 @@ export const reconcileNinetyNineFoodOrderReservation = async (
           storeId,
           orderId: normalizedOrderId,
           state: 'not_applicable',
-          detail: 'order_without_composed_inventory_items',
+          detail: 'bound_order_without_composed_inventory_items',
         });
         return 'not_applicable';
       }
