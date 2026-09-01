@@ -26,6 +26,22 @@ const reconciliationSource = readFileSync(
   'server/integrations/ninetyNineFoodAvailabilityReconciliationService.ts',
   'utf8'
 );
+const e2eClientSource = readFileSync(
+  'src/utils/ninetyNineFoodE2ETest.ts',
+  'utf8'
+);
+const e2eWorkspaceSource = readFileSync(
+  'src/components/store/NinetyNineFoodE2ETestWorkspace.tsx',
+  'utf8'
+);
+const e2eBridgeSource = readFileSync(
+  'src/components/store/NinetyNineFoodE2ETestBridge.tsx',
+  'utf8'
+);
+const storeConnectionsPortalSource = readFileSync(
+  'src/components/store/StoreConnectionsPortalBridge.tsx',
+  'utf8'
+);
 
 test('99Food availability authorization freezes exact canonical and provider identity evidence', () => {
   assert.match(serviceSource, /channelAvailabilitySnapshotId: snapshotId/);
@@ -169,7 +185,55 @@ test('reconciliation route is owner-authenticated and never reuses the write tok
   assert.doesNotMatch(reconciliationSource, /authorizationToken|tokenMatches|useCount:\s*0/);
 });
 
-test('authorization execution and reconciliation do not mutate Kyrub canonical inventory reservations ATP or fiscal state', () => {
+test('controlled 99Food E2E client follows the full frozen availability route chain', () => {
+  assert.match(e2eClientSource, /\/api\/integrations\/99food\/product-bindings/);
+  assert.match(e2eClientSource, /\/capabilities\/menu\/discover/);
+  assert.match(e2eClientSource, /\/catalog-identity\/resolve/);
+  assert.match(e2eClientSource, /\/policies\/99food/);
+  assert.match(e2eClientSource, /\/snapshots\/99food/);
+  assert.match(e2eClientSource, /\/availability-proposals/);
+  assert.match(e2eClientSource, /\/availability-authorizations\/\$\{encoded\(authorizationId\)\}\/execute/);
+  assert.match(e2eClientSource, /\/availability-executions\/\$\{encoded\(executionId\)\}\/reconcile/);
+});
+
+test('controlled 99Food workspace keeps the raw one-time token only in React memory', () => {
+  assert.match(e2eWorkspaceSource, /authorizationToken, setAuthorizationToken/);
+  assert.match(e2eWorkspaceSource, /setAuthorizationToken\(result\.authorizationToken\)/);
+  assert.match(e2eWorkspaceSource, /setAuthorizationToken\(''\)/);
+  assert.doesNotMatch(e2eWorkspaceSource, /localStorage|sessionStorage|indexedDB/);
+  assert.doesNotMatch(e2eClientSource, /localStorage|sessionStorage|indexedDB/);
+});
+
+test('controlled 99Food workspace separates owner authorization from the real provider write', () => {
+  assert.match(e2eWorkspaceSource, /6\. Autorizar alteração/);
+  assert.match(e2eWorkspaceSource, /7\. Alterar disponibilidade na 99Food agora/);
+  assert.match(e2eWorkspaceSource, /PATCH real/);
+  assert.match(e2eWorkspaceSource, /authorizeNinetyNineFoodE2EAvailability/);
+  assert.match(e2eWorkspaceSource, /executeNinetyNineFoodE2EAvailability/);
+  assert.match(e2eWorkspaceSource, /Nenhum retry automático será feito/);
+});
+
+test('controlled 99Food workspace advances with server-returned frozen identifiers and explicit reconciliation', () => {
+  assert.match(e2eWorkspaceSource, /selected\.canonicalStoreId/);
+  assert.match(e2eWorkspaceSource, /selected\.canonicalProductId/);
+  assert.match(e2eWorkspaceSource, /selected\.externalProductId/);
+  assert.match(e2eWorkspaceSource, /snapshot\.snapshotId/);
+  assert.match(e2eWorkspaceSource, /proposal\.id/);
+  assert.match(e2eWorkspaceSource, /authorization\.id/);
+  assert.match(e2eWorkspaceSource, /execution\.id/);
+  assert.match(e2eWorkspaceSource, /8\. Reconciliar com a 99Food/);
+  assert.doesNotMatch(e2eWorkspaceSource, /while\s*\(|for\s*\([^)]*attempt/i);
+});
+
+test('99Food E2E workspace is gated by a connected provider connection and mounted beside store connections', () => {
+  assert.match(e2eBridgeSource, /getNinetyNineFoodConnectionStatus/);
+  assert.match(e2eBridgeSource, /status\.status === 'connected'/);
+  assert.match(e2eBridgeSource, /if \(!connected\) return null/);
+  assert.match(storeConnectionsPortalSource, /NinetyNineFoodE2ETestBridge/);
+  assert.match(storeConnectionsPortalSource, /<NinetyNineFoodE2ETestBridge notify=\{notify\} \/>/);
+});
+
+test('authorization execution reconciliation and E2E workspace do not mutate Kyrub canonical inventory or fiscal state', () => {
   assert.doesNotMatch(serviceSource, /emit.*(?:nfe|nfce|nfse)/i);
   assert.doesNotMatch(serviceSource, /inventoryLedger|physicalQuantity\s*:|reservationStatus\s*:/);
   assert.doesNotMatch(executorSource, /inventoryLedger|physicalQuantity\s*:|reservationStatus\s*:|availableToPromiseUnits\s*:/);
@@ -177,4 +241,5 @@ test('authorization execution and reconciliation do not mutate Kyrub canonical i
   assert.doesNotMatch(executorSource, /sendNinetyNineFoodOrderStatus|requestCancellation/);
   assert.doesNotMatch(reconciliationSource, /inventoryLedger|physicalQuantity\s*:|reservationStatus\s*:|availableToPromiseUnits\s*:/);
   assert.doesNotMatch(reconciliationSource, /emit.*(?:nfe|nfce|nfse)/i);
+  assert.doesNotMatch(e2eWorkspaceSource, /emit.*(?:nfe|nfce|nfse)|inventoryLedger|physicalQuantity\s*:|reservationStatus\s*:/i);
 });

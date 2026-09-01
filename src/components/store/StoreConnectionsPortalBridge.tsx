@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { User } from 'firebase/auth';
 import MercadoLivreE2ETestBridge from './MercadoLivreE2ETestBridge';
+import NinetyNineFoodE2ETestBridge from './NinetyNineFoodE2ETestBridge';
 import StoreConnectionsWorkspace from './StoreConnectionsWorkspace';
 
 interface StoreConnectionsPortalBridgeProps {
@@ -61,6 +62,7 @@ export default function StoreConnectionsPortalBridge({
     <div className="space-y-5">
       <StoreConnectionsWorkspace user={user} storeId={storeId} notify={notify} />
       <MercadoLivreE2ETestBridge user={user} storeId={storeId} notify={notify} />
+      <NinetyNineFoodE2ETestBridge notify={notify} />
     </div>,
     host
   );
