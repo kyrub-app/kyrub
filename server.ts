@@ -10,6 +10,7 @@ import {
   createNinetyNineFoodRouter,
   type RawBodyRequest,
 } from "./server/integrations/ninetyNineFoodRouter";
+import { createNinetyNineFoodAdaptiveOnboardingRouter } from "./server/integrations/ninetyNineFoodAdaptiveOnboardingRouter";
 import { createStoreConnectionOnboardingRouter } from "./server/integrations/storeConnectionOnboardingRouter";
 import { createMercadoLivreRouter } from "./server/integrations/mercadoLivreRouter";
 import { createMercadoLivreStockExecutionRouter } from "./server/integrations/mercadoLivreStockExecutionRouter";
@@ -117,6 +118,12 @@ app.use(
   "/api/integrations/99food",
   integrationRateLimiter,
   createNinetyNineFoodRouter()
+);
+
+app.use(
+  "/api/integrations/99food",
+  integrationRateLimiter,
+  createNinetyNineFoodAdaptiveOnboardingRouter()
 );
 
 app.use(
