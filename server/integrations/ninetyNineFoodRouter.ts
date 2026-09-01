@@ -23,6 +23,7 @@ import {
   rejectNinetyNineFoodBlockedOrder,
   retryNinetyNineFoodBlockedOrderReservation,
 } from './ninetyNineFoodOrderBlockResolutionService';
+import { createNinetyNineFoodAvailabilityProposalRouter } from './ninetyNineFoodAvailabilityProposalRouter';
 import {
   drainNinetyNineFoodIngressQueue,
   enqueueNinetyNineFoodWebhook,
@@ -141,6 +142,7 @@ const cronAuthorized = (request: Request): boolean => {
 
 export const createNinetyNineFoodRouter = (): Router => {
   const router = Router();
+  router.use(createNinetyNineFoodAvailabilityProposalRouter());
 
   router.get('/status', async (request, response) => {
     try {
