@@ -5,6 +5,7 @@ import {
   listNinetyNineFoodAvailabilityProposals,
 } from './ninetyNineFoodAvailabilityProposalService';
 import { createNinetyNineFoodCatalogIdentityRouter } from './ninetyNineFoodCatalogIdentityRouter';
+import { createNinetyNineFoodAvailabilityAuthorizationRouter } from './ninetyNineFoodAvailabilityAuthorizationRouter';
 
 const bearerToken = (request: Request): string => {
   const authorization = request.get('authorization') ?? '';
@@ -48,6 +49,7 @@ const errorResponse = (response: Response, error: unknown): void => {
 export const createNinetyNineFoodAvailabilityProposalRouter = (): Router => {
   const router = Router();
   router.use(createNinetyNineFoodCatalogIdentityRouter());
+  router.use(createNinetyNineFoodAvailabilityAuthorizationRouter());
 
   router.get('/availability-proposals', async (request, response) => {
     try {
