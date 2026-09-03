@@ -5,6 +5,9 @@ import {
   buildStoreCommerceChannelDeclarationFromAnswer,
 } from '../shared/storeConnectionOnboarding.js';
 import { parseStoreConnectionSyncAuthority } from '../server/integrations/storeConnectionRegistry.js';
+import {
+  resolveKyrubiaStoreConnectionDeclarationIntent,
+} from '../src/ai/deterministicStoreConnectionOnboarding.js';
 
 test('merchant answer deterministically declares existing commerce channels without connecting them', () => {
   const declaration = buildStoreCommerceChannelDeclarationFromAnswer({
@@ -86,4 +89,67 @@ test('Mercado Livre remains manual review until a real sync runtime exists', () 
   assert.match(registry, /STORE_CONNECTION_SYNC_AUTHORITY_UNAVAILABLE/);
   assert.match(router, /status: 409/);
   assert.match(router, /sincronização automática deste canal ainda não está habilitada/);
+});
+
+test('Kyrubia recognizes explicit existing-channel declarations deterministically', () => {
+  assert.deepEqual(
+    resolveKyrubiaStoreConnectionDeclarationIntent('Já vendo no Mercado Livre e 99Food.'),
+    {
+      answer: 'Já vendo no Mercado Livre e 99Food.',
+      channels: ['mercado_livre', '99food'],
+      kind: 'channels_declared',
+    }
+  );
+  assert.deepEqual(
+    resolveKyrubiaStoreConnectionDeclarationIntent('Mercado Livre e 99Food'),
+    {
+      answer: 'Mercado Livre e 99Food',
+      channels: ['mercado_livre', '99food'],
+      kind: 'channels_declared',
+    }
+  );
+});
+
+test('Kyrubia does not turn questions, connection commands or future intent into declarations', () => {
+  assert.equal(resolveKyrubiaStoreConnectionDeclarationIntent('Como conectar Mercado Livre?'), null);
+  assert.equal(resolveKyrubiaStoreConnectionDeclarationIntent('Quero conectar o Mercado Livre'), null);
+  assert.equal(resolveKyrubiaStoreConnectionDeclarationIntent('Quero vender na Shopee'), null);
+  assert.equal(resolveKyrubiaStoreConnectionDeclarationIntent('Mercado Livre é bom para minha loja'), null);
+});
+
+test('Kyrubia can explicitly register that the merchant has no other sales channel', () => {
+  assert.deepEqual(
+    resolveKyrubiaStoreConnectionDeclarationIntent('Não vendo em nenhum outro lugar hoje.'),
+    {
+      answer: 'Não vendo em nenhum outro lugar hoje.',
+      channels: [],
+      kind: 'no_external_channels',
+    }
+  );
+});
+
+test('Kyrubia prepares channel declaration for human confirmation instead of persisting from the chat router', () => {
+  const router = readFileSync('src/ai/storePromotionWorkspaceRouter.ts', 'utf8');
+  assert.match(router, /resolveKyrubiaStoreConnectionDeclarationIntent/);
+  assert.match(router, /emitKyrubStoreConnectionOnboardingProposal/);
+  assert.match(router, /não conecta contas nem importa dados/);
+  assert.doesNotMatch(router, /\/api\/store-connections/);
+  assert.doesNotMatch(router, /saveStoreCommerceChannelDeclaration/);
+});
+
+test('channel confirmation persists only the reviewed declaration and never starts OAuth, imports or sync', () => {
+  const bridge = readFileSync('src/components/KyrubAiStoreConnectionOnboardingBridge.tsx', 'utf8');
+  const client = readFileSync('src/utils/storeConnectionOnboarding.ts', 'utf8');
+  assert.match(bridge, /Confirmar canais/);
+  assert.match(bridge, /Não conecta nenhuma conta/);
+  assert.match(bridge, /saveStoreCommerceChannelDeclaration/);
+  assert.match(client, /\/api\/store-connections\/\$\{encoded\(storeId\)\}\/channels/);
+  assert.match(client, /method: 'PUT'/);
+  assert.doesNotMatch(client, /authorize|catalog-import|sync-authority|accessToken|refreshToken|clientSecret/);
+});
+
+test('store operation bridge mounts the channel confirmation without adding another app root', () => {
+  const source = readFileSync('src/components/KyrubAiStoreOperationActionBridge.tsx', 'utf8');
+  assert.match(source, /KyrubAiStoreConnectionOnboardingBridge/);
+  assert.match(source, /<KyrubAiStoreConnectionOnboardingBridge \/>/);
 });
