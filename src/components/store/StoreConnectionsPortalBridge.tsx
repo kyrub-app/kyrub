@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import type { User } from 'firebase/auth';
 import MercadoLivreE2ETestBridge from './MercadoLivreE2ETestBridge';
 import NinetyNineFoodE2ETestBridge from './NinetyNineFoodE2ETestBridge';
+import { PhysicalInventoryWorkspace } from './PhysicalInventoryWorkspace';
 import StoreChannelCenter from './StoreChannelCenter';
 import StoreChannelOperationsQueue from './StoreChannelOperationsQueue';
 import StoreConnectionsWorkspace from './StoreConnectionsWorkspace';
@@ -64,6 +65,7 @@ export default function StoreConnectionsPortalBridge({
     <div className="space-y-5">
       <StoreChannelCenter user={user} storeId={storeId} />
       <StoreChannelOperationsQueue user={user} storeId={storeId} />
+      <PhysicalInventoryWorkspace storeId={storeId} />
       <div id="kyrub-mercado-livre-channel-detail">
         <StoreConnectionsWorkspace user={user} storeId={storeId} notify={notify} />
       </div>

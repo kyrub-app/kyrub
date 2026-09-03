@@ -126,6 +126,7 @@ test('99Food ATP item exposes exact canonical product and shortage evidence', ()
   });
   assert.equal(items[0].remediationTarget, 'kyrub_inventory');
   assert.equal(items[0].remediationExternalProductIds, undefined);
+  assert.equal(items[0].remediationInventoryItemId, 'ingredient-meat');
   assert.deepEqual(items[0].evidence, [
     'Produtos Kyrub envolvidos: product-burger',
     'Item de estoque com ATP insuficiente: ingredient-meat',
@@ -205,6 +206,33 @@ test('99Food binding remediation preload is exact, memory-only and never auto-bi
   assert.match(preloadEffect, /setExternalProductId\(externalId\)/);
   assert.match(preloadEffect, /setCanonicalProductId\(''\)/);
   assert.doesNotMatch(preloadEffect, /bindNinetyNineFoodE2EProduct|handleBind/);
+});
+
+test('ATP remediation focuses exact canonical physical inventory item without stock mutation', () => {
+  const erpRead = readFileSync('src/actions/erpReadActionService.ts', 'utf8');
+  const handoff = readFileSync('src/utils/physicalInventoryRemediation.ts', 'utf8');
+  const workspace = readFileSync('src/components/store/PhysicalInventoryWorkspace.tsx', 'utf8');
+  const queue = readFileSync('src/components/store/StoreChannelOperationsQueue.tsx', 'utf8');
+  const portal = readFileSync('src/components/store/StoreConnectionsPortalBridge.tsx', 'utf8');
+
+  assert.match(erpRead, /doc\(db, 'users', user\.uid, 'private_store', 'inventory'\)/);
+  assert.match(erpRead, /inventoryData\?\.inventoryCatalog/);
+  assert.match(workspace, /readKyrubErpContext\(user, \{ force \}\)/);
+  assert.match(workspace, /Autoridade física Kyrub · somente leitura/);
+  assert.match(workspace, /KYRUB_PHYSICAL_INVENTORY_FOCUS_EVENT/);
+  assert.match(workspace, /focusedItemId === item\.id/);
+  assert.match(workspace, /physicalInventoryItemElementId\(item\.id\)/);
+  assert.doesNotMatch(workspace, /executeKyrubAction|executeInventoryTransformation|updateDoc|setDoc|addDoc|deleteDoc/);
+
+  assert.match(handoff, /window\.dispatchEvent/);
+  assert.doesNotMatch(handoff, /localStorage|sessionStorage|indexedDB|Firestore|fetch\(/i);
+  assert.match(queue, /requestPhysicalInventoryFocus\(item\.remediationInventoryItemId\)/);
+  assert.match(queue, /kyrub-physical-inventory-workspace/);
+  assert.doesNotMatch(queue, /inventoryItemId.*name|name.*inventoryItemId/);
+
+  const queueIndex = portal.indexOf('<StoreChannelOperationsQueue');
+  const inventoryIndex = portal.indexOf('<PhysicalInventoryWorkspace');
+  assert.ok(queueIndex >= 0 && inventoryIndex > queueIndex);
 });
 
 test('99Food reservation retry stays inside canonical reconciliation and never writes provider status', () => {
