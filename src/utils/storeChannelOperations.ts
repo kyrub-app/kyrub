@@ -46,6 +46,18 @@ export interface NinetyNineFoodReservationPreflight {
   checkedAt: string;
 }
 
+export interface NinetyNineFoodInventoryAuthorityDiagnostic {
+  orderId: string;
+  state:
+    | 'resolved'
+    | 'no_active_owner'
+    | 'multiple_active_owners'
+    | 'inventory_document_missing';
+  activeOwnerCount: number;
+  inventoryDocumentExists: boolean;
+  checkedAt: string;
+}
+
 export type StoreChannelOperationalItem = {
   id: string;
   provider: 'mercado_livre' | '99food';
@@ -112,6 +124,18 @@ export const preflightNinetyNineFoodBlockedOrderReservation = async (
   return authorizedNinetyNineFoodRequest<NinetyNineFoodReservationPreflight>(
     user,
     `/api/integrations/99food/blocked-orders/${encodedOrderId}/preflight`
+  );
+};
+
+export const diagnoseNinetyNineFoodBlockedOrderInventoryAuthority = async (
+  user: User,
+  orderId: string
+): Promise<NinetyNineFoodInventoryAuthorityDiagnostic> => {
+  const encodedOrderId = encodeURIComponent(orderId.trim());
+  if (!encodedOrderId) throw new Error('Pedido 99Food inválido para diagnosticar a autoridade de estoque.');
+  return authorizedNinetyNineFoodRequest<NinetyNineFoodInventoryAuthorityDiagnostic>(
+    user,
+    `/api/integrations/99food/blocked-orders/${encodedOrderId}/authority-diagnostic`
   );
 };
 
