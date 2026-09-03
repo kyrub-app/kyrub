@@ -38,8 +38,24 @@ test('unresolved canonical store repair uses only an explicit existing private l
   assert.doesNotMatch(service, /where\(['"]name['"]|normalizeName|localeCompare|toLocaleLowerCase|recoveryCanonicalStoreId|createHash\('sha256'\)\.update\(uid\)/);
 });
 
-test('multiple active owners remain non-actionable and no owner is selected by approximation', () => {
-  assert.match(service, /if \(activeOwnerIds\.length > 1\)/);
+test('active owners without the canonical root owner are classified before multiple-owner governance', () => {
+  const mismatchIndex = service.indexOf('if (!activeOwnerIds.includes(canonicalOwnerId))');
+  const multipleIndex = service.indexOf('if (activeOwnerIds.length > 1)', mismatchIndex);
+
+  assert.ok(mismatchIndex >= 0);
+  assert.ok(multipleIndex > mismatchIndex);
+  assert.match(service, /state: 'canonical_owner_not_active'/);
+  assert.match(service, /reason: 'canonical_owner_mismatch'/);
+  assert.match(service, /activeOwnerCount: activeOwnerIds\.length/);
+  assert.match(client, /'canonical_owner_not_active'/);
+  assert.doesNotMatch(service, /if \(activeOwnerIds\[0\] !== canonicalOwnerId\)/);
+});
+
+test('multiple active owners mean canonical owner plus additional owners and remain non-actionable', () => {
+  const canonicalPresenceIndex = service.indexOf('if (!activeOwnerIds.includes(canonicalOwnerId))');
+  const multipleIndex = service.indexOf('if (activeOwnerIds.length > 1)', canonicalPresenceIndex);
+  assert.ok(canonicalPresenceIndex >= 0);
+  assert.ok(multipleIndex > canonicalPresenceIndex);
   assert.match(service, /reason: 'multiple_active_owners'/);
   assert.match(panel, /Este painel não escolhe nem desativa nenhum deles/);
   assert.doesNotMatch(service, /activeOwnerIds\[0\][\s\S]{0,120}activate_canonical_owner/);
