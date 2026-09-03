@@ -306,7 +306,7 @@ export default function StoreChannelOperationsQueue({ user, storeId }: { user: U
                   )}
                   {item.kind === '99food_authority_unresolved' && (
                     <p className="mt-2 text-[9px] leading-relaxed text-amber-100/80">
-                      Próximo passo: diagnostique a autoridade para saber se faltou owner ativo, existem múltiplos owners ativos ou o documento físico canônico está ausente. O Kyrub não escolherá um owner ou inventário alternativo por aproximação.
+                      Próximo passo: diagnostique a autoridade para saber se faltou owner ativo, o owner canônico está inativo, existem owners adicionais ativos ou o documento físico canônico está ausente. O Kyrub não escolherá um owner ou inventário alternativo por aproximação.
                     </p>
                   )}
 
@@ -315,25 +315,31 @@ export default function StoreChannelOperationsQueue({ user, storeId }: { user: U
                       {authorityDiagnostic.state === 'no_active_owner' && (
                         <>
                           <strong className="block">Nenhum owner ativo foi encontrado.</strong>
-                          <span className="mt-1 block">A loja precisa voltar a ter exatamente um owner ativo antes de o Kyrub resolver a autoridade física. Nenhuma identidade foi escolhida automaticamente.</span>
+                          <span className="mt-1 block">A loja precisa voltar a ter o owner canônico ativo antes de o Kyrub resolver a autoridade física. Nenhuma identidade foi escolhida automaticamente.</span>
+                        </>
+                      )}
+                      {authorityDiagnostic.state === 'canonical_owner_not_active' && (
+                        <>
+                          <strong className="block">O owner canônico não está ativo.</strong>
+                          <span className="mt-1 block">Existem {authorityDiagnostic.activeOwnerCount} owner(s) ativos, mas nenhum deles coincide com o owner definido na raiz canônica. O diagnóstico não promoveu, substituiu ou escolheu nenhuma identidade.</span>
                         </>
                       )}
                       {authorityDiagnostic.state === 'multiple_active_owners' && (
                         <>
-                          <strong className="block">Mais de um owner ativo foi encontrado.</strong>
-                          <span className="mt-1 block">Foram encontrados {authorityDiagnostic.activeOwnerCount} owners ativos. O Kyrub não escolherá um deles por inferência; a configuração precisa voltar a ter exatamente um owner ativo.</span>
+                          <strong className="block">O owner canônico está ativo com owners adicionais.</strong>
+                          <span className="mt-1 block">Foram encontrados {authorityDiagnostic.activeOwnerCount} owners ativos. O Kyrub preserva o owner canônico e não escolherá quais owners adicionais devem perder autoridade sem decisão humana explícita.</span>
                         </>
                       )}
                       {authorityDiagnostic.state === 'inventory_document_missing' && (
                         <>
                           <strong className="block">O documento físico canônico está ausente.</strong>
-                          <span className="mt-1 block">Existe exatamente um owner ativo, mas o documento de inventário físico correspondente não existe nesta leitura. Nenhum inventário alternativo foi adotado.</span>
+                          <span className="mt-1 block">O owner canônico é o único owner ativo, mas o documento de inventário físico correspondente não existe nesta leitura. Nenhum inventário alternativo foi adotado.</span>
                         </>
                       )}
                       {authorityDiagnostic.state === 'resolved' && (
                         <>
                           <strong className="block">A autoridade está resolvida nesta leitura.</strong>
-                          <span className="mt-1 block">O diagnóstico não criou reserva nem autorizou retry. Use “Verificar ATP” para reavaliar binding, ficha técnica, estoque e reservas ativas antes de qualquer nova tentativa.</span>
+                          <span className="mt-1 block">O owner canônico é o único owner ativo e o documento físico correspondente existe. O diagnóstico não criou reserva nem autorizou retry. Use “Verificar ATP” antes de qualquer nova tentativa.</span>
                         </>
                       )}
                     </div>
@@ -369,7 +375,7 @@ export default function StoreChannelOperationsQueue({ user, storeId }: { user: U
                         <>
                           <strong className="block">Autoridade de estoque ainda não resolvida.</strong>
                           <span className="mt-1 block">
-                            O Kyrub ainda não consegue identificar exatamente um owner ativo com documento físico canônico para esta loja. O preflight não escolheu nenhum owner ou inventário alternativo. Use “Diagnosticar autoridade” para distinguir a causa antes de verificar o ATP novamente.
+                            O Kyrub ainda não consegue identificar exatamente o owner canônico ativo com documento físico canônico para esta loja. O preflight não escolheu nenhum owner ou inventário alternativo. Use “Diagnosticar autoridade” para distinguir a causa antes de verificar o ATP novamente.
                           </span>
                         </>
                       )}
