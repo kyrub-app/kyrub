@@ -46,6 +46,30 @@ export interface NinetyNineFoodReservationPreflight {
   checkedAt: string;
 }
 
+export type NinetyNineFoodReservationRetryState =
+  | 'reserved'
+  | 'released'
+  | 'consumed'
+  | 'waiting_physical_consumption'
+  | 'not_applicable'
+  | 'blocked_product_binding_unresolved'
+  | 'blocked_insufficient_atp'
+  | 'blocked_authority_unresolved';
+
+export interface NinetyNineFoodReservationRetryResult {
+  orderId: string;
+  reconciliationState: NinetyNineFoodReservationRetryState;
+  state: NinetyNineFoodReservationRetryState;
+  evidence: {
+    unresolvedExternalProductIds: string[];
+    canonicalProductIds: string[];
+    inventoryItemId: string;
+    requiredQuantity: number | null;
+    availableQuantity: number | null;
+  };
+  checkedAt: string;
+}
+
 export interface NinetyNineFoodInventoryAuthorityDiagnostic {
   orderId: string;
   state:
@@ -83,6 +107,17 @@ export type StoreChannelOperationalQueue = {
   items: StoreChannelOperationalItem[];
   sourceErrors: Array<'mercado_livre_review' | 'mercado_livre_conflict' | '99food_blocked_orders'>;
 };
+
+const RETRY_STATES = new Set<NinetyNineFoodReservationRetryState>([
+  'reserved',
+  'released',
+  'consumed',
+  'waiting_physical_consumption',
+  'not_applicable',
+  'blocked_product_binding_unresolved',
+  'blocked_insufficient_atp',
+  'blocked_authority_unresolved',
+]);
 
 const authorizedNinetyNineFoodRequest = async <T>(
   user: User,
@@ -140,17 +175,54 @@ export const diagnoseNinetyNineFoodBlockedOrderInventoryAuthority = async (
   );
 };
 
+const retryState = (value: unknown): NinetyNineFoodReservationRetryState | null =>
+  typeof value === 'string' && RETRY_STATES.has(value as NinetyNineFoodReservationRetryState)
+    ? value as NinetyNineFoodReservationRetryState
+    : null;
+
+const retryStringList = (value: unknown): string[] =>
+  Array.isArray(value)
+    ? Array.from(new Set(value.filter((entry): entry is string => typeof entry === 'string' && Boolean(entry.trim())).map(entry => entry.trim())))
+    : [];
+
+const retryFiniteNumber = (value: unknown): number | null =>
+  typeof value === 'number' && Number.isFinite(value) ? value : null;
+
 export const retryNinetyNineFoodBlockedOrderReservation = async (
   user: User,
   orderId: string
-): Promise<{ orderId: string; state: unknown }> => {
+): Promise<NinetyNineFoodReservationRetryResult> => {
   const encodedOrderId = encodeURIComponent(orderId.trim());
   if (!encodedOrderId) throw new Error('Pedido 99Food inválido para nova tentativa de reserva.');
-  return authorizedNinetyNineFoodRequest<{ orderId: string; state: unknown }>(
+  const payload = await authorizedNinetyNineFoodRequest<Record<string, unknown>>(
     user,
     `/api/integrations/99food/blocked-orders/${encodedOrderId}/retry-reservation`,
     { method: 'POST' }
   );
+  const resultOrderId = typeof payload.orderId === 'string' ? payload.orderId.trim() : '';
+  const reconciliationState = retryState(payload.reconciliationState);
+  const state = retryState(payload.state);
+  const evidenceValue = payload.evidence;
+  const evidence = evidenceValue && typeof evidenceValue === 'object' && !Array.isArray(evidenceValue)
+    ? evidenceValue as Record<string, unknown>
+    : {};
+  const checkedAt = typeof payload.checkedAt === 'string' ? payload.checkedAt.trim() : '';
+  if (!resultOrderId || !reconciliationState || !state || !checkedAt) {
+    throw new Error('A resposta autoritativa da nova tentativa de reserva está incompleta.');
+  }
+  return {
+    orderId: resultOrderId,
+    reconciliationState,
+    state,
+    evidence: {
+      unresolvedExternalProductIds: retryStringList(evidence.unresolvedExternalProductIds),
+      canonicalProductIds: retryStringList(evidence.canonicalProductIds),
+      inventoryItemId: typeof evidence.inventoryItemId === 'string' ? evidence.inventoryItemId.trim() : '',
+      requiredQuantity: retryFiniteNumber(evidence.requiredQuantity),
+      availableQuantity: retryFiniteNumber(evidence.availableQuantity),
+    },
+    checkedAt,
+  };
 };
 
 export const buildStoreChannelOperationalItems = (input: {

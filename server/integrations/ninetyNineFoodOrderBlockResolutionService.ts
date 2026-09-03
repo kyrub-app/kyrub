@@ -5,6 +5,7 @@ import {
   extractNinetyNineFoodExternalOrderLines,
   reconcileNinetyNineFoodOrderReservation,
   resolveNinetyNineFoodBoundOrderLines,
+  type NinetyNineFoodReservationReconciliationState,
 } from '../inventory/ninetyNineFoodReservationLifecycle';
 import { inspectCanonicalOrderInventoryAvailability } from '../inventory/canonicalInventoryReservationService';
 import { sendNinetyNineFoodOrderStatus } from './ninetyNineFoodService';
@@ -25,6 +26,17 @@ const finiteNumber = (value: unknown): number | null =>
 const BLOCKED_STATES = new Set([
   'blocked_insufficient_atp',
   'blocked_product_binding_unresolved',
+  'blocked_authority_unresolved',
+]);
+
+const RESERVATION_RECONCILIATION_STATES = new Set<NinetyNineFoodReservationReconciliationState>([
+  'reserved',
+  'released',
+  'consumed',
+  'waiting_physical_consumption',
+  'not_applicable',
+  'blocked_product_binding_unresolved',
+  'blocked_insufficient_atp',
   'blocked_authority_unresolved',
 ]);
 
@@ -101,6 +113,45 @@ export interface NinetyNineFoodReservationPreflight {
   lines: NinetyNineFoodReservationPreflightLine[];
   checkedAt: string;
 }
+
+export interface NinetyNineFoodReservationRetryEvidence {
+  unresolvedExternalProductIds: string[];
+  canonicalProductIds: string[];
+  inventoryItemId: string;
+  requiredQuantity: number | null;
+  availableQuantity: number | null;
+}
+
+export interface NinetyNineFoodReservationRetryResult {
+  orderId: string;
+  reconciliationState: NinetyNineFoodReservationReconciliationState;
+  state: NinetyNineFoodReservationReconciliationState;
+  evidence: NinetyNineFoodReservationRetryEvidence;
+  checkedAt: string;
+}
+
+const reservationEvidence = (
+  order: Record<string, unknown>
+): NinetyNineFoodReservationRetryEvidence => {
+  const value = order.inventoryReservation;
+  const reservation = value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+  return {
+    unresolvedExternalProductIds: stringList(reservation.unresolvedExternalProductIds),
+    canonicalProductIds: stringList(reservation.canonicalProductIds),
+    inventoryItemId: clean(reservation.inventoryItemId, 240),
+    requiredQuantity: finiteNumber(reservation.requiredQuantity),
+    availableQuantity: finiteNumber(reservation.availableQuantity),
+  };
+};
+
+const reservationReconciliationState = (
+  value: string
+): NinetyNineFoodReservationReconciliationState | null =>
+  RESERVATION_RECONCILIATION_STATES.has(value as NinetyNineFoodReservationReconciliationState)
+    ? value as NinetyNineFoodReservationReconciliationState
+    : null;
 
 export const listNinetyNineFoodBlockedOrders = async (input: {
   tenantId: string;
@@ -223,7 +274,7 @@ export const retryNinetyNineFoodBlockedOrderReservation = async (input: {
   tenantId: string;
   orderId: string;
   requestedByUserId: string;
-}) => {
+}): Promise<NinetyNineFoodReservationRetryResult> => {
   const tenantId = clean(input.tenantId, 160);
   const orderId = clean(input.orderId, 240);
   const requestedByUserId = clean(input.requestedByUserId, 160);
@@ -234,11 +285,32 @@ export const retryNinetyNineFoodBlockedOrderReservation = async (input: {
   const snapshot = await adminDb.doc(orderPath(canonicalStoreId, orderId)).get();
   if (!snapshot.exists) throw new Error('NINETY_NINE_FOOD_BLOCK_ORDER_NOT_FOUND');
   const order = snapshot.data() as Record<string, unknown>;
+  if (integrationProvider(order) !== '99food') {
+    throw new Error('NINETY_NINE_FOOD_BLOCK_SOURCE_MISMATCH');
+  }
   if (!BLOCKED_STATES.has(inventoryReservationState(order))) {
     throw new Error('NINETY_NINE_FOOD_BLOCK_ORDER_NOT_BLOCKED');
   }
-  const state = await reconcileNinetyNineFoodOrderReservation(tenantId, orderId);
-  return { orderId, state };
+
+  const reconciliationState = await reconcileNinetyNineFoodOrderReservation(tenantId, orderId);
+  const readbackSnapshot = await adminDb.doc(orderPath(canonicalStoreId, orderId)).get();
+  if (!readbackSnapshot.exists) {
+    throw new Error('NINETY_NINE_FOOD_BLOCK_RETRY_READBACK_INVALID');
+  }
+  const readbackOrder = readbackSnapshot.data() as Record<string, unknown>;
+  if (integrationProvider(readbackOrder) !== '99food') {
+    throw new Error('NINETY_NINE_FOOD_BLOCK_RETRY_READBACK_INVALID');
+  }
+  const state = reservationReconciliationState(inventoryReservationState(readbackOrder));
+  if (!state) throw new Error('NINETY_NINE_FOOD_BLOCK_RETRY_READBACK_INVALID');
+
+  return {
+    orderId,
+    reconciliationState,
+    state,
+    evidence: reservationEvidence(readbackOrder),
+    checkedAt: new Date().toISOString(),
+  };
 };
 
 export const rejectNinetyNineFoodBlockedOrder = async (input: {
