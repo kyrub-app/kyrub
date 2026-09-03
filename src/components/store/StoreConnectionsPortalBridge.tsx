@@ -123,6 +123,18 @@ export default function StoreConnectionsPortalBridge({
   return createPortal(
     <div className="space-y-5">
       <StoreChannelCenter user={user} storeId={storeId} />
+      {inventoryRefreshVersion > 0 && (
+        <div
+          id="kyrub-post-inventory-adjustment-guidance"
+          className="rounded-2xl border border-cyan-500/20 bg-cyan-500/[0.055] px-4 py-3 text-[10px] leading-relaxed text-cyan-100"
+          role="status"
+        >
+          <strong className="block text-cyan-200">Ajuste confirmado · visões reconsultadas</strong>
+          <span className="mt-1 block">
+            O Kyrub reconsultou o estoque físico e as pendências dos canais. Isso não significa que um bloqueio ATP foi resolvido: se o pedido 99Food continuar listado, ele permanece bloqueado e exige uma nova ação explícita em “Tentar reservar novamente”.
+          </span>
+        </div>
+      )}
       <StoreChannelOperationsQueue
         key={`channel-operations-${inventoryRefreshVersion}`}
         user={user}
