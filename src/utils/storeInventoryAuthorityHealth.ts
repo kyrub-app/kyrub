@@ -5,6 +5,7 @@ export interface StoreInventoryAuthorityHealth {
     | 'canonical_store_unresolved'
     | 'resolved'
     | 'no_active_owner'
+    | 'canonical_owner_not_active'
     | 'multiple_active_owners'
     | 'inventory_document_missing';
   activeOwnerCount: number;
