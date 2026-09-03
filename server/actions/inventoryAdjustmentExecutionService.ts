@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { FieldValue } from 'firebase-admin/firestore';
 import type {
+  KyrubActionOrigin,
   KyrubInventoryAdjustmentMode,
   KyrubInventoryAdjustmentSourceKind,
   KyrubInventoryMovementKind,
@@ -63,6 +64,11 @@ const cleanText = (value: unknown, maximum: number): string =>
 
 const bearerToken = (authorization: string): string =>
   /^Bearer\s+(.+)$/i.exec(authorization)?.[1]?.trim() ?? '';
+
+const normalizeOrigin = (value: unknown): KyrubActionOrigin =>
+  value === 'manual' || value === 'chatgpt' || value === 'automation'
+    ? value
+    : 'kyrubia';
 
 const normalizeName = (value: string): string =>
   value
@@ -191,6 +197,8 @@ const normalizeProposal = (value: unknown): KyrubExactInventoryAdjustmentProposa
   const sourceKind = normalizeSourceKind(source.kind, mode);
   const movementKind = movementKindFor(mode, sourceKind);
   const label = cleanText(source.label, 180);
+  const origin = normalizeOrigin(value.origin);
+  const idempotencyKey = cleanText(value.idempotencyKey, 260);
   const inputProvenance = sourceKind === 'supplier_invoice'
     ? 'document_content' as const
     : 'user_intent' as const;
@@ -203,10 +211,11 @@ const normalizeProposal = (value: unknown): KyrubExactInventoryAdjustmentProposa
     entries,
     source: { kind: sourceKind, ...(label ? { label } : {}) },
     requiresConfirmation: true,
-    origin: 'kyrubia',
+    origin,
     risk: 'medium',
     inputProvenance,
     impact: { entityCount: entries.length, reversibility: 'limited' },
+    ...(idempotencyKey ? { idempotencyKey } : {}),
   };
 };
 
@@ -364,6 +373,7 @@ export const executeAuthorizedKyrubInventoryAdjustment = async (
 
   const proposal = normalizeProposal(rawRequest.proposal);
   const movementKind = proposal.movementKind ?? movementKindFor(proposal.mode, proposal.source.kind);
+  const origin = proposal.origin ?? 'kyrubia';
   const inventoryRef = adminDb.doc(`users/${actor.uid}/private_store/inventory`);
   const receiptId = receiptIdFor(actor.uid, proposal.id);
   const receiptRef = adminDb.doc(`kyrub_action_receipts/${receiptId}`);
@@ -534,7 +544,7 @@ export const executeAuthorizedKyrubInventoryAdjustment = async (
       kind: movementKind,
       reason: proposal.source.kind,
       sourceLabel: proposal.source.label ?? '',
-      origin: 'kyrubia',
+      origin,
       lines: movementLines,
       entryCount: movementLines.length,
       createdAt: FieldValue.serverTimestamp(),
@@ -546,7 +556,7 @@ export const executeAuthorizedKyrubInventoryAdjustment = async (
       actionId: proposal.id,
       actionType: 'adjust_inventory',
       actorUid: actor.uid,
-      origin: 'kyrubia',
+      origin,
       inputProvenance: proposal.inputProvenance ?? 'user_intent',
       targetType: 'inventory',
       targetId: actor.uid,
@@ -563,7 +573,7 @@ export const executeAuthorizedKyrubInventoryAdjustment = async (
     type: proposal.type,
     status,
     entityId: actor.uid,
-    origin: 'kyrubia' as const,
-    idempotencyKey: `kyrubia:adjust_inventory:${actor.uid}:${proposal.id}`,
+    origin,
+    idempotencyKey: proposal.idempotencyKey ?? `${origin}:adjust_inventory:${actor.uid}:${proposal.id}`,
   };
 };
