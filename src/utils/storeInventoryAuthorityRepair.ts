@@ -10,6 +10,7 @@ export type StoreInventoryAuthorityRepairReason =
   | 'authority_scope_mismatch'
   | 'multiple_active_owners'
   | 'canonical_owner_mismatch'
+  | 'canonical_owner_identity_conflict'
   | 'already_resolved';
 
 export interface StoreInventoryAuthorityRepairPreview {
