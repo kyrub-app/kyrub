@@ -22,5 +22,9 @@ export default function NinetyNineFoodE2ETestBridge({
   }, []);
 
   if (!connected) return null;
-  return <NinetyNineFoodE2ETestWorkspace notify={notify} />;
+  return (
+    <div id="kyrub-99food-product-binding-workspace">
+      <NinetyNineFoodE2ETestWorkspace notify={notify} />
+    </div>
+  );
 }
