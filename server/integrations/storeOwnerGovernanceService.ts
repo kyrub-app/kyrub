@@ -172,7 +172,7 @@ const inspectGovernanceContext = async (
       : [];
   }).sort();
 
-  if (activeOwnerIds.length <= 1) {
+  if (activeOwnerIds.length === 0) {
     return {
       state: 'no_conflict',
       tenantId,
@@ -199,6 +199,18 @@ const inspectGovernanceContext = async (
       activeOwnerIds,
       extraOwnerIds: [],
       conflictId,
+    };
+  }
+
+  if (activeOwnerIds.length === 1) {
+    return {
+      state: 'no_conflict',
+      tenantId,
+      canonicalStoreId,
+      canonicalOwnerId,
+      activeOwnerIds,
+      extraOwnerIds: [],
+      conflictId: '',
     };
   }
 
