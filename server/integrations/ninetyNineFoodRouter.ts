@@ -20,6 +20,7 @@ import {
 } from './ninetyNineFoodProductBindingService';
 import {
   listNinetyNineFoodBlockedOrders,
+  preflightNinetyNineFoodBlockedOrderReservation,
   rejectNinetyNineFoodBlockedOrder,
   retryNinetyNineFoodBlockedOrderReservation,
 } from './ninetyNineFoodOrderBlockResolutionService';
@@ -84,7 +85,7 @@ const errorResponse = (response: Response, error: unknown): void => {
     response.status(404).json({ error: message });
     return;
   }
-  if (/PRODUCT_BINDING_INPUT_INVALID|PRODUCT_BINDING_CANONICAL_PRODUCT_INVALID|PRODUCT_BINDING_CANONICAL_STORE_REQUIRED|PRODUCT_BINDING_CONNECTION_INVALID|NINETY_NINE_FOOD_BLOCK_INPUT_INVALID|NINETY_NINE_FOOD_BLOCK_CANONICAL_STORE_REQUIRED|NINETY_NINE_FOOD_BLOCK_EXTERNAL_ORDER_REQUIRED/.test(message)) {
+  if (/PRODUCT_BINDING_INPUT_INVALID|PRODUCT_BINDING_CANONICAL_PRODUCT_INVALID|PRODUCT_BINDING_CANONICAL_STORE_REQUIRED|PRODUCT_BINDING_CONNECTION_INVALID|NINETY_NINE_FOOD_BLOCK_INPUT_INVALID|NINETY_NINE_FOOD_BLOCK_CANONICAL_STORE_REQUIRED|NINETY_NINE_FOOD_BLOCK_EXTERNAL_ORDER_REQUIRED|NINETY_NINE_FOOD_BLOCK_SOURCE_MISMATCH/.test(message)) {
     response.status(400).json({ error: message });
     return;
   }
@@ -203,6 +204,19 @@ export const createNinetyNineFoodRouter = (): Router => {
       const tenantId = await authenticatedTenantId(request);
       response.json(await listNinetyNineFoodBlockedOrders({
         tenantId,
+        requestedByUserId: tenantId,
+      }));
+    } catch (error) {
+      errorResponse(response, error);
+    }
+  });
+
+  router.get('/blocked-orders/:orderId/preflight', async (request, response) => {
+    try {
+      const tenantId = await authenticatedTenantId(request);
+      response.json(await preflightNinetyNineFoodBlockedOrderReservation({
+        tenantId,
+        orderId: request.params.orderId,
         requestedByUserId: tenantId,
       }));
     } catch (error) {
