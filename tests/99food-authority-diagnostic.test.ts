@@ -115,6 +115,27 @@ test('authority diagnostic UI distinguishes canonical owner mismatch without aut
   );
 });
 
+test('99Food authority diagnostics route unresolved causes to existing correction surfaces by scroll only', () => {
+  assert.match(queue, /const openAuthorityDiagnosticRemediation/);
+  assert.match(queue, /state === 'canonical_owner_not_active'/);
+  assert.match(queue, /state === 'multiple_active_owners'/);
+  assert.match(queue, /'kyrub-store-owner-governance'/);
+  assert.match(queue, /'kyrub-inventory-authority-repair'/);
+  assert.match(queue, /authorityDiagnostic\.state !== 'resolved'/);
+  assert.match(queue, /Revisar governança de owners/);
+  assert.match(queue, /Abrir correção segura/);
+
+  const routing = queue.match(
+    /const openAuthorityDiagnosticRemediation[\s\S]*?\n};/
+  )?.[0] ?? '';
+  assert.match(routing, /getElementById\(targetId\)/);
+  assert.match(routing, /scrollIntoView/);
+  assert.doesNotMatch(
+    routing,
+    /confirmStoreInventoryAuthorityRepair|confirmCanonicalOwnerReconciliation|confirmStoreOwnerGovernanceDecision|retryNinetyNineFoodBlockedOrderReservation|requestPhysicalInventoryFocus|requestNinetyNineFoodBindingRemediation|fetch\(|method:\s*'POST'/
+  );
+});
+
 test('authority diagnostic services never write provider status or mutate store authority', () => {
   const combined = `${diagnosticService}\n${orderDiagnosticService}`;
   assert.doesNotMatch(
