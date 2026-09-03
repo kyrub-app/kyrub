@@ -27,6 +27,7 @@ const labels: Record<StoreChannelOperationalItem['kind'], string> = {
   mercado_livre_conflict: 'Conflito',
   '99food_insufficient_atp': 'ATP insuficiente',
   '99food_binding_unresolved': 'Binding não resolvido',
+  '99food_authority_unresolved': 'Autoridade de estoque não resolvida',
 };
 
 const openChannel = (target: StoreChannelOperationalItem['actionTarget']): void => {
@@ -84,7 +85,11 @@ const preflightTone = (
   if (preflight.state === 'ready_for_retry' || preflight.state === 'already_reserved') {
     return 'border-emerald-500/20 bg-emerald-500/5 text-emerald-100';
   }
-  if (preflight.state === 'insufficient_atp' || preflight.state === 'binding_unresolved') {
+  if (
+    preflight.state === 'insufficient_atp' ||
+    preflight.state === 'binding_unresolved' ||
+    preflight.state === 'authority_unresolved'
+  ) {
     return 'border-amber-500/20 bg-amber-500/5 text-amber-100';
   }
   return 'border-slate-700 bg-slate-950/60 text-slate-300';
@@ -259,6 +264,11 @@ export default function StoreChannelOperationsQueue({ user, storeId }: { user: U
                         : 'Próximo passo: abra o estoque físico canônico; quando houver um inventoryItemId exato, o Kyrub destaca somente aquele insumo/componente. Depois da correção explícita do saldo, verifique o ATP antes de decidir por uma nova tentativa.'}
                     </p>
                   )}
+                  {item.kind === '99food_authority_unresolved' && (
+                    <p className="mt-2 text-[9px] leading-relaxed text-amber-100/80">
+                      Próximo passo: corrija a configuração de autoridade da loja para que exista exatamente um owner ativo e o documento físico canônico correspondente. O Kyrub não escolherá um owner ou inventário alternativo por aproximação.
+                    </p>
+                  )}
 
                   {preflight && (
                     <div className={`mt-3 rounded-xl border p-3 text-[9px] leading-relaxed ${preflightTone(preflight)}`} aria-live="polite">
@@ -278,6 +288,14 @@ export default function StoreChannelOperationsQueue({ user, storeId }: { user: U
                               <Wrench className="h-3 w-3" /> Corrigir binding atual
                             </button>
                           )}
+                        </>
+                      )}
+                      {preflight.state === 'authority_unresolved' && (
+                        <>
+                          <strong className="block">Autoridade de estoque ainda não resolvida.</strong>
+                          <span className="mt-1 block">
+                            O Kyrub ainda não consegue identificar exatamente um owner ativo com documento físico canônico para esta loja. O preflight não escolheu nenhum owner ou inventário alternativo. Corrija a configuração da loja e use “Verificar ATP” novamente.
+                          </span>
                         </>
                       )}
                       {preflight.state === 'insufficient_atp' && (
@@ -333,7 +351,7 @@ export default function StoreChannelOperationsQueue({ user, storeId }: { user: U
 
                   {retryArmed && canRetryReservation && (
                     <p className="mt-3 rounded-xl border border-cyan-500/20 bg-cyan-500/5 p-2.5 text-[9px] leading-relaxed text-cyan-100">
-                      Confirme somente depois de corrigir o binding ou disponibilizar ATP. A nova tentativa pode criar a reserva canônica do pedido, mas não rejeita o pedido e não envia status à 99Food. Um preflight anterior é apenas informativo e pode ficar desatualizado.
+                      Confirme somente depois de corrigir o binding, a autoridade de estoque ou disponibilizar ATP. A nova tentativa pode criar a reserva canônica do pedido, mas não rejeita o pedido e não envia status à 99Food. Um preflight anterior é apenas informativo e pode ficar desatualizado.
                     </p>
                   )}
                 </div>
