@@ -6,6 +6,7 @@ import {
   CircleDot,
   Network,
   RefreshCw,
+  ShieldCheck,
   Store,
 } from 'lucide-react';
 import type {
@@ -17,6 +18,10 @@ import {
   type PublicStoreConnectionRecord,
   type StoreConnectionOnboardingSnapshot,
 } from '../../utils/storeConnections';
+import {
+  loadStoreInventoryAuthorityHealth,
+  type StoreInventoryAuthorityHealth,
+} from '../../utils/storeInventoryAuthorityHealth';
 
 type CenterChannel = 'kyrub_marketplace' | KyrubCommerceChannel;
 type ChannelState = 'native' | 'connected' | 'connecting' | 'attention' | 'declared' | 'available';
@@ -108,6 +113,56 @@ const statusPresentation = (state: ChannelState): {
   }
 };
 
+const authorityPresentation = (
+  health: StoreInventoryAuthorityHealth | null
+): { label: string; detail: string; className: string; icon: typeof BadgeCheck } => {
+  if (!health) {
+    return {
+      label: 'Não verificado',
+      detail: 'A autoridade física da loja ainda não foi verificada nesta sessão.',
+      className: 'border-slate-700 bg-slate-900 text-slate-400',
+      icon: ShieldCheck,
+    };
+  }
+  switch (health.state) {
+    case 'resolved':
+      return {
+        label: 'Pronta',
+        detail: 'Existe exatamente um owner ativo e o documento físico canônico correspondente foi encontrado.',
+        className: 'border-emerald-500/25 bg-emerald-500/10 text-emerald-300',
+        icon: BadgeCheck,
+      };
+    case 'canonical_store_unresolved':
+      return {
+        label: 'Loja canônica pendente',
+        detail: 'O tenant ainda não possui uma loja canônica resolvida. O Kyrub não usa o UID como substituto por inferência.',
+        className: 'border-amber-500/25 bg-amber-500/10 text-amber-300',
+        icon: CircleAlert,
+      };
+    case 'no_active_owner':
+      return {
+        label: 'Sem owner ativo',
+        detail: 'Nenhum owner ativo foi encontrado na loja canônica. A autoridade de estoque permanece bloqueada.',
+        className: 'border-amber-500/25 bg-amber-500/10 text-amber-300',
+        icon: CircleAlert,
+      };
+    case 'multiple_active_owners':
+      return {
+        label: 'Múltiplos owners',
+        detail: `Foram encontrados ${health.activeOwnerCount} owners ativos. O Kyrub não escolherá um deles por aproximação.`,
+        className: 'border-amber-500/25 bg-amber-500/10 text-amber-300',
+        icon: CircleAlert,
+      };
+    case 'inventory_document_missing':
+      return {
+        label: 'Inventário físico ausente',
+        detail: 'Existe exatamente um owner ativo, mas o documento físico canônico correspondente não foi encontrado.',
+        className: 'border-amber-500/25 bg-amber-500/10 text-amber-300',
+        icon: CircleAlert,
+      };
+  }
+};
+
 const channelDetail = (row: Omit<ChannelRow, 'detail'>): string => {
   if (row.channel === 'kyrub_marketplace') {
     return 'Canal nativo da sua loja. Não depende de conta, token ou credencial externa.';
@@ -186,6 +241,7 @@ export default function StoreChannelCenter({
   storeId: string;
 }) {
   const [snapshot, setSnapshot] = useState<StoreConnectionOnboardingSnapshot | null>(null);
+  const [authorityHealth, setAuthorityHealth] = useState<StoreInventoryAuthorityHealth | null>(null);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
 
@@ -193,14 +249,38 @@ export default function StoreChannelCenter({
   const connectedCount = rows.filter(row => row.state === 'connected').length;
   const declaredCount = rows.filter(row => row.state === 'declared').length;
   const attentionCount = rows.filter(row => row.state === 'attention').length;
+  const authorityMeta = authorityPresentation(authorityHealth);
+  const AuthorityIcon = authorityMeta.icon;
 
   const refresh = async (): Promise<void> => {
     setLoading(true);
     setMessage('');
     try {
-      setSnapshot(await loadStoreConnectionOnboarding(user, storeId));
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Não foi possível consultar a Central de Canais.');
+      const [connectionsResult, authorityResult] = await Promise.allSettled([
+        loadStoreConnectionOnboarding(user, storeId),
+        loadStoreInventoryAuthorityHealth(user, storeId),
+      ]);
+      const failures: string[] = [];
+      if (connectionsResult.status === 'fulfilled') {
+        setSnapshot(connectionsResult.value);
+      } else {
+        failures.push(
+          connectionsResult.reason instanceof Error
+            ? connectionsResult.reason.message
+            : 'Não foi possível consultar os canais.'
+        );
+      }
+      if (authorityResult.status === 'fulfilled') {
+        setAuthorityHealth(authorityResult.value);
+      } else {
+        setAuthorityHealth(null);
+        failures.push(
+          authorityResult.reason instanceof Error
+            ? authorityResult.reason.message
+            : 'Não foi possível verificar a autoridade do estoque.'
+        );
+      }
+      setMessage(failures.join(' '));
     } finally {
       setLoading(false);
     }
@@ -248,6 +328,25 @@ export default function StoreChannelCenter({
         </div>
       </div>
 
+      <div id="kyrub-inventory-authority-health" className="mt-4 rounded-2xl border border-slate-800 bg-slate-950/55 p-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <ShieldCheck className="h-4 w-4 text-cyan-300" />
+              <strong className="text-sm text-white">Autoridade do estoque</strong>
+            </div>
+            <p className="mt-2 text-[10px] leading-relaxed text-slate-400">{authorityMeta.detail}</p>
+            <p className="mt-2 text-[9px] leading-relaxed text-slate-600">
+              Verificação preventiva e somente leitura. Não altera owner, membership, inventário, reservas nem canais externos.
+            </p>
+          </div>
+          <span className={`inline-flex shrink-0 items-center gap-1 rounded-full border px-2.5 py-1 text-[9px] font-black uppercase ${authorityMeta.className}`}>
+            <AuthorityIcon className="h-3 w-3" />
+            {authorityMeta.label}
+          </span>
+        </div>
+      </div>
+
       <div className="mt-4 grid gap-2 lg:grid-cols-2">
         {rows.map(row => {
           const meta = statusPresentation(row.state);
@@ -289,7 +388,7 @@ export default function StoreChannelCenter({
       )}
 
       <p className="mt-4 text-[10px] leading-relaxed text-slate-600">
-        A Central é uma projeção de leitura do registry autoritativo. Ela não conecta contas, não importa produtos, não altera estoque e não executa sincronização por conta própria.
+        A Central é uma projeção de leitura do registry autoritativo e da saúde da autoridade física. Ela não conecta contas, não importa produtos, não altera owner ou estoque e não executa sincronização por conta própria.
       </p>
     </section>
   );
