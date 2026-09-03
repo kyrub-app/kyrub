@@ -12,6 +12,7 @@ import StoreChannelCenter from './StoreChannelCenter';
 import StoreChannelOperationsQueue from './StoreChannelOperationsQueue';
 import StoreConnectionsWorkspace from './StoreConnectionsWorkspace';
 import StoreInventoryAuthorityRepairPanel from './StoreInventoryAuthorityRepairPanel';
+import StoreOwnerGovernancePanel from './StoreOwnerGovernancePanel';
 
 interface StoreConnectionsPortalBridgeProps {
   user: User;
@@ -131,6 +132,13 @@ export default function StoreConnectionsPortalBridge({
         storeId={storeId}
       />
       <StoreInventoryAuthorityRepairPanel
+        key={`authority-repair-${storeViewRefreshVersion}`}
+        user={user}
+        storeId={storeId}
+        onApplied={() => setAuthorityRefreshVersion(version => version + 1)}
+      />
+      <StoreOwnerGovernancePanel
+        key={`owner-governance-${storeViewRefreshVersion}`}
         user={user}
         storeId={storeId}
         onApplied={() => setAuthorityRefreshVersion(version => version + 1)}
