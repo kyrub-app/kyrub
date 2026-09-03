@@ -12,6 +12,7 @@ import {
   Wrench,
   X,
 } from 'lucide-react';
+import { requestNinetyNineFoodBindingRemediation } from '../../utils/ninetyNineFoodBindingRemediation';
 import {
   loadStoreChannelOperationalQueue,
   retryNinetyNineFoodBlockedOrderReservation,
@@ -33,7 +34,12 @@ const openChannel = (target: StoreChannelOperationalItem['actionTarget']): void 
   element?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 };
 
-const openRemediation = (target: NonNullable<StoreChannelOperationalItem['remediationTarget']>): void => {
+const openRemediation = (item: StoreChannelOperationalItem): void => {
+  const target = item.remediationTarget;
+  if (!target) return;
+  if (target === '99food_binding' && item.remediationExternalProductIds?.length) {
+    requestNinetyNineFoodBindingRemediation(item.remediationExternalProductIds);
+  }
   const element = target === '99food_binding'
     ? document.getElementById('kyrub-99food-product-binding-workspace')
       ?? document.getElementById('kyrub-99food-channel-detail')
@@ -170,7 +176,7 @@ export default function StoreChannelOperationsQueue({ user, storeId }: { user: U
                   {item.remediationTarget && (
                     <p className="mt-2 text-[9px] leading-relaxed text-cyan-200/80">
                       {item.remediationTarget === '99food_binding'
-                        ? 'Próximo passo: vincule o item externo a um produto canônico Kyrub e depois tente a reserva novamente.'
+                        ? 'Próximo passo: o Kyrub pode levar o ID externo exato até a bancada; você ainda precisa escolher o produto canônico e confirmar o vínculo.'
                         : 'Próximo passo: corrija a disponibilidade canônica/ATP do produto e depois tente a reserva novamente.'}
                     </p>
                   )}
@@ -184,7 +190,7 @@ export default function StoreChannelOperationsQueue({ user, storeId }: { user: U
                   {item.remediationTarget && (
                     <button
                       type="button"
-                      onClick={() => openRemediation(item.remediationTarget!)}
+                      onClick={() => openRemediation(item)}
                       disabled={Boolean(retryingOrderId)}
                       className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-violet-500/25 bg-violet-500/10 px-3 py-2 text-[9px] font-black uppercase tracking-wider text-violet-300 disabled:opacity-40"
                     >
@@ -228,7 +234,7 @@ export default function StoreChannelOperationsQueue({ user, storeId }: { user: U
       </div>
 
       <p className="mt-4 text-[10px] leading-relaxed text-slate-600">
-        A fila nunca aprova mudanças do Mercado Livre, rejeita pedidos ou escreve em provedores. Os atalhos de correção apenas navegam; o único write aqui é a nova tentativa explicitamente confirmada da reserva interna Kyrub para um pedido 99Food ainda bloqueado.
+        A fila nunca aprova mudanças do Mercado Livre, rejeita pedidos ou escreve em provedores. Os atalhos de correção só transportam contexto/navegam; o único write aqui é a nova tentativa explicitamente confirmada da reserva interna Kyrub para um pedido 99Food ainda bloqueado.
       </p>
     </section>
   );
