@@ -176,7 +176,7 @@ test('Central de Canais is mounted above provider-specific workspaces without re
   assert.match(source, /kyrub-mercado-livre-channel-detail/);
 });
 
-test('multichannel operation normalizer prioritizes conflicts and avoids duplicate Mercado Livre review for the same proposal', () => {
+test('multichannel operation normalizer prioritizes conflicts and routes 99Food binding remediation explicitly', () => {
   const items = buildStoreChannelOperationalItems({
     mercadoLivreReview: [{
       proposal: { id: 'proposal-1' },
@@ -202,8 +202,28 @@ test('multichannel operation normalizer prioritizes conflicts and avoids duplica
   assert.equal(items.length, 2);
   assert.equal(items[0].kind, '99food_binding_unresolved');
   assert.equal(items[0].severity, 'critical');
+  assert.equal(items[0].remediationTarget, '99food_binding');
   assert.equal(items[1].kind, 'mercado_livre_conflict');
   assert.equal(items.some(item => item.kind === 'mercado_livre_sync_review'), false);
+});
+
+test('99Food insufficient ATP routes only to canonical Kyrub inventory remediation', () => {
+  const items = buildStoreChannelOperationalItems({
+    mercadoLivreReview: [],
+    mercadoLivreConflicts: [],
+    ninetyNineFoodBlocked: [{
+      orderId: 'order-atp',
+      externalOrderId: 'ext-atp',
+      displayId: 'ATP',
+      customerName: 'Cliente',
+      blockedState: 'blocked_insufficient_atp',
+      blockedDetail: 'atp insuficiente',
+      status: 'accepted',
+    }],
+  });
+  assert.equal(items.length, 1);
+  assert.equal(items[0].kind, '99food_insufficient_atp');
+  assert.equal(items[0].remediationTarget, 'kyrub_inventory');
 });
 
 test('multichannel queue reads authoritative sources and exposes only the internal 99Food reservation retry write', () => {
@@ -220,6 +240,17 @@ test('multichannel queue reads authoritative sources and exposes only the intern
   assert.match(component, /Tentar reservar novamente/);
   assert.match(component, /Confirmar nova tentativa/);
   assert.match(component, /Nenhum status foi enviado à 99Food/);
+});
+
+test('blocked 99Food items expose deterministic correction navigation without new writes', () => {
+  const component = readFileSync('src/components/store/StoreChannelOperationsQueue.tsx', 'utf8');
+  const bridge = readFileSync('src/components/store/NinetyNineFoodE2ETestBridge.tsx', 'utf8');
+  assert.match(component, /kyrub-99food-product-binding-workspace/);
+  assert.match(component, /kyrub-product-inventory-workspace-host/);
+  assert.match(component, /Corrigir binding/);
+  assert.match(component, /Abrir estoque/);
+  assert.match(bridge, /id="kyrub-99food-product-binding-workspace"/);
+  assert.doesNotMatch(component, /blocked-orders\/.*\/reject|sendNinetyNineFoodOrderStatus|decideMercadoLivreSyncProposal/);
 });
 
 test('99Food reservation retry stays inside canonical reservation reconciliation and never writes provider status', () => {
