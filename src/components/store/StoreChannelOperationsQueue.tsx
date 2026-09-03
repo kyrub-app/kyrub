@@ -5,9 +5,11 @@ import {
   ArrowDownRight,
   CircleAlert,
   LoaderCircle,
+  PackageSearch,
   RefreshCw,
   RotateCcw,
   ShieldCheck,
+  Wrench,
   X,
 } from 'lucide-react';
 import {
@@ -28,6 +30,14 @@ const openChannel = (target: StoreChannelOperationalItem['actionTarget']): void 
     ? document.getElementById('kyrub-mercado-livre-channel-detail')
     : document.getElementById('kyrub-99food-channel-detail')
       ?? document.querySelector<HTMLElement>('[data-integration-id="99food"]');
+  element?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+};
+
+const openRemediation = (target: NonNullable<StoreChannelOperationalItem['remediationTarget']>): void => {
+  const element = target === '99food_binding'
+    ? document.getElementById('kyrub-99food-product-binding-workspace')
+      ?? document.getElementById('kyrub-99food-channel-detail')
+    : document.getElementById('kyrub-product-inventory-workspace-host');
   element?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 };
 
@@ -136,6 +146,11 @@ export default function StoreChannelOperationsQueue({ user, storeId }: { user: U
           const canRetryReservation = item.provider === '99food';
           const retryArmed = confirmRetryOrderId === item.reference;
           const retrying = retryingOrderId === item.reference;
+          const remediationLabel = item.remediationTarget === '99food_binding'
+            ? 'Corrigir binding'
+            : item.remediationTarget === 'kyrub_inventory'
+              ? 'Abrir estoque'
+              : '';
           return (
             <article key={item.id} className={`rounded-2xl border p-4 ${item.severity === 'critical' ? 'border-rose-500/20 bg-rose-500/[0.045]' : 'border-amber-500/20 bg-amber-500/[0.035]'}`}>
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -144,13 +159,33 @@ export default function StoreChannelOperationsQueue({ user, storeId }: { user: U
                   <strong className="mt-2 block text-xs text-white">{item.title}</strong>
                   <p className="mt-1 text-[10px] leading-relaxed text-slate-400">{item.detail}</p>
                   <p className="mt-2 break-all text-[9px] text-slate-600">Ref. {item.reference}</p>
+                  {item.remediationTarget && (
+                    <p className="mt-2 text-[9px] leading-relaxed text-cyan-200/80">
+                      {item.remediationTarget === '99food_binding'
+                        ? 'Próximo passo: vincule o item externo a um produto canônico Kyrub e depois tente a reserva novamente.'
+                        : 'Próximo passo: corrija a disponibilidade canônica/ATP do produto e depois tente a reserva novamente.'}
+                    </p>
+                  )}
                   {retryArmed && canRetryReservation && (
                     <p className="mt-3 rounded-xl border border-cyan-500/20 bg-cyan-500/5 p-2.5 text-[9px] leading-relaxed text-cyan-100">
                       Confirme somente depois de corrigir o binding ou disponibilizar ATP. A nova tentativa pode criar a reserva canônica do pedido, mas não rejeita o pedido e não envia status à 99Food.
                     </p>
                   )}
                 </div>
-                <div className="flex shrink-0 flex-wrap gap-2 sm:max-w-[240px] sm:justify-end">
+                <div className="flex shrink-0 flex-wrap gap-2 sm:max-w-[280px] sm:justify-end">
+                  {item.remediationTarget && (
+                    <button
+                      type="button"
+                      onClick={() => openRemediation(item.remediationTarget!)}
+                      disabled={Boolean(retryingOrderId)}
+                      className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-violet-500/25 bg-violet-500/10 px-3 py-2 text-[9px] font-black uppercase tracking-wider text-violet-300 disabled:opacity-40"
+                    >
+                      {item.remediationTarget === '99food_binding'
+                        ? <Wrench className="h-3.5 w-3.5" />
+                        : <PackageSearch className="h-3.5 w-3.5" />}
+                      {remediationLabel}
+                    </button>
+                  )}
                   {canRetryReservation && (
                     <>
                       <button
@@ -185,7 +220,7 @@ export default function StoreChannelOperationsQueue({ user, storeId }: { user: U
       </div>
 
       <p className="mt-4 text-[10px] leading-relaxed text-slate-600">
-        A fila nunca aprova mudanças do Mercado Livre, rejeita pedidos ou escreve em provedores. O único write aqui é a nova tentativa explicitamente confirmada da reserva interna Kyrub para um pedido 99Food ainda bloqueado.
+        A fila nunca aprova mudanças do Mercado Livre, rejeita pedidos ou escreve em provedores. Os atalhos de correção apenas navegam; o único write aqui é a nova tentativa explicitamente confirmada da reserva interna Kyrub para um pedido 99Food ainda bloqueado.
       </p>
     </section>
   );
