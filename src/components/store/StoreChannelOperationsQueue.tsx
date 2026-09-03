@@ -13,6 +13,7 @@ import {
   X,
 } from 'lucide-react';
 import { requestNinetyNineFoodBindingRemediation } from '../../utils/ninetyNineFoodBindingRemediation';
+import { requestPhysicalInventoryFocus } from '../../utils/physicalInventoryRemediation';
 import {
   loadStoreChannelOperationalQueue,
   retryNinetyNineFoodBlockedOrderReservation,
@@ -37,13 +38,18 @@ const openChannel = (target: StoreChannelOperationalItem['actionTarget']): void 
 const openRemediation = (item: StoreChannelOperationalItem): void => {
   const target = item.remediationTarget;
   if (!target) return;
+
   if (target === '99food_binding' && item.remediationExternalProductIds?.length) {
     requestNinetyNineFoodBindingRemediation(item.remediationExternalProductIds);
   }
+  if (target === 'kyrub_inventory' && item.remediationInventoryItemId) {
+    requestPhysicalInventoryFocus(item.remediationInventoryItemId);
+  }
+
   const element = target === '99food_binding'
     ? document.getElementById('kyrub-99food-product-binding-workspace')
       ?? document.getElementById('kyrub-99food-channel-detail')
-    : document.getElementById('kyrub-product-inventory-workspace-host');
+    : document.getElementById('kyrub-physical-inventory-workspace');
   element?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 };
 
@@ -177,7 +183,7 @@ export default function StoreChannelOperationsQueue({ user, storeId }: { user: U
                     <p className="mt-2 text-[9px] leading-relaxed text-cyan-200/80">
                       {item.remediationTarget === '99food_binding'
                         ? 'Próximo passo: o Kyrub pode levar o ID externo exato até a bancada; você ainda precisa escolher o produto canônico e confirmar o vínculo.'
-                        : 'Próximo passo: corrija a disponibilidade canônica/ATP do produto e depois tente a reserva novamente.'}
+                        : 'Próximo passo: abra o estoque físico canônico; quando houver um inventoryItemId exato, o Kyrub destaca somente aquele insumo/componente. Depois da correção explícita do saldo, tente a reserva novamente.'}
                     </p>
                   )}
                   {retryArmed && canRetryReservation && (
