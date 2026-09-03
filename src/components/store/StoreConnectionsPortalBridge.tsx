@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import type { User } from 'firebase/auth';
 import MercadoLivreE2ETestBridge from './MercadoLivreE2ETestBridge';
 import NinetyNineFoodE2ETestBridge from './NinetyNineFoodE2ETestBridge';
+import StoreChannelCenter from './StoreChannelCenter';
 import StoreConnectionsWorkspace from './StoreConnectionsWorkspace';
 
 interface StoreConnectionsPortalBridgeProps {
@@ -60,7 +61,10 @@ export default function StoreConnectionsPortalBridge({
 
   return createPortal(
     <div className="space-y-5">
-      <StoreConnectionsWorkspace user={user} storeId={storeId} notify={notify} />
+      <StoreChannelCenter user={user} storeId={storeId} />
+      <div id="kyrub-mercado-livre-channel-detail">
+        <StoreConnectionsWorkspace user={user} storeId={storeId} notify={notify} />
+      </div>
       <MercadoLivreE2ETestBridge user={user} storeId={storeId} notify={notify} />
       <NinetyNineFoodE2ETestBridge notify={notify} />
     </div>,
