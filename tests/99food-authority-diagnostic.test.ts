@@ -23,14 +23,25 @@ const queue = readFileSync(
   'utf8'
 );
 
-test('canonical authority diagnostic classifies exact owner cardinality and physical document existence', () => {
-  assert.match(diagnosticService, /where\('role', '==', 'owner'\)/);
-  assert.match(diagnosticService, /data\.status === 'active'/);
-  assert.match(diagnosticService, /clean\(data\.userId\) === document\.id/);
+test('canonical authority diagnostic validates the root owner before accepting active membership', () => {
+  const canonicalStoreIndex = diagnosticService.indexOf('adminDb.doc(`stores/${storeId}`).get()');
+  const canonicalOwnerIndex = diagnosticService.indexOf('canonicalStore.data()?.ownerId');
+  const ownerQueryIndex = diagnosticService.indexOf("where('role', '==', 'owner')");
+  const mismatchIndex = diagnosticService.indexOf('!activeOwners.some(document => document.id === canonicalOwnerId)');
+  const multipleIndex = diagnosticService.indexOf('if (activeOwners.length > 1)');
+
+  assert.ok(canonicalStoreIndex >= 0);
+  assert.ok(canonicalOwnerIndex > canonicalStoreIndex);
+  assert.ok(ownerQueryIndex > canonicalOwnerIndex);
+  assert.ok(mismatchIndex > ownerQueryIndex);
+  assert.ok(multipleIndex > mismatchIndex);
+  assert.match(diagnosticService, /INVENTORY_AUTHORITY_CANONICAL_OWNER_REQUIRED/);
   assert.match(diagnosticService, /state: 'no_active_owner'/);
+  assert.match(diagnosticService, /state: 'canonical_owner_not_active'/);
   assert.match(diagnosticService, /state: 'multiple_active_owners'/);
   assert.match(diagnosticService, /state: inventoryDocumentExists \? 'resolved' : 'inventory_document_missing'/);
-  assert.match(diagnosticService, /inventoryDocumentPathForOwner\(activeOwners\[0\]\.id\)/);
+  assert.match(diagnosticService, /inventoryDocumentPathForOwner\(canonicalOwnerId\)/);
+  assert.doesNotMatch(diagnosticService, /inventoryDocumentPathForOwner\(activeOwners\[0\]\.id\)/);
 });
 
 test('canonical authority diagnostic is read-only and never falls back to legacy authority', () => {
@@ -68,21 +79,32 @@ test('authority diagnostic API is an authenticated GET separated from reservatio
   assert.match(router, /NINETY_NINE_FOOD_BLOCK_AUTHORITY_DIAGNOSTIC_NOT_APPLICABLE/);
 });
 
-test('client authority diagnostic uses GET only and exposes no write option', () => {
+test('client authority diagnostic uses GET only and exposes canonical mismatch without identity', () => {
   const section = client.match(
     /export const diagnoseNinetyNineFoodBlockedOrderInventoryAuthority[\s\S]*?\n};/
   )?.[0] ?? '';
+  assert.match(client, /'canonical_owner_not_active'/);
   assert.match(section, /authority-diagnostic/);
   assert.doesNotMatch(section, /method:\s*'POST'|method:\s*'PUT'|method:\s*'PATCH'|method:\s*'DELETE'/);
 });
 
-test('authority diagnostic UI distinguishes causes without automatic owner selection or retry', () => {
+test('authority diagnostic UI distinguishes canonical owner mismatch without automatic selection or retry', () => {
   assert.match(queue, /Diagnosticar autoridade/);
   assert.match(queue, /Nenhum owner ativo foi encontrado/);
-  assert.match(queue, /Mais de um owner ativo foi encontrado/);
+  assert.match(queue, /O owner canônico não está ativo/);
+  assert.match(queue, /O owner canônico está ativo com owners adicionais/);
   assert.match(queue, /O documento físico canônico está ausente/);
   assert.match(queue, /A autoridade está resolvida nesta leitura/);
+  assert.match(queue, /O diagnóstico não promoveu, substituiu ou escolheu nenhuma identidade/);
   assert.match(queue, /Use “Verificar ATP”/);
+
+  const mismatchBlock = queue.match(
+    /authorityDiagnostic\.state === 'canonical_owner_not_active'[\s\S]*?<\/\>/
+  )?.[0] ?? '';
+  assert.doesNotMatch(
+    mismatchBlock,
+    /retryNinetyNineFoodBlockedOrderReservation|setConfirmRetryOrderId|requestPhysicalInventoryFocus|requestNinetyNineFoodBindingRemediation/
+  );
 
   const resolvedBlock = queue.match(
     /authorityDiagnostic\.state === 'resolved'[\s\S]*?<\/\>/
