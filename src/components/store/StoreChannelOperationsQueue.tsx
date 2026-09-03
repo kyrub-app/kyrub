@@ -22,6 +22,7 @@ import {
   type NinetyNineFoodInventoryAuthorityDiagnostic,
   type NinetyNineFoodReservationPreflight,
   type NinetyNineFoodReservationRetryResult,
+  type NinetyNineFoodReservationRetryState,
   type StoreChannelOperationalItem,
 } from '../../utils/storeChannelOperations';
 
@@ -119,6 +120,26 @@ const preflightTone = (
   return 'border-slate-700 bg-slate-950/60 text-slate-300';
 };
 
+type RetryFeedbackTone = 'success' | 'warning' | 'neutral';
+
+const retryFeedbackTone = (state: NinetyNineFoodReservationRetryState): RetryFeedbackTone => {
+  if (
+    state === 'blocked_insufficient_atp' ||
+    state === 'blocked_product_binding_unresolved' ||
+    state === 'blocked_authority_unresolved'
+  ) {
+    return 'warning';
+  }
+  if (
+    state === 'reserved' ||
+    state === 'consumed' ||
+    state === 'waiting_physical_consumption'
+  ) {
+    return 'success';
+  }
+  return 'neutral';
+};
+
 const retryFeedback = (result: NinetyNineFoodReservationRetryResult): string => {
   const evidence = result.evidence;
   const mismatch = result.reconciliationState !== result.state
@@ -173,6 +194,7 @@ export default function StoreChannelOperationsQueue({ user, storeId }: { user: U
   const [authorityDiagnosticByOrder, setAuthorityDiagnosticByOrder] = useState<Record<string, NinetyNineFoodInventoryAuthorityDiagnostic>>({});
   const [authorityDiagnosticErrorByOrder, setAuthorityDiagnosticErrorByOrder] = useState<Record<string, string>>({});
   const [actionFeedback, setActionFeedback] = useState('');
+  const [actionFeedbackTone, setActionFeedbackTone] = useState<RetryFeedbackTone>('success');
   const [actionError, setActionError] = useState('');
   const criticalCount = useMemo(() => items.filter(item => item.severity === 'critical').length, [items]);
 
@@ -265,6 +287,7 @@ export default function StoreChannelOperationsQueue({ user, storeId }: { user: U
     try {
       const result = await retryNinetyNineFoodBlockedOrderReservation(user, item.reference);
       setConfirmRetryOrderId('');
+      setActionFeedbackTone(retryFeedbackTone(result.state));
       setActionFeedback(retryFeedback(result));
       await refresh();
     } catch (error) {
@@ -279,6 +302,11 @@ export default function StoreChannelOperationsQueue({ user, storeId }: { user: U
   };
 
   const operationBusy = Boolean(retryingOrderId) || Boolean(preflightingOrderId) || Boolean(diagnosingAuthorityOrderId);
+  const actionFeedbackClass = actionFeedbackTone === 'warning'
+    ? 'border-amber-500/20 bg-amber-500/5 text-amber-100'
+    : actionFeedbackTone === 'neutral'
+      ? 'border-slate-700 bg-slate-950/60 text-slate-300'
+      : 'border-emerald-500/20 bg-emerald-500/5 text-emerald-200';
 
   return (
     <section className="rounded-3xl border border-amber-500/20 bg-amber-500/[0.035] p-5" aria-label="Pendências dos canais">
@@ -309,7 +337,7 @@ export default function StoreChannelOperationsQueue({ user, storeId }: { user: U
       )}
 
       {actionFeedback && (
-        <p className="mt-4 rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-3 text-[10px] leading-relaxed text-emerald-200" aria-live="polite">
+        <p className={`mt-4 rounded-2xl border p-3 text-[10px] leading-relaxed ${actionFeedbackClass}`} aria-live="polite">
           {actionFeedback}
         </p>
       )}
