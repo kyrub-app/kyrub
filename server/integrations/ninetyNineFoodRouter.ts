@@ -24,6 +24,7 @@ import {
   rejectNinetyNineFoodBlockedOrder,
   retryNinetyNineFoodBlockedOrderReservation,
 } from './ninetyNineFoodOrderBlockResolutionService';
+import { diagnoseNinetyNineFoodBlockedOrderInventoryAuthority } from './ninetyNineFoodAuthorityDiagnosticService';
 import { createNinetyNineFoodAvailabilityProposalRouter } from './ninetyNineFoodAvailabilityProposalRouter';
 import { createNinetyNineFoodMenuCapabilityRouter } from './ninetyNineFoodMenuCapabilityRouter';
 import {
@@ -77,7 +78,7 @@ const errorResponse = (response: Response, error: unknown): void => {
     response.status(404).json({ error: message });
     return;
   }
-  if (/PRODUCT_BINDING_ALREADY_ACTIVE|PRODUCT_BINDING_CONFLICT|NINETY_NINE_FOOD_BLOCK_ORDER_NOT_BLOCKED|NINETY_NINE_FOOD_BLOCK_REJECTION_ALREADY_RESERVED/.test(message)) {
+  if (/PRODUCT_BINDING_ALREADY_ACTIVE|PRODUCT_BINDING_CONFLICT|NINETY_NINE_FOOD_BLOCK_ORDER_NOT_BLOCKED|NINETY_NINE_FOOD_BLOCK_REJECTION_ALREADY_RESERVED|NINETY_NINE_FOOD_BLOCK_AUTHORITY_DIAGNOSTIC_NOT_APPLICABLE/.test(message)) {
     response.status(409).json({ error: message });
     return;
   }
@@ -215,6 +216,19 @@ export const createNinetyNineFoodRouter = (): Router => {
     try {
       const tenantId = await authenticatedTenantId(request);
       response.json(await preflightNinetyNineFoodBlockedOrderReservation({
+        tenantId,
+        orderId: request.params.orderId,
+        requestedByUserId: tenantId,
+      }));
+    } catch (error) {
+      errorResponse(response, error);
+    }
+  });
+
+  router.get('/blocked-orders/:orderId/authority-diagnostic', async (request, response) => {
+    try {
+      const tenantId = await authenticatedTenantId(request);
+      response.json(await diagnoseNinetyNineFoodBlockedOrderInventoryAuthority({
         tenantId,
         orderId: request.params.orderId,
         requestedByUserId: tenantId,
