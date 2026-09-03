@@ -5,6 +5,7 @@ import {
   saveStoreCommerceChannelDeclaration,
 } from './storeConnectionOnboardingService.js';
 import { updateStoreConnectionSyncAuthority } from './storeConnectionRegistry.js';
+import { loadStoreInventoryAuthorityHealth } from './storeInventoryAuthorityHealthService.js';
 
 const clean = (value: unknown): string =>
   typeof value === 'string' ? value.trim() : '';
@@ -23,7 +24,11 @@ const authenticatedOwner = async (authorization: string, storeId: string) => {
 const mapError = (error: unknown): { status: number; message: string } => {
   const message = error instanceof Error ? error.message : String(error);
   if (message === 'AUTH_REQUIRED') return { status: 401, message: 'Faça login novamente.' };
-  if (message === 'STORE_CONNECTION_FORBIDDEN' || message === 'STORE_REPRESENTATION_FORBIDDEN') {
+  if (
+    message === 'STORE_CONNECTION_FORBIDDEN' ||
+    message === 'STORE_REPRESENTATION_FORBIDDEN' ||
+    message === 'STORE_INVENTORY_AUTHORITY_FORBIDDEN'
+  ) {
     return { status: 403, message: 'Você não pode administrar conexões desta loja.' };
   }
   if (message === 'STORE_INSTITUTIONAL_NOT_FOUND' || message === 'STORE_CONNECTION_NOT_FOUND') {
@@ -55,6 +60,21 @@ export const createStoreConnectionOnboardingRouter = (): Router => {
       const identity = await authenticatedOwner(request.get('authorization') ?? '', storeId);
       response.setHeader('Cache-Control', 'no-store, max-age=0');
       response.json(await loadStoreConnectionOnboarding({ storeId, userId: identity.uid }));
+    } catch (error) {
+      const mapped = mapError(error);
+      response.status(mapped.status).json({ error: mapped.message });
+    }
+  });
+
+  router.get('/:storeId/inventory-authority-health', async (request, response) => {
+    try {
+      const storeId = clean(request.params.storeId);
+      const identity = await authenticatedOwner(request.get('authorization') ?? '', storeId);
+      response.setHeader('Cache-Control', 'no-store, max-age=0');
+      response.json(await loadStoreInventoryAuthorityHealth({
+        tenantId: identity.uid,
+        requestedByUserId: identity.uid,
+      }));
     } catch (error) {
       const mapped = mapError(error);
       response.status(mapped.status).json({ error: mapped.message });
