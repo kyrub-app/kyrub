@@ -36,24 +36,49 @@ export type StoreChannelOperationalQueue = {
   sourceErrors: Array<'mercado_livre_review' | 'mercado_livre_conflict' | '99food_blocked_orders'>;
 };
 
-const loadNinetyNineFoodBlockedOrders = async (
-  user: User
-): Promise<{ items: NinetyNineFoodBlockedOrder[] }> => {
+const authorizedNinetyNineFoodRequest = async <T>(
+  user: User,
+  path: string,
+  init: RequestInit = {}
+): Promise<T> => {
   const token = await user.getIdToken();
-  const response = await fetch('/api/integrations/99food/blocked-orders', {
-    cache: 'no-store',
-    headers: { authorization: `Bearer ${token}` },
-  });
+  const headers = new Headers(init.headers);
+  headers.set('authorization', `Bearer ${token}`);
+  if (init.body && !headers.has('content-type')) headers.set('content-type', 'application/json');
+  const response = await fetch(path, { ...init, headers, cache: 'no-store' });
   const payload = await response.json().catch(() => ({})) as Record<string, unknown>;
   if (!response.ok) {
     throw new Error(
       typeof payload.error === 'string' && payload.error.trim()
         ? payload.error.trim()
-        : `Não foi possível consultar pedidos bloqueados da 99Food (${response.status}).`
+        : `A operação 99Food não pôde ser concluída (${response.status}).`
     );
   }
+  return payload as T;
+};
+
+const loadNinetyNineFoodBlockedOrders = async (
+  user: User
+): Promise<{ items: NinetyNineFoodBlockedOrder[] }> => {
+  const payload = await authorizedNinetyNineFoodRequest<{ items?: unknown }>(
+    user,
+    '/api/integrations/99food/blocked-orders'
+  );
   const items = Array.isArray(payload.items) ? payload.items : [];
   return { items: items as NinetyNineFoodBlockedOrder[] };
+};
+
+export const retryNinetyNineFoodBlockedOrderReservation = async (
+  user: User,
+  orderId: string
+): Promise<{ orderId: string; state: unknown }> => {
+  const encodedOrderId = encodeURIComponent(orderId.trim());
+  if (!encodedOrderId) throw new Error('Pedido 99Food inválido para nova tentativa de reserva.');
+  return authorizedNinetyNineFoodRequest<{ orderId: string; state: unknown }>(
+    user,
+    `/api/integrations/99food/blocked-orders/${encodedOrderId}/retry-reservation`,
+    { method: 'POST' }
+  );
 };
 
 export const buildStoreChannelOperationalItems = (input: {
