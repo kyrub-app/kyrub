@@ -1,8 +1,18 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { User } from 'firebase/auth';
-import { AlertTriangle, ArrowDownRight, CircleAlert, RefreshCw, ShieldCheck } from 'lucide-react';
+import {
+  AlertTriangle,
+  ArrowDownRight,
+  CircleAlert,
+  LoaderCircle,
+  RefreshCw,
+  RotateCcw,
+  ShieldCheck,
+  X,
+} from 'lucide-react';
 import {
   loadStoreChannelOperationalQueue,
+  retryNinetyNineFoodBlockedOrderReservation,
   type StoreChannelOperationalItem,
 } from '../../utils/storeChannelOperations';
 
@@ -26,6 +36,10 @@ export default function StoreChannelOperationsQueue({ user, storeId }: { user: U
   const [sourceErrors, setSourceErrors] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [loaded, setLoaded] = useState(false);
+  const [confirmRetryOrderId, setConfirmRetryOrderId] = useState('');
+  const [retryingOrderId, setRetryingOrderId] = useState('');
+  const [actionFeedback, setActionFeedback] = useState('');
+  const [actionError, setActionError] = useState('');
   const criticalCount = useMemo(() => items.filter(item => item.severity === 'critical').length, [items]);
 
   const refresh = useCallback(async (): Promise<void> => {
@@ -42,6 +56,36 @@ export default function StoreChannelOperationsQueue({ user, storeId }: { user: U
 
   useEffect(() => { void refresh(); }, [refresh]);
 
+  const retryReservation = async (item: StoreChannelOperationalItem): Promise<void> => {
+    if (item.provider !== '99food') return;
+    if (confirmRetryOrderId !== item.reference) {
+      setConfirmRetryOrderId(item.reference);
+      setActionFeedback('');
+      setActionError('');
+      return;
+    }
+
+    setRetryingOrderId(item.reference);
+    setActionFeedback('');
+    setActionError('');
+    try {
+      await retryNinetyNineFoodBlockedOrderReservation(user, item.reference);
+      setConfirmRetryOrderId('');
+      setActionFeedback(
+        'O Kyrub reprocessou a reserva interna deste pedido e atualizou a fila. Se o bloqueio continuar, o pedido permanece aqui. Nenhum status foi enviado à 99Food.'
+      );
+      await refresh();
+    } catch (error) {
+      setActionError(
+        error instanceof Error
+          ? error.message
+          : 'Não foi possível tentar a reserva novamente.'
+      );
+    } finally {
+      setRetryingOrderId('');
+    }
+  };
+
   return (
     <section className="rounded-3xl border border-amber-500/20 bg-amber-500/[0.035] p-5" aria-label="Pendências dos canais">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
@@ -49,10 +93,10 @@ export default function StoreChannelOperationsQueue({ user, storeId }: { user: U
           <span className="text-[10px] font-black uppercase tracking-[0.18em] text-amber-300">Operação omnichannel</span>
           <h3 className="mt-1 flex items-center gap-2 text-lg font-black text-white"><AlertTriangle className="h-5 w-5" /> Pendências dos canais</h3>
           <p className="mt-2 max-w-2xl text-[11px] leading-relaxed text-slate-400">
-            Reúne estados autoritativos que precisam de atenção. Esta fila apenas lê e encaminha para o módulo correto do canal.
+            Reúne estados autoritativos que precisam de atenção. A fila encaminha para o módulo correto e só oferece uma ação interna quando já existe contrato explícito de autoridade.
           </p>
         </div>
-        <button type="button" onClick={() => void refresh()} disabled={loading}
+        <button type="button" onClick={() => void refresh()} disabled={loading || Boolean(retryingOrderId)}
           className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[10px] font-black uppercase tracking-wider text-slate-300 disabled:opacity-50">
           <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} /> Atualizar
         </button>
@@ -70,6 +114,17 @@ export default function StoreChannelOperationsQueue({ user, storeId }: { user: U
         </div>
       )}
 
+      {actionFeedback && (
+        <p className="mt-4 rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-3 text-[10px] leading-relaxed text-emerald-200" aria-live="polite">
+          {actionFeedback}
+        </p>
+      )}
+      {actionError && (
+        <p className="mt-4 rounded-2xl border border-rose-500/20 bg-rose-500/5 p-3 text-[10px] leading-relaxed text-rose-200" aria-live="polite">
+          {actionError}
+        </p>
+      )}
+
       <div className="mt-4 space-y-2">
         {!loaded || (loading && items.length === 0) ? (
           <p className="rounded-2xl border border-slate-800 bg-slate-950/50 p-4 text-[10px] text-slate-500">Consultando filas autoritativas dos canais…</p>
@@ -77,26 +132,60 @@ export default function StoreChannelOperationsQueue({ user, storeId }: { user: U
           <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-4 text-emerald-300">
             <div className="flex items-center gap-2"><ShieldCheck className="h-4 w-4" /><strong className="text-xs">Nenhuma pendência encontrada.</strong></div>
           </div>
-        ) : items.map(item => (
-          <article key={item.id} className={`rounded-2xl border p-4 ${item.severity === 'critical' ? 'border-rose-500/20 bg-rose-500/[0.045]' : 'border-amber-500/20 bg-amber-500/[0.035]'}`}>
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2"><span className="text-[9px] font-black uppercase text-slate-500">{item.provider === 'mercado_livre' ? 'Mercado Livre' : '99Food'}</span><span className="rounded-full border border-slate-700 px-2 py-0.5 text-[8px] font-black uppercase text-slate-300">{labels[item.kind]}</span></div>
-                <strong className="mt-2 block text-xs text-white">{item.title}</strong>
-                <p className="mt-1 text-[10px] leading-relaxed text-slate-400">{item.detail}</p>
-                <p className="mt-2 break-all text-[9px] text-slate-600">Ref. {item.reference}</p>
+        ) : items.map(item => {
+          const canRetryReservation = item.provider === '99food';
+          const retryArmed = confirmRetryOrderId === item.reference;
+          const retrying = retryingOrderId === item.reference;
+          return (
+            <article key={item.id} className={`rounded-2xl border p-4 ${item.severity === 'critical' ? 'border-rose-500/20 bg-rose-500/[0.045]' : 'border-amber-500/20 bg-amber-500/[0.035]'}`}>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2"><span className="text-[9px] font-black uppercase text-slate-500">{item.provider === 'mercado_livre' ? 'Mercado Livre' : '99Food'}</span><span className="rounded-full border border-slate-700 px-2 py-0.5 text-[8px] font-black uppercase text-slate-300">{labels[item.kind]}</span></div>
+                  <strong className="mt-2 block text-xs text-white">{item.title}</strong>
+                  <p className="mt-1 text-[10px] leading-relaxed text-slate-400">{item.detail}</p>
+                  <p className="mt-2 break-all text-[9px] text-slate-600">Ref. {item.reference}</p>
+                  {retryArmed && canRetryReservation && (
+                    <p className="mt-3 rounded-xl border border-cyan-500/20 bg-cyan-500/5 p-2.5 text-[9px] leading-relaxed text-cyan-100">
+                      Confirme somente depois de corrigir o binding ou disponibilizar ATP. A nova tentativa pode criar a reserva canônica do pedido, mas não rejeita o pedido e não envia status à 99Food.
+                    </p>
+                  )}
+                </div>
+                <div className="flex shrink-0 flex-wrap gap-2 sm:max-w-[240px] sm:justify-end">
+                  {canRetryReservation && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => void retryReservation(item)}
+                        disabled={Boolean(retryingOrderId) || loading}
+                        className={`inline-flex items-center justify-center gap-1.5 rounded-xl border px-3 py-2 text-[9px] font-black uppercase tracking-wider disabled:opacity-40 ${retryArmed ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300' : 'border-cyan-500/25 bg-cyan-500/10 text-cyan-300'}`}
+                      >
+                        {retrying ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />}
+                        {retrying ? 'Tentando…' : retryArmed ? 'Confirmar nova tentativa' : 'Tentar reservar novamente'}
+                      </button>
+                      {retryArmed && !retrying && (
+                        <button
+                          type="button"
+                          onClick={() => setConfirmRetryOrderId('')}
+                          className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[9px] font-black uppercase tracking-wider text-slate-400"
+                        >
+                          <X className="h-3.5 w-3.5" /> Cancelar
+                        </button>
+                      )}
+                    </>
+                  )}
+                  <button type="button" onClick={() => openChannel(item.actionTarget)} disabled={Boolean(retryingOrderId)}
+                    className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[9px] font-black uppercase tracking-wider text-slate-300 disabled:opacity-40">
+                    <ArrowDownRight className="h-3.5 w-3.5" /> Abrir canal
+                  </button>
+                </div>
               </div>
-              <button type="button" onClick={() => openChannel(item.actionTarget)}
-                className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-xl border border-cyan-500/25 bg-cyan-500/10 px-3 py-2 text-[9px] font-black uppercase tracking-wider text-cyan-300">
-                <ArrowDownRight className="h-3.5 w-3.5" /> Abrir canal
-              </button>
-            </div>
-          </article>
-        ))}
+            </article>
+          );
+        })}
       </div>
 
       <p className="mt-4 text-[10px] leading-relaxed text-slate-600">
-        A fila não altera produtos, estoque, reservas, decisões de revisão ou estado de provedor. A ação permanece no módulo específico do canal.
+        A fila nunca aprova mudanças do Mercado Livre, rejeita pedidos ou escreve em provedores. O único write aqui é a nova tentativa explicitamente confirmada da reserva interna Kyrub para um pedido 99Food ainda bloqueado.
       </p>
     </section>
   );
