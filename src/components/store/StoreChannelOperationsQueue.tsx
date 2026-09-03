@@ -15,9 +15,11 @@ import {
 import { requestNinetyNineFoodBindingRemediation } from '../../utils/ninetyNineFoodBindingRemediation';
 import { requestPhysicalInventoryFocus } from '../../utils/physicalInventoryRemediation';
 import {
+  diagnoseNinetyNineFoodBlockedOrderInventoryAuthority,
   loadStoreChannelOperationalQueue,
   preflightNinetyNineFoodBlockedOrderReservation,
   retryNinetyNineFoodBlockedOrderReservation,
+  type NinetyNineFoodInventoryAuthorityDiagnostic,
   type NinetyNineFoodReservationPreflight,
   type StoreChannelOperationalItem,
 } from '../../utils/storeChannelOperations';
@@ -105,6 +107,9 @@ export default function StoreChannelOperationsQueue({ user, storeId }: { user: U
   const [preflightingOrderId, setPreflightingOrderId] = useState('');
   const [preflightByOrder, setPreflightByOrder] = useState<Record<string, NinetyNineFoodReservationPreflight>>({});
   const [preflightErrorByOrder, setPreflightErrorByOrder] = useState<Record<string, string>>({});
+  const [diagnosingAuthorityOrderId, setDiagnosingAuthorityOrderId] = useState('');
+  const [authorityDiagnosticByOrder, setAuthorityDiagnosticByOrder] = useState<Record<string, NinetyNineFoodInventoryAuthorityDiagnostic>>({});
+  const [authorityDiagnosticErrorByOrder, setAuthorityDiagnosticErrorByOrder] = useState<Record<string, string>>({});
   const [actionFeedback, setActionFeedback] = useState('');
   const [actionError, setActionError] = useState('');
   const criticalCount = useMemo(() => items.filter(item => item.severity === 'critical').length, [items]);
@@ -113,6 +118,8 @@ export default function StoreChannelOperationsQueue({ user, storeId }: { user: U
     setLoading(true);
     setPreflightByOrder({});
     setPreflightErrorByOrder({});
+    setAuthorityDiagnosticByOrder({});
+    setAuthorityDiagnosticErrorByOrder({});
     try {
       const result = await loadStoreChannelOperationalQueue(user, storeId);
       setItems(result.items);
@@ -153,6 +160,34 @@ export default function StoreChannelOperationsQueue({ user, storeId }: { user: U
     }
   };
 
+  const diagnoseAuthority = async (item: StoreChannelOperationalItem): Promise<void> => {
+    if (item.kind !== '99food_authority_unresolved') return;
+    setConfirmRetryOrderId('');
+    setDiagnosingAuthorityOrderId(item.reference);
+    setAuthorityDiagnosticErrorByOrder(previous => ({ ...previous, [item.reference]: '' }));
+    try {
+      const result = await diagnoseNinetyNineFoodBlockedOrderInventoryAuthority(
+        user,
+        item.reference
+      );
+      setAuthorityDiagnosticByOrder(previous => ({ ...previous, [item.reference]: result }));
+    } catch (error) {
+      setAuthorityDiagnosticByOrder(previous => {
+        const next = { ...previous };
+        delete next[item.reference];
+        return next;
+      });
+      setAuthorityDiagnosticErrorByOrder(previous => ({
+        ...previous,
+        [item.reference]: error instanceof Error
+          ? error.message
+          : 'Não foi possível diagnosticar a autoridade de estoque deste pedido.',
+      }));
+    } finally {
+      setDiagnosingAuthorityOrderId('');
+    }
+  };
+
   const retryReservation = async (item: StoreChannelOperationalItem): Promise<void> => {
     if (item.provider !== '99food') return;
     if (confirmRetryOrderId !== item.reference) {
@@ -183,6 +218,8 @@ export default function StoreChannelOperationsQueue({ user, storeId }: { user: U
     }
   };
 
+  const operationBusy = Boolean(retryingOrderId) || Boolean(preflightingOrderId) || Boolean(diagnosingAuthorityOrderId);
+
   return (
     <section className="rounded-3xl border border-amber-500/20 bg-amber-500/[0.035] p-5" aria-label="Pendências dos canais">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
@@ -193,7 +230,7 @@ export default function StoreChannelOperationsQueue({ user, storeId }: { user: U
             Reúne estados autoritativos que precisam de atenção. A fila encaminha para o módulo correto e só oferece uma ação interna quando já existe contrato explícito de autoridade.
           </p>
         </div>
-        <button type="button" onClick={() => void refresh()} disabled={loading || Boolean(retryingOrderId) || Boolean(preflightingOrderId)}
+        <button type="button" onClick={() => void refresh()} disabled={loading || operationBusy}
           className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[10px] font-black uppercase tracking-wider text-slate-300 disabled:opacity-50">
           <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} /> Atualizar
         </button>
@@ -234,8 +271,11 @@ export default function StoreChannelOperationsQueue({ user, storeId }: { user: U
           const retryArmed = confirmRetryOrderId === item.reference;
           const retrying = retryingOrderId === item.reference;
           const preflighting = preflightingOrderId === item.reference;
+          const diagnosingAuthority = diagnosingAuthorityOrderId === item.reference;
           const preflight = preflightByOrder[item.reference];
           const preflightError = preflightErrorByOrder[item.reference] ?? '';
+          const authorityDiagnostic = authorityDiagnosticByOrder[item.reference];
+          const authorityDiagnosticError = authorityDiagnosticErrorByOrder[item.reference] ?? '';
           const remediationLabel = item.remediationTarget === '99food_binding'
             ? 'Corrigir binding'
             : item.remediationTarget === 'kyrub_inventory'
@@ -266,7 +306,42 @@ export default function StoreChannelOperationsQueue({ user, storeId }: { user: U
                   )}
                   {item.kind === '99food_authority_unresolved' && (
                     <p className="mt-2 text-[9px] leading-relaxed text-amber-100/80">
-                      Próximo passo: corrija a configuração de autoridade da loja para que exista exatamente um owner ativo e o documento físico canônico correspondente. O Kyrub não escolherá um owner ou inventário alternativo por aproximação.
+                      Próximo passo: diagnostique a autoridade para saber se faltou owner ativo, existem múltiplos owners ativos ou o documento físico canônico está ausente. O Kyrub não escolherá um owner ou inventário alternativo por aproximação.
+                    </p>
+                  )}
+
+                  {authorityDiagnostic && item.kind === '99food_authority_unresolved' && (
+                    <div className={`mt-3 rounded-xl border p-3 text-[9px] leading-relaxed ${authorityDiagnostic.state === 'resolved' ? 'border-emerald-500/20 bg-emerald-500/5 text-emerald-100' : 'border-amber-500/20 bg-amber-500/5 text-amber-100'}`} aria-live="polite">
+                      {authorityDiagnostic.state === 'no_active_owner' && (
+                        <>
+                          <strong className="block">Nenhum owner ativo foi encontrado.</strong>
+                          <span className="mt-1 block">A loja precisa voltar a ter exatamente um owner ativo antes de o Kyrub resolver a autoridade física. Nenhuma identidade foi escolhida automaticamente.</span>
+                        </>
+                      )}
+                      {authorityDiagnostic.state === 'multiple_active_owners' && (
+                        <>
+                          <strong className="block">Mais de um owner ativo foi encontrado.</strong>
+                          <span className="mt-1 block">Foram encontrados {authorityDiagnostic.activeOwnerCount} owners ativos. O Kyrub não escolherá um deles por inferência; a configuração precisa voltar a ter exatamente um owner ativo.</span>
+                        </>
+                      )}
+                      {authorityDiagnostic.state === 'inventory_document_missing' && (
+                        <>
+                          <strong className="block">O documento físico canônico está ausente.</strong>
+                          <span className="mt-1 block">Existe exatamente um owner ativo, mas o documento de inventário físico correspondente não existe nesta leitura. Nenhum inventário alternativo foi adotado.</span>
+                        </>
+                      )}
+                      {authorityDiagnostic.state === 'resolved' && (
+                        <>
+                          <strong className="block">A autoridade está resolvida nesta leitura.</strong>
+                          <span className="mt-1 block">O diagnóstico não criou reserva nem autorizou retry. Use “Verificar ATP” para reavaliar binding, ficha técnica, estoque e reservas ativas antes de qualquer nova tentativa.</span>
+                        </>
+                      )}
+                    </div>
+                  )}
+
+                  {authorityDiagnosticError && item.kind === '99food_authority_unresolved' && (
+                    <p className="mt-3 rounded-xl border border-rose-500/20 bg-rose-500/5 p-3 text-[9px] leading-relaxed text-rose-100" aria-live="polite">
+                      {authorityDiagnosticError}
                     </p>
                   )}
 
@@ -282,7 +357,7 @@ export default function StoreChannelOperationsQueue({ user, storeId }: { user: U
                             <button
                               type="button"
                               onClick={() => openBindingRemediation(preflight.unresolvedExternalProductIds)}
-                              disabled={Boolean(retryingOrderId) || Boolean(preflightingOrderId)}
+                              disabled={operationBusy}
                               className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-violet-500/25 bg-violet-500/10 px-2.5 py-1.5 text-[8px] font-black uppercase text-violet-200 disabled:opacity-40"
                             >
                               <Wrench className="h-3 w-3" /> Corrigir binding atual
@@ -294,7 +369,7 @@ export default function StoreChannelOperationsQueue({ user, storeId }: { user: U
                         <>
                           <strong className="block">Autoridade de estoque ainda não resolvida.</strong>
                           <span className="mt-1 block">
-                            O Kyrub ainda não consegue identificar exatamente um owner ativo com documento físico canônico para esta loja. O preflight não escolheu nenhum owner ou inventário alternativo. Corrija a configuração da loja e use “Verificar ATP” novamente.
+                            O Kyrub ainda não consegue identificar exatamente um owner ativo com documento físico canônico para esta loja. O preflight não escolheu nenhum owner ou inventário alternativo. Use “Diagnosticar autoridade” para distinguir a causa antes de verificar o ATP novamente.
                           </span>
                         </>
                       )}
@@ -310,7 +385,7 @@ export default function StoreChannelOperationsQueue({ user, storeId }: { user: U
                                 <button
                                   type="button"
                                   onClick={() => openInventoryRemediation(line.inventoryItemId)}
-                                  disabled={Boolean(retryingOrderId) || Boolean(preflightingOrderId)}
+                                  disabled={operationBusy}
                                   className="inline-flex shrink-0 items-center justify-center gap-1 rounded-lg border border-cyan-500/25 bg-cyan-500/10 px-2 py-1.5 text-[8px] font-black uppercase text-cyan-200 disabled:opacity-40"
                                 >
                                   <PackageSearch className="h-3 w-3" /> Abrir item
@@ -351,16 +426,16 @@ export default function StoreChannelOperationsQueue({ user, storeId }: { user: U
 
                   {retryArmed && canRetryReservation && (
                     <p className="mt-3 rounded-xl border border-cyan-500/20 bg-cyan-500/5 p-2.5 text-[9px] leading-relaxed text-cyan-100">
-                      Confirme somente depois de corrigir o binding, a autoridade de estoque ou disponibilizar ATP. A nova tentativa pode criar a reserva canônica do pedido, mas não rejeita o pedido e não envia status à 99Food. Um preflight anterior é apenas informativo e pode ficar desatualizado.
+                      Confirme somente depois de corrigir o binding, a autoridade de estoque ou disponibilizar ATP. A nova tentativa pode criar a reserva canônica do pedido, mas não rejeita o pedido e não envia status à 99Food. Diagnósticos e preflights anteriores são apenas informativos e podem ficar desatualizados.
                     </p>
                   )}
                 </div>
-                <div className="flex shrink-0 flex-wrap gap-2 sm:max-w-[310px] sm:justify-end">
+                <div className="flex shrink-0 flex-wrap gap-2 sm:max-w-[330px] sm:justify-end">
                   {item.remediationTarget && (
                     <button
                       type="button"
                       onClick={() => openRemediation(item)}
-                      disabled={Boolean(retryingOrderId) || Boolean(preflightingOrderId)}
+                      disabled={operationBusy}
                       className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-violet-500/25 bg-violet-500/10 px-3 py-2 text-[9px] font-black uppercase tracking-wider text-violet-300 disabled:opacity-40"
                     >
                       {item.remediationTarget === '99food_binding'
@@ -369,12 +444,25 @@ export default function StoreChannelOperationsQueue({ user, storeId }: { user: U
                       {remediationLabel}
                     </button>
                   )}
+                  {item.kind === '99food_authority_unresolved' && (
+                    <button
+                      type="button"
+                      onClick={() => void diagnoseAuthority(item)}
+                      disabled={operationBusy || loading}
+                      className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-[9px] font-black uppercase tracking-wider text-amber-200 disabled:opacity-40"
+                    >
+                      {diagnosingAuthority
+                        ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+                        : <ShieldCheck className="h-3.5 w-3.5" />}
+                      {diagnosingAuthority ? 'Diagnosticando…' : 'Diagnosticar autoridade'}
+                    </button>
+                  )}
                   {canRetryReservation && (
                     <>
                       <button
                         type="button"
                         onClick={() => void preflightReservation(item)}
-                        disabled={Boolean(preflightingOrderId) || Boolean(retryingOrderId) || loading}
+                        disabled={operationBusy || loading}
                         className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-slate-600 bg-slate-950 px-3 py-2 text-[9px] font-black uppercase tracking-wider text-slate-200 disabled:opacity-40"
                       >
                         {preflighting
@@ -385,7 +473,7 @@ export default function StoreChannelOperationsQueue({ user, storeId }: { user: U
                       <button
                         type="button"
                         onClick={() => void retryReservation(item)}
-                        disabled={Boolean(retryingOrderId) || Boolean(preflightingOrderId) || loading}
+                        disabled={operationBusy || loading}
                         className={`inline-flex items-center justify-center gap-1.5 rounded-xl border px-3 py-2 text-[9px] font-black uppercase tracking-wider disabled:opacity-40 ${retryArmed ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300' : 'border-cyan-500/25 bg-cyan-500/10 text-cyan-300'}`}
                       >
                         {retrying ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />}
@@ -402,7 +490,7 @@ export default function StoreChannelOperationsQueue({ user, storeId }: { user: U
                       )}
                     </>
                   )}
-                  <button type="button" onClick={() => openChannel(item.actionTarget)} disabled={Boolean(retryingOrderId) || Boolean(preflightingOrderId)}
+                  <button type="button" onClick={() => openChannel(item.actionTarget)} disabled={operationBusy}
                     className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[9px] font-black uppercase tracking-wider text-slate-300 disabled:opacity-40">
                     <ArrowDownRight className="h-3.5 w-3.5" /> Abrir canal
                   </button>
@@ -414,7 +502,7 @@ export default function StoreChannelOperationsQueue({ user, storeId }: { user: U
       </div>
 
       <p className="mt-4 text-[10px] leading-relaxed text-slate-600">
-        O preflight é somente leitura e pode ficar desatualizado logo após a consulta. Ele não cria reserva nem autoriza uma tentativa. A fila nunca aprova mudanças do Mercado Livre, rejeita pedidos ou escreve em provedores; o único write aqui continua sendo a nova tentativa explicitamente confirmada da reserva interna Kyrub para um pedido 99Food ainda bloqueado.
+        Diagnóstico e preflight são somente leitura e podem ficar desatualizados logo após a consulta. Eles não criam reserva nem autorizam uma tentativa. A fila nunca aprova mudanças do Mercado Livre, rejeita pedidos ou escreve em provedores; o único write aqui continua sendo a nova tentativa explicitamente confirmada da reserva interna Kyrub para um pedido 99Food ainda bloqueado.
       </p>
     </section>
   );
