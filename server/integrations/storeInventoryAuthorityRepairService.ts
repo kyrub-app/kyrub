@@ -23,6 +23,7 @@ export type StoreInventoryAuthorityRepairReason =
 export type StoreInventoryAuthorityRepairState =
   | 'canonical_store_unresolved'
   | 'no_active_owner'
+  | 'canonical_owner_not_active'
   | 'multiple_active_owners'
   | 'inventory_document_missing'
   | 'resolved';
@@ -251,11 +252,11 @@ const inspectRepairContext = async (
     };
   }
 
-  if (activeOwnerIds.length > 1) {
+  if (!activeOwnerIds.includes(canonicalOwnerId)) {
     return {
       preview: blockedPreview({
-        state: 'multiple_active_owners',
-        reason: 'multiple_active_owners',
+        state: 'canonical_owner_not_active',
+        reason: 'canonical_owner_mismatch',
         activeOwnerCount: activeOwnerIds.length,
       }),
       tenantId,
@@ -265,12 +266,12 @@ const inspectRepairContext = async (
     };
   }
 
-  if (activeOwnerIds[0] !== canonicalOwnerId) {
+  if (activeOwnerIds.length > 1) {
     return {
       preview: blockedPreview({
-        state: 'inventory_document_missing',
-        reason: 'canonical_owner_mismatch',
-        activeOwnerCount: 1,
+        state: 'multiple_active_owners',
+        reason: 'multiple_active_owners',
+        activeOwnerCount: activeOwnerIds.length,
       }),
       tenantId,
       canonicalStoreId,
