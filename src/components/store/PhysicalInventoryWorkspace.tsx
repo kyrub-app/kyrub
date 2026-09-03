@@ -1,8 +1,20 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, Boxes, RefreshCw, ShieldCheck } from 'lucide-react';
+import {
+  AlertTriangle,
+  Boxes,
+  ClipboardCheck,
+  PackagePlus,
+  RefreshCw,
+  ShieldCheck,
+  X,
+} from 'lucide-react';
 import type { KyrubErpInventorySummary } from '../../../shared/kyrubErpContext';
 import { readKyrubErpContext } from '../../actions/erpReadActionService';
 import { auth } from '../../utils/firebase';
+import {
+  requestManualPhysicalInventoryAdjustment,
+  type ManualPhysicalInventoryAdjustmentMode,
+} from '../../utils/manualPhysicalInventoryAdjustment';
 import {
   KYRUB_PHYSICAL_INVENTORY_FOCUS_EVENT,
   physicalInventoryItemElementId,
@@ -13,9 +25,20 @@ interface PhysicalInventoryWorkspaceProps {
   storeId: string;
 }
 
+type AdjustmentDraft = {
+  itemId: string;
+  mode: ManualPhysicalInventoryAdjustmentMode;
+  quantity: string;
+};
+
 const quantity = new Intl.NumberFormat('pt-BR', {
   maximumFractionDigits: 3,
 });
+
+const parseQuantityInput = (value: string): number | null => {
+  const parsed = Number(value.trim().replace(',', '.'));
+  return Number.isFinite(parsed) ? parsed : null;
+};
 
 export function PhysicalInventoryWorkspace({ storeId }: PhysicalInventoryWorkspaceProps) {
   const [items, setItems] = useState<KyrubErpInventorySummary[]>([]);
@@ -25,6 +48,8 @@ export function PhysicalInventoryWorkspace({ storeId }: PhysicalInventoryWorkspa
   const [truncated, setTruncated] = useState(false);
   const [focusedItemId, setFocusedItemId] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
+  const [adjustmentDraft, setAdjustmentDraft] = useState<AdjustmentDraft | null>(null);
+  const [actionMessage, setActionMessage] = useState('');
 
   const lowStockCount = useMemo(
     () => items.filter(item => item.currentQuantity <= item.minimumQuantity).length,
@@ -91,6 +116,50 @@ export function PhysicalInventoryWorkspace({ storeId }: PhysicalInventoryWorkspa
 
   const focusedItemExists = !focusedItemId || items.some(item => item.id === focusedItemId);
 
+  const beginAdjustment = (
+    item: KyrubErpInventorySummary,
+    mode: ManualPhysicalInventoryAdjustmentMode
+  ): void => {
+    setFocusedItemId(item.id);
+    setActionMessage('');
+    setErrorMessage('');
+    setAdjustmentDraft({ itemId: item.id, mode, quantity: '' });
+  };
+
+  const reviewAdjustment = (item: KyrubErpInventorySummary): void => {
+    if (!adjustmentDraft || adjustmentDraft.itemId !== item.id) return;
+    const requestedQuantity = parseQuantityInput(adjustmentDraft.quantity);
+    if (
+      requestedQuantity === null ||
+      (adjustmentDraft.mode === 'increment' ? requestedQuantity <= 0 : requestedQuantity < 0)
+    ) {
+      setErrorMessage(
+        adjustmentDraft.mode === 'increment'
+          ? 'Informe uma quantidade maior que zero para dar entrada.'
+          : 'Informe uma contagem física igual ou maior que zero.'
+      );
+      return;
+    }
+
+    try {
+      requestManualPhysicalInventoryAdjustment({
+        item,
+        mode: adjustmentDraft.mode,
+        quantity: requestedQuantity,
+      });
+      setAdjustmentDraft(null);
+      setActionMessage(
+        'A proposta foi enviada para revisão. O saldo só muda depois da confirmação explícita no modal de estoque.'
+      );
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : 'Não foi possível preparar o ajuste para revisão.'
+      );
+    }
+  };
+
   return (
     <section
       id="kyrub-physical-inventory-workspace"
@@ -100,13 +169,13 @@ export function PhysicalInventoryWorkspace({ storeId }: PhysicalInventoryWorkspa
       <header className="flex flex-col gap-3 border-b border-slate-800 pb-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
           <span className="text-[9px] font-black uppercase tracking-[0.18em] text-cyan-300">
-            Autoridade física Kyrub · somente leitura
+            Autoridade física Kyrub · somente leitura direta · ajustes por confirmação
           </span>
           <h4 className="mt-1 flex items-center gap-2 text-xs font-black uppercase tracking-wide text-white">
             <Boxes className="h-4 w-4 text-cyan-300" /> Estoque físico
           </h4>
           <p className="mt-1 max-w-2xl text-[10px] leading-relaxed text-slate-500">
-            Insumos e componentes do inventário privado usados pelo ATP e pelas fichas técnicas. Esta visão não altera saldo.
+            Insumos e componentes do inventário privado usados pelo ATP e pelas fichas técnicas. Os botões abaixo apenas preparam uma proposta; nenhuma quantidade é alterada sem o modal de confirmação do Kyrub.
           </p>
         </div>
         <button
@@ -136,6 +205,12 @@ export function PhysicalInventoryWorkspace({ storeId }: PhysicalInventoryWorkspa
         </p>
       )}
 
+      {actionMessage && (
+        <p className="rounded-2xl border border-cyan-500/20 bg-cyan-500/5 p-3 text-[10px] leading-relaxed text-cyan-100" role="status">
+          {actionMessage}
+        </p>
+      )}
+
       {focusedItemId && loaded && !focusedItemExists && (
         <p className="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-3 text-[10px] leading-relaxed text-amber-100">
           O bloqueio aponta para o item exato <strong className="break-all">{focusedItemId}</strong>, mas ele não está presente na leitura atual{truncated ? ' (a leitura foi truncada)' : ''}. Nenhum item semelhante será selecionado por aproximação.
@@ -156,6 +231,7 @@ export function PhysicalInventoryWorkspace({ storeId }: PhysicalInventoryWorkspa
           {items.map(item => {
             const focused = focusedItemId === item.id;
             const atOrBelowMinimum = item.currentQuantity <= item.minimumQuantity;
+            const draft = adjustmentDraft?.itemId === item.id ? adjustmentDraft : null;
             return (
               <article
                 key={item.id}
@@ -188,6 +264,71 @@ export function PhysicalInventoryWorkspace({ storeId }: PhysicalInventoryWorkspa
                 </div>
                 {item.supplier && (
                   <p className="mt-2 truncate text-[8px] text-slate-600">Fornecedor: {item.supplier}</p>
+                )}
+
+                {!draft ? (
+                  <div className="mt-3 grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => beginAdjustment(item, 'increment')}
+                      className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-xl border border-emerald-500/25 bg-emerald-500/10 px-2 text-[8px] font-black uppercase text-emerald-200"
+                    >
+                      <PackagePlus className="h-3.5 w-3.5" /> Dar entrada
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => beginAdjustment(item, 'set')}
+                      className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-xl border border-violet-500/25 bg-violet-500/10 px-2 text-[8px] font-black uppercase text-violet-200"
+                    >
+                      <ClipboardCheck className="h-3.5 w-3.5" /> Corrigir contagem
+                    </button>
+                  </div>
+                ) : (
+                  <div className="mt-3 space-y-2 rounded-xl border border-slate-700 bg-slate-950/75 p-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <span className="block text-[8px] font-black uppercase text-cyan-300">
+                          {draft.mode === 'increment' ? 'Entrada manual' : 'Contagem física'}
+                        </span>
+                        <p className="mt-1 text-[8px] leading-relaxed text-slate-500">
+                          {draft.mode === 'increment'
+                            ? 'Informe somente a quantidade que chegou. O Kyrub somará ao saldo atual após confirmação.'
+                            : 'Informe o saldo físico total contado. O Kyrub substituirá o saldo atual somente após confirmação.'}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setAdjustmentDraft(null)}
+                        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-slate-800 text-slate-500"
+                        aria-label="Cancelar ajuste"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                    <label className="block text-[8px] font-black uppercase text-slate-500">
+                      {draft.mode === 'increment' ? 'Quantidade de entrada' : 'Saldo contado'} ({item.unit})
+                      <input
+                        value={draft.quantity}
+                        onChange={event => setAdjustmentDraft(current => current && current.itemId === item.id
+                          ? { ...current, quantity: event.target.value }
+                          : current)}
+                        inputMode="decimal"
+                        autoFocus
+                        placeholder={draft.mode === 'increment' ? 'Ex.: 2,5' : `Atual: ${quantity.format(item.currentQuantity)}`}
+                        className="mt-1 w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-[10px] text-white outline-none focus:border-cyan-500"
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => reviewAdjustment(item)}
+                      className="w-full rounded-lg border border-cyan-500/30 bg-cyan-500/10 px-3 py-2.5 text-[8px] font-black uppercase text-cyan-200"
+                    >
+                      Revisar ajuste
+                    </button>
+                    <p className="text-[8px] leading-relaxed text-slate-600">
+                      O clique acima não altera o estoque. Ele abre a confirmação autoritativa do Kyrub com este ID canônico exato.
+                    </p>
+                  </div>
                 )}
               </article>
             );
