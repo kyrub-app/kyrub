@@ -159,7 +159,7 @@ test('Central de Canais is a read-only projection over declaration and authorita
   assert.match(source, /Central de Canais/);
   assert.match(source, /loadStoreConnectionOnboarding/);
   assert.match(source, /Kyrub Marketplace/);
-  assert.match(source, /connection\.status === 'connected'/);
+  assert.match(source, /if \(status === 'connected'\) return 'connected'/);
   assert.match(source, /state: 'declared'/);
   assert.match(source, /não conecta contas, não importa produtos, não altera estoque/);
   assert.doesNotMatch(source, /beginMercadoLivreConnection|connectNinetyNineFoodAdaptive|updateStoreConnectionSyncAuthority/);
