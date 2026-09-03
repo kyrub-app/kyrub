@@ -29,6 +29,7 @@ export type StoreChannelOperationalItem = {
   detail: string;
   reference: string;
   actionTarget: 'mercado_livre' | '99food';
+  remediationTarget?: '99food_binding' | 'kyrub_inventory';
 };
 
 export type StoreChannelOperationalQueue = {
@@ -132,6 +133,7 @@ export const buildStoreChannelOperationalItems = (input: {
         : 'O pedido não conseguiu reservar disponibilidade suficiente no ATP canônico. O estoque físico não foi inventado nem sobrescrito.',
       reference: order.orderId,
       actionTarget: '99food',
+      remediationTarget: bindingBlocked ? '99food_binding' : 'kyrub_inventory',
     });
   }
 
