@@ -71,7 +71,7 @@ test('repair preview is fingerprinted and confirmation revalidates inside a tran
   assert.match(service, /inventoryDocumentExists: input\.inventoryDocumentExists/);
   assert.match(service, /if \(!input\.confirmed\) throw new Error\('STORE_INVENTORY_AUTHORITY_REPAIR_CONFIRMATION_REQUIRED'\)/);
   assert.match(service, /adminDb\.runTransaction/);
-  assert.match(service, /inspectRepairContext\(/[\s\S]*transaction\.get/);
+  assert.match(service, /inspectRepairContext\([\s\S]*transaction\.get/);
   assert.match(service, /preview\.repairId !== expectedRepairId/);
   assert.match(service, /STORE_INVENTORY_AUTHORITY_REPAIR_STALE/);
 });
