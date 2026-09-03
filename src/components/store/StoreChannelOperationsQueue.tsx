@@ -34,6 +34,9 @@ const labels: Record<StoreChannelOperationalItem['kind'], string> = {
   '99food_authority_unresolved': 'Autoridade de estoque não resolvida',
 };
 
+const operationElementId = (item: StoreChannelOperationalItem): string =>
+  `kyrub-channel-operation-${item.provider}-${encodeURIComponent(item.reference)}`;
+
 const openChannel = (target: StoreChannelOperationalItem['actionTarget']): void => {
   const element = target === 'mercado_livre'
     ? document.getElementById('kyrub-mercado-livre-channel-detail')
@@ -122,12 +125,13 @@ const preflightTone = (
 
 type RetryFeedbackTone = 'success' | 'warning' | 'neutral';
 
+const retryStateRemainsBlocked = (state: NinetyNineFoodReservationRetryState): boolean =>
+  state === 'blocked_insufficient_atp' ||
+  state === 'blocked_product_binding_unresolved' ||
+  state === 'blocked_authority_unresolved';
+
 const retryFeedbackTone = (state: NinetyNineFoodReservationRetryState): RetryFeedbackTone => {
-  if (
-    state === 'blocked_insufficient_atp' ||
-    state === 'blocked_product_binding_unresolved' ||
-    state === 'blocked_authority_unresolved'
-  ) {
+  if (retryStateRemainsBlocked(state)) {
     return 'warning';
   }
   if (
@@ -187,6 +191,7 @@ export default function StoreChannelOperationsQueue({ user, storeId }: { user: U
   const [loaded, setLoaded] = useState(false);
   const [confirmRetryOrderId, setConfirmRetryOrderId] = useState('');
   const [retryingOrderId, setRetryingOrderId] = useState('');
+  const [refocusOrderId, setRefocusOrderId] = useState('');
   const [preflightingOrderId, setPreflightingOrderId] = useState('');
   const [preflightByOrder, setPreflightByOrder] = useState<Record<string, NinetyNineFoodReservationPreflight>>({});
   const [preflightErrorByOrder, setPreflightErrorByOrder] = useState<Record<string, string>>({});
@@ -215,6 +220,23 @@ export default function StoreChannelOperationsQueue({ user, storeId }: { user: U
   }, [storeId, user]);
 
   useEffect(() => { void refresh(); }, [refresh]);
+
+  useEffect(() => {
+    if (!refocusOrderId || loading) return;
+    const matchingItem = items.find(
+      candidate => candidate.provider === '99food' && candidate.reference === refocusOrderId
+    );
+    if (!matchingItem) {
+      setRefocusOrderId('');
+      return;
+    }
+    const element = document.getElementById(operationElementId(matchingItem));
+    if (element instanceof HTMLElement) {
+      element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      element.focus({ preventScroll: true });
+    }
+    setRefocusOrderId('');
+  }, [items, loading, refocusOrderId]);
 
   const preflightReservation = async (item: StoreChannelOperationalItem): Promise<void> => {
     if (item.provider !== '99food') return;
@@ -290,6 +312,9 @@ export default function StoreChannelOperationsQueue({ user, storeId }: { user: U
       setActionFeedbackTone(retryFeedbackTone(result.state));
       setActionFeedback(retryFeedback(result));
       await refresh();
+      if (retryStateRemainsBlocked(result.state)) {
+        setRefocusOrderId(result.orderId);
+      }
     } catch (error) {
       setActionError(
         error instanceof Error
@@ -370,7 +395,12 @@ export default function StoreChannelOperationsQueue({ user, storeId }: { user: U
               ? 'Abrir estoque'
               : '';
           return (
-            <article key={item.id} className={`rounded-2xl border p-4 ${item.severity === 'critical' ? 'border-rose-500/20 bg-rose-500/[0.045]' : 'border-amber-500/20 bg-amber-500/[0.035]'}`}>
+            <article
+              key={item.id}
+              id={operationElementId(item)}
+              tabIndex={-1}
+              className={`rounded-2xl border p-4 outline-none ${item.severity === 'critical' ? 'border-rose-500/20 bg-rose-500/[0.045]' : 'border-amber-500/20 bg-amber-500/[0.035]'}`}
+            >
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2"><span className="text-[9px] font-black uppercase text-slate-500">{item.provider === 'mercado_livre' ? 'Mercado Livre' : '99Food'}</span><span className="rounded-full border border-slate-700 px-2 py-0.5 text-[8px] font-black uppercase text-slate-300">{labels[item.kind]}</span></div>
