@@ -9,6 +9,7 @@ import {
   type KyrubStoreOperationProposalEventDetail,
 } from '../ai/storeOperationEvents';
 import { auth } from '../utils/firebase';
+import { KyrubAiStoreConnectionOnboardingBridge } from './KyrubAiStoreConnectionOnboardingBridge';
 
 type ConfirmationState = 'reviewing' | 'executing' | 'success' | 'error';
 
@@ -44,7 +45,7 @@ const withIdempotency = (
   idempotencyKey: proposal.idempotencyKey ?? `kyrubia:${proposal.type}:${conversationId}:${proposal.id}`,
 });
 
-export function KyrubAiStoreOperationActionBridge() {
+function KyrubAiStoreOperationConfirmationBridge() {
   const [pending, setPending] = useState<PendingStoreOperation | null>(null);
 
   useEffect(() => {
@@ -235,5 +236,14 @@ export function KyrubAiStoreOperationActionBridge() {
         </footer>
       </section>
     </div>
+  );
+}
+
+export function KyrubAiStoreOperationActionBridge() {
+  return (
+    <>
+      <KyrubAiStoreConnectionOnboardingBridge />
+      <KyrubAiStoreOperationConfirmationBridge />
+    </>
   );
 }
