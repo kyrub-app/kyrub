@@ -57,6 +57,27 @@ const openInventoryRemediation = (inventoryItemId: string): void => {
     ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 };
 
+const openAuthorityDiagnosticRemediation = (
+  state: NinetyNineFoodInventoryAuthorityDiagnostic['state']
+): void => {
+  if (state === 'resolved') return;
+  const targetId = (
+    state === 'canonical_owner_not_active' ||
+    state === 'multiple_active_owners'
+  )
+    ? 'kyrub-store-owner-governance'
+    : 'kyrub-inventory-authority-repair';
+  document.getElementById(targetId)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+};
+
+const authorityDiagnosticRemediationLabel = (
+  state: NinetyNineFoodInventoryAuthorityDiagnostic['state']
+): string => (
+  state === 'canonical_owner_not_active' || state === 'multiple_active_owners'
+    ? 'Revisar governança de owners'
+    : 'Abrir correção segura'
+);
+
 const openRemediation = (item: StoreChannelOperationalItem): void => {
   const target = item.remediationTarget;
   if (!target) return;
@@ -341,6 +362,16 @@ export default function StoreChannelOperationsQueue({ user, storeId }: { user: U
                           <strong className="block">A autoridade está resolvida nesta leitura.</strong>
                           <span className="mt-1 block">O owner canônico é o único owner ativo e o documento físico correspondente existe. O diagnóstico não criou reserva nem autorizou retry. Use “Verificar ATP” antes de qualquer nova tentativa.</span>
                         </>
+                      )}
+                      {authorityDiagnostic.state !== 'resolved' && (
+                        <button
+                          type="button"
+                          onClick={() => openAuthorityDiagnosticRemediation(authorityDiagnostic.state)}
+                          className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-cyan-500/25 bg-cyan-500/10 px-2.5 py-1.5 text-[8px] font-black uppercase text-cyan-200"
+                        >
+                          <Wrench className="h-3 w-3" />
+                          {authorityDiagnosticRemediationLabel(authorityDiagnostic.state)}
+                        </button>
                       )}
                     </div>
                   )}
