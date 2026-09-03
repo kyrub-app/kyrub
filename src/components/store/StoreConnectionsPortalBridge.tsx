@@ -11,6 +11,7 @@ import { PhysicalInventoryWorkspace } from './PhysicalInventoryWorkspace';
 import StoreChannelCenter from './StoreChannelCenter';
 import StoreChannelOperationsQueue from './StoreChannelOperationsQueue';
 import StoreConnectionsWorkspace from './StoreConnectionsWorkspace';
+import StoreInventoryAuthorityRepairPanel from './StoreInventoryAuthorityRepairPanel';
 
 interface StoreConnectionsPortalBridgeProps {
   user: User;
@@ -30,6 +31,8 @@ export default function StoreConnectionsPortalBridge({
 }: StoreConnectionsPortalBridgeProps) {
   const [host, setHost] = useState<HTMLElement | null>(null);
   const [inventoryRefreshVersion, setInventoryRefreshVersion] = useState(0);
+  const [authorityRefreshVersion, setAuthorityRefreshVersion] = useState(0);
+  const storeViewRefreshVersion = inventoryRefreshVersion + authorityRefreshVersion;
 
   useEffect(() => {
     let cancelled = false;
@@ -122,7 +125,16 @@ export default function StoreConnectionsPortalBridge({
 
   return createPortal(
     <div className="space-y-5">
-      <StoreChannelCenter user={user} storeId={storeId} />
+      <StoreChannelCenter
+        key={`channel-center-${storeViewRefreshVersion}`}
+        user={user}
+        storeId={storeId}
+      />
+      <StoreInventoryAuthorityRepairPanel
+        user={user}
+        storeId={storeId}
+        onApplied={() => setAuthorityRefreshVersion(version => version + 1)}
+      />
       {inventoryRefreshVersion > 0 && (
         <div
           id="kyrub-post-inventory-adjustment-guidance"
@@ -136,12 +148,12 @@ export default function StoreConnectionsPortalBridge({
         </div>
       )}
       <StoreChannelOperationsQueue
-        key={`channel-operations-${inventoryRefreshVersion}`}
+        key={`channel-operations-${storeViewRefreshVersion}`}
         user={user}
         storeId={storeId}
       />
       <PhysicalInventoryWorkspace
-        key={`physical-inventory-${inventoryRefreshVersion}`}
+        key={`physical-inventory-${storeViewRefreshVersion}`}
         storeId={storeId}
       />
       <div id="kyrub-mercado-livre-channel-detail">

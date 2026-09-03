@@ -6,6 +6,10 @@ import {
 } from './storeConnectionOnboardingService.js';
 import { updateStoreConnectionSyncAuthority } from './storeConnectionRegistry.js';
 import { loadStoreInventoryAuthorityHealth } from './storeInventoryAuthorityHealthService.js';
+import {
+  applyStoreInventoryAuthorityRepair,
+  loadStoreInventoryAuthorityRepairPreview,
+} from './storeInventoryAuthorityRepairService.js';
 
 const clean = (value: unknown): string =>
   typeof value === 'string' ? value.trim() : '';
@@ -27,12 +31,30 @@ const mapError = (error: unknown): { status: number; message: string } => {
   if (
     message === 'STORE_CONNECTION_FORBIDDEN' ||
     message === 'STORE_REPRESENTATION_FORBIDDEN' ||
-    message === 'STORE_INVENTORY_AUTHORITY_FORBIDDEN'
+    message === 'STORE_INVENTORY_AUTHORITY_FORBIDDEN' ||
+    message === 'STORE_INVENTORY_AUTHORITY_REPAIR_FORBIDDEN'
   ) {
     return { status: 403, message: 'Você não pode administrar conexões desta loja.' };
   }
   if (message === 'STORE_INSTITUTIONAL_NOT_FOUND' || message === 'STORE_CONNECTION_NOT_FOUND') {
     return { status: 404, message: 'A loja ou conexão ainda não foi encontrada.' };
+  }
+  if (
+    message === 'STORE_INVENTORY_AUTHORITY_REPAIR_CONFIRMATION_REQUIRED' ||
+    message === 'STORE_INVENTORY_AUTHORITY_REPAIR_STALE' ||
+    message === 'STORE_INVENTORY_AUTHORITY_REPAIR_NOT_ACTIONABLE'
+  ) {
+    return {
+      status: 409,
+      message: message === 'STORE_INVENTORY_AUTHORITY_REPAIR_STALE'
+        ? 'A situação da autoridade mudou desde a revisão. Atualize a análise antes de confirmar.'
+        : message === 'STORE_INVENTORY_AUTHORITY_REPAIR_NOT_ACTIONABLE'
+          ? 'Este estado não possui correção automática segura. Revise a autoridade da loja antes de continuar.'
+          : 'Revise e confirme explicitamente a correção antes de aplicá-la.',
+    };
+  }
+  if (message === 'STORE_INVENTORY_AUTHORITY_REPAIR_ID_REQUIRED') {
+    return { status: 400, message: 'A revisão da correção é inválida ou expirou.' };
   }
   if (message === 'STORE_CONNECTION_SYNC_AUTHORITY_UNAVAILABLE') {
     return {
@@ -74,6 +96,38 @@ export const createStoreConnectionOnboardingRouter = (): Router => {
       response.json(await loadStoreInventoryAuthorityHealth({
         tenantId: identity.uid,
         requestedByUserId: identity.uid,
+      }));
+    } catch (error) {
+      const mapped = mapError(error);
+      response.status(mapped.status).json({ error: mapped.message });
+    }
+  });
+
+  router.get('/:storeId/inventory-authority-repair', async (request, response) => {
+    try {
+      const storeId = clean(request.params.storeId);
+      const identity = await authenticatedOwner(request.get('authorization') ?? '', storeId);
+      response.setHeader('Cache-Control', 'no-store, max-age=0');
+      response.json(await loadStoreInventoryAuthorityRepairPreview({
+        tenantId: identity.uid,
+        requestedByUserId: identity.uid,
+      }));
+    } catch (error) {
+      const mapped = mapError(error);
+      response.status(mapped.status).json({ error: mapped.message });
+    }
+  });
+
+  router.post('/:storeId/inventory-authority-repair', async (request, response) => {
+    try {
+      const storeId = clean(request.params.storeId);
+      const identity = await authenticatedOwner(request.get('authorization') ?? '', storeId);
+      response.setHeader('Cache-Control', 'no-store, max-age=0');
+      response.json(await applyStoreInventoryAuthorityRepair({
+        tenantId: identity.uid,
+        requestedByUserId: identity.uid,
+        repairId: clean(request.body?.repairId),
+        confirmed: request.body?.confirmed === true,
       }));
     } catch (error) {
       const mapped = mapError(error);
