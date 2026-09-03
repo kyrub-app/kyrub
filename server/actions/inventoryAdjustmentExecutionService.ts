@@ -1,13 +1,16 @@
 import { createHash } from 'node:crypto';
 import { FieldValue } from 'firebase-admin/firestore';
 import type {
-  KyrubAiAdjustInventoryProposal,
-  KyrubInventoryAdjustmentEntry,
   KyrubInventoryAdjustmentMode,
   KyrubInventoryAdjustmentSourceKind,
   KyrubInventoryMovementKind,
   KyrubInventoryUnit,
 } from '../../shared/kyrubActions.js';
+import {
+  normalizeExactInventoryItemId,
+  type KyrubExactInventoryAdjustmentEntry,
+  type KyrubExactInventoryAdjustmentProposal,
+} from '../../shared/exactInventoryAdjustment.js';
 import { verifyFirebaseIdToken } from '../ai/consultantAuth.js';
 import { adminDb } from '../firebaseAdmin.js';
 import { KyrubActionExecutionError } from './actionExecutionService.js';
@@ -109,7 +112,7 @@ const movementKindFor = (
 const normalizeEntry = (
   value: unknown,
   mode: KyrubInventoryAdjustmentMode
-): KyrubInventoryAdjustmentEntry => {
+): KyrubExactInventoryAdjustmentEntry => {
   if (!isRecord(value)) {
     throw new KyrubActionExecutionError(
       400,
@@ -126,6 +129,16 @@ const normalizeEntry = (
     ? Math.max(0, value.purchaseCost)
     : undefined;
   const quantityValid = mode === 'set' ? quantity >= 0 : quantity > 0;
+  const hasInventoryItemId = value.inventoryItemId !== undefined && value.inventoryItemId !== null;
+  const inventoryItemId = normalizeExactInventoryItemId(value.inventoryItemId);
+
+  if (hasInventoryItemId && !inventoryItemId) {
+    throw new KyrubActionExecutionError(
+      400,
+      'INVALID_INVENTORY_ITEM_ID',
+      'O identificador canônico do item de estoque é inválido.'
+    );
+  }
 
   if (!name || !quantityValid || !isUnit(unit)) {
     throw new KyrubActionExecutionError(
@@ -138,6 +151,7 @@ const normalizeEntry = (
   }
 
   return {
+    ...(inventoryItemId ? { inventoryItemId } : {}),
     name,
     quantity,
     unit,
@@ -145,7 +159,7 @@ const normalizeEntry = (
   };
 };
 
-const normalizeProposal = (value: unknown): KyrubAiAdjustInventoryProposal => {
+const normalizeProposal = (value: unknown): KyrubExactInventoryAdjustmentProposal => {
   if (!isRecord(value) || value.type !== 'adjust_inventory') {
     throw new KyrubActionExecutionError(
       400,
@@ -282,7 +296,7 @@ const normalizeRecentMovement = (value: unknown): RecentInventoryMovement | null
   };
 };
 
-const deterministicItemId = (uid: string, entry: KyrubInventoryAdjustmentEntry): string =>
+const deterministicItemId = (uid: string, entry: KyrubExactInventoryAdjustmentEntry): string =>
   `inv-${createHash('sha256')
     .update(`${uid}:${normalizeName(entry.name)}:${entry.unit}`)
     .digest('hex')
@@ -382,10 +396,19 @@ export const executeAuthorizedKyrubInventoryAdjustment = async (
     const movementLines: InventoryMovementLine[] = [];
 
     for (const entry of proposal.entries) {
+      const exactInventoryItemId = entry.inventoryItemId ?? '';
       const key = `${normalizeName(entry.name)}::${entry.unit}`;
-      const existingIndex = catalog.findIndex(item =>
-        `${normalizeName(item.name)}::${item.unit}` === key
-      );
+      const existingIndex = exactInventoryItemId
+        ? catalog.findIndex(item => item.id === exactInventoryItemId)
+        : catalog.findIndex(item => `${normalizeName(item.name)}::${item.unit}` === key);
+
+      if (exactInventoryItemId && existingIndex < 0) {
+        throw new KyrubActionExecutionError(
+          409,
+          'INVENTORY_ITEM_ID_NOT_FOUND',
+          `O item canônico ${exactInventoryItemId} não está disponível no estoque privado. Nenhum item será escolhido por nome.`
+        );
+      }
 
       if (existingIndex < 0) {
         if (proposal.mode !== 'increment') {
@@ -419,6 +442,17 @@ export const executeAuthorizedKyrubInventoryAdjustment = async (
       }
 
       const existing = catalog[existingIndex];
+      if (
+        exactInventoryItemId &&
+        (normalizeName(existing.name) !== normalizeName(entry.name) || existing.unit !== entry.unit)
+      ) {
+        throw new KyrubActionExecutionError(
+          409,
+          'INVENTORY_ITEM_IDENTITY_MISMATCH',
+          `O item canônico ${exactInventoryItemId} não corresponde ao nome/unidade revisados. Atualize a leitura do estoque antes de confirmar.`
+        );
+      }
+
       const resultingQuantity = resultingQuantityFor(
         proposal.mode,
         existing.currentQuantity,
