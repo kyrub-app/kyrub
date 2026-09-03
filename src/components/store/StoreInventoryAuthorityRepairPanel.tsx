@@ -47,11 +47,13 @@ const actionCopy = (
 const blockedCopy = (preview: StoreInventoryAuthorityRepairPreview): string => {
   switch (preview.reason) {
     case 'multiple_active_owners':
-      return `Foram encontrados ${preview.activeOwnerCount} owners ativos. Este painel não escolhe nem desativa nenhum deles; a situação exige uma futura superfície explícita de gestão da equipe.`;
+      return `Foram encontrados ${preview.activeOwnerCount} owners ativos. Este painel não escolhe nem desativa nenhum deles; use a governança de owners para revisar a autoridade com decisões humanas separadas.`;
     case 'canonical_link_missing':
       return 'Não existe um vínculo canônico explícito suficiente para reparar com segurança. O Kyrub não procurará uma loja por nome e não criará outra loja neste fluxo.';
     case 'canonical_owner_mismatch':
-      return 'O único owner ativo não coincide com o ownerId da loja canônica. O Kyrub não trocará a autoridade automaticamente.';
+      return 'O único owner ativo não coincide com o ownerId da loja canônica. O Kyrub não trocará a autoridade automaticamente; revise a governança de owners.';
+    case 'canonical_owner_identity_conflict':
+      return 'A membership localizada no caminho do owner canônico já aponta explicitamente para outra identidade. O Kyrub não substituirá esse userId por merge e não ativará a membership automaticamente.';
     case 'authority_scope_mismatch':
       return 'As autoridades institucionais da loja, tenant e registro canônico não estão alinhadas. Nenhuma correção será aplicada por aproximação.';
     case 'already_resolved':
@@ -201,7 +203,7 @@ export default function StoreInventoryAuthorityRepairPanel({
       )}
 
       <p className="mt-4 text-[9px] leading-relaxed text-slate-600">
-        Este fluxo não seleciona entre múltiplos owners, não altera quantidades, não cria itens de estoque, não executa reserva e não envia status a canais externos.
+        Este fluxo não seleciona entre múltiplos owners, não substitui uma identidade conflitante, não altera quantidades, não cria itens de estoque, não executa reserva e não envia status a canais externos.
       </p>
     </section>
   );

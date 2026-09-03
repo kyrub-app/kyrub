@@ -17,6 +17,7 @@ export type StoreInventoryAuthorityRepairReason =
   | 'authority_scope_mismatch'
   | 'multiple_active_owners'
   | 'canonical_owner_mismatch'
+  | 'canonical_owner_identity_conflict'
   | 'already_resolved';
 
 export type StoreInventoryAuthorityRepairState =
@@ -209,6 +210,29 @@ const inspectRepairContext = async (
   }).sort();
 
   if (activeOwnerIds.length === 0) {
+    const canonicalOwnerMemberRef = adminDb.doc(
+      `stores/${canonicalStoreId}/members/${canonicalOwnerId}`
+    );
+    const canonicalOwnerMemberSnapshot = await reader.get(canonicalOwnerMemberRef);
+    const canonicalOwnerMember = canonicalOwnerMemberSnapshot.data() as Record<string, unknown> | undefined;
+    const existingCanonicalMemberUserId = clean(canonicalOwnerMember?.userId);
+    if (
+      canonicalOwnerMemberSnapshot.exists &&
+      existingCanonicalMemberUserId &&
+      existingCanonicalMemberUserId !== canonicalOwnerId
+    ) {
+      return {
+        preview: blockedPreview({
+          state: 'no_active_owner',
+          reason: 'canonical_owner_identity_conflict',
+        }),
+        tenantId,
+        canonicalStoreId,
+        canonicalOwnerId,
+        inventoryDocumentPath: '',
+      };
+    }
+
     const preview = actionablePreview({
       tenantId,
       canonicalStoreId,
@@ -357,6 +381,15 @@ export const applyStoreInventoryAuthorityRepair = async (input: {
         `stores/${context.canonicalStoreId}/members/${context.canonicalOwnerId}`
       );
       const ownerMemberSnapshot = await transaction.get(ownerMemberRef);
+      const ownerMember = ownerMemberSnapshot.data() as Record<string, unknown> | undefined;
+      const existingOwnerMemberUserId = clean(ownerMember?.userId);
+      if (
+        ownerMemberSnapshot.exists &&
+        existingOwnerMemberUserId &&
+        existingOwnerMemberUserId !== context.canonicalOwnerId
+      ) {
+        throw new Error('STORE_INVENTORY_AUTHORITY_REPAIR_NOT_ACTIONABLE');
+      }
       transaction.set(
         ownerMemberRef,
         {
