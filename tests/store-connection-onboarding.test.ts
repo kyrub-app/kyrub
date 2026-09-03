@@ -8,6 +8,7 @@ import { parseStoreConnectionSyncAuthority } from '../server/integrations/storeC
 import {
   resolveKyrubiaStoreConnectionDeclarationIntent,
 } from '../src/ai/deterministicStoreConnectionOnboarding.js';
+import { buildStoreChannelOperationalItems } from '../src/utils/storeChannelOperations.js';
 
 test('merchant answer deterministically declares existing commerce channels without connecting them', () => {
   const declaration = buildStoreCommerceChannelDeclarationFromAnswer({
@@ -173,4 +174,55 @@ test('Central de Canais is mounted above provider-specific workspaces without re
   assert.match(source, /<MercadoLivreE2ETestBridge/);
   assert.match(source, /<NinetyNineFoodE2ETestBridge/);
   assert.match(source, /kyrub-mercado-livre-channel-detail/);
+});
+
+test('multichannel operation normalizer prioritizes conflicts and avoids duplicate Mercado Livre review for the same proposal', () => {
+  const items = buildStoreChannelOperationalItems({
+    mercadoLivreReview: [{
+      proposal: { id: 'proposal-1' },
+      snapshot: { item: { externalId: 'MLB1', title: 'Produto A' } },
+    }] as never[],
+    mercadoLivreConflicts: [{
+      proposalId: 'proposal-1',
+      canonicalProductId: 'product-a',
+      baselineStatus: 'conflict',
+      resolvableFields: ['name'],
+    }] as never[],
+    ninetyNineFoodBlocked: [{
+      orderId: 'order-99',
+      externalOrderId: 'ext-99',
+      displayId: '99',
+      customerName: 'Cliente',
+      blockedState: 'blocked_product_binding_unresolved',
+      blockedDetail: 'binding ausente',
+      status: 'accepted',
+    }],
+  });
+
+  assert.equal(items.length, 2);
+  assert.equal(items[0].kind, '99food_binding_unresolved');
+  assert.equal(items[0].severity, 'critical');
+  assert.equal(items[1].kind, 'mercado_livre_conflict');
+  assert.equal(items.some(item => item.kind === 'mercado_livre_sync_review'), false);
+});
+
+test('multichannel queue reads existing authoritative sources and contains no provider mutation paths', () => {
+  const source = readFileSync('src/utils/storeChannelOperations.ts', 'utf8');
+  const component = readFileSync('src/components/store/StoreChannelOperationsQueue.tsx', 'utf8');
+  assert.match(source, /loadMercadoLivreSyncReviewQueue/);
+  assert.match(source, /loadMercadoLivreConflictResolutionQueue/);
+  assert.match(source, /\/api\/integrations\/99food\/blocked-orders/);
+  assert.match(source, /Promise\.allSettled/);
+  assert.doesNotMatch(source, /retry-reservation|blocked-orders\/.*\/reject|decideMercadoLivreSyncProposal|updateStoreConnectionSyncAuthority/);
+  assert.match(component, /Pendências dos canais/);
+  assert.match(component, /A fila não altera produtos, estoque, reservas/);
+});
+
+test('channel portal mounts the operational queue between overview and provider-specific modules', () => {
+  const source = readFileSync('src/components/store/StoreConnectionsPortalBridge.tsx', 'utf8');
+  const centerIndex = source.indexOf('<StoreChannelCenter');
+  const queueIndex = source.indexOf('<StoreChannelOperationsQueue');
+  const mercadoLivreIndex = source.indexOf('id="kyrub-mercado-livre-channel-detail"');
+  assert.ok(centerIndex >= 0 && queueIndex > centerIndex && mercadoLivreIndex > queueIndex);
+  assert.match(source, /id="kyrub-99food-channel-detail"/);
 });
