@@ -10,6 +10,10 @@ import {
   applyStoreInventoryAuthorityRepair,
   loadStoreInventoryAuthorityRepairPreview,
 } from './storeInventoryAuthorityRepairService.js';
+import {
+  applyStoreOwnerGovernanceDecision,
+  loadStoreOwnerGovernancePreview,
+} from './storeOwnerGovernanceService.js';
 
 const clean = (value: unknown): string =>
   typeof value === 'string' ? value.trim() : '';
@@ -32,7 +36,8 @@ const mapError = (error: unknown): { status: number; message: string } => {
     message === 'STORE_CONNECTION_FORBIDDEN' ||
     message === 'STORE_REPRESENTATION_FORBIDDEN' ||
     message === 'STORE_INVENTORY_AUTHORITY_FORBIDDEN' ||
-    message === 'STORE_INVENTORY_AUTHORITY_REPAIR_FORBIDDEN'
+    message === 'STORE_INVENTORY_AUTHORITY_REPAIR_FORBIDDEN' ||
+    message === 'STORE_OWNER_GOVERNANCE_FORBIDDEN'
   ) {
     return { status: 403, message: 'Você não pode administrar conexões desta loja.' };
   }
@@ -53,8 +58,33 @@ const mapError = (error: unknown): { status: number; message: string } => {
           : 'Revise e confirme explicitamente a correção antes de aplicá-la.',
     };
   }
-  if (message === 'STORE_INVENTORY_AUTHORITY_REPAIR_ID_REQUIRED') {
-    return { status: 400, message: 'A revisão da correção é inválida ou expirou.' };
+  if (
+    message === 'STORE_OWNER_GOVERNANCE_CONFIRMATION_REQUIRED' ||
+    message === 'STORE_OWNER_GOVERNANCE_STALE' ||
+    message === 'STORE_OWNER_GOVERNANCE_NOT_ACTIONABLE' ||
+    message === 'STORE_OWNER_GOVERNANCE_CANONICAL_OWNER_PROTECTED' ||
+    message === 'STORE_OWNER_GOVERNANCE_CANDIDATE_UNIDENTIFIABLE'
+  ) {
+    return {
+      status: 409,
+      message: message === 'STORE_OWNER_GOVERNANCE_STALE'
+        ? 'O conjunto de owners mudou desde a revisão. Atualize o conflito antes de confirmar.'
+        : message === 'STORE_OWNER_GOVERNANCE_CANONICAL_OWNER_PROTECTED'
+          ? 'O owner canônico da loja é protegido e não pode ser desativado por esta decisão.'
+          : message === 'STORE_OWNER_GOVERNANCE_CANDIDATE_UNIDENTIFIABLE'
+            ? 'Este owner adicional não pôde ser identificado com segurança para confirmação.'
+            : message === 'STORE_OWNER_GOVERNANCE_NOT_ACTIONABLE'
+              ? 'Este conflito não possui uma decisão segura disponível neste estado.'
+              : 'Revise e confirme explicitamente a decisão de ownership antes de aplicá-la.',
+    };
+  }
+  if (
+    message === 'STORE_INVENTORY_AUTHORITY_REPAIR_ID_REQUIRED' ||
+    message === 'STORE_OWNER_GOVERNANCE_CONFLICT_ID_REQUIRED' ||
+    message === 'STORE_OWNER_GOVERNANCE_SELECTION_REQUIRED' ||
+    message === 'STORE_OWNER_GOVERNANCE_SELECTION_INVALID'
+  ) {
+    return { status: 400, message: 'A revisão da autoridade é inválida ou expirou.' };
   }
   if (message === 'STORE_CONNECTION_SYNC_AUTHORITY_UNAVAILABLE') {
     return {
@@ -127,6 +157,39 @@ export const createStoreConnectionOnboardingRouter = (): Router => {
         tenantId: identity.uid,
         requestedByUserId: identity.uid,
         repairId: clean(request.body?.repairId),
+        confirmed: request.body?.confirmed === true,
+      }));
+    } catch (error) {
+      const mapped = mapError(error);
+      response.status(mapped.status).json({ error: mapped.message });
+    }
+  });
+
+  router.get('/:storeId/owner-governance', async (request, response) => {
+    try {
+      const storeId = clean(request.params.storeId);
+      const identity = await authenticatedOwner(request.get('authorization') ?? '', storeId);
+      response.setHeader('Cache-Control', 'no-store, max-age=0');
+      response.json(await loadStoreOwnerGovernancePreview({
+        tenantId: identity.uid,
+        requestedByUserId: identity.uid,
+      }));
+    } catch (error) {
+      const mapped = mapError(error);
+      response.status(mapped.status).json({ error: mapped.message });
+    }
+  });
+
+  router.post('/:storeId/owner-governance', async (request, response) => {
+    try {
+      const storeId = clean(request.params.storeId);
+      const identity = await authenticatedOwner(request.get('authorization') ?? '', storeId);
+      response.setHeader('Cache-Control', 'no-store, max-age=0');
+      response.json(await applyStoreOwnerGovernanceDecision({
+        tenantId: identity.uid,
+        requestedByUserId: identity.uid,
+        conflictId: clean(request.body?.conflictId),
+        selectionId: clean(request.body?.selectionId),
         confirmed: request.body?.confirmed === true,
       }));
     } catch (error) {
