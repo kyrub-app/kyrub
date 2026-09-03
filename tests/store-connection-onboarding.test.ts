@@ -206,16 +206,30 @@ test('multichannel operation normalizer prioritizes conflicts and avoids duplica
   assert.equal(items.some(item => item.kind === 'mercado_livre_sync_review'), false);
 });
 
-test('multichannel queue reads existing authoritative sources and contains no provider mutation paths', () => {
+test('multichannel queue reads authoritative sources and exposes only the internal 99Food reservation retry write', () => {
   const source = readFileSync('src/utils/storeChannelOperations.ts', 'utf8');
   const component = readFileSync('src/components/store/StoreChannelOperationsQueue.tsx', 'utf8');
   assert.match(source, /loadMercadoLivreSyncReviewQueue/);
   assert.match(source, /loadMercadoLivreConflictResolutionQueue/);
   assert.match(source, /\/api\/integrations\/99food\/blocked-orders/);
+  assert.match(source, /retry-reservation/);
+  assert.match(source, /method: 'POST'/);
   assert.match(source, /Promise\.allSettled/);
-  assert.doesNotMatch(source, /retry-reservation|blocked-orders\/.*\/reject|decideMercadoLivreSyncProposal|updateStoreConnectionSyncAuthority/);
+  assert.doesNotMatch(source, /blocked-orders\/.*\/reject|decideMercadoLivreSyncProposal|updateStoreConnectionSyncAuthority|orders\/.*\/status/);
   assert.match(component, /Pendências dos canais/);
-  assert.match(component, /A fila não altera produtos, estoque, reservas/);
+  assert.match(component, /Tentar reservar novamente/);
+  assert.match(component, /Confirmar nova tentativa/);
+  assert.match(component, /Nenhum status foi enviado à 99Food/);
+});
+
+test('99Food reservation retry stays inside canonical reservation reconciliation and never writes provider status', () => {
+  const service = readFileSync('server/integrations/ninetyNineFoodOrderBlockResolutionService.ts', 'utf8');
+  const retrySection = service.match(
+    /export const retryNinetyNineFoodBlockedOrderReservation[\s\S]*?\n};\n\nexport const rejectNinetyNineFoodBlockedOrder/
+  )?.[0] ?? '';
+  assert.match(retrySection, /reconcileNinetyNineFoodOrderReservation/);
+  assert.match(retrySection, /BLOCKED_STATES\.has/);
+  assert.doesNotMatch(retrySection, /sendNinetyNineFoodOrderStatus|provider_write_succeeded|rejected/);
 });
 
 test('channel portal mounts the operational queue between overview and provider-specific modules', () => {
