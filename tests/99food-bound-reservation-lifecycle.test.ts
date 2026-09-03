@@ -158,12 +158,37 @@ test('reservation retry UI reports the authoritative outcome then reloads the qu
   assert.doesNotMatch(feedbackSection, /retryNinetyNineFoodBlockedOrderReservation|sendNinetyNineFoodOrderStatus|openRemediation/);
 
   const retryCallIndex = handlerSection.indexOf('const result = await retryNinetyNineFoodBlockedOrderReservation');
+  const toneIndex = handlerSection.indexOf('setActionFeedbackTone(retryFeedbackTone(result.state))');
   const feedbackIndex = handlerSection.indexOf('setActionFeedback(retryFeedback(result))');
   const refreshIndex = handlerSection.indexOf('await refresh()');
   assert.ok(retryCallIndex >= 0);
-  assert.ok(feedbackIndex > retryCallIndex);
+  assert.ok(toneIndex > retryCallIndex);
+  assert.ok(feedbackIndex > toneIndex);
   assert.ok(refreshIndex > feedbackIndex);
   assert.equal(handlerSection.match(/retryNinetyNineFoodBlockedOrderReservation/g)?.length, 1);
+});
+
+test('reservation retry feedback tone follows the authoritative readback state', () => {
+  const toneStart = operationsQueueSource.indexOf('const retryFeedbackTone =');
+  const feedbackStart = operationsQueueSource.indexOf('const retryFeedback =', toneStart);
+  const toneSection = operationsQueueSource.slice(toneStart, feedbackStart);
+
+  assert.match(operationsQueueSource, /type RetryFeedbackTone = 'success' \| 'warning' \| 'neutral'/);
+  assert.ok(toneStart >= 0);
+  assert.ok(feedbackStart > toneStart);
+  assert.match(toneSection, /state === 'blocked_insufficient_atp'/);
+  assert.match(toneSection, /state === 'blocked_product_binding_unresolved'/);
+  assert.match(toneSection, /state === 'blocked_authority_unresolved'/);
+  assert.match(toneSection, /return 'warning'/);
+  assert.match(toneSection, /state === 'reserved'/);
+  assert.match(toneSection, /state === 'consumed'/);
+  assert.match(toneSection, /state === 'waiting_physical_consumption'/);
+  assert.match(toneSection, /return 'success'/);
+  assert.match(toneSection, /return 'neutral'/);
+  assert.match(operationsQueueSource, /actionFeedbackTone === 'warning'/);
+  assert.match(operationsQueueSource, /actionFeedbackTone === 'neutral'/);
+  assert.match(operationsQueueSource, /border-amber-500\/20 bg-amber-500\/5 text-amber-100/);
+  assert.match(operationsQueueSource, /border-emerald-500\/20 bg-emerald-500\/5 text-emerald-200/);
 });
 
 test('provider rejection requires explicit authenticated action and a non-empty reason', () => {
