@@ -21,6 +21,27 @@ export interface NinetyNineFoodBlockedOrder {
   status: string;
 }
 
+export interface NinetyNineFoodReservationPreflightLine {
+  inventoryItemId: string;
+  requiredQuantity: number;
+  availableQuantity: number;
+  shortageQuantity: number;
+}
+
+export interface NinetyNineFoodReservationPreflight {
+  orderId: string;
+  state:
+    | 'binding_unresolved'
+    | 'insufficient_atp'
+    | 'ready_for_retry'
+    | 'already_reserved'
+    | 'not_applicable';
+  canonicalProductIds: string[];
+  unresolvedExternalProductIds: string[];
+  lines: NinetyNineFoodReservationPreflightLine[];
+  checkedAt: string;
+}
+
 export type StoreChannelOperationalItem = {
   id: string;
   provider: 'mercado_livre' | '99food';
@@ -75,6 +96,18 @@ const loadNinetyNineFoodBlockedOrders = async (
   );
   const items = Array.isArray(payload.items) ? payload.items : [];
   return { items: items as NinetyNineFoodBlockedOrder[] };
+};
+
+export const preflightNinetyNineFoodBlockedOrderReservation = async (
+  user: User,
+  orderId: string
+): Promise<NinetyNineFoodReservationPreflight> => {
+  const encodedOrderId = encodeURIComponent(orderId.trim());
+  if (!encodedOrderId) throw new Error('Pedido 99Food inválido para verificar o ATP.');
+  return authorizedNinetyNineFoodRequest<NinetyNineFoodReservationPreflight>(
+    user,
+    `/api/integrations/99food/blocked-orders/${encodedOrderId}/preflight`
+  );
 };
 
 export const retryNinetyNineFoodBlockedOrderReservation = async (
