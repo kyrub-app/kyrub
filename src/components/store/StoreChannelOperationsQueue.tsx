@@ -37,22 +37,45 @@ const openChannel = (target: StoreChannelOperationalItem['actionTarget']): void 
   element?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 };
 
+const openBindingRemediation = (externalProductIds: string[]): void => {
+  if (externalProductIds.length === 0) return;
+  requestNinetyNineFoodBindingRemediation(externalProductIds);
+  const element = document.getElementById('kyrub-99food-product-binding-workspace')
+    ?? document.getElementById('kyrub-99food-channel-detail');
+  element?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+};
+
+const openInventoryRemediation = (inventoryItemId: string): void => {
+  const normalized = inventoryItemId.trim();
+  if (!normalized) return;
+  requestPhysicalInventoryFocus(normalized);
+  document
+    .getElementById('kyrub-physical-inventory-workspace')
+    ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+};
+
 const openRemediation = (item: StoreChannelOperationalItem): void => {
   const target = item.remediationTarget;
   if (!target) return;
 
-  if (target === '99food_binding' && item.remediationExternalProductIds?.length) {
-    requestNinetyNineFoodBindingRemediation(item.remediationExternalProductIds);
-  }
-  if (target === 'kyrub_inventory' && item.remediationInventoryItemId) {
-    requestPhysicalInventoryFocus(item.remediationInventoryItemId);
+  if (target === '99food_binding') {
+    if (item.remediationExternalProductIds?.length) {
+      requestNinetyNineFoodBindingRemediation(item.remediationExternalProductIds);
+    }
+    const element = document.getElementById('kyrub-99food-product-binding-workspace')
+      ?? document.getElementById('kyrub-99food-channel-detail');
+    element?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    return;
   }
 
-  const element = target === '99food_binding'
-    ? document.getElementById('kyrub-99food-product-binding-workspace')
-      ?? document.getElementById('kyrub-99food-channel-detail')
-    : document.getElementById('kyrub-physical-inventory-workspace');
-  element?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  if (target === 'kyrub_inventory') {
+    if (item.remediationInventoryItemId) {
+      requestPhysicalInventoryFocus(item.remediationInventoryItemId);
+    }
+    document
+      .getElementById('kyrub-physical-inventory-workspace')
+      ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
 };
 
 const preflightTone = (
@@ -245,16 +268,36 @@ export default function StoreChannelOperationsQueue({ user, storeId }: { user: U
                           <span className="mt-1 block break-all">
                             Produtos externos sem vínculo: {preflight.unresolvedExternalProductIds.join(', ') || 'não identificados'}.
                           </span>
+                          {preflight.unresolvedExternalProductIds.length > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => openBindingRemediation(preflight.unresolvedExternalProductIds)}
+                              disabled={Boolean(retryingOrderId) || Boolean(preflightingOrderId)}
+                              className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-violet-500/25 bg-violet-500/10 px-2.5 py-1.5 text-[8px] font-black uppercase text-violet-200 disabled:opacity-40"
+                            >
+                              <Wrench className="h-3 w-3" /> Corrigir binding atual
+                            </button>
+                          )}
                         </>
                       )}
                       {preflight.state === 'insufficient_atp' && (
                         <>
                           <strong className="block">O ATP ainda não está suficiente.</strong>
-                          <div className="mt-1 space-y-1">
+                          <div className="mt-2 space-y-2">
                             {preflight.lines.filter(line => line.shortageQuantity > 0).map(line => (
-                              <span key={line.inventoryItemId} className="block break-all">
-                                {line.inventoryItemId}: necessário {line.requiredQuantity}, disponível {line.availableQuantity}, faltam {line.shortageQuantity}.
-                              </span>
+                              <div key={line.inventoryItemId} className="flex flex-col gap-1.5 rounded-lg border border-amber-400/15 bg-slate-950/35 p-2 sm:flex-row sm:items-center sm:justify-between">
+                                <span className="break-all">
+                                  {line.inventoryItemId}: necessário {line.requiredQuantity}, disponível {line.availableQuantity}, faltam {line.shortageQuantity}.
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => openInventoryRemediation(line.inventoryItemId)}
+                                  disabled={Boolean(retryingOrderId) || Boolean(preflightingOrderId)}
+                                  className="inline-flex shrink-0 items-center justify-center gap-1 rounded-lg border border-cyan-500/25 bg-cyan-500/10 px-2 py-1.5 text-[8px] font-black uppercase text-cyan-200 disabled:opacity-40"
+                                >
+                                  <PackageSearch className="h-3 w-3" /> Abrir item
+                                </button>
+                              </div>
                             ))}
                           </div>
                         </>
