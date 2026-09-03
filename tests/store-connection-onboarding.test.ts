@@ -106,6 +106,7 @@ test('multichannel normalizer prioritizes conflict and routes 99Food binding rem
   assert.equal(items.length, 2);
   assert.equal(items[0].kind, '99food_binding_unresolved');
   assert.equal(items[0].remediationTarget, '99food_binding');
+  assert.deepEqual(items[0].remediationExternalProductIds, ['ext-product-b', 'ext-product-a']);
   assert.deepEqual(items[0].evidence, ['Produtos externos sem binding: ext-product-b, ext-product-a']);
   assert.equal(items.some(item => item.kind === 'mercado_livre_sync_review'), false);
 });
@@ -124,6 +125,7 @@ test('99Food ATP item exposes exact canonical product and shortage evidence', ()
     }],
   });
   assert.equal(items[0].remediationTarget, 'kyrub_inventory');
+  assert.equal(items[0].remediationExternalProductIds, undefined);
   assert.deepEqual(items[0].evidence, [
     'Produtos Kyrub envolvidos: product-burger',
     'Item de estoque com ATP insuficiente: ingredient-meat',
@@ -184,6 +186,25 @@ test('multichannel queue exposes only internal reservation retry write and deter
   assert.match(component, /Corrigir binding/);
   assert.match(component, /Abrir estoque/);
   assert.match(bridge, /id="kyrub-99food-product-binding-workspace"/);
+});
+
+test('99Food binding remediation preload is exact, memory-only and never auto-binds a canonical product', () => {
+  const handoff = readFileSync('src/utils/ninetyNineFoodBindingRemediation.ts', 'utf8');
+  const queue = readFileSync('src/components/store/StoreChannelOperationsQueue.tsx', 'utf8');
+  const workspace = readFileSync('src/components/store/NinetyNineFoodE2ETestWorkspace.tsx', 'utf8');
+  const preloadEffect = workspace.match(
+    /useEffect\(\(\) => \{\n    const applyPendingRemediation[\s\S]*?\n  \}, \[\]\);/
+  )?.[0] ?? '';
+
+  assert.match(handoff, /let pendingContext: NinetyNineFoodBindingRemediationContext \| null = null/);
+  assert.match(handoff, /window\.dispatchEvent/);
+  assert.match(handoff, /pendingContext = null/);
+  assert.doesNotMatch(handoff, /localStorage|sessionStorage|indexedDB|Firestore|fetch\(/i);
+  assert.match(queue, /requestNinetyNineFoodBindingRemediation\(item\.remediationExternalProductIds\)/);
+  assert.match(preloadEffect, /consumeNinetyNineFoodBindingRemediation/);
+  assert.match(preloadEffect, /setExternalProductId\(externalId\)/);
+  assert.match(preloadEffect, /setCanonicalProductId\(''\)/);
+  assert.doesNotMatch(preloadEffect, /bindNinetyNineFoodE2EProduct|handleBind/);
 });
 
 test('99Food reservation retry stays inside canonical reconciliation and never writes provider status', () => {
