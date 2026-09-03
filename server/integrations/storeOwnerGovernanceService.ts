@@ -34,6 +34,7 @@ export interface StoreOwnerGovernancePreview {
   conflictId: string;
   activeOwnerCount: number;
   canonicalOwnerProtected: boolean;
+  canonicalOwnerActivationId: string;
   candidates: StoreOwnerGovernanceCandidate[];
   requiresConfirmation: boolean;
   checkedAt: string;
@@ -84,6 +85,14 @@ const selectionIdFor = (conflictId: string, memberUserId: string): string =>
     .update(`${conflictId}:${memberUserId}`)
     .digest('hex')
     .slice(0, 32)}`;
+
+const canonicalOwnerActivationIdFor = (
+  conflictId: string,
+  canonicalOwnerId: string
+): string => `canonical-owner-activation-${createHash('sha256')
+  .update(`${conflictId}:${canonicalOwnerId}:activate-canonical-owner`)
+  .digest('hex')
+  .slice(0, 40)}`;
 
 const inspectGovernanceContext = async (
   reader: GovernanceReader,
@@ -282,14 +291,19 @@ export const loadStoreOwnerGovernancePreview = async (input: {
         context.extraOwnerIds.map(userId => candidateProfile(context.conflictId, userId))
       )
     : [];
+  const canonicalOwnerActivationId = context.state === 'canonical_owner_not_active'
+    ? canonicalOwnerActivationIdFor(context.conflictId, context.canonicalOwnerId)
+    : '';
   return {
     state: context.state,
     actionable: context.state === 'multiple_active_owners' && candidates.some(candidate => candidate.selectable),
     conflictId: context.conflictId,
     activeOwnerCount: context.activeOwnerIds.length,
     canonicalOwnerProtected: context.state === 'multiple_active_owners',
+    canonicalOwnerActivationId,
     candidates,
-    requiresConfirmation: context.state === 'multiple_active_owners',
+    requiresConfirmation:
+      context.state === 'multiple_active_owners' || context.state === 'canonical_owner_not_active',
     checkedAt: new Date().toISOString(),
   };
 };
@@ -384,6 +398,101 @@ export const applyStoreOwnerGovernanceDecision = async (input: {
     return {
       conflictId: context.conflictId,
       selectionId: expectedSelectionId,
+      applied: true as const,
+    };
+  });
+};
+
+export const applyCanonicalOwnerReconciliation = async (input: {
+  tenantId: string;
+  requestedByUserId: string;
+  conflictId: string;
+  activationId: string;
+  confirmed: boolean;
+}): Promise<{ conflictId: string; activationId: string; applied: true }> => {
+  const tenantId = clean(input.tenantId);
+  const requestedByUserId = clean(input.requestedByUserId);
+  const expectedConflictId = clean(input.conflictId);
+  const expectedActivationId = clean(input.activationId);
+  if (!tenantId || requestedByUserId !== tenantId) {
+    throw new Error('STORE_OWNER_GOVERNANCE_FORBIDDEN');
+  }
+  if (!input.confirmed) throw new Error('STORE_CANONICAL_OWNER_RECONCILIATION_CONFIRMATION_REQUIRED');
+  if (!expectedConflictId || !expectedActivationId) {
+    throw new Error('STORE_CANONICAL_OWNER_RECONCILIATION_ID_REQUIRED');
+  }
+
+  return adminDb.runTransaction(async transaction => {
+    const context = await inspectGovernanceContext(transactionReader(transaction), tenantId);
+    if (
+      context.state !== 'canonical_owner_not_active' ||
+      !context.conflictId ||
+      !context.canonicalOwnerId
+    ) {
+      throw new Error('STORE_CANONICAL_OWNER_RECONCILIATION_NOT_ACTIONABLE');
+    }
+    const currentActivationId = canonicalOwnerActivationIdFor(
+      context.conflictId,
+      context.canonicalOwnerId
+    );
+    if (
+      context.conflictId !== expectedConflictId ||
+      currentActivationId !== expectedActivationId
+    ) {
+      throw new Error('STORE_CANONICAL_OWNER_RECONCILIATION_STALE');
+    }
+
+    const memberRef = adminDb.doc(
+      `stores/${context.canonicalStoreId}/members/${context.canonicalOwnerId}`
+    );
+    const memberSnapshot = await transaction.get(memberRef);
+    const member = memberSnapshot.data() as Record<string, unknown> | undefined;
+    const existingUserId = clean(member?.userId);
+    if (memberSnapshot.exists && existingUserId && existingUserId !== context.canonicalOwnerId) {
+      throw new Error('STORE_CANONICAL_OWNER_RECONCILIATION_MEMBER_CONFLICT');
+    }
+
+    const decisionId = `canonical-owner-reconciliation-${createHash('sha256')
+      .update(`${context.conflictId}:${context.canonicalOwnerId}`)
+      .digest('hex')
+      .slice(0, 40)}`;
+    const decisionRef = adminDb.doc(
+      `stores/${context.canonicalStoreId}/ownerGovernanceDecisions/${decisionId}`
+    );
+    const decisionSnapshot = await transaction.get(decisionRef);
+    if (decisionSnapshot.exists) {
+      throw new Error('STORE_CANONICAL_OWNER_RECONCILIATION_STALE');
+    }
+
+    transaction.set(
+      memberRef,
+      {
+        userId: context.canonicalOwnerId,
+        role: 'owner',
+        status: 'active',
+        ...(memberSnapshot.exists ? {} : { createdAt: FieldValue.serverTimestamp() }),
+        canonicalOwnerReconciledAt: FieldValue.serverTimestamp(),
+        canonicalOwnerReconciledBy: requestedByUserId,
+        updatedAt: FieldValue.serverTimestamp(),
+      },
+      { merge: true }
+    );
+    transaction.set(decisionRef, {
+      schemaVersion: 1,
+      id: decisionId,
+      conflictId: context.conflictId,
+      activationId: currentActivationId,
+      action: 'activate_canonical_owner_membership',
+      canonicalOwnerUserId: context.canonicalOwnerId,
+      requestedByUserId,
+      authority: 'explicit_canonical_store_owner_confirmation',
+      confirmed: true,
+      appliedAt: FieldValue.serverTimestamp(),
+    });
+
+    return {
+      conflictId: context.conflictId,
+      activationId: currentActivationId,
       applied: true as const,
     };
   });
