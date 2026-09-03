@@ -128,7 +128,7 @@ const authorityPresentation = (
     case 'resolved':
       return {
         label: 'Pronta',
-        detail: 'Existe exatamente um owner ativo e o documento físico canônico correspondente foi encontrado.',
+        detail: 'O owner canônico da loja é o único owner ativo e o documento físico canônico correspondente foi encontrado.',
         className: 'border-emerald-500/25 bg-emerald-500/10 text-emerald-300',
         icon: BadgeCheck,
       };
@@ -146,17 +146,24 @@ const authorityPresentation = (
         className: 'border-amber-500/25 bg-amber-500/10 text-amber-300',
         icon: CircleAlert,
       };
+    case 'canonical_owner_not_active':
+      return {
+        label: 'Owner canônico inativo',
+        detail: `Foram encontrados ${health.activeOwnerCount} owner(s) ativos, mas nenhum deles é o owner definido pela raiz canônica da loja. O Kyrub não adotará outro owner por inferência.`,
+        className: 'border-amber-500/25 bg-amber-500/10 text-amber-300',
+        icon: CircleAlert,
+      };
     case 'multiple_active_owners':
       return {
         label: 'Múltiplos owners',
-        detail: `Foram encontrados ${health.activeOwnerCount} owners ativos. O Kyrub não escolherá um deles por aproximação.`,
+        detail: `O owner canônico está ativo, mas foram encontrados ${health.activeOwnerCount} owners ativos. O Kyrub não escolherá um deles por aproximação.`,
         className: 'border-amber-500/25 bg-amber-500/10 text-amber-300',
         icon: CircleAlert,
       };
     case 'inventory_document_missing':
       return {
         label: 'Inventário físico ausente',
-        detail: 'Existe exatamente um owner ativo, mas o documento físico canônico correspondente não foi encontrado.',
+        detail: 'O owner canônico é o único owner ativo, mas o documento físico canônico correspondente não foi encontrado.',
         className: 'border-amber-500/25 bg-amber-500/10 text-amber-300',
         icon: CircleAlert,
       };
