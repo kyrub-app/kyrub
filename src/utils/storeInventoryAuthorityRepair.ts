@@ -17,6 +17,7 @@ export interface StoreInventoryAuthorityRepairPreview {
   state:
     | 'canonical_store_unresolved'
     | 'no_active_owner'
+    | 'canonical_owner_not_active'
     | 'multiple_active_owners'
     | 'inventory_document_missing'
     | 'resolved';
