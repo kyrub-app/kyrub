@@ -9,6 +9,14 @@ const clean = (value: unknown, maximum = 500): string =>
     ? String(value).replace(/\s+/g, ' ').trim().slice(0, maximum)
     : '';
 
+const stringList = (value: unknown, maximum = 240): string[] =>
+  Array.isArray(value)
+    ? Array.from(new Set(value.map(item => clean(item, maximum)).filter(Boolean))).sort()
+    : [];
+
+const finiteNumber = (value: unknown): number | null =>
+  typeof value === 'number' && Number.isFinite(value) ? value : null;
+
 const BLOCKED_STATES = new Set([
   'blocked_insufficient_atp',
   'blocked_product_binding_unresolved',
@@ -49,6 +57,11 @@ export interface NinetyNineFoodBlockedOrder {
   customerName: string;
   blockedState: 'blocked_insufficient_atp' | 'blocked_product_binding_unresolved';
   blockedDetail: string;
+  unresolvedExternalProductIds: string[];
+  canonicalProductIds: string[];
+  inventoryItemId: string;
+  requiredQuantity: number | null;
+  availableQuantity: number | null;
   status: string;
 }
 
@@ -77,6 +90,11 @@ export const listNinetyNineFoodBlockedOrders = async (input: {
       customerName: clean(order.buyerName, 240),
       blockedState: state as NinetyNineFoodBlockedOrder['blockedState'],
       blockedDetail: clean(reservation.detail, 1_000),
+      unresolvedExternalProductIds: stringList(reservation.unresolvedExternalProductIds),
+      canonicalProductIds: stringList(reservation.canonicalProductIds),
+      inventoryItemId: clean(reservation.inventoryItemId, 240),
+      requiredQuantity: finiteNumber(reservation.requiredQuantity),
+      availableQuantity: finiteNumber(reservation.availableQuantity),
       status: clean(order.status, 120),
     }];
   });

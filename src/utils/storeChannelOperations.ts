@@ -13,6 +13,11 @@ export interface NinetyNineFoodBlockedOrder {
   customerName: string;
   blockedState: 'blocked_insufficient_atp' | 'blocked_product_binding_unresolved';
   blockedDetail: string;
+  unresolvedExternalProductIds?: string[];
+  canonicalProductIds?: string[];
+  inventoryItemId?: string;
+  requiredQuantity?: number | null;
+  availableQuantity?: number | null;
   status: string;
 }
 
@@ -27,6 +32,7 @@ export type StoreChannelOperationalItem = {
     | '99food_binding_unresolved';
   title: string;
   detail: string;
+  evidence?: string[];
   reference: string;
   actionTarget: 'mercado_livre' | '99food';
   remediationTarget?: '99food_binding' | 'kyrub_inventory';
@@ -122,6 +128,29 @@ export const buildStoreChannelOperationalItems = (input: {
 
   for (const order of input.ninetyNineFoodBlocked) {
     const bindingBlocked = order.blockedState === 'blocked_product_binding_unresolved';
+    const unresolvedExternalProductIds = order.unresolvedExternalProductIds ?? [];
+    const canonicalProductIds = order.canonicalProductIds ?? [];
+    const inventoryItemId = order.inventoryItemId ?? '';
+    const requiredQuantity = order.requiredQuantity ?? null;
+    const availableQuantity = order.availableQuantity ?? null;
+    const evidence: string[] = [];
+    if (bindingBlocked && unresolvedExternalProductIds.length > 0) {
+      evidence.push(`Produtos externos sem binding: ${unresolvedExternalProductIds.join(', ')}`);
+    }
+    if (!bindingBlocked && canonicalProductIds.length > 0) {
+      evidence.push(`Produtos Kyrub envolvidos: ${canonicalProductIds.join(', ')}`);
+    }
+    if (!bindingBlocked && inventoryItemId) {
+      evidence.push(`Item de estoque com ATP insuficiente: ${inventoryItemId}`);
+    }
+    if (
+      !bindingBlocked &&
+      requiredQuantity !== null &&
+      availableQuantity !== null
+    ) {
+      evidence.push(`Necessário: ${requiredQuantity} · disponível: ${availableQuantity}`);
+    }
+
     items.push({
       id: `99food-blocked:${order.orderId}`,
       provider: '99food',
@@ -131,6 +160,7 @@ export const buildStoreChannelOperationalItems = (input: {
       detail: bindingBlocked
         ? 'A linha externa ainda não possui binding ativo para um produto canônico Kyrub. Nenhuma reserva foi inferida por nome ou SKU.'
         : 'O pedido não conseguiu reservar disponibilidade suficiente no ATP canônico. O estoque físico não foi inventado nem sobrescrito.',
+      evidence,
       reference: order.orderId,
       actionTarget: '99food',
       remediationTarget: bindingBlocked ? '99food_binding' : 'kyrub_inventory',
