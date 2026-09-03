@@ -11,7 +11,10 @@ export interface NinetyNineFoodBlockedOrder {
   externalOrderId: string;
   displayId: string;
   customerName: string;
-  blockedState: 'blocked_insufficient_atp' | 'blocked_product_binding_unresolved';
+  blockedState:
+    | 'blocked_insufficient_atp'
+    | 'blocked_product_binding_unresolved'
+    | 'blocked_authority_unresolved';
   blockedDetail: string;
   unresolvedExternalProductIds?: string[];
   canonicalProductIds?: string[];
@@ -33,6 +36,7 @@ export interface NinetyNineFoodReservationPreflight {
   state:
     | 'binding_unresolved'
     | 'insufficient_atp'
+    | 'authority_unresolved'
     | 'ready_for_retry'
     | 'already_reserved'
     | 'not_applicable';
@@ -50,7 +54,8 @@ export type StoreChannelOperationalItem = {
     | 'mercado_livre_sync_review'
     | 'mercado_livre_conflict'
     | '99food_insufficient_atp'
-    | '99food_binding_unresolved';
+    | '99food_binding_unresolved'
+    | '99food_authority_unresolved';
   title: string;
   detail: string;
   evidence?: string[];
@@ -163,6 +168,7 @@ export const buildStoreChannelOperationalItems = (input: {
 
   for (const order of input.ninetyNineFoodBlocked) {
     const bindingBlocked = order.blockedState === 'blocked_product_binding_unresolved';
+    const authorityBlocked = order.blockedState === 'blocked_authority_unresolved';
     const unresolvedExternalProductIds = order.unresolvedExternalProductIds ?? [];
     const canonicalProductIds = order.canonicalProductIds ?? [];
     const inventoryItemId = order.inventoryItemId ?? '';
@@ -175,11 +181,12 @@ export const buildStoreChannelOperationalItems = (input: {
     if (!bindingBlocked && canonicalProductIds.length > 0) {
       evidence.push(`Produtos Kyrub envolvidos: ${canonicalProductIds.join(', ')}`);
     }
-    if (!bindingBlocked && inventoryItemId) {
+    if (!bindingBlocked && !authorityBlocked && inventoryItemId) {
       evidence.push(`Item de estoque com ATP insuficiente: ${inventoryItemId}`);
     }
     if (
       !bindingBlocked &&
+      !authorityBlocked &&
       requiredQuantity !== null &&
       availableQuantity !== null
     ) {
@@ -190,17 +197,29 @@ export const buildStoreChannelOperationalItems = (input: {
       id: `99food-blocked:${order.orderId}`,
       provider: '99food',
       severity: 'critical',
-      kind: bindingBlocked ? '99food_binding_unresolved' : '99food_insufficient_atp',
+      kind: authorityBlocked
+        ? '99food_authority_unresolved'
+        : bindingBlocked
+          ? '99food_binding_unresolved'
+          : '99food_insufficient_atp',
       title: `Pedido 99Food ${order.displayId || order.externalOrderId || order.orderId}`,
-      detail: bindingBlocked
-        ? 'A linha externa ainda não possui binding ativo para um produto canônico Kyrub. Nenhuma reserva foi inferida por nome ou SKU.'
-        : 'O pedido não conseguiu reservar disponibilidade suficiente no ATP canônico. O estoque físico não foi inventado nem sobrescrito.',
+      detail: authorityBlocked
+        ? 'O Kyrub não conseguiu resolver uma única autoridade canônica de estoque para a loja. Nenhum owner ou inventário alternativo foi escolhido por inferência.'
+        : bindingBlocked
+          ? 'A linha externa ainda não possui binding ativo para um produto canônico Kyrub. Nenhuma reserva foi inferida por nome ou SKU.'
+          : 'O pedido não conseguiu reservar disponibilidade suficiente no ATP canônico. O estoque físico não foi inventado nem sobrescrito.',
       evidence,
       reference: order.orderId,
       actionTarget: '99food',
-      remediationTarget: bindingBlocked ? '99food_binding' : 'kyrub_inventory',
+      remediationTarget: authorityBlocked
+        ? undefined
+        : bindingBlocked
+          ? '99food_binding'
+          : 'kyrub_inventory',
       remediationExternalProductIds: bindingBlocked ? unresolvedExternalProductIds : undefined,
-      remediationInventoryItemId: !bindingBlocked && inventoryItemId ? inventoryItemId : undefined,
+      remediationInventoryItemId: !bindingBlocked && !authorityBlocked && inventoryItemId
+        ? inventoryItemId
+        : undefined,
     });
   }
 
