@@ -21,6 +21,7 @@ import {
   retryNinetyNineFoodBlockedOrderReservation,
   type NinetyNineFoodInventoryAuthorityDiagnostic,
   type NinetyNineFoodReservationPreflight,
+  type NinetyNineFoodReservationRetryResult,
   type StoreChannelOperationalItem,
 } from '../../utils/storeChannelOperations';
 
@@ -116,6 +117,46 @@ const preflightTone = (
     return 'border-amber-500/20 bg-amber-500/5 text-amber-100';
   }
   return 'border-slate-700 bg-slate-950/60 text-slate-300';
+};
+
+const retryFeedback = (result: NinetyNineFoodReservationRetryResult): string => {
+  const evidence = result.evidence;
+  const mismatch = result.reconciliationState !== result.state
+    ? ` A tentativa produziu “${result.reconciliationState}”, mas a leitura autoritativa imediatamente posterior já está em “${result.state}”.`
+    : '';
+  const noProviderWrite = ' Nenhum status foi enviado à 99Food.';
+
+  if (result.state === 'reserved') {
+    return `Reserva canônica confirmada para o pedido. A leitura autoritativa do Kyrub está em “reserved”.${mismatch}${noProviderWrite}`;
+  }
+  if (result.state === 'blocked_insufficient_atp') {
+    const quantities = evidence.requiredQuantity !== null && evidence.availableQuantity !== null
+      ? ` Necessário: ${evidence.requiredQuantity}; disponível: ${evidence.availableQuantity}.`
+      : '';
+    const item = evidence.inventoryItemId
+      ? ` Item físico atual: ${evidence.inventoryItemId}.`
+      : '';
+    return `A nova tentativa continua bloqueada por ATP insuficiente.${item}${quantities}${mismatch}${noProviderWrite}`;
+  }
+  if (result.state === 'blocked_product_binding_unresolved') {
+    const products = evidence.unresolvedExternalProductIds.length > 0
+      ? ` IDs externos sem binding: ${evidence.unresolvedExternalProductIds.join(', ')}.`
+      : '';
+    return `A nova tentativa continua bloqueada por binding não resolvido.${products}${mismatch}${noProviderWrite}`;
+  }
+  if (result.state === 'blocked_authority_unresolved') {
+    return `A nova tentativa continua bloqueada porque a autoridade canônica do estoque ainda não está resolvida.${mismatch}${noProviderWrite}`;
+  }
+  if (result.state === 'released') {
+    return `A leitura autoritativa mostra a reserva canônica como liberada. O pedido não permanece com uma reserva física ativa neste estado.${mismatch}${noProviderWrite}`;
+  }
+  if (result.state === 'consumed') {
+    return `A leitura autoritativa mostra a reserva canônica como consumida por evidência física já aplicada.${mismatch}${noProviderWrite}`;
+  }
+  if (result.state === 'waiting_physical_consumption') {
+    return `A reserva canônica existe e agora aguarda a etapa de consumo físico correspondente ao estado operacional do pedido.${mismatch}${noProviderWrite}`;
+  }
+  return `A reserva de insumos não é aplicável ao estado atual deste pedido. A fila será reconsultada com esse estado autoritativo.${mismatch}${noProviderWrite}`;
 };
 
 export default function StoreChannelOperationsQueue({ user, storeId }: { user: User; storeId: string }) {
@@ -222,11 +263,9 @@ export default function StoreChannelOperationsQueue({ user, storeId }: { user: U
     setActionFeedback('');
     setActionError('');
     try {
-      await retryNinetyNineFoodBlockedOrderReservation(user, item.reference);
+      const result = await retryNinetyNineFoodBlockedOrderReservation(user, item.reference);
       setConfirmRetryOrderId('');
-      setActionFeedback(
-        'O Kyrub reprocessou a reserva interna deste pedido e atualizou a fila. Se o bloqueio continuar, o pedido permanece aqui. Nenhum status foi enviado à 99Food.'
-      );
+      setActionFeedback(retryFeedback(result));
       await refresh();
     } catch (error) {
       setActionError(
