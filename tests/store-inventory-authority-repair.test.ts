@@ -45,6 +45,37 @@ test('multiple active owners remain non-actionable and no owner is selected by a
   assert.doesNotMatch(service, /activeOwnerIds\[0\][\s\S]{0,120}activate_canonical_owner/);
 });
 
+test('zero-owner repair blocks when the canonical membership path belongs to another explicit identity', () => {
+  const zeroOwnerIndex = service.indexOf('if (activeOwnerIds.length === 0)');
+  const memberReadIndex = service.indexOf('canonicalOwnerMemberSnapshot = await reader.get(canonicalOwnerMemberRef)');
+  const conflictIndex = service.indexOf("reason: 'canonical_owner_identity_conflict'");
+  const activationIndex = service.indexOf("action: 'activate_canonical_owner'", conflictIndex);
+
+  assert.ok(zeroOwnerIndex >= 0);
+  assert.ok(memberReadIndex > zeroOwnerIndex);
+  assert.ok(conflictIndex > memberReadIndex);
+  assert.ok(activationIndex > conflictIndex);
+  assert.match(service, /existingCanonicalMemberUserId !== canonicalOwnerId/);
+  assert.match(client, /'canonical_owner_identity_conflict'/);
+  assert.match(panel, /já aponta explicitamente para outra identidade/);
+  assert.match(panel, /não substituirá esse userId por merge/);
+});
+
+test('owner activation revalidates membership identity before its merge write', () => {
+  const activationBranch = service.match(
+    /preview\.action === 'activate_canonical_owner'[\s\S]*?transaction\.set\(\n        ownerMemberRef,[\s\S]*?\n      \);/
+  )?.[0] ?? '';
+  const snapshotIndex = activationBranch.indexOf('ownerMemberSnapshot = await transaction.get(ownerMemberRef)');
+  const conflictIndex = activationBranch.indexOf('existingOwnerMemberUserId !== context.canonicalOwnerId');
+  const writeIndex = activationBranch.indexOf('transaction.set(');
+
+  assert.ok(snapshotIndex >= 0);
+  assert.ok(conflictIndex > snapshotIndex);
+  assert.ok(writeIndex > conflictIndex);
+  assert.match(activationBranch, /STORE_INVENTORY_AUTHORITY_REPAIR_NOT_ACTIONABLE/);
+  assert.match(activationBranch, /userId: context\.canonicalOwnerId/);
+});
+
 test('owner activation is restricted to the canonical root owner id', () => {
   assert.match(service, /canonicalOwnerId = clean\(canonicalStore\?\.ownerId\)/);
   assert.match(service, /members\/\$\{context\.canonicalOwnerId\}/);
