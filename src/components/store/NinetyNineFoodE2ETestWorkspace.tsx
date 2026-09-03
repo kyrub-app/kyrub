@@ -14,6 +14,10 @@ import {
   type NinetyNineFoodE2ECatalogIdentity,
   type NinetyNineFoodE2EReconciliation,
 } from '../../utils/ninetyNineFoodE2ETest';
+import {
+  consumeNinetyNineFoodBindingRemediation,
+  NINETY_NINE_FOOD_BINDING_REMEDIATION_EVENT,
+} from '../../utils/ninetyNineFoodBindingRemediation';
 
 interface Props {
   notify: (message: string, type?: 'success' | 'error' | 'info') => void;
@@ -100,6 +104,29 @@ export default function NinetyNineFoodE2ETestWorkspace({ notify }: Props) {
         if (!cancelled) setFeedback(error instanceof Error ? error.message : String(error));
       });
     return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    const applyPendingRemediation = (): void => {
+      const context = consumeNinetyNineFoodBindingRemediation();
+      const externalId = context?.externalProductIds[0]?.trim() ?? '';
+      if (!externalId) return;
+      resetFlow();
+      setExternalProductId(externalId);
+      setCanonicalProductId('');
+      setFeedback(
+        context && context.externalProductIds.length > 1
+          ? `ID externo exato pré-carregado para binding: ${externalId}. Existem ${context.externalProductIds.length} itens sem binding; corrija um por vez.`
+          : `ID externo exato pré-carregado para binding: ${externalId}. Escolha o produto canônico Kyrub antes de confirmar.`
+      );
+    };
+
+    const handleRemediation = (): void => applyPendingRemediation();
+    window.addEventListener(NINETY_NINE_FOOD_BINDING_REMEDIATION_EVENT, handleRemediation);
+    applyPendingRemediation();
+    return () => {
+      window.removeEventListener(NINETY_NINE_FOOD_BINDING_REMEDIATION_EVENT, handleRemediation);
+    };
   }, []);
 
   const run = async (key: string, task: () => Promise<void>): Promise<void> => {
