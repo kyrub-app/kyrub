@@ -158,6 +158,14 @@ export default function StoreChannelOperationsQueue({ user, storeId }: { user: U
                   <div className="flex flex-wrap items-center gap-2"><span className="text-[9px] font-black uppercase text-slate-500">{item.provider === 'mercado_livre' ? 'Mercado Livre' : '99Food'}</span><span className="rounded-full border border-slate-700 px-2 py-0.5 text-[8px] font-black uppercase text-slate-300">{labels[item.kind]}</span></div>
                   <strong className="mt-2 block text-xs text-white">{item.title}</strong>
                   <p className="mt-1 text-[10px] leading-relaxed text-slate-400">{item.detail}</p>
+                  {item.evidence && item.evidence.length > 0 && (
+                    <div className="mt-2 space-y-1 rounded-xl border border-slate-800 bg-slate-950/50 p-2.5">
+                      <span className="block text-[8px] font-black uppercase tracking-wider text-slate-500">Evidência do bloqueio</span>
+                      {item.evidence.map(line => (
+                        <p key={line} className="break-all text-[9px] leading-relaxed text-slate-300">{line}</p>
+                      ))}
+                    </div>
+                  )}
                   <p className="mt-2 break-all text-[9px] text-slate-600">Ref. {item.reference}</p>
                   {item.remediationTarget && (
                     <p className="mt-2 text-[9px] leading-relaxed text-cyan-200/80">
