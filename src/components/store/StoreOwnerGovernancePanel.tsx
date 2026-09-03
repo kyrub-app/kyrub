@@ -1,7 +1,14 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { User } from 'firebase/auth';
-import { AlertTriangle, ShieldAlert, UserRoundX, UsersRound } from 'lucide-react';
 import {
+  AlertTriangle,
+  ShieldAlert,
+  UserRoundCheck,
+  UserRoundX,
+  UsersRound,
+} from 'lucide-react';
+import {
+  confirmCanonicalOwnerReconciliation,
   confirmStoreOwnerGovernanceDecision,
   loadStoreOwnerGovernancePreview,
   type StoreOwnerGovernanceCandidate,
@@ -21,13 +28,9 @@ export default function StoreOwnerGovernancePanel({
   const [loading, setLoading] = useState(false);
   const [applying, setApplying] = useState(false);
   const [armedSelectionId, setArmedSelectionId] = useState('');
+  const [armedCanonicalOwnerActivation, setArmedCanonicalOwnerActivation] = useState(false);
   const [message, setMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
-
-  const armedCandidate = useMemo(
-    () => preview?.candidates.find(candidate => candidate.selectionId === armedSelectionId) ?? null,
-    [armedSelectionId, preview]
-  );
 
   const load = async (): Promise<void> => {
     setLoading(true);
@@ -36,6 +39,7 @@ export default function StoreOwnerGovernancePanel({
       const next = await loadStoreOwnerGovernancePreview(user, storeId);
       setPreview(next);
       setArmedSelectionId('');
+      setArmedCanonicalOwnerActivation(false);
     } catch (error) {
       setPreview(null);
       setErrorMessage(
@@ -52,6 +56,33 @@ export default function StoreOwnerGovernancePanel({
     void load();
   }, [storeId, user.uid]);
 
+  const confirmCanonicalOwner = async (): Promise<void> => {
+    if (
+      !preview ||
+      preview.state !== 'canonical_owner_not_active' ||
+      !armedCanonicalOwnerActivation
+    ) return;
+    setApplying(true);
+    setErrorMessage('');
+    setMessage('');
+    try {
+      await confirmCanonicalOwnerReconciliation(user, storeId, preview);
+      setMessage(
+        'A membership do owner canônico foi ativada. Nenhum owner existente foi desativado; o Kyrub reconsultará o conflito antes da próxima decisão.'
+      );
+      await load();
+      onApplied();
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : 'Não foi possível reconciliar o owner canônico.'
+      );
+    } finally {
+      setApplying(false);
+    }
+  };
+
   const confirmCandidate = async (candidate: StoreOwnerGovernanceCandidate): Promise<void> => {
     if (!preview || candidate.selectionId !== armedSelectionId) return;
     setApplying(true);
@@ -62,8 +93,8 @@ export default function StoreOwnerGovernancePanel({
       setMessage(
         'A autoridade deste owner adicional foi desativada com confirmação explícita. O Kyrub reconsultará a autoridade antes de qualquer próxima decisão.'
       );
-      onApplied();
       await load();
+      onApplied();
     } catch (error) {
       setErrorMessage(
         error instanceof Error
@@ -98,7 +129,7 @@ export default function StoreOwnerGovernancePanel({
           </span>
           <h4 className="mt-1 text-sm font-black text-white">Conflito de owners ativos</h4>
           <p className="mt-2 max-w-3xl text-[10px] leading-relaxed text-slate-400">
-            Esta área só resolve duplicidade de autoridade quando o owner canônico da loja continua ativo e protegido. Nenhum owner é escolhido automaticamente.
+            O Kyrub primeiro garante que o owner definido pela loja canônica esteja ativo e protegido. Só depois permite revisar owners adicionais, sempre um por confirmação e sem escolhas automáticas.
           </p>
         </div>
       </div>
@@ -116,11 +147,53 @@ export default function StoreOwnerGovernancePanel({
         </p>
       )}
 
-      {canonicalOwnerMissing && (
-        <p className="mt-4 flex items-start gap-2 rounded-2xl border border-red-500/20 bg-red-500/5 p-3 text-[10px] leading-relaxed text-red-100">
-          <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" />
-          Existem múltiplos owners ativos, mas o owner definido pela loja canônica não está entre eles. O Kyrub não desativará ninguém até essa autoridade ser reconciliada por outro fluxo explícito.
-        </p>
+      {canonicalOwnerMissing && preview && (
+        <div className="mt-4 rounded-2xl border border-amber-500/20 bg-slate-950/55 p-3">
+          <p className="flex items-start gap-2 text-[10px] leading-relaxed text-amber-100">
+            <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" />
+            Existem {preview.activeOwnerCount} owners ativos, mas o owner explicitamente definido pela loja canônica não está entre eles. O Kyrub não desativará ninguém antes de restaurar essa autoridade canônica.
+          </p>
+
+          {!armedCanonicalOwnerActivation ? (
+            <button
+              type="button"
+              onClick={() => {
+                setArmedCanonicalOwnerActivation(true);
+                setMessage('');
+                setErrorMessage('');
+              }}
+              disabled={applying || !preview.canonicalOwnerActivationId}
+              className="mt-3 inline-flex min-h-9 items-center justify-center gap-1.5 rounded-xl border border-emerald-500/25 bg-emerald-500/10 px-3 text-[8px] font-black uppercase text-emerald-200 disabled:opacity-40"
+            >
+              <UserRoundCheck className="h-3.5 w-3.5" /> Revisar ativação do owner canônico
+            </button>
+          ) : (
+            <div className="mt-3 rounded-xl border border-emerald-500/20 bg-emerald-500/[0.045] p-3">
+              <p className="flex items-start gap-2 text-[9px] leading-relaxed text-emerald-100">
+                <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                Esta decisão ativará somente a membership do owner que já está definido na raiz canônica da loja e que corresponde ao usuário autenticado. <strong>Nenhum dos owners atualmente ativos será desativado nesta etapa.</strong> Depois da ativação, o conflito continuará até que cada owner adicional seja revisado separadamente.
+              </p>
+              <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                <button
+                  type="button"
+                  onClick={() => void confirmCanonicalOwner()}
+                  disabled={applying}
+                  className="inline-flex min-h-9 items-center justify-center rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 text-[8px] font-black uppercase text-emerald-100 disabled:opacity-40"
+                >
+                  {applying ? 'Ativando owner canônico…' : 'Confirmar ativação do owner canônico'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setArmedCanonicalOwnerActivation(false)}
+                  disabled={applying}
+                  className="inline-flex min-h-9 items-center justify-center rounded-xl border border-slate-700 bg-slate-950 px-3 text-[8px] font-black uppercase text-slate-400 disabled:opacity-40"
+                >
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
       )}
 
       {multipleOwners && preview && (
@@ -213,7 +286,7 @@ export default function StoreOwnerGovernancePanel({
       )}
 
       <p className="mt-4 text-[9px] leading-relaxed text-slate-600">
-        A decisão de ownership não altera saldo físico, bindings, reservas, pedidos ou estado em provedores externos. Cada owner adicional exige uma confirmação separada e o conflito é recalculado depois de cada decisão.
+        A decisão de ownership não altera saldo físico, bindings, reservas, pedidos ou estado em provedores externos. Ativação do owner canônico e remoção de owners adicionais são decisões separadas e o conflito é recalculado depois de cada uma.
       </p>
     </section>
   );
