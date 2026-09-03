@@ -62,10 +62,14 @@ test('unmapped 99Food items block reservation before ATP reservation is attempte
 
 test('existing reservations can complete historical release and consumption without remapping product identity', () => {
   const findIndex = lifecycleSource.indexOf('let reservationId = await findReservationId');
-  const resolveIndex = lifecycleSource.indexOf('resolveBoundOrderLines(', findIndex);
+  const unresolvedBranchIndex = lifecycleSource.indexOf('if (!reservationId) {', findIndex);
+  const resolveIndex = lifecycleSource.indexOf(
+    'resolveNinetyNineFoodBoundOrderLines(',
+    unresolvedBranchIndex
+  );
   assert.ok(findIndex >= 0);
-  assert.ok(resolveIndex > findIndex);
-  assert.match(lifecycleSource, /if \(!reservationId\) \{/);
+  assert.ok(unresolvedBranchIndex > findIndex);
+  assert.ok(resolveIndex > unresolvedBranchIndex);
   assert.match(lifecycleSource, /ledgerStatus === 'consumed'/);
   assert.match(lifecycleSource, /nextStatus: 'released'/);
 });
