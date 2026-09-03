@@ -13,11 +13,11 @@ export interface NinetyNineFoodBlockedOrder {
   customerName: string;
   blockedState: 'blocked_insufficient_atp' | 'blocked_product_binding_unresolved';
   blockedDetail: string;
-  unresolvedExternalProductIds: string[];
-  canonicalProductIds: string[];
-  inventoryItemId: string;
-  requiredQuantity: number | null;
-  availableQuantity: number | null;
+  unresolvedExternalProductIds?: string[];
+  canonicalProductIds?: string[];
+  inventoryItemId?: string;
+  requiredQuantity?: number | null;
+  availableQuantity?: number | null;
   status: string;
 }
 
@@ -128,22 +128,27 @@ export const buildStoreChannelOperationalItems = (input: {
 
   for (const order of input.ninetyNineFoodBlocked) {
     const bindingBlocked = order.blockedState === 'blocked_product_binding_unresolved';
+    const unresolvedExternalProductIds = order.unresolvedExternalProductIds ?? [];
+    const canonicalProductIds = order.canonicalProductIds ?? [];
+    const inventoryItemId = order.inventoryItemId ?? '';
+    const requiredQuantity = order.requiredQuantity ?? null;
+    const availableQuantity = order.availableQuantity ?? null;
     const evidence: string[] = [];
-    if (bindingBlocked && order.unresolvedExternalProductIds.length > 0) {
-      evidence.push(`Produtos externos sem binding: ${order.unresolvedExternalProductIds.join(', ')}`);
+    if (bindingBlocked && unresolvedExternalProductIds.length > 0) {
+      evidence.push(`Produtos externos sem binding: ${unresolvedExternalProductIds.join(', ')}`);
     }
-    if (!bindingBlocked && order.canonicalProductIds.length > 0) {
-      evidence.push(`Produtos Kyrub envolvidos: ${order.canonicalProductIds.join(', ')}`);
+    if (!bindingBlocked && canonicalProductIds.length > 0) {
+      evidence.push(`Produtos Kyrub envolvidos: ${canonicalProductIds.join(', ')}`);
     }
-    if (!bindingBlocked && order.inventoryItemId) {
-      evidence.push(`Item de estoque com ATP insuficiente: ${order.inventoryItemId}`);
+    if (!bindingBlocked && inventoryItemId) {
+      evidence.push(`Item de estoque com ATP insuficiente: ${inventoryItemId}`);
     }
     if (
       !bindingBlocked &&
-      order.requiredQuantity !== null &&
-      order.availableQuantity !== null
+      requiredQuantity !== null &&
+      availableQuantity !== null
     ) {
-      evidence.push(`Necessário: ${order.requiredQuantity} · disponível: ${order.availableQuantity}`);
+      evidence.push(`Necessário: ${requiredQuantity} · disponível: ${availableQuantity}`);
     }
 
     items.push({
