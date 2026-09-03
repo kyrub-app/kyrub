@@ -4,6 +4,11 @@ import {
   isKyrubiaStorePromotionIntent,
   resolveKyrubiaDeterministicStorePromotion,
 } from './deterministicStorePromotion';
+import {
+  resolveKyrubiaStoreConnectionDeclarationIntent,
+  storeConnectionChannelLabel,
+} from './deterministicStoreConnectionOnboarding';
+import { emitKyrubStoreConnectionOnboardingProposal } from './storeConnectionOnboardingEvents';
 import { emitKyrubStorePromotionProposal } from './storePromotionEvents';
 
 const runtimeId = (prefix: string): string => {
@@ -24,6 +29,22 @@ export const routeKyrubiaStorePromotionFromWorkspace = async (
   conversationId: string,
   message: string
 ): Promise<KyrubiaStorePromotionRouteResult> => {
+  const channelDeclaration = resolveKyrubiaStoreConnectionDeclarationIntent(message);
+  if (channelDeclaration) {
+    emitKyrubStoreConnectionOnboardingProposal(
+      conversationId,
+      channelDeclaration.answer,
+      channelDeclaration.channels
+    );
+    const labels = channelDeclaration.channels.map(storeConnectionChannelLabel);
+    return {
+      handled: true,
+      reply: labels.length > 0
+        ? `Identifiquei que você já vende em ${labels.join(', ')}. Revise a confirmação que abri. Isso apenas registra os canais atuais da sua loja; não conecta contas nem importa dados.`
+        : 'Entendi que você não vende em outros canais hoje. Revise a confirmação que abri. Isso apenas registra essa informação e não altera nenhuma integração.',
+    };
+  }
+
   if (!isKyrubiaStorePromotionIntent(message)) {
     return { handled: false };
   }
