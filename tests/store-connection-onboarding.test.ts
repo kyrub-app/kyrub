@@ -153,3 +153,24 @@ test('store operation bridge mounts the channel confirmation without adding anot
   assert.match(source, /KyrubAiStoreConnectionOnboardingBridge/);
   assert.match(source, /<KyrubAiStoreConnectionOnboardingBridge \/>/);
 });
+
+test('Central de Canais is a read-only projection over declaration and authoritative connection registry', () => {
+  const source = readFileSync('src/components/store/StoreChannelCenter.tsx', 'utf8');
+  assert.match(source, /Central de Canais/);
+  assert.match(source, /loadStoreConnectionOnboarding/);
+  assert.match(source, /Kyrub Marketplace/);
+  assert.match(source, /if \(status === 'connected'\) return 'connected'/);
+  assert.match(source, /type ChannelState = [^;]*'declared'/);
+  assert.match(source, /declared\.has\(channel\)/);
+  assert.match(source, /não conecta contas, não importa produtos, não altera estoque/);
+  assert.doesNotMatch(source, /beginMercadoLivreConnection|connectNinetyNineFoodAdaptive|updateStoreConnectionSyncAuthority/);
+});
+
+test('Central de Canais is mounted above provider-specific workspaces without replacing them', () => {
+  const source = readFileSync('src/components/store/StoreConnectionsPortalBridge.tsx', 'utf8');
+  assert.match(source, /<StoreChannelCenter user=\{user\} storeId=\{storeId\} \/>/);
+  assert.match(source, /<StoreConnectionsWorkspace user=\{user\} storeId=\{storeId\} notify=\{notify\} \/>/);
+  assert.match(source, /<MercadoLivreE2ETestBridge/);
+  assert.match(source, /<NinetyNineFoodE2ETestBridge/);
+  assert.match(source, /kyrub-mercado-livre-channel-detail/);
+});
