@@ -14,6 +14,18 @@ import {
   type NinetyNineFoodConnectInput,
 } from './ninetyNineFoodService';
 import {
+  bindNinetyNineFoodProduct,
+  deactivateNinetyNineFoodProductBinding,
+  listNinetyNineFoodProductBindings,
+} from './ninetyNineFoodProductBindingService';
+import {
+  listNinetyNineFoodBlockedOrders,
+  rejectNinetyNineFoodBlockedOrder,
+  retryNinetyNineFoodBlockedOrderReservation,
+} from './ninetyNineFoodOrderBlockResolutionService';
+import { createNinetyNineFoodAvailabilityProposalRouter } from './ninetyNineFoodAvailabilityProposalRouter';
+import { createNinetyNineFoodMenuCapabilityRouter } from './ninetyNineFoodMenuCapabilityRouter';
+import {
   drainNinetyNineFoodIngressQueue,
   enqueueNinetyNineFoodWebhook,
 } from './ninetyNineFoodIngressQueue';
@@ -56,8 +68,24 @@ const errorResponse = (response: Response, error: unknown): void => {
     response.status(403).json({ error: message });
     return;
   }
+  if (/PRODUCT_BINDING_FORBIDDEN|NINETY_NINE_FOOD_BLOCK_FORBIDDEN/.test(message)) {
+    response.status(403).json({ error: message });
+    return;
+  }
+  if (/PRODUCT_BINDING_NOT_FOUND|PRODUCT_BINDING_CANONICAL_PRODUCT_NOT_FOUND|PRODUCT_BINDING_CONNECTION_REQUIRED|NINETY_NINE_FOOD_BLOCK_ORDER_NOT_FOUND/.test(message)) {
+    response.status(404).json({ error: message });
+    return;
+  }
+  if (/PRODUCT_BINDING_ALREADY_ACTIVE|PRODUCT_BINDING_CONFLICT|NINETY_NINE_FOOD_BLOCK_ORDER_NOT_BLOCKED|NINETY_NINE_FOOD_BLOCK_REJECTION_ALREADY_RESERVED/.test(message)) {
+    response.status(409).json({ error: message });
+    return;
+  }
   if (/não está vinculado|não está configurada|não encontrado/i.test(message)) {
     response.status(404).json({ error: message });
+    return;
+  }
+  if (/PRODUCT_BINDING_INPUT_INVALID|PRODUCT_BINDING_CANONICAL_PRODUCT_INVALID|PRODUCT_BINDING_CANONICAL_STORE_REQUIRED|PRODUCT_BINDING_CONNECTION_INVALID|NINETY_NINE_FOOD_BLOCK_INPUT_INVALID|NINETY_NINE_FOOD_BLOCK_CANONICAL_STORE_REQUIRED|NINETY_NINE_FOOD_BLOCK_EXTERNAL_ORDER_REQUIRED/.test(message)) {
+    response.status(400).json({ error: message });
     return;
   }
   if (/inválid|informe|HTTPS|excede|incompleto/i.test(message)) {
@@ -115,11 +143,97 @@ const cronAuthorized = (request: Request): boolean => {
 
 export const createNinetyNineFoodRouter = (): Router => {
   const router = Router();
+  router.use(createNinetyNineFoodAvailabilityProposalRouter());
+  router.use(createNinetyNineFoodMenuCapabilityRouter());
 
   router.get('/status', async (request, response) => {
     try {
       const tenantId = await authenticatedTenantId(request);
       response.json(await getNinetyNineFoodStatus(tenantId));
+    } catch (error) {
+      errorResponse(response, error);
+    }
+  });
+
+  router.get('/product-bindings', async (request, response) => {
+    try {
+      const tenantId = await authenticatedTenantId(request);
+      response.json(await listNinetyNineFoodProductBindings({
+        tenantId,
+        requestedByUserId: tenantId,
+      }));
+    } catch (error) {
+      errorResponse(response, error);
+    }
+  });
+
+  router.put('/product-bindings/:externalProductId', async (request, response) => {
+    try {
+      const tenantId = await authenticatedTenantId(request);
+      const canonicalProductId = typeof request.body?.canonicalProductId === 'string'
+        ? request.body.canonicalProductId
+        : '';
+      const result = await bindNinetyNineFoodProduct({
+        tenantId,
+        externalProductId: request.params.externalProductId,
+        canonicalProductId,
+        boundByUserId: tenantId,
+      });
+      response.status(result.alreadyBound ? 200 : 201).json(result);
+    } catch (error) {
+      errorResponse(response, error);
+    }
+  });
+
+  router.delete('/product-bindings/:externalProductId', async (request, response) => {
+    try {
+      const tenantId = await authenticatedTenantId(request);
+      response.json(await deactivateNinetyNineFoodProductBinding({
+        tenantId,
+        externalProductId: request.params.externalProductId,
+        deactivatedByUserId: tenantId,
+      }));
+    } catch (error) {
+      errorResponse(response, error);
+    }
+  });
+
+  router.get('/blocked-orders', async (request, response) => {
+    try {
+      const tenantId = await authenticatedTenantId(request);
+      response.json(await listNinetyNineFoodBlockedOrders({
+        tenantId,
+        requestedByUserId: tenantId,
+      }));
+    } catch (error) {
+      errorResponse(response, error);
+    }
+  });
+
+  router.post('/blocked-orders/:orderId/retry-reservation', async (request, response) => {
+    try {
+      const tenantId = await authenticatedTenantId(request);
+      response.json(await retryNinetyNineFoodBlockedOrderReservation({
+        tenantId,
+        orderId: request.params.orderId,
+        requestedByUserId: tenantId,
+      }));
+    } catch (error) {
+      errorResponse(response, error);
+    }
+  });
+
+  router.post('/blocked-orders/:orderId/reject', async (request, response) => {
+    try {
+      const tenantId = await authenticatedTenantId(request);
+      const reason = typeof request.body?.reason === 'string' ? request.body.reason : '';
+      const result = await rejectNinetyNineFoodBlockedOrder({
+        tenantId,
+        orderId: request.params.orderId,
+        reason,
+        requestedByUserId: tenantId,
+      });
+      response.status(result.status === 'provider_write_succeeded' ? 200 : 202).json(result);
     } catch (error) {
       errorResponse(response, error);
     }

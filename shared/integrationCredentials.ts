@@ -1,6 +1,7 @@
 export type KyrubIntegrationProviderId =
   | 'mercado_pago'
   | 'mercado_livre'
+  | '99food'
   | 'lalamove'
   | 'pagbank'
   | 'pagarme'
@@ -76,6 +77,18 @@ export const KYRUB_INTEGRATION_PROVIDERS: KyrubIntegrationProviderDefinition[] =
       { key: 'client_id', label: 'Client ID', required: true },
       { key: 'client_secret', label: 'Client Secret', required: true },
       { key: 'redirect_uri', label: 'Redirect URI', required: true },
+    ],
+  },
+  {
+    providerId: '99food',
+    title: '99Food Platform',
+    category: 'other',
+    supportedEnvironments: ['sandbox', 'production'],
+    credentialSlots: [
+      { key: 'client_id', label: 'Client ID', required: true },
+      { key: 'client_secret', label: 'Client Secret', required: true },
+      { key: 'base_url', label: 'Open Delivery Base URL', required: true },
+      { key: 'token_url', label: 'OAuth Token URL', required: false },
     ],
   },
   {

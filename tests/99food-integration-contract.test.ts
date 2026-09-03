@@ -81,13 +81,14 @@ test('real orders are written to the current KDS collection and canonical mirror
   assert.match(serviceSource, /routingTarget/);
 });
 
-test('connection and KDS status bridges are mounted without exposing secrets', () => {
+test('connection and KDS status bridges are mounted without exposing platform secrets', () => {
   assert.match(appSource, /NinetyNineFoodConnectionBridge/);
   assert.match(appSource, /NinetyNineFoodOrderStatusBridge/);
   assert.match(statusBridgeSource, /metadata\.hasPendingWrites/);
   assert.match(statusBridgeSource, /sendNinetyNineFoodOrderStatus/);
-  assert.match(frontendSource, /Reconciliar pedidos agora/);
-  assert.match(frontendSource, /AES-256-GCM/);
+  assert.match(frontendSource, /Reconciliar pedidos/);
+  assert.match(frontendSource, /segredos da plataforma não são expostos à loja/);
+  assert.doesNotMatch(frontendSource, /setBaseUrl|setTokenUrl|URL base da API|URL do token/);
 });
 
 test('Firebase Admin is installed as a server dependency', () => {

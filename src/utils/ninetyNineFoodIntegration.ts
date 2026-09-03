@@ -14,6 +14,29 @@ export interface NinetyNineFoodConnectionStatus {
   lastVerifiedAt: string;
   lastWebhookAt: string;
   lastPollAt: string;
+  credentialAuthority?: 'platform_vault' | 'merchant_vault';
+  onboardingMode?: NinetyNineFoodOnboardingMode;
+}
+
+export type NinetyNineFoodOnboardingMode =
+  | 'platform_managed'
+  | 'authorization_required'
+  | 'merchant_credentials_required'
+  | 'platform_not_ready'
+  | 'provider_contract_unsupported';
+
+export interface NinetyNineFoodOnboardingPlan {
+  provider: '99food';
+  environment: 'sandbox' | 'production';
+  mode: NinetyNineFoodOnboardingMode;
+  platformConfigured: boolean;
+  discoveryVerified: boolean;
+  merchantMustProvideSecret: boolean;
+  merchantCanConnect: boolean;
+  supportedGrantTypes: string[];
+  clientIdGeneration: string[];
+  manifestHash: string;
+  message: string;
 }
 
 export interface NinetyNineFoodConnectRequest {
@@ -25,6 +48,15 @@ export interface NinetyNineFoodConnectRequest {
   tokenUrl?: string;
   clientId: string;
   clientSecret: string;
+}
+
+export interface NinetyNineFoodAdaptiveConnectRequest {
+  externalStoreId: string;
+  accountLabel: string;
+  routingTarget: string;
+  environment: 'sandbox' | 'production';
+  clientId?: string;
+  clientSecret?: string;
 }
 
 const authorizedRequest = async <T>(
@@ -58,6 +90,20 @@ const authorizedRequest = async <T>(
 export const getNinetyNineFoodConnectionStatus = (): Promise<NinetyNineFoodConnectionStatus> =>
   authorizedRequest('/api/integrations/99food/status');
 
+export const getNinetyNineFoodOnboardingPlan = (
+  environment: 'sandbox' | 'production'
+): Promise<NinetyNineFoodOnboardingPlan> =>
+  authorizedRequest(`/api/integrations/99food/onboarding-plan?environment=${environment}`);
+
+export const connectNinetyNineFoodAdaptive = (
+  input: NinetyNineFoodAdaptiveConnectRequest
+): Promise<NinetyNineFoodConnectionStatus> =>
+  authorizedRequest('/api/integrations/99food/connect-adaptive', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+
+/** @deprecated Kept only for already-integrated internal callers. New merchant UI must use connectNinetyNineFoodAdaptive. */
 export const connectNinetyNineFood = (
   input: NinetyNineFoodConnectRequest
 ): Promise<NinetyNineFoodConnectionStatus> =>

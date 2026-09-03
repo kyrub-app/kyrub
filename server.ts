@@ -10,6 +10,7 @@ import {
   createNinetyNineFoodRouter,
   type RawBodyRequest,
 } from "./server/integrations/ninetyNineFoodRouter";
+import { createNinetyNineFoodAdaptiveOnboardingRouter } from "./server/integrations/ninetyNineFoodAdaptiveOnboardingRouter";
 import { createStoreConnectionOnboardingRouter } from "./server/integrations/storeConnectionOnboardingRouter";
 import { createMercadoLivreRouter } from "./server/integrations/mercadoLivreRouter";
 import { createMercadoLivreStockExecutionRouter } from "./server/integrations/mercadoLivreStockExecutionRouter";
@@ -20,6 +21,7 @@ import { createPaidWaitingFundingResponsibilityRouter } from "./server/delivery/
 import { createOperationsHealthRouter } from "./server/admin/operationsHealthRouter";
 import { createPlatformEconomyRouter } from "./server/admin/platformEconomyRouter";
 import { createMercadoLivrePlatformCredentialRouter } from "./server/admin/mercadoLivrePlatformCredentialRouter";
+import { createNinetyNineFoodPlatformCredentialRouter } from "./server/admin/ninetyNineFoodPlatformCredentialRouter";
 import { createOrderInventoryRouter } from "./server/inventory/orderInventoryRouter";
 import { createKyrubAiConsultantRouter } from "./server/ai/consultantRouter";
 import { createKyrubActionExecutionRouter } from "./server/actions/actionExecutionRouter";
@@ -116,6 +118,12 @@ app.use(
   "/api/integrations/99food",
   integrationRateLimiter,
   createNinetyNineFoodRouter()
+);
+
+app.use(
+  "/api/integrations/99food",
+  integrationRateLimiter,
+  createNinetyNineFoodAdaptiveOnboardingRouter()
 );
 
 app.use(
@@ -250,6 +258,12 @@ app.use(
   "/api/admin/integrations/mercado-livre",
   integrationRateLimiter,
   createMercadoLivrePlatformCredentialRouter()
+);
+
+app.use(
+  "/api/admin/integrations/99food",
+  integrationRateLimiter,
+  createNinetyNineFoodPlatformCredentialRouter()
 );
 
 app.use(
