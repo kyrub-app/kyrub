@@ -25,6 +25,7 @@ const finiteNumber = (value: unknown): number | null =>
 const BLOCKED_STATES = new Set([
   'blocked_insufficient_atp',
   'blocked_product_binding_unresolved',
+  'blocked_authority_unresolved',
 ]);
 
 const canonicalStoreIdForTenant = async (tenantId: string): Promise<string> => {
@@ -66,7 +67,10 @@ export interface NinetyNineFoodBlockedOrder {
   externalOrderId: string;
   displayId: string;
   customerName: string;
-  blockedState: 'blocked_insufficient_atp' | 'blocked_product_binding_unresolved';
+  blockedState:
+    | 'blocked_insufficient_atp'
+    | 'blocked_product_binding_unresolved'
+    | 'blocked_authority_unresolved';
   blockedDetail: string;
   unresolvedExternalProductIds: string[];
   canonicalProductIds: string[];
@@ -88,6 +92,7 @@ export interface NinetyNineFoodReservationPreflight {
   state:
     | 'binding_unresolved'
     | 'insufficient_atp'
+    | 'authority_unresolved'
     | 'ready_for_retry'
     | 'already_reserved'
     | 'not_applicable';
@@ -177,23 +182,41 @@ export const preflightNinetyNineFoodBlockedOrderReservation = async (input: {
     };
   }
 
-  const inspection = await inspectCanonicalOrderInventoryAvailability({
-    storeId: canonicalStoreId,
-    orderId,
-    sourceChannel: '99food',
-    orderLines,
-  });
+  try {
+    const inspection = await inspectCanonicalOrderInventoryAvailability({
+      storeId: canonicalStoreId,
+      orderId,
+      sourceChannel: '99food',
+      orderLines,
+    });
 
-  return {
-    orderId,
-    state: inspection.state === 'ready'
-      ? 'ready_for_retry'
-      : inspection.state,
-    canonicalProductIds,
-    unresolvedExternalProductIds: [],
-    lines: inspection.lines,
-    checkedAt: inspection.checkedAt,
-  };
+    return {
+      orderId,
+      state: inspection.state === 'ready'
+        ? 'ready_for_retry'
+        : inspection.state,
+      canonicalProductIds,
+      unresolvedExternalProductIds: [],
+      lines: inspection.lines,
+      checkedAt: inspection.checkedAt,
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (
+      message.includes('INVENTORY_AUTHORITY_OWNER_UNRESOLVED') ||
+      message.includes('INVENTORY_AUTHORITY_DOCUMENT_NOT_FOUND')
+    ) {
+      return {
+        orderId,
+        state: 'authority_unresolved',
+        canonicalProductIds,
+        unresolvedExternalProductIds: [],
+        lines: [],
+        checkedAt,
+      };
+    }
+    throw error;
+  }
 };
 
 export const retryNinetyNineFoodBlockedOrderReservation = async (input: {
