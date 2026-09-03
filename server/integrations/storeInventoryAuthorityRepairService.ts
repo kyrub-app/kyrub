@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { FieldValue, type Transaction } from 'firebase-admin/firestore';
+import { FieldValue } from 'firebase-admin/firestore';
 import { adminDb } from '../firebaseAdmin.js';
 import { inventoryDocumentPathForOwner } from '../inventory/canonicalInventoryAuthorityService.js';
 import { getPrimaryUserStoreDocumentPath } from '../../src/utils/storePaths.js';
@@ -43,6 +43,10 @@ type RepairContext = {
   canonicalStoreId: string;
   canonicalOwnerId: string;
   inventoryDocumentPath: string;
+};
+
+type Reader = {
+  get: (referenceOrQuery: any) => Promise<any>;
 };
 
 const repairIdFor = (input: {
@@ -99,10 +103,6 @@ const actionablePreview = (input: {
   requiresConfirmation: true,
   checkedAt: new Date().toISOString(),
 });
-
-type Reader = {
-  get: Transaction['get'];
-};
 
 const inspectRepairContext = async (
   reader: Reader,
@@ -201,7 +201,7 @@ const inspectRepairContext = async (
     .collection(`stores/${canonicalStoreId}/members`)
     .where('role', '==', 'owner');
   const ownerMembers = await reader.get(ownerQuery);
-  const activeOwnerIds = ownerMembers.docs.flatMap(document => {
+  const activeOwnerIds = ownerMembers.docs.flatMap((document: any) => {
     const data = document.data();
     return data.status === 'active' && clean(data.userId) === document.id
       ? [document.id]
@@ -290,12 +290,7 @@ const inspectRepairContext = async (
 };
 
 const databaseReader: Reader = {
-  get: adminDb.getAll
-    ? (referenceOrQuery: Parameters<Transaction['get']>[0]) => {
-        if ('path' in referenceOrQuery) return referenceOrQuery.get();
-        return referenceOrQuery.get();
-      }
-    : (() => { throw new Error('STORE_INVENTORY_AUTHORITY_REPAIR_READ_UNAVAILABLE'); }) as Transaction['get'],
+  get: (referenceOrQuery: any) => referenceOrQuery.get(),
 };
 
 export const loadStoreInventoryAuthorityRepairPreview = async (input: {
@@ -327,7 +322,10 @@ export const applyStoreInventoryAuthorityRepair = async (input: {
   if (!expectedRepairId) throw new Error('STORE_INVENTORY_AUTHORITY_REPAIR_ID_REQUIRED');
 
   return adminDb.runTransaction(async transaction => {
-    const context = await inspectRepairContext(transaction, tenantId);
+    const context = await inspectRepairContext(
+      { get: (referenceOrQuery: any) => transaction.get(referenceOrQuery as any) },
+      tenantId
+    );
     const { preview } = context;
     if (!preview.actionable || !preview.action || !preview.repairId) {
       throw new Error('STORE_INVENTORY_AUTHORITY_REPAIR_NOT_ACTIONABLE');
