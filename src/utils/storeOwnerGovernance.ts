@@ -17,6 +17,7 @@ export interface StoreOwnerGovernancePreview {
   conflictId: string;
   activeOwnerCount: number;
   canonicalOwnerProtected: boolean;
+  canonicalOwnerActivationId: string;
   candidates: StoreOwnerGovernanceCandidate[];
   requiresConfirmation: boolean;
   checkedAt: string;
@@ -53,6 +54,42 @@ export const loadStoreOwnerGovernancePreview = async (
     throw await responseError(response, 'Não foi possível revisar os owners da loja.');
   }
   return response.json() as Promise<StoreOwnerGovernancePreview>;
+};
+
+export const confirmCanonicalOwnerReconciliation = async (
+  user: User,
+  storeId: string,
+  preview: StoreOwnerGovernancePreview
+): Promise<void> => {
+  const normalizedStoreId = storeId.trim();
+  if (
+    !normalizedStoreId ||
+    !preview.conflictId ||
+    !preview.canonicalOwnerActivationId ||
+    preview.state !== 'canonical_owner_not_active'
+  ) {
+    throw new Error('A revisão do owner canônico está incompleta ou expirou.');
+  }
+  const token = await user.getIdToken();
+  const response = await fetch(
+    `/api/store-connections/${encodeURIComponent(normalizedStoreId)}/owner-governance/reconcile-canonical-owner`,
+    {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${token}`,
+        'content-type': 'application/json',
+      },
+      cache: 'no-store',
+      body: JSON.stringify({
+        conflictId: preview.conflictId,
+        activationId: preview.canonicalOwnerActivationId,
+        confirmed: true,
+      }),
+    }
+  );
+  if (!response.ok) {
+    throw await responseError(response, 'Não foi possível ativar a membership do owner canônico.');
+  }
 };
 
 export const confirmStoreOwnerGovernanceDecision = async (
