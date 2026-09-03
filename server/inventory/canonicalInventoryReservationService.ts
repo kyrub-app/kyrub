@@ -50,6 +50,21 @@ export interface CanonicalInventoryReservationDocument {
   physicalConsumptionEvidenceId?: string;
 }
 
+export class InventoryAvailableToPromiseExceededError extends Error {
+  readonly code = 'INVENTORY_AVAILABLE_TO_PROMISE_EXCEEDED';
+
+  constructor(
+    readonly inventoryItemId: string,
+    readonly requiredQuantity: number,
+    readonly availableQuantity: number
+  ) {
+    super(
+      `INVENTORY_AVAILABLE_TO_PROMISE_EXCEEDED:${inventoryItemId}:${requiredQuantity}:${availableQuantity}`
+    );
+    this.name = 'InventoryAvailableToPromiseExceededError';
+  }
+}
+
 const aggregateLines = (lines: InventoryReservationLine[]): InventoryReservationLine[] => {
   const totals = new Map<string, number>();
   for (const line of lines) {
@@ -163,8 +178,10 @@ export const reserveCanonicalOrderInventory = async (input: {
       const alreadyReserved = activeTotals.get(line.inventoryItemId) ?? 0;
       const available = roundQuantity(Math.max(0, item.currentQuantity - alreadyReserved));
       if (available + 0.000001 < line.quantity) {
-        throw new Error(
-          `INVENTORY_AVAILABLE_TO_PROMISE_EXCEEDED:${line.inventoryItemId}:${line.quantity}:${available}`
+        throw new InventoryAvailableToPromiseExceededError(
+          line.inventoryItemId,
+          line.quantity,
+          available
         );
       }
     }
