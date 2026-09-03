@@ -36,6 +36,7 @@ export type StoreChannelOperationalItem = {
   reference: string;
   actionTarget: 'mercado_livre' | '99food';
   remediationTarget?: '99food_binding' | 'kyrub_inventory';
+  remediationExternalProductIds?: string[];
 };
 
 export type StoreChannelOperationalQueue = {
@@ -164,6 +165,7 @@ export const buildStoreChannelOperationalItems = (input: {
       reference: order.orderId,
       actionTarget: '99food',
       remediationTarget: bindingBlocked ? '99food_binding' : 'kyrub_inventory',
+      remediationExternalProductIds: bindingBlocked ? unresolvedExternalProductIds : undefined,
     });
   }
 
