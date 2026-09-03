@@ -11,6 +11,7 @@ import {
   loadStoreInventoryAuthorityRepairPreview,
 } from './storeInventoryAuthorityRepairService.js';
 import {
+  applyCanonicalOwnerReconciliation,
   applyStoreOwnerGovernanceDecision,
   loadStoreOwnerGovernancePreview,
 } from './storeOwnerGovernanceService.js';
@@ -79,10 +80,28 @@ const mapError = (error: unknown): { status: number; message: string } => {
     };
   }
   if (
+    message === 'STORE_CANONICAL_OWNER_RECONCILIATION_CONFIRMATION_REQUIRED' ||
+    message === 'STORE_CANONICAL_OWNER_RECONCILIATION_STALE' ||
+    message === 'STORE_CANONICAL_OWNER_RECONCILIATION_NOT_ACTIONABLE' ||
+    message === 'STORE_CANONICAL_OWNER_RECONCILIATION_MEMBER_CONFLICT'
+  ) {
+    return {
+      status: 409,
+      message: message === 'STORE_CANONICAL_OWNER_RECONCILIATION_STALE'
+        ? 'O conflito de owner mudou desde a revisão. Atualize antes de ativar o owner canônico.'
+        : message === 'STORE_CANONICAL_OWNER_RECONCILIATION_MEMBER_CONFLICT'
+          ? 'A membership do owner canônico aponta para outra identidade e não pode ser reconciliada automaticamente.'
+          : message === 'STORE_CANONICAL_OWNER_RECONCILIATION_NOT_ACTIONABLE'
+            ? 'O owner canônico não precisa ou não pode ser ativado neste estado.'
+            : 'Revise e confirme explicitamente a ativação do owner canônico.',
+    };
+  }
+  if (
     message === 'STORE_INVENTORY_AUTHORITY_REPAIR_ID_REQUIRED' ||
     message === 'STORE_OWNER_GOVERNANCE_CONFLICT_ID_REQUIRED' ||
     message === 'STORE_OWNER_GOVERNANCE_SELECTION_REQUIRED' ||
-    message === 'STORE_OWNER_GOVERNANCE_SELECTION_INVALID'
+    message === 'STORE_OWNER_GOVERNANCE_SELECTION_INVALID' ||
+    message === 'STORE_CANONICAL_OWNER_RECONCILIATION_ID_REQUIRED'
   ) {
     return { status: 400, message: 'A revisão da autoridade é inválida ou expirou.' };
   }
@@ -173,6 +192,24 @@ export const createStoreConnectionOnboardingRouter = (): Router => {
       response.json(await loadStoreOwnerGovernancePreview({
         tenantId: identity.uid,
         requestedByUserId: identity.uid,
+      }));
+    } catch (error) {
+      const mapped = mapError(error);
+      response.status(mapped.status).json({ error: mapped.message });
+    }
+  });
+
+  router.post('/:storeId/owner-governance/reconcile-canonical-owner', async (request, response) => {
+    try {
+      const storeId = clean(request.params.storeId);
+      const identity = await authenticatedOwner(request.get('authorization') ?? '', storeId);
+      response.setHeader('Cache-Control', 'no-store, max-age=0');
+      response.json(await applyCanonicalOwnerReconciliation({
+        tenantId: identity.uid,
+        requestedByUserId: identity.uid,
+        conflictId: clean(request.body?.conflictId),
+        activationId: clean(request.body?.activationId),
+        confirmed: request.body?.confirmed === true,
       }));
     } catch (error) {
       const mapped = mapError(error);
