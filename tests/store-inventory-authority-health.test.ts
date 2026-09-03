@@ -83,7 +83,7 @@ test('Channel Center keeps channel registry and authority health as independent 
   assert.match(center, /Não altera owner, membership, inventário, reservas nem canais externos/);
 });
 
-test('Channel Center explains root-aware authority health states without a mutation CTA', () => {
+test('Channel Center explains root-aware authority health and routes to exact remediation surfaces only', () => {
   assert.match(center, /Loja canônica pendente/);
   assert.match(center, /Sem owner ativo/);
   assert.match(center, /Owner canônico inativo/);
@@ -92,12 +92,20 @@ test('Channel Center explains root-aware authority health states without a mutat
   assert.match(center, /label: 'Pronta'/);
   assert.match(center, /nenhum deles é o owner definido pela raiz canônica da loja/);
   assert.match(center, /O owner canônico está ativo, mas foram encontrados/);
+  assert.match(center, /health\.state === 'canonical_owner_not_active'/);
+  assert.match(center, /health\.state === 'multiple_active_owners'/);
+  assert.match(center, /'kyrub-store-owner-governance'/);
+  assert.match(center, /'kyrub-inventory-authority-repair'/);
+  assert.match(center, /scrollIntoView\(\{ behavior: 'smooth', block: 'start' \}\)/);
+  assert.match(center, /Revisar governança de owners/);
+  assert.match(center, /Abrir correção segura/);
 
-  const healthCard = center.match(
-    /<div id="kyrub-inventory-authority-health"[\s\S]*?<\/div>\n\n      <div className="mt-4 grid gap-2/
+  const routing = center.match(
+    /const openAuthorityRemediation[\s\S]*?\n};/
   )?.[0] ?? '';
+  assert.match(routing, /getElementById\(elementId\)/);
   assert.doesNotMatch(
-    healthCard,
-    /<button|onClick|retry|requestPhysicalInventoryFocus|requestNinetyNineFoodBindingRemediation|updateStoreConnectionSyncAuthority/
+    routing,
+    /confirmStoreInventoryAuthorityRepair|confirmCanonicalOwnerReconciliation|confirmStoreOwnerGovernanceDecision|retryNinetyNineFoodBlockedOrderReservation|updateStoreConnectionSyncAuthority|fetch\(|method:\s*'POST'/
   );
 });
