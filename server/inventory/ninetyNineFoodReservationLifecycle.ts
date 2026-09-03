@@ -94,7 +94,9 @@ interface ExternalOrderLine {
   transferredQuantity: number;
 }
 
-const extractExternalOrderLines = (order: Record<string, unknown>): ExternalOrderLine[] =>
+export const extractNinetyNineFoodExternalOrderLines = (
+  order: Record<string, unknown>
+): ExternalOrderLine[] =>
   Array.isArray(order.items)
     ? order.items.flatMap(candidate => {
         if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return [];
@@ -112,7 +114,7 @@ const extractExternalOrderLines = (order: Record<string, unknown>): ExternalOrde
       })
     : [];
 
-const resolveBoundOrderLines = async (
+export const resolveNinetyNineFoodBoundOrderLines = async (
   tenantId: string,
   externalLines: ExternalOrderLine[]
 ): Promise<{
@@ -232,8 +234,8 @@ export const reconcileNinetyNineFoodOrderReservation = async (
 
   let reservationId = await findReservationId(storeId, normalizedOrderId);
   if (!reservationId) {
-    const externalLines = extractExternalOrderLines(order);
-    const { orderLines, unresolvedExternalProductIds } = await resolveBoundOrderLines(
+    const externalLines = extractNinetyNineFoodExternalOrderLines(order);
+    const { orderLines, unresolvedExternalProductIds } = await resolveNinetyNineFoodBoundOrderLines(
       normalizedTenantId,
       externalLines
     );
