@@ -160,7 +160,7 @@ test('99Food reservation lifecycle persists structured block evidence and clears
   assert.match(source, /error instanceof InventoryAvailableToPromiseExceededError/);
   assert.match(source, /requiredQuantity: error\.requiredQuantity/);
   assert.match(source, /availableQuantity: error\.availableQuantity/);
-  assert.doesNotMatch(source, /split\(':')/);
+  assert.equal(source.includes("split(':')"), false);
 });
 
 test('blocked-order API projects structured remediation evidence without exposing credentials', () => {
