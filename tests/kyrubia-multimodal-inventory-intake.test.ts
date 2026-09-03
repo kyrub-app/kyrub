@@ -179,3 +179,22 @@ test('multimodal client enriches only proposal-free responses and reuses standar
   assert.match(multimodalClient, /emitKyrubAiActionProposal/);
   assert.doesNotMatch(multimodalClient, /firebase\/firestore|setDoc\(|updateDoc\(|runTransaction\(/);
 });
+
+test('exact inventory adjustment identity is optional for legacy intake but authoritative when supplied', () => {
+  const extension = readFileSync('shared/exactInventoryAdjustment.ts', 'utf8');
+  const executor = readFileSync('server/actions/inventoryAdjustmentExecutionService.ts', 'utf8');
+
+  assert.match(extension, /inventoryItemId\?: string/);
+  assert.match(extension, /\^\[a-zA-Z0-9_-\]\{1,180\}\$/);
+
+  assert.match(executor, /normalizeExactInventoryItemId\(value\.inventoryItemId\)/);
+  assert.match(executor, /exactInventoryItemId\s*\?\s*catalog\.findIndex\(item => item\.id === exactInventoryItemId\)/);
+  assert.match(executor, /INVENTORY_ITEM_ID_NOT_FOUND/);
+  assert.match(executor, /Nenhum item será escolhido por nome/);
+  assert.match(executor, /INVENTORY_ITEM_IDENTITY_MISMATCH/);
+  assert.match(executor, /normalizeName\(existing\.name\) !== normalizeName\(entry\.name\)/);
+
+  assert.match(executor, /: catalog\.findIndex\(item => `\$\{normalizeName\(item\.name\)\}::\$\{item\.unit\}` === key\)/);
+  assert.match(executor, /if \(existingIndex < 0\) \{\n        if \(proposal\.mode !== 'increment'\)/);
+  assert.match(executor, /const itemId = deterministicItemId\(actor\.uid, entry\)/);
+});
