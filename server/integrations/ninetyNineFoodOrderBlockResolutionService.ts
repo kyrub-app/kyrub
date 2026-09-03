@@ -1,7 +1,12 @@
 import { createHash } from 'node:crypto';
 import { FieldValue } from 'firebase-admin/firestore';
 import { adminDb } from '../firebaseAdmin';
-import { reconcileNinetyNineFoodOrderReservation } from '../inventory/ninetyNineFoodReservationLifecycle';
+import {
+  extractNinetyNineFoodExternalOrderLines,
+  reconcileNinetyNineFoodOrderReservation,
+  resolveNinetyNineFoodBoundOrderLines,
+} from '../inventory/ninetyNineFoodReservationLifecycle';
+import { inspectCanonicalOrderInventoryAvailability } from '../inventory/canonicalInventoryReservationService';
 import { sendNinetyNineFoodOrderStatus } from './ninetyNineFoodService';
 
 const clean = (value: unknown, maximum = 500): string =>
@@ -44,6 +49,12 @@ const inventoryReservationState = (order: Record<string, unknown>): string => {
   return clean((value as Record<string, unknown>).state, 120);
 };
 
+const integrationProvider = (order: Record<string, unknown>): string => {
+  const integration = order.integration;
+  if (!integration || typeof integration !== 'object' || Array.isArray(integration)) return '';
+  return clean((integration as Record<string, unknown>).provider, 120);
+};
+
 const externalOrderId = (order: Record<string, unknown>): string => {
   const integration = order.integration;
   if (!integration || typeof integration !== 'object' || Array.isArray(integration)) return '';
@@ -63,6 +74,27 @@ export interface NinetyNineFoodBlockedOrder {
   requiredQuantity: number | null;
   availableQuantity: number | null;
   status: string;
+}
+
+export interface NinetyNineFoodReservationPreflightLine {
+  inventoryItemId: string;
+  requiredQuantity: number;
+  availableQuantity: number;
+  shortageQuantity: number;
+}
+
+export interface NinetyNineFoodReservationPreflight {
+  orderId: string;
+  state:
+    | 'binding_unresolved'
+    | 'insufficient_atp'
+    | 'ready_for_retry'
+    | 'already_reserved'
+    | 'not_applicable';
+  canonicalProductIds: string[];
+  unresolvedExternalProductIds: string[];
+  lines: NinetyNineFoodReservationPreflightLine[];
+  checkedAt: string;
 }
 
 export const listNinetyNineFoodBlockedOrders = async (input: {
@@ -99,6 +131,69 @@ export const listNinetyNineFoodBlockedOrders = async (input: {
     }];
   });
   return { canonicalStoreId, items };
+};
+
+export const preflightNinetyNineFoodBlockedOrderReservation = async (input: {
+  tenantId: string;
+  orderId: string;
+  requestedByUserId: string;
+}): Promise<NinetyNineFoodReservationPreflight> => {
+  const tenantId = clean(input.tenantId, 160);
+  const orderId = clean(input.orderId, 240);
+  const requestedByUserId = clean(input.requestedByUserId, 160);
+  if (!tenantId || !orderId || requestedByUserId !== tenantId) {
+    throw new Error('NINETY_NINE_FOOD_BLOCK_INPUT_INVALID');
+  }
+
+  const canonicalStoreId = await canonicalStoreIdForTenant(tenantId);
+  const snapshot = await adminDb.doc(orderPath(canonicalStoreId, orderId)).get();
+  if (!snapshot.exists) throw new Error('NINETY_NINE_FOOD_BLOCK_ORDER_NOT_FOUND');
+  const order = snapshot.data() as Record<string, unknown>;
+  if (integrationProvider(order) !== '99food') {
+    throw new Error('NINETY_NINE_FOOD_BLOCK_SOURCE_MISMATCH');
+  }
+  if (!BLOCKED_STATES.has(inventoryReservationState(order))) {
+    throw new Error('NINETY_NINE_FOOD_BLOCK_ORDER_NOT_BLOCKED');
+  }
+
+  const externalLines = extractNinetyNineFoodExternalOrderLines(order);
+  const { orderLines, unresolvedExternalProductIds } = await resolveNinetyNineFoodBoundOrderLines(
+    tenantId,
+    externalLines
+  );
+  const canonicalProductIds = Array.from(new Set(
+    orderLines.map(line => clean(line.productId, 240)).filter(Boolean)
+  )).sort();
+  const checkedAt = new Date().toISOString();
+
+  if (unresolvedExternalProductIds.length > 0) {
+    return {
+      orderId,
+      state: 'binding_unresolved',
+      canonicalProductIds,
+      unresolvedExternalProductIds,
+      lines: [],
+      checkedAt,
+    };
+  }
+
+  const inspection = await inspectCanonicalOrderInventoryAvailability({
+    storeId: canonicalStoreId,
+    orderId,
+    sourceChannel: '99food',
+    orderLines,
+  });
+
+  return {
+    orderId,
+    state: inspection.state === 'ready'
+      ? 'ready_for_retry'
+      : inspection.state,
+    canonicalProductIds,
+    unresolvedExternalProductIds: [],
+    lines: inspection.lines,
+    checkedAt: inspection.checkedAt,
+  };
 };
 
 export const retryNinetyNineFoodBlockedOrderReservation = async (input: {
