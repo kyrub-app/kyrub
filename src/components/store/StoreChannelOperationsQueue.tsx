@@ -16,7 +16,9 @@ import { requestNinetyNineFoodBindingRemediation } from '../../utils/ninetyNineF
 import { requestPhysicalInventoryFocus } from '../../utils/physicalInventoryRemediation';
 import {
   loadStoreChannelOperationalQueue,
+  preflightNinetyNineFoodBlockedOrderReservation,
   retryNinetyNineFoodBlockedOrderReservation,
+  type NinetyNineFoodReservationPreflight,
   type StoreChannelOperationalItem,
 } from '../../utils/storeChannelOperations';
 
@@ -53,6 +55,18 @@ const openRemediation = (item: StoreChannelOperationalItem): void => {
   element?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 };
 
+const preflightTone = (
+  preflight: NinetyNineFoodReservationPreflight
+): string => {
+  if (preflight.state === 'ready_for_retry' || preflight.state === 'already_reserved') {
+    return 'border-emerald-500/20 bg-emerald-500/5 text-emerald-100';
+  }
+  if (preflight.state === 'insufficient_atp' || preflight.state === 'binding_unresolved') {
+    return 'border-amber-500/20 bg-amber-500/5 text-amber-100';
+  }
+  return 'border-slate-700 bg-slate-950/60 text-slate-300';
+};
+
 export default function StoreChannelOperationsQueue({ user, storeId }: { user: User; storeId: string }) {
   const [items, setItems] = useState<StoreChannelOperationalItem[]>([]);
   const [sourceErrors, setSourceErrors] = useState<string[]>([]);
@@ -60,12 +74,17 @@ export default function StoreChannelOperationsQueue({ user, storeId }: { user: U
   const [loaded, setLoaded] = useState(false);
   const [confirmRetryOrderId, setConfirmRetryOrderId] = useState('');
   const [retryingOrderId, setRetryingOrderId] = useState('');
+  const [preflightingOrderId, setPreflightingOrderId] = useState('');
+  const [preflightByOrder, setPreflightByOrder] = useState<Record<string, NinetyNineFoodReservationPreflight>>({});
+  const [preflightErrorByOrder, setPreflightErrorByOrder] = useState<Record<string, string>>({});
   const [actionFeedback, setActionFeedback] = useState('');
   const [actionError, setActionError] = useState('');
   const criticalCount = useMemo(() => items.filter(item => item.severity === 'critical').length, [items]);
 
   const refresh = useCallback(async (): Promise<void> => {
     setLoading(true);
+    setPreflightByOrder({});
+    setPreflightErrorByOrder({});
     try {
       const result = await loadStoreChannelOperationalQueue(user, storeId);
       setItems(result.items);
@@ -77,6 +96,34 @@ export default function StoreChannelOperationsQueue({ user, storeId }: { user: U
   }, [storeId, user]);
 
   useEffect(() => { void refresh(); }, [refresh]);
+
+  const preflightReservation = async (item: StoreChannelOperationalItem): Promise<void> => {
+    if (item.provider !== '99food') return;
+    setConfirmRetryOrderId('');
+    setPreflightingOrderId(item.reference);
+    setPreflightErrorByOrder(previous => ({ ...previous, [item.reference]: '' }));
+    try {
+      const result = await preflightNinetyNineFoodBlockedOrderReservation(
+        user,
+        item.reference
+      );
+      setPreflightByOrder(previous => ({ ...previous, [item.reference]: result }));
+    } catch (error) {
+      setPreflightByOrder(previous => {
+        const next = { ...previous };
+        delete next[item.reference];
+        return next;
+      });
+      setPreflightErrorByOrder(previous => ({
+        ...previous,
+        [item.reference]: error instanceof Error
+          ? error.message
+          : 'Não foi possível verificar o ATP atual deste pedido.',
+      }));
+    } finally {
+      setPreflightingOrderId('');
+    }
+  };
 
   const retryReservation = async (item: StoreChannelOperationalItem): Promise<void> => {
     if (item.provider !== '99food') return;
@@ -118,7 +165,7 @@ export default function StoreChannelOperationsQueue({ user, storeId }: { user: U
             Reúne estados autoritativos que precisam de atenção. A fila encaminha para o módulo correto e só oferece uma ação interna quando já existe contrato explícito de autoridade.
           </p>
         </div>
-        <button type="button" onClick={() => void refresh()} disabled={loading || Boolean(retryingOrderId)}
+        <button type="button" onClick={() => void refresh()} disabled={loading || Boolean(retryingOrderId) || Boolean(preflightingOrderId)}
           className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[10px] font-black uppercase tracking-wider text-slate-300 disabled:opacity-50">
           <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} /> Atualizar
         </button>
@@ -158,6 +205,9 @@ export default function StoreChannelOperationsQueue({ user, storeId }: { user: U
           const canRetryReservation = item.provider === '99food';
           const retryArmed = confirmRetryOrderId === item.reference;
           const retrying = retryingOrderId === item.reference;
+          const preflighting = preflightingOrderId === item.reference;
+          const preflight = preflightByOrder[item.reference];
+          const preflightError = preflightErrorByOrder[item.reference] ?? '';
           const remediationLabel = item.remediationTarget === '99food_binding'
             ? 'Corrigir binding'
             : item.remediationTarget === 'kyrub_inventory'
@@ -183,21 +233,73 @@ export default function StoreChannelOperationsQueue({ user, storeId }: { user: U
                     <p className="mt-2 text-[9px] leading-relaxed text-cyan-200/80">
                       {item.remediationTarget === '99food_binding'
                         ? 'Próximo passo: o Kyrub pode levar o ID externo exato até a bancada; você ainda precisa escolher o produto canônico e confirmar o vínculo.'
-                        : 'Próximo passo: abra o estoque físico canônico; quando houver um inventoryItemId exato, o Kyrub destaca somente aquele insumo/componente. Depois da correção explícita do saldo, tente a reserva novamente.'}
+                        : 'Próximo passo: abra o estoque físico canônico; quando houver um inventoryItemId exato, o Kyrub destaca somente aquele insumo/componente. Depois da correção explícita do saldo, verifique o ATP antes de decidir por uma nova tentativa.'}
                     </p>
                   )}
+
+                  {preflight && (
+                    <div className={`mt-3 rounded-xl border p-3 text-[9px] leading-relaxed ${preflightTone(preflight)}`} aria-live="polite">
+                      {preflight.state === 'binding_unresolved' && (
+                        <>
+                          <strong className="block">Binding ainda pendente nesta leitura.</strong>
+                          <span className="mt-1 block break-all">
+                            Produtos externos sem vínculo: {preflight.unresolvedExternalProductIds.join(', ') || 'não identificados'}.
+                          </span>
+                        </>
+                      )}
+                      {preflight.state === 'insufficient_atp' && (
+                        <>
+                          <strong className="block">O ATP ainda não está suficiente.</strong>
+                          <div className="mt-1 space-y-1">
+                            {preflight.lines.filter(line => line.shortageQuantity > 0).map(line => (
+                              <span key={line.inventoryItemId} className="block break-all">
+                                {line.inventoryItemId}: necessário {line.requiredQuantity}, disponível {line.availableQuantity}, faltam {line.shortageQuantity}.
+                              </span>
+                            ))}
+                          </div>
+                        </>
+                      )}
+                      {preflight.state === 'ready_for_retry' && (
+                        <>
+                          <strong className="block">ATP suficiente nesta leitura.</strong>
+                          <span className="mt-1 block">
+                            O preflight não criou reserva e não garante que a disponibilidade continuará igual. Se quiser executar a tentativa, use “Tentar reservar novamente” separadamente.
+                          </span>
+                        </>
+                      )}
+                      {preflight.state === 'already_reserved' && (
+                        <>
+                          <strong className="block">Já existe uma reserva ativa para este pedido.</strong>
+                          <span className="mt-1 block">Atualize a fila antes de qualquer nova ação; o preflight não alterou essa reserva.</span>
+                        </>
+                      )}
+                      {preflight.state === 'not_applicable' && (
+                        <>
+                          <strong className="block">Reserva de insumos não aplicável nesta leitura.</strong>
+                          <span className="mt-1 block">Nenhum item composto exigiu reserva física. O preflight não mudou o pedido.</span>
+                        </>
+                      )}
+                    </div>
+                  )}
+
+                  {preflightError && (
+                    <p className="mt-3 rounded-xl border border-rose-500/20 bg-rose-500/5 p-3 text-[9px] leading-relaxed text-rose-100" aria-live="polite">
+                      {preflightError}
+                    </p>
+                  )}
+
                   {retryArmed && canRetryReservation && (
                     <p className="mt-3 rounded-xl border border-cyan-500/20 bg-cyan-500/5 p-2.5 text-[9px] leading-relaxed text-cyan-100">
-                      Confirme somente depois de corrigir o binding ou disponibilizar ATP. A nova tentativa pode criar a reserva canônica do pedido, mas não rejeita o pedido e não envia status à 99Food.
+                      Confirme somente depois de corrigir o binding ou disponibilizar ATP. A nova tentativa pode criar a reserva canônica do pedido, mas não rejeita o pedido e não envia status à 99Food. Um preflight anterior é apenas informativo e pode ficar desatualizado.
                     </p>
                   )}
                 </div>
-                <div className="flex shrink-0 flex-wrap gap-2 sm:max-w-[280px] sm:justify-end">
+                <div className="flex shrink-0 flex-wrap gap-2 sm:max-w-[310px] sm:justify-end">
                   {item.remediationTarget && (
                     <button
                       type="button"
                       onClick={() => openRemediation(item)}
-                      disabled={Boolean(retryingOrderId)}
+                      disabled={Boolean(retryingOrderId) || Boolean(preflightingOrderId)}
                       className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-violet-500/25 bg-violet-500/10 px-3 py-2 text-[9px] font-black uppercase tracking-wider text-violet-300 disabled:opacity-40"
                     >
                       {item.remediationTarget === '99food_binding'
@@ -210,8 +312,19 @@ export default function StoreChannelOperationsQueue({ user, storeId }: { user: U
                     <>
                       <button
                         type="button"
+                        onClick={() => void preflightReservation(item)}
+                        disabled={Boolean(preflightingOrderId) || Boolean(retryingOrderId) || loading}
+                        className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-slate-600 bg-slate-950 px-3 py-2 text-[9px] font-black uppercase tracking-wider text-slate-200 disabled:opacity-40"
+                      >
+                        {preflighting
+                          ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+                          : <ShieldCheck className="h-3.5 w-3.5" />}
+                        {preflighting ? 'Verificando…' : 'Verificar ATP'}
+                      </button>
+                      <button
+                        type="button"
                         onClick={() => void retryReservation(item)}
-                        disabled={Boolean(retryingOrderId) || loading}
+                        disabled={Boolean(retryingOrderId) || Boolean(preflightingOrderId) || loading}
                         className={`inline-flex items-center justify-center gap-1.5 rounded-xl border px-3 py-2 text-[9px] font-black uppercase tracking-wider disabled:opacity-40 ${retryArmed ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300' : 'border-cyan-500/25 bg-cyan-500/10 text-cyan-300'}`}
                       >
                         {retrying ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />}
@@ -228,7 +341,7 @@ export default function StoreChannelOperationsQueue({ user, storeId }: { user: U
                       )}
                     </>
                   )}
-                  <button type="button" onClick={() => openChannel(item.actionTarget)} disabled={Boolean(retryingOrderId)}
+                  <button type="button" onClick={() => openChannel(item.actionTarget)} disabled={Boolean(retryingOrderId) || Boolean(preflightingOrderId)}
                     className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[9px] font-black uppercase tracking-wider text-slate-300 disabled:opacity-40">
                     <ArrowDownRight className="h-3.5 w-3.5" /> Abrir canal
                   </button>
@@ -240,7 +353,7 @@ export default function StoreChannelOperationsQueue({ user, storeId }: { user: U
       </div>
 
       <p className="mt-4 text-[10px] leading-relaxed text-slate-600">
-        A fila nunca aprova mudanças do Mercado Livre, rejeita pedidos ou escreve em provedores. Os atalhos de correção só transportam contexto/navegam; o único write aqui é a nova tentativa explicitamente confirmada da reserva interna Kyrub para um pedido 99Food ainda bloqueado.
+        O preflight é somente leitura e pode ficar desatualizado logo após a consulta. Ele não cria reserva nem autoriza uma tentativa. A fila nunca aprova mudanças do Mercado Livre, rejeita pedidos ou escreve em provedores; o único write aqui continua sendo a nova tentativa explicitamente confirmada da reserva interna Kyrub para um pedido 99Food ainda bloqueado.
       </p>
     </section>
   );
