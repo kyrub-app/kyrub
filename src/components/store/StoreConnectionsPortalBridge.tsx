@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import type { User } from 'firebase/auth';
 import MercadoLivreE2ETestBridge from './MercadoLivreE2ETestBridge';
 import NinetyNineFoodE2ETestBridge from './NinetyNineFoodE2ETestBridge';
-import PhysicalInventoryWorkspace from './PhysicalInventoryWorkspace';
+import { PhysicalInventoryWorkspace } from './PhysicalInventoryWorkspace';
 import StoreChannelCenter from './StoreChannelCenter';
 import StoreChannelOperationsQueue from './StoreChannelOperationsQueue';
 import StoreConnectionsWorkspace from './StoreConnectionsWorkspace';
