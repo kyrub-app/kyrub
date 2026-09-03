@@ -25,6 +25,7 @@ import {
 
 type CenterChannel = 'kyrub_marketplace' | KyrubCommerceChannel;
 type ChannelState = 'native' | 'connected' | 'connecting' | 'attention' | 'declared' | 'available';
+type AuthorityRemediationTarget = 'repair' | 'governance';
 
 type ChannelRow = {
   channel: CenterChannel;
@@ -170,6 +171,26 @@ const authorityPresentation = (
   }
 };
 
+const authorityRemediationTarget = (
+  health: StoreInventoryAuthorityHealth | null
+): AuthorityRemediationTarget | null => {
+  if (!health || health.state === 'resolved') return null;
+  if (
+    health.state === 'canonical_owner_not_active' ||
+    health.state === 'multiple_active_owners'
+  ) {
+    return 'governance';
+  }
+  return 'repair';
+};
+
+const openAuthorityRemediation = (target: AuthorityRemediationTarget): void => {
+  const elementId = target === 'governance'
+    ? 'kyrub-store-owner-governance'
+    : 'kyrub-inventory-authority-repair';
+  document.getElementById(elementId)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+};
+
 const channelDetail = (row: Omit<ChannelRow, 'detail'>): string => {
   if (row.channel === 'kyrub_marketplace') {
     return 'Canal nativo da sua loja. Não depende de conta, token ou credencial externa.';
@@ -257,6 +278,7 @@ export default function StoreChannelCenter({
   const declaredCount = rows.filter(row => row.state === 'declared').length;
   const attentionCount = rows.filter(row => row.state === 'attention').length;
   const authorityMeta = authorityPresentation(authorityHealth);
+  const authorityTarget = authorityRemediationTarget(authorityHealth);
   const AuthorityIcon = authorityMeta.icon;
 
   const refresh = async (): Promise<void> => {
@@ -346,6 +368,17 @@ export default function StoreChannelCenter({
             <p className="mt-2 text-[9px] leading-relaxed text-slate-600">
               Verificação preventiva e somente leitura. Não altera owner, membership, inventário, reservas nem canais externos.
             </p>
+            {authorityTarget && (
+              <button
+                type="button"
+                onClick={() => openAuthorityRemediation(authorityTarget)}
+                className="mt-3 text-[9px] font-black uppercase tracking-wider text-cyan-300 hover:text-cyan-200"
+              >
+                {authorityTarget === 'governance'
+                  ? 'Revisar governança de owners'
+                  : 'Abrir correção segura'}
+              </button>
+            )}
           </div>
           <span className={`inline-flex shrink-0 items-center gap-1 rounded-full border px-2.5 py-1 text-[9px] font-black uppercase ${authorityMeta.className}`}>
             <AuthorityIcon className="h-3 w-3" />
