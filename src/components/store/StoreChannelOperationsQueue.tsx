@@ -57,15 +57,20 @@ const openInventoryRemediation = (inventoryItemId: string): void => {
 const openRemediation = (item: StoreChannelOperationalItem): void => {
   const target = item.remediationTarget;
   if (!target) return;
+
   if (target === '99food_binding') {
-    openBindingRemediation(item.remediationExternalProductIds ?? []);
+    if (item.remediationExternalProductIds?.length) {
+      requestNinetyNineFoodBindingRemediation(item.remediationExternalProductIds);
+    }
+    const element = document.getElementById('kyrub-99food-product-binding-workspace')
+      ?? document.getElementById('kyrub-99food-channel-detail');
+    element?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     return;
   }
+
   if (target === 'kyrub_inventory') {
-    const inventoryItemId = item.remediationInventoryItemId?.trim() ?? '';
-    if (inventoryItemId) {
-      openInventoryRemediation(inventoryItemId);
-      return;
+    if (item.remediationInventoryItemId) {
+      requestPhysicalInventoryFocus(item.remediationInventoryItemId);
     }
     document
       .getElementById('kyrub-physical-inventory-workspace')
