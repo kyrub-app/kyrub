@@ -16,8 +16,9 @@ import {
   XCircle,
 } from 'lucide-react';
 import {
-  consumeCanonicalOrderNavigation,
+  acknowledgeCanonicalOrderNavigation,
   KYRUB_CANONICAL_ORDER_NAVIGATION_REQUESTED_EVENT,
+  readCanonicalOrderNavigation,
   type CanonicalOrderNavigationRequest,
 } from '../../utils/canonicalOrderNavigation';
 import {
@@ -158,12 +159,12 @@ export const CustomerOrderInbox = ({
       setFocusOrderId(request.orderId);
     };
 
-    acceptNavigation(consumeCanonicalOrderNavigation(storeId));
+    acceptNavigation(readCanonicalOrderNavigation(storeId));
 
     const handleNavigation = (event: Event): void => {
       const detail = (event as CustomEvent<CanonicalOrderNavigationRequest>).detail;
       if (detail?.storeId?.trim() !== storeId) return;
-      acceptNavigation(consumeCanonicalOrderNavigation(storeId) ?? detail);
+      acceptNavigation(readCanonicalOrderNavigation(storeId) ?? detail);
     };
 
     window.addEventListener(
@@ -250,16 +251,18 @@ export const CustomerOrderInbox = ({
     if (!focusOrderId || originFilter !== 'all' || stationFilter !== 'all') return;
     if (!filteredOrders.some(order => order.id === focusOrderId)) return;
 
+    const focusedOrderId = focusOrderId;
     const frame = window.requestAnimationFrame(() => {
-      const element = document.getElementById(orderElementId(focusOrderId));
+      const element = document.getElementById(orderElementId(focusedOrderId));
       if (!(element instanceof HTMLElement)) return;
       element.scrollIntoView({ behavior: 'smooth', block: 'center' });
       element.focus({ preventScroll: true });
-      setFocusOrderId('');
+      acknowledgeCanonicalOrderNavigation(storeId, focusedOrderId);
+      setFocusOrderId(current => current === focusedOrderId ? '' : current);
     });
 
     return () => window.cancelAnimationFrame(frame);
-  }, [filteredOrders, focusOrderId, originFilter, stationFilter]);
+  }, [filteredOrders, focusOrderId, originFilter, stationFilter, storeId]);
 
   const filterOptions: Array<{ id: InboxFilter; label: string }> = [
     { id: 'active', label: 'Ativos' },

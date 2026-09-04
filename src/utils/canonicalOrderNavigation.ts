@@ -33,14 +33,39 @@ export const requestCanonicalOrderNavigation = (
   return true;
 };
 
-export const consumeCanonicalOrderNavigation = (
+export const readCanonicalOrderNavigation = (
   storeId: string
 ): CanonicalOrderNavigationRequest | null => {
   const normalizedStoreId = clean(storeId);
   if (!normalizedStoreId || pendingNavigation?.storeId !== normalizedStoreId) {
     return null;
   }
-  const request = pendingNavigation;
+  return pendingNavigation;
+};
+
+export const acknowledgeCanonicalOrderNavigation = (
+  storeId: string,
+  orderId: string
+): boolean => {
+  const normalizedStoreId = clean(storeId);
+  const normalizedOrderId = clean(orderId);
+  if (
+    !normalizedStoreId ||
+    !normalizedOrderId ||
+    pendingNavigation?.storeId !== normalizedStoreId ||
+    pendingNavigation.orderId !== normalizedOrderId
+  ) {
+    return false;
+  }
+  pendingNavigation = null;
+  return true;
+};
+
+export const consumeCanonicalOrderNavigation = (
+  storeId: string
+): CanonicalOrderNavigationRequest | null => {
+  const request = readCanonicalOrderNavigation(storeId);
+  if (!request) return null;
   pendingNavigation = null;
   return request;
 };

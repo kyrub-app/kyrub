@@ -114,6 +114,25 @@ test('canonical order navigation stays memory-only and carries exact store and o
   assert.doesNotMatch(navigationSource, /localStorage|sessionStorage|\bfetch\(|firebase|firestore/i);
 });
 
+test('canonical order navigation is retained across inbox remounts until exact focus acknowledgement', () => {
+  const readStart = navigationSource.indexOf('export const readCanonicalOrderNavigation = (');
+  const acknowledgeStart = navigationSource.indexOf('export const acknowledgeCanonicalOrderNavigation = (', readStart);
+  const consumeStart = navigationSource.indexOf('export const consumeCanonicalOrderNavigation = (', acknowledgeStart);
+  const readSection = navigationSource.slice(readStart, acknowledgeStart);
+  const acknowledgeSection = navigationSource.slice(acknowledgeStart, consumeStart);
+
+  assert.ok(readStart >= 0);
+  assert.ok(acknowledgeStart > readStart);
+  assert.ok(consumeStart > acknowledgeStart);
+  assert.match(readSection, /pendingNavigation\?\.storeId !== normalizedStoreId/);
+  assert.match(readSection, /return pendingNavigation;/);
+  assert.doesNotMatch(readSection, /pendingNavigation = null/);
+  assert.match(acknowledgeSection, /pendingNavigation\?\.storeId !== normalizedStoreId/);
+  assert.match(acknowledgeSection, /pendingNavigation\.orderId !== normalizedOrderId/);
+  assert.match(acknowledgeSection, /pendingNavigation = null;/);
+  assert.match(acknowledgeSection, /return true;/);
+});
+
 test('resolved retry handoff is an explicit navigation button and not an operational write', () => {
   const effectStart = portalSource.indexOf('const handleRetryResolved = (event: Event): void =>');
   const effectEnd = portalSource.indexOf('  if (!host || user.uid !== storeId) return null;', effectStart);
@@ -156,23 +175,33 @@ test('retailer navigation listener only opens Pedidos for the authenticated exac
   assert.match(retailerSource, /<CustomerOrderInbox\s+storeId=\{activeRetailerId\}/);
 });
 
-test('customer order inbox consumes exact pending identity, clears hiding filters, and focuses without changing status', () => {
+test('customer order inbox reads exact pending identity, clears hiding filters, and acknowledges only after focus', () => {
   const navigationStart = inboxSource.indexOf('const acceptNavigation = (');
   const navigationEnd = inboxSource.indexOf('  const filterOptions:', navigationStart);
   const navigationSection = inboxSource.slice(navigationStart, navigationEnd);
 
   assert.ok(navigationStart >= 0);
   assert.ok(navigationEnd > navigationStart);
-  assert.match(navigationSection, /consumeCanonicalOrderNavigation\(storeId\)/);
+  assert.match(navigationSection, /readCanonicalOrderNavigation\(storeId\)/);
+  assert.doesNotMatch(navigationSection, /consumeCanonicalOrderNavigation\(storeId\)/);
   assert.match(navigationSection, /request\.storeId !== storeId/);
   assert.match(navigationSection, /setFocusOrderId\(request\.orderId\)/);
   assert.match(navigationSection, /orders\.find\(order => order\.id === focusOrderId\)/);
   assert.match(navigationSection, /setOriginFilter\('all'\)/);
   assert.match(navigationSection, /setStationFilter\('all'\)/);
   assert.match(navigationSection, /\['completed', 'rejected', 'cancelled'\]\.includes\(target\.status\)/);
-  assert.match(navigationSection, /document\.getElementById\(orderElementId\(focusOrderId\)\)/);
-  assert.match(navigationSection, /scrollIntoView\(\{ behavior: 'smooth', block: 'center' \}\)/);
-  assert.match(navigationSection, /focus\(\{ preventScroll: true \}\)/);
+
+  const elementIndex = navigationSection.indexOf('document.getElementById(orderElementId(focusedOrderId))');
+  const scrollIndex = navigationSection.indexOf("scrollIntoView({ behavior: 'smooth', block: 'center' })");
+  const focusIndex = navigationSection.indexOf('focus({ preventScroll: true })');
+  const acknowledgeIndex = navigationSection.indexOf('acknowledgeCanonicalOrderNavigation(storeId, focusedOrderId)');
+  const clearLocalIndex = navigationSection.indexOf("setFocusOrderId(current => current === focusedOrderId ? '' : current)");
+
+  assert.ok(elementIndex >= 0);
+  assert.ok(scrollIndex > elementIndex);
+  assert.ok(focusIndex > scrollIndex);
+  assert.ok(acknowledgeIndex > focusIndex);
+  assert.ok(clearLocalIndex > acknowledgeIndex);
   assert.doesNotMatch(navigationSection, /onChangeStatus|updateOrderStatusWithDecision|\bfetch\(/);
   assert.match(inboxSource, /id=\{orderElementId\(order\.id\)\}/);
   assert.match(inboxSource, /tabIndex=\{-1\}/);
