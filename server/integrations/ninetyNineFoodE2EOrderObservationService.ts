@@ -20,6 +20,18 @@ const stringList = (value: unknown, max = 240): string[] =>
 const finiteNumber = (value: unknown): number | null =>
   typeof value === 'number' && Number.isFinite(value) ? value : null;
 
+const timestampToIso = (value: unknown): string => {
+  if (
+    value &&
+    typeof value === 'object' &&
+    'toDate' in value &&
+    typeof (value as { toDate?: unknown }).toDate === 'function'
+  ) {
+    return (value as { toDate: () => Date }).toDate().toISOString();
+  }
+  return clean(value, 120);
+};
+
 const canonicalStoreIdForTenant = async (tenantId: string): Promise<string> => {
   const tenant = await adminDb.doc(`tenants/${tenantId}`).get();
   const canonicalStoreId = clean(tenant.data()?.canonicalStoreId, 160);
@@ -58,6 +70,17 @@ const reservationState = (
   return RESERVATION_STATES.has(state) ? state : 'unobserved';
 };
 
+interface InboundEventEvidence {
+  eventId: string;
+  eventType: string;
+  status: string;
+  receivedAt: string;
+  processedAt: string;
+}
+
+const eventRank = (event: InboundEventEvidence): string =>
+  event.processedAt || event.receivedAt;
+
 export interface NinetyNineFoodE2EObservedOrder {
   orderId: string;
   externalOrderId: string;
@@ -67,8 +90,7 @@ export interface NinetyNineFoodE2EObservedOrder {
   createdAt: string;
   updatedAt: string;
   lastEvent: string;
-  lastInboundEventId: string;
-  lastInboundEventAt: string;
+  inboundEvent: InboundEventEvidence;
   reservation: {
     state: NinetyNineFoodObservedReservationState;
     detail: string;
@@ -100,15 +122,47 @@ export const listRecentNinetyNineFoodE2EObservedOrders = async (input: {
     ? Math.trunc(input.limit)
     : 20;
   const limit = Math.max(1, Math.min(50, requestedLimit));
-  const snapshot = await adminDb.collection(`stores/${canonicalStoreId}/orders`).get();
+  const [ordersSnapshot, eventsSnapshot] = await Promise.all([
+    adminDb.collection(`stores/${canonicalStoreId}/orders`).get(),
+    adminDb.collection(`tenants/${tenantId}/integrationEvents`).get(),
+  ]);
 
-  const items = snapshot.docs.flatMap(document => {
+  const eventByExternalOrderId = new Map<string, InboundEventEvidence>();
+  for (const document of eventsSnapshot.docs) {
+    const event = record(document.data());
+    if (clean(event.provider, 120) !== '99food') continue;
+    const externalOrderId = clean(event.externalOrderId, 240);
+    const eventId = clean(event.eventId, 240);
+    if (!externalOrderId || !eventId) continue;
+    const candidate: InboundEventEvidence = {
+      eventId,
+      eventType: clean(event.eventType, 160),
+      status: clean(event.status, 120),
+      receivedAt: timestampToIso(event.receivedAt),
+      processedAt: timestampToIso(event.processedAt),
+    };
+    const current = eventByExternalOrderId.get(externalOrderId);
+    const candidateProcessed = candidate.status === 'processed';
+    const currentProcessed = current?.status === 'processed';
+    if (
+      !current ||
+      (candidateProcessed && !currentProcessed) ||
+      (candidateProcessed === currentProcessed && eventRank(candidate) > eventRank(current))
+    ) {
+      eventByExternalOrderId.set(externalOrderId, candidate);
+    }
+  }
+
+  const items = ordersSnapshot.docs.flatMap(document => {
     const order = record(document.data());
     const integration = record(order.integration);
     if (clean(integration.provider, 120) !== '99food') return [];
     const externalOrderId = clean(integration.externalOrderId, 240);
     if (!externalOrderId) return [];
     const reservation = record(order.inventoryReservation);
+    const ingress = eventByExternalOrderId.get(externalOrderId);
+    const fallbackEventId = clean(integration.lastInboundEventId, 240);
+    const fallbackEventAt = clean(integration.lastInboundEventAt, 120);
     return [{
       orderId: document.id,
       externalOrderId,
@@ -121,8 +175,13 @@ export const listRecentNinetyNineFoodE2EObservedOrders = async (input: {
       createdAt: clean(order.createdAt, 120),
       updatedAt: clean(order.updatedAt, 120),
       lastEvent: clean(integration.lastEvent, 160),
-      lastInboundEventId: clean(integration.lastInboundEventId, 240),
-      lastInboundEventAt: clean(integration.lastInboundEventAt, 120),
+      inboundEvent: ingress ?? {
+        eventId: fallbackEventId,
+        eventType: clean(integration.lastEvent, 160),
+        status: fallbackEventId ? 'observed_on_order' : 'unobserved',
+        receivedAt: fallbackEventAt,
+        processedAt: fallbackEventAt,
+      },
       reservation: {
         state: reservationState(reservation),
         detail: clean(reservation.detail, 500),
