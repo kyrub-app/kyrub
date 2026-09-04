@@ -16,7 +16,9 @@ import { StoreDeliveryTrackingBridge } from './store/StoreDeliveryTrackingBridge
 import type { Product } from '../types';
 import { auth } from '../utils/firebase';
 import {
+  KYRUB_CANONICAL_ORDER_NAVIGATION_CHANGED_EVENT,
   KYRUB_CANONICAL_ORDER_NAVIGATION_REQUESTED_EVENT,
+  readCanonicalOrderNavigation,
   type CanonicalOrderNavigationRequest,
 } from '../utils/canonicalOrderNavigation';
 import {
@@ -129,6 +131,31 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = props => {
       );
     };
   }, [activeRetailerId, setActiveSubTab]);
+
+  useEffect(() => {
+    const syncCanonicalOrderNavigation = (): void => {
+      const user = auth.currentUser;
+      if (!user || user.uid !== activeRetailerId) {
+        setCanonicalNavigationOrderId('');
+        return;
+      }
+      setCanonicalNavigationOrderId(
+        readCanonicalOrderNavigation(activeRetailerId)?.orderId ?? ''
+      );
+    };
+
+    syncCanonicalOrderNavigation();
+    window.addEventListener(
+      KYRUB_CANONICAL_ORDER_NAVIGATION_CHANGED_EVENT,
+      syncCanonicalOrderNavigation
+    );
+    return () => {
+      window.removeEventListener(
+        KYRUB_CANONICAL_ORDER_NAVIGATION_CHANGED_EVENT,
+        syncCanonicalOrderNavigation
+      );
+    };
+  }, [activeRetailerId]);
 
   useEffect(() => {
     const handlePublicProductCreate = (event: Event): void => {
