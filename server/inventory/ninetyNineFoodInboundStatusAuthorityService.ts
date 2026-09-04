@@ -48,7 +48,6 @@ const activeStatusMutationId = (value: unknown): string => {
 };
 
 export interface NinetyNineFoodInboundStatusAuthorityResult {
-  orderExists: boolean;
   reconciliationRequired: boolean;
   executionId: string;
   localStatusApplied: boolean;
@@ -83,12 +82,9 @@ export const applyNinetyNineFoodInboundStatusWithAuthority = async (input: {
       transaction.get(lockReference),
     ]);
     if (!legacySnapshot.exists) {
-      return {
-        orderExists: false,
-        reconciliationRequired: false,
-        executionId: '',
-        localStatusApplied: false,
-      };
+      throw new Error(
+        'NINETY_NINE_FOOD_INBOUND_ORDER_DISAPPEARED: o pedido deixou de existir antes da aplicação autoritativa do evento inbound.'
+      );
     }
     if (activeStatusMutationId(lockSnapshot.data())) {
       throw new Error(
@@ -99,12 +95,21 @@ export const applyNinetyNineFoodInboundStatusWithAuthority = async (input: {
     const canonicalStoreId = clean(tenantSnapshot.data()?.canonicalStoreId);
     const order = record(legacySnapshot.data());
     const integration = integrationData(order);
+    const provider = clean(integration.provider);
     const outboundStatus = clean(integration.outboundStatus);
     const executionId = clean(integration.outboundExecutionId);
-    const hasActiveAuthority =
-      clean(integration.provider) === '99food' &&
-      ACTIVE_OUTBOUND_STATUSES.has(outboundStatus) &&
-      Boolean(executionId);
+    if (provider !== '99food') {
+      throw new Error(
+        'NINETY_NINE_FOOD_INBOUND_ORDER_SOURCE_MISMATCH: o pedido existente não pertence à autoridade 99Food.'
+      );
+    }
+    const hasActiveOutboundState = ACTIVE_OUTBOUND_STATUSES.has(outboundStatus);
+    if (hasActiveOutboundState && !executionId) {
+      throw new Error(
+        'NINETY_NINE_FOOD_INBOUND_EXECUTION_AUTHORITY_CONFLICT: o pedido possui estado outbound ativo sem executionId server-only.'
+      );
+    }
+    const hasActiveAuthority = hasActiveOutboundState && Boolean(executionId);
 
     let executionSnapshot: DocumentSnapshot | null = null;
     if (hasActiveAuthority) {
@@ -180,7 +185,6 @@ export const applyNinetyNineFoodInboundStatusWithAuthority = async (input: {
     }
 
     return {
-      orderExists: true,
       reconciliationRequired: hasActiveAuthority,
       executionId: hasActiveAuthority ? executionId : '',
       localStatusApplied: Boolean(input.mappedStatus),
