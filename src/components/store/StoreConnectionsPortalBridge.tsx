@@ -5,7 +5,15 @@ import {
   KYRUB_ACTIVITY_UPDATED_EVENT,
 } from '../../observability/kyrubActivityBrowser';
 import { readRecentKyrubActivityEvents } from '../../observability/kyrubActivityLog';
-import { requestCanonicalOrderNavigation } from '../../utils/canonicalOrderNavigation';
+import {
+  KYRUB_CANONICAL_ORDER_NAVIGATION_CHANGED_EVENT,
+  requestCanonicalOrderNavigation,
+} from '../../utils/canonicalOrderNavigation';
+import {
+  KYRUB_RESOLVED_RETRY_HANDOFF_CHANGED_EVENT,
+  readResolvedRetryHandoff,
+  retainResolvedRetryHandoff,
+} from '../../utils/resolvedRetryHandoff';
 import {
   KYRUB_99FOOD_RETRY_RESOLVED_EVENT,
   type NinetyNineFoodRetryResolvedDetail,
@@ -38,7 +46,9 @@ export default function StoreConnectionsPortalBridge({
   const [host, setHost] = useState<HTMLElement | null>(null);
   const [inventoryRefreshVersion, setInventoryRefreshVersion] = useState(0);
   const [authorityRefreshVersion, setAuthorityRefreshVersion] = useState(0);
-  const [resolvedRetry, setResolvedRetry] = useState<NinetyNineFoodRetryResolvedDetail | null>(null);
+  const [resolvedRetry, setResolvedRetry] = useState<NinetyNineFoodRetryResolvedDetail | null>(
+    () => readResolvedRetryHandoff(storeId)
+  );
   const storeViewRefreshVersion = inventoryRefreshVersion + authorityRefreshVersion;
 
   useEffect(() => {
@@ -129,6 +139,10 @@ export default function StoreConnectionsPortalBridge({
   }, [storeId, user.uid]);
 
   useEffect(() => {
+    const syncResolvedRetry = (): void => {
+      setResolvedRetry(readResolvedRetryHandoff(storeId));
+    };
+
     const handleRetryResolved = (event: Event): void => {
       const detail = (event as CustomEvent<NinetyNineFoodRetryResolvedDetail>).detail;
       const orderId = detail?.orderId?.trim() ?? '';
@@ -140,11 +154,35 @@ export default function StoreConnectionsPortalBridge({
         return;
       }
       setResolvedRetry({ ...detail, storeId, orderId });
+      retainResolvedRetryHandoff({ ...detail, storeId, orderId });
     };
 
+    const handleHandoffChanged = (event: Event): void => {
+      const detail = (event as CustomEvent<{ storeId?: string }>).detail;
+      if (detail?.storeId?.trim() !== storeId) return;
+      syncResolvedRetry();
+    };
+
+    syncResolvedRetry();
     window.addEventListener(KYRUB_99FOOD_RETRY_RESOLVED_EVENT, handleRetryResolved);
+    window.addEventListener(
+      KYRUB_RESOLVED_RETRY_HANDOFF_CHANGED_EVENT,
+      handleHandoffChanged
+    );
+    window.addEventListener(
+      KYRUB_CANONICAL_ORDER_NAVIGATION_CHANGED_EVENT,
+      syncResolvedRetry
+    );
     return () => {
       window.removeEventListener(KYRUB_99FOOD_RETRY_RESOLVED_EVENT, handleRetryResolved);
+      window.removeEventListener(
+        KYRUB_RESOLVED_RETRY_HANDOFF_CHANGED_EVENT,
+        handleHandoffChanged
+      );
+      window.removeEventListener(
+        KYRUB_CANONICAL_ORDER_NAVIGATION_CHANGED_EVENT,
+        syncResolvedRetry
+      );
     };
   }, [storeId, user.uid]);
 
@@ -189,7 +227,7 @@ export default function StoreConnectionsPortalBridge({
         >
           <strong className="block text-emerald-200">Retry reconsultado · bloqueio não está mais ativo</strong>
           <span className="mt-1 block">
-            O readback autoritativo do pedido {resolvedRetry.orderId} está em “{resolvedRetry.state}”. Este aviso não muda status nem envia qualquer comando à 99Food.
+            O readback autoritativo do pedido {resolvedRetry.orderId} está em “{resolvedRetry.state}”. Este aviso permanece recuperável até o pedido ser realmente focalizado; cancelar a localização não repete o retry nem apaga este resultado.
           </span>
           <button
             id="kyrub-open-resolved-99food-order"
