@@ -1,4 +1,5 @@
 import { auth } from './firebase';
+import { recordOmnichannelE2EEvidence } from './omnichannelE2EEvidence';
 
 const encoded = (value: string): string => encodeURIComponent(value.trim());
 
@@ -146,8 +147,33 @@ export const executeNinetyNineFoodE2EAvailability = (
   { method: 'POST', body: JSON.stringify({ authorizationToken }) }
 );
 
-export const reconcileNinetyNineFoodE2EAvailability = (executionId: string) =>
-  authorizedRequest<NinetyNineFoodE2EReconciliation>(
+export const reconcileNinetyNineFoodE2EAvailability = async (
+  executionId: string
+): Promise<NinetyNineFoodE2EReconciliation> => {
+  const result = await authorizedRequest<NinetyNineFoodE2EReconciliation>(
     `/api/integrations/99food/availability-executions/${encoded(executionId)}/reconcile`,
     { method: 'POST' }
   );
+  const user = auth.currentUser;
+  if (user) {
+    recordOmnichannelE2EEvidence({
+      storeId: user.uid,
+      kind: '99food_availability',
+      source: 'provider_readback',
+      referenceId: result.executionId,
+      outcome: result.status,
+      summary: result.status === 'reconciled'
+        ? `99Food confirmou quantityAvailable = ${result.observedQuantityAvailable}.`
+        : `99Food ainda diverge do target ${result.targetAvailableQuantity}; reconciliação continua necessária.`,
+      details: {
+        executionId: result.executionId,
+        reconciliationId: result.reconciliationId,
+        targetAvailableQuantity: result.targetAvailableQuantity,
+        observedQuantityAvailable: result.observedQuantityAvailable,
+        providerEvidenceHash: result.providerEvidenceHash,
+        authority: result.authority,
+      },
+    });
+  }
+  return result;
+};
