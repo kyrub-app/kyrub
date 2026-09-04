@@ -46,6 +46,21 @@ test('a late CREATED event on an existing order cannot downgrade canonical statu
   assert.match(missingOrderBranch, /persistNormalizedOrder/);
 });
 
+test('inbound event serializes against the exact server-only KDS status mutation lock', () => {
+  assert.match(authorityServiceSource, /orderStatusMutationLocks/);
+  assert.match(authorityServiceSource, /authorityDocumentId/);
+  assert.match(authorityServiceSource, /transaction\.get\(lockReference\)/);
+  assert.match(authorityServiceSource, /activeStatusMutationId\(lockSnapshot\.data\(\)\)/);
+  assert.match(
+    authorityServiceSource,
+    /NINETY_NINE_FOOD_INBOUND_STATUS_MUTATION_BUSY/
+  );
+  assert.ok(
+    authorityServiceSource.indexOf('activeStatusMutationId(lockSnapshot.data())') <
+      authorityServiceSource.indexOf('transaction.set(legacyReference')
+  );
+});
+
 test('active outbound execution requires exact server-only execution evidence before inbound mutation', () => {
   assert.match(authorityServiceSource, /ACTIVE_OUTBOUND_STATUSES/);
   assert.match(authorityServiceSource, /'executing', 'reconciliation_required'/);
