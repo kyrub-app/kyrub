@@ -1,8 +1,11 @@
+import { createHash } from 'node:crypto';
 import { FieldValue, type DocumentSnapshot } from 'firebase-admin/firestore';
 import { adminDb } from '../firebaseAdmin.js';
 import type { InventoryOrderStatus } from '../../shared/inventoryConsumption.js';
 
 const STATUS_MUTATION_LEASE_MS = 2 * 60 * 1000;
+const STATUS_MUTATION_LOCK_COLLECTION = 'orderStatusMutationLocks';
+const STATUS_SYNC_EXECUTION_COLLECTION = 'ninetyNineFoodStatusSyncExecutions';
 
 const SUPPORTED_STATUSES = new Set<InventoryOrderStatus>([
   'accepted',
@@ -33,8 +36,13 @@ const integrationData = (value: unknown): Record<string, unknown> => {
 const orderReference = (tenantId: string, orderId: string) =>
   adminDb.doc(`artifacts/${tenantId}/public/data/customerOrders/${orderId}`);
 
+const authorityDocumentId = (tenantId: string, orderId: string): string =>
+  createHash('sha256').update(`${tenantId}:${orderId}`).digest('hex');
+
 const mutationLockReference = (tenantId: string, orderId: string) =>
-  orderReference(tenantId, orderId).collection('statusMutationLocks').doc('current');
+  adminDb.doc(
+    `${STATUS_MUTATION_LOCK_COLLECTION}/${authorityDocumentId(tenantId, orderId)}`
+  );
 
 const activeStatusMutationId = (value: unknown): string => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return '';
@@ -70,7 +78,7 @@ export const claimOrderStatusMutation = async (input: {
 
   const orderRef = orderReference(tenantId, orderId);
   const lockRef = mutationLockReference(tenantId, orderId);
-  const mutationId = orderRef.collection('statusMutationClaims').doc().id;
+  const mutationId = adminDb.collection(STATUS_MUTATION_LOCK_COLLECTION).doc().id;
 
   return adminDb.runTransaction(async transaction => {
     const [orderSnapshot, lockSnapshot] = await Promise.all([
@@ -101,6 +109,7 @@ export const claimOrderStatusMutation = async (input: {
       orderId,
       claimedAt,
       leaseExpiresAt,
+      authority: 'server_only_status_mutation_lock',
       updatedAt: FieldValue.serverTimestamp(),
     });
     return { mutationId, tenantId, orderId };
@@ -151,9 +160,7 @@ export const claimNinetyNineFoodStatusSyncExecution = async (input: {
 
   const orderRef = orderReference(tenantId, orderId);
   const lockRef = mutationLockReference(tenantId, orderId);
-  const executionReference = orderRef
-    .collection('providerStatusExecutions')
-    .doc();
+  const executionReference = adminDb.collection(STATUS_SYNC_EXECUTION_COLLECTION).doc();
   const executionId = executionReference.id;
 
   return adminDb.runTransaction(async transaction => {
@@ -210,6 +217,7 @@ export const claimNinetyNineFoodStatusSyncExecution = async (input: {
       executionId,
       tenantId,
       orderId,
+      orderPath: orderRef.path,
       provider: '99food',
       externalOrderId,
       targetStatus: input.status,
@@ -258,9 +266,9 @@ export const finalizeNinetyNineFoodStatusSyncExecution = async (input: {
   }
 
   const orderRef = orderReference(tenantId, orderId);
-  const executionReference = orderRef
-    .collection('providerStatusExecutions')
-    .doc(executionId);
+  const executionReference = adminDb.doc(
+    `${STATUS_SYNC_EXECUTION_COLLECTION}/${executionId}`
+  );
 
   return adminDb.runTransaction(async transaction => {
     const [orderSnapshot, executionSnapshot] = await Promise.all([
