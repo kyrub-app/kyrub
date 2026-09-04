@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
-import { ShieldCheck, X } from 'lucide-react';
+import { ShieldCheck } from 'lucide-react';
 import { auth } from '../../utils/firebase';
 import {
   KYRUB_99FOOD_STATUS_WRITE_AUTHORITY_CHANGED_EVENT,
@@ -104,7 +104,7 @@ export function NinetyNineFoodOrderStatusBridge() {
   }, []);
 
   const choose = (
-    choice: 'cancel' | 'kyrub_only' | 'kyrub_and_99food'
+    choice: 'kyrub_only' | 'kyrub_and_99food'
   ): void => {
     if (!request) return;
     resolveNinetyNineFoodStatusWriteAuthority(request, choice);
@@ -121,30 +121,20 @@ export function NinetyNineFoodOrderStatusBridge() {
             aria-modal="true"
             aria-labelledby="kyrub-99food-status-write-authority-title"
           >
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <span className="font-mono text-[9px] font-black uppercase tracking-[0.16em] text-amber-300">
-                  Autoridade de canal · 99Food
-                </span>
-                <h3
-                  id="kyrub-99food-status-write-authority-title"
-                  className="mt-1 text-lg font-black text-white"
-                >
-                  Onde aplicar esta mudança?
-                </h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => choose('cancel')}
-                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-800 bg-slate-950 text-slate-500"
-                aria-label="Voltar sem alterar o pedido"
+            <div>
+              <span className="font-mono text-[9px] font-black uppercase tracking-[0.16em] text-amber-300">
+                Autoridade de canal · 99Food
+              </span>
+              <h3
+                id="kyrub-99food-status-write-authority-title"
+                className="mt-1 text-lg font-black text-white"
               >
-                <X className="h-4 w-4" />
-              </button>
+                Onde aplicar esta mudança?
+              </h3>
             </div>
 
             <p className="mt-4 rounded-2xl border border-amber-500/20 bg-amber-500/[0.07] p-4 text-[10px] leading-relaxed text-amber-100">
-              Você está prestes a <strong>{statusLabel(request.status)}</strong> no pedido {request.orderId}. O Kyrub não enviará nada à 99Food sem sua escolha explícita abaixo.
+              Você escolheu <strong>{statusLabel(request.status)}</strong> no pedido {request.orderId}. Agora defina somente o alcance dessa ação. O Kyrub não enviará nada à 99Food sem a opção explícita abaixo.
             </p>
 
             <div className="mt-5 grid gap-3 sm:grid-cols-2">
@@ -168,7 +158,7 @@ export function NinetyNineFoodOrderStatusBridge() {
             </div>
 
             <p className="mt-3 text-[9px] leading-relaxed text-slate-500">
-              O status canônico do Kyrub é atualizado primeiro. Se a 99Food falhar depois disso, o pedido permanece atualizado no Kyrub, o erro é mostrado e nenhum retry externo é executado automaticamente.
+              Esta tela define apenas o alcance da mudança que você já solicitou no KDS. O status canônico do Kyrub é atualizado primeiro. Se a 99Food falhar depois disso, o pedido permanece atualizado no Kyrub, o erro é mostrado e nenhum retry externo é executado automaticamente.
             </p>
           </section>
         </div>
