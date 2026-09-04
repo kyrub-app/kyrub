@@ -107,6 +107,12 @@ export const writeNinetyNineFoodOrderStatusToProvider = async (input: {
   ) {
     throw new Error('Identidade externa 99Food do pedido mudou antes do provider write.');
   }
+  if (
+    clean(integration.outboundStatus) !== 'executing' ||
+    clean(order.status) !== input.status
+  ) {
+    throw new Error('O status local do pedido mudou antes do provider write 99Food.');
+  }
 
   const action = buildOpenDeliveryAction(externalOrderId, input.status, {
     displayId: clean(integration.displayId) || externalOrderId,
