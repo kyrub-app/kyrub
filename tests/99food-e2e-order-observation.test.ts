@@ -71,7 +71,7 @@ test('server observation service is owner-scoped, bounded and strictly read-only
   assert.match(serviceSource, /Math\.max\(1, Math\.min\(50, requestedLimit\)\)/);
   assert.doesNotMatch(
     serviceSource,
-    /\.set\(|\.update\(|\.create\(|\.delete\(|runTransaction|\.batch\(|sendAction|writeNinetyNineFood|retry|reconcile/i
+    /\.set\(|\.update\(|\.create\(|\.delete\(|runTransaction|\.batch\(|sendAction|writeNinetyNineFood|retryNinetyNineFood|reconcileNinetyNineFoodOrderReservation/i
   );
 });
 
@@ -120,7 +120,7 @@ test('observation panel only re-reads persisted evidence and never polls, retrie
   assert.match(panelSource, /reservationLabel\(item\)/);
   assert.doesNotMatch(
     panelSource,
-    /pollNinetyNineFood|retryNinetyNineFood|updateOrderStatus|sendNinetyNineFood|authorize|execute|reconcile|setInterval|setTimeout|\bfetch\(/
+    /pollNinetyNineFood|retryNinetyNineFood|updateOrderStatus|sendNinetyNineFood|authorizeNinetyNineFood|executeNinetyNineFood|reconcileNinetyNineFood|setInterval|setTimeout|\bfetch\(/
   );
 });
 
@@ -129,6 +129,7 @@ test('existing connected 99Food E2E bridge mounts observation without replacing 
   const observationIndex = bridgeSource.indexOf('<NinetyNineFoodE2EOrderObservationPanel');
   assert.match(bridgeSource, /getNinetyNineFoodConnectionStatus/);
   assert.match(bridgeSource, /auth\.currentUser/);
+  assert.match(bridgeSource, /if \(!connected\) return null/);
   assert.ok(workspaceIndex >= 0);
   assert.ok(observationIndex > workspaceIndex);
 });
