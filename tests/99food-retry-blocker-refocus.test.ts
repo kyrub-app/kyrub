@@ -116,21 +116,45 @@ test('canonical order navigation stays memory-only and carries exact store and o
 
 test('canonical order navigation is retained across inbox remounts until exact focus acknowledgement', () => {
   const readStart = navigationSource.indexOf('export const readCanonicalOrderNavigation = (');
-  const acknowledgeStart = navigationSource.indexOf('export const acknowledgeCanonicalOrderNavigation = (', readStart);
+  const currentStart = navigationSource.indexOf('export const isCurrentCanonicalOrderNavigation = (', readStart);
+  const acknowledgeStart = navigationSource.indexOf('export const acknowledgeCanonicalOrderNavigation = (', currentStart);
   const consumeStart = navigationSource.indexOf('export const consumeCanonicalOrderNavigation = (', acknowledgeStart);
-  const readSection = navigationSource.slice(readStart, acknowledgeStart);
+  const readSection = navigationSource.slice(readStart, currentStart);
+  const currentSection = navigationSource.slice(currentStart, acknowledgeStart);
   const acknowledgeSection = navigationSource.slice(acknowledgeStart, consumeStart);
 
   assert.ok(readStart >= 0);
-  assert.ok(acknowledgeStart > readStart);
+  assert.ok(currentStart > readStart);
+  assert.ok(acknowledgeStart > currentStart);
   assert.ok(consumeStart > acknowledgeStart);
   assert.match(readSection, /pendingNavigation\?\.storeId !== normalizedStoreId/);
   assert.match(readSection, /return pendingNavigation;/);
   assert.doesNotMatch(readSection, /pendingNavigation = null/);
-  assert.match(acknowledgeSection, /pendingNavigation\?\.storeId !== normalizedStoreId/);
-  assert.match(acknowledgeSection, /pendingNavigation\.orderId !== normalizedOrderId/);
+  assert.match(currentSection, /pendingNavigation\?\.storeId === normalizedStoreId/);
+  assert.match(currentSection, /pendingNavigation\.orderId === normalizedOrderId/);
+  assert.match(acknowledgeSection, /if \(!isCurrentCanonicalOrderNavigation\(storeId, orderId\)\)/);
   assert.match(acknowledgeSection, /pendingNavigation = null;/);
+  assert.match(acknowledgeSection, /replacedNavigationOrderId = '';/);
   assert.match(acknowledgeSection, /return true;/);
+});
+
+test('latest explicit canonical order navigation replaces the older target for the same store', () => {
+  const requestStart = navigationSource.indexOf('export const requestCanonicalOrderNavigation = (');
+  const readStart = navigationSource.indexOf('export const readCanonicalOrderNavigation = (', requestStart);
+  const requestSection = navigationSource.slice(requestStart, readStart);
+  const replacementStart = navigationSource.indexOf('export const readReplacedCanonicalOrderNavigationId = (');
+  const currentStart = navigationSource.indexOf('export const isCurrentCanonicalOrderNavigation = (', replacementStart);
+  const replacementSection = navigationSource.slice(replacementStart, currentStart);
+
+  assert.ok(requestStart >= 0);
+  assert.ok(readStart > requestStart);
+  assert.match(requestSection, /const previous = pendingNavigation;/);
+  assert.match(requestSection, /previous\.storeId === normalized\.storeId/);
+  assert.match(requestSection, /previous\.orderId !== normalized\.orderId/);
+  assert.match(requestSection, /\? previous\.orderId/);
+  assert.match(requestSection, /pendingNavigation = normalized;/);
+  assert.match(replacementSection, /return replacedNavigationOrderId;/);
+  assert.doesNotMatch(requestSection, /push\(|queue|localStorage|sessionStorage|\bfetch\(/i);
 });
 
 test('resolved retry handoff is an explicit navigation button and not an operational write', () => {
@@ -175,7 +199,7 @@ test('retailer navigation listener only opens Pedidos for the authenticated exac
   assert.match(retailerSource, /<CustomerOrderInbox\s+storeId=\{activeRetailerId\}/);
 });
 
-test('customer order inbox reads exact pending identity, clears hiding filters, and acknowledges only after focus', () => {
+test('customer order inbox reads exact pending identity, clears hiding filters, and acknowledges only after current exact focus', () => {
   const navigationStart = inboxSource.indexOf('const acceptNavigation = (');
   const navigationEnd = inboxSource.indexOf('  const filterOptions:', navigationStart);
   const navigationSection = inboxSource.slice(navigationStart, navigationEnd);
@@ -186,25 +210,43 @@ test('customer order inbox reads exact pending identity, clears hiding filters, 
   assert.doesNotMatch(navigationSection, /consumeCanonicalOrderNavigation\(storeId\)/);
   assert.match(navigationSection, /request\.storeId !== storeId/);
   assert.match(navigationSection, /setFocusOrderId\(request\.orderId\)/);
+  assert.match(navigationSection, /readReplacedCanonicalOrderNavigationId\(storeId\)/);
   assert.match(navigationSection, /orders\.find\(order => order\.id === focusOrderId\)/);
   assert.match(navigationSection, /setOriginFilter\('all'\)/);
   assert.match(navigationSection, /setStationFilter\('all'\)/);
   assert.match(navigationSection, /\['completed', 'rejected', 'cancelled'\]\.includes\(target\.status\)/);
 
+  const currentIndex = navigationSection.indexOf('isCurrentCanonicalOrderNavigation(storeId, focusedOrderId)');
   const elementIndex = navigationSection.indexOf('document.getElementById(orderElementId(focusedOrderId))');
   const scrollIndex = navigationSection.indexOf("scrollIntoView({ behavior: 'smooth', block: 'center' })");
   const focusIndex = navigationSection.indexOf('focus({ preventScroll: true })');
   const acknowledgeIndex = navigationSection.indexOf('acknowledgeCanonicalOrderNavigation(storeId, focusedOrderId)');
   const clearLocalIndex = navigationSection.indexOf("setFocusOrderId(current => current === focusedOrderId ? '' : current)");
 
-  assert.ok(elementIndex >= 0);
+  assert.ok(currentIndex >= 0);
+  assert.ok(elementIndex > currentIndex);
   assert.ok(scrollIndex > elementIndex);
   assert.ok(focusIndex > scrollIndex);
   assert.ok(acknowledgeIndex > focusIndex);
   assert.ok(clearLocalIndex > acknowledgeIndex);
+  assert.match(navigationSection, /if \(!acknowledgeCanonicalOrderNavigation\(storeId, focusedOrderId\)\) return;/);
   assert.doesNotMatch(navigationSection, /onChangeStatus|updateOrderStatusWithDecision|\bfetch\(/);
   assert.match(inboxSource, /id=\{orderElementId\(order\.id\)\}/);
   assert.match(inboxSource, /tabIndex=\{-1\}/);
+});
+
+test('inbox explicitly reports when a newer order navigation replaces an older pending target', () => {
+  const bannerStart = inboxSource.indexOf('id="kyrub-canonical-order-navigation-replaced"');
+  const bannerEnd = inboxSource.indexOf('<div className="rounded-2xl border border-cyan-500/20', bannerStart);
+  const bannerSection = inboxSource.slice(bannerStart, bannerEnd);
+
+  assert.ok(bannerStart >= 0);
+  assert.ok(bannerEnd > bannerStart);
+  assert.match(bannerSection, /replacedFocusOrderId/);
+  assert.match(bannerSection, /focusOrderId/);
+  assert.match(bannerSection, /Pedido mais recente priorizado/);
+  assert.match(bannerSection, /O Kyrub seguirá somente o destino explícito mais recente/);
+  assert.doesNotMatch(bannerSection, /onChangeStatus|updateOrderStatusWithDecision|\bfetch\(/);
 });
 
 test('pending canonical order location is visible, exact, and never falls back to a similar order', () => {
