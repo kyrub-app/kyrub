@@ -156,19 +156,21 @@ const productIdsFromReadResult = (readResult: Record<string, unknown>): Set<stri
   }));
 };
 
-const mercadoLivreRequirementLabel = (value: string): string => {
-  switch (value) {
-    case 'mercado_livre_category_id':
-      return 'categoria do Mercado Livre';
-    case 'listing_type_id':
-      return 'tipo de anúncio';
-    case 'condition':
-      return 'condição do produto';
-    case 'required_attributes':
-      return 'atributos obrigatórios da categoria';
-    default:
-      return value;
+const mercadoLivreCategoryStepReply = (
+  result: Extract<
+    Awaited<ReturnType<typeof prepareKyrubiaMercadoLivrePublication>>,
+    { prepared: true }
+  >
+): string => {
+  const inspection = result.requirementInspection;
+  if (inspection.status === 'unavailable') return inspection.message;
+  if (inspection.categorySuggestions.length === 0) {
+    return 'O Mercado Livre não retornou uma categoria sugerida para este produto. Precisamos revisar a classificação antes de continuar.';
   }
+  const suggestions = inspection.categorySuggestions
+    .map((suggestion, index) => `${index + 1}) ${suggestion.categoryName}`)
+    .join('; ');
+  return `O Mercado Livre sugeriu estas categorias: ${suggestions}. Escolha a categoria correta antes de continuarmos. Depois dela, o Kyrub consultará as opções oficiais de condição, tipo de anúncio e atributos obrigatórios.`;
 };
 
 const mercadoLivrePrepareReply = (
@@ -178,14 +180,9 @@ const mercadoLivrePrepareReply = (
   const model = result.providerPublicationModel === 'user_products'
     ? 'User Products'
     : 'itens legado';
-  const missing = result.missingRequirements
-    .map(mercadoLivreRequirementLabel)
-    .join(', ');
   return [
     `Encontrei o produto real no catálogo e preparei o rascunho interno para o Mercado Livre usando o modelo ${model}.`,
-    missing
-      ? `Antes de poder publicar, ainda precisamos completar: ${missing}.`
-      : 'O rascunho já está pronto para a etapa de revisão.',
+    mercadoLivreCategoryStepReply(result),
     'Nenhuma publicação foi enviada ao Mercado Livre e nenhuma autorização de publicação foi criada.',
   ].join(' ');
 };
