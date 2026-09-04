@@ -204,7 +204,7 @@ test('cancelling order location cannot clear the retained resolved retry handoff
   assert.doesNotMatch(handoffSource, /KYRUB_CANONICAL_ORDER_NAVIGATION_CHANGED_EVENT/);
 });
 
-test('store connections portal restores the retained handoff and opening Pedidos does not consume it', () => {
+test('store connections portal restores the retained handoff after cancelled navigation without consuming it', () => {
   const retryEffectStart = portalSource.indexOf('const syncResolvedRetry = (): void =>');
   const portalReturnStart = portalSource.indexOf('  if (!host || user.uid !== storeId) return null;', retryEffectStart);
   const retrySection = portalSource.slice(retryEffectStart, portalReturnStart);
@@ -217,11 +217,13 @@ test('store connections portal restores the retained handoff and opening Pedidos
   assert.match(retrySection, /readResolvedRetryHandoff\(storeId\)/);
   assert.match(retrySection, /retainResolvedRetryHandoff\(\{ \.\.\.detail, storeId, orderId \}\)/);
   assert.match(retrySection, /KYRUB_RESOLVED_RETRY_HANDOFF_CHANGED_EVENT/);
+  assert.match(retrySection, /KYRUB_CANONICAL_ORDER_NAVIGATION_CHANGED_EVENT/);
 
   assert.ok(buttonStart >= 0);
   assert.ok(buttonEnd > buttonStart);
-  assert.match(buttonSection, /requestCanonicalOrderNavigation\(\{/);
-  assert.doesNotMatch(buttonSection, /setResolvedRetry\(null\)|clearResolvedRetryHandoff/);
+  assert.match(buttonSection, /const requested = requestCanonicalOrderNavigation\(\{/);
+  assert.match(buttonSection, /if \(requested\) setResolvedRetry\(null\)/);
+  assert.doesNotMatch(buttonSection, /clearResolvedRetryHandoff/);
   assert.doesNotMatch(
     buttonSection,
     /retryNinetyNineFoodBlockedOrderReservation|updateOrderStatusWithDecision|sendNinetyNineFoodOrderStatus|\bfetch\(/
