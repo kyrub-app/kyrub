@@ -14,16 +14,18 @@ const kindLabel = (kind: OmnichannelE2EEvidenceKind): string => {
     case 'mercado_livre_publication': return 'Mercado Livre · publicação';
     case 'mercado_livre_stock': return 'Mercado Livre · estoque';
     case '99food_availability': return '99Food · disponibilidade';
+    case '99food_order_observation': return '99Food · pedido real / reserva';
     case '99food_status_decision': return '99Food · decisão de status';
     case '99food_manual_status_sync': return '99Food · envio manual de status';
     case '99food_status_reconciliation': return '99Food · reconciliação de status';
   }
 };
 
-const sourceLabel = (record: OmnichannelE2EEvidenceRecord): string =>
-  record.source === 'provider_readback'
-    ? 'readback do provedor'
-    : 'resultado autoritativo da execução';
+const sourceLabel = (record: OmnichannelE2EEvidenceRecord): string => {
+  if (record.source === 'provider_readback') return 'readback do provedor';
+  if (record.source === 'canonical_readback') return 'readback canônico do Kyrub';
+  return 'resultado autoritativo da execução';
+};
 
 const detailText = (record: OmnichannelE2EEvidenceRecord): string[] =>
   Object.entries(record.details)
