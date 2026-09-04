@@ -8,6 +8,10 @@ const mercadoLivrePrepare = readFileSync(
   'server/ai/kyrubiaMercadoLivrePrepareTool.ts',
   'utf8'
 );
+const mercadoLivreRequirements = readFileSync(
+  'server/integrations/mercadoLivreOutboundRequirementsService.ts',
+  'utf8'
+);
 const systemInstruction = readFileSync(
   'server/ai/kyrubiaSystemInstruction.ts',
   'utf8'
@@ -53,16 +57,34 @@ test('Mercado Livre preparation creates an internal proposal without provider pu
   assert.doesNotMatch(mercadoLivrePrepare, /mercadoLivrePostJson/);
 });
 
-test('Mercado Livre preparation response is authoritative Kyrub text, never an unverified provider claim', () => {
-  assert.match(loop, /reply: mercadoLivrePrepareReply\(prepared\)/);
-  assert.match(loop, /Nenhuma publicação foi enviada ao Mercado Livre/);
-  assert.match(loop, /nenhuma autorização de publicação foi criada/i);
+test('prepared Mercado Livre draft inspects official provider category suggestions without selecting one', () => {
+  assert.match(mercadoLivrePrepare, /inspectMercadoLivreOutboundRequirements/);
+  assert.match(mercadoLivrePrepare, /requirementInspection/);
+  assert.match(mercadoLivrePrepare, /authority: inspection\.authority/);
+  assert.match(mercadoLivreRequirements, /authority: 'provider_api_refetch'/);
+  assert.match(mercadoLivreRequirements, /domain_discovery\/search\?limit=3/);
+  assert.match(mercadoLivreRequirements, /mercadoLivreGetJson/);
+  assert.doesNotMatch(mercadoLivrePrepare, /configureMercadoLivreOutboundRequirements/);
+  assert.doesNotMatch(mercadoLivrePrepare, /categoryId:\s*inspection\.categorySuggestions\[0\]/);
+  assert.doesNotMatch(mercadoLivrePrepare, /mercadoLivrePostJson|mercadoLivrePutJson/);
 });
 
-test('Kyrubia instruction requires catalog resolution before Mercado Livre preparation and forbids publication claims', () => {
+test('Mercado Livre preparation response is authoritative Kyrub text and asks the owner to choose a provider category', () => {
+  assert.match(loop, /reply: mercadoLivrePrepareReply\(prepared\)/);
+  assert.match(loop, /categorySuggestions/);
+  assert.match(loop, /Escolha a categoria correta antes de continuarmos/);
+  assert.match(loop, /condição, tipo de anúncio e atributos obrigatórios/);
+  assert.match(loop, /Nenhuma publicação foi enviada ao Mercado Livre/);
+  assert.match(loop, /nenhuma autorização de publicação foi criada/i);
+  assert.doesNotMatch(loop, /selectedCategoryId\s*=\s*inspection\.categorySuggestions\[0\]/);
+});
+
+test('Kyrubia instruction requires catalog resolution and explicit owner category choice before later Mercado Livre requirements', () => {
   assert.match(systemInstruction, /primeiro consulte query_products/);
   assert.match(systemInstruction, /Nunca invente productId/);
   assert.match(systemInstruction, /Só use prepare_mercado_livre_publication depois que query_products retornar/);
+  assert.match(systemInstruction, /não escolha uma categoria em nome do usuário/i);
+  assert.match(systemInstruction, /Mesmo se vier apenas uma sugestão, peça confirmação/);
   assert.match(systemInstruction, /NÃO publica no Mercado Livre/);
   assert.match(systemInstruction, /autorização explícita do proprietário/);
 });
