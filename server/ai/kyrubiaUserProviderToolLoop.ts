@@ -174,7 +174,7 @@ const mercadoLivreRequirementLabel = (value: string): string => {
 const mercadoLivrePrepareReply = (
   result: Awaited<ReturnType<typeof prepareKyrubiaMercadoLivrePublication>>
 ): string => {
-  if (!result.prepared) return result.message;
+  if ('message' in result) return result.message;
   const model = result.providerPublicationModel === 'user_products'
     ? 'User Products'
     : 'itens legado';
