@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
+import './99food-status-sync-execution-claim.test.ts';
 
 const routerSource = readFileSync(
   'server/inventory/orderInventoryRouter.ts',

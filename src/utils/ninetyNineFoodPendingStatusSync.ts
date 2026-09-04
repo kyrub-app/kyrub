@@ -7,6 +7,7 @@ export type NinetyNineFoodPendingStatusSyncState =
 
 export interface NinetyNineFoodPendingStatusSyncItem {
   orderId: string;
+  orderRevision: string;
   externalOrderId: string;
   displayId: string;
   customerName: string;
@@ -18,6 +19,8 @@ export interface NinetyNineFoodPendingStatusSyncItem {
 
 export interface NinetyNineFoodPendingStatusSyncResult {
   orderId: string;
+  orderRevision: string;
+  executionId: string;
   externalOrderId: string;
   status: CustomerOrderStatus;
   partnerSync: 'sent' | 'attention';
@@ -69,11 +72,13 @@ const parseItem = (value: unknown): NinetyNineFoodPendingStatusSyncItem | null =
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   const candidate = value as Record<string, unknown>;
   const orderId = clean(candidate.orderId);
+  const orderRevision = clean(candidate.orderRevision);
   const externalOrderId = clean(candidate.externalOrderId);
   const status = clean(candidate.status) as CustomerOrderStatus;
   const outboundStatus = clean(candidate.outboundStatus);
   if (
     !orderId ||
+    !orderRevision ||
     !externalOrderId ||
     !ORDER_STATUSES.has(status) ||
     (outboundStatus !== 'authorization_required' && outboundStatus !== 'attention')
@@ -82,6 +87,7 @@ const parseItem = (value: unknown): NinetyNineFoodPendingStatusSyncItem | null =
   }
   return {
     orderId,
+    orderRevision,
     externalOrderId,
     displayId: clean(candidate.displayId) || externalOrderId,
     customerName: clean(candidate.customerName),
@@ -109,7 +115,8 @@ export const sendNinetyNineFoodPendingStatusSync = async (
   item: NinetyNineFoodPendingStatusSyncItem
 ): Promise<NinetyNineFoodPendingStatusSyncResult> => {
   const orderId = item.orderId.trim();
-  if (!orderId || !ORDER_STATUSES.has(item.status)) {
+  const orderRevision = item.orderRevision.trim();
+  if (!orderId || !orderRevision || !ORDER_STATUSES.has(item.status)) {
     throw new Error('Pendência 99Food inválida para envio manual.');
   }
   const payload = await request<Record<string, unknown>>(
@@ -121,6 +128,7 @@ export const sendNinetyNineFoodPendingStatusSync = async (
         providerWriteAuthorization: {
           provider: '99food',
           status: item.status,
+          orderRevision,
           confirmed: true,
         },
       }),
@@ -130,11 +138,15 @@ export const sendNinetyNineFoodPendingStatusSync = async (
     ? payload.partnerSync
     : null;
   const resultOrderId = clean(payload.orderId);
+  const resultOrderRevision = clean(payload.orderRevision);
+  const executionId = clean(payload.executionId);
   const externalOrderId = clean(payload.externalOrderId);
   const status = clean(payload.status) as CustomerOrderStatus;
   if (
     !partnerSync ||
     !resultOrderId ||
+    !resultOrderRevision ||
+    !executionId ||
     !externalOrderId ||
     !ORDER_STATUSES.has(status) ||
     payload.localTransitionApplied !== false
@@ -143,6 +155,8 @@ export const sendNinetyNineFoodPendingStatusSync = async (
   }
   return {
     orderId: resultOrderId,
+    orderRevision: resultOrderRevision,
+    executionId,
     externalOrderId,
     status,
     partnerSync,
