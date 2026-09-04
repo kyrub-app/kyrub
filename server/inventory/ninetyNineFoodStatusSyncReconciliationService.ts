@@ -81,9 +81,14 @@ const executionAgeMs = (
 export const isNinetyNineFoodProviderWriteOutcomeUnknown = (error: unknown): boolean => {
   if (!(error instanceof Error)) return true;
   const message = error.message.trim();
-  if (/^Open Delivery respondeu \d{3}/i.test(message)) return false;
+  const httpStatus = /^Open Delivery respondeu (\d{3})/i.exec(message)?.[1];
+  if (httpStatus) {
+    const status = Number(httpStatus);
+    if (status >= 400 && status < 500) return false;
+    return true;
+  }
   if (
-    /não está configurada|não encontrado no Kyrub|identidade externa 99Food|status local do pedido mudou antes do provider write|sem identificador externo/i.test(message)
+    /não está configurada|não encontrado no Kyrub|identidade externa 99Food|status local do pedido mudou antes do provider write|sem identificador externo|não retornou access_token/i.test(message)
   ) {
     return false;
   }
@@ -159,6 +164,9 @@ export const markNinetyNineFoodProviderWriteOutcomeUnknown = async (input: {
     ]);
     if (!executionSnapshot.exists) return;
     const execution = record(executionSnapshot.data());
+    if (clean(execution.tenantId) !== tenantId || clean(execution.orderId) !== orderId) {
+      throw new Error('Execução 99Food inconsistente ao registrar resultado desconhecido.');
+    }
     const integration = integrationData(orderSnapshot.data());
     const ownsOrderMarker =
       orderSnapshot.exists &&
@@ -177,9 +185,6 @@ export const markNinetyNineFoodProviderWriteOutcomeUnknown = async (input: {
         'integration.outboundError': warning,
         'integration.outboundUpdatedAt': new Date().toISOString(),
       });
-    }
-    if (clean(execution.tenantId) !== tenantId || clean(execution.orderId) !== orderId) {
-      throw new Error('Execução 99Food inconsistente ao registrar resultado desconhecido.');
     }
   });
 };
@@ -366,15 +371,19 @@ export const finalizeNinetyNineFoodStatusSyncReconciliation = async (input: {
       clean(integration.outboundExecutionId) === input.claim.executionId &&
       clean(integration.outboundStatus) === 'reconciliation_required';
     const localStatusChanged = clean(order.status) !== input.claim.targetStatus;
-    const requestedOutcome = input.outcome;
+    const requestedOutcome: NinetyNineFoodReconciliationOutcome = ownsOrderMarker
+      ? input.outcome
+      : 'uncertain';
     const effectiveOutcome =
       requestedOutcome !== 'uncertain' && localStatusChanged
         ? 'conflict'
         : requestedOutcome;
     const explicitWarning = clean(input.warning).slice(0, 500);
-    const warning = localStatusChanged && requestedOutcome !== 'uncertain'
-      ? 'O status local mudou durante a reconciliação. Nenhum novo envio foi feito; revise o pedido antes de continuar.'
-      : explicitWarning;
+    const warning = !ownsOrderMarker
+      ? 'A execução perdeu o marcador autoritativo do pedido durante a reconciliação. Nenhum novo envio foi feito.'
+      : localStatusChanged && requestedOutcome !== 'uncertain'
+        ? 'O status local mudou durante a reconciliação. Nenhum novo envio foi feito; revise o pedido antes de continuar.'
+        : explicitWarning;
     const completedAt = new Date().toISOString();
     const terminalExecutionStatus = effectiveOutcome === 'confirmed'
       ? 'reconciliation_confirmed'
