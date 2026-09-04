@@ -1,9 +1,15 @@
 import { FieldValue } from 'firebase-admin/firestore';
 import { adminDb } from '../firebaseAdmin.js';
 import { mercadoLivreValidateJson } from './mercadoLivreOauthService.js';
+import {
+  assertMercadoLivrePublicationCapabilityCurrent,
+  type MercadoLivrePublicationModel,
+  type MercadoLivreStockAuthority,
+} from './mercadoLivrePublicationCapabilityService.js';
 import { mercadoLivrePublicationCorrelationMarker } from './mercadoLivrePublicationCorrelation.js';
 
 interface ProposalRecord {
+  schemaVersion: 2;
   id: string;
   storeId: string;
   canonicalStoreId: string;
@@ -14,6 +20,9 @@ interface ProposalRecord {
   authority: 'canonical_kyrub_snapshot';
   action: 'create_external_listing';
   canonicalBaselineHash: string;
+  providerCapabilityFingerprint: string;
+  providerPublicationModel: MercadoLivrePublicationModel;
+  providerStockAuthority: MercadoLivreStockAuthority;
   canonical: {
     name: string;
     price: number;
@@ -68,12 +77,15 @@ const assertProposal = (storeId: string, proposalId: string, value: unknown): Pr
     ? record.canonical as Record<string, unknown>
     : null;
   if (
+    record.schemaVersion !== 2 ||
     clean(record.id, 160) !== proposalId || clean(record.storeId, 160) !== storeId ||
     record.provider !== 'mercado_livre' || record.status !== 'review_required' ||
     record.authority !== 'canonical_kyrub_snapshot' || record.action !== 'create_external_listing' ||
     record.executionStatus !== 'not_authorized' || !clean(record.canonicalStoreId, 160) ||
     !clean(record.connectionId, 200) || !clean(record.canonicalProductId, 160) ||
-    !clean(record.canonicalBaselineHash, 80) || !canonical || !clean(canonical.name, 120) ||
+    !clean(record.canonicalBaselineHash, 80) || !/^[a-f0-9]{64}$/i.test(clean(record.providerCapabilityFingerprint, 80)) ||
+    record.providerPublicationModel !== 'legacy_items' || record.providerStockAuthority !== 'item_available_quantity' ||
+    !canonical || !clean(canonical.name, 120) ||
     !clean(record.providerCategoryId, 160) || !clean(record.providerListingTypeId, 120) ||
     !clean(record.providerCondition, 120) || !clean(record.providerCurrencyId, 16)
   ) throw new Error('MERCADO_LIVRE_OUTBOUND_PROPOSAL_INVALID');
@@ -179,6 +191,15 @@ export const validateMercadoLivreOutboundListing = async (input: {
     throw new Error('MERCADO_LIVRE_OUTBOUND_PROPOSAL_STALE');
   }
 
+  await assertMercadoLivrePublicationCapabilityCurrent({
+    storeId,
+    connectionId: proposal.connectionId,
+    requestedByUserId: validatedByUserId,
+    expectedFingerprint: proposal.providerCapabilityFingerprint,
+    expectedPublicationModel: proposal.providerPublicationModel,
+    expectedStockAuthority: proposal.providerStockAuthority,
+  });
+
   const publicationCorrelationMarker = mercadoLivrePublicationCorrelationMarker(storeId, proposalId);
   const itemPayload = {
     title: proposal.canonical.name,
@@ -225,6 +246,7 @@ export const validateMercadoLivreOutboundListing = async (input: {
     const currentConfiguration = assertConfiguration(currentProposal, currentConfigDoc.data());
     const currentConditional = assertConditionalValidation(currentProposal, currentConfiguration, currentConditionalDoc.data());
     if (
+      currentProposal.providerCapabilityFingerprint !== proposal.providerCapabilityFingerprint ||
       currentConfiguration.configuredAt !== configuration.configuredAt ||
       currentConditional.validatedAt !== conditionalValidation.validatedAt ||
       !currentCanonicalDoc.exists ||
@@ -237,6 +259,9 @@ export const validateMercadoLivreOutboundListing = async (input: {
       canonicalStoreId: proposal.canonicalStoreId,
       canonicalProductId: proposal.canonicalProductId,
       canonicalBaselineHash: proposal.canonicalBaselineHash,
+      providerCapabilityFingerprint: proposal.providerCapabilityFingerprint,
+      providerPublicationModel: proposal.providerPublicationModel,
+      providerStockAuthority: proposal.providerStockAuthority,
       requirementConfiguredAt: configuration.configuredAt,
       conditionalRequirementValidatedAt: conditionalValidation.validatedAt,
       validatedByUserId,
