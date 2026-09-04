@@ -1,5 +1,6 @@
 import type { User } from 'firebase/auth';
 import type { CustomerOrderStatus } from './customerOrders';
+import { recordOmnichannelE2EEvidence } from './omnichannelE2EEvidence';
 
 export const KYRUB_99FOOD_STATUS_SYNC_RECONCILIATION_CHANGED_EVENT =
   'kyrub:99food-status-sync-reconciliation-changed';
@@ -186,6 +187,28 @@ export const reconcileNinetyNineFoodStatusSyncExecution = async (
     providerWriteAttempted: false,
     localTransitionApplied: false,
   };
+  recordOmnichannelE2EEvidence({
+    storeId: user.uid,
+    kind: '99food_status_reconciliation',
+    source: 'provider_readback',
+    referenceId: item.executionId,
+    outcome: reconciliation,
+    summary: `Reconciliação do status ${targetStatus} do pedido ${item.orderId}: ${reconciliation}.`,
+    details: {
+      executionId: item.executionId,
+      orderId: item.orderId,
+      externalOrderId: result.externalOrderId,
+      targetStatus,
+      reconciliation,
+      providerLastEvent: result.providerLastEvent,
+      providerStatus: result.providerStatus,
+      warning: result.warning,
+      orderMarkerFinalized: result.orderMarkerFinalized,
+      localStatusChanged: result.localStatusChanged,
+      providerWriteAttempted: false,
+      localTransitionApplied: false,
+    },
+  });
   notifyNinetyNineFoodStatusSyncReconciliationChanged();
   return result;
 };
