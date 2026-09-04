@@ -1,8 +1,11 @@
 import { FieldValue } from 'firebase-admin/firestore';
 import { adminDb } from '../firebaseAdmin.js';
 import { mercadoLivrePostJson } from './mercadoLivreOauthService.js';
+import { buildMercadoLivreInitialPublicationPayload } from './mercadoLivreInitialPublicationPayloadAdapter.js';
+import { assertCurrentMercadoLivrePublicationCapability } from './mercadoLivrePublicationCapabilitySnapshotGuard.js';
 
 interface OutboundProposalRecord {
+  schemaVersion: 2;
   id: string;
   storeId: string;
   canonicalStoreId: string;
@@ -13,6 +16,10 @@ interface OutboundProposalRecord {
   authority: 'canonical_kyrub_snapshot';
   action: 'create_external_listing';
   canonicalBaselineHash: string;
+  providerCapabilityFingerprint: string;
+  providerPublicationModel: 'legacy_items' | 'user_products';
+  providerStockAuthority: 'item_available_quantity';
+  providerCapability: unknown;
   canonical: {
     name: string;
     price: number;
@@ -65,12 +72,16 @@ const assertProposal = (storeId: string, proposalId: string, value: unknown): Ou
     ? record.canonical as Record<string, unknown>
     : null;
   if (
+    record.schemaVersion !== 2 ||
     clean(record.id, 160) !== proposalId || clean(record.storeId, 160) !== storeId ||
     record.provider !== 'mercado_livre' || record.status !== 'review_required' ||
     record.authority !== 'canonical_kyrub_snapshot' || record.action !== 'create_external_listing' ||
     record.executionStatus !== 'not_authorized' || !clean(record.canonicalStoreId, 160) ||
     !clean(record.connectionId, 200) || !clean(record.canonicalProductId, 160) ||
     !clean(record.canonicalBaselineHash, 80) || !canonical || !clean(canonical.name, 120) ||
+    !clean(record.providerCapabilityFingerprint, 80) ||
+    (record.providerPublicationModel !== 'legacy_items' && record.providerPublicationModel !== 'user_products') ||
+    record.providerStockAuthority !== 'item_available_quantity' || !record.providerCapability ||
     !clean(record.providerCategoryId, 160) || !clean(record.providerListingTypeId, 120) ||
     !clean(record.providerCondition, 120) || !clean(record.providerCurrencyId, 16)
   ) throw new Error('MERCADO_LIVRE_OUTBOUND_PROPOSAL_INVALID');
@@ -148,28 +159,32 @@ export const validateMercadoLivreOutboundConditionalRequirements = async (input:
   const proposal = assertProposal(storeId, proposalId, proposalDoc.data());
   const configuration = assertConfiguration(proposal, configDoc.data());
 
+  await assertCurrentMercadoLivrePublicationCapability({
+    storeId,
+    connectionId: proposal.connectionId,
+    requestedByUserId: validatedByUserId,
+    expectedSnapshot: proposal.providerCapability,
+  });
+
   const canonicalRef = adminDb.doc(`stores/${proposal.canonicalStoreId}/products/${proposal.canonicalProductId}`);
   const canonicalDoc = await canonicalRef.get();
   if (!canonicalDoc.exists || !canonicalMatchesProposal(proposal, canonicalDoc.data())) {
     throw new Error('MERCADO_LIVRE_OUTBOUND_PROPOSAL_STALE');
   }
 
-  const payload = {
-    title: proposal.canonical.name,
-    category_id: proposal.providerCategoryId,
+  const payload = buildMercadoLivreInitialPublicationPayload({
+    publicationModel: proposal.providerPublicationModel,
+    stockAuthority: proposal.providerStockAuthority,
+    name: proposal.canonical.name,
+    categoryId: proposal.providerCategoryId,
     price: proposal.canonical.price,
-    currency_id: proposal.providerCurrencyId,
-    available_quantity: proposal.canonical.stock,
-    buying_mode: 'buy_it_now',
+    currencyId: proposal.providerCurrencyId,
+    availableQuantity: proposal.canonical.stock,
+    listingTypeId: proposal.providerListingTypeId,
     condition: proposal.providerCondition,
-    listing_type_id: proposal.providerListingTypeId,
-    ...(proposal.canonical.image ? { pictures: [{ source: proposal.canonical.image }] } : {}),
-    attributes: configuration.attributes.map(attribute => ({
-      id: attribute.id,
-      ...(attribute.valueId ? { value_id: attribute.valueId } : {}),
-      ...(attribute.valueName ? { value_name: attribute.valueName } : {}),
-    })),
-  };
+    pictureUrl: proposal.canonical.image,
+    attributes: configuration.attributes,
+  });
 
   const conditional = await mercadoLivrePostJson<ConditionalRequirementResponse>(
     storeId,
@@ -203,6 +218,7 @@ export const validateMercadoLivreOutboundConditionalRequirements = async (input:
     const currentProposal = assertProposal(storeId, proposalId, currentProposalDoc.data());
     const currentConfiguration = assertConfiguration(currentProposal, currentConfigDoc.data());
     if (
+      currentProposal.providerCapabilityFingerprint !== proposal.providerCapabilityFingerprint ||
       currentConfiguration.configuredAt !== configuration.configuredAt ||
       !currentCanonicalDoc.exists ||
       !canonicalMatchesProposal(currentProposal, currentCanonicalDoc.data())
@@ -214,6 +230,9 @@ export const validateMercadoLivreOutboundConditionalRequirements = async (input:
       canonicalStoreId: proposal.canonicalStoreId,
       canonicalProductId: proposal.canonicalProductId,
       canonicalBaselineHash: proposal.canonicalBaselineHash,
+      providerCapabilityFingerprint: proposal.providerCapabilityFingerprint,
+      providerPublicationModel: proposal.providerPublicationModel,
+      providerStockAuthority: proposal.providerStockAuthority,
       requirementConfiguredAt: configuration.configuredAt,
       validatedByUserId,
       serverValidatedAt: FieldValue.serverTimestamp(),
