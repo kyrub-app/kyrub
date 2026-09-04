@@ -64,15 +64,25 @@ test('manual provider execution atomically claims the exact order revision befor
   assert.match(executionServiceSource, /authority: 'explicit_status_scoped_order_revision'/);
 });
 
-test('local KDS status changes and manual provider execution serialize through a separate lock document', () => {
+test('local KDS status changes and manual provider execution serialize through a server-only lock document', () => {
   assert.match(executionRouterSource, /claimOrderStatusMutation\(/);
   assert.match(executionRouterSource, /releaseAfterResponse\(response, claim\)/);
   assert.match(executionRouterSource, /router\.post\('\/:orderId\/status'/);
-  assert.match(executionServiceSource, /statusMutationLocks/);
+  assert.match(executionServiceSource, /orderStatusMutationLocks/);
+  assert.match(executionServiceSource, /authorityDocumentId/);
+  assert.match(executionServiceSource, /authority: 'server_only_status_mutation_lock'/);
   assert.match(executionServiceSource, /transaction\.get\(lockRef\)/);
   assert.match(executionServiceSource, /activeStatusMutationId\(lockSnapshot\.data\(\)\)/);
   assert.match(executionServiceSource, /transaction\.delete\(lockRef\)/);
   assert.doesNotMatch(executionServiceSource, /integration\.statusMutationExecutionId/);
+  assert.doesNotMatch(executionServiceSource, /\.collection\('statusMutationLocks'\)/);
+});
+
+test('execution audit is stored in a server-only top-level collection, not under the legacy artifact tree', () => {
+  assert.match(executionServiceSource, /ninetyNineFoodStatusSyncExecutions/);
+  assert.match(executionServiceSource, /adminDb\.collection\(STATUS_SYNC_EXECUTION_COLLECTION\)\.doc\(\)/);
+  assert.match(executionServiceSource, /orderPath: orderRef\.path/);
+  assert.doesNotMatch(executionServiceSource, /\.collection\('providerStatusExecutions'\)/);
 });
 
 test('dedicated provider writer rechecks status and has no local order mutation side effect', () => {
