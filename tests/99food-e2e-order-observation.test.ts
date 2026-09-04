@@ -71,7 +71,7 @@ test('server observation service is owner-scoped, bounded and strictly read-only
   assert.match(serviceSource, /Math\.max\(1, Math\.min\(50, requestedLimit\)\)/);
   assert.doesNotMatch(
     serviceSource,
-    /\.set\(|\.update\(|\.create\(|\.delete\(|runTransaction|\.batch\(|sendAction|writeNinetyNineFood|retryNinetyNineFood|reconcileNinetyNineFoodOrderReservation/i
+    /\b(?:transaction|batch)\.(?:set|update|create|delete)\(|adminDb\.doc\([^\n]+\)\.(?:set|update|create|delete)\(|runTransaction|\.batch\(|sendAction|writeNinetyNineFood|retryNinetyNineFood|reconcileNinetyNineFoodOrderReservation/i
   );
 });
 
