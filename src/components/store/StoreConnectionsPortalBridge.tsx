@@ -5,7 +5,10 @@ import {
   KYRUB_ACTIVITY_UPDATED_EVENT,
 } from '../../observability/kyrubActivityBrowser';
 import { readRecentKyrubActivityEvents } from '../../observability/kyrubActivityLog';
-import { requestCanonicalOrderNavigation } from '../../utils/canonicalOrderNavigation';
+import {
+  KYRUB_CANONICAL_ORDER_NAVIGATION_CHANGED_EVENT,
+  requestCanonicalOrderNavigation,
+} from '../../utils/canonicalOrderNavigation';
 import {
   KYRUB_RESOLVED_RETRY_HANDOFF_CHANGED_EVENT,
   readResolvedRetryHandoff,
@@ -150,6 +153,7 @@ export default function StoreConnectionsPortalBridge({
       ) {
         return;
       }
+      setResolvedRetry({ ...detail, storeId, orderId });
       retainResolvedRetryHandoff({ ...detail, storeId, orderId });
     };
 
@@ -165,11 +169,19 @@ export default function StoreConnectionsPortalBridge({
       KYRUB_RESOLVED_RETRY_HANDOFF_CHANGED_EVENT,
       handleHandoffChanged
     );
+    window.addEventListener(
+      KYRUB_CANONICAL_ORDER_NAVIGATION_CHANGED_EVENT,
+      syncResolvedRetry
+    );
     return () => {
       window.removeEventListener(KYRUB_99FOOD_RETRY_RESOLVED_EVENT, handleRetryResolved);
       window.removeEventListener(
         KYRUB_RESOLVED_RETRY_HANDOFF_CHANGED_EVENT,
         handleHandoffChanged
+      );
+      window.removeEventListener(
+        KYRUB_CANONICAL_ORDER_NAVIGATION_CHANGED_EVENT,
+        syncResolvedRetry
       );
     };
   }, [storeId, user.uid]);
@@ -215,17 +227,18 @@ export default function StoreConnectionsPortalBridge({
         >
           <strong className="block text-emerald-200">Retry reconsultado · bloqueio não está mais ativo</strong>
           <span className="mt-1 block">
-            O readback autoritativo do pedido {resolvedRetry.orderId} está em “{resolvedRetry.state}”. Este aviso permanece disponível até o pedido ser realmente focalizado; cancelar a localização não repete o retry nem apaga este resultado.
+            O readback autoritativo do pedido {resolvedRetry.orderId} está em “{resolvedRetry.state}”. Este aviso permanece recuperável até o pedido ser realmente focalizado; cancelar a localização não repete o retry nem apaga este resultado.
           </span>
           <button
             id="kyrub-open-resolved-99food-order"
             type="button"
             className="mt-3 inline-flex min-h-10 items-center justify-center rounded-xl bg-emerald-500 px-4 text-[10px] font-black uppercase text-slate-950 hover:bg-emerald-400"
             onClick={() => {
-              requestCanonicalOrderNavigation({
+              const requested = requestCanonicalOrderNavigation({
                 storeId,
                 orderId: resolvedRetry.orderId,
               });
+              if (requested) setResolvedRetry(null);
             }}
           >
             Abrir pedidos
