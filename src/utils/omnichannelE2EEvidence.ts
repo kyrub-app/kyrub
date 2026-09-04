@@ -5,12 +5,14 @@ export type OmnichannelE2EEvidenceKind =
   | 'mercado_livre_publication'
   | 'mercado_livre_stock'
   | '99food_availability'
+  | '99food_order_observation'
   | '99food_status_decision'
   | '99food_manual_status_sync'
   | '99food_status_reconciliation';
 
 export type OmnichannelE2EEvidenceSource =
   | 'authoritative_execution_result'
+  | 'canonical_readback'
   | 'provider_readback';
 
 export type OmnichannelE2EEvidenceDetailValue =
