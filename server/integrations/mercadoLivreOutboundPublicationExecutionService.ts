@@ -2,6 +2,7 @@ import { createHash, timingSafeEqual } from 'node:crypto';
 import { FieldValue } from 'firebase-admin/firestore';
 import { adminDb } from '../firebaseAdmin.js';
 import { mercadoLivrePostJson } from './mercadoLivreOauthService.js';
+import { assertMercadoLivrePublicationCapabilityUnchanged } from './mercadoLivrePublicationCapabilityGuard.js';
 
 interface AuthorizationRecord {
   id: string;
@@ -12,6 +13,9 @@ interface AuthorizationRecord {
   canonicalStoreId: string;
   canonicalProductId: string;
   canonicalBaselineHash: string;
+  providerCapabilityFingerprint: string;
+  providerPublicationModel: 'legacy_items';
+  providerStockAuthority: 'item_available_quantity';
   listingValidatedAt: string;
   payload: Record<string, unknown>;
   payloadHash: string;
@@ -30,6 +34,9 @@ interface ProposalRecord {
   connectionId: string;
   canonicalProductId: string;
   canonicalBaselineHash: string;
+  providerCapabilityFingerprint: string;
+  providerPublicationModel: 'legacy_items';
+  providerStockAuthority: 'item_available_quantity';
   executionStatus: 'authorized' | 'executing' | 'published' | 'reconciliation_required' | 'provider_rejected';
   publicationAuthorizationId: string;
 }
@@ -91,6 +98,8 @@ const assertAuthorization = (storeId: string, authorizationId: string, value: un
     record.authority !== 'store_owner_publication_authorization' || !clean(record.proposalId, 160) ||
     !clean(record.connectionId, 200) || !clean(record.canonicalStoreId, 160) ||
     !clean(record.canonicalProductId, 160) || !clean(record.canonicalBaselineHash, 80) ||
+    !clean(record.providerCapabilityFingerprint, 80) ||
+    record.providerPublicationModel !== 'legacy_items' || record.providerStockAuthority !== 'item_available_quantity' ||
     !clean(record.listingValidatedAt, 80) || !record.payload || typeof record.payload !== 'object' || Array.isArray(record.payload) ||
     !clean(record.payloadHash, 80) || !clean(record.tokenHash, 80) || !Number.isFinite(Number(record.expiresAtMillis))
   ) throw new Error('MERCADO_LIVRE_PUBLICATION_AUTHORIZATION_INVALID');
@@ -106,6 +115,9 @@ const assertProposal = (authorization: AuthorizationRecord, value: unknown): Pro
     clean(record.connectionId, 200) !== authorization.connectionId ||
     clean(record.canonicalProductId, 160) !== authorization.canonicalProductId ||
     clean(record.canonicalBaselineHash, 80) !== authorization.canonicalBaselineHash ||
+    clean(record.providerCapabilityFingerprint, 80) !== authorization.providerCapabilityFingerprint ||
+    record.providerPublicationModel !== authorization.providerPublicationModel ||
+    record.providerStockAuthority !== authorization.providerStockAuthority ||
     clean(record.publicationAuthorizationId, 160) !== authorization.id
   ) throw new Error('MERCADO_LIVRE_OUTBOUND_PROPOSAL_STALE');
   return record as unknown as ProposalRecord;
@@ -167,6 +179,13 @@ export const executeAuthorizedMercadoLivrePublication = async (input: {
     throw new Error('MERCADO_LIVRE_PUBLICATION_AUTHORIZATION_PAYLOAD_STALE');
   }
 
+  await assertMercadoLivrePublicationCapabilityUnchanged({
+    storeId,
+    connectionId: authorization.connectionId,
+    expectedFingerprint: authorization.providerCapabilityFingerprint,
+    requestedByUserId: executedByUserId,
+  });
+
   const proposalRef = adminDb.doc(`stores/${storeId}/catalogOutboundPublicationProposals/${authorization.proposalId}`);
   const validationRef = adminDb.doc(`stores/${storeId}/catalogOutboundListingValidations/${authorization.proposalId}`);
   const canonicalRef = adminDb.doc(`stores/${authorization.canonicalStoreId}/products/${authorization.canonicalProductId}`);
@@ -190,8 +209,10 @@ export const executeAuthorizedMercadoLivrePublication = async (input: {
     if (
       currentAuthorization.consumptionStatus !== 'available' || currentAuthorization.useCount !== 0 ||
       currentAuthorization.expiresAtMillis <= Date.now() || executionDoc.exists ||
+      currentAuthorization.providerCapabilityFingerprint !== authorization.providerCapabilityFingerprint ||
       proposal.executionStatus !== 'authorized' ||
       clean(validation?.validatedAt, 80) !== currentAuthorization.listingValidatedAt ||
+      clean(validation?.providerCapabilityFingerprint, 80) !== currentAuthorization.providerCapabilityFingerprint ||
       !validation?.providerPayload || typeof validation.providerPayload !== 'object' || Array.isArray(validation.providerPayload) ||
       !safeHashEquals(currentAuthorization.payloadHash, payloadHash(validation.providerPayload as Record<string, unknown>)) ||
       !currentCanonicalHash || !safeHashEquals(currentAuthorization.canonicalBaselineHash, currentCanonicalHash)
@@ -211,7 +232,7 @@ export const executeAuthorizedMercadoLivrePublication = async (input: {
       serverPublicationExecutionReservedAt: FieldValue.serverTimestamp(),
     });
     transaction.create(executionRef, {
-      schemaVersion: 1,
+      schemaVersion: 2,
       id: executionId,
       proposalId: currentAuthorization.proposalId,
       authorizationId,
@@ -220,6 +241,9 @@ export const executeAuthorizedMercadoLivrePublication = async (input: {
       connectionId: currentAuthorization.connectionId,
       canonicalStoreId: currentAuthorization.canonicalStoreId,
       canonicalProductId: currentAuthorization.canonicalProductId,
+      providerCapabilityFingerprint: currentAuthorization.providerCapabilityFingerprint,
+      providerPublicationModel: currentAuthorization.providerPublicationModel,
+      providerStockAuthority: currentAuthorization.providerStockAuthority,
       payloadHash: currentAuthorization.payloadHash,
       status: 'executing',
       authority: 'consumed_store_owner_publication_authorization',
@@ -303,6 +327,7 @@ export const executeAuthorizedMercadoLivrePublication = async (input: {
         sourceAuthorizationId: authorizationId,
         sourceExecutionId: executionId,
         canonicalBaselineHash: authorization.canonicalBaselineHash,
+        providerCapabilityFingerprint: authorization.providerCapabilityFingerprint,
         createdAt: completedAt,
         updatedAt: completedAt,
         serverCreatedAt: FieldValue.serverTimestamp(),
