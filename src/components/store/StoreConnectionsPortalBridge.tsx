@@ -5,6 +5,11 @@ import {
   KYRUB_ACTIVITY_UPDATED_EVENT,
 } from '../../observability/kyrubActivityBrowser';
 import { readRecentKyrubActivityEvents } from '../../observability/kyrubActivityLog';
+import { requestCanonicalOrderNavigation } from '../../utils/canonicalOrderNavigation';
+import {
+  KYRUB_99FOOD_RETRY_RESOLVED_EVENT,
+  type NinetyNineFoodRetryResolvedDetail,
+} from '../../utils/storeChannelOperations';
 import MercadoLivreE2ETestBridge from './MercadoLivreE2ETestBridge';
 import NinetyNineFoodE2ETestBridge from './NinetyNineFoodE2ETestBridge';
 import { PhysicalInventoryWorkspace } from './PhysicalInventoryWorkspace';
@@ -33,6 +38,7 @@ export default function StoreConnectionsPortalBridge({
   const [host, setHost] = useState<HTMLElement | null>(null);
   const [inventoryRefreshVersion, setInventoryRefreshVersion] = useState(0);
   const [authorityRefreshVersion, setAuthorityRefreshVersion] = useState(0);
+  const [resolvedRetry, setResolvedRetry] = useState<NinetyNineFoodRetryResolvedDetail | null>(null);
   const storeViewRefreshVersion = inventoryRefreshVersion + authorityRefreshVersion;
 
   useEffect(() => {
@@ -122,6 +128,26 @@ export default function StoreConnectionsPortalBridge({
     };
   }, [storeId, user.uid]);
 
+  useEffect(() => {
+    const handleRetryResolved = (event: Event): void => {
+      const detail = (event as CustomEvent<NinetyNineFoodRetryResolvedDetail>).detail;
+      const orderId = detail?.orderId?.trim() ?? '';
+      if (
+        !orderId ||
+        detail?.storeId?.trim() !== storeId ||
+        user.uid !== storeId
+      ) {
+        return;
+      }
+      setResolvedRetry({ ...detail, storeId, orderId });
+    };
+
+    window.addEventListener(KYRUB_99FOOD_RETRY_RESOLVED_EVENT, handleRetryResolved);
+    return () => {
+      window.removeEventListener(KYRUB_99FOOD_RETRY_RESOLVED_EVENT, handleRetryResolved);
+    };
+  }, [storeId, user.uid]);
+
   if (!host || user.uid !== storeId) return null;
 
   return createPortal(
@@ -153,6 +179,32 @@ export default function StoreConnectionsPortalBridge({
           <span className="mt-1 block">
             O Kyrub reconsultou o estoque físico e as pendências dos canais. Isso não significa que um bloqueio ATP foi resolvido: se o pedido 99Food continuar listado, ele permanece bloqueado e exige uma nova ação explícita em “Tentar reservar novamente”.
           </span>
+        </div>
+      )}
+      {resolvedRetry && (
+        <div
+          id="kyrub-99food-retry-resolved-handoff"
+          className="rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.055] px-4 py-3 text-[10px] leading-relaxed text-emerald-100"
+          role="status"
+        >
+          <strong className="block text-emerald-200">Retry reconsultado · bloqueio não está mais ativo</strong>
+          <span className="mt-1 block">
+            O readback autoritativo do pedido {resolvedRetry.orderId} está em “{resolvedRetry.state}”. Este aviso não muda status nem envia qualquer comando à 99Food.
+          </span>
+          <button
+            id="kyrub-open-resolved-99food-order"
+            type="button"
+            className="mt-3 inline-flex min-h-10 items-center justify-center rounded-xl bg-emerald-500 px-4 text-[10px] font-black uppercase text-slate-950 hover:bg-emerald-400"
+            onClick={() => {
+              const requested = requestCanonicalOrderNavigation({
+                storeId,
+                orderId: resolvedRetry.orderId,
+              });
+              if (requested) setResolvedRetry(null);
+            }}
+          >
+            Abrir pedidos
+          </button>
         </div>
       )}
       <StoreChannelOperationsQueue

@@ -6,6 +6,26 @@ const queueSource = readFileSync(
   'src/components/store/StoreChannelOperationsQueue.tsx',
   'utf8'
 );
+const operationsSource = readFileSync(
+  'src/utils/storeChannelOperations.ts',
+  'utf8'
+);
+const navigationSource = readFileSync(
+  'src/utils/canonicalOrderNavigation.ts',
+  'utf8'
+);
+const portalSource = readFileSync(
+  'src/components/store/StoreConnectionsPortalBridge.tsx',
+  'utf8'
+);
+const retailerSource = readFileSync(
+  'src/components/RetailerPanel.tsx',
+  'utf8'
+);
+const inboxSource = readFileSync(
+  'src/components/customer/CustomerOrderInbox.tsx',
+  'utf8'
+);
 
 test('blocked retry refocus uses only the authoritative refreshed queue and exact 99Food order identity', () => {
   const effectStart = queueSource.indexOf("useEffect(() => {\n    if (!refocusOrderId || loading) return;");
@@ -57,4 +77,102 @@ test('queue rows expose a deterministic focus target without making remediation 
   assert.match(queueSource, /`kyrub-channel-operation-\$\{item\.provider\}-\$\{encodeURIComponent\(item\.reference\)\}`/);
   assert.match(queueSource, /id=\{operationElementId\(item\)\}/);
   assert.match(queueSource, /tabIndex=\{-1\}/);
+});
+
+test('resolved retry signal is emitted only after validated authoritative readback and never for blocked states', () => {
+  const retryStart = operationsSource.indexOf('export const retryNinetyNineFoodBlockedOrderReservation = async');
+  const retryEnd = operationsSource.indexOf('export const buildStoreChannelOperationalItems', retryStart);
+  const retrySection = operationsSource.slice(retryStart, retryEnd);
+
+  assert.ok(retryStart >= 0);
+  assert.ok(retryEnd > retryStart);
+  const validationIndex = retrySection.indexOf("throw new Error('A resposta autoritativa da nova tentativa de reserva está incompleta.')");
+  const resultIndex = retrySection.indexOf('const result: NinetyNineFoodReservationRetryResult =');
+  const resolvedCheckIndex = retrySection.indexOf('if (!RETRY_BLOCKED_STATES.has(result.state))');
+  const eventIndex = retrySection.indexOf('KYRUB_99FOOD_RETRY_RESOLVED_EVENT');
+  const returnIndex = retrySection.indexOf('return result;');
+
+  assert.ok(validationIndex >= 0);
+  assert.ok(resultIndex > validationIndex);
+  assert.ok(resolvedCheckIndex > resultIndex);
+  assert.ok(eventIndex > resolvedCheckIndex);
+  assert.ok(returnIndex > eventIndex);
+  assert.match(operationsSource, /const RETRY_BLOCKED_STATES = new Set<NinetyNineFoodReservationRetryState>\(\[/);
+  assert.match(operationsSource, /'blocked_product_binding_unresolved'/);
+  assert.match(operationsSource, /'blocked_insufficient_atp'/);
+  assert.match(operationsSource, /'blocked_authority_unresolved'/);
+  assert.doesNotMatch(retrySection, /sendNinetyNineFoodOrderStatus|updateOrderStatusWithDecision/);
+});
+
+test('canonical order navigation stays memory-only and carries exact store and order identity', () => {
+  assert.match(navigationSource, /let pendingNavigation: CanonicalOrderNavigationRequest \| null = null;/);
+  assert.match(navigationSource, /pendingNavigation = normalized;/);
+  assert.match(navigationSource, /KYRUB_CANONICAL_ORDER_NAVIGATION_REQUESTED_EVENT/);
+  assert.match(navigationSource, /\{ detail: normalized \}/);
+  assert.match(navigationSource, /pendingNavigation\?\.storeId !== normalizedStoreId/);
+  assert.match(navigationSource, /pendingNavigation = null;/);
+  assert.doesNotMatch(navigationSource, /localStorage|sessionStorage|\bfetch\(|firebase|firestore/i);
+});
+
+test('resolved retry handoff is an explicit navigation button and not an operational write', () => {
+  const effectStart = portalSource.indexOf('const handleRetryResolved = (event: Event): void =>');
+  const effectEnd = portalSource.indexOf('  if (!host || user.uid !== storeId) return null;', effectStart);
+  const effectSection = portalSource.slice(effectStart, effectEnd);
+  const handoffStart = portalSource.indexOf('id="kyrub-99food-retry-resolved-handoff"');
+  const handoffEnd = portalSource.indexOf('<StoreChannelOperationsQueue', handoffStart);
+  const handoffSection = portalSource.slice(handoffStart, handoffEnd);
+
+  assert.ok(effectStart >= 0);
+  assert.ok(effectEnd > effectStart);
+  assert.match(effectSection, /detail\?\.storeId\?\.trim\(\) !== storeId/);
+  assert.match(effectSection, /user\.uid !== storeId/);
+  assert.match(effectSection, /setResolvedRetry\(\{ \.\.\.detail, storeId, orderId \}\)/);
+
+  assert.ok(handoffStart >= 0);
+  assert.ok(handoffEnd > handoffStart);
+  assert.match(handoffSection, /id="kyrub-open-resolved-99food-order"/);
+  assert.match(handoffSection, /requestCanonicalOrderNavigation\(\{/);
+  assert.match(handoffSection, /storeId,/);
+  assert.match(handoffSection, /orderId: resolvedRetry\.orderId/);
+  assert.match(handoffSection, /if \(requested\) setResolvedRetry\(null\)/);
+  assert.doesNotMatch(
+    handoffSection,
+    /retryNinetyNineFoodBlockedOrderReservation|updateOrderStatusWithDecision|sendNinetyNineFoodOrderStatus|\bfetch\(/
+  );
+});
+
+test('retailer navigation listener only opens Pedidos for the authenticated exact store', () => {
+  const listenerStart = retailerSource.indexOf('const handleCanonicalOrderNavigation = (event: Event): void =>');
+  const listenerEnd = retailerSource.indexOf('  useEffect(() => {\n    const handlePublicProductCreate', listenerStart);
+  const listenerSection = retailerSource.slice(listenerStart, listenerEnd);
+
+  assert.ok(listenerStart >= 0);
+  assert.ok(listenerEnd > listenerStart);
+  assert.match(listenerSection, /detail\?\.storeId\?\.trim\(\) !== activeRetailerId/);
+  assert.match(listenerSection, /user\.uid !== activeRetailerId/);
+  assert.match(listenerSection, /setActiveSubTab\('pedidos'\)/);
+  assert.doesNotMatch(listenerSection, /updateOrderStatusWithDecision|setCustomerOrders|\bfetch\(/);
+  assert.match(retailerSource, /<CustomerOrderInbox\s+storeId=\{activeRetailerId\}/);
+});
+
+test('customer order inbox consumes exact pending identity, clears hiding filters, and focuses without changing status', () => {
+  const navigationStart = inboxSource.indexOf('const acceptNavigation = (');
+  const navigationEnd = inboxSource.indexOf('  const filterOptions:', navigationStart);
+  const navigationSection = inboxSource.slice(navigationStart, navigationEnd);
+
+  assert.ok(navigationStart >= 0);
+  assert.ok(navigationEnd > navigationStart);
+  assert.match(navigationSection, /consumeCanonicalOrderNavigation\(storeId\)/);
+  assert.match(navigationSection, /request\.storeId !== storeId/);
+  assert.match(navigationSection, /setFocusOrderId\(request\.orderId\)/);
+  assert.match(navigationSection, /orders\.find\(order => order\.id === focusOrderId\)/);
+  assert.match(navigationSection, /setOriginFilter\('all'\)/);
+  assert.match(navigationSection, /setStationFilter\('all'\)/);
+  assert.match(navigationSection, /\['completed', 'rejected', 'cancelled'\]\.includes\(target\.status\)/);
+  assert.match(navigationSection, /document\.getElementById\(orderElementId\(focusOrderId\)\)/);
+  assert.match(navigationSection, /scrollIntoView\(\{ behavior: 'smooth', block: 'center' \}\)/);
+  assert.match(navigationSection, /focus\(\{ preventScroll: true \}\)/);
+  assert.doesNotMatch(navigationSection, /onChangeStatus|updateOrderStatusWithDecision|\bfetch\(/);
+  assert.match(inboxSource, /id=\{orderElementId\(order\.id\)\}/);
+  assert.match(inboxSource, /tabIndex=\{-1\}/);
 });

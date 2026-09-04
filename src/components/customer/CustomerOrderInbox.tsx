@@ -16,6 +16,11 @@ import {
   XCircle,
 } from 'lucide-react';
 import {
+  consumeCanonicalOrderNavigation,
+  KYRUB_CANONICAL_ORDER_NAVIGATION_REQUESTED_EVENT,
+  type CanonicalOrderNavigationRequest,
+} from '../../utils/canonicalOrderNavigation';
+import {
   getCustomerOrderItemOpenQuantity,
   getCustomerOrderOutstandingTotal,
   getCustomerOrderPaymentStatusLabel,
@@ -39,6 +44,7 @@ import {
 } from '../../utils/productionRouting';
 
 interface CustomerOrderInboxProps {
+  storeId: string;
   orders: CustomerOrder[];
   busyOrderId: string;
   attendanceSpaces?: string[];
@@ -71,6 +77,9 @@ const formatDateTime = (value: string): string => {
         timeStyle: 'short',
       }).format(date);
 };
+
+const orderElementId = (orderId: string): string =>
+  `kyrub-customer-order-${encodeURIComponent(orderId)}`;
 
 const isPickupWaiting = (order: CustomerOrder): boolean =>
   order.fulfillmentType === 'pickup' && order.status === 'ready';
@@ -119,6 +128,7 @@ const matchesStage = (order: CustomerOrder, filter: InboxFilter): boolean => {
 };
 
 export const CustomerOrderInbox = ({
+  storeId,
   orders,
   busyOrderId,
   attendanceSpaces = [],
@@ -130,6 +140,7 @@ export const CustomerOrderInbox = ({
   const [stationRoutes, setStationRoutes] = useState<ProductPreparationStations>(
     loadCachedProductPreparationStations
   );
+  const [focusOrderId, setFocusOrderId] = useState('');
   const [rejectingOrder, setRejectingOrder] = useState<CustomerOrder | null>(null);
   const [routingOrder, setRoutingOrder] = useState<CustomerOrder | null>(null);
   const [pickupOrder, setPickupOrder] = useState<CustomerOrder | null>(null);
@@ -138,6 +149,34 @@ export const CustomerOrderInbox = ({
   const [pickupBusy, setPickupBusy] = useState(false);
   const [rejectionReason, setRejectionReason] = useState('');
   const [suggestedAlternative, setSuggestedAlternative] = useState('');
+
+  useEffect(() => {
+    const acceptNavigation = (
+      request: CanonicalOrderNavigationRequest | null
+    ): void => {
+      if (!request || request.storeId !== storeId) return;
+      setFocusOrderId(request.orderId);
+    };
+
+    acceptNavigation(consumeCanonicalOrderNavigation(storeId));
+
+    const handleNavigation = (event: Event): void => {
+      const detail = (event as CustomEvent<CanonicalOrderNavigationRequest>).detail;
+      if (detail?.storeId?.trim() !== storeId) return;
+      acceptNavigation(consumeCanonicalOrderNavigation(storeId) ?? detail);
+    };
+
+    window.addEventListener(
+      KYRUB_CANONICAL_ORDER_NAVIGATION_REQUESTED_EVENT,
+      handleNavigation
+    );
+    return () => {
+      window.removeEventListener(
+        KYRUB_CANONICAL_ORDER_NAVIGATION_REQUESTED_EVENT,
+        handleNavigation
+      );
+    };
+  }, [storeId]);
 
   useEffect(() => {
     const refresh = (event?: Event): void => {
@@ -168,6 +207,20 @@ export const CustomerOrderInbox = ({
     }
   }, [stationFilter, stationOptions]);
 
+  useEffect(() => {
+    if (!focusOrderId) return;
+    const target = orders.find(order => order.id === focusOrderId);
+    if (!target) return;
+
+    setOriginFilter('all');
+    setStationFilter('all');
+    setFilter(
+      ['completed', 'rejected', 'cancelled'].includes(target.status)
+        ? 'finished'
+        : 'active'
+    );
+  }, [focusOrderId, orders]);
+
   const pickupCount = useMemo(
     () => orders.filter(isPickupWaiting).length,
     [orders]
@@ -192,6 +245,21 @@ export const CustomerOrderInbox = ({
       }),
     [attendanceSpaces, filter, orders, originFilter, stationFilter, stationRoutes]
   );
+
+  useEffect(() => {
+    if (!focusOrderId || originFilter !== 'all' || stationFilter !== 'all') return;
+    if (!filteredOrders.some(order => order.id === focusOrderId)) return;
+
+    const frame = window.requestAnimationFrame(() => {
+      const element = document.getElementById(orderElementId(focusOrderId));
+      if (!(element instanceof HTMLElement)) return;
+      element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      element.focus({ preventScroll: true });
+      setFocusOrderId('');
+    });
+
+    return () => window.cancelAnimationFrame(frame);
+  }, [filteredOrders, focusOrderId, originFilter, stationFilter]);
 
   const filterOptions: Array<{ id: InboxFilter; label: string }> = [
     { id: 'active', label: 'Ativos' },
@@ -323,7 +391,12 @@ export const CustomerOrderInbox = ({
             const pickupWaiting = isPickupWaiting(order);
 
             return (
-              <article key={order.id} className={`flex flex-col overflow-hidden rounded-3xl border bg-slate-950 ${pickupWaiting ? 'border-cyan-500/30' : 'border-slate-800'}`}>
+              <article
+                key={order.id}
+                id={orderElementId(order.id)}
+                tabIndex={-1}
+                className={`flex flex-col overflow-hidden rounded-3xl border bg-slate-950 focus:outline-none focus:ring-2 focus:ring-emerald-400/60 ${pickupWaiting ? 'border-cyan-500/30' : 'border-slate-800'}`}
+              >
                 <div className="flex items-start justify-between gap-3 border-b border-slate-800 p-4">
                   <div className="min-w-0">
                     <span className={`font-mono text-[9px] font-bold uppercase tracking-wide ${pickupWaiting ? 'text-cyan-300' : 'text-orange-400'}`}>{origin.label} · {getFulfillmentLabel(order.fulfillmentType)}</span>
