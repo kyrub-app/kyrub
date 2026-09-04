@@ -1,3 +1,4 @@
+import { inspectMercadoLivreOutboundRequirements } from '../integrations/mercadoLivreOutboundRequirementsService.js';
 import { proposeMercadoLivreExternalPublication } from '../integrations/mercadoLivreOutboundPublicationService.js';
 import { listPublicStoreConnectionRegistry } from '../integrations/storeConnectionRegistry.js';
 
@@ -5,6 +6,23 @@ const clean = (value: unknown, maximum = 240): string =>
   typeof value === 'string' || typeof value === 'number'
     ? String(value).replace(/\s+/g, ' ').trim().slice(0, maximum)
     : '';
+
+export type KyrubiaMercadoLivreRequirementInspection =
+  | {
+      status: 'available';
+      siteId: string;
+      categorySuggestions: Array<{
+        domainId: string;
+        domainName: string;
+        categoryId: string;
+        categoryName: string;
+      }>;
+      authority: 'provider_api_refetch';
+    }
+  | {
+      status: 'unavailable';
+      message: string;
+    };
 
 export type KyrubiaMercadoLivrePrepareResult =
   | {
@@ -15,6 +33,7 @@ export type KyrubiaMercadoLivrePrepareResult =
       providerPublicationModel: 'legacy_items' | 'user_products';
       providerStockAuthority: 'item_available_quantity' | 'stock_locations';
       missingRequirements: string[];
+      requirementInspection: KyrubiaMercadoLivreRequirementInspection;
       externalWritePerformed: false;
       authorizationCreated: false;
     }
@@ -41,6 +60,36 @@ const preparationFailure = (
   externalWritePerformed: false,
   authorizationCreated: false,
 });
+
+const inspectPreparedRequirements = async (input: {
+  uid: string;
+  proposalId: string;
+}): Promise<KyrubiaMercadoLivreRequirementInspection> => {
+  try {
+    const inspection = await inspectMercadoLivreOutboundRequirements({
+      storeId: input.uid,
+      proposalId: input.proposalId,
+      inspectedByUserId: input.uid,
+    });
+    return {
+      status: 'available',
+      siteId: inspection.siteId,
+      categorySuggestions: inspection.categorySuggestions.map(suggestion => ({
+        domainId: suggestion.domainId,
+        domainName: suggestion.domainName,
+        categoryId: suggestion.categoryId,
+        categoryName: suggestion.categoryName,
+      })),
+      authority: inspection.authority,
+    };
+  } catch {
+    return {
+      status: 'unavailable',
+      message:
+        'O rascunho foi preparado, mas o Kyrub não conseguiu consultar as categorias oficiais do Mercado Livre agora. Nenhuma publicação externa foi executada.',
+    };
+  }
+};
 
 export const prepareKyrubiaMercadoLivrePublication = async (input: {
   uid: string;
@@ -80,6 +129,10 @@ export const prepareKyrubiaMercadoLivrePublication = async (input: {
       canonicalProductId: productId,
       proposedByUserId: uid,
     });
+    const requirementInspection = await inspectPreparedRequirements({
+      uid,
+      proposalId: proposal.id,
+    });
     return {
       prepared: true,
       proposalId: proposal.id,
@@ -88,6 +141,7 @@ export const prepareKyrubiaMercadoLivrePublication = async (input: {
       providerPublicationModel: proposal.providerPublicationModel,
       providerStockAuthority: proposal.providerStockAuthority,
       missingRequirements: [...proposal.requirements.missing],
+      requirementInspection,
       externalWritePerformed: false,
       authorizationCreated: false,
     };
