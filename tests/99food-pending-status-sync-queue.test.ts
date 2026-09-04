@@ -6,6 +6,10 @@ const routerSource = readFileSync(
   'server/inventory/orderInventoryRouter.ts',
   'utf8'
 );
+const legacyIntegrationRouterSource = readFileSync(
+  'server/integrations/ninetyNineFoodRouter.ts',
+  'utf8'
+);
 const clientSource = readFileSync(
   'src/utils/ninetyNineFoodPendingStatusSync.ts',
   'utf8'
@@ -61,6 +65,23 @@ test('manual pending sync never replays the local status transition', () => {
   assert.match(section, /response\.status\(202\)\.json/);
   assert.match(section, /partnerSync: 'attention'/);
   assert.match(section, /partnerSync: 'sent'/);
+});
+
+test('legacy direct provider route is retained only as an authenticated disabled boundary', () => {
+  const routeStart = legacyIntegrationRouterSource.indexOf(
+    "router.post('/orders/:externalOrderId/status'"
+  );
+  const routeEnd = legacyIntegrationRouterSource.indexOf(
+    'const webhookHandler',
+    routeStart
+  );
+  const section = legacyIntegrationRouterSource.slice(routeStart, routeEnd);
+
+  assert.ok(routeStart >= 0);
+  assert.match(section, /authenticatedTenantId\(request\)/);
+  assert.match(section, /response\.status\(410\)\.json/);
+  assert.match(section, /NINETY_NINE_FOOD_DIRECT_STATUS_WRITE_DISABLED/);
+  assert.doesNotMatch(section, /sendNinetyNineFoodOrderStatus\(/);
 });
 
 test('pending client sends structured status-scoped authorization only after an explicit UI action', () => {
