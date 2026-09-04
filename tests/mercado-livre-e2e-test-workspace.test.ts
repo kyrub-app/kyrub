@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 
 // This regression file is intentionally part of prebuild so every preview contains the complete merchant E2E bench.
 const servicePath = new URL('../server/integrations/mercadoLivreE2ETestService.ts', import.meta.url);
+const capabilityServicePath = new URL('../server/integrations/mercadoLivrePublicationCapabilityService.ts', import.meta.url);
 const routerPath = new URL('../server/integrations/mercadoLivreE2ETestRouter.ts', import.meta.url);
 const componentPath = new URL('../src/components/store/MercadoLivreE2ETestWorkspace.tsx', import.meta.url);
 const bridgePath = new URL('../src/components/store/StoreConnectionsPortalBridge.tsx', import.meta.url);
@@ -20,10 +21,34 @@ test('E2E helper only lists canonical eligible products and provider requirement
   assert.doesNotMatch(source, /mercadoLivrePutJson|mercadoLivrePostJson/);
 });
 
+test('publication capability is provider-read-only and fail-closed for new ML models', async () => {
+  const source = await readFile(capabilityServicePath, 'utf8');
+  assert.match(source, /user_product_seller/);
+  assert.match(source, /warehouse_management/);
+  assert.match(source, /multiwarehouse/);
+  assert.match(source, /user_products_publication_adapter_required/);
+  assert.match(source, /stock_locations_adapter_required/);
+  assert.match(source, /ready_current_adapter/);
+  assert.match(source, /adapter_migration_required/);
+  assert.match(source, /mercadoLivreGetJson/);
+  assert.doesNotMatch(source, /mercadoLivrePostJson|mercadoLivrePutJson|fetch\s*\(/);
+});
+
+test('publication capability binds provider seller identity to the connected ML account', async () => {
+  const source = await readFile(capabilityServicePath, 'utf8');
+  assert.match(source, /observedSellerId !== externalAccountId/);
+  assert.match(source, /MERCADO_LIVRE_SELLER_IDENTITY_MISMATCH/);
+  assert.match(source, /getStoreConnectionRegistryRecord/);
+  assert.match(source, /connection\.provider !== 'mercado_livre'/);
+  assert.match(source, /connection\.status !== 'connected'/);
+});
+
 test('E2E read router is owner authenticated and mounted beside Mercado Livre routes', async () => {
   const router = await readFile(routerPath, 'utf8');
   const server = await readFile(serverPath, 'utf8');
   assert.match(router, /authenticatedOwner/);
+  assert.match(router, /e2e\/publication-capability/);
+  assert.match(router, /inspectMercadoLivrePublicationCapability/);
   assert.match(router, /e2e\/eligible-products/);
   assert.match(router, /category-options/);
   assert.match(server, /createMercadoLivreE2ETestRouter/);
