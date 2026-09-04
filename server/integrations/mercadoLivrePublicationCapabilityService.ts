@@ -114,7 +114,6 @@ export const projectMercadoLivrePublicationCapability = (input: {
       : 'none';
 
   const blockers: string[] = [];
-  if (publicationModel === 'user_products') blockers.push('user_products_publication_adapter_required');
   if (stockAuthority === 'stock_locations') blockers.push('stock_locations_adapter_required');
 
   return {

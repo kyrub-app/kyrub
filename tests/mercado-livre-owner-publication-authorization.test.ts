@@ -23,17 +23,17 @@ test('authorization revalidates the exact seller publication model before granti
   assert.ok(tokenIndex > guardIndex);
   assert.match(source, /schemaVersion: 2/);
   assert.match(source, /providerCapabilityFingerprint/);
-  assert.match(source, /providerPublicationModel: 'legacy_items'/);
+  assert.match(source, /'legacy_items' \| 'user_products'/);
   assert.match(source, /providerStockAuthority: 'item_available_quantity'/);
   assert.match(source, /providerCapability: proposal\.providerCapability/);
 });
 
-test('validation capability fingerprint must match the proposal before authorization', async () => {
+test('validation capability fingerprint and publication model must match the proposal before authorization', async () => {
   const source = await readFile(servicePath, 'utf8');
   assert.match(source, /providerCapabilityFingerprint, 80\) !== proposal\.providerCapabilityFingerprint/);
   assert.match(source, /currentValidation\.providerCapabilityFingerprint !== proposal\.providerCapabilityFingerprint/);
-  assert.match(source, /providerPublicationModel !== proposal\.providerPublicationModel/);
-  assert.match(source, /providerStockAuthority !== proposal\.providerStockAuthority/);
+  assert.match(source, /record\.providerPublicationModel !== proposal\.providerPublicationModel/);
+  assert.match(source, /record\.providerStockAuthority !== proposal\.providerStockAuthority/);
 });
 
 test('authorization is owner-only, expiring and single-use capable', async () => {

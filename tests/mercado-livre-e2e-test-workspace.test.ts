@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
+import { buildMercadoLivreInitialPublicationPayload } from '../server/integrations/mercadoLivreInitialPublicationPayloadAdapter.js';
 
 // This regression file is intentionally part of prebuild so every preview contains the complete merchant E2E bench.
 const servicePath = new URL('../server/integrations/mercadoLivreE2ETestService.ts', import.meta.url);
@@ -21,17 +22,62 @@ test('E2E helper only lists canonical eligible products and provider requirement
   assert.doesNotMatch(source, /mercadoLivrePutJson|mercadoLivrePostJson/);
 });
 
-test('publication capability is provider-read-only and fail-closed for new ML models', async () => {
+test('publication capability supports User Products but still fails closed for warehouse stock', async () => {
   const source = await readFile(capabilityServicePath, 'utf8');
   assert.match(source, /user_product_seller/);
   assert.match(source, /warehouse_management/);
   assert.match(source, /multiwarehouse/);
-  assert.match(source, /user_products_publication_adapter_required/);
+  assert.doesNotMatch(source, /user_products_publication_adapter_required/);
   assert.match(source, /stock_locations_adapter_required/);
   assert.match(source, /ready_current_adapter/);
   assert.match(source, /adapter_migration_required/);
   assert.match(source, /mercadoLivreGetJson/);
   assert.doesNotMatch(source, /mercadoLivrePostJson|mercadoLivrePutJson|fetch\s*\(/);
+});
+
+test('initial publication adapter separates legacy title from User Products family_name', () => {
+  const common = {
+    stockAuthority: 'item_available_quantity' as const,
+    name: 'Violão Yamaha C40',
+    categoryId: 'MLB123',
+    price: 600,
+    currencyId: 'BRL',
+    availableQuantity: 1,
+    listingTypeId: 'gold_special',
+    condition: 'used',
+    pictureUrl: 'https://example.com/guitar.jpg',
+    attributes: [{ id: 'BRAND', valueName: 'Yamaha' }],
+    sellerCustomField: 'kyrub-test',
+  };
+  const legacy = buildMercadoLivreInitialPublicationPayload({
+    ...common,
+    publicationModel: 'legacy_items',
+  });
+  assert.equal(legacy.title, 'Violão Yamaha C40');
+  assert.equal('family_name' in legacy, false);
+
+  const userProducts = buildMercadoLivreInitialPublicationPayload({
+    ...common,
+    publicationModel: 'user_products',
+  });
+  assert.equal(userProducts.family_name, 'Violão Yamaha C40');
+  assert.equal('title' in userProducts, false);
+  assert.equal('variations' in userProducts, false);
+});
+
+test('initial publication adapter refuses warehouse-managed stock until its dedicated adapter exists', () => {
+  assert.throws(() => buildMercadoLivreInitialPublicationPayload({
+    publicationModel: 'user_products',
+    stockAuthority: 'stock_locations',
+    name: 'Violão Yamaha C40',
+    categoryId: 'MLB123',
+    price: 600,
+    currencyId: 'BRL',
+    availableQuantity: 1,
+    listingTypeId: 'gold_special',
+    condition: 'used',
+    attributes: [],
+  }), /MERCADO_LIVRE_STOCK_LOCATION_PUBLICATION_ADAPTER_REQUIRED/);
 });
 
 test('publication capability binds provider seller identity to the connected ML account', async () => {

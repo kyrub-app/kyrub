@@ -1,6 +1,7 @@
 import { FieldValue } from 'firebase-admin/firestore';
 import { adminDb } from '../firebaseAdmin.js';
 import { mercadoLivreValidateJson } from './mercadoLivreOauthService.js';
+import { buildMercadoLivreInitialPublicationPayload } from './mercadoLivreInitialPublicationPayloadAdapter.js';
 import { mercadoLivrePublicationCorrelationMarker } from './mercadoLivrePublicationCorrelation.js';
 import { assertCurrentMercadoLivrePublicationCapability } from './mercadoLivrePublicationCapabilitySnapshotGuard.js';
 
@@ -17,7 +18,7 @@ interface ProposalRecord {
   action: 'create_external_listing';
   canonicalBaselineHash: string;
   providerCapabilityFingerprint: string;
-  providerPublicationModel: 'legacy_items';
+  providerPublicationModel: 'legacy_items' | 'user_products';
   providerStockAuthority: 'item_available_quantity';
   providerCapability: unknown;
   canonical: {
@@ -50,6 +51,9 @@ interface ConditionalValidationRecord {
   validatedAt: string;
   requirementConfiguredAt: string;
   canonicalBaselineHash: string;
+  providerCapabilityFingerprint: string;
+  providerPublicationModel: 'legacy_items' | 'user_products';
+  providerStockAuthority: 'item_available_quantity';
 }
 
 const clean = (value: unknown, maximum = 2_000): string =>
@@ -81,7 +85,8 @@ const assertProposal = (storeId: string, proposalId: string, value: unknown): Pr
     record.executionStatus !== 'not_authorized' || !clean(record.canonicalStoreId, 160) ||
     !clean(record.connectionId, 200) || !clean(record.canonicalProductId, 160) ||
     !clean(record.canonicalBaselineHash, 80) || !canonical || !clean(canonical.name, 120) ||
-    !clean(record.providerCapabilityFingerprint, 80) || record.providerPublicationModel !== 'legacy_items' ||
+    !clean(record.providerCapabilityFingerprint, 80) ||
+    (record.providerPublicationModel !== 'legacy_items' && record.providerPublicationModel !== 'user_products') ||
     record.providerStockAuthority !== 'item_available_quantity' || !record.providerCapability ||
     !clean(record.providerCategoryId, 160) || !clean(record.providerListingTypeId, 120) ||
     !clean(record.providerCondition, 120) || !clean(record.providerCurrencyId, 16)
@@ -112,6 +117,9 @@ const assertConditionalValidation = (
     clean(record.proposalId, 160) !== proposal.id ||
     clean(record.canonicalBaselineHash, 80) !== proposal.canonicalBaselineHash ||
     clean(record.requirementConfiguredAt, 80) !== configuration.configuredAt ||
+    clean(record.providerCapabilityFingerprint, 80) !== proposal.providerCapabilityFingerprint ||
+    record.providerPublicationModel !== proposal.providerPublicationModel ||
+    record.providerStockAuthority !== proposal.providerStockAuthority ||
     record.authority !== 'provider_api_conditional_validation' ||
     record.ready !== true || !clean(record.validatedAt, 80)
   ) throw new Error('MERCADO_LIVRE_OUTBOUND_CONDITIONAL_VALIDATION_REQUIRED');
@@ -196,23 +204,20 @@ export const validateMercadoLivreOutboundListing = async (input: {
   }
 
   const publicationCorrelationMarker = mercadoLivrePublicationCorrelationMarker(storeId, proposalId);
-  const itemPayload = {
-    title: proposal.canonical.name,
-    category_id: proposal.providerCategoryId,
+  const itemPayload = buildMercadoLivreInitialPublicationPayload({
+    publicationModel: proposal.providerPublicationModel,
+    stockAuthority: proposal.providerStockAuthority,
+    name: proposal.canonical.name,
+    categoryId: proposal.providerCategoryId,
     price: proposal.canonical.price,
-    currency_id: proposal.providerCurrencyId,
-    available_quantity: proposal.canonical.stock,
-    buying_mode: 'buy_it_now',
-    listing_type_id: proposal.providerListingTypeId,
+    currencyId: proposal.providerCurrencyId,
+    availableQuantity: proposal.canonical.stock,
+    listingTypeId: proposal.providerListingTypeId,
     condition: proposal.providerCondition,
-    seller_custom_field: publicationCorrelationMarker,
-    ...(proposal.canonical.image ? { pictures: [{ source: proposal.canonical.image }] } : {}),
-    attributes: configuration.attributes.map(attribute => ({
-      id: attribute.id,
-      ...(attribute.valueId ? { value_id: attribute.valueId } : {}),
-      ...(attribute.valueName ? { value_name: attribute.valueName } : {}),
-    })),
-  };
+    pictureUrl: proposal.canonical.image,
+    attributes: configuration.attributes,
+    sellerCustomField: publicationCorrelationMarker,
+  });
 
   const providerValidation = await mercadoLivreValidateJson(storeId, '/items/validate', itemPayload);
   const causes = providerCauses(providerValidation.payload);

@@ -50,6 +50,7 @@ export interface MercadoLivreOutboundPublicationProposal {
   };
   adaptation: {
     title: string;
+    familyName?: string;
     price: number;
     availableQuantity: number;
     pictureUrl?: string;
@@ -173,11 +174,8 @@ export const proposeMercadoLivreExternalPublication = async (input: {
       `MERCADO_LIVRE_OUTBOUND_PUBLICATION_ADAPTER_MIGRATION_REQUIRED:${providerCapability.blockers.join(',')}`
     );
   }
-  if (
-    providerCapability.publicationModel !== 'legacy_items' ||
-    providerCapability.stockAuthority !== 'item_available_quantity'
-  ) {
-    throw new Error('MERCADO_LIVRE_OUTBOUND_PUBLICATION_MODEL_UNSUPPORTED');
+  if (providerCapability.stockAuthority !== 'item_available_quantity') {
+    throw new Error('MERCADO_LIVRE_STOCK_LOCATION_PUBLICATION_ADAPTER_REQUIRED');
   }
   const providerCapabilitySnapshot = freezeMercadoLivrePublicationCapability(providerCapability);
 
@@ -247,6 +245,7 @@ export const proposeMercadoLivreExternalPublication = async (input: {
     },
     adaptation: {
       title: product.name,
+      ...(providerCapability.publicationModel === 'user_products' ? { familyName: product.name } : {}),
       price: product.price,
       availableQuantity: product.stock,
       ...(product.image ? { pictureUrl: product.image } : {}),

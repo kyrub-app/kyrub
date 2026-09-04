@@ -31,19 +31,22 @@ test('outbound proposal resolves the canonical store instead of assuming owner s
   assert.match(source, /providerCapabilitySnapshot\.fingerprint/);
 });
 
-test('proposal freezes the provider-owned publication model before any external write can be authorized', async () => {
+test('proposal freezes either legacy or User Products provider model before authorization', async () => {
   const source = await readFile(servicePath, 'utf8');
   assert.match(source, /inspectMercadoLivrePublicationCapability/);
   assert.match(source, /freezeMercadoLivrePublicationCapability/);
   assert.match(source, /readiness !== 'ready_current_adapter'/);
   assert.match(source, /MERCADO_LIVRE_OUTBOUND_PUBLICATION_ADAPTER_MIGRATION_REQUIRED/);
-  assert.match(source, /publicationModel !== 'legacy_items'/);
+  assert.doesNotMatch(source, /publicationModel !== 'legacy_items'/);
   assert.match(source, /stockAuthority !== 'item_available_quantity'/);
+  assert.match(source, /MERCADO_LIVRE_STOCK_LOCATION_PUBLICATION_ADAPTER_REQUIRED/);
   assert.match(source, /schemaVersion: 2/);
   assert.match(source, /providerCapabilityFingerprint/);
   assert.match(source, /providerPublicationModel/);
   assert.match(source, /providerStockAuthority/);
   assert.match(source, /providerCapability: providerCapabilitySnapshot/);
+  assert.match(source, /publicationModel === 'user_products'/);
+  assert.match(source, /familyName: product\.name/);
 });
 
 test('capability fingerprint is based only on material seller publication and stock authority', async () => {
