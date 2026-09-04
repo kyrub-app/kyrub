@@ -17,8 +17,10 @@ import {
 } from 'lucide-react';
 import {
   acknowledgeCanonicalOrderNavigation,
+  isCurrentCanonicalOrderNavigation,
   KYRUB_CANONICAL_ORDER_NAVIGATION_REQUESTED_EVENT,
   readCanonicalOrderNavigation,
+  readReplacedCanonicalOrderNavigationId,
   type CanonicalOrderNavigationRequest,
 } from '../../utils/canonicalOrderNavigation';
 import {
@@ -142,6 +144,7 @@ export const CustomerOrderInbox = ({
     loadCachedProductPreparationStations
   );
   const [focusOrderId, setFocusOrderId] = useState('');
+  const [replacedFocusOrderId, setReplacedFocusOrderId] = useState('');
   const [rejectingOrder, setRejectingOrder] = useState<CustomerOrder | null>(null);
   const [routingOrder, setRoutingOrder] = useState<CustomerOrder | null>(null);
   const [pickupOrder, setPickupOrder] = useState<CustomerOrder | null>(null);
@@ -157,6 +160,7 @@ export const CustomerOrderInbox = ({
     ): void => {
       if (!request || request.storeId !== storeId) return;
       setFocusOrderId(request.orderId);
+      setReplacedFocusOrderId(readReplacedCanonicalOrderNavigationId(storeId));
     };
 
     acceptNavigation(readCanonicalOrderNavigation(storeId));
@@ -253,12 +257,14 @@ export const CustomerOrderInbox = ({
 
     const focusedOrderId = focusOrderId;
     const frame = window.requestAnimationFrame(() => {
+      if (!isCurrentCanonicalOrderNavigation(storeId, focusedOrderId)) return;
       const element = document.getElementById(orderElementId(focusedOrderId));
       if (!(element instanceof HTMLElement)) return;
       element.scrollIntoView({ behavior: 'smooth', block: 'center' });
       element.focus({ preventScroll: true });
-      acknowledgeCanonicalOrderNavigation(storeId, focusedOrderId);
+      if (!acknowledgeCanonicalOrderNavigation(storeId, focusedOrderId)) return;
       setFocusOrderId(current => current === focusedOrderId ? '' : current);
+      setReplacedFocusOrderId('');
     });
 
     return () => window.cancelAnimationFrame(frame);
@@ -335,6 +341,19 @@ export const CustomerOrderInbox = ({
           {orders.length} no histórico
         </span>
       </div>
+
+      {replacedFocusOrderId && focusOrderId && (
+        <div
+          id="kyrub-canonical-order-navigation-replaced"
+          className="rounded-2xl border border-amber-500/20 bg-amber-500/[0.06] px-4 py-3 text-[10px] leading-relaxed text-amber-100"
+          role="status"
+        >
+          <strong className="block text-amber-200">Pedido mais recente priorizado</strong>
+          <span className="mt-1 block">
+            A navegação para {replacedFocusOrderId} foi substituída pelo pedido {focusOrderId}. O Kyrub seguirá somente o destino explícito mais recente.
+          </span>
+        </div>
+      )}
 
       <div className="rounded-2xl border border-cyan-500/20 bg-cyan-500/5 p-2.5">
         <div className="mb-2 flex items-center gap-1.5 px-1 text-[8px] font-black uppercase tracking-wide text-cyan-300">
