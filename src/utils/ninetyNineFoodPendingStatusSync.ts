@@ -1,5 +1,6 @@
 import type { User } from 'firebase/auth';
 import type { CustomerOrderStatus } from './customerOrders';
+import { notifyNinetyNineFoodStatusSyncReconciliationChanged } from './ninetyNineFoodStatusSyncReconciliation';
 
 export type NinetyNineFoodPendingStatusSyncState =
   | 'authorization_required'
@@ -23,7 +24,7 @@ export interface NinetyNineFoodPendingStatusSyncResult {
   executionId: string;
   externalOrderId: string;
   status: CustomerOrderStatus;
-  partnerSync: 'sent' | 'attention';
+  partnerSync: 'sent' | 'attention' | 'reconciliation_required';
   partnerWarning: string;
   localTransitionApplied: false;
 }
@@ -134,9 +135,12 @@ export const sendNinetyNineFoodPendingStatusSync = async (
       }),
     }
   );
-  const partnerSync = payload.partnerSync === 'sent' || payload.partnerSync === 'attention'
-    ? payload.partnerSync
-    : null;
+  const partnerSync =
+    payload.partnerSync === 'sent' ||
+    payload.partnerSync === 'attention' ||
+    payload.partnerSync === 'reconciliation_required'
+      ? payload.partnerSync
+      : null;
   const resultOrderId = clean(payload.orderId);
   const resultOrderRevision = clean(payload.orderRevision);
   const executionId = clean(payload.executionId);
@@ -152,6 +156,9 @@ export const sendNinetyNineFoodPendingStatusSync = async (
     payload.localTransitionApplied !== false
   ) {
     throw new Error('A resposta autoritativa da sincronização 99Food está incompleta.');
+  }
+  if (partnerSync === 'reconciliation_required') {
+    notifyNinetyNineFoodStatusSyncReconciliationChanged();
   }
   return {
     orderId: resultOrderId,

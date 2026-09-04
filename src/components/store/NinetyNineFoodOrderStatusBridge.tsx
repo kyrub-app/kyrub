@@ -23,6 +23,8 @@ import {
   sendNinetyNineFoodPendingStatusSync,
   type NinetyNineFoodPendingStatusSyncItem,
 } from '../../utils/ninetyNineFoodPendingStatusSync';
+import { KYRUB_99FOOD_STATUS_SYNC_RECONCILIATION_CHANGED_EVENT } from '../../utils/ninetyNineFoodStatusSyncReconciliation';
+import { NinetyNineFoodStatusSyncReconciliationQueue } from './NinetyNineFoodStatusSyncReconciliationQueue';
 
 const statusLabel = (status: string): string => {
   switch (status) {
@@ -125,6 +127,10 @@ export function NinetyNineFoodOrderStatusBridge() {
       void refreshPending();
     };
 
+    const handleReconciliationChanged = (): void => {
+      void refreshPending();
+    };
+
     const unsubscribeAuth = onAuthStateChanged(auth, user => {
       syncAuthority();
       if (user) {
@@ -148,6 +154,10 @@ export function NinetyNineFoodOrderStatusBridge() {
       KYRUB_99FOOD_STATUS_WRITE_RESULT_EVENT,
       handleResult
     );
+    window.addEventListener(
+      KYRUB_99FOOD_STATUS_SYNC_RECONCILIATION_CHANGED_EVENT,
+      handleReconciliationChanged
+    );
 
     return () => {
       unsubscribeAuth();
@@ -162,6 +172,10 @@ export function NinetyNineFoodOrderStatusBridge() {
       window.removeEventListener(
         KYRUB_99FOOD_STATUS_WRITE_RESULT_EVENT,
         handleResult
+      );
+      window.removeEventListener(
+        KYRUB_99FOOD_STATUS_SYNC_RECONCILIATION_CHANGED_EVENT,
+        handleReconciliationChanged
       );
       if (clearMessageTimer !== null) window.clearTimeout(clearMessageTimer);
     };
@@ -198,6 +212,10 @@ export function NinetyNineFoodOrderStatusBridge() {
         setMessage(
           `O status “${statusName(result.status)}” do pedido ${item.displayId} foi enviado à 99Food. O Kyrub não refez a transição local.`
         );
+      } else if (result.partnerSync === 'reconciliation_required') {
+        setMessage(
+          `O Kyrub perdeu a certeza sobre a resposta da 99Food para o pedido ${item.displayId}. Nenhum retry será feito. A execução foi movida para a fila de reconciliação antes de qualquer novo envio.`
+        );
       } else {
         setMessage(
           `A 99Food não confirmou o envio do pedido ${item.displayId}: ${result.partnerWarning || 'resposta do provedor indisponível.'} A pendência continua manual e o status local não foi revertido.`
@@ -219,6 +237,8 @@ export function NinetyNineFoodOrderStatusBridge() {
 
   return (
     <>
+      <NinetyNineFoodStatusSyncReconciliationQueue />
+
       {request && (
         <div className="fixed inset-0 z-[190] flex items-end justify-center bg-slate-950/90 backdrop-blur-md sm:items-center sm:p-5">
           <section

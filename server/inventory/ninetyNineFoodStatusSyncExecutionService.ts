@@ -89,10 +89,12 @@ export const claimOrderStatusMutation = async (input: {
     const integration = integrationData(orderSnapshot.data());
     if (
       clean(integration.provider) === '99food' &&
-      clean(integration.outboundStatus) === 'executing'
+      ['executing', 'reconciliation_required'].includes(clean(integration.outboundStatus))
     ) {
       throw new Error(
-        'A sincronização externa 99Food deste pedido está em execução. Aguarde a conclusão antes de alterar o status.'
+        clean(integration.outboundStatus) === 'reconciliation_required'
+          ? 'Este pedido possui uma execução 99Food aguardando reconciliação. Conclua a conferência antes de alterar o status.'
+          : 'A sincronização externa 99Food deste pedido está em execução. Aguarde a conclusão antes de alterar o status.'
       );
     }
     if (activeStatusMutationId(lockSnapshot.data())) {
@@ -280,7 +282,9 @@ export const finalizeNinetyNineFoodStatusSyncExecution = async (input: {
     }
 
     const order = orderSnapshot.data() as Record<string, unknown> | undefined;
+    const execution = executionSnapshot.data() as Record<string, unknown>;
     const integration = integrationData(order);
+    const ownsExecutionPhase = clean(execution.status) === 'provider_write_started';
     const ownsOrderMarker =
       orderSnapshot.exists &&
       clean(integration.provider) === '99food' &&
@@ -288,6 +292,11 @@ export const finalizeNinetyNineFoodStatusSyncExecution = async (input: {
       clean(integration.outboundExecutionId) === executionId;
     const concurrentStatusChange =
       orderSnapshot.exists && clean(order?.status) !== input.claim.status;
+
+    if (!ownsExecutionPhase || !ownsOrderMarker) {
+      return { orderMarkerFinalized: false, concurrentStatusChange };
+    }
+
     const completedAt = new Date().toISOString();
     const explicitWarning = clean(input.providerWarning).slice(0, 500);
     const warning = concurrentStatusChange
@@ -304,27 +313,25 @@ export const finalizeNinetyNineFoodStatusSyncExecution = async (input: {
           : 'provider_write_failed',
       providerWarning: warning || FieldValue.delete(),
       completedAt,
-      orderMarkerFinalized: ownsOrderMarker,
+      orderMarkerFinalized: true,
       concurrentStatusChange,
       updatedAt: FieldValue.serverTimestamp(),
     });
 
-    if (ownsOrderMarker) {
-      transaction.update(orderRef, {
-        'integration.outboundStatus': effectiveOutcome === 'sent' ? 'sent' : 'attention',
-        'integration.outboundTargetStatus': effectiveOutcome === 'sent'
-          ? FieldValue.delete()
-          : input.claim.status,
-        'integration.outboundError': effectiveOutcome === 'sent' || !warning
-          ? FieldValue.delete()
-          : warning,
-        'integration.outboundExecutionId': FieldValue.delete(),
-        'integration.outboundExecutionRevision': FieldValue.delete(),
-        'integration.outboundExecutionStartedAt': FieldValue.delete(),
-        'integration.outboundUpdatedAt': completedAt,
-      });
-    }
+    transaction.update(orderRef, {
+      'integration.outboundStatus': effectiveOutcome === 'sent' ? 'sent' : 'attention',
+      'integration.outboundTargetStatus': effectiveOutcome === 'sent'
+        ? FieldValue.delete()
+        : input.claim.status,
+      'integration.outboundError': effectiveOutcome === 'sent' || !warning
+        ? FieldValue.delete()
+        : warning,
+      'integration.outboundExecutionId': FieldValue.delete(),
+      'integration.outboundExecutionRevision': FieldValue.delete(),
+      'integration.outboundExecutionStartedAt': FieldValue.delete(),
+      'integration.outboundUpdatedAt': completedAt,
+    });
 
-    return { orderMarkerFinalized: ownsOrderMarker, concurrentStatusChange };
+    return { orderMarkerFinalized: true, concurrentStatusChange };
   });
 };

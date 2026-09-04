@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
+import './99food-orphan-status-sync-reconciliation.test.ts';
 
 const serverSource = readFileSync('server.ts', 'utf8');
 const executionRouterSource = readFileSync(

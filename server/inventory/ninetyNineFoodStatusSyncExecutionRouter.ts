@@ -1,5 +1,6 @@
 import { Router, type NextFunction, type Request, type Response } from 'express';
 import { adminAuth, adminDb } from '../firebaseAdmin.js';
+import { inspectNinetyNineFoodProviderStatusForReconciliation } from '../integrations/ninetyNineFoodProviderStatusReader.js';
 import { writeNinetyNineFoodOrderStatusToProvider } from '../integrations/ninetyNineFoodProviderStatusWriter.js';
 import {
   claimNinetyNineFoodStatusSyncExecution,
@@ -9,6 +10,14 @@ import {
   releaseOrderStatusMutation,
   type OrderStatusMutationClaim,
 } from './ninetyNineFoodStatusSyncExecutionService.js';
+import {
+  claimNinetyNineFoodStatusSyncReconciliation,
+  finalizeNinetyNineFoodStatusSyncReconciliation,
+  isNinetyNineFoodProviderWriteOutcomeUnknown,
+  listNinetyNineFoodStatusSyncReconciliationItems,
+  markNinetyNineFoodProviderWriteOutcomeUnknown,
+  markNinetyNineFoodProviderWriteStarted,
+} from './ninetyNineFoodStatusSyncReconciliationService.js';
 import type { InventoryOrderStatus } from '../../shared/inventoryConsumption.js';
 
 const SUPPORTED_STATUSES = new Set<InventoryOrderStatus>([
@@ -65,7 +74,7 @@ const errorResponse = (response: Response, error: unknown): void => {
     return;
   }
   if (
-    /mudou desde a leitura da fila|mudou desde a autorização|não está pendente|está em execução|outra mudança de status/i.test(message)
+    /mudou desde a leitura da fila|mudou desde a autorização|não está pendente|está em execução|outra mudança de status|reconciliação|perdeu a autoridade/i.test(message)
   ) {
     response.status(409).json({
       error: message,
@@ -186,6 +195,11 @@ const serializeNinetyNineFoodStatusMutation = async (
       next();
       return;
     }
+    if (clean(integration.outboundStatus) === 'reconciliation_required') {
+      throw new Error(
+        'Este pedido possui uma execução 99Food com resultado externo desconhecido. Conclua a reconciliação antes de alterar novamente o status.'
+      );
+    }
 
     const claim = await claimOrderStatusMutation({ tenantId, orderId });
     releaseAfterResponse(response, claim);
@@ -207,6 +221,77 @@ export const createNinetyNineFoodStatusSyncExecutionRouter = (): Router => {
     }
   });
 
+  router.get('/provider-sync/99food/reconciliation', async (request, response) => {
+    try {
+      const tenantId = await authenticatedTenantId(request);
+      response.json({
+        items: await listNinetyNineFoodStatusSyncReconciliationItems(tenantId),
+      });
+    } catch (error) {
+      errorResponse(response, error);
+    }
+  });
+
+  router.post(
+    '/:orderId/provider-sync/99food/reconciliation/:executionId',
+    async (request, response) => {
+      try {
+        const tenantId = await authenticatedTenantId(request);
+        const orderId = clean(request.params.orderId);
+        const executionId = clean(request.params.executionId);
+        const claim = await claimNinetyNineFoodStatusSyncReconciliation({
+          tenantId,
+          orderId,
+          executionId,
+        });
+
+        let observation: Awaited<ReturnType<typeof inspectNinetyNineFoodProviderStatusForReconciliation>>;
+        try {
+          observation = await inspectNinetyNineFoodProviderStatusForReconciliation({
+            tenantId,
+            executionId: claim.executionId,
+            externalOrderId: claim.externalOrderId,
+            targetStatus: claim.targetStatus,
+          });
+        } catch (error) {
+          observation = {
+            outcome: 'uncertain',
+            providerLastEvent: '',
+            providerStatus: '',
+            warning: error instanceof Error
+              ? `A leitura da 99Food não pôde confirmar o resultado: ${error.message}`.slice(0, 500)
+              : 'A leitura da 99Food não pôde confirmar o resultado. A execução continua bloqueada para nova conferência manual.',
+          };
+        }
+
+        const finalized = await finalizeNinetyNineFoodStatusSyncReconciliation({
+          tenantId,
+          claim,
+          outcome: observation.outcome,
+          providerLastEvent: observation.providerLastEvent,
+          providerStatus: observation.providerStatus,
+          warning: observation.warning,
+        });
+        response.status(finalized.outcome === 'confirmed' ? 200 : 202).json({
+          executionId: claim.executionId,
+          orderId: claim.orderId,
+          externalOrderId: claim.externalOrderId,
+          targetStatus: claim.targetStatus,
+          reconciliation: finalized.outcome,
+          providerLastEvent: observation.providerLastEvent,
+          providerStatus: observation.providerStatus,
+          warning: observation.warning,
+          orderMarkerFinalized: finalized.orderMarkerFinalized,
+          localStatusChanged: finalized.localStatusChanged,
+          providerWriteAttempted: false,
+          localTransitionApplied: false,
+        });
+      } catch (error) {
+        errorResponse(response, error);
+      }
+    }
+  );
+
   router.post('/:orderId/provider-sync/99food', async (request, response) => {
     try {
       const tenantId = await authenticatedTenantId(request);
@@ -222,6 +307,11 @@ export const createNinetyNineFoodStatusSyncExecutionRouter = (): Router => {
         status: authorization.status,
         expectedOrderRevision: authorization.orderRevision,
         authorizedByUserId: tenantId,
+      });
+      await markNinetyNineFoodProviderWriteStarted({
+        tenantId,
+        executionId: claim.executionId,
+        orderId: claim.orderId,
       });
 
       try {
@@ -262,6 +352,27 @@ export const createNinetyNineFoodStatusSyncExecutionRouter = (): Router => {
         });
       } catch (error) {
         const partnerWarning = error instanceof Error ? error.message : String(error);
+        if (isNinetyNineFoodProviderWriteOutcomeUnknown(error)) {
+          await markNinetyNineFoodProviderWriteOutcomeUnknown({
+            tenantId,
+            executionId: claim.executionId,
+            orderId: claim.orderId,
+            warning: partnerWarning,
+          }).catch(markError => {
+            console.error('[99Food Status Sync Execution] Ambiguous provider outcome marker failed.', markError);
+          });
+          response.status(202).json({
+            orderId: claim.orderId,
+            externalOrderId: claim.externalOrderId,
+            status: claim.status,
+            executionId: claim.executionId,
+            partnerSync: 'reconciliation_required',
+            partnerWarning: partnerWarning || 'A resposta externa ficou ambígua. Confira o estado na 99Food antes de qualquer novo envio.',
+            localTransitionApplied: false,
+            orderRevision: claim.expectedOrderRevision,
+          });
+          return;
+        }
         await finalizeNinetyNineFoodStatusSyncExecution({
           tenantId,
           claim,
