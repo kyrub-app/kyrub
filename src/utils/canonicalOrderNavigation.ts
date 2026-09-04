@@ -7,6 +7,7 @@ export interface CanonicalOrderNavigationRequest {
 }
 
 let pendingNavigation: CanonicalOrderNavigationRequest | null = null;
+let replacedNavigationOrderId = '';
 
 const clean = (value: string): string => value.trim().slice(0, 240);
 
@@ -25,6 +26,13 @@ export const requestCanonicalOrderNavigation = (
   const normalized = normalizeRequest(request);
   if (!normalized) return false;
 
+  const previous = pendingNavigation;
+  replacedNavigationOrderId =
+    previous &&
+    previous.storeId === normalized.storeId &&
+    previous.orderId !== normalized.orderId
+      ? previous.orderId
+      : '';
   pendingNavigation = normalized;
   window.dispatchEvent(new CustomEvent<CanonicalOrderNavigationRequest>(
     KYRUB_CANONICAL_ORDER_NAVIGATION_REQUESTED_EVENT,
@@ -43,21 +51,42 @@ export const readCanonicalOrderNavigation = (
   return pendingNavigation;
 };
 
-export const acknowledgeCanonicalOrderNavigation = (
+export const readReplacedCanonicalOrderNavigationId = (
+  storeId: string
+): string => {
+  const normalizedStoreId = clean(storeId);
+  if (
+    !normalizedStoreId ||
+    pendingNavigation?.storeId !== normalizedStoreId
+  ) {
+    return '';
+  }
+  return replacedNavigationOrderId;
+};
+
+export const isCurrentCanonicalOrderNavigation = (
   storeId: string,
   orderId: string
 ): boolean => {
   const normalizedStoreId = clean(storeId);
   const normalizedOrderId = clean(orderId);
-  if (
-    !normalizedStoreId ||
-    !normalizedOrderId ||
-    pendingNavigation?.storeId !== normalizedStoreId ||
-    pendingNavigation.orderId !== normalizedOrderId
-  ) {
+  return Boolean(
+    normalizedStoreId &&
+    normalizedOrderId &&
+    pendingNavigation?.storeId === normalizedStoreId &&
+    pendingNavigation.orderId === normalizedOrderId
+  );
+};
+
+export const acknowledgeCanonicalOrderNavigation = (
+  storeId: string,
+  orderId: string
+): boolean => {
+  if (!isCurrentCanonicalOrderNavigation(storeId, orderId)) {
     return false;
   }
   pendingNavigation = null;
+  replacedNavigationOrderId = '';
   return true;
 };
 
@@ -67,5 +96,6 @@ export const consumeCanonicalOrderNavigation = (
   const request = readCanonicalOrderNavigation(storeId);
   if (!request) return null;
   pendingNavigation = null;
+  replacedNavigationOrderId = '';
   return request;
 };
