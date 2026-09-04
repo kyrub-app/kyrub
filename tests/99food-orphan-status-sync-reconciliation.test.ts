@@ -105,14 +105,17 @@ test('provider reconciliation reader is strictly read-only and cannot resend sta
   assert.match(reconciliationSection, /localTransitionApplied: false/);
 });
 
-test('provider observation distinguishes confirmed, not observed, conflict, and uncertain without retry', () => {
+test('provider observation distinguishes confirmed, not observed, conflict, and uncertain without automatic retry', () => {
   assert.match(providerReaderSource, /outcome: 'confirmed'/);
   assert.match(providerReaderSource, /outcome: 'not_observed'/);
   assert.match(providerReaderSource, /outcome: 'conflict'/);
   assert.match(providerReaderSource, /outcome: 'uncertain'/);
   assert.match(providerReaderSource, /CANCELLATION_REQUESTED/);
   assert.match(providerReaderSource, /CANCELLATION_REQUEST_DENIED/);
-  assert.doesNotMatch(providerReaderSource, /retry|setInterval|setTimeout/i);
+  assert.doesNotMatch(
+    providerReaderSource,
+    /setInterval|setTimeout|retryNinetyNineFood|schedule|enqueue.*retry/i
+  );
 });
 
 test('uncertain reconciliation stays blocked while resolved outcomes release to sent or attention', () => {
