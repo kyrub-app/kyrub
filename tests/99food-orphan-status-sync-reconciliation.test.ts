@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
+import './99food-inbound-reconciliation-authority.test.ts';
 
 const routerSource = readFileSync(
   'server/inventory/ninetyNineFoodStatusSyncExecutionRouter.ts',
