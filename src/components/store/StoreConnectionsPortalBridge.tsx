@@ -11,6 +11,7 @@ import {
 } from '../../utils/canonicalOrderNavigation';
 import {
   KYRUB_RESOLVED_RETRY_HANDOFF_CHANGED_EVENT,
+  readReplacedResolvedRetryHandoffOrderId,
   readResolvedRetryHandoff,
   retainResolvedRetryHandoff,
 } from '../../utils/resolvedRetryHandoff';
@@ -50,6 +51,7 @@ export default function StoreConnectionsPortalBridge({
     () => readResolvedRetryHandoff(storeId)
   );
   const storeViewRefreshVersion = inventoryRefreshVersion + authorityRefreshVersion;
+  const replacedResolvedRetryOrderId = readReplacedResolvedRetryHandoffOrderId(storeId);
 
   useEffect(() => {
     let cancelled = false;
@@ -226,6 +228,14 @@ export default function StoreConnectionsPortalBridge({
           role="status"
         >
           <strong className="block text-emerald-200">Retry reconsultado · bloqueio não está mais ativo</strong>
+          {replacedResolvedRetryOrderId && replacedResolvedRetryOrderId !== resolvedRetry.orderId && (
+            <span
+              id="kyrub-resolved-retry-handoff-replaced"
+              className="mt-2 block rounded-xl border border-amber-500/20 bg-amber-500/[0.07] px-3 py-2 text-amber-100"
+            >
+              Um resultado resolvido mais recente foi priorizado: o pedido {replacedResolvedRetryOrderId} foi substituído pelo pedido {resolvedRetry.orderId}. O Kyrub mantém apenas um handoff ativo por loja e não criou uma fila oculta.
+            </span>
+          )}
           <span className="mt-1 block">
             O readback autoritativo do pedido {resolvedRetry.orderId} está em “{resolvedRetry.state}”. Este aviso permanece recuperável até o pedido ser realmente focalizado; cancelar a localização não repete o retry nem apaga este resultado.
           </span>
