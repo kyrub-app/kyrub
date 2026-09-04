@@ -99,7 +99,7 @@ test('only the execution that owns the marker can finalize and concurrent status
 
 test('revision conflict remains manual with no automatic provider retry', () => {
   assert.match(executionRouterSource, /NINETY_NINE_FOOD_STATUS_SYNC_REVISION_CONFLICT/);
-  assert.match(executionRouterSource, /Atualize a fila 99Food e confirme novamente/);
+  assert.match(executionServiceSource, /Atualize a fila 99Food e confirme novamente/);
   assert.doesNotMatch(
     executionRouterSource,
     /setInterval|setTimeout|retryNinetyNineFood|schedule|enqueue.*retry/i
