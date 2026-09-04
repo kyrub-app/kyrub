@@ -8,6 +8,7 @@ export const KYRUB_RESOLVED_RETRY_HANDOFF_CHANGED_EVENT =
   'kyrub:resolved-retry-handoff-changed';
 
 const handoffByStore = new Map<string, NinetyNineFoodRetryResolvedDetail>();
+const replacedOrderIdByStore = new Map<string, string>();
 
 const clean = (value: string): string => value.trim().slice(0, 240);
 
@@ -27,6 +28,13 @@ export const retainResolvedRetryHandoff = (
   const checkedAt = detail.checkedAt.trim();
   if (!storeId || !orderId || !checkedAt) return false;
 
+  const previous = handoffByStore.get(storeId);
+  if (previous && previous.orderId !== orderId) {
+    replacedOrderIdByStore.set(storeId, previous.orderId);
+  } else {
+    replacedOrderIdByStore.delete(storeId);
+  }
+
   handoffByStore.set(storeId, {
     ...detail,
     storeId,
@@ -43,6 +51,14 @@ export const readResolvedRetryHandoff = (
   const normalizedStoreId = clean(storeId);
   if (!normalizedStoreId) return null;
   return handoffByStore.get(normalizedStoreId) ?? null;
+};
+
+export const readReplacedResolvedRetryHandoffOrderId = (
+  storeId: string
+): string => {
+  const normalizedStoreId = clean(storeId);
+  if (!normalizedStoreId || !handoffByStore.has(normalizedStoreId)) return '';
+  return replacedOrderIdByStore.get(normalizedStoreId) ?? '';
 };
 
 export const clearResolvedRetryHandoff = (
@@ -62,6 +78,7 @@ export const clearResolvedRetryHandoff = (
   }
 
   handoffByStore.delete(normalizedStoreId);
+  replacedOrderIdByStore.delete(normalizedStoreId);
   notifyChanged(normalizedStoreId);
   return true;
 };
