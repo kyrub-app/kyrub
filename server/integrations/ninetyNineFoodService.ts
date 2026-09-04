@@ -1,6 +1,7 @@
 import { randomBytes, createHash } from 'node:crypto';
 import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { adminDb } from '../firebaseAdmin';
+import { applyNinetyNineFoodInboundStatusWithAuthority } from '../inventory/ninetyNineFoodInboundStatusAuthorityService';
 import {
   OpenDeliveryClient,
   buildOpenDeliveryAction,
@@ -469,7 +470,7 @@ export const processNinetyNineFoodEvent = async (
     const currentOrder = await legacyReference.get();
     const status = mapOpenDeliveryEventToOrderStatus(event.eventType);
 
-    if (event.eventType === 'CREATED' || !currentOrder.exists) {
+    if (!currentOrder.exists) {
       const client = new OpenDeliveryClient(connectionRuntime(connection));
       const details = await client.getOrder(event);
       const order = normalizeOpenDeliveryOrder(details, {
@@ -478,13 +479,15 @@ export const processNinetyNineFoodEvent = async (
         sourceAppId: event.sourceAppId,
       });
       await persistNormalizedOrder(connection.tenantId, order);
-    } else if (status) {
-      await updatePersistedOrderStatus(
-        connection.tenantId,
-        event.orderId,
-        status,
-        event.eventType
-      );
+    } else {
+      await applyNinetyNineFoodInboundStatusWithAuthority({
+        tenantId: connection.tenantId,
+        externalOrderId: event.orderId,
+        eventId: event.eventId,
+        eventType: event.eventType,
+        eventReferencePath: reservation.referencePath,
+        mappedStatus: event.eventType === 'CREATED' ? null : status,
+      });
     }
 
     await Promise.all([
