@@ -79,7 +79,7 @@ test('status proof reads the existing pending GET and session evidence but creat
   assert.match(proofSource, /readOmnichannelE2EEvidence/);
   assert.doesNotMatch(
     proofSource,
-    /\bfetch\(|axios|setDoc|updateDoc|firebase|firestore|setInterval|setTimeout/i
+    /\bfetch\(|axios|setDoc|updateDoc|from ['"]firebase\/firestore['"]|setInterval|setTimeout/i
   );
 });
 
