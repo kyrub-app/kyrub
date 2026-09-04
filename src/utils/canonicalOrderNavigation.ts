@@ -2,6 +2,8 @@ export const KYRUB_CANONICAL_ORDER_NAVIGATION_REQUESTED_EVENT =
   'kyrub:canonical-order-navigation-requested';
 export const KYRUB_CANONICAL_ORDER_NAVIGATION_CHANGED_EVENT =
   'kyrub:canonical-order-navigation-changed';
+export const KYRUB_CANONICAL_ORDER_NAVIGATION_ACKNOWLEDGED_EVENT =
+  'kyrub:canonical-order-navigation-acknowledged';
 
 export interface CanonicalOrderNavigationRequest {
   storeId: string;
@@ -102,12 +104,23 @@ export const acknowledgeCanonicalOrderNavigation = (
   storeId: string,
   orderId: string
 ): boolean => {
-  if (!isCurrentCanonicalOrderNavigation(storeId, orderId)) {
+  const normalizedStoreId = clean(storeId);
+  const normalizedOrderId = clean(orderId);
+  if (!isCurrentCanonicalOrderNavigation(normalizedStoreId, normalizedOrderId)) {
     return false;
   }
   pendingNavigation = null;
   replacedNavigationOrderId = '';
   notifyNavigationChanged();
+  window.dispatchEvent(new CustomEvent<CanonicalOrderNavigationRequest>(
+    KYRUB_CANONICAL_ORDER_NAVIGATION_ACKNOWLEDGED_EVENT,
+    {
+      detail: {
+        storeId: normalizedStoreId,
+        orderId: normalizedOrderId,
+      },
+    }
+  ));
   return true;
 };
 
