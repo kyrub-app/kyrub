@@ -46,6 +46,15 @@ test('manual status proof requires an explicit false localTransitionApplied valu
   assert.match(proofSource, /não faça uma nova tentativa automática/);
 });
 
+test('multiple manual sends fail closed instead of choosing latest-wins evidence', () => {
+  assert.match(proofSource, /const multipleManualSyncs = manualRecords\.length > 1/);
+  assert.match(proofSource, /manualRecords\.length === 1 \? manualRecords\[0\] : null/);
+  assert.match(proofSource, /state: 'blocked'/);
+  assert.match(proofSource, /Mais de um envio manual foi observado/);
+  assert.match(proofSource, /não escolha automaticamente um deles/);
+  assert.doesNotMatch(proofSource, /manualRecords\[0\] \?\? null/);
+});
+
 test('final direct proof must be later than manual evidence and use a different status', () => {
   assert.match(proofSource, /laterThan\(record, manualAt\)/);
   assert.match(proofSource, /detailString\(record, 'status'\) !== manualStatus/);
