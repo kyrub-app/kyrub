@@ -5,6 +5,9 @@ import { readFile } from 'node:fs/promises';
 // This regression file is intentionally part of prebuild so every preview contains the complete merchant E2E bench.
 const servicePath = new URL('../server/integrations/mercadoLivreE2ETestService.ts', import.meta.url);
 const routerPath = new URL('../server/integrations/mercadoLivreE2ETestRouter.ts', import.meta.url);
+const sellerCapabilityPath = new URL('../server/integrations/mercadoLivreSellerCapabilityService.ts', import.meta.url);
+const publicationAuthorizationPath = new URL('../server/integrations/mercadoLivreOutboundPublicationAuthorizationService.ts', import.meta.url);
+const publicationExecutionPath = new URL('../server/integrations/mercadoLivreOutboundPublicationExecutionService.ts', import.meta.url);
 const componentPath = new URL('../src/components/store/MercadoLivreE2ETestWorkspace.tsx', import.meta.url);
 const bridgePath = new URL('../src/components/store/StoreConnectionsPortalBridge.tsx', import.meta.url);
 const clientPath = new URL('../src/utils/mercadoLivreE2ETest.ts', import.meta.url);
@@ -20,11 +23,43 @@ test('E2E helper only lists canonical eligible products and provider requirement
   assert.doesNotMatch(source, /mercadoLivrePutJson|mercadoLivrePostJson/);
 });
 
+test('seller publication capability is derived from authenticated Mercado Livre profile and fails closed on identity drift', async () => {
+  const source = await readFile(sellerCapabilityPath, 'utf8');
+  assert.match(source, /\/users\/\$\{encodeURIComponent\(providerUserId\)\}/);
+  assert.match(source, /user_product_seller/);
+  assert.match(source, /warehouse_management/);
+  assert.match(source, /publicationModel/);
+  assert.match(source, /legacy_items/);
+  assert.match(source, /user_products/);
+  assert.match(source, /multi_origin_seller_warehouse/);
+  assert.match(source, /capabilityFingerprint/);
+  assert.match(source, /MERCADO_LIVRE_SELLER_CAPABILITY_IDENTITY_MISMATCH/);
+  assert.match(source, /mercado_livre_authenticated_user_profile/);
+  assert.match(source, /mercadoLivreGetJson/);
+  assert.doesNotMatch(source, /mercadoLivrePutJson|mercadoLivrePostJson|adminDb|FieldValue/);
+});
+
+test('legacy publication authority freezes capability and execution rechecks it before the provider write', async () => {
+  const authorization = await readFile(publicationAuthorizationPath, 'utf8');
+  const execution = await readFile(publicationExecutionPath, 'utf8');
+  assert.match(authorization, /inspectMercadoLivreSellerCapability/);
+  assert.match(authorization, /MERCADO_LIVRE_USER_PRODUCTS_ADAPTER_REQUIRED/);
+  assert.match(authorization, /providerCapabilityFingerprint/);
+  assert.match(authorization, /providerPublicationModel/);
+  assert.match(execution, /inspectMercadoLivreSellerCapability/);
+  assert.match(execution, /MERCADO_LIVRE_PUBLICATION_PROVIDER_CAPABILITY_STALE/);
+  assert.match(execution, /safeHashEquals\(authorization\.providerCapabilityFingerprint, providerCapability\.capabilityFingerprint\)/);
+  assert.match(execution, /mercadoLivrePostJson<.*>\(storeId, '\/items'/);
+  assert.ok(execution.indexOf('MERCADO_LIVRE_PUBLICATION_PROVIDER_CAPABILITY_STALE') < execution.indexOf("mercadoLivrePostJson<MercadoLivreCreatedItem>(storeId, '/items'"));
+});
+
 test('E2E read router is owner authenticated and mounted beside Mercado Livre routes', async () => {
   const router = await readFile(routerPath, 'utf8');
   const server = await readFile(serverPath, 'utf8');
   assert.match(router, /authenticatedOwner/);
   assert.match(router, /e2e\/eligible-products/);
+  assert.match(router, /e2e\/seller-capability/);
+  assert.match(router, /inspectMercadoLivreSellerCapability/);
   assert.match(router, /category-options/);
   assert.match(server, /createMercadoLivreE2ETestRouter/);
   assert.match(server, /\/api\/store-connections\/mercado-livre/);

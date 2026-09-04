@@ -2,6 +2,7 @@ import { createHash, timingSafeEqual } from 'node:crypto';
 import { FieldValue } from 'firebase-admin/firestore';
 import { adminDb } from '../firebaseAdmin.js';
 import { mercadoLivrePostJson } from './mercadoLivreOauthService.js';
+import { inspectMercadoLivreSellerCapability } from './mercadoLivreSellerCapabilityService.js';
 
 interface AuthorizationRecord {
   id: string;
@@ -20,6 +21,11 @@ interface AuthorizationRecord {
   consumptionStatus: 'available' | 'executing' | 'consumed' | 'reconciliation_required' | 'rejected';
   useCount: number;
   expiresAtMillis: number;
+  providerPublicationModel: 'legacy_items';
+  providerStockAuthorityMode: string;
+  providerCapabilityFingerprint: string;
+  providerCapabilityObservedAt: string;
+  providerCapabilityAuthority: 'mercado_livre_authenticated_user_profile';
   authority: 'store_owner_publication_authorization';
 }
 
@@ -92,7 +98,10 @@ const assertAuthorization = (storeId: string, authorizationId: string, value: un
     !clean(record.connectionId, 200) || !clean(record.canonicalStoreId, 160) ||
     !clean(record.canonicalProductId, 160) || !clean(record.canonicalBaselineHash, 80) ||
     !clean(record.listingValidatedAt, 80) || !record.payload || typeof record.payload !== 'object' || Array.isArray(record.payload) ||
-    !clean(record.payloadHash, 80) || !clean(record.tokenHash, 80) || !Number.isFinite(Number(record.expiresAtMillis))
+    !clean(record.payloadHash, 80) || !clean(record.tokenHash, 80) || !Number.isFinite(Number(record.expiresAtMillis)) ||
+    record.providerPublicationModel !== 'legacy_items' || !clean(record.providerStockAuthorityMode, 120) ||
+    !clean(record.providerCapabilityFingerprint, 80) || !clean(record.providerCapabilityObservedAt, 80) ||
+    record.providerCapabilityAuthority !== 'mercado_livre_authenticated_user_profile'
   ) throw new Error('MERCADO_LIVRE_PUBLICATION_AUTHORIZATION_INVALID');
   return record as unknown as AuthorizationRecord;
 };
@@ -167,6 +176,18 @@ export const executeAuthorizedMercadoLivrePublication = async (input: {
     throw new Error('MERCADO_LIVRE_PUBLICATION_AUTHORIZATION_PAYLOAD_STALE');
   }
 
+  const providerCapability = await inspectMercadoLivreSellerCapability({
+    storeId,
+    connectionId: authorization.connectionId,
+  });
+  if (
+    providerCapability.requiresUserProductsAdapter ||
+    providerCapability.publicationModel !== authorization.providerPublicationModel ||
+    !safeHashEquals(authorization.providerCapabilityFingerprint, providerCapability.capabilityFingerprint)
+  ) {
+    throw new Error('MERCADO_LIVRE_PUBLICATION_PROVIDER_CAPABILITY_STALE');
+  }
+
   const proposalRef = adminDb.doc(`stores/${storeId}/catalogOutboundPublicationProposals/${authorization.proposalId}`);
   const validationRef = adminDb.doc(`stores/${storeId}/catalogOutboundListingValidations/${authorization.proposalId}`);
   const canonicalRef = adminDb.doc(`stores/${authorization.canonicalStoreId}/products/${authorization.canonicalProductId}`);
@@ -194,6 +215,7 @@ export const executeAuthorizedMercadoLivrePublication = async (input: {
       clean(validation?.validatedAt, 80) !== currentAuthorization.listingValidatedAt ||
       !validation?.providerPayload || typeof validation.providerPayload !== 'object' || Array.isArray(validation.providerPayload) ||
       !safeHashEquals(currentAuthorization.payloadHash, payloadHash(validation.providerPayload as Record<string, unknown>)) ||
+      !safeHashEquals(currentAuthorization.providerCapabilityFingerprint, providerCapability.capabilityFingerprint) ||
       !currentCanonicalHash || !safeHashEquals(currentAuthorization.canonicalBaselineHash, currentCanonicalHash)
     ) throw new Error('MERCADO_LIVRE_PUBLICATION_EXECUTION_STALE');
 
@@ -221,6 +243,11 @@ export const executeAuthorizedMercadoLivrePublication = async (input: {
       canonicalStoreId: currentAuthorization.canonicalStoreId,
       canonicalProductId: currentAuthorization.canonicalProductId,
       payloadHash: currentAuthorization.payloadHash,
+      providerPublicationModel: currentAuthorization.providerPublicationModel,
+      providerStockAuthorityMode: currentAuthorization.providerStockAuthorityMode,
+      providerCapabilityFingerprint: currentAuthorization.providerCapabilityFingerprint,
+      providerCapabilityObservedAt: providerCapability.observedAt,
+      providerCapabilityAuthority: providerCapability.authority,
       status: 'executing',
       authority: 'consumed_store_owner_publication_authorization',
       executedByUserId,
@@ -303,6 +330,9 @@ export const executeAuthorizedMercadoLivrePublication = async (input: {
         sourceAuthorizationId: authorizationId,
         sourceExecutionId: executionId,
         canonicalBaselineHash: authorization.canonicalBaselineHash,
+        providerPublicationModel: authorization.providerPublicationModel,
+        providerStockAuthorityMode: authorization.providerStockAuthorityMode,
+        providerCapabilityFingerprint: authorization.providerCapabilityFingerprint,
         createdAt: completedAt,
         updatedAt: completedAt,
         serverCreatedAt: FieldValue.serverTimestamp(),
