@@ -1,4 +1,4 @@
-import { FieldValue } from 'firebase-admin/firestore';
+import { FieldValue, type DocumentSnapshot } from 'firebase-admin/firestore';
 import { adminDb } from '../firebaseAdmin.js';
 import type { InventoryOrderStatus } from '../../shared/inventoryConsumption.js';
 
@@ -80,7 +80,7 @@ export const applyNinetyNineFoodInboundStatusWithAuthority = async (input: {
       ACTIVE_OUTBOUND_STATUSES.has(outboundStatus) &&
       Boolean(executionId);
 
-    let executionSnapshot = null;
+    let executionSnapshot: DocumentSnapshot | null = null;
     if (hasActiveAuthority) {
       executionSnapshot = await transaction.get(
         adminDb.doc(`${STATUS_SYNC_EXECUTION_COLLECTION}/${executionId}`)
