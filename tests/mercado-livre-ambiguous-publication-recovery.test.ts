@@ -3,14 +3,17 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
 const validationPath = new URL('../server/integrations/mercadoLivreOutboundListingValidationService.ts', import.meta.url);
+const payloadAdapterPath = new URL('../server/integrations/mercadoLivreInitialPublicationPayloadAdapter.ts', import.meta.url);
 const recoveryPath = new URL('../server/integrations/mercadoLivreAmbiguousPublicationRecoveryService.ts', import.meta.url);
 const reconciliationPath = new URL('../server/integrations/mercadoLivrePostPublicationReconciliationService.ts', import.meta.url);
 
-test('validated outbound payload carries a deterministic searchable provider correlation marker', async () => {
+test('validated outbound payload carries a deterministic searchable provider correlation marker through the shared adapter', async () => {
   const source = await readFile(validationPath, 'utf8');
+  const adapter = await readFile(payloadAdapterPath, 'utf8');
   assert.match(source, /mercadoLivrePublicationCorrelationMarker\(storeId, proposalId\)/);
-  assert.match(source, /seller_custom_field: publicationCorrelationMarker/);
-  const markerIndex = source.indexOf('seller_custom_field: publicationCorrelationMarker');
+  assert.match(source, /sellerCustomField: publicationCorrelationMarker/);
+  assert.match(adapter, /seller_custom_field: clean\(input\.sellerCustomField, 120\)/);
+  const markerIndex = source.indexOf('sellerCustomField: publicationCorrelationMarker');
   const validateIndex = source.indexOf("mercadoLivreValidateJson(storeId, '/items/validate', itemPayload)");
   assert.ok(markerIndex >= 0 && validateIndex > markerIndex);
 });
