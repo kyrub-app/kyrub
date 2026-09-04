@@ -229,3 +229,38 @@ test('store connections portal restores the retained handoff after cancelled nav
     /retryNinetyNineFoodBlockedOrderReservation|updateOrderStatusWithDecision|sendNinetyNineFoodOrderStatus|\bfetch\(/
   );
 });
+
+test('latest resolved retry handoff replaces the older order for the same store without creating a queue', () => {
+  const retainStart = handoffSource.indexOf('export const retainResolvedRetryHandoff = (');
+  const readStart = handoffSource.indexOf('export const readResolvedRetryHandoff = (', retainStart);
+  const retainSection = handoffSource.slice(retainStart, readStart);
+
+  assert.ok(retainStart >= 0);
+  assert.ok(readStart > retainStart);
+  assert.match(handoffSource, /const replacedOrderIdByStore = new Map<string, string>\(\);/);
+  assert.match(retainSection, /const previous = handoffByStore\.get\(storeId\);/);
+  assert.match(retainSection, /previous && previous\.orderId !== orderId/);
+  assert.match(retainSection, /replacedOrderIdByStore\.set\(storeId, previous\.orderId\)/);
+  assert.match(retainSection, /handoffByStore\.set\(storeId,/);
+  assert.doesNotMatch(retainSection, /push\(|queue|\[\.\.\.|localStorage|sessionStorage/i);
+});
+
+test('stale focus acknowledgement cannot clear a newer resolved retry handoff and the replacement is visible', () => {
+  const clearStart = handoffSource.indexOf('export const clearResolvedRetryHandoff = (');
+  const listenerStart = handoffSource.indexOf("if (typeof window !== 'undefined')", clearStart);
+  const clearSection = handoffSource.slice(clearStart, listenerStart);
+  const bannerStart = portalSource.indexOf('id="kyrub-resolved-retry-handoff-replaced"');
+  const bannerEnd = portalSource.indexOf('<span className="mt-1 block">', bannerStart);
+  const bannerSection = portalSource.slice(bannerStart, bannerEnd);
+
+  assert.match(clearSection, /current\.orderId !== normalizedOrderId/);
+  assert.match(clearSection, /return false;/);
+  assert.match(clearSection, /replacedOrderIdByStore\.delete\(normalizedStoreId\)/);
+  assert.ok(bannerStart >= 0);
+  assert.ok(bannerEnd > bannerStart);
+  assert.match(bannerSection, /replacedResolvedRetryOrderId/);
+  assert.match(bannerSection, /resolvedRetry\.orderId/);
+  assert.match(bannerSection, /mantém apenas um handoff ativo por loja/);
+  assert.match(bannerSection, /não criou uma fila oculta/);
+  assert.doesNotMatch(bannerSection, /retryNinetyNineFoodBlockedOrderReservation|\bfetch\(/);
+});
