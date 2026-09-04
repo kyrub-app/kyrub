@@ -23,8 +23,9 @@ export default function NinetyNineFoodE2ETestBridge({
     return () => { cancelled = true; };
   }, []);
 
+  if (!connected) return null;
   const user = auth.currentUser;
-  if (!connected || !user) return null;
+  if (!user) return null;
   return (
     <div id="kyrub-99food-product-binding-workspace" className="space-y-4">
       <NinetyNineFoodE2ETestWorkspace notify={notify} />
