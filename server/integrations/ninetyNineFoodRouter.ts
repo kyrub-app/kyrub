@@ -26,6 +26,7 @@ import {
 import { diagnoseNinetyNineFoodBlockedOrderInventoryAuthority } from './ninetyNineFoodAuthorityDiagnosticService';
 import { createNinetyNineFoodAvailabilityProposalRouter } from './ninetyNineFoodAvailabilityProposalRouter';
 import { createNinetyNineFoodMenuCapabilityRouter } from './ninetyNineFoodMenuCapabilityRouter';
+import { listRecentNinetyNineFoodE2EObservedOrders } from './ninetyNineFoodE2EOrderObservationService';
 import {
   drainNinetyNineFoodIngressQueue,
   enqueueNinetyNineFoodWebhook,
@@ -68,7 +69,7 @@ const errorResponse = (response: Response, error: unknown): void => {
     response.status(403).json({ error: message });
     return;
   }
-  if (/PRODUCT_BINDING_FORBIDDEN|NINETY_NINE_FOOD_BLOCK_FORBIDDEN/.test(message)) {
+  if (/PRODUCT_BINDING_FORBIDDEN|NINETY_NINE_FOOD_BLOCK_FORBIDDEN|NINETY_NINE_FOOD_E2E_ORDER_OBSERVATION_FORBIDDEN/.test(message)) {
     response.status(403).json({ error: message });
     return;
   }
@@ -140,6 +141,20 @@ export const createNinetyNineFoodRouter = (): Router => {
     try {
       const tenantId = await authenticatedTenantId(request);
       response.json(await getNinetyNineFoodStatus(tenantId));
+    } catch (error) {
+      errorResponse(response, error);
+    }
+  });
+
+  router.get('/e2e/recent-orders', async (request, response) => {
+    try {
+      const tenantId = await authenticatedTenantId(request);
+      const requestedLimit = Number(request.query.limit ?? 20);
+      response.json(await listRecentNinetyNineFoodE2EObservedOrders({
+        tenantId,
+        requestedByUserId: tenantId,
+        limit: Number.isFinite(requestedLimit) ? requestedLimit : 20,
+      }));
     } catch (error) {
       errorResponse(response, error);
     }
