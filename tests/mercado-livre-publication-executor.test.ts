@@ -5,6 +5,20 @@ import { readFile } from 'node:fs/promises';
 const servicePath = new URL('../server/integrations/mercadoLivreOutboundPublicationExecutionService.ts', import.meta.url);
 const routerPath = new URL('../server/integrations/mercadoLivreRouter.ts', import.meta.url);
 
+test('executor revalidates seller publication capability before consuming owner authorization', async () => {
+  const source = await readFile(servicePath, 'utf8');
+  const capabilityIndex = source.indexOf('await assertCurrentMercadoLivrePublicationCapability');
+  const reserveIndex = source.indexOf("consumptionStatus: 'executing'");
+  const postIndex = source.indexOf("mercadoLivrePostJson<MercadoLivreCreatedItem>(storeId, '/items'");
+  assert.ok(capabilityIndex >= 0);
+  assert.ok(reserveIndex > capabilityIndex);
+  assert.ok(postIndex > reserveIndex);
+  assert.match(source, /expectedSnapshot: authorization\.providerCapability/);
+  assert.match(source, /providerCapabilityFingerprint/);
+  assert.match(source, /providerPublicationModel: 'legacy_items'/);
+  assert.match(source, /providerStockAuthority: 'item_available_quantity'/);
+});
+
 test('executor consumes owner authorization before the real provider publication call', async () => {
   const source = await readFile(servicePath, 'utf8');
   const reserveIndex = source.indexOf("consumptionStatus: 'executing'");
@@ -13,6 +27,17 @@ test('executor consumes owner authorization before the real provider publication
   assert.ok(postIndex > reserveIndex);
   assert.match(source, /useCount: 1/);
   assert.match(source, /consumedByExecutionId/);
+});
+
+test('executor rejects legacy authorizations and binds validation, proposal and execution to the same seller model', async () => {
+  const source = await readFile(servicePath, 'utf8');
+  assert.match(source, /record\.schemaVersion !== 2/);
+  assert.match(source, /assertMercadoLivrePublicationCapabilitySnapshot/);
+  assert.match(source, /currentAuthorization\.providerCapabilityFingerprint !== authorization\.providerCapabilityFingerprint/);
+  assert.match(source, /proposal\.providerCapabilityFingerprint !== currentAuthorization\.providerCapabilityFingerprint/);
+  assert.match(source, /validation\?\.providerCapabilityFingerprint/);
+  assert.match(source, /schemaVersion: 2/);
+  assert.match(source, /providerCapability: currentAuthorization\.providerCapability/);
 });
 
 test('executor verifies token hash, expiry, payload and full canonical baseline before publication', async () => {
@@ -32,7 +57,7 @@ test('ambiguous provider result never retries and requires reconciliation', asyn
   assert.doesNotMatch(source, /retry|RETRY|setTimeout/);
 });
 
-test('successful publication creates a durable external catalog binding only after external item id exists', async () => {
+test('successful publication creates a durable capability-bound external catalog binding only after external item id exists', async () => {
   const source = await readFile(servicePath, 'utf8');
   const externalIdIndex = source.indexOf('const externalItemId');
   const bindingIndex = source.indexOf('externalCatalogBindings/${bindingId}');
@@ -41,6 +66,9 @@ test('successful publication creates a durable external catalog binding only aft
   assert.match(source, /authority: 'store_owner_outbound_publication'/);
   assert.match(source, /externalItemId/);
   assert.match(source, /canonicalProductId/);
+  assert.match(source, /providerCapabilityFingerprint: authorization\.providerCapabilityFingerprint/);
+  assert.match(source, /providerPublicationModel: authorization\.providerPublicationModel/);
+  assert.match(source, /providerStockAuthority: authorization\.providerStockAuthority/);
 });
 
 test('execution endpoint remains owner authenticated and requires the raw one-time token', async () => {
