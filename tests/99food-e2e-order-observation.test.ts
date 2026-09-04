@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
+import './99food-e2e-test-subject.test.ts';
 
 const serviceSource = readFileSync(
   'server/integrations/ninetyNineFoodE2EOrderObservationService.ts',

@@ -1,10 +1,22 @@
 import { useState } from 'react';
 import type { User } from 'firebase/auth';
 import { Eye, RefreshCw, ShieldAlert } from 'lucide-react';
+import { requestCanonicalOrderNavigation } from '../../utils/canonicalOrderNavigation';
 import {
   loadNinetyNineFoodE2EObservedOrders,
   type NinetyNineFoodE2EObservedOrder,
 } from '../../utils/ninetyNineFoodE2EOrderObservation';
+import {
+  clearNinetyNineFoodE2ETestSubject,
+  clearNinetyNineFoodE2ETestWindow,
+  isNinetyNineFoodE2EOrderFreshForWindow,
+  readNinetyNineFoodE2ETestSubject,
+  readNinetyNineFoodE2ETestWindow,
+  selectNinetyNineFoodE2ETestSubject,
+  startNinetyNineFoodE2ETestWindow,
+  type NinetyNineFoodE2ETestSubject,
+  type NinetyNineFoodE2ETestWindow,
+} from '../../utils/ninetyNineFoodE2ETestSubject';
 
 const reservationLabel = (
   item: NinetyNineFoodE2EObservedOrder
@@ -27,11 +39,18 @@ export default function NinetyNineFoodE2EOrderObservationPanel({
 }: {
   user: User;
 }) {
+  const storeId = user.uid;
   const [items, setItems] = useState<NinetyNineFoodE2EObservedOrder[]>([]);
   const [observedAt, setObservedAt] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [hasObserved, setHasObserved] = useState(false);
+  const [testWindow, setTestWindow] = useState<NinetyNineFoodE2ETestWindow | null>(
+    () => readNinetyNineFoodE2ETestWindow(storeId)
+  );
+  const [subject, setSubject] = useState<NinetyNineFoodE2ETestSubject | null>(
+    () => readNinetyNineFoodE2ETestSubject(storeId)
+  );
 
   const observe = async (): Promise<void> => {
     setLoading(true);
@@ -50,6 +69,34 @@ export default function NinetyNineFoodE2EOrderObservationPanel({
     } finally {
       setLoading(false);
     }
+  };
+
+  const startWindow = (): void => {
+    const nextWindow = startNinetyNineFoodE2ETestWindow(storeId);
+    setTestWindow(nextWindow);
+    setSubject(null);
+    setError('');
+  };
+
+  const endWindow = (): void => {
+    clearNinetyNineFoodE2ETestWindow(storeId);
+    setTestWindow(null);
+    setSubject(null);
+  };
+
+  const chooseSubject = (item: NinetyNineFoodE2EObservedOrder): void => {
+    const selected = selectNinetyNineFoodE2ETestSubject(storeId, item);
+    if (!selected) {
+      setError('Este pedido não pertence à janela atual ou não possui ingress processado suficiente para ser a cobaia do teste.');
+      return;
+    }
+    setSubject(selected);
+    setError('');
+  };
+
+  const releaseSubject = (): void => {
+    clearNinetyNineFoodE2ETestSubject(storeId);
+    setSubject(null);
   };
 
   return (
@@ -79,6 +126,85 @@ export default function NinetyNineFoodE2EOrderObservationPanel({
         </button>
       </div>
 
+      <div className="rounded-xl border border-cyan-500/15 bg-cyan-500/[0.035] p-3">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <strong className="block text-[8px] font-black uppercase text-cyan-200">
+              Cobaia desta sessão
+            </strong>
+            <p className="mt-1 max-w-3xl text-[8px] leading-relaxed text-slate-500">
+              Inicie a janela antes de criar o pedido na 99Food. Só ingress recebido depois desse instante pode ser escolhido. O Kyrub nunca seleciona automaticamente o “último pedido”.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              id="kyrub-start-99food-e2e-test-window"
+              type="button"
+              onClick={startWindow}
+              className="min-h-9 rounded-lg border border-cyan-500/25 px-3 text-[8px] font-black uppercase text-cyan-200"
+            >
+              {testWindow ? 'Reiniciar janela' : 'Iniciar janela'}
+            </button>
+            {testWindow && (
+              <button
+                id="kyrub-end-99food-e2e-test-window"
+                type="button"
+                onClick={endWindow}
+                className="min-h-9 rounded-lg border border-slate-700 px-3 text-[8px] font-black uppercase text-slate-400"
+              >
+                Encerrar janela
+              </button>
+            )}
+          </div>
+        </div>
+
+        {testWindow && (
+          <p className="mt-2 font-mono text-[7px] text-cyan-300/70">
+            Aceitar candidatos com ingress recebido a partir de {testWindow.startedAt}
+          </p>
+        )}
+
+        {subject && (
+          <div
+            id="kyrub-99food-e2e-selected-subject"
+            className="mt-3 rounded-lg border border-emerald-500/20 bg-emerald-500/[0.05] p-3"
+          >
+            <strong className="text-[9px] text-emerald-200">
+              Cobaia selecionada: pedido {subject.displayId}
+            </strong>
+            <p className="mt-1 break-all font-mono text-[7px] text-slate-500">
+              Kyrub {subject.orderId} · 99Food {subject.externalOrderId} · evento {subject.inboundEventId}
+            </p>
+            <p className="mt-1 text-[8px] text-slate-500">
+              Reserva observada na seleção: {subject.reservationState}. Esta seleção é contexto local; não autoriza mudança de status nem provider write.
+            </p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              <button
+                id="kyrub-open-99food-e2e-test-subject"
+                type="button"
+                onClick={() => {
+                  requestCanonicalOrderNavigation({
+                    storeId,
+                    orderId: subject.orderId,
+                  });
+                }}
+                className="min-h-9 rounded-lg bg-emerald-500 px-3 text-[8px] font-black uppercase text-slate-950"
+              >
+                Abrir pedido no KDS
+              </button>
+              <button
+                id="kyrub-clear-99food-e2e-test-subject"
+                type="button"
+                onClick={releaseSubject}
+                className="min-h-9 rounded-lg border border-slate-700 px-3 text-[8px] font-black uppercase text-slate-400"
+              >
+                Desvincular cobaia
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
       {error && (
         <p className="rounded-xl border border-rose-500/20 bg-rose-500/[0.05] p-3 text-[8px] leading-relaxed text-rose-200">
           {error}
@@ -101,6 +227,8 @@ export default function NinetyNineFoodE2EOrderObservationPanel({
         <div className="space-y-2">
           {items.map(item => {
             const ingressClean = item.inboundEvent.status === 'processed' && Boolean(item.inboundEvent.eventId);
+            const freshCandidate = isNinetyNineFoodE2EOrderFreshForWindow(item, testWindow);
+            const selected = subject?.orderId === item.orderId && subject.externalOrderId === item.externalOrderId;
             return (
               <article
                 key={item.orderId}
@@ -129,6 +257,15 @@ export default function NinetyNineFoodE2EOrderObservationPanel({
                     <span className="rounded-full border border-cyan-500/20 px-2 py-1 text-[7px] font-black uppercase text-cyan-300">
                       {reservationLabel(item)}
                     </span>
+                    {testWindow && (
+                      <span className={`rounded-full border px-2 py-1 text-[7px] font-black uppercase ${
+                        freshCandidate
+                          ? 'border-cyan-500/25 text-cyan-300'
+                          : 'border-slate-700 text-slate-600'
+                      }`}>
+                        {freshCandidate ? 'novo nesta janela' : 'fora da janela'}
+                      </span>
+                    )}
                   </div>
                 </div>
 
@@ -137,6 +274,7 @@ export default function NinetyNineFoodE2EOrderObservationPanel({
                     <span className="block text-[7px] font-black uppercase text-slate-600">Ingress Open Delivery</span>
                     <span className="mt-1 block break-all">eventId: {item.inboundEvent.eventId || 'não observado'}</span>
                     <span className="block">eventType: {item.inboundEvent.eventType || item.lastEvent || 'não observado'}</span>
+                    <span className="block">receivedAt: {item.inboundEvent.receivedAt || 'não observado'}</span>
                     <span className="block">processedAt: {item.inboundEvent.processedAt || 'não observado'}</span>
                   </div>
                   <div className="rounded-lg border border-slate-800 bg-slate-900/50 p-2">
@@ -148,6 +286,22 @@ export default function NinetyNineFoodE2EOrderObservationPanel({
                     )}
                   </div>
                 </div>
+
+                {testWindow && freshCandidate && !selected && (
+                  <button
+                    id={`kyrub-select-99food-e2e-subject-${item.orderId}`}
+                    type="button"
+                    onClick={() => chooseSubject(item)}
+                    className="mt-3 min-h-9 rounded-lg border border-cyan-500/25 bg-cyan-500/[0.06] px-3 text-[8px] font-black uppercase text-cyan-200"
+                  >
+                    Usar este pedido como cobaia
+                  </button>
+                )}
+                {selected && (
+                  <p className="mt-3 text-[8px] font-black uppercase text-emerald-300">
+                    Cobaia ativa desta sessão
+                  </p>
+                )}
               </article>
             );
           })}
@@ -162,7 +316,7 @@ export default function NinetyNineFoodE2EOrderObservationPanel({
       <div className="flex items-start gap-2 rounded-xl border border-amber-500/15 bg-amber-500/[0.035] p-3 text-[8px] leading-relaxed text-amber-100/70">
         <ShieldAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
         <span>
-          Um pedido só constitui prova limpa de ingress quando há identidade externa e evidência de evento processado. Reserva `blocked_*` também é evidência válida do teste, mas exige resolver o bloqueio antes de avançar o status.
+          Um pedido só constitui prova limpa de ingress quando há identidade externa e evidência de evento processado. Reserva `blocked_*` também é evidência válida do teste, mas exige resolver o bloqueio antes de avançar o status. Selecionar ou abrir a cobaia nunca concede autoridade de status.
         </span>
       </div>
     </section>
