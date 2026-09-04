@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
+import './99food-e2e-status-proof.test.ts';
 
 const subjectSource = readFileSync(
   'src/utils/ninetyNineFoodE2ETestSubject.ts',
