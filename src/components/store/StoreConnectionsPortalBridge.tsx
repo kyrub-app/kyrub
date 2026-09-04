@@ -22,6 +22,7 @@ import {
 import MercadoLivreE2ETestBridge from './MercadoLivreE2ETestBridge';
 import NinetyNineFoodE2ETestBridge from './NinetyNineFoodE2ETestBridge';
 import OmnichannelE2EReadinessPanel from './OmnichannelE2EReadinessPanel';
+import OmnichannelE2ERunbookPanel from './OmnichannelE2ERunbookPanel';
 import { PhysicalInventoryWorkspace } from './PhysicalInventoryWorkspace';
 import StoreChannelCenter from './StoreChannelCenter';
 import StoreChannelOperationsQueue from './StoreChannelOperationsQueue';
@@ -203,6 +204,7 @@ export default function StoreConnectionsPortalBridge({
         user={user}
         storeId={storeId}
       />
+      <OmnichannelE2ERunbookPanel />
       <StoreInventoryAuthorityRepairPanel
         key={`authority-repair-${storeViewRefreshVersion}`}
         user={user}
