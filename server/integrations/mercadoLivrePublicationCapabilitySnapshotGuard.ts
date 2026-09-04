@@ -64,11 +64,8 @@ export const assertCurrentMercadoLivrePublicationCapability = async (input: {
     throw new Error('MERCADO_LIVRE_PUBLICATION_CAPABILITY_STALE');
   }
 
-  if (
-    currentSnapshot.publicationModel !== 'legacy_items' ||
-    currentSnapshot.stockAuthority !== 'item_available_quantity'
-  ) {
-    throw new Error('MERCADO_LIVRE_OUTBOUND_PUBLICATION_MODEL_UNSUPPORTED');
+  if (currentSnapshot.stockAuthority !== 'item_available_quantity') {
+    throw new Error('MERCADO_LIVRE_STOCK_LOCATION_PUBLICATION_ADAPTER_REQUIRED');
   }
 
   return currentSnapshot;
