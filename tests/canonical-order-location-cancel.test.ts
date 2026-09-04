@@ -6,6 +6,10 @@ const navigationSource = readFileSync(
   'src/utils/canonicalOrderNavigation.ts',
   'utf8'
 );
+const handoffSource = readFileSync(
+  'src/utils/resolvedRetryHandoff.ts',
+  'utf8'
+);
 const controlSource = readFileSync(
   'src/components/customer/CanonicalOrderLocationControl.tsx',
   'utf8'
@@ -16,6 +20,10 @@ const trackingBridgeSource = readFileSync(
 );
 const retailerSource = readFileSync(
   'src/components/RetailerPanel.tsx',
+  'utf8'
+);
+const portalSource = readFileSync(
+  'src/components/store/StoreConnectionsPortalBridge.tsx',
   'utf8'
 );
 
@@ -59,6 +67,29 @@ test('navigation state changes are announced in memory after request, cancel, ac
     navigationSource,
     /localStorage|sessionStorage|firebase|firestore|\bfetch\(/i
   );
+});
+
+test('successful exact focus emits a separate acknowledgement event while cancel does not', () => {
+  const cancelStart = navigationSource.indexOf('export const cancelCanonicalOrderNavigation = (');
+  const acknowledgeStart = navigationSource.indexOf(
+    'export const acknowledgeCanonicalOrderNavigation = (',
+    cancelStart
+  );
+  const consumeStart = navigationSource.indexOf(
+    'export const consumeCanonicalOrderNavigation = (',
+    acknowledgeStart
+  );
+  const cancelSection = navigationSource.slice(cancelStart, acknowledgeStart);
+  const acknowledgeSection = navigationSource.slice(acknowledgeStart, consumeStart);
+
+  assert.match(
+    navigationSource,
+    /KYRUB_CANONICAL_ORDER_NAVIGATION_ACKNOWLEDGED_EVENT =\n  'kyrub:canonical-order-navigation-acknowledged'/
+  );
+  assert.doesNotMatch(cancelSection, /KYRUB_CANONICAL_ORDER_NAVIGATION_ACKNOWLEDGED_EVENT/);
+  assert.match(acknowledgeSection, /KYRUB_CANONICAL_ORDER_NAVIGATION_ACKNOWLEDGED_EVENT/);
+  assert.match(acknowledgeSection, /storeId: normalizedStoreId/);
+  assert.match(acknowledgeSection, /orderId: normalizedOrderId/);
 });
 
 test('Pedidos exposes an explicit cancel control without operational side effects or automatic timeout', () => {
@@ -142,5 +173,57 @@ test('order location control remains mounted even when there are no active deliv
   assert.doesNotMatch(
     trackingBridgeSource,
     /if \(deliveries\.length === 0\) return null;/
+  );
+});
+
+test('resolved 99Food retry handoff remains memory-only and is cleared only by matching exact focus acknowledgement', () => {
+  assert.match(handoffSource, /const handoffByStore = new Map<string, NinetyNineFoodRetryResolvedDetail>\(\);/);
+  assert.match(handoffSource, /retainResolvedRetryHandoff/);
+  assert.match(handoffSource, /readResolvedRetryHandoff/);
+  assert.match(handoffSource, /clearResolvedRetryHandoff/);
+  assert.match(
+    handoffSource,
+    /KYRUB_CANONICAL_ORDER_NAVIGATION_ACKNOWLEDGED_EVENT/
+  );
+  assert.match(handoffSource, /current\.orderId !== normalizedOrderId/);
+  assert.match(handoffSource, /handoffByStore\.delete\(normalizedStoreId\)/);
+  assert.doesNotMatch(
+    handoffSource,
+    /localStorage|sessionStorage|firebase|firestore|\bfetch\(|setTimeout|setInterval/i
+  );
+});
+
+test('cancelling order location cannot clear the retained resolved retry handoff', () => {
+  assert.doesNotMatch(
+    navigationSource.slice(
+      navigationSource.indexOf('export const cancelCanonicalOrderNavigation = ('),
+      navigationSource.indexOf('export const acknowledgeCanonicalOrderNavigation = (')
+    ),
+    /resolvedRetry|handoff|KYRUB_CANONICAL_ORDER_NAVIGATION_ACKNOWLEDGED_EVENT/i
+  );
+  assert.doesNotMatch(handoffSource, /KYRUB_CANONICAL_ORDER_NAVIGATION_CHANGED_EVENT/);
+});
+
+test('store connections portal restores the retained handoff and opening Pedidos does not consume it', () => {
+  const retryEffectStart = portalSource.indexOf('const syncResolvedRetry = (): void =>');
+  const portalReturnStart = portalSource.indexOf('  if (!host || user.uid !== storeId) return null;', retryEffectStart);
+  const retrySection = portalSource.slice(retryEffectStart, portalReturnStart);
+  const buttonStart = portalSource.indexOf('id="kyrub-open-resolved-99food-order"');
+  const buttonEnd = portalSource.indexOf('</button>', buttonStart);
+  const buttonSection = portalSource.slice(buttonStart, buttonEnd);
+
+  assert.ok(retryEffectStart >= 0);
+  assert.ok(portalReturnStart > retryEffectStart);
+  assert.match(retrySection, /readResolvedRetryHandoff\(storeId\)/);
+  assert.match(retrySection, /retainResolvedRetryHandoff\(\{ \.\.\.detail, storeId, orderId \}\)/);
+  assert.match(retrySection, /KYRUB_RESOLVED_RETRY_HANDOFF_CHANGED_EVENT/);
+
+  assert.ok(buttonStart >= 0);
+  assert.ok(buttonEnd > buttonStart);
+  assert.match(buttonSection, /requestCanonicalOrderNavigation\(\{/);
+  assert.doesNotMatch(buttonSection, /setResolvedRetry\(null\)|clearResolvedRetryHandoff/);
+  assert.doesNotMatch(
+    buttonSection,
+    /retryNinetyNineFoodBlockedOrderReservation|updateOrderStatusWithDecision|sendNinetyNineFoodOrderStatus|\bfetch\(/
   );
 });
