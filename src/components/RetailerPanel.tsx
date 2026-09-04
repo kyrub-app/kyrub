@@ -58,6 +58,7 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = props => {
   const [cashHost, setCashHost] = useState<HTMLElement | null>(null);
   const [productsHost, setProductsHost] = useState<HTMLElement | null>(null);
   const [customerOrders, setCustomerOrders] = useState<CustomerOrder[]>([]);
+  const [canonicalNavigationOrderId, setCanonicalNavigationOrderId] = useState('');
   const [busyOrderId, setBusyOrderId] = useState('');
   const [selectedTableCode, setSelectedTableCode] = useState('');
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
@@ -71,6 +72,13 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = props => {
     () => customerOrders.filter(isOrderVisibleInKds),
     [customerOrders]
   );
+  const canonicalNavigationOrderVisible = useMemo(
+    () => Boolean(
+      canonicalNavigationOrderId &&
+      kdsOrders.some(order => order.id === canonicalNavigationOrderId)
+    ),
+    [canonicalNavigationOrderId, kdsOrders]
+  );
 
   const activeRetailerProducts = useMemo(
     () =>
@@ -81,6 +89,18 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = props => {
       ),
     [activeRetailerId, products]
   );
+
+  useEffect(() => {
+    setCanonicalNavigationOrderId('');
+  }, [activeRetailerId]);
+
+  useEffect(() => {
+    if (!canonicalNavigationOrderVisible) return;
+    const frame = window.requestAnimationFrame(() => {
+      setCanonicalNavigationOrderId('');
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [canonicalNavigationOrderVisible]);
 
   useEffect(() => {
     const handleCanonicalOrderNavigation = (event: Event): void => {
@@ -94,6 +114,7 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = props => {
       ) {
         return;
       }
+      setCanonicalNavigationOrderId(detail.orderId.trim());
       setActiveSubTab('pedidos');
     };
 
@@ -548,6 +569,18 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = props => {
         createPortal(
           <>
             <StoreDeliveryTrackingBridge storeId={activeRetailerId} />
+            {canonicalNavigationOrderId && !canonicalNavigationOrderVisible && (
+              <div
+                id="kyrub-canonical-order-location-pending"
+                className="mb-4 rounded-2xl border border-cyan-500/20 bg-cyan-500/[0.055] px-4 py-3 text-[10px] leading-relaxed text-cyan-100"
+                role="status"
+              >
+                <strong className="block text-cyan-200">Localizando pedido canônico</strong>
+                <span className="mt-1 block">
+                  O Kyrub está aguardando o pedido {canonicalNavigationOrderId} aparecer nesta visão em tempo real. Nenhum outro pedido será escolhido por nome, cliente, SKU ou similaridade.
+                </span>
+              </div>
+            )}
             <CustomerOrderInbox
               storeId={activeRetailerId}
               orders={kdsOrders}
