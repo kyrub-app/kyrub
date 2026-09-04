@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
+import './omnichannel-e2e-readiness.test.ts';
 
 const navigationSource = readFileSync(
   'src/utils/canonicalOrderNavigation.ts',

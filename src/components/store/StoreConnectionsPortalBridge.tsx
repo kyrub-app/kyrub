@@ -21,6 +21,7 @@ import {
 } from '../../utils/storeChannelOperations';
 import MercadoLivreE2ETestBridge from './MercadoLivreE2ETestBridge';
 import NinetyNineFoodE2ETestBridge from './NinetyNineFoodE2ETestBridge';
+import OmnichannelE2EReadinessPanel from './OmnichannelE2EReadinessPanel';
 import { PhysicalInventoryWorkspace } from './PhysicalInventoryWorkspace';
 import StoreChannelCenter from './StoreChannelCenter';
 import StoreChannelOperationsQueue from './StoreChannelOperationsQueue';
@@ -194,6 +195,11 @@ export default function StoreConnectionsPortalBridge({
     <div className="space-y-5">
       <StoreChannelCenter
         key={`channel-center-${storeViewRefreshVersion}`}
+        user={user}
+        storeId={storeId}
+      />
+      <OmnichannelE2EReadinessPanel
+        key={`omnichannel-e2e-readiness-${storeViewRefreshVersion}`}
         user={user}
         storeId={storeId}
       />
