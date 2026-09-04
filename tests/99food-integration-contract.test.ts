@@ -27,6 +27,10 @@ const statusBridgeSource = readFileSync(
   'src/components/store/NinetyNineFoodOrderStatusBridge.tsx',
   'utf8'
 );
+const statusAuthoritySource = readFileSync(
+  'src/utils/ninetyNineFoodStatusWriteAuthority.ts',
+  'utf8'
+);
 const appSource = readFileSync('src/App.tsx', 'utf8');
 const packageSource = readFileSync('package.json', 'utf8');
 
@@ -81,11 +85,15 @@ test('real orders are written to the current KDS collection and canonical mirror
   assert.match(serviceSource, /routingTarget/);
 });
 
-test('connection and KDS status bridges are mounted without exposing platform secrets', () => {
+test('connection and KDS status bridges are mounted with explicit provider-write authority and without platform secrets', () => {
   assert.match(appSource, /NinetyNineFoodConnectionBridge/);
   assert.match(appSource, /NinetyNineFoodOrderStatusBridge/);
-  assert.match(statusBridgeSource, /metadata\.hasPendingWrites/);
-  assert.match(statusBridgeSource, /sendNinetyNineFoodOrderStatus/);
+  assert.match(statusBridgeSource, /kyrub-99food-status-write-authority/);
+  assert.match(statusBridgeSource, /Atualizar só no Kyrub/);
+  assert.match(statusBridgeSource, /Kyrub \+ 99Food/);
+  assert.match(statusAuthoritySource, /kyrub:99food-status-write-authority-requested/);
+  assert.doesNotMatch(statusBridgeSource, /metadata\.hasPendingWrites/);
+  assert.doesNotMatch(statusBridgeSource, /sendNinetyNineFoodOrderStatus/);
   assert.match(frontendSource, /Reconciliar pedidos/);
   assert.match(frontendSource, /segredos da plataforma não são expostos à loja/);
   assert.doesNotMatch(frontendSource, /setBaseUrl|setTokenUrl|URL base da API|URL do token/);

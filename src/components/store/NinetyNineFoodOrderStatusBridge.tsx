@@ -1,121 +1,179 @@
-import { useEffect, useRef, useState } from 'react';
-import { collection, onSnapshot } from 'firebase/firestore';
+import { useEffect, useState } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
-import { auth, db } from '../../utils/firebase';
-import { sendNinetyNineFoodOrderStatus } from '../../utils/ninetyNineFoodIntegration';
+import { ShieldCheck } from 'lucide-react';
+import { auth } from '../../utils/firebase';
+import {
+  KYRUB_99FOOD_STATUS_WRITE_AUTHORITY_CHANGED_EVENT,
+  KYRUB_99FOOD_STATUS_WRITE_AUTHORITY_REQUESTED_EVENT,
+  KYRUB_99FOOD_STATUS_WRITE_RESULT_EVENT,
+  readNinetyNineFoodStatusWriteAuthority,
+  resolveNinetyNineFoodStatusWriteAuthority,
+  type NinetyNineFoodStatusWriteAuthorityRequest,
+  type NinetyNineFoodStatusWriteResult,
+} from '../../utils/ninetyNineFoodStatusWriteAuthority';
 
-const OUTBOUND_STATUSES = new Set([
-  'accepted',
-  'preparing',
-  'ready',
-  'out_for_delivery',
-  'completed',
-  'rejected',
-  'cancelled',
-]);
+const statusLabel = (status: string): string => {
+  switch (status) {
+    case 'accepted': return 'aceitar o pedido';
+    case 'preparing': return 'iniciar o preparo';
+    case 'ready': return 'marcar o pedido como pronto';
+    case 'out_for_delivery': return 'confirmar a saída para entrega';
+    case 'completed': return 'concluir o pedido';
+    case 'rejected': return 'recusar o pedido';
+    case 'cancelled': return 'cancelar o pedido';
+    default: return `alterar para ${status}`;
+  }
+};
 
-const cleanString = (value: unknown): string =>
-  typeof value === 'string' ? value.trim() : '';
-
-const outboundReason = (
-  data: Record<string, unknown>,
-  status: string
-): string => {
-  if (status !== 'rejected' && status !== 'cancelled') return '';
-  const note = cleanString(data.customerNote);
-  return note.slice(0, 500);
+const resultMessage = (result: NinetyNineFoodStatusWriteResult): string => {
+  if (result.partnerSync === 'sent') {
+    return `O pedido ${result.orderId} foi atualizado no Kyrub e a 99Food aceitou o envio do mesmo status.`;
+  }
+  if (result.partnerSync === 'attention') {
+    return `O pedido ${result.orderId} foi atualizado no Kyrub, mas a 99Food não confirmou o envio: ${result.partnerWarning || 'resposta do provedor indisponível.'}`;
+  }
+  if (result.partnerSync === 'authorization-required') {
+    return `O pedido ${result.orderId} foi atualizado somente no Kyrub. Nenhuma alteração foi enviada à 99Food.`;
+  }
+  return '';
 };
 
 export function NinetyNineFoodOrderStatusBridge() {
-  const previousStatuses = useRef(new Map<string, string>());
-  const initialized = useRef(false);
+  const [request, setRequest] = useState<NinetyNineFoodStatusWriteAuthorityRequest | null>(null);
   const [message, setMessage] = useState('');
 
   useEffect(() => {
     let clearMessageTimer: number | null = null;
-    let unsubscribeOrders = () => undefined;
 
-    const unsubscribeAuth = onAuthStateChanged(auth, user => {
-      unsubscribeOrders();
-      unsubscribeOrders = () => undefined;
-      previousStatuses.current.clear();
-      initialized.current = false;
-      if (!user) return;
+    const syncAuthority = (): void => {
+      const user = auth.currentUser;
+      setRequest(user ? readNinetyNineFoodStatusWriteAuthority(user.uid) : null);
+    };
 
-      unsubscribeOrders = onSnapshot(
-        collection(db, `artifacts/${user.uid}/public/data/customerOrders`),
-        { includeMetadataChanges: true },
-        snapshot => {
-          for (const change of snapshot.docChanges({ includeMetadataChanges: true })) {
-            const data = change.doc.data() as Record<string, unknown>;
-            const integration = data.integration && typeof data.integration === 'object'
-              ? data.integration as Record<string, unknown>
-              : {};
-            const provider = cleanString(integration.provider);
-            const externalOrderId = cleanString(integration.externalOrderId);
-            const status = cleanString(data.status);
-            const previous = previousStatuses.current.get(change.doc.id);
-            previousStatuses.current.set(change.doc.id, status);
+    const handleRequested = (
+      event: Event
+    ): void => {
+      const detail = (event as CustomEvent<NinetyNineFoodStatusWriteAuthorityRequest>).detail;
+      const user = auth.currentUser;
+      if (!user || detail?.storeId !== user.uid) return;
+      syncAuthority();
+    };
 
-            if (
-              !initialized.current ||
-              change.type !== 'modified' ||
-              !change.doc.metadata.hasPendingWrites ||
-              provider !== '99food' ||
-              !externalOrderId ||
-              !OUTBOUND_STATUSES.has(status) ||
-              status === previous
-            ) {
-              continue;
-            }
+    const handleResult = (event: Event): void => {
+      const detail = (event as CustomEvent<NinetyNineFoodStatusWriteResult>).detail;
+      const user = auth.currentUser;
+      if (!user || detail?.storeId !== user.uid) return;
+      const nextMessage = resultMessage(detail);
+      if (!nextMessage) return;
+      setMessage(nextMessage);
+      if (clearMessageTimer !== null) window.clearTimeout(clearMessageTimer);
+      clearMessageTimer = window.setTimeout(() => setMessage(''), 8000);
+    };
 
-            void sendNinetyNineFoodOrderStatus(
-              externalOrderId,
-              status,
-              outboundReason(data, status)
-            )
-              .then(() => {
-                setMessage(`Status do pedido ${externalOrderId} enviado à 99Food.`);
-              })
-              .catch(error => {
-                setMessage(
-                  `O pedido foi atualizado no Kyrub, mas a 99Food não confirmou: ${
-                    error instanceof Error ? error.message : String(error)
-                  }`
-                );
-              })
-              .finally(() => {
-                if (clearMessageTimer !== null) {
-                  window.clearTimeout(clearMessageTimer);
-                }
-                clearMessageTimer = window.setTimeout(() => setMessage(''), 7000);
-              });
-          }
-          initialized.current = true;
-        },
-        error => {
-          console.warn('99Food status bridge is unavailable.', error);
-        }
-      );
-    });
+    const unsubscribeAuth = onAuthStateChanged(auth, syncAuthority);
+    syncAuthority();
+    window.addEventListener(
+      KYRUB_99FOOD_STATUS_WRITE_AUTHORITY_REQUESTED_EVENT,
+      handleRequested
+    );
+    window.addEventListener(
+      KYRUB_99FOOD_STATUS_WRITE_AUTHORITY_CHANGED_EVENT,
+      syncAuthority
+    );
+    window.addEventListener(
+      KYRUB_99FOOD_STATUS_WRITE_RESULT_EVENT,
+      handleResult
+    );
 
     return () => {
       unsubscribeAuth();
-      unsubscribeOrders();
+      window.removeEventListener(
+        KYRUB_99FOOD_STATUS_WRITE_AUTHORITY_REQUESTED_EVENT,
+        handleRequested
+      );
+      window.removeEventListener(
+        KYRUB_99FOOD_STATUS_WRITE_AUTHORITY_CHANGED_EVENT,
+        syncAuthority
+      );
+      window.removeEventListener(
+        KYRUB_99FOOD_STATUS_WRITE_RESULT_EVENT,
+        handleResult
+      );
       if (clearMessageTimer !== null) window.clearTimeout(clearMessageTimer);
     };
   }, []);
 
-  if (!message) return null;
+  const choose = (
+    choice: 'kyrub_only' | 'kyrub_and_99food'
+  ): void => {
+    if (!request) return;
+    resolveNinetyNineFoodStatusWriteAuthority(request, choice);
+  };
 
   return (
-    <div className="fixed bottom-24 left-1/2 z-[125] w-[min(92vw,34rem)] -translate-x-1/2 rounded-2xl border border-yellow-500/30 bg-slate-950 px-5 py-4 text-center shadow-2xl">
-      <strong className="block text-[9px] font-black uppercase tracking-wide text-yellow-300">
-        Sincronização 99Food
-      </strong>
-      <span className="mt-1 block text-[10px] leading-relaxed text-slate-300">
-        {message}
-      </span>
-    </div>
+    <>
+      {request && (
+        <div className="fixed inset-0 z-[190] flex items-end justify-center bg-slate-950/90 backdrop-blur-md sm:items-center sm:p-5">
+          <section
+            id="kyrub-99food-status-write-authority"
+            className="w-full max-w-lg rounded-t-3xl border border-amber-500/25 bg-slate-900 p-5 shadow-2xl sm:rounded-3xl sm:p-6"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="kyrub-99food-status-write-authority-title"
+          >
+            <div>
+              <span className="font-mono text-[9px] font-black uppercase tracking-[0.16em] text-amber-300">
+                Autoridade de canal · 99Food
+              </span>
+              <h3
+                id="kyrub-99food-status-write-authority-title"
+                className="mt-1 text-lg font-black text-white"
+              >
+                Onde aplicar esta mudança?
+              </h3>
+            </div>
+
+            <p className="mt-4 rounded-2xl border border-amber-500/20 bg-amber-500/[0.07] p-4 text-[10px] leading-relaxed text-amber-100">
+              Você escolheu <strong>{statusLabel(request.status)}</strong> no pedido {request.orderId}. Agora defina somente o alcance dessa ação. O Kyrub não enviará nada à 99Food sem a opção explícita abaixo.
+            </p>
+
+            <div className="mt-5 grid gap-3 sm:grid-cols-2">
+              <button
+                id="kyrub-99food-status-kyrub-only"
+                type="button"
+                onClick={() => choose('kyrub_only')}
+                className="min-h-12 rounded-xl border border-slate-700 bg-slate-950 px-4 text-[10px] font-black uppercase text-slate-200"
+              >
+                Atualizar só no Kyrub
+              </button>
+              <button
+                id="kyrub-99food-status-kyrub-and-provider"
+                type="button"
+                onClick={() => choose('kyrub_and_99food')}
+                className="flex min-h-12 items-center justify-center gap-2 rounded-xl bg-amber-500 px-4 text-[10px] font-black uppercase text-slate-950"
+              >
+                <ShieldCheck className="h-4 w-4" />
+                Kyrub + 99Food
+              </button>
+            </div>
+
+            <p className="mt-3 text-[9px] leading-relaxed text-slate-500">
+              Esta tela define apenas o alcance da mudança que você já solicitou no KDS. O status canônico do Kyrub é atualizado primeiro. Se a 99Food falhar depois disso, o pedido permanece atualizado no Kyrub, o erro é mostrado e nenhum retry externo é executado automaticamente.
+            </p>
+          </section>
+        </div>
+      )}
+
+      {message && (
+        <div className="fixed bottom-24 left-1/2 z-[125] w-[min(92vw,34rem)] -translate-x-1/2 rounded-2xl border border-yellow-500/30 bg-slate-950 px-5 py-4 text-center shadow-2xl">
+          <strong className="block text-[9px] font-black uppercase tracking-wide text-yellow-300">
+            Sincronização 99Food
+          </strong>
+          <span className="mt-1 block text-[10px] leading-relaxed text-slate-300">
+            {message}
+          </span>
+        </div>
+      )}
+    </>
   );
 }
