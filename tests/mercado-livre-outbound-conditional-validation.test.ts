@@ -52,6 +52,19 @@ test('listing readiness uses Mercado Livre items validator instead of creating a
   assert.doesNotMatch(source, /['"`]\/items['"`]\s*,\s*itemPayload/);
 });
 
+test('listing validation rechecks the frozen seller publication model before provider validation', async () => {
+  const source = await readFile(listingValidatorPath, 'utf8');
+  const capabilityIndex = source.indexOf('assertMercadoLivrePublicationCapabilityCurrent({');
+  const validateIndex = source.indexOf("mercadoLivreValidateJson(storeId, '/items/validate', itemPayload)");
+  assert.ok(capabilityIndex >= 0);
+  assert.ok(validateIndex > capabilityIndex);
+  assert.match(source, /expectedFingerprint: proposal\.providerCapabilityFingerprint/);
+  assert.match(source, /expectedPublicationModel: proposal\.providerPublicationModel/);
+  assert.match(source, /expectedStockAuthority: proposal\.providerStockAuthority/);
+  assert.match(source, /providerCapabilityFingerprint: proposal\.providerCapabilityFingerprint/);
+  assert.match(source, /record\.schemaVersion !== 2/);
+});
+
 test('listing validator cannot run before successful conditional validation', async () => {
   const source = await readFile(listingValidatorPath, 'utf8');
   assert.match(source, /MERCADO_LIVRE_OUTBOUND_CONDITIONAL_VALIDATION_REQUIRED/);
