@@ -6,6 +6,10 @@ const routerSource = readFileSync(
   'server/inventory/ninetyNineFoodStatusSyncExecutionRouter.ts',
   'utf8'
 );
+const executionServiceSource = readFileSync(
+  'server/inventory/ninetyNineFoodStatusSyncExecutionService.ts',
+  'utf8'
+);
 const reconciliationServiceSource = readFileSync(
   'server/inventory/ninetyNineFoodStatusSyncReconciliationService.ts',
   'utf8'
@@ -71,6 +75,23 @@ test('reconciliation atomically takes ownership before reading provider state', 
   assert.match(reconciliationServiceSource, /'integration\.outboundStatus': 'reconciliation_required'/);
 });
 
+test('late original worker cannot overwrite a reconciliation that already took ownership', () => {
+  const phaseIndex = executionServiceSource.indexOf(
+    "const ownsExecutionPhase = clean(execution.status) === 'provider_write_started'"
+  );
+  const guardIndex = executionServiceSource.indexOf(
+    'if (!ownsExecutionPhase || !ownsOrderMarker)'
+  );
+  const executionWriteIndex = executionServiceSource.indexOf(
+    'transaction.update(executionReference',
+    guardIndex
+  );
+  assert.ok(phaseIndex >= 0);
+  assert.ok(guardIndex > phaseIndex);
+  assert.ok(executionWriteIndex > guardIndex);
+  assert.match(executionServiceSource, /return \{ orderMarkerFinalized: false, concurrentStatusChange \}/);
+});
+
 test('provider reconciliation reader is strictly read-only and cannot resend status', () => {
   assert.match(providerReaderSource, /client\.getOrder\(syntheticEvent\)/);
   assert.doesNotMatch(providerReaderSource, /sendAction\(/);
@@ -104,6 +125,7 @@ test('uncertain reconciliation stays blocked while resolved outcomes release to 
 
 test('normal KDS status mutation is blocked while reconciliation is required', () => {
   assert.match(routerSource, /outboundStatus\) === 'reconciliation_required'/);
+  assert.match(executionServiceSource, /'executing', 'reconciliation_required'/);
   assert.match(routerSource, /Conclua a reconciliação antes de alterar novamente o status/);
 });
 
