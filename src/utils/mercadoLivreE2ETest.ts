@@ -1,4 +1,5 @@
 import type { User } from 'firebase/auth';
+import { recordOmnichannelE2EEvidence } from './omnichannelE2EEvidence';
 
 const encoded = (value: string): string => encodeURIComponent(value.trim());
 
@@ -150,8 +151,12 @@ export const executeMercadoLivreE2EPublication = (user: User, storeId: string, a
     { method: 'POST', body: JSON.stringify({ authorizationToken }) }
   );
 
-export const reconcileMercadoLivreE2EPublication = (user: User, storeId: string, executionId: string) =>
-  authorizedFetch<{
+export const reconcileMercadoLivreE2EPublication = async (
+  user: User,
+  storeId: string,
+  executionId: string
+) => {
+  const result = await authorizedFetch<{
     executionId: string;
     bindingId: string;
     externalItemId: string;
@@ -162,6 +167,22 @@ export const reconcileMercadoLivreE2EPublication = (user: User, storeId: string,
     `/api/store-connections/mercado-livre/${encoded(storeId)}/outbound-publication-executions/${encoded(executionId)}/reconcile`,
     { method: 'POST' }
   );
+  recordOmnichannelE2EEvidence({
+    storeId,
+    kind: 'mercado_livre_publication',
+    source: 'provider_readback',
+    referenceId: result.executionId,
+    outcome: result.reconciliationStatus,
+    summary: `Mercado Livre confirmou por readback o anúncio ${result.externalItemId}.`,
+    details: {
+      executionId: result.executionId,
+      bindingId: result.bindingId,
+      externalItemId: result.externalItemId,
+      snapshotId: result.snapshotId,
+    },
+  });
+  return result;
+};
 
 export const setMercadoLivreE2EAvailabilityPolicy = (
   user: User,
@@ -227,8 +248,12 @@ export const executeMercadoLivreE2EStock = (user: User, storeId: string, authori
     { method: 'POST', body: JSON.stringify({ authorizationToken }) }
   );
 
-export const reconcileMercadoLivreE2EStock = (user: User, storeId: string, executionId: string) =>
-  authorizedFetch<{
+export const reconcileMercadoLivreE2EStock = async (
+  user: User,
+  storeId: string,
+  executionId: string
+) => {
+  const result = await authorizedFetch<{
     executionId: string;
     proposalId: string;
     bindingId: string;
@@ -241,3 +266,21 @@ export const reconcileMercadoLivreE2EStock = (user: User, storeId: string, execu
     `/api/store-connections/mercado-livre/${encoded(storeId)}/outbound-stock-executions/${encoded(executionId)}/reconcile`,
     { method: 'POST' }
   );
+  recordOmnichannelE2EEvidence({
+    storeId,
+    kind: 'mercado_livre_stock',
+    source: 'provider_readback',
+    referenceId: result.executionId,
+    outcome: result.reconciliationStatus,
+    summary: `Mercado Livre confirmou ${result.observedAvailableQuantity} unidade(s) para ${result.externalItemId}.`,
+    details: {
+      executionId: result.executionId,
+      proposalId: result.proposalId,
+      bindingId: result.bindingId,
+      externalItemId: result.externalItemId,
+      targetAvailableQuantity: result.targetAvailableQuantity,
+      observedAvailableQuantity: result.observedAvailableQuantity,
+    },
+  });
+  return result;
+};
