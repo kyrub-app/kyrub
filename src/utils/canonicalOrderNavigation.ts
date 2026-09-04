@@ -1,5 +1,7 @@
 export const KYRUB_CANONICAL_ORDER_NAVIGATION_REQUESTED_EVENT =
   'kyrub:canonical-order-navigation-requested';
+export const KYRUB_CANONICAL_ORDER_NAVIGATION_CHANGED_EVENT =
+  'kyrub:canonical-order-navigation-changed';
 
 export interface CanonicalOrderNavigationRequest {
   storeId: string;
@@ -10,6 +12,10 @@ let pendingNavigation: CanonicalOrderNavigationRequest | null = null;
 let replacedNavigationOrderId = '';
 
 const clean = (value: string): string => value.trim().slice(0, 240);
+
+const notifyNavigationChanged = (): void => {
+  window.dispatchEvent(new Event(KYRUB_CANONICAL_ORDER_NAVIGATION_CHANGED_EVENT));
+};
 
 const normalizeRequest = (
   request: CanonicalOrderNavigationRequest
@@ -38,6 +44,7 @@ export const requestCanonicalOrderNavigation = (
     KYRUB_CANONICAL_ORDER_NAVIGATION_REQUESTED_EVENT,
     { detail: normalized }
   ));
+  notifyNavigationChanged();
   return true;
 };
 
@@ -87,6 +94,7 @@ export const cancelCanonicalOrderNavigation = (
   }
   pendingNavigation = null;
   replacedNavigationOrderId = '';
+  notifyNavigationChanged();
   return true;
 };
 
@@ -99,6 +107,7 @@ export const acknowledgeCanonicalOrderNavigation = (
   }
   pendingNavigation = null;
   replacedNavigationOrderId = '';
+  notifyNavigationChanged();
   return true;
 };
 
@@ -109,5 +118,6 @@ export const consumeCanonicalOrderNavigation = (
   if (!request) return null;
   pendingNavigation = null;
   replacedNavigationOrderId = '';
+  notifyNavigationChanged();
   return request;
 };
