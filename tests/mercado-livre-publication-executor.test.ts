@@ -15,6 +15,21 @@ test('executor consumes owner authorization before the real provider publication
   assert.match(source, /consumedByExecutionId/);
 });
 
+test('executor rechecks the exact seller model before consuming the one-time authorization', async () => {
+  const source = await readFile(servicePath, 'utf8');
+  const capabilityIndex = source.indexOf('assertMercadoLivrePublicationCapabilityCurrent({');
+  const reserveIndex = source.indexOf("consumptionStatus: 'executing'");
+  const postIndex = source.indexOf("mercadoLivrePostJson<MercadoLivreCreatedItem>(storeId, '/items'");
+  assert.ok(capabilityIndex >= 0);
+  assert.ok(reserveIndex > capabilityIndex);
+  assert.ok(postIndex > reserveIndex);
+  assert.match(source, /expectedFingerprint: authorization\.providerCapabilityFingerprint/);
+  assert.match(source, /expectedPublicationModel: authorization\.providerPublicationModel/);
+  assert.match(source, /expectedStockAuthority: authorization\.providerStockAuthority/);
+  assert.match(source, /record\.schemaVersion !== 2/);
+  assert.match(source, /providerCapabilityFingerprint: currentAuthorization\.providerCapabilityFingerprint/);
+});
+
 test('executor verifies token hash, expiry, payload and full canonical baseline before publication', async () => {
   const source = await readFile(servicePath, 'utf8');
   assert.match(source, /timingSafeEqual/);
@@ -41,6 +56,7 @@ test('successful publication creates a durable external catalog binding only aft
   assert.match(source, /authority: 'store_owner_outbound_publication'/);
   assert.match(source, /externalItemId/);
   assert.match(source, /canonicalProductId/);
+  assert.match(source, /providerCapabilityFingerprint: authorization\.providerCapabilityFingerprint/);
 });
 
 test('execution endpoint remains owner authenticated and requires the raw one-time token', async () => {
