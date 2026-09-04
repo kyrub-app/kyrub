@@ -41,6 +41,14 @@ const canonicalStoreIdForTenant = async (tenantId: string): Promise<string> => {
   return canonicalStoreId;
 };
 
+const chunks = <T>(items: T[], size: number): T[][] => {
+  const output: T[][] = [];
+  for (let index = 0; index < items.length; index += size) {
+    output.push(items.slice(index, index + size));
+  }
+  return output;
+};
+
 export type NinetyNineFoodObservedReservationState =
   | 'reserved'
   | 'released'
@@ -122,10 +130,13 @@ export const listRecentNinetyNineFoodE2EObservedOrders = async (input: {
     ? Math.trunc(input.limit)
     : 20;
   const limit = Math.max(1, Math.min(50, requestedLimit));
-  const [ordersSnapshot, eventsSnapshot] = await Promise.all([
-    adminDb.collection(`stores/${canonicalStoreId}/orders`).get(),
-    adminDb.collection(`tenants/${tenantId}/integrationEvents`).get(),
-  ]);
+  const eventReadLimit = Math.max(50, Math.min(500, limit * 20));
+
+  const eventsSnapshot = await adminDb
+    .collection(`tenants/${tenantId}/integrationEvents`)
+    .orderBy('receivedAt', 'desc')
+    .limit(eventReadLimit)
+    .get();
 
   const eventByExternalOrderId = new Map<string, InboundEventEvidence>();
   for (const document of eventsSnapshot.docs) {
@@ -153,54 +164,71 @@ export const listRecentNinetyNineFoodE2EObservedOrders = async (input: {
     }
   }
 
-  const items = ordersSnapshot.docs.flatMap(document => {
-    const order = record(document.data());
-    const integration = record(order.integration);
-    if (clean(integration.provider, 120) !== '99food') return [];
-    const externalOrderId = clean(integration.externalOrderId, 240);
-    if (!externalOrderId) return [];
-    const reservation = record(order.inventoryReservation);
-    const ingress = eventByExternalOrderId.get(externalOrderId);
-    const fallbackEventId = clean(integration.lastInboundEventId, 240);
-    const fallbackEventAt = clean(integration.lastInboundEventAt, 120);
-    return [{
-      orderId: document.id,
-      externalOrderId,
-      displayId:
-        clean(integration.displayId, 160) ||
-        clean(order.displayId, 160) ||
+  const externalOrderIds = Array.from(eventByExternalOrderId.entries())
+    .sort((left, right) => eventRank(right[1]).localeCompare(eventRank(left[1])))
+    .slice(0, Math.max(limit * 3, limit))
+    .map(([externalOrderId]) => externalOrderId);
+
+  if (externalOrderIds.length === 0) {
+    return {
+      canonicalStoreId,
+      observedAt: new Date().toISOString(),
+      items: [],
+    };
+  }
+
+  const orderSnapshots = await Promise.all(
+    chunks(externalOrderIds, 10).map(ids =>
+      adminDb
+        .collection(`stores/${canonicalStoreId}/orders`)
+        .where('integration.externalOrderId', 'in', ids)
+        .get()
+    )
+  );
+
+  const items = orderSnapshots.flatMap(snapshot =>
+    snapshot.docs.flatMap(document => {
+      const order = record(document.data());
+      const integration = record(order.integration);
+      if (clean(integration.provider, 120) !== '99food') return [];
+      const externalOrderId = clean(integration.externalOrderId, 240);
+      if (!externalOrderId) return [];
+      const ingress = eventByExternalOrderId.get(externalOrderId);
+      if (!ingress) return [];
+      const reservation = record(order.inventoryReservation);
+      return [{
+        orderId: document.id,
         externalOrderId,
-      customerName: clean(order.buyerName, 240) || clean(order.customerName, 240),
-      status: clean(order.status, 120),
-      createdAt: clean(order.createdAt, 120),
-      updatedAt: clean(order.updatedAt, 120),
-      lastEvent: clean(integration.lastEvent, 160),
-      inboundEvent: ingress ?? {
-        eventId: fallbackEventId,
-        eventType: clean(integration.lastEvent, 160),
-        status: fallbackEventId ? 'observed_on_order' : 'unobserved',
-        receivedAt: fallbackEventAt,
-        processedAt: fallbackEventAt,
-      },
-      reservation: {
-        state: reservationState(reservation),
-        detail: clean(reservation.detail, 500),
-        canonicalProductIds: stringList(reservation.canonicalProductIds),
-        unresolvedExternalProductIds: stringList(
-          reservation.unresolvedExternalProductIds
-        ),
-        inventoryItemId: clean(reservation.inventoryItemId, 240),
-        requiredQuantity: finiteNumber(reservation.requiredQuantity),
-        availableQuantity: finiteNumber(reservation.availableQuantity),
-        reconciledAt: clean(reservation.reconciledAt, 120),
-      },
-    } satisfies NinetyNineFoodE2EObservedOrder];
-  });
+        displayId:
+          clean(integration.displayId, 160) ||
+          clean(order.displayId, 160) ||
+          externalOrderId,
+        customerName: clean(order.buyerName, 240) || clean(order.customerName, 240),
+        status: clean(order.status, 120),
+        createdAt: clean(order.createdAt, 120),
+        updatedAt: clean(order.updatedAt, 120),
+        lastEvent: clean(integration.lastEvent, 160),
+        inboundEvent: ingress,
+        reservation: {
+          state: reservationState(reservation),
+          detail: clean(reservation.detail, 500),
+          canonicalProductIds: stringList(reservation.canonicalProductIds),
+          unresolvedExternalProductIds: stringList(
+            reservation.unresolvedExternalProductIds
+          ),
+          inventoryItemId: clean(reservation.inventoryItemId, 240),
+          requiredQuantity: finiteNumber(reservation.requiredQuantity),
+          availableQuantity: finiteNumber(reservation.availableQuantity),
+          reconciledAt: clean(reservation.reconciledAt, 120),
+        },
+      } satisfies NinetyNineFoodE2EObservedOrder];
+    })
+  );
 
   items.sort((left, right) => {
-    const leftTime = left.updatedAt || left.createdAt;
-    const rightTime = right.updatedAt || right.createdAt;
-    return rightTime.localeCompare(leftTime);
+    const leftRank = eventRank(left.inboundEvent) || left.updatedAt || left.createdAt;
+    const rightRank = eventRank(right.inboundEvent) || right.updatedAt || right.createdAt;
+    return rightRank.localeCompare(leftRank);
   });
 
   return {
