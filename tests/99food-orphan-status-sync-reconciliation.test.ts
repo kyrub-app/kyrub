@@ -40,9 +40,10 @@ test('manual delayed provider write records provider-write start before the exte
   assert.match(reconciliationServiceSource, /providerWriteStartedAt/);
 });
 
-test('ambiguous transport outcome is separated from definitive provider failure', () => {
+test('ambiguous transport and 5xx outcomes are separated from definitive 4xx provider failures', () => {
   assert.match(reconciliationServiceSource, /isNinetyNineFoodProviderWriteOutcomeUnknown/);
-  assert.match(reconciliationServiceSource, /Open Delivery respondeu \\d\{3\}/);
+  assert.match(reconciliationServiceSource, /Open Delivery respondeu \(\\d\{3\}\)/);
+  assert.match(reconciliationServiceSource, /status >= 400 && status < 500/);
   assert.match(reconciliationServiceSource, /AbortError/);
   assert.match(reconciliationServiceSource, /ETIMEDOUT/);
   assert.match(routerSource, /partnerSync: 'reconciliation_required'/);
