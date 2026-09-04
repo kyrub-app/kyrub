@@ -38,6 +38,19 @@ test('server observation projects only canonical 99Food orders and correlates ex
   assert.match(serviceSource, /inboundEvent: ingress/);
 });
 
+test('recent-order observation bounds Firestore reads around recent ingress evidence instead of scanning whole collections', () => {
+  assert.match(serviceSource, /\.orderBy\('receivedAt', 'desc'\)/);
+  assert.match(serviceSource, /\.limit\(eventReadLimit\)/);
+  assert.match(serviceSource, /Math\.max\(50, Math\.min\(500, limit \* 20\)\)/);
+  assert.match(serviceSource, /chunks\(externalOrderIds, 10\)/);
+  assert.match(serviceSource, /\.where\('integration\.externalOrderId', 'in', ids\)/);
+  assert.match(serviceSource, /\.slice\(0, Math\.max\(limit \* 3, limit\)\)/);
+  assert.doesNotMatch(
+    serviceSource,
+    /const \[ordersSnapshot, eventsSnapshot\] = await Promise\.all/
+  );
+});
+
 test('observation exposes reservation state already written on the order without recalculating ATP', () => {
   assert.match(serviceSource, /'reserved'/);
   assert.match(serviceSource, /'waiting_physical_consumption'/);
