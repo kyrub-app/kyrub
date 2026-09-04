@@ -14,6 +14,10 @@ const trackingBridgeSource = readFileSync(
   'src/components/store/StoreDeliveryTrackingBridge.tsx',
   'utf8'
 );
+const retailerSource = readFileSync(
+  'src/components/RetailerPanel.tsx',
+  'utf8'
+);
 
 test('canonical order location cancellation requires the exact current store and order identity', () => {
   const cancelStart = navigationSource.indexOf(
@@ -95,6 +99,34 @@ test('stale cancel UI preserves a newer explicit target instead of clearing it',
   assert.ok(cancelIndex >= 0);
   assert.ok(rereadIndex > cancelIndex);
   assert.ok(clearIndex > rereadIndex);
+});
+
+test('retailer pending banner follows the same in-memory navigation state after cancel or focus acknowledgement', () => {
+  const syncStart = retailerSource.indexOf(
+    'const syncCanonicalOrderNavigation = (): void =>'
+  );
+  const syncEnd = retailerSource.indexOf(
+    '  useEffect(() => {\n    const handlePublicProductCreate',
+    syncStart
+  );
+  const syncSection = retailerSource.slice(syncStart, syncEnd);
+
+  assert.ok(syncStart >= 0);
+  assert.ok(syncEnd > syncStart);
+  assert.match(syncSection, /user\.uid !== activeRetailerId/);
+  assert.match(
+    syncSection,
+    /readCanonicalOrderNavigation\(activeRetailerId\)\?\.orderId \?\? ''/
+  );
+  assert.match(
+    syncSection,
+    /KYRUB_CANONICAL_ORDER_NAVIGATION_CHANGED_EVENT/
+  );
+  assert.match(syncSection, /setCanonicalNavigationOrderId\(''\)/);
+  assert.doesNotMatch(
+    syncSection,
+    /setActiveSubTab|updateOrderStatusWithDecision|onChangeStatus|\bfetch\(/
+  );
 });
 
 test('order location control remains mounted even when there are no active deliveries', () => {
