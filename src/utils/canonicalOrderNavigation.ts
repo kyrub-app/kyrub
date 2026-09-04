@@ -104,11 +104,11 @@ export const acknowledgeCanonicalOrderNavigation = (
   storeId: string,
   orderId: string
 ): boolean => {
-  const normalizedStoreId = clean(storeId);
-  const normalizedOrderId = clean(orderId);
-  if (!isCurrentCanonicalOrderNavigation(normalizedStoreId, normalizedOrderId)) {
+  if (!isCurrentCanonicalOrderNavigation(storeId, orderId)) {
     return false;
   }
+  const normalizedStoreId = clean(storeId);
+  const normalizedOrderId = clean(orderId);
   pendingNavigation = null;
   replacedNavigationOrderId = '';
   notifyNavigationChanged();
