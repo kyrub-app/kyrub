@@ -16,6 +16,10 @@ import { StoreDeliveryTrackingBridge } from './store/StoreDeliveryTrackingBridge
 import type { Product } from '../types';
 import { auth } from '../utils/firebase';
 import {
+  KYRUB_CANONICAL_ORDER_NAVIGATION_REQUESTED_EVENT,
+  type CanonicalOrderNavigationRequest,
+} from '../utils/canonicalOrderNavigation';
+import {
   persistPublicProduct,
   PUBLIC_PRODUCT_CREATE_EVENT,
   type PublicProduct,
@@ -45,6 +49,7 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = props => {
     setNewProductModal,
     triggerToast,
     activeSubTab,
+    setActiveSubTab,
     atendimentoSpaces,
   } = props;
 
@@ -76,6 +81,33 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = props => {
       ),
     [activeRetailerId, products]
   );
+
+  useEffect(() => {
+    const handleCanonicalOrderNavigation = (event: Event): void => {
+      const detail = (event as CustomEvent<CanonicalOrderNavigationRequest>).detail;
+      const user = auth.currentUser;
+      if (
+        !detail?.orderId?.trim() ||
+        detail?.storeId?.trim() !== activeRetailerId ||
+        !user ||
+        user.uid !== activeRetailerId
+      ) {
+        return;
+      }
+      setActiveSubTab('pedidos');
+    };
+
+    window.addEventListener(
+      KYRUB_CANONICAL_ORDER_NAVIGATION_REQUESTED_EVENT,
+      handleCanonicalOrderNavigation
+    );
+    return () => {
+      window.removeEventListener(
+        KYRUB_CANONICAL_ORDER_NAVIGATION_REQUESTED_EVENT,
+        handleCanonicalOrderNavigation
+      );
+    };
+  }, [activeRetailerId, setActiveSubTab]);
 
   useEffect(() => {
     const handlePublicProductCreate = (event: Event): void => {
@@ -517,6 +549,7 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = props => {
           <>
             <StoreDeliveryTrackingBridge storeId={activeRetailerId} />
             <CustomerOrderInbox
+              storeId={activeRetailerId}
               orders={kdsOrders}
               busyOrderId={busyOrderId}
               attendanceSpaces={atendimentoSpaces}
