@@ -3,9 +3,11 @@ import { FieldValue } from 'firebase-admin/firestore';
 import { adminDb } from '../firebaseAdmin.js';
 import { mercadoLivreGetJson } from './mercadoLivreOauthService.js';
 import { getStoreConnectionRegistryRecord } from './storeConnectionRegistry.js';
+import { assertMercadoLivrePublicationCapabilitySnapshot } from './mercadoLivrePublicationCapabilitySnapshotGuard.js';
 import { recoverAmbiguousMercadoLivrePublication } from './mercadoLivreAmbiguousPublicationRecoveryService.js';
 
 interface ExecutionRecord {
+  schemaVersion: 2;
   id: string;
   proposalId: string;
   authorizationId: string;
@@ -14,12 +16,18 @@ interface ExecutionRecord {
   connectionId: string;
   canonicalStoreId: string;
   canonicalProductId: string;
+  providerCapabilityFingerprint: string;
+  providerPublicationModel: 'legacy_items' | 'user_products';
+  providerStockAuthority: 'item_available_quantity';
+  providerCapability: unknown;
   status: 'published';
   externalItemId: string;
+  externalUserProductId?: string;
   bindingId: string;
 }
 
 interface AuthorizationRecord {
+  schemaVersion: 2;
   id: string;
   proposalId: string;
   storeId: string;
@@ -28,21 +36,31 @@ interface AuthorizationRecord {
   canonicalStoreId: string;
   canonicalProductId: string;
   canonicalBaselineHash: string;
+  providerCapabilityFingerprint: string;
+  providerPublicationModel: 'legacy_items' | 'user_products';
+  providerStockAuthority: 'item_available_quantity';
+  providerCapability: unknown;
   consumptionStatus: 'consumed';
   externalItemId: string;
+  externalUserProductId?: string;
   bindingId: string;
 }
 
 interface BindingRecord {
+  schemaVersion: 2;
   id: string;
   storeId: string;
   provider: 'mercado_livre';
   connectionId: string;
   externalItemId: string;
+  externalUserProductId?: string;
   canonicalStoreId: string;
   canonicalProductId: string;
   status: 'active';
   canonicalBaselineHash: string;
+  providerCapabilityFingerprint: string;
+  providerPublicationModel: 'legacy_items' | 'user_products';
+  providerStockAuthority: 'item_available_quantity';
 }
 
 interface CanonicalState {
@@ -55,6 +73,7 @@ interface CanonicalState {
 
 interface ProviderItem {
   id?: unknown;
+  user_product_id?: unknown;
   title?: unknown;
   price?: unknown;
   available_quantity?: unknown;
@@ -88,16 +107,32 @@ const syncBaselineHash = (state: CanonicalState): string => sha256(JSON.stringif
   isService: false,
 }));
 
+const assertCapabilityBinding = (record: Record<string, unknown>, errorCode: string): void => {
+  const snapshot = assertMercadoLivrePublicationCapabilitySnapshot(record.providerCapability);
+  if (
+    clean(record.providerCapabilityFingerprint, 80) !== snapshot.fingerprint ||
+    record.providerPublicationModel !== snapshot.publicationModel ||
+    record.providerStockAuthority !== 'item_available_quantity' ||
+    record.providerStockAuthority !== snapshot.stockAuthority
+  ) throw new Error(errorCode);
+};
+
 const assertExecution = (storeId: string, executionId: string, value: unknown): ExecutionRecord => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('MERCADO_LIVRE_PUBLICATION_EXECUTION_NOT_FOUND');
   const record = value as Record<string, unknown>;
   if (
+    record.schemaVersion !== 2 ||
     clean(record.id, 160) !== executionId || clean(record.storeId, 160) !== storeId ||
     record.provider !== 'mercado_livre' || record.status !== 'published' ||
     !clean(record.proposalId, 160) || !clean(record.authorizationId, 160) ||
     !clean(record.connectionId, 200) || !clean(record.canonicalStoreId, 160) ||
-    !clean(record.canonicalProductId, 160) || !clean(record.externalItemId, 160) || !clean(record.bindingId, 160)
+    !clean(record.canonicalProductId, 160) || !clean(record.externalItemId, 160) || !clean(record.bindingId, 160) ||
+    !clean(record.providerCapabilityFingerprint, 80) ||
+    (record.providerPublicationModel !== 'legacy_items' && record.providerPublicationModel !== 'user_products') ||
+    record.providerStockAuthority !== 'item_available_quantity' || !record.providerCapability ||
+    (record.providerPublicationModel === 'user_products' && !clean(record.externalUserProductId, 160))
   ) throw new Error('MERCADO_LIVRE_PUBLICATION_EXECUTION_NOT_RECONCILABLE');
+  assertCapabilityBinding(record, 'MERCADO_LIVRE_PUBLICATION_EXECUTION_NOT_RECONCILABLE');
   return record as unknown as ExecutionRecord;
 };
 
@@ -105,13 +140,20 @@ const assertAuthorization = (execution: ExecutionRecord, value: unknown): Author
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('MERCADO_LIVRE_PUBLICATION_AUTHORIZATION_NOT_FOUND');
   const record = value as Record<string, unknown>;
   if (
+    record.schemaVersion !== 2 ||
     clean(record.id, 160) !== execution.authorizationId || clean(record.proposalId, 160) !== execution.proposalId ||
     clean(record.storeId, 160) !== execution.storeId || record.provider !== 'mercado_livre' ||
     clean(record.connectionId, 200) !== execution.connectionId || clean(record.canonicalStoreId, 160) !== execution.canonicalStoreId ||
     clean(record.canonicalProductId, 160) !== execution.canonicalProductId || !clean(record.canonicalBaselineHash, 80) ||
     record.consumptionStatus !== 'consumed' || clean(record.externalItemId, 160) !== execution.externalItemId ||
-    clean(record.bindingId, 160) !== execution.bindingId
+    clean(record.bindingId, 160) !== execution.bindingId ||
+    clean(record.providerCapabilityFingerprint, 80) !== execution.providerCapabilityFingerprint ||
+    record.providerPublicationModel !== execution.providerPublicationModel ||
+    record.providerStockAuthority !== execution.providerStockAuthority || !record.providerCapability ||
+    (execution.providerPublicationModel === 'user_products' &&
+      clean(record.externalUserProductId, 160) !== execution.externalUserProductId)
   ) throw new Error('MERCADO_LIVRE_PUBLICATION_AUTHORIZATION_STALE');
+  assertCapabilityBinding(record, 'MERCADO_LIVRE_PUBLICATION_AUTHORIZATION_STALE');
   return record as unknown as AuthorizationRecord;
 };
 
@@ -119,11 +161,17 @@ const assertBinding = (execution: ExecutionRecord, value: unknown): BindingRecor
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('MERCADO_LIVRE_EXTERNAL_BINDING_NOT_FOUND');
   const record = value as Record<string, unknown>;
   if (
+    record.schemaVersion !== 2 ||
     clean(record.id, 160) !== execution.bindingId || clean(record.storeId, 160) !== execution.storeId ||
     record.provider !== 'mercado_livre' || record.status !== 'active' ||
     clean(record.connectionId, 200) !== execution.connectionId || clean(record.externalItemId, 160) !== execution.externalItemId ||
     clean(record.canonicalStoreId, 160) !== execution.canonicalStoreId || clean(record.canonicalProductId, 160) !== execution.canonicalProductId ||
-    !clean(record.canonicalBaselineHash, 80)
+    !clean(record.canonicalBaselineHash, 80) ||
+    clean(record.providerCapabilityFingerprint, 80) !== execution.providerCapabilityFingerprint ||
+    record.providerPublicationModel !== execution.providerPublicationModel ||
+    record.providerStockAuthority !== execution.providerStockAuthority ||
+    (execution.providerPublicationModel === 'user_products' &&
+      clean(record.externalUserProductId, 160) !== execution.externalUserProductId)
   ) throw new Error('MERCADO_LIVRE_EXTERNAL_BINDING_CONFLICT');
   return record as unknown as BindingRecord;
 };
@@ -146,13 +194,19 @@ const providerItem = (value: unknown, execution: ExecutionRecord, externalAccoun
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('MERCADO_LIVRE_ITEM_RESPONSE_INVALID');
   const item = value as ProviderItem;
   const id = clean(item.id, 160);
+  const externalUserProductId = clean(item.user_product_id, 160);
   const title = clean(item.title, 120);
   const sellerId = clean(item.seller_id, 160);
-  if (id !== execution.externalItemId || !title || sellerId !== externalAccountId) {
+  if (
+    id !== execution.externalItemId || !title || sellerId !== externalAccountId ||
+    (execution.providerPublicationModel === 'user_products' &&
+      externalUserProductId !== execution.externalUserProductId)
+  ) {
     throw new Error('MERCADO_LIVRE_POST_PUBLICATION_IDENTITY_MISMATCH');
   }
   return {
     externalId: id,
+    ...(externalUserProductId ? { externalUserProductId } : {}),
     title,
     price: finiteNonNegative(item.price),
     availableQuantity: finiteNonNegative(item.available_quantity),
@@ -166,6 +220,8 @@ export interface MercadoLivrePostPublicationReconciliationResult {
   executionId: string;
   bindingId: string;
   externalItemId: string;
+  externalUserProductId?: string;
+  providerPublicationModel: 'legacy_items' | 'user_products';
   snapshotId: string;
   reconciliationStatus: 'reconciled';
   alreadyReconciled: boolean;
@@ -214,6 +270,8 @@ export const reconcileMercadoLivrePublishedItem = async (input: {
       executionId,
       bindingId: execution.bindingId,
       externalItemId: execution.externalItemId,
+      ...(execution.externalUserProductId ? { externalUserProductId: execution.externalUserProductId } : {}),
+      providerPublicationModel: execution.providerPublicationModel,
       snapshotId,
       reconciliationStatus: 'reconciled',
       alreadyReconciled: true,
@@ -254,6 +312,10 @@ export const reconcileMercadoLivrePublishedItem = async (input: {
       connectionId: execution.connectionId,
       externalAccountId: connection.externalAccountId,
       externalItemId: execution.externalItemId,
+      ...(execution.externalUserProductId ? { externalUserProductId: execution.externalUserProductId } : {}),
+      providerCapabilityFingerprint: execution.providerCapabilityFingerprint,
+      providerPublicationModel: execution.providerPublicationModel,
+      providerStockAuthority: execution.providerStockAuthority,
       sourceNotificationId: `outbound_publication:${executionId}`,
       sourceTopic: 'items',
       sourceResource: `/items/${execution.externalItemId}`,
@@ -265,7 +327,12 @@ export const reconcileMercadoLivrePublishedItem = async (input: {
 
     if (snapshotDoc.exists) {
       const existing = snapshotDoc.data() as Record<string, unknown>;
-      if (clean(existing.externalItemId, 160) !== execution.externalItemId || existing.authority !== 'provider_api_refetch') {
+      if (
+        clean(existing.externalItemId, 160) !== execution.externalItemId || existing.authority !== 'provider_api_refetch' ||
+        existing.providerPublicationModel !== execution.providerPublicationModel ||
+        (execution.providerPublicationModel === 'user_products' &&
+          clean(existing.externalUserProductId, 160) !== execution.externalUserProductId)
+      ) {
         throw new Error('MERCADO_LIVRE_EXTERNAL_SNAPSHOT_CONFLICT');
       }
     } else {
@@ -316,7 +383,7 @@ export const reconcileMercadoLivrePublishedItem = async (input: {
       serverPostPublicationReconciledAt: FieldValue.serverTimestamp(),
     });
     transaction.create(reconciliationRef, {
-      schemaVersion: 1,
+      schemaVersion: 2,
       id: executionId,
       storeId,
       provider: 'mercado_livre',
@@ -328,6 +395,10 @@ export const reconcileMercadoLivrePublishedItem = async (input: {
       canonicalStoreId: execution.canonicalStoreId,
       canonicalProductId: execution.canonicalProductId,
       externalItemId: execution.externalItemId,
+      ...(execution.externalUserProductId ? { externalUserProductId: execution.externalUserProductId } : {}),
+      providerCapabilityFingerprint: execution.providerCapabilityFingerprint,
+      providerPublicationModel: execution.providerPublicationModel,
+      providerStockAuthority: execution.providerStockAuthority,
       snapshotId,
       providerIdentityVerified: true,
       providerSellerId: connection.externalAccountId,
@@ -344,6 +415,8 @@ export const reconcileMercadoLivrePublishedItem = async (input: {
     executionId,
     bindingId: execution.bindingId,
     externalItemId: execution.externalItemId,
+    ...(execution.externalUserProductId ? { externalUserProductId: execution.externalUserProductId } : {}),
+    providerPublicationModel: execution.providerPublicationModel,
     snapshotId,
     reconciliationStatus: 'reconciled',
     alreadyReconciled: false,
