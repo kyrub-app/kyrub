@@ -78,6 +78,18 @@ export const isCurrentCanonicalOrderNavigation = (
   );
 };
 
+export const cancelCanonicalOrderNavigation = (
+  storeId: string,
+  orderId: string
+): boolean => {
+  if (!isCurrentCanonicalOrderNavigation(storeId, orderId)) {
+    return false;
+  }
+  pendingNavigation = null;
+  replacedNavigationOrderId = '';
+  return true;
+};
+
 export const acknowledgeCanonicalOrderNavigation = (
   storeId: string,
   orderId: string
