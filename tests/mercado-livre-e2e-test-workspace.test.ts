@@ -35,7 +35,8 @@ test('seller publication capability is derived from authenticated Mercado Livre 
   assert.match(source, /capabilityFingerprint/);
   assert.match(source, /MERCADO_LIVRE_SELLER_CAPABILITY_IDENTITY_MISMATCH/);
   assert.match(source, /mercado_livre_authenticated_user_profile/);
-  assert.doesNotMatch(source, /mercadoLivrePutJson|mercadoLivrePostJson|\.create\(|\.set\(|\.update\(/);
+  assert.match(source, /mercadoLivreGetJson/);
+  assert.doesNotMatch(source, /mercadoLivrePutJson|mercadoLivrePostJson|adminDb|FieldValue/);
 });
 
 test('legacy publication authority freezes capability and execution rechecks it before the provider write', async () => {
