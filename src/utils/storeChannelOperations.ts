@@ -70,6 +70,21 @@ export interface NinetyNineFoodReservationRetryResult {
   checkedAt: string;
 }
 
+export const KYRUB_99FOOD_RETRY_RESOLVED_EVENT =
+  'kyrub:99food-reservation-retry-resolved';
+
+export interface NinetyNineFoodRetryResolvedDetail {
+  storeId: string;
+  orderId: string;
+  state: Exclude<
+    NinetyNineFoodReservationRetryState,
+    | 'blocked_product_binding_unresolved'
+    | 'blocked_insufficient_atp'
+    | 'blocked_authority_unresolved'
+  >;
+  checkedAt: string;
+}
+
 export interface NinetyNineFoodInventoryAuthorityDiagnostic {
   orderId: string;
   state:
@@ -114,6 +129,12 @@ const RETRY_STATES = new Set<NinetyNineFoodReservationRetryState>([
   'consumed',
   'waiting_physical_consumption',
   'not_applicable',
+  'blocked_product_binding_unresolved',
+  'blocked_insufficient_atp',
+  'blocked_authority_unresolved',
+]);
+
+const RETRY_BLOCKED_STATES = new Set<NinetyNineFoodReservationRetryState>([
   'blocked_product_binding_unresolved',
   'blocked_insufficient_atp',
   'blocked_authority_unresolved',
@@ -210,7 +231,7 @@ export const retryNinetyNineFoodBlockedOrderReservation = async (
   if (!resultOrderId || !reconciliationState || !state || !checkedAt) {
     throw new Error('A resposta autoritativa da nova tentativa de reserva está incompleta.');
   }
-  return {
+  const result: NinetyNineFoodReservationRetryResult = {
     orderId: resultOrderId,
     reconciliationState,
     state,
@@ -223,6 +244,22 @@ export const retryNinetyNineFoodBlockedOrderReservation = async (
     },
     checkedAt,
   };
+
+  if (!RETRY_BLOCKED_STATES.has(result.state)) {
+    window.dispatchEvent(new CustomEvent<NinetyNineFoodRetryResolvedDetail>(
+      KYRUB_99FOOD_RETRY_RESOLVED_EVENT,
+      {
+        detail: {
+          storeId: user.uid,
+          orderId: result.orderId,
+          state: result.state as NinetyNineFoodRetryResolvedDetail['state'],
+          checkedAt: result.checkedAt,
+        },
+      }
+    ));
+  }
+
+  return result;
 };
 
 export const buildStoreChannelOperationalItems = (input: {
