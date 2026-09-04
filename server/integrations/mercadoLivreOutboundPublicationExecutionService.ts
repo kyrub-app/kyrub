@@ -18,7 +18,7 @@ interface AuthorizationRecord {
   canonicalProductId: string;
   canonicalBaselineHash: string;
   providerCapabilityFingerprint: string;
-  providerPublicationModel: 'legacy_items';
+  providerPublicationModel: 'legacy_items' | 'user_products';
   providerStockAuthority: 'item_available_quantity';
   providerCapability: unknown;
   listingValidatedAt: string;
@@ -41,7 +41,7 @@ interface ProposalRecord {
   canonicalProductId: string;
   canonicalBaselineHash: string;
   providerCapabilityFingerprint: string;
-  providerPublicationModel: 'legacy_items';
+  providerPublicationModel: 'legacy_items' | 'user_products';
   providerStockAuthority: 'item_available_quantity';
   providerCapability: unknown;
   executionStatus: 'authorized' | 'executing' | 'published' | 'reconciliation_required' | 'provider_rejected';
@@ -50,6 +50,7 @@ interface ProposalRecord {
 
 interface MercadoLivreCreatedItem {
   id?: unknown;
+  user_product_id?: unknown;
   status?: unknown;
   permalink?: unknown;
 }
@@ -100,11 +101,25 @@ const assertCapabilityBinding = (record: Record<string, unknown>, errorCode: str
   const snapshot = assertMercadoLivrePublicationCapabilitySnapshot(record.providerCapability);
   if (
     clean(record.providerCapabilityFingerprint, 80) !== snapshot.fingerprint ||
-    record.providerPublicationModel !== 'legacy_items' ||
+    (record.providerPublicationModel !== 'legacy_items' && record.providerPublicationModel !== 'user_products') ||
     record.providerPublicationModel !== snapshot.publicationModel ||
     record.providerStockAuthority !== 'item_available_quantity' ||
     record.providerStockAuthority !== snapshot.stockAuthority
   ) throw new Error(errorCode);
+};
+
+const assertPayloadMatchesPublicationModel = (authorization: AuthorizationRecord): void => {
+  const title = clean(authorization.payload.title, 120);
+  const familyName = clean(authorization.payload.family_name, 120);
+  if (authorization.providerPublicationModel === 'user_products') {
+    if (!familyName || title || Array.isArray(authorization.payload.variations)) {
+      throw new Error('MERCADO_LIVRE_PUBLICATION_AUTHORIZATION_PAYLOAD_MODEL_MISMATCH');
+    }
+    return;
+  }
+  if (!title || familyName) {
+    throw new Error('MERCADO_LIVRE_PUBLICATION_AUTHORIZATION_PAYLOAD_MODEL_MISMATCH');
+  }
 };
 
 const assertAuthorization = (storeId: string, authorizationId: string, value: unknown): AuthorizationRecord => {
@@ -122,7 +137,9 @@ const assertAuthorization = (storeId: string, authorizationId: string, value: un
     !clean(record.payloadHash, 80) || !clean(record.tokenHash, 80) || !Number.isFinite(Number(record.expiresAtMillis))
   ) throw new Error('MERCADO_LIVRE_PUBLICATION_AUTHORIZATION_INVALID');
   assertCapabilityBinding(record, 'MERCADO_LIVRE_PUBLICATION_AUTHORIZATION_INVALID');
-  return record as unknown as AuthorizationRecord;
+  const authorization = record as unknown as AuthorizationRecord;
+  assertPayloadMatchesPublicationModel(authorization);
+  return authorization;
 };
 
 const assertProposal = (authorization: AuthorizationRecord, value: unknown): ProposalRecord => {
@@ -167,8 +184,10 @@ export interface MercadoLivrePublicationExecutionResult {
   executionId: string;
   status: 'published';
   externalItemId: string;
+  externalUserProductId?: string;
   bindingId: string;
   providerStatus: string;
+  providerPublicationModel: 'legacy_items' | 'user_products';
   permalink?: string;
 }
 
@@ -308,12 +327,32 @@ export const executeAuthorizedMercadoLivrePublication = async (input: {
   }
 
   const externalItemId = clean(providerItem.id, 160);
-  if (!externalItemId) {
+  const externalUserProductId = clean(providerItem.user_product_id, 160);
+  const userProductIdentityMissing =
+    authorization.providerPublicationModel === 'user_products' && !externalUserProductId;
+  if (!externalItemId || userProductIdentityMissing) {
     const ambiguousAt = new Date().toISOString();
+    const failureCode = !externalItemId
+      ? 'provider_success_without_item_id'
+      : 'provider_user_products_success_without_user_product_id';
     await adminDb.runTransaction(async transaction => {
-      transaction.update(executionRef, { status: 'reconciliation_required', failureCode: 'provider_success_without_item_id', ambiguousAt, serverAmbiguousAt: FieldValue.serverTimestamp() });
-      transaction.update(authorizationRef, { consumptionStatus: 'reconciliation_required', serverExecutionFailedAt: FieldValue.serverTimestamp() });
-      transaction.update(proposalRef, { executionStatus: 'reconciliation_required', serverPublicationExecutionFailedAt: FieldValue.serverTimestamp() });
+      transaction.update(executionRef, {
+        status: 'reconciliation_required',
+        failureCode,
+        ...(externalItemId ? { externalItemId } : {}),
+        ambiguousAt,
+        serverAmbiguousAt: FieldValue.serverTimestamp(),
+      });
+      transaction.update(authorizationRef, {
+        consumptionStatus: 'reconciliation_required',
+        executionFailedAt: ambiguousAt,
+        serverExecutionFailedAt: FieldValue.serverTimestamp(),
+      });
+      transaction.update(proposalRef, {
+        executionStatus: 'reconciliation_required',
+        publicationExecutionFailedAt: ambiguousAt,
+        serverPublicationExecutionFailedAt: FieldValue.serverTimestamp(),
+      });
     });
     throw new Error('MERCADO_LIVRE_PUBLICATION_RESULT_AMBIGUOUS');
   }
@@ -338,7 +377,9 @@ export const executeAuthorizedMercadoLivrePublication = async (input: {
         clean(existing.connectionId, 200) !== authorization.connectionId ||
         clean(existing.externalItemId, 160) !== externalItemId ||
         clean(existing.canonicalStoreId, 160) !== authorization.canonicalStoreId ||
-        clean(existing.canonicalProductId, 160) !== authorization.canonicalProductId
+        clean(existing.canonicalProductId, 160) !== authorization.canonicalProductId ||
+        (authorization.providerPublicationModel === 'user_products' &&
+          clean(existing.externalUserProductId, 160) !== externalUserProductId)
       ) throw new Error('MERCADO_LIVRE_EXTERNAL_BINDING_CONFLICT');
     } else {
       transaction.create(bindingRef, {
@@ -348,6 +389,7 @@ export const executeAuthorizedMercadoLivrePublication = async (input: {
         provider: 'mercado_livre',
         connectionId: authorization.connectionId,
         externalItemId,
+        ...(externalUserProductId ? { externalUserProductId } : {}),
         canonicalStoreId: authorization.canonicalStoreId,
         canonicalProductId: authorization.canonicalProductId,
         status: 'active',
@@ -369,6 +411,7 @@ export const executeAuthorizedMercadoLivrePublication = async (input: {
     transaction.update(executionRef, {
       status: 'published',
       externalItemId,
+      ...(externalUserProductId ? { externalUserProductId } : {}),
       bindingId,
       providerStatus: clean(providerItem.status, 80),
       ...(clean(providerItem.permalink, 2_000) ? { permalink: clean(providerItem.permalink, 2_000) } : {}),
@@ -379,12 +422,14 @@ export const executeAuthorizedMercadoLivrePublication = async (input: {
       consumptionStatus: 'consumed',
       consumedAt: completedAt,
       externalItemId,
+      ...(externalUserProductId ? { externalUserProductId } : {}),
       bindingId,
       serverConsumedAt: FieldValue.serverTimestamp(),
     });
     transaction.update(proposalRef, {
       executionStatus: 'published',
       externalItemId,
+      ...(externalUserProductId ? { externalUserProductId } : {}),
       externalCatalogBindingId: bindingId,
       publishedAt: completedAt,
       serverPublishedAt: FieldValue.serverTimestamp(),
@@ -397,8 +442,10 @@ export const executeAuthorizedMercadoLivrePublication = async (input: {
     executionId,
     status: 'published',
     externalItemId,
+    ...(externalUserProductId ? { externalUserProductId } : {}),
     bindingId,
     providerStatus: clean(providerItem.status, 80),
+    providerPublicationModel: authorization.providerPublicationModel,
     ...(clean(providerItem.permalink, 2_000) ? { permalink: clean(providerItem.permalink, 2_000) } : {}),
   };
 };
