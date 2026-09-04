@@ -1,5 +1,6 @@
 import type { User } from 'firebase/auth';
 import type { CustomerOrderStatus } from './customerOrders';
+import { recordOmnichannelE2EEvidence } from './omnichannelE2EEvidence';
 import { notifyNinetyNineFoodStatusSyncReconciliationChanged } from './ninetyNineFoodStatusSyncReconciliation';
 
 export type NinetyNineFoodPendingStatusSyncState =
@@ -157,10 +158,7 @@ export const sendNinetyNineFoodPendingStatusSync = async (
   ) {
     throw new Error('A resposta autoritativa da sincronização 99Food está incompleta.');
   }
-  if (partnerSync === 'reconciliation_required') {
-    notifyNinetyNineFoodStatusSyncReconciliationChanged();
-  }
-  return {
+  const result: NinetyNineFoodPendingStatusSyncResult = {
     orderId: resultOrderId,
     orderRevision: resultOrderRevision,
     executionId,
@@ -170,4 +168,30 @@ export const sendNinetyNineFoodPendingStatusSync = async (
     partnerWarning: clean(payload.partnerWarning),
     localTransitionApplied: false,
   };
+  recordOmnichannelE2EEvidence({
+    storeId: user.uid,
+    kind: '99food_manual_status_sync',
+    source: 'authoritative_execution_result',
+    referenceId: executionId,
+    outcome: partnerSync,
+    summary: partnerSync === 'sent'
+      ? `Envio manual do status ${status} para o pedido ${resultOrderId} foi aceito pela 99Food sem repetir a transição local.`
+      : partnerSync === 'reconciliation_required'
+        ? `Envio manual do status ${status} para o pedido ${resultOrderId} ficou ambíguo e exige reconciliação; nenhum retry automático será feito.`
+        : `Envio manual do status ${status} para o pedido ${resultOrderId} exige atenção; a transição local não foi repetida.`,
+    details: {
+      orderId: resultOrderId,
+      orderRevision: resultOrderRevision,
+      executionId,
+      externalOrderId,
+      status,
+      partnerSync,
+      partnerWarning: result.partnerWarning,
+      localTransitionApplied: false,
+    },
+  });
+  if (partnerSync === 'reconciliation_required') {
+    notifyNinetyNineFoodStatusSyncReconciliationChanged();
+  }
+  return result;
 };
