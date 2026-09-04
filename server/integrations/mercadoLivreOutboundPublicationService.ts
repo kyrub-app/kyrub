@@ -1,6 +1,13 @@
 import { createHash } from 'node:crypto';
 import { FieldValue } from 'firebase-admin/firestore';
 import { adminDb } from '../firebaseAdmin.js';
+import {
+  freezeMercadoLivrePublicationCapability,
+  inspectMercadoLivrePublicationCapability,
+  type MercadoLivrePublicationCapabilitySnapshot,
+  type MercadoLivrePublicationModel,
+  type MercadoLivreStockAuthority,
+} from './mercadoLivrePublicationCapabilityService.js';
 import { getStoreConnectionRegistryRecord } from './storeConnectionRegistry.js';
 
 interface CanonicalProductRecord {
@@ -16,7 +23,7 @@ interface CanonicalProductRecord {
 }
 
 export interface MercadoLivreOutboundPublicationProposal {
-  schemaVersion: 1;
+  schemaVersion: 2;
   id: string;
   storeId: string;
   canonicalStoreId: string;
@@ -29,6 +36,10 @@ export interface MercadoLivreOutboundPublicationProposal {
   proposedByUserId: string;
   proposedAt: string;
   canonicalBaselineHash: string;
+  providerCapabilityFingerprint: string;
+  providerPublicationModel: MercadoLivrePublicationModel;
+  providerStockAuthority: MercadoLivreStockAuthority;
+  providerCapability: MercadoLivrePublicationCapabilitySnapshot;
   canonical: {
     name: string;
     price: number;
@@ -82,9 +93,17 @@ const proposalIdFor = (
   connectionId: string,
   canonicalStoreId: string,
   productId: string,
-  baselineHash: string
+  baselineHash: string,
+  providerCapabilityFingerprint: string
 ): string => `mlout_${createHash('sha256')
-  .update([storeId, connectionId, canonicalStoreId, productId, baselineHash].join(':'))
+  .update([
+    storeId,
+    connectionId,
+    canonicalStoreId,
+    productId,
+    baselineHash,
+    providerCapabilityFingerprint,
+  ].join(':'))
   .digest('hex')
   .slice(0, 32)}`;
 
@@ -144,6 +163,24 @@ export const proposeMercadoLivreExternalPublication = async (input: {
     throw new Error('MERCADO_LIVRE_OUTBOUND_AUTHORITY_INVALID');
   }
 
+  const providerCapability = await inspectMercadoLivrePublicationCapability({
+    storeId,
+    connectionId,
+    requestedByUserId: proposedByUserId,
+  });
+  if (providerCapability.readiness !== 'ready_current_adapter') {
+    throw new Error(
+      `MERCADO_LIVRE_OUTBOUND_PUBLICATION_ADAPTER_MIGRATION_REQUIRED:${providerCapability.blockers.join(',')}`
+    );
+  }
+  if (
+    providerCapability.publicationModel !== 'legacy_items' ||
+    providerCapability.stockAuthority !== 'item_available_quantity'
+  ) {
+    throw new Error('MERCADO_LIVRE_OUTBOUND_PUBLICATION_MODEL_UNSUPPORTED');
+  }
+  const providerCapabilitySnapshot = freezeMercadoLivrePublicationCapability(providerCapability);
+
   const privateStoreRef = adminDb.doc(`users/${storeId}/stores/${storeId}`);
   const privateStoreDoc = await privateStoreRef.get();
   if (!privateStoreDoc.exists) throw new Error('STORE_REQUIRED');
@@ -155,24 +192,35 @@ export const proposeMercadoLivreExternalPublication = async (input: {
   if (!productDoc.exists) throw new Error('MERCADO_LIVRE_OUTBOUND_PRODUCT_NOT_FOUND');
   const product = assertCanonicalProduct(canonicalStoreId, canonicalProductId, productDoc.data());
   const baselineHash = canonicalHash(product);
-  const proposalId = proposalIdFor(storeId, connectionId, canonicalStoreId, canonicalProductId, baselineHash);
+  const proposalId = proposalIdFor(
+    storeId,
+    connectionId,
+    canonicalStoreId,
+    canonicalProductId,
+    baselineHash,
+    providerCapabilitySnapshot.fingerprint
+  );
   const proposalRef = adminDb.doc(`stores/${storeId}/catalogOutboundPublicationProposals/${proposalId}`);
   const existing = await proposalRef.get();
   if (existing.exists) {
     const prior = existing.data() as MercadoLivreOutboundPublicationProposal;
     if (
+      prior.schemaVersion !== 2 ||
       prior.storeId !== storeId ||
       prior.canonicalStoreId !== canonicalStoreId ||
       prior.connectionId !== connectionId ||
       prior.canonicalProductId !== canonicalProductId ||
-      prior.canonicalBaselineHash !== baselineHash
+      prior.canonicalBaselineHash !== baselineHash ||
+      prior.providerCapabilityFingerprint !== providerCapabilitySnapshot.fingerprint ||
+      prior.providerPublicationModel !== providerCapability.publicationModel ||
+      prior.providerStockAuthority !== providerCapability.stockAuthority
     ) throw new Error('MERCADO_LIVRE_OUTBOUND_PROPOSAL_CONFLICT');
     return prior;
   }
 
   const now = new Date().toISOString();
   const proposal: MercadoLivreOutboundPublicationProposal = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     id: proposalId,
     storeId,
     canonicalStoreId,
@@ -185,6 +233,10 @@ export const proposeMercadoLivreExternalPublication = async (input: {
     proposedByUserId,
     proposedAt: now,
     canonicalBaselineHash: baselineHash,
+    providerCapabilityFingerprint: providerCapabilitySnapshot.fingerprint,
+    providerPublicationModel: providerCapability.publicationModel,
+    providerStockAuthority: providerCapability.stockAuthority,
+    providerCapability: providerCapabilitySnapshot,
     canonical: {
       name: product.name,
       price: product.price,
