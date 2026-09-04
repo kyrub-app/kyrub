@@ -26,18 +26,40 @@ test('ambiguous recovery searches seller items by exact seller_custom_field and 
   assert.match(source, /candidates\.length === 0/);
   assert.match(source, /candidates\.length !== 1/);
   assert.doesNotMatch(source, /mercadoLivrePostJson/);
-  assert.doesNotMatch(source, /'\/items'/);
+  assert.doesNotMatch(source, /['"`]\/items['"`]/);
 });
 
-test('only one identity-verified candidate can restore published state and durable binding', async () => {
+test('only one identity-verified candidate can restore published state and durable capability-bound binding', async () => {
   const source = await readFile(recoveryPath, 'utf8');
   assert.match(source, /sellerCustomField !== marker/);
   assert.match(source, /sellerId !== externalAccountId/);
   assert.match(source, /externalCatalogBindings\/\$\{bindingId\}/);
+  assert.match(source, /schemaVersion: 2/);
+  assert.match(source, /providerCapabilityFingerprint/);
+  assert.match(source, /providerPublicationModel/);
+  assert.match(source, /providerStockAuthority/);
   assert.match(source, /authority: 'provider_search_recovered_owner_publication'/);
   assert.match(source, /status: 'published'/);
   assert.match(source, /recovered_from_provider_search/);
   assert.match(source, /catalogOutboundPublicationRecoveries/);
+});
+
+test('User Products ambiguous recovery requires and persists provider user_product_id', async () => {
+  const source = await readFile(recoveryPath, 'utf8');
+  assert.match(source, /user_product_id\?: unknown/);
+  assert.match(source, /publicationModel === 'user_products' && !externalUserProductId/);
+  assert.match(source, /MERCADO_LIVRE_PUBLICATION_RECOVERY_IDENTITY_MISMATCH/);
+  assert.match(source, /externalUserProductId: verified\.externalUserProductId/);
+  assert.match(source, /providerPublicationModel: execution\.providerPublicationModel/);
+});
+
+test('recovery rejects proposal, authorization or binding that drift from the frozen publication model', async () => {
+  const source = await readFile(recoveryPath, 'utf8');
+  assert.match(source, /assertMercadoLivrePublicationCapabilitySnapshot/);
+  assert.match(source, /currentAuthorization = assertAuthorization/);
+  assert.match(source, /proposal\?\.providerPublicationModel !== currentExecution\.providerPublicationModel/);
+  assert.match(source, /existing\.providerPublicationModel !== currentExecution\.providerPublicationModel/);
+  assert.match(source, /existing\.providerCapabilityFingerprint/);
 });
 
 test('post-publication reconciliation recovers ambiguous execution first and then uses normal baseline flow', async () => {
