@@ -10,7 +10,6 @@ import {
   getNinetyNineFoodStatus,
   pollAllNinetyNineFoodConnections,
   pollNinetyNineFood,
-  sendNinetyNineFoodOrderStatus,
   type NinetyNineFoodConnectInput,
 } from './ninetyNineFoodService';
 import {
@@ -31,7 +30,6 @@ import {
   drainNinetyNineFoodIngressQueue,
   enqueueNinetyNineFoodWebhook,
 } from './ninetyNineFoodIngressQueue';
-import type { NormalizedIntegrationOrder } from './openDelivery';
 
 export interface RawBodyRequest extends Request {
   rawBody?: Buffer;
@@ -125,16 +123,6 @@ const parseConnectInput = (value: unknown): NinetyNineFoodConnectInput => {
       : '',
   };
 };
-
-const ORDER_STATUSES = new Set<NormalizedIntegrationOrder['status']>([
-  'accepted',
-  'preparing',
-  'ready',
-  'out_for_delivery',
-  'completed',
-  'rejected',
-  'cancelled',
-]);
 
 const cronAuthorized = (request: Request): boolean => {
   const configuredSecret = process.env.INTEGRATION_CRON_SECRET?.trim();
@@ -309,24 +297,11 @@ export const createNinetyNineFoodRouter = (): Router => {
 
   router.post('/orders/:externalOrderId/status', async (request, response) => {
     try {
-      const tenantId = await authenticatedTenantId(request);
-      const status = typeof request.body?.status === 'string'
-        ? request.body.status as NormalizedIntegrationOrder['status']
-        : 'pending';
-      if (!ORDER_STATUSES.has(status)) {
-        response.status(400).json({ error: 'Status 99Food não suportado.' });
-        return;
-      }
-      const reason = typeof request.body?.reason === 'string'
-        ? request.body.reason
-        : '';
-      await sendNinetyNineFoodOrderStatus(
-        tenantId,
-        request.params.externalOrderId,
-        status,
-        reason
-      );
-      response.status(204).end();
+      await authenticatedTenantId(request);
+      response.status(410).json({
+        error: 'A escrita direta de status 99Food foi desativada. Use o fluxo canônico do pedido no Kyrub, que exige autorização explícita e vinculada ao status atual.',
+        code: 'NINETY_NINE_FOOD_DIRECT_STATUS_WRITE_DISABLED',
+      });
     } catch (error) {
       errorResponse(response, error);
     }
