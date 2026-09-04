@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 
 const servicePath = new URL('../server/integrations/mercadoLivreOutboundConditionalValidationService.ts', import.meta.url);
 const listingValidatorPath = new URL('../server/integrations/mercadoLivreOutboundListingValidationService.ts', import.meta.url);
+const capabilityGuardPath = new URL('../server/integrations/mercadoLivrePublicationCapabilitySnapshotGuard.ts', import.meta.url);
 const oauthPath = new URL('../server/integrations/mercadoLivreOauthService.ts', import.meta.url);
 const routerPath = new URL('../server/integrations/mercadoLivreRouter.ts', import.meta.url);
 
@@ -50,6 +51,29 @@ test('listing readiness uses Mercado Livre items validator instead of creating a
   assert.match(source, /authority: 'provider_items_validate'/);
   assert.match(source, /executionStatus: 'not_authorized'/);
   assert.doesNotMatch(source, /['"`]\/items['"`]\s*,\s*itemPayload/);
+});
+
+test('listing validation rechecks the frozen seller publication model before provider validation', async () => {
+  const source = await readFile(listingValidatorPath, 'utf8');
+  const guardIndex = source.indexOf('await assertCurrentMercadoLivrePublicationCapability');
+  const validateIndex = source.indexOf("mercadoLivreValidateJson(storeId, '/items/validate', itemPayload)");
+  assert.ok(guardIndex >= 0);
+  assert.ok(validateIndex > guardIndex);
+  assert.match(source, /schemaVersion: 2/);
+  assert.match(source, /providerCapabilityFingerprint/);
+  assert.match(source, /providerPublicationModel: 'legacy_items'/);
+  assert.match(source, /providerStockAuthority: 'item_available_quantity'/);
+});
+
+test('seller capability guard fails closed when the material provider model drifts', async () => {
+  const source = await readFile(capabilityGuardPath, 'utf8');
+  assert.match(source, /inspectMercadoLivrePublicationCapability/);
+  assert.match(source, /freezeMercadoLivrePublicationCapability/);
+  assert.match(source, /currentSnapshot\.fingerprint !== expected\.fingerprint/);
+  assert.match(source, /MERCADO_LIVRE_PUBLICATION_CAPABILITY_STALE/);
+  assert.match(source, /publicationModel !== 'legacy_items'/);
+  assert.match(source, /stockAuthority !== 'item_available_quantity'/);
+  assert.doesNotMatch(source, /mercadoLivrePostJson|mercadoLivreValidateJson/);
 });
 
 test('listing validator cannot run before successful conditional validation', async () => {
