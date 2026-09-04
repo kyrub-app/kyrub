@@ -27,16 +27,15 @@ test('revision-bound 99Food execution router is mounted before the legacy order 
     mountStart
   );
   const legacyIndex = serverSource.indexOf('createOrderInventoryRouter()', mountStart);
+  const mountSection = serverSource.slice(
+    mountStart,
+    legacyIndex + 'createOrderInventoryRouter()'.length
+  );
 
   assert.ok(mountStart >= 0);
   assert.ok(executionIndex > mountStart);
   assert.ok(legacyIndex > executionIndex);
-  assert.match(
-    serverSource.slice(mountStart, legacyIndex + 'createOrderInventoryRouter()'.length),
-    /integrationRateLimiter/[Symbol.match]
-      ? /integrationRateLimiter/
-      : /integrationRateLimiter/
-  );
+  assert.match(mountSection, /integrationRateLimiter/);
 });
 
 test('pending queue exposes Firestore document revision and client echoes it inside explicit authority', () => {
@@ -76,8 +75,10 @@ test('local KDS status changes and manual provider execution serialize through a
   assert.doesNotMatch(executionServiceSource, /integration\.statusMutationExecutionId/);
 });
 
-test('dedicated provider writer has no local order-status mutation side effect', () => {
+test('dedicated provider writer rechecks status and has no local order mutation side effect', () => {
   assert.match(providerWriterSource, /buildOpenDeliveryAction/);
+  assert.match(providerWriterSource, /clean\(integration\.outboundStatus\) !== 'executing'/);
+  assert.match(providerWriterSource, /clean\(order\.status\) !== input\.status/);
   assert.match(providerWriterSource, /client\.sendAction\(action\)/);
   assert.match(providerWriterSource, /integration\.externalOrderId/);
   assert.doesNotMatch(providerWriterSource, /updatePersistedOrderStatus/);
