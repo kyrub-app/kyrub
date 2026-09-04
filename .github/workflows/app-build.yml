@@ -28,6 +28,9 @@ jobs:
       - name: Validate TypeScript, tests and bundle
         run: npm run build > build.log 2>&1
 
+      - name: Validate 99Food retry blocker refocus
+        run: node --test --import tsx tests/99food-retry-blocker-refocus.test.ts >> build.log 2>&1
+
       - name: Normalize Vercel serverless ESM dependency graph
         run: node scripts/normalize-serverless-esm-imports.mjs >> build.log 2>&1
 
