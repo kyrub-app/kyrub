@@ -1,4 +1,5 @@
 import type { CustomerOrderStatus } from './customerOrders';
+import { recordOmnichannelE2EEvidence } from './omnichannelE2EEvidence';
 
 export const KYRUB_99FOOD_STATUS_WRITE_AUTHORITY_REQUESTED_EVENT =
   'kyrub:99food-status-write-authority-requested';
@@ -115,6 +116,26 @@ export const resolveNinetyNineFoodStatusWriteAuthority = (
 export const publishNinetyNineFoodStatusWriteResult = (
   result: NinetyNineFoodStatusWriteResult
 ): void => {
+  if (result.partnerSync !== 'not-applicable') {
+    recordOmnichannelE2EEvidence({
+      storeId: result.storeId,
+      kind: '99food_status_decision',
+      source: 'authoritative_execution_result',
+      referenceId: `${result.orderId}:${result.status}`,
+      outcome: result.partnerSync,
+      summary: result.partnerSync === 'authorization-required'
+        ? `Pedido ${result.orderId}: status ${result.status} aplicado somente no Kyrub; nenhum provider write foi autorizado.`
+        : result.partnerSync === 'sent'
+          ? `Pedido ${result.orderId}: status ${result.status} aplicado no Kyrub e enviado à 99Food.`
+          : `Pedido ${result.orderId}: status ${result.status} aplicado localmente, mas o provider exige atenção.`,
+      details: {
+        orderId: result.orderId,
+        status: result.status,
+        partnerSync: result.partnerSync,
+        partnerWarning: result.partnerWarning,
+      },
+    });
+  }
   window.dispatchEvent(
     new CustomEvent<NinetyNineFoodStatusWriteResult>(
       KYRUB_99FOOD_STATUS_WRITE_RESULT_EVENT,
