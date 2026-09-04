@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
+import './omnichannel-e2e-runbook.test.ts';
 
 const readinessSource = readFileSync(
   'src/utils/omnichannelE2EReadiness.ts',
