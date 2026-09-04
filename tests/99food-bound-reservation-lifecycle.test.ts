@@ -169,16 +169,20 @@ test('reservation retry UI reports the authoritative outcome then reloads the qu
 });
 
 test('reservation retry feedback tone follows the authoritative readback state', () => {
+  const blockedHelperStart = operationsQueueSource.indexOf('const retryStateRemainsBlocked =');
   const toneStart = operationsQueueSource.indexOf('const retryFeedbackTone =');
   const feedbackStart = operationsQueueSource.indexOf('const retryFeedback =', toneStart);
+  const blockedHelperSection = operationsQueueSource.slice(blockedHelperStart, toneStart);
   const toneSection = operationsQueueSource.slice(toneStart, feedbackStart);
 
   assert.match(operationsQueueSource, /type RetryFeedbackTone = 'success' \| 'warning' \| 'neutral'/);
-  assert.ok(toneStart >= 0);
+  assert.ok(blockedHelperStart >= 0);
+  assert.ok(toneStart > blockedHelperStart);
   assert.ok(feedbackStart > toneStart);
-  assert.match(toneSection, /state === 'blocked_insufficient_atp'/);
-  assert.match(toneSection, /state === 'blocked_product_binding_unresolved'/);
-  assert.match(toneSection, /state === 'blocked_authority_unresolved'/);
+  assert.match(blockedHelperSection, /state === 'blocked_insufficient_atp'/);
+  assert.match(blockedHelperSection, /state === 'blocked_product_binding_unresolved'/);
+  assert.match(blockedHelperSection, /state === 'blocked_authority_unresolved'/);
+  assert.match(toneSection, /retryStateRemainsBlocked\(state\)/);
   assert.match(toneSection, /return 'warning'/);
   assert.match(toneSection, /state === 'reserved'/);
   assert.match(toneSection, /state === 'consumed'/);
