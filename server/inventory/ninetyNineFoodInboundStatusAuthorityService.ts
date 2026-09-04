@@ -1,8 +1,10 @@
+import { createHash } from 'node:crypto';
 import { FieldValue, type DocumentSnapshot } from 'firebase-admin/firestore';
 import { adminDb } from '../firebaseAdmin.js';
 import type { InventoryOrderStatus } from '../../shared/inventoryConsumption.js';
 
 const STATUS_SYNC_EXECUTION_COLLECTION = 'ninetyNineFoodStatusSyncExecutions';
+const STATUS_MUTATION_LOCK_COLLECTION = 'orderStatusMutationLocks';
 const ACTIVE_OUTBOUND_STATUSES = new Set(['executing', 'reconciliation_required']);
 const EXECUTING_PHASES = new Set(['claimed', 'provider_write_started']);
 const RECONCILIATION_PHASES = new Set([
@@ -25,8 +27,25 @@ const integrationData = (value: unknown): Record<string, unknown> =>
 const internalOrderId = (externalOrderId: string): string =>
   `99food-${externalOrderId.replace(/[^a-zA-Z0-9_-]/g, '-')}`;
 
+const authorityDocumentId = (tenantId: string, orderId: string): string =>
+  createHash('sha256').update(`${tenantId}:${orderId}`).digest('hex');
+
 const legacyOrderReference = (tenantId: string, orderId: string) =>
   adminDb.doc(`artifacts/${tenantId}/public/data/customerOrders/${orderId}`);
+
+const mutationLockReference = (tenantId: string, orderId: string) =>
+  adminDb.doc(
+    `${STATUS_MUTATION_LOCK_COLLECTION}/${authorityDocumentId(tenantId, orderId)}`
+  );
+
+const activeStatusMutationId = (value: unknown): string => {
+  const lock = record(value);
+  const mutationId = clean(lock.mutationId);
+  const leaseExpiresAt = Date.parse(clean(lock.leaseExpiresAt));
+  return mutationId && Number.isFinite(leaseExpiresAt) && leaseExpiresAt > Date.now()
+    ? mutationId
+    : '';
+};
 
 export interface NinetyNineFoodInboundStatusAuthorityResult {
   orderExists: boolean;
@@ -55,11 +74,13 @@ export const applyNinetyNineFoodInboundStatusWithAuthority = async (input: {
   const orderId = internalOrderId(externalOrderId);
   const tenantReference = adminDb.doc(`tenants/${tenantId}`);
   const legacyReference = legacyOrderReference(tenantId, orderId);
+  const lockReference = mutationLockReference(tenantId, orderId);
 
   return adminDb.runTransaction(async transaction => {
-    const [tenantSnapshot, legacySnapshot] = await Promise.all([
+    const [tenantSnapshot, legacySnapshot, lockSnapshot] = await Promise.all([
       transaction.get(tenantReference),
       transaction.get(legacyReference),
+      transaction.get(lockReference),
     ]);
     if (!legacySnapshot.exists) {
       return {
@@ -68,6 +89,11 @@ export const applyNinetyNineFoodInboundStatusWithAuthority = async (input: {
         executionId: '',
         localStatusApplied: false,
       };
+    }
+    if (activeStatusMutationId(lockSnapshot.data())) {
+      throw new Error(
+        'NINETY_NINE_FOOD_INBOUND_STATUS_MUTATION_BUSY: uma mudança local de status ainda possui autoridade sobre este pedido; o evento inbound deve ser reprocessado depois.'
+      );
     }
 
     const canonicalStoreId = clean(tenantSnapshot.data()?.canonicalStoreId);
