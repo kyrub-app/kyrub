@@ -9,9 +9,11 @@ import {
   kyrubiaCreateNoteProposalFromCall,
   KYRUBIA_ALL_TOOLS,
   KYRUBIA_MUTATION_TOOL,
+  KYRUBIA_QUERY_PRODUCTS_TOOL_NAME,
   type KyrubiaCreateNoteProposal,
   type KyrubiaNormalizedToolCall,
 } from './kyrubiaSharedToolExecutor.js';
+import { prepareKyrubiaMercadoLivrePublication } from './kyrubiaMercadoLivrePrepareTool.js';
 import {
   messagesToKyrubiaProviderTurns,
   runKyrubiaUserProviderText,
@@ -32,6 +34,26 @@ export type KyrubiaUserProviderToolLoopResult =
     }
   | Exclude<KyrubiaUserProviderRuntimeResult, { status: 'user_provider' }>;
 
+const KYRUBIA_PREPARE_MERCADO_LIVRE_PUBLICATION_TOOL_NAME =
+  'prepare_mercado_livre_publication';
+
+const KYRUBIA_PREPARE_MERCADO_LIVRE_PUBLICATION_DECLARATION = {
+  name: KYRUBIA_PREPARE_MERCADO_LIVRE_PUBLICATION_TOOL_NAME,
+  description:
+    'Prepara somente um rascunho interno de publicação no Mercado Livre para um produto real retornado por query_products nesta mesma interação. Não publica, não cria autorização de publicação e não pode usar um productId inventado.',
+  parameters: {
+    type: 'OBJECT',
+    properties: {
+      productId: {
+        type: 'STRING',
+        description:
+          'ID exato de um produto retornado por query_products nesta mesma interação.',
+      },
+    },
+    required: ['productId'],
+  },
+} as const;
+
 const declarations = (
   source: typeof KYRUBIA_ALL_TOOLS | typeof KYRUBIA_MUTATION_TOOL
 ) => source.functionDeclarations.map(declaration => ({
@@ -39,6 +61,15 @@ const declarations = (
   description: declaration.description,
   parameters: declaration.parameters as unknown as Record<string, unknown>,
 }));
+
+const postReadDeclarations = () => [
+  ...declarations(KYRUBIA_MUTATION_TOOL),
+  {
+    name: KYRUBIA_PREPARE_MERCADO_LIVRE_PUBLICATION_DECLARATION.name,
+    description: KYRUBIA_PREPARE_MERCADO_LIVRE_PUBLICATION_DECLARATION.description,
+    parameters: KYRUBIA_PREPARE_MERCADO_LIVRE_PUBLICATION_DECLARATION.parameters as unknown as Record<string, unknown>,
+  },
+];
 
 const normalizedToolCall = (call: {
   id: string;
@@ -113,6 +144,52 @@ const turnsWithReadResult = (
   return turns;
 };
 
+const cleanProductId = (value: unknown): string =>
+  typeof value === 'string' ? value.trim().slice(0, 160) : '';
+
+const productIdsFromReadResult = (readResult: Record<string, unknown>): Set<string> => {
+  if (!Array.isArray(readResult.items)) return new Set<string>();
+  return new Set(readResult.items.flatMap(item => {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) return [];
+    const id = cleanProductId((item as Record<string, unknown>).id);
+    return id ? [id] : [];
+  }));
+};
+
+const mercadoLivreRequirementLabel = (value: string): string => {
+  switch (value) {
+    case 'mercado_livre_category_id':
+      return 'categoria do Mercado Livre';
+    case 'listing_type_id':
+      return 'tipo de anúncio';
+    case 'condition':
+      return 'condição do produto';
+    case 'required_attributes':
+      return 'atributos obrigatórios da categoria';
+    default:
+      return value;
+  }
+};
+
+const mercadoLivrePrepareReply = (
+  result: Awaited<ReturnType<typeof prepareKyrubiaMercadoLivrePublication>>
+): string => {
+  if ('message' in result) return result.message;
+  const model = result.providerPublicationModel === 'user_products'
+    ? 'User Products'
+    : 'itens legado';
+  const missing = result.missingRequirements
+    .map(mercadoLivreRequirementLabel)
+    .join(', ');
+  return [
+    `Encontrei o produto real no catálogo e preparei o rascunho interno para o Mercado Livre usando o modelo ${model}.`,
+    missing
+      ? `Antes de poder publicar, ainda precisamos completar: ${missing}.`
+      : 'O rascunho já está pronto para a etapa de revisão.',
+    'Nenhuma publicação foi enviada ao Mercado Livre e nenhuma autorização de publicação foi criada.',
+  ].join(' ');
+};
+
 export const runKyrubiaUserProviderToolLoop = async (input: {
   uid: string;
   systemText: string;
@@ -182,12 +259,59 @@ export const runKyrubiaUserProviderToolLoop = async (input: {
     systemText: input.systemText,
     messages: input.messages,
     turns,
-    tools: declarations(KYRUBIA_MUTATION_TOOL),
+    tools: postReadDeclarations(),
     hasAttachments: false,
     signal: input.signal,
   });
 
   if (second.status !== 'user_provider') return second;
+
+  const supportedSecondCalls = second.response.toolCalls.filter(call =>
+    call.name === 'create_note' ||
+    call.name === KYRUBIA_PREPARE_MERCADO_LIVRE_PUBLICATION_TOOL_NAME
+  );
+  if (supportedSecondCalls.length !== second.response.toolCalls.length || supportedSecondCalls.length > 1) {
+    return {
+      status: 'provider_failed',
+      provider: second.provider,
+      code: 'AI_PROVIDER_UNSUPPORTED_TOOL',
+      message: 'A IA conectada solicitou uma combinação de ferramentas que o Kyrub não permite executar.',
+    };
+  }
+
+  const mercadoLivreCall = supportedSecondCalls.find(
+    call => call.name === KYRUBIA_PREPARE_MERCADO_LIVRE_PUBLICATION_TOOL_NAME
+  );
+  if (mercadoLivreCall) {
+    const requestedProductId = cleanProductId(mercadoLivreCall.arguments.productId);
+    const observedProductIds = productIdsFromReadResult(readResult);
+    if (
+      readCall.name !== KYRUBIA_QUERY_PRODUCTS_TOOL_NAME ||
+      !requestedProductId ||
+      requestedProductId.includes('/') ||
+      !observedProductIds.has(requestedProductId)
+    ) {
+      return {
+        status: 'provider_failed',
+        provider: second.provider,
+        code: 'AI_PROVIDER_UNSUPPORTED_TOOL',
+        message: 'A IA tentou preparar uma publicação para um produto que não foi confirmado pela consulta atual do catálogo.',
+      };
+    }
+
+    const prepared = await prepareKyrubiaMercadoLivrePublication({
+      uid: input.uid,
+      productId: requestedProductId,
+    });
+    return {
+      status: 'user_provider',
+      provider: second.provider,
+      model: second.model,
+      reply: mercadoLivrePrepareReply(prepared),
+      usage: addUsage(first.response.usage, second.response.usage),
+      calls: 2,
+    };
+  }
 
   const secondProposal = noteProposal(second.response.toolCalls);
   const reply = second.response.text.trim();
