@@ -173,3 +173,37 @@ export const inspectMercadoLivrePublicationCapability = async (input: {
     seller,
   });
 };
+
+export const assertMercadoLivrePublicationCapabilityCurrent = async (input: {
+  storeId: string;
+  connectionId: string;
+  requestedByUserId: string;
+  expectedFingerprint: string;
+  expectedPublicationModel: MercadoLivrePublicationModel;
+  expectedStockAuthority: MercadoLivreStockAuthority;
+}): Promise<MercadoLivrePublicationCapabilitySnapshot> => {
+  const expectedFingerprint = clean(input.expectedFingerprint, 80);
+  if (!/^[a-f0-9]{64}$/i.test(expectedFingerprint)) {
+    throw new Error('MERCADO_LIVRE_PUBLICATION_CAPABILITY_EXPECTATION_INVALID');
+  }
+
+  const current = await inspectMercadoLivrePublicationCapability({
+    storeId: input.storeId,
+    connectionId: input.connectionId,
+    requestedByUserId: input.requestedByUserId,
+  });
+  const snapshot = freezeMercadoLivrePublicationCapability(current);
+  if (
+    snapshot.fingerprint !== expectedFingerprint ||
+    current.publicationModel !== input.expectedPublicationModel ||
+    current.stockAuthority !== input.expectedStockAuthority
+  ) {
+    throw new Error('MERCADO_LIVRE_PUBLICATION_CAPABILITY_STALE');
+  }
+  if (current.readiness !== 'ready_current_adapter') {
+    throw new Error(
+      `MERCADO_LIVRE_OUTBOUND_PUBLICATION_ADAPTER_MIGRATION_REQUIRED:${current.blockers.join(',')}`
+    );
+  }
+  return snapshot;
+};
