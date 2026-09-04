@@ -16,7 +16,7 @@ interface ProposalRecord {
   action: 'create_external_listing';
   canonicalBaselineHash: string;
   providerCapabilityFingerprint: string;
-  providerPublicationModel: 'legacy_items';
+  providerPublicationModel: 'legacy_items' | 'user_products';
   providerStockAuthority: 'item_available_quantity';
   providerCapability: unknown;
   canonical: {
@@ -42,7 +42,7 @@ interface ListingValidationRecord {
   executionStatus: 'not_authorized';
   canonicalBaselineHash: string;
   providerCapabilityFingerprint: string;
-  providerPublicationModel: 'legacy_items';
+  providerPublicationModel: 'legacy_items' | 'user_products';
   providerStockAuthority: 'item_available_quantity';
   providerPayload: Record<string, unknown>;
 }
@@ -78,7 +78,8 @@ const assertProposal = (storeId: string, proposalId: string, value: unknown): Pr
     record.authority !== 'canonical_kyrub_snapshot' || record.action !== 'create_external_listing' ||
     !clean(record.canonicalStoreId, 160) || !clean(record.connectionId, 200) ||
     !clean(record.canonicalProductId, 160) || !clean(record.canonicalBaselineHash, 80) ||
-    !clean(record.providerCapabilityFingerprint, 80) || record.providerPublicationModel !== 'legacy_items' ||
+    !clean(record.providerCapabilityFingerprint, 80) ||
+    (record.providerPublicationModel !== 'legacy_items' && record.providerPublicationModel !== 'user_products') ||
     record.providerStockAuthority !== 'item_available_quantity' || !record.providerCapability ||
     !canonical || !clean(canonical.name, 120) ||
     record.publicationReadiness !== 'ready_for_owner_authorization' ||
