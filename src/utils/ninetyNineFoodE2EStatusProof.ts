@@ -58,15 +58,21 @@ const detailString = (
   key: string
 ): string => clean(record.details[key]);
 
-const detailBoolean = (
+const detailIsFalse = (
   record: OmnichannelE2EEvidenceRecord,
   key: string
-): boolean => record.details[key] === true;
+): boolean => record.details[key] === false;
 
 const after = (record: OmnichannelE2EEvidenceRecord, instant: string): boolean => {
   const recordMillis = millis(record.observedAt);
   const instantMillis = millis(instant);
   return recordMillis !== null && instantMillis !== null && recordMillis >= instantMillis;
+};
+
+const laterThan = (record: OmnichannelE2EEvidenceRecord, instant: string): boolean => {
+  const recordMillis = millis(record.observedAt);
+  const instantMillis = millis(instant);
+  return recordMillis !== null && instantMillis !== null && recordMillis > instantMillis;
 };
 
 const orderEvidence = (
@@ -98,9 +104,7 @@ export const loadNinetyNineFoodE2EStatusProof = async (
     throw new Error('A cobaia E2E não pertence ao owner autenticado.');
   }
 
-  const [pendingItems] = await Promise.all([
-    loadNinetyNineFoodPendingStatusSyncs(user),
-  ]);
+  const pendingItems = await loadNinetyNineFoodPendingStatusSyncs(user);
   const records = orderEvidence(
     readOmnichannelE2EEvidence(subject.storeId),
     subject
@@ -149,12 +153,11 @@ export const loadNinetyNineFoodE2EStatusProof = async (
     'Depois de provar Kyrub-only, use a fila manual padrão para autorizar o envio da revisão exata. Este observador não envia nada.'
   );
   if (manualEvidence) {
-    const localTransitionApplied = detailBoolean(manualEvidence, 'localTransitionApplied');
+    const noLocalReplay = detailIsFalse(manualEvidence, 'localTransitionApplied');
     const outcome = manualEvidence.outcome;
     const manualStatus = detailString(manualEvidence, 'status');
-    const localReplayGuard = localTransitionApplied === false;
     const state: NinetyNineFoodE2EProofState =
-      outcome === 'sent' && localReplayGuard
+      outcome === 'sent' && noLocalReplay
         ? 'proven'
         : outcome === 'reconciliation_required' || outcome === 'attention'
           ? 'attention'
@@ -170,7 +173,7 @@ export const loadNinetyNineFoodE2EStatusProof = async (
         ? 'Envio manual aceito com localTransitionApplied = false; a transição local não foi repetida.'
         : state === 'attention'
           ? 'O envio manual ficou ambíguo/em atenção. Pare e reconcilie; não faça uma nova tentativa automática.'
-          : 'A evidência do envio manual não preserva a garantia de ausência de replay local.'
+          : 'A evidência do envio manual não contém localTransitionApplied = false de forma explícita.'
     };
   }
 
@@ -178,7 +181,7 @@ export const loadNinetyNineFoodE2EStatusProof = async (
   const manualStatus = manualEvidence ? detailString(manualEvidence, 'status') : '';
   const directEvidence = manualEvidence && manualSync.state === 'proven'
     ? decisions.find(record =>
-        after(record, manualAt) &&
+        laterThan(record, manualAt) &&
         (record.outcome === 'sent' || record.outcome === 'attention') &&
         detailString(record, 'status') !== manualStatus
       ) ?? null
@@ -204,7 +207,7 @@ export const loadNinetyNineFoodE2EStatusProof = async (
   const warnings: string[] = [];
   const directBeforeManual = decisions.find(record =>
     (record.outcome === 'sent' || record.outcome === 'attention') &&
-    (!manualEvidence || !after(record, manualEvidence.observedAt))
+    (!manualEvidence || !laterThan(record, manualEvidence.observedAt))
   );
   if (directBeforeManual) {
     warnings.push(
@@ -214,7 +217,7 @@ export const loadNinetyNineFoodE2EStatusProof = async (
   const secondKyrubOnly = manualEvidence
     ? decisions.find(record =>
         record.outcome === 'authorization-required' &&
-        after(record, manualEvidence.observedAt) &&
+        laterThan(record, manualEvidence.observedAt) &&
         detailString(record, 'status') !== manualStatus
       )
     : null;
@@ -223,9 +226,7 @@ export const loadNinetyNineFoodE2EStatusProof = async (
       `A transição seguinte (${detailString(secondKyrubOnly, 'status')}) também foi Kyrub-only; ainda falta provar uma autorização Kyrub + 99Food nova.`
     );
   }
-  if (manualEvidence && !detailBoolean(manualEvidence, 'localTransitionApplied')) {
-    // Expected shape; no warning.
-  } else if (manualEvidence) {
+  if (manualEvidence && !detailIsFalse(manualEvidence, 'localTransitionApplied')) {
     warnings.push('A resposta do envio manual não provou localTransitionApplied = false. Pare o E2E.');
   }
 
