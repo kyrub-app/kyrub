@@ -6,6 +6,8 @@ import { readFile } from 'node:fs/promises';
 const servicePath = new URL('../server/integrations/mercadoLivreE2ETestService.ts', import.meta.url);
 const routerPath = new URL('../server/integrations/mercadoLivreE2ETestRouter.ts', import.meta.url);
 const sellerCapabilityPath = new URL('../server/integrations/mercadoLivreSellerCapabilityService.ts', import.meta.url);
+const publicationAuthorizationPath = new URL('../server/integrations/mercadoLivreOutboundPublicationAuthorizationService.ts', import.meta.url);
+const publicationExecutionPath = new URL('../server/integrations/mercadoLivreOutboundPublicationExecutionService.ts', import.meta.url);
 const componentPath = new URL('../src/components/store/MercadoLivreE2ETestWorkspace.tsx', import.meta.url);
 const bridgePath = new URL('../src/components/store/StoreConnectionsPortalBridge.tsx', import.meta.url);
 const clientPath = new URL('../src/utils/mercadoLivreE2ETest.ts', import.meta.url);
@@ -34,6 +36,20 @@ test('seller publication capability is derived from authenticated Mercado Livre 
   assert.match(source, /MERCADO_LIVRE_SELLER_CAPABILITY_IDENTITY_MISMATCH/);
   assert.match(source, /mercado_livre_authenticated_user_profile/);
   assert.doesNotMatch(source, /mercadoLivrePutJson|mercadoLivrePostJson|\.create\(|\.set\(|\.update\(/);
+});
+
+test('legacy publication authority freezes capability and execution rechecks it before the provider write', async () => {
+  const authorization = await readFile(publicationAuthorizationPath, 'utf8');
+  const execution = await readFile(publicationExecutionPath, 'utf8');
+  assert.match(authorization, /inspectMercadoLivreSellerCapability/);
+  assert.match(authorization, /MERCADO_LIVRE_USER_PRODUCTS_ADAPTER_REQUIRED/);
+  assert.match(authorization, /providerCapabilityFingerprint/);
+  assert.match(authorization, /providerPublicationModel/);
+  assert.match(execution, /inspectMercadoLivreSellerCapability/);
+  assert.match(execution, /MERCADO_LIVRE_PUBLICATION_PROVIDER_CAPABILITY_STALE/);
+  assert.match(execution, /safeHashEquals\(authorization\.providerCapabilityFingerprint, providerCapability\.capabilityFingerprint\)/);
+  assert.match(execution, /mercadoLivrePostJson<.*>\(storeId, '\/items'/);
+  assert.ok(execution.indexOf('MERCADO_LIVRE_PUBLICATION_PROVIDER_CAPABILITY_STALE') < execution.indexOf("mercadoLivrePostJson<MercadoLivreCreatedItem>(storeId, '/items'"));
 });
 
 test('E2E read router is owner authenticated and mounted beside Mercado Livre routes', async () => {
