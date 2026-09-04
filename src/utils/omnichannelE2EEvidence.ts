@@ -46,24 +46,23 @@ const sanitizeDetails = (
   value: Record<string, OmnichannelE2EEvidenceDetailValue> | undefined
 ): Record<string, OmnichannelE2EEvidenceDetailValue> => {
   if (!value) return {};
-  const entries = Object.entries(value)
-    .slice(0, 24)
-    .flatMap(([keyValue, detail]) => {
-      const key = clean(keyValue, 80);
-      if (!key) return [];
-      if (typeof detail === 'string') {
-        return [[key, clean(detail, 500)] as const];
-      }
-      if (
-        detail === null ||
-        typeof detail === 'boolean' ||
-        (typeof detail === 'number' && Number.isFinite(detail))
-      ) {
-        return [[key, detail] as const];
-      }
-      return [];
-    });
-  return Object.fromEntries(entries);
+  const sanitized: Record<string, OmnichannelE2EEvidenceDetailValue> = {};
+  for (const [keyValue, detail] of Object.entries(value).slice(0, 24)) {
+    const key = clean(keyValue, 80);
+    if (!key) continue;
+    if (typeof detail === 'string') {
+      sanitized[key] = clean(detail, 500);
+      continue;
+    }
+    if (
+      detail === null ||
+      typeof detail === 'boolean' ||
+      (typeof detail === 'number' && Number.isFinite(detail))
+    ) {
+      sanitized[key] = detail;
+    }
+  }
+  return sanitized;
 };
 
 const notifyChanged = (storeId: string): void => {
