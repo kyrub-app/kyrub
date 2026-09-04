@@ -112,10 +112,11 @@ export const loadNinetyNineFoodE2EStatusProof = async (
   const pending = exactPending(pendingItems, subject);
   const decisions = records.filter(record => record.kind === '99food_status_decision');
   const manualRecords = records.filter(record => record.kind === '99food_manual_status_sync');
-
-  const kyrubOnlyEvidence = decisions.find(
+  const kyrubOnlyRecords = decisions.filter(
     record => record.outcome === 'authorization-required'
-  ) ?? null;
+  );
+
+  const kyrubOnlyEvidence = kyrubOnlyRecords[0] ?? null;
   const kyrubOnlyStatus = decisionStatus(kyrubOnlyEvidence) ||
     (pending?.outboundStatus === 'authorization_required' ? pending.status : '');
 
@@ -148,11 +149,22 @@ export const loadNinetyNineFoodE2EStatusProof = async (
     };
   }
 
-  const manualEvidence = manualRecords[0] ?? null;
+  const multipleManualSyncs = manualRecords.length > 1;
+  const manualEvidence = manualRecords.length === 1 ? manualRecords[0] : null;
   let manualSync = emptyStep(
     'Depois de provar Kyrub-only, use a fila manual padrão para autorizar o envio da revisão exata. Este observador não envia nada.'
   );
-  if (manualEvidence) {
+  if (multipleManualSyncs) {
+    manualSync = {
+      state: 'blocked',
+      status: '',
+      source: 'session_evidence_conflict',
+      observedAt: '',
+      orderRevision: '',
+      executionId: '',
+      note: 'Mais de um envio manual foi observado para esta cobaia na mesma sessão. O roteiro deixou de ser unívoco; não escolha automaticamente um deles.'
+    };
+  } else if (manualEvidence) {
     const noLocalReplay = detailIsFalse(manualEvidence, 'localTransitionApplied');
     const outcome = manualEvidence.outcome;
     const manualStatus = detailString(manualEvidence, 'status');
@@ -205,6 +217,12 @@ export const loadNinetyNineFoodE2EStatusProof = async (
   }
 
   const warnings: string[] = [];
+  if (multipleManualSyncs) {
+    warnings.push('Mais de um envio manual foi observado para a cobaia. Pare o E2E e reinicie a janela com um novo pedido para obter uma sequência unívoca.');
+  }
+  if (kyrubOnlyRecords.length > 1 && !manualEvidence) {
+    warnings.push('Mais de uma decisão Kyrub-only foi observada antes do único envio manual esperado. Não trate a sequência como limpa.');
+  }
   const directBeforeManual = decisions.find(record =>
     (record.outcome === 'sent' || record.outcome === 'attention') &&
     (!manualEvidence || !laterThan(record, manualEvidence.observedAt))
