@@ -44,6 +44,20 @@ test('authorization rechecks canonical freshness transactionally before granting
   assert.match(source, /executionStatus: 'authorized'/);
 });
 
+test('authorization rechecks and persists the exact Mercado Livre publication capability fingerprint', async () => {
+  const source = await readFile(servicePath, 'utf8');
+  const capabilityIndex = source.indexOf('assertMercadoLivrePublicationCapabilityCurrent({');
+  const authorizationIndex = source.indexOf('transaction.create(authorizationRef');
+  assert.ok(capabilityIndex >= 0);
+  assert.ok(authorizationIndex > capabilityIndex);
+  assert.match(source, /expectedFingerprint: proposal\.providerCapabilityFingerprint/);
+  assert.match(source, /currentValidation\.providerCapabilityFingerprint !== proposal\.providerCapabilityFingerprint/);
+  assert.match(source, /schemaVersion: 2/);
+  assert.match(source, /providerCapabilityFingerprint: proposal\.providerCapabilityFingerprint/);
+  assert.match(source, /providerPublicationModel: proposal\.providerPublicationModel/);
+  assert.match(source, /providerStockAuthority: proposal\.providerStockAuthority/);
+});
+
 test('authorization route remains separate from the real Mercado Livre item creation executor', async () => {
   const router = await readFile(routerPath, 'utf8');
   assert.match(router, /authorize-publication/);
