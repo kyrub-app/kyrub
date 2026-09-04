@@ -21,6 +21,11 @@ const SUPPORTED_STATUSES = new Set<InventoryOrderStatus>([
   'cancelled',
 ]);
 
+const PENDING_PARTNER_SYNC_STATUSES = new Set([
+  'authorization_required',
+  'attention',
+]);
+
 type DeliveryProvider = 'kyrub' | 'merchant';
 type ParsedOrderDecision = OrderStatusDecisionInput & {
   deliveryProvider?: DeliveryProvider;
@@ -92,6 +97,10 @@ const errorResponse = (response: Response, error: unknown): void => {
     response.status(404).json({ error: message });
     return;
   }
+  if (/Sincronização 99Food.*não está pendente|status do pedido mudou desde a autorização 99Food/i.test(message)) {
+    response.status(409).json({ error: message, code: 'NINETY_NINE_FOOD_STATUS_SYNC_STALE' });
+    return;
+  }
   if (/não permitida|inválid|explique|identificado|Revise os dados|Revise os itens|Revise as quantidades|Escolha como a entrega|Autorização 99Food/i.test(message)) {
     response.status(400).json({ error: message });
     return;
@@ -112,6 +121,9 @@ const errorResponse = (response: Response, error: unknown): void => {
 
 const orderReference = (tenantId: string, orderId: string) =>
   adminDb.doc(`artifacts/${tenantId}/public/data/customerOrders/${orderId}`);
+
+const orderCollection = (tenantId: string) =>
+  adminDb.collection(`artifacts/${tenantId}/public/data/customerOrders`);
 
 const persistDeliveryProvider = async (
   tenantId: string,
@@ -141,10 +153,14 @@ const persistDeliveryProvider = async (
 const markPartnerSyncError = async (
   tenantId: string,
   orderId: string,
+  status: InventoryOrderStatus,
+  reason: string,
   message: string
 ): Promise<void> => {
   await orderReference(tenantId, orderId).update({
     'integration.outboundStatus': 'attention',
+    'integration.outboundTargetStatus': status,
+    'integration.outboundReason': reason || FieldValue.delete(),
     'integration.outboundError': message.slice(0, 500),
     'integration.outboundUpdatedAt': new Date().toISOString(),
   });
@@ -156,6 +172,8 @@ const markPartnerSyncSuccess = async (
 ): Promise<void> => {
   await orderReference(tenantId, orderId).update({
     'integration.outboundStatus': 'sent',
+    'integration.outboundTargetStatus': FieldValue.delete(),
+    'integration.outboundReason': FieldValue.delete(),
     'integration.outboundError': FieldValue.delete(),
     'integration.outboundUpdatedAt': new Date().toISOString(),
   });
@@ -163,19 +181,178 @@ const markPartnerSyncSuccess = async (
 
 const markPartnerSyncAuthorizationRequired = async (
   tenantId: string,
-  orderId: string
+  orderId: string,
+  status: InventoryOrderStatus,
+  reason: string
 ): Promise<void> => {
   await orderReference(tenantId, orderId).update({
     'integration.outboundStatus': 'authorization_required',
+    'integration.outboundTargetStatus': status,
+    'integration.outboundReason': reason || FieldValue.delete(),
     'integration.outboundError': FieldValue.delete(),
     'integration.outboundUpdatedAt': new Date().toISOString(),
   });
+};
+
+const listPendingNinetyNineFoodStatusSyncs = async (tenantId: string) => {
+  const snapshot = await orderCollection(tenantId)
+    .where(
+      'integration.outboundStatus',
+      'in',
+      Array.from(PENDING_PARTNER_SYNC_STATUSES)
+    )
+    .limit(100)
+    .get();
+
+  const items = snapshot.docs.flatMap(document => {
+    const data = document.data() as Record<string, unknown>;
+    const integration =
+      data.integration && typeof data.integration === 'object' && !Array.isArray(data.integration)
+        ? data.integration as Record<string, unknown>
+        : {};
+    const provider = clean(integration.provider);
+    const outboundStatus = clean(integration.outboundStatus);
+    const currentStatus = clean(data.status) as InventoryOrderStatus;
+    const frozenTargetStatus = clean(integration.outboundTargetStatus) as InventoryOrderStatus;
+    const status = SUPPORTED_STATUSES.has(frozenTargetStatus)
+      ? frozenTargetStatus
+      : currentStatus;
+    const externalOrderId = clean(integration.externalOrderId);
+    if (
+      provider !== '99food' ||
+      !PENDING_PARTNER_SYNC_STATUSES.has(outboundStatus) ||
+      !SUPPORTED_STATUSES.has(status) ||
+      !externalOrderId
+    ) {
+      return [];
+    }
+    return [{
+      orderId: document.id,
+      externalOrderId,
+      displayId: clean(data.displayId) || clean(data.orderNumber) || externalOrderId,
+      customerName: clean(data.customerName),
+      status,
+      outboundStatus,
+      outboundError: clean(integration.outboundError),
+      outboundUpdatedAt: clean(integration.outboundUpdatedAt) || clean(data.updatedAt),
+    }];
+  });
+
+  items.sort((left, right) =>
+    right.outboundUpdatedAt.localeCompare(left.outboundUpdatedAt)
+  );
+  return { items };
 };
 
 export const createOrderInventoryRouter = (): Router => {
   const router = Router();
 
   router.use('/availability', createChannelAvailabilityPolicyRouter());
+
+  router.get('/provider-sync/99food/pending', async (request, response) => {
+    try {
+      const tenantId = await authenticatedTenantId(request);
+      response.json(await listPendingNinetyNineFoodStatusSyncs(tenantId));
+    } catch (error) {
+      errorResponse(response, error);
+    }
+  });
+
+  router.post('/:orderId/provider-sync/99food', async (request, response) => {
+    try {
+      const tenantId = await authenticatedTenantId(request);
+      const orderId = clean(request.params.orderId);
+      const authorizationValue = request.body?.providerWriteAuthorization;
+      const authorizationCandidate =
+        authorizationValue && typeof authorizationValue === 'object'
+          ? authorizationValue as Record<string, unknown>
+          : {};
+      const requestedStatus = clean(authorizationCandidate.status) as InventoryOrderStatus;
+      if (!SUPPORTED_STATUSES.has(requestedStatus)) {
+        throw new Error('Autorização 99Food inválida para este status do pedido.');
+      }
+      const providerWriteAuthorization = parseProviderWriteAuthorization(
+        authorizationValue,
+        requestedStatus
+      );
+      if (!providerWriteAuthorization) {
+        throw new Error('Autorização 99Food inválida para este status do pedido.');
+      }
+
+      const currentSnapshot = await orderReference(tenantId, orderId).get();
+      if (!currentSnapshot.exists) throw new Error('Pedido não encontrado.');
+      const currentData = currentSnapshot.data() as Record<string, unknown>;
+      const currentIntegration =
+        currentData.integration && typeof currentData.integration === 'object' && !Array.isArray(currentData.integration)
+          ? currentData.integration as Record<string, unknown>
+          : {};
+      const currentProvider = clean(currentIntegration.provider);
+      const currentStatus = clean(currentData.status) as InventoryOrderStatus;
+      const outboundTargetStatus = clean(currentIntegration.outboundTargetStatus) as InventoryOrderStatus;
+      const expectedStatus = SUPPORTED_STATUSES.has(outboundTargetStatus)
+        ? outboundTargetStatus
+        : currentStatus;
+      const outboundStatus = clean(currentIntegration.outboundStatus);
+      const externalOrderId = clean(currentIntegration.externalOrderId);
+      const reason = clean(currentIntegration.outboundReason);
+
+      if (currentProvider !== '99food') {
+        throw new Error('Autorização 99Food não corresponde ao provedor deste pedido.');
+      }
+      if (!PENDING_PARTNER_SYNC_STATUSES.has(outboundStatus)) {
+        throw new Error('Sincronização 99Food deste pedido não está pendente para envio manual.');
+      }
+      if (
+        !SUPPORTED_STATUSES.has(currentStatus) ||
+        currentStatus !== providerWriteAuthorization.status ||
+        expectedStatus !== providerWriteAuthorization.status
+      ) {
+        throw new Error('O status do pedido mudou desde a autorização 99Food. Revise a fila e confirme novamente.');
+      }
+      if (!externalOrderId) {
+        throw new Error('Pedido 99Food sem identificador externo válido.');
+      }
+
+      try {
+        await sendNinetyNineFoodOrderStatus(
+          tenantId,
+          externalOrderId,
+          providerWriteAuthorization.status,
+          reason
+        );
+        await markPartnerSyncSuccess(tenantId, orderId);
+        response.json({
+          orderId,
+          externalOrderId,
+          status: providerWriteAuthorization.status,
+          partnerSync: 'sent',
+          partnerWarning: '',
+          localTransitionApplied: false,
+        });
+      } catch (error) {
+        const partnerWarning = error instanceof Error ? error.message : String(error);
+        await markPartnerSyncError(
+          tenantId,
+          orderId,
+          providerWriteAuthorization.status,
+          reason,
+          partnerWarning
+        ).catch(markError => {
+          console.error('[Order Inventory] Partner sync marker failed.', markError);
+        });
+        response.status(202).json({
+          orderId,
+          externalOrderId,
+          status: providerWriteAuthorization.status,
+          partnerSync: 'attention',
+          partnerWarning,
+          localTransitionApplied: false,
+        });
+      }
+    } catch (error) {
+      errorResponse(response, error);
+    }
+  });
 
   router.post('/:orderId/reconcile-inventory', async (request, response) => {
     try {
@@ -277,10 +454,14 @@ export const createOrderInventoryRouter = (): Router => {
       if (result.provider === '99food' && result.externalOrderId) {
         if (!providerWriteAuthorization) {
           partnerSync = 'authorization-required';
-          await markPartnerSyncAuthorizationRequired(tenantId, result.orderId)
-            .catch(markError => {
-              console.error('[Order Inventory] Partner authorization marker failed.', markError);
-            });
+          await markPartnerSyncAuthorizationRequired(
+            tenantId,
+            result.orderId,
+            result.status,
+            decision.reason
+          ).catch(markError => {
+            console.error('[Order Inventory] Partner authorization marker failed.', markError);
+          });
         } else {
           try {
             await sendNinetyNineFoodOrderStatus(
@@ -295,10 +476,15 @@ export const createOrderInventoryRouter = (): Router => {
             partnerSync = 'attention';
             partnerWarning =
               error instanceof Error ? error.message : String(error);
-            await markPartnerSyncError(tenantId, result.orderId, partnerWarning)
-              .catch(markError => {
-                console.error('[Order Inventory] Partner sync marker failed.', markError);
-              });
+            await markPartnerSyncError(
+              tenantId,
+              result.orderId,
+              result.status,
+              decision.reason,
+              partnerWarning
+            ).catch(markError => {
+              console.error('[Order Inventory] Partner sync marker failed.', markError);
+            });
           }
         }
       }
