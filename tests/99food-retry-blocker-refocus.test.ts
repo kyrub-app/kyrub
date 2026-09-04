@@ -150,6 +150,7 @@ test('retailer navigation listener only opens Pedidos for the authenticated exac
   assert.ok(listenerEnd > listenerStart);
   assert.match(listenerSection, /detail\?\.storeId\?\.trim\(\) !== activeRetailerId/);
   assert.match(listenerSection, /user\.uid !== activeRetailerId/);
+  assert.match(listenerSection, /setCanonicalNavigationOrderId\(detail\.orderId\.trim\(\)\)/);
   assert.match(listenerSection, /setActiveSubTab\('pedidos'\)/);
   assert.doesNotMatch(listenerSection, /updateOrderStatusWithDecision|setCustomerOrders|\bfetch\(/);
   assert.match(retailerSource, /<CustomerOrderInbox\s+storeId=\{activeRetailerId\}/);
@@ -175,4 +176,27 @@ test('customer order inbox consumes exact pending identity, clears hiding filter
   assert.doesNotMatch(navigationSection, /onChangeStatus|updateOrderStatusWithDecision|\bfetch\(/);
   assert.match(inboxSource, /id=\{orderElementId\(order\.id\)\}/);
   assert.match(inboxSource, /tabIndex=\{-1\}/);
+});
+
+test('pending canonical order location is visible, exact, and never falls back to a similar order', () => {
+  const stateStart = retailerSource.indexOf("const [canonicalNavigationOrderId, setCanonicalNavigationOrderId] = useState('');");
+  const visibleStart = retailerSource.indexOf('const canonicalNavigationOrderVisible = useMemo(', stateStart);
+  const listenerStart = retailerSource.indexOf('const handleCanonicalOrderNavigation = (event: Event): void =>', visibleStart);
+  const bannerStart = retailerSource.indexOf('id="kyrub-canonical-order-location-pending"', listenerStart);
+  const bannerEnd = retailerSource.indexOf('<CustomerOrderInbox', bannerStart);
+  const visibilitySection = retailerSource.slice(visibleStart, listenerStart);
+  const bannerSection = retailerSource.slice(bannerStart, bannerEnd);
+
+  assert.ok(stateStart >= 0);
+  assert.ok(visibleStart > stateStart);
+  assert.ok(listenerStart > visibleStart);
+  assert.ok(bannerStart > listenerStart);
+  assert.ok(bannerEnd > bannerStart);
+  assert.match(visibilitySection, /kdsOrders\.some\(order => order\.id === canonicalNavigationOrderId\)/);
+  assert.match(bannerSection, /canonicalNavigationOrderId/);
+  assert.match(bannerSection, /Nenhum outro pedido será escolhido por nome, cliente, SKU ou similaridade/);
+  assert.doesNotMatch(
+    `${visibilitySection}\n${bannerSection}`,
+    /includes\(canonicalNavigationOrderId\)|localeCompare|toLocaleLowerCase|fuzzy|similarity|updateOrderStatusWithDecision|onChangeStatus|\bfetch\(/
+  );
 });
