@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { mercadoLivreGetJson } from './mercadoLivreOauthService.js';
 import { getStoreConnectionRegistryRecord } from './storeConnectionRegistry.js';
 
@@ -33,6 +34,48 @@ export interface MercadoLivrePublicationCapability {
   observedAt: string;
   authority: 'mercado_livre_users_api';
 }
+
+export interface MercadoLivrePublicationCapabilitySnapshot {
+  externalAccountId: string;
+  siteId: string;
+  publicationModel: MercadoLivrePublicationModel;
+  stockAuthority: MercadoLivreStockAuthority;
+  warehouseMode: 'none' | 'single_warehouse' | 'multiwarehouse';
+  userProductSeller: boolean;
+  warehouseManagement: boolean;
+  multiwarehouse: boolean;
+  observedTags: string[];
+  observedAt: string;
+  authority: 'mercado_livre_users_api';
+  fingerprint: string;
+}
+
+const materialCapabilityState = (capability: MercadoLivrePublicationCapability) => ({
+  externalAccountId: capability.externalAccountId,
+  siteId: capability.siteId,
+  publicationModel: capability.publicationModel,
+  stockAuthority: capability.stockAuthority,
+  warehouseMode: capability.warehouseMode,
+  userProductSeller: capability.userProductSeller,
+  warehouseManagement: capability.warehouseManagement,
+  multiwarehouse: capability.multiwarehouse,
+});
+
+export const mercadoLivrePublicationCapabilityFingerprint = (
+  capability: MercadoLivrePublicationCapability
+): string => createHash('sha256')
+  .update(JSON.stringify(materialCapabilityState(capability)))
+  .digest('hex');
+
+export const freezeMercadoLivrePublicationCapability = (
+  capability: MercadoLivrePublicationCapability
+): MercadoLivrePublicationCapabilitySnapshot => ({
+  ...materialCapabilityState(capability),
+  observedTags: [...capability.observedTags],
+  observedAt: capability.observedAt,
+  authority: capability.authority,
+  fingerprint: mercadoLivrePublicationCapabilityFingerprint(capability),
+});
 
 export const projectMercadoLivrePublicationCapability = (input: {
   storeId: string;
