@@ -386,6 +386,31 @@ export default async function handler(
     ? rawBody.proposal as Record<string, unknown>
     : null;
 
+  if (rawProposal?.type === 'create_product') {
+    let mapError: ((error: unknown) => HttpErrorResult) | null = null;
+    try {
+      const actionService = await import('../server/actions/actionExecutionService.js');
+      mapError = actionService.mapKyrubActionExecutionError;
+      const [entitlementLifecycle, executablePlanCatalog] = await Promise.all([
+        import('../server/admin/storeEntitlementLifecycleService.js'),
+        import('../server/admin/executablePlanCatalogService.js'),
+      ]);
+      await entitlementLifecycle.reconcileStoreEntitlementFromAuthorization(authorization);
+      await executablePlanCatalog.hydrateExecutablePlanCatalog();
+      const result = await actionService.executeAuthorizedKyrubAction(
+        authorization,
+        request.body
+      );
+      response.status(200).json(result);
+    } catch (error) {
+      const mapped = mapError
+        ? mapError(error)
+        : genericUnavailable('Não foi possível executar a criação do produto agora.');
+      response.status(mapped.status).json(mapped.body);
+    }
+    return;
+  }
+
   if (rawProposal?.type === 'adjust_inventory') {
     let mapError: ((error: unknown) => HttpErrorResult) | null = null;
     try {
