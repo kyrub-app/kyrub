@@ -18,6 +18,7 @@ import type {
   KyrubErpProductSummary,
   KyrubErpStoreSummary,
 } from '../../shared/kyrubErpContext.js';
+import { configureKyrubiaMercadoLivreDraftRequirements } from '../integrations/mercadoLivreKyrubiaDraftConfigurationService.js';
 import {
   inspectMercadoLivreRequirementCategoryOptions,
   type MercadoLivreRequirementCategoryOptions,
@@ -644,6 +645,32 @@ const mercadoLivreAttributeUnavailableReply = (
   return `Não consegui revalidar “${label}” contra os requisitos atuais do Mercado Livre (${code}). O Kyrub manteve tudo apenas como contexto de conversa e não avançou nem gravou requisitos no rascunho.`;
 };
 
+const mercadoLivreDraftConfigurationUnavailableReply = (error: unknown): string => {
+  const code = error instanceof Error ? error.message.split(':')[0] : 'MERCADO_LIVRE_KYRUBIA_DRAFT_CONFIGURATION_UNAVAILABLE';
+  return `O comando para configurar o draft foi explícito, mas a revalidação autoritativa bloqueou a escrita (${code}). Mantive os valores somente no contexto desta conversa; nenhuma configuração foi sobrescrita, nenhuma autorização de publicação foi criada e nada foi publicado no Mercado Livre.`;
+};
+
+const appendDraftConfigurationCommand = (
+  reply: string,
+  complete: boolean
+): string => complete
+  ? `${reply} Se quiser persistir agora essa configuração interna, diga exatamente “Configurar draft”. Esse comando autoriza somente a gravação do draft; ele não autoriza publicar no Mercado Livre.`
+  : reply;
+
+const isExplicitDraftConfigurationCommand = (message: string): boolean =>
+  /^(?:configurar|configure)(?:\s+o)?\s+(?:draft|rascunho)$/i.test(message.trim());
+
+const clearMercadoLivreRequirementProgress = (
+  context: KyrubiaTurnContext
+): KyrubiaTurnContext => ({
+  ...context,
+  id: randomUUID(),
+  generatedAt: new Date().toISOString(),
+  offeredIntents: undefined,
+  selectedIntent: undefined,
+  mercadoLivreRequirementProgress: undefined,
+});
+
 const loadOptionsFor = async (
   userId: string,
   intent: MercadoLivreConversationIntent
@@ -743,13 +770,56 @@ export const executeAuthorizedKyrubiaUserProviderChat = async (
       });
       return deterministicResult(
         requestId,
-        step.reply,
+        appendDraftConfigurationCommand(step.reply, step.complete),
         withAttributeCollectorStep(previousTurnContext, step)
       );
     } catch (error) {
       return deterministicResult(
         requestId,
         mercadoLivreAttributeUnavailableReply(attributeProgress, error),
+        previousTurnContext
+      );
+    }
+  }
+
+  if (
+    previousTurnContext &&
+    attributeProgress &&
+    !attributeProgress.pendingAttribute &&
+    isExplicitDraftConfigurationCommand(latestMessage)
+  ) {
+    try {
+      const configuration = await configureKyrubiaMercadoLivreDraftRequirements({
+        storeId: user.uid,
+        proposalId: attributeProgress.proposalId,
+        categoryId: attributeProgress.categoryId,
+        categoryName: attributeProgress.categoryName,
+        condition: attributeProgress.condition,
+        listingTypeId: attributeProgress.listingTypeId,
+        listingTypeName: attributeProgress.listingTypeName,
+        attributes: attributeProgress.collectedAttributes,
+        configuredByUserId: user.uid,
+      });
+      const writeLabel = configuration.idempotent
+        ? 'A mesma configuração já estava persistida e foi reconhecida de forma idempotente.'
+        : 'A configuração interna foi persistida agora.';
+      const reply = [
+        writeLabel,
+        `O draft ficou configurado para “${configuration.category.name}”, condição “${conditionLabel(configuration.condition)}” e tipo de anúncio “${configuration.listingType.name}”.`,
+        `Foram congelados ${configuration.requiredAttributeIds.length} requisito(s) básico(s) e ${configuration.conditionalAttributeIds.length} requisito(s) condicional(is) realmente confirmados pelo provedor; a configuração ficou ready=true.`,
+        'A evidência da inspeção condicional foi persistida na mesma transação para manter o próximo gate coerente.',
+        'Nenhuma autorização de publicação foi criada e nenhum anúncio foi criado ou alterado no Mercado Livre.',
+        'O próximo gate é validar o payload do anúncio com o Mercado Livre; essa validação também não publica o item.',
+      ].join(' ');
+      return deterministicResult(
+        requestId,
+        reply,
+        clearMercadoLivreRequirementProgress(previousTurnContext)
+      );
+    } catch (error) {
+      return deterministicResult(
+        requestId,
+        mercadoLivreDraftConfigurationUnavailableReply(error),
         previousTurnContext
       );
     }
@@ -820,7 +890,7 @@ export const executeAuthorizedKyrubiaUserProviderChat = async (
           listingIntent: selected,
           options,
         });
-        reply = `${mercadoLivreListingTypeConfirmation(selected, options)} ${step.reply}`;
+        reply = `${mercadoLivreListingTypeConfirmation(selected, options)} ${appendDraftConfigurationCommand(step.reply, step.complete)}`;
         nextTurnContext = withAttributeCollectorStep(selectedTurnContext, step);
       } catch (error) {
         reply = mercadoLivreOptionsUnavailableReply(selected.label, error);

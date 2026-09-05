@@ -14,6 +14,7 @@ const serverPath = new URL('../server.ts', import.meta.url);
 const kyrubiaChatPath = new URL('../server/ai/kyrubiaUserProviderChatService.ts', import.meta.url);
 const kyrubiaAttributeCollectorPath = new URL('../server/ai/kyrubiaMercadoLivreRequiredAttributeCollector.ts', import.meta.url);
 const kyrubiaAttributePlannerPath = new URL('../server/ai/kyrubiaMercadoLivreRequiredAttributePlanner.ts', import.meta.url);
+const kyrubiaDraftConfigurationPath = new URL('../server/integrations/mercadoLivreKyrubiaDraftConfigurationService.ts', import.meta.url);
 const kyrubiaContextPath = new URL('../shared/kyrubiaContext.ts', import.meta.url);
 const offeredIntentRuntimePath = new URL('../src/ai/offeredIntentRuntime.ts', import.meta.url);
 
@@ -180,7 +181,7 @@ test('enumerated Mercado Livre attribute values are exact intent-only choices bo
   assert.match(collector, /normalize\(value\.name\) === wanted/);
 });
 
-test('free-text attribute answers remain conversational and no requirement configuration is written', async () => {
+test('free-text attribute answers remain conversational and no requirement configuration is written before explicit configuration command', async () => {
   const collector = await readFile(kyrubiaAttributeCollectorPath, 'utf8');
   const chat = await readFile(kyrubiaChatPath, 'utf8');
   assert.match(collector, /valueName: text/);
@@ -190,6 +191,8 @@ test('free-text attribute answers remain conversational and no requirement confi
   assert.doesNotMatch(collector, /mercadoLivrePostJson|mercadoLivrePutJson|authorizeMercadoLivre|executeMercadoLivre/);
   assert.doesNotMatch(chat, /configureMercadoLivreOutboundRequirements/);
   assert.doesNotMatch(chat, /mercadoLivrePostJson|mercadoLivrePutJson|authorizeMercadoLivre|executeMercadoLivre/);
+  assert.match(chat, /isExplicitDraftConfigurationCommand/);
+  assert.match(chat, /diga exatamente “Configurar draft”/);
 });
 
 test('conditional attributes are collected only after official provider inspection and are re-established every turn', async () => {
@@ -204,6 +207,39 @@ test('conditional attributes are collected only after official provider inspecti
   assert.match(chat, /await startMercadoLivreRequiredAttributeCollection/);
   assert.match(chat, /userId: user\.uid/);
   assert.doesNotMatch(collector, /ready:\s*true/);
+});
+
+test('Cairubia draft configuration revalidates provider requirements and persists only provider-required attributes atomically', async () => {
+  const source = await readFile(kyrubiaDraftConfigurationPath, 'utf8');
+  assert.match(source, /assertCurrentMercadoLivrePublicationCapability/);
+  assert.match(source, /inspectMercadoLivreRequirementCategoryOptions/);
+  assert.match(source, /inspectMercadoLivreConditionalRequirements/);
+  assert.match(source, /recoverProviderRequiredAttributes/);
+  assert.match(source, /MERCADO_LIVRE_KYRUBIA_DRAFT_UNAUTHORIZED_ATTRIBUTE/);
+  assert.match(source, /MERCADO_LIVRE_KYRUBIA_DRAFT_CONDITIONAL_REQUIRED_MISSING/);
+  assert.match(source, /adminDb\.runTransaction/);
+  assert.match(source, /transaction\.create\(configRef/);
+  assert.match(source, /transaction\.create\(conditionalRef/);
+  assert.match(source, /configurationSource: 'kyrubia_revalidated_session'/);
+  assert.match(source, /validationSource: 'preconfiguration_provider_api_conditional_inspection'/);
+  assert.match(source, /requirements: \{ ready: true, missing: \[\] \}/);
+  assert.match(source, /executionStatus: 'not_authorized'/);
+  assert.doesNotMatch(source, /mercadoLivrePutJson|authorizeMercadoLivre|executeMercadoLivre|\/items['"`]/);
+});
+
+test('Cairubia only persists the completed draft after an exact owner command and keeps publication authorization separate', async () => {
+  const chat = await readFile(kyrubiaChatPath, 'utf8');
+  const source = await readFile(kyrubiaDraftConfigurationPath, 'utf8');
+  assert.match(chat, /isExplicitDraftConfigurationCommand\(latestMessage\)/);
+  assert.match(chat, /attributeProgress &&\s*!attributeProgress\.pendingAttribute/);
+  assert.match(chat, /configureKyrubiaMercadoLivreDraftRequirements/);
+  assert.match(chat, /Esse comando autoriza somente a gravação do draft; ele não autoriza publicar no Mercado Livre/);
+  assert.match(chat, /Nenhuma autorização de publicação foi criada/);
+  assert.match(source, /MERCADO_LIVRE_KYRUBIA_DRAFT_CONFIGURATION_CONFLICT/);
+  assert.match(source, /idempotent = true/);
+  assert.match(source, /authority: 'provider_api_conditional_validation'/);
+  assert.match(source, /requirementConfiguredAt: configuredAt/);
+  assert.doesNotMatch(source, /randomBytes|authorizationToken|catalogOutboundPublicationAuthorizations/);
 });
 
 test('plan offered-intent runtime cannot consume Mercado Livre attribute answers', async () => {
