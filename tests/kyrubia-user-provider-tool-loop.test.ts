@@ -18,6 +18,10 @@ const mercadoLivreRequirements = readFileSync(
   'server/integrations/mercadoLivreOutboundRequirementsService.ts',
   'utf8'
 );
+const mercadoLivreRequirementOptions = readFileSync(
+  'server/integrations/mercadoLivreRequirementOptionsService.ts',
+  'utf8'
+);
 const systemInstruction = readFileSync(
   'server/ai/kyrubiaSystemInstruction.ts',
   'utf8'
@@ -159,6 +163,62 @@ test('selected category becomes selectedIntent without gaining mutation authorit
   } else {
     assert.fail('expected Mercado Livre category selected intent');
   }
+});
+
+test('selected Mercado Livre category is revalidated against exact persisted inspection and current canonical proposal', () => {
+  assert.match(mercadoLivreRequirementOptions, /catalogOutboundRequirementInspections/);
+  assert.match(mercadoLivreRequirementOptions, /inspection\.authority !== 'provider_api_refetch'/);
+  assert.match(mercadoLivreRequirementOptions, /inspection\.connectionId/);
+  assert.match(mercadoLivreRequirementOptions, /inspection\.canonicalBaselineHash/);
+  assert.match(mercadoLivreRequirementOptions, /inspection\.inspectedByUserId/);
+  assert.match(mercadoLivreRequirementOptions, /canonicalMatchesProposal/);
+  assert.match(mercadoLivreRequirementOptions, /MERCADO_LIVRE_OUTBOUND_PROPOSAL_STALE/);
+  assert.match(mercadoLivreRequirementOptions, /MERCADO_LIVRE_OUTBOUND_CATEGORY_INTENT_MISMATCH/);
+});
+
+test('requirement option inspection refetches current Mercado Livre site, prediction, category, attributes and listing types', () => {
+  assert.match(mercadoLivreRequirementOptions, /\/users\/\$\{encodeURIComponent\(connection\.externalAccountId\)\}/);
+  assert.match(mercadoLivreRequirementOptions, /domain_discovery\/search\?limit=3/);
+  assert.match(mercadoLivreRequirementOptions, /\/categories\/\$\{encodeURIComponent\(categoryId\)\}/);
+  assert.match(mercadoLivreRequirementOptions, /\/attributes/);
+  assert.match(mercadoLivreRequirementOptions, /available_listing_types\?category_id=/);
+  assert.match(mercadoLivreRequirementOptions, /authority: 'provider_api_requirement_options'/);
+  assert.match(mercadoLivreRequirementOptions, /inspectionAuthority: 'provider_api_refetch'/);
+});
+
+test('read-only Mercado Livre requirement option authority has no persistence or provider write path', () => {
+  assert.match(mercadoLivreRequirementOptions, /mercadoLivreGetJson/);
+  assert.doesNotMatch(mercadoLivreRequirementOptions, /FieldValue/);
+  assert.doesNotMatch(mercadoLivreRequirementOptions, /runTransaction/);
+  assert.doesNotMatch(mercadoLivreRequirementOptions, /transaction\.(set|update|delete)/);
+  assert.doesNotMatch(mercadoLivreRequirementOptions, /\.set\s*\(/);
+  assert.doesNotMatch(mercadoLivreRequirementOptions, /\.update\s*\(/);
+  assert.doesNotMatch(mercadoLivreRequirementOptions, /mercadoLivrePostJson|mercadoLivrePutJson/);
+  assert.doesNotMatch(mercadoLivreRequirementOptions, /configureMercadoLivreOutboundRequirements/);
+});
+
+test('category selection loads official requirement options deterministically without spending user AI or choosing values', () => {
+  assert.match(chatService, /inspectMercadoLivreRequirementCategoryOptions/);
+  assert.match(chatService, /proposalId: selectedIntent\.payload\.proposalId/);
+  assert.match(chatService, /categoryId: selectedIntent\.payload\.categoryId/);
+  assert.match(chatService, /categoryName: selectedIntent\.payload\.categoryName/);
+  assert.match(chatService, /requestedByUserId: user\.uid/);
+  assert.match(chatService, /Condições aceitas/);
+  assert.match(chatService, /Tipos de anúncio disponíveis/);
+  assert.match(chatService, /Atributos obrigatórios em qualquer condição/);
+  assert.match(chatService, /ainda não escolheu condição, tipo de anúncio ou valores de atributos por você/);
+  assert.match(chatService, /funding: 'none'/);
+  assert.doesNotMatch(chatService, /options\.conditions\[0\]/);
+  assert.doesNotMatch(chatService, /options\.listingTypes\[0\]/);
+  assert.doesNotMatch(chatService, /configureMercadoLivreOutboundRequirements/);
+  assert.doesNotMatch(chatService, /authorizeMercadoLivre|executeMercadoLivre|mercadoLivrePostJson|mercadoLivrePutJson/);
+});
+
+test('category option drift fails closed and never turns conversational intent into provider authority', () => {
+  assert.match(chatService, /STALE\|MISMATCH\|NOT_PREDICTED\|SITE_CHANGED\|NOT_LISTABLE/);
+  assert.match(chatService, /O Kyrub não avançou com base em memória ou suposição/);
+  assert.match(chatService, /Nenhum requisito foi configurado e nada foi publicado/);
+  assert.match(chatService, /turnContext: selectedTurnContext/);
 });
 
 test('category selection is deterministic Kyrub context and performs no requirement configuration or provider write', () => {
