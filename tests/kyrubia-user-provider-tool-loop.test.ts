@@ -10,6 +10,7 @@ import {
 const loop = readFileSync('server/ai/kyrubiaUserProviderToolLoop.ts', 'utf8');
 const runtime = readFileSync('server/ai/kyrubiaUserProviderRuntime.ts', 'utf8');
 const chatService = readFileSync('server/ai/kyrubiaUserProviderChatService.ts', 'utf8');
+const sharedContext = readFileSync('shared/kyrubiaContext.ts', 'utf8');
 const mercadoLivrePrepare = readFileSync(
   'server/ai/kyrubiaMercadoLivrePrepareTool.ts',
   'utf8'
@@ -57,6 +58,62 @@ const mercadoLivreCategoryContext = (): KyrubiaTurnContext => ({
     authorization: 'intent_only' as const,
     primary: index === 0,
   })),
+});
+
+const mercadoLivreConditionContext = (): KyrubiaTurnContext => ({
+  version: 1,
+  id: 'turn-condition-1',
+  source: 'kyrub_runtime',
+  sourceAction: 'mercado_livre_requirement_options',
+  generatedAt: '2026-09-05T00:40:00.000Z',
+  scope: { kind: 'own_store', storeId: 'owner-1' },
+  entities: [{
+    entityType: 'product',
+    entityId: 'product-1',
+    label: 'Violão usado',
+    position: 1,
+  }],
+  selectedIntent: {
+    id: 'category-intent',
+    intent: 'mercado_livre.category_select',
+    label: 'Violões',
+    payload: {
+      proposalId: 'proposal-1',
+      categoryId: 'MLB123',
+      categoryName: 'Violões',
+      providerAuthority: 'provider_api_refetch',
+    },
+    authorization: 'intent_only',
+  },
+  offeredIntents: [
+    {
+      id: 'condition-new',
+      intent: 'mercado_livre.condition_select',
+      label: 'Novo',
+      payload: {
+        proposalId: 'proposal-1',
+        categoryId: 'MLB123',
+        categoryName: 'Violões',
+        condition: 'new',
+        providerAuthority: 'provider_api_requirement_options',
+      },
+      authorization: 'intent_only',
+      primary: true,
+    },
+    {
+      id: 'condition-used',
+      intent: 'mercado_livre.condition_select',
+      label: 'Usado',
+      payload: {
+        proposalId: 'proposal-1',
+        categoryId: 'MLB123',
+        categoryName: 'Violões',
+        condition: 'used',
+        providerAuthority: 'provider_api_requirement_options',
+      },
+      authorization: 'intent_only',
+    },
+  ],
 });
 
 test('BYO-AI loop consumes the shared Kyrubia tool authority instead of duplicating ERP semantics', () => {
@@ -199,10 +256,10 @@ test('read-only Mercado Livre requirement option authority has no persistence or
 
 test('category selection loads official requirement options deterministically without spending user AI or choosing values', () => {
   assert.match(chatService, /inspectMercadoLivreRequirementCategoryOptions/);
-  assert.match(chatService, /proposalId: selectedIntent\.payload\.proposalId/);
-  assert.match(chatService, /categoryId: selectedIntent\.payload\.categoryId/);
-  assert.match(chatService, /categoryName: selectedIntent\.payload\.categoryName/);
-  assert.match(chatService, /requestedByUserId: user\.uid/);
+  assert.match(chatService, /proposalId: intent\.payload\.proposalId/);
+  assert.match(chatService, /categoryId: intent\.payload\.categoryId/);
+  assert.match(chatService, /categoryName: intent\.payload\.categoryName/);
+  assert.match(chatService, /requestedByUserId: userId/);
   assert.match(chatService, /Condições aceitas/);
   assert.match(chatService, /Tipos de anúncio disponíveis/);
   assert.match(chatService, /Atributos obrigatórios em qualquer condição/);
@@ -214,20 +271,69 @@ test('category selection loads official requirement options deterministically wi
   assert.doesNotMatch(chatService, /authorizeMercadoLivre|executeMercadoLivre|mercadoLivrePostJson|mercadoLivrePutJson/);
 });
 
+test('category readback now offers exact condition intents without granting requirement or publication authority', () => {
+  assert.match(sharedContext, /mercado_livre\.condition_select/);
+  assert.match(sharedContext, /providerAuthority: 'provider_api_requirement_options'/);
+  assert.match(chatService, /withConditionChoices/);
+  assert.match(chatService, /intent: 'mercado_livre\.condition_select'/);
+  assert.match(chatService, /condition,/);
+  assert.match(chatService, /authorization: 'intent_only'/);
+  assert.match(chatService, /sourceAction: 'mercado_livre_requirement_options'/);
+  assert.match(chatService, /Escolha agora a condição correta do item/);
+});
+
+test('condition chip or ordinal selection stays intent-only and carries exact proposal/category binding', () => {
+  const context = mercadoLivreConditionContext();
+  const selected = resolveKyrubiaOfferedIntentSelection({
+    selectedOfferedIntentId: 'condition-used',
+    message: 'Usado',
+    context,
+  });
+  assert.equal(selected?.resolution, 'structured_id');
+  assert.equal(selected?.offeredIntent.intent, 'mercado_livre.condition_select');
+  assert.equal(selected?.authorization, 'intent_only');
+  if (selected?.offeredIntent.intent === 'mercado_livre.condition_select') {
+    assert.equal(selected.offeredIntent.payload.proposalId, 'proposal-1');
+    assert.equal(selected.offeredIntent.payload.categoryId, 'MLB123');
+    assert.equal(selected.offeredIntent.payload.condition, 'used');
+    assert.equal(selected.offeredIntent.payload.providerAuthority, 'provider_api_requirement_options');
+  }
+
+  assert.equal(
+    resolveKyrubiaOfferedIntentSelection({ message: 'a primeira', context })?.offeredIntent.id,
+    'condition-new'
+  );
+});
+
+test('condition selection refetches provider options and fails closed if the condition is no longer available', () => {
+  assert.match(chatService, /selected\.intent === 'mercado_livre\.condition_select'/);
+  assert.match(chatService, /const options = await loadOptionsFor\(user\.uid, selected\)/);
+  assert.match(chatService, /!options\.conditions\.includes\(selected\.payload\.condition\)/);
+  assert.match(chatService, /MERCADO_LIVRE_OUTBOUND_CONDITION_NOT_AVAILABLE/);
+  assert.match(chatService, /Com essa condição, estes atributos estão obrigatórios/);
+  assert.match(chatService, /attribute\.required \|\| \(intent\.payload\.condition === 'new' && attribute\.newRequired\)/);
+});
+
+test('condition choice does not auto-select listing type, configure proposal, authorize, or publish', () => {
+  assert.match(chatService, /A condição ficou registrada apenas como intenção conversacional/);
+  assert.match(chatService, /ainda não escolheu tipo de anúncio nem valores de atributos/);
+  assert.doesNotMatch(chatService, /options\.listingTypes\[0\]/);
+  assert.doesNotMatch(chatService, /configureMercadoLivreOutboundRequirements/);
+  assert.doesNotMatch(chatService, /authorizeMercadoLivre|executeMercadoLivre|mercadoLivrePostJson|mercadoLivrePutJson/);
+});
+
 test('category option drift fails closed and never turns conversational intent into provider authority', () => {
   assert.match(chatService, /STALE\|MISMATCH\|NOT_PREDICTED\|SITE_CHANGED\|NOT_LISTABLE/);
   assert.match(chatService, /O Kyrub não avançou com base em memória ou suposição/);
   assert.match(chatService, /Nenhum requisito foi configurado e nada foi publicado/);
-  assert.match(chatService, /turnContext: selectedTurnContext/);
 });
 
-test('category selection is deterministic Kyrub context and performs no requirement configuration or provider write', () => {
+test('category and condition selection are deterministic Kyrub context and perform no provider write', () => {
   assert.match(chatService, /resolveKyrubiaOfferedIntentSelection/);
   assert.match(chatService, /selectKyrubiaOfferedIntentContext/);
   assert.match(chatService, /status: 'deterministic'/);
   assert.match(chatService, /provider: 'kyrub'/);
   assert.match(chatService, /funding: 'none'/);
-  assert.match(chatService, /Nenhum requisito foi configurado e nada foi publicado/);
   assert.doesNotMatch(chatService, /configureMercadoLivreOutboundRequirements/);
   assert.doesNotMatch(chatService, /mercadoLivrePostJson|mercadoLivrePutJson/);
 });

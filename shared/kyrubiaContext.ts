@@ -23,7 +23,8 @@ export type KyrubiaPlanOfferedIntentKind =
   | 'plan.continue_free';
 
 export type KyrubiaMercadoLivreOfferedIntentKind =
-  'mercado_livre.category_select';
+  | 'mercado_livre.category_select'
+  | 'mercado_livre.condition_select';
 
 export type KyrubiaOfferedIntentKind =
   | KyrubiaPlanOfferedIntentKind
@@ -58,9 +59,22 @@ export type KyrubiaMercadoLivreCategoryOfferedIntent =
     };
   };
 
+export type KyrubiaMercadoLivreConditionOfferedIntent =
+  KyrubiaOfferedIntentBase & {
+    intent: 'mercado_livre.condition_select';
+    payload: {
+      proposalId: string;
+      categoryId: string;
+      categoryName: string;
+      condition: string;
+      providerAuthority: 'provider_api_requirement_options';
+    };
+  };
+
 export type KyrubiaOfferedIntent =
   | KyrubiaPlanOfferedIntent
-  | KyrubiaMercadoLivreCategoryOfferedIntent;
+  | KyrubiaMercadoLivreCategoryOfferedIntent
+  | KyrubiaMercadoLivreConditionOfferedIntent;
 
 export type KyrubiaTurnContext = {
   version: 1;
@@ -70,7 +84,8 @@ export type KyrubiaTurnContext = {
     | KyrubReadActionType
     | 'plan_conversation'
     | 'operational_workflow'
-    | 'mercado_livre_publication_preparation';
+    | 'mercado_livre_publication_preparation'
+    | 'mercado_livre_requirement_options';
   generatedAt: string;
   scope: KyrubiaOperationalScope;
   entities: KyrubiaEntityReference[];
