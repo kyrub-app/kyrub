@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+import type { KyrubiaTurnContext } from '../../shared/kyrubiaContext.js';
 import type { KyrubErpContextSnapshot } from '../../shared/kyrubErpContext.js';
 import type {
   KyrubiaProviderTurn,
@@ -29,6 +31,7 @@ export type KyrubiaUserProviderToolLoopResult =
       model: string;
       reply: string;
       actionProposal?: KyrubiaCreateNoteProposal;
+      turnContext?: KyrubiaTurnContext;
       usage: KyrubiaProviderUsage;
       calls: 1 | 2;
     }
@@ -156,6 +159,20 @@ const productIdsFromReadResult = (readResult: Record<string, unknown>): Set<stri
   }));
 };
 
+const productLabelFromReadResult = (
+  readResult: Record<string, unknown>,
+  productId: string
+): string => {
+  if (!Array.isArray(readResult.items)) return productId;
+  const match = readResult.items.find(item =>
+    item && typeof item === 'object' && !Array.isArray(item) &&
+    cleanProductId((item as Record<string, unknown>).id) === productId
+  );
+  if (!match || typeof match !== 'object' || Array.isArray(match)) return productId;
+  const name = (match as Record<string, unknown>).name;
+  return typeof name === 'string' && name.trim() ? name.trim().slice(0, 180) : productId;
+};
+
 const mercadoLivreCategoryStepReply = (
   result: Extract<
     Awaited<ReturnType<typeof prepareKyrubiaMercadoLivrePublication>>,
@@ -187,8 +204,57 @@ const mercadoLivrePrepareReply = (
   ].join(' ');
 };
 
+const mercadoLivreCategoryTurnContext = (input: {
+  uid: string;
+  conversationId: string;
+  productId: string;
+  productLabel: string;
+  result: Awaited<ReturnType<typeof prepareKyrubiaMercadoLivrePublication>>;
+}): KyrubiaTurnContext | undefined => {
+  if ('message' in input.result || input.result.requirementInspection.status !== 'available') {
+    return undefined;
+  }
+  const suggestions = input.result.requirementInspection.categorySuggestions.slice(0, 3);
+  if (suggestions.length === 0) return undefined;
+  const fingerprint = createHash('sha256')
+    .update(`${input.conversationId}:${input.result.proposalId}:${suggestions.map(item => item.categoryId).join(',')}`)
+    .digest('hex')
+    .slice(0, 32);
+  return {
+    version: 1,
+    id: `ml-category-turn-${fingerprint}`,
+    source: 'kyrub_runtime',
+    sourceAction: 'mercado_livre_publication_preparation',
+    generatedAt: new Date().toISOString(),
+    scope: { kind: 'own_store', storeId: input.uid },
+    entities: [{
+      entityType: 'product',
+      entityId: input.productId,
+      label: input.productLabel,
+      position: 1,
+    }],
+    offeredIntents: suggestions.map((suggestion, index) => ({
+      id: `ml-category-${createHash('sha256')
+        .update(`${input.result.proposalId}:${suggestion.categoryId}`)
+        .digest('hex')
+        .slice(0, 28)}`,
+      intent: 'mercado_livre.category_select' as const,
+      label: suggestion.categoryName,
+      payload: {
+        proposalId: input.result.proposalId,
+        categoryId: suggestion.categoryId,
+        categoryName: suggestion.categoryName,
+        providerAuthority: input.result.requirementInspection.authority,
+      },
+      authorization: 'intent_only' as const,
+      primary: index === 0,
+    })),
+  };
+};
+
 export const runKyrubiaUserProviderToolLoop = async (input: {
   uid: string;
+  conversationId: string;
   systemText: string;
   messages: KyrubiaTextRuntimeMessage[];
   erpContext: KyrubErpContextSnapshot | null;
@@ -300,11 +366,19 @@ export const runKyrubiaUserProviderToolLoop = async (input: {
       uid: input.uid,
       productId: requestedProductId,
     });
+    const turnContext = mercadoLivreCategoryTurnContext({
+      uid: input.uid,
+      conversationId: input.conversationId,
+      productId: requestedProductId,
+      productLabel: productLabelFromReadResult(readResult, requestedProductId),
+      result: prepared,
+    });
     return {
       status: 'user_provider',
       provider: second.provider,
       model: second.model,
       reply: mercadoLivrePrepareReply(prepared),
+      ...(turnContext ? { turnContext } : {}),
       usage: addUsage(first.response.usage, second.response.usage),
       calls: 2,
     };
