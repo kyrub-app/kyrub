@@ -1,6 +1,7 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import type {
   KyrubiaMercadoLivreCategoryOfferedIntent,
+  KyrubiaMercadoLivreConditionOfferedIntent,
   KyrubiaTurnContext,
 } from '../../shared/kyrubiaContext.js';
 import {
@@ -107,6 +108,10 @@ export type KyrubiaUserProviderChatResult = {
   httpStatus: number;
   body: KyrubiaUserProviderChatBody;
 };
+
+type MercadoLivreConversationIntent =
+  | KyrubiaMercadoLivreCategoryOfferedIntent
+  | KyrubiaMercadoLivreConditionOfferedIntent;
 
 const record = (value: unknown): Record<string, unknown> =>
   value && typeof value === 'object' && !Array.isArray(value)
@@ -242,9 +247,9 @@ const normalizeMessages = (value: unknown): {
   return { messages, hasAttachments };
 };
 
-const normalizeMercadoLivreCategoryIntent = (
+const normalizeMercadoLivreIntent = (
   value: unknown
-): KyrubiaMercadoLivreCategoryOfferedIntent | null => {
+): MercadoLivreConversationIntent | null => {
   const raw = record(value);
   const payload = record(raw.payload);
   const id = clean(raw.id, 160);
@@ -252,24 +257,49 @@ const normalizeMercadoLivreCategoryIntent = (
   const proposalId = clean(payload.proposalId, 180);
   const categoryId = clean(payload.categoryId, 160);
   const categoryName = clean(payload.categoryName, 180);
+  if (!id || !label || raw.authorization !== 'intent_only' || !proposalId || !categoryId || !categoryName) {
+    return null;
+  }
   if (
-    !id || !label || raw.intent !== 'mercado_livre.category_select' ||
-    raw.authorization !== 'intent_only' || !proposalId || !categoryId || !categoryName ||
-    payload.providerAuthority !== 'provider_api_refetch'
-  ) return null;
-  return {
-    id,
-    intent: 'mercado_livre.category_select',
-    label,
-    payload: {
-      proposalId,
-      categoryId,
-      categoryName,
-      providerAuthority: 'provider_api_refetch',
-    },
-    authorization: 'intent_only',
-    ...(raw.primary === true ? { primary: true } : {}),
-  };
+    raw.intent === 'mercado_livre.category_select' &&
+    payload.providerAuthority === 'provider_api_refetch'
+  ) {
+    return {
+      id,
+      intent: 'mercado_livre.category_select',
+      label,
+      payload: {
+        proposalId,
+        categoryId,
+        categoryName,
+        providerAuthority: 'provider_api_refetch',
+      },
+      authorization: 'intent_only',
+      ...(raw.primary === true ? { primary: true } : {}),
+    };
+  }
+  const condition = clean(payload.condition, 120);
+  if (
+    raw.intent === 'mercado_livre.condition_select' &&
+    payload.providerAuthority === 'provider_api_requirement_options' &&
+    condition
+  ) {
+    return {
+      id,
+      intent: 'mercado_livre.condition_select',
+      label,
+      payload: {
+        proposalId,
+        categoryId,
+        categoryName,
+        condition,
+        providerAuthority: 'provider_api_requirement_options',
+      },
+      authorization: 'intent_only',
+      ...(raw.primary === true ? { primary: true } : {}),
+    };
+  }
+  return null;
 };
 
 const normalizeMercadoLivreTurnContext = (
@@ -280,19 +310,24 @@ const normalizeMercadoLivreTurnContext = (
   const scope = record(raw.scope);
   const id = clean(raw.id, 180);
   const generatedAt = clean(raw.generatedAt, 80);
+  const sourceAction = raw.sourceAction === 'mercado_livre_requirement_options'
+    ? 'mercado_livre_requirement_options' as const
+    : raw.sourceAction === 'mercado_livre_publication_preparation'
+      ? 'mercado_livre_publication_preparation' as const
+      : null;
   if (
-    raw.version !== 1 || raw.source !== 'kyrub_runtime' ||
-    raw.sourceAction !== 'mercado_livre_publication_preparation' ||
+    raw.version !== 1 || raw.source !== 'kyrub_runtime' || !sourceAction ||
     !id || !generatedAt || scope.kind !== 'own_store' ||
-    clean(scope.storeId, 160) !== ownerUid || !Array.isArray(raw.offeredIntents)
+    clean(scope.storeId, 160) !== ownerUid
   ) return undefined;
-  const offeredIntents = raw.offeredIntents
-    .slice(0, 3)
-    .flatMap(item => {
-      const intent = normalizeMercadoLivreCategoryIntent(item);
-      return intent ? [intent] : [];
-    });
-  if (offeredIntents.length === 0) return undefined;
+  const offeredIntents = Array.isArray(raw.offeredIntents)
+    ? raw.offeredIntents.slice(0, 3).flatMap(item => {
+        const intent = normalizeMercadoLivreIntent(item);
+        return intent ? [intent] : [];
+      })
+    : [];
+  const selectedIntent = normalizeMercadoLivreIntent(raw.selectedIntent) ?? undefined;
+  if (offeredIntents.length === 0 && !selectedIntent) return undefined;
   const entities = Array.isArray(raw.entities)
     ? raw.entities.slice(0, 3).flatMap(item => {
         const entity = record(item);
@@ -306,11 +341,12 @@ const normalizeMercadoLivreTurnContext = (
     version: 1,
     id,
     source: 'kyrub_runtime',
-    sourceAction: 'mercado_livre_publication_preparation',
+    sourceAction,
     generatedAt,
     scope: { kind: 'own_store', storeId: ownerUid },
     entities,
-    offeredIntents,
+    ...(offeredIntents.length ? { offeredIntents } : {}),
+    ...(selectedIntent ? { selectedIntent } : {}),
   };
 };
 
@@ -328,6 +364,44 @@ const compactAttributeNames = (
   values: MercadoLivreRequirementCategoryOptions['attributes']
 ): string => compactNames(values.map(value => ({ id: value.id, name: value.name })), 10);
 
+const conditionLabel = (condition: string): string => {
+  if (condition === 'new') return 'Novo';
+  if (condition === 'used') return 'Usado';
+  if (condition === 'not_specified') return 'Não especificado';
+  return condition;
+};
+
+const withConditionChoices = (
+  context: KyrubiaTurnContext,
+  intent: KyrubiaMercadoLivreCategoryOfferedIntent,
+  options: MercadoLivreRequirementCategoryOptions
+): KyrubiaTurnContext => {
+  const offeredIntents: KyrubiaMercadoLivreConditionOfferedIntent[] = options.conditions
+    .slice(0, 3)
+    .map((condition, index) => ({
+      id: `ml-condition-${createHash('sha256')
+        .update(`${intent.payload.proposalId}:${intent.payload.categoryId}:${condition}`)
+        .digest('hex')
+        .slice(0, 28)}`,
+      intent: 'mercado_livre.condition_select',
+      label: conditionLabel(condition),
+      payload: {
+        proposalId: intent.payload.proposalId,
+        categoryId: intent.payload.categoryId,
+        categoryName: intent.payload.categoryName,
+        condition,
+        providerAuthority: 'provider_api_requirement_options',
+      },
+      authorization: 'intent_only',
+      primary: index === 0,
+    }));
+  return {
+    ...context,
+    sourceAction: 'mercado_livre_requirement_options',
+    offeredIntents: offeredIntents.length ? offeredIntents : undefined,
+  };
+};
+
 const mercadoLivreCategoryOptionsReply = (
   intent: KyrubiaMercadoLivreCategoryOfferedIntent,
   options: MercadoLivreRequirementCategoryOptions
@@ -335,7 +409,7 @@ const mercadoLivreCategoryOptionsReply = (
   const alwaysRequired = options.attributes.filter(attribute => attribute.required);
   const newRequired = options.attributes.filter(attribute => attribute.newRequired);
   const conditionalRequired = options.attributes.filter(attribute => attribute.conditionalRequired);
-  const conditions = options.conditions.length ? options.conditions.join(', ') : 'nenhuma informada';
+  const conditions = options.conditions.length ? options.conditions.map(conditionLabel).join(', ') : 'nenhuma informada';
   const currencies = options.currencies.length ? options.currencies.join(', ') : 'não informada';
   return [
     `Confirmei novamente no Mercado Livre a categoria “${options.category.name}” para este rascunho.`,
@@ -345,21 +419,54 @@ const mercadoLivreCategoryOptionsReply = (
     `Atributos obrigatórios em qualquer condição: ${compactAttributeNames(alwaysRequired)}.`,
     `Atributos que passam a ser obrigatórios quando a condição é novo: ${compactAttributeNames(newRequired)}.`,
     `Atributos com exigência condicional: ${compactAttributeNames(conditionalRequired)}.`,
+    options.conditions.length
+      ? 'Escolha agora a condição correta do item antes de continuarmos.'
+      : 'O Mercado Livre não informou uma condição selecionável para esta categoria; o Kyrub não vai inventar uma.',
     `A escolha “${intent.payload.categoryName}” continua sendo somente intenção conversacional. O Kyrub ainda não escolheu condição, tipo de anúncio ou valores de atributos por você.`,
     'Nenhum requisito foi gravado no rascunho, nenhuma autorização de publicação foi criada e nada foi publicado no Mercado Livre.',
   ].join(' ');
 };
 
-const mercadoLivreCategoryOptionsUnavailableReply = (
-  intent: KyrubiaMercadoLivreCategoryOfferedIntent,
+const mercadoLivreConditionReply = (
+  intent: KyrubiaMercadoLivreConditionOfferedIntent,
+  options: MercadoLivreRequirementCategoryOptions
+): string => {
+  const required = options.attributes.filter(attribute =>
+    attribute.required || (intent.payload.condition === 'new' && attribute.newRequired)
+  );
+  const conditional = options.attributes.filter(attribute => attribute.conditionalRequired);
+  return [
+    `Confirmei no Mercado Livre que a condição “${conditionLabel(intent.payload.condition)}” continua aceita para “${options.category.name}”.`,
+    `Com essa condição, estes atributos estão obrigatórios: ${compactAttributeNames(required)}.`,
+    `Atributos com exigência condicional: ${compactAttributeNames(conditional)}.`,
+    `Tipos de anúncio que continuam disponíveis: ${compactNames(options.listingTypes)}.`,
+    'A condição ficou registrada apenas como intenção conversacional. O Kyrub ainda não escolheu tipo de anúncio nem valores de atributos.',
+    'Nenhum requisito foi gravado no rascunho, nenhuma autorização de publicação foi criada e nada foi publicado no Mercado Livre.',
+  ].join(' ');
+};
+
+const mercadoLivreOptionsUnavailableReply = (
+  label: string,
   error: unknown
 ): string => {
   const code = error instanceof Error ? error.message.split(':')[0] : 'MERCADO_LIVRE_REQUIREMENT_OPTIONS_UNAVAILABLE';
   const stale = /STALE|MISMATCH|NOT_PREDICTED|SITE_CHANGED|NOT_LISTABLE/.test(code);
   return stale
-    ? `Não consegui confirmar “${intent.payload.categoryName}” como uma opção ainda válida para este rascunho. A evidência ou o estado atual do Mercado Livre mudou, então o Kyrub bloqueou a continuidade. Nenhum requisito foi configurado e nada foi publicado.`
-    : `A categoria “${intent.payload.categoryName}” foi escolhida, mas não consegui revalidar agora as opções oficiais do Mercado Livre. O Kyrub não avançou com base em memória ou suposição. Nenhum requisito foi configurado e nada foi publicado.`;
+    ? `Não consegui confirmar “${label}” como uma opção ainda válida para este rascunho. A evidência ou o estado atual do Mercado Livre mudou, então o Kyrub bloqueou a continuidade. Nenhum requisito foi configurado e nada foi publicado.`
+    : `A opção “${label}” foi escolhida, mas não consegui revalidar agora as opções oficiais do Mercado Livre. O Kyrub não avançou com base em memória ou suposição. Nenhum requisito foi configurado e nada foi publicado.`;
 };
+
+const loadOptionsFor = async (
+  userId: string,
+  intent: MercadoLivreConversationIntent
+): Promise<MercadoLivreRequirementCategoryOptions> =>
+  inspectMercadoLivreRequirementCategoryOptions({
+    storeId: userId,
+    proposalId: intent.payload.proposalId,
+    categoryId: intent.payload.categoryId,
+    categoryName: intent.payload.categoryName,
+    requestedByUserId: userId,
+  });
 
 export const executeAuthorizedKyrubiaUserProviderChat = async (
   authorization: string,
@@ -381,43 +488,70 @@ export const executeAuthorizedKyrubiaUserProviderChat = async (
     context: previousTurnContext,
   });
 
-  if (
-    previousTurnContext &&
-    offeredIntentSelection?.offeredIntent.intent === 'mercado_livre.category_select'
-  ) {
-    const selectedIntent = offeredIntentSelection.offeredIntent;
-    const selectedTurnContext = selectKyrubiaOfferedIntentContext(
-      previousTurnContext,
-      offeredIntentSelection
-    );
-    let reply: string;
-    try {
-      const options = await inspectMercadoLivreRequirementCategoryOptions({
-        storeId: user.uid,
-        proposalId: selectedIntent.payload.proposalId,
-        categoryId: selectedIntent.payload.categoryId,
-        categoryName: selectedIntent.payload.categoryName,
-        requestedByUserId: user.uid,
-      });
-      reply = mercadoLivreCategoryOptionsReply(selectedIntent, options);
-    } catch (error) {
-      reply = mercadoLivreCategoryOptionsUnavailableReply(selectedIntent, error);
+  if (previousTurnContext && offeredIntentSelection) {
+    const selected = offeredIntentSelection.offeredIntent;
+    if (selected.intent === 'mercado_livre.category_select') {
+      const selectedTurnContext = selectKyrubiaOfferedIntentContext(
+        previousTurnContext,
+        offeredIntentSelection
+      );
+      let reply: string;
+      let nextTurnContext = selectedTurnContext;
+      try {
+        const options = await loadOptionsFor(user.uid, selected);
+        reply = mercadoLivreCategoryOptionsReply(selected, options);
+        nextTurnContext = withConditionChoices(selectedTurnContext, selected, options);
+      } catch (error) {
+        reply = mercadoLivreOptionsUnavailableReply(selected.payload.categoryName, error);
+      }
+      return {
+        httpStatus: 200,
+        body: {
+          status: 'deterministic',
+          reply,
+          provider: 'kyrub',
+          model: 'kyrub-runtime-v1',
+          mode: 'deterministic',
+          requestId,
+          turnContext: nextTurnContext,
+          capabilities: byoCapabilities,
+          funding: 'none',
+          usage: {},
+        },
+      };
     }
-    return {
-      httpStatus: 200,
-      body: {
-        status: 'deterministic',
-        reply,
-        provider: 'kyrub',
-        model: 'kyrub-runtime-v1',
-        mode: 'deterministic',
-        requestId,
-        turnContext: selectedTurnContext,
-        capabilities: byoCapabilities,
-        funding: 'none',
-        usage: {},
-      },
-    };
+
+    if (selected.intent === 'mercado_livre.condition_select') {
+      const selectedTurnContext = selectKyrubiaOfferedIntentContext(
+        previousTurnContext,
+        offeredIntentSelection
+      );
+      let reply: string;
+      try {
+        const options = await loadOptionsFor(user.uid, selected);
+        if (!options.conditions.includes(selected.payload.condition)) {
+          throw new Error('MERCADO_LIVRE_OUTBOUND_CONDITION_NOT_AVAILABLE');
+        }
+        reply = mercadoLivreConditionReply(selected, options);
+      } catch (error) {
+        reply = mercadoLivreOptionsUnavailableReply(selected.label, error);
+      }
+      return {
+        httpStatus: 200,
+        body: {
+          status: 'deterministic',
+          reply,
+          provider: 'kyrub',
+          model: 'kyrub-runtime-v1',
+          mode: 'deterministic',
+          requestId,
+          turnContext: selectedTurnContext,
+          capabilities: byoCapabilities,
+          funding: 'none',
+          usage: {},
+        },
+      };
+    }
   }
 
   const result = await runKyrubiaUserProviderToolLoop({
