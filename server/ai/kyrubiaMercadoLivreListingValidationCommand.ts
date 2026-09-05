@@ -3,26 +3,12 @@ import type { KyrubiaTurnContext } from '../../shared/kyrubiaContext.js';
 import { validateKyrubiaMercadoLivreDraftListing } from '../integrations/mercadoLivreKyrubiaListingValidationService.js';
 import { authorizeKyrubiaMercadoLivrePublication } from '../integrations/mercadoLivreKyrubiaPublicationAuthorizationService.js';
 
-type KyrubiaMercadoLivrePublicationAuthorizationContinuation = {
-  proposalId: string;
-  authorizationId: string;
-  authorizationToken: string;
-  expiresAtMillis: number;
-  authority: 'store_owner_publication_authorization';
-  authorizationSource: 'kyrubia_explicit_owner_command';
-  transport: 'server_issued_one_time_capability';
-};
-
-type KyrubiaMercadoLivrePreparationTurnContext = KyrubiaTurnContext & {
-  mercadoLivrePublicationAuthorization?: KyrubiaMercadoLivrePublicationAuthorizationContinuation;
-};
-
 export type KyrubiaMercadoLivreListingValidationCommandResult =
   | { handled: false }
   | {
       handled: true;
       reply: string;
-      turnContext: KyrubiaMercadoLivrePreparationTurnContext;
+      turnContext: KyrubiaTurnContext;
     };
 
 const isExplicitDraftValidationCommand = (message: string): boolean =>
@@ -46,13 +32,14 @@ const proposalIdFromPreparationContext = (
 
 const refreshedPreparationContext = (
   context: KyrubiaTurnContext
-): KyrubiaMercadoLivrePreparationTurnContext => ({
+): KyrubiaTurnContext => ({
   ...context,
   id: randomUUID(),
   sourceAction: 'mercado_livre_publication_preparation',
   generatedAt: new Date().toISOString(),
   offeredIntents: undefined,
   mercadoLivreRequirementProgress: undefined,
+  mercadoLivrePublicationAuthorization: undefined,
 });
 
 const compactCause = (
@@ -120,7 +107,7 @@ export const handleKyrubiaMercadoLivreListingValidationCommand = async (input: {
           'O proposal agora está executionStatus=authorized e recebeu uma capability one-time com validade de 15 minutos.',
           'O segredo dessa capability não é exibido na conversa e o Firestore guarda somente o hash do token.',
           'Autorizar ainda não publica: nenhum POST /items foi executado e nenhum anúncio foi criado ou alterado no Mercado Livre.',
-          'A execução real continuará em um gate separado que deverá consumir essa autorização uma única vez.',
+          'Se quiser atravessar a última fronteira e executar a publicação real, diga exatamente “Publicar agora”. Esse comando consumirá a autorização uma única vez.',
         ].join(' '),
       };
     } catch (error) {
