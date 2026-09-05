@@ -165,7 +165,6 @@ const canonicalMatchesProposal = (
 export interface MercadoLivreKyrubiaPublicationAuthorizationResult {
   proposalId: string;
   authorizationId: string;
-  authorizationToken: string;
   status: 'authorized';
   executionStatus: 'authorized';
   payloadHash: string;
@@ -211,9 +210,9 @@ export const authorizeKyrubiaMercadoLivrePublication = async (input: {
     throw new Error('MERCADO_LIVRE_OUTBOUND_PROPOSAL_STALE');
   }
 
-  const authorizationToken = randomBytes(32).toString('base64url');
-  const authorizationId = `mlpub_${sha256(`${storeId}:${proposalId}:${authorizationToken}`).slice(0, 32)}`;
-  const tokenHash = sha256(authorizationToken);
+  const authorizationSecret = randomBytes(32).toString('base64url');
+  const authorizationId = `mlpub_${sha256(`${storeId}:${proposalId}:${authorizationSecret}`).slice(0, 32)}`;
+  const tokenHash = sha256(authorizationSecret);
   const payloadHash = stablePayloadHash(validation.providerPayload);
   const authorizedAt = new Date().toISOString();
   const expiresAtMillis = Date.now() + 15 * 60 * 1000;
@@ -287,7 +286,6 @@ export const authorizeKyrubiaMercadoLivrePublication = async (input: {
   return {
     proposalId,
     authorizationId,
-    authorizationToken,
     status: 'authorized',
     executionStatus: 'authorized',
     payloadHash,
