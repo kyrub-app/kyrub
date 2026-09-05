@@ -207,6 +207,8 @@ export const executeKyrubiaMercadoLivrePublication = async (input: {
       authorizationId,
       authorizationToken,
       executedByUserId,
+      expectedAuthorizationSource: 'kyrubia_explicit_owner_command',
+      expectedValidationSource: 'kyrubia_revalidated_draft',
     });
   } catch (error) {
     const originalErrorCode = errorCode(error);
