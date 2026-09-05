@@ -9,12 +9,11 @@ export type KyrubiaMercadoLivrePublicationExecutionCommandResult =
 const isExplicitPublicationExecutionCommand = (message: string): boolean =>
   /^(?:publicar|publique)\s+agora$/i.test(message.trim());
 
-const refreshedContextWithoutClientCapability = (context: KyrubiaTurnContext): KyrubiaTurnContext => ({
+const refreshedPublicationContext = (context: KyrubiaTurnContext): KyrubiaTurnContext => ({
   ...context,
   id: randomUUID(),
   generatedAt: new Date().toISOString(),
   offeredIntents: undefined,
-  mercadoLivrePublicationAuthorization: undefined,
 });
 
 const errorCode = (error: unknown): string =>
@@ -33,7 +32,7 @@ export const handleKyrubiaMercadoLivrePublicationExecutionCommand = async (input
   const proposalId = context.selectedIntent?.intent === 'mercado_livre.listing_type_select'
     ? context.selectedIntent.payload.proposalId.trim()
     : '';
-  const turnContext = refreshedContextWithoutClientCapability(context);
+  const turnContext = refreshedPublicationContext(context);
   if (
     context.sourceAction !== 'mercado_livre_publication_preparation' ||
     !proposalId
