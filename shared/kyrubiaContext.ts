@@ -129,16 +129,6 @@ export type KyrubiaMercadoLivreRequirementProgress = {
   authorization: 'intent_only';
 };
 
-export type KyrubiaMercadoLivrePublicationAuthorizationContinuation = {
-  proposalId: string;
-  authorizationId: string;
-  authorizationToken: string;
-  expiresAtMillis: number;
-  authority: 'store_owner_publication_authorization';
-  authorizationSource: 'kyrubia_explicit_owner_command';
-  transport: 'server_issued_one_time_capability';
-};
-
 export type KyrubiaOfferedIntent =
   | KyrubiaPlanOfferedIntent
   | KyrubiaMercadoLivreCategoryOfferedIntent
@@ -170,12 +160,6 @@ export type KyrubiaTurnContext = {
    * context, never provider authority and never proof that a draft was saved.
    */
   mercadoLivreRequirementProgress?: KyrubiaMercadoLivreRequirementProgress;
-  /**
-   * Short-lived bearer capability issued only after explicit owner authorization.
-   * It is bound to the authenticated owner and proposal, and is never sufficient
-   * by itself: execution must revalidate the server-side authorization record.
-   */
-  mercadoLivrePublicationAuthorization?: KyrubiaMercadoLivrePublicationAuthorizationContinuation;
 };
 
 export type KyrubiaTurnSelection = {
