@@ -11,6 +11,10 @@ const componentPath = new URL('../src/components/store/MercadoLivreE2ETestWorksp
 const bridgePath = new URL('../src/components/store/StoreConnectionsPortalBridge.tsx', import.meta.url);
 const clientPath = new URL('../src/utils/mercadoLivreE2ETest.ts', import.meta.url);
 const serverPath = new URL('../server.ts', import.meta.url);
+const kyrubiaChatPath = new URL('../server/ai/kyrubiaUserProviderChatService.ts', import.meta.url);
+const kyrubiaAttributeCollectorPath = new URL('../server/ai/kyrubiaMercadoLivreRequiredAttributeCollector.ts', import.meta.url);
+const kyrubiaContextPath = new URL('../shared/kyrubiaContext.ts', import.meta.url);
+const offeredIntentRuntimePath = new URL('../src/ai/offeredIntentRuntime.ts', import.meta.url);
 
 test('E2E helper only lists canonical eligible products and provider requirement options', async () => {
   const source = await readFile(servicePath, 'utf8');
@@ -133,4 +137,66 @@ test('E2E workspace is mounted through the existing store connections portal', a
   const source = await readFile(bridgePath, 'utf8');
   assert.match(source, /MercadoLivreE2ETestBridge/);
   assert.match(source, /StoreConnectionsWorkspace/);
+});
+
+test('Cairubia required attribute collection is session-only intent context', async () => {
+  const context = await readFile(kyrubiaContextPath, 'utf8');
+  const chat = await readFile(kyrubiaChatPath, 'utf8');
+  assert.match(context, /mercado_livre\.attribute_value_select/);
+  assert.match(context, /mercadoLivreRequirementProgress/);
+  assert.match(context, /authorization: 'intent_only'/);
+  assert.match(context, /providerAuthority: 'provider_api_requirement_options'/);
+  assert.match(chat, /startMercadoLivreRequiredAttributeCollection/);
+  assert.match(chat, /continueMercadoLivreRequiredAttributeCollection/);
+  assert.match(chat, /withAttributeCollectorStep/);
+});
+
+test('Cairubia attribute collector mirrors required/new-required rules and revalidates provider state every turn', async () => {
+  const collector = await readFile(kyrubiaAttributeCollectorPath, 'utf8');
+  assert.match(collector, /attribute\.required \|\| \(condition === 'new' && attribute\.newRequired\)/);
+  assert.match(collector, /inspectMercadoLivreRequirementCategoryOptions/);
+  assert.match(collector, /assertTupleCurrent/);
+  assert.match(collector, /canonicalCollected/);
+  assert.match(collector, /MERCADO_LIVRE_ATTRIBUTE_PROGRESS_CONDITION_STALE/);
+  assert.match(collector, /MERCADO_LIVRE_ATTRIBUTE_PROGRESS_LISTING_TYPE_STALE/);
+  assert.match(collector, /MERCADO_LIVRE_ATTRIBUTE_VALUE_STALE/);
+});
+
+test('enumerated Mercado Livre attribute values are exact intent-only choices bound to the listing tuple', async () => {
+  const collector = await readFile(kyrubiaAttributeCollectorPath, 'utf8');
+  assert.match(collector, /intent: 'mercado_livre\.attribute_value_select'/);
+  assert.match(collector, /proposalId: progress\.proposalId/);
+  assert.match(collector, /categoryId: progress\.categoryId/);
+  assert.match(collector, /condition: progress\.condition/);
+  assert.match(collector, /listingTypeId: progress\.listingTypeId/);
+  assert.match(collector, /attributeId: attribute\.id/);
+  assert.match(collector, /valueId: value\.id/);
+  assert.match(collector, /authorization: 'intent_only'/);
+  assert.match(collector, /normalize\(value\.name\) === wanted/);
+});
+
+test('free-text attribute answers remain conversational and no requirement configuration is written', async () => {
+  const collector = await readFile(kyrubiaAttributeCollectorPath, 'utf8');
+  const chat = await readFile(kyrubiaChatPath, 'utf8');
+  assert.match(collector, /valueName: text/);
+  assert.match(collector, /nada será gravado no rascunho ainda/i);
+  assert.doesNotMatch(collector, /configureMercadoLivreOutboundRequirements/);
+  assert.doesNotMatch(collector, /adminDb|FieldValue|runTransaction|\.set\s*\(|\.update\s*\(/);
+  assert.doesNotMatch(collector, /mercadoLivrePostJson|mercadoLivrePutJson|authorizeMercadoLivre|executeMercadoLivre/);
+  assert.doesNotMatch(chat, /configureMercadoLivreOutboundRequirements/);
+  assert.doesNotMatch(chat, /mercadoLivrePostJson|mercadoLivrePutJson|authorizeMercadoLivre|executeMercadoLivre/);
+});
+
+test('conditional attributes remain an explicit blocker after base required attributes are collected', async () => {
+  const collector = await readFile(kyrubiaAttributeCollectorPath, 'utf8');
+  assert.match(collector, /attribute\.conditionalRequired/);
+  assert.match(collector, /Ainda existem \$\{conditional\.length\} atributo\(s\) marcados pelo provedor como condicionais/);
+  assert.match(collector, /eles precisam ser avaliados antes de qualquer configuração do draft/);
+  assert.doesNotMatch(collector, /ready:\s*true/);
+});
+
+test('plan offered-intent runtime cannot consume Mercado Livre attribute answers', async () => {
+  const runtime = await readFile(offeredIntentRuntimePath, 'utf8');
+  assert.match(runtime, /offeredIntent\.intent === 'mercado_livre\.attribute_value_select'/);
+  assert.match(runtime, /return null/);
 });
