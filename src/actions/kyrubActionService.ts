@@ -11,7 +11,6 @@ import { invalidateKyrubErpContext } from './erpReadActionService';
 import { KYRUB_CATALOG_PRODUCT_CHANGED_EVENT } from './kyrubCatalogDraftService';
 
 const SAFE_ACTION_ENDPOINT = '/api/action-execute';
-const CREATE_PRODUCT_ACTION_ENDPOINT = '/api/action-execute-product';
 const STORE_PROMOTION_ACTION_ENDPOINT = '/api/ai/consultant?transport=store-promotion-execute';
 
 const readJson = async (response: Response): Promise<Record<string, unknown>> => {
@@ -187,9 +186,7 @@ export const executeKyrubAction = async (
     (proposal as unknown as { type?: string }).type === 'create_store_promotion';
   const endpoint = isStorePromotion
     ? STORE_PROMOTION_ACTION_ENDPOINT
-    : proposal.type === 'create_product'
-      ? CREATE_PRODUCT_ACTION_ENDPOINT
-      : SAFE_ACTION_ENDPOINT;
+    : SAFE_ACTION_ENDPOINT;
 
   let response: Response;
   try {
