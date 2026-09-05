@@ -1,5 +1,13 @@
 import { randomUUID } from 'node:crypto';
 import type {
+  KyrubiaMercadoLivreCategoryOfferedIntent,
+  KyrubiaTurnContext,
+} from '../../shared/kyrubiaContext.js';
+import {
+  resolveKyrubiaOfferedIntentSelection,
+  selectKyrubiaOfferedIntentContext,
+} from '../../shared/kyrubiaContext.js';
+import type {
   KyrubErpContextSnapshot,
   KyrubErpOrderSummary,
   KyrubErpProductSummary,
@@ -50,6 +58,7 @@ export type KyrubiaUserProviderChatBody =
         checklist: string[];
         requiresConfirmation: true;
       };
+      turnContext?: KyrubiaTurnContext;
       capabilities: typeof byoCapabilities;
       funding: 'user_provider';
       usage: {
@@ -57,6 +66,18 @@ export type KyrubiaUserProviderChatBody =
         outputTokens?: number;
         totalTokens?: number;
       };
+    }
+  | {
+      status: 'deterministic';
+      reply: string;
+      provider: 'kyrub';
+      model: 'kyrub-runtime-v1';
+      mode: 'deterministic';
+      requestId: string;
+      turnContext: KyrubiaTurnContext;
+      capabilities: typeof byoCapabilities;
+      funding: 'none';
+      usage: Record<string, never>;
     }
   | {
       status: 'legacy_allowed';
@@ -217,6 +238,83 @@ const normalizeMessages = (value: unknown): {
   return { messages, hasAttachments };
 };
 
+const normalizeMercadoLivreCategoryIntent = (
+  value: unknown
+): KyrubiaMercadoLivreCategoryOfferedIntent | null => {
+  const raw = record(value);
+  const payload = record(raw.payload);
+  const id = clean(raw.id, 160);
+  const label = clean(raw.label, 180);
+  const proposalId = clean(payload.proposalId, 180);
+  const categoryId = clean(payload.categoryId, 160);
+  const categoryName = clean(payload.categoryName, 180);
+  if (
+    !id || !label || raw.intent !== 'mercado_livre.category_select' ||
+    raw.authorization !== 'intent_only' || !proposalId || !categoryId || !categoryName ||
+    payload.providerAuthority !== 'provider_api_refetch'
+  ) return null;
+  return {
+    id,
+    intent: 'mercado_livre.category_select',
+    label,
+    payload: {
+      proposalId,
+      categoryId,
+      categoryName,
+      providerAuthority: 'provider_api_refetch',
+    },
+    authorization: 'intent_only',
+    ...(raw.primary === true ? { primary: true } : {}),
+  };
+};
+
+const normalizeMercadoLivreTurnContext = (
+  value: unknown,
+  ownerUid: string
+): KyrubiaTurnContext | undefined => {
+  const raw = record(value);
+  const scope = record(raw.scope);
+  const id = clean(raw.id, 180);
+  const generatedAt = clean(raw.generatedAt, 80);
+  if (
+    raw.version !== 1 || raw.source !== 'kyrub_runtime' ||
+    raw.sourceAction !== 'mercado_livre_publication_preparation' ||
+    !id || !generatedAt || scope.kind !== 'own_store' ||
+    clean(scope.storeId, 160) !== ownerUid || !Array.isArray(raw.offeredIntents)
+  ) return undefined;
+  const offeredIntents = raw.offeredIntents
+    .slice(0, 3)
+    .flatMap(item => {
+      const intent = normalizeMercadoLivreCategoryIntent(item);
+      return intent ? [intent] : [];
+    });
+  if (offeredIntents.length === 0) return undefined;
+  const entities = Array.isArray(raw.entities)
+    ? raw.entities.slice(0, 3).flatMap(item => {
+        const entity = record(item);
+        const entityId = clean(entity.entityId, 160);
+        const label = clean(entity.label, 180);
+        if (entity.entityType !== 'product' || !entityId || !label) return [];
+        return [{ entityType: 'product' as const, entityId, label, position: 1 }];
+      })
+    : [];
+  return {
+    version: 1,
+    id,
+    source: 'kyrub_runtime',
+    sourceAction: 'mercado_livre_publication_preparation',
+    generatedAt,
+    scope: { kind: 'own_store', storeId: ownerUid },
+    entities,
+    offeredIntents,
+  };
+};
+
+const mercadoLivreCategorySelectionReply = (
+  intent: KyrubiaMercadoLivreCategoryOfferedIntent
+): string =>
+  `Entendi: você escolheu “${intent.payload.categoryName}” para este rascunho do Mercado Livre. Essa escolha ficou registrada apenas como intenção conversacional vinculada ao rascunho ${intent.payload.proposalId}. Nenhum requisito foi configurado e nada foi publicado. Antes de continuar, o Kyrub ainda precisa revalidar essa categoria contra a inspeção oficial do Mercado Livre.`;
+
 export const executeAuthorizedKyrubiaUserProviderChat = async (
   authorization: string,
   input: unknown
@@ -226,11 +324,45 @@ export const executeAuthorizedKyrubiaUserProviderChat = async (
   const raw = record(input);
   const topic = clean(raw.topic, MAX_TOPIC_CHARACTERS) || 'Nova solicitação';
   const screenContext = clean(raw.screenContext, MAX_SCREEN_CONTEXT_CHARACTERS);
+  const conversationId = clean(raw.conversationId, 180) || `conversation-${requestId}`;
   const { messages, hasAttachments } = normalizeMessages(raw.messages);
   const erpContext = normalizeErpContext(raw.erpContext);
+  const previousTurnContext = normalizeMercadoLivreTurnContext(raw.turnContext, user.uid);
+  const latestMessage = messages.at(-1)?.content ?? '';
+  const offeredIntentSelection = resolveKyrubiaOfferedIntentSelection({
+    selectedOfferedIntentId: clean(raw.selectedOfferedIntentId, 160),
+    message: latestMessage,
+    context: previousTurnContext,
+  });
+
+  if (
+    previousTurnContext &&
+    offeredIntentSelection?.offeredIntent.intent === 'mercado_livre.category_select'
+  ) {
+    const selectedIntent = offeredIntentSelection.offeredIntent;
+    return {
+      httpStatus: 200,
+      body: {
+        status: 'deterministic',
+        reply: mercadoLivreCategorySelectionReply(selectedIntent),
+        provider: 'kyrub',
+        model: 'kyrub-runtime-v1',
+        mode: 'deterministic',
+        requestId,
+        turnContext: selectKyrubiaOfferedIntentContext(
+          previousTurnContext,
+          offeredIntentSelection
+        ),
+        capabilities: byoCapabilities,
+        funding: 'none',
+        usage: {},
+      },
+    };
+  }
 
   const result = await runKyrubiaUserProviderToolLoop({
     uid: user.uid,
+    conversationId,
     systemText: buildKyrubiaSystemInstruction(user, topic, screenContext),
     messages,
     erpContext,
@@ -278,6 +410,7 @@ export const executeAuthorizedKyrubiaUserProviderChat = async (
       mode: 'conversation',
       requestId,
       ...(result.actionProposal ? { actionProposal: result.actionProposal } : {}),
+      ...(result.turnContext ? { turnContext: result.turnContext } : {}),
       capabilities: byoCapabilities,
       funding: 'user_provider',
       usage: result.usage,
