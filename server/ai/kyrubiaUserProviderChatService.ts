@@ -815,7 +815,8 @@ export const executeAuthorizedKyrubiaUserProviderChat = async (
         if (currentListingType.name !== selected.payload.listingTypeName) {
           throw new Error('MERCADO_LIVRE_OUTBOUND_LISTING_TYPE_MISMATCH');
         }
-        const step = startMercadoLivreRequiredAttributeCollection({
+        const step = await startMercadoLivreRequiredAttributeCollection({
+          userId: user.uid,
           listingIntent: selected,
           options,
         });

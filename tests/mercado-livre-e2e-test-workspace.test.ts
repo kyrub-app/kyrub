@@ -156,7 +156,7 @@ test('Cairubia attribute collector delegates required/new-required planning and 
   const collector = await readFile(kyrubiaAttributeCollectorPath, 'utf8');
   const planner = await readFile(kyrubiaAttributePlannerPath, 'utf8');
   assert.match(collector, /planKyrubiaMercadoLivreRequiredAttributes/);
-  assert.match(collector, /const plan = planFor\(progress, options, collected\)/);
+  assert.match(collector, /const plan = planFor\(input\.progress, input\.options, baseCollected\)/);
   assert.match(planner, /attribute\.required \|\|/);
   assert.match(planner, /condition === 'new' && attribute\.newRequired/);
   assert.match(collector, /inspectMercadoLivreRequirementCategoryOptions/);
@@ -192,11 +192,17 @@ test('free-text attribute answers remain conversational and no requirement confi
   assert.doesNotMatch(chat, /mercadoLivrePostJson|mercadoLivrePutJson|authorizeMercadoLivre|executeMercadoLivre/);
 });
 
-test('conditional attributes remain an explicit blocker after base required attributes are collected', async () => {
+test('conditional attributes are collected only after official provider inspection and are re-established every turn', async () => {
   const collector = await readFile(kyrubiaAttributeCollectorPath, 'utf8');
-  assert.match(collector, /attribute\.conditionalRequired/);
-  assert.match(collector, /Ainda existem \$\{conditional\.length\} atributo\(s\) marcados pelo provedor como condicionais/);
-  assert.match(collector, /eles precisam ser avaliados antes de qualquer configuração do draft/);
+  const chat = await readFile(kyrubiaChatPath, 'utf8');
+  assert.match(collector, /inspectMercadoLivreConditionalRequirements/);
+  assert.match(collector, /recoverProviderAuthorizedConditionalState/);
+  assert.match(collector, /inspection\.missingConditionalAttributeIds/);
+  assert.match(collector, /MERCADO_LIVRE_ATTRIBUTE_PROGRESS_CONDITIONAL_STALE/);
+  assert.match(collector, /inspeção oficial \/attributes\/conditional/i);
+  assert.match(collector, /nenhum RequirementConfiguration foi criado/i);
+  assert.match(chat, /await startMercadoLivreRequiredAttributeCollection/);
+  assert.match(chat, /userId: user\.uid/);
   assert.doesNotMatch(collector, /ready:\s*true/);
 });
 
