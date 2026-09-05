@@ -25,7 +25,8 @@ export type KyrubiaPlanOfferedIntentKind =
 export type KyrubiaMercadoLivreOfferedIntentKind =
   | 'mercado_livre.category_select'
   | 'mercado_livre.condition_select'
-  | 'mercado_livre.listing_type_select';
+  | 'mercado_livre.listing_type_select'
+  | 'mercado_livre.attribute_value_select';
 
 export type KyrubiaOfferedIntentKind =
   | KyrubiaPlanOfferedIntentKind
@@ -86,11 +87,54 @@ export type KyrubiaMercadoLivreListingTypeOfferedIntent =
     };
   };
 
+export type KyrubiaMercadoLivreAttributeValueOfferedIntent =
+  KyrubiaOfferedIntentBase & {
+    intent: 'mercado_livre.attribute_value_select';
+    payload: {
+      proposalId: string;
+      categoryId: string;
+      categoryName: string;
+      condition: string;
+      listingTypeId: string;
+      listingTypeName: string;
+      attributeId: string;
+      attributeName: string;
+      valueId: string;
+      valueName: string;
+      providerAuthority: 'provider_api_requirement_options';
+    };
+  };
+
+export type KyrubiaMercadoLivreCollectedAttribute = {
+  id: string;
+  name: string;
+  valueId?: string;
+  valueName: string;
+};
+
+export type KyrubiaMercadoLivreRequirementProgress = {
+  proposalId: string;
+  categoryId: string;
+  categoryName: string;
+  condition: string;
+  listingTypeId: string;
+  listingTypeName: string;
+  collectedAttributes: KyrubiaMercadoLivreCollectedAttribute[];
+  pendingAttribute?: {
+    id: string;
+    name: string;
+    valueType: string;
+  };
+  providerAuthority: 'provider_api_requirement_options';
+  authorization: 'intent_only';
+};
+
 export type KyrubiaOfferedIntent =
   | KyrubiaPlanOfferedIntent
   | KyrubiaMercadoLivreCategoryOfferedIntent
   | KyrubiaMercadoLivreConditionOfferedIntent
-  | KyrubiaMercadoLivreListingTypeOfferedIntent;
+  | KyrubiaMercadoLivreListingTypeOfferedIntent
+  | KyrubiaMercadoLivreAttributeValueOfferedIntent;
 
 export type KyrubiaTurnContext = {
   version: 1;
@@ -111,6 +155,11 @@ export type KyrubiaTurnContext = {
    * operation must revalidate provider evidence, current state and authority.
    */
   selectedIntent?: KyrubiaOfferedIntent;
+  /**
+   * Session-only Mercado Livre requirement progress. This is conversational
+   * context, never provider authority and never proof that a draft was saved.
+   */
+  mercadoLivreRequirementProgress?: KyrubiaMercadoLivreRequirementProgress;
 };
 
 export type KyrubiaTurnSelection = {
