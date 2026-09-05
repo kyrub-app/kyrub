@@ -9,6 +9,7 @@ import {
   inspectMercadoLivreRequirementCategoryOptions,
   type MercadoLivreRequirementCategoryOptions,
 } from '../integrations/mercadoLivreRequirementOptionsService.js';
+import { planKyrubiaMercadoLivreRequiredAttributes } from './kyrubiaMercadoLivreRequiredAttributePlanner.js';
 
 export type KyrubiaMercadoLivreAttributeCollectorStep = {
   reply: string;
@@ -30,13 +31,30 @@ const normalize = (value: string): string =>
     .replace(/\s+/g, ' ')
     .trim();
 
-const requiredAttributes = (
+const planFor = (
+  progress: KyrubiaMercadoLivreRequirementProgress,
   options: MercadoLivreRequirementCategoryOptions,
-  condition: string
-): MercadoLivreRequirementCategoryOptions['attributes'] =>
-  options.attributes.filter(attribute =>
-    attribute.required || (condition === 'new' && attribute.newRequired)
-  );
+  collectedAttributes: readonly KyrubiaMercadoLivreCollectedAttribute[] = []
+) => planKyrubiaMercadoLivreRequiredAttributes({
+  proposalId: progress.proposalId,
+  categoryId: progress.categoryId,
+  condition: progress.condition,
+  listingTypeId: progress.listingTypeId,
+  options,
+  selections: collectedAttributes.map(attribute => ({
+    id: attribute.id,
+    ...(attribute.valueId ? { valueId: attribute.valueId } : {}),
+    ...(attribute.valueName ? { valueName: attribute.valueName } : {}),
+  })),
+});
+
+const requiredAttributes = (
+  progress: KyrubiaMercadoLivreRequirementProgress,
+  options: MercadoLivreRequirementCategoryOptions
+): MercadoLivreRequirementCategoryOptions['attributes'] => {
+  const requiredIds = new Set(planFor(progress, options).requiredAttributeIds);
+  return options.attributes.filter(attribute => requiredIds.has(attribute.id));
+};
 
 const assertTupleCurrent = (
   progress: KyrubiaMercadoLivreRequirementProgress,
@@ -65,7 +83,7 @@ const canonicalCollected = (
   progress: KyrubiaMercadoLivreRequirementProgress,
   options: MercadoLivreRequirementCategoryOptions
 ): KyrubiaMercadoLivreCollectedAttribute[] => {
-  const required = requiredAttributes(options, progress.condition);
+  const required = requiredAttributes(progress, options);
   const requiredById = new Map(required.map(attribute => [attribute.id, attribute] as const));
   const seen = new Set<string>();
   const result: KyrubiaMercadoLivreCollectedAttribute[] = [];
@@ -187,25 +205,32 @@ const buildStep = (
 ): KyrubiaMercadoLivreAttributeCollectorStep => {
   assertTupleCurrent(progress, options);
   const collected = canonicalCollected(progress, options);
-  const required = requiredAttributes(options, progress.condition);
-  const supplied = new Set(collected.map(attribute => attribute.id));
-  const pending = required.find(attribute => !supplied.has(attribute.id));
+  const plan = planFor(progress, options, collected);
+  const pending = plan.nextAttribute
+    ? options.attributes.find(attribute => attribute.id === plan.nextAttribute?.id)
+    : undefined;
+  if (plan.nextAttribute && !pending) {
+    throw new Error('MERCADO_LIVRE_ATTRIBUTE_PLAN_PROVIDER_ATTRIBUTE_MISSING');
+  }
   const nextProgress: KyrubiaMercadoLivreRequirementProgress = {
     ...progress,
     collectedAttributes: collected,
     ...(pending
       ? { pendingAttribute: { id: pending.id, name: pending.name, valueType: pending.valueType } }
       : { pendingAttribute: undefined }),
-    providerAuthority: 'provider_api_requirement_options',
+    providerAuthority: plan.authority,
     authorization: 'intent_only',
   };
-  if (!pending) {
+  if (plan.complete) {
     return {
       reply: completedReply(nextProgress, options),
       progress: nextProgress,
       offeredIntents: [],
       complete: true,
     };
+  }
+  if (!pending) {
+    throw new Error('MERCADO_LIVRE_ATTRIBUTE_PLAN_PENDING_ATTRIBUTE_MISSING');
   }
   return {
     reply: attributePrompt(nextProgress, pending),
@@ -320,11 +345,15 @@ export const continueMercadoLivreRequiredAttributeCollection = async (input: {
   });
   assertTupleCurrent(input.progress, options);
   const collected = canonicalCollected(input.progress, options);
-  const required = requiredAttributes(options, input.progress.condition);
-  const supplied = new Set(collected.map(attribute => attribute.id));
-  const pending = required.find(attribute => !supplied.has(attribute.id));
-  if (!pending) {
+  const plan = planFor(input.progress, options, collected);
+  const pending = plan.nextAttribute
+    ? options.attributes.find(attribute => attribute.id === plan.nextAttribute?.id)
+    : undefined;
+  if (plan.complete) {
     return buildStep({ ...input.progress, collectedAttributes: collected }, options);
+  }
+  if (!pending) {
+    throw new Error('MERCADO_LIVRE_ATTRIBUTE_PLAN_PENDING_ATTRIBUTE_MISSING');
   }
   assertPendingMatches(input.progress, pending);
   const answer = input.selectedValueIntent
