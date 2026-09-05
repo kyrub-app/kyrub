@@ -15,7 +15,10 @@ import {
   type KyrubiaCreateNoteProposal,
   type KyrubiaNormalizedToolCall,
 } from './kyrubiaSharedToolExecutor.js';
-import { prepareKyrubiaMercadoLivrePublication } from './kyrubiaMercadoLivrePrepareTool.js';
+import {
+  prepareKyrubiaMercadoLivrePublication,
+  type KyrubiaMercadoLivrePrepareResult,
+} from './kyrubiaMercadoLivrePrepareTool.js';
 import {
   messagesToKyrubiaProviderTurns,
   runKyrubiaUserProviderText,
@@ -36,6 +39,11 @@ export type KyrubiaUserProviderToolLoopResult =
       calls: 1 | 2;
     }
   | Exclude<KyrubiaUserProviderRuntimeResult, { status: 'user_provider' }>;
+
+type KyrubiaMercadoLivrePreparedResult = Extract<
+  KyrubiaMercadoLivrePrepareResult,
+  { prepared: true }
+>;
 
 const KYRUBIA_PREPARE_MERCADO_LIVRE_PUBLICATION_TOOL_NAME =
   'prepare_mercado_livre_publication';
@@ -174,10 +182,7 @@ const productLabelFromReadResult = (
 };
 
 const mercadoLivreCategoryStepReply = (
-  result: Extract<
-    Awaited<ReturnType<typeof prepareKyrubiaMercadoLivrePublication>>,
-    { prepared: true }
-  >
+  result: KyrubiaMercadoLivrePreparedResult
 ): string => {
   const inspection = result.requirementInspection;
   if (inspection.status === 'unavailable') return inspection.message;
@@ -191,9 +196,9 @@ const mercadoLivreCategoryStepReply = (
 };
 
 const mercadoLivrePrepareReply = (
-  result: Awaited<ReturnType<typeof prepareKyrubiaMercadoLivrePublication>>
+  result: KyrubiaMercadoLivrePrepareResult
 ): string => {
-  if ('message' in result) return result.message;
+  if (!result.prepared) return result.message;
   const model = result.providerPublicationModel === 'user_products'
     ? 'User Products'
     : 'itens legado';
@@ -209,9 +214,9 @@ const mercadoLivreCategoryTurnContext = (input: {
   conversationId: string;
   productId: string;
   productLabel: string;
-  result: Awaited<ReturnType<typeof prepareKyrubiaMercadoLivrePublication>>;
+  result: KyrubiaMercadoLivrePreparedResult;
 }): KyrubiaTurnContext | undefined => {
-  if ('message' in input.result || input.result.requirementInspection.status !== 'available') {
+  if (input.result.requirementInspection.status !== 'available') {
     return undefined;
   }
   const suggestions = input.result.requirementInspection.categorySuggestions.slice(0, 3);
@@ -366,13 +371,15 @@ export const runKyrubiaUserProviderToolLoop = async (input: {
       uid: input.uid,
       productId: requestedProductId,
     });
-    const turnContext = mercadoLivreCategoryTurnContext({
-      uid: input.uid,
-      conversationId: input.conversationId,
-      productId: requestedProductId,
-      productLabel: productLabelFromReadResult(readResult, requestedProductId),
-      result: prepared,
-    });
+    const turnContext = prepared.prepared
+      ? mercadoLivreCategoryTurnContext({
+          uid: input.uid,
+          conversationId: input.conversationId,
+          productId: requestedProductId,
+          productLabel: productLabelFromReadResult(readResult, requestedProductId),
+          result: prepared,
+        })
+      : undefined;
     return {
       status: 'user_provider',
       provider: second.provider,
