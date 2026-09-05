@@ -4,6 +4,11 @@ import type {
   CustomerOrder,
   CustomerOrderStatus,
 } from './customerOrders';
+import {
+  publishNinetyNineFoodStatusWriteResult,
+  requestNinetyNineFoodStatusWriteAuthority,
+  type NinetyNineFoodStatusWriteResult,
+} from './ninetyNineFoodStatusWriteAuthority';
 import { recordCurrentUserActivityEvent } from '../observability/kyrubActivityBrowser';
 
 export type OrderDeliveryProvider = 'kyrub' | 'merchant';
@@ -35,12 +40,24 @@ export interface OrderOriginOption {
   group: 'attendance' | 'kyrub' | 'marketplace' | 'internal';
 }
 
+export interface OrderStatusUpdateResult {
+  orderId: string;
+  status: CustomerOrderStatus;
+  provider: string;
+  externalOrderId: string;
+  partnerSync: NinetyNineFoodStatusWriteResult['partnerSync'];
+  partnerWarning: string;
+}
+
 const normalize = (value: string): string =>
   value.trim().toLocaleUpperCase('pt-BR');
 
-const isNinetyNineFoodOrder = (order: CustomerOrder): boolean =>
+export const isNinetyNineFoodOrder = (order: CustomerOrder): boolean =>
   order.buyerId.toLocaleLowerCase('pt-BR').startsWith('99food:') ||
   order.operatorName.toLocaleLowerCase('pt-BR').includes('99food');
+
+const isNinetyNineFoodOrderId = (orderId: string): boolean =>
+  orderId.trim().toLocaleLowerCase('pt-BR').startsWith('99food-');
 
 export const isPendingAttendanceApproval = (order: CustomerOrder): boolean =>
   order.source === 'customer' &&
@@ -147,20 +164,76 @@ const recordOrderActivity = (
   });
 };
 
+const parseOrderStatusUpdateResult = (
+  value: unknown,
+  fallbackOrderId: string,
+  fallbackStatus: CustomerOrderStatus
+): OrderStatusUpdateResult => {
+  const candidate = value && typeof value === 'object'
+    ? value as Record<string, unknown>
+    : {};
+  const partnerSync =
+    candidate.partnerSync === 'authorization-required' ||
+    candidate.partnerSync === 'sent' ||
+    candidate.partnerSync === 'attention'
+      ? candidate.partnerSync
+      : 'not-applicable';
+  return {
+    orderId:
+      typeof candidate.orderId === 'string' && candidate.orderId.trim()
+        ? candidate.orderId.trim()
+        : fallbackOrderId,
+    status:
+      typeof candidate.status === 'string'
+        ? candidate.status as CustomerOrderStatus
+        : fallbackStatus,
+    provider: typeof candidate.provider === 'string' ? candidate.provider : '',
+    externalOrderId:
+      typeof candidate.externalOrderId === 'string' ? candidate.externalOrderId : '',
+    partnerSync,
+    partnerWarning:
+      typeof candidate.partnerWarning === 'string' ? candidate.partnerWarning : '',
+  };
+};
+
 export const updateOrderStatusWithDecision = async (
   storeId: string,
   orderId: string,
   nextStatus: CustomerOrderStatus,
   decision: OrderDecision = {}
-): Promise<void> => {
+): Promise<OrderStatusUpdateResult> => {
   const user = auth.currentUser;
-  if (!user || user.uid !== storeId.trim()) {
+  const normalizedStoreId = storeId.trim();
+  const normalizedOrderId = orderId.trim();
+  if (!user || user.uid !== normalizedStoreId) {
     throw new Error('Faça login novamente para atualizar o pedido.');
+  }
+
+  let providerWriteAuthorization:
+    | { provider: '99food'; status: CustomerOrderStatus; confirmed: true }
+    | undefined;
+
+  if (isNinetyNineFoodOrderId(normalizedOrderId)) {
+    const choice = await requestNinetyNineFoodStatusWriteAuthority({
+      storeId: normalizedStoreId,
+      orderId: normalizedOrderId,
+      status: nextStatus,
+    });
+    if (choice === 'cancel') {
+      throw new Error('A atualização do pedido foi cancelada antes de qualquer alteração.');
+    }
+    if (choice === 'kyrub_and_99food') {
+      providerWriteAuthorization = {
+        provider: '99food',
+        status: nextStatus,
+        confirmed: true,
+      };
+    }
   }
 
   recordOrderActivity(
     'interaction.action_attempted',
-    orderId,
+    normalizedOrderId,
     nextStatus,
     decision,
     'client_observation'
@@ -169,30 +242,48 @@ export const updateOrderStatusWithDecision = async (
   try {
     const token = await user.getIdToken();
     const response = await fetch(
-      `/api/orders/${encodeURIComponent(orderId.trim())}/status`,
+      `/api/orders/${encodeURIComponent(normalizedOrderId)}/status`,
       {
         method: 'POST',
         headers: {
           authorization: `Bearer ${token}`,
           'content-type': 'application/json',
         },
-        body: JSON.stringify({ status: nextStatus, decision }),
+        body: JSON.stringify({
+          status: nextStatus,
+          decision,
+          ...(providerWriteAuthorization ? { providerWriteAuthorization } : {}),
+        }),
       }
     );
+    const payload = await response.json().catch(() => ({})) as Record<string, unknown>;
     if (response.ok) {
+      const result = parseOrderStatusUpdateResult(
+        payload,
+        normalizedOrderId,
+        nextStatus
+      );
       recordOrderActivity(
         'result.action_succeeded',
-        orderId,
+        normalizedOrderId,
         nextStatus,
         decision,
         'authoritative_write_ack'
       );
-      return;
+      if (result.provider === '99food' || isNinetyNineFoodOrderId(normalizedOrderId)) {
+        publishNinetyNineFoodStatusWriteResult({
+          storeId: normalizedStoreId,
+          orderId: result.orderId,
+          status: result.status,
+          partnerSync: result.partnerSync,
+          partnerWarning: result.partnerWarning,
+        });
+      }
+      return result;
     }
-    const payload = await response.json().catch(() => ({})) as Record<string, unknown>;
     recordOrderActivity(
       'result.action_failed',
-      orderId,
+      normalizedOrderId,
       nextStatus,
       decision,
       'client_observation'
@@ -206,7 +297,7 @@ export const updateOrderStatusWithDecision = async (
     if (!(error instanceof Error) || !error.message.includes('Não foi possível atualizar')) {
       recordOrderActivity(
         'result.action_failed',
-        orderId,
+        normalizedOrderId,
         nextStatus,
         decision,
         'client_observation'

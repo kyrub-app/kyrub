@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+import type { KyrubiaTurnContext } from '../../shared/kyrubiaContext.js';
 import type { KyrubErpContextSnapshot } from '../../shared/kyrubErpContext.js';
 import type {
   KyrubiaProviderTurn,
@@ -9,9 +11,14 @@ import {
   kyrubiaCreateNoteProposalFromCall,
   KYRUBIA_ALL_TOOLS,
   KYRUBIA_MUTATION_TOOL,
+  KYRUBIA_QUERY_PRODUCTS_TOOL_NAME,
   type KyrubiaCreateNoteProposal,
   type KyrubiaNormalizedToolCall,
 } from './kyrubiaSharedToolExecutor.js';
+import {
+  prepareKyrubiaMercadoLivrePublication,
+  type KyrubiaMercadoLivrePrepareResult,
+} from './kyrubiaMercadoLivrePrepareTool.js';
 import {
   messagesToKyrubiaProviderTurns,
   runKyrubiaUserProviderText,
@@ -27,10 +34,36 @@ export type KyrubiaUserProviderToolLoopResult =
       model: string;
       reply: string;
       actionProposal?: KyrubiaCreateNoteProposal;
+      turnContext?: KyrubiaTurnContext;
       usage: KyrubiaProviderUsage;
       calls: 1 | 2;
     }
   | Exclude<KyrubiaUserProviderRuntimeResult, { status: 'user_provider' }>;
+
+type KyrubiaMercadoLivrePreparedResult = Extract<
+  KyrubiaMercadoLivrePrepareResult,
+  { prepared: true }
+>;
+
+const KYRUBIA_PREPARE_MERCADO_LIVRE_PUBLICATION_TOOL_NAME =
+  'prepare_mercado_livre_publication';
+
+const KYRUBIA_PREPARE_MERCADO_LIVRE_PUBLICATION_DECLARATION = {
+  name: KYRUBIA_PREPARE_MERCADO_LIVRE_PUBLICATION_TOOL_NAME,
+  description:
+    'Prepara somente um rascunho interno de publicação no Mercado Livre para um produto real retornado por query_products nesta mesma interação. Não publica, não cria autorização de publicação e não pode usar um productId inventado.',
+  parameters: {
+    type: 'OBJECT',
+    properties: {
+      productId: {
+        type: 'STRING',
+        description:
+          'ID exato de um produto retornado por query_products nesta mesma interação.',
+      },
+    },
+    required: ['productId'],
+  },
+} as const;
 
 const declarations = (
   source: typeof KYRUBIA_ALL_TOOLS | typeof KYRUBIA_MUTATION_TOOL
@@ -39,6 +72,15 @@ const declarations = (
   description: declaration.description,
   parameters: declaration.parameters as unknown as Record<string, unknown>,
 }));
+
+const postReadDeclarations = () => [
+  ...declarations(KYRUBIA_MUTATION_TOOL),
+  {
+    name: KYRUBIA_PREPARE_MERCADO_LIVRE_PUBLICATION_DECLARATION.name,
+    description: KYRUBIA_PREPARE_MERCADO_LIVRE_PUBLICATION_DECLARATION.description,
+    parameters: KYRUBIA_PREPARE_MERCADO_LIVRE_PUBLICATION_DECLARATION.parameters as unknown as Record<string, unknown>,
+  },
+];
 
 const normalizedToolCall = (call: {
   id: string;
@@ -113,8 +155,112 @@ const turnsWithReadResult = (
   return turns;
 };
 
+const cleanProductId = (value: unknown): string =>
+  typeof value === 'string' ? value.trim().slice(0, 160) : '';
+
+const productIdsFromReadResult = (readResult: Record<string, unknown>): Set<string> => {
+  if (!Array.isArray(readResult.items)) return new Set<string>();
+  return new Set(readResult.items.flatMap(item => {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) return [];
+    const id = cleanProductId((item as Record<string, unknown>).id);
+    return id ? [id] : [];
+  }));
+};
+
+const productLabelFromReadResult = (
+  readResult: Record<string, unknown>,
+  productId: string
+): string => {
+  if (!Array.isArray(readResult.items)) return productId;
+  const match = readResult.items.find(item =>
+    item && typeof item === 'object' && !Array.isArray(item) &&
+    cleanProductId((item as Record<string, unknown>).id) === productId
+  );
+  if (!match || typeof match !== 'object' || Array.isArray(match)) return productId;
+  const name = (match as Record<string, unknown>).name;
+  return typeof name === 'string' && name.trim() ? name.trim().slice(0, 180) : productId;
+};
+
+const mercadoLivreCategoryStepReply = (
+  result: KyrubiaMercadoLivrePreparedResult
+): string => {
+  const inspection = result.requirementInspection;
+  if (inspection.status === 'unavailable') return inspection.message;
+  if (inspection.categorySuggestions.length === 0) {
+    return 'O Mercado Livre não retornou uma categoria sugerida para este produto. Precisamos revisar a classificação antes de continuar.';
+  }
+  const suggestions = inspection.categorySuggestions
+    .map((suggestion, index) => `${index + 1}) ${suggestion.categoryName}`)
+    .join('; ');
+  return `O Mercado Livre sugeriu estas categorias: ${suggestions}. Escolha a categoria correta antes de continuarmos. Depois dela, o Kyrub consultará as opções oficiais de condição, tipo de anúncio e atributos obrigatórios.`;
+};
+
+const mercadoLivrePrepareReply = (
+  result: KyrubiaMercadoLivrePrepareResult
+): string => {
+  if ('message' in result) return result.message;
+  const model = result.providerPublicationModel === 'user_products'
+    ? 'User Products'
+    : 'itens legado';
+  return [
+    `Encontrei o produto real no catálogo e preparei o rascunho interno para o Mercado Livre usando o modelo ${model}.`,
+    mercadoLivreCategoryStepReply(result),
+    'Nenhuma publicação foi enviada ao Mercado Livre e nenhuma autorização de publicação foi criada.',
+  ].join(' ');
+};
+
+const mercadoLivreCategoryTurnContext = (input: {
+  uid: string;
+  conversationId: string;
+  productId: string;
+  productLabel: string;
+  result: KyrubiaMercadoLivrePreparedResult;
+}): KyrubiaTurnContext | undefined => {
+  const inspection = input.result.requirementInspection;
+  if (inspection.status !== 'available') {
+    return undefined;
+  }
+  const suggestions = inspection.categorySuggestions.slice(0, 3);
+  if (suggestions.length === 0) return undefined;
+  const fingerprint = createHash('sha256')
+    .update(`${input.conversationId}:${input.result.proposalId}:${suggestions.map(item => item.categoryId).join(',')}`)
+    .digest('hex')
+    .slice(0, 32);
+  return {
+    version: 1,
+    id: `ml-category-turn-${fingerprint}`,
+    source: 'kyrub_runtime',
+    sourceAction: 'mercado_livre_publication_preparation',
+    generatedAt: new Date().toISOString(),
+    scope: { kind: 'own_store', storeId: input.uid },
+    entities: [{
+      entityType: 'product',
+      entityId: input.productId,
+      label: input.productLabel,
+      position: 1,
+    }],
+    offeredIntents: suggestions.map((suggestion, index) => ({
+      id: `ml-category-${createHash('sha256')
+        .update(`${input.result.proposalId}:${suggestion.categoryId}`)
+        .digest('hex')
+        .slice(0, 28)}`,
+      intent: 'mercado_livre.category_select' as const,
+      label: suggestion.categoryName,
+      payload: {
+        proposalId: input.result.proposalId,
+        categoryId: suggestion.categoryId,
+        categoryName: suggestion.categoryName,
+        providerAuthority: inspection.authority,
+      },
+      authorization: 'intent_only' as const,
+      primary: index === 0,
+    })),
+  };
+};
+
 export const runKyrubiaUserProviderToolLoop = async (input: {
   uid: string;
+  conversationId: string;
   systemText: string;
   messages: KyrubiaTextRuntimeMessage[];
   erpContext: KyrubErpContextSnapshot | null;
@@ -182,12 +328,69 @@ export const runKyrubiaUserProviderToolLoop = async (input: {
     systemText: input.systemText,
     messages: input.messages,
     turns,
-    tools: declarations(KYRUBIA_MUTATION_TOOL),
+    tools: postReadDeclarations(),
     hasAttachments: false,
     signal: input.signal,
   });
 
   if (second.status !== 'user_provider') return second;
+
+  const supportedSecondCalls = second.response.toolCalls.filter(call =>
+    call.name === 'create_note' ||
+    call.name === KYRUBIA_PREPARE_MERCADO_LIVRE_PUBLICATION_TOOL_NAME
+  );
+  if (supportedSecondCalls.length !== second.response.toolCalls.length || supportedSecondCalls.length > 1) {
+    return {
+      status: 'provider_failed',
+      provider: second.provider,
+      code: 'AI_PROVIDER_UNSUPPORTED_TOOL',
+      message: 'A IA conectada solicitou uma combinação de ferramentas que o Kyrub não permite executar.',
+    };
+  }
+
+  const mercadoLivreCall = supportedSecondCalls.find(
+    call => call.name === KYRUBIA_PREPARE_MERCADO_LIVRE_PUBLICATION_TOOL_NAME
+  );
+  if (mercadoLivreCall) {
+    const requestedProductId = cleanProductId(mercadoLivreCall.arguments.productId);
+    const observedProductIds = productIdsFromReadResult(readResult);
+    if (
+      readCall.name !== KYRUBIA_QUERY_PRODUCTS_TOOL_NAME ||
+      !requestedProductId ||
+      requestedProductId.includes('/') ||
+      !observedProductIds.has(requestedProductId)
+    ) {
+      return {
+        status: 'provider_failed',
+        provider: second.provider,
+        code: 'AI_PROVIDER_UNSUPPORTED_TOOL',
+        message: 'A IA tentou preparar uma publicação para um produto que não foi confirmado pela consulta atual do catálogo.',
+      };
+    }
+
+    const prepared = await prepareKyrubiaMercadoLivrePublication({
+      uid: input.uid,
+      productId: requestedProductId,
+    });
+    const turnContext = prepared.prepared
+      ? mercadoLivreCategoryTurnContext({
+          uid: input.uid,
+          conversationId: input.conversationId,
+          productId: requestedProductId,
+          productLabel: productLabelFromReadResult(readResult, requestedProductId),
+          result: prepared,
+        })
+      : undefined;
+    return {
+      status: 'user_provider',
+      provider: second.provider,
+      model: second.model,
+      reply: mercadoLivrePrepareReply(prepared),
+      ...(turnContext ? { turnContext } : {}),
+      usage: addUsage(first.response.usage, second.response.usage),
+      calls: 2,
+    };
+  }
 
   const secondProposal = noteProposal(second.response.toolCalls);
   const reply = second.response.text.trim();

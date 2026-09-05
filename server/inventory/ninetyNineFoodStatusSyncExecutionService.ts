@@ -1,0 +1,337 @@
+import { createHash } from 'node:crypto';
+import { FieldValue, type DocumentSnapshot } from 'firebase-admin/firestore';
+import { adminDb } from '../firebaseAdmin.js';
+import type { InventoryOrderStatus } from '../../shared/inventoryConsumption.js';
+
+const STATUS_MUTATION_LEASE_MS = 2 * 60 * 1000;
+const STATUS_MUTATION_LOCK_COLLECTION = 'orderStatusMutationLocks';
+const STATUS_SYNC_EXECUTION_COLLECTION = 'ninetyNineFoodStatusSyncExecutions';
+
+const SUPPORTED_STATUSES = new Set<InventoryOrderStatus>([
+  'accepted',
+  'preparing',
+  'ready',
+  'out_for_delivery',
+  'completed',
+  'rejected',
+  'cancelled',
+]);
+
+const PENDING_STATUSES = new Set([
+  'authorization_required',
+  'attention',
+]);
+
+const clean = (value: unknown): string =>
+  typeof value === 'string' ? value.trim() : '';
+
+const integrationData = (value: unknown): Record<string, unknown> => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  const order = value as Record<string, unknown>;
+  return order.integration && typeof order.integration === 'object' && !Array.isArray(order.integration)
+    ? order.integration as Record<string, unknown>
+    : {};
+};
+
+const orderReference = (tenantId: string, orderId: string) =>
+  adminDb.doc(`artifacts/${tenantId}/public/data/customerOrders/${orderId}`);
+
+const authorityDocumentId = (tenantId: string, orderId: string): string =>
+  createHash('sha256').update(`${tenantId}:${orderId}`).digest('hex');
+
+const mutationLockReference = (tenantId: string, orderId: string) =>
+  adminDb.doc(
+    `${STATUS_MUTATION_LOCK_COLLECTION}/${authorityDocumentId(tenantId, orderId)}`
+  );
+
+const activeStatusMutationId = (value: unknown): string => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return '';
+  const lock = value as Record<string, unknown>;
+  const mutationId = clean(lock.mutationId);
+  const leaseExpiresAt = Date.parse(clean(lock.leaseExpiresAt));
+  return mutationId && Number.isFinite(leaseExpiresAt) && leaseExpiresAt > Date.now()
+    ? mutationId
+    : '';
+};
+
+export const orderDocumentRevision = (
+  snapshot: Pick<DocumentSnapshot, 'updateTime'>
+): string => {
+  const updateTime = snapshot.updateTime;
+  if (!updateTime) return '';
+  return `${updateTime.seconds}:${updateTime.nanoseconds}`;
+};
+
+export interface OrderStatusMutationClaim {
+  mutationId: string;
+  tenantId: string;
+  orderId: string;
+}
+
+export const claimOrderStatusMutation = async (input: {
+  tenantId: string;
+  orderId: string;
+}): Promise<OrderStatusMutationClaim> => {
+  const tenantId = clean(input.tenantId);
+  const orderId = clean(input.orderId);
+  if (!tenantId || !orderId) throw new Error('Pedido não identificado.');
+
+  const orderRef = orderReference(tenantId, orderId);
+  const lockRef = mutationLockReference(tenantId, orderId);
+  const mutationId = adminDb.collection(STATUS_MUTATION_LOCK_COLLECTION).doc().id;
+
+  return adminDb.runTransaction(async transaction => {
+    const [orderSnapshot, lockSnapshot] = await Promise.all([
+      transaction.get(orderRef),
+      transaction.get(lockRef),
+    ]);
+    if (!orderSnapshot.exists) throw new Error('Pedido não encontrado.');
+    const integration = integrationData(orderSnapshot.data());
+    if (
+      clean(integration.provider) === '99food' &&
+      ['executing', 'reconciliation_required'].includes(clean(integration.outboundStatus))
+    ) {
+      throw new Error(
+        clean(integration.outboundStatus) === 'reconciliation_required'
+          ? 'Este pedido possui uma execução 99Food aguardando reconciliação. Conclua a conferência antes de alterar o status.'
+          : 'A sincronização externa 99Food deste pedido está em execução. Aguarde a conclusão antes de alterar o status.'
+      );
+    }
+    if (activeStatusMutationId(lockSnapshot.data())) {
+      throw new Error(
+        'Outra mudança de status deste pedido já está em execução. Atualize o pedido e tente novamente.'
+      );
+    }
+
+    const claimedAt = new Date().toISOString();
+    const leaseExpiresAt = new Date(Date.now() + STATUS_MUTATION_LEASE_MS).toISOString();
+    transaction.set(lockRef, {
+      mutationId,
+      tenantId,
+      orderId,
+      claimedAt,
+      leaseExpiresAt,
+      authority: 'server_only_status_mutation_lock',
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    return { mutationId, tenantId, orderId };
+  });
+};
+
+export const releaseOrderStatusMutation = async (
+  claim: OrderStatusMutationClaim
+): Promise<void> => {
+  const lockRef = mutationLockReference(claim.tenantId, claim.orderId);
+  await adminDb.runTransaction(async transaction => {
+    const snapshot = await transaction.get(lockRef);
+    if (!snapshot.exists) return;
+    if (clean(snapshot.data()?.mutationId) !== claim.mutationId) return;
+    transaction.delete(lockRef);
+  });
+};
+
+export interface NinetyNineFoodStatusSyncExecutionClaim {
+  executionId: string;
+  orderId: string;
+  externalOrderId: string;
+  status: InventoryOrderStatus;
+  reason: string;
+  expectedOrderRevision: string;
+}
+
+export const claimNinetyNineFoodStatusSyncExecution = async (input: {
+  tenantId: string;
+  orderId: string;
+  status: InventoryOrderStatus;
+  expectedOrderRevision: string;
+  authorizedByUserId: string;
+}): Promise<NinetyNineFoodStatusSyncExecutionClaim> => {
+  const tenantId = clean(input.tenantId);
+  const orderId = clean(input.orderId);
+  const expectedOrderRevision = clean(input.expectedOrderRevision);
+  const authorizedByUserId = clean(input.authorizedByUserId);
+  if (
+    !tenantId ||
+    !orderId ||
+    !expectedOrderRevision ||
+    !authorizedByUserId ||
+    !SUPPORTED_STATUSES.has(input.status)
+  ) {
+    throw new Error('Autorização 99Food vinculada à revisão do pedido é inválida.');
+  }
+
+  const orderRef = orderReference(tenantId, orderId);
+  const lockRef = mutationLockReference(tenantId, orderId);
+  const executionReference = adminDb.collection(STATUS_SYNC_EXECUTION_COLLECTION).doc();
+  const executionId = executionReference.id;
+
+  return adminDb.runTransaction(async transaction => {
+    const [snapshot, lockSnapshot] = await Promise.all([
+      transaction.get(orderRef),
+      transaction.get(lockRef),
+    ]);
+    if (!snapshot.exists) throw new Error('Pedido não encontrado.');
+    const actualRevision = orderDocumentRevision(snapshot);
+    if (!actualRevision || actualRevision !== expectedOrderRevision) {
+      throw new Error(
+        'O pedido mudou desde a leitura da fila 99Food. Atualize a fila e confirme novamente.'
+      );
+    }
+    if (activeStatusMutationId(lockSnapshot.data())) {
+      throw new Error(
+        'O pedido está executando outra mudança de status. Atualize a fila 99Food e confirme novamente depois.'
+      );
+    }
+
+    const order = snapshot.data() as Record<string, unknown>;
+    const integration = integrationData(order);
+    const provider = clean(integration.provider);
+    const outboundStatus = clean(integration.outboundStatus);
+    const currentStatus = clean(order.status) as InventoryOrderStatus;
+    const frozenTargetStatus = clean(integration.outboundTargetStatus) as InventoryOrderStatus;
+    const expectedStatus = SUPPORTED_STATUSES.has(frozenTargetStatus)
+      ? frozenTargetStatus
+      : currentStatus;
+    const externalOrderId = clean(integration.externalOrderId);
+    const reason = clean(integration.outboundReason);
+
+    if (provider !== '99food') {
+      throw new Error('Autorização 99Food não corresponde ao provedor deste pedido.');
+    }
+    if (!PENDING_STATUSES.has(outboundStatus)) {
+      throw new Error('Sincronização 99Food deste pedido não está pendente para envio manual.');
+    }
+    if (
+      !SUPPORTED_STATUSES.has(currentStatus) ||
+      currentStatus !== input.status ||
+      expectedStatus !== input.status
+    ) {
+      throw new Error(
+        'O status do pedido mudou desde a autorização 99Food. Revise a fila e confirme novamente.'
+      );
+    }
+    if (!externalOrderId) {
+      throw new Error('Pedido 99Food sem identificador externo válido.');
+    }
+
+    const startedAt = new Date().toISOString();
+    transaction.create(executionReference, {
+      executionId,
+      tenantId,
+      orderId,
+      orderPath: orderRef.path,
+      provider: '99food',
+      externalOrderId,
+      targetStatus: input.status,
+      reason,
+      expectedOrderRevision,
+      authorizedByUserId,
+      authority: 'explicit_status_scoped_order_revision',
+      status: 'claimed',
+      createdAt: FieldValue.serverTimestamp(),
+      claimedAt: startedAt,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    transaction.update(orderRef, {
+      'integration.outboundStatus': 'executing',
+      'integration.outboundExecutionId': executionId,
+      'integration.outboundExecutionRevision': expectedOrderRevision,
+      'integration.outboundExecutionStartedAt': startedAt,
+      'integration.outboundUpdatedAt': startedAt,
+    });
+
+    return {
+      executionId,
+      orderId,
+      externalOrderId,
+      status: input.status,
+      reason,
+      expectedOrderRevision,
+    };
+  });
+};
+
+export const finalizeNinetyNineFoodStatusSyncExecution = async (input: {
+  tenantId: string;
+  claim: NinetyNineFoodStatusSyncExecutionClaim;
+  outcome: 'sent' | 'attention';
+  providerWarning?: string;
+}): Promise<{
+  orderMarkerFinalized: boolean;
+  concurrentStatusChange: boolean;
+}> => {
+  const tenantId = clean(input.tenantId);
+  const executionId = clean(input.claim.executionId);
+  const orderId = clean(input.claim.orderId);
+  if (!tenantId || !executionId || !orderId) {
+    throw new Error('Execução 99Food não identificada para finalização.');
+  }
+
+  const orderRef = orderReference(tenantId, orderId);
+  const executionReference = adminDb.doc(
+    `${STATUS_SYNC_EXECUTION_COLLECTION}/${executionId}`
+  );
+
+  return adminDb.runTransaction(async transaction => {
+    const [orderSnapshot, executionSnapshot] = await Promise.all([
+      transaction.get(orderRef),
+      transaction.get(executionReference),
+    ]);
+    if (!executionSnapshot.exists) {
+      throw new Error('Execução 99Food não encontrada para finalização.');
+    }
+
+    const order = orderSnapshot.data() as Record<string, unknown> | undefined;
+    const execution = executionSnapshot.data() as Record<string, unknown>;
+    const integration = integrationData(order);
+    const ownsExecutionPhase = clean(execution.status) === 'provider_write_started';
+    const ownsOrderMarker =
+      orderSnapshot.exists &&
+      clean(integration.provider) === '99food' &&
+      clean(integration.outboundStatus) === 'executing' &&
+      clean(integration.outboundExecutionId) === executionId;
+    const concurrentStatusChange =
+      orderSnapshot.exists && clean(order?.status) !== input.claim.status;
+
+    if (!ownsExecutionPhase || !ownsOrderMarker) {
+      return { orderMarkerFinalized: false, concurrentStatusChange };
+    }
+
+    const completedAt = new Date().toISOString();
+    const explicitWarning = clean(input.providerWarning).slice(0, 500);
+    const warning = concurrentStatusChange
+      ? 'O status local mudou durante o provider write 99Food. A execução exige conciliação manual antes de novo envio.'
+      : explicitWarning;
+    const effectiveOutcome =
+      input.outcome === 'sent' && concurrentStatusChange ? 'attention' : input.outcome;
+
+    transaction.update(executionReference, {
+      status: effectiveOutcome === 'sent'
+        ? 'provider_write_succeeded'
+        : concurrentStatusChange
+          ? 'provider_write_requires_reconciliation'
+          : 'provider_write_failed',
+      providerWarning: warning || FieldValue.delete(),
+      completedAt,
+      orderMarkerFinalized: true,
+      concurrentStatusChange,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+
+    transaction.update(orderRef, {
+      'integration.outboundStatus': effectiveOutcome === 'sent' ? 'sent' : 'attention',
+      'integration.outboundTargetStatus': effectiveOutcome === 'sent'
+        ? FieldValue.delete()
+        : input.claim.status,
+      'integration.outboundError': effectiveOutcome === 'sent' || !warning
+        ? FieldValue.delete()
+        : warning,
+      'integration.outboundExecutionId': FieldValue.delete(),
+      'integration.outboundExecutionRevision': FieldValue.delete(),
+      'integration.outboundExecutionStartedAt': FieldValue.delete(),
+      'integration.outboundUpdatedAt': completedAt,
+    });
+
+    return { orderMarkerFinalized: true, concurrentStatusChange };
+  });
+};

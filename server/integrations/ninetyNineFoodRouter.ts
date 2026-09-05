@@ -10,7 +10,6 @@ import {
   getNinetyNineFoodStatus,
   pollAllNinetyNineFoodConnections,
   pollNinetyNineFood,
-  sendNinetyNineFoodOrderStatus,
   type NinetyNineFoodConnectInput,
 } from './ninetyNineFoodService';
 import {
@@ -20,16 +19,18 @@ import {
 } from './ninetyNineFoodProductBindingService';
 import {
   listNinetyNineFoodBlockedOrders,
+  preflightNinetyNineFoodBlockedOrderReservation,
   rejectNinetyNineFoodBlockedOrder,
   retryNinetyNineFoodBlockedOrderReservation,
 } from './ninetyNineFoodOrderBlockResolutionService';
+import { diagnoseNinetyNineFoodBlockedOrderInventoryAuthority } from './ninetyNineFoodAuthorityDiagnosticService';
 import { createNinetyNineFoodAvailabilityProposalRouter } from './ninetyNineFoodAvailabilityProposalRouter';
 import { createNinetyNineFoodMenuCapabilityRouter } from './ninetyNineFoodMenuCapabilityRouter';
+import { listRecentNinetyNineFoodE2EObservedOrders } from './ninetyNineFoodE2EOrderObservationService';
 import {
   drainNinetyNineFoodIngressQueue,
   enqueueNinetyNineFoodWebhook,
 } from './ninetyNineFoodIngressQueue';
-import type { NormalizedIntegrationOrder } from './openDelivery';
 
 export interface RawBodyRequest extends Request {
   rawBody?: Buffer;
@@ -68,7 +69,7 @@ const errorResponse = (response: Response, error: unknown): void => {
     response.status(403).json({ error: message });
     return;
   }
-  if (/PRODUCT_BINDING_FORBIDDEN|NINETY_NINE_FOOD_BLOCK_FORBIDDEN/.test(message)) {
+  if (/PRODUCT_BINDING_FORBIDDEN|NINETY_NINE_FOOD_BLOCK_FORBIDDEN|NINETY_NINE_FOOD_E2E_ORDER_OBSERVATION_FORBIDDEN/.test(message)) {
     response.status(403).json({ error: message });
     return;
   }
@@ -76,7 +77,7 @@ const errorResponse = (response: Response, error: unknown): void => {
     response.status(404).json({ error: message });
     return;
   }
-  if (/PRODUCT_BINDING_ALREADY_ACTIVE|PRODUCT_BINDING_CONFLICT|NINETY_NINE_FOOD_BLOCK_ORDER_NOT_BLOCKED|NINETY_NINE_FOOD_BLOCK_REJECTION_ALREADY_RESERVED/.test(message)) {
+  if (/PRODUCT_BINDING_ALREADY_ACTIVE|PRODUCT_BINDING_CONFLICT|NINETY_NINE_FOOD_BLOCK_ORDER_NOT_BLOCKED|NINETY_NINE_FOOD_BLOCK_REJECTION_ALREADY_RESERVED|NINETY_NINE_FOOD_BLOCK_AUTHORITY_DIAGNOSTIC_NOT_APPLICABLE/.test(message)) {
     response.status(409).json({ error: message });
     return;
   }
@@ -84,7 +85,7 @@ const errorResponse = (response: Response, error: unknown): void => {
     response.status(404).json({ error: message });
     return;
   }
-  if (/PRODUCT_BINDING_INPUT_INVALID|PRODUCT_BINDING_CANONICAL_PRODUCT_INVALID|PRODUCT_BINDING_CANONICAL_STORE_REQUIRED|PRODUCT_BINDING_CONNECTION_INVALID|NINETY_NINE_FOOD_BLOCK_INPUT_INVALID|NINETY_NINE_FOOD_BLOCK_CANONICAL_STORE_REQUIRED|NINETY_NINE_FOOD_BLOCK_EXTERNAL_ORDER_REQUIRED/.test(message)) {
+  if (/PRODUCT_BINDING_INPUT_INVALID|PRODUCT_BINDING_CANONICAL_PRODUCT_INVALID|PRODUCT_BINDING_CANONICAL_STORE_REQUIRED|PRODUCT_BINDING_CONNECTION_INVALID|NINETY_NINE_FOOD_BLOCK_INPUT_INVALID|NINETY_NINE_FOOD_BLOCK_CANONICAL_STORE_REQUIRED|NINETY_NINE_FOOD_BLOCK_EXTERNAL_ORDER_REQUIRED|NINETY_NINE_FOOD_BLOCK_SOURCE_MISMATCH/.test(message)) {
     response.status(400).json({ error: message });
     return;
   }
@@ -124,16 +125,6 @@ const parseConnectInput = (value: unknown): NinetyNineFoodConnectInput => {
   };
 };
 
-const ORDER_STATUSES = new Set<NormalizedIntegrationOrder['status']>([
-  'accepted',
-  'preparing',
-  'ready',
-  'out_for_delivery',
-  'completed',
-  'rejected',
-  'cancelled',
-]);
-
 const cronAuthorized = (request: Request): boolean => {
   const configuredSecret = process.env.INTEGRATION_CRON_SECRET?.trim();
   if (!configuredSecret) return false;
@@ -150,6 +141,20 @@ export const createNinetyNineFoodRouter = (): Router => {
     try {
       const tenantId = await authenticatedTenantId(request);
       response.json(await getNinetyNineFoodStatus(tenantId));
+    } catch (error) {
+      errorResponse(response, error);
+    }
+  });
+
+  router.get('/e2e/recent-orders', async (request, response) => {
+    try {
+      const tenantId = await authenticatedTenantId(request);
+      const requestedLimit = Number(request.query.limit ?? 20);
+      response.json(await listRecentNinetyNineFoodE2EObservedOrders({
+        tenantId,
+        requestedByUserId: tenantId,
+        limit: Number.isFinite(requestedLimit) ? requestedLimit : 20,
+      }));
     } catch (error) {
       errorResponse(response, error);
     }
@@ -203,6 +208,32 @@ export const createNinetyNineFoodRouter = (): Router => {
       const tenantId = await authenticatedTenantId(request);
       response.json(await listNinetyNineFoodBlockedOrders({
         tenantId,
+        requestedByUserId: tenantId,
+      }));
+    } catch (error) {
+      errorResponse(response, error);
+    }
+  });
+
+  router.get('/blocked-orders/:orderId/preflight', async (request, response) => {
+    try {
+      const tenantId = await authenticatedTenantId(request);
+      response.json(await preflightNinetyNineFoodBlockedOrderReservation({
+        tenantId,
+        orderId: request.params.orderId,
+        requestedByUserId: tenantId,
+      }));
+    } catch (error) {
+      errorResponse(response, error);
+    }
+  });
+
+  router.get('/blocked-orders/:orderId/authority-diagnostic', async (request, response) => {
+    try {
+      const tenantId = await authenticatedTenantId(request);
+      response.json(await diagnoseNinetyNineFoodBlockedOrderInventoryAuthority({
+        tenantId,
+        orderId: request.params.orderId,
         requestedByUserId: tenantId,
       }));
     } catch (error) {
@@ -281,24 +312,11 @@ export const createNinetyNineFoodRouter = (): Router => {
 
   router.post('/orders/:externalOrderId/status', async (request, response) => {
     try {
-      const tenantId = await authenticatedTenantId(request);
-      const status = typeof request.body?.status === 'string'
-        ? request.body.status as NormalizedIntegrationOrder['status']
-        : 'pending';
-      if (!ORDER_STATUSES.has(status)) {
-        response.status(400).json({ error: 'Status 99Food não suportado.' });
-        return;
-      }
-      const reason = typeof request.body?.reason === 'string'
-        ? request.body.reason
-        : '';
-      await sendNinetyNineFoodOrderStatus(
-        tenantId,
-        request.params.externalOrderId,
-        status,
-        reason
-      );
-      response.status(204).end();
+      await authenticatedTenantId(request);
+      response.status(410).json({
+        error: 'A escrita direta de status 99Food foi desativada. Use o fluxo canônico do pedido no Kyrub, que exige autorização explícita e vinculada ao status atual.',
+        code: 'NINETY_NINE_FOOD_DIRECT_STATUS_WRITE_DISABLED',
+      });
     } catch (error) {
       errorResponse(response, error);
     }

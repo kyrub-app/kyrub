@@ -5,7 +5,8 @@ import type {
 import type { KyrubErpContextSnapshot } from '../../shared/kyrubErpContext';
 import type {
   KyrubiaOfferedIntent,
-  KyrubiaOfferedIntentKind,
+  KyrubiaPlanOfferedIntent,
+  KyrubiaPlanOfferedIntentKind,
   KyrubiaTurnContext,
 } from '../../shared/kyrubiaContext';
 import type { KyrubCommercialPlanId } from '../../shared/kyrubCommercialPlans';
@@ -34,11 +35,11 @@ const createTurnId = (): string => {
 
 const offer = (
   id: string,
-  intent: KyrubiaOfferedIntentKind,
+  intent: KyrubiaPlanOfferedIntentKind,
   label: string,
   planId?: KyrubCommercialPlanId,
   primary = false
-): KyrubiaOfferedIntent => ({
+): KyrubiaPlanOfferedIntent => ({
   id,
   intent,
   label,
@@ -99,7 +100,7 @@ export const createKyrubiaCapacityPlanTurnContext = (
 const followUpsFor = (
   focusPlan: KyrubCommercialPlanId | null,
   latestMessage: string
-): KyrubiaOfferedIntent[] => {
+): KyrubiaPlanOfferedIntent[] => {
   const planId = focusPlan ?? 'pro';
   const name = planName(planId);
   const intent = normalize(latestMessage);
@@ -159,6 +160,12 @@ const genericAcceptance = (message: string): boolean => {
 };
 
 const syntheticMessageFor = (offeredIntent: KyrubiaOfferedIntent): string | null => {
+  if (
+    offeredIntent.intent === 'mercado_livre.category_select' ||
+    offeredIntent.intent === 'mercado_livre.condition_select' ||
+    offeredIntent.intent === 'mercado_livre.listing_type_select' ||
+    offeredIntent.intent === 'mercado_livre.attribute_value_select'
+  ) return null;
   const planId = offeredIntent.payload?.planId;
   const name = planId ? planName(planId) : 'Pro';
 

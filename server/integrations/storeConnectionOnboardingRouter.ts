@@ -5,6 +5,16 @@ import {
   saveStoreCommerceChannelDeclaration,
 } from './storeConnectionOnboardingService.js';
 import { updateStoreConnectionSyncAuthority } from './storeConnectionRegistry.js';
+import { loadStoreInventoryAuthorityHealth } from './storeInventoryAuthorityHealthService.js';
+import {
+  applyStoreInventoryAuthorityRepair,
+  loadStoreInventoryAuthorityRepairPreview,
+} from './storeInventoryAuthorityRepairService.js';
+import {
+  applyCanonicalOwnerReconciliation,
+  applyStoreOwnerGovernanceDecision,
+  loadStoreOwnerGovernancePreview,
+} from './storeOwnerGovernanceService.js';
 
 const clean = (value: unknown): string =>
   typeof value === 'string' ? value.trim() : '';
@@ -23,11 +33,77 @@ const authenticatedOwner = async (authorization: string, storeId: string) => {
 const mapError = (error: unknown): { status: number; message: string } => {
   const message = error instanceof Error ? error.message : String(error);
   if (message === 'AUTH_REQUIRED') return { status: 401, message: 'Faça login novamente.' };
-  if (message === 'STORE_CONNECTION_FORBIDDEN' || message === 'STORE_REPRESENTATION_FORBIDDEN') {
+  if (
+    message === 'STORE_CONNECTION_FORBIDDEN' ||
+    message === 'STORE_REPRESENTATION_FORBIDDEN' ||
+    message === 'STORE_INVENTORY_AUTHORITY_FORBIDDEN' ||
+    message === 'STORE_INVENTORY_AUTHORITY_REPAIR_FORBIDDEN' ||
+    message === 'STORE_OWNER_GOVERNANCE_FORBIDDEN'
+  ) {
     return { status: 403, message: 'Você não pode administrar conexões desta loja.' };
   }
   if (message === 'STORE_INSTITUTIONAL_NOT_FOUND' || message === 'STORE_CONNECTION_NOT_FOUND') {
     return { status: 404, message: 'A loja ou conexão ainda não foi encontrada.' };
+  }
+  if (
+    message === 'STORE_INVENTORY_AUTHORITY_REPAIR_CONFIRMATION_REQUIRED' ||
+    message === 'STORE_INVENTORY_AUTHORITY_REPAIR_STALE' ||
+    message === 'STORE_INVENTORY_AUTHORITY_REPAIR_NOT_ACTIONABLE'
+  ) {
+    return {
+      status: 409,
+      message: message === 'STORE_INVENTORY_AUTHORITY_REPAIR_STALE'
+        ? 'A situação da autoridade mudou desde a revisão. Atualize a análise antes de confirmar.'
+        : message === 'STORE_INVENTORY_AUTHORITY_REPAIR_NOT_ACTIONABLE'
+          ? 'Este estado não possui correção automática segura. Revise a autoridade da loja antes de continuar.'
+          : 'Revise e confirme explicitamente a correção antes de aplicá-la.',
+    };
+  }
+  if (
+    message === 'STORE_OWNER_GOVERNANCE_CONFIRMATION_REQUIRED' ||
+    message === 'STORE_OWNER_GOVERNANCE_STALE' ||
+    message === 'STORE_OWNER_GOVERNANCE_NOT_ACTIONABLE' ||
+    message === 'STORE_OWNER_GOVERNANCE_CANONICAL_OWNER_PROTECTED' ||
+    message === 'STORE_OWNER_GOVERNANCE_CANDIDATE_UNIDENTIFIABLE'
+  ) {
+    return {
+      status: 409,
+      message: message === 'STORE_OWNER_GOVERNANCE_STALE'
+        ? 'O conjunto de owners mudou desde a revisão. Atualize o conflito antes de confirmar.'
+        : message === 'STORE_OWNER_GOVERNANCE_CANONICAL_OWNER_PROTECTED'
+          ? 'O owner canônico da loja é protegido e não pode ser desativado por esta decisão.'
+          : message === 'STORE_OWNER_GOVERNANCE_CANDIDATE_UNIDENTIFIABLE'
+            ? 'Este owner adicional não pôde ser identificado com segurança para confirmação.'
+            : message === 'STORE_OWNER_GOVERNANCE_NOT_ACTIONABLE'
+              ? 'Este conflito não possui uma decisão segura disponível neste estado.'
+              : 'Revise e confirme explicitamente a decisão de ownership antes de aplicá-la.',
+    };
+  }
+  if (
+    message === 'STORE_CANONICAL_OWNER_RECONCILIATION_CONFIRMATION_REQUIRED' ||
+    message === 'STORE_CANONICAL_OWNER_RECONCILIATION_STALE' ||
+    message === 'STORE_CANONICAL_OWNER_RECONCILIATION_NOT_ACTIONABLE' ||
+    message === 'STORE_CANONICAL_OWNER_RECONCILIATION_MEMBER_CONFLICT'
+  ) {
+    return {
+      status: 409,
+      message: message === 'STORE_CANONICAL_OWNER_RECONCILIATION_STALE'
+        ? 'O conflito de owner mudou desde a revisão. Atualize antes de ativar o owner canônico.'
+        : message === 'STORE_CANONICAL_OWNER_RECONCILIATION_MEMBER_CONFLICT'
+          ? 'A membership do owner canônico aponta para outra identidade e não pode ser reconciliada automaticamente.'
+          : message === 'STORE_CANONICAL_OWNER_RECONCILIATION_NOT_ACTIONABLE'
+            ? 'O owner canônico não precisa ou não pode ser ativado neste estado.'
+            : 'Revise e confirme explicitamente a ativação do owner canônico.',
+    };
+  }
+  if (
+    message === 'STORE_INVENTORY_AUTHORITY_REPAIR_ID_REQUIRED' ||
+    message === 'STORE_OWNER_GOVERNANCE_CONFLICT_ID_REQUIRED' ||
+    message === 'STORE_OWNER_GOVERNANCE_SELECTION_REQUIRED' ||
+    message === 'STORE_OWNER_GOVERNANCE_SELECTION_INVALID' ||
+    message === 'STORE_CANONICAL_OWNER_RECONCILIATION_ID_REQUIRED'
+  ) {
+    return { status: 400, message: 'A revisão da autoridade é inválida ou expirou.' };
   }
   if (message === 'STORE_CONNECTION_SYNC_AUTHORITY_UNAVAILABLE') {
     return {
@@ -55,6 +131,104 @@ export const createStoreConnectionOnboardingRouter = (): Router => {
       const identity = await authenticatedOwner(request.get('authorization') ?? '', storeId);
       response.setHeader('Cache-Control', 'no-store, max-age=0');
       response.json(await loadStoreConnectionOnboarding({ storeId, userId: identity.uid }));
+    } catch (error) {
+      const mapped = mapError(error);
+      response.status(mapped.status).json({ error: mapped.message });
+    }
+  });
+
+  router.get('/:storeId/inventory-authority-health', async (request, response) => {
+    try {
+      const storeId = clean(request.params.storeId);
+      const identity = await authenticatedOwner(request.get('authorization') ?? '', storeId);
+      response.setHeader('Cache-Control', 'no-store, max-age=0');
+      response.json(await loadStoreInventoryAuthorityHealth({
+        tenantId: identity.uid,
+        requestedByUserId: identity.uid,
+      }));
+    } catch (error) {
+      const mapped = mapError(error);
+      response.status(mapped.status).json({ error: mapped.message });
+    }
+  });
+
+  router.get('/:storeId/inventory-authority-repair', async (request, response) => {
+    try {
+      const storeId = clean(request.params.storeId);
+      const identity = await authenticatedOwner(request.get('authorization') ?? '', storeId);
+      response.setHeader('Cache-Control', 'no-store, max-age=0');
+      response.json(await loadStoreInventoryAuthorityRepairPreview({
+        tenantId: identity.uid,
+        requestedByUserId: identity.uid,
+      }));
+    } catch (error) {
+      const mapped = mapError(error);
+      response.status(mapped.status).json({ error: mapped.message });
+    }
+  });
+
+  router.post('/:storeId/inventory-authority-repair', async (request, response) => {
+    try {
+      const storeId = clean(request.params.storeId);
+      const identity = await authenticatedOwner(request.get('authorization') ?? '', storeId);
+      response.setHeader('Cache-Control', 'no-store, max-age=0');
+      response.json(await applyStoreInventoryAuthorityRepair({
+        tenantId: identity.uid,
+        requestedByUserId: identity.uid,
+        repairId: clean(request.body?.repairId),
+        confirmed: request.body?.confirmed === true,
+      }));
+    } catch (error) {
+      const mapped = mapError(error);
+      response.status(mapped.status).json({ error: mapped.message });
+    }
+  });
+
+  router.get('/:storeId/owner-governance', async (request, response) => {
+    try {
+      const storeId = clean(request.params.storeId);
+      const identity = await authenticatedOwner(request.get('authorization') ?? '', storeId);
+      response.setHeader('Cache-Control', 'no-store, max-age=0');
+      response.json(await loadStoreOwnerGovernancePreview({
+        tenantId: identity.uid,
+        requestedByUserId: identity.uid,
+      }));
+    } catch (error) {
+      const mapped = mapError(error);
+      response.status(mapped.status).json({ error: mapped.message });
+    }
+  });
+
+  router.post('/:storeId/owner-governance/reconcile-canonical-owner', async (request, response) => {
+    try {
+      const storeId = clean(request.params.storeId);
+      const identity = await authenticatedOwner(request.get('authorization') ?? '', storeId);
+      response.setHeader('Cache-Control', 'no-store, max-age=0');
+      response.json(await applyCanonicalOwnerReconciliation({
+        tenantId: identity.uid,
+        requestedByUserId: identity.uid,
+        conflictId: clean(request.body?.conflictId),
+        activationId: clean(request.body?.activationId),
+        confirmed: request.body?.confirmed === true,
+      }));
+    } catch (error) {
+      const mapped = mapError(error);
+      response.status(mapped.status).json({ error: mapped.message });
+    }
+  });
+
+  router.post('/:storeId/owner-governance', async (request, response) => {
+    try {
+      const storeId = clean(request.params.storeId);
+      const identity = await authenticatedOwner(request.get('authorization') ?? '', storeId);
+      response.setHeader('Cache-Control', 'no-store, max-age=0');
+      response.json(await applyStoreOwnerGovernanceDecision({
+        tenantId: identity.uid,
+        requestedByUserId: identity.uid,
+        conflictId: clean(request.body?.conflictId),
+        selectionId: clean(request.body?.selectionId),
+        confirmed: request.body?.confirmed === true,
+      }));
     } catch (error) {
       const mapped = mapError(error);
       response.status(mapped.status).json({ error: mapped.message });

@@ -1,13 +1,17 @@
 import { createHash } from 'node:crypto';
 import { FieldValue } from 'firebase-admin/firestore';
 import type {
-  KyrubAiAdjustInventoryProposal,
-  KyrubInventoryAdjustmentEntry,
+  KyrubActionOrigin,
   KyrubInventoryAdjustmentMode,
   KyrubInventoryAdjustmentSourceKind,
   KyrubInventoryMovementKind,
   KyrubInventoryUnit,
 } from '../../shared/kyrubActions.js';
+import {
+  normalizeExactInventoryItemId,
+  type KyrubExactInventoryAdjustmentEntry,
+  type KyrubExactInventoryAdjustmentProposal,
+} from '../../shared/exactInventoryAdjustment.js';
 import { verifyFirebaseIdToken } from '../ai/consultantAuth.js';
 import { adminDb } from '../firebaseAdmin.js';
 import { KyrubActionExecutionError } from './actionExecutionService.js';
@@ -61,6 +65,11 @@ const cleanText = (value: unknown, maximum: number): string =>
 const bearerToken = (authorization: string): string =>
   /^Bearer\s+(.+)$/i.exec(authorization)?.[1]?.trim() ?? '';
 
+const normalizeOrigin = (value: unknown): KyrubActionOrigin =>
+  value === 'manual' || value === 'chatgpt' || value === 'automation'
+    ? value
+    : 'kyrubia';
+
 const normalizeName = (value: string): string =>
   value
     .normalize('NFD')
@@ -109,7 +118,7 @@ const movementKindFor = (
 const normalizeEntry = (
   value: unknown,
   mode: KyrubInventoryAdjustmentMode
-): KyrubInventoryAdjustmentEntry => {
+): KyrubExactInventoryAdjustmentEntry => {
   if (!isRecord(value)) {
     throw new KyrubActionExecutionError(
       400,
@@ -126,6 +135,16 @@ const normalizeEntry = (
     ? Math.max(0, value.purchaseCost)
     : undefined;
   const quantityValid = mode === 'set' ? quantity >= 0 : quantity > 0;
+  const hasInventoryItemId = value.inventoryItemId !== undefined && value.inventoryItemId !== null;
+  const inventoryItemId = normalizeExactInventoryItemId(value.inventoryItemId);
+
+  if (hasInventoryItemId && !inventoryItemId) {
+    throw new KyrubActionExecutionError(
+      400,
+      'INVALID_INVENTORY_ITEM_ID',
+      'O identificador canônico do item de estoque é inválido.'
+    );
+  }
 
   if (!name || !quantityValid || !isUnit(unit)) {
     throw new KyrubActionExecutionError(
@@ -138,6 +157,7 @@ const normalizeEntry = (
   }
 
   return {
+    ...(inventoryItemId ? { inventoryItemId } : {}),
     name,
     quantity,
     unit,
@@ -145,7 +165,7 @@ const normalizeEntry = (
   };
 };
 
-const normalizeProposal = (value: unknown): KyrubAiAdjustInventoryProposal => {
+const normalizeProposal = (value: unknown): KyrubExactInventoryAdjustmentProposal => {
   if (!isRecord(value) || value.type !== 'adjust_inventory') {
     throw new KyrubActionExecutionError(
       400,
@@ -177,6 +197,8 @@ const normalizeProposal = (value: unknown): KyrubAiAdjustInventoryProposal => {
   const sourceKind = normalizeSourceKind(source.kind, mode);
   const movementKind = movementKindFor(mode, sourceKind);
   const label = cleanText(source.label, 180);
+  const origin = normalizeOrigin(value.origin);
+  const idempotencyKey = cleanText(value.idempotencyKey, 260);
   const inputProvenance = sourceKind === 'supplier_invoice'
     ? 'document_content' as const
     : 'user_intent' as const;
@@ -189,10 +211,11 @@ const normalizeProposal = (value: unknown): KyrubAiAdjustInventoryProposal => {
     entries,
     source: { kind: sourceKind, ...(label ? { label } : {}) },
     requiresConfirmation: true,
-    origin: 'kyrubia',
+    origin,
     risk: 'medium',
     inputProvenance,
     impact: { entityCount: entries.length, reversibility: 'limited' },
+    ...(idempotencyKey ? { idempotencyKey } : {}),
   };
 };
 
@@ -282,7 +305,7 @@ const normalizeRecentMovement = (value: unknown): RecentInventoryMovement | null
   };
 };
 
-const deterministicItemId = (uid: string, entry: KyrubInventoryAdjustmentEntry): string =>
+const deterministicItemId = (uid: string, entry: KyrubExactInventoryAdjustmentEntry): string =>
   `inv-${createHash('sha256')
     .update(`${uid}:${normalizeName(entry.name)}:${entry.unit}`)
     .digest('hex')
@@ -350,6 +373,7 @@ export const executeAuthorizedKyrubInventoryAdjustment = async (
 
   const proposal = normalizeProposal(rawRequest.proposal);
   const movementKind = proposal.movementKind ?? movementKindFor(proposal.mode, proposal.source.kind);
+  const origin = proposal.origin ?? 'kyrubia';
   const inventoryRef = adminDb.doc(`users/${actor.uid}/private_store/inventory`);
   const receiptId = receiptIdFor(actor.uid, proposal.id);
   const receiptRef = adminDb.doc(`kyrub_action_receipts/${receiptId}`);
@@ -382,10 +406,19 @@ export const executeAuthorizedKyrubInventoryAdjustment = async (
     const movementLines: InventoryMovementLine[] = [];
 
     for (const entry of proposal.entries) {
+      const exactInventoryItemId = entry.inventoryItemId ?? '';
       const key = `${normalizeName(entry.name)}::${entry.unit}`;
-      const existingIndex = catalog.findIndex(item =>
-        `${normalizeName(item.name)}::${item.unit}` === key
-      );
+      const existingIndex = exactInventoryItemId
+        ? catalog.findIndex(item => item.id === exactInventoryItemId)
+        : catalog.findIndex(item => `${normalizeName(item.name)}::${item.unit}` === key);
+
+      if (exactInventoryItemId && existingIndex < 0) {
+        throw new KyrubActionExecutionError(
+          409,
+          'INVENTORY_ITEM_ID_NOT_FOUND',
+          `O item canônico ${exactInventoryItemId} não está disponível no estoque privado. Nenhum item será escolhido por nome.`
+        );
+      }
 
       if (existingIndex < 0) {
         if (proposal.mode !== 'increment') {
@@ -419,6 +452,17 @@ export const executeAuthorizedKyrubInventoryAdjustment = async (
       }
 
       const existing = catalog[existingIndex];
+      if (
+        exactInventoryItemId &&
+        (normalizeName(existing.name) !== normalizeName(entry.name) || existing.unit !== entry.unit)
+      ) {
+        throw new KyrubActionExecutionError(
+          409,
+          'INVENTORY_ITEM_IDENTITY_MISMATCH',
+          `O item canônico ${exactInventoryItemId} não corresponde ao nome/unidade revisados. Atualize a leitura do estoque antes de confirmar.`
+        );
+      }
+
       const resultingQuantity = resultingQuantityFor(
         proposal.mode,
         existing.currentQuantity,
@@ -500,7 +544,7 @@ export const executeAuthorizedKyrubInventoryAdjustment = async (
       kind: movementKind,
       reason: proposal.source.kind,
       sourceLabel: proposal.source.label ?? '',
-      origin: 'kyrubia',
+      origin,
       lines: movementLines,
       entryCount: movementLines.length,
       createdAt: FieldValue.serverTimestamp(),
@@ -512,7 +556,7 @@ export const executeAuthorizedKyrubInventoryAdjustment = async (
       actionId: proposal.id,
       actionType: 'adjust_inventory',
       actorUid: actor.uid,
-      origin: 'kyrubia',
+      origin,
       inputProvenance: proposal.inputProvenance ?? 'user_intent',
       targetType: 'inventory',
       targetId: actor.uid,
@@ -529,7 +573,7 @@ export const executeAuthorizedKyrubInventoryAdjustment = async (
     type: proposal.type,
     status,
     entityId: actor.uid,
-    origin: 'kyrubia' as const,
-    idempotencyKey: `kyrubia:adjust_inventory:${actor.uid}:${proposal.id}`,
+    origin,
+    idempotencyKey: proposal.idempotencyKey ?? `${origin}:adjust_inventory:${actor.uid}:${proposal.id}`,
   };
 };

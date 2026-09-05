@@ -50,6 +50,35 @@ export interface CanonicalInventoryReservationDocument {
   physicalConsumptionEvidenceId?: string;
 }
 
+export interface CanonicalInventoryAvailabilityLine {
+  inventoryItemId: string;
+  requiredQuantity: number;
+  availableQuantity: number;
+  shortageQuantity: number;
+}
+
+export interface CanonicalInventoryAvailabilityInspection {
+  reservationId: string;
+  state: 'ready' | 'insufficient_atp' | 'already_reserved' | 'not_applicable';
+  lines: CanonicalInventoryAvailabilityLine[];
+  checkedAt: string;
+}
+
+export class InventoryAvailableToPromiseExceededError extends Error {
+  readonly code = 'INVENTORY_AVAILABLE_TO_PROMISE_EXCEEDED';
+
+  constructor(
+    readonly inventoryItemId: string,
+    readonly requiredQuantity: number,
+    readonly availableQuantity: number
+  ) {
+    super(
+      `INVENTORY_AVAILABLE_TO_PROMISE_EXCEEDED:${inventoryItemId}:${requiredQuantity}:${availableQuantity}`
+    );
+    this.name = 'InventoryAvailableToPromiseExceededError';
+  }
+}
+
 const aggregateLines = (lines: InventoryReservationLine[]): InventoryReservationLine[] => {
   const totals = new Map<string, number>();
   for (const line of lines) {
@@ -81,6 +110,149 @@ const buildRequiredLines = (
     composition,
   });
 }));
+
+type ActiveReservationSnapshot = {
+  id: string;
+  data: Partial<CanonicalInventoryReservationDocument>;
+};
+
+const evaluateAvailabilityLines = (input: {
+  requiredLines: InventoryReservationLine[];
+  catalog: ReturnType<typeof parseInventoryCatalogRecords>;
+  activeReservations: ActiveReservationSnapshot[];
+  excludedReservationId: string;
+  inventoryAuthorityOwnerUserId: string;
+}): CanonicalInventoryAvailabilityLine[] => {
+  const activeTotals = new Map<string, number>();
+  for (const reservation of input.activeReservations) {
+    if (reservation.id === input.excludedReservationId) continue;
+    const data = reservation.data;
+    if (
+      data.inventoryAuthorityOwnerUserId !== input.inventoryAuthorityOwnerUserId ||
+      !Array.isArray(data.lines)
+    ) continue;
+    for (const line of data.lines) {
+      if (!line?.inventoryItemId || !Number.isFinite(line.quantity) || line.quantity <= 0) continue;
+      activeTotals.set(
+        line.inventoryItemId,
+        roundQuantity((activeTotals.get(line.inventoryItemId) ?? 0) + line.quantity)
+      );
+    }
+  }
+
+  const catalogById = new Map(input.catalog.map(item => [item.id, item]));
+  return input.requiredLines.map(line => {
+    const item = catalogById.get(line.inventoryItemId);
+    if (!item) throw new Error(`INVENTORY_COMPONENT_NOT_FOUND:${line.inventoryItemId}`);
+    const alreadyReserved = activeTotals.get(line.inventoryItemId) ?? 0;
+    const availableQuantity = roundQuantity(
+      Math.max(0, item.currentQuantity - alreadyReserved)
+    );
+    return {
+      inventoryItemId: line.inventoryItemId,
+      requiredQuantity: line.quantity,
+      availableQuantity,
+      shortageQuantity: roundQuantity(
+        Math.max(0, line.quantity - availableQuantity)
+      ),
+    };
+  });
+};
+
+export const inspectCanonicalOrderInventoryAvailability = async (input: {
+  storeId: string;
+  orderId: string;
+  sourceChannel: CommerceChannel;
+  orderLines: CanonicalInventoryOrderLine[];
+}): Promise<CanonicalInventoryAvailabilityInspection> => {
+  const storeId = clean(input.storeId);
+  const orderId = clean(input.orderId);
+  if (!storeId || !orderId) throw new Error('INVENTORY_RESERVATION_IDENTITY_REQUIRED');
+
+  const reservationId = reservationIdFor(storeId, orderId, input.sourceChannel);
+  const reservationReference = adminDb.doc(`${reservationsPath(storeId)}/${reservationId}`);
+  const activeReservationsQuery = adminDb
+    .collection(reservationsPath(storeId))
+    .where('status', '==', 'active');
+
+  return adminDb.runTransaction(async transaction => {
+    const authority = await resolveCanonicalInventoryAuthorityInTransaction(
+      transaction,
+      storeId
+    );
+    const inventoryReference = adminDb.doc(authority.inventoryDocumentPath);
+    const [inventorySnapshot, reservationSnapshot, activeReservationsSnapshot] = await Promise.all([
+      transaction.get(inventoryReference),
+      transaction.get(reservationReference),
+      transaction.get(activeReservationsQuery),
+    ]);
+
+    if (!inventorySnapshot.exists) {
+      throw new Error('INVENTORY_AUTHORITY_DOCUMENT_NOT_FOUND');
+    }
+
+    if (reservationSnapshot.exists) {
+      const existing = reservationSnapshot.data() as CanonicalInventoryReservationDocument;
+      if (
+        existing.storeId === storeId &&
+        existing.orderId === orderId &&
+        existing.sourceChannel === input.sourceChannel &&
+        existing.inventoryAuthorityOwnerUserId === authority.ownerUserId &&
+        existing.status === 'active'
+      ) {
+        return {
+          reservationId,
+          state: 'already_reserved' as const,
+          lines: (Array.isArray(existing.lines) ? existing.lines : []).map(line => ({
+            inventoryItemId: line.inventoryItemId,
+            requiredQuantity: line.quantity,
+            availableQuantity: line.quantity,
+            shortageQuantity: 0,
+          })),
+          checkedAt: new Date().toISOString(),
+        };
+      }
+      throw new Error('INVENTORY_RESERVATION_ALREADY_TERMINAL_OR_CONFLICTING');
+    }
+
+    const inventoryData = inventorySnapshot.data();
+    const catalog = parseInventoryCatalogRecords(
+      inventoryData?.inventoryCatalog ?? inventoryData?.catalog
+    );
+    const compositions = parseInventoryCompositionRecords(
+      inventoryData?.productCompositions ?? inventoryData?.compositions
+    );
+    const requiredLines = buildRequiredLines(input.orderLines, compositions);
+    if (requiredLines.length === 0) {
+      return {
+        reservationId,
+        state: 'not_applicable' as const,
+        lines: [],
+        checkedAt: new Date().toISOString(),
+      };
+    }
+
+    const lines = evaluateAvailabilityLines({
+      requiredLines,
+      catalog,
+      activeReservations: activeReservationsSnapshot.docs.map(document => ({
+        id: document.id,
+        data: document.data() as Partial<CanonicalInventoryReservationDocument>,
+      })),
+      excludedReservationId: reservationId,
+      inventoryAuthorityOwnerUserId: authority.ownerUserId,
+    });
+
+    return {
+      reservationId,
+      state: lines.some(line => line.shortageQuantity > 0)
+        ? 'insufficient_atp' as const
+        : 'ready' as const,
+      lines,
+      checkedAt: new Date().toISOString(),
+    };
+  });
+};
 
 export const reserveCanonicalOrderInventory = async (input: {
   storeId: string;
@@ -133,7 +305,9 @@ export const reserveCanonicalOrderInventory = async (input: {
     }
 
     const inventoryData = inventorySnapshot.data();
-    const catalog = parseInventoryCatalogRecords(inventoryData?.inventoryCatalog ?? inventoryData?.catalog);
+    const catalog = parseInventoryCatalogRecords(
+      inventoryData?.inventoryCatalog ?? inventoryData?.catalog
+    );
     const compositions = parseInventoryCompositionRecords(
       inventoryData?.productCompositions ?? inventoryData?.compositions
     );
@@ -142,31 +316,23 @@ export const reserveCanonicalOrderInventory = async (input: {
       throw new Error('INVENTORY_RESERVATION_NO_COMPOSED_ITEMS');
     }
 
-    const activeTotals = new Map<string, number>();
-    for (const document of activeReservationsSnapshot.docs) {
-      if (document.id === reservationId) continue;
-      const data = document.data() as Partial<CanonicalInventoryReservationDocument>;
-      if (data.inventoryAuthorityOwnerUserId !== authority.ownerUserId || !Array.isArray(data.lines)) continue;
-      for (const line of data.lines) {
-        if (!line?.inventoryItemId || !Number.isFinite(line.quantity) || line.quantity <= 0) continue;
-        activeTotals.set(
-          line.inventoryItemId,
-          roundQuantity((activeTotals.get(line.inventoryItemId) ?? 0) + line.quantity)
-        );
-      }
-    }
-
-    const catalogById = new Map(catalog.map(item => [item.id, item]));
-    for (const line of requiredLines) {
-      const item = catalogById.get(line.inventoryItemId);
-      if (!item) throw new Error(`INVENTORY_COMPONENT_NOT_FOUND:${line.inventoryItemId}`);
-      const alreadyReserved = activeTotals.get(line.inventoryItemId) ?? 0;
-      const available = roundQuantity(Math.max(0, item.currentQuantity - alreadyReserved));
-      if (available + 0.000001 < line.quantity) {
-        throw new Error(
-          `INVENTORY_AVAILABLE_TO_PROMISE_EXCEEDED:${line.inventoryItemId}:${line.quantity}:${available}`
-        );
-      }
+    const availabilityLines = evaluateAvailabilityLines({
+      requiredLines,
+      catalog,
+      activeReservations: activeReservationsSnapshot.docs.map(document => ({
+        id: document.id,
+        data: document.data() as Partial<CanonicalInventoryReservationDocument>,
+      })),
+      excludedReservationId: reservationId,
+      inventoryAuthorityOwnerUserId: authority.ownerUserId,
+    });
+    const shortage = availabilityLines.find(line => line.shortageQuantity > 0);
+    if (shortage) {
+      throw new InventoryAvailableToPromiseExceededError(
+        shortage.inventoryItemId,
+        shortage.requiredQuantity,
+        shortage.availableQuantity
+      );
     }
 
     transaction.create(reservationReference, {

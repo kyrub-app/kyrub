@@ -3,6 +3,7 @@ import { FieldValue } from 'firebase-admin/firestore';
 import { adminDb } from '../firebaseAdmin';
 import { resolveActiveNinetyNineFoodProductBinding } from '../integrations/ninetyNineFoodProductBindingService';
 import {
+  InventoryAvailableToPromiseExceededError,
   reserveCanonicalOrderInventory,
   transitionCanonicalInventoryReservation,
 } from './canonicalInventoryReservationService';
@@ -22,10 +23,33 @@ const legacyOrderPath = (tenantId: string, orderId: string): string =>
 const reservationCollectionPath = (storeId: string): string =>
   `stores/${storeId}/inventoryReservations`;
 
-const reservationStatePatch = (state: string, detail = '') => ({
+interface ReservationStateEvidence {
+  unresolvedExternalProductIds?: string[];
+  canonicalProductIds?: string[];
+  inventoryItemId?: string;
+  requiredQuantity?: number;
+  availableQuantity?: number;
+}
+
+const reservationStatePatch = (
+  state: string,
+  detail = '',
+  evidence: ReservationStateEvidence = {}
+) => ({
   inventoryReservation: {
     state,
     detail,
+    unresolvedExternalProductIds: evidence.unresolvedExternalProductIds ?? [],
+    canonicalProductIds: evidence.canonicalProductIds ?? [],
+    inventoryItemId: evidence.inventoryItemId ?? '',
+    requiredQuantity:
+      typeof evidence.requiredQuantity === 'number' && Number.isFinite(evidence.requiredQuantity)
+        ? evidence.requiredQuantity
+        : null,
+    availableQuantity:
+      typeof evidence.availableQuantity === 'number' && Number.isFinite(evidence.availableQuantity)
+        ? evidence.availableQuantity
+        : null,
     reconciledAt: new Date().toISOString(),
   },
 });
@@ -36,8 +60,13 @@ const writeOrderReservationState = async (input: {
   orderId: string;
   state: string;
   detail?: string;
+  evidence?: ReservationStateEvidence;
 }): Promise<void> => {
-  const patch = reservationStatePatch(input.state, input.detail ?? '');
+  const patch = reservationStatePatch(
+    input.state,
+    input.detail ?? '',
+    input.evidence ?? {}
+  );
   const batch = adminDb.batch();
   batch.set(adminDb.doc(legacyOrderPath(input.tenantId, input.orderId)), patch, { merge: true });
   batch.set(adminDb.doc(`stores/${input.storeId}/orders/${input.orderId}`), patch, { merge: true });
@@ -65,7 +94,9 @@ interface ExternalOrderLine {
   transferredQuantity: number;
 }
 
-const extractExternalOrderLines = (order: Record<string, unknown>): ExternalOrderLine[] =>
+export const extractNinetyNineFoodExternalOrderLines = (
+  order: Record<string, unknown>
+): ExternalOrderLine[] =>
   Array.isArray(order.items)
     ? order.items.flatMap(candidate => {
         if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return [];
@@ -83,7 +114,7 @@ const extractExternalOrderLines = (order: Record<string, unknown>): ExternalOrde
       })
     : [];
 
-const resolveBoundOrderLines = async (
+export const resolveNinetyNineFoodBoundOrderLines = async (
   tenantId: string,
   externalLines: ExternalOrderLine[]
 ): Promise<{
@@ -203,11 +234,14 @@ export const reconcileNinetyNineFoodOrderReservation = async (
 
   let reservationId = await findReservationId(storeId, normalizedOrderId);
   if (!reservationId) {
-    const externalLines = extractExternalOrderLines(order);
-    const { orderLines, unresolvedExternalProductIds } = await resolveBoundOrderLines(
+    const externalLines = extractNinetyNineFoodExternalOrderLines(order);
+    const { orderLines, unresolvedExternalProductIds } = await resolveNinetyNineFoodBoundOrderLines(
       normalizedTenantId,
       externalLines
     );
+    const canonicalProductIds = Array.from(new Set(
+      orderLines.map(line => clean(line.productId)).filter(Boolean)
+    )).sort();
 
     if (unresolvedExternalProductIds.length > 0) {
       await writeOrderReservationState({
@@ -216,6 +250,10 @@ export const reconcileNinetyNineFoodOrderReservation = async (
         orderId: normalizedOrderId,
         state: 'blocked_product_binding_unresolved',
         detail: `unmapped_99food_products:${unresolvedExternalProductIds.join(',')}`.slice(0, 500),
+        evidence: {
+          unresolvedExternalProductIds,
+          canonicalProductIds,
+        },
       });
       return 'blocked_product_binding_unresolved';
     }
@@ -240,6 +278,22 @@ export const reconcileNinetyNineFoodOrderReservation = async (
         });
         return 'not_applicable';
       }
+      if (error instanceof InventoryAvailableToPromiseExceededError) {
+        await writeOrderReservationState({
+          tenantId: normalizedTenantId,
+          storeId,
+          orderId: normalizedOrderId,
+          state: 'blocked_insufficient_atp',
+          detail: message.slice(0, 500),
+          evidence: {
+            canonicalProductIds,
+            inventoryItemId: error.inventoryItemId,
+            requiredQuantity: error.requiredQuantity,
+            availableQuantity: error.availableQuantity,
+          },
+        });
+        return 'blocked_insufficient_atp';
+      }
       if (message.includes('INVENTORY_AVAILABLE_TO_PROMISE_EXCEEDED')) {
         await writeOrderReservationState({
           tenantId: normalizedTenantId,
@@ -247,6 +301,7 @@ export const reconcileNinetyNineFoodOrderReservation = async (
           orderId: normalizedOrderId,
           state: 'blocked_insufficient_atp',
           detail: message.slice(0, 500),
+          evidence: { canonicalProductIds },
         });
         return 'blocked_insufficient_atp';
       }

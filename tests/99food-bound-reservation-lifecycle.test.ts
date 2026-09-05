@@ -42,6 +42,14 @@ const routerSource = readFileSync(
   'server/integrations/ninetyNineFoodRouter.ts',
   'utf8'
 );
+const operationsClientSource = readFileSync(
+  'src/utils/storeChannelOperations.ts',
+  'utf8'
+);
+const operationsQueueSource = readFileSync(
+  'src/components/store/StoreChannelOperationsQueue.tsx',
+  'utf8'
+);
 
 test('new 99Food reservations resolve external items exclusively through active product bindings', () => {
   assert.match(lifecycleSource, /resolveActiveNinetyNineFoodProductBinding/);
@@ -62,10 +70,14 @@ test('unmapped 99Food items block reservation before ATP reservation is attempte
 
 test('existing reservations can complete historical release and consumption without remapping product identity', () => {
   const findIndex = lifecycleSource.indexOf('let reservationId = await findReservationId');
-  const resolveIndex = lifecycleSource.indexOf('resolveBoundOrderLines(', findIndex);
+  const unresolvedBranchIndex = lifecycleSource.indexOf('if (!reservationId) {', findIndex);
+  const resolveIndex = lifecycleSource.indexOf(
+    'resolveNinetyNineFoodBoundOrderLines(',
+    unresolvedBranchIndex
+  );
   assert.ok(findIndex >= 0);
-  assert.ok(resolveIndex > findIndex);
-  assert.match(lifecycleSource, /if \(!reservationId\) \{/);
+  assert.ok(unresolvedBranchIndex > findIndex);
+  assert.ok(resolveIndex > unresolvedBranchIndex);
   assert.match(lifecycleSource, /ledgerStatus === 'consumed'/);
   assert.match(lifecycleSource, /nextStatus: 'released'/);
 });
@@ -88,6 +100,99 @@ test('operator may retry reservation after correcting inventory or product bindi
   assert.match(resolutionSource, /retryNinetyNineFoodBlockedOrderReservation/);
   assert.match(resolutionSource, /reconcileNinetyNineFoodOrderReservation/);
   assert.match(routerSource, /\/blocked-orders\/:orderId\/retry-reservation/);
+});
+
+test('reservation retry performs an authoritative order readback after canonical reconciliation', () => {
+  const retryStart = resolutionSource.indexOf('export const retryNinetyNineFoodBlockedOrderReservation');
+  const retryEnd = resolutionSource.indexOf('export const rejectNinetyNineFoodBlockedOrder', retryStart);
+  const retrySection = resolutionSource.slice(retryStart, retryEnd);
+  const reconcileIndex = retrySection.indexOf('await reconcileNinetyNineFoodOrderReservation(tenantId, orderId)');
+  const readbackIndex = retrySection.indexOf('const readbackSnapshot = await adminDb.doc(orderPath(canonicalStoreId, orderId)).get()');
+
+  assert.ok(retryStart >= 0);
+  assert.ok(retryEnd > retryStart);
+  assert.ok(reconcileIndex >= 0);
+  assert.ok(readbackIndex > reconcileIndex);
+  assert.match(retrySection, /integrationProvider\(readbackOrder\) !== '99food'/);
+  assert.match(retrySection, /NINETY_NINE_FOOD_BLOCK_RETRY_READBACK_INVALID/);
+  assert.match(retrySection, /reconciliationState,/);
+  assert.match(retrySection, /state,/);
+  assert.match(retrySection, /evidence: reservationEvidence\(readbackOrder\)/);
+  assert.match(retrySection, /checkedAt: new Date\(\)\.toISOString\(\)/);
+  assert.doesNotMatch(retrySection, /sendNinetyNineFoodOrderStatus|requestedAction: 'reject_order'/);
+});
+
+test('reservation retry browser contract validates both reconciliation and authoritative readback states', () => {
+  const retryStart = operationsClientSource.indexOf('export const retryNinetyNineFoodBlockedOrderReservation');
+  const retryEnd = operationsClientSource.indexOf('export const buildStoreChannelOperationalItems', retryStart);
+  const retrySection = operationsClientSource.slice(retryStart, retryEnd);
+
+  assert.match(operationsClientSource, /export type NinetyNineFoodReservationRetryState/);
+  assert.match(operationsClientSource, /export interface NinetyNineFoodReservationRetryResult/);
+  assert.match(retrySection, /const reconciliationState = retryState\(payload\.reconciliationState\)/);
+  assert.match(retrySection, /const state = retryState\(payload\.state\)/);
+  assert.match(retrySection, /unresolvedExternalProductIds: retryStringList/);
+  assert.match(retrySection, /requiredQuantity: retryFiniteNumber/);
+  assert.match(retrySection, /availableQuantity: retryFiniteNumber/);
+  assert.doesNotMatch(retrySection, /localStorage|sessionStorage|indexedDB/);
+});
+
+test('reservation retry UI reports the authoritative outcome then reloads the queue without another retry', () => {
+  const feedbackStart = operationsQueueSource.indexOf('const retryFeedback =');
+  const componentStart = operationsQueueSource.indexOf('export default function StoreChannelOperationsQueue');
+  const feedbackSection = operationsQueueSource.slice(feedbackStart, componentStart);
+  const handlerStart = operationsQueueSource.indexOf('const retryReservation = async');
+  const handlerEnd = operationsQueueSource.indexOf('const operationBusy', handlerStart);
+  const handlerSection = operationsQueueSource.slice(handlerStart, handlerEnd);
+
+  assert.ok(feedbackStart >= 0);
+  assert.match(feedbackSection, /result\.reconciliationState !== result\.state/);
+  assert.match(feedbackSection, /result\.state === 'reserved'/);
+  assert.match(feedbackSection, /result\.state === 'blocked_insufficient_atp'/);
+  assert.match(feedbackSection, /result\.state === 'blocked_product_binding_unresolved'/);
+  assert.match(feedbackSection, /result\.state === 'blocked_authority_unresolved'/);
+  assert.match(feedbackSection, /result\.state === 'released'/);
+  assert.match(feedbackSection, /result\.state === 'consumed'/);
+  assert.match(feedbackSection, /result\.state === 'waiting_physical_consumption'/);
+  assert.match(feedbackSection, /Nenhum status foi enviado à 99Food/);
+  assert.doesNotMatch(feedbackSection, /retryNinetyNineFoodBlockedOrderReservation|sendNinetyNineFoodOrderStatus|openRemediation/);
+
+  const retryCallIndex = handlerSection.indexOf('const result = await retryNinetyNineFoodBlockedOrderReservation');
+  const toneIndex = handlerSection.indexOf('setActionFeedbackTone(retryFeedbackTone(result.state))');
+  const feedbackIndex = handlerSection.indexOf('setActionFeedback(retryFeedback(result))');
+  const refreshIndex = handlerSection.indexOf('await refresh()');
+  assert.ok(retryCallIndex >= 0);
+  assert.ok(toneIndex > retryCallIndex);
+  assert.ok(feedbackIndex > toneIndex);
+  assert.ok(refreshIndex > feedbackIndex);
+  assert.equal(handlerSection.match(/retryNinetyNineFoodBlockedOrderReservation/g)?.length, 1);
+});
+
+test('reservation retry feedback tone follows the authoritative readback state', () => {
+  const blockedHelperStart = operationsQueueSource.indexOf('const retryStateRemainsBlocked =');
+  const toneStart = operationsQueueSource.indexOf('const retryFeedbackTone =');
+  const feedbackStart = operationsQueueSource.indexOf('const retryFeedback =', toneStart);
+  const blockedHelperSection = operationsQueueSource.slice(blockedHelperStart, toneStart);
+  const toneSection = operationsQueueSource.slice(toneStart, feedbackStart);
+
+  assert.match(operationsQueueSource, /type RetryFeedbackTone = 'success' \| 'warning' \| 'neutral'/);
+  assert.ok(blockedHelperStart >= 0);
+  assert.ok(toneStart > blockedHelperStart);
+  assert.ok(feedbackStart > toneStart);
+  assert.match(blockedHelperSection, /state === 'blocked_insufficient_atp'/);
+  assert.match(blockedHelperSection, /state === 'blocked_product_binding_unresolved'/);
+  assert.match(blockedHelperSection, /state === 'blocked_authority_unresolved'/);
+  assert.match(toneSection, /retryStateRemainsBlocked\(state\)/);
+  assert.match(toneSection, /return 'warning'/);
+  assert.match(toneSection, /state === 'reserved'/);
+  assert.match(toneSection, /state === 'consumed'/);
+  assert.match(toneSection, /state === 'waiting_physical_consumption'/);
+  assert.match(toneSection, /return 'success'/);
+  assert.match(toneSection, /return 'neutral'/);
+  assert.match(operationsQueueSource, /actionFeedbackTone === 'warning'/);
+  assert.match(operationsQueueSource, /actionFeedbackTone === 'neutral'/);
+  assert.match(operationsQueueSource, /border-amber-500\/20 bg-amber-500\/5 text-amber-100/);
+  assert.match(operationsQueueSource, /border-emerald-500\/20 bg-emerald-500\/5 text-emerald-200/);
 });
 
 test('provider rejection requires explicit authenticated action and a non-empty reason', () => {

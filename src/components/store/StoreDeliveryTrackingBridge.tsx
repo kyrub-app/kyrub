@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { collection, onSnapshot } from 'firebase/firestore';
 import { KeyRound, Truck } from 'lucide-react';
 import { auth, db } from '../../utils/firebase';
+import { CanonicalOrderLocationControl } from '../customer/CanonicalOrderLocationControl';
 import { AuthorizedDeliveryTrackingViewer } from './AuthorizedDeliveryTrackingViewer';
 
 const DELIVERY_COLLECTION_PATH = 'hub/renda/deliveries';
@@ -127,38 +128,41 @@ export function StoreDeliveryTrackingBridge({
     );
   }, [storeId]);
 
-  if (deliveries.length === 0) return null;
-
   return (
-    <section className="mb-4 space-y-3 rounded-3xl border border-cyan-500/20 bg-cyan-500/5 p-4">
-      <div>
-        <span className="font-mono text-[8px] font-black uppercase tracking-[0.18em] text-cyan-300">
-          Kyrub Entregas
-        </span>
-        <h3 className="mt-1 flex items-center gap-2 text-sm font-black text-white">
-          <Truck className="h-4 w-4 text-orange-400" />
-          Entregas em deslocamento
-        </h3>
-      </div>
-      <div className="grid gap-3 lg:grid-cols-2">
-        {deliveries.map(delivery => (
-          <article key={delivery.id} className="space-y-3 rounded-2xl border border-slate-800 bg-slate-950 p-3">
-            <div className="text-[9px] leading-relaxed text-slate-400">
-              <p className="truncate"><strong className="text-slate-500">Coleta:</strong> {delivery.from}</p>
-              <p className="truncate"><strong className="text-slate-500">Destino:</strong> {delivery.to}</p>
-            </div>
-            {delivery.status === 'accepted' && (
-              <StoreDeliveryPickupCode deliveryId={delivery.id} />
-            )}
-            <AuthorizedDeliveryTrackingViewer
-              deliveryId={delivery.id}
-              origin={delivery.from}
-              destination={delivery.to}
-              compact
-            />
-          </article>
-        ))}
-      </div>
-    </section>
+    <>
+      <CanonicalOrderLocationControl storeId={storeId} />
+      {deliveries.length > 0 && (
+        <section className="mb-4 space-y-3 rounded-3xl border border-cyan-500/20 bg-cyan-500/5 p-4">
+          <div>
+            <span className="font-mono text-[8px] font-black uppercase tracking-[0.18em] text-cyan-300">
+              Kyrub Entregas
+            </span>
+            <h3 className="mt-1 flex items-center gap-2 text-sm font-black text-white">
+              <Truck className="h-4 w-4 text-orange-400" />
+              Entregas em deslocamento
+            </h3>
+          </div>
+          <div className="grid gap-3 lg:grid-cols-2">
+            {deliveries.map(delivery => (
+              <article key={delivery.id} className="space-y-3 rounded-2xl border border-slate-800 bg-slate-950 p-3">
+                <div className="text-[9px] leading-relaxed text-slate-400">
+                  <p className="truncate"><strong className="text-slate-500">Coleta:</strong> {delivery.from}</p>
+                  <p className="truncate"><strong className="text-slate-500">Destino:</strong> {delivery.to}</p>
+                </div>
+                {delivery.status === 'accepted' && (
+                  <StoreDeliveryPickupCode deliveryId={delivery.id} />
+                )}
+                <AuthorizedDeliveryTrackingViewer
+                  deliveryId={delivery.id}
+                  origin={delivery.from}
+                  destination={delivery.to}
+                  compact
+                />
+              </article>
+            ))}
+          </div>
+        </section>
+      )}
+    </>
   );
 }

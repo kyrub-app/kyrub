@@ -16,6 +16,12 @@ import { StoreDeliveryTrackingBridge } from './store/StoreDeliveryTrackingBridge
 import type { Product } from '../types';
 import { auth } from '../utils/firebase';
 import {
+  KYRUB_CANONICAL_ORDER_NAVIGATION_CHANGED_EVENT,
+  KYRUB_CANONICAL_ORDER_NAVIGATION_REQUESTED_EVENT,
+  readCanonicalOrderNavigation,
+  type CanonicalOrderNavigationRequest,
+} from '../utils/canonicalOrderNavigation';
+import {
   persistPublicProduct,
   PUBLIC_PRODUCT_CREATE_EVENT,
   type PublicProduct,
@@ -45,6 +51,7 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = props => {
     setNewProductModal,
     triggerToast,
     activeSubTab,
+    setActiveSubTab,
     atendimentoSpaces,
   } = props;
 
@@ -53,6 +60,7 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = props => {
   const [cashHost, setCashHost] = useState<HTMLElement | null>(null);
   const [productsHost, setProductsHost] = useState<HTMLElement | null>(null);
   const [customerOrders, setCustomerOrders] = useState<CustomerOrder[]>([]);
+  const [canonicalNavigationOrderId, setCanonicalNavigationOrderId] = useState('');
   const [busyOrderId, setBusyOrderId] = useState('');
   const [selectedTableCode, setSelectedTableCode] = useState('');
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
@@ -66,6 +74,13 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = props => {
     () => customerOrders.filter(isOrderVisibleInKds),
     [customerOrders]
   );
+  const canonicalNavigationOrderVisible = useMemo(
+    () => Boolean(
+      canonicalNavigationOrderId &&
+      kdsOrders.some(order => order.id === canonicalNavigationOrderId)
+    ),
+    [canonicalNavigationOrderId, kdsOrders]
+  );
 
   const activeRetailerProducts = useMemo(
     () =>
@@ -76,6 +91,71 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = props => {
       ),
     [activeRetailerId, products]
   );
+
+  useEffect(() => {
+    setCanonicalNavigationOrderId('');
+  }, [activeRetailerId]);
+
+  useEffect(() => {
+    if (!canonicalNavigationOrderVisible) return;
+    const frame = window.requestAnimationFrame(() => {
+      setCanonicalNavigationOrderId('');
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [canonicalNavigationOrderVisible]);
+
+  useEffect(() => {
+    const handleCanonicalOrderNavigation = (event: Event): void => {
+      const detail = (event as CustomEvent<CanonicalOrderNavigationRequest>).detail;
+      const user = auth.currentUser;
+      if (
+        !detail?.orderId?.trim() ||
+        detail?.storeId?.trim() !== activeRetailerId ||
+        !user ||
+        user.uid !== activeRetailerId
+      ) {
+        return;
+      }
+      setCanonicalNavigationOrderId(detail.orderId.trim());
+      setActiveSubTab('pedidos');
+    };
+
+    window.addEventListener(
+      KYRUB_CANONICAL_ORDER_NAVIGATION_REQUESTED_EVENT,
+      handleCanonicalOrderNavigation
+    );
+    return () => {
+      window.removeEventListener(
+        KYRUB_CANONICAL_ORDER_NAVIGATION_REQUESTED_EVENT,
+        handleCanonicalOrderNavigation
+      );
+    };
+  }, [activeRetailerId, setActiveSubTab]);
+
+  useEffect(() => {
+    const syncCanonicalOrderNavigation = (): void => {
+      const user = auth.currentUser;
+      if (!user || user.uid !== activeRetailerId) {
+        setCanonicalNavigationOrderId('');
+        return;
+      }
+      setCanonicalNavigationOrderId(
+        readCanonicalOrderNavigation(activeRetailerId)?.orderId ?? ''
+      );
+    };
+
+    syncCanonicalOrderNavigation();
+    window.addEventListener(
+      KYRUB_CANONICAL_ORDER_NAVIGATION_CHANGED_EVENT,
+      syncCanonicalOrderNavigation
+    );
+    return () => {
+      window.removeEventListener(
+        KYRUB_CANONICAL_ORDER_NAVIGATION_CHANGED_EVENT,
+        syncCanonicalOrderNavigation
+      );
+    };
+  }, [activeRetailerId]);
 
   useEffect(() => {
     const handlePublicProductCreate = (event: Event): void => {
@@ -516,7 +596,20 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = props => {
         createPortal(
           <>
             <StoreDeliveryTrackingBridge storeId={activeRetailerId} />
+            {canonicalNavigationOrderId && !canonicalNavigationOrderVisible && (
+              <div
+                id="kyrub-canonical-order-location-pending"
+                className="mb-4 rounded-2xl border border-cyan-500/20 bg-cyan-500/[0.055] px-4 py-3 text-[10px] leading-relaxed text-cyan-100"
+                role="status"
+              >
+                <strong className="block text-cyan-200">Localizando pedido canônico</strong>
+                <span className="mt-1 block">
+                  O Kyrub está aguardando o pedido {canonicalNavigationOrderId} aparecer nesta visão em tempo real. Nenhum outro pedido será escolhido por nome, cliente, SKU ou similaridade.
+                </span>
+              </div>
+            )}
             <CustomerOrderInbox
+              storeId={activeRetailerId}
               orders={kdsOrders}
               busyOrderId={busyOrderId}
               attendanceSpaces={atendimentoSpaces}

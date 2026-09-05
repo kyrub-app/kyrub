@@ -13,11 +13,34 @@ test('post-publication reconciliation re-fetches the exact Mercado Livre item an
   assert.match(source, /MERCADO_LIVRE_POST_PUBLICATION_IDENTITY_MISMATCH/);
 });
 
-test('initial provider snapshot uses the same authoritative inbound snapshot collection', async () => {
+test('User Products reconciliation requires exact provider user_product_id across execution, authorization, binding and readback', async () => {
+  const source = await readFile(servicePath, 'utf8');
+  assert.match(source, /user_product_id\?: unknown/);
+  assert.match(source, /providerPublicationModel === 'user_products'/);
+  assert.match(source, /externalUserProductId !== execution\.externalUserProductId/);
+  assert.match(source, /record\.externalUserProductId, 160\) !== execution\.externalUserProductId/);
+  assert.match(source, /externalUserProductId: execution\.externalUserProductId/);
+  assert.match(source, /providerPublicationModel: execution\.providerPublicationModel/);
+});
+
+test('published execution and binding must remain capability-bound schema v2 evidence', async () => {
+  const source = await readFile(servicePath, 'utf8');
+  assert.match(source, /record\.schemaVersion !== 2/);
+  assert.match(source, /assertMercadoLivrePublicationCapabilitySnapshot/);
+  assert.match(source, /providerCapabilityFingerprint/);
+  assert.match(source, /providerPublicationModel/);
+  assert.match(source, /providerStockAuthority/);
+  assert.match(source, /MERCADO_LIVRE_PUBLICATION_EXECUTION_NOT_RECONCILABLE/);
+  assert.match(source, /MERCADO_LIVRE_EXTERNAL_BINDING_CONFLICT/);
+});
+
+test('initial provider snapshot uses the same authoritative inbound snapshot collection and retains User Product identity', async () => {
   const source = await readFile(servicePath, 'utf8');
   assert.match(source, /externalCatalogSnapshots/);
   assert.match(source, /authority: 'provider_api_refetch'/);
   assert.match(source, /sourceExecutionId: executionId/);
+  assert.match(source, /externalUserProductId/);
+  assert.match(source, /providerCapabilityFingerprint: execution\.providerCapabilityFingerprint/);
   assert.doesNotMatch(source, /catalogSyncProposals\/\$\{snapshotId\}/);
 });
 
@@ -28,6 +51,16 @@ test('outbound binding is normalized to the inbound canonical baseline contract'
   assert.match(source, /canonicalBaselineHash: inboundBaselineHash/);
   assert.match(source, /externalCatalogBindingBaselines/);
   assert.match(source, /authority: 'post_publication_canonical_snapshot'/);
+});
+
+test('reconciliation record freezes provider model and User Product identity after readback', async () => {
+  const source = await readFile(servicePath, 'utf8');
+  assert.match(source, /catalogOutboundPublicationReconciliations/);
+  assert.match(source, /schemaVersion: 2/);
+  assert.match(source, /externalUserProductId: execution\.externalUserProductId/);
+  assert.match(source, /providerPublicationModel: execution\.providerPublicationModel/);
+  assert.match(source, /providerIdentityVerified: true/);
+  assert.match(source, /authority: 'provider_api_refetch_post_publication'/);
 });
 
 test('reconciliation is idempotent and leaves automatic sync disabled', async () => {

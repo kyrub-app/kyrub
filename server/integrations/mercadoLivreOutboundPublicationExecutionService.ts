@@ -2,8 +2,13 @@ import { createHash, timingSafeEqual } from 'node:crypto';
 import { FieldValue } from 'firebase-admin/firestore';
 import { adminDb } from '../firebaseAdmin.js';
 import { mercadoLivrePostJson } from './mercadoLivreOauthService.js';
+import {
+  assertCurrentMercadoLivrePublicationCapability,
+  assertMercadoLivrePublicationCapabilitySnapshot,
+} from './mercadoLivrePublicationCapabilitySnapshotGuard.js';
 
 interface AuthorizationRecord {
+  schemaVersion: 2;
   id: string;
   proposalId: string;
   storeId: string;
@@ -12,6 +17,10 @@ interface AuthorizationRecord {
   canonicalStoreId: string;
   canonicalProductId: string;
   canonicalBaselineHash: string;
+  providerCapabilityFingerprint: string;
+  providerPublicationModel: 'legacy_items' | 'user_products';
+  providerStockAuthority: 'item_available_quantity';
+  providerCapability: unknown;
   listingValidatedAt: string;
   payload: Record<string, unknown>;
   payloadHash: string;
@@ -21,21 +30,32 @@ interface AuthorizationRecord {
   useCount: number;
   expiresAtMillis: number;
   authority: 'store_owner_publication_authorization';
+  authorizationSource?: 'kyrubia_explicit_owner_command';
+  listingValidationSource?: 'kyrubia_revalidated_draft';
+  authorizedByUserId?: string;
 }
 
 interface ProposalRecord {
+  schemaVersion: 2;
   id: string;
   storeId: string;
   canonicalStoreId: string;
   connectionId: string;
   canonicalProductId: string;
   canonicalBaselineHash: string;
+  providerCapabilityFingerprint: string;
+  providerPublicationModel: 'legacy_items' | 'user_products';
+  providerStockAuthority: 'item_available_quantity';
+  providerCapability: unknown;
   executionStatus: 'authorized' | 'executing' | 'published' | 'reconciliation_required' | 'provider_rejected';
   publicationAuthorizationId: string;
+  publicationAuthorizationSource?: 'kyrubia_explicit_owner_command';
+  publicationAuthorizedByUserId?: string;
 }
 
 interface MercadoLivreCreatedItem {
   id?: unknown;
+  user_product_id?: unknown;
   status?: unknown;
   permalink?: unknown;
 }
@@ -82,32 +102,68 @@ const safeHashEquals = (expectedHex: string, actualHex: string): boolean => {
   return timingSafeEqual(Buffer.from(expectedHex, 'hex'), Buffer.from(actualHex, 'hex'));
 };
 
+const assertCapabilityBinding = (record: Record<string, unknown>, errorCode: string): void => {
+  const snapshot = assertMercadoLivrePublicationCapabilitySnapshot(record.providerCapability);
+  if (
+    clean(record.providerCapabilityFingerprint, 80) !== snapshot.fingerprint ||
+    (record.providerPublicationModel !== 'legacy_items' && record.providerPublicationModel !== 'user_products') ||
+    record.providerPublicationModel !== snapshot.publicationModel ||
+    record.providerStockAuthority !== 'item_available_quantity' ||
+    record.providerStockAuthority !== snapshot.stockAuthority
+  ) throw new Error(errorCode);
+};
+
+const assertPayloadMatchesPublicationModel = (authorization: AuthorizationRecord): void => {
+  const title = clean(authorization.payload.title, 120);
+  const familyName = clean(authorization.payload.family_name, 120);
+  if (authorization.providerPublicationModel === 'user_products') {
+    if (!familyName || title || Array.isArray(authorization.payload.variations)) {
+      throw new Error('MERCADO_LIVRE_PUBLICATION_AUTHORIZATION_PAYLOAD_MODEL_MISMATCH');
+    }
+    return;
+  }
+  if (!title || familyName) {
+    throw new Error('MERCADO_LIVRE_PUBLICATION_AUTHORIZATION_PAYLOAD_MODEL_MISMATCH');
+  }
+};
+
 const assertAuthorization = (storeId: string, authorizationId: string, value: unknown): AuthorizationRecord => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('MERCADO_LIVRE_PUBLICATION_AUTHORIZATION_NOT_FOUND');
   const record = value as Record<string, unknown>;
   if (
+    record.schemaVersion !== 2 ||
     clean(record.id, 160) !== authorizationId || clean(record.storeId, 160) !== storeId ||
     record.provider !== 'mercado_livre' || record.status !== 'authorized' ||
     record.authority !== 'store_owner_publication_authorization' || !clean(record.proposalId, 160) ||
     !clean(record.connectionId, 200) || !clean(record.canonicalStoreId, 160) ||
     !clean(record.canonicalProductId, 160) || !clean(record.canonicalBaselineHash, 80) ||
+    !clean(record.providerCapabilityFingerprint, 80) || !record.providerCapability ||
     !clean(record.listingValidatedAt, 80) || !record.payload || typeof record.payload !== 'object' || Array.isArray(record.payload) ||
     !clean(record.payloadHash, 80) || !clean(record.tokenHash, 80) || !Number.isFinite(Number(record.expiresAtMillis))
   ) throw new Error('MERCADO_LIVRE_PUBLICATION_AUTHORIZATION_INVALID');
-  return record as unknown as AuthorizationRecord;
+  assertCapabilityBinding(record, 'MERCADO_LIVRE_PUBLICATION_AUTHORIZATION_INVALID');
+  const authorization = record as unknown as AuthorizationRecord;
+  assertPayloadMatchesPublicationModel(authorization);
+  return authorization;
 };
 
 const assertProposal = (authorization: AuthorizationRecord, value: unknown): ProposalRecord => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('MERCADO_LIVRE_OUTBOUND_PROPOSAL_NOT_FOUND');
   const record = value as Record<string, unknown>;
   if (
+    record.schemaVersion !== 2 ||
     clean(record.id, 160) !== authorization.proposalId || clean(record.storeId, 160) !== authorization.storeId ||
     clean(record.canonicalStoreId, 160) !== authorization.canonicalStoreId ||
     clean(record.connectionId, 200) !== authorization.connectionId ||
     clean(record.canonicalProductId, 160) !== authorization.canonicalProductId ||
     clean(record.canonicalBaselineHash, 80) !== authorization.canonicalBaselineHash ||
+    clean(record.providerCapabilityFingerprint, 80) !== authorization.providerCapabilityFingerprint ||
+    record.providerPublicationModel !== authorization.providerPublicationModel ||
+    record.providerStockAuthority !== authorization.providerStockAuthority ||
+    !record.providerCapability ||
     clean(record.publicationAuthorizationId, 160) !== authorization.id
   ) throw new Error('MERCADO_LIVRE_OUTBOUND_PROPOSAL_STALE');
+  assertCapabilityBinding(record, 'MERCADO_LIVRE_OUTBOUND_PROPOSAL_STALE');
   return record as unknown as ProposalRecord;
 };
 
@@ -133,22 +189,37 @@ export interface MercadoLivrePublicationExecutionResult {
   executionId: string;
   status: 'published';
   externalItemId: string;
+  externalUserProductId?: string;
   bindingId: string;
   providerStatus: string;
+  providerPublicationModel: 'legacy_items' | 'user_products';
   permalink?: string;
 }
 
 export const executeAuthorizedMercadoLivrePublication = async (input: {
   storeId: string;
   authorizationId: string;
-  authorizationToken: string;
+  authorizationToken?: string;
   executedByUserId: string;
+  expectedAuthorizationSource?: 'kyrubia_explicit_owner_command';
+  expectedValidationSource?: 'kyrubia_revalidated_draft';
+  serverExecutionAuthority?: 'kyrubia_explicit_publish_now_command';
+  expectedProposalId?: string;
 }): Promise<MercadoLivrePublicationExecutionResult> => {
   const storeId = input.storeId.trim();
   const authorizationId = input.authorizationId.trim();
-  const authorizationToken = input.authorizationToken.trim();
+  const authorizationToken = input.authorizationToken?.trim() ?? '';
   const executedByUserId = input.executedByUserId.trim();
-  if (!storeId || !authorizationId || !authorizationToken || executedByUserId !== storeId) {
+  const expectedAuthorizationSource = input.expectedAuthorizationSource;
+  const expectedValidationSource = input.expectedValidationSource;
+  const serverExecutionAuthority = input.serverExecutionAuthority;
+  const expectedProposalId = input.expectedProposalId?.trim() ?? '';
+  const hasKyrubiaServerAuthority = serverExecutionAuthority === 'kyrubia_explicit_publish_now_command';
+  if (
+    !storeId || !authorizationId || executedByUserId !== storeId ||
+    (!authorizationToken && !hasKyrubiaServerAuthority) ||
+    (hasKyrubiaServerAuthority && !expectedProposalId)
+  ) {
     throw new Error('MERCADO_LIVRE_PUBLICATION_EXECUTION_TARGET_INVALID');
   }
 
@@ -156,7 +227,22 @@ export const executeAuthorizedMercadoLivrePublication = async (input: {
   const authorizationDoc = await authorizationRef.get();
   if (!authorizationDoc.exists) throw new Error('MERCADO_LIVRE_PUBLICATION_AUTHORIZATION_NOT_FOUND');
   const authorization = assertAuthorization(storeId, authorizationId, authorizationDoc.data());
-  if (!safeHashEquals(authorization.tokenHash, sha256(authorizationToken))) {
+  if (
+    (expectedAuthorizationSource && authorization.authorizationSource !== expectedAuthorizationSource) ||
+    (expectedValidationSource && authorization.listingValidationSource !== expectedValidationSource)
+  ) {
+    throw new Error('MERCADO_LIVRE_PUBLICATION_EXECUTION_PROVENANCE_MISMATCH');
+  }
+  if (hasKyrubiaServerAuthority) {
+    if (
+      authorization.proposalId !== expectedProposalId ||
+      authorization.authorizationSource !== 'kyrubia_explicit_owner_command' ||
+      authorization.listingValidationSource !== 'kyrubia_revalidated_draft' ||
+      clean(authorization.authorizedByUserId, 160) !== executedByUserId
+    ) {
+      throw new Error('MERCADO_LIVRE_PUBLICATION_EXECUTION_SERVER_AUTHORITY_INVALID');
+    }
+  } else if (!safeHashEquals(authorization.tokenHash, sha256(authorizationToken))) {
     throw new Error('MERCADO_LIVRE_PUBLICATION_AUTHORIZATION_TOKEN_INVALID');
   }
   if (authorization.expiresAtMillis <= Date.now()) throw new Error('MERCADO_LIVRE_PUBLICATION_AUTHORIZATION_EXPIRED');
@@ -166,6 +252,13 @@ export const executeAuthorizedMercadoLivrePublication = async (input: {
   if (!safeHashEquals(authorization.payloadHash, payloadHash(authorization.payload))) {
     throw new Error('MERCADO_LIVRE_PUBLICATION_AUTHORIZATION_PAYLOAD_STALE');
   }
+
+  await assertCurrentMercadoLivrePublicationCapability({
+    storeId,
+    connectionId: authorization.connectionId,
+    requestedByUserId: executedByUserId,
+    expectedSnapshot: authorization.providerCapability,
+  });
 
   const proposalRef = adminDb.doc(`stores/${storeId}/catalogOutboundPublicationProposals/${authorization.proposalId}`);
   const validationRef = adminDb.doc(`stores/${storeId}/catalogOutboundListingValidations/${authorization.proposalId}`);
@@ -188,10 +281,25 @@ export const executeAuthorizedMercadoLivrePublication = async (input: {
     const validation = validationDoc.data() as Record<string, unknown> | undefined;
     const currentCanonicalHash = canonicalHash(canonicalDoc.data());
     if (
+      (expectedAuthorizationSource &&
+        (currentAuthorization.authorizationSource !== expectedAuthorizationSource ||
+          proposal.publicationAuthorizationSource !== expectedAuthorizationSource)) ||
+      (expectedValidationSource &&
+        (currentAuthorization.listingValidationSource !== expectedValidationSource ||
+          validation?.validationSource !== expectedValidationSource)) ||
+      (hasKyrubiaServerAuthority &&
+        (currentAuthorization.proposalId !== expectedProposalId ||
+          clean(currentAuthorization.authorizedByUserId, 160) !== executedByUserId ||
+          clean(proposal.publicationAuthorizedByUserId, 160) !== executedByUserId)) ||
       currentAuthorization.consumptionStatus !== 'available' || currentAuthorization.useCount !== 0 ||
       currentAuthorization.expiresAtMillis <= Date.now() || executionDoc.exists ||
+      currentAuthorization.providerCapabilityFingerprint !== authorization.providerCapabilityFingerprint ||
       proposal.executionStatus !== 'authorized' ||
+      proposal.providerCapabilityFingerprint !== currentAuthorization.providerCapabilityFingerprint ||
       clean(validation?.validatedAt, 80) !== currentAuthorization.listingValidatedAt ||
+      clean(validation?.providerCapabilityFingerprint, 80) !== currentAuthorization.providerCapabilityFingerprint ||
+      validation?.providerPublicationModel !== currentAuthorization.providerPublicationModel ||
+      validation?.providerStockAuthority !== currentAuthorization.providerStockAuthority ||
       !validation?.providerPayload || typeof validation.providerPayload !== 'object' || Array.isArray(validation.providerPayload) ||
       !safeHashEquals(currentAuthorization.payloadHash, payloadHash(validation.providerPayload as Record<string, unknown>)) ||
       !currentCanonicalHash || !safeHashEquals(currentAuthorization.canonicalBaselineHash, currentCanonicalHash)
@@ -211,7 +319,7 @@ export const executeAuthorizedMercadoLivrePublication = async (input: {
       serverPublicationExecutionReservedAt: FieldValue.serverTimestamp(),
     });
     transaction.create(executionRef, {
-      schemaVersion: 1,
+      schemaVersion: 2,
       id: executionId,
       proposalId: currentAuthorization.proposalId,
       authorizationId,
@@ -220,9 +328,15 @@ export const executeAuthorizedMercadoLivrePublication = async (input: {
       connectionId: currentAuthorization.connectionId,
       canonicalStoreId: currentAuthorization.canonicalStoreId,
       canonicalProductId: currentAuthorization.canonicalProductId,
+      canonicalBaselineHash: currentAuthorization.canonicalBaselineHash,
+      providerCapabilityFingerprint: currentAuthorization.providerCapabilityFingerprint,
+      providerPublicationModel: currentAuthorization.providerPublicationModel,
+      providerStockAuthority: currentAuthorization.providerStockAuthority,
+      providerCapability: currentAuthorization.providerCapability,
       payloadHash: currentAuthorization.payloadHash,
       status: 'executing',
       authority: 'consumed_store_owner_publication_authorization',
+      ...(serverExecutionAuthority ? { executionSource: serverExecutionAuthority } : {}),
       executedByUserId,
       reservedAt,
       serverReservedAt: FieldValue.serverTimestamp(),
@@ -257,12 +371,32 @@ export const executeAuthorizedMercadoLivrePublication = async (input: {
   }
 
   const externalItemId = clean(providerItem.id, 160);
-  if (!externalItemId) {
+  const externalUserProductId = clean(providerItem.user_product_id, 160);
+  const userProductIdentityMissing =
+    authorization.providerPublicationModel === 'user_products' && !externalUserProductId;
+  if (!externalItemId || userProductIdentityMissing) {
     const ambiguousAt = new Date().toISOString();
+    const failureCode = !externalItemId
+      ? 'provider_success_without_item_id'
+      : 'provider_user_products_success_without_user_product_id';
     await adminDb.runTransaction(async transaction => {
-      transaction.update(executionRef, { status: 'reconciliation_required', failureCode: 'provider_success_without_item_id', ambiguousAt, serverAmbiguousAt: FieldValue.serverTimestamp() });
-      transaction.update(authorizationRef, { consumptionStatus: 'reconciliation_required', serverExecutionFailedAt: FieldValue.serverTimestamp() });
-      transaction.update(proposalRef, { executionStatus: 'reconciliation_required', serverPublicationExecutionFailedAt: FieldValue.serverTimestamp() });
+      transaction.update(executionRef, {
+        status: 'reconciliation_required',
+        failureCode,
+        ...(externalItemId ? { externalItemId } : {}),
+        ambiguousAt,
+        serverAmbiguousAt: FieldValue.serverTimestamp(),
+      });
+      transaction.update(authorizationRef, {
+        consumptionStatus: 'reconciliation_required',
+        executionFailedAt: ambiguousAt,
+        serverExecutionFailedAt: FieldValue.serverTimestamp(),
+      });
+      transaction.update(proposalRef, {
+        executionStatus: 'reconciliation_required',
+        publicationExecutionFailedAt: ambiguousAt,
+        serverPublicationExecutionFailedAt: FieldValue.serverTimestamp(),
+      });
     });
     throw new Error('MERCADO_LIVRE_PUBLICATION_RESULT_AMBIGUOUS');
   }
@@ -276,7 +410,10 @@ export const executeAuthorizedMercadoLivrePublication = async (input: {
       transaction.get(bindingRef),
     ]);
     const execution = executionDoc.data() as Record<string, unknown> | undefined;
-    if (clean(execution?.status, 80) !== 'executing') throw new Error('MERCADO_LIVRE_PUBLICATION_EXECUTION_CONFLICT');
+    if (
+      clean(execution?.status, 80) !== 'executing' ||
+      clean(execution?.providerCapabilityFingerprint, 80) !== authorization.providerCapabilityFingerprint
+    ) throw new Error('MERCADO_LIVRE_PUBLICATION_EXECUTION_CONFLICT');
     if (bindingDoc.exists) {
       const existing = bindingDoc.data() as Record<string, unknown>;
       if (
@@ -284,16 +421,19 @@ export const executeAuthorizedMercadoLivrePublication = async (input: {
         clean(existing.connectionId, 200) !== authorization.connectionId ||
         clean(existing.externalItemId, 160) !== externalItemId ||
         clean(existing.canonicalStoreId, 160) !== authorization.canonicalStoreId ||
-        clean(existing.canonicalProductId, 160) !== authorization.canonicalProductId
+        clean(existing.canonicalProductId, 160) !== authorization.canonicalProductId ||
+        (authorization.providerPublicationModel === 'user_products' &&
+          clean(existing.externalUserProductId, 160) !== externalUserProductId)
       ) throw new Error('MERCADO_LIVRE_EXTERNAL_BINDING_CONFLICT');
     } else {
       transaction.create(bindingRef, {
-        schemaVersion: 1,
+        schemaVersion: 2,
         id: bindingId,
         storeId,
         provider: 'mercado_livre',
         connectionId: authorization.connectionId,
         externalItemId,
+        ...(externalUserProductId ? { externalUserProductId } : {}),
         canonicalStoreId: authorization.canonicalStoreId,
         canonicalProductId: authorization.canonicalProductId,
         status: 'active',
@@ -303,6 +443,9 @@ export const executeAuthorizedMercadoLivrePublication = async (input: {
         sourceAuthorizationId: authorizationId,
         sourceExecutionId: executionId,
         canonicalBaselineHash: authorization.canonicalBaselineHash,
+        providerCapabilityFingerprint: authorization.providerCapabilityFingerprint,
+        providerPublicationModel: authorization.providerPublicationModel,
+        providerStockAuthority: authorization.providerStockAuthority,
         createdAt: completedAt,
         updatedAt: completedAt,
         serverCreatedAt: FieldValue.serverTimestamp(),
@@ -312,6 +455,7 @@ export const executeAuthorizedMercadoLivrePublication = async (input: {
     transaction.update(executionRef, {
       status: 'published',
       externalItemId,
+      ...(externalUserProductId ? { externalUserProductId } : {}),
       bindingId,
       providerStatus: clean(providerItem.status, 80),
       ...(clean(providerItem.permalink, 2_000) ? { permalink: clean(providerItem.permalink, 2_000) } : {}),
@@ -322,12 +466,14 @@ export const executeAuthorizedMercadoLivrePublication = async (input: {
       consumptionStatus: 'consumed',
       consumedAt: completedAt,
       externalItemId,
+      ...(externalUserProductId ? { externalUserProductId } : {}),
       bindingId,
       serverConsumedAt: FieldValue.serverTimestamp(),
     });
     transaction.update(proposalRef, {
       executionStatus: 'published',
       externalItemId,
+      ...(externalUserProductId ? { externalUserProductId } : {}),
       externalCatalogBindingId: bindingId,
       publishedAt: completedAt,
       serverPublishedAt: FieldValue.serverTimestamp(),
@@ -340,8 +486,10 @@ export const executeAuthorizedMercadoLivrePublication = async (input: {
     executionId,
     status: 'published',
     externalItemId,
+    ...(externalUserProductId ? { externalUserProductId } : {}),
     bindingId,
     providerStatus: clean(providerItem.status, 80),
+    providerPublicationModel: authorization.providerPublicationModel,
     ...(clean(providerItem.permalink, 2_000) ? { permalink: clean(providerItem.permalink, 2_000) } : {}),
   };
 };

@@ -1,8 +1,10 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { FieldValue } from 'firebase-admin/firestore';
 import { adminDb } from '../firebaseAdmin.js';
+import { assertCurrentMercadoLivrePublicationCapability } from './mercadoLivrePublicationCapabilitySnapshotGuard.js';
 
 interface ProposalRecord {
+  schemaVersion: 2;
   id: string;
   storeId: string;
   canonicalStoreId: string;
@@ -13,6 +15,10 @@ interface ProposalRecord {
   authority: 'canonical_kyrub_snapshot';
   action: 'create_external_listing';
   canonicalBaselineHash: string;
+  providerCapabilityFingerprint: string;
+  providerPublicationModel: 'legacy_items' | 'user_products';
+  providerStockAuthority: 'item_available_quantity';
+  providerCapability: unknown;
   canonical: {
     name: string;
     price: number;
@@ -35,6 +41,9 @@ interface ListingValidationRecord {
   validatedAt: string;
   executionStatus: 'not_authorized';
   canonicalBaselineHash: string;
+  providerCapabilityFingerprint: string;
+  providerPublicationModel: 'legacy_items' | 'user_products';
+  providerStockAuthority: 'item_available_quantity';
   providerPayload: Record<string, unknown>;
 }
 
@@ -63,11 +72,15 @@ const assertProposal = (storeId: string, proposalId: string, value: unknown): Pr
     ? record.canonical as Record<string, unknown>
     : null;
   if (
+    record.schemaVersion !== 2 ||
     clean(record.id, 160) !== proposalId || clean(record.storeId, 160) !== storeId ||
     record.provider !== 'mercado_livre' || record.status !== 'review_required' ||
     record.authority !== 'canonical_kyrub_snapshot' || record.action !== 'create_external_listing' ||
     !clean(record.canonicalStoreId, 160) || !clean(record.connectionId, 200) ||
     !clean(record.canonicalProductId, 160) || !clean(record.canonicalBaselineHash, 80) ||
+    !clean(record.providerCapabilityFingerprint, 80) ||
+    (record.providerPublicationModel !== 'legacy_items' && record.providerPublicationModel !== 'user_products') ||
+    record.providerStockAuthority !== 'item_available_quantity' || !record.providerCapability ||
     !canonical || !clean(canonical.name, 120) ||
     record.publicationReadiness !== 'ready_for_owner_authorization' ||
     record.publicationReadinessAuthority !== 'provider_items_validate' ||
@@ -86,6 +99,9 @@ const assertValidation = (proposal: ProposalRecord, value: unknown): ListingVali
     record.authority !== 'provider_items_validate' || record.executionStatus !== 'not_authorized' ||
     clean(record.validatedAt, 80) !== proposal.publicationValidatedAt ||
     clean(record.canonicalBaselineHash, 80) !== proposal.canonicalBaselineHash ||
+    clean(record.providerCapabilityFingerprint, 80) !== proposal.providerCapabilityFingerprint ||
+    record.providerPublicationModel !== proposal.providerPublicationModel ||
+    record.providerStockAuthority !== proposal.providerStockAuthority ||
     !record.providerPayload || typeof record.providerPayload !== 'object' || Array.isArray(record.providerPayload)
   ) throw new Error('MERCADO_LIVRE_OUTBOUND_LISTING_VALIDATION_REQUIRED');
   return record as unknown as ListingValidationRecord;
@@ -136,6 +152,13 @@ export const authorizeMercadoLivreOutboundPublication = async (input: {
   const validation = assertValidation(proposal, validationDoc.data());
   if (proposal.executionStatus !== 'not_authorized') throw new Error('MERCADO_LIVRE_OUTBOUND_ALREADY_AUTHORIZED');
 
+  await assertCurrentMercadoLivrePublicationCapability({
+    storeId,
+    connectionId: proposal.connectionId,
+    requestedByUserId: authorizedByUserId,
+    expectedSnapshot: proposal.providerCapability,
+  });
+
   const canonicalRef = adminDb.doc(`stores/${proposal.canonicalStoreId}/products/${proposal.canonicalProductId}`);
   const canonicalDoc = await canonicalRef.get();
   if (!canonicalDoc.exists || !canonicalMatchesProposal(proposal, canonicalDoc.data())) {
@@ -159,14 +182,16 @@ export const authorizeMercadoLivreOutboundPublication = async (input: {
     const currentValidation = assertValidation(currentProposal, currentValidationDoc.data());
     if (
       currentProposal.executionStatus !== 'not_authorized' ||
+      currentProposal.providerCapabilityFingerprint !== proposal.providerCapabilityFingerprint ||
       currentValidation.validatedAt !== validation.validatedAt ||
+      currentValidation.providerCapabilityFingerprint !== proposal.providerCapabilityFingerprint ||
       stablePayloadHash(currentValidation.providerPayload) !== payloadHash ||
       !currentCanonicalDoc.exists || !canonicalMatchesProposal(currentProposal, currentCanonicalDoc.data()) ||
       existingAuthorizationDoc.exists
     ) throw new Error('MERCADO_LIVRE_OUTBOUND_AUTHORIZATION_CONFLICT');
 
     transaction.create(authorizationRef, {
-      schemaVersion: 1,
+      schemaVersion: 2,
       id: authorizationId,
       proposalId,
       storeId,
@@ -175,6 +200,10 @@ export const authorizeMercadoLivreOutboundPublication = async (input: {
       canonicalStoreId: proposal.canonicalStoreId,
       canonicalProductId: proposal.canonicalProductId,
       canonicalBaselineHash: proposal.canonicalBaselineHash,
+      providerCapabilityFingerprint: proposal.providerCapabilityFingerprint,
+      providerPublicationModel: proposal.providerPublicationModel,
+      providerStockAuthority: proposal.providerStockAuthority,
+      providerCapability: proposal.providerCapability,
       listingValidatedAt: validation.validatedAt,
       payload: validation.providerPayload,
       payloadHash,

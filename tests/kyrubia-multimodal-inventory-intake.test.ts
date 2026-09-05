@@ -179,3 +179,52 @@ test('multimodal client enriches only proposal-free responses and reuses standar
   assert.match(multimodalClient, /emitKyrubAiActionProposal/);
   assert.doesNotMatch(multimodalClient, /firebase\/firestore|setDoc\(|updateDoc\(|runTransaction\(/);
 });
+
+test('exact inventory adjustment identity is optional for legacy intake but authoritative when supplied', () => {
+  const extension = readFileSync('shared/exactInventoryAdjustment.ts', 'utf8');
+  const executor = readFileSync('server/actions/inventoryAdjustmentExecutionService.ts', 'utf8');
+
+  assert.match(extension, /inventoryItemId\?: string/);
+  assert.match(extension, /\^\[a-zA-Z0-9_-\]\{1,180\}\$/);
+
+  assert.match(executor, /normalizeExactInventoryItemId\(value\.inventoryItemId\)/);
+  assert.match(executor, /exactInventoryItemId\s*\?\s*catalog\.findIndex\(item => item\.id === exactInventoryItemId\)/);
+  assert.match(executor, /INVENTORY_ITEM_ID_NOT_FOUND/);
+  assert.match(executor, /Nenhum item será escolhido por nome/);
+  assert.match(executor, /INVENTORY_ITEM_IDENTITY_MISMATCH/);
+  assert.match(executor, /normalizeName\(existing\.name\) !== normalizeName\(entry\.name\)/);
+
+  assert.match(executor, /: catalog\.findIndex\(item => `\$\{normalizeName\(item\.name\)\}::\$\{item\.unit\}` === key\)/);
+  assert.match(executor, /if \(existingIndex < 0\) \{\n        if \(proposal\.mode !== 'increment'\)/);
+  assert.match(executor, /const itemId = deterministicItemId\(actor\.uid, entry\)/);
+});
+
+test('manual physical inventory UI prepares exact proposals and still requires the existing confirmation bridge', () => {
+  const manual = readFileSync('src/utils/manualPhysicalInventoryAdjustment.ts', 'utf8');
+  const workspace = readFileSync('src/components/store/PhysicalInventoryWorkspace.tsx', 'utf8');
+  const bridge = readFileSync('src/components/KyrubAiInventoryActionBridge.tsx', 'utf8');
+  const executor = readFileSync('server/actions/inventoryAdjustmentExecutionService.ts', 'utf8');
+
+  assert.match(manual, /inventoryItemId: itemId/);
+  assert.match(manual, /origin: 'manual'/);
+  assert.match(manual, /mode: input\.mode/);
+  assert.match(manual, /requiresConfirmation: true/);
+  assert.match(manual, /KYRUB_AI_ACTION_PROPOSAL_EVENT/);
+  assert.match(manual, /window\.dispatchEvent/);
+  assert.doesNotMatch(manual, /executeKyrubAction|\/api\/action-execute|firebase\/firestore|setDoc\(|updateDoc\(/);
+
+  assert.match(workspace, /Dar entrada/);
+  assert.match(workspace, /Corrigir contagem/);
+  assert.match(workspace, /Revisar ajuste/);
+  assert.match(workspace, /requestManualPhysicalInventoryAdjustment/);
+  assert.match(workspace, /O clique acima não altera o estoque/);
+  assert.doesNotMatch(workspace, /executeKyrubAction|\/api\/action-execute|setDoc\(|updateDoc\(/);
+
+  assert.match(bridge, /detail\.proposal\.type === 'adjust_inventory'/);
+  assert.match(bridge, /executeKyrubAction\(user, current\.proposal, true\)/);
+
+  assert.match(executor, /const origin = proposal\.origin \?\? 'kyrubia'/);
+  assert.match(executor, /origin,\n      lines: movementLines/);
+  assert.match(executor, /origin,\n      inputProvenance:/);
+  assert.match(executor, /idempotencyKey: proposal\.idempotencyKey \?\?/);
+});
