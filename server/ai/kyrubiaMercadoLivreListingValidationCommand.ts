@@ -40,7 +40,6 @@ const refreshedPreparationContext = (
   generatedAt: new Date().toISOString(),
   offeredIntents: undefined,
   mercadoLivreRequirementProgress: undefined,
-  mercadoLivrePublicationAuthorization: undefined,
 });
 
 const compactCause = (
