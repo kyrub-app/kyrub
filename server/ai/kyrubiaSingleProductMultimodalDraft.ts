@@ -115,6 +115,9 @@ const previousAssistant = (
   return '';
 };
 
+const isCollectorPrompt = (message: string): boolean =>
+  /pre[cç]o|categoria|estoque|quantas unidades/i.test(message);
+
 const barePriceAnswer = (message: string, prompt: string): number | undefined => {
   if (!/pre[cç]o/i.test(prompt)) return undefined;
   return localizedNumber(/^\s*(?:r\$\s*)?(\d+(?:[.,]\d{1,2})?)\s*(?:reais)?\s*$/i.exec(message)?.[1]);
@@ -155,6 +158,7 @@ const draftFromConversation = (
     const message = messages[index];
     if (message.role !== 'user') continue;
     const prompt = previousAssistant(messages, index);
+    if (!isCollectorPrompt(prompt)) continue;
 
     if (draft.price === undefined) {
       const explicit = parsePrice(message.content);
@@ -251,6 +255,12 @@ export const resolveKyrubiaSingleProductMultimodalDraft = (
     latestUserIndex > anchorIndex &&
     latestDecision.primary !== 'conversation' &&
     latestDecision.primary !== 'create_products'
+  ) {
+    return null;
+  }
+  if (
+    latestUserIndex > anchorIndex &&
+    !isCollectorPrompt(previousAssistant(messages, latestUserIndex))
   ) {
     return null;
   }
