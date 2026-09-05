@@ -46,7 +46,7 @@ test('Cairubia accepts only the explicit owner authorization phrase and never tr
   const command = await readFile(commandPath, 'utf8');
   assert.match(command, /\^\(\?:autorizar\|autorize\)/);
   assert.match(command, /authorizeKyrubiaMercadoLivrePublication/);
-  assert.match(command, /mercadoLivrePublicationAuthorization: undefined/);
+  assert.doesNotMatch(command, /mercadoLivrePublicationAuthorization/);
   assert.match(command, /segredo interno dessa autorização não é enviado ao navegador/);
   assert.match(command, /proposalId como localizador conversacional/);
   assert.doesNotMatch(command, /authorizationToken/);
