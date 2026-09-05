@@ -1,17 +1,35 @@
 import { randomUUID } from 'node:crypto';
 import type { KyrubiaTurnContext } from '../../shared/kyrubiaContext.js';
 import { validateKyrubiaMercadoLivreDraftListing } from '../integrations/mercadoLivreKyrubiaListingValidationService.js';
+import { authorizeKyrubiaMercadoLivrePublication } from '../integrations/mercadoLivreKyrubiaPublicationAuthorizationService.js';
+
+type KyrubiaMercadoLivrePublicationAuthorizationContinuation = {
+  proposalId: string;
+  authorizationId: string;
+  authorizationToken: string;
+  expiresAtMillis: number;
+  authority: 'store_owner_publication_authorization';
+  authorizationSource: 'kyrubia_explicit_owner_command';
+  transport: 'server_issued_one_time_capability';
+};
+
+type KyrubiaMercadoLivrePreparationTurnContext = KyrubiaTurnContext & {
+  mercadoLivrePublicationAuthorization?: KyrubiaMercadoLivrePublicationAuthorizationContinuation;
+};
 
 export type KyrubiaMercadoLivreListingValidationCommandResult =
   | { handled: false }
   | {
       handled: true;
       reply: string;
-      turnContext: KyrubiaTurnContext;
+      turnContext: KyrubiaMercadoLivrePreparationTurnContext;
     };
 
 const isExplicitDraftValidationCommand = (message: string): boolean =>
   /^(?:validar|valide)(?:\s+o)?\s+(?:draft|rascunho)$/i.test(message.trim());
+
+const isExplicitPublicationAuthorizationCommand = (message: string): boolean =>
+  /^(?:autorizar|autorize)(?:\s+a)?\s+publica(?:ção|cao)$/i.test(message.trim());
 
 const proposalIdFromPreparationContext = (
   context: KyrubiaTurnContext
@@ -28,7 +46,7 @@ const proposalIdFromPreparationContext = (
 
 const refreshedPreparationContext = (
   context: KyrubiaTurnContext
-): KyrubiaTurnContext => ({
+): KyrubiaMercadoLivrePreparationTurnContext => ({
   ...context,
   id: randomUUID(),
   sourceAction: 'mercado_livre_publication_preparation',
@@ -44,7 +62,7 @@ const compactCause = (
   return parts.join(' — ');
 };
 
-const unavailableReply = (error: unknown): string => {
+const validationUnavailableReply = (error: unknown): string => {
   const code = error instanceof Error
     ? error.message.split(':')[0]
     : 'MERCADO_LIVRE_KYRUBIA_LISTING_VALIDATION_UNAVAILABLE';
@@ -55,16 +73,68 @@ const unavailableReply = (error: unknown): string => {
   ].join(' ');
 };
 
+const authorizationUnavailableReply = (error: unknown): string => {
+  const code = error instanceof Error
+    ? error.message.split(':')[0]
+    : 'MERCADO_LIVRE_KYRUBIA_PUBLICATION_AUTHORIZATION_UNAVAILABLE';
+  return [
+    `O comando “Autorizar publicação” foi reconhecido, mas o gate autoritativo bloqueou a autorização (${code}).`,
+    'A autorização só nasce se a validação 204 da Cairubia, o payload, a capability e o produto canônico ainda forem exatamente os mesmos no servidor.',
+    'Nenhum token utilizável foi criado para este comando e nenhum anúncio foi publicado ou alterado no Mercado Livre.',
+  ].join(' ');
+};
+
 export const handleKyrubiaMercadoLivreListingValidationCommand = async (input: {
   userId: string;
   message: string;
   context?: KyrubiaTurnContext;
 }): Promise<KyrubiaMercadoLivreListingValidationCommandResult> => {
-  if (!input.context || !isExplicitDraftValidationCommand(input.message)) {
-    return { handled: false };
-  }
+  if (!input.context) return { handled: false };
   const proposalId = proposalIdFromPreparationContext(input.context);
   if (!proposalId) return { handled: false };
+
+  if (isExplicitPublicationAuthorizationCommand(input.message)) {
+    const turnContext = refreshedPreparationContext(input.context);
+    try {
+      const authorization = await authorizeKyrubiaMercadoLivrePublication({
+        storeId: input.userId,
+        proposalId,
+        authorizedByUserId: input.userId,
+      });
+      return {
+        handled: true,
+        turnContext: {
+          ...turnContext,
+          mercadoLivrePublicationAuthorization: {
+            proposalId: authorization.proposalId,
+            authorizationId: authorization.authorizationId,
+            authorizationToken: authorization.authorizationToken,
+            expiresAtMillis: authorization.expiresAtMillis,
+            authority: authorization.authority,
+            authorizationSource: authorization.authorizationSource,
+            transport: 'server_issued_one_time_capability',
+          },
+        },
+        reply: [
+          'A autorização explícita do proprietário foi registrada.',
+          'O proposal agora está executionStatus=authorized e recebeu uma capability one-time com validade de 15 minutos.',
+          'O segredo dessa capability não é exibido na conversa e o Firestore guarda somente o hash do token.',
+          'Autorizar ainda não publica: nenhum POST /items foi executado e nenhum anúncio foi criado ou alterado no Mercado Livre.',
+          'A execução real continuará em um gate separado que deverá consumir essa autorização uma única vez.',
+        ].join(' '),
+      };
+    } catch (error) {
+      return {
+        handled: true,
+        turnContext,
+        reply: authorizationUnavailableReply(error),
+      };
+    }
+  }
+
+  if (!isExplicitDraftValidationCommand(input.message)) {
+    return { handled: false };
+  }
 
   const turnContext = refreshedPreparationContext(input.context);
   try {
@@ -82,7 +152,7 @@ export const handleKyrubiaMercadoLivreListingValidationCommand = async (input: {
           `O Mercado Livre respondeu ${validation.providerStatus} ao /items/validate: o payload persistido foi aceito no gate de validação.`,
           'Registrei a evidência como ready_for_owner_authorization com autoridade provider_items_validate.',
           'Isso não é autorização de publicação: executionStatus continua not_authorized, nenhum token de publicação foi criado e nenhum item foi publicado.',
-          'A próxima fronteira é uma autorização explícita e separada do proprietário para a publicação real.',
+          'Se você realmente quiser criar a autorização one-time para este payload já validado, diga exatamente “Autorizar publicação”. Esse comando ainda não publica o item.',
         ].join(' '),
       };
     }
@@ -105,7 +175,7 @@ export const handleKyrubiaMercadoLivreListingValidationCommand = async (input: {
     return {
       handled: true,
       turnContext,
-      reply: unavailableReply(error),
+      reply: validationUnavailableReply(error),
     };
   }
 };
