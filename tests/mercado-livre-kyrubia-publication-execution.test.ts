@@ -15,7 +15,8 @@ test('Cairubia publish-now carries only the proposal locator and never a raw aut
   const authorization = await readFile(authorizationPath, 'utf8');
   assert.match(command, /selectedIntent\?\.intent === 'mercado_livre\.listing_type_select'/);
   assert.match(command, /proposalId/);
-  assert.match(command, /mercadoLivrePublicationAuthorization: undefined/);
+  assert.doesNotMatch(command, /mercadoLivrePublicationAuthorization/);
+  assert.doesNotMatch(gate, /mercadoLivrePublicationAuthorization/);
   assert.doesNotMatch(command, /authorizationToken/);
   assert.doesNotMatch(gate, /authorizationToken/);
   assert.doesNotMatch(authorization, /authorizationToken/);
