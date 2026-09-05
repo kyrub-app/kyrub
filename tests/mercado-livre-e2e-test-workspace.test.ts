@@ -13,6 +13,7 @@ const clientPath = new URL('../src/utils/mercadoLivreE2ETest.ts', import.meta.ur
 const serverPath = new URL('../server.ts', import.meta.url);
 const kyrubiaChatPath = new URL('../server/ai/kyrubiaUserProviderChatService.ts', import.meta.url);
 const kyrubiaAttributeCollectorPath = new URL('../server/ai/kyrubiaMercadoLivreRequiredAttributeCollector.ts', import.meta.url);
+const kyrubiaAttributePlannerPath = new URL('../server/ai/kyrubiaMercadoLivreRequiredAttributePlanner.ts', import.meta.url);
 const kyrubiaContextPath = new URL('../shared/kyrubiaContext.ts', import.meta.url);
 const offeredIntentRuntimePath = new URL('../src/ai/offeredIntentRuntime.ts', import.meta.url);
 
@@ -151,9 +152,13 @@ test('Cairubia required attribute collection is session-only intent context', as
   assert.match(chat, /withAttributeCollectorStep/);
 });
 
-test('Cairubia attribute collector mirrors required/new-required rules and revalidates provider state every turn', async () => {
+test('Cairubia attribute collector delegates required/new-required planning and revalidates provider state every turn', async () => {
   const collector = await readFile(kyrubiaAttributeCollectorPath, 'utf8');
-  assert.match(collector, /attribute\.required \|\| \(condition === 'new' && attribute\.newRequired\)/);
+  const planner = await readFile(kyrubiaAttributePlannerPath, 'utf8');
+  assert.match(collector, /planKyrubiaMercadoLivreRequiredAttributes/);
+  assert.match(collector, /const plan = planFor\(progress, options, collected\)/);
+  assert.match(planner, /attribute\.required \|\|/);
+  assert.match(planner, /condition === 'new' && attribute\.newRequired/);
   assert.match(collector, /inspectMercadoLivreRequirementCategoryOptions/);
   assert.match(collector, /assertTupleCurrent/);
   assert.match(collector, /canonicalCollected/);
