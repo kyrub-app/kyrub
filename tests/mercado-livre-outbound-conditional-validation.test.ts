@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
 const servicePath = new URL('../server/integrations/mercadoLivreOutboundConditionalValidationService.ts', import.meta.url);
+const inspectionPath = new URL('../server/integrations/mercadoLivreConditionalRequirementInspectionService.ts', import.meta.url);
 const listingValidatorPath = new URL('../server/integrations/mercadoLivreOutboundListingValidationService.ts', import.meta.url);
 const payloadAdapterPath = new URL('../server/integrations/mercadoLivreInitialPublicationPayloadAdapter.ts', import.meta.url);
 const capabilityGuardPath = new URL('../server/integrations/mercadoLivrePublicationCapabilitySnapshotGuard.ts', import.meta.url);
@@ -15,6 +16,33 @@ test('conditional required attributes are validated with the official provider e
   assert.match(source, /\/categories\/\$\{encodeURIComponent\(proposal\.providerCategoryId\)\}\/attributes\/conditional/);
   assert.match(source, /required_attributes/);
   assert.match(source, /provider_api_conditional_validation/);
+});
+
+test('pre-configuration conditional inspection revalidates exact tuple and uses provider conditional endpoint without persistence', async () => {
+  const source = await readFile(inspectionPath, 'utf8');
+  assert.match(source, /inspectMercadoLivreRequirementCategoryOptions/);
+  assert.match(source, /assertCurrentMercadoLivrePublicationCapability/);
+  assert.match(source, /options\.conditions\.includes\(condition\)/);
+  assert.match(source, /option => option\.id === listingTypeId/);
+  assert.match(source, /listingType\.name !== listingTypeName/);
+  assert.match(source, /assertBaseRequirementsSatisfied/);
+  assert.match(source, /buildMercadoLivreInitialPublicationPayload/);
+  assert.match(source, /\/categories\/\$\{encodeURIComponent\(categoryId\)\}\/attributes\/conditional/);
+  assert.match(source, /authority: 'provider_api_conditional_inspection'/);
+  assert.doesNotMatch(source, /FieldValue|runTransaction|transaction\.(?:set|update|delete)/);
+  assert.doesNotMatch(source, /\.set\s*\(|\.update\s*\(/);
+  assert.doesNotMatch(source, /catalogOutboundRequirementConfigurations|catalogOutboundConditionalValidations/);
+});
+
+test('conditional inspection canonicalizes owner answers and fails closed before provider inspection when base requirements are incomplete', async () => {
+  const source = await readFile(inspectionPath, 'utf8');
+  assert.match(source, /MERCADO_LIVRE_CONDITIONAL_INSPECTION_VALUE_STALE/);
+  assert.match(source, /MERCADO_LIVRE_CONDITIONAL_INSPECTION_BASE_REQUIRED_MISSING/);
+  assert.match(source, /MERCADO_LIVRE_CONDITIONAL_INSPECTION_PROVIDER_ATTRIBUTE_UNKNOWN/);
+  const baseGuard = source.indexOf('assertBaseRequirementsSatisfied(options, condition, attributes)');
+  const providerCall = source.indexOf('mercadoLivrePostJson<ConditionalRequirementResponse>');
+  assert.ok(baseGuard >= 0);
+  assert.ok(providerCall > baseGuard);
 });
 
 test('conditional and listing validation both use the same model-aware initial publication payload adapter', async () => {
