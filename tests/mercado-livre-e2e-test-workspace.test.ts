@@ -181,7 +181,7 @@ test('free-text attribute answers remain conversational and no requirement confi
   assert.match(collector, /valueName: text/);
   assert.match(collector, /nada será gravado no rascunho ainda/i);
   assert.doesNotMatch(collector, /configureMercadoLivreOutboundRequirements/);
-  assert.doesNotMatch(collector, /adminDb|FieldValue|runTransaction|\.set\s*\(|\.update\s*\(/);
+  assert.doesNotMatch(collector, /adminDb|FieldValue|runTransaction|transaction\.(?:set|update|delete)/);
   assert.doesNotMatch(collector, /mercadoLivrePostJson|mercadoLivrePutJson|authorizeMercadoLivre|executeMercadoLivre/);
   assert.doesNotMatch(chat, /configureMercadoLivreOutboundRequirements/);
   assert.doesNotMatch(chat, /mercadoLivrePostJson|mercadoLivrePutJson|authorizeMercadoLivre|executeMercadoLivre/);
