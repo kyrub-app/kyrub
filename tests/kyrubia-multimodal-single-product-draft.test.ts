@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import test from 'node:test';
 import type { KyrubAiConversationMessage } from '../shared/aiConsultant';
 import { resolveKyrubiaSingleProductMultimodalDraft } from '../server/ai/kyrubiaSingleProductMultimodalDraft';
@@ -106,4 +106,25 @@ test('consultor routes bulk catalog then single-product collector then guarded g
   assert.ok(generic > single);
   assert.match(router, /Blocked action outside classified intent/);
   assert.match(router, /INTENT_ACTION_MISMATCH/);
+});
+
+test('create_product stays on the existing action endpoint and uses a fast path before broad bootstrap', () => {
+  const client = readFileSync(new URL('../src/actions/kyrubActionService.ts', import.meta.url), 'utf8');
+  const endpoint = readFileSync(new URL('../api/action-execute.ts', import.meta.url), 'utf8');
+  assert.match(client, /SAFE_ACTION_ENDPOINT = '\/api\/action-execute'/);
+  assert.doesNotMatch(client, /action-execute-product/);
+
+  const fastPath = endpoint.indexOf("if (rawProposal?.type === 'create_product')");
+  const broadBootstrap = endpoint.indexOf('const [\n      actionFacade,');
+  assert.ok(fastPath >= 0);
+  assert.ok(broadBootstrap > fastPath);
+  assert.match(endpoint.slice(fastPath, broadBootstrap), /mapKyrubActionExecutionError/);
+  assert.match(endpoint.slice(fastPath, broadBootstrap), /reconcileStoreEntitlementFromAuthorization/);
+  assert.match(endpoint.slice(fastPath, broadBootstrap), /hydrateExecutablePlanCatalog/);
+  assert.match(endpoint.slice(fastPath, broadBootstrap), /executeAuthorizedKyrubAction/);
+});
+
+test('create_product fast path does not spend an extra Vercel serverless function', () => {
+  const dedicatedEndpoint = new URL('../api/action-execute-product.ts', import.meta.url);
+  assert.equal(existsSync(dedicatedEndpoint), false);
 });
