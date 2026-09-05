@@ -13,6 +13,12 @@ import { adminDb } from '../firebaseAdmin.js';
 import {
   KyrubActionExecutionError,
 } from './actionExecutionService.js';
+import {
+  cleanupNewProductAttachments,
+  normalizeKyrubiaProductAttachmentPaths,
+  promoteKyrubiaProductAttachments,
+  type PromotedProductAttachments,
+} from './productAttachmentPromotionService.js';
 import { evaluateKyrubActionPolicy } from './kyrubiaPolicyEngine.js';
 
 const MAX_PRODUCT_ID_CHARACTERS = 180;
@@ -22,6 +28,11 @@ const MAX_PRODUCT_DESCRIPTION_CHARACTERS = 2_000;
 const MAX_PRODUCT_IMAGE_CHARACTERS = 2_000;
 const EXECUTION_ENVELOPE_TTL_MS = 5 * 60 * 1_000;
 const PRODUCT_PATCH_KEYS = new Set(['name', 'description', 'price', 'category', 'image']);
+const RESOLVE_PRODUCT_BY_NAME_ID = '__kyrubia_resolve_product_by_name__';
+
+type KyrubAiUpdateProductMediaProposal = KyrubAiUpdateProductProposal & {
+  sourceAttachmentPaths?: string[];
+};
 
 const INPUT_PROVENANCE = new Set<KyrubInputProvenance>([
   'user_intent',
@@ -139,7 +150,7 @@ const normalizeProductPatch = (value: unknown): KyrubProductPatch => {
   return patch;
 };
 
-const normalizeProposal = (value: unknown): KyrubAiUpdateProductProposal => {
+const normalizeProposal = (value: unknown): KyrubAiUpdateProductMediaProposal => {
   const candidate = requestRecord(value);
   if (candidate.type !== 'update_product') {
     throw new KyrubActionExecutionError(
@@ -161,12 +172,17 @@ const normalizeProposal = (value: unknown): KyrubAiUpdateProductProposal => {
     );
   }
 
+  const sourceAttachmentPaths = candidate.sourceAttachmentPaths === undefined
+    ? []
+    : normalizeKyrubiaProductAttachmentPaths(candidate.sourceAttachmentPaths);
+
   return {
     id: safeActionId(candidate.id),
     type: 'update_product',
     productId: normalizeProductId(candidate.productId),
     expectedCurrentName,
     patch: normalizeProductPatch(candidate.patch),
+    ...(sourceAttachmentPaths.length > 0 ? { sourceAttachmentPaths } : {}),
     requiresConfirmation: true,
     origin: 'kyrubia',
     risk: 'medium',
@@ -204,13 +220,13 @@ const verifyActionActor = async (token: string) => {
 };
 
 const idempotencyKeyFor = (
-  proposal: KyrubAiUpdateProductProposal,
+  proposal: KyrubAiUpdateProductMediaProposal,
   actorUid: string
 ): string => proposal.idempotencyKey?.trim() ||
   `kyrubia:${proposal.type}:${actorUid}:${proposal.id}`;
 
 const canonicalProposalPayload = (
-  proposal: KyrubAiUpdateProductProposal,
+  proposal: KyrubAiUpdateProductMediaProposal,
   idempotencyKey: string
 ): Record<string, unknown> => ({
   id: proposal.id,
@@ -218,6 +234,7 @@ const canonicalProposalPayload = (
   productId: proposal.productId,
   expectedCurrentName: proposal.expectedCurrentName,
   patch: proposal.patch,
+  sourceAttachmentPaths: proposal.sourceAttachmentPaths ?? [],
   requiresConfirmation: true,
   origin: proposal.origin ?? 'kyrubia',
   risk: 'medium',
@@ -227,7 +244,7 @@ const canonicalProposalPayload = (
 });
 
 const proposalHash = (
-  proposal: KyrubAiUpdateProductProposal,
+  proposal: KyrubAiUpdateProductMediaProposal,
   idempotencyKey: string
 ): string => createHash('sha256')
   .update(JSON.stringify(canonicalProposalPayload(proposal, idempotencyKey)))
@@ -242,7 +259,7 @@ const deterministicExecutionId = (
   .slice(0, 40)}`;
 
 const buildEnvelope = (
-  proposal: KyrubAiUpdateProductProposal,
+  proposal: KyrubAiUpdateProductMediaProposal,
   actorUid: string,
   idempotencyKey: string,
   policyDecision: KyrubPolicyDecision,
@@ -383,159 +400,236 @@ const applyProductPatch = (
   ...('image' in patch ? { image: patch.image } : {}),
 });
 
+const resolveTargetProductId = async (
+  actorUid: string,
+  proposal: KyrubAiUpdateProductMediaProposal
+): Promise<string> => {
+  if (proposal.productId !== RESOLVE_PRODUCT_BY_NAME_ID) {
+    return proposal.productId;
+  }
+
+  const tenantSnapshot = await adminDb.doc(`tenants/${actorUid}`).get();
+  if (!tenantSnapshot.exists) {
+    throw new KyrubActionExecutionError(
+      404,
+      'PRODUCT_NOT_FOUND',
+      'O catálogo da sua loja não foi encontrado.'
+    );
+  }
+  const tenantData = tenantSnapshot.data() as Record<string, unknown>;
+  const rawProducts = Array.isArray(tenantData.publicProducts)
+    ? tenantData.publicProducts
+    : [];
+  const expected = normalizeName(proposal.expectedCurrentName);
+  const matches = rawProducts.flatMap(item => {
+    const product = recordValue(item);
+    if (!product) return [];
+    const id = cleanText(product.id, MAX_PRODUCT_ID_CHARACTERS);
+    const name = cleanText(product.name, MAX_PRODUCT_NAME_CHARACTERS);
+    if (
+      !id ||
+      normalizeName(name) !== expected ||
+      product.storeId !== actorUid ||
+      product.supplierId !== actorUid
+    ) {
+      return [];
+    }
+    return [id];
+  });
+
+  if (matches.length === 0) {
+    throw new KyrubActionExecutionError(
+      404,
+      'PRODUCT_NOT_FOUND',
+      `Não encontrei “${proposal.expectedCurrentName}” na loja autenticada.`
+    );
+  }
+  if (matches.length > 1) {
+    throw new KyrubActionExecutionError(
+      409,
+      'PRODUCT_IDENTITY_AMBIGUOUS',
+      `Existe mais de um produto chamado “${proposal.expectedCurrentName}”. Identifique o item de forma mais específica.`
+    );
+  }
+  return matches[0];
+};
+
 const executeProductUpdate = async (
   actor: { uid: string },
-  proposal: KyrubAiUpdateProductProposal,
+  proposal: KyrubAiUpdateProductMediaProposal,
   envelope: KyrubExecutionEnvelope
 ): Promise<KyrubActionExecutionResult> => {
   const canonicalStore = await ensureCanonicalStore(actor.uid);
+  const resolvedProductId = await resolveTargetProductId(actor.uid, proposal);
   const tenantReference = adminDb.doc(`tenants/${actor.uid}`);
   const canonicalReference = adminDb.doc(
-    `stores/${canonicalStore.id}/products/${proposal.productId}`
+    `stores/${canonicalStore.id}/products/${resolvedProductId}`
   );
   const receiptReference = receiptReferenceFor(envelope);
 
-  const status = await adminDb.runTransaction(async transaction => {
-    const [tenantSnapshot, canonicalSnapshot, existingReceipt] = await Promise.all([
-      transaction.get(tenantReference),
-      transaction.get(canonicalReference),
-      transaction.get(receiptReference),
-    ]);
-
-    if (existingReceipt.exists) {
-      const data = existingReceipt.data() as Record<string, unknown>;
-      if (receiptMatches(data, envelope)) return 'already_applied' as const;
-      throw new KyrubActionExecutionError(
-        409,
-        'IDEMPOTENCY_CONFLICT',
-        'Esta alteração de produto já foi utilizada com outro conteúdo.'
-      );
-    }
-
-    if (!tenantSnapshot.exists) {
-      throw new KyrubActionExecutionError(
-        404,
-        'PRODUCT_NOT_FOUND',
-        'O catálogo da sua loja não foi encontrado.'
-      );
-    }
-
-    const tenantData = tenantSnapshot.data() as Record<string, unknown>;
-    const rawProducts = Array.isArray(tenantData.publicProducts)
-      ? tenantData.publicProducts
-      : [];
-    const index = rawProducts.findIndex(item =>
-      recordValue(item)?.id === proposal.productId
-    );
-    if (index < 0) {
-      throw new KyrubActionExecutionError(
-        404,
-        'PRODUCT_NOT_FOUND',
-        'Esse produto publicado não foi encontrado na sua loja. Atualize a conversa e tente novamente.'
-      );
-    }
-
-    const currentProduct = recordValue(rawProducts[index]);
-    if (!currentProduct) {
-      throw new KyrubActionExecutionError(
-        409,
-        'PRODUCT_INVALID',
-        'O registro atual do produto não é válido para atualização.'
-      );
-    }
-    if (
-      currentProduct.storeId !== actor.uid ||
-      currentProduct.supplierId !== actor.uid
-    ) {
-      throw new KyrubActionExecutionError(
-        403,
-        'PRODUCT_OWNERSHIP_REQUIRED',
-        'Este produto não pertence à loja autenticada.'
-      );
-    }
-
-    const currentName = cleanText(
-      currentProduct.name,
-      MAX_PRODUCT_NAME_CHARACTERS
-    );
-    if (
-      !currentName ||
-      normalizeName(currentName) !== normalizeName(proposal.expectedCurrentName)
-    ) {
-      throw new KyrubActionExecutionError(
-        409,
-        'PRODUCT_CHANGED',
-        'O produto mudou desde a leitura usada pela Kyrubia. Revise o estado atual antes de confirmar novamente.'
-      );
-    }
-
-    const updatedLegacy: Record<string, unknown> = {
-      ...applyProductPatch(currentProduct, proposal.patch),
-      updatedAt: envelope.authorizedAt,
-      actionOrigin: envelope.origin,
-      actionType: proposal.type,
-      actionId: proposal.id,
-      actionIdempotencyKey: envelope.idempotencyKey,
-      actionProposalHash: envelope.proposalHash,
-      actionExecutionId: envelope.executionId,
-    };
-    const nextProducts = rawProducts.map((item, itemIndex) =>
-      itemIndex === index ? updatedLegacy : item
-    );
-
-    transaction.set(tenantReference, {
-      publicProducts: nextProducts,
-      updatedAt: FieldValue.serverTimestamp(),
-    }, { merge: true });
-
-    const canonicalSeed: Record<string, unknown> = canonicalSnapshot.exists
-      ? {}
-      : {
-          ...updatedLegacy,
-          id: proposal.productId,
-          storeId: canonicalStore.id,
-          supplierId: canonicalStore.id,
-          publicationStatus: 'published',
-          createdByUserId: actor.uid,
-          createdByRole: 'owner',
-          legacyStoreId: actor.uid,
-          legacyProductId: proposal.productId,
-          legacySupplierId: actor.uid,
-          archivedAt: '',
-          migration: {
-            mode: 'dual_write',
-            migratedByUserId: actor.uid,
-            migratedByRole: 'owner',
-          },
-          createdAt: FieldValue.serverTimestamp(),
-        };
-
-    transaction.set(canonicalReference, {
-      ...canonicalSeed,
+  let promoted: PromotedProductAttachments | null = null;
+  let effectivePatch = proposal.patch;
+  if ((proposal.sourceAttachmentPaths?.length ?? 0) > 0) {
+    promoted = await promoteKyrubiaProductAttachments({
+      actorUid: actor.uid,
+      productId: resolvedProductId,
+      sourceAttachmentPaths: proposal.sourceAttachmentPaths ?? [],
+    });
+    effectivePatch = {
       ...proposal.patch,
-      updatedByUserId: actor.uid,
-      updatedByRole: 'owner',
-      legacyUpdatedAt: envelope.authorizedAt,
-      actionOrigin: envelope.origin,
-      actionExecutionId: envelope.executionId,
-      updatedAt: FieldValue.serverTimestamp(),
-    }, { merge: true });
-    transaction.set(
-      receiptReference,
-      receiptPayload(envelope, proposal.productId)
-    );
-    return 'success' as const;
-  });
+      image: promoted.urls[0],
+    };
+  }
 
-  return {
-    actionId: proposal.id,
-    type: proposal.type,
-    status,
-    entityId: proposal.productId,
-    origin: envelope.origin,
-    idempotencyKey: envelope.idempotencyKey,
-    executionEnvelope: envelope,
-  };
+  try {
+    const status = await adminDb.runTransaction(async transaction => {
+      const [tenantSnapshot, canonicalSnapshot, existingReceipt] = await Promise.all([
+        transaction.get(tenantReference),
+        transaction.get(canonicalReference),
+        transaction.get(receiptReference),
+      ]);
+
+      if (existingReceipt.exists) {
+        const data = existingReceipt.data() as Record<string, unknown>;
+        if (receiptMatches(data, envelope)) return 'already_applied' as const;
+        throw new KyrubActionExecutionError(
+          409,
+          'IDEMPOTENCY_CONFLICT',
+          'Esta alteração de produto já foi utilizada com outro conteúdo.'
+        );
+      }
+
+      if (!tenantSnapshot.exists) {
+        throw new KyrubActionExecutionError(
+          404,
+          'PRODUCT_NOT_FOUND',
+          'O catálogo da sua loja não foi encontrado.'
+        );
+      }
+
+      const tenantData = tenantSnapshot.data() as Record<string, unknown>;
+      const rawProducts = Array.isArray(tenantData.publicProducts)
+        ? tenantData.publicProducts
+        : [];
+      const index = rawProducts.findIndex(item =>
+        recordValue(item)?.id === resolvedProductId
+      );
+      if (index < 0) {
+        throw new KyrubActionExecutionError(
+          404,
+          'PRODUCT_NOT_FOUND',
+          'Esse produto publicado não foi encontrado na sua loja. Atualize a conversa e tente novamente.'
+        );
+      }
+
+      const currentProduct = recordValue(rawProducts[index]);
+      if (!currentProduct) {
+        throw new KyrubActionExecutionError(
+          409,
+          'PRODUCT_INVALID',
+          'O registro atual do produto não é válido para atualização.'
+        );
+      }
+      if (
+        currentProduct.storeId !== actor.uid ||
+        currentProduct.supplierId !== actor.uid
+      ) {
+        throw new KyrubActionExecutionError(
+          403,
+          'PRODUCT_OWNERSHIP_REQUIRED',
+          'Este produto não pertence à loja autenticada.'
+        );
+      }
+
+      const currentName = cleanText(
+        currentProduct.name,
+        MAX_PRODUCT_NAME_CHARACTERS
+      );
+      if (
+        !currentName ||
+        normalizeName(currentName) !== normalizeName(proposal.expectedCurrentName)
+      ) {
+        throw new KyrubActionExecutionError(
+          409,
+          'PRODUCT_CHANGED',
+          'O produto mudou desde a leitura usada pela Kyrubia. Revise o estado atual antes de confirmar novamente.'
+        );
+      }
+
+      const mediaFields = promoted ? { images: promoted.urls } : {};
+      const updatedLegacy: Record<string, unknown> = {
+        ...applyProductPatch(currentProduct, effectivePatch),
+        ...mediaFields,
+        updatedAt: envelope.authorizedAt,
+        actionOrigin: envelope.origin,
+        actionType: proposal.type,
+        actionId: proposal.id,
+        actionIdempotencyKey: envelope.idempotencyKey,
+        actionProposalHash: envelope.proposalHash,
+        actionExecutionId: envelope.executionId,
+      };
+      const nextProducts = rawProducts.map((item, itemIndex) =>
+        itemIndex === index ? updatedLegacy : item
+      );
+
+      transaction.set(tenantReference, {
+        publicProducts: nextProducts,
+        updatedAt: FieldValue.serverTimestamp(),
+      }, { merge: true });
+
+      const canonicalSeed: Record<string, unknown> = canonicalSnapshot.exists
+        ? {}
+        : {
+            ...updatedLegacy,
+            id: resolvedProductId,
+            storeId: canonicalStore.id,
+            supplierId: canonicalStore.id,
+            publicationStatus: 'published',
+            createdByUserId: actor.uid,
+            createdByRole: 'owner',
+            legacyStoreId: actor.uid,
+            legacyProductId: resolvedProductId,
+            legacySupplierId: actor.uid,
+            archivedAt: '',
+            migration: {
+              mode: 'dual_write',
+              migratedByUserId: actor.uid,
+              migratedByRole: 'owner',
+            },
+            createdAt: FieldValue.serverTimestamp(),
+          };
+
+      transaction.set(canonicalReference, {
+        ...canonicalSeed,
+        ...effectivePatch,
+        ...mediaFields,
+        updatedByUserId: actor.uid,
+        updatedByRole: 'owner',
+        legacyUpdatedAt: envelope.authorizedAt,
+        actionOrigin: envelope.origin,
+        actionExecutionId: envelope.executionId,
+        updatedAt: FieldValue.serverTimestamp(),
+      }, { merge: true });
+      transaction.set(
+        receiptReference,
+        receiptPayload(envelope, resolvedProductId)
+      );
+      return 'success' as const;
+    });
+
+    return {
+      actionId: proposal.id,
+      type: proposal.type,
+      status,
+      entityId: resolvedProductId,
+      origin: envelope.origin,
+      idempotencyKey: envelope.idempotencyKey,
+      executionEnvelope: envelope,
+    };
+  } catch (error) {
+    await cleanupNewProductAttachments(promoted?.createdObjectPaths ?? []);
+    throw error;
+  }
 };
 
 const mapPolicyFailure = (decision: KyrubPolicyDecision): never => {
@@ -586,7 +680,7 @@ export const executeAuthorizedKyrubProductUpdate = async (
   const proposal = normalizeProposal(body.proposal);
   const confirmed = body.confirmed === true;
   const idempotencyKey = idempotencyKeyFor(proposal, actor.uid);
-  const normalizedProposal: KyrubAiUpdateProductProposal = {
+  const normalizedProposal: KyrubAiUpdateProductMediaProposal = {
     ...proposal,
     idempotencyKey,
   };
