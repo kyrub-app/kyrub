@@ -29,6 +29,7 @@ import {
   startMercadoLivreRequiredAttributeCollection,
   type KyrubiaMercadoLivreAttributeCollectorStep,
 } from './kyrubiaMercadoLivreRequiredAttributeCollector.js';
+import { handleKyrubiaMercadoLivreListingValidationCommand } from './kyrubiaMercadoLivreListingValidationCommand.js';
 import { ConsultantHttpError } from './types.js';
 import { buildKyrubiaSystemInstruction } from './kyrubiaSystemInstruction.js';
 import { runKyrubiaUserProviderToolLoop } from './kyrubiaUserProviderToolLoop.js';
@@ -665,9 +666,9 @@ const clearMercadoLivreRequirementProgress = (
 ): KyrubiaTurnContext => ({
   ...context,
   id: randomUUID(),
+  sourceAction: 'mercado_livre_publication_preparation',
   generatedAt: new Date().toISOString(),
   offeredIntents: undefined,
-  selectedIntent: undefined,
   mercadoLivreRequirementProgress: undefined,
 });
 
@@ -809,7 +810,7 @@ export const executeAuthorizedKyrubiaUserProviderChat = async (
         `Foram congelados ${configuration.requiredAttributeIds.length} requisito(s) básico(s) e ${configuration.conditionalAttributeIds.length} requisito(s) condicional(is) realmente confirmados pelo provedor; a configuração ficou ready=true.`,
         'A evidência da inspeção condicional foi persistida na mesma transação para manter o próximo gate coerente.',
         'Nenhuma autorização de publicação foi criada e nenhum anúncio foi criado ou alterado no Mercado Livre.',
-        'O próximo gate é validar o payload do anúncio com o Mercado Livre; essa validação também não publica o item.',
+        'Se quiser executar agora apenas o gate oficial de validação do payload, diga exatamente “Validar draft”. Esse comando chama /items/validate, mas não autoriza nem publica o item.',
       ].join(' ');
       return deterministicResult(
         requestId,
@@ -823,6 +824,19 @@ export const executeAuthorizedKyrubiaUserProviderChat = async (
         previousTurnContext
       );
     }
+  }
+
+  const listingValidationCommand = await handleKyrubiaMercadoLivreListingValidationCommand({
+    userId: user.uid,
+    message: latestMessage,
+    context: previousTurnContext,
+  });
+  if (listingValidationCommand.handled) {
+    return deterministicResult(
+      requestId,
+      listingValidationCommand.reply,
+      listingValidationCommand.turnContext
+    );
   }
 
   if (previousTurnContext && offeredIntentSelection) {
