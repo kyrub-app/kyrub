@@ -35,11 +35,19 @@ test('publication execution requires the exact publish-now command and the same 
 
 test('Cairubia execution bridge accepts only Cairubia authorization and validation provenance', async () => {
   const bridge = await readFile(bridgePath, 'utf8');
+  const executor = await readFile(executorPath, 'utf8');
   assert.match(bridge, /authorization\.authorizationSource !== 'kyrubia_explicit_owner_command'/);
   assert.match(bridge, /authorization\.listingValidationSource !== 'kyrubia_revalidated_draft'/);
   assert.match(bridge, /proposal\.publicationAuthorizationSource !== 'kyrubia_explicit_owner_command'/);
   assert.match(bridge, /validation\.validationSource !== 'kyrubia_revalidated_draft'/);
   assert.match(bridge, /validation\.providerStatus !== 204/);
+  assert.match(bridge, /expectedAuthorizationSource: 'kyrubia_explicit_owner_command'/);
+  assert.match(bridge, /expectedValidationSource: 'kyrubia_revalidated_draft'/);
+  assert.match(executor, /expectedAuthorizationSource\?: 'kyrubia_explicit_owner_command'/);
+  assert.match(executor, /currentAuthorization\.authorizationSource !== expectedAuthorizationSource/);
+  assert.match(executor, /proposal\.publicationAuthorizationSource !== expectedAuthorizationSource/);
+  assert.match(executor, /currentAuthorization\.listingValidationSource !== expectedValidationSource/);
+  assert.match(executor, /validation\?\.validationSource !== expectedValidationSource/);
   assert.match(bridge, /executeAuthorizedMercadoLivrePublication/);
   assert.doesNotMatch(bridge, /mercadoLivrePostJson|mercadoLivrePutJson/);
 });
