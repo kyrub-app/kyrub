@@ -24,7 +24,8 @@ export type KyrubiaPlanOfferedIntentKind =
 
 export type KyrubiaMercadoLivreOfferedIntentKind =
   | 'mercado_livre.category_select'
-  | 'mercado_livre.condition_select';
+  | 'mercado_livre.condition_select'
+  | 'mercado_livre.listing_type_select';
 
 export type KyrubiaOfferedIntentKind =
   | KyrubiaPlanOfferedIntentKind
@@ -71,10 +72,25 @@ export type KyrubiaMercadoLivreConditionOfferedIntent =
     };
   };
 
+export type KyrubiaMercadoLivreListingTypeOfferedIntent =
+  KyrubiaOfferedIntentBase & {
+    intent: 'mercado_livre.listing_type_select';
+    payload: {
+      proposalId: string;
+      categoryId: string;
+      categoryName: string;
+      condition: string;
+      listingTypeId: string;
+      listingTypeName: string;
+      providerAuthority: 'provider_api_requirement_options';
+    };
+  };
+
 export type KyrubiaOfferedIntent =
   | KyrubiaPlanOfferedIntent
   | KyrubiaMercadoLivreCategoryOfferedIntent
-  | KyrubiaMercadoLivreConditionOfferedIntent;
+  | KyrubiaMercadoLivreConditionOfferedIntent
+  | KyrubiaMercadoLivreListingTypeOfferedIntent;
 
 export type KyrubiaTurnContext = {
   version: 1;
