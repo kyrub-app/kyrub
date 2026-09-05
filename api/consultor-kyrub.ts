@@ -22,6 +22,7 @@ import { buildKyrubInventoryIntakeProposal } from '../shared/kyrubInventoryIntak
 import { buildKyrubInventoryMovementProposal } from '../shared/kyrubInventoryMovements.js';
 import { buildKyrubInventoryTransformationProposal } from '../shared/kyrubInventoryTransformationIntent.js';
 import { resolveKyrubInventoryHistoryRead } from '../shared/kyrubiaInventoryHistory.js';
+import { resolveKyrubiaSingleProductMultimodalDraft } from '../server/ai/kyrubiaSingleProductMultimodalDraft.js';
 import { handleKyrubiaCatalogAnalysis } from '../server/kyrubiaCatalogAnalysisRoute.js';
 import handleKyrubia from './kyrubia.js';
 
@@ -711,6 +712,12 @@ export default async function handler(
           ? captured.body.model
           : importResponse.model,
       });
+      return;
+    }
+
+    const singleProductMultimodal = resolveKyrubiaSingleProductMultimodalDraft(messages);
+    if (singleProductMultimodal) {
+      response.status(200).json(singleProductMultimodal);
       return;
     }
 
