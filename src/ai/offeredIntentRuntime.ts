@@ -162,7 +162,8 @@ const genericAcceptance = (message: string): boolean => {
 const syntheticMessageFor = (offeredIntent: KyrubiaOfferedIntent): string | null => {
   if (
     offeredIntent.intent === 'mercado_livre.category_select' ||
-    offeredIntent.intent === 'mercado_livre.condition_select'
+    offeredIntent.intent === 'mercado_livre.condition_select' ||
+    offeredIntent.intent === 'mercado_livre.listing_type_select'
   ) return null;
   const planId = offeredIntent.payload?.planId;
   const name = planId ? planName(planId) : 'Pro';
