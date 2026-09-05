@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import test from 'node:test';
 import type { KyrubAiConversationMessage } from '../shared/aiConsultant';
 import { resolveKyrubiaSingleProductMultimodalDraft } from '../server/ai/kyrubiaSingleProductMultimodalDraft';
@@ -108,20 +108,23 @@ test('consultor routes bulk catalog then single-product collector then guarded g
   assert.match(router, /INTENT_ACTION_MISMATCH/);
 });
 
-test('create_product uses a dedicated endpoint instead of the broad generic action bootstrap', () => {
+test('create_product stays on the existing action endpoint and uses a fast path before broad bootstrap', () => {
   const client = readFileSync(new URL('../src/actions/kyrubActionService.ts', import.meta.url), 'utf8');
-  assert.match(client, /CREATE_PRODUCT_ACTION_ENDPOINT = '\/api\/action-execute-product'/);
-  assert.match(client, /proposal\.type === 'create_product'[\s\S]*CREATE_PRODUCT_ACTION_ENDPOINT/);
+  const endpoint = readFileSync(new URL('../api/action-execute.ts', import.meta.url), 'utf8');
+  assert.match(client, /SAFE_ACTION_ENDPOINT = '\/api\/action-execute'/);
+  assert.doesNotMatch(client, /action-execute-product/);
+
+  const fastPath = endpoint.indexOf("if (rawProposal?.type === 'create_product')");
+  const broadBootstrap = endpoint.indexOf('const [\n      actionFacade,');
+  assert.ok(fastPath >= 0);
+  assert.ok(broadBootstrap > fastPath);
+  assert.match(endpoint.slice(fastPath, broadBootstrap), /mapKyrubActionExecutionError/);
+  assert.match(endpoint.slice(fastPath, broadBootstrap), /reconcileStoreEntitlementFromAuthorization/);
+  assert.match(endpoint.slice(fastPath, broadBootstrap), /hydrateExecutablePlanCatalog/);
+  assert.match(endpoint.slice(fastPath, broadBootstrap), /executeAuthorizedKyrubAction/);
 });
 
-test('dedicated create-product endpoint reuses canonical execution and preserves entitlement gates', () => {
-  const endpoint = readFileSync(new URL('../api/action-execute-product.ts', import.meta.url), 'utf8');
-  assert.match(endpoint, /proposal as Record<string, unknown>\)\.type === 'create_product'/);
-  assert.match(endpoint, /actionService\.mapKyrubActionExecutionError/);
-  assert.match(endpoint, /reconcileStoreEntitlementFromAuthorization/);
-  assert.match(endpoint, /hydrateExecutablePlanCatalog/);
-  assert.match(endpoint, /actionService\.executeAuthorizedKyrubAction/);
-  assert.doesNotMatch(endpoint, /actionExecutionFacade/);
-  assert.doesNotMatch(endpoint, /catalogProductLifecycleService/);
-  assert.doesNotMatch(endpoint, /catalogImportExecutionService/);
+test('create_product fast path does not spend an extra Vercel serverless function', () => {
+  const dedicatedEndpoint = new URL('../api/action-execute-product.ts', import.meta.url);
+  assert.equal(existsSync(dedicatedEndpoint), false);
 });
