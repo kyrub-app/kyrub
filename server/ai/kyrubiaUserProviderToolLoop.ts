@@ -198,7 +198,7 @@ const mercadoLivreCategoryStepReply = (
 const mercadoLivrePrepareReply = (
   result: KyrubiaMercadoLivrePrepareResult
 ): string => {
-  if (!result.prepared) return result.message;
+  if ('message' in result) return result.message;
   const model = result.providerPublicationModel === 'user_products'
     ? 'User Products'
     : 'itens legado';
@@ -216,10 +216,11 @@ const mercadoLivreCategoryTurnContext = (input: {
   productLabel: string;
   result: KyrubiaMercadoLivrePreparedResult;
 }): KyrubiaTurnContext | undefined => {
-  if (input.result.requirementInspection.status !== 'available') {
+  const inspection = input.result.requirementInspection;
+  if (inspection.status !== 'available') {
     return undefined;
   }
-  const suggestions = input.result.requirementInspection.categorySuggestions.slice(0, 3);
+  const suggestions = inspection.categorySuggestions.slice(0, 3);
   if (suggestions.length === 0) return undefined;
   const fingerprint = createHash('sha256')
     .update(`${input.conversationId}:${input.result.proposalId}:${suggestions.map(item => item.categoryId).join(',')}`)
@@ -249,7 +250,7 @@ const mercadoLivreCategoryTurnContext = (input: {
         proposalId: input.result.proposalId,
         categoryId: suggestion.categoryId,
         categoryName: suggestion.categoryName,
-        providerAuthority: input.result.requirementInspection.authority,
+        providerAuthority: inspection.authority,
       },
       authorization: 'intent_only' as const,
       primary: index === 0,
