@@ -116,6 +116,67 @@ const mercadoLivreConditionContext = (): KyrubiaTurnContext => ({
   ],
 });
 
+const mercadoLivreListingTypeContext = (): KyrubiaTurnContext => ({
+  version: 1,
+  id: 'turn-listing-type-1',
+  source: 'kyrub_runtime',
+  sourceAction: 'mercado_livre_requirement_options',
+  generatedAt: '2026-09-05T01:00:00.000Z',
+  scope: { kind: 'own_store', storeId: 'owner-1' },
+  entities: [{
+    entityType: 'product',
+    entityId: 'product-1',
+    label: 'Violão usado',
+    position: 1,
+  }],
+  selectedIntent: {
+    id: 'condition-used',
+    intent: 'mercado_livre.condition_select',
+    label: 'Usado',
+    payload: {
+      proposalId: 'proposal-1',
+      categoryId: 'MLB123',
+      categoryName: 'Violões',
+      condition: 'used',
+      providerAuthority: 'provider_api_requirement_options',
+    },
+    authorization: 'intent_only',
+  },
+  offeredIntents: [
+    {
+      id: 'listing-gold-special',
+      intent: 'mercado_livre.listing_type_select',
+      label: 'Clássico',
+      payload: {
+        proposalId: 'proposal-1',
+        categoryId: 'MLB123',
+        categoryName: 'Violões',
+        condition: 'used',
+        listingTypeId: 'gold_special',
+        listingTypeName: 'Clássico',
+        providerAuthority: 'provider_api_requirement_options',
+      },
+      authorization: 'intent_only',
+      primary: true,
+    },
+    {
+      id: 'listing-gold-pro',
+      intent: 'mercado_livre.listing_type_select',
+      label: 'Premium',
+      payload: {
+        proposalId: 'proposal-1',
+        categoryId: 'MLB123',
+        categoryName: 'Violões',
+        condition: 'used',
+        listingTypeId: 'gold_pro',
+        listingTypeName: 'Premium',
+        providerAuthority: 'provider_api_requirement_options',
+      },
+      authorization: 'intent_only',
+    },
+  ],
+});
+
 test('BYO-AI loop consumes the shared Kyrubia tool authority instead of duplicating ERP semantics', () => {
   assert.match(loop, /executeKyrubiaSharedReadTool/);
   assert.match(loop, /isKyrubiaErpReadTool/);
@@ -314,10 +375,58 @@ test('condition selection refetches provider options and fails closed if the con
   assert.match(chatService, /attribute\.required \|\| \(intent\.payload\.condition === 'new' && attribute\.newRequired\)/);
 });
 
-test('condition choice does not auto-select listing type, configure proposal, authorize, or publish', () => {
-  assert.match(chatService, /A condição ficou registrada apenas como intenção conversacional/);
-  assert.match(chatService, /ainda não escolheu tipo de anúncio nem valores de atributos/);
+test('condition choice offers listing type intents but does not auto-select or persist one', () => {
+  assert.match(sharedContext, /mercado_livre\.listing_type_select/);
+  assert.match(chatService, /withListingTypeChoices/);
+  assert.match(chatService, /intent: 'mercado_livre\.listing_type_select'/);
+  assert.match(chatService, /listingTypeId: listingType\.id/);
+  assert.match(chatService, /listingTypeName: listingType\.name/);
+  assert.match(chatService, /condition: intent\.payload\.condition/);
+  assert.match(chatService, /authorization: 'intent_only'/);
+  assert.match(chatService, /Escolha agora o tipo de anúncio correto/);
   assert.doesNotMatch(chatService, /options\.listingTypes\[0\]/);
+  assert.doesNotMatch(chatService, /configureMercadoLivreOutboundRequirements/);
+});
+
+test('listing type chip or ordinal selection stays intent-only and carries proposal/category/condition tuple', () => {
+  const context = mercadoLivreListingTypeContext();
+  const selected = resolveKyrubiaOfferedIntentSelection({
+    selectedOfferedIntentId: 'listing-gold-pro',
+    message: 'Premium',
+    context,
+  });
+  assert.equal(selected?.resolution, 'structured_id');
+  assert.equal(selected?.offeredIntent.intent, 'mercado_livre.listing_type_select');
+  assert.equal(selected?.authorization, 'intent_only');
+  if (selected?.offeredIntent.intent === 'mercado_livre.listing_type_select') {
+    assert.equal(selected.offeredIntent.payload.proposalId, 'proposal-1');
+    assert.equal(selected.offeredIntent.payload.categoryId, 'MLB123');
+    assert.equal(selected.offeredIntent.payload.condition, 'used');
+    assert.equal(selected.offeredIntent.payload.listingTypeId, 'gold_pro');
+    assert.equal(selected.offeredIntent.payload.listingTypeName, 'Premium');
+    assert.equal(selected.offeredIntent.payload.providerAuthority, 'provider_api_requirement_options');
+  }
+
+  assert.equal(
+    resolveKyrubiaOfferedIntentSelection({ message: 'a primeira', context })?.offeredIntent.id,
+    'listing-gold-special'
+  );
+});
+
+test('listing type selection refetches provider options and fails closed on condition or listing type drift', () => {
+  assert.match(chatService, /selected\.intent === 'mercado_livre\.listing_type_select'/);
+  assert.match(chatService, /!options\.conditions\.includes\(selected\.payload\.condition\)/);
+  assert.match(chatService, /listingType\.id === selected\.payload\.listingTypeId/);
+  assert.match(chatService, /MERCADO_LIVRE_OUTBOUND_LISTING_TYPE_NOT_AVAILABLE/);
+  assert.match(chatService, /currentListingType\.name !== selected\.payload\.listingTypeName/);
+  assert.match(chatService, /MERCADO_LIVRE_OUTBOUND_LISTING_TYPE_MISMATCH/);
+  assert.match(chatService, /categoria, condição e tipo de anúncio definidos/);
+});
+
+test('listing type choice still does not configure proposal, authorize, or publish', () => {
+  assert.match(chatService, /continuam sendo apenas intenção conversacional vinculada ao mesmo rascunho/);
+  assert.match(chatService, /ainda não gravou categoria, condição, tipo de anúncio ou valores de atributos no draft/);
+  assert.match(chatService, /O próximo passo seguro é coletar somente os atributos/);
   assert.doesNotMatch(chatService, /configureMercadoLivreOutboundRequirements/);
   assert.doesNotMatch(chatService, /authorizeMercadoLivre|executeMercadoLivre|mercadoLivrePostJson|mercadoLivrePutJson/);
 });
@@ -328,7 +437,7 @@ test('category option drift fails closed and never turns conversational intent i
   assert.match(chatService, /Nenhum requisito foi configurado e nada foi publicado/);
 });
 
-test('category and condition selection are deterministic Kyrub context and perform no provider write', () => {
+test('category, condition and listing type selections are deterministic Kyrub context and perform no provider write', () => {
   assert.match(chatService, /resolveKyrubiaOfferedIntentSelection/);
   assert.match(chatService, /selectKyrubiaOfferedIntentContext/);
   assert.match(chatService, /status: 'deterministic'/);
