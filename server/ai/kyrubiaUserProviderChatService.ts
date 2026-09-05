@@ -13,6 +13,10 @@ import type {
   KyrubErpProductSummary,
   KyrubErpStoreSummary,
 } from '../../shared/kyrubErpContext.js';
+import {
+  inspectMercadoLivreRequirementCategoryOptions,
+  type MercadoLivreRequirementCategoryOptions,
+} from '../integrations/mercadoLivreRequirementOptionsService.js';
 import { authenticateConsultantRequest } from './consultantAuth.js';
 import { ConsultantHttpError } from './types.js';
 import { buildKyrubiaSystemInstruction } from './kyrubiaSystemInstruction.js';
@@ -310,10 +314,52 @@ const normalizeMercadoLivreTurnContext = (
   };
 };
 
-const mercadoLivreCategorySelectionReply = (
-  intent: KyrubiaMercadoLivreCategoryOfferedIntent
-): string =>
-  `Entendi: você escolheu “${intent.payload.categoryName}” para este rascunho do Mercado Livre. Essa escolha ficou registrada apenas como intenção conversacional vinculada ao rascunho ${intent.payload.proposalId}. Nenhum requisito foi configurado e nada foi publicado. Antes de continuar, o Kyrub ainda precisa revalidar essa categoria contra a inspeção oficial do Mercado Livre.`;
+const compactNames = (
+  values: Array<{ id: string; name: string }>,
+  maximum = 8
+): string => {
+  if (values.length === 0) return 'nenhum';
+  const shown = values.slice(0, maximum).map(value => `${value.name} (${value.id})`);
+  const remaining = values.length - shown.length;
+  return `${shown.join(', ')}${remaining > 0 ? ` e mais ${remaining}` : ''}`;
+};
+
+const compactAttributeNames = (
+  values: MercadoLivreRequirementCategoryOptions['attributes']
+): string => compactNames(values.map(value => ({ id: value.id, name: value.name })), 10);
+
+const mercadoLivreCategoryOptionsReply = (
+  intent: KyrubiaMercadoLivreCategoryOfferedIntent,
+  options: MercadoLivreRequirementCategoryOptions
+): string => {
+  const alwaysRequired = options.attributes.filter(attribute => attribute.required);
+  const newRequired = options.attributes.filter(attribute => attribute.newRequired);
+  const conditionalRequired = options.attributes.filter(attribute => attribute.conditionalRequired);
+  const conditions = options.conditions.length ? options.conditions.join(', ') : 'nenhuma informada';
+  const currencies = options.currencies.length ? options.currencies.join(', ') : 'não informada';
+  return [
+    `Confirmei novamente no Mercado Livre a categoria “${options.category.name}” para este rascunho.`,
+    `Condições aceitas: ${conditions}.`,
+    `Tipos de anúncio disponíveis: ${compactNames(options.listingTypes)}.`,
+    `Moeda(s) aceita(s): ${currencies}.`,
+    `Atributos obrigatórios em qualquer condição: ${compactAttributeNames(alwaysRequired)}.`,
+    `Atributos que passam a ser obrigatórios quando a condição é novo: ${compactAttributeNames(newRequired)}.`,
+    `Atributos com exigência condicional: ${compactAttributeNames(conditionalRequired)}.`,
+    `A escolha “${intent.payload.categoryName}” continua sendo somente intenção conversacional. O Kyrub ainda não escolheu condição, tipo de anúncio ou valores de atributos por você.`,
+    'Nenhum requisito foi gravado no rascunho, nenhuma autorização de publicação foi criada e nada foi publicado no Mercado Livre.',
+  ].join(' ');
+};
+
+const mercadoLivreCategoryOptionsUnavailableReply = (
+  intent: KyrubiaMercadoLivreCategoryOfferedIntent,
+  error: unknown
+): string => {
+  const code = error instanceof Error ? error.message.split(':')[0] : 'MERCADO_LIVRE_REQUIREMENT_OPTIONS_UNAVAILABLE';
+  const stale = /STALE|MISMATCH|NOT_PREDICTED|SITE_CHANGED|NOT_LISTABLE/.test(code);
+  return stale
+    ? `Não consegui confirmar “${intent.payload.categoryName}” como uma opção ainda válida para este rascunho. A evidência ou o estado atual do Mercado Livre mudou, então o Kyrub bloqueou a continuidade. Nenhum requisito foi configurado e nada foi publicado.`
+    : `A categoria “${intent.payload.categoryName}” foi escolhida, mas não consegui revalidar agora as opções oficiais do Mercado Livre. O Kyrub não avançou com base em memória ou suposição. Nenhum requisito foi configurado e nada foi publicado.`;
+};
 
 export const executeAuthorizedKyrubiaUserProviderChat = async (
   authorization: string,
@@ -340,19 +386,33 @@ export const executeAuthorizedKyrubiaUserProviderChat = async (
     offeredIntentSelection?.offeredIntent.intent === 'mercado_livre.category_select'
   ) {
     const selectedIntent = offeredIntentSelection.offeredIntent;
+    const selectedTurnContext = selectKyrubiaOfferedIntentContext(
+      previousTurnContext,
+      offeredIntentSelection
+    );
+    let reply: string;
+    try {
+      const options = await inspectMercadoLivreRequirementCategoryOptions({
+        storeId: user.uid,
+        proposalId: selectedIntent.payload.proposalId,
+        categoryId: selectedIntent.payload.categoryId,
+        categoryName: selectedIntent.payload.categoryName,
+        requestedByUserId: user.uid,
+      });
+      reply = mercadoLivreCategoryOptionsReply(selectedIntent, options);
+    } catch (error) {
+      reply = mercadoLivreCategoryOptionsUnavailableReply(selectedIntent, error);
+    }
     return {
       httpStatus: 200,
       body: {
         status: 'deterministic',
-        reply: mercadoLivreCategorySelectionReply(selectedIntent),
+        reply,
         provider: 'kyrub',
         model: 'kyrub-runtime-v1',
         mode: 'deterministic',
         requestId,
-        turnContext: selectKyrubiaOfferedIntentContext(
-          previousTurnContext,
-          offeredIntentSelection
-        ),
+        turnContext: selectedTurnContext,
         capabilities: byoCapabilities,
         funding: 'none',
         usage: {},
