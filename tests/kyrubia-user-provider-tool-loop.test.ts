@@ -112,7 +112,7 @@ test('Mercado Livre preparation returns up to three exact category chips bound t
   assert.match(loop, /intent: 'mercado_livre\.category_select'/);
   assert.match(loop, /proposalId: input\.result\.proposalId/);
   assert.match(loop, /categoryId: suggestion\.categoryId/);
-  assert.match(loop, /providerAuthority: input\.result\.requirementInspection\.authority/);
+  assert.match(loop, /providerAuthority: inspection\.authority/);
   assert.match(loop, /authorization: 'intent_only'/);
   assert.match(loop, /categorySuggestions\.slice\(0, 3\)/);
 });
