@@ -68,7 +68,7 @@ const authorizationUnavailableReply = (error: unknown): string => {
   return [
     `O comando “Autorizar publicação” foi reconhecido, mas o gate autoritativo bloqueou a autorização (${code}).`,
     'A autorização só nasce se a validação 204 da Cairubia, o payload, a capability e o produto canônico ainda forem exatamente os mesmos no servidor.',
-    'Nenhum token utilizável foi criado para este comando e nenhum anúncio foi publicado ou alterado no Mercado Livre.',
+    'Nenhuma autorização utilizável foi criada para este comando e nenhum anúncio foi publicado ou alterado no Mercado Livre.',
   ].join(' ');
 };
 
@@ -95,24 +95,13 @@ export const handleKyrubiaMercadoLivreListingValidationCommand = async (input: {
       });
       return {
         handled: true,
-        turnContext: {
-          ...turnContext,
-          mercadoLivrePublicationAuthorization: {
-            proposalId: authorization.proposalId,
-            authorizationId: authorization.authorizationId,
-            authorizationToken: authorization.authorizationToken,
-            expiresAtMillis: authorization.expiresAtMillis,
-            authority: authorization.authority,
-            authorizationSource: authorization.authorizationSource,
-            transport: 'server_issued_one_time_capability',
-          },
-        },
+        turnContext,
         reply: [
           'A autorização explícita do proprietário foi registrada.',
-          'O proposal agora está executionStatus=authorized e recebeu uma capability one-time com validade de 15 minutos.',
-          'O segredo dessa capability não é exibido na conversa e o Firestore guarda somente o hash do token.',
+          `O proposal agora está executionStatus=authorized e a autorização ${authorization.authorizationId} ficou disponível por até 15 minutos.`,
+          'O segredo interno dessa autorização não é enviado ao navegador; o Firestore guarda somente o hash e a Cairubia continuará apenas com o proposalId como localizador conversacional.',
           'Autorizar ainda não publica: nenhum POST /items foi executado e nenhum anúncio foi criado ou alterado no Mercado Livre.',
-          'Se quiser atravessar a última fronteira e executar a publicação real, diga exatamente “Publicar agora”. Esse comando consumirá a autorização uma única vez.',
+          'Se quiser atravessar a última fronteira e executar a publicação real, diga exatamente “Publicar agora”. Esse comando reabrirá a autorização no servidor e a consumirá uma única vez.',
         ].join(' '),
       };
     } catch (error) {
@@ -143,7 +132,7 @@ export const handleKyrubiaMercadoLivreListingValidationCommand = async (input: {
         reply: [
           `O Mercado Livre respondeu ${validation.providerStatus} ao /items/validate: o payload persistido foi aceito no gate de validação.`,
           'Registrei a evidência como ready_for_owner_authorization com autoridade provider_items_validate.',
-          'Isso não é autorização de publicação: executionStatus continua not_authorized, nenhum token de publicação foi criado e nenhum item foi publicado.',
+          'Isso não é autorização de publicação: executionStatus continua not_authorized, nenhuma autorização de execução foi criada e nenhum item foi publicado.',
           'Se você realmente quiser criar a autorização one-time para este payload já validado, diga exatamente “Autorizar publicação”. Esse comando ainda não publica o item.',
         ].join(' '),
       };
