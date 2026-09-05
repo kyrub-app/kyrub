@@ -14,7 +14,7 @@ export type KyrubiaOperationalScope = {
   storeId: string | null;
 };
 
-export type KyrubiaOfferedIntentKind =
+export type KyrubiaPlanOfferedIntentKind =
   | 'plan.explain'
   | 'plan.price'
   | 'plan.credits'
@@ -22,13 +22,16 @@ export type KyrubiaOfferedIntentKind =
   | 'plan.billing'
   | 'plan.continue_free';
 
-export type KyrubiaOfferedIntent = {
+export type KyrubiaMercadoLivreOfferedIntentKind =
+  'mercado_livre.category_select';
+
+export type KyrubiaOfferedIntentKind =
+  | KyrubiaPlanOfferedIntentKind
+  | KyrubiaMercadoLivreOfferedIntentKind;
+
+type KyrubiaOfferedIntentBase = {
   id: string;
-  intent: KyrubiaOfferedIntentKind;
   label: string;
-  payload?: {
-    planId?: 'free' | 'pro' | 'business';
-  };
   /**
    * A suggested option expresses conversational intent only. It never grants
    * authority to mutate data, bypass policy, or satisfy a confirmation gate.
@@ -37,6 +40,28 @@ export type KyrubiaOfferedIntent = {
   primary?: boolean;
 };
 
+export type KyrubiaPlanOfferedIntent = KyrubiaOfferedIntentBase & {
+  intent: KyrubiaPlanOfferedIntentKind;
+  payload?: {
+    planId?: 'free' | 'pro' | 'business';
+  };
+};
+
+export type KyrubiaMercadoLivreCategoryOfferedIntent =
+  KyrubiaOfferedIntentBase & {
+    intent: 'mercado_livre.category_select';
+    payload: {
+      proposalId: string;
+      categoryId: string;
+      categoryName: string;
+      providerAuthority: 'provider_api_refetch';
+    };
+  };
+
+export type KyrubiaOfferedIntent =
+  | KyrubiaPlanOfferedIntent
+  | KyrubiaMercadoLivreCategoryOfferedIntent;
+
 export type KyrubiaTurnContext = {
   version: 1;
   id: string;
@@ -44,11 +69,17 @@ export type KyrubiaTurnContext = {
   sourceAction:
     | KyrubReadActionType
     | 'plan_conversation'
-    | 'operational_workflow';
+    | 'operational_workflow'
+    | 'mercado_livre_publication_preparation';
   generatedAt: string;
   scope: KyrubiaOperationalScope;
   entities: KyrubiaEntityReference[];
   offeredIntents?: KyrubiaOfferedIntent[];
+  /**
+   * A selected intent is still conversational context only. Any later
+   * operation must revalidate provider evidence, current state and authority.
+   */
+  selectedIntent?: KyrubiaOfferedIntent;
 };
 
 export type KyrubiaTurnSelection = {
@@ -57,6 +88,13 @@ export type KyrubiaTurnSelection = {
   entityIds: string[];
   labels: string[];
   resolution: 'all' | 'first_n' | 'position';
+};
+
+export type KyrubiaOfferedIntentSelection = {
+  sourceTurnId: string;
+  offeredIntent: KyrubiaOfferedIntent;
+  resolution: 'structured_id' | 'position';
+  authorization: 'intent_only';
 };
 
 export type KyrubiaContextualRecallResult = {
@@ -168,6 +206,66 @@ export const resolveKyrubiaTurnSelection = (
 
   return null;
 };
+
+const offeredIntentPosition = (message: string): number | null => {
+  const intent = normalize(message);
+  const exactNumeric = /^(?:opcao\s+)?([1-3])$/.exec(intent);
+  if (exactNumeric) return Number(exactNumeric[1]);
+  for (const [word, position] of Object.entries(ordinalWords)) {
+    if (position > 3) continue;
+    if (
+      intent === word ||
+      intent === `a ${word}` ||
+      intent === `o ${word}` ||
+      intent === `opcao ${word}`
+    ) return position;
+  }
+  return null;
+};
+
+export const resolveKyrubiaOfferedIntentSelection = (input: {
+  selectedOfferedIntentId?: string;
+  message: string;
+  context?: KyrubiaTurnContext;
+}): KyrubiaOfferedIntentSelection | null => {
+  const offered = input.context?.offeredIntents?.slice(0, 3) ?? [];
+  if (!input.context || offered.length === 0) return null;
+
+  const selectedId = input.selectedOfferedIntentId?.trim();
+  if (selectedId) {
+    const match = offered.find(intent => intent.id === selectedId);
+    return match
+      ? {
+          sourceTurnId: input.context.id,
+          offeredIntent: match,
+          resolution: 'structured_id',
+          authorization: 'intent_only',
+        }
+      : null;
+  }
+
+  const position = offeredIntentPosition(input.message);
+  const match = position ? offered[position - 1] : undefined;
+  return match
+    ? {
+        sourceTurnId: input.context.id,
+        offeredIntent: match,
+        resolution: 'position',
+        authorization: 'intent_only',
+      }
+    : null;
+};
+
+export const selectKyrubiaOfferedIntentContext = (
+  context: KyrubiaTurnContext,
+  selection: KyrubiaOfferedIntentSelection
+): KyrubiaTurnContext => ({
+  ...context,
+  id: createTurnId(),
+  generatedAt: new Date().toISOString(),
+  offeredIntents: undefined,
+  selectedIntent: selection.offeredIntent,
+});
 
 const MUTATION_OR_COMMAND_PATTERN =
   /\b(aplique|aplicar|altere|alterar|atualize|atualizar|mude|mudar|desconto|descontar|preco|precos|estoque|exclua|excluir|delete|deletar|remova|remover|crie|criar|salve|salvar|adicione|adicionar|registre|registrar|compre|comprar|venda|vender|envie|enviar|publique|publicar)\b/;
