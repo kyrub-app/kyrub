@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { KyrubiaTurnContext } from '../../shared/kyrubiaContext.js';
 import { validateKyrubiaMercadoLivreDraftListing } from '../integrations/mercadoLivreKyrubiaListingValidationService.js';
 import { authorizeKyrubiaMercadoLivrePublication } from '../integrations/mercadoLivreKyrubiaPublicationAuthorizationService.js';
+import { handleKyrubiaMercadoLivrePublicationExecutionCommand } from './kyrubiaMercadoLivrePublicationExecutionCommand.js';
 
 export type KyrubiaMercadoLivreListingValidationCommandResult =
   | { handled: false }
@@ -77,6 +78,10 @@ export const handleKyrubiaMercadoLivreListingValidationCommand = async (input: {
   context?: KyrubiaTurnContext;
 }): Promise<KyrubiaMercadoLivreListingValidationCommandResult> => {
   if (!input.context) return { handled: false };
+
+  const executionCommand = await handleKyrubiaMercadoLivrePublicationExecutionCommand(input);
+  if (executionCommand.handled) return executionCommand;
+
   const proposalId = proposalIdFromPreparationContext(input.context);
   if (!proposalId) return { handled: false };
 
