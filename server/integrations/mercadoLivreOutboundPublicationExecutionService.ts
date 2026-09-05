@@ -30,6 +30,8 @@ interface AuthorizationRecord {
   useCount: number;
   expiresAtMillis: number;
   authority: 'store_owner_publication_authorization';
+  authorizationSource?: 'kyrubia_explicit_owner_command';
+  listingValidationSource?: 'kyrubia_revalidated_draft';
 }
 
 interface ProposalRecord {
@@ -46,6 +48,7 @@ interface ProposalRecord {
   providerCapability: unknown;
   executionStatus: 'authorized' | 'executing' | 'published' | 'reconciliation_required' | 'provider_rejected';
   publicationAuthorizationId: string;
+  publicationAuthorizationSource?: 'kyrubia_explicit_owner_command';
 }
 
 interface MercadoLivreCreatedItem {
@@ -196,11 +199,15 @@ export const executeAuthorizedMercadoLivrePublication = async (input: {
   authorizationId: string;
   authorizationToken: string;
   executedByUserId: string;
+  expectedAuthorizationSource?: 'kyrubia_explicit_owner_command';
+  expectedValidationSource?: 'kyrubia_revalidated_draft';
 }): Promise<MercadoLivrePublicationExecutionResult> => {
   const storeId = input.storeId.trim();
   const authorizationId = input.authorizationId.trim();
   const authorizationToken = input.authorizationToken.trim();
   const executedByUserId = input.executedByUserId.trim();
+  const expectedAuthorizationSource = input.expectedAuthorizationSource;
+  const expectedValidationSource = input.expectedValidationSource;
   if (!storeId || !authorizationId || !authorizationToken || executedByUserId !== storeId) {
     throw new Error('MERCADO_LIVRE_PUBLICATION_EXECUTION_TARGET_INVALID');
   }
@@ -209,6 +216,12 @@ export const executeAuthorizedMercadoLivrePublication = async (input: {
   const authorizationDoc = await authorizationRef.get();
   if (!authorizationDoc.exists) throw new Error('MERCADO_LIVRE_PUBLICATION_AUTHORIZATION_NOT_FOUND');
   const authorization = assertAuthorization(storeId, authorizationId, authorizationDoc.data());
+  if (
+    (expectedAuthorizationSource && authorization.authorizationSource !== expectedAuthorizationSource) ||
+    (expectedValidationSource && authorization.listingValidationSource !== expectedValidationSource)
+  ) {
+    throw new Error('MERCADO_LIVRE_PUBLICATION_EXECUTION_PROVENANCE_MISMATCH');
+  }
   if (!safeHashEquals(authorization.tokenHash, sha256(authorizationToken))) {
     throw new Error('MERCADO_LIVRE_PUBLICATION_AUTHORIZATION_TOKEN_INVALID');
   }
@@ -248,6 +261,12 @@ export const executeAuthorizedMercadoLivrePublication = async (input: {
     const validation = validationDoc.data() as Record<string, unknown> | undefined;
     const currentCanonicalHash = canonicalHash(canonicalDoc.data());
     if (
+      (expectedAuthorizationSource &&
+        (currentAuthorization.authorizationSource !== expectedAuthorizationSource ||
+          proposal.publicationAuthorizationSource !== expectedAuthorizationSource)) ||
+      (expectedValidationSource &&
+        (currentAuthorization.listingValidationSource !== expectedValidationSource ||
+          validation?.validationSource !== expectedValidationSource)) ||
       currentAuthorization.consumptionStatus !== 'available' || currentAuthorization.useCount !== 0 ||
       currentAuthorization.expiresAtMillis <= Date.now() || executionDoc.exists ||
       currentAuthorization.providerCapabilityFingerprint !== authorization.providerCapabilityFingerprint ||
