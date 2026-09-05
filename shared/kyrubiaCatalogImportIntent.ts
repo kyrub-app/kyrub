@@ -13,19 +13,30 @@ const normalize = (value: string): string =>
     .trim();
 
 const IMPORT_VERB = /\b(cadastre|cadastrar|cadastro|adicione|adicionar|inclua|incluir|importe|importar|crie|criar|recadastre|recadastrar)\b/;
-const PRODUCT_SIGNAL = /\b(produto|produtos|item|itens|cardapio|catalogo|menu|lista|vitrine)\b/;
-const CONTEXT_SIGNAL = /\b(esse|esses|essa|essas|deste|destes|dessa|dessas|imagem|img|foto|anexo|anexado|anexada|anexados|anexadas|arquivo|print|screenshot|captura|analise|lista|cardapio|catalogo|menu)\b/;
+const BULK_PRODUCT_SIGNAL = /\b(produtos|itens|cardapio|catalogo|menu|lista)\b/;
+const SINGLE_PRODUCT_REFERENCE =
+  /\b(?:um|1)\s+(?:unico|so)\s+produto\b|\b(?:mesmo|unico)\s+produto\b|\bproduto\s+chamad[oa]\b/;
+const CONTEXT_SIGNAL = /\b(esse|esses|essa|essas|deste|destes|dessa|dessas|imagem|imagens|img|foto|fotos|anexo|anexado|anexada|anexados|anexadas|arquivo|print|screenshot|captura|analise|lista|cardapio|catalogo|menu)\b/;
 const EXPLICIT_OTHER_ARTIFACT = /\b(?:nota|notas|tarefa|tarefas|lembrete|lembretes|checklist)\b/;
 
 export const isKyrubiaCatalogImportText = (message: string): boolean => {
   const intent = normalize(message);
-  return Boolean(
-    intent &&
-    !EXPLICIT_OTHER_ARTIFACT.test(intent) &&
-    IMPORT_VERB.test(intent) &&
-    PRODUCT_SIGNAL.test(intent) &&
-    CONTEXT_SIGNAL.test(intent)
-  );
+  if (
+    !intent ||
+    EXPLICIT_OTHER_ARTIFACT.test(intent) ||
+    !IMPORT_VERB.test(intent) ||
+    !CONTEXT_SIGNAL.test(intent)
+  ) {
+    return false;
+  }
+
+  // Imagens podem ser apenas referências visuais do mesmo produto. Esse caso
+  // pertence ao fluxo normal de criação de produto e não ao importador em lote
+  // de catálogo/cardápio. A ressalva vem antes do plural porque a própria
+  // frase pode negar múltiplos produtos ("não são três produtos").
+  if (SINGLE_PRODUCT_REFERENCE.test(intent)) return false;
+
+  return BULK_PRODUCT_SIGNAL.test(intent);
 };
 
 export const isKyrubCatalogAnalysisItemReadyForImport = (
