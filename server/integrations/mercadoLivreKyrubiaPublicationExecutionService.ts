@@ -20,6 +20,31 @@ const executionIdFor = (storeId: string, authorizationId: string): string =>
 const errorCode = (error: unknown): string =>
   error instanceof Error ? error.message.split(':')[0] : 'MERCADO_LIVRE_PUBLICATION_EXECUTION_FAILED';
 
+const proposalAuthorizationId = (input: {
+  storeId: string;
+  proposalId: string;
+  proposal: unknown;
+}): string => {
+  const proposal = input.proposal && typeof input.proposal === 'object' && !Array.isArray(input.proposal)
+    ? input.proposal as Record<string, unknown>
+    : {};
+  const authorizationId = clean(proposal.publicationAuthorizationId, 180);
+  if (
+    proposal.schemaVersion !== 2 ||
+    clean(proposal.id, 180) !== input.proposalId ||
+    clean(proposal.storeId, 160) !== input.storeId ||
+    proposal.provider !== 'mercado_livre' ||
+    proposal.executionStatus !== 'authorized' ||
+    proposal.publicationAuthorizationAuthority !== 'store_owner_publication_authorization' ||
+    proposal.publicationAuthorizationSource !== 'kyrubia_explicit_owner_command' ||
+    clean(proposal.publicationAuthorizedByUserId, 160) !== input.storeId ||
+    !/^mlpub_[a-f0-9]{32}$/i.test(authorizationId)
+  ) {
+    throw new Error('MERCADO_LIVRE_KYRUBIA_PUBLICATION_EXECUTION_PROPOSAL_INVALID');
+  }
+  return authorizationId;
+};
+
 const assertKyrubiaExecutionEvidence = (input: {
   storeId: string;
   proposalId: string;
@@ -67,7 +92,8 @@ const assertKyrubiaExecutionEvidence = (input: {
     proposal.executionStatus !== 'authorized' ||
     clean(proposal.publicationAuthorizationId, 180) !== input.authorizationId ||
     proposal.publicationAuthorizationAuthority !== 'store_owner_publication_authorization' ||
-    proposal.publicationAuthorizationSource !== 'kyrubia_explicit_owner_command'
+    proposal.publicationAuthorizationSource !== 'kyrubia_explicit_owner_command' ||
+    clean(proposal.publicationAuthorizedByUserId, 160) !== input.storeId
   ) {
     throw new Error('MERCADO_LIVRE_KYRUBIA_PUBLICATION_EXECUTION_PROPOSAL_INVALID');
   }
@@ -90,6 +116,67 @@ const assertKyrubiaExecutionEvidence = (input: {
   ) {
     throw new Error('MERCADO_LIVRE_KYRUBIA_PUBLICATION_EXECUTION_VALIDATION_INVALID');
   }
+};
+
+const resetExpiredAuthorizationForRevalidation = async (input: {
+  storeId: string;
+  proposalId: string;
+  authorizationId: string;
+}): Promise<boolean> => {
+  const authorizationRef = adminDb.doc(
+    `stores/${input.storeId}/catalogOutboundPublicationAuthorizations/${input.authorizationId}`
+  );
+  const proposalRef = adminDb.doc(
+    `stores/${input.storeId}/catalogOutboundPublicationProposals/${input.proposalId}`
+  );
+  const executionId = executionIdFor(input.storeId, input.authorizationId);
+  const executionRef = adminDb.doc(
+    `stores/${input.storeId}/catalogOutboundPublicationExecutions/${executionId}`
+  );
+
+  return adminDb.runTransaction(async transaction => {
+    const [authorizationDoc, proposalDoc, executionDoc] = await Promise.all([
+      transaction.get(authorizationRef),
+      transaction.get(proposalRef),
+      transaction.get(executionRef),
+    ]);
+    if (!authorizationDoc.exists || !proposalDoc.exists || executionDoc.exists) return false;
+    const authorization = authorizationDoc.data() as Record<string, unknown>;
+    const proposal = proposalDoc.data() as Record<string, unknown>;
+    if (
+      authorization.authorizationSource !== 'kyrubia_explicit_owner_command' ||
+      clean(authorization.proposalId, 180) !== input.proposalId ||
+      clean(authorization.storeId, 160) !== input.storeId ||
+      clean(authorization.authorizedByUserId, 160) !== input.storeId ||
+      authorization.consumptionStatus !== 'available' ||
+      Number(authorization.useCount) !== 0 ||
+      Number(authorization.expiresAtMillis) > Date.now() ||
+      proposal.executionStatus !== 'authorized' ||
+      clean(proposal.publicationAuthorizationId, 180) !== input.authorizationId ||
+      proposal.publicationAuthorizationSource !== 'kyrubia_explicit_owner_command'
+    ) return false;
+
+    const expiredAt = new Date().toISOString();
+    transaction.update(authorizationRef, {
+      consumptionStatus: 'expired',
+      expiredAt,
+      serverExpiredAt: FieldValue.serverTimestamp(),
+    });
+    transaction.update(proposalRef, {
+      executionStatus: 'not_authorized',
+      publicationReadiness: FieldValue.delete(),
+      publicationReadinessAuthority: FieldValue.delete(),
+      publicationValidationSource: FieldValue.delete(),
+      publicationValidatedAt: FieldValue.delete(),
+      publicationAuthorizationId: FieldValue.delete(),
+      publicationAuthorizationAuthority: FieldValue.delete(),
+      publicationAuthorizationSource: FieldValue.delete(),
+      publicationAuthorizedByUserId: FieldValue.delete(),
+      publicationAuthorizedAt: FieldValue.delete(),
+      serverPublicationAuthorizationExpiredAt: FieldValue.serverTimestamp(),
+    });
+    return true;
+  });
 };
 
 const markUnconfirmedReservedExecutionForReconciliation = async (input: {
@@ -155,27 +242,29 @@ const markUnconfirmedReservedExecutionForReconciliation = async (input: {
 export const executeKyrubiaMercadoLivrePublication = async (input: {
   storeId: string;
   proposalId: string;
-  authorizationId: string;
-  authorizationToken: string;
   executedByUserId: string;
 }): Promise<MercadoLivrePublicationExecutionResult> => {
   const storeId = clean(input.storeId, 160);
   const proposalId = clean(input.proposalId, 180);
-  const authorizationId = clean(input.authorizationId, 180);
-  const authorizationToken = clean(input.authorizationToken, 200);
   const executedByUserId = clean(input.executedByUserId, 160);
-  if (
-    !storeId || !proposalId || !authorizationId || !authorizationToken ||
-    executedByUserId !== storeId
-  ) {
+  if (!storeId || !proposalId || executedByUserId !== storeId) {
     throw new Error('MERCADO_LIVRE_KYRUBIA_PUBLICATION_EXECUTION_TARGET_INVALID');
   }
 
-  const authorizationRef = adminDb.doc(
-    `stores/${storeId}/catalogOutboundPublicationAuthorizations/${authorizationId}`
-  );
   const proposalRef = adminDb.doc(
     `stores/${storeId}/catalogOutboundPublicationProposals/${proposalId}`
+  );
+  const proposalSnapshot = await proposalRef.get();
+  if (!proposalSnapshot.exists) {
+    throw new Error('MERCADO_LIVRE_KYRUBIA_PUBLICATION_EXECUTION_PROPOSAL_INVALID');
+  }
+  const authorizationId = proposalAuthorizationId({
+    storeId,
+    proposalId,
+    proposal: proposalSnapshot.data(),
+  });
+  const authorizationRef = adminDb.doc(
+    `stores/${storeId}/catalogOutboundPublicationAuthorizations/${authorizationId}`
   );
   const validationRef = adminDb.doc(
     `stores/${storeId}/catalogOutboundListingValidations/${proposalId}`
@@ -205,13 +294,27 @@ export const executeKyrubiaMercadoLivrePublication = async (input: {
     return await executeAuthorizedMercadoLivrePublication({
       storeId,
       authorizationId,
-      authorizationToken,
       executedByUserId,
       expectedAuthorizationSource: 'kyrubia_explicit_owner_command',
       expectedValidationSource: 'kyrubia_revalidated_draft',
+      serverExecutionAuthority: 'kyrubia_explicit_publish_now_command',
+      expectedProposalId: proposalId,
     });
   } catch (error) {
     const originalErrorCode = errorCode(error);
+    if (originalErrorCode === 'MERCADO_LIVRE_PUBLICATION_AUTHORIZATION_EXPIRED') {
+      const reset = await resetExpiredAuthorizationForRevalidation({
+        storeId,
+        proposalId,
+        authorizationId,
+      });
+      if (reset) {
+        throw new Error(
+          'MERCADO_LIVRE_KYRUBIA_PUBLICATION_EXECUTION_AUTHORIZATION_EXPIRED_REVALIDATION_REQUIRED'
+        );
+      }
+    }
+
     const recoveryState = await markUnconfirmedReservedExecutionForReconciliation({
       storeId,
       proposalId,
