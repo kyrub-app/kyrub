@@ -5,6 +5,7 @@ import type {
   KyrubiaMercadoLivreCollectedAttribute,
   KyrubiaMercadoLivreConditionOfferedIntent,
   KyrubiaMercadoLivreListingTypeOfferedIntent,
+  KyrubiaMercadoLivrePublicationAuthorizationContinuation,
   KyrubiaMercadoLivreRequirementProgress,
   KyrubiaTurnContext,
 } from '../../shared/kyrubiaContext.js';
@@ -425,6 +426,35 @@ const normalizeRequirementProgress = (
   };
 };
 
+const normalizePublicationAuthorization = (
+  value: unknown,
+  expectedProposalId: string
+): KyrubiaMercadoLivrePublicationAuthorizationContinuation | undefined => {
+  const raw = record(value);
+  const proposalId = clean(raw.proposalId, 180);
+  const authorizationId = clean(raw.authorizationId, 180);
+  const authorizationToken = clean(raw.authorizationToken, 200);
+  const expiresAtMillis = Number(raw.expiresAtMillis);
+  if (
+    !expectedProposalId || proposalId !== expectedProposalId ||
+    !/^mlpub_[a-f0-9]{32}$/i.test(authorizationId) ||
+    !/^[A-Za-z0-9_-]{43}$/.test(authorizationToken) ||
+    !Number.isSafeInteger(expiresAtMillis) || expiresAtMillis <= 0 ||
+    raw.authority !== 'store_owner_publication_authorization' ||
+    raw.authorizationSource !== 'kyrubia_explicit_owner_command' ||
+    raw.transport !== 'server_issued_one_time_capability'
+  ) return undefined;
+  return {
+    proposalId,
+    authorizationId,
+    authorizationToken,
+    expiresAtMillis,
+    authority: 'store_owner_publication_authorization',
+    authorizationSource: 'kyrubia_explicit_owner_command',
+    transport: 'server_issued_one_time_capability',
+  };
+};
+
 const normalizeMercadoLivreTurnContext = (
   value: unknown,
   ownerUid: string
@@ -451,7 +481,16 @@ const normalizeMercadoLivreTurnContext = (
     : [];
   const selectedIntent = normalizeMercadoLivreIntent(raw.selectedIntent) ?? undefined;
   const mercadoLivreRequirementProgress = normalizeRequirementProgress(raw.mercadoLivreRequirementProgress);
-  if (offeredIntents.length === 0 && !selectedIntent && !mercadoLivreRequirementProgress) return undefined;
+  const selectedProposalId = selectedIntent?.intent === 'mercado_livre.listing_type_select'
+    ? selectedIntent.payload.proposalId
+    : '';
+  const mercadoLivrePublicationAuthorization = sourceAction === 'mercado_livre_publication_preparation'
+    ? normalizePublicationAuthorization(raw.mercadoLivrePublicationAuthorization, selectedProposalId)
+    : undefined;
+  if (
+    offeredIntents.length === 0 && !selectedIntent && !mercadoLivreRequirementProgress &&
+    !mercadoLivrePublicationAuthorization
+  ) return undefined;
   const entities = Array.isArray(raw.entities)
     ? raw.entities.slice(0, 3).flatMap(item => {
         const entity = record(item);
@@ -472,6 +511,7 @@ const normalizeMercadoLivreTurnContext = (
     ...(offeredIntents.length ? { offeredIntents } : {}),
     ...(selectedIntent ? { selectedIntent } : {}),
     ...(mercadoLivreRequirementProgress ? { mercadoLivreRequirementProgress } : {}),
+    ...(mercadoLivrePublicationAuthorization ? { mercadoLivrePublicationAuthorization } : {}),
   };
 };
 

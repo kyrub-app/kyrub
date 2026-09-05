@@ -18,18 +18,19 @@ test('Cairubia publication authorization requires the exact schema-v2 validation
   assert.match(source, /conditionalRequirementValidatedAt/);
 });
 
-test('authorization rechecks provider capability and canonical product before creating a one-time capability', async () => {
+test('authorization rechecks provider capability and canonical product before creating a one-time server capability', async () => {
   const source = await readFile(servicePath, 'utf8');
   assert.match(source, /assertCurrentMercadoLivrePublicationCapability/);
   assert.match(source, /canonicalMatchesProposal/);
-  assert.match(source, /randomBytes\(32\)/);
-  assert.match(source, /tokenHash = sha256\(authorizationToken\)/);
+  assert.match(source, /authorizationSecret = randomBytes\(32\)/);
+  assert.match(source, /tokenHash = sha256\(authorizationSecret\)/);
   assert.match(source, /Date\.now\(\) \+ 15 \* 60 \* 1000/);
   assert.match(source, /catalogOutboundPublicationAuthorizations/);
   assert.match(source, /consumptionStatus: 'available'/);
   assert.match(source, /useCount: 0/);
   assert.match(source, /authorizationSource: 'kyrubia_explicit_owner_command'/);
   assert.match(source, /executionStatus: 'authorized'/);
+  assert.doesNotMatch(source, /authorizationToken/);
 });
 
 test('authorization is atomic and never performs the Mercado Livre item write', async () => {
@@ -41,14 +42,15 @@ test('authorization is atomic and never performs the Mercado Livre item write', 
   assert.doesNotMatch(source, /['"]\/items['"]/);
 });
 
-test('Cairubia accepts only the explicit owner authorization phrase and keeps the secret out of the reply text', async () => {
+test('Cairubia accepts only the explicit owner authorization phrase and never transports the secret to turn context', async () => {
   const command = await readFile(commandPath, 'utf8');
   assert.match(command, /\^\(\?:autorizar\|autorize\)/);
   assert.match(command, /authorizeKyrubiaMercadoLivrePublication/);
-  assert.match(command, /mercadoLivrePublicationAuthorization/);
-  assert.match(command, /transport: 'server_issued_one_time_capability'/);
-  assert.match(command, /O segredo dessa capability não é exibido na conversa/);
-  assert.doesNotMatch(command, /reply:[\s\S]{0,1000}authorization\.authorizationToken/);
+  assert.match(command, /mercadoLivrePublicationAuthorization: undefined/);
+  assert.match(command, /segredo interno dessa autorização não é enviado ao navegador/);
+  assert.match(command, /proposalId como localizador conversacional/);
+  assert.doesNotMatch(command, /authorizationToken/);
+  assert.doesNotMatch(command, /transport: 'server_issued_one_time_capability'/);
   assert.doesNotMatch(command, /\b(?:sim|pode|ok)\b.*isExplicitPublicationAuthorizationCommand/i);
 });
 

@@ -30,6 +30,9 @@ interface AuthorizationRecord {
   useCount: number;
   expiresAtMillis: number;
   authority: 'store_owner_publication_authorization';
+  authorizationSource?: 'kyrubia_explicit_owner_command';
+  listingValidationSource?: 'kyrubia_revalidated_draft';
+  authorizedByUserId?: string;
 }
 
 interface ProposalRecord {
@@ -46,6 +49,8 @@ interface ProposalRecord {
   providerCapability: unknown;
   executionStatus: 'authorized' | 'executing' | 'published' | 'reconciliation_required' | 'provider_rejected';
   publicationAuthorizationId: string;
+  publicationAuthorizationSource?: 'kyrubia_explicit_owner_command';
+  publicationAuthorizedByUserId?: string;
 }
 
 interface MercadoLivreCreatedItem {
@@ -194,14 +199,27 @@ export interface MercadoLivrePublicationExecutionResult {
 export const executeAuthorizedMercadoLivrePublication = async (input: {
   storeId: string;
   authorizationId: string;
-  authorizationToken: string;
+  authorizationToken?: string;
   executedByUserId: string;
+  expectedAuthorizationSource?: 'kyrubia_explicit_owner_command';
+  expectedValidationSource?: 'kyrubia_revalidated_draft';
+  serverExecutionAuthority?: 'kyrubia_explicit_publish_now_command';
+  expectedProposalId?: string;
 }): Promise<MercadoLivrePublicationExecutionResult> => {
   const storeId = input.storeId.trim();
   const authorizationId = input.authorizationId.trim();
-  const authorizationToken = input.authorizationToken.trim();
+  const authorizationToken = input.authorizationToken?.trim() ?? '';
   const executedByUserId = input.executedByUserId.trim();
-  if (!storeId || !authorizationId || !authorizationToken || executedByUserId !== storeId) {
+  const expectedAuthorizationSource = input.expectedAuthorizationSource;
+  const expectedValidationSource = input.expectedValidationSource;
+  const serverExecutionAuthority = input.serverExecutionAuthority;
+  const expectedProposalId = input.expectedProposalId?.trim() ?? '';
+  const hasKyrubiaServerAuthority = serverExecutionAuthority === 'kyrubia_explicit_publish_now_command';
+  if (
+    !storeId || !authorizationId || executedByUserId !== storeId ||
+    (!authorizationToken && !hasKyrubiaServerAuthority) ||
+    (hasKyrubiaServerAuthority && !expectedProposalId)
+  ) {
     throw new Error('MERCADO_LIVRE_PUBLICATION_EXECUTION_TARGET_INVALID');
   }
 
@@ -209,7 +227,22 @@ export const executeAuthorizedMercadoLivrePublication = async (input: {
   const authorizationDoc = await authorizationRef.get();
   if (!authorizationDoc.exists) throw new Error('MERCADO_LIVRE_PUBLICATION_AUTHORIZATION_NOT_FOUND');
   const authorization = assertAuthorization(storeId, authorizationId, authorizationDoc.data());
-  if (!safeHashEquals(authorization.tokenHash, sha256(authorizationToken))) {
+  if (
+    (expectedAuthorizationSource && authorization.authorizationSource !== expectedAuthorizationSource) ||
+    (expectedValidationSource && authorization.listingValidationSource !== expectedValidationSource)
+  ) {
+    throw new Error('MERCADO_LIVRE_PUBLICATION_EXECUTION_PROVENANCE_MISMATCH');
+  }
+  if (hasKyrubiaServerAuthority) {
+    if (
+      authorization.proposalId !== expectedProposalId ||
+      authorization.authorizationSource !== 'kyrubia_explicit_owner_command' ||
+      authorization.listingValidationSource !== 'kyrubia_revalidated_draft' ||
+      clean(authorization.authorizedByUserId, 160) !== executedByUserId
+    ) {
+      throw new Error('MERCADO_LIVRE_PUBLICATION_EXECUTION_SERVER_AUTHORITY_INVALID');
+    }
+  } else if (!safeHashEquals(authorization.tokenHash, sha256(authorizationToken))) {
     throw new Error('MERCADO_LIVRE_PUBLICATION_AUTHORIZATION_TOKEN_INVALID');
   }
   if (authorization.expiresAtMillis <= Date.now()) throw new Error('MERCADO_LIVRE_PUBLICATION_AUTHORIZATION_EXPIRED');
@@ -248,6 +281,16 @@ export const executeAuthorizedMercadoLivrePublication = async (input: {
     const validation = validationDoc.data() as Record<string, unknown> | undefined;
     const currentCanonicalHash = canonicalHash(canonicalDoc.data());
     if (
+      (expectedAuthorizationSource &&
+        (currentAuthorization.authorizationSource !== expectedAuthorizationSource ||
+          proposal.publicationAuthorizationSource !== expectedAuthorizationSource)) ||
+      (expectedValidationSource &&
+        (currentAuthorization.listingValidationSource !== expectedValidationSource ||
+          validation?.validationSource !== expectedValidationSource)) ||
+      (hasKyrubiaServerAuthority &&
+        (currentAuthorization.proposalId !== expectedProposalId ||
+          clean(currentAuthorization.authorizedByUserId, 160) !== executedByUserId ||
+          clean(proposal.publicationAuthorizedByUserId, 160) !== executedByUserId)) ||
       currentAuthorization.consumptionStatus !== 'available' || currentAuthorization.useCount !== 0 ||
       currentAuthorization.expiresAtMillis <= Date.now() || executionDoc.exists ||
       currentAuthorization.providerCapabilityFingerprint !== authorization.providerCapabilityFingerprint ||
@@ -293,6 +336,7 @@ export const executeAuthorizedMercadoLivrePublication = async (input: {
       payloadHash: currentAuthorization.payloadHash,
       status: 'executing',
       authority: 'consumed_store_owner_publication_authorization',
+      ...(serverExecutionAuthority ? { executionSource: serverExecutionAuthority } : {}),
       executedByUserId,
       reservedAt,
       serverReservedAt: FieldValue.serverTimestamp(),
