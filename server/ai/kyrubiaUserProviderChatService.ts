@@ -619,7 +619,8 @@ const mercadoLivreListingTypeConfirmation = (
   options: MercadoLivreRequirementCategoryOptions
 ): string => [
   `Confirmei no Mercado Livre que o tipo de anúncio “${intent.payload.listingTypeName}” (${intent.payload.listingTypeId}) continua disponível para “${options.category.name}” com a condição “${conditionLabel(intent.payload.condition)}”.`,
-  'Com categoria, condição e tipo de anúncio definidos, o próximo passo seguro é coletar somente os atributos que o Mercado Livre realmente exige para este anúncio.',
+  'Com categoria, condição e tipo de anúncio definidos, sigo apenas para a coleta conversacional de requisitos.',
+  'O próximo passo seguro é coletar somente os atributos que o Mercado Livre realmente exige para este anúncio.',
   'Essas três escolhas continuam sendo apenas intenção conversacional vinculada ao mesmo rascunho. O Kyrub ainda não gravou categoria, condição, tipo de anúncio ou valores de atributos no draft.',
 ].join(' ');
 
