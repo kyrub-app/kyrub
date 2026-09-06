@@ -18,6 +18,7 @@ interface CanonicalProductRecord {
   stock: number;
   category: string;
   image: string;
+  images: string[];
   isService: boolean;
   publicationStatus: string;
 }
@@ -46,6 +47,7 @@ export interface MercadoLivreOutboundPublicationProposal {
     stock: number;
     category: string;
     image: string;
+    images: string[];
     publicationStatus: string;
   };
   adaptation: {
@@ -54,6 +56,7 @@ export interface MercadoLivreOutboundPublicationProposal {
     price: number;
     availableQuantity: number;
     pictureUrl?: string;
+    pictureUrls?: string[];
   };
   requirements: {
     ready: false;
@@ -77,6 +80,20 @@ const integerNonNegative = (value: unknown): number | null => {
   return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : null;
 };
 
+const canonicalImages = (value: unknown, primary: string): string[] => {
+  const candidates = [primary, ...(Array.isArray(value) ? value : [])];
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const candidate of candidates) {
+    const url = clean(candidate, 2_000);
+    if (!url || seen.has(url)) continue;
+    seen.add(url);
+    result.push(url);
+    if (result.length >= 12) break;
+  }
+  return result;
+};
+
 const canonicalHash = (product: CanonicalProductRecord): string => createHash('sha256')
   .update(JSON.stringify({
     name: product.name,
@@ -84,6 +101,7 @@ const canonicalHash = (product: CanonicalProductRecord): string => createHash('s
     stock: product.stock,
     category: product.category,
     image: product.image,
+    images: product.images,
     isService: product.isService,
     publicationStatus: product.publicationStatus,
   }))
@@ -120,6 +138,8 @@ const assertCanonicalProduct = (
   const name = clean(record.name, 120);
   const price = finiteNonNegative(record.price);
   const stock = integerNonNegative(record.stock);
+  const image = clean(record.image, 2_000);
+  const images = canonicalImages(record.images, image);
   if (
     clean(record.id, 160) !== productId ||
     clean(record.storeId, 160) !== canonicalStoreId ||
@@ -136,7 +156,8 @@ const assertCanonicalProduct = (
     price,
     stock,
     category: clean(record.category, 160),
-    image: clean(record.image, 2_000),
+    image,
+    images,
     isService: false,
     publicationStatus: clean(record.publicationStatus, 80),
   };
@@ -241,6 +262,7 @@ export const proposeMercadoLivreExternalPublication = async (input: {
       stock: product.stock,
       category: product.category,
       image: product.image,
+      images: product.images,
       publicationStatus: product.publicationStatus,
     },
     adaptation: {
@@ -249,6 +271,7 @@ export const proposeMercadoLivreExternalPublication = async (input: {
       price: product.price,
       availableQuantity: product.stock,
       ...(product.image ? { pictureUrl: product.image } : {}),
+      ...(product.images.length > 0 ? { pictureUrls: product.images } : {}),
     },
     requirements: {
       ready: false,
