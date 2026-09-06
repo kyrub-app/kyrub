@@ -21,17 +21,13 @@ export type ErpSubTab =
   | 'ponto'
   | 'gerencial';
 
-type MenuItem =
-  | {
-      id: 'loja';
-      label: string;
-      icon: typeof StoreIcon;
-    }
-  | {
-      id: ErpSubTab;
-      label: string;
-      icon: typeof StoreIcon;
-    };
+export type MobileErpMenuItemId = 'loja' | ErpSubTab;
+
+type MenuItem = {
+  id: MobileErpMenuItemId;
+  label: string;
+  icon: typeof StoreIcon;
+};
 
 const MENU_ITEMS: readonly MenuItem[] = [
   { id: 'loja', label: 'Loja', icon: StoreIcon },
@@ -42,6 +38,31 @@ const MENU_ITEMS: readonly MenuItem[] = [
   { id: 'ponto', label: 'Ponto', icon: Fingerprint },
   { id: 'gerencial', label: 'Gerencial', icon: LayoutGrid },
 ];
+
+const MENU_ITEM_IDS = new Set<MobileErpMenuItemId>(
+  MENU_ITEMS.map(item => item.id)
+);
+
+const isMobileErpMenuItemId = (
+  value: string | undefined
+): value is MobileErpMenuItemId => Boolean(value && MENU_ITEM_IDS.has(value as MobileErpMenuItemId));
+
+export const commitMobileErpMenuSelection = (
+  itemId: MobileErpMenuItemId,
+  actions: {
+    onOpenStoreConfig: () => void;
+    onSelectTab: (tab: ErpSubTab) => void;
+    onCloseMenu: () => void;
+  }
+): void => {
+  if (itemId === 'loja') {
+    actions.onOpenStoreConfig();
+  } else {
+    actions.onSelectTab(itemId);
+  }
+
+  actions.onCloseMenu();
+};
 
 interface MobileErpMenuProps {
   activeSubTab: ErpSubTab;
@@ -80,15 +101,44 @@ export function MobileErpMenu({
     };
   }, [isOpen]);
 
-  const handleSelect = (itemId: MenuItem['id']) => {
-    if (itemId === 'loja') {
-      onOpenStoreConfig();
-    } else {
-      onSelectTab(itemId);
-    }
+  useEffect(() => {
+    if (!isOpen || !isRetailer) return;
 
-    setIsOpen(false);
-  };
+    const handleCapturedMenuClick = (event: MouseEvent): void => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+
+      const menuButton = target.closest<HTMLElement>(
+        '[data-kyrub-mobile-erp-item]'
+      );
+      if (!menuButton) return;
+
+      const portalRoot = menuButton.closest<HTMLElement>(
+        '[data-kyrub-mobile-erp-portal="true"]'
+      );
+      if (!portalRoot) return;
+
+      const itemId = menuButton.dataset.kyrubMobileErpItem;
+      if (!isMobileErpMenuItemId(itemId)) return;
+
+      // Capture the native click before React's portal event can bubble back
+      // through the legacy management overlay. This keeps touch navigation
+      // authoritative even when another overlay intercepts synthetic clicks.
+      event.preventDefault();
+      event.stopPropagation();
+
+      commitMobileErpMenuSelection(itemId, {
+        onOpenStoreConfig,
+        onSelectTab,
+        onCloseMenu: () => setIsOpen(false),
+      });
+    };
+
+    window.addEventListener('click', handleCapturedMenuClick, true);
+    return () => {
+      window.removeEventListener('click', handleCapturedMenuClick, true);
+    };
+  }, [isOpen, isRetailer, onOpenStoreConfig, onSelectTab]);
 
   const drawerPortal =
     isOpen && isRetailer && typeof document !== 'undefined'
@@ -111,9 +161,9 @@ export function MobileErpMenu({
               role="dialog"
               aria-modal="true"
               aria-label="Menu do painel de gestão"
-              className="pointer-events-auto absolute inset-y-0 right-0 z-10 flex w-[82vw] max-w-sm animate-fade-in flex-col border-l border-slate-800 bg-slate-900 shadow-2xl"
+              className="pointer-events-auto absolute inset-y-0 right-0 z-10 isolate flex w-[82vw] max-w-sm animate-fade-in flex-col border-l border-slate-800 bg-slate-900 shadow-2xl"
             >
-              <div className="flex h-[53px] shrink-0 items-center justify-between border-b border-slate-800 px-5">
+              <div className="relative z-20 flex h-[53px] shrink-0 items-center justify-between border-b border-slate-800 px-5">
                 <span className="text-[11px] font-black uppercase tracking-[0.18em] text-orange-400">
                   Painel da loja
                 </span>
@@ -121,13 +171,16 @@ export function MobileErpMenu({
                   type="button"
                   onClick={() => setIsOpen(false)}
                   aria-label="Fechar menu"
-                  className="flex h-8 w-8 touch-manipulation items-center justify-center rounded-full border border-slate-700 bg-slate-950 text-slate-400 hover:text-white"
+                  className="pointer-events-auto flex h-8 w-8 touch-manipulation items-center justify-center rounded-full border border-slate-700 bg-slate-950 text-slate-400 hover:text-white"
                 >
                   <X className="h-4 w-4" />
                 </button>
               </div>
 
-              <nav className="space-y-2 overflow-y-auto p-4" aria-label="Seções do painel">
+              <nav
+                className="pointer-events-auto relative z-20 space-y-2 overflow-y-auto p-4"
+                aria-label="Seções do painel"
+              >
                 {MENU_ITEMS.map(item => {
                   const Icon = item.icon;
                   const isSelected = item.id !== 'loja' && item.id === activeSubTab;
@@ -136,9 +189,9 @@ export function MobileErpMenu({
                     <button
                       key={item.id}
                       type="button"
-                      onClick={() => handleSelect(item.id)}
+                      data-kyrub-mobile-erp-item={item.id}
                       aria-current={isSelected ? 'page' : undefined}
-                      className={`flex min-h-12 w-full touch-manipulation items-center gap-3 rounded-2xl border px-4 py-3 text-left transition-colors ${
+                      className={`pointer-events-auto relative z-20 flex min-h-12 w-full touch-manipulation items-center gap-3 rounded-2xl border px-4 py-3 text-left transition-colors ${
                         isSelected
                           ? 'border-orange-400 bg-orange-500 text-slate-950 shadow-lg shadow-orange-500/10'
                           : 'border-slate-800 bg-slate-950/70 text-slate-300 hover:border-slate-700 hover:text-white'
