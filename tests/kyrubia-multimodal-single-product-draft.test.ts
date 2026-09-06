@@ -190,3 +190,57 @@ test('product media promotion does not spend an extra Vercel serverless function
   const mediaEndpoint = new URL('../api/product-media.ts', import.meta.url);
   assert.equal(existsSync(mediaEndpoint), false);
 });
+
+test('normal Kyrubia conversation routes exact Chaveiro Mercado Livre preparation before legacy create_note fallback', () => {
+  const wrapper = readFileSync(new URL('../api/kyrubia.ts', import.meta.url), 'utf8');
+  const bridge = readFileSync(
+    new URL('../server/ai/kyrubiaMercadoLivrePlatformConversation.ts', import.meta.url),
+    'utf8'
+  );
+  const legacy = readFileSync(new URL('../compat-api/kyrubiaLegacyRoute.ts', import.meta.url), 'utf8');
+
+  assert.match(bridge, /Prepare|preparar/i);
+  assert.match(bridge, /mercado\s\+livre/);
+  assert.match(bridge, /authenticateConsultantRequest/);
+  assert.match(bridge, /prepareKyrubiaMercadoLivrePublication/);
+  assert.match(bridge, /normalize\(name\) !== target/);
+  assert.match(bridge, /intent: 'mercado_livre\.category_select'/);
+  assert.match(bridge, /authorization: 'intent_only'/);
+  assert.match(bridge, /externalWritePerformed|Nenhuma publicação foi enviada/);
+
+  const prepareCall = wrapper.indexOf('prepareKyrubiaMercadoLivrePlatformConversation');
+  const legacyCall = wrapper.lastIndexOf('await legacyKyrubiaHandler');
+  assert.ok(prepareCall >= 0);
+  assert.ok(legacyCall > prepareCall);
+  assert.match(wrapper, /\[current_user_request\]/);
+  assert.match(wrapper, /executeAuthorizedKyrubiaUserProviderChat/);
+  assert.match(wrapper, /result\.body\.status === 'deterministic'/);
+  assert.match(wrapper, /export const maxDuration = 30/);
+  assert.match(legacy, /create_note/);
+});
+
+test('Mercado Livre continuation keeps the explicit authority gates instead of returning to legacy AI', () => {
+  const bridge = readFileSync(
+    new URL('../server/ai/kyrubiaMercadoLivrePlatformConversation.ts', import.meta.url),
+    'utf8'
+  );
+  const chat = readFileSync(
+    new URL('../server/ai/kyrubiaUserProviderChatService.ts', import.meta.url),
+    'utf8'
+  );
+  const gates = readFileSync(
+    new URL('../server/ai/kyrubiaMercadoLivreListingValidationCommand.ts', import.meta.url),
+    'utf8'
+  );
+
+  assert.match(bridge, /mercado_livre_publication_preparation/);
+  assert.match(bridge, /mercado_livre_requirement_options/);
+  assert.match(bridge, /validar|valide/i);
+  assert.match(bridge, /autorizar|autorize/i);
+  assert.match(bridge, /publicar|publique/i);
+  assert.match(chat, /configureKyrubiaMercadoLivreDraftRequirements/);
+  assert.match(chat, /diga exatamente “Validar draft”/);
+  assert.match(gates, /isExplicitDraftValidationCommand/);
+  assert.match(gates, /isExplicitPublicationAuthorizationCommand/);
+  assert.match(gates, /handleKyrubiaMercadoLivrePublicationExecutionCommand/);
+});
