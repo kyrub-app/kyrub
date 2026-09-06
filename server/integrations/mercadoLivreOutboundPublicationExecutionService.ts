@@ -75,6 +75,20 @@ const integerNonNegative = (value: unknown): number | null => {
   return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : null;
 };
 
+const canonicalImages = (value: unknown, primary: unknown): string[] => {
+  const candidates = [primary, ...(Array.isArray(value) ? value : [])];
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const candidate of candidates) {
+    const url = clean(candidate, 2_000);
+    if (!url || seen.has(url)) continue;
+    seen.add(url);
+    result.push(url);
+    if (result.length >= 12) break;
+  }
+  return result;
+};
+
 const sha256 = (value: string): string => createHash('sha256').update(value).digest('hex');
 const payloadHash = (value: Record<string, unknown>): string => sha256(JSON.stringify(value));
 
@@ -85,13 +99,15 @@ const canonicalHash = (value: unknown): string | null => {
   const price = finiteNonNegative(record.price);
   const stock = integerNonNegative(record.stock);
   const publicationStatus = clean(record.publicationStatus, 80);
+  const image = clean(record.image, 2_000);
   if (!name || price === null || stock === null || record.isService !== false || !publicationStatus) return null;
   return sha256(JSON.stringify({
     name,
     price,
     stock,
     category: clean(record.category, 160),
-    image: clean(record.image, 2_000),
+    image,
+    images: canonicalImages(record.images, image),
     isService: false,
     publicationStatus,
   }));
