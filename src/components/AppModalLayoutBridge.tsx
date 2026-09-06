@@ -16,6 +16,45 @@ const findModalPanel = (overlay: HTMLElement): HTMLElement | null => {
   return null;
 };
 
+const classTokens = (element: HTMLElement): string[] =>
+  typeof element.className === 'string'
+    ? element.className.split(/\s+/).filter(Boolean)
+    : [];
+
+const hasClassToken = (element: HTMLElement, token: string): boolean =>
+  classTokens(element).includes(token);
+
+const hasClassPrefix = (element: HTMLElement, prefix: string): boolean =>
+  classTokens(element).some(token => token.startsWith(prefix));
+
+const usesSelfManagedOverlayLayout = (
+  overlay: HTMLElement,
+  panel: HTMLElement
+): boolean => {
+  if (overlay.dataset.kyrubSkipTopOverlay === 'true') return true;
+
+  const absolutelyPositionedPanel =
+    hasClassToken(panel, 'absolute') &&
+    (
+      hasClassToken(panel, 'inset-y-0') ||
+      hasClassPrefix(panel, 'top-') ||
+      hasClassPrefix(panel, 'bottom-')
+    );
+
+  const fullHeightDrawer =
+    hasClassToken(overlay, 'justify-end') &&
+    (
+      hasClassToken(panel, 'h-full') ||
+      hasClassToken(panel, 'inset-y-0')
+    );
+
+  const viewportOwnedPanel =
+    hasClassToken(panel, 'h-[100dvh]') ||
+    hasClassToken(panel, 'min-h-[100dvh]');
+
+  return absolutelyPositionedPanel || fullHeightDrawer || viewportOwnedPanel;
+};
+
 const normalizeText = (value: string | null | undefined): string =>
   (value ?? '').replace(/\s+/g, ' ').trim().toLocaleUpperCase('pt-BR');
 
@@ -91,9 +130,8 @@ export function AppModalLayoutBridge() {
       document
         .querySelectorAll<HTMLElement>('.fixed.inset-0')
         .forEach(overlay => {
-          if (overlay.dataset.kyrubSkipTopOverlay === 'true') return;
           const panel = findModalPanel(overlay);
-          if (!panel) return;
+          if (!panel || usesSelfManagedOverlayLayout(overlay, panel)) return;
 
           overlay.dataset.kyrubTopOverlay = 'true';
           panel.dataset.kyrubTopPanel = 'true';
