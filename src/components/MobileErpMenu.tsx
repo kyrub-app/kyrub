@@ -120,7 +120,11 @@ export function MobileErpMenu({
       )}
 
       {isOpen && isRetailer && (
-        <div className="fixed inset-0 z-[90]" role="presentation">
+        <div
+          className="fixed inset-0 z-[90]"
+          role="presentation"
+          data-kyrub-skip-top-overlay="true"
+        >
           <button
             type="button"
             aria-label="Fechar menu do painel"
