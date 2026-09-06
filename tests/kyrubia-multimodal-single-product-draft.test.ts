@@ -164,7 +164,7 @@ test('normal Chaveiro preparation command is recognized by the deterministic Mer
   );
 
   assert.match(bridge, /(?:prepare|preparar)/);
-  assert.match(bridge, /mercado\s\+livre/);
+  assert.match(bridge, /mercado\\s\+livre/);
   assert.match(bridge, /prepareKyrubiaMercadoLivrePublication/);
   assert.match(bridge, /authorization: 'intent_only'/);
   assert.match(bridge, /Nenhuma publicação foi enviada ao Mercado Livre/);
