@@ -799,6 +799,48 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = ({
                     </div>
                   </button>
 
+                  {/* CRM */}
+                  <button
+                    type="button"
+                    disabled
+                    aria-disabled="true"
+                    className="relative bg-slate-900 border border-slate-850 p-5 rounded-3xl text-left transition-all cursor-not-allowed space-y-2 opacity-75"
+                  >
+                    <span className="absolute top-4 right-4 text-[8px] font-mono font-black uppercase tracking-wider text-cyan-400 bg-cyan-500/10 border border-cyan-500/20 px-2 py-0.5 rounded-full">
+                      Em desenvolvimento
+                    </span>
+                    <div className="w-10 h-10 bg-cyan-500/10 rounded-2xl flex items-center justify-center text-cyan-400 border border-cyan-500/20">
+                      <UserCheck className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-black text-white uppercase">CRM</h4>
+                      <p className="text-[10px] text-slate-400 leading-relaxed mt-0.5 pr-20">
+                        Relacionamento, segmentação, histórico e inteligência sobre a base de clientes.
+                      </p>
+                    </div>
+                  </button>
+
+                  {/* Marketing Analytics */}
+                  <button
+                    type="button"
+                    disabled
+                    aria-disabled="true"
+                    className="relative bg-slate-900 border border-slate-850 p-5 rounded-3xl text-left transition-all cursor-not-allowed space-y-2 opacity-75"
+                  >
+                    <span className="absolute top-4 right-4 text-[8px] font-mono font-black uppercase tracking-wider text-violet-400 bg-violet-500/10 border border-violet-500/20 px-2 py-0.5 rounded-full">
+                      Em desenvolvimento
+                    </span>
+                    <div className="w-10 h-10 bg-violet-500/10 rounded-2xl flex items-center justify-center text-violet-400 border border-violet-500/20">
+                      <Zap className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-black text-white uppercase">MARKETING</h4>
+                      <p className="text-[10px] text-slate-400 leading-relaxed mt-0.5 pr-20">
+                        Aquisição, conversão, retenção, canais e insights de performance comercial.
+                      </p>
+                    </div>
+                  </button>
+
                   {/* Integracoes / Sandbox */}
                   <button
                     onClick={() => setActiveGerencialModule('integracoes')}
@@ -826,7 +868,7 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = ({
                     <div>
                       <h4 className="text-xs font-black text-white uppercase group-hover:text-amber-400 transition-colors">CUPONS & VOUCHERS</h4>
                       <p className="text-[10px] text-slate-400 leading-relaxed mt-0.5">
-                        Campanhas de marketing e cupons de desconto para a sua vitrine.
+                        Criação e gestão de cupons, vouchers e incentivos promocionais da vitrine.
                       </p>
                     </div>
                   </button>
