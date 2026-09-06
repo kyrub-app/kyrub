@@ -132,4 +132,27 @@ describe('Kyrub public and operational routes', () => {
     assert.match(profileBridgeSource, /Plano e faturamento/);
     assert.match(profileBridgeSource, /Abrir Central de Planos/);
   });
+
+  test('mobile ERP navigation drawer is excluded from global modal layout decoration', () => {
+    const mobileMenuSource = readFileSync(
+      'src/components/MobileErpMenu.tsx',
+      'utf8'
+    );
+    const modalLayoutSource = readFileSync(
+      'src/components/AppModalLayoutBridge.tsx',
+      'utf8'
+    );
+
+    assert.match(mobileMenuSource, /className="fixed inset-0 z-\[90\]"/);
+    assert.match(
+      mobileMenuSource,
+      /data-kyrub-skip-top-overlay="true"/
+    );
+    assert.match(
+      modalLayoutSource,
+      /overlay\.dataset\.kyrubSkipTopOverlay === 'true'/
+    );
+    assert.match(mobileMenuSource, /id="mobile-erp-navigation-drawer"/);
+    assert.match(mobileMenuSource, /onSelectTab\(itemId\)/);
+  });
 });
