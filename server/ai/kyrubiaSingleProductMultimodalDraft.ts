@@ -2,7 +2,10 @@ import type {
   KyrubAiConsultantResponse,
   KyrubAiConversationMessage,
 } from '../../shared/aiConsultant.js';
-import type { KyrubAiCreateProductProposal } from '../../shared/kyrubActions.js';
+import type {
+  KyrubAiCreateProductProposal,
+  KyrubAiUpdateProductProposal,
+} from '../../shared/kyrubActions.js';
 import { classifyKyrubiaCapability } from '../../shared/kyrubiaCapabilityRouter.js';
 
 type ProductDraft = {
@@ -14,6 +17,13 @@ type ProductDraft = {
   isService: boolean;
   isComplimentary: boolean;
 };
+
+type KyrubAiUpdateProductMediaProposal = KyrubAiUpdateProductProposal & {
+  sourceAttachmentPaths: string[];
+};
+
+const RESOLVE_PRODUCT_BY_NAME_ID = '__kyrubia_resolve_product_by_name__';
+const PRODUCT_IMAGE_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
 
 const normalize = (value: string): string =>
   value
@@ -83,11 +93,36 @@ const isExplicitSingleProductRequest = (message: string): boolean => {
   );
 };
 
+const isProductMediaUpdateRequest = (message: string): boolean => {
+  const intent = normalize(message);
+  return (
+    /\b(use|usar|adicione|adicionar|vincule|vincular|aplique|aplicar|coloque|colocar|associe|associar)\b/.test(intent) &&
+    /\b(imagem|imagens|foto|fotos|anexo|anexos)\b/.test(intent)
+  );
+};
+
 const attachmentCount = (messages: KyrubAiConversationMessage[]): number =>
   messages.reduce(
     (total, message) => total + (message.role === 'user' ? message.attachments?.length ?? 0 : 0),
     0
   );
+
+const imageAttachmentPaths = (
+  messages: KyrubAiConversationMessage[],
+  anchorIndex: number
+): string[] => {
+  const seen = new Set<string>();
+  return messages.slice(anchorIndex).flatMap(message => {
+    if (message.role !== 'user' || !Array.isArray(message.attachments)) return [];
+    return message.attachments.flatMap(attachment => {
+      const path = attachment.storagePath?.trim() ?? '';
+      const mimeType = attachment.mimeType?.trim().toLowerCase() ?? '';
+      if (!path || !PRODUCT_IMAGE_MIME_TYPES.has(mimeType) || seen.has(path)) return [];
+      seen.add(path);
+      return [path];
+    });
+  }).slice(0, 10);
+};
 
 const lastSingleProductAnchor = (
   messages: KyrubAiConversationMessage[]
@@ -198,7 +233,7 @@ const requestId = (): string => {
 
 const response = (
   reply: string,
-  actionProposal?: KyrubAiCreateProductProposal
+  actionProposal?: KyrubAiCreateProductProposal | KyrubAiUpdateProductProposal
 ): KyrubAiConsultantResponse => ({
   reply,
   provider: 'kyrub',
@@ -208,7 +243,9 @@ const response = (
   ...(actionProposal ? { actionProposal } : {}),
   capabilities: {
     actionsEnabled: true,
-    enabledActions: ['create_product'],
+    enabledActions: actionProposal?.type === 'update_product'
+      ? ['update_product']
+      : ['create_product'],
     enabledReadActions: [],
     voiceEnabled: false,
     persistentCloudHistoryEnabled: false,
@@ -234,6 +271,54 @@ const proposalFromDraft = (draft: ProductDraft): KyrubAiCreateProductProposal =>
   impact: { entityCount: 1, reversibility: 'limited' },
 });
 
+const productMediaUpdateResponse = (
+  messages: KyrubAiConversationMessage[],
+  anchorIndex: number,
+  latestUserIndex: number
+): KyrubAiConsultantResponse | null => {
+  if (latestUserIndex <= anchorIndex) return null;
+  const latestUser = messages[latestUserIndex];
+  if (!isProductMediaUpdateRequest(latestUser.content)) return null;
+
+  const paths = imageAttachmentPaths(messages, anchorIndex);
+  if (paths.length === 0) {
+    return response(
+      'Entendi que você quer usar imagens da conversa no produto, mas não encontrei anexos JPG, PNG ou WEBP disponíveis neste histórico. Nenhuma alteração foi proposta.'
+    );
+  }
+
+  const anchorDraft = draftFromConversation(messages, anchorIndex);
+  const productName = parseProductName(latestUser.content) ?? anchorDraft.name;
+  if (!productName) {
+    return response(
+      'Encontrei as imagens da conversa, mas não consegui identificar com segurança qual produto deve recebê-las. Informe o nome exato do produto.'
+    );
+  }
+
+  const proposal: KyrubAiUpdateProductMediaProposal = {
+    id: requestId(),
+    type: 'update_product',
+    productId: RESOLVE_PRODUCT_BY_NAME_ID,
+    expectedCurrentName: productName,
+    patch: {
+      image: `${paths.length} ${paths.length === 1 ? 'imagem anexada' : 'imagens anexadas'} nesta conversa`,
+    },
+    sourceAttachmentPaths: paths,
+    requiresConfirmation: true,
+    origin: 'kyrubia',
+    risk: 'medium',
+    inputProvenance: 'user_intent',
+    impact: { entityCount: 1, reversibility: 'limited' },
+  };
+
+  return response(
+    `Encontrei ${paths.length} ${paths.length === 1 ? 'imagem' : 'imagens'} desta conversa para “${productName}”. ` +
+      'Se você confirmar, vou promover essas imagens do armazenamento privado da conversa para a mídia pública do produto. ' +
+      'A primeira será a imagem principal da vitrine e todas ficarão vinculadas ao registro canônico para uso nos canais de venda. Nenhuma publicação no Mercado Livre acontece nesta confirmação.',
+    proposal
+  );
+};
+
 export const resolveKyrubiaSingleProductMultimodalDraft = (
   messages: KyrubAiConversationMessage[]
 ): KyrubAiConsultantResponse | null => {
@@ -248,6 +333,13 @@ export const resolveKyrubiaSingleProductMultimodalDraft = (
     return -1;
   })();
   if (latestUserIndex < anchorIndex) return null;
+
+  const mediaUpdate = productMediaUpdateResponse(
+    messages,
+    anchorIndex,
+    latestUserIndex
+  );
+  if (mediaUpdate) return mediaUpdate;
 
   const latestUser = messages[latestUserIndex];
   const latestDecision = classifyKyrubiaCapability(latestUser.content);
