@@ -89,6 +89,8 @@ const consultantError = (error: unknown): { status: number; body: unknown } => {
   return { status, body: { error: message, code } };
 };
 
+export const maxDuration = 30;
+
 export default async function handler(
   request: VercelRequestLike,
   response: VercelResponseLike
