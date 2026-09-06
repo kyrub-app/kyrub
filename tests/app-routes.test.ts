@@ -203,6 +203,28 @@ describe('Kyrub public and operational routes', () => {
     );
   });
 
+  test('mobile ERP keeps Gerencial away from the bottom gesture zone', () => {
+    const mobileMenuSource = readFileSync(
+      'src/components/MobileErpMenu.tsx',
+      'utf8'
+    );
+
+    const storePosition = mobileMenuSource.indexOf("id: 'loja'");
+    const gerencialPosition = mobileMenuSource.indexOf("id: 'gerencial'");
+    const pdvPosition = mobileMenuSource.indexOf("id: 'clientes'");
+
+    assert.ok(storePosition >= 0);
+    assert.ok(gerencialPosition > storePosition);
+    assert.ok(pdvPosition > gerencialPosition);
+    assert.match(
+      mobileMenuSource,
+      /className="min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain p-4"/
+    );
+    assert.match(mobileMenuSource, /safe-area-inset-bottom/);
+    assert.match(mobileMenuSource, /scrollPaddingBottom: '5rem'/);
+    assert.match(mobileMenuSource, /data-kyrub-mobile-menu-item=\{item\.id\}/);
+  });
+
   test('mobile ERP native dialog keeps all drawer controls explicit and tappable', () => {
     const mobileMenuSource = readFileSync(
       'src/components/MobileErpMenu.tsx',
@@ -211,7 +233,6 @@ describe('Kyrub public and operational routes', () => {
 
     assert.match(mobileMenuSource, /aria-label="Fechar menu"/);
     assert.match(mobileMenuSource, /aria-label="Abrir menu do painel de gestão"/);
-    assert.match(mobileMenuSource, /className="space-y-2 overflow-y-auto p-4"/);
     assert.match(mobileMenuSource, /touch-manipulation/);
     assert.match(
       mobileMenuSource,
