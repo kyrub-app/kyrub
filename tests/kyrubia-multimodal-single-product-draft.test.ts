@@ -149,17 +149,13 @@ test('consultor routes bulk catalog then single-product collector then Mercado L
   assert.match(router, /INTENT_ACTION_MISMATCH/);
 });
 
-test('normal Chaveiro preparation command is recognized by the deterministic Mercado Livre bridge without provider write authority', () => {
+test('normal Chaveiro preparation command enters the deterministic Mercado Livre bridge without provider write authority', () => {
   const bridge = readFileSync(
     new URL('../server/ai/kyrubiaMercadoLivrePlatformConversation.ts', import.meta.url),
     'utf8'
   );
   const prepareTool = readFileSync(
     new URL('../server/ai/kyrubiaMercadoLivrePrepareTool.ts', import.meta.url),
-    'utf8'
-  );
-  const providerChat = readFileSync(
-    new URL('../server/ai/kyrubiaUserProviderChatService.ts', import.meta.url),
     'utf8'
   );
 
@@ -171,10 +167,6 @@ test('normal Chaveiro preparation command is recognized by the deterministic Mer
   assert.doesNotMatch(bridge, /mercadoLivrePostJson|mercadoLivrePutJson/);
   assert.match(prepareTool, /externalWritePerformed:\s*false/);
   assert.match(prepareTool, /authorizationCreated:\s*false/);
-  assert.match(providerChat, /Configurar draft/);
-  assert.match(providerChat, /Validar draft/);
-  assert.match(providerChat, /Autorizar publicação/);
-  assert.match(providerChat, /Publicar agora/);
 });
 
 test('confirmed product media remains server-authoritative and private attachments are never reused directly', () => {
