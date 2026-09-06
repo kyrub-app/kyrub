@@ -156,6 +156,24 @@ describe('Kyrub public and operational routes', () => {
     assert.match(mobileMenuSource, /onSelectTab\(itemId\)/);
   });
 
+  test('mobile ERP navigation keeps its interactive drawer above the fullscreen backdrop', () => {
+    const mobileMenuSource = readFileSync(
+      'src/components/MobileErpMenu.tsx',
+      'utf8'
+    );
+
+    assert.match(
+      mobileMenuSource,
+      /className="absolute inset-0 z-0 bg-slate-950\/75 backdrop-blur-sm"/
+    );
+    assert.match(
+      mobileMenuSource,
+      /className="absolute inset-y-0 right-0 z-10 flex w-\[82vw\]/
+    );
+    assert.match(mobileMenuSource, /onClick=\{\(\) => handleSelect\(item\.id\)\}/);
+    assert.match(mobileMenuSource, /touch-manipulation/);
+  });
+
   test('global modal layout skips self-managed drawers, popovers and viewport panels', () => {
     const modalLayoutSource = readFileSync(
       'src/components/AppModalLayoutBridge.tsx',
