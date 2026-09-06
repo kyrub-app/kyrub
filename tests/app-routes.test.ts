@@ -1,10 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { describe, test } from 'node:test';
-import {
-  commitMobileErpMenuSelection,
-  isMobileErpMenuTapGesture,
-} from '../src/components/MobileErpMenu';
+import { commitMobileErpMenuSelection } from '../src/components/MobileErpMenu';
 import {
   buildPublicStorefrontPath,
   buildPublicStorefrontUrl,
@@ -180,24 +177,24 @@ describe('Kyrub public and operational routes', () => {
     assert.deepEqual(sequence, ['tab:gerencial', 'close']);
   });
 
-  test('mobile ERP touch navigation distinguishes taps from scroll gestures', () => {
-    assert.equal(
-      isMobileErpMenuTapGesture(
-        { clientX: 100, clientY: 200 },
-        { clientX: 106, clientY: 209 }
-      ),
-      true
+  test('mobile ERP keeps one portal subtree alive across close and reopen cycles', () => {
+    const mobileMenuSource = readFileSync(
+      'src/components/MobileErpMenu.tsx',
+      'utf8'
     );
-    assert.equal(
-      isMobileErpMenuTapGesture(
-        { clientX: 100, clientY: 200 },
-        { clientX: 102, clientY: 240 }
-      ),
-      false
+
+    assert.match(mobileMenuSource, /hidden=\{!isOpen\}/);
+    assert.match(
+      mobileMenuSource,
+      /const drawerPortal =\s*\n\s*isRetailer && typeof document !== 'undefined'/
+    );
+    assert.doesNotMatch(
+      mobileMenuSource,
+      /const drawerPortal =\s*\n\s*isOpen && isRetailer/
     );
   });
 
-  test('mobile ERP navigation handles touch locally without a global click capture', () => {
+  test('mobile ERP navigation uses only local click handlers for drawer controls', () => {
     const mobileMenuSource = readFileSync(
       'src/components/MobileErpMenu.tsx',
       'utf8'
@@ -208,15 +205,10 @@ describe('Kyrub public and operational routes', () => {
       /window\.addEventListener\('click', .*true\)/
     );
     assert.doesNotMatch(mobileMenuSource, /event\.stopPropagation\(\)/);
-    assert.match(
-      mobileMenuSource,
-      /onTouchStart=\{event => handleItemTouchStart\(item\.id, event\)\}/
-    );
-    assert.match(
-      mobileMenuSource,
-      /onTouchEnd=\{event => handleItemTouchEnd\(item\.id, event\)\}/
-    );
-    assert.match(mobileMenuSource, /event\.preventDefault\(\)/);
+    assert.doesNotMatch(mobileMenuSource, /onTouchStart=/);
+    assert.doesNotMatch(mobileMenuSource, /onTouchEnd=/);
+    assert.doesNotMatch(mobileMenuSource, /event\.preventDefault\(\)/);
+    assert.doesNotMatch(mobileMenuSource, /useRef/);
     assert.match(
       mobileMenuSource,
       /onClick=\{\(\) => handleSelect\(item\.id\)\}/
