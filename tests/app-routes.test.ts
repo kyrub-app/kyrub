@@ -133,7 +133,7 @@ describe('Kyrub public and operational routes', () => {
     assert.match(profileBridgeSource, /Abrir Central de Planos/);
   });
 
-  test('mobile ERP navigation drawer is excluded from global modal layout decoration', () => {
+  test('mobile ERP navigation drawer is portaled outside the management overlay', () => {
     const mobileMenuSource = readFileSync(
       'src/components/MobileErpMenu.tsx',
       'utf8'
@@ -143,10 +143,14 @@ describe('Kyrub public and operational routes', () => {
       'utf8'
     );
 
-    assert.match(mobileMenuSource, /className="fixed inset-0 z-\[90\]"/);
+    assert.match(mobileMenuSource, /import \{ createPortal \} from 'react-dom'/);
+    assert.match(mobileMenuSource, /createPortal\(/);
+    assert.match(mobileMenuSource, /document\.body/);
+    assert.match(mobileMenuSource, /data-kyrub-mobile-erp-portal="true"/);
+    assert.match(mobileMenuSource, /data-kyrub-skip-top-overlay="true"/);
     assert.match(
       mobileMenuSource,
-      /data-kyrub-skip-top-overlay="true"/
+      /className="pointer-events-auto fixed inset-0 z-\[200\]"/
     );
     assert.match(
       modalLayoutSource,
@@ -156,7 +160,7 @@ describe('Kyrub public and operational routes', () => {
     assert.match(mobileMenuSource, /onSelectTab\(itemId\)/);
   });
 
-  test('mobile ERP navigation keeps its interactive drawer above the fullscreen backdrop', () => {
+  test('mobile ERP navigation keeps every drawer surface interactive', () => {
     const mobileMenuSource = readFileSync(
       'src/components/MobileErpMenu.tsx',
       'utf8'
@@ -164,11 +168,15 @@ describe('Kyrub public and operational routes', () => {
 
     assert.match(
       mobileMenuSource,
-      /className="absolute inset-0 z-0 bg-slate-950\/75 backdrop-blur-sm"/
+      /className="pointer-events-auto absolute inset-0 z-0 bg-slate-950\/75 backdrop-blur-sm"/
     );
     assert.match(
       mobileMenuSource,
-      /className="absolute inset-y-0 right-0 z-10 flex w-\[82vw\]/
+      /className="pointer-events-auto absolute inset-y-0 right-0 z-10 flex w-\[82vw\]/
+    );
+    assert.match(
+      mobileMenuSource,
+      /aria-label="Fechar menu"[\s\S]*?onClick=\{\(\) => setIsOpen\(false\)\}/
     );
     assert.match(mobileMenuSource, /onClick=\{\(\) => handleSelect\(item\.id\)\}/);
     assert.match(mobileMenuSource, /touch-manipulation/);
