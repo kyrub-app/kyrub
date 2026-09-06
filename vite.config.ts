@@ -9,6 +9,13 @@ export default defineConfig(() => {
     resolve: {
       alias: [
         {
+          find: /^\.\/components\/RetailerPanel$/,
+          replacement: path.resolve(
+            __dirname,
+            'src/components/RetailerPanelRuntimeRouter.tsx'
+          ),
+        },
+        {
           find: /^\.\.\/ai\/consultantClient$/,
           replacement: path.resolve(
             __dirname,
