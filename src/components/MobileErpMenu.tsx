@@ -94,7 +94,7 @@ export function MobileErpMenu({
     isOpen && isRetailer && typeof document !== 'undefined'
       ? createPortal(
           <div
-            className="fixed inset-0 z-[90]"
+            className="pointer-events-auto fixed inset-0 z-[200]"
             role="presentation"
             data-kyrub-skip-top-overlay="true"
             data-kyrub-mobile-erp-portal="true"
@@ -103,7 +103,7 @@ export function MobileErpMenu({
               type="button"
               aria-label="Fechar menu do painel"
               onClick={() => setIsOpen(false)}
-              className="absolute inset-0 z-0 bg-slate-950/75 backdrop-blur-sm"
+              className="pointer-events-auto absolute inset-0 z-0 bg-slate-950/75 backdrop-blur-sm"
             />
 
             <aside
@@ -111,7 +111,7 @@ export function MobileErpMenu({
               role="dialog"
               aria-modal="true"
               aria-label="Menu do painel de gestão"
-              className="absolute inset-y-0 right-0 z-10 flex w-[82vw] max-w-sm animate-fade-in flex-col border-l border-slate-800 bg-slate-900 shadow-2xl"
+              className="pointer-events-auto absolute inset-y-0 right-0 z-10 flex w-[82vw] max-w-sm animate-fade-in flex-col border-l border-slate-800 bg-slate-900 shadow-2xl"
             >
               <div className="flex h-[53px] shrink-0 items-center justify-between border-b border-slate-800 px-5">
                 <span className="text-[11px] font-black uppercase tracking-[0.18em] text-orange-400">
