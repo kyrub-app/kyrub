@@ -30,6 +30,7 @@ import { SocialPublishingBridge } from './components/SocialPublishingBridge';
 import { UserNotificationCenterBridge } from './components/UserNotificationCenterBridge';
 import { CatalogCustomizationInheritanceBridge } from './components/store/CatalogCustomizationInheritanceBridge';
 import { CourierLiveTrackingBridge } from './components/store/CourierLiveTrackingBridge';
+import { GerencialMercadoLivreIntegrationBridge } from './components/store/GerencialMercadoLivreIntegrationBridge';
 import { IntegrationTestOrderBridge } from './components/store/IntegrationTestOrderBridge';
 import { KyrubDeliveryOpportunityBridge } from './components/store/KyrubDeliveryOpportunityBridge';
 import { KyrubDeliveryStatusSyncBridge } from './components/store/KyrubDeliveryStatusSyncBridge';
@@ -246,6 +247,7 @@ function AuthenticatedKyrubApp({ operational }: { operational: boolean }) {
       <UnifiedProductCreateModalBridge />
       <CatalogCustomizationInheritanceBridge />
       <ProductWorkspaceLayoutBridge />
+      <GerencialMercadoLivreIntegrationBridge />
       {operational && <OperationalAppEntryBridge />}
       <LegacyApp key={`legacy-cache-${legacyCacheRevision}`} />
       {legacyRefreshing && <KyrubBootstrapScreen />}
