@@ -1,5 +1,4 @@
-import { useEffect, useState } from 'react';
-import { createPortal } from 'react-dom';
+import { useRef, useState, type MouseEvent } from 'react';
 import {
   ArrowLeft,
   Calendar,
@@ -47,9 +46,6 @@ export const commitMobileErpMenuSelection = (
     onCloseMenu: () => void;
   }
 ): void => {
-  // Close the drawer before changing the underlying panel. Gerencial mounts a
-  // substantial subtree, and allowing that subtree to appear while the drawer
-  // is still active can leave the old interaction layer in front of it.
   actions.onCloseMenu();
 
   if (itemId === 'loja') {
@@ -76,60 +72,75 @@ export function MobileErpMenu({
   onOpenStoreConfig,
   onSelectTab,
 }: MobileErpMenuProps) {
+  const dialogRef = useRef<HTMLDialogElement | null>(null);
   const [isOpen, setIsOpen] = useState(false);
 
-  useEffect(() => {
-    if (!isOpen) return;
+  const openMenu = (): void => {
+    const dialog = dialogRef.current;
+    if (!dialog || dialog.open) return;
 
-    const previousOverflow = document.documentElement.style.overflow;
-    document.documentElement.style.overflow = 'hidden';
+    dialog.showModal();
+    setIsOpen(true);
+  };
 
-    const handleEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setIsOpen(false);
-    };
-
-    window.addEventListener('keydown', handleEscape);
-
-    return () => {
-      window.removeEventListener('keydown', handleEscape);
-      document.documentElement.style.overflow = previousOverflow;
-    };
-  }, [isOpen]);
+  const closeMenu = (): void => {
+    const dialog = dialogRef.current;
+    if (dialog?.open) dialog.close();
+    setIsOpen(false);
+  };
 
   const handleSelect = (itemId: MobileErpMenuItemId): void => {
     commitMobileErpMenuSelection(itemId, {
       onOpenStoreConfig,
       onSelectTab,
-      onCloseMenu: () => setIsOpen(false),
+      onCloseMenu: closeMenu,
     });
   };
 
-  // Keep one portal subtree alive for the lifetime of this retailer panel.
-  // Reopening only toggles browser visibility, so the second open reuses the
-  // exact same DOM nodes and local React handlers instead of remounting them.
-  const drawerPortal =
-    isRetailer && typeof document !== 'undefined'
-      ? createPortal(
-          <div
-            hidden={!isOpen}
-            className="pointer-events-auto fixed inset-0 z-[200]"
-            role="presentation"
-            data-kyrub-skip-top-overlay="true"
-            data-kyrub-mobile-erp-portal="true"
-          >
-            <button
-              type="button"
-              aria-label="Fechar menu do painel"
-              onClick={() => setIsOpen(false)}
-              className="pointer-events-auto absolute inset-0 z-0 bg-slate-950/75 backdrop-blur-sm"
-            />
+  const handleDialogClick = (event: MouseEvent<HTMLDialogElement>): void => {
+    if (event.target === event.currentTarget) closeMenu();
+  };
 
+  return (
+    <div className="sm:hidden -mx-6 -my-2.5 flex w-screen max-w-none shrink-0 items-center justify-between border-b border-slate-800 bg-slate-900 px-6 py-2.5">
+      {canClosePanel ? (
+        <button
+          type="button"
+          onClick={onClosePanel}
+          aria-label="Voltar e fechar painel de gestão"
+          className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-700 bg-slate-950 text-slate-400 shadow-sm transition-colors hover:border-orange-500/70 hover:text-white"
+        >
+          <ArrowLeft className="h-4 w-4" />
+        </button>
+      ) : (
+        <span className="h-8 w-8" aria-hidden="true" />
+      )}
+
+      {isRetailer ? (
+        <>
+          <button
+            type="button"
+            onClick={openMenu}
+            aria-label="Abrir menu do painel de gestão"
+            aria-controls="mobile-erp-navigation-dialog"
+            aria-expanded={isOpen}
+            className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-700 bg-slate-950 text-slate-300 shadow-lg transition-colors hover:border-orange-500/70 hover:text-white"
+          >
+            <Menu className="h-4 w-4" />
+          </button>
+
+          <dialog
+            ref={dialogRef}
+            id="mobile-erp-navigation-dialog"
+            aria-label="Menu do painel de gestão"
+            onClose={() => setIsOpen(false)}
+            onClick={handleDialogClick}
+            className="fixed inset-0 m-0 h-[100dvh] max-h-none w-screen max-w-none overflow-hidden border-0 bg-transparent p-0 text-white"
+          >
             <aside
               id="mobile-erp-navigation-drawer"
-              role="dialog"
-              aria-modal="true"
-              aria-label="Menu do painel de gestão"
-              className="pointer-events-auto absolute inset-y-0 right-0 z-10 flex w-[82vw] max-w-sm flex-col border-l border-slate-800 bg-slate-900 shadow-2xl"
+              aria-label="Seções do painel"
+              className="absolute inset-y-0 right-0 flex w-[82vw] max-w-sm flex-col border-l border-slate-800 bg-slate-900 shadow-2xl"
             >
               <div className="flex h-[53px] shrink-0 items-center justify-between border-b border-slate-800 px-5">
                 <span className="text-[11px] font-black uppercase tracking-[0.18em] text-orange-400">
@@ -137,7 +148,7 @@ export function MobileErpMenu({
                 </span>
                 <button
                   type="button"
-                  onClick={() => setIsOpen(false)}
+                  onClick={closeMenu}
                   aria-label="Fechar menu"
                   className="flex h-8 w-8 touch-manipulation items-center justify-center rounded-full border border-slate-700 bg-slate-950 text-slate-400 hover:text-white"
                 >
@@ -171,42 +182,18 @@ export function MobileErpMenu({
                 })}
               </nav>
             </aside>
-          </div>,
-          document.body
-        )
-      : null;
+          </dialog>
 
-  return (
-    <div className="sm:hidden -mx-6 -my-2.5 flex w-screen max-w-none shrink-0 items-center justify-between border-b border-slate-800 bg-slate-900 px-6 py-2.5">
-      {canClosePanel ? (
-        <button
-          type="button"
-          onClick={onClosePanel}
-          aria-label="Voltar e fechar painel de gestão"
-          className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-700 bg-slate-950 text-slate-400 shadow-sm transition-colors hover:border-orange-500/70 hover:text-white"
-        >
-          <ArrowLeft className="h-4 w-4" />
-        </button>
+          <style>{`
+            #mobile-erp-navigation-dialog::backdrop {
+              background: rgb(2 6 23 / 0.75);
+              backdrop-filter: blur(4px);
+            }
+          `}</style>
+        </>
       ) : (
         <span className="h-8 w-8" aria-hidden="true" />
       )}
-
-      {isRetailer ? (
-        <button
-          type="button"
-          onClick={() => setIsOpen(true)}
-          aria-label="Abrir menu do painel de gestão"
-          aria-controls="mobile-erp-navigation-drawer"
-          aria-expanded={isOpen}
-          className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-700 bg-slate-950 text-slate-300 shadow-lg transition-colors hover:border-orange-500/70 hover:text-white"
-        >
-          <Menu className="h-4 w-4" />
-        </button>
-      ) : (
-        <span className="h-8 w-8" aria-hidden="true" />
-      )}
-
-      {drawerPortal}
     </div>
   );
 }
