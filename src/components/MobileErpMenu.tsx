@@ -47,13 +47,16 @@ export const commitMobileErpMenuSelection = (
     onCloseMenu: () => void;
   }
 ): void => {
+  // Close the drawer before changing the underlying panel. Gerencial mounts a
+  // substantial subtree, and allowing that subtree to appear while the drawer
+  // is still active can leave the old interaction layer in front of it.
+  actions.onCloseMenu();
+
   if (itemId === 'loja') {
     actions.onOpenStoreConfig();
   } else {
     actions.onSelectTab(itemId);
   }
-
-  actions.onCloseMenu();
 };
 
 interface MobileErpMenuProps {
@@ -79,19 +82,7 @@ export function MobileErpMenu({
     if (!isOpen) return;
 
     const previousOverflow = document.documentElement.style.overflow;
-    const appRoot = document.getElementById('root');
-    const previousRootInert = appRoot?.inert ?? false;
-
     document.documentElement.style.overflow = 'hidden';
-
-    // The drawer is portaled directly under document.body, outside #root.
-    // Making the application root inert while the drawer is open prevents
-    // Gerencial bridges, workspaces or any other underlying surface from
-    // participating in hit-testing without disabling the drawer itself.
-    if (appRoot) {
-      appRoot.inert = true;
-      appRoot.dataset.kyrubMobileErpBackgroundInert = 'true';
-    }
 
     const handleEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') setIsOpen(false);
@@ -102,11 +93,6 @@ export function MobileErpMenu({
     return () => {
       window.removeEventListener('keydown', handleEscape);
       document.documentElement.style.overflow = previousOverflow;
-
-      if (appRoot) {
-        appRoot.inert = previousRootInert;
-        delete appRoot.dataset.kyrubMobileErpBackgroundInert;
-      }
     };
   }, [isOpen]);
 
