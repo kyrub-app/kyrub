@@ -129,7 +129,7 @@ export function MobileErpMenu({
             type="button"
             aria-label="Fechar menu do painel"
             onClick={() => setIsOpen(false)}
-            className="absolute inset-0 bg-slate-950/75 backdrop-blur-sm"
+            className="absolute inset-0 z-0 bg-slate-950/75 backdrop-blur-sm"
           />
 
           <aside
@@ -137,7 +137,7 @@ export function MobileErpMenu({
             role="dialog"
             aria-modal="true"
             aria-label="Menu do painel de gestão"
-            className="absolute inset-y-0 right-0 flex w-[82vw] max-w-sm animate-fade-in flex-col border-l border-slate-800 bg-slate-900 shadow-2xl"
+            className="absolute inset-y-0 right-0 z-10 flex w-[82vw] max-w-sm animate-fade-in flex-col border-l border-slate-800 bg-slate-900 shadow-2xl"
           >
             <div className="flex h-[53px] shrink-0 items-center justify-between border-b border-slate-800 px-5">
               <span className="text-[11px] font-black uppercase tracking-[0.18em] text-orange-400">
@@ -164,7 +164,7 @@ export function MobileErpMenu({
                     type="button"
                     onClick={() => handleSelect(item.id)}
                     aria-current={isSelected ? 'page' : undefined}
-                    className={`flex min-h-12 w-full items-center gap-3 rounded-2xl border px-4 py-3 text-left transition-colors ${
+                    className={`flex min-h-12 w-full touch-manipulation items-center gap-3 rounded-2xl border px-4 py-3 text-left transition-colors ${
                       isSelected
                         ? 'border-orange-400 bg-orange-500 text-slate-950 shadow-lg shadow-orange-500/10'
                         : 'border-slate-800 bg-slate-950/70 text-slate-300 hover:border-slate-700 hover:text-white'
