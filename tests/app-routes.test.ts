@@ -155,4 +155,47 @@ describe('Kyrub public and operational routes', () => {
     assert.match(mobileMenuSource, /id="mobile-erp-navigation-drawer"/);
     assert.match(mobileMenuSource, /onSelectTab\(itemId\)/);
   });
+
+  test('global modal layout skips self-managed drawers, popovers and viewport panels', () => {
+    const modalLayoutSource = readFileSync(
+      'src/components/AppModalLayoutBridge.tsx',
+      'utf8'
+    );
+    const cartDrawerSource = readFileSync(
+      'src/components/modals/B2CCartDrawer.tsx',
+      'utf8'
+    );
+    const notificationCenterSource = readFileSync(
+      'src/components/UserNotificationCenterBridge.tsx',
+      'utf8'
+    );
+    const storeChatSource = readFileSync(
+      'src/components/store/StoreCustomerChatModal.tsx',
+      'utf8'
+    );
+
+    assert.ok(modalLayoutSource.includes('usesSelfManagedOverlayLayout'));
+    assert.ok(
+      modalLayoutSource.includes("hasClassToken(overlay, 'justify-end')")
+    );
+    assert.ok(modalLayoutSource.includes("hasClassToken(panel, 'h-full')"));
+    assert.ok(modalLayoutSource.includes("hasClassToken(panel, 'absolute')"));
+    assert.ok(modalLayoutSource.includes("hasClassToken(panel, 'h-[100dvh]')"));
+    assert.ok(
+      modalLayoutSource.includes(
+        'if (!panel || usesSelfManagedOverlayLayout(overlay, panel)) return;'
+      )
+    );
+
+    assert.ok(cartDrawerSource.includes('fixed inset-0 z-50 flex justify-end'));
+    assert.ok(cartDrawerSource.includes('flex h-full w-full max-w-md'));
+    assert.ok(
+      notificationCenterSource.includes('id="canonical-notification-center"')
+    );
+    assert.ok(
+      notificationCenterSource.includes('className="absolute inset-x-2 top-')
+    );
+    assert.ok(storeChatSource.includes('id="store-customer-chat-modal"'));
+    assert.ok(storeChatSource.includes('h-[100dvh]'));
+  });
 });
