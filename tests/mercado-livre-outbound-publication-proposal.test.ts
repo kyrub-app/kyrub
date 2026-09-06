@@ -1,10 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
+import { buildMercadoLivreInitialPublicationPayload } from '../server/integrations/mercadoLivreInitialPublicationPayloadAdapter';
 
 const servicePath = new URL('../server/integrations/mercadoLivreOutboundPublicationService.ts', import.meta.url);
 const capabilityPath = new URL('../server/integrations/mercadoLivrePublicationCapabilityService.ts', import.meta.url);
 const routerPath = new URL('../server/integrations/mercadoLivreRouter.ts', import.meta.url);
+const kyrubiaDraftPath = new URL('../server/integrations/mercadoLivreKyrubiaDraftConfigurationService.ts', import.meta.url);
+const kyrubiaValidationPath = new URL('../server/integrations/mercadoLivreKyrubiaListingValidationService.ts', import.meta.url);
+const genericValidationPath = new URL('../server/integrations/mercadoLivreOutboundListingValidationService.ts', import.meta.url);
+const authorizationPath = new URL('../server/integrations/mercadoLivreOutboundPublicationAuthorizationService.ts', import.meta.url);
+const executionPath = new URL('../server/integrations/mercadoLivreOutboundPublicationExecutionService.ts', import.meta.url);
 
 test('outbound publication starts as a non-executable owner-reviewed proposal', async () => {
   const source = await readFile(servicePath, 'utf8');
@@ -47,6 +53,56 @@ test('proposal freezes either legacy or User Products provider model before auth
   assert.match(source, /providerCapability: providerCapabilitySnapshot/);
   assert.match(source, /publicationModel === 'user_products'/);
   assert.match(source, /familyName: product\.name/);
+});
+
+test('Mercado Livre payload preserves all unique canonical product pictures in order', () => {
+  const payload = buildMercadoLivreInitialPublicationPayload({
+    publicationModel: 'legacy_items',
+    stockAuthority: 'item_available_quantity',
+    name: 'Chaveiro Kyrub',
+    categoryId: 'MLB123',
+    price: 29.9,
+    currencyId: 'BRL',
+    availableQuantity: 10,
+    listingTypeId: 'gold_special',
+    condition: 'new',
+    pictureUrl: 'https://cdn.kyrub.test/chaveiro-1.png',
+    pictureUrls: [
+      'https://cdn.kyrub.test/chaveiro-1.png',
+      'https://cdn.kyrub.test/chaveiro-2.png',
+      'https://cdn.kyrub.test/chaveiro-3.png',
+      'https://cdn.kyrub.test/chaveiro-2.png',
+    ],
+    attributes: [],
+  });
+
+  assert.deepEqual(payload.pictures, [
+    { source: 'https://cdn.kyrub.test/chaveiro-1.png' },
+    { source: 'https://cdn.kyrub.test/chaveiro-2.png' },
+    { source: 'https://cdn.kyrub.test/chaveiro-3.png' },
+  ]);
+});
+
+test('full canonical image set is frozen and revalidated through every publication gate', async () => {
+  const [proposal, draft, kyrubiaValidation, genericValidation, authorization, execution] = await Promise.all([
+    readFile(servicePath, 'utf8'),
+    readFile(kyrubiaDraftPath, 'utf8'),
+    readFile(kyrubiaValidationPath, 'utf8'),
+    readFile(genericValidationPath, 'utf8'),
+    readFile(authorizationPath, 'utf8'),
+    readFile(executionPath, 'utf8'),
+  ]);
+
+  assert.match(proposal, /images: product\.images/);
+  assert.match(proposal, /pictureUrls: product\.images/);
+  assert.match(proposal, /images: product\.images,[\s\S]*isService/);
+  assert.match(draft, /sameJson\(canonicalImages\(record\.images, image\), proposal\.canonical\.images\)/);
+  assert.match(kyrubiaValidation, /pictureUrls: proposal\.canonical\.images/);
+  assert.match(kyrubiaValidation, /sameJson\(canonicalImages\(record\.images, image\), proposal\.canonical\.images\)/);
+  assert.match(genericValidation, /pictureUrls: proposal\.canonical\.images/);
+  assert.match(authorization, /sameJson\(canonicalImages\(record\.images, image\), proposal\.canonical\.images\)/);
+  assert.match(execution, /images: canonicalImages\(record\.images, image\)/);
+  assert.match(execution, /mercadoLivrePostJson<MercadoLivreCreatedItem>\(storeId, '\/items', authorization\.payload\)/);
 });
 
 test('capability fingerprint is based only on material seller publication and stock authority', async () => {
