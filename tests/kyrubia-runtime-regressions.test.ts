@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
 const kyrubiaSource = readFileSync(
-  new URL('../compat-api/kyrubiaLegacyRoute.ts', import.meta.url),
+  new URL('../api/kyrubia.ts', import.meta.url),
   'utf8'
 );
 const consultantSource = readFileSync(
