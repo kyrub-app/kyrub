@@ -126,7 +126,7 @@ export function MobileErpMenu({
       ? createPortal(
           <div
             hidden={!isOpen}
-            className="pointer-events-auto fixed inset-0 z-[2147483647]"
+            className="pointer-events-auto fixed inset-0 z-[200]"
             role="presentation"
             data-kyrub-skip-top-overlay="true"
             data-kyrub-mobile-erp-portal="true"
