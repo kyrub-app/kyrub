@@ -174,9 +174,10 @@ describe('Kyrub public and operational routes', () => {
       mobileMenuSource,
       /className="pointer-events-auto absolute inset-y-0 right-0 z-10 flex w-\[82vw\]/
     );
-    assert.match(
-      mobileMenuSource,
-      /aria-label="Fechar menu"[\s\S]*?onClick=\{\(\) => setIsOpen\(false\)\}/
+    assert.match(mobileMenuSource, /aria-label="Fechar menu"/);
+    assert.ok(
+      (mobileMenuSource.match(/onClick=\{\(\) => setIsOpen\(false\)\}/g) ?? [])
+        .length >= 2
     );
     assert.match(mobileMenuSource, /onClick=\{\(\) => handleSelect\(item\.id\)\}/);
     assert.match(mobileMenuSource, /touch-manipulation/);
