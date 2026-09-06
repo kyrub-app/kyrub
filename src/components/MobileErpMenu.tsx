@@ -30,12 +30,12 @@ type MenuItem = {
 
 const MENU_ITEMS: readonly MenuItem[] = [
   { id: 'loja', label: 'Loja', icon: StoreIcon },
+  { id: 'gerencial', label: 'Gerencial', icon: LayoutGrid },
   { id: 'clientes', label: 'PDV', icon: Users },
   { id: 'caixa', label: 'Caixa', icon: DollarSign },
   { id: 'pedidos', label: 'Pedidos', icon: ClipboardList },
   { id: 'reservas', label: 'Reservas', icon: Calendar },
   { id: 'ponto', label: 'Ponto', icon: Fingerprint },
-  { id: 'gerencial', label: 'Gerencial', icon: LayoutGrid },
 ];
 
 export const commitMobileErpMenuSelection = (
@@ -156,7 +156,14 @@ export function MobileErpMenu({
                 </button>
               </div>
 
-              <nav className="space-y-2 overflow-y-auto p-4" aria-label="Seções do painel">
+              <nav
+                className="min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain p-4"
+                aria-label="Seções do painel"
+                style={{
+                  paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 4rem)',
+                  scrollPaddingBottom: '5rem',
+                }}
+              >
                 {MENU_ITEMS.map(item => {
                   const Icon = item.icon;
                   const isSelected = item.id !== 'loja' && item.id === activeSubTab;
@@ -165,6 +172,7 @@ export function MobileErpMenu({
                     <button
                       key={item.id}
                       type="button"
+                      data-kyrub-mobile-menu-item={item.id}
                       onClick={() => handleSelect(item.id)}
                       aria-current={isSelected ? 'page' : undefined}
                       className={`flex min-h-12 w-full touch-manipulation items-center gap-3 rounded-2xl border px-4 py-3 text-left transition-colors ${
