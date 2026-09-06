@@ -132,16 +132,41 @@ test('genuine bulk catalog request stays outside the single-product collector', 
   assert.equal(resolveKyrubiaSingleProductMultimodalDraft(messages), null);
 });
 
-test('consultor routes bulk catalog then single-product collector then guarded generic fallback', () => {
+test('consultor routes bulk catalog then single-product collector then Mercado Livre bridge then guarded generic fallback', () => {
   const router = readFileSync(new URL('../api/consultor-kyrub.ts', import.meta.url), 'utf8');
   const bulk = router.indexOf('if (!analysisContext && importRequested && hasAttachmentHistory(messages))');
   const single = router.indexOf('resolveKyrubiaSingleProductMultimodalDraft(messages)');
+  const mercadoLivre = router.lastIndexOf('await handleMercadoLivrePlatformConversation');
   const generic = router.lastIndexOf('await runGenericWithCapabilityGuard');
   assert.ok(bulk >= 0);
   assert.ok(single > bulk);
-  assert.ok(generic > single);
+  assert.ok(mercadoLivre > single);
+  assert.ok(generic > mercadoLivre);
+  assert.match(router, /prepareKyrubiaMercadoLivrePlatformConversation/);
+  assert.match(router, /shouldRouteKyrubiaMercadoLivrePlatformContinuation/);
+  assert.match(router, /executeAuthorizedKyrubiaUserProviderChat/);
   assert.match(router, /Blocked action outside classified intent/);
   assert.match(router, /INTENT_ACTION_MISMATCH/);
+});
+
+test('normal Chaveiro preparation command enters the deterministic Mercado Livre bridge without provider write authority', () => {
+  const bridge = readFileSync(
+    new URL('../server/ai/kyrubiaMercadoLivrePlatformConversation.ts', import.meta.url),
+    'utf8'
+  );
+  const prepareTool = readFileSync(
+    new URL('../server/ai/kyrubiaMercadoLivrePrepareTool.ts', import.meta.url),
+    'utf8'
+  );
+
+  assert.match(bridge, /(?:prepare|preparar)/);
+  assert.match(bridge, /mercado\\s\+livre/);
+  assert.match(bridge, /prepareKyrubiaMercadoLivrePublication/);
+  assert.match(bridge, /authorization: 'intent_only'/);
+  assert.match(bridge, /Nenhuma publicação foi enviada ao Mercado Livre/);
+  assert.doesNotMatch(bridge, /mercadoLivrePostJson|mercadoLivrePutJson/);
+  assert.match(prepareTool, /externalWritePerformed:\s*false/);
+  assert.match(prepareTool, /authorizationCreated:\s*false/);
 });
 
 test('confirmed product media remains server-authoritative and private attachments are never reused directly', () => {

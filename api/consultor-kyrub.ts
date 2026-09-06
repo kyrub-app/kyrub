@@ -22,6 +22,10 @@ import { buildKyrubInventoryIntakeProposal } from '../shared/kyrubInventoryIntak
 import { buildKyrubInventoryMovementProposal } from '../shared/kyrubInventoryMovements.js';
 import { buildKyrubInventoryTransformationProposal } from '../shared/kyrubInventoryTransformationIntent.js';
 import { resolveKyrubInventoryHistoryRead } from '../shared/kyrubiaInventoryHistory.js';
+import {
+  prepareKyrubiaMercadoLivrePlatformConversation,
+  shouldRouteKyrubiaMercadoLivrePlatformContinuation,
+} from '../server/ai/kyrubiaMercadoLivrePlatformConversation.js';
 import { resolveKyrubiaSingleProductMultimodalDraft } from '../server/ai/kyrubiaSingleProductMultimodalDraft.js';
 import { handleKyrubiaCatalogAnalysis } from '../server/kyrubiaCatalogAnalysisRoute.js';
 import handleKyrubia from './kyrubia.js';
@@ -64,6 +68,11 @@ const readBody = (value: unknown): Record<string, unknown> => {
   } catch {
     return {};
   }
+};
+
+const authorizationHeader = (request: VercelRequestLike): string => {
+  const value = request.headers.authorization ?? request.headers.Authorization;
+  return Array.isArray(value) ? value[0] ?? '' : value ?? '';
 };
 
 const conversationMessages = (body: Record<string, unknown>): KyrubAiConversationMessage[] =>
@@ -604,6 +613,44 @@ const runGenericWithCapabilityGuard = async (
   response.status(statusCode).json(capturedBody);
 };
 
+const handleMercadoLivrePlatformConversation = async (
+  request: VercelRequestLike,
+  body: Record<string, unknown>,
+  messages: KyrubAiConversationMessage[]
+): Promise<{ statusCode: number; body: unknown } | null> => {
+  const latestMessage = latestUserMessage(messages)?.content ?? '';
+  const authorization = authorizationHeader(request);
+
+  if (
+    shouldRouteKyrubiaMercadoLivrePlatformContinuation({
+      turnContext: body.turnContext,
+      selectedOfferedIntentId: body.selectedOfferedIntentId,
+      message: latestMessage,
+    })
+  ) {
+    const { executeAuthorizedKyrubiaUserProviderChat } = await import(
+      '../server/ai/kyrubiaUserProviderChatService.js'
+    );
+    const result = await executeAuthorizedKyrubiaUserProviderChat(
+      authorization,
+      body
+    );
+    if (result.body.status !== 'legacy_allowed') {
+      return { statusCode: result.httpStatus, body: result.body };
+    }
+  }
+
+  const prepared = await prepareKyrubiaMercadoLivrePlatformConversation({
+    authorization,
+    conversationId: typeof body.conversationId === 'string'
+      ? body.conversationId
+      : '',
+    message: latestMessage,
+    erpContext: body.erpContext,
+  });
+  return prepared ? { statusCode: 200, body: prepared } : null;
+};
+
 export const maxDuration = 30;
 
 export default async function handler(
@@ -718,6 +765,16 @@ export default async function handler(
     const singleProductMultimodal = resolveKyrubiaSingleProductMultimodalDraft(messages);
     if (singleProductMultimodal) {
       response.status(200).json(singleProductMultimodal);
+      return;
+    }
+
+    const mercadoLivrePlatform = await handleMercadoLivrePlatformConversation(
+      request,
+      body,
+      messages
+    );
+    if (mercadoLivrePlatform) {
+      response.status(mercadoLivrePlatform.statusCode).json(mercadoLivrePlatform.body);
       return;
     }
 
