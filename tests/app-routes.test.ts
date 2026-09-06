@@ -134,30 +134,22 @@ describe('Kyrub public and operational routes', () => {
     assert.match(profileBridgeSource, /Abrir Central de Planos/);
   });
 
-  test('mobile ERP navigation drawer is portaled outside the management overlay', () => {
+  test('mobile ERP navigation uses the browser top layer instead of a custom portal overlay', () => {
     const mobileMenuSource = readFileSync(
       'src/components/MobileErpMenu.tsx',
       'utf8'
     );
-    const modalLayoutSource = readFileSync(
-      'src/components/AppModalLayoutBridge.tsx',
-      'utf8'
-    );
 
-    assert.match(mobileMenuSource, /import \{ createPortal \} from 'react-dom'/);
-    assert.match(mobileMenuSource, /createPortal\(/);
-    assert.match(mobileMenuSource, /document\.body/);
-    assert.match(mobileMenuSource, /data-kyrub-mobile-erp-portal="true"/);
-    assert.match(mobileMenuSource, /data-kyrub-skip-top-overlay="true"/);
-    assert.match(
-      mobileMenuSource,
-      /className="pointer-events-auto fixed inset-0 z-\[200\]"/
-    );
-    assert.match(
-      modalLayoutSource,
-      /overlay\.dataset\.kyrubSkipTopOverlay === 'true'/
-    );
+    assert.match(mobileMenuSource, /useRef<HTMLDialogElement \| null>/);
+    assert.match(mobileMenuSource, /<dialog/);
+    assert.match(mobileMenuSource, /dialog\.showModal\(\)/);
+    assert.match(mobileMenuSource, /dialog\.close\(\)/);
+    assert.match(mobileMenuSource, /mobile-erp-navigation-dialog::backdrop/);
     assert.match(mobileMenuSource, /id="mobile-erp-navigation-drawer"/);
+    assert.doesNotMatch(mobileMenuSource, /createPortal/);
+    assert.doesNotMatch(mobileMenuSource, /document\.body/);
+    assert.doesNotMatch(mobileMenuSource, /data-kyrub-mobile-erp-portal/);
+    assert.doesNotMatch(mobileMenuSource, /z-\[200\]/);
   });
 
   test('mobile ERP menu closes before committing Gerencial selection', () => {
@@ -177,69 +169,54 @@ describe('Kyrub public and operational routes', () => {
     assert.deepEqual(sequence, ['close', 'tab:gerencial']);
   });
 
-  test('mobile ERP keeps one portal subtree alive across close and reopen cycles', () => {
+  test('mobile ERP native dialog stays mounted while the browser owns open and close state', () => {
     const mobileMenuSource = readFileSync(
       'src/components/MobileErpMenu.tsx',
       'utf8'
     );
 
-    assert.match(mobileMenuSource, /hidden=\{!isOpen\}/);
-    assert.match(
-      mobileMenuSource,
-      /const drawerPortal =\s*\n\s*isRetailer && typeof document !== 'undefined'/
-    );
-    assert.doesNotMatch(
-      mobileMenuSource,
-      /const drawerPortal =\s*\n\s*isOpen && isRetailer/
-    );
+    assert.match(mobileMenuSource, /ref=\{dialogRef\}/);
+    assert.match(mobileMenuSource, /onClose=\{\(\) => setIsOpen\(false\)\}/);
+    assert.match(mobileMenuSource, /onClick=\{handleDialogClick\}/);
+    assert.match(mobileMenuSource, /aria-controls="mobile-erp-navigation-dialog"/);
+    assert.doesNotMatch(mobileMenuSource, /hidden=\{!isOpen\}/);
+    assert.doesNotMatch(mobileMenuSource, /isOpen && isRetailer/);
   });
 
-  test('mobile ERP navigation uses only local click handlers for drawer controls', () => {
+  test('mobile ERP navigation uses only native dialog and local button handlers', () => {
     const mobileMenuSource = readFileSync(
       'src/components/MobileErpMenu.tsx',
       'utf8'
     );
 
-    assert.doesNotMatch(
-      mobileMenuSource,
-      /window\.addEventListener\('click', .*true\)/
-    );
+    assert.doesNotMatch(mobileMenuSource, /window\.addEventListener/);
     assert.doesNotMatch(mobileMenuSource, /event\.stopPropagation\(\)/);
     assert.doesNotMatch(mobileMenuSource, /onTouchStart=/);
     assert.doesNotMatch(mobileMenuSource, /onTouchEnd=/);
     assert.doesNotMatch(mobileMenuSource, /event\.preventDefault\(\)/);
-    assert.doesNotMatch(mobileMenuSource, /useRef/);
     assert.doesNotMatch(mobileMenuSource, /\.inert\s*=/);
+    assert.doesNotMatch(mobileMenuSource, /document\.documentElement\.style\.overflow/);
+    assert.match(mobileMenuSource, /onClick=\{closeMenu\}/);
     assert.match(
       mobileMenuSource,
       /onClick=\{\(\) => handleSelect\(item\.id\)\}/
     );
   });
 
-  test('mobile ERP navigation keeps the known-good drawer controls interactive', () => {
+  test('mobile ERP native dialog keeps all drawer controls explicit and tappable', () => {
     const mobileMenuSource = readFileSync(
       'src/components/MobileErpMenu.tsx',
       'utf8'
     );
 
-    assert.match(
-      mobileMenuSource,
-      /className="pointer-events-auto absolute inset-0 z-0 bg-slate-950\/75 backdrop-blur-sm"/
-    );
-    assert.match(
-      mobileMenuSource,
-      /className="pointer-events-auto absolute inset-y-0 right-0 z-10 flex w-\[82vw\]/
-    );
     assert.match(mobileMenuSource, /aria-label="Fechar menu"/);
-    assert.ok(
-      (mobileMenuSource.match(/onClick=\{\(\) => setIsOpen\(false\)\}/g) ?? [])
-        .length >= 2
-    );
+    assert.match(mobileMenuSource, /aria-label="Abrir menu do painel de gestão"/);
+    assert.match(mobileMenuSource, /className="space-y-2 overflow-y-auto p-4"/);
+    assert.match(mobileMenuSource, /touch-manipulation/);
     assert.match(
       mobileMenuSource,
-      /className="space-y-2 overflow-y-auto p-4"/
+      /if \(event\.target === event\.currentTarget\) closeMenu\(\)/
     );
-    assert.match(mobileMenuSource, /touch-manipulation/);
   });
 
   test('global modal layout skips self-managed drawers, popovers and viewport panels', () => {
