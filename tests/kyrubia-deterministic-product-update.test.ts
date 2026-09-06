@@ -201,6 +201,13 @@ test('product update contract stays confirmation-bound, rich and server-authorit
   assert.match(facadeSource, /isKyrubProductUpdateExecutionRequest/);
   assert.match(facadeSource, /executeLegacyAuthorizedKyrubAction/);
   assert.match(apiSource, /actionExecutionFacade/);
+  assert.match(apiSource, /rawProposal\?\.type === 'update_product'/);
+  assert.match(apiSource, /import\('\.\.\/server\/actions\/productUpdateExecutionService\.js'\)/);
+  assert.ok(
+    apiSource.indexOf("rawProposal?.type === 'update_product'") <
+      apiSource.indexOf("import('../server/actions/actionExecutionFacade.js')"),
+    'update_product must execute before the broad action bootstrap'
+  );
   assert.match(routerSource, /actionExecutionFacade/);
 
   assert.match(actionEventsSource, /case 'update_product'/);

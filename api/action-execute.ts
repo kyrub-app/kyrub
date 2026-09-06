@@ -411,6 +411,39 @@ export default async function handler(
     return;
   }
 
+  if (rawProposal?.type === 'update_product') {
+    let mapError: ((error: unknown) => HttpErrorResult) | null = null;
+    try {
+      const actionService = await import('../server/actions/actionExecutionService.js');
+      mapError = actionService.mapKyrubActionExecutionError;
+      const [productUpdate, entitlementLifecycle, executablePlanCatalog] = await Promise.all([
+        import('../server/actions/productUpdateExecutionService.js'),
+        import('../server/admin/storeEntitlementLifecycleService.js'),
+        import('../server/admin/executablePlanCatalogService.js'),
+      ]);
+      await entitlementLifecycle.reconcileStoreEntitlementFromAuthorization(authorization);
+      await executablePlanCatalog.hydrateExecutablePlanCatalog();
+      if (!productUpdate.isKyrubProductUpdateExecutionRequest(request.body)) {
+        response.status(400).json({
+          error: 'A alteração do produto precisa ser revisada e confirmada.',
+          code: 'INVALID_PRODUCT_UPDATE_REQUEST',
+        });
+        return;
+      }
+      const result = await productUpdate.executeAuthorizedKyrubProductUpdate(
+        authorization,
+        request.body
+      );
+      response.status(200).json(result);
+    } catch (error) {
+      const mapped = mapError
+        ? mapError(error)
+        : genericUnavailable('Não foi possível executar a alteração do produto agora.');
+      response.status(mapped.status).json(mapped.body);
+    }
+    return;
+  }
+
   if (rawProposal?.type === 'adjust_inventory') {
     let mapError: ((error: unknown) => HttpErrorResult) | null = null;
     try {
