@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { describe, test } from 'node:test';
+import { commitMobileErpMenuSelection } from '../src/components/MobileErpMenu';
 import {
   buildPublicStorefrontPath,
   buildPublicStorefrontUrl,
@@ -157,7 +158,43 @@ describe('Kyrub public and operational routes', () => {
       /overlay\.dataset\.kyrubSkipTopOverlay === 'true'/
     );
     assert.match(mobileMenuSource, /id="mobile-erp-navigation-drawer"/);
-    assert.match(mobileMenuSource, /onSelectTab\(itemId\)/);
+  });
+
+  test('mobile ERP menu commits Gerencial selection before closing the drawer', () => {
+    const sequence: string[] = [];
+    let selectedTab = '';
+
+    commitMobileErpMenuSelection('gerencial', {
+      onOpenStoreConfig: () => sequence.push('store-config'),
+      onSelectTab: tab => {
+        selectedTab = tab;
+        sequence.push(`tab:${tab}`);
+      },
+      onCloseMenu: () => sequence.push('close'),
+    });
+
+    assert.equal(selectedTab, 'gerencial');
+    assert.deepEqual(sequence, ['tab:gerencial', 'close']);
+  });
+
+  test('mobile ERP navigation captures native clicks before legacy overlay propagation', () => {
+    const mobileMenuSource = readFileSync(
+      'src/components/MobileErpMenu.tsx',
+      'utf8'
+    );
+
+    assert.match(
+      mobileMenuSource,
+      /window\.addEventListener\('click', handleCapturedMenuClick, true\)/
+    );
+    assert.match(
+      mobileMenuSource,
+      /window\.removeEventListener\('click', handleCapturedMenuClick, true\)/
+    );
+    assert.match(mobileMenuSource, /data-kyrub-mobile-erp-item=\{item\.id\}/);
+    assert.match(mobileMenuSource, /event\.preventDefault\(\)/);
+    assert.match(mobileMenuSource, /event\.stopPropagation\(\)/);
+    assert.match(mobileMenuSource, /commitMobileErpMenuSelection\(itemId/);
   });
 
   test('mobile ERP navigation keeps every drawer surface interactive', () => {
@@ -172,14 +209,17 @@ describe('Kyrub public and operational routes', () => {
     );
     assert.match(
       mobileMenuSource,
-      /className="pointer-events-auto absolute inset-y-0 right-0 z-10 flex w-\[82vw\]/
+      /className="pointer-events-auto absolute inset-y-0 right-0 z-10 isolate flex w-\[82vw\]/
     );
     assert.match(mobileMenuSource, /aria-label="Fechar menu"/);
     assert.ok(
       (mobileMenuSource.match(/onClick=\{\(\) => setIsOpen\(false\)\}/g) ?? [])
         .length >= 2
     );
-    assert.match(mobileMenuSource, /onClick=\{\(\) => handleSelect\(item\.id\)\}/);
+    assert.match(
+      mobileMenuSource,
+      /className="pointer-events-auto relative z-20 space-y-2 overflow-y-auto p-4"/
+    );
     assert.match(mobileMenuSource, /touch-manipulation/);
   });
 
