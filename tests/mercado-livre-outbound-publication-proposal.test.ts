@@ -76,7 +76,6 @@ test('Mercado Livre payload preserves all unique canonical product pictures in o
     pictureUrls: [...threePictures, threePictures[1]],
     attributes: [],
   });
-
   assert.deepEqual(payload.pictures, threePictures.map(source => ({ source })));
 });
 
@@ -94,7 +93,6 @@ test('User Products payload keeps the same multi-picture set without reintroduci
     pictureUrls: threePictures,
     attributes: [],
   });
-
   assert.equal(payload.family_name, 'Chaveiro Kyrub');
   assert.equal('title' in payload, false);
   assert.deepEqual(payload.pictures, threePictures.map(source => ({ source })));
@@ -120,11 +118,9 @@ test('full canonical image set is frozen and revalidated through every publicati
   assert.match(authorization, /sameJson\(canonicalImages\(record\.images, image\), proposal\.canonical\.images\)/);
   assert.match(execution, /images: canonicalImages\(record\.images, image\)/);
   assert.match(execution, /mercadoLivrePostJson<MercadoLivreCreatedItem>\(storeId, '\/items', authorization\.payload\)/);
-  assert.doesNotMatch(proposal, /mercadoLivrePostJson/);
-  assert.doesNotMatch(draft, /mercadoLivrePostJson/);
-  assert.doesNotMatch(kyrubiaValidation, /mercadoLivrePostJson/);
-  assert.doesNotMatch(genericValidation, /mercadoLivrePostJson/);
-  assert.doesNotMatch(authorization, /mercadoLivrePostJson/);
+  for (const source of [proposal, draft, kyrubiaValidation, genericValidation, authorization]) {
+    assert.doesNotMatch(source, /mercadoLivrePostJson/);
+  }
 });
 
 test('capability fingerprint is based only on material seller publication and stock authority', async () => {
