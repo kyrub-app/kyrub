@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type TouchEvent } from 'react';
+import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   ArrowLeft,
@@ -29,15 +29,6 @@ type MenuItem = {
   icon: typeof StoreIcon;
 };
 
-type TouchPoint = {
-  clientX: number;
-  clientY: number;
-};
-
-type MenuTouchStart = TouchPoint & {
-  itemId: MobileErpMenuItemId;
-};
-
 const MENU_ITEMS: readonly MenuItem[] = [
   { id: 'loja', label: 'Loja', icon: StoreIcon },
   { id: 'clientes', label: 'PDV', icon: Users },
@@ -47,16 +38,6 @@ const MENU_ITEMS: readonly MenuItem[] = [
   { id: 'ponto', label: 'Ponto', icon: Fingerprint },
   { id: 'gerencial', label: 'Gerencial', icon: LayoutGrid },
 ];
-
-const MOBILE_TAP_MAX_MOVEMENT_PX = 12;
-
-export const isMobileErpMenuTapGesture = (
-  start: TouchPoint,
-  end: TouchPoint,
-  maxMovement = MOBILE_TAP_MAX_MOVEMENT_PX
-): boolean =>
-  Math.abs(end.clientX - start.clientX) <= maxMovement &&
-  Math.abs(end.clientY - start.clientY) <= maxMovement;
 
 export const commitMobileErpMenuSelection = (
   itemId: MobileErpMenuItemId,
@@ -93,7 +74,6 @@ export function MobileErpMenu({
   onSelectTab,
 }: MobileErpMenuProps) {
   const [isOpen, setIsOpen] = useState(false);
-  const menuTouchStartRef = useRef<MenuTouchStart | null>(null);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -121,48 +101,14 @@ export function MobileErpMenu({
     });
   };
 
-  const handleItemTouchStart = (
-    itemId: MobileErpMenuItemId,
-    event: TouchEvent<HTMLButtonElement>
-  ): void => {
-    const touch = event.touches[0];
-    if (!touch) return;
-
-    menuTouchStartRef.current = {
-      itemId,
-      clientX: touch.clientX,
-      clientY: touch.clientY,
-    };
-  };
-
-  const handleItemTouchEnd = (
-    itemId: MobileErpMenuItemId,
-    event: TouchEvent<HTMLButtonElement>
-  ): void => {
-    const start = menuTouchStartRef.current;
-    menuTouchStartRef.current = null;
-    const touch = event.changedTouches[0];
-
-    if (!start || start.itemId !== itemId || !touch) return;
-    if (
-      !isMobileErpMenuTapGesture(start, {
-        clientX: touch.clientX,
-        clientY: touch.clientY,
-      })
-    ) {
-      return;
-    }
-
-    // On mobile, commit the selection directly from touchend. Preventing the
-    // emulated click avoids a second action after the drawer has unmounted.
-    event.preventDefault();
-    handleSelect(itemId);
-  };
-
+  // Keep one portal subtree alive for the lifetime of this retailer panel.
+  // Reopening only toggles browser visibility, so the second open reuses the
+  // exact same DOM nodes and local React handlers instead of remounting them.
   const drawerPortal =
-    isOpen && isRetailer && typeof document !== 'undefined'
+    isRetailer && typeof document !== 'undefined'
       ? createPortal(
           <div
+            hidden={!isOpen}
             className="pointer-events-auto fixed inset-0 z-[200]"
             role="presentation"
             data-kyrub-skip-top-overlay="true"
@@ -180,7 +126,7 @@ export function MobileErpMenu({
               role="dialog"
               aria-modal="true"
               aria-label="Menu do painel de gestão"
-              className="pointer-events-auto absolute inset-y-0 right-0 z-10 flex w-[82vw] max-w-sm animate-fade-in flex-col border-l border-slate-800 bg-slate-900 shadow-2xl"
+              className="pointer-events-auto absolute inset-y-0 right-0 z-10 flex w-[82vw] max-w-sm flex-col border-l border-slate-800 bg-slate-900 shadow-2xl"
             >
               <div className="flex h-[53px] shrink-0 items-center justify-between border-b border-slate-800 px-5">
                 <span className="text-[11px] font-black uppercase tracking-[0.18em] text-orange-400">
@@ -206,11 +152,6 @@ export function MobileErpMenu({
                       key={item.id}
                       type="button"
                       onClick={() => handleSelect(item.id)}
-                      onTouchStart={event => handleItemTouchStart(item.id, event)}
-                      onTouchEnd={event => handleItemTouchEnd(item.id, event)}
-                      onTouchCancel={() => {
-                        menuTouchStartRef.current = null;
-                      }}
                       aria-current={isSelected ? 'page' : undefined}
                       className={`flex min-h-12 w-full touch-manipulation items-center gap-3 rounded-2xl border px-4 py-3 text-left transition-colors ${
                         isSelected
