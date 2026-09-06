@@ -12,6 +12,12 @@ const genericValidationPath = new URL('../server/integrations/mercadoLivreOutbou
 const authorizationPath = new URL('../server/integrations/mercadoLivreOutboundPublicationAuthorizationService.ts', import.meta.url);
 const executionPath = new URL('../server/integrations/mercadoLivreOutboundPublicationExecutionService.ts', import.meta.url);
 
+const threePictures = [
+  'https://cdn.kyrub.test/chaveiro-1.png',
+  'https://cdn.kyrub.test/chaveiro-2.png',
+  'https://cdn.kyrub.test/chaveiro-3.png',
+];
+
 test('outbound publication starts as a non-executable owner-reviewed proposal', async () => {
   const source = await readFile(servicePath, 'utf8');
   assert.match(source, /status: 'review_required'/);
@@ -66,21 +72,32 @@ test('Mercado Livre payload preserves all unique canonical product pictures in o
     availableQuantity: 10,
     listingTypeId: 'gold_special',
     condition: 'new',
-    pictureUrl: 'https://cdn.kyrub.test/chaveiro-1.png',
-    pictureUrls: [
-      'https://cdn.kyrub.test/chaveiro-1.png',
-      'https://cdn.kyrub.test/chaveiro-2.png',
-      'https://cdn.kyrub.test/chaveiro-3.png',
-      'https://cdn.kyrub.test/chaveiro-2.png',
-    ],
+    pictureUrl: threePictures[0],
+    pictureUrls: [...threePictures, threePictures[1]],
     attributes: [],
   });
 
-  assert.deepEqual(payload.pictures, [
-    { source: 'https://cdn.kyrub.test/chaveiro-1.png' },
-    { source: 'https://cdn.kyrub.test/chaveiro-2.png' },
-    { source: 'https://cdn.kyrub.test/chaveiro-3.png' },
-  ]);
+  assert.deepEqual(payload.pictures, threePictures.map(source => ({ source })));
+});
+
+test('User Products payload keeps the same multi-picture set without reintroducing legacy title', () => {
+  const payload = buildMercadoLivreInitialPublicationPayload({
+    publicationModel: 'user_products',
+    stockAuthority: 'item_available_quantity',
+    name: 'Chaveiro Kyrub',
+    categoryId: 'MLB123',
+    price: 29.9,
+    currencyId: 'BRL',
+    availableQuantity: 10,
+    listingTypeId: 'gold_special',
+    condition: 'new',
+    pictureUrls: threePictures,
+    attributes: [],
+  });
+
+  assert.equal(payload.family_name, 'Chaveiro Kyrub');
+  assert.equal('title' in payload, false);
+  assert.deepEqual(payload.pictures, threePictures.map(source => ({ source })));
 });
 
 test('full canonical image set is frozen and revalidated through every publication gate', async () => {
