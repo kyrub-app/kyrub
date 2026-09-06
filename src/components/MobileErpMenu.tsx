@@ -43,11 +43,8 @@ export const commitMobileErpMenuSelection = (
   actions: {
     onOpenStoreConfig: () => void;
     onSelectTab: (tab: ErpSubTab) => void;
-    onCloseMenu: () => void;
   }
 ): void => {
-  actions.onCloseMenu();
-
   if (itemId === 'loja') {
     actions.onOpenStoreConfig();
   } else {
@@ -73,27 +70,42 @@ export function MobileErpMenu({
   onSelectTab,
 }: MobileErpMenuProps) {
   const dialogRef = useRef<HTMLDialogElement | null>(null);
+  const pendingSelectionRef = useRef<MobileErpMenuItemId | null>(null);
   const [isOpen, setIsOpen] = useState(false);
 
   const openMenu = (): void => {
     const dialog = dialogRef.current;
     if (!dialog || dialog.open) return;
 
+    pendingSelectionRef.current = null;
     dialog.showModal();
     setIsOpen(true);
   };
 
   const closeMenu = (): void => {
     const dialog = dialogRef.current;
-    if (dialog?.open) dialog.close();
+    if (dialog?.open) {
+      dialog.close();
+      return;
+    }
     setIsOpen(false);
   };
 
   const handleSelect = (itemId: MobileErpMenuItemId): void => {
+    pendingSelectionRef.current = itemId;
+    closeMenu();
+  };
+
+  const handleDialogClose = (): void => {
+    setIsOpen(false);
+
+    const itemId = pendingSelectionRef.current;
+    pendingSelectionRef.current = null;
+    if (!itemId) return;
+
     commitMobileErpMenuSelection(itemId, {
       onOpenStoreConfig,
       onSelectTab,
-      onCloseMenu: closeMenu,
     });
   };
 
@@ -133,7 +145,7 @@ export function MobileErpMenu({
             ref={dialogRef}
             id="mobile-erp-navigation-dialog"
             aria-label="Menu do painel de gestão"
-            onClose={() => setIsOpen(false)}
+            onClose={handleDialogClose}
             onClick={handleDialogClick}
             className="fixed inset-0 m-0 h-[100dvh] max-h-none w-screen max-w-none overflow-hidden border-0 bg-transparent p-0 text-white"
           >
