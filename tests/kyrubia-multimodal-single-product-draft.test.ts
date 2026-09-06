@@ -71,6 +71,42 @@ test('multimodal product collector gathers price category and stock one field at
   assert.match(review.reply, /nada será publicado no Mercado Livre/i);
 });
 
+test('explicit follow-up can bind the original three images to the already-created product', () => {
+  const messages: KyrubAiConversationMessage[] = [
+    anchor(),
+    { role: 'assistant', content: 'Produto criado com sucesso.', attachments: [] },
+    {
+      role: 'user',
+      content: 'Kyrubia, use as três imagens que enviei nesta conversa como imagens do produto Chaveiro Kyrub.',
+      attachments: [],
+    },
+  ];
+
+  const result = resolveKyrubiaSingleProductMultimodalDraft(messages);
+  assert.ok(result);
+  assert.equal(result.actionProposal?.type, 'update_product');
+  assert.deepEqual(result.capabilities.enabledActions, ['update_product']);
+  assert.match(result.reply, /3 imagens/i);
+  assert.match(result.reply, /primeira será a imagem principal/i);
+  assert.match(result.reply, /Nenhuma publicação no Mercado Livre/i);
+
+  const proposal = result.actionProposal as Record<string, unknown>;
+  assert.equal(proposal.productId, '__kyrubia_resolve_product_by_name__');
+  assert.equal(proposal.expectedCurrentName, 'Chaveiro Kyrub');
+  assert.deepEqual(proposal.sourceAttachmentPaths, [
+    'kyrubia-attachments/owner/conversation/img-1',
+    'kyrubia-attachments/owner/conversation/img-2',
+    'kyrubia-attachments/owner/conversation/img-3',
+  ]);
+});
+
+test('initial visual-reference request never silently publishes attachments as product media', () => {
+  const result = resolveKyrubiaSingleProductMultimodalDraft([anchor()]);
+  assert.ok(result);
+  assert.equal(result.actionProposal, undefined);
+  assert.doesNotMatch(result.reply, /promover essas imagens/i);
+});
+
 test('collector releases the conversation after its own collection prompts so Mercado Livre can continue', () => {
   const messages: KyrubAiConversationMessage[] = [
     anchor(),
@@ -108,6 +144,30 @@ test('consultor routes bulk catalog then single-product collector then guarded g
   assert.match(router, /INTENT_ACTION_MISMATCH/);
 });
 
+test('confirmed product media remains server-authoritative and private attachments are never reused directly', () => {
+  const execution = readFileSync(
+    new URL('../server/actions/productUpdateExecutionService.ts', import.meta.url),
+    'utf8'
+  );
+  const promotion = readFileSync(
+    new URL('../server/actions/productAttachmentPromotionService.ts', import.meta.url),
+    'utf8'
+  );
+
+  assert.match(execution, /sourceAttachmentPaths:\s*proposal\.sourceAttachmentPaths \?\? \[\]/);
+  assert.match(execution, /proposalHash/);
+  assert.match(execution, /promoteKyrubiaProductAttachments/);
+  assert.match(execution, /images:\s*promoted\.urls/);
+  assert.match(execution, /cleanupNewProductAttachments/);
+  assert.match(promotion, /kyrubia-attachments\/\$\{input\.actorUid\}\//);
+  assert.match(promotion, /app-images\/\$\{input\.actorUid\}\//);
+  assert.match(promotion, /image\/jpeg/);
+  assert.match(promotion, /image\/png/);
+  assert.match(promotion, /image\/webp/);
+  assert.match(promotion, /firebaseStorageDownloadTokens/);
+  assert.doesNotMatch(promotion, /makePublic\(/);
+});
+
 test('create_product stays on the existing action endpoint and uses a fast path before broad bootstrap', () => {
   const client = readFileSync(new URL('../src/actions/kyrubActionService.ts', import.meta.url), 'utf8');
   const endpoint = readFileSync(new URL('../api/action-execute.ts', import.meta.url), 'utf8');
@@ -124,7 +184,9 @@ test('create_product stays on the existing action endpoint and uses a fast path 
   assert.match(endpoint.slice(fastPath, broadBootstrap), /executeAuthorizedKyrubAction/);
 });
 
-test('create_product fast path does not spend an extra Vercel serverless function', () => {
+test('product media promotion does not spend an extra Vercel serverless function', () => {
   const dedicatedEndpoint = new URL('../api/action-execute-product.ts', import.meta.url);
   assert.equal(existsSync(dedicatedEndpoint), false);
+  const mediaEndpoint = new URL('../api/product-media.ts', import.meta.url);
+  assert.equal(existsSync(mediaEndpoint), false);
 });
