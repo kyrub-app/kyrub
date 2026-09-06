@@ -20,6 +20,7 @@ export interface MercadoLivreInitialPublicationPayloadInput {
   listingTypeId: string;
   condition: string;
   pictureUrl?: string;
+  pictureUrls?: readonly string[];
   attributes: MercadoLivreInitialPublicationAttribute[];
   sellerCustomField?: string;
 }
@@ -28,6 +29,23 @@ const clean = (value: unknown, maximum = 2_000): string =>
   typeof value === 'string' || typeof value === 'number'
     ? String(value).replace(/\s+/g, ' ').trim().slice(0, maximum)
     : '';
+
+const normalizePictureUrls = (input: MercadoLivreInitialPublicationPayloadInput): string[] => {
+  const candidates = [
+    ...(Array.isArray(input.pictureUrls) ? input.pictureUrls : []),
+    input.pictureUrl ?? '',
+  ];
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const candidate of candidates) {
+    const url = clean(candidate, 2_000);
+    if (!url || seen.has(url)) continue;
+    seen.add(url);
+    result.push(url);
+    if (result.length >= 12) break;
+  }
+  return result;
+};
 
 export const buildMercadoLivreInitialPublicationPayload = (
   input: MercadoLivreInitialPublicationPayloadInput
@@ -41,6 +59,7 @@ export const buildMercadoLivreInitialPublicationPayload = (
     throw new Error('MERCADO_LIVRE_PUBLICATION_MODEL_UNSUPPORTED');
   }
 
+  const pictureUrls = normalizePictureUrls(input);
   const common = {
     category_id: clean(input.categoryId, 160),
     price: input.price,
@@ -52,8 +71,8 @@ export const buildMercadoLivreInitialPublicationPayload = (
     ...(clean(input.sellerCustomField, 120)
       ? { seller_custom_field: clean(input.sellerCustomField, 120) }
       : {}),
-    ...(clean(input.pictureUrl, 2_000)
-      ? { pictures: [{ source: clean(input.pictureUrl, 2_000) }] }
+    ...(pictureUrls.length > 0
+      ? { pictures: pictureUrls.map(source => ({ source })) }
       : {}),
     attributes: input.attributes.map(attribute => ({
       id: clean(attribute.id, 160),

@@ -33,6 +33,7 @@ interface OutboundProposalRecord {
     stock: number;
     category: string;
     image: string;
+    images: string[];
     publicationStatus: string;
   };
   executionStatus: 'not_authorized';
@@ -88,6 +89,20 @@ const integerNonNegative = (value: unknown): number | null => {
   return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : null;
 };
 
+const canonicalImages = (value: unknown, primary: unknown): string[] => {
+  const candidates = [primary, ...(Array.isArray(value) ? value : [])];
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const candidate of candidates) {
+    const url = clean(candidate, 2_000);
+    if (!url || seen.has(url)) continue;
+    seen.add(url);
+    result.push(url);
+    if (result.length >= 12) break;
+  }
+  return result;
+};
+
 const normalize = (value: string): string =>
   value
     .normalize('NFD')
@@ -95,6 +110,9 @@ const normalize = (value: string): string =>
     .toLocaleLowerCase('pt-BR')
     .replace(/\s+/g, ' ')
     .trim();
+
+const sameJson = (left: unknown, right: unknown): boolean =>
+  JSON.stringify(left) === JSON.stringify(right);
 
 const assertProposal = (
   storeId: string,
@@ -127,6 +145,7 @@ const assertProposal = (
     !record.providerCapability ||
     !canonical ||
     !clean(canonical.name, 120) ||
+    !Array.isArray(canonical.images) ||
     finiteNonNegative(canonical.price) === null ||
     integerNonNegative(canonical.stock) === null
   ) {
@@ -141,13 +160,15 @@ const canonicalMatchesProposal = (
 ): boolean => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const record = value as Record<string, unknown>;
+  const image = clean(record.image, 2_000);
   return clean(record.id, 160) === proposal.canonicalProductId &&
     clean(record.storeId, 160) === proposal.canonicalStoreId &&
     clean(record.name, 120) === proposal.canonical.name &&
     finiteNonNegative(record.price) === proposal.canonical.price &&
     integerNonNegative(record.stock) === proposal.canonical.stock &&
     clean(record.category, 160) === proposal.canonical.category &&
-    clean(record.image, 2_000) === proposal.canonical.image &&
+    image === proposal.canonical.image &&
+    sameJson(canonicalImages(record.images, image), proposal.canonical.images) &&
     clean(record.publicationStatus, 80) === proposal.canonical.publicationStatus &&
     record.isService === false;
 };
@@ -334,9 +355,6 @@ const stableAttributes = (
 
 const stableStrings = (values: readonly string[]): string[] =>
   [...new Set(values.map(value => clean(value, 160)).filter(Boolean))].sort();
-
-const sameJson = (left: unknown, right: unknown): boolean =>
-  JSON.stringify(left) === JSON.stringify(right);
 
 const configurationMatches = (input: {
   value: unknown;

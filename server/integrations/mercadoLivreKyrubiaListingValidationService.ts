@@ -27,6 +27,7 @@ interface ProposalRecord {
     stock: number;
     category: string;
     image: string;
+    images: string[];
     publicationStatus: string;
   };
   providerSiteId: string;
@@ -101,6 +102,20 @@ const finiteNonNegative = (value: unknown): number | null => {
 const integerNonNegative = (value: unknown): number | null => {
   const parsed = Number(value);
   return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : null;
+};
+
+const canonicalImages = (value: unknown, primary: unknown): string[] => {
+  const candidates = [primary, ...(Array.isArray(value) ? value : [])];
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const candidate of candidates) {
+    const url = clean(candidate, 2_000);
+    if (!url || seen.has(url)) continue;
+    seen.add(url);
+    result.push(url);
+    if (result.length >= 12) break;
+  }
+  return result;
 };
 
 const normalizedStringArray = (value: unknown): string[] => {
@@ -197,6 +212,7 @@ const assertProposal = (
     !record.providerCapability ||
     !canonical ||
     !clean(canonical.name, 120) ||
+    !Array.isArray(canonical.images) ||
     finiteNonNegative(canonical.price) === null ||
     integerNonNegative(canonical.stock) === null ||
     !clean(record.providerSiteId, 16) ||
@@ -312,13 +328,15 @@ const canonicalMatchesProposal = (
 ): boolean => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const record = value as Record<string, unknown>;
+  const image = clean(record.image, 2_000);
   return clean(record.id, 160) === proposal.canonicalProductId &&
     clean(record.storeId, 160) === proposal.canonicalStoreId &&
     clean(record.name, 120) === proposal.canonical.name &&
     finiteNonNegative(record.price) === proposal.canonical.price &&
     integerNonNegative(record.stock) === proposal.canonical.stock &&
     clean(record.category, 160) === proposal.canonical.category &&
-    clean(record.image, 2_000) === proposal.canonical.image &&
+    image === proposal.canonical.image &&
+    sameJson(canonicalImages(record.images, image), proposal.canonical.images) &&
     clean(record.publicationStatus, 80) === proposal.canonical.publicationStatus &&
     record.isService === false;
 };
@@ -410,6 +428,7 @@ export const validateKyrubiaMercadoLivreDraftListing = async (input: {
     listingTypeId: proposal.providerListingTypeId,
     condition: proposal.providerCondition,
     pictureUrl: proposal.canonical.image,
+    pictureUrls: proposal.canonical.images,
     attributes: configuration.attributes,
     sellerCustomField: publicationCorrelationMarker,
   });

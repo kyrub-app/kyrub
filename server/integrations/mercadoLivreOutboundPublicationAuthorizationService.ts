@@ -25,6 +25,7 @@ interface ProposalRecord {
     stock: number;
     category: string;
     image: string;
+    images: string[];
     publicationStatus: string;
   };
   publicationReadiness: 'ready_for_owner_authorization';
@@ -62,6 +63,23 @@ const integerNonNegative = (value: unknown): number | null => {
   return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : null;
 };
 
+const canonicalImages = (value: unknown, primary: unknown): string[] => {
+  const candidates = [primary, ...(Array.isArray(value) ? value : [])];
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const candidate of candidates) {
+    const url = clean(candidate, 2_000);
+    if (!url || seen.has(url)) continue;
+    seen.add(url);
+    result.push(url);
+    if (result.length >= 12) break;
+  }
+  return result;
+};
+
+const sameJson = (left: unknown, right: unknown): boolean =>
+  JSON.stringify(left) === JSON.stringify(right);
+
 const sha256 = (value: string): string => createHash('sha256').update(value).digest('hex');
 const stablePayloadHash = (payload: Record<string, unknown>): string => sha256(JSON.stringify(payload));
 
@@ -81,7 +99,7 @@ const assertProposal = (storeId: string, proposalId: string, value: unknown): Pr
     !clean(record.providerCapabilityFingerprint, 80) ||
     (record.providerPublicationModel !== 'legacy_items' && record.providerPublicationModel !== 'user_products') ||
     record.providerStockAuthority !== 'item_available_quantity' || !record.providerCapability ||
-    !canonical || !clean(canonical.name, 120) ||
+    !canonical || !clean(canonical.name, 120) || !Array.isArray(canonical.images) ||
     record.publicationReadiness !== 'ready_for_owner_authorization' ||
     record.publicationReadinessAuthority !== 'provider_items_validate' ||
     !clean(record.publicationValidatedAt, 80) ||
@@ -110,13 +128,15 @@ const assertValidation = (proposal: ProposalRecord, value: unknown): ListingVali
 const canonicalMatchesProposal = (proposal: ProposalRecord, value: unknown): boolean => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const record = value as Record<string, unknown>;
+  const image = clean(record.image, 2_000);
   return clean(record.id, 160) === proposal.canonicalProductId &&
     clean(record.storeId, 160) === proposal.canonicalStoreId &&
     clean(record.name, 120) === proposal.canonical.name &&
     finiteNonNegative(record.price) === proposal.canonical.price &&
     integerNonNegative(record.stock) === proposal.canonical.stock &&
     clean(record.category, 160) === proposal.canonical.category &&
-    clean(record.image, 2_000) === proposal.canonical.image &&
+    image === proposal.canonical.image &&
+    sameJson(canonicalImages(record.images, image), proposal.canonical.images) &&
     clean(record.publicationStatus, 80) === proposal.canonical.publicationStatus &&
     record.isService === false;
 };
