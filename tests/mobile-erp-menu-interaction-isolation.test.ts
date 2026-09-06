@@ -14,9 +14,9 @@ describe('mobile ERP drawer interaction isolation', () => {
     assert.match(source, /data-kyrub-mobile-erp-portal="true"/);
   });
 
-  test('keeps the persistent portal above independent Gerencial surfaces', () => {
+  test('preserves the persistent known-good drawer stacking contract', () => {
     assert.match(source, /hidden=\{!isOpen\}/);
-    assert.match(source, /z-\[2147483647\]/);
+    assert.match(source, /className="pointer-events-auto fixed inset-0 z-\[200\]"/);
     assert.match(source, /data-kyrub-skip-top-overlay="true"/);
   });
 
