@@ -160,7 +160,7 @@ describe('Kyrub public and operational routes', () => {
     assert.match(mobileMenuSource, /id="mobile-erp-navigation-drawer"/);
   });
 
-  test('mobile ERP menu commits Gerencial selection before closing the drawer', () => {
+  test('mobile ERP menu closes before committing Gerencial selection', () => {
     const sequence: string[] = [];
     let selectedTab = '';
 
@@ -174,7 +174,7 @@ describe('Kyrub public and operational routes', () => {
     });
 
     assert.equal(selectedTab, 'gerencial');
-    assert.deepEqual(sequence, ['tab:gerencial', 'close']);
+    assert.deepEqual(sequence, ['close', 'tab:gerencial']);
   });
 
   test('mobile ERP keeps one portal subtree alive across close and reopen cycles', () => {
@@ -209,6 +209,7 @@ describe('Kyrub public and operational routes', () => {
     assert.doesNotMatch(mobileMenuSource, /onTouchEnd=/);
     assert.doesNotMatch(mobileMenuSource, /event\.preventDefault\(\)/);
     assert.doesNotMatch(mobileMenuSource, /useRef/);
+    assert.doesNotMatch(mobileMenuSource, /\.inert\s*=/);
     assert.match(
       mobileMenuSource,
       /onClick=\{\(\) => handleSelect\(item\.id\)\}/
