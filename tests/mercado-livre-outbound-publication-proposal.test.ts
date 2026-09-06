@@ -103,6 +103,9 @@ test('full canonical image set is frozen and revalidated through every publicati
   assert.match(authorization, /sameJson\(canonicalImages\(record\.images, image\), proposal\.canonical\.images\)/);
   assert.match(execution, /images: canonicalImages\(record\.images, image\)/);
   assert.match(execution, /mercadoLivrePostJson<MercadoLivreCreatedItem>\(storeId, '\/items', authorization\.payload\)/);
+  assert.doesNotMatch(proposal, /mercadoLivrePostJson/);
+  assert.doesNotMatch(kyrubiaValidation, /mercadoLivrePostJson/);
+  assert.doesNotMatch(authorization, /mercadoLivrePostJson/);
 });
 
 test('capability fingerprint is based only on material seller publication and stock authority', async () => {
