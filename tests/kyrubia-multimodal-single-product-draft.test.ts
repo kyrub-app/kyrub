@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import test from 'node:test';
 import type { KyrubAiConversationMessage } from '../shared/aiConsultant';
 import { resolveKyrubiaSingleProductMultimodalDraft } from '../server/ai/kyrubiaSingleProductMultimodalDraft';
+import { resolveOwnedProductIdentityFromPublicProducts } from '../server/catalog/authoritativeProductIdentityService';
 
 const attachment = (id: string) => ({
   id,
@@ -162,11 +163,63 @@ test('normal Chaveiro preparation command enters the deterministic Mercado Livre
   assert.match(bridge, /(?:prepare|preparar)/);
   assert.match(bridge, /mercado\\s\+livre/);
   assert.match(bridge, /prepareKyrubiaMercadoLivrePublication/);
+  assert.match(bridge, /resolveAuthoritativeOwnStoreProductByExactName/);
+  assert.doesNotMatch(bridge, /productLocatorFromErpContext/);
+  assert.doesNotMatch(bridge, /snapshot atual do catálogo/);
   assert.match(bridge, /authorization: 'intent_only'/);
   assert.match(bridge, /Nenhuma publicação foi enviada ao Mercado Livre/);
   assert.doesNotMatch(bridge, /mercadoLivrePostJson|mercadoLivrePutJson/);
   assert.match(prepareTool, /externalWritePerformed:\s*false/);
   assert.match(prepareTool, /authorizationCreated:\s*false/);
+});
+
+test('Mercado Livre product locator resolves only the authenticated owner and fails closed on ambiguity', () => {
+  const publicProducts = [
+    {
+      id: 'chaveiro-owner',
+      name: 'Chaveiro Kyrub',
+      storeId: 'owner',
+      supplierId: 'owner',
+    },
+    {
+      id: 'chaveiro-other-store',
+      name: 'Chaveiro Kyrub',
+      storeId: 'other',
+      supplierId: 'other',
+    },
+  ];
+  const found = resolveOwnedProductIdentityFromPublicProducts({
+    ownerUid: 'owner',
+    targetName: '  CHAVEIRO   KYRUB  ',
+    publicProducts,
+  });
+  assert.deepEqual(found, {
+    status: 'found',
+    product: { id: 'chaveiro-owner', name: 'Chaveiro Kyrub' },
+  });
+
+  const ambiguous = resolveOwnedProductIdentityFromPublicProducts({
+    ownerUid: 'owner',
+    targetName: 'Chaveiro Kyrub',
+    publicProducts: [
+      ...publicProducts,
+      {
+        id: 'chaveiro-owner-2',
+        name: 'Chaveiro Kyrub',
+        storeId: 'owner',
+        supplierId: 'owner',
+      },
+    ],
+  });
+  assert.equal(ambiguous.status, 'ambiguous');
+  if (ambiguous.status !== 'ambiguous') assert.fail('Expected ambiguous identity.');
+  assert.equal(ambiguous.matches.length, 2);
+
+  assert.deepEqual(resolveOwnedProductIdentityFromPublicProducts({
+    ownerUid: 'owner',
+    targetName: 'Produto inexistente',
+    publicProducts,
+  }), { status: 'not_found' });
 });
 
 test('confirmed product media remains server-authoritative and private attachments are never reused directly', () => {

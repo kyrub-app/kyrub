@@ -1,6 +1,9 @@
 import { createHash, randomUUID } from 'node:crypto';
 import type { KyrubAiConsultantResponse } from '../../shared/aiConsultant.js';
 import type { KyrubiaTurnContext } from '../../shared/kyrubiaContext.js';
+import {
+  resolveAuthoritativeOwnStoreProductByExactName,
+} from '../catalog/authoritativeProductIdentityService.js';
 import { authenticateConsultantRequest } from './consultantAuth.js';
 import {
   prepareKyrubiaMercadoLivrePublication,
@@ -11,15 +14,6 @@ const clean = (value: unknown, maximum = 240): string =>
   typeof value === 'string'
     ? value.replace(/\s+/g, ' ').trim().slice(0, maximum)
     : '';
-
-const normalize = (value: string): string =>
-  value
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLocaleLowerCase('pt-BR')
-    .replace(/[^a-z0-9]+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
 
 const record = (value: unknown): Record<string, unknown> =>
   value && typeof value === 'object' && !Array.isArray(value)
@@ -36,24 +30,6 @@ const preparationTarget = (message: string): string => {
 export const isKyrubiaMercadoLivrePlatformPreparationText = (
   message: string
 ): boolean => Boolean(preparationTarget(message));
-
-const productLocatorFromErpContext = (
-  erpContext: unknown,
-  targetName: string
-): { id: string; name: string } | null => {
-  const context = record(erpContext);
-  if (!Array.isArray(context.products)) return null;
-  const target = normalize(targetName);
-  if (!target) return null;
-  const matches = context.products.flatMap(candidate => {
-    const product = record(candidate);
-    const id = clean(product.id, 160);
-    const name = clean(product.name, 180);
-    if (!id || id.includes('/') || !name || normalize(name) !== target) return [];
-    return [{ id, name }];
-  });
-  return matches.length === 1 ? matches[0] : null;
-};
 
 const categoryStepReply = (
   result: Extract<KyrubiaMercadoLivrePrepareResult, { prepared: true }>
@@ -141,6 +117,20 @@ const platformCapabilities: KyrubAiConsultantResponse['capabilities'] = {
   persistentCloudHistoryEnabled: false,
 };
 
+const unresolvedProductResponse = (input: {
+  targetName: string;
+  reason: 'not_found' | 'ambiguous';
+}): KyrubAiConsultantResponse => ({
+  reply: input.reason === 'ambiguous'
+    ? `Existe mais de um produto chamado “${input.targetName}” na loja autenticada. Não preparei nenhum rascunho do Mercado Livre. Identifique o item de forma mais específica.`
+    : `Não encontrei “${input.targetName}” na loja autenticada. Não preparei nenhum rascunho do Mercado Livre. Confira o nome do produto e tente novamente.`,
+  provider: 'kyrub',
+  model: 'kyrub-mercado-livre-platform-runtime-v1',
+  mode: 'deterministic',
+  requestId: randomUUID(),
+  capabilities: platformCapabilities,
+});
+
 export const prepareKyrubiaMercadoLivrePlatformConversation = async (input: {
   authorization: string;
   conversationId: string;
@@ -151,19 +141,17 @@ export const prepareKyrubiaMercadoLivrePlatformConversation = async (input: {
   if (!targetName) return null;
 
   const user = await authenticateConsultantRequest(input.authorization);
-  const product = productLocatorFromErpContext(input.erpContext, targetName);
-  if (!product) {
-    return {
-      reply:
-        `Não consegui resolver “${targetName}” como um único produto exato no snapshot atual do catálogo. ` +
-        'Não preparei nenhum rascunho do Mercado Livre. Atualize o catálogo ou informe exatamente o nome do produto que deseja preparar.',
-      provider: 'kyrub',
-      model: 'kyrub-mercado-livre-platform-runtime-v1',
-      mode: 'deterministic',
-      requestId: randomUUID(),
-      capabilities: platformCapabilities,
-    };
+  const resolution = await resolveAuthoritativeOwnStoreProductByExactName({
+    ownerUid: user.uid,
+    targetName,
+  });
+  if (resolution.status !== 'found') {
+    return unresolvedProductResponse({
+      targetName,
+      reason: resolution.status,
+    });
   }
+  const product = resolution.product;
 
   const prepared = await prepareKyrubiaMercadoLivrePublication({
     uid: user.uid,
