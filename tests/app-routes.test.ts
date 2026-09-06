@@ -152,21 +152,39 @@ describe('Kyrub public and operational routes', () => {
     assert.doesNotMatch(mobileMenuSource, /z-\[200\]/);
   });
 
-  test('mobile ERP menu closes before committing Gerencial selection', () => {
-    const sequence: string[] = [];
+  test('mobile ERP commits Gerencial as a valid destination', () => {
     let selectedTab = '';
 
     commitMobileErpMenuSelection('gerencial', {
-      onOpenStoreConfig: () => sequence.push('store-config'),
+      onOpenStoreConfig: () => undefined,
       onSelectTab: tab => {
         selectedTab = tab;
-        sequence.push(`tab:${tab}`);
       },
-      onCloseMenu: () => sequence.push('close'),
     });
 
     assert.equal(selectedTab, 'gerencial');
-    assert.deepEqual(sequence, ['close', 'tab:gerencial']);
+  });
+
+  test('mobile ERP waits for the native dialog close event before committing navigation', () => {
+    const mobileMenuSource = readFileSync(
+      'src/components/MobileErpMenu.tsx',
+      'utf8'
+    );
+
+    assert.match(
+      mobileMenuSource,
+      /pendingSelectionRef = useRef<MobileErpMenuItemId \| null>\(null\)/
+    );
+    assert.match(
+      mobileMenuSource,
+      /pendingSelectionRef\.current = itemId;\s*closeMenu\(\);/
+    );
+    assert.match(mobileMenuSource, /const handleDialogClose = \(\): void =>/);
+    assert.match(mobileMenuSource, /onClose=\{handleDialogClose\}/);
+    assert.match(
+      mobileMenuSource,
+      /const itemId = pendingSelectionRef\.current;\s*pendingSelectionRef\.current = null;\s*if \(!itemId\) return;\s*commitMobileErpMenuSelection/
+    );
   });
 
   test('mobile ERP native dialog stays mounted while the browser owns open and close state', () => {
@@ -176,7 +194,7 @@ describe('Kyrub public and operational routes', () => {
     );
 
     assert.match(mobileMenuSource, /ref=\{dialogRef\}/);
-    assert.match(mobileMenuSource, /onClose=\{\(\) => setIsOpen\(false\)\}/);
+    assert.match(mobileMenuSource, /onClose=\{handleDialogClose\}/);
     assert.match(mobileMenuSource, /onClick=\{handleDialogClick\}/);
     assert.match(mobileMenuSource, /aria-controls="mobile-erp-navigation-dialog"/);
     assert.doesNotMatch(mobileMenuSource, /hidden=\{!isOpen\}/);
