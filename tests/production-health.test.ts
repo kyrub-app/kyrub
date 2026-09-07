@@ -116,3 +116,19 @@ test('admin integration transports do not statically initialize operations healt
   assert.match(source, /import\('\.\.\/\.\.\/\.\.\/server\/admin\/integrationCredentialService\.js'\)/);
   assert.match(source, /import\('\.\.\/\.\.\/\.\.\/server\/admin\/operationsHealthRouter\.js'\)/);
 });
+
+test('store connections reuse the existing health serverless transport without increasing the function budget', () => {
+  const health = readFileSync('api/health.ts', 'utf8');
+  const transport = readFileSync('server/integrations/storeConnectionsServerlessTransport.ts', 'utf8');
+  const vercel = readFileSync('vercel.json', 'utf8');
+
+  assert.match(vercel, /\/api\/store-connections\/:path\*/);
+  assert.match(vercel, /\/api\/health\?transport=store-connections&path=:path\*/);
+  assert.match(health, /transport === 'store-connections'/);
+  assert.match(health, /storeConnectionsServerlessTransport\.js/);
+  assert.match(transport, /createStoreConnectionOnboardingRouter/);
+  assert.match(transport, /createMercadoLivreRouter/);
+  assert.match(transport, /createMercadoLivreStockExecutionRouter/);
+  assert.match(transport, /createMercadoLivreE2ETestRouter/);
+  assert.match(transport, /request\.url = `\/api\/store-connections/);
+});

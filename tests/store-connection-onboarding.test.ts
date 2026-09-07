@@ -242,17 +242,3 @@ test('99Food reservation retry stays inside canonical reconciliation and never w
   assert.match(retrySection, /BLOCKED_STATES\.has/);
   assert.doesNotMatch(retrySection, /sendNinetyNineFoodOrderStatus|provider_write_succeeded|rejected/);
 });
-
-test('Vercel routes the complete store connection surface through the canonical backend routers', () => {
-  const gateway = readFileSync('api/store-connections-gateway.ts', 'utf8');
-  const vercel = readFileSync('vercel.json', 'utf8');
-
-  assert.match(gateway, /createStoreConnectionOnboardingRouter/);
-  assert.match(gateway, /createMercadoLivreRouter/);
-  assert.match(gateway, /createMercadoLivreStockExecutionRouter/);
-  assert.match(gateway, /createMercadoLivreE2ETestRouter/);
-  assert.match(gateway, /request\.url = routedUrl\(request\)/);
-  assert.match(gateway, /STORE_CONNECTION_ROUTE_NOT_FOUND/);
-  assert.match(vercel, /\/api\/store-connections\/:path\*/);
-  assert.match(vercel, /store-connections-gateway\?__kyrubStoreConnectionPath=:path\*/);
-});
