@@ -4,9 +4,10 @@ import test from 'node:test';
 
 const main = readFileSync('src/main.tsx', 'utf8');
 const app = readFileSync('src/App.tsx', 'utf8');
+const viteConfig = readFileSync('vite.config.ts', 'utf8');
 const retailerPanel = readFileSync('src/components/RetailerPanel.tsx', 'utf8');
 const gerencialPanel = readFileSync(
-  'src/components/GerencialPanel.tsx',
+  'src/components/GerencialPanelRuntime.tsx',
   'utf8'
 );
 const runtimeRouter = readFileSync(
@@ -60,14 +61,22 @@ test('retailer inventory removes admin workspaces and replaces the appearance ca
   assert.match(retailerPanel, /candidateGrid\.style\.display = 'none'/);
 });
 
+test('native Gerencial is the browser runtime and enters without hidden modal work', () => {
+  assert.match(viteConfig, /RetailerPanelRuntimeRouter\.tsx/);
+  assert.match(runtimeRouter, /from '\.\/GerencialPanelRuntime'/);
+  assert.match(runtimeRouter, /<GerencialPanel/);
+  assert.match(gerencialPanel, /id="kyrub-gerencial-native-runtime"/);
+  assert.match(gerencialPanel, /data-kyrub-gerencial-runtime="inert-entry"/);
+  assert.match(gerencialPanel, /activeModule === 'integracoes'/);
+  assert.match(gerencialPanel, /editingProduct &&/);
+  assert.doesNotMatch(gerencialPanel, /erp-gerencial-tab/);
+});
+
 test('native Gerencial owns product navigation without the legacy layout bridge', () => {
   assert.doesNotMatch(app, /<ProductWorkspaceLayoutBridge \/>/);
   assert.doesNotMatch(app, /GerencialMercadoLivreIntegrationBridge/);
-  assert.match(runtimeRouter, /<GerencialPanel/);
-  assert.match(gerencialPanel, /id="kyrub-gerencial-native-runtime"/);
   assert.match(gerencialPanel, /<ProductInventoryWorkspace/);
   assert.match(gerencialPanel, /Menu Gerencial/);
-  assert.doesNotMatch(gerencialPanel, /erp-gerencial-tab/);
 });
 
 test('retailer inventory starts with two mobile columns and expands responsively', () => {
