@@ -9,6 +9,13 @@ export default defineConfig(() => {
     resolve: {
       alias: [
         {
+          find: /^\.\/components\/MobileErpMenu$/,
+          replacement: path.resolve(
+            __dirname,
+            'src/components/MobileErpMenuRuntime.tsx'
+          ),
+        },
+        {
           find: /^\.\/components\/RetailerPanel$/,
           replacement: path.resolve(
             __dirname,
