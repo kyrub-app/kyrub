@@ -30,18 +30,15 @@ import { SocialPublishingBridge } from './components/SocialPublishingBridge';
 import { UserNotificationCenterBridge } from './components/UserNotificationCenterBridge';
 import { CatalogCustomizationInheritanceBridge } from './components/store/CatalogCustomizationInheritanceBridge';
 import { CourierLiveTrackingBridge } from './components/store/CourierLiveTrackingBridge';
-import { GerencialMercadoLivreIntegrationBridge } from './components/store/GerencialMercadoLivreIntegrationBridge';
 import { IntegrationTestOrderBridge } from './components/store/IntegrationTestOrderBridge';
 import { KyrubDeliveryOpportunityBridge } from './components/store/KyrubDeliveryOpportunityBridge';
 import { KyrubDeliveryStatusSyncBridge } from './components/store/KyrubDeliveryStatusSyncBridge';
 import { LocalAttendanceBridge } from './components/store/LocalAttendanceBridge';
-import { ManualStorePromotionBridge } from './components/store/ManualStorePromotionBridge';
 import { NinetyNineFoodConnectionBridge } from './components/store/NinetyNineFoodConnectionBridge';
 import { NinetyNineFoodOrderStatusBridge } from './components/store/NinetyNineFoodOrderStatusBridge';
 import { OperationalAppEntryBridge } from './components/store/OperationalAppEntryBridge';
 import { OrderInventoryReconciliationBridge } from './components/store/OrderInventoryReconciliationBridge';
 import { ProductCrossDeviceSyncBridge } from './components/store/ProductCrossDeviceSyncBridge';
-import { ProductWorkspaceLayoutBridge } from './components/store/ProductWorkspaceLayoutBridge';
 import { StoreCrmRelationshipBridge } from './components/store/StoreCrmRelationshipBridge';
 import { StoreCustomerChatBridge } from './components/store/StoreCustomerChatBridge';
 import { StoreInstitutionalIdentityBridge } from './components/store/StoreInstitutionalIdentityBridge';
@@ -235,7 +232,6 @@ function AuthenticatedKyrubApp({ operational }: { operational: boolean }) {
       <KyrubAiOrderStatusActionBridge />
       <KyrubAiStoreOperationActionBridge />
       <KyrubAiStorePromotionActionBridge />
-      <ManualStorePromotionBridge />
       <StoreLoyaltyCenterBridge />
       <StoreCrmRelationshipBridge />
       <LocalAttendanceBridge />
@@ -246,8 +242,6 @@ function AuthenticatedKyrubApp({ operational }: { operational: boolean }) {
       <StoreRestartLandingBridge />
       <UnifiedProductCreateModalBridge />
       <CatalogCustomizationInheritanceBridge />
-      <ProductWorkspaceLayoutBridge />
-      <GerencialMercadoLivreIntegrationBridge />
       {operational && <OperationalAppEntryBridge />}
       <LegacyApp key={`legacy-cache-${legacyCacheRevision}`} />
       {legacyRefreshing && <KyrubBootstrapScreen />}
