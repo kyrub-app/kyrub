@@ -1,84 +1,71 @@
 import React from 'react';
-import { GerencialPanel } from './GerencialPanelRuntime';
 import { RetailerPanel as LegacyRetailerPanel } from './LegacyRetailerPanel';
 import { RetailerPanel as ModernRetailerPanel } from './RetailerPanel';
 
 type RetailerPanelProps = React.ComponentProps<typeof LegacyRetailerPanel>;
 
-type GerencialPanelErrorBoundaryProps = {
-  children: React.ReactNode;
-  onRecover: () => void;
-};
+const GERENCIAL_MODULES = [
+  ['Produtos & Estoque', 'Catálogo, publicação, estoque e edição dos itens da loja.'],
+  ['Vendas & Analytics', 'Indicadores e leitura operacional das vendas da loja.'],
+  ['Financeiro Interno', 'Custos, entradas, obrigações e projeções financeiras da operação.'],
+  ['Recursos Humanos', 'Equipe, cargos, acessos e rotinas da loja única do usuário.'],
+  ['CRM', 'Relacionamento, segmentação, histórico e inteligência sobre clientes.'],
+  ['Marketing', 'Aquisição, conversão, retenção, canais e inteligência de crescimento.'],
+  ['Integrações & Sandbox', 'Conexões externas, OAuth, sincronização e testes controlados dos canais.'],
+  ['Cupons & Vouchers', 'Incentivos promocionais separados de CRM e Marketing.'],
+] as const;
 
-type GerencialPanelErrorBoundaryState = {
-  error: Error | null;
-};
-
-class GerencialPanelErrorBoundary extends React.Component<
-  GerencialPanelErrorBoundaryProps,
-  GerencialPanelErrorBoundaryState
-> {
-  state: GerencialPanelErrorBoundaryState = { error: null };
-
-  static getDerivedStateFromError(error: Error): GerencialPanelErrorBoundaryState {
-    return { error };
-  }
-
-  componentDidCatch(error: Error, info: React.ErrorInfo): void {
-    console.error('Falha contida no Painel Gerencial.', error, info.componentStack);
-  }
-
-  private recover = (): void => {
-    this.setState({ error: null });
-    this.props.onRecover();
-  };
-
-  render(): React.ReactNode {
-    if (!this.state.error) return this.props.children;
-
-    return (
-      <section
-        id="erp-gerencial-recovery-boundary"
-        className="rounded-3xl border border-red-500/25 bg-slate-900 p-6 text-white"
-        role="alert"
-      >
-        <span className="font-mono text-[9px] font-black uppercase tracking-[0.16em] text-red-300">
-          Painel Gerencial isolado
-        </span>
-        <h3 className="mt-2 text-base font-black">Não foi possível abrir o Gerencial.</h3>
-        <p className="mt-2 text-xs leading-relaxed text-slate-400">
-          A falha ficou contida nesta área. As demais funções do Kyrub continuam disponíveis.
-        </p>
+const GerencialInlineShell: React.FC<{
+  onBackToPdv: () => void;
+}> = ({ onBackToPdv }) => (
+  <section
+    id="kyrub-gerencial-inline-shell"
+    data-kyrub-gerencial-runtime="inline-shell"
+    className="space-y-5"
+  >
+    <header className="rounded-3xl border border-emerald-500/25 bg-slate-900 p-5 text-white">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <span className="font-mono text-[9px] font-black uppercase tracking-[0.16em] text-emerald-300">
+            Painel Gerencial
+          </span>
+          <h2 className="mt-1 text-lg font-black">Gestão da loja</h2>
+          <p className="mt-1 max-w-2xl text-[10px] leading-relaxed text-slate-400">
+            Shell direto do runtime. Nenhum módulo, bridge, listener ou integração é carregado nesta entrada.
+          </p>
+        </div>
         <button
           type="button"
-          onClick={this.recover}
-          className="mt-4 min-h-11 rounded-xl bg-orange-500 px-4 text-xs font-black uppercase text-slate-950"
+          onClick={onBackToPdv}
+          className="min-h-10 rounded-xl bg-orange-500 px-3 text-[9px] font-black uppercase text-slate-950"
         >
           Voltar ao PDV
         </button>
-      </section>
-    );
-  }
-}
+      </div>
+    </header>
+
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2" id="kyrub-gerencial-inline-module-grid">
+      {GERENCIAL_MODULES.map(([title, description]) => (
+        <button
+          key={title}
+          type="button"
+          className="min-h-32 rounded-3xl border border-slate-800 bg-slate-900 p-5 text-left text-white"
+          aria-label={title}
+        >
+          <h3 className="text-xs font-black uppercase">{title}</h3>
+          <p className="mt-2 text-[10px] leading-relaxed text-slate-400">{description}</p>
+        </button>
+      ))}
+    </div>
+  </section>
+);
 
 export const RetailerPanel: React.FC<RetailerPanelProps> = props => {
   if (props.activeSubTab === 'gerencial') {
     return (
-      <GerencialPanelErrorBoundary
-        key={`${props.activeRetailerId}-gerencial-native`}
-        onRecover={() => props.setActiveSubTab('clientes')}
-      >
-        <GerencialPanel
-          activeRetailerId={props.activeRetailerId}
-          activeStore={props.activeStore}
-          products={props.products}
-          orders={props.orders}
-          setProducts={props.setProducts}
-          setNewProductModal={props.setNewProductModal}
-          triggerToast={props.triggerToast}
-          setActiveSubTab={props.setActiveSubTab}
-        />
-      </GerencialPanelErrorBoundary>
+      <GerencialInlineShell
+        onBackToPdv={() => props.setActiveSubTab('clientes')}
+      />
     );
   }
 
