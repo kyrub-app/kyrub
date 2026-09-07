@@ -32,6 +32,51 @@ const unavailable = (message: string): HttpErrorResult => ({
   body: { error: message, code: 'ADMIN_RUNTIME_UNAVAILABLE' },
 });
 
+const mercadoLivrePlatformError = (error: unknown): HttpErrorResult => {
+  const message = error instanceof Error ? error.message : String(error);
+  if (/AUTH_REQUIRED|id-token|expired|revoked/i.test(message)) {
+    return {
+      status: 401,
+      body: { error: 'Faça login novamente.', code: 'AUTH_REQUIRED' },
+    };
+  }
+  if (message === 'EMAIL_NOT_VERIFIED' || message === 'FORBIDDEN') {
+    return {
+      status: 403,
+      body: {
+        error: 'Somente Super Admin pode alterar a integração Mercado Livre da plataforma.',
+        code: message,
+      },
+    };
+  }
+  if (message.startsWith('MERCADO_LIVRE_')) {
+    return {
+      status: 400,
+      body: {
+        error: 'Revise Client ID, Client Secret e Redirect URI.',
+        code: message.split(':')[0],
+      },
+    };
+  }
+  if (/INTEGRATION_MASTER_KEY/i.test(message)) {
+    return {
+      status: 503,
+      body: {
+        error: 'O cofre seguro da plataforma não está disponível.',
+        code: 'VAULT_UNAVAILABLE',
+      },
+    };
+  }
+  console.error('[Admin Mercado Livre Platform]', message);
+  return {
+    status: 503,
+    body: {
+      error: 'Não foi possível concluir a configuração do Mercado Livre.',
+      code: 'MERCADO_LIVRE_PLATFORM_OPERATION_FAILED',
+    },
+  };
+};
+
 export default async function handler(
   request: RequestLike,
   response: ResponseLike
@@ -82,6 +127,53 @@ export default async function handler(
       const mapped = mapError
         ? mapError(error)
         : unavailable('Não foi possível consultar a economia da plataforma agora.');
+      response.status(mapped.status).json(mapped.body);
+    }
+    return;
+  }
+
+  if (
+    transport === 'mercado-livre-platform-status'
+    || transport === 'mercado-livre-platform-credentials'
+    || transport === 'mercado-livre-platform-validate'
+  ) {
+    const expectedMethod = transport === 'mercado-livre-platform-status' ? 'GET' : 'POST';
+    if (method !== expectedMethod) {
+      response.status(405).json({ error: 'Método não permitido.', code: 'METHOD_NOT_ALLOWED' });
+      return;
+    }
+
+    try {
+      const mercadoLivre = await import(
+        '../../../server/admin/mercadoLivrePlatformCredentialService.js'
+      );
+
+      if (transport === 'mercado-livre-platform-status') {
+        const status = await mercadoLivre.loadAuthorizedMercadoLivrePlatformCredentialStatus(
+          authorization
+        );
+        response.status(200).json(status);
+        return;
+      }
+
+      if (transport === 'mercado-livre-platform-credentials') {
+        const body = bodyRecord(request.body);
+        const status = await mercadoLivre.saveAuthorizedMercadoLivrePlatformCredentials({
+          authorization,
+          clientId: body.clientId,
+          clientSecret: body.clientSecret,
+          redirectUri: body.redirectUri,
+        });
+        response.status(200).json(status);
+        return;
+      }
+
+      const result = await mercadoLivre.validateAuthorizedMercadoLivrePlatformConfiguration(
+        authorization
+      );
+      response.status(200).json(result);
+    } catch (error) {
+      const mapped = mercadoLivrePlatformError(error);
       response.status(mapped.status).json(mapped.body);
     }
     return;
