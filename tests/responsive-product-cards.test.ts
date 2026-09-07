@@ -65,30 +65,29 @@ test('retailer inventory removes admin workspaces and replaces the appearance ca
   assert.match(retailerPanel, /candidateGrid\.style\.display = 'none'/);
 });
 
-test('native Gerencial browser entry is a lazy shell with no hidden operational work', () => {
+test('native Gerencial browser entry renders directly in the live router', () => {
   assert.match(viteConfig, /RetailerPanelRuntimeRouter\.tsx/);
-  assert.match(runtimeRouter, /from '\.\/GerencialPanelRuntime'/);
-  assert.match(runtimeRouter, /<GerencialPanel/);
-  assert.match(gerencialPanel, /id="kyrub-gerencial-native-runtime"/);
-  assert.match(gerencialPanel, /data-kyrub-gerencial-runtime="lazy-shell"/);
-  assert.match(gerencialPanel, /lazy\(async \(\) =>/);
-  assert.match(gerencialPanel, /import\('\.\/GerencialIntegrationsRuntime'\)/);
-  assert.doesNotMatch(gerencialPanel, /firebase\/auth|onAuthStateChanged|auth\.currentUser/);
-  assert.doesNotMatch(gerencialPanel, /ProductInventoryWorkspace|ProductEditorModal/);
-  assert.doesNotMatch(gerencialPanel, /\.filter\(/);
-  assert.doesNotMatch(gerencialPanel, /MutationObserver|createPortal|erp-gerencial-tab/);
+  assert.match(runtimeRouter, /id="kyrub-gerencial-inline-shell"/);
+  assert.match(runtimeRouter, /data-kyrub-gerencial-runtime="inline-shell"/);
+  assert.match(runtimeRouter, /GERENCIAL_MODULES\.map/);
+  assert.match(runtimeRouter, /Gestão da loja/);
+  assert.match(runtimeRouter, /Voltar ao PDV/);
+  assert.doesNotMatch(runtimeRouter, /GerencialPanelRuntime/);
+  assert.doesNotMatch(runtimeRouter, /GerencialPanelErrorBoundary/);
+  assert.doesNotMatch(runtimeRouter, /firebase\/auth|onAuthStateChanged|auth\.currentUser/);
+  assert.doesNotMatch(runtimeRouter, /ProductInventoryWorkspace|ProductEditorModal/);
+  assert.doesNotMatch(runtimeRouter, /MutationObserver|createPortal|erp-gerencial-tab/);
 });
 
-test('Gerencial integrations load separately and own Mercado Livre only after module selection', () => {
+test('Gerencial operational modules remain detached from the inline entry shell', () => {
   assert.doesNotMatch(app, /<ProductWorkspaceLayoutBridge \/>/);
   assert.doesNotMatch(app, /GerencialMercadoLivreIntegrationBridge/);
-  assert.match(gerencialPanel, /activeModule === 'integracoes'/);
-  assert.match(gerencialPanel, /<LazyIntegrationsRuntime/);
+  assert.doesNotMatch(runtimeRouter, /StoreConnectionsWorkspace|MercadoLivreE2ETestBridge/);
+  assert.match(gerencialPanel, /import\('\.\/GerencialIntegrationsRuntime'\)/);
   assert.match(gerencialIntegrations, /data-kyrub-gerencial-module="integrations-lazy"/);
   assert.match(gerencialIntegrations, /onAuthStateChanged\(auth, setUser\)/);
   assert.match(gerencialIntegrations, /<StoreConnectionsWorkspace/);
   assert.match(gerencialIntegrations, /<MercadoLivreE2ETestBridge/);
-  assert.match(gerencialPanel, /Menu Gerencial/);
 });
 
 test('retailer inventory starts with two mobile columns and expands responsively', () => {
