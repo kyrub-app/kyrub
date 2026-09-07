@@ -6,16 +6,20 @@ const main = readFileSync('src/main.tsx', 'utf8');
 const app = readFileSync('src/App.tsx', 'utf8');
 const viteConfig = readFileSync('vite.config.ts', 'utf8');
 const retailerPanel = readFileSync('src/components/RetailerPanel.tsx', 'utf8');
-const gerencialPanel = readFileSync(
-  'src/components/GerencialPanelRuntime.tsx',
+const runtimeRouter = readFileSync(
+  'src/components/RetailerPanelRuntimeRouter.tsx',
+  'utf8'
+);
+const mobileErpMenu = readFileSync(
+  'src/components/MobileErpMenu.tsx',
+  'utf8'
+);
+const managementNavigation = readFileSync(
+  'src/utils/erpManagementNavigation.ts',
   'utf8'
 );
 const gerencialIntegrations = readFileSync(
   'src/components/GerencialIntegrationsRuntime.tsx',
-  'utf8'
-);
-const runtimeRouter = readFileSync(
-  'src/components/RetailerPanelRuntimeRouter.tsx',
   'utf8'
 );
 const inventoryWorkspace = readFileSync(
@@ -65,25 +69,67 @@ test('retailer inventory removes admin workspaces and replaces the appearance ca
   assert.match(retailerPanel, /candidateGrid\.style\.display = 'none'/);
 });
 
-test('native Gerencial browser entry renders directly in the live router', () => {
-  assert.match(viteConfig, /RetailerPanelRuntimeRouter\.tsx/);
-  assert.match(runtimeRouter, /id="kyrub-gerencial-inline-shell"/);
-  assert.match(runtimeRouter, /data-kyrub-gerencial-runtime="inline-shell"/);
-  assert.match(runtimeRouter, /GERENCIAL_MODULES\.map/);
-  assert.match(runtimeRouter, /Gestão da loja/);
-  assert.match(runtimeRouter, /Voltar ao PDV/);
-  assert.doesNotMatch(runtimeRouter, /GerencialPanelRuntime/);
-  assert.doesNotMatch(runtimeRouter, /GerencialPanelErrorBoundary/);
-  assert.doesNotMatch(runtimeRouter, /firebase\/auth|onAuthStateChanged|auth\.currentUser/);
-  assert.doesNotMatch(runtimeRouter, /ProductInventoryWorkspace|ProductEditorModal/);
-  assert.doesNotMatch(runtimeRouter, /MutationObserver|createPortal|erp-gerencial-tab/);
+test('mobile ERP menu removes Gerencial and exposes every management module directly', () => {
+  assert.doesNotMatch(mobileErpMenu, /id: 'gerencial', label: 'Gerencial'/);
+  assert.doesNotMatch(mobileErpMenu, /label: 'Gerencial'/);
+
+  for (const id of [
+    'produtos',
+    'vendas',
+    'financeiro',
+    'rh',
+    'crm',
+    'marketing',
+    'integracoes',
+    'vouchers',
+  ]) {
+    assert.match(mobileErpMenu, new RegExp(`id: '${id}'`));
+  }
+
+  for (const label of [
+    'Produtos & Estoque',
+    'Vendas & Analytics',
+    'Financeiro Interno',
+    'Recursos Humanos',
+    'CRM',
+    'Marketing',
+    'Integrações & Sandbox',
+    'Cupons & Vouchers',
+  ]) {
+    assert.match(mobileErpMenu, new RegExp(label));
+  }
 });
 
-test('Gerencial operational modules remain detached from the inline entry shell', () => {
+test('management menu selections use a direct navigation authority instead of activeSubTab gerencial', () => {
+  assert.match(
+    managementNavigation,
+    /kyrub:erp-management-navigation/
+  );
+  assert.match(managementNavigation, /ErpManagementModule/);
+  assert.match(mobileErpMenu, /requestErpManagementNavigation/);
+  assert.match(mobileErpMenu, /isManagementModule\(itemId\)/);
+  assert.match(mobileErpMenu, /selectManagement\(itemId\)/);
+  assert.doesNotMatch(
+    mobileErpMenu,
+    /onSelectTab\('gerencial'\)/
+  );
+});
+
+test('runtime router owns flattened management destinations and keeps the retired Gerencial route inert', () => {
+  assert.match(viteConfig, /RetailerPanelRuntimeRouter\.tsx/);
+  assert.match(runtimeRouter, /KYRUB_ERP_MANAGEMENT_NAVIGATION_EVENT/);
+  assert.match(runtimeRouter, /useState<ErpManagementModule \| null>/);
+  assert.match(runtimeRouter, /data-kyrub-management-module=\{moduleId\}/);
+  assert.match(runtimeRouter, /Gerencial foi removido\./);
+  assert.doesNotMatch(runtimeRouter, /<LegacyRetailerPanel/);
+});
+
+test('Integrations and Sandbox loads directly and owns Mercado Livre without the old Gerencial bridge', () => {
   assert.doesNotMatch(app, /<ProductWorkspaceLayoutBridge \/>/);
   assert.doesNotMatch(app, /GerencialMercadoLivreIntegrationBridge/);
-  assert.doesNotMatch(runtimeRouter, /StoreConnectionsWorkspace|MercadoLivreE2ETestBridge/);
-  assert.match(gerencialPanel, /import\('\.\/GerencialIntegrationsRuntime'\)/);
+  assert.match(runtimeRouter, /import\('\.\/GerencialIntegrationsRuntime'\)/);
+  assert.match(runtimeRouter, /moduleId === 'integracoes'/);
+  assert.match(runtimeRouter, /<LazyIntegrationsRuntime/);
   assert.match(gerencialIntegrations, /data-kyrub-gerencial-module="integrations-lazy"/);
   assert.match(gerencialIntegrations, /onAuthStateChanged\(auth, setUser\)/);
   assert.match(gerencialIntegrations, /<StoreConnectionsWorkspace/);
