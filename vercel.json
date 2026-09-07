@@ -10,6 +10,10 @@
   },
   "rewrites": [
     {
+      "source": "/api/store-connections/:path*",
+      "destination": "/api/store-connections-gateway?__kyrubStoreConnectionPath=:path*"
+    },
+    {
       "source": "/api/mcp",
       "destination": "/api/health?transport=mcp"
     },
