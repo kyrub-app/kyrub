@@ -1,4 +1,5 @@
 import React from 'react';
+import { GerencialPanel } from './GerencialPanel';
 import { RetailerPanel as LegacyRetailerPanel } from './LegacyRetailerPanel';
 import { RetailerPanel as ModernRetailerPanel } from './RetailerPanel';
 
@@ -64,10 +65,19 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = props => {
   if (props.activeSubTab === 'gerencial') {
     return (
       <GerencialPanelErrorBoundary
-        key={`${props.activeRetailerId}-gerencial`}
+        key={`${props.activeRetailerId}-gerencial-native`}
         onRecover={() => props.setActiveSubTab('clientes')}
       >
-        <LegacyRetailerPanel {...props} />
+        <GerencialPanel
+          activeRetailerId={props.activeRetailerId}
+          activeStore={props.activeStore}
+          products={props.products}
+          orders={props.orders}
+          setProducts={props.setProducts}
+          setNewProductModal={props.setNewProductModal}
+          triggerToast={props.triggerToast}
+          setActiveSubTab={props.setActiveSubTab}
+        />
       </GerencialPanelErrorBoundary>
     );
   }
