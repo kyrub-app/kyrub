@@ -10,6 +10,42 @@
   },
   "rewrites": [
     {
+      "source": "/api/store-connections/mercado-livre/callback",
+      "destination": "/api/health?transport=store-connections&path=mercado-livre/callback"
+    },
+    {
+      "source": "/api/store-connections/mercado-livre/notifications",
+      "destination": "/api/health?transport=store-connections&path=mercado-livre/notifications"
+    },
+    {
+      "source": "/api/store-connections/mercado-livre/:storeId/:segment1",
+      "destination": "/api/health?transport=store-connections&path=mercado-livre/:storeId/:segment1"
+    },
+    {
+      "source": "/api/store-connections/mercado-livre/:storeId/:segment1/:segment2",
+      "destination": "/api/health?transport=store-connections&path=mercado-livre/:storeId/:segment1/:segment2"
+    },
+    {
+      "source": "/api/store-connections/mercado-livre/:storeId/:segment1/:segment2/:segment3",
+      "destination": "/api/health?transport=store-connections&path=mercado-livre/:storeId/:segment1/:segment2/:segment3"
+    },
+    {
+      "source": "/api/store-connections/mercado-livre/:storeId/:segment1/:segment2/:segment3/:segment4",
+      "destination": "/api/health?transport=store-connections&path=mercado-livre/:storeId/:segment1/:segment2/:segment3/:segment4"
+    },
+    {
+      "source": "/api/store-connections/:storeId",
+      "destination": "/api/health?transport=store-connections&path=:storeId"
+    },
+    {
+      "source": "/api/store-connections/:storeId/:segment1",
+      "destination": "/api/health?transport=store-connections&path=:storeId/:segment1"
+    },
+    {
+      "source": "/api/store-connections/:storeId/:segment1/:segment2",
+      "destination": "/api/health?transport=store-connections&path=:storeId/:segment1/:segment2"
+    },
+    {
       "source": "/api/store-connections/:path*",
       "destination": "/api/health?transport=store-connections&path=:path*"
     },
