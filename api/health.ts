@@ -65,6 +65,29 @@ export default async function handler(
     return;
   }
 
+  if (transport === 'store-connections') {
+    response.setHeader('Cache-Control', 'no-store, max-age=0');
+    try {
+      const storeConnections = await import(
+        '../server/integrations/storeConnectionsServerlessTransport.js'
+      );
+      await storeConnections.handleStoreConnectionsServerlessRequest(
+        request,
+        response
+      );
+    } catch (error) {
+      console.error(
+        '[store-connections-transport]',
+        error instanceof Error ? error.message : String(error)
+      );
+      response.status(503).json({
+        error: 'A integração de canais está temporariamente indisponível.',
+        code: 'STORE_CONNECTION_TRANSPORT_UNAVAILABLE',
+      });
+    }
+    return;
+  }
+
   if (transport === 'activity-events') {
     response.setHeader('Cache-Control', 'no-store, max-age=0');
     response.setHeader('Content-Type', 'application/json; charset=utf-8');
