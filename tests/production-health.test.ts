@@ -122,15 +122,18 @@ test('admin integration transports do not statically initialize operations healt
   assert.match(source, /import\('\.\.\/\.\.\/\.\.\/server\/admin\/operationsHealthRouter\.js'\)/);
 });
 
-test('Mercado Livre platform vault reuses the existing admin serverless runtime', () => {
-  const vercel = readFileSync('vercel.json', 'utf8');
+test('Mercado Livre platform vault keeps client routes bound to the existing admin serverless runtime', () => {
+  const runtime = readFileSync('api/admin/operations/health.ts', 'utf8');
+  const client = readFileSync('src/utils/adminMercadoLivrePlatform.ts', 'utf8');
 
-  assert.ok(vercel.includes('"source": "/api/admin/integrations/mercado-livre/status"'));
-  assert.ok(vercel.includes('transport=mercado-livre-platform-status'));
-  assert.ok(vercel.includes('"source": "/api/admin/integrations/mercado-livre/credentials"'));
-  assert.ok(vercel.includes('transport=mercado-livre-platform-credentials'));
-  assert.ok(vercel.includes('"source": "/api/admin/integrations/mercado-livre/validate"'));
-  assert.ok(vercel.includes('transport=mercado-livre-platform-validate'));
+  assert.match(runtime, /mercado-livre-platform-status/);
+  assert.match(runtime, /mercado-livre-platform-credentials/);
+  assert.match(runtime, /mercado-livre-platform-validate/);
+  assert.match(runtime, /mercadoLivrePlatformCredentialService\.js/);
+  assert.match(client, /\/api\/admin\/integrations\/mercado-livre/);
+  assert.match(client, /\/status/);
+  assert.match(client, /\/credentials/);
+  assert.match(client, /\/validate/);
 });
 
 test('store connections reuse the existing health serverless transport without increasing the function budget', () => {
