@@ -60,6 +60,7 @@ test('Vercel payment and credential runtimes use explicit ESM extensions', () =>
     'api/admin/operations/health.ts',
     'server/admin/integrationCredentialService.ts',
     'server/admin/integrationReadinessService.ts',
+    'server/admin/mercadoLivrePlatformCredentialService.ts',
     'server/payments/paymentIntentRouter.ts',
     'server/payments/mercadoPagoCheckoutBridge.ts',
     'server/payments/mercadoPagoPixProvider.ts',
@@ -110,11 +111,26 @@ test('admin integration transports do not statically initialize operations healt
 
   assert.doesNotMatch(source, /^import\s.+from\s+['"]\.\.\/\.\.\/\.\.\/server\//m);
   assert.match(source, /transport === 'integration-readiness'/);
+  assert.match(source, /transport === 'mercado-livre-platform-status'/);
+  assert.match(source, /transport === 'mercado-livre-platform-credentials'/);
+  assert.match(source, /transport === 'mercado-livre-platform-validate'/);
   assert.match(source, /transport === 'mercado-pago-credentials'/);
   assert.match(source, /transport === 'mercado-pago-test'/);
   assert.match(source, /import\('\.\.\/\.\.\/\.\.\/server\/admin\/integrationReadinessService\.js'\)/);
+  assert.match(source, /mercadoLivrePlatformCredentialService\.js/);
   assert.match(source, /import\('\.\.\/\.\.\/\.\.\/server\/admin\/integrationCredentialService\.js'\)/);
   assert.match(source, /import\('\.\.\/\.\.\/\.\.\/server\/admin\/operationsHealthRouter\.js'\)/);
+});
+
+test('Mercado Livre platform vault reuses the existing admin serverless runtime', () => {
+  const vercel = readFileSync('vercel.json', 'utf8');
+
+  assert.ok(vercel.includes('"source": "/api/admin/integrations/mercado-livre/status"'));
+  assert.ok(vercel.includes('transport=mercado-livre-platform-status'));
+  assert.ok(vercel.includes('"source": "/api/admin/integrations/mercado-livre/credentials"'));
+  assert.ok(vercel.includes('transport=mercado-livre-platform-credentials'));
+  assert.ok(vercel.includes('"source": "/api/admin/integrations/mercado-livre/validate"'));
+  assert.ok(vercel.includes('transport=mercado-livre-platform-validate'));
 });
 
 test('store connections reuse the existing health serverless transport without increasing the function budget', () => {
