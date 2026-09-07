@@ -38,6 +38,18 @@
       "destination": "/api/action-execute?transport=mercado-pago-webhook"
     },
     {
+      "source": "/api/admin/integrations/mercado-livre/status",
+      "destination": "/api/admin/operations/health?transport=mercado-livre-platform-status"
+    },
+    {
+      "source": "/api/admin/integrations/mercado-livre/credentials",
+      "destination": "/api/admin/operations/health?transport=mercado-livre-platform-credentials"
+    },
+    {
+      "source": "/api/admin/integrations/mercado-livre/validate",
+      "destination": "/api/admin/operations/health?transport=mercado-livre-platform-validate"
+    },
+    {
       "source": "/api/admin/integrations/status",
       "destination": "/api/admin/operations/health?transport=integration-readiness"
     },
