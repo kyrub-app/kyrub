@@ -10,6 +10,10 @@ const gerencialPanel = readFileSync(
   'src/components/GerencialPanelRuntime.tsx',
   'utf8'
 );
+const gerencialIntegrations = readFileSync(
+  'src/components/GerencialIntegrationsRuntime.tsx',
+  'utf8'
+);
 const runtimeRouter = readFileSync(
   'src/components/RetailerPanelRuntimeRouter.tsx',
   'utf8'
@@ -61,21 +65,29 @@ test('retailer inventory removes admin workspaces and replaces the appearance ca
   assert.match(retailerPanel, /candidateGrid\.style\.display = 'none'/);
 });
 
-test('native Gerencial is the browser runtime and enters without hidden modal work', () => {
+test('native Gerencial browser entry is a lazy shell with no hidden operational work', () => {
   assert.match(viteConfig, /RetailerPanelRuntimeRouter\.tsx/);
   assert.match(runtimeRouter, /from '\.\/GerencialPanelRuntime'/);
   assert.match(runtimeRouter, /<GerencialPanel/);
   assert.match(gerencialPanel, /id="kyrub-gerencial-native-runtime"/);
-  assert.match(gerencialPanel, /data-kyrub-gerencial-runtime="inert-entry"/);
-  assert.match(gerencialPanel, /activeModule === 'integracoes'/);
-  assert.match(gerencialPanel, /editingProduct &&/);
-  assert.doesNotMatch(gerencialPanel, /erp-gerencial-tab/);
+  assert.match(gerencialPanel, /data-kyrub-gerencial-runtime="lazy-shell"/);
+  assert.match(gerencialPanel, /lazy\(async \(\) =>/);
+  assert.match(gerencialPanel, /import\('\.\/GerencialIntegrationsRuntime'\)/);
+  assert.doesNotMatch(gerencialPanel, /firebase\/auth|onAuthStateChanged|auth\.currentUser/);
+  assert.doesNotMatch(gerencialPanel, /ProductInventoryWorkspace|ProductEditorModal/);
+  assert.doesNotMatch(gerencialPanel, /\.filter\(/);
+  assert.doesNotMatch(gerencialPanel, /MutationObserver|createPortal|erp-gerencial-tab/);
 });
 
-test('native Gerencial owns product navigation without the legacy layout bridge', () => {
+test('Gerencial integrations load separately and own Mercado Livre only after module selection', () => {
   assert.doesNotMatch(app, /<ProductWorkspaceLayoutBridge \/>/);
   assert.doesNotMatch(app, /GerencialMercadoLivreIntegrationBridge/);
-  assert.match(gerencialPanel, /<ProductInventoryWorkspace/);
+  assert.match(gerencialPanel, /activeModule === 'integracoes'/);
+  assert.match(gerencialPanel, /<LazyIntegrationsRuntime/);
+  assert.match(gerencialIntegrations, /data-kyrub-gerencial-module="integrations-lazy"/);
+  assert.match(gerencialIntegrations, /onAuthStateChanged\(auth, setUser\)/);
+  assert.match(gerencialIntegrations, /<StoreConnectionsWorkspace/);
+  assert.match(gerencialIntegrations, /<MercadoLivreE2ETestBridge/);
   assert.match(gerencialPanel, /Menu Gerencial/);
 });
 
