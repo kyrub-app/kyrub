@@ -152,17 +152,35 @@ describe('Kyrub public and operational routes', () => {
     assert.doesNotMatch(mobileMenuSource, /z-\[200\]/);
   });
 
-  test('mobile ERP commits Gerencial as a valid destination', () => {
+  test('mobile ERP routes management modules directly without committing legacy Gerencial', () => {
     let selectedTab = '';
+    let selectedManagement = '';
 
-    commitMobileErpMenuSelection('gerencial', {
+    commitMobileErpMenuSelection('integracoes', {
       onOpenStoreConfig: () => undefined,
       onSelectTab: tab => {
         selectedTab = tab;
       },
+      onSelectManagementModule: module => {
+        selectedManagement = module ?? '';
+      },
     });
 
-    assert.equal(selectedTab, 'gerencial');
+    assert.equal(selectedTab, '');
+    assert.equal(selectedManagement, 'integracoes');
+
+    commitMobileErpMenuSelection('clientes', {
+      onOpenStoreConfig: () => undefined,
+      onSelectTab: tab => {
+        selectedTab = tab;
+      },
+      onSelectManagementModule: module => {
+        selectedManagement = module ?? '';
+      },
+    });
+
+    assert.equal(selectedTab, 'clientes');
+    assert.equal(selectedManagement, '');
   });
 
   test('mobile ERP waits for the native dialog close event before committing navigation', () => {
@@ -221,26 +239,27 @@ describe('Kyrub public and operational routes', () => {
     );
   });
 
-  test('mobile ERP keeps Gerencial away from the bottom gesture zone', () => {
+  test('mobile ERP removes Gerencial and keeps flattened management modules scroll-safe', () => {
     const mobileMenuSource = readFileSync(
       'src/components/MobileErpMenu.tsx',
       'utf8'
     );
 
     const storePosition = mobileMenuSource.indexOf("id: 'loja'");
-    const gerencialPosition = mobileMenuSource.indexOf("id: 'gerencial'");
+    const productsPosition = mobileMenuSource.indexOf("id: 'produtos'");
+    const integrationsPosition = mobileMenuSource.indexOf("id: 'integracoes'");
     const pdvPosition = mobileMenuSource.indexOf("id: 'clientes'");
 
     assert.ok(storePosition >= 0);
-    assert.ok(gerencialPosition > storePosition);
-    assert.ok(pdvPosition > gerencialPosition);
-    assert.match(
-      mobileMenuSource,
-      /className="min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain p-4"/
-    );
+    assert.ok(productsPosition > storePosition);
+    assert.ok(integrationsPosition > productsPosition);
+    assert.ok(pdvPosition > integrationsPosition);
+    assert.equal(mobileMenuSource.includes("id: 'gerencial', label: 'Gerencial'"), false);
     assert.match(mobileMenuSource, /safe-area-inset-bottom/);
     assert.match(mobileMenuSource, /scrollPaddingBottom: '5rem'/);
     assert.match(mobileMenuSource, /data-kyrub-mobile-menu-item=\{item\.id\}/);
+    assert.match(mobileMenuSource, />\s*Gestão\s*</);
+    assert.match(mobileMenuSource, />\s*Operação\s*</);
   });
 
   test('mobile ERP native dialog keeps all drawer controls explicit and tappable', () => {
