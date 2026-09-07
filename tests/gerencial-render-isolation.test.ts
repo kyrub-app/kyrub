@@ -32,3 +32,24 @@ test('Gerencial runtime path has a local recovery boundary', () => {
   assert.match(routerSource, /erp-gerencial-recovery-boundary/);
   assert.match(routerSource, /Voltar ao PDV/);
 });
+
+test('mobile runtime commits selection on the next frame instead of depending on dialog close', () => {
+  const runtimeSource = readFileSync(
+    'src/components/MobileErpMenuRuntime.tsx',
+    'utf8'
+  );
+  const canonicalSource = readFileSync(
+    'src/components/MobileErpMenu.tsx',
+    'utf8'
+  );
+  const viteSource = readFileSync('vite.config.ts', 'utf8');
+
+  assert.match(runtimeSource, /if \(dialog\?\.open\) dialog\.close\(\);/);
+  assert.match(runtimeSource, /window\.requestAnimationFrame\(\(\) =>/);
+  assert.match(runtimeSource, /commitMobileErpMenuSelection\(itemId/);
+  assert.match(runtimeSource, /data-kyrub-mobile-menu-runtime="frame-fallback"/);
+  assert.match(runtimeSource, /onClose=\{handleDialogClose\}/);
+  assert.match(runtimeSource, /const handleDialogClose = \(\): void => \{\s*setIsOpen\(false\);\s*\};/);
+  assert.match(viteSource, /MobileErpMenuRuntime\.tsx/);
+  assert.doesNotMatch(canonicalSource, /data-kyrub-mobile-menu-runtime="frame-fallback"/);
+});
