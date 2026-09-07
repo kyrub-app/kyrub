@@ -1,5 +1,5 @@
 import React from 'react';
-import { GerencialPanel } from './GerencialPanel';
+import { GerencialPanel } from './GerencialPanelRuntime';
 import { RetailerPanel as LegacyRetailerPanel } from './LegacyRetailerPanel';
 import { RetailerPanel as ModernRetailerPanel } from './RetailerPanel';
 
