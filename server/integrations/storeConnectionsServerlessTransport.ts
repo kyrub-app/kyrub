@@ -70,13 +70,16 @@ const reconstructedQuery = (query: Record<string, QueryValue> | undefined): stri
   return serialized ? `?${serialized}` : '';
 };
 
+const normalizeTransportPath = (path: string): string =>
+  path === 'mercado-livre/oauth/callback' ? 'mercado-livre/callback' : path;
+
 export const handleStoreConnectionsServerlessRequest = async (
   requestInput: unknown,
   responseInput: unknown
 ): Promise<void> => {
   const request = requestInput as RequestLike;
   const response = responseInput as ResponseLike;
-  const path = first(request.query?.path).replace(/^\/+|\/+$/g, '');
+  const path = normalizeTransportPath(first(request.query?.path).replace(/^\/+|\/+$/g, ''));
   const originalUrl = request.url;
   request.url = `/api/store-connections${path ? `/${path}` : ''}${reconstructedQuery(request.query)}`;
 
