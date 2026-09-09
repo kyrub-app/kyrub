@@ -12,7 +12,10 @@ import {
   MERCADO_LIVRE_PLATFORM_PROVIDER_ID,
 } from '../../shared/mercadoLivrePlatformCredential.js';
 import type { KyrubStoreConnection } from '../../shared/storeConnections.js';
-import { resolvePlatformCredentials } from './platformCredentialStore.js';
+import {
+  markPlatformCredentialValidation,
+  resolvePlatformCredentials,
+} from './platformCredentialStore.js';
 import { saveStoreConnectionRegistryRecord } from './storeConnectionRegistry.js';
 import {
   loadMercadoLivreTokenSecret,
@@ -83,6 +86,22 @@ const safeProviderDiagnostic = (value: unknown): string =>
     .trim()
     .slice(0, 240);
 
+const markInvalidPlatformClient = async (): Promise<void> => {
+  try {
+    await markPlatformCredentialValidation({
+      providerId: MERCADO_LIVRE_PLATFORM_PROVIDER_ID,
+      environment: MERCADO_LIVRE_PLATFORM_ENVIRONMENT,
+      ok: false,
+      code: 'MERCADO_LIVRE_INVALID_CLIENT',
+    });
+  } catch (error) {
+    console.error(
+      '[Mercado Livre platform credential status]',
+      error instanceof Error ? error.message : String(error)
+    );
+  }
+};
+
 const tokenSecretFromResponse = (
   payload: MercadoLivreTokenResponse,
   fallbackExternalAccountId = ''
@@ -124,6 +143,9 @@ const tokenRequest = async (body: URLSearchParams): Promise<MercadoLivreTokenRes
       error: code,
       description: description || undefined,
     });
+    if (code === 'invalid_client') {
+      await markInvalidPlatformClient();
+    }
     throw new Error(`MERCADO_LIVRE_TOKEN_EXCHANGE_FAILED:${code}`);
   }
   return payload;

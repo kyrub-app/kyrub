@@ -7,6 +7,7 @@ import { OfficialKnowledgeSemanticSetupBridge } from './components/OfficialKnowl
 import { OfficialKnowledgeSetupBridge } from './components/OfficialKnowledgeSetupBridge';
 import { BuyerPickupCodeBridge } from './components/store/BuyerPickupCodeBridge';
 import { LocalServicePdvBridge } from './components/store/LocalServicePdvBridge';
+import { MercadoLivreOAuthReturnBridge } from './components/store/MercadoLivreOAuthReturnBridge';
 import { PickupPdvNavigationBridge } from './components/store/PickupPdvNavigationBridge';
 import { ProfileCommunitiesCloudBridge } from './components/ProfileCommunitiesCloudBridge';
 import { ProfileConnectedCardsPolishBridge } from './components/ProfileConnectedCardsPolishBridge';
@@ -24,17 +25,6 @@ import './styles/catalog-category-tree.css';
 import './styles/profile-verification.css';
 import './styles/profile-header-layout.css';
 import './styles/retired-gerencial-route.css';
-
-const mercadoLivreOAuthReturn =
-  new URLSearchParams(window.location.search).get('integration') === 'mercado_livre';
-
-if (mercadoLivreOAuthReturn && window.location.pathname === '/') {
-  window.history.replaceState(
-    {},
-    '',
-    `/staff${window.location.search}${window.location.hash}`
-  );
-}
 
 const rootElement = document.getElementById('root');
 
@@ -56,6 +46,7 @@ createRoot(rootElement).render(
           <ProfileCommunitiesCloudBridge />
           <BuyerPickupCodeBridge />
           <LocalServicePdvBridge />
+          <MercadoLivreOAuthReturnBridge />
           <PickupPdvNavigationBridge />
           <KyrubOfficialKnowledgeRuntimeBridge />
           <KyrubActivityObserverBridge />
