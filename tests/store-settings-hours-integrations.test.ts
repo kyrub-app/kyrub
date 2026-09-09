@@ -78,12 +78,17 @@ test('canonical integrations runtime owns store channel planning', () => {
   assert.match(gerencialIntegrationsSource, /Configurações dos canais salvas na loja/);
 });
 
-test('Mercado Livre remains on the canonical OAuth and E2E authority', () => {
+test('Mercado Livre remains on the canonical OAuth and E2E authority inside one modal', () => {
   assert.match(gerencialIntegrationsSource, /<StoreConnectionsWorkspace/);
   assert.match(gerencialIntegrationsSource, /<MercadoLivreE2ETestBridge/);
   assert.match(gerencialIntegrationsSource, /consolidated-store-channel-plans/);
   assert.match(gerencialIntegrationsSource, /data-integration-id=\"mercado-livre\"/);
-  assert.match(gerencialIntegrationsSource, /planejamento genérico antigo do Mercado Livre foi aposentado/);
+  assert.match(gerencialIntegrationsSource, /mercado-livre-integration-card/);
+  assert.match(gerencialIntegrationsSource, /open-mercado-livre-integration/);
+  assert.match(gerencialIntegrationsSource, /mercado-livre-integration-modal/);
+  assert.match(gerencialIntegrationsSource, /close-mercado-livre-integration/);
+  assert.match(gerencialIntegrationsSource, /params\.get\('integration'\) === 'mercado_livre'/);
+  assert.match(gerencialIntegrationsSource, /aria-modal="true"/);
 });
 
 test('browser cannot claim an external integration is active', () => {
