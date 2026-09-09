@@ -7,6 +7,7 @@ import { OfficialKnowledgeSemanticSetupBridge } from './components/OfficialKnowl
 import { OfficialKnowledgeSetupBridge } from './components/OfficialKnowledgeSetupBridge';
 import { BuyerPickupCodeBridge } from './components/store/BuyerPickupCodeBridge';
 import { LocalServicePdvBridge } from './components/store/LocalServicePdvBridge';
+import { MercadoLivreOAuthReturnBridge } from './components/store/MercadoLivreOAuthReturnBridge';
 import { PickupPdvNavigationBridge } from './components/store/PickupPdvNavigationBridge';
 import { ProfileCommunitiesCloudBridge } from './components/ProfileCommunitiesCloudBridge';
 import { ProfileConnectedCardsPolishBridge } from './components/ProfileConnectedCardsPolishBridge';
@@ -45,6 +46,7 @@ createRoot(rootElement).render(
           <ProfileCommunitiesCloudBridge />
           <BuyerPickupCodeBridge />
           <LocalServicePdvBridge />
+          <MercadoLivreOAuthReturnBridge />
           <PickupPdvNavigationBridge />
           <KyrubOfficialKnowledgeRuntimeBridge />
           <KyrubActivityObserverBridge />
