@@ -43,6 +43,12 @@ interface MercadoLivreTokenResponse {
   user_id?: unknown;
 }
 
+interface MercadoLivreTokenErrorResponse extends MercadoLivreTokenResponse {
+  error?: unknown;
+  error_description?: unknown;
+  message?: unknown;
+}
+
 const hashOAuthState = (state: string): string =>
   createHash('sha256').update(state).digest('hex');
 
@@ -67,6 +73,15 @@ const oauthConfig = async () => {
 
 const text = (value: unknown): string =>
   typeof value === 'string' || typeof value === 'number' ? String(value).trim() : '';
+
+const safeProviderDiagnostic = (value: unknown): string =>
+  text(value)
+    .replace(/[\u0000-\u001F\u007F]+/g, ' ')
+    .replace(/https?:\/\/\S+/gi, '[url]')
+    .replace(/[A-Za-z0-9_-]{40,}/g, '[redacted]')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 240);
 
 const tokenSecretFromResponse = (
   payload: MercadoLivreTokenResponse,
@@ -98,12 +113,17 @@ const tokenRequest = async (body: URLSearchParams): Promise<MercadoLivreTokenRes
     },
     body,
   });
-  const payload = await response.json().catch(() => ({})) as MercadoLivreTokenResponse & {
-    error?: unknown;
-    message?: unknown;
-  };
+  const payload = await response.json().catch(() => ({})) as MercadoLivreTokenErrorResponse;
   if (!response.ok) {
-    const code = text(payload.error) || `HTTP_${response.status}`;
+    const code = safeProviderDiagnostic(payload.error) || `HTTP_${response.status}`;
+    const description =
+      safeProviderDiagnostic(payload.error_description) ||
+      safeProviderDiagnostic(payload.message);
+    console.error('[Mercado Livre token exchange rejected]', {
+      status: response.status,
+      error: code,
+      description: description || undefined,
+    });
     throw new Error(`MERCADO_LIVRE_TOKEN_EXCHANGE_FAILED:${code}`);
   }
   return payload;
