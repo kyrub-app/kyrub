@@ -59,6 +59,12 @@ const MANAGEMENT_MODULES: Record<ErpManagementModule, ModuleDefinition> = {
   },
 };
 
+const mercadoLivreOAuthReturnModule = (): ErpManagementModule | null => {
+  if (typeof window === 'undefined') return null;
+  const params = new URLSearchParams(window.location.search);
+  return params.get('integration') === 'mercado_livre' ? 'integracoes' : null;
+};
+
 const LazyIntegrationsRuntime = lazy(async () => {
   const module = await import('./GerencialIntegrationsRuntime');
   return { default: module.GerencialIntegrationsRuntime };
@@ -132,7 +138,7 @@ function DirectManagementModule({
 
 export const RetailerPanel: React.FC<RetailerPanelProps> = props => {
   const [managementModule, setManagementModule] =
-    useState<ErpManagementModule | null>(null);
+    useState<ErpManagementModule | null>(() => mercadoLivreOAuthReturnModule());
 
   useEffect(() => {
     const handleManagementNavigation = (event: Event): void => {
@@ -153,7 +159,7 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = props => {
   }, []);
 
   useEffect(() => {
-    setManagementModule(null);
+    setManagementModule(mercadoLivreOAuthReturnModule());
   }, [props.activeSubTab]);
 
   const backToPdv = (): void => {
