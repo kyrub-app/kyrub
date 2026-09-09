@@ -1,0 +1,9 @@
+/*
+ * The desktop ERP header is still rendered by LegacyApp while the browser
+ * runtime routes management modules directly. Its final legacy tab points to
+ * the retired "gerencial" sub-route, so keep that stale entry out of the
+ * visible navigation without re-mounting or bridging the removed panel.
+ */
+#erp-tab-navigation-header > button:last-child {
+  display: none;
+}
