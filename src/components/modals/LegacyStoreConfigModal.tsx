@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { PlugZap, Store as StoreIcon } from 'lucide-react';
+import { Store as StoreIcon } from 'lucide-react';
 import { StoreOnboardingGuide } from '../store/StoreOnboardingGuide';
 
 interface StoreConfigModalProps {
@@ -31,7 +31,7 @@ interface StoreConfigModalProps {
   integrationsControls?: React.ReactNode;
 }
 
-type StoreConfigTab = 'perfil' | 'ambiente' | 'integracoes';
+type StoreConfigTab = 'perfil' | 'ambiente';
 
 export const StoreConfigModal: React.FC<StoreConfigModalProps> = ({
   isOpen,
@@ -59,7 +59,6 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = ({
   handleSaveStoreProfile,
   profileMediaControls,
   profileOperationalControls,
-  integrationsControls,
 }) => {
   const [configActiveTab, setConfigActiveTab] = useState<StoreConfigTab>('perfil');
 
@@ -84,7 +83,7 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = ({
           </button>
         </div>
 
-        <div className="grid grid-cols-3 border-b border-slate-850 bg-slate-950/50">
+        <div className="grid grid-cols-2 border-b border-slate-850 bg-slate-950/50">
           <button
             type="button"
             onClick={() => setConfigActiveTab('perfil')}
@@ -106,19 +105,6 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = ({
             }`}
           >
             Ambientes
-          </button>
-          <button
-            type="button"
-            onClick={() => setConfigActiveTab('integracoes')}
-            className={`flex items-center justify-center gap-1 py-3 text-[9px] sm:text-xs font-black uppercase tracking-wider border-b-2 transition-all cursor-pointer ${
-              configActiveTab === 'integracoes'
-                ? 'border-cyan-400 text-white bg-slate-900/40'
-                : 'border-transparent text-slate-400 hover:text-slate-300'
-            }`}
-            id="store-config-integrations-tab"
-          >
-            <PlugZap className="hidden h-3.5 w-3.5 sm:block" />
-            Integrações
           </button>
         </div>
 
@@ -273,8 +259,6 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = ({
               </div>
             </div>
           )}
-
-          {configActiveTab === 'integracoes' && integrationsControls}
         </div>
 
         <div className="bg-slate-950 px-6 py-4 border-t border-slate-850 flex justify-end gap-3">

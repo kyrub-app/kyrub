@@ -12,6 +12,10 @@ const modalSource = readFileSync(
   'src/components/modals/StoreConfigModal.tsx',
   'utf8'
 );
+const gerencialIntegrationsSource = readFileSync(
+  'src/components/GerencialIntegrationsRuntime.tsx',
+  'utf8'
+);
 const hoursSource = readFileSync(
   'src/components/store/StoreOpeningHoursEditor.tsx',
   'utf8'
@@ -30,16 +34,15 @@ const settingsSource = readFileSync(
 );
 const resetSource = readFileSync('src/utils/storeReset.ts', 'utf8');
 
-test('store settings places integrations after environments', () => {
+test('store settings retires the duplicated integrations tab', () => {
   const profileIndex = legacyModalSource.indexOf('Perfil');
   const environmentsIndex = legacyModalSource.indexOf('Ambientes');
-  const integrationsIndex = legacyModalSource.indexOf('Integrações');
 
   assert.ok(profileIndex >= 0);
   assert.ok(environmentsIndex > profileIndex);
-  assert.ok(integrationsIndex > environmentsIndex);
-  assert.match(legacyModalSource, /store-config-integrations-tab/);
-  assert.match(legacyModalSource, /integrationsControls/);
+  assert.doesNotMatch(legacyModalSource, /store-config-integrations-tab/);
+  assert.doesNotMatch(legacyModalSource, /configActiveTab === 'integracoes'/);
+  assert.match(legacyModalSource, /grid-cols-2/);
 });
 
 test('profile receives an editable seven-day opening schedule', () => {
@@ -67,6 +70,22 @@ test('integration onboarding includes the requested fiscal and marketplace chann
   assert.match(integrationsSource, /Sincronizar estoque/);
 });
 
+test('canonical integrations runtime owns store channel planning', () => {
+  assert.match(gerencialIntegrationsSource, /<StoreIntegrationsPanel/);
+  assert.match(gerencialIntegrationsSource, /subscribeToStoreOperationalSettings/);
+  assert.match(gerencialIntegrationsSource, /persistStoreIntegrationPlans/);
+  assert.match(gerencialIntegrationsSource, /save-consolidated-store-integrations/);
+  assert.match(gerencialIntegrationsSource, /Configurações dos canais salvas na loja/);
+});
+
+test('Mercado Livre remains on the canonical OAuth and E2E authority', () => {
+  assert.match(gerencialIntegrationsSource, /<StoreConnectionsWorkspace/);
+  assert.match(gerencialIntegrationsSource, /<MercadoLivreE2ETestBridge/);
+  assert.match(gerencialIntegrationsSource, /consolidated-store-channel-plans/);
+  assert.match(gerencialIntegrationsSource, /data-integration-id=\"mercado-livre\"/);
+  assert.match(gerencialIntegrationsSource, /planejamento genérico antigo do Mercado Livre foi aposentado/);
+});
+
 test('browser cannot claim an external integration is active', () => {
   assert.doesNotMatch(settingsSource, /'active'/);
   assert.match(settingsSource, /awaiting-authorization/);
@@ -85,13 +104,12 @@ test('orders can be tested against the current operational queue', () => {
   assert.match(appSource, /legacy-cache-/);
 });
 
-test('hours and onboarding are cached and synchronized with the profile action', () => {
+test('hours and integration plans stay on the same operational settings document', () => {
   assert.match(modalSource, /subscribeToStoreOperationalSettings/);
   assert.match(modalSource, /persistStoreOperationalSettings/);
   assert.match(modalSource, /saveCachedStoreOperationalSettings/);
   assert.match(modalSource, /validateStoreOpeningHours/);
   assert.match(modalSource, /<StoreOpeningHoursEditor/);
-  assert.match(modalSource, /<StoreIntegrationsPanel/);
   assert.match(settingsSource, /persistStoreIntegrationPlans/);
   assert.match(settingsSource, /doc\(db, 'tenants', user\.uid\)/);
   assert.match(settingsSource, /operationalSettings: normalized/);
