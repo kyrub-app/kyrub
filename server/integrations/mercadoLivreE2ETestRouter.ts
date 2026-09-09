@@ -66,7 +66,32 @@ export const createMercadoLivreE2ETestRouter = (): Router => {
       const storeId = clean(request.params.storeId);
       const identity = await authenticatedOwner(request.get('authorization') ?? '', storeId);
       response.setHeader('Cache-Control', 'no-store, max-age=0');
-      response.json(await listMercadoLivreE2EEligibleProducts({ storeId, requestedByUserId: identity.uid }));
+      const result = await listMercadoLivreE2EEligibleProducts({ storeId, requestedByUserId: identity.uid });
+
+      if (!result.items.length) {
+        const { canonicalProductCount, excluded } = result.diagnostics;
+        const reasons = [
+          excluded.storeMismatch ? `loja canônica divergente: ${excluded.storeMismatch}` : '',
+          excluded.missingId ? `identificação ausente: ${excluded.missingId}` : '',
+          excluded.missingName ? `nome ausente: ${excluded.missingName}` : '',
+          excluded.invalidPrice ? `preço inválido: ${excluded.invalidPrice}` : '',
+          excluded.invalidStock ? `estoque inválido: ${excluded.invalidStock}` : '',
+          excluded.missingPublicationStatus ? `status de publicação ausente: ${excluded.missingPublicationStatus}` : '',
+          excluded.service ? `serviço: ${excluded.service}` : '',
+        ].filter(Boolean).join(' · ');
+        const error = canonicalProductCount === 0
+          ? 'Nenhum produto foi encontrado no catálogo canônico desta loja. O catálogo precisa estar sincronizado antes do teste Mercado Livre.'
+          : `${canonicalProductCount} produto(s) foram encontrados no catálogo canônico, mas nenhum passou pelo gate de elegibilidade.${reasons ? ` Motivos: ${reasons}.` : ''}`;
+
+        response.status(409).json({
+          error,
+          code: 'MERCADO_LIVRE_E2E_NO_ELIGIBLE_PRODUCTS',
+          diagnostics: result.diagnostics,
+        });
+        return;
+      }
+
+      response.json(result);
     } catch (error) {
       const code = errorCode(error);
       response.status(statusFor(code)).json({ error: 'Não foi possível preparar os produtos para o teste.', code });
