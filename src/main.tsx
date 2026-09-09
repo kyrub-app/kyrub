@@ -23,6 +23,18 @@ import './styles/responsive-product-cards.css';
 import './styles/catalog-category-tree.css';
 import './styles/profile-verification.css';
 import './styles/profile-header-layout.css';
+import './styles/retired-gerencial-route.css';
+
+const mercadoLivreOAuthReturn =
+  new URLSearchParams(window.location.search).get('integration') === 'mercado_livre';
+
+if (mercadoLivreOAuthReturn && window.location.pathname === '/') {
+  window.history.replaceState(
+    {},
+    '',
+    `/staff${window.location.search}${window.location.hash}`
+  );
+}
 
 const rootElement = document.getElementById('root');
 
