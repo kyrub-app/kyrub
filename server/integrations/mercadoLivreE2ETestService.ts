@@ -30,10 +30,28 @@ export interface MercadoLivreE2EEligibleProduct {
   externalItemId: string;
 }
 
+export interface MercadoLivreE2EEligibilityDiagnostics {
+  canonicalProductCount: number;
+  eligibleProductCount: number;
+  excluded: {
+    storeMismatch: number;
+    missingId: number;
+    missingName: number;
+    invalidPrice: number;
+    invalidStock: number;
+    missingPublicationStatus: number;
+    service: number;
+  };
+}
+
 export const listMercadoLivreE2EEligibleProducts = async (input: {
   storeId: string;
   requestedByUserId: string;
-}): Promise<{ canonicalStoreId: string; items: MercadoLivreE2EEligibleProduct[] }> => {
+}): Promise<{
+  canonicalStoreId: string;
+  items: MercadoLivreE2EEligibleProduct[];
+  diagnostics: MercadoLivreE2EEligibilityDiagnostics;
+}> => {
   const storeId = clean(input.storeId, 160);
   const requestedByUserId = clean(input.requestedByUserId, 160);
   if (!storeId || requestedByUserId !== storeId) throw new Error('MERCADO_LIVRE_E2E_FORBIDDEN');
@@ -60,19 +78,58 @@ export const listMercadoLivreE2EEligibleProducts = async (input: {
     });
   }
 
-  const items = productsSnapshot.docs.flatMap(document => {
+  const excluded: MercadoLivreE2EEligibilityDiagnostics['excluded'] = {
+    storeMismatch: 0,
+    missingId: 0,
+    missingName: 0,
+    invalidPrice: 0,
+    invalidStock: 0,
+    missingPublicationStatus: 0,
+    service: 0,
+  };
+  const items: MercadoLivreE2EEligibleProduct[] = [];
+
+  for (const document of productsSnapshot.docs) {
     const record = document.data() as Record<string, unknown>;
     const id = clean(record.id, 160) || document.id;
     const name = clean(record.name, 120);
     const price = finiteNonNegative(record.price);
     const stock = integerNonNegative(record.stock);
     const publicationStatus = clean(record.publicationStatus, 80);
-    if (
-      clean(record.storeId, 160) !== canonicalStoreId ||
-      !id || !name || price === null || stock === null || !publicationStatus || record.isService === true
-    ) return [];
+
+    // Keep the exact eligibility gate intact. Diagnostics attribute each excluded
+    // document to the first failing condition only, without exposing product data.
+    if (clean(record.storeId, 160) !== canonicalStoreId) {
+      excluded.storeMismatch += 1;
+      continue;
+    }
+    if (!id) {
+      excluded.missingId += 1;
+      continue;
+    }
+    if (!name) {
+      excluded.missingName += 1;
+      continue;
+    }
+    if (price === null) {
+      excluded.invalidPrice += 1;
+      continue;
+    }
+    if (stock === null) {
+      excluded.invalidStock += 1;
+      continue;
+    }
+    if (!publicationStatus) {
+      excluded.missingPublicationStatus += 1;
+      continue;
+    }
+    if (record.isService === true) {
+      excluded.service += 1;
+      continue;
+    }
+
     const binding = bindingByProduct.get(id);
-    return [{
+    items.push({
       id,
       canonicalStoreId,
       name,
@@ -83,10 +140,20 @@ export const listMercadoLivreE2EEligibleProducts = async (input: {
       publicationStatus,
       activeBindingId: binding?.id ?? '',
       externalItemId: binding?.externalItemId ?? '',
-    }];
-  }).sort((left, right) => left.name.localeCompare(right.name, 'pt-BR'));
+    });
+  }
 
-  return { canonicalStoreId, items };
+  items.sort((left, right) => left.name.localeCompare(right.name, 'pt-BR'));
+
+  return {
+    canonicalStoreId,
+    items,
+    diagnostics: {
+      canonicalProductCount: productsSnapshot.size,
+      eligibleProductCount: items.length,
+      excluded,
+    },
+  };
 };
 
 interface ProposalRecord {
