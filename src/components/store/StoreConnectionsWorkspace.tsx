@@ -77,6 +77,7 @@ export default function StoreConnectionsWorkspace({
   const [syncing, setSyncing] = useState(false);
   const [importDraftRefreshKey, setImportDraftRefreshKey] = useState(0);
   const [message, setMessage] = useState('');
+  const [catalogFeedback, setCatalogFeedback] = useState('');
 
   const mercadoLivre = useMemo(
     () => snapshot?.connections.find(connection => connection.provider === 'mercado_livre') ?? null,
@@ -136,14 +137,36 @@ export default function StoreConnectionsWorkspace({
   const loadPreview = async (): Promise<void> => {
     setLoadingPreview(true);
     setMessage('');
+    setCatalogFeedback('');
     try {
       const result = await loadMercadoLivreCatalogPreview(user, storeId, 50);
       setPreview(result.items);
       setPreviewTotal(result.total);
       setSelected(new Set());
-      if (!result.items.length) setMessage('A conta conectada não retornou anúncios para este preview.');
+
+      if (!result.items.length) {
+        const emptyMessage = 'A conta conectada não retornou anúncios para este preview.';
+        setCatalogFeedback(emptyMessage);
+        notify('Nenhum anúncio do Mercado Livre foi encontrado nesta conta.', 'info');
+        return;
+      }
+
+      setCatalogFeedback(
+        `${result.items.length} anúncio(s) carregado(s) de ${result.total}. A lista está logo abaixo.`
+      );
+      window.requestAnimationFrame(() => {
+        window.requestAnimationFrame(() => {
+          document
+            .getElementById('mercado-livre-catalog-preview')
+            ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        });
+      });
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Não foi possível carregar os produtos do Mercado Livre.');
+      const errorMessage = error instanceof Error
+        ? error.message
+        : 'Não foi possível carregar os produtos do Mercado Livre.';
+      setMessage(errorMessage);
+      setCatalogFeedback(errorMessage);
     } finally {
       setLoadingPreview(false);
     }
@@ -251,6 +274,16 @@ export default function StoreConnectionsWorkspace({
               <RefreshCw className={`h-3.5 w-3.5 ${loadingPreview ? 'animate-spin' : ''}`} />
               {loadingPreview ? 'Consultando…' : 'Ver produtos do Mercado Livre'}
             </button>
+
+            {catalogFeedback && (
+              <div
+                className="rounded-2xl border border-yellow-500/20 bg-yellow-500/[0.06] p-3 text-[10px] leading-relaxed text-yellow-100"
+                aria-live="polite"
+                id="mercado-livre-catalog-feedback"
+              >
+                {catalogFeedback}
+              </div>
+            )}
           </div>
         ) : (
           <div className="mt-4">
@@ -280,7 +313,10 @@ export default function StoreConnectionsWorkspace({
       )}
 
       {preview.length > 0 && (
-        <div className="rounded-3xl border border-slate-800 bg-slate-900 p-5">
+        <div
+          className="scroll-mt-24 rounded-3xl border border-slate-800 bg-slate-900 p-5"
+          id="mercado-livre-catalog-preview"
+        >
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <span className="text-[9px] font-black uppercase tracking-wider text-slate-500">Preview somente leitura</span>
