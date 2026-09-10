@@ -5,6 +5,7 @@ import {
   listMercadoLivreE2EEligibleProducts,
 } from './mercadoLivreE2ETestService.js';
 import { inspectMercadoLivrePublicationCapability } from './mercadoLivrePublicationCapabilityService.js';
+import { configureMercadoLivreOutboundRequirements } from './mercadoLivreOutboundRequirementsService.js';
 import { configureMercadoLivreOutboundCommercialRequirements } from './mercadoLivreOutboundCommercialConfigurationService.js';
 
 const clean = (value: unknown): string => typeof value === 'string' ? value.trim() : '';
@@ -114,6 +115,30 @@ export const createMercadoLivreE2ETestRouter = (): Router => {
     } catch (error) {
       const code = errorCode(error);
       response.status(statusFor(code)).json({ error: 'Não foi possível consultar as opções oficiais da categoria.', code });
+    }
+  });
+
+  router.post('/:storeId/e2e/outbound-publication-proposals/:proposalId/configure-requirements', async (request, response) => {
+    try {
+      const storeId = clean(request.params.storeId);
+      const identity = await authenticatedOwner(request.get('authorization') ?? '', storeId);
+      response.setHeader('Cache-Control', 'no-store, max-age=0');
+      response.json(await configureMercadoLivreOutboundRequirements({
+        storeId,
+        proposalId: clean(request.params.proposalId),
+        categoryId: request.body?.categoryId,
+        listingTypeId: request.body?.listingTypeId,
+        condition: request.body?.condition,
+        familyName: request.body?.familyName,
+        attributes: request.body?.attributes,
+        configuredByUserId: identity.uid,
+      }));
+    } catch (error) {
+      const code = errorCode(error);
+      response.status(statusFor(code)).json({
+        error: 'Não foi possível configurar os requisitos do anúncio com o Mercado Livre.',
+        code,
+      });
     }
   });
 
