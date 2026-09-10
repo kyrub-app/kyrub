@@ -250,6 +250,48 @@ const normalizedAttributes = (value: unknown): Array<{ id: string; valueId?: str
   return result;
 };
 
+const assertCategoryFromSavedInspection = async (input: {
+  storeId: string;
+  proposalId: string;
+  siteId: string;
+  categoryId: string;
+  proposal: OutboundProposalRecord;
+}): Promise<void> => {
+  const inspectionDoc = await adminDb.doc(
+    `stores/${input.storeId}/catalogOutboundRequirementInspections/${input.proposalId}`
+  ).get();
+  if (!inspectionDoc.exists) {
+    throw new Error('MERCADO_LIVRE_OUTBOUND_REQUIREMENT_INSPECTION_REQUIRED');
+  }
+
+  const inspection = inspectionDoc.data() as Record<string, unknown>;
+  const inspectionMatchesCurrentProposal =
+    clean(inspection.proposalId, 160) === input.proposalId &&
+    clean(inspection.siteId, 8) === input.siteId &&
+    inspection.authority === 'provider_api_refetch' &&
+    clean(inspection.connectionId, 200) === input.proposal.connectionId &&
+    clean(inspection.canonicalStoreId, 160) === input.proposal.canonicalStoreId &&
+    clean(inspection.canonicalProductId, 160) === input.proposal.canonicalProductId &&
+    clean(inspection.canonicalBaselineHash, 80) === input.proposal.canonicalBaselineHash &&
+    clean(inspection.inspectedByUserId, 160) === input.storeId &&
+    Boolean(clean(inspection.inspectedAt, 80));
+
+  if (!inspectionMatchesCurrentProposal) {
+    throw new Error('MERCADO_LIVRE_OUTBOUND_REQUIREMENT_INSPECTION_STALE');
+  }
+
+  const suggestions = Array.isArray(inspection.categorySuggestions)
+    ? inspection.categorySuggestions
+    : [];
+  const selectedCategoryWasInspected = suggestions.some(candidate => {
+    if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return false;
+    return clean((candidate as Record<string, unknown>).categoryId, 160) === input.categoryId;
+  });
+  if (!selectedCategoryWasInspected) {
+    throw new Error('MERCADO_LIVRE_OUTBOUND_CATEGORY_NOT_PREDICTED');
+  }
+};
+
 export const configureMercadoLivreOutboundRequirements = async (input: {
   storeId: string;
   proposalId: string;
@@ -273,8 +315,7 @@ export const configureMercadoLivreOutboundRequirements = async (input: {
   await assertCanonicalStillCurrent(proposal);
   const connection = await assertConnectedManualReview(proposal);
   const siteId = await loadSiteId(storeId, connection.externalAccountId);
-  const suggestions = await predictionsFor(storeId, siteId, proposal.canonical.name);
-  if (!suggestions.some(item => item.categoryId === categoryId)) throw new Error('MERCADO_LIVRE_OUTBOUND_CATEGORY_NOT_PREDICTED');
+  await assertCategoryFromSavedInspection({ storeId, proposalId, siteId, categoryId, proposal });
 
   const [category, categoryAttributes, listingTypes] = await Promise.all([
     mercadoLivreGetJson<CategoryDetail>(storeId, `/categories/${encodeURIComponent(categoryId)}`),
