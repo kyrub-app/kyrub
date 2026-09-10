@@ -193,11 +193,18 @@ export const confirmMercadoLivreE2EVariantIdentity = (user: User, storeId: strin
     proposalId: string;
     canonicalStoreId: string;
     canonicalProductId: string;
+    familyKey: string;
     familyName: string;
-    variantKey: string;
-    dimensionCount: number;
-    alreadyConfirmed: boolean;
-    authority: 'store_owner_confirmed_external_variant_identity';
+    dimensions: Array<{
+      providerAttributeId: string;
+      label: string;
+      valueText: string;
+      valueId?: string;
+      valueType: string;
+    }>;
+    dimensionFingerprint: string;
+    alreadyApplied: boolean;
+    authority: 'store_owner_confirmed_user_product_variant';
     confirmedAt: string;
   }>(
     user,
