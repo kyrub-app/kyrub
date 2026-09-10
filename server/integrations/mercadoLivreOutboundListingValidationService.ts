@@ -178,6 +178,12 @@ const providerCauses = (value: unknown): Array<{ code: string; message: string; 
     .filter(item => item.code || item.message || item.reference);
 };
 
+const providerHttpFailureCode = (error: unknown): string | null => {
+  const message = error instanceof Error ? error.message : String(error);
+  const match = /^MERCADO_LIVRE_API_FAILED:HTTP_(\d{3})$/.exec(message);
+  return match ? `MERCADO_LIVRE_API_FAILED_HTTP_${match[1]}` : null;
+};
+
 export interface MercadoLivreOutboundListingValidationResult {
   proposalId: string;
   status: 'ready_for_owner_authorization' | 'needs_correction';
@@ -241,7 +247,15 @@ export const validateMercadoLivreOutboundListing = async (input: {
     sellerCustomField: publicationCorrelationMarker,
   });
 
-  const providerValidation = await mercadoLivreValidateJson(storeId, '/items/validate', itemPayload);
+  const providerValidation = await mercadoLivreValidateJson(storeId, '/items/validate', itemPayload).catch(error => {
+    const code = providerHttpFailureCode(error);
+    if (!code) throw error;
+    console.error('[Mercado Livre listing validation provider]', {
+      code,
+      endpoint: '/items/validate',
+    });
+    throw new Error(code);
+  });
   const causes = providerCauses(providerValidation.payload);
   const status = providerValidation.status === 204 ? 'ready_for_owner_authorization' : 'needs_correction';
   const validatedAt = new Date().toISOString();
