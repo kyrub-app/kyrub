@@ -37,6 +37,7 @@ interface CategoryPrediction {
 interface CategoryDetail {
   id?: unknown;
   name?: unknown;
+  path_from_root?: unknown;
   settings?: {
     listing_allowed?: unknown;
     status?: unknown;
@@ -54,6 +55,8 @@ interface CategoryAttribute {
 }
 interface AvailableListingTypesResponse { category_id?: unknown; available?: unknown }
 
+type CategoryPathNode = { id: string; name: string };
+
 export interface MercadoLivreOutboundRequirementInspection {
   proposalId: string;
   siteId: string;
@@ -62,6 +65,7 @@ export interface MercadoLivreOutboundRequirementInspection {
     domainName: string;
     categoryId: string;
     categoryName: string;
+    categoryPath: CategoryPathNode[];
   }>;
   authority: 'provider_api_refetch';
   inspectedAt: string;
@@ -97,6 +101,16 @@ const integerNonNegative = (value: unknown): number | null => {
 };
 const stringArray = (value: unknown): string[] =>
   Array.isArray(value) ? value.map(item => clean(item, 120)).filter(Boolean) : [];
+const categoryPathFrom = (value: unknown): CategoryPathNode[] => {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap(item => {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) return [];
+    const record = item as Record<string, unknown>;
+    const id = clean(record.id, 160);
+    const name = clean(record.name, 160);
+    return id && name ? [{ id, name }] : [];
+  });
+};
 
 const assertProposal = (storeId: string, proposalId: string, value: unknown): OutboundProposalRecord => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('MERCADO_LIVRE_OUTBOUND_PROPOSAL_NOT_FOUND');
@@ -169,6 +183,27 @@ const predictionsFor = async (storeId: string, siteId: string, title: string) =>
   })).filter(item => item.categoryId && item.categoryName);
 };
 
+const enrichCategorySuggestions = async (
+  storeId: string,
+  suggestions: Awaited<ReturnType<typeof predictionsFor>>
+): Promise<MercadoLivreOutboundRequirementInspection['categorySuggestions']> =>
+  Promise.all(suggestions.map(async suggestion => {
+    try {
+      const detail = await mercadoLivreGetJson<CategoryDetail>(
+        storeId,
+        `/categories/${encodeURIComponent(suggestion.categoryId)}`
+      );
+      return {
+        ...suggestion,
+        categoryPath: clean(detail.id, 160) === suggestion.categoryId
+          ? categoryPathFrom(detail.path_from_root)
+          : [],
+      };
+    } catch {
+      return { ...suggestion, categoryPath: [] };
+    }
+  }));
+
 export const inspectMercadoLivreOutboundRequirements = async (input: {
   storeId: string; proposalId: string; inspectedByUserId: string;
 }): Promise<MercadoLivreOutboundRequirementInspection> => {
@@ -180,7 +215,8 @@ export const inspectMercadoLivreOutboundRequirements = async (input: {
   await assertCanonicalStillCurrent(proposal);
   const connection = await assertConnectedManualReview(proposal);
   const siteId = await loadSiteId(storeId, connection.externalAccountId);
-  const categorySuggestions = await predictionsFor(storeId, siteId, proposal.canonical.name);
+  const predictedCategories = await predictionsFor(storeId, siteId, proposal.canonical.name);
+  const categorySuggestions = await enrichCategorySuggestions(storeId, predictedCategories);
   const inspectedAt = new Date().toISOString();
   const inspection: MercadoLivreOutboundRequirementInspection = {
     proposalId, siteId, categorySuggestions, authority: 'provider_api_refetch', inspectedAt,
