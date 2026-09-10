@@ -51,9 +51,12 @@ test('conditional and listing validation both use the same model-aware initial p
   const adapterSource = await readFile(payloadAdapterPath, 'utf8');
   assert.match(conditionalSource, /buildMercadoLivreInitialPublicationPayload/);
   assert.match(listingSource, /buildMercadoLivreInitialPublicationPayload/);
-  assert.match(adapterSource, /family_name: name/);
+  assert.match(conditionalSource, /familyName: configuration\.familyName/);
+  assert.match(listingSource, /familyName: configuration\.familyName/);
+  assert.match(adapterSource, /family_name: familyName/);
   assert.match(adapterSource, /title: name/);
   assert.match(adapterSource, /publicationModel === 'user_products'/);
+  assert.match(adapterSource, /MERCADO_LIVRE_OUTBOUND_FAMILY_NAME_REQUIRED/);
   assert.doesNotMatch(servicePath.pathname, /\/items$/);
 });
 
