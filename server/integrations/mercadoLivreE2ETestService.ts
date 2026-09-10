@@ -97,36 +97,13 @@ export const listMercadoLivreE2EEligibleProducts = async (input: {
     const stock = integerNonNegative(record.stock);
     const publicationStatus = clean(record.publicationStatus, 80);
 
-    // Keep the exact eligibility gate intact. Diagnostics attribute each excluded
-    // document to the first failing condition only, without exposing product data.
-    if (clean(record.storeId, 160) !== canonicalStoreId) {
-      excluded.storeMismatch += 1;
-      continue;
-    }
-    if (!id) {
-      excluded.missingId += 1;
-      continue;
-    }
-    if (!name) {
-      excluded.missingName += 1;
-      continue;
-    }
-    if (price === null) {
-      excluded.invalidPrice += 1;
-      continue;
-    }
-    if (stock === null) {
-      excluded.invalidStock += 1;
-      continue;
-    }
-    if (!publicationStatus) {
-      excluded.missingPublicationStatus += 1;
-      continue;
-    }
-    if (record.isService === true) {
-      excluded.service += 1;
-      continue;
-    }
+    if (clean(record.storeId, 160) !== canonicalStoreId) { excluded.storeMismatch += 1; continue; }
+    if (!id) { excluded.missingId += 1; continue; }
+    if (!name) { excluded.missingName += 1; continue; }
+    if (price === null) { excluded.invalidPrice += 1; continue; }
+    if (stock === null) { excluded.invalidStock += 1; continue; }
+    if (!publicationStatus) { excluded.missingPublicationStatus += 1; continue; }
+    if (record.isService === true) { excluded.service += 1; continue; }
 
     const binding = bindingByProduct.get(id);
     items.push({
@@ -144,7 +121,6 @@ export const listMercadoLivreE2EEligibleProducts = async (input: {
   }
 
   items.sort((left, right) => left.name.localeCompare(right.name, 'pt-BR'));
-
   return {
     canonicalStoreId,
     items,
@@ -198,6 +174,36 @@ const trueTagNames = (tags: Record<string, unknown>): string[] =>
     .filter(Boolean)
     .sort();
 
+const recordFrom = (value: unknown): Record<string, unknown> =>
+  value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
+
+const uniqueStrings = (value: unknown): string[] =>
+  Array.isArray(value) ? [...new Set(value.map(item => clean(item, 120)).filter(Boolean))] : [];
+
+const categoryShippingModes = (value: unknown): string[] => {
+  const record = recordFrom(value);
+  const direct = uniqueStrings(record.modes);
+  const logistics = Array.isArray(record.logistics) ? record.logistics : [];
+  const fromLogistics = logistics.flatMap(candidate => {
+    const item = recordFrom(candidate);
+    const mode = clean(item.mode, 120);
+    return mode ? [mode] : [];
+  });
+  return [...new Set([...direct, ...fromLogistics])];
+};
+
+export interface MercadoLivreE2ESaleTermOption {
+  id: string;
+  name: string;
+  valueType: string;
+  required: boolean;
+  hidden: boolean;
+  values: Array<{ id: string; name: string }>;
+  allowedUnits: Array<{ id: string; name: string }>;
+  defaultUnit: string;
+  providerTags: string[];
+}
+
 export interface MercadoLivreE2ECategoryOptions {
   proposalId: string;
   category: { id: string; name: string };
@@ -219,6 +225,13 @@ export interface MercadoLivreE2ECategoryOptions {
     providerTags: string[];
     values: Array<{ id: string; name: string }>;
   }>;
+  saleTerms: MercadoLivreE2ESaleTermOption[];
+  shipping: {
+    sellerModes: string[];
+    categoryModes: string[];
+    allowedModes: string[];
+    localPickUpAvailable: boolean;
+  };
   authority: 'provider_api_requirement_options';
 }
 
@@ -253,40 +266,37 @@ export const inspectMercadoLivreE2ECategoryOptions = async (input: {
     throw new Error('MERCADO_LIVRE_CONNECTION_INVALID');
   }
 
-  const [categoryRaw, attributesRaw, listingTypesRaw] = await Promise.all([
+  const externalAccountId = encodeURIComponent(connection.externalAccountId);
+  const [categoryRaw, attributesRaw, listingTypesRaw, saleTermsRaw, sellerShippingRaw, categoryShippingRaw] = await Promise.all([
     mercadoLivreGetJson<unknown>(storeId, `/categories/${encodeURIComponent(categoryId)}`),
     mercadoLivreGetJson<unknown>(storeId, `/categories/${encodeURIComponent(categoryId)}/attributes`),
-    mercadoLivreGetJson<unknown>(storeId, `/users/${encodeURIComponent(connection.externalAccountId)}/available_listing_types?category_id=${encodeURIComponent(categoryId)}`),
+    mercadoLivreGetJson<unknown>(storeId, `/users/${externalAccountId}/available_listing_types?category_id=${encodeURIComponent(categoryId)}`),
+    mercadoLivreGetJson<unknown>(storeId, `/categories/${encodeURIComponent(categoryId)}/sale_terms`),
+    mercadoLivreGetJson<unknown>(storeId, `/users/${externalAccountId}/shipping_preferences`),
+    mercadoLivreGetJson<unknown>(storeId, `/categories/${encodeURIComponent(categoryId)}/shipping_preferences`),
   ]);
   if (!categoryRaw || typeof categoryRaw !== 'object' || Array.isArray(categoryRaw)) throw new Error('MERCADO_LIVRE_OUTBOUND_CATEGORY_INVALID');
   const category = categoryRaw as Record<string, unknown>;
-  const settings = category.settings && typeof category.settings === 'object' && !Array.isArray(category.settings)
-    ? category.settings as Record<string, unknown> : {};
+  const settings = recordFrom(category.settings);
   if (clean(category.id, 160) !== categoryId || settings.listing_allowed !== true || clean(settings.status, 80) !== 'enabled') {
     throw new Error('MERCADO_LIVRE_OUTBOUND_CATEGORY_NOT_LISTABLE');
   }
-  const conditions = Array.isArray(settings.item_conditions)
-    ? settings.item_conditions.map(value => clean(value, 120)).filter(Boolean) : [];
-  const currencies = Array.isArray(settings.currencies)
-    ? settings.currencies.map(value => clean(value, 40)).filter(Boolean) : [];
+  const conditions = uniqueStrings(settings.item_conditions);
+  const currencies = uniqueStrings(settings.currencies);
 
-  const listingContainer = listingTypesRaw && typeof listingTypesRaw === 'object' && !Array.isArray(listingTypesRaw)
-    ? listingTypesRaw as Record<string, unknown> : {};
+  const listingContainer = recordFrom(listingTypesRaw);
   const listingTypes = (Array.isArray(listingContainer.available) ? listingContainer.available : []).flatMap(candidate => {
-    if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return [];
-    const record = candidate as Record<string, unknown>;
+    const record = recordFrom(candidate);
     const id = clean(record.id, 120);
     if (!id) return [];
     return [{ id, name: clean(record.name, 160) || id }];
   });
 
   const attributes = (Array.isArray(attributesRaw) ? attributesRaw : []).flatMap(candidate => {
-    if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return [];
-    const record = candidate as Record<string, unknown>;
+    const record = recordFrom(candidate);
     const id = clean(record.id, 160);
     if (!id) return [];
-    const tags = record.tags && typeof record.tags === 'object' && !Array.isArray(record.tags)
-      ? record.tags as Record<string, unknown> : {};
+    const tags = recordFrom(record.tags);
     return [{
       id,
       name: clean(record.name, 255) || id,
@@ -304,6 +314,31 @@ export const inspectMercadoLivreE2ECategoryOptions = async (input: {
     }];
   });
 
+  const saleTerms = (Array.isArray(saleTermsRaw) ? saleTermsRaw : []).flatMap(candidate => {
+    const record = recordFrom(candidate);
+    const id = clean(record.id, 160);
+    if (!id) return [];
+    const tags = recordFrom(record.tags);
+    return [{
+      id,
+      name: clean(record.name, 255) || id,
+      valueType: clean(record.value_type, 80),
+      required: tags.required === true,
+      hidden: tags.hidden === true,
+      values: parseValues(record.values),
+      allowedUnits: parseValues(record.allowed_units),
+      defaultUnit: clean(record.default_unit, 80),
+      providerTags: trueTagNames(tags),
+    }];
+  });
+
+  const sellerShipping = recordFrom(sellerShippingRaw);
+  const sellerModes = uniqueStrings(sellerShipping.modes);
+  const categoryModes = categoryShippingModes(categoryShippingRaw);
+  const allowedModes = categoryModes.length
+    ? sellerModes.filter(mode => categoryModes.includes(mode))
+    : [...sellerModes];
+
   return {
     proposalId,
     category: { id: categoryId, name: clean(category.name, 160) || categoryId },
@@ -311,6 +346,13 @@ export const inspectMercadoLivreE2ECategoryOptions = async (input: {
     currencies,
     listingTypes,
     attributes,
+    saleTerms,
+    shipping: {
+      sellerModes,
+      categoryModes,
+      allowedModes,
+      localPickUpAvailable: sellerShipping.local_pick_up === true,
+    },
     authority: 'provider_api_requirement_options',
   };
 };

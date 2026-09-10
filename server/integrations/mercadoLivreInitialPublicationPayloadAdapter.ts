@@ -9,6 +9,18 @@ export interface MercadoLivreInitialPublicationAttribute {
   valueName?: string;
 }
 
+export interface MercadoLivreInitialPublicationSaleTerm {
+  id: string;
+  valueId?: string;
+  valueName?: string;
+}
+
+export interface MercadoLivreInitialPublicationShipping {
+  mode: string;
+  freeShipping: boolean;
+  localPickUp: boolean;
+}
+
 export interface MercadoLivreInitialPublicationPayloadInput {
   publicationModel: MercadoLivrePublicationModel;
   stockAuthority: MercadoLivreStockAuthority;
@@ -22,6 +34,8 @@ export interface MercadoLivreInitialPublicationPayloadInput {
   pictureUrl?: string;
   pictureUrls?: readonly string[];
   attributes: MercadoLivreInitialPublicationAttribute[];
+  saleTerms?: MercadoLivreInitialPublicationSaleTerm[];
+  shipping?: MercadoLivreInitialPublicationShipping | null;
   sellerCustomField?: string;
 }
 
@@ -47,6 +61,12 @@ const normalizePictureUrls = (input: MercadoLivreInitialPublicationPayloadInput)
   return result;
 };
 
+const providerValue = (value: MercadoLivreInitialPublicationAttribute | MercadoLivreInitialPublicationSaleTerm) => ({
+  id: clean(value.id, 160),
+  ...(clean(value.valueId, 160) ? { value_id: clean(value.valueId, 160) } : {}),
+  ...(clean(value.valueName, 600) ? { value_name: clean(value.valueName, 600) } : {}),
+});
+
 export const buildMercadoLivreInitialPublicationPayload = (
   input: MercadoLivreInitialPublicationPayloadInput
 ): Record<string, unknown> => {
@@ -60,6 +80,8 @@ export const buildMercadoLivreInitialPublicationPayload = (
   }
 
   const pictureUrls = normalizePictureUrls(input);
+  const saleTerms = (input.saleTerms ?? []).filter(term => clean(term.id, 160));
+  const shippingMode = clean(input.shipping?.mode, 120);
   const common = {
     category_id: clean(input.categoryId, 160),
     price: input.price,
@@ -74,11 +96,15 @@ export const buildMercadoLivreInitialPublicationPayload = (
     ...(pictureUrls.length > 0
       ? { pictures: pictureUrls.map(source => ({ source })) }
       : {}),
-    attributes: input.attributes.map(attribute => ({
-      id: clean(attribute.id, 160),
-      ...(clean(attribute.valueId, 160) ? { value_id: clean(attribute.valueId, 160) } : {}),
-      ...(clean(attribute.valueName, 600) ? { value_name: clean(attribute.valueName, 600) } : {}),
-    })),
+    attributes: input.attributes.map(providerValue),
+    ...(saleTerms.length > 0 ? { sale_terms: saleTerms.map(providerValue) } : {}),
+    ...(shippingMode && input.shipping ? {
+      shipping: {
+        mode: shippingMode,
+        free_shipping: input.shipping.freeShipping,
+        local_pick_up: input.shipping.localPickUp,
+      },
+    } : {}),
   };
 
   if (input.publicationModel === 'user_products') {
