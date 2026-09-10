@@ -25,6 +25,7 @@ export interface MercadoLivreInitialPublicationPayloadInput {
   publicationModel: MercadoLivrePublicationModel;
   stockAuthority: MercadoLivreStockAuthority;
   name: string;
+  familyName?: string;
   categoryId: string;
   price: number;
   currencyId: string;
@@ -108,8 +109,10 @@ export const buildMercadoLivreInitialPublicationPayload = (
   };
 
   if (input.publicationModel === 'user_products') {
+    const familyName = clean(input.familyName, 120);
+    if (!familyName) throw new Error('MERCADO_LIVRE_OUTBOUND_FAMILY_NAME_REQUIRED');
     return {
-      family_name: name,
+      family_name: familyName,
       ...common,
     };
   }
