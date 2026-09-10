@@ -39,6 +39,8 @@ interface ProposalRecord {
 
 interface ConfigurationRecord {
   proposalId: string;
+  publicationModel: 'legacy_items' | 'user_products';
+  familyName: string;
   attributes: Array<{ id: string; valueId?: string; valueName?: string }>;
   authority: 'provider_api_refetch_and_store_owner_selection';
   configuredAt: string;
@@ -125,9 +127,12 @@ const assertProposal = (storeId: string, proposalId: string, value: unknown): Pr
 const assertConfiguration = (proposal: ProposalRecord, value: unknown): ConfigurationRecord => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('MERCADO_LIVRE_OUTBOUND_REQUIREMENTS_NOT_CONFIGURED');
   const record = value as Record<string, unknown>;
+  const familyName = clean(record.familyName, 120);
   if (
     clean(record.proposalId, 160) !== proposal.id ||
     clean(record.canonicalBaselineHash, 80) !== proposal.canonicalBaselineHash ||
+    record.publicationModel !== proposal.providerPublicationModel ||
+    (proposal.providerPublicationModel === 'user_products' && !familyName) ||
     record.authority !== 'provider_api_refetch_and_store_owner_selection' ||
     !Array.isArray(record.attributes) || !clean(record.configuredAt, 80)
   ) throw new Error('MERCADO_LIVRE_OUTBOUND_REQUIREMENTS_INVALID');
@@ -270,6 +275,7 @@ export const validateMercadoLivreOutboundListing = async (input: {
     publicationModel: proposal.providerPublicationModel,
     stockAuthority: proposal.providerStockAuthority,
     name: proposal.canonical.name,
+    familyName: configuration.familyName,
     categoryId: proposal.providerCategoryId,
     price: proposal.canonical.price,
     currencyId: proposal.providerCurrencyId,
@@ -322,6 +328,7 @@ export const validateMercadoLivreOutboundListing = async (input: {
     if (
       currentProposal.providerCapabilityFingerprint !== proposal.providerCapabilityFingerprint ||
       currentConfiguration.configuredAt !== configuration.configuredAt ||
+      currentConfiguration.familyName !== configuration.familyName ||
       currentConditional.validatedAt !== conditionalValidation.validatedAt ||
       Boolean(currentCommercial) !== Boolean(commercialConfiguration) ||
       (currentCommercial && commercialConfiguration && currentCommercial.configuredAt !== commercialConfiguration.configuredAt) ||
@@ -338,6 +345,7 @@ export const validateMercadoLivreOutboundListing = async (input: {
       providerCapabilityFingerprint: proposal.providerCapabilityFingerprint,
       providerPublicationModel: proposal.providerPublicationModel,
       providerStockAuthority: proposal.providerStockAuthority,
+      familyName: configuration.familyName,
       requirementConfiguredAt: configuration.configuredAt,
       commercialRequirementConfiguredAt: commercialConfiguration?.configuredAt ?? null,
       conditionalRequirementValidatedAt: conditionalValidation.validatedAt,
