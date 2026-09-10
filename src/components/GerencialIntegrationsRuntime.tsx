@@ -154,13 +154,14 @@ export function GerencialIntegrationsRuntime({
 
           {mercadoLivreOpen && (
             <div
-              className="fixed inset-0 z-[160] bg-slate-950/90 p-2 backdrop-blur-sm sm:p-6"
+              className="fixed inset-0 z-[160] flex h-[100dvh] min-h-0 items-stretch bg-slate-950/90 p-2 backdrop-blur-sm sm:p-6"
               role="dialog"
               aria-modal="true"
               aria-labelledby="mercado-livre-integration-modal-title"
               id="mercado-livre-integration-modal"
+              style={{ paddingBottom: 'max(0.5rem, env(safe-area-inset-bottom))' }}
             >
-              <div className="mx-auto flex h-full w-full max-w-4xl flex-col overflow-hidden rounded-3xl border border-yellow-500/20 bg-slate-950 shadow-2xl">
+              <div className="mx-auto flex h-full min-h-0 w-full max-w-4xl flex-col overflow-hidden rounded-3xl border border-yellow-500/20 bg-slate-950 shadow-2xl">
                 <header className="flex shrink-0 items-center justify-between gap-4 border-b border-slate-800 bg-slate-900 px-4 py-4 sm:px-6">
                   <div className="min-w-0">
                     <span className="font-mono text-[8px] font-black uppercase tracking-[0.16em] text-yellow-300">
@@ -184,7 +185,13 @@ export function GerencialIntegrationsRuntime({
                   </button>
                 </header>
 
-                <div className="flex-1 overflow-y-auto p-3 sm:p-5">
+                <div
+                  className="min-h-0 flex-1 touch-pan-y overflow-x-hidden overflow-y-auto overscroll-contain p-3 sm:p-5"
+                  style={{
+                    WebkitOverflowScrolling: 'touch',
+                    paddingBottom: 'max(6rem, calc(env(safe-area-inset-bottom) + 2rem))',
+                  }}
+                >
                   <div className="space-y-5">
                     <section className="rounded-3xl border border-yellow-500/20 bg-yellow-500/[0.04] p-5">
                       <span className="font-mono text-[9px] font-black uppercase tracking-[0.16em] text-yellow-300">
