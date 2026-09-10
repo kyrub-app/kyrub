@@ -84,6 +84,7 @@ test('User Products payload keeps the same multi-picture set without reintroduci
     publicationModel: 'user_products',
     stockAuthority: 'item_available_quantity',
     name: 'Chaveiro Kyrub',
+    familyName: 'Chaveiro Kyrub',
     categoryId: 'MLB123',
     price: 29.9,
     currencyId: 'BRL',
