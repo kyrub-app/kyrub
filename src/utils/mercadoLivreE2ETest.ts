@@ -71,6 +71,7 @@ export interface MercadoLivreE2ESaleTermOption {
 
 export interface MercadoLivreE2ECategoryOptions {
   proposalId: string;
+  publicationModel: 'legacy_items' | 'user_products';
   category: { id: string; name: string };
   conditions: string[];
   currencies: string[];
@@ -146,21 +147,22 @@ export const configureMercadoLivreE2ERequirements = (
     categoryId: string;
     listingTypeId: string;
     condition: string;
+    familyName?: string;
     attributes: MercadoLivreAttributeInput[];
     saleTerms?: MercadoLivreSaleTermInput[];
     shipping?: MercadoLivreShippingInput;
   }
 ) => authorizedFetch<{
   proposalId: string;
+  publicationModel: 'legacy_items' | 'user_products';
+  familyName: string;
   ready: boolean;
   requiredAttributeIds: string[];
   conditionalAttributeIds: string[];
   missingRequiredAttributeIds: string[];
-  saleTerms: MercadoLivreSaleTermInput[];
-  shipping: MercadoLivreShippingInput | null;
 }>(
   user,
-  `/api/store-connections/mercado-livre/${encoded(storeId)}/outbound-publication-proposals/${encoded(proposalId)}/configure-requirements`,
+  `/api/store-connections/mercado-livre/${encoded(storeId)}/e2e/outbound-publication-proposals/${encoded(proposalId)}/configure-requirements`,
   { method: 'POST', body: JSON.stringify(input) }
 );
 
