@@ -24,6 +24,25 @@ test('category prediction is suggestion rather than silent category authority', 
   assert.match(source, /configuredByUserId !== storeId/);
 });
 
+test('configuration reuses the saved provider inspection instead of rerunning category prediction', async () => {
+  const source = await readFile(servicePath, 'utf8');
+  const helperStart = source.indexOf('const assertCategoryFromSavedInspection');
+  const configureStart = source.indexOf('export const configureMercadoLivreOutboundRequirements');
+  assert.ok(helperStart >= 0);
+  assert.ok(configureStart > helperStart);
+
+  const helperSource = source.slice(helperStart, configureStart);
+  const configureSource = source.slice(configureStart);
+  assert.match(helperSource, /catalogOutboundRequirementInspections/);
+  assert.match(helperSource, /canonicalBaselineHash/);
+  assert.match(helperSource, /connectionId/);
+  assert.match(helperSource, /siteId/);
+  assert.match(helperSource, /inspectedByUserId/);
+  assert.match(helperSource, /MERCADO_LIVRE_OUTBOUND_REQUIREMENT_INSPECTION_STALE/);
+  assert.match(configureSource, /assertCategoryFromSavedInspection/);
+  assert.doesNotMatch(configureSource, /predictionsFor\(/);
+});
+
 test('required attributes, listing type and condition must match current provider metadata', async () => {
   const source = await readFile(servicePath, 'utf8');
   assert.match(source, /tags\?\.required === true/);
