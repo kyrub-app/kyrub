@@ -71,12 +71,27 @@ export const proposeMercadoLivreE2EPublication = (user: User, storeId: string, c
     { method: 'POST', body: JSON.stringify({ connectionId, canonicalProductId }) }
   );
 
-export const inspectMercadoLivreE2ERequirements = (user: User, storeId: string, proposalId: string) =>
-  authorizedFetch<{ proposalId: string; siteId: string; categorySuggestions: MercadoLivreCategorySuggestion[] }>(
+export const inspectMercadoLivreE2ERequirements = async (user: User, storeId: string, proposalId: string) => {
+  const result = await authorizedFetch<{ proposalId: string; siteId: string; categorySuggestions: MercadoLivreCategorySuggestion[] }>(
     user,
     `/api/store-connections/mercado-livre/${encoded(storeId)}/outbound-publication-proposals/${encoded(proposalId)}/inspect-requirements`,
     { method: 'POST' }
   );
+  const seenCategoryIds = new Set<string>();
+  return {
+    ...result,
+    categorySuggestions: result.categorySuggestions
+      .filter(item => {
+        if (!item.categoryId || seenCategoryIds.has(item.categoryId)) return false;
+        seenCategoryIds.add(item.categoryId);
+        return true;
+      })
+      .map(item => ({
+        ...item,
+        categoryName: `${item.categoryName} · ${item.categoryId} · ${item.domainName || item.domainId}`,
+      })),
+  };
+};
 
 export const loadMercadoLivreE2ECategoryOptions = (user: User, storeId: string, proposalId: string, categoryId: string) =>
   authorizedFetch<MercadoLivreE2ECategoryOptions>(
