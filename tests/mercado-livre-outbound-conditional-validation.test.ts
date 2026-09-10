@@ -85,6 +85,15 @@ test('listing readiness uses Mercado Livre items validator instead of creating a
   assert.doesNotMatch(source, /mercadoLivrePostJson<MercadoLivreCreatedItem>/);
 });
 
+test('listing validator preserves safe provider HTTP status diagnostics without exposing credentials', async () => {
+  const source = await readFile(listingValidatorPath, 'utf8');
+  assert.match(source, /MERCADO_LIVRE_API_FAILED:HTTP_\(\\d\{3\}\)/);
+  assert.match(source, /MERCADO_LIVRE_API_FAILED_HTTP_\$\{match\[1\]\}/);
+  assert.match(source, /\[Mercado Livre listing validation provider\]/);
+  assert.match(source, /endpoint: '\/items\/validate'/);
+  assert.doesNotMatch(source, /accessToken|refreshToken|authorization:\s*`Bearer/);
+});
+
 test('listing validation rechecks the frozen seller publication model before provider validation', async () => {
   const source = await readFile(listingValidatorPath, 'utf8');
   const guardIndex = source.indexOf('await assertCurrentMercadoLivrePublicationCapability');
