@@ -57,6 +57,18 @@ export interface MercadoLivreE2ECategoryAttribute {
   values: Array<{ id: string; name: string }>;
 }
 
+export interface MercadoLivreE2ESaleTermOption {
+  id: string;
+  name: string;
+  valueType: string;
+  required: boolean;
+  hidden: boolean;
+  values: Array<{ id: string; name: string }>;
+  allowedUnits: Array<{ id: string; name: string }>;
+  defaultUnit: string;
+  providerTags: string[];
+}
+
 export interface MercadoLivreE2ECategoryOptions {
   proposalId: string;
   category: { id: string; name: string };
@@ -64,6 +76,13 @@ export interface MercadoLivreE2ECategoryOptions {
   currencies: string[];
   listingTypes: Array<{ id: string; name: string }>;
   attributes: MercadoLivreE2ECategoryAttribute[];
+  saleTerms: MercadoLivreE2ESaleTermOption[];
+  shipping: {
+    sellerModes: string[];
+    categoryModes: string[];
+    allowedModes: string[];
+    localPickUpAvailable: boolean;
+  };
   authority: 'provider_api_requirement_options';
 }
 
@@ -116,18 +135,29 @@ export const loadMercadoLivreE2ECategoryOptions = (user: User, storeId: string, 
   );
 
 export type MercadoLivreAttributeInput = { id: string; valueId?: string; valueName?: string };
+export type MercadoLivreSaleTermInput = { id: string; valueId?: string; valueName?: string };
+export type MercadoLivreShippingInput = { mode?: string; freeShipping?: boolean; localPickUp?: boolean };
 
 export const configureMercadoLivreE2ERequirements = (
   user: User,
   storeId: string,
   proposalId: string,
-  input: { categoryId: string; listingTypeId: string; condition: string; attributes: MercadoLivreAttributeInput[] }
+  input: {
+    categoryId: string;
+    listingTypeId: string;
+    condition: string;
+    attributes: MercadoLivreAttributeInput[];
+    saleTerms?: MercadoLivreSaleTermInput[];
+    shipping?: MercadoLivreShippingInput;
+  }
 ) => authorizedFetch<{
   proposalId: string;
   ready: boolean;
   requiredAttributeIds: string[];
   conditionalAttributeIds: string[];
   missingRequiredAttributeIds: string[];
+  saleTerms: MercadoLivreSaleTermInput[];
+  shipping: MercadoLivreShippingInput | null;
 }>(
   user,
   `/api/store-connections/mercado-livre/${encoded(storeId)}/outbound-publication-proposals/${encoded(proposalId)}/configure-requirements`,
