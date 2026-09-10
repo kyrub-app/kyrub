@@ -8,6 +8,7 @@ const servicePath = new URL('../server/integrations/mercadoLivreE2ETestService.t
 const capabilityServicePath = new URL('../server/integrations/mercadoLivrePublicationCapabilityService.ts', import.meta.url);
 const routerPath = new URL('../server/integrations/mercadoLivreE2ETestRouter.ts', import.meta.url);
 const componentPath = new URL('../src/components/store/MercadoLivreE2ETestWorkspace.tsx', import.meta.url);
+const wizardPath = new URL('../src/components/store/MercadoLivreRequirementsWizard.tsx', import.meta.url);
 const bridgePath = new URL('../src/components/store/StoreConnectionsPortalBridge.tsx', import.meta.url);
 const clientPath = new URL('../src/utils/mercadoLivreE2ETest.ts', import.meta.url);
 const serverPath = new URL('../server.ts', import.meta.url);
@@ -108,15 +109,16 @@ test('E2E read router is owner authenticated and mounted beside Mercado Livre ro
 });
 
 test('merchant E2E workspace separates preparation from the two real provider writes', async () => {
-  const source = await readFile(componentPath, 'utf8');
-  assert.match(source, /Preparar publicação/);
-  assert.match(source, /Validar com Mercado Livre/);
-  assert.match(source, /Autorizar publicação real/);
-  assert.match(source, /Publicar agora/);
-  assert.match(source, /Autorizar alteração real de estoque/);
-  assert.match(source, /Alterar estoque agora/);
-  assert.match(source, /Confirmar anúncio no Mercado Livre/);
-  assert.match(source, /Confirmar estoque no Mercado Livre/);
+  const workspace = await readFile(componentPath, 'utf8');
+  const wizard = await readFile(wizardPath, 'utf8');
+  assert.match(workspace, /Preparar publicação/);
+  assert.match(wizard, /Validar com Mercado Livre/);
+  assert.match(workspace, /Autorizar publicação real/);
+  assert.match(workspace, /Publicar agora/);
+  assert.match(workspace, /Autorizar alteração real de estoque/);
+  assert.match(workspace, /Alterar estoque agora/);
+  assert.match(workspace, /Confirmar anúncio no Mercado Livre/);
+  assert.match(workspace, /Confirmar estoque no Mercado Livre/);
 });
 
 test('one-time publication and stock tokens stay in React state only', async () => {

@@ -191,6 +191,13 @@ const parseValues = (value: unknown): Array<{ id: string; name: string }> => {
   }).slice(0, 200);
 };
 
+const trueTagNames = (tags: Record<string, unknown>): string[] =>
+  Object.entries(tags)
+    .filter(([, value]) => value === true)
+    .map(([name]) => clean(name, 120))
+    .filter(Boolean)
+    .sort();
+
 export interface MercadoLivreE2ECategoryOptions {
   proposalId: string;
   category: { id: string; name: string };
@@ -204,6 +211,12 @@ export interface MercadoLivreE2ECategoryOptions {
     required: boolean;
     newRequired: boolean;
     conditionalRequired: boolean;
+    allowVariations: boolean;
+    variationAttribute: boolean;
+    catalogRequired: boolean;
+    readOnly: boolean;
+    hidden: boolean;
+    providerTags: string[];
     values: Array<{ id: string; name: string }>;
   }>;
   authority: 'provider_api_requirement_options';
@@ -281,6 +294,12 @@ export const inspectMercadoLivreE2ECategoryOptions = async (input: {
       required: tags.required === true,
       newRequired: tags.new_required === true,
       conditionalRequired: tags.conditional_required === true,
+      allowVariations: tags.allow_variations === true,
+      variationAttribute: tags.variation_attribute === true,
+      catalogRequired: tags.catalog_required === true,
+      readOnly: tags.read_only === true,
+      hidden: tags.hidden === true,
+      providerTags: trueTagNames(tags),
       values: parseValues(record.values),
     }];
   });
