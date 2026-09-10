@@ -174,7 +174,7 @@ export const validateMercadoLivreE2EConditionalRequirements = (user: User, store
 export const validateMercadoLivreE2EListing = (user: User, storeId: string, proposalId: string) =>
   authorizedFetch<{
     proposalId: string;
-    publicationReadiness: 'ready_for_owner_authorization' | 'needs_correction';
+    status: 'ready_for_owner_authorization' | 'needs_correction';
     providerStatus: number;
     causes: Array<{ code?: string; message?: string; reference?: string }>;
   }>(
