@@ -5,6 +5,7 @@ import {
   listMercadoLivreE2EEligibleProducts,
 } from './mercadoLivreE2ETestService.js';
 import { inspectMercadoLivrePublicationCapability } from './mercadoLivrePublicationCapabilityService.js';
+import { configureMercadoLivreOutboundCommercialRequirements } from './mercadoLivreOutboundCommercialConfigurationService.js';
 
 const clean = (value: unknown): string => typeof value === 'string' ? value.trim() : '';
 const bearerToken = (authorization: string): string => /^Bearer\s+(.+)$/i.exec(authorization)?.[1]?.trim() ?? '';
@@ -34,7 +35,8 @@ const statusFor = (code: string): number => {
     code.includes('MISMATCH') ||
     code.includes('INCONSISTENT') ||
     code.includes('NOT_PREDICTED') ||
-    code.includes('NOT_LISTABLE')
+    code.includes('NOT_LISTABLE') ||
+    code.includes('UNAVAILABLE')
   ) return 409;
   return 503;
 };
@@ -112,6 +114,27 @@ export const createMercadoLivreE2ETestRouter = (): Router => {
     } catch (error) {
       const code = errorCode(error);
       response.status(statusFor(code)).json({ error: 'Não foi possível consultar as opções oficiais da categoria.', code });
+    }
+  });
+
+  router.post('/:storeId/e2e/outbound-publication-proposals/:proposalId/configure-commercial-requirements', async (request, response) => {
+    try {
+      const storeId = clean(request.params.storeId);
+      const identity = await authenticatedOwner(request.get('authorization') ?? '', storeId);
+      response.setHeader('Cache-Control', 'no-store, max-age=0');
+      response.json(await configureMercadoLivreOutboundCommercialRequirements({
+        storeId,
+        proposalId: clean(request.params.proposalId),
+        saleTerms: request.body?.saleTerms,
+        shipping: request.body?.shipping,
+        configuredByUserId: identity.uid,
+      }));
+    } catch (error) {
+      const code = errorCode(error);
+      response.status(statusFor(code)).json({
+        error: 'Não foi possível validar as condições comerciais e de entrega com o Mercado Livre.',
+        code,
+      });
     }
   });
 
