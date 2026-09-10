@@ -139,6 +139,7 @@ interface ProposalRecord {
   connectionId: string;
   canonicalStoreId: string;
   canonicalProductId: string;
+  providerPublicationModel: 'legacy_items' | 'user_products';
   status: 'review_required';
   action: 'create_external_listing';
   executionStatus: 'not_authorized';
@@ -151,7 +152,8 @@ const assertProposal = (storeId: string, proposalId: string, value: unknown): Pr
     clean(record.id, 160) !== proposalId || clean(record.storeId, 160) !== storeId ||
     record.provider !== 'mercado_livre' || record.status !== 'review_required' ||
     record.action !== 'create_external_listing' || record.executionStatus !== 'not_authorized' ||
-    !clean(record.connectionId, 200) || !clean(record.canonicalStoreId, 160) || !clean(record.canonicalProductId, 160)
+    !clean(record.connectionId, 200) || !clean(record.canonicalStoreId, 160) || !clean(record.canonicalProductId, 160) ||
+    (record.providerPublicationModel !== 'legacy_items' && record.providerPublicationModel !== 'user_products')
   ) throw new Error('MERCADO_LIVRE_OUTBOUND_PROPOSAL_INVALID');
   return record as unknown as ProposalRecord;
 };
@@ -206,6 +208,7 @@ export interface MercadoLivreE2ESaleTermOption {
 
 export interface MercadoLivreE2ECategoryOptions {
   proposalId: string;
+  publicationModel: 'legacy_items' | 'user_products';
   category: { id: string; name: string };
   conditions: string[];
   currencies: string[];
@@ -341,6 +344,7 @@ export const inspectMercadoLivreE2ECategoryOptions = async (input: {
 
   return {
     proposalId,
+    publicationModel: proposal.providerPublicationModel,
     category: { id: categoryId, name: clean(category.name, 160) || categoryId },
     conditions,
     currencies,

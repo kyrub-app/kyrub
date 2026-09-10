@@ -77,16 +77,18 @@ function AttributeField({ attribute, condition, value, onChange }: {
 }
 
 export default function MercadoLivreRequirementsWizard({
-  options, listingTypeId, condition, attributeValues, busy,
-  onListingTypeChange, onConditionChange, onAttributeChange, onValidate,
+  options, listingTypeId, condition, familyName, attributeValues, busy,
+  onListingTypeChange, onConditionChange, onFamilyNameChange, onAttributeChange, onValidate,
 }: {
   options: MercadoLivreE2ECategoryOptions;
   listingTypeId: string;
   condition: string;
+  familyName: string;
   attributeValues: Record<string, AttributeValue>;
   busy: boolean;
   onListingTypeChange: (value: string) => void;
   onConditionChange: (value: string) => void;
+  onFamilyNameChange: (value: string) => void;
   onAttributeChange: (id: string, value: AttributeValue) => void;
   onValidate: (commercial: MercadoLivreCommercialWizardInput) => void;
 }) {
@@ -103,14 +105,14 @@ export default function MercadoLivreRequirementsWizard({
   const additionalAttributes = useMemo(() => editableAttributes.filter(attribute => !variationAttributes.includes(attribute) && !requiredAttributes.includes(attribute)), [editableAttributes, variationAttributes, requiredAttributes]);
 
   const steps = useMemo<WizardStep[]>(() => [
-    { id: 'configuration', title: 'Configuração do anúncio', description: 'Escolha condição e tipo de anúncio antes de revisar os dados da categoria.' },
+    { id: 'configuration', title: 'Configuração do anúncio', description: options.publicationModel === 'user_products' ? 'Escolha condição, tipo de anúncio e o nome da família que agrupa este produto e suas possíveis variações.' : 'Escolha condição e tipo de anúncio antes de revisar os dados da categoria.' },
     { id: 'variations', title: 'Variações', description: variationAttributes.length ? 'Preencha cor, tamanho e outros dados que o Mercado Livre permite usar para diferenciar variações.' : 'Esta categoria não retornou atributos de variação editáveis.', attributes: variationAttributes },
     { id: 'required', title: 'Características necessárias', description: 'Obrigatórios e condicionais ficam juntos aqui. Você pode avançar e deixar a validação oficial apontar o que ainda faltar.', attributes: requiredAttributes },
     { id: 'additional', title: 'Características adicionais', description: 'Informações opcionais enriquecem o anúncio e podem depois enriquecer o cadastro do produto no Kyrub. Preencha o que souber ou pule a etapa.', attributes: additionalAttributes },
     { id: 'sale_terms', title: 'Disponibilidade e garantia', description: 'Prazo de disponibilidade, garantia e demais condições comerciais vêm da própria categoria do Mercado Livre. Você pode pular o que não souber.' },
     { id: 'shipping', title: 'Entrega', description: 'Escolha apenas modos permitidos para esta conta e categoria. Se pular, o validador oficial poderá pedir uma decisão depois.' },
     { id: 'review', title: 'Revisão e validação', description: 'Revise o preenchimento. O Mercado Livre continua sendo a autoridade final e pode pedir correções depois desta etapa.' },
-  ], [variationAttributes, requiredAttributes, additionalAttributes]);
+  ], [options.publicationModel, variationAttributes, requiredAttributes, additionalAttributes]);
 
   useEffect(() => { setStepIndex(previous => Math.min(previous, steps.length - 1)); }, [steps.length]);
   const step = steps[stepIndex];
@@ -118,9 +120,10 @@ export default function MercadoLivreRequirementsWizard({
   const missingRequired = editableAttributes.filter(attribute => requiredForCondition(attribute, condition) && !hasValue(attributeValues[attribute.id]));
   const saleTermCount = Object.values(saleTermValues).filter(value => Boolean(value.valueId?.trim() || value.valueName?.trim() || value.amount?.trim())).length;
   const shippingComplete = Boolean(shippingMode && freeShippingChoice && (!options.shipping.localPickUpAvailable || localPickUpChoice));
+  const familyNameReady = options.publicationModel !== 'user_products' || Boolean(familyName.trim());
 
   const statusFor = (candidate: WizardStep): 'complete' | 'skipped' | 'attention' | 'pending' => {
-    if (candidate.id === 'configuration') return listingTypeId && condition ? 'complete' : skipped.has(candidate.id) ? 'skipped' : 'attention';
+    if (candidate.id === 'configuration') return listingTypeId && condition && familyNameReady ? 'complete' : skipped.has(candidate.id) ? 'skipped' : 'attention';
     if (candidate.id === 'sale_terms') {
       const missing = options.saleTerms.filter(term => term.required).some(term => {
         const value = saleTermValues[term.id];
@@ -177,6 +180,7 @@ export default function MercadoLivreRequirementsWizard({
       <div className="mt-4"><p className="text-[11px] font-black text-white">{step.title}</p><p className="mt-1 text-[9px] leading-relaxed text-slate-500">{step.description}</p></div>
 
       {step.id === 'configuration' && <div className="mt-4 grid gap-3 sm:grid-cols-2">
+        {options.publicationModel === 'user_products' && <label className="text-[10px] font-bold text-slate-400 sm:col-span-2">Nome da família<input value={familyName} maxLength={120} onChange={event => onFamilyNameChange(event.target.value)} placeholder="Ex.: Camiseta Kyrub Essencial" className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2.5 text-xs text-white placeholder:text-slate-700" /><span className="mt-1 block text-[8px] font-normal leading-relaxed text-slate-600">No modelo User Products, a família agrupa o produto e suas variações. O Kyrub pré-preenche com o nome do produto, mas a confirmação é sua.</span></label>}
         <label className="text-[10px] font-bold text-slate-400">Tipo de anúncio<select value={listingTypeId} onChange={event => onListingTypeChange(event.target.value)} className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2.5 text-xs text-white"><option value="">Selecione…</option>{options.listingTypes.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
         <label className="text-[10px] font-bold text-slate-400">Condição<select value={condition} onChange={event => onConditionChange(event.target.value)} className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2.5 text-xs text-white"><option value="">Selecione…</option>{options.conditions.map(item => <option key={item} value={item}>{item}</option>)}</select></label>
       </div>}
@@ -199,9 +203,10 @@ export default function MercadoLivreRequirementsWizard({
       </div>}
 
       {step.id === 'review' && <div className="mt-4 space-y-3">
-        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4"><div className="rounded-xl border border-slate-800 bg-slate-950/60 p-3"><span className="text-[8px] font-black uppercase text-slate-600">Categoria</span><p className="mt-1 text-[10px] font-bold text-white">{options.category.name}</p></div><div className="rounded-xl border border-slate-800 bg-slate-950/60 p-3"><span className="text-[8px] font-black uppercase text-slate-600">Características</span><p className="mt-1 text-[10px] font-bold text-white">{answeredCount} de {editableAttributes.length} preenchidas</p></div><div className="rounded-xl border border-slate-800 bg-slate-950/60 p-3"><span className="text-[8px] font-black uppercase text-slate-600">Condições comerciais</span><p className="mt-1 text-[10px] font-bold text-white">{saleTermCount} preenchida(s)</p></div><div className="rounded-xl border border-slate-800 bg-slate-950/60 p-3"><span className="text-[8px] font-black uppercase text-slate-600">Entrega</span><p className={`mt-1 text-[10px] font-bold ${shippingComplete ? 'text-emerald-300' : 'text-amber-200'}`}>{shippingComplete ? shippingModeLabel(shippingMode) : 'Não concluída'}</p></div></div>
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4"><div className="rounded-xl border border-slate-800 bg-slate-950/60 p-3"><span className="text-[8px] font-black uppercase text-slate-600">Categoria</span><p className="mt-1 text-[10px] font-bold text-white">{options.category.name}</p></div>{options.publicationModel === 'user_products' && <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-3"><span className="text-[8px] font-black uppercase text-slate-600">Família</span><p className={`mt-1 text-[10px] font-bold ${familyNameReady ? 'text-white' : 'text-amber-200'}`}>{familyName.trim() || 'Não informada'}</p></div>}<div className="rounded-xl border border-slate-800 bg-slate-950/60 p-3"><span className="text-[8px] font-black uppercase text-slate-600">Características</span><p className="mt-1 text-[10px] font-bold text-white">{answeredCount} de {editableAttributes.length} preenchidas</p></div><div className="rounded-xl border border-slate-800 bg-slate-950/60 p-3"><span className="text-[8px] font-black uppercase text-slate-600">Condições comerciais</span><p className="mt-1 text-[10px] font-bold text-white">{saleTermCount} preenchida(s)</p></div><div className="rounded-xl border border-slate-800 bg-slate-950/60 p-3"><span className="text-[8px] font-black uppercase text-slate-600">Entrega</span><p className={`mt-1 text-[10px] font-bold ${shippingComplete ? 'text-emerald-300' : 'text-amber-200'}`}>{shippingComplete ? shippingModeLabel(shippingMode) : 'Não concluída'}</p></div></div>
+        {!familyNameReady && <p className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-3 text-[9px] leading-relaxed text-amber-100">Informe o nome da família antes de validar este User Product.</p>}
         {missingRequired.length > 0 && <p className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-3 text-[9px] leading-relaxed text-amber-100">Você pode validar mesmo assim. Se algum campo for indispensável, o Mercado Livre devolverá a correção e o Cairube poderá conduzir o preenchimento faltante.</p>}
-        <button type="button" onClick={() => onValidate({ saleTerms: normalizedSaleTerms(), shipping: normalizedShipping() })} disabled={busy || !listingTypeId || !condition} className="w-full rounded-xl border border-cyan-500/30 bg-cyan-500/10 px-4 py-3 text-[10px] font-black uppercase text-cyan-200 disabled:opacity-40">Validar com Mercado Livre</button>
+        <button type="button" onClick={() => onValidate({ saleTerms: normalizedSaleTerms(), shipping: normalizedShipping() })} disabled={busy || !listingTypeId || !condition || !familyNameReady} className="w-full rounded-xl border border-cyan-500/30 bg-cyan-500/10 px-4 py-3 text-[10px] font-black uppercase text-cyan-200 disabled:opacity-40">Validar com Mercado Livre</button>
       </div>}
 
       <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-slate-800 pt-3"><button type="button" onClick={() => setStepIndex(previous => Math.max(previous - 1, 0))} disabled={stepIndex === 0} className="inline-flex items-center gap-1 rounded-xl border border-slate-800 px-3 py-2 text-[9px] font-black uppercase text-slate-400 disabled:opacity-30"><ChevronLeft className="h-3.5 w-3.5" /> Voltar</button>{step.id !== 'review' && <div className="flex gap-2"><button type="button" onClick={skipCurrent} className="inline-flex items-center gap-1 rounded-xl border border-slate-800 px-3 py-2 text-[9px] font-black uppercase text-slate-500"><SkipForward className="h-3.5 w-3.5" /> Pular etapa</button><button type="button" onClick={moveNext} className="inline-flex items-center gap-1 rounded-xl bg-cyan-300 px-3 py-2 text-[9px] font-black uppercase text-slate-950">Continuar <ChevronRight className="h-3.5 w-3.5" /></button></div>}</div>

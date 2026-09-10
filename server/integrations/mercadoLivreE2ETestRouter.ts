@@ -6,6 +6,8 @@ import {
 } from './mercadoLivreE2ETestService.js';
 import { inspectMercadoLivrePublicationCapability } from './mercadoLivrePublicationCapabilityService.js';
 import { configureMercadoLivreOutboundCommercialRequirements } from './mercadoLivreOutboundCommercialConfigurationService.js';
+import { configureMercadoLivreOutboundRequirements } from './mercadoLivreOutboundRequirementsService.js';
+import { confirmMercadoLivreCanonicalVariantIdentity } from './mercadoLivreCanonicalVariantIdentityService.js';
 
 const clean = (value: unknown): string => typeof value === 'string' ? value.trim() : '';
 const bearerToken = (authorization: string): string => /^Bearer\s+(.+)$/i.exec(authorization)?.[1]?.trim() ?? '';
@@ -36,7 +38,9 @@ const statusFor = (code: string): number => {
     code.includes('INCONSISTENT') ||
     code.includes('NOT_PREDICTED') ||
     code.includes('NOT_LISTABLE') ||
-    code.includes('UNAVAILABLE')
+    code.includes('UNAVAILABLE') ||
+    code.includes('EMPTY') ||
+    code.includes('STALE')
   ) return 409;
   return 503;
 };
@@ -117,6 +121,30 @@ export const createMercadoLivreE2ETestRouter = (): Router => {
     }
   });
 
+  router.post('/:storeId/e2e/outbound-publication-proposals/:proposalId/configure-requirements', async (request, response) => {
+    try {
+      const storeId = clean(request.params.storeId);
+      const identity = await authenticatedOwner(request.get('authorization') ?? '', storeId);
+      response.setHeader('Cache-Control', 'no-store, max-age=0');
+      response.json(await configureMercadoLivreOutboundRequirements({
+        storeId,
+        proposalId: clean(request.params.proposalId),
+        categoryId: request.body?.categoryId,
+        listingTypeId: request.body?.listingTypeId,
+        condition: request.body?.condition,
+        familyName: request.body?.familyName,
+        attributes: request.body?.attributes,
+        configuredByUserId: identity.uid,
+      }));
+    } catch (error) {
+      const code = errorCode(error);
+      response.status(statusFor(code)).json({
+        error: 'Não foi possível configurar os requisitos do anúncio.',
+        code,
+      });
+    }
+  });
+
   router.post('/:storeId/e2e/outbound-publication-proposals/:proposalId/configure-commercial-requirements', async (request, response) => {
     try {
       const storeId = clean(request.params.storeId);
@@ -133,6 +161,25 @@ export const createMercadoLivreE2ETestRouter = (): Router => {
       const code = errorCode(error);
       response.status(statusFor(code)).json({
         error: 'Não foi possível validar as condições comerciais e de entrega com o Mercado Livre.',
+        code,
+      });
+    }
+  });
+
+  router.post('/:storeId/e2e/outbound-publication-proposals/:proposalId/confirm-variant-identity', async (request, response) => {
+    try {
+      const storeId = clean(request.params.storeId);
+      const identity = await authenticatedOwner(request.get('authorization') ?? '', storeId);
+      response.setHeader('Cache-Control', 'no-store, max-age=0');
+      response.json(await confirmMercadoLivreCanonicalVariantIdentity({
+        storeId,
+        proposalId: clean(request.params.proposalId),
+        confirmedByUserId: identity.uid,
+      }));
+    } catch (error) {
+      const code = errorCode(error);
+      response.status(statusFor(code)).json({
+        error: 'Não foi possível confirmar a identidade desta variante no catálogo Kyrub.',
         code,
       });
     }

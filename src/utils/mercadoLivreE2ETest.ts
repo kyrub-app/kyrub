@@ -72,6 +72,7 @@ export interface MercadoLivreE2ESaleTermOption {
 export interface MercadoLivreE2ECategoryOptions {
   proposalId: string;
   category: { id: string; name: string };
+  publicationModel: 'legacy_items' | 'user_products';
   conditions: string[];
   currencies: string[];
   listingTypes: Array<{ id: string; name: string }>;
@@ -146,12 +147,16 @@ export const configureMercadoLivreE2ERequirements = (
     categoryId: string;
     listingTypeId: string;
     condition: string;
+    familyName?: string;
     attributes: MercadoLivreAttributeInput[];
     saleTerms?: MercadoLivreSaleTermInput[];
     shipping?: MercadoLivreShippingInput;
   }
 ) => authorizedFetch<{
   proposalId: string;
+  publicationModel: 'legacy_items' | 'user_products';
+  familyName: string;
+  familyNameAuthority: 'store_owner_selection' | 'canonical_name_compatibility_fallback' | 'not_applicable';
   ready: boolean;
   requiredAttributeIds: string[];
   conditionalAttributeIds: string[];
@@ -160,7 +165,7 @@ export const configureMercadoLivreE2ERequirements = (
   shipping: MercadoLivreShippingInput | null;
 }>(
   user,
-  `/api/store-connections/mercado-livre/${encoded(storeId)}/outbound-publication-proposals/${encoded(proposalId)}/configure-requirements`,
+  `/api/store-connections/mercado-livre/${encoded(storeId)}/e2e/outbound-publication-proposals/${encoded(proposalId)}/configure-requirements`,
   { method: 'POST', body: JSON.stringify(input) }
 );
 
@@ -180,6 +185,30 @@ export const validateMercadoLivreE2EListing = (user: User, storeId: string, prop
   }>(
     user,
     `/api/store-connections/mercado-livre/${encoded(storeId)}/outbound-publication-proposals/${encoded(proposalId)}/validate-listing`,
+    { method: 'POST' }
+  );
+
+export const confirmMercadoLivreE2EVariantIdentity = (user: User, storeId: string, proposalId: string) =>
+  authorizedFetch<{
+    proposalId: string;
+    canonicalStoreId: string;
+    canonicalProductId: string;
+    familyKey: string;
+    familyName: string;
+    dimensions: Array<{
+      providerAttributeId: string;
+      label: string;
+      valueText: string;
+      valueId?: string;
+      valueType: string;
+    }>;
+    dimensionFingerprint: string;
+    alreadyApplied: boolean;
+    authority: 'store_owner_confirmed_user_product_variant';
+    confirmedAt: string;
+  }>(
+    user,
+    `/api/store-connections/mercado-livre/${encoded(storeId)}/e2e/outbound-publication-proposals/${encoded(proposalId)}/confirm-variant-identity`,
     { method: 'POST' }
   );
 
