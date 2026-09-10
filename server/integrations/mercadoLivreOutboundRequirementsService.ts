@@ -4,7 +4,7 @@ import { mercadoLivreGetJson } from './mercadoLivreOauthService.js';
 import { getStoreConnectionRegistryRecord } from './storeConnectionRegistry.js';
 
 interface OutboundProposalRecord {
-  schemaVersion: 1;
+  schemaVersion: 2;
   id: string;
   storeId: string;
   canonicalStoreId: string;
@@ -15,6 +15,7 @@ interface OutboundProposalRecord {
   authority: 'canonical_kyrub_snapshot';
   action: 'create_external_listing';
   canonicalBaselineHash: string;
+  providerPublicationModel: 'legacy_items' | 'user_products';
   canonical: {
     name: string;
     price: number;
@@ -74,6 +75,8 @@ export interface MercadoLivreOutboundRequirementInspection {
 export interface MercadoLivreOutboundRequirementConfiguration {
   proposalId: string;
   siteId: string;
+  publicationModel: 'legacy_items' | 'user_products';
+  familyName: string;
   category: { id: string; name: string };
   listingType: { id: string; name: string };
   condition: string;
@@ -118,12 +121,14 @@ const assertProposal = (storeId: string, proposalId: string, value: unknown): Ou
   const canonical = record.canonical && typeof record.canonical === 'object' && !Array.isArray(record.canonical)
     ? record.canonical as Record<string, unknown> : null;
   if (
+    record.schemaVersion !== 2 ||
     clean(record.id, 160) !== proposalId || clean(record.storeId, 160) !== storeId ||
     record.provider !== 'mercado_livre' || record.status !== 'review_required' ||
     record.authority !== 'canonical_kyrub_snapshot' || record.action !== 'create_external_listing' ||
     record.executionStatus !== 'not_authorized' || !clean(record.canonicalStoreId, 160) ||
     !clean(record.connectionId, 200) || !clean(record.canonicalProductId, 160) ||
-    !clean(record.canonicalBaselineHash, 80) || !canonical || !clean(canonical.name, 120)
+    !clean(record.canonicalBaselineHash, 80) || !canonical || !clean(canonical.name, 120) ||
+    (record.providerPublicationModel !== 'legacy_items' && record.providerPublicationModel !== 'user_products')
   ) throw new Error('MERCADO_LIVRE_OUTBOUND_PROPOSAL_INVALID');
   return record as unknown as OutboundProposalRecord;
 };
@@ -298,6 +303,7 @@ export const configureMercadoLivreOutboundRequirements = async (input: {
   categoryId: unknown;
   listingTypeId: unknown;
   condition: unknown;
+  familyName?: unknown;
   attributes: unknown;
   configuredByUserId: string;
 }): Promise<MercadoLivreOutboundRequirementConfiguration> => {
@@ -312,6 +318,13 @@ export const configureMercadoLivreOutboundRequirements = async (input: {
   }
 
   const proposal = await loadProposal(storeId, proposalId);
+  const familyName = proposal.providerPublicationModel === 'user_products'
+    ? clean(input.familyName, 120)
+    : '';
+  if (proposal.providerPublicationModel === 'user_products' && !familyName) {
+    throw new Error('MERCADO_LIVRE_OUTBOUND_FAMILY_NAME_REQUIRED');
+  }
+
   await assertCanonicalStillCurrent(proposal);
   const connection = await assertConnectedManualReview(proposal);
   const siteId = await loadSiteId(storeId, connection.externalAccountId);
@@ -348,6 +361,8 @@ export const configureMercadoLivreOutboundRequirements = async (input: {
   const configuration: MercadoLivreOutboundRequirementConfiguration = {
     proposalId,
     siteId,
+    publicationModel: proposal.providerPublicationModel,
+    familyName,
     category: { id: categoryId, name: clean(category.name, 160) },
     listingType: { id: listingTypeId, name: clean(selectedListing.name, 160) || listingTypeId },
     condition,
@@ -372,6 +387,7 @@ export const configureMercadoLivreOutboundRequirements = async (input: {
     const currentProposal = assertProposal(storeId, proposalId, currentProposalDoc.data());
     if (
       currentProposal.canonicalBaselineHash !== proposal.canonicalBaselineHash ||
+      currentProposal.providerPublicationModel !== proposal.providerPublicationModel ||
       !currentCanonicalDoc.exists ||
       !canonicalMatchesProposal(currentProposal, currentCanonicalDoc.data())
     ) throw new Error('MERCADO_LIVRE_OUTBOUND_PROPOSAL_STALE');
@@ -391,6 +407,7 @@ export const configureMercadoLivreOutboundRequirements = async (input: {
       providerListingTypeId: listingTypeId,
       providerCondition: condition,
       providerCurrencyId: currencyId,
+      providerFamilyName: familyName,
       providerAttributes: attributes,
       requirements: {
         ready,
