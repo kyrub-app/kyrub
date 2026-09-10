@@ -46,6 +46,7 @@ test('initial publication adapter separates legacy title from User Products fami
   const common = {
     stockAuthority: 'item_available_quantity' as const,
     name: 'Violão Yamaha C40',
+    familyName: 'Violão Yamaha C40',
     categoryId: 'MLB123',
     price: 600,
     currencyId: 'BRL',
