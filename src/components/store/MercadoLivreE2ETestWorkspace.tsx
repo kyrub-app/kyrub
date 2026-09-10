@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { User } from 'firebase/auth';
 import { CheckCircle2, CircleAlert, ExternalLink, Play, RefreshCw, ShieldCheck } from 'lucide-react';
+import MercadoLivreRequirementsWizard from './MercadoLivreRequirementsWizard';
 import {
   authorizeMercadoLivreE2EPublication,
   authorizeMercadoLivreE2EStock,
@@ -148,20 +149,13 @@ export default function MercadoLivreE2ETestWorkspace({
     try {
       const result = await loadMercadoLivreE2ECategoryOptions(user, storeId, proposalId, nextCategoryId);
       setOptions(result);
-      setMessage('Opções oficiais carregadas. Preencha apenas os campos necessários para esta categoria.');
+      setMessage('Opções oficiais carregadas. O Cairube organizou os dados da categoria em etapas; informações opcionais podem ser puladas.');
     } catch (error) {
       setMessage(errorText(error, 'Não foi possível carregar as opções da categoria.'));
     } finally {
       setBusy(false);
     }
   };
-
-  const visibleAttributes = useMemo(() => {
-    if (!options) return [];
-    return options.attributes.filter(attribute =>
-      attribute.required || attribute.conditionalRequired || (condition === 'new' && attribute.newRequired)
-    );
-  }, [options, condition]);
 
   const setAttribute = (id: string, value: { valueId?: string; valueName?: string }): void => {
     setAttributeValues(previous => ({ ...previous, [id]: value }));
@@ -189,7 +183,7 @@ export default function MercadoLivreE2ETestWorkspace({
         attributes,
       });
       if (configured.missingRequiredAttributeIds.length) {
-        setMessage(`Ainda faltam atributos obrigatórios: ${configured.missingRequiredAttributeIds.join(', ')}.`);
+        setMessage(`O Mercado Livre ainda exige estes atributos: ${configured.missingRequiredAttributeIds.join(', ')}. Volte ao wizard, preencha o que for possível e valide novamente.`);
         return;
       }
       if (configured.conditionalAttributeIds.length) {
@@ -198,7 +192,9 @@ export default function MercadoLivreE2ETestWorkspace({
       const validation = await validateMercadoLivreE2EListing(user, storeId, proposalId);
       if (validation.publicationReadiness !== 'ready_for_owner_authorization') {
         const causes = validation.causes.map(cause => cause.message || cause.code).filter(Boolean).join(' · ');
-        setMessage(causes ? `O Mercado Livre pediu correções: ${causes}` : 'O anúncio ainda precisa de correções antes de publicar.');
+        setMessage(causes
+          ? `O Mercado Livre pediu correções: ${causes}. Revise as etapas do wizard e valide novamente.`
+          : 'O anúncio ainda precisa de correções antes de publicar. Revise as etapas do wizard.');
         return;
       }
       setPublicationReady(true);
@@ -442,51 +438,26 @@ export default function MercadoLivreE2ETestWorkspace({
                 </label>
 
                 {options && (
-                  <>
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      <label className="text-[10px] font-bold text-slate-400">Tipo de anúncio
-                        <select value={listingTypeId} onChange={event => { setListingTypeId(event.target.value); setPublicationReady(false); }} className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white">
-                          <option value="">Selecione…</option>
-                          {options.listingTypes.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
-                        </select>
-                      </label>
-                      <label className="text-[10px] font-bold text-slate-400">Condição
-                        <select value={condition} onChange={event => { setCondition(event.target.value); setPublicationReady(false); }} className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white">
-                          <option value="">Selecione…</option>
-                          {options.conditions.map(item => <option key={item} value={item}>{item}</option>)}
-                        </select>
-                      </label>
-                    </div>
-
-                    {visibleAttributes.map(attribute => (
-                      <label key={attribute.id} className="text-[10px] font-bold text-slate-400">
-                        {attribute.name}{attribute.conditionalRequired ? ' · validação condicional' : ' · obrigatório'}
-                        {attribute.values.length && attribute.valueType.trim().toLowerCase() !== 'string' ? (
-                          <select
-                            value={attributeValues[attribute.id]?.valueId ?? ''}
-                            onChange={event => {
-                              const chosen = attribute.values.find(value => value.id === event.target.value);
-                              setAttribute(attribute.id, chosen ? { valueId: chosen.id, valueName: chosen.name } : {});
-                            }}
-                            className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white"
-                          >
-                            <option value="">Selecione…</option>
-                            {attribute.values.map(value => <option key={`${attribute.id}:${value.id}`} value={value.id}>{value.name}</option>)}
-                          </select>
-                        ) : (
-                          <input
-                            value={attributeValues[attribute.id]?.valueName ?? ''}
-                            onChange={event => setAttribute(attribute.id, { valueName: event.target.value })}
-                            className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white"
-                          />
-                        )}
-                      </label>
-                    ))}
-
-                    <button type="button" onClick={() => void validatePublication()} disabled={busy} className="rounded-xl border border-cyan-500/30 bg-cyan-500/10 px-4 py-2.5 text-[10px] font-black uppercase text-cyan-200 disabled:opacity-50">
-                      Validar com Mercado Livre
-                    </button>
-                  </>
+                  <MercadoLivreRequirementsWizard
+                    key={categoryId}
+                    options={options}
+                    listingTypeId={listingTypeId}
+                    condition={condition}
+                    attributeValues={attributeValues}
+                    busy={busy}
+                    onListingTypeChange={value => {
+                      setListingTypeId(value);
+                      setPublicationReady(false);
+                      setPublicationAuthorization(null);
+                    }}
+                    onConditionChange={value => {
+                      setCondition(value);
+                      setPublicationReady(false);
+                      setPublicationAuthorization(null);
+                    }}
+                    onAttributeChange={setAttribute}
+                    onValidate={() => void validatePublication()}
+                  />
                 )}
 
                 {publicationReady && !publicationAuthorization && !publicationExecution && (
