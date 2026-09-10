@@ -199,11 +199,12 @@ export default function MercadoLivreE2ETestWorkspace({ user, storeId, connection
     setBusy(true);
     try {
       const result = await confirmMercadoLivreE2EVariantIdentity(user, storeId, proposalId);
+      const dimensionCount = result.dimensions.length;
       setVariantIdentityConfirmed(true);
-      setVariantDimensionCount(result.dimensionCount);
-      setMessage(result.alreadyConfirmed
-        ? `A família “${result.familyName}” e ${result.dimensionCount} dimensão(ões) desta variante já estavam confirmadas no catálogo Kyrub.`
-        : `Identidade da variante confirmada: família “${result.familyName}”, com ${result.dimensionCount} dimensão(ões). Nenhum anúncio foi criado.`);
+      setVariantDimensionCount(dimensionCount);
+      setMessage(result.alreadyApplied
+        ? `A família “${result.familyName}” e ${dimensionCount} dimensão(ões) desta variante já estavam confirmadas no catálogo Kyrub.`
+        : `Identidade da variante confirmada: família “${result.familyName}”, com ${dimensionCount} dimensão(ões). Nenhum anúncio foi criado.`);
     } catch (error) { setMessage(errorText(error, 'Não foi possível confirmar a identidade da variante no Kyrub.')); }
     finally { setBusy(false); }
   };
