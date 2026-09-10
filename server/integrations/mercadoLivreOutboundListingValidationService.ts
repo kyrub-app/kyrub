@@ -45,6 +45,16 @@ interface ConfigurationRecord {
   canonicalBaselineHash: string;
 }
 
+interface CommercialConfigurationRecord {
+  proposalId: string;
+  saleTerms: Array<{ id: string; valueId?: string; valueName?: string }>;
+  shipping: { mode: string; freeShipping: boolean; localPickUp: boolean } | null;
+  requirementConfiguredAt: string;
+  authority: 'provider_api_commercial_options_and_store_owner_selection';
+  configuredAt: string;
+  canonicalBaselineHash: string;
+}
+
 interface ConditionalValidationRecord {
   proposalId: string;
   ready: boolean;
@@ -86,8 +96,7 @@ const canonicalImages = (value: unknown, primary: unknown): string[] => {
   return result;
 };
 
-const sameJson = (left: unknown, right: unknown): boolean =>
-  JSON.stringify(left) === JSON.stringify(right);
+const sameJson = (left: unknown, right: unknown): boolean => JSON.stringify(left) === JSON.stringify(right);
 
 const assertProposal = (storeId: string, proposalId: string, value: unknown): ProposalRecord => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('MERCADO_LIVRE_OUTBOUND_PROPOSAL_NOT_FOUND');
@@ -123,6 +132,28 @@ const assertConfiguration = (proposal: ProposalRecord, value: unknown): Configur
     !Array.isArray(record.attributes) || !clean(record.configuredAt, 80)
   ) throw new Error('MERCADO_LIVRE_OUTBOUND_REQUIREMENTS_INVALID');
   return record as unknown as ConfigurationRecord;
+};
+
+const assertCommercialConfiguration = (
+  proposal: ProposalRecord,
+  configuration: ConfigurationRecord,
+  value: unknown
+): CommercialConfigurationRecord => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('MERCADO_LIVRE_OUTBOUND_COMMERCIAL_CONFIGURATION_INVALID');
+  }
+  const record = value as Record<string, unknown>;
+  const shippingValid = record.shipping === null || (
+    record.shipping && typeof record.shipping === 'object' && !Array.isArray(record.shipping)
+  );
+  if (
+    clean(record.proposalId, 160) !== proposal.id ||
+    clean(record.canonicalBaselineHash, 80) !== proposal.canonicalBaselineHash ||
+    clean(record.requirementConfiguredAt, 80) !== configuration.configuredAt ||
+    record.authority !== 'provider_api_commercial_options_and_store_owner_selection' ||
+    !Array.isArray(record.saleTerms) || !shippingValid || !clean(record.configuredAt, 80)
+  ) throw new Error('MERCADO_LIVRE_OUTBOUND_COMMERCIAL_CONFIGURATION_INVALID');
+  return record as unknown as CommercialConfigurationRecord;
 };
 
 const assertConditionalValidation = (
@@ -208,13 +239,17 @@ export const validateMercadoLivreOutboundListing = async (input: {
 
   const proposalRef = adminDb.doc(`stores/${storeId}/catalogOutboundPublicationProposals/${proposalId}`);
   const configRef = adminDb.doc(`stores/${storeId}/catalogOutboundRequirementConfigurations/${proposalId}`);
+  const commercialRef = adminDb.doc(`stores/${storeId}/catalogOutboundCommercialConfigurations/${proposalId}`);
   const conditionalRef = adminDb.doc(`stores/${storeId}/catalogOutboundConditionalValidations/${proposalId}`);
-  const [proposalDoc, configDoc, conditionalDoc] = await Promise.all([
-    proposalRef.get(), configRef.get(), conditionalRef.get(),
+  const [proposalDoc, configDoc, commercialDoc, conditionalDoc] = await Promise.all([
+    proposalRef.get(), configRef.get(), commercialRef.get(), conditionalRef.get(),
   ]);
   if (!proposalDoc.exists) throw new Error('MERCADO_LIVRE_OUTBOUND_PROPOSAL_NOT_FOUND');
   const proposal = assertProposal(storeId, proposalId, proposalDoc.data());
   const configuration = assertConfiguration(proposal, configDoc.data());
+  const commercialConfiguration = commercialDoc.exists
+    ? assertCommercialConfiguration(proposal, configuration, commercialDoc.data())
+    : null;
   const conditionalValidation = assertConditionalValidation(proposal, configuration, conditionalDoc.data());
 
   await assertCurrentMercadoLivrePublicationCapability({
@@ -244,16 +279,15 @@ export const validateMercadoLivreOutboundListing = async (input: {
     pictureUrl: proposal.canonical.image,
     pictureUrls: proposal.canonical.images,
     attributes: configuration.attributes,
+    saleTerms: commercialConfiguration?.saleTerms ?? [],
+    shipping: commercialConfiguration?.shipping ?? null,
     sellerCustomField: publicationCorrelationMarker,
   });
 
   const providerValidation = await mercadoLivreValidateJson(storeId, '/items/validate', itemPayload).catch(error => {
     const code = providerHttpFailureCode(error);
     if (!code) throw error;
-    console.error('[Mercado Livre listing validation provider]', {
-      code,
-      endpoint: '/items/validate',
-    });
+    console.error('[Mercado Livre listing validation provider]', { code, endpoint: '/items/validate' });
     throw new Error(code);
   });
   const causes = providerCauses(providerValidation.payload);
@@ -271,9 +305,10 @@ export const validateMercadoLivreOutboundListing = async (input: {
 
   const validationRef = adminDb.doc(`stores/${storeId}/catalogOutboundListingValidations/${proposalId}`);
   await adminDb.runTransaction(async transaction => {
-    const [currentProposalDoc, currentConfigDoc, currentConditionalDoc, currentCanonicalDoc] = await Promise.all([
+    const [currentProposalDoc, currentConfigDoc, currentCommercialDoc, currentConditionalDoc, currentCanonicalDoc] = await Promise.all([
       transaction.get(proposalRef),
       transaction.get(configRef),
+      transaction.get(commercialRef),
       transaction.get(conditionalRef),
       transaction.get(canonicalRef),
     ]);
@@ -281,10 +316,15 @@ export const validateMercadoLivreOutboundListing = async (input: {
     const currentProposal = assertProposal(storeId, proposalId, currentProposalDoc.data());
     const currentConfiguration = assertConfiguration(currentProposal, currentConfigDoc.data());
     const currentConditional = assertConditionalValidation(currentProposal, currentConfiguration, currentConditionalDoc.data());
+    const currentCommercial = currentCommercialDoc.exists
+      ? assertCommercialConfiguration(currentProposal, currentConfiguration, currentCommercialDoc.data())
+      : null;
     if (
       currentProposal.providerCapabilityFingerprint !== proposal.providerCapabilityFingerprint ||
       currentConfiguration.configuredAt !== configuration.configuredAt ||
       currentConditional.validatedAt !== conditionalValidation.validatedAt ||
+      Boolean(currentCommercial) !== Boolean(commercialConfiguration) ||
+      (currentCommercial && commercialConfiguration && currentCommercial.configuredAt !== commercialConfiguration.configuredAt) ||
       !currentCanonicalDoc.exists ||
       !canonicalMatchesProposal(currentProposal, currentCanonicalDoc.data())
     ) throw new Error('MERCADO_LIVRE_OUTBOUND_PROPOSAL_STALE');
@@ -299,6 +339,7 @@ export const validateMercadoLivreOutboundListing = async (input: {
       providerPublicationModel: proposal.providerPublicationModel,
       providerStockAuthority: proposal.providerStockAuthority,
       requirementConfiguredAt: configuration.configuredAt,
+      commercialRequirementConfiguredAt: commercialConfiguration?.configuredAt ?? null,
       conditionalRequirementValidatedAt: conditionalValidation.validatedAt,
       validatedByUserId,
       publicationCorrelationMarker,
