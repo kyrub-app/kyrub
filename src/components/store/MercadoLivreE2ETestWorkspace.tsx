@@ -461,7 +461,7 @@ export default function MercadoLivreE2ETestWorkspace({
                     {visibleAttributes.map(attribute => (
                       <label key={attribute.id} className="text-[10px] font-bold text-slate-400">
                         {attribute.name}{attribute.conditionalRequired ? ' · validação condicional' : ' · obrigatório'}
-                        {attribute.values.length ? (
+                        {attribute.values.length && attribute.valueType.trim().toLowerCase() !== 'string' ? (
                           <select
                             value={attributeValues[attribute.id]?.valueId ?? ''}
                             onChange={event => {
