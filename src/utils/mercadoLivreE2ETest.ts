@@ -41,21 +41,29 @@ export interface MercadoLivreCategorySuggestion {
   categoryPath?: Array<{ id: string; name: string }>;
 }
 
+export interface MercadoLivreE2ECategoryAttribute {
+  id: string;
+  name: string;
+  valueType: string;
+  required: boolean;
+  newRequired: boolean;
+  conditionalRequired: boolean;
+  allowVariations: boolean;
+  variationAttribute: boolean;
+  catalogRequired: boolean;
+  readOnly: boolean;
+  hidden: boolean;
+  providerTags: string[];
+  values: Array<{ id: string; name: string }>;
+}
+
 export interface MercadoLivreE2ECategoryOptions {
   proposalId: string;
   category: { id: string; name: string };
   conditions: string[];
   currencies: string[];
   listingTypes: Array<{ id: string; name: string }>;
-  attributes: Array<{
-    id: string;
-    name: string;
-    valueType: string;
-    required: boolean;
-    newRequired: boolean;
-    conditionalRequired: boolean;
-    values: Array<{ id: string; name: string }>;
-  }>;
+  attributes: MercadoLivreE2ECategoryAttribute[];
   authority: 'provider_api_requirement_options';
 }
 
@@ -138,7 +146,7 @@ export const validateMercadoLivreE2EListing = (user: User, storeId: string, prop
     proposalId: string;
     publicationReadiness: 'ready_for_owner_authorization' | 'needs_correction';
     providerStatus: number;
-    causes: Array<{ code?: string; message?: string }>;
+    causes: Array<{ code?: string; message?: string; reference?: string }>;
   }>(
     user,
     `/api/store-connections/mercado-livre/${encoded(storeId)}/outbound-publication-proposals/${encoded(proposalId)}/validate-listing`,
