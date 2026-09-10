@@ -8,6 +8,7 @@ import {
   authorizeMercadoLivreE2EPublication,
   authorizeMercadoLivreE2EStock,
   configureMercadoLivreE2ERequirements,
+  confirmMercadoLivreE2EVariantIdentity,
   createMercadoLivreE2EAvailabilitySnapshot,
   executeMercadoLivreE2EPublication,
   executeMercadoLivreE2EStock,
@@ -48,10 +49,13 @@ export default function MercadoLivreE2ETestWorkspace({ user, storeId, connection
   const [options, setOptions] = useState<MercadoLivreE2ECategoryOptions | null>(null);
   const [listingTypeId, setListingTypeId] = useState('');
   const [condition, setCondition] = useState('');
+  const [familyName, setFamilyName] = useState('');
   const [attributeValues, setAttributeValues] = useState<Record<string, { valueId?: string; valueName?: string }>>({});
   const [publicationReady, setPublicationReady] = useState(false);
   const [catalogEnriched, setCatalogEnriched] = useState(false);
   const [catalogEnrichmentCount, setCatalogEnrichmentCount] = useState(0);
+  const [variantIdentityConfirmed, setVariantIdentityConfirmed] = useState(false);
+  const [variantDimensionCount, setVariantDimensionCount] = useState(0);
   const [publicationAuthorization, setPublicationAuthorization] = useState<{ id: string; token: string } | null>(null);
   const [publicationExecution, setPublicationExecution] = useState<{ id: string; bindingId: string; externalItemId: string; permalink?: string } | null>(null);
   const [publicationReconciled, setPublicationReconciled] = useState(false);
@@ -68,17 +72,27 @@ export default function MercadoLivreE2ETestWorkspace({ user, storeId, connection
   const [stockReconciled, setStockReconciled] = useState(false);
 
   const selectedProduct = useMemo(() => products.find(product => product.id === selectedProductId) ?? null, [products, selectedProductId]);
+  const selectedVariationCount = useMemo(() => {
+    if (!options || options.publicationModel !== 'user_products') return 0;
+    return options.attributes.filter(attribute => {
+      if (!attribute.variationAttribute && !attribute.allowVariations) return false;
+      const value = attributeValues[attribute.id];
+      return Boolean(value?.valueId?.trim() || value?.valueName?.trim());
+    }).length;
+  }, [options, attributeValues]);
 
   const invalidateValidation = (): void => {
     setPublicationReady(false);
     setCatalogEnriched(false);
     setCatalogEnrichmentCount(0);
+    setVariantIdentityConfirmed(false);
+    setVariantDimensionCount(0);
     setPublicationAuthorization(null);
   };
 
   const resetFlow = (product?: MercadoLivreE2EEligibleProduct | null): void => {
-    setProposalId(''); setSuggestions([]); setCategoryId(''); setOptions(null); setListingTypeId(''); setCondition(''); setAttributeValues({});
-    setPublicationReady(false); setCatalogEnriched(false); setCatalogEnrichmentCount(0); setPublicationAuthorization(null); setPublicationExecution(null); setPublicationReconciled(false);
+    setProposalId(''); setSuggestions([]); setCategoryId(''); setOptions(null); setListingTypeId(''); setCondition(''); setFamilyName(product?.name ?? ''); setAttributeValues({});
+    setPublicationReady(false); setCatalogEnriched(false); setCatalogEnrichmentCount(0); setVariantIdentityConfirmed(false); setVariantDimensionCount(0); setPublicationAuthorization(null); setPublicationExecution(null); setPublicationReconciled(false);
     setBindingId(product?.activeBindingId ?? ''); setExternalItemId(product?.externalItemId ?? '');
     setPolicyEnabledChoice(''); setSafetyStock(''); setAllocationCap(''); setPolicySaved(false); setAvailabilitySnapshot(null); setStockProposal(null);
     setStockAuthorization(null); setStockExecutionId(''); setStockReconciled(false); setMessage('');
@@ -104,6 +118,7 @@ export default function MercadoLivreE2ETestWorkspace({ user, storeId, connection
       const proposal = await proposeMercadoLivreE2EPublication(user, storeId, connectionId, selectedProduct.id);
       const inspection = await inspectMercadoLivreE2ERequirements(user, storeId, proposal.id);
       setProposalId(proposal.id); setSuggestions(inspection.categorySuggestions);
+      if (!familyName.trim()) setFamilyName(selectedProduct.name);
       setMessage('Proposta criada sem publicar nada. Escolha uma das categorias sugeridas oficialmente pelo Mercado Livre.');
     } catch (error) { setMessage(errorText(error, 'Não foi possível preparar a publicação.')); }
     finally { setBusy(false); }
@@ -116,7 +131,10 @@ export default function MercadoLivreE2ETestWorkspace({ user, storeId, connection
     try {
       const result = await loadMercadoLivreE2ECategoryOptions(user, storeId, proposalId, nextCategoryId);
       setOptions(result);
-      setMessage('Opções oficiais carregadas. O Cairube organizou características, disponibilidade, garantia e entrega em etapas; informações opcionais podem ser puladas.');
+      if (result.publicationModel === 'user_products' && !familyName.trim()) setFamilyName(selectedProduct?.name ?? '');
+      setMessage(result.publicationModel === 'user_products'
+        ? 'Esta conta usa User Products. Defina a família, revise as variações e complete as características oficiais antes de validar.'
+        : 'Opções oficiais carregadas. O Cairube organizou características, disponibilidade, garantia e entrega em etapas; informações opcionais podem ser puladas.');
     } catch (error) { setMessage(errorText(error, 'Não foi possível carregar as opções da categoria.')); }
     finally { setBusy(false); }
   };
@@ -131,10 +149,14 @@ export default function MercadoLivreE2ETestWorkspace({ user, storeId, connection
       setMessage('Escolha categoria, tipo de anúncio e condição antes de validar.');
       return;
     }
+    if (options?.publicationModel === 'user_products' && !familyName.trim()) {
+      setMessage('Informe o nome da família antes de validar este User Product.');
+      return;
+    }
     const attributes: MercadoLivreAttributeInput[] = Object.entries(attributeValues).flatMap(([id, value]) => value.valueId || value.valueName ? [{ id, ...value }] : []);
     setBusy(true); setMessage(''); invalidateValidation();
     try {
-      const configured = await configureMercadoLivreE2ERequirements(user, storeId, proposalId, { categoryId, listingTypeId, condition, attributes });
+      const configured = await configureMercadoLivreE2ERequirements(user, storeId, proposalId, { categoryId, listingTypeId, condition, familyName: familyName.trim() || undefined, attributes });
       const commercialConfigured = await configureMercadoLivreE2ECommercialRequirements(user, storeId, proposalId, commercial);
       if (configured.missingRequiredAttributeIds.length) {
         setMessage(`O Mercado Livre ainda exige estes atributos: ${configured.missingRequiredAttributeIds.join(', ')}. Volte ao wizard, preencha o que for possível e valide novamente.`);
@@ -151,7 +173,9 @@ export default function MercadoLivreE2ETestWorkspace({ user, storeId, connection
         return;
       }
       setPublicationReady(true);
-      setMessage('Validação concluída sem criar anúncio. Você pode opcionalmente salvar as características confirmadas no produto Kyrub; publicar continua exigindo autorização separada.');
+      setMessage(options?.publicationModel === 'user_products' && selectedVariationCount > 0
+        ? 'Validação concluída sem criar anúncio. A família e as dimensões de variante podem ser confirmadas no catálogo Kyrub; publicar continua exigindo autorização separada.'
+        : 'Validação concluída sem criar anúncio. Você pode opcionalmente salvar as características confirmadas no produto Kyrub; publicar continua exigindo autorização separada.');
     } catch (error) { setMessage(errorText(error, 'Não foi possível validar o anúncio.')); }
     finally { setBusy(false); }
   };
@@ -167,6 +191,20 @@ export default function MercadoLivreE2ETestWorkspace({ user, storeId, connection
         ? `As ${result.appliedFactCount} característica(s) já estavam confirmadas no cadastro canônico do produto.`
         : `${result.appliedFactCount} característica(s) confirmada(s) foram salvas no cadastro canônico do produto Kyrub. Dados de variação, garantia e frete continuam separados.`);
     } catch (error) { setMessage(errorText(error, 'Não foi possível salvar as características no produto Kyrub.')); }
+    finally { setBusy(false); }
+  };
+
+  const confirmVariantIdentity = async (): Promise<void> => {
+    if (!proposalId || !publicationReady || options?.publicationModel !== 'user_products' || selectedVariationCount === 0) return;
+    setBusy(true);
+    try {
+      const result = await confirmMercadoLivreE2EVariantIdentity(user, storeId, proposalId);
+      setVariantIdentityConfirmed(true);
+      setVariantDimensionCount(result.dimensionCount);
+      setMessage(result.alreadyConfirmed
+        ? `A família “${result.familyName}” e ${result.dimensionCount} dimensão(ões) desta variante já estavam confirmadas no catálogo Kyrub.`
+        : `Identidade da variante confirmada: família “${result.familyName}”, com ${result.dimensionCount} dimensão(ões). Nenhum anúncio foi criado.`);
+    } catch (error) { setMessage(errorText(error, 'Não foi possível confirmar a identidade da variante no Kyrub.')); }
     finally { setBusy(false); }
   };
 
@@ -271,7 +309,7 @@ export default function MercadoLivreE2ETestWorkspace({ user, storeId, connection
     <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><span className="text-[9px] font-black uppercase tracking-[0.18em] text-cyan-300">Bancada controlada</span><h4 className="mt-1 text-sm font-black text-white">Teste E2E Mercado Livre</h4><p className="mt-2 max-w-3xl text-[10px] leading-relaxed text-slate-400">Prepare e valide tudo sem escrever no canal. Os dois writes reais — criar anúncio e alterar estoque — aparecem como ações separadas e exigem autorização one-time.</p></div><button type="button" onClick={() => void loadProducts()} disabled={loadingProducts || busy} className="inline-flex items-center gap-2 rounded-xl border border-slate-700 px-3 py-2 text-[9px] font-black uppercase text-slate-300 disabled:opacity-50"><RefreshCw className={`h-3.5 w-3.5 ${loadingProducts ? 'animate-spin' : ''}`} /> Atualizar produtos</button></div>
     <div className="mt-4 grid gap-3">
       <label className="text-[10px] font-bold text-slate-400">Produto Kyrub elegível<select value={selectedProductId} onChange={event => { const id = event.target.value; const product = products.find(item => item.id === id) ?? null; setSelectedProductId(id); resetFlow(product); }} className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2.5 text-xs text-white"><option value="">Selecione…</option>{products.map(product => <option key={product.id} value={product.id}>{product.name} · {money(product.price)} · estoque {product.stock}{product.activeBindingId ? ' · já vinculado' : ''}</option>)}</select></label>
-      {selectedProduct && !selectedProduct.activeBindingId && !bindingId && <div className="rounded-2xl border border-slate-800 bg-slate-950/50 p-4"><p className="text-[10px] font-black uppercase tracking-wider text-slate-400">1. Publicação</p>{!proposalId && <button type="button" onClick={() => void preparePublication()} disabled={busy} className="mt-3 rounded-xl bg-cyan-300 px-4 py-2.5 text-[10px] font-black uppercase text-slate-950 disabled:opacity-50">Preparar publicação</button>}{proposalId && <div className="mt-3 grid gap-3"><label className="text-[10px] font-bold text-slate-400">Categoria sugerida pelo Mercado Livre<select value={categoryId} onChange={event => void chooseCategory(event.target.value)} className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white"><option value="">Selecione…</option>{suggestions.map(item => <option key={item.categoryId} value={item.categoryId}>{item.categoryName}</option>)}</select></label>{options && <MercadoLivreRequirementsWizard key={categoryId} options={options} listingTypeId={listingTypeId} condition={condition} attributeValues={attributeValues} busy={busy} onListingTypeChange={value => { setListingTypeId(value); invalidateValidation(); }} onConditionChange={value => { setCondition(value); invalidateValidation(); }} onAttributeChange={setAttribute} onValidate={commercial => void validatePublication(commercial)} />}{publicationReady && !publicationExecution && <div className="rounded-2xl border border-slate-800 bg-slate-950/60 p-3"><div className="flex items-start gap-2"><Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-cyan-300" /><div><p className="text-[10px] font-black text-white">Enriquecer cadastro Kyrub (opcional)</p><p className="mt-1 text-[9px] leading-relaxed text-slate-500">Salva no produto apenas características não relacionadas a variações que você informou e que o Mercado Livre acabou de validar. Garantia, prazo e frete continuam como dados comerciais do canal.</p></div></div>{catalogEnriched ? <p className="mt-3 inline-flex items-center gap-1 text-[9px] font-bold text-emerald-300"><CheckCircle2 className="h-3.5 w-3.5" /> {catalogEnrichmentCount} característica(s) salva(s)</p> : <button type="button" onClick={() => void enrichCanonicalProduct()} disabled={busy} className="mt-3 rounded-xl border border-cyan-500/30 bg-cyan-500/10 px-3 py-2 text-[9px] font-black uppercase text-cyan-200 disabled:opacity-50">Salvar características no produto Kyrub</button>}</div>}{publicationReady && !publicationAuthorization && !publicationExecution && <button type="button" onClick={() => void authorizePublication()} disabled={busy} className="inline-flex items-center justify-center gap-2 rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-2.5 text-[10px] font-black uppercase text-amber-200 disabled:opacity-50"><ShieldCheck className="h-3.5 w-3.5" /> Autorizar publicação real</button>}{publicationAuthorization && <div className="rounded-2xl border border-rose-500/30 bg-rose-500/10 p-3"><p className="text-[10px] font-bold leading-relaxed text-rose-200">A próxima ação cria um anúncio REAL no Mercado Livre.</p><button type="button" onClick={() => void publishNow()} disabled={busy} className="mt-3 inline-flex items-center gap-2 rounded-xl bg-rose-400 px-4 py-2.5 text-[10px] font-black uppercase text-slate-950 disabled:opacity-50"><Play className="h-3.5 w-3.5" /> Publicar agora</button></div>}{publicationExecution && !publicationReconciled && <button type="button" onClick={() => void reconcilePublication()} disabled={busy} className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-2.5 text-[10px] font-black uppercase text-emerald-200 disabled:opacity-50">Confirmar anúncio no Mercado Livre</button>}{publicationExecution?.permalink && <a href={publicationExecution.permalink} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[10px] font-bold text-cyan-300">Abrir anúncio <ExternalLink className="h-3 w-3" /></a>}</div>}</div>}
+      {selectedProduct && !selectedProduct.activeBindingId && !bindingId && <div className="rounded-2xl border border-slate-800 bg-slate-950/50 p-4"><p className="text-[10px] font-black uppercase tracking-wider text-slate-400">1. Publicação</p>{!proposalId && <button type="button" onClick={() => void preparePublication()} disabled={busy} className="mt-3 rounded-xl bg-cyan-300 px-4 py-2.5 text-[10px] font-black uppercase text-slate-950 disabled:opacity-50">Preparar publicação</button>}{proposalId && <div className="mt-3 grid gap-3"><label className="text-[10px] font-bold text-slate-400">Categoria sugerida pelo Mercado Livre<select value={categoryId} onChange={event => void chooseCategory(event.target.value)} className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white"><option value="">Selecione…</option>{suggestions.map(item => <option key={item.categoryId} value={item.categoryId}>{item.categoryName}</option>)}</select></label>{options && <MercadoLivreRequirementsWizard key={categoryId} options={options} listingTypeId={listingTypeId} condition={condition} familyName={familyName} attributeValues={attributeValues} busy={busy} onListingTypeChange={value => { setListingTypeId(value); invalidateValidation(); }} onConditionChange={value => { setCondition(value); invalidateValidation(); }} onFamilyNameChange={value => { setFamilyName(value); invalidateValidation(); }} onAttributeChange={setAttribute} onValidate={commercial => void validatePublication(commercial)} />}{publicationReady && !publicationExecution && <div className="rounded-2xl border border-slate-800 bg-slate-950/60 p-3"><div className="flex items-start gap-2"><Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-cyan-300" /><div><p className="text-[10px] font-black text-white">Enriquecer cadastro Kyrub (opcional)</p><p className="mt-1 text-[9px] leading-relaxed text-slate-500">Salva no produto apenas características não relacionadas a variações que você informou e que o Mercado Livre acabou de validar. Garantia, prazo e frete continuam como dados comerciais do canal.</p></div></div>{catalogEnriched ? <p className="mt-3 inline-flex items-center gap-1 text-[9px] font-bold text-emerald-300"><CheckCircle2 className="h-3.5 w-3.5" /> {catalogEnrichmentCount} característica(s) salva(s)</p> : <button type="button" onClick={() => void enrichCanonicalProduct()} disabled={busy} className="mt-3 rounded-xl border border-cyan-500/30 bg-cyan-500/10 px-3 py-2 text-[9px] font-black uppercase text-cyan-200 disabled:opacity-50">Salvar características no produto Kyrub</button>}</div>}{publicationReady && options?.publicationModel === 'user_products' && selectedVariationCount > 0 && !publicationExecution && <div className="rounded-2xl border border-violet-500/20 bg-violet-500/5 p-3"><p className="text-[10px] font-black text-violet-100">Família e identidade da variante</p><p className="mt-1 text-[9px] leading-relaxed text-slate-500">Confirma no catálogo Kyrub a família “{familyName}” e as dimensões de variação que acabaram de ser validadas pelo Mercado Livre. Esta ação não cria anúncio e não usa o modelo legado de variations[].</p>{variantIdentityConfirmed ? <p className="mt-3 inline-flex items-center gap-1 text-[9px] font-bold text-emerald-300"><CheckCircle2 className="h-3.5 w-3.5" /> {variantDimensionCount} dimensão(ões) confirmada(s)</p> : <button type="button" onClick={() => void confirmVariantIdentity()} disabled={busy} className="mt-3 rounded-xl border border-violet-500/30 bg-violet-500/10 px-3 py-2 text-[9px] font-black uppercase text-violet-200 disabled:opacity-50">Confirmar variante no Kyrub</button>}</div>}{publicationReady && !publicationAuthorization && !publicationExecution && <button type="button" onClick={() => void authorizePublication()} disabled={busy} className="inline-flex items-center justify-center gap-2 rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-2.5 text-[10px] font-black uppercase text-amber-200 disabled:opacity-50"><ShieldCheck className="h-3.5 w-3.5" /> Autorizar publicação real</button>}{publicationAuthorization && <div className="rounded-2xl border border-rose-500/30 bg-rose-500/10 p-3"><p className="text-[10px] font-bold leading-relaxed text-rose-200">A próxima ação cria um anúncio REAL no Mercado Livre.</p><button type="button" onClick={() => void publishNow()} disabled={busy} className="mt-3 inline-flex items-center gap-2 rounded-xl bg-rose-400 px-4 py-2.5 text-[10px] font-black uppercase text-slate-950 disabled:opacity-50"><Play className="h-3.5 w-3.5" /> Publicar agora</button></div>}{publicationExecution && !publicationReconciled && <button type="button" onClick={() => void reconcilePublication()} disabled={busy} className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-2.5 text-[10px] font-black uppercase text-emerald-200 disabled:opacity-50">Confirmar anúncio no Mercado Livre</button>}{publicationExecution?.permalink && <a href={publicationExecution.permalink} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[10px] font-bold text-cyan-300">Abrir anúncio <ExternalLink className="h-3 w-3" /></a>}</div>}</div>}
       {stockStageAvailable && selectedProduct && <div className="rounded-2xl border border-slate-800 bg-slate-950/50 p-4"><div className="flex items-center justify-between gap-3"><div><p className="text-[10px] font-black uppercase tracking-wider text-slate-400">2. Estoque</p><p className="mt-1 text-[9px] text-slate-600">Binding {bindingId.slice(0, 16)}… {externalItemId ? `· ${externalItemId}` : ''}</p></div>{stockReconciled && <CheckCircle2 className="h-5 w-5 text-emerald-400" />}</div><div className="mt-3 grid gap-3 sm:grid-cols-3"><label className="text-[10px] font-bold text-slate-400">Canal habilitado?<select value={policyEnabledChoice} onChange={event => { setPolicyEnabledChoice(event.target.value); setPolicySaved(false); }} className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white"><option value="">Escolha…</option><option value="enabled">Sim</option><option value="disabled">Não</option></select></label><label className="text-[10px] font-bold text-slate-400">Estoque de segurança<input type="number" min="0" step="1" value={safetyStock} onChange={event => { setSafetyStock(event.target.value); setPolicySaved(false); }} className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white" placeholder="Ex.: 2" /></label><label className="text-[10px] font-bold text-slate-400">Teto do canal (opcional)<input type="number" min="0" step="1" value={allocationCap} onChange={event => { setAllocationCap(event.target.value); setPolicySaved(false); }} className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white" placeholder="Sem teto" /></label></div><div className="mt-3 flex flex-wrap gap-2"><button type="button" onClick={() => void savePolicy()} disabled={busy} className="rounded-xl border border-slate-700 px-3 py-2 text-[9px] font-black uppercase text-slate-300 disabled:opacity-50">Salvar política</button><button type="button" onClick={() => void createSnapshot()} disabled={busy || !policySaved} className="rounded-xl border border-cyan-500/30 px-3 py-2 text-[9px] font-black uppercase text-cyan-200 disabled:opacity-40">Calcular snapshot</button><button type="button" onClick={() => void proposeStock()} disabled={busy || !availabilitySnapshot} className="rounded-xl border border-cyan-500/30 px-3 py-2 text-[9px] font-black uppercase text-cyan-200 disabled:opacity-40">Preparar atualização</button></div>{availabilitySnapshot && <p className="mt-3 text-[10px] text-slate-400">ATP: <strong className="text-white">{availabilitySnapshot.availableToPromiseUnits}</strong> · Publicável: <strong className="text-white">{availabilitySnapshot.publishableUnits}</strong></p>}{stockProposal && <p className="mt-2 text-[10px] text-slate-400">ML observado: {stockProposal.observed ?? '—'} · alvo: {stockProposal.target} · status: {stockProposal.status}</p>}{stockProposal?.status === 'review_required' && !stockAuthorization && !stockExecutionId && <button type="button" onClick={() => void authorizeStock()} disabled={busy} className="mt-3 rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-2.5 text-[10px] font-black uppercase text-amber-200 disabled:opacity-50">Autorizar alteração real de estoque</button>}{stockAuthorization && <div className="mt-3 rounded-2xl border border-rose-500/30 bg-rose-500/10 p-3"><p className="text-[10px] font-bold leading-relaxed text-rose-200">A próxima ação faz um PUT REAL de available_quantity no anúncio.</p><button type="button" onClick={() => void updateStockNow()} disabled={busy} className="mt-3 inline-flex items-center gap-2 rounded-xl bg-rose-400 px-4 py-2.5 text-[10px] font-black uppercase text-slate-950 disabled:opacity-50"><Play className="h-3.5 w-3.5" /> Alterar estoque agora</button></div>}{stockExecutionId && !stockReconciled && <button type="button" onClick={() => void reconcileStock()} disabled={busy} className="mt-3 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-2.5 text-[10px] font-black uppercase text-emerald-200 disabled:opacity-50">Confirmar estoque no Mercado Livre</button>}</div>}
     </div>
     {message && <div className="mt-4 flex items-start gap-2 rounded-2xl border border-slate-800 bg-slate-950/60 p-3 text-[10px] leading-relaxed text-slate-300" aria-live="polite"><CircleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0 text-cyan-300" /> {message}</div>}
