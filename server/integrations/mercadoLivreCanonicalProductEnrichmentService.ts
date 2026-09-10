@@ -9,7 +9,33 @@ const clean = (value: unknown, maximum = 2_000): string =>
     : '';
 
 const recordFrom = (value: unknown): Record<string, unknown> =>
-  value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
+  value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+
+const finiteNonNegative = (value: unknown): number | null => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+};
+
+const integerNonNegative = (value: unknown): number | null => {
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : null;
+};
+
+const canonicalImages = (value: unknown, primary: string): string[] => {
+  const candidates = [primary, ...(Array.isArray(value) ? value : [])];
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const candidate of candidates) {
+    const url = clean(candidate, 2_000);
+    if (!url || seen.has(url)) continue;
+    seen.add(url);
+    result.push(url);
+    if (result.length >= 12) break;
+  }
+  return result;
+};
 
 interface ProposalRecord {
   schemaVersion: 2;
@@ -67,6 +93,8 @@ export interface CanonicalCatalogFact {
   };
 }
 
+type PreservedCatalogFact = Record<string, unknown>;
+
 const CANONICAL_KEY_BY_PROVIDER_ATTRIBUTE: Record<string, string> = {
   BRAND: 'brand',
   MODEL: 'model',
@@ -83,7 +111,11 @@ const CANONICAL_KEY_BY_PROVIDER_ATTRIBUTE: Record<string, string> = {
   SIZE: 'size',
 };
 
-const assertProposal = (storeId: string, proposalId: string, value: unknown): ProposalRecord => {
+const assertProposal = (
+  storeId: string,
+  proposalId: string,
+  value: unknown
+): ProposalRecord => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     throw new Error('MERCADO_LIVRE_OUTBOUND_PROPOSAL_NOT_FOUND');
   }
@@ -99,7 +131,9 @@ const assertProposal = (storeId: string, proposalId: string, value: unknown): Pr
     !clean(record.canonicalProductId, 160) ||
     !clean(record.canonicalBaselineHash, 80) ||
     !clean(record.providerCategoryId, 160)
-  ) throw new Error('MERCADO_LIVRE_OUTBOUND_PROPOSAL_INVALID');
+  ) {
+    throw new Error('MERCADO_LIVRE_OUTBOUND_PROPOSAL_INVALID');
+  }
   return record as unknown as ProposalRecord;
 };
 
@@ -117,7 +151,9 @@ const assertConfiguration = (
     record.authority !== 'provider_api_refetch_and_store_owner_selection' ||
     !Array.isArray(record.attributes) ||
     !clean(record.configuredAt, 80)
-  ) throw new Error('MERCADO_LIVRE_OUTBOUND_REQUIREMENTS_INVALID');
+  ) {
+    throw new Error('MERCADO_LIVRE_OUTBOUND_REQUIREMENTS_INVALID');
+  }
   return record as unknown as RequirementConfigurationRecord;
 };
 
@@ -137,11 +173,54 @@ const assertValidation = (
     record.status !== 'ready_for_owner_authorization' ||
     record.authority !== 'provider_items_validate' ||
     !clean(record.validatedAt, 80)
-  ) throw new Error('MERCADO_LIVRE_OUTBOUND_LISTING_VALIDATION_REQUIRED');
+  ) {
+    throw new Error('MERCADO_LIVRE_OUTBOUND_LISTING_VALIDATION_REQUIRED');
+  }
   return record as unknown as ListingValidationRecord;
 };
 
-const providerValueName = (definition: ProviderAttributeDefinition, valueId: string): string => {
+const canonicalBaselineHashFrom = (
+  expectedStoreId: string,
+  expectedProductId: string,
+  value: unknown
+): string | null => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  const name = clean(record.name, 120);
+  const price = finiteNonNegative(record.price);
+  const stock = integerNonNegative(record.stock);
+  const category = clean(record.category, 160);
+  const image = clean(record.image, 2_000);
+  const publicationStatus = clean(record.publicationStatus, 80);
+  if (
+    clean(record.id, 160) !== expectedProductId ||
+    clean(record.storeId, 160) !== expectedStoreId ||
+    !name ||
+    price === null ||
+    stock === null ||
+    record.isService !== false ||
+    !publicationStatus
+  ) {
+    return null;
+  }
+  return createHash('sha256')
+    .update(JSON.stringify({
+      name,
+      price,
+      stock,
+      category,
+      image,
+      images: canonicalImages(record.images, image),
+      isService: false,
+      publicationStatus,
+    }))
+    .digest('hex');
+};
+
+const providerValueName = (
+  definition: ProviderAttributeDefinition,
+  valueId: string
+): string => {
   const values = Array.isArray(definition.values) ? definition.values : [];
   for (const candidate of values) {
     const record = recordFrom(candidate);
@@ -165,34 +244,49 @@ const factFingerprint = (facts: CanonicalCatalogFact[]): string => createHash('s
   }))))
   .digest('hex');
 
-const existingFactsFrom = (value: unknown): CanonicalCatalogFact[] => {
+const existingFactsFrom = (value: unknown): PreservedCatalogFact[] => {
   const profile = recordFrom(value);
   const facts = Array.isArray(profile.facts) ? profile.facts : [];
   return facts.flatMap(candidate => {
     const record = recordFrom(candidate);
-    const provenance = recordFrom(record.provenance);
     const key = clean(record.key, 220);
     const label = clean(record.label, 255);
     const valueText = clean(record.valueText, 600);
     if (!key || !label || !valueText) return [];
+
+    const provenance = recordFrom(record.provenance);
     if (
       provenance.source !== 'owner_confirmed_external_taxonomy' ||
       provenance.provider !== 'mercado_livre'
     ) {
-      return [candidate as CanonicalCatalogFact];
+      return [record];
     }
+
     const providerAttributeId = clean(provenance.providerAttributeId, 160);
     const providerCategoryId = clean(provenance.providerCategoryId, 160);
     const proposalId = clean(provenance.proposalId, 160);
     const requirementConfiguredAt = clean(provenance.requirementConfiguredAt, 80);
     const providerValidatedAt = clean(provenance.providerValidatedAt, 80);
-    if (!providerAttributeId || !providerCategoryId || !proposalId || !requirementConfiguredAt || !providerValidatedAt) return [];
+    if (
+      !providerAttributeId ||
+      !providerCategoryId ||
+      !proposalId ||
+      !requirementConfiguredAt ||
+      !providerValidatedAt
+    ) {
+      return [];
+    }
+
     return [{
       key,
-      ...(clean(record.canonicalKey, 120) ? { canonicalKey: clean(record.canonicalKey, 120) } : {}),
+      ...(clean(record.canonicalKey, 120)
+        ? { canonicalKey: clean(record.canonicalKey, 120) }
+        : {}),
       label,
       valueText,
-      ...(clean(record.valueId, 160) ? { valueId: clean(record.valueId, 160) } : {}),
+      ...(clean(record.valueId, 160)
+        ? { valueId: clean(record.valueId, 160) }
+        : {}),
       valueType: clean(record.valueType, 80),
       provenance: {
         source: 'owner_confirmed_external_taxonomy',
@@ -203,8 +297,17 @@ const existingFactsFrom = (value: unknown): CanonicalCatalogFact[] => {
         requirementConfiguredAt,
         providerValidatedAt,
       },
-    }];
+    } satisfies CanonicalCatalogFact];
   }).slice(0, 200);
+};
+
+const isReplacedMercadoLivreFact = (
+  fact: PreservedCatalogFact,
+  replacedIds: Set<string>
+): boolean => {
+  const provenance = recordFrom(fact.provenance);
+  return provenance.provider === 'mercado_livre' &&
+    replacedIds.has(clean(provenance.providerAttributeId, 160));
 };
 
 const buildFacts = (input: {
@@ -230,11 +333,15 @@ const buildFacts = (input: {
     if (tags.hidden === true || tags.read_only === true) continue;
 
     const valueId = clean(configured.valueId, 160);
-    const valueText = clean(configured.valueName, 600) || (valueId ? providerValueName(definition, valueId) : '');
+    const valueText = clean(configured.valueName, 600) ||
+      (valueId ? providerValueName(definition, valueId) : '');
     if (!valueText) continue;
+
     const canonicalKey = CANONICAL_KEY_BY_PROVIDER_ATTRIBUTE[id];
     facts.push({
-      key: canonicalKey ? `canonical:${canonicalKey}` : `external:mercado_livre:${id.toLocaleLowerCase('en-US')}`,
+      key: canonicalKey
+        ? `canonical:${canonicalKey}`
+        : `external:mercado_livre:${id.toLocaleLowerCase('en-US')}`,
       ...(canonicalKey ? { canonicalKey } : {}),
       label: clean(definition.name, 255) || id,
       valueText,
@@ -278,11 +385,19 @@ export const enrichCanonicalProductFromMercadoLivre = async (input: {
     throw new Error('MERCADO_LIVRE_CANONICAL_ENRICHMENT_TARGET_INVALID');
   }
 
-  const proposalRef = adminDb.doc(`stores/${storeId}/catalogOutboundPublicationProposals/${proposalId}`);
-  const configurationRef = adminDb.doc(`stores/${storeId}/catalogOutboundRequirementConfigurations/${proposalId}`);
-  const validationRef = adminDb.doc(`stores/${storeId}/catalogOutboundListingValidations/${proposalId}`);
+  const proposalRef = adminDb.doc(
+    `stores/${storeId}/catalogOutboundPublicationProposals/${proposalId}`
+  );
+  const configurationRef = adminDb.doc(
+    `stores/${storeId}/catalogOutboundRequirementConfigurations/${proposalId}`
+  );
+  const validationRef = adminDb.doc(
+    `stores/${storeId}/catalogOutboundListingValidations/${proposalId}`
+  );
   const [proposalDoc, configurationDoc, validationDoc] = await Promise.all([
-    proposalRef.get(), configurationRef.get(), validationRef.get(),
+    proposalRef.get(),
+    configurationRef.get(),
+    validationRef.get(),
   ]);
   const proposal = assertProposal(storeId, proposalId, proposalDoc.data());
   const configuration = assertConfiguration(proposal, configurationDoc.data());
@@ -292,43 +407,81 @@ export const enrichCanonicalProductFromMercadoLivre = async (input: {
     storeId,
     `/categories/${encodeURIComponent(proposal.providerCategoryId)}/attributes`
   );
-  if (!Array.isArray(definitionsRaw)) throw new Error('MERCADO_LIVRE_OUTBOUND_ATTRIBUTES_INVALID');
+  if (!Array.isArray(definitionsRaw)) {
+    throw new Error('MERCADO_LIVRE_OUTBOUND_ATTRIBUTES_INVALID');
+  }
   const facts = buildFacts({
     proposal,
     configuration,
     validation,
     definitions: definitionsRaw as ProviderAttributeDefinition[],
   });
-  if (!facts.length) throw new Error('MERCADO_LIVRE_CANONICAL_ENRICHMENT_EMPTY');
+  if (!facts.length) {
+    throw new Error('MERCADO_LIVRE_CANONICAL_ENRICHMENT_EMPTY');
+  }
 
   const fingerprint = factFingerprint(facts);
-  const canonicalRef = adminDb.doc(`stores/${proposal.canonicalStoreId}/products/${proposal.canonicalProductId}`);
-  const confirmationRef = adminDb.doc(`stores/${storeId}/catalogEnrichmentConfirmations/${proposalId}`);
+  const canonicalRef = adminDb.doc(
+    `stores/${proposal.canonicalStoreId}/products/${proposal.canonicalProductId}`
+  );
+  const confirmationRef = adminDb.doc(
+    `stores/${storeId}/catalogEnrichmentConfirmations/${proposalId}`
+  );
   const enrichedAt = new Date().toISOString();
   let alreadyApplied = false;
 
   await adminDb.runTransaction(async transaction => {
-    const [currentProposalDoc, currentConfigurationDoc, currentValidationDoc, canonicalDoc, confirmationDoc] = await Promise.all([
+    const [
+      currentProposalDoc,
+      currentConfigurationDoc,
+      currentValidationDoc,
+      canonicalDoc,
+      confirmationDoc,
+    ] = await Promise.all([
       transaction.get(proposalRef),
       transaction.get(configurationRef),
       transaction.get(validationRef),
       transaction.get(canonicalRef),
       transaction.get(confirmationRef),
     ]);
-    const currentProposal = assertProposal(storeId, proposalId, currentProposalDoc.data());
-    const currentConfiguration = assertConfiguration(currentProposal, currentConfigurationDoc.data());
-    const currentValidation = assertValidation(currentProposal, currentConfiguration, currentValidationDoc.data());
+
+    const currentProposal = assertProposal(
+      storeId,
+      proposalId,
+      currentProposalDoc.data()
+    );
+    const currentConfiguration = assertConfiguration(
+      currentProposal,
+      currentConfigurationDoc.data()
+    );
+    const currentValidation = assertValidation(
+      currentProposal,
+      currentConfiguration,
+      currentValidationDoc.data()
+    );
     if (
       currentConfiguration.configuredAt !== configuration.configuredAt ||
       currentValidation.validatedAt !== validation.validatedAt ||
       currentProposal.canonicalBaselineHash !== proposal.canonicalBaselineHash
-    ) throw new Error('MERCADO_LIVRE_OUTBOUND_PROPOSAL_STALE');
-    if (!canonicalDoc.exists) throw new Error('MERCADO_LIVRE_OUTBOUND_PRODUCT_NOT_FOUND');
+    ) {
+      throw new Error('MERCADO_LIVRE_OUTBOUND_PROPOSAL_STALE');
+    }
+    if (!canonicalDoc.exists) {
+      throw new Error('MERCADO_LIVRE_OUTBOUND_PRODUCT_NOT_FOUND');
+    }
+
     const canonical = canonicalDoc.data() as Record<string, unknown>;
+    const currentBaselineHash = canonicalBaselineHashFrom(
+      proposal.canonicalStoreId,
+      proposal.canonicalProductId,
+      canonical
+    );
     if (
-      clean(canonical.id, 160) !== proposal.canonicalProductId ||
-      clean(canonical.storeId, 160) !== proposal.canonicalStoreId
-    ) throw new Error('MERCADO_LIVRE_OUTBOUND_PRODUCT_INVALID');
+      !currentBaselineHash ||
+      currentBaselineHash !== proposal.canonicalBaselineHash
+    ) {
+      throw new Error('MERCADO_LIVRE_OUTBOUND_PROPOSAL_STALE');
+    }
 
     if (confirmationDoc.exists) {
       const prior = confirmationDoc.data() as Record<string, unknown>;
@@ -344,12 +497,16 @@ export const enrichCanonicalProductFromMercadoLivre = async (input: {
     }
 
     const existingFacts = existingFactsFrom(canonical.catalogProfile);
-    const replacedIds = new Set(facts.map(fact => fact.provenance.providerAttributeId));
-    const preserved = existingFacts.filter(fact => !(
-      fact.provenance?.provider === 'mercado_livre' &&
-      replacedIds.has(fact.provenance.providerAttributeId)
-    ));
-    const mergedFacts = [...preserved, ...facts].slice(-200);
+    const replacedIds = new Set(
+      facts.map(fact => fact.provenance.providerAttributeId)
+    );
+    const preserved = existingFacts.filter(
+      fact => !isReplacedMercadoLivreFact(fact, replacedIds)
+    );
+    const mergedFacts: Array<PreservedCatalogFact | CanonicalCatalogFact> = [
+      ...preserved,
+      ...facts,
+    ].slice(-200);
 
     transaction.update(canonicalRef, {
       'catalogProfile.schemaVersion': 1,
@@ -385,7 +542,11 @@ export const enrichCanonicalProductFromMercadoLivre = async (input: {
     canonicalStoreId: proposal.canonicalStoreId,
     canonicalProductId: proposal.canonicalProductId,
     appliedFactCount: facts.length,
-    canonicalKeys: [...new Set(facts.map(fact => fact.canonicalKey).filter((value): value is string => Boolean(value)))],
+    canonicalKeys: [...new Set(
+      facts
+        .map(fact => fact.canonicalKey)
+        .filter((value): value is string => Boolean(value))
+    )],
     factFingerprint: fingerprint,
     alreadyApplied,
     authority: 'store_owner_confirmed_external_taxonomy_enrichment',
