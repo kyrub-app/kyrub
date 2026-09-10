@@ -38,6 +38,7 @@ export interface MercadoLivreCategorySuggestion {
   domainName: string;
   categoryId: string;
   categoryName: string;
+  categoryPath?: Array<{ id: string; name: string }>;
 }
 
 export interface MercadoLivreE2ECategoryOptions {
@@ -86,10 +87,16 @@ export const inspectMercadoLivreE2ERequirements = async (user: User, storeId: st
         seenCategoryIds.add(item.categoryId);
         return true;
       })
-      .map(item => ({
-        ...item,
-        categoryName: `${item.categoryName} · ${item.categoryId} · ${item.domainName || item.domainId}`,
-      })),
+      .map(item => {
+        const pathLabel = Array.isArray(item.categoryPath)
+          ? item.categoryPath.map(node => node.name?.trim()).filter(Boolean).join(' > ')
+          : '';
+        const contextLabel = pathLabel || item.domainName || item.domainId;
+        return {
+          ...item,
+          categoryName: [item.categoryName, item.categoryId, contextLabel].filter(Boolean).join(' · '),
+        };
+      }),
   };
 };
 
