@@ -57,6 +57,7 @@ interface CategoryAttribute {
 interface AvailableListingTypesResponse { category_id?: unknown; available?: unknown }
 
 type CategoryPathNode = { id: string; name: string };
+type FamilyNameAuthority = 'store_owner_selection' | 'canonical_name_compatibility_fallback' | 'not_applicable';
 
 export interface MercadoLivreOutboundRequirementInspection {
   proposalId: string;
@@ -77,6 +78,7 @@ export interface MercadoLivreOutboundRequirementConfiguration {
   siteId: string;
   publicationModel: 'legacy_items' | 'user_products';
   familyName: string;
+  familyNameAuthority: FamilyNameAuthority;
   category: { id: string; name: string };
   listingType: { id: string; name: string };
   condition: string;
@@ -318,12 +320,15 @@ export const configureMercadoLivreOutboundRequirements = async (input: {
   }
 
   const proposal = await loadProposal(storeId, proposalId);
+  const suppliedFamilyName = clean(input.familyName, 120);
   const familyName = proposal.providerPublicationModel === 'user_products'
-    ? clean(input.familyName, 120)
+    ? suppliedFamilyName || proposal.canonical.name
     : '';
-  if (proposal.providerPublicationModel === 'user_products' && !familyName) {
-    throw new Error('MERCADO_LIVRE_OUTBOUND_FAMILY_NAME_REQUIRED');
-  }
+  const familyNameAuthority: FamilyNameAuthority = proposal.providerPublicationModel !== 'user_products'
+    ? 'not_applicable'
+    : suppliedFamilyName
+      ? 'store_owner_selection'
+      : 'canonical_name_compatibility_fallback';
 
   await assertCanonicalStillCurrent(proposal);
   const connection = await assertConnectedManualReview(proposal);
@@ -363,6 +368,7 @@ export const configureMercadoLivreOutboundRequirements = async (input: {
     siteId,
     publicationModel: proposal.providerPublicationModel,
     familyName,
+    familyNameAuthority,
     category: { id: categoryId, name: clean(category.name, 160) },
     listingType: { id: listingTypeId, name: clean(selectedListing.name, 160) || listingTypeId },
     condition,
@@ -408,6 +414,7 @@ export const configureMercadoLivreOutboundRequirements = async (input: {
       providerCondition: condition,
       providerCurrencyId: currencyId,
       providerFamilyName: familyName,
+      providerFamilyNameAuthority: familyNameAuthority,
       providerAttributes: attributes,
       requirements: {
         ready,
