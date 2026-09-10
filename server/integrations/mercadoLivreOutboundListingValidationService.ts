@@ -1,6 +1,6 @@
 import { FieldValue } from 'firebase-admin/firestore';
 import { adminDb } from '../firebaseAdmin.js';
-import { mercadoLivreValidateJson } from './mercadoLivreOauthService.js';
+import { mercadoLivreValidateJson } from './mercadoLivreListingValidationTransport.js';
 import { buildMercadoLivreInitialPublicationPayload } from './mercadoLivreInitialPublicationPayloadAdapter.js';
 import { mercadoLivrePublicationCorrelationMarker } from './mercadoLivrePublicationCorrelation.js';
 import { assertCurrentMercadoLivrePublicationCapability } from './mercadoLivrePublicationCapabilitySnapshotGuard.js';
