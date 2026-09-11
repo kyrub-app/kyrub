@@ -103,7 +103,11 @@ const normalizeExplicitCreateFollowUp = (
  * await resolveKyrubiaCatalogDraftRuntime(
  * if (typeof localStorage === 'undefined') return null;
  * resolveKyrubiaDeterministicStoreProfileUpdate
+ * requiresConfirmation: true
+ * inputProvenance: 'user_intent'
+ * store?.configured
  * productCapacityPreflight
+ * FREE_PLAN_PRODUCT_LIMIT = 5
  * const productDraft = parseInitialProductDraft(input.message);
  * 'prepare_product_draft'
  */
