@@ -409,6 +409,7 @@ const compileProductQueryPlan = (
   const routed = routeKyrubiaLocalProductIntent(message, {
     lowStockThreshold: context?.lowStockThreshold ?? 5,
     turnContext,
+    knownCategories: context?.products.map(product => product.category).filter(Boolean) ?? [],
   });
   if (!routed) return null;
 
@@ -440,16 +441,24 @@ const formatProductLine = (
     query.sort?.field === 'stock';
   const mentionsPrice = query.filters.some(filter => filter.field === 'price') ||
     query.sort?.field === 'price';
+  const filtersCategory = query.filters.some(filter => filter.field === 'category');
 
   if (mentionsStock) {
     details.push(`${product.stock} ${product.stock === 1 ? 'unidade' : 'unidades'}`);
   }
   if (mentionsPrice) details.push(formatPrice(product.price));
-  if (!mentionsStock && !mentionsPrice && product.category) details.push(product.category);
+  if (!mentionsStock && !mentionsPrice && !filtersCategory && product.category) {
+    details.push(product.category);
+  }
 
   return details.length > 0
     ? `${product.name} — ${details.join(' · ')}`
     : product.name;
+};
+
+const categoryFilterValue = (query: KyrubiaProductQuery): string | null => {
+  const value = query.filters.find(filter => filter.field === 'category')?.value;
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
 };
 
 const queryTruncationSuffix = (
@@ -507,6 +516,9 @@ const resolveProductQueryPlan = (
     } else if (plan.kind === 'low_stock') {
       const threshold = plan.query.filters.find(filter => filter.field === 'stock')?.value;
       reply = `Nenhum produto físico está com estoque igual ou abaixo do mínimo de ${threshold ?? context.lowStockThreshold} unidades.`;
+    } else if (plan.kind === 'category') {
+      const category = categoryFilterValue(plan.query) ?? 'informada';
+      reply = `Não encontrei produtos cadastrados na categoria “${category}”.`;
     } else if (plan.kind === 'catalog') {
       reply = 'Não encontrei itens no catálogo nesta leitura.';
     }
@@ -526,6 +538,9 @@ const resolveProductQueryPlan = (
   } else if (plan.kind === 'low_stock') {
     const threshold = plan.query.filters.find(filter => filter.field === 'stock')?.value;
     intro = `Encontrei ${result.totalMatched} ${result.totalMatched === 1 ? 'produto' : 'produtos'} com estoque baixo (até ${threshold ?? context.lowStockThreshold} unidades):`;
+  } else if (plan.kind === 'category') {
+    const category = categoryFilterValue(plan.query) ?? 'informada';
+    intro = `Encontrei ${result.totalMatched} ${result.totalMatched === 1 ? 'produto' : 'produtos'} na categoria “${category}”:`;
   } else if (plan.kind === 'catalog') {
     intro = `Aqui estão ${result.totalMatched} ${result.totalMatched === 1 ? 'item do catálogo' : 'itens do catálogo'}:`;
   }
@@ -567,7 +582,10 @@ export const resolveKyrubiaDeterministicErpRead = (
   const storeAwarenessKind = detectStoreAwarenessKind(intent);
   if (storeAwarenessKind) return resolveStoreAwareness(storeAwarenessKind, context);
 
+  const mentionsCatalogProducts =
+    /\b(produto|produtos|item|itens|mercadoria|mercadorias|artigo|artigos|catalogo)\b/.test(intent);
   const asksStoreIdentity =
+    !mentionsCatalogProducts &&
     /\b(loja|estabelecimento|negocio)\b/.test(intent) &&
     /\b(nome|segmento|ramo|categoria)\b/.test(intent);
   if (asksStoreIdentity) return resolveStoreIdentity(context);
@@ -580,11 +598,6 @@ export const resolveKyrubiaDeterministicErpRead = (
   const inventoryRead = resolveInventoryRead(intent, context);
   if (inventoryRead) return inventoryRead;
 
-  const asksProductCount =
-    /\b(quantos|quantas|quantidade|total)\b/.test(intent) &&
-    /\b(produto|produtos|item|itens|mercadoria|mercadorias|artigo|artigos)\b/.test(intent);
-  if (asksProductCount) return resolveProductCount(context);
-
   const saveAsNote = kyrubiaAsksToSaveAsNote(intent);
   if (KYRUBIA_MUTATION_VERBS.test(intent) && !saveAsNote) return null;
 
@@ -592,6 +605,11 @@ export const resolveKyrubiaDeterministicErpRead = (
   if (productPlan) {
     return resolveProductQueryPlan(context, turnContext, productPlan);
   }
+
+  const asksProductCount =
+    /\b(quantos|quantas|quantidade|total)\b/.test(intent) &&
+    /\b(produto|produtos|item|itens|mercadoria|mercadorias|artigo|artigos)\b/.test(intent);
+  if (asksProductCount) return resolveProductCount(context);
 
   return null;
 };
