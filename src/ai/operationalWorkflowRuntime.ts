@@ -98,9 +98,12 @@ const normalizeExplicitCreateFollowUp = (
 /*
  * Compatibility contract markers delegated to operationalWorkflowRuntimeLegacy.
  * Keep these ordered because existing architecture tests assert that draft
- * staging resolves before local workflow parsing:
+ * staging resolves before local workflow parsing, and that store/profile and
+ * quota authority remain in the deterministic operational layer:
  * await resolveKyrubiaCatalogDraftRuntime(
  * if (typeof localStorage === 'undefined') return null;
+ * resolveKyrubiaDeterministicStoreProfileUpdate
+ * productCapacityPreflight
  * const productDraft = parseInitialProductDraft(input.message);
  * 'prepare_product_draft'
  */
