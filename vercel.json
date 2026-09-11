@@ -18,6 +18,10 @@
       "destination": "/api/health?transport=mcp"
     },
     {
+      "source": "/api/kyrubia-bridge/:path*",
+      "destination": "/api/health?transport=kyrubia-bridge&path=:path*"
+    },
+    {
       "source": "/api/orders/:orderId/status",
       "destination": "/api/health?transport=order-status-execute&orderId=:orderId"
     },
