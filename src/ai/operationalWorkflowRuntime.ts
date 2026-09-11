@@ -75,6 +75,26 @@ const messageForOperationalFlow = (
   return canonicalCreateMessage(target);
 };
 
+const normalizeExplicitCreateFollowUp = (
+  result: KyrubAiConsultantResponse | null,
+  target: ExplicitCreateTarget | null
+): KyrubAiConsultantResponse | null => {
+  if (!result || !target) return result;
+
+  // Long explicit-create commands are canonicalized before entering the legacy
+  // collector. Keep the first follow-up equally canonical so callers receive
+  // one question only, without an extra answer hint that is unrelated to the
+  // parser recovery contract.
+  const verbosePriceQuestion =
+    `Qual será o preço de “${target.name}”? Você também pode dizer “grátis”.`;
+  if (result.reply !== verbosePriceQuestion) return result;
+
+  return {
+    ...result,
+    reply: `Qual será o preço de “${target.name}”?`,
+  };
+};
+
 /*
  * Compatibility contract markers delegated to operationalWorkflowRuntimeLegacy.
  * Keep these ordered because existing architecture tests assert that draft
@@ -91,8 +111,9 @@ export const resolveKyrubiaOperationalWorkflow = async (
     message: string;
     erpContext?: KyrubErpContextSnapshot;
   }
-): Promise<KyrubAiConsultantResponse | null> =>
-  resolveLegacyOperationalWorkflow({
+): Promise<KyrubAiConsultantResponse | null> => {
+  const target = parseExplicitKyrubiaCreateTarget(input.message);
+  const result = await resolveLegacyOperationalWorkflow({
     ...input,
     message: messageForOperationalFlow(
       input.user,
@@ -100,3 +121,6 @@ export const resolveKyrubiaOperationalWorkflow = async (
       input.message
     ),
   });
+
+  return normalizeExplicitCreateFollowUp(result, target);
+};
