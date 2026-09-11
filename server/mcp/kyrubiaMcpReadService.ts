@@ -1,6 +1,6 @@
 import { adminDb } from '../firebaseAdmin.js';
 import type { KyrubMcpPrincipal } from './kyrubiaMcpAuth.js';
-import type { KyrubMcpToolName } from '../../shared/kyrubiaMcp.js';
+import type { KyrubMcpReadToolName } from '../../shared/kyrubiaMcp.js';
 
 const PENDING_ORDER_STATUSES = new Set([
   'pending',
@@ -101,9 +101,7 @@ const readInventory = async (
       ![...requested].some(candidate =>
         normalizedName.includes(candidate) || candidate.includes(normalizedName)
       )
-    ) {
-      return [];
-    }
+    ) return [];
     return [{
       id: cleanText(item.id, 180),
       name,
@@ -150,7 +148,7 @@ const readPendingOrders = async (
 
 export const callKyrubMcpReadTool = async (
   principal: KyrubMcpPrincipal,
-  tool: KyrubMcpToolName,
+  tool: KyrubMcpReadToolName,
   args: Record<string, unknown>
 ): Promise<Record<string, unknown>> => {
   switch (tool) {

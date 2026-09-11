@@ -69,6 +69,11 @@ test('Vercel payment and credential runtimes use explicit ESM extensions', () =>
     'server/integrations/providerCredentialResolver.ts',
     'server/integrations/platformCredentialStore.ts',
     'server/integrations/kyrubCredentialVault.ts',
+    'server/mcp/kyrubiaBridgeSessionService.ts',
+    'server/mcp/kyrubiaBridgeServerlessTransport.ts',
+    'server/mcp/kyrubiaMcpAuth.ts',
+    'server/mcp/kyrubiaMcpChatService.ts',
+    'server/mcp/kyrubiaMcpServer.ts',
     'src/utils/paymentOrderMaterialization.ts',
   ];
 
@@ -150,4 +155,62 @@ test('store connections reuse the existing health serverless transport without i
   assert.match(transport, /createMercadoLivreStockExecutionRouter/);
   assert.match(transport, /createMercadoLivreE2ETestRouter/);
   assert.match(transport, /request\.url = `\/api\/store-connections/);
+});
+
+test('Kyrubia bridge reuses the health runtime and keeps session lifecycle outside a new serverless function', () => {
+  const health = readFileSync('api/health.ts', 'utf8');
+  const vercel = readFileSync('vercel.json', 'utf8');
+  const transport = readFileSync('server/mcp/kyrubiaBridgeServerlessTransport.ts', 'utf8');
+
+  assert.match(vercel, /\/api\/kyrubia-bridge\/:path\*/);
+  assert.match(vercel, /\/api\/health\?transport=kyrubia-bridge&path=:path\*/);
+  assert.match(health, /transport === 'kyrubia-bridge'/);
+  assert.match(health, /kyrubiaBridgeServerlessTransport\.js/);
+  assert.match(transport, /path === 'session'/);
+  assert.match(transport, /path === 'session\/status'/);
+  assert.match(transport, /path === 'session\/revoke'/);
+  assert.match(transport, /authenticateConsultantRequest/);
+});
+
+test('Kyrubia bridge credentials are short lived, hashed at rest and revocable', () => {
+  const source = readFileSync('server/mcp/kyrubiaBridgeSessionService.ts', 'utf8');
+
+  assert.match(source, /randomBytes\(32\)/);
+  assert.match(source, /createHash\('sha256'\)/);
+  assert.match(source, /timingSafeEqual/);
+  assert.match(source, /tokenHash/);
+  assert.match(source, /MAX_TTL_MINUTES = 24 \* 60/);
+  assert.match(source, /expiresAtMillis <= Date\.now\(\)/);
+  assert.match(source, /BRIDGE_SESSION_EXPIRED/);
+  assert.match(source, /BRIDGE_SESSION_REVOKED/);
+  assert.match(source, /mode: 'proposal_only'/);
+  assert.doesNotMatch(source, /token:\s*token,[\s\S]*sessionRef\([^)]*\)\.set/);
+});
+
+test('MCP accepts bridge sessions without weakening the Firebase-token gate', () => {
+  const auth = readFileSync('server/mcp/kyrubiaMcpAuth.ts', 'utf8');
+
+  assert.match(auth, /token\.startsWith\('kbv0\.'\)/);
+  assert.match(auth, /verifyKyrubiaBridgeAuthorization/);
+  assert.match(auth, /KYRUB_MCP_ALLOW_FIREBASE_ID_TOKEN/);
+  assert.match(auth, /verifyFirebaseIdToken/);
+  assert.match(auth, /authType: 'firebase_id_token'/);
+});
+
+test('MCP exposes direct Kyrubia conversation only in proposal-only read mode', () => {
+  const definitions = readFileSync('shared/kyrubiaMcp.ts', 'utf8');
+  const server = readFileSync('server/mcp/kyrubiaMcpServer.ts', 'utf8');
+  const chat = readFileSync('server/mcp/kyrubiaMcpChatService.ts', 'utf8');
+
+  assert.match(definitions, /name: 'kyrubia_chat'/);
+  assert.match(definitions, /readOnlyHint: true/);
+  assert.match(server, /KYRUB_MCP_TOOLS/);
+  assert.match(server, /callKyrubiaMcpChat/);
+  assert.match(chat, /PONTE EXTERNA KYRUBIA — MODO PROPOSAL_ONLY/);
+  assert.match(chat, /tools: \[\]/);
+  assert.match(chat, /writesAllowed: false/);
+  assert.match(chat, /providerWritesAllowed: false/);
+  assert.match(chat, /requiresKyrubConfirmation: true/);
+  assert.match(chat, /callKyrubMcpReadTool/);
+  assert.doesNotMatch(chat, /mercadoLivrePostJson|mercadoLivrePutJson|runTransaction|transaction\.(?:set|update|delete)/);
 });

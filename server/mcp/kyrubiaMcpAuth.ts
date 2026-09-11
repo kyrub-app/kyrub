@@ -3,7 +3,10 @@ import { verifyFirebaseIdToken } from '../ai/consultantAuth.js';
 export type KyrubMcpPrincipal = {
   uid: string;
   email: string | null;
-  authType: 'firebase_id_token';
+  name: string;
+  authType: 'firebase_id_token' | 'bridge_session';
+  bridgeSessionId?: string;
+  bridgeMode?: 'proposal_only';
 };
 
 export class KyrubMcpAuthError extends Error {
@@ -38,6 +41,16 @@ export const verifyKyrubMcpAuthorization = async (
 ): Promise<KyrubMcpPrincipal> => {
   assertKyrubMcpEnabled();
 
+  const token = bearerToken(authorization);
+  if (!token) {
+    throw new KyrubMcpAuthError(401, 'AUTH_REQUIRED', 'Autenticação obrigatória.');
+  }
+
+  if (token.startsWith('kbv0.')) {
+    const bridge = await import('./kyrubiaBridgeSessionService.js');
+    return bridge.verifyKyrubiaBridgeAuthorization(authorization);
+  }
+
   if (!enabled('KYRUB_MCP_ALLOW_FIREBASE_ID_TOKEN')) {
     throw new KyrubMcpAuthError(
       401,
@@ -46,16 +59,14 @@ export const verifyKyrubMcpAuthorization = async (
     );
   }
 
-  const token = bearerToken(authorization);
-  if (!token) {
-    throw new KyrubMcpAuthError(401, 'AUTH_REQUIRED', 'Autenticação obrigatória.');
-  }
-
   try {
     const decoded = await verifyFirebaseIdToken(token);
     return {
       uid: decoded.uid,
       email: typeof decoded.email === 'string' ? decoded.email : null,
+      name: typeof decoded.name === 'string' && decoded.name.trim()
+        ? decoded.name.trim()
+        : 'Usuário do Kyrub',
       authType: 'firebase_id_token',
     };
   } catch {
