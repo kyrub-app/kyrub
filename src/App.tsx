@@ -15,6 +15,7 @@ import { KyrubAiStoreOperationActionBridge } from './components/KyrubAiStoreOper
 import { KyrubAiStorePromotionActionBridge } from './components/KyrubAiStorePromotionActionBridge';
 import { KyrubAiTaskActionBridge } from './components/KyrubAiTaskActionBridge';
 import { KyrubAiWorkspaceBridge } from './components/KyrubAiWorkspaceBridge';
+import { KyrubiaExternalBridgeControls } from './components/KyrubiaExternalBridgeControls';
 import { KyrubiaNamingBridge } from './components/KyrubiaNamingBridge';
 import { NoteInvitationOutboxBridge } from './components/NoteInvitationOutboxBridge';
 import { PlanCenterApp } from './components/plans/PlanCenterApp';
@@ -223,6 +224,7 @@ function AuthenticatedKyrubApp({ operational }: { operational: boolean }) {
       )}
       <KyrubAiWorkspaceBridge />
       <KyrubAiProviderSettingsBridge />
+      <KyrubiaExternalBridgeControls />
       <KyrubiaNamingBridge />
       <KyrubAiNoteActionBridge />
       <KyrubAiTaskActionBridge />
