@@ -65,6 +65,20 @@ export default async function handler(
     return;
   }
 
+  if (transport === 'kyrubia-bridge') {
+    try {
+      const bridge = await import('../server/mcp/kyrubiaBridgeServerlessTransport.js');
+      await bridge.handleKyrubiaBridgeServerlessRequest(request, response);
+    } catch (error) {
+      console.error('[kyrubia-bridge-transport]', error instanceof Error ? error.message : 'unknown');
+      response.status(503).json({
+        error: 'A ponte externa da Kyrubia está temporariamente indisponível.',
+        code: 'KYRUBIA_BRIDGE_TRANSPORT_UNAVAILABLE',
+      });
+    }
+    return;
+  }
+
   if (transport === 'store-connections') {
     response.setHeader('Cache-Control', 'no-store, max-age=0');
     try {
