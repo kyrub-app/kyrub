@@ -6,6 +6,7 @@ import type {
 
 export type KyrubiaLocalProductIntentKind =
   | 'catalog'
+  | 'category'
   | 'missing_image'
   | 'missing_description'
   | 'low_stock'
@@ -218,6 +219,55 @@ const numericFieldFilter = (
   return null;
 };
 
+const cleanCategoryValue = (value: string): string =>
+  value
+    .trim()
+    .replace(/^["“”']+|["“”']+$/g, '')
+    .replace(/[.,;:!?]+$/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+const knownCategoryCandidates = (categories: string[]): string[] => {
+  const values = categories.flatMap(category => [
+    category,
+    ...category.split('>').map(part => part.trim()),
+  ]);
+  return [...new Set(values.map(cleanCategoryValue).filter(Boolean))]
+    .sort((left, right) => right.length - left.length);
+};
+
+const extractCategoryFilter = (
+  message: string,
+  intent: string,
+  knownCategories: string[]
+): KyrubiaProductQueryFilter | null => {
+  const quoted = /\bcategoria\s+(?:da\s+minha\s+loja\s+)?["“']([^"”']{1,100})["”']/i.exec(message)?.[1];
+  if (quoted) {
+    const value = cleanCategoryValue(quoted);
+    if (value) return { field: 'category', operator: 'contains', value };
+  }
+
+  const explicitPatterns = [
+    /\b(?:na|da|de|em)\s+categoria\s+(?:da minha loja\s+)?([a-z0-9][a-z0-9 $.,-]{0,100}?)(?=\s+(?:com|sem|que|e\s+(?:com|sem)|ordenad[oa]s?|mais|menos|ate|por)\b|$)/,
+    /\bcategoria\s+(?:da minha loja\s+)?([a-z0-9][a-z0-9 $.,-]{0,100}?)(?=\s+(?:com|sem|que|e\s+(?:com|sem)|ordenad[oa]s?|mais|menos|ate|por)\b|$)/,
+  ];
+  for (const pattern of explicitPatterns) {
+    const value = cleanCategoryValue(pattern.exec(intent)?.[1] ?? '');
+    if (value) return { field: 'category', operator: 'contains', value };
+  }
+
+  for (const category of knownCategoryCandidates(knownCategories)) {
+    const normalizedCategory = normalizeKyrubiaIntentText(category);
+    if (!normalizedCategory) continue;
+    const pattern = new RegExp(`\\b(?:em|na|no|nas|nos)\\s+(?:a\\s+|o\\s+)?${escapeRegex(normalizedCategory)}\\b`);
+    if (pattern.test(intent)) {
+      return { field: 'category', operator: 'contains', value: category };
+    }
+  }
+
+  return null;
+};
+
 const extractSort = (intent: string): KyrubiaProductQuerySort | undefined => {
   const priceDesc = [
     'mais caro', 'mais caros', 'maior preco', 'maiores precos', 'maior valor',
@@ -293,6 +343,7 @@ export const routeKyrubiaLocalProductIntent = (
   options: {
     lowStockThreshold?: number;
     turnContext?: KyrubiaTurnContext;
+    knownCategories?: string[];
   } = {}
 ): KyrubiaLocalProductIntent | null => {
   const intent = normalizeKyrubiaIntentText(message);
@@ -304,6 +355,7 @@ export const routeKyrubiaLocalProductIntent = (
   const descriptionFilter = booleanFieldFilter(intent, 'hasDescription', DESCRIPTION_TERMS);
   const stockFilter = numericFieldFilter(intent, 'stock', STOCK_TERMS);
   const priceFilter = numericFieldFilter(intent, 'price', PRICE_TERMS);
+  const categoryFilter = extractCategoryFilter(message, intent, options.knownCategories ?? []);
   const lowStock = hasLowStockConcept(intent);
   const sort = extractSort(intent) ??
     (lowStock ? { field: 'stock' as const, direction: 'asc' as const } : undefined);
@@ -312,9 +364,12 @@ export const routeKyrubiaLocalProductIntent = (
   const explicitService = hasAnyToken(tokens, SERVICE_NOUNS);
   const explicitPhysical = containsAnyPhrase(intent, PHYSICAL_CUES);
   const hasFieldSignal = Boolean(
-    imageFilter || descriptionFilter || stockFilter || priceFilter || lowStock || sort
+    imageFilter || descriptionFilter || stockFilter || priceFilter || categoryFilter || lowStock || sort
   );
-  const hasQueryVerb = hasAnyToken(tokens, QUERY_VERBS);
+  const categoryQuerySignal = Boolean(
+    categoryFilter && /\b(o que|tenho|tem|cadastrad[oa]s?|existem?|existe|quantos|quantas)\b/.test(intent)
+  );
+  const hasQueryVerb = hasAnyToken(tokens, QUERY_VERBS) || categoryQuerySignal;
   const hasContextCue = containsAnyPhrase(intent, CONTEXT_CUES);
   const reusableProductContext = Boolean(
     options.turnContext?.entities.length &&
@@ -331,6 +386,7 @@ export const routeKyrubiaLocalProductIntent = (
   const filters: KyrubiaProductQueryFilter[] = [];
   if (imageFilter) filters.push(imageFilter);
   if (descriptionFilter) filters.push(descriptionFilter);
+  if (categoryFilter) filters.push(categoryFilter);
   if (stockFilter) {
     filters.push(stockFilter);
   } else if (lowStock) {
@@ -351,15 +407,18 @@ export const routeKyrubiaLocalProductIntent = (
 
   let kind: KyrubiaLocalProductIntentKind = 'filtered';
   let title = 'Consulta de produtos';
-  if (lowStock && !imageFilter && !descriptionFilter && !priceFilter) {
+  if (lowStock && !imageFilter && !descriptionFilter && !priceFilter && !categoryFilter) {
     kind = 'low_stock';
     title = 'Produtos com estoque baixo';
-  } else if (imageFilter?.value === false && !descriptionFilter && !stockFilter && !priceFilter && !lowStock) {
+  } else if (imageFilter?.value === false && !descriptionFilter && !stockFilter && !priceFilter && !lowStock && !categoryFilter) {
     kind = 'missing_image';
     title = 'Produtos sem imagem';
-  } else if (descriptionFilter?.value === false && !imageFilter && !stockFilter && !priceFilter && !lowStock) {
+  } else if (descriptionFilter?.value === false && !imageFilter && !stockFilter && !priceFilter && !lowStock && !categoryFilter) {
     kind = 'missing_description';
     title = 'Produtos sem descrição';
+  } else if (categoryFilter && !imageFilter && !descriptionFilter && !stockFilter && !priceFilter && !lowStock) {
+    kind = 'category';
+    title = `Produtos da categoria ${String(categoryFilter.value)}`;
   } else if (filters.length === 0 && !sort) {
     kind = 'catalog';
     title = 'Produtos do catálogo';
@@ -368,6 +427,7 @@ export const routeKyrubiaLocalProductIntent = (
   const matchedConcepts = [
     explicitProduct ? 'entity:product' : '',
     explicitService ? 'entity:service' : '',
+    categoryFilter ? 'field:category' : '',
     imageFilter ? 'field:image' : '',
     descriptionFilter ? 'field:description' : '',
     stockFilter || lowStock ? 'field:stock' : '',

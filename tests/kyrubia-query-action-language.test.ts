@@ -98,6 +98,43 @@ const erpSnapshot = (): KyrubErpContextSnapshot => ({
   warnings: [],
 });
 
+const categorySnapshot = (): KyrubErpContextSnapshot => ({
+  ...erpSnapshot(),
+  products: [
+    {
+      id: 'key-mdf',
+      name: 'Chaveiro MDF',
+      category: 'Acessórios > Chaveiro',
+      price: 20,
+      stock: 10,
+      isService: false,
+      hasDescription: true,
+      hasImage: true,
+    },
+    {
+      id: 'key-acrylic',
+      name: 'Chaveiro Acrílico',
+      category: 'Acessórios > Chaveiro',
+      price: 20,
+      stock: 5,
+      isService: false,
+      hasDescription: true,
+      hasImage: false,
+    },
+    {
+      id: 'cup',
+      name: 'Caneca',
+      category: 'Presentes > Canecas',
+      price: 30,
+      stock: 4,
+      isService: false,
+      hasDescription: true,
+      hasImage: true,
+    },
+  ],
+  productCount: 3,
+});
+
 test('product query language composes filters, sorting and limit without a phrase-specific tool', () => {
   const query = createKyrubiaProductQuery({
     filters: [
@@ -223,6 +260,74 @@ test('low stock continues to use the same generic executor while preserving comp
   assert.equal(result?.queryPlan?.filters.some(filter =>
     filter.field === 'stock' && filter.operator === 'lte' && filter.value === 5
   ), true);
+});
+
+test('catalog category question is answered from the ERP snapshot instead of knowledge search', () => {
+  const result = resolveKyrubiaDeterministicErpRead(
+    'Quais são os produtos da minha loja cadastrados na categoria "chaveiro"?',
+    categorySnapshot()
+  );
+
+  assert.equal(result?.action, 'list_products');
+  assert.equal(result?.queryPlan?.filters.some(filter =>
+    filter.field === 'category' && filter.operator === 'contains' && filter.value === 'chaveiro'
+  ), true);
+  assert.deepEqual(
+    result?.turnContext?.entities.map(entity => entity.entityId),
+    ['key-mdf', 'key-acrylic']
+  );
+  assert.match(result?.reply ?? '', /2 produtos na categoria “chaveiro”/i);
+  assert.match(result?.reply ?? '', /Chaveiro MDF/);
+  assert.match(result?.reply ?? '', /Chaveiro Acrílico/);
+  assert.doesNotMatch(result?.reply ?? '', /Manual KYRUB|correspondência lexical/i);
+});
+
+test('catalog category matching is accent-insensitive and supports hierarchical categories', () => {
+  const result = resolveKyrubiaDeterministicErpRead(
+    'Mostre os produtos da categoria “CHÁVEIRO”.',
+    categorySnapshot()
+  );
+
+  assert.deepEqual(
+    result?.turnContext?.entities.map(entity => entity.entityId),
+    ['key-mdf', 'key-acrylic']
+  );
+  assert.match(result?.reply ?? '', /Chaveiro MDF/);
+  assert.match(result?.reply ?? '', /Chaveiro Acrílico/);
+});
+
+test('category-aware count does not fall back to the total catalog count', () => {
+  const result = resolveKyrubiaDeterministicErpRead(
+    'Quantos produtos existem na categoria chaveiro?',
+    categorySnapshot()
+  );
+
+  assert.equal(result?.action, 'list_products');
+  assert.match(result?.reply ?? '', /2 produtos na categoria “chaveiro”/i);
+  assert.doesNotMatch(result?.reply ?? '', /3 itens cadastrados no catálogo/i);
+});
+
+test('known catalog categories support natural "cadastrado em" phrasing without the word categoria', () => {
+  const result = resolveKyrubiaDeterministicErpRead(
+    'O que tenho cadastrado em Chaveiro?',
+    categorySnapshot()
+  );
+
+  assert.equal(result?.action, 'list_products');
+  assert.deepEqual(
+    result?.turnContext?.entities.map(entity => entity.entityId),
+    ['key-mdf', 'key-acrylic']
+  );
+});
+
+test('category query returns a canonical empty result instead of falling through to knowledge', () => {
+  const result = resolveKyrubiaDeterministicErpRead(
+    'Quais produtos estão na categoria camisetas?',
+    categorySnapshot()
+  );
+
+  assert.equal(result?.action, 'list_products');
+  assert.match(result?.reply ?? '', /Não encontrei produtos cadastrados na categoria “camisetas”/i);
 });
 
 test('open reasoning still stays outside the local intent router', () => {
