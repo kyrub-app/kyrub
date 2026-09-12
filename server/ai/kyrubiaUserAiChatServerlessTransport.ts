@@ -4,6 +4,7 @@ import type {
   KyrubErpProductSummary,
 } from '../../shared/kyrubErpContext.js';
 import { resolveKyrubiaDeterministicErpRead } from '../../shared/kyrubiaDeterministicErp.js';
+import { routeKyrubiaLocalProductIntent } from '../../shared/kyrubiaIntentRouter.js';
 import { adminDb } from '../firebaseAdmin.js';
 import { authenticateConsultantRequest } from './consultantAuth.js';
 
@@ -38,7 +39,7 @@ type LegacyCatalogSource = {
   canonicalStoreId: string;
 };
 
-const MAX_PRODUCTS_IN_CONTEXT = 120;
+const MAX_PRODUCTS_IN_CLIENT_CONTEXT = 120;
 
 const record = (value: unknown): Record<string, unknown> =>
   value && typeof value === 'object' && !Array.isArray(value)
@@ -56,6 +57,47 @@ const finiteNumber = (value: unknown, fallback = 0): number =>
 const headerValue = (value: HeaderValue): string =>
   Array.isArray(value) ? value[0] ?? '' : value ?? '';
 
+const safeTraceIdentifier = (value: unknown): string => {
+  const cleaned = cleanText(value, 160);
+  return /^[a-zA-Z0-9:_-]{1,160}$/.test(cleaned) ? cleaned : '';
+};
+
+const releaseIdentifier = (): string =>
+  process.env.KYRUB_RELEASE?.trim()
+  || process.env.VERCEL_GIT_COMMIT_SHA?.trim().slice(0, 12)
+  || process.env.npm_package_version?.trim()
+  || 'development';
+
+const requestTraceId = (request: RequestLike): string =>
+  safeTraceIdentifier(
+    headerValue(
+      request.headers['x-kyrub-request-id']
+      ?? request.headers['X-Kyrub-Request-Id']
+    )
+  ) || randomUUID();
+
+const setDiagnosticHeaders = (
+  response: ResponseLike,
+  traceId: string,
+  decision: string
+): void => {
+  response.setHeader('X-Kyrub-Release', releaseIdentifier());
+  response.setHeader('X-Kyrub-Request-Id', traceId);
+  response.setHeader('X-Kyrub-Route', 'kyrubia-user-ai-chat');
+  response.setHeader('X-Kyrub-Decision', decision);
+};
+
+const logDecision = (
+  traceId: string,
+  details: Record<string, unknown>
+): void => {
+  console.info('[kyrubia-chat-route]', JSON.stringify({
+    requestId: traceId,
+    release: releaseIdentifier(),
+    ...details,
+  }));
+};
+
 const latestUserMessage = (input: unknown): string => {
   const body = record(input);
   if (!Array.isArray(body.messages)) return '';
@@ -65,26 +107,6 @@ const latestUserMessage = (input: unknown): string => {
     return cleanText(message.content, 4_000);
   }
   return '';
-};
-
-const looksLikeCatalogCategoryRead = (message: string): boolean => {
-  const normalized = message
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLocaleLowerCase('pt-BR')
-    .replace(/[^a-z0-9]+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-
-  const mentionsProducts =
-    /\b(produto|produtos|item|itens|mercadoria|mercadorias|artigo|artigos|catalogo)\b/.test(normalized);
-  const mentionsCategory = /\bcategoria\b/.test(normalized);
-  const asksRead =
-    /\b(quais|qual|liste|listar|mostre|mostrar|encontre|encontrar|tenho|tem|existem|existe|quantos|quantas)\b/.test(normalized);
-  const mutation =
-    /\b(crie|criar|cadastre|cadastrar|adicione|adicionar|altere|alterar|mude|mudar|renomeie|renomear|publique|publicar|exclua|excluir)\b/.test(normalized);
-
-  return mentionsProducts && mentionsCategory && asksRead && !mutation;
 };
 
 const productSummary = (
@@ -129,7 +151,7 @@ const clientCatalogContext = (input: unknown): KyrubErpContextSnapshot | null =>
     allProducts.length,
     Math.trunc(finiteNumber(rawContext.productCount, allProducts.length))
   );
-  const products = allProducts.slice(0, MAX_PRODUCTS_IN_CONTEXT);
+  const products = allProducts.slice(0, MAX_PRODUCTS_IN_CLIENT_CONTEXT);
 
   return {
     source: 'authenticated_client_snapshot',
@@ -151,15 +173,51 @@ const clientCatalogContext = (input: unknown): KyrubErpContextSnapshot | null =>
   };
 };
 
+const deterministicResponse = (
+  reply: string,
+  turnContext?: ReturnType<typeof resolveKyrubiaDeterministicErpRead> extends infer Result
+    ? Result extends { turnContext?: infer TurnContext }
+      ? TurnContext
+      : never
+    : never,
+  requestId = randomUUID()
+): Record<string, unknown> => ({
+  status: 'deterministic',
+  reply,
+  provider: 'kyrub',
+  model: 'kyrub-runtime-v1',
+  mode: 'deterministic',
+  requestId,
+  ...(turnContext ? { turnContext } : {}),
+  capabilities: {
+    actionsEnabled: true,
+    enabledActions: ['create_note'],
+    enabledReadActions: [
+      'read_store_summary',
+      'list_products',
+      'list_low_stock_products',
+      'list_pending_orders',
+    ],
+    voiceEnabled: false,
+    persistentCloudHistoryEnabled: false,
+    multimodalAttachmentsEnabled: false,
+    providerResilienceEnabled: false,
+    usageMeteringEnabled: true,
+  },
+  funding: 'none',
+  usage: {},
+});
+
 const resolveClientCatalogRead = (
   message: string,
-  input: unknown
+  input: unknown,
+  traceId: string
 ): Record<string, unknown> | null => {
   const context = clientCatalogContext(input);
   if (!context) return null;
   const resolved = resolveKyrubiaDeterministicErpRead(message, context);
   return resolved
-    ? deterministicResponse(resolved.reply, resolved.turnContext)
+    ? deterministicResponse(resolved.reply, resolved.turnContext, traceId)
     : null;
 };
 
@@ -245,7 +303,8 @@ const mergeCatalogProducts = (
 };
 
 const authoritativeCatalogContext = async (
-  uid: string
+  uid: string,
+  traceId: string
 ): Promise<KyrubErpContextSnapshot> => {
   const warnings: string[] = [];
   let legacyAvailable = false;
@@ -263,7 +322,10 @@ const authoritativeCatalogContext = async (
     warnings.push('O espelho legado do catálogo não pôde ser consultado.');
     console.warn(
       '[kyrubia-authoritative-catalog] legacy read failed',
-      error instanceof Error ? error.message : 'unknown'
+      JSON.stringify({
+        requestId: traceId,
+        error: error instanceof Error ? error.message : 'unknown',
+      })
     );
   }
 
@@ -280,7 +342,10 @@ const authoritativeCatalogContext = async (
     warnings.push('O catálogo canônico não pôde ser consultado.');
     console.warn(
       '[kyrubia-authoritative-catalog] canonical read failed',
-      error instanceof Error ? error.message : 'unknown'
+      JSON.stringify({
+        requestId: traceId,
+        error: error instanceof Error ? error.message : 'unknown',
+      })
     );
   }
 
@@ -289,16 +354,23 @@ const authoritativeCatalogContext = async (
   }
 
   const mergedProducts = mergeCatalogProducts(legacyProducts, canonicalProducts);
-  const productsTruncated = mergedProducts.length > MAX_PRODUCTS_IN_CONTEXT;
-  const products = mergedProducts.slice(0, MAX_PRODUCTS_IN_CONTEXT);
+  logDecision(traceId, {
+    stage: 'catalog_loaded',
+    legacyAvailable,
+    canonicalAvailable,
+    canonicalStoreMapped: Boolean(canonicalStoreId),
+    legacyProductCount: legacyProducts.length,
+    canonicalProductCount: canonicalProducts.length,
+    mergedProductCount: mergedProducts.length,
+  });
 
   return {
     source: 'authenticated_client_snapshot',
     generatedAt: new Date().toISOString(),
     store: null,
-    products,
+    products: mergedProducts,
     productCount: mergedProducts.length,
-    productsTruncated,
+    productsTruncated: false,
     pendingOrders: [],
     pendingOrderCount: 0,
     ordersTruncated: false,
@@ -312,46 +384,23 @@ const authoritativeCatalogContext = async (
   };
 };
 
-const deterministicResponse = (
-  reply: string,
-  turnContext?: ReturnType<typeof resolveKyrubiaDeterministicErpRead> extends infer Result
-    ? Result extends { turnContext?: infer TurnContext }
-      ? TurnContext
-      : never
-    : never
-): Record<string, unknown> => ({
-  status: 'deterministic',
-  reply,
-  provider: 'kyrub',
-  model: 'kyrub-runtime-v1',
-  mode: 'deterministic',
-  requestId: randomUUID(),
-  ...(turnContext ? { turnContext } : {}),
-  capabilities: {
-    actionsEnabled: true,
-    enabledActions: ['create_note'],
-    enabledReadActions: [
-      'read_store_summary',
-      'list_products',
-      'list_low_stock_products',
-      'list_pending_orders',
-    ],
-    voiceEnabled: false,
-    persistentCloudHistoryEnabled: false,
-    multimodalAttachmentsEnabled: false,
-    providerResilienceEnabled: false,
-    usageMeteringEnabled: true,
-  },
-  funding: 'none',
-  usage: {},
-});
-
-const deterministicCatalogRead = async (
+const deterministicOperationalRead = async (
   authorization: string,
-  input: unknown
+  input: unknown,
+  traceId: string
 ): Promise<Record<string, unknown> | null> => {
   const message = latestUserMessage(input);
-  if (!message || !looksLikeCatalogCategoryRead(message)) return null;
+  if (!message) return null;
+
+  const intent = routeKyrubiaLocalProductIntent(message);
+  if (!intent) return null;
+
+  logDecision(traceId, {
+    stage: 'intent_classified',
+    decision: 'operational_product_read',
+    kind: intent.kind,
+    matchedConcepts: intent.matchedConcepts,
+  });
 
   let user: Awaited<ReturnType<typeof authenticateConsultantRequest>>;
   try {
@@ -359,53 +408,103 @@ const deterministicCatalogRead = async (
   } catch (error) {
     console.error(
       '[kyrubia-authoritative-catalog] authentication failed',
-      record(error).code ?? (error instanceof Error ? error.message : 'unknown')
+      JSON.stringify({
+        requestId: traceId,
+        code: record(error).code ?? (error instanceof Error ? error.message : 'unknown'),
+      })
     );
     if (isTransientAuthUnavailable(error)) {
-      const clientResolved = resolveClientCatalogRead(message, input);
-      if (clientResolved) return clientResolved;
+      const clientResolved = resolveClientCatalogRead(message, input, traceId);
+      if (clientResolved) {
+        logDecision(traceId, {
+          stage: 'resolved',
+          decision: 'operational_product_read',
+          source: 'client_snapshot_after_auth_unavailable',
+          kind: intent.kind,
+        });
+        return clientResolved;
+      }
+      return deterministicResponse(
+        'Identifiquei que esta é uma consulta operacional da sua loja, mas não consegui acessar o catálogo agora. Tente novamente em instantes.',
+        undefined,
+        traceId
+      );
     }
     throw error;
   }
 
   let context: KyrubErpContextSnapshot;
   try {
-    context = await authoritativeCatalogContext(user.uid);
+    context = await authoritativeCatalogContext(user.uid, traceId);
   } catch (error) {
     console.error(
-      '[kyrubia-authoritative-catalog] category read unavailable',
-      error instanceof Error ? error.message : 'unknown'
+      '[kyrubia-authoritative-catalog] operational read unavailable',
+      JSON.stringify({
+        requestId: traceId,
+        error: error instanceof Error ? error.message : 'unknown',
+      })
     );
-    const clientResolved = resolveClientCatalogRead(message, input);
-    if (clientResolved) return clientResolved;
+    const clientResolved = resolveClientCatalogRead(message, input, traceId);
+    if (clientResolved) {
+      logDecision(traceId, {
+        stage: 'resolved',
+        decision: 'operational_product_read',
+        source: 'client_snapshot_after_catalog_unavailable',
+        kind: intent.kind,
+      });
+      return clientResolved;
+    }
     return deterministicResponse(
-      'Não consegui consultar o catálogo da sua loja nesta solicitação. Tente novamente em instantes.'
+      'Identifiquei que esta é uma consulta operacional da sua loja, mas não consegui acessar o catálogo agora. Tente novamente em instantes.',
+      undefined,
+      traceId
     );
   }
 
   const resolved = resolveKyrubiaDeterministicErpRead(message, context);
   if (!resolved) {
-    const clientResolved = resolveClientCatalogRead(message, input);
-    if (clientResolved) return clientResolved;
+    const clientResolved = resolveClientCatalogRead(message, input, traceId);
+    if (clientResolved) {
+      logDecision(traceId, {
+        stage: 'resolved',
+        decision: 'operational_product_read',
+        source: 'client_snapshot_after_parser_miss',
+        kind: intent.kind,
+      });
+      return clientResolved;
+    }
     return deterministicResponse(
-      'Entendi que você quer consultar produtos por categoria, mas não consegui identificar o filtro de categoria com segurança. Informe apenas o nome da categoria e eu consulto o catálogo da sua loja.'
+      'Entendi que você quer consultar os produtos da sua loja, mas não consegui interpretar o filtro com segurança. Reformule a consulta informando o critério desejado.',
+      undefined,
+      traceId
     );
   }
 
-  return deterministicResponse(resolved.reply, resolved.turnContext);
+  logDecision(traceId, {
+    stage: 'resolved',
+    decision: 'operational_product_read',
+    source: 'authoritative_catalog',
+    kind: intent.kind,
+    action: resolved.action,
+  });
+  return deterministicResponse(resolved.reply, resolved.turnContext, traceId);
 };
 
 export const handleKyrubiaUserAiChatServerlessRequest = async (
   request: RequestLike,
   response: ResponseLike
 ): Promise<void> => {
+  const traceId = requestTraceId(request);
   response.setHeader('Cache-Control', 'no-store, max-age=0');
   response.setHeader('Content-Type', 'application/json; charset=utf-8');
+  setDiagnosticHeaders(response, traceId, 'route_entered');
 
   if ((request.method?.toUpperCase() || 'GET') !== 'POST') {
+    setDiagnosticHeaders(response, traceId, 'method_not_allowed');
     response.status(405).json({
       error: 'Método não permitido.',
       code: 'METHOD_NOT_ALLOWED',
+      requestId: traceId,
     });
     return;
   }
@@ -414,19 +513,33 @@ export const handleKyrubiaUserAiChatServerlessRequest = async (
     request.headers.authorization ?? request.headers.Authorization
   );
 
-  const deterministic = await deterministicCatalogRead(
+  const deterministic = await deterministicOperationalRead(
     authorization,
-    request.body
+    request.body,
+    traceId
   );
   if (deterministic) {
+    setDiagnosticHeaders(response, traceId, 'operational_product_read');
     response.status(200).json(deterministic);
     return;
   }
 
+  setDiagnosticHeaders(response, traceId, 'provider_chat');
+  logDecision(traceId, {
+    stage: 'delegated',
+    decision: 'provider_chat',
+  });
   const providerChat = await import('./kyrubiaUserProviderChatService.js');
   const result = await providerChat.executeAuthorizedKyrubiaUserProviderChat(
     authorization,
     request.body
   );
+  logDecision(traceId, {
+    stage: 'provider_result',
+    decision: 'provider_chat',
+    httpStatus: result.httpStatus,
+    status: record(result.body).status ?? '',
+    code: record(result.body).code ?? '',
+  });
   response.status(result.httpStatus).json(result.body);
 };
