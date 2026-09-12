@@ -5,6 +5,7 @@ const ROOT = process.cwd();
 const API_ROOT = path.join(ROOT, 'api');
 const SOURCE_EXTENSIONS = ['.ts', '.tsx', '.mts', '.cts'];
 const RUNTIME_EXTENSIONS = new Set(['.js', '.mjs', '.cjs', '.json', '.node', '.wasm']);
+const TRANSITIVE_RUNTIME_EXTENSIONS = new Set(['.js', '.mjs', '.cjs']);
 
 const toPosix = value => value.split(path.sep).join('/');
 
@@ -40,6 +41,30 @@ const resolveRelativeSource = (fromFile, specifier) => {
   return null;
 };
 
+const resolveRuntimeBackedSource = (fromFile, specifier) => {
+  const runtimeExtension = path.extname(specifier);
+  if (!TRANSITIVE_RUNTIME_EXTENSIONS.has(runtimeExtension)) return null;
+
+  const withoutRuntimeExtension = specifier.slice(0, -runtimeExtension.length);
+  const base = path.resolve(path.dirname(fromFile), withoutRuntimeExtension);
+  for (const extension of SOURCE_EXTENSIONS) {
+    const candidate = `${base}${extension}`;
+    if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) {
+      return { source: candidate, runtimeSpecifier: specifier };
+    }
+  }
+
+  return null;
+};
+
+const resolveReachableSource = (fromFile, specifier) => {
+  if (!specifier.startsWith('.')) return null;
+  if (RUNTIME_EXTENSIONS.has(path.extname(specifier))) {
+    return resolveRuntimeBackedSource(fromFile, specifier);
+  }
+  return resolveRelativeSource(fromFile, specifier);
+};
+
 const SPECIFIER_PATTERNS = [
   /(\b(?:import|export)\s+(?:type\s+)?(?:[^'";]*?\s+from\s+)?)(['"])(\.{1,2}\/[^'"\n]+)(\2)/g,
   /(\bimport\s*\(\s*)(['"])(\.{1,2}\/[^'"\n]+)(\2)(\s*\))/g,
@@ -69,9 +94,7 @@ while (queue.length > 0) {
 
   const content = fs.readFileSync(normalized, 'utf8');
   for (const specifier of collectRelativeSpecifiers(content)) {
-    if (!specifier.startsWith('.')) continue;
-    if (RUNTIME_EXTENSIONS.has(path.extname(specifier))) continue;
-    const resolved = resolveRelativeSource(normalized, specifier);
+    const resolved = resolveReachableSource(normalized, specifier);
     if (resolved && !reachable.has(resolved.source)) queue.push(resolved.source);
   }
 }
