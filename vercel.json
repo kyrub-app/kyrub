@@ -10,6 +10,17 @@
   },
   "rewrites": [
     {
+      "source": "/api/action-execute",
+      "has": [
+        {
+          "type": "query",
+          "key": "transport",
+          "value": "kyrubia-user-ai-chat"
+        }
+      ],
+      "destination": "/api/health"
+    },
+    {
       "source": "/api/store-connections/:path*",
       "destination": "/api/health?transport=store-connections&path=:path*"
     },
