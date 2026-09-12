@@ -10,6 +10,7 @@ import {
 import { resolveKyrubiaDeterministicErpRead } from '../../shared/kyrubiaDeterministicErp';
 import { resolveKyrubiaDeterministicNote } from '../../shared/kyrubiaDeterministicNote';
 import { resolveKyrubiaDeterministicTask } from '../../shared/kyrubiaDeterministicTask';
+import { routeKyrubiaLocalProductIntent } from '../../shared/kyrubiaIntentRouter';
 import {
   describeKyrubiaTurnSelection,
   resolveKyrubiaContextualRecall,
@@ -163,6 +164,12 @@ export const requestKyrubAiConsultant = async (
 
   const requestPayload = prepareKyrubAiOpportunityContinuation(payload);
   const latestUserMessage = requestPayload.messages.at(-1);
+  const localProductReadIntent = latestUserMessage?.role === 'user'
+    ? routeKyrubiaLocalProductIntent(
+        latestUserMessage.content,
+        { turnContext: requestPayload.turnContext }
+      )
+    : null;
 
   const missingContextReply = latestUserMessage?.role === 'user'
     ? resolveKyrubiaMissingContextReply(
@@ -585,31 +592,56 @@ export const requestKyrubAiConsultant = async (
     : contextualPayload;
 
   let lastNetworkFailure: unknown = null;
+  const networkRequestId = createRuntimeRequestId();
+  const endpoints = localProductReadIntent
+    ? [KYRUB_AI_CONSULTANT_ENDPOINT]
+    : CONSULTANT_ENDPOINTS;
+  const networkIntent = localProductReadIntent
+    ? `product_query:${localProductReadIntent.kind}`
+    : 'general';
 
-  for (const [index, endpoint] of CONSULTANT_ENDPOINTS.entries()) {
+  for (const [index, endpoint] of endpoints.entries()) {
     let response: Response;
     try {
+      console.info('[Kyrubia] Chat route attempt.', {
+        requestId: networkRequestId,
+        endpoint,
+        intent: networkIntent,
+      });
       response = await fetch(endpoint, {
         method: 'POST',
         headers: {
           authorization: `Bearer ${token}`,
           'content-type': 'application/json',
           accept: 'application/json',
+          'x-kyrub-request-id': networkRequestId,
+          'x-kyrub-intent': networkIntent,
         },
         body: JSON.stringify(enrichedPayload),
         cache: 'no-store',
         credentials: 'same-origin',
         signal,
       });
+      console.info('[Kyrubia] Chat route result.', {
+        requestId: networkRequestId,
+        endpoint,
+        intent: networkIntent,
+        status: response.status,
+        route: response.headers.get('x-kyrub-route'),
+        decision: response.headers.get('x-kyrub-decision'),
+        release: response.headers.get('x-kyrub-release'),
+      });
     } catch (error) {
       if (signal?.aborted) throw error;
       lastNetworkFailure = error;
+      if (localProductReadIntent) break;
       continue;
     }
 
     const body = await readResponseBody(response);
-    const hasAnotherEndpoint = index < CONSULTANT_ENDPOINTS.length - 1;
+    const hasAnotherEndpoint = index < endpoints.length - 1;
     const canTryCompatibilityRoute =
+      !localProductReadIntent &&
       hasAnotherEndpoint &&
       (response.status === 404 ||
         response.status === 405 ||
@@ -619,6 +651,13 @@ export const requestKyrubAiConsultant = async (
 
     if (!response.ok) {
       const normalized = normalizeConsultantError(body);
+      if (localProductReadIntent && response.status >= 500) {
+        throw new KyrubAiClientError(
+          'Identifiquei que esta é uma consulta operacional da sua loja, mas o catálogo está temporariamente indisponível. Tente novamente em instantes.',
+          normalized.code || 'OPERATIONAL_DATA_UNAVAILABLE',
+          response.status
+        );
+      }
       throw new KyrubAiClientError(
         normalized.message,
         normalized.code,
@@ -646,7 +685,18 @@ export const requestKyrubAiConsultant = async (
     return result;
   }
 
-  console.warn('[Kyrubia] AI endpoint connection failed.', lastNetworkFailure);
+  console.warn('[Kyrubia] AI endpoint connection failed.', {
+    requestId: networkRequestId,
+    intent: networkIntent,
+    error: lastNetworkFailure,
+  });
+  if (localProductReadIntent) {
+    throw new KyrubAiClientError(
+      'Identifiquei que esta é uma consulta operacional da sua loja, mas não consegui conectar ao catálogo agora. Tente novamente em instantes.',
+      'OPERATIONAL_DATA_UNAVAILABLE',
+      503
+    );
+  }
   throw new KyrubAiClientError(
     'Não foi possível conectar ao servidor da Kyrubia. Verifique sua internet e tente novamente.',
     'AI_UNAVAILABLE',
