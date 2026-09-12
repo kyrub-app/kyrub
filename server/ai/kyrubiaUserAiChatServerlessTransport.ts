@@ -6,7 +6,6 @@ import type {
 import { resolveKyrubiaDeterministicErpRead } from '../../shared/kyrubiaDeterministicErp.js';
 import { adminDb } from '../firebaseAdmin.js';
 import { authenticateConsultantRequest } from './consultantAuth.js';
-import { executeAuthorizedKyrubiaUserProviderChat } from './kyrubiaUserProviderChatService.js';
 
 type HeaderValue = string | string[] | undefined;
 
@@ -31,6 +30,12 @@ type CanonicalProductCandidate = {
   id: string;
   data: Record<string, unknown>;
   archived: boolean;
+};
+
+type LegacyCatalogSource = {
+  available: boolean;
+  products: KyrubErpProductSummary[];
+  canonicalStoreId: string;
 };
 
 const MAX_PRODUCTS_IN_CONTEXT = 120;
@@ -108,6 +113,61 @@ const productSummary = (
   };
 };
 
+const clientCatalogContext = (input: unknown): KyrubErpContextSnapshot | null => {
+  const body = record(input);
+  const rawContext = record(body.erpContext);
+  const availability = record(rawContext.availability);
+  if (availability.products !== true || !Array.isArray(rawContext.products)) {
+    return null;
+  }
+
+  const allProducts = rawContext.products.flatMap(value => {
+    const product = productSummary(value);
+    return product ? [product] : [];
+  });
+  const productCount = Math.max(
+    allProducts.length,
+    Math.trunc(finiteNumber(rawContext.productCount, allProducts.length))
+  );
+  const products = allProducts.slice(0, MAX_PRODUCTS_IN_CONTEXT);
+
+  return {
+    source: 'authenticated_client_snapshot',
+    generatedAt: cleanText(rawContext.generatedAt, 80) || new Date().toISOString(),
+    store: null,
+    products,
+    productCount,
+    productsTruncated: rawContext.productsTruncated === true || productCount > products.length,
+    pendingOrders: [],
+    pendingOrderCount: 0,
+    ordersTruncated: false,
+    lowStockThreshold: Math.max(0, finiteNumber(rawContext.lowStockThreshold, 5)),
+    availability: {
+      store: false,
+      products: true,
+      orders: false,
+    },
+    warnings: ['Catálogo respondido a partir do snapshot autenticado já carregado no aplicativo.'],
+  };
+};
+
+const resolveClientCatalogRead = (
+  message: string,
+  input: unknown
+): Record<string, unknown> | null => {
+  const context = clientCatalogContext(input);
+  if (!context) return null;
+  const resolved = resolveKyrubiaDeterministicErpRead(message, context);
+  return resolved
+    ? deterministicResponse(resolved.reply, resolved.turnContext)
+    : null;
+};
+
+const isTransientAuthUnavailable = (error: unknown): boolean => {
+  const candidate = record(error);
+  return candidate.status === 503 && candidate.code === 'AUTH_UNAVAILABLE';
+};
+
 const findCanonicalStoreForOwner = async (
   uid: string
 ): Promise<CanonicalStoreCandidate | null> => {
@@ -130,9 +190,11 @@ const findCanonicalStoreForOwner = async (
 
 const readLegacyProducts = async (
   uid: string
-): Promise<{ available: boolean; products: KyrubErpProductSummary[] }> => {
+): Promise<LegacyCatalogSource> => {
   const snapshot = await adminDb.doc(`tenants/${uid}`).get();
-  if (!snapshot.exists) return { available: true, products: [] };
+  if (!snapshot.exists) {
+    return { available: true, products: [], canonicalStoreId: '' };
+  }
   const data = snapshot.data() as Record<string, unknown>;
   const rawProducts = Array.isArray(data.publicProducts) ? data.publicProducts : [];
   return {
@@ -141,6 +203,7 @@ const readLegacyProducts = async (
       const product = productSummary(value);
       return product ? [product] : [];
     }),
+    canonicalStoreId: cleanText(data.canonicalStoreId, 160),
   };
 };
 
@@ -189,11 +252,13 @@ const authoritativeCatalogContext = async (
   let canonicalAvailable = false;
   let legacyProducts: KyrubErpProductSummary[] = [];
   let canonicalProducts: CanonicalProductCandidate[] = [];
+  let canonicalStoreId = '';
 
   try {
     const legacy = await readLegacyProducts(uid);
     legacyAvailable = legacy.available;
     legacyProducts = legacy.products;
+    canonicalStoreId = legacy.canonicalStoreId;
   } catch (error) {
     warnings.push('O espelho legado do catálogo não pôde ser consultado.');
     console.warn(
@@ -202,11 +267,13 @@ const authoritativeCatalogContext = async (
     );
   }
 
-  let canonicalStore: CanonicalStoreCandidate | null = null;
   try {
-    canonicalStore = await findCanonicalStoreForOwner(uid);
-    if (canonicalStore) {
-      canonicalProducts = await readCanonicalProducts(canonicalStore.id);
+    if (!canonicalStoreId) {
+      const canonicalStore = await findCanonicalStoreForOwner(uid);
+      canonicalStoreId = canonicalStore?.id ?? '';
+    }
+    if (canonicalStoreId) {
+      canonicalProducts = await readCanonicalProducts(canonicalStoreId);
       canonicalAvailable = true;
     }
   } catch (error) {
@@ -286,7 +353,21 @@ const deterministicCatalogRead = async (
   const message = latestUserMessage(input);
   if (!message || !looksLikeCatalogCategoryRead(message)) return null;
 
-  const user = await authenticateConsultantRequest(authorization);
+  let user: Awaited<ReturnType<typeof authenticateConsultantRequest>>;
+  try {
+    user = await authenticateConsultantRequest(authorization);
+  } catch (error) {
+    console.error(
+      '[kyrubia-authoritative-catalog] authentication failed',
+      record(error).code ?? (error instanceof Error ? error.message : 'unknown')
+    );
+    if (isTransientAuthUnavailable(error)) {
+      const clientResolved = resolveClientCatalogRead(message, input);
+      if (clientResolved) return clientResolved;
+    }
+    throw error;
+  }
+
   let context: KyrubErpContextSnapshot;
   try {
     context = await authoritativeCatalogContext(user.uid);
@@ -295,6 +376,8 @@ const deterministicCatalogRead = async (
       '[kyrubia-authoritative-catalog] category read unavailable',
       error instanceof Error ? error.message : 'unknown'
     );
+    const clientResolved = resolveClientCatalogRead(message, input);
+    if (clientResolved) return clientResolved;
     return deterministicResponse(
       'Não consegui consultar o catálogo da sua loja nesta solicitação. Tente novamente em instantes.'
     );
@@ -302,6 +385,8 @@ const deterministicCatalogRead = async (
 
   const resolved = resolveKyrubiaDeterministicErpRead(message, context);
   if (!resolved) {
+    const clientResolved = resolveClientCatalogRead(message, input);
+    if (clientResolved) return clientResolved;
     return deterministicResponse(
       'Entendi que você quer consultar produtos por categoria, mas não consegui identificar o filtro de categoria com segurança. Informe apenas o nome da categoria e eu consulto o catálogo da sua loja.'
     );
@@ -338,7 +423,8 @@ export const handleKyrubiaUserAiChatServerlessRequest = async (
     return;
   }
 
-  const result = await executeAuthorizedKyrubiaUserProviderChat(
+  const providerChat = await import('./kyrubiaUserProviderChatService.js');
+  const result = await providerChat.executeAuthorizedKyrubiaUserProviderChat(
     authorization,
     request.body
   );
