@@ -5,14 +5,14 @@ import test from 'node:test';
 const shared = readFileSync('shared/aiConsultant.ts', 'utf8');
 const client = readFileSync('src/ai/consultantClient.ts', 'utf8');
 const multimodal = readFileSync('src/ai/multimodalConsultantClient.ts', 'utf8');
-const actionExecute = readFileSync('api/action-execute.ts', 'utf8');
+const health = readFileSync('api/health.ts', 'utf8');
 const chatService = readFileSync('server/ai/kyrubiaUserProviderChatService.ts', 'utf8');
 const systemInstruction = readFileSync('server/ai/kyrubiaSystemInstruction.ts', 'utf8');
 
-test('text consultant tries BYO-AI through the existing action-execute function before platform inference', () => {
+test('text consultant reaches the dedicated Kyrubia chat transport before platform inference', () => {
   assert.match(
     shared,
-    /KYRUB_AI_CONSULTANT_ENDPOINT\s*=\s*[\s\S]*transport=kyrubia-user-ai-chat/
+    /KYRUB_AI_CONSULTANT_ENDPOINT\s*=\s*[\s\S]*\/api\/health\?transport=kyrubia-user-ai-chat/
   );
   assert.match(shared, /KYRUB_AI_CONSULTANT_COMPAT_ENDPOINT = KYRUB_AI_PLATFORM_CONSULTANT_ENDPOINT/);
   assert.match(client, /const CONSULTANT_ENDPOINTS = \[/);
@@ -48,8 +48,8 @@ test('BYO-AI success is explicitly user-funded and does not debit Kyrubia Credit
   assert.doesNotMatch(chatService, /debit|charge.*credit|kyrubia_credits/i);
 });
 
-test('cutover reuses action-execute rather than introducing another API function', () => {
-  assert.match(actionExecute, /transport === 'kyrubia-user-ai-chat'/);
-  assert.match(actionExecute, /kyrubiaUserProviderChatService\.js/);
-  assert.match(actionExecute, /executeAuthorizedKyrubiaUserProviderChat/);
+test('health transport owns the deterministic chat interception before provider delegation', () => {
+  assert.match(health, /transport === 'kyrubia-user-ai-chat'/);
+  assert.match(health, /kyrubiaUserAiChatServerlessTransport\.js/);
+  assert.match(health, /handleKyrubiaUserAiChatServerlessRequest/);
 });
