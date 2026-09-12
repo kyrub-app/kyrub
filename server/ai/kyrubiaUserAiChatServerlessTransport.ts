@@ -22,6 +22,19 @@ type ResponseLike = {
   json(body: unknown): void;
 };
 
+type CanonicalStoreCandidate = {
+  id: string;
+  data: Record<string, unknown>;
+};
+
+type CanonicalProductCandidate = {
+  id: string;
+  data: Record<string, unknown>;
+  archived: boolean;
+};
+
+const MAX_PRODUCTS_IN_CONTEXT = 120;
+
 const record = (value: unknown): Record<string, unknown> =>
   value && typeof value === 'object' && !Array.isArray(value)
     ? value as Record<string, unknown>
@@ -69,9 +82,12 @@ const looksLikeCatalogCategoryRead = (message: string): boolean => {
   return mentionsProducts && mentionsCategory && asksRead && !mutation;
 };
 
-const productSummary = (value: unknown): KyrubErpProductSummary | null => {
+const productSummary = (
+  value: unknown,
+  fallbackId = ''
+): KyrubErpProductSummary | null => {
   const product = record(value);
-  const id = cleanText(product.id, 160);
+  const id = cleanText(product.id, 160) || cleanText(fallbackId, 160);
   const name = cleanText(product.name, 180);
   if (!id || !name) return null;
 
@@ -85,31 +101,137 @@ const productSummary = (value: unknown): KyrubErpProductSummary | null => {
     stock: Math.max(0, Math.trunc(rawStock)),
     isService: product.isService === true,
     hasDescription: Boolean(cleanText(product.description, 1)),
-    hasImage: Boolean(cleanText(product.image, 1)),
+    hasImage: Boolean(
+      cleanText(product.image, 1) ||
+      (Array.isArray(product.images) && product.images.some(image => Boolean(cleanText(image, 1))))
+    ),
   };
+};
+
+const findCanonicalStoreForOwner = async (
+  uid: string
+): Promise<CanonicalStoreCandidate | null> => {
+  const snapshot = await adminDb.collection('stores').where('ownerId', '==', uid).get();
+  const matches = snapshot.docs
+    .map(document => ({
+      id: document.id,
+      data: document.data() as Record<string, unknown>,
+    }))
+    .filter(store =>
+      store.data.legacyTenantId === uid ||
+      (!cleanText(store.data.legacyTenantId, 160) && store.data.ownerId === uid)
+    );
+
+  if (matches.length > 1) {
+    throw new Error('STORE_IDENTITY_CONFLICT');
+  }
+  return matches[0] ?? null;
+};
+
+const readLegacyProducts = async (
+  uid: string
+): Promise<{ available: boolean; products: KyrubErpProductSummary[] }> => {
+  const snapshot = await adminDb.doc(`tenants/${uid}`).get();
+  if (!snapshot.exists) return { available: true, products: [] };
+  const data = snapshot.data() as Record<string, unknown>;
+  const rawProducts = Array.isArray(data.publicProducts) ? data.publicProducts : [];
+  return {
+    available: true,
+    products: rawProducts.flatMap(value => {
+      const product = productSummary(value);
+      return product ? [product] : [];
+    }),
+  };
+};
+
+const readCanonicalProducts = async (
+  storeId: string
+): Promise<CanonicalProductCandidate[]> => {
+  const snapshot = await adminDb.collection(`stores/${storeId}/products`).get();
+  return snapshot.docs.flatMap(document => {
+    const data = document.data() as Record<string, unknown>;
+    const id = cleanText(data.id, 160) || document.id;
+    if (!id) return [];
+    return [{
+      id,
+      data,
+      archived: data.publicationStatus === 'archived',
+    }];
+  });
+};
+
+const mergeCatalogProducts = (
+  legacyProducts: KyrubErpProductSummary[],
+  canonicalProducts: CanonicalProductCandidate[]
+): KyrubErpProductSummary[] => {
+  const productsById = new Map(
+    legacyProducts.map(product => [product.id, product] as const)
+  );
+
+  for (const canonical of canonicalProducts) {
+    if (canonical.archived) {
+      productsById.delete(canonical.id);
+      continue;
+    }
+    const product = productSummary(canonical.data, canonical.id);
+    if (product) productsById.set(product.id, product);
+  }
+
+  return [...productsById.values()]
+    .sort((left, right) => left.name.localeCompare(right.name, 'pt-BR'));
 };
 
 const authoritativeCatalogContext = async (
   uid: string
 ): Promise<KyrubErpContextSnapshot> => {
-  const snapshot = await adminDb.doc(`tenants/${uid}`).get();
-  const data = snapshot.data() as Record<string, unknown> | undefined;
-  const products = Array.isArray(data?.publicProducts)
-    ? data.publicProducts
-        .flatMap(value => {
-          const product = productSummary(value);
-          return product ? [product] : [];
-        })
-        .slice(0, 120)
-    : [];
+  const warnings: string[] = [];
+  let legacyAvailable = false;
+  let canonicalAvailable = false;
+  let legacyProducts: KyrubErpProductSummary[] = [];
+  let canonicalProducts: CanonicalProductCandidate[] = [];
+
+  try {
+    const legacy = await readLegacyProducts(uid);
+    legacyAvailable = legacy.available;
+    legacyProducts = legacy.products;
+  } catch (error) {
+    warnings.push('O espelho legado do catálogo não pôde ser consultado.');
+    console.warn(
+      '[kyrubia-authoritative-catalog] legacy read failed',
+      error instanceof Error ? error.message : 'unknown'
+    );
+  }
+
+  let canonicalStore: CanonicalStoreCandidate | null = null;
+  try {
+    canonicalStore = await findCanonicalStoreForOwner(uid);
+    if (canonicalStore) {
+      canonicalProducts = await readCanonicalProducts(canonicalStore.id);
+      canonicalAvailable = true;
+    }
+  } catch (error) {
+    warnings.push('O catálogo canônico não pôde ser consultado.');
+    console.warn(
+      '[kyrubia-authoritative-catalog] canonical read failed',
+      error instanceof Error ? error.message : 'unknown'
+    );
+  }
+
+  if (!legacyAvailable && !canonicalAvailable) {
+    throw new Error('AUTHORITATIVE_CATALOG_UNAVAILABLE');
+  }
+
+  const mergedProducts = mergeCatalogProducts(legacyProducts, canonicalProducts);
+  const productsTruncated = mergedProducts.length > MAX_PRODUCTS_IN_CONTEXT;
+  const products = mergedProducts.slice(0, MAX_PRODUCTS_IN_CONTEXT);
 
   return {
     source: 'authenticated_client_snapshot',
     generatedAt: new Date().toISOString(),
     store: null,
     products,
-    productCount: products.length,
-    productsTruncated: false,
+    productCount: mergedProducts.length,
+    productsTruncated,
     pendingOrders: [],
     pendingOrderCount: 0,
     ordersTruncated: false,
@@ -119,9 +241,43 @@ const authoritativeCatalogContext = async (
       products: true,
       orders: false,
     },
-    warnings: [],
+    warnings,
   };
 };
+
+const deterministicResponse = (
+  reply: string,
+  turnContext?: ReturnType<typeof resolveKyrubiaDeterministicErpRead> extends infer Result
+    ? Result extends { turnContext?: infer TurnContext }
+      ? TurnContext
+      : never
+    : never
+): Record<string, unknown> => ({
+  status: 'deterministic',
+  reply,
+  provider: 'kyrub',
+  model: 'kyrub-runtime-v1',
+  mode: 'deterministic',
+  requestId: randomUUID(),
+  ...(turnContext ? { turnContext } : {}),
+  capabilities: {
+    actionsEnabled: true,
+    enabledActions: ['create_note'],
+    enabledReadActions: [
+      'read_store_summary',
+      'list_products',
+      'list_low_stock_products',
+      'list_pending_orders',
+    ],
+    voiceEnabled: false,
+    persistentCloudHistoryEnabled: false,
+    multimodalAttachmentsEnabled: false,
+    providerResilienceEnabled: false,
+    usageMeteringEnabled: true,
+  },
+  funding: 'none',
+  usage: {},
+});
 
 const deterministicCatalogRead = async (
   authorization: string,
@@ -131,39 +287,27 @@ const deterministicCatalogRead = async (
   if (!message || !looksLikeCatalogCategoryRead(message)) return null;
 
   const user = await authenticateConsultantRequest(authorization);
-  const context = await authoritativeCatalogContext(user.uid);
-  const resolved = resolveKyrubiaDeterministicErpRead(message, context);
-  const categoryFilter = resolved?.queryPlan?.filters.find(
-    filter => filter.field === 'category'
-  );
-  if (!resolved || !categoryFilter) return null;
+  let context: KyrubErpContextSnapshot;
+  try {
+    context = await authoritativeCatalogContext(user.uid);
+  } catch (error) {
+    console.error(
+      '[kyrubia-authoritative-catalog] category read unavailable',
+      error instanceof Error ? error.message : 'unknown'
+    );
+    return deterministicResponse(
+      'Não consegui consultar o catálogo da sua loja nesta solicitação. Tente novamente em instantes.'
+    );
+  }
 
-  return {
-    status: 'deterministic',
-    reply: resolved.reply,
-    provider: 'kyrub',
-    model: 'kyrub-runtime-v1',
-    mode: 'deterministic',
-    requestId: randomUUID(),
-    ...(resolved.turnContext ? { turnContext: resolved.turnContext } : {}),
-    capabilities: {
-      actionsEnabled: true,
-      enabledActions: ['create_note'],
-      enabledReadActions: [
-        'read_store_summary',
-        'list_products',
-        'list_low_stock_products',
-        'list_pending_orders',
-      ],
-      voiceEnabled: false,
-      persistentCloudHistoryEnabled: false,
-      multimodalAttachmentsEnabled: false,
-      providerResilienceEnabled: false,
-      usageMeteringEnabled: true,
-    },
-    funding: 'none',
-    usage: {},
-  };
+  const resolved = resolveKyrubiaDeterministicErpRead(message, context);
+  if (!resolved) {
+    return deterministicResponse(
+      'Entendi que você quer consultar produtos por categoria, mas não consegui identificar o filtro de categoria com segurança. Informe apenas o nome da categoria e eu consulto o catálogo da sua loja.'
+    );
+  }
+
+  return deterministicResponse(resolved.reply, resolved.turnContext);
 };
 
 export const handleKyrubiaUserAiChatServerlessRequest = async (
