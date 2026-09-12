@@ -180,7 +180,7 @@ const deterministicResponse = (
       ? TurnContext
       : never
     : never,
-  requestId = randomUUID()
+  requestId: string = randomUUID()
 ): Record<string, unknown> => ({
   status: 'deterministic',
   reply,
