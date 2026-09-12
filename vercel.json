@@ -18,7 +18,7 @@
           "value": "kyrubia-user-ai-chat"
         }
       ],
-      "destination": "/api/health"
+      "destination": "/api/health?transport=kyrubia-user-ai-chat"
     },
     {
       "source": "/api/store-connections/:path*",
