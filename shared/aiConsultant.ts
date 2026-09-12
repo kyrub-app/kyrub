@@ -28,7 +28,7 @@ export type KyrubAiActionProposal =
 
 export const KYRUB_AI_PLATFORM_CONSULTANT_ENDPOINT = '/api/consultor-kyrub';
 export const KYRUB_AI_CONSULTANT_ENDPOINT =
-  '/api/action-execute?transport=kyrubia-user-ai-chat';
+  '/api/health?transport=kyrubia-user-ai-chat';
 export const KYRUB_AI_CATALOG_ANALYSIS_ENDPOINT = KYRUB_AI_PLATFORM_CONSULTANT_ENDPOINT;
 export const KYRUB_AI_CONSULTANT_COMPAT_ENDPOINT = KYRUB_AI_PLATFORM_CONSULTANT_ENDPOINT;
 export const KYRUB_AI_CONSULTANT_LEGACY_ENDPOINT = '/api/ai/consultant';
