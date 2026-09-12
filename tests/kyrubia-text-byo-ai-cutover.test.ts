@@ -7,6 +7,7 @@ const client = readFileSync('src/ai/consultantClient.ts', 'utf8');
 const multimodal = readFileSync('src/ai/multimodalConsultantClient.ts', 'utf8');
 const health = readFileSync('api/health.ts', 'utf8');
 const actionExecute = readFileSync('api/action-execute.ts', 'utf8');
+const chatTransport = readFileSync('server/ai/kyrubiaUserAiChatServerlessTransport.ts', 'utf8');
 const chatService = readFileSync('server/ai/kyrubiaUserProviderChatService.ts', 'utf8');
 const systemInstruction = readFileSync('server/ai/kyrubiaSystemInstruction.ts', 'utf8');
 
@@ -63,4 +64,23 @@ test('legacy action-execute chat transport uses the same deterministic authority
     actionExecute,
     /transport === 'kyrubia-user-ai-chat'[\s\S]{0,500}kyrubiaUserProviderChatService\.js/
   );
+});
+
+test('category transport can recover from transient auth failure with the authenticated client ERP snapshot', () => {
+  assert.match(chatTransport, /clientCatalogContext/);
+  assert.match(chatTransport, /body\.erpContext/);
+  assert.match(chatTransport, /isTransientAuthUnavailable/);
+  assert.match(chatTransport, /resolveClientCatalogRead\(message, input\)/);
+});
+
+test('category transport resolves the canonical store mapping recorded on the legacy tenant first', () => {
+  assert.match(chatTransport, /canonicalStoreId: cleanText\(data\.canonicalStoreId, 160\)/);
+  assert.match(chatTransport, /if \(!canonicalStoreId\)[\s\S]*findCanonicalStoreForOwner\(uid\)/);
+  assert.match(chatTransport, /stores\/\$\{storeId\}\/products/);
+});
+
+test('provider service is lazy-loaded only after deterministic category handling', () => {
+  assert.doesNotMatch(chatTransport, /^import .*kyrubiaUserProviderChatService\.js/m);
+  assert.match(chatTransport, /const deterministic = await deterministicCatalogRead/);
+  assert.match(chatTransport, /await import\('\.\/kyrubiaUserProviderChatService\.js'\)/);
 });
