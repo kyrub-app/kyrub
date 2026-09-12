@@ -48,6 +48,15 @@ export class KyrubiaSharedToolError extends Error {
 const cleanText = (value: unknown, maximum: number): string =>
   typeof value === 'string' ? value.trim().slice(0, maximum) : '';
 
+const normalizeProductMatchText = (value: unknown): string =>
+  cleanText(value, 180)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLocaleLowerCase('pt-BR')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
 const optionalFiniteNumber = (value: unknown): number | undefined =>
   typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 
@@ -342,15 +351,16 @@ export const executeKyrubiaSharedReadTool = (
     if (!context.availability.products) {
       return { available: false, reason: 'products_unavailable', warnings: context.warnings };
     }
-    const search = cleanText(call.args.search, 120).toLocaleLowerCase('pt-BR');
-    const category = cleanText(call.args.category, 120).toLocaleLowerCase('pt-BR');
+    const search = normalizeProductMatchText(call.args.search);
+    const category = normalizeProductMatchText(call.args.category);
     const requestedLimit = clampInteger(call.args.limit, 20, 1, MAX_TOOL_ITEMS);
     const filtered = context.products.filter(product => {
+      const productName = normalizeProductMatchText(product.name);
+      const productCategory = normalizeProductMatchText(product.category);
       const matchesSearch = !search ||
-        product.name.toLocaleLowerCase('pt-BR').includes(search) ||
-        product.category.toLocaleLowerCase('pt-BR').includes(search);
-      const matchesCategory = !category ||
-        product.category.toLocaleLowerCase('pt-BR') === category;
+        productName.includes(search) ||
+        productCategory.includes(search);
+      const matchesCategory = !category || productCategory.includes(category);
       return matchesSearch && matchesCategory;
     });
     return {
