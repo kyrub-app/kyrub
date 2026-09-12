@@ -66,11 +66,11 @@ test('legacy action-execute chat transport uses the same deterministic authority
   );
 });
 
-test('category transport can recover from transient auth failure with the authenticated client ERP snapshot', () => {
+test('operational product transport can recover from transient auth failure with the authenticated client ERP snapshot', () => {
   assert.match(chatTransport, /clientCatalogContext/);
   assert.match(chatTransport, /body\.erpContext/);
   assert.match(chatTransport, /isTransientAuthUnavailable/);
-  assert.match(chatTransport, /resolveClientCatalogRead\(message, input\)/);
+  assert.match(chatTransport, /resolveClientCatalogRead\(message, input, traceId\)/);
 });
 
 test('category transport resolves the canonical store mapping recorded on the legacy tenant first', () => {
@@ -79,8 +79,8 @@ test('category transport resolves the canonical store mapping recorded on the le
   assert.match(chatTransport, /stores\/\$\{storeId\}\/products/);
 });
 
-test('provider service is lazy-loaded only after deterministic category handling', () => {
+test('provider service is lazy-loaded only after deterministic operational handling', () => {
   assert.doesNotMatch(chatTransport, /^import .*kyrubiaUserProviderChatService\.js/m);
-  assert.match(chatTransport, /const deterministic = await deterministicCatalogRead/);
+  assert.match(chatTransport, /const deterministic = await deterministicOperationalRead/);
   assert.match(chatTransport, /await import\('\.\/kyrubiaUserProviderChatService\.js'\)/);
 });

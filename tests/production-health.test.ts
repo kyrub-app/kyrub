@@ -214,3 +214,28 @@ test('MCP exposes direct Kyrubia conversation only in proposal-only read mode', 
   assert.match(chat, /callKyrubMcpReadTool/);
   assert.doesNotMatch(chat, /mercadoLivrePostJson|mercadoLivrePutJson|runTransaction|transaction\.(?:set|update|delete)/);
 });
+
+test('Kyrubia operational product reads are terminal, canonical and observable', () => {
+  const client = readFileSync('src/ai/consultantClient.ts', 'utf8');
+  const health = readFileSync('api/health.ts', 'utf8');
+  const transport = readFileSync('server/ai/kyrubiaUserAiChatServerlessTransport.ts', 'utf8');
+
+  assert.match(client, /routeKyrubiaLocalProductIntent/);
+  assert.match(client, /localProductReadIntent[\s\S]*\? \[KYRUB_AI_CONSULTANT_ENDPOINT\]/);
+  assert.match(client, /!localProductReadIntent &&[\s\S]*hasAnotherEndpoint/);
+  assert.match(client, /'x-kyrub-request-id': networkRequestId/);
+  assert.match(client, /'x-kyrub-intent': networkIntent/);
+  assert.match(client, /OPERATIONAL_DATA_UNAVAILABLE/);
+
+  assert.match(health, /X-Kyrub-Release/);
+  assert.match(health, /X-Kyrub-Request-Id/);
+  assert.match(health, /kyrubia-user-ai-chat-entry/);
+  assert.match(health, /KYRUBIA_USER_AI_CHAT_TRANSPORT_UNAVAILABLE/);
+
+  assert.match(transport, /routeKyrubiaLocalProductIntent\(message\)/);
+  assert.match(transport, /decision: 'operational_product_read'/);
+  assert.match(transport, /products: mergedProducts/);
+  assert.match(transport, /productsTruncated: false/);
+  assert.match(transport, /X-Kyrub-Decision/);
+  assert.match(transport, /source: 'authoritative_catalog'/);
+});

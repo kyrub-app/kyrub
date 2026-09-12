@@ -55,11 +55,28 @@ const safeLogIdentifier = (value: unknown): string => {
   return /^[a-zA-Z0-9:_-]{1,160}$/.test(cleaned) ? cleaned : '';
 };
 
+const createTraceId = (): string =>
+  `kyrub-route-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+
+const requestTraceId = (request: RequestLike): string =>
+  safeLogIdentifier(
+    headerValue(
+      request.headers['x-kyrub-request-id']
+      ?? request.headers['X-Kyrub-Request-Id']
+    )
+  ) || createTraceId();
+
 export default async function handler(
   request: RequestLike,
   response: ResponseLike
 ): Promise<void> {
+  const traceId = requestTraceId(request);
   const transport = queryValue(request.query?.transport);
+  response.setHeader('X-Kyrub-Release', releaseIdentifier());
+  response.setHeader('X-Kyrub-Request-Id', traceId);
+  response.setHeader('X-Kyrub-Route', 'health-multiplexer');
+  response.setHeader('X-Kyrub-Decision', transport || 'health');
+
   if (transport === 'mcp') {
     await handleKyrubMcpRequest(request, response);
     return;
@@ -70,24 +87,40 @@ export default async function handler(
       const bridge = await import('../server/mcp/kyrubiaBridgeServerlessTransport.js');
       await bridge.handleKyrubiaBridgeServerlessRequest(request, response);
     } catch (error) {
-      console.error('[kyrubia-bridge-transport]', error instanceof Error ? error.message : 'unknown');
+      console.error('[kyrubia-bridge-transport]', JSON.stringify({
+        requestId: traceId,
+        error: error instanceof Error ? error.message : 'unknown',
+      }));
+      response.setHeader('X-Kyrub-Decision', 'kyrubia_bridge_transport_error');
       response.status(503).json({
         error: 'A ponte externa da Kyrubia está temporariamente indisponível.',
         code: 'KYRUBIA_BRIDGE_TRANSPORT_UNAVAILABLE',
+        requestId: traceId,
       });
     }
     return;
   }
 
   if (transport === 'kyrubia-user-ai-chat') {
+    console.info('[kyrubia-user-ai-chat-entry]', JSON.stringify({
+      requestId: traceId,
+      release: releaseIdentifier(),
+      transport,
+      method: request.method?.toUpperCase() || 'GET',
+    }));
     try {
       const chat = await import('../server/ai/kyrubiaUserAiChatServerlessTransport.js');
       await chat.handleKyrubiaUserAiChatServerlessRequest(request, response);
     } catch (error) {
-      console.error('[kyrubia-user-ai-chat-transport]', error instanceof Error ? error.message : 'unknown');
+      console.error('[kyrubia-user-ai-chat-transport]', JSON.stringify({
+        requestId: traceId,
+        error: error instanceof Error ? error.message : 'unknown',
+      }));
+      response.setHeader('X-Kyrub-Decision', 'kyrubia_user_ai_chat_transport_error');
       response.status(503).json({
         error: 'A conversa da Kyrubia está temporariamente indisponível.',
         code: 'KYRUBIA_USER_AI_CHAT_TRANSPORT_UNAVAILABLE',
+        requestId: traceId,
       });
     }
     return;
