@@ -79,6 +79,20 @@ export default async function handler(
     return;
   }
 
+  if (transport === 'kyrubia-user-ai-chat') {
+    try {
+      const chat = await import('../server/ai/kyrubiaUserAiChatServerlessTransport.js');
+      await chat.handleKyrubiaUserAiChatServerlessRequest(request, response);
+    } catch (error) {
+      console.error('[kyrubia-user-ai-chat-transport]', error instanceof Error ? error.message : 'unknown');
+      response.status(503).json({
+        error: 'A conversa da Kyrubia está temporariamente indisponível.',
+        code: 'KYRUBIA_USER_AI_CHAT_TRANSPORT_UNAVAILABLE',
+      });
+    }
+    return;
+  }
+
   if (transport === 'store-connections') {
     response.setHeader('Cache-Control', 'no-store, max-age=0');
     try {
