@@ -60,12 +60,8 @@ export default async function handler(
 
   if (transport === 'kyrubia-user-ai-chat') {
     try {
-      const chat = await import('../server/ai/kyrubiaUserProviderChatService.js');
-      const result = await chat.executeAuthorizedKyrubiaUserProviderChat(
-        authorization,
-        request.body
-      );
-      response.status(result.httpStatus).json(result.body);
+      const chat = await import('../server/ai/kyrubiaUserAiChatServerlessTransport.js');
+      await chat.handleKyrubiaUserAiChatServerlessRequest(request, response);
     } catch (error) {
       const vault = await import('../server/ai/userAiProviderCredentialService.js');
       const mapped = vault.mapUserAiProviderCredentialError(error);
