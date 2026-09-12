@@ -6,6 +6,7 @@ const shared = readFileSync('shared/aiConsultant.ts', 'utf8');
 const client = readFileSync('src/ai/consultantClient.ts', 'utf8');
 const multimodal = readFileSync('src/ai/multimodalConsultantClient.ts', 'utf8');
 const health = readFileSync('api/health.ts', 'utf8');
+const actionExecute = readFileSync('api/action-execute.ts', 'utf8');
 const chatService = readFileSync('server/ai/kyrubiaUserProviderChatService.ts', 'utf8');
 const systemInstruction = readFileSync('server/ai/kyrubiaSystemInstruction.ts', 'utf8');
 
@@ -52,4 +53,14 @@ test('health transport owns the deterministic chat interception before provider 
   assert.match(health, /transport === 'kyrubia-user-ai-chat'/);
   assert.match(health, /kyrubiaUserAiChatServerlessTransport\.js/);
   assert.match(health, /handleKyrubiaUserAiChatServerlessRequest/);
+});
+
+test('legacy action-execute chat transport uses the same deterministic authority', () => {
+  assert.match(actionExecute, /transport === 'kyrubia-user-ai-chat'/);
+  assert.match(actionExecute, /kyrubiaUserAiChatServerlessTransport\.js/);
+  assert.match(actionExecute, /handleKyrubiaUserAiChatServerlessRequest\(request, response\)/);
+  assert.doesNotMatch(
+    actionExecute,
+    /transport === 'kyrubia-user-ai-chat'[\s\S]{0,500}kyrubiaUserProviderChatService\.js/
+  );
 });
