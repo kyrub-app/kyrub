@@ -180,11 +180,34 @@ const recentActivityReply = (
   };
 };
 
+const asksForPrivateStoreState = (message: string): boolean => {
+  const intent = normalize(message);
+  const privateScope =
+    /\b(minha loja|meu catalogo|meus produtos|meus itens|meu estoque|meus pedidos)\b/.test(intent);
+  if (!privateScope) return false;
+
+  // Product rules, plan limits and how-to questions belong to the official
+  // Manual. Questions about the user's current store state belong to the
+  // authoritative ERP snapshot and must be allowed to fall through to it.
+  const officialRuleCue =
+    /\bplano\s+(pro|free|business)\b/.test(intent) ||
+    /\b(limite do plano|regra|regras|posso|pode|poderia|devo|preciso)\b/.test(intent) ||
+    /^(como|pra que|por que)\b/.test(intent) ||
+    /\bcomo\s+(?:cadastrar|publicar|ativar|funciona)\b/.test(intent);
+  if (officialRuleCue) return false;
+
+  const readFraming =
+    /^(qual|quais|quanto|quantos|quantas|liste|lista|mostre|mostra|exiba|exibe|me diga|o que tenho|o que eu tenho)\b/.test(intent);
+  if (!readFraming) return false;
+
+  return /\b(produto|produtos|item|itens|catalogo|categoria|categorias|cadastrado|cadastrados|cadastrada|cadastradas|tenho|tem|existe|existem|estoque|quantidade|saldo|pedido|pedidos|endereco|status|descricao|palavras chave|preco|precos|valor|valores)\b/.test(intent);
+};
+
 const isOfficialProductQuestion = (message: string): boolean => {
   const intent = normalize(message);
   const questionLike = /\?$/.test(message.trim()) ||
     /^(o que|o q|como|qual|quais|quanto|quantos|pra que|por que)\b/.test(intent);
-  if (!questionLike) return false;
+  if (!questionLike || asksForPrivateStoreState(message)) return false;
 
   return /\b(kyrub|kyrubia)\b/.test(intent) ||
     /\bplano\s+(pro|free|business)\b/.test(intent) ||
