@@ -297,6 +297,7 @@ export const inspectMercadoLivreConditionalRequirements = async (input: {
     publicationModel: proposal.providerPublicationModel,
     stockAuthority: proposal.providerStockAuthority,
     name: proposal.canonical.name,
+    familyName: proposal.canonical.name,
     categoryId,
     price: proposal.canonical.price,
     currencyId: options.currencies[0],
