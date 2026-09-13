@@ -257,7 +257,11 @@ export const resolveKyrubiaOperationalWorkflow = async (
       input.user.uid,
       input.conversationId
     );
-    if (workflow?.objective === 'create_product' && workflow.stage === 'awaiting_product_confirmation') {
+    if (
+      workflow?.objective === 'create_product' &&
+      workflow.stage === 'awaiting_product_confirmation' &&
+      workflow.productDraft.photoSkipped !== true
+    ) {
       saveKyrubiaOperationalWorkflow(localStorage, {
         ...workflow,
         stage: 'collecting_product_photo',
