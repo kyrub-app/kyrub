@@ -106,3 +106,30 @@ test('confirmed canonical product can continue automatically into the selected M
   assert.match(workspace, /KYRUBIA_OPERATIONAL_WORKFLOW_MESSAGE_EVENT/);
   assert.match(workspace, /submitContent\(detail\.message\)/);
 });
+
+test('product photo upload persists the canonical image from the original File instead of downloading the private attachment again', () => {
+  const attachmentClient = readFileSync(
+    new URL('../src/ai/kyrubiaAttachmentService.ts', import.meta.url),
+    'utf8'
+  );
+  const shared = readFileSync(
+    new URL('../shared/aiConsultant.ts', import.meta.url),
+    'utf8'
+  );
+
+  assert.match(
+    attachmentClient,
+    /workflow\?\.objective === 'create_product'[\s\S]*workflow\.stage === 'collecting_product_photo'/
+  );
+  assert.match(attachmentClient, /const canonicalImage = await uploadCurrentUserImage\(file\)/);
+  assert.match(attachmentClient, /uploadedAttachment\.canonicalImageStoragePath = canonicalImage\.fileId/);
+  assert.match(attachmentClient, /uploadedAttachment\.canonicalImageUrl = canonicalImage\.url/);
+  assert.match(attachmentClient, /const directCanonicalUrl = trustedCanonicalImageUrl\(user, attachment\)/);
+  assert.match(attachmentClient, /if \(directCanonicalUrl\) return directCanonicalUrl/);
+  assert.ok(
+    attachmentClient.indexOf('if (directCanonicalUrl) return directCanonicalUrl') <
+      attachmentClient.indexOf('const bytes = await getBytes')
+  );
+  assert.match(shared, /canonicalImageStoragePath\?: string/);
+  assert.match(shared, /canonicalImageUrl\?: string/);
+});

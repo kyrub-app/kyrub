@@ -12,6 +12,7 @@ import {
 } from '../../shared/aiConsultant';
 import { uploadCurrentUserImage } from '../utils/appImageStorage';
 import { storage } from '../utils/firebase';
+import { loadKyrubiaOperationalWorkflow } from './operationalWorkflowStore';
 
 const ACCEPTED_MIME_TYPES = new Set<KyrubAiAttachmentMimeType>([
   'image/jpeg',
@@ -24,6 +25,11 @@ const IMAGE_MIME_TYPES = new Set<KyrubAiAttachmentMimeType>([
   'image/jpeg',
   'image/png',
   'image/webp',
+]);
+
+const TRUSTED_FIREBASE_DOWNLOAD_HOSTS = new Set([
+  'firebasestorage.googleapis.com',
+  'storage.googleapis.com',
 ]);
 
 const extensionMimeType = (name: string): KyrubAiAttachmentMimeType | null => {
@@ -67,6 +73,53 @@ const normalizedFile = (file: File): File => {
     type: mimeType,
     lastModified: file.lastModified,
   });
+};
+
+const isWaitingForCanonicalProductPhoto = (
+  user: User,
+  conversationId: string
+): boolean => {
+  if (typeof localStorage === 'undefined') return false;
+  const workflow = loadKyrubiaOperationalWorkflow(
+    localStorage,
+    user.uid,
+    conversationId
+  );
+  return workflow?.objective === 'create_product' &&
+    workflow.stage === 'collecting_product_photo';
+};
+
+const trustedCanonicalImageUrl = (
+  user: User,
+  attachment: KyrubAiAttachmentRef
+): string | null => {
+  const canonicalPath = attachment.canonicalImageStoragePath;
+  const canonicalUrl = attachment.canonicalImageUrl;
+  if (
+    typeof canonicalPath !== 'string' ||
+    typeof canonicalUrl !== 'string' ||
+    !canonicalPath.startsWith(`app-images/${user.uid}/`)
+  ) {
+    return null;
+  }
+
+  try {
+    const parsed = new URL(canonicalUrl);
+    if (
+      parsed.protocol !== 'https:' ||
+      !TRUSTED_FIREBASE_DOWNLOAD_HOSTS.has(parsed.hostname)
+    ) {
+      return null;
+    }
+    const marker = '/o/';
+    const markerIndex = parsed.pathname.lastIndexOf(marker);
+    if (markerIndex < 0) return null;
+    const encodedObjectPath = parsed.pathname.slice(markerIndex + marker.length);
+    if (decodeURIComponent(encodedObjectPath) !== canonicalPath) return null;
+    return canonicalUrl;
+  } catch {
+    return null;
+  }
 };
 
 export const normalizeKyrubiaAttachmentFiles = (
@@ -119,6 +172,11 @@ export const uploadKyrubiaAttachments = async (
 ): Promise<KyrubAiAttachmentRef[]> => {
   const normalized = normalizeKyrubiaAttachmentFiles(files);
   const uploaded: KyrubAiAttachmentRef[] = [];
+  const persistCanonicalProductPhoto = isWaitingForCanonicalProductPhoto(
+    user,
+    conversationId
+  );
+  let canonicalProductPhotoBound = false;
 
   try {
     for (const file of normalized) {
@@ -143,13 +201,26 @@ export const uploadKyrubiaAttachments = async (
           originalName: safeFileName(file.name),
         },
       });
-      uploaded.push({
+
+      const uploadedAttachment: KyrubAiAttachmentRef = {
         id: attachmentId,
         name: safeFileName(file.name),
         mimeType,
         size: file.size,
         storagePath,
-      });
+      };
+      uploaded.push(uploadedAttachment);
+
+      if (
+        persistCanonicalProductPhoto &&
+        !canonicalProductPhotoBound &&
+        IMAGE_MIME_TYPES.has(mimeType)
+      ) {
+        const canonicalImage = await uploadCurrentUserImage(file);
+        uploadedAttachment.canonicalImageStoragePath = canonicalImage.fileId;
+        uploadedAttachment.canonicalImageUrl = canonicalImage.url;
+        canonicalProductPhotoBound = true;
+      }
     }
     return uploaded;
   } catch (error) {
@@ -175,6 +246,13 @@ export const promoteKyrubiaImageAttachment = async (
   if (!attachment.storagePath.startsWith(ownPrefix)) {
     throw new Error('A foto precisa pertencer à sua conversa autenticada.');
   }
+
+  const directCanonicalUrl = trustedCanonicalImageUrl(user, attachment);
+  if (directCanonicalUrl) return directCanonicalUrl;
+
+  // Compatibility fallback for attachments created before direct canonical photo
+  // persistence existed. New product-photo turns avoid this fragile browser
+  // download-and-reupload round trip entirely.
   const bytes = await getBytes(
     ref(storage, attachment.storagePath),
     KYRUB_AI_ATTACHMENT_LIMITS.maxImageBytes
@@ -182,8 +260,8 @@ export const promoteKyrubiaImageAttachment = async (
   const file = new File([bytes], safeFileName(attachment.name), {
     type: attachment.mimeType,
   });
-  const uploaded = await uploadCurrentUserImage(file);
-  return uploaded.url;
+  const uploadedImage = await uploadCurrentUserImage(file);
+  return uploadedImage.url;
 };
 
 export const deleteKyrubiaAttachments = async (

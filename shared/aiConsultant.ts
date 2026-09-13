@@ -61,6 +61,15 @@ export type KyrubAiAttachmentRef = {
   mimeType: KyrubAiAttachmentMimeType;
   size: number;
   storagePath: string;
+  /**
+   * Present only when an image was uploaded while the deterministic product
+   * workflow was explicitly waiting for its canonical photo. The private
+   * conversation attachment remains the source for multimodal analysis; these
+   * fields let the product workflow reuse the same browser File without a
+   * fragile download-and-reupload round trip through Firebase Storage.
+   */
+  canonicalImageStoragePath?: string;
+  canonicalImageUrl?: string;
 };
 
 export type KyrubAiMessageRole = 'user' | 'assistant';
