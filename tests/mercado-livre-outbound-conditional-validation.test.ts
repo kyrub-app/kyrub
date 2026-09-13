@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 
 const servicePath = new URL('../server/integrations/mercadoLivreOutboundConditionalValidationService.ts', import.meta.url);
 const inspectionPath = new URL('../server/integrations/mercadoLivreConditionalRequirementInspectionService.ts', import.meta.url);
+const draftConfigurationPath = new URL('../server/integrations/mercadoLivreKyrubiaDraftConfigurationService.ts', import.meta.url);
 const listingValidatorPath = new URL('../server/integrations/mercadoLivreOutboundListingValidationService.ts', import.meta.url);
 const payloadAdapterPath = new URL('../server/integrations/mercadoLivreInitialPublicationPayloadAdapter.ts', import.meta.url);
 const capabilityGuardPath = new URL('../server/integrations/mercadoLivrePublicationCapabilitySnapshotGuard.ts', import.meta.url);
@@ -43,6 +44,19 @@ test('conditional inspection canonicalizes owner answers and fails closed before
   const providerCall = source.indexOf('mercadoLivrePostJson<ConditionalRequirementResponse>');
   assert.ok(baseGuard >= 0);
   assert.ok(providerCall > baseGuard);
+});
+
+test('open provider string values remain legal through conditional inspection and draft configuration', async () => {
+  const inspectionSource = await readFile(inspectionPath, 'utf8');
+  const draftSource = await readFile(draftConfigurationPath, 'utf8');
+  for (const source of [inspectionSource, draftSource]) {
+    assert.match(source, /attributeHasClosedProviderValueSet/);
+    assert.match(source, /attribute\.valueType === 'list' \|\| attribute\.valueType === 'boolean'/);
+    assert.match(source, /valueId \|\| attributeHasClosedProviderValueSet\(providerAttribute\)/);
+    assert.match(source, /const providerValue = valueId/);
+  }
+  assert.match(inspectionSource, /result\.push\(\{ id, valueName \}\)/);
+  assert.match(draftSource, /result\.push\(\{ id, name: providerAttribute\.name, valueName \}\)/);
 });
 
 test('conditional and listing validation both use the same model-aware initial publication payload adapter', async () => {
