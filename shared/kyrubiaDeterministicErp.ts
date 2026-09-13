@@ -56,6 +56,9 @@ type StoreAwarenessKind =
 // Compatibility contract markers during the query-language migration:
 // NEEDS_REASONING_OR_MUTATION, resolveLowStockNote, resolveContextualCatalogFilter.
 
+const CATALOG_PRODUCT_NOUNS =
+  /\b(produto|produtos|item|itens|mercadoria|mercadorias|artigo|artigos|catalogo)\b/;
+
 const createTurnId = (): string => {
   try {
     return globalThis.crypto.randomUUID();
@@ -163,6 +166,7 @@ const commonCatalogCategory = (
 
 const detectStoreAwarenessKind = (intent: string): StoreAwarenessKind | null => {
   if (KYRUBIA_MUTATION_VERBS.test(intent)) return null;
+  if (CATALOG_PRODUCT_NOUNS.test(intent)) return null;
 
   const storeScope = /\b(minha loja|meu estabelecimento|meu negocio|loja|estabelecimento)\b/.test(intent);
   const deliveryPickupScope =
@@ -401,11 +405,58 @@ const resolvePendingOrders = (
   };
 };
 
+const cleanProductNameNeedle = (value: string): string =>
+  value
+    .trim()
+    .replace(/^["“”']+|["“”']+$/g, '')
+    .replace(/[.,;:!?]+$/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+const extractProductNameContains = (
+  message: string,
+  intent: string
+): string | null => {
+  if (!CATALOG_PRODUCT_NOUNS.test(intent) || !/\bnome\b/.test(intent)) return null;
+
+  const quotedBeforeName = /["“']([^"”']{1,100})["”']\s+no\s+nome/i.exec(message)?.[1];
+  if (quotedBeforeName) {
+    const value = cleanProductNameNeedle(quotedBeforeName);
+    if (value) return value;
+  }
+
+  const patterns = [
+    /\b(?:tem|tenham|tenha|contem|contendo|inclui|incluindo|com)\s+([a-z0-9][a-z0-9 $.,-]{0,100}?)\s+no\s+nome\b/,
+    /\bnome\s+(?:contem|contendo|inclui|incluindo|com)\s+([a-z0-9][a-z0-9 $.,-]{0,100}?)(?=\s+(?:e|com|sem|ordenad[oa]s?|mais|menos|ate|por)\b|$)/,
+  ];
+  for (const pattern of patterns) {
+    const value = cleanProductNameNeedle(pattern.exec(intent)?.[1] ?? '');
+    if (value) return value;
+  }
+
+  return null;
+};
+
 const compileProductQueryPlan = (
   message: string,
   context: KyrubErpContextSnapshot | undefined,
   turnContext: KyrubiaTurnContext | undefined
 ): ProductQueryPlan | null => {
+  const intent = normalizeKyrubiaIntentText(message);
+  const nameContains = extractProductNameContains(message, intent);
+  if (nameContains) {
+    return {
+      query: createKyrubiaProductQuery({
+        filters: [{ field: 'name', operator: 'contains', value: nameContains }],
+        limit: 20,
+      }),
+      action: 'list_products',
+      title: `Produtos com “${nameContains}” no nome`,
+      saveAsNote: kyrubiaAsksToSaveAsNote(intent),
+      kind: 'filtered',
+    };
+  }
+
   const routed = routeKyrubiaLocalProductIntent(message, {
     lowStockThreshold: context?.lowStockThreshold ?? 5,
     turnContext,
@@ -582,8 +633,7 @@ export const resolveKyrubiaDeterministicErpRead = (
   const storeAwarenessKind = detectStoreAwarenessKind(intent);
   if (storeAwarenessKind) return resolveStoreAwareness(storeAwarenessKind, context);
 
-  const mentionsCatalogProducts =
-    /\b(produto|produtos|item|itens|mercadoria|mercadorias|artigo|artigos|catalogo)\b/.test(intent);
+  const mentionsCatalogProducts = CATALOG_PRODUCT_NOUNS.test(intent);
   const asksStoreIdentity =
     !mentionsCatalogProducts &&
     /\b(loja|estabelecimento|negocio)\b/.test(intent) &&
@@ -608,7 +658,7 @@ export const resolveKyrubiaDeterministicErpRead = (
 
   const asksProductCount =
     /\b(quantos|quantas|quantidade|total)\b/.test(intent) &&
-    /\b(produto|produtos|item|itens|mercadoria|mercadorias|artigo|artigos)\b/.test(intent);
+    CATALOG_PRODUCT_NOUNS.test(intent);
   if (asksProductCount) return resolveProductCount(context);
 
   return null;
