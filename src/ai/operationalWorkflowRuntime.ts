@@ -4,6 +4,7 @@ import type {
   KyrubAiConsultantResponse,
 } from '../../shared/aiConsultant';
 import type { KyrubErpContextSnapshot } from '../../shared/kyrubErpContext';
+import type { KyrubCommerceChannel } from '../../shared/storeConnections';
 import {
   isKyrubiaImageAttachment,
   promoteKyrubiaImageAttachment,
@@ -11,7 +12,15 @@ import {
 import {
   loadKyrubiaOperationalWorkflow,
   saveKyrubiaOperationalWorkflow,
+  type KyrubiaOperationalWorkflow,
+  type KyrubiaProductResumeStage,
 } from './operationalWorkflowStore';
+import {
+  buildKyrubiaProductChannelOffer,
+  kyrubiaProductChannelLabel,
+  loadConnectedKyrubiaProductPreparationChannels,
+  resolveKyrubiaProductChannelSelection,
+} from './productChannelPreparation';
 import { resolveKyrubiaOperationalWorkflow as resolveLegacyOperationalWorkflow } from './operationalWorkflowRuntimeLegacy';
 
 type ExplicitCreateTarget = {
@@ -43,7 +52,7 @@ const createRequestId = (): string => {
 };
 
 const productPhotoPrompt = (name?: string): string =>
-  `Antes de concluir o cadastro de “${name?.trim() || 'este produto'}”, envie uma foto real do produto usando Anexar ou Câmera. A foto será salva no cadastro canônico e poderá ser reaproveitada em canais como o Mercado Livre. Se quiser cadastrar sem foto por enquanto, diga “sem foto”.`;
+  `Antes de concluir o cadastro de “${name?.trim() || 'este produto'}”, envie uma foto real do produto usando Anexar ou Câmera. A foto será salva no cadastro canônico e poderá ser reaproveitada nos canais externos escolhidos. Se quiser cadastrar sem foto por enquanto, diga “sem foto”.`;
 
 const operationalResponse = (reply: string): KyrubAiConsultantResponse => ({
   reply,
@@ -80,6 +89,39 @@ const asksForMercadoLivreCategorySuggestion = (message: string): boolean => {
   return /\b(?:categoria|qual|suger\w*|recomend\w*|indic\w*|usar|use|mesma|igual)\b/.test(intent);
 };
 
+const selectedChannelLabels = (channels: KyrubCommerceChannel[] | undefined): string =>
+  (channels ?? []).map(kyrubiaProductChannelLabel).join(', ');
+
+const internalCategoryPrompt = (
+  workflow: KyrubiaOperationalWorkflow
+): string => {
+  const productName = workflow.productDraft.name?.trim() || 'este produto';
+  const selected = selectedChannelLabels(workflow.selectedProductChannels);
+  const providerReminder = selected
+    ? ` A categoria de ${selected} será tratada separadamente na preparação externa.`
+    : '';
+  return `Em qual categoria interna da sua loja no Kyrub “${productName}” deve ficar?${providerReminder}`;
+};
+
+const resumeQuestion = (
+  workflow: KyrubiaOperationalWorkflow,
+  stage: KyrubiaProductResumeStage
+): string => {
+  const productName = workflow.productDraft.name?.trim() || 'este produto';
+  switch (stage) {
+    case 'collecting_product_price':
+      return `Qual será o preço de “${productName}”?`;
+    case 'collecting_product_category':
+      return internalCategoryPrompt(workflow);
+    case 'collecting_product_stock':
+      return `Quantas unidades de “${productName}” estão disponíveis agora? Se ainda não houver estoque, diga 0.`;
+    case 'collecting_product_photo':
+      return productPhotoPrompt(productName);
+    case 'awaiting_product_confirmation':
+      return '';
+  }
+};
+
 const resolveMercadoLivreCategoryDuringProductCreation = (input: {
   user: User;
   conversationId: string;
@@ -100,8 +142,11 @@ const resolveMercadoLivreCategoryDuringProductCreation = (input: {
   }
 
   const productName = workflow.productDraft.name?.trim() || 'este produto';
+  const selectedMercadoLivre = workflow.selectedProductChannels?.includes('mercado_livre') === true;
   return operationalResponse(
-    `A categoria que estou pedindo agora é a categoria interna da sua loja no Kyrub. A categoria do Mercado Livre é separada e será sugerida e revalidada quando você preparar “${productName}” para vender no Mercado Livre, porque o provedor usa uma taxonomia própria. Não vou gravar sua pergunta como categoria. Informe a categoria interna que deseja usar para “${productName}”; pode ser uma categoria que já existe na sua loja ou uma nova.`
+    selectedMercadoLivre
+      ? `Sim: como você escolheu preparar “${productName}” também para o Mercado Livre, eu vou consultar e revalidar a categoria oficial do provedor na etapa externa. Agora preciso apenas da categoria interna do catálogo Kyrub, que continua separada. Não vou gravar sua pergunta como categoria. ${internalCategoryPrompt(workflow)}`
+      : `A categoria que estou pedindo agora é a categoria interna da sua loja no Kyrub. A categoria do Mercado Livre é separada e só será sugerida e revalidada se você decidir preparar “${productName}” para esse canal. Não vou gravar sua pergunta como categoria. ${internalCategoryPrompt(workflow)}`
   );
 };
 
@@ -145,10 +190,6 @@ const messageForOperationalFlow = (
     conversationId
   );
 
-  // Recover cleanly from the exact bug this wrapper fixes: an older parser may
-  // already have opened a create-product workflow but failed to retain the
-  // quoted name. In that state, provide only the authoritative quoted value so
-  // the collector does not save the entire multi-sentence command as the name.
   if (existing?.objective === 'create_product' && existing.stage === 'collecting_product_name') {
     return target.name;
   }
@@ -161,11 +202,6 @@ const normalizeExplicitCreateFollowUp = (
   target: ExplicitCreateTarget | null
 ): KyrubAiConsultantResponse | null => {
   if (!result || !target) return result;
-
-  // Long explicit-create commands are canonicalized before entering the legacy
-  // collector. Keep the first follow-up equally canonical so callers receive
-  // one question only, without an extra answer hint that is unrelated to the
-  // parser recovery contract.
   const verbosePriceQuestion =
     `Qual será o preço de “${target.name}”? Você também pode dizer “grátis”.`;
   if (result.reply !== verbosePriceQuestion) return result;
@@ -236,6 +272,141 @@ const finalizePhotoStage = async (input: {
   });
 };
 
+const resolveProductChannelSelectionStage = async (input: {
+  user: User;
+  conversationId: string;
+  message: string;
+  erpContext?: KyrubErpContextSnapshot;
+}): Promise<KyrubAiConsultantResponse | null> => {
+  if (typeof localStorage === 'undefined') return null;
+  const workflow = loadKyrubiaOperationalWorkflow(
+    localStorage,
+    input.user.uid,
+    input.conversationId
+  );
+  if (workflow?.objective !== 'create_product' || workflow.stage !== 'selecting_product_channels') {
+    return null;
+  }
+
+  const available = workflow.availableProductChannels ?? [];
+  const selection = resolveKyrubiaProductChannelSelection(input.message, available);
+  if (selection.kind === 'unresolved') {
+    return operationalResponse(
+      `${buildKyrubiaProductChannelOffer(workflow.productDraft.name?.trim() || 'este produto', available)}`
+    );
+  }
+
+  const resumeStage = workflow.productChannelResumeStage ?? 'collecting_product_price';
+  const next: KyrubiaOperationalWorkflow = {
+    ...workflow,
+    stage: resumeStage,
+    selectedProductChannels: selection.channels,
+    productChannelResumeStage: undefined,
+    updatedAt: new Date().toISOString(),
+  };
+  saveKyrubiaOperationalWorkflow(localStorage, next);
+
+  const selected = selectedChannelLabels(selection.channels);
+  const acknowledgement = selection.kind === 'kyrub_only'
+    ? 'Certo. Vou cadastrar este produto somente no catálogo canônico do Kyrub por enquanto.'
+    : `Perfeito. Vou manter um único produto canônico no Kyrub e, depois do cadastro, preparar separadamente os requisitos de ${selected}. Nenhuma publicação externa será feita sem autorização.`;
+
+  if (resumeStage === 'awaiting_product_confirmation') {
+    if (
+      next.productDraft.isService !== true &&
+      !next.productDraft.image?.trim() &&
+      next.productDraft.photoSkipped !== true
+    ) {
+      saveKyrubiaOperationalWorkflow(localStorage, {
+        ...next,
+        stage: 'collecting_product_photo',
+        updatedAt: new Date().toISOString(),
+      });
+      return operationalResponse(`${acknowledgement} ${productPhotoPrompt(next.productDraft.name)}`);
+    }
+    const review = await resolveLegacyOperationalWorkflow({
+      user: input.user,
+      conversationId: input.conversationId,
+      message: input.message,
+      erpContext: input.erpContext,
+    });
+    return review
+      ? { ...review, reply: `${acknowledgement}\n\n${review.reply}` }
+      : operationalResponse(acknowledgement);
+  }
+
+  return operationalResponse(`${acknowledgement} ${resumeQuestion(next, resumeStage)}`);
+};
+
+const maybeOfferConnectedProductChannels = async (input: {
+  user: User;
+  conversationId: string;
+  erpContext?: KyrubErpContextSnapshot;
+}, result: KyrubAiConsultantResponse | null): Promise<KyrubAiConsultantResponse | null> => {
+  if (!result || typeof localStorage === 'undefined') return result;
+  const workflow = loadKyrubiaOperationalWorkflow(
+    localStorage,
+    input.user.uid,
+    input.conversationId
+  );
+  if (
+    workflow?.objective !== 'create_product' ||
+    workflow.productChannelOfferChecked === true ||
+    workflow.productDraft.isService === true ||
+    !workflow.productDraft.name?.trim() ||
+    !(
+      workflow.stage === 'collecting_product_price' ||
+      workflow.stage === 'collecting_product_category' ||
+      workflow.stage === 'collecting_product_stock' ||
+      workflow.stage === 'awaiting_product_confirmation'
+    )
+  ) {
+    return result;
+  }
+
+  let channels: KyrubCommerceChannel[] = [];
+  try {
+    channels = await loadConnectedKyrubiaProductPreparationChannels(
+      input.user,
+      input.erpContext?.store?.id?.trim() || input.user.uid
+    );
+  } catch {
+    saveKyrubiaOperationalWorkflow(localStorage, {
+      ...workflow,
+      productChannelOfferChecked: true,
+      updatedAt: new Date().toISOString(),
+    });
+    return result;
+  }
+
+  if (channels.length === 0) {
+    saveKyrubiaOperationalWorkflow(localStorage, {
+      ...workflow,
+      productChannelOfferChecked: true,
+      availableProductChannels: [],
+      selectedProductChannels: [],
+      updatedAt: new Date().toISOString(),
+    });
+    return result;
+  }
+
+  const resumeStage = workflow.stage as KyrubiaProductResumeStage;
+  saveKyrubiaOperationalWorkflow(localStorage, {
+    ...workflow,
+    stage: 'selecting_product_channels',
+    productChannelOfferChecked: true,
+    availableProductChannels: channels,
+    selectedProductChannels: [],
+    productChannelResumeStage: resumeStage,
+    updatedAt: new Date().toISOString(),
+  });
+  return {
+    ...result,
+    reply: buildKyrubiaProductChannelOffer(workflow.productDraft.name.trim(), channels),
+    actionProposal: undefined,
+  };
+};
+
 /*
  * Compatibility contract markers delegated to operationalWorkflowRuntimeLegacy.
  * Keep these ordered because existing architecture tests assert that draft
@@ -264,6 +435,9 @@ export const resolveKyrubiaOperationalWorkflow = async (
   const photoResult = await finalizePhotoStage(input);
   if (photoResult) return photoResult;
 
+  const channelSelectionResult = await resolveProductChannelSelectionStage(input);
+  if (channelSelectionResult) return channelSelectionResult;
+
   const mercadoLivreCategoryResult = resolveMercadoLivreCategoryDuringProductCreation(input);
   if (mercadoLivreCategoryResult) return mercadoLivreCategoryResult;
 
@@ -279,8 +453,9 @@ export const resolveKyrubiaOperationalWorkflow = async (
     erpContext: input.erpContext,
   });
   const normalizedResult = normalizeExplicitCreateFollowUp(result, target);
+  const channelAwareResult = await maybeOfferConnectedProductChannels(input, normalizedResult);
 
-  if (normalizedResult && typeof localStorage !== 'undefined') {
+  if (channelAwareResult && typeof localStorage !== 'undefined') {
     const workflow = loadKyrubiaOperationalWorkflow(
       localStorage,
       input.user.uid,
@@ -299,12 +474,12 @@ export const resolveKyrubiaOperationalWorkflow = async (
         updatedAt: new Date().toISOString(),
       });
       return {
-        ...normalizedResult,
+        ...channelAwareResult,
         reply: productPhotoPrompt(workflow.productDraft.name),
         actionProposal: undefined,
       };
     }
   }
 
-  return normalizedResult;
+  return channelAwareResult;
 };
