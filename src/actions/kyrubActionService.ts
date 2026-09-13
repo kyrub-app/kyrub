@@ -5,7 +5,11 @@ import type {
   KyrubAiPrepareProductDraftProposal,
   KyrubAiUpdateStoreProfileProposal,
 } from '../../shared/kyrubActions';
-import { completeKyrubiaProductAndAdvance } from '../ai/operationalWorkflowStore';
+import {
+  completeKyrubiaProductAndAdvance,
+  dispatchKyrubiaOperationalWorkflowMessage,
+  loadKyrubiaOperationalWorkflow,
+} from '../ai/operationalWorkflowStore';
 import { recordUserActivityEvent } from '../observability/kyrubActivityBrowser';
 import { invalidateKyrubErpContext } from './erpReadActionService';
 import { KYRUB_CATALOG_PRODUCT_CHANGED_EVENT } from './kyrubCatalogDraftService';
@@ -147,11 +151,32 @@ const advanceProductSequenceAfterExecution = (
   if (typeof localStorage === 'undefined') return;
   const conversationId = conversationIdFromProductIdempotencyKey(proposal);
   if (!conversationId) return;
-  completeKyrubiaProductAndAdvance(
+
+  const workflow = loadKyrubiaOperationalWorkflow(
     localStorage,
     user.uid,
     conversationId
   );
+  const productName = workflow?.productDraft.name?.trim() || '';
+  const continueToMercadoLivre =
+    workflow?.selectedProductChannels?.includes('mercado_livre') === true;
+  const progress = completeKyrubiaProductAndAdvance(
+    localStorage,
+    user.uid,
+    conversationId
+  );
+
+  if (
+    progress &&
+    !progress.hasMore &&
+    continueToMercadoLivre &&
+    productName
+  ) {
+    dispatchKyrubiaOperationalWorkflowMessage({
+      conversationId,
+      message: `Prepare “${productName}” para vender no Mercado Livre.`,
+    });
+  }
 };
 
 const emitCatalogChanged = (productId: string): void => {
@@ -179,9 +204,6 @@ export const executeKyrubAction = async (
     );
   }
 
-  // Promoções ainda não fazem parte do registro canônico genérico de ações.
-  // Mantemos esse limite intacto e apenas roteamos a proposta já validada pelo
-  // bridge especializado para um transport explícito em função já existente.
   const isStorePromotion =
     (proposal as unknown as { type?: string }).type === 'create_store_promotion';
   const endpoint = isStorePromotion
@@ -262,13 +284,8 @@ export const executePreauthorizedProductDraftAction = async (
   user: User,
   proposal: KyrubAiPrepareProductDraftProposal
 ): Promise<KyrubActionExecutionResult> => {
-  if (proposal.requiresConfirmation !== false) {
-    throw new Error('Este rascunho está marcado como uma ação que exige confirmação.');
+  if (proposal.requiresConfirmation) {
+    throw new Error('Este rascunho exige confirmação humana.');
   }
-
-  recordConfirmedKyrubiaActionAttempt(user.uid, proposal, true);
-  const result = await executeKyrubAction(user, proposal, false);
-  recordConfirmedKyrubiaActionResult(user.uid, proposal, result, true);
-  emitCatalogChanged(result.entityId);
-  return result;
+  return executeKyrubAction(user, proposal, false);
 };
