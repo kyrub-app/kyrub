@@ -173,7 +173,7 @@ export type KyrubiaTurnSelection = {
 export type KyrubiaOfferedIntentSelection = {
   sourceTurnId: string;
   offeredIntent: KyrubiaOfferedIntent;
-  resolution: 'structured_id' | 'position';
+  resolution: 'structured_id' | 'position' | 'label' | 'provider_id';
   authorization: 'intent_only';
 };
 
@@ -303,6 +303,32 @@ const offeredIntentPosition = (message: string): number | null => {
   return null;
 };
 
+const providerIdentifierForOfferedIntent = (
+  intent: KyrubiaOfferedIntent
+): string => {
+  if (intent.intent === 'mercado_livre.category_select') {
+    return intent.payload.categoryId;
+  }
+  if (intent.intent === 'mercado_livre.listing_type_select') {
+    return intent.payload.listingTypeId;
+  }
+  if (intent.intent === 'mercado_livre.attribute_value_select') {
+    return intent.payload.valueId;
+  }
+  return '';
+};
+
+const offeredIntentSelectionResult = (
+  context: KyrubiaTurnContext,
+  offeredIntent: KyrubiaOfferedIntent,
+  resolution: KyrubiaOfferedIntentSelection['resolution']
+): KyrubiaOfferedIntentSelection => ({
+  sourceTurnId: context.id,
+  offeredIntent,
+  resolution,
+  authorization: 'intent_only',
+});
+
 export const resolveKyrubiaOfferedIntentSelection = (input: {
   selectedOfferedIntentId?: string;
   message: string;
@@ -315,25 +341,33 @@ export const resolveKyrubiaOfferedIntentSelection = (input: {
   if (selectedId) {
     const match = offered.find(intent => intent.id === selectedId);
     return match
-      ? {
-          sourceTurnId: input.context.id,
-          offeredIntent: match,
-          resolution: 'structured_id',
-          authorization: 'intent_only',
-        }
+      ? offeredIntentSelectionResult(input.context, match, 'structured_id')
       : null;
   }
 
   const position = offeredIntentPosition(input.message);
-  const match = position ? offered[position - 1] : undefined;
-  return match
-    ? {
-        sourceTurnId: input.context.id,
-        offeredIntent: match,
-        resolution: 'position',
-        authorization: 'intent_only',
-      }
-    : null;
+  const positionalMatch = position ? offered[position - 1] : undefined;
+  if (positionalMatch) {
+    return offeredIntentSelectionResult(input.context, positionalMatch, 'position');
+  }
+
+  const normalizedMessage = normalize(input.message);
+  const labelMatches = offered.filter(
+    intent => normalize(intent.label) === normalizedMessage
+  );
+  if (labelMatches.length === 1) {
+    return offeredIntentSelectionResult(input.context, labelMatches[0], 'label');
+  }
+
+  const providerIdMatches = offered.filter(intent => {
+    const providerId = providerIdentifierForOfferedIntent(intent);
+    return Boolean(providerId && normalizedMessage.includes(normalize(providerId)));
+  });
+  if (providerIdMatches.length === 1) {
+    return offeredIntentSelectionResult(input.context, providerIdMatches[0], 'provider_id');
+  }
+
+  return null;
 };
 
 export const selectKyrubiaOfferedIntentContext = (
