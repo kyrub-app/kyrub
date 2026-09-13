@@ -9,6 +9,7 @@ import {
   prepareKyrubiaMercadoLivrePublication,
   type KyrubiaMercadoLivrePrepareResult,
 } from './kyrubiaMercadoLivrePrepareTool.js';
+import { extractKyrubiaMercadoLivrePreparationTarget } from './kyrubiaMercadoLivrePreparationTarget.js';
 
 const clean = (value: unknown, maximum = 240): string =>
   typeof value === 'string'
@@ -20,16 +21,9 @@ const record = (value: unknown): Record<string, unknown> =>
     ? value as Record<string, unknown>
     : {};
 
-const preparationTarget = (message: string): string => {
-  const text = clean(message, 600);
-  if (!text) return '';
-  const match = /^(?:kyrubia\s*[,,:-]?\s*)?(?:prepare|preparar)\s+(?:(?:o|a|um|uma)\s+)?(.+?)\s+para\s+(?:(?:vender|anunciar|publicar)\s+)?(?:tamb[eé]m\s+)?(?:(?:no|na|o|a)\s+)?mercado\s+livre[.!?\s]*$/i.exec(text);
-  return clean(match?.[1], 180);
-};
-
 export const isKyrubiaMercadoLivrePlatformPreparationText = (
   message: string
-): boolean => Boolean(preparationTarget(message));
+): boolean => Boolean(extractKyrubiaMercadoLivrePreparationTarget(message));
 
 type AvailablePreparation = Extract<KyrubiaMercadoLivrePrepareResult, { prepared: true }>;
 type CategorySuggestion = Extract<
@@ -157,7 +151,7 @@ export const prepareKyrubiaMercadoLivrePlatformConversation = async (input: {
   message: string;
   erpContext: unknown;
 }): Promise<KyrubAiConsultantResponse | null> => {
-  const targetName = preparationTarget(input.message);
+  const targetName = extractKyrubiaMercadoLivrePreparationTarget(input.message);
   if (!targetName) return null;
 
   const user = await authenticateConsultantRequest(input.authorization);

@@ -155,13 +155,18 @@ test('normal Chaveiro preparation command enters the deterministic Mercado Livre
     new URL('../server/ai/kyrubiaMercadoLivrePlatformConversation.ts', import.meta.url),
     'utf8'
   );
+  const targetParser = readFileSync(
+    new URL('../server/ai/kyrubiaMercadoLivrePreparationTarget.ts', import.meta.url),
+    'utf8'
+  );
   const prepareTool = readFileSync(
     new URL('../server/ai/kyrubiaMercadoLivrePrepareTool.ts', import.meta.url),
     'utf8'
   );
 
-  assert.match(bridge, /(?:prepare|preparar)/);
-  assert.match(bridge, /mercado\\s\+livre/);
+  assert.match(targetParser, /(?:prepare|preparar)/);
+  assert.match(targetParser, /mercado\\s\+livre/);
+  assert.match(bridge, /extractKyrubiaMercadoLivrePreparationTarget/);
   assert.match(bridge, /prepareKyrubiaMercadoLivrePublication/);
   assert.match(bridge, /resolveAuthoritativeOwnStoreProductByExactName/);
   assert.doesNotMatch(bridge, /productLocatorFromErpContext/);

@@ -2,6 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { buildMercadoLivreInitialPublicationPayload } from '../server/integrations/mercadoLivreInitialPublicationPayloadAdapter.js';
+import { resolveOwnedProductIdentityFromCanonicalProducts } from '../server/catalog/authoritativeProductIdentityService.js';
+import { extractKyrubiaMercadoLivrePreparationTarget } from '../server/ai/kyrubiaMercadoLivrePreparationTarget.js';
 
 // This regression file is intentionally part of prebuild so every preview contains the complete merchant E2E bench.
 const servicePath = new URL('../server/integrations/mercadoLivreE2ETestService.ts', import.meta.url);
@@ -18,6 +20,7 @@ const kyrubiaAttributePlannerPath = new URL('../server/ai/kyrubiaMercadoLivreReq
 const kyrubiaDraftConfigurationPath = new URL('../server/integrations/mercadoLivreKyrubiaDraftConfigurationService.ts', import.meta.url);
 const kyrubiaContextPath = new URL('../shared/kyrubiaContext.ts', import.meta.url);
 const offeredIntentRuntimePath = new URL('../src/ai/offeredIntentRuntime.ts', import.meta.url);
+const productIdentityPath = new URL('../server/catalog/authoritativeProductIdentityService.ts', import.meta.url);
 
 test('E2E helper only lists canonical eligible products and provider requirement options', async () => {
   const source = await readFile(servicePath, 'utf8');
@@ -249,4 +252,72 @@ test('plan offered-intent runtime cannot consume Mercado Livre attribute answers
   const runtime = await readFile(offeredIntentRuntimePath, 'utf8');
   assert.match(runtime, /offeredIntent\.intent === 'mercado_livre\.attribute_value_select'/);
   assert.match(runtime, /return null/);
+});
+
+test('Mercado Livre preparation resolves identity from the canonical store before legacy publicProducts', async () => {
+  const source = await readFile(productIdentityPath, 'utf8');
+  const canonicalRead = source.indexOf('collection(`stores/${canonicalStoreId}/products`)');
+  const canonicalGuard = source.indexOf('if (!canonicalSnapshot.empty)');
+  const legacyFallback = source.indexOf('return resolveLegacyProductIdentity({ ownerUid, targetName })');
+  assert.ok(canonicalRead >= 0);
+  assert.ok(canonicalGuard > canonicalRead);
+  assert.ok(legacyFallback > canonicalGuard);
+  assert.match(source, /users\/\$\{ownerUid\}\/stores\/\$\{ownerUid\}/);
+});
+
+test('canonical product identity ignores legacy duplication and preserves genuine canonical ambiguity', () => {
+  const single = resolveOwnedProductIdentityFromCanonicalProducts({
+    canonicalStoreId: 'store-canonical-1',
+    targetName: 'Squeeze 480ml Dobrável Laranja com Mosquetão',
+    canonicalProducts: [{
+      id: 'product-squeeze-1',
+      data: {
+        id: 'product-squeeze-1',
+        storeId: 'store-canonical-1',
+        name: 'Squeeze 480ml Dobrável Laranja com Mosquetão',
+      },
+    }],
+  });
+  assert.equal(single.status, 'found');
+  if (single.status === 'found') assert.equal(single.product.id, 'product-squeeze-1');
+
+  const duplicate = resolveOwnedProductIdentityFromCanonicalProducts({
+    canonicalStoreId: 'store-canonical-1',
+    targetName: 'Squeeze 480ml Dobravel Laranja com Mosquetao',
+    canonicalProducts: [
+      {
+        id: 'product-squeeze-1',
+        data: {
+          id: 'product-squeeze-1',
+          storeId: 'store-canonical-1',
+          name: 'Squeeze 480ml Dobrável Laranja com Mosquetão',
+        },
+      },
+      {
+        id: 'product-squeeze-2',
+        data: {
+          id: 'product-squeeze-2',
+          storeId: 'store-canonical-1',
+          name: 'Squeeze 480ml Dobravel Laranja com Mosquetao',
+        },
+      },
+    ],
+  });
+  assert.equal(duplicate.status, 'ambiguous');
+});
+
+test('Mercado Livre preparation strips one matching outer quote pair from the product target', () => {
+  const expected = 'Squeeze 480ml Dobrável Laranja com Mosquetão';
+  assert.equal(
+    extractKyrubiaMercadoLivrePreparationTarget(
+      'Prepare “Squeeze 480ml Dobrável Laranja com Mosquetão” para vender no Mercado Livre.'
+    ),
+    expected
+  );
+  assert.equal(
+    extractKyrubiaMercadoLivrePreparationTarget(
+      'Prepare "Squeeze 480ml Dobrável Laranja com Mosquetão" para vender no Mercado Livre.'
+    ),
+    expected
+  );
 });
