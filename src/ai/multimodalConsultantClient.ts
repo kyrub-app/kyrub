@@ -8,11 +8,17 @@ import {
   buildGuidedPurchaseIntakeReply,
   shouldGuidePurchaseIntake,
 } from '../../shared/kyrubPurchaseIntakeGuidance';
+import { readKyrubErpContext } from '../actions/erpReadActionService';
 import { auth } from '../utils/firebase';
 import { emitKyrubAiActionProposal } from './actionEvents';
 import { loadKyrubiaCatalogAnalysis } from './catalogAnalysisStore';
-import { KyrubAiClientError } from './consultantClient';
+import {
+  KyrubAiClientError,
+  requestKyrubAiConsultant,
+} from './consultantClient';
 import { normalizeConsultantError } from './consultantError';
+import { loadKyrubiaOperationalWorkflow } from './operationalWorkflowStore';
+import { resolveKyrubiaOperationalWorkflow } from './operationalWorkflowRuntime';
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   Boolean(value) && typeof value === 'object' && !Array.isArray(value);
@@ -62,6 +68,20 @@ const latestUserMessage = (
     if (message.role === 'user') return message;
   }
   return null;
+};
+
+const shouldUseDeterministicMercadoLivreRuntime = (
+  payload: KyrubAiConsultantRequest
+): boolean => {
+  const latest = latestUserMessage(payload)?.content ?? '';
+  const turnContext = payload.turnContext;
+  if (
+    turnContext?.sourceAction === 'mercado_livre_requirement_options' ||
+    turnContext?.sourceAction === 'mercado_livre_publication_preparation'
+  ) {
+    return true;
+  }
+  return /mercado\s+livre/i.test(latest) && /\b(prepar|public|vend)/i.test(latest);
 };
 
 const withGuidedPurchaseIntake = (
@@ -114,6 +134,46 @@ export const requestKyrubAiMultimodalConsultant = async (
       'AUTH_REQUIRED',
       401
     );
+  }
+
+  const latestUser = latestUserMessage(payload);
+  const activeOperationalWorkflow = typeof localStorage !== 'undefined'
+    ? loadKyrubiaOperationalWorkflow(
+        localStorage,
+        currentUser.uid,
+        payload.conversationId
+      )
+    : null;
+
+  if (activeOperationalWorkflow && latestUser) {
+    let erpContext = payload.erpContext;
+    if (!erpContext) {
+      try {
+        erpContext = await readKyrubErpContext(currentUser);
+      } catch (error) {
+        if (signal?.aborted) throw error;
+        console.warn('[Kyrubia] ERP read context unavailable during multimodal workflow.', error);
+      }
+    }
+    const operational = await resolveKyrubiaOperationalWorkflow({
+      user: currentUser,
+      conversationId: payload.conversationId,
+      message: latestUser.content,
+      erpContext,
+      attachments: latestUser.attachments,
+    });
+    if (operational) {
+      emitKyrubAiActionProposal(payload.conversationId, operational);
+      return operational;
+    }
+  }
+
+  // A prior product photo may remain in the conversation history. Mercado Livre
+  // preparation and all of its follow-up selections still belong to the
+  // deterministic server runtime; do not let historical image bytes divert that
+  // workflow back to the generative multimodal endpoint.
+  if (shouldUseDeterministicMercadoLivreRuntime(payload)) {
+    return requestKyrubAiConsultant(payload, signal);
   }
 
   const contextualPayload = withCatalogAnalysisContext(payload, currentUser.uid);

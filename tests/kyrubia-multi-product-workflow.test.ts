@@ -164,13 +164,26 @@ test('multi-product intent persists a sequential workflow instead of collapsing 
       message: 'Testando',
       erpContext: erpContext(2),
     });
-    const firstReview = await resolveKyrubiaOperationalWorkflow({
+    const photoPrompt = await resolveKyrubiaOperationalWorkflow({
       user: fakeUser,
       conversationId,
       message: '10',
       erpContext: erpContext(2),
     });
 
+    assert.equal(photoPrompt?.actionProposal, undefined);
+    assert.match(photoPrompt?.reply ?? '', /foto real/i);
+    assert.equal(
+      loadKyrubiaOperationalWorkflow(storage, fakeUser.uid, conversationId)?.stage,
+      'collecting_product_photo'
+    );
+
+    const firstReview = await resolveKyrubiaOperationalWorkflow({
+      user: fakeUser,
+      conversationId,
+      message: 'sem foto',
+      erpContext: erpContext(2),
+    });
     assert.equal(firstReview?.actionProposal?.type, 'create_product');
     assert.match(firstReview?.reply ?? '', /Produto 1 de 2/i);
     if (firstReview?.actionProposal?.type !== 'create_product') {
@@ -179,6 +192,7 @@ test('multi-product intent persists a sequential workflow instead of collapsing 
     assert.equal(firstReview.actionProposal.name, 'Teste2');
     assert.equal(firstReview.actionProposal.price, 14);
     assert.equal(firstReview.actionProposal.stock, 10);
+    assert.equal(firstReview.actionProposal.image, '');
 
     const progress = completeKyrubiaProductAndAdvance(
       storage,
@@ -248,10 +262,19 @@ test('free-plan capacity is rechecked before the next item and stops a sequence 
       message: 'Teste',
       erpContext: erpContext(3),
     });
-    const review = await resolveKyrubiaOperationalWorkflow({
+    const photoPrompt = await resolveKyrubiaOperationalWorkflow({
       user: fakeUser,
       conversationId,
       message: '1',
+      erpContext: erpContext(3),
+    });
+    assert.equal(photoPrompt?.actionProposal, undefined);
+    assert.match(photoPrompt?.reply ?? '', /foto real/i);
+
+    const review = await resolveKyrubiaOperationalWorkflow({
+      user: fakeUser,
+      conversationId,
+      message: 'sem foto',
       erpContext: erpContext(3),
     });
     assert.equal(review?.actionProposal?.type, 'create_product');

@@ -139,7 +139,7 @@ test('draft preparation and listing bypass plan reconciliation but not auth or p
 
 test('operational runtime resolves draft staging before any live product workflow', () => {
   const runtime = readFileSync(
-    new URL('../src/ai/operationalWorkflowRuntime.ts', import.meta.url),
+    new URL('../src/ai/operationalWorkflowRuntimeLegacy.ts', import.meta.url),
     'utf8'
   );
   const draftRuntime = runtime.indexOf('await resolveKyrubiaCatalogDraftRuntime(');

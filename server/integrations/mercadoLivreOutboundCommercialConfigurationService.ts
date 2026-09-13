@@ -133,6 +133,7 @@ export const configureMercadoLivreOutboundCommercialRequirements = async (input:
   };
 
   const commercialRef = adminDb.doc(`stores/${storeId}/catalogOutboundCommercialConfigurations/${proposalId}`);
+  const listingValidationRef = adminDb.doc(`stores/${storeId}/catalogOutboundListingValidations/${proposalId}`);
   await adminDb.runTransaction(async transaction => {
     const [currentProposalDoc, currentRequirementsDoc] = await Promise.all([
       transaction.get(proposalRef),
@@ -154,11 +155,18 @@ export const configureMercadoLivreOutboundCommercialRequirements = async (input:
       configuredByUserId,
       serverConfiguredAt: FieldValue.serverTimestamp(),
     });
+    transaction.delete(listingValidationRef);
     transaction.update(proposalRef, {
       providerSaleTerms: selections.saleTerms,
       providerShipping: selections.shipping,
       commercialRequirementAuthority: configuration.authority,
       commercialRequirementConfiguredAt: configuredAt,
+      publicationReadiness: FieldValue.delete(),
+      publicationReadinessAuthority: FieldValue.delete(),
+      publicationValidationSource: FieldValue.delete(),
+      publicationValidatedAt: FieldValue.delete(),
+      publicationValidationCauses: FieldValue.delete(),
+      publicationCorrelationMarker: FieldValue.delete(),
       executionStatus: 'not_authorized',
       serverCommercialRequirementConfiguredAt: FieldValue.serverTimestamp(),
     });

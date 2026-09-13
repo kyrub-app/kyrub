@@ -149,16 +149,26 @@ test('free-plan preflight turns a full catalog request into an upgrade conversat
   });
 });
 
-test('a complete product request on a configured store becomes a create_product confirmation proposal locally', async () => {
+test('a complete physical product request asks for a photo before the create_product confirmation proposal', async () => {
   await withMemoryStorage(async () => {
-    const result = await resolveKyrubiaOperationalWorkflow({
+    const conversationId = 'conversation-product-1';
+    const photoPrompt = await resolveKyrubiaOperationalWorkflow({
       user: fakeUser,
-      conversationId: 'conversation-product-1',
+      conversationId,
       message: 'Cadastre um produto chamado Camiseta por R$ 49,90, categoria roupas, com estoque de 3 unidades.',
       erpContext: erpContext(true),
     });
 
-    assert.equal(result?.provider, 'kyrub');
+    assert.equal(photoPrompt?.provider, 'kyrub');
+    assert.equal(photoPrompt?.actionProposal, undefined);
+    assert.match(photoPrompt?.reply ?? '', /foto real do produto/i);
+
+    const result = await resolveKyrubiaOperationalWorkflow({
+      user: fakeUser,
+      conversationId,
+      message: 'sem foto',
+      erpContext: erpContext(true),
+    });
     assert.equal(
       result?.actionProposal?.type,
       'create_product',
@@ -175,29 +185,49 @@ test('a complete product request on a configured store becomes a create_product 
   });
 });
 
-test('promotional Pro at five products is eligible to prepare the sixth product instead of hitting the Free gate', async () => {
+test('promotional Pro at five products is eligible to collect the sixth product photo instead of hitting the Free gate', async () => {
   await withMemoryStorage(async () => {
-    const result = await resolveKyrubiaOperationalWorkflow({
+    const conversationId = 'conversation-pro-sixth-product';
+    const photoPrompt = await resolveKyrubiaOperationalWorkflow({
       user: fakeUser,
-      conversationId: 'conversation-pro-sixth-product',
+      conversationId,
       message: 'Cadastre um produto chamado Caneca Pro por R$ 30, categoria presentes, com estoque de 5 unidades.',
       erpContext: erpContext(true, 5, 'pro'),
     });
 
+    assert.equal(photoPrompt?.actionProposal, undefined);
+    assert.match(photoPrompt?.reply ?? '', /foto real do produto/i);
+    assert.doesNotMatch(photoPrompt?.reply ?? '', /plano chegou ao limite|upgrade para o plano Pro/i);
+
+    const result = await resolveKyrubiaOperationalWorkflow({
+      user: fakeUser,
+      conversationId,
+      message: 'sem foto',
+      erpContext: erpContext(true, 5, 'pro'),
+    });
     assert.equal(result?.actionProposal?.type, 'create_product');
-    assert.doesNotMatch(result?.reply ?? '', /plano chegou ao limite|upgrade para o plano Pro/i);
   });
 });
 
-test('business plan is not blocked by the free-plan capacity preflight', async () => {
+test('business plan is not blocked by the free-plan capacity preflight and reaches photo collection', async () => {
   await withMemoryStorage(async () => {
-    const result = await resolveKyrubiaOperationalWorkflow({
+    const conversationId = 'conversation-business-product';
+    const photoPrompt = await resolveKyrubiaOperationalWorkflow({
       user: fakeUser,
-      conversationId: 'conversation-business-product',
+      conversationId,
       message: 'Cadastre um produto chamado Caneca por R$ 30, categoria presentes, com estoque de 5 unidades.',
       erpContext: erpContext(true, 12, 'business'),
     });
 
+    assert.equal(photoPrompt?.actionProposal, undefined);
+    assert.match(photoPrompt?.reply ?? '', /foto real do produto/i);
+
+    const result = await resolveKyrubiaOperationalWorkflow({
+      user: fakeUser,
+      conversationId,
+      message: 'sem foto',
+      erpContext: erpContext(true, 12, 'business'),
+    });
     assert.equal(result?.actionProposal?.type, 'create_product');
   });
 });
