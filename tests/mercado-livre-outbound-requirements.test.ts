@@ -51,7 +51,8 @@ test('downstream requirement revalidation uses the selected provider category id
   assert.match(source, /available_listing_types\?category_id=/);
   assert.match(source, /settings\.listing_allowed !== true/);
   assert.match(source, /MERCADO_LIVRE_OUTBOUND_CATEGORY_NOT_LISTABLE/);
-  assert.doesNotMatch(source, /domain_discovery\/search/);
+  assert.match(source, /prediction through domain_discovery\/search\?limit=3 is a discovery/i);
+  assert.doesNotMatch(source, /const currentPredictions/);
   assert.doesNotMatch(source, /MERCADO_LIVRE_OUTBOUND_CATEGORY_NOT_PREDICTED/);
 });
 
