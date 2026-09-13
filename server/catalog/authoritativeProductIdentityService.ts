@@ -60,18 +60,13 @@ export const resolveOwnedProductIdentityFromCanonicalProducts = (input: {
     const storedId = clean(product.id, MAX_PRODUCT_ID_CHARACTERS);
     const storeId = clean(product.storeId, MAX_STORE_ID_CHARACTERS);
     const name = clean(product.name, MAX_PRODUCT_NAME_CHARACTERS);
-    const publicationStatus = clean(
-      product.publicationStatus,
-      MAX_PUBLICATION_STATUS_CHARACTERS
-    );
     if (
       !documentId ||
       documentId.includes('/') ||
       storedId !== documentId ||
       storeId !== canonicalStoreId ||
       !name ||
-      normalizeName(name) !== expected ||
-      !PREPARABLE_CANONICAL_PRODUCT_STATUSES.has(publicationStatus)
+      normalizeName(name) !== expected
     ) {
       return [];
     }
@@ -148,17 +143,25 @@ export const resolveAuthoritativeOwnStoreProductByExactName = async (input: {
         .collection(`stores/${canonicalStoreId}/products`)
         .get();
       if (!canonicalSnapshot.empty) {
+        const preparableDocuments = canonicalSnapshot.docs.filter(document => {
+          const data = document.data() as Record<string, unknown>;
+          const publicationStatus = clean(
+            data.publicationStatus,
+            MAX_PUBLICATION_STATUS_CHARACTERS
+          );
+          return PREPARABLE_CANONICAL_PRODUCT_STATUSES.has(publicationStatus);
+        });
         const resolution = resolveOwnedProductIdentityFromCanonicalProducts({
           canonicalStoreId,
           targetName,
-          canonicalProducts: canonicalSnapshot.docs.map(document => ({
+          canonicalProducts: preparableDocuments.map(document => ({
             id: document.id,
             data: document.data(),
           })),
         });
         if (resolution.status === 'ambiguous') {
           const ambiguousIds = new Set(resolution.matches.map(match => match.id));
-          const matches = canonicalSnapshot.docs.flatMap(document => {
+          const matches = preparableDocuments.flatMap(document => {
             if (!ambiguousIds.has(document.id)) return [];
             const data = document.data() as Record<string, unknown>;
             return [{
