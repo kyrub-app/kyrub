@@ -1,4 +1,5 @@
 import type { KyrubActionAuthorizationGrant } from '../../shared/kyrubActions';
+import type { KyrubCommerceChannel } from '../../shared/storeConnections';
 
 export type KyrubiaProductDraft = {
   name?: string;
@@ -12,16 +13,20 @@ export type KyrubiaProductDraft = {
   isComplimentary?: boolean;
 };
 
-export type KyrubiaOperationalWorkflowStage =
-  | 'awaiting_store_activation_confirmation'
-  | 'collecting_store_name'
-  | 'collecting_store_keywords'
-  | 'collecting_product_name'
+export type KyrubiaProductResumeStage =
   | 'collecting_product_price'
   | 'collecting_product_category'
   | 'collecting_product_stock'
   | 'collecting_product_photo'
   | 'awaiting_product_confirmation';
+
+export type KyrubiaOperationalWorkflowStage =
+  | 'awaiting_store_activation_confirmation'
+  | 'collecting_store_name'
+  | 'collecting_store_keywords'
+  | 'collecting_product_name'
+  | 'selecting_product_channels'
+  | KyrubiaProductResumeStage;
 
 export type KyrubiaOperationalWorkflow = {
   version: 1;
@@ -32,6 +37,10 @@ export type KyrubiaOperationalWorkflow = {
   productDraft: KyrubiaProductDraft;
   requestedProductCount?: number;
   completedProductCount?: number;
+  productChannelOfferChecked?: boolean;
+  availableProductChannels?: KyrubCommerceChannel[];
+  selectedProductChannels?: KyrubCommerceChannel[];
+  productChannelResumeStage?: KyrubiaProductResumeStage;
   activationGrant?: KyrubActionAuthorizationGrant;
   updatedAt: string;
 };
@@ -67,11 +76,31 @@ const isStage = (value: unknown): value is KyrubiaOperationalWorkflowStage =>
   value === 'collecting_store_name' ||
   value === 'collecting_store_keywords' ||
   value === 'collecting_product_name' ||
+  value === 'selecting_product_channels' ||
   value === 'collecting_product_price' ||
   value === 'collecting_product_category' ||
   value === 'collecting_product_stock' ||
   value === 'collecting_product_photo' ||
   value === 'awaiting_product_confirmation';
+
+const isProductResumeStage = (value: unknown): value is KyrubiaProductResumeStage =>
+  value === 'collecting_product_price' ||
+  value === 'collecting_product_category' ||
+  value === 'collecting_product_stock' ||
+  value === 'collecting_product_photo' ||
+  value === 'awaiting_product_confirmation';
+
+const isCommerceChannel = (value: unknown): value is KyrubCommerceChannel =>
+  value === 'mercado_livre' ||
+  value === 'shopee' ||
+  value === 'ifood' ||
+  value === '99food' ||
+  value === 'instagram' ||
+  value === 'erp' ||
+  value === 'other';
+
+const isChannelList = (value: unknown): value is KyrubCommerceChannel[] =>
+  Array.isArray(value) && value.every(isCommerceChannel);
 
 const isPositiveInteger = (value: unknown): value is number =>
   typeof value === 'number' && Number.isInteger(value) && value > 0;
@@ -116,7 +145,15 @@ export const loadKyrubiaOperationalWorkflow = (
       (parsed.requestedProductCount !== undefined &&
         !isPositiveInteger(parsed.requestedProductCount)) ||
       (parsed.completedProductCount !== undefined &&
-        !isNonNegativeInteger(parsed.completedProductCount))
+        !isNonNegativeInteger(parsed.completedProductCount)) ||
+      (parsed.productChannelOfferChecked !== undefined &&
+        typeof parsed.productChannelOfferChecked !== 'boolean') ||
+      (parsed.availableProductChannels !== undefined &&
+        !isChannelList(parsed.availableProductChannels)) ||
+      (parsed.selectedProductChannels !== undefined &&
+        !isChannelList(parsed.selectedProductChannels)) ||
+      (parsed.productChannelResumeStage !== undefined &&
+        !isProductResumeStage(parsed.productChannelResumeStage))
     ) {
       return null;
     }
@@ -217,6 +254,7 @@ export const completeKyrubiaProductAndAdvance = (
     },
     requestedProductCount: current.requestedCount,
     completedProductCount: completedCount,
+    productChannelResumeStage: undefined,
     updatedAt: new Date().toISOString(),
   };
   saveKyrubiaOperationalWorkflow(storage, next);
