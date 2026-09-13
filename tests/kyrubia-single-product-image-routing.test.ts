@@ -77,7 +77,8 @@ test('physical product creation asks for a real photo before exposing create_pro
   assert.match(runtime, /foto real do produto/i);
   assert.match(runtime, /stage: 'collecting_product_photo'/);
   assert.match(runtime, /actionProposal: undefined/);
-  assert.match(runtime, /actionProposal\.isService !== true/);
+  assert.match(runtime, /workflow\.productDraft\.isService !== true/);
+  assert.match(runtime, /!workflow\.productDraft\.image\?\.trim\(\)/);
 });
 
 test('product photo attachment is promoted to stable app image storage and later Mercado Livre turns remain deterministic', () => {
