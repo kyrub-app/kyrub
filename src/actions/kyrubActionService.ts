@@ -284,8 +284,13 @@ export const executePreauthorizedProductDraftAction = async (
   user: User,
   proposal: KyrubAiPrepareProductDraftProposal
 ): Promise<KyrubActionExecutionResult> => {
-  if (proposal.requiresConfirmation) {
-    throw new Error('Este rascunho exige confirmação humana.');
+  if (proposal.requiresConfirmation !== false) {
+    throw new Error('Este rascunho está marcado como uma ação que exige confirmação.');
   }
-  return executeKyrubAction(user, proposal, false);
+
+  recordConfirmedKyrubiaActionAttempt(user.uid, proposal, true);
+  const result = await executeKyrubAction(user, proposal, false);
+  recordConfirmedKyrubiaActionResult(user.uid, proposal, result, true);
+  emitCatalogChanged(result.entityId);
+  return result;
 };
