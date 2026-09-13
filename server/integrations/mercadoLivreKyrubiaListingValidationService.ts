@@ -44,6 +44,18 @@ type ConfigurationAttribute = {
   valueName: string;
 };
 
+type CommercialValue = {
+  id: string;
+  valueId?: string;
+  valueName?: string;
+};
+
+type CommercialShipping = {
+  mode: string;
+  freeShipping: boolean;
+  localPickUp: boolean;
+};
+
 interface ConfigurationRecord {
   schemaVersion: 2;
   proposalId: string;
@@ -87,6 +99,17 @@ interface ConditionalValidationRecord {
   providerCapabilityFingerprint: string;
   providerPublicationModel: 'legacy_items' | 'user_products';
   providerStockAuthority: 'item_available_quantity';
+}
+
+interface CommercialConfigurationRecord {
+  proposalId: string;
+  saleTerms: CommercialValue[];
+  shipping: CommercialShipping | null;
+  missingRequiredSaleTermIds: string[];
+  requirementConfiguredAt: string;
+  authority: 'provider_api_commercial_options_and_store_owner_selection';
+  configuredAt: string;
+  canonicalBaselineHash: string;
 }
 
 const clean = (value: unknown, maximum = 2_000): string =>
@@ -152,6 +175,54 @@ const normalizeAttributes = (value: unknown): ConfigurationAttribute[] => {
     attributes.push({ id, ...(valueId ? { valueId } : {}), valueName });
   }
   return attributes.sort((left, right) => left.id.localeCompare(right.id));
+};
+
+const normalizeCommercialValues = (value: unknown): CommercialValue[] => {
+  if (!Array.isArray(value) || value.length > 40) {
+    throw new Error('MERCADO_LIVRE_KYRUBIA_LISTING_VALIDATION_COMMERCIAL_INVALID');
+  }
+  const seen = new Set<string>();
+  const result: CommercialValue[] = [];
+  for (const candidate of value) {
+    if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) {
+      throw new Error('MERCADO_LIVRE_KYRUBIA_LISTING_VALIDATION_COMMERCIAL_INVALID');
+    }
+    const raw = candidate as Record<string, unknown>;
+    const id = clean(raw.id, 160);
+    const valueId = clean(raw.valueId ?? raw.value_id, 160);
+    const valueName = clean(raw.valueName ?? raw.value_name, 600);
+    if (!id || seen.has(id) || (!valueId && !valueName)) {
+      throw new Error('MERCADO_LIVRE_KYRUBIA_LISTING_VALIDATION_COMMERCIAL_INVALID');
+    }
+    seen.add(id);
+    result.push({
+      id,
+      ...(valueId ? { valueId } : {}),
+      ...(valueName ? { valueName } : {}),
+    });
+  }
+  return result.sort((left, right) => left.id.localeCompare(right.id));
+};
+
+const normalizeCommercialShipping = (value: unknown): CommercialShipping | null => {
+  if (value === null || value === undefined) return null;
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('MERCADO_LIVRE_KYRUBIA_LISTING_VALIDATION_COMMERCIAL_INVALID');
+  }
+  const raw = value as Record<string, unknown>;
+  const mode = clean(raw.mode, 120);
+  if (
+    !mode ||
+    typeof raw.freeShipping !== 'boolean' ||
+    typeof raw.localPickUp !== 'boolean'
+  ) {
+    throw new Error('MERCADO_LIVRE_KYRUBIA_LISTING_VALIDATION_COMMERCIAL_INVALID');
+  }
+  return {
+    mode,
+    freeShipping: raw.freeShipping,
+    localPickUp: raw.localPickUp,
+  };
 };
 
 const normalizeRequiredConditionalAttributes = (
@@ -322,6 +393,36 @@ const assertConditionalValidation = (
   };
 };
 
+const assertCommercialConfiguration = (
+  proposal: ProposalRecord,
+  configuration: ConfigurationRecord,
+  value: unknown
+): CommercialConfigurationRecord => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('MERCADO_LIVRE_KYRUBIA_LISTING_VALIDATION_COMMERCIAL_INVALID');
+  }
+  const record = value as Record<string, unknown>;
+  const saleTerms = normalizeCommercialValues(record.saleTerms);
+  const shipping = normalizeCommercialShipping(record.shipping);
+  const missingRequiredSaleTermIds = normalizedStringArray(record.missingRequiredSaleTermIds);
+  if (
+    clean(record.proposalId, 180) !== proposal.id ||
+    clean(record.canonicalBaselineHash, 80) !== proposal.canonicalBaselineHash ||
+    clean(record.requirementConfiguredAt, 80) !== configuration.configuredAt ||
+    record.authority !== 'provider_api_commercial_options_and_store_owner_selection' ||
+    !clean(record.configuredAt, 80) ||
+    missingRequiredSaleTermIds.length !== 0
+  ) {
+    throw new Error('MERCADO_LIVRE_KYRUBIA_LISTING_VALIDATION_COMMERCIAL_INVALID');
+  }
+  return {
+    ...(record as unknown as CommercialConfigurationRecord),
+    saleTerms,
+    shipping,
+    missingRequiredSaleTermIds,
+  };
+};
+
 const canonicalMatchesProposal = (
   proposal: ProposalRecord,
   value: unknown
@@ -387,10 +488,12 @@ export const validateKyrubiaMercadoLivreDraftListing = async (input: {
   const proposalRef = adminDb.doc(`stores/${storeId}/catalogOutboundPublicationProposals/${proposalId}`);
   const configRef = adminDb.doc(`stores/${storeId}/catalogOutboundRequirementConfigurations/${proposalId}`);
   const conditionalRef = adminDb.doc(`stores/${storeId}/catalogOutboundConditionalValidations/${proposalId}`);
-  const [proposalDoc, configDoc, conditionalDoc] = await Promise.all([
+  const commercialRef = adminDb.doc(`stores/${storeId}/catalogOutboundCommercialConfigurations/${proposalId}`);
+  const [proposalDoc, configDoc, conditionalDoc, commercialDoc] = await Promise.all([
     proposalRef.get(),
     configRef.get(),
     conditionalRef.get(),
+    commercialRef.get(),
   ]);
   if (!proposalDoc.exists) throw new Error('MERCADO_LIVRE_OUTBOUND_PROPOSAL_NOT_FOUND');
   const proposal = assertProposal(storeId, proposalId, proposalDoc.data());
@@ -400,6 +503,9 @@ export const validateKyrubiaMercadoLivreDraftListing = async (input: {
     configuration,
     conditionalDoc.data()
   );
+  const commercialConfiguration = commercialDoc.exists
+    ? assertCommercialConfiguration(proposal, configuration, commercialDoc.data())
+    : null;
 
   await assertCurrentMercadoLivrePublicationCapability({
     storeId,
@@ -431,6 +537,8 @@ export const validateKyrubiaMercadoLivreDraftListing = async (input: {
     pictureUrl: proposal.canonical.image,
     pictureUrls: proposal.canonical.images,
     attributes: configuration.attributes,
+    saleTerms: commercialConfiguration?.saleTerms ?? [],
+    shipping: commercialConfiguration?.shipping ?? null,
     sellerCustomField: publicationCorrelationMarker,
   });
 
@@ -459,10 +567,17 @@ export const validateKyrubiaMercadoLivreDraftListing = async (input: {
     `stores/${storeId}/catalogOutboundListingValidations/${proposalId}`
   );
   await adminDb.runTransaction(async transaction => {
-    const [currentProposalDoc, currentConfigDoc, currentConditionalDoc, currentCanonicalDoc] = await Promise.all([
+    const [
+      currentProposalDoc,
+      currentConfigDoc,
+      currentConditionalDoc,
+      currentCommercialDoc,
+      currentCanonicalDoc,
+    ] = await Promise.all([
       transaction.get(proposalRef),
       transaction.get(configRef),
       transaction.get(conditionalRef),
+      transaction.get(commercialRef),
       transaction.get(canonicalRef),
     ]);
     if (!currentProposalDoc.exists) throw new Error('MERCADO_LIVRE_OUTBOUND_PROPOSAL_NOT_FOUND');
@@ -473,10 +588,20 @@ export const validateKyrubiaMercadoLivreDraftListing = async (input: {
       currentConfiguration,
       currentConditionalDoc.data()
     );
+    const currentCommercial = currentCommercialDoc.exists
+      ? assertCommercialConfiguration(
+          currentProposal,
+          currentConfiguration,
+          currentCommercialDoc.data()
+        )
+      : null;
     if (
       currentProposal.providerCapabilityFingerprint !== proposal.providerCapabilityFingerprint ||
       currentConfiguration.configuredAt !== configuration.configuredAt ||
       currentConditional.validatedAt !== conditionalValidation.validatedAt ||
+      Boolean(currentCommercial) !== Boolean(commercialConfiguration) ||
+      (currentCommercial && commercialConfiguration &&
+        currentCommercial.configuredAt !== commercialConfiguration.configuredAt) ||
       !currentCanonicalDoc.exists ||
       !canonicalMatchesProposal(currentProposal, currentCanonicalDoc.data())
     ) {
@@ -495,6 +620,7 @@ export const validateKyrubiaMercadoLivreDraftListing = async (input: {
       providerStockAuthority: proposal.providerStockAuthority,
       requirementConfiguredAt: configuration.configuredAt,
       conditionalRequirementValidatedAt: conditionalValidation.validatedAt,
+      commercialRequirementConfiguredAt: commercialConfiguration?.configuredAt ?? null,
       validatedByUserId,
       publicationCorrelationMarker,
       providerPayload,
