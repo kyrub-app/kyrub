@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { KyrubiaTurnContext } from '../../shared/kyrubiaContext.js';
+import { configureMercadoLivreOutboundCommercialRequirements } from '../integrations/mercadoLivreOutboundCommercialConfigurationService.js';
+import { inspectKyrubiaMercadoLivreCommercialReadiness } from '../integrations/mercadoLivreKyrubiaCommercialReadinessService.js';
 import { validateKyrubiaMercadoLivreDraftListing } from '../integrations/mercadoLivreKyrubiaListingValidationService.js';
 import { authorizeKyrubiaMercadoLivrePublication } from '../integrations/mercadoLivreKyrubiaPublicationAuthorizationService.js';
 import { handleKyrubiaMercadoLivrePublicationExecutionCommand } from './kyrubiaMercadoLivrePublicationExecutionCommand.js';
@@ -12,11 +14,38 @@ export type KyrubiaMercadoLivreListingValidationCommandResult =
       turnContext: KyrubiaTurnContext;
     };
 
+type ShippingCommand = {
+  mode: string;
+  freeShipping: boolean;
+  localPickUp: boolean;
+};
+
 const isExplicitDraftValidationCommand = (message: string): boolean =>
   /^(?:validar|valide)(?:\s+o)?\s+(?:draft|rascunho)$/i.test(message.trim());
 
 const isExplicitPublicationAuthorizationCommand = (message: string): boolean =>
   /^(?:autorizar|autorize)(?:\s+a)?\s+publica(?:ção|cao)$/i.test(message.trim());
+
+const parseShippingCommand = (message: string): ShippingCommand | null => {
+  const match = /^(?:configurar|configure)\s+(?:o\s+)?frete\s+([a-z0-9_-]{1,120})(.*)$/i.exec(message.trim());
+  if (!match?.[1]) return null;
+  const qualifiers = (match[2] ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLocaleLowerCase('pt-BR')
+    .trim();
+  if (
+    qualifiers &&
+    !/^(?:com\s+frete\s+gratis|com\s+retirada\s+local|com\s+frete\s+gratis\s+e\s+retirada\s+local|com\s+retirada\s+local\s+e\s+frete\s+gratis)$/i.test(qualifiers)
+  ) {
+    return null;
+  }
+  return {
+    mode: match[1],
+    freeShipping: /frete\s+gratis/.test(qualifiers),
+    localPickUp: /retirada\s+local/.test(qualifiers),
+  };
+};
 
 const proposalIdFromPreparationContext = (
   context: KyrubiaTurnContext
@@ -60,6 +89,17 @@ const validationUnavailableReply = (error: unknown): string => {
   ].join(' ');
 };
 
+const shippingUnavailableReply = (error: unknown): string => {
+  const code = error instanceof Error
+    ? error.message.split(':')[0]
+    : 'MERCADO_LIVRE_KYRUBIA_COMMERCIAL_READINESS_UNAVAILABLE';
+  return [
+    `Não consegui confirmar agora os modos de frete oficiais dessa conta e categoria (${code}).`,
+    'O Kyrub não escolheu um modo por suposição e não chamou /items/validate.',
+    'Nenhuma autorização de publicação foi criada e nenhum anúncio foi publicado.',
+  ].join(' ');
+};
+
 const authorizationUnavailableReply = (error: unknown): string => {
   const code = error instanceof Error
     ? error.message.split(':')[0]
@@ -68,6 +108,24 @@ const authorizationUnavailableReply = (error: unknown): string => {
     `O comando “Autorizar publicação” foi reconhecido, mas o gate autoritativo bloqueou a autorização (${code}).`,
     'A autorização só nasce se a validação 204 da Cairubia, o payload, a capability e o produto canônico ainda forem exatamente os mesmos no servidor.',
     'Nenhuma autorização utilizável foi criada para este comando e nenhum anúncio foi publicado ou alterado no Mercado Livre.',
+  ].join(' ');
+};
+
+const shippingSelectionReply = (input: {
+  allowedModes: string[];
+  localPickUpAvailable: boolean;
+}): string => {
+  const modes = input.allowedModes.map(mode => `“${mode}”`).join(', ');
+  const examples = input.allowedModes.slice(0, 3).map(mode => `“Configurar frete ${mode}”`).join(', ');
+  return [
+    'Antes de chamar /items/validate, falta definir o frete com base nas preferências atuais da sua própria conta do Mercado Livre.',
+    `Modo(s) oficialmente compatível(is) com esta conta e categoria: ${modes}.`,
+    input.localPickUpAvailable
+      ? 'A conta também informa retirada local disponível.'
+      : 'A conta não informa retirada local disponível para esta configuração.',
+    `Escolha um dos modos dizendo exatamente ${examples}.`,
+    'Sem complemento, o Kyrub configura frete grátis=false e retirada local=false. Se for realmente a sua escolha, você pode acrescentar “com frete grátis”, “com retirada local” ou ambos.',
+    'Nenhuma escolha foi feita pelo Kyrub, /items/validate ainda não foi chamado e nada foi autorizado ou publicado.',
   ].join(' ');
 };
 
@@ -112,12 +170,123 @@ export const handleKyrubiaMercadoLivreListingValidationCommand = async (input: {
     }
   }
 
+  const shippingCommand = parseShippingCommand(input.message);
+  if (shippingCommand) {
+    const turnContext = refreshedPreparationContext(input.context);
+    try {
+      const readiness = await inspectKyrubiaMercadoLivreCommercialReadiness({
+        storeId: input.userId,
+        proposalId,
+        requestedByUserId: input.userId,
+      });
+      if (!readiness.allowedShippingModes.includes(shippingCommand.mode)) {
+        return {
+          handled: true,
+          turnContext,
+          reply: [
+            `O modo “${shippingCommand.mode}” não está entre os modos atualmente compatíveis informados pelo Mercado Livre para esta conta e categoria.`,
+            readiness.allowedShippingModes.length
+              ? `Escolha um destes: ${readiness.allowedShippingModes.join(', ')}.`
+              : 'O provedor não informou nenhum modo compatível neste momento.',
+            'Nada foi gravado, validado, autorizado ou publicado.',
+          ].join(' '),
+        };
+      }
+      if (shippingCommand.localPickUp && !readiness.localPickUpAvailable) {
+        return {
+          handled: true,
+          turnContext,
+          reply: 'A retirada local não está disponível nas preferências atuais dessa conta. O Kyrub não gravou essa escolha e nada foi autorizado ou publicado.',
+        };
+      }
+      const configuration = await configureMercadoLivreOutboundCommercialRequirements({
+        storeId: input.userId,
+        proposalId,
+        saleTerms: [],
+        shipping: shippingCommand,
+        configuredByUserId: input.userId,
+      });
+      if (configuration.missingRequiredSaleTermIds.length > 0) {
+        return {
+          handled: true,
+          turnContext,
+          reply: [
+            `O frete “${shippingCommand.mode}” foi persistido, mas o Mercado Livre ainda exige termo(s) comercial(is): ${configuration.missingRequiredSaleTermIds.join(', ')}.`,
+            'O Kyrub bloqueou a validação até esses termos serem coletados com valores oficiais; nenhuma autorização foi criada e nada foi publicado.',
+          ].join(' '),
+        };
+      }
+      return {
+        handled: true,
+        turnContext,
+        reply: [
+          `O frete foi persistido com modo “${shippingCommand.mode}”, frete grátis=${shippingCommand.freeShipping} e retirada local=${shippingCommand.localPickUp}.`,
+          'A escolha foi revalidada contra as preferências oficiais atuais da conta e da categoria antes da gravação.',
+          'Nenhuma autorização de publicação foi criada e nenhum anúncio foi publicado.',
+          'Agora diga exatamente “Validar draft” para executar somente o gate oficial /items/validate com esse frete.',
+        ].join(' '),
+      };
+    } catch (error) {
+      return {
+        handled: true,
+        turnContext,
+        reply: shippingUnavailableReply(error),
+      };
+    }
+  }
+
   if (!isExplicitDraftValidationCommand(input.message)) {
     return { handled: false };
   }
 
   const turnContext = refreshedPreparationContext(input.context);
   try {
+    const readiness = await inspectKyrubiaMercadoLivreCommercialReadiness({
+      storeId: input.userId,
+      proposalId,
+      requestedByUserId: input.userId,
+    });
+    if (readiness.missingRequiredSaleTermIds.length > 0) {
+      const names = readiness.requiredSaleTerms
+        .filter(term => readiness.missingRequiredSaleTermIds.includes(term.id))
+        .map(term => `${term.name} (${term.id})`);
+      return {
+        handled: true,
+        turnContext,
+        reply: [
+          `Ainda faltam termo(s) comercial(is) obrigatório(s) do Mercado Livre: ${names.join(', ') || readiness.missingRequiredSaleTermIds.join(', ')}.`,
+          'O Kyrub não chamou /items/validate porque esses dados precisam ser coletados com opções atuais do provedor antes.',
+          'Nenhuma autorização foi criada e nada foi publicado.',
+        ].join(' '),
+      };
+    }
+    const configuredMode = readiness.configuredShipping?.mode ?? '';
+    if (
+      !configuredMode ||
+      !readiness.allowedShippingModes.includes(configuredMode)
+    ) {
+      if (readiness.allowedShippingModes.length === 0) {
+        return {
+          handled: true,
+          turnContext,
+          reply: [
+            'O Mercado Livre não informou nenhum modo de frete compatível entre as preferências desta conta e desta categoria.',
+            `Modos da conta: ${readiness.sellerShippingModes.join(', ') || 'nenhum'}. Modos da categoria: ${readiness.categoryShippingModes.join(', ') || 'nenhum'}.`,
+            'O Kyrub não chamou /items/validate e não vai inventar um modo. Ajuste as opções logísticas da conta no Mercado Livre e tente novamente.',
+            'Nenhuma autorização foi criada e nada foi publicado.',
+          ].join(' '),
+        };
+      }
+      return {
+        handled: true,
+        turnContext,
+        reply: shippingSelectionReply({
+          allowedModes: readiness.allowedShippingModes,
+          localPickUpAvailable: readiness.localPickUpAvailable,
+        }),
+      };
+    }
+
     const validation = await validateKyrubiaMercadoLivreDraftListing({
       storeId: input.userId,
       proposalId,
