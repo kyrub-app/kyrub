@@ -41,6 +41,7 @@ const MAX_TOPIC_CHARACTERS = 80;
 const MAX_SCREEN_CONTEXT_CHARACTERS = 240;
 const MAX_ERP_PRODUCTS = 120;
 const MAX_ERP_ORDERS = 30;
+const MAX_MERCADO_LIVRE_OFFERED_INTENTS = 8;
 
 const byoCapabilities = {
   actionsEnabled: true,
@@ -444,7 +445,7 @@ const normalizeMercadoLivreTurnContext = (
     clean(scope.storeId, 160) !== ownerUid
   ) return undefined;
   const offeredIntents = Array.isArray(raw.offeredIntents)
-    ? raw.offeredIntents.slice(0, 3).flatMap(item => {
+    ? raw.offeredIntents.slice(0, MAX_MERCADO_LIVRE_OFFERED_INTENTS).flatMap(item => {
         const intent = normalizeMercadoLivreIntent(item);
         return intent ? [intent] : [];
       })
@@ -535,7 +536,7 @@ const withListingTypeChoices = (
   options: MercadoLivreRequirementCategoryOptions
 ): KyrubiaTurnContext => {
   const offeredIntents: KyrubiaMercadoLivreListingTypeOfferedIntent[] = options.listingTypes
-    .slice(0, 3)
+    .slice(0, MAX_MERCADO_LIVRE_OFFERED_INTENTS)
     .map((listingType, index) => ({
       id: `ml-listing-type-${createHash('sha256')
         .update(`${intent.payload.proposalId}:${intent.payload.categoryId}:${intent.payload.condition}:${listingType.id}`)
