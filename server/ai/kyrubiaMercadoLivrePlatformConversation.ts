@@ -31,8 +31,28 @@ export const isKyrubiaMercadoLivrePlatformPreparationText = (
   message: string
 ): boolean => Boolean(preparationTarget(message));
 
+type AvailablePreparation = Extract<KyrubiaMercadoLivrePrepareResult, { prepared: true }>;
+type CategorySuggestion = Extract<
+  AvailablePreparation['requirementInspection'],
+  { status: 'available' }
+>['categorySuggestions'][number];
+
+const categoryChoiceLabel = (suggestion: CategorySuggestion): string => {
+  const hierarchy = suggestion.categoryPath
+    .map(node => clean(node.name, 160))
+    .filter(Boolean)
+    .join(' > ');
+  const fallbackContext = clean(suggestion.domainName, 160);
+  const context = hierarchy || fallbackContext;
+  return [
+    clean(suggestion.categoryName, 160),
+    suggestion.categoryId ? `ID ${suggestion.categoryId}` : '',
+    context,
+  ].filter(Boolean).join(' · ');
+};
+
 const categoryStepReply = (
-  result: Extract<KyrubiaMercadoLivrePrepareResult, { prepared: true }>
+  result: AvailablePreparation
 ): string => {
   const inspection = result.requirementInspection;
   if (inspection.status === 'unavailable') return inspection.message;
@@ -41,7 +61,7 @@ const categoryStepReply = (
   }
   const suggestions = inspection.categorySuggestions
     .slice(0, 3)
-    .map((suggestion, index) => `${index + 1}) ${suggestion.categoryName}`)
+    .map((suggestion, index) => `${index + 1}) ${categoryChoiceLabel(suggestion)}`)
     .join('; ');
   return [
     `O Mercado Livre sugeriu estas categorias: ${suggestions}.`,
@@ -67,7 +87,7 @@ const categoryTurnContext = (input: {
   conversationId: string;
   productId: string;
   productLabel: string;
-  result: Extract<KyrubiaMercadoLivrePrepareResult, { prepared: true }>;
+  result: AvailablePreparation;
 }): KyrubiaTurnContext | undefined => {
   const inspection = input.result.requirementInspection;
   if (inspection.status !== 'available') return undefined;
@@ -96,7 +116,7 @@ const categoryTurnContext = (input: {
         .digest('hex')
         .slice(0, 28)}`,
       intent: 'mercado_livre.category_select' as const,
-      label: suggestion.categoryName,
+      label: categoryChoiceLabel(suggestion),
       payload: {
         proposalId: input.result.proposalId,
         categoryId: suggestion.categoryId,
