@@ -1,3 +1,4 @@
+import { routeKyrubiaLocalProductIntent } from '../../shared/kyrubiaIntentRouter';
 import {
   buildKyrubiaObjectiveContext,
   formatKyrubiaQuotedLabel,
@@ -42,6 +43,12 @@ const normalizeOperationalIntent = (value: string): string =>
 export const shouldDeferTrustedReadToOperationalWorkflow = (
   message: string
 ): boolean => {
+  // Product/catalog reads belong to the authenticated operational catalog,
+  // not to the Manual KYRUB. Reuse the same classifier used by the chat
+  // transport so trusted knowledge cannot intercept phrases such as
+  // “produtos da minha loja na categoria chaveiro”.
+  if (routeKyrubiaLocalProductIntent(message)) return true;
+
   const intent = normalizeOperationalIntent(message);
   const hasProductTarget =
     /\b(produto|produtos|item|itens|servico|servicos|catalogo)\b/.test(intent);
@@ -61,9 +68,9 @@ export const resolveKyrubiaObjectiveRuntime = (
   message: string
 ): KyrubiaObjectiveRuntimeResult | null => {
   // Trusted reads stay ahead of objectives and provider calls, except when the
-  // user is explicitly asking to mutate the product catalog. In that case this
-  // layer deliberately falls through so the downstream operational workflow can
-  // perform its own preflight/review/confirmation. Falling through is not
+  // user is explicitly asking to read or mutate the product catalog. In those
+  // cases this layer deliberately falls through so the downstream operational
+  // workflow can use the authenticated store state. Falling through is not
   // authorization and never executes an action by itself.
   const trustedRead = shouldDeferTrustedReadToOperationalWorkflow(message)
     ? null
