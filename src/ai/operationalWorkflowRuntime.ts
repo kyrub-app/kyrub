@@ -4,7 +4,14 @@ import type {
   KyrubAiConsultantResponse,
 } from '../../shared/aiConsultant';
 import type { KyrubErpContextSnapshot } from '../../shared/kyrubErpContext';
-import { loadKyrubiaOperationalWorkflow } from './operationalWorkflowStore';
+import {
+  isKyrubiaImageAttachment,
+  promoteKyrubiaImageAttachment,
+} from './kyrubiaAttachmentService';
+import {
+  loadKyrubiaOperationalWorkflow,
+  saveKyrubiaOperationalWorkflow,
+} from './operationalWorkflowStore';
 import { resolveKyrubiaOperationalWorkflow as resolveLegacyOperationalWorkflow } from './operationalWorkflowRuntimeLegacy';
 
 type ExplicitCreateTarget = {
@@ -26,6 +33,46 @@ const stripOuterQuotes = (value: string): string =>
     .replace(/^["“”']+/, '')
     .replace(/["“”']+$/, '')
     .trim();
+
+const createRequestId = (): string => {
+  try {
+    return globalThis.crypto.randomUUID();
+  } catch {
+    return `kyrub-photo-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  }
+};
+
+const productPhotoPrompt = (name?: string): string =>
+  `Antes de concluir o cadastro de “${name?.trim() || 'este produto'}”, envie uma foto real do produto usando Anexar ou Câmera. A foto será salva no cadastro canônico e poderá ser reaproveitada em canais como o Mercado Livre. Se quiser cadastrar sem foto por enquanto, diga “sem foto”.`;
+
+const operationalResponse = (reply: string): KyrubAiConsultantResponse => ({
+  reply,
+  provider: 'kyrub',
+  model: 'kyrub-operational-runtime-v1',
+  mode: 'deterministic',
+  requestId: createRequestId(),
+  capabilities: {
+    actionsEnabled: true,
+    enabledActions: [
+      'create_note',
+      'start_store_activation',
+      'update_store_profile',
+      'prepare_product_draft',
+      'create_product',
+    ],
+    enabledReadActions: [
+      'read_store_summary',
+      'list_products',
+      'list_low_stock_products',
+      'list_pending_orders',
+    ],
+    voiceEnabled: false,
+    persistentCloudHistoryEnabled: false,
+  },
+});
+
+const wantsToSkipProductPhoto = (message: string): boolean =>
+  /^(?:sem\s+foto|pular|pule|depois|agora\s+n[aã]o|n[aã]o\s+agora)$/i.test(message.trim());
 
 export const parseExplicitKyrubiaCreateTarget = (
   message: string
@@ -98,6 +145,66 @@ const normalizeExplicitCreateFollowUp = (
   };
 };
 
+const finalizePhotoStage = async (input: {
+  user: User;
+  conversationId: string;
+  message: string;
+  erpContext?: KyrubErpContextSnapshot;
+  attachments?: KyrubAiAttachmentRef[];
+}): Promise<KyrubAiConsultantResponse | null> => {
+  if (typeof localStorage === 'undefined') return null;
+  const workflow = loadKyrubiaOperationalWorkflow(
+    localStorage,
+    input.user.uid,
+    input.conversationId
+  );
+  if (workflow?.objective !== 'create_product' || workflow.stage !== 'collecting_product_photo') {
+    return null;
+  }
+
+  const imageAttachment = input.attachments?.find(isKyrubiaImageAttachment);
+  if (!imageAttachment && !wantsToSkipProductPhoto(input.message)) {
+    return operationalResponse(productPhotoPrompt(workflow.productDraft.name));
+  }
+
+  if (imageAttachment) {
+    try {
+      const image = await promoteKyrubiaImageAttachment(input.user, imageAttachment);
+      saveKyrubiaOperationalWorkflow(localStorage, {
+        ...workflow,
+        stage: 'awaiting_product_confirmation',
+        productDraft: {
+          ...workflow.productDraft,
+          image,
+          photoSkipped: false,
+        },
+        updatedAt: new Date().toISOString(),
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Não consegui salvar essa foto.';
+      return operationalResponse(`${message} ${productPhotoPrompt(workflow.productDraft.name)}`);
+    }
+  } else {
+    saveKyrubiaOperationalWorkflow(localStorage, {
+      ...workflow,
+      stage: 'awaiting_product_confirmation',
+      productDraft: {
+        ...workflow.productDraft,
+        image: '',
+        photoSkipped: true,
+      },
+      updatedAt: new Date().toISOString(),
+    });
+  }
+
+  return resolveLegacyOperationalWorkflow({
+    user: input.user,
+    conversationId: input.conversationId,
+    message: input.message,
+    erpContext: input.erpContext,
+  });
+};
+
 /*
  * Compatibility contract markers delegated to operationalWorkflowRuntimeLegacy.
  * Keep these ordered because existing architecture tests assert that draft
@@ -123,15 +230,46 @@ export const resolveKyrubiaOperationalWorkflow = async (
     attachments?: KyrubAiAttachmentRef[];
   }
 ): Promise<KyrubAiConsultantResponse | null> => {
+  const photoResult = await finalizePhotoStage(input);
+  if (photoResult) return photoResult;
+
   const target = parseExplicitKyrubiaCreateTarget(input.message);
   const result = await resolveLegacyOperationalWorkflow({
-    ...input,
+    user: input.user,
+    conversationId: input.conversationId,
     message: messageForOperationalFlow(
       input.user,
       input.conversationId,
       input.message
     ),
+    erpContext: input.erpContext,
   });
+  const normalizedResult = normalizeExplicitCreateFollowUp(result, target);
 
-  return normalizeExplicitCreateFollowUp(result, target);
+  if (
+    normalizedResult?.actionProposal?.type === 'create_product' &&
+    normalizedResult.actionProposal.isService !== true &&
+    !normalizedResult.actionProposal.image?.trim() &&
+    typeof localStorage !== 'undefined'
+  ) {
+    const workflow = loadKyrubiaOperationalWorkflow(
+      localStorage,
+      input.user.uid,
+      input.conversationId
+    );
+    if (workflow?.objective === 'create_product' && workflow.stage === 'awaiting_product_confirmation') {
+      saveKyrubiaOperationalWorkflow(localStorage, {
+        ...workflow,
+        stage: 'collecting_product_photo',
+        updatedAt: new Date().toISOString(),
+      });
+      return {
+        ...normalizedResult,
+        reply: productPhotoPrompt(workflow.productDraft.name),
+        actionProposal: undefined,
+      };
+    }
+  }
+
+  return normalizedResult;
 };
