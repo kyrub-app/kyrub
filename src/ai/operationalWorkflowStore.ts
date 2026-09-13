@@ -7,6 +7,7 @@ export type KyrubiaProductDraft = {
   stock?: number;
   category?: string;
   image?: string;
+  photoSkipped?: boolean;
   isService?: boolean;
   isComplimentary?: boolean;
 };
@@ -19,6 +20,7 @@ export type KyrubiaOperationalWorkflowStage =
   | 'collecting_product_price'
   | 'collecting_product_category'
   | 'collecting_product_stock'
+  | 'collecting_product_photo'
   | 'awaiting_product_confirmation';
 
 export type KyrubiaOperationalWorkflow = {
@@ -68,6 +70,7 @@ const isStage = (value: unknown): value is KyrubiaOperationalWorkflowStage =>
   value === 'collecting_product_price' ||
   value === 'collecting_product_category' ||
   value === 'collecting_product_stock' ||
+  value === 'collecting_product_photo' ||
   value === 'awaiting_product_confirmation';
 
 const isPositiveInteger = (value: unknown): value is number =>
