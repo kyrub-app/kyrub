@@ -28,11 +28,6 @@ interface MercadoLivreUserResponse {
   site_id?: unknown;
 }
 
-interface CategoryPrediction {
-  category_id?: unknown;
-  category_name?: unknown;
-}
-
 export interface MercadoLivreRequirementCategoryOptions {
   proposalId: string;
   siteId: string;
@@ -181,25 +176,6 @@ const assertPersistedInspection = (input: {
   };
 };
 
-const currentPredictions = async (
-  storeId: string,
-  siteId: string,
-  title: string
-): Promise<Array<{ categoryId: string; categoryName: string }>> => {
-  const result = await mercadoLivreGetJson<CategoryPrediction[]>(
-    storeId,
-    `/sites/${encodeURIComponent(siteId)}/domain_discovery/search?limit=3&q=${encodeURIComponent(title)}`
-  );
-  if (!Array.isArray(result)) {
-    throw new Error('MERCADO_LIVRE_OUTBOUND_CATEGORY_PREDICTION_INVALID');
-  }
-  return result.flatMap(candidate => {
-    const categoryId = clean(candidate.category_id, 160);
-    const categoryName = clean(candidate.category_name, 180);
-    return categoryId && categoryName ? [{ categoryId, categoryName }] : [];
-  });
-};
-
 export const inspectMercadoLivreRequirementCategoryOptions = async (input: {
   storeId: string;
   proposalId: string;
@@ -265,12 +241,10 @@ export const inspectMercadoLivreRequirementCategoryOptions = async (input: {
     throw new Error('MERCADO_LIVRE_OUTBOUND_SITE_CHANGED');
   }
 
-  const predictions = await currentPredictions(storeId, currentSiteId, proposal.canonical.name);
-  const currentPrediction = predictions.find(candidate => candidate.categoryId === categoryId);
-  if (!currentPrediction || currentPrediction.categoryName !== categoryName) {
-    throw new Error('MERCADO_LIVRE_OUTBOUND_CATEGORY_NOT_PREDICTED');
-  }
-
+  // Category prediction through domain_discovery/search?limit=3 is a discovery
+  // aid only. Once the store owner explicitly selects a provider category,
+  // revalidation targets that stable provider ID directly. Prediction ranking
+  // is intentionally volatile and cannot revoke a previously confirmed choice.
   const [categoryRaw, attributesRaw, listingTypesRaw] = await Promise.all([
     mercadoLivreGetJson<unknown>(storeId, `/categories/${encodeURIComponent(categoryId)}`),
     mercadoLivreGetJson<unknown>(storeId, `/categories/${encodeURIComponent(categoryId)}/attributes`),

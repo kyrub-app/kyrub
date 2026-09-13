@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
 const servicePath = new URL('../server/integrations/mercadoLivreOutboundRequirementsService.ts', import.meta.url);
+const requirementOptionsPath = new URL('../server/integrations/mercadoLivreRequirementOptionsService.ts', import.meta.url);
 const routerPath = new URL('../server/integrations/mercadoLivreRouter.ts', import.meta.url);
 const collectorPath = new URL('../server/ai/kyrubiaMercadoLivreRequiredAttributeCollector.ts', import.meta.url);
 
@@ -42,6 +43,17 @@ test('configuration reuses the saved provider inspection instead of rerunning ca
   assert.match(helperSource, /MERCADO_LIVRE_OUTBOUND_REQUIREMENT_INSPECTION_STALE/);
   assert.match(configureSource, /assertCategoryFromSavedInspection/);
   assert.doesNotMatch(configureSource, /predictionsFor\(/);
+});
+
+test('downstream requirement revalidation uses the selected provider category id rather than volatile prediction ranking', async () => {
+  const source = await readFile(requirementOptionsPath, 'utf8');
+  assert.match(source, /\/categories\/\$\{encodeURIComponent\(categoryId\)\}/);
+  assert.match(source, /available_listing_types\?category_id=/);
+  assert.match(source, /settings\.listing_allowed !== true/);
+  assert.match(source, /MERCADO_LIVRE_OUTBOUND_CATEGORY_NOT_LISTABLE/);
+  assert.match(source, /prediction through domain_discovery\/search\?limit=3 is a discovery/i);
+  assert.doesNotMatch(source, /const currentPredictions/);
+  assert.doesNotMatch(source, /MERCADO_LIVRE_OUTBOUND_CATEGORY_NOT_PREDICTED/);
 });
 
 test('required attributes, listing type and condition must match current provider metadata', async () => {
