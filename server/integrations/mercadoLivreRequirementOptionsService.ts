@@ -241,10 +241,10 @@ export const inspectMercadoLivreRequirementCategoryOptions = async (input: {
     throw new Error('MERCADO_LIVRE_OUTBOUND_SITE_CHANGED');
   }
 
-  // Category prediction is a discovery aid only. Once the store owner has
-  // explicitly selected a provider category, revalidation must target that
-  // stable provider ID directly. Ranking from domain_discovery/search is
-  // intentionally volatile and cannot revoke a previously confirmed choice.
+  // Category prediction through domain_discovery/search?limit=3 is a discovery
+  // aid only. Once the store owner explicitly selects a provider category,
+  // revalidation targets that stable provider ID directly. Prediction ranking
+  // is intentionally volatile and cannot revoke a previously confirmed choice.
   const [categoryRaw, attributesRaw, listingTypesRaw] = await Promise.all([
     mercadoLivreGetJson<unknown>(storeId, `/categories/${encodeURIComponent(categoryId)}`),
     mercadoLivreGetJson<unknown>(storeId, `/categories/${encodeURIComponent(categoryId)}/attributes`),
