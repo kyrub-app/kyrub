@@ -1,6 +1,7 @@
 import type { User } from 'firebase/auth';
 import {
   deleteObject,
+  getBytes,
   ref,
   uploadBytes,
 } from 'firebase/storage';
@@ -9,6 +10,7 @@ import {
   type KyrubAiAttachmentMimeType,
   type KyrubAiAttachmentRef,
 } from '../../shared/aiConsultant';
+import { uploadCurrentUserImage } from '../utils/appImageStorage';
 import { storage } from '../utils/firebase';
 
 const ACCEPTED_MIME_TYPES = new Set<KyrubAiAttachmentMimeType>([
@@ -16,6 +18,12 @@ const ACCEPTED_MIME_TYPES = new Set<KyrubAiAttachmentMimeType>([
   'image/png',
   'image/webp',
   'application/pdf',
+]);
+
+const IMAGE_MIME_TYPES = new Set<KyrubAiAttachmentMimeType>([
+  'image/jpeg',
+  'image/png',
+  'image/webp',
 ]);
 
 const extensionMimeType = (name: string): KyrubAiAttachmentMimeType | null => {
@@ -150,6 +158,32 @@ export const uploadKyrubiaAttachments = async (
     );
     throw error;
   }
+};
+
+export const isKyrubiaImageAttachment = (
+  attachment: KyrubAiAttachmentRef
+): boolean => IMAGE_MIME_TYPES.has(attachment.mimeType);
+
+export const promoteKyrubiaImageAttachment = async (
+  user: User,
+  attachment: KyrubAiAttachmentRef
+): Promise<string> => {
+  if (!isKyrubiaImageAttachment(attachment)) {
+    throw new Error('Envie uma imagem JPG, PNG ou WEBP para usar como foto do produto.');
+  }
+  const ownPrefix = `kyrubia-attachments/${user.uid}/`;
+  if (!attachment.storagePath.startsWith(ownPrefix)) {
+    throw new Error('A foto precisa pertencer à sua conversa autenticada.');
+  }
+  const bytes = await getBytes(
+    ref(storage, attachment.storagePath),
+    KYRUB_AI_ATTACHMENT_LIMITS.maxImageBytes
+  );
+  const file = new File([bytes], safeFileName(attachment.name), {
+    type: attachment.mimeType,
+  });
+  const uploaded = await uploadCurrentUserImage(file);
+  return uploaded.url;
 };
 
 export const deleteKyrubiaAttachments = async (
