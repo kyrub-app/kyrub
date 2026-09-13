@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { shouldDeferTrustedReadToOperationalWorkflow } from '../src/ai/objectiveRuntimeService';
 import { resolveKyrubiaTrustedReadRuntime } from '../src/ai/trustedReadRuntime';
@@ -11,6 +12,11 @@ const storage: KyrubActivityStorage = {
 
 const failingProductionPhrase =
   'Quais são os produtos da minha loja cadastrados na categoria “chaveiro”?';
+
+const consultantClientSource = readFileSync(
+  new URL('../src/ai/consultantClient.ts', import.meta.url),
+  'utf8'
+);
 
 test('operational product category read defers before Manual KYRUB routing', () => {
   assert.equal(
@@ -27,6 +33,17 @@ test('trusted knowledge cannot answer an operational product category read', () 
       failingProductionPhrase
     ),
     null
+  );
+});
+
+test('operational product reads cannot short-circuit on the legacy browser ERP snapshot', () => {
+  assert.match(
+    consultantClientSource,
+    /const deterministic = latestUserMessage\?\.role === 'user' && !localProductReadIntent/
+  );
+  assert.match(
+    consultantClientSource,
+    /const endpoints = localProductReadIntent\s*\? \[KYRUB_AI_CONSULTANT_ENDPOINT\]/
   );
 });
 

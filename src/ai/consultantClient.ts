@@ -493,7 +493,9 @@ export const requestKyrubAiConsultant = async (
     return result;
   }
 
-  const deterministic = latestUserMessage?.role === 'user'
+  // Product reads must reach the authoritative server catalog first. The browser
+  // ERP snapshot still uses the legacy publicProducts mirror and is fallback-only.
+  const deterministic = latestUserMessage?.role === 'user' && !localProductReadIntent
     ? resolveKyrubiaDeterministicErpRead(
         latestUserMessage.content,
         erpContext,
