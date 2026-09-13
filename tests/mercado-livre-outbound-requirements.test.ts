@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 
 const servicePath = new URL('../server/integrations/mercadoLivreOutboundRequirementsService.ts', import.meta.url);
 const routerPath = new URL('../server/integrations/mercadoLivreRouter.ts', import.meta.url);
+const collectorPath = new URL('../server/ai/kyrubiaMercadoLivreRequiredAttributeCollector.ts', import.meta.url);
 
 test('outbound requirements come from authenticated Mercado Livre provider metadata', async () => {
   const source = await readFile(servicePath, 'utf8');
@@ -77,4 +78,13 @@ test('outbound requirement routes remain owner authenticated and separate from p
   assert.match(router, /configureMercadoLivreOutboundRequirements/);
   assert.match(router, /authenticatedOwner/);
   assert.doesNotMatch(router, /createMercadoLivreListing|publishMercadoLivre/);
+});
+
+test('Kyrubia treats string attribute values as suggestions instead of a closed enum', async () => {
+  const source = await readFile(collectorPath, 'utf8');
+  assert.match(source, /attributeHasClosedProviderValueSet/);
+  assert.match(source, /attribute\.valueType === 'list' \|\| attribute\.valueType === 'boolean'/);
+  assert.match(source, /Esses valores são sugestões, não uma lista fechada/);
+  assert.match(source, /if \(attributeHasClosedProviderValueSet\(attribute\)\) return null/);
+  assert.match(source, /return \{ id: attribute\.id, name: attribute\.name, valueName: text \}/);
 });

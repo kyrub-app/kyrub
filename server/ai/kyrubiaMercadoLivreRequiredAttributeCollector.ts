@@ -41,6 +41,9 @@ const normalize = (value: string): string =>
     .replace(/\s+/g, ' ')
     .trim();
 
+const attributeHasClosedProviderValueSet = (attribute: ProviderAttribute): boolean =>
+  attribute.valueType === 'list' || attribute.valueType === 'boolean';
+
 const planFor = (
   progress: KyrubiaMercadoLivreRequirementProgress,
   options: MercadoLivreRequirementCategoryOptions,
@@ -90,11 +93,12 @@ const canonicalizeCollectedAttribute = (
   }
   const valueName = clean(collected.valueName, 255);
   const valueId = clean(collected.valueId, 160);
-  if (providerAttribute.values.length > 0) {
-    const providerValue = valueId
-      ? providerAttribute.values.find(value => value.id === valueId)
-      : providerAttribute.values.find(value => normalize(value.name) === normalize(valueName));
-    if (!providerValue || (valueName && providerValue.name !== valueName)) {
+  const providerValue = valueId
+    ? providerAttribute.values.find(value => value.id === valueId)
+    : providerAttribute.values.find(value => normalize(value.name) === normalize(valueName));
+
+  if (providerValue) {
+    if (valueName && providerValue.name !== valueName) {
       throw new Error('MERCADO_LIVRE_ATTRIBUTE_VALUE_STALE');
     }
     return {
@@ -103,6 +107,10 @@ const canonicalizeCollectedAttribute = (
       ...(providerValue.id ? { valueId: providerValue.id } : {}),
       valueName: providerValue.name,
     };
+  }
+
+  if (valueId || attributeHasClosedProviderValueSet(providerAttribute)) {
+    throw new Error('MERCADO_LIVRE_ATTRIBUTE_VALUE_STALE');
   }
   if (!valueName) {
     throw new Error('MERCADO_LIVRE_ATTRIBUTE_VALUE_INVALID');
@@ -265,13 +273,23 @@ const attributePrompt = (
       .map(value => value.name)
       .join(', ');
     const remaining = attribute.values.length - Math.min(attribute.values.length, 8);
+    if (attributeHasClosedProviderValueSet(attribute)) {
+      return [
+        `Agora preciso de “${attribute.name}” (${attribute.id}), ${requirementDescription}.`,
+        authorityNote,
+        `Valores oficiais permitidos: ${preview}${remaining > 0 ? ` e mais ${remaining}` : ''}.`,
+        'Escolha uma opção abaixo ou digite exatamente um dos valores oficiais.',
+        `Já coletei ${answered} atributo(s) nesta conversa.`,
+        'Nada foi gravado no rascunho e nenhuma autorização de publicação foi criada.',
+      ].join(' ');
+    }
     return [
       `Agora preciso de “${attribute.name}” (${attribute.id}), ${requirementDescription}.`,
       authorityNote,
-      `Valores oficiais disponíveis: ${preview}${remaining > 0 ? ` e mais ${remaining}` : ''}.`,
-      'Escolha uma opção abaixo ou digite exatamente um dos valores oficiais.',
+      `O Mercado Livre informa o tipo de valor como “${attribute.valueType || 'texto'}” e sugeriu: ${preview}${remaining > 0 ? ` e mais ${remaining}` : ''}.`,
+      'Esses valores são sugestões, não uma lista fechada. Você pode escolher uma sugestão ou digitar outro valor válido para este atributo.',
       `Já coletei ${answered} atributo(s) nesta conversa.`,
-      'Nada foi gravado no rascunho e nenhuma autorização de publicação foi criada.',
+      'Essa resposta continuará apenas no contexto da conversa; nada será gravado no rascunho ainda.',
     ].join(' ');
   }
 
@@ -475,13 +493,15 @@ const answerFromMessage = (
     const providerValue = attribute.values.find(value =>
       normalize(value.id) === wanted || normalize(value.name) === wanted
     );
-    if (!providerValue) return null;
-    return {
-      id: attribute.id,
-      name: attribute.name,
-      ...(providerValue.id ? { valueId: providerValue.id } : {}),
-      valueName: providerValue.name,
-    };
+    if (providerValue) {
+      return {
+        id: attribute.id,
+        name: attribute.name,
+        ...(providerValue.id ? { valueId: providerValue.id } : {}),
+        valueName: providerValue.name,
+      };
+    }
+    if (attributeHasClosedProviderValueSet(attribute)) return null;
   }
   return { id: attribute.id, name: attribute.name, valueName: text };
 };
