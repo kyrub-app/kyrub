@@ -5,6 +5,7 @@ import { readFile } from 'node:fs/promises';
 const servicePath = new URL('../server/integrations/mercadoLivreKyrubiaListingValidationService.ts', import.meta.url);
 const commandPath = new URL('../server/ai/kyrubiaMercadoLivreListingValidationCommand.ts', import.meta.url);
 const chatPath = new URL('../server/ai/kyrubiaUserProviderChatService.ts', import.meta.url);
+const readinessPath = new URL('../server/integrations/mercadoLivreKyrubiaCommercialReadinessService.ts', import.meta.url);
 
 test('Cairubia listing validation only accepts its persisted schema-v2 draft evidence', async () => {
   const source = await readFile(servicePath, 'utf8');
@@ -43,6 +44,25 @@ test('listing validation command is explicit and uses conversation context only 
   assert.match(command, /Nenhuma autorização de publicação foi criada/i);
   assert.match(command, /executionStatus continua not_authorized/);
   assert.doesNotMatch(command, /\b(?:sim|pode|ok)\b.*isExplicitDraftValidationCommand/i);
+});
+
+test('Kairuba preflights provider shipping before items validate and never invents a seller mode', async () => {
+  const command = await readFile(commandPath, 'utf8');
+  const readiness = await readFile(readinessPath, 'utf8');
+  const readinessCall = command.indexOf('inspectKyrubiaMercadoLivreCommercialReadiness({');
+  const validationCall = command.lastIndexOf('validateKyrubiaMercadoLivreDraftListing({');
+
+  assert.ok(readinessCall >= 0);
+  assert.ok(validationCall > readinessCall);
+  assert.match(command, /parseShippingCommand/);
+  assert.match(command, /Configurar frete/);
+  assert.match(command, /allowedShippingModes\.includes\(shippingCommand\.mode\)/);
+  assert.match(command, /configureMercadoLivreOutboundCommercialRequirements/);
+  assert.match(command, /O Kyrub não chamou \/items\/validate/);
+  assert.match(command, /Nada foi gravado, validado, autorizado ou publicado/);
+  assert.match(readiness, /inspectMercadoLivreCommercialRequirements/);
+  assert.match(readiness, /provider_api_commercial_options/);
+  assert.match(readiness, /missingRequiredSaleTermIds/);
 });
 
 test('after draft configuration Cairubia preserves only the listing locator and offers validation as a separate gate', async () => {
