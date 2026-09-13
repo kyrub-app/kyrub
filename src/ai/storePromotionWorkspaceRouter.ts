@@ -8,6 +8,7 @@ import {
   resolveKyrubiaStoreConnectionDeclarationIntent,
   storeConnectionChannelLabel,
 } from './deterministicStoreConnectionOnboarding';
+import { loadKyrubiaOperationalWorkflow } from './operationalWorkflowStore';
 import { emitKyrubStoreConnectionOnboardingProposal } from './storeConnectionOnboardingEvents';
 import { emitKyrubStorePromotionProposal } from './storePromotionEvents';
 
@@ -24,12 +25,26 @@ export type KyrubiaStorePromotionRouteResult = {
   reply?: string;
 };
 
+export const shouldDeferStoreConnectionDeclarationToProductWorkflow = (
+  workflow: { objective?: string; stage?: string } | null | undefined
+): boolean =>
+  workflow?.objective === 'create_product' &&
+  workflow.stage === 'selecting_product_channels';
+
 export const routeKyrubiaStorePromotionFromWorkspace = async (
   user: Pick<User, 'uid' | 'email'>,
   conversationId: string,
   message: string
 ): Promise<KyrubiaStorePromotionRouteResult> => {
-  const channelDeclaration = resolveKyrubiaStoreConnectionDeclarationIntent(message);
+  const activeOperationalWorkflow = typeof localStorage !== 'undefined'
+    ? loadKyrubiaOperationalWorkflow(localStorage, user.uid, conversationId)
+    : null;
+  const channelDeclaration = shouldDeferStoreConnectionDeclarationToProductWorkflow(
+    activeOperationalWorkflow
+  )
+    ? null
+    : resolveKyrubiaStoreConnectionDeclarationIntent(message);
+
   if (channelDeclaration) {
     emitKyrubStoreConnectionOnboardingProposal(
       conversationId,
