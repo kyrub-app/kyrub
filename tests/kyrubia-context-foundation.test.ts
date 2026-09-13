@@ -7,7 +7,10 @@ import {
   describeKyrubiaTurnSelection,
   resolveKyrubiaContextualRecall,
   resolveKyrubiaMissingContextReply,
+  resolveKyrubiaOfferedIntentSelection,
   resolveKyrubiaTurnSelection,
+  selectKyrubiaOfferedIntentContext,
+  type KyrubiaTurnContext,
 } from '../shared/kyrubiaContext';
 
 const snapshot = (): KyrubErpContextSnapshot => ({
@@ -218,6 +221,73 @@ test('structured reference explicitly remains context rather than authorization 
   assert.match(description, /Referência operacional resolvida pelo Kyrub/i);
   assert.match(description, /não prova estado atual/i);
   assert.match(description, /(?:não|nem) autoriza mutações/i);
+});
+
+test('failed Mercado Livre selection can retry the exact selected intent without reviving other choices', () => {
+  const context: KyrubiaTurnContext = {
+    version: 1,
+    id: 'turn-listing-types',
+    source: 'kyrub_runtime',
+    sourceAction: 'mercado_livre_requirement_options',
+    generatedAt: '2026-09-13T22:00:00.000Z',
+    scope: { kind: 'own_store', storeId: 'owner-1' },
+    entities: [
+      { entityType: 'product', entityId: 'product-1', label: 'Garrafinha E2E', position: 1 },
+    ],
+    offeredIntents: [
+      {
+        id: 'listing-classic',
+        intent: 'mercado_livre.listing_type_select',
+        label: 'Clássico',
+        payload: {
+          proposalId: 'proposal-1',
+          categoryId: 'MLB123032',
+          categoryName: 'Garrafinhas Esportivas',
+          condition: 'new',
+          listingTypeId: 'gold_special',
+          listingTypeName: 'Clássico',
+          providerAuthority: 'provider_api_requirement_options',
+        },
+        authorization: 'intent_only',
+      },
+      {
+        id: 'listing-premium',
+        intent: 'mercado_livre.listing_type_select',
+        label: 'Premium',
+        payload: {
+          proposalId: 'proposal-1',
+          categoryId: 'MLB123032',
+          categoryName: 'Garrafinhas Esportivas',
+          condition: 'new',
+          listingTypeId: 'gold_pro',
+          listingTypeName: 'Premium',
+          providerAuthority: 'provider_api_requirement_options',
+        },
+        authorization: 'intent_only',
+      },
+    ],
+  };
+
+  const first = resolveKyrubiaOfferedIntentSelection({
+    message: 'Clássico',
+    context,
+  });
+  assert.ok(first);
+  const failedAttemptContext = selectKyrubiaOfferedIntentContext(context, first);
+  assert.equal(failedAttemptContext.offeredIntents, undefined);
+  assert.equal(failedAttemptContext.selectedIntent?.id, 'listing-classic');
+
+  const retry = resolveKyrubiaOfferedIntentSelection({
+    message: 'Clássico',
+    context: failedAttemptContext,
+  });
+  assert.equal(retry?.offeredIntent.id, 'listing-classic');
+  assert.equal(retry?.resolution, 'label');
+
+  assert.equal(resolveKyrubiaOfferedIntentSelection({
+    message: 'Premium',
+    context: failedAttemptContext,
+  }), null);
 });
 
 test('workspace persists the latest structured turn and uses activate-store wording', async () => {
