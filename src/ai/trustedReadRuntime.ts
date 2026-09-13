@@ -1,5 +1,6 @@
 import type { KyrubActivityEvent } from '../../shared/kyrubActivityEvents';
 import { searchKyrubKnowledge } from '../../shared/kyrubKnowledgeSearch';
+import { routeKyrubiaLocalProductIntent } from '../../shared/kyrubiaIntentRouter';
 import { getOfficialKnowledgeRuntimeSnapshot } from '../knowledge/officialKnowledgeRuntimeCache';
 import {
   readRecentKyrubActivityEvents,
@@ -194,6 +195,10 @@ const isOfficialProductQuestion = (message: string): boolean => {
 };
 
 const officialKnowledgeReply = (message: string): KyrubiaTrustedReadResult | null => {
+  // “Minha loja” is valid wording both for product rules and for live catalog
+  // data. An authenticated catalog intent must never be answered from the
+  // Manual KYRUB, even if this runtime is called without the upstream deferral.
+  if (routeKyrubiaLocalProductIntent(message)) return null;
   if (!isOfficialProductQuestion(message)) return null;
 
   const items = getOfficialKnowledgeRuntimeSnapshot();
