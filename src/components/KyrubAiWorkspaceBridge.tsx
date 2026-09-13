@@ -34,6 +34,10 @@ import {
   uploadKyrubiaAttachments,
 } from '../ai/kyrubiaAttachmentService';
 import { requestKyrubAiMultimodalConsultant } from '../ai/multimodalConsultantClient';
+import {
+  KYRUBIA_OPERATIONAL_WORKFLOW_MESSAGE_EVENT,
+  type KyrubiaOperationalWorkflowMessageDetail,
+} from '../ai/operationalWorkflowStore';
 import { routeKyrubiaStorePromotionFromWorkspace } from '../ai/storePromotionWorkspaceRouter';
 import {
   createKyrubAiConversation,
@@ -424,6 +428,30 @@ export function KyrubAiWorkspaceBridge() {
       selectedOfferedIntentId
     );
   };
+
+  useEffect(() => {
+    const handleOperationalFollowUp = (event: Event) => {
+      const detail = (
+        event as CustomEvent<KyrubiaOperationalWorkflowMessageDetail>
+      ).detail;
+      if (
+        !detail?.message?.trim() ||
+        detail.conversationId !== activeConversationId ||
+        busy
+      ) {
+        return;
+      }
+      void submitContent(detail.message);
+    };
+    window.addEventListener(
+      KYRUBIA_OPERATIONAL_WORKFLOW_MESSAGE_EVENT,
+      handleOperationalFollowUp
+    );
+    return () => window.removeEventListener(
+      KYRUBIA_OPERATIONAL_WORKFLOW_MESSAGE_EVENT,
+      handleOperationalFollowUp
+    );
+  }, [activeConversationId, busy, user, conversations]);
 
   const sendMessage = async (event?: FormEvent) => {
     event?.preventDefault();
