@@ -61,3 +61,41 @@ test('consultor router keeps bulk import ahead of generic flow without forcing s
   assert.match(router, /latestUserRequestsCatalogImport\(messages\)/);
   assert.match(router, /isKyrubiaCatalogImportText\(latestUser\.content\)/);
 });
+
+test('physical product creation asks for a real photo before exposing create_product confirmation', () => {
+  const runtime = readFileSync(
+    new URL('../src/ai/operationalWorkflowRuntime.ts', import.meta.url),
+    'utf8'
+  );
+  const store = readFileSync(
+    new URL('../src/ai/operationalWorkflowStore.ts', import.meta.url),
+    'utf8'
+  );
+
+  assert.match(store, /'collecting_product_photo'/);
+  assert.match(runtime, /productPhotoPrompt/);
+  assert.match(runtime, /foto real do produto/i);
+  assert.match(runtime, /stage: 'collecting_product_photo'/);
+  assert.match(runtime, /actionProposal: undefined/);
+  assert.match(runtime, /actionProposal\.isService !== true/);
+});
+
+test('product photo attachment is promoted to stable app image storage and later Mercado Livre turns remain deterministic', () => {
+  const attachmentClient = readFileSync(
+    new URL('../src/ai/kyrubiaAttachmentService.ts', import.meta.url),
+    'utf8'
+  );
+  const multimodalClient = readFileSync(
+    new URL('../src/ai/multimodalConsultantClient.ts', import.meta.url),
+    'utf8'
+  );
+
+  assert.match(attachmentClient, /getBytes/);
+  assert.match(attachmentClient, /uploadCurrentUserImage/);
+  assert.match(attachmentClient, /isKyrubiaImageAttachment/);
+  assert.match(multimodalClient, /loadKyrubiaOperationalWorkflow/);
+  assert.match(multimodalClient, /attachments: latestUser\.attachments/);
+  assert.match(multimodalClient, /shouldUseDeterministicMercadoLivreRuntime/);
+  assert.match(multimodalClient, /return requestKyrubAiConsultant\(payload, signal\)/);
+  assert.match(multimodalClient, /mercado_livre_publication_preparation/);
+});
