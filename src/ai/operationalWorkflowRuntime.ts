@@ -74,6 +74,37 @@ const operationalResponse = (reply: string): KyrubAiConsultantResponse => ({
 const wantsToSkipProductPhoto = (message: string): boolean =>
   /^(?:sem\s+foto|pular|pule|depois|agora\s+n[aã]o|n[aã]o\s+agora)$/i.test(message.trim());
 
+const asksForMercadoLivreCategorySuggestion = (message: string): boolean => {
+  const intent = normalize(message);
+  if (!/\b(?:ml|mercado livre)\b/.test(intent)) return false;
+  return /\b(?:categoria|qual|suger\w*|recomend\w*|indic\w*|usar|use|mesma|igual)\b/.test(intent);
+};
+
+const resolveMercadoLivreCategoryDuringProductCreation = (input: {
+  user: User;
+  conversationId: string;
+  message: string;
+}): KyrubAiConsultantResponse | null => {
+  if (typeof localStorage === 'undefined') return null;
+  const workflow = loadKyrubiaOperationalWorkflow(
+    localStorage,
+    input.user.uid,
+    input.conversationId
+  );
+  if (
+    workflow?.objective !== 'create_product' ||
+    workflow.stage !== 'collecting_product_category' ||
+    !asksForMercadoLivreCategorySuggestion(input.message)
+  ) {
+    return null;
+  }
+
+  const productName = workflow.productDraft.name?.trim() || 'este produto';
+  return operationalResponse(
+    `A categoria que estou pedindo agora é a categoria interna da sua loja no Kyrub. A categoria do Mercado Livre é separada e será sugerida e revalidada quando você preparar “${productName}” para vender no Mercado Livre, porque o provedor usa uma taxonomia própria. Não vou gravar sua pergunta como categoria. Informe a categoria interna que deseja usar para “${productName}”; pode ser uma categoria que já existe na sua loja ou uma nova.`
+  );
+};
+
 export const parseExplicitKyrubiaCreateTarget = (
   message: string
 ): ExplicitCreateTarget | null => {
@@ -233,6 +264,9 @@ export const resolveKyrubiaOperationalWorkflow = async (
   const photoResult = await finalizePhotoStage(input);
   if (photoResult) return photoResult;
 
+  const mercadoLivreCategoryResult = resolveMercadoLivreCategoryDuringProductCreation(input);
+  if (mercadoLivreCategoryResult) return mercadoLivreCategoryResult;
+
   const target = parseExplicitKyrubiaCreateTarget(input.message);
   const result = await resolveLegacyOperationalWorkflow({
     user: input.user,
@@ -246,12 +280,7 @@ export const resolveKyrubiaOperationalWorkflow = async (
   });
   const normalizedResult = normalizeExplicitCreateFollowUp(result, target);
 
-  if (
-    normalizedResult?.actionProposal?.type === 'create_product' &&
-    normalizedResult.actionProposal.isService !== true &&
-    !normalizedResult.actionProposal.image?.trim() &&
-    typeof localStorage !== 'undefined'
-  ) {
+  if (normalizedResult && typeof localStorage !== 'undefined') {
     const workflow = loadKyrubiaOperationalWorkflow(
       localStorage,
       input.user.uid,
@@ -260,6 +289,8 @@ export const resolveKyrubiaOperationalWorkflow = async (
     if (
       workflow?.objective === 'create_product' &&
       workflow.stage === 'awaiting_product_confirmation' &&
+      workflow.productDraft.isService !== true &&
+      !workflow.productDraft.image?.trim() &&
       workflow.productDraft.photoSkipped !== true
     ) {
       saveKyrubiaOperationalWorkflow(localStorage, {
