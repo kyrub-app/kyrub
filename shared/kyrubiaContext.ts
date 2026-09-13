@@ -334,7 +334,7 @@ export const resolveKyrubiaOfferedIntentSelection = (input: {
   message: string;
   context?: KyrubiaTurnContext;
 }): KyrubiaOfferedIntentSelection | null => {
-  const offered = input.context?.offeredIntents?.slice(0, 3) ?? [];
+  const offered = input.context?.offeredIntents?.slice(0, 8) ?? [];
   if (!input.context || offered.length === 0) return null;
 
   const selectedId = input.selectedOfferedIntentId?.trim();

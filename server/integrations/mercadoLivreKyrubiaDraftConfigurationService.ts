@@ -72,6 +72,8 @@ type CanonicalAttribute = {
   valueName: string;
 };
 
+type ProviderAttribute = MercadoLivreRequirementCategoryOptions['attributes'][number];
+
 const MAX_ATTRIBUTES = 40;
 
 const clean = (value: unknown, maximum = 2_000): string =>
@@ -110,6 +112,9 @@ const normalize = (value: string): string =>
     .toLocaleLowerCase('pt-BR')
     .replace(/\s+/g, ' ')
     .trim();
+
+const attributeHasClosedProviderValueSet = (attribute: ProviderAttribute): boolean =>
+  attribute.valueType === 'list' || attribute.valueType === 'boolean';
 
 const sameJson = (left: unknown, right: unknown): boolean =>
   JSON.stringify(left) === JSON.stringify(right);
@@ -199,11 +204,11 @@ const canonicalizeAttributes = (
     if (suppliedName && suppliedName !== providerAttribute.name) {
       throw new Error('MERCADO_LIVRE_KYRUBIA_DRAFT_ATTRIBUTE_NAME_STALE');
     }
-    if (providerAttribute.values.length > 0) {
-      const providerValue = valueId
-        ? providerAttribute.values.find(option => option.id === valueId)
-        : providerAttribute.values.find(option => normalize(option.name) === normalize(valueName));
-      if (!providerValue || (valueName && providerValue.name !== valueName)) {
+    const providerValue = valueId
+      ? providerAttribute.values.find(option => option.id === valueId)
+      : providerAttribute.values.find(option => normalize(option.name) === normalize(valueName));
+    if (providerValue) {
+      if (valueName && providerValue.name !== valueName) {
         throw new Error('MERCADO_LIVRE_KYRUBIA_DRAFT_ATTRIBUTE_VALUE_STALE');
       }
       result.push({
@@ -213,6 +218,9 @@ const canonicalizeAttributes = (
         valueName: providerValue.name,
       });
       continue;
+    }
+    if (valueId || attributeHasClosedProviderValueSet(providerAttribute)) {
+      throw new Error('MERCADO_LIVRE_KYRUBIA_DRAFT_ATTRIBUTE_VALUE_STALE');
     }
     result.push({ id, name: providerAttribute.name, valueName });
   }

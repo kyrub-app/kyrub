@@ -44,6 +44,28 @@ const normalize = (value: string): string =>
 const attributeHasClosedProviderValueSet = (attribute: ProviderAttribute): boolean =>
   attribute.valueType === 'list' || attribute.valueType === 'boolean';
 
+const escapeRegExp = (value: string): string =>
+  value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const attributeAnswerText = (
+  attribute: ProviderAttribute,
+  message: string
+): string => {
+  const text = clean(message, 255);
+  if (!text) return '';
+  for (const label of [attribute.name, attribute.id]) {
+    const cleanLabel = clean(label, 255);
+    if (!cleanLabel) continue;
+    const match = new RegExp(
+      `^${escapeRegExp(cleanLabel)}\\s*(?:(?:[:=\\-])\\s*|\\s+)(.+)$`,
+      'i'
+    ).exec(text);
+    const value = clean(match?.[1], 255);
+    if (value) return value;
+  }
+  return text;
+};
+
 const planFor = (
   progress: KyrubiaMercadoLivreRequirementProgress,
   options: MercadoLivreRequirementCategoryOptions,
@@ -483,11 +505,13 @@ const answerFromMessage = (
   attribute: ProviderAttribute,
   message: string
 ): KyrubiaMercadoLivreCollectedAttribute | null => {
-  const text = clean(message, 255);
-  if (!text) return null;
-  if (/^(cancelar|cancela|parar|pare|depois|voltar|pular|skip|não sei|nao sei)$/i.test(text)) {
+  const rawText = clean(message, 255);
+  if (!rawText) return null;
+  if (/^(cancelar|cancela|parar|pare|depois|voltar|pular|skip|não sei|nao sei)$/i.test(rawText)) {
     return null;
   }
+  const text = attributeAnswerText(attribute, rawText);
+  if (!text) return null;
   if (attribute.values.length > 0) {
     const wanted = normalize(text);
     const providerValue = attribute.values.find(value =>

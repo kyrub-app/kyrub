@@ -42,6 +42,36 @@ const context: KyrubiaTurnContext = {
   ],
 };
 
+const listingTypeContext: KyrubiaTurnContext = {
+  ...context,
+  id: 'turn-listing-types',
+  sourceAction: 'mercado_livre_requirement_options',
+  offeredIntents: [
+    ['gold_pro', 'Premium'],
+    ['gold_premium', 'Diamante'],
+    ['gold_special', 'Clássico'],
+    ['gold', 'Ouro'],
+    ['silver', 'Prata'],
+    ['bronze', 'Bronze'],
+    ['free', 'Grátis'],
+  ].map(([listingTypeId, listingTypeName], index) => ({
+    id: `listing-${index + 1}`,
+    intent: 'mercado_livre.listing_type_select' as const,
+    label: listingTypeName,
+    payload: {
+      proposalId: 'proposal-1',
+      categoryId: 'MLB439316',
+      categoryName: 'Chaveiros',
+      condition: 'new',
+      listingTypeId,
+      listingTypeName,
+      providerAuthority: 'provider_api_requirement_options' as const,
+    },
+    authorization: 'intent_only' as const,
+    ...(index === 0 ? { primary: true } : {}),
+  })),
+};
+
 test('resolves an offered Mercado Livre option from the exact visible label', () => {
   const selection = resolveKyrubiaOfferedIntentSelection({
     message: context.offeredIntents?.[0]?.label ?? '',
@@ -56,4 +86,22 @@ test('resolves a category option when the user message uniquely mentions its pro
     context,
   });
   assert.equal(selection?.offeredIntent.id, 'intent-1');
+});
+
+test('resolves a visible Mercado Livre listing type beyond the first three options', () => {
+  const selection = resolveKyrubiaOfferedIntentSelection({
+    message: 'Ouro',
+    context: listingTypeContext,
+  });
+  assert.equal(selection?.offeredIntent.id, 'listing-4');
+  assert.equal(selection?.resolution, 'label');
+});
+
+test('resolves the seventh visible Mercado Livre listing type by provider id', () => {
+  const selection = resolveKyrubiaOfferedIntentSelection({
+    message: 'Quero o anúncio free',
+    context: listingTypeContext,
+  });
+  assert.equal(selection?.offeredIntent.id, 'listing-7');
+  assert.equal(selection?.resolution, 'provider_id');
 });
