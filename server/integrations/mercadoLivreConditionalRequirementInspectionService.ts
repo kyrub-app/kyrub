@@ -57,10 +57,23 @@ export interface MercadoLivreConditionalRequirementInspectionResult {
   inspectedAt: string;
 }
 
+type ProviderAttribute = MercadoLivreRequirementCategoryOptions['attributes'][number];
+
 const clean = (value: unknown, maximum = 2_000): string =>
   typeof value === 'string' || typeof value === 'number'
     ? String(value).replace(/\s+/g, ' ').trim().slice(0, maximum)
     : '';
+
+const normalize = (value: string): string =>
+  value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLocaleLowerCase('pt-BR')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+const attributeHasClosedProviderValueSet = (attribute: ProviderAttribute): boolean =>
+  attribute.valueType === 'list' || attribute.valueType === 'boolean';
 
 const finiteNonNegative = (value: unknown): number | null => {
   const parsed = Number(value);
@@ -147,11 +160,11 @@ const canonicalizeAttributes = (
     if (!providerAttribute) {
       throw new Error('MERCADO_LIVRE_CONDITIONAL_INSPECTION_ATTRIBUTE_STALE');
     }
-    if (providerAttribute.values.length > 0) {
-      const providerValue = valueId
-        ? providerAttribute.values.find(option => option.id === valueId)
-        : providerAttribute.values.find(option => option.name === valueName);
-      if (!providerValue || (valueName && providerValue.name !== valueName)) {
+    const providerValue = valueId
+      ? providerAttribute.values.find(option => option.id === valueId)
+      : providerAttribute.values.find(option => normalize(option.name) === normalize(valueName));
+    if (providerValue) {
+      if (valueName && providerValue.name !== valueName) {
         throw new Error('MERCADO_LIVRE_CONDITIONAL_INSPECTION_VALUE_STALE');
       }
       result.push({
@@ -160,6 +173,9 @@ const canonicalizeAttributes = (
         valueName: providerValue.name,
       });
       continue;
+    }
+    if (valueId || attributeHasClosedProviderValueSet(providerAttribute)) {
+      throw new Error('MERCADO_LIVRE_CONDITIONAL_INSPECTION_VALUE_STALE');
     }
     if (!valueName) {
       throw new Error('MERCADO_LIVRE_CONDITIONAL_INSPECTION_VALUE_REQUIRED');
