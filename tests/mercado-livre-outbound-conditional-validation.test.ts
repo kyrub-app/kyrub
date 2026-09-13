@@ -11,6 +11,7 @@ const payloadAdapterPath = new URL('../server/integrations/mercadoLivreInitialPu
 const capabilityGuardPath = new URL('../server/integrations/mercadoLivrePublicationCapabilitySnapshotGuard.ts', import.meta.url);
 const oauthPath = new URL('../server/integrations/mercadoLivreOauthService.ts', import.meta.url);
 const routerPath = new URL('../server/integrations/mercadoLivreRouter.ts', import.meta.url);
+const attributePlannerPath = new URL('../server/ai/kyrubiaMercadoLivreRequiredAttributePlanner.ts', import.meta.url);
 
 test('conditional required attributes are validated with the official provider endpoint', async () => {
   const source = await readFile(servicePath, 'utf8');
@@ -47,9 +48,16 @@ test('conditional inspection canonicalizes owner answers and fails closed before
   assert.ok(providerCall > baseGuard);
 });
 
-test('open provider string values remain legal through conditional inspection and draft configuration', async () => {
+test('open provider string values remain legal through planner, conditional inspection and draft configuration', async () => {
+  const plannerSource = await readFile(attributePlannerPath, 'utf8');
   const inspectionSource = await readFile(inspectionPath, 'utf8');
   const draftSource = await readFile(draftConfigurationPath, 'utf8');
+
+  assert.match(plannerSource, /attributeHasClosedProviderValueSet/);
+  assert.match(plannerSource, /attribute\.valueType === 'list' \|\| attribute\.valueType === 'boolean'/);
+  assert.match(plannerSource, /if \(valueId \|\| attributeHasClosedProviderValueSet\(attribute\)\)/);
+  assert.match(plannerSource, /inputMode: attributeHasClosedProviderValueSet\(next\) \? 'provider_values' : 'free_text'/);
+
   for (const source of [inspectionSource, draftSource]) {
     assert.match(source, /attributeHasClosedProviderValueSet/);
     assert.match(source, /attribute\.valueType === 'list' \|\| attribute\.valueType === 'boolean'/);
