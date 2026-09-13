@@ -48,6 +48,10 @@ const normalizeSelections = (
   return selections;
 };
 
+const attributeHasClosedProviderValueSet = (
+  attribute: MercadoLivreRequirementCategoryOptions['attributes'][number]
+): boolean => attribute.valueType === 'list' || attribute.valueType === 'boolean';
+
 export const planKyrubiaMercadoLivreRequiredAttributes = (input: {
   proposalId: string;
   categoryId: string;
@@ -91,14 +95,15 @@ export const planKyrubiaMercadoLivreRequiredAttributes = (input: {
   for (const attribute of required) {
     const selection = selections.get(attribute.id);
     if (!selection) continue;
-    if (attribute.values.length > 0) {
-      const providerValue = attribute.values.find(candidate =>
-        (selection.valueId && candidate.id === selection.valueId) ||
-        (!selection.valueId && selection.valueName && candidate.name === selection.valueName)
-      );
-      if (!providerValue) {
-        throw new Error('MERCADO_LIVRE_ATTRIBUTE_PLAN_VALUE_NOT_AVAILABLE');
-      }
+    const valueId = clean(selection.valueId, 160);
+    const valueName = clean(selection.valueName, 255);
+    const providerValue = attribute.values.find(candidate =>
+      (valueId && candidate.id === valueId) ||
+      (!valueId && valueName && candidate.name === valueName)
+    );
+    if (providerValue) continue;
+    if (valueId || attributeHasClosedProviderValueSet(attribute)) {
+      throw new Error('MERCADO_LIVRE_ATTRIBUTE_PLAN_VALUE_NOT_AVAILABLE');
     }
   }
 
@@ -120,7 +125,7 @@ export const planKyrubiaMercadoLivreRequiredAttributes = (input: {
           name: next.name,
           valueType: next.valueType,
           values: next.values.slice(0, 100),
-          inputMode: next.values.length > 0 ? 'provider_values' : 'free_text',
+          inputMode: attributeHasClosedProviderValueSet(next) ? 'provider_values' : 'free_text',
         }
       : null,
     complete: unresolved.length === 0,
