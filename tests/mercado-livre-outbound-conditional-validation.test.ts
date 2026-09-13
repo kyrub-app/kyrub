@@ -6,6 +6,7 @@ const servicePath = new URL('../server/integrations/mercadoLivreOutboundConditio
 const inspectionPath = new URL('../server/integrations/mercadoLivreConditionalRequirementInspectionService.ts', import.meta.url);
 const draftConfigurationPath = new URL('../server/integrations/mercadoLivreKyrubiaDraftConfigurationService.ts', import.meta.url);
 const listingValidatorPath = new URL('../server/integrations/mercadoLivreOutboundListingValidationService.ts', import.meta.url);
+const kyrubiaListingValidatorPath = new URL('../server/integrations/mercadoLivreKyrubiaListingValidationService.ts', import.meta.url);
 const payloadAdapterPath = new URL('../server/integrations/mercadoLivreInitialPublicationPayloadAdapter.ts', import.meta.url);
 const capabilityGuardPath = new URL('../server/integrations/mercadoLivrePublicationCapabilitySnapshotGuard.ts', import.meta.url);
 const oauthPath = new URL('../server/integrations/mercadoLivreOauthService.ts', import.meta.url);
@@ -57,6 +58,13 @@ test('open provider string values remain legal through conditional inspection an
   }
   assert.match(inspectionSource, /result\.push\(\{ id, valueName \}\)/);
   assert.match(draftSource, /result\.push\(\{ id, name: providerAttribute\.name, valueName \}\)/);
+});
+
+test('Kyrubia supplies a stable User Products family name at conditional and listing validation gates', async () => {
+  const inspectionSource = await readFile(inspectionPath, 'utf8');
+  const kyrubiaListingSource = await readFile(kyrubiaListingValidatorPath, 'utf8');
+  assert.match(inspectionSource, /familyName: proposal\.canonical\.name/);
+  assert.match(kyrubiaListingSource, /familyName: proposal\.canonical\.name/);
 });
 
 test('conditional and listing validation both use the same model-aware initial publication payload adapter', async () => {
