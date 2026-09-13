@@ -1,5 +1,8 @@
 import type { User } from 'firebase/auth';
-import type { KyrubAiConsultantResponse } from '../../shared/aiConsultant';
+import type {
+  KyrubAiAttachmentRef,
+  KyrubAiConsultantResponse,
+} from '../../shared/aiConsultant';
 import type { KyrubErpContextSnapshot } from '../../shared/kyrubErpContext';
 import { loadKyrubiaOperationalWorkflow } from './operationalWorkflowStore';
 import { resolveKyrubiaOperationalWorkflow as resolveLegacyOperationalWorkflow } from './operationalWorkflowRuntimeLegacy';
@@ -117,6 +120,7 @@ export const resolveKyrubiaOperationalWorkflow = async (
     conversationId: string;
     message: string;
     erpContext?: KyrubErpContextSnapshot;
+    attachments?: KyrubAiAttachmentRef[];
   }
 ): Promise<KyrubAiConsultantResponse | null> => {
   const target = parseExplicitKyrubiaCreateTarget(input.message);
