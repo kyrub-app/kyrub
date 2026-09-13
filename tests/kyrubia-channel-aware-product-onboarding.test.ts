@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
+import { resolveKyrubiaStoreConnectionDeclarationIntent } from '../src/ai/deterministicStoreConnectionOnboarding';
 import {
   KYRUBIA_PRODUCT_PREPARATION_READY_CHANNELS,
   buildKyrubiaProductChannelOffer,
@@ -63,6 +64,31 @@ test('operational workflow stores channel selection before resuming canonical fi
   assert.match(runtime, /buildKyrubiaProductChannelOffer/);
   assert.match(runtime, /categoria interna da sua loja no Kyrub/i);
   assert.match(runtime, /Nenhuma publicação externa será feita sem autorização/i);
+});
+
+test('workspace routing gives an active product channel selection precedence over generic channel declaration', () => {
+  const router = readFileSync(
+    new URL('../src/ai/storePromotionWorkspaceRouter.ts', import.meta.url),
+    'utf8'
+  );
+  assert.match(
+    router,
+    /workflow\?\.objective === 'create_product'[\s\S]*workflow\.stage === 'selecting_product_channels'/
+  );
+  assert.match(router, /loadKyrubiaOperationalWorkflow\(localStorage, user\.uid, conversationId\)/);
+  assert.match(
+    router,
+    /shouldDeferStoreConnectionDeclarationToProductWorkflow\([\s\S]*?\? null[\s\S]*?: resolveKyrubiaStoreConnectionDeclarationIntent\(message\)/
+  );
+
+  assert.deepEqual(
+    resolveKyrubiaStoreConnectionDeclarationIntent('Mercado Livre'),
+    {
+      answer: 'Mercado Livre',
+      channels: ['mercado_livre'],
+      kind: 'channels_declared',
+    }
+  );
 });
 
 test('confirmed canonical product can continue automatically into the selected Mercado Livre preparation flow', () => {
