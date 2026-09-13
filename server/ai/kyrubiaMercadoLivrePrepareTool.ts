@@ -16,6 +16,10 @@ export type KyrubiaMercadoLivreRequirementInspection =
         domainName: string;
         categoryId: string;
         categoryName: string;
+        categoryPath: Array<{
+          id: string;
+          name: string;
+        }>;
       }>;
       authority: 'provider_api_refetch';
     }
@@ -79,6 +83,10 @@ const inspectPreparedRequirements = async (input: {
         domainName: suggestion.domainName,
         categoryId: suggestion.categoryId,
         categoryName: suggestion.categoryName,
+        categoryPath: suggestion.categoryPath.map(node => ({
+          id: node.id,
+          name: node.name,
+        })),
       })),
       authority: inspection.authority,
     };
