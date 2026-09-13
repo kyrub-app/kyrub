@@ -421,6 +421,7 @@ export const validateKyrubiaMercadoLivreDraftListing = async (input: {
     publicationModel: proposal.providerPublicationModel,
     stockAuthority: proposal.providerStockAuthority,
     name: proposal.canonical.name,
+    familyName: proposal.canonical.name,
     categoryId: proposal.providerCategoryId,
     price: proposal.canonical.price,
     currencyId: proposal.providerCurrencyId,
