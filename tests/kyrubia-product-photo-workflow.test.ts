@@ -17,8 +17,21 @@ test('physical product workflow asks for a photo before exposing create_product 
   assert.match(runtime, /foto real do produto/i);
   assert.match(runtime, /stage: 'collecting_product_photo'/);
   assert.match(runtime, /actionProposal: undefined/);
-  assert.match(runtime, /actionProposal\.isService !== true/);
+  assert.match(runtime, /workflow\.productDraft\.isService !== true/);
+  assert.match(runtime, /!workflow\.productDraft\.image\?\.trim\(\)/);
   assert.match(runtime, /wantsToSkipProductPhoto/);
+});
+
+test('a Mercado Livre category question is not persisted as the Kyrub internal category', async () => {
+  const runtime = await readFile(runtimePath, 'utf8');
+  assert.match(runtime, /asksForMercadoLivreCategorySuggestion/);
+  assert.match(runtime, /workflow\.stage !== 'collecting_product_category'/);
+  assert.match(runtime, /categoria interna da sua loja no Kyrub/i);
+  assert.match(runtime, /categoria do Mercado Livre é separada/i);
+  assert.match(runtime, /Não vou gravar sua pergunta como categoria/i);
+  const categoryGuard = runtime.indexOf('resolveMercadoLivreCategoryDuringProductCreation(input)');
+  const legacyRuntime = runtime.indexOf('const target = parseExplicitKyrubiaCreateTarget(input.message);');
+  assert.ok(categoryGuard >= 0 && categoryGuard < legacyRuntime);
 });
 
 test('a Kairuba image attachment is promoted from private chat storage to stable canonical image storage', async () => {
