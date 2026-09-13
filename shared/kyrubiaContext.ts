@@ -329,13 +329,48 @@ const offeredIntentSelectionResult = (
   authorization: 'intent_only',
 });
 
+const exactMercadoLivreSelectedIntentRetry = (
+  context: KyrubiaTurnContext,
+  message: string,
+  selectedOfferedIntentId?: string
+): KyrubiaOfferedIntentSelection | null => {
+  const selected = context.selectedIntent;
+  if (!selected || !selected.intent.startsWith('mercado_livre.')) return null;
+
+  const selectedId = selectedOfferedIntentId?.trim();
+  if (selectedId) {
+    return selectedId === selected.id
+      ? offeredIntentSelectionResult(context, selected, 'structured_id')
+      : null;
+  }
+
+  const normalizedMessage = normalize(message);
+  if (normalizedMessage === normalize(selected.label)) {
+    return offeredIntentSelectionResult(context, selected, 'label');
+  }
+
+  const providerId = providerIdentifierForOfferedIntent(selected);
+  if (providerId && normalizedMessage === normalize(providerId)) {
+    return offeredIntentSelectionResult(context, selected, 'provider_id');
+  }
+
+  return null;
+};
+
 export const resolveKyrubiaOfferedIntentSelection = (input: {
   selectedOfferedIntentId?: string;
   message: string;
   context?: KyrubiaTurnContext;
 }): KyrubiaOfferedIntentSelection | null => {
   const offered = input.context?.offeredIntents?.slice(0, 8) ?? [];
-  if (!input.context || offered.length === 0) return null;
+  if (!input.context) return null;
+  if (offered.length === 0) {
+    return exactMercadoLivreSelectedIntentRetry(
+      input.context,
+      input.message,
+      input.selectedOfferedIntentId
+    );
+  }
 
   const selectedId = input.selectedOfferedIntentId?.trim();
   if (selectedId) {
