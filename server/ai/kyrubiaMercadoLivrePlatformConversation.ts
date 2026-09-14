@@ -3,7 +3,10 @@ import type { KyrubAiConsultantResponse } from '../../shared/aiConsultant.js';
 import type { KyrubiaTurnContext } from '../../shared/kyrubiaContext.js';
 import {
   resolveAuthoritativeOwnStoreProductByExactName,
+  type AuthoritativeProductIdentity,
+  type AuthoritativeProductIdentityResolution,
 } from '../catalog/authoritativeProductIdentityService.js';
+import { adminDb } from '../firebaseAdmin.js';
 import { authenticateConsultantRequest } from './consultantAuth.js';
 import {
   prepareKyrubiaMercadoLivrePublication,
@@ -20,6 +23,46 @@ const record = (value: unknown): Record<string, unknown> =>
   value && typeof value === 'object' && !Array.isArray(value)
     ? value as Record<string, unknown>
     : {};
+
+const PREPARABLE_CANONICAL_PRODUCT_STATUSES = new Set(['published', 'paused']);
+
+const explicitCanonicalProductId = (target: string): string => {
+  const match = /^(?:produto\s+)?id\s+(product-[a-z0-9_-]{8,180})$/i.exec(clean(target, 220));
+  return clean(match?.[1], 180);
+};
+
+const resolveCanonicalProductByExplicitId = async (input: {
+  ownerUid: string;
+  productId: string;
+}): Promise<AuthoritativeProductIdentityResolution> => {
+  const ownerUid = clean(input.ownerUid, 180);
+  const productId = clean(input.productId, 180);
+  if (!ownerUid || !productId || productId.includes('/')) return { status: 'not_found' };
+
+  const privateStoreDoc = await adminDb.doc(`users/${ownerUid}/stores/${ownerUid}`).get();
+  if (!privateStoreDoc.exists) return { status: 'not_found' };
+  const canonicalStoreId = clean(
+    (privateStoreDoc.data() as Record<string, unknown>).canonicalStoreId,
+    180
+  );
+  if (!canonicalStoreId) return { status: 'not_found' };
+
+  const productDoc = await adminDb.doc(`stores/${canonicalStoreId}/products/${productId}`).get();
+  if (!productDoc.exists) return { status: 'not_found' };
+  const data = productDoc.data() as Record<string, unknown>;
+  const storedId = clean(data.id, 180);
+  const storeId = clean(data.storeId, 180);
+  const name = clean(data.name, 180);
+  const publicationStatus = clean(data.publicationStatus, 80);
+  if (
+    storedId !== productId ||
+    storeId !== canonicalStoreId ||
+    !name ||
+    !PREPARABLE_CANONICAL_PRODUCT_STATUSES.has(publicationStatus)
+  ) return { status: 'not_found' };
+
+  return { status: 'found', product: { id: productId, name } };
+};
 
 export const isKyrubiaMercadoLivrePlatformPreparationText = (
   message: string
@@ -131,19 +174,41 @@ const platformCapabilities: KyrubAiConsultantResponse['capabilities'] = {
   persistentCloudHistoryEnabled: false,
 };
 
+const canonicalDuplicateOptions = (matches: AuthoritativeProductIdentity[]): string =>
+  matches
+    .slice(0, 5)
+    .map((match, index) => `${index + 1}) ${match.name} · ID ${match.id}`)
+    .join('; ');
+
 const unresolvedProductResponse = (input: {
   targetName: string;
   reason: 'not_found' | 'ambiguous';
-}): KyrubAiConsultantResponse => ({
-  reply: input.reason === 'ambiguous'
-    ? `Existe mais de um produto chamado “${input.targetName}” na loja autenticada. Não preparei nenhum rascunho do Mercado Livre. Identifique o item de forma mais específica.`
-    : `Não encontrei “${input.targetName}” na loja autenticada. Não preparei nenhum rascunho do Mercado Livre. Confira o nome do produto e tente novamente.`,
-  provider: 'kyrub',
-  model: 'kyrub-mercado-livre-platform-runtime-v1',
-  mode: 'deterministic',
-  requestId: randomUUID(),
-  capabilities: platformCapabilities,
-});
+  matches?: AuthoritativeProductIdentity[];
+}): KyrubAiConsultantResponse => {
+  const options = canonicalDuplicateOptions(input.matches ?? []);
+  const firstId = clean(input.matches?.[0]?.id, 180);
+  const ambiguityReply = options
+    ? [
+        `Existe mais de um produto canônico chamado “${input.targetName}” na loja autenticada.`,
+        `Encontrei: ${options}.`,
+        'Não escolhi nenhum automaticamente e não preparei rascunho do Mercado Livre.',
+        firstId
+          ? `Escolha o item desejado pelo ID e envie, por exemplo: “Prepare o produto ID ${firstId} para vender no Mercado Livre”.`
+          : 'Escolha o item pelo ID canônico para continuar.',
+      ].join(' ')
+    : `Existe mais de um produto chamado “${input.targetName}” na loja autenticada. Não preparei nenhum rascunho do Mercado Livre. Identifique o item de forma mais específica.`;
+
+  return {
+    reply: input.reason === 'ambiguous'
+      ? ambiguityReply
+      : `Não encontrei “${input.targetName}” na loja autenticada. Não preparei nenhum rascunho do Mercado Livre. Confira o nome ou ID do produto e tente novamente.`,
+    provider: 'kyrub',
+    model: 'kyrub-mercado-livre-platform-runtime-v1',
+    mode: 'deterministic',
+    requestId: randomUUID(),
+    capabilities: platformCapabilities,
+  };
+};
 
 export const prepareKyrubiaMercadoLivrePlatformConversation = async (input: {
   authorization: string;
@@ -155,14 +220,21 @@ export const prepareKyrubiaMercadoLivrePlatformConversation = async (input: {
   if (!targetName) return null;
 
   const user = await authenticateConsultantRequest(input.authorization);
-  const resolution = await resolveAuthoritativeOwnStoreProductByExactName({
-    ownerUid: user.uid,
-    targetName,
-  });
+  const explicitProductId = explicitCanonicalProductId(targetName);
+  const resolution = explicitProductId
+    ? await resolveCanonicalProductByExplicitId({
+        ownerUid: user.uid,
+        productId: explicitProductId,
+      })
+    : await resolveAuthoritativeOwnStoreProductByExactName({
+        ownerUid: user.uid,
+        targetName,
+      });
   if (resolution.status !== 'found') {
     return unresolvedProductResponse({
       targetName,
       reason: resolution.status,
+      ...(resolution.status === 'ambiguous' ? { matches: resolution.matches } : {}),
     });
   }
   const product = resolution.product;
