@@ -5,6 +5,7 @@ import {
   executeAuthorizedMercadoLivrePublication,
   type MercadoLivrePublicationExecutionResult,
 } from './mercadoLivreOutboundPublicationExecutionService.js';
+import { isMercadoLivreReadyListingValidationEvidence } from './mercadoLivreListingValidationEvidence.js';
 
 const clean = (value: unknown, maximum = 2_000): string =>
   typeof value === 'string' || typeof value === 'number'
@@ -102,7 +103,7 @@ const assertKyrubiaExecutionEvidence = (input: {
     validation.schemaVersion !== 2 ||
     clean(validation.proposalId, 180) !== input.proposalId ||
     validation.status !== 'ready_for_owner_authorization' ||
-    validation.providerStatus !== 204 ||
+    !isMercadoLivreReadyListingValidationEvidence(validation) ||
     validation.authority !== 'provider_items_validate' ||
     validation.validationSource !== 'kyrubia_revalidated_draft' ||
     clean(validation.validatedAt, 80) !== clean(authorization.listingValidatedAt, 80) ||

@@ -11,7 +11,8 @@ test('Cairubia publication authorization requires the exact schema-v2 validation
   assert.match(source, /publicationReadiness !== 'ready_for_owner_authorization'/);
   assert.match(source, /publicationReadinessAuthority !== 'provider_items_validate'/);
   assert.match(source, /publicationValidationSource !== 'kyrubia_revalidated_draft'/);
-  assert.match(source, /record\.providerStatus !== 204/);
+  assert.match(source, /isMercadoLivreReadyListingValidationEvidence\(record\)/);
+  assert.doesNotMatch(source, /record\.providerStatus !== 204/);
   assert.match(source, /record\.validationSource !== 'kyrubia_revalidated_draft'/);
   assert.match(source, /record\.executionStatus !== 'not_authorized'/);
   assert.match(source, /requirementConfiguredAt/);

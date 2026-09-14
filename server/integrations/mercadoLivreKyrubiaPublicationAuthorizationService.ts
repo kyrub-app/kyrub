@@ -2,6 +2,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { FieldValue } from 'firebase-admin/firestore';
 import { adminDb } from '../firebaseAdmin.js';
 import { assertCurrentMercadoLivrePublicationCapability } from './mercadoLivrePublicationCapabilitySnapshotGuard.js';
+import { isMercadoLivreReadyListingValidationEvidence } from './mercadoLivreListingValidationEvidence.js';
 
 interface ProposalRecord {
   schemaVersion: 2;
@@ -38,7 +39,11 @@ interface ListingValidationRecord {
   schemaVersion: 2;
   proposalId: string;
   status: 'ready_for_owner_authorization';
-  providerStatus: 204;
+  providerStatus: number;
+  causes: unknown[];
+  providerDisposition: 'accepted' | 'warning_only';
+  providerWarningCount: number;
+  providerBlockingCauseCount: 0;
   authority: 'provider_items_validate';
   validationSource: 'kyrubia_revalidated_draft';
   validatedAt: string;
@@ -125,7 +130,7 @@ const assertValidation = (
     record.schemaVersion !== 2 ||
     clean(record.proposalId, 180) !== proposal.id ||
     record.status !== 'ready_for_owner_authorization' ||
-    record.providerStatus !== 204 ||
+    !isMercadoLivreReadyListingValidationEvidence(record) ||
     record.authority !== 'provider_items_validate' ||
     record.validationSource !== 'kyrubia_revalidated_draft' ||
     record.executionStatus !== 'not_authorized' ||
