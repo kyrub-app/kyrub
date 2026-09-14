@@ -4,6 +4,12 @@ import { buildMercadoLivreInitialPublicationPayload } from './mercadoLivreInitia
 import { mercadoLivreValidateJson } from './mercadoLivreListingValidationTransport.js';
 import { mercadoLivrePublicationCorrelationMarker } from './mercadoLivrePublicationCorrelation.js';
 import { assertCurrentMercadoLivrePublicationCapability } from './mercadoLivrePublicationCapabilitySnapshotGuard.js';
+import {
+  classifyMercadoLivreListingValidationEvidence,
+  mercadoLivreProviderValidationCauses,
+  type MercadoLivreListingValidationCause,
+  type MercadoLivreListingValidationDisposition,
+} from './mercadoLivreListingValidationEvidence.js';
 
 interface ProposalRecord {
   schemaVersion: 2;
@@ -442,31 +448,14 @@ const canonicalMatchesProposal = (
     record.isService === false;
 };
 
-const providerCauses = (
-  value: unknown
-): Array<{ code: string; message: string; reference: string }> => {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return [];
-  const record = value as Record<string, unknown>;
-  const raw = Array.isArray(record.cause) ? record.cause : [];
-  return raw
-    .filter(item => item && typeof item === 'object' && !Array.isArray(item))
-    .map(item => {
-      const cause = item as Record<string, unknown>;
-      return {
-        code: clean(cause.code, 120),
-        message: clean(cause.message, 600),
-        reference: clean(cause.reference, 240),
-      };
-    })
-    .filter(item => item.code || item.message || item.reference)
-    .slice(0, 30);
-};
-
 export interface MercadoLivreKyrubiaListingValidationResult {
   proposalId: string;
   status: 'ready_for_owner_authorization' | 'needs_correction';
   providerStatus: number;
-  causes: Array<{ code: string; message: string; reference: string }>;
+  causes: MercadoLivreListingValidationCause[];
+  providerDisposition: MercadoLivreListingValidationDisposition;
+  providerWarningCount: number;
+  providerBlockingCauseCount: number;
   authority: 'provider_items_validate';
   validationSource: 'kyrubia_revalidated_draft';
   validatedAt: string;
@@ -547,16 +536,21 @@ export const validateKyrubiaMercadoLivreDraftListing = async (input: {
     '/items/validate',
     providerPayload
   );
-  const causes = providerCauses(providerValidation.payload);
-  const status = providerValidation.status === 204
-    ? 'ready_for_owner_authorization'
-    : 'needs_correction';
+  const causes = mercadoLivreProviderValidationCauses(providerValidation.payload);
+  const classification = classifyMercadoLivreListingValidationEvidence({
+    providerStatus: providerValidation.status,
+    causes,
+  });
+  const status = classification.status;
   const validatedAt = new Date().toISOString();
   const result: MercadoLivreKyrubiaListingValidationResult = {
     proposalId,
     status,
     providerStatus: providerValidation.status,
     causes,
+    providerDisposition: classification.disposition,
+    providerWarningCount: classification.warningCount,
+    providerBlockingCauseCount: classification.blockingCauseCount,
     authority: 'provider_items_validate',
     validationSource: 'kyrubia_revalidated_draft',
     validatedAt,
@@ -631,6 +625,9 @@ export const validateKyrubiaMercadoLivreDraftListing = async (input: {
       publicationReadinessAuthority: 'provider_items_validate',
       publicationValidationSource: 'kyrubia_revalidated_draft',
       publicationValidatedAt: validatedAt,
+      publicationValidationDisposition: classification.disposition,
+      publicationValidationWarningCount: classification.warningCount,
+      publicationValidationBlockingCauseCount: classification.blockingCauseCount,
       publicationValidationCauses: causes,
       publicationCorrelationMarker,
       executionStatus: 'not_authorized',
