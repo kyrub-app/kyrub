@@ -1,4 +1,7 @@
-import { mercadoLivreCommercialGetJson } from './mercadoLivreCommercialReadTransport.js';
+import {
+  mercadoLivreCommercialGetJson,
+  mercadoLivreCommercialPostJson,
+} from './mercadoLivreCommercialReadTransport.js';
 
 const clean = (value: unknown, maximum = 2_000): string =>
   typeof value === 'string' || typeof value === 'number'
@@ -7,9 +10,6 @@ const clean = (value: unknown, maximum = 2_000): string =>
 
 const recordFrom = (value: unknown): Record<string, unknown> =>
   value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
-
-const stringArray = (value: unknown): string[] =>
-  Array.isArray(value) ? [...new Set(value.map(item => clean(item, 120)).filter(Boolean))] : [];
 
 const parseValues = (value: unknown): Array<{ id: string; name: string }> => {
   if (!Array.isArray(value)) return [];
@@ -21,15 +21,63 @@ const parseValues = (value: unknown): Array<{ id: string; name: string }> => {
   }).slice(0, 200);
 };
 
-const categoryShippingModes = (value: unknown): string[] => {
-  const record = recordFrom(value);
-  const modes = stringArray(record.modes);
-  const logistics = Array.isArray(record.logistics) ? record.logistics : [];
-  for (const candidate of logistics) {
-    const mode = clean(recordFrom(candidate).mode, 120);
-    if (mode && !modes.includes(mode)) modes.push(mode);
+type PrepublicationAttribute = {
+  id: string;
+  valueId?: string;
+  valueName: string;
+};
+
+const normalizePrepublicationAttributes = (value: unknown): PrepublicationAttribute[] => {
+  if (!Array.isArray(value) || value.length > 40) {
+    throw new Error('MERCADO_LIVRE_COMMERCIAL_REQUIREMENTS_ATTRIBUTES_INVALID');
   }
-  return modes;
+  const seen = new Set<string>();
+  const result: PrepublicationAttribute[] = [];
+  for (const candidate of value) {
+    const record = recordFrom(candidate);
+    const id = clean(record.id, 160);
+    const valueId = clean(record.valueId ?? record.value_id, 160);
+    const valueName = clean(record.valueName ?? record.value_name, 600);
+    if (!id || !valueName || seen.has(id)) {
+      throw new Error('MERCADO_LIVRE_COMMERCIAL_REQUIREMENTS_ATTRIBUTES_INVALID');
+    }
+    seen.add(id);
+    result.push({ id, ...(valueId ? { valueId } : {}), valueName });
+  }
+  return result;
+};
+
+const parsePrepublicationShipping = (value: unknown): {
+  allowedModes: string[];
+  localPickUpAvailable: boolean;
+} => {
+  const channels = recordFrom(recordFrom(value).channels);
+  const marketplace = recordFrom(channels.marketplace);
+  const availableModes = Array.isArray(marketplace.available_modes)
+    ? marketplace.available_modes
+    : [];
+  const allowedModes: string[] = [];
+  let localPickUpAvailable = false;
+
+  for (const candidate of availableModes) {
+    const modeRecord = recordFrom(candidate);
+    const mode = clean(modeRecord.mode, 120);
+    if (mode && !allowedModes.includes(mode)) allowedModes.push(mode);
+
+    const rules = [recordFrom(modeRecord.shipping_attributes)];
+    const logisticTypes = Array.isArray(modeRecord.logistic_types) ? modeRecord.logistic_types : [];
+    for (const logisticType of logisticTypes) {
+      rules.push(recordFrom(recordFrom(logisticType).attributes));
+    }
+    if (rules.some(rule => {
+      const localPickUp = clean(rule.local_pick_up, 80);
+      return Boolean(localPickUp) && localPickUp !== 'not_allowed';
+    })) {
+      localPickUpAvailable = true;
+    }
+  }
+
+  return { allowedModes, localPickUpAvailable };
 };
 
 export interface MercadoLivreSaleTermMetadata {
@@ -68,29 +116,74 @@ export const inspectMercadoLivreCommercialRequirements = async (input: {
   storeId: string;
   categoryId: string;
   externalAccountId: string;
+  siteId: string;
+  title: string;
+  price: number;
+  currencyId: string;
+  listingTypeId: string;
+  condition: string;
+  attributes: unknown;
 }): Promise<MercadoLivreCommercialRequirements> => {
   const storeId = clean(input.storeId, 160);
   const categoryId = clean(input.categoryId, 160);
   const externalAccountId = clean(input.externalAccountId, 160);
-  if (!storeId || !categoryId || !externalAccountId) {
+  const siteId = clean(input.siteId, 16);
+  const title = clean(input.title, 120);
+  const currencyId = clean(input.currencyId, 16);
+  const listingTypeId = clean(input.listingTypeId, 120);
+  const condition = clean(input.condition, 120);
+  const price = Number(input.price);
+  const attributes = normalizePrepublicationAttributes(input.attributes);
+  if (
+    !storeId ||
+    !categoryId ||
+    !externalAccountId ||
+    !siteId ||
+    !title ||
+    !currencyId ||
+    !listingTypeId ||
+    !condition ||
+    !Number.isFinite(price) ||
+    price < 0
+  ) {
     throw new Error('MERCADO_LIVRE_COMMERCIAL_REQUIREMENTS_TARGET_INVALID');
   }
 
-  const [saleTermsRaw, sellerShippingRaw, categoryShippingRaw] = await Promise.all([
+  const providerAttributes = attributes.map(attribute => ({
+    id: attribute.id,
+    ...(attribute.valueId ? { value_id: attribute.valueId } : {}),
+    value_name: attribute.valueName,
+  }));
+  const sellerId: string | number = /^\d+$/.test(externalAccountId)
+    ? Number(externalAccountId)
+    : externalAccountId;
+
+  const [saleTermsRaw, shippingModesRaw] = await Promise.all([
     mercadoLivreCommercialGetJson<unknown>({
       storeId,
       endpoint: 'category_sale_terms',
       path: `/categories/${encodeURIComponent(categoryId)}/sale_terms`,
     }),
-    mercadoLivreCommercialGetJson<unknown>({
+    mercadoLivreCommercialPostJson<unknown>({
       storeId,
-      endpoint: 'seller_shipping_preferences',
-      path: `/users/${encodeURIComponent(externalAccountId)}/shipping_preferences`,
-    }),
-    mercadoLivreCommercialGetJson<unknown>({
-      storeId,
-      endpoint: 'category_shipping_preferences',
-      path: `/categories/${encodeURIComponent(categoryId)}/shipping_preferences`,
+      endpoint: 'prepublication_shipping_modes',
+      path: `/users/${encodeURIComponent(externalAccountId)}/shipping_modes`,
+      body: {
+        site_id: siteId,
+        seller_id: sellerId,
+        title,
+        item_price: price,
+        item_currency: currencyId,
+        category_id: categoryId,
+        catalog: { attributes: providerAttributes },
+        sale_terms: [],
+        listing_type_id: listingTypeId,
+        buying_mode: 'buy_it_now',
+        condition,
+        channels: [{ id: 'marketplace' }],
+        new_format: true,
+        verbose: false,
+      },
     }),
   ]);
 
@@ -110,20 +203,14 @@ export const inspectMercadoLivreCommercialRequirements = async (input: {
     }];
   });
 
-  const sellerShipping = recordFrom(sellerShippingRaw);
-  const sellerModes = stringArray(sellerShipping.modes);
-  const categoryModes = categoryShippingModes(categoryShippingRaw);
-  const allowedModes = categoryModes.length
-    ? sellerModes.filter(mode => categoryModes.includes(mode))
-    : [...sellerModes];
-
+  const shipping = parsePrepublicationShipping(shippingModesRaw);
   return {
     saleTerms,
     shipping: {
-      sellerModes,
-      categoryModes,
-      allowedModes,
-      localPickUpAvailable: sellerShipping.local_pick_up === true,
+      sellerModes: [...shipping.allowedModes],
+      categoryModes: [...shipping.allowedModes],
+      allowedModes: shipping.allowedModes,
+      localPickUpAvailable: shipping.localPickUpAvailable,
     },
   };
 };

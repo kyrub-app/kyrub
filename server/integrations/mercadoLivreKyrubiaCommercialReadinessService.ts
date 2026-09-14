@@ -21,7 +21,15 @@ interface ProposalRecord {
   provider: 'mercado_livre';
   connectionId: string;
   canonicalBaselineHash: string;
+  providerSiteId: string;
   providerCategoryId: string;
+  providerListingTypeId: string;
+  providerCondition: string;
+  providerCurrencyId: string;
+  canonical: {
+    name: string;
+    price: number;
+  };
   executionStatus: 'not_authorized';
 }
 
@@ -30,6 +38,7 @@ interface RequirementConfigurationRecord {
   configuredAt: string;
   canonicalBaselineHash: string;
   authority: 'provider_api_refetch_and_store_owner_selection';
+  attributes: unknown[];
 }
 
 const assertProposal = (
@@ -38,6 +47,8 @@ const assertProposal = (
   value: unknown
 ): ProposalRecord => {
   const record = recordFrom(value);
+  const canonical = recordFrom(record.canonical);
+  const price = Number(canonical.price);
   if (
     clean(record.id, 160) !== proposalId ||
     clean(record.storeId, 160) !== storeId ||
@@ -45,11 +56,24 @@ const assertProposal = (
     record.executionStatus !== 'not_authorized' ||
     !clean(record.connectionId, 200) ||
     !clean(record.canonicalBaselineHash, 80) ||
-    !clean(record.providerCategoryId, 160)
+    !clean(record.providerSiteId, 16) ||
+    !clean(record.providerCategoryId, 160) ||
+    !clean(record.providerListingTypeId, 120) ||
+    !clean(record.providerCondition, 120) ||
+    !clean(record.providerCurrencyId, 16) ||
+    !clean(canonical.name, 120) ||
+    !Number.isFinite(price) ||
+    price < 0
   ) {
     throw new Error('MERCADO_LIVRE_OUTBOUND_PROPOSAL_INVALID');
   }
-  return record as unknown as ProposalRecord;
+  return {
+    ...(record as unknown as ProposalRecord),
+    canonical: {
+      name: clean(canonical.name, 120),
+      price,
+    },
+  };
 };
 
 const assertRequirementConfiguration = (
@@ -61,11 +85,15 @@ const assertRequirementConfiguration = (
     clean(record.proposalId, 160) !== proposal.id ||
     clean(record.canonicalBaselineHash, 80) !== proposal.canonicalBaselineHash ||
     record.authority !== 'provider_api_refetch_and_store_owner_selection' ||
-    !clean(record.configuredAt, 80)
+    !clean(record.configuredAt, 80) ||
+    !Array.isArray(record.attributes)
   ) {
     throw new Error('MERCADO_LIVRE_OUTBOUND_REQUIREMENTS_NOT_CONFIGURED');
   }
-  return record as unknown as RequirementConfigurationRecord;
+  return {
+    ...(record as unknown as RequirementConfigurationRecord),
+    attributes: record.attributes,
+  };
 };
 
 const configuredShippingFrom = (
@@ -175,6 +203,13 @@ export const inspectKyrubiaMercadoLivreCommercialReadiness = async (input: {
     storeId,
     categoryId: proposal.providerCategoryId,
     externalAccountId: connection.externalAccountId,
+    siteId: proposal.providerSiteId,
+    title: proposal.canonical.name,
+    price: proposal.canonical.price,
+    currencyId: proposal.providerCurrencyId,
+    listingTypeId: proposal.providerListingTypeId,
+    condition: proposal.providerCondition,
+    attributes: requirementConfiguration.attributes,
   });
   const configuredShipping = commercialDoc.exists
     ? configuredShippingFrom(
