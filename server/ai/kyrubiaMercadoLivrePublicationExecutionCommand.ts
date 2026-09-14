@@ -6,8 +6,11 @@ export type KyrubiaMercadoLivrePublicationExecutionCommandResult =
   | { handled: false }
   | { handled: true; reply: string; turnContext: KyrubiaTurnContext };
 
+const normalizeExplicitCommand = (message: string): string =>
+  message.trim().replace(/[.!?…]+$/u, '').trim();
+
 const isExplicitPublicationExecutionCommand = (message: string): boolean =>
-  /^(?:publicar|publique)\s+agora$/i.test(message.trim());
+  /^(?:publicar|publique)\s+agora$/i.test(normalizeExplicitCommand(message));
 
 const refreshedPublicationContext = (context: KyrubiaTurnContext): KyrubiaTurnContext => ({
   ...context,
