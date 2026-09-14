@@ -20,14 +20,17 @@ type ShippingCommand = {
   localPickUp: boolean;
 };
 
+const normalizeExplicitCommand = (message: string): string =>
+  message.trim().replace(/[.!?…]+$/u, '').trim();
+
 const isExplicitDraftValidationCommand = (message: string): boolean =>
-  /^(?:validar|valide)(?:\s+o)?\s+(?:draft|rascunho)$/i.test(message.trim());
+  /^(?:validar|valide)(?:\s+o)?\s+(?:draft|rascunho)$/i.test(normalizeExplicitCommand(message));
 
 const isExplicitPublicationAuthorizationCommand = (message: string): boolean =>
-  /^(?:autorizar|autorize)(?:\s+a)?\s+publica(?:ção|cao)$/i.test(message.trim());
+  /^(?:autorizar|autorize)(?:\s+a)?\s+publica(?:ção|cao)$/i.test(normalizeExplicitCommand(message));
 
 const parseShippingCommand = (message: string): ShippingCommand | null => {
-  const match = /^(?:configurar|configure)\s+(?:o\s+)?frete\s+([a-z0-9_-]{1,120})(.*)$/i.exec(message.trim());
+  const match = /^(?:configurar|configure)\s+(?:o\s+)?frete\s+([a-z0-9_-]{1,120})(.*)$/i.exec(normalizeExplicitCommand(message));
   if (!match?.[1]) return null;
   const qualifiers = (match[2] ?? '')
     .normalize('NFD')
@@ -51,13 +54,26 @@ const proposalIdFromPreparationContext = (
   context: KyrubiaTurnContext
 ): string => {
   if (
-    context.sourceAction !== 'mercado_livre_publication_preparation' ||
-    context.mercadoLivreRequirementProgress ||
-    context.selectedIntent?.intent !== 'mercado_livre.listing_type_select'
+    context.sourceAction !== 'mercado_livre_publication_preparation' &&
+    context.sourceAction !== 'mercado_livre_requirement_options'
   ) {
     return '';
   }
-  return context.selectedIntent.payload.proposalId.trim();
+
+  const progressProposalId = context.mercadoLivreRequirementProgress?.proposalId.trim() ?? '';
+  if (progressProposalId) return progressProposalId;
+
+  const selectedIntent = context.selectedIntent;
+  if (
+    selectedIntent?.intent === 'mercado_livre.category_select' ||
+    selectedIntent?.intent === 'mercado_livre.condition_select' ||
+    selectedIntent?.intent === 'mercado_livre.listing_type_select' ||
+    selectedIntent?.intent === 'mercado_livre.attribute_value_select'
+  ) {
+    return selectedIntent.payload.proposalId.trim();
+  }
+
+  return '';
 };
 
 const refreshedPreparationContext = (
