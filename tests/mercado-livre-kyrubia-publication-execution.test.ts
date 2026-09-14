@@ -42,7 +42,8 @@ test('Cairubia execution bridge accepts only Cairubia authorization and validati
   assert.match(bridge, /authorization\.listingValidationSource !== 'kyrubia_revalidated_draft'/);
   assert.match(bridge, /proposal\.publicationAuthorizationSource !== 'kyrubia_explicit_owner_command'/);
   assert.match(bridge, /validation\.validationSource !== 'kyrubia_revalidated_draft'/);
-  assert.match(bridge, /validation\.providerStatus !== 204/);
+  assert.match(bridge, /isMercadoLivreReadyListingValidationEvidence\(validation\)/);
+  assert.doesNotMatch(bridge, /validation\.providerStatus !== 204/);
   assert.match(bridge, /serverExecutionAuthority: 'kyrubia_explicit_publish_now_command'/);
   assert.match(bridge, /expectedProposalId: proposalId/);
   assert.match(bridge, /expectedAuthorizationSource: 'kyrubia_explicit_owner_command'/);
