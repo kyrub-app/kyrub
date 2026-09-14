@@ -20,7 +20,7 @@ const MANAGEMENT_MODULES: Record<ErpManagementModule, ModuleDefinition> = {
   produtos: {
     title: 'Produtos & Estoque',
     description: 'Catálogo, publicação, estoque e edição dos itens da loja.',
-    status: 'migration',
+    status: 'native',
   },
   vendas: {
     title: 'Vendas & Analytics',
@@ -70,13 +70,18 @@ const LazyIntegrationsRuntime = lazy(async () => {
   return { default: module.GerencialIntegrationsRuntime };
 });
 
+const LazyProductInventoryRuntime = lazy(async () => {
+  const module = await import('./store/ProductInventoryDirectRuntime');
+  return { default: module.ProductInventoryDirectRuntime };
+});
+
 function DirectManagementModule({
   moduleId,
-  triggerToast,
+  retailerProps,
   onBackToPdv,
 }: {
   moduleId: ErpManagementModule;
-  triggerToast: RetailerPanelProps['triggerToast'];
+  retailerProps: RetailerPanelProps;
   onBackToPdv: () => void;
 }) {
   const definition = MANAGEMENT_MODULES[moduleId];
@@ -116,7 +121,23 @@ function DirectManagementModule({
             </div>
           }
         >
-          <LazyIntegrationsRuntime triggerToast={triggerToast} />
+          <LazyIntegrationsRuntime triggerToast={retailerProps.triggerToast} />
+        </Suspense>
+      ) : moduleId === 'produtos' ? (
+        <Suspense
+          fallback={
+            <div className="rounded-3xl border border-cyan-500/20 bg-slate-900 p-5 text-[10px] text-cyan-100">
+              Carregando Produtos & Estoque…
+            </div>
+          }
+        >
+          <LazyProductInventoryRuntime
+            activeRetailerId={retailerProps.activeRetailerId}
+            activeStore={retailerProps.activeStore}
+            products={retailerProps.products}
+            setProducts={retailerProps.setProducts}
+            triggerToast={retailerProps.triggerToast}
+          />
         </Suspense>
       ) : (
         <div className="rounded-3xl border border-slate-800 bg-slate-900 p-5 text-white">
@@ -171,7 +192,7 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = props => {
     return (
       <DirectManagementModule
         moduleId={managementModule}
-        triggerToast={props.triggerToast}
+        retailerProps={props}
         onBackToPdv={backToPdv}
       />
     );
