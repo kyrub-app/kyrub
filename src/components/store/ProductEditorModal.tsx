@@ -74,26 +74,33 @@ export const ProductEditorModal: React.FC<ProductEditorModalProps> = ({
       kind
     );
     const previousFiscalProfile = fiscalState.initialProfile;
-
-    await persistProductFiscalProfile(
-      user,
-      productWithStorePoints.id,
-      nextFiscalProfile
+    const shouldPersistFiscalProfile = Boolean(
+      nextFiscalProfile || previousFiscalProfile
     );
+
+    if (shouldPersistFiscalProfile) {
+      await persistProductFiscalProfile(
+        user,
+        productWithStorePoints.id,
+        nextFiscalProfile
+      );
+    }
 
     try {
       await onSave(productWithStorePoints);
     } catch (error) {
-      void persistProductFiscalProfile(
-        user,
-        productWithStorePoints.id,
-        previousFiscalProfile
-      ).catch(rollbackError => {
-        console.error(
-          'Não foi possível reverter os dados fiscais após a falha do item.',
-          rollbackError
-        );
-      });
+      if (shouldPersistFiscalProfile) {
+        void persistProductFiscalProfile(
+          user,
+          productWithStorePoints.id,
+          previousFiscalProfile
+        ).catch(rollbackError => {
+          console.error(
+            'Não foi possível reverter os dados fiscais após a falha do item.',
+            rollbackError
+          );
+        });
+      }
       throw error;
     }
   };
