@@ -216,6 +216,7 @@ export const handleKyrubiaMercadoLivreBoundListingUpdateCommand = async (input: 
       canonicalProductId: proposal.canonicalProductId,
       externalItemId: proposal.externalItemId,
     });
+    const priceEvidence = `Evidência de preço usada neste gate: produto canônico ${proposal.canonicalProductId}; baseline R$ ${proposal.baseline.price}; Kyrub atual R$ ${proposal.currentCanonical.price}; Mercado Livre atual R$ ${proposal.observedExternal.price}.`;
 
     if (proposal.status === 'no_changes') {
       return {
@@ -224,6 +225,7 @@ export const handleKyrubiaMercadoLivreBoundListingUpdateCommand = async (input: 
         reply: [
           `A verificação de atualização foi concluída para o item ${proposal.externalItemId} no binding ${proposal.bindingId}.`,
           'Nome e preço do produto canônico não apresentam nenhuma mudança real a enviar em relação à baseline reconciliada e à leitura atual do Mercado Livre.',
+          priceEvidence,
           `O registro ${proposal.id} ficou como no_changes e executionStatus=not_authorized.`,
           'Estoque, categoria, imagem e status da publicação permanecem fora desta autoridade de atualização.',
           'Nenhuma autorização foi criada e nenhum PUT /items foi enviado ao Mercado Livre.',
@@ -239,6 +241,7 @@ export const handleKyrubiaMercadoLivreBoundListingUpdateCommand = async (input: 
         `Preparei a proposta ${proposal.id} para atualizar ${changes} do item ${proposal.externalItemId}.`,
         `Ela está review_required e executionStatus=not_authorized no binding ${proposal.bindingId}.`,
         'A proposta foi calculada comparando a baseline reconciliada, o produto canônico atual do Kyrub e uma nova leitura do anúncio no Mercado Livre.',
+        priceEvidence,
         'Estoque, categoria, imagem e status da publicação estão explicitamente protegidos e não fazem parte desta proposta.',
         'Nenhuma autorização de atualização foi criada e nenhum PUT /items foi enviado ao Mercado Livre.',
       ].join(' '),

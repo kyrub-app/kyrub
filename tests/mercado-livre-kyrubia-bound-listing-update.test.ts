@@ -48,6 +48,14 @@ test('no-change preparation reports a deterministic no-op without crossing provi
   assert.match(source, /Estoque, categoria, imagem e status da publicação permanecem fora/);
 });
 
+test('bound update reply exposes the exact canonical product and price evidence used by the gate', async () => {
+  const source = await readFile(commandPath, 'utf8');
+  assert.match(source, /produto canônico \$\{proposal\.canonicalProductId\}/);
+  assert.match(source, /baseline R\$ \$\{proposal\.baseline\.price\}/);
+  assert.match(source, /Kyrub atual R\$ \$\{proposal\.currentCanonical\.price\}/);
+  assert.match(source, /Mercado Livre atual R\$ \$\{proposal\.observedExternal\.price\}/);
+});
+
 test('existing Mercado Livre operational dispatcher handles the bound update command before publication execution', async () => {
   const source = await readFile(executionCommandPath, 'utf8');
   const boundIndex = source.indexOf('handleKyrubiaMercadoLivreBoundListingUpdateCommand(input)');
