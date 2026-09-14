@@ -104,6 +104,7 @@ export const buildMercadoLivreInitialPublicationPayload = (
         mode: shippingMode,
         free_shipping: input.shipping.freeShipping,
         local_pick_up: input.shipping.localPickUp,
+        ...(shippingMode === 'me2' ? { free_methods: [] } : {}),
       },
     } : {}),
   };
