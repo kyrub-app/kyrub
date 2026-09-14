@@ -17,11 +17,24 @@ const stripOneMatchingOuterQuotePair = (value: string): string => {
   return matching ? clean(text.slice(1, -1), 180) : text;
 };
 
+const stripOptionalProductDescriptor = (value: string): string => {
+  const text = clean(value, 180);
+  return clean(
+    text.replace(
+      /^(?:produto|item)\s+(?=(?:["“'‘`])|(?:id\s+product-))/i,
+      ''
+    ),
+    180
+  );
+};
+
 export const extractKyrubiaMercadoLivrePreparationTarget = (
   message: string
 ): string => {
   const text = clean(message, 600);
   if (!text) return '';
   const match = /^(?:kyrubia\s*[,,:-]?\s*)?(?:prepare|preparar)\s+(?:(?:o|a|um|uma)\s+)?(.+?)\s+para\s+(?:(?:vender|anunciar|publicar)\s+)?(?:tamb[eé]m\s+)?(?:(?:no|na|o|a)\s+)?mercado\s+livre[.!?\s]*$/i.exec(text);
-  return stripOneMatchingOuterQuotePair(clean(match?.[1], 180));
+  return stripOneMatchingOuterQuotePair(
+    stripOptionalProductDescriptor(clean(match?.[1], 180))
+  );
 };
