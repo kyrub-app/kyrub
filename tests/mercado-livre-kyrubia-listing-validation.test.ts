@@ -7,6 +7,7 @@ const servicePath = new URL('../server/integrations/mercadoLivreKyrubiaListingVa
 const transportPath = new URL('../server/integrations/mercadoLivreListingValidationTransport.ts', import.meta.url);
 const commandPath = new URL('../server/ai/kyrubiaMercadoLivreListingValidationCommand.ts', import.meta.url);
 const executionCommandPath = new URL('../server/ai/kyrubiaMercadoLivrePublicationExecutionCommand.ts', import.meta.url);
+const gateResolverPath = new URL('../server/integrations/mercadoLivreKyrubiaGateProposalResolver.ts', import.meta.url);
 const chatPath = new URL('../server/ai/kyrubiaUserProviderChatService.ts', import.meta.url);
 const readinessPath = new URL('../server/integrations/mercadoLivreKyrubiaCommercialReadinessService.ts', import.meta.url);
 const commercialConfigurationPath = new URL('../server/integrations/mercadoLivreOutboundCommercialConfigurationService.ts', import.meta.url);
@@ -112,6 +113,24 @@ test('explicit Mercado Livre gate commands tolerate terminal punctuation and sta
   assert.match(command, /mercado_livre\.attribute_value_select/);
   assert.match(execution, /normalizeExplicitCommand/);
   assert.match(execution, /replace\(\/\[\.!\?…\]\+\$\/u, ''\)/);
+});
+
+test('explicit Mercado Livre gates recover from persisted owner state instead of falling through to generic AI', async () => {
+  const command = await readFile(commandPath, 'utf8');
+  const resolver = await readFile(gateResolverPath, 'utf8');
+
+  assert.match(command, /parseExplicitGateCommand/);
+  assert.match(command, /resolveMercadoLivreKyrubiaGateProposal/);
+  assert.match(command, /requestedProposalId/);
+  assert.match(command, /recoveredPreparationContext/);
+  assert.match(command, /não recorreu à IA genérica/i);
+  assert.doesNotMatch(command, /if \(!input\.context\) return \{ handled: false \}/);
+  assert.match(resolver, /catalogOutboundPublicationProposals/);
+  assert.match(resolver, /catalogOutboundRequirementConfigurations/);
+  assert.match(resolver, /candidates\.length === 1/);
+  assert.match(resolver, /candidates\.length > 1/);
+  assert.match(resolver, /publicationReadiness === 'ready_for_owner_authorization'/);
+  assert.match(resolver, /executionStatus === 'authorized'/);
 });
 
 test('Kairuba preflights provider shipping before items validate and never invents a seller mode', async () => {
