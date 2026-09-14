@@ -199,11 +199,16 @@ const baselineCanonicalState = (value: unknown, execution: ExecutionRecord): Can
   return canonicalState(source.baseline);
 };
 
-const providerState = (value: unknown, execution: ExecutionRecord): ProviderState => {
+const currentProviderState = (
+  value: unknown,
+  execution: ExecutionRecord,
+  externalAccountId: string
+): ProviderState => {
   const source = record(value);
-  if (clean(source.id, 128) !== execution.externalItemId) {
-    throw new Error('MERCADO_LIVRE_SYNC_INSPECTION_PROVIDER_IDENTITY_MISMATCH');
-  }
+  if (
+    clean(source.id, 128) !== execution.externalItemId ||
+    clean(source.seller_id, 128) !== externalAccountId
+  ) throw new Error('MERCADO_LIVRE_SYNC_INSPECTION_PROVIDER_IDENTITY_MISMATCH');
   if (
     execution.providerPublicationModel === 'user_products' &&
     clean(source.user_product_id, 128) !== clean(execution.externalUserProductId, 128)
@@ -226,7 +231,21 @@ const baselineProviderState = (value: unknown, execution: ExecutionRecord): Prov
     snapshot.authority !== 'provider_api_refetch' ||
     clean(snapshot.sourceExecutionId, 128) !== execution.id
   ) throw new Error('MERCADO_LIVRE_SYNC_INSPECTION_PROVIDER_BASELINE_INVALID');
-  return providerState(snapshot.item, execution);
+  const item = record(snapshot.item);
+  if (
+    clean(item.externalId, 128) !== execution.externalItemId ||
+    (execution.providerPublicationModel === 'user_products' &&
+      clean(item.externalUserProductId, 128) !== clean(execution.externalUserProductId, 128))
+  ) throw new Error('MERCADO_LIVRE_SYNC_INSPECTION_PROVIDER_BASELINE_INVALID');
+  const title = clean(item.title, 120);
+  if (!title) throw new Error('MERCADO_LIVRE_SYNC_INSPECTION_PROVIDER_BASELINE_INVALID');
+  return {
+    title,
+    price: finiteNonNegative(item.price),
+    availableQuantity: finiteNonNegative(item.availableQuantity),
+    categoryId: clean(item.categoryId, 128),
+    status: clean(item.status, 80),
+  };
 };
 
 const canonicalChanges = (before: CanonicalState, after: CanonicalState): MercadoLivreSyncChange[] => {
@@ -322,7 +341,7 @@ export const inspectMercadoLivrePostPublicationSync = async (input: {
     storeId,
     `/items/${encodeURIComponent(execution.externalItemId)}`
   );
-  const currentProvider = providerState(fetchedProvider, execution);
+  const currentProvider = currentProviderState(fetchedProvider, execution, connection.externalAccountId);
 
   const canonicalDiff = canonicalChanges(baselineCanonical, currentCanonical);
   const providerDiff = providerChanges(baselineProvider, currentProvider);
