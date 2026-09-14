@@ -2,6 +2,11 @@ import { randomUUID } from 'node:crypto';
 import type { KyrubiaTurnContext } from '../../shared/kyrubiaContext.js';
 import { configureMercadoLivreOutboundCommercialRequirements } from '../integrations/mercadoLivreOutboundCommercialConfigurationService.js';
 import { inspectKyrubiaMercadoLivreCommercialReadiness } from '../integrations/mercadoLivreKyrubiaCommercialReadinessService.js';
+import {
+  resolveMercadoLivreKyrubiaGateProposal,
+  type MercadoLivreKyrubiaGateKind,
+  type MercadoLivreKyrubiaGateProposalCandidate,
+} from '../integrations/mercadoLivreKyrubiaGateProposalResolver.js';
 import { validateKyrubiaMercadoLivreDraftListing } from '../integrations/mercadoLivreKyrubiaListingValidationService.js';
 import { authorizeKyrubiaMercadoLivrePublication } from '../integrations/mercadoLivreKyrubiaPublicationAuthorizationService.js';
 import { handleKyrubiaMercadoLivrePublicationExecutionCommand } from './kyrubiaMercadoLivrePublicationExecutionCommand.js';
@@ -20,14 +25,49 @@ type ShippingCommand = {
   localPickUp: boolean;
 };
 
+type ExplicitGateCommand = {
+  gate: MercadoLivreKyrubiaGateKind;
+  canonicalMessage: 'Validar draft' | 'Autorizar publicação' | 'Publicar agora';
+  requestedProposalId?: string;
+};
+
 const normalizeExplicitCommand = (message: string): string =>
   message.trim().replace(/[.!?…]+$/u, '').trim();
 
+const parseExplicitGateCommand = (message: string): ExplicitGateCommand | null => {
+  const normalized = normalizeExplicitCommand(message);
+  const validation = /^(?:validar|valide)(?:\s+o)?\s+(?:draft|rascunho)(?:\s+id\s+([a-zA-Z0-9_-]{1,180}))?$/i.exec(normalized);
+  if (validation) {
+    return {
+      gate: 'validate',
+      canonicalMessage: 'Validar draft',
+      ...(validation[1] ? { requestedProposalId: validation[1] } : {}),
+    };
+  }
+  const authorization = /^(?:autorizar|autorize)(?:\s+a)?\s+publica(?:ção|cao)(?:\s+id\s+([a-zA-Z0-9_-]{1,180}))?$/i.exec(normalized);
+  if (authorization) {
+    return {
+      gate: 'authorize',
+      canonicalMessage: 'Autorizar publicação',
+      ...(authorization[1] ? { requestedProposalId: authorization[1] } : {}),
+    };
+  }
+  const publication = /^(?:publicar|publique)\s+agora(?:\s+id\s+([a-zA-Z0-9_-]{1,180}))?$/i.exec(normalized);
+  if (publication) {
+    return {
+      gate: 'publish',
+      canonicalMessage: 'Publicar agora',
+      ...(publication[1] ? { requestedProposalId: publication[1] } : {}),
+    };
+  }
+  return null;
+};
+
 const isExplicitDraftValidationCommand = (message: string): boolean =>
-  /^(?:validar|valide)(?:\s+o)?\s+(?:draft|rascunho)$/i.test(normalizeExplicitCommand(message));
+  parseExplicitGateCommand(message)?.gate === 'validate';
 
 const isExplicitPublicationAuthorizationCommand = (message: string): boolean =>
-  /^(?:autorizar|autorize)(?:\s+a)?\s+publica(?:ção|cao)$/i.test(normalizeExplicitCommand(message));
+  parseExplicitGateCommand(message)?.gate === 'authorize';
 
 const parseShippingCommand = (message: string): ShippingCommand | null => {
   const match = /^(?:configurar|configure)\s+(?:o\s+)?frete\s+([a-z0-9_-]{1,120})(.*)$/i.exec(normalizeExplicitCommand(message));
@@ -86,6 +126,83 @@ const refreshedPreparationContext = (
   offeredIntents: undefined,
   mercadoLivreRequirementProgress: undefined,
 });
+
+const emptyRecoveryContext = (userId: string): KyrubiaTurnContext => ({
+  version: 1,
+  id: randomUUID(),
+  source: 'kyrub_runtime',
+  sourceAction: 'mercado_livre_publication_preparation',
+  generatedAt: new Date().toISOString(),
+  scope: { kind: 'own_store', storeId: userId },
+  entities: [],
+});
+
+const recoveredPreparationContext = (
+  userId: string,
+  candidate: MercadoLivreKyrubiaGateProposalCandidate
+): KyrubiaTurnContext => ({
+  version: 1,
+  id: randomUUID(),
+  source: 'kyrub_runtime',
+  sourceAction: 'mercado_livre_publication_preparation',
+  generatedAt: new Date().toISOString(),
+  scope: { kind: 'own_store', storeId: userId },
+  entities: [{
+    entityType: 'product',
+    entityId: candidate.canonicalProductId,
+    label: candidate.productName,
+    position: 1,
+  }],
+  selectedIntent: {
+    id: `ml-gate-${candidate.proposalId}`.slice(0, 160),
+    intent: 'mercado_livre.listing_type_select',
+    label: candidate.listingTypeName,
+    payload: {
+      proposalId: candidate.proposalId,
+      categoryId: candidate.categoryId,
+      categoryName: candidate.categoryName,
+      condition: candidate.condition,
+      listingTypeId: candidate.listingTypeId,
+      listingTypeName: candidate.listingTypeName,
+      providerAuthority: 'provider_api_requirement_options',
+    },
+    authorization: 'intent_only',
+  },
+});
+
+const gateCommandExample = (
+  gate: MercadoLivreKyrubiaGateKind,
+  proposalId: string
+): string => {
+  if (gate === 'authorize') return `Autorizar publicação ID ${proposalId}`;
+  if (gate === 'publish') return `Publicar agora ID ${proposalId}`;
+  return `Validar draft ID ${proposalId}`;
+};
+
+const gateRecoveryReply = (input: {
+  gate: MercadoLivreKyrubiaGateKind;
+  status: 'ambiguous' | 'not_found';
+  candidates: MercadoLivreKyrubiaGateProposalCandidate[];
+  requestedProposalId?: string;
+}): string => {
+  if (input.status === 'ambiguous') {
+    const candidates = input.candidates
+      .map((candidate, index) => `${index + 1}) ${candidate.productName} · proposal ${candidate.proposalId} · produto ${candidate.canonicalProductId}`)
+      .join('; ');
+    return [
+      'O comando do Mercado Livre foi reconhecido, mas existe mais de um draft persistido elegível para esse gate.',
+      `Encontrei: ${candidates}.`,
+      `Escolha explicitamente um proposal, por exemplo: “${gateCommandExample(input.gate, input.candidates[0].proposalId)}”.`,
+      'O Kyrub não escolheu nenhum automaticamente, não recorreu à IA genérica e não publicou nada.',
+    ].join(' ');
+  }
+  return [
+    input.requestedProposalId
+      ? `O comando foi reconhecido, mas o proposal ${input.requestedProposalId} não está elegível para esse gate no estado persistido atual.`
+      : 'O comando foi reconhecido, mas não encontrei um draft persistido elegível para esse gate no estado atual.',
+    'O Kyrub não usou texto da IA como prova de validação ou autorização e não publicou nada.',
+  ].join(' ');
+};
 
 const compactCause = (
   cause: { code: string; message: string; reference: string }
@@ -150,16 +267,63 @@ export const handleKyrubiaMercadoLivreListingValidationCommand = async (input: {
   message: string;
   context?: KyrubiaTurnContext;
 }): Promise<KyrubiaMercadoLivreListingValidationCommandResult> => {
-  if (!input.context) return { handled: false };
+  const explicitGate = parseExplicitGateCommand(input.message);
+  let context = input.context;
+  let proposalId = context ? proposalIdFromPreparationContext(context) : '';
+  let commandMessage = input.message;
 
-  const executionCommand = await handleKyrubiaMercadoLivrePublicationExecutionCommand(input);
+  if (explicitGate && (explicitGate.requestedProposalId || !context || !proposalId)) {
+    try {
+      const resolution = await resolveMercadoLivreKyrubiaGateProposal({
+        storeId: input.userId,
+        gate: explicitGate.gate,
+        ...(explicitGate.requestedProposalId
+          ? { requestedProposalId: explicitGate.requestedProposalId }
+          : {}),
+      });
+      if (resolution.status !== 'resolved') {
+        return {
+          handled: true,
+          turnContext: context ?? emptyRecoveryContext(input.userId),
+          reply: gateRecoveryReply({
+            gate: explicitGate.gate,
+            status: resolution.status,
+            candidates: resolution.candidates,
+            ...(explicitGate.requestedProposalId
+              ? { requestedProposalId: explicitGate.requestedProposalId }
+              : {}),
+          }),
+        };
+      }
+      context = recoveredPreparationContext(input.userId, resolution.candidate);
+      proposalId = resolution.candidate.proposalId;
+      commandMessage = explicitGate.canonicalMessage;
+    } catch (error) {
+      const code = error instanceof Error
+        ? error.message.split(':')[0]
+        : 'MERCADO_LIVRE_KYRUBIA_GATE_PROPOSAL_RECOVERY_FAILED';
+      return {
+        handled: true,
+        turnContext: context ?? emptyRecoveryContext(input.userId),
+        reply: `O comando do Mercado Livre foi reconhecido, mas não consegui recuperar com segurança o draft persistido (${code}). Não recorri à IA genérica e nada foi autorizado ou publicado.`,
+      };
+    }
+  }
+
+  if (!context) return { handled: false };
+
+  const executionCommand = await handleKyrubiaMercadoLivrePublicationExecutionCommand({
+    ...input,
+    message: commandMessage,
+    context,
+  });
   if (executionCommand.handled) return executionCommand;
 
-  const proposalId = proposalIdFromPreparationContext(input.context);
+  if (!proposalId) proposalId = proposalIdFromPreparationContext(context);
   if (!proposalId) return { handled: false };
 
-  if (isExplicitPublicationAuthorizationCommand(input.message)) {
-    const turnContext = refreshedPreparationContext(input.context);
+  if (isExplicitPublicationAuthorizationCommand(commandMessage)) {
+    const turnContext = refreshedPreparationContext(context);
     try {
       const authorization = await authorizeKyrubiaMercadoLivrePublication({
         storeId: input.userId,
@@ -186,9 +350,9 @@ export const handleKyrubiaMercadoLivreListingValidationCommand = async (input: {
     }
   }
 
-  const shippingCommand = parseShippingCommand(input.message);
+  const shippingCommand = parseShippingCommand(commandMessage);
   if (shippingCommand) {
-    const turnContext = refreshedPreparationContext(input.context);
+    const turnContext = refreshedPreparationContext(context);
     try {
       const readiness = await inspectKyrubiaMercadoLivreCommercialReadiness({
         storeId: input.userId,
@@ -251,11 +415,11 @@ export const handleKyrubiaMercadoLivreListingValidationCommand = async (input: {
     }
   }
 
-  if (!isExplicitDraftValidationCommand(input.message)) {
+  if (!isExplicitDraftValidationCommand(commandMessage)) {
     return { handled: false };
   }
 
-  const turnContext = refreshedPreparationContext(input.context);
+  const turnContext = refreshedPreparationContext(context);
   try {
     const readiness = await inspectKyrubiaMercadoLivreCommercialReadiness({
       storeId: input.userId,
