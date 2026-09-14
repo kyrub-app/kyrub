@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { KyrubiaTurnContext } from '../../shared/kyrubiaContext.js';
 import { executeKyrubiaMercadoLivrePublication } from '../integrations/mercadoLivreKyrubiaPublicationExecutionService.js';
 import { verifyAndReconcileKyrubiaMercadoLivrePublication } from '../integrations/mercadoLivreKyrubiaPostPublicationVerificationService.js';
+import { handleKyrubiaMercadoLivreBoundListingUpdateCommand } from './kyrubiaMercadoLivreBoundListingUpdateCommand.js';
 
 export type KyrubiaMercadoLivrePublicationExecutionCommandResult =
   | { handled: false }
@@ -31,6 +32,9 @@ export const handleKyrubiaMercadoLivrePublicationExecutionCommand = async (input
   message: string;
   context?: KyrubiaTurnContext;
 }): Promise<KyrubiaMercadoLivrePublicationExecutionCommandResult> => {
+  const boundUpdateCommand = await handleKyrubiaMercadoLivreBoundListingUpdateCommand(input);
+  if (boundUpdateCommand.handled) return boundUpdateCommand;
+
   const publishNow = isExplicitPublicationExecutionCommand(input.message);
   const reconcilePublication = isExplicitPostPublicationReconciliationCommand(input.message);
   if (!input.context || (!publishNow && !reconcilePublication)) {
