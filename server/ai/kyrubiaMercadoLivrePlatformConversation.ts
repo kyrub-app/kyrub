@@ -74,6 +74,71 @@ type CategorySuggestion = Extract<
   { status: 'available' }
 >['categorySuggestions'][number];
 
+type CanonicalDuplicateProvenance = {
+  productId: string;
+  mercadoLivreProposalIds: string[];
+  configuredCategory?: {
+    id: string;
+    name: string;
+  };
+};
+
+const inspectCanonicalDuplicateProvenance = async (input: {
+  ownerUid: string;
+  matches: AuthoritativeProductIdentity[];
+}): Promise<CanonicalDuplicateProvenance[]> => {
+  const ownerUid = clean(input.ownerUid, 180);
+  if (!ownerUid) return [];
+
+  return Promise.all(input.matches.slice(0, 5).map(async match => {
+    try {
+      const proposals = await adminDb
+        .collection(`stores/${ownerUid}/catalogOutboundPublicationProposals`)
+        .where('canonicalProductId', '==', match.id)
+        .limit(10)
+        .get();
+      const proposalIds = proposals.docs
+        .map(document => clean(document.id, 180))
+        .filter(Boolean);
+
+      let configuredCategory: CanonicalDuplicateProvenance['configuredCategory'];
+      for (const proposalId of proposalIds) {
+        const configuration = await adminDb.doc(
+          `stores/${ownerUid}/catalogOutboundRequirementConfigurations/${proposalId}`
+        ).get();
+        if (!configuration.exists) continue;
+        const category = record(
+          (configuration.data() as Record<string, unknown>).category
+        );
+        const categoryId = clean(category.id, 180);
+        const categoryName = clean(category.name, 180);
+        if (categoryId || categoryName) {
+          configuredCategory = {
+            id: categoryId,
+            name: categoryName,
+          };
+          break;
+        }
+      }
+
+      return {
+        productId: match.id,
+        mercadoLivreProposalIds: proposalIds,
+        ...(configuredCategory ? { configuredCategory } : {}),
+      };
+    } catch (error) {
+      console.warn('[kyrubia][mercado_livre_duplicate_provenance_unavailable]', {
+        productId: match.id,
+        message: error instanceof Error ? error.message : String(error),
+      });
+      return {
+        productId: match.id,
+        mercadoLivreProposalIds: [],
+      };
+    }
+  }));
+};
+
 const categoryChoiceLabel = (suggestion: CategorySuggestion): string => {
   const hierarchy = suggestion.categoryPath
     .map(node => clean(node.name, 160))
@@ -174,18 +239,44 @@ const platformCapabilities: KyrubAiConsultantResponse['capabilities'] = {
   persistentCloudHistoryEnabled: false,
 };
 
-const canonicalDuplicateOptions = (matches: AuthoritativeProductIdentity[]): string =>
-  matches
-    .slice(0, 5)
-    .map((match, index) => `${index + 1}) ${match.name} · ID ${match.id}`)
-    .join('; ');
+const provenanceLabel = (
+  match: AuthoritativeProductIdentity,
+  provenance: CanonicalDuplicateProvenance | undefined
+): string => {
+  if (provenance?.configuredCategory) {
+    const category = [
+      provenance.configuredCategory.name,
+      provenance.configuredCategory.id ? `ID ${provenance.configuredCategory.id}` : '',
+    ].filter(Boolean).join(' · ');
+    return `${match.name} · ID ${match.id} · Mercado Livre já configurado${category ? `: ${category}` : ''}`;
+  }
+  if ((provenance?.mercadoLivreProposalIds.length ?? 0) > 0) {
+    return `${match.name} · ID ${match.id} · já possui rascunho interno do Mercado Livre`;
+  }
+  return `${match.name} · ID ${match.id} · sem rascunho do Mercado Livre encontrado`;
+};
+
+const canonicalDuplicateOptions = (
+  matches: AuthoritativeProductIdentity[],
+  provenance: CanonicalDuplicateProvenance[] = []
+): string => matches
+  .slice(0, 5)
+  .map((match, index) => {
+    const context = provenance.find(item => item.productId === match.id);
+    return `${index + 1}) ${provenanceLabel(match, context)}`;
+  })
+  .join('; ');
 
 const unresolvedProductResponse = (input: {
   targetName: string;
   reason: 'not_found' | 'ambiguous';
   matches?: AuthoritativeProductIdentity[];
+  provenance?: CanonicalDuplicateProvenance[];
 }): KyrubAiConsultantResponse => {
-  const options = canonicalDuplicateOptions(input.matches ?? []);
+  const options = canonicalDuplicateOptions(
+    input.matches ?? [],
+    input.provenance ?? []
+  );
   const firstId = clean(input.matches?.[0]?.id, 180);
   const ambiguityReply = options
     ? [
@@ -231,10 +322,22 @@ export const prepareKyrubiaMercadoLivrePlatformConversation = async (input: {
         targetName,
       });
   if (resolution.status !== 'found') {
+    const provenance = resolution.status === 'ambiguous'
+      ? await inspectCanonicalDuplicateProvenance({
+          ownerUid: user.uid,
+          matches: resolution.matches,
+        })
+      : undefined;
+    if (resolution.status === 'ambiguous') {
+      console.warn('[kyrubia][mercado_livre_canonical_product_provenance]', {
+        matches: provenance,
+      });
+    }
     return unresolvedProductResponse({
       targetName,
       reason: resolution.status,
       ...(resolution.status === 'ambiguous' ? { matches: resolution.matches } : {}),
+      ...(provenance ? { provenance } : {}),
     });
   }
   const product = resolution.product;
