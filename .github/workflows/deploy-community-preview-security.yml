@@ -6,6 +6,8 @@ on:
     branches: [main]
     paths:
       - 'firestore.kyrubia-conversations.fragment.rules'
+      - 'firestore.product-dual-write.fragment.rules'
+      - '.github/workflows/deploy-community-preview-security.yml'
 
 permissions:
   contents: read
