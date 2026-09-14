@@ -212,6 +212,48 @@ const normalizeExplicitCreateFollowUp = (
   };
 };
 
+const stabilizeCreateProductProposal = (input: {
+  user: User;
+  conversationId: string;
+}, result: KyrubAiConsultantResponse | null): KyrubAiConsultantResponse | null => {
+  if (
+    !result?.actionProposal ||
+    result.actionProposal.type !== 'create_product' ||
+    typeof localStorage === 'undefined'
+  ) {
+    return result;
+  }
+
+  const workflow = loadKyrubiaOperationalWorkflow(
+    localStorage,
+    input.user.uid,
+    input.conversationId
+  );
+  if (
+    workflow?.objective !== 'create_product' ||
+    workflow.stage !== 'awaiting_product_confirmation'
+  ) {
+    return result;
+  }
+
+  const stableProposalId = workflow.productProposalId?.trim() || createRequestId();
+  if (!workflow.productProposalId?.trim()) {
+    saveKyrubiaOperationalWorkflow(localStorage, {
+      ...workflow,
+      productProposalId: stableProposalId,
+      updatedAt: new Date().toISOString(),
+    });
+  }
+
+  return {
+    ...result,
+    actionProposal: {
+      ...result.actionProposal,
+      id: stableProposalId,
+    },
+  };
+};
+
 const finalizePhotoStage = async (input: {
   user: User;
   conversationId: string;
@@ -433,10 +475,14 @@ export const resolveKyrubiaOperationalWorkflow = async (
   }
 ): Promise<KyrubAiConsultantResponse | null> => {
   const photoResult = await finalizePhotoStage(input);
-  if (photoResult) return photoResult;
+  if (photoResult) {
+    return stabilizeCreateProductProposal(input, photoResult);
+  }
 
   const channelSelectionResult = await resolveProductChannelSelectionStage(input);
-  if (channelSelectionResult) return channelSelectionResult;
+  if (channelSelectionResult) {
+    return stabilizeCreateProductProposal(input, channelSelectionResult);
+  }
 
   const mercadoLivreCategoryResult = resolveMercadoLivreCategoryDuringProductCreation(input);
   if (mercadoLivreCategoryResult) return mercadoLivreCategoryResult;
@@ -481,5 +527,5 @@ export const resolveKyrubiaOperationalWorkflow = async (
     }
   }
 
-  return channelAwareResult;
+  return stabilizeCreateProductProposal(input, channelAwareResult);
 };
