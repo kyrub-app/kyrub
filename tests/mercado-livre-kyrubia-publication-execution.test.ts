@@ -7,6 +7,7 @@ const gatePath = new URL('../server/ai/kyrubiaMercadoLivreListingValidationComma
 const authorizationPath = new URL('../server/integrations/mercadoLivreKyrubiaPublicationAuthorizationService.ts', import.meta.url);
 const bridgePath = new URL('../server/integrations/mercadoLivreKyrubiaPublicationExecutionService.ts', import.meta.url);
 const executorPath = new URL('../server/integrations/mercadoLivreOutboundPublicationExecutionService.ts', import.meta.url);
+const verificationPath = new URL('../server/integrations/mercadoLivreKyrubiaPostPublicationVerificationService.ts', import.meta.url);
 const routerPath = new URL('../server/integrations/mercadoLivreRouter.ts', import.meta.url);
 
 test('Cairubia publish-now carries only the proposal locator and never a raw authorization token', async () => {
@@ -119,6 +120,18 @@ test('publish-now delegates to the existing single provider executor and never d
   assert.match(bridge, /executeAuthorizedMercadoLivrePublication/);
   assert.equal(executor.match(/mercadoLivrePostJson<MercadoLivreCreatedItem>\(storeId, '\/items'/g)?.length, 1);
   assert.doesNotMatch(bridge, /mercadoLivrePostJson|mercadoLivrePutJson/);
+});
+
+test('post-publication reconciliation is an explicit read-only Cairubia command before canonical reconciliation', async () => {
+  const command = await readFile(commandPath, 'utf8');
+  const verification = await readFile(verificationPath, 'utf8');
+  assert.match(command, /isExplicitPostPublicationReconciliationCommand/);
+  assert.match(command, /Reconciliar publicação/);
+  assert.match(command, /verifyAndReconcileKyrubiaMercadoLivrePublication/);
+  assert.match(command, /nenhuma alteração foi enviada ao anúncio/i);
+  assert.match(verification, /mercadoLivreGetJson/);
+  assert.match(verification, /reconcileMercadoLivrePublishedItem/);
+  assert.doesNotMatch(verification, /mercadoLivrePostJson|mercadoLivrePutJson/);
 });
 
 test('execution replies distinguish published, expired, rejected, reconciliation and pre-reservation blocking', async () => {

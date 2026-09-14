@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { KyrubiaTurnContext } from '../../shared/kyrubiaContext.js';
 import { executeKyrubiaMercadoLivrePublication } from '../integrations/mercadoLivreKyrubiaPublicationExecutionService.js';
+import { verifyAndReconcileKyrubiaMercadoLivrePublication } from '../integrations/mercadoLivreKyrubiaPostPublicationVerificationService.js';
 
 export type KyrubiaMercadoLivrePublicationExecutionCommandResult =
   | { handled: false }
@@ -11,6 +12,9 @@ const normalizeExplicitCommand = (message: string): string =>
 
 const isExplicitPublicationExecutionCommand = (message: string): boolean =>
   /^(?:publicar|publique)\s+agora$/i.test(normalizeExplicitCommand(message));
+
+const isExplicitPostPublicationReconciliationCommand = (message: string): boolean =>
+  /^(?:reconciliar|reconcile)(?:\s+a)?\s+publica(?:ção|cao)$/i.test(normalizeExplicitCommand(message));
 
 const refreshedPublicationContext = (context: KyrubiaTurnContext): KyrubiaTurnContext => ({
   ...context,
@@ -27,7 +31,9 @@ export const handleKyrubiaMercadoLivrePublicationExecutionCommand = async (input
   message: string;
   context?: KyrubiaTurnContext;
 }): Promise<KyrubiaMercadoLivrePublicationExecutionCommandResult> => {
-  if (!input.context || !isExplicitPublicationExecutionCommand(input.message)) {
+  const publishNow = isExplicitPublicationExecutionCommand(input.message);
+  const reconcilePublication = isExplicitPostPublicationReconciliationCommand(input.message);
+  if (!input.context || (!publishNow && !reconcilePublication)) {
     return { handled: false };
   }
 
@@ -43,8 +49,61 @@ export const handleKyrubiaMercadoLivrePublicationExecutionCommand = async (input
     return {
       handled: true,
       turnContext,
-      reply: 'O comando “Publicar agora” foi reconhecido, mas não há um proposal de publicação válido neste contexto. Nenhum POST /items foi executado.',
+      reply: reconcilePublication
+        ? 'O comando “Reconciliar publicação” foi reconhecido, mas não há um proposal de publicação válido neste contexto. Nenhuma leitura pós-publicação foi tratada como evidência e nenhuma alteração foi enviada ao Mercado Livre.'
+        : 'O comando “Publicar agora” foi reconhecido, mas não há um proposal de publicação válido neste contexto. Nenhum POST /items foi executado.',
     };
+  }
+
+  if (reconcilePublication) {
+    try {
+      const result = await verifyAndReconcileKyrubiaMercadoLivrePublication({
+        storeId: input.userId,
+        proposalId,
+        verifiedByUserId: input.userId,
+      });
+      if (result.status === 'mismatch') {
+        const visible = result.mismatches.slice(0, 6).join(' | ');
+        return {
+          handled: true,
+          turnContext,
+          reply: [
+            `A leitura pós-publicação do item ${result.externalItemId} encontrou divergência entre o payload autorizado e o estado relido no Mercado Livre.`,
+            visible ? `Diferenças: ${visible}.` : 'O provedor não devolveu uma comparação coerente para todos os campos esperados.',
+            `Os atributos conferidos ficaram em ${result.matchedAttributeCount}/${result.expectedAttributeCount}.`,
+            'O Kyrub não marcou essa publicação como reconciliada e não enviou nenhuma escrita corretiva automática ao Mercado Livre.',
+          ].join(' '),
+        };
+      }
+
+      const price = result.providerPrice === null
+        ? 'preço não informado'
+        : `${result.providerCurrencyId || 'moeda não informada'} ${result.providerPrice}`;
+      const userProduct = result.externalUserProductId
+        ? ` O User Product ${result.externalUserProductId} também foi relido e a identidade coincidiu com o binding.`
+        : '';
+      const idempotency = result.alreadyReconciled
+        ? ' A reconciliação canônica já existia e foi reconhecida de forma idempotente.'
+        : '';
+      return {
+        handled: true,
+        turnContext,
+        reply: [
+          `Readback pós-publicação concluído para ${result.externalItemId}.`,
+          `O Mercado Livre devolveu status “${result.providerStatus || 'não informado'}”, título “${result.providerTitle || 'não informado'}”, ${price} e categoria ${result.providerCategoryId || 'não informada'}.`,
+          `Os campos comerciais autorizados e ${result.matchedAttributeCount}/${result.expectedAttributeCount} atributo(s) esperado(s) coincidiram com a leitura atual.${userProduct}`,
+          `A reconciliação canônica ficou ${result.reconciliationStatus ?? 'não concluída'} no binding ${result.bindingId}.${idempotency}`,
+          'Essa etapa fez apenas leitura do provedor e persistência de evidência no Kyrub; nenhuma alteração foi enviada ao anúncio.',
+        ].join(' '),
+      };
+    } catch (error) {
+      const code = errorCode(error);
+      return {
+        handled: true,
+        turnContext,
+        reply: `O comando “Reconciliar publicação” foi reconhecido, mas o readback autoritativo foi bloqueado (${code}). O Kyrub não considerou a publicação reconciliada e não enviou nenhuma escrita corretiva ao Mercado Livre.`,
+      };
+    }
   }
 
   try {
