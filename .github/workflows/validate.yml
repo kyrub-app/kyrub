@@ -58,6 +58,7 @@ jobs:
           tests/kyrubia-cloud-history-contract.test.ts
           tests/kyrubia-list-products-category-semantics.test.ts
           tests/kyrubia-operational-read-manual-bypass.test.ts
+          tests/kyrubia-product-publication-by-id.test.ts
           tests/gamification-redemption-repository.test.ts
           tests/app-error-boundary.test.ts
           tests/production-health.test.ts
