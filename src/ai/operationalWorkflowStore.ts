@@ -35,6 +35,7 @@ export type KyrubiaOperationalWorkflow = {
   objective: 'store_setup' | 'create_product';
   stage: KyrubiaOperationalWorkflowStage;
   productDraft: KyrubiaProductDraft;
+  productProposalId?: string;
   requestedProductCount?: number;
   completedProductCount?: number;
   productChannelOfferChecked?: boolean;
@@ -108,6 +109,9 @@ const isPositiveInteger = (value: unknown): value is number =>
 const isNonNegativeInteger = (value: unknown): value is number =>
   typeof value === 'number' && Number.isInteger(value) && value >= 0;
 
+const isProposalId = (value: unknown): value is string =>
+  typeof value === 'string' && value.trim().length > 0 && value.length <= 220;
+
 export const getKyrubiaProductSequenceProgress = (
   workflow: KyrubiaOperationalWorkflow
 ): KyrubiaProductSequenceProgress => {
@@ -142,6 +146,8 @@ export const loadKyrubiaOperationalWorkflow = (
       (parsed.objective !== 'store_setup' && parsed.objective !== 'create_product') ||
       !isStage(parsed.stage) ||
       !isProductDraft(parsed.productDraft) ||
+      (parsed.productProposalId !== undefined &&
+        !isProposalId(parsed.productProposalId)) ||
       (parsed.requestedProductCount !== undefined &&
         !isPositiveInteger(parsed.requestedProductCount)) ||
       (parsed.completedProductCount !== undefined &&
@@ -252,6 +258,7 @@ export const completeKyrubiaProductAndAdvance = (
     productDraft: {
       isService: workflow.productDraft.isService === true,
     },
+    productProposalId: undefined,
     requestedProductCount: current.requestedCount,
     completedProductCount: completedCount,
     productChannelResumeStage: undefined,
