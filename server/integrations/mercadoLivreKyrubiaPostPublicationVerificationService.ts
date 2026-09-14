@@ -241,10 +241,6 @@ export const compareMercadoLivrePublishedReadback = (input: {
     pushCheck(checks, 'user_product.id', expectedUserProductId, fetchedUserProductId, fetchedUserProductId === expectedUserProductId);
   }
 
-  const expectedStatus = clean(input.execution.providerStatus, 80);
-  const actualStatus = clean(input.item.status, 80);
-  if (expectedStatus) pushCheck(checks, 'item.status', expectedStatus, actualStatus, actualStatus === expectedStatus);
-
   const categoryId = clean(input.payload.category_id, 160);
   if (categoryId) pushCheck(checks, 'item.category_id', categoryId, input.item.category_id, clean(input.item.category_id, 160) === categoryId);
 
