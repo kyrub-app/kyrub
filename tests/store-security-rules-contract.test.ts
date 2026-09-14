@@ -3,6 +3,10 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
 const rules = readFileSync('firestore.store-security.rules', 'utf8');
+const productDualWriteRules = readFileSync(
+  'firestore.product-dual-write.fragment.rules',
+  'utf8'
+);
 
 test('canonical security rules cover every protected store resource', () => {
   [
@@ -46,5 +50,31 @@ test('audit records are append-only and bind actor identity to auth', () => {
   assert.match(
     rules,
     /match \/auditLogs\/\{logId\}[\s\S]*allow update, delete: if false/
+  );
+});
+
+test('canonical product dual-write accepts current product shape without reopening server provenance', () => {
+  [
+    'isComplimentary',
+    'storePointsPerUnit',
+    'actionOrigin',
+    'actionExecutionId',
+  ].forEach(field => assert.match(productDualWriteRules, new RegExp(`'${field}'`)));
+
+  assert.match(
+    productDualWriteRules,
+    /storePointsPerUnit is number[\s\S]*storePointsPerUnit >= 0/
+  );
+  assert.match(
+    productDualWriteRules,
+    /canonicalProductServerProvenanceIsImmutable\(\)[\s\S]*diff\(existing\(\)\)[\s\S]*affectedKeys\(\)[\s\S]*actionOrigin[\s\S]*actionExecutionId/
+  );
+  assert.match(
+    productDualWriteRules,
+    /allow create:[\s\S]*!incoming\(\)\.keys\(\)\.hasAny\(\['actionOrigin', 'actionExecutionId'\]\)/
+  );
+  assert.match(
+    productDualWriteRules,
+    /allow update:[\s\S]*canonicalProductServerProvenanceIsImmutable\(\)/
   );
 });
