@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
+import { buildMercadoLivreInitialPublicationPayload } from '../server/integrations/mercadoLivreInitialPublicationPayloadAdapter.js';
 
 const servicePath = new URL('../server/integrations/mercadoLivreKyrubiaListingValidationService.ts', import.meta.url);
 const transportPath = new URL('../server/integrations/mercadoLivreListingValidationTransport.ts', import.meta.url);
@@ -41,6 +42,34 @@ test('Cairubia validates the final payload through items validate without publis
   assert.match(source, /commercialRequirementConfiguredAt/);
   assert.doesNotMatch(source, /mercadoLivrePostJson|mercadoLivrePutJson/);
   assert.doesNotMatch(source, /catalogOutboundPublicationAuthorizations|authorizationToken|tokenHash/);
+});
+
+test('ME2 listing validation payload keeps the explicit empty free methods list expected by Mercado Livre', () => {
+  const payload = buildMercadoLivreInitialPublicationPayload({
+    publicationModel: 'user_products',
+    stockAuthority: 'item_available_quantity',
+    name: 'Squeeze 480ml Dobrável Laranja com Mosquetão',
+    familyName: 'Squeeze 480ml Dobrável Laranja com Mosquetão',
+    categoryId: 'MLB9908',
+    price: 10,
+    currencyId: 'BRL',
+    availableQuantity: 1,
+    listingTypeId: 'gold_special',
+    condition: 'new',
+    attributes: [],
+    shipping: {
+      mode: 'me2',
+      freeShipping: false,
+      localPickUp: false,
+    },
+  });
+
+  assert.deepEqual(payload.shipping, {
+    mode: 'me2',
+    free_shipping: false,
+    local_pick_up: false,
+    free_methods: [],
+  });
 });
 
 test('listing validation transport records safe provider diagnostics for blocked HTTP responses', async () => {
