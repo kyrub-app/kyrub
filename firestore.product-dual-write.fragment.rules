@@ -52,6 +52,8 @@
           'stock',
           'category',
           'isService',
+          'isComplimentary',
+          'storePointsPerUnit',
           'publicationStatus',
           'createdByUserId',
           'createdByRole',
@@ -66,11 +68,32 @@
           'migration',
           'createdAt',
           'updatedAt',
-          'kyrubiaActionExecutionId'
+          'kyrubiaActionExecutionId',
+          'actionOrigin',
+          'actionExecutionId'
         ])
+        && (
+          !incoming().keys().hasAny(['isComplimentary'])
+          || incoming().isComplimentary is bool
+        )
+        && (
+          !incoming().keys().hasAny(['storePointsPerUnit'])
+          || (
+            incoming().storePointsPerUnit is number
+            && incoming().storePointsPerUnit >= 0
+          )
+        )
         && (
           !incoming().keys().hasAny(['kyrubiaActionExecutionId'])
           || incoming().kyrubiaActionExecutionId is string
+        )
+        && (
+          !incoming().keys().hasAny(['actionOrigin'])
+          || incoming().actionOrigin is string
+        )
+        && (
+          !incoming().keys().hasAny(['actionExecutionId'])
+          || incoming().actionExecutionId is string
         )
         && incoming().id == productId
         && incoming().storeId == storeId
@@ -151,6 +174,13 @@
         && incoming().createdAt == existing().createdAt;
     }
 
+    function canonicalProductServerProvenanceIsImmutable() {
+      return !incoming()
+        .diff(existing())
+        .affectedKeys()
+        .hasAny(['actionOrigin', 'actionExecutionId']);
+    }
+
     function canonicalProductArchiveMetadataIsValid() {
       return incoming().publicationStatus == 'archived'
         ? (
@@ -172,6 +202,7 @@
 
       allow create: if isSignedIn()
         && canonicalProductFieldsAreValid(storeId, productId)
+        && !incoming().keys().hasAny(['actionOrigin', 'actionExecutionId'])
         && incoming().publicationStatus != 'archived'
         && incoming().archivedAt == ''
         && incoming().createdAt == request.time
@@ -184,6 +215,7 @@
       allow update: if isSignedIn()
         && canonicalProductEditor(storeId)
         && canonicalProductIdentityIsImmutable()
+        && canonicalProductServerProvenanceIsImmutable()
         && canonicalProductFieldsAreValid(storeId, productId)
         && incoming().updatedByUserId == request.auth.uid
         && incoming().updatedByRole == storeSecCurrentRole(storeId)
