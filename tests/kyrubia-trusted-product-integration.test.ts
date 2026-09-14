@@ -6,6 +6,11 @@ import type { KyrubErpContextSnapshot } from '../shared/kyrubErpContext';
 import { resolveKyrubiaObjectiveRuntime } from '../src/ai/objectiveRuntimeService';
 import { resolveKyrubiaOperationalWorkflow } from '../src/ai/operationalWorkflowRuntime';
 import {
+  completeKyrubiaProductAndAdvance,
+  loadKyrubiaOperationalWorkflow,
+  saveKyrubiaOperationalWorkflow,
+} from '../src/ai/operationalWorkflowStore';
+import {
   clearOfficialKnowledgeRuntimeSnapshot,
   setOfficialKnowledgeRuntimeSnapshot,
 } from '../src/knowledge/officialKnowledgeRuntimeCache';
@@ -82,6 +87,159 @@ test('explicit product mutation falls through trusted reads and reaches the safe
     assert.equal(operational.actionProposal, undefined);
   } finally {
     clearOfficialKnowledgeRuntimeSnapshot();
+    if (previousDescriptor) {
+      Object.defineProperty(globalThis, 'localStorage', previousDescriptor);
+    } else {
+      delete (globalThis as { localStorage?: Storage }).localStorage;
+    }
+  }
+});
+
+test('repeated review of the same logical product reuses one create-product proposal id', async () => {
+  const storage = new MemoryStorage();
+  const previousDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+  Object.defineProperty(globalThis, 'localStorage', {
+    configurable: true,
+    value: storage,
+  });
+
+  try {
+    saveKyrubiaOperationalWorkflow(storage, {
+      version: 1,
+      conversationId: 'stable-product-conversation',
+      userId: 'user-1',
+      objective: 'create_product',
+      stage: 'awaiting_product_confirmation',
+      productDraft: {
+        name: 'Squeeze 480ml Dobrável Laranja com Mosquetão',
+        price: 29.9,
+        stock: 4,
+        category: 'Garrafas',
+        image: '',
+        photoSkipped: true,
+        isService: false,
+        isComplimentary: false,
+      },
+      requestedProductCount: 1,
+      completedProductCount: 0,
+      productChannelOfferChecked: true,
+      updatedAt: new Date().toISOString(),
+    });
+
+    const input = {
+      user: { uid: 'user-1' } as User,
+      conversationId: 'stable-product-conversation',
+      message: 'revise novamente',
+    };
+    const first = await resolveKyrubiaOperationalWorkflow(input);
+    const second = await resolveKyrubiaOperationalWorkflow(input);
+
+    assert.equal(first?.actionProposal?.type, 'create_product');
+    assert.equal(second?.actionProposal?.type, 'create_product');
+    if (first?.actionProposal?.type !== 'create_product' || second?.actionProposal?.type !== 'create_product') {
+      assert.fail('Expected create_product proposals.');
+    }
+    assert.equal(second.actionProposal.id, first.actionProposal.id);
+
+    const persisted = loadKyrubiaOperationalWorkflow(
+      storage,
+      'user-1',
+      'stable-product-conversation'
+    );
+    assert.equal(persisted?.productProposalId, first.actionProposal.id);
+  } finally {
+    if (previousDescriptor) {
+      Object.defineProperty(globalThis, 'localStorage', previousDescriptor);
+    } else {
+      delete (globalThis as { localStorage?: Storage }).localStorage;
+    }
+  }
+});
+
+test('legacy workflow without proposal identity gets one stable id and the next batch item resets it', async () => {
+  const storage = new MemoryStorage();
+  const previousDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+  Object.defineProperty(globalThis, 'localStorage', {
+    configurable: true,
+    value: storage,
+  });
+
+  try {
+    const conversationId = 'batch-product-conversation';
+    saveKyrubiaOperationalWorkflow(storage, {
+      version: 1,
+      conversationId,
+      userId: 'user-1',
+      objective: 'create_product',
+      stage: 'awaiting_product_confirmation',
+      productDraft: {
+        name: 'Produto A',
+        price: 10,
+        stock: 1,
+        category: 'Teste',
+        image: '',
+        photoSkipped: true,
+        isService: false,
+        isComplimentary: false,
+      },
+      requestedProductCount: 2,
+      completedProductCount: 0,
+      productChannelOfferChecked: true,
+      updatedAt: new Date().toISOString(),
+    });
+
+    const first = await resolveKyrubiaOperationalWorkflow({
+      user: { uid: 'user-1' } as User,
+      conversationId,
+      message: 'revise',
+    });
+    assert.equal(first?.actionProposal?.type, 'create_product');
+    if (first?.actionProposal?.type !== 'create_product') {
+      assert.fail('Expected the first create_product proposal.');
+    }
+    const firstId = first.actionProposal.id;
+
+    const progress = completeKyrubiaProductAndAdvance(
+      storage,
+      'user-1',
+      conversationId
+    );
+    assert.equal(progress?.completedCount, 1);
+    assert.equal(progress?.hasMore, true);
+
+    const advanced = loadKyrubiaOperationalWorkflow(storage, 'user-1', conversationId);
+    assert.equal(advanced?.stage, 'collecting_product_name');
+    assert.equal(advanced?.productProposalId, undefined);
+    assert.ok(advanced);
+
+    saveKyrubiaOperationalWorkflow(storage, {
+      ...advanced,
+      stage: 'awaiting_product_confirmation',
+      productDraft: {
+        name: 'Produto B',
+        price: 20,
+        stock: 2,
+        category: 'Teste',
+        image: '',
+        photoSkipped: true,
+        isService: false,
+        isComplimentary: false,
+      },
+      productChannelOfferChecked: true,
+      updatedAt: new Date().toISOString(),
+    });
+
+    const second = await resolveKyrubiaOperationalWorkflow({
+      user: { uid: 'user-1' } as User,
+      conversationId,
+      message: 'revise',
+    });
+    assert.equal(second?.actionProposal?.type, 'create_product');
+    if (second?.actionProposal?.type !== 'create_product') {
+      assert.fail('Expected the second create_product proposal.');
+    }
+    assert.notEqual(second.actionProposal.id, firstId);
+  } finally {
     if (previousDescriptor) {
       Object.defineProperty(globalThis, 'localStorage', previousDescriptor);
     } else {
