@@ -6,7 +6,15 @@ const inventorySource = readFileSync(
   'src/components/store/ProductInventoryWorkspace.tsx',
   'utf8'
 );
+const directInventorySource = readFileSync(
+  'src/components/store/ProductInventoryDirectRuntime.tsx',
+  'utf8'
+);
 const retailerSource = readFileSync('src/components/RetailerPanel.tsx', 'utf8');
+const retailerRouterSource = readFileSync(
+  'src/components/RetailerPanelRuntimeRouter.tsx',
+  'utf8'
+);
 const editorAdapterSource = readFileSync(
   'src/components/store/ProductEditorModal.tsx',
   'utf8'
@@ -72,6 +80,21 @@ test('retailer catalog persists edits and confirms deletion', () => {
   assert.match(retailerSource, /removePublicProduct\(user, product\.id\)/);
   assert.match(retailerSource, /confirm-delete-product-button/);
   assert.match(retailerSource, /Pedidos antigos continuarão preservando/);
+});
+
+test('the direct products module mounts native cloud-backed inventory management', () => {
+  assert.match(retailerRouterSource, /produtos:[\s\S]*status: 'native'/);
+  assert.match(retailerRouterSource, /LazyProductInventoryRuntime/);
+  assert.match(retailerRouterSource, /moduleId === 'produtos'/);
+  assert.match(directInventorySource, /ProductInventoryWorkspace/);
+  assert.match(directInventorySource, /ProductEditorModal/);
+  assert.match(directInventorySource, /persistPublicProduct\(user, updatedProduct\)/);
+  assert.match(directInventorySource, /OperationalDualWriteBridge/);
+  assert.match(directInventorySource, /PUBLIC_PRODUCT_CREATE_EVENT/);
+  assert.match(directInventorySource, /removePublicProduct\(user, product\.id\)/);
+  assert.match(directInventorySource, /id: previousProduct\.id/);
+  assert.match(directInventorySource, /não envia alterações automaticamente ao Mercado Livre/);
+  assert.doesNotMatch(directInventorySource, /fetch\(/);
 });
 
 test('the unified modal keeps media, hierarchy, quick notes and personalization', () => {
