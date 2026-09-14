@@ -11,6 +11,11 @@ export type MercadoLivreCommercialPostEndpoint = 'prepublication_shipping_modes'
 const text = (value: unknown): string =>
   typeof value === 'string' || typeof value === 'number' ? String(value).trim() : '';
 
+const recordFrom = (value: unknown): Record<string, unknown> =>
+  value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+
 const safeProviderDiagnostic = (value: unknown): string =>
   text(value)
     .replace(/[\u0000-\u001F\u007F]+/g, ' ')
@@ -28,8 +33,7 @@ const providerDiagnostic = (payload: unknown): {
   providerError?: string;
   providerMessage?: string;
 } => {
-  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return {};
-  const record = payload as Record<string, unknown>;
+  const record = recordFrom(payload);
   const providerCode = safeProviderDiagnostic(record.code);
   const providerError = safeProviderDiagnostic(record.error);
   const providerMessage = safeProviderDiagnostic(record.message ?? record.error_description);
@@ -38,6 +42,42 @@ const providerDiagnostic = (payload: unknown): {
     ...(providerError ? { providerError } : {}),
     ...(providerMessage ? { providerMessage } : {}),
   };
+};
+
+const shippingRuleDiagnostic = (value: unknown): Record<string, unknown> => {
+  const record = recordFrom(value);
+  const tags = Array.isArray(record.tags)
+    ? record.tags.map(tag => safeProviderDiagnostic(tag)).filter(Boolean).slice(0, 20)
+    : [];
+  return {
+    dimensions: safeProviderDiagnostic(record.dimensions),
+    costs: safeProviderDiagnostic(record.costs),
+    adoption: safeProviderDiagnostic(record.adoption),
+    freeShipping: safeProviderDiagnostic(record.free_shipping),
+    localPickUp: safeProviderDiagnostic(record.local_pick_up),
+    tags,
+  };
+};
+
+const prepublicationShippingDiagnostic = (payload: unknown): Array<Record<string, unknown>> => {
+  const marketplace = recordFrom(recordFrom(recordFrom(payload).channels).marketplace);
+  const modes = Array.isArray(marketplace.available_modes) ? marketplace.available_modes : [];
+  return modes.slice(0, 8).map(candidate => {
+    const mode = recordFrom(candidate);
+    const logisticTypes = Array.isArray(mode.logistic_types) ? mode.logistic_types : [];
+    return {
+      mode: safeProviderDiagnostic(mode.mode),
+      shippingAttributes: shippingRuleDiagnostic(mode.shipping_attributes),
+      logisticTypes: logisticTypes.slice(0, 12).map(logisticCandidate => {
+        const logistic = recordFrom(logisticCandidate);
+        return {
+          type: safeProviderDiagnostic(logistic.type),
+          default: logistic.default === true,
+          attributes: shippingRuleDiagnostic(logistic.attributes),
+        };
+      }),
+    };
+  });
 };
 
 const reportRejection = (
@@ -139,7 +179,15 @@ export const mercadoLivreCommercialPostJson = async <T>(input: {
       },
       body: JSON.stringify(input.body),
     });
-    if (response.ok) return response.json() as Promise<T>;
+    if (response.ok) {
+      const payload = await response.json() as T;
+      console.info('[Mercado Livre prepublication shipping diagnostic]', {
+        endpoint: input.endpoint,
+        status: response.status,
+        modes: prepublicationShippingDiagnostic(payload),
+      });
+      return payload;
+    }
     const payload = await response.json().catch(() => ({}));
     return reportRejection(input.endpoint, response.status, payload);
   } catch (error) {
