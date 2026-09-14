@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
 const servicePath = new URL('../server/integrations/mercadoLivrePostPublicationReconciliationService.ts', import.meta.url);
+const verificationPath = new URL('../server/integrations/mercadoLivreKyrubiaPostPublicationVerificationService.ts', import.meta.url);
 const routerPath = new URL('../server/integrations/mercadoLivreRouter.ts', import.meta.url);
 
 test('post-publication reconciliation re-fetches the exact Mercado Livre item and verifies seller identity', async () => {
@@ -69,6 +70,27 @@ test('reconciliation is idempotent and leaves automatic sync disabled', async ()
   assert.match(source, /alreadyReconciled: true/);
   assert.match(source, /connection\.syncAuthority !== 'manual_review'/);
   assert.doesNotMatch(source, /kyrub_to_external|bidirectional/);
+});
+
+test('Kyrubia post-publication readback compares the authorized payload before canonical reconciliation', async () => {
+  const source = await readFile(verificationPath, 'utf8');
+  const mismatchIndex = source.indexOf('comparison.mismatches.length > 0');
+  const reconciliationIndex = source.indexOf('reconcileMercadoLivrePublishedItem({');
+  assert.ok(mismatchIndex >= 0);
+  assert.ok(reconciliationIndex > mismatchIndex);
+  assert.match(source, /include_attributes=all/);
+  assert.match(source, /\/user-products\/\$\{encodeURIComponent\(execution\.externalUserProductId\)\}/);
+  assert.match(source, /item\.category_id/);
+  assert.match(source, /item\.listing_type_id/);
+  assert.match(source, /item\.condition/);
+  assert.match(source, /item\.currency_id/);
+  assert.match(source, /item\.price/);
+  assert.match(source, /user_product\.family_name/);
+  assert.match(source, /attribute\.\$\{expected\.id\}/);
+  assert.match(source, /catalogOutboundPublicationReadbackVerifications/);
+  assert.match(source, /status: 'mismatch'/);
+  assert.match(source, /status: 'verified'/);
+  assert.doesNotMatch(source, /mercadoLivrePostJson|mercadoLivrePutJson/);
 });
 
 test('owner-authenticated reconciliation route is separate from publication execution', async () => {
