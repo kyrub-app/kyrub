@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { KyrubiaTurnContext } from '../../shared/kyrubiaContext.js';
 import { executeKyrubiaMercadoLivrePublication } from '../integrations/mercadoLivreKyrubiaPublicationExecutionService.js';
 import { verifyAndReconcileKyrubiaMercadoLivrePublication } from '../integrations/mercadoLivreKyrubiaPostPublicationVerificationService.js';
+import { inspectMercadoLivrePostPublicationSync } from '../integrations/mercadoLivrePostPublicationSyncInspectionService.js';
 
 export type KyrubiaMercadoLivrePublicationExecutionCommandResult =
   | { handled: false }
@@ -16,6 +17,9 @@ const isExplicitPublicationExecutionCommand = (message: string): boolean =>
 const isExplicitPostPublicationReconciliationCommand = (message: string): boolean =>
   /^(?:reconciliar|reconcile)(?:\s+a)?\s+publica(?:ção|cao)$/i.test(normalizeExplicitCommand(message));
 
+const isExplicitPostPublicationSyncInspectionCommand = (message: string): boolean =>
+  /^(?:verificar|verifique)(?:\s+a)?\s+sincroniza(?:ção|cao)$/i.test(normalizeExplicitCommand(message));
+
 const refreshedPublicationContext = (context: KyrubiaTurnContext): KyrubiaTurnContext => ({
   ...context,
   id: randomUUID(),
@@ -26,6 +30,9 @@ const refreshedPublicationContext = (context: KyrubiaTurnContext): KyrubiaTurnCo
 const errorCode = (error: unknown): string =>
   error instanceof Error ? error.message.split(':')[0] : 'MERCADO_LIVRE_KYRUBIA_PUBLICATION_EXECUTION_FAILED';
 
+const summarizeChanges = (changes: Array<{ field: string; before: string | number | null; after: string | number | null }>): string =>
+  changes.slice(0, 6).map(change => `${change.field}: ${change.before ?? '∅'} → ${change.after ?? '∅'}`).join(' | ');
+
 export const handleKyrubiaMercadoLivrePublicationExecutionCommand = async (input: {
   userId: string;
   message: string;
@@ -33,7 +40,8 @@ export const handleKyrubiaMercadoLivrePublicationExecutionCommand = async (input
 }): Promise<KyrubiaMercadoLivrePublicationExecutionCommandResult> => {
   const publishNow = isExplicitPublicationExecutionCommand(input.message);
   const reconcilePublication = isExplicitPostPublicationReconciliationCommand(input.message);
-  if (!input.context || (!publishNow && !reconcilePublication)) {
+  const inspectSync = isExplicitPostPublicationSyncInspectionCommand(input.message);
+  if (!input.context || (!publishNow && !reconcilePublication && !inspectSync)) {
     return { handled: false };
   }
 
@@ -46,13 +54,75 @@ export const handleKyrubiaMercadoLivrePublicationExecutionCommand = async (input
     context.sourceAction !== 'mercado_livre_publication_preparation' ||
     !proposalId
   ) {
-    return {
-      handled: true,
-      turnContext,
-      reply: reconcilePublication
+    const reply = inspectSync
+      ? 'O comando “Verificar sincronização” foi reconhecido, mas não há um proposal publicado válido neste contexto. Nenhuma leitura foi usada para decidir sincronização e nenhuma alteração foi enviada ao Mercado Livre.'
+      : reconcilePublication
         ? 'O comando “Reconciliar publicação” foi reconhecido, mas não há um proposal de publicação válido neste contexto. Nenhuma leitura pós-publicação foi tratada como evidência e nenhuma alteração foi enviada ao Mercado Livre.'
-        : 'O comando “Publicar agora” foi reconhecido, mas não há um proposal de publicação válido neste contexto. Nenhum POST /items foi executado.',
-    };
+        : 'O comando “Publicar agora” foi reconhecido, mas não há um proposal de publicação válido neste contexto. Nenhum POST /items foi executado.';
+    return { handled: true, turnContext, reply };
+  }
+
+  if (inspectSync) {
+    try {
+      const result = await inspectMercadoLivrePostPublicationSync({
+        storeId: input.userId,
+        proposalId,
+        inspectedByUserId: input.userId,
+      });
+      const canonical = summarizeChanges(result.canonicalChanges);
+      const provider = summarizeChanges(result.providerChanges);
+      if (result.classification === 'in_sync') {
+        return {
+          handled: true,
+          turnContext,
+          reply: [
+            `A inspeção do binding ${result.bindingId} concluiu que o produto do Kyrub e o item ${result.externalItemId} continuam sem mudanças relevantes desde a baseline reconciliada.`,
+            `O status atual observado no Mercado Livre é “${result.providerStatus || 'não informado'}”.`,
+            'A autoridade de sincronização permanece manual_review; nenhuma escrita foi enviada ao Mercado Livre e nenhum dado canônico foi alterado.',
+          ].join(' '),
+        };
+      }
+      if (result.classification === 'canonical_changed') {
+        return {
+          handled: true,
+          turnContext,
+          reply: [
+            `A inspeção do binding ${result.bindingId} encontrou mudança apenas no Kyrub desde a baseline reconciliada.`,
+            canonical ? `Mudanças canônicas: ${canonical}.` : '',
+            'Isso é candidato a uma futura proposta de atualização Kyrub → Mercado Livre, mas nenhuma escrita externa foi executada. A autoridade continua manual_review.',
+          ].filter(Boolean).join(' '),
+        };
+      }
+      if (result.classification === 'provider_changed') {
+        return {
+          handled: true,
+          turnContext,
+          reply: [
+            `A inspeção do binding ${result.bindingId} encontrou mudança apenas no Mercado Livre desde a baseline reconciliada.`,
+            provider ? `Mudanças do provedor: ${provider}.` : '',
+            'Isso exige revisão antes de qualquer incorporação ao Kyrub. Nenhuma alteração canônica e nenhuma escrita externa foram executadas.',
+          ].filter(Boolean).join(' '),
+        };
+      }
+      return {
+        handled: true,
+        turnContext,
+        reply: [
+          `A inspeção do binding ${result.bindingId} encontrou mudanças nos dois lados e classificou o estado como conflict.`,
+          canonical ? `Kyrub: ${canonical}.` : '',
+          provider ? `Mercado Livre: ${provider}.` : '',
+          result.overlappingFields.length > 0 ? `Campos concorrentes: ${result.overlappingFields.join(', ')}.` : 'As mudanças são bilaterais e precisam de revisão conjunta.',
+          'O Kyrub não escolheu vencedor, não atualizou o produto canônico e não enviou nenhuma escrita ao Mercado Livre.',
+        ].filter(Boolean).join(' '),
+      };
+    } catch (error) {
+      const code = errorCode(error);
+      return {
+        handled: true,
+        turnContext,
+        reply: `O comando “Verificar sincronização” foi reconhecido, mas a inspeção autoritativa foi bloqueada (${code}). Nenhuma alteração foi enviada ao Mercado Livre e nenhum estado canônico foi sobrescrito.`,
+      };
+    }
   }
 
   if (reconcilePublication) {
