@@ -2,12 +2,19 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { buildMercadoLivreInitialPublicationPayload } from '../server/integrations/mercadoLivreInitialPublicationPayloadAdapter.js';
+import {
+  classifyMercadoLivreListingValidationEvidence,
+  isMercadoLivreReadyListingValidationEvidence,
+  mercadoLivreProviderValidationCauses,
+} from '../server/integrations/mercadoLivreListingValidationEvidence.js';
 
 const servicePath = new URL('../server/integrations/mercadoLivreKyrubiaListingValidationService.ts', import.meta.url);
 const transportPath = new URL('../server/integrations/mercadoLivreListingValidationTransport.ts', import.meta.url);
 const commandPath = new URL('../server/ai/kyrubiaMercadoLivreListingValidationCommand.ts', import.meta.url);
 const executionCommandPath = new URL('../server/ai/kyrubiaMercadoLivrePublicationExecutionCommand.ts', import.meta.url);
 const gateResolverPath = new URL('../server/integrations/mercadoLivreKyrubiaGateProposalResolver.ts', import.meta.url);
+const authorizationPath = new URL('../server/integrations/mercadoLivreKyrubiaPublicationAuthorizationService.ts', import.meta.url);
+const publicationExecutionPath = new URL('../server/integrations/mercadoLivreKyrubiaPublicationExecutionService.ts', import.meta.url);
 const chatPath = new URL('../server/ai/kyrubiaUserProviderChatService.ts', import.meta.url);
 const readinessPath = new URL('../server/integrations/mercadoLivreKyrubiaCommercialReadinessService.ts', import.meta.url);
 const commercialConfigurationPath = new URL('../server/integrations/mercadoLivreOutboundCommercialConfigurationService.ts', import.meta.url);
@@ -44,6 +51,75 @@ test('Cairubia validates the final payload through items validate without publis
   assert.match(source, /commercialRequirementConfiguredAt/);
   assert.doesNotMatch(source, /mercadoLivrePostJson|mercadoLivrePutJson/);
   assert.doesNotMatch(source, /catalogOutboundPublicationAuthorizations|authorizationToken|tokenHash/);
+});
+
+test('warning-only Mercado Livre 400 is non-blocking only with explicit warning evidence', () => {
+  const causes = mercadoLivreProviderValidationCauses({
+    cause: [{
+      code: 'shipping.lost_me1_by_user',
+      message: 'User has not mode me1',
+      type: 'warning',
+      references: ['shipping.mode'],
+    }],
+  });
+  assert.deepEqual(causes, [{
+    code: 'shipping.lost_me1_by_user',
+    message: 'User has not mode me1',
+    reference: 'shipping.mode',
+    type: 'warning',
+  }]);
+  assert.deepEqual(
+    classifyMercadoLivreListingValidationEvidence({ providerStatus: 400, causes }),
+    {
+      status: 'ready_for_owner_authorization',
+      disposition: 'warning_only',
+      warningCount: 1,
+      blockingCauseCount: 0,
+    }
+  );
+
+  const readyRecord = {
+    status: 'ready_for_owner_authorization',
+    providerStatus: 400,
+    causes,
+    providerDisposition: 'warning_only',
+    providerWarningCount: 1,
+    providerBlockingCauseCount: 0,
+  };
+  assert.equal(isMercadoLivreReadyListingValidationEvidence(readyRecord), true);
+  assert.equal(isMercadoLivreReadyListingValidationEvidence({ ...readyRecord, providerDisposition: 'accepted' }), false);
+  assert.equal(isMercadoLivreReadyListingValidationEvidence({ ...readyRecord, providerBlockingCauseCount: 1 }), false);
+});
+
+test('Mercado Livre validation stays fail-closed for errors, mixed, unknown, empty 400 and incoherent evidence', () => {
+  const warning = { code: 'w', message: 'warning', reference: '', type: 'warning' as const };
+  const error = { code: 'e', message: 'error', reference: '', type: 'error' as const };
+  const unknown = { code: 'u', message: 'unknown', reference: '', type: '' as const };
+
+  assert.equal(classifyMercadoLivreListingValidationEvidence({ providerStatus: 400, causes: [error] }).status, 'needs_correction');
+  assert.equal(classifyMercadoLivreListingValidationEvidence({ providerStatus: 400, causes: [warning, error] }).status, 'needs_correction');
+  assert.equal(classifyMercadoLivreListingValidationEvidence({ providerStatus: 400, causes: [unknown] }).status, 'needs_correction');
+  assert.equal(classifyMercadoLivreListingValidationEvidence({ providerStatus: 400, causes: [] }).status, 'needs_correction');
+  assert.equal(classifyMercadoLivreListingValidationEvidence({ providerStatus: 422, causes: [warning] }).status, 'needs_correction');
+
+  assert.deepEqual(
+    classifyMercadoLivreListingValidationEvidence({ providerStatus: 204, causes: [] }),
+    {
+      status: 'ready_for_owner_authorization',
+      disposition: 'accepted',
+      warningCount: 0,
+      blockingCauseCount: 0,
+    }
+  );
+});
+
+test('authorization and execution re-check the same warning-only validation evidence policy', async () => {
+  const authorization = await readFile(authorizationPath, 'utf8');
+  const execution = await readFile(publicationExecutionPath, 'utf8');
+  assert.match(authorization, /isMercadoLivreReadyListingValidationEvidence\(record\)/);
+  assert.match(execution, /isMercadoLivreReadyListingValidationEvidence\(validation\)/);
+  assert.doesNotMatch(authorization, /record\.providerStatus !== 204/);
+  assert.doesNotMatch(execution, /validation\.providerStatus !== 204/);
 });
 
 test('ME2 listing validation payload keeps the explicit empty free methods list expected by Mercado Livre', () => {
