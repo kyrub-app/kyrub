@@ -3,6 +3,12 @@ import { adminDb } from '../firebaseAdmin.js';
 const MAX_PRODUCT_ID_CHARACTERS = 180;
 const MAX_PRODUCT_NAME_CHARACTERS = 180;
 const MAX_STORE_ID_CHARACTERS = 180;
+const MAX_PUBLICATION_STATUS_CHARACTERS = 80;
+
+const PREPARABLE_CANONICAL_PRODUCT_STATUSES = new Set([
+  'published',
+  'paused',
+]);
 
 const clean = (value: unknown, maximum: number): string =>
   typeof value === 'string'
@@ -137,14 +143,43 @@ export const resolveAuthoritativeOwnStoreProductByExactName = async (input: {
         .collection(`stores/${canonicalStoreId}/products`)
         .get();
       if (!canonicalSnapshot.empty) {
-        return resolveOwnedProductIdentityFromCanonicalProducts({
+        const preparableDocuments = canonicalSnapshot.docs.filter(document => {
+          const data = document.data() as Record<string, unknown>;
+          const publicationStatus = clean(
+            data.publicationStatus,
+            MAX_PUBLICATION_STATUS_CHARACTERS
+          );
+          return PREPARABLE_CANONICAL_PRODUCT_STATUSES.has(publicationStatus);
+        });
+        const resolution = resolveOwnedProductIdentityFromCanonicalProducts({
           canonicalStoreId,
           targetName,
-          canonicalProducts: canonicalSnapshot.docs.map(document => ({
+          canonicalProducts: preparableDocuments.map(document => ({
             id: document.id,
             data: document.data(),
           })),
         });
+        if (resolution.status === 'ambiguous') {
+          const ambiguousIds = new Set(resolution.matches.map(match => match.id));
+          const matches = preparableDocuments.flatMap(document => {
+            if (!ambiguousIds.has(document.id)) return [];
+            const data = document.data() as Record<string, unknown>;
+            return [{
+              id: document.id,
+              publicationStatus: clean(
+                data.publicationStatus,
+                MAX_PUBLICATION_STATUS_CHARACTERS
+              ),
+              actionExecutionId: clean(data.actionExecutionId, 180),
+              kyrubiaActionExecutionId: clean(data.kyrubiaActionExecutionId, 180),
+            }];
+          });
+          console.warn(
+            '[kyrubia][mercado_livre_canonical_product_ambiguity]',
+            JSON.stringify({ matchCount: matches.length, matches })
+          );
+        }
+        return resolution;
       }
     }
   }
