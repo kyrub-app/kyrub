@@ -13,6 +13,11 @@ const clean = (value: unknown, maximum = 2_000): string =>
     ? String(value).replace(/\s+/g, ' ').trim().slice(0, maximum)
     : '';
 
+const recordFrom = (value: unknown): Record<string, unknown> =>
+  value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+
 interface ProposalRecord {
   id: string;
   storeId: string;
@@ -21,7 +26,15 @@ interface ProposalRecord {
   canonicalStoreId: string;
   canonicalProductId: string;
   canonicalBaselineHash: string;
+  providerSiteId: string;
   providerCategoryId: string;
+  providerListingTypeId: string;
+  providerCondition: string;
+  providerCurrencyId: string;
+  canonical: {
+    name: string;
+    price: number;
+  };
   executionStatus: 'not_authorized';
 }
 
@@ -31,6 +44,7 @@ interface RequirementConfigurationRecord {
   configuredAt: string;
   canonicalBaselineHash: string;
   authority: 'provider_api_refetch_and_store_owner_selection';
+  attributes: unknown[];
 }
 
 const assertProposal = (storeId: string, proposalId: string, value: unknown): ProposalRecord => {
@@ -38,6 +52,8 @@ const assertProposal = (storeId: string, proposalId: string, value: unknown): Pr
     throw new Error('MERCADO_LIVRE_OUTBOUND_PROPOSAL_NOT_FOUND');
   }
   const record = value as Record<string, unknown>;
+  const canonical = recordFrom(record.canonical);
+  const price = Number(canonical.price);
   if (
     clean(record.id, 160) !== proposalId ||
     clean(record.storeId, 160) !== storeId ||
@@ -47,9 +63,22 @@ const assertProposal = (storeId: string, proposalId: string, value: unknown): Pr
     !clean(record.canonicalStoreId, 160) ||
     !clean(record.canonicalProductId, 160) ||
     !clean(record.canonicalBaselineHash, 80) ||
-    !clean(record.providerCategoryId, 160)
+    !clean(record.providerSiteId, 16) ||
+    !clean(record.providerCategoryId, 160) ||
+    !clean(record.providerListingTypeId, 120) ||
+    !clean(record.providerCondition, 120) ||
+    !clean(record.providerCurrencyId, 16) ||
+    !clean(canonical.name, 120) ||
+    !Number.isFinite(price) ||
+    price < 0
   ) throw new Error('MERCADO_LIVRE_OUTBOUND_PROPOSAL_INVALID');
-  return record as unknown as ProposalRecord;
+  return {
+    ...(record as unknown as ProposalRecord),
+    canonical: {
+      name: clean(canonical.name, 120),
+      price,
+    },
+  };
 };
 
 const assertRequirementConfiguration = (
@@ -60,17 +89,20 @@ const assertRequirementConfiguration = (
     throw new Error('MERCADO_LIVRE_OUTBOUND_REQUIREMENTS_NOT_CONFIGURED');
   }
   const record = value as Record<string, unknown>;
-  const category = record.category && typeof record.category === 'object' && !Array.isArray(record.category)
-    ? record.category as Record<string, unknown>
-    : {};
+  const category = recordFrom(record.category);
   if (
     clean(record.proposalId, 160) !== proposal.id ||
     clean(record.canonicalBaselineHash, 80) !== proposal.canonicalBaselineHash ||
     clean(category.id, 160) !== proposal.providerCategoryId ||
     record.authority !== 'provider_api_refetch_and_store_owner_selection' ||
-    !clean(record.configuredAt, 80)
+    !clean(record.configuredAt, 80) ||
+    !Array.isArray(record.attributes)
   ) throw new Error('MERCADO_LIVRE_OUTBOUND_REQUIREMENTS_INVALID');
-  return record as unknown as RequirementConfigurationRecord;
+  return {
+    ...(record as unknown as RequirementConfigurationRecord),
+    category: { id: clean(category.id, 160) },
+    attributes: record.attributes,
+  };
 };
 
 export interface MercadoLivreOutboundCommercialConfiguration {
@@ -115,6 +147,13 @@ export const configureMercadoLivreOutboundCommercialRequirements = async (input:
     storeId,
     categoryId: proposal.providerCategoryId,
     externalAccountId: connection.externalAccountId,
+    siteId: proposal.providerSiteId,
+    title: proposal.canonical.name,
+    price: proposal.canonical.price,
+    currencyId: proposal.providerCurrencyId,
+    listingTypeId: proposal.providerListingTypeId,
+    condition: proposal.providerCondition,
+    attributes: requirementConfiguration.attributes,
   });
   const selections = validateMercadoLivreCommercialSelections({
     saleTerms: input.saleTerms,
