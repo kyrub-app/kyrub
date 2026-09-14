@@ -93,6 +93,13 @@ test('Kyrubia post-publication readback compares the authorized payload before c
   assert.doesNotMatch(source, /mercadoLivrePostJson|mercadoLivrePutJson/);
 });
 
+test('provider-managed item status transitions are observed but do not invalidate authorized readback evidence', async () => {
+  const source = await readFile(verificationPath, 'utf8');
+  assert.doesNotMatch(source, /pushCheck\(checks, 'item\.status'/);
+  assert.match(source, /const providerStatus = clean\(providerItem\.status, 80\)/);
+  assert.match(source, /providerStatus,/);
+});
+
 test('owner-authenticated reconciliation route is separate from publication execution', async () => {
   const source = await readFile(routerPath, 'utf8');
   assert.match(source, /outbound-publication-executions\/:executionId\/reconcile/);
