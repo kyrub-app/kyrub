@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
 const servicePath = new URL('../server/integrations/mercadoLivreKyrubiaListingValidationService.ts', import.meta.url);
+const transportPath = new URL('../server/integrations/mercadoLivreListingValidationTransport.ts', import.meta.url);
 const commandPath = new URL('../server/ai/kyrubiaMercadoLivreListingValidationCommand.ts', import.meta.url);
 const chatPath = new URL('../server/ai/kyrubiaUserProviderChatService.ts', import.meta.url);
 const readinessPath = new URL('../server/integrations/mercadoLivreKyrubiaCommercialReadinessService.ts', import.meta.url);
@@ -26,6 +27,8 @@ test('Cairubia validates the final payload through items validate without publis
   const source = await readFile(servicePath, 'utf8');
   assert.match(source, /buildMercadoLivreInitialPublicationPayload/);
   assert.match(source, /mercadoLivreValidateJson/);
+  assert.match(source, /from '\.\/mercadoLivreListingValidationTransport\.js'/);
+  assert.doesNotMatch(source, /from '\.\/mercadoLivreOauthService\.js'/);
   assert.match(source, /'\/items\/validate'/);
   assert.match(source, /ready_for_owner_authorization/);
   assert.match(source, /needs_correction/);
@@ -38,6 +41,15 @@ test('Cairubia validates the final payload through items validate without publis
   assert.match(source, /commercialRequirementConfiguredAt/);
   assert.doesNotMatch(source, /mercadoLivrePostJson|mercadoLivrePutJson/);
   assert.doesNotMatch(source, /catalogOutboundPublicationAuthorizations|authorizationToken|tokenHash/);
+});
+
+test('listing validation transport records safe provider diagnostics for blocked HTTP responses', async () => {
+  const transport = await readFile(transportPath, 'utf8');
+  assert.match(transport, /\[Mercado Livre listing validation rejection\]/);
+  assert.match(transport, /providerDiagnostic\(payload\)/);
+  assert.match(transport, /Bearer \[redacted\]/);
+  assert.match(transport, /\[email\]/);
+  assert.match(transport, /MERCADO_LIVRE_API_FAILED:HTTP_/);
 });
 
 test('listing validation command is explicit and uses conversation context only as a locator', async () => {
