@@ -75,10 +75,16 @@ test('ME2 listing validation payload keeps the explicit empty free methods list 
 test('listing validation transport records safe provider diagnostics for blocked HTTP responses', async () => {
   const transport = await readFile(transportPath, 'utf8');
   assert.match(transport, /\[Mercado Livre listing validation rejection\]/);
+  assert.match(transport, /\[Mercado Livre listing validation diagnostic\]/);
+  assert.match(transport, /requestShippingDiagnostic/);
+  assert.match(transport, /providerCauseDiagnostics/);
+  assert.match(transport, /freeMethodsCount/);
+  assert.match(transport, /record\.type \?\? record\.severity \?\? record\.level/);
   assert.match(transport, /providerDiagnostic\(payload\)/);
   assert.match(transport, /Bearer \[redacted\]/);
   assert.match(transport, /\[email\]/);
   assert.match(transport, /MERCADO_LIVRE_API_FAILED:HTTP_/);
+  assert.doesNotMatch(transport, /console\.info\([^\n]*body/);
 });
 
 test('listing validation command is explicit and uses conversation context only as a locator', async () => {
