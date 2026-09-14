@@ -49,7 +49,11 @@ export const resolveKyrubProductPublication = async (
 ): Promise<KyrubProductPublicationResolution | null> => {
   const intent = parseKyrubProductPublicationIntent(message);
   if (!intent) return null;
-  const target = normalize(intent.productName);
+  const targetProductId = intent.productId?.trim() ?? '';
+  const target = intent.productName ? normalize(intent.productName) : '';
+  const displayTarget = targetProductId
+    ? `ID ${targetProductId}`
+    : `“${intent.productName}”`;
 
   if (intent.published) {
     let drafts;
@@ -60,31 +64,39 @@ export const resolveKyrubProductPublication = async (
         reply: 'Entendi que você quer publicar um produto, mas não consegui consultar os rascunhos canônicos agora. Nada foi publicado.',
       };
     }
-    const matches = drafts.filter(draft => normalize(draft.product.name ?? '') === target);
+    const matches = targetProductId
+      ? drafts.filter(draft => draft.id === targetProductId)
+      : drafts.filter(draft => normalize(draft.product.name ?? '') === target);
     if (matches.length > 1) {
       return {
-        reply: `Encontrei mais de um rascunho chamado “${intent.productName}”. Não vou escolher um deles por suposição.`,
+        reply: targetProductId
+          ? `Encontrei mais de um rascunho associado ao ${displayTarget}. Não vou escolher um deles por suposição.`
+          : `Encontrei mais de um rascunho chamado ${displayTarget}. Não vou escolher um deles por suposição.`,
       };
     }
     if (matches.length === 1) {
       const draft = matches[0];
       return {
-        reply: `Encontrei o rascunho “${draft.product.name}”. Vou propor a publicação na vitrine. O servidor ainda validará os campos obrigatórios e o limite do seu plano; nada será publicado antes da sua confirmação.`,
+        reply: `Encontrei o rascunho “${draft.product.name}” · ID ${draft.id}. Vou propor a publicação na vitrine. O servidor ainda validará os campos obrigatórios e o limite do seu plano; nada será publicado antes da sua confirmação.`,
         actionProposal: proposalFor(draft.id, draft.product.name, true),
       };
     }
 
     try {
       const erp = await readKyrubErpContext(user, { force: true });
-      const alreadyPublished = erp.products.some(product => normalize(product.name) === target);
+      const alreadyPublished = targetProductId
+        ? erp.products.some(product => product.id === targetProductId)
+        : erp.products.some(product => normalize(product.name) === target);
       if (alreadyPublished) {
-        return { reply: `“${intent.productName}” já está publicado. Nenhuma alteração é necessária.` };
+        return { reply: `${displayTarget} já está publicado. Nenhuma alteração é necessária.` };
       }
     } catch {
       // A ausência no conjunto canônico de rascunhos já é suficiente para não agir.
     }
     return {
-      reply: `Não encontrei um rascunho chamado “${intent.productName}”. Nenhuma publicação foi proposta.`,
+      reply: targetProductId
+        ? `Não encontrei um rascunho com ${displayTarget}. Nenhuma publicação foi proposta.`
+        : `Não encontrei um rascunho chamado ${displayTarget}. Nenhuma publicação foi proposta.`,
     };
   }
 
@@ -97,23 +109,29 @@ export const resolveKyrubProductPublication = async (
     };
   }
 
-  const matches = erp.products.filter(product => normalize(product.name) === target);
+  const matches = targetProductId
+    ? erp.products.filter(product => product.id === targetProductId)
+    : erp.products.filter(product => normalize(product.name) === target);
   if (matches.length > 1) {
     return {
-      reply: `Encontrei mais de um produto publicado chamado “${intent.productName}”. Não vou escolher um deles por suposição.`,
+      reply: targetProductId
+        ? `Encontrei mais de um produto publicado associado ao ${displayTarget}. Não vou escolher um deles por suposição.`
+        : `Encontrei mais de um produto publicado chamado ${displayTarget}. Não vou escolher um deles por suposição.`,
     };
   }
   if (matches.length === 0) {
     return {
       reply: erp.productsTruncated
-        ? `Não encontrei “${intent.productName}” na parte publicada do catálogo disponível nesta leitura. Como a lista está parcial, não vou adivinhar qual produto retirar da vitrine.`
-        : `Não encontrei um produto publicado chamado “${intent.productName}”. Nenhuma alteração foi proposta.`,
+        ? `Não encontrei ${displayTarget} na parte publicada do catálogo disponível nesta leitura. Como a lista está parcial, não vou adivinhar qual produto retirar da vitrine.`
+        : targetProductId
+          ? `Não encontrei um produto publicado com ${displayTarget}. Nenhuma alteração foi proposta.`
+          : `Não encontrei um produto publicado chamado ${displayTarget}. Nenhuma alteração foi proposta.`,
     };
   }
 
   const product = matches[0];
   return {
-    reply: `Encontrei “${product.name}” no catálogo publicado. Vou propor que ele volte para rascunho e saia da vitrine. Nada será alterado antes da sua confirmação.`,
+    reply: `Encontrei “${product.name}” · ID ${product.id} no catálogo publicado. Vou propor que ele volte para rascunho e saia da vitrine. Nada será alterado antes da sua confirmação.`,
     actionProposal: proposalFor(product.id, product.name, false),
   };
 };
