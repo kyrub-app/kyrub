@@ -1,4 +1,4 @@
-import { mercadoLivreGetJson } from './mercadoLivreOauthService.js';
+import { mercadoLivreCommercialGetJson } from './mercadoLivreCommercialReadTransport.js';
 
 const clean = (value: unknown, maximum = 2_000): string =>
   typeof value === 'string' || typeof value === 'number'
@@ -77,9 +77,21 @@ export const inspectMercadoLivreCommercialRequirements = async (input: {
   }
 
   const [saleTermsRaw, sellerShippingRaw, categoryShippingRaw] = await Promise.all([
-    mercadoLivreGetJson<unknown>(storeId, `/categories/${encodeURIComponent(categoryId)}/sale_terms`),
-    mercadoLivreGetJson<unknown>(storeId, `/users/${encodeURIComponent(externalAccountId)}/shipping_preferences`),
-    mercadoLivreGetJson<unknown>(storeId, `/categories/${encodeURIComponent(categoryId)}/shipping_preferences`),
+    mercadoLivreCommercialGetJson<unknown>({
+      storeId,
+      endpoint: 'category_sale_terms',
+      path: `/categories/${encodeURIComponent(categoryId)}/sale_terms`,
+    }),
+    mercadoLivreCommercialGetJson<unknown>({
+      storeId,
+      endpoint: 'seller_shipping_preferences',
+      path: `/users/${encodeURIComponent(externalAccountId)}/shipping_preferences`,
+    }),
+    mercadoLivreCommercialGetJson<unknown>({
+      storeId,
+      endpoint: 'category_shipping_preferences',
+      path: `/categories/${encodeURIComponent(categoryId)}/shipping_preferences`,
+    }),
   ]);
 
   const saleTerms = (Array.isArray(saleTermsRaw) ? saleTermsRaw : []).flatMap(candidate => {
