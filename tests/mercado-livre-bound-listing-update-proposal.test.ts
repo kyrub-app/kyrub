@@ -32,15 +32,25 @@ test('bound update proposal uses detailed binding baseline and permits local div
   const source = await readFile(servicePath, 'utf8');
   assert.match(source, /externalCatalogBindingBaselines/);
   assert.match(source, /canonicalTargetHash/);
-  assert.match(source, /localChanged = current\[field\] !== baseline\[field\]/);
+  assert.match(source, /localChanged = !updatableFieldEqual\(field, current\[field\], baseline\[field\]\)/);
   assert.doesNotMatch(source, /currentCanonicalHash !== binding\.canonicalBaselineHash/);
 });
 
 test('bound update proposal blocks same-field concurrent provider divergence', async () => {
   const source = await readFile(servicePath, 'utf8');
-  assert.match(source, /providerChanged = observed\[field\] !== baseline\[field\]/);
-  assert.match(source, /localChanged && providerChanged && current\[field\] !== observed\[field\]/);
+  assert.match(source, /providerChanged = !updatableFieldEqual\(field, observed\[field\], baseline\[field\]\)/);
+  assert.match(source, /localChanged && providerChanged && !updatableFieldEqual\(field, current\[field\], observed\[field\]\)/);
   assert.match(source, /MERCADO_LIVRE_BOUND_LISTING_UPDATE_FIELD_CONFLICT/);
+});
+
+test('bound update proposal ignores provider-only title formatting differences but keeps price exact', async () => {
+  const source = await readFile(servicePath, 'utf8');
+  assert.match(source, /const semanticText =/);
+  assert.match(source, /normalize\('NFD'\)/);
+  assert.match(source, /toLocaleLowerCase\('pt-BR'\)/);
+  assert.match(source, /field === 'name'/);
+  assert.match(source, /semanticText\(left\) === semanticText\(right\)/);
+  assert.match(source, /: left === right/);
 });
 
 test('bound update proposal is deterministic over baseline, canonical target and provider observations', async () => {

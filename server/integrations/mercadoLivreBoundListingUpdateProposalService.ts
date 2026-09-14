@@ -81,6 +81,20 @@ const clean = (value: unknown, maximum = 2_000): string =>
     ? String(value).replace(/\s+/g, ' ').trim().slice(0, maximum)
     : '';
 
+const semanticText = (value: unknown): string => clean(value, 300)
+  .normalize('NFD')
+  .replace(/[\u0300-\u036f]/g, '')
+  .toLocaleLowerCase('pt-BR')
+  .replace(/[^a-z0-9]+/g, '');
+
+const updatableFieldEqual = (
+  field: UpdatableField,
+  left: string | number,
+  right: string | number
+): boolean => field === 'name'
+  ? semanticText(left) === semanticText(right)
+  : left === right;
+
 const finiteNonNegative = (value: unknown): number | null => {
   if (value === null || value === undefined || value === '') return null;
   const parsed = Number(value);
@@ -166,12 +180,12 @@ const outboundChanges = (baseline: CanonicalState, current: CanonicalState, obse
   const changedFields: UpdatableField[] = [];
   const proposedChanges: Partial<Record<UpdatableField, string | number>> = {};
   for (const field of ['name', 'price'] as UpdatableField[]) {
-    const localChanged = current[field] !== baseline[field];
-    const providerChanged = observed[field] !== baseline[field];
-    if (localChanged && providerChanged && current[field] !== observed[field]) {
+    const localChanged = !updatableFieldEqual(field, current[field], baseline[field]);
+    const providerChanged = !updatableFieldEqual(field, observed[field], baseline[field]);
+    if (localChanged && providerChanged && !updatableFieldEqual(field, current[field], observed[field])) {
       throw new Error('MERCADO_LIVRE_BOUND_LISTING_UPDATE_FIELD_CONFLICT');
     }
-    if (localChanged && current[field] !== observed[field]) {
+    if (localChanged && !updatableFieldEqual(field, current[field], observed[field])) {
       changedFields.push(field);
       proposedChanges[field] = current[field];
     }
