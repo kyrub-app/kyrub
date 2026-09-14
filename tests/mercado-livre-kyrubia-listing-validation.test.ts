@@ -6,6 +6,7 @@ import { buildMercadoLivreInitialPublicationPayload } from '../server/integratio
 const servicePath = new URL('../server/integrations/mercadoLivreKyrubiaListingValidationService.ts', import.meta.url);
 const transportPath = new URL('../server/integrations/mercadoLivreListingValidationTransport.ts', import.meta.url);
 const commandPath = new URL('../server/ai/kyrubiaMercadoLivreListingValidationCommand.ts', import.meta.url);
+const executionCommandPath = new URL('../server/ai/kyrubiaMercadoLivrePublicationExecutionCommand.ts', import.meta.url);
 const chatPath = new URL('../server/ai/kyrubiaUserProviderChatService.ts', import.meta.url);
 const readinessPath = new URL('../server/integrations/mercadoLivreKyrubiaCommercialReadinessService.ts', import.meta.url);
 const commercialConfigurationPath = new URL('../server/integrations/mercadoLivreOutboundCommercialConfigurationService.ts', import.meta.url);
@@ -91,11 +92,26 @@ test('listing validation command is explicit and uses conversation context only 
   const command = await readFile(commandPath, 'utf8');
   assert.match(command, /\^\(\?:validar\|valide\)/);
   assert.match(command, /sourceAction !== 'mercado_livre_publication_preparation'/);
-  assert.match(command, /selectedIntent\?\.intent !== 'mercado_livre\.listing_type_select'/);
+  assert.match(command, /sourceAction !== 'mercado_livre_requirement_options'/);
+  assert.match(command, /mercadoLivreRequirementProgress\?\.proposalId/);
+  assert.match(command, /selectedIntent\?\.intent === 'mercado_livre\.listing_type_select'/);
   assert.match(command, /validateKyrubiaMercadoLivreDraftListing/);
   assert.match(command, /Nenhuma autorização de publicação foi criada/i);
   assert.match(command, /executionStatus continua not_authorized/);
   assert.doesNotMatch(command, /\b(?:sim|pode|ok)\b.*isExplicitDraftValidationCommand/i);
+});
+
+test('explicit Mercado Livre gate commands tolerate terminal punctuation and stale requirement context', async () => {
+  const command = await readFile(commandPath, 'utf8');
+  const execution = await readFile(executionCommandPath, 'utf8');
+
+  assert.match(command, /normalizeExplicitCommand/);
+  assert.match(command, /replace\(\/\[\.!\?…\]\+\$\/u, ''\)/);
+  assert.match(command, /mercado_livre_requirement_options/);
+  assert.match(command, /progressProposalId/);
+  assert.match(command, /mercado_livre\.attribute_value_select/);
+  assert.match(execution, /normalizeExplicitCommand/);
+  assert.match(execution, /replace\(\/\[\.!\?…\]\+\$\/u, ''\)/);
 });
 
 test('Kairuba preflights provider shipping before items validate and never invents a seller mode', async () => {
