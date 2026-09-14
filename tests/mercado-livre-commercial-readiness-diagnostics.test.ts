@@ -48,6 +48,13 @@ test('Mercado Livre commercial readiness uses provider prepublication shipping m
 test('commercial readiness diagnostics expose provider status without leaking credentials', async () => {
   const transport = await readFile(transportPath, 'utf8');
   assert.match(transport, /Mercado Livre commercial readiness rejection/);
+  assert.match(transport, /Mercado Livre prepublication shipping diagnostic/);
+  assert.match(transport, /prepublicationShippingDiagnostic/);
+  assert.match(transport, /shippingRuleDiagnostic/);
+  assert.match(transport, /shippingAttributes/);
+  assert.match(transport, /logisticTypes/);
+  assert.match(transport, /freeShipping/);
+  assert.match(transport, /localPickUp/);
   assert.match(transport, /status/);
   assert.match(transport, /providerCode/);
   assert.match(transport, /providerError/);
