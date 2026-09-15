@@ -14,6 +14,8 @@ export const MERCADO_LIVRE_ORDERS_V2_QUEUE_TOPIC = 'mercado_livre_orders_v2';
 
 const ORDER_PROCESSING_LEASE_MS = 120_000;
 const ORDER_PROCESSING_HEARTBEAT_MS = 30_000;
+// Keep automatic retry bounded. A fresh provider notification remains independently processable
+// because Queue/inbox idempotency is scoped to notificationId, not externalOrderId.
 const MAX_RETRYABLE_FAILURES = 12;
 
 const queueIdempotencyKey = (notificationId: string): string =>
