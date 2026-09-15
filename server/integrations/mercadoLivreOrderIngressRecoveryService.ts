@@ -1,6 +1,8 @@
 import { createHash } from 'node:crypto';
 import { FieldValue } from 'firebase-admin/firestore';
 import { adminDb } from '../firebaseAdmin.js';
+import { parseMercadoLivreOrderSnapshot } from '../../shared/mercadoLivreOrderIngress.js';
+import { mercadoLivreGetJson } from './mercadoLivreOauthService.js';
 import {
   processMercadoLivreOrderNotificationInboxItem,
   type MercadoLivreOrderIngressResult,
@@ -18,11 +20,85 @@ const inboxIdFor = (notificationId: string): string =>
   `mercado_livre__${createHash('sha256').update(notificationId).digest('hex')}`;
 
 const orderIdPattern = /^mercado-livre-order-[A-Za-z0-9_-]{3,100}$/;
+const externalOrderIdFromOrderId = (orderId: string): string =>
+  orderId.replace(/^mercado-livre-order-/, '');
 
 export interface MercadoLivreOrderIngressRecoveryResult extends MercadoLivreOrderIngressResult {
   recoveryAuthority: 'store_owner_binding_resolution';
   recoveredFromBlock: true;
+  providerChangedDuringRecovery?: boolean;
 }
+
+const reconcileProviderChangeDuringRecovery = async (input: {
+  storeId: string;
+  orderId: string;
+  inboxId: string;
+  requestedByUserId: string;
+  currentResult: MercadoLivreOrderIngressResult;
+}): Promise<{
+  result: MercadoLivreOrderIngressResult;
+  providerChangedDuringRecovery: boolean;
+}> => {
+  const externalOrderId = externalOrderIdFromOrderId(input.orderId);
+  const inboxRef = adminDb.doc(`integrationWebhookInbox/${input.inboxId}`);
+  const inboxSnapshot = await inboxRef.get();
+  if (!inboxSnapshot.exists) {
+    throw new Error('MERCADO_LIVRE_NOTIFICATION_INBOX_NOT_FOUND');
+  }
+  const inbox = inboxSnapshot.data() as Record<string, unknown>;
+  const previousProviderStatus = clean(inbox.providerOrderStatus, 80).toLowerCase();
+  const externalAccountId = clean(inbox.externalAccountId, 100);
+
+  const fetchedAt = new Date().toISOString();
+  const fetched = await mercadoLivreGetJson<unknown>(
+    input.storeId,
+    `/orders/${encodeURIComponent(externalOrderId)}`
+  );
+  const snapshot = parseMercadoLivreOrderSnapshot(fetched, externalOrderId, fetchedAt);
+  if (snapshot.sellerId && externalAccountId && snapshot.sellerId !== externalAccountId) {
+    throw new Error('MERCADO_LIVRE_ORDER_SELLER_MISMATCH');
+  }
+
+  if (!previousProviderStatus || snapshot.providerStatus === previousProviderStatus) {
+    return { result: input.currentResult, providerChangedDuringRecovery: false };
+  }
+
+  let reopened = false;
+  await adminDb.runTransaction(async transaction => {
+    const currentInboxSnapshot = await transaction.get(inboxRef);
+    if (!currentInboxSnapshot.exists) {
+      throw new Error('MERCADO_LIVRE_NOTIFICATION_INBOX_NOT_FOUND');
+    }
+    const currentInbox = currentInboxSnapshot.data() as Record<string, unknown>;
+    if (clean(currentInbox.processingStatus, 40) !== 'processed') {
+      throw new Error('MERCADO_LIVRE_ORDER_RECOVERY_STATE_INVALID');
+    }
+    const currentProviderStatus = clean(currentInbox.providerOrderStatus, 80).toLowerCase();
+    if (currentProviderStatus !== previousProviderStatus) return;
+
+    transaction.update(inboxRef, {
+      processingStatus: 'pending',
+      processingOutcome: FieldValue.delete(),
+      processedAt: FieldValue.delete(),
+      recoveryReconciliationAuthority: 'provider_api_final_refetch',
+      recoveryProviderStatusBefore: previousProviderStatus,
+      recoveryProviderStatusObserved: snapshot.providerStatus,
+      recoveryProviderChangeDetectedAt: FieldValue.serverTimestamp(),
+      recoveryRequestedByUserId: input.requestedByUserId,
+    });
+    reopened = true;
+  });
+
+  if (!reopened) {
+    return { result: input.currentResult, providerChangedDuringRecovery: false };
+  }
+
+  const reconciled = await processMercadoLivreOrderNotificationInboxItem({
+    inboxId: input.inboxId,
+    expectedStoreId: input.storeId,
+  });
+  return { result: reconciled, providerChangedDuringRecovery: true };
+};
 
 export const retryMercadoLivreOrderIngressAfterBinding = async (input: {
   storeId: string;
@@ -136,11 +212,21 @@ export const retryMercadoLivreOrderIngressAfterBinding = async (input: {
   });
 
   let result: MercadoLivreOrderIngressResult;
+  let providerChangedDuringRecovery = false;
   try {
     result = await processMercadoLivreOrderNotificationInboxItem({
       inboxId,
       expectedStoreId: storeId,
     });
+    const finalReconciliation = await reconcileProviderChangeDuringRecovery({
+      storeId,
+      orderId,
+      inboxId,
+      requestedByUserId,
+      currentResult: result,
+    });
+    result = finalReconciliation.result;
+    providerChangedDuringRecovery = finalReconciliation.providerChangedDuringRecovery;
   } catch (error) {
     await blockRef.set({
       status: 'retry_failed',
@@ -156,6 +242,7 @@ export const retryMercadoLivreOrderIngressAfterBinding = async (input: {
       status: 'resolved',
       resolutionAuthority: 'provider_api_refetch_after_store_owner_binding_resolution',
       resolutionOutcome: result.outcome ?? (result.alreadyProcessed ? 'already_processed' : 'processed'),
+      providerChangedDuringRecovery,
       retryLeaseUntil: null,
       resolvedAt: FieldValue.serverTimestamp(),
     }, { merge: true });
@@ -165,5 +252,6 @@ export const retryMercadoLivreOrderIngressAfterBinding = async (input: {
     ...result,
     recoveryAuthority: 'store_owner_binding_resolution',
     recoveredFromBlock: true,
+    ...(providerChangedDuringRecovery ? { providerChangedDuringRecovery: true } : {}),
   };
 };
