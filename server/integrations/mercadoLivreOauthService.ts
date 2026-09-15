@@ -52,6 +52,8 @@ interface MercadoLivreTokenErrorResponse extends MercadoLivreTokenResponse {
   message?: unknown;
 }
 
+const MERCADO_LIVRE_PROVIDER_TIMEOUT_MS = 12_000;
+
 const hashOAuthState = (state: string): string =>
   createHash('sha256').update(state).digest('hex');
 
@@ -85,6 +87,32 @@ const safeProviderDiagnostic = (value: unknown): string =>
     .replace(/\s+/g, ' ')
     .trim()
     .slice(0, 240);
+
+const isTransientProviderStatus = (status: number): boolean =>
+  status === 408 || status === 425 || status === 429 || status >= 500;
+
+const fetchMercadoLivreWithTimeout = async (
+  url: string | URL,
+  init: RequestInit,
+  operation: string
+): Promise<Response> => {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), MERCADO_LIVRE_PROVIDER_TIMEOUT_MS);
+  timer.unref?.();
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } catch (error) {
+    if (controller.signal.aborted) {
+      throw new Error(`MERCADO_LIVRE_API_TRANSIENT:${operation}_TIMEOUT`);
+    }
+    if (error instanceof TypeError || error instanceof Error) {
+      throw new Error(`MERCADO_LIVRE_API_TRANSIENT:${operation}_NETWORK`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
+};
 
 const markInvalidPlatformClient = async (): Promise<void> => {
   try {
@@ -124,16 +152,23 @@ const tokenSecretFromResponse = (
 };
 
 const tokenRequest = async (body: URLSearchParams): Promise<MercadoLivreTokenResponse> => {
-  const response = await fetch(MERCADO_LIVRE_TOKEN_ENDPOINT, {
-    method: 'POST',
-    headers: {
-      accept: 'application/json',
-      'content-type': 'application/x-www-form-urlencoded',
+  const response = await fetchMercadoLivreWithTimeout(
+    MERCADO_LIVRE_TOKEN_ENDPOINT,
+    {
+      method: 'POST',
+      headers: {
+        accept: 'application/json',
+        'content-type': 'application/x-www-form-urlencoded',
+      },
+      body,
     },
-    body,
-  });
+    'TOKEN'
+  );
   const payload = await response.json().catch(() => ({})) as MercadoLivreTokenErrorResponse;
   if (!response.ok) {
+    if (isTransientProviderStatus(response.status)) {
+      throw new Error(`MERCADO_LIVRE_API_TRANSIENT:TOKEN_HTTP_${response.status}`);
+    }
     const code = safeProviderDiagnostic(payload.error) || `HTTP_${response.status}`;
     const description =
       safeProviderDiagnostic(payload.error_description) ||
@@ -273,13 +308,22 @@ export const getValidMercadoLivreAccessToken = async (storeIdInput: string): Pro
 export const mercadoLivreGetJson = async <T>(storeId: string, path: string): Promise<T> => {
   const secret = await getValidMercadoLivreAccessToken(storeId);
   const url = new URL(path, MERCADO_LIVRE_API_ORIGIN);
-  const response = await fetch(url, {
-    headers: {
-      accept: 'application/json',
-      authorization: `Bearer ${secret.accessToken}`,
+  const response = await fetchMercadoLivreWithTimeout(
+    url,
+    {
+      headers: {
+        accept: 'application/json',
+        authorization: `Bearer ${secret.accessToken}`,
+      },
     },
-  });
-  if (!response.ok) throw new Error(`MERCADO_LIVRE_API_FAILED:HTTP_${response.status}`);
+    'GET'
+  );
+  if (!response.ok) {
+    if (isTransientProviderStatus(response.status)) {
+      throw new Error(`MERCADO_LIVRE_API_TRANSIENT:GET_HTTP_${response.status}`);
+    }
+    throw new Error(`MERCADO_LIVRE_API_FAILED:HTTP_${response.status}`);
+  }
   return response.json() as Promise<T>;
 };
 
