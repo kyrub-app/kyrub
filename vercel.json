@@ -9,7 +9,7 @@
     }
   },
   "functions": {
-    "api/health.ts": {
+    "api/mercado-livre-orders-v2-consumer.ts": {
       "experimentalTriggers": [
         {
           "type": "queue/v2beta",
@@ -35,6 +35,10 @@
     {
       "source": "/api/store-connections/:path*",
       "destination": "/api/health?transport=store-connections&path=:path*"
+    },
+    {
+      "source": "/api/media/drive",
+      "destination": "/api/health?transport=drive-media"
     },
     {
       "source": "/api/mcp",
