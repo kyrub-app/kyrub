@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { FieldValue } from 'firebase-admin/firestore';
 import { send } from '@vercel/queue';
 import {
@@ -12,6 +12,9 @@ import { adminDb } from '../firebaseAdmin.js';
 
 export const MERCADO_LIVRE_ORDERS_V2_QUEUE_TOPIC = 'mercado_livre_orders_v2';
 
+const ORDER_PROCESSING_LEASE_MS = 120_000;
+const ORDER_PROCESSING_HEARTBEAT_MS = 30_000;
+
 const queueIdempotencyKey = (notificationId: string): string =>
   `ml-orders-v2-${createHash('sha256').update(notificationId).digest('hex')}`;
 
@@ -22,6 +25,9 @@ const orderLeaseId = (notification: MercadoLivreNotificationEnvelope, externalOr
 
 const errorCode = (error: unknown): string =>
   (error instanceof Error ? error.message : String(error)).split(':')[0].slice(0, 120);
+
+const errorDiagnostic = (error: unknown): string =>
+  (error instanceof Error ? error.message : String(error)).replace(/\s+/g, ' ').trim().slice(0, 240);
 
 const terminalEnvelopeErrors = new Set([
   'MERCADO_LIVRE_NOTIFICATION_INVALID',
@@ -69,25 +75,58 @@ const quarantinePendingInbox = async (input: {
   });
 };
 
+const recordRetryableFailure = async (input: {
+  inboxId: string;
+  error: unknown;
+}): Promise<void> => {
+  const inboxRef = adminDb.doc(`integrationWebhookInbox/${input.inboxId}`);
+  try {
+    await adminDb.runTransaction(async transaction => {
+      const snapshot = await transaction.get(inboxRef);
+      if (!snapshot.exists) return;
+      const status = String(snapshot.data()?.processingStatus ?? '').trim();
+      if (status !== 'pending') return;
+      transaction.update(inboxRef, {
+        processingOutcome: 'retryable_infrastructure_failure',
+        lastRetryableErrorCode: errorCode(input.error),
+        lastRetryableErrorDiagnostic: errorDiagnostic(input.error),
+        retryableFailureCount: FieldValue.increment(1),
+        lastRetryableFailureAt: FieldValue.serverTimestamp(),
+      });
+    });
+  } catch (recordError) {
+    console.error('[Mercado Livre order Queue retry metadata]', {
+      inboxId: input.inboxId,
+      error: errorCode(recordError),
+    });
+  }
+};
+
+interface OrderProcessingLease {
+  leaseId: string;
+  holderToken: string;
+  notificationId: string;
+}
+
 const acquireOrderProcessingLease = async (input: {
   notification: MercadoLivreNotificationEnvelope;
   externalOrderId: string;
   leaseMs?: number;
-}): Promise<string> => {
+}): Promise<OrderProcessingLease> => {
   const leaseId = orderLeaseId(input.notification, input.externalOrderId);
   const leaseRef = adminDb.doc(`integrationOrderProcessingLeases/${leaseId}`);
   const now = Date.now();
-  const leaseUntil = new Date(now + (input.leaseMs ?? 60_000)).toISOString();
+  const leaseUntil = new Date(now + (input.leaseMs ?? ORDER_PROCESSING_LEASE_MS)).toISOString();
+  const holderToken = randomUUID();
 
   await adminDb.runTransaction(async transaction => {
     const snapshot = await transaction.get(leaseRef);
     if (snapshot.exists) {
       const data = snapshot.data() as Record<string, unknown>;
-      const currentHolder = String(data.holderNotificationId ?? '').trim();
+      const currentHolderToken = String(data.holderToken ?? '').trim();
       const currentLeaseUntil = String(data.leaseUntil ?? '').trim();
       if (
-        currentHolder &&
-        currentHolder !== input.notification.notificationId &&
+        currentHolderToken &&
         Number.isFinite(Date.parse(currentLeaseUntil)) &&
         Date.parse(currentLeaseUntil) > now
       ) {
@@ -100,26 +139,62 @@ const acquireOrderProcessingLease = async (input: {
       externalAccountId: input.notification.externalAccountId,
       externalOrderId: input.externalOrderId,
       holderNotificationId: input.notification.notificationId,
+      holderToken,
       leaseUntil,
       acquiredAt: FieldValue.serverTimestamp(),
+      renewedAt: FieldValue.serverTimestamp(),
     }, { merge: true });
   });
 
-  return leaseId;
+  return { leaseId, holderToken, notificationId: input.notification.notificationId };
 };
 
-const releaseOrderProcessingLease = async (input: {
-  leaseId: string;
-  notificationId: string;
-}): Promise<void> => {
-  const leaseRef = adminDb.doc(`integrationOrderProcessingLeases/${input.leaseId}`);
+const renewOrderProcessingLease = async (lease: OrderProcessingLease): Promise<void> => {
+  const leaseRef = adminDb.doc(`integrationOrderProcessingLeases/${lease.leaseId}`);
+  const leaseUntil = new Date(Date.now() + ORDER_PROCESSING_LEASE_MS).toISOString();
+  await adminDb.runTransaction(async transaction => {
+    const snapshot = await transaction.get(leaseRef);
+    if (!snapshot.exists) throw new Error('MERCADO_LIVRE_ORDER_PROCESSING_LEASE_LOST');
+    const holderToken = String(snapshot.data()?.holderToken ?? '').trim();
+    if (holderToken !== lease.holderToken) {
+      throw new Error('MERCADO_LIVRE_ORDER_PROCESSING_LEASE_LOST');
+    }
+    transaction.update(leaseRef, {
+      leaseUntil,
+      renewedAt: FieldValue.serverTimestamp(),
+    });
+  });
+};
+
+const releaseOrderProcessingLease = async (lease: OrderProcessingLease): Promise<void> => {
+  const leaseRef = adminDb.doc(`integrationOrderProcessingLeases/${lease.leaseId}`);
   await adminDb.runTransaction(async transaction => {
     const snapshot = await transaction.get(leaseRef);
     if (!snapshot.exists) return;
-    const holder = String(snapshot.data()?.holderNotificationId ?? '').trim();
-    if (holder !== input.notificationId) return;
+    const holderToken = String(snapshot.data()?.holderToken ?? '').trim();
+    if (holderToken !== lease.holderToken) return;
     transaction.delete(leaseRef);
   });
+};
+
+const startOrderProcessingLeaseHeartbeat = (lease: OrderProcessingLease): (() => void) => {
+  let renewalInFlight = false;
+  const timer = setInterval(() => {
+    if (renewalInFlight) return;
+    renewalInFlight = true;
+    void renewOrderProcessingLease(lease)
+      .catch(error => {
+        console.error('[Mercado Livre order processing lease heartbeat]', {
+          notificationId: lease.notificationId,
+          error: errorCode(error),
+        });
+      })
+      .finally(() => {
+        renewalInFlight = false;
+      });
+  }, ORDER_PROCESSING_HEARTBEAT_MS);
+  timer.unref?.();
+  return () => clearInterval(timer);
 };
 
 export interface MercadoLivreOrderQueuePublishResult {
@@ -191,8 +266,13 @@ export const consumeMercadoLivreOrderQueueMessage = async (
     };
   }
 
-  const leaseId = await acquireOrderProcessingLease({ notification, externalOrderId });
+  let lease: OrderProcessingLease | null = null;
+  let stopHeartbeat: (() => void) | null = null;
   try {
+    lease = await acquireOrderProcessingLease({ notification, externalOrderId });
+    await renewOrderProcessingLease(lease);
+    stopHeartbeat = startOrderProcessingLeaseHeartbeat(lease);
+
     const processed = await processMercadoLivreOrderNotificationInboxItem({
       inboxId: ingested.inboxId,
     });
@@ -212,11 +292,19 @@ export const consumeMercadoLivreOrderQueueMessage = async (
         errorCode: code,
       };
     }
+    await recordRetryableFailure({ inboxId: ingested.inboxId, error });
     throw error;
   } finally {
-    await releaseOrderProcessingLease({
-      leaseId,
-      notificationId: notification.notificationId,
-    });
+    stopHeartbeat?.();
+    if (lease) {
+      try {
+        await releaseOrderProcessingLease(lease);
+      } catch (releaseError) {
+        console.error('[Mercado Livre order processing lease release]', {
+          notificationId: notification.notificationId,
+          error: errorCode(releaseError),
+        });
+      }
+    }
   }
 };
