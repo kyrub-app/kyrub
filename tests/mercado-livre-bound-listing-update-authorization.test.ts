@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 
 const servicePath = new URL('../server/integrations/mercadoLivreBoundListingUpdateAuthorizationService.ts', import.meta.url);
 const routerPath = new URL('../server/integrations/mercadoLivreRouter.ts', import.meta.url);
+const kyrubiaCommandPath = new URL('../server/ai/kyrubiaMercadoLivreBoundListingUpdateAuthorizationCommand.ts', import.meta.url);
 
 test('bound listing update authorization freezes only title and price changes', async () => {
   const source = await readFile(servicePath, 'utf8');
@@ -53,4 +54,19 @@ test('owner-authenticated route exposes explicit update authorization', async ()
   assert.match(source, /outbound-update-proposals\/:proposalId\/authorize/);
   assert.match(source, /authorizeMercadoLivreBoundListingUpdate/);
   assert.match(source, /authenticatedOwner/);
+});
+
+test('Kyrubia bound update crosses shared multichannel governance before creating Mercado Livre authority', async () => {
+  const source = await readFile(kyrubiaCommandPath, 'utf8');
+  const governanceIndex = source.indexOf('evaluateExternalWriteAuthorizationRequest({');
+  const authorizationIndex = source.indexOf('authorizeMercadoLivreBoundListingUpdate({');
+
+  assert.ok(governanceIndex >= 0);
+  assert.ok(authorizationIndex > governanceIndex);
+  assert.match(source, /channel: 'mercado_livre'/);
+  assert.match(source, /operationKind: 'catalog\.bound_listing\.price_update'/);
+  assert.match(source, /userSignal: 'explicit_authorization'/);
+  assert.match(source, /authorizedFields: proposal\.changedFields/);
+  assert.match(source, /protectedFields: proposal\.protectedFields/);
+  assert.match(source, /EXTERNAL_WRITE_GOVERNANCE_/);
 });
