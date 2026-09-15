@@ -1,4 +1,7 @@
 import {
+  resolveKyrubiaMercadoLivreGenericConfirmationGuard,
+} from '../server/ai/kyrubiaMercadoLivreGenericConfirmationGuard.js';
+import {
   handleKyrubMcpRequest,
   type KyrubMcpHttpRequest,
   type KyrubMcpHttpResponse,
@@ -108,6 +111,49 @@ export default async function handler(
       transport,
       method: request.method?.toUpperCase() || 'GET',
     }));
+
+    const genericConfirmation = resolveKyrubiaMercadoLivreGenericConfirmationGuard(
+      request.body
+    );
+    if (genericConfirmation) {
+      console.info('[kyrubia-mercado-livre-generic-confirmation-blocked]', JSON.stringify({
+        requestId: traceId,
+        release: releaseIdentifier(),
+        decision: 'mercado_livre_generic_confirmation_blocked',
+      }));
+      response.setHeader('Cache-Control', 'no-store, max-age=0');
+      response.setHeader('Content-Type', 'application/json; charset=utf-8');
+      response.setHeader('X-Kyrub-Route', 'kyrubia-user-ai-chat');
+      response.setHeader('X-Kyrub-Decision', 'mercado_livre_generic_confirmation_blocked');
+      response.status(200).json({
+        status: 'deterministic',
+        reply: genericConfirmation.reply,
+        provider: 'kyrub',
+        model: 'kyrub-runtime-v1',
+        mode: 'deterministic',
+        requestId: traceId,
+        turnContext: genericConfirmation.turnContext,
+        capabilities: {
+          actionsEnabled: true,
+          enabledActions: ['create_note'],
+          enabledReadActions: [
+            'read_store_summary',
+            'list_products',
+            'list_low_stock_products',
+            'list_pending_orders',
+          ],
+          voiceEnabled: false,
+          persistentCloudHistoryEnabled: false,
+          multimodalAttachmentsEnabled: false,
+          providerResilienceEnabled: false,
+          usageMeteringEnabled: true,
+        },
+        funding: 'none',
+        usage: {},
+      });
+      return;
+    }
+
     try {
       const chat = await import('../server/ai/kyrubiaUserAiChatServerlessTransport.js');
       await chat.handleKyrubiaUserAiChatServerlessRequest(request, response);
