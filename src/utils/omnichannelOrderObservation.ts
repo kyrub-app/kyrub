@@ -37,8 +37,27 @@ export interface OmnichannelManualReview {
   exhaustedAt: string;
 }
 
+export interface OmnichannelManualReviewAuditEntry {
+  eventId: string;
+  provider: 'mercado_livre';
+  externalOrderId: string;
+  orderId: string;
+  inboxId: string;
+  decisionSequence: number | null;
+  actorUserId: string;
+  action: string;
+  reason: string;
+  decisionResult: string;
+  previousRetryCycle: number | null;
+  nextRetryCycle: number | null;
+  failureCount: number | null;
+  failureBudget: number | null;
+  occurredAt: string;
+}
+
 export interface OmnichannelObservationResponse {
   manualReviews: OmnichannelManualReview[];
+  manualReviewAudit: OmnichannelManualReviewAuditEntry[];
   items: unknown[];
   [key: string]: unknown;
 }
