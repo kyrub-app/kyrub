@@ -29,6 +29,34 @@ const divergenceSource = readFileSync(
   'server/integrations/omnichannelDivergenceService.ts',
   'utf8'
 );
+const orderObserverSource = readFileSync(
+  'server/integrations/omnichannelOrderObservationService.ts',
+  'utf8'
+);
+const orderObserverEscalationSource = readFileSync(
+  'server/integrations/omnichannelOrderObservationEscalationService.ts',
+  'utf8'
+);
+const orderObserverRouterSource = readFileSync(
+  'server/integrations/omnichannelOrderObservationRouter.ts',
+  'utf8'
+);
+const storeConnectionsTransportSource = readFileSync(
+  'server/integrations/storeConnectionsServerlessTransport.ts',
+  'utf8'
+);
+const orderObservationClientSource = readFileSync(
+  'src/utils/omnichannelOrderObservation.ts',
+  'utf8'
+);
+const manualReviewPanelSource = readFileSync(
+  'src/components/store/OmnichannelManualReviewPanel.tsx',
+  'utf8'
+);
+const mercadoLivreBridgeSource = readFileSync(
+  'src/components/store/MercadoLivreE2ETestBridge.tsx',
+  'utf8'
+);
 
 test('webhook validates, persists and returns before business processing', () => {
   assert.match(queueSource, /verifyOpenDeliverySignature/);
@@ -69,6 +97,90 @@ test('divergence observability records only unresolved conflicts server-side', (
   assert.match(divergenceSource, /FieldValue\.increment\(1\)/);
   assert.match(divergenceSource, /adminDb\.runTransaction/);
   assert.doesNotMatch(routerSource, /integrationSyncDivergences/);
+});
+
+test('read-only order observer exposes 99Food ingress before a canonical order exists', () => {
+  assert.match(orderObserverSource, /integrationIngress/);
+  assert.match(orderObserverSource, /status === 'queued'/);
+  assert.match(orderObserverSource, /status === 'failed'/);
+  assert.match(orderObserverSource, /upsertObservation\(observations, '99food'/);
+  assert.match(orderObserverSource, /inventoryReservation/);
+  assert.match(orderObserverSource, /blocked_product_binding_unresolved/);
+  assert.doesNotMatch(
+    orderObserverSource,
+    /FieldValue|runTransaction|transaction\.(?:set|update|create)\(|\.ref\.(?:set|update|create)\(/
+  );
+});
+
+test('read-only order observer correlates Mercado Livre inbox, binding blocks and KDS', () => {
+  assert.match(orderObserverSource, /integrationWebhookInbox/);
+  assert.match(orderObserverSource, /mercadoLivreOrderIngressBlocks/);
+  assert.match(orderObserverSource, /provider_api_refetch/);
+  assert.match(orderObserverSource, /routingTarget/);
+  assert.match(orderObserverSource, /toUpperCase\(\) === 'KDS'/);
+  assert.match(orderObserverSource, /omnichannelDivergences/);
+  assert.match(orderObserverSource, /integrationSyncDivergences/);
+  assert.doesNotMatch(orderObserverSource, /fiscal|sefaz|cfop|cst/i);
+});
+
+test('retry-exhausted Mercado Livre inbox is visible as manual-review divergence without writes', () => {
+  assert.match(orderObserverEscalationSource, /processingOutcome, 120\) !== 'retry_exhausted'/);
+  assert.match(orderObserverEscalationSource, /manualReviewRequired !== true/);
+  assert.match(orderObserverEscalationSource, /retryableFailureCount/);
+  assert.match(orderObserverEscalationSource, /retryableFailureBudget/);
+  assert.match(orderObserverEscalationSource, /lastRetryableErrorCode/);
+  assert.match(orderObserverEscalationSource, /lastRetryableErrorDiagnostic/);
+  assert.match(orderObserverEscalationSource, /retry_exhausted_manual_review_required/);
+  assert.match(orderObserverEscalationSource, /manualReviews/);
+  assert.match(orderObserverEscalationSource, /observation\.divergence\.state = 'open'/);
+  assert.doesNotMatch(
+    orderObserverEscalationSource,
+    /FieldValue|runTransaction|transaction\.(?:set|update|create)\(|\.ref\.(?:set|update|create)\(/
+  );
+});
+
+test('omnichannel order observation reuses the existing serverless transport and owner auth', () => {
+  assert.match(orderObserverRouterSource, /verifyIdToken\(token, true\)/);
+  assert.match(orderObserverRouterSource, /OMNICHANNEL_ORDER_OBSERVATION_FORBIDDEN/);
+  assert.match(orderObserverRouterSource, /\/orders\/recent/);
+  assert.match(orderObserverRouterSource, /listRecentOmnichannelObservedOrdersWithEscalations/);
+  assert.match(storeConnectionsTransportSource, /createOmnichannelOrderObservationRouter/);
+  assert.match(storeConnectionsTransportSource, /\/api\/store-connections\/omnichannel/);
+});
+
+test('manual-review client reads observer state and submits only action plus optional reason to the owner endpoint', () => {
+  assert.match(orderObservationClientSource, /\/api\/store-connections\/omnichannel\/orders\/recent\?limit=/);
+  assert.match(orderObservationClientSource, /method: 'POST'/);
+  assert.match(orderObservationClientSource, /order-ingress-reviews\/\$\{encoded\(inboxId\)\}\/resolve/);
+  assert.match(orderObservationClientSource, /JSON\.stringify\(\{\s*action,/s);
+  assert.match(orderObservationClientSource, /reason: reason\.trim\(\)/);
+  const resolver = orderObservationClientSource.slice(
+    orderObservationClientSource.indexOf('export const resolveMercadoLivreManualReview')
+  );
+  assert.doesNotMatch(resolver, /canonicalProductId|paymentStatus|providerStatus|externalAccountId/);
+  assert.doesNotMatch(resolver, /mercadoLivreGetJson|mercadoLivrePostJson|mercadoLivrePutJson/);
+});
+
+test('Mercado Livre manual-review panel exposes explicit human decisions with reinforced confirmation', () => {
+  assert.match(manualReviewPanelSource, /Tentar novamente agora/);
+  assert.match(manualReviewPanelSource, /Manter em revisão/);
+  assert.match(manualReviewPanelSource, /Encerrar como não processável/);
+  assert.match(manualReviewPanelSource, /Confirmar decisão/);
+  assert.match(manualReviewPanelSource, /type="checkbox"/);
+  assert.match(manualReviewPanelSource, /close_non_processable' && reason\.trim\(\)\.length < 8/);
+  assert.match(manualReviewPanelSource, /\$\{review\.failureCount\}\/\$\{review\.failureBudget\} tentativas/);
+  assert.match(manualReviewPanelSource, /loadOmnichannelManualReviews/);
+  assert.match(manualReviewPanelSource, /resolveMercadoLivreManualReview/);
+  assert.match(manualReviewPanelSource, /O estado comercial será relido oficialmente no Mercado Livre/);
+  assert.doesNotMatch(manualReviewPanelSource, /canonicalProductId|paymentStatus|providerStatus/);
+});
+
+test('manual-review panel remains visible even when the current Mercado Livre connection id is temporarily unavailable', () => {
+  const panelAt = mercadoLivreBridgeSource.indexOf('<OmnichannelManualReviewPanel');
+  const connectionGateAt = mercadoLivreBridgeSource.indexOf('{connectionId ?');
+  assert.ok(panelAt >= 0 && connectionGateAt > panelAt);
+  assert.match(mercadoLivreBridgeSource, /OmnichannelManualReviewPanel/);
+  assert.match(mercadoLivreBridgeSource, /MercadoLivreE2ETestWorkspace/);
 });
 
 test('OAuth client requests the Open Delivery scope', () => {
