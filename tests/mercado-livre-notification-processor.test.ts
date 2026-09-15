@@ -47,7 +47,7 @@ test('manual catalog processor route remains owner scoped and is not wired direc
   assert.match(router, /\/:storeId\/notifications\/:inboxId\/process/);
   assert.match(router, /authenticatedOwner/);
   const webhook = router.match(/router\.post\('\/notifications'[\s\S]*?\n  \}\);/)?.[0] ?? '';
-  assert.doesNotMatch(webhook, /processMercadoLivreNotificationInboxItem/);
+  assert.doesNotMatch(webhook, /processMercadoLivreOrderNotificationInboxItem/);
 });
 
 test('orders_v2 resource parser accepts only order resource paths', () => {
@@ -231,11 +231,12 @@ test('late and concurrent notifications for one Mercado Livre order are serializ
   assert.match(queue, /integrationOrderProcessingLeases/);
   assert.match(queue, /externalAccountId.*externalOrderId/s);
   assert.match(queue, /MERCADO_LIVRE_ORDER_PROCESSING_LEASE_BUSY/);
-  assert.match(queue, /acquireOrderProcessingLease/);
+  assert.match(queue, /holderToken/);
+  assert.match(queue, /startOrderProcessingLeaseHeartbeat/);
   assert.match(queue, /finally \{/);
   assert.match(queue, /releaseOrderProcessingLease/);
 
-  const acquireAt = queue.indexOf('const leaseId = await acquireOrderProcessingLease');
+  const acquireAt = queue.indexOf('lease = await acquireOrderProcessingLease');
   const processAt = queue.indexOf('processMercadoLivreOrderNotificationInboxItem', acquireAt);
   assert.ok(acquireAt >= 0 && processAt > acquireAt);
 });
