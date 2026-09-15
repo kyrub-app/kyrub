@@ -7,6 +7,7 @@ import {
   assertMercadoLivrePlatformCredentialInput,
 } from '../../shared/mercadoLivrePlatformCredential.js';
 import type { KyrubStoreConnection } from '../../shared/storeConnections.js';
+import { processMercadoLivreOrderNotificationInboxItem } from './mercadoLivreOrderIngressService.js';
 import { resolvePlatformCredentials } from './platformCredentialStore.js';
 
 const clean = (value: unknown): string =>
@@ -170,6 +171,10 @@ export const ingestMercadoLivreNotification = async (
       createdAt: FieldValue.serverTimestamp(),
     });
   });
+
+  if (notification.topic === 'orders_v2' && disposition === 'pending_fetch') {
+    await processMercadoLivreOrderNotificationInboxItem({ inboxId });
+  }
 
   return {
     accepted: true,
