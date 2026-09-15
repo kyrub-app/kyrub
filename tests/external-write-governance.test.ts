@@ -6,6 +6,7 @@ import {
   canAdvanceExternalWriteBaseline,
   classifyExternalWriteContinuation,
   evaluateExternalWriteAttempt,
+  evaluateExternalWriteAuthorizationRequest,
   type ExternalWriteAttemptContext,
   type ExternalWriteAuthorizationBinding,
   type ExternalWriteTargetScope,
@@ -49,6 +50,28 @@ test('external write governance policy keeps local save, generic confirmation an
   assert.equal(EXTERNAL_WRITE_GOVERNANCE_POLICY.reconciliationMode, 'provider_readback_required');
   assert.equal(EXTERNAL_WRITE_GOVERNANCE_POLICY.baselineAdvance, 'exact_target_observed_and_reconciled_only');
   assert.equal(EXTERNAL_WRITE_GOVERNANCE_POLICY.providerStateAuthority, 'external_channel_only_not_inventory');
+});
+
+test('authorization preflight accepts an exact explicit field scope before provider-specific authority is created', () => {
+  assert.deepEqual(evaluateExternalWriteAuthorizationRequest({
+    request: mercadoLivreScope,
+    userSignal: 'explicit_authorization',
+    authorizedFields: ['price'],
+    protectedFields: ['stock', 'category', 'image', 'publicationStatus'],
+  }), {
+    allowed: true,
+    code: 'ALLOWED',
+  });
+
+  assert.deepEqual(evaluateExternalWriteAuthorizationRequest({
+    request: mercadoLivreScope,
+    userSignal: 'generic_confirmation',
+    authorizedFields: ['price'],
+    protectedFields: ['stock'],
+  }), {
+    allowed: false,
+    code: 'GENERIC_CONFIRMATION_NOT_AUTHORITY',
+  });
 });
 
 test('one exact explicit revalidated authorization can pass the provider-write gate', () => {
