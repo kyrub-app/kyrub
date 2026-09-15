@@ -26,7 +26,7 @@ export interface ExternalWriteTargetScope {
   storeId: string;
   channel: string;
   operationKind: string;
-  proposalId: string;
+  operationRef: string;
   targetRef: string;
 }
 
@@ -91,7 +91,7 @@ const hasValidScope = (scope: ExternalWriteTargetScope): boolean =>
     clean(scope.storeId) &&
     clean(scope.channel) &&
     clean(scope.operationKind) &&
-    clean(scope.proposalId) &&
+    clean(scope.operationRef) &&
     clean(scope.targetRef)
   );
 
@@ -102,7 +102,7 @@ const scopeMatches = (
   request.storeId === authorization.storeId &&
   request.channel === authorization.channel &&
   request.operationKind === authorization.operationKind &&
-  request.proposalId === authorization.proposalId &&
+  request.operationRef === authorization.operationRef &&
   request.targetRef === authorization.targetRef;
 
 const evaluateFieldScope = (
