@@ -259,7 +259,7 @@ const cleanCompositionsAgainstCatalog = (
   compositions: Record<string, ProductComposition>,
   catalog: InventoryCatalogItem[]
 ): Record<string, ProductComposition> => {
-  const allowedItemIds = new Set(catalog.map(item => [item.id, item]));
+  const allowedItemIds = new Set(catalog.map(item => item.id));
   const cleaned: Record<string, ProductComposition> = {};
 
   for (const [productId, composition] of Object.entries(compositions)) {
