@@ -57,7 +57,7 @@ test('notification inbox binds provider user id only to an existing connected Me
   assert.match(source, /MERCADO_LIVRE_NOTIFICATION_ACCOUNT_AMBIGUOUS/);
 });
 
-test('notification application id is checked against the platform credential vault', () => {
+test('notification application id is checked against the platform credential vault in the durable consumer', () => {
   const source = readFileSync('server/integrations/mercadoLivreNotificationInboxService.ts', 'utf8');
   assert.match(source, /resolvePlatformCredentials/);
   assert.match(source, /MERCADO_LIVRE_PLATFORM_PROVIDER_ID/);
@@ -65,7 +65,7 @@ test('notification application id is checked against the platform credential vau
   assert.match(source, /ignored_application/);
 });
 
-test('notification persistence is deterministic, idempotent and creates a durable processing trigger first', () => {
+test('notification persistence is deterministic and idempotent after queue delivery', () => {
   const source = readFileSync('server/integrations/mercadoLivreNotificationInboxService.ts', 'utf8');
   assert.match(source, /createHash\('sha256'\)/);
   assert.match(source, /integrationWebhookInbox/);
@@ -74,19 +74,59 @@ test('notification persistence is deterministic, idempotent and creates a durabl
   assert.match(source, /transaction\.create/);
   assert.match(source, /authority: 'provider_notification_trigger'/);
   assert.match(source, /processingStatus: disposition === 'pending_fetch' \? 'pending' : 'ignored'/);
+  assert.doesNotMatch(source, /mercadoLivreOrderIngressQueue|CRON_SECRET/);
   assert.doesNotMatch(source, /saveStoreConnectionRegistryRecord|updateStoreConnectionSyncAuthority/);
 });
 
-test('orders_v2 is processable while catalog topics keep their existing manual-review processor', () => {
+test('orders_v2 is recognized by the inbox but is not synchronously refetched there', () => {
   const inbox = readFileSync('server/integrations/mercadoLivreNotificationInboxService.ts', 'utf8');
   assert.match(inbox, /new Set\(\['items', 'items_prices', 'orders_v2'\]\)/);
-  assert.match(inbox, /notification\.topic === 'orders_v2'/);
-  assert.match(inbox, /processMercadoLivreOrderNotificationInboxItem\(\{ inboxId \}\)/);
-  const automaticBlock = inbox.match(/if \(notification\.topic === 'orders_v2'[\s\S]*?\n  \}/)?.[0] ?? '';
-  assert.doesNotMatch(automaticBlock, /processMercadoLivreNotificationInboxItem/);
+  assert.doesNotMatch(inbox, /processMercadoLivreOrderNotificationInboxItem/);
+  assert.doesNotMatch(inbox, /mercadoLivreGetJson/);
 });
 
-test('notification callback preserves retry behavior for transient inbox or order-refetch failures', () => {
+test('orders_v2 public ingress sends to Vercel Queue while catalog notifications fall through to manual-review router', () => {
+  const ingress = readFileSync('server/integrations/mercadoLivreOrderQueueIngressRouter.ts', 'utf8');
+  const transport = readFileSync('server/integrations/storeConnectionsServerlessTransport.ts', 'utf8');
+  assert.match(ingress, /notification\.topic !== 'orders_v2'/);
+  assert.match(ingress, /next\(\)/);
+  assert.match(ingress, /enqueueMercadoLivreOrderNotification\(request\.body\)/);
+  assert.match(ingress, /response\.status\(200\)/);
+  assert.match(ingress, /response\.status\(503\)/);
+  assert.match(transport, /createMercadoLivreOrderQueueIngressRouter\(\)/);
+  assert.ok(
+    transport.indexOf('createMercadoLivreOrderQueueIngressRouter()') <
+      transport.indexOf('createMercadoLivreRouter()'),
+    'orders_v2 queue ingress must run before the legacy Mercado Livre router'
+  );
+});
+
+test('Vercel Queue publication is durable and deduplicated by Mercado Livre notification id', () => {
+  const queue = readFileSync('server/integrations/mercadoLivreOrderQueueService.ts', 'utf8');
+  assert.match(queue, /send\(/);
+  assert.match(queue, /MERCADO_LIVRE_ORDERS_V2_QUEUE_TOPIC/);
+  assert.match(queue, /idempotencyKey: queueIdempotencyKey\(notification\.notificationId\)/);
+  assert.match(queue, /retentionSeconds: 86_400/);
+  assert.match(queue, /ingestMercadoLivreNotification\(input\)/);
+  assert.match(queue, /processMercadoLivreOrderNotificationInboxItem/);
+  assert.doesNotMatch(queue, /CRON_SECRET|setInterval|mercadoLivreOrderIngressQueue/);
+});
+
+test('Vercel Queue consumer is internally triggered and retries by throwing processing failures', () => {
+  const consumer = readFileSync('api/mercado-livre-orders-v2-consumer.ts', 'utf8');
+  const vercel = JSON.parse(readFileSync('vercel.json', 'utf8')) as {
+    functions?: Record<string, { experimentalTriggers?: Array<Record<string, unknown>> }>;
+  };
+  assert.match(consumer, /new QueueClient\(\)/);
+  assert.match(consumer, /handleNodeCallback/);
+  assert.match(consumer, /consumeMercadoLivreOrderQueueMessage\(message\)/);
+  const trigger = vercel.functions?.['api/mercado-livre-orders-v2-consumer.ts']?.experimentalTriggers?.[0];
+  assert.equal(trigger?.type, 'queue/v2beta');
+  assert.equal(trigger?.topic, 'mercado_livre_orders_v2');
+  assert.equal(trigger?.retryAfterSeconds, 30);
+});
+
+test('catalog notification callback preserves the existing manual-review retry behavior', () => {
   const router = readFileSync('server/integrations/mercadoLivreRouter.ts', 'utf8');
   assert.match(router, /router\.post\('\/notifications'/);
   assert.match(router, /ingestMercadoLivreNotification\(request\.body\)/);
