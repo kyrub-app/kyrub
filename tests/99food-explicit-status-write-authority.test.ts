@@ -15,12 +15,16 @@ const authoritySource = readFileSync(
   'src/utils/ninetyNineFoodStatusWriteAuthority.ts',
   'utf8'
 );
+const pendingSyncSource = readFileSync(
+  'src/utils/ninetyNineFoodPendingStatusSync.ts',
+  'utf8'
+);
 const bridgeSource = readFileSync(
   'src/components/store/NinetyNineFoodOrderStatusBridge.tsx',
   'utf8'
 );
 
-test('99Food provider authorization is validated before the canonical local status transition', () => {
+test('legacy server 99Food provider authorization remains validated before canonical local status transition', () => {
   const routeStart = routerSource.indexOf("router.post('/:orderId/status'");
   const routeSection = routerSource.slice(routeStart);
   const suppliedIndex = routeSection.indexOf('const providerAuthorizationSupplied =');
@@ -35,50 +39,55 @@ test('99Food provider authorization is validated before the canonical local stat
   assert.ok(invalidIndex > parseIndex);
   assert.ok(providerMismatchIndex > invalidIndex);
   assert.ok(transitionIndex > providerMismatchIndex);
-  assert.match(routerSource, /candidate\.provider !== '99food'/);
-  assert.match(routerSource, /candidate\.confirmed !== true/);
-  assert.match(routerSource, /candidate\.status !== expectedStatus/);
 });
 
-test('99Food provider write only occurs after explicit structured authorization', () => {
-  const routeStart = routerSource.indexOf("router.post('/:orderId/status'");
-  const routeSection = routerSource.slice(routeStart);
-  const providerBlockStart = routeSection.indexOf("if (result.provider === '99food' && result.externalOrderId)");
-  const providerBlock = routeSection.slice(providerBlockStart);
-  const authorizationRequiredIndex = providerBlock.indexOf('if (!providerWriteAuthorization)');
-  const pendingMarkerIndex = providerBlock.indexOf('markPartnerSyncAuthorizationRequired');
-  const sendIndex = providerBlock.indexOf('sendNinetyNineFoodOrderStatus(');
-
-  assert.ok(providerBlockStart >= 0);
-  assert.ok(authorizationRequiredIndex >= 0);
-  assert.ok(pendingMarkerIndex > authorizationRequiredIndex);
-  assert.ok(sendIndex > pendingMarkerIndex);
-  assert.match(providerBlock, /partnerSync = 'authorization-required'/);
-  assert.match(providerBlock, /partnerSync = 'sent'/);
-  assert.match(providerBlock, /partnerSync = 'attention'/);
-  assert.doesNotMatch(
-    providerBlock.slice(authorizationRequiredIndex, sendIndex),
-    /sendNinetyNineFoodOrderStatus\(/
-  );
-});
-
-test('client asks for explicit authority before recording or posting a 99Food status change', () => {
+test('initial client never self-asserts provider authority in the local status POST', () => {
   const functionStart = workflowSource.indexOf('export const updateOrderStatusWithDecision = async');
   const functionEnd = workflowSource.indexOf('export const reviewAttendanceOrder', functionStart);
   const section = workflowSource.slice(functionStart, functionEnd);
-  const requestIndex = section.indexOf('requestNinetyNineFoodStatusWriteAuthority({');
-  const choiceIndex = section.indexOf("if (choice === 'kyrub_and_99food')");
-  const activityIndex = section.indexOf("recordOrderActivity(\n    'interaction.action_attempted'");
-  const fetchIndex = section.indexOf('await fetch(');
+  const choiceIndex = section.indexOf("choice === 'kyrub_and_99food'");
+  const localFetchIndex = section.indexOf('/status`');
+  const bodyIndex = section.indexOf('body: JSON.stringify({', localFetchIndex);
+  const bodyEnd = section.indexOf('}),', bodyIndex);
+  const localBody = section.slice(bodyIndex, bodyEnd);
 
-  assert.ok(requestIndex >= 0);
-  assert.ok(choiceIndex > requestIndex);
-  assert.ok(activityIndex > choiceIndex);
-  assert.ok(fetchIndex > activityIndex);
-  assert.match(section, /provider: '99food'/);
-  assert.match(section, /status: nextStatus/);
-  assert.match(section, /confirmed: true/);
-  assert.match(section, /\.\.\.\(providerWriteAuthorization \? \{ providerWriteAuthorization \} : \{\}\)/);
+  assert.ok(choiceIndex >= 0);
+  assert.ok(localFetchIndex > choiceIndex);
+  assert.match(localBody, /status: nextStatus/);
+  assert.match(localBody, /decision/);
+  assert.doesNotMatch(localBody, /providerWriteAuthorization|confirmed|authorizationId|authorizationToken/);
+  assert.doesNotMatch(section, /confirmed:\s*true/);
+});
+
+test('Kyrub + 99Food reuses the revision-bound server one-time pending pipeline after local success', () => {
+  const helperStart = workflowSource.indexOf('const syncInitialNinetyNineFoodExternalStatus = async');
+  const functionStart = workflowSource.indexOf('export const updateOrderStatusWithDecision = async');
+  const localFetchIndex = workflowSource.indexOf('/status`', functionStart);
+  const localParseIndex = workflowSource.indexOf('const localResult = parseOrderStatusUpdateResult', localFetchIndex);
+  const externalSyncIndex = workflowSource.indexOf('syncInitialNinetyNineFoodExternalStatus(user, localResult)', localParseIndex);
+
+  assert.ok(helperStart >= 0);
+  assert.match(workflowSource.slice(helperStart, functionStart), /loadNinetyNineFoodPendingStatusSyncs\(user\)/);
+  assert.match(workflowSource.slice(helperStart, functionStart), /candidate\.orderId === result\.orderId/);
+  assert.match(workflowSource.slice(helperStart, functionStart), /candidate\.status === result\.status/);
+  assert.match(workflowSource.slice(helperStart, functionStart), /sendNinetyNineFoodPendingStatusSync\(user, item\)/);
+  assert.ok(localFetchIndex >= 0);
+  assert.ok(localParseIndex > localFetchIndex);
+  assert.ok(externalSyncIndex > localParseIndex);
+  assert.match(pendingSyncSource, /provider-sync\/99food\/authorize/);
+  assert.match(pendingSyncSource, /authorizationId/);
+  assert.match(pendingSyncSource, /authorizationToken/);
+});
+
+test('missing pending evidence blocks external write without rolling back the local transition', () => {
+  const helperStart = workflowSource.indexOf('const syncInitialNinetyNineFoodExternalStatus = async');
+  const helperEnd = workflowSource.indexOf('export const updateOrderStatusWithDecision', helperStart);
+  const helper = workflowSource.slice(helperStart, helperEnd);
+  assert.match(helper, /if \(!item\)/);
+  assert.match(helper, /partnerSync: 'attention'/);
+  assert.match(helper, /Nenhuma escrita externa foi tentada/);
+  assert.match(helper, /catch \(error\)/);
+  assert.doesNotMatch(helper, /throw error|transitionOrderStatusWithInventory|sendNinetyNineFoodOrderStatus/);
 });
 
 test('status authority broker is memory-only, exact, and supports only explicit choices', () => {
@@ -122,8 +131,10 @@ test('99Food bridge is an authority/result UI and never performs the provider wr
   );
 });
 
-test('provider result messaging preserves local success when external write needs attention', () => {
+test('provider result messaging preserves local success and exposes reconciliation state', () => {
   assert.match(workflowSource, /publishNinetyNineFoodStatusWriteResult\(\{/);
+  assert.match(authoritySource, /'reconciliation-required'/);
+  assert.match(authoritySource, /nenhum retry automático será feito/);
   assert.match(bridgeSource, /foi atualizado no Kyrub, mas a 99Food não confirmou o envio/);
   assert.match(bridgeSource, /foi atualizado somente no Kyrub/);
   assert.match(bridgeSource, /foi atualizado no Kyrub e a 99Food aceitou o envio/);

@@ -9,6 +9,10 @@ import {
   requestNinetyNineFoodStatusWriteAuthority,
   type NinetyNineFoodStatusWriteResult,
 } from './ninetyNineFoodStatusWriteAuthority';
+import {
+  loadNinetyNineFoodPendingStatusSyncs,
+  sendNinetyNineFoodPendingStatusSync,
+} from './ninetyNineFoodPendingStatusSync';
 import { recordCurrentUserActivityEvent } from '../observability/kyrubActivityBrowser';
 
 export type OrderDeliveryProvider = 'kyrub' | 'merchant';
@@ -175,7 +179,8 @@ const parseOrderStatusUpdateResult = (
   const partnerSync =
     candidate.partnerSync === 'authorization-required' ||
     candidate.partnerSync === 'sent' ||
-    candidate.partnerSync === 'attention'
+    candidate.partnerSync === 'attention' ||
+    candidate.partnerSync === 'reconciliation-required'
       ? candidate.partnerSync
       : 'not-applicable';
   return {
@@ -196,6 +201,43 @@ const parseOrderStatusUpdateResult = (
   };
 };
 
+const syncInitialNinetyNineFoodExternalStatus = async (
+  user: User,
+  result: OrderStatusUpdateResult
+): Promise<OrderStatusUpdateResult> => {
+  try {
+    const pendingItems = await loadNinetyNineFoodPendingStatusSyncs(user);
+    const item = pendingItems.find(candidate =>
+      candidate.orderId === result.orderId && candidate.status === result.status
+    );
+    if (!item) {
+      return {
+        ...result,
+        partnerSync: 'attention',
+        partnerWarning: 'O status foi aplicado no Kyrub, mas a pendência autoritativa 99Food ainda não ficou disponível. Nenhuma escrita externa foi tentada; revise a fila 99Food antes de enviar.',
+      };
+    }
+
+    const external = await sendNinetyNineFoodPendingStatusSync(user, item);
+    return {
+      ...result,
+      externalOrderId: external.externalOrderId || result.externalOrderId,
+      partnerSync: external.partnerSync === 'reconciliation_required'
+        ? 'reconciliation-required'
+        : external.partnerSync,
+      partnerWarning: external.partnerWarning,
+    };
+  } catch (error) {
+    return {
+      ...result,
+      partnerSync: 'attention',
+      partnerWarning: error instanceof Error
+        ? error.message
+        : 'O status foi aplicado no Kyrub, mas a sincronização one-time com a 99Food não pôde ser concluída.',
+    };
+  }
+};
+
 export const updateOrderStatusWithDecision = async (
   storeId: string,
   orderId: string,
@@ -209,10 +251,7 @@ export const updateOrderStatusWithDecision = async (
     throw new Error('Faça login novamente para atualizar o pedido.');
   }
 
-  let providerWriteAuthorization:
-    | { provider: '99food'; status: CustomerOrderStatus; confirmed: true }
-    | undefined;
-
+  let syncWithNinetyNineFood = false;
   if (isNinetyNineFoodOrderId(normalizedOrderId)) {
     const choice = await requestNinetyNineFoodStatusWriteAuthority({
       storeId: normalizedStoreId,
@@ -222,13 +261,7 @@ export const updateOrderStatusWithDecision = async (
     if (choice === 'cancel') {
       throw new Error('A atualização do pedido foi cancelada antes de qualquer alteração.');
     }
-    if (choice === 'kyrub_and_99food') {
-      providerWriteAuthorization = {
-        provider: '99food',
-        status: nextStatus,
-        confirmed: true,
-      };
-    }
+    syncWithNinetyNineFood = choice === 'kyrub_and_99food';
   }
 
   recordOrderActivity(
@@ -252,17 +285,21 @@ export const updateOrderStatusWithDecision = async (
         body: JSON.stringify({
           status: nextStatus,
           decision,
-          ...(providerWriteAuthorization ? { providerWriteAuthorization } : {}),
         }),
       }
     );
     const payload = await response.json().catch(() => ({})) as Record<string, unknown>;
     if (response.ok) {
-      const result = parseOrderStatusUpdateResult(
+      const localResult = parseOrderStatusUpdateResult(
         payload,
         normalizedOrderId,
         nextStatus
       );
+      const result =
+        syncWithNinetyNineFood &&
+        (localResult.provider === '99food' || isNinetyNineFoodOrderId(normalizedOrderId))
+          ? await syncInitialNinetyNineFoodExternalStatus(user, localResult)
+          : localResult;
       recordOrderActivity(
         'result.action_succeeded',
         normalizedOrderId,

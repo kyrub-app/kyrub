@@ -28,7 +28,8 @@ export interface NinetyNineFoodStatusWriteResult {
     | 'not-applicable'
     | 'authorization-required'
     | 'sent'
-    | 'attention';
+    | 'attention'
+    | 'reconciliation-required';
   partnerWarning: string;
 }
 
@@ -152,8 +153,10 @@ export const publishNinetyNineFoodStatusWriteResult = (
       summary: result.partnerSync === 'authorization-required'
         ? `Pedido ${result.orderId}: status ${result.status} aplicado somente no Kyrub; nenhum provider write foi autorizado.`
         : result.partnerSync === 'sent'
-          ? `Pedido ${result.orderId}: status ${result.status} aplicado no Kyrub e enviado à 99Food.`
-          : `Pedido ${result.orderId}: status ${result.status} aplicado localmente, mas o provider exige atenção.`,
+          ? `Pedido ${result.orderId}: status ${result.status} aplicado no Kyrub e confirmado por releitura da 99Food.`
+          : result.partnerSync === 'reconciliation-required'
+            ? `Pedido ${result.orderId}: status ${result.status} aplicado no Kyrub; a escrita externa exige reconciliação e nenhum retry automático será feito.`
+            : `Pedido ${result.orderId}: status ${result.status} aplicado localmente, mas o provider exige atenção.`,
       details: {
         orderId: result.orderId,
         status: result.status,
