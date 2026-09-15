@@ -95,6 +95,20 @@ test('status authority broker is memory-only, exact, and supports only explicit 
   );
 });
 
+test('99Food external choice crosses provider-neutral governance without granting authority to Kyrub-only', () => {
+  const governanceIndex = authoritySource.indexOf('evaluateExternalWriteAuthorizationRequest({');
+  const explicitChoiceIndex = authoritySource.indexOf("choice === 'kyrub_and_99food'");
+  assert.ok(governanceIndex >= 0);
+  assert.ok(explicitChoiceIndex >= 0);
+  assert.match(authoritySource, /channel: '99food'/);
+  assert.match(authoritySource, /operationKind: 'order\.status_transition'/);
+  assert.match(authoritySource, /operationRef: `\$\{request\.orderId\}:\$\{request\.status\}`/);
+  assert.match(authoritySource, /userSignal: 'explicit_authorization'/);
+  assert.match(authoritySource, /authorizedFields: \['status'\]/);
+  assert.match(authoritySource, /choice === 'kyrub_and_99food'[\s\S]*sharedGovernanceAllowsProviderWrite\(normalized\)/);
+  assert.doesNotMatch(authoritySource, /choice === 'kyrub_only'[\s\S]{0,180}sharedGovernanceAllowsProviderWrite/);
+});
+
 test('99Food bridge is an authority/result UI and never performs the provider write itself', () => {
   assert.match(bridgeSource, /id="kyrub-99food-status-write-authority"/);
   assert.match(bridgeSource, /Atualizar só no Kyrub/);
