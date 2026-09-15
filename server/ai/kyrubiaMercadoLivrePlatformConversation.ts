@@ -9,6 +9,10 @@ import {
 import { adminDb } from '../firebaseAdmin.js';
 import { authenticateConsultantRequest } from './consultantAuth.js';
 import {
+  handleKyrubiaMercadoLivreBoundUpdateAuthorizationCommand,
+  isKyrubiaMercadoLivreBoundUpdateAuthorizationCandidate,
+} from './kyrubiaMercadoLivreBoundListingUpdateAuthorizationCommand.js';
+import {
   prepareKyrubiaMercadoLivrePublication,
   type KyrubiaMercadoLivrePrepareResult,
 } from './kyrubiaMercadoLivrePrepareTool.js';
@@ -307,6 +311,12 @@ export const prepareKyrubiaMercadoLivrePlatformConversation = async (input: {
   message: string;
   erpContext: unknown;
 }): Promise<KyrubAiConsultantResponse | null> => {
+  const boundUpdateAuthorization = await handleKyrubiaMercadoLivreBoundUpdateAuthorizationCommand({
+    authorization: input.authorization,
+    message: input.message,
+  });
+  if (boundUpdateAuthorization) return boundUpdateAuthorization;
+
   const targetName = extractKyrubiaMercadoLivrePreparationTarget(input.message);
   if (!targetName) return null;
 
@@ -375,6 +385,8 @@ export const shouldRouteKyrubiaMercadoLivrePlatformContinuation = (input: {
   selectedOfferedIntentId?: unknown;
   message: string;
 }): boolean => {
+  if (isKyrubiaMercadoLivreBoundUpdateAuthorizationCandidate(input.message)) return false;
+
   const context = record(input.turnContext);
   const sourceAction = clean(context.sourceAction, 120);
   if (
