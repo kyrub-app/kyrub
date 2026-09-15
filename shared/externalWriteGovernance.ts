@@ -30,6 +30,13 @@ export interface ExternalWriteTargetScope {
   targetRef: string;
 }
 
+export interface ExternalWriteAuthorizationRequestContext {
+  request: ExternalWriteTargetScope;
+  userSignal: ExternalWriteUserSignal;
+  authorizedFields: readonly string[];
+  protectedFields: readonly string[];
+}
+
 export interface ExternalWriteAuthorizationBinding extends ExternalWriteTargetScope {
   authorizationId: string;
   authoritySource: 'explicit_user_authorization';
@@ -98,39 +105,12 @@ const scopeMatches = (
   request.proposalId === authorization.proposalId &&
   request.targetRef === authorization.targetRef;
 
-export const evaluateExternalWriteAttempt = (
-  context: ExternalWriteAttemptContext
+const evaluateFieldScope = (
+  authorizedFieldsInput: readonly string[],
+  protectedFieldsInput: readonly string[]
 ): ExternalWriteAttemptDecision => {
-  if (!hasValidScope(context.request)) {
-    return { allowed: false, code: 'INVALID_REQUEST_SCOPE' };
-  }
-
-  if (context.userSignal === 'local_persistence') {
-    return { allowed: false, code: 'LOCAL_PERSISTENCE_NOT_AUTHORITY' };
-  }
-  if (context.userSignal === 'generic_confirmation') {
-    return { allowed: false, code: 'GENERIC_CONFIRMATION_NOT_AUTHORITY' };
-  }
-  if (context.reconciled) {
-    return { allowed: false, code: 'ALREADY_RECONCILED' };
-  }
-  if (context.providerWriteAttempted) {
-    return { allowed: false, code: 'PROVIDER_WRITE_ALREADY_ATTEMPTED' };
-  }
-
-  const authorization = context.authorization;
-  if (!authorization || authorization.authoritySource !== 'explicit_user_authorization') {
-    return { allowed: false, code: 'EXPLICIT_AUTHORIZATION_REQUIRED' };
-  }
-  if (!hasValidScope(authorization) || !clean(authorization.authorizationId)) {
-    return { allowed: false, code: 'AUTHORIZATION_SCOPE_INVALID' };
-  }
-  if (!scopeMatches(context.request, authorization)) {
-    return { allowed: false, code: 'AUTHORIZATION_SCOPE_MISMATCH' };
-  }
-
-  const authorizedFields = normalizedFields(authorization.authorizedFields);
-  const protectedFields = new Set(normalizedFields(authorization.protectedFields));
+  const authorizedFields = normalizedFields(authorizedFieldsInput);
+  const protectedFields = new Set(normalizedFields(protectedFieldsInput));
   if (authorizedFields.length === 0) {
     return { allowed: false, code: 'AUTHORIZED_FIELDS_REQUIRED' };
   }
@@ -139,6 +119,52 @@ export const evaluateExternalWriteAttempt = (
   }
   if (authorizedFields.some(field => protectedFields.has(field))) {
     return { allowed: false, code: 'AUTHORIZED_PROTECTED_FIELD_OVERLAP' };
+  }
+  return { allowed: true, code: 'ALLOWED' };
+};
+
+export const evaluateExternalWriteAuthorizationRequest = (
+  context: ExternalWriteAuthorizationRequestContext
+): ExternalWriteAttemptDecision => {
+  if (!hasValidScope(context.request)) {
+    return { allowed: false, code: 'INVALID_REQUEST_SCOPE' };
+  }
+  if (context.userSignal === 'local_persistence') {
+    return { allowed: false, code: 'LOCAL_PERSISTENCE_NOT_AUTHORITY' };
+  }
+  if (context.userSignal === 'generic_confirmation') {
+    return { allowed: false, code: 'GENERIC_CONFIRMATION_NOT_AUTHORITY' };
+  }
+  return evaluateFieldScope(context.authorizedFields, context.protectedFields);
+};
+
+export const evaluateExternalWriteAttempt = (
+  context: ExternalWriteAttemptContext
+): ExternalWriteAttemptDecision => {
+  const authorization = context.authorization;
+  const preflight = evaluateExternalWriteAuthorizationRequest({
+    request: context.request,
+    userSignal: context.userSignal,
+    authorizedFields: authorization?.authorizedFields ?? [],
+    protectedFields: authorization?.protectedFields ?? [],
+  });
+  if (!preflight.allowed) return preflight;
+
+  if (context.reconciled) {
+    return { allowed: false, code: 'ALREADY_RECONCILED' };
+  }
+  if (context.providerWriteAttempted) {
+    return { allowed: false, code: 'PROVIDER_WRITE_ALREADY_ATTEMPTED' };
+  }
+
+  if (!authorization || authorization.authoritySource !== 'explicit_user_authorization') {
+    return { allowed: false, code: 'EXPLICIT_AUTHORIZATION_REQUIRED' };
+  }
+  if (!hasValidScope(authorization) || !clean(authorization.authorizationId)) {
+    return { allowed: false, code: 'AUTHORIZATION_SCOPE_INVALID' };
+  }
+  if (!scopeMatches(context.request, authorization)) {
+    return { allowed: false, code: 'AUTHORIZATION_SCOPE_MISMATCH' };
   }
   if (!authorization.revalidatedImmediatelyBeforeWrite) {
     return { allowed: false, code: 'IMMEDIATE_REVALIDATION_REQUIRED' };
