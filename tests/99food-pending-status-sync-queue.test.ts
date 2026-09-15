@@ -4,7 +4,15 @@ import test from 'node:test';
 import './99food-status-sync-execution-claim.test.ts';
 
 const routerSource = readFileSync(
-  'server/inventory/orderInventoryRouter.ts',
+  'server/inventory/ninetyNineFoodStatusSyncExecutionRouter.ts',
+  'utf8'
+);
+const executionServiceSource = readFileSync(
+  'server/inventory/ninetyNineFoodStatusSyncExecutionService.ts',
+  'utf8'
+);
+const authorizationServiceSource = readFileSync(
+  'server/inventory/ninetyNineFoodStatusWriteAuthorizationService.ts',
   'utf8'
 );
 const legacyIntegrationRouterSource = readFileSync(
@@ -29,41 +37,41 @@ test('pending 99Food status queue is projected from the order integration eviden
   assert.match(routerSource, /provider !== '99food'/);
   assert.match(routerSource, /integration\.externalOrderId/);
   assert.doesNotMatch(
-    routerSource.slice(routeStart, routerSource.indexOf("router.post('/:orderId/provider-sync/99food'", routeStart)),
-    /sendNinetyNineFoodOrderStatus\(|transitionOrderStatusWithInventory\(/
+    routerSource.slice(routeStart, routerSource.indexOf("router.get('/provider-sync/99food/reconciliation'", routeStart)),
+    /writeNinetyNineFoodOrderStatusToProvider\(|transitionOrderStatusWithInventory\(/
   );
 });
 
-test('manual pending sync validates exact authority and current local status before provider write', () => {
-  const routeStart = routerSource.indexOf("router.post('/:orderId/provider-sync/99food'");
-  const routeEnd = routerSource.indexOf("router.post('/:orderId/reconcile-inventory'", routeStart);
-  const section = routerSource.slice(routeStart, routeEnd);
-  const parseIndex = section.indexOf('parseProviderWriteAuthorization(');
-  const snapshotIndex = section.indexOf('orderReference(tenantId, orderId).get()');
-  const pendingIndex = section.indexOf('PENDING_PARTNER_SYNC_STATUSES.has(outboundStatus)');
-  const staleIndex = section.indexOf('currentStatus !== providerWriteAuthorization.status');
-  const sendIndex = section.indexOf('sendNinetyNineFoodOrderStatus(');
+test('manual pending sync requires a server-issued exact authority before atomic execution claim', () => {
+  const authorizeStart = routerSource.indexOf("router.post('/:orderId/provider-sync/99food/authorize'");
+  const executeStart = routerSource.indexOf("router.post('/:orderId/provider-sync/99food'", authorizeStart + 1);
+  const claimIndex = routerSource.indexOf('claimNinetyNineFoodStatusSyncExecution({', executeStart);
+  const writeIndex = routerSource.indexOf('writeNinetyNineFoodOrderStatusToProvider({', claimIndex);
 
-  assert.ok(routeStart >= 0);
-  assert.ok(parseIndex >= 0);
-  assert.ok(snapshotIndex > parseIndex);
-  assert.ok(pendingIndex > snapshotIndex);
-  assert.ok(staleIndex > pendingIndex);
-  assert.ok(sendIndex > staleIndex);
-  assert.match(section, /currentProvider !== '99food'/);
-  assert.match(section, /expectedStatus !== providerWriteAuthorization\.status/);
-  assert.match(section, /externalOrderId/);
+  assert.ok(authorizeStart >= 0);
+  assert.ok(executeStart > authorizeStart);
+  assert.ok(claimIndex > executeStart);
+  assert.ok(writeIndex > claimIndex);
+  assert.match(routerSource, /issueNinetyNineFoodStatusWriteAuthorization/);
+  assert.match(routerSource, /authorizationId: authorization\.authorizationId/);
+  assert.match(routerSource, /authorizationToken: authorization\.authorizationToken/);
+  assert.match(executionServiceSource, /transaction\.get\(authorizationRef\)/);
+  assert.match(executionServiceSource, /actualRevision !== expectedOrderRevision/);
+  assert.match(executionServiceSource, /currentStatus !== input\.status/);
+  assert.match(executionServiceSource, /expectedStatus !== input\.status/);
+  assert.match(executionServiceSource, /consumptionStatus: 'consumed'/);
+  assert.match(authorizationServiceSource, /authoritySource: 'explicit_user_authorization'/);
 });
 
 test('manual pending sync never replays the local status transition', () => {
-  const routeStart = routerSource.indexOf("router.post('/:orderId/provider-sync/99food'");
-  const routeEnd = routerSource.indexOf("router.post('/:orderId/reconcile-inventory'", routeStart);
+  const routeStart = routerSource.indexOf("router.post('/:orderId/provider-sync/99food'", routerSource.indexOf('/authorize') + 1);
+  const routeEnd = routerSource.indexOf("router.post('/:orderId/status'", routeStart);
   const section = routerSource.slice(routeStart, routeEnd);
 
   assert.doesNotMatch(section, /transitionOrderStatusWithInventory\(/);
   assert.doesNotMatch(section, /persistDeliveryProvider\(/);
   assert.match(section, /localTransitionApplied: false/);
-  assert.match(section, /response\.status\(202\)\.json/);
+  assert.match(section, /partnerSync: 'reconciliation_required'/);
   assert.match(section, /partnerSync: 'attention'/);
   assert.match(section, /partnerSync: 'sent'/);
 });
@@ -85,12 +93,17 @@ test('legacy direct provider route is retained only as an authenticated disabled
   assert.doesNotMatch(section, /sendNinetyNineFoodOrderStatus\(/);
 });
 
-test('pending client sends structured status-scoped authorization only after an explicit UI action', () => {
-  assert.match(clientSource, /providerWriteAuthorization/);
+test('pending client obtains server authority only after the explicit UI action and then consumes it once', () => {
+  const authorizeIndex = clientSource.indexOf('issueServerAuthorization(user, item)');
+  const executeIndex = clientSource.indexOf('/provider-sync/99food`', authorizeIndex);
+  assert.ok(authorizeIndex >= 0);
+  assert.ok(executeIndex > authorizeIndex);
+  assert.match(clientSource, /provider-sync\/99food\/authorize/);
+  assert.match(clientSource, /authorizationId/);
+  assert.match(clientSource, /authorizationToken/);
   assert.match(clientSource, /provider: '99food'/);
   assert.match(clientSource, /status: item\.status/);
-  assert.match(clientSource, /confirmed: true/);
-  assert.match(clientSource, /localTransitionApplied !== false/);
+  assert.doesNotMatch(clientSource, /confirmed:\s*true/);
 
   assert.match(bridgeSource, /Sincronizações de status pendentes/);
   assert.match(bridgeSource, /Revisar e enviar/);
@@ -99,9 +112,16 @@ test('pending client sends structured status-scoped authorization only after an 
   assert.match(bridgeSource, /sendNinetyNineFoodPendingStatusSync\(user, item\)/);
 });
 
-test('failed manual provider writes stay manual and do not roll back Kyrub', () => {
-  assert.match(routerSource, /markPartnerSyncError\(/);
-  assert.match(routerSource, /'integration\.outboundStatus': 'attention'/);
+test('successful manual provider write requires readback and unresolved results never schedule automatic retry', () => {
+  const writeIndex = routerSource.indexOf('writeNinetyNineFoodOrderStatusToProvider({');
+  const readbackIndex = routerSource.indexOf('inspectNinetyNineFoodProviderStatusForReconciliation({', writeIndex);
+  const unresolvedIndex = routerSource.indexOf("observation.outcome !== 'confirmed'", readbackIndex);
+  const markerIndex = routerSource.indexOf('markNinetyNineFoodProviderWriteOutcomeUnknown({', unresolvedIndex);
+  assert.ok(writeIndex >= 0);
+  assert.ok(readbackIndex > writeIndex);
+  assert.ok(unresolvedIndex > readbackIndex);
+  assert.ok(markerIndex > unresolvedIndex);
+  assert.match(routerSource, /partnerSync: 'reconciliation_required'/);
   assert.match(bridgeSource, /status local não foi revertido/i);
   assert.match(bridgeSource, /não agenda retry automático/i);
   assert.doesNotMatch(

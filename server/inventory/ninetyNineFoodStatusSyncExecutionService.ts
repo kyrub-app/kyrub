@@ -1,6 +1,10 @@
 import { createHash } from 'node:crypto';
 import { FieldValue, type DocumentSnapshot } from 'firebase-admin/firestore';
 import { adminDb } from '../firebaseAdmin.js';
+import {
+  assertNinetyNineFoodStatusWriteAuthorizationForExecution,
+  ninetyNineFoodStatusWriteAuthorizationReference,
+} from './ninetyNineFoodStatusWriteAuthorizationService.js';
 import type { InventoryOrderStatus } from '../../shared/inventoryConsumption.js';
 
 const STATUS_MUTATION_LEASE_MS = 2 * 60 * 1000;
@@ -132,6 +136,7 @@ export const releaseOrderStatusMutation = async (
 
 export interface NinetyNineFoodStatusSyncExecutionClaim {
   executionId: string;
+  authorizationId: string;
   orderId: string;
   externalOrderId: string;
   status: InventoryOrderStatus;
@@ -144,33 +149,41 @@ export const claimNinetyNineFoodStatusSyncExecution = async (input: {
   orderId: string;
   status: InventoryOrderStatus;
   expectedOrderRevision: string;
-  authorizedByUserId: string;
+  authorizationId: string;
+  authorizationToken: string;
 }): Promise<NinetyNineFoodStatusSyncExecutionClaim> => {
   const tenantId = clean(input.tenantId);
   const orderId = clean(input.orderId);
   const expectedOrderRevision = clean(input.expectedOrderRevision);
-  const authorizedByUserId = clean(input.authorizedByUserId);
+  const authorizationId = clean(input.authorizationId);
+  const authorizationToken = clean(input.authorizationToken);
   if (
     !tenantId ||
     !orderId ||
     !expectedOrderRevision ||
-    !authorizedByUserId ||
+    !authorizationId ||
+    !authorizationToken ||
     !SUPPORTED_STATUSES.has(input.status)
   ) {
-    throw new Error('Autorização 99Food vinculada à revisão do pedido é inválida.');
+    throw new Error('Autorização one-time 99Food vinculada à revisão do pedido é inválida.');
   }
 
   const orderRef = orderReference(tenantId, orderId);
   const lockRef = mutationLockReference(tenantId, orderId);
+  const authorizationRef = ninetyNineFoodStatusWriteAuthorizationReference(authorizationId);
   const executionReference = adminDb.collection(STATUS_SYNC_EXECUTION_COLLECTION).doc();
   const executionId = executionReference.id;
 
   return adminDb.runTransaction(async transaction => {
-    const [snapshot, lockSnapshot] = await Promise.all([
+    const [snapshot, lockSnapshot, authorizationSnapshot] = await Promise.all([
       transaction.get(orderRef),
       transaction.get(lockRef),
+      transaction.get(authorizationRef),
     ]);
     if (!snapshot.exists) throw new Error('Pedido não encontrado.');
+    if (!authorizationSnapshot.exists) {
+      throw new Error('Autorização one-time 99Food não encontrada. Atualize a fila e confirme novamente.');
+    }
     const actualRevision = orderDocumentRevision(snapshot);
     if (!actualRevision || actualRevision !== expectedOrderRevision) {
       throw new Error(
@@ -214,9 +227,29 @@ export const claimNinetyNineFoodStatusSyncExecution = async (input: {
       throw new Error('Pedido 99Food sem identificador externo válido.');
     }
 
+    assertNinetyNineFoodStatusWriteAuthorizationForExecution({
+      authorizationId,
+      authorizationToken,
+      tenantId,
+      orderId,
+      status: input.status,
+      orderRevision: expectedOrderRevision,
+      externalOrderId,
+      value: authorizationSnapshot.data(),
+    });
+
     const startedAt = new Date().toISOString();
+    transaction.update(authorizationRef, {
+      consumptionStatus: 'consumed',
+      useCount: 1,
+      consumedByExecutionId: executionId,
+      consumedAt: startedAt,
+      serverConsumedAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+    });
     transaction.create(executionReference, {
       executionId,
+      authorizationId,
       tenantId,
       orderId,
       orderPath: orderRef.path,
@@ -225,8 +258,7 @@ export const claimNinetyNineFoodStatusSyncExecution = async (input: {
       targetStatus: input.status,
       reason,
       expectedOrderRevision,
-      authorizedByUserId,
-      authority: 'explicit_status_scoped_order_revision',
+      authority: 'server_issued_one_time_status_scoped_order_revision',
       status: 'claimed',
       createdAt: FieldValue.serverTimestamp(),
       claimedAt: startedAt,
@@ -242,6 +274,7 @@ export const claimNinetyNineFoodStatusSyncExecution = async (input: {
 
     return {
       executionId,
+      authorizationId,
       orderId,
       externalOrderId,
       status: input.status,

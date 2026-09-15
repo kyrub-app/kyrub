@@ -23,6 +23,7 @@ export interface NinetyNineFoodPendingStatusSyncResult {
   orderId: string;
   orderRevision: string;
   executionId: string;
+  authorizationId: string;
   externalOrderId: string;
   status: CustomerOrderStatus;
   partnerSync: 'sent' | 'attention' | 'reconciliation_required';
@@ -112,6 +113,46 @@ export const loadNinetyNineFoodPendingStatusSyncs = async (
     .filter((item): item is NinetyNineFoodPendingStatusSyncItem => Boolean(item));
 };
 
+const issueServerAuthorization = async (
+  user: User,
+  item: NinetyNineFoodPendingStatusSyncItem
+): Promise<{
+  authorizationId: string;
+  authorizationToken: string;
+}> => {
+  const payload = await request<Record<string, unknown>>(
+    user,
+    `/api/orders/${encodeURIComponent(item.orderId)}/provider-sync/99food/authorize`,
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        status: item.status,
+        orderRevision: item.orderRevision,
+      }),
+    }
+  );
+  const authorizationId = clean(payload.authorizationId);
+  const authorizationToken = clean(payload.authorizationToken);
+  const orderId = clean(payload.orderId);
+  const externalOrderId = clean(payload.externalOrderId);
+  const status = clean(payload.status) as CustomerOrderStatus;
+  const orderRevision = clean(payload.orderRevision);
+  const expiresAtMillis = Number(payload.expiresAtMillis);
+  if (
+    !authorizationId ||
+    !authorizationToken ||
+    orderId !== item.orderId ||
+    externalOrderId !== item.externalOrderId ||
+    status !== item.status ||
+    orderRevision !== item.orderRevision ||
+    !Number.isFinite(expiresAtMillis) ||
+    expiresAtMillis <= Date.now()
+  ) {
+    throw new Error('A autorização one-time retornada pelo servidor 99Food está incompleta ou não corresponde à pendência revisada.');
+  }
+  return { authorizationId, authorizationToken };
+};
+
 export const sendNinetyNineFoodPendingStatusSync = async (
   user: User,
   item: NinetyNineFoodPendingStatusSyncItem
@@ -121,6 +162,8 @@ export const sendNinetyNineFoodPendingStatusSync = async (
   if (!orderId || !orderRevision || !ORDER_STATUSES.has(item.status)) {
     throw new Error('Pendência 99Food inválida para envio manual.');
   }
+
+  const authorization = await issueServerAuthorization(user, item);
   const payload = await request<Record<string, unknown>>(
     user,
     `/api/orders/${encodeURIComponent(orderId)}/provider-sync/99food`,
@@ -131,7 +174,8 @@ export const sendNinetyNineFoodPendingStatusSync = async (
           provider: '99food',
           status: item.status,
           orderRevision,
-          confirmed: true,
+          authorizationId: authorization.authorizationId,
+          authorizationToken: authorization.authorizationToken,
         },
       }),
     }
@@ -145,6 +189,7 @@ export const sendNinetyNineFoodPendingStatusSync = async (
   const resultOrderId = clean(payload.orderId);
   const resultOrderRevision = clean(payload.orderRevision);
   const executionId = clean(payload.executionId);
+  const authorizationId = clean(payload.authorizationId);
   const externalOrderId = clean(payload.externalOrderId);
   const status = clean(payload.status) as CustomerOrderStatus;
   if (
@@ -152,6 +197,7 @@ export const sendNinetyNineFoodPendingStatusSync = async (
     !resultOrderId ||
     !resultOrderRevision ||
     !executionId ||
+    authorizationId !== authorization.authorizationId ||
     !externalOrderId ||
     !ORDER_STATUSES.has(status) ||
     payload.localTransitionApplied !== false
@@ -162,6 +208,7 @@ export const sendNinetyNineFoodPendingStatusSync = async (
     orderId: resultOrderId,
     orderRevision: resultOrderRevision,
     executionId,
+    authorizationId,
     externalOrderId,
     status,
     partnerSync,
@@ -175,13 +222,14 @@ export const sendNinetyNineFoodPendingStatusSync = async (
     referenceId: executionId,
     outcome: partnerSync,
     summary: partnerSync === 'sent'
-      ? `Envio manual do status ${status} para o pedido ${resultOrderId} foi aceito pela 99Food sem repetir a transição local.`
+      ? `Envio manual do status ${status} para o pedido ${resultOrderId} foi confirmado por releitura da 99Food sem repetir a transição local.`
       : partnerSync === 'reconciliation_required'
-        ? `Envio manual do status ${status} para o pedido ${resultOrderId} ficou ambíguo e exige reconciliação; nenhum retry automático será feito.`
+        ? `Envio manual do status ${status} para o pedido ${resultOrderId} não foi confirmado pela releitura e exige reconciliação; nenhum retry automático será feito.`
         : `Envio manual do status ${status} para o pedido ${resultOrderId} exige atenção; a transição local não foi repetida.`,
     details: {
       orderId: resultOrderId,
       orderRevision: resultOrderRevision,
+      authorizationId,
       executionId,
       externalOrderId,
       status,

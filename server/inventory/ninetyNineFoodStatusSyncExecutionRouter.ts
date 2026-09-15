@@ -11,6 +11,9 @@ import {
   type OrderStatusMutationClaim,
 } from './ninetyNineFoodStatusSyncExecutionService.js';
 import {
+  issueNinetyNineFoodStatusWriteAuthorization,
+} from './ninetyNineFoodStatusWriteAuthorizationService.js';
+import {
   claimNinetyNineFoodStatusSyncReconciliation,
   finalizeNinetyNineFoodStatusSyncReconciliation,
   isNinetyNineFoodProviderWriteOutcomeUnknown,
@@ -74,7 +77,7 @@ const errorResponse = (response: Response, error: unknown): void => {
     return;
   }
   if (
-    /mudou desde a leitura da fila|mudou desde a autorização|não está pendente|está em execução|outra mudança de status|reconciliação|perdeu a autoridade/i.test(message)
+    /mudou desde a leitura da fila|mudou desde a autorização|não está pendente|está em execução|outra mudança de status|reconciliação|perdeu a autoridade|já foi consumida|expirou/i.test(message)
   ) {
     response.status(409).json({
       error: message,
@@ -82,7 +85,7 @@ const errorResponse = (response: Response, error: unknown): void => {
     });
     return;
   }
-  if (/Autorização 99Food|identificador externo|identidade externa|não corresponde ao provedor/i.test(message)) {
+  if (/Autorização 99Food|Autorização one-time 99Food|Token da autorização|identificador externo|identidade externa|não corresponde ao provedor|governança multicanal/i.test(message)) {
     response.status(400).json({ error: message });
     return;
   }
@@ -95,20 +98,25 @@ const errorResponse = (response: Response, error: unknown): void => {
 const parseAuthorization = (value: unknown): {
   status: InventoryOrderStatus;
   orderRevision: string;
+  authorizationId: string;
+  authorizationToken: string;
 } | null => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   const candidate = value as Record<string, unknown>;
   const status = clean(candidate.status) as InventoryOrderStatus;
   const orderRevision = clean(candidate.orderRevision);
+  const authorizationId = clean(candidate.authorizationId);
+  const authorizationToken = clean(candidate.authorizationToken);
   if (
     candidate.provider !== '99food' ||
-    candidate.confirmed !== true ||
     !SUPPORTED_STATUSES.has(status) ||
-    !orderRevision
+    !orderRevision ||
+    !authorizationId ||
+    !authorizationToken
   ) {
     return null;
   }
-  return { status, orderRevision };
+  return { status, orderRevision, authorizationId, authorizationToken };
 };
 
 const listPending = async (tenantId: string) => {
@@ -292,13 +300,34 @@ export const createNinetyNineFoodStatusSyncExecutionRouter = (): Router => {
     }
   );
 
+  router.post('/:orderId/provider-sync/99food/authorize', async (request, response) => {
+    try {
+      const tenantId = await authenticatedTenantId(request);
+      const orderId = clean(request.params.orderId);
+      const status = clean(request.body?.status) as InventoryOrderStatus;
+      const orderRevision = clean(request.body?.orderRevision);
+      if (!orderId || !SUPPORTED_STATUSES.has(status) || !orderRevision) {
+        throw new Error('Autorização one-time 99Food vinculada à revisão do pedido é inválida.');
+      }
+      response.json(await issueNinetyNineFoodStatusWriteAuthorization({
+        tenantId,
+        orderId,
+        status,
+        expectedOrderRevision: orderRevision,
+        authorizedByUserId: tenantId,
+      }));
+    } catch (error) {
+      errorResponse(response, error);
+    }
+  });
+
   router.post('/:orderId/provider-sync/99food', async (request, response) => {
     try {
       const tenantId = await authenticatedTenantId(request);
       const orderId = clean(request.params.orderId);
       const authorization = parseAuthorization(request.body?.providerWriteAuthorization);
       if (!authorization) {
-        throw new Error('Autorização 99Food vinculada à revisão do pedido é inválida.');
+        throw new Error('Autorização one-time 99Food vinculada à revisão do pedido é inválida.');
       }
 
       const claim = await claimNinetyNineFoodStatusSyncExecution({
@@ -306,7 +335,8 @@ export const createNinetyNineFoodStatusSyncExecutionRouter = (): Router => {
         orderId,
         status: authorization.status,
         expectedOrderRevision: authorization.orderRevision,
-        authorizedByUserId: tenantId,
+        authorizationId: authorization.authorizationId,
+        authorizationToken: authorization.authorizationToken,
       });
       await markNinetyNineFoodProviderWriteStarted({
         tenantId,
@@ -322,6 +352,51 @@ export const createNinetyNineFoodStatusSyncExecutionRouter = (): Router => {
           status: claim.status,
           reason: claim.reason,
         });
+
+        let observation: Awaited<ReturnType<typeof inspectNinetyNineFoodProviderStatusForReconciliation>>;
+        try {
+          observation = await inspectNinetyNineFoodProviderStatusForReconciliation({
+            tenantId,
+            executionId: claim.executionId,
+            externalOrderId: claim.externalOrderId,
+            targetStatus: claim.status,
+          });
+        } catch (readbackError) {
+          observation = {
+            outcome: 'uncertain',
+            providerLastEvent: '',
+            providerStatus: '',
+            warning: readbackError instanceof Error
+              ? `A ação foi aceita pela 99Food, mas a releitura autoritativa falhou: ${readbackError.message}`.slice(0, 500)
+              : 'A ação foi aceita pela 99Food, mas a releitura autoritativa falhou. Nenhum retry automático será executado.',
+          };
+        }
+
+        if (observation.outcome !== 'confirmed') {
+          const warning = observation.warning ||
+            'A ação foi aceita pela 99Food, mas o estado alvo ainda não foi observado na releitura autoritativa. Nenhum retry automático será executado.';
+          await markNinetyNineFoodProviderWriteOutcomeUnknown({
+            tenantId,
+            executionId: claim.executionId,
+            orderId: claim.orderId,
+            warning,
+          });
+          response.status(202).json({
+            orderId: claim.orderId,
+            externalOrderId: claim.externalOrderId,
+            status: claim.status,
+            executionId: claim.executionId,
+            authorizationId: claim.authorizationId,
+            partnerSync: 'reconciliation_required',
+            partnerWarning: warning,
+            providerLastEvent: observation.providerLastEvent,
+            providerStatus: observation.providerStatus,
+            localTransitionApplied: false,
+            orderRevision: claim.expectedOrderRevision,
+          });
+          return;
+        }
+
         const finalized = await finalizeNinetyNineFoodStatusSyncExecution({
           tenantId,
           claim,
@@ -333,8 +408,9 @@ export const createNinetyNineFoodStatusSyncExecutionRouter = (): Router => {
             externalOrderId: claim.externalOrderId,
             status: claim.status,
             executionId: claim.executionId,
+            authorizationId: claim.authorizationId,
             partnerSync: 'attention',
-            partnerWarning: 'A 99Food recebeu o provider write, mas a revisão local não permaneceu estável até a finalização. Revise o pedido antes de qualquer novo envio.',
+            partnerWarning: 'A releitura confirmou o estado na 99Food, mas a revisão local não permaneceu estável até a finalização. Revise o pedido antes de qualquer novo envio.',
             localTransitionApplied: false,
             orderRevision: claim.expectedOrderRevision,
           });
@@ -345,8 +421,11 @@ export const createNinetyNineFoodStatusSyncExecutionRouter = (): Router => {
           externalOrderId: claim.externalOrderId,
           status: claim.status,
           executionId: claim.executionId,
+          authorizationId: claim.authorizationId,
           partnerSync: 'sent',
           partnerWarning: '',
+          providerLastEvent: observation.providerLastEvent,
+          providerStatus: observation.providerStatus,
           localTransitionApplied: false,
           orderRevision: claim.expectedOrderRevision,
         });
@@ -366,6 +445,7 @@ export const createNinetyNineFoodStatusSyncExecutionRouter = (): Router => {
             externalOrderId: claim.externalOrderId,
             status: claim.status,
             executionId: claim.executionId,
+            authorizationId: claim.authorizationId,
             partnerSync: 'reconciliation_required',
             partnerWarning: partnerWarning || 'A resposta externa ficou ambígua. Confira o estado na 99Food antes de qualquer novo envio.',
             localTransitionApplied: false,
@@ -386,6 +466,7 @@ export const createNinetyNineFoodStatusSyncExecutionRouter = (): Router => {
           externalOrderId: claim.externalOrderId,
           status: claim.status,
           executionId: claim.executionId,
+          authorizationId: claim.authorizationId,
           partnerSync: 'attention',
           partnerWarning,
           localTransitionApplied: false,
