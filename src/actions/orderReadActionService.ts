@@ -5,6 +5,7 @@ import {
   getCustomerOrderDocumentPath,
   parseCustomerOrder,
   type CustomerFulfillmentType,
+  type CustomerOrderCommercialChannel,
   type CustomerOrderPaymentStatus,
   type CustomerOrderStatus,
 } from '../utils/customerOrders';
@@ -32,6 +33,7 @@ export type KyrubOrderDetails = {
   status: CustomerOrderStatus;
   paymentStatus: CustomerOrderPaymentStatus;
   source: 'customer' | 'staff' | 'transfer';
+  sourceChannel: CustomerOrderCommercialChannel | null;
   operatorName: string;
   createdAt: string;
   updatedAt: string;
@@ -72,6 +74,7 @@ export const readKyrubOrderDetails = async (
     status: order.status,
     paymentStatus: order.paymentStatus,
     source: order.source,
+    sourceChannel: order.sourceChannel,
     operatorName: order.operatorName,
     createdAt: order.createdAt,
     updatedAt: order.updatedAt,
