@@ -33,6 +33,11 @@ const errorCode = (error: unknown): string =>
 const manualRetryIdempotencyKey = (inboxId: string, cycle: number): string =>
   `ml-orders-v2-manual-${createHash('sha256').update(`${inboxId}:${cycle}`).digest('hex')}`;
 
+const manualReviewAuditDocumentId = (
+  inboxId: string,
+  decisionSequence: number
+): string => `${inboxId}__decision_${String(decisionSequence).padStart(8, '0')}`;
+
 const assertReviewableInbox = (
   data: Record<string, unknown>,
   storeId: string
@@ -110,6 +115,7 @@ export const resolveMercadoLivreOrderManualReview = async (input: {
   let externalOrderId = '';
   let envelope: Record<string, unknown> | null = null;
   let manualRetryCycle = 0;
+  let decisionSequence = 0;
 
   await adminDb.runTransaction(async transaction => {
     const snapshot = await transaction.get(inboxRef);
@@ -121,12 +127,63 @@ export const resolveMercadoLivreOrderManualReview = async (input: {
     const parsedEnvelope = parseMercadoLivreNotification(providerEnvelopeFromInbox(data));
     externalOrderId = mercadoLivreOrderIdFromResource(parsedEnvelope.resource);
 
+    const previousRetryCycle = finiteInteger(data.manualRetryCycle);
+    const previousFailureCount = finiteInteger(data.retryableFailureCount);
+    const failureBudget = finiteInteger(data.retryableFailureBudget);
+    decisionSequence = finiteInteger(data.manualReviewDecisionSequence) + 1;
+    const nextRetryCycle = action === 'retry_now'
+      ? previousRetryCycle + 1
+      : previousRetryCycle;
+    const decisionResult = action === 'retry_now'
+      ? 'retry_requested'
+      : action === 'keep_in_review'
+        ? 'kept_in_review'
+        : 'closed_non_processable';
+    const auditRef = adminDb.doc(
+      `integrationManualReviewAudit/${manualReviewAuditDocumentId(inboxId, decisionSequence)}`
+    );
+
+    transaction.create(auditRef, {
+      schemaVersion: 1,
+      eventType: 'manual_review_decision',
+      provider: 'mercado_livre',
+      topic: 'orders_v2',
+      storeId,
+      inboxId,
+      notificationId: clean(data.notificationId, 200),
+      externalAccountId: clean(data.externalAccountId, 80),
+      externalOrderId,
+      orderId: `mercado-livre-order-${externalOrderId}`,
+      decisionSequence,
+      actorUserId: requestedByUserId,
+      action,
+      reason: reason || null,
+      decisionResult,
+      authority: 'store_owner_manual_review',
+      previousState: {
+        processingStatus: clean(data.processingStatus, 80),
+        processingOutcome: clean(data.processingOutcome, 120),
+        resolutionAuthority: clean(data.resolutionAuthority, 120),
+        manualReviewRequired: data.manualReviewRequired === true,
+        manualReviewDisposition: clean(data.manualReviewDisposition, 120) || null,
+      },
+      previousRetryCycle,
+      nextRetryCycle,
+      retryableFailureCount: previousFailureCount,
+      retryableFailureBudget: failureBudget,
+      lastRetryableErrorCode: clean(data.lastRetryableErrorCode, 120) || null,
+      lastRetryableErrorDiagnostic: clean(data.lastRetryableErrorDiagnostic, 240) || null,
+      previousRetryExhaustedAt: data.retryExhaustedAt ?? data.failedAt ?? null,
+      occurredAt: FieldValue.serverTimestamp(),
+    });
+
     if (action === 'keep_in_review') {
       transaction.update(inboxRef, {
         manualReviewRequired: true,
         manualReviewDisposition: 'keep_in_review',
         resolutionAuthority: 'manual_review_required',
         manualReviewReason: reason || FieldValue.delete(),
+        manualReviewDecisionSequence: decisionSequence,
         manualReviewUpdatedByUserId: requestedByUserId,
         manualReviewUpdatedAt: FieldValue.serverTimestamp(),
       });
@@ -142,6 +199,7 @@ export const resolveMercadoLivreOrderManualReview = async (input: {
         manualReviewRequired: false,
         manualReviewDisposition: 'non_processable',
         manualReviewReason: reason,
+        manualReviewDecisionSequence: decisionSequence,
         manualReviewClosedByUserId: requestedByUserId,
         manualReviewClosedAt: FieldValue.serverTimestamp(),
         manualReviewUpdatedByUserId: requestedByUserId,
@@ -150,7 +208,7 @@ export const resolveMercadoLivreOrderManualReview = async (input: {
       return;
     }
 
-    manualRetryCycle = Math.max(0, finiteInteger(data.manualRetryCycle)) + 1;
+    manualRetryCycle = nextRetryCycle;
     envelope = providerEnvelopeFromInbox(data);
     transaction.update(inboxRef, {
       processingStatus: 'pending',
@@ -160,12 +218,14 @@ export const resolveMercadoLivreOrderManualReview = async (input: {
       manualReviewRequired: false,
       manualReviewDisposition: 'retry_now',
       manualReviewReason: reason || FieldValue.delete(),
+      manualReviewDecisionSequence: decisionSequence,
+      manualRetryDecisionSequence: decisionSequence,
       manualReviewUpdatedByUserId: requestedByUserId,
       manualReviewUpdatedAt: FieldValue.serverTimestamp(),
       manualRetryCycle,
       manualRetryRequestedAt: FieldValue.serverTimestamp(),
       retryableFailureCount: 0,
-      previousRetryCycleFailureCount: finiteInteger(data.retryableFailureCount),
+      previousRetryCycleFailureCount: previousFailureCount,
       previousRetryCycleFirstFailureAt: data.firstRetryableFailureAt ?? null,
       previousRetryCycleLastFailureAt: data.lastRetryableFailureAt ?? null,
       previousRetryCycleLastErrorCode: clean(data.lastRetryableErrorCode, 120) || null,
@@ -202,7 +262,7 @@ export const resolveMercadoLivreOrderManualReview = async (input: {
     };
   }
 
-  if (!envelope || manualRetryCycle < 1) {
+  if (!envelope || manualRetryCycle < 1 || decisionSequence < 1) {
     throw new Error('MERCADO_LIVRE_ORDER_MANUAL_RETRY_STATE_INVALID');
   }
 
@@ -238,6 +298,27 @@ export const resolveMercadoLivreOrderManualReview = async (input: {
         clean(data.processingOutcome, 120) !== 'manual_retry_requested' ||
         finiteInteger(data.manualRetryCycle) !== manualRetryCycle
       ) return;
+      const failureAuditRef = adminDb.doc(
+        `integrationManualReviewAudit/${manualReviewAuditDocumentId(inboxId, decisionSequence)}__queue_failure`
+      );
+      transaction.create(failureAuditRef, {
+        schemaVersion: 1,
+        eventType: 'manual_retry_queue_failure',
+        provider: 'mercado_livre',
+        topic: 'orders_v2',
+        storeId,
+        inboxId,
+        externalOrderId,
+        orderId,
+        decisionSequence,
+        actorUserId: requestedByUserId,
+        action: 'retry_now',
+        manualRetryCycle,
+        result: 'queue_failed',
+        errorCode: errorCode(error),
+        authority: 'integration_queue_result',
+        occurredAt: FieldValue.serverTimestamp(),
+      });
       transaction.update(inboxRef, {
         processingStatus: 'failed',
         processingOutcome: 'retry_exhausted',
