@@ -68,8 +68,8 @@ test('Drive media keeps the public endpoint while reusing health serverless tran
   assert.match(proxySource, /contentType\.startsWith\('image\/'\)/);
   assert.match(proxySource, /X-Content-Type-Options/);
   assert.match(proxySource, /stale-while-revalidate/);
-  assert.match(vercelSource, /"source": "\/api\/media\/drive"/);
-  assert.match(vercelSource, /"destination": "\/api\/health\?transport=drive-media"/);
+  assert.match(vercelSource, /"source"\s*:\s*"\/api\/media\/drive"/);
+  assert.match(vercelSource, /"destination"\s*:\s*"\/api\/health\?transport=drive-media"/);
   assert.match(healthSource, /transport === 'drive-media'/);
   assert.match(healthSource, /proxyPublicGoogleDriveImage/);
   assert.match(serverSource, /"\/api\/media\/drive"/);
