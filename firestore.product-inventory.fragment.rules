@@ -17,7 +17,9 @@
           && data.keys().hasOnly([
             'ownerId',
             'inventoryCatalog',
+            'catalog',
             'productCompositions',
+            'compositions',
             'productFiscalProfiles',
             'createdAt',
             'updatedAt'
@@ -25,6 +27,20 @@
           && data.ownerId == userId
           && data.inventoryCatalog is list
           && data.productCompositions is map
+          && (
+            !data.keys().hasAny(['catalog'])
+            || (
+              data.catalog is list
+              && data.catalog == data.inventoryCatalog
+            )
+          )
+          && (
+            !data.keys().hasAny(['compositions'])
+            || (
+              data.compositions is map
+              && data.compositions == data.productCompositions
+            )
+          )
           && (
             !data.keys().hasAny(['productFiscalProfiles'])
             || (
@@ -50,7 +66,9 @@
         && incoming().updatedAt == request.time
         && incoming().diff(existing()).affectedKeys().hasOnly([
           'inventoryCatalog',
+          'catalog',
           'productCompositions',
+          'compositions',
           'productFiscalProfiles',
           'updatedAt'
         ]);

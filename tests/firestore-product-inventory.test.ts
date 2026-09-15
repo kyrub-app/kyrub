@@ -67,6 +67,15 @@ const inventoryPayload = () => ({
   updatedAt: serverTimestamp(),
 });
 
+const inventoryPayloadWithAliases = () => {
+  const payload = inventoryPayload();
+  return {
+    ...payload,
+    catalog: payload.inventoryCatalog,
+    compositions: payload.productCompositions,
+  };
+};
+
 const fiscalProfile = () => ({
   enabled: true,
   kind: 'goods',
@@ -89,6 +98,36 @@ test('owner creates and reads the private inventory document', async () => {
   const owner = environment.authenticatedContext(OWNER_ID).firestore();
   await assertSucceeds(setDoc(doc(owner, INVENTORY_PATH), inventoryPayload()));
   await assertSucceeds(getDoc(doc(owner, INVENTORY_PATH)));
+});
+
+test('owner can persist synchronized legacy aliases used by the inventory client', async () => {
+  const owner = environment.authenticatedContext(OWNER_ID).firestore();
+  await assertSucceeds(
+    setDoc(doc(owner, INVENTORY_PATH), inventoryPayloadWithAliases())
+  );
+
+  await assertSucceeds(
+    updateDoc(doc(owner, INVENTORY_PATH), {
+      inventoryCatalog: [],
+      catalog: [],
+      productCompositions: {},
+      compositions: {},
+      updatedAt: serverTimestamp(),
+    })
+  );
+});
+
+test('private inventory rejects aliases that drift from canonical inventory fields', async () => {
+  const owner = environment.authenticatedContext(OWNER_ID).firestore();
+  const payload = inventoryPayload();
+
+  await assertFails(
+    setDoc(doc(owner, INVENTORY_PATH), {
+      ...payload,
+      catalog: [],
+      compositions: payload.productCompositions,
+    })
+  );
 });
 
 test('owner stores and updates private fiscal profiles beside inventory data', async () => {
