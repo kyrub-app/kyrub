@@ -117,6 +117,58 @@ test('owner can persist synchronized legacy aliases used by the inventory client
   );
 });
 
+test('owner can update a historical inventory document without createdAt or with preserved legacy fields', async () => {
+  await environment.withSecurityRulesDisabled(async context => {
+    await setDoc(doc(context.firestore(), INVENTORY_PATH), {
+      ownerId: OWNER_ID,
+      inventoryCatalog: [],
+      catalog: [],
+      productCompositions: {},
+      compositions: {},
+      legacyImportMarker: 'preserve-me',
+      updatedAt: new Date('2026-08-18T00:00:00.000Z'),
+    });
+  });
+
+  const owner = environment.authenticatedContext(OWNER_ID).firestore();
+  await assertSucceeds(
+    updateDoc(doc(owner, INVENTORY_PATH), {
+      inventoryCatalog: [],
+      catalog: [],
+      productCompositions: {},
+      compositions: {},
+      updatedAt: serverTimestamp(),
+    })
+  );
+
+  const snapshot = await getDoc(doc(owner, INVENTORY_PATH));
+  if (snapshot.data()?.legacyImportMarker !== 'preserve-me') {
+    throw new Error('Legacy inventory metadata should remain untouched.');
+  }
+});
+
+test('owner cannot mutate preserved undeclared legacy inventory fields', async () => {
+  await environment.withSecurityRulesDisabled(async context => {
+    await setDoc(doc(context.firestore(), INVENTORY_PATH), {
+      ownerId: OWNER_ID,
+      inventoryCatalog: [],
+      catalog: [],
+      productCompositions: {},
+      compositions: {},
+      legacyImportMarker: 'preserve-me',
+      updatedAt: new Date('2026-08-18T00:00:00.000Z'),
+    });
+  });
+
+  const owner = environment.authenticatedContext(OWNER_ID).firestore();
+  await assertFails(
+    updateDoc(doc(owner, INVENTORY_PATH), {
+      legacyImportMarker: 'changed',
+      updatedAt: serverTimestamp(),
+    })
+  );
+});
+
 test('private inventory rejects aliases that drift from canonical inventory fields', async () => {
   const owner = environment.authenticatedContext(OWNER_ID).firestore();
   const payload = inventoryPayload();
