@@ -9,6 +9,7 @@ import { configureMercadoLivreOutboundCommercialRequirements } from './mercadoLi
 import { configureMercadoLivreOutboundRequirements } from './mercadoLivreOutboundRequirementsService.js';
 import { confirmMercadoLivreCanonicalVariantIdentity } from './mercadoLivreCanonicalVariantIdentityService.js';
 import { retryMercadoLivreOrderIngressAfterBinding } from './mercadoLivreOrderIngressRecoveryService.js';
+import { resolveMercadoLivreOrderManualReview } from './mercadoLivreOrderManualReviewService.js';
 
 const clean = (value: unknown): string => typeof value === 'string' ? value.trim() : '';
 const bearerToken = (authorization: string): string => /^Bearer\s+(.+)$/i.exec(authorization)?.[1]?.trim() ?? '';
@@ -201,6 +202,28 @@ export const createMercadoLivreE2ETestRouter = (): Router => {
       const code = errorCode(error);
       response.status(statusFor(code)).json({
         error: 'Não foi possível reprocessar o pedido bloqueado pelo vínculo de produto.',
+        code,
+      });
+    }
+  });
+
+  router.post('/:storeId/e2e/order-ingress-reviews/:inboxId/resolve', async (request, response) => {
+    try {
+      const storeId = clean(request.params.storeId);
+      const identity = await authenticatedOwner(request.get('authorization') ?? '', storeId);
+      response.setHeader('Cache-Control', 'no-store, max-age=0');
+      const result = await resolveMercadoLivreOrderManualReview({
+        storeId,
+        inboxId: clean(request.params.inboxId),
+        requestedByUserId: identity.uid,
+        action: request.body?.action,
+        reason: request.body?.reason,
+      });
+      response.status(result.status === 'queued' ? 202 : 200).json(result);
+    } catch (error) {
+      const code = errorCode(error);
+      response.status(statusFor(code)).json({
+        error: 'Não foi possível aplicar a decisão da revisão manual deste pedido.',
         code,
       });
     }

@@ -309,3 +309,73 @@ test('binding recovery endpoint is owner-only and accepts no browser-supplied bi
   assert.doesNotMatch(route, /request\.body/);
   assert.doesNotMatch(route, /canonicalProductId|paymentStatus|providerStatus/);
 });
+
+test('exhausted order review endpoint is owner-only and accepts only action plus optional reason', () => {
+  const router = readFileSync('server/integrations/mercadoLivreE2ETestRouter.ts', 'utf8');
+  const start = router.indexOf("router.post('/:storeId/e2e/order-ingress-reviews/:inboxId/resolve'");
+  const end = router.indexOf('\n\n  return router;', start);
+  assert.ok(start >= 0 && end > start);
+  const route = router.slice(start, end);
+  assert.match(route, /authenticatedOwner/);
+  assert.match(route, /resolveMercadoLivreOrderManualReview/);
+  assert.match(route, /action: request\.body\?\.action/);
+  assert.match(route, /reason: request\.body\?\.reason/);
+  assert.match(route, /requestedByUserId: identity\.uid/);
+  assert.doesNotMatch(route, /canonicalProductId|paymentStatus|providerStatus|externalAccountId/);
+});
+
+test('manual retry reopens only an exhausted inbox, resets only the retry cycle and queues the original provider envelope', () => {
+  const service = readFileSync('server/integrations/mercadoLivreOrderManualReviewService.ts', 'utf8');
+  assert.match(service, /processingStatus, 80\) !== 'failed'/);
+  assert.match(service, /processingOutcome, 120\) !== 'retry_exhausted'/);
+  assert.match(service, /data\.manualReviewRequired !== true/);
+  assert.match(service, /_id: clean\(data\.notificationId/);
+  assert.match(service, /resource: clean\(data\.resource/);
+  assert.match(service, /user_id: clean\(data\.externalAccountId/);
+  assert.match(service, /application_id: clean\(data\.applicationId/);
+  assert.match(service, /attempts: finiteInteger\(data\.attempts\)/);
+  assert.match(service, /processingStatus: 'pending'/);
+  assert.match(service, /processingOutcome: 'manual_retry_requested'/);
+  assert.match(service, /resolutionAuthority: 'provider_api_refetch_required'/);
+  assert.match(service, /retryableFailureCount: 0/);
+  assert.match(service, /manualRetryCycle/);
+  assert.match(service, /previousRetryCycleFailureCount/);
+  assert.match(service, /lastRetryExhaustedAt/);
+  assert.match(service, /firstRetryableFailureAt: FieldValue\.delete\(\)/);
+  assert.match(service, /lastRetryableFailureAt: FieldValue\.delete\(\)/);
+  assert.match(service, /send\(\s*\n\s*MERCADO_LIVRE_ORDERS_V2_QUEUE_TOPIC/);
+  assert.match(service, /manualRetryIdempotencyKey\(inboxId, manualRetryCycle\)/);
+  assert.doesNotMatch(service, /mercadoLivreGetJson|mercadoLivrePostJson|mercadoLivrePutJson/);
+  assert.doesNotMatch(service, /canonicalProductId|paymentStatus|providerStatus/);
+});
+
+test('manual review keep and non-processable close are local review decisions with no provider or KDS execution', () => {
+  const service = readFileSync('server/integrations/mercadoLivreOrderManualReviewService.ts', 'utf8');
+  const keepStart = service.indexOf("if (action === 'keep_in_review')");
+  const closeStart = service.indexOf("if (action === 'close_non_processable')", keepStart);
+  const retryStart = service.indexOf('manualRetryCycle =', closeStart);
+  assert.ok(keepStart >= 0 && closeStart > keepStart && retryStart > closeStart);
+  const keepBlock = service.slice(keepStart, closeStart);
+  const closeBlock = service.slice(closeStart, retryStart);
+  assert.match(keepBlock, /manualReviewDisposition: 'keep_in_review'/);
+  assert.match(keepBlock, /manualReviewRequired: true/);
+  assert.match(closeBlock, /processingOutcome: 'manual_review_closed_non_processable'/);
+  assert.match(closeBlock, /manualReviewRequired: false/);
+  assert.match(closeBlock, /manualReviewDisposition: 'non_processable'/);
+  assert.match(service, /MERCADO_LIVRE_ORDER_MANUAL_REVIEW_REASON_REQUIRED/);
+  assert.doesNotMatch(keepBlock, /send\(|mercadoLivreGetJson|processMercadoLivreOrderNotificationInboxItem/);
+  assert.doesNotMatch(closeBlock, /send\(|mercadoLivreGetJson|processMercadoLivreOrderNotificationInboxItem/);
+});
+
+test('manual retry queue failure returns the same inbox to human review instead of leaving it pending', () => {
+  const service = readFileSync('server/integrations/mercadoLivreOrderManualReviewService.ts', 'utf8');
+  const catchStart = service.indexOf('} catch (error) {', service.indexOf('const queued = await send'));
+  assert.ok(catchStart >= 0);
+  const recovery = service.slice(catchStart);
+  assert.match(recovery, /processingStatus: 'failed'/);
+  assert.match(recovery, /processingOutcome: 'retry_exhausted'/);
+  assert.match(recovery, /manualReviewRequired: true/);
+  assert.match(recovery, /manualReviewDisposition: 'retry_enqueue_failed'/);
+  assert.match(recovery, /finiteInteger\(data\.manualRetryCycle\) !== manualRetryCycle/);
+  assert.match(recovery, /MERCADO_LIVRE_ORDER_MANUAL_RETRY_QUEUE_FAILED/);
+});
