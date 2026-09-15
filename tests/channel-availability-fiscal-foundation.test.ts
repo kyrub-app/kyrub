@@ -98,19 +98,35 @@ test('disabled channel publishes zero while preserving ATP evidence', () => {
   assert.equal(projection.publishableUnits, 0);
 });
 
-test('fiscal candidate is source-neutral and waits for commercial confirmation', () => {
+test('commercial confirmation is evidence only and never becomes the fiscal trigger', () => {
   const candidate = evaluateFiscalEventCandidate({
     storeId: 'store-1',
     orderId: 'order-1',
     sourceChannel: '99food',
+    commerciallyConfirmed: true,
+    items: [{ productId: 'burger', kind: 'goods', fiscalProfileReady: true }],
+  });
+  assert.equal(candidate.commercialEvidence, 'confirmed');
+  assert.equal(candidate.trigger, null);
+  assert.equal(candidate.status, 'accounting_decision_required');
+  assert.equal(candidate.documentFamily, null);
+  assert.equal(candidate.emissionAuthority, 'none_until_accounting_policy');
+});
+
+test('unconfirmed commercial state also remains accounting-decision bound', () => {
+  const candidate = evaluateFiscalEventCandidate({
+    storeId: 'store-1',
+    orderId: 'order-2',
+    sourceChannel: 'mercado_livre',
     commerciallyConfirmed: false,
     items: [{ productId: 'burger', kind: 'goods', fiscalProfileReady: true }],
   });
-  assert.equal(candidate.status, 'not_triggered');
-  assert.equal(candidate.documentFamily, null);
+  assert.equal(candidate.commercialEvidence, 'not_confirmed');
+  assert.equal(candidate.trigger, null);
+  assert.equal(candidate.status, 'accounting_decision_required');
 });
 
-test('missing product fiscal preparation blocks fiscal policy instead of inventing taxes', () => {
+test('missing fiscal preparation is evidence without inventing tax or emission policy', () => {
   const candidate = evaluateFiscalEventCandidate({
     storeId: 'store-1',
     orderId: 'order-ml-1',
@@ -121,12 +137,13 @@ test('missing product fiscal preparation blocks fiscal policy instead of inventi
       { productId: 'drink', kind: 'goods', fiscalProfileReady: false },
     ],
   });
-  assert.equal(candidate.status, 'blocked_missing_fiscal_data');
+  assert.equal(candidate.status, 'accounting_decision_required');
   assert.deepEqual(candidate.missingProductIds, ['drink']);
   assert.equal(candidate.documentFamily, null);
+  assert.equal(candidate.trigger, null);
 });
 
-test('goods services and mixed orders remain separated before fiscal emission policy', () => {
+test('goods services and mixed orders do not select NFC-e NF-e or NFS-e before accounting policy', () => {
   const goods = evaluateFiscalEventCandidate({
     storeId: 'store-1', orderId: 'g', sourceChannel: 'kyrub', commerciallyConfirmed: true,
     items: [{ productId: 'p', kind: 'goods', fiscalProfileReady: true }],
@@ -143,10 +160,12 @@ test('goods services and mixed orders remain separated before fiscal emission po
     ],
   });
 
-  assert.equal(goods.documentFamily, 'goods_document_policy_required');
-  assert.equal(service.documentFamily, 'nfse');
-  assert.equal(mixed.documentFamily, 'mixed_operation_review_required');
-  assert.equal(goods.status, 'ready_for_fiscal_policy');
+  for (const candidate of [goods, service, mixed]) {
+    assert.equal(candidate.status, 'accounting_decision_required');
+    assert.equal(candidate.documentFamily, null);
+    assert.equal(candidate.trigger, null);
+    assert.equal(candidate.emissionAuthority, 'none_until_accounting_policy');
+  }
 });
 
 const reservationServiceSource = readFileSync(
