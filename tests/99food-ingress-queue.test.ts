@@ -29,6 +29,18 @@ const divergenceSource = readFileSync(
   'server/integrations/omnichannelDivergenceService.ts',
   'utf8'
 );
+const orderObserverSource = readFileSync(
+  'server/integrations/omnichannelOrderObservationService.ts',
+  'utf8'
+);
+const orderObserverRouterSource = readFileSync(
+  'server/integrations/omnichannelOrderObservationRouter.ts',
+  'utf8'
+);
+const storeConnectionsTransportSource = readFileSync(
+  'server/integrations/storeConnectionsServerlessTransport.ts',
+  'utf8'
+);
 
 test('webhook validates, persists and returns before business processing', () => {
   assert.match(queueSource, /verifyOpenDeliverySignature/);
@@ -69,6 +81,37 @@ test('divergence observability records only unresolved conflicts server-side', (
   assert.match(divergenceSource, /FieldValue\.increment\(1\)/);
   assert.match(divergenceSource, /adminDb\.runTransaction/);
   assert.doesNotMatch(routerSource, /integrationSyncDivergences/);
+});
+
+test('read-only order observer exposes 99Food ingress before a canonical order exists', () => {
+  assert.match(orderObserverSource, /integrationIngress/);
+  assert.match(orderObserverSource, /status === 'queued'/);
+  assert.match(orderObserverSource, /status === 'failed'/);
+  assert.match(orderObserverSource, /upsertObservation\(observations, '99food'/);
+  assert.match(orderObserverSource, /inventoryReservation/);
+  assert.match(orderObserverSource, /blocked_product_binding_unresolved/);
+  assert.doesNotMatch(orderObserverSource, /\.set\(/);
+  assert.doesNotMatch(orderObserverSource, /\.update\(/);
+  assert.doesNotMatch(orderObserverSource, /runTransaction/);
+});
+
+test('read-only order observer correlates Mercado Livre inbox, binding blocks and KDS', () => {
+  assert.match(orderObserverSource, /integrationWebhookInbox/);
+  assert.match(orderObserverSource, /mercadoLivreOrderIngressBlocks/);
+  assert.match(orderObserverSource, /provider_api_refetch/);
+  assert.match(orderObserverSource, /routingTarget/);
+  assert.match(orderObserverSource, /toUpperCase\(\) === 'KDS'/);
+  assert.match(orderObserverSource, /omnichannelDivergences/);
+  assert.match(orderObserverSource, /integrationSyncDivergences/);
+  assert.doesNotMatch(orderObserverSource, /fiscal|sefaz|cfop|cst/i);
+});
+
+test('omnichannel order observation reuses the existing serverless transport and owner auth', () => {
+  assert.match(orderObserverRouterSource, /verifyIdToken\(token, true\)/);
+  assert.match(orderObserverRouterSource, /OMNICHANNEL_ORDER_OBSERVATION_FORBIDDEN/);
+  assert.match(orderObserverRouterSource, /\/orders\/recent/);
+  assert.match(storeConnectionsTransportSource, /createOmnichannelOrderObservationRouter/);
+  assert.match(storeConnectionsTransportSource, /\/api\/store-connections\/omnichannel/);
 });
 
 test('OAuth client requests the Open Delivery scope', () => {
