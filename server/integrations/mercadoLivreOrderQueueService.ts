@@ -4,6 +4,7 @@ import { send } from '@vercel/queue';
 import {
   ingestMercadoLivreNotification,
   parseMercadoLivreNotification,
+  type MercadoLivreNotificationEnvelope,
 } from './mercadoLivreNotificationInboxService.js';
 import { processMercadoLivreOrderNotificationInboxItem } from './mercadoLivreOrderIngressService.js';
 import { mercadoLivreOrderIdFromResource } from '../../shared/mercadoLivreOrderIngress.js';
@@ -13,6 +14,11 @@ export const MERCADO_LIVRE_ORDERS_V2_QUEUE_TOPIC = 'mercado_livre_orders_v2';
 
 const queueIdempotencyKey = (notificationId: string): string =>
   `ml-orders-v2-${createHash('sha256').update(notificationId).digest('hex')}`;
+
+const orderLeaseId = (notification: MercadoLivreNotificationEnvelope, externalOrderId: string): string =>
+  `mlorder_${createHash('sha256')
+    .update(`${notification.externalAccountId}:${externalOrderId}`)
+    .digest('hex')}`;
 
 const errorCode = (error: unknown): string =>
   (error instanceof Error ? error.message : String(error)).split(':')[0].slice(0, 120);
@@ -63,6 +69,59 @@ const quarantinePendingInbox = async (input: {
   });
 };
 
+const acquireOrderProcessingLease = async (input: {
+  notification: MercadoLivreNotificationEnvelope;
+  externalOrderId: string;
+  leaseMs?: number;
+}): Promise<string> => {
+  const leaseId = orderLeaseId(input.notification, input.externalOrderId);
+  const leaseRef = adminDb.doc(`integrationOrderProcessingLeases/${leaseId}`);
+  const now = Date.now();
+  const leaseUntil = new Date(now + (input.leaseMs ?? 60_000)).toISOString();
+
+  await adminDb.runTransaction(async transaction => {
+    const snapshot = await transaction.get(leaseRef);
+    if (snapshot.exists) {
+      const data = snapshot.data() as Record<string, unknown>;
+      const currentHolder = String(data.holderNotificationId ?? '').trim();
+      const currentLeaseUntil = String(data.leaseUntil ?? '').trim();
+      if (
+        currentHolder &&
+        currentHolder !== input.notification.notificationId &&
+        Number.isFinite(Date.parse(currentLeaseUntil)) &&
+        Date.parse(currentLeaseUntil) > now
+      ) {
+        throw new Error('MERCADO_LIVRE_ORDER_PROCESSING_LEASE_BUSY');
+      }
+    }
+
+    transaction.set(leaseRef, {
+      provider: 'mercado_livre',
+      externalAccountId: input.notification.externalAccountId,
+      externalOrderId: input.externalOrderId,
+      holderNotificationId: input.notification.notificationId,
+      leaseUntil,
+      acquiredAt: FieldValue.serverTimestamp(),
+    }, { merge: true });
+  });
+
+  return leaseId;
+};
+
+const releaseOrderProcessingLease = async (input: {
+  leaseId: string;
+  notificationId: string;
+}): Promise<void> => {
+  const leaseRef = adminDb.doc(`integrationOrderProcessingLeases/${input.leaseId}`);
+  await adminDb.runTransaction(async transaction => {
+    const snapshot = await transaction.get(leaseRef);
+    if (!snapshot.exists) return;
+    const holder = String(snapshot.data()?.holderNotificationId ?? '').trim();
+    if (holder !== input.notificationId) return;
+    transaction.delete(leaseRef);
+  });
+};
+
 export interface MercadoLivreOrderQueuePublishResult {
   queued: true;
   messageId: string;
@@ -108,12 +167,14 @@ export const enqueueMercadoLivreOrderNotification = async (
 export const consumeMercadoLivreOrderQueueMessage = async (
   input: unknown
 ): Promise<MercadoLivreOrderQueueConsumeResult> => {
+  let notification: MercadoLivreNotificationEnvelope;
+  let externalOrderId: string;
   try {
-    const notification = parseMercadoLivreNotification(input);
+    notification = parseMercadoLivreNotification(input);
     if (notification.topic !== 'orders_v2') {
       throw new Error('MERCADO_LIVRE_ORDER_QUEUE_TOPIC_INVALID');
     }
-    mercadoLivreOrderIdFromResource(notification.resource);
+    externalOrderId = mercadoLivreOrderIdFromResource(notification.resource);
   } catch (error) {
     const code = errorCode(error);
     if (isMercadoLivreOrderQueueTerminalEnvelopeError(code)) {
@@ -130,6 +191,7 @@ export const consumeMercadoLivreOrderQueueMessage = async (
     };
   }
 
+  const leaseId = await acquireOrderProcessingLease({ notification, externalOrderId });
   try {
     const processed = await processMercadoLivreOrderNotificationInboxItem({
       inboxId: ingested.inboxId,
@@ -151,5 +213,10 @@ export const consumeMercadoLivreOrderQueueMessage = async (
       };
     }
     throw error;
+  } finally {
+    await releaseOrderProcessingLease({
+      leaseId,
+      notificationId: notification.notificationId,
+    });
   }
 };
