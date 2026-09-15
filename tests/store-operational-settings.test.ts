@@ -3,6 +3,7 @@ import { describe, test } from 'node:test';
 import {
   STORE_INTEGRATION_IDS,
   STORE_WEEKDAYS,
+  createEmptyStoreFiscalIssuerProfile,
   createEmptyStoreIntegrationPlan,
   createEmptyStoreOperationalSettings,
   getStoreOperationalSettingsCacheKey,
@@ -26,7 +27,7 @@ class MemoryStorage {
 }
 
 describe('store operational settings', () => {
-  test('starts without fictitious commercial hours or connected channels', () => {
+  test('starts without fictitious commercial hours, connected channels or fiscal identity', () => {
     const settings = createEmptyStoreOperationalSettings();
 
     for (const day of STORE_WEEKDAYS) {
@@ -43,6 +44,11 @@ describe('store operational settings', () => {
         createEmptyStoreIntegrationPlan()
       );
     }
+
+    assert.deepEqual(
+      settings.fiscalIssuerProfile,
+      createEmptyStoreFiscalIssuerProfile()
+    );
   });
 
   test('migrates old planning metadata into an editable draft', () => {
@@ -74,6 +80,59 @@ describe('store operational settings', () => {
       parsed.integrations.sefaz,
       createEmptyStoreIntegrationPlan()
     );
+  });
+
+  test('migrates legacy SEFAZ public identity into the canonical fiscal issuer profile', () => {
+    const parsed = parseStoreOperationalSettings({
+      integrations: {
+        sefaz: {
+          status: 'draft',
+          environment: 'production',
+          accountLabel: '  Restaurante Centro Ltda.  ',
+          externalStoreId: ' 12.345.678/0001-90 ',
+        },
+      },
+    });
+
+    assert.deepEqual(parsed.fiscalIssuerProfile, {
+      legalName: 'Restaurante Centro Ltda.',
+      taxIdentifier: '12.345.678/0001-90',
+      environment: 'production',
+    });
+  });
+
+  test('canonical fiscal issuer profile wins and keeps the legacy SEFAZ card synchronized', () => {
+    const parsed = parseStoreOperationalSettings({
+      fiscalIssuerProfile: {
+        legalName: ' Unidade Fiscal Canônica Ltda. ',
+        taxIdentifier: ' 98.765.432/0001-10 ',
+        environment: 'production',
+        certificate: 'must-not-be-persisted',
+        password: 'must-not-be-persisted',
+      },
+      integrations: {
+        sefaz: {
+          status: 'draft',
+          environment: 'sandbox',
+          accountLabel: 'Nome legado',
+          externalStoreId: '00.000.000/0000-00',
+        },
+      },
+    });
+
+    assert.deepEqual(parsed.fiscalIssuerProfile, {
+      legalName: 'Unidade Fiscal Canônica Ltda.',
+      taxIdentifier: '98.765.432/0001-10',
+      environment: 'production',
+    });
+    assert.equal(parsed.integrations.sefaz.accountLabel, 'Unidade Fiscal Canônica Ltda.');
+    assert.equal(parsed.integrations.sefaz.externalStoreId, '98.765.432/0001-10');
+    assert.equal(parsed.integrations.sefaz.environment, 'production');
+    assert.deepEqual(Object.keys(parsed.fiscalIssuerProfile).sort(), [
+      'environment',
+      'legalName',
+      'taxIdentifier',
+    ]);
   });
 
   test('normalizes non-secret integration onboarding fields', () => {
