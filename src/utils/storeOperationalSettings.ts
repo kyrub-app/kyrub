@@ -69,10 +69,19 @@ export interface StoreFiscalIssuerProfile {
   environment: StoreIntegrationEnvironment;
 }
 
+export type StoreFiscalAccountingDecisionStatus = 'required' | 'recorded';
+
+export interface StoreFiscalAccountingDecisionRecord {
+  status: StoreFiscalAccountingDecisionStatus;
+  policyReference: string;
+  recordedAt: string;
+}
+
 export interface StoreOperationalSettings {
   openingHours: StoreOpeningHours;
   integrations: StoreIntegrationPlans;
   fiscalIssuerProfile: StoreFiscalIssuerProfile;
+  fiscalAccountingDecision: StoreFiscalAccountingDecisionRecord;
 }
 
 export interface StorageLike {
@@ -126,10 +135,17 @@ export const createEmptyStoreFiscalIssuerProfile = (): StoreFiscalIssuerProfile 
   environment: 'sandbox',
 });
 
+export const createEmptyStoreFiscalAccountingDecision = (): StoreFiscalAccountingDecisionRecord => ({
+  status: 'required',
+  policyReference: '',
+  recordedAt: '',
+});
+
 export const createEmptyStoreOperationalSettings = (): StoreOperationalSettings => ({
   openingHours: createEmptyStoreOpeningHours(),
   integrations: createEmptyStoreIntegrationPlans(),
   fiscalIssuerProfile: createEmptyStoreFiscalIssuerProfile(),
+  fiscalAccountingDecision: createEmptyStoreFiscalAccountingDecision(),
 });
 
 const parseOpeningDay = (value: unknown): StoreOpeningHoursDay => {
@@ -219,6 +235,32 @@ export const parseStoreFiscalIssuerProfile = (
   };
 };
 
+export const parseStoreFiscalAccountingDecision = (
+  value: unknown
+): StoreFiscalAccountingDecisionRecord => {
+  if (!value || typeof value !== 'object') {
+    return createEmptyStoreFiscalAccountingDecision();
+  }
+
+  const candidate = value as Record<string, unknown>;
+  const policyReference = normalizeText(candidate.policyReference);
+  const recordedAt = normalizeDateTime(candidate.recordedAt);
+
+  if (
+    candidate.status !== 'recorded' ||
+    !policyReference ||
+    !recordedAt
+  ) {
+    return createEmptyStoreFiscalAccountingDecision();
+  }
+
+  return {
+    status: 'recorded',
+    policyReference,
+    recordedAt,
+  };
+};
+
 export const deriveStoreFiscalIssuerProfileFromSefaz = (
   sefazPlan: StoreIntegrationPlan
 ): StoreFiscalIssuerProfile => ({
@@ -265,6 +307,9 @@ export const parseStoreOperationalSettings = (
       ? mirrorFiscalIssuerProfileIntoSefaz(parsedIntegrations, fiscalIssuerProfile)
       : parsedIntegrations,
     fiscalIssuerProfile,
+    fiscalAccountingDecision: parseStoreFiscalAccountingDecision(
+      candidate.fiscalAccountingDecision
+    ),
   };
 };
 
