@@ -20,6 +20,20 @@ test('Mercado Livre notification parser accepts the provider envelope without tr
   assert.equal(parsed.topic, 'items');
 });
 
+test('Mercado Livre notification parser accepts orders_v2 envelopes for durable order ingress', () => {
+  const parsed = parseMercadoLivreNotification({
+    _id: 'notification-order-1',
+    resource: '/orders/2000012345678901',
+    user_id: 123456789,
+    topic: 'orders_v2',
+    application_id: 987654321,
+    attempts: 1,
+    sent: '2026-09-15T17:00:00.000Z',
+  });
+  assert.equal(parsed.resource, '/orders/2000012345678901');
+  assert.equal(parsed.topic, 'orders_v2');
+});
+
 test('Mercado Livre notification parser fails closed on invalid resource paths', () => {
   assert.throws(
     () => parseMercadoLivreNotification({
@@ -51,7 +65,7 @@ test('notification application id is checked against the platform credential vau
   assert.match(source, /ignored_application/);
 });
 
-test('notification persistence is deterministic, idempotent and only creates processing triggers', () => {
+test('notification persistence is deterministic, idempotent and creates a durable processing trigger first', () => {
   const source = readFileSync('server/integrations/mercadoLivreNotificationInboxService.ts', 'utf8');
   assert.match(source, /createHash\('sha256'\)/);
   assert.match(source, /integrationWebhookInbox/);
@@ -63,7 +77,16 @@ test('notification persistence is deterministic, idempotent and only creates pro
   assert.doesNotMatch(source, /saveStoreConnectionRegistryRecord|updateStoreConnectionSyncAuthority/);
 });
 
-test('notification callback acknowledges durable triggers quickly and retries only transient inbox failures', () => {
+test('orders_v2 is processable while catalog topics keep their existing manual-review processor', () => {
+  const inbox = readFileSync('server/integrations/mercadoLivreNotificationInboxService.ts', 'utf8');
+  assert.match(inbox, /new Set\(\['items', 'items_prices', 'orders_v2'\]\)/);
+  assert.match(inbox, /notification\.topic === 'orders_v2'/);
+  assert.match(inbox, /processMercadoLivreOrderNotificationInboxItem\(\{ inboxId \}\)/);
+  const automaticBlock = inbox.match(/if \(notification\.topic === 'orders_v2'[\s\S]*?\n  \}/)?.[0] ?? '';
+  assert.doesNotMatch(automaticBlock, /processMercadoLivreNotificationInboxItem/);
+});
+
+test('notification callback preserves retry behavior for transient inbox or order-refetch failures', () => {
   const router = readFileSync('server/integrations/mercadoLivreRouter.ts', 'utf8');
   assert.match(router, /router\.post\('\/notifications'/);
   assert.match(router, /ingestMercadoLivreNotification\(request\.body\)/);
@@ -71,7 +94,7 @@ test('notification callback acknowledges durable triggers quickly and retries on
   assert.match(router, /response\.status\(503\)\.json\(\{ received: false \}\)/);
 });
 
-test('notification inbox does not enable automatic Mercado Livre sync authority yet', () => {
+test('notification inbox does not enable automatic Mercado Livre catalog sync authority', () => {
   const inbox = readFileSync('server/integrations/mercadoLivreNotificationInboxService.ts', 'utf8');
   const registry = readFileSync('server/integrations/storeConnectionRegistry.ts', 'utf8');
   assert.doesNotMatch(inbox, /external_to_kyrub|kyrub_to_external|bidirectional/);
