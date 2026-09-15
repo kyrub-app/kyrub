@@ -276,6 +276,25 @@ const cleanCompositionsAgainstCatalog = (
   return cleaned;
 };
 
+const comparableInventorySettings = (settings: ProductInventorySettings) => ({
+  catalog: settings.catalog.map(({ updatedAt: _updatedAt, ...item }) => item),
+  compositions: Object.fromEntries(
+    Object.entries(settings.compositions)
+      .sort(([leftId], [rightId]) => leftId.localeCompare(rightId))
+      .map(([productId, { updatedAt: _updatedAt, ...composition }]) => [
+        productId,
+        composition,
+      ])
+  ),
+});
+
+export const productInventorySettingsEquivalent = (
+  left: ProductInventorySettings,
+  right: ProductInventorySettings
+): boolean =>
+  JSON.stringify(comparableInventorySettings(left)) ===
+  JSON.stringify(comparableInventorySettings(right));
+
 export const persistProductInventorySettings = async (
   user: Pick<User, 'uid'>,
   productId: string,
@@ -323,6 +342,11 @@ export const persistProductInventorySettings = async (
         normalizedCatalog
       ),
     };
+
+    // Product-only edits should not create or rewrite the private inventory
+    // document. This keeps unrelated catalog changes independent from private
+    // inventory permissions and legacy document-shape migrations.
+    if (productInventorySettingsEquivalent(current, nextSettings)) return;
 
     transaction.set(
       inventoryReference,
