@@ -14,6 +14,7 @@ export const MERCADO_LIVRE_ORDERS_V2_QUEUE_TOPIC = 'mercado_livre_orders_v2';
 
 const ORDER_PROCESSING_LEASE_MS = 120_000;
 const ORDER_PROCESSING_HEARTBEAT_MS = 30_000;
+const MAX_RETRYABLE_FAILURES = 12;
 
 const queueIdempotencyKey = (notificationId: string): string =>
   `ml-orders-v2-${createHash('sha256').update(notificationId).digest('hex')}`;
@@ -49,6 +50,11 @@ const terminalProcessingErrors = new Set([
   'MERCADO_LIVRE_ORDER_ITEM_INVALID',
 ]);
 
+const coordinationRetryErrors = new Set([
+  'MERCADO_LIVRE_ORDER_PROCESSING_LEASE_BUSY',
+  'MERCADO_LIVRE_ORDER_PROCESSING_LEASE_LOST',
+]);
+
 export const isMercadoLivreOrderQueueTerminalEnvelopeError = (code: string): boolean =>
   terminalEnvelopeErrors.has(code);
 
@@ -75,31 +81,83 @@ const quarantinePendingInbox = async (input: {
   });
 };
 
+interface RetryableFailureRecordResult {
+  exhausted: boolean;
+  failureCount: number;
+}
+
 const recordRetryableFailure = async (input: {
   inboxId: string;
   error: unknown;
-}): Promise<void> => {
+}): Promise<RetryableFailureRecordResult> => {
+  const code = errorCode(input.error);
+  if (coordinationRetryErrors.has(code)) {
+    return { exhausted: false, failureCount: 0 };
+  }
+
   const inboxRef = adminDb.doc(`integrationWebhookInbox/${input.inboxId}`);
   try {
-    await adminDb.runTransaction(async transaction => {
+    return await adminDb.runTransaction(async transaction => {
       const snapshot = await transaction.get(inboxRef);
-      if (!snapshot.exists) return;
-      const status = String(snapshot.data()?.processingStatus ?? '').trim();
-      if (status !== 'pending') return;
+      if (!snapshot.exists) return { exhausted: false, failureCount: 0 };
+      const data = snapshot.data() as Record<string, unknown>;
+      const status = String(data.processingStatus ?? '').trim();
+      const outcome = String(data.processingOutcome ?? '').trim();
+      const existingCount = Number(data.retryableFailureCount ?? 0);
+      const failureCount = Number.isFinite(existingCount) && existingCount > 0
+        ? Math.trunc(existingCount) + 1
+        : 1;
+
+      if (status === 'failed' && outcome === 'retry_exhausted') {
+        return { exhausted: true, failureCount: Math.max(failureCount - 1, MAX_RETRYABLE_FAILURES) };
+      }
+      if (status !== 'pending') return { exhausted: false, failureCount: Math.max(0, failureCount - 1) };
+
+      const exhausted = failureCount >= MAX_RETRYABLE_FAILURES;
       transaction.update(inboxRef, {
-        processingOutcome: 'retryable_infrastructure_failure',
-        lastRetryableErrorCode: errorCode(input.error),
+        ...(exhausted ? {
+          processingStatus: 'failed',
+          processingOutcome: 'retry_exhausted',
+          processingAuthority: 'manual_review_required',
+          resolutionAuthority: 'manual_review_required',
+          manualReviewRequired: true,
+          retryExhaustedAt: FieldValue.serverTimestamp(),
+          failedAt: FieldValue.serverTimestamp(),
+        } : {
+          processingOutcome: 'retryable_infrastructure_failure',
+        }),
+        lastRetryableErrorCode: code,
         lastRetryableErrorDiagnostic: errorDiagnostic(input.error),
-        retryableFailureCount: FieldValue.increment(1),
+        retryableFailureCount: failureCount,
+        retryableFailureBudget: MAX_RETRYABLE_FAILURES,
+        firstRetryableFailureAt: data.firstRetryableFailureAt || FieldValue.serverTimestamp(),
         lastRetryableFailureAt: FieldValue.serverTimestamp(),
       });
+      return { exhausted, failureCount };
     });
   } catch (recordError) {
     console.error('[Mercado Livre order Queue retry metadata]', {
       inboxId: input.inboxId,
       error: errorCode(recordError),
     });
+    return { exhausted: false, failureCount: 0 };
   }
+};
+
+const exhaustedInboxDisposition = async (inboxId: string): Promise<MercadoLivreOrderQueueConsumeResult | null> => {
+  const snapshot = await adminDb.doc(`integrationWebhookInbox/${inboxId}`).get();
+  if (!snapshot.exists) return null;
+  const data = snapshot.data() as Record<string, unknown>;
+  if (
+    String(data.processingStatus ?? '').trim() !== 'failed' ||
+    String(data.processingOutcome ?? '').trim() !== 'retry_exhausted'
+  ) return null;
+  return {
+    disposition: 'retry_exhausted',
+    inboxId,
+    outcome: 'manual_review_required',
+    errorCode: String(data.lastRetryableErrorCode ?? '').trim() || undefined,
+  };
 };
 
 interface OrderProcessingLease {
@@ -266,6 +324,9 @@ export const consumeMercadoLivreOrderQueueMessage = async (
     };
   }
 
+  const alreadyExhausted = await exhaustedInboxDisposition(ingested.inboxId);
+  if (alreadyExhausted) return alreadyExhausted;
+
   let lease: OrderProcessingLease | null = null;
   let stopHeartbeat: (() => void) | null = null;
   try {
@@ -292,7 +353,15 @@ export const consumeMercadoLivreOrderQueueMessage = async (
         errorCode: code,
       };
     }
-    await recordRetryableFailure({ inboxId: ingested.inboxId, error });
+    const retry = await recordRetryableFailure({ inboxId: ingested.inboxId, error });
+    if (retry.exhausted) {
+      return {
+        disposition: 'retry_exhausted',
+        inboxId: ingested.inboxId,
+        outcome: 'manual_review_required',
+        errorCode: code,
+      };
+    }
     throw error;
   } finally {
     stopHeartbeat?.();
