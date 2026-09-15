@@ -3,8 +3,8 @@
   "buildCommand": "npm run build && node scripts/normalize-serverless-esm-imports.mjs && npm run lint",
   "git": {
     "deploymentEnabled": {
+      "*": false,
       "main": true,
-      "codex/*": false,
       "preview-*": true
     }
   },
