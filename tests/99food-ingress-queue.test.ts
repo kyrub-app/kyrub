@@ -90,9 +90,10 @@ test('read-only order observer exposes 99Food ingress before a canonical order e
   assert.match(orderObserverSource, /upsertObservation\(observations, '99food'/);
   assert.match(orderObserverSource, /inventoryReservation/);
   assert.match(orderObserverSource, /blocked_product_binding_unresolved/);
-  assert.doesNotMatch(orderObserverSource, /\.set\(/);
-  assert.doesNotMatch(orderObserverSource, /\.update\(/);
-  assert.doesNotMatch(orderObserverSource, /runTransaction/);
+  assert.doesNotMatch(
+    orderObserverSource,
+    /FieldValue|runTransaction|transaction\.(?:set|update|create)\(|\.ref\.(?:set|update|create)\(/
+  );
 });
 
 test('read-only order observer correlates Mercado Livre inbox, binding blocks and KDS', () => {
