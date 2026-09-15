@@ -5,6 +5,7 @@ import { createMercadoLivreOrderQueueIngressRouter } from './mercadoLivreOrderQu
 import { createMercadoLivreRouter } from './mercadoLivreRouter.js';
 import { createMercadoLivreStockExecutionRouter } from './mercadoLivreStockExecutionRouter.js';
 import { createMercadoLivreE2ETestRouter } from './mercadoLivreE2ETestRouter.js';
+import { createOmnichannelOrderObservationRouter } from './omnichannelOrderObservationRouter.js';
 
 type QueryValue = string | string[] | undefined;
 
@@ -52,6 +53,11 @@ app.use(
   '/api/store-connections/mercado-livre',
   integrationRateLimiter,
   createMercadoLivreE2ETestRouter()
+);
+app.use(
+  '/api/store-connections/omnichannel',
+  integrationRateLimiter,
+  createOmnichannelOrderObservationRouter()
 );
 app.use(
   '/api/store-connections',
