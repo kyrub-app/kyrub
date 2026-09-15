@@ -188,25 +188,6 @@ export const createMercadoLivreE2ETestRouter = (): Router => {
     }
   });
 
-  router.post('/:storeId/e2e/order-ingress-blocks/:orderId/retry-after-binding', async (request, response) => {
-    try {
-      const storeId = clean(request.params.storeId);
-      const identity = await authenticatedOwner(request.get('authorization') ?? '', storeId);
-      response.setHeader('Cache-Control', 'no-store, max-age=0');
-      response.json(await retryMercadoLivreOrderIngressAfterBinding({
-        storeId,
-        orderId: clean(request.params.orderId),
-        requestedByUserId: identity.uid,
-      }));
-    } catch (error) {
-      const code = errorCode(error);
-      response.status(statusFor(code)).json({
-        error: 'Não foi possível reprocessar o pedido bloqueado pelo vínculo de produto.',
-        code,
-      });
-    }
-  });
-
   router.post('/:storeId/e2e/order-ingress-reviews/:inboxId/resolve', async (request, response) => {
     try {
       const storeId = clean(request.params.storeId);
@@ -224,6 +205,25 @@ export const createMercadoLivreE2ETestRouter = (): Router => {
       const code = errorCode(error);
       response.status(statusFor(code)).json({
         error: 'Não foi possível aplicar a decisão da revisão manual deste pedido.',
+        code,
+      });
+    }
+  });
+
+  router.post('/:storeId/e2e/order-ingress-blocks/:orderId/retry-after-binding', async (request, response) => {
+    try {
+      const storeId = clean(request.params.storeId);
+      const identity = await authenticatedOwner(request.get('authorization') ?? '', storeId);
+      response.setHeader('Cache-Control', 'no-store, max-age=0');
+      response.json(await retryMercadoLivreOrderIngressAfterBinding({
+        storeId,
+        orderId: clean(request.params.orderId),
+        requestedByUserId: identity.uid,
+      }));
+    } catch (error) {
+      const code = errorCode(error);
+      response.status(statusFor(code)).json({
+        error: 'Não foi possível reprocessar o pedido bloqueado pelo vínculo de produto.',
         code,
       });
     }
