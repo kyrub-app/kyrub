@@ -233,6 +233,7 @@ export const buildStaffTableOrder = (
     status: 'accepted',
     paymentStatus: 'unpaid',
     source: 'staff',
+    sourceChannel: 'kyrub',
     operatorId: user.uid,
     operatorName: operatorNameFor(user),
     createdAt: timestamp,
