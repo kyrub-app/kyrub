@@ -107,9 +107,62 @@ test('commercial confirmation is evidence only and never becomes the fiscal trig
     items: [{ productId: 'burger', kind: 'goods', fiscalProfileReady: true }],
   });
   assert.equal(candidate.commercialEvidence, 'confirmed');
+  assert.deepEqual(candidate.accountingDecisionEvidence, {
+    status: 'required',
+    policyReference: null,
+    recordedAt: null,
+  });
   assert.equal(candidate.trigger, null);
   assert.equal(candidate.status, 'accounting_decision_required');
   assert.equal(candidate.documentFamily, null);
+  assert.equal(candidate.emissionAuthority, 'none_until_accounting_policy');
+});
+
+test('recorded accounting decision reference still requires executable policy resolution', () => {
+  const candidate = evaluateFiscalEventCandidate({
+    storeId: 'store-1',
+    orderId: 'order-accounting-reference',
+    sourceChannel: 'kyrub',
+    commerciallyConfirmed: true,
+    accountingDecision: {
+      status: 'recorded',
+      policyReference: ' contador/parecer-fiscal-2026-09 ',
+      recordedAt: '2026-09-15T14:30:00-03:00',
+    },
+    items: [{ productId: 'burger', kind: 'goods', fiscalProfileReady: true }],
+  });
+
+  assert.deepEqual(candidate.accountingDecisionEvidence, {
+    status: 'recorded',
+    policyReference: 'contador/parecer-fiscal-2026-09',
+    recordedAt: '2026-09-15T17:30:00.000Z',
+  });
+  assert.equal(candidate.status, 'accounting_policy_resolution_required');
+  assert.equal(candidate.trigger, null);
+  assert.equal(candidate.documentFamily, null);
+  assert.equal(candidate.emissionAuthority, 'none_until_accounting_policy');
+});
+
+test('incomplete accounting reference is rejected back to decision-required', () => {
+  const candidate = evaluateFiscalEventCandidate({
+    storeId: 'store-1',
+    orderId: 'order-invalid-accounting-reference',
+    sourceChannel: 'mercado_livre',
+    commerciallyConfirmed: true,
+    accountingDecision: {
+      status: 'recorded',
+      policyReference: '',
+      recordedAt: '2026-09-15T17:30:00.000Z',
+    },
+    items: [{ productId: 'burger', kind: 'goods', fiscalProfileReady: true }],
+  });
+
+  assert.deepEqual(candidate.accountingDecisionEvidence, {
+    status: 'required',
+    policyReference: null,
+    recordedAt: null,
+  });
+  assert.equal(candidate.status, 'accounting_decision_required');
   assert.equal(candidate.emissionAuthority, 'none_until_accounting_policy');
 });
 
