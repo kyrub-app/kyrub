@@ -16,6 +16,26 @@ const gerencialIntegrationsSource = readFileSync(
   'src/components/GerencialIntegrationsRuntime.tsx',
   'utf8'
 );
+const gerencialPanelSource = readFileSync(
+  'src/components/GerencialPanel.tsx',
+  'utf8'
+);
+const administrativeAuditServiceSource = readFileSync(
+  'server/integrations/storeAdministrativeAuditService.ts',
+  'utf8'
+);
+const onboardingRouterSource = readFileSync(
+  'server/integrations/storeConnectionOnboardingRouter.ts',
+  'utf8'
+);
+const administrativeAuditWorkspaceSource = readFileSync(
+  'src/components/store/StoreAdministrativeAuditWorkspace.tsx',
+  'utf8'
+);
+const administrativeAuditClientSource = readFileSync(
+  'src/utils/storeAdministrativeAudit.ts',
+  'utf8'
+);
 const hoursSource = readFileSync(
   'src/components/store/StoreOpeningHoursEditor.tsx',
   'utf8'
@@ -89,6 +109,50 @@ test('Mercado Livre remains on the canonical OAuth and E2E authority inside one 
   assert.match(gerencialIntegrationsSource, /close-mercado-livre-integration/);
   assert.match(gerencialIntegrationsSource, /params\.get\('integration'\) === 'mercado_livre'/);
   assert.match(gerencialIntegrationsSource, /aria-modal="true"/);
+});
+
+test('store Gerencial exposes an independent read-only Actions and Audit module', () => {
+  assert.match(gerencialPanelSource, /\| 'auditoria'/);
+  assert.match(gerencialPanelSource, /auditoria: 'Ações & Auditoria'/);
+  assert.match(gerencialPanelSource, /title="Ações & Auditoria"/);
+  assert.match(gerencialPanelSource, /<StoreAdministrativeAuditWorkspace user=\{user\} storeId=\{user\.uid\}/);
+  assert.match(administrativeAuditWorkspaceSource, /ADM do lojista · somente leitura/);
+  assert.match(administrativeAuditWorkspaceSource, /O Kyrub não cria registros fictícios/);
+  assert.doesNotMatch(administrativeAuditWorkspaceSource, /method:\s*'POST'|method:\s*'PUT'|method:\s*'PATCH'|method:\s*'DELETE'/);
+});
+
+test('administrative audit API is owner-only and exposes a GET projection without browser write authority', () => {
+  assert.match(onboardingRouterSource, /router\.get\('\/:storeId\/administrative-audit'/);
+  assert.match(onboardingRouterSource, /authenticatedOwner\(request\.get\('authorization'\)/);
+  assert.match(onboardingRouterSource, /loadStoreAdministrativeAudit\(/);
+  assert.match(onboardingRouterSource, /requestedByUserId: identity\.uid/);
+  assert.doesNotMatch(onboardingRouterSource, /router\.(?:post|put|patch|delete)\('\/:storeId\/administrative-audit'/);
+  assert.match(administrativeAuditClientSource, /method:\s*'POST'|fetch\(/);
+  assert.doesNotMatch(administrativeAuditClientSource, /method:\s*'(?:POST|PUT|PATCH|DELETE)'/);
+});
+
+test('administrative audit projects real domain evidence and degrades individual unavailable sources safely', () => {
+  assert.match(administrativeAuditServiceSource, /ownerGovernanceDecisions/);
+  assert.match(administrativeAuditServiceSource, /inventoryAuthorityRepairs/);
+  assert.match(administrativeAuditServiceSource, /integrationManualReviewAudit/);
+  assert.match(administrativeAuditServiceSource, /administrativeAudit/);
+  assert.match(administrativeAuditServiceSource, /Promise\.allSettled/);
+  assert.match(administrativeAuditServiceSource, /sourceWarnings/);
+  assert.match(administrativeAuditServiceSource, /merged\.has\(event\.sourceRef\)/);
+  assert.match(administrativeAuditServiceSource, /readAuthority: 'store_owner'/);
+});
+
+test('future canonical store audit events are append-only server evidence, not browser claims', () => {
+  const appendStart = administrativeAuditServiceSource.indexOf('export const appendStoreAdministrativeAuditEvent');
+  const readStart = administrativeAuditServiceSource.indexOf('const resolveCanonicalStoreId', appendStart);
+  assert.ok(appendStart >= 0 && readStart > appendStart);
+  const appendSection = administrativeAuditServiceSource.slice(appendStart, readStart);
+  assert.match(appendSection, /transaction\.create\(auditRef/);
+  assert.match(appendSection, /FieldValue\.serverTimestamp\(\)/);
+  assert.match(appendSection, /sourceKind/);
+  assert.match(appendSection, /sourceRef/);
+  assert.doesNotMatch(appendSection, /transaction\.(?:update|set)\(auditRef/);
+  assert.doesNotMatch(administrativeAuditClientSource, /appendStoreAdministrativeAuditEvent|administrativeAudit\/.*(?:post|write)/i);
 });
 
 test('browser cannot claim an external integration is active', () => {
