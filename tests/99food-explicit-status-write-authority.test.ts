@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
+import './external-write-governance.test.js';
 
 const routerSource = readFileSync(
   'server/inventory/orderInventoryRouter.ts',
