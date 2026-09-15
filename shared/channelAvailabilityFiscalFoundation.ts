@@ -181,24 +181,65 @@ export interface FiscalItemPreparation {
   fiscalProfileReady: boolean;
 }
 
+export interface FiscalAccountingDecisionEvidenceInput {
+  status: 'required' | 'recorded';
+  policyReference: string;
+  recordedAt: string;
+}
+
+export interface FiscalAccountingDecisionEvidence {
+  status: 'required' | 'recorded';
+  policyReference: string | null;
+  recordedAt: string | null;
+}
+
 export interface FiscalEventCandidate {
   storeId: string;
   orderId: string;
   sourceChannel: CommerceChannel;
   commercialEvidence: 'confirmed' | 'not_confirmed';
+  accountingDecisionEvidence: FiscalAccountingDecisionEvidence;
   trigger: null;
-  status: 'accounting_decision_required';
+  status:
+    | 'accounting_decision_required'
+    | 'accounting_policy_resolution_required';
   documentFamily: null;
   missingProductIds: string[];
   authority: 'canonical_order_and_fiscal_preparation';
   emissionAuthority: 'none_until_accounting_policy';
 }
 
+const normalizeFiscalAccountingDecisionEvidence = (
+  value: FiscalAccountingDecisionEvidenceInput | undefined
+): FiscalAccountingDecisionEvidence => {
+  if (!value || value.status !== 'recorded') {
+    return { status: 'required', policyReference: null, recordedAt: null };
+  }
+
+  const policyReference = typeof value.policyReference === 'string'
+    ? value.policyReference.trim().slice(0, 120)
+    : '';
+  const timestamp = typeof value.recordedAt === 'string'
+    ? Date.parse(value.recordedAt)
+    : Number.NaN;
+
+  if (!policyReference || !Number.isFinite(timestamp)) {
+    return { status: 'required', policyReference: null, recordedAt: null };
+  }
+
+  return {
+    status: 'recorded',
+    policyReference,
+    recordedAt: new Date(timestamp).toISOString(),
+  };
+};
+
 export const evaluateFiscalEventCandidate = (input: {
   storeId: string;
   orderId: string;
   sourceChannel: CommerceChannel;
   commerciallyConfirmed: boolean;
+  accountingDecision?: FiscalAccountingDecisionEvidenceInput;
   items: FiscalItemPreparation[];
 }): FiscalEventCandidate => {
   const missingProductIds = input.items
@@ -206,16 +247,23 @@ export const evaluateFiscalEventCandidate = (input: {
     .map(item => item.productId)
     .filter(Boolean)
     .sort();
+  const accountingDecisionEvidence = normalizeFiscalAccountingDecisionEvidence(
+    input.accountingDecision
+  );
 
   return {
     storeId: input.storeId,
     orderId: input.orderId,
     sourceChannel: input.sourceChannel,
     commercialEvidence: input.commerciallyConfirmed ? 'confirmed' : 'not_confirmed',
-    // Commercial confirmation is evidence only. The accounting policy must define
-    // the legal fiscal trigger and document family before emission can exist.
+    accountingDecisionEvidence,
+    // Commercial confirmation and an external accounting-policy reference are
+    // evidence only. A resolved executable policy must still define the legal
+    // fiscal trigger and document family before emission authority can exist.
     trigger: null,
-    status: 'accounting_decision_required',
+    status: accountingDecisionEvidence.status === 'recorded'
+      ? 'accounting_policy_resolution_required'
+      : 'accounting_decision_required',
     documentFamily: null,
     missingProductIds,
     authority: 'canonical_order_and_fiscal_preparation',
