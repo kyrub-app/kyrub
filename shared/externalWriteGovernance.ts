@@ -141,15 +141,15 @@ export const evaluateExternalWriteAuthorizationRequest = (
 export const evaluateExternalWriteAttempt = (
   context: ExternalWriteAttemptContext
 ): ExternalWriteAttemptDecision => {
-  const authorization = context.authorization;
-  const preflight = evaluateExternalWriteAuthorizationRequest({
-    request: context.request,
-    userSignal: context.userSignal,
-    authorizedFields: authorization?.authorizedFields ?? [],
-    protectedFields: authorization?.protectedFields ?? [],
-  });
-  if (!preflight.allowed) return preflight;
-
+  if (!hasValidScope(context.request)) {
+    return { allowed: false, code: 'INVALID_REQUEST_SCOPE' };
+  }
+  if (context.userSignal === 'local_persistence') {
+    return { allowed: false, code: 'LOCAL_PERSISTENCE_NOT_AUTHORITY' };
+  }
+  if (context.userSignal === 'generic_confirmation') {
+    return { allowed: false, code: 'GENERIC_CONFIRMATION_NOT_AUTHORITY' };
+  }
   if (context.reconciled) {
     return { allowed: false, code: 'ALREADY_RECONCILED' };
   }
@@ -157,9 +157,17 @@ export const evaluateExternalWriteAttempt = (
     return { allowed: false, code: 'PROVIDER_WRITE_ALREADY_ATTEMPTED' };
   }
 
+  const authorization = context.authorization;
   if (!authorization || authorization.authoritySource !== 'explicit_user_authorization') {
     return { allowed: false, code: 'EXPLICIT_AUTHORIZATION_REQUIRED' };
   }
+
+  const fieldScope = evaluateFieldScope(
+    authorization.authorizedFields,
+    authorization.protectedFields
+  );
+  if (!fieldScope.allowed) return fieldScope;
+
   if (!hasValidScope(authorization) || !clean(authorization.authorizationId)) {
     return { allowed: false, code: 'AUTHORIZATION_SCOPE_INVALID' };
   }
