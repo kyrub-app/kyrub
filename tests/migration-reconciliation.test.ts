@@ -38,6 +38,7 @@ const order = (overrides: Partial<CustomerOrder> = {}): CustomerOrder => ({
   status: 'accepted',
   paymentStatus: 'partial',
   source: 'customer',
+  sourceChannel: 'kyrub',
   operatorId: '',
   operatorName: '',
   createdAt: '2026-07-22T10:00:00.000Z',
