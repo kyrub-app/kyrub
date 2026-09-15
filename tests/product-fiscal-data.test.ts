@@ -24,6 +24,18 @@ const fiscalSimulationSource = readFileSync(
   'shared/fiscalSimulation.ts',
   'utf8'
 );
+const fiscalPreflightReadSource = readFileSync(
+  'server/integrations/fiscalPreflightReadService.ts',
+  'utf8'
+);
+const connectionRouterSource = readFileSync(
+  'server/integrations/storeConnectionOnboardingRouter.ts',
+  'utf8'
+);
+const storeConnectionsTransportSource = readFileSync(
+  'server/integrations/storeConnectionsServerlessTransport.ts',
+  'utf8'
+);
 
 test('disabled fiscal preparation keeps the item free of fiscal requirements', () => {
   const draft = createEmptyProductFiscalProfile('goods');
@@ -264,4 +276,40 @@ test('fiscal simulation requires an auditable timestamp instead of inventing one
     }),
     /FISCAL_SIMULATION_TIMESTAMP_INVALID/
   );
+});
+
+test('canonical fiscal preflight reads server truth instead of accepting browser fiscal evidence', () => {
+  assert.match(fiscalPreflightReadSource, /tenants\/\$\{tenantId\}/);
+  assert.match(fiscalPreflightReadSource, /users\/\$\{tenantId\}\/private_store\/inventory/);
+  assert.match(fiscalPreflightReadSource, /stores\/\$\{canonicalStoreId\}\/orders\/\$\{orderId\}/);
+  assert.match(fiscalPreflightReadSource, /productFiscalProfiles/);
+  assert.match(fiscalPreflightReadSource, /fiscalAccountingDecision/);
+  assert.match(fiscalPreflightReadSource, /order\.paymentStatus === 'paid'/);
+  assert.match(fiscalPreflightReadSource, /simulateFiscalPreflight/);
+  assert.match(fiscalPreflightReadSource, /commercialConfirmationAuthority: 'canonical_order_payment_status'/);
+});
+
+test('canonical fiscal preflight is strictly read-only and cannot call a fiscal or marketplace provider', () => {
+  assert.doesNotMatch(
+    fiscalPreflightReadSource,
+    /\.set\(|\.update\(|\.create\(|runTransaction|FieldValue|\.batch\(|fetch\s*\(|mercadoLivrePutJson|sendNinetyNineFood/
+  );
+  assert.match(fiscalPreflightReadSource, /readAuthority: 'server_canonical_read_only'/);
+});
+
+test('owner-only fiscal preflight route accepts identifiers only and reuses the existing store-connections serverless budget', () => {
+  const routeStart = connectionRouterSource.indexOf(
+    "router.get('/:storeId/fiscal-preflight/:orderId'"
+  );
+  const routeEnd = connectionRouterSource.indexOf(
+    "router.get('/:storeId/inventory-authority-health'",
+    routeStart
+  );
+  assert.ok(routeStart >= 0 && routeEnd > routeStart);
+  const routeSource = connectionRouterSource.slice(routeStart, routeEnd);
+  assert.match(routeSource, /authenticatedOwner/);
+  assert.match(routeSource, /loadCanonicalFiscalPreflight/);
+  assert.doesNotMatch(routeSource, /request\.body|request\.query/);
+  assert.match(storeConnectionsTransportSource, /createStoreConnectionOnboardingRouter/);
+  assert.match(storeConnectionsTransportSource, /\/api\/store-connections/);
 });
