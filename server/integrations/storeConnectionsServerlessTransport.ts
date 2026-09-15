@@ -1,10 +1,10 @@
 import express from 'express';
 import rateLimit from 'express-rate-limit';
 import { createStoreConnectionOnboardingRouter } from './storeConnectionOnboardingRouter.js';
+import { createMercadoLivreOrderQueueIngressRouter } from './mercadoLivreOrderQueueIngressRouter.js';
 import { createMercadoLivreRouter } from './mercadoLivreRouter.js';
 import { createMercadoLivreStockExecutionRouter } from './mercadoLivreStockExecutionRouter.js';
 import { createMercadoLivreE2ETestRouter } from './mercadoLivreE2ETestRouter.js';
-import { createMercadoLivreOrderIngressWorkerRouter } from './mercadoLivreOrderIngressWorkerRouter.js';
 
 type QueryValue = string | string[] | undefined;
 
@@ -36,6 +36,11 @@ const integrationRateLimiter = rateLimit({
 app.use(
   '/api/store-connections/mercado-livre',
   integrationRateLimiter,
+  createMercadoLivreOrderQueueIngressRouter()
+);
+app.use(
+  '/api/store-connections/mercado-livre',
+  integrationRateLimiter,
   createMercadoLivreRouter()
 );
 app.use(
@@ -47,11 +52,6 @@ app.use(
   '/api/store-connections/mercado-livre',
   integrationRateLimiter,
   createMercadoLivreE2ETestRouter()
-);
-app.use(
-  '/api/store-connections/mercado-livre',
-  integrationRateLimiter,
-  createMercadoLivreOrderIngressWorkerRouter()
 );
 app.use(
   '/api/store-connections',
