@@ -20,7 +20,8 @@ const productModalSource = readFileSync(
   'utf8'
 );
 const proxySource = readFileSync('server/driveMediaProxy.ts', 'utf8');
-const serverlessSource = readFileSync('api/media/drive.ts', 'utf8');
+const healthSource = readFileSync('api/health.ts', 'utf8');
+const vercelSource = readFileSync('vercel.json', 'utf8');
 const serverSource = readFileSync('server.ts', 'utf8');
 
 test('Drive picker requests per-file access through Firebase reauthentication', () => {
@@ -63,10 +64,13 @@ test('new products accept Drive-backed image references', () => {
   assert.match(pickerButtonSource, /pickPublicGoogleDriveImage/);
 });
 
-test('Drive media is proxied locally and on Vercel with image-only validation', () => {
+test('Drive media keeps the public endpoint while reusing health serverless transport', () => {
   assert.match(proxySource, /contentType\.startsWith\('image\/'\)/);
   assert.match(proxySource, /X-Content-Type-Options/);
   assert.match(proxySource, /stale-while-revalidate/);
-  assert.match(serverlessSource, /proxyPublicGoogleDriveImage/);
+  assert.match(vercelSource, /"source": "\/api\/media\/drive"/);
+  assert.match(vercelSource, /"destination": "\/api\/health\?transport=drive-media"/);
+  assert.match(healthSource, /transport === 'drive-media'/);
+  assert.match(healthSource, /proxyPublicGoogleDriveImage/);
   assert.match(serverSource, /"\/api\/media\/drive"/);
 });
