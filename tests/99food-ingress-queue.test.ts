@@ -33,6 +33,10 @@ const orderObserverSource = readFileSync(
   'server/integrations/omnichannelOrderObservationService.ts',
   'utf8'
 );
+const orderObserverEscalationSource = readFileSync(
+  'server/integrations/omnichannelOrderObservationEscalationService.ts',
+  'utf8'
+);
 const orderObserverRouterSource = readFileSync(
   'server/integrations/omnichannelOrderObservationRouter.ts',
   'utf8'
@@ -107,10 +111,27 @@ test('read-only order observer correlates Mercado Livre inbox, binding blocks an
   assert.doesNotMatch(orderObserverSource, /fiscal|sefaz|cfop|cst/i);
 });
 
+test('retry-exhausted Mercado Livre inbox is visible as manual-review divergence without writes', () => {
+  assert.match(orderObserverEscalationSource, /processingOutcome, 120\) !== 'retry_exhausted'/);
+  assert.match(orderObserverEscalationSource, /manualReviewRequired !== true/);
+  assert.match(orderObserverEscalationSource, /retryableFailureCount/);
+  assert.match(orderObserverEscalationSource, /retryableFailureBudget/);
+  assert.match(orderObserverEscalationSource, /lastRetryableErrorCode/);
+  assert.match(orderObserverEscalationSource, /lastRetryableErrorDiagnostic/);
+  assert.match(orderObserverEscalationSource, /retry_exhausted_manual_review_required/);
+  assert.match(orderObserverEscalationSource, /manualReviews/);
+  assert.match(orderObserverEscalationSource, /observation\.divergence\.state = 'open'/);
+  assert.doesNotMatch(
+    orderObserverEscalationSource,
+    /FieldValue|runTransaction|transaction\.(?:set|update|create)\(|\.ref\.(?:set|update|create)\(/
+  );
+});
+
 test('omnichannel order observation reuses the existing serverless transport and owner auth', () => {
   assert.match(orderObserverRouterSource, /verifyIdToken\(token, true\)/);
   assert.match(orderObserverRouterSource, /OMNICHANNEL_ORDER_OBSERVATION_FORBIDDEN/);
   assert.match(orderObserverRouterSource, /\/orders\/recent/);
+  assert.match(orderObserverRouterSource, /listRecentOmnichannelObservedOrdersWithEscalations/);
   assert.match(storeConnectionsTransportSource, /createOmnichannelOrderObservationRouter/);
   assert.match(storeConnectionsTransportSource, /\/api\/store-connections\/omnichannel/);
 });
