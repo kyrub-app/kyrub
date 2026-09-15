@@ -1,3 +1,4 @@
+import { evaluateExternalWriteAuthorizationRequest } from '../../shared/externalWriteGovernance';
 import type { CustomerOrderStatus } from './customerOrders';
 import { recordOmnichannelE2EEvidence } from './omnichannelE2EEvidence';
 
@@ -49,6 +50,22 @@ const normalizeRequest = (
   if (!storeId || !orderId || !status) return null;
   return { storeId, orderId, status };
 };
+
+const sharedGovernanceAllowsProviderWrite = (
+  request: NinetyNineFoodStatusWriteAuthorityRequest
+): boolean =>
+  evaluateExternalWriteAuthorizationRequest({
+    request: {
+      storeId: request.storeId,
+      channel: '99food',
+      operationKind: 'order.status_transition',
+      operationRef: `${request.orderId}:${request.status}`,
+      targetRef: request.orderId,
+    },
+    userSignal: 'explicit_authorization',
+    authorizedFields: ['status'],
+    protectedFields: [],
+  }).allowed;
 
 const notifyChanged = (): void => {
   window.dispatchEvent(
@@ -109,6 +126,15 @@ export const resolveNinetyNineFoodStatusWriteAuthority = (
   const resolver = pendingAuthority.resolve;
   pendingAuthority = null;
   notifyChanged();
+
+  if (
+    choice === 'kyrub_and_99food' &&
+    !sharedGovernanceAllowsProviderWrite(normalized)
+  ) {
+    resolver('cancel');
+    return false;
+  }
+
   resolver(choice);
   return true;
 };
