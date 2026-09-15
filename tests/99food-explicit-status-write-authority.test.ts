@@ -7,6 +7,10 @@ const routerSource = readFileSync(
   'server/inventory/orderInventoryRouter.ts',
   'utf8'
 );
+const executionRouterSource = readFileSync(
+  'server/inventory/ninetyNineFoodStatusSyncExecutionRouter.ts',
+  'utf8'
+);
 const workflowSource = readFileSync(
   'src/utils/orderWorkflow.ts',
   'utf8'
@@ -24,21 +28,34 @@ const bridgeSource = readFileSync(
   'utf8'
 );
 
-test('legacy server 99Food provider authorization remains validated before canonical local status transition', () => {
+test('legacy server 99Food provider authorization remains behind the pre-router shutdown boundary', () => {
   const routeStart = routerSource.indexOf("router.post('/:orderId/status'");
   const routeSection = routerSource.slice(routeStart);
   const suppliedIndex = routeSection.indexOf('const providerAuthorizationSupplied =');
   const parseIndex = routeSection.indexOf('parseProviderWriteAuthorization(');
-  const invalidIndex = routeSection.indexOf("throw new Error('Autorização 99Food inválida para este status do pedido.')");
-  const providerMismatchIndex = routeSection.indexOf("throw new Error('Autorização 99Food não corresponde ao provedor deste pedido.')");
   const transitionIndex = routeSection.indexOf('transitionOrderStatusWithInventory(');
 
   assert.ok(routeStart >= 0);
   assert.ok(suppliedIndex >= 0);
   assert.ok(parseIndex > suppliedIndex);
-  assert.ok(invalidIndex > parseIndex);
-  assert.ok(providerMismatchIndex > invalidIndex);
-  assert.ok(transitionIndex > providerMismatchIndex);
+  assert.ok(transitionIndex > parseIndex);
+});
+
+test('99Food pre-router rejects embedded legacy provider authority before lock or legacy status handling', () => {
+  const functionStart = executionRouterSource.indexOf('const serializeNinetyNineFoodStatusMutation = async');
+  const functionEnd = executionRouterSource.indexOf('export const createNinetyNineFoodStatusSyncExecutionRouter', functionStart);
+  const section = executionRouterSource.slice(functionStart, functionEnd);
+  const providerIndex = section.indexOf("clean(integration.provider) !== '99food'");
+  const legacyGuardIndex = section.indexOf('request.body?.providerWriteAuthorization !== undefined');
+  const lockIndex = section.indexOf('claimOrderStatusMutation({ tenantId, orderId })');
+
+  assert.ok(functionStart >= 0);
+  assert.ok(providerIndex >= 0);
+  assert.ok(legacyGuardIndex > providerIndex);
+  assert.ok(lockIndex > legacyGuardIndex);
+  assert.match(section, /response\.status\(410\)\.json/);
+  assert.match(section, /NINETY_NINE_FOOD_LEGACY_STATUS_AUTHORITY_DISABLED/);
+  assert.match(section, /autorização one-time do servidor/);
 });
 
 test('initial client never self-asserts provider authority in the local status POST', () => {
