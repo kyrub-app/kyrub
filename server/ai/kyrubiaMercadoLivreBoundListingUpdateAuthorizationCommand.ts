@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { KyrubAiConsultantResponse } from '../../shared/aiConsultant.js';
+import { evaluateExternalWriteAuthorizationRequest } from '../../shared/externalWriteGovernance.js';
 import { adminDb } from '../firebaseAdmin.js';
 import { authorizeMercadoLivreBoundListingUpdate } from '../integrations/mercadoLivreBoundListingUpdateAuthorizationService.js';
 import { executeAuthorizedMercadoLivreBoundListingUpdate } from '../integrations/mercadoLivreBoundListingUpdateExecutionService.js';
@@ -152,6 +153,22 @@ export const handleKyrubiaMercadoLivreBoundUpdateAuthorizationCommand = async (i
     proposedPrice !== command.toPrice ||
     observedPrice !== command.fromPrice
   ) return commandMismatchReply('PROPOSAL_SCOPE_MISMATCH');
+
+  const governance = evaluateExternalWriteAuthorizationRequest({
+    request: {
+      storeId: user.uid,
+      channel: 'mercado_livre',
+      operationKind: 'catalog.bound_listing.price_update',
+      proposalId: command.proposalId,
+      targetRef: command.externalItemId,
+    },
+    userSignal: 'explicit_authorization',
+    authorizedFields: proposal.changedFields,
+    protectedFields: proposal.protectedFields,
+  });
+  if (!governance.allowed) {
+    return commandMismatchReply(`EXTERNAL_WRITE_GOVERNANCE_${governance.code}`);
+  }
 
   if (proposal.executionStatus === 'reconciled') {
     return response(
