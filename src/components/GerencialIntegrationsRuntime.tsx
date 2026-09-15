@@ -2,11 +2,13 @@ import { useEffect, useState } from 'react';
 import { onAuthStateChanged, type User } from 'firebase/auth';
 import { auth } from '../utils/firebase';
 import {
+  createEmptyStoreFiscalAccountingDecision,
   createEmptyStoreIntegrationPlans,
   loadCachedStoreOperationalSettings,
   persistStoreIntegrationPlans,
   saveCachedStoreOperationalSettings,
   subscribeToStoreOperationalSettings,
+  type StoreFiscalAccountingDecisionRecord,
   type StoreIntegrationPlans,
 } from '../utils/storeOperationalSettings';
 import MercadoLivreE2ETestBridge from './store/MercadoLivreE2ETestBridge';
@@ -27,6 +29,8 @@ export function GerencialIntegrationsRuntime({
   const [integrationPlans, setIntegrationPlans] = useState<StoreIntegrationPlans>(
     createEmptyStoreIntegrationPlans
   );
+  const [fiscalAccountingDecision, setFiscalAccountingDecision] =
+    useState<StoreFiscalAccountingDecisionRecord>(createEmptyStoreFiscalAccountingDecision);
   const [savingChannels, setSavingChannels] = useState(false);
   const [mercadoLivreOpen, setMercadoLivreOpen] = useState(false);
 
@@ -60,16 +64,19 @@ export function GerencialIntegrationsRuntime({
   useEffect(() => {
     if (!user) {
       setIntegrationPlans(createEmptyStoreIntegrationPlans());
+      setFiscalAccountingDecision(createEmptyStoreFiscalAccountingDecision());
       return;
     }
 
     const cached = loadCachedStoreOperationalSettings(localStorage, user.uid);
     setIntegrationPlans(cached.integrations);
+    setFiscalAccountingDecision(cached.fiscalAccountingDecision);
 
     return subscribeToStoreOperationalSettings(
       user,
       settings => {
         setIntegrationPlans(settings.integrations);
+        setFiscalAccountingDecision(settings.fiscalAccountingDecision);
         saveCachedStoreOperationalSettings(localStorage, user.uid, settings);
       },
       error => {
@@ -111,6 +118,8 @@ export function GerencialIntegrationsRuntime({
       setSavingChannels(false);
     }
   };
+
+  const accountingDecisionRecorded = fiscalAccountingDecision.status === 'recorded';
 
   return (
     <div className="space-y-5" id="kyrub-gerencial-integrations-runtime" data-kyrub-gerencial-module="integrations-lazy">
@@ -214,6 +223,68 @@ export function GerencialIntegrationsRuntime({
               </div>
             </div>
           )}
+
+          <section
+            className={`rounded-3xl border p-5 ${
+              accountingDecisionRecorded
+                ? 'border-emerald-500/20 bg-emerald-500/[0.04]'
+                : 'border-amber-500/20 bg-amber-500/[0.04]'
+            }`}
+            id="fiscal-accounting-decision-status"
+            aria-live="polite"
+          >
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="min-w-0">
+                <span
+                  className={`font-mono text-[9px] font-black uppercase tracking-[0.16em] ${
+                    accountingDecisionRecorded ? 'text-emerald-300' : 'text-amber-300'
+                  }`}
+                >
+                  Fiscal · somente leitura
+                </span>
+                <h3 className="mt-1 text-sm font-black uppercase text-white">
+                  {accountingDecisionRecorded
+                    ? 'Referência contábil registrada'
+                    : 'Decisão contábil pendente'}
+                </h3>
+                <p className="mt-2 max-w-2xl text-[10px] leading-relaxed text-slate-400">
+                  {accountingDecisionRecorded
+                    ? 'Existe evidência de uma orientação contábil registrada. Ela ainda não define gatilho fiscal, família de documento nem concede autoridade de emissão.'
+                    : 'A operação fiscal permanece aguardando orientação contábil. Nenhum gatilho, família de documento ou autoridade de emissão é definido por esta tela.'}
+                </p>
+              </div>
+              <span
+                className={`rounded-full border px-3 py-1 font-mono text-[8px] font-black uppercase tracking-wide ${
+                  accountingDecisionRecorded
+                    ? 'border-emerald-500/25 bg-emerald-500/10 text-emerald-200'
+                    : 'border-amber-500/25 bg-amber-500/10 text-amber-200'
+                }`}
+              >
+                {accountingDecisionRecorded ? 'Registrada' : 'Pendente'}
+              </span>
+            </div>
+
+            {accountingDecisionRecorded && (
+              <dl className="mt-4 grid gap-3 sm:grid-cols-2">
+                <div className="rounded-2xl border border-slate-800 bg-slate-950/40 p-3">
+                  <dt className="font-mono text-[8px] font-black uppercase tracking-wide text-slate-500">
+                    Referência da orientação
+                  </dt>
+                  <dd className="mt-1 break-words text-[10px] font-semibold text-slate-200">
+                    {fiscalAccountingDecision.policyReference}
+                  </dd>
+                </div>
+                <div className="rounded-2xl border border-slate-800 bg-slate-950/40 p-3">
+                  <dt className="font-mono text-[8px] font-black uppercase tracking-wide text-slate-500">
+                    Registrada em
+                  </dt>
+                  <dd className="mt-1 break-words text-[10px] font-semibold text-slate-200">
+                    {fiscalAccountingDecision.recordedAt}
+                  </dd>
+                </div>
+              </dl>
+            )}
+          </section>
 
           <section className="rounded-3xl border border-slate-800 bg-slate-900 p-5">
             <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
