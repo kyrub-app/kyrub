@@ -148,17 +148,45 @@ test('active Mercado Livre order processing lease is renewed while provider and 
   assert.match(queue, /holderToken !== lease\.holderToken/);
 });
 
-test('transient consumer failures stay pending, accumulate retry diagnostics and are rethrown to Queue', () => {
+test('transient consumer failures stay pending until the explicit retry budget is exhausted', () => {
   const queue = readFileSync('server/integrations/mercadoLivreOrderQueueService.ts', 'utf8');
+  assert.match(queue, /MAX_RETRYABLE_FAILURES = 12/);
   assert.match(queue, /recordRetryableFailure/);
   assert.match(queue, /processingOutcome: 'retryable_infrastructure_failure'/);
-  assert.match(queue, /retryableFailureCount: FieldValue\.increment\(1\)/);
+  assert.match(queue, /retryableFailureCount: failureCount/);
+  assert.match(queue, /retryableFailureBudget: MAX_RETRYABLE_FAILURES/);
+  assert.match(queue, /firstRetryableFailureAt/);
   assert.match(queue, /lastRetryableFailureAt: FieldValue\.serverTimestamp\(\)/);
-  const retryStart = queue.indexOf('const recordRetryableFailure');
-  const retryEnd = queue.indexOf('interface OrderProcessingLease', retryStart);
-  const retryBlock = queue.slice(retryStart, retryEnd);
-  assert.doesNotMatch(retryBlock, /processingStatus: 'failed'/);
-  assert.match(queue, /await recordRetryableFailure\(\{ inboxId: ingested\.inboxId, error \}\);\n    throw error;/);
+  assert.match(queue, /coordinationRetryErrors/);
+  assert.match(queue, /MERCADO_LIVRE_ORDER_PROCESSING_LEASE_BUSY/);
+  assert.match(queue, /MERCADO_LIVRE_ORDER_PROCESSING_LEASE_LOST/);
+});
+
+test('retry exhaustion preserves the inbox and escalates to manual review instead of throwing forever', () => {
+  const queue = readFileSync('server/integrations/mercadoLivreOrderQueueService.ts', 'utf8');
+  assert.match(queue, /failureCount >= MAX_RETRYABLE_FAILURES/);
+  assert.match(queue, /processingStatus: 'failed'/);
+  assert.match(queue, /processingOutcome: 'retry_exhausted'/);
+  assert.match(queue, /processingAuthority: 'manual_review_required'/);
+  assert.match(queue, /resolutionAuthority: 'manual_review_required'/);
+  assert.match(queue, /manualReviewRequired: true/);
+  assert.match(queue, /retryExhaustedAt: FieldValue\.serverTimestamp\(\)/);
+  assert.match(queue, /exhaustedInboxDisposition/);
+  assert.match(queue, /disposition: 'retry_exhausted'/);
+  assert.match(queue, /outcome: 'manual_review_required'/);
+  const catchStart = queue.indexOf('const retry = await recordRetryableFailure');
+  const throwAt = queue.indexOf('throw error;', catchStart);
+  const exhaustedReturnAt = queue.indexOf("disposition: 'retry_exhausted'", catchStart);
+  assert.ok(catchStart >= 0 && exhaustedReturnAt > catchStart && throwAt > exhaustedReturnAt);
+});
+
+test('already exhausted inbox is acknowledged deterministically on redelivery without another provider refetch', () => {
+  const queue = readFileSync('server/integrations/mercadoLivreOrderQueueService.ts', 'utf8');
+  const ingestAt = queue.indexOf('const ingested = await ingestMercadoLivreNotification(input)');
+  const exhaustedAt = queue.indexOf('const alreadyExhausted = await exhaustedInboxDisposition', ingestAt);
+  const leaseAt = queue.indexOf('lease = await acquireOrderProcessingLease', exhaustedAt);
+  assert.ok(ingestAt >= 0 && exhaustedAt > ingestAt && leaseAt > exhaustedAt);
+  assert.match(queue, /if \(alreadyExhausted\) return alreadyExhausted/);
 });
 
 test('Mercado Livre provider reads classify timeout network 429 and 5xx as retryable infrastructure failures', () => {
