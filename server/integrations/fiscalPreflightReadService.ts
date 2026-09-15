@@ -121,7 +121,7 @@ const parseCanonicalOrderFiscalEvidence = (
     throw new Error('FISCAL_PREFLIGHT_ORDER_INVALID');
   }
 
-  const itemsByProductId = new Map<string, FiscalItemPreparation['kind']>();
+  const itemsByProductId: Record<string, FiscalItemPreparation['kind']> = {};
   for (const rawItem of order.items) {
     const item = record(rawItem);
     const productId = clean(item.productId, 128);
@@ -131,17 +131,20 @@ const parseCanonicalOrderFiscalEvidence = (
     const kind: FiscalItemPreparation['kind'] = item.isService === true
       ? 'service'
       : 'goods';
-    const existingKind = itemsByProductId.get(productId);
+    const existingKind = itemsByProductId[productId];
     if (existingKind && existingKind !== kind) {
       throw new Error('FISCAL_PREFLIGHT_ORDER_INTEGRITY_INVALID');
     }
-    itemsByProductId.set(productId, kind);
+    itemsByProductId[productId] = kind;
   }
 
   return {
     sourceChannel: parseChannel(order.sourceChannel),
     paymentStatus: clean(order.paymentStatus, 40),
-    items: Array.from(itemsByProductId, ([productId, kind]) => ({ productId, kind })),
+    items: Object.entries(itemsByProductId).map(([productId, kind]) => ({
+      productId,
+      kind,
+    })),
   };
 };
 
