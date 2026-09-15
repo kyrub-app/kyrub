@@ -143,10 +143,12 @@ const resolveOrderBindings = async (input: {
   return { bindings, missingExternalItemIds, canonicalStoreId: resolvedCanonicalStoreId };
 };
 
-const currentOrderStatus = (value: unknown): string => {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return '';
-  return clean((value as Record<string, unknown>).status, 80);
-};
+const asRecord = (value: unknown): Record<string, unknown> =>
+  value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+
+const currentOrderStatus = (value: unknown): string => clean(asRecord(value).status, 80);
 
 const canonicalOrder = (
   order: Record<string, unknown>,
@@ -166,22 +168,47 @@ const canonicalOrder = (
   },
 });
 
-const integrationPatch = (input: {
+const legacyOrderFromCanonical = (
+  order: Record<string, unknown>,
+  tenantId: string
+): Record<string, unknown> => ({
+  ...order,
+  storeId: tenantId,
+});
+
+const integrationState = (input: {
   externalOrderId: string;
   providerStatus: string;
   inbox: MercadoLivreOrderInboxRecord;
   fetchedAt: string;
 }): Record<string, unknown> => ({
-  'integration.provider': 'mercado_livre',
-  'integration.externalOrderId': input.externalOrderId,
-  'integration.providerStatus': input.providerStatus,
-  'integration.authority': 'provider_api_refetch',
-  'integration.routingTarget': 'KDS',
-  'integration.connectionId': input.inbox.connectionId,
-  'integration.externalAccountId': input.inbox.externalAccountId,
-  'integration.lastNotificationId': input.inbox.notificationId,
-  'integration.lastNotificationTopic': input.inbox.topic,
-  'integration.lastProviderFetchAt': input.fetchedAt,
+  ...asRecord(asRecord(input).integration),
+  provider: 'mercado_livre',
+  externalOrderId: input.externalOrderId,
+  providerStatus: input.providerStatus,
+  authority: 'provider_api_refetch',
+  routingTarget: 'KDS',
+  connectionId: input.inbox.connectionId,
+  externalAccountId: input.inbox.externalAccountId,
+  lastNotificationId: input.inbox.notificationId,
+  lastNotificationTopic: input.inbox.topic,
+  lastProviderFetchAt: input.fetchedAt,
+});
+
+const mergeProviderState = (input: {
+  order: Record<string, unknown>;
+  externalOrderId: string;
+  providerStatus: string;
+  inbox: MercadoLivreOrderInboxRecord;
+  fetchedAt: string;
+  status?: string;
+}): Record<string, unknown> => ({
+  ...input.order,
+  ...(input.status ? { status: input.status } : {}),
+  integration: {
+    ...asRecord(input.order.integration),
+    ...integrationState(input),
+  },
   updatedAt: input.fetchedAt,
 });
 
@@ -245,60 +272,100 @@ export const processMercadoLivreOrderNotificationInboxItem = async (input: {
     const outcome = isMercadoLivreFinalCancellation(snapshot)
       ? 'cancelled_before_ingress'
       : 'awaiting_commercial_confirmation';
-    await inboxRef.update({
-      processingStatus: 'processed',
-      processedAt: FieldValue.serverTimestamp(),
-      processingAuthority: 'provider_api_refetch',
-      processingOutcome: outcome,
-      externalOrderId,
-      providerOrderStatus: snapshot.providerStatus,
+    await adminDb.runTransaction(async transaction => {
+      const currentInboxDocument = await transaction.get(inboxRef);
+      if (!currentInboxDocument.exists) throw new Error('MERCADO_LIVRE_NOTIFICATION_INBOX_NOT_FOUND');
+      const currentInbox = assertOrderInbox(currentInboxDocument.data());
+      if (currentInbox.processingStatus === 'processed') return;
+      if (currentInbox.processingStatus !== 'pending') {
+        throw new Error('MERCADO_LIVRE_NOTIFICATION_INBOX_NOT_PENDING');
+      }
+      transaction.update(inboxRef, {
+        processingStatus: 'processed',
+        processedAt: FieldValue.serverTimestamp(),
+        processingAuthority: 'provider_api_refetch',
+        processingOutcome: outcome,
+        externalOrderId,
+        providerOrderStatus: snapshot.providerStatus,
+      });
     });
     return { alreadyProcessed: false, externalOrderId, orderId, outcome };
   }
 
   if (existingStatus) {
-    const patch = integrationPatch({
-      externalOrderId,
-      providerStatus: snapshot.providerStatus,
-      inbox,
-      fetchedAt,
-    });
     let outcome: MercadoLivreOrderIngressResult['outcome'] = 'updated';
-    const transactionResult = await adminDb.runTransaction(async transaction => {
+    let processedByOtherWorker = false;
+    await adminDb.runTransaction(async transaction => {
       const currentInboxDocument = await transaction.get(inboxRef);
       if (!currentInboxDocument.exists) throw new Error('MERCADO_LIVRE_NOTIFICATION_INBOX_NOT_FOUND');
       const currentInbox = assertOrderInbox(currentInboxDocument.data());
-      if (currentInbox.processingStatus === 'processed') return 'already_processed' as const;
-      if (currentInbox.processingStatus !== 'pending') throw new Error('MERCADO_LIVRE_NOTIFICATION_INBOX_NOT_PENDING');
+      if (currentInbox.processingStatus === 'processed') {
+        processedByOtherWorker = true;
+        return;
+      }
+      if (currentInbox.processingStatus !== 'pending') {
+        throw new Error('MERCADO_LIVRE_NOTIFICATION_INBOX_NOT_PENDING');
+      }
 
-      if (isMercadoLivreFinalCancellation(snapshot) && existingStatus === 'pending') {
+      const currentLegacy = await transaction.get(legacyRef);
+      const currentCanonical = canonicalRef ? await transaction.get(canonicalRef) : null;
+      const currentCanonicalData = currentCanonical?.exists ? asRecord(currentCanonical.data()) : {};
+      const currentLegacyData = currentLegacy.exists ? asRecord(currentLegacy.data()) : {};
+      const authoritativeOrder = currentCanonical?.exists ? currentCanonicalData : currentLegacyData;
+      const authoritativeStatus = currentOrderStatus(authoritativeOrder);
+      if (!authoritativeStatus) throw new Error('MERCADO_LIVRE_ORDER_EXISTING_STATE_INVALID');
+
+      let nextStatus = authoritativeStatus;
+      if (isMercadoLivreFinalCancellation(snapshot) && authoritativeStatus === 'pending') {
         outcome = 'cancelled_pending_order';
-        transaction.set(legacyRef, { ...patch, status: 'cancelled' }, { merge: true });
-        if (canonicalRef) transaction.set(canonicalRef, { ...patch, status: 'cancelled' }, { merge: true });
+        nextStatus = 'cancelled';
+      } else if (
+        isMercadoLivreFinalCancellation(snapshot) &&
+        authoritativeStatus !== 'cancelled' &&
+        authoritativeStatus !== 'rejected'
+      ) {
+        outcome = 'provider_cancellation_review_required';
+        const divergenceRef = adminDb.doc(
+          `stores/${inbox.storeId}/omnichannelDivergences/mercado_livre_order_${externalOrderId}`
+        );
+        transaction.set(divergenceRef, {
+          provider: 'mercado_livre',
+          storeId: inbox.storeId,
+          orderId,
+          externalOrderId,
+          kind: 'provider_cancellation_after_kyrub_progress',
+          providerStatus: snapshot.providerStatus,
+          kyrubStatus: authoritativeStatus,
+          authority: 'manual_resolution_required',
+          detectedAt: fetchedAt,
+          serverDetectedAt: FieldValue.serverTimestamp(),
+        }, { merge: true });
+      }
+
+      const merge = (order: Record<string, unknown>) => mergeProviderState({
+        order,
+        externalOrderId,
+        providerStatus: snapshot.providerStatus,
+        inbox,
+        fetchedAt,
+        status: nextStatus,
+      });
+      const mergedAuthoritativeOrder = merge(authoritativeOrder);
+
+      if (currentLegacy.exists) {
+        transaction.set(legacyRef, merge(currentLegacyData));
       } else {
-        transaction.set(legacyRef, patch, { merge: true });
-        if (canonicalRef) transaction.set(canonicalRef, patch, { merge: true });
-        if (
-          isMercadoLivreFinalCancellation(snapshot) &&
-          existingStatus !== 'cancelled' &&
-          existingStatus !== 'rejected'
-        ) {
-          outcome = 'provider_cancellation_review_required';
-          const divergenceRef = adminDb.doc(
-            `stores/${inbox.storeId}/omnichannelDivergences/mercado_livre_order_${externalOrderId}`
+        transaction.set(legacyRef, legacyOrderFromCanonical(mergedAuthoritativeOrder, inbox.storeId));
+      }
+
+      if (canonicalRef) {
+        if (currentCanonical?.exists) {
+          transaction.set(canonicalRef, merge(currentCanonicalData));
+        } else {
+          transaction.set(
+            canonicalRef,
+            canonicalOrder(mergedAuthoritativeOrder, tenantCanonicalStoreId, inbox.storeId)
           );
-          transaction.set(divergenceRef, {
-            provider: 'mercado_livre',
-            storeId: inbox.storeId,
-            orderId,
-            externalOrderId,
-            kind: 'provider_cancellation_after_kyrub_progress',
-            providerStatus: snapshot.providerStatus,
-            kyrubStatus: existingStatus,
-            authority: 'manual_resolution_required',
-            detectedAt: fetchedAt,
-            serverDetectedAt: FieldValue.serverTimestamp(),
-          }, { merge: true });
         }
       }
 
@@ -311,9 +378,9 @@ export const processMercadoLivreOrderNotificationInboxItem = async (input: {
         providerOrderStatus: snapshot.providerStatus,
         orderId,
       });
-      return 'processed' as const;
     });
-    if (transactionResult === 'already_processed') return { alreadyProcessed: true, externalOrderId, orderId };
+
+    if (processedByOtherWorker) return { alreadyProcessed: true, externalOrderId, orderId };
     return { alreadyProcessed: false, externalOrderId, orderId, outcome };
   }
 
@@ -333,11 +400,18 @@ export const processMercadoLivreOrderNotificationInboxItem = async (input: {
     const blockRef = adminDb.doc(
       `stores/${inbox.storeId}/mercadoLivreOrderIngressBlocks/${orderId}`
     );
+    let processedByOtherWorker = false;
     await adminDb.runTransaction(async transaction => {
       const currentInboxDocument = await transaction.get(inboxRef);
       if (!currentInboxDocument.exists) throw new Error('MERCADO_LIVRE_NOTIFICATION_INBOX_NOT_FOUND');
       const currentInbox = assertOrderInbox(currentInboxDocument.data());
-      if (currentInbox.processingStatus === 'processed') return;
+      if (currentInbox.processingStatus === 'processed') {
+        processedByOtherWorker = true;
+        return;
+      }
+      if (currentInbox.processingStatus !== 'pending') {
+        throw new Error('MERCADO_LIVRE_NOTIFICATION_INBOX_NOT_PENDING');
+      }
       transaction.set(blockRef, {
         provider: 'mercado_livre',
         storeId: inbox.storeId,
@@ -362,6 +436,7 @@ export const processMercadoLivreOrderNotificationInboxItem = async (input: {
         orderId,
       });
     });
+    if (processedByOtherWorker) return { alreadyProcessed: true, externalOrderId, orderId };
     return {
       alreadyProcessed: false,
       externalOrderId,
@@ -377,7 +452,7 @@ export const processMercadoLivreOrderNotificationInboxItem = async (input: {
     canonicalStoreId: bindingResolution.canonicalStoreId,
     bindings: bindingResolution.bindings,
   });
-  const integration = {
+  const fullIntegrationState = {
     ...order.integration,
     connectionId: inbox.connectionId,
     externalAccountId: inbox.externalAccountId,
@@ -385,39 +460,69 @@ export const processMercadoLivreOrderNotificationInboxItem = async (input: {
     lastNotificationTopic: inbox.topic,
     lastProviderFetchAt: fetchedAt,
   };
-  const legacyOrder = { ...order, integration };
+  const legacyOrder = { ...order, integration: fullIntegrationState } as Record<string, unknown>;
   const canonicalOrderRef = adminDb.doc(
     `stores/${bindingResolution.canonicalStoreId}/orders/${order.id}`
   );
   let created = false;
+  let processedByOtherWorker = false;
 
   await adminDb.runTransaction(async transaction => {
-    const [currentInboxDocument, currentLegacy, currentCanonical] = await Promise.all([
-      transaction.get(inboxRef),
-      transaction.get(legacyRef),
-      transaction.get(canonicalOrderRef),
-    ]);
+    const currentInboxDocument = await transaction.get(inboxRef);
     if (!currentInboxDocument.exists) throw new Error('MERCADO_LIVRE_NOTIFICATION_INBOX_NOT_FOUND');
     const currentInbox = assertOrderInbox(currentInboxDocument.data());
-    if (currentInbox.processingStatus === 'processed') return;
-    if (currentInbox.processingStatus !== 'pending') throw new Error('MERCADO_LIVRE_NOTIFICATION_INBOX_NOT_PENDING');
+    if (currentInbox.processingStatus === 'processed') {
+      processedByOtherWorker = true;
+      return;
+    }
+    if (currentInbox.processingStatus !== 'pending') {
+      throw new Error('MERCADO_LIVRE_NOTIFICATION_INBOX_NOT_PENDING');
+    }
 
+    const currentLegacy = await transaction.get(legacyRef);
+    const currentCanonical = await transaction.get(canonicalOrderRef);
     if (!currentLegacy.exists && !currentCanonical.exists) {
       created = true;
       transaction.set(legacyRef, legacyOrder);
       transaction.set(
         canonicalOrderRef,
-        canonicalOrder(legacyOrder as Record<string, unknown>, bindingResolution.canonicalStoreId, inbox.storeId)
+        canonicalOrder(legacyOrder, bindingResolution.canonicalStoreId, inbox.storeId)
       );
     } else {
-      const patch = integrationPatch({
+      const authoritativeOrder = currentCanonical.exists
+        ? asRecord(currentCanonical.data())
+        : asRecord(currentLegacy.data());
+      const mergedOrder = mergeProviderState({
+        order: authoritativeOrder,
         externalOrderId,
         providerStatus: snapshot.providerStatus,
         inbox,
         fetchedAt,
       });
-      transaction.set(legacyRef, patch, { merge: true });
-      transaction.set(canonicalOrderRef, patch, { merge: true });
+      transaction.set(
+        legacyRef,
+        currentLegacy.exists
+          ? mergeProviderState({
+              order: asRecord(currentLegacy.data()),
+              externalOrderId,
+              providerStatus: snapshot.providerStatus,
+              inbox,
+              fetchedAt,
+            })
+          : legacyOrderFromCanonical(mergedOrder, inbox.storeId)
+      );
+      transaction.set(
+        canonicalOrderRef,
+        currentCanonical.exists
+          ? mergeProviderState({
+              order: asRecord(currentCanonical.data()),
+              externalOrderId,
+              providerStatus: snapshot.providerStatus,
+              inbox,
+              fetchedAt,
+            })
+          : canonicalOrder(mergedOrder, bindingResolution.canonicalStoreId, inbox.storeId)
+      );
     }
 
     transaction.update(inboxRef, {
@@ -432,6 +537,7 @@ export const processMercadoLivreOrderNotificationInboxItem = async (input: {
     });
   });
 
+  if (processedByOtherWorker) return { alreadyProcessed: true, externalOrderId, orderId };
   return {
     alreadyProcessed: false,
     externalOrderId,
