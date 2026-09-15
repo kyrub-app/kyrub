@@ -50,6 +50,24 @@ export interface OmnichannelManualReviewEscalation {
   exhaustedAt: string;
 }
 
+export interface OmnichannelManualReviewAuditEntry {
+  eventId: string;
+  provider: 'mercado_livre';
+  externalOrderId: string;
+  orderId: string;
+  inboxId: string;
+  decisionSequence: number | null;
+  actorUserId: string;
+  action: 'retry_now' | 'keep_in_review' | 'close_non_processable' | string;
+  reason: string;
+  decisionResult: string;
+  previousRetryCycle: number | null;
+  nextRetryCycle: number | null;
+  failureCount: number | null;
+  failureBudget: number | null;
+  occurredAt: string;
+}
+
 const attachManualReviewToObservation = (
   observation: OmnichannelObservedOrder,
   escalation: OmnichannelManualReviewEscalation
@@ -94,14 +112,22 @@ export const listRecentOmnichannelObservedOrdersWithEscalations = async (input: 
   limit?: number;
 }): Promise<Awaited<ReturnType<typeof listRecentOmnichannelObservedOrders>> & {
   manualReviews: OmnichannelManualReviewEscalation[];
+  manualReviewAudit: OmnichannelManualReviewAuditEntry[];
 }> => {
   const base = await listRecentOmnichannelObservedOrders(input);
   const tenantId = clean(input.tenantId, 160);
-  const inbox = await adminDb
-    .collection('integrationWebhookInbox')
-    .where('storeId', '==', tenantId)
-    .limit(500)
-    .get();
+  const [inbox, audit] = await Promise.all([
+    adminDb
+      .collection('integrationWebhookInbox')
+      .where('storeId', '==', tenantId)
+      .limit(500)
+      .get(),
+    adminDb
+      .collection('integrationManualReviewAudit')
+      .where('storeId', '==', tenantId)
+      .limit(500)
+      .get(),
+  ]);
 
   const manualReviews: OmnichannelManualReviewEscalation[] = [];
   for (const document of inbox.docs) {
@@ -137,6 +163,42 @@ export const listRecentOmnichannelObservedOrdersWithEscalations = async (input: 
     if (observation) attachManualReviewToObservation(observation, escalation);
   }
 
+  const manualReviewAudit: OmnichannelManualReviewAuditEntry[] = [];
+  for (const document of audit.docs) {
+    const data = document.data() as Record<string, unknown>;
+    if (
+      clean(data.provider, 80) !== 'mercado_livre' ||
+      clean(data.topic, 80) !== 'orders_v2' ||
+      clean(data.eventType, 120) !== 'manual_review_decision'
+    ) continue;
+    const externalOrderId = clean(data.externalOrderId, 240);
+    const inboxId = clean(data.inboxId, 220);
+    if (!externalOrderId || !inboxId) continue;
+    manualReviewAudit.push({
+      eventId: document.id,
+      provider: 'mercado_livre',
+      externalOrderId,
+      orderId: clean(data.orderId, 240) || `mercado-livre-order-${externalOrderId}`,
+      inboxId,
+      decisionSequence: finiteNumber(data.decisionSequence),
+      actorUserId: clean(data.actorUserId, 160),
+      action: clean(data.action, 80),
+      reason: clean(data.reason, 500),
+      decisionResult: clean(data.decisionResult, 120),
+      previousRetryCycle: finiteNumber(data.previousRetryCycle),
+      nextRetryCycle: finiteNumber(data.nextRetryCycle),
+      failureCount: finiteNumber(data.retryableFailureCount),
+      failureBudget: finiteNumber(data.retryableFailureBudget),
+      occurredAt: timestampToIso(data.occurredAt),
+    });
+  }
+
   manualReviews.sort((left, right) => right.exhaustedAt.localeCompare(left.exhaustedAt));
-  return { ...base, manualReviews };
+  manualReviewAudit.sort((left, right) => {
+    if (!left.occurredAt && !right.occurredAt) return (right.decisionSequence ?? 0) - (left.decisionSequence ?? 0);
+    if (!left.occurredAt) return 1;
+    if (!right.occurredAt) return -1;
+    return right.occurredAt.localeCompare(left.occurredAt);
+  });
+  return { ...base, manualReviews, manualReviewAudit };
 };
