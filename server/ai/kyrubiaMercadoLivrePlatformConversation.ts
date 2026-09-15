@@ -8,6 +8,7 @@ import {
 } from '../catalog/authoritativeProductIdentityService.js';
 import { adminDb } from '../firebaseAdmin.js';
 import { authenticateConsultantRequest } from './consultantAuth.js';
+import { handleKyrubiaMercadoLivreBoundListingUpdateCommand } from './kyrubiaMercadoLivreBoundListingUpdateCommand.js';
 import {
   handleKyrubiaMercadoLivreBoundUpdateAuthorizationCommand,
   isKyrubiaMercadoLivreBoundUpdateAuthorizationCandidate,
@@ -243,6 +244,10 @@ const platformCapabilities: KyrubAiConsultantResponse['capabilities'] = {
   persistentCloudHistoryEnabled: false,
 };
 
+const isKyrubiaMercadoLivreBoundUpdatePreparationCandidate = (
+  message: string
+): boolean => /^(?:preparar|prepare)(?:\s+a)?\s+atualiza(?:ção|cao)\b/i.test(message.trim());
+
 const provenanceLabel = (
   match: AuthoritativeProductIdentity,
   provenance: CanonicalDuplicateProvenance | undefined
@@ -316,6 +321,25 @@ export const prepareKyrubiaMercadoLivrePlatformConversation = async (input: {
     message: input.message,
   });
   if (boundUpdateAuthorization) return boundUpdateAuthorization;
+
+  if (isKyrubiaMercadoLivreBoundUpdatePreparationCandidate(input.message)) {
+    const user = await authenticateConsultantRequest(input.authorization);
+    const boundUpdate = await handleKyrubiaMercadoLivreBoundListingUpdateCommand({
+      userId: user.uid,
+      message: input.message,
+    });
+    if (boundUpdate.handled) {
+      return {
+        reply: boundUpdate.reply,
+        provider: 'kyrub',
+        model: 'kyrub-mercado-livre-bound-update-runtime-v1',
+        mode: 'deterministic',
+        requestId: randomUUID(),
+        turnContext: boundUpdate.turnContext,
+        capabilities: platformCapabilities,
+      };
+    }
+  }
 
   const targetName = extractKyrubiaMercadoLivrePreparationTarget(input.message);
   if (!targetName) return null;

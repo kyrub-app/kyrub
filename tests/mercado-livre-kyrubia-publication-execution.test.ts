@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
 const commandPath = new URL('../server/ai/kyrubiaMercadoLivrePublicationExecutionCommand.ts', import.meta.url);
+const platformConversationPath = new URL('../server/ai/kyrubiaMercadoLivrePlatformConversation.ts', import.meta.url);
 const gatePath = new URL('../server/ai/kyrubiaMercadoLivreListingValidationCommand.ts', import.meta.url);
 const authorizationPath = new URL('../server/integrations/mercadoLivreKyrubiaPublicationAuthorizationService.ts', import.meta.url);
 const bridgePath = new URL('../server/integrations/mercadoLivreKyrubiaPublicationExecutionService.ts', import.meta.url);
@@ -146,4 +147,18 @@ test('execution replies distinguish published, expired, rejected, reconciliation
   assert.match(bridge, /MERCADO_LIVRE_KYRUBIA_PUBLICATION_EXECUTION_RECONCILIATION_REQUIRED/);
   assert.match(bridge, /MERCADO_LIVRE_KYRUBIA_PUBLICATION_EXECUTION_PROVIDER_REJECTED/);
   assert.match(bridge, /MERCADO_LIVRE_KYRUBIA_PUBLICATION_EXECUTION_BLOCKED_BEFORE_RESERVATION/);
+});
+
+test('bound listing update preparation is routed deterministically even without prior publication turn context', async () => {
+  const platform = await readFile(platformConversationPath, 'utf8');
+  const candidateIndex = platform.indexOf('isKyrubiaMercadoLivreBoundUpdatePreparationCandidate(input.message)');
+  const boundHandlerIndex = platform.indexOf('handleKyrubiaMercadoLivreBoundListingUpdateCommand({');
+  const newPublicationIndex = platform.indexOf('extractKyrubiaMercadoLivrePreparationTarget(input.message)');
+
+  assert.ok(candidateIndex >= 0);
+  assert.ok(boundHandlerIndex > candidateIndex);
+  assert.ok(newPublicationIndex > boundHandlerIndex);
+  assert.match(platform, /userId: user\.uid/);
+  assert.match(platform, /model: 'kyrub-mercado-livre-bound-update-runtime-v1'/);
+  assert.match(platform, /turnContext: boundUpdate\.turnContext/);
 });
