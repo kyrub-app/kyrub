@@ -47,6 +47,7 @@ export const materializePaidMarketplaceOrder = (input: {
     status: 'pending',
     paymentStatus: 'paid',
     source: 'customer',
+    sourceChannel: 'kyrub',
     operatorId: draft.buyerId,
     operatorName: draft.buyerName,
     createdAt: now,

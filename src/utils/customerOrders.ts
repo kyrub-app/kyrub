@@ -10,6 +10,7 @@ import {
   type Unsubscribe,
 } from 'firebase/firestore';
 import type { User } from 'firebase/auth';
+import type { CommerceChannel } from '../../shared/channelAvailabilityFiscalFoundation';
 import type { CartItem } from '../types';
 import { db } from './firebase';
 import {
@@ -33,6 +34,7 @@ export type CustomerOrderStatus =
 
 export type CustomerOrderPaymentStatus = 'unpaid' | 'partial' | 'paid';
 export type CustomerOrderSource = 'customer' | 'staff' | 'transfer';
+export type CustomerOrderCommercialChannel = CommerceChannel;
 
 export interface CustomerOrderItem {
   lineId: string;
@@ -63,6 +65,7 @@ export interface CustomerOrder {
   status: CustomerOrderStatus;
   paymentStatus: CustomerOrderPaymentStatus;
   source: CustomerOrderSource;
+  sourceChannel: CustomerOrderCommercialChannel | null;
   operatorId: string;
   operatorName: string;
   createdAt: string;
@@ -126,6 +129,14 @@ const isOrderStatus = (value: unknown): value is CustomerOrderStatus =>
 
 const isOrderSource = (value: unknown): value is CustomerOrderSource =>
   value === 'customer' || value === 'staff' || value === 'transfer';
+
+const isCommercialChannel = (
+  value: unknown
+): value is CustomerOrderCommercialChannel =>
+  value === 'kyrub' ||
+  value === 'mercado_livre' ||
+  value === '99food' ||
+  value === 'other';
 
 const isPaymentStatus = (
   value: unknown
@@ -285,6 +296,7 @@ export const buildCustomerOrder = (
     status: 'pending',
     paymentStatus: 'unpaid',
     source: 'customer',
+    sourceChannel: 'kyrub',
     operatorId: '',
     operatorName: '',
     createdAt: timestamp,
@@ -301,6 +313,9 @@ export const parseCustomerOrder = (value: unknown): CustomerOrder | null => {
   const buyerId = cleanString(candidate.buyerId);
   const buyerName = cleanString(candidate.buyerName);
   const source = isOrderSource(candidate.source) ? candidate.source : 'customer';
+  const sourceChannel = isCommercialChannel(candidate.sourceChannel)
+    ? candidate.sourceChannel
+    : null;
   const buyerEmail = cleanString(candidate.buyerEmail);
   const subtotal = finiteNumber(candidate.subtotal);
   const total = finiteNumber(candidate.total);
@@ -385,6 +400,7 @@ export const parseCustomerOrder = (value: unknown): CustomerOrder | null => {
     status: candidate.status,
     paymentStatus,
     source,
+    sourceChannel,
     operatorId: cleanString(candidate.operatorId),
     operatorName: cleanString(candidate.operatorName),
     createdAt:
@@ -404,6 +420,7 @@ const comparableOrder = (order: CustomerOrder) => ({
   status: order.status,
   paymentStatus: order.paymentStatus,
   source: order.source,
+  sourceChannel: order.sourceChannel,
   items: order.items.map(item => ({
     lineId: item.lineId,
     productId: item.productId,

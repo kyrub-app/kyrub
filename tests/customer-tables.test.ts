@@ -37,6 +37,7 @@ const makeOrder = (
   status: 'pending',
   paymentStatus: 'unpaid',
   source: 'customer',
+  sourceChannel: 'kyrub',
   operatorId: '',
   operatorName: '',
   createdAt: '2026-07-21T20:00:00.000Z',
