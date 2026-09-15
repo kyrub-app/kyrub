@@ -3,7 +3,9 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "engines": { "node": "22.x" },
+  "engines": {
+    "node": "22.x"
+  },
   "scripts": {
     "dev": "tsx server.ts",
     "firestore:compose": "node scripts/compose-firestore-rules.mjs",
@@ -27,6 +29,7 @@
     "@firebase/rules-unit-testing": "^5.0.1",
     "@google/genai": "^2.4.0",
     "@tailwindcss/vite": "^4.1.14",
+    "@vercel/queue": "0.5.1",
     "@vitejs/plugin-react": "^5.0.4",
     "dexie": "^4.4.4",
     "dotenv": "^17.2.3",

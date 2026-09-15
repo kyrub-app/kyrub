@@ -195,6 +195,27 @@ export default async function handler(
     return;
   }
 
+  if (transport === 'drive-media') {
+    if ((request.method?.toUpperCase() || 'GET') !== 'GET') {
+      response.setHeader('Allow', 'GET');
+      response.status(405).json({ error: 'Método não permitido.' });
+      return;
+    }
+    try {
+      const media = await import('../server/driveMediaProxy.js');
+      await media.proxyPublicGoogleDriveImage(
+        queryValue(request.query?.fileId),
+        response as never
+      );
+    } catch (error) {
+      console.error('[drive-media-transport]', error instanceof Error ? error.message : String(error));
+      if (!(response as unknown as { writableEnded?: boolean }).writableEnded) {
+        response.status(503).json({ error: 'A imagem está temporariamente indisponível.' });
+      }
+    }
+    return;
+  }
+
   if (transport === 'activity-events') {
     response.setHeader('Cache-Control', 'no-store, max-age=0');
     response.setHeader('Content-Type', 'application/json; charset=utf-8');

@@ -8,6 +8,18 @@
       "preview-*": true
     }
   },
+  "functions": {
+    "api/mercado-livre-orders-v2-consumer.ts": {
+      "experimentalTriggers": [
+        {
+          "type": "queue/v2beta",
+          "topic": "mercado_livre_orders_v2",
+          "retryAfterSeconds": 30,
+          "initialDelaySeconds": 0
+        }
+      ]
+    }
+  },
   "rewrites": [
     {
       "source": "/api/action-execute",
@@ -23,6 +35,10 @@
     {
       "source": "/api/store-connections/:path*",
       "destination": "/api/health?transport=store-connections&path=:path*"
+    },
+    {
+      "source": "/api/media/drive",
+      "destination": "/api/health?transport=drive-media"
     },
     {
       "source": "/api/mcp",
