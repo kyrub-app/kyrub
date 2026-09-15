@@ -63,9 +63,16 @@ export type StoreIntegrationPlans = Record<
   StoreIntegrationPlan
 >;
 
+export interface StoreFiscalIssuerProfile {
+  legalName: string;
+  taxIdentifier: string;
+  environment: StoreIntegrationEnvironment;
+}
+
 export interface StoreOperationalSettings {
   openingHours: StoreOpeningHours;
   integrations: StoreIntegrationPlans;
+  fiscalIssuerProfile: StoreFiscalIssuerProfile;
 }
 
 export interface StorageLike {
@@ -113,9 +120,16 @@ export const createEmptyStoreIntegrationPlans = (): StoreIntegrationPlans =>
     ])
   ) as StoreIntegrationPlans;
 
+export const createEmptyStoreFiscalIssuerProfile = (): StoreFiscalIssuerProfile => ({
+  legalName: '',
+  taxIdentifier: '',
+  environment: 'sandbox',
+});
+
 export const createEmptyStoreOperationalSettings = (): StoreOperationalSettings => ({
   openingHours: createEmptyStoreOpeningHours(),
   integrations: createEmptyStoreIntegrationPlans(),
+  fiscalIssuerProfile: createEmptyStoreFiscalIssuerProfile(),
 });
 
 const parseOpeningDay = (value: unknown): StoreOpeningHoursDay => {
@@ -189,6 +203,43 @@ export const parseStoreIntegrationPlans = (
   ) as StoreIntegrationPlans;
 };
 
+export const parseStoreFiscalIssuerProfile = (
+  value: unknown
+): StoreFiscalIssuerProfile => {
+  if (!value || typeof value !== 'object') {
+    return createEmptyStoreFiscalIssuerProfile();
+  }
+
+  const candidate = value as Record<string, unknown>;
+  return {
+    legalName: normalizeText(candidate.legalName),
+    taxIdentifier: normalizeText(candidate.taxIdentifier),
+    environment:
+      candidate.environment === 'production' ? 'production' : 'sandbox',
+  };
+};
+
+export const deriveStoreFiscalIssuerProfileFromSefaz = (
+  sefazPlan: StoreIntegrationPlan
+): StoreFiscalIssuerProfile => ({
+  legalName: sefazPlan.accountLabel,
+  taxIdentifier: sefazPlan.externalStoreId,
+  environment: sefazPlan.environment,
+});
+
+const mirrorFiscalIssuerProfileIntoSefaz = (
+  integrations: StoreIntegrationPlans,
+  fiscalIssuerProfile: StoreFiscalIssuerProfile
+): StoreIntegrationPlans => ({
+  ...integrations,
+  sefaz: {
+    ...integrations.sefaz,
+    accountLabel: fiscalIssuerProfile.legalName,
+    externalStoreId: fiscalIssuerProfile.taxIdentifier,
+    environment: fiscalIssuerProfile.environment,
+  },
+});
+
 export const parseStoreOperationalSettings = (
   value: unknown
 ): StoreOperationalSettings => {
@@ -198,12 +249,22 @@ export const parseStoreOperationalSettings = (
   const openingCandidate = candidate.openingHours && typeof candidate.openingHours === 'object'
     ? candidate.openingHours as Record<string, unknown>
     : {};
+  const parsedIntegrations = parseStoreIntegrationPlans(candidate.integrations);
+  const hasCanonicalFiscalIssuerProfile = Boolean(
+    candidate.fiscalIssuerProfile && typeof candidate.fiscalIssuerProfile === 'object'
+  );
+  const fiscalIssuerProfile = hasCanonicalFiscalIssuerProfile
+    ? parseStoreFiscalIssuerProfile(candidate.fiscalIssuerProfile)
+    : deriveStoreFiscalIssuerProfileFromSefaz(parsedIntegrations.sefaz);
 
   return {
     openingHours: Object.fromEntries(
       STORE_WEEKDAYS.map(day => [day, parseOpeningDay(openingCandidate[day])])
     ) as StoreOpeningHours,
-    integrations: parseStoreIntegrationPlans(candidate.integrations),
+    integrations: hasCanonicalFiscalIssuerProfile
+      ? mirrorFiscalIssuerProfileIntoSefaz(parsedIntegrations, fiscalIssuerProfile)
+      : parsedIntegrations,
+    fiscalIssuerProfile,
   };
 };
 
@@ -296,6 +357,7 @@ export const persistStoreIntegrationPlans = async (
   integrations: StoreIntegrationPlans
 ): Promise<void> => {
   const normalized = parseStoreIntegrationPlans(integrations);
+  const fiscalIssuerProfile = deriveStoreFiscalIssuerProfileFromSefaz(normalized.sefaz);
 
   await setDoc(
     doc(db, 'tenants', user.uid),
@@ -306,6 +368,7 @@ export const persistStoreIntegrationPlans = async (
       role: 'retailer',
       operationalSettings: {
         integrations: normalized,
+        fiscalIssuerProfile,
       },
       updatedAt: serverTimestamp(),
     },
