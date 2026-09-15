@@ -12,7 +12,7 @@ import { resolvePlatformCredentials } from './platformCredentialStore.js';
 const clean = (value: unknown): string =>
   typeof value === 'string' || typeof value === 'number' ? String(value).trim() : '';
 
-const catalogTopics = new Set(['items', 'items_prices']);
+const processableTopics = new Set(['items', 'items_prices', 'orders_v2']);
 
 export interface MercadoLivreNotificationEnvelope {
   notificationId: string;
@@ -28,6 +28,8 @@ export interface MercadoLivreNotificationIngestResult {
   accepted: boolean;
   duplicate: boolean;
   disposition: 'pending_fetch' | 'ignored_topic' | 'ignored_application' | 'unbound_account';
+  topic: string;
+  inboxId?: string;
 }
 
 const parsePositiveInteger = (value: unknown, code: string): number => {
@@ -126,6 +128,7 @@ export const ingestMercadoLivreNotification = async (
       accepted: false,
       duplicate: false,
       disposition: 'ignored_application',
+      topic: notification.topic,
     };
   }
 
@@ -135,11 +138,13 @@ export const ingestMercadoLivreNotification = async (
       accepted: true,
       duplicate: false,
       disposition: 'unbound_account',
+      topic: notification.topic,
     };
   }
 
-  const disposition = catalogTopics.has(notification.topic) ? 'pending_fetch' : 'ignored_topic';
-  const reference = adminDb.doc(`integrationWebhookInbox/${inboxDocumentId(notification.notificationId)}`);
+  const disposition = processableTopics.has(notification.topic) ? 'pending_fetch' : 'ignored_topic';
+  const inboxId = inboxDocumentId(notification.notificationId);
+  const reference = adminDb.doc(`integrationWebhookInbox/${inboxId}`);
   let duplicate = false;
 
   await adminDb.runTransaction(async transaction => {
@@ -170,5 +175,7 @@ export const ingestMercadoLivreNotification = async (
     accepted: true,
     duplicate,
     disposition,
+    topic: notification.topic,
+    inboxId,
   };
 };
