@@ -45,6 +45,18 @@ const storeConnectionsTransportSource = readFileSync(
   'server/integrations/storeConnectionsServerlessTransport.ts',
   'utf8'
 );
+const orderObservationClientSource = readFileSync(
+  'src/utils/omnichannelOrderObservation.ts',
+  'utf8'
+);
+const manualReviewPanelSource = readFileSync(
+  'src/components/store/OmnichannelManualReviewPanel.tsx',
+  'utf8'
+);
+const mercadoLivreBridgeSource = readFileSync(
+  'src/components/store/MercadoLivreE2ETestBridge.tsx',
+  'utf8'
+);
 
 test('webhook validates, persists and returns before business processing', () => {
   assert.match(queueSource, /verifyOpenDeliverySignature/);
@@ -134,6 +146,41 @@ test('omnichannel order observation reuses the existing serverless transport and
   assert.match(orderObserverRouterSource, /listRecentOmnichannelObservedOrdersWithEscalations/);
   assert.match(storeConnectionsTransportSource, /createOmnichannelOrderObservationRouter/);
   assert.match(storeConnectionsTransportSource, /\/api\/store-connections\/omnichannel/);
+});
+
+test('manual-review client reads observer state and submits only action plus optional reason to the owner endpoint', () => {
+  assert.match(orderObservationClientSource, /\/api\/store-connections\/omnichannel\/orders\/recent\?limit=/);
+  assert.match(orderObservationClientSource, /method: 'POST'/);
+  assert.match(orderObservationClientSource, /order-ingress-reviews\/\$\{encoded\(inboxId\)\}\/resolve/);
+  assert.match(orderObservationClientSource, /JSON\.stringify\(\{\s*action,/s);
+  assert.match(orderObservationClientSource, /reason: reason\.trim\(\)/);
+  const resolver = orderObservationClientSource.slice(
+    orderObservationClientSource.indexOf('export const resolveMercadoLivreManualReview')
+  );
+  assert.doesNotMatch(resolver, /canonicalProductId|paymentStatus|providerStatus|externalAccountId/);
+  assert.doesNotMatch(resolver, /mercadoLivreGetJson|mercadoLivrePostJson|mercadoLivrePutJson/);
+});
+
+test('Mercado Livre manual-review panel exposes explicit human decisions with reinforced confirmation', () => {
+  assert.match(manualReviewPanelSource, /Tentar novamente agora/);
+  assert.match(manualReviewPanelSource, /Manter em revisão/);
+  assert.match(manualReviewPanelSource, /Encerrar como não processável/);
+  assert.match(manualReviewPanelSource, /Confirmar decisão/);
+  assert.match(manualReviewPanelSource, /type="checkbox"/);
+  assert.match(manualReviewPanelSource, /close_non_processable' && reason\.trim\(\)\.length < 8/);
+  assert.match(manualReviewPanelSource, /\$\{review\.failureCount\}\/\$\{review\.failureBudget\} tentativas/);
+  assert.match(manualReviewPanelSource, /loadOmnichannelManualReviews/);
+  assert.match(manualReviewPanelSource, /resolveMercadoLivreManualReview/);
+  assert.match(manualReviewPanelSource, /O estado comercial será relido oficialmente no Mercado Livre/);
+  assert.doesNotMatch(manualReviewPanelSource, /canonicalProductId|paymentStatus|providerStatus/);
+});
+
+test('manual-review panel remains visible even when the current Mercado Livre connection id is temporarily unavailable', () => {
+  const panelAt = mercadoLivreBridgeSource.indexOf('<OmnichannelManualReviewPanel');
+  const connectionGateAt = mercadoLivreBridgeSource.indexOf('{connectionId ?');
+  assert.ok(panelAt >= 0 && connectionGateAt > panelAt);
+  assert.match(mercadoLivreBridgeSource, /OmnichannelManualReviewPanel/);
+  assert.match(mercadoLivreBridgeSource, /MercadoLivreE2ETestWorkspace/);
 });
 
 test('OAuth client requests the Open Delivery scope', () => {
