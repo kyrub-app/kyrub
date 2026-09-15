@@ -185,14 +185,13 @@ export interface FiscalEventCandidate {
   storeId: string;
   orderId: string;
   sourceChannel: CommerceChannel;
-  trigger: 'commercially_confirmed';
-  status:
-    | 'not_triggered'
-    | 'blocked_missing_fiscal_data'
-    | 'ready_for_fiscal_policy';
-  documentFamily: FiscalDocumentFamily | null;
+  commercialEvidence: 'confirmed' | 'not_confirmed';
+  trigger: null;
+  status: 'accounting_decision_required';
+  documentFamily: null;
   missingProductIds: string[];
   authority: 'canonical_order_and_fiscal_preparation';
+  emissionAuthority: 'none_until_accounting_policy';
 }
 
 export const evaluateFiscalEventCandidate = (input: {
@@ -202,50 +201,24 @@ export const evaluateFiscalEventCandidate = (input: {
   commerciallyConfirmed: boolean;
   items: FiscalItemPreparation[];
 }): FiscalEventCandidate => {
-  const base = {
-    storeId: input.storeId,
-    orderId: input.orderId,
-    sourceChannel: input.sourceChannel,
-    trigger: 'commercially_confirmed' as const,
-    authority: 'canonical_order_and_fiscal_preparation' as const,
-  };
-
-  if (!input.commerciallyConfirmed) {
-    return {
-      ...base,
-      status: 'not_triggered',
-      documentFamily: null,
-      missingProductIds: [],
-    };
-  }
-
   const missingProductIds = input.items
     .filter(item => !item.fiscalProfileReady)
     .map(item => item.productId)
     .filter(Boolean)
     .sort();
 
-  if (missingProductIds.length > 0 || input.items.length === 0) {
-    return {
-      ...base,
-      status: 'blocked_missing_fiscal_data',
-      documentFamily: null,
-      missingProductIds,
-    };
-  }
-
-  const hasGoods = input.items.some(item => item.kind === 'goods');
-  const hasServices = input.items.some(item => item.kind === 'service');
-  const documentFamily: FiscalDocumentFamily = hasGoods && hasServices
-    ? 'mixed_operation_review_required'
-    : hasServices
-      ? 'nfse'
-      : 'goods_document_policy_required';
-
   return {
-    ...base,
-    status: 'ready_for_fiscal_policy',
-    documentFamily,
-    missingProductIds: [],
+    storeId: input.storeId,
+    orderId: input.orderId,
+    sourceChannel: input.sourceChannel,
+    commercialEvidence: input.commerciallyConfirmed ? 'confirmed' : 'not_confirmed',
+    // Commercial confirmation is evidence only. The accounting policy must define
+    // the legal fiscal trigger and document family before emission can exist.
+    trigger: null,
+    status: 'accounting_decision_required',
+    documentFamily: null,
+    missingProductIds,
+    authority: 'canonical_order_and_fiscal_preparation',
+    emissionAuthority: 'none_until_accounting_policy',
   };
 };
