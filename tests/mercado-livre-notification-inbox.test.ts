@@ -112,20 +112,31 @@ test('Vercel Queue publication is durable and deduplicated by Mercado Livre noti
   assert.doesNotMatch(queue, /CRON_SECRET|setInterval|mercadoLivreOrderIngressQueue/);
 });
 
-test('Vercel Queue consumer reuses the existing health function and retries by throwing processing failures', () => {
-  const consumer = readFileSync('api/health.ts', 'utf8');
+test('Vercel Queue consumer is a dedicated private trigger and cannot air-gap public health', () => {
+  const consumer = readFileSync('api/mercado-livre-orders-v2-consumer.ts', 'utf8');
+  const health = readFileSync('api/health.ts', 'utf8');
   const vercel = JSON.parse(readFileSync('vercel.json', 'utf8')) as {
     functions?: Record<string, { experimentalTriggers?: Array<Record<string, unknown>> }>;
   };
-  assert.match(consumer, /com\.vercel\.queue\.v2beta/);
   assert.match(consumer, /new QueueClient\(\)/);
   assert.match(consumer, /handleNodeCallback/);
   assert.match(consumer, /consumeMercadoLivreOrderQueueMessage\(message\)/);
-  const trigger = vercel.functions?.['api/health.ts']?.experimentalTriggers?.[0];
+  const trigger = vercel.functions?.['api/mercado-livre-orders-v2-consumer.ts']?.experimentalTriggers?.[0];
   assert.equal(trigger?.type, 'queue/v2beta');
   assert.equal(trigger?.topic, 'mercado_livre_orders_v2');
   assert.equal(trigger?.retryAfterSeconds, 30);
-  assert.equal(readFileSync('api/health.ts', 'utf8').includes('CRON_SECRET'), false);
+  assert.equal(vercel.functions?.['api/health.ts'], undefined);
+  assert.doesNotMatch(health, /QueueClient|com\.vercel\.queue\.v2beta/);
+});
+
+test('Drive media keeps its public URL through health transport so Queue consumer stays inside Hobby function budget', () => {
+  const health = readFileSync('api/health.ts', 'utf8');
+  const vercel = readFileSync('vercel.json', 'utf8');
+  assert.match(vercel, /"source": "\/api\/media\/drive"/);
+  assert.match(vercel, /"destination": "\/api\/health\?transport=drive-media"/);
+  assert.match(health, /transport === 'drive-media'/);
+  assert.match(health, /driveMediaProxy\.js/);
+  assert.match(health, /proxyPublicGoogleDriveImage/);
 });
 
 test('catalog notification callback preserves the existing manual-review retry behavior', () => {
