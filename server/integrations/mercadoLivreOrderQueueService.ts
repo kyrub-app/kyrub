@@ -35,7 +35,6 @@ const terminalProcessingErrors = new Set([
   'MERCADO_LIVRE_ORDER_RESPONSE_INVALID',
   'MERCADO_LIVRE_ORDER_ITEMS_INVALID',
   'MERCADO_LIVRE_ORDER_ITEM_INVALID',
-  'MERCADO_LIVRE_ORDER_INBOX_INVALID',
 ]);
 
 export const isMercadoLivreOrderQueueTerminalEnvelopeError = (code: string): boolean =>
