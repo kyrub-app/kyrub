@@ -8,6 +8,7 @@ import { inspectMercadoLivrePublicationCapability } from './mercadoLivrePublicat
 import { configureMercadoLivreOutboundCommercialRequirements } from './mercadoLivreOutboundCommercialConfigurationService.js';
 import { configureMercadoLivreOutboundRequirements } from './mercadoLivreOutboundRequirementsService.js';
 import { confirmMercadoLivreCanonicalVariantIdentity } from './mercadoLivreCanonicalVariantIdentityService.js';
+import { retryMercadoLivreOrderIngressAfterBinding } from './mercadoLivreOrderIngressRecoveryService.js';
 
 const clean = (value: unknown): string => typeof value === 'string' ? value.trim() : '';
 const bearerToken = (authorization: string): string => /^Bearer\s+(.+)$/i.exec(authorization)?.[1]?.trim() ?? '';
@@ -40,7 +41,8 @@ const statusFor = (code: string): number => {
     code.includes('NOT_LISTABLE') ||
     code.includes('UNAVAILABLE') ||
     code.includes('EMPTY') ||
-    code.includes('STALE')
+    code.includes('STALE') ||
+    code.includes('IN_PROGRESS')
   ) return 409;
   return 503;
 };
@@ -180,6 +182,25 @@ export const createMercadoLivreE2ETestRouter = (): Router => {
       const code = errorCode(error);
       response.status(statusFor(code)).json({
         error: 'Não foi possível confirmar a identidade desta variante no catálogo Kyrub.',
+        code,
+      });
+    }
+  });
+
+  router.post('/:storeId/e2e/order-ingress-blocks/:orderId/retry-after-binding', async (request, response) => {
+    try {
+      const storeId = clean(request.params.storeId);
+      const identity = await authenticatedOwner(request.get('authorization') ?? '', storeId);
+      response.setHeader('Cache-Control', 'no-store, max-age=0');
+      response.json(await retryMercadoLivreOrderIngressAfterBinding({
+        storeId,
+        orderId: clean(request.params.orderId),
+        requestedByUserId: identity.uid,
+      }));
+    } catch (error) {
+      const code = errorCode(error);
+      response.status(statusFor(code)).json({
+        error: 'Não foi possível reprocessar o pedido bloqueado pelo vínculo de produto.',
         code,
       });
     }
