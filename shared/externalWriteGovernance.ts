@@ -22,13 +22,16 @@ export type ExternalWriteAuthorizationConsumptionStatus =
   | 'rejected'
   | 'expired';
 
-export interface ExternalWriteTargetScope {
+type ExternalWriteOperationReference =
+  | { operationRef: string; proposalId?: never }
+  | { operationRef?: never; proposalId: string };
+
+export type ExternalWriteTargetScope = {
   storeId: string;
   channel: string;
   operationKind: string;
-  operationRef: string;
   targetRef: string;
-}
+} & ExternalWriteOperationReference;
 
 export interface ExternalWriteAuthorizationRequestContext {
   request: ExternalWriteTargetScope;
@@ -37,14 +40,14 @@ export interface ExternalWriteAuthorizationRequestContext {
   protectedFields: readonly string[];
 }
 
-export interface ExternalWriteAuthorizationBinding extends ExternalWriteTargetScope {
+export type ExternalWriteAuthorizationBinding = ExternalWriteTargetScope & {
   authorizationId: string;
   authoritySource: 'explicit_user_authorization';
   authorizedFields: readonly string[];
   protectedFields: readonly string[];
   revalidatedImmediatelyBeforeWrite: boolean;
   consumptionStatus: ExternalWriteAuthorizationConsumptionStatus;
-}
+};
 
 export interface ExternalWriteAttemptContext {
   request: ExternalWriteTargetScope;
@@ -86,12 +89,17 @@ const clean = (value: unknown, maximum = 240): string =>
 const normalizedFields = (fields: readonly string[]): string[] =>
   fields.map(field => clean(field, 120)).filter(Boolean);
 
+const operationReference = (scope: ExternalWriteTargetScope): string =>
+  'operationRef' in scope && scope.operationRef
+    ? clean(scope.operationRef)
+    : clean('proposalId' in scope ? scope.proposalId : '');
+
 const hasValidScope = (scope: ExternalWriteTargetScope): boolean =>
   Boolean(
     clean(scope.storeId) &&
     clean(scope.channel) &&
     clean(scope.operationKind) &&
-    clean(scope.operationRef) &&
+    operationReference(scope) &&
     clean(scope.targetRef)
   );
 
@@ -102,7 +110,7 @@ const scopeMatches = (
   request.storeId === authorization.storeId &&
   request.channel === authorization.channel &&
   request.operationKind === authorization.operationKind &&
-  request.operationRef === authorization.operationRef &&
+  operationReference(request) === operationReference(authorization) &&
   request.targetRef === authorization.targetRef;
 
 const evaluateFieldScope = (
