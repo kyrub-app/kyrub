@@ -16,10 +16,17 @@ import StoreConnectionsWorkspace from './store/StoreConnectionsWorkspace';
 import { StoreIntegrationsPanel } from './store/StoreIntegrationsPanel';
 
 type ToastType = 'success' | 'error' | 'info';
+type FiscalWorkspaceTab = 'overview' | 'sefaz' | 'accountant-api';
 
 interface GerencialIntegrationsRuntimeProps {
   triggerToast: (message: string, type?: ToastType) => void;
 }
+
+const fiscalTabLabel: Record<FiscalWorkspaceTab, string> = {
+  overview: 'Visão geral',
+  sefaz: 'SEFAZ',
+  'accountant-api': 'API Contador',
+};
 
 export function GerencialIntegrationsRuntime({
   triggerToast,
@@ -33,6 +40,7 @@ export function GerencialIntegrationsRuntime({
     useState<StoreFiscalAccountingDecisionRecord>(createEmptyStoreFiscalAccountingDecision);
   const [savingChannels, setSavingChannels] = useState(false);
   const [mercadoLivreOpen, setMercadoLivreOpen] = useState(false);
+  const [fiscalTab, setFiscalTab] = useState<FiscalWorkspaceTab>('overview');
 
   useEffect(() => onAuthStateChanged(auth, setUser), []);
 
@@ -120,6 +128,7 @@ export function GerencialIntegrationsRuntime({
   };
 
   const accountingDecisionRecorded = fiscalAccountingDecision.status === 'recorded';
+  const sefazConfigured = integrationPlans.sefaz.status !== 'not-configured';
 
   return (
     <div className="space-y-5" id="kyrub-gerencial-integrations-runtime" data-kyrub-gerencial-module="integrations-lazy">
@@ -225,64 +234,198 @@ export function GerencialIntegrationsRuntime({
           )}
 
           <section
-            className={`rounded-3xl border p-5 ${
-              accountingDecisionRecorded
-                ? 'border-emerald-500/20 bg-emerald-500/[0.04]'
-                : 'border-amber-500/20 bg-amber-500/[0.04]'
-            }`}
-            id="fiscal-accounting-decision-status"
-            aria-live="polite"
+            className="rounded-3xl border border-violet-500/20 bg-violet-500/[0.035] p-5"
+            id="accounting-fiscal-integrations-hub"
           >
             <div className="flex flex-wrap items-start justify-between gap-3">
-              <div className="min-w-0">
-                <span
-                  className={`font-mono text-[9px] font-black uppercase tracking-[0.16em] ${
-                    accountingDecisionRecorded ? 'text-emerald-300' : 'text-amber-300'
-                  }`}
-                >
-                  Fiscal · somente leitura
+              <div>
+                <span className="font-mono text-[9px] font-black uppercase tracking-[0.16em] text-violet-300">
+                  Gerencial · Integrações
                 </span>
-                <h3 className="mt-1 text-sm font-black uppercase text-white">
-                  {accountingDecisionRecorded
-                    ? 'Referência contábil registrada'
-                    : 'Decisão contábil pendente'}
-                </h3>
+                <h3 className="mt-1 text-lg font-black text-white">Contábil / Fiscais</h3>
                 <p className="mt-2 max-w-2xl text-[10px] leading-relaxed text-slate-400">
-                  {accountingDecisionRecorded
-                    ? 'Existe evidência de uma orientação contábil registrada. Ela ainda não define gatilho fiscal, família de documento nem concede autoridade de emissão.'
-                    : 'A operação fiscal permanece aguardando orientação contábil. Nenhum gatilho, família de documento ou autoridade de emissão é definido por esta tela.'}
+                  Centraliza a decisão contábil, o preparo da conexão fiscal com a SEFAZ e a futura integração com o sistema ou escritório do contador sem misturar essas autoridades com o fluxo comercial dos pedidos.
                 </p>
               </div>
-              <span
-                className={`rounded-full border px-3 py-1 font-mono text-[8px] font-black uppercase tracking-wide ${
-                  accountingDecisionRecorded
-                    ? 'border-emerald-500/25 bg-emerald-500/10 text-emerald-200'
-                    : 'border-amber-500/25 bg-amber-500/10 text-amber-200'
-                }`}
-              >
-                {accountingDecisionRecorded ? 'Registrada' : 'Pendente'}
+              <span className="rounded-full border border-violet-500/25 bg-violet-500/10 px-3 py-1 font-mono text-[8px] font-black uppercase tracking-wide text-violet-200">
+                Zero emissão automática
               </span>
             </div>
 
-            {accountingDecisionRecorded && (
-              <dl className="mt-4 grid gap-3 sm:grid-cols-2">
-                <div className="rounded-2xl border border-slate-800 bg-slate-950/40 p-3">
-                  <dt className="font-mono text-[8px] font-black uppercase tracking-wide text-slate-500">
-                    Referência da orientação
-                  </dt>
-                  <dd className="mt-1 break-words text-[10px] font-semibold text-slate-200">
-                    {fiscalAccountingDecision.policyReference}
-                  </dd>
+            <div className="mt-4 grid grid-cols-3 gap-2" role="tablist" aria-label="Contábil e fiscais">
+              {(Object.keys(fiscalTabLabel) as FiscalWorkspaceTab[]).map(tab => {
+                const active = fiscalTab === tab;
+                return (
+                  <button
+                    key={tab}
+                    type="button"
+                    role="tab"
+                    aria-selected={active}
+                    onClick={() => setFiscalTab(tab)}
+                    className={`min-h-10 rounded-xl border px-2 py-2 text-[9px] font-black uppercase tracking-wide transition ${
+                      active
+                        ? 'border-violet-400/40 bg-violet-500/15 text-violet-100'
+                        : 'border-slate-800 bg-slate-950/50 text-slate-500 hover:text-slate-300'
+                    }`}
+                    id={`accounting-fiscal-tab-${tab}`}
+                  >
+                    {fiscalTabLabel[tab]}
+                  </button>
+                );
+              })}
+            </div>
+
+            {fiscalTab === 'overview' && (
+              <div className="mt-4 space-y-4" role="tabpanel" id="accounting-fiscal-overview">
+                <section
+                  className={`rounded-2xl border p-4 ${
+                    accountingDecisionRecorded
+                      ? 'border-emerald-500/20 bg-emerald-500/[0.04]'
+                      : 'border-amber-500/20 bg-amber-500/[0.04]'
+                  }`}
+                  id="fiscal-accounting-decision-status"
+                  aria-live="polite"
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <span
+                        className={`font-mono text-[9px] font-black uppercase tracking-[0.16em] ${
+                          accountingDecisionRecorded ? 'text-emerald-300' : 'text-amber-300'
+                        }`}
+                      >
+                        Decisão contábil · somente leitura
+                      </span>
+                      <h4 className="mt-1 text-sm font-black uppercase text-white">
+                        {accountingDecisionRecorded
+                          ? 'Referência contábil registrada'
+                          : 'Decisão contábil pendente'}
+                      </h4>
+                      <p className="mt-2 max-w-2xl text-[10px] leading-relaxed text-slate-400">
+                        {accountingDecisionRecorded
+                          ? 'Existe evidência de uma orientação contábil registrada. Ela ainda não define gatilho fiscal, família de documento nem concede autoridade de emissão.'
+                          : 'A operação fiscal permanece aguardando orientação contábil. Nenhum gatilho, família de documento ou autoridade de emissão é definido por esta tela.'}
+                      </p>
+                    </div>
+                    <span
+                      className={`rounded-full border px-3 py-1 font-mono text-[8px] font-black uppercase tracking-wide ${
+                        accountingDecisionRecorded
+                          ? 'border-emerald-500/25 bg-emerald-500/10 text-emerald-200'
+                          : 'border-amber-500/25 bg-amber-500/10 text-amber-200'
+                      }`}
+                    >
+                      {accountingDecisionRecorded ? 'Registrada' : 'Pendente'}
+                    </span>
+                  </div>
+
+                  {accountingDecisionRecorded && (
+                    <dl className="mt-4 grid gap-3 sm:grid-cols-2">
+                      <div className="rounded-2xl border border-slate-800 bg-slate-950/40 p-3">
+                        <dt className="font-mono text-[8px] font-black uppercase tracking-wide text-slate-500">
+                          Referência da orientação
+                        </dt>
+                        <dd className="mt-1 break-words text-[10px] font-semibold text-slate-200">
+                          {fiscalAccountingDecision.policyReference}
+                        </dd>
+                      </div>
+                      <div className="rounded-2xl border border-slate-800 bg-slate-950/40 p-3">
+                        <dt className="font-mono text-[8px] font-black uppercase tracking-wide text-slate-500">
+                          Registrada em
+                        </dt>
+                        <dd className="mt-1 break-words text-[10px] font-semibold text-slate-200">
+                          {fiscalAccountingDecision.recordedAt}
+                        </dd>
+                      </div>
+                    </dl>
+                  )}
+                </section>
+
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <div className="rounded-2xl border border-slate-800 bg-slate-950/50 p-3">
+                    <span className="font-mono text-[8px] font-black uppercase text-slate-500">Política fiscal executável</span>
+                    <strong className="mt-1 block text-[10px] text-amber-200">Ainda não definida</strong>
+                  </div>
+                  <div className="rounded-2xl border border-slate-800 bg-slate-950/50 p-3">
+                    <span className="font-mono text-[8px] font-black uppercase text-slate-500">Autoridade de emissão</span>
+                    <strong className="mt-1 block text-[10px] text-amber-200">Bloqueada</strong>
+                  </div>
+                  <div className="rounded-2xl border border-slate-800 bg-slate-950/50 p-3">
+                    <span className="font-mono text-[8px] font-black uppercase text-slate-500">SEFAZ</span>
+                    <strong className="mt-1 block text-[10px] text-slate-200">
+                      {sefazConfigured ? 'Configuração iniciada' : 'Não configurada'}
+                    </strong>
+                  </div>
                 </div>
-                <div className="rounded-2xl border border-slate-800 bg-slate-950/40 p-3">
-                  <dt className="font-mono text-[8px] font-black uppercase tracking-wide text-slate-500">
-                    Registrada em
-                  </dt>
-                  <dd className="mt-1 break-words text-[10px] font-semibold text-slate-200">
-                    {fiscalAccountingDecision.recordedAt}
-                  </dd>
+              </div>
+            )}
+
+            {fiscalTab === 'sefaz' && (
+              <div className="mt-4 space-y-4" role="tabpanel" id="accounting-fiscal-sefaz">
+                <section className="rounded-2xl border border-amber-500/20 bg-amber-500/[0.04] p-4">
+                  <span className="font-mono text-[9px] font-black uppercase tracking-wide text-amber-300">
+                    Conector fiscal
+                  </span>
+                  <h4 className="mt-1 text-sm font-black uppercase text-white">SEFAZ</h4>
+                  <p className="mt-2 text-[10px] leading-relaxed text-slate-400">
+                    Esta área prepara a unidade fiscal e o ambiente de homologação. Certificado, CSC, senha ou chave privada não devem ser digitados no navegador e nenhuma configuração abaixo concede, sozinha, autoridade para emitir documento fiscal.
+                  </p>
+                </section>
+
+                <div className="flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => void saveChannelDrafts()}
+                    disabled={savingChannels}
+                    className="min-h-10 rounded-xl border border-amber-500/25 bg-amber-500/10 px-4 text-[9px] font-black uppercase text-amber-200 disabled:opacity-45"
+                    id="save-sefaz-integration"
+                  >
+                    {savingChannels ? 'Salvando...' : 'Salvar SEFAZ'}
+                  </button>
                 </div>
-              </dl>
+
+                <div id="accounting-fiscal-sefaz-plan">
+                  <style>{`#accounting-fiscal-sefaz-plan [data-integration-id]:not([data-integration-id="sefaz"]) { display: none; }`}</style>
+                  <StoreIntegrationsPanel
+                    value={integrationPlans}
+                    onChange={updateIntegrationPlans}
+                    disabled={savingChannels}
+                  />
+                </div>
+              </div>
+            )}
+
+            {fiscalTab === 'accountant-api' && (
+              <div className="mt-4 space-y-4" role="tabpanel" id="accounting-fiscal-accountant-api">
+                <section className="rounded-2xl border border-cyan-500/20 bg-cyan-500/[0.04] p-4">
+                  <span className="font-mono text-[9px] font-black uppercase tracking-wide text-cyan-300">
+                    Fonte da política contábil
+                  </span>
+                  <h4 className="mt-1 text-sm font-black uppercase text-white">API Contador</h4>
+                  <p className="mt-2 text-[10px] leading-relaxed text-slate-400">
+                    Ponto reservado para integrar o Kyrub ao sistema do contador ou escritório contábil. Ainda não há conector ativo nem credencial solicitada ao lojista nesta tela.
+                  </p>
+                </section>
+
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="rounded-2xl border border-slate-800 bg-slate-950/50 p-4">
+                    <span className="font-mono text-[8px] font-black uppercase tracking-wide text-slate-500">Estado</span>
+                    <strong className="mt-1 block text-[11px] text-slate-200">Sem conexão ativa</strong>
+                    <p className="mt-2 text-[9px] leading-relaxed text-slate-500">
+                      Nenhum fornecedor de API contábil foi presumido e nenhum dado fiscal fictício foi criado.
+                    </p>
+                  </div>
+                  <div className="rounded-2xl border border-slate-800 bg-slate-950/50 p-4">
+                    <span className="font-mono text-[8px] font-black uppercase tracking-wide text-slate-500">Contrato esperado</span>
+                    <strong className="mt-1 block text-[11px] text-slate-200">Política versionada e auditável</strong>
+                    <p className="mt-2 text-[9px] leading-relaxed text-slate-500">
+                      A futura integração deverá trazer referência, vigência e parâmetros contábeis explícitos antes de qualquer autorização de emissão.
+                    </p>
+                  </div>
+                </div>
+
+                <p className="rounded-2xl border border-amber-500/20 bg-amber-500/[0.04] px-4 py-3 text-[9px] leading-relaxed text-amber-100">
+                  Registrar uma referência contábil continua sendo evidência, não política fiscal executável. O Kyrub não escolherá NFC-e, NF-e, NFS-e, CFOP, CST ou tributos por inferência.
+                </p>
+              </div>
             )}
           </section>
 
@@ -294,7 +437,7 @@ export function GerencialIntegrationsRuntime({
                 </span>
                 <h3 className="mt-1 text-sm font-black uppercase text-white">Demais integrações</h3>
                 <p className="mt-2 max-w-2xl text-[10px] leading-relaxed text-slate-400">
-                  Open Delivery, SEFAZ, iFood, 99Food e Shopee continuam vinculados à mesma loja e ao mesmo documento operacional.
+                  Open Delivery, iFood, 99Food e Shopee continuam vinculados à mesma loja. SEFAZ agora fica concentrada em Contábil / Fiscais.
                 </p>
               </div>
               <button
@@ -309,7 +452,7 @@ export function GerencialIntegrationsRuntime({
             </div>
 
             <div id="consolidated-store-channel-plans">
-              <style>{`#consolidated-store-channel-plans [data-integration-id="mercado-livre"] { display: none; }`}</style>
+              <style>{`#consolidated-store-channel-plans [data-integration-id="mercado-livre"], #consolidated-store-channel-plans [data-integration-id="sefaz"] { display: none; }`}</style>
               <StoreIntegrationsPanel
                 value={integrationPlans}
                 onChange={updateIntegrationPlans}
