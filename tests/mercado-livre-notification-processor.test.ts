@@ -260,6 +260,10 @@ test('paid order without binding is durably blocked before any KDS normalization
   assert.match(bindingGate, /processingOutcome: 'blocked_product_binding'/);
   assert.match(bindingGate, /authority: 'manual_resolution_required'/);
   assert.match(bindingGate, /snapshot\.lines\.map\(line => line\.externalItemId\)/);
+  assert.match(bindingGate, /allExternalItemIds/);
+  assert.match(bindingGate, /resolvedExternalItemIds/);
+  assert.match(bindingGate, /missingExternalItemIds/);
+  assert.match(bindingGate, /bindingCompleteness: 'all_items_required'/);
 });
 
 test('binding recovery reopens the original provider inbox and never fabricates a replacement notification', () => {
