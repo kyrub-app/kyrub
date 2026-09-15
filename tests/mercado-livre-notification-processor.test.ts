@@ -144,6 +144,43 @@ test('unpaid order cannot be normalized into the KDS and missing canonical bindi
   );
 });
 
+test('multi-item paid order is all-or-nothing when only some external items have canonical bindings', () => {
+  const snapshot = parseMercadoLivreOrderSnapshot({
+    id: 2000012345678910,
+    status: 'paid',
+    seller: { id: 777 },
+    buyer: { id: 888 },
+    total_amount: 52,
+    paid_amount: 52,
+    order_items: [
+      {
+        item: { id: 'MLB7640119796', title: 'Chaveiro Kyrub' },
+        quantity: 1,
+        unit_price: 22,
+      },
+      {
+        item: { id: 'MLB7640119800', title: 'Tag Kyrub' },
+        quantity: 1,
+        unit_price: 30,
+      },
+    ],
+  }, '2000012345678910', '2026-09-15T16:10:00.000Z');
+
+  assert.throws(
+    () => normalizeMercadoLivrePaidOrderForKds({
+      snapshot,
+      tenantId: 'tenant-owner-1',
+      canonicalStoreId: 'canonical-store-1',
+      bindings: [{
+        externalItemId: 'MLB7640119796',
+        canonicalProductId: 'product-kyrub-1',
+        canonicalStoreId: 'canonical-store-1',
+      }],
+    }),
+    /MERCADO_LIVRE_ORDER_PRODUCT_BINDING_REQUIRED:MLB7640119800/
+  );
+});
+
 test('order ingress service dual-writes legacy plus canonical order without coupling to fiscal emission', () => {
   const source = readFileSync('server/integrations/mercadoLivreOrderIngressService.ts', 'utf8');
   assert.match(source, /artifacts\/\$\{tenantId\}\/public\/data\/customerOrders/);
@@ -189,6 +226,29 @@ test('fragmented notifications for the same order stay independent because Queue
   assert.match(ingress, /lastNotificationId: input\.inbox\.notificationId/);
 });
 
+test('late and concurrent notifications for one Mercado Livre order are serialized before canonical reconciliation', () => {
+  const queue = readFileSync('server/integrations/mercadoLivreOrderQueueService.ts', 'utf8');
+  assert.match(queue, /integrationOrderProcessingLeases/);
+  assert.match(queue, /externalAccountId.*externalOrderId/s);
+  assert.match(queue, /MERCADO_LIVRE_ORDER_PROCESSING_LEASE_BUSY/);
+  assert.match(queue, /acquireOrderProcessingLease/);
+  assert.match(queue, /finally \{/);
+  assert.match(queue, /releaseOrderProcessingLease/);
+
+  const acquireAt = queue.indexOf('const leaseId = await acquireOrderProcessingLease');
+  const processAt = queue.indexOf('processMercadoLivreOrderNotificationInboxItem', acquireAt);
+  assert.ok(acquireAt >= 0 && processAt > acquireAt);
+});
+
+test('a late notification never trusts its sent timestamp as order state and always refetches provider truth', () => {
+  const inbox = readFileSync('server/integrations/mercadoLivreNotificationInboxService.ts', 'utf8');
+  const ingress = readFileSync('server/integrations/mercadoLivreOrderIngressService.ts', 'utf8');
+  assert.match(inbox, /sentAt: notification\.sentAt/);
+  assert.match(ingress, /mercadoLivreGetJson<unknown>/);
+  assert.match(ingress, /parseMercadoLivreOrderSnapshot\(fetched, externalOrderId, fetchedAt\)/);
+  assert.doesNotMatch(ingress, /inbox\.sentAt/);
+});
+
 test('paid order without binding is durably blocked before any KDS normalization', () => {
   const ingress = readFileSync('server/integrations/mercadoLivreOrderIngressService.ts', 'utf8');
   const bindingStart = ingress.indexOf('const bindingResolution = await resolveOrderBindings');
@@ -199,6 +259,7 @@ test('paid order without binding is durably blocked before any KDS normalization
   assert.match(bindingGate, /status: 'product_binding_required'/);
   assert.match(bindingGate, /processingOutcome: 'blocked_product_binding'/);
   assert.match(bindingGate, /authority: 'manual_resolution_required'/);
+  assert.match(bindingGate, /snapshot\.lines\.map\(line => line\.externalItemId\)/);
 });
 
 test('binding recovery reopens the original provider inbox and never fabricates a replacement notification', () => {
@@ -213,6 +274,22 @@ test('binding recovery reopens the original provider inbox and never fabricates 
   assert.match(recovery, /retryLeaseUntil/);
   assert.doesNotMatch(recovery, /@vercel\/queue|\bsend\s*\(/);
   assert.doesNotMatch(recovery, /canonicalProductId/);
+});
+
+test('binding recovery performs one final official refetch and reconciles payment or cancellation races through the same inbox', () => {
+  const recovery = readFileSync('server/integrations/mercadoLivreOrderIngressRecoveryService.ts', 'utf8');
+  assert.match(recovery, /reconcileProviderChangeDuringRecovery/);
+  assert.match(recovery, /mercadoLivreGetJson<unknown>/);
+  assert.match(recovery, /parseMercadoLivreOrderSnapshot/);
+  assert.match(recovery, /snapshot\.providerStatus === previousProviderStatus/);
+  assert.match(recovery, /recoveryReconciliationAuthority: 'provider_api_final_refetch'/);
+  assert.match(recovery, /processingStatus: 'pending'/);
+  assert.match(recovery, /providerChangedDuringRecovery/);
+
+  const finalRefetchAt = recovery.indexOf('const fetched = await mercadoLivreGetJson<unknown>');
+  const reopenAt = recovery.indexOf("processingStatus: 'pending'", finalRefetchAt);
+  const canonicalReprocessAt = recovery.indexOf('processMercadoLivreOrderNotificationInboxItem', reopenAt);
+  assert.ok(finalRefetchAt >= 0 && reopenAt > finalRefetchAt && canonicalReprocessAt > reopenAt);
 });
 
 test('binding recovery endpoint is owner-only and accepts no browser-supplied binding or commercial evidence', () => {
