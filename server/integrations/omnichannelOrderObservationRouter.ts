@@ -1,6 +1,6 @@
 import { Router, type Request, type Response } from 'express';
 import { adminAuth } from '../firebaseAdmin.js';
-import { listRecentOmnichannelObservedOrders } from './omnichannelOrderObservationService.js';
+import { listRecentOmnichannelObservedOrdersWithEscalations } from './omnichannelOrderObservationEscalationService.js';
 
 const bearerToken = (request: Request): string => {
   const authorization = request.get('authorization') ?? '';
@@ -45,7 +45,7 @@ export const createOmnichannelOrderObservationRouter = (): Router => {
     try {
       const tenantId = await authenticatedTenantId(request);
       const requestedLimit = Number(request.query.limit ?? 30);
-      response.json(await listRecentOmnichannelObservedOrders({
+      response.json(await listRecentOmnichannelObservedOrdersWithEscalations({
         tenantId,
         requestedByUserId: tenantId,
         limit: Number.isFinite(requestedLimit) ? requestedLimit : 30,
