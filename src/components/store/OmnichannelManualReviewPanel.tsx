@@ -5,6 +5,7 @@ import {
   resolveMercadoLivreManualReview,
   type MercadoLivreManualReviewAction,
   type OmnichannelManualReview,
+  type OmnichannelManualReviewAuditEntry,
 } from '../../utils/omnichannelOrderObservation';
 
 type ToastType = 'success' | 'error' | 'info';
@@ -26,6 +27,18 @@ const actionDescription: Record<MercadoLivreManualReviewAction, string> = {
   close_non_processable: 'Encerra somente esta pendência operacional local. O pedido e o status no Mercado Livre não são alterados.',
 };
 
+const auditActionLabel = (action: string): string =>
+  action in actionLabel
+    ? actionLabel[action as MercadoLivreManualReviewAction]
+    : action || 'Decisão registrada';
+
+const auditResultLabel = (result: string): string => {
+  if (result === 'retry_requested') return 'Novo ciclo de retry solicitado';
+  if (result === 'kept_in_review') return 'Mantido em revisão';
+  if (result === 'closed_non_processable') return 'Encerrado como não processável';
+  return result || 'Resultado registrado';
+};
+
 const formatTimestamp = (value: string): string => {
   if (!value) return 'horário indisponível';
   const parsed = new Date(value);
@@ -42,6 +55,7 @@ export default function OmnichannelManualReviewPanel({
   notify: (message: string, type?: ToastType) => void;
 }) {
   const [reviews, setReviews] = useState<OmnichannelManualReview[]>([]);
+  const [auditEntries, setAuditEntries] = useState<OmnichannelManualReviewAuditEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [pendingDecision, setPendingDecision] = useState<PendingDecision>(null);
@@ -55,6 +69,7 @@ export default function OmnichannelManualReviewPanel({
       setLoadError('');
       const snapshot = await loadOmnichannelManualReviews(user, 50);
       setReviews(snapshot.manualReviews.filter(item => item.provider === 'mercado_livre'));
+      setAuditEntries((snapshot.manualReviewAudit ?? []).filter(item => item.provider === 'mercado_livre'));
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Não foi possível carregar a fila de revisão.';
       setLoadError(message);
@@ -285,6 +300,88 @@ export default function OmnichannelManualReviewPanel({
             </article>
           );
         })}
+      </div>
+
+      <div className="mt-6 border-t border-slate-800 pt-5" id="mercado-livre-manual-review-audit-history">
+        <div className="flex flex-wrap items-end justify-between gap-2">
+          <div>
+            <span className="font-mono text-[8px] font-black uppercase tracking-[0.16em] text-cyan-300">
+              Trilha de auditoria
+            </span>
+            <h4 className="mt-1 text-[11px] font-black uppercase text-white">Histórico de decisões humanas</h4>
+          </div>
+          <span className="font-mono text-[8px] text-slate-600">append-only · owner scoped</span>
+        </div>
+        <p className="mt-2 max-w-2xl text-[9px] leading-relaxed text-slate-500">
+          Este histórico é separado do estado atual do pedido. Encerrar ou reprocessar uma pendência não apaga a decisão anterior.
+        </p>
+
+        {!loading && !loadError && auditEntries.length === 0 && (
+          <p className="mt-3 rounded-xl border border-slate-800 bg-slate-950/45 px-3 py-3 text-[9px] text-slate-500">
+            Ainda não existem decisões humanas registradas nesta trilha.
+          </p>
+        )}
+
+        <div className="mt-3 space-y-2">
+          {auditEntries.slice(0, 20).map(entry => {
+            const retryTransition = entry.previousRetryCycle !== null && entry.nextRetryCycle !== null
+              ? `${entry.previousRetryCycle} → ${entry.nextRetryCycle}`
+              : '';
+            const attempts = entry.failureCount !== null && entry.failureBudget !== null
+              ? `${entry.failureCount}/${entry.failureBudget}`
+              : '';
+            const actorLabel = entry.actorUserId && entry.actorUserId !== user.uid
+              ? 'Outro usuário autorizado da loja'
+              : 'Responsável autenticado da loja';
+
+            return (
+              <article
+                key={entry.eventId}
+                className="rounded-xl border border-slate-800 bg-slate-950/45 p-3"
+                data-manual-review-audit-event={entry.eventId}
+              >
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <strong className="block break-all text-[10px] text-slate-200">
+                      Pedido Mercado Livre {entry.externalOrderId}
+                    </strong>
+                    <p className="mt-1 text-[8px] text-slate-600">
+                      {formatTimestamp(entry.occurredAt)} · decisão #{entry.decisionSequence ?? '—'}
+                    </p>
+                  </div>
+                  <span className="rounded-full border border-cyan-500/20 bg-cyan-500/[0.06] px-2 py-1 font-mono text-[7px] font-black uppercase text-cyan-200">
+                    {auditResultLabel(entry.decisionResult)}
+                  </span>
+                </div>
+
+                <dl className="mt-3 grid gap-2 sm:grid-cols-2">
+                  <div>
+                    <dt className="font-mono text-[7px] font-black uppercase text-slate-600">Ação</dt>
+                    <dd className="mt-0.5 text-[9px] text-slate-300">{auditActionLabel(entry.action)}</dd>
+                  </div>
+                  <div>
+                    <dt className="font-mono text-[7px] font-black uppercase text-slate-600">Responsável</dt>
+                    <dd className="mt-0.5 text-[9px] text-slate-300">{actorLabel}</dd>
+                  </div>
+                  {(retryTransition || attempts) && (
+                    <div>
+                      <dt className="font-mono text-[7px] font-black uppercase text-slate-600">Retry</dt>
+                      <dd className="mt-0.5 text-[9px] text-slate-300">
+                        {[retryTransition && `ciclo ${retryTransition}`, attempts && `${attempts} falhas`].filter(Boolean).join(' · ')}
+                      </dd>
+                    </div>
+                  )}
+                  {entry.reason && (
+                    <div className={retryTransition || attempts ? '' : 'sm:col-span-2'}>
+                      <dt className="font-mono text-[7px] font-black uppercase text-slate-600">Justificativa</dt>
+                      <dd className="mt-0.5 break-words text-[9px] leading-relaxed text-slate-300">{entry.reason}</dd>
+                    </div>
+                  )}
+                </dl>
+              </article>
+            );
+          })}
+        </div>
       </div>
     </section>
   );
