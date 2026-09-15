@@ -73,6 +73,36 @@ export default async function handler(
   request: RequestLike,
   response: ResponseLike
 ): Promise<void> {
+  const queueEventType = headerValue(
+    request.headers['ce-type'] ?? request.headers['Ce-Type']
+  );
+  if (queueEventType === 'com.vercel.queue.v2beta') {
+    const [{ QueueClient }, orderQueue] = await Promise.all([
+      import('@vercel/queue'),
+      import('../server/integrations/mercadoLivreOrderQueueService.js'),
+    ]);
+    const queue = new QueueClient();
+    const callback = queue.handleNodeCallback(async (message, metadata) => {
+      if (metadata.topicName !== orderQueue.MERCADO_LIVRE_ORDERS_V2_QUEUE_TOPIC) {
+        throw new Error('MERCADO_LIVRE_ORDER_QUEUE_TOPIC_MISMATCH');
+      }
+      const result = await orderQueue.consumeMercadoLivreOrderQueueMessage(message);
+      console.info('[Mercado Livre orders_v2 consumed]', JSON.stringify({
+        topic: metadata.topicName,
+        messageId: metadata.messageId,
+        deliveryCount: metadata.deliveryCount,
+        disposition: result.disposition,
+        inboxId: result.inboxId,
+        outcome: result.outcome,
+      }));
+    });
+    await (callback as unknown as (
+      request: unknown,
+      response: unknown
+    ) => Promise<void>)(request, response);
+    return;
+  }
+
   const traceId = requestTraceId(request);
   const transport = queryValue(request.query?.transport);
   response.setHeader('X-Kyrub-Release', releaseIdentifier());
