@@ -145,35 +145,12 @@ export const ingestMercadoLivreNotification = async (
   const disposition = processableTopics.has(notification.topic) ? 'pending_fetch' : 'ignored_topic';
   const inboxId = inboxDocumentId(notification.notificationId);
   const reference = adminDb.doc(`integrationWebhookInbox/${inboxId}`);
-  const isOrderNotification = notification.topic === 'orders_v2' && disposition === 'pending_fetch';
-  const queueReference = isOrderNotification
-    ? adminDb.doc(`mercadoLivreOrderIngressQueue/${inboxId}`)
-    : null;
   let duplicate = false;
 
   await adminDb.runTransaction(async transaction => {
     const existing = await transaction.get(reference);
     if (existing.exists) {
       duplicate = true;
-      if (queueReference) {
-        const existingData = existing.data() as Record<string, unknown>;
-        const existingTopic = clean(existingData.topic);
-        const existingStatus = clean(existingData.processingStatus);
-        if (existingTopic === 'orders_v2' && existingStatus !== 'processed') {
-          transaction.set(reference, {
-            disposition: 'pending_fetch',
-            processingStatus: 'pending',
-          }, { merge: true });
-          transaction.set(queueReference, {
-            provider: 'mercado_livre',
-            topic: 'orders_v2',
-            inboxId,
-            status: 'pending',
-            authority: 'durable_webhook_queue',
-            updatedAt: FieldValue.serverTimestamp(),
-          }, { merge: true });
-        }
-      }
       return;
     }
 
@@ -193,19 +170,6 @@ export const ingestMercadoLivreNotification = async (
       authority: 'provider_notification_trigger',
       createdAt: FieldValue.serverTimestamp(),
     });
-
-    if (queueReference) {
-      transaction.create(queueReference, {
-        provider: 'mercado_livre',
-        topic: 'orders_v2',
-        inboxId,
-        status: 'pending',
-        authority: 'durable_webhook_queue',
-        attempts: 0,
-        createdAt: FieldValue.serverTimestamp(),
-        updatedAt: FieldValue.serverTimestamp(),
-      });
-    }
   });
 
   return {
