@@ -199,14 +199,14 @@ export default function StoreAdministrativeAuditWorkspace({
                           {domainLabel[event.domain] ?? 'Loja'} · {event.actorLabel}
                         </span>
                         <h4 className="mt-1 text-[11px] font-black text-white">
-                          {actionLabel[event.action] ?? event.action.replaceAll('_', ' ') || 'Ação administrativa'}
+                          {actionLabel[event.action] ?? (event.action.replaceAll('_', ' ') || 'Ação administrativa')}
                         </h4>
                         <p className="mt-1 text-[9px] text-slate-500">
                           {formatTimestamp(event.occurredAt)} · {subjectLabel(event)}
                         </p>
                       </div>
                       <span className="rounded-full border border-slate-700 bg-slate-900 px-3 py-1 font-mono text-[8px] font-black uppercase text-slate-300">
-                        {resultLabel[event.result] ?? event.result.replaceAll('_', ' ') || 'Registrado'}
+                        {resultLabel[event.result] ?? (event.result.replaceAll('_', ' ') || 'Registrado')}
                       </span>
                     </div>
 
