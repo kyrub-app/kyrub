@@ -6,24 +6,13 @@
           && documentId == 'inventory';
       }
 
-      function hasValidPrivateInventoryShape(data) {
+      function hasValidPrivateInventoryFields(data) {
         return data.keys().hasAll([
           'ownerId',
           'inventoryCatalog',
           'productCompositions',
-          'createdAt',
           'updatedAt'
         ])
-          && data.keys().hasOnly([
-            'ownerId',
-            'inventoryCatalog',
-            'catalog',
-            'productCompositions',
-            'compositions',
-            'productFiscalProfiles',
-            'createdAt',
-            'updatedAt'
-          ])
           && data.ownerId == userId
           && data.inventoryCatalog is list
           && data.productCompositions is map
@@ -50,6 +39,32 @@
           );
       }
 
+      function hasValidPrivateInventoryShape(data) {
+        return hasValidPrivateInventoryFields(data)
+          && data.keys().hasAll(['createdAt'])
+          && data.keys().hasOnly([
+            'ownerId',
+            'inventoryCatalog',
+            'catalog',
+            'productCompositions',
+            'compositions',
+            'productFiscalProfiles',
+            'createdAt',
+            'updatedAt'
+          ]);
+      }
+
+      function preservesPrivateInventoryCreatedAt() {
+        return (
+          existing().keys().hasAny(['createdAt'])
+          && incoming().keys().hasAny(['createdAt'])
+          && incoming().createdAt == existing().createdAt
+        ) || (
+          !existing().keys().hasAny(['createdAt'])
+          && !incoming().keys().hasAny(['createdAt'])
+        );
+      }
+
       allow get: if isPrivateInventoryOwner();
       allow list: if false;
 
@@ -60,9 +75,9 @@
 
       allow update: if isPrivateInventoryOwner()
         && existing().ownerId == userId
-        && hasValidPrivateInventoryShape(incoming())
+        && hasValidPrivateInventoryFields(incoming())
         && incoming().ownerId == existing().ownerId
-        && incoming().createdAt == existing().createdAt
+        && preservesPrivateInventoryCreatedAt()
         && incoming().updatedAt == request.time
         && incoming().diff(existing()).affectedKeys().hasOnly([
           'inventoryCatalog',
