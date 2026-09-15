@@ -73,36 +73,6 @@ export default async function handler(
   request: RequestLike,
   response: ResponseLike
 ): Promise<void> {
-  const queueEventType = headerValue(
-    request.headers['ce-type'] ?? request.headers['Ce-Type']
-  );
-  if (queueEventType === 'com.vercel.queue.v2beta') {
-    const [{ QueueClient }, orderQueue] = await Promise.all([
-      import('@vercel/queue'),
-      import('../server/integrations/mercadoLivreOrderQueueService.js'),
-    ]);
-    const queue = new QueueClient();
-    const callback = queue.handleNodeCallback(async (message, metadata) => {
-      if (metadata.topicName !== orderQueue.MERCADO_LIVRE_ORDERS_V2_QUEUE_TOPIC) {
-        throw new Error('MERCADO_LIVRE_ORDER_QUEUE_TOPIC_MISMATCH');
-      }
-      const result = await orderQueue.consumeMercadoLivreOrderQueueMessage(message);
-      console.info('[Mercado Livre orders_v2 consumed]', JSON.stringify({
-        topic: metadata.topicName,
-        messageId: metadata.messageId,
-        deliveryCount: metadata.deliveryCount,
-        disposition: result.disposition,
-        inboxId: result.inboxId,
-        outcome: result.outcome,
-      }));
-    });
-    await (callback as unknown as (
-      request: unknown,
-      response: unknown
-    ) => Promise<void>)(request, response);
-    return;
-  }
-
   const traceId = requestTraceId(request);
   const transport = queryValue(request.query?.transport);
   response.setHeader('X-Kyrub-Release', releaseIdentifier());
@@ -221,6 +191,27 @@ export default async function handler(
         error: 'A integração de canais está temporariamente indisponível.',
         code: 'STORE_CONNECTION_TRANSPORT_UNAVAILABLE',
       });
+    }
+    return;
+  }
+
+  if (transport === 'drive-media') {
+    if ((request.method?.toUpperCase() || 'GET') !== 'GET') {
+      response.setHeader('Allow', 'GET');
+      response.status(405).json({ error: 'Método não permitido.' });
+      return;
+    }
+    try {
+      const media = await import('../server/driveMediaProxy.js');
+      await media.proxyPublicGoogleDriveImage(
+        queryValue(request.query?.fileId),
+        response as never
+      );
+    } catch (error) {
+      console.error('[drive-media-transport]', error instanceof Error ? error.message : String(error));
+      if (!(response as unknown as { writableEnded?: boolean }).writableEnded) {
+        response.status(503).json({ error: 'A imagem está temporariamente indisponível.' });
+      }
     }
     return;
   }
