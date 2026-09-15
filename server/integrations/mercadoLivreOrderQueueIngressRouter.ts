@@ -1,13 +1,17 @@
 import { Router } from 'express';
 import { parseMercadoLivreNotification } from './mercadoLivreNotificationInboxService.js';
-import { enqueueMercadoLivreOrderNotification } from './mercadoLivreOrderQueueService.js';
+import {
+  enqueueMercadoLivreOrderNotification,
+  isMercadoLivreOrderQueueTerminalEnvelopeError,
+} from './mercadoLivreOrderQueueService.js';
 
 const errorCode = (error: unknown): string =>
   (error instanceof Error ? error.message : String(error)).split(':')[0].slice(0, 100);
 
 const isNonRetryableNotificationError = (code: string): boolean =>
-  code.startsWith('MERCADO_LIVRE_NOTIFICATION_') &&
-  (code.endsWith('_INVALID') || code === 'MERCADO_LIVRE_NOTIFICATION_INVALID');
+  (code.startsWith('MERCADO_LIVRE_NOTIFICATION_') &&
+    (code.endsWith('_INVALID') || code === 'MERCADO_LIVRE_NOTIFICATION_INVALID')) ||
+  isMercadoLivreOrderQueueTerminalEnvelopeError(code);
 
 export const createMercadoLivreOrderQueueIngressRouter = (): Router => {
   const router = Router();
@@ -19,7 +23,7 @@ export const createMercadoLivreOrderQueueIngressRouter = (): Router => {
     } catch (error) {
       const code = errorCode(error);
       if (isNonRetryableNotificationError(code)) {
-        response.status(200).json({ received: true });
+        response.status(200).json({ received: true, ignored: true, code });
         return;
       }
       next(error);
@@ -40,7 +44,13 @@ export const createMercadoLivreOrderQueueIngressRouter = (): Router => {
         notificationId: queued.notificationId,
       });
     } catch (error) {
-      console.error('[Mercado Livre orders_v2 queue]', errorCode(error));
+      const code = errorCode(error);
+      if (isNonRetryableNotificationError(code)) {
+        console.warn('[Mercado Livre orders_v2 ignored]', code);
+        response.status(200).json({ received: true, ignored: true, code });
+        return;
+      }
+      console.error('[Mercado Livre orders_v2 queue]', code);
       response.status(503).json({ received: false });
     }
   });
