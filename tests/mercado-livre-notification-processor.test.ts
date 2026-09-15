@@ -154,3 +154,76 @@ test('order ingress service dual-writes legacy plus canonical order without coup
   assert.match(source, /provider_cancellation_review_required/);
   assert.doesNotMatch(source, /NFC-e|NF-e|NFS-e|SEFAZ|CFOP|CST|emissionAuthority/);
 });
+
+test('orders_v2 malformed resources are poison-safe before Queue publication and after Queue delivery', () => {
+  const queue = readFileSync('server/integrations/mercadoLivreOrderQueueService.ts', 'utf8');
+  const ingress = readFileSync('server/integrations/mercadoLivreOrderQueueIngressRouter.ts', 'utf8');
+  assert.match(queue, /mercadoLivreOrderIdFromResource\(notification\.resource\)/);
+  assert.match(queue, /MERCADO_LIVRE_ORDER_RESOURCE_UNSUPPORTED/);
+  assert.match(queue, /disposition: 'discarded_invalid_message'/);
+  assert.match(ingress, /isMercadoLivreOrderQueueTerminalEnvelopeError/);
+  assert.match(ingress, /received: true, ignored: true, code/);
+  assert.match(ingress, /response\.status\(503\)\.json\(\{ received: false \}\)/);
+});
+
+test('Queue redelivery quarantines deterministic provider contract failures instead of retrying forever', () => {
+  const queue = readFileSync('server/integrations/mercadoLivreOrderQueueService.ts', 'utf8');
+  assert.match(queue, /MERCADO_LIVRE_ORDER_SELLER_MISMATCH/);
+  assert.match(queue, /MERCADO_LIVRE_ORDER_RESPONSE_INVALID/);
+  assert.match(queue, /MERCADO_LIVRE_ORDER_ITEMS_INVALID/);
+  assert.match(queue, /processingStatus: 'failed'/);
+  assert.match(queue, /processingOutcome: 'quarantined_terminal_error'/);
+  assert.match(queue, /if \(isMercadoLivreOrderQueueTerminalProcessingError\(code\)\)/);
+  assert.match(queue, /throw error;/);
+});
+
+test('fragmented notifications for the same order stay independent because Queue idempotency is notification-scoped', () => {
+  const queue = readFileSync('server/integrations/mercadoLivreOrderQueueService.ts', 'utf8');
+  assert.match(queue, /queueIdempotencyKey\(notification\.notificationId\)/);
+  assert.doesNotMatch(queue, /queueIdempotencyKey\(.*externalOrderId/);
+
+  const ingress = readFileSync('server/integrations/mercadoLivreOrderIngressService.ts', 'utf8');
+  const providerFetch = ingress.indexOf('mercadoLivreGetJson<unknown>');
+  const existingStateRead = ingress.indexOf('const existingStatus = currentOrderStatus');
+  assert.ok(providerFetch >= 0 && existingStateRead > providerFetch);
+  assert.match(ingress, /lastNotificationId: input\.inbox\.notificationId/);
+});
+
+test('paid order without binding is durably blocked before any KDS normalization', () => {
+  const ingress = readFileSync('server/integrations/mercadoLivreOrderIngressService.ts', 'utf8');
+  const bindingStart = ingress.indexOf('const bindingResolution = await resolveOrderBindings');
+  const normalizationStart = ingress.indexOf('const order = normalizeMercadoLivrePaidOrderForKds', bindingStart);
+  assert.ok(bindingStart >= 0 && normalizationStart > bindingStart);
+  const bindingGate = ingress.slice(bindingStart, normalizationStart);
+  assert.match(bindingGate, /mercadoLivreOrderIngressBlocks/);
+  assert.match(bindingGate, /status: 'product_binding_required'/);
+  assert.match(bindingGate, /processingOutcome: 'blocked_product_binding'/);
+  assert.match(bindingGate, /authority: 'manual_resolution_required'/);
+});
+
+test('binding recovery reopens the original provider inbox and never fabricates a replacement notification', () => {
+  const recovery = readFileSync('server/integrations/mercadoLivreOrderIngressRecoveryService.ts', 'utf8');
+  assert.match(recovery, /sourceNotificationId/);
+  assert.match(recovery, /createHash\('sha256'\)\.update\(notificationId\)/);
+  assert.match(recovery, /processingOutcome, 80\) !== 'blocked_product_binding'/);
+  assert.match(recovery, /processingStatus: 'pending'/);
+  assert.match(recovery, /recoveryAuthority: 'store_owner_binding_resolution'/);
+  assert.match(recovery, /processMercadoLivreOrderNotificationInboxItem/);
+  assert.match(recovery, /expectedStoreId: storeId/);
+  assert.match(recovery, /retryLeaseUntil/);
+  assert.doesNotMatch(recovery, /@vercel\/queue|\bsend\s*\(/);
+  assert.doesNotMatch(recovery, /canonicalProductId/);
+});
+
+test('binding recovery endpoint is owner-only and accepts no browser-supplied binding or commercial evidence', () => {
+  const router = readFileSync('server/integrations/mercadoLivreE2ETestRouter.ts', 'utf8');
+  const start = router.indexOf("router.post('/:storeId/e2e/order-ingress-blocks/:orderId/retry-after-binding'");
+  const end = router.indexOf('\n\n  return router;', start);
+  assert.ok(start >= 0 && end > start);
+  const route = router.slice(start, end);
+  assert.match(route, /authenticatedOwner/);
+  assert.match(route, /retryMercadoLivreOrderIngressAfterBinding/);
+  assert.match(route, /requestedByUserId: identity\.uid/);
+  assert.doesNotMatch(route, /request\.body/);
+  assert.doesNotMatch(route, /canonicalProductId|paymentStatus|providerStatus/);
+});
