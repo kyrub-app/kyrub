@@ -171,9 +171,6 @@ const resolveOrderItems = async (input: {
       input.canonicalStoreId
     );
     if (!product) throw new Error('IN_PERSON_ORDER_PRODUCT_NOT_SELLABLE');
-    if (!product.isService && line.quantity > product.stock) {
-      throw new Error('IN_PERSON_ORDER_PRODUCT_STOCK_INSUFFICIENT');
-    }
     return {
       lineId: `${input.orderId}-line-${index + 1}`,
       productId: product.id,
