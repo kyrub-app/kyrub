@@ -57,6 +57,22 @@ export const parseLocalServiceRequestCreateInput = (value: unknown): LocalServic
   return { storeId, orderId, kind: candidate.kind };
 };
 
+export const resolveLocalServiceRequestLocation = (input: {
+  serviceLocation?: unknown;
+  tableCode?: unknown;
+}): ResolvedOrderServiceLocation | null => {
+  const record = input.serviceLocation && typeof input.serviceLocation === 'object'
+    ? input.serviceLocation as Record<string, unknown>
+    : null;
+  const legacyLabel = record?.source === 'legacy_table_code'
+    ? clean(record.label, 80)
+    : '';
+  return resolveOrderServiceLocation({
+    serviceLocation: input.serviceLocation,
+    tableCode: input.tableCode ?? legacyLabel,
+  });
+};
+
 export const buildLocalServiceRequest = (input: {
   id: string;
   storeId: string;
@@ -75,7 +91,10 @@ export const buildLocalServiceRequest = (input: {
   const orderId = clean(input.orderId);
   const customerId = clean(input.customerId, 180);
   const requestedAt = clean(input.requestedAt, 80);
-  const serviceLocation = resolveOrderServiceLocation({ serviceLocation: input.serviceLocation, tableCode: input.tableCode });
+  const serviceLocation = resolveLocalServiceRequestLocation({
+    serviceLocation: input.serviceLocation,
+    tableCode: input.tableCode,
+  });
   const occurrence = Number(input.occurrence ?? 1);
   if (!id || !storeId || !legacyStoreId || !orderId || !customerId || !serviceLocation ||
       !isLocalServiceRequestKind(input.kind) || !finiteIso(requestedAt) ||
