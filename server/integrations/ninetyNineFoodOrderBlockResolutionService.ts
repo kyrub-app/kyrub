@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { FieldValue } from 'firebase-admin/firestore';
 import { adminDb } from '../firebaseAdmin';
 import {
@@ -9,6 +9,7 @@ import {
 } from '../inventory/ninetyNineFoodReservationLifecycle';
 import { inspectCanonicalOrderInventoryAvailability } from '../inventory/canonicalInventoryReservationService';
 import { sendNinetyNineFoodOrderStatus } from './ninetyNineFoodService';
+import { appendStoreAdministrativeAuditEvent } from './storeAdministrativeAuditService.js';
 
 const clean = (value: unknown, maximum = 500): string =>
   typeof value === 'string' || typeof value === 'number'
@@ -128,6 +129,7 @@ export interface NinetyNineFoodReservationRetryResult {
   state: NinetyNineFoodReservationReconciliationState;
   evidence: NinetyNineFoodReservationRetryEvidence;
   checkedAt: string;
+  auditAttemptId: string;
 }
 
 const reservationEvidence = (
@@ -152,6 +154,74 @@ const reservationReconciliationState = (
   RESERVATION_RECONCILIATION_STATES.has(value as NinetyNineFoodReservationReconciliationState)
     ? value as NinetyNineFoodReservationReconciliationState
     : null;
+
+type ReservationRetryAuditPhase = 'requested' | 'completed' | 'failed';
+
+const appendReservationRetryAudit = async (input: {
+  tenantId: string;
+  canonicalStoreId: string;
+  orderId: string;
+  externalOrderId: string;
+  requestedByUserId: string;
+  retryAttemptId: string;
+  phase: ReservationRetryAuditPhase;
+  blockedStateBefore: string;
+  reconciliationState?: NinetyNineFoodReservationReconciliationState | null;
+  stateAfter?: NinetyNineFoodReservationReconciliationState | null;
+  evidence?: NinetyNineFoodReservationRetryEvidence;
+  errorCode?: string;
+}): Promise<void> => {
+  const result = input.phase === 'requested'
+    ? 'retry_requested'
+    : input.phase === 'completed'
+      ? 'retry_completed'
+      : 'retry_failed';
+  const action = `retry_blocked_order_reservation_${input.phase}`;
+  const sourceRef = [
+    `stores/${input.canonicalStoreId}/orders/${input.orderId}`,
+    `99food-reservation-retry:${input.retryAttemptId}:${input.phase}`,
+  ].join('#');
+  const evidence = input.evidence ?? {
+    unresolvedExternalProductIds: [],
+    canonicalProductIds: [],
+    inventoryItemId: '',
+    requiredQuantity: null,
+    availableQuantity: null,
+  };
+
+  await adminDb.runTransaction(async transaction => {
+    appendStoreAdministrativeAuditEvent(transaction, {
+      tenantId: input.tenantId,
+      canonicalStoreId: input.canonicalStoreId,
+      domain: 'inventory',
+      action,
+      result,
+      actorType: 'store_owner',
+      actorUserId: input.requestedByUserId,
+      authority: 'store_owner_inventory_reservation_retry',
+      subjectType: 'external_order',
+      subjectId: input.externalOrderId || input.orderId,
+      reason: input.blockedStateBefore,
+      sourceKind: '99food_reservation_retry',
+      sourceRef,
+      metadata: {
+        provider: '99food',
+        orderId: input.orderId,
+        retryAttemptId: input.retryAttemptId,
+        phase: input.phase,
+        blockedStateBefore: input.blockedStateBefore,
+        reconciliationState: input.reconciliationState ?? null,
+        stateAfter: input.stateAfter ?? null,
+        unresolvedExternalProductCount: evidence.unresolvedExternalProductIds.length,
+        canonicalProductCount: evidence.canonicalProductIds.length,
+        inventoryItemId: evidence.inventoryItemId || null,
+        requiredQuantity: evidence.requiredQuantity,
+        availableQuantity: evidence.availableQuantity,
+        errorCode: clean(input.errorCode, 120) || null,
+      },
+    });
+  });
+};
 
 export const listNinetyNineFoodBlockedOrders = async (input: {
   tenantId: string;
@@ -288,28 +358,114 @@ export const retryNinetyNineFoodBlockedOrderReservation = async (input: {
   if (integrationProvider(order) !== '99food') {
     throw new Error('NINETY_NINE_FOOD_BLOCK_SOURCE_MISMATCH');
   }
-  if (!BLOCKED_STATES.has(inventoryReservationState(order))) {
+  const blockedStateBefore = inventoryReservationState(order);
+  if (!BLOCKED_STATES.has(blockedStateBefore)) {
     throw new Error('NINETY_NINE_FOOD_BLOCK_ORDER_NOT_BLOCKED');
   }
+  const providerOrderId = externalOrderId(order);
+  const retryAttemptId = randomUUID();
 
-  const reconciliationState = await reconcileNinetyNineFoodOrderReservation(tenantId, orderId);
-  const readbackSnapshot = await adminDb.doc(orderPath(canonicalStoreId, orderId)).get();
-  if (!readbackSnapshot.exists) {
-    throw new Error('NINETY_NINE_FOOD_BLOCK_RETRY_READBACK_INVALID');
+  await appendReservationRetryAudit({
+    tenantId,
+    canonicalStoreId,
+    orderId,
+    externalOrderId: providerOrderId,
+    requestedByUserId,
+    retryAttemptId,
+    phase: 'requested',
+    blockedStateBefore,
+  });
+
+  let reconciliationState: NinetyNineFoodReservationReconciliationState;
+  try {
+    reconciliationState = await reconcileNinetyNineFoodOrderReservation(tenantId, orderId);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    try {
+      await appendReservationRetryAudit({
+        tenantId,
+        canonicalStoreId,
+        orderId,
+        externalOrderId: providerOrderId,
+        requestedByUserId,
+        retryAttemptId,
+        phase: 'failed',
+        blockedStateBefore,
+        errorCode: message,
+      });
+    } catch (auditError) {
+      console.error('[99Food reservation retry failure audit unavailable]', {
+        tenantId,
+        orderId,
+        retryAttemptId,
+        error: auditError instanceof Error ? auditError.message : String(auditError),
+      });
+    }
+    throw error;
   }
-  const readbackOrder = readbackSnapshot.data() as Record<string, unknown>;
-  if (integrationProvider(readbackOrder) !== '99food') {
-    throw new Error('NINETY_NINE_FOOD_BLOCK_RETRY_READBACK_INVALID');
+
+  let readbackOrder: Record<string, unknown>;
+  let state: NinetyNineFoodReservationReconciliationState;
+  try {
+    const readbackSnapshot = await adminDb.doc(orderPath(canonicalStoreId, orderId)).get();
+    if (!readbackSnapshot.exists) {
+      throw new Error('NINETY_NINE_FOOD_BLOCK_RETRY_READBACK_INVALID');
+    }
+    readbackOrder = readbackSnapshot.data() as Record<string, unknown>;
+    if (integrationProvider(readbackOrder) !== '99food') {
+      throw new Error('NINETY_NINE_FOOD_BLOCK_RETRY_READBACK_INVALID');
+    }
+    const readbackState = reservationReconciliationState(inventoryReservationState(readbackOrder));
+    if (!readbackState) throw new Error('NINETY_NINE_FOOD_BLOCK_RETRY_READBACK_INVALID');
+    state = readbackState;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    try {
+      await appendReservationRetryAudit({
+        tenantId,
+        canonicalStoreId,
+        orderId,
+        externalOrderId: providerOrderId,
+        requestedByUserId,
+        retryAttemptId,
+        phase: 'failed',
+        blockedStateBefore,
+        reconciliationState,
+        errorCode: message,
+      });
+    } catch (auditError) {
+      console.error('[99Food reservation retry readback audit unavailable]', {
+        tenantId,
+        orderId,
+        retryAttemptId,
+        error: auditError instanceof Error ? auditError.message : String(auditError),
+      });
+    }
+    throw error;
   }
-  const state = reservationReconciliationState(inventoryReservationState(readbackOrder));
-  if (!state) throw new Error('NINETY_NINE_FOOD_BLOCK_RETRY_READBACK_INVALID');
+
+  const evidence = reservationEvidence(readbackOrder);
+  await appendReservationRetryAudit({
+    tenantId,
+    canonicalStoreId,
+    orderId,
+    externalOrderId: providerOrderId,
+    requestedByUserId,
+    retryAttemptId,
+    phase: 'completed',
+    blockedStateBefore,
+    reconciliationState,
+    stateAfter: state,
+    evidence,
+  });
 
   return {
     orderId,
     reconciliationState,
     state,
-    evidence: reservationEvidence(readbackOrder),
+    evidence,
     checkedAt: new Date().toISOString(),
+    auditAttemptId: retryAttemptId,
   };
 };
 
