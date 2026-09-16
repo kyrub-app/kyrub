@@ -29,6 +29,7 @@ import { ProductInventoryWorkspace } from './store/ProductInventoryWorkspace';
 import MercadoLivreE2ETestBridge from './store/MercadoLivreE2ETestBridge';
 import StoreConnectionsWorkspace from './store/StoreConnectionsWorkspace';
 import StoreAdministrativeAuditWorkspace from './store/StoreAdministrativeAuditWorkspace';
+import StoreTeamAccessWorkspace from './store/StoreTeamAccessWorkspace';
 
 type GerencialModule =
   | 'produtos'
@@ -296,7 +297,7 @@ export function GerencialPanel({
     produtos: 'Produtos & Estoque',
     vendas: 'Vendas & Analytics',
     financeiro: 'Financeiro Interno',
-    rh: 'Recursos Humanos',
+    rh: 'Equipe & Permissões',
     integracoes: 'Integrações & Sandbox',
     auditoria: 'Ações & Auditoria',
     vouchers: 'Cupons & Vouchers',
@@ -334,7 +335,7 @@ export function GerencialPanel({
           <ModuleCard title="Produtos & Estoque" description="Catálogo, publicação, estoque e edição dos itens da loja." icon={Package} accent="text-orange-300" onClick={() => setActiveModule('produtos')} />
           <ModuleCard title="Vendas & Analytics" description="Indicadores calculados a partir dos pedidos reais associados à loja." icon={BarChart3} accent="text-blue-300" onClick={() => setActiveModule('vendas')} />
           <ModuleCard title="Financeiro Interno" description="Custos, entradas, obrigações e projeções financeiras da operação." icon={DollarSign} accent="text-emerald-300" badge="Migração nativa" onClick={() => setActiveModule('financeiro')} />
-          <ModuleCard title="Recursos Humanos" description="Equipe, cargos, acessos e rotinas de trabalho da loja única do usuário." icon={Users} accent="text-pink-300" badge="Migração nativa" onClick={() => setActiveModule('rh')} />
+          <ModuleCard title="Equipe & Permissões" description="Vínculos canônicos, papéis e estados reais da equipe da loja." icon={Users} accent="text-pink-300" badge="Somente leitura" onClick={() => setActiveModule('rh')} />
           <ModuleCard title="CRM" description="Relacionamento, segmentação, histórico e inteligência sobre clientes." icon={UserCheck} accent="text-cyan-300" badge="Em desenvolvimento" disabled />
           <ModuleCard title="Marketing" description="Aquisição, conversão, retenção, canais e inteligência de crescimento." icon={Zap} accent="text-violet-300" badge="Em desenvolvimento" disabled />
           <ModuleCard title="Integrações & Sandbox" description="Conexões externas, OAuth, sincronização e testes controlados dos canais." icon={Settings} accent="text-purple-300" onClick={() => setActiveModule('integracoes')} />
@@ -365,11 +366,13 @@ export function GerencialPanel({
       )}
 
       {activeModule === 'rh' && (
-        <NativeMigrationNotice
-          title="Recursos Humanos"
-          description="O RH será migrado para um workspace autoritativo da loja única do usuário. O componente de diretório multi-loja não é reutilizado aqui, para não introduzir uma capacidade que não pertence a este modelo."
-          icon={Users}
-        />
+        user ? (
+          <StoreTeamAccessWorkspace user={user} storeId={user.uid} />
+        ) : (
+          <div className="rounded-3xl border border-amber-500/20 bg-amber-500/[0.06] p-5 text-[10px] leading-relaxed text-amber-100">
+            A sessão autenticada ainda não está disponível para carregar a equipe da loja.
+          </div>
+        )
       )}
 
       {activeModule === 'integracoes' && (
