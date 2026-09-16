@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import './local-service-requests.test';
 import type { ServiceLocationSnapshot } from '../shared/serviceLocation';
 import type { CustomerOrder } from '../src/utils/customerOrders';
 import {
@@ -111,7 +112,7 @@ test('prefers canonical table identity and label over legacy tableCode', () => {
   assert.equal(cards[0].orderCount, 2);
 });
 
-test('does not misclassify a canonical non-table location as a table because of legacy data', () => {
+test('keeps canonical non-table location as its own service-location card', () => {
   const cards = buildCustomerTableCards([
     makeOrder({
       tableCode: '12',
@@ -124,7 +125,10 @@ test('does not misclassify a canonical non-table location as a table because of 
     }),
   ]);
 
-  assert.deepEqual(cards, []);
+  assert.equal(cards.length, 1);
+  assert.equal(cards[0].tableCode, 'Balcão 2');
+  assert.equal(cards[0].serviceLocation.kind, 'counter');
+  assert.equal(cards[0].serviceLocation.source, 'canonical');
 });
 
 test('ignores delivery, pickup and terminal dine-in orders', () => {
@@ -139,7 +143,7 @@ test('ignores delivery, pickup and terminal dine-in orders', () => {
   assert.deepEqual(cards, []);
 });
 
-test('prioritizes alerting tables before numeric table order', () => {
+test('prioritizes alerting locations before numeric table order', () => {
   const cards = buildCustomerTableCards([
     makeOrder({ id: 'accepted-2', tableCode: '2', status: 'accepted' }),
     makeOrder({ id: 'preparing-10', tableCode: '10', status: 'preparing' }),
@@ -153,7 +157,7 @@ test('prioritizes alerting tables before numeric table order', () => {
   );
 });
 
-test('uses the highest-priority operational state within a shared table', () => {
+test('uses the highest-priority operational state within a shared location', () => {
   const cards = buildCustomerTableCards([
     makeOrder({ id: 'accepted', status: 'accepted' }),
     makeOrder({ id: 'preparing', status: 'preparing' }),
@@ -164,7 +168,7 @@ test('uses the highest-priority operational state within a shared table', () => 
   assert.equal(getCustomerTableStateLabel(cards[0].state, 0), 'Pronto');
 });
 
-test('shows only unpaid and non-transferred quantities in the table card', () => {
+test('shows only unpaid and non-transferred quantities in the location card', () => {
   const cards = buildCustomerTableCards([
     makeOrder({
       status: 'accepted',
