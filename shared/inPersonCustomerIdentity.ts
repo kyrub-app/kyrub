@@ -14,6 +14,11 @@ export type InPersonCustomerPaymentState =
   | 'attention'
   | 'reconciliation_required';
 
+export type InPersonCustomerPaymentEvidence =
+  | 'none'
+  | 'canonical_payment'
+  | 'legacy_order_state';
+
 export interface InPersonCustomerLookupInput {
   storeId: string;
   orderId: string;
@@ -40,6 +45,7 @@ export interface InPersonCustomerCandidate {
 
 export interface InPersonCustomerPaymentSummary {
   state: InPersonCustomerPaymentState;
+  evidence: InPersonCustomerPaymentEvidence;
   orderPaymentStatus: 'unpaid' | 'partial' | 'paid';
   expectedAmount: number;
   authoritativelyPaidAmount: number;
