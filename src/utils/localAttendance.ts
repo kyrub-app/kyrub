@@ -50,7 +50,8 @@ export const loadLocalAttendanceSessions = async (
 export const openLocalAttendance = async (input: {
   storeId: string;
   customerLabel: string;
-  space: string;
+  space?: string;
+  serviceLocationId?: string;
   itemCount: number;
 }): Promise<LocalAttendanceSession> => {
   const payload = await json<{ session: LocalAttendanceSession }>(

@@ -1,7 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { onAuthStateChanged } from 'firebase/auth';
+import type { ServiceLocation } from '../../../shared/serviceLocation';
 import { auth } from '../../utils/firebase';
+import { loadServiceLocations } from '../../utils/serviceLocations';
 import { LocalAttendanceWorkspace } from './LocalAttendanceWorkspace';
 
 const CANONICAL_HOST_IDS = new Set([
@@ -10,12 +12,45 @@ const CANONICAL_HOST_IDS = new Set([
   'canonical-local-attendance-host',
 ]);
 
+const LEGACY_SEED = ['GERAL', 'BALCÃO', 'ENTREGA', 'AGENDADOS'];
+
+const normalizedLegacySpaces = (spaces: string[]): string[] => {
+  const unique = Array.from(new Set(
+    spaces.map(item => item.trim().toLocaleUpperCase('pt-BR')).filter(Boolean)
+  ));
+  const current = [...unique].sort();
+  const seed = [...LEGACY_SEED].sort();
+  const isOnlySeed = current.length === seed.length &&
+    current.every((item, index) => item === seed[index]);
+  return isOnlySeed ? [] : unique;
+};
+
 export const LocalAttendanceBridge = () => {
   const [storeId, setStoreId] = useState(auth.currentUser?.uid ?? '');
   const [host, setHost] = useState<HTMLElement | null>(null);
-  const [spaces, setSpaces] = useState<string[]>(['GERAL']);
+  const [serviceLocations, setServiceLocations] = useState<ServiceLocation[]>([]);
+  const [legacySpaces, setLegacySpaces] = useState<string[]>([]);
 
   useEffect(() => onAuthStateChanged(auth, user => setStoreId(user?.uid ?? '')), []);
+
+  const refreshLocations = useCallback(async (): Promise<void> => {
+    if (!storeId) {
+      setServiceLocations([]);
+      return;
+    }
+    try {
+      setServiceLocations(await loadServiceLocations(storeId, { activeOnly: true }));
+    } catch (error) {
+      console.warn('Canonical service locations are unavailable.', error);
+    }
+  }, [storeId]);
+
+  useEffect(() => {
+    void refreshLocations();
+    const handleLocationsChanged = () => void refreshLocations();
+    window.addEventListener('kyrub-service-locations-changed', handleLocationsChanged);
+    return () => window.removeEventListener('kyrub-service-locations-changed', handleLocationsChanged);
+  }, [refreshLocations]);
 
   useEffect(() => {
     let cancelled = false;
@@ -55,7 +90,7 @@ export const LocalAttendanceBridge = () => {
       const detectedSpaces = Array.from(opener.querySelectorAll('select option'))
         .map(option => option.textContent?.trim() ?? '')
         .filter(Boolean);
-      if (detectedSpaces.length > 0) setSpaces(Array.from(new Set(detectedSpaces)));
+      setLegacySpaces(normalizedLegacySpaces(detectedSpaces));
 
       const directChildren = Array.from(container.children).filter(
         (child): child is HTMLElement => child instanceof HTMLElement
@@ -101,7 +136,11 @@ export const LocalAttendanceBridge = () => {
 
   if (!host || !storeId) return null;
   return createPortal(
-    <LocalAttendanceWorkspace storeId={storeId} spaces={spaces} />,
+    <LocalAttendanceWorkspace
+      storeId={storeId}
+      serviceLocations={serviceLocations}
+      legacySpaces={legacySpaces}
+    />,
     host
   );
 };
