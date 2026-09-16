@@ -101,6 +101,16 @@ export const InPersonCustomerLinker = ({
   }, [selectedOrderId, storeId]);
 
   useEffect(() => {
+    if (!storeId || !selectedOrderId) return;
+    const timer = window.setInterval(() => {
+      void loadInPersonCustomerContext({ storeId, orderId: selectedOrderId })
+        .then(setContext)
+        .catch(() => undefined);
+    }, 10000);
+    return () => window.clearInterval(timer);
+  }, [selectedOrderId, storeId]);
+
+  useEffect(() => {
     const refresh = (event: Event) => {
       const detail = event instanceof CustomEvent
         ? event.detail as { orderId?: string } | undefined
