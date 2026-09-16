@@ -15,6 +15,7 @@ import {
   subscribeToStoreCustomerOrders,
   type CustomerOrder,
 } from '../../utils/customerOrders';
+import { InPersonOrderComposer } from './InPersonOrderComposer';
 
 const focusElement = (id: string): void => {
   const element = document.getElementById(id);
@@ -116,6 +117,8 @@ export function LocalServicePdvBridge() {
           {summary.activeOrders} pedido{summary.activeOrders === 1 ? '' : 's'} local{summary.activeOrders === 1 ? '' : 'is'}
         </span>
       </div>
+
+      <InPersonOrderComposer storeId={user.uid} />
 
       <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
         <button
