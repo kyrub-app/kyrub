@@ -50,7 +50,7 @@ const mapError = (error: unknown): { status: number; message: string } => {
     return { status: 409, message: 'Esta solicitação já foi encerrada.' };
   }
   if (code === 'LOCAL_SERVICE_REQUEST_NOTHING_DUE') {
-    return { status: 409, message: 'Esta conta não possui valor em aberto para solicitar maquininha.' };
+    return { status: 409, message: 'Esta conta não possui valor em aberto para fechamento.' };
   }
   if (code.startsWith('LOCAL_SERVICE_REQUEST_') || code.startsWith('IN_PERSON_ORDER_')) {
     return { status: 400, message: 'Não foi possível validar a solicitação de atendimento.' };
