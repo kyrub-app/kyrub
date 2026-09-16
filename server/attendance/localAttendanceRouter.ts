@@ -14,6 +14,7 @@ import {
 } from './serviceLocationService.js';
 import { createInPersonOrderRouter } from './inPersonOrderRouter.js';
 import { createInPersonCustomerIdentityRouter } from './inPersonCustomerIdentityRouter.js';
+import { createLocalServiceRequestRouter } from './localServiceRequestRouter.js';
 import { isServiceLocationKind } from '../../shared/serviceLocation.js';
 
 const clean = (value: unknown): string =>
@@ -74,6 +75,7 @@ export const createLocalAttendanceRouter = (): Router => {
 
   router.use('/orders', createInPersonOrderRouter());
   router.use('/customers', createInPersonCustomerIdentityRouter());
+  router.use('/service-requests', createLocalServiceRequestRouter());
 
   router.get('/locations', async (request, response) => {
     try {
