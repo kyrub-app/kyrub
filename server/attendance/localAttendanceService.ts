@@ -6,6 +6,7 @@ import {
   parseLocalAttendanceSession,
   type LocalAttendanceSession,
 } from '../../shared/localAttendance.js';
+import type { ServiceLocation } from '../../shared/serviceLocation.js';
 
 const clean = (value: unknown): string =>
   typeof value === 'string' ? value.trim() : '';
@@ -34,7 +35,8 @@ export const openLocalAttendanceSession = async (input: {
   storeId: string;
   actorUserId: string;
   customerLabel: unknown;
-  space: unknown;
+  space?: unknown;
+  serviceLocation?: ServiceLocation | null;
   itemCount: unknown;
   now?: Date;
 }): Promise<LocalAttendanceSession> => {
@@ -51,6 +53,7 @@ export const openLocalAttendanceSession = async (input: {
     storeId,
     customerLabel: input.customerLabel,
     space: input.space,
+    serviceLocation: input.serviceLocation,
     itemCount: input.itemCount,
     actorUserId,
     openedAt: now.toISOString(),
