@@ -16,6 +16,7 @@ import {
   type CustomerOrder,
 } from '../../utils/customerOrders';
 import { InPersonOrderComposer } from './InPersonOrderComposer';
+import { InPersonCustomerLinker } from './InPersonCustomerLinker';
 
 const focusElement = (id: string): void => {
   const element = document.getElementById(id);
@@ -119,6 +120,7 @@ export function LocalServicePdvBridge() {
       </div>
 
       <InPersonOrderComposer storeId={user.uid} />
+      <InPersonCustomerLinker storeId={user.uid} orders={orders} />
 
       <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
         <button
