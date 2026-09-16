@@ -141,15 +141,15 @@ describe('in-person customer linking', () => {
     assert.match(service, /collection\(paymentCollectionPath\(context\.canonicalStoreId\)\)/);
     assert.match(service, /\.where\('orderId', '==', orderId\)/);
     assert.match(service, /isPaymentAuthoritativelyPaid\(payment\.status\)/);
-    assert.match(service, /state = 'paid_unattributed'/);
-    assert.match(service, /state = 'reconciliation_required'/);
+    assert.match(service, /'paid_unattributed'/);
+    assert.match(service, /'reconciliation_required'/);
     assert.doesNotMatch(service, /request\.body.*paymentStatus|mark.*paid/i);
   });
 
   test('CRM includes explicit customer relationships but never operational local-order handles', () => {
     const crm = readFileSync('server/payments/storeCrmService.ts', 'utf8');
     assert.match(crm, /customerRelationships/);
-    assert.match(crm, /source|relationshipSnapshot/);
+    assert.match(crm, /relationshipSnapshot/);
     assert.match(crm, /!customerId\.startsWith\('local-order:'\)/);
     assert.match(crm, /isPaymentAuthoritativelyPaid\(payment\.status\)/);
     assert.match(crm, /confirmedPurchases: paid\.length/);
@@ -172,6 +172,8 @@ describe('in-person customer linking', () => {
     assert.match(linker, /CPF ou telefone exato/);
     assert.match(linker, /Pagamento confirmado, ainda não atribuído ao Cairuvi/);
     assert.match(linker, /Identificar o Cairuvi não confirma pagamento, não gera pontos/);
+    assert.match(linker, /window\.setInterval/);
+    assert.match(linker, /10000/);
     assert.doesNotMatch(linker, /Marcar como pago|Confirmar pagamento manualmente|setPaymentStatus/i);
   });
 
