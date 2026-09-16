@@ -105,6 +105,29 @@ describe('authoritative in-person order creation', () => {
     assert.doesNotMatch(payloadBlock, /status\s*:/);
   });
 
+  test('order creation does not become a second inventory authority', () => {
+    const service = readFileSync('server/attendance/inPersonOrderService.ts', 'utf8');
+    const composer = readFileSync('src/components/store/InPersonOrderComposer.tsx', 'utf8');
+    const inventory = readFileSync('server/inventory/orderInventoryService.ts', 'utf8');
+    assert.doesNotMatch(service, /line\.quantity\s*>\s*product\.stock/);
+    assert.doesNotMatch(composer, /quantity\s*>=\s*product\.stock/);
+    assert.match(composer, /Estoque exibido:/);
+    assert.match(inventory, /resolvePhysicalInventoryAuthority/);
+    assert.match(inventory, /applyInventoryForStatus/);
+    assert.match(inventory, /shouldConsumeInventory/);
+  });
+
+  test('existing status authority keeps legacy and canonical copies aligned', () => {
+    const inventory = readFileSync('server/inventory/orderInventoryService.ts', 'utf8');
+    assert.match(inventory, /const canonicalStoreId = clean\(tenantSnapshot\.data\(\)\?\.canonicalStoreId\)/);
+    assert.match(inventory, /transaction\.set\(\s*orderReference/);
+    assert.match(
+      inventory,
+      /adminDb\.doc\(`stores\/\$\{canonicalStoreId\}\/orders\/\$\{normalizedOrderId\}`\)/
+    );
+    assert.match(inventory, /status: nextStatus/);
+  });
+
   test('PDV mounts the composer and states the non-fiscal/non-payment boundary', () => {
     const bridge = readFileSync('src/components/store/LocalServicePdvBridge.tsx', 'utf8');
     const composer = readFileSync('src/components/store/InPersonOrderComposer.tsx', 'utf8');
