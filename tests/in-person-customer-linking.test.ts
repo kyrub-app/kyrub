@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { describe, test } from 'node:test';
+import './in-person-payment-convergence.test';
 import {
   isDirectStaffLinkAllowed,
   maskCustomerEmail,
