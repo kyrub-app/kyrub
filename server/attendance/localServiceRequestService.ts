@@ -42,7 +42,7 @@ const readRequest = (
     !clean(data.legacyStoreId) ||
     !clean(data.orderId) ||
     !clean(data.customerId) ||
-    (data.kind !== 'assistance' && data.kind !== 'payment_terminal') ||
+    (data.kind !== 'assistance' && data.kind !== 'close_account') ||
     (data.status !== 'open' && data.status !== 'acknowledged' &&
       data.status !== 'resolved' && data.status !== 'cancelled') ||
     !Number.isSafeInteger(data.occurrence) || Number(data.occurrence) <= 0 ||
@@ -111,7 +111,7 @@ const requestIdsForOrder = (orderId: string): Array<{
   id: string;
 }> => [
   { kind: 'assistance', id: localServiceRequestId(orderId, 'assistance') },
-  { kind: 'payment_terminal', id: localServiceRequestId(orderId, 'payment_terminal') },
+  { kind: 'close_account', id: localServiceRequestId(orderId, 'close_account') },
 ];
 
 export const createLocalServiceRequest = async (input: {
@@ -125,7 +125,7 @@ export const createLocalServiceRequest = async (input: {
   const context = await resolveInPersonOrderStoreContext(request.storeId);
   const order = await loadCustomerOrder(context.legacyStoreId, request.orderId);
   assertCustomerCanRequest(order, request.orderId, customerId);
-  if (request.kind === 'payment_terminal' && outstandingOrderAmount(order) <= 0) {
+  if (request.kind === 'close_account' && outstandingOrderAmount(order) <= 0) {
     throw new Error('LOCAL_SERVICE_REQUEST_NOTHING_DUE');
   }
   const serviceLocation = resolveOrderServiceLocation({
