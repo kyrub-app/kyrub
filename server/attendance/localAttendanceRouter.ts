@@ -12,6 +12,7 @@ import {
   listServiceLocations,
   updateServiceLocation,
 } from './serviceLocationService.js';
+import { createInPersonOrderRouter } from './inPersonOrderRouter.js';
 import { isServiceLocationKind } from '../../shared/serviceLocation.js';
 
 const clean = (value: unknown): string =>
@@ -69,6 +70,8 @@ const mapError = (error: unknown): { status: number; message: string } => {
 
 export const createLocalAttendanceRouter = (): Router => {
   const router = Router();
+
+  router.use('/orders', createInPersonOrderRouter());
 
   router.get('/locations', async (request, response) => {
     try {
