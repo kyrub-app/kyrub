@@ -1,9 +1,10 @@
 import type { DocumentData, QueryDocumentSnapshot } from 'firebase-admin/firestore';
 import { adminDb } from '../firebaseAdmin.js';
 import { deriveStorePointBalance, STORE_POINTS_CURRENCY, type StorePointLedgerEntry } from '../../shared/storePoints.js';
-import { normalizeCanonicalPayment, isPaymentAuthoritativelyPaid, type CanonicalPayment } from '../../src/utils/canonicalPayment.js';
+import { isPaymentAuthoritativelyPaid, type CanonicalPayment } from '../../src/utils/canonicalPayment.js';
 import { STORE_CRM_MAX_CUSTOMERS, STORE_CRM_SCHEMA_VERSION, buildStoreCrmCustomerSummary, type StoreCrmSummary } from '../../shared/storeCrm.js';
 import type { StoreChallengeProgress } from '../../shared/storeChallenges.js';
+import { classifyCompatiblePaymentRecord } from './paymentRecordCompatibility.js';
 
 const clean = (value: unknown): string => typeof value === 'string' ? value.trim() : '';
 const finiteIso = (value: unknown): string => {
@@ -21,10 +22,12 @@ const challengePath = (storeId: string) => `stores/${storeId}/challengeProgress`
 const redemptionPath = (storeId: string) => `stores/${storeId}/rewardRedemptions`;
 const relationshipPath = (storeId: string) => `stores/${storeId}/customerRelationships`;
 
-const parsePayment = (doc: QueryDocumentSnapshot<DocumentData>, storeId: string): CanonicalPayment => {
-  const payment = normalizeCanonicalPayment(doc.data() as CanonicalPayment);
-  if (payment.storeId !== storeId) throw new Error('STORE_CRM_PAYMENT_SCOPE_INVALID');
-  return payment;
+const parsePayment = (
+  doc: QueryDocumentSnapshot<DocumentData>,
+  storeId: string
+): CanonicalPayment | null => {
+  const classified = classifyCompatiblePaymentRecord(doc.data(), storeId);
+  return classified.kind === 'canonical' ? classified.payment : null;
 };
 
 const parseLedger = (doc: QueryDocumentSnapshot<DocumentData>, storeId: string): StorePointLedgerEntry => {
@@ -99,6 +102,7 @@ export const loadStoreCrmSummary = async (input: { storeId: string; now?: Date }
   const paidByCustomer = new Map<string, CanonicalPayment[]>();
   for (const doc of paymentSnapshot.docs) {
     const payment = parsePayment(doc, storeId);
+    if (!payment) continue;
     if (!isResolvedCustomerId(payment.buyerId)) continue;
     customerIds.add(payment.buyerId);
     if (!isPaymentAuthoritativelyPaid(payment.status)) continue;
