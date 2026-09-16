@@ -33,11 +33,16 @@ const actionLabel: Record<string, string> = {
   '99food_product_binding_reactivated': 'Binding 99Food reativado',
   '99food_product_binding_deactivated': 'Binding 99Food desativado',
   reject_order: 'Pedido 99Food rejeitado',
+  retry_blocked_order_reservation_requested: 'Retry de reserva 99Food solicitado',
+  retry_blocked_order_reservation_completed: 'Retry de reserva 99Food concluído',
+  retry_blocked_order_reservation_failed: 'Retry de reserva 99Food falhou',
 };
 
 const resultLabel: Record<string, string> = {
   applied: 'Aplicado',
   retry_requested: 'Retry solicitado',
+  retry_completed: 'Retry concluído',
+  retry_failed: 'Retry falhou',
   kept_in_review: 'Em revisão',
   closed_non_processable: 'Encerrado',
   queue_failed: 'Falha na fila',
@@ -77,12 +82,30 @@ const evidenceLines = (event: StoreAdministrativeAuditEvent): string[] => {
   if (stateBefore) lines.push(`Estado anterior: ${stateBefore}`);
   const blockedState = typeof metadata.blockedState === 'string' ? metadata.blockedState : '';
   if (blockedState) lines.push(`Bloqueio anterior: ${blockedState}`);
+  const blockedStateBefore = typeof metadata.blockedStateBefore === 'string' ? metadata.blockedStateBefore : '';
+  if (blockedStateBefore) lines.push(`Bloqueio antes do retry: ${blockedStateBefore}`);
+  const reconciliationState = typeof metadata.reconciliationState === 'string' ? metadata.reconciliationState : '';
+  if (reconciliationState) lines.push(`Reconciliação: ${reconciliationState}`);
+  const stateAfter = typeof metadata.stateAfter === 'string' ? metadata.stateAfter : '';
+  if (stateAfter) lines.push(`Estado após retry: ${stateAfter}`);
+  const retryAttemptId = typeof metadata.retryAttemptId === 'string' ? metadata.retryAttemptId : '';
+  if (retryAttemptId) lines.push(`Tentativa: ${retryAttemptId}`);
   const canonicalProductId = typeof metadata.canonicalProductId === 'string' ? metadata.canonicalProductId : '';
   if (canonicalProductId) lines.push(`Produto Kyrub: ${canonicalProductId}`);
   const previousCanonicalProductId = typeof metadata.previousCanonicalProductId === 'string'
     ? metadata.previousCanonicalProductId
     : '';
   if (previousCanonicalProductId) lines.push(`Produto Kyrub anterior: ${previousCanonicalProductId}`);
+  const canonicalProductCount = typeof metadata.canonicalProductCount === 'number' ? metadata.canonicalProductCount : null;
+  if (canonicalProductCount !== null) lines.push(`Produtos Kyrub resolvidos: ${canonicalProductCount}`);
+  const unresolvedExternalProductCount = typeof metadata.unresolvedExternalProductCount === 'number'
+    ? metadata.unresolvedExternalProductCount
+    : null;
+  if (unresolvedExternalProductCount !== null) {
+    lines.push(`Produtos externos ainda sem binding: ${unresolvedExternalProductCount}`);
+  }
+  const inventoryItemId = typeof metadata.inventoryItemId === 'string' ? metadata.inventoryItemId : '';
+  if (inventoryItemId) lines.push(`Item de estoque: ${inventoryItemId}`);
   const revision = typeof metadata.revision === 'number' ? metadata.revision : null;
   if (revision !== null) lines.push(`Revisão do binding: ${revision}`);
   const attempts = typeof metadata.attempts === 'number' ? metadata.attempts : null;
