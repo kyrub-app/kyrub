@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { BellRing, CreditCard, LoaderCircle, X } from 'lucide-react';
 import type { CustomerOrder } from '../../utils/customerOrders';
 import { getCustomerOrderOutstandingTotal } from '../../utils/customerOrders';
 import {
   cancelLocalServiceRequest,
   createLocalServiceRequest,
+  loadOwnActiveLocalServiceRequests,
 } from '../../utils/localServiceRequests';
 import type {
   LocalServiceRequest,
@@ -23,10 +24,38 @@ export const CustomerLocalServiceRequestActions = ({
   storeId: string;
   order: CustomerOrder;
 }) => {
-  const [current, setCurrent] = useState<LocalServiceRequest | null>(null);
+  const [requests, setRequests] = useState<LocalServiceRequest[]>([]);
   const [pendingKind, setPendingKind] = useState<LocalServiceRequestKind | ''>('');
+  const [cancellingId, setCancellingId] = useState('');
   const [message, setMessage] = useState('');
-  const [cancelling, setCancelling] = useState(false);
+
+  const refresh = useCallback(async (quiet = false): Promise<void> => {
+    if (!storeId || !order.id || order.fulfillmentType !== 'dine_in') {
+      setRequests([]);
+      return;
+    }
+    try {
+      setRequests(await loadOwnActiveLocalServiceRequests({
+        storeId,
+        orderId: order.id,
+      }));
+      if (!quiet) setMessage('');
+    } catch (error) {
+      if (!quiet) {
+        setMessage(error instanceof Error ? error.message : 'Não foi possível atualizar seus chamados.');
+      }
+    }
+  }, [order.fulfillmentType, order.id, storeId]);
+
+  useEffect(() => {
+    if (terminalStatuses.has(order.status) || order.fulfillmentType !== 'dine_in') {
+      setRequests([]);
+      return;
+    }
+    void refresh();
+    const timer = window.setInterval(() => void refresh(true), 5000);
+    return () => window.clearInterval(timer);
+  }, [order.fulfillmentType, order.status, refresh]);
 
   if (
     order.fulfillmentType !== 'dine_in' ||
@@ -34,9 +63,11 @@ export const CustomerLocalServiceRequestActions = ({
   ) return null;
 
   const outstanding = getCustomerOrderOutstandingTotal(order);
+  const activeFor = (kind: LocalServiceRequestKind): LocalServiceRequest | undefined =>
+    requests.find(request => request.kind === kind);
 
   const request = async (kind: LocalServiceRequestKind): Promise<void> => {
-    if (pendingKind) return;
+    if (pendingKind || activeFor(kind)) return;
     setPendingKind(kind);
     setMessage('');
     try {
@@ -45,7 +76,10 @@ export const CustomerLocalServiceRequestActions = ({
         orderId: order.id,
         kind,
       });
-      setCurrent(next);
+      setRequests(current => [
+        ...current.filter(request => request.kind !== kind),
+        next,
+      ]);
       setMessage(
         kind === 'payment_terminal'
           ? 'A loja recebeu sua solicitação de maquininha.'
@@ -58,25 +92,26 @@ export const CustomerLocalServiceRequestActions = ({
     }
   };
 
-  const cancel = async (): Promise<void> => {
-    if (!current || cancelling) return;
-    setCancelling(true);
+  const cancel = async (current: LocalServiceRequest): Promise<void> => {
+    if (cancellingId) return;
+    setCancellingId(current.id);
     setMessage('');
     try {
-      const next = await cancelLocalServiceRequest({
+      await cancelLocalServiceRequest({
         storeId,
         requestId: current.id,
       });
-      setCurrent(next);
+      setRequests(items => items.filter(item => item.id !== current.id));
       setMessage('Solicitação cancelada.');
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Não foi possível cancelar a solicitação.');
     } finally {
-      setCancelling(false);
+      setCancellingId('');
     }
   };
 
-  const active = current?.status === 'open' || current?.status === 'acknowledged';
+  const assistance = activeFor('assistance');
+  const paymentTerminal = activeFor('payment_terminal');
 
   return (
     <section
@@ -94,7 +129,7 @@ export const CustomerLocalServiceRequestActions = ({
         <button
           type="button"
           onClick={() => void request('assistance')}
-          disabled={Boolean(pendingKind) || active}
+          disabled={Boolean(pendingKind) || Boolean(assistance)}
           className="flex min-h-11 items-center justify-center gap-2 rounded-xl border border-cyan-500/20 bg-cyan-500/10 px-3 text-[9px] font-black uppercase text-cyan-100 disabled:opacity-40"
         >
           {pendingKind === 'assistance'
@@ -105,7 +140,7 @@ export const CustomerLocalServiceRequestActions = ({
         <button
           type="button"
           onClick={() => void request('payment_terminal')}
-          disabled={Boolean(pendingKind) || active || outstanding <= 0}
+          disabled={Boolean(pendingKind) || Boolean(paymentTerminal) || outstanding <= 0}
           className="flex min-h-11 items-center justify-center gap-2 rounded-xl border border-amber-500/20 bg-amber-500/10 px-3 text-[9px] font-black uppercase text-amber-100 disabled:opacity-40"
         >
           {pendingKind === 'payment_terminal'
@@ -115,23 +150,32 @@ export const CustomerLocalServiceRequestActions = ({
         </button>
       </div>
 
-      {active && current && (
-        <div className="mt-3 flex items-center justify-between gap-3 rounded-xl border border-slate-800 bg-slate-900 px-3 py-2">
-          <div className="min-w-0">
-            <strong className="block text-[9px] text-slate-200">{requestLabel(current.kind)}</strong>
-            <span className="text-[8px] text-slate-600">
-              {current.status === 'acknowledged' ? 'A equipe já viu o chamado.' : 'Aguardando a equipe.'}
-            </span>
-          </div>
-          <button
-            type="button"
-            onClick={() => void cancel()}
-            disabled={cancelling}
-            className="flex shrink-0 items-center gap-1 rounded-lg border border-slate-700 px-2 py-1.5 text-[8px] font-black uppercase text-slate-400 disabled:opacity-40"
-          >
-            {cancelling ? <LoaderCircle className="h-3 w-3 animate-spin" /> : <X className="h-3 w-3" />}
-            Cancelar
-          </button>
+      {requests.length > 0 && (
+        <div className="mt-3 space-y-2">
+          {requests.map(current => (
+            <div
+              key={current.id}
+              className="flex items-center justify-between gap-3 rounded-xl border border-slate-800 bg-slate-900 px-3 py-2"
+            >
+              <div className="min-w-0">
+                <strong className="block text-[9px] text-slate-200">{requestLabel(current.kind)}</strong>
+                <span className="text-[8px] text-slate-600">
+                  {current.status === 'acknowledged' ? 'A equipe já viu o chamado.' : 'Aguardando a equipe.'}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => void cancel(current)}
+                disabled={Boolean(cancellingId)}
+                className="flex shrink-0 items-center gap-1 rounded-lg border border-slate-700 px-2 py-1.5 text-[8px] font-black uppercase text-slate-400 disabled:opacity-40"
+              >
+                {cancellingId === current.id
+                  ? <LoaderCircle className="h-3 w-3 animate-spin" />
+                  : <X className="h-3 w-3" />}
+                Cancelar
+              </button>
+            </div>
+          ))}
         </div>
       )}
 
