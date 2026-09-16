@@ -13,6 +13,7 @@ import {
   updateServiceLocation,
 } from './serviceLocationService.js';
 import { createInPersonOrderRouter } from './inPersonOrderRouter.js';
+import { createInPersonCustomerIdentityRouter } from './inPersonCustomerIdentityRouter.js';
 import { isServiceLocationKind } from '../../shared/serviceLocation.js';
 
 const clean = (value: unknown): string =>
@@ -72,6 +73,7 @@ export const createLocalAttendanceRouter = (): Router => {
   const router = Router();
 
   router.use('/orders', createInPersonOrderRouter());
+  router.use('/customers', createInPersonCustomerIdentityRouter());
 
   router.get('/locations', async (request, response) => {
     try {
