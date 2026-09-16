@@ -6,6 +6,7 @@ import {
   cancelOwnLocalServiceRequest,
   createLocalServiceRequest,
   listActiveLocalServiceRequests,
+  listOwnActiveLocalServiceRequests,
   resolveLocalServiceRequest,
 } from './localServiceRequestService.js';
 
@@ -48,6 +49,9 @@ const mapError = (error: unknown): { status: number; message: string } => {
   if (code === 'LOCAL_SERVICE_REQUEST_NOT_ACTIVE') {
     return { status: 409, message: 'Esta solicitação já foi encerrada.' };
   }
+  if (code === 'LOCAL_SERVICE_REQUEST_NOTHING_DUE') {
+    return { status: 409, message: 'Esta conta não possui valor em aberto para solicitar maquininha.' };
+  }
   if (code.startsWith('LOCAL_SERVICE_REQUEST_') || code.startsWith('IN_PERSON_ORDER_')) {
     return { status: 400, message: 'Não foi possível validar a solicitação de atendimento.' };
   }
@@ -70,6 +74,24 @@ export const createLocalServiceRequestRouter = (): Router => {
         request: await createLocalServiceRequest({
           authenticatedUserId: identity.uid,
           value: request.body,
+        }),
+      });
+    } catch (error) {
+      sendError(response, error);
+    }
+  });
+
+  router.get('/mine', async (request, response) => {
+    try {
+      const storeId = clean(request.query.storeId);
+      const orderId = clean(request.query.orderId);
+      if (!storeId || !orderId) throw new Error('LOCAL_SERVICE_REQUEST_INPUT_INVALID');
+      const identity = await requireIdentity(request.get('authorization') ?? '');
+      response.status(200).json({
+        requests: await listOwnActiveLocalServiceRequests({
+          authenticatedUserId: identity.uid,
+          legacyStoreId: storeId,
+          orderId,
         }),
       });
     } catch (error) {
