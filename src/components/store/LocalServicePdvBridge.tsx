@@ -17,6 +17,7 @@ import {
 } from '../../utils/customerOrders';
 import { InPersonOrderComposer } from './InPersonOrderComposer';
 import { InPersonCustomerLinker } from './InPersonCustomerLinker';
+import { LocalServiceRequestInbox } from './LocalServiceRequestInbox';
 
 const focusElement = (id: string): void => {
   const element = document.getElementById(id);
@@ -119,6 +120,7 @@ export function LocalServicePdvBridge() {
         </span>
       </div>
 
+      <LocalServiceRequestInbox storeId={user.uid} />
       <InPersonOrderComposer storeId={user.uid} />
       <InPersonCustomerLinker storeId={user.uid} orders={orders} />
 
@@ -159,7 +161,7 @@ export function LocalServicePdvBridge() {
       {summary.waitingPickup > 0 && (
         <div className="mt-3 flex items-start gap-2 rounded-xl border border-cyan-500/20 bg-cyan-500/[0.05] px-3 py-2 text-[9px] leading-relaxed text-cyan-100/70">
           <CircleDot className="mt-0.5 h-3.5 w-3.5 shrink-0 text-cyan-300" />
-          Pedido pronto para retirada continua aberto até o handoff seguro com o código de 6 dígitos do cliente.
+          Pedido pronto para retirada permanece aberto até a entrega ao cliente.
         </div>
       )}
     </section>,
