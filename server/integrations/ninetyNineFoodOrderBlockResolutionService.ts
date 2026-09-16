@@ -463,7 +463,7 @@ export const retryNinetyNineFoodBlockedOrderReservation = async (input: {
     orderId,
     reconciliationState,
     state,
-    evidence,
+    evidence: reservationEvidence(readbackOrder),
     checkedAt: new Date().toISOString(),
     auditAttemptId: retryAttemptId,
   };
