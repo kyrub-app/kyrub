@@ -98,8 +98,7 @@ export const InPersonOrderComposer = ({ storeId }: { storeId: string }) => {
   const adjustQuantity = (product: InPersonCatalogProduct, delta: number): void => {
     setQuantities(current => {
       const before = current[product.id] ?? 0;
-      const maximum = product.isService ? 999 : product.stock;
-      const next = Math.max(0, Math.min(maximum, before + delta));
+      const next = Math.max(0, Math.min(999, before + delta));
       if (next === before) return current;
       return { ...current, [product.id]: next };
     });
@@ -159,7 +158,7 @@ export const InPersonOrderComposer = ({ storeId }: { storeId: string }) => {
             </h3>
           </div>
           <p className="mt-1 text-[9px] leading-relaxed text-slate-500">
-            Selecione um local gerenciado e os produtos. Nome, preço, estoque e local são reconfirmados pelo servidor antes da gravação.
+            Selecione um local gerenciado e os produtos. Nome, preço e local são reconfirmados pelo servidor antes da gravação; o estoque é decidido pela autoridade operacional ao avançar o pedido.
           </p>
         </div>
         <button
@@ -233,7 +232,6 @@ export const InPersonOrderComposer = ({ storeId }: { storeId: string }) => {
               </div>
             ) : visibleProducts.map(product => {
               const quantity = quantities[product.id] ?? 0;
-              const unavailable = !product.isService && product.stock <= 0;
               return (
                 <article key={product.id} className="rounded-xl border border-slate-800 bg-slate-950/75 p-3">
                   <div className="flex items-start gap-3">
@@ -241,7 +239,7 @@ export const InPersonOrderComposer = ({ storeId }: { storeId: string }) => {
                       <strong className="block truncate text-[10px] text-white">{product.name}</strong>
                       <div className="mt-1 flex flex-wrap gap-2 text-[8px] text-slate-500">
                         <span>{money(product.price)}</span>
-                        <span>{product.isService ? 'Serviço' : `Estoque: ${product.stock}`}</span>
+                        <span>{product.isService ? 'Serviço' : `Estoque exibido: ${product.stock}`}</span>
                       </div>
                     </div>
                     <div className="flex items-center gap-1 rounded-xl border border-slate-800 bg-slate-900 p-1">
@@ -258,7 +256,7 @@ export const InPersonOrderComposer = ({ storeId }: { storeId: string }) => {
                       <button
                         type="button"
                         onClick={() => adjustQuantity(product, 1)}
-                        disabled={unavailable || submitting || (!product.isService && quantity >= product.stock)}
+                        disabled={submitting || quantity >= 999}
                         className="rounded-lg p-1.5 text-orange-300 hover:text-orange-200 disabled:opacity-30"
                         aria-label={`Adicionar ${product.name}`}
                       >
