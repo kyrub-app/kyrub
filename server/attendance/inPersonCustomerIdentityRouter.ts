@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Router, type Response } from 'express';
 import { verifyFirebaseIdToken } from '../ai/consultantAuth.js';
 import { loadOwnerStoreInstitutionalRepresentation } from '../store/storeInstitutionalIdentityService.js';
 import {
@@ -78,7 +78,7 @@ const mapError = (error: unknown): { status: number; message: string; code?: str
   return { status: 503, message: 'A identificação do cliente está temporariamente indisponível.' };
 };
 
-const sendError = (response: Parameters<Router['use']>[0] extends never ? never : any, error: unknown): void => {
+const sendError = (response: Response, error: unknown): void => {
   const mapped = mapError(error);
   response.status(mapped.status).json({
     error: mapped.message,
