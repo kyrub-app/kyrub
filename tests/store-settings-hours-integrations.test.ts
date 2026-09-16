@@ -24,6 +24,10 @@ const administrativeAuditServiceSource = readFileSync(
   'server/integrations/storeAdministrativeAuditService.ts',
   'utf8'
 );
+const ninetyNineFoodBlockResolutionSource = readFileSync(
+  'server/integrations/ninetyNineFoodOrderBlockResolutionService.ts',
+  'utf8'
+);
 const onboardingRouterSource = readFileSync(
   'server/integrations/storeConnectionOnboardingRouter.ts',
   'utf8'
@@ -152,6 +156,32 @@ test('99Food contributes only persisted binding and blocked-order resolution evi
   assert.match(administrativeAuditWorkspaceSource, /Binding 99Food criado/);
   assert.match(administrativeAuditWorkspaceSource, /Pedido 99Food rejeitado/);
   assert.doesNotMatch(administrativeAuditServiceSource, /sendNinetyNineFoodOrderStatus|reconcileNinetyNineFoodOrderReservation/);
+});
+
+test('99Food blocked-order reservation retry emits append-only requested and outcome evidence', () => {
+  const retryStart = ninetyNineFoodBlockResolutionSource.indexOf(
+    'export const retryNinetyNineFoodBlockedOrderReservation'
+  );
+  const rejectStart = ninetyNineFoodBlockResolutionSource.indexOf(
+    'export const rejectNinetyNineFoodBlockedOrder',
+    retryStart
+  );
+  assert.ok(retryStart >= 0 && rejectStart > retryStart);
+  const retrySection = ninetyNineFoodBlockResolutionSource.slice(retryStart, rejectStart);
+  const requestedAudit = retrySection.indexOf("phase: 'requested'");
+  const reconcileCall = retrySection.indexOf('reconcileNinetyNineFoodOrderReservation');
+  const completedAudit = retrySection.indexOf("phase: 'completed'");
+  assert.ok(requestedAudit >= 0 && reconcileCall > requestedAudit && completedAudit > reconcileCall);
+  assert.match(ninetyNineFoodBlockResolutionSource, /appendStoreAdministrativeAuditEvent/);
+  assert.match(ninetyNineFoodBlockResolutionSource, /sourceKind: '99food_reservation_retry'/);
+  assert.match(ninetyNineFoodBlockResolutionSource, /authority: 'store_owner_inventory_reservation_retry'/);
+  assert.match(ninetyNineFoodBlockResolutionSource, /randomUUID\(\)/);
+  assert.match(retrySection, /phase: 'failed'/);
+  assert.match(retrySection, /auditAttemptId: retryAttemptId/);
+  assert.doesNotMatch(retrySection, /sendNinetyNineFoodOrderStatus/);
+  assert.match(administrativeAuditWorkspaceSource, /Retry de reserva 99Food solicitado/);
+  assert.match(administrativeAuditWorkspaceSource, /Retry de reserva 99Food concluído/);
+  assert.match(administrativeAuditWorkspaceSource, /Retry de reserva 99Food falhou/);
 });
 
 test('future canonical store audit events are append-only server evidence, not browser claims', () => {
