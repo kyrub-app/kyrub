@@ -1,5 +1,7 @@
 import type { User } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
+import type { ResolvedOrderServiceLocation } from '../../shared/serviceLocation';
+import { resolveOrderServiceLocation } from '../../shared/serviceLocation';
 import { db } from '../utils/firebase';
 import {
   getCustomerOrderDocumentPath,
@@ -26,6 +28,7 @@ export type KyrubOrderDetails = {
   fulfillmentType: CustomerFulfillmentType;
   deliveryAddress: string;
   tableCode: string;
+  serviceLocation: ResolvedOrderServiceLocation | null;
   customerNote: string;
   items: KyrubOrderDetailItem[];
   subtotal: number;
@@ -50,7 +53,8 @@ export const readKyrubOrderDetails = async (
   const snapshot = await getDoc(
     doc(db, getCustomerOrderDocumentPath(user.uid, normalizedOrderId))
   );
-  const order = parseCustomerOrder(snapshot.data());
+  const rawOrder = snapshot.data();
+  const order = parseCustomerOrder(rawOrder);
   if (!order || order.id !== normalizedOrderId || order.storeId !== user.uid) return null;
 
   return {
@@ -59,6 +63,10 @@ export const readKyrubOrderDetails = async (
     fulfillmentType: order.fulfillmentType,
     deliveryAddress: order.deliveryAddress,
     tableCode: order.tableCode,
+    serviceLocation: resolveOrderServiceLocation({
+      serviceLocation: rawOrder?.serviceLocation,
+      tableCode: order.tableCode,
+    }),
     customerNote: order.customerNote,
     items: order.items.map(item => ({
       productId: item.productId,

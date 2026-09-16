@@ -1,3 +1,8 @@
+import type { ResolvedOrderServiceLocation } from '../../shared/serviceLocation';
+import {
+  resolveOrderServiceLocation,
+  serviceLocationIdentityKey,
+} from '../../shared/serviceLocation';
 import type { CustomerOrder } from './customerOrders';
 import {
   getCustomerOrderItemOpenQuantity,
@@ -12,6 +17,7 @@ export type CustomerTableOperationalState =
 
 export interface CustomerTableCard {
   tableCode: string;
+  serviceLocation: ResolvedOrderServiceLocation;
   orders: CustomerOrder[];
   orderCount: number;
   pendingCount: number;
@@ -42,9 +48,24 @@ const tableCodeCollator = new Intl.Collator('pt-BR', {
   sensitivity: 'base',
 });
 
+type CustomerOrderWithServiceLocation = CustomerOrder & {
+  serviceLocation?: unknown;
+};
+
+const resolveTableLocation = (
+  order: CustomerOrder
+): ResolvedOrderServiceLocation | null => {
+  const serviceLocation = (order as CustomerOrderWithServiceLocation).serviceLocation;
+  const location = resolveOrderServiceLocation({
+    serviceLocation,
+    tableCode: order.tableCode,
+  });
+  return location?.kind === 'table' ? location : null;
+};
+
 const isActiveDineInOrder = (order: CustomerOrder): boolean =>
   order.fulfillmentType === 'dine_in' &&
-  order.tableCode.trim().length > 0 &&
+  Boolean(resolveTableLocation(order)) &&
   !TERMINAL_STATUSES.has(order.status) &&
   order.items.some(item => getCustomerOrderItemOpenQuantity(item) > 0);
 
@@ -65,19 +86,23 @@ const resolveTableState = (
 export const buildCustomerTableCards = (
   orders: CustomerOrder[]
 ): CustomerTableCard[] => {
-  const grouped = new Map<string, CustomerOrder[]>();
+  const grouped = new Map<
+    string,
+    { serviceLocation: ResolvedOrderServiceLocation; orders: CustomerOrder[] }
+  >();
 
   orders.filter(isActiveDineInOrder).forEach(order => {
-    const normalizedTableCode = order.tableCode.trim();
-    const key = normalizedTableCode.toLocaleLowerCase('pt-BR');
-    const current = grouped.get(key) ?? [];
-    current.push({ ...order, tableCode: normalizedTableCode });
+    const serviceLocation = resolveTableLocation(order);
+    if (!serviceLocation) return;
+    const key = serviceLocationIdentityKey(serviceLocation);
+    const current = grouped.get(key) ?? { serviceLocation, orders: [] };
+    current.orders.push(order);
     grouped.set(key, current);
   });
 
   return Array.from(grouped.values())
-    .map(tableOrders => {
-      const sortedOrders = [...tableOrders].sort((left, right) =>
+    .map(group => {
+      const sortedOrders = [...group.orders].sort((left, right) =>
         right.createdAt.localeCompare(left.createdAt)
       );
       const buyerNames = Array.from(
@@ -89,7 +114,8 @@ export const buildCustomerTableCards = (
       );
 
       return {
-        tableCode: sortedOrders[0].tableCode,
+        tableCode: group.serviceLocation.label,
+        serviceLocation: group.serviceLocation,
         orders: sortedOrders,
         orderCount: sortedOrders.length,
         pendingCount: sortedOrders.filter(awaitsAttendanceApproval).length,

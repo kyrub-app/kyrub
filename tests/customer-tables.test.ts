@@ -1,13 +1,18 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import type { ServiceLocationSnapshot } from '../shared/serviceLocation';
 import type { CustomerOrder } from '../src/utils/customerOrders';
 import {
   buildCustomerTableCards,
   getCustomerTableStateLabel,
 } from '../src/utils/customerTables';
 
+type CustomerOrderOverrides = Partial<CustomerOrder> & {
+  serviceLocation?: ServiceLocationSnapshot | null;
+};
+
 const makeOrder = (
-  overrides: Partial<CustomerOrder> = {}
+  overrides: CustomerOrderOverrides = {}
 ): CustomerOrder => ({
   id: 'order-1',
   storeId: 'store-1',
@@ -45,7 +50,7 @@ const makeOrder = (
   ...overrides,
 });
 
-test('groups active dine-in orders into one card per normalized table code', () => {
+test('groups active dine-in orders into one card per normalized legacy table code', () => {
   const cards = buildCustomerTableCards([
     makeOrder(),
     makeOrder({
@@ -77,6 +82,7 @@ test('groups active dine-in orders into one card per normalized table code', () 
 
   assert.equal(cards.length, 1);
   assert.equal(cards[0].tableCode, '12');
+  assert.equal(cards[0].serviceLocation.source, 'legacy_table_code');
   assert.equal(cards[0].orderCount, 2);
   assert.equal(cards[0].pendingCount, 1);
   assert.equal(cards[0].itemCount, 3);
@@ -84,6 +90,41 @@ test('groups active dine-in orders into one card per normalized table code', () 
   assert.deepEqual(cards[0].buyerNames, ['Cliente Dois', 'Cliente Um']);
   assert.equal(cards[0].state, 'pending');
   assert.equal(cards[0].openedAt, '2026-07-21T20:00:00.000Z');
+});
+
+test('prefers canonical table identity and label over legacy tableCode', () => {
+  const serviceLocation: ServiceLocationSnapshot = {
+    schemaVersion: 1,
+    id: 'table-7',
+    kind: 'table',
+    label: 'Mesa 7',
+  };
+  const cards = buildCustomerTableCards([
+    makeOrder({ id: 'order-a', tableCode: '12', serviceLocation }),
+    makeOrder({ id: 'order-b', tableCode: '99', serviceLocation, status: 'accepted' }),
+  ]);
+
+  assert.equal(cards.length, 1);
+  assert.equal(cards[0].tableCode, 'Mesa 7');
+  assert.equal(cards[0].serviceLocation.id, 'table-7');
+  assert.equal(cards[0].serviceLocation.source, 'canonical');
+  assert.equal(cards[0].orderCount, 2);
+});
+
+test('does not misclassify a canonical non-table location as a table because of legacy data', () => {
+  const cards = buildCustomerTableCards([
+    makeOrder({
+      tableCode: '12',
+      serviceLocation: {
+        schemaVersion: 1,
+        id: 'counter-2',
+        kind: 'counter',
+        label: 'Balcão 2',
+      },
+    }),
+  ]);
+
+  assert.deepEqual(cards, []);
 });
 
 test('ignores delivery, pickup and terminal dine-in orders', () => {
