@@ -29,6 +29,10 @@ const actionLabel: Record<string, string> = {
   keep_in_review: 'Mantido em revisão',
   close_non_processable: 'Encerrado como não processável',
   manual_retry_queue_failure: 'Falha ao reenviar tentativa',
+  '99food_product_binding_created': 'Binding 99Food criado',
+  '99food_product_binding_reactivated': 'Binding 99Food reativado',
+  '99food_product_binding_deactivated': 'Binding 99Food desativado',
+  reject_order: 'Pedido 99Food rejeitado',
 };
 
 const resultLabel: Record<string, string> = {
@@ -37,6 +41,9 @@ const resultLabel: Record<string, string> = {
   kept_in_review: 'Em revisão',
   closed_non_processable: 'Encerrado',
   queue_failed: 'Falha na fila',
+  provider_write_succeeded: 'Aplicado no 99Food',
+  reconciliation_required: 'Reconciliação necessária',
+  executing: 'Em processamento',
 };
 
 const formatTimestamp = (value: string): string => {
@@ -47,6 +54,7 @@ const formatTimestamp = (value: string): string => {
 
 const subjectLabel = (event: StoreAdministrativeAuditEvent): string => {
   if (event.subjectType === 'external_order' && event.subjectId) return `Pedido externo ${event.subjectId}`;
+  if (event.subjectType === 'external_product_binding' && event.subjectId) return `Produto externo ${event.subjectId}`;
   if (event.subjectType === 'inventory_authority') return 'Autoridade de estoque';
   if (event.subjectType === 'store_membership') return 'Acesso administrativo da loja';
   return 'Operação da loja';
@@ -57,6 +65,7 @@ const evidenceLines = (event: StoreAdministrativeAuditEvent): string[] => {
   const lines: string[] = [];
   const provider = typeof metadata.provider === 'string' ? metadata.provider : '';
   if (provider === 'mercado_livre') lines.push('Canal: Mercado Livre');
+  if (provider === '99food') lines.push('Canal: 99Food');
   const failureCount = typeof metadata.failureCount === 'number' ? metadata.failureCount : null;
   const failureBudget = typeof metadata.failureBudget === 'number' ? metadata.failureBudget : null;
   if (failureCount !== null && failureBudget !== null) {
@@ -66,6 +75,18 @@ const evidenceLines = (event: StoreAdministrativeAuditEvent): string[] => {
   if (retryCycle !== null) lines.push(`Ciclo de retry: ${retryCycle}`);
   const stateBefore = typeof metadata.stateBefore === 'string' ? metadata.stateBefore : '';
   if (stateBefore) lines.push(`Estado anterior: ${stateBefore}`);
+  const blockedState = typeof metadata.blockedState === 'string' ? metadata.blockedState : '';
+  if (blockedState) lines.push(`Bloqueio anterior: ${blockedState}`);
+  const canonicalProductId = typeof metadata.canonicalProductId === 'string' ? metadata.canonicalProductId : '';
+  if (canonicalProductId) lines.push(`Produto Kyrub: ${canonicalProductId}`);
+  const previousCanonicalProductId = typeof metadata.previousCanonicalProductId === 'string'
+    ? metadata.previousCanonicalProductId
+    : '';
+  if (previousCanonicalProductId) lines.push(`Produto Kyrub anterior: ${previousCanonicalProductId}`);
+  const revision = typeof metadata.revision === 'number' ? metadata.revision : null;
+  if (revision !== null) lines.push(`Revisão do binding: ${revision}`);
+  const attempts = typeof metadata.attempts === 'number' ? metadata.attempts : null;
+  if (attempts !== null) lines.push(`Tentativas: ${attempts}`);
   const errorCode = typeof metadata.errorCode === 'string' ? metadata.errorCode : '';
   if (errorCode) lines.push(`Diagnóstico: ${errorCode}`);
   return lines;
