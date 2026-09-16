@@ -16,6 +16,30 @@ const gerencialIntegrationsSource = readFileSync(
   'src/components/GerencialIntegrationsRuntime.tsx',
   'utf8'
 );
+const gerencialPanelSource = readFileSync(
+  'src/components/GerencialPanel.tsx',
+  'utf8'
+);
+const administrativeAuditServiceSource = readFileSync(
+  'server/integrations/storeAdministrativeAuditService.ts',
+  'utf8'
+);
+const ninetyNineFoodBlockResolutionSource = readFileSync(
+  'server/integrations/ninetyNineFoodOrderBlockResolutionService.ts',
+  'utf8'
+);
+const onboardingRouterSource = readFileSync(
+  'server/integrations/storeConnectionOnboardingRouter.ts',
+  'utf8'
+);
+const administrativeAuditWorkspaceSource = readFileSync(
+  'src/components/store/StoreAdministrativeAuditWorkspace.tsx',
+  'utf8'
+);
+const administrativeAuditClientSource = readFileSync(
+  'src/utils/storeAdministrativeAudit.ts',
+  'utf8'
+);
 const hoursSource = readFileSync(
   'src/components/store/StoreOpeningHoursEditor.tsx',
   'utf8'
@@ -89,6 +113,88 @@ test('Mercado Livre remains on the canonical OAuth and E2E authority inside one 
   assert.match(gerencialIntegrationsSource, /close-mercado-livre-integration/);
   assert.match(gerencialIntegrationsSource, /params\.get\('integration'\) === 'mercado_livre'/);
   assert.match(gerencialIntegrationsSource, /aria-modal="true"/);
+});
+
+test('store Gerencial exposes an independent read-only Actions and Audit module', () => {
+  assert.match(gerencialPanelSource, /\| 'auditoria'/);
+  assert.match(gerencialPanelSource, /auditoria: 'Ações & Auditoria'/);
+  assert.match(gerencialPanelSource, /title="Ações & Auditoria"/);
+  assert.match(gerencialPanelSource, /<StoreAdministrativeAuditWorkspace user=\{user\} storeId=\{user\.uid\}/);
+  assert.match(administrativeAuditWorkspaceSource, /ADM do lojista · somente leitura/);
+  assert.match(administrativeAuditWorkspaceSource, /O Kyrub não cria registros fictícios/);
+  assert.doesNotMatch(administrativeAuditWorkspaceSource, /method:\s*'POST'|method:\s*'PUT'|method:\s*'PATCH'|method:\s*'DELETE'/);
+});
+
+test('administrative audit API is owner-only and exposes a GET projection without browser write authority', () => {
+  assert.match(onboardingRouterSource, /router\.get\('\/:storeId\/administrative-audit'/);
+  assert.match(onboardingRouterSource, /authenticatedOwner\(request\.get\('authorization'\)/);
+  assert.match(onboardingRouterSource, /loadStoreAdministrativeAudit\(/);
+  assert.match(onboardingRouterSource, /requestedByUserId: identity\.uid/);
+  assert.doesNotMatch(onboardingRouterSource, /router\.(?:post|put|patch|delete)\('\/:storeId\/administrative-audit'/);
+  assert.match(administrativeAuditClientSource, /method:\s*'POST'|fetch\(/);
+  assert.doesNotMatch(administrativeAuditClientSource, /method:\s*'(?:POST|PUT|PATCH|DELETE)'/);
+});
+
+test('administrative audit projects real domain evidence and degrades individual unavailable sources safely', () => {
+  assert.match(administrativeAuditServiceSource, /ownerGovernanceDecisions/);
+  assert.match(administrativeAuditServiceSource, /inventoryAuthorityRepairs/);
+  assert.match(administrativeAuditServiceSource, /integrationManualReviewAudit/);
+  assert.match(administrativeAuditServiceSource, /administrativeAudit/);
+  assert.match(administrativeAuditServiceSource, /Promise\.allSettled/);
+  assert.match(administrativeAuditServiceSource, /sourceWarnings/);
+  assert.match(administrativeAuditServiceSource, /merged\.has\(event\.sourceRef\)/);
+  assert.match(administrativeAuditServiceSource, /readAuthority: 'store_owner'/);
+});
+
+test('99Food contributes only persisted binding and blocked-order resolution evidence to the store audit', () => {
+  assert.match(administrativeAuditServiceSource, /externalProductBindingAudits/);
+  assert.match(administrativeAuditServiceSource, /integrationOrderBlockResolutions/);
+  assert.match(administrativeAuditServiceSource, /99food_product_binding_audit/);
+  assert.match(administrativeAuditServiceSource, /99food_order_block_resolution/);
+  assert.match(administrativeAuditServiceSource, /provider: '99food'/);
+  assert.match(administrativeAuditWorkspaceSource, /Canal: 99Food/);
+  assert.match(administrativeAuditWorkspaceSource, /Binding 99Food criado/);
+  assert.match(administrativeAuditWorkspaceSource, /Pedido 99Food rejeitado/);
+  assert.doesNotMatch(administrativeAuditServiceSource, /sendNinetyNineFoodOrderStatus|reconcileNinetyNineFoodOrderReservation/);
+});
+
+test('99Food blocked-order reservation retry emits append-only requested and outcome evidence', () => {
+  const retryStart = ninetyNineFoodBlockResolutionSource.indexOf(
+    'export const retryNinetyNineFoodBlockedOrderReservation'
+  );
+  const rejectStart = ninetyNineFoodBlockResolutionSource.indexOf(
+    'export const rejectNinetyNineFoodBlockedOrder',
+    retryStart
+  );
+  assert.ok(retryStart >= 0 && rejectStart > retryStart);
+  const retrySection = ninetyNineFoodBlockResolutionSource.slice(retryStart, rejectStart);
+  const requestedAudit = retrySection.indexOf("phase: 'requested'");
+  const reconcileCall = retrySection.indexOf('reconcileNinetyNineFoodOrderReservation');
+  const completedAudit = retrySection.indexOf("phase: 'completed'");
+  assert.ok(requestedAudit >= 0 && reconcileCall > requestedAudit && completedAudit > reconcileCall);
+  assert.match(ninetyNineFoodBlockResolutionSource, /appendStoreAdministrativeAuditEvent/);
+  assert.match(ninetyNineFoodBlockResolutionSource, /sourceKind: '99food_reservation_retry'/);
+  assert.match(ninetyNineFoodBlockResolutionSource, /authority: 'store_owner_inventory_reservation_retry'/);
+  assert.match(ninetyNineFoodBlockResolutionSource, /randomUUID\(\)/);
+  assert.match(retrySection, /phase: 'failed'/);
+  assert.match(retrySection, /auditAttemptId: retryAttemptId/);
+  assert.doesNotMatch(retrySection, /sendNinetyNineFoodOrderStatus/);
+  assert.match(administrativeAuditWorkspaceSource, /Retry de reserva 99Food solicitado/);
+  assert.match(administrativeAuditWorkspaceSource, /Retry de reserva 99Food concluído/);
+  assert.match(administrativeAuditWorkspaceSource, /Retry de reserva 99Food falhou/);
+});
+
+test('future canonical store audit events are append-only server evidence, not browser claims', () => {
+  const appendStart = administrativeAuditServiceSource.indexOf('export const appendStoreAdministrativeAuditEvent');
+  const readStart = administrativeAuditServiceSource.indexOf('const resolveCanonicalStoreId', appendStart);
+  assert.ok(appendStart >= 0 && readStart > appendStart);
+  const appendSection = administrativeAuditServiceSource.slice(appendStart, readStart);
+  assert.match(appendSection, /transaction\.create\(auditRef/);
+  assert.match(appendSection, /FieldValue\.serverTimestamp\(\)/);
+  assert.match(appendSection, /sourceKind/);
+  assert.match(appendSection, /sourceRef/);
+  assert.doesNotMatch(appendSection, /transaction\.(?:update|set)\(auditRef/);
+  assert.doesNotMatch(administrativeAuditClientSource, /appendStoreAdministrativeAuditEvent|administrativeAudit\/.*(?:post|write)/i);
 });
 
 test('browser cannot claim an external integration is active', () => {
