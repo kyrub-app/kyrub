@@ -11,6 +11,10 @@ import {
 } from 'firebase/firestore';
 import type { User } from 'firebase/auth';
 import type { CommerceChannel } from '../../shared/channelAvailabilityFiscalFoundation';
+import {
+  parseServiceLocationSnapshot,
+  type ServiceLocationSnapshot,
+} from '../../shared/serviceLocation';
 import type { CartItem } from '../types';
 import { db } from './firebase';
 import {
@@ -58,6 +62,7 @@ export interface CustomerOrder {
   fulfillmentType: CustomerFulfillmentType;
   deliveryAddress: string;
   tableCode: string;
+  serviceLocation?: ServiceLocationSnapshot | null;
   customerNote: string;
   items: CustomerOrderItem[];
   subtotal: number;
@@ -79,6 +84,7 @@ export interface BuildCustomerOrderInput {
   fulfillmentType: CustomerFulfillmentType | '';
   deliveryAddress: string;
   tableCode: string;
+  serviceLocation?: ServiceLocationSnapshot | null;
   customerNote: string;
   cart: CartItem[];
   itemNotes: Record<string, string>;
@@ -233,15 +239,39 @@ export const buildCustomerOrder = (
   if (input.cart.length === 0) throw new Error('Seu carrinho está vazio.');
 
   const deliveryAddress = input.deliveryAddress.trim();
-  const tableCode = input.tableCode.trim();
+  const legacyTableCode = input.tableCode.trim();
+  const serviceLocationProvided =
+    input.serviceLocation !== undefined && input.serviceLocation !== null;
+  const canonicalServiceLocation = serviceLocationProvided
+    ? parseServiceLocationSnapshot(input.serviceLocation)
+    : null;
+
+  if (serviceLocationProvided && !canonicalServiceLocation) {
+    throw new Error('Local de atendimento inválido.');
+  }
 
   if (input.fulfillmentType === 'delivery' && !deliveryAddress) {
     throw new Error('Informe o endereço de entrega.');
   }
 
-  if (input.fulfillmentType === 'dine_in' && !tableCode) {
+  if (
+    input.fulfillmentType === 'dine_in' &&
+    !canonicalServiceLocation &&
+    !legacyTableCode
+  ) {
     throw new Error('Informe a mesa ou o código de atendimento.');
   }
+
+  const serviceLocation =
+    input.fulfillmentType === 'dine_in' ? canonicalServiceLocation : null;
+  const tableCode =
+    input.fulfillmentType !== 'dine_in'
+      ? ''
+      : serviceLocation
+        ? serviceLocation.kind === 'table'
+          ? legacyTableCode || serviceLocation.label
+          : ''
+        : legacyTableCode;
 
   const timestamp = new Date(now).toISOString();
   const orderId = `customer-order-${user.uid}-${now}`;
@@ -288,7 +318,8 @@ export const buildCustomerOrder = (
     fulfillmentType: input.fulfillmentType,
     deliveryAddress:
       input.fulfillmentType === 'delivery' ? deliveryAddress : '',
-    tableCode: input.fulfillmentType === 'dine_in' ? tableCode : '',
+    tableCode,
+    serviceLocation,
     customerNote: input.customerNote.trim(),
     items,
     subtotal,
@@ -383,6 +414,10 @@ export const parseCustomerOrder = (value: unknown): CustomerOrder | null => {
   const paymentStatus = isPaymentStatus(candidate.paymentStatus)
     ? candidate.paymentStatus
     : resolveCustomerOrderPaymentStatus(items);
+  const serviceLocation =
+    candidate.fulfillmentType === 'dine_in'
+      ? parseServiceLocationSnapshot(candidate.serviceLocation)
+      : null;
 
   return {
     id,
@@ -393,6 +428,7 @@ export const parseCustomerOrder = (value: unknown): CustomerOrder | null => {
     fulfillmentType: candidate.fulfillmentType,
     deliveryAddress: cleanString(candidate.deliveryAddress),
     tableCode: cleanString(candidate.tableCode),
+    serviceLocation,
     customerNote: cleanString(candidate.customerNote),
     items,
     subtotal,
@@ -415,6 +451,7 @@ const comparableOrder = (order: CustomerOrder) => ({
   buyerId: order.buyerId,
   fulfillmentType: order.fulfillmentType,
   tableCode: order.tableCode,
+  serviceLocation: order.serviceLocation ?? null,
   subtotal: Number(order.subtotal.toFixed(2)),
   total: Number(order.total.toFixed(2)),
   status: order.status,
