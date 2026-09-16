@@ -333,6 +333,80 @@ const mercadoLivreManualReviewEvent = (
   };
 };
 
+const ninetyNineFoodProductBindingAuditEvent = (
+  tenantId: string,
+  canonicalStoreId: string,
+  id: string,
+  data: Record<string, unknown>
+): StoreAdministrativeAuditEvent => {
+  const bindingAction = clean(data.action, 80) || 'updated';
+  return {
+    id: `99food-product-binding:${id}`,
+    tenantId,
+    canonicalStoreId,
+    domain: 'integrations',
+    action: `99food_product_binding_${bindingAction}`,
+    result: 'applied',
+    actorType: 'store_owner',
+    actorLabel: actorLabel('store_owner'),
+    authority: clean(data.authority, 160),
+    subjectType: 'external_product_binding',
+    subjectId: clean(data.externalProductId, 240),
+    reason: '',
+    occurredAt: timestampIso(data.serverCreatedAt ?? data.occurredAt),
+    sourceKind: '99food_product_binding_audit',
+    sourceRef: `stores/${canonicalStoreId}/externalProductBindingAudits/${id}`,
+    metadata: sanitizeMetadata({
+      provider: '99food',
+      externalStoreId: clean(data.externalStoreId, 240) || null,
+      externalProductId: clean(data.externalProductId, 240) || null,
+      canonicalProductId: clean(data.canonicalProductId, 240) || null,
+      previousCanonicalProductId: clean(data.previousCanonicalProductId, 240) || null,
+      revision: safeInteger(data.revision),
+    }),
+  };
+};
+
+const ninetyNineFoodOrderBlockResolutionEvent = (
+  tenantId: string,
+  canonicalStoreId: string,
+  id: string,
+  data: Record<string, unknown>
+): StoreAdministrativeAuditEvent => {
+  const status = clean(data.status, 120) || 'recorded';
+  return {
+    id: `99food-order-block-resolution:${id}`,
+    tenantId,
+    canonicalStoreId,
+    domain: 'orders',
+    action: clean(data.requestedAction, 120) || 'resolve_blocked_order',
+    result: status,
+    actorType: 'store_owner',
+    actorLabel: actorLabel('store_owner'),
+    authority: clean(data.authority, 160),
+    subjectType: 'external_order',
+    subjectId: clean(data.externalOrderId ?? data.orderId, 240),
+    reason: clean(data.reason, 500),
+    occurredAt: timestampIso(
+      data.serverCompletedAt ??
+      data.serverFailedAt ??
+      data.serverRequestedAt ??
+      data.completedAt ??
+      data.failedAt ??
+      data.requestedAt
+    ),
+    sourceKind: '99food_order_block_resolution',
+    sourceRef: `stores/${canonicalStoreId}/integrationOrderBlockResolutions/${id}`,
+    metadata: sanitizeMetadata({
+      provider: '99food',
+      orderId: clean(data.orderId, 240) || null,
+      blockedState: clean(data.blockedState, 160) || null,
+      attempts: safeInteger(data.attempts),
+      reconciliationRequired: status === 'reconciliation_required',
+    }),
+  };
+};
+
 const readCanonicalEvents = async (
   tenantId: string,
   canonicalStoreId: string,
@@ -396,6 +470,42 @@ const readMercadoLivreManualReviewEvents = async (
   );
 };
 
+const readNinetyNineFoodProductBindingAuditEvents = async (
+  tenantId: string,
+  canonicalStoreId: string,
+  limit: number
+): Promise<StoreAdministrativeAuditEvent[]> => {
+  if (!canonicalStoreId) return [];
+  const snapshot = await adminDb
+    .collection(`stores/${canonicalStoreId}/externalProductBindingAudits`)
+    .orderBy('occurredAt', 'desc')
+    .limit(Math.min(240, Math.max(limit * 2, 80)))
+    .get();
+  return snapshot.docs.flatMap(document => {
+    const data = document.data() as Record<string, unknown>;
+    if (clean(data.provider, 80) !== '99food' || clean(data.tenantId, 160) !== tenantId) return [];
+    return [ninetyNineFoodProductBindingAuditEvent(tenantId, canonicalStoreId, document.id, data)];
+  }).slice(0, limit);
+};
+
+const readNinetyNineFoodOrderBlockResolutionEvents = async (
+  tenantId: string,
+  canonicalStoreId: string,
+  limit: number
+): Promise<StoreAdministrativeAuditEvent[]> => {
+  if (!canonicalStoreId) return [];
+  const snapshot = await adminDb
+    .collection(`stores/${canonicalStoreId}/integrationOrderBlockResolutions`)
+    .orderBy('serverRequestedAt', 'desc')
+    .limit(Math.min(240, Math.max(limit * 2, 80)))
+    .get();
+  return snapshot.docs.flatMap(document => {
+    const data = document.data() as Record<string, unknown>;
+    if (clean(data.provider, 80) !== '99food' || clean(data.tenantId, 160) !== tenantId) return [];
+    return [ninetyNineFoodOrderBlockResolutionEvent(tenantId, canonicalStoreId, document.id, data)];
+  }).slice(0, limit);
+};
+
 const timeValue = (event: StoreAdministrativeAuditEvent): number => {
   const value = Date.parse(event.occurredAt);
   return Number.isFinite(value) ? value : 0;
@@ -420,12 +530,16 @@ export const loadStoreAdministrativeAudit = async (input: {
     readOwnerGovernanceEvents(tenantId, canonicalStoreId, sourceLimit),
     readInventoryAuthorityEvents(tenantId, canonicalStoreId, sourceLimit),
     readMercadoLivreManualReviewEvents(tenantId, sourceLimit),
+    readNinetyNineFoodProductBindingAuditEvents(tenantId, canonicalStoreId, sourceLimit),
+    readNinetyNineFoodOrderBlockResolutionEvents(tenantId, canonicalStoreId, sourceLimit),
   ]);
   const sourceNames = [
     'canonical_store_audit',
     'owner_governance_decision',
     'inventory_authority_repair',
     'mercado_livre_manual_review',
+    '99food_product_binding_audit',
+    '99food_order_block_resolution',
   ];
   const sourceWarnings = sources.flatMap((source, index) =>
     source.status === 'rejected' ? [`${sourceNames[index]}_unavailable`] : []
