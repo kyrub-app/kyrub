@@ -40,6 +40,18 @@ const administrativeAuditClientSource = readFileSync(
   'src/utils/storeAdministrativeAudit.ts',
   'utf8'
 );
+const teamAccessServiceSource = readFileSync(
+  'server/integrations/storeTeamAccessService.ts',
+  'utf8'
+);
+const teamAccessWorkspaceSource = readFileSync(
+  'src/components/store/StoreTeamAccessWorkspace.tsx',
+  'utf8'
+);
+const teamAccessClientSource = readFileSync(
+  'src/utils/storeTeamAccess.ts',
+  'utf8'
+);
 const hoursSource = readFileSync(
   'src/components/store/StoreOpeningHoursEditor.tsx',
   'utf8'
@@ -195,6 +207,41 @@ test('future canonical store audit events are append-only server evidence, not b
   assert.match(appendSection, /sourceRef/);
   assert.doesNotMatch(appendSection, /transaction\.(?:update|set)\(auditRef/);
   assert.doesNotMatch(administrativeAuditClientSource, /appendStoreAdministrativeAuditEvent|administrativeAudit\/.*(?:post|write)/i);
+});
+
+test('Gerencial team module reads only canonical memberships and does not invent mutation authority', () => {
+  assert.match(gerencialPanelSource, /rh: 'Equipe & Permissões'/);
+  assert.match(gerencialPanelSource, /title="Equipe & Permissões"/);
+  assert.match(gerencialPanelSource, /<StoreTeamAccessWorkspace user=\{user\} storeId=\{user\.uid\}/);
+  assert.match(teamAccessWorkspaceSource, /Somente leitura/);
+  assert.match(teamAccessWorkspaceSource, /Nenhum papel adicional é criado/);
+  assert.match(teamAccessWorkspaceSource, /Nenhuma membership canônica real foi encontrada/);
+  assert.doesNotMatch(teamAccessWorkspaceSource, /method:\s*'(?:POST|PUT|PATCH|DELETE)'/);
+});
+
+test('team access API is owner-only GET and projects only the canonical membership vocabulary', () => {
+  assert.match(onboardingRouterSource, /router\.get\('\/:storeId\/team-access'/);
+  assert.match(onboardingRouterSource, /loadStoreTeamAccess\(/);
+  assert.doesNotMatch(onboardingRouterSource, /router\.(?:post|put|patch|delete)\('\/:storeId\/team-access'/);
+  assert.match(teamAccessServiceSource, /'owner'/);
+  assert.match(teamAccessServiceSource, /'manager'/);
+  assert.match(teamAccessServiceSource, /'cashier'/);
+  assert.match(teamAccessServiceSource, /'seller'/);
+  assert.match(teamAccessServiceSource, /'production'/);
+  assert.doesNotMatch(teamAccessServiceSource, /'attendant'/);
+  assert.match(teamAccessServiceSource, /'invited'/);
+  assert.match(teamAccessServiceSource, /'active'/);
+  assert.match(teamAccessServiceSource, /'suspended'/);
+  assert.match(teamAccessServiceSource, /'removed'/);
+  assert.match(teamAccessServiceSource, /collection\(`stores\/\$\{canonicalStoreId\}\/members`\)/);
+  assert.match(teamAccessServiceSource, /userId !== document\.id/);
+  assert.match(teamAccessServiceSource, /maskEmail/);
+  assert.match(teamAccessServiceSource, /opaqueMemberRef/);
+  assert.match(teamAccessServiceSource, /readAuthority: 'store_owner'/);
+  assert.match(teamAccessServiceSource, /canonical_owner_membership_missing/);
+  assert.doesNotMatch(teamAccessServiceSource, /runTransaction|transaction\.(?:create|set|update|delete)\(/);
+  assert.doesNotMatch(teamAccessServiceSource, /adminDb\.doc\([^)]*\)\.(?:create|set|update|delete)\(/s);
+  assert.doesNotMatch(teamAccessClientSource, /method:\s*'(?:POST|PUT|PATCH|DELETE)'/);
 });
 
 test('browser cannot claim an external integration is active', () => {

@@ -16,6 +16,7 @@ import {
   loadStoreOwnerGovernancePreview,
 } from './storeOwnerGovernanceService.js';
 import { loadStoreAdministrativeAudit } from './storeAdministrativeAuditService.js';
+import { loadStoreTeamAccess } from './storeTeamAccessService.js';
 
 const clean = (value: unknown): string =>
   typeof value === 'string' ? value.trim() : '';
@@ -33,18 +34,25 @@ const authenticatedOwner = async (authorization: string, storeId: string) => {
 
 const mapError = (error: unknown): { status: number; message: string } => {
   const message = error instanceof Error ? error.message : String(error);
-  if (message === 'AUTH_REQUIRED') return { status: 401, message: 'Faça login novamente.' };
+  if (message === 'AUTH_REQUIRED' || message === 'STORE_TEAM_ACCESS_AUTH_REQUIRED') {
+    return { status: 401, message: 'Faça login novamente.' };
+  }
   if (
     message === 'STORE_CONNECTION_FORBIDDEN' ||
     message === 'STORE_REPRESENTATION_FORBIDDEN' ||
     message === 'STORE_INVENTORY_AUTHORITY_FORBIDDEN' ||
     message === 'STORE_INVENTORY_AUTHORITY_REPAIR_FORBIDDEN' ||
     message === 'STORE_OWNER_GOVERNANCE_FORBIDDEN' ||
-    message === 'STORE_ADMINISTRATIVE_AUDIT_FORBIDDEN'
+    message === 'STORE_ADMINISTRATIVE_AUDIT_FORBIDDEN' ||
+    message === 'STORE_TEAM_ACCESS_FORBIDDEN'
   ) {
     return { status: 403, message: 'Você não pode administrar conexões desta loja.' };
   }
-  if (message === 'STORE_INSTITUTIONAL_NOT_FOUND' || message === 'STORE_CONNECTION_NOT_FOUND') {
+  if (
+    message === 'STORE_INSTITUTIONAL_NOT_FOUND' ||
+    message === 'STORE_CONNECTION_NOT_FOUND' ||
+    message === 'STORE_TEAM_ACCESS_CANONICAL_STORE_UNRESOLVED'
+  ) {
     return { status: 404, message: 'A loja ou conexão ainda não foi encontrada.' };
   }
   if (
@@ -148,6 +156,21 @@ export const createStoreConnectionOnboardingRouter = (): Router => {
         tenantId: identity.uid,
         requestedByUserId: identity.uid,
         limit: Number(request.query.limit),
+      }));
+    } catch (error) {
+      const mapped = mapError(error);
+      response.status(mapped.status).json({ error: mapped.message });
+    }
+  });
+
+  router.get('/:storeId/team-access', async (request, response) => {
+    try {
+      const storeId = clean(request.params.storeId);
+      const identity = await authenticatedOwner(request.get('authorization') ?? '', storeId);
+      response.setHeader('Cache-Control', 'no-store, max-age=0');
+      response.json(await loadStoreTeamAccess({
+        tenantId: identity.uid,
+        requestedByUserId: identity.uid,
       }));
     } catch (error) {
       const mapped = mapError(error);
