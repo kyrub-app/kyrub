@@ -81,13 +81,33 @@ export const normalizePhoneLookup = (value: unknown): string => {
   return digits;
 };
 
+const appendBrazilianPhoneFormats = (
+  variants: Set<string>,
+  nationalDigits: string
+): void => {
+  if (nationalDigits.length !== 10 && nationalDigits.length !== 11) return;
+  const area = nationalDigits.slice(0, 2);
+  const subscriber = nationalDigits.slice(2);
+  const split = subscriber.length === 9 ? 5 : 4;
+  const first = subscriber.slice(0, split);
+  const last = subscriber.slice(split);
+  variants.add(nationalDigits);
+  variants.add(`(${area}) ${first}-${last}`);
+  variants.add(`${area} ${first}-${last}`);
+  variants.add(`+55${nationalDigits}`);
+  variants.add(`+55 (${area}) ${first}-${last}`);
+};
+
 export const phoneLookupVariants = (value: unknown): string[] => {
   const raw = clean(value, 40);
   const digits = normalizePhoneLookup(value);
+  const nationalDigits =
+    digits.length === 12 || digits.length === 13
+      ? digits.startsWith('55') ? digits.slice(2) : digits
+      : digits;
   const variants = new Set<string>([raw, digits]);
-  if (digits.length === 11) variants.add(`+55${digits}`);
-  if (digits.length === 13 && digits.startsWith('55')) {
-    variants.add(digits.slice(2));
+  appendBrazilianPhoneFormats(variants, nationalDigits);
+  if (digits.startsWith('55') && (digits.length === 12 || digits.length === 13)) {
     variants.add(`+${digits}`);
   }
   return [...variants].filter(Boolean).slice(0, 10);
