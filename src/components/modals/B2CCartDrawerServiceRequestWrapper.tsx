@@ -8,7 +8,7 @@ import {
   subscribeToCustomerOrder,
   type CustomerOrder,
 } from '../../utils/customerOrders';
-import { B2CCartDrawer as CoreB2CCartDrawer } from './B2CCartDrawer';
+import { B2CCartDrawer as CoreB2CCartDrawer } from './B2CCartDrawerCore';
 
 type Props = React.ComponentProps<typeof CoreB2CCartDrawer>;
 
