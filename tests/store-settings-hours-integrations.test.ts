@@ -142,6 +142,18 @@ test('administrative audit projects real domain evidence and degrades individual
   assert.match(administrativeAuditServiceSource, /readAuthority: 'store_owner'/);
 });
 
+test('99Food contributes only persisted binding and blocked-order resolution evidence to the store audit', () => {
+  assert.match(administrativeAuditServiceSource, /externalProductBindingAudits/);
+  assert.match(administrativeAuditServiceSource, /integrationOrderBlockResolutions/);
+  assert.match(administrativeAuditServiceSource, /99food_product_binding_audit/);
+  assert.match(administrativeAuditServiceSource, /99food_order_block_resolution/);
+  assert.match(administrativeAuditServiceSource, /provider: '99food'/);
+  assert.match(administrativeAuditWorkspaceSource, /Canal: 99Food/);
+  assert.match(administrativeAuditWorkspaceSource, /Binding 99Food criado/);
+  assert.match(administrativeAuditWorkspaceSource, /Pedido 99Food rejeitado/);
+  assert.doesNotMatch(administrativeAuditServiceSource, /sendNinetyNineFoodOrderStatus|reconcileNinetyNineFoodOrderReservation/);
+});
+
 test('future canonical store audit events are append-only server evidence, not browser claims', () => {
   const appendStart = administrativeAuditServiceSource.indexOf('export const appendStoreAdministrativeAuditEvent');
   const readStart = administrativeAuditServiceSource.indexOf('const resolveCanonicalStoreId', appendStart);
