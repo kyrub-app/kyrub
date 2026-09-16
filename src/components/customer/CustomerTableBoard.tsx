@@ -26,19 +26,18 @@ import {
 } from '../../utils/customerTables';
 
 interface CustomerTableBoardProps {
-  storeId: string;
+  storeId?: string;
   orders: CustomerOrder[];
-  onOpenLocation: (location: ResolvedOrderServiceLocation) => void;
+  onOpenTable?: (tableCode: string) => void;
+  onOpenLocation?: (location: ResolvedOrderServiceLocation) => void;
 }
 
 const formatElapsedTime = (value: string, now: number): string => {
   const startedAt = new Date(value).getTime();
   if (!Number.isFinite(startedAt)) return '--:--';
-
   const elapsedMinutes = Math.max(0, Math.floor((now - startedAt) / 60000));
   const hours = Math.floor(elapsedMinutes / 60);
   const minutes = elapsedMinutes % 60;
-
   return hours > 0 ? `${hours}h ${minutes}min` : `${minutes}min`;
 };
 
@@ -102,20 +101,22 @@ const requestText = (request: LocalServiceRequest): string =>
 export const CustomerTableBoard = ({
   storeId,
   orders,
+  onOpenTable,
   onOpenLocation,
 }: CustomerTableBoardProps) => {
   const [now, setNow] = useState(() => Date.now());
   const [requests, setRequests] = useState<LocalServiceRequest[]>([]);
   const [actingId, setActingId] = useState('');
   const [requestError, setRequestError] = useState('');
+  const effectiveStoreId = storeId?.trim() || orders[0]?.storeId?.trim() || '';
 
   const refreshRequests = useCallback(async (quiet = false): Promise<void> => {
-    if (!storeId) {
+    if (!effectiveStoreId) {
       setRequests([]);
       return;
     }
     try {
-      setRequests(await loadActiveLocalServiceRequests(storeId));
+      setRequests(await loadActiveLocalServiceRequests(effectiveStoreId));
       if (!quiet) setRequestError('');
     } catch (error) {
       if (!quiet) {
@@ -124,7 +125,7 @@ export const CustomerTableBoard = ({
         );
       }
     }
-  }, [storeId]);
+  }, [effectiveStoreId]);
 
   const locations = useMemo(
     () => buildCustomerTableCards(orders, requests),
@@ -146,14 +147,14 @@ export const CustomerTableBoard = ({
     request: LocalServiceRequest,
     action: 'acknowledge' | 'resolve'
   ): Promise<void> => {
-    if (actingId) return;
+    if (actingId || !effectiveStoreId) return;
     setActingId(request.id);
     setRequestError('');
     try {
       if (action === 'acknowledge') {
-        await acknowledgeLocalServiceRequest({ storeId, requestId: request.id });
+        await acknowledgeLocalServiceRequest({ storeId: effectiveStoreId, requestId: request.id });
       } else {
-        await resolveLocalServiceRequest({ storeId, requestId: request.id });
+        await resolveLocalServiceRequest({ storeId: effectiveStoreId, requestId: request.id });
       }
       await refreshRequests(true);
     } catch (error) {
@@ -163,6 +164,14 @@ export const CustomerTableBoard = ({
     } finally {
       setActingId('');
     }
+  };
+
+  const openLocation = (location: ResolvedOrderServiceLocation): void => {
+    if (onOpenLocation) {
+      onOpenLocation(location);
+      return;
+    }
+    onOpenTable?.(location.label);
   };
 
   if (locations.length === 0) return null;
@@ -279,7 +288,7 @@ export const CustomerTableBoard = ({
 
               <button
                 type="button"
-                onClick={() => onOpenLocation(card.serviceLocation)}
+                onClick={() => openLocation(card.serviceLocation)}
                 className={`flex min-h-9 items-center justify-center gap-1.5 rounded-xl border px-2 py-2 text-[8px] font-black uppercase tracking-wide sm:text-[9px] ${presentation.button}`}
                 aria-label={`Abrir atendimento de ${card.tableCode}`}
               >
