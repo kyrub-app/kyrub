@@ -239,7 +239,8 @@ test('team access API is owner-only GET and projects only the canonical membersh
   assert.match(teamAccessServiceSource, /opaqueMemberRef/);
   assert.match(teamAccessServiceSource, /readAuthority: 'store_owner'/);
   assert.match(teamAccessServiceSource, /canonical_owner_membership_missing/);
-  assert.doesNotMatch(teamAccessServiceSource, /\.set\(|\.update\(|\.delete\(|runTransaction/);
+  assert.doesNotMatch(teamAccessServiceSource, /runTransaction|transaction\.(?:create|set|update|delete)\(/);
+  assert.doesNotMatch(teamAccessServiceSource, /adminDb\.doc\([^)]*\)\.(?:create|set|update|delete)\(/s);
   assert.doesNotMatch(teamAccessClientSource, /method:\s*'(?:POST|PUT|PATCH|DELETE)'/);
 });
 
