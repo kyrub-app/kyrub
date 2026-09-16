@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { describe, test } from 'node:test';
 import './in-person-order-creation.test';
+import './in-person-customer-linking.test';
 import {
   buildOpenLocalAttendance,
   localAttendancePath,
