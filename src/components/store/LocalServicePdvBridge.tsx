@@ -5,6 +5,7 @@ import {
   BellRing,
   ChefHat,
   CircleDot,
+  MapPin,
   PackageCheck,
   Utensils,
 } from 'lucide-react';
@@ -108,7 +109,7 @@ export function LocalServicePdvBridge() {
             Salão, balcão e retirada
           </h2>
           <p className="mt-1 max-w-2xl text-[10px] leading-relaxed text-slate-500">
-            Esta visão usa os mesmos pedidos canônicos de mesas e retirada. Entregas não participam deste painel.
+            Esta visão usa os mesmos pedidos canônicos de atendimento presencial e retirada. Entregas não participam deste painel.
           </p>
         </div>
         <span className="w-fit rounded-full border border-orange-500/20 bg-orange-500/10 px-3 py-1 font-mono text-[9px] font-black text-orange-200">
@@ -122,9 +123,9 @@ export function LocalServicePdvBridge() {
           onClick={() => focusElement('kyrub-customer-table-board-host')}
           className="rounded-2xl border border-slate-800 bg-slate-900 p-3 text-left transition-colors hover:border-orange-500/30"
         >
-          <Utensils className="h-4 w-4 text-orange-400" />
-          <strong className="mt-2 block text-lg font-black text-white">{summary.activeTables}</strong>
-          <span className="text-[8px] font-black uppercase text-slate-500">Mesas/códigos ativos</span>
+          <MapPin className="h-4 w-4 text-orange-400" />
+          <strong className="mt-2 block text-lg font-black text-white">{summary.activeServiceLocations}</strong>
+          <span className="text-[8px] font-black uppercase text-slate-500">Locais ativos</span>
         </button>
 
         <div className="rounded-2xl border border-slate-800 bg-slate-900 p-3">
@@ -135,7 +136,7 @@ export function LocalServicePdvBridge() {
 
         <div className="rounded-2xl border border-slate-800 bg-slate-900 p-3">
           <ChefHat className="h-4 w-4 text-blue-400" />
-          <strong className="mt-2 block text-lg font-black text-white">{summary.inProduction + summary.readyForTable}</strong>
+          <strong className="mt-2 block text-lg font-black text-white">{summary.inProduction + summary.readyForServiceLocation}</strong>
           <span className="text-[8px] font-black uppercase text-slate-500">Em fluxo local</span>
         </div>
 
