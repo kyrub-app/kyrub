@@ -4,14 +4,18 @@ import {
   buildLocalServiceRequest,
   localServiceRequestId,
   parseLocalServiceRequestCreateInput,
+  resolveLocalServiceRequestLocation,
   type LocalServiceRequest,
-  type LocalServiceRequestStatus,
+  type LocalServiceRequestKind,
 } from '../../shared/localServiceRequest.js';
 import { resolveOrderServiceLocation } from '../../shared/serviceLocation.js';
 import { resolveInPersonOrderStoreContext } from './inPersonOrderService.js';
 
 const clean = (value: unknown, max = 220): string =>
   typeof value === 'string' ? value.trim().slice(0, max) : '';
+
+const finite = (value: unknown): number | null =>
+  typeof value === 'number' && Number.isFinite(value) ? value : null;
 
 const legacyOrderPath = (storeId: string, orderId: string): string =>
   `artifacts/${storeId}/public/data/customerOrders/${orderId}`;
@@ -28,6 +32,9 @@ const readRequest = (
   storeId: string,
   requestId: string
 ): LocalServiceRequest => {
+  const serviceLocation = resolveLocalServiceRequestLocation({
+    serviceLocation: data.serviceLocation,
+  });
   if (
     data.schemaVersion !== 1 ||
     clean(data.id) !== requestId ||
@@ -39,12 +46,15 @@ const readRequest = (
     (data.status !== 'open' && data.status !== 'acknowledged' &&
       data.status !== 'resolved' && data.status !== 'cancelled') ||
     !Number.isSafeInteger(data.occurrence) || Number(data.occurrence) <= 0 ||
-    !resolveOrderServiceLocation({ serviceLocation: data.serviceLocation }) ||
+    !serviceLocation ||
     !clean(data.requestedAt) || !clean(data.updatedAt)
   ) {
     throw new Error('LOCAL_SERVICE_REQUEST_RECORD_INVALID');
   }
-  return data as LocalServiceRequest;
+  return {
+    ...data,
+    serviceLocation,
+  } as LocalServiceRequest;
 };
 
 const loadCustomerOrder = async (legacyStoreId: string, orderId: string) => {
@@ -76,6 +86,34 @@ const assertCustomerCanRequest = (
   }
 };
 
+const outstandingOrderAmount = (order: DocumentData): number => {
+  if (!Array.isArray(order.items)) return 0;
+  return Number(order.items.reduce((sum: number, value: unknown) => {
+    if (!value || typeof value !== 'object') return sum;
+    const item = value as Record<string, unknown>;
+    const quantity = finite(item.quantity);
+    const paidQuantity = finite(item.paidQuantity) ?? 0;
+    const transferredQuantity = finite(item.transferredQuantity) ?? 0;
+    const price = finite(item.price);
+    if (
+      quantity === null || !Number.isInteger(quantity) || quantity <= 0 ||
+      !Number.isInteger(paidQuantity) || paidQuantity < 0 ||
+      !Number.isInteger(transferredQuantity) || transferredQuantity < 0 ||
+      price === null || price < 0
+    ) return sum;
+    const openQuantity = Math.max(0, quantity - paidQuantity - transferredQuantity);
+    return sum + openQuantity * price;
+  }, 0).toFixed(2));
+};
+
+const requestIdsForOrder = (orderId: string): Array<{
+  kind: LocalServiceRequestKind;
+  id: string;
+}> => [
+  { kind: 'assistance', id: localServiceRequestId(orderId, 'assistance') },
+  { kind: 'payment_terminal', id: localServiceRequestId(orderId, 'payment_terminal') },
+];
+
 export const createLocalServiceRequest = async (input: {
   authenticatedUserId: string;
   value: unknown;
@@ -87,6 +125,9 @@ export const createLocalServiceRequest = async (input: {
   const context = await resolveInPersonOrderStoreContext(request.storeId);
   const order = await loadCustomerOrder(context.legacyStoreId, request.orderId);
   assertCustomerCanRequest(order, request.orderId, customerId);
+  if (request.kind === 'payment_terminal' && outstandingOrderAmount(order) <= 0) {
+    throw new Error('LOCAL_SERVICE_REQUEST_NOTHING_DUE');
+  }
   const serviceLocation = resolveOrderServiceLocation({
     serviceLocation: order.serviceLocation,
     tableCode: order.tableCode,
@@ -134,6 +175,33 @@ export const createLocalServiceRequest = async (input: {
     });
     transaction.create(reference, created);
     return created;
+  });
+};
+
+export const listOwnActiveLocalServiceRequests = async (input: {
+  authenticatedUserId: string;
+  legacyStoreId: string;
+  orderId: string;
+}): Promise<LocalServiceRequest[]> => {
+  const customerId = clean(input.authenticatedUserId, 180);
+  const orderId = clean(input.orderId);
+  if (!customerId || !orderId) throw new Error('LOCAL_SERVICE_REQUEST_AUTH_REQUIRED');
+  const context = await resolveInPersonOrderStoreContext(input.legacyStoreId);
+  const order = await loadCustomerOrder(context.legacyStoreId, orderId);
+  assertCustomerCanRequest(order, orderId, customerId);
+  const references = requestIdsForOrder(orderId).map(({ id }) =>
+    adminDb.doc(requestPath(context.canonicalStoreId, id))
+  );
+  const snapshots = await adminDb.getAll(...references);
+  return snapshots.flatMap(snapshot => {
+    if (!snapshot.exists) return [];
+    const request = readRequest(snapshot.data()!, context.canonicalStoreId, snapshot.id);
+    if (
+      request.customerId !== customerId ||
+      request.orderId !== orderId ||
+      !activeStatus(request.status)
+    ) return [];
+    return [request];
   });
 };
 
@@ -223,6 +291,7 @@ export const cancelOwnLocalServiceRequest = async (input: {
   const requestId = clean(input.requestId);
   if (!customerId || !requestId) throw new Error('LOCAL_SERVICE_REQUEST_CANCEL_INVALID');
   const now = input.now ?? new Date();
+  if (Number.isNaN(now.getTime())) throw new Error('LOCAL_SERVICE_REQUEST_TIME_INVALID');
   const timestamp = now.toISOString();
   const reference = adminDb.doc(requestPath(context.canonicalStoreId, requestId));
   return adminDb.runTransaction(async transaction => {
