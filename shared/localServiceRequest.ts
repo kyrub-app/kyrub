@@ -1,7 +1,7 @@
 import { resolveOrderServiceLocation, type ResolvedOrderServiceLocation } from './serviceLocation.js';
 
 export const LOCAL_SERVICE_REQUEST_SCHEMA_VERSION = 1 as const;
-export type LocalServiceRequestKind = 'assistance' | 'payment_terminal';
+export type LocalServiceRequestKind = 'assistance' | 'close_account';
 export type LocalServiceRequestStatus = 'open' | 'acknowledged' | 'resolved' | 'cancelled';
 
 export interface LocalServiceRequestCreateInput {
@@ -37,7 +37,7 @@ const finiteIso = (value: string): boolean =>
   Boolean(value) && Number.isFinite(Date.parse(value));
 
 export const isLocalServiceRequestKind = (value: unknown): value is LocalServiceRequestKind =>
-  value === 'assistance' || value === 'payment_terminal';
+  value === 'assistance' || value === 'close_account';
 
 export const localServiceRequestId = (orderIdInput: string, kind: LocalServiceRequestKind): string => {
   const orderId = clean(orderIdInput);
@@ -123,4 +123,4 @@ export const buildLocalServiceRequest = (input: {
 };
 
 export const localServiceRequestKindLabel = (kind: LocalServiceRequestKind): string =>
-  kind === 'payment_terminal' ? 'Solicitar maquininha' : 'Chamar atendimento';
+  kind === 'close_account' ? 'Fechar conta' : 'Chamar atendimento';
