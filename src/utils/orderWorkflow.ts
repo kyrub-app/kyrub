@@ -1,4 +1,9 @@
 import type { User } from 'firebase/auth';
+import {
+  resolveOrderServiceLocation,
+  serviceLocationIdentityKey,
+  type ResolvedOrderServiceLocation,
+} from '../../shared/serviceLocation';
 import { auth } from './firebase';
 import type {
   CustomerOrder,
@@ -56,6 +61,21 @@ export interface OrderStatusUpdateResult {
 const normalize = (value: string): string =>
   value.trim().toLocaleUpperCase('pt-BR');
 
+const resolvedLocationForOrder = (
+  order: Pick<CustomerOrder, 'serviceLocation' | 'tableCode'>
+): ResolvedOrderServiceLocation | null =>
+  resolveOrderServiceLocation({
+    serviceLocation: order.serviceLocation,
+    tableCode: order.tableCode,
+  });
+
+const normalizeAttendanceTarget = (
+  target: ResolvedOrderServiceLocation | string
+): ResolvedOrderServiceLocation | null =>
+  typeof target === 'string'
+    ? resolveOrderServiceLocation({ tableCode: target })
+    : target;
+
 export const isNinetyNineFoodOrder = (order: CustomerOrder): boolean =>
   order.buyerId.toLocaleLowerCase('pt-BR').startsWith('99food:') ||
   order.operatorName.toLocaleLowerCase('pt-BR').includes('99food');
@@ -66,7 +86,7 @@ const isNinetyNineFoodOrderId = (orderId: string): boolean =>
 export const isPendingAttendanceApproval = (order: CustomerOrder): boolean =>
   order.source === 'customer' &&
   order.fulfillmentType === 'dine_in' &&
-  Boolean(order.tableCode.trim()) &&
+  Boolean(resolvedLocationForOrder(order)) &&
   order.status === 'pending' &&
   !order.operatorId.trim();
 
@@ -80,15 +100,19 @@ export const isOrderVisibleInKds = (order: CustomerOrder): boolean => {
 
 export const getPendingAttendanceOrders = (
   orders: CustomerOrder[],
-  tableCode: string
+  target: ResolvedOrderServiceLocation | string
 ): CustomerOrder[] => {
-  const expected = normalize(tableCode);
+  const expected = normalizeAttendanceTarget(target);
+  if (!expected) return [];
+  const expectedKey = serviceLocationIdentityKey(expected);
   return orders
-    .filter(
-      order =>
-        isPendingAttendanceApproval(order) &&
-        normalize(order.tableCode) === expected
-    )
+    .filter(order => {
+      if (!isPendingAttendanceApproval(order)) return false;
+      const current = resolvedLocationForOrder(order);
+      return Boolean(
+        current && serviceLocationIdentityKey(current) === expectedKey
+      );
+    })
     .sort((left, right) => left.createdAt.localeCompare(right.createdAt));
 };
 
@@ -96,7 +120,11 @@ const attendanceEnvironmentFor = (
   order: CustomerOrder,
   attendanceSpaces: string[]
 ): string => {
-  const tableCode = normalize(order.tableCode);
+  const location = resolvedLocationForOrder(order);
+  if (location?.source === 'canonical') {
+    return normalize(location.label);
+  }
+  const tableCode = normalize(location?.label ?? order.tableCode);
   const configured = attendanceSpaces
     .map(normalize)
     .filter(space => space && space !== 'GERAL');
