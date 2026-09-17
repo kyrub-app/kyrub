@@ -70,7 +70,7 @@ import { SharedNotesModal } from './components/modals/SharedNotesModal';
 import { UserSearchModal } from './components/modals/UserSearchModal';
 import { MomentsModal } from './components/modals/MomentsModal';
 import { ActiveAlarmModal } from './components/modals/ActiveAlarmModal';
-import { B2CCartDrawer } from './components/modals/B2CCartDrawer';
+import { B2CCartDrawerServiceRequestWrapper as B2CCartDrawer } from './components/modals/B2CCartDrawerServiceRequestWrapper';
 import { GpsOverlayModal } from './components/modals/GpsOverlayModal';
 import { useWallet } from './hooks/useWallet';
 import { useProductivityNotes } from './hooks/useProductivityNotes';
