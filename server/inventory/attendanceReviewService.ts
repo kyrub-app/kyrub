@@ -1,4 +1,5 @@
 import { adminAuth, adminDb } from '../firebaseAdmin';
+import { resolveOrderServiceLocation } from '../../shared/serviceLocation.js';
 
 export type AttendanceReviewItemInput = {
   lineId: string;
@@ -65,11 +66,15 @@ const parsePendingAttendanceOrder = (
 ): PendingAttendanceOrder | null => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   const record = value as Record<string, unknown>;
+  const serviceLocation = resolveOrderServiceLocation({
+    serviceLocation: record.serviceLocation,
+    tableCode: record.tableCode,
+  });
   if (
     clean(record.id) !== orderId ||
     clean(record.source) !== 'customer' ||
     clean(record.fulfillmentType) !== 'dine_in' ||
-    !clean(record.tableCode) ||
+    !serviceLocation ||
     clean(record.status) !== 'pending' ||
     clean(record.operatorId)
   ) {
