@@ -84,11 +84,11 @@ const intentStatusForPaymentStatus = (
   return null;
 };
 
-const assertMarketplacePaymentIntentMatchesPayment = (
+function assertMarketplacePaymentIntentMatchesPayment(
   payment: CanonicalPayment,
   intent: NormalizedCanonicalPaymentIntent,
   event: VerifiedPaymentProviderEvent
-): asserts intent is MarketplaceCanonicalPaymentIntent => {
+): asserts intent is MarketplaceCanonicalPaymentIntent {
   if (intent.context !== 'marketplace') {
     throw new Error('PAYMENT_INTENT_CONTEXT_MISMATCH');
   }
@@ -119,7 +119,7 @@ const assertMarketplacePaymentIntentMatchesPayment = (
   if (intent.provider && intent.provider !== event.provider) {
     throw new Error('PAYMENT_INTENT_PROVIDER_MISMATCH');
   }
-};
+}
 
 const assertStorePointPurchaseMatchesPayment = (
   entry: StorePointLedgerEntry,
