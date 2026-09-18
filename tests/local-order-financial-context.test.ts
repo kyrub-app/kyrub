@@ -30,6 +30,9 @@ test('service location financial context reads canonical evidence without treati
   assert.match(serviceSource, /ignoredLegacyMirrorCount \+= 1/);
   assert.match(serviceSource, /canonicalPayments\.push\(compatible\.payment\)/);
   assert.match(serviceSource, /payment\.orderId !== orderId/);
+  assert.match(serviceSource, /payment\.context !== 'table'/);
+  assert.match(serviceSource, /payment\.context !== 'pos'/);
+  assert.match(serviceSource, /LOCAL_ORDER_FINANCIAL_PAYMENT_CONTEXT_INVALID/);
   assert.match(serviceSource, /reconciliation_required/);
 });
 
