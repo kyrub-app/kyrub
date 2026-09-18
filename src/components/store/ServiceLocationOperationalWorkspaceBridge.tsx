@@ -6,6 +6,7 @@ import {
   type ResolvedOrderServiceLocation,
 } from '../../../shared/serviceLocation';
 import { AttendanceOrderApproval } from '../customer/AttendanceOrderApproval';
+import { InPersonOrderComposer } from './InPersonOrderComposer';
 import { auth } from '../../utils/firebase';
 import {
   getCustomerOrderOutstandingTotal,
@@ -219,6 +220,17 @@ export function ServiceLocationOperationalWorkspaceBridge() {
               </article>
             ))}
           </div>
+
+          {location.source === 'canonical' && (
+            <div className="mt-5">
+              <InPersonOrderComposer
+                storeId={storeId}
+                lockedServiceLocationId={location.id}
+                heading={`Adicionar pedido · ${location.label}`}
+                embedded
+              />
+            </div>
+          )}
 
           {message && (
             <p className="mt-4 rounded-xl border border-cyan-500/20 bg-cyan-500/10 px-3 py-2 text-[9px] text-cyan-100" role="status">
