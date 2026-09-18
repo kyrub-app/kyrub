@@ -38,7 +38,7 @@ test('local Pix attach input accepts opaque ids only and rejects financial brows
   }
 });
 
-test('attach revalidates canonical order, identity, approval, context and balance before PSP call', () => {
+test('attach revalidates canonical order, identity, approval, context and billable balance before PSP call', () => {
   assert.match(service, /resolveInPersonOrderStoreContext/);
   assert.match(service, /normalizeCanonicalPaymentIntent/);
   assert.match(service, /normalizeCanonicalPayment/);
@@ -52,9 +52,12 @@ test('attach revalidates canonical order, identity, approval, context and balanc
   assert.match(service, /classifyCompatiblePaymentRecord/);
   assert.match(service, /isPaymentAuthoritativelyPaid/);
   assert.match(service, /LOCAL_PIX_PROVIDER_OTHER_PAYMENT_PENDING/);
-  assert.match(service, /authoritativelyPaidAmount \+= candidate\.amount/);
+  assert.match(service, /summarizeLocalOrderPayable\(order\)/);
+  assert.match(service, /payable\.hasOperationalPaidQuantity/);
+  assert.match(service, /payable\.billableAmount - authoritativelyPaidAmount/);
   assert.match(service, /Math\.abs\(remaining - intent\.amount\) > 0\.009/);
   assert.match(service, /LOCAL_PIX_PROVIDER_INTENT_STALE/);
+  assert.doesNotMatch(service, /orderTotal - authoritativelyPaidAmount/);
   assert.doesNotMatch(service, /request\.body\?\.(amount|email)|request\.(amount|email)/);
 });
 
@@ -122,7 +125,7 @@ test('provider binding is idempotent and does not mutate order payment state', (
   assert.match(service, /provider: 'mercado-pago'/);
   assert.match(service, /providerIntentId: input\.providerPaymentId/);
   assert.match(service, /providerPaymentId: input\.providerPaymentId/);
-  assert.doesNotMatch(service, /paidQuantity/);
+  assert.doesNotMatch(service, /paidQuantity\s*:/);
   assert.doesNotMatch(service, /paymentStatus\s*:/);
   assert.doesNotMatch(service, /transaction\.(set|update)\(orderRef/);
 });
