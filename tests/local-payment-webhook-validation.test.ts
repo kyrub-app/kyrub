@@ -6,6 +6,10 @@ const webhookSource = readFileSync(
   'server/payments/paymentWebhookProcessor.ts',
   'utf8'
 );
+const destinationSource = readFileSync(
+  'server/delivery/customerDestinationOrderResolutionService.ts',
+  'utf8'
+);
 const economicLedgerSource = readFileSync(
   'server/payments/storeEconomicLedgerService.ts',
   'utf8'
@@ -40,17 +44,21 @@ test('local webhook synchronizes payment intent status without materializing or 
   assert.match(webhookSource, /transaction\.update\(intentRef/);
   assert.match(webhookSource, /transaction\.update\(paymentRef/);
   assert.match(webhookSource, /if \(current\.context === 'marketplace'\)/);
-  assert.match(webhookSource, /buildStorePointPurchaseEntry/);
-  assert.match(webhookSource, /prepareStoreChallengePaymentPlan/);
-  assert.match(webhookSource, /materializePaidMarketplaceOrder/);
-  const localBranch = webhookSource.slice(
-    webhookSource.indexOf("} else {\n      if (!intentSnapshot.exists)"),
-    webhookSource.indexOf('\n\n    economicLedgerPlan =')
-  );
+  const localStart = webhookSource.indexOf("} else {\n      if (!intentSnapshot.exists)");
+  const localEnd = webhookSource.indexOf('\n\n    economicLedgerPlan =');
+  assert.ok(localStart >= 0 && localEnd > localStart);
+  const localBranch = webhookSource.slice(localStart, localEnd);
   assert.doesNotMatch(localBranch, /materializePaidMarketplaceOrder/);
   assert.doesNotMatch(localBranch, /buildStorePointPurchaseEntry/);
   assert.doesNotMatch(localBranch, /prepareStoreChallengePaymentPlan/);
   assert.doesNotMatch(localBranch, /paymentStatus|paidQuantity/);
+});
+
+test('local intent bypasses marketplace destination geocoding and attachment', () => {
+  assert.match(destinationSource, /PaymentIntentDocument/);
+  assert.match(destinationSource, /if \(intent\.context !== 'marketplace'\) return null/);
+  assert.match(destinationSource, /Existing local orders already have an operational Service Location/);
+  assert.match(destinationSource, /if \(!prepared\) return/);
 });
 
 test('non-marketplace capture remains economic evidence without inventing receivable authority', () => {
