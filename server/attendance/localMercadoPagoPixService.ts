@@ -13,11 +13,14 @@ import {
 import { parseServiceLocationSnapshot } from '../../shared/serviceLocation.js';
 import { parseLocalPixProviderAttachInput } from '../../shared/localPaymentProvider.js';
 import { classifyCompatiblePaymentRecord } from '../payments/paymentRecordCompatibility.js';
+import type {
+  PaymentProviderId,
+  PixProviderCheckout,
+} from '../payments/paymentProviderAdapter.js';
 import {
-  createMercadoPagoPixPayment,
-  getMercadoPagoPixCheckout,
-  type MercadoPagoPixCheckout,
-} from '../payments/mercadoPagoPixProvider.js';
+  assertPaymentProviderBinding,
+  resolvePrimaryPaymentProvider,
+} from '../payments/paymentProviderPolicy.js';
 import { resolveInPersonOrderStoreContext } from './inPersonOrderService.js';
 import { summarizeLocalOrderPayable } from './localOrderPayable.js';
 
@@ -70,20 +73,27 @@ const assertLocalPair = (input: {
 
 const assertProviderBinding = (
   intent: ExistingOrderCanonicalPaymentIntent,
-  payment: CanonicalPayment
+  payment: CanonicalPayment,
+  selectedProvider: PaymentProviderId
 ): string => {
   const intentProviderId = clean(intent.providerIntentId, 220);
   const paymentProviderId = clean(payment.providerPaymentId, 220);
-  const provider = clean(intent.provider || payment.provider, 80);
+  const intentProvider = clean(intent.provider, 80);
+  const paymentProvider = clean(payment.provider, 80);
   if (
-    (intent.provider && intent.provider !== 'mercado-pago') ||
-    (payment.provider && payment.provider !== 'mercado-pago') ||
+    (intentProvider && paymentProvider && intentProvider !== paymentProvider) ||
     (intentProviderId && paymentProviderId && intentProviderId !== paymentProviderId)
   ) {
     throw new Error('LOCAL_PIX_PROVIDER_BINDING_CONFLICT');
   }
   const providerPaymentId = intentProviderId || paymentProviderId;
-  if (providerPaymentId && provider !== 'mercado-pago') {
+  try {
+    assertPaymentProviderBinding({
+      selectedProvider,
+      boundProvider: intentProvider || paymentProvider,
+      providerPaymentId,
+    });
+  } catch {
     throw new Error('LOCAL_PIX_PROVIDER_BINDING_CONFLICT');
   }
   return providerPaymentId;
@@ -101,6 +111,7 @@ const validateBeforeProvider = async (input: {
   canonicalStoreId: string;
   paymentIntentId: string;
   paymentId: string;
+  selectedProvider: PaymentProviderId;
   now: Date;
 }): Promise<ValidatedLocalPixContext> => {
   const intentRef = adminDb.doc(
@@ -129,7 +140,11 @@ const validateBeforeProvider = async (input: {
     paymentIntentId: input.paymentIntentId,
     paymentId: input.paymentId,
   });
-  const existingProviderPaymentId = assertProviderBinding(intent, payment);
+  const existingProviderPaymentId = assertProviderBinding(
+    intent,
+    payment,
+    input.selectedProvider
+  );
 
   if (intent.status !== 'pending' || payment.status !== 'pending') {
     if (!existingProviderPaymentId) {
@@ -244,6 +259,7 @@ const bindProviderPayment = async (input: {
   canonicalStoreId: string;
   paymentIntentId: string;
   paymentId: string;
+  provider: PaymentProviderId;
   providerPaymentId: string;
   updatedAt: string;
 }): Promise<void> => {
@@ -274,7 +290,11 @@ const bindProviderPayment = async (input: {
       paymentIntentId: input.paymentIntentId,
       paymentId: input.paymentId,
     });
-    const existingProviderPaymentId = assertProviderBinding(intent, payment);
+    const existingProviderPaymentId = assertProviderBinding(
+      intent,
+      payment,
+      input.provider
+    );
     if (
       existingProviderPaymentId &&
       existingProviderPaymentId !== input.providerPaymentId
@@ -283,14 +303,14 @@ const bindProviderPayment = async (input: {
     }
     if (!intent.providerIntentId || !intent.provider) {
       transaction.update(intentRef, {
-        provider: 'mercado-pago',
+        provider: input.provider,
         providerIntentId: input.providerPaymentId,
         updatedAt: input.updatedAt,
       });
     }
     if (!payment.providerPaymentId || !payment.provider) {
       transaction.update(paymentRef, {
-        provider: 'mercado-pago',
+        provider: input.provider,
         providerPaymentId: input.providerPaymentId,
         updatedAt: input.updatedAt,
       });
@@ -298,7 +318,7 @@ const bindProviderPayment = async (input: {
   });
 };
 
-export interface LocalMercadoPagoPixResult extends MercadoPagoPixCheckout {
+export interface LocalPixProviderResult extends PixProviderCheckout {
   paymentIntentId: string;
   paymentId: string;
   orderId: string;
@@ -307,17 +327,18 @@ export interface LocalMercadoPagoPixResult extends MercadoPagoPixCheckout {
   context: 'table' | 'pos';
 }
 
-export const attachMercadoPagoPixToLocalIntent = async (input: {
+export const attachPixProviderToLocalIntent = async (input: {
   authenticatedUserId: string;
   value: unknown;
   now?: Date;
-}): Promise<LocalMercadoPagoPixResult> => {
+}): Promise<LocalPixProviderResult> => {
   const request = parseLocalPixProviderAttachInput(input.value);
   const actorUserId = clean(input.authenticatedUserId, 180);
   if (!actorUserId || actorUserId !== request.storeId) {
     throw new Error('LOCAL_PIX_PROVIDER_FORBIDDEN');
   }
   const storeContext = await resolveInPersonOrderStoreContext(request.storeId);
+  const provider = resolvePrimaryPaymentProvider();
   const now = input.now ?? new Date();
   if (Number.isNaN(now.getTime())) throw new Error('LOCAL_PIX_PROVIDER_TIME_INVALID');
 
@@ -327,25 +348,27 @@ export const attachMercadoPagoPixToLocalIntent = async (input: {
       canonicalStoreId: storeContext.canonicalStoreId,
       paymentIntentId: request.paymentIntentId,
       paymentId: request.paymentId,
+      selectedProvider: provider.id,
       now,
     })
   );
 
   const pix = validated.existingProviderPaymentId
-    ? await getMercadoPagoPixCheckout(validated.existingProviderPaymentId)
-    : await createMercadoPagoPixPayment({
+    ? await provider.getPixCheckout(validated.existingProviderPaymentId)
+    : await provider.createLocalPixPayment({
         intent: validated.intent,
         paymentId: validated.payment.id,
         payerEmail: validated.email,
       });
 
-  if (!pix.providerPaymentId) {
+  if (!pix.providerPaymentId || pix.provider !== provider.id) {
     throw new Error('LOCAL_PIX_PROVIDER_PAYMENT_ID_MISSING');
   }
   await bindProviderPayment({
     canonicalStoreId: storeContext.canonicalStoreId,
     paymentIntentId: validated.intent.id,
     paymentId: validated.payment.id,
+    provider: provider.id,
     providerPaymentId: pix.providerPaymentId,
     updatedAt: new Date().toISOString(),
   });
@@ -360,3 +383,9 @@ export const attachMercadoPagoPixToLocalIntent = async (input: {
     context: validated.intent.context,
   };
 };
+
+/**
+ * Compatibility alias for the existing local-attendance router. The execution
+ * is provider-neutral now; Mercado Pago remains only the default adapter.
+ */
+export const attachMercadoPagoPixToLocalIntent = attachPixProviderToLocalIntent;
