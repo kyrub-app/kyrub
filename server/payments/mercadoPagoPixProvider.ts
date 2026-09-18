@@ -1,5 +1,5 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
-import type { CanonicalPaymentIntent } from '../../src/utils/canonicalPaymentIntent.js';
+import type { MarketplaceCanonicalPaymentIntent } from '../../src/utils/canonicalPaymentIntent.js';
 import type {
   PaymentProviderEventType,
   VerifiedPaymentProviderEvent,
@@ -90,8 +90,12 @@ const mercadoPagoRequest = async <T>(path: string, init: RequestInit = {}): Prom
   return payload;
 };
 
+/**
+ * This provider entrypoint is intentionally marketplace-only. Existing local
+ * orders need a separate payer-resolution contract before they may call a PSP.
+ */
 export const createMercadoPagoPixPayment = async (input: {
-  intent: CanonicalPaymentIntent;
+  intent: MarketplaceCanonicalPaymentIntent;
   paymentId: string;
 }): Promise<MercadoPagoPixCheckout> => {
   const payerEmail = input.intent.orderDraft.buyerEmail.trim();
@@ -102,7 +106,7 @@ export const createMercadoPagoPixPayment = async (input: {
     headers: { 'X-Idempotency-Key': input.intent.idempotencyKey },
     body: JSON.stringify({
       transaction_amount: input.intent.amount,
-      description: `Pedido Kyrub ${input.intent.orderDraft.draftId}`,
+      description: `Pedido Kyrub ${input.intent.target.orderId}`,
       payment_method_id: 'pix',
       payer: { email: payerEmail },
       date_of_expiration: input.intent.expiresAt,
