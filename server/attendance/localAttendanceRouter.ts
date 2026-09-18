@@ -15,6 +15,7 @@ import {
 import { createInPersonOrderRouter } from './inPersonOrderRouter.js';
 import { createInPersonCustomerIdentityRouter } from './inPersonCustomerIdentityRouter.js';
 import { createLocalServiceRequestRouter } from './localServiceRequestRouter.js';
+import { loadLocalOrderFinancialContext } from './localOrderFinancialContextService.js';
 import { isServiceLocationKind } from '../../shared/serviceLocation.js';
 
 const clean = (value: unknown): string =>
@@ -57,11 +58,18 @@ const mapError = (error: unknown): { status: number; message: string } => {
   if (message === 'SERVICE_LOCATION_INACTIVE') {
     return { status: 409, message: 'Este local de atendimento está desativado.' };
   }
+  if (message === 'LOCAL_ORDER_FINANCIAL_ORDER_NOT_FOUND') {
+    return { status: 404, message: 'Pedido não encontrado para leitura financeira.' };
+  }
+  if (message === 'LOCAL_ORDER_FINANCIAL_ORDER_NOT_LOCAL') {
+    return { status: 409, message: 'Este pedido não pertence ao atendimento local.' };
+  }
   if (
     message.startsWith('LOCAL_ATTENDANCE_') ||
     message.startsWith('SERVICE_LOCATION_') ||
     message.startsWith('STORE_INSTITUTIONAL_') ||
-    message.startsWith('STORE_REPRESENTATION_')
+    message.startsWith('STORE_REPRESENTATION_') ||
+    message.startsWith('LOCAL_ORDER_FINANCIAL_')
   ) {
     console.warn('[Local attendance]', message);
     return { status: 400, message: 'Os dados do atendimento local são inválidos.' };
@@ -76,6 +84,27 @@ export const createLocalAttendanceRouter = (): Router => {
   router.use('/orders', createInPersonOrderRouter());
   router.use('/customers', createInPersonCustomerIdentityRouter());
   router.use('/service-requests', createLocalServiceRequestRouter());
+
+  router.get('/financial-context', async (request, response) => {
+    try {
+      const storeId = clean(request.query.storeId);
+      const orderId = clean(request.query.orderId);
+      if (!storeId || !orderId) throw new Error('LOCAL_ORDER_FINANCIAL_SCOPE_REQUIRED');
+      await requireStoreAuthority({
+        authorization: request.get('authorization') ?? '',
+        storeId,
+      });
+      response.status(200).json({
+        context: await loadLocalOrderFinancialContext({
+          legacyStoreId: storeId,
+          orderId,
+        }),
+      });
+    } catch (error) {
+      const mapped = mapError(error);
+      response.status(mapped.status).json({ error: mapped.message });
+    }
+  });
 
   router.get('/locations', async (request, response) => {
     try {

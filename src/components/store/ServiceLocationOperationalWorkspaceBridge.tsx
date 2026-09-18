@@ -8,6 +8,7 @@ import {
 import { AttendanceOrderApproval } from '../customer/AttendanceOrderApproval';
 import { InPersonCustomerLinker } from './InPersonCustomerLinker';
 import { InPersonOrderComposer } from './InPersonOrderComposer';
+import { ServiceLocationFinancialContextPanel } from './ServiceLocationFinancialContextPanel';
 import { ServiceLocationOrderList } from './ServiceLocationOrderList';
 import { ServiceLocationRequestPanel } from './ServiceLocationRequestPanel';
 import { auth } from '../../utils/firebase';
@@ -200,6 +201,11 @@ export function ServiceLocationOperationalWorkspaceBridge() {
           />
 
           <ServiceLocationOrderList orders={activeOrders} />
+
+          <ServiceLocationFinancialContextPanel
+            storeId={storeId}
+            orders={activeOrders}
+          />
 
           {hasStaffOrder && (
             <InPersonCustomerLinker
