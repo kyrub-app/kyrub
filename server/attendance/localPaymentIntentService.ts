@@ -221,6 +221,10 @@ export const createLocalPaymentIntent = async (input: {
     }
     validEmail((userSnapshot.data() as DocumentData | undefined)?.email);
 
+    if (paymentSnapshot.size >= MAX_PAYMENT_RECORDS_PER_ORDER) {
+      throw new Error('LOCAL_PAYMENT_INTENT_RECONCILIATION_REQUIRED');
+    }
+
     const canonicalPayments: CanonicalPayment[] = [];
     for (const document of paymentSnapshot.docs) {
       const compatible = classifyCompatiblePaymentRecord(
@@ -242,7 +246,12 @@ export const createLocalPaymentIntent = async (input: {
       throw new Error('LOCAL_PAYMENT_INTENT_PAYMENT_ALREADY_PENDING');
     }
 
-    const payable = summarizeLocalOrderPayable(order);
+    let payable;
+    try {
+      payable = summarizeLocalOrderPayable(order);
+    } catch {
+      throw new Error('LOCAL_PAYMENT_INTENT_ORDER_TOTAL_INVALID');
+    }
     if (payable.hasOperationalPaidQuantity) {
       throw new Error('LOCAL_PAYMENT_INTENT_RECONCILIATION_REQUIRED');
     }
