@@ -26,8 +26,21 @@ test('self-service dine-in orders require staff approval before KDS', () => {
   assert.match(workflowSource, /fulfillmentType === 'dine_in'/);
   assert.match(workflowSource, /status === 'pending'/);
   assert.match(workflowSource, /!order\.operatorId\.trim\(\)/);
+  assert.match(workflowSource, /resolveOrderServiceLocation/);
+  assert.match(workflowSource, /Boolean\(attendanceLocationFor\(order\)\)/);
+  assert.doesNotMatch(
+    workflowSource,
+    /Boolean\(order\.tableCode\.trim\(\)\)/
+  );
   assert.match(retailerSource, /isOrderVisibleInKds/);
   assert.match(retailerSource, /orders=\{kdsOrders\}/);
+});
+
+test('canonical non-table locations use stable service-location identity for approval routing', () => {
+  assert.match(workflowSource, /getPendingAttendanceOrdersForLocation/);
+  assert.match(workflowSource, /serviceLocationIdentityKey\(location\)/);
+  assert.match(workflowSource, /serviceLocationIdentityKey\(orderLocation\) === expected/);
+  assert.match(workflowSource, /resolvedLocation\?\.source === 'canonical'/);
 });
 
 test('Kyrub marketplace delivery and pickup require paid status before KDS', () => {
