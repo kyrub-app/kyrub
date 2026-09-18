@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { parseLocalPixProviderAttachInput } from '../shared/localPaymentProvider';
 import type { ExistingOrderCanonicalPaymentIntent } from '../src/utils/canonicalPaymentIntent';
+import { adminDb } from '../server/firebaseAdmin';
 import { createMercadoPagoPixPayment } from '../server/payments/mercadoPagoPixProvider';
 
 const service = readFileSync(
@@ -72,6 +73,10 @@ test('shared Mercado Pago provider requires server-supplied email for existing-o
 test('mocked local Mercado Pago provider sends only canonical amount plus server-resolved payer and returns QR data', async () => {
   const originalFetch = globalThis.fetch;
   const originalToken = process.env.MERCADO_PAGO_ACCESS_TOKEN;
+  const mutableAdminDb = adminDb as unknown as {
+    doc: (path: string) => { get: () => Promise<{ data: () => unknown }> };
+  };
+  const originalDoc = mutableAdminDb.doc;
   const intent: ExistingOrderCanonicalPaymentIntent = {
     id: 'pi_local_mock_1',
     storeId: 'store-1',
@@ -93,6 +98,9 @@ test('mocked local Mercado Pago provider sends only canonical amount plus server
   let capturedInit: RequestInit | undefined;
 
   process.env.MERCADO_PAGO_ACCESS_TOKEN = 'test-access-token';
+  mutableAdminDb.doc = () => ({
+    get: async () => ({ data: () => undefined }),
+  });
   globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
     capturedUrl = String(input);
     capturedInit = init;
@@ -146,6 +154,7 @@ test('mocked local Mercado Pago provider sends only canonical amount plus server
       expiresAt: '2026-09-18T12:15:00.000Z',
     });
   } finally {
+    mutableAdminDb.doc = originalDoc;
     globalThis.fetch = originalFetch;
     if (originalToken === undefined) delete process.env.MERCADO_PAGO_ACCESS_TOKEN;
     else process.env.MERCADO_PAGO_ACCESS_TOKEN = originalToken;
