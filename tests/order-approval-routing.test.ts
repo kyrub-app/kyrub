@@ -27,6 +27,10 @@ const serviceLocationWorkspaceSource = readFileSync(
   'src/components/store/ServiceLocationOperationalWorkspaceBridge.tsx',
   'utf8'
 );
+const serviceLocationOrderListSource = readFileSync(
+  'src/components/store/ServiceLocationOrderList.tsx',
+  'utf8'
+);
 const serviceLocationRequestPanelSource = readFileSync(
   'src/components/store/ServiceLocationRequestPanel.tsx',
   'utf8'
@@ -80,6 +84,21 @@ test('non-table service locations open a dedicated operational workspace instead
   assert.doesNotMatch(serviceLocationWorkspaceSource, /registerTablePayment/);
   assert.doesNotMatch(serviceLocationWorkspaceSource, /transferTableItems/);
   assert.match(mainSource, /<ServiceLocationOperationalWorkspaceBridge \/>/);
+});
+
+test('selected service location shows line items and notes as read-only operational detail', () => {
+  assert.match(serviceLocationWorkspaceSource, /<ServiceLocationOrderList orders=\{activeOrders\} \/>/);
+  assert.match(serviceLocationOrderListSource, /order\.items\.map/);
+  assert.match(serviceLocationOrderListSource, /item\.quantity/);
+  assert.match(serviceLocationOrderListSource, /item\.note/);
+  assert.match(serviceLocationOrderListSource, /order\.customerNote/);
+  assert.match(serviceLocationOrderListSource, /Total do pedido/);
+  assert.match(serviceLocationOrderListSource, /somente leitura operacional/);
+  assert.match(serviceLocationOrderListSource, /Produção continua no KDS/);
+  assert.doesNotMatch(serviceLocationOrderListSource, /registerTablePayment/);
+  assert.doesNotMatch(serviceLocationOrderListSource, /transferTableItems/);
+  assert.doesNotMatch(serviceLocationOrderListSource, /updateCustomerOrderStatus/);
+  assert.doesNotMatch(serviceLocationOrderListSource, /paidQuantity\s*=/);
 });
 
 test('selected service location workspace surfaces the same operational service requests without creating payment authority', () => {

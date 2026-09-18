@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { MapPin, ReceiptText, UserRound, X } from 'lucide-react';
+import { MapPin, ReceiptText, X } from 'lucide-react';
 import {
   resolveOrderServiceLocation,
   serviceLocationIdentityKey,
@@ -8,11 +8,11 @@ import {
 import { AttendanceOrderApproval } from '../customer/AttendanceOrderApproval';
 import { InPersonCustomerLinker } from './InPersonCustomerLinker';
 import { InPersonOrderComposer } from './InPersonOrderComposer';
+import { ServiceLocationOrderList } from './ServiceLocationOrderList';
 import { ServiceLocationRequestPanel } from './ServiceLocationRequestPanel';
 import { auth } from '../../utils/firebase';
 import {
   getCustomerOrderOutstandingTotal,
-  getCustomerOrderStatusLabel,
   isTerminalCustomerOrderStatus,
   subscribeToStoreCustomerOrders,
   type CustomerOrder,
@@ -199,39 +199,7 @@ export function ServiceLocationOperationalWorkspaceBridge() {
             location={location}
           />
 
-          <div className="mt-5 space-y-2">
-            {activeOrders.length === 0 ? (
-              <div className="rounded-2xl border border-dashed border-slate-800 bg-slate-950/60 px-4 py-8 text-center text-[10px] text-slate-500">
-                Não há pedidos ativos neste local.
-              </div>
-            ) : activeOrders.map(order => (
-              <article
-                key={order.id}
-                className="rounded-2xl border border-slate-800 bg-slate-950 p-3"
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <span className="flex items-center gap-1.5 text-[9px] text-slate-500">
-                      <UserRound className="h-3.5 w-3.5" />
-                      {order.buyerName || 'Cliente'}
-                    </span>
-                    <strong className="mt-1 block truncate text-xs text-white">
-                      Pedido {order.id.slice(-8)}
-                    </strong>
-                  </div>
-                  <span className="rounded-full border border-slate-700 bg-slate-900 px-2 py-1 text-[8px] font-black uppercase text-slate-300">
-                    {getCustomerOrderStatusLabel(order.status)}
-                  </span>
-                </div>
-                <div className="mt-3 flex items-center justify-between border-t border-white/5 pt-3 text-[9px] text-slate-500">
-                  <span>{order.items.length} item(ns)</span>
-                  <strong className="font-mono text-xs text-white">
-                    {currency.format(getCustomerOrderOutstandingTotal(order))}
-                  </strong>
-                </div>
-              </article>
-            ))}
-          </div>
+          <ServiceLocationOrderList orders={activeOrders} />
 
           {hasStaffOrder && (
             <InPersonCustomerLinker
