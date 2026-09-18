@@ -152,7 +152,7 @@ export function ServiceLocationOperationalWorkspaceBridge() {
                   {location.label}
                 </h2>
                 <p className="mt-1 text-[10px] leading-relaxed text-slate-500">
-                  Pedidos e conta operacional deste local. Pagamento e transferência permanecem fora deste workspace enquanto a convergência financeira não for generalizada para Service Locations.
+                  Pedidos, chamados, identificação e cobrança Pix canônica deste local. O QR apenas inicia uma cobrança: quitação depende do webhook verificado e transferências/alocação por item continuam fora desta generalização.
                 </p>
               </div>
             </div>
