@@ -74,13 +74,15 @@ test('canonical non-table locations use stable service-location identity for app
   assert.match(approvalSource, /getPendingAttendanceOrdersForLocation/);
 });
 
-test('non-table service locations open a dedicated operational workspace instead of table finance', () => {
+test('non-table service locations open a dedicated operational workspace without reusing table finance', () => {
   assert.match(tableBoardSource, /location\.kind === 'table'/);
   assert.match(tableBoardSource, /requestServiceLocationWorkspaceOpen/);
   assert.match(workspaceNavigationSource, /kyrub-service-location-workspace-open/);
   assert.match(serviceLocationWorkspaceSource, /serviceLocationIdentityKey/);
   assert.match(serviceLocationWorkspaceSource, /Atendimento local/);
-  assert.match(serviceLocationWorkspaceSource, /Pagamento e transferência permanecem fora deste workspace/);
+  assert.match(serviceLocationWorkspaceSource, /cobrança Pix canônica/);
+  assert.match(serviceLocationWorkspaceSource, /quitação depende do webhook verificado/);
+  assert.match(serviceLocationWorkspaceSource, /transferências\/alocação por item continuam fora/);
   assert.doesNotMatch(serviceLocationWorkspaceSource, /registerTablePayment/);
   assert.doesNotMatch(serviceLocationWorkspaceSource, /transferTableItems/);
   assert.match(mainSource, /<ServiceLocationOperationalWorkspaceBridge \/>/);
