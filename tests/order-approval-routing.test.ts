@@ -19,6 +19,19 @@ const inboxSource = readFileSync(
   'src/components/customer/CustomerOrderInbox.tsx',
   'utf8'
 );
+const tableBoardSource = readFileSync(
+  'src/components/customer/CustomerTableBoard.tsx',
+  'utf8'
+);
+const serviceLocationWorkspaceSource = readFileSync(
+  'src/components/store/ServiceLocationOperationalWorkspaceBridge.tsx',
+  'utf8'
+);
+const workspaceNavigationSource = readFileSync(
+  'src/utils/serviceLocationWorkspace.ts',
+  'utf8'
+);
+const mainSource = readFileSync('src/main.tsx', 'utf8');
 const retailerSource = readFileSync('src/components/RetailerPanel.tsx', 'utf8');
 
 test('self-service dine-in orders require staff approval before KDS', () => {
@@ -41,6 +54,20 @@ test('canonical non-table locations use stable service-location identity for app
   assert.match(workflowSource, /serviceLocationIdentityKey\(location\)/);
   assert.match(workflowSource, /serviceLocationIdentityKey\(orderLocation\) === expected/);
   assert.match(workflowSource, /resolvedLocation\?\.source === 'canonical'/);
+  assert.match(approvalSource, /serviceLocation\?: ResolvedOrderServiceLocation/);
+  assert.match(approvalSource, /getPendingAttendanceOrdersForLocation/);
+});
+
+test('non-table service locations open a dedicated operational workspace instead of table finance', () => {
+  assert.match(tableBoardSource, /location\.kind === 'table'/);
+  assert.match(tableBoardSource, /requestServiceLocationWorkspaceOpen/);
+  assert.match(workspaceNavigationSource, /kyrub-service-location-workspace-open/);
+  assert.match(serviceLocationWorkspaceSource, /serviceLocationIdentityKey/);
+  assert.match(serviceLocationWorkspaceSource, /Atendimento local/);
+  assert.match(serviceLocationWorkspaceSource, /Pagamento e transferência permanecem fora deste workspace/);
+  assert.doesNotMatch(serviceLocationWorkspaceSource, /registerTablePayment/);
+  assert.doesNotMatch(serviceLocationWorkspaceSource, /transferTableItems/);
+  assert.match(mainSource, /<ServiceLocationOperationalWorkspaceBridge \/>/);
 });
 
 test('Kyrub marketplace delivery and pickup require paid status before KDS', () => {

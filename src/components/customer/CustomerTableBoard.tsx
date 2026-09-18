@@ -20,6 +20,9 @@ import {
   resolveLocalServiceRequest,
 } from '../../utils/localServiceRequests';
 import {
+  requestServiceLocationWorkspaceOpen,
+} from '../../utils/serviceLocationWorkspace';
+import {
   buildCustomerTableCards,
   getCustomerTableStateLabel,
   type CustomerTableCard,
@@ -171,7 +174,16 @@ export const CustomerTableBoard = ({
       onOpenLocation(location);
       return;
     }
-    onOpenTable?.(location.label);
+    if (location.kind === 'table' || location.source === 'legacy_table_code') {
+      onOpenTable?.(location.label);
+      return;
+    }
+    if (effectiveStoreId) {
+      requestServiceLocationWorkspaceOpen({
+        storeId: effectiveStoreId,
+        location,
+      });
+    }
   };
 
   if (locations.length === 0) return null;
