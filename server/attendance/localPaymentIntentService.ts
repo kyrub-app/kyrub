@@ -99,6 +99,8 @@ const assertExistingPair = (input: {
     input.payment.storeId !== input.canonicalStoreId ||
     input.payment.orderId !== input.orderId ||
     input.payment.buyerId !== input.buyerId ||
+    (input.payment.paymentIntentId !== undefined &&
+      input.payment.paymentIntentId !== input.intent.id) ||
     input.payment.idempotencyKey !== input.idempotencyKey ||
     input.payment.context !== input.context ||
     input.payment.method !== 'pix' ||
@@ -301,6 +303,7 @@ export const createLocalPaymentIntent = async (input: {
       storeId: storeContext.canonicalStoreId,
       orderId: request.orderId,
       buyerId,
+      paymentIntentId: intent.id,
       amount,
       currency: 'BRL',
       method: 'pix',
