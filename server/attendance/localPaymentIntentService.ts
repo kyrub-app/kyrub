@@ -16,6 +16,7 @@ import { parseServiceLocationSnapshot } from '../../shared/serviceLocation.js';
 import { parseLocalPaymentIntentCreateInput } from '../../shared/localPaymentIntent.js';
 import { classifyCompatiblePaymentRecord } from '../payments/paymentRecordCompatibility.js';
 import { resolveInPersonOrderStoreContext } from './inPersonOrderService.js';
+import { summarizeLocalOrderPayable } from './localOrderPayable.js';
 
 const MAX_PAYMENT_RECORDS_PER_ORDER = 50;
 const INTENT_TTL_MS = 15 * 60 * 1000;
@@ -220,6 +221,10 @@ export const createLocalPaymentIntent = async (input: {
     }
     validEmail((userSnapshot.data() as DocumentData | undefined)?.email);
 
+    if (paymentSnapshot.size >= MAX_PAYMENT_RECORDS_PER_ORDER) {
+      throw new Error('LOCAL_PAYMENT_INTENT_RECONCILIATION_REQUIRED');
+    }
+
     const canonicalPayments: CanonicalPayment[] = [];
     for (const document of paymentSnapshot.docs) {
       const compatible = classifyCompatiblePaymentRecord(
@@ -241,7 +246,16 @@ export const createLocalPaymentIntent = async (input: {
       throw new Error('LOCAL_PAYMENT_INTENT_PAYMENT_ALREADY_PENDING');
     }
 
-    const expectedAmount = Number((finite(order.total) ?? 0).toFixed(2));
+    let payable;
+    try {
+      payable = summarizeLocalOrderPayable(order);
+    } catch {
+      throw new Error('LOCAL_PAYMENT_INTENT_ORDER_TOTAL_INVALID');
+    }
+    if (payable.hasOperationalPaidQuantity) {
+      throw new Error('LOCAL_PAYMENT_INTENT_RECONCILIATION_REQUIRED');
+    }
+    const expectedAmount = payable.billableAmount;
     const authoritativelyPaidAmount = Number(
       canonicalPayments
         .filter(payment => isPaymentAuthoritativelyPaid(payment.status))

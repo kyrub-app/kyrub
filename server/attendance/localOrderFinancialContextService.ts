@@ -10,6 +10,7 @@ import type {
 } from '../../shared/localOrderFinancialContext.js';
 import { classifyCompatiblePaymentRecord } from '../payments/paymentRecordCompatibility.js';
 import { resolveInPersonOrderStoreContext } from './inPersonOrderService.js';
+import { summarizeLocalOrderPayable } from './localOrderPayable.js';
 
 const MAX_PAYMENT_RECORDS_PER_ORDER = 50;
 
@@ -25,10 +26,12 @@ const paymentStatus = (value: unknown): 'unpaid' | 'partial' | 'paid' =>
 const resolveState = (input: {
   expectedAmount: number;
   operationalStatus: 'unpaid' | 'partial' | 'paid';
+  hasOperationalPaidQuantity: boolean;
   payments: CanonicalPayment[];
   authoritativelyPaidAmount: number;
   pendingPaymentCount: number;
 }): LocalOrderFinancialState => {
+  if (input.hasOperationalPaidQuantity) return 'reconciliation_required';
   if (input.payments.length === 0) {
     return input.operationalStatus === 'unpaid'
       ? 'not_started'
@@ -107,7 +110,13 @@ export const loadLocalOrderFinancialContext = async (input: {
     canonicalPayments.push(compatible.payment);
   }
 
-  const expectedAmount = Number((finite(order.total) ?? 0).toFixed(2));
+  let payable;
+  try {
+    payable = summarizeLocalOrderPayable(order);
+  } catch {
+    throw new Error('LOCAL_ORDER_FINANCIAL_ORDER_INVALID');
+  }
+  const expectedAmount = payable.billableAmount;
   const orderPaymentStatus = paymentStatus(order.paymentStatus);
   const paidPayments = canonicalPayments.filter(payment =>
     isPaymentAuthoritativelyPaid(payment.status)
@@ -130,6 +139,7 @@ export const loadLocalOrderFinancialContext = async (input: {
     state: resolveState({
       expectedAmount,
       operationalStatus: orderPaymentStatus,
+      hasOperationalPaidQuantity: payable.hasOperationalPaidQuantity,
       payments: canonicalPayments,
       authoritativelyPaidAmount,
       pendingPaymentCount,

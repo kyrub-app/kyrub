@@ -19,14 +19,12 @@ import {
   type MercadoPagoPixCheckout,
 } from '../payments/mercadoPagoPixProvider.js';
 import { resolveInPersonOrderStoreContext } from './inPersonOrderService.js';
+import { summarizeLocalOrderPayable } from './localOrderPayable.js';
 
 const MAX_PAYMENT_RECORDS_PER_ORDER = 50;
 
 const clean = (value: unknown, max = 254): string =>
   typeof value === 'string' ? value.trim().slice(0, max) : '';
-
-const finite = (value: unknown): number | null =>
-  typeof value === 'number' && Number.isFinite(value) ? value : null;
 
 const payerEmail = (value: unknown): string => {
   const email = clean(value).toLocaleLowerCase('pt-BR');
@@ -186,6 +184,16 @@ const validateBeforeProvider = async (input: {
     throw new Error('LOCAL_PIX_PROVIDER_CONTEXT_CHANGED');
   }
 
+  let payable;
+  try {
+    payable = summarizeLocalOrderPayable(order);
+  } catch {
+    throw new Error('LOCAL_PIX_PROVIDER_ORDER_TOTAL_INVALID');
+  }
+  if (payable.hasOperationalPaidQuantity) {
+    throw new Error('LOCAL_PIX_PROVIDER_INTENT_STALE');
+  }
+
   if (orderPayments.size >= MAX_PAYMENT_RECORDS_PER_ORDER) {
     throw new Error('LOCAL_PIX_PROVIDER_PAYMENT_HISTORY_LIMIT');
   }
@@ -217,11 +225,9 @@ const validateBeforeProvider = async (input: {
   }
   if (!currentFound) throw new Error('LOCAL_PIX_PROVIDER_PAYMENT_NOT_INDEXED');
 
-  const orderTotal = finite(order.total);
-  if (orderTotal === null || orderTotal <= 0) {
-    throw new Error('LOCAL_PIX_PROVIDER_ORDER_TOTAL_INVALID');
-  }
-  const remaining = Number((orderTotal - authoritativelyPaidAmount).toFixed(2));
+  const remaining = Number(
+    (payable.billableAmount - authoritativelyPaidAmount).toFixed(2)
+  );
   if (Math.abs(remaining - intent.amount) > 0.009) {
     throw new Error('LOCAL_PIX_PROVIDER_INTENT_STALE');
   }

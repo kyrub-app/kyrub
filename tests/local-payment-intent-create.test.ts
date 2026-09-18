@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
+import './local-order-payable.test';
 import { parseLocalPaymentIntentCreateInput } from '../shared/localPaymentIntent';
 
 test('local payment intent input accepts only scope and idempotency', () => {
@@ -41,6 +42,9 @@ test('server derives buyer, context and remaining amount from canonical state', 
   assert.match(service, /validEmail/);
   assert.match(service, /classifyCompatiblePaymentRecord/);
   assert.match(service, /isPaymentAuthoritativelyPaid/);
+  assert.match(service, /summarizeLocalOrderPayable\(order\)/);
+  assert.match(service, /expectedAmount = payable\.billableAmount/);
+  assert.match(service, /payable\.hasOperationalPaidQuantity/);
   assert.match(service, /expectedAmount - authoritativelyPaidAmount/);
   assert.doesNotMatch(service, /candidate\.amount|request\.amount|value\.amount/);
   assert.doesNotMatch(service, /candidate\.email|request\.email|value\.email/);
@@ -55,6 +59,8 @@ test('local intent creation is transactional, idempotent and blocks ambiguous fi
   assert.match(service, /LOCAL_PAYMENT_INTENT_IDEMPOTENCY_CONFLICT/);
   assert.match(service, /LOCAL_PAYMENT_INTENT_PAYMENT_ALREADY_PENDING/);
   assert.match(service, /LOCAL_PAYMENT_INTENT_RECONCILIATION_REQUIRED/);
+  assert.match(service, /paymentSnapshot\.size >= MAX_PAYMENT_RECORDS_PER_ORDER/);
+  assert.match(service, /LOCAL_PAYMENT_INTENT_ORDER_TOTAL_INVALID/);
   assert.match(service, /LOCAL_PAYMENT_INTENT_ALREADY_PAID/);
   assert.match(service, /target: \{\s*kind: 'existing_order'/);
   assert.match(service, /context,/);
@@ -63,7 +69,7 @@ test('local intent creation is transactional, idempotent and blocks ambiguous fi
   assert.match(service, /transaction\.set\(intentRef, intent\)/);
   assert.match(service, /transaction\.set\(paymentRef, payment\)/);
   assert.doesNotMatch(service, /transaction\.(set|update)\(orderRef/);
-  assert.doesNotMatch(service, /paidQuantity/);
+  assert.doesNotMatch(service, /paidQuantity\s*:/);
 });
 
 test('owner-authorized endpoint creates the pending pair but never calls a PSP', () => {
