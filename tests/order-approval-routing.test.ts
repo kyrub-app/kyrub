@@ -27,6 +27,10 @@ const serviceLocationWorkspaceSource = readFileSync(
   'src/components/store/ServiceLocationOperationalWorkspaceBridge.tsx',
   'utf8'
 );
+const serviceLocationRequestPanelSource = readFileSync(
+  'src/components/store/ServiceLocationRequestPanel.tsx',
+  'utf8'
+);
 const inPersonOrderComposerSource = readFileSync(
   'src/components/store/InPersonOrderComposer.tsx',
   'utf8'
@@ -72,6 +76,20 @@ test('non-table service locations open a dedicated operational workspace instead
   assert.doesNotMatch(serviceLocationWorkspaceSource, /registerTablePayment/);
   assert.doesNotMatch(serviceLocationWorkspaceSource, /transferTableItems/);
   assert.match(mainSource, /<ServiceLocationOperationalWorkspaceBridge \/>/);
+});
+
+test('selected service location workspace surfaces the same operational service requests without creating payment authority', () => {
+  assert.match(serviceLocationWorkspaceSource, /<ServiceLocationRequestPanel/);
+  assert.match(serviceLocationWorkspaceSource, /location=\{location\}/);
+  assert.match(serviceLocationRequestPanelSource, /loadActiveLocalServiceRequests/);
+  assert.match(serviceLocationRequestPanelSource, /serviceLocationIdentityKey\(request\.serviceLocation\) === expected/);
+  assert.match(serviceLocationRequestPanelSource, /acknowledgeLocalServiceRequest/);
+  assert.match(serviceLocationRequestPanelSource, /resolveLocalServiceRequest/);
+  assert.match(serviceLocationRequestPanelSource, /Chamados deste local/);
+  assert.match(serviceLocationRequestPanelSource, /não registra pagamento/);
+  assert.doesNotMatch(serviceLocationRequestPanelSource, /paymentStatus/);
+  assert.doesNotMatch(serviceLocationRequestPanelSource, /paidQuantity/);
+  assert.doesNotMatch(serviceLocationRequestPanelSource, /registerTablePayment/);
 });
 
 test('staff can create another order in the selected canonical service location without fabricating a table code', () => {
