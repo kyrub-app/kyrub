@@ -34,7 +34,7 @@ const stateLabel = (context: LocalOrderFinancialContext): string => {
 };
 
 const canOpenPix = (context: LocalOrderFinancialContext): boolean =>
-  context.state === 'unpaid' ||
+  context.state === 'not_started' ||
   context.state === 'partial' ||
   context.state === 'pending';
 
