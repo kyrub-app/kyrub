@@ -3,6 +3,41 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import './local-order-payable.test';
 import { parseLocalPaymentIntentCreateInput } from '../shared/localPaymentIntent';
+import { normalizeCanonicalPayment } from '../src/utils/canonicalPayment';
+
+const basePayment = {
+  id: 'pay-local-1',
+  storeId: 'store-1',
+  orderId: 'order-1',
+  buyerId: 'buyer-1',
+  amount: 20,
+  currency: 'BRL' as const,
+  method: 'pix' as const,
+  context: 'pos' as const,
+  status: 'pending' as const,
+  provider: '',
+  providerPaymentId: '',
+  idempotencyKey: 'idem-1',
+  createdAt: '2026-09-18T12:00:00.000Z',
+  updatedAt: '2026-09-18T12:00:00.000Z',
+  paidAt: '',
+  refundedAt: '',
+};
+
+test('canonical payment keeps historical compatibility while accepting an explicit intent link', () => {
+  const historical = normalizeCanonicalPayment(basePayment);
+  assert.equal(historical.paymentIntentId, undefined);
+
+  const linked = normalizeCanonicalPayment({
+    ...basePayment,
+    paymentIntentId: '  pi-local-1  ',
+  });
+  assert.equal(linked.paymentIntentId, 'pi-local-1');
+  assert.throws(() => normalizeCanonicalPayment({
+    ...basePayment,
+    paymentIntentId: '   ',
+  }), /payment intent id is required when provided/);
+});
 
 test('local payment intent input accepts only scope and idempotency', () => {
   assert.deepEqual(
@@ -50,7 +85,7 @@ test('server derives buyer, context and remaining amount from canonical state', 
   assert.doesNotMatch(service, /candidate\.email|request\.email|value\.email/);
 });
 
-test('local intent creation is transactional, idempotent and blocks ambiguous finance', () => {
+test('local intent creation is transactional, idempotent and persists its payment link', () => {
   const service = readFileSync(
     'server/attendance/localPaymentIntentService.ts',
     'utf8'
@@ -63,6 +98,9 @@ test('local intent creation is transactional, idempotent and blocks ambiguous fi
   assert.match(service, /LOCAL_PAYMENT_INTENT_ORDER_TOTAL_INVALID/);
   assert.match(service, /LOCAL_PAYMENT_INTENT_ALREADY_PAID/);
   assert.match(service, /target: \{\s*kind: 'existing_order'/);
+  assert.match(service, /paymentIntentId: intent\.id/);
+  assert.match(service, /input\.payment\.paymentIntentId !== undefined/);
+  assert.match(service, /input\.payment\.paymentIntentId !== input\.intent\.id/);
   assert.match(service, /context,/);
   assert.match(service, /method: 'pix'/);
   assert.match(service, /status: 'pending'/);
