@@ -18,6 +18,7 @@ import { createLocalServiceRequestRouter } from './localServiceRequestRouter.js'
 import { loadLocalOrderFinancialContext } from './localOrderFinancialContextService.js';
 import { createLocalPaymentIntent } from './localPaymentIntentService.js';
 import { attachMercadoPagoPixToLocalIntent } from './localMercadoPagoPixService.js';
+import { loadPendingLocalPixAttempt } from './localPendingPixService.js';
 import { isServiceLocationKind } from '../../shared/serviceLocation.js';
 
 const clean = (value: unknown): string =>
@@ -48,7 +49,8 @@ const mapError = (error: unknown): { status: number; message: string } => {
   if (
     message === 'STORE_REPRESENTATION_FORBIDDEN' ||
     message === 'LOCAL_PAYMENT_INTENT_FORBIDDEN' ||
-    message === 'LOCAL_PIX_PROVIDER_FORBIDDEN'
+    message === 'LOCAL_PIX_PROVIDER_FORBIDDEN' ||
+    message === 'LOCAL_PIX_RECOVERY_FORBIDDEN'
   ) {
     return { status: 403, message: 'Você não pode operar o atendimento desta loja.' };
   }
@@ -141,6 +143,12 @@ const mapError = (error: unknown): { status: number; message: string } => {
     };
   }
   if (
+    message === 'LOCAL_PIX_RECOVERY_AMBIGUOUS' ||
+    message === 'LOCAL_PIX_RECOVERY_PROVIDER_CONFLICT'
+  ) {
+    return { status: 409, message: 'O pagamento pendente precisa ser conciliado antes de continuar.' };
+  }
+  if (
     message === 'MERCADO_PAGO_NOT_CONFIGURED' ||
     message.startsWith('MERCADO_PAGO_API_ERROR:')
   ) {
@@ -153,7 +161,8 @@ const mapError = (error: unknown): { status: number; message: string } => {
     message.startsWith('STORE_REPRESENTATION_') ||
     message.startsWith('LOCAL_ORDER_FINANCIAL_') ||
     message.startsWith('LOCAL_PAYMENT_INTENT_') ||
-    message.startsWith('LOCAL_PIX_PROVIDER_')
+    message.startsWith('LOCAL_PIX_PROVIDER_') ||
+    message.startsWith('LOCAL_PIX_RECOVERY_')
   ) {
     console.warn('[Local attendance]', message);
     return { status: 400, message: 'Os dados do atendimento local são inválidos.' };
@@ -181,6 +190,28 @@ export const createLocalAttendanceRouter = (): Router => {
       response.status(200).json({
         context: await loadLocalOrderFinancialContext({
           legacyStoreId: storeId,
+          orderId,
+        }),
+      });
+    } catch (error) {
+      const mapped = mapError(error);
+      response.status(mapped.status).json({ error: mapped.message });
+    }
+  });
+
+  router.get('/payment-intents/pending-pix', async (request, response) => {
+    try {
+      const storeId = clean(request.query.storeId);
+      const orderId = clean(request.query.orderId);
+      if (!storeId || !orderId) throw new Error('LOCAL_PIX_RECOVERY_SCOPE_INVALID');
+      const representation = await requireStoreAuthority({
+        authorization: request.get('authorization') ?? '',
+        storeId,
+      });
+      response.status(200).json({
+        attempt: await loadPendingLocalPixAttempt({
+          authenticatedUserId: representation.authenticatedUserId,
+          storeId,
           orderId,
         }),
       });
