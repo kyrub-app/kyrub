@@ -27,6 +27,10 @@ const serviceLocationWorkspaceSource = readFileSync(
   'src/components/store/ServiceLocationOperationalWorkspaceBridge.tsx',
   'utf8'
 );
+const inPersonOrderComposerSource = readFileSync(
+  'src/components/store/InPersonOrderComposer.tsx',
+  'utf8'
+);
 const workspaceNavigationSource = readFileSync(
   'src/utils/serviceLocationWorkspace.ts',
   'utf8'
@@ -68,6 +72,16 @@ test('non-table service locations open a dedicated operational workspace instead
   assert.doesNotMatch(serviceLocationWorkspaceSource, /registerTablePayment/);
   assert.doesNotMatch(serviceLocationWorkspaceSource, /transferTableItems/);
   assert.match(mainSource, /<ServiceLocationOperationalWorkspaceBridge \/>/);
+});
+
+test('staff can create another order in the selected canonical service location without fabricating a table code', () => {
+  assert.match(serviceLocationWorkspaceSource, /<InPersonOrderComposer/);
+  assert.match(serviceLocationWorkspaceSource, /lockedServiceLocationId=\{location\.id\}/);
+  assert.match(inPersonOrderComposerSource, /lockedServiceLocationId\?: string/);
+  assert.match(inPersonOrderComposerSource, /serviceLocationId: selectedLocationId/);
+  assert.match(inPersonOrderComposerSource, /Este local não está mais ativo para novos pedidos/);
+  assert.match(inPersonOrderComposerSource, /id="locked-service-location"/);
+  assert.doesNotMatch(inPersonOrderComposerSource, /tableCode:/);
 });
 
 test('Kyrub marketplace delivery and pickup require paid status before KDS', () => {
