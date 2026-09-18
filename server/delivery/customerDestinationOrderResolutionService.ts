@@ -1,5 +1,8 @@
 import { FieldValue } from 'firebase-admin/firestore';
-import { normalizeCanonicalPaymentIntent } from '../../src/utils/canonicalPaymentIntent.js';
+import {
+  normalizeCanonicalPaymentIntent,
+  type PaymentIntentDocument,
+} from '../../src/utils/canonicalPaymentIntent.js';
 import { parseDeliveryCustomerDestinationResolution } from '../../shared/deliveryCustomerDestinationResolution.js';
 import { adminDb } from '../firebaseAdmin.js';
 import { resolveCustomerDestinationFromAddress } from './customerDestinationGeocodingService.js';
@@ -58,7 +61,7 @@ const parsePrepared = (
 export const prepareCustomerDestinationResolutionForPaymentIntent = async (input: {
   storeId: string;
   paymentIntentId: string;
-}): Promise<PreparedCustomerDestinationResolution> => {
+}): Promise<PreparedCustomerDestinationResolution | null> => {
   const storeId = input.storeId.trim();
   const paymentIntentId = input.paymentIntentId.trim();
   if (!storeId || !paymentIntentId) {
@@ -69,10 +72,17 @@ export const prepareCustomerDestinationResolutionForPaymentIntent = async (input
     .doc(`stores/${storeId}/paymentIntents/${paymentIntentId}`)
     .get();
   if (!intentSnapshot.exists) throw new Error('PAYMENT_INTENT_NOT_FOUND');
-  const intent = normalizeCanonicalPaymentIntent(intentSnapshot.data() as never);
+  const intent = normalizeCanonicalPaymentIntent(
+    intentSnapshot.data() as PaymentIntentDocument
+  );
   if (intent.storeId !== storeId || intent.id !== paymentIntentId) {
     throw new Error('CUSTOMER_DESTINATION_PAYMENT_INTENT_MISMATCH');
   }
+
+  // Delivery destination resolution belongs only to a marketplace order draft.
+  // Existing local orders already have an operational Service Location and must
+  // never be routed through address geocoding or delivery-order attachment.
+  if (intent.context !== 'marketplace') return null;
 
   const orderId = intent.orderDraft.draftId;
   const reference = adminDb.doc(resolutionPath(storeId, orderId));
@@ -129,8 +139,9 @@ export const prepareCustomerDestinationResolutionForPaymentIntent = async (input
 };
 
 export const attachPreparedCustomerDestinationResolutionToOperationalOrder = async (
-  prepared: PreparedCustomerDestinationResolution
+  prepared: PreparedCustomerDestinationResolution | null
 ): Promise<void> => {
+  if (!prepared) return;
   const reference = adminDb.doc(orderPath(prepared.storeId, prepared.orderId));
   await adminDb.runTransaction(async transaction => {
     const snapshot = await transaction.get(reference);
