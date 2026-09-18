@@ -7,6 +7,8 @@ export interface LocalPaymentIntentCreateInput {
   idempotencyKey: string;
 }
 
+const ALLOWED_FIELDS = new Set(['storeId', 'orderId', 'idempotencyKey']);
+
 const clean = (value: unknown): string =>
   typeof value === 'string' ? value.trim() : '';
 
@@ -23,6 +25,9 @@ export const parseLocalPaymentIntentCreateInput = (
     throw new Error('LOCAL_PAYMENT_INTENT_INVALID');
   }
   const candidate = value as Record<string, unknown>;
+  if (Object.keys(candidate).some(field => !ALLOWED_FIELDS.has(field))) {
+    throw new Error('LOCAL_PAYMENT_INTENT_UNSUPPORTED_FIELD');
+  }
   const storeId = clean(candidate.storeId);
   const orderId = clean(candidate.orderId);
   const idempotencyKey = clean(candidate.idempotencyKey);
