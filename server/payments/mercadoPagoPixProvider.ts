@@ -1,5 +1,8 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
-import type { MarketplaceCanonicalPaymentIntent } from '../../src/utils/canonicalPaymentIntent.js';
+import type {
+  ExistingOrderCanonicalPaymentIntent,
+  MarketplaceCanonicalPaymentIntent,
+} from '../../src/utils/canonicalPaymentIntent.js';
 import type {
   PaymentProviderEventType,
   VerifiedPaymentProviderEvent,
@@ -46,8 +49,28 @@ export interface VerifiedMercadoPagoPaymentEvent
   kyrubPaymentId: string;
 }
 
+type MercadoPagoPixPaymentInput =
+  | {
+      intent: MarketplaceCanonicalPaymentIntent;
+      paymentId: string;
+      payerEmail?: never;
+    }
+  | {
+      intent: ExistingOrderCanonicalPaymentIntent;
+      paymentId: string;
+      payerEmail: string;
+    };
+
 const clean = (value: unknown): string =>
   typeof value === 'string' ? value.trim() : String(value ?? '').trim();
+
+const normalizePayerEmail = (value: unknown): string => {
+  const email = clean(value).toLocaleLowerCase('pt-BR');
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(email)) {
+    throw new Error('MERCADO_PAGO_PAYER_EMAIL_REQUIRED');
+  }
+  return email;
+};
 
 export const isMercadoPagoPixConfigured = (): boolean =>
   Boolean(clean(process.env.MERCADO_PAGO_ACCESS_TOKEN));
@@ -91,15 +114,18 @@ const mercadoPagoRequest = async <T>(path: string, init: RequestInit = {}): Prom
 };
 
 /**
- * This provider entrypoint is intentionally marketplace-only. Existing local
- * orders need a separate payer-resolution contract before they may call a PSP.
+ * One provider path serves both marketplace drafts and existing local orders.
+ * Marketplace owns payer email in its immutable draft. Local checkout must pass
+ * a server-resolved profile email and cannot source it from browser input.
  */
-export const createMercadoPagoPixPayment = async (input: {
-  intent: MarketplaceCanonicalPaymentIntent;
-  paymentId: string;
-}): Promise<MercadoPagoPixCheckout> => {
-  const payerEmail = input.intent.orderDraft.buyerEmail.trim();
-  if (!payerEmail) throw new Error('MERCADO_PAGO_PAYER_EMAIL_REQUIRED');
+export const createMercadoPagoPixPayment = async (
+  input: MercadoPagoPixPaymentInput
+): Promise<MercadoPagoPixCheckout> => {
+  const payerEmail = normalizePayerEmail(
+    input.intent.context === 'marketplace'
+      ? input.intent.orderDraft.buyerEmail
+      : input.payerEmail
+  );
 
   const payment = await mercadoPagoRequest<MercadoPagoPayment>('/v1/payments', {
     method: 'POST',
@@ -143,6 +169,11 @@ const normalizePixCheckout = (payment: MercadoPagoPayment): MercadoPagoPixChecko
     expiresAt: clean(payment.date_of_expiration),
   };
 };
+
+export const getMercadoPagoPixCheckout = async (
+  providerPaymentId: string
+): Promise<MercadoPagoPixCheckout> =>
+  normalizePixCheckout(await getMercadoPagoPayment(providerPaymentId));
 
 const headerValue = (
   headers: Record<string, string | string[] | undefined>,
