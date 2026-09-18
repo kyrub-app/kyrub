@@ -31,6 +31,10 @@ const serviceLocationRequestPanelSource = readFileSync(
   'src/components/store/ServiceLocationRequestPanel.tsx',
   'utf8'
 );
+const inPersonCustomerLinkerSource = readFileSync(
+  'src/components/store/InPersonCustomerLinker.tsx',
+  'utf8'
+);
 const inPersonOrderComposerSource = readFileSync(
   'src/components/store/InPersonOrderComposer.tsx',
   'utf8'
@@ -90,6 +94,20 @@ test('selected service location workspace surfaces the same operational service 
   assert.doesNotMatch(serviceLocationRequestPanelSource, /paymentStatus/);
   assert.doesNotMatch(serviceLocationRequestPanelSource, /paidQuantity/);
   assert.doesNotMatch(serviceLocationRequestPanelSource, /registerTablePayment/);
+});
+
+test('staff can identify an in-person customer from the selected service location without broadening identity or payment authority', () => {
+  assert.match(serviceLocationWorkspaceSource, /hasStaffOrder/);
+  assert.match(serviceLocationWorkspaceSource, /activeOrders\.some\(order => order\.source === 'staff'\)/);
+  assert.match(serviceLocationWorkspaceSource, /<InPersonCustomerLinker/);
+  assert.match(serviceLocationWorkspaceSource, /orders=\{activeOrders\}/);
+  assert.match(inPersonCustomerLinkerSource, /order\.source === 'staff'/);
+  assert.match(inPersonCustomerLinkerSource, /CPF e telefone usam correspondência exata/);
+  assert.match(inPersonCustomerLinkerSource, /Identificar o Cairuvi não confirma pagamento/);
+  assert.match(inPersonCustomerLinkerSource, /loadInPersonCustomerContext/);
+  assert.match(inPersonCustomerLinkerSource, /linkInPersonCustomer/);
+  assert.doesNotMatch(inPersonCustomerLinkerSource, /paymentStatus\s*=/);
+  assert.doesNotMatch(inPersonCustomerLinkerSource, /paidQuantity\s*=/);
 });
 
 test('staff can create another order in the selected canonical service location without fabricating a table code', () => {
