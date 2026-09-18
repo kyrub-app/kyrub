@@ -16,6 +16,7 @@ import { createInPersonOrderRouter } from './inPersonOrderRouter.js';
 import { createInPersonCustomerIdentityRouter } from './inPersonCustomerIdentityRouter.js';
 import { createLocalServiceRequestRouter } from './localServiceRequestRouter.js';
 import { loadLocalOrderFinancialContext } from './localOrderFinancialContextService.js';
+import { createLocalPaymentIntent } from './localPaymentIntentService.js';
 import { isServiceLocationKind } from '../../shared/serviceLocation.js';
 
 const clean = (value: unknown): string =>
@@ -43,7 +44,10 @@ const mapError = (error: unknown): { status: number; message: string } => {
   if (message === 'AUTH_REQUIRED') {
     return { status: 401, message: 'Faça login novamente para acessar o atendimento local.' };
   }
-  if (message === 'STORE_REPRESENTATION_FORBIDDEN') {
+  if (
+    message === 'STORE_REPRESENTATION_FORBIDDEN' ||
+    message === 'LOCAL_PAYMENT_INTENT_FORBIDDEN'
+  ) {
     return { status: 403, message: 'Você não pode operar o atendimento desta loja.' };
   }
   if (message === 'STORE_INSTITUTIONAL_NOT_FOUND') {
@@ -64,12 +68,45 @@ const mapError = (error: unknown): { status: number; message: string } => {
   if (message === 'LOCAL_ORDER_FINANCIAL_ORDER_NOT_LOCAL') {
     return { status: 409, message: 'Este pedido não pertence ao atendimento local.' };
   }
+  if (message === 'LOCAL_PAYMENT_INTENT_ORDER_NOT_FOUND') {
+    return { status: 404, message: 'Pedido presencial não encontrado.' };
+  }
+  if (
+    message === 'LOCAL_PAYMENT_INTENT_ORDER_NOT_LOCAL' ||
+    message === 'LOCAL_PAYMENT_INTENT_ORDER_CLOSED' ||
+    message === 'LOCAL_PAYMENT_INTENT_CUSTOMER_IDENTIFICATION_REQUIRED' ||
+    message === 'LOCAL_PAYMENT_INTENT_PAYER_NOT_FOUND' ||
+    message === 'LOCAL_PAYMENT_INTENT_PAYER_EMAIL_REQUIRED' ||
+    message === 'LOCAL_PAYMENT_INTENT_SERVICE_LOCATION_REQUIRED' ||
+    message === 'LOCAL_PAYMENT_INTENT_PAYMENT_ALREADY_PENDING' ||
+    message === 'LOCAL_PAYMENT_INTENT_RECONCILIATION_REQUIRED' ||
+    message === 'LOCAL_PAYMENT_INTENT_ALREADY_PAID' ||
+    message === 'LOCAL_PAYMENT_INTENT_IDEMPOTENCY_CONFLICT' ||
+    message === 'LOCAL_PAYMENT_INTENT_PAYMENT_CONTEXT_CONFLICT'
+  ) {
+    return {
+      status: 409,
+      message:
+        message === 'LOCAL_PAYMENT_INTENT_CUSTOMER_IDENTIFICATION_REQUIRED'
+          ? 'Identifique o Cairubido antes de iniciar o pagamento deste pedido.'
+          : message === 'LOCAL_PAYMENT_INTENT_PAYMENT_ALREADY_PENDING'
+            ? 'Já existe um pagamento pendente para este pedido.'
+            : message === 'LOCAL_PAYMENT_INTENT_ALREADY_PAID'
+              ? 'Este pedido já possui quitação financeira canônica.'
+              : message === 'LOCAL_PAYMENT_INTENT_RECONCILIATION_REQUIRED'
+                ? 'A situação financeira deste pedido precisa ser conciliada antes de um novo pagamento.'
+                : message === 'LOCAL_PAYMENT_INTENT_PAYER_EMAIL_REQUIRED' || message === 'LOCAL_PAYMENT_INTENT_PAYER_NOT_FOUND'
+                  ? 'A conta do cliente ainda não possui dados suficientes para iniciar o pagamento.'
+                  : 'Este pedido ainda não está apto para iniciar um pagamento canônico.',
+    };
+  }
   if (
     message.startsWith('LOCAL_ATTENDANCE_') ||
     message.startsWith('SERVICE_LOCATION_') ||
     message.startsWith('STORE_INSTITUTIONAL_') ||
     message.startsWith('STORE_REPRESENTATION_') ||
-    message.startsWith('LOCAL_ORDER_FINANCIAL_')
+    message.startsWith('LOCAL_ORDER_FINANCIAL_') ||
+    message.startsWith('LOCAL_PAYMENT_INTENT_')
   ) {
     console.warn('[Local attendance]', message);
     return { status: 400, message: 'Os dados do atendimento local são inválidos.' };
@@ -100,6 +137,25 @@ export const createLocalAttendanceRouter = (): Router => {
           orderId,
         }),
       });
+    } catch (error) {
+      const mapped = mapError(error);
+      response.status(mapped.status).json({ error: mapped.message });
+    }
+  });
+
+  router.post('/payment-intents', async (request, response) => {
+    try {
+      const storeId = clean(request.body?.storeId);
+      if (!storeId) throw new Error('LOCAL_PAYMENT_INTENT_SCOPE_REQUIRED');
+      const representation = await requireStoreAuthority({
+        authorization: request.get('authorization') ?? '',
+        storeId,
+      });
+      const result = await createLocalPaymentIntent({
+        authenticatedUserId: representation.authenticatedUserId,
+        value: request.body,
+      });
+      response.status(result.duplicate ? 200 : 201).json(result);
     } catch (error) {
       const mapped = mapError(error);
       response.status(mapped.status).json({ error: mapped.message });
