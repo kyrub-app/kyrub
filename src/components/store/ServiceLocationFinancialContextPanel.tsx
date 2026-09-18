@@ -38,7 +38,7 @@ const stateLabel = (context: LocalOrderFinancialContext): string => {
 };
 
 const pixActionLabel = (context: LocalOrderFinancialContext): string => {
-  if (context.state === 'pending') return 'Retomar Pix';
+  if (context.pendingPaymentCount > 0) return 'Retomar Pix';
   if (context.state === 'partial') return 'Cobrar saldo por Pix';
   if (context.state === 'refunded') return 'Gerar novo Pix';
   return 'Gerar Pix';
@@ -118,8 +118,19 @@ export function ServiceLocationFinancialContextPanel({
       setPixByOrder(current => {
         const retained = { ...current };
         for (const context of next) {
+          const existing = retained[context.orderId];
           if (context.state === 'paid' || context.state === 'reconciliation_required') {
             delete retained[context.orderId];
+          } else if (
+            context.pendingPaymentCount === 0 &&
+            existing?.checkout &&
+            !existing.loading
+          ) {
+            retained[context.orderId] = {
+              ...existing,
+              checkout: null,
+              copied: false,
+            };
           }
         }
         return retained;
@@ -241,7 +252,7 @@ export function ServiceLocationFinancialContextPanel({
           const context = contexts[order.id];
           const pix = pixByOrder[order.id] ?? emptyPixState();
           const visibleCheckout =
-            context?.state === 'pending' ? pix.checkout : null;
+            context && canOperatePix(context) ? pix.checkout : null;
           const safeTicketUrl = visibleCheckout?.ticketUrl.startsWith('https://')
             ? visibleCheckout.ticketUrl
             : '';
