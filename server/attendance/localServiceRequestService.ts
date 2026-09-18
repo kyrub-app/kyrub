@@ -10,6 +10,7 @@ import {
 } from '../../shared/localServiceRequest.js';
 import { resolveOrderServiceLocation } from '../../shared/serviceLocation.js';
 import { resolveInPersonOrderStoreContext } from './inPersonOrderService.js';
+import { loadLocalOrderFinancialContext } from './localOrderFinancialContextService.js';
 
 const clean = (value: unknown, max = 220): string =>
   typeof value === 'string' ? value.trim().slice(0, max) : '';
@@ -106,6 +107,28 @@ const outstandingOrderAmount = (order: DocumentData): number => {
   }, 0).toFixed(2));
 };
 
+const isCanonicallyPaid = async (
+  legacyStoreId: string,
+  orderId: string
+): Promise<boolean> => {
+  try {
+    const financial = await loadLocalOrderFinancialContext({ legacyStoreId, orderId });
+    return (
+      financial.canonicalProjection.state === 'paid' &&
+      financial.canonicalProjection.outstandingAmount <= 0.009
+    );
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      error.message === 'LOCAL_ORDER_FINANCIAL_ORDER_NOT_FOUND'
+    ) {
+      // Preserve legacy-only table compatibility until those orders are migrated.
+      return false;
+    }
+    throw error;
+  }
+};
+
 const requestIdsForOrder = (orderId: string): Array<{
   kind: LocalServiceRequestKind;
   id: string;
@@ -125,7 +148,13 @@ export const createLocalServiceRequest = async (input: {
   const context = await resolveInPersonOrderStoreContext(request.storeId);
   const order = await loadCustomerOrder(context.legacyStoreId, request.orderId);
   assertCustomerCanRequest(order, request.orderId, customerId);
-  if (request.kind === 'close_account' && outstandingOrderAmount(order) <= 0) {
+  if (
+    request.kind === 'close_account' &&
+    (
+      outstandingOrderAmount(order) <= 0 ||
+      await isCanonicallyPaid(context.legacyStoreId, request.orderId)
+    )
+  ) {
     throw new Error('LOCAL_SERVICE_REQUEST_NOTHING_DUE');
   }
   const serviceLocation = resolveOrderServiceLocation({
