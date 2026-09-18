@@ -1,4 +1,4 @@
-import type { PaymentMethod } from './canonicalPayment';
+import type { PaymentContext, PaymentMethod } from './canonicalPayment';
 import type { StorePromotionDiscountType } from './storePromotions';
 import { normalizeStorePointsPerUnit } from '../../shared/storePoints';
 
@@ -53,6 +53,11 @@ export interface CanonicalPaymentIntent {
   id: string;
   storeId: string;
   buyerId: string;
+  /**
+   * Historical payment-intent documents predate explicit context and are
+   * marketplace intents. New normalized documents always persist context.
+   */
+  context?: PaymentContext;
   method: PaymentMethod;
   status: PaymentIntentStatus;
   amount: number;
@@ -77,6 +82,20 @@ const money = (label: string, value: number): number => {
     throw new Error(`${label} must be a finite non-negative number.`);
   }
   return Number(value.toFixed(2));
+};
+
+export const paymentIntentContext = (
+  intent: Pick<CanonicalPaymentIntent, 'context'>
+): PaymentContext => {
+  if (intent.context === undefined) return 'marketplace';
+  if (
+    intent.context !== 'marketplace' &&
+    intent.context !== 'table' &&
+    intent.context !== 'pos'
+  ) {
+    throw new Error('Payment intent context is invalid.');
+  }
+  return intent.context;
 };
 
 export const normalizePaymentIntentItem = (
@@ -190,6 +209,7 @@ export const normalizeCanonicalPaymentIntent = (
   intent: CanonicalPaymentIntent
 ): CanonicalPaymentIntent => {
   const orderDraft = normalizePaymentIntentOrderDraft(intent.orderDraft);
+  const context = paymentIntentContext(intent);
   const amount = money('payment intent amount', intent.amount);
   if (amount <= 0) throw new Error('Payment intent amount must be positive.');
   if (amount !== orderDraft.total) {
@@ -207,6 +227,7 @@ export const normalizeCanonicalPaymentIntent = (
     id: required('payment intent id', intent.id),
     storeId: required('store id', intent.storeId),
     buyerId: required('buyer id', intent.buyerId),
+    context,
     amount,
     currency: 'BRL',
     provider: intent.provider.trim(),

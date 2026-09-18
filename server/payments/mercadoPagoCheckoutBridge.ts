@@ -1,6 +1,7 @@
 import { adminDb } from '../firebaseAdmin.js';
 import {
   normalizeCanonicalPaymentIntent,
+  paymentIntentContext,
   type CanonicalPaymentIntent,
 } from '../../src/utils/canonicalPaymentIntent.js';
 import {
@@ -33,6 +34,19 @@ const emptyBridge = (expiresAt: string): MercadoPagoCheckoutBridgeResult => ({
   expiresAt,
 });
 
+const assertMarketplaceCheckoutContext = (
+  intent: CanonicalPaymentIntent,
+  payment: CanonicalPayment
+): void => {
+  const intentContext = paymentIntentContext(intent);
+  if (intentContext !== payment.context) {
+    throw new Error('CHECKOUT_PAYMENT_CONTEXT_MISMATCH');
+  }
+  if (intentContext !== 'marketplace') {
+    throw new Error('CHECKOUT_PAYMENT_CONTEXT_UNSUPPORTED');
+  }
+};
+
 export const attachMercadoPagoPixToExistingIntent = async (input: {
   storeId: string;
   paymentIntentId: string;
@@ -61,6 +75,7 @@ export const attachMercadoPagoPixToExistingIntent = async (input: {
   const payment = normalizeCanonicalPayment(
     paymentSnapshot.data() as CanonicalPayment
   );
+  assertMarketplaceCheckoutContext(intent, payment);
   if (intent.status !== 'pending' || payment.status !== 'pending') {
     throw new Error('CHECKOUT_PAYMENT_NOT_PENDING');
   }
@@ -100,6 +115,7 @@ export const attachMercadoPagoPixToExistingIntent = async (input: {
     const freshPayment = normalizeCanonicalPayment(
       freshPaymentSnapshot.data() as CanonicalPayment
     );
+    assertMarketplaceCheckoutContext(freshIntent, freshPayment);
     if (
       freshIntent.providerIntentId &&
       freshIntent.providerIntentId !== pix.providerPaymentId
