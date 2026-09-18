@@ -49,7 +49,7 @@ export interface VerifiedMercadoPagoPaymentEvent
   kyrubPaymentId: string;
 }
 
-type MercadoPagoPixPaymentInput =
+export type MercadoPagoPixPaymentInput =
   | {
       intent: MarketplaceCanonicalPaymentIntent;
       paymentId: string;
@@ -60,6 +60,11 @@ type MercadoPagoPixPaymentInput =
       paymentId: string;
       payerEmail: string;
     };
+
+export interface MercadoPagoPixPaymentRequest {
+  path: '/v1/payments';
+  init: RequestInit;
+}
 
 const clean = (value: unknown): string =>
   typeof value === 'string' ? value.trim() : String(value ?? '').trim();
@@ -114,6 +119,42 @@ const mercadoPagoRequest = async <T>(path: string, init: RequestInit = {}): Prom
 };
 
 /**
+ * Pure request construction keeps provider payload authority testable without
+ * resolving credentials or performing network I/O. The runtime entrypoint
+ * below sends exactly this request after credentials are resolved.
+ */
+export const buildMercadoPagoPixPaymentRequest = (
+  input: MercadoPagoPixPaymentInput
+): MercadoPagoPixPaymentRequest => {
+  const payerEmail = normalizePayerEmail(
+    input.intent.context === 'marketplace'
+      ? input.intent.orderDraft.buyerEmail
+      : input.payerEmail
+  );
+
+  return {
+    path: '/v1/payments',
+    init: {
+      method: 'POST',
+      headers: { 'X-Idempotency-Key': input.intent.idempotencyKey },
+      body: JSON.stringify({
+        transaction_amount: input.intent.amount,
+        description: `Pedido Kyrub ${input.intent.target.orderId}`,
+        payment_method_id: 'pix',
+        payer: { email: payerEmail },
+        date_of_expiration: input.intent.expiresAt,
+        external_reference: input.intent.id,
+        metadata: {
+          kyrub_store_id: input.intent.storeId,
+          kyrub_payment_id: input.paymentId,
+          kyrub_payment_intent_id: input.intent.id,
+        },
+      }),
+    },
+  };
+};
+
+/**
  * One provider path serves both marketplace drafts and existing local orders.
  * Marketplace owns payer email in its immutable draft. Local checkout must pass
  * a server-resolved profile email and cannot source it from browser input.
@@ -121,30 +162,11 @@ const mercadoPagoRequest = async <T>(path: string, init: RequestInit = {}): Prom
 export const createMercadoPagoPixPayment = async (
   input: MercadoPagoPixPaymentInput
 ): Promise<MercadoPagoPixCheckout> => {
-  const payerEmail = normalizePayerEmail(
-    input.intent.context === 'marketplace'
-      ? input.intent.orderDraft.buyerEmail
-      : input.payerEmail
+  const request = buildMercadoPagoPixPaymentRequest(input);
+  const payment = await mercadoPagoRequest<MercadoPagoPayment>(
+    request.path,
+    request.init
   );
-
-  const payment = await mercadoPagoRequest<MercadoPagoPayment>('/v1/payments', {
-    method: 'POST',
-    headers: { 'X-Idempotency-Key': input.intent.idempotencyKey },
-    body: JSON.stringify({
-      transaction_amount: input.intent.amount,
-      description: `Pedido Kyrub ${input.intent.target.orderId}`,
-      payment_method_id: 'pix',
-      payer: { email: payerEmail },
-      date_of_expiration: input.intent.expiresAt,
-      external_reference: input.intent.id,
-      metadata: {
-        kyrub_store_id: input.intent.storeId,
-        kyrub_payment_id: input.paymentId,
-        kyrub_payment_intent_id: input.intent.id,
-      },
-    }),
-  });
-
   return normalizePixCheckout(payment);
 };
 
