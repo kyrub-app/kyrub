@@ -5,6 +5,7 @@ import './in-person-order-creation.test';
 import './in-person-customer-linking.test';
 import './local-payment-intent-create.test';
 import './local-payment-webhook-validation.test';
+import './local-pix-workspace.test';
 import {
   buildOpenLocalAttendance,
   localAttendancePath,
