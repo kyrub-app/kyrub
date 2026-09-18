@@ -50,9 +50,10 @@ test('attach revalidates canonical order, identity, approval, context and balanc
   assert.match(service, /classifyCompatiblePaymentRecord/);
   assert.match(service, /isPaymentAuthoritativelyPaid/);
   assert.match(service, /LOCAL_PIX_PROVIDER_OTHER_PAYMENT_PENDING/);
+  assert.match(service, /authoritativelyPaidAmount \+= candidate\.amount/);
   assert.match(service, /Math\.abs\(remaining - intent\.amount\) > 0\.009/);
   assert.match(service, /LOCAL_PIX_PROVIDER_INTENT_STALE/);
-  assert.doesNotMatch(service, /request\.email|request\.amount|candidate\.email|candidate\.amount/);
+  assert.doesNotMatch(service, /request\.body\?\.(amount|email)|request\.(amount|email)/);
 });
 
 test('shared Mercado Pago provider requires server-supplied email for existing-order intent', () => {
