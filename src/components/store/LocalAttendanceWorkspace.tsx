@@ -9,6 +9,7 @@ import {
   Users,
 } from 'lucide-react';
 import type { LocalAttendanceSession } from '../../../shared/localAttendance';
+import type { ServiceLocation } from '../../../shared/serviceLocation';
 import {
   closeLocalAttendance,
   loadLocalAttendanceSessions,
@@ -25,20 +26,46 @@ const formatTime = (value: string): string => {
   }).format(new Date(value));
 };
 
+type AttendanceChoice = {
+  key: string;
+  label: string;
+  serviceLocationId?: string;
+};
+
 export const LocalAttendanceWorkspace = ({
   storeId,
-  spaces,
+  serviceLocations,
+  legacySpaces,
 }: {
   storeId: string;
-  spaces: string[];
+  serviceLocations: ServiceLocation[];
+  legacySpaces: string[];
 }) => {
-  const normalizedSpaces = useMemo(
-    () => (spaces.length > 0 ? spaces : ['GERAL']).map(item => item.trim()).filter(Boolean),
-    [spaces]
-  );
+  const choices = useMemo<AttendanceChoice[]>(() => {
+    const canonical = serviceLocations
+      .filter(location => location.active)
+      .map(location => ({
+        key: `canonical:${location.id}`,
+        label: location.label,
+        serviceLocationId: location.id,
+      }));
+    const canonicalLabels = new Set(
+      canonical.map(item => item.label.trim().toLocaleUpperCase('pt-BR'))
+    );
+    const legacy = Array.from(new Set(
+      legacySpaces.map(item => item.trim()).filter(Boolean)
+    ))
+      .filter(label => !canonicalLabels.has(label.toLocaleUpperCase('pt-BR')))
+      .map(label => ({
+        key: `legacy:${label.toLocaleUpperCase('pt-BR')}`,
+        label,
+      }));
+    return [...canonical, ...legacy];
+  }, [legacySpaces, serviceLocations]);
+
   const [sessions, setSessions] = useState<LocalAttendanceSession[]>([]);
   const [customerLabel, setCustomerLabel] = useState('');
-  const [space, setSpace] = useState(normalizedSpaces[0] ?? 'GERAL');
+  const [choiceKey, setChoiceKey] = useState('');
   const [itemCount, setItemCount] = useState(1);
   const [filter, setFilter] = useState('TODOS');
   const [loading, setLoading] = useState(false);
@@ -46,9 +73,16 @@ export const LocalAttendanceWorkspace = ({
   const [errorMessage, setErrorMessage] = useState('');
 
   useEffect(() => {
-    if (!normalizedSpaces.includes(space)) setSpace(normalizedSpaces[0] ?? 'GERAL');
-    if (filter !== 'TODOS' && !normalizedSpaces.includes(filter)) setFilter('TODOS');
-  }, [filter, normalizedSpaces, space]);
+    if (!choices.some(choice => choice.key === choiceKey)) {
+      setChoiceKey(choices[0]?.key ?? '');
+    }
+    if (
+      filter !== 'TODOS' &&
+      !choices.some(choice => choice.label.toLocaleUpperCase('pt-BR') === filter)
+    ) {
+      setFilter('TODOS');
+    }
+  }, [choiceKey, choices, filter]);
 
   const refresh = useCallback(async (silent = false): Promise<void> => {
     if (!storeId) return;
@@ -80,19 +114,23 @@ export const LocalAttendanceWorkspace = ({
     [sessions]
   );
   const visibleSessions = useMemo(
-    () => openSessions.filter(session => filter === 'TODOS' || session.space === filter),
+    () => openSessions.filter(session =>
+      filter === 'TODOS' || session.space === filter
+    ),
     [filter, openSessions]
   );
 
   const handleOpen = async (): Promise<void> => {
-    if (!customerLabel.trim() || loading) return;
+    const choice = choices.find(item => item.key === choiceKey);
+    if (!customerLabel.trim() || !choice || loading) return;
     setLoading(true);
     setErrorMessage('');
     try {
       const session = await openLocalAttendance({
         storeId,
         customerLabel: customerLabel.trim(),
-        space,
+        space: choice.label,
+        serviceLocationId: choice.serviceLocationId,
         itemCount,
       });
       setSessions(current => [session, ...current]);
@@ -145,6 +183,12 @@ export const LocalAttendanceWorkspace = ({
         </button>
       </div>
 
+      {choices.length === 0 && (
+        <div className="rounded-2xl border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-[9px] text-amber-200">
+          Cadastre um local em Configurações da Loja → Ambientes antes de abrir um novo atendimento local.
+        </div>
+      )}
+
       <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_minmax(9rem,0.35fr)_6rem_auto]">
         <input
           value={customerLabel}
@@ -152,18 +196,20 @@ export const LocalAttendanceWorkspace = ({
           placeholder="Nome ou identificação local do cliente"
           className="min-h-10 rounded-xl border border-slate-800 bg-slate-950 px-3 text-xs text-white outline-none focus:border-orange-500/40"
         />
-        <select value={space} onChange={event => setSpace(event.target.value)} className="min-h-10 rounded-xl border border-slate-800 bg-slate-950 px-3 text-[10px] font-bold uppercase text-white outline-none">
-          {normalizedSpaces.map(item => <option key={item} value={item.toLocaleUpperCase('pt-BR')}>{item}</option>)}
+        <select value={choiceKey} onChange={event => setChoiceKey(event.target.value)} disabled={choices.length === 0} className="min-h-10 rounded-xl border border-slate-800 bg-slate-950 px-3 text-[10px] font-bold uppercase text-white outline-none disabled:text-slate-600">
+          {choices.length === 0
+            ? <option value="">Nenhum local</option>
+            : choices.map(choice => <option key={choice.key} value={choice.key}>{choice.label}</option>)}
         </select>
         <input type="number" min={1} max={999} value={itemCount} onChange={event => setItemCount(Math.max(1, Math.min(999, Number(event.target.value) || 1)))} className="min-h-10 rounded-xl border border-slate-800 bg-slate-950 px-3 text-center text-xs text-white outline-none" aria-label="Quantidade de itens estimada" />
-        <button type="button" onClick={() => void handleOpen()} disabled={loading || !customerLabel.trim()} className="flex min-h-10 items-center justify-center gap-2 rounded-xl bg-orange-600 px-4 text-[9px] font-black uppercase text-white disabled:bg-slate-800 disabled:text-slate-600">
+        <button type="button" onClick={() => void handleOpen()} disabled={loading || !customerLabel.trim() || !choiceKey} className="flex min-h-10 items-center justify-center gap-2 rounded-xl bg-orange-600 px-4 text-[9px] font-black uppercase text-white disabled:bg-slate-800 disabled:text-slate-600">
           {loading ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
           Abrir
         </button>
       </div>
 
       <div className="flex gap-1.5 overflow-x-auto pb-1">
-        {['TODOS', ...normalizedSpaces.map(item => item.toLocaleUpperCase('pt-BR'))].map(item => (
+        {['TODOS', ...Array.from(new Set(choices.map(choice => choice.label.toLocaleUpperCase('pt-BR'))))].map(item => (
           <button type="button" key={item} onClick={() => setFilter(item)} className={`shrink-0 rounded-full px-3 py-1.5 text-[8px] font-black uppercase ${filter === item ? 'bg-orange-500 text-slate-950' : 'border border-slate-800 bg-slate-950 text-slate-500'}`}>
             {item}
           </button>
@@ -187,7 +233,7 @@ export const LocalAttendanceWorkspace = ({
                 <div className="min-w-0">
                   <strong className="block truncate text-xs text-white">{session.customerLabel}</strong>
                   <div className="mt-1 flex flex-wrap items-center gap-2 text-[8px] text-slate-600">
-                    <span className="flex items-center gap-1"><MapPin className="h-3 w-3" />{session.space}</span>
+                    <span className="flex items-center gap-1"><MapPin className="h-3 w-3" />{session.serviceLocation?.label ?? session.space}</span>
                     <span>{session.itemCount} item(ns)</span>
                     <span className="flex items-center gap-1"><Clock3 className="h-3 w-3" />{formatTime(session.openedAt)}</span>
                   </div>

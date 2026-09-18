@@ -1,13 +1,19 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import './local-service-requests.test';
+import type { ServiceLocationSnapshot } from '../shared/serviceLocation';
 import type { CustomerOrder } from '../src/utils/customerOrders';
 import {
   buildCustomerTableCards,
   getCustomerTableStateLabel,
 } from '../src/utils/customerTables';
 
+type CustomerOrderOverrides = Partial<CustomerOrder> & {
+  serviceLocation?: ServiceLocationSnapshot | null;
+};
+
 const makeOrder = (
-  overrides: Partial<CustomerOrder> = {}
+  overrides: CustomerOrderOverrides = {}
 ): CustomerOrder => ({
   id: 'order-1',
   storeId: 'store-1',
@@ -45,7 +51,7 @@ const makeOrder = (
   ...overrides,
 });
 
-test('groups active dine-in orders into one card per normalized table code', () => {
+test('groups active dine-in orders into one card per normalized legacy table code', () => {
   const cards = buildCustomerTableCards([
     makeOrder(),
     makeOrder({
@@ -77,6 +83,7 @@ test('groups active dine-in orders into one card per normalized table code', () 
 
   assert.equal(cards.length, 1);
   assert.equal(cards[0].tableCode, '12');
+  assert.equal(cards[0].serviceLocation.source, 'legacy_table_code');
   assert.equal(cards[0].orderCount, 2);
   assert.equal(cards[0].pendingCount, 1);
   assert.equal(cards[0].itemCount, 3);
@@ -84,6 +91,44 @@ test('groups active dine-in orders into one card per normalized table code', () 
   assert.deepEqual(cards[0].buyerNames, ['Cliente Dois', 'Cliente Um']);
   assert.equal(cards[0].state, 'pending');
   assert.equal(cards[0].openedAt, '2026-07-21T20:00:00.000Z');
+});
+
+test('prefers canonical table identity and label over legacy tableCode', () => {
+  const serviceLocation: ServiceLocationSnapshot = {
+    schemaVersion: 1,
+    id: 'table-7',
+    kind: 'table',
+    label: 'Mesa 7',
+  };
+  const cards = buildCustomerTableCards([
+    makeOrder({ id: 'order-a', tableCode: '12', serviceLocation }),
+    makeOrder({ id: 'order-b', tableCode: '99', serviceLocation, status: 'accepted' }),
+  ]);
+
+  assert.equal(cards.length, 1);
+  assert.equal(cards[0].tableCode, 'Mesa 7');
+  assert.equal(cards[0].serviceLocation.id, 'table-7');
+  assert.equal(cards[0].serviceLocation.source, 'canonical');
+  assert.equal(cards[0].orderCount, 2);
+});
+
+test('keeps canonical non-table location as its own service-location card', () => {
+  const cards = buildCustomerTableCards([
+    makeOrder({
+      tableCode: '12',
+      serviceLocation: {
+        schemaVersion: 1,
+        id: 'counter-2',
+        kind: 'counter',
+        label: 'Balcão 2',
+      },
+    }),
+  ]);
+
+  assert.equal(cards.length, 1);
+  assert.equal(cards[0].tableCode, 'Balcão 2');
+  assert.equal(cards[0].serviceLocation.kind, 'counter');
+  assert.equal(cards[0].serviceLocation.source, 'canonical');
 });
 
 test('ignores delivery, pickup and terminal dine-in orders', () => {
@@ -98,7 +143,7 @@ test('ignores delivery, pickup and terminal dine-in orders', () => {
   assert.deepEqual(cards, []);
 });
 
-test('prioritizes alerting tables before numeric table order', () => {
+test('prioritizes alerting locations before numeric table order', () => {
   const cards = buildCustomerTableCards([
     makeOrder({ id: 'accepted-2', tableCode: '2', status: 'accepted' }),
     makeOrder({ id: 'preparing-10', tableCode: '10', status: 'preparing' }),
@@ -112,7 +157,7 @@ test('prioritizes alerting tables before numeric table order', () => {
   );
 });
 
-test('uses the highest-priority operational state within a shared table', () => {
+test('uses the highest-priority operational state within a shared location', () => {
   const cards = buildCustomerTableCards([
     makeOrder({ id: 'accepted', status: 'accepted' }),
     makeOrder({ id: 'preparing', status: 'preparing' }),
@@ -123,7 +168,7 @@ test('uses the highest-priority operational state within a shared table', () => 
   assert.equal(getCustomerTableStateLabel(cards[0].state, 0), 'Pronto');
 });
 
-test('shows only unpaid and non-transferred quantities in the table card', () => {
+test('shows only unpaid and non-transferred quantities in the location card', () => {
   const cards = buildCustomerTableCards([
     makeOrder({
       status: 'accepted',

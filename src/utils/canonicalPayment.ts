@@ -19,6 +19,11 @@ export interface CanonicalPayment {
   storeId: string;
   orderId: string;
   buyerId: string;
+  /**
+   * Explicit link to the PaymentIntent that originated this payment. Historical
+   * records may omit it; new payment creation paths should persist it.
+   */
+  paymentIntentId?: string;
   amount: number;
   currency: 'BRL';
   method: PaymentMethod;
@@ -60,12 +65,18 @@ export const normalizeCanonicalPayment = (
     throw new Error('Payment amount must be a positive finite number.');
   }
 
+  const paymentIntentId = input.paymentIntentId?.trim();
+  if (input.paymentIntentId !== undefined && !paymentIntentId) {
+    throw new Error('payment intent id is required when provided.');
+  }
+
   return {
     ...input,
     id: required('payment id', input.id),
     storeId: required('store id', input.storeId),
     orderId: required('order id', input.orderId),
     buyerId: required('buyer id', input.buyerId),
+    ...(paymentIntentId ? { paymentIntentId } : {}),
     amount: Number(input.amount.toFixed(2)),
     currency: 'BRL',
     provider: input.provider.trim(),

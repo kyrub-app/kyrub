@@ -1,3 +1,9 @@
+import type { LocalServiceRequest } from '../../shared/localServiceRequest';
+import type { ResolvedOrderServiceLocation } from '../../shared/serviceLocation';
+import {
+  resolveOrderServiceLocation,
+  serviceLocationIdentityKey,
+} from '../../shared/serviceLocation';
 import type { CustomerOrder } from './customerOrders';
 import {
   getCustomerOrderItemOpenQuantity,
@@ -11,10 +17,16 @@ export type CustomerTableOperationalState =
   | 'accepted';
 
 export interface CustomerTableCard {
+  /** Legacy compatibility name. This is the Service Location label. */
   tableCode: string;
+  serviceLocation: ResolvedOrderServiceLocation;
   orders: CustomerOrder[];
+  requests: LocalServiceRequest[];
   orderCount: number;
   pendingCount: number;
+  assistanceRequestCount: number;
+  closeAccountRequestCount: number;
+  unacknowledgedRequestCount: number;
   itemCount: number;
   total: number;
   buyerNames: string[];
@@ -37,14 +49,28 @@ const STATE_PRIORITY: Record<CustomerTableOperationalState, number> = {
   accepted: 3,
 };
 
-const tableCodeCollator = new Intl.Collator('pt-BR', {
+const locationCollator = new Intl.Collator('pt-BR', {
   numeric: true,
   sensitivity: 'base',
 });
 
+type CustomerOrderWithServiceLocation = CustomerOrder & {
+  serviceLocation?: unknown;
+};
+
+export const resolveCustomerOrderServiceLocation = (
+  order: CustomerOrder
+): ResolvedOrderServiceLocation | null => {
+  const serviceLocation = (order as CustomerOrderWithServiceLocation).serviceLocation;
+  return resolveOrderServiceLocation({
+    serviceLocation,
+    tableCode: order.tableCode,
+  });
+};
+
 const isActiveDineInOrder = (order: CustomerOrder): boolean =>
   order.fulfillmentType === 'dine_in' &&
-  order.tableCode.trim().length > 0 &&
+  Boolean(resolveCustomerOrderServiceLocation(order)) &&
   !TERMINAL_STATUSES.has(order.status) &&
   order.items.some(item => getCustomerOrderItemOpenQuantity(item) > 0);
 
@@ -63,22 +89,43 @@ const resolveTableState = (
 };
 
 export const buildCustomerTableCards = (
-  orders: CustomerOrder[]
+  orders: CustomerOrder[],
+  requests: LocalServiceRequest[] = []
 ): CustomerTableCard[] => {
-  const grouped = new Map<string, CustomerOrder[]>();
+  const grouped = new Map<
+    string,
+    {
+      serviceLocation: ResolvedOrderServiceLocation;
+      orders: CustomerOrder[];
+      requests: LocalServiceRequest[];
+    }
+  >();
 
   orders.filter(isActiveDineInOrder).forEach(order => {
-    const normalizedTableCode = order.tableCode.trim();
-    const key = normalizedTableCode.toLocaleLowerCase('pt-BR');
-    const current = grouped.get(key) ?? [];
-    current.push({ ...order, tableCode: normalizedTableCode });
+    const serviceLocation = resolveCustomerOrderServiceLocation(order);
+    if (!serviceLocation) return;
+    const key = serviceLocationIdentityKey(serviceLocation);
+    const current = grouped.get(key) ?? { serviceLocation, orders: [], requests: [] };
+    current.orders.push(order);
     grouped.set(key, current);
   });
 
+  requests.forEach(request => {
+    if (request.status !== 'open' && request.status !== 'acknowledged') return;
+    const key = serviceLocationIdentityKey(request.serviceLocation);
+    const current = grouped.get(key);
+    if (!current) return;
+    if (!current.orders.some(order => order.id === request.orderId)) return;
+    current.requests.push(request);
+  });
+
   return Array.from(grouped.values())
-    .map(tableOrders => {
-      const sortedOrders = [...tableOrders].sort((left, right) =>
+    .map(group => {
+      const sortedOrders = [...group.orders].sort((left, right) =>
         right.createdAt.localeCompare(left.createdAt)
+      );
+      const sortedRequests = [...group.requests].sort((left, right) =>
+        left.requestedAt.localeCompare(right.requestedAt)
       );
       const buyerNames = Array.from(
         new Set(
@@ -89,10 +136,15 @@ export const buildCustomerTableCards = (
       );
 
       return {
-        tableCode: sortedOrders[0].tableCode,
+        tableCode: group.serviceLocation.label,
+        serviceLocation: group.serviceLocation,
         orders: sortedOrders,
+        requests: sortedRequests,
         orderCount: sortedOrders.length,
         pendingCount: sortedOrders.filter(awaitsAttendanceApproval).length,
+        assistanceRequestCount: sortedRequests.filter(request => request.kind === 'assistance').length,
+        closeAccountRequestCount: sortedRequests.filter(request => request.kind === 'close_account').length,
+        unacknowledgedRequestCount: sortedRequests.filter(request => request.status === 'open').length,
         itemCount: sortedOrders.reduce(
           (sum, order) =>
             sum +
@@ -114,19 +166,21 @@ export const buildCustomerTableCards = (
             !oldest || order.createdAt < oldest ? order.createdAt : oldest,
           ''
         ),
-        updatedAt: sortedOrders.reduce(
-          (latest, order) =>
-            order.updatedAt > latest ? order.updatedAt : latest,
-          sortedOrders[0].updatedAt
-        ),
+        updatedAt: [
+          ...sortedOrders.map(order => order.updatedAt),
+          ...sortedRequests.map(request => request.updatedAt),
+        ].sort().at(-1) ?? sortedOrders[0].updatedAt,
         state: resolveTableState(sortedOrders),
       } satisfies CustomerTableCard;
     })
     .sort((left, right) => {
+      const leftAttention = left.pendingCount + left.unacknowledgedRequestCount;
+      const rightAttention = right.pendingCount + right.unacknowledgedRequestCount;
+      if (leftAttention !== rightAttention) return rightAttention - leftAttention;
       const stateDifference =
         STATE_PRIORITY[left.state] - STATE_PRIORITY[right.state];
       if (stateDifference !== 0) return stateDifference;
-      return tableCodeCollator.compare(left.tableCode, right.tableCode);
+      return locationCollator.compare(left.tableCode, right.tableCode);
     });
 };
 

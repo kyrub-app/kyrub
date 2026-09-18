@@ -1,7 +1,8 @@
 import { adminDb } from '../firebaseAdmin.js';
 import {
   normalizeCanonicalPaymentIntent,
-  type CanonicalPaymentIntent,
+  type MarketplaceCanonicalPaymentIntent,
+  type NormalizedCanonicalPaymentIntent,
 } from '../../src/utils/canonicalPaymentIntent.js';
 import {
   normalizeCanonicalPayment,
@@ -33,6 +34,24 @@ const emptyBridge = (expiresAt: string): MercadoPagoCheckoutBridgeResult => ({
   expiresAt,
 });
 
+function assertMarketplaceCheckoutContext(
+  intent: NormalizedCanonicalPaymentIntent,
+  payment: CanonicalPayment
+): asserts intent is MarketplaceCanonicalPaymentIntent {
+  if (intent.context !== payment.context) {
+    throw new Error('CHECKOUT_PAYMENT_CONTEXT_MISMATCH');
+  }
+  if (intent.context !== 'marketplace') {
+    throw new Error('CHECKOUT_PAYMENT_CONTEXT_UNSUPPORTED');
+  }
+  if (
+    intent.target.kind !== 'marketplace_order_draft' ||
+    intent.target.orderId !== payment.orderId
+  ) {
+    throw new Error('CHECKOUT_PAYMENT_TARGET_MISMATCH');
+  }
+}
+
 export const attachMercadoPagoPixToExistingIntent = async (input: {
   storeId: string;
   paymentIntentId: string;
@@ -56,11 +75,12 @@ export const attachMercadoPagoPixToExistingIntent = async (input: {
   }
 
   const intent = normalizeCanonicalPaymentIntent(
-    intentSnapshot.data() as CanonicalPaymentIntent
+    intentSnapshot.data() as import('../../src/utils/canonicalPaymentIntent.js').CanonicalPaymentIntent
   );
   const payment = normalizeCanonicalPayment(
     paymentSnapshot.data() as CanonicalPayment
   );
+  assertMarketplaceCheckoutContext(intent, payment);
   if (intent.status !== 'pending' || payment.status !== 'pending') {
     throw new Error('CHECKOUT_PAYMENT_NOT_PENDING');
   }
@@ -95,11 +115,12 @@ export const attachMercadoPagoPixToExistingIntent = async (input: {
       throw new Error('CHECKOUT_PAYMENT_STATE_MISSING');
     }
     const freshIntent = normalizeCanonicalPaymentIntent(
-      freshIntentSnapshot.data() as CanonicalPaymentIntent
+      freshIntentSnapshot.data() as import('../../src/utils/canonicalPaymentIntent.js').CanonicalPaymentIntent
     );
     const freshPayment = normalizeCanonicalPayment(
       freshPaymentSnapshot.data() as CanonicalPayment
     );
+    assertMarketplaceCheckoutContext(freshIntent, freshPayment);
     if (
       freshIntent.providerIntentId &&
       freshIntent.providerIntentId !== pix.providerPaymentId

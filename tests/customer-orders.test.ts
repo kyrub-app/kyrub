@@ -9,6 +9,7 @@ import {
   buildCanonicalCustomerOrderWriteData,
   buildCustomerOrder,
   canTransitionCustomerOrderStatus,
+  customerOrdersEquivalent,
   getLastCustomerOrderStorageKey,
   loadLastCustomerOrderId,
   parseCustomerOrder,
@@ -46,6 +47,20 @@ const product = (overrides: Partial<Product> = {}): Product => ({
 
 const cart = (quantity = 2): CartItem[] => [{ product: product(), quantity }];
 
+const tableLocation = {
+  schemaVersion: 1 as const,
+  id: 'table-7',
+  kind: 'table' as const,
+  label: 'Mesa 7',
+};
+
+const counterLocation = {
+  schemaVersion: 1 as const,
+  id: 'counter-2',
+  kind: 'counter' as const,
+  label: 'Balcão 2',
+};
+
 describe('customer orders', () => {
   test('builds a delivery order with immutable product snapshots', () => {
     const order = buildCustomerOrder(
@@ -72,6 +87,7 @@ describe('customer orders', () => {
     assert.equal(order.total, 25);
     assert.equal(order.status, 'pending');
     assert.equal(order.paymentStatus, 'unpaid');
+    assert.equal(order.serviceLocation, null);
   });
 
   test('builds the canonical-first payload without losing legacy lineage', () => {
@@ -139,7 +155,7 @@ describe('customer orders', () => {
     assert.equal(parsed?.updatedAt, order.updatedAt);
   });
 
-  test('does not invent address, table or payment for pickup', () => {
+  test('does not invent address, table, service location or payment for pickup', () => {
     const order = buildCustomerOrder(
       { uid: 'buyer-a' },
       {
@@ -149,6 +165,7 @@ describe('customer orders', () => {
         fulfillmentType: 'pickup',
         deliveryAddress: 'should be removed',
         tableCode: 'should be removed',
+        serviceLocation: counterLocation,
         customerNote: '',
         cart: cart(1),
         itemNotes: {},
@@ -157,10 +174,11 @@ describe('customer orders', () => {
 
     assert.equal(order.deliveryAddress, '');
     assert.equal(order.tableCode, '');
+    assert.equal(order.serviceLocation, null);
     assert.equal(order.paymentStatus, 'unpaid');
   });
 
-  test('requires a table or service code for dine-in orders', () => {
+  test('requires a table, service code or canonical service location for dine-in orders', () => {
     assert.throws(
       () =>
         buildCustomerOrder(
@@ -179,6 +197,159 @@ describe('customer orders', () => {
         ),
       /mesa ou o código/i
     );
+  });
+
+  test('keeps legacy tableCode-only dine-in orders compatible', () => {
+    const order = buildCustomerOrder(
+      { uid: 'buyer-a' },
+      {
+        storeId: 'store-a',
+        buyerName: 'Ana',
+        buyerEmail: 'ana@example.com',
+        fulfillmentType: 'dine_in',
+        deliveryAddress: '',
+        tableCode: ' 12 ',
+        customerNote: '',
+        cart: cart(1),
+        itemNotes: {},
+      }
+    );
+
+    assert.equal(order.tableCode, '12');
+    assert.equal(order.serviceLocation, null);
+    assert.equal(parseCustomerOrder(order)?.tableCode, '12');
+  });
+
+  test('persists a canonical table snapshot while mirroring its label for legacy readers', () => {
+    const order = buildCustomerOrder(
+      { uid: 'buyer-a' },
+      {
+        storeId: 'legacy-store-a',
+        buyerName: 'Ana',
+        buyerEmail: 'ana@example.com',
+        fulfillmentType: 'dine_in',
+        deliveryAddress: '',
+        tableCode: '',
+        serviceLocation: tableLocation,
+        customerNote: '',
+        cart: cart(1),
+        itemNotes: {},
+      }
+    );
+
+    assert.deepEqual(order.serviceLocation, tableLocation);
+    assert.equal(order.tableCode, 'Mesa 7');
+    assert.equal(order.sourceChannel, 'kyrub');
+    assert.deepEqual(parseCustomerOrder(order)?.serviceLocation, tableLocation);
+
+    const canonical = buildCanonicalCustomerOrderWriteData(
+      order,
+      'canonical-store-a'
+    );
+    assert.deepEqual(canonical.serviceLocation, tableLocation);
+  });
+
+  test('canonical non-table locations clear stale table semantics', () => {
+    const order = buildCustomerOrder(
+      { uid: 'buyer-a' },
+      {
+        storeId: 'store-a',
+        buyerName: 'Ana',
+        buyerEmail: 'ana@example.com',
+        fulfillmentType: 'dine_in',
+        deliveryAddress: '',
+        tableCode: 'legacy-table-value',
+        serviceLocation: counterLocation,
+        customerNote: '',
+        cart: cart(1),
+        itemNotes: {},
+      }
+    );
+
+    assert.equal(order.tableCode, '');
+    assert.deepEqual(order.serviceLocation, counterLocation);
+  });
+
+  test('rejects malformed explicit service-location input instead of silently downgrading it', () => {
+    assert.throws(
+      () =>
+        buildCustomerOrder(
+          { uid: 'buyer-a' },
+          {
+            storeId: 'store-a',
+            buyerName: 'Ana',
+            buyerEmail: 'ana@example.com',
+            fulfillmentType: 'dine_in',
+            deliveryAddress: '',
+            tableCode: '12',
+            serviceLocation: {
+              schemaVersion: 1,
+              id: '',
+              kind: 'table',
+              label: 'Mesa 12',
+            } as any,
+            customerNote: '',
+            cart: cart(1),
+            itemNotes: {},
+          }
+        ),
+      /local de atendimento inválido/i
+    );
+  });
+
+  test('ignores malformed persisted service location while preserving legacy table fallback', () => {
+    const legacy = buildCustomerOrder(
+      { uid: 'buyer-a' },
+      {
+        storeId: 'store-a',
+        buyerName: 'Ana',
+        buyerEmail: 'ana@example.com',
+        fulfillmentType: 'dine_in',
+        deliveryAddress: '',
+        tableCode: '12',
+        customerNote: '',
+        cart: cart(1),
+        itemNotes: {},
+      }
+    );
+
+    const parsed = parseCustomerOrder({
+      ...legacy,
+      serviceLocation: {
+        schemaVersion: 999,
+        id: 'counter-2',
+        kind: 'counter',
+        label: 'Balcão 2',
+      },
+    });
+
+    assert.equal(parsed?.serviceLocation, null);
+    assert.equal(parsed?.tableCode, '12');
+  });
+
+  test('canonical-vs-legacy equivalence detects service-location divergence', () => {
+    const legacy = buildCustomerOrder(
+      { uid: 'buyer-a' },
+      {
+        storeId: 'store-a',
+        buyerName: 'Ana',
+        buyerEmail: 'ana@example.com',
+        fulfillmentType: 'dine_in',
+        deliveryAddress: '',
+        tableCode: 'Mesa 7',
+        customerNote: '',
+        cart: cart(1),
+        itemNotes: {},
+      },
+      1_700_000_000_000
+    );
+    const canonical = {
+      ...legacy,
+      serviceLocation: tableLocation,
+    };
+
+    assert.equal(customerOrdersEquivalent(legacy, canonical), false);
+    assert.equal(customerOrdersEquivalent(canonical, { ...canonical }), true);
   });
 
   test('enforces the customer-order status workflow', () => {

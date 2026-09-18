@@ -1,4 +1,10 @@
 import { buildStoreInstitutionalPrincipalId } from './storeInstitutionalIdentity.js';
+import {
+  buildServiceLocationSnapshot,
+  parseServiceLocationSnapshot,
+  type ServiceLocation,
+  type ServiceLocationSnapshot,
+} from './serviceLocation.js';
 
 export const LOCAL_ATTENDANCE_SCHEMA_VERSION = 1 as const;
 export const LOCAL_ATTENDANCE_MAX_CUSTOMER_LABEL_LENGTH = 120;
@@ -15,6 +21,7 @@ export interface LocalAttendanceSession {
   storePrincipalId: string;
   customerLabel: string;
   space: string;
+  serviceLocation?: ServiceLocationSnapshot | null;
   itemCount: number;
   status: LocalAttendanceStatus;
   openedAt: string;
@@ -75,7 +82,8 @@ export const buildOpenLocalAttendance = (input: {
   id: string;
   storeId: string;
   customerLabel: unknown;
-  space: unknown;
+  space?: unknown;
+  serviceLocation?: ServiceLocation | null;
   itemCount: unknown;
   actorUserId: string;
   openedAt: string;
@@ -93,13 +101,21 @@ export const buildOpenLocalAttendance = (input: {
     throw new Error('LOCAL_ATTENDANCE_INVALID');
   }
 
+  const serviceLocation = input.serviceLocation
+    ? buildServiceLocationSnapshot(input.serviceLocation)
+    : null;
+  const space = normalizeLocalAttendanceSpace(
+    serviceLocation?.label ?? input.space
+  );
+
   return {
     schemaVersion: LOCAL_ATTENDANCE_SCHEMA_VERSION,
     id,
     storeId,
     storePrincipalId: buildStoreInstitutionalPrincipalId(storeId),
     customerLabel: normalizeLocalAttendanceCustomerLabel(input.customerLabel),
-    space: normalizeLocalAttendanceSpace(input.space),
+    space,
+    serviceLocation,
     itemCount: normalizeLocalAttendanceItemCount(input.itemCount),
     status: 'open',
     openedAt,
@@ -116,6 +132,10 @@ export const parseLocalAttendanceSession = (
   expectedId: string
 ): LocalAttendanceSession => {
   const data = value as Partial<LocalAttendanceSession>;
+  const suppliedLocation = data.serviceLocation;
+  const serviceLocation = suppliedLocation == null
+    ? null
+    : parseServiceLocationSnapshot(suppliedLocation);
   if (
     data.schemaVersion !== LOCAL_ATTENDANCE_SCHEMA_VERSION ||
     data.id !== expectedId ||
@@ -128,12 +148,16 @@ export const parseLocalAttendanceSession = (
     (data.status === 'open' && clean(data.closedAt) !== '') ||
     !validPathId(clean(data.openedByUserId)) ||
     (data.status === 'closed' && !validPathId(clean(data.closedByUserId))) ||
-    (data.status === 'open' && clean(data.closedByUserId) !== '')
+    (data.status === 'open' && clean(data.closedByUserId) !== '') ||
+    (suppliedLocation != null && !serviceLocation)
   ) {
     throw new Error('LOCAL_ATTENDANCE_RECORD_INVALID');
   }
   normalizeLocalAttendanceCustomerLabel(data.customerLabel);
   normalizeLocalAttendanceSpace(data.space);
   normalizeLocalAttendanceItemCount(data.itemCount);
-  return data as LocalAttendanceSession;
+  return {
+    ...(data as LocalAttendanceSession),
+    serviceLocation,
+  };
 };

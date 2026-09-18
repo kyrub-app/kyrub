@@ -7,17 +7,20 @@ import {
   RotateCcw,
   XCircle,
 } from 'lucide-react';
+import type { ResolvedOrderServiceLocation } from '../../../shared/serviceLocation';
 import { auth } from '../../utils/firebase';
 import type { CustomerOrder } from '../../utils/customerOrders';
 import {
   getPendingAttendanceOrders,
+  getPendingAttendanceOrdersForLocation,
   reviewAttendanceOrder,
   type AttendanceReviewItem,
 } from '../../utils/orderWorkflow';
 
 interface AttendanceOrderApprovalProps {
   storeId: string;
-  tableCode: string;
+  tableCode?: string;
+  serviceLocation?: ResolvedOrderServiceLocation | null;
   orders: CustomerOrder[];
   notify: (message: string, type?: 'success' | 'error' | 'info') => void;
 }
@@ -34,13 +37,17 @@ const currency = new Intl.NumberFormat('pt-BR', {
 
 export function AttendanceOrderApproval({
   storeId,
-  tableCode,
+  tableCode = '',
+  serviceLocation = null,
   orders,
   notify,
 }: AttendanceOrderApprovalProps) {
+  const locationLabel = serviceLocation?.label ?? tableCode;
   const pendingOrders = useMemo(
-    () => getPendingAttendanceOrders(orders, tableCode),
-    [orders, tableCode]
+    () => serviceLocation
+      ? getPendingAttendanceOrdersForLocation(orders, serviceLocation)
+      : getPendingAttendanceOrders(orders, tableCode),
+    [orders, serviceLocation, tableCode]
   );
   const order = pendingOrders[0] ?? null;
   const [lines, setLines] = useState<EditableLine[]>([]);
@@ -129,7 +136,7 @@ export function AttendanceOrderApproval({
         })),
         customerNote,
       });
-      notify(`Pedido da mesa ${tableCode} aprovado e enviado ao KDS.`, 'success');
+      notify(`Pedido de ${locationLabel} aprovado e enviado ao KDS.`, 'success');
     } catch (error) {
       notify(
         error instanceof Error ? error.message : 'Não foi possível aprovar o pedido.',
@@ -159,7 +166,7 @@ export function AttendanceOrderApproval({
         reason,
         alternative,
       });
-      notify(`Pedido da mesa ${tableCode} recusado com justificativa.`, 'info');
+      notify(`Pedido de ${locationLabel} recusado com justificativa.`, 'info');
     } catch (error) {
       notify(
         error instanceof Error ? error.message : 'Não foi possível recusar o pedido.',
@@ -183,7 +190,7 @@ export function AttendanceOrderApproval({
                 Aprovação do atendimento
               </span>
               <h3 className="mt-1 text-lg font-black text-white">
-                Novo pedido · {tableCode}
+                Novo pedido · {locationLabel}
               </h3>
               <p className="mt-1 text-[11px] leading-relaxed text-slate-400">
                 Revise, altere ou recuse antes de liberar a produção. Este pedido ainda não aparece no KDS.

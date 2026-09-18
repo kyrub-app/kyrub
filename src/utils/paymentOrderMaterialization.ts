@@ -10,7 +10,10 @@ export const materializePaidMarketplaceOrder = (input: {
   now?: string;
 }): CustomerOrder => {
   const intent = normalizeCanonicalPaymentIntent(input.intent);
-  if (!canMaterializeOperationalOrder(intent)) {
+  if (
+    intent.context !== 'marketplace' ||
+    !canMaterializeOperationalOrder(intent)
+  ) {
     throw new Error('PAYMENT_REQUIRED_BEFORE_ORDER_MATERIALIZATION');
   }
 

@@ -1,3 +1,9 @@
+import {
+  resolveOrderServiceLocation,
+  serviceLocationIdentityKey,
+  type ServiceLocationSnapshot,
+} from './serviceLocation.js';
+
 export type LocalServiceFulfillmentType = 'dine_in' | 'pickup';
 
 export type LocalServiceOrderStatus =
@@ -14,23 +20,29 @@ export interface LocalServiceOrderLike {
   fulfillmentType: string;
   status: string;
   tableCode: string;
+  serviceLocation?: ServiceLocationSnapshot | null;
   source: string;
   operatorId: string;
 }
 
 export interface LocalServiceSummary {
   activeOrders: number;
+  activeServiceLocations: number;
   activeTables: number;
   pendingApprovals: number;
   inProduction: number;
+  readyForServiceLocation: number;
   readyForTable: number;
   waitingPickup: number;
 }
 
 const TERMINAL_STATUSES = new Set(['completed', 'rejected', 'cancelled']);
 
-const normalize = (value: unknown): string =>
-  typeof value === 'string' ? value.trim() : '';
+const resolveLocation = (order: Pick<LocalServiceOrderLike, 'serviceLocation' | 'tableCode'>) =>
+  resolveOrderServiceLocation({
+    serviceLocation: order.serviceLocation,
+    tableCode: order.tableCode,
+  });
 
 export const isLocalServiceOrder = (
   order: Pick<LocalServiceOrderLike, 'fulfillmentType'>
@@ -44,36 +56,51 @@ export const isActiveLocalServiceOrder = (
 export const isLocalAttendanceApprovalPending = (
   order: Pick<
     LocalServiceOrderLike,
-    'fulfillmentType' | 'status' | 'source' | 'operatorId' | 'tableCode'
+    'fulfillmentType' | 'status' | 'source' | 'operatorId' | 'tableCode' | 'serviceLocation'
   >
 ): boolean =>
   order.fulfillmentType === 'dine_in' &&
   order.status === 'pending' &&
   order.source === 'customer' &&
-  Boolean(normalize(order.tableCode)) &&
-  !normalize(order.operatorId);
+  Boolean(resolveLocation(order)) &&
+  !order.operatorId.trim();
 
 export const buildLocalServiceSummary = (
   orders: LocalServiceOrderLike[]
 ): LocalServiceSummary => {
   const active = orders.filter(isActiveLocalServiceOrder);
-  const activeTables = new Set(
-    active
-      .filter(order => order.fulfillmentType === 'dine_in')
-      .map(order => normalize(order.tableCode).toLocaleUpperCase('pt-BR'))
-      .filter(Boolean)
+  const activeLocations = active
+    .map(order => resolveLocation(order))
+    .filter(location => location !== null);
+  const activeServiceLocations = new Set(
+    activeLocations.map(serviceLocationIdentityKey)
   );
+  const activeTables = new Set(
+    activeLocations
+      .filter(location => location.kind === 'table')
+      .map(serviceLocationIdentityKey)
+  );
+  const readyForServiceLocation = active.filter(order =>
+    order.fulfillmentType === 'dine_in' &&
+    order.status === 'ready' &&
+    Boolean(resolveLocation(order))
+  ).length;
+  const readyForTable = active.filter(order =>
+    order.fulfillmentType === 'dine_in' &&
+    order.status === 'ready' &&
+    resolveLocation(order)?.kind === 'table'
+  ).length;
 
   return {
     activeOrders: active.length,
+    activeServiceLocations: activeServiceLocations.size,
     activeTables: activeTables.size,
     pendingApprovals: active.filter(isLocalAttendanceApprovalPending).length,
     inProduction: active.filter(order =>
       order.status === 'accepted' || order.status === 'preparing'
     ).length,
-    readyForTable: active.filter(order =>
-      order.fulfillmentType === 'dine_in' && order.status === 'ready'
-    ).length,
+    readyForServiceLocation,
+    readyForTable,
     waitingPickup: active.filter(order =>
       order.fulfillmentType === 'pickup' && order.status === 'ready'
     ).length,
