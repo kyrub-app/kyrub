@@ -1,6 +1,5 @@
 import type { CustomerOrder } from './customerOrders.js';
 import {
-  canMaterializeOperationalOrder,
   normalizeCanonicalPaymentIntent,
   type CanonicalPaymentIntent,
 } from './canonicalPaymentIntent.js';
@@ -10,7 +9,7 @@ export const materializePaidMarketplaceOrder = (input: {
   now?: string;
 }): CustomerOrder => {
   const intent = normalizeCanonicalPaymentIntent(input.intent);
-  if (!canMaterializeOperationalOrder(intent)) {
+  if (intent.context !== 'marketplace' || intent.status !== 'paid') {
     throw new Error('PAYMENT_REQUIRED_BEFORE_ORDER_MATERIALIZATION');
   }
 
