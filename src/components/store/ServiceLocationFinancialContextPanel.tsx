@@ -1,8 +1,19 @@
 import { useCallback, useEffect, useState } from 'react';
-import { CircleAlert, CreditCard, LoaderCircle, ShieldCheck } from 'lucide-react';
+import {
+  CircleAlert,
+  Copy,
+  CreditCard,
+  LoaderCircle,
+  QrCode,
+  ShieldCheck,
+} from 'lucide-react';
 import type { LocalOrderFinancialContext } from '../../../shared/localOrderFinancialContext';
 import type { CustomerOrder } from '../../utils/customerOrders';
 import { loadLocalOrderFinancialContext } from '../../utils/localOrderFinancialContext';
+import {
+  openOrCreateLocalPixCheckout,
+  type LocalPixCheckout,
+} from '../../utils/localPixCheckout';
 
 const money = (value: number): string =>
   new Intl.NumberFormat('pt-BR', {
@@ -22,6 +33,14 @@ const stateLabel = (context: LocalOrderFinancialContext): string => {
   }
 };
 
+const canOpenPix = (context: LocalOrderFinancialContext): boolean =>
+  context.state === 'unpaid' ||
+  context.state === 'partial' ||
+  context.state === 'pending';
+
+const qrImageSource = (value: string): string =>
+  value.startsWith('data:') ? value : `data:image/png;base64,${value}`;
+
 export function ServiceLocationFinancialContextPanel({
   storeId,
   orders,
@@ -30,6 +49,8 @@ export function ServiceLocationFinancialContextPanel({
   orders: CustomerOrder[];
 }) {
   const [contexts, setContexts] = useState<Record<string, LocalOrderFinancialContext>>({});
+  const [pixByOrder, setPixByOrder] = useState<Record<string, LocalPixCheckout>>({});
+  const [busyOrderId, setBusyOrderId] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -68,6 +89,40 @@ export function ServiceLocationFinancialContextPanel({
     return () => window.clearInterval(timer);
   }, [refresh, storeId, orders.length]);
 
+  useEffect(() => {
+    const activeIds = new Set(orders.map(order => order.id));
+    setPixByOrder(current => Object.fromEntries(
+      Object.entries(current).filter(([orderId]) => activeIds.has(orderId))
+    ));
+  }, [orders]);
+
+  const openPix = async (orderId: string): Promise<void> => {
+    setBusyOrderId(orderId);
+    setError('');
+    try {
+      const checkout = await openOrCreateLocalPixCheckout({ storeId, orderId });
+      setPixByOrder(current => ({ ...current, [orderId]: checkout }));
+      await refresh(true);
+    } catch (caught) {
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : 'Não foi possível gerar ou recuperar o Pix deste pedido.'
+      );
+    } finally {
+      setBusyOrderId('');
+    }
+  };
+
+  const copyPix = async (checkout: LocalPixCheckout): Promise<void> => {
+    if (!checkout.qrCode) return;
+    try {
+      await navigator.clipboard.writeText(checkout.qrCode);
+    } catch {
+      setError('Não foi possível copiar o código Pix automaticamente.');
+    }
+  };
+
   if (orders.length === 0) return null;
 
   return (
@@ -82,7 +137,7 @@ export function ServiceLocationFinancialContextPanel({
             Evidência financeira canônica
           </h3>
           <p className="mt-1 text-[8px] leading-relaxed text-indigo-100/55">
-            Leitura de pagamentos canônicos vinculados aos pedidos deste local. Espelhos legados não comprovam quitação e são ignorados no valor confirmado.
+            Leitura e cobrança Pix usam os pagamentos canônicos do pedido. Espelhos legados não comprovam quitação e são ignorados no valor confirmado.
           </p>
         </div>
       </div>
@@ -104,6 +159,8 @@ export function ServiceLocationFinancialContextPanel({
       <div className="mt-3 space-y-2">
         {orders.map(order => {
           const context = contexts[order.id];
+          const checkout = pixByOrder[order.id];
+          const isBusy = busyOrderId === order.id;
           return (
             <article
               key={order.id}
@@ -138,13 +195,71 @@ export function ServiceLocationFinancialContextPanel({
                   )}
                 </div>
               )}
+
+              {context && canOpenPix(context) && !checkout && (
+                <button
+                  type="button"
+                  disabled={isBusy}
+                  onClick={() => void openPix(order.id)}
+                  className="mt-3 inline-flex items-center gap-2 rounded-lg border border-cyan-400/25 bg-cyan-400/10 px-3 py-2 text-[8px] font-black uppercase text-cyan-100 disabled:cursor-wait disabled:opacity-60"
+                >
+                  {isBusy ? (
+                    <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <QrCode className="h-3.5 w-3.5" />
+                  )}
+                  {context.state === 'pending' ? 'Abrir Pix pendente' : 'Gerar Pix do saldo'}
+                </button>
+              )}
+
+              {checkout && (
+                <div className="mt-3 rounded-xl border border-cyan-400/20 bg-cyan-400/[0.06] p-3">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
+                    {checkout.qrCodeBase64 && (
+                      <img
+                        src={qrImageSource(checkout.qrCodeBase64)}
+                        alt="QR Code Pix deste pedido"
+                        className="h-32 w-32 rounded-lg bg-white p-1"
+                      />
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <strong className="block text-[10px] text-cyan-100">
+                        Pix {money(checkout.amount)}
+                      </strong>
+                      <p className="mt-1 text-[8px] leading-relaxed text-cyan-100/65">
+                        Aguardando confirmação autoritativa do Mercado Pago. Exibir o QR não marca o pedido como pago.
+                      </p>
+                      {checkout.qrCode && (
+                        <button
+                          type="button"
+                          onClick={() => void copyPix(checkout)}
+                          className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-slate-700 px-2.5 py-1.5 text-[8px] font-bold text-slate-200"
+                        >
+                          <Copy className="h-3 w-3" />
+                          Copiar Pix copia e cola
+                        </button>
+                      )}
+                      {checkout.ticketUrl && (
+                        <a
+                          href={checkout.ticketUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="ml-2 mt-2 inline-flex rounded-lg border border-slate-700 px-2.5 py-1.5 text-[8px] font-bold text-slate-200"
+                        >
+                          Abrir cobrança
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
             </article>
           );
         })}
       </div>
 
       <p className="mt-3 text-[8px] leading-relaxed text-slate-600">
-        Esta área é somente leitura. Não registra recebimento, não altera `paymentStatus` ou `paidQuantity` e não chama PSP.
+        O QR é apenas uma cobrança pendente. A quitação continua dependendo do webhook verificado; esta tela não altera `paidQuantity`, não inventa alocação por item e não dispara fiscal.
       </p>
     </section>
   );
