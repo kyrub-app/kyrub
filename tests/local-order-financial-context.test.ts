@@ -36,6 +36,14 @@ test('service location financial context reads canonical evidence without treati
   assert.match(serviceSource, /reconciliation_required/);
 });
 
+test('financial context derives expected amount from billable lines and fails closed on legacy line settlement', () => {
+  assert.match(serviceSource, /summarizeLocalOrderPayable\(order\)/);
+  assert.match(serviceSource, /expectedAmount = payable\.billableAmount/);
+  assert.match(serviceSource, /hasOperationalPaidQuantity: payable\.hasOperationalPaidQuantity/);
+  assert.match(serviceSource, /if \(input\.hasOperationalPaidQuantity\) return 'reconciliation_required'/);
+  assert.doesNotMatch(serviceSource, /expectedAmount = Number\(\(finite\(order\.total\)/);
+});
+
 test('financial context endpoint is owner-authorized and read-only', () => {
   assert.match(routerSource, /router\.get\('\/financial-context'/);
   assert.match(routerSource, /requireStoreAuthority/);
