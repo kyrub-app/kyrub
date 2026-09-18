@@ -60,6 +60,8 @@ test('workspace exposes Pix from canonical financial context without projecting 
   assert.match(panelSource, /Abrir Pix pendente/);
   assert.match(panelSource, /Aguardando confirmação autoritativa do Mercado Pago/);
   assert.match(panelSource, /Copiar Pix copia e cola/);
+  assert.match(panelSource, /const context = contexts\[orderId\]/);
+  assert.match(panelSource, /return !context \|\| canOpenPix\(context\)/);
   assert.doesNotMatch(panelSource, /paidQuantity\s*[:=]/);
   assert.doesNotMatch(panelSource, /paymentStatus\s*[:=]/);
   assert.match(workspaceSource, /cobrança Pix canônica/);
