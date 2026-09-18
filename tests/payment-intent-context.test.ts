@@ -59,9 +59,13 @@ test('marketplace materialization remains impossible for an existing-order inten
   assert.match(intentSource, /intent\.context === 'marketplace' && intent\.status === 'paid'/);
 });
 
-test('current Mercado Pago provider and checkout bridge remain marketplace-only', () => {
+test('Mercado Pago provider is shared by typed intents while marketplace checkout bridge remains isolated', () => {
   assert.match(pixProviderSource, /MarketplaceCanonicalPaymentIntent/);
-  assert.match(pixProviderSource, /intentionally marketplace-only/);
+  assert.match(pixProviderSource, /ExistingOrderCanonicalPaymentIntent/);
+  assert.match(pixProviderSource, /payerEmail: string/);
+  assert.match(pixProviderSource, /input\.intent\.context === 'marketplace'/);
+  assert.match(pixProviderSource, /input\.intent\.orderDraft\.buyerEmail/);
+  assert.match(pixProviderSource, /input\.payerEmail/);
   assert.match(checkoutBridgeSource, /assertMarketplaceCheckoutContext/);
   assert.match(checkoutBridgeSource, /intent\.context !== payment\.context/);
   assert.match(checkoutBridgeSource, /intent\.context !== 'marketplace'/);
@@ -76,7 +80,7 @@ test('marketplace webhook checks the explicit target before materializing or gra
   assert.match(webhookSource, /intent\.target\.kind !== 'marketplace_order_draft'/);
   assert.match(webhookSource, /intent\.target\.orderId !== payment\.orderId/);
   assert.match(webhookSource, /intent\.orderDraft\.draftId !== payment\.orderId/);
-  assert.match(webhookSource, /orderId: intent\.target\.orderId/);
+  assert.match(webhookSource, /orderId: marketplaceIntent\.target\.orderId/);
   assert.match(webhookSource, /materializePaidMarketplaceOrder/);
 });
 
@@ -86,9 +90,8 @@ test('local financial read model accepts only table or pos canonical payment evi
   assert.match(localFinancialSource, /LOCAL_ORDER_FINANCIAL_PAYMENT_CONTEXT_INVALID/);
 });
 
-test('this target foundation still does not create or attach a local payment intent', () => {
+test('marketplace payment router still has no local-attendance shortcut', () => {
   assert.doesNotMatch(intentRouterSource, /local-attendance/);
-  assert.doesNotMatch(pixProviderSource, /ExistingOrderCanonicalPaymentIntent/);
   assert.doesNotMatch(checkoutBridgeSource, /context === 'table'/);
   assert.doesNotMatch(checkoutBridgeSource, /context === 'pos'/);
 });

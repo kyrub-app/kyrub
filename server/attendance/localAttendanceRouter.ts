@@ -17,6 +17,7 @@ import { createInPersonCustomerIdentityRouter } from './inPersonCustomerIdentity
 import { createLocalServiceRequestRouter } from './localServiceRequestRouter.js';
 import { loadLocalOrderFinancialContext } from './localOrderFinancialContextService.js';
 import { createLocalPaymentIntent } from './localPaymentIntentService.js';
+import { attachMercadoPagoPixToLocalIntent } from './localMercadoPagoPixService.js';
 import { isServiceLocationKind } from '../../shared/serviceLocation.js';
 
 const clean = (value: unknown): string =>
@@ -46,7 +47,8 @@ const mapError = (error: unknown): { status: number; message: string } => {
   }
   if (
     message === 'STORE_REPRESENTATION_FORBIDDEN' ||
-    message === 'LOCAL_PAYMENT_INTENT_FORBIDDEN'
+    message === 'LOCAL_PAYMENT_INTENT_FORBIDDEN' ||
+    message === 'LOCAL_PIX_PROVIDER_FORBIDDEN'
   ) {
     return { status: 403, message: 'Você não pode operar o atendimento desta loja.' };
   }
@@ -70,6 +72,13 @@ const mapError = (error: unknown): { status: number; message: string } => {
   }
   if (message === 'LOCAL_PAYMENT_INTENT_ORDER_NOT_FOUND') {
     return { status: 404, message: 'Pedido presencial não encontrado.' };
+  }
+  if (
+    message === 'LOCAL_PIX_PROVIDER_PAYMENT_STATE_MISSING' ||
+    message === 'LOCAL_PIX_PROVIDER_ORDER_NOT_FOUND' ||
+    message === 'LOCAL_PIX_PROVIDER_PAYER_NOT_FOUND'
+  ) {
+    return { status: 404, message: 'O pagamento presencial não está mais disponível.' };
   }
   if (
     message === 'LOCAL_PAYMENT_INTENT_ORDER_NOT_LOCAL' ||
@@ -101,12 +110,50 @@ const mapError = (error: unknown): { status: number; message: string } => {
     };
   }
   if (
+    message === 'LOCAL_PIX_PROVIDER_ATTENDANCE_APPROVAL_REQUIRED' ||
+    message === 'LOCAL_PIX_PROVIDER_CUSTOMER_IDENTIFICATION_REQUIRED' ||
+    message === 'LOCAL_PIX_PROVIDER_PAYER_EMAIL_REQUIRED' ||
+    message === 'LOCAL_PIX_PROVIDER_PAYMENT_NOT_PENDING' ||
+    message === 'LOCAL_PIX_PROVIDER_INTENT_EXPIRED' ||
+    message === 'LOCAL_PIX_PROVIDER_ORDER_NOT_ELIGIBLE' ||
+    message === 'LOCAL_PIX_PROVIDER_BUYER_CHANGED' ||
+    message === 'LOCAL_PIX_PROVIDER_CONTEXT_CHANGED' ||
+    message === 'LOCAL_PIX_PROVIDER_OTHER_PAYMENT_PENDING' ||
+    message === 'LOCAL_PIX_PROVIDER_INTENT_STALE' ||
+    message === 'LOCAL_PIX_PROVIDER_PAYMENT_PAIR_MISMATCH' ||
+    message === 'LOCAL_PIX_PROVIDER_BINDING_CONFLICT' ||
+    message === 'LOCAL_PIX_PROVIDER_PAYMENT_CONTEXT_CONFLICT'
+  ) {
+    return {
+      status: 409,
+      message:
+        message === 'LOCAL_PIX_PROVIDER_ATTENDANCE_APPROVAL_REQUIRED'
+          ? 'Aprove o pedido de autoatendimento antes de gerar o Pix.'
+          : message === 'LOCAL_PIX_PROVIDER_CUSTOMER_IDENTIFICATION_REQUIRED'
+            ? 'Identifique o Cairubido antes de gerar o Pix.'
+            : message === 'LOCAL_PIX_PROVIDER_PAYER_EMAIL_REQUIRED'
+              ? 'A conta do cliente precisa de um e-mail válido para gerar o Pix.'
+              : message === 'LOCAL_PIX_PROVIDER_INTENT_EXPIRED'
+                ? 'Este pagamento expirou. Inicie uma nova tentativa.'
+                : message === 'LOCAL_PIX_PROVIDER_INTENT_STALE'
+                  ? 'O saldo do pedido mudou. Inicie um novo pagamento com o valor atualizado.'
+                  : 'O pagamento mudou e precisa ser revisado antes de gerar o Pix.',
+    };
+  }
+  if (
+    message === 'MERCADO_PAGO_NOT_CONFIGURED' ||
+    message.startsWith('MERCADO_PAGO_API_ERROR:')
+  ) {
+    return { status: 503, message: 'O Pix do Mercado Pago está temporariamente indisponível.' };
+  }
+  if (
     message.startsWith('LOCAL_ATTENDANCE_') ||
     message.startsWith('SERVICE_LOCATION_') ||
     message.startsWith('STORE_INSTITUTIONAL_') ||
     message.startsWith('STORE_REPRESENTATION_') ||
     message.startsWith('LOCAL_ORDER_FINANCIAL_') ||
-    message.startsWith('LOCAL_PAYMENT_INTENT_')
+    message.startsWith('LOCAL_PAYMENT_INTENT_') ||
+    message.startsWith('LOCAL_PIX_PROVIDER_')
   ) {
     console.warn('[Local attendance]', message);
     return { status: 400, message: 'Os dados do atendimento local são inválidos.' };
@@ -156,6 +203,25 @@ export const createLocalAttendanceRouter = (): Router => {
         value: request.body,
       });
       response.status(result.duplicate ? 200 : 201).json(result);
+    } catch (error) {
+      const mapped = mapError(error);
+      response.status(mapped.status).json({ error: mapped.message });
+    }
+  });
+
+  router.post('/payment-intents/mercado-pago-pix', async (request, response) => {
+    try {
+      const storeId = clean(request.body?.storeId);
+      if (!storeId) throw new Error('LOCAL_PIX_PROVIDER_TARGET_INVALID');
+      const representation = await requireStoreAuthority({
+        authorization: request.get('authorization') ?? '',
+        storeId,
+      });
+      const result = await attachMercadoPagoPixToLocalIntent({
+        authenticatedUserId: representation.authenticatedUserId,
+        value: request.body,
+      });
+      response.status(200).json(result);
     } catch (error) {
       const mapped = mapError(error);
       response.status(mapped.status).json({ error: mapped.message });
