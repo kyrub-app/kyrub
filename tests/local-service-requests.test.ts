@@ -123,6 +123,17 @@ test('assistance and close-account can coexist on one location card', () => {
   assert.equal(cards[0].requests.length, 2);
 });
 
+test('close-account consults canonical payment truth without allocating legacy paid quantities', () => {
+  const service = readFileSync('server/attendance/localServiceRequestService.ts', 'utf8');
+  assert.match(service, /loadLocalOrderFinancialContext/);
+  assert.match(service, /financial\.canonicalProjection\.state === 'paid'/);
+  assert.match(service, /financial\.canonicalProjection\.outstandingAmount <= 0\.009/);
+  assert.match(service, /LOCAL_ORDER_FINANCIAL_ORDER_NOT_FOUND/);
+  assert.match(service, /Preserve legacy-only table compatibility/);
+  assert.doesNotMatch(service, /paidQuantity\s*:/);
+  assert.doesNotMatch(service, /paymentStatus\s*:/);
+});
+
 test('service request implementation does not write payment, points, provider or fiscal state', () => {
   const service = readFileSync('server/attendance/localServiceRequestService.ts', 'utf8');
   const board = readFileSync('src/components/customer/CustomerTableBoard.tsx', 'utf8');
