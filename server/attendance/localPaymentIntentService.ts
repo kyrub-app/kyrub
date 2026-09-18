@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import type { DocumentData } from 'firebase-admin/firestore';
 import { adminDb } from '../firebaseAdmin.js';
 import {
@@ -39,7 +40,7 @@ const operationalPaymentStatus = (
   value === 'partial' || value === 'paid' ? value : 'unpaid';
 
 const documentToken = (value: string): string =>
-  Buffer.from(value).toString('base64url').slice(0, 150);
+  createHash('sha256').update(value).digest('base64url');
 
 const assertEligibleLocalOrder = (
   orderId: string,
@@ -93,12 +94,14 @@ const assertExistingPair = (input: {
     input.intent.idempotencyKey !== input.idempotencyKey ||
     input.intent.context !== input.context ||
     input.intent.method !== 'pix' ||
+    input.intent.status !== 'pending' ||
     input.payment.storeId !== input.canonicalStoreId ||
     input.payment.orderId !== input.orderId ||
     input.payment.buyerId !== input.buyerId ||
     input.payment.idempotencyKey !== input.idempotencyKey ||
     input.payment.context !== input.context ||
     input.payment.method !== 'pix' ||
+    input.payment.status !== 'pending' ||
     input.payment.amount !== input.intent.amount
   ) {
     throw new Error('LOCAL_PAYMENT_INTENT_IDEMPOTENCY_CONFLICT');
