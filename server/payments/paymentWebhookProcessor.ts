@@ -8,6 +8,8 @@ import {
 import {
   normalizeCanonicalPaymentIntent,
   type CanonicalPaymentIntent,
+  type ExistingOrderCanonicalPaymentIntent,
+  type ExistingOrderPaymentIntentDocument,
   type MarketplaceCanonicalPaymentIntent,
   type NormalizedCanonicalPaymentIntent,
   type PaymentIntentStatus,
@@ -84,6 +86,21 @@ const intentStatusForPaymentStatus = (
   return null;
 };
 
+const assertIntentProviderMatchesEvent = (
+  intent: NormalizedCanonicalPaymentIntent,
+  event: VerifiedPaymentProviderEvent
+): void => {
+  if (intent.provider && intent.provider !== event.provider) {
+    throw new Error('PAYMENT_INTENT_PROVIDER_MISMATCH');
+  }
+  if (
+    intent.providerIntentId &&
+    intent.providerIntentId !== event.providerPaymentId
+  ) {
+    throw new Error('PAYMENT_INTENT_PROVIDER_PAYMENT_ID_MISMATCH');
+  }
+};
+
 function assertMarketplacePaymentIntentMatchesPayment(
   payment: CanonicalPayment,
   intent: NormalizedCanonicalPaymentIntent,
@@ -116,9 +133,42 @@ function assertMarketplacePaymentIntentMatchesPayment(
   if (intent.method !== payment.method || intent.method !== event.method) {
     throw new Error('PAYMENT_INTENT_METHOD_MISMATCH');
   }
-  if (intent.provider && intent.provider !== event.provider) {
-    throw new Error('PAYMENT_INTENT_PROVIDER_MISMATCH');
+  assertIntentProviderMatchesEvent(intent, event);
+}
+
+function assertExistingOrderPaymentIntentMatchesPayment(
+  payment: CanonicalPayment,
+  intent: NormalizedCanonicalPaymentIntent,
+  event: VerifiedPaymentProviderEvent
+): asserts intent is ExistingOrderCanonicalPaymentIntent {
+  if (payment.context !== 'table' && payment.context !== 'pos') {
+    throw new Error('LOCAL_PAYMENT_INTENT_CONTEXT_INVALID');
   }
+  if (intent.context !== payment.context) {
+    throw new Error('PAYMENT_INTENT_CONTEXT_MISMATCH');
+  }
+  if (intent.target.kind !== 'existing_order') {
+    throw new Error('PAYMENT_INTENT_TARGET_INVALID');
+  }
+  if (intent.id !== event.paymentIntentId) {
+    throw new Error('PAYMENT_INTENT_ID_MISMATCH');
+  }
+  if (intent.storeId !== payment.storeId) {
+    throw new Error('PAYMENT_INTENT_STORE_MISMATCH');
+  }
+  if (intent.buyerId !== payment.buyerId) {
+    throw new Error('PAYMENT_INTENT_BUYER_MISMATCH');
+  }
+  if (intent.target.orderId !== payment.orderId) {
+    throw new Error('PAYMENT_INTENT_ORDER_MISMATCH');
+  }
+  if (intent.amount !== payment.amount || intent.amount !== event.amount) {
+    throw new Error('PAYMENT_INTENT_AMOUNT_MISMATCH');
+  }
+  if (intent.method !== payment.method || intent.method !== event.method) {
+    throw new Error('PAYMENT_INTENT_METHOD_MISMATCH');
+  }
+  assertIntentProviderMatchesEvent(intent, event);
 }
 
 const assertStorePointPurchaseMatchesPayment = (
@@ -198,7 +248,8 @@ export const processVerifiedPaymentWebhook = async (input: {
 
     let orderId = '';
     let orderMaterialized = false;
-    let intent: MarketplaceCanonicalPaymentIntent | null = null;
+    let paymentIntent: NormalizedCanonicalPaymentIntent | null = null;
+    let marketplaceIntent: MarketplaceCanonicalPaymentIntent | null = null;
     let operationalOrder: ReturnType<typeof materializePaidMarketplaceOrder> | null = null;
     let operationalOrderExists = false;
     let promotionRef: ReturnType<typeof adminDb.doc> | null = null;
@@ -224,14 +275,15 @@ export const processVerifiedPaymentWebhook = async (input: {
         intentSnapshot.data() as CanonicalPaymentIntent
       );
       assertMarketplacePaymentIntentMatchesPayment(current, normalizedIntent, event);
-      intent = normalizedIntent;
+      paymentIntent = normalizedIntent;
+      marketplaceIntent = normalizedIntent;
 
       if (effectiveStatus === 'paid') {
         const paidIntent: MarketplaceCanonicalPaymentIntent = {
-          ...intent,
+          ...marketplaceIntent,
           status: 'paid',
           provider: event.provider,
-          providerIntentId: event.paymentIntentId,
+          providerIntentId: event.providerPaymentId,
           updatedAt: event.occurredAt,
         };
         operationalOrder = materializePaidMarketplaceOrder({
@@ -244,8 +296,8 @@ export const processVerifiedPaymentWebhook = async (input: {
         operationalOrderExists = (await transaction.get(orderRef)).exists;
         orderId = operationalOrder.id;
 
-        const promotion = intent.orderDraft.promotionSnapshot;
-        if (promotion && (intent.orderDraft.discountTotal ?? 0) > 0) {
+        const promotion = marketplaceIntent.orderDraft.promotionSnapshot;
+        if (promotion && (marketplaceIntent.orderDraft.discountTotal ?? 0) > 0) {
           promotionRef = adminDb.doc(promotionPath(storeId, promotion.promotionId));
           redemptionRef = adminDb.doc(
             promotionRedemptionPath(storeId, promotion.promotionId, paymentId)
@@ -260,12 +312,12 @@ export const processVerifiedPaymentWebhook = async (input: {
 
         pointLedgerEntry = buildStorePointPurchaseEntry({
           storeId,
-          customerId: intent.buyerId,
-          orderId: intent.target.orderId,
+          customerId: marketplaceIntent.buyerId,
+          orderId: marketplaceIntent.target.orderId,
           paymentId,
-          paymentIntentId: intent.id,
+          paymentIntentId: marketplaceIntent.id,
           occurredAt: event.occurredAt,
-          items: intent.orderDraft.items,
+          items: marketplaceIntent.orderDraft.items,
         });
         if (pointLedgerEntry) {
           pointLedgerRef = adminDb.doc(
@@ -281,7 +333,11 @@ export const processVerifiedPaymentWebhook = async (input: {
         const purchaseLedgerSnapshot = await transaction.get(purchaseLedgerRef);
         if (purchaseLedgerSnapshot.exists) {
           const purchaseEntry = purchaseLedgerSnapshot.data() as StorePointLedgerEntry;
-          assertStorePointPurchaseMatchesPayment(purchaseEntry, current, intent);
+          assertStorePointPurchaseMatchesPayment(
+            purchaseEntry,
+            current,
+            marketplaceIntent
+          );
           pointReversalEntry = buildStorePointReversalEntry({
             reversalId: `refund:${paymentId}`,
             original: purchaseEntry,
@@ -301,10 +357,22 @@ export const processVerifiedPaymentWebhook = async (input: {
           storeId,
           paymentId,
           status: effectiveStatus,
-          intent,
+          intent: marketplaceIntent,
           occurredAt: event.occurredAt,
         });
       }
+    } else {
+      if (!intentSnapshot.exists) throw new Error('PAYMENT_INTENT_NOT_FOUND');
+      const normalizedIntent = normalizeCanonicalPaymentIntent(
+        intentSnapshot.data() as ExistingOrderPaymentIntentDocument
+      );
+      assertExistingOrderPaymentIntentMatchesPayment(
+        current,
+        normalizedIntent,
+        event
+      );
+      paymentIntent = normalizedIntent;
+      orderId = current.orderId;
     }
 
     economicLedgerPlan = await prepareStoreEconomicLedgerPaymentPlan({
@@ -321,9 +389,11 @@ export const processVerifiedPaymentWebhook = async (input: {
       duplicate,
     });
 
-    if (intent && intentStatus && intent.status !== intentStatus) {
-      if (intent.status !== 'pending') {
-        throw new Error(`PAYMENT_INTENT_STATUS_CONFLICT:${intent.status}->${intentStatus}`);
+    if (paymentIntent && intentStatus && paymentIntent.status !== intentStatus) {
+      if (paymentIntent.status !== 'pending') {
+        throw new Error(
+          `PAYMENT_INTENT_STATUS_CONFLICT:${paymentIntent.status}->${intentStatus}`
+        );
       }
       transaction.update(intentRef, {
         status: intentStatus,
@@ -331,7 +401,7 @@ export const processVerifiedPaymentWebhook = async (input: {
         ...(intentStatus === 'paid'
           ? {
               provider: event.provider,
-              providerIntentId: event.paymentIntentId,
+              providerIntentId: event.providerPaymentId,
             }
           : {}),
       });
@@ -361,23 +431,23 @@ export const processVerifiedPaymentWebhook = async (input: {
     applyEconomicObligationsPaymentPlan(transaction, economicObligationsPlan);
 
     if (
-      intent &&
+      marketplaceIntent &&
       effectiveStatus === 'paid' &&
       redemptionRef &&
       !redemptionExists
     ) {
-      const promotion = intent.orderDraft.promotionSnapshot!;
+      const promotion = marketplaceIntent.orderDraft.promotionSnapshot!;
       transaction.set(redemptionRef, {
         promotionId: promotion.promotionId,
         code: promotion.code,
         storeId,
-        buyerId: intent.buyerId,
-        paymentIntentId: intent.id,
+        buyerId: marketplaceIntent.buyerId,
+        paymentIntentId: marketplaceIntent.id,
         paymentId,
-        orderId: intent.target.orderId,
-        subtotal: intent.orderDraft.subtotal,
-        discountTotal: intent.orderDraft.discountTotal ?? 0,
-        paidTotal: intent.orderDraft.total,
+        orderId: marketplaceIntent.target.orderId,
+        subtotal: marketplaceIntent.orderDraft.subtotal,
+        discountTotal: marketplaceIntent.orderDraft.discountTotal ?? 0,
+        paidTotal: marketplaceIntent.orderDraft.total,
         redeemedAt: event.occurredAt,
         provider: event.provider,
         providerPaymentId: event.providerPaymentId,
