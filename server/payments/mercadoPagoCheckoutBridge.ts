@@ -34,10 +34,10 @@ const emptyBridge = (expiresAt: string): MercadoPagoCheckoutBridgeResult => ({
   expiresAt,
 });
 
-const assertMarketplaceCheckoutContext = (
+function assertMarketplaceCheckoutContext(
   intent: NormalizedCanonicalPaymentIntent,
   payment: CanonicalPayment
-): asserts intent is MarketplaceCanonicalPaymentIntent => {
+): asserts intent is MarketplaceCanonicalPaymentIntent {
   if (intent.context !== payment.context) {
     throw new Error('CHECKOUT_PAYMENT_CONTEXT_MISMATCH');
   }
@@ -50,7 +50,7 @@ const assertMarketplaceCheckoutContext = (
   ) {
     throw new Error('CHECKOUT_PAYMENT_TARGET_MISMATCH');
   }
-};
+}
 
 export const attachMercadoPagoPixToExistingIntent = async (input: {
   storeId: string;
