@@ -1,12 +1,11 @@
 import type { DocumentData } from 'firebase-admin/firestore';
 import { adminDb } from '../firebaseAdmin.js';
-import {
-  isPaymentAuthoritativelyPaid,
-  type CanonicalPayment,
-} from '../../src/utils/canonicalPayment.js';
+import type { CanonicalPayment } from '../../src/utils/canonicalPayment.js';
+import { buildCanonicalOrderFinancialProjection } from '../../shared/canonicalOrderFinancialProjection.js';
 import type {
   LocalOrderFinancialContext,
-  LocalOrderFinancialState,
+  LocalOrderLineSettlementConsistency,
+  LocalOrderLineSettlementStatus,
 } from '../../shared/localOrderFinancialContext.js';
 import { classifyCompatiblePaymentRecord } from '../payments/paymentRecordCompatibility.js';
 import { resolveInPersonOrderStoreContext } from './inPersonOrderService.js';
@@ -20,33 +19,24 @@ const clean = (value: unknown, max = 240): string =>
 const finite = (value: unknown): number | null =>
   typeof value === 'number' && Number.isFinite(value) ? value : null;
 
-const paymentStatus = (value: unknown): 'unpaid' | 'partial' | 'paid' =>
+const lineSettlementStatus = (value: unknown): LocalOrderLineSettlementStatus =>
   value === 'partial' || value === 'paid' ? value : 'unpaid';
 
-const resolveState = (input: {
-  expectedAmount: number;
-  operationalStatus: 'unpaid' | 'partial' | 'paid';
+const resolveLineSettlementConsistency = (input: {
+  status: LocalOrderLineSettlementStatus;
   hasOperationalPaidQuantity: boolean;
-  payments: CanonicalPayment[];
-  authoritativelyPaidAmount: number;
-  pendingPaymentCount: number;
-}): LocalOrderFinancialState => {
-  if (input.hasOperationalPaidQuantity) return 'reconciliation_required';
-  if (input.payments.length === 0) {
-    return input.operationalStatus === 'unpaid'
-      ? 'not_started'
-      : 'reconciliation_required';
+  canonicalState: LocalOrderFinancialContext['canonicalProjection']['state'];
+}): LocalOrderLineSettlementConsistency => {
+  if (input.hasOperationalPaidQuantity) {
+    return 'mixed_authority_requires_reconciliation';
   }
-  if (input.authoritativelyPaidAmount > 0) {
-    return input.authoritativelyPaidAmount + 0.009 >= input.expectedAmount &&
-      input.expectedAmount > 0
-      ? 'paid'
-      : 'partial';
+  if (input.status !== 'unpaid') {
+    return 'line_settlement_ahead';
   }
-  if (input.pendingPaymentCount > 0) return 'pending';
-  if (input.payments.every(payment => payment.status === 'refunded')) return 'refunded';
-  if (input.operationalStatus !== 'unpaid') return 'reconciliation_required';
-  return 'attention';
+  if (input.canonicalState === 'paid' || input.canonicalState === 'partial') {
+    return 'canonical_ahead';
+  }
+  return 'aligned';
 };
 
 const assertLocalOrder = (
@@ -116,33 +106,40 @@ export const loadLocalOrderFinancialContext = async (input: {
   } catch {
     throw new Error('LOCAL_ORDER_FINANCIAL_ORDER_INVALID');
   }
-  const expectedAmount = payable.billableAmount;
-  const orderPaymentStatus = paymentStatus(order.paymentStatus);
-  const paidPayments = canonicalPayments.filter(payment =>
-    isPaymentAuthoritativelyPaid(payment.status)
-  );
-  const authoritativelyPaidAmount = Number(
-    paidPayments.reduce((sum, payment) => sum + payment.amount, 0).toFixed(2)
-  );
-  const pendingPaymentCount = canonicalPayments.filter(
-    payment => payment.status === 'pending'
-  ).length;
+
+  const canonicalProjection = buildCanonicalOrderFinancialProjection({
+    expectedAmount: payable.billableAmount,
+    payments: canonicalPayments,
+  });
+  const status = lineSettlementStatus(order.paymentStatus);
+  const lineSettlementConsistency = resolveLineSettlementConsistency({
+    status,
+    hasOperationalPaidQuantity: payable.hasOperationalPaidQuantity,
+    canonicalState: canonicalProjection.state,
+  });
+  const state =
+    lineSettlementConsistency === 'line_settlement_ahead' ||
+    lineSettlementConsistency === 'mixed_authority_requires_reconciliation'
+      ? 'reconciliation_required'
+      : canonicalProjection.state;
 
   return {
     orderId,
-    orderPaymentStatus,
-    expectedAmount,
-    authoritativelyPaidAmount,
-    pendingPaymentCount,
-    canonicalPaymentCount: canonicalPayments.length,
+    canonicalProjection,
+    lineSettlement: {
+      status,
+      openAmount: payable.openAmount,
+      operationalPaidAmount: payable.operationalPaidAmount,
+      transferredAmount: payable.transferredAmount,
+      hasAllocatedPaidQuantity: payable.hasOperationalPaidQuantity,
+    },
+    lineSettlementConsistency,
     ignoredLegacyMirrorCount,
-    state: resolveState({
-      expectedAmount,
-      operationalStatus: orderPaymentStatus,
-      hasOperationalPaidQuantity: payable.hasOperationalPaidQuantity,
-      payments: canonicalPayments,
-      authoritativelyPaidAmount,
-      pendingPaymentCount,
-    }),
+    state,
+    orderPaymentStatus: status,
+    expectedAmount: canonicalProjection.expectedAmount,
+    authoritativelyPaidAmount: canonicalProjection.authoritativelyPaidAmount,
+    pendingPaymentCount: canonicalProjection.pendingPaymentCount,
+    canonicalPaymentCount: canonicalProjection.canonicalPaymentCount,
   };
 };
