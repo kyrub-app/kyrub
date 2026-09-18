@@ -49,14 +49,29 @@ export interface PaymentIntentOrderDraft {
   total: number;
 }
 
+export interface MarketplacePaymentIntentTarget {
+  kind: 'marketplace_order_draft';
+  orderId: string;
+}
+
+export interface ExistingOrderPaymentIntentTarget {
+  kind: 'existing_order';
+  orderId: string;
+}
+
+export type PaymentIntentTarget =
+  | MarketplacePaymentIntentTarget
+  | ExistingOrderPaymentIntentTarget;
+
+/**
+ * Persistence/input shape. Historical marketplace intents may not have
+ * explicit context/target yet, so both remain optional at this boundary.
+ * Normalized code must use NormalizedCanonicalPaymentIntent instead.
+ */
 export interface CanonicalPaymentIntent {
   id: string;
   storeId: string;
   buyerId: string;
-  /**
-   * Historical payment-intent documents predate explicit context and are
-   * marketplace intents. New normalized documents always persist context.
-   */
   context?: PaymentContext;
   method: PaymentMethod;
   status: PaymentIntentStatus;
@@ -65,11 +80,46 @@ export interface CanonicalPaymentIntent {
   provider: string;
   providerIntentId: string;
   idempotencyKey: string;
-  orderDraft: PaymentIntentOrderDraft;
+  target?: PaymentIntentTarget;
+  orderDraft?: PaymentIntentOrderDraft;
   createdAt: string;
   updatedAt: string;
   expiresAt: string;
 }
+
+interface NormalizedPaymentIntentBase {
+  id: string;
+  storeId: string;
+  buyerId: string;
+  method: PaymentMethod;
+  status: PaymentIntentStatus;
+  amount: number;
+  currency: 'BRL';
+  provider: string;
+  providerIntentId: string;
+  idempotencyKey: string;
+  createdAt: string;
+  updatedAt: string;
+  expiresAt: string;
+}
+
+export interface MarketplaceCanonicalPaymentIntent
+  extends NormalizedPaymentIntentBase {
+  context: 'marketplace';
+  target: MarketplacePaymentIntentTarget;
+  orderDraft: PaymentIntentOrderDraft;
+}
+
+export interface ExistingOrderCanonicalPaymentIntent
+  extends NormalizedPaymentIntentBase {
+  context: 'table' | 'pos';
+  target: ExistingOrderPaymentIntentTarget;
+  orderDraft?: never;
+}
+
+export type NormalizedCanonicalPaymentIntent =
+  | MarketplaceCanonicalPaymentIntent
+  | ExistingOrderCanonicalPaymentIntent;
 
 const required = (label: string, value: string): string => {
   const normalized = value.trim();
@@ -205,41 +255,99 @@ export const normalizePaymentIntentOrderDraft = (
   };
 };
 
+const normalizeTargetOrderId = (target: PaymentIntentTarget | undefined): string =>
+  target ? required('payment intent target order id', target.orderId) : '';
+
+const normalizeBase = (
+  intent: CanonicalPaymentIntent,
+  amount: number
+): NormalizedPaymentIntentBase => ({
+  id: required('payment intent id', intent.id),
+  storeId: required('store id', intent.storeId),
+  buyerId: required('buyer id', intent.buyerId),
+  method: intent.method,
+  status: intent.status,
+  amount,
+  currency: 'BRL',
+  provider: intent.provider.trim(),
+  providerIntentId: intent.providerIntentId.trim(),
+  idempotencyKey: required('payment intent idempotency key', intent.idempotencyKey),
+  createdAt: intent.createdAt.trim(),
+  updatedAt: intent.updatedAt.trim(),
+  expiresAt: intent.expiresAt.trim(),
+});
+
 export const normalizeCanonicalPaymentIntent = (
   intent: CanonicalPaymentIntent
-): CanonicalPaymentIntent => {
-  const orderDraft = normalizePaymentIntentOrderDraft(intent.orderDraft);
+): NormalizedCanonicalPaymentIntent => {
   const context = paymentIntentContext(intent);
   const amount = money('payment intent amount', intent.amount);
   if (amount <= 0) throw new Error('Payment intent amount must be positive.');
-  if (amount !== orderDraft.total) {
-    throw new Error('Payment intent amount must equal the immutable order draft total.');
-  }
-  if (intent.storeId.trim() !== orderDraft.storeId) {
-    throw new Error('Payment intent store does not match order draft store.');
-  }
-  if (intent.buyerId.trim() !== orderDraft.buyerId) {
-    throw new Error('Payment intent buyer does not match order draft buyer.');
+  const base = normalizeBase(intent, amount);
+
+  if (context === 'marketplace') {
+    if (!intent.orderDraft) {
+      throw new Error('Marketplace payment intent requires an immutable order draft.');
+    }
+    const orderDraft = normalizePaymentIntentOrderDraft(intent.orderDraft);
+    if (amount !== orderDraft.total) {
+      throw new Error('Payment intent amount must equal the immutable order draft total.');
+    }
+    if (base.storeId !== orderDraft.storeId) {
+      throw new Error('Payment intent store does not match order draft store.');
+    }
+    if (base.buyerId !== orderDraft.buyerId) {
+      throw new Error('Payment intent buyer does not match order draft buyer.');
+    }
+    if (intent.target && intent.target.kind !== 'marketplace_order_draft') {
+      throw new Error('Marketplace payment intent target is invalid.');
+    }
+    const targetOrderId = intent.target
+      ? normalizeTargetOrderId(intent.target)
+      : orderDraft.draftId;
+    if (targetOrderId !== orderDraft.draftId) {
+      throw new Error('Payment intent target does not match order draft.');
+    }
+    return {
+      ...base,
+      context: 'marketplace',
+      target: {
+        kind: 'marketplace_order_draft',
+        orderId: targetOrderId,
+      },
+      orderDraft,
+    };
   }
 
+  if (intent.orderDraft !== undefined) {
+    throw new Error('Existing-order payment intent cannot contain a marketplace order draft.');
+  }
+  if (!intent.target || intent.target.kind !== 'existing_order') {
+    throw new Error('Existing-order payment intent target is required.');
+  }
+  const targetOrderId = normalizeTargetOrderId(intent.target);
   return {
-    ...intent,
-    id: required('payment intent id', intent.id),
-    storeId: required('store id', intent.storeId),
-    buyerId: required('buyer id', intent.buyerId),
+    ...base,
     context,
-    amount,
-    currency: 'BRL',
-    provider: intent.provider.trim(),
-    providerIntentId: intent.providerIntentId.trim(),
-    idempotencyKey: required('payment intent idempotency key', intent.idempotencyKey),
-    orderDraft,
-    createdAt: intent.createdAt.trim(),
-    updatedAt: intent.updatedAt.trim(),
-    expiresAt: intent.expiresAt.trim(),
+    target: {
+      kind: 'existing_order',
+      orderId: targetOrderId,
+    },
   };
 };
 
+export const isMarketplacePaymentIntent = (
+  intent: NormalizedCanonicalPaymentIntent
+): intent is MarketplaceCanonicalPaymentIntent => intent.context === 'marketplace';
+
+export const assertMarketplacePaymentIntent = (
+  intent: NormalizedCanonicalPaymentIntent
+): asserts intent is MarketplaceCanonicalPaymentIntent => {
+  if (!isMarketplacePaymentIntent(intent)) {
+    throw new Error('Marketplace payment intent required.');
+  }
+};
+
 export const canMaterializeOperationalOrder = (
-  intent: CanonicalPaymentIntent
-): boolean => intent.status === 'paid';
+  intent: NormalizedCanonicalPaymentIntent
+): boolean => intent.context === 'marketplace' && intent.status === 'paid';
