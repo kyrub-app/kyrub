@@ -98,6 +98,12 @@ export const loadLocalOrderFinancialContext = async (input: {
     if (compatible.payment.orderId !== orderId) {
       throw new Error('LOCAL_ORDER_FINANCIAL_PAYMENT_SCOPE_INVALID');
     }
+    if (
+      compatible.payment.context !== 'table' &&
+      compatible.payment.context !== 'pos'
+    ) {
+      throw new Error('LOCAL_ORDER_FINANCIAL_PAYMENT_CONTEXT_INVALID');
+    }
     canonicalPayments.push(compatible.payment);
   }
 
