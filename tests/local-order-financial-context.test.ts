@@ -38,7 +38,7 @@ test('financial context endpoint is owner-authorized and read-only', () => {
   assert.match(routerSource, /requireStoreAuthority/);
   assert.match(routerSource, /loadLocalOrderFinancialContext/);
   assert.match(clientSource, /\/api\/local-attendance\/financial-context/);
-  assert.match(clientSource, /method/);
+  assert.match(clientSource, /fetch\(url/);
   assert.doesNotMatch(clientSource, /method:\s*'POST'/);
   assert.doesNotMatch(serviceSource, /\.set\(/);
   assert.doesNotMatch(serviceSource, /\.update\(/);
