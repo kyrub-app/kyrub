@@ -61,7 +61,7 @@ test('attach revalidates canonical order, identity, approval, context and billab
   assert.doesNotMatch(service, /request\.body\?\.(amount|email)|request\.(amount|email)/);
 });
 
-test('shared Mercado Pago provider requires server-supplied email for existing-order intent', () => {
+test('shared Mercado Pago adapter still requires server-supplied email for existing-order intent', () => {
   assert.match(provider, /ExistingOrderCanonicalPaymentIntent/);
   assert.match(provider, /payerEmail: string/);
   assert.match(provider, /input\.intent\.context === 'marketplace'/);
@@ -117,20 +117,23 @@ test('pure local Mercado Pago request uses canonical amount plus server-resolved
   assert.match(provider, /return normalizePixCheckout\(payment\)/);
 });
 
-test('provider binding is idempotent and does not mutate order payment state', () => {
+test('provider binding is idempotent through the adapter and does not mutate order payment state', () => {
   assert.match(service, /existingProviderPaymentId/);
-  assert.match(service, /getMercadoPagoPixCheckout/);
-  assert.match(service, /createMercadoPagoPixPayment/);
+  assert.match(service, /resolvePrimaryPaymentProvider/);
+  assert.match(service, /provider\.getPixCheckout/);
+  assert.match(service, /provider\.createLocalPixPayment/);
   assert.match(service, /bindProviderPayment/);
-  assert.match(service, /provider: 'mercado-pago'/);
+  assert.match(service, /provider: provider\.id/);
   assert.match(service, /providerIntentId: input\.providerPaymentId/);
   assert.match(service, /providerPaymentId: input\.providerPaymentId/);
+  assert.match(service, /attachMercadoPagoPixToLocalIntent = attachPixProviderToLocalIntent/);
+  assert.doesNotMatch(service, /createMercadoPagoPixPayment|getMercadoPagoPixCheckout/);
   assert.doesNotMatch(service, /paidQuantity\s*:/);
   assert.doesNotMatch(service, /paymentStatus\s*:/);
   assert.doesNotMatch(service, /transaction\.(set|update)\(orderRef/);
 });
 
-test('owner-authorized local route attaches Pix without accepting payer or amount fields', () => {
+test('owner-authorized local route preserves compatibility without accepting payer or amount fields', () => {
   assert.match(router, /router\.post\('\/payment-intents\/mercado-pago-pix'/);
   assert.match(router, /requireStoreAuthority/);
   assert.match(router, /attachMercadoPagoPixToLocalIntent/);
