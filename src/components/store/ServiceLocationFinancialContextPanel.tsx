@@ -96,6 +96,18 @@ export function ServiceLocationFinancialContextPanel({
     ));
   }, [orders]);
 
+  useEffect(() => {
+    setPixByOrder(current => {
+      const next = Object.entries(current).filter(([orderId]) => {
+        const context = contexts[orderId];
+        return !context || canOpenPix(context);
+      });
+      return next.length === Object.keys(current).length
+        ? current
+        : Object.fromEntries(next);
+    });
+  }, [contexts]);
+
   const openPix = async (orderId: string): Promise<void> => {
     setBusyOrderId(orderId);
     setError('');
