@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import './local-order-payable.test';
+import './local-pending-payment-recovery.test';
 import { parseLocalPaymentIntentCreateInput } from '../shared/localPaymentIntent';
 import { normalizeCanonicalPayment } from '../src/utils/canonicalPayment';
 

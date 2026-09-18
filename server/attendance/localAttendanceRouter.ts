@@ -17,6 +17,7 @@ import { createInPersonCustomerIdentityRouter } from './inPersonCustomerIdentity
 import { createLocalServiceRequestRouter } from './localServiceRequestRouter.js';
 import { loadLocalOrderFinancialContext } from './localOrderFinancialContextService.js';
 import { createLocalPaymentIntent } from './localPaymentIntentService.js';
+import { loadPendingLocalPayment } from './localPendingPaymentService.js';
 import { attachMercadoPagoPixToLocalIntent } from './localMercadoPagoPixService.js';
 import { isServiceLocationKind } from '../../shared/serviceLocation.js';
 
@@ -79,6 +80,20 @@ const mapError = (error: unknown): { status: number; message: string } => {
     message === 'LOCAL_PIX_PROVIDER_PAYER_NOT_FOUND'
   ) {
     return { status: 404, message: 'O pagamento presencial não está mais disponível.' };
+  }
+  if (
+    message === 'LOCAL_PENDING_PAYMENT_LINK_REQUIRED' ||
+    message === 'LOCAL_PENDING_PAYMENT_INTENT_NOT_FOUND' ||
+    message === 'LOCAL_PENDING_PAYMENT_RECONCILIATION_REQUIRED' ||
+    message === 'LOCAL_PENDING_PAYMENT_SCOPE_MISMATCH' ||
+    message === 'LOCAL_PENDING_PAYMENT_CONTEXT_INVALID' ||
+    message === 'LOCAL_PENDING_PAYMENT_PAIR_MISMATCH' ||
+    message === 'LOCAL_PENDING_PAYMENT_PROVIDER_STATE_INVALID'
+  ) {
+    return {
+      status: 409,
+      message: 'A cobrança pendente precisa ser conciliada antes de ser retomada.',
+    };
   }
   if (
     message === 'LOCAL_PAYMENT_INTENT_ORDER_NOT_LOCAL' ||
@@ -153,6 +168,7 @@ const mapError = (error: unknown): { status: number; message: string } => {
     message.startsWith('STORE_REPRESENTATION_') ||
     message.startsWith('LOCAL_ORDER_FINANCIAL_') ||
     message.startsWith('LOCAL_PAYMENT_INTENT_') ||
+    message.startsWith('LOCAL_PENDING_PAYMENT_') ||
     message.startsWith('LOCAL_PIX_PROVIDER_')
   ) {
     console.warn('[Local attendance]', message);
@@ -180,6 +196,27 @@ export const createLocalAttendanceRouter = (): Router => {
       });
       response.status(200).json({
         context: await loadLocalOrderFinancialContext({
+          legacyStoreId: storeId,
+          orderId,
+        }),
+      });
+    } catch (error) {
+      const mapped = mapError(error);
+      response.status(mapped.status).json({ error: mapped.message });
+    }
+  });
+
+  router.get('/payment-intents/pending', async (request, response) => {
+    try {
+      const storeId = clean(request.query.storeId);
+      const orderId = clean(request.query.orderId);
+      if (!storeId || !orderId) throw new Error('LOCAL_PENDING_PAYMENT_SCOPE_REQUIRED');
+      await requireStoreAuthority({
+        authorization: request.get('authorization') ?? '',
+        storeId,
+      });
+      response.status(200).json({
+        payment: await loadPendingLocalPayment({
           legacyStoreId: storeId,
           orderId,
         }),
