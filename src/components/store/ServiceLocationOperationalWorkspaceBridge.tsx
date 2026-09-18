@@ -6,6 +6,7 @@ import {
   type ResolvedOrderServiceLocation,
 } from '../../../shared/serviceLocation';
 import { AttendanceOrderApproval } from '../customer/AttendanceOrderApproval';
+import { InPersonCustomerLinker } from './InPersonCustomerLinker';
 import { InPersonOrderComposer } from './InPersonOrderComposer';
 import { ServiceLocationRequestPanel } from './ServiceLocationRequestPanel';
 import { auth } from '../../utils/firebase';
@@ -120,6 +121,11 @@ export function ServiceLocationOperationalWorkspaceBridge() {
     [activeOrders]
   );
 
+  const hasStaffOrder = useMemo(
+    () => activeOrders.some(order => order.source === 'staff'),
+    [activeOrders]
+  );
+
   if (!selection) return null;
 
   const { location, storeId } = selection;
@@ -226,6 +232,13 @@ export function ServiceLocationOperationalWorkspaceBridge() {
               </article>
             ))}
           </div>
+
+          {hasStaffOrder && (
+            <InPersonCustomerLinker
+              storeId={storeId}
+              orders={activeOrders}
+            />
+          )}
 
           {location.source === 'canonical' && (
             <div className="mt-5">
