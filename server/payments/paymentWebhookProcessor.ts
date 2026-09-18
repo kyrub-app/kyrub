@@ -8,6 +8,8 @@ import {
 import {
   normalizeCanonicalPaymentIntent,
   type CanonicalPaymentIntent,
+  type MarketplaceCanonicalPaymentIntent,
+  type NormalizedCanonicalPaymentIntent,
   type PaymentIntentStatus,
 } from '../../src/utils/canonicalPaymentIntent.js';
 import { materializePaidMarketplaceOrder } from '../../src/utils/paymentOrderMaterialization.js';
@@ -82,11 +84,17 @@ const intentStatusForPaymentStatus = (
   return null;
 };
 
-const assertMarketplacePaymentIntentMatchesPayment = (
+function assertMarketplacePaymentIntentMatchesPayment(
   payment: CanonicalPayment,
-  intent: CanonicalPaymentIntent,
+  intent: NormalizedCanonicalPaymentIntent,
   event: VerifiedPaymentProviderEvent
-): void => {
+): asserts intent is MarketplaceCanonicalPaymentIntent {
+  if (intent.context !== 'marketplace') {
+    throw new Error('PAYMENT_INTENT_CONTEXT_MISMATCH');
+  }
+  if (intent.target.kind !== 'marketplace_order_draft') {
+    throw new Error('PAYMENT_INTENT_TARGET_INVALID');
+  }
   if (intent.id !== event.paymentIntentId) {
     throw new Error('PAYMENT_INTENT_ID_MISMATCH');
   }
@@ -96,7 +104,10 @@ const assertMarketplacePaymentIntentMatchesPayment = (
   if (intent.buyerId !== payment.buyerId) {
     throw new Error('PAYMENT_INTENT_BUYER_MISMATCH');
   }
-  if (intent.orderDraft.draftId !== payment.orderId) {
+  if (
+    intent.target.orderId !== payment.orderId ||
+    intent.orderDraft.draftId !== payment.orderId
+  ) {
     throw new Error('PAYMENT_INTENT_ORDER_MISMATCH');
   }
   if (intent.amount !== payment.amount || intent.amount !== event.amount) {
@@ -108,12 +119,12 @@ const assertMarketplacePaymentIntentMatchesPayment = (
   if (intent.provider && intent.provider !== event.provider) {
     throw new Error('PAYMENT_INTENT_PROVIDER_MISMATCH');
   }
-};
+}
 
 const assertStorePointPurchaseMatchesPayment = (
   entry: StorePointLedgerEntry,
   payment: CanonicalPayment,
-  intent: CanonicalPaymentIntent
+  intent: MarketplaceCanonicalPaymentIntent
 ): void => {
   if (
     entry.kind !== 'purchase_base' ||
@@ -187,7 +198,7 @@ export const processVerifiedPaymentWebhook = async (input: {
 
     let orderId = '';
     let orderMaterialized = false;
-    let intent: CanonicalPaymentIntent | null = null;
+    let intent: MarketplaceCanonicalPaymentIntent | null = null;
     let operationalOrder: ReturnType<typeof materializePaidMarketplaceOrder> | null = null;
     let operationalOrderExists = false;
     let promotionRef: ReturnType<typeof adminDb.doc> | null = null;
@@ -209,13 +220,14 @@ export const processVerifiedPaymentWebhook = async (input: {
     // Resolve order, coupon, points, challenges, economic ledger and obligations first.
     if (current.context === 'marketplace') {
       if (!intentSnapshot.exists) throw new Error('PAYMENT_INTENT_NOT_FOUND');
-      intent = normalizeCanonicalPaymentIntent(
+      const normalizedIntent = normalizeCanonicalPaymentIntent(
         intentSnapshot.data() as CanonicalPaymentIntent
       );
-      assertMarketplacePaymentIntentMatchesPayment(current, intent, event);
+      assertMarketplacePaymentIntentMatchesPayment(current, normalizedIntent, event);
+      intent = normalizedIntent;
 
       if (effectiveStatus === 'paid') {
-        const paidIntent: CanonicalPaymentIntent = {
+        const paidIntent: MarketplaceCanonicalPaymentIntent = {
           ...intent,
           status: 'paid',
           provider: event.provider,
@@ -249,7 +261,7 @@ export const processVerifiedPaymentWebhook = async (input: {
         pointLedgerEntry = buildStorePointPurchaseEntry({
           storeId,
           customerId: intent.buyerId,
-          orderId: intent.orderDraft.draftId,
+          orderId: intent.target.orderId,
           paymentId,
           paymentIntentId: intent.id,
           occurredAt: event.occurredAt,
@@ -362,7 +374,7 @@ export const processVerifiedPaymentWebhook = async (input: {
         buyerId: intent.buyerId,
         paymentIntentId: intent.id,
         paymentId,
-        orderId: intent.orderDraft.draftId,
+        orderId: intent.target.orderId,
         subtotal: intent.orderDraft.subtotal,
         discountTotal: intent.orderDraft.discountTotal ?? 0,
         paidTotal: intent.orderDraft.total,
