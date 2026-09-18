@@ -7,6 +7,7 @@ import {
 } from '../../../shared/serviceLocation';
 import { AttendanceOrderApproval } from '../customer/AttendanceOrderApproval';
 import { InPersonOrderComposer } from './InPersonOrderComposer';
+import { ServiceLocationRequestPanel } from './ServiceLocationRequestPanel';
 import { auth } from '../../utils/firebase';
 import {
   getCustomerOrderOutstandingTotal,
@@ -186,6 +187,11 @@ export function ServiceLocationOperationalWorkspaceBridge() {
               </span>
             </div>
           </div>
+
+          <ServiceLocationRequestPanel
+            storeId={storeId}
+            location={location}
+          />
 
           <div className="mt-5 space-y-2">
             {activeOrders.length === 0 ? (
