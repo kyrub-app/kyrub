@@ -66,11 +66,10 @@ const json = async <T>(response: Response, fallback: string): Promise<T> => {
 };
 
 export const newLocalPaymentAttemptKey = (orderId: string): string => {
-  const id = orderId.trim();
-  if (!id) throw new Error('Pedido inválido para iniciar o Pix.');
+  if (!orderId.trim()) throw new Error('Pedido inválido para iniciar o Pix.');
   const random = globalThis.crypto?.randomUUID?.();
   if (!random) throw new Error('Não foi possível criar uma tentativa segura de pagamento.');
-  return `local-pix:${id}:${random}`;
+  return `local-pix:${random}`;
 };
 
 export const loadPendingLocalPayment = async (input: {
