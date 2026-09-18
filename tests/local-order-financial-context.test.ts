@@ -56,16 +56,16 @@ test('financial context endpoint is owner-authorized and read-only', () => {
   assert.doesNotMatch(serviceSource, /writeBatch/);
 });
 
-test('selected service location projects financial evidence without exposing a manual payment action', () => {
+test('selected service location keeps canonical evidence authoritative while offering explicit Pix checkout', () => {
   assert.match(workspaceSource, /<ServiceLocationFinancialContextPanel/);
   assert.match(workspaceSource, /orders=\{activeOrders\}/);
   assert.match(panelSource, /Evidência financeira canônica/);
   assert.match(panelSource, /Espelhos legados não comprovam quitação/);
   assert.match(panelSource, /authoritativelyPaidAmount/);
   assert.match(panelSource, /Conciliação necessária/);
-  assert.match(panelSource, /somente leitura/);
+  assert.match(panelSource, /Gerar Pix|Retomar Pix/);
+  assert.match(panelSource, /webhook verificado do provedor/);
   assert.doesNotMatch(panelSource, /registerTablePayment/);
   assert.doesNotMatch(panelSource, /paidQuantity\s*=/);
   assert.doesNotMatch(panelSource, /paymentStatus\s*=/);
-  assert.doesNotMatch(panelSource, /PaymentIntent/);
 });
