@@ -22,7 +22,20 @@ const money = (value: number): string =>
     currency: 'BRL',
   }).format(value);
 
-export const InPersonOrderComposer = ({ storeId }: { storeId: string }) => {
+interface InPersonOrderComposerProps {
+  storeId: string;
+  lockedServiceLocationId?: string;
+  heading?: string;
+  embedded?: boolean;
+}
+
+export const InPersonOrderComposer = ({
+  storeId,
+  lockedServiceLocationId = '',
+  heading = 'Novo pedido presencial',
+  embedded = false,
+}: InPersonOrderComposerProps) => {
+  const lockedLocationId = lockedServiceLocationId.trim();
   const [locations, setLocations] = useState<ServiceLocation[]>([]);
   const [products, setProducts] = useState<InPersonCatalogProduct[]>([]);
   const [selectedLocationId, setSelectedLocationId] = useState('');
@@ -46,12 +59,21 @@ export const InPersonOrderComposer = ({ storeId }: { storeId: string }) => {
       ]);
       setLocations(nextLocations);
       setProducts(nextProducts);
-      setSelectedLocationId(current =>
-        nextLocations.some(location => location.id === current)
+      setSelectedLocationId(current => {
+        if (lockedLocationId) {
+          return nextLocations.some(location => location.id === lockedLocationId)
+            ? lockedLocationId
+            : '';
+        }
+        return nextLocations.some(location => location.id === current)
           ? current
-          : nextLocations[0]?.id ?? ''
+          : nextLocations[0]?.id ?? '';
+      });
+      setErrorMessage(
+        lockedLocationId && !nextLocations.some(location => location.id === lockedLocationId)
+          ? 'Este local não está mais ativo para novos pedidos.'
+          : ''
       );
-      setErrorMessage('');
     } catch (error) {
       setErrorMessage(
         error instanceof Error
@@ -61,7 +83,7 @@ export const InPersonOrderComposer = ({ storeId }: { storeId: string }) => {
     } finally {
       if (!silent) setLoading(false);
     }
-  }, [storeId]);
+  }, [lockedLocationId, storeId]);
 
   useEffect(() => {
     void refresh();
@@ -70,6 +92,11 @@ export const InPersonOrderComposer = ({ storeId }: { storeId: string }) => {
     return () =>
       window.removeEventListener('kyrub-service-locations-changed', handleLocationsChanged);
   }, [refresh]);
+
+  const selectedLocation = useMemo(
+    () => locations.find(location => location.id === selectedLocationId) ?? null,
+    [locations, selectedLocationId]
+  );
 
   const visibleProducts = useMemo(() => {
     const expected = search.trim().toLocaleLowerCase('pt-BR');
@@ -130,7 +157,7 @@ export const InPersonOrderComposer = ({ storeId }: { storeId: string }) => {
       );
       window.dispatchEvent(
         new CustomEvent('kyrub-in-person-order-created', {
-          detail: { orderId: order.id },
+          detail: { orderId: order.id, serviceLocationId: selectedLocationId },
         })
       );
     } catch (error) {
@@ -146,19 +173,21 @@ export const InPersonOrderComposer = ({ storeId }: { storeId: string }) => {
 
   return (
     <section
-      id="kyrub-in-person-order-composer"
-      className="mt-4 space-y-3 rounded-2xl border border-slate-800 bg-slate-900/70 p-3 sm:p-4"
+      id={embedded ? 'kyrub-service-location-order-composer' : 'kyrub-in-person-order-composer'}
+      className={`${embedded ? '' : 'mt-4'} space-y-3 rounded-2xl border border-slate-800 bg-slate-900/70 p-3 sm:p-4`}
     >
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="flex items-center gap-2">
             <ShoppingCart className="h-4 w-4 text-orange-400" />
             <h3 className="text-[11px] font-black uppercase text-white">
-              Novo pedido presencial
+              {heading}
             </h3>
           </div>
           <p className="mt-1 text-[9px] leading-relaxed text-slate-500">
-            Selecione um local gerenciado e os produtos. Nome, preço e local são reconfirmados pelo servidor antes da gravação; o estoque é decidido pela autoridade operacional ao avançar o pedido.
+            {lockedLocationId
+              ? 'O pedido será criado neste local. Nome, preço e identidade do local são reconfirmados pelo servidor antes da gravação.'
+              : 'Selecione um local gerenciado e os produtos. Nome, preço e local são reconfirmados pelo servidor antes da gravação; o estoque é decidido pela autoridade operacional ao avançar o pedido.'}
           </p>
         </div>
         <button
@@ -191,18 +220,30 @@ export const InPersonOrderComposer = ({ storeId }: { storeId: string }) => {
       ) : (
         <>
           <div className="grid gap-2 sm:grid-cols-2">
-            <label className="space-y-1 text-[8px] font-black uppercase text-slate-500">
-              Local do atendimento
-              <select
-                value={selectedLocationId}
-                onChange={event => setSelectedLocationId(event.target.value)}
-                className="min-h-10 w-full rounded-xl border border-slate-800 bg-slate-950 px-3 text-[10px] font-bold normal-case text-white outline-none"
-              >
-                {locations.map(location => (
-                  <option key={location.id} value={location.id}>{location.label}</option>
-                ))}
-              </select>
-            </label>
+            {lockedLocationId ? (
+              <div className="space-y-1 text-[8px] font-black uppercase text-slate-500">
+                Local do atendimento
+                <div
+                  id="locked-service-location"
+                  className="flex min-h-10 items-center rounded-xl border border-orange-500/20 bg-orange-500/5 px-3 text-[10px] font-bold normal-case text-orange-100"
+                >
+                  {selectedLocation?.label ?? 'Local indisponível'}
+                </div>
+              </div>
+            ) : (
+              <label className="space-y-1 text-[8px] font-black uppercase text-slate-500">
+                Local do atendimento
+                <select
+                  value={selectedLocationId}
+                  onChange={event => setSelectedLocationId(event.target.value)}
+                  className="min-h-10 w-full rounded-xl border border-slate-800 bg-slate-950 px-3 text-[10px] font-bold normal-case text-white outline-none"
+                >
+                  {locations.map(location => (
+                    <option key={location.id} value={location.id}>{location.label}</option>
+                  ))}
+                </select>
+              </label>
+            )}
             <label className="space-y-1 text-[8px] font-black uppercase text-slate-500">
               Identificação local opcional
               <input
