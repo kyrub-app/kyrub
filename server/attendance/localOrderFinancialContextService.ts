@@ -1,12 +1,13 @@
 import type { DocumentData } from 'firebase-admin/firestore';
 import { adminDb } from '../firebaseAdmin.js';
+import type { CanonicalPayment } from '../../src/utils/canonicalPayment.js';
 import {
-  isPaymentAuthoritativelyPaid,
-  type CanonicalPayment,
-} from '../../src/utils/canonicalPayment.js';
+  buildCanonicalOrderFinancialProjection,
+} from '../../shared/canonicalOrderFinancialProjection.js';
 import type {
   LocalOrderFinancialContext,
-  LocalOrderFinancialState,
+  LocalOrderLineSettlementConsistency,
+  LocalOrderLineSettlementStatus,
 } from '../../shared/localOrderFinancialContext.js';
 import { classifyCompatiblePaymentRecord } from '../payments/paymentRecordCompatibility.js';
 import { resolveInPersonOrderStoreContext } from './inPersonOrderService.js';
@@ -19,31 +20,33 @@ const clean = (value: unknown, max = 240): string =>
 const finite = (value: unknown): number | null =>
   typeof value === 'number' && Number.isFinite(value) ? value : null;
 
-const paymentStatus = (value: unknown): 'unpaid' | 'partial' | 'paid' =>
+const lineSettlementStatus = (value: unknown): LocalOrderLineSettlementStatus =>
   value === 'partial' || value === 'paid' ? value : 'unpaid';
 
-const resolveState = (input: {
-  expectedAmount: number;
-  operationalStatus: 'unpaid' | 'partial' | 'paid';
-  payments: CanonicalPayment[];
-  authoritativelyPaidAmount: number;
-  pendingPaymentCount: number;
-}): LocalOrderFinancialState => {
-  if (input.payments.length === 0) {
-    return input.operationalStatus === 'unpaid'
-      ? 'not_started'
-      : 'reconciliation_required';
+const settlementRank = (status: LocalOrderLineSettlementStatus): number =>
+  status === 'paid' ? 2 : status === 'partial' ? 1 : 0;
+
+const canonicalRank = (
+  state: LocalOrderFinancialContext['canonicalProjection']['state']
+): number => state === 'paid' ? 2 : state === 'partial' ? 1 : 0;
+
+const resolveLineSettlementConsistency = (input: {
+  lineSettlementStatus: LocalOrderLineSettlementStatus;
+  canonicalState: LocalOrderFinancialContext['canonicalProjection']['state'];
+}): LocalOrderLineSettlementConsistency => {
+  if (
+    input.canonicalState === 'not_started' &&
+    input.lineSettlementStatus !== 'unpaid'
+  ) {
+    return 'line_settlement_ahead';
   }
-  if (input.authoritativelyPaidAmount > 0) {
-    return input.authoritativelyPaidAmount + 0.009 >= input.expectedAmount &&
-      input.expectedAmount > 0
-      ? 'paid'
-      : 'partial';
+  if (
+    (input.canonicalState === 'paid' || input.canonicalState === 'partial') &&
+    settlementRank(input.lineSettlementStatus) < canonicalRank(input.canonicalState)
+  ) {
+    return 'canonical_ahead';
   }
-  if (input.pendingPaymentCount > 0) return 'pending';
-  if (input.payments.every(payment => payment.status === 'refunded')) return 'refunded';
-  if (input.operationalStatus !== 'unpaid') return 'reconciliation_required';
-  return 'attention';
+  return 'aligned';
 };
 
 const assertLocalOrder = (
@@ -107,32 +110,30 @@ export const loadLocalOrderFinancialContext = async (input: {
     canonicalPayments.push(compatible.payment);
   }
 
-  const expectedAmount = Number((finite(order.total) ?? 0).toFixed(2));
-  const orderPaymentStatus = paymentStatus(order.paymentStatus);
-  const paidPayments = canonicalPayments.filter(payment =>
-    isPaymentAuthoritativelyPaid(payment.status)
-  );
-  const authoritativelyPaidAmount = Number(
-    paidPayments.reduce((sum, payment) => sum + payment.amount, 0).toFixed(2)
-  );
-  const pendingPaymentCount = canonicalPayments.filter(
-    payment => payment.status === 'pending'
-  ).length;
+  const canonicalProjection = buildCanonicalOrderFinancialProjection({
+    expectedAmount: Number((finite(order.total) ?? 0).toFixed(2)),
+    payments: canonicalPayments,
+  });
+  const settlementStatus = lineSettlementStatus(order.paymentStatus);
+  const lineSettlementConsistency = resolveLineSettlementConsistency({
+    lineSettlementStatus: settlementStatus,
+    canonicalState: canonicalProjection.state,
+  });
+  const state = lineSettlementConsistency === 'line_settlement_ahead'
+    ? 'reconciliation_required'
+    : canonicalProjection.state;
 
   return {
     orderId,
-    orderPaymentStatus,
-    expectedAmount,
-    authoritativelyPaidAmount,
-    pendingPaymentCount,
-    canonicalPaymentCount: canonicalPayments.length,
+    lineSettlementStatus: settlementStatus,
+    lineSettlementConsistency,
+    canonicalProjection,
     ignoredLegacyMirrorCount,
-    state: resolveState({
-      expectedAmount,
-      operationalStatus: orderPaymentStatus,
-      payments: canonicalPayments,
-      authoritativelyPaidAmount,
-      pendingPaymentCount,
-    }),
+    state,
+    orderPaymentStatus: settlementStatus,
+    expectedAmount: canonicalProjection.expectedAmount,
+    authoritativelyPaidAmount: canonicalProjection.authoritativelyPaidAmount,
+    pendingPaymentCount: canonicalProjection.pendingPaymentCount,
+    canonicalPaymentCount: canonicalProjection.canonicalPaymentCount,
   };
 };

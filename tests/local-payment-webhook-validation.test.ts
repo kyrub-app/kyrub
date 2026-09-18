@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import './local-mercado-pago-pix-attach.test';
+import './local-financial-projection.test';
 
 const webhookSource = readFileSync(
   'server/payments/paymentWebhookProcessor.ts',

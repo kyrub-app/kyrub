@@ -149,7 +149,7 @@ export function ServiceLocationFinancialContextPanel({
             Evidência financeira canônica
           </h3>
           <p className="mt-1 text-[8px] leading-relaxed text-indigo-100/55">
-            Leitura e cobrança Pix usam os pagamentos canônicos do pedido. Espelhos legados não comprovam quitação e são ignorados no valor confirmado.
+            O pagamento canônico e a liquidação por itens são estados separados. O QR e o webhook comprovam dinheiro; `paidQuantity` continua reservado à alocação explícita das linhas.
           </p>
         </div>
       </div>
@@ -190,20 +190,24 @@ export function ServiceLocationFinancialContextPanel({
                 </div>
                 {context && (
                   <span className="shrink-0 font-mono text-[9px] text-indigo-100">
-                    {money(context.authoritativelyPaidAmount)} / {money(context.expectedAmount)}
+                    {money(context.canonicalProjection.authoritativelyPaidAmount)} / {money(context.canonicalProjection.expectedAmount)}
                   </span>
                 )}
               </div>
 
               {context && (
                 <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 border-t border-white/5 pt-2 text-[7px] text-slate-600">
-                  <span>{context.canonicalPaymentCount} pagamento(s) canônico(s)</span>
-                  <span>{context.pendingPaymentCount} pendente(s)</span>
+                  <span>{context.canonicalProjection.canonicalPaymentCount} pagamento(s) canônico(s)</span>
+                  <span>{context.canonicalProjection.pendingPaymentCount} pendente(s)</span>
+                  <span>Liquidação por itens: {context.lineSettlementStatus}</span>
                   {context.ignoredLegacyMirrorCount > 0 && (
                     <span>{context.ignoredLegacyMirrorCount} espelho(s) legado(s) ignorado(s)</span>
                   )}
+                  {context.lineSettlementConsistency === 'canonical_ahead' && (
+                    <span className="font-bold text-cyan-300">Pagamento canônico confirmado; alocação por item continua independente</span>
+                  )}
                   {context.state === 'reconciliation_required' && (
-                    <span className="font-bold text-amber-300">Status operacional diverge da evidência canônica</span>
+                    <span className="font-bold text-amber-300">Liquidação por item está adiante da evidência canônica</span>
                   )}
                 </div>
               )}
