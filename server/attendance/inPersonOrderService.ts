@@ -26,6 +26,80 @@ export interface InPersonOrderStoreContext {
   canonicalStoreId: string;
 }
 
+const reconcileTenantCanonicalStoreBinding = async (input: {
+  legacyStoreId: string;
+  canonicalStoreId: string;
+}): Promise<void> => {
+  await adminDb.runTransaction(async transaction => {
+    const tenantReference = adminDb.doc(`tenants/${input.legacyStoreId}`);
+    const privateStoreReference = adminDb.doc(
+      `users/${input.legacyStoreId}/stores/${input.legacyStoreId}`
+    );
+    const canonicalStoreReference = adminDb.doc(`stores/${input.canonicalStoreId}`);
+    const [tenantSnapshot, privateStoreSnapshot, canonicalStoreSnapshot] =
+      await Promise.all([
+        transaction.get(tenantReference),
+        transaction.get(privateStoreReference),
+        transaction.get(canonicalStoreReference),
+      ]);
+
+    // A tenant document is an existing authority boundary. Never synthesize one
+    // from the payment/order path just to make checkout proceed.
+    if (!tenantSnapshot.exists) {
+      throw new Error('IN_PERSON_ORDER_CANONICAL_CUTOVER_REQUIRED');
+    }
+    if (!privateStoreSnapshot.exists) {
+      throw new Error('IN_PERSON_ORDER_STORE_NOT_FOUND');
+    }
+    if (!canonicalStoreSnapshot.exists) {
+      throw new Error('IN_PERSON_ORDER_CANONICAL_STORE_NOT_FOUND');
+    }
+
+    const privateStore = privateStoreSnapshot.data() as Record<string, unknown>;
+    const canonicalStore = canonicalStoreSnapshot.data() as Record<string, unknown>;
+    if (
+      clean(privateStore.id) !== input.legacyStoreId ||
+      clean(privateStore.ownerId) !== input.legacyStoreId
+    ) {
+      throw new Error('IN_PERSON_ORDER_STORE_SCOPE_INVALID');
+    }
+    if (
+      clean(canonicalStore.ownerId) !== input.legacyStoreId ||
+      clean(canonicalStore.legacyTenantId) !== input.legacyStoreId
+    ) {
+      throw new Error('IN_PERSON_ORDER_CANONICAL_STORE_SCOPE_INVALID');
+    }
+
+    const currentTenantCanonicalStoreId = clean(
+      tenantSnapshot.data()?.canonicalStoreId
+    );
+    const currentPrivateCanonicalStoreId = clean(privateStore.canonicalStoreId);
+    if (
+      currentTenantCanonicalStoreId &&
+      currentTenantCanonicalStoreId !== input.canonicalStoreId
+    ) {
+      throw new Error('IN_PERSON_ORDER_CANONICAL_STORE_CONFLICT');
+    }
+    if (
+      currentPrivateCanonicalStoreId &&
+      currentPrivateCanonicalStoreId !== input.canonicalStoreId
+    ) {
+      throw new Error('IN_PERSON_ORDER_CANONICAL_STORE_CONFLICT');
+    }
+
+    if (!currentTenantCanonicalStoreId) {
+      transaction.set(
+        tenantReference,
+        {
+          canonicalStoreId: input.canonicalStoreId,
+          updatedAt: FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      );
+    }
+  });
+};
+
 export const resolveInPersonOrderStoreContext = async (
   legacyStoreIdInput: string
 ): Promise<InPersonOrderStoreContext> => {
@@ -47,7 +121,7 @@ export const resolveInPersonOrderStoreContext = async (
     throw new Error('IN_PERSON_ORDER_STORE_SCOPE_INVALID');
   }
 
-  const tenantCanonicalStoreId = clean(tenantSnapshot.data()?.canonicalStoreId);
+  let tenantCanonicalStoreId = clean(tenantSnapshot.data()?.canonicalStoreId);
   const privateCanonicalStoreId = clean(privateStore.canonicalStoreId);
   if (
     tenantCanonicalStoreId &&
@@ -87,8 +161,16 @@ export const resolveInPersonOrderStoreContext = async (
   }
 
   // Status/inventory authorities still resolve the canonical store through the
-  // legacy tenant. Refuse to create a split-brain order if that binding is absent.
-  if (!tenantCanonicalStoreId || tenantCanonicalStoreId !== canonicalStoreId) {
+  // legacy tenant. Repair only a missing pointer whose target was uniquely
+  // resolved and scope-validated; conflicts and ambiguous identities stay closed.
+  if (!tenantCanonicalStoreId) {
+    await reconcileTenantCanonicalStoreBinding({
+      legacyStoreId,
+      canonicalStoreId,
+    });
+    tenantCanonicalStoreId = canonicalStoreId;
+  }
+  if (tenantCanonicalStoreId !== canonicalStoreId) {
     throw new Error('IN_PERSON_ORDER_CANONICAL_CUTOVER_REQUIRED');
   }
 
