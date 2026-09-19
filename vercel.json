@@ -38,7 +38,7 @@
     },
     {
       "source": "/api/local-attendance/:path*",
-      "destination": "/api/local-attendance?path=:path*"
+      "destination": "/api/health?transport=local-attendance&path=:path*"
     },
     {
       "source": "/api/media/drive",
