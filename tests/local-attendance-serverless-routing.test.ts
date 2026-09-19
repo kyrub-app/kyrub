@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import test from 'node:test';
 
-test('Vercel exposes canonical local attendance through its dedicated serverless entrypoint', () => {
+test('Vercel exposes canonical local attendance through the existing health multiplexer', () => {
   const vercel = readFileSync('vercel.json', 'utf8');
-  const entrypoint = readFileSync('api/local-attendance.ts', 'utf8');
+  const health = readFileSync('api/health.ts', 'utf8');
   const transport = readFileSync(
     'server/attendance/localAttendanceServerlessTransport.ts',
     'utf8'
@@ -13,9 +13,12 @@ test('Vercel exposes canonical local attendance through its dedicated serverless
   assert.match(vercel, /"source": "\/api\/local-attendance\/:path\*"/);
   assert.match(
     vercel,
-    /"destination": "\/api\/local-attendance\?path=:path\*"/
+    /"destination": "\/api\/health\?transport=local-attendance&path=:path\*"/
   );
-  assert.match(entrypoint, /handleLocalAttendanceServerlessRequest/);
+  assert.match(health, /transport === 'local-attendance'/);
+  assert.match(health, /localAttendanceServerlessTransport\.js/);
+  assert.match(health, /handleLocalAttendanceServerlessRequest/);
+  assert.equal(existsSync('api/local-attendance.ts'), false);
   assert.match(transport, /createLocalAttendanceRouter/);
   assert.match(
     transport,
