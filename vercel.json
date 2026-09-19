@@ -37,6 +37,10 @@
       "destination": "/api/health?transport=store-connections&path=:path*"
     },
     {
+      "source": "/api/local-attendance",
+      "destination": "/api/health?transport=local-attendance"
+    },
+    {
       "source": "/api/local-attendance/:path*",
       "destination": "/api/health?transport=local-attendance&path=:path*"
     },
