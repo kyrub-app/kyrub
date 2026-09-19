@@ -41,8 +41,15 @@ const paymentContextForOrder = (
   order: DocumentData
 ): 'table' | 'pos' => {
   const location = parseServiceLocationSnapshot(order.serviceLocation);
-  if (!location) throw new Error('LOCAL_PIX_PROVIDER_SERVICE_LOCATION_REQUIRED');
-  return location.kind === 'table' ? 'table' : 'pos';
+  if (location) return location.kind === 'table' ? 'table' : 'pos';
+
+  // Keep provider revalidation compatible with historical dine-in orders that
+  // predate canonical service-location snapshots. The fallback comes only from
+  // the authoritative order document and can classify context as table; it does
+  // not alter amount, payer, order identity, payment state or provider binding.
+  if (clean(order.tableCode, 80)) return 'table';
+
+  throw new Error('LOCAL_PIX_PROVIDER_SERVICE_LOCATION_REQUIRED');
 };
 
 const assertLocalPair = (input: {
