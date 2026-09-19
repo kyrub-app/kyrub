@@ -62,6 +62,7 @@ jobs:
           tests/gamification-redemption-repository.test.ts
           tests/app-error-boundary.test.ts
           tests/production-health.test.ts
+          tests/local-attendance-serverless-routing.test.ts
 
       - name: Build
         run: npm run build
