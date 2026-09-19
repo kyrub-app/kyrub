@@ -172,6 +172,31 @@ export default async function handler(
     return;
   }
 
+  if (transport === 'local-attendance') {
+    response.setHeader('Cache-Control', 'no-store, max-age=0');
+    try {
+      const localAttendance = await import(
+        '../server/attendance/localAttendanceServerlessTransport.js'
+      );
+      await localAttendance.handleLocalAttendanceServerlessRequest(
+        request,
+        response
+      );
+    } catch (error) {
+      console.error(
+        '[local-attendance-transport]',
+        error instanceof Error ? error.message : String(error)
+      );
+      if (!(response as unknown as { writableEnded?: boolean }).writableEnded) {
+        response.status(503).json({
+          error: 'O atendimento local está temporariamente indisponível.',
+          code: 'LOCAL_ATTENDANCE_TRANSPORT_UNAVAILABLE',
+        });
+      }
+    }
+    return;
+  }
+
   if (transport === 'store-connections') {
     response.setHeader('Cache-Control', 'no-store, max-age=0');
     try {
