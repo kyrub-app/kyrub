@@ -2,6 +2,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App.tsx';
 import { AppErrorBoundary } from './components/AppErrorBoundary';
+import { GerencialIntegrationsNativeBridge } from './components/GerencialIntegrationsNativeBridge';
 import { KyrubAiConversationCloudSyncGate } from './components/KyrubAiConversationCloudSyncGate';
 import { OfficialKnowledgeSemanticSetupBridge } from './components/OfficialKnowledgeSemanticSetupBridge';
 import { OfficialKnowledgeSetupBridge } from './components/OfficialKnowledgeSetupBridge';
@@ -50,6 +51,7 @@ createRoot(rootElement).render(
           <ServiceLocationOperationalWorkspaceBridge />
           <MercadoLivreOAuthReturnBridge />
           <PickupPdvNavigationBridge />
+          <GerencialIntegrationsNativeBridge />
           <KyrubOfficialKnowledgeRuntimeBridge />
           <KyrubActivityObserverBridge />
           <KyrubActivityLogSetupBridge />
