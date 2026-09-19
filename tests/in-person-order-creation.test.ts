@@ -49,6 +49,32 @@ describe('authoritative in-person order creation', () => {
     assert.doesNotMatch(service, /name:\s*line\./);
   });
 
+  test('a missing tenant canonical pointer self-heals only after authoritative scope revalidation', () => {
+    const service = readFileSync('server/attendance/inPersonOrderService.ts', 'utf8');
+    assert.match(service, /const reconcileTenantCanonicalStoreBinding/);
+    assert.match(service, /adminDb\.runTransaction\(async transaction/);
+    assert.match(
+      service,
+      /if \(!tenantSnapshot\.exists\)[\s\S]*IN_PERSON_ORDER_CANONICAL_CUTOVER_REQUIRED/
+    );
+    assert.match(
+      service,
+      /clean\(canonicalStore\.ownerId\) !== input\.legacyStoreId[\s\S]*clean\(canonicalStore\.legacyTenantId\) !== input\.legacyStoreId/
+    );
+    assert.match(
+      service,
+      /currentTenantCanonicalStoreId &&[\s\S]*currentTenantCanonicalStoreId !== input\.canonicalStoreId[\s\S]*IN_PERSON_ORDER_CANONICAL_STORE_CONFLICT/
+    );
+    assert.match(
+      service,
+      /if \(!currentTenantCanonicalStoreId\)[\s\S]*transaction\.set\([\s\S]*tenantReference[\s\S]*canonicalStoreId: input\.canonicalStoreId/
+    );
+    assert.match(
+      service,
+      /if \(!tenantCanonicalStoreId\)[\s\S]*await reconcileTenantCanonicalStoreBinding/
+    );
+  });
+
   test('staff order is canonical Kyrub commerce without customer identity or automatic settlement', () => {
     const service = readFileSync('server/attendance/inPersonOrderService.ts', 'utf8');
     assert.match(service, /buyerId: `local-order:\$\{orderId\}`/);
