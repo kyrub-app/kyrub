@@ -72,10 +72,15 @@ const assertEligibleLocalOrder = (
 
 const paymentContextForOrder = (order: DocumentData): PaymentContext => {
   const location = parseServiceLocationSnapshot(order.serviceLocation);
-  if (!location) {
-    throw new Error('LOCAL_PAYMENT_INTENT_SERVICE_LOCATION_REQUIRED');
-  }
-  return location.kind === 'table' ? 'table' : 'pos';
+  if (location) return location.kind === 'table' ? 'table' : 'pos';
+
+  // Compatibility bridge for dine-in orders created before canonical service
+  // location snapshots were mandatory. The table code is read only from the
+  // authoritative server-side order and may classify the payment context, but
+  // it never supplies amount, payer identity, settlement or provider state.
+  if (clean(order.tableCode, 80)) return 'table';
+
+  throw new Error('LOCAL_PAYMENT_INTENT_SERVICE_LOCATION_REQUIRED');
 };
 
 const assertExistingPair = (input: {
