@@ -10,6 +10,11 @@ test('Vercel exposes canonical local attendance through the existing health mult
     'utf8'
   );
 
+  assert.match(vercel, /"source": "\/api\/local-attendance"/);
+  assert.match(
+    vercel,
+    /"destination": "\/api\/health\?transport=local-attendance"/
+  );
   assert.match(vercel, /"source": "\/api\/local-attendance\/:path\*"/);
   assert.match(
     vercel,
