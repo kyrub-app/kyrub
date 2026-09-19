@@ -8,7 +8,10 @@ const storefrontSource = source('src/components/LegacyStorefrontPanel.tsx');
 const publicStorefrontSource = source('src/components/PublicStorefrontApp.tsx');
 const storefrontEventsSource = source('src/utils/storefrontEvents.ts');
 const sharedPdvSource = source('src/components/pdv/SharedPdvCatalog.tsx');
-const staffPdvSource = source('src/components/customer/TableServiceWorkspace.tsx');
+const staffPdvSource = [
+  source('src/components/customer/TableServiceWorkspace.tsx'),
+  source('src/components/customer/LegacyTableServiceWorkspace.tsx'),
+].join('\n');
 const checkoutSource = source('src/components/modals/B2CCartDrawer.tsx');
 const productModalSource = source('src/components/modals/NewProductModal.tsx');
 const storeConfigSource = source('src/components/modals/StoreConfigModal.tsx');
