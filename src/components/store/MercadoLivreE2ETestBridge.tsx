@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type { User } from 'firebase/auth';
 import { loadStoreConnectionOnboarding } from '../../utils/storeConnections';
 import MercadoLivreE2ETestWorkspace from './MercadoLivreE2ETestWorkspace';
+import OmnichannelManualReviewPanel from './OmnichannelManualReviewPanel';
 
 export default function MercadoLivreE2ETestBridge({
   user,
@@ -30,13 +31,17 @@ export default function MercadoLivreE2ETestBridge({
     return () => { cancelled = true; };
   }, [storeId, user.uid]);
 
-  if (!connectionId) return null;
   return (
-    <MercadoLivreE2ETestWorkspace
-      user={user}
-      storeId={storeId}
-      connectionId={connectionId}
-      notify={notify}
-    />
+    <div className="space-y-5">
+      <OmnichannelManualReviewPanel user={user} storeId={storeId} notify={notify} />
+      {connectionId ? (
+        <MercadoLivreE2ETestWorkspace
+          user={user}
+          storeId={storeId}
+          connectionId={connectionId}
+          notify={notify}
+        />
+      ) : null}
+    </div>
   );
 }

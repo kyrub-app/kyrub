@@ -128,6 +128,7 @@ export const enqueueNinetyNineFoodWebhook = async (input: {
       payload: input.payload,
       status: 'queued',
       attempts: 0,
+      processingOutcome: 'pending_processing',
       receivedAt: FieldValue.serverTimestamp(),
       availableAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
@@ -170,6 +171,8 @@ const reserveIngress = async (
     transaction.update(reference, {
       status: 'processing',
       attempts: FieldValue.increment(1),
+      processingOutcome: 'processing',
+      lastAttemptAt: FieldValue.serverTimestamp(),
       leaseExpiresAt,
       availableAt: leaseExpiresAt,
       updatedAt: FieldValue.serverTimestamp(),
@@ -225,6 +228,9 @@ export const drainNinetyNineFoodIngressQueue = async (
       await reconcileNinetyNineFoodOrderReservation(tenantId, orderId);
       await document.ref.update({
         status: 'processed',
+        orderId,
+        processingOutcome: 'canonical_order_reconciled',
+        processingAuthority: 'verified_provider_webhook',
         processedAt: FieldValue.serverTimestamp(),
         expiresAt: Timestamp.fromMillis(Date.now() + PROCESSED_RETENTION_MS),
         leaseExpiresAt: FieldValue.delete(),
@@ -244,6 +250,8 @@ export const drainNinetyNineFoodIngressQueue = async (
       const nextAttemptAt = Timestamp.fromMillis(Date.now() + backoffMs);
       await document.ref.update({
         status: 'failed',
+        processingOutcome: 'retry_scheduled',
+        processingAuthority: 'verified_provider_webhook',
         error: (error instanceof Error ? error.message : String(error)).slice(0, 1_000),
         failedAt: FieldValue.serverTimestamp(),
         nextAttemptAt,
