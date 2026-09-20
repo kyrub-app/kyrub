@@ -196,9 +196,9 @@ app.use(
 );
 
 app.use(
-  "/api/store-identity",
+  "/api/store-campaigns",
   integrationRateLimiter,
-  createStoreInstitutionalIdentityRouter()
+  createStoreCampaignRouter()
 );
 
 app.use(
@@ -208,27 +208,27 @@ app.use(
 );
 
 app.use(
+  "/api/store-identity",
+  integrationRateLimiter,
+  createStoreInstitutionalIdentityRouter()
+);
+
+app.use(
   "/api/store-chat",
   integrationRateLimiter,
   createStoreCustomerChatRouter()
 );
 
 app.use(
-  "/api/store-campaigns",
+  "/api/notifications",
   integrationRateLimiter,
-  createStoreCampaignRouter()
+  createUserNotificationRouter()
 );
 
 app.use(
   "/api/communication-preferences",
   integrationRateLimiter,
   createUserCommunicationPreferenceRouter()
-);
-
-app.use(
-  "/api/notifications",
-  integrationRateLimiter,
-  createUserNotificationRouter()
 );
 
 app.use(
@@ -241,17 +241,18 @@ app.use(
 app.use(
   "/api/delivery-tracking",
   integrationRateLimiter,
+  enforceDeliveryWorkEligibility,
   createDeliveryTrackingRouter()
 );
 
 app.use(
-  "/api/paid-waiting",
+  "/api/paid-waiting-funding-responsibility",
   integrationRateLimiter,
   createPaidWaitingFundingResponsibilityRouter()
 );
 
 app.use(
-  "/api/admin/operations",
+  "/api/admin/operations/health",
   integrationRateLimiter,
   createOperationsHealthRouter()
 );
@@ -263,21 +264,15 @@ app.use(
 );
 
 app.use(
-  "/api/admin/mercado-livre",
+  "/api/admin/integrations/mercado-livre",
   integrationRateLimiter,
   createMercadoLivrePlatformCredentialRouter()
 );
 
 app.use(
-  "/api/admin/99food",
+  "/api/admin/integrations/99food",
   integrationRateLimiter,
   createNinetyNineFoodPlatformCredentialRouter()
-);
-
-app.use(
-  "/api/ai/consultant",
-  consultantRateLimiter,
-  createKyrubAiConsultantRouter()
 );
 
 app.use(
@@ -286,45 +281,76 @@ app.use(
   createKyrubActionExecutionRouter()
 );
 
-app.post("/api/consultor-kyrub", consultantRateLimiter, handleKyrubAiConsultant);
+app.all(
+  "/api/consultor-kyrub",
+  consultantRateLimiter,
+  async (request, response) => {
+    await handleKyrubAiConsultant(request, response);
+  }
+);
 
-app.get("/api/drive-media", driveMediaRateLimiter, proxyPublicGoogleDriveImage);
+app.use(
+  "/api/ai/consultant",
+  consultantRateLimiter,
+  createKyrubAiConsultantRouter()
+);
 
-app.post("/api/gemini", geminiRateLimiter, async (req, res) => {
+app.post("/api/gemini/generate", geminiRateLimiter, async (req: express.Request, res: express.Response) => {
+  const { prompt } = req.body;
+
+  if (!prompt) {
+    return res.status(400).json({ error: "O campo 'prompt' é obrigatório." });
+  }
+
   if (!ai) {
-    res.status(503).json({ error: "Serviço de IA indisponível: GEMINI_API_KEY não configurada." });
-    return;
+    return res.status(503).json({
+      error: "A inteligência do Kyrub ainda não foi configurada neste ambiente.",
+      code: "AI_NOT_CONFIGURED",
+    });
   }
 
   try {
-    const prompt = typeof req.body?.prompt === "string" ? req.body.prompt.trim() : "";
-    if (!prompt) {
-      res.status(400).json({ error: "Prompt obrigatório." });
-      return;
-    }
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
+      model: process.env.GEMINI_MODEL?.trim() || "gemini-3.5-flash",
       contents: prompt,
+      config: {
+        systemInstruction: `Você é o Consultor Kyrub. Responda em português do Brasil, de forma clara e prática. Nunca diga que executou ações no aplicativo quando apenas gerou texto. Nunca invente dados do usuário.`,
+        temperature: 0.7,
+      },
     });
-    res.json({ text: response.text ?? "" });
-  } catch (error) {
-    console.error("[Kyrub Server] Gemini request failed", error);
-    res.status(500).json({ error: "Falha ao consultar IA." });
+    res.json({ text: response.text });
+  } catch (error: any) {
+    console.error("[Kyrub Server] Gemini generation error:", error);
+    res.status(500).json({ error: "Erro interno ao processar inteligência do Kyrub: " + (error.message || String(error)) });
   }
 });
 
-async function startServer() {
-  if (process.env.NODE_ENV === "production") {
-    app.use(express.static(path.resolve("dist")));
-    app.get("*", (_req, res) => {
-      res.sendFile(path.resolve("dist", "index.html"));
-    });
-  } else {
+app.get(
+  "/api/media/drive",
+  driveMediaRateLimiter,
+  async (req: express.Request, res: express.Response) =>
+    proxyPublicGoogleDriveImage(req.query.fileId, res)
+);
+
+app.get("/api/health", (_req, res) => {
+  res.json({ status: "ok", app: "Kyrub", version: "1.5.0" });
+});
+
+async function bootstrap() {
+  if (process.env.NODE_ENV !== "production") {
+    console.log("[Kyrub Server] Running in DEVELOPMENT mode. Initializing Vite middleware...");
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
     });
     app.use(vite.middlewares);
+  } else {
+    console.log("[Kyrub Server] Running in PRODUCTION mode. Serving static assets...");
+    const distPath = path.join(process.cwd(), "dist");
+    app.use(express.static(distPath));
+    app.get("*", (_req, res) => {
+      res.sendFile(path.join(distPath, "index.html"));
+    });
   }
 
   app.listen(PORT, "0.0.0.0", () => {
@@ -332,7 +358,6 @@ async function startServer() {
   });
 }
 
-startServer().catch(error => {
-  console.error("[Kyrub Server] Failed to start", error);
-  process.exit(1);
+bootstrap().catch((err) => {
+  console.error("[Kyrub Server] Critical bootstrapping failure:", err);
 });
