@@ -48,6 +48,17 @@ test('quotes 95% off R$ 29,50 as R$ 1,48 using integer-cent rounding', () => {
   assert.deepEqual(quote.eligibleProductIds, ['xburger']);
 });
 
+test('quotes fixed R$ 29,40 off R$ 29,50 as exactly R$ 0,10', () => {
+  const quote = quoteStorePromotion(
+    promotion({ discountType: 'fixed', discountValue: 29.4 }),
+    [{ productId: 'xburger', unitPrice: 29.5, quantity: 1 }]
+  );
+
+  assert.equal(quote.subtotal, 29.5);
+  assert.equal(quote.discountTotal, 29.4);
+  assert.equal(quote.total, 0.1);
+});
+
 test('discount only applies to products explicitly scoped by the promotion', () => {
   const quote = quoteStorePromotion(promotion(), [
     { productId: 'xburger', unitPrice: 29.5, quantity: 1 },
