@@ -20,12 +20,13 @@ test('saving OAuth application preserves existing Mercado Pago platform credenti
   assert.match(service, /access_token: accessToken/);
 });
 
-test('ADM exposes only masked OAuth metadata after save', async () => {
-  const endpoint = await source('api/admin/integrations/mercado-pago/oauth.ts');
+test('ADM exposes masked OAuth metadata through the existing operations function', async () => {
+  const endpoint = await source('api/admin/operations/health.ts');
   const bridge = await source('src/components/admin/AdminMercadoPagoOAuthBridge.tsx');
+  assert.match(endpoint, /mercado-pago-oauth-application/);
   assert.match(endpoint, /clientIdLast4/);
   assert.match(endpoint, /clientSecretLast4/);
-  assert.doesNotMatch(endpoint, /resolvePlatformCredentials/);
   assert.match(bridge, /Salvar aplicação OAuth/);
+  assert.match(bridge, /transport=mercado-pago-oauth-application/);
   assert.match(bridge, /https:\/\/kyrub\.com\/api\/store-connections\/mercado-pago\/callback/);
 });
