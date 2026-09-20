@@ -1,6 +1,7 @@
 import express from 'express';
 import { createLocalAttendanceRouter } from './localAttendanceRouter.js';
 import { createLocalStoreOwnedPixRouter } from './localStoreOwnedPixRouter.js';
+import { createLocalCouponQuoteRouter } from './localCouponQuoteRouter.js';
 
 type QueryValue = string | string[] | undefined;
 type HeaderValue = string | string[] | undefined;
@@ -25,6 +26,7 @@ const app = express();
 app.set('trust proxy', 1);
 app.use('/api/local-attendance', createLocalAttendanceRouter());
 app.use('/api/local-attendance', createLocalStoreOwnedPixRouter());
+app.use('/api/local-attendance', createLocalCouponQuoteRouter());
 
 const first = (value: QueryValue | HeaderValue): string =>
   (Array.isArray(value) ? value[0] : value)?.trim() ?? '';
