@@ -10,7 +10,7 @@ interface OAuthStatus {
   redirectUriConfigured: boolean;
 }
 
-const request = async <T>(user: User, init?: RequestInit): Promise<T> => {
+const request = async <T,>(user: User, init?: RequestInit): Promise<T> => {
   const token = await user.getIdToken();
   const response = await fetch('/api/admin/integrations/mercado-pago/oauth', {
     ...init,
