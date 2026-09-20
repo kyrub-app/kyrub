@@ -146,7 +146,9 @@ export const createLocalPaymentIntent = async (input: {
   storeId: string;
   orderId: string;
   idempotencyKey: string;
+  couponCode?: string;
 }): Promise<LocalPaymentIntentResult> => {
+  const couponCode = input.couponCode?.trim() ?? '';
   const result = await json<Omit<LocalPaymentIntentResult, 'provider'>>(
     await authorizedFetch('/api/local-attendance/payment-intents', {
       method: 'POST',
@@ -154,6 +156,7 @@ export const createLocalPaymentIntent = async (input: {
         storeId: input.storeId,
         orderId: input.orderId,
         idempotencyKey: input.idempotencyKey,
+        ...(couponCode ? { couponCode } : {}),
       }),
     }),
     'Não foi possível iniciar o pagamento Pix.'
