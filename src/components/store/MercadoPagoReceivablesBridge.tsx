@@ -46,7 +46,7 @@ function MercadoPagoReceivablesPanel({ user }: { user: User }) {
         <div>
           <h3 className="text-lg font-black text-white">Mercado Pago</h3>
           <p className="mt-1 max-w-2xl text-[10px] leading-relaxed text-slate-400">
-            Autorize a conta que receberá Pix das vendas diretas desta loja. O Kyrub não solicita Access Token no navegador.
+            Conecte sua própria conta Mercado Pago para receber os Pix das vendas diretas desta loja. A autorização acontece no Mercado Pago e o Kyrub não solicita Access Token no navegador.
           </p>
         </div>
         <span className={`rounded-full border px-3 py-1 font-mono text-[8px] font-black uppercase ${status?.connected ? 'border-emerald-500/25 bg-emerald-500/10 text-emerald-200' : 'border-slate-700 bg-slate-950 text-slate-400'}`}>
@@ -62,7 +62,7 @@ function MercadoPagoReceivablesPanel({ user }: { user: User }) {
 
       {status && !status.platformConfigured && (
         <div className="mt-4 rounded-2xl border border-amber-500/25 bg-amber-500/[0.07] p-3 text-[10px] leading-relaxed text-amber-100">
-          A aplicação Mercado Pago do Kyrub ainda precisa de Client ID, Client Secret e Redirect URI no backend antes de autorizar lojistas.
+          A conexão com o Mercado Pago está temporariamente indisponível. Tente novamente mais tarde.
         </div>
       )}
 
@@ -76,7 +76,7 @@ function MercadoPagoReceivablesPanel({ user }: { user: User }) {
             onClick={() => void beginMercadoPagoStoreConnection(user).catch(error => setMessage(error instanceof Error ? error.message : 'Falha ao abrir autorização.'))}
             className="min-h-11 rounded-xl bg-sky-400 px-4 text-[10px] font-black uppercase text-slate-950 disabled:cursor-not-allowed disabled:opacity-40"
           >
-            Conectar Mercado Pago
+            Conectar minha conta Mercado Pago
           </button>
         ) : (
           <>
