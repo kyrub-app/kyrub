@@ -40,7 +40,7 @@ const MENU_ITEMS: readonly MenuItem[] = [
   { id: 'crm', label: 'CRM', icon: UserCheck, section: 'gestao' },
   { id: 'marketing', label: 'Marketing', icon: Zap, section: 'gestao' },
   { id: 'integracoes', label: 'Integrações & Sandbox', icon: Settings, section: 'gestao' },
-  { id: 'vouchers', label: 'Cupons & Vouchers', icon: Percent, section: 'gestao' },
+  { id: 'vouchers', label: 'Promocionais', icon: Percent, section: 'gestao' },
   { id: 'clientes', label: 'PDV', icon: Users, section: 'operacao' },
   { id: 'caixa', label: 'Caixa', icon: DollarSign, section: 'operacao' },
   { id: 'pedidos', label: 'Pedidos', icon: ClipboardList, section: 'operacao' },
@@ -88,7 +88,6 @@ export function MobileErpMenu({
   const openMenu = (): void => {
     const dialog = dialogRef.current;
     if (!dialog || dialog.open) return;
-
     dialog.showModal();
     setIsOpen(true);
   };
@@ -101,7 +100,6 @@ export function MobileErpMenu({
 
   const handleSelect = (itemId: MobileErpMenuItemId): void => {
     const dialog = dialogRef.current;
-
     if (dialog?.open) dialog.close();
     setIsOpen(false);
 
@@ -118,9 +116,7 @@ export function MobileErpMenu({
     });
   };
 
-  const handleDialogClose = (): void => {
-    setIsOpen(false);
-  };
+  const handleDialogClose = (): void => setIsOpen(false);
 
   const handleDialogClick = (event: MouseEvent<HTMLDialogElement>): void => {
     if (event.target === event.currentTarget) closeMenu();
@@ -148,9 +144,7 @@ export function MobileErpMenu({
           }`}
         >
           <Icon className="h-5 w-5 shrink-0" />
-          <span className="text-sm font-black uppercase tracking-wide">
-            {item.label}
-          </span>
+          <span className="text-sm font-black uppercase tracking-wide">{item.label}</span>
         </button>
       );
     });
@@ -200,9 +194,7 @@ export function MobileErpMenu({
               className="absolute inset-y-0 right-0 flex w-[82vw] max-w-sm flex-col border-l border-slate-800 bg-slate-900 shadow-2xl"
             >
               <div className="flex h-[53px] shrink-0 items-center justify-between border-b border-slate-800 px-5">
-                <span className="text-[11px] font-black uppercase tracking-[0.18em] text-orange-400">
-                  Painel da loja
-                </span>
+                <span className="text-[11px] font-black uppercase tracking-[0.18em] text-orange-400">Painel da loja</span>
                 <button
                   type="button"
                   onClick={closeMenu}
@@ -222,16 +214,12 @@ export function MobileErpMenu({
                 }}
               >
                 <div className="space-y-2">
-                  <p className="px-1 pb-1 font-mono text-[9px] font-black uppercase tracking-[0.16em] text-slate-500">
-                    Gestão
-                  </p>
+                  <p className="px-1 pb-1 font-mono text-[9px] font-black uppercase tracking-[0.16em] text-slate-500">Gestão</p>
                   {renderItems('gestao')}
                 </div>
 
                 <div className="mt-5 space-y-2 border-t border-slate-800 pt-4">
-                  <p className="px-1 pb-1 font-mono text-[9px] font-black uppercase tracking-[0.16em] text-slate-500">
-                    Operação
-                  </p>
+                  <p className="px-1 pb-1 font-mono text-[9px] font-black uppercase tracking-[0.16em] text-slate-500">Operação</p>
                   {renderItems('operacao')}
                 </div>
               </nav>
