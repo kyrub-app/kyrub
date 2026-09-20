@@ -1,8 +1,8 @@
 import type { ExistingOrderCanonicalPaymentIntent } from '../../src/utils/canonicalPaymentIntent.js';
 import {
-  createMercadoPagoPixPayment,
-  getMercadoPagoPixCheckout,
-} from './mercadoPagoPixProvider.js';
+  createStoreScopedMercadoPagoLocalPix,
+  getStoreScopedMercadoPagoPixCheckout,
+} from './mercadoPagoStoreScopedProvider.js';
 
 export type PaymentProviderId = 'mercado-pago';
 
@@ -30,8 +30,8 @@ export interface PaymentProviderAdapter {
 
 const mercadoPagoAdapter: PaymentProviderAdapter = {
   id: 'mercado-pago',
-  createLocalPixPayment: createMercadoPagoPixPayment,
-  getPixCheckout: getMercadoPagoPixCheckout,
+  createLocalPixPayment: createStoreScopedMercadoPagoLocalPix,
+  getPixCheckout: getStoreScopedMercadoPagoPixCheckout,
 };
 
 const adapters: Readonly<Record<PaymentProviderId, PaymentProviderAdapter>> = {
