@@ -7,6 +7,7 @@ import {
   LoaderCircle,
   QrCode,
   ShieldCheck,
+  TicketPercent,
 } from 'lucide-react';
 import type { LocalOrderFinancialContext } from '../../../shared/localOrderFinancialContext';
 import type { CustomerOrder } from '../../utils/customerOrders';
@@ -67,6 +68,7 @@ interface PixUiState {
   copied: boolean;
   boundProvider: '' | LocalPixProvider;
   confirmedCredit: boolean;
+  couponCode: string;
 }
 
 const emptyPixState = (): PixUiState => ({
@@ -76,6 +78,7 @@ const emptyPixState = (): PixUiState => ({
   copied: false,
   boundProvider: '',
   confirmedCredit: false,
+  couponCode: '',
 });
 
 export function ServiceLocationFinancialContextPanel({
@@ -135,6 +138,7 @@ export function ServiceLocationFinancialContextPanel({
               copied: false,
               boundProvider: '',
               confirmedCredit: false,
+              couponCode: '',
             };
           }
         }
@@ -170,12 +174,16 @@ export function ServiceLocationFinancialContextPanel({
     provider: LocalPixProvider
   ): Promise<void> => {
     if (!canOperatePix(context)) return;
+    const couponCode = (pixByOrder[order.id]?.couponCode ?? '').trim();
     patchPix(order.id, { loading: true, error: '', copied: false, confirmedCredit: false });
     try {
       let pending = await loadPendingLocalPayment({
         storeId,
         orderId: order.id,
       });
+      if (pending && couponCode) {
+        throw new Error('Já existe uma cobrança pendente para este pedido. O cupom só pode ser definido ao criar uma nova tentativa de pagamento.');
+      }
       if (pending?.provider && pending.provider !== provider) {
         patchPix(order.id, { boundProvider: pending.provider });
         throw new Error(`Esta tentativa já está vinculada a ${providerLabel(pending.provider)}. Retome pelo mesmo modo ou inicie outra tentativa após o encerramento desta.`);
@@ -185,6 +193,7 @@ export function ServiceLocationFinancialContextPanel({
           storeId,
           orderId: order.id,
           idempotencyKey: newLocalPaymentAttemptKey(order.id),
+          ...(couponCode ? { couponCode } : {}),
         });
       }
       const checkout = provider === 'mercado-pago'
@@ -217,7 +226,7 @@ export function ServiceLocationFinancialContextPanel({
       });
       await refresh(true);
     }
-  }, [patchPix, refresh, storeId]);
+  }, [patchPix, pixByOrder, refresh, storeId]);
 
   const confirmStorePix = useCallback(async (
     orderId: string,
@@ -239,6 +248,7 @@ export function ServiceLocationFinancialContextPanel({
         copied: false,
         confirmedCredit: false,
         boundProvider: '',
+        couponCode: '',
       });
       await refresh(true);
     } catch (caught) {
@@ -319,6 +329,7 @@ export function ServiceLocationFinancialContextPanel({
             : '';
           const mercadoPagoAvailable = options?.mercadoPagoConnected === true;
           const storePixAvailable = options?.storePixEnabled === true;
+          const hasPendingPayment = (context?.canonicalProjection.pendingPaymentCount ?? 0) > 0;
           return (
             <article
               key={order.id}
@@ -360,6 +371,38 @@ export function ServiceLocationFinancialContextPanel({
 
               {context && canOperatePix(context) && (
                 <div className="mt-3 border-t border-white/5 pt-3">
+                  <div className="mb-3 rounded-lg border border-violet-400/15 bg-violet-500/[0.05] p-2.5">
+                    <label htmlFor={`coupon-${order.id}`} className="flex items-center gap-1.5 text-[8px] font-bold text-violet-100">
+                      <TicketPercent className="h-3.5 w-3.5" />
+                      Cupom de desconto
+                    </label>
+                    <div className="mt-1.5 flex items-center gap-2">
+                      <input
+                        id={`coupon-${order.id}`}
+                        type="text"
+                        value={pix.couponCode}
+                        maxLength={48}
+                        autoComplete="off"
+                        spellCheck={false}
+                        disabled={pix.loading || Boolean(visibleCheckout) || hasPendingPayment}
+                        onChange={event => patchPix(order.id, {
+                          couponCode: event.target.value,
+                          error: '',
+                        })}
+                        placeholder="Digite o código apresentado pelo cliente"
+                        className="min-h-9 w-full rounded-lg border border-white/10 bg-black/30 px-2.5 text-[8px] font-semibold uppercase text-white outline-none placeholder:normal-case placeholder:text-slate-600 focus:border-violet-400/40 disabled:cursor-not-allowed disabled:opacity-50"
+                      />
+                    </div>
+                    <p className="mt-1.5 text-[7px] leading-relaxed text-violet-100/50">
+                      Opcional. O desconto é validado e calculado no servidor quando uma nova cobrança é criada; o Staff não informa o valor final.
+                    </p>
+                    {hasPendingPayment && !visibleCheckout && (
+                      <p className="mt-1 text-[7px] font-semibold text-amber-200/75">
+                        Já existe uma tentativa pendente. Para preservar o valor congelado, não é possível adicionar ou trocar cupom nessa tentativa.
+                      </p>
+                    )}
+                  </div>
+
                   <div className="flex flex-wrap gap-2">
                     {mercadoPagoAvailable && (
                       <button
@@ -497,7 +540,7 @@ export function ServiceLocationFinancialContextPanel({
       </div>
 
       <p className="mt-3 text-[8px] leading-relaxed text-slate-600">
-        O valor da cobrança é calculado no servidor pela base cobrável das linhas. A interface envia apenas IDs opacos e nunca informa valor, e-mail do pagador, `paymentStatus` ou `paidQuantity`.
+        O valor da cobrança é calculado no servidor pela base cobrável das linhas. A interface envia apenas IDs opacos e, opcionalmente, o código do cupom; nunca informa valor, e-mail do pagador, `paymentStatus` ou `paidQuantity`.
       </p>
     </section>
   );
