@@ -46,9 +46,7 @@ const allocationFromIntent = (
     intent.buyerId !== payment.buyerId ||
     intent.orderDraft.draftId !== payment.orderId ||
     Number(intent.amount.toFixed(2)) !== Number(payment.amount.toFixed(2))
-  ) {
-    throw new Error('STORE_ECONOMIC_LEDGER_INTENT_MISMATCH');
-  }
+  ) throw new Error('STORE_ECONOMIC_LEDGER_INTENT_MISMATCH');
   return buildMarketplaceEconomicAllocationSnapshot({
     subtotal: intent.orderDraft.subtotal,
     discountTotal: intent.orderDraft.discountTotal ?? 0,
@@ -65,11 +63,8 @@ const resolvePaymentIntent = async (input: {
 }): Promise<CanonicalPaymentIntent | null> => {
   if (input.payment.context !== 'marketplace') return null;
   if (input.paymentIntent) return input.paymentIntent;
-
   const snapshot = await input.transaction.get(
-    adminDb.doc(
-      `stores/${input.payment.storeId}/paymentIntents/${input.event.paymentIntentId}`
-    )
+    adminDb.doc(`stores/${input.payment.storeId}/paymentIntents/${input.event.paymentIntentId}`)
   );
   if (!snapshot.exists) throw new Error('STORE_ECONOMIC_LEDGER_INTENT_NOT_FOUND');
   return normalizeCanonicalPaymentIntent(snapshot.data() as CanonicalPaymentIntent);
@@ -86,6 +81,10 @@ const parseEntry = (
     entry.kind === 'payment_refund' ||
     entry.kind === 'payment_chargeback' ||
     entry.kind === 'payment_chargeback_reversal';
+  const validAuthority =
+    entry.sourceAuthority === 'provider_webhook' ||
+    entry.sourceAuthority === 'canonical_payment_snapshot' ||
+    entry.sourceAuthority === 'operator_attestation';
   if (
     entry.schemaVersion !== STORE_ECONOMIC_LEDGER_SCHEMA_VERSION ||
     entry.id !== expectedEntryId ||
@@ -101,21 +100,17 @@ const parseEntry = (
     !clean(entry.provider) ||
     !clean(entry.providerPaymentId) ||
     typeof entry.providerEventId !== 'string' ||
-    (entry.sourceAuthority !== 'provider_webhook' &&
-      entry.sourceAuthority !== 'canonical_payment_snapshot') ||
+    !validAuthority ||
     typeof entry.reversalOfEntryId !== 'string' ||
     !clean(entry.occurredAt) ||
     !Number.isFinite(Date.parse(entry.occurredAt))
   ) throw new Error('STORE_ECONOMIC_LEDGER_ENTRY_INVALID');
-
-  if (
-    (entry.kind === 'payment_capture' || entry.kind === 'payment_chargeback_reversal') &&
-    entry.amountMinor <= 0
-  ) throw new Error('STORE_ECONOMIC_LEDGER_POSITIVE_ENTRY_INVALID');
-  if (
-    (entry.kind === 'payment_refund' || entry.kind === 'payment_chargeback') &&
-    entry.amountMinor >= 0
-  ) throw new Error('STORE_ECONOMIC_LEDGER_NEGATIVE_ENTRY_INVALID');
+  if ((entry.kind === 'payment_capture' || entry.kind === 'payment_chargeback_reversal') && entry.amountMinor <= 0) {
+    throw new Error('STORE_ECONOMIC_LEDGER_POSITIVE_ENTRY_INVALID');
+  }
+  if ((entry.kind === 'payment_refund' || entry.kind === 'payment_chargeback') && entry.amountMinor >= 0) {
+    throw new Error('STORE_ECONOMIC_LEDGER_NEGATIVE_ENTRY_INVALID');
+  }
   return entry as StoreEconomicLedgerEntry;
 };
 
@@ -126,7 +121,8 @@ const assertEntryEquivalent = (
   const immutableKeys: Array<keyof StoreEconomicLedgerEntry> = [
     'id', 'storeId', 'kind', 'currency', 'amountMinor', 'paymentId',
     'paymentIntentId', 'orderId', 'buyerId', 'paymentContext', 'paymentMethod',
-    'provider', 'providerPaymentId', 'reversalOfEntryId', 'occurredAt',
+    'provider', 'providerPaymentId', 'providerEventId', 'sourceAuthority',
+    'reversalOfEntryId', 'occurredAt',
   ];
   for (const key of immutableKeys) {
     if (existing[key] !== expected[key]) {
@@ -148,19 +144,13 @@ export const prepareStoreEconomicLedgerPaymentPlan = async (input: {
   event: VerifiedPaymentProviderEvent;
   paymentIntent?: CanonicalPaymentIntent | null;
 }): Promise<StoreEconomicLedgerPaymentPlan | null> => {
-  const relevant = [
-    'payment.paid',
-    'refund.succeeded',
-    'chargeback.debited',
-    'chargeback.reversed',
-  ].includes(input.event.eventType);
+  const relevant = ['payment.paid', 'refund.succeeded', 'chargeback.debited', 'chargeback.reversed']
+    .includes(input.event.eventType);
   if (!relevant) return null;
-
   const storeId = clean(input.payment.storeId);
   if (!storeId) throw new Error('STORE_ECONOMIC_LEDGER_STORE_REQUIRED');
   const paymentIntent = await resolvePaymentIntent(input);
   const economicAllocation = allocationFromIntent(input.payment, paymentIntent);
-
   const captureId = buildPaymentCaptureEconomicEntryId(input.payment.id);
   const captureRef = refFor(storeId, captureId);
 
@@ -198,34 +188,20 @@ export const prepareStoreEconomicLedgerPaymentPlan = async (input: {
   const chargebackId = buildPaymentChargebackEconomicEntryId(input.payment.id);
   const chargebackRef = refFor(storeId, chargebackId);
   const chargebackSnapshot = await input.transaction.get(chargebackRef);
-
   if (input.event.eventType === 'chargeback.debited') {
     const entry = buildPaymentChargebackEconomicEntry({ payment: input.payment, event: input.event, capture });
-    if (chargebackSnapshot.exists) {
-      assertEntryEquivalent(parseEntry(chargebackSnapshot.data(), storeId, chargebackId), entry);
-    } else {
-      writes.push({ ref: chargebackRef, entry });
-    }
+    if (chargebackSnapshot.exists) assertEntryEquivalent(parseEntry(chargebackSnapshot.data(), storeId, chargebackId), entry);
+    else writes.push({ ref: chargebackRef, entry });
     return { writes };
   }
-
-  if (!chargebackSnapshot.exists) {
-    throw new Error('STORE_ECONOMIC_LEDGER_CHARGEBACK_NOT_FOUND');
-  }
+  if (!chargebackSnapshot.exists) throw new Error('STORE_ECONOMIC_LEDGER_CHARGEBACK_NOT_FOUND');
   const chargeback = parseEntry(chargebackSnapshot.data(), storeId, chargebackId);
   const reversalId = buildPaymentChargebackReversalEconomicEntryId(input.payment.id);
   const reversalRef = refFor(storeId, reversalId);
   const reversalSnapshot = await input.transaction.get(reversalRef);
-  const reversal = buildPaymentChargebackReversalEconomicEntry({
-    payment: input.payment,
-    event: input.event,
-    chargeback,
-  });
-  if (reversalSnapshot.exists) {
-    assertEntryEquivalent(parseEntry(reversalSnapshot.data(), storeId, reversalId), reversal);
-  } else {
-    writes.push({ ref: reversalRef, entry: reversal });
-  }
+  const reversal = buildPaymentChargebackReversalEconomicEntry({ payment: input.payment, event: input.event, chargeback });
+  if (reversalSnapshot.exists) assertEntryEquivalent(parseEntry(reversalSnapshot.data(), storeId, reversalId), reversal);
+  else writes.push({ ref: reversalRef, entry: reversal });
   return { writes };
 };
 
@@ -244,12 +220,7 @@ export const listStoreEconomicLedgerEntries = async (input: {
   const storeId = clean(input.storeId);
   if (!storeId) throw new Error('STORE_ECONOMIC_LEDGER_STORE_REQUIRED');
   const limit = Math.max(1, Math.min(100, input.limit ?? 100));
-  const snapshot = await adminDb
-    .collection(`stores/${storeId}/economicLedger`)
-    .orderBy('occurredAt', 'desc')
-    .limit(limit)
-    .get();
-  return snapshot.docs.map(document =>
-    parseEntry(document.data(), storeId, decodeURIComponent(document.id))
-  );
+  const snapshot = await adminDb.collection(`stores/${storeId}/economicLedger`)
+    .orderBy('occurredAt', 'desc').limit(limit).get();
+  return snapshot.docs.map(document => parseEntry(document.data(), storeId, decodeURIComponent(document.id)));
 };
