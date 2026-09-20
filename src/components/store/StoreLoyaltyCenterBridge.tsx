@@ -17,6 +17,7 @@ import {
   subscribeToPreferredPublicProducts,
   type PublicProduct,
 } from '../../utils/publicProducts';
+import { StorePromotionsManager } from '../StorePromotionsManager';
 import { StoreChallengeManager } from './StoreChallengeManager';
 import { StoreRewardManager } from './StoreRewardManager';
 
@@ -37,10 +38,20 @@ const parseDraftPoints = (value: string): number | null => {
 };
 
 const findLegacyModuleHeading = (): HTMLElement | null =>
-  Array.from(document.querySelectorAll<HTMLElement>('h3,h4,strong')).find(element => {
+  Array.from(document.querySelectorAll<HTMLElement>('#erp-gerencial-tab h3,#erp-gerencial-tab h4,#erp-gerencial-tab strong')).find(element => {
     const text = normalizeText(element.textContent);
     return text === 'CUPONS & VOUCHERS' || text === 'FIDELIDADE & PROMOÇÕES';
   }) ?? null;
+
+const findLegacyVoucherSurface = (): HTMLElement | null => {
+  const management = document.getElementById('erp-gerencial-tab');
+  if (!(management instanceof HTMLElement)) return null;
+  const heading = Array.from(management.querySelectorAll<HTMLElement>('h4')).find(
+    element => normalizeText(element.textContent) === 'CRIAR NOVO CUPOM'
+  );
+  const grid = heading?.closest('.grid');
+  return grid instanceof HTMLElement ? grid : null;
+};
 
 const updateLegacyModuleLabel = (): void => {
   const heading = findLegacyModuleHeading();
@@ -63,6 +74,8 @@ export function StoreLoyaltyCenterBridge() {
   const [message, setMessage] = useState('');
   const [success, setSuccess] = useState(false);
   const createdHostRef = useRef<HTMLDivElement | null>(null);
+  const hiddenLegacySurfaceRef = useRef<HTMLElement | null>(null);
+  const previousLegacyDisplayRef = useRef('');
 
   useEffect(() => onAuthStateChanged(auth, setUser), []);
 
@@ -97,6 +110,11 @@ export function StoreLoyaltyCenterBridge() {
     let cancelled = false;
 
     const teardown = (): void => {
+      if (hiddenLegacySurfaceRef.current?.isConnected) {
+        hiddenLegacySurfaceRef.current.style.display = previousLegacyDisplayRef.current;
+      }
+      hiddenLegacySurfaceRef.current = null;
+      previousLegacyDisplayRef.current = '';
       createdHostRef.current?.remove();
       createdHostRef.current = null;
       setHost(null);
@@ -106,21 +124,28 @@ export function StoreLoyaltyCenterBridge() {
       if (cancelled) return;
       updateLegacyModuleLabel();
 
-      const promotionHost = document.getElementById(
-        'kyrub-manual-store-promotion-host'
-      );
-      const parent = promotionHost?.parentElement;
-      if (!(promotionHost instanceof HTMLElement) || !(parent instanceof HTMLElement)) {
+      if (createdHostRef.current && !createdHostRef.current.isConnected) {
+        teardown();
+      }
+
+      const legacySurface = findLegacyVoucherSurface();
+      if (!(legacySurface instanceof HTMLElement) || !legacySurface.parentElement) {
         if (createdHostRef.current) teardown();
         return;
       }
 
-      if (!createdHostRef.current?.isConnected) {
+      if (!createdHostRef.current) {
+        hiddenLegacySurfaceRef.current = legacySurface;
+        previousLegacyDisplayRef.current = legacySurface.style.display;
+        legacySurface.style.display = 'none';
+
         const nextHost = document.createElement('div');
         nextHost.id = 'kyrub-store-loyalty-center-host';
-        parent.insertBefore(nextHost, promotionHost);
+        nextHost.dataset.kyrubLoyaltyAuthority = 'canonical';
+        legacySurface.parentElement.insertBefore(nextHost, legacySurface);
         createdHostRef.current = nextHost;
         setHost(nextHost);
+        setActiveTab('coupons');
       }
     };
 
@@ -131,21 +156,9 @@ export function StoreLoyaltyCenterBridge() {
     return () => {
       cancelled = true;
       observer.disconnect();
-      const promotionHost = document.getElementById(
-        'kyrub-manual-store-promotion-host'
-      );
-      if (promotionHost instanceof HTMLElement) promotionHost.style.display = '';
       teardown();
     };
   }, []);
-
-  useEffect(() => {
-    const promotionHost = document.getElementById(
-      'kyrub-manual-store-promotion-host'
-    );
-    if (!(promotionHost instanceof HTMLElement)) return;
-    promotionHost.style.display = activeTab === 'coupons' ? '' : 'none';
-  }, [activeTab, host]);
 
   const configuredCount = useMemo(
     () => products.filter(product => (product.storePointsPerUnit ?? 0) > 0).length,
@@ -183,7 +196,7 @@ export function StoreLoyaltyCenterBridge() {
     }
   };
 
-  if (!host) return null;
+  if (!user || !host) return null;
 
   const tabs: Array<{
     id: LoyaltyTab;
@@ -238,6 +251,17 @@ export function StoreLoyaltyCenterBridge() {
           })}
         </nav>
       </section>
+
+      {activeTab === 'coupons' && (
+        <StorePromotionsManager
+          storeId={user.uid}
+          products={products}
+          triggerToast={(nextMessage, type = 'info') => {
+            setSuccess(type === 'success');
+            setMessage(nextMessage);
+          }}
+        />
+      )}
 
       {activeTab === 'points' && (
         <section className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
