@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import type React from 'react';
+import { createPortal } from 'react-dom';
 import { QrCode, X } from 'lucide-react';
 import { TableServiceWorkspace as LegacyTableServiceWorkspace } from './LegacyTableServiceWorkspace';
 import { ServiceLocationFinancialContextPanel } from '../store/ServiceLocationFinancialContextPanel';
@@ -14,6 +15,7 @@ const PIX_LABEL = getTablePaymentMethodLabel('pix').toLocaleLowerCase('pt-BR');
 
 export const TableServiceWorkspace = (props: TableServiceWorkspaceProps) => {
   const [pixCheckoutOpen, setPixCheckoutOpen] = useState(false);
+  const [accountCheckoutHost, setAccountCheckoutHost] = useState<HTMLElement | null>(null);
 
   useEffect(() => {
     setPixCheckoutOpen(false);
@@ -23,6 +25,43 @@ export const TableServiceWorkspace = (props: TableServiceWorkspaceProps) => {
     () => getActiveTableOrders(props.orders, props.tableCode),
     [props.orders, props.tableCode]
   );
+
+  useEffect(() => {
+    let disposed = false;
+    let host: HTMLDivElement | null = null;
+
+    const install = (): void => {
+      if (disposed) return;
+      const accountView = document.getElementById('staff-pdv-account-view');
+      if (!(accountView instanceof HTMLElement)) {
+        if (host) {
+          host.remove();
+          host = null;
+          setAccountCheckoutHost(null);
+        }
+        return;
+      }
+      if (host?.isConnected) return;
+
+      host = document.createElement('div');
+      host.id = 'staff-table-canonical-coupon-checkout-host';
+      host.className = 'mx-auto mb-5 w-full max-w-5xl';
+      const content = accountView.firstElementChild;
+      if (content) accountView.insertBefore(host, content);
+      else accountView.appendChild(host);
+      setAccountCheckoutHost(host);
+    };
+
+    install();
+    const observer = new MutationObserver(install);
+    observer.observe(document.body, { childList: true, subtree: true });
+    return () => {
+      disposed = true;
+      observer.disconnect();
+      host?.remove();
+      setAccountCheckoutHost(null);
+    };
+  }, [props.storeId, props.tableCode]);
 
   const interceptLegacyPix = (event: React.MouseEvent<HTMLDivElement>): void => {
     const target = event.target;
@@ -37,11 +76,40 @@ export const TableServiceWorkspace = (props: TableServiceWorkspaceProps) => {
     setPixCheckoutOpen(true);
   };
 
+  const canonicalCheckout = activeOrders.length > 0 ? (
+    <ServiceLocationFinancialContextPanel
+      storeId={props.storeId}
+      orders={activeOrders}
+    />
+  ) : (
+    <div className="rounded-2xl border border-dashed border-slate-800 bg-slate-950/60 px-4 py-8 text-center text-[10px] text-slate-500">
+      Não há pedido ativo com saldo aberto nesta mesa para aplicar cupom ou gerar Pix.
+    </div>
+  );
+
   return (
     <>
       <div onClickCapture={interceptLegacyPix}>
         <LegacyTableServiceWorkspace {...props} />
       </div>
+
+      {accountCheckoutHost && createPortal(
+        <section className="rounded-3xl border border-indigo-500/20 bg-indigo-500/[0.04] p-4 sm:p-5" id="staff-table-canonical-coupon-checkout">
+          <div className="mb-4">
+            <span className="font-mono text-[9px] font-black uppercase tracking-[0.18em] text-indigo-300">
+              Checkout canônico · Mesa {props.tableCode}
+            </span>
+            <h3 className="mt-1 text-sm font-black text-white">
+              Cupom, valor final e cobrança Pix
+            </h3>
+            <p className="mt-1 text-[10px] leading-relaxed text-slate-400">
+              Aplique o cupom antes de confirmar a cobrança. O servidor recalcula o desconto e o Pix usa o valor final autorizado; gerar o QR Code não baixa a mesa como paga.
+            </p>
+          </div>
+          {canonicalCheckout}
+        </section>,
+        accountCheckoutHost
+      )}
 
       {pixCheckoutOpen && (
         <div className="fixed inset-0 z-[150] flex items-end justify-center bg-slate-950/90 backdrop-blur-sm sm:items-center sm:p-5">
@@ -83,16 +151,7 @@ export const TableServiceWorkspace = (props: TableServiceWorkspaceProps) => {
               A cobrança permanece pendente até a autoridade correspondente ao modo escolhido: webhook verificado no Mercado Pago ou confirmação manual auditada no Pix próprio. Se houver mais de um pedido ativo na mesa, cada pedido aparece separadamente para não somar valores no navegador nem criar uma segunda autoridade financeira.
             </div>
 
-            {activeOrders.length > 0 ? (
-              <ServiceLocationFinancialContextPanel
-                storeId={props.storeId}
-                orders={activeOrders}
-              />
-            ) : (
-              <div className="mt-5 rounded-2xl border border-dashed border-slate-800 bg-slate-950/60 px-4 py-8 text-center text-[10px] text-slate-500">
-                Não há pedido ativo com saldo aberto nesta mesa para gerar Pix.
-              </div>
-            )}
+            <div className="mt-5">{canonicalCheckout}</div>
           </section>
         </div>
       )}
