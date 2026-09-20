@@ -3,6 +3,7 @@ import {
   isMercadoPagoWebhookRuntimeConfigured,
   verifiedMercadoPagoPaymentEvent,
 } from './mercadoPagoPixProvider.js';
+import { verifiedStoreScopedMercadoPagoPaymentEvent } from './mercadoPagoStoreScopedProvider.js';
 import {
   attachPreparedCustomerDestinationResolutionToOperationalOrder,
   prepareCustomerDestinationResolutionForPaymentIntent,
@@ -32,7 +33,15 @@ export const processMercadoPagoWebhook = async (input: {
   const dataId = input.dataId.trim();
   if (!dataId) throw new Error('MERCADO_PAGO_WEBHOOK_DATA_ID_REQUIRED');
 
-  const event = await verifiedMercadoPagoPaymentEvent({
+  // New local/direct payments are resolved from a server-owned provider binding
+  // before the Mercado Pago payment is fetched. This prevents webhook metadata
+  // from selecting another merchant credential. Payments created before this
+  // cutover continue through the legacy platform credential path.
+  const storeScopedEvent = await verifiedStoreScopedMercadoPagoPaymentEvent({
+    headers: input.headers,
+    dataId,
+  });
+  const event = storeScopedEvent ?? await verifiedMercadoPagoPaymentEvent({
     headers: input.headers,
     dataId,
   });
@@ -59,9 +68,7 @@ export const processMercadoPagoWebhook = async (input: {
     event,
   });
 
-  await attachPreparedCustomerDestinationResolutionToOperationalOrder(
-    preparedDestination
-  );
+  await attachPreparedCustomerDestinationResolutionToOperationalOrder(preparedDestination);
 
   return {
     accepted: true,
