@@ -40,7 +40,9 @@ const parseDraftPoints = (value: string): number | null => {
 const findLegacyModuleHeading = (): HTMLElement | null =>
   Array.from(document.querySelectorAll<HTMLElement>('#erp-gerencial-tab h3,#erp-gerencial-tab h4,#erp-gerencial-tab strong')).find(element => {
     const text = normalizeText(element.textContent);
-    return text === 'CUPONS & VOUCHERS' || text === 'FIDELIDADE & PROMOÇÕES';
+    return text === 'CUPONS & VOUCHERS'
+      || text === 'FIDELIDADE & PROMOÇÕES'
+      || text === 'PROMOCIONAIS';
   }) ?? null;
 
 const findLegacyVoucherSurface = (): HTMLElement | null => {
@@ -56,11 +58,10 @@ const findLegacyVoucherSurface = (): HTMLElement | null => {
 const updateLegacyModuleLabel = (): void => {
   const heading = findLegacyModuleHeading();
   if (!heading) return;
-  heading.textContent = 'FIDELIDADE & PROMOÇÕES';
+  heading.textContent = 'PROMOCIONAIS';
   const description = heading.parentElement?.querySelector('p');
   if (description) {
-    description.textContent =
-      'Cupons, Pontos da Loja, desafios e recompensas em uma única central.';
+    description.textContent = 'Cupons, pontos, desafios e recompensas em uma única central.';
   }
 };
 
@@ -215,7 +216,7 @@ export function StoreLoyaltyCenterBridge() {
         <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <span className="font-mono text-[9px] font-black uppercase tracking-[0.16em] text-amber-400">
-              Fidelidade & Promoções
+              Promocionais
             </span>
             <h3 className="mt-1 text-base font-black text-white">Benefícios da sua loja</h3>
           </div>
@@ -226,7 +227,7 @@ export function StoreLoyaltyCenterBridge() {
           )}
         </div>
 
-        <nav className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4" aria-label="Áreas de fidelidade e promoções">
+        <nav className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4" aria-label="Áreas promocionais">
           {tabs.map(tab => {
             const Icon = tab.icon;
             const active = activeTab === tab.id;
