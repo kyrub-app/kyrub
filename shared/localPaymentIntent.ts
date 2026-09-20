@@ -5,9 +5,10 @@ export interface LocalPaymentIntentCreateInput {
   storeId: string;
   orderId: string;
   idempotencyKey: string;
+  couponCode?: string;
 }
 
-const ALLOWED_FIELDS = new Set(['storeId', 'orderId', 'idempotencyKey']);
+const ALLOWED_FIELDS = new Set(['storeId', 'orderId', 'idempotencyKey', 'couponCode']);
 
 const clean = (value: unknown): string =>
   typeof value === 'string' ? value.trim() : '';
@@ -31,6 +32,7 @@ export const parseLocalPaymentIntentCreateInput = (
   const storeId = clean(candidate.storeId);
   const orderId = clean(candidate.orderId);
   const idempotencyKey = clean(candidate.idempotencyKey);
+  const couponCode = clean(candidate.couponCode);
   if (!validId(storeId, 180) || !validId(orderId, LOCAL_PAYMENT_INTENT_MAX_ID_LENGTH)) {
     throw new Error('LOCAL_PAYMENT_INTENT_SCOPE_REQUIRED');
   }
@@ -40,5 +42,13 @@ export const parseLocalPaymentIntentCreateInput = (
   ) {
     throw new Error('LOCAL_PAYMENT_INTENT_IDEMPOTENCY_INVALID');
   }
-  return { storeId, orderId, idempotencyKey };
+  if (couponCode.length > 48) {
+    throw new Error('LOCAL_PAYMENT_INTENT_COUPON_INVALID');
+  }
+  return {
+    storeId,
+    orderId,
+    idempotencyKey,
+    ...(couponCode ? { couponCode } : {}),
+  };
 };
