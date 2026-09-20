@@ -12,7 +12,7 @@ interface OAuthStatus {
 
 const request = async <T,>(user: User, init?: RequestInit): Promise<T> => {
   const token = await user.getIdToken();
-  const response = await fetch('/api/admin/integrations/mercado-pago/oauth', {
+  const response = await fetch('/api/admin/operations/health?transport=mercado-pago-oauth-application', {
     ...init,
     headers: {
       authorization: `Bearer ${token}`,
