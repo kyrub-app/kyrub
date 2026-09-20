@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { FieldValue } from 'firebase-admin/firestore';
 import { publicIntegrationCredentialView } from '../../shared/integrationCredentials.js';
+import { assertMercadoPagoPlatformOAuthInput } from '../../shared/mercadoPagoPlatformOAuth.js';
 import { adminDb } from '../firebaseAdmin.js';
 import {
   loadPlatformCredentialMetadata,
@@ -29,6 +30,16 @@ const audit = async (input: { actorId: string; action: string; result: string; t
   });
 };
 
+const existingMercadoPagoCredentials = async (): Promise<Record<string, string>> => {
+  const current = await resolvePlatformCredentials('mercado_pago', 'production');
+  return Object.fromEntries(
+    Object.entries(current ?? {}).flatMap(([key, value]) => {
+      const normalized = clean(value);
+      return normalized ? [[key, normalized]] : [];
+    })
+  );
+};
+
 export const saveAuthorizedMercadoPagoCredentials = async (input: {
   authorization: string;
   accessToken: unknown;
@@ -39,12 +50,49 @@ export const saveAuthorizedMercadoPagoCredentials = async (input: {
   const webhookSecret = clean(input.webhookSecret);
   if (!accessToken) throw new Error('MERCADO_PAGO_ACCESS_TOKEN_REQUIRED');
   if (accessToken.length > 4096 || webhookSecret.length > 4096) throw new Error('MERCADO_PAGO_CREDENTIAL_TOO_LARGE');
+  const existing = await existingMercadoPagoCredentials();
   const record = await savePlatformCredentials({
     providerId: 'mercado_pago',
     environment: 'production',
-    credentials: { access_token: accessToken, ...(webhookSecret ? { webhook_secret: webhookSecret } : {}) },
+    credentials: {
+      ...existing,
+      access_token: accessToken,
+      ...(webhookSecret ? { webhook_secret: webhookSecret } : {}),
+    },
   });
   await audit({ actorId: admin.uid, action: 'admin.integration.mercado_pago.credentials.saved', result: 'configured', targetId: 'mercado_pago' });
+  return publicIntegrationCredentialView(record);
+};
+
+export const saveAuthorizedMercadoPagoOAuthApplication = async (input: {
+  authorization: string;
+  clientId: unknown;
+  clientSecret: unknown;
+  redirectUri: unknown;
+}): Promise<ReturnType<typeof publicIntegrationCredentialView>> => {
+  const admin = await authorizeIntegrationReadiness(input.authorization);
+  const oauth = assertMercadoPagoPlatformOAuthInput({
+    clientId: input.clientId,
+    clientSecret: input.clientSecret,
+    redirectUri: input.redirectUri,
+  });
+  const existing = await existingMercadoPagoCredentials();
+  const record = await savePlatformCredentials({
+    providerId: 'mercado_pago',
+    environment: 'production',
+    credentials: {
+      ...existing,
+      client_id: oauth.clientId,
+      client_secret: oauth.clientSecret,
+      redirect_uri: oauth.redirectUri,
+    },
+  });
+  await audit({
+    actorId: admin.uid,
+    action: 'admin.integration.mercado_pago.oauth_application.saved',
+    result: 'configured',
+    targetId: 'mercado_pago',
+  });
   return publicIntegrationCredentialView(record);
 };
 
@@ -113,8 +161,10 @@ export const testAuthorizedGoogleMapsConnection = async (
 export const mapIntegrationCredentialError = (error: unknown): { status: number; body: { error: string; code: string } } => {
   const message = error instanceof Error ? error.message : String(error);
   if (message === 'MERCADO_PAGO_ACCESS_TOKEN_REQUIRED') return { status: 400, body: { error: 'Informe o Access Token do Mercado Pago.', code: message } };
+  if (message === 'MERCADO_PAGO_CLIENT_ID_REQUIRED' || message === 'MERCADO_PAGO_CLIENT_SECRET_REQUIRED') return { status: 400, body: { error: 'Informe Client ID e Client Secret da aplicação Mercado Pago.', code: message } };
+  if (message === 'MERCADO_PAGO_REDIRECT_URI_HTTPS_REQUIRED' || message === 'MERCADO_PAGO_REDIRECT_URI_CALLBACK_INVALID') return { status: 400, body: { error: 'Use a Redirect URI HTTPS oficial do callback Mercado Pago do Kyrub.', code: message } };
   if (message === 'GOOGLE_MAPS_API_KEY_REQUIRED') return { status: 400, body: { error: 'Informe a API Key do Google Maps.', code: message } };
-  if (message === 'MERCADO_PAGO_CREDENTIAL_TOO_LARGE' || message === 'GOOGLE_MAPS_CREDENTIAL_TOO_LARGE') return { status: 400, body: { error: 'A credencial excede o tamanho permitido.', code: message } };
+  if (message === 'MERCADO_PAGO_CREDENTIAL_TOO_LARGE' || message === 'MERCADO_PAGO_OAUTH_CREDENTIAL_TOO_LARGE' || message === 'GOOGLE_MAPS_CREDENTIAL_TOO_LARGE') return { status: 400, body: { error: 'A credencial excede o tamanho permitido.', code: message } };
   if (/AUTH_REQUIRED|id-token|expired|revoked/i.test(message)) return { status: 401, body: { error: 'Faça login novamente.', code: 'AUTH_REQUIRED' } };
   if (message === 'EMAIL_NOT_VERIFIED' || message === 'FORBIDDEN') return { status: 403, body: { error: 'Somente Super Admin pode alterar integrações da plataforma.', code: message } };
   if (/INTEGRATION_MASTER_KEY/i.test(message)) return { status: 503, body: { error: 'O cofre seguro da plataforma não está disponível.', code: 'VAULT_UNAVAILABLE' } };

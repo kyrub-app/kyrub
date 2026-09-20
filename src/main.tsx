@@ -2,6 +2,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App.tsx';
 import { AppErrorBoundary } from './components/AppErrorBoundary';
+import { AdminMercadoPagoOAuthBridge } from './components/admin/AdminMercadoPagoOAuthBridge';
 import { GerencialIntegrationsNativeBridge } from './components/GerencialIntegrationsNativeBridge';
 import { KyrubAiConversationCloudSyncGate } from './components/KyrubAiConversationCloudSyncGate';
 import { OfficialKnowledgeSemanticSetupBridge } from './components/OfficialKnowledgeSemanticSetupBridge';
@@ -54,6 +55,7 @@ createRoot(rootElement).render(
           <PickupPdvNavigationBridge />
           <GerencialIntegrationsNativeBridge />
           <MercadoPagoReceivablesBridge />
+          <AdminMercadoPagoOAuthBridge />
           <KyrubOfficialKnowledgeRuntimeBridge />
           <KyrubActivityObserverBridge />
           <KyrubActivityLogSetupBridge />

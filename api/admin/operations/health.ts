@@ -35,10 +35,7 @@ const unavailable = (message: string): HttpErrorResult => ({
 const mercadoLivrePlatformError = (error: unknown): HttpErrorResult => {
   const message = error instanceof Error ? error.message : String(error);
   if (/AUTH_REQUIRED|id-token|expired|revoked/i.test(message)) {
-    return {
-      status: 401,
-      body: { error: 'Faça login novamente.', code: 'AUTH_REQUIRED' },
-    };
+    return { status: 401, body: { error: 'Faça login novamente.', code: 'AUTH_REQUIRED' } };
   }
   if (message === 'EMAIL_NOT_VERIFIED' || message === 'FORBIDDEN') {
     return {
@@ -119,9 +116,7 @@ export default async function handler(
     try {
       const economy = await import('../../../server/admin/platformEconomyRouter.js');
       mapError = economy.mapPlatformEconomyError;
-      const snapshot = await economy.loadAuthorizedPlatformEconomySnapshot(
-        authorization
-      );
+      const snapshot = await economy.loadAuthorizedPlatformEconomySnapshot(authorization);
       response.status(200).json(snapshot);
     } catch (error) {
       const mapped = mapError
@@ -144,18 +139,12 @@ export default async function handler(
     }
 
     try {
-      const mercadoLivre = await import(
-        '../../../server/admin/mercadoLivrePlatformCredentialService.js'
-      );
-
+      const mercadoLivre = await import('../../../server/admin/mercadoLivrePlatformCredentialService.js');
       if (transport === 'mercado-livre-platform-status') {
-        const status = await mercadoLivre.loadAuthorizedMercadoLivrePlatformCredentialStatus(
-          authorization
-        );
+        const status = await mercadoLivre.loadAuthorizedMercadoLivrePlatformCredentialStatus(authorization);
         response.status(200).json(status);
         return;
       }
-
       if (transport === 'mercado-livre-platform-credentials') {
         const body = bodyRecord(request.body);
         const status = await mercadoLivre.saveAuthorizedMercadoLivrePlatformCredentials({
@@ -167,13 +156,51 @@ export default async function handler(
         response.status(200).json(status);
         return;
       }
-
-      const result = await mercadoLivre.validateAuthorizedMercadoLivrePlatformConfiguration(
-        authorization
-      );
+      const result = await mercadoLivre.validateAuthorizedMercadoLivrePlatformConfiguration(authorization);
       response.status(200).json(result);
     } catch (error) {
       const mapped = mercadoLivrePlatformError(error);
+      response.status(mapped.status).json(mapped.body);
+    }
+    return;
+  }
+
+  if (transport === 'mercado-pago-oauth-application') {
+    if (method !== 'GET' && method !== 'POST') {
+      response.status(405).json({ error: 'Método não permitido.', code: 'METHOD_NOT_ALLOWED' });
+      return;
+    }
+    let mapError: ((error: unknown) => HttpErrorResult) | null = null;
+    try {
+      const credentials = await import('../../../server/admin/integrationCredentialService.js');
+      const readiness = await import('../../../server/admin/integrationReadinessService.js');
+      const store = await import('../../../server/integrations/platformCredentialStore.js');
+      mapError = credentials.mapIntegrationCredentialError;
+      await readiness.authorizeIntegrationReadiness(authorization);
+      if (method === 'POST') {
+        const body = bodyRecord(request.body);
+        await credentials.saveAuthorizedMercadoPagoOAuthApplication({
+          authorization,
+          clientId: body.clientId,
+          clientSecret: body.clientSecret,
+          redirectUri: body.redirectUri,
+        });
+      }
+      const metadata = await store.loadPlatformCredentialMetadata('mercado_pago', 'production');
+      response.status(200).json({
+        configured: Boolean(
+          metadata?.credentials.client_id
+          && metadata.credentials.client_secret
+          && metadata.credentials.redirect_uri
+        ),
+        clientIdLast4: metadata?.credentials.client_id?.last4 ?? '',
+        clientSecretLast4: metadata?.credentials.client_secret?.last4 ?? '',
+        redirectUriConfigured: Boolean(metadata?.credentials.redirect_uri),
+      });
+    } catch (error) {
+      const mapped = mapError
+        ? mapError(error)
+        : unavailable('Não foi possível configurar o OAuth do Mercado Pago agora.');
       response.status(mapped.status).json(mapped.body);
     }
     return;
@@ -225,10 +252,7 @@ export default async function handler(
   }
 
   if (method !== 'GET') {
-    response.status(405).json({
-      error: 'Método não permitido.',
-      code: 'METHOD_NOT_ALLOWED',
-    });
+    response.status(405).json({ error: 'Método não permitido.', code: 'METHOD_NOT_ALLOWED' });
     return;
   }
 
