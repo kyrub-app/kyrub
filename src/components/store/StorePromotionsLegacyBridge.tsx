@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { onAuthStateChanged, type User } from 'firebase/auth';
+import { Award, Gift, Sparkles, Target } from 'lucide-react';
 import { auth } from '../../utils/firebase';
 import { StorePromotionsManager } from '../StorePromotionsManager';
 
@@ -19,10 +20,59 @@ const findLegacyVoucherGrid = (): HTMLElement | null => {
   return grid instanceof HTMLElement ? grid : null;
 };
 
+const LoyaltyGamificationOverview = () => (
+  <section
+    id="kyrub-loyalty-gamification-overview"
+    className="mt-5 rounded-3xl border border-violet-500/20 bg-violet-500/[0.04] p-5"
+  >
+    <div className="flex items-start gap-3">
+      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-violet-500/15 text-violet-300">
+        <Sparkles className="h-5 w-5" />
+      </span>
+      <div>
+        <span className="font-mono text-[9px] font-black uppercase tracking-[0.18em] text-violet-300">
+          Fidelidade & Gamificação
+        </span>
+        <h3 className="mt-1 text-sm font-black text-white">
+          Cupons, pontos, desafios e recompensas no mesmo módulo
+        </h3>
+        <p className="mt-1 text-[10px] leading-relaxed text-slate-400">
+          Cupons e vouchers continuam sendo a autoridade de desconto. Pontos, desafios e recompensas ficam separados do preço-base do produto e não alteram pagamentos sem uma regra autoritativa.
+        </p>
+      </div>
+    </div>
+
+    <div className="mt-4 grid gap-3 sm:grid-cols-3">
+      <article className="rounded-2xl border border-slate-800 bg-slate-950 p-4">
+        <Award className="h-5 w-5 text-amber-300" />
+        <strong className="mt-3 block text-xs font-black uppercase text-white">Pontos</strong>
+        <p className="mt-1 text-[10px] leading-relaxed text-slate-500">
+          Saldo, bônus temporários e multiplicadores de pontos por campanha.
+        </p>
+      </article>
+      <article className="rounded-2xl border border-slate-800 bg-slate-950 p-4">
+        <Target className="h-5 w-5 text-cyan-300" />
+        <strong className="mt-3 block text-xs font-black uppercase text-white">Desafios</strong>
+        <p className="mt-1 text-[10px] leading-relaxed text-slate-500">
+          Metas de compra, recorrência e ações promocionais com critérios explícitos.
+        </p>
+      </article>
+      <article className="rounded-2xl border border-slate-800 bg-slate-950 p-4">
+        <Gift className="h-5 w-5 text-emerald-300" />
+        <strong className="mt-3 block text-xs font-black uppercase text-white">Recompensas</strong>
+        <p className="mt-1 text-[10px] leading-relaxed text-slate-500">
+          Benefícios e trocas por pontos sem misturar recompensa com desconto de checkout.
+        </p>
+      </article>
+    </div>
+  </section>
+);
+
 /**
  * The retailer production shell still owns Gerencial navigation. When the
  * legacy Vouchers submodule becomes visible, replace only its session-local
- * form with the server-authoritative promotion manager.
+ * form with the server-authoritative promotion manager and expose the loyalty
+ * surface that belongs to the same commercial module.
  */
 export function StorePromotionsLegacyBridge() {
   const [user, setUser] = useState<User | null>(auth.currentUser);
@@ -80,11 +130,14 @@ export function StorePromotionsLegacyBridge() {
   if (!user || !host) return null;
 
   return createPortal(
-    <StorePromotionsManager
-      storeId={user.uid}
-      products={[]}
-      triggerToast={() => undefined}
-    />,
+    <>
+      <StorePromotionsManager
+        storeId={user.uid}
+        products={[]}
+        triggerToast={() => undefined}
+      />
+      <LoyaltyGamificationOverview />
+    </>,
     host
   );
 }
