@@ -32,6 +32,7 @@ import { createStoreCampaignRouter } from "./server/campaigns/storeCampaignRoute
 import { createUserCommunicationPreferenceRouter } from "./server/notifications/userCommunicationPreferenceRouter";
 import { createUserNotificationRouter } from "./server/notifications/userNotificationRouter";
 import { createPaymentIntentRouter } from "./server/payments/paymentIntentRouter";
+import { createStorePromotionManagementRouter } from "./server/payments/storePromotionManagementRouter";
 import { createStoreRewardRouter } from "./server/payments/storeRewardRouter";
 import { createStoreRelationshipRouter } from "./server/payments/storeRelationshipRouter";
 import { createMarketplaceDiscoveryRouter } from "./server/payments/marketplaceDiscoveryRouter";
@@ -162,6 +163,12 @@ app.use(
   "/api/payments",
   integrationRateLimiter,
   createPaymentIntentRouter()
+);
+
+app.use(
+  "/api/store-promotions",
+  integrationRateLimiter,
+  createStorePromotionManagementRouter()
 );
 
 app.use(
