@@ -80,7 +80,7 @@ export const TableServiceWorkspace = (props: TableServiceWorkspaceProps) => {
             </header>
 
             <div className="mt-4 rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.05] px-3 py-2.5 text-[9px] leading-relaxed text-emerald-100/75">
-              A cobrança permanece pendente até a confirmação autoritativa do provedor. Se houver mais de um pedido ativo na mesa, cada pedido aparece separadamente para não somar valores no navegador nem criar uma segunda autoridade financeira.
+              A cobrança permanece pendente até a autoridade correspondente ao modo escolhido: webhook verificado no Mercado Pago ou confirmação manual auditada no Pix próprio. Se houver mais de um pedido ativo na mesa, cada pedido aparece separadamente para não somar valores no navegador nem criar uma segunda autoridade financeira.
             </div>
 
             {activeOrders.length > 0 ? (

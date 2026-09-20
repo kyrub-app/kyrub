@@ -15,6 +15,8 @@ const MAX_PAYMENT_RECORDS_PER_ORDER = 50;
 const clean = (value: unknown, maximum = 220): string =>
   typeof value === 'string' ? value.trim().slice(0, maximum) : '';
 
+export type PendingLocalPaymentProvider = '' | 'mercado-pago' | 'store-pix';
+
 export interface PendingLocalPaymentRecovery {
   paymentIntentId: string;
   paymentId: string;
@@ -25,6 +27,7 @@ export interface PendingLocalPaymentRecovery {
   method: 'pix';
   context: 'table' | 'pos';
   expiresAt: string;
+  provider: PendingLocalPaymentProvider;
   providerReady: boolean;
 }
 
@@ -65,9 +68,11 @@ const assertPendingPair = (input: {
   const hasProviderState = Boolean(
     intentProvider || paymentProvider || intentProviderId || paymentProviderId
   );
+  const supportedProvider =
+    intentProvider === 'mercado-pago' || intentProvider === 'store-pix';
   const providerReady = Boolean(
-    intentProvider === 'mercado-pago' &&
-    paymentProvider === 'mercado-pago' &&
+    supportedProvider &&
+    paymentProvider === intentProvider &&
     intentProviderId &&
     paymentProviderId &&
     intentProviderId === paymentProviderId
@@ -86,6 +91,7 @@ const assertPendingPair = (input: {
     method: 'pix',
     context: payment.context,
     expiresAt: intent.expiresAt,
+    provider: providerReady ? intentProvider as PendingLocalPaymentProvider : '',
     providerReady,
   };
 };

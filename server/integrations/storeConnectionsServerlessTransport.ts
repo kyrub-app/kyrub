@@ -6,6 +6,7 @@ import { createMercadoLivreRouter } from './mercadoLivreRouter.js';
 import { createMercadoLivreStockExecutionRouter } from './mercadoLivreStockExecutionRouter.js';
 import { createMercadoLivreE2ETestRouter } from './mercadoLivreE2ETestRouter.js';
 import { createMercadoPagoStoreRouter } from './mercadoPagoStoreRouter.js';
+import { createStoreOwnedPixRouter } from './storeOwnedPixRouter.js';
 
 type QueryValue = string | string[] | undefined;
 
@@ -58,6 +59,11 @@ app.use(
   '/api/store-connections/mercado-pago',
   integrationRateLimiter,
   createMercadoPagoStoreRouter()
+);
+app.use(
+  '/api/store-connections/pix-own',
+  integrationRateLimiter,
+  createStoreOwnedPixRouter()
 );
 app.use(
   '/api/store-connections',

@@ -13,6 +13,7 @@ import { MercadoLivreOAuthReturnBridge } from './components/store/MercadoLivreOA
 import { MercadoPagoReceivablesBridge } from './components/store/MercadoPagoReceivablesBridge';
 import { PickupPdvNavigationBridge } from './components/store/PickupPdvNavigationBridge';
 import { ServiceLocationOperationalWorkspaceBridge } from './components/store/ServiceLocationOperationalWorkspaceBridge';
+import { StoreOwnedPixReceivablesBridge } from './components/store/StoreOwnedPixReceivablesBridge';
 import { ProfileCommunitiesCloudBridge } from './components/ProfileCommunitiesCloudBridge';
 import { ProfileConnectedCardsPolishBridge } from './components/ProfileConnectedCardsPolishBridge';
 import { ProfileConnectedImageFitBridge } from './components/ProfileConnectedImageFitBridge';
@@ -55,6 +56,7 @@ createRoot(rootElement).render(
           <PickupPdvNavigationBridge />
           <GerencialIntegrationsNativeBridge />
           <MercadoPagoReceivablesBridge />
+          <StoreOwnedPixReceivablesBridge />
           <AdminMercadoPagoOAuthBridge />
           <KyrubOfficialKnowledgeRuntimeBridge />
           <KyrubActivityObserverBridge />

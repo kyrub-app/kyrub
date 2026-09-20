@@ -1,5 +1,7 @@
 import { auth } from './firebase';
 
+export type LocalPixProvider = 'mercado-pago' | 'store-pix';
+
 export interface PendingLocalPaymentRecovery {
   paymentIntentId: string;
   paymentId: string;
@@ -10,10 +12,12 @@ export interface PendingLocalPaymentRecovery {
   method: 'pix';
   context: 'table' | 'pos';
   expiresAt: string;
+  provider: '' | LocalPixProvider;
   providerReady: boolean;
 }
 
 export interface LocalPaymentIntentResult extends PendingLocalPaymentRecovery {
+  provider: '';
   providerReady: false;
   duplicate: boolean;
 }
@@ -32,6 +36,47 @@ export interface LocalMercadoPagoPixCheckout {
   amount: number;
   currency: 'BRL';
   context: 'table' | 'pos';
+}
+
+export interface LocalStoreOwnedPixCheckout {
+  provider: 'store-pix';
+  providerPaymentId: string;
+  status: 'pending';
+  qrCode: string;
+  qrCodeBase64: string;
+  ticketUrl: '';
+  expiresAt: string;
+  paymentIntentId: string;
+  paymentId: string;
+  orderId: string;
+  amount: number;
+  currency: 'BRL';
+  context: 'table' | 'pos';
+  confirmationAuthority: 'operator_attestation';
+  bankVerifiedByKyrub: false;
+}
+
+export type LocalPixCheckout = LocalMercadoPagoPixCheckout | LocalStoreOwnedPixCheckout;
+
+export interface LocalPaymentOptions {
+  mercadoPagoConnected: boolean;
+  storePixConfigured: boolean;
+  storePixEnabled: boolean;
+}
+
+export interface LocalStoreOwnedPixConfirmation {
+  confirmed: true;
+  duplicate: boolean;
+  paymentIntentId: string;
+  paymentId: string;
+  orderId: string;
+  amount: number;
+  currency: 'BRL';
+  provider: 'store-pix';
+  providerPaymentId: string;
+  sourceAuthority: 'operator_attestation';
+  bankVerifiedByKyrub: false;
+  attestedAt: string;
 }
 
 const currentUser = () => {
@@ -72,6 +117,14 @@ export const newLocalPaymentAttemptKey = (orderId: string): string => {
   return `local-pix:${random}`;
 };
 
+export const loadLocalPaymentOptions = async (storeId: string): Promise<LocalPaymentOptions> => {
+  const params = new URLSearchParams({ storeId });
+  return json<LocalPaymentOptions>(
+    await authorizedFetch(`/api/local-attendance/payment-options?${params.toString()}`),
+    'Não foi possível consultar os modos de recebimento.'
+  );
+};
+
 export const loadPendingLocalPayment = async (input: {
   storeId: string;
   orderId: string;
@@ -93,8 +146,8 @@ export const createLocalPaymentIntent = async (input: {
   storeId: string;
   orderId: string;
   idempotencyKey: string;
-}): Promise<LocalPaymentIntentResult> =>
-  json<LocalPaymentIntentResult>(
+}): Promise<LocalPaymentIntentResult> => {
+  const result = await json<Omit<LocalPaymentIntentResult, 'provider'>>(
     await authorizedFetch('/api/local-attendance/payment-intents', {
       method: 'POST',
       body: JSON.stringify({
@@ -105,6 +158,8 @@ export const createLocalPaymentIntent = async (input: {
     }),
     'Não foi possível iniciar o pagamento Pix.'
   );
+  return { ...result, provider: '' };
+};
 
 export const attachLocalMercadoPagoPix = async (input: {
   storeId: string;
@@ -120,5 +175,42 @@ export const attachLocalMercadoPagoPix = async (input: {
         paymentId: input.paymentId,
       }),
     }),
-    'Não foi possível gerar ou recuperar o Pix.'
+    'Não foi possível gerar ou recuperar o Pix do Mercado Pago.'
+  );
+
+export const attachLocalStoreOwnedPix = async (input: {
+  storeId: string;
+  paymentIntentId: string;
+  paymentId: string;
+}): Promise<LocalStoreOwnedPixCheckout> =>
+  json<LocalStoreOwnedPixCheckout>(
+    await authorizedFetch('/api/local-attendance/payment-intents/store-pix', {
+      method: 'POST',
+      body: JSON.stringify({
+        storeId: input.storeId,
+        paymentIntentId: input.paymentIntentId,
+        paymentId: input.paymentId,
+      }),
+    }),
+    'Não foi possível gerar ou recuperar o Pix próprio.'
+  );
+
+export const confirmLocalStoreOwnedPix = async (input: {
+  storeId: string;
+  paymentIntentId: string;
+  paymentId: string;
+  providerPaymentId: string;
+}): Promise<LocalStoreOwnedPixConfirmation> =>
+  json<LocalStoreOwnedPixConfirmation>(
+    await authorizedFetch('/api/local-attendance/payment-intents/store-pix/confirm', {
+      method: 'POST',
+      body: JSON.stringify({
+        storeId: input.storeId,
+        paymentIntentId: input.paymentIntentId,
+        paymentId: input.paymentId,
+        providerPaymentId: input.providerPaymentId,
+        confirmedCredit: true,
+      }),
+    }),
+    'Não foi possível registrar a confirmação manual do Pix.'
   );

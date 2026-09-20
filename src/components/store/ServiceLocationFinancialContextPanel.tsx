@@ -13,10 +13,15 @@ import type { CustomerOrder } from '../../utils/customerOrders';
 import { loadLocalOrderFinancialContext } from '../../utils/localOrderFinancialContext';
 import {
   attachLocalMercadoPagoPix,
+  attachLocalStoreOwnedPix,
+  confirmLocalStoreOwnedPix,
   createLocalPaymentIntent,
+  loadLocalPaymentOptions,
   loadPendingLocalPayment,
   newLocalPaymentAttemptKey,
-  type LocalMercadoPagoPixCheckout,
+  type LocalPaymentOptions,
+  type LocalPixCheckout,
+  type LocalPixProvider,
 } from '../../utils/localPixCheckout';
 
 const money = (value: number): string =>
@@ -37,13 +42,6 @@ const stateLabel = (context: LocalOrderFinancialContext): string => {
   }
 };
 
-const pixActionLabel = (context: LocalOrderFinancialContext): string => {
-  if (context.canonicalProjection.pendingPaymentCount > 0) return 'Retomar Pix';
-  if (context.state === 'partial') return 'Cobrar saldo por Pix';
-  if (context.state === 'refunded') return 'Gerar novo Pix';
-  return 'Gerar Pix';
-};
-
 const canOperatePix = (context: LocalOrderFinancialContext): boolean =>
   context.state !== 'paid' && context.state !== 'reconciliation_required';
 
@@ -59,11 +57,16 @@ const expiryLabel = (value: string): string => {
   }).format(new Date(timestamp));
 };
 
+const providerLabel = (provider: LocalPixProvider): string =>
+  provider === 'mercado-pago' ? 'Mercado Pago' : 'Pix próprio';
+
 interface PixUiState {
   loading: boolean;
   error: string;
-  checkout: LocalMercadoPagoPixCheckout | null;
+  checkout: LocalPixCheckout | null;
   copied: boolean;
+  boundProvider: '' | LocalPixProvider;
+  confirmedCredit: boolean;
 }
 
 const emptyPixState = (): PixUiState => ({
@@ -71,6 +74,8 @@ const emptyPixState = (): PixUiState => ({
   error: '',
   checkout: null,
   copied: false,
+  boundProvider: '',
+  confirmedCredit: false,
 });
 
 export function ServiceLocationFinancialContextPanel({
@@ -82,6 +87,7 @@ export function ServiceLocationFinancialContextPanel({
 }) {
   const [contexts, setContexts] = useState<Record<string, LocalOrderFinancialContext>>({});
   const [pixByOrder, setPixByOrder] = useState<Record<string, PixUiState>>({});
+  const [options, setOptions] = useState<LocalPaymentOptions | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -111,10 +117,7 @@ export function ServiceLocationFinancialContextPanel({
           loadLocalOrderFinancialContext({ storeId, orderId: order.id })
         )
       );
-      const nextContexts = Object.fromEntries(
-        next.map(context => [context.orderId, context])
-      );
-      setContexts(nextContexts);
+      setContexts(Object.fromEntries(next.map(context => [context.orderId, context])));
       setPixByOrder(current => {
         const retained = { ...current };
         for (const context of next) {
@@ -130,6 +133,8 @@ export function ServiceLocationFinancialContextPanel({
               ...existing,
               checkout: null,
               copied: false,
+              boundProvider: '',
+              confirmedCredit: false,
             };
           }
         }
@@ -149,17 +154,32 @@ export function ServiceLocationFinancialContextPanel({
     }
   }, [orders, storeId]);
 
+  const refreshOptions = useCallback(async (): Promise<void> => {
+    if (!storeId) return;
+    try {
+      setOptions(await loadLocalPaymentOptions(storeId));
+    } catch (caught) {
+      setOptions(null);
+      setError(caught instanceof Error ? caught.message : 'Não foi possível consultar os modos de recebimento.');
+    }
+  }, [storeId]);
+
   const preparePix = useCallback(async (
     order: CustomerOrder,
-    context: LocalOrderFinancialContext
+    context: LocalOrderFinancialContext,
+    provider: LocalPixProvider
   ): Promise<void> => {
     if (!canOperatePix(context)) return;
-    patchPix(order.id, { loading: true, error: '', copied: false });
+    patchPix(order.id, { loading: true, error: '', copied: false, confirmedCredit: false });
     try {
       let pending = await loadPendingLocalPayment({
         storeId,
         orderId: order.id,
       });
+      if (pending?.provider && pending.provider !== provider) {
+        patchPix(order.id, { boundProvider: pending.provider });
+        throw new Error(`Esta tentativa já está vinculada a ${providerLabel(pending.provider)}. Retome pelo mesmo modo ou inicie outra tentativa após o encerramento desta.`);
+      }
       if (!pending) {
         pending = await createLocalPaymentIntent({
           storeId,
@@ -167,16 +187,24 @@ export function ServiceLocationFinancialContextPanel({
           idempotencyKey: newLocalPaymentAttemptKey(order.id),
         });
       }
-      const checkout = await attachLocalMercadoPagoPix({
-        storeId,
-        paymentIntentId: pending.paymentIntentId,
-        paymentId: pending.paymentId,
-      });
+      const checkout = provider === 'mercado-pago'
+        ? await attachLocalMercadoPagoPix({
+            storeId,
+            paymentIntentId: pending.paymentIntentId,
+            paymentId: pending.paymentId,
+          })
+        : await attachLocalStoreOwnedPix({
+            storeId,
+            paymentIntentId: pending.paymentIntentId,
+            paymentId: pending.paymentId,
+          });
       patchPix(order.id, {
         loading: false,
         error: '',
         checkout,
         copied: false,
+        boundProvider: provider,
+        confirmedCredit: false,
       });
       await refresh(true);
     } catch (caught) {
@@ -190,6 +218,39 @@ export function ServiceLocationFinancialContextPanel({
       await refresh(true);
     }
   }, [patchPix, refresh, storeId]);
+
+  const confirmStorePix = useCallback(async (
+    orderId: string,
+    checkout: Extract<LocalPixCheckout, { provider: 'store-pix' }>
+  ): Promise<void> => {
+    const state = pixByOrder[orderId];
+    if (!state?.confirmedCredit) return;
+    patchPix(orderId, { loading: true, error: '' });
+    try {
+      await confirmLocalStoreOwnedPix({
+        storeId,
+        paymentIntentId: checkout.paymentIntentId,
+        paymentId: checkout.paymentId,
+        providerPaymentId: checkout.providerPaymentId,
+      });
+      patchPix(orderId, {
+        loading: false,
+        checkout: null,
+        copied: false,
+        confirmedCredit: false,
+        boundProvider: '',
+      });
+      await refresh(true);
+    } catch (caught) {
+      patchPix(orderId, {
+        loading: false,
+        error: caught instanceof Error
+          ? caught.message
+          : 'Não foi possível registrar a confirmação manual do Pix.',
+      });
+      await refresh(true);
+    }
+  }, [patchPix, pixByOrder, refresh, storeId]);
 
   const copyPixCode = useCallback(async (
     orderId: string,
@@ -209,10 +270,11 @@ export function ServiceLocationFinancialContextPanel({
 
   useEffect(() => {
     void refresh();
+    void refreshOptions();
     if (!storeId || orders.length === 0) return;
     const timer = window.setInterval(() => void refresh(true), 10000);
     return () => window.clearInterval(timer);
-  }, [refresh, storeId, orders.length]);
+  }, [refresh, refreshOptions, storeId, orders.length]);
 
   if (orders.length === 0) return null;
 
@@ -228,7 +290,7 @@ export function ServiceLocationFinancialContextPanel({
             Evidência financeira canônica
           </h3>
           <p className="mt-1 text-[8px] leading-relaxed text-indigo-100/55">
-            Dinheiro confirmado e liquidação por itens são estados separados. O webhook comprova pagamento; `paidQuantity` continua reservado à alocação explícita das linhas.
+            Dinheiro confirmado e liquidação por itens são estados separados. Mercado Pago usa webhook verificado; Pix próprio usa declaração manual auditada do operador. `paidQuantity` continua reservado à alocação explícita das linhas.
           </p>
         </div>
       </div>
@@ -251,11 +313,12 @@ export function ServiceLocationFinancialContextPanel({
         {orders.map(order => {
           const context = contexts[order.id];
           const pix = pixByOrder[order.id] ?? emptyPixState();
-          const visibleCheckout =
-            context && canOperatePix(context) ? pix.checkout : null;
-          const safeTicketUrl = visibleCheckout?.ticketUrl.startsWith('https://')
+          const visibleCheckout = context && canOperatePix(context) ? pix.checkout : null;
+          const safeTicketUrl = visibleCheckout?.provider === 'mercado-pago' && visibleCheckout.ticketUrl.startsWith('https://')
             ? visibleCheckout.ticketUrl
             : '';
+          const mercadoPagoAvailable = options?.mercadoPagoConnected === true;
+          const storePixAvailable = options?.storePixEnabled === true;
           return (
             <article
               key={order.id}
@@ -297,17 +360,35 @@ export function ServiceLocationFinancialContextPanel({
 
               {context && canOperatePix(context) && (
                 <div className="mt-3 border-t border-white/5 pt-3">
-                  <button
-                    type="button"
-                    disabled={pix.loading}
-                    onClick={() => void preparePix(order, context)}
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-400/25 bg-indigo-500/10 px-2.5 py-1.5 text-[8px] font-bold text-indigo-100 transition hover:bg-indigo-500/20 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    {pix.loading
-                      ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
-                      : <QrCode className="h-3.5 w-3.5" />}
-                    {pix.loading ? 'Preparando Pix…' : pixActionLabel(context)}
-                  </button>
+                  <div className="flex flex-wrap gap-2">
+                    {mercadoPagoAvailable && (
+                      <button
+                        type="button"
+                        disabled={pix.loading || Boolean(pix.boundProvider && pix.boundProvider !== 'mercado-pago')}
+                        onClick={() => void preparePix(order, context, 'mercado-pago')}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-sky-400/25 bg-sky-500/10 px-2.5 py-1.5 text-[8px] font-bold text-sky-100 transition hover:bg-sky-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {pix.loading && pix.boundProvider === 'mercado-pago' ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <QrCode className="h-3.5 w-3.5" />}
+                        Mercado Pago
+                      </button>
+                    )}
+                    {storePixAvailable && (
+                      <button
+                        type="button"
+                        disabled={pix.loading || Boolean(pix.boundProvider && pix.boundProvider !== 'store-pix')}
+                        onClick={() => void preparePix(order, context, 'store-pix')}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-400/25 bg-emerald-500/10 px-2.5 py-1.5 text-[8px] font-bold text-emerald-100 transition hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {pix.loading && pix.boundProvider === 'store-pix' ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <QrCode className="h-3.5 w-3.5" />}
+                        Pix próprio
+                      </button>
+                    )}
+                  </div>
+                  {options && !mercadoPagoAvailable && !storePixAvailable && (
+                    <p className="mt-2 text-[8px] leading-relaxed text-amber-200/75">
+                      Nenhum modo Pix está ativo. Configure Recebimentos em Integrações antes de gerar a cobrança.
+                    </p>
+                  )}
                 </div>
               )}
 
@@ -323,12 +404,12 @@ export function ServiceLocationFinancialContextPanel({
                   <div className="flex items-center justify-between gap-3">
                     <div>
                       <strong className="text-[9px] text-emerald-100">
-                        Pix aguardando confirmação
+                        Pix aguardando confirmação · {providerLabel(visibleCheckout.provider)}
                       </strong>
                       <p className="mt-0.5 text-[7px] text-emerald-100/55">
                         {money(visibleCheckout.amount)}
                         {expiryLabel(visibleCheckout.expiresAt)
-                          ? ` · expira em ${expiryLabel(visibleCheckout.expiresAt)}`
+                          ? ` · tentativa Kyrub válida até ${expiryLabel(visibleCheckout.expiresAt)}`
                           : ''}
                       </p>
                     </div>
@@ -377,9 +458,37 @@ export function ServiceLocationFinancialContextPanel({
                     </a>
                   )}
 
-                  <p className="mt-3 text-[7px] leading-relaxed text-emerald-100/55">
-                    O pedido não é marcado como pago por esta tela. A confirmação só aparece após o webhook verificado do provedor atualizar a evidência canônica.
-                  </p>
+                  {visibleCheckout.provider === 'mercado-pago' ? (
+                    <p className="mt-3 text-[7px] leading-relaxed text-emerald-100/55">
+                      O pedido não é marcado como pago por gerar o QR. A evidência financeira só muda após o webhook verificado do Mercado Pago.
+                    </p>
+                  ) : (
+                    <div className="mt-3 rounded-lg border border-amber-500/25 bg-amber-500/[0.08] p-2.5">
+                      <p className="text-[8px] font-bold text-amber-100">Confirmação manual — o Kyrub não consultou o banco.</p>
+                      <p className="mt-1 text-[7px] leading-relaxed text-amber-100/70">
+                        Confira o crédito na conta ou no aplicativo da instituição recebedora. Só então declare o recebimento abaixo. A identidade do operador, o valor canônico e o horário ficam auditados.
+                      </p>
+                      <label className="mt-2 flex items-start gap-2 text-[8px] text-amber-50">
+                        <input
+                          type="checkbox"
+                          checked={pix.confirmedCredit}
+                          onChange={event => patchPix(order.id, { confirmedCredit: event.target.checked })}
+                          disabled={pix.loading}
+                          className="mt-0.5"
+                        />
+                        <span>Conferi na conta recebedora e confirmo que este crédito foi recebido.</span>
+                      </label>
+                      <button
+                        type="button"
+                        disabled={pix.loading || !pix.confirmedCredit}
+                        onClick={() => void confirmStorePix(order.id, visibleCheckout)}
+                        className="mt-2 inline-flex min-h-9 items-center gap-1.5 rounded-lg bg-amber-300 px-3 text-[8px] font-black uppercase text-slate-950 disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        {pix.loading && <LoaderCircle className="h-3.5 w-3.5 animate-spin" />}
+                        Confirmar recebimento manualmente
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
             </article>
