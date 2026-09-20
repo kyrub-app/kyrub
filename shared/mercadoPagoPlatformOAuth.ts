@@ -20,7 +20,11 @@ const clean = (value: unknown): string =>
     : '';
 
 export const assertMercadoPagoPlatformOAuthInput = (
-  input: Partial<MercadoPagoPlatformOAuthInput>
+  input: {
+    clientId?: unknown;
+    clientSecret?: unknown;
+    redirectUri?: unknown;
+  }
 ): MercadoPagoPlatformOAuthInput => {
   const clientId = clean(input.clientId);
   const clientSecret = clean(input.clientSecret);
