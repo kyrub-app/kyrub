@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { DocumentData } from 'firebase-admin/firestore';
 import { adminDb } from '../firebaseAdmin.js';
-import { isPaymentAuthoritativelyPaid, normalizeCanonicalPayment, type CanonicalPayment, type PaymentContext } from '../../src/utils/canonicalPayment.js';
+import { isPaymentAuthoritativelyPaid, normalizeCanonicalPayment, type CanonicalPayment } from '../../src/utils/canonicalPayment.js';
 import { normalizeCanonicalPaymentIntent, type ExistingOrderPaymentIntentDocument, type ExistingOrderCanonicalPaymentIntent } from '../../src/utils/canonicalPaymentIntent.js';
 import { parseServiceLocationSnapshot } from '../../shared/serviceLocation.js';
 import { parseLocalPaymentIntentCreateInput } from '../../shared/localPaymentIntent.js';
@@ -10,6 +10,7 @@ import { resolveStorePromotionForCheckout } from '../payments/storePromotionServ
 import { resolveInPersonOrderStoreContext } from './inPersonOrderService.js';
 import { summarizeLocalOrderPayable } from './localOrderPayable.js';
 
+type LocalPaymentContext = 'table' | 'pos';
 const MAX_PAYMENT_RECORDS_PER_ORDER = 50;
 const INTENT_TTL_MS = 15 * 60 * 1000;
 const clean = (value: unknown, max = 254): string => typeof value === 'string' ? value.trim().slice(0, max) : '';
@@ -29,7 +30,7 @@ const assertEligibleLocalOrder = (orderId: string, value: DocumentData | undefin
   return value;
 };
 
-const paymentContextForOrder = (order: DocumentData): PaymentContext => { const location = parseServiceLocationSnapshot(order.serviceLocation); if (location) return location.kind === 'table' ? 'table' : 'pos'; if (clean(order.tableCode, 80)) return 'table'; throw new Error('LOCAL_PAYMENT_INTENT_SERVICE_LOCATION_REQUIRED'); };
+const paymentContextForOrder = (order: DocumentData): LocalPaymentContext => { const location = parseServiceLocationSnapshot(order.serviceLocation); if (location) return location.kind === 'table' ? 'table' : 'pos'; if (clean(order.tableCode, 80)) return 'table'; throw new Error('LOCAL_PAYMENT_INTENT_SERVICE_LOCATION_REQUIRED'); };
 
 const promotionLinesForOrder = (order: DocumentData) => {
   if (!Array.isArray(order.items) || order.items.length === 0) throw new Error('LOCAL_PAYMENT_INTENT_ORDER_ITEMS_INVALID');
@@ -44,11 +45,11 @@ const promotionLinesForOrder = (order: DocumentData) => {
   });
 };
 
-const assertExistingPair = (input: { intent: ExistingOrderCanonicalPaymentIntent; payment: CanonicalPayment; canonicalStoreId: string; orderId: string; buyerId: string; idempotencyKey: string; context: PaymentContext; couponCode?: string; }): void => {
+const assertExistingPair = (input: { intent: ExistingOrderCanonicalPaymentIntent; payment: CanonicalPayment; canonicalStoreId: string; orderId: string; buyerId: string; idempotencyKey: string; context: LocalPaymentContext; couponCode?: string; }): void => {
   if (input.intent.storeId !== input.canonicalStoreId || input.intent.target.kind !== 'existing_order' || input.intent.target.orderId !== input.orderId || input.intent.buyerId !== input.buyerId || input.intent.idempotencyKey !== input.idempotencyKey || input.intent.context !== input.context || input.intent.method !== 'pix' || input.intent.status !== 'pending' || input.payment.storeId !== input.canonicalStoreId || input.payment.orderId !== input.orderId || input.payment.buyerId !== input.buyerId || (input.payment.paymentIntentId !== undefined && input.payment.paymentIntentId !== input.intent.id) || input.payment.idempotencyKey !== input.idempotencyKey || input.payment.context !== input.context || input.payment.method !== 'pix' || input.payment.status !== 'pending' || input.payment.amount !== input.intent.amount || (input.couponCode ?? '') !== (input.intent.commercialSnapshot?.couponCode ?? '')) throw new Error('LOCAL_PAYMENT_INTENT_IDEMPOTENCY_CONFLICT');
 };
 
-export interface LocalPaymentIntentCreateResult { paymentIntentId: string; paymentId: string; orderId: string; status: 'pending'; amount: number; currency: 'BRL'; method: 'pix'; context: 'table' | 'pos'; expiresAt: string; providerReady: false; duplicate: boolean; }
+export interface LocalPaymentIntentCreateResult { paymentIntentId: string; paymentId: string; orderId: string; status: 'pending'; amount: number; currency: 'BRL'; method: 'pix'; context: LocalPaymentContext; expiresAt: string; providerReady: false; duplicate: boolean; }
 
 export const createLocalPaymentIntent = async (input: { authenticatedUserId: string; value: unknown; now?: Date; }): Promise<LocalPaymentIntentCreateResult> => {
   const request = parseLocalPaymentIntentCreateInput(input.value); const actorUserId = clean(input.authenticatedUserId, 180); if (!actorUserId || actorUserId !== request.storeId) throw new Error('LOCAL_PAYMENT_INTENT_FORBIDDEN');
