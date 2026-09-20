@@ -18,7 +18,8 @@ export type StoreEconomicLedgerKind =
 
 export type StoreEconomicLedgerSourceAuthority =
   | 'provider_webhook'
-  | 'canonical_payment_snapshot';
+  | 'canonical_payment_snapshot'
+  | 'operator_attestation';
 
 export interface StoreEconomicLedgerEntry {
   schemaVersion: typeof STORE_ECONOMIC_LEDGER_SCHEMA_VERSION;
@@ -53,12 +54,9 @@ export interface StoreEconomicLedgerSummary {
   entryCount: number;
 }
 
-const clean = (value: unknown): string =>
-  typeof value === 'string' ? value.trim() : '';
-const validIso = (value: string): boolean =>
-  Boolean(value) && Number.isFinite(Date.parse(value));
-const validPathId = (value: string): boolean =>
-  Boolean(value) && value.length <= 240 && value !== '.' && value !== '..';
+const clean = (value: unknown): string => typeof value === 'string' ? value.trim() : '';
+const validIso = (value: string): boolean => Boolean(value) && Number.isFinite(Date.parse(value));
+const validPathId = (value: string): boolean => Boolean(value) && value.length <= 240 && value !== '.' && value !== '..';
 
 export const brlToMinor = (amount: number): number => {
   if (!Number.isFinite(amount) || amount <= 0) throw new Error('STORE_ECONOMIC_LEDGER_AMOUNT_INVALID');
