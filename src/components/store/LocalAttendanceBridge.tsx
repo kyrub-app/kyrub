@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { onAuthStateChanged } from 'firebase/auth';
-import { ArrowRight, LoaderCircle } from 'lucide-react';
+import { ArrowRight, LoaderCircle, MapPin } from 'lucide-react';
 import type { LocalAttendanceSession } from '../../../shared/localAttendance';
 import type { ServiceLocation } from '../../../shared/serviceLocation';
 import { auth } from '../../utils/firebase';
@@ -17,14 +17,24 @@ export const KYRUB_LOCAL_ATTENDANCE_SESSIONS_CHANGED =
   'kyrub-local-attendance-sessions-changed';
 
 const BOARD_HOST_ID = 'kyrub-customer-table-board-host';
+const SUMMARY_HOST_ID = 'canonical-local-attendance-summary-host';
 const OPENER_HOST_ID = 'canonical-local-attendance-opener-host';
 const FILTER_HOST_ID = 'canonical-attendance-location-filter-host';
 
 const normalize = (value: string): string =>
   value.trim().toLocaleLowerCase('pt-BR');
 
+const parsePeopleInput = (value: string): number | null => {
+  const normalized = value.trim();
+  if (!/^\d{1,3}$/.test(normalized)) return null;
+  const parsed = Number(normalized);
+  if (!Number.isSafeInteger(parsed) || parsed < 1 || parsed > 999) return null;
+  return parsed;
+};
+
 export const LocalAttendanceBridge = () => {
   const [storeId, setStoreId] = useState(auth.currentUser?.uid ?? '');
+  const [summaryHost, setSummaryHost] = useState<HTMLElement | null>(null);
   const [openerHost, setOpenerHost] = useState<HTMLElement | null>(null);
   const [filterHost, setFilterHost] = useState<HTMLElement | null>(null);
   const [serviceLocations, setServiceLocations] = useState<ServiceLocation[]>([]);
@@ -32,7 +42,7 @@ export const LocalAttendanceBridge = () => {
   const [customerLabel, setCustomerLabel] = useState('');
   const [selectedLocationId, setSelectedLocationId] = useState('');
   const [locationFilter, setLocationFilter] = useState('all');
-  const [peopleCount, setPeopleCount] = useState(1);
+  const [peopleInput, setPeopleInput] = useState('1');
   const [busy, setBusy] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
 
@@ -45,6 +55,10 @@ export const LocalAttendanceBridge = () => {
   const openSessions = useMemo(
     () => sessions.filter(session => session.status === 'open'),
     [sessions]
+  );
+  const peopleCount = useMemo(
+    () => parsePeopleInput(peopleInput),
+    [peopleInput]
   );
 
   const refresh = useCallback(async (quiet = false): Promise<void> => {
@@ -116,17 +130,9 @@ export const LocalAttendanceBridge = () => {
   }, [locationFilter]);
 
   useEffect(() => {
-    const headerBlock = document.getElementById('erp-attendance-opener-row')?.parentElement;
-    if (!(headerBlock instanceof HTMLElement)) return;
-    const counter = Array.from(headerBlock.querySelectorAll('span')).find(span =>
-      /\bativos?\b/i.test(span.textContent ?? '')
-    );
-    if (counter) counter.textContent = `${openSessions.length} Ativo${openSessions.length === 1 ? '' : 's'}`;
-  }, [openSessions.length, openerHost]);
-
-  useEffect(() => {
     let cancelled = false;
     let timer = 0;
+    let localSummaryHost: HTMLDivElement | null = null;
     let localOpenerHost: HTMLDivElement | null = null;
     let localFilterHost: HTMLDivElement | null = null;
     const hiddenNodes = new Map<HTMLElement, string>();
@@ -143,6 +149,27 @@ export const LocalAttendanceBridge = () => {
       hiddenNodes.clear();
     };
 
+    const hideLegacyActiveCounters = (
+      headerBlock: HTMLElement,
+      opener: HTMLElement
+    ): void => {
+      const matching = Array.from(
+        headerBlock.querySelectorAll<HTMLElement>('span, div')
+      ).filter(node => /^\s*\d+\s+ativos?\s*$/i.test(node.textContent ?? ''));
+
+      for (const node of matching) {
+        let target = node;
+        while (target.parentElement && target.parentElement !== headerBlock) {
+          target = target.parentElement;
+        }
+        if (target !== opener && !target.contains(opener)) {
+          hide(target);
+        } else {
+          hide(node);
+        }
+      }
+    };
+
     const synchronize = (): void => {
       if (cancelled) return;
       const container = document.getElementById('erp-clientes-tab');
@@ -155,6 +182,17 @@ export const LocalAttendanceBridge = () => {
       if (!(headerBlock instanceof HTMLElement) || headerBlock.parentElement !== container) {
         timer = window.setTimeout(synchronize, 60);
         return;
+      }
+
+      hideLegacyActiveCounters(headerBlock, opener);
+
+      if (!localSummaryHost?.isConnected) {
+        localSummaryHost?.remove();
+        localSummaryHost = document.createElement('div');
+        localSummaryHost.id = SUMMARY_HOST_ID;
+        localSummaryHost.className = 'w-full';
+        headerBlock.insertBefore(localSummaryHost, opener);
+        setSummaryHost(localSummaryHost);
       }
 
       for (const child of Array.from(opener.children)) {
@@ -196,6 +234,10 @@ export const LocalAttendanceBridge = () => {
         setFilterHost(localFilterHost);
       }
 
+      const board = document.getElementById('customer-service-location-board');
+      const inlineBoardSummary = board?.firstElementChild;
+      if (inlineBoardSummary instanceof HTMLElement) hide(inlineBoardSummary);
+
       const refreshedChildren = Array.from(container.children).filter(
         (child): child is HTMLElement => child instanceof HTMLElement
       );
@@ -235,8 +277,10 @@ export const LocalAttendanceBridge = () => {
       window.clearTimeout(timer);
       observer.disconnect();
       restore();
+      localSummaryHost?.remove();
       localOpenerHost?.remove();
       localFilterHost?.remove();
+      setSummaryHost(null);
       setOpenerHost(null);
       setFilterHost(null);
     };
@@ -247,10 +291,20 @@ export const LocalAttendanceBridge = () => {
     if (serviceLocationId !== 'all') setSelectedLocationId(serviceLocationId);
   };
 
+  const handlePeopleBlur = (): void => {
+    const parsed = parsePeopleInput(peopleInput);
+    setPeopleInput(parsed === null ? '1' : String(parsed));
+  };
+
   const handleOpen = async (): Promise<void> => {
     const label = customerLabel.trim();
     const location = activeLocations.find(item => item.id === selectedLocationId);
+    const parsedPeopleCount = parsePeopleInput(peopleInput);
     if (!label || !location || busy) return;
+    if (parsedPeopleCount === null) {
+      setErrorMessage('Informe uma quantidade de pessoas entre 1 e 999.');
+      return;
+    }
     const duplicated = openSessions.some(
       session => normalize(session.customerLabel) === normalize(label)
     );
@@ -269,11 +323,11 @@ export const LocalAttendanceBridge = () => {
         customerLabel: label,
         serviceLocationId: location.id,
         space: location.label,
-        itemCount: peopleCount,
+        itemCount: parsedPeopleCount,
       });
       setSessions(current => [session, ...current.filter(item => item.id !== session.id)]);
       setCustomerLabel('');
-      setPeopleCount(1);
+      setPeopleInput('1');
       setLocationFilter(location.id);
       window.dispatchEvent(
         new CustomEvent(KYRUB_LOCAL_ATTENDANCE_SESSIONS_CHANGED, {
@@ -288,6 +342,24 @@ export const LocalAttendanceBridge = () => {
       setBusy(false);
     }
   };
+
+  const summary = summaryHost ? createPortal(
+    <div className="flex items-start justify-between gap-3 pb-3" id="canonical-local-attendance-summary">
+      <div className="min-w-0">
+        <h3 className="flex items-center gap-2 text-[10px] font-black uppercase tracking-wider text-slate-300">
+          <MapPin className="h-4 w-4 shrink-0 text-orange-400" />
+          Locais em atendimento
+        </h3>
+        <p className="mt-1 text-[9px] leading-relaxed text-slate-600">
+          Cada atendimento aberto vira um card operacional com pedidos, alertas, valores e acesso ao PDV.
+        </p>
+      </div>
+      <span className="shrink-0 rounded-full border border-slate-800 bg-slate-950 px-2.5 py-1 font-mono text-[9px] font-bold text-slate-500">
+        {openSessions.length} ativo{openSessions.length === 1 ? '' : 's'}
+      </span>
+    </div>,
+    summaryHost
+  ) : null;
 
   const opener = openerHost ? createPortal(
     <div className="space-y-2">
@@ -313,11 +385,14 @@ export const LocalAttendanceBridge = () => {
         <label className="flex min-h-10 items-center justify-between gap-2 rounded-xl border border-slate-800 bg-slate-950 px-3">
           <span className="text-[9px] font-black uppercase text-slate-500">Pessoas</span>
           <input
-            type="number"
-            min={1}
-            max={999}
-            value={peopleCount}
-            onChange={event => setPeopleCount(Math.max(1, Math.min(999, Number(event.target.value) || 1)))}
+            type="text"
+            inputMode="numeric"
+            pattern="[0-9]*"
+            value={peopleInput}
+            onChange={event =>
+              setPeopleInput(event.target.value.replace(/\D/g, '').slice(0, 3))
+            }
+            onBlur={handlePeopleBlur}
             className="w-10 bg-transparent text-right text-xs font-black text-white outline-none"
             aria-label="Quantidade de pessoas"
           />
@@ -325,7 +400,7 @@ export const LocalAttendanceBridge = () => {
         <button
           type="button"
           onClick={() => void handleOpen()}
-          disabled={busy || !customerLabel.trim() || !selectedLocationId}
+          disabled={busy || !customerLabel.trim() || !selectedLocationId || peopleCount === null}
           className="flex min-h-10 items-center justify-center rounded-xl bg-orange-500 text-slate-950 disabled:bg-slate-800 disabled:text-slate-600"
           aria-label="Iniciar atendimento"
           title="Iniciar atendimento"
@@ -373,5 +448,5 @@ export const LocalAttendanceBridge = () => {
     filterHost
   ) : null;
 
-  return <>{opener}{filters}</>;
+  return <>{summary}{opener}{filters}</>;
 };
