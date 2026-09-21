@@ -19,6 +19,8 @@ type Draft = {
   active: boolean;
 };
 
+type PromotionApiPayload = { promotions?: StorePromotion[]; error?: string };
+
 const localInput = (date: Date): string => {
   const shifted = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
   return shifted.toISOString().slice(0, 16);
@@ -58,6 +60,31 @@ async function authorizedFetch(url: string, init: RequestInit = {}): Promise<Res
   });
 }
 
+async function readPromotionApiPayload(response: Response, fallbackMessage: string): Promise<PromotionApiPayload> {
+  const contentType = response.headers.get('content-type')?.toLowerCase() ?? '';
+  const raw = await response.text();
+
+  if (!contentType.includes('application/json')) {
+    console.error('[StorePromotionsManager] Promotions API returned non-JSON response.', {
+      status: response.status,
+      contentType,
+      bodyPreview: raw.slice(0, 160),
+    });
+    throw new Error(fallbackMessage);
+  }
+
+  try {
+    return raw ? JSON.parse(raw) as PromotionApiPayload : {};
+  } catch (error) {
+    console.error('[StorePromotionsManager] Promotions API returned invalid JSON.', {
+      status: response.status,
+      contentType,
+      error,
+    });
+    throw new Error(fallbackMessage);
+  }
+}
+
 export function StorePromotionsManager({
   storeId,
   products,
@@ -82,7 +109,7 @@ export function StorePromotionsManager({
     setLoading(true);
     try {
       const response = await authorizedFetch(`/api/store-promotions?storeId=${encodeURIComponent(storeId)}`);
-      const payload = await response.json() as { promotions?: StorePromotion[]; error?: string };
+      const payload = await readPromotionApiPayload(response, 'Não foi possível carregar os cupons agora. Tente novamente em instantes.');
       if (!response.ok) throw new Error(payload.error || 'Não foi possível carregar os cupons.');
       setPromotions(payload.promotions ?? []);
     } catch (error) {
@@ -119,7 +146,7 @@ export function StorePromotionsManager({
       };
       const url = draft.id ? `/api/store-promotions/${encodeURIComponent(draft.id)}` : '/api/store-promotions';
       const response = await authorizedFetch(url, { method: draft.id ? 'PUT' : 'POST', body: JSON.stringify(body) });
-      const payload = await response.json() as { error?: string };
+      const payload = await readPromotionApiPayload(response, 'Não foi possível salvar o cupom agora. Tente novamente em instantes.');
       if (!response.ok) throw new Error(payload.error || 'Não foi possível salvar o cupom.');
       triggerToast(draft.id ? 'Cupom atualizado.' : 'Cupom criado.', 'success');
       reset();
@@ -137,7 +164,7 @@ export function StorePromotionsManager({
       const response = await authorizedFetch(`/api/store-promotions/${encodeURIComponent(promotion.id)}/active`, {
         method: 'PATCH', body: JSON.stringify({ storeId, active: !promotion.active }),
       });
-      const payload = await response.json() as { error?: string };
+      const payload = await readPromotionApiPayload(response, 'Não foi possível alterar o cupom agora. Tente novamente em instantes.');
       if (!response.ok) throw new Error(payload.error || 'Não foi possível alterar o cupom.');
       setPromotions(current => current.map(item => item.id === promotion.id ? { ...item, active: !promotion.active } : item));
       triggerToast(!promotion.active ? 'Cupom ativado.' : 'Cupom pausado.', 'success');
