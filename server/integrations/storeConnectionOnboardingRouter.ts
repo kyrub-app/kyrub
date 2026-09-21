@@ -16,9 +16,41 @@ import {
   loadStoreOwnerGovernancePreview,
 } from './storeOwnerGovernanceService.js';
 import { loadCanonicalFiscalPreflight } from './fiscalPreflightReadService.js';
+import {
+  loadFiscalHomologationPolicy,
+  saveFiscalHomologationPolicy,
+} from './fiscalHomologationPolicyRegistry.js';
+import type {
+  FiscalHomologationDocumentFamily,
+  FiscalHomologationOperationScope,
+  FiscalHomologationOperationalTrigger,
+} from '../../shared/fiscalHomologationPolicy.js';
 
 const clean = (value: unknown): string =>
   typeof value === 'string' ? value.trim() : '';
+
+const parseFiscalOperationScope = (
+  value: unknown
+): FiscalHomologationOperationScope | null =>
+  value === 'goods' || value === 'service' || value === 'mixed'
+    ? value
+    : null;
+
+const parseFiscalDocumentFamily = (
+  value: unknown
+): FiscalHomologationDocumentFamily | null =>
+  value === 'nfe' || value === 'nfce' || value === 'nfse'
+    ? value
+    : null;
+
+const parseFiscalOperationalTrigger = (
+  value: unknown
+): FiscalHomologationOperationalTrigger | null =>
+  value === 'payment_confirmed' ||
+  value === 'fulfillment_confirmed' ||
+  value === 'service_completed'
+    ? value
+    : null;
 
 const bearerToken = (authorization: string): string =>
   /^Bearer\s+(.+)$/i.exec(authorization)?.[1]?.trim() ?? '';
@@ -59,6 +91,24 @@ const mapError = (error: unknown): { status: number; message: string } => {
     return {
       status: 409,
       message: 'A loja canônica precisa estar resolvida antes da simulação fiscal.',
+    };
+  }
+  if (message === 'FISCAL_HOMOLOGATION_CANONICAL_STORE_REQUIRED') {
+    return {
+      status: 409,
+      message: 'A loja canônica precisa estar resolvida antes de configurar a política fiscal de homologação.',
+    };
+  }
+  if (message === 'FISCAL_HOMOLOGATION_POLICY_STORED_RECORD_INVALID') {
+    return {
+      status: 409,
+      message: 'A política fiscal armazenada está inconsistente e precisa de revisão antes de continuar.',
+    };
+  }
+  if (message.startsWith('FISCAL_HOMOLOGATION_POLICY_INCOMPLETE:')) {
+    return {
+      status: 400,
+      message: 'Complete todos os campos explícitos da política antes de aprová-la para homologação.',
     };
   }
   if (
@@ -172,6 +222,46 @@ export const createStoreConnectionOnboardingRouter = (): Router => {
         requestedByUserId: identity.uid,
         orderId: clean(request.params.orderId),
       }));
+    } catch (error) {
+      const mapped = mapError(error);
+      response.status(mapped.status).json({ error: mapped.message });
+    }
+  });
+
+  router.get('/:storeId/fiscal-policy/homologation', async (request, response) => {
+    try {
+      const storeId = clean(request.params.storeId);
+      const identity = await authenticatedOwner(request.get('authorization') ?? '', storeId);
+      response.setHeader('Cache-Control', 'no-store, max-age=0');
+      response.json({
+        policy: await loadFiscalHomologationPolicy({
+          tenantId: identity.uid,
+          requestedByUserId: identity.uid,
+        }),
+      });
+    } catch (error) {
+      const mapped = mapError(error);
+      response.status(mapped.status).json({ error: mapped.message });
+    }
+  });
+
+  router.put('/:storeId/fiscal-policy/homologation', async (request, response) => {
+    try {
+      const storeId = clean(request.params.storeId);
+      const identity = await authenticatedOwner(request.get('authorization') ?? '', storeId);
+      response.setHeader('Cache-Control', 'no-store, max-age=0');
+      response.json({
+        policy: await saveFiscalHomologationPolicy({
+          tenantId: identity.uid,
+          requestedByUserId: identity.uid,
+          approveForHomologation: request.body?.approveForHomologation === true,
+          policyReference: clean(request.body?.policyReference),
+          effectiveFrom: clean(request.body?.effectiveFrom),
+          operationScope: parseFiscalOperationScope(request.body?.operationScope),
+          documentFamily: parseFiscalDocumentFamily(request.body?.documentFamily),
+          operationalTrigger: parseFiscalOperationalTrigger(request.body?.operationalTrigger),
+        }),
+      });
     } catch (error) {
       const mapped = mapError(error);
       response.status(mapped.status).json({ error: mapped.message });
