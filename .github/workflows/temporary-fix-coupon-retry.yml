@@ -1,0 +1,40 @@
+name: Temporary coupon retry recovery fix
+
+on:
+  push:
+    branches:
+      - ux/move-transfer-into-table-item-row
+
+permissions:
+  contents: write
+
+jobs:
+  implement:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Apply coupon retry recovery
+        run: python .github/scripts/fix-coupon-retry.py
+      - name: Install dependencies
+        run: npm ci
+      - name: TypeScript
+        run: npm run lint
+      - name: Coupon regression
+        run: node --test --import tsx tests/table-checkout-coupon.test.ts tests/table-transfer-row-action.test.ts
+      - name: Full application build
+        run: npm run build
+      - name: Commit implementation
+        run: |
+          rm .github/workflows/temporary-fix-coupon-retry.yml
+          rm .github/scripts/fix-coupon-retry.py
+          git config user.name "kyrub-app"
+          git config user.email "kyrub.app@gmail.com"
+          git add -A
+          git commit -m "Restore coupon retry after validation error"
+          git push origin HEAD:ux/move-transfer-into-table-item-row
