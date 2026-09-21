@@ -203,6 +203,13 @@ const serializeNinetyNineFoodStatusMutation = async (
       next();
       return;
     }
+    if (request.body?.providerWriteAuthorization !== undefined) {
+      response.status(410).json({
+        error: 'A autorização 99Food embutida no POST de status foi desativada. Atualize o pedido no Kyrub sem autoridade externa e use a autorização one-time do servidor para sincronizar o canal.',
+        code: 'NINETY_NINE_FOOD_LEGACY_STATUS_AUTHORITY_DISABLED',
+      });
+      return;
+    }
     if (clean(integration.outboundStatus) === 'reconciliation_required') {
       throw new Error(
         'Este pedido possui uma execução 99Food com resultado externo desconhecido. Conclua a reconciliação antes de alterar novamente o status.'
