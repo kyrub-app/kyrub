@@ -71,8 +71,8 @@ test('staff PDV keeps review, notes and direct KDS submission behind the send ic
 });
 
 test('staff account and transfer operations stay available without the old top tab bar', () => {
-  matches(staffPdvSource, [/id="staff-pdv-account-view"/, /id="staff-pdv-transfer-view"/, /Voltar ao PDV/, /Registrar pagamento/, /Transferir itens/]);
-  excludes(staffPdvSource, [/const tabs:/, /grid grid-cols-3 gap-1/]);
+  matches(staffPdvSource, [/id="staff-pdv-account-view"/, /id="staff-pdv-transfer-view"/, /Registrar pagamento/, /Transferir itens/, /Excluir/]);
+  excludes(staffPdvSource, [/Voltar ao PDV/, /const tabs:/, /grid grid-cols-3 gap-1/]);
 });
 
 test('staff can attach Google Photos or Drive media to each subcategory level', () => {
