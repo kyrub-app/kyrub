@@ -56,7 +56,7 @@ interface TableServiceWorkspaceProps {
 }
 
 type WorkspaceView = 'catalog' | 'account' | 'transfer';
-type BusyAction = '' | 'order' | 'payment' | 'transfer' | 'exclude' | 'coupon';
+type BusyAction = '' | 'order' | 'payment' | 'transfer' | 'exclude';
 type CartEntry = { product: Product; quantity: number; note: string };
 
 const CONFIRMED_SALE_STATUSES = new Set<CustomerOrder['status']>([
@@ -93,6 +93,7 @@ const SelectionList = ({
   setSelections,
   emptyMessage,
   onExclude,
+  onTransfer,
   excludingLineKey,
 }: {
   lines: TableOpenLine[];
@@ -100,6 +101,7 @@ const SelectionList = ({
   setSelections: React.Dispatch<React.SetStateAction<Record<string, number>>>;
   emptyMessage: string;
   onExclude?: (line: TableOpenLine) => void;
+  onTransfer?: (line: TableOpenLine) => void;
   excludingLineKey?: string;
 }) => {
   const updateQuantity = (line: TableOpenLine, quantity: number): void => {
@@ -186,6 +188,17 @@ const SelectionList = ({
                     {excludingLineKey === line.key ? 'Excluindo...' : 'Excluir'}
                   </button>
                 )}
+                {onTransfer && (
+                  <button
+                    type="button"
+                    onClick={() => onTransfer(line)}
+                    className="flex min-h-7 items-center gap-1.5 rounded-lg border border-blue-500/30 bg-blue-500/10 px-2.5 text-[9px] font-black uppercase text-blue-300"
+                    aria-label={`Transferir ${line.name} para outra mesa`}
+                  >
+                    <ArrowRightLeft className="h-3.5 w-3.5" />
+                    Transferir
+                  </button>
+                )}
               </div>
               <div className="flex items-center gap-2">
                 <button
@@ -238,6 +251,7 @@ export const TableServiceWorkspace = ({
   const [excludingLineKey, setExcludingLineKey] = useState('');
   const [couponCode, setCouponCode] = useState('');
   const [couponQuote, setCouponQuote] = useState<StorePromotionQuote | null>(null);
+  const [isCouponApplying, setIsCouponApplying] = useState(false);
   const [paymentAmountInput, setPaymentAmountInput] = useState('');
   const [settlementHistory, setSettlementHistory] = useState<TableSettlementEntry[]>([]);
 
@@ -253,6 +267,7 @@ export const TableServiceWorkspace = ({
     setExcludingLineKey('');
     setCouponCode('');
     setCouponQuote(null);
+    setIsCouponApplying(false);
     setPaymentAmountInput('');
     setSettlementHistory([]);
     onAppliedCouponChange?.('');
@@ -453,7 +468,8 @@ export const TableServiceWorkspace = ({
       return;
     }
 
-    setBusyAction('coupon');
+    if (isCouponApplying) return;
+    setIsCouponApplying(true);
     try {
       const quote = await quoteLocalCoupon({
         storeId,
@@ -479,12 +495,13 @@ export const TableServiceWorkspace = ({
     } catch (error) {
       setCouponQuote(null);
       onAppliedCouponChange?.('');
+      setIsCouponApplying(false);
       notify(
         error instanceof Error ? error.message : 'Não foi possível aplicar o cupom.',
         'error'
       );
     } finally {
-      setBusyAction('');
+      setIsCouponApplying(false);
     }
   };
 
@@ -687,16 +704,6 @@ export const TableServiceWorkspace = ({
             id="staff-pdv-account-view"
           >
             <div className="mx-auto max-w-5xl">
-              <div className="mb-4 flex items-center justify-end">
-                <button
-                  type="button"
-                  onClick={() => setView('transfer')}
-                  className="flex min-h-10 items-center gap-2 rounded-xl border border-blue-500/30 bg-blue-500/10 px-4 text-[10px] font-black uppercase text-blue-300"
-                >
-                  <ArrowRightLeft className="h-4 w-4" /> Transferir
-                </button>
-              </div>
-
               <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
                 <section className="space-y-4">
                   <div>
@@ -716,6 +723,10 @@ export const TableServiceWorkspace = ({
                     setSelections={setPaymentSelections}
                     emptyMessage="Não há itens pendentes de pagamento nesta mesa."
                     onExclude={line => void handleExcludeItem(line)}
+                    onTransfer={line => {
+                      setTransferSelections({ [line.key]: line.availableQuantity });
+                      setView('transfer');
+                    }}
                     excludingLineKey={excludingLineKey}
                   />
                 </section>
@@ -824,7 +835,7 @@ export const TableServiceWorkspace = ({
                           setCouponQuote(null);
                           onAppliedCouponChange?.('');
                         }}
-                        disabled={confirmedPaymentExists}
+                        disabled={confirmedPaymentExists || isCouponApplying}
                         placeholder={confirmedPaymentExists ? 'Cupom bloqueado após o primeiro pagamento' : 'Digite o cupom'}
                         className="min-h-10 min-w-0 flex-1 rounded-xl border border-slate-800 bg-slate-900 px-3 text-xs font-bold uppercase text-white outline-none placeholder:normal-case placeholder:text-slate-600 focus:border-violet-400"
                       />
@@ -835,12 +846,12 @@ export const TableServiceWorkspace = ({
                           confirmedPaymentExists ||
                           !couponCode.trim() ||
                           paymentSelectionArray.length === 0 ||
-                          busyAction === 'coupon' ||
+                          isCouponApplying ||
                           busyAction === 'payment'
                         }
                         className="min-h-10 rounded-xl bg-violet-500 px-3 text-[9px] font-black uppercase text-white disabled:opacity-40"
                       >
-                        {busyAction === 'coupon' ? 'Aplicando...' : 'Aplicar'}
+                        {isCouponApplying ? 'Aplicando...' : 'Aplicar'}
                       </button>
                     </div>
                     {couponQuote && (
@@ -871,7 +882,7 @@ export const TableServiceWorkspace = ({
                   </p>
                   <button
                     type="button"
-                    disabled={paymentSelectionArray.length === 0 || paymentAmount <= 0 || paymentAmount > payablePaymentTotal + 0.009 || busyAction === 'payment'}
+                    disabled={paymentSelectionArray.length === 0 || paymentAmount <= 0 || paymentAmount > payablePaymentTotal + 0.009 || busyAction === 'payment' || isCouponApplying}
                     onClick={() => void handleRegisterPayment()}
                     className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 text-[10px] font-black uppercase text-white disabled:opacity-50"
                   >
