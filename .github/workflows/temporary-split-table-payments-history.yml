@@ -1,0 +1,40 @@
+name: Temporary split table payments history
+
+on:
+  push:
+    branches:
+      - feat/split-table-payments-history
+
+permissions:
+  contents: write
+
+jobs:
+  implement:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Apply split payment implementation
+        run: python3 .github/scripts/split-table-payments-history.py
+      - name: Install dependencies
+        run: npm ci
+      - name: TypeScript
+        run: npm run lint
+      - name: Focused regression tests
+        run: node --test --import tsx tests/table-split-payment-history.test.ts tests/table-operations.test.ts tests/table-checkout-coupon.test.ts tests/local-pix-checkout-ui.test.ts
+      - name: Full application build
+        run: npm run build
+      - name: Commit implementation
+        run: |
+          rm .github/workflows/temporary-split-table-payments-history.yml
+          rm .github/scripts/split-table-payments-history.py
+          git config user.name "kyrub-app"
+          git config user.email "kyrub.app@gmail.com"
+          git add -A
+          git commit -m "Add split table payments and settlement history"
+          git push origin HEAD:feat/split-table-payments-history
