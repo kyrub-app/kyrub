@@ -170,8 +170,8 @@ export const buildCustomerTableCards = (
       orders: [],
       requests: [],
       session: null,
-      tableCode: order.tableCode || serviceLocation.label,
-      displayLabel: order.tableCode || serviceLocation.label,
+      tableCode: serviceLocation.label,
+      displayLabel: serviceLocation.label,
       areaLabel: serviceLocation.label,
     };
     current.orders.push(order);
