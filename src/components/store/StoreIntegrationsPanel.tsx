@@ -25,6 +25,7 @@ import {
   persistStoreIntegrationPlans,
   validateStoreIntegrationSetup,
 } from '../../utils/storeOperationalSettings';
+import { validateBrazilFiscalIssuerIdentity } from '../../utils/brazilFiscalIdentifier';
 import { auth } from '../../utils/firebase';
 import { INTEGRATION_TEST_ORDER_EVENT } from '../../utils/integrationTestOrders';
 
@@ -104,16 +105,16 @@ const INTEGRATIONS: Record<StoreIntegrationId, IntegrationDefinition> = {
     name: 'SEFAZ — NF-e / NFC-e',
     category: 'Fiscal',
     description:
-      'Cadastro inicial da unidade fiscal. Emissão real continuará isolada dos canais de pedidos e dependerá de certificado, credenciamento e provedor seguro.',
+      'Cadastro da identidade fiscal do emissor. Nesta etapa o Kyrub registra nome ou razão social, CPF/CNPJ e ambiente de homologação sem conceder autoridade de emissão.',
     icon: FileText,
     accent: 'text-amber-300',
     orderCapable: false,
     catalogCapable: false,
     inventoryCapable: false,
-    accountLabel: 'Razão social ou unidade fiscal',
-    accountPlaceholder: 'Ex.: Restaurante Exemplo Ltda.',
-    externalIdLabel: 'CNPJ / identificador fiscal',
-    externalIdPlaceholder: 'Somente o identificador público da empresa',
+    accountLabel: 'Nome ou razão social do emissor',
+    accountPlaceholder: 'Ex.: João da Silva ou Empresa Exemplo Ltda.',
+    externalIdLabel: 'CPF / CNPJ do emissor',
+    externalIdPlaceholder: 'CPF ou CNPJ, inclusive formato alfanumérico',
     activationNote:
       'Certificados, CSC, senhas e chaves privadas nunca serão digitados nesta tela. O conector fiscal deverá usar cofre de segredos no backend.',
   },
@@ -260,17 +261,27 @@ export function StoreIntegrationsPanel({
     }
 
     try {
-      validateStoreIntegrationSetup(integrationId, value[integrationId]);
+      const fiscalIssuer = integrationId === 'sefaz';
+      if (fiscalIssuer) {
+        validateBrazilFiscalIssuerIdentity(
+          value.sefaz.accountLabel,
+          value.sefaz.externalStoreId
+        );
+      } else {
+        validateStoreIntegrationSetup(integrationId, value[integrationId]);
+      }
+
       setBusyId(integrationId);
       const nextValue = replaceIntegration(integrationId, {
         ...value[integrationId],
-        status: 'awaiting-authorization',
+        status: fiscalIssuer ? 'draft' : 'awaiting-authorization',
       });
       await persistStoreIntegrationPlans(user, nextValue);
       setFeedback({
         integrationId,
-        message:
-          'Solicitação salva. A conexão externa continuará bloqueada até o backend e o parceiro confirmarem a autorização.',
+        message: fiscalIssuer
+          ? 'Cadastro fiscal do emissor salvo. A emissão continua bloqueada; o próximo passo será a homologação fiscal e a política contábil executável.'
+          : 'Solicitação salva. A conexão externa continuará bloqueada até o backend e o parceiro confirmarem a autorização.',
         type: 'success',
       });
     } catch (error) {
@@ -411,6 +422,20 @@ export function StoreIntegrationsPanel({
                 {definition.description}
               </p>
 
+              {integrationId === 'sefaz' && (
+                <div
+                  className="mt-3 rounded-xl border border-amber-500/20 bg-amber-500/[0.04] px-3 py-2.5"
+                  data-fiscal-issuer-onboarding="true"
+                >
+                  <strong className="text-[9px] font-black uppercase text-amber-200">
+                    Identificação fiscal do emissor
+                  </strong>
+                  <p className="mt-1 text-[8px] leading-relaxed text-slate-400">
+                    Informe o nome ou razão social e o CPF/CNPJ que identificam o emissor. O Kyrub aceita CNPJ numérico e o novo CNPJ alfanumérico. Novos cadastros começam em homologação e não habilitam emissão fiscal.
+                  </p>
+                </div>
+              )}
+
               {!configured ? (
                 <button
                   type="button"
@@ -420,7 +445,7 @@ export function StoreIntegrationsPanel({
                   id={`configure-store-integration-${integrationId}`}
                 >
                   <PlugZap className="h-3.5 w-3.5" />
-                  Configurar integração
+                  {integrationId === 'sefaz' ? 'Cadastrar emissor fiscal' : 'Configurar integração'}
                 </button>
               ) : (
                 <>
@@ -430,7 +455,7 @@ export function StoreIntegrationsPanel({
                     className="mt-3 flex min-h-9 w-full items-center justify-between rounded-xl border border-slate-800 bg-slate-900 px-3 text-[8px] font-black uppercase text-slate-300"
                     aria-expanded={expanded}
                   >
-                    <span>Dados e roteamento</span>
+                    <span>{integrationId === 'sefaz' ? 'Dados do emissor' : 'Dados e roteamento'}</span>
                     {expanded ? (
                       <ChevronUp className="h-3.5 w-3.5" />
                     ) : (
@@ -463,17 +488,21 @@ export function StoreIntegrationsPanel({
                           value={plan.externalStoreId}
                           onChange={event =>
                             updateIntegration(integrationId, {
-                              externalStoreId: event.target.value,
+                              externalStoreId:
+                                integrationId === 'sefaz'
+                                  ? event.target.value.toUpperCase()
+                                  : event.target.value,
                             })
                           }
                           disabled={disabled || busy}
                           placeholder={definition.externalIdPlaceholder}
+                          autoCapitalize={integrationId === 'sefaz' ? 'characters' : undefined}
                           className="mt-1.5 w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 text-[10px] normal-case text-white outline-none focus:border-cyan-500 disabled:opacity-45"
                         />
                       </label>
 
                       <label className="block text-[8px] font-black uppercase text-slate-500">
-                        Ambiente desejado
+                        {integrationId === 'sefaz' ? 'Ambiente fiscal' : 'Ambiente desejado'}
                         <select
                           value={plan.environment}
                           onChange={event =>
@@ -488,9 +517,22 @@ export function StoreIntegrationsPanel({
                           className="mt-1.5 w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 text-[10px] text-white outline-none focus:border-cyan-500 disabled:opacity-45"
                         >
                           <option value="sandbox">Homologação / sandbox</option>
-                          <option value="production">Produção</option>
+                          <option
+                            value="production"
+                            disabled={integrationId === 'sefaz' && plan.environment !== 'production'}
+                          >
+                            {integrationId === 'sefaz'
+                              ? 'Produção — após homologação fiscal'
+                              : 'Produção'}
+                          </option>
                         </select>
                       </label>
+
+                      {integrationId === 'sefaz' && plan.environment !== 'production' && (
+                        <p className="rounded-xl border border-amber-500/15 bg-amber-500/[0.03] px-3 py-2 text-[8px] leading-relaxed text-amber-100">
+                          Produção permanece bloqueada neste primeiro cadastro. Ela será liberada somente depois da homologação, das credenciais fiscais e da política contábil executável.
+                        </p>
+                      )}
 
                       {definition.orderCapable && (
                         <label className="block text-[8px] font-black uppercase text-slate-500">
@@ -597,9 +639,13 @@ export function StoreIntegrationsPanel({
                           id={`request-store-integration-${integrationId}`}
                         >
                           <Send className="h-3.5 w-3.5" />
-                          {plan.status === 'awaiting-authorization'
-                            ? 'Atualizar solicitação'
-                            : 'Solicitar conexão'}
+                          {integrationId === 'sefaz'
+                            ? busy
+                              ? 'Salvando...'
+                              : 'Salvar cadastro fiscal'
+                            : plan.status === 'awaiting-authorization'
+                              ? 'Atualizar solicitação'
+                              : 'Solicitar conexão'}
                         </button>
 
                         {definition.orderCapable && (
