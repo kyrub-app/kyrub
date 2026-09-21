@@ -126,16 +126,39 @@ test('local service summary derives operational counts without parallel state', 
   });
 });
 
-test('PDV overview reuses canonical customer orders and existing pickup navigation', () => {
+test('PDV stays operational while the local service KPI dashboard lives under the Renda store access', () => {
   const bridge = readFileSync('src/components/store/LocalServicePdvBridge.tsx', 'utf8');
+  const dashboard = readFileSync(
+    'src/components/store/LocalServiceDashboardCards.tsx',
+    'utf8'
+  );
+  const renda = readFileSync('src/components/tabs/RendaTab.tsx', 'utf8');
+
   assert.match(bridge, /subscribeToStoreCustomerOrders\(/);
   assert.match(bridge, /buildLocalServiceSummary\(orders\)/);
   assert.match(bridge, /getElementById\('erp-clientes-tab'\)/);
-  assert.match(bridge, /getElementById\('kyrub-pdv-pickup-tab'\)/);
   assert.match(bridge, /PDV · Atendimento Local/);
   assert.match(bridge, /Entregas não participam deste painel/);
-  assert.match(bridge, /summary\.activeServiceLocations/);
-  assert.match(bridge, /Locais ativos/);
+  assert.doesNotMatch(bridge, /Locais ativos/);
+  assert.doesNotMatch(bridge, /Aguardando aprovação/);
+  assert.doesNotMatch(bridge, /Em fluxo local/);
+  assert.doesNotMatch(bridge, /Aguardando retirada/);
+
+  assert.match(dashboard, /subscribeToStoreCustomerOrders\(/);
+  assert.match(dashboard, /buildLocalServiceSummary\(orders\)/);
+  assert.match(dashboard, /summary\.activeServiceLocations/);
+  assert.match(dashboard, /Locais ativos/);
+  assert.match(dashboard, /Aguardando aprovação/);
+  assert.match(dashboard, /Em fluxo local/);
+  assert.match(dashboard, /Aguardando retirada/);
+  assert.match(dashboard, /Pedido pronto para retirada permanece aberto/);
+
+  assert.match(renda, /LocalServiceDashboardCards/);
+  assert.match(renda, /id="btn-criar-loja-ofertas"/);
+  assert.match(
+    renda,
+    /btn-criar-loja-ofertas[\s\S]*hasConfiguredStore && <LocalServiceDashboardCards \/>/
+  );
 });
 
 test('secure pickup remains the only completion path for ready pickup in the local PDV', () => {
