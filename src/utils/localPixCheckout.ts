@@ -1,4 +1,5 @@
 import { auth } from './firebase';
+import type { StorePromotionQuote } from './storePromotions';
 
 export type LocalPixProvider = 'mercado-pago' | 'store-pix';
 
@@ -122,6 +123,29 @@ export const loadLocalPaymentOptions = async (storeId: string): Promise<LocalPay
   return json<LocalPaymentOptions>(
     await authorizedFetch(`/api/local-attendance/payment-options?${params.toString()}`),
     'Não foi possível consultar os modos de recebimento.'
+  );
+};
+
+export const quoteLocalCoupon = async (input: {
+  storeId: string;
+  couponCode: string;
+  items: Array<{ productId: string; quantity: number }>;
+}): Promise<StorePromotionQuote> => {
+  const couponCode = input.couponCode.trim();
+  if (!couponCode) throw new Error('Digite um cupom para aplicar.');
+  if (input.items.length === 0) {
+    throw new Error('Selecione ao menos um item antes de aplicar o cupom.');
+  }
+  return json<StorePromotionQuote>(
+    await authorizedFetch('/api/payments/coupons/quote', {
+      method: 'POST',
+      body: JSON.stringify({
+        storeId: input.storeId,
+        couponCode,
+        items: input.items,
+      }),
+    }),
+    'Não foi possível validar o cupom.'
   );
 };
 

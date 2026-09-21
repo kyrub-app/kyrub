@@ -2,6 +2,7 @@ import { collection, doc, runTransaction } from 'firebase/firestore';
 import type { User } from 'firebase/auth';
 import type { Product } from '../types';
 import { db } from './firebase';
+import type { StorePromotionQuote } from './storePromotions';
 import {
   getCustomerOrderDocumentPath,
   getCustomerOrderItemOpenQuantity,
@@ -90,6 +91,7 @@ interface RegisterTablePaymentInput {
   tableCode: string;
   selections: TableItemSelection[];
   method: TablePaymentMethod;
+  coupon?: StorePromotionQuote;
 }
 
 interface TransferTableItemsInput {
@@ -109,6 +111,7 @@ interface ExcludeTableItemInput {
 const normalizeTableCode = (value: string): string => value.trim();
 const tableKey = (value: string): string =>
   normalizeTableCode(value).toLocaleLowerCase('pt-BR');
+const roundMoney = (value: number): number => Math.round(value * 100) / 100;
 
 const operatorNameFor = (
   user: Pick<User, 'displayName' | 'email'>
@@ -384,7 +387,31 @@ export const registerTablePayment = async (
       input.tableCode,
       input.selections
     );
-    result = applied;
+    const selectedSubtotal = roundMoney(applied.amount);
+    const coupon = input.coupon;
+    let paymentAmount = selectedSubtotal;
+    let discountAmount = 0;
+
+    if (coupon) {
+      const quotedSubtotal = roundMoney(coupon.subtotal);
+      const quotedDiscount = roundMoney(coupon.discountTotal);
+      const quotedTotal = roundMoney(coupon.total);
+      if (
+        !coupon.code.trim() ||
+        !Number.isFinite(quotedSubtotal) ||
+        !Number.isFinite(quotedDiscount) ||
+        !Number.isFinite(quotedTotal) ||
+        quotedDiscount < 0 ||
+        quotedTotal < 0 ||
+        Math.abs(quotedSubtotal - selectedSubtotal) > 0.009 ||
+        Math.abs(roundMoney(quotedSubtotal - quotedDiscount) - quotedTotal) > 0.009
+      ) {
+        throw new Error('O saldo selecionado mudou. Aplique o cupom novamente.');
+      }
+      discountAmount = quotedDiscount;
+      paymentAmount = quotedTotal;
+    }
+    result = { ...applied, amount: paymentAmount };
 
     applied.updatedOrders.forEach(order => {
       transaction.update(
@@ -403,7 +430,12 @@ export const registerTablePayment = async (
       storeId: input.storeId,
       tableCode: normalizeTableCode(input.tableCode),
       method: input.method,
-      amount: applied.amount,
+      amount: paymentAmount,
+      originalAmount: selectedSubtotal,
+      discountAmount,
+      couponCode: coupon?.code ?? '',
+      couponTitle: coupon?.title ?? '',
+      promotionId: coupon?.promotionId ?? '',
       quantity: applied.quantity,
       items: applied.items,
       operatorId: user.uid,

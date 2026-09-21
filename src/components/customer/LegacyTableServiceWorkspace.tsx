@@ -9,6 +9,7 @@ import {
   Plus,
   ReceiptText,
   Send,
+  TicketPercent,
   Trash2,
   Utensils,
   WalletCards,
@@ -34,6 +35,8 @@ import {
   type TableOpenLine,
   type TablePaymentMethod,
 } from '../../utils/tableOperations';
+import { quoteLocalCoupon } from '../../utils/localPixCheckout';
+import type { StorePromotionQuote } from '../../utils/storePromotions';
 import { SharedPdvCatalog } from '../pdv/SharedPdvCatalog';
 
 interface TableServiceWorkspaceProps {
@@ -43,10 +46,11 @@ interface TableServiceWorkspaceProps {
   orders: CustomerOrder[];
   onClose: () => void;
   notify: (message: string, type?: 'success' | 'error' | 'info') => void;
+  onAppliedCouponChange?: (couponCode: string) => void;
 }
 
 type WorkspaceView = 'catalog' | 'account' | 'transfer';
-type BusyAction = '' | 'order' | 'payment' | 'transfer' | 'exclude';
+type BusyAction = '' | 'order' | 'payment' | 'transfer' | 'exclude' | 'coupon';
 type CartEntry = { product: Product; quantity: number; note: string };
 
 const CONFIRMED_SALE_STATUSES = new Set<CustomerOrder['status']>([
@@ -211,6 +215,7 @@ export const TableServiceWorkspace = ({
   orders,
   onClose,
   notify,
+  onAppliedCouponChange,
 }: TableServiceWorkspaceProps) => {
   const [view, setView] = useState<WorkspaceView>('catalog');
   const [isReviewOpen, setIsReviewOpen] = useState(false);
@@ -223,6 +228,8 @@ export const TableServiceWorkspace = ({
   const [targetTableCode, setTargetTableCode] = useState('');
   const [busyAction, setBusyAction] = useState<BusyAction>('');
   const [excludingLineKey, setExcludingLineKey] = useState('');
+  const [couponCode, setCouponCode] = useState('');
+  const [couponQuote, setCouponQuote] = useState<StorePromotionQuote | null>(null);
 
   useEffect(() => {
     setView('catalog');
@@ -234,7 +241,15 @@ export const TableServiceWorkspace = ({
     setTransferSelections({});
     setTargetTableCode('');
     setExcludingLineKey('');
-  }, [tableCode]);
+    setCouponCode('');
+    setCouponQuote(null);
+    onAppliedCouponChange?.('');
+  }, [tableCode, onAppliedCouponChange]);
+
+  useEffect(() => {
+    setCouponQuote(null);
+    onAppliedCouponChange?.('');
+  }, [paymentSelections, onAppliedCouponChange]);
 
   const storeProducts = useMemo(
     () =>
@@ -285,6 +300,16 @@ export const TableServiceWorkspace = ({
     (sum, line) => sum + (paymentSelections[line.key] ?? 0) * line.price,
     0
   );
+  const selectedCouponItems = useMemo(() => {
+    const quantities = new Map<string, number>();
+    for (const line of openLines) {
+      const quantity = paymentSelections[line.key] ?? 0;
+      if (quantity <= 0 || !line.productId.trim()) continue;
+      quantities.set(line.productId, (quantities.get(line.productId) ?? 0) + quantity);
+    }
+    return Array.from(quantities, ([productId, quantity]) => ({ productId, quantity }));
+  }, [openLines, paymentSelections]);
+  const payablePaymentTotal = couponQuote?.total ?? selectedPaymentTotal;
   const selectedTransferTotal = openLines.reduce(
     (sum, line) => sum + (transferSelections[line.key] ?? 0) * line.price,
     0
@@ -363,6 +388,50 @@ export const TableServiceWorkspace = ({
     }
   };
 
+  const assertCouponMatchesSelection = (quote: StorePromotionQuote): void => {
+    if (Math.abs(quote.subtotal - selectedPaymentTotal) > 0.009) {
+      throw new Error('O valor dos itens mudou. Revise a seleção e aplique o cupom novamente.');
+    }
+  };
+
+  const handleApplyCoupon = async (): Promise<void> => {
+    const code = couponCode.trim();
+    if (!code) {
+      notify('Digite o código do cupom.', 'info');
+      return;
+    }
+    if (paymentSelectionArray.length === 0) {
+      notify('Selecione ao menos um item antes de aplicar o cupom.', 'info');
+      return;
+    }
+
+    setBusyAction('coupon');
+    try {
+      const quote = await quoteLocalCoupon({
+        storeId,
+        couponCode: code,
+        items: selectedCouponItems,
+      });
+      assertCouponMatchesSelection(quote);
+      setCouponCode(quote.code);
+      setCouponQuote(quote);
+      onAppliedCouponChange?.(quote.code);
+      notify(
+        `Cupom ${quote.code} aplicado. Saldo a pagar: ${formatCurrency(quote.total)}.`,
+        'success'
+      );
+    } catch (error) {
+      setCouponQuote(null);
+      onAppliedCouponChange?.('');
+      notify(
+        error instanceof Error ? error.message : 'Não foi possível aplicar o cupom.',
+        'error'
+      );
+    } finally {
+      setBusyAction('');
+    }
+  };
+
   const handleRegisterPayment = async (): Promise<void> => {
     const user = auth.currentUser;
     if (!user) {
@@ -372,13 +441,28 @@ export const TableServiceWorkspace = ({
 
     setBusyAction('payment');
     try {
+      let confirmedCoupon = couponQuote;
+      if (couponQuote) {
+        confirmedCoupon = await quoteLocalCoupon({
+          storeId,
+          couponCode: couponQuote.code,
+          items: selectedCouponItems,
+        });
+        assertCouponMatchesSelection(confirmedCoupon);
+        setCouponQuote(confirmedCoupon);
+        onAppliedCouponChange?.(confirmedCoupon.code);
+      }
       const result = await registerTablePayment(user, {
         storeId,
         tableCode,
         selections: paymentSelectionArray,
         method: paymentMethod,
+        ...(confirmedCoupon ? { coupon: confirmedCoupon } : {}),
       });
       setPaymentSelections({});
+      setCouponCode('');
+      setCouponQuote(null);
+      onAppliedCouponChange?.('');
       notify(
         `${formatCurrency(result.amount)} registrado em ${getTablePaymentMethodLabel(paymentMethod)}.`,
         'success'
@@ -590,11 +674,66 @@ export const TableServiceWorkspace = ({
                       <span>Saldo da mesa</span>
                       <span>{formatCurrency(outstandingTotal)}</span>
                     </div>
+                    {couponQuote && (
+                      <>
+                        <div className="flex justify-between text-slate-500">
+                          <span>Selecionado</span>
+                          <span>{formatCurrency(selectedPaymentTotal)}</span>
+                        </div>
+                        <div className="flex justify-between font-bold text-violet-300">
+                          <span>Desconto · {couponQuote.code}</span>
+                          <span>− {formatCurrency(couponQuote.discountTotal)}</span>
+                        </div>
+                      </>
+                    )}
                     <div className="flex justify-between border-t border-slate-800 pt-2 font-black text-white">
-                      <span>Selecionado</span>
-                      <span>{formatCurrency(selectedPaymentTotal)}</span>
+                      <span>Saldo a pagar</span>
+                      <span>{formatCurrency(payablePaymentTotal)}</span>
                     </div>
                   </div>
+
+                  <div className="rounded-2xl border border-violet-500/20 bg-violet-500/[0.05] p-3">
+                    <label htmlFor="staff-table-coupon-code" className="flex items-center gap-2 text-[10px] font-black text-violet-100">
+                      <TicketPercent className="h-4 w-4" />
+                      Cupom de desconto
+                    </label>
+                    <div className="mt-2 flex gap-2">
+                      <input
+                        id="staff-table-coupon-code"
+                        type="text"
+                        value={couponCode}
+                        maxLength={48}
+                        autoComplete="off"
+                        spellCheck={false}
+                        onChange={event => {
+                          setCouponCode(event.target.value.toUpperCase());
+                          setCouponQuote(null);
+                          onAppliedCouponChange?.('');
+                        }}
+                        placeholder="Digite o cupom"
+                        className="min-h-10 min-w-0 flex-1 rounded-xl border border-slate-800 bg-slate-900 px-3 text-xs font-bold uppercase text-white outline-none placeholder:normal-case placeholder:text-slate-600 focus:border-violet-400"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => void handleApplyCoupon()}
+                        disabled={
+                          !couponCode.trim() ||
+                          paymentSelectionArray.length === 0 ||
+                          busyAction === 'coupon' ||
+                          busyAction === 'payment'
+                        }
+                        className="min-h-10 rounded-xl bg-violet-500 px-3 text-[9px] font-black uppercase text-white disabled:opacity-40"
+                      >
+                        {busyAction === 'coupon' ? 'Aplicando...' : 'Aplicar'}
+                      </button>
+                    </div>
+                    {couponQuote && (
+                      <p className="mt-2 text-[9px] font-semibold text-violet-200">
+                        {couponQuote.title} · desconto de {formatCurrency(couponQuote.discountTotal)} aplicado.
+                      </p>
+                    )}
+                  </div>
+
                   <div className="grid grid-cols-2 gap-2">
                     {(['cash', 'pix', 'card', 'other'] as TablePaymentMethod[]).map(method => (
                       <button
