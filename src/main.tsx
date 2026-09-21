@@ -7,6 +7,7 @@ import { GerencialIntegrationsNativeBridge } from './components/GerencialIntegra
 import { KyrubAiConversationCloudSyncGate } from './components/KyrubAiConversationCloudSyncGate';
 import { OfficialKnowledgeSemanticSetupBridge } from './components/OfficialKnowledgeSemanticSetupBridge';
 import { OfficialKnowledgeSetupBridge } from './components/OfficialKnowledgeSetupBridge';
+import { PdvProductQuickActionsBridge } from './components/pdv/PdvProductQuickActionsBridge';
 import { BuyerPickupCodeBridge } from './components/store/BuyerPickupCodeBridge';
 import { MercadoLivreOAuthReturnBridge } from './components/store/MercadoLivreOAuthReturnBridge';
 import { MercadoPagoReceivablesBridge } from './components/store/MercadoPagoReceivablesBridge';
@@ -52,6 +53,7 @@ createRoot(rootElement).render(
           <ServiceLocationOperationalWorkspaceBridge />
           <MercadoLivreOAuthReturnBridge />
           <PickupPdvNavigationBridge />
+          <PdvProductQuickActionsBridge />
           <GerencialIntegrationsNativeBridge />
           <MercadoPagoReceivablesBridge />
           <StoreOwnedPixReceivablesBridge />
