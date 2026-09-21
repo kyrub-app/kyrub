@@ -42,37 +42,35 @@ export const LocalAttendanceBridge = () => {
     let cancelled = false;
     let timer = 0;
     let portalHost: HTMLDivElement | null = null;
-    let hiddenNodes: Array<{ node: HTMLElement; display: string }> = [];
+    const hiddenNodes = new Map<HTMLElement, string>();
 
     const restoreLegacy = (): void => {
-      hiddenNodes.forEach(({ node, display }) => {
+      hiddenNodes.forEach((display, node) => {
         if (node.isConnected) node.style.display = display;
       });
-      hiddenNodes = [];
+      hiddenNodes.clear();
     };
 
-    const mount = (): void => {
-      if (cancelled) return;
-      if (portalHost?.isConnected) return;
-
-      restoreLegacy();
-      portalHost?.remove();
-      portalHost = null;
-      setHost(null);
-
+    const resolveLegacyContext = (): {
+      container: HTMLElement;
+      headerBlock: HTMLElement;
+    } | null => {
       const container = document.getElementById('erp-clientes-tab');
       const opener = document.getElementById('erp-attendance-opener-row');
       if (!(container instanceof HTMLElement) || !(opener instanceof HTMLElement)) {
-        timer = window.setTimeout(mount, 60);
-        return;
+        return null;
       }
-
       const headerBlock = opener.parentElement;
       if (!(headerBlock instanceof HTMLElement) || headerBlock.parentElement !== container) {
-        timer = window.setTimeout(mount, 60);
-        return;
+        return null;
       }
+      return { container, headerBlock };
+    };
 
+    const hideLegacyAttendanceUi = (): boolean => {
+      const context = resolveLegacyContext();
+      if (!context) return false;
+      const { container, headerBlock } = context;
       const directChildren = Array.from(container.children).filter(
         (child): child is HTMLElement => child instanceof HTMLElement
       );
@@ -81,26 +79,57 @@ export const LocalAttendanceBridge = () => {
         if (child === headerBlock) return true;
         if (child.id === 'empty-clients') return true;
         if (child.id) return false;
-        return child !== headerBlock && !child.querySelector('[id$="-host"]');
+        return !child.querySelector('[id$="-host"]');
       });
 
       for (const node of legacyNodes) {
-        hiddenNodes.push({ node, display: node.style.display });
-        node.style.display = 'none';
+        if (!hiddenNodes.has(node)) {
+          hiddenNodes.set(node, node.style.display);
+        }
+        if (node.style.display !== 'none') {
+          node.style.display = 'none';
+        }
       }
+      return true;
+    };
+
+    const mount = (): void => {
+      if (cancelled) return;
+      if (portalHost?.isConnected) {
+        hideLegacyAttendanceUi();
+        return;
+      }
+
+      restoreLegacy();
+      portalHost?.remove();
+      portalHost = null;
+      setHost(null);
+
+      const context = resolveLegacyContext();
+      if (!context) {
+        timer = window.setTimeout(mount, 60);
+        return;
+      }
+      const { container, headerBlock } = context;
+      hideLegacyAttendanceUi();
 
       portalHost = document.createElement('div');
       portalHost.id = 'canonical-local-attendance-host';
       portalHost.className = 'min-w-0';
       container.insertBefore(portalHost, headerBlock);
       setHost(portalHost);
+      hideLegacyAttendanceUi();
     };
 
     const observer = new MutationObserver(() => {
-      if (!portalHost?.isConnected) {
-        window.clearTimeout(timer);
-        timer = window.setTimeout(mount, 30);
-      }
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => {
+        if (!portalHost?.isConnected) {
+          mount();
+          return;
+        }
+        hideLegacyAttendanceUi();
+      }, 30);
     });
     observer.observe(document.body, { childList: true, subtree: true });
     timer = window.setTimeout(mount, 0);

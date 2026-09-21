@@ -52,6 +52,7 @@ export const LocalAttendanceWorkspace = ({
   const [sessions, setSessions] = useState<LocalAttendanceSession[]>([]);
   const [customerLabel, setCustomerLabel] = useState('');
   const [choiceKey, setChoiceKey] = useState('');
+  const [locationFilter, setLocationFilter] = useState('all');
   const [itemCount, setItemCount] = useState(1);
   const [loading, setLoading] = useState(false);
   const [busyId, setBusyId] = useState('');
@@ -62,6 +63,15 @@ export const LocalAttendanceWorkspace = ({
       setChoiceKey(choices[0]?.key ?? '');
     }
   }, [choiceKey, choices]);
+
+  useEffect(() => {
+    if (
+      locationFilter !== 'all' &&
+      !choices.some(choice => choice.serviceLocationId === locationFilter)
+    ) {
+      setLocationFilter('all');
+    }
+  }, [choices, locationFilter]);
 
   const refresh = useCallback(async (silent = false): Promise<void> => {
     if (!storeId) return;
@@ -91,6 +101,15 @@ export const LocalAttendanceWorkspace = ({
   const openSessions = useMemo(
     () => sessions.filter(session => session.status === 'open'),
     [sessions]
+  );
+
+  const filteredOpenSessions = useMemo(
+    () => locationFilter === 'all'
+      ? openSessions
+      : openSessions.filter(
+          session => session.serviceLocation?.id === locationFilter
+        ),
+    [locationFilter, openSessions]
   );
 
   const handleOpen = async (): Promise<void> => {
@@ -162,6 +181,36 @@ export const LocalAttendanceWorkspace = ({
         </div>
       )}
 
+      {choices.length > 0 && (
+        <div id="canonical-attendance-location-filter" className="flex items-center gap-2 overflow-x-auto whitespace-nowrap pb-1 scrollbar-none">
+          <button
+            type="button"
+            onClick={() => setLocationFilter('all')}
+            className={`rounded-full px-4 py-1.5 text-[10px] font-black uppercase tracking-wider transition-all ${
+              locationFilter === 'all'
+                ? 'bg-orange-500 text-slate-950'
+                : 'bg-slate-950 text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            Todos
+          </button>
+          {choices.map(choice => (
+            <button
+              key={choice.serviceLocationId}
+              type="button"
+              onClick={() => setLocationFilter(choice.serviceLocationId)}
+              className={`rounded-full px-4 py-1.5 text-[10px] font-black uppercase tracking-wider transition-all ${
+                locationFilter === choice.serviceLocationId
+                  ? 'bg-orange-500 text-slate-950'
+                  : 'bg-slate-950 text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              {choice.label}
+            </button>
+          ))}
+        </div>
+      )}
+
       <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_minmax(9rem,0.35fr)]">
         <input
           value={customerLabel}
@@ -204,9 +253,9 @@ export const LocalAttendanceWorkspace = ({
         <div className="rounded-xl border border-red-500/25 bg-red-500/10 px-3 py-2 text-[9px] text-red-300" role="alert">{errorMessage}</div>
       )}
 
-      {openSessions.length > 0 && (
+      {filteredOpenSessions.length > 0 && (
         <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-          {openSessions.map(session => (
+          {filteredOpenSessions.map(session => (
             <article key={session.id} className="rounded-2xl border border-slate-800 bg-slate-950 p-3">
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
@@ -223,6 +272,12 @@ export const LocalAttendanceWorkspace = ({
               </div>
             </article>
           ))}
+        </div>
+      )}
+
+      {openSessions.length > 0 && filteredOpenSessions.length === 0 && (
+        <div className="rounded-2xl border border-dashed border-slate-800 py-5 text-center text-[9px] text-slate-500">
+          Nenhum atendimento ativo neste local.
         </div>
       )}
     </section>
