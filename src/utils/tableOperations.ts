@@ -9,6 +9,7 @@ export {
   applyTablePaymentSelections,
   applyTableTransferSelections,
   transferTableItems,
+  excludeTableItem,
   getTablePaymentMethodLabel,
 } from './legacyTableOperations';
 
@@ -19,6 +20,7 @@ export type {
   TableOpenLine,
   AppliedTablePayment,
   AppliedTableTransfer,
+  TableItemExclusionReceipt,
 } from './legacyTableOperations';
 
 export type TablePaymentMethod = 'cash' | 'pix' | 'card' | 'other';

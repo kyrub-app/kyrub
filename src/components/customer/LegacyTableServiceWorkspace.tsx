@@ -9,6 +9,7 @@ import {
   Plus,
   ReceiptText,
   Send,
+  Trash2,
   Utensils,
   WalletCards,
   X,
@@ -21,6 +22,7 @@ import {
 } from '../../utils/customerOrders';
 import {
   createStaffTableOrder,
+  excludeTableItem,
   getActiveTableOrders,
   getTableOpenLines,
   getTableOutstandingTotal,
@@ -44,7 +46,7 @@ interface TableServiceWorkspaceProps {
 }
 
 type WorkspaceView = 'catalog' | 'account' | 'transfer';
-type BusyAction = '' | 'order' | 'payment' | 'transfer';
+type BusyAction = '' | 'order' | 'payment' | 'transfer' | 'exclude';
 type CartEntry = { product: Product; quantity: number; note: string };
 
 const CONFIRMED_SALE_STATUSES = new Set<CustomerOrder['status']>([
@@ -80,11 +82,15 @@ const SelectionList = ({
   selections,
   setSelections,
   emptyMessage,
+  onExclude,
+  excludingLineKey,
 }: {
   lines: TableOpenLine[];
   selections: Record<string, number>;
   setSelections: React.Dispatch<React.SetStateAction<Record<string, number>>>;
   emptyMessage: string;
+  onExclude?: (line: TableOpenLine) => void;
+  excludingLineKey?: string;
 }) => {
   const updateQuantity = (line: TableOpenLine, quantity: number): void => {
     const safeQuantity = Math.max(0, Math.min(line.availableQuantity, quantity));
@@ -143,20 +149,34 @@ const SelectionList = ({
             </div>
 
             <div className="mt-3 flex items-center justify-between border-t border-white/5 pt-3">
-              <button
-                type="button"
-                onClick={() =>
-                  updateQuantity(line, selected > 0 ? 0 : line.availableQuantity)
-                }
-                className={`flex h-7 w-7 items-center justify-center rounded-lg border ${
-                  selected > 0
-                    ? 'border-orange-500 bg-orange-500 text-slate-950'
-                    : 'border-slate-700 bg-slate-900 text-slate-500'
-                }`}
-                aria-label={`Selecionar ${line.name}`}
-              >
-                {selected > 0 && <Check className="h-3.5 w-3.5" />}
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() =>
+                    updateQuantity(line, selected > 0 ? 0 : line.availableQuantity)
+                  }
+                  className={`flex h-7 w-7 items-center justify-center rounded-lg border ${
+                    selected > 0
+                      ? 'border-orange-500 bg-orange-500 text-slate-950'
+                      : 'border-slate-700 bg-slate-900 text-slate-500'
+                  }`}
+                  aria-label={`Selecionar ${line.name}`}
+                >
+                  {selected > 0 && <Check className="h-3.5 w-3.5" />}
+                </button>
+                {onExclude && (
+                  <button
+                    type="button"
+                    onClick={() => onExclude(line)}
+                    disabled={excludingLineKey === line.key}
+                    className="flex min-h-7 items-center gap-1.5 rounded-lg border border-red-500/30 bg-red-500/10 px-2.5 text-[9px] font-black uppercase text-red-300 disabled:opacity-50"
+                    aria-label={`Excluir ${line.name} da conta`}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    {excludingLineKey === line.key ? 'Excluindo...' : 'Excluir'}
+                  </button>
+                )}
+              </div>
               <div className="flex items-center gap-2">
                 <button
                   type="button"
@@ -202,6 +222,7 @@ export const TableServiceWorkspace = ({
   const [paymentMethod, setPaymentMethod] = useState<TablePaymentMethod>('cash');
   const [targetTableCode, setTargetTableCode] = useState('');
   const [busyAction, setBusyAction] = useState<BusyAction>('');
+  const [excludingLineKey, setExcludingLineKey] = useState('');
 
   useEffect(() => {
     setView('catalog');
@@ -212,6 +233,7 @@ export const TableServiceWorkspace = ({
     setPaymentSelections({});
     setTransferSelections({});
     setTargetTableCode('');
+    setExcludingLineKey('');
   }, [tableCode]);
 
   const storeProducts = useMemo(
@@ -371,6 +393,42 @@ export const TableServiceWorkspace = ({
     }
   };
 
+  const handleExcludeItem = async (line: TableOpenLine): Promise<void> => {
+    const user = auth.currentUser;
+    if (!user) {
+      notify('Faça login novamente para excluir o item.', 'error');
+      return;
+    }
+
+    setBusyAction('exclude');
+    setExcludingLineKey(line.key);
+    try {
+      const result = await excludeTableItem(user, {
+        storeId,
+        tableCode,
+        orderId: line.orderId,
+        lineId: line.lineId,
+      });
+      setPaymentSelections(previous => {
+        const next = { ...previous };
+        delete next[line.key];
+        return next;
+      });
+      notify(
+        `${result.quantity}x ${result.itemName} excluído(s) da conta da mesa ${tableCode}.`,
+        'success'
+      );
+    } catch (error) {
+      notify(
+        error instanceof Error ? error.message : 'Não foi possível excluir o item.',
+        'error'
+      );
+    } finally {
+      setExcludingLineKey('');
+      setBusyAction('');
+    }
+  };
+
   const handleTransferItems = async (): Promise<void> => {
     const user = auth.currentUser;
     if (!user) {
@@ -485,18 +543,11 @@ export const TableServiceWorkspace = ({
             id="staff-pdv-account-view"
           >
             <div className="mx-auto max-w-5xl">
-              <div className="mb-4 flex items-center justify-between gap-3">
-                <button
-                  type="button"
-                  onClick={() => setView('catalog')}
-                  className="flex min-h-10 items-center gap-2 rounded-xl border border-slate-800 bg-slate-950 px-3 text-[10px] font-black uppercase text-slate-300"
-                >
-                  <ChevronLeft className="h-4 w-4" /> Voltar ao PDV
-                </button>
+              <div className="mb-4 flex items-center justify-end">
                 <button
                   type="button"
                   onClick={() => setView('transfer')}
-                  className="flex min-h-10 items-center gap-2 rounded-xl border border-blue-500/30 bg-blue-500/10 px-3 text-[10px] font-black uppercase text-blue-300"
+                  className="flex min-h-10 items-center gap-2 rounded-xl border border-blue-500/30 bg-blue-500/10 px-4 text-[10px] font-black uppercase text-blue-300"
                 >
                   <ArrowRightLeft className="h-4 w-4" /> Transferir
                 </button>
@@ -520,6 +571,8 @@ export const TableServiceWorkspace = ({
                     selections={paymentSelections}
                     setSelections={setPaymentSelections}
                     emptyMessage="Não há itens pendentes de pagamento nesta mesa."
+                    onExclude={line => void handleExcludeItem(line)}
+                    excludingLineKey={excludingLineKey}
                   />
                 </section>
 

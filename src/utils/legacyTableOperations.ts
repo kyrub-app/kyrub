@@ -73,6 +73,18 @@ export interface AppliedTableTransfer {
   quantity: number;
 }
 
+export interface TableItemExclusionReceipt {
+  exclusionId: string;
+  orderId: string;
+  lineId: string;
+  tableCode: string;
+  productId: string;
+  itemName: string;
+  quantity: number;
+  amount: number;
+  createdAt: string;
+}
+
 interface RegisterTablePaymentInput {
   storeId: string;
   tableCode: string;
@@ -85,6 +97,13 @@ interface TransferTableItemsInput {
   sourceTableCode: string;
   targetTableCode: string;
   selections: TableItemSelection[];
+}
+
+interface ExcludeTableItemInput {
+  storeId: string;
+  tableCode: string;
+  orderId: string;
+  lineId: string;
 }
 
 const normalizeTableCode = (value: string): string => value.trim();
@@ -210,6 +229,7 @@ export const buildStaffTableOrder = (
       quantity,
       paidQuantity: 0,
       transferredQuantity: 0,
+      voidedQuantity: 0,
       note: note.trim(),
       image: product.image.trim(),
       isService: product.isService === true,
@@ -446,6 +466,7 @@ export const applyTableTransferSelections = (
         quantity: selectedQuantity,
         paidQuantity: 0,
         transferredQuantity: 0,
+        voidedQuantity: 0,
       });
 
       return {
@@ -563,6 +584,97 @@ export const transferTableItems = async (
 
   if (!result) throw new Error('Não foi possível transferir os itens.');
   return result;
+};
+
+export const excludeTableItem = async (
+  user: Pick<User, 'uid' | 'email' | 'displayName'>,
+  input: ExcludeTableItemInput
+): Promise<TableItemExclusionReceipt> => {
+  const tableCode = normalizeTableCode(input.tableCode);
+  const orderId = input.orderId.trim();
+  const lineId = input.lineId.trim();
+
+  if (user.uid !== input.storeId) {
+    throw new Error('Somente a loja autenticada pode excluir itens da conta.');
+  }
+  if (!tableCode || !orderId || !lineId) {
+    throw new Error('Item da conta não identificado.');
+  }
+
+  const orderReference = doc(db, getCustomerOrderDocumentPath(input.storeId, orderId));
+  const exclusionReference = doc(
+    collection(db, `artifacts/${input.storeId}/public/data/tableItemExclusions`)
+  );
+  let receipt: TableItemExclusionReceipt | null = null;
+
+  await runTransaction(db, async transaction => {
+    const snapshot = await transaction.get(orderReference);
+    const order = parseCustomerOrder(snapshot.data());
+    if (!order) throw new Error('O pedido não foi encontrado.');
+    if (
+      order.fulfillmentType !== 'dine_in' ||
+      tableKey(order.tableCode) !== tableKey(tableCode) ||
+      isTerminalCustomerOrderStatus(order.status)
+    ) {
+      throw new Error('O item não está em uma conta ativa desta mesa.');
+    }
+
+    const sourceItem = order.items.find(item => item.lineId === lineId);
+    if (!sourceItem) throw new Error('O item selecionado não foi encontrado.');
+    const availableQuantity = getCustomerOrderItemOpenQuantity(sourceItem);
+    if (availableQuantity <= 0) {
+      throw new Error('Este item já não possui quantidade em aberto.');
+    }
+
+    const createdAt = new Date().toISOString();
+    const nextItems = order.items.map(item =>
+      item.lineId === lineId
+        ? { ...item, voidedQuantity: (item.voidedQuantity ?? 0) + availableQuantity }
+        : item
+    );
+    const allItemsClosed = nextItems.every(
+      item => getCustomerOrderItemOpenQuantity(item) === 0
+    );
+    const nextSubtotal = nextItems.reduce(
+      (sum, item) =>
+        sum + item.price * Math.max(0, item.quantity - (item.voidedQuantity ?? 0)),
+      0
+    );
+
+    transaction.update(orderReference, {
+      items: nextItems,
+      subtotal: nextSubtotal,
+      total: nextSubtotal,
+      status: allItemsClosed ? 'cancelled' : order.status,
+      updatedAt: createdAt,
+    });
+
+    const nextReceipt: TableItemExclusionReceipt = {
+      exclusionId: exclusionReference.id,
+      orderId: order.id,
+      lineId: sourceItem.lineId,
+      tableCode,
+      productId: sourceItem.productId,
+      itemName: sourceItem.name,
+      quantity: availableQuantity,
+      amount: sourceItem.price * availableQuantity,
+      createdAt,
+    };
+    receipt = nextReceipt;
+    transaction.set(exclusionReference, {
+      ...nextReceipt,
+      storeId: input.storeId,
+      unitPrice: sourceItem.price,
+      previousOrderStatus: order.status,
+      operatorId: user.uid,
+      operatorName: operatorNameFor(user),
+      reason: '',
+      authorizationMode: 'temporary_simple_exclusion',
+    });
+  });
+
+  if (!receipt) throw new Error('Não foi possível excluir o item da conta.');
+  return receipt;
 };
 
 export const getTablePaymentMethodLabel = (

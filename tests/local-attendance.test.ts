@@ -215,8 +215,10 @@ describe('canonical local attendance', () => {
   test('managed environment UI preserves production spaces and does not auto-promote seed values', () => {
     const modal = readFileSync('src/components/modals/LegacyStoreConfigModal.tsx', 'utf8');
     const manager = readFileSync('src/components/store/ServiceLocationManager.tsx', 'utf8');
+    const productionManager = readFileSync('src/components/store/ProductionSpaceManager.tsx', 'utf8');
     assert.match(modal, /<ServiceLocationManager legacySpaces=\{atendimentoSpaces\} \/>/);
-    assert.match(modal, /Espaços de Produção/);
+    assert.match(modal, /<ProductionSpaceManager/);
+    assert.match(productionManager, /Espaços de produção/i);
     assert.match(manager, /isOnlyLegacySeed/);
     assert.match(manager, /A promoção é manual/);
     assert.match(manager, /Nenhum local de atendimento cadastrado/);
