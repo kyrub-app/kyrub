@@ -38,6 +38,8 @@ export const TableServiceWorkspace = (props: TableServiceWorkspaceProps) => {
       couponCode={appliedCouponCode}
       requestedAmount={paymentDraft.amount}
       targetOrderIds={paymentDraft.orderIds}
+      autoStart
+      compact
     />
   ) : (
     <div className="rounded-2xl border border-dashed border-slate-800 bg-slate-950/60 px-4 py-8 text-center text-[10px] text-slate-500">
@@ -71,13 +73,13 @@ export const TableServiceWorkspace = (props: TableServiceWorkspaceProps) => {
                 </span>
                 <div className="min-w-0">
                   <span className="font-mono text-[9px] font-black uppercase tracking-[0.18em] text-indigo-300">
-                    Cobrança Pix canônica · Mesa {props.tableCode}
+                    Pagamento via Pix · Mesa {props.tableCode}
                   </span>
                   <h2 id="staff-table-canonical-pix-title" className="mt-1 text-xl font-black text-white">
-                    Gerar QR Code sem baixar a conta antes do pagamento
+                    Apresente o QR Code ao cliente
                   </h2>
                   <p className="mt-2 text-[10px] leading-relaxed text-slate-400">
-                    O Pix desta tela usa a cobrança canônica do Kyrub. O valor é relido no servidor por pedido; a seleção de itens da tela anterior não define o valor bancário e nenhum item é marcado como pago apenas por gerar o QR Code.
+                    A cobrança só será concluída depois da confirmação do pagamento.
                   </p>
                 </div>
               </div>
@@ -91,11 +93,7 @@ export const TableServiceWorkspace = (props: TableServiceWorkspaceProps) => {
               </button>
             </header>
 
-            <div className="mt-4 rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.05] px-3 py-2.5 text-[9px] leading-relaxed text-emerald-100/75">
-              A cobrança permanece pendente até a autoridade correspondente ao modo escolhido: webhook verificado no Mercado Pago ou confirmação manual auditada no Pix próprio. Se houver mais de um pedido ativo na mesa, cada pedido aparece separadamente para não somar valores no navegador nem criar uma segunda autoridade financeira.
-            </div>
-
-            <div className="mt-5">{canonicalCheckout}</div>
+            <div className="mt-4">{canonicalCheckout}</div>
           </section>
         </div>
       )}
