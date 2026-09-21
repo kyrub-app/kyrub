@@ -7,6 +7,10 @@ const panel = readFileSync(
   'src/components/store/ServiceLocationFinancialContextPanel.tsx',
   'utf8'
 );
+const tableWorkspace = readFileSync(
+  'src/components/customer/TableServiceWorkspace.tsx',
+  'utf8'
+);
 
 test('browser Pix client may request an operator-entered amount while server keeps financial authority', () => {
   assert.match(client, /\/api\/local-attendance\/payment-intents\/pending/);
@@ -51,7 +55,16 @@ test('Pix UI never claims payment merely because a QR was generated', () => {
   assert.doesNotMatch(panel, /registerTablePayment/);
 });
 
-test('Pix UI exposes provider-specific QR only after explicit user action', () => {
+test('staff Pix confirmation auto-starts exactly one configured provider and keeps a compact fallback chooser', () => {
+  assert.match(tableWorkspace, /onPixRequested=\{\(\) => setPixCheckoutOpen\(true\)\}/);
+  assert.match(tableWorkspace, /autoStart/);
+  assert.match(tableWorkspace, /compact/);
+  assert.doesNotMatch(tableWorkspace, /A cobrança permanece pendente até a autoridade correspondente/);
+  assert.match(panel, /if \(!autoStart \|\| !options \|\| requestedAmount <= 0 \|\| targetOrderIds\.length !== 1\) return/);
+  assert.match(panel, /if \(providers\.length !== 1\) return/);
+  assert.match(panel, /void preparePix\(order, context, providers\[0\]\)/);
+  assert.match(panel, /Como deseja receber este Pix\?/);
+  assert.match(panel, /Gerando QR Code…/);
   assert.match(panel, /onClick=\{\(\) => void preparePix\(order, context, 'mercado-pago'\)\}/);
   assert.match(panel, /onClick=\{\(\) => void preparePix\(order, context, 'store-pix'\)\}/);
   assert.match(panel, /qrCodeBase64/);
@@ -59,6 +72,4 @@ test('Pix UI exposes provider-specific QR only after explicit user action', () =
   assert.match(panel, /navigator\.clipboard\.writeText/);
   assert.match(panel, /safeTicketUrl/);
   assert.match(panel, /startsWith\('https:\/\/'\)/);
-  assert.doesNotMatch(panel, /useEffect\([^]*attachLocalMercadoPagoPix/);
-  assert.doesNotMatch(panel, /useEffect\([^]*attachLocalStoreOwnedPix/);
 });
