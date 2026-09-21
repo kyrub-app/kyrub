@@ -10,23 +10,37 @@ const mobileMenuSource = readFileSync(
   'src/components/MobileErpMenu.tsx',
   'utf8'
 );
+const retailerRouterSource = readFileSync(
+  'src/components/RetailerPanelRuntimeRouter.tsx',
+  'utf8'
+);
 
-test('store CRM is mounted in Gerencial instead of the PDV client workspace', () => {
-  assert.match(crmBridgeSource, /erp-gerencial-tab/);
+test('store CRM is no longer injected into the PDV client workspace', () => {
   assert.doesNotMatch(crmBridgeSource, /erp-clientes-tab/);
-  assert.match(crmBridgeSource, /StoreCrmRelationshipPanel/);
-  assert.match(crmBridgeSource, /detail\?\.module === 'crm'/);
+  assert.doesNotMatch(crmBridgeSource, /createPortal/);
+  assert.match(crmBridgeSource, /StoreCrmRelationshipBridge = \(\) => null/);
 });
 
-test('mobile Gerencial module selections enter the Gerencial tab before opening a module', () => {
+test('CRM is an authoritative direct management module that reuses the existing panel', () => {
   assert.match(
-    mobileMenuSource,
-    /if \(isManagementModule\(itemId\)\) \{\s*actions\.onSelectTab\('gerencial'\);\s*selectManagement\(itemId\);/s
+    retailerRouterSource,
+    /crm:\s*\{[\s\S]*?status:\s*'native'/
+  );
+  assert.match(retailerRouterSource, /LazyCrmRelationshipPanel/);
+  assert.match(retailerRouterSource, /moduleId === 'crm'/);
+  assert.match(
+    retailerRouterSource,
+    /<LazyCrmRelationshipPanel storeId=\{retailerProps\.activeRetailerId\} \/>/
   );
 });
 
-test('legacy Gerencial CRM entry is promoted from placeholder to the real module', () => {
-  assert.match(crmBridgeSource, /candidate\.disabled = false/);
-  assert.match(crmBridgeSource, /candidate\.dataset\.kyrubCrmEntry = 'true'/);
-  assert.match(crmBridgeSource, /setCrmSelected\(true\)/);
+test('direct management selections do not reactivate the removed legacy Gerencial route', () => {
+  assert.match(
+    mobileMenuSource,
+    /if \(isManagementModule\(itemId\)\) \{\s*selectManagement\(itemId\);\s*return;\s*\}/s
+  );
+  assert.doesNotMatch(
+    mobileMenuSource,
+    /if \(isManagementModule\(itemId\)\) \{\s*actions\.onSelectTab\('gerencial'\)/s
+  );
 });
