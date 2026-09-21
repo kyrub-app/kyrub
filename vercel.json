@@ -45,6 +45,14 @@
       "destination": "/api/health?transport=local-attendance&path=:path*"
     },
     {
+      "source": "/api/store-promotions",
+      "destination": "/api/store-promotions-transport"
+    },
+    {
+      "source": "/api/store-promotions/:path*",
+      "destination": "/api/store-promotions-transport?path=:path*"
+    },
+    {
       "source": "/api/orders/:orderId/attendance-review",
       "destination": "/api/health?transport=local-attendance&path=orders/:orderId/attendance-review"
     },
