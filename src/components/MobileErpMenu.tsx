@@ -90,7 +90,6 @@ export const commitMobileErpMenuSelection = (
   }
 
   if (isManagementModule(itemId)) {
-    actions.onSelectTab('gerencial');
     selectManagement(itemId);
     return;
   }
