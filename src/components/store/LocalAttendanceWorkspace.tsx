@@ -1,10 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  CheckCircle2,
+  ArrowRight,
   Clock3,
   LoaderCircle,
   MapPin,
-  Plus,
   RefreshCw,
   Users,
 } from 'lucide-react';
@@ -67,7 +66,6 @@ export const LocalAttendanceWorkspace = ({
   const [customerLabel, setCustomerLabel] = useState('');
   const [choiceKey, setChoiceKey] = useState('');
   const [itemCount, setItemCount] = useState(1);
-  const [filter, setFilter] = useState('TODOS');
   const [loading, setLoading] = useState(false);
   const [busyId, setBusyId] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
@@ -76,13 +74,7 @@ export const LocalAttendanceWorkspace = ({
     if (!choices.some(choice => choice.key === choiceKey)) {
       setChoiceKey(choices[0]?.key ?? '');
     }
-    if (
-      filter !== 'TODOS' &&
-      !choices.some(choice => choice.label.toLocaleUpperCase('pt-BR') === filter)
-    ) {
-      setFilter('TODOS');
-    }
-  }, [choiceKey, choices, filter]);
+  }, [choiceKey, choices]);
 
   const refresh = useCallback(async (silent = false): Promise<void> => {
     if (!storeId) return;
@@ -112,12 +104,6 @@ export const LocalAttendanceWorkspace = ({
   const openSessions = useMemo(
     () => sessions.filter(session => session.status === 'open'),
     [sessions]
-  );
-  const visibleSessions = useMemo(
-    () => openSessions.filter(session =>
-      filter === 'TODOS' || session.space === filter
-    ),
-    [filter, openSessions]
   );
 
   const handleOpen = async (): Promise<void> => {
@@ -189,7 +175,7 @@ export const LocalAttendanceWorkspace = ({
         </div>
       )}
 
-      <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_minmax(9rem,0.35fr)_6rem_auto]">
+      <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_minmax(9rem,0.35fr)]">
         <input
           value={customerLabel}
           onChange={event => setCustomerLabel(event.target.value)}
@@ -201,40 +187,46 @@ export const LocalAttendanceWorkspace = ({
             ? <option value="">Nenhum local</option>
             : choices.map(choice => <option key={choice.key} value={choice.key}>{choice.label}</option>)}
         </select>
-        <input type="number" min={1} max={999} value={itemCount} onChange={event => setItemCount(Math.max(1, Math.min(999, Number(event.target.value) || 1)))} className="min-h-10 rounded-xl border border-slate-800 bg-slate-950 px-3 text-center text-xs text-white outline-none" aria-label="Quantidade de itens estimada" />
-        <button type="button" onClick={() => void handleOpen()} disabled={loading || !customerLabel.trim() || !choiceKey} className="flex min-h-10 items-center justify-center gap-2 rounded-xl bg-orange-600 px-4 text-[9px] font-black uppercase text-white disabled:bg-slate-800 disabled:text-slate-600">
-          {loading ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-          Abrir
-        </button>
-      </div>
-
-      <div className="flex gap-1.5 overflow-x-auto pb-1">
-        {['TODOS', ...Array.from(new Set(choices.map(choice => choice.label.toLocaleUpperCase('pt-BR'))))].map(item => (
-          <button type="button" key={item} onClick={() => setFilter(item)} className={`shrink-0 rounded-full px-3 py-1.5 text-[8px] font-black uppercase ${filter === item ? 'bg-orange-500 text-slate-950' : 'border border-slate-800 bg-slate-950 text-slate-500'}`}>
-            {item}
+        <div className="grid grid-cols-[minmax(0,1fr)_4rem] gap-2 md:col-span-2">
+          <label className="flex min-h-10 items-center justify-between gap-3 rounded-xl border border-slate-800 bg-slate-950 px-3">
+            <span className="text-[10px] font-black uppercase tracking-wide text-slate-400">Pessoas</span>
+            <input
+              type="number"
+              min={1}
+              max={999}
+              value={itemCount}
+              onChange={event => setItemCount(Math.max(1, Math.min(999, Number(event.target.value) || 1)))}
+              className="w-16 bg-transparent text-right text-xs font-black text-white outline-none"
+              aria-label="Quantidade de pessoas"
+            />
+          </label>
+          <button
+            type="button"
+            onClick={() => void handleOpen()}
+            disabled={loading || !customerLabel.trim() || !choiceKey}
+            className="flex min-h-10 items-center justify-center rounded-xl bg-orange-600 text-white transition-colors hover:bg-orange-500 disabled:bg-slate-800 disabled:text-slate-600"
+            aria-label="Iniciar atendimento"
+            title="Iniciar atendimento"
+          >
+            {loading ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <ArrowRight className="h-5 w-5" />}
           </button>
-        ))}
+        </div>
       </div>
 
       {errorMessage && (
         <div className="rounded-xl border border-red-500/25 bg-red-500/10 px-3 py-2 text-[9px] text-red-300" role="alert">{errorMessage}</div>
       )}
 
-      {visibleSessions.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-slate-800 py-9 text-center">
-          <CheckCircle2 className="mx-auto mb-2 h-7 w-7 text-slate-700" />
-          <p className="text-[10px] font-bold uppercase text-slate-500">Nenhum atendimento local ativo</p>
-        </div>
-      ) : (
+      {openSessions.length > 0 && (
         <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-          {visibleSessions.map(session => (
+          {openSessions.map(session => (
             <article key={session.id} className="rounded-2xl border border-slate-800 bg-slate-950 p-3">
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
                   <strong className="block truncate text-xs text-white">{session.customerLabel}</strong>
                   <div className="mt-1 flex flex-wrap items-center gap-2 text-[8px] text-slate-600">
                     <span className="flex items-center gap-1"><MapPin className="h-3 w-3" />{session.serviceLocation?.label ?? session.space}</span>
-                    <span>{session.itemCount} item(ns)</span>
+                    <span>{session.itemCount} pessoa(s)</span>
                     <span className="flex items-center gap-1"><Clock3 className="h-3 w-3" />{formatTime(session.openedAt)}</span>
                   </div>
                 </div>

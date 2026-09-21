@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Store as StoreIcon } from 'lucide-react';
 import { StoreOnboardingGuide } from '../store/StoreOnboardingGuide';
 import { ServiceLocationManager } from '../store/ServiceLocationManager';
+import { ProductionSpaceManager } from '../store/ProductionSpaceManager';
 
 interface StoreConfigModalProps {
   isOpen: boolean;
@@ -187,45 +188,21 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = ({
             <div className="space-y-6 animate-fade-in">
               <ServiceLocationManager legacySpaces={atendimentoSpaces} />
 
-              <div className="space-y-3 bg-slate-950/40 border border-slate-850 p-4 rounded-2xl">
-                <h4 className="text-[10px] font-mono text-teal-400 uppercase font-black">Espaços de Produção</h4>
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={newProducaoSpace}
-                    onChange={event => setNewProducaoSpace(event.target.value)}
-                    onKeyDown={event => event.key === 'Enter' && handleAddProducaoSpace()}
-                    className="flex-1 bg-slate-950 border border-slate-850 rounded-xl px-3 py-1.5 text-xs text-white focus:outline-none uppercase"
-                    placeholder="Novo espaço (ex: SALADAS)..."
-                  />
-                  <button
-                    type="button"
-                    onClick={handleAddProducaoSpace}
-                    className="bg-teal-500 hover:bg-teal-600 text-slate-950 font-bold px-3 py-1.5 rounded-xl text-xs uppercase cursor-pointer"
-                  >
-                    + Adicionar
-                  </button>
-                </div>
-                <div className="flex flex-wrap gap-1.5 pt-2">
-                  {producaoSpaces.map(space => (
-                    <span key={space} className="inline-flex items-center gap-1 bg-slate-900 border border-slate-800 text-[10px] text-slate-300 px-2.5 py-1 rounded-full font-bold">
-                      {space}
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveProducaoSpace(space)}
-                        className="text-red-400 hover:text-red-300 ml-1 font-bold font-mono focus:outline-none text-xs"
-                      >
-                        ✕
-                      </button>
-                    </span>
-                  ))}
-                </div>
-              </div>
+              <ProductionSpaceManager
+                newSpace={newProducaoSpace}
+                setNewSpace={setNewProducaoSpace}
+                addSpace={handleAddProducaoSpace}
+                activeSpaces={producaoSpaces}
+                removeSpace={handleRemoveProducaoSpace}
+              />
             </div>
           )}
         </div>
 
-        <div className="bg-slate-950 px-6 py-4 border-t border-slate-850 flex justify-end gap-3">
+        <div
+          className={`${configActiveTab === 'ambiente' ? 'hidden' : 'flex'} bg-slate-950 px-6 py-4 border-t border-slate-850 justify-end gap-3`}
+          data-store-config-footer="true"
+        >
           <button
             type="button"
             onClick={onClose}

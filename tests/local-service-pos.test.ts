@@ -126,23 +126,17 @@ test('local service summary derives operational counts without parallel state', 
   });
 });
 
-test('PDV stays operational while the local service KPI dashboard lives under the Renda store access', () => {
-  const bridge = readFileSync('src/components/store/LocalServicePdvBridge.tsx', 'utf8');
+test('PDV omits the redundant local service intro while the KPI dashboard stays under Renda', () => {
+  const main = readFileSync('src/main.tsx', 'utf8');
   const dashboard = readFileSync(
     'src/components/store/LocalServiceDashboardCards.tsx',
     'utf8'
   );
   const renda = readFileSync('src/components/tabs/RendaTab.tsx', 'utf8');
 
-  assert.match(bridge, /subscribeToStoreCustomerOrders\(/);
-  assert.match(bridge, /buildLocalServiceSummary\(orders\)/);
-  assert.match(bridge, /getElementById\('erp-clientes-tab'\)/);
-  assert.match(bridge, /PDV · Atendimento Local/);
-  assert.match(bridge, /Entregas não participam deste painel/);
-  assert.doesNotMatch(bridge, /Locais ativos/);
-  assert.doesNotMatch(bridge, /Aguardando aprovação/);
-  assert.doesNotMatch(bridge, /Em fluxo local/);
-  assert.doesNotMatch(bridge, /Aguardando retirada/);
+  assert.doesNotMatch(main, /LocalServicePdvBridge/);
+  assert.match(main, /<PickupPdvNavigationBridge \/>/);
+  assert.match(main, /<ServiceLocationOperationalWorkspaceBridge \/>/);
 
   assert.match(dashboard, /subscribeToStoreCustomerOrders\(/);
   assert.match(dashboard, /buildLocalServiceSummary\(orders\)/);
@@ -159,6 +153,20 @@ test('PDV stays operational while the local service KPI dashboard lives under th
     renda,
     /btn-criar-loja-ofertas[\s\S]*hasConfiguredStore && <LocalServiceDashboardCards \/>/
   );
+});
+
+test('local attendance workspace omits redundant filters and empty-state filler', () => {
+  const workspace = readFileSync(
+    'src/components/store/LocalAttendanceWorkspace.tsx',
+    'utf8'
+  );
+
+  assert.match(workspace, /Atendimentos locais/);
+  assert.match(workspace, /openSessions\.length > 0/);
+  assert.doesNotMatch(workspace, /setFilter\(/);
+  assert.doesNotMatch(workspace, /'TODOS'/);
+  assert.doesNotMatch(workspace, /Nenhum atendimento local ativo/);
+  assert.doesNotMatch(workspace, /CheckCircle2/);
 });
 
 test('secure pickup remains the only completion path for ready pickup in the local PDV', () => {
@@ -183,10 +191,4 @@ test('service location foundation carries no customer identity, permission or fi
   const source = readFileSync('shared/serviceLocation.ts', 'utf8');
   assert.doesNotMatch(source, /customerId|buyerId|email|phone|permission|role|fiscal|invoice|payment/i);
   assert.doesNotMatch(source, /nfc|qr|token/i);
-});
-
-test('local service bridge is mounted next to existing pickup authority', () => {
-  const main = readFileSync('src/main.tsx', 'utf8');
-  assert.match(main, /<LocalServicePdvBridge \/>/);
-  assert.match(main, /<PickupPdvNavigationBridge \/>/);
 });

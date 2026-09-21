@@ -1,5 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
-import { LoaderCircle, MapPin, Plus, RefreshCw, Save, ToggleLeft, ToggleRight } from 'lucide-react';
+import {
+  LoaderCircle,
+  MapPin,
+  Plus,
+  RefreshCw,
+  Save,
+  ToggleLeft,
+  ToggleRight,
+} from 'lucide-react';
 import {
   inferLegacyServiceLocationKind,
   type ServiceLocation,
@@ -11,17 +19,6 @@ import {
   loadServiceLocations,
   updateManagedServiceLocation,
 } from '../../utils/serviceLocations';
-
-const KIND_OPTIONS: Array<{ value: ServiceLocationKind; label: string }> = [
-  { value: 'table', label: 'Mesa' },
-  { value: 'counter', label: 'Balcão' },
-  { value: 'parking_spot', label: 'Vaga' },
-  { value: 'room', label: 'Quarto' },
-  { value: 'chair', label: 'Cadeira / assento' },
-  { value: 'box', label: 'Box' },
-  { value: 'service_window', label: 'Guichê' },
-  { value: 'other', label: 'Outro' },
-];
 
 const LEGACY_SEED = ['GERAL', 'BALCÃO', 'ENTREGA', 'AGENDADOS'];
 
@@ -36,7 +33,6 @@ const isOnlyLegacySeed = (spaces: string[]): boolean => {
 
 type LocationDraft = {
   label: string;
-  kind: ServiceLocationKind;
 };
 
 export const ServiceLocationManager = ({
@@ -48,7 +44,6 @@ export const ServiceLocationManager = ({
   const [locations, setLocations] = useState<ServiceLocation[]>([]);
   const [drafts, setDrafts] = useState<Record<string, LocationDraft>>({});
   const [newLabel, setNewLabel] = useState('');
-  const [newKind, setNewKind] = useState<ServiceLocationKind>('table');
   const [loading, setLoading] = useState(false);
   const [busyId, setBusyId] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
@@ -61,7 +56,7 @@ export const ServiceLocationManager = ({
       setLocations(next);
       setDrafts(Object.fromEntries(next.map(location => [
         location.id,
-        { label: location.label, kind: location.kind },
+        { label: location.label },
       ])));
       setErrorMessage('');
     } catch (error) {
@@ -97,7 +92,7 @@ export const ServiceLocationManager = ({
 
   const createLocation = async (
     label: string,
-    kind: ServiceLocationKind
+    kind: ServiceLocationKind = 'other'
   ): Promise<void> => {
     if (!storeId || !label.trim()) return;
     setBusyId('create');
@@ -113,7 +108,7 @@ export const ServiceLocationManager = ({
       ));
       setDrafts(current => ({
         ...current,
-        [created.id]: { label: created.label, kind: created.kind },
+        [created.id]: { label: created.label },
       }));
       setNewLabel('');
     } catch (error) {
@@ -135,12 +130,11 @@ export const ServiceLocationManager = ({
         storeId,
         locationId: location.id,
         label: draft.label.trim(),
-        kind: draft.kind,
       });
       setLocations(current => current.map(item => item.id === updated.id ? updated : item));
       setDrafts(current => ({
         ...current,
-        [updated.id]: { label: updated.label, kind: updated.kind },
+        [updated.id]: { label: updated.label },
       }));
     } catch (error) {
       setErrorMessage(
@@ -171,40 +165,72 @@ export const ServiceLocationManager = ({
   };
 
   return (
-    <section className="space-y-4 rounded-2xl border border-slate-850 bg-slate-950/40 p-4" id="canonical-service-location-manager">
+    <section
+      className="space-y-4 rounded-2xl border border-slate-850 bg-slate-950/40 p-4"
+      id="canonical-service-location-manager"
+    >
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="flex items-center gap-2">
             <MapPin className="h-4 w-4 text-orange-400" />
-            <h4 className="text-[10px] font-black uppercase text-orange-400">Locais de atendimento</h4>
+            <h4 className="text-[10px] font-black uppercase text-orange-400">
+              Locais de atendimento
+            </h4>
           </div>
           <p className="mt-1 text-[9px] leading-relaxed text-slate-500">
-            Cadastre somente locais físicos de atendimento. Entrega, agendados e estações de produção continuam separados.
+            Cadastre livremente as áreas, setores ou ambientes onde sua loja atende clientes. Use os nomes reais do seu negócio; não há categorias obrigatórias.
           </p>
         </div>
-        <button type="button" onClick={() => void refresh()} disabled={loading} className="rounded-xl border border-slate-800 bg-slate-950 p-2 text-slate-500 hover:text-white disabled:opacity-50" aria-label="Atualizar locais de atendimento">
+        <button
+          type="button"
+          onClick={() => void refresh()}
+          disabled={loading}
+          className="rounded-xl border border-slate-800 bg-slate-950 p-2 text-slate-500 hover:text-white disabled:opacity-50"
+          aria-label="Atualizar locais de atendimento"
+        >
           <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
         </button>
       </div>
 
-      <div className="grid gap-2 sm:grid-cols-[9rem_minmax(0,1fr)_auto]">
-        <select value={newKind} onChange={event => setNewKind(event.target.value as ServiceLocationKind)} className="min-h-10 rounded-xl border border-slate-800 bg-slate-950 px-3 text-[10px] font-bold text-white outline-none">
-          {KIND_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
-        </select>
-        <input value={newLabel} onChange={event => setNewLabel(event.target.value)} onKeyDown={event => event.key === 'Enter' && void createLocation(newLabel, newKind)} placeholder="Ex.: Mesa 5, Balcão 2, Vaga 3" className="min-h-10 rounded-xl border border-slate-800 bg-slate-950 px-3 text-xs text-white outline-none focus:border-orange-500/40" />
-        <button type="button" onClick={() => void createLocation(newLabel, newKind)} disabled={!newLabel.trim() || busyId === 'create'} className="flex min-h-10 items-center justify-center gap-2 rounded-xl bg-orange-500 px-4 text-[9px] font-black uppercase text-slate-950 disabled:bg-slate-800 disabled:text-slate-600">
-          {busyId === 'create' ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+      <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+        <input
+          value={newLabel}
+          onChange={event => setNewLabel(event.target.value)}
+          onKeyDown={event => event.key === 'Enter' && void createLocation(newLabel)}
+          placeholder="Ex.: Salão principal, Mezanino, Calçada, Cadeiras de corte"
+          aria-label="Nome do local de atendimento"
+          className="min-h-10 rounded-xl border border-slate-800 bg-slate-950 px-3 text-xs text-white outline-none focus:border-orange-500/40"
+        />
+        <button
+          type="button"
+          onClick={() => void createLocation(newLabel)}
+          disabled={!newLabel.trim() || busyId === 'create'}
+          className="flex min-h-10 items-center justify-center gap-2 rounded-xl bg-orange-500 px-4 text-[9px] font-black uppercase text-slate-950 disabled:bg-slate-800 disabled:text-slate-600"
+        >
+          {busyId === 'create'
+            ? <LoaderCircle className="h-4 w-4 animate-spin" />
+            : <Plus className="h-4 w-4" />}
           Adicionar
         </button>
       </div>
 
       {legacyCandidates.length > 0 && (
         <div className="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-3">
-          <p className="text-[9px] font-black uppercase text-amber-300">Espaços antigos reconhecidos</p>
-          <p className="mt-1 text-[9px] text-slate-500">A promoção é manual. O registro antigo permanece apenas como compatibilidade durante a transição.</p>
+          <p className="text-[9px] font-black uppercase text-amber-300">
+            Espaços antigos reconhecidos
+          </p>
+          <p className="mt-1 text-[9px] text-slate-500">
+            A promoção é manual. O registro antigo permanece apenas como compatibilidade durante a transição.
+          </p>
           <div className="mt-2 flex flex-wrap gap-2">
             {legacyCandidates.map(candidate => (
-              <button key={`${candidate.kind}:${candidate.label}`} type="button" onClick={() => void createLocation(candidate.label, candidate.kind)} disabled={Boolean(busyId)} className="rounded-xl border border-amber-500/20 bg-slate-950 px-3 py-2 text-[9px] font-bold text-amber-200 disabled:opacity-50">
+              <button
+                key={`${candidate.kind}:${candidate.label}`}
+                type="button"
+                onClick={() => void createLocation(candidate.label, candidate.kind)}
+                disabled={Boolean(busyId)}
+                className="rounded-xl border border-amber-500/20 bg-slate-950 px-3 py-2 text-[9px] font-bold text-amber-200 disabled:opacity-50"
+              >
                 Promover {candidate.label}
               </button>
             ))}
@@ -213,7 +239,12 @@ export const ServiceLocationManager = ({
       )}
 
       {errorMessage && (
-        <div className="rounded-xl border border-red-500/25 bg-red-500/10 px-3 py-2 text-[9px] text-red-300" role="alert">{errorMessage}</div>
+        <div
+          className="rounded-xl border border-red-500/25 bg-red-500/10 px-3 py-2 text-[9px] text-red-300"
+          role="alert"
+        >
+          {errorMessage}
+        </div>
       )}
 
       {locations.length === 0 && !loading ? (
@@ -223,23 +254,53 @@ export const ServiceLocationManager = ({
       ) : (
         <div className="space-y-2">
           {locations.map(location => {
-            const draft = drafts[location.id] ?? { label: location.label, kind: location.kind };
+            const draft = drafts[location.id] ?? { label: location.label };
             return (
-              <div key={location.id} className={`rounded-2xl border p-3 ${location.active ? 'border-slate-800 bg-slate-950' : 'border-slate-850 bg-slate-950/50 opacity-70'}`}>
-                <div className="grid gap-2 sm:grid-cols-[8rem_minmax(0,1fr)_auto_auto]">
-                  <select value={draft.kind} onChange={event => setDrafts(current => ({ ...current, [location.id]: { ...draft, kind: event.target.value as ServiceLocationKind } }))} className="min-h-9 rounded-xl border border-slate-800 bg-slate-900 px-2 text-[9px] font-bold text-white outline-none">
-                    {KIND_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
-                  </select>
-                  <input value={draft.label} onChange={event => setDrafts(current => ({ ...current, [location.id]: { ...draft, label: event.target.value } }))} className="min-h-9 rounded-xl border border-slate-800 bg-slate-900 px-3 text-[10px] text-white outline-none focus:border-orange-500/40" />
-                  <button type="button" onClick={() => void saveLocation(location)} disabled={busyId === location.id || !draft.label.trim()} className="flex min-h-9 items-center justify-center gap-1 rounded-xl border border-slate-700 px-3 text-[8px] font-black uppercase text-slate-300 disabled:opacity-50">
+              <div
+                key={location.id}
+                className={`rounded-2xl border p-3 ${
+                  location.active
+                    ? 'border-slate-800 bg-slate-950'
+                    : 'border-slate-850 bg-slate-950/50 opacity-70'
+                }`}
+              >
+                <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto_auto]">
+                  <input
+                    value={draft.label}
+                    onChange={event => setDrafts(current => ({
+                      ...current,
+                      [location.id]: { label: event.target.value },
+                    }))}
+                    aria-label={`Nome do local ${location.label}`}
+                    className="min-h-9 rounded-xl border border-slate-800 bg-slate-900 px-3 text-[10px] text-white outline-none focus:border-orange-500/40"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => void saveLocation(location)}
+                    disabled={busyId === location.id || !draft.label.trim()}
+                    className="flex min-h-9 items-center justify-center gap-1 rounded-xl border border-slate-700 px-3 text-[8px] font-black uppercase text-slate-300 disabled:opacity-50"
+                  >
                     <Save className="h-3.5 w-3.5" /> Salvar
                   </button>
-                  <button type="button" onClick={() => void toggleLocation(location)} disabled={busyId === location.id} className={`flex min-h-9 items-center justify-center gap-1 rounded-xl border px-3 text-[8px] font-black uppercase disabled:opacity-50 ${location.active ? 'border-emerald-500/20 text-emerald-300' : 'border-slate-700 text-slate-500'}`}>
-                    {location.active ? <ToggleRight className="h-4 w-4" /> : <ToggleLeft className="h-4 w-4" />}
+                  <button
+                    type="button"
+                    onClick={() => void toggleLocation(location)}
+                    disabled={busyId === location.id}
+                    className={`flex min-h-9 items-center justify-center gap-1 rounded-xl border px-3 text-[8px] font-black uppercase disabled:opacity-50 ${
+                      location.active
+                        ? 'border-emerald-500/20 text-emerald-300'
+                        : 'border-slate-700 text-slate-500'
+                    }`}
+                  >
+                    {location.active
+                      ? <ToggleRight className="h-4 w-4" />
+                      : <ToggleLeft className="h-4 w-4" />}
                     {location.active ? 'Ativo' : 'Inativo'}
                   </button>
                 </div>
-                <p className="mt-2 font-mono text-[8px] text-slate-700">ID estável: {location.id}</p>
+                <p className="mt-2 font-mono text-[8px] text-slate-700">
+                  ID estável: {location.id}
+                </p>
               </div>
             );
           })}
