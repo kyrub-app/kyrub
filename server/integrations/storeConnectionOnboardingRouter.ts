@@ -15,6 +15,7 @@ import {
   applyStoreOwnerGovernanceDecision,
   loadStoreOwnerGovernancePreview,
 } from './storeOwnerGovernanceService.js';
+import { loadStoreAdministrativeAudit } from './storeAdministrativeAuditService.js';
 
 const clean = (value: unknown): string =>
   typeof value === 'string' ? value.trim() : '';
@@ -38,7 +39,8 @@ const mapError = (error: unknown): { status: number; message: string } => {
     message === 'STORE_REPRESENTATION_FORBIDDEN' ||
     message === 'STORE_INVENTORY_AUTHORITY_FORBIDDEN' ||
     message === 'STORE_INVENTORY_AUTHORITY_REPAIR_FORBIDDEN' ||
-    message === 'STORE_OWNER_GOVERNANCE_FORBIDDEN'
+    message === 'STORE_OWNER_GOVERNANCE_FORBIDDEN' ||
+    message === 'STORE_ADMINISTRATIVE_AUDIT_FORBIDDEN'
   ) {
     return { status: 403, message: 'Você não pode administrar conexões desta loja.' };
   }
@@ -131,6 +133,22 @@ export const createStoreConnectionOnboardingRouter = (): Router => {
       const identity = await authenticatedOwner(request.get('authorization') ?? '', storeId);
       response.setHeader('Cache-Control', 'no-store, max-age=0');
       response.json(await loadStoreConnectionOnboarding({ storeId, userId: identity.uid }));
+    } catch (error) {
+      const mapped = mapError(error);
+      response.status(mapped.status).json({ error: mapped.message });
+    }
+  });
+
+  router.get('/:storeId/administrative-audit', async (request, response) => {
+    try {
+      const storeId = clean(request.params.storeId);
+      const identity = await authenticatedOwner(request.get('authorization') ?? '', storeId);
+      response.setHeader('Cache-Control', 'no-store, max-age=0');
+      response.json(await loadStoreAdministrativeAudit({
+        tenantId: identity.uid,
+        requestedByUserId: identity.uid,
+        limit: Number(request.query.limit),
+      }));
     } catch (error) {
       const mapped = mapError(error);
       response.status(mapped.status).json({ error: mapped.message });

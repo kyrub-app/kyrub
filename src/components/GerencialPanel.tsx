@@ -28,6 +28,7 @@ import { ProductEditorModal } from './store/ProductEditorModal';
 import { ProductInventoryWorkspace } from './store/ProductInventoryWorkspace';
 import MercadoLivreE2ETestBridge from './store/MercadoLivreE2ETestBridge';
 import StoreConnectionsWorkspace from './store/StoreConnectionsWorkspace';
+import StoreAdministrativeAuditWorkspace from './store/StoreAdministrativeAuditWorkspace';
 
 type GerencialModule =
   | 'produtos'
@@ -35,6 +36,7 @@ type GerencialModule =
   | 'financeiro'
   | 'rh'
   | 'integracoes'
+  | 'auditoria'
   | 'vouchers';
 
 type ToastType = 'success' | 'error' | 'info';
@@ -296,6 +298,7 @@ export function GerencialPanel({
     financeiro: 'Financeiro Interno',
     rh: 'Recursos Humanos',
     integracoes: 'Integrações & Sandbox',
+    auditoria: 'Ações & Auditoria',
     vouchers: 'Cupons & Vouchers',
   };
 
@@ -335,6 +338,7 @@ export function GerencialPanel({
           <ModuleCard title="CRM" description="Relacionamento, segmentação, histórico e inteligência sobre clientes." icon={UserCheck} accent="text-cyan-300" badge="Em desenvolvimento" disabled />
           <ModuleCard title="Marketing" description="Aquisição, conversão, retenção, canais e inteligência de crescimento." icon={Zap} accent="text-violet-300" badge="Em desenvolvimento" disabled />
           <ModuleCard title="Integrações & Sandbox" description="Conexões externas, OAuth, sincronização e testes controlados dos canais." icon={Settings} accent="text-purple-300" onClick={() => setActiveModule('integracoes')} />
+          <ModuleCard title="Ações & Auditoria" description="Linha do tempo administrativa de decisões, reparos, integrações e futuras ações autorizadas da loja." icon={ShieldCheck} accent="text-cyan-300" onClick={() => setActiveModule('auditoria')} />
           <ModuleCard title="Cupons & Vouchers" description="Incentivos promocionais permanecem separados de CRM e Marketing." icon={Percent} accent="text-amber-300" badge="Migração nativa" onClick={() => setActiveModule('vouchers')} />
         </div>
       )}
@@ -421,6 +425,16 @@ export function GerencialPanel({
             </p>
           </section>
         </div>
+      )}
+
+      {activeModule === 'auditoria' && (
+        user ? (
+          <StoreAdministrativeAuditWorkspace user={user} storeId={user.uid} />
+        ) : (
+          <div className="rounded-3xl border border-amber-500/20 bg-amber-500/[0.06] p-5 text-[10px] leading-relaxed text-amber-100">
+            A sessão autenticada ainda não está disponível para carregar a auditoria da loja.
+          </div>
+        )
       )}
 
       {activeModule === 'vouchers' && (
