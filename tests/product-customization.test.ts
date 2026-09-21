@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { describe, test } from 'node:test';
 import type { Product } from '../src/types';
 import {
@@ -197,5 +198,21 @@ describe('product customization', () => {
       parseProductQuickNotes(['Gelo', 'gelo', '', ' Limão ']),
       ['Gelo', 'Limão']
     );
+  });
+
+  test('staff PDV splits product details from direct add without bypassing customization', () => {
+    const bridge = readFileSync(
+      'src/components/pdv/PdvProductQuickActionsBridge.tsx',
+      'utf8'
+    );
+    const main = readFileSync('src/main.tsx', 'utf8');
+
+    assert.match(bridge, /button\[id\^="staff-pdv-add-"\]/);
+    assert.match(bridge, /textContent = 'Detalhes'/);
+    assert.match(bridge, /textContent = '\+ Add'/);
+    assert.match(bridge, /original\.click\(\)/);
+    assert.match(bridge, /staff-pdv-confirm-customization/);
+    assert.match(bridge, /isCustomizableProductButton/);
+    assert.match(main, /<PdvProductQuickActionsBridge \/>/);
   });
 });
