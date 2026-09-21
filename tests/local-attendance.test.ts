@@ -200,26 +200,51 @@ describe('canonical local attendance', () => {
     assert.doesNotMatch(service, /customerOrders|payments|delivery|storePointLedger|rewardRedemptions/i);
   });
 
-  test('bridge replaces only legacy ticket UI and preserves CRM/table canonical hosts', () => {
+  test('bridge replaces the legacy opener and chips in place without creating a second attendance workspace', () => {
     const bridge = readFileSync('src/components/store/LocalAttendanceBridge.tsx', 'utf8');
     const app = readFileSync('src/App.tsx', 'utf8');
     assert.match(app, /<LocalAttendanceBridge \/>/);
     assert.match(bridge, /erp-attendance-opener-row/);
-    assert.match(bridge, /store-crm-relationship-host/);
+    assert.match(bridge, /canonical-local-attendance-opener-host/);
+    assert.match(bridge, /canonical-attendance-location-filter-host/);
     assert.match(bridge, /kyrub-customer-table-board-host/);
-    assert.match(bridge, /canonical-local-attendance-host/);
     assert.match(bridge, /loadServiceLocations/);
-    assert.match(bridge, /node\.style\.display = 'none'/);
+    assert.match(bridge, /openLocalAttendance/);
+    assert.doesNotMatch(bridge, /LocalAttendanceWorkspace/);
+    assert.doesNotMatch(bridge, /canonical-local-attendance-host/);
   });
 
-  test('PDV derives new attendance choices only from configured canonical service locations', () => {
+  test('PDV derives opener and filter choices only from active canonical service locations', () => {
     const bridge = readFileSync('src/components/store/LocalAttendanceBridge.tsx', 'utf8');
-    const workspace = readFileSync('src/components/store/LocalAttendanceWorkspace.tsx', 'utf8');
     assert.match(bridge, /loadServiceLocations\(storeId, \{ activeOnly: true \}\)/);
-    assert.doesNotMatch(bridge, /legacySpaces|normalizedLegacySpaces|select option/);
-    assert.match(workspace, /serviceLocations\s*\.filter\(location => location\.active\)/);
-    assert.match(workspace, /serviceLocationId: location\.id/);
-    assert.doesNotMatch(workspace, /legacySpaces|key: `legacy:/);
+    assert.match(bridge, /activeLocations\.map\(location/);
+    assert.match(bridge, /serviceLocationId: location\.id/);
+    assert.match(bridge, /kyrub-attendance-location-filter-changed/);
+    assert.doesNotMatch(bridge, /legacySpaces|normalizedLegacySpaces|\['GERAL'/);
+  });
+
+  test('open attendance sessions are projected into the existing operational cards before a first order exists', () => {
+    const cards = readFileSync('src/utils/customerTables.ts', 'utf8');
+    const board = readFileSync('src/components/customer/CustomerTableBoard.tsx', 'utf8');
+    assert.match(cards, /attendanceSessions: LocalAttendanceSession\[\] = \[\]/);
+    assert.match(cards, /session\.status === 'open'/);
+    assert.match(cards, /`attendance:\$\{session\.id\}`/);
+    assert.match(cards, /displayLabel: session\.customerLabel/);
+    assert.match(cards, /areaLabel: session\.serviceLocation\?\.label \?\? session\.space/);
+    assert.match(board, /loadLocalAttendanceSessions/);
+    assert.match(board, /buildCustomerTableCards\(orders, requests, attendanceSessions\)/);
+    assert.match(board, /card\.attendanceId/);
+    assert.match(board, /onOpenTable\?\.\(card\.tableCode\)/);
+    assert.match(board, /aguardando pedido/);
+  });
+
+  test('configured service-location filter controls the existing card board instead of a duplicate card list', () => {
+    const bridge = readFileSync('src/components/store/LocalAttendanceBridge.tsx', 'utf8');
+    const board = readFileSync('src/components/customer/CustomerTableBoard.tsx', 'utf8');
+    assert.match(bridge, /KYRUB_ATTENDANCE_LOCATION_FILTER_CHANGED/);
+    assert.match(board, /ATTENDANCE_FILTER_EVENT/);
+    assert.match(board, /card\.serviceLocation\.id === locationFilter/);
+    assert.doesNotMatch(bridge, /filteredOpenSessions\.map/);
   });
 
   test('managed environment UI preserves production spaces and does not auto-promote seed values', () => {
@@ -235,14 +260,14 @@ describe('canonical local attendance', () => {
     assert.doesNotMatch(manager, /createManagedServiceLocation\([^)]*GERAL/);
   });
 
-  test('workspace refreshes across devices and never claims payment or fiscal completion', () => {
-    const workspace = readFileSync('src/components/store/LocalAttendanceWorkspace.tsx', 'utf8');
-    assert.match(workspace, /setInterval\(\(\) => void refresh\(true\), 10000\)/);
-    assert.match(workspace, /não confirma pagamento, fiscal ou pedido online/);
-    assert.match(workspace, /closeLocalAttendance/);
-    assert.match(workspace, /serviceLocationId: choice\.serviceLocationId/);
-    assert.doesNotMatch(workspace, /\['GERAL'\]/);
-    assert.doesNotMatch(workspace, /checkout|gateway|nota fiscal emitida|pagamento concluído/i);
+  test('attendance UI refreshes across devices and never creates payment or fiscal authority', () => {
+    const bridge = readFileSync('src/components/store/LocalAttendanceBridge.tsx', 'utf8');
+    const board = readFileSync('src/components/customer/CustomerTableBoard.tsx', 'utf8');
+    assert.match(bridge, /setInterval\(\(\) => void refresh\(true\), 10000\)/);
+    assert.match(board, /setInterval\(\(\) => \{/);
+    assert.match(board, /closeLocalAttendance/);
+    assert.doesNotMatch(bridge, /checkout|gateway|nota fiscal emitida|pagamento concluído/i);
+    assert.doesNotMatch(board, /registerTablePayment|attachMercadoPagoPix|emit.*fiscal/i);
   });
 
   test('direct browser Firestore access to attendance and service locations stays closed', () => {

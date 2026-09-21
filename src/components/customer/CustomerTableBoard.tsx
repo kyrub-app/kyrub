@@ -10,10 +10,17 @@ import {
   ReceiptText,
   Utensils,
   Users,
+  XCircle,
 } from 'lucide-react';
+import type { LocalAttendanceSession } from '../../../shared/localAttendance';
 import type { LocalServiceRequest } from '../../../shared/localServiceRequest';
 import type { ResolvedOrderServiceLocation } from '../../../shared/serviceLocation';
 import type { CustomerOrder } from '../../utils/customerOrders';
+import { auth } from '../../utils/firebase';
+import {
+  closeLocalAttendance,
+  loadLocalAttendanceSessions,
+} from '../../utils/localAttendance';
 import {
   acknowledgeLocalServiceRequest,
   loadActiveLocalServiceRequests,
@@ -34,6 +41,9 @@ interface CustomerTableBoardProps {
   onOpenTable?: (tableCode: string) => void;
   onOpenLocation?: (location: ResolvedOrderServiceLocation) => void;
 }
+
+const ATTENDANCE_FILTER_EVENT = 'kyrub-attendance-location-filter-changed';
+const ATTENDANCE_SESSIONS_EVENT = 'kyrub-local-attendance-sessions-changed';
 
 const formatElapsedTime = (value: string, now: number): string => {
   const startedAt = new Date(value).getTime();
@@ -109,9 +119,13 @@ export const CustomerTableBoard = ({
 }: CustomerTableBoardProps) => {
   const [now, setNow] = useState(() => Date.now());
   const [requests, setRequests] = useState<LocalServiceRequest[]>([]);
+  const [attendanceSessions, setAttendanceSessions] = useState<LocalAttendanceSession[]>([]);
+  const [locationFilter, setLocationFilter] = useState('all');
   const [actingId, setActingId] = useState('');
+  const [closingAttendanceId, setClosingAttendanceId] = useState('');
   const [requestError, setRequestError] = useState('');
-  const effectiveStoreId = storeId?.trim() || orders[0]?.storeId?.trim() || '';
+  const effectiveStoreId =
+    storeId?.trim() || auth.currentUser?.uid?.trim() || orders[0]?.storeId?.trim() || '';
 
   const refreshRequests = useCallback(async (quiet = false): Promise<void> => {
     if (!effectiveStoreId) {
@@ -130,9 +144,36 @@ export const CustomerTableBoard = ({
     }
   }, [effectiveStoreId]);
 
+  const refreshAttendance = useCallback(async (quiet = false): Promise<void> => {
+    if (!effectiveStoreId) {
+      setAttendanceSessions([]);
+      return;
+    }
+    try {
+      setAttendanceSessions(await loadLocalAttendanceSessions(effectiveStoreId));
+      if (!quiet) setRequestError('');
+    } catch (error) {
+      if (!quiet) {
+        setRequestError(
+          error instanceof Error ? error.message : 'Não foi possível atualizar os atendimentos.'
+        );
+      }
+    }
+  }, [effectiveStoreId]);
+
   const locations = useMemo(
-    () => buildCustomerTableCards(orders, requests),
-    [orders, requests]
+    () => buildCustomerTableCards(orders, requests, attendanceSessions),
+    [attendanceSessions, orders, requests]
+  );
+
+  const visibleLocations = useMemo(
+    () => locationFilter === 'all'
+      ? locations
+      : locations.filter(card =>
+          card.serviceLocation.source === 'canonical' &&
+          card.serviceLocation.id === locationFilter
+        ),
+    [locationFilter, locations]
   );
 
   useEffect(() => {
@@ -142,9 +183,27 @@ export const CustomerTableBoard = ({
 
   useEffect(() => {
     void refreshRequests();
-    const timer = window.setInterval(() => void refreshRequests(true), 5000);
+    void refreshAttendance();
+    const timer = window.setInterval(() => {
+      void refreshRequests(true);
+      void refreshAttendance(true);
+    }, 5000);
     return () => window.clearInterval(timer);
-  }, [refreshRequests]);
+  }, [refreshAttendance, refreshRequests]);
+
+  useEffect(() => {
+    const handleFilter = (event: Event): void => {
+      const detail = (event as CustomEvent<{ serviceLocationId?: string }>).detail;
+      setLocationFilter(detail?.serviceLocationId?.trim() || 'all');
+    };
+    const handleSessionsChanged = () => void refreshAttendance(true);
+    window.addEventListener(ATTENDANCE_FILTER_EVENT, handleFilter);
+    window.addEventListener(ATTENDANCE_SESSIONS_EVENT, handleSessionsChanged);
+    return () => {
+      window.removeEventListener(ATTENDANCE_FILTER_EVENT, handleFilter);
+      window.removeEventListener(ATTENDANCE_SESSIONS_EVENT, handleSessionsChanged);
+    };
+  }, [refreshAttendance]);
 
   const actOnRequest = async (
     request: LocalServiceRequest,
@@ -169,13 +228,18 @@ export const CustomerTableBoard = ({
     }
   };
 
-  const openLocation = (location: ResolvedOrderServiceLocation): void => {
+  const openCard = (card: CustomerTableCard): void => {
+    if (card.attendanceId) {
+      onOpenTable?.(card.tableCode);
+      return;
+    }
+    const location = card.serviceLocation;
     if (onOpenLocation) {
       onOpenLocation(location);
       return;
     }
     if (location.kind === 'table' || location.source === 'legacy_table_code') {
-      onOpenTable?.(location.label);
+      onOpenTable?.(card.tableCode);
       return;
     }
     if (effectiveStoreId) {
@@ -183,6 +247,37 @@ export const CustomerTableBoard = ({
         storeId: effectiveStoreId,
         location,
       });
+    }
+  };
+
+  const closeAttendance = async (card: CustomerTableCard): Promise<void> => {
+    if (
+      !effectiveStoreId ||
+      !card.attendanceId ||
+      closingAttendanceId ||
+      card.orderCount > 0
+    ) {
+      return;
+    }
+    setClosingAttendanceId(card.attendanceId);
+    setRequestError('');
+    try {
+      await closeLocalAttendance({
+        storeId: effectiveStoreId,
+        attendanceId: card.attendanceId,
+      });
+      await refreshAttendance(true);
+      window.dispatchEvent(
+        new CustomEvent(ATTENDANCE_SESSIONS_EVENT, {
+          detail: { storeId: effectiveStoreId, attendanceId: card.attendanceId },
+        })
+      );
+    } catch (error) {
+      setRequestError(
+        error instanceof Error ? error.message : 'Não foi possível encerrar o atendimento.'
+      );
+    } finally {
+      setClosingAttendanceId('');
     }
   };
 
@@ -197,11 +292,11 @@ export const CustomerTableBoard = ({
             Locais em atendimento
           </h3>
           <p className="mt-1 text-[9px] text-slate-600">
-            Pedido novo, chamado e fechamento de conta aparecem no card do próprio local.
+            Cada atendimento aberto vira um card operacional com pedidos, alertas, valores e acesso ao PDV.
           </p>
         </div>
         <span className="rounded-full border border-slate-800 bg-slate-950 px-2.5 py-1 font-mono text-[9px] font-bold text-slate-500">
-          {locations.length} ativo{locations.length === 1 ? '' : 's'}
+          {visibleLocations.length} ativo{visibleLocations.length === 1 ? '' : 's'}
         </span>
       </div>
 
@@ -211,120 +306,144 @@ export const CustomerTableBoard = ({
         </p>
       )}
 
-      <div className="grid grid-cols-2 gap-2 sm:gap-3 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
-        {locations.map(card => {
-          const presentation = cardPresentation(card);
-          const additionalClients = Math.max(0, card.buyerNames.length - 1);
-          const openRequests = card.requests.filter(request => request.status === 'open');
-          const acknowledgedRequests = card.requests.filter(request => request.status === 'acknowledged');
+      {visibleLocations.length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-slate-800 py-6 text-center text-[9px] text-slate-500">
+          Nenhum atendimento ativo neste local.
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 gap-2 sm:gap-3 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
+          {visibleLocations.map(card => {
+            const presentation = cardPresentation(card);
+            const additionalClients = Math.max(0, card.buyerNames.length - 1);
+            const openRequests = card.requests.filter(request => request.status === 'open');
+            const acknowledgedRequests = card.requests.filter(request => request.status === 'acknowledged');
+            const canCloseAttendance = Boolean(card.attendanceId) && card.orderCount === 0;
 
-          return (
-            <article
-              key={`${card.serviceLocation.source}:${card.serviceLocation.kind}:${card.serviceLocation.id || card.tableCode}`}
-              className={`relative flex min-h-44 w-full min-w-0 flex-col overflow-hidden rounded-2xl border-2 p-3 text-left shadow-xl transition-all sm:min-h-48 sm:p-4 ${presentation.card} ${openRequests.length > 0 ? 'ring-2 ring-rose-400/30' : ''}`}
-            >
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <span className="font-mono text-[7px] font-bold uppercase tracking-[0.14em] text-slate-500 sm:text-[8px]">
-                    {locationKindLabel(card.serviceLocation)}
+            return (
+              <article
+                key={card.attendanceId || `${card.serviceLocation.source}:${card.serviceLocation.kind}:${card.serviceLocation.id || card.tableCode}`}
+                className={`relative flex min-h-44 w-full min-w-0 flex-col overflow-hidden rounded-2xl border-2 p-3 text-left shadow-xl transition-all sm:min-h-48 sm:p-4 ${presentation.card} ${openRequests.length > 0 ? 'ring-2 ring-rose-400/30' : ''}`}
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <span className="font-mono text-[7px] font-bold uppercase tracking-[0.14em] text-slate-500 sm:text-[8px]">
+                      {card.attendanceId ? card.areaLabel : locationKindLabel(card.serviceLocation)}
+                    </span>
+                    <h4 className="mt-0.5 truncate text-xl font-black text-white sm:text-2xl">
+                      {card.displayLabel}
+                    </h4>
+                  </div>
+                  <span className={`flex max-w-[58%] items-center gap-1 rounded-full border px-1.5 py-1 text-[7px] font-black uppercase sm:px-2 sm:text-[8px] ${presentation.badge}`}>
+                    {presentation.icon}
+                    <span className="truncate">
+                      {openRequests.length > 0
+                        ? `${openRequests.length} alerta${openRequests.length === 1 ? '' : 's'}`
+                        : getCustomerTableStateLabel(card.state, card.pendingCount)}
+                    </span>
                   </span>
-                  <h4 className="mt-0.5 truncate text-xl font-black text-white sm:text-2xl">
-                    {card.tableCode}
-                  </h4>
                 </div>
-                <span className={`flex max-w-[58%] items-center gap-1 rounded-full border px-1.5 py-1 text-[7px] font-black uppercase sm:px-2 sm:text-[8px] ${presentation.badge}`}>
-                  {presentation.icon}
-                  <span className="truncate">
-                    {openRequests.length > 0
-                      ? `${openRequests.length} alerta${openRequests.length === 1 ? '' : 's'}`
-                      : getCustomerTableStateLabel(card.state, card.pendingCount)}
-                  </span>
-                </span>
-              </div>
 
-              {(openRequests.length > 0 || acknowledgedRequests.length > 0) && (
-                <div className="mt-2 space-y-1.5" aria-live="polite">
-                  {[...openRequests, ...acknowledgedRequests].map(request => (
-                    <div
-                      key={request.id}
-                      className={`rounded-xl border px-2 py-2 ${
-                        request.kind === 'close_account'
-                          ? 'border-rose-400/30 bg-rose-500/10'
-                          : 'border-cyan-400/25 bg-cyan-500/10'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <strong className={`text-[8px] font-black uppercase ${request.kind === 'close_account' ? 'text-rose-100' : 'text-cyan-100'}`}>
-                          {requestText(request)}
-                        </strong>
-                        <span className="text-[7px] uppercase text-slate-500">
-                          {request.status === 'acknowledged' ? 'Em atendimento' : 'Novo'}
-                        </span>
-                      </div>
-                      <div className="mt-1.5 flex gap-1.5">
-                        {request.status === 'open' && (
+                {(openRequests.length > 0 || acknowledgedRequests.length > 0) && (
+                  <div className="mt-2 space-y-1.5" aria-live="polite">
+                    {[...openRequests, ...acknowledgedRequests].map(request => (
+                      <div
+                        key={request.id}
+                        className={`rounded-xl border px-2 py-2 ${
+                          request.kind === 'close_account'
+                            ? 'border-rose-400/30 bg-rose-500/10'
+                            : 'border-cyan-400/25 bg-cyan-500/10'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <strong className={`text-[8px] font-black uppercase ${request.kind === 'close_account' ? 'text-rose-100' : 'text-cyan-100'}`}>
+                            {requestText(request)}
+                          </strong>
+                          <span className="text-[7px] uppercase text-slate-500">
+                            {request.status === 'acknowledged' ? 'Em atendimento' : 'Novo'}
+                          </span>
+                        </div>
+                        <div className="mt-1.5 flex gap-1.5">
+                          {request.status === 'open' && (
+                            <button
+                              type="button"
+                              onClick={() => void actOnRequest(request, 'acknowledge')}
+                              disabled={Boolean(actingId)}
+                              className="flex-1 rounded-lg border border-white/10 bg-slate-950/50 px-2 py-1.5 text-[7px] font-black uppercase text-slate-200 disabled:opacity-40"
+                            >
+                              {actingId === request.id ? 'Atualizando…' : 'Assumir'}
+                            </button>
+                          )}
                           <button
                             type="button"
-                            onClick={() => void actOnRequest(request, 'acknowledge')}
+                            onClick={() => void actOnRequest(request, 'resolve')}
                             disabled={Boolean(actingId)}
-                            className="flex-1 rounded-lg border border-white/10 bg-slate-950/50 px-2 py-1.5 text-[7px] font-black uppercase text-slate-200 disabled:opacity-40"
+                            className="flex flex-1 items-center justify-center gap-1 rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-2 py-1.5 text-[7px] font-black uppercase text-emerald-100 disabled:opacity-40"
                           >
-                            {actingId === request.id ? 'Atualizando…' : 'Assumir'}
+                            {actingId === request.id
+                              ? <LoaderCircle className="h-3 w-3 animate-spin" />
+                              : <Check className="h-3 w-3" />}
+                            Resolvido
                           </button>
-                        )}
-                        <button
-                          type="button"
-                          onClick={() => void actOnRequest(request, 'resolve')}
-                          disabled={Boolean(actingId)}
-                          className="flex flex-1 items-center justify-center gap-1 rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-2 py-1.5 text-[7px] font-black uppercase text-emerald-100 disabled:opacity-40"
-                        >
-                          {actingId === request.id
-                            ? <LoaderCircle className="h-3 w-3 animate-spin" />
-                            : <Check className="h-3 w-3" />}
-                          Resolvido
-                        </button>
+                        </div>
                       </div>
-                    </div>
-                  ))}
-                </div>
-              )}
+                    ))}
+                  </div>
+                )}
 
-              <div className="flex flex-1 flex-col items-center justify-center py-2 text-center sm:py-3">
-                <strong className="font-mono text-base text-white sm:text-lg">
-                  R$ {card.total.toFixed(2)}
-                </strong>
-                <span className="mt-1 text-[7px] font-bold uppercase leading-tight text-slate-500 sm:text-[8px]">
-                  {card.orderCount} {card.orderCount === 1 ? 'pedido' : 'pedidos'} · {card.itemCount} {card.itemCount === 1 ? 'item' : 'itens'}
-                </span>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => openLocation(card.serviceLocation)}
-                className={`flex min-h-9 items-center justify-center gap-1.5 rounded-xl border px-2 py-2 text-[8px] font-black uppercase tracking-wide sm:text-[9px] ${presentation.button}`}
-                aria-label={`Abrir atendimento de ${card.tableCode}`}
-              >
-                <Utensils className="h-3.5 w-3.5" />
-                Abrir atendimento
-              </button>
-
-              <div className="mt-2 flex items-end justify-between gap-2 border-t border-white/5 pt-2 text-[8px] text-slate-500 sm:text-[9px]">
-                <span className="flex items-center gap-1 font-mono">
-                  <Clock3 className="h-3 w-3" />
-                  {formatElapsedTime(card.openedAt, now)}
-                </span>
-                <span className="flex min-w-0 items-center justify-end gap-1">
-                  <Users className="h-3 w-3 shrink-0" />
-                  <span className="truncate font-bold text-slate-300">
-                    {card.primaryBuyerName}
-                    {additionalClients > 0 ? ` +${additionalClients}` : ''}
+                <div className="flex flex-1 flex-col items-center justify-center py-2 text-center sm:py-3">
+                  <strong className="font-mono text-base text-white sm:text-lg">
+                    R$ {card.total.toFixed(2)}
+                  </strong>
+                  <span className="mt-1 text-[7px] font-bold uppercase leading-tight text-slate-500 sm:text-[8px]">
+                    {card.orderCount > 0
+                      ? `${card.orderCount} ${card.orderCount === 1 ? 'pedido' : 'pedidos'} · ${card.itemCount} ${card.itemCount === 1 ? 'item' : 'itens'}`
+                      : `${card.peopleCount || 1} ${(card.peopleCount || 1) === 1 ? 'pessoa' : 'pessoas'} · aguardando pedido`}
                   </span>
-                </span>
-              </div>
-            </article>
-          );
-        })}
-      </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => openCard(card)}
+                  className={`flex min-h-9 items-center justify-center gap-1.5 rounded-xl border px-2 py-2 text-[8px] font-black uppercase tracking-wide sm:text-[9px] ${presentation.button}`}
+                  aria-label={`Abrir atendimento de ${card.displayLabel}`}
+                >
+                  <Utensils className="h-3.5 w-3.5" />
+                  Abrir atendimento
+                </button>
+
+                {card.attendanceId && (
+                  <button
+                    type="button"
+                    onClick={() => void closeAttendance(card)}
+                    disabled={!canCloseAttendance || closingAttendanceId === card.attendanceId}
+                    className="mt-1.5 flex min-h-7 items-center justify-center gap-1 rounded-lg text-[7px] font-black uppercase text-slate-600 hover:text-slate-300 disabled:cursor-not-allowed disabled:opacity-40"
+                    title={canCloseAttendance ? 'Encerrar atendimento vazio' : 'Conclua os pedidos antes de encerrar o atendimento'}
+                  >
+                    {closingAttendanceId === card.attendanceId
+                      ? <LoaderCircle className="h-3 w-3 animate-spin" />
+                      : <XCircle className="h-3 w-3" />}
+                    Encerrar
+                  </button>
+                )}
+
+                <div className="mt-2 flex items-end justify-between gap-2 border-t border-white/5 pt-2 text-[8px] text-slate-500 sm:text-[9px]">
+                  <span className="flex items-center gap-1 font-mono">
+                    <Clock3 className="h-3 w-3" />
+                    {formatElapsedTime(card.openedAt, now)}
+                  </span>
+                  <span className="flex min-w-0 items-center justify-end gap-1">
+                    <Users className="h-3 w-3 shrink-0" />
+                    <span className="truncate font-bold text-slate-300">
+                      {card.primaryBuyerName}
+                      {additionalClients > 0 ? ` +${additionalClients}` : ''}
+                    </span>
+                  </span>
+                </div>
+              </article>
+            );
+          })}
+        </div>
+      )}
     </section>
   );
 };
