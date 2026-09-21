@@ -47,7 +47,7 @@ test('manual catalog processor route remains owner scoped and is not wired direc
   assert.match(router, /\/:storeId\/notifications\/:inboxId\/process/);
   assert.match(router, /authenticatedOwner/);
   const webhook = router.match(/router\.post\('\/notifications'[\s\S]*?\n  \}\);/)?.[0] ?? '';
-  assert.doesNotMatch(webhook, /processMercadoLivreNotificationInboxItem/);
+  assert.doesNotMatch(webhook, /processMercadoLivreOrderNotificationInboxItem/);
 });
 
 test('orders_v2 resource parser accepts only order resource paths', () => {
@@ -144,6 +144,43 @@ test('unpaid order cannot be normalized into the KDS and missing canonical bindi
   );
 });
 
+test('multi-item paid order is all-or-nothing when only some external items have canonical bindings', () => {
+  const snapshot = parseMercadoLivreOrderSnapshot({
+    id: 2000012345678910,
+    status: 'paid',
+    seller: { id: 777 },
+    buyer: { id: 888 },
+    total_amount: 52,
+    paid_amount: 52,
+    order_items: [
+      {
+        item: { id: 'MLB7640119796', title: 'Chaveiro Kyrub' },
+        quantity: 1,
+        unit_price: 22,
+      },
+      {
+        item: { id: 'MLB7640119800', title: 'Tag Kyrub' },
+        quantity: 1,
+        unit_price: 30,
+      },
+    ],
+  }, '2000012345678910', '2026-09-15T16:10:00.000Z');
+
+  assert.throws(
+    () => normalizeMercadoLivrePaidOrderForKds({
+      snapshot,
+      tenantId: 'tenant-owner-1',
+      canonicalStoreId: 'canonical-store-1',
+      bindings: [{
+        externalItemId: 'MLB7640119796',
+        canonicalProductId: 'product-kyrub-1',
+        canonicalStoreId: 'canonical-store-1',
+      }],
+    }),
+    /MERCADO_LIVRE_ORDER_PRODUCT_BINDING_REQUIRED:MLB7640119800/
+  );
+});
+
 test('order ingress service dual-writes legacy plus canonical order without coupling to fiscal emission', () => {
   const source = readFileSync('server/integrations/mercadoLivreOrderIngressService.ts', 'utf8');
   assert.match(source, /artifacts\/\$\{tenantId\}\/public\/data\/customerOrders/);
@@ -153,4 +190,192 @@ test('order ingress service dual-writes legacy plus canonical order without coup
   assert.match(source, /blocked_product_binding/);
   assert.match(source, /provider_cancellation_review_required/);
   assert.doesNotMatch(source, /NFC-e|NF-e|NFS-e|SEFAZ|CFOP|CST|emissionAuthority/);
+});
+
+test('orders_v2 malformed resources are poison-safe before Queue publication and after Queue delivery', () => {
+  const queue = readFileSync('server/integrations/mercadoLivreOrderQueueService.ts', 'utf8');
+  const ingress = readFileSync('server/integrations/mercadoLivreOrderQueueIngressRouter.ts', 'utf8');
+  assert.match(queue, /mercadoLivreOrderIdFromResource\(notification\.resource\)/);
+  assert.match(queue, /MERCADO_LIVRE_ORDER_RESOURCE_UNSUPPORTED/);
+  assert.match(queue, /disposition: 'discarded_invalid_message'/);
+  assert.match(ingress, /isMercadoLivreOrderQueueTerminalEnvelopeError/);
+  assert.match(ingress, /received: true, ignored: true, code/);
+  assert.match(ingress, /response\.status\(503\)\.json\(\{ received: false \}\)/);
+});
+
+test('Queue redelivery quarantines deterministic provider contract failures instead of retrying forever', () => {
+  const queue = readFileSync('server/integrations/mercadoLivreOrderQueueService.ts', 'utf8');
+  assert.match(queue, /MERCADO_LIVRE_ORDER_SELLER_MISMATCH/);
+  assert.match(queue, /MERCADO_LIVRE_ORDER_RESPONSE_INVALID/);
+  assert.match(queue, /MERCADO_LIVRE_ORDER_ITEMS_INVALID/);
+  assert.match(queue, /processingStatus: 'failed'/);
+  assert.match(queue, /processingOutcome: 'quarantined_terminal_error'/);
+  assert.match(queue, /if \(isMercadoLivreOrderQueueTerminalProcessingError\(code\)\)/);
+  assert.match(queue, /throw error;/);
+});
+
+test('fragmented notifications for the same order stay independent because Queue idempotency is notification-scoped', () => {
+  const queue = readFileSync('server/integrations/mercadoLivreOrderQueueService.ts', 'utf8');
+  assert.match(queue, /queueIdempotencyKey\(notification\.notificationId\)/);
+  assert.doesNotMatch(queue, /queueIdempotencyKey\(.*externalOrderId/);
+
+  const ingress = readFileSync('server/integrations/mercadoLivreOrderIngressService.ts', 'utf8');
+  const providerFetch = ingress.indexOf('mercadoLivreGetJson<unknown>');
+  const existingStateRead = ingress.indexOf('const existingStatus = currentOrderStatus');
+  assert.ok(providerFetch >= 0 && existingStateRead > providerFetch);
+  assert.match(ingress, /lastNotificationId: input\.inbox\.notificationId/);
+});
+
+test('late and concurrent notifications for one Mercado Livre order are serialized before canonical reconciliation', () => {
+  const queue = readFileSync('server/integrations/mercadoLivreOrderQueueService.ts', 'utf8');
+  assert.match(queue, /integrationOrderProcessingLeases/);
+  assert.match(queue, /externalAccountId.*externalOrderId/s);
+  assert.match(queue, /MERCADO_LIVRE_ORDER_PROCESSING_LEASE_BUSY/);
+  assert.match(queue, /holderToken/);
+  assert.match(queue, /startOrderProcessingLeaseHeartbeat/);
+  assert.match(queue, /finally \{/);
+  assert.match(queue, /releaseOrderProcessingLease/);
+
+  const acquireAt = queue.indexOf('lease = await acquireOrderProcessingLease');
+  const processAt = queue.indexOf('processMercadoLivreOrderNotificationInboxItem', acquireAt);
+  assert.ok(acquireAt >= 0 && processAt > acquireAt);
+});
+
+test('a late notification never trusts its sent timestamp as order state and always refetches provider truth', () => {
+  const inbox = readFileSync('server/integrations/mercadoLivreNotificationInboxService.ts', 'utf8');
+  const ingress = readFileSync('server/integrations/mercadoLivreOrderIngressService.ts', 'utf8');
+  assert.match(inbox, /sentAt: notification\.sentAt/);
+  assert.match(ingress, /mercadoLivreGetJson<unknown>/);
+  assert.match(ingress, /parseMercadoLivreOrderSnapshot\(fetched, externalOrderId, fetchedAt\)/);
+  assert.doesNotMatch(ingress, /inbox\.sentAt/);
+});
+
+test('paid order without binding is durably blocked before any KDS normalization', () => {
+  const ingress = readFileSync('server/integrations/mercadoLivreOrderIngressService.ts', 'utf8');
+  const bindingStart = ingress.indexOf('const bindingResolution = await resolveOrderBindings');
+  const normalizationStart = ingress.indexOf('const order = normalizeMercadoLivrePaidOrderForKds', bindingStart);
+  assert.ok(bindingStart >= 0 && normalizationStart > bindingStart);
+  const bindingGate = ingress.slice(bindingStart, normalizationStart);
+  assert.match(bindingGate, /mercadoLivreOrderIngressBlocks/);
+  assert.match(bindingGate, /status: 'product_binding_required'/);
+  assert.match(bindingGate, /processingOutcome: 'blocked_product_binding'/);
+  assert.match(bindingGate, /authority: 'manual_resolution_required'/);
+  assert.match(bindingGate, /snapshot\.lines\.map\(line => line\.externalItemId\)/);
+  assert.match(bindingGate, /allExternalItemIds/);
+  assert.match(bindingGate, /resolvedExternalItemIds/);
+  assert.match(bindingGate, /missingExternalItemIds/);
+  assert.match(bindingGate, /bindingCompleteness: 'all_items_required'/);
+});
+
+test('binding recovery reopens the original provider inbox and never fabricates a replacement notification', () => {
+  const recovery = readFileSync('server/integrations/mercadoLivreOrderIngressRecoveryService.ts', 'utf8');
+  assert.match(recovery, /sourceNotificationId/);
+  assert.match(recovery, /createHash\('sha256'\)\.update\(notificationId\)/);
+  assert.match(recovery, /processingOutcome, 80\) !== 'blocked_product_binding'/);
+  assert.match(recovery, /processingStatus: 'pending'/);
+  assert.match(recovery, /recoveryAuthority: 'store_owner_binding_resolution'/);
+  assert.match(recovery, /processMercadoLivreOrderNotificationInboxItem/);
+  assert.match(recovery, /expectedStoreId: storeId/);
+  assert.match(recovery, /retryLeaseUntil/);
+  assert.doesNotMatch(recovery, /@vercel\/queue|\bsend\s*\(/);
+  assert.doesNotMatch(recovery, /canonicalProductId/);
+});
+
+test('binding recovery performs one final official refetch and reconciles payment or cancellation races through the same inbox', () => {
+  const recovery = readFileSync('server/integrations/mercadoLivreOrderIngressRecoveryService.ts', 'utf8');
+  assert.match(recovery, /reconcileProviderChangeDuringRecovery/);
+  assert.match(recovery, /mercadoLivreGetJson<unknown>/);
+  assert.match(recovery, /parseMercadoLivreOrderSnapshot/);
+  assert.match(recovery, /snapshot\.providerStatus === previousProviderStatus/);
+  assert.match(recovery, /recoveryReconciliationAuthority: 'provider_api_final_refetch'/);
+  assert.match(recovery, /processingStatus: 'pending'/);
+  assert.match(recovery, /providerChangedDuringRecovery/);
+
+  const finalRefetchAt = recovery.indexOf('const fetched = await mercadoLivreGetJson<unknown>');
+  const reopenAt = recovery.indexOf("processingStatus: 'pending'", finalRefetchAt);
+  const canonicalReprocessAt = recovery.indexOf('processMercadoLivreOrderNotificationInboxItem', reopenAt);
+  assert.ok(finalRefetchAt >= 0 && reopenAt > finalRefetchAt && canonicalReprocessAt > reopenAt);
+});
+
+test('binding recovery endpoint is owner-only and accepts no browser-supplied binding or commercial evidence', () => {
+  const router = readFileSync('server/integrations/mercadoLivreE2ETestRouter.ts', 'utf8');
+  const start = router.indexOf("router.post('/:storeId/e2e/order-ingress-blocks/:orderId/retry-after-binding'");
+  const end = router.indexOf('\n\n  return router;', start);
+  assert.ok(start >= 0 && end > start);
+  const route = router.slice(start, end);
+  assert.match(route, /authenticatedOwner/);
+  assert.match(route, /retryMercadoLivreOrderIngressAfterBinding/);
+  assert.match(route, /requestedByUserId: identity\.uid/);
+  assert.doesNotMatch(route, /request\.body/);
+  assert.doesNotMatch(route, /canonicalProductId|paymentStatus|providerStatus/);
+});
+
+test('exhausted order review endpoint is owner-only and accepts only action plus optional reason', () => {
+  const router = readFileSync('server/integrations/mercadoLivreE2ETestRouter.ts', 'utf8');
+  const start = router.indexOf("router.post('/:storeId/e2e/order-ingress-reviews/:inboxId/resolve'");
+  const end = router.indexOf('\n\n  return router;', start);
+  assert.ok(start >= 0 && end > start);
+  const route = router.slice(start, end);
+  assert.match(route, /authenticatedOwner/);
+  assert.match(route, /resolveMercadoLivreOrderManualReview/);
+  assert.match(route, /action: request\.body\?\.action/);
+  assert.match(route, /reason: request\.body\?\.reason/);
+  assert.match(route, /requestedByUserId: identity\.uid/);
+  assert.doesNotMatch(route, /canonicalProductId|paymentStatus|providerStatus|externalAccountId/);
+});
+
+test('manual retry reopens only an exhausted inbox, resets only the retry cycle and queues the original provider envelope', () => {
+  const service = readFileSync('server/integrations/mercadoLivreOrderManualReviewService.ts', 'utf8');
+  assert.match(service, /processingStatus, 80\) !== 'failed'/);
+  assert.match(service, /processingOutcome, 120\) !== 'retry_exhausted'/);
+  assert.match(service, /data\.manualReviewRequired !== true/);
+  assert.match(service, /_id: clean\(data\.notificationId/);
+  assert.match(service, /resource: clean\(data\.resource/);
+  assert.match(service, /user_id: clean\(data\.externalAccountId/);
+  assert.match(service, /application_id: clean\(data\.applicationId/);
+  assert.match(service, /attempts: finiteInteger\(data\.attempts\)/);
+  assert.match(service, /processingStatus: 'pending'/);
+  assert.match(service, /processingOutcome: 'manual_retry_requested'/);
+  assert.match(service, /resolutionAuthority: 'provider_api_refetch_required'/);
+  assert.match(service, /retryableFailureCount: 0/);
+  assert.match(service, /manualRetryCycle/);
+  assert.match(service, /previousRetryCycleFailureCount/);
+  assert.match(service, /lastRetryExhaustedAt/);
+  assert.match(service, /firstRetryableFailureAt: FieldValue\.delete\(\)/);
+  assert.match(service, /lastRetryableFailureAt: FieldValue\.delete\(\)/);
+  assert.match(service, /send\(\s*\n\s*MERCADO_LIVRE_ORDERS_V2_QUEUE_TOPIC/);
+  assert.match(service, /manualRetryIdempotencyKey\(inboxId, manualRetryCycle\)/);
+  assert.doesNotMatch(service, /mercadoLivreGetJson|mercadoLivrePostJson|mercadoLivrePutJson/);
+  assert.doesNotMatch(service, /canonicalProductId|paymentStatus|providerStatus/);
+});
+
+test('manual review keep and non-processable close are local review decisions with no provider or KDS execution', () => {
+  const service = readFileSync('server/integrations/mercadoLivreOrderManualReviewService.ts', 'utf8');
+  const keepStart = service.indexOf("if (action === 'keep_in_review')");
+  const closeStart = service.indexOf("if (action === 'close_non_processable')", keepStart);
+  const retryStart = service.indexOf('manualRetryCycle =', closeStart);
+  assert.ok(keepStart >= 0 && closeStart > keepStart && retryStart > closeStart);
+  const keepBlock = service.slice(keepStart, closeStart);
+  const closeBlock = service.slice(closeStart, retryStart);
+  assert.match(keepBlock, /manualReviewDisposition: 'keep_in_review'/);
+  assert.match(keepBlock, /manualReviewRequired: true/);
+  assert.match(closeBlock, /processingOutcome: 'manual_review_closed_non_processable'/);
+  assert.match(closeBlock, /manualReviewRequired: false/);
+  assert.match(closeBlock, /manualReviewDisposition: 'non_processable'/);
+  assert.match(service, /MERCADO_LIVRE_ORDER_MANUAL_REVIEW_REASON_REQUIRED/);
+  assert.doesNotMatch(keepBlock, /send\(|mercadoLivreGetJson|processMercadoLivreOrderNotificationInboxItem/);
+  assert.doesNotMatch(closeBlock, /send\(|mercadoLivreGetJson|processMercadoLivreOrderNotificationInboxItem/);
+});
+
+test('manual retry queue failure returns the same inbox to human review instead of leaving it pending', () => {
+  const service = readFileSync('server/integrations/mercadoLivreOrderManualReviewService.ts', 'utf8');
+  const catchStart = service.indexOf('} catch (error) {', service.indexOf('const queued = await send'));
+  assert.ok(catchStart >= 0);
+  const recovery = service.slice(catchStart);
+  assert.match(recovery, /processingStatus: 'failed'/);
+  assert.match(recovery, /processingOutcome: 'retry_exhausted'/);
+  assert.match(recovery, /manualReviewRequired: true/);
+  assert.match(recovery, /manualReviewDisposition: 'retry_enqueue_failed'/);
+  assert.match(recovery, /finiteInteger\(data\.manualRetryCycle\) !== manualRetryCycle/);
+  assert.match(recovery, /MERCADO_LIVRE_ORDER_MANUAL_RETRY_QUEUE_FAILED/);
 });

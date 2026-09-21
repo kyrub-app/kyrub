@@ -394,9 +394,11 @@ export const processMercadoLivreOrderNotificationInboxItem = async (input: {
     bindingResolution.missingExternalItemIds.length ||
     !bindingResolution.canonicalStoreId
   ) {
+    const allExternalItemIds = [...new Set(snapshot.lines.map(line => line.externalItemId))];
     const missingExternalItemIds = bindingResolution.missingExternalItemIds.length
       ? bindingResolution.missingExternalItemIds
-      : snapshot.lines.map(line => line.externalItemId);
+      : allExternalItemIds;
+    const resolvedExternalItemIds = bindingResolution.bindings.map(binding => binding.externalItemId);
     const blockRef = adminDb.doc(
       `stores/${inbox.storeId}/mercadoLivreOrderIngressBlocks/${orderId}`
     );
@@ -419,7 +421,10 @@ export const processMercadoLivreOrderNotificationInboxItem = async (input: {
         externalOrderId,
         orderId,
         providerOrderStatus: snapshot.providerStatus,
+        allExternalItemIds,
+        resolvedExternalItemIds,
         missingExternalItemIds,
+        bindingCompleteness: 'all_items_required',
         status: 'product_binding_required',
         authority: 'manual_resolution_required',
         sourceNotificationId: inbox.notificationId,
