@@ -84,9 +84,11 @@ const emptyPixState = (): PixUiState => ({
 export function ServiceLocationFinancialContextPanel({
   storeId,
   orders,
+  couponCode: appliedCouponCode = '',
 }: {
   storeId: string;
   orders: CustomerOrder[];
+  couponCode?: string;
 }) {
   const [contexts, setContexts] = useState<Record<string, LocalOrderFinancialContext>>({});
   const [pixByOrder, setPixByOrder] = useState<Record<string, PixUiState>>({});
@@ -174,7 +176,7 @@ export function ServiceLocationFinancialContextPanel({
     provider: LocalPixProvider
   ): Promise<void> => {
     if (!canOperatePix(context)) return;
-    const couponCode = (pixByOrder[order.id]?.couponCode ?? '').trim();
+    const couponCode = appliedCouponCode.trim();
     patchPix(order.id, { loading: true, error: '', copied: false, confirmedCredit: false });
     try {
       let pending = await loadPendingLocalPayment({ storeId, orderId: order.id });
@@ -203,6 +205,7 @@ export function ServiceLocationFinancialContextPanel({
         copied: false,
         boundProvider: provider,
         confirmedCredit: false,
+        couponCode,
       });
       await refresh(true);
     } catch (caught) {
@@ -212,7 +215,7 @@ export function ServiceLocationFinancialContextPanel({
       });
       await refresh(true);
     }
-  }, [patchPix, pixByOrder, refresh, storeId]);
+  }, [appliedCouponCode, patchPix, pixByOrder, refresh, storeId]);
 
   const confirmStorePix = useCallback(async (
     orderId: string,
@@ -289,7 +292,6 @@ export function ServiceLocationFinancialContextPanel({
           const safeTicketUrl = visibleCheckout?.provider === 'mercado-pago' && visibleCheckout.ticketUrl.startsWith('https://') ? visibleCheckout.ticketUrl : '';
           const mercadoPagoAvailable = options?.mercadoPagoConnected === true;
           const storePixAvailable = options?.storePixEnabled === true;
-          const hasPendingPayment = (context?.canonicalProjection.pendingPaymentCount ?? 0) > 0;
           const couponApplied = Boolean(visibleCheckout && pix.couponCode.trim());
           const couponSubtotal = couponApplied && context ? context.canonicalProjection.expectedAmount : 0;
           const couponDiscount = couponApplied && visibleCheckout ? Number(Math.max(0, couponSubtotal - visibleCheckout.amount).toFixed(2)) : 0;
@@ -316,26 +318,6 @@ export function ServiceLocationFinancialContextPanel({
 
               {context && canOperatePix(context) && (
                 <div className="mt-3 border-t border-white/5 pt-3">
-                  <div className="mb-3 rounded-lg border border-violet-400/15 bg-violet-500/[0.05] p-2.5">
-                    <label htmlFor={`coupon-${order.id}`} className="flex items-center gap-1.5 text-[8px] font-bold text-violet-100"><TicketPercent className="h-3.5 w-3.5" />Cupom de desconto</label>
-                    <div className="mt-1.5 flex items-center gap-2">
-                      <input
-                        id={`coupon-${order.id}`}
-                        type="text"
-                        value={pix.couponCode}
-                        maxLength={48}
-                        autoComplete="off"
-                        spellCheck={false}
-                        disabled={pix.loading || Boolean(visibleCheckout) || hasPendingPayment}
-                        onChange={event => patchPix(order.id, { couponCode: event.target.value, error: '' })}
-                        placeholder="Digite o código apresentado pelo cliente"
-                        className="min-h-9 w-full rounded-lg border border-white/10 bg-black/30 px-2.5 text-[8px] font-semibold uppercase text-white outline-none placeholder:normal-case placeholder:text-slate-600 focus:border-violet-400/40 disabled:cursor-not-allowed disabled:opacity-50"
-                      />
-                    </div>
-                    <p className="mt-1.5 text-[7px] leading-relaxed text-violet-100/50">Opcional. O desconto é validado e calculado no servidor quando uma nova cobrança é criada; o Staff não informa o valor final.</p>
-                    {hasPendingPayment && !visibleCheckout && <p className="mt-1 text-[7px] font-semibold text-amber-200/75">Já existe uma tentativa pendente. Para preservar o valor congelado, não é possível adicionar ou trocar cupom nessa tentativa.</p>}
-                  </div>
-
                   <div className="flex flex-wrap gap-2">
                     {mercadoPagoAvailable && <button type="button" disabled={pix.loading || Boolean(pix.boundProvider && pix.boundProvider !== 'mercado-pago')} onClick={() => void preparePix(order, context, 'mercado-pago')} className="inline-flex items-center gap-1.5 rounded-lg border border-sky-400/25 bg-sky-500/10 px-2.5 py-1.5 text-[8px] font-bold text-sky-100 transition hover:bg-sky-500/20 disabled:cursor-not-allowed disabled:opacity-50">{pix.loading && pix.boundProvider === 'mercado-pago' ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <QrCode className="h-3.5 w-3.5" />}Mercado Pago</button>}
                     {storePixAvailable && <button type="button" disabled={pix.loading || Boolean(pix.boundProvider && pix.boundProvider !== 'store-pix')} onClick={() => void preparePix(order, context, 'store-pix')} className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-400/25 bg-emerald-500/10 px-2.5 py-1.5 text-[8px] font-bold text-emerald-100 transition hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-50">{pix.loading && pix.boundProvider === 'store-pix' ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <QrCode className="h-3.5 w-3.5" />}Pix próprio</button>}
