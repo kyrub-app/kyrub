@@ -1,0 +1,44 @@
+name: Temporary streamlined Pix checkout
+
+on:
+  push:
+    branches:
+      - ux/streamline-pix-checkout
+    paths:
+      - '.github/scripts/streamline-pix-checkout.py'
+      - '.github/workflows/temporary-streamline-pix-checkout.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  implement:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ux/streamline-pix-checkout
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Apply streamlined Pix checkout
+        run: python3 .github/scripts/streamline-pix-checkout.py
+      - name: Install dependencies
+        run: npm ci
+      - name: TypeScript
+        run: npm run lint
+      - name: Pix checkout regression
+        run: node --test --import tsx tests/local-pix-checkout-ui.test.ts tests/table-checkout-coupon.test.ts tests/table-split-payment-history.test.ts
+      - name: Full application build
+        run: npm run build
+      - name: Commit implementation
+        run: |
+          rm .github/scripts/streamline-pix-checkout.py
+          rm .github/workflows/temporary-streamline-pix-checkout.yml
+          git config user.name "kyrub-app"
+          git config user.email "kyrub.app@gmail.com"
+          git add -A
+          git commit -m "Streamline staff Pix checkout to QR code"
+          git push origin HEAD:ux/streamline-pix-checkout
