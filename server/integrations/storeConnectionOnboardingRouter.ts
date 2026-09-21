@@ -15,6 +15,7 @@ import {
   applyStoreOwnerGovernanceDecision,
   loadStoreOwnerGovernancePreview,
 } from './storeOwnerGovernanceService.js';
+import { loadCanonicalFiscalPreflight } from './fiscalPreflightReadService.js';
 
 const clean = (value: unknown): string =>
   typeof value === 'string' ? value.trim() : '';
@@ -42,8 +43,32 @@ const mapError = (error: unknown): { status: number; message: string } => {
   ) {
     return { status: 403, message: 'Você não pode administrar conexões desta loja.' };
   }
-  if (message === 'STORE_INSTITUTIONAL_NOT_FOUND' || message === 'STORE_CONNECTION_NOT_FOUND') {
-    return { status: 404, message: 'A loja ou conexão ainda não foi encontrada.' };
+  if (
+    message === 'STORE_INSTITUTIONAL_NOT_FOUND' ||
+    message === 'STORE_CONNECTION_NOT_FOUND' ||
+    message === 'FISCAL_PREFLIGHT_ORDER_NOT_FOUND'
+  ) {
+    return {
+      status: 404,
+      message: message === 'FISCAL_PREFLIGHT_ORDER_NOT_FOUND'
+        ? 'O pedido canônico não foi encontrado.'
+        : 'A loja ou conexão ainda não foi encontrada.',
+    };
+  }
+  if (message === 'FISCAL_PREFLIGHT_CANONICAL_STORE_REQUIRED') {
+    return {
+      status: 409,
+      message: 'A loja canônica precisa estar resolvida antes da simulação fiscal.',
+    };
+  }
+  if (
+    message === 'FISCAL_PREFLIGHT_ORDER_ID_INVALID' ||
+    message === 'FISCAL_PREFLIGHT_ORDER_INVALID'
+  ) {
+    return { status: 400, message: 'O pedido não possui evidência suficiente para a simulação fiscal.' };
+  }
+  if (message === 'FISCAL_PREFLIGHT_ORDER_INTEGRITY_INVALID') {
+    return { status: 409, message: 'A identidade fiscal do pedido canônico está inconsistente.' };
   }
   if (
     message === 'STORE_INVENTORY_AUTHORITY_REPAIR_CONFIRMATION_REQUIRED' ||
@@ -131,6 +156,22 @@ export const createStoreConnectionOnboardingRouter = (): Router => {
       const identity = await authenticatedOwner(request.get('authorization') ?? '', storeId);
       response.setHeader('Cache-Control', 'no-store, max-age=0');
       response.json(await loadStoreConnectionOnboarding({ storeId, userId: identity.uid }));
+    } catch (error) {
+      const mapped = mapError(error);
+      response.status(mapped.status).json({ error: mapped.message });
+    }
+  });
+
+  router.get('/:storeId/fiscal-preflight/:orderId', async (request, response) => {
+    try {
+      const storeId = clean(request.params.storeId);
+      const identity = await authenticatedOwner(request.get('authorization') ?? '', storeId);
+      response.setHeader('Cache-Control', 'no-store, max-age=0');
+      response.json(await loadCanonicalFiscalPreflight({
+        tenantId: identity.uid,
+        requestedByUserId: identity.uid,
+        orderId: clean(request.params.orderId),
+      }));
     } catch (error) {
       const mapped = mapError(error);
       response.status(mapped.status).json({ error: mapped.message });
