@@ -41,7 +41,7 @@ test('canonical payment keeps historical compatibility while accepting an explic
   }), /payment intent id is required when provided/);
 });
 
-test('local payment intent input accepts only scope and idempotency', () => {
+test('local payment intent input accepts scope, idempotency and an optional partial amount', () => {
   assert.deepEqual(
     parseLocalPaymentIntentCreateInput({
       storeId: 'owner-1',
@@ -54,7 +54,21 @@ test('local payment intent input accepts only scope and idempotency', () => {
       idempotencyKey: 'checkout-attempt-1',
     }
   );
-  for (const field of ['amount', 'email', 'method', 'context', 'buyerId']) {
+  assert.deepEqual(
+    parseLocalPaymentIntentCreateInput({
+      storeId: 'owner-1',
+      orderId: 'staff-order-1',
+      idempotencyKey: 'checkout-attempt-1',
+      amount: 19.5,
+    }),
+    {
+      storeId: 'owner-1',
+      orderId: 'staff-order-1',
+      idempotencyKey: 'checkout-attempt-1',
+      amount: 19.5,
+    }
+  );
+  for (const field of ['email', 'method', 'context', 'buyerId']) {
     assert.throws(() => parseLocalPaymentIntentCreateInput({
       storeId: 'owner-1',
       orderId: 'staff-order-1',
@@ -79,11 +93,12 @@ test('server derives buyer, context and remaining amount from canonical state', 
   assert.match(service, /validEmail/);
   assert.match(service, /classifyCompatiblePaymentRecord/);
   assert.match(service, /isPaymentAuthoritativelyPaid/);
-  assert.match(service, /summarizeLocalOrderPayable\(order\)/);
+  assert.match(service, /summarizeLocalOrderPayable\(operationalOrder\)/);
   assert.match(service, /expectedAmount = payable\.billableAmount/);
-  assert.match(service, /payable\.hasOperationalPaidQuantity/);
+  assert.match(service, /payable\.operationalPaidAmount/);
+  assert.match(service, /canonicalPaidAmount \+ payable\.operationalPaidAmount/);
   assert.match(service, /expectedAmount - authoritativelyPaidAmount/);
-  assert.doesNotMatch(service, /candidate\.amount|request\.amount|value\.amount/);
+  assert.match(service, /request\.amount \?\? outstandingSubtotal/);
   assert.doesNotMatch(service, /candidate\.email|request\.email|value\.email/);
 });
 

@@ -85,10 +85,14 @@ export function ServiceLocationFinancialContextPanel({
   storeId,
   orders,
   couponCode: appliedCouponCode = '',
+  requestedAmount = 0,
+  targetOrderIds = [],
 }: {
   storeId: string;
   orders: CustomerOrder[];
   couponCode?: string;
+  requestedAmount?: number;
+  targetOrderIds?: string[];
 }) {
   const [contexts, setContexts] = useState<Record<string, LocalOrderFinancialContext>>({});
   const [pixByOrder, setPixByOrder] = useState<Record<string, PixUiState>>({});
@@ -193,6 +197,7 @@ export function ServiceLocationFinancialContextPanel({
           orderId: order.id,
           idempotencyKey: newLocalPaymentAttemptKey(order.id),
           ...(couponCode ? { couponCode } : {}),
+          ...(requestedAmount > 0 ? { amount: requestedAmount } : {}),
         });
       }
       const checkout = provider === 'mercado-pago'
@@ -215,7 +220,7 @@ export function ServiceLocationFinancialContextPanel({
       });
       await refresh(true);
     }
-  }, [appliedCouponCode, patchPix, pixByOrder, refresh, storeId]);
+  }, [appliedCouponCode, patchPix, pixByOrder, refresh, requestedAmount, storeId]);
 
   const confirmStorePix = useCallback(async (
     orderId: string,
@@ -293,6 +298,7 @@ export function ServiceLocationFinancialContextPanel({
           const mercadoPagoAvailable = options?.mercadoPagoConnected === true;
           const storePixAvailable = options?.storePixEnabled === true;
           const couponApplied = Boolean(visibleCheckout && pix.couponCode.trim());
+          const selectedForPix = targetOrderIds.length === 0 || (targetOrderIds.length === 1 && targetOrderIds[0] === order.id);
           const couponSubtotal = couponApplied && context ? context.canonicalProjection.expectedAmount : 0;
           const couponDiscount = couponApplied && visibleCheckout ? Number(Math.max(0, couponSubtotal - visibleCheckout.amount).toFixed(2)) : 0;
           return (
@@ -318,9 +324,11 @@ export function ServiceLocationFinancialContextPanel({
 
               {context && canOperatePix(context) && (
                 <div className="mt-3 border-t border-white/5 pt-3">
+                  {targetOrderIds.length > 1 && <p className="mb-2 text-[8px] text-amber-200/75">Para Pix parcial, selecione itens de um único pedido por vez.</p>}
+                  {selectedForPix && requestedAmount > 0 && <p className="mb-2 text-[8px] text-emerald-200/75">Valor solicitado nesta cobrança: {money(requestedAmount)}.</p>}
                   <div className="flex flex-wrap gap-2">
-                    {mercadoPagoAvailable && <button type="button" disabled={pix.loading || Boolean(pix.boundProvider && pix.boundProvider !== 'mercado-pago')} onClick={() => void preparePix(order, context, 'mercado-pago')} className="inline-flex items-center gap-1.5 rounded-lg border border-sky-400/25 bg-sky-500/10 px-2.5 py-1.5 text-[8px] font-bold text-sky-100 transition hover:bg-sky-500/20 disabled:cursor-not-allowed disabled:opacity-50">{pix.loading && pix.boundProvider === 'mercado-pago' ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <QrCode className="h-3.5 w-3.5" />}Mercado Pago</button>}
-                    {storePixAvailable && <button type="button" disabled={pix.loading || Boolean(pix.boundProvider && pix.boundProvider !== 'store-pix')} onClick={() => void preparePix(order, context, 'store-pix')} className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-400/25 bg-emerald-500/10 px-2.5 py-1.5 text-[8px] font-bold text-emerald-100 transition hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-50">{pix.loading && pix.boundProvider === 'store-pix' ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <QrCode className="h-3.5 w-3.5" />}Pix próprio</button>}
+                    {mercadoPagoAvailable && <button type="button" disabled={!selectedForPix || pix.loading || Boolean(pix.boundProvider && pix.boundProvider !== 'mercado-pago')} onClick={() => void preparePix(order, context, 'mercado-pago')} className="inline-flex items-center gap-1.5 rounded-lg border border-sky-400/25 bg-sky-500/10 px-2.5 py-1.5 text-[8px] font-bold text-sky-100 transition hover:bg-sky-500/20 disabled:cursor-not-allowed disabled:opacity-50">{pix.loading && pix.boundProvider === 'mercado-pago' ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <QrCode className="h-3.5 w-3.5" />}Mercado Pago</button>}
+                    {storePixAvailable && <button type="button" disabled={!selectedForPix || pix.loading || Boolean(pix.boundProvider && pix.boundProvider !== 'store-pix')} onClick={() => void preparePix(order, context, 'store-pix')} className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-400/25 bg-emerald-500/10 px-2.5 py-1.5 text-[8px] font-bold text-emerald-100 transition hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-50">{pix.loading && pix.boundProvider === 'store-pix' ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <QrCode className="h-3.5 w-3.5" />}Pix próprio</button>}
                   </div>
                   {options && !mercadoPagoAvailable && !storePixAvailable && <p className="mt-2 text-[8px] leading-relaxed text-amber-200/75">Nenhum modo Pix está ativo. Configure Recebimentos em Integrações antes de gerar a cobrança.</p>}
                 </div>

@@ -29,11 +29,15 @@ import {
   getTableOutstandingTotal,
   getTablePaymentMethodLabel,
   registerTablePayment,
+  registerTablePartialPayment,
+  applyTableCoupon,
+  subscribeTableSettlementHistory,
   transferTableItems,
   type StaffTableCartItem,
   type TableItemSelection,
   type TableOpenLine,
   type TablePaymentMethod,
+  type TableSettlementEntry,
 } from '../../utils/tableOperations';
 import { quoteLocalCoupon } from '../../utils/localPixCheckout';
 import type { StorePromotionQuote } from '../../utils/storePromotions';
@@ -47,6 +51,8 @@ interface TableServiceWorkspaceProps {
   onClose: () => void;
   notify: (message: string, type?: 'success' | 'error' | 'info') => void;
   onAppliedCouponChange?: (couponCode: string) => void;
+  onPaymentDraftChange?: (draft: { amount: number; orderIds: string[] }) => void;
+  onPixRequested?: () => void;
 }
 
 type WorkspaceView = 'catalog' | 'account' | 'transfer';
@@ -216,6 +222,8 @@ export const TableServiceWorkspace = ({
   onClose,
   notify,
   onAppliedCouponChange,
+  onPaymentDraftChange,
+  onPixRequested,
 }: TableServiceWorkspaceProps) => {
   const [view, setView] = useState<WorkspaceView>('catalog');
   const [isReviewOpen, setIsReviewOpen] = useState(false);
@@ -230,6 +238,8 @@ export const TableServiceWorkspace = ({
   const [excludingLineKey, setExcludingLineKey] = useState('');
   const [couponCode, setCouponCode] = useState('');
   const [couponQuote, setCouponQuote] = useState<StorePromotionQuote | null>(null);
+  const [paymentAmountInput, setPaymentAmountInput] = useState('');
+  const [settlementHistory, setSettlementHistory] = useState<TableSettlementEntry[]>([]);
 
   useEffect(() => {
     setView('catalog');
@@ -243,13 +253,24 @@ export const TableServiceWorkspace = ({
     setExcludingLineKey('');
     setCouponCode('');
     setCouponQuote(null);
+    setPaymentAmountInput('');
+    setSettlementHistory([]);
     onAppliedCouponChange?.('');
-  }, [tableCode, onAppliedCouponChange]);
+    onPaymentDraftChange?.({ amount: 0, orderIds: [] });
+  }, [tableCode, onAppliedCouponChange, onPaymentDraftChange]);
 
   useEffect(() => {
     setCouponQuote(null);
     onAppliedCouponChange?.('');
   }, [paymentSelections, onAppliedCouponChange]);
+
+  useEffect(() =>
+    subscribeTableSettlementHistory(
+      storeId,
+      tableCode,
+      setSettlementHistory,
+      () => setSettlementHistory([])
+    ), [storeId, tableCode]);
 
   const storeProducts = useMemo(
     () =>
@@ -296,10 +317,14 @@ export const TableServiceWorkspace = ({
   );
   const paymentSelectionArray = selectionToArray(paymentSelections, openLines);
   const transferSelectionArray = selectionToArray(transferSelections, openLines);
-  const selectedPaymentTotal = openLines.reduce(
-    (sum, line) => sum + (paymentSelections[line.key] ?? 0) * line.price,
-    0
-  );
+  const selectedPaymentTotal = openLines.reduce((sum, line) => {
+    const quantity = paymentSelections[line.key] ?? 0;
+    if (quantity <= 0) return sum;
+    const lineAmount = quantity >= line.availableQuantity
+      ? line.outstandingAmount
+      : Math.min(line.outstandingAmount, quantity * line.price);
+    return sum + lineAmount;
+  }, 0);
   const selectedCouponItems = useMemo(() => {
     const quantities = new Map<string, number>();
     for (const line of openLines) {
@@ -309,7 +334,30 @@ export const TableServiceWorkspace = ({
     }
     return Array.from(quantities, ([productId, quantity]) => ({ productId, quantity }));
   }, [openLines, paymentSelections]);
-  const payablePaymentTotal = couponQuote?.total ?? selectedPaymentTotal;
+  const payablePaymentTotal = selectedPaymentTotal;
+  const confirmedPaymentExists = settlementHistory.some(entry => entry.kind === 'payment' && entry.status === 'confirmed');
+  const paymentAmount = (() => {
+    const normalized = paymentAmountInput.trim().replace(/\./g, '').replace(',', '.');
+    const parsed = Number(normalized);
+    return Number.isFinite(parsed) ? Math.round(parsed * 100) / 100 : 0;
+  })();
+  const selectedPaymentOrderIds = Array.from(new Set(paymentSelectionArray.map(selection => selection.orderId)));
+  useEffect(() => {
+    if (selectedPaymentTotal <= 0) {
+      setPaymentAmountInput('');
+      onPaymentDraftChange?.({ amount: 0, orderIds: [] });
+      return;
+    }
+    setPaymentAmountInput(selectedPaymentTotal.toFixed(2).replace('.', ','));
+  }, [selectedPaymentTotal]);
+
+  useEffect(() => {
+    onPaymentDraftChange?.({
+      amount: paymentAmount,
+      orderIds: selectedPaymentOrderIds,
+    });
+  }, [paymentAmount, selectedPaymentOrderIds.join('|'), onPaymentDraftChange]);
+
   const selectedTransferTotal = openLines.reduce(
     (sum, line) => sum + (transferSelections[line.key] ?? 0) * line.price,
     0
@@ -413,11 +461,19 @@ export const TableServiceWorkspace = ({
         items: selectedCouponItems,
       });
       assertCouponMatchesSelection(quote);
-      setCouponCode(quote.code);
-      setCouponQuote(quote);
-      onAppliedCouponChange?.(quote.code);
+      const user = auth.currentUser;
+      if (!user) throw new Error('Faça login novamente para aplicar o cupom.');
+      await applyTableCoupon(user, {
+        storeId,
+        tableCode,
+        selections: paymentSelectionArray,
+        quote,
+      });
+      setCouponCode('');
+      setCouponQuote(null);
+      onAppliedCouponChange?.('');
       notify(
-        `Cupom ${quote.code} aplicado. Saldo a pagar: ${formatCurrency(quote.total)}.`,
+        `Cupom ${quote.code} aplicado como desconto de ${formatCurrency(quote.discountTotal)}.`,
         'success'
       );
     } catch (error) {
@@ -439,30 +495,34 @@ export const TableServiceWorkspace = ({
       return;
     }
 
+    if (paymentSelectionArray.length === 0) {
+      notify('Selecione ao menos um item para receber.', 'info');
+      return;
+    }
+    if (paymentAmount <= 0 || paymentAmount > payablePaymentTotal + 0.009) {
+      notify('Informe um valor válido, sem ultrapassar o saldo a pagar.', 'info');
+      return;
+    }
+    if (paymentMethod === 'pix') {
+      if (selectedPaymentOrderIds.length !== 1) {
+        notify('Para Pix parcial, selecione itens de um único pedido por vez.', 'info');
+        return;
+      }
+      onPixRequested?.();
+      return;
+    }
+
     setBusyAction('payment');
     try {
-      let confirmedCoupon = couponQuote;
-      if (couponQuote) {
-        confirmedCoupon = await quoteLocalCoupon({
-          storeId,
-          couponCode: couponQuote.code,
-          items: selectedCouponItems,
-        });
-        assertCouponMatchesSelection(confirmedCoupon);
-        setCouponQuote(confirmedCoupon);
-        onAppliedCouponChange?.(confirmedCoupon.code);
-      }
-      const result = await registerTablePayment(user, {
+      const result = await registerTablePartialPayment(user, {
         storeId,
         tableCode,
         selections: paymentSelectionArray,
         method: paymentMethod,
-        ...(confirmedCoupon ? { coupon: confirmedCoupon } : {}),
+        amount: paymentAmount,
       });
       setPaymentSelections({});
-      setCouponCode('');
-      setCouponQuote(null);
-      onAppliedCouponChange?.('');
+      setPaymentAmountInput('');
       notify(
         `${formatCurrency(result.amount)} registrado em ${getTablePaymentMethodLabel(paymentMethod)}.`,
         'success'
@@ -692,6 +752,60 @@ export const TableServiceWorkspace = ({
                     </div>
                   </div>
 
+                  <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-black uppercase text-slate-200">Histórico de pagamentos e ajustes</span>
+                      <span className="text-[8px] text-slate-600">{settlementHistory.length}</span>
+                    </div>
+                    {settlementHistory.length === 0 ? (
+                      <p className="mt-2 text-[9px] text-slate-600">Nenhum pagamento ou desconto registrado nesta mesa.</p>
+                    ) : (
+                      <div className="mt-2 space-y-1.5">
+                        {settlementHistory.map(entry => (
+                          <div key={entry.id} className="flex items-center justify-between gap-3 rounded-xl bg-slate-950 px-2.5 py-2">
+                            <div className="min-w-0">
+                              <strong className={`block truncate text-[9px] ${entry.kind === 'discount' ? 'text-violet-200' : 'text-emerald-200'}`}>
+                                {entry.kind === 'discount'
+                                  ? `Cupom ${entry.couponCode || entry.title || 'aplicado'}`
+                                  : getTablePaymentMethodLabel(entry.method as TablePaymentMethod)}
+                              </strong>
+                              <span className="text-[8px] text-slate-600">
+                                {entry.createdAt ? new Date(entry.createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : ''}
+                                {entry.operatorName ? ` · ${entry.operatorName}` : ''}
+                              </span>
+                            </div>
+                            <span className={`font-mono text-[9px] font-black ${entry.kind === 'discount' ? 'text-violet-300' : 'text-emerald-300'}`}>
+                              {entry.kind === 'discount' ? '− ' : ''}{formatCurrency(entry.amount)}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.05] p-3">
+                    <label htmlFor="staff-table-payment-amount" className="text-[10px] font-black text-emerald-100">Valor a pagar agora</label>
+                    <div className="mt-2 flex gap-2">
+                      <input
+                        id="staff-table-payment-amount"
+                        type="text"
+                        inputMode="decimal"
+                        value={paymentAmountInput}
+                        onChange={event => setPaymentAmountInput(event.target.value.replace(/[^0-9,.]/g, ''))}
+                        placeholder="0,00"
+                        className="min-h-10 min-w-0 flex-1 rounded-xl border border-slate-800 bg-slate-950 px-3 font-mono text-xs font-bold text-white outline-none focus:border-emerald-400"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setPaymentAmountInput(payablePaymentTotal.toFixed(2).replace('.', ','))}
+                        disabled={payablePaymentTotal <= 0}
+                        className="min-h-10 rounded-xl border border-emerald-500/25 px-3 text-[8px] font-black uppercase text-emerald-200 disabled:opacity-40"
+                      >
+                        Usar saldo
+                      </button>
+                    </div>
+                  </div>
+
                   <div className="rounded-2xl border border-violet-500/20 bg-violet-500/[0.05] p-3">
                     <label htmlFor="staff-table-coupon-code" className="flex items-center gap-2 text-[10px] font-black text-violet-100">
                       <TicketPercent className="h-4 w-4" />
@@ -710,13 +824,15 @@ export const TableServiceWorkspace = ({
                           setCouponQuote(null);
                           onAppliedCouponChange?.('');
                         }}
-                        placeholder="Digite o cupom"
+                        disabled={confirmedPaymentExists}
+                        placeholder={confirmedPaymentExists ? 'Cupom bloqueado após o primeiro pagamento' : 'Digite o cupom'}
                         className="min-h-10 min-w-0 flex-1 rounded-xl border border-slate-800 bg-slate-900 px-3 text-xs font-bold uppercase text-white outline-none placeholder:normal-case placeholder:text-slate-600 focus:border-violet-400"
                       />
                       <button
                         type="button"
                         onClick={() => void handleApplyCoupon()}
                         disabled={
+                          confirmedPaymentExists ||
                           !couponCode.trim() ||
                           paymentSelectionArray.length === 0 ||
                           busyAction === 'coupon' ||
@@ -755,12 +871,16 @@ export const TableServiceWorkspace = ({
                   </p>
                   <button
                     type="button"
-                    disabled={paymentSelectionArray.length === 0 || busyAction === 'payment'}
+                    disabled={paymentSelectionArray.length === 0 || paymentAmount <= 0 || paymentAmount > payablePaymentTotal + 0.009 || busyAction === 'payment'}
                     onClick={() => void handleRegisterPayment()}
                     className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 text-[10px] font-black uppercase text-white disabled:opacity-50"
                   >
                     <CreditCard className="h-4 w-4" />
-                    {busyAction === 'payment' ? 'Registrando...' : 'Registrar pagamento'}
+                    {busyAction === 'payment'
+                      ? 'Registrando...'
+                      : paymentMethod === 'pix'
+                        ? 'Gerar cobrança Pix'
+                        : 'Registrar pagamento'}
                   </button>
                 </aside>
               </div>

@@ -45,8 +45,8 @@ const promotionLinesForOrder = (order: DocumentData) => {
   });
 };
 
-const assertExistingPair = (input: { intent: ExistingOrderCanonicalPaymentIntent; payment: CanonicalPayment; canonicalStoreId: string; orderId: string; buyerId: string; idempotencyKey: string; context: LocalPaymentContext; couponCode?: string; }): void => {
-  if (input.intent.storeId !== input.canonicalStoreId || input.intent.target.kind !== 'existing_order' || input.intent.target.orderId !== input.orderId || input.intent.buyerId !== input.buyerId || input.intent.idempotencyKey !== input.idempotencyKey || input.intent.context !== input.context || input.intent.method !== 'pix' || input.intent.status !== 'pending' || input.payment.storeId !== input.canonicalStoreId || input.payment.orderId !== input.orderId || input.payment.buyerId !== input.buyerId || (input.payment.paymentIntentId !== undefined && input.payment.paymentIntentId !== input.intent.id) || input.payment.idempotencyKey !== input.idempotencyKey || input.payment.context !== input.context || input.payment.method !== 'pix' || input.payment.status !== 'pending' || input.payment.amount !== input.intent.amount || (input.couponCode ?? '') !== (input.intent.commercialSnapshot?.couponCode ?? '')) throw new Error('LOCAL_PAYMENT_INTENT_IDEMPOTENCY_CONFLICT');
+const assertExistingPair = (input: { intent: ExistingOrderCanonicalPaymentIntent; payment: CanonicalPayment; canonicalStoreId: string; orderId: string; buyerId: string; idempotencyKey: string; context: LocalPaymentContext; couponCode?: string; requestedAmount?: number; }): void => {
+  if (input.intent.storeId !== input.canonicalStoreId || input.intent.target.kind !== 'existing_order' || input.intent.target.orderId !== input.orderId || input.intent.buyerId !== input.buyerId || input.intent.idempotencyKey !== input.idempotencyKey || input.intent.context !== input.context || input.intent.method !== 'pix' || input.intent.status !== 'pending' || input.payment.storeId !== input.canonicalStoreId || input.payment.orderId !== input.orderId || input.payment.buyerId !== input.buyerId || (input.payment.paymentIntentId !== undefined && input.payment.paymentIntentId !== input.intent.id) || input.payment.idempotencyKey !== input.idempotencyKey || input.payment.context !== input.context || input.payment.method !== 'pix' || input.payment.status !== 'pending' || input.payment.amount !== input.intent.amount || (input.couponCode ?? '') !== (input.intent.commercialSnapshot?.couponCode ?? '') || (input.requestedAmount !== undefined && Math.abs(input.intent.amount - input.requestedAmount) > 0.009)) throw new Error('LOCAL_PAYMENT_INTENT_IDEMPOTENCY_CONFLICT');
 };
 
 export interface LocalPaymentIntentCreateResult { paymentIntentId: string; paymentId: string; orderId: string; status: 'pending'; amount: number; currency: 'BRL'; method: 'pix'; context: LocalPaymentContext; expiresAt: string; providerReady: false; duplicate: boolean; }
@@ -55,15 +55,15 @@ export const createLocalPaymentIntent = async (input: { authenticatedUserId: str
   const request = parseLocalPaymentIntentCreateInput(input.value); const actorUserId = clean(input.authenticatedUserId, 180); if (!actorUserId || actorUserId !== request.storeId) throw new Error('LOCAL_PAYMENT_INTENT_FORBIDDEN');
   const storeContext = await resolveInPersonOrderStoreContext(request.storeId); const now = input.now ?? new Date(); if (Number.isNaN(now.getTime())) throw new Error('LOCAL_PAYMENT_INTENT_TIME_INVALID');
   const createdAt = now.toISOString(); const expiresAt = new Date(now.getTime() + INTENT_TTL_MS).toISOString(); const suffix = documentToken(`${storeContext.canonicalStoreId}|${request.orderId}|${request.idempotencyKey}`); const paymentIntentId = `pi_local_${suffix}`; const paymentId = `pay_local_${suffix}`;
-  const orderRef = adminDb.doc(`stores/${storeContext.canonicalStoreId}/orders/${request.orderId}`); const intentRef = adminDb.doc(`stores/${storeContext.canonicalStoreId}/paymentIntents/${paymentIntentId}`); const paymentRef = adminDb.doc(`stores/${storeContext.canonicalStoreId}/payments/${paymentId}`); const paymentQuery = adminDb.collection(`stores/${storeContext.canonicalStoreId}/payments`).where('orderId', '==', request.orderId).limit(MAX_PAYMENT_RECORDS_PER_ORDER);
+  const orderRef = adminDb.doc(`stores/${storeContext.canonicalStoreId}/orders/${request.orderId}`); const legacyOrderRef = adminDb.doc(`artifacts/${request.storeId}/public/data/customerOrders/${request.orderId}`); const intentRef = adminDb.doc(`stores/${storeContext.canonicalStoreId}/paymentIntents/${paymentIntentId}`); const paymentRef = adminDb.doc(`stores/${storeContext.canonicalStoreId}/payments/${paymentId}`); const paymentQuery = adminDb.collection(`stores/${storeContext.canonicalStoreId}/payments`).where('orderId', '==', request.orderId).limit(MAX_PAYMENT_RECORDS_PER_ORDER);
 
   return adminDb.runTransaction(async transaction => {
     const orderSnapshot = await transaction.get(orderRef); const order = assertEligibleLocalOrder(request.orderId, orderSnapshot.data()); const buyerId = clean(order.buyerId, 220); const context = paymentContextForOrder(order);
-    const userRef = adminDb.doc(`users/${buyerId}`); const [userSnapshot, existingIntentSnapshot, existingPaymentSnapshot, paymentSnapshot] = await Promise.all([transaction.get(userRef), transaction.get(intentRef), transaction.get(paymentRef), transaction.get(paymentQuery)]);
+    const userRef = adminDb.doc(`users/${buyerId}`); const [userSnapshot, existingIntentSnapshot, existingPaymentSnapshot, paymentSnapshot, legacyOrderSnapshot] = await Promise.all([transaction.get(userRef), transaction.get(intentRef), transaction.get(paymentRef), transaction.get(paymentQuery), transaction.get(legacyOrderRef)]);
     if (existingIntentSnapshot.exists || existingPaymentSnapshot.exists) {
       if (!existingIntentSnapshot.exists || !existingPaymentSnapshot.exists) throw new Error('LOCAL_PAYMENT_INTENT_IDEMPOTENCY_CONFLICT');
       const savedIntent = normalizeCanonicalPaymentIntent(existingIntentSnapshot.data() as ExistingOrderPaymentIntentDocument); const savedPayment = normalizeCanonicalPayment(existingPaymentSnapshot.data() as CanonicalPayment);
-      assertExistingPair({ intent: savedIntent, payment: savedPayment, canonicalStoreId: storeContext.canonicalStoreId, orderId: request.orderId, buyerId, idempotencyKey: request.idempotencyKey, context, couponCode: request.couponCode });
+      assertExistingPair({ intent: savedIntent, payment: savedPayment, canonicalStoreId: storeContext.canonicalStoreId, orderId: request.orderId, buyerId, idempotencyKey: request.idempotencyKey, context, couponCode: request.couponCode, requestedAmount: request.amount });
       return { paymentIntentId: savedIntent.id, paymentId: savedPayment.id, orderId: request.orderId, status: 'pending', amount: savedIntent.amount, currency: 'BRL', method: 'pix', context, expiresAt: savedIntent.expiresAt, providerReady: false, duplicate: true };
     }
     if (!userSnapshot.exists) throw new Error('LOCAL_PAYMENT_INTENT_PAYER_NOT_FOUND'); validEmail((userSnapshot.data() as DocumentData | undefined)?.email);
@@ -71,20 +71,25 @@ export const createLocalPaymentIntent = async (input: { authenticatedUserId: str
     const canonicalPayments: CanonicalPayment[] = [];
     for (const document of paymentSnapshot.docs) { const compatible = classifyCompatiblePaymentRecord(document.data(), storeContext.canonicalStoreId); if (compatible.kind === 'legacy_table_payment_mirror') continue; const payment = compatible.payment; if (payment.orderId !== request.orderId) throw new Error('LOCAL_PAYMENT_INTENT_PAYMENT_SCOPE_INVALID'); if (payment.context !== context) throw new Error('LOCAL_PAYMENT_INTENT_PAYMENT_CONTEXT_CONFLICT'); canonicalPayments.push(payment); }
     if (canonicalPayments.some(payment => payment.status === 'pending')) throw new Error('LOCAL_PAYMENT_INTENT_PAYMENT_ALREADY_PENDING');
-    let payable; try { payable = summarizeLocalOrderPayable(order); } catch { throw new Error('LOCAL_PAYMENT_INTENT_ORDER_TOTAL_INVALID'); }
-    if (payable.hasOperationalPaidQuantity) throw new Error('LOCAL_PAYMENT_INTENT_RECONCILIATION_REQUIRED');
+    const operationalOrder = legacyOrderSnapshot.exists ? legacyOrderSnapshot.data() : order;
+    let payable; try { payable = summarizeLocalOrderPayable(operationalOrder); } catch { throw new Error('LOCAL_PAYMENT_INTENT_ORDER_TOTAL_INVALID'); }
     const expectedAmount = payable.billableAmount;
-    const authoritativelyPaidAmount = Number(canonicalPayments.filter(payment => isPaymentAuthoritativelyPaid(payment.status)).reduce((sum, payment) => sum + payment.amount, 0).toFixed(2));
-    const projectedStatus = operationalPaymentStatus(order.paymentStatus);
+    const canonicalPaidAmount = Number(canonicalPayments.filter(payment => isPaymentAuthoritativelyPaid(payment.status)).reduce((sum, payment) => sum + payment.amount, 0).toFixed(2));
+    const authoritativelyPaidAmount = Number((canonicalPaidAmount + payable.operationalPaidAmount).toFixed(2));
+    const projectedStatus = operationalPaymentStatus(operationalOrder.paymentStatus);
     if ((projectedStatus === 'paid' && authoritativelyPaidAmount + 0.009 < expectedAmount) || (projectedStatus === 'partial' && authoritativelyPaidAmount <= 0)) throw new Error('LOCAL_PAYMENT_INTENT_RECONCILIATION_REQUIRED');
     const outstandingSubtotal = Number((expectedAmount - authoritativelyPaidAmount).toFixed(2)); if (outstandingSubtotal <= 0.009) throw new Error('LOCAL_PAYMENT_INTENT_ALREADY_PAID');
 
-    let amount = outstandingSubtotal; let commercialSnapshot: ExistingOrderPaymentIntentDocument['commercialSnapshot'];
+    let amount = request.amount ?? outstandingSubtotal;
+    if (amount > outstandingSubtotal + 0.009) throw new Error('LOCAL_PAYMENT_INTENT_AMOUNT_EXCEEDS_OUTSTANDING');
+    let commercialSnapshot: ExistingOrderPaymentIntentDocument['commercialSnapshot'];
     if (request.couponCode) {
       if (authoritativelyPaidAmount > 0) throw new Error('LOCAL_PAYMENT_INTENT_COUPON_PARTIAL_PAYMENT_UNSUPPORTED');
       const resolved = await resolveStorePromotionForCheckout({ storeId: storeContext.canonicalStoreId, buyerId, couponCode: request.couponCode, lines: promotionLinesForOrder(order), now });
       const discountTotal = Number(resolved.quote.discountTotal.toFixed(2)); if (discountTotal <= 0) throw new Error('LOCAL_COUPON_NO_DISCOUNT');
-      amount = Number((outstandingSubtotal - discountTotal).toFixed(2)); if (amount <= 0.009) throw new Error('LOCAL_COUPON_TOTAL_INVALID');
+      const discountedOutstanding = Number((outstandingSubtotal - discountTotal).toFixed(2)); if (discountedOutstanding <= 0.009) throw new Error('LOCAL_COUPON_TOTAL_INVALID');
+      if (request.amount !== undefined && request.amount > discountedOutstanding + 0.009) throw new Error('LOCAL_PAYMENT_INTENT_AMOUNT_EXCEEDS_OUTSTANDING');
+      amount = request.amount ?? discountedOutstanding;
       commercialSnapshot = { subtotal: outstandingSubtotal, discountTotal, total: amount, couponCode: resolved.promotion.code, promotionSnapshot: { promotionId: resolved.promotion.id, code: resolved.promotion.code, title: resolved.promotion.title, badge: resolved.promotion.badge, discountType: resolved.promotion.discountType, discountValue: resolved.promotion.discountValue, eligibleProductIds: [...resolved.promotion.productIds] } };
     }
 
