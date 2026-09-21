@@ -20,7 +20,9 @@ jobs:
           node-version: 22
           cache: npm
       - name: Apply split payment changes
-        run: python3 .github/scripts/apply-split-table-payments.py
+        run: |
+          python3 .github/scripts/fix-split-table-payments-script.py
+          python3 .github/scripts/apply-split-table-payments.py
       - name: Install dependencies
         run: npm ci
       - name: TypeScript
@@ -34,6 +36,7 @@ jobs:
         run: |
           rm .github/workflows/temporary-split-table-payments.yml
           rm .github/scripts/apply-split-table-payments.py
+          rm .github/scripts/fix-split-table-payments-script.py
           git config user.name "kyrub-app"
           git config user.email "kyrub.app@gmail.com"
           git add -A
