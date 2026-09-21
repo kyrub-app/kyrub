@@ -7,6 +7,7 @@ import {
   isValidBrazilCpf,
   validateBrazilFiscalIssuerIdentity,
 } from '../src/utils/brazilFiscalIdentifier';
+import './fiscal-homologation-policy.test';
 import './store-location-settings.test';
 
 const appSource = readFileSync('src/App.tsx', 'utf8');
