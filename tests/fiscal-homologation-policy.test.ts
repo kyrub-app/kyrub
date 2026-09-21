@@ -5,6 +5,7 @@ import {
   resolveFiscalHomologationPolicy,
   validateFiscalHomologationPolicyForApproval,
 } from '../shared/fiscalHomologationPolicy';
+import './fiscal-homologation-policy-registry.test';
 
 test('fiscal homologation policy starts incomplete without inventing tax choices', () => {
   const resolution = resolveFiscalHomologationPolicy({
