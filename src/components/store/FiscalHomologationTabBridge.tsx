@@ -7,6 +7,7 @@ import FiscalPreflightWorkspace from './FiscalPreflightWorkspace';
 const HUB_ID = 'accounting-fiscal-integrations-hub';
 const TAB_ID = 'accounting-fiscal-tab-homologation';
 const HOST_ID = 'accounting-fiscal-homologation-bridge-host';
+const PANEL_ID = 'accounting-fiscal-homologation';
 
 const ACTIVE_TAB_CLASSES = [
   'border-violet-400/40',
@@ -43,7 +44,7 @@ export function FiscalHomologationTabBridge() {
       setNativeTabVisualState(tab, tab.id === TAB_ID);
     });
     hub.querySelectorAll<HTMLElement>('[role="tabpanel"]').forEach(panel => {
-      panel.style.display = 'none';
+      panel.style.display = panel.id === PANEL_ID ? '' : 'none';
     });
     const bridgeHost = document.getElementById(HOST_ID);
     if (bridgeHost) bridgeHost.style.display = '';
@@ -124,7 +125,7 @@ export function FiscalHomologationTabBridge() {
           }
         }
       `}</style>
-      <div role="tabpanel" id="accounting-fiscal-homologation">
+      <div role="tabpanel" id={PANEL_ID}>
         <FiscalPreflightWorkspace user={user} storeId={user.uid} />
       </div>
     </>,
