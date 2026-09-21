@@ -133,14 +133,17 @@ export const saveFiscalHomologationPolicy = async (
 
   return adminDb.runTransaction(async transaction => {
     const currentSnapshot = await transaction.get(currentRef);
-    const currentVersion = currentSnapshot.exists
-      ? Number(record(record(currentSnapshot.data()).resolution).policy && record(record(currentSnapshot.data()).resolution).policy
-        ? record(record(currentSnapshot.data()).resolution).policy.version
-        : 0)
-      : 0;
-    const version = Number.isInteger(currentVersion) && currentVersion > 0
-      ? currentVersion + 1
-      : 1;
+    const currentData = record(currentSnapshot.data());
+    const currentResolution = record(currentData.resolution);
+    const currentPolicy = record(currentResolution.policy);
+    const rawCurrentVersion = currentPolicy.version;
+    const currentVersion =
+      typeof rawCurrentVersion === 'number' &&
+      Number.isInteger(rawCurrentVersion) &&
+      rawCurrentVersion > 0
+        ? rawCurrentVersion
+        : 0;
+    const version = currentVersion + 1;
     const policyId = `homologation:${canonicalStoreId}`;
     const draftInput = {
       policyId,
