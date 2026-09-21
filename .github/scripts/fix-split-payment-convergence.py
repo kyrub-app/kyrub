@@ -87,6 +87,29 @@ text = replace_once(
 )
 path.write_text(text)
 
+# The prebuild contract now permits an optional numeric amount while buyer/context remain server-derived.
+path = Path('tests/local-payment-intent-create.test.ts')
+text = path.read_text()
+text = replace_once(
+    text,
+    "test('local payment intent input accepts only scope and idempotency', () => {",
+    "test('local payment intent input accepts scope, idempotency and an optional partial amount', () => {",
+    'intent input test title',
+)
+text = replace_once(
+    text,
+    "  for (const field of ['amount', 'email', 'method', 'context', 'buyerId']) {",
+    "  assert.deepEqual(\n    parseLocalPaymentIntentCreateInput({\n      storeId: 'owner-1',\n      orderId: 'staff-order-1',\n      idempotencyKey: 'checkout-attempt-1',\n      amount: 19.5,\n    }),\n    {\n      storeId: 'owner-1',\n      orderId: 'staff-order-1',\n      idempotencyKey: 'checkout-attempt-1',\n      amount: 19.5,\n    }\n  );\n  for (const field of ['email', 'method', 'context', 'buyerId']) {",
+    'intent amount acceptance regression',
+)
+text = replace_once(
+    text,
+    "  assert.match(service, /summarizeLocalOrderPayable\\(order\\)/);\n  assert.match(service, /expectedAmount = payable\\.billableAmount/);\n  assert.match(service, /payable\\.hasOperationalPaidQuantity/);\n  assert.match(service, /expectedAmount - authoritativelyPaidAmount/);\n  assert.doesNotMatch(service, /candidate\\.amount|request\\.amount|value\\.amount/);",
+    "  assert.match(service, /summarizeLocalOrderPayable\\(operationalOrder\\)/);\n  assert.match(service, /expectedAmount = payable\\.billableAmount/);\n  assert.match(service, /payable\\.operationalPaidAmount/);\n  assert.match(service, /canonicalPaidAmount \\+ payable\\.operationalPaidAmount/);\n  assert.match(service, /expectedAmount - authoritativelyPaidAmount/);\n  assert.match(service, /request\\.amount \\?\\? outstandingSubtotal/);",
+    'server remaining amount authority regression',
+)
+path.write_text(text)
+
 # Expand the new regression to explicitly cover convergence semantics.
 path = Path('tests/table-split-payment-history.test.ts')
 text = path.read_text()
