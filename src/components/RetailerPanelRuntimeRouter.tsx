@@ -11,7 +11,7 @@ const MANAGEMENT_MODULES: Record<ErpManagementModule, ModuleDefinition> = {
   vendas: { title: 'Vendas & Analytics', description: 'Indicadores e leitura operacional das vendas da loja.', status: 'migration' },
   financeiro: { title: 'Financeiro Interno', description: 'Custos, entradas, obrigações e projeções financeiras da operação.', status: 'migration' },
   rh: { title: 'Recursos Humanos', description: 'Equipe, cargos, acessos e rotinas da loja única do usuário.', status: 'migration' },
-  crm: { title: 'CRM', description: 'Relacionamento, segmentação, histórico e inteligência sobre clientes.', status: 'development' },
+  crm: { title: 'CRM', description: 'Relacionamento, segmentação, histórico e inteligência sobre clientes.', status: 'native' },
   marketing: { title: 'Marketing', description: 'Aquisição, conversão, retenção, canais e inteligência de crescimento.', status: 'development' },
   integracoes: { title: 'Integrações & Sandbox', description: 'Conexões externas, OAuth, sincronização e testes controlados dos canais.', status: 'native' },
   vouchers: { title: 'Promocionais', description: 'Cupons, pontos, desafios e recompensas em uma única central.', status: 'native' },
@@ -25,6 +25,7 @@ const mercadoLivreOAuthReturnModule = (): ErpManagementModule | null => {
 const LazyIntegrationsRuntime = lazy(async () => { const module = await import('./GerencialIntegrationsRuntime'); return { default: module.GerencialIntegrationsRuntime }; });
 const LazyProductInventoryRuntime = lazy(async () => { const module = await import('./store/ProductInventoryDirectRuntime'); return { default: module.ProductInventoryDirectRuntime }; });
 const LazyPromotionalRuntime = lazy(async () => { const module = await import('./store/PromotionalDirectRuntime'); return { default: module.PromotionalDirectRuntime }; });
+const LazyCrmRelationshipPanel = lazy(async () => { const module = await import('./store/StoreCrmRelationshipPanel'); return { default: module.StoreCrmRelationshipPanel }; });
 
 function Loading({ children }: { children: React.ReactNode }) {
   return <div className="rounded-3xl border border-cyan-500/20 bg-slate-900 p-5 text-[10px] text-cyan-100">{children}</div>;
@@ -37,6 +38,7 @@ function DirectManagementModule({ moduleId, retailerProps, onBackToPdv }: { modu
     {moduleId === 'integracoes' ? <Suspense fallback={<Loading>Carregando Integrações & Sandbox…</Loading>}><LazyIntegrationsRuntime triggerToast={retailerProps.triggerToast} /></Suspense>
       : moduleId === 'produtos' ? <Suspense fallback={<Loading>Carregando Produtos & Estoque…</Loading>}><LazyProductInventoryRuntime activeRetailerId={retailerProps.activeRetailerId} activeStore={retailerProps.activeStore} products={retailerProps.products} setProducts={retailerProps.setProducts} triggerToast={retailerProps.triggerToast} /></Suspense>
       : moduleId === 'vouchers' ? <Suspense fallback={<Loading>Carregando Promocionais…</Loading>}><LazyPromotionalRuntime /></Suspense>
+      : moduleId === 'crm' ? <Suspense fallback={<Loading>Carregando CRM…</Loading>}><LazyCrmRelationshipPanel storeId={retailerProps.activeRetailerId} /></Suspense>
       : <div className="rounded-3xl border border-slate-800 bg-slate-900 p-5 text-white"><span className="font-mono text-[9px] font-black uppercase tracking-[0.16em] text-slate-500">{definition.status === 'development' ? 'Em desenvolvimento' : 'Migração nativa'}</span><p className="mt-3 max-w-2xl text-[11px] leading-relaxed text-slate-400">{definition.status === 'development' ? 'Este módulo já tem destino próprio no menu e será implementado sem depender do antigo painel Gerencial.' : 'Este módulo já tem destino próprio no menu. Sua funcionalidade será reativada diretamente aqui, sem restaurar estados locais ou bridges do antigo Gerencial.'}</p></div>}
   </section>;
 }
