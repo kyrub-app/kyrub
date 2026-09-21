@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  CheckCircle2,
   Clock3,
   LoaderCircle,
   MapPin,
@@ -67,7 +66,6 @@ export const LocalAttendanceWorkspace = ({
   const [customerLabel, setCustomerLabel] = useState('');
   const [choiceKey, setChoiceKey] = useState('');
   const [itemCount, setItemCount] = useState(1);
-  const [filter, setFilter] = useState('TODOS');
   const [loading, setLoading] = useState(false);
   const [busyId, setBusyId] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
@@ -76,13 +74,7 @@ export const LocalAttendanceWorkspace = ({
     if (!choices.some(choice => choice.key === choiceKey)) {
       setChoiceKey(choices[0]?.key ?? '');
     }
-    if (
-      filter !== 'TODOS' &&
-      !choices.some(choice => choice.label.toLocaleUpperCase('pt-BR') === filter)
-    ) {
-      setFilter('TODOS');
-    }
-  }, [choiceKey, choices, filter]);
+  }, [choiceKey, choices]);
 
   const refresh = useCallback(async (silent = false): Promise<void> => {
     if (!storeId) return;
@@ -112,12 +104,6 @@ export const LocalAttendanceWorkspace = ({
   const openSessions = useMemo(
     () => sessions.filter(session => session.status === 'open'),
     [sessions]
-  );
-  const visibleSessions = useMemo(
-    () => openSessions.filter(session =>
-      filter === 'TODOS' || session.space === filter
-    ),
-    [filter, openSessions]
   );
 
   const handleOpen = async (): Promise<void> => {
@@ -208,26 +194,13 @@ export const LocalAttendanceWorkspace = ({
         </button>
       </div>
 
-      <div className="flex gap-1.5 overflow-x-auto pb-1">
-        {['TODOS', ...Array.from(new Set(choices.map(choice => choice.label.toLocaleUpperCase('pt-BR'))))].map(item => (
-          <button type="button" key={item} onClick={() => setFilter(item)} className={`shrink-0 rounded-full px-3 py-1.5 text-[8px] font-black uppercase ${filter === item ? 'bg-orange-500 text-slate-950' : 'border border-slate-800 bg-slate-950 text-slate-500'}`}>
-            {item}
-          </button>
-        ))}
-      </div>
-
       {errorMessage && (
         <div className="rounded-xl border border-red-500/25 bg-red-500/10 px-3 py-2 text-[9px] text-red-300" role="alert">{errorMessage}</div>
       )}
 
-      {visibleSessions.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-slate-800 py-9 text-center">
-          <CheckCircle2 className="mx-auto mb-2 h-7 w-7 text-slate-700" />
-          <p className="text-[10px] font-bold uppercase text-slate-500">Nenhum atendimento local ativo</p>
-        </div>
-      ) : (
+      {openSessions.length > 0 && (
         <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-          {visibleSessions.map(session => (
+          {openSessions.map(session => (
             <article key={session.id} className="rounded-2xl border border-slate-800 bg-slate-950 p-3">
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
