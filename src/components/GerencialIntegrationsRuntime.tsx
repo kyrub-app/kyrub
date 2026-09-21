@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { onAuthStateChanged, type User } from 'firebase/auth';
 import { auth } from '../utils/firebase';
+import { validateBrazilFiscalIssuerIdentity } from '../utils/brazilFiscalIdentifier';
 import {
   createEmptyStoreFiscalAccountingDecision,
   createEmptyStoreIntegrationPlans,
@@ -122,6 +123,36 @@ export function GerencialIntegrationsRuntime({
     } catch (error) {
       console.error('Falha ao salvar configurações dos canais.', error);
       notify('Não foi possível salvar as configurações dos canais.', 'error');
+    } finally {
+      setSavingChannels(false);
+    }
+  };
+
+  const saveSefazDraft = async (): Promise<void> => {
+    if (!user) {
+      notify('Faça login novamente para salvar o cadastro fiscal.', 'error');
+      return;
+    }
+
+    try {
+      validateBrazilFiscalIssuerIdentity(
+        integrationPlans.sefaz.accountLabel,
+        integrationPlans.sefaz.externalStoreId
+      );
+      setSavingChannels(true);
+      await persistStoreIntegrationPlans(user, integrationPlans);
+      notify(
+        'Cadastro fiscal do emissor salvo. A emissão continua bloqueada até homologação e política contábil executável.',
+        'success'
+      );
+    } catch (error) {
+      console.error('Falha ao salvar cadastro fiscal do emissor.', error);
+      notify(
+        error instanceof Error
+          ? error.message
+          : 'Não foi possível salvar o cadastro fiscal do emissor.',
+        'error'
+      );
     } finally {
       setSavingChannels(false);
     }
@@ -362,23 +393,23 @@ export function GerencialIntegrationsRuntime({
               <div className="mt-4 space-y-4" role="tabpanel" id="accounting-fiscal-sefaz">
                 <section className="rounded-2xl border border-amber-500/20 bg-amber-500/[0.04] p-4">
                   <span className="font-mono text-[9px] font-black uppercase tracking-wide text-amber-300">
-                    Conector fiscal
+                    Cadastro fiscal
                   </span>
-                  <h4 className="mt-1 text-sm font-black uppercase text-white">SEFAZ</h4>
+                  <h4 className="mt-1 text-sm font-black uppercase text-white">Identificação fiscal do emissor</h4>
                   <p className="mt-2 text-[10px] leading-relaxed text-slate-400">
-                    Esta área prepara a unidade fiscal e o ambiente de homologação. Certificado, CSC, senha ou chave privada não devem ser digitados no navegador e nenhuma configuração abaixo concede, sozinha, autoridade para emitir documento fiscal.
+                    Cadastre nome ou razão social e CPF/CNPJ do emissor. Novos cadastros permanecem em homologação. Certificado, CSC, senha ou chave privada não devem ser digitados no navegador, e salvar estes dados não concede autoridade de emissão.
                   </p>
                 </section>
 
                 <div className="flex justify-end">
                   <button
                     type="button"
-                    onClick={() => void saveChannelDrafts()}
+                    onClick={() => void saveSefazDraft()}
                     disabled={savingChannels}
                     className="min-h-10 rounded-xl border border-amber-500/25 bg-amber-500/10 px-4 text-[9px] font-black uppercase text-amber-200 disabled:opacity-45"
                     id="save-sefaz-integration"
                   >
-                    {savingChannels ? 'Salvando...' : 'Salvar SEFAZ'}
+                    {savingChannels ? 'Salvando...' : 'Salvar cadastro fiscal'}
                   </button>
                 </div>
 

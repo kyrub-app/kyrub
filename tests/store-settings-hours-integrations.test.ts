@@ -1,6 +1,12 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
+import {
+  getBrazilFiscalTaxIdentifierKind,
+  isValidBrazilCnpj,
+  isValidBrazilCpf,
+  validateBrazilFiscalIssuerIdentity,
+} from '../src/utils/brazilFiscalIdentifier';
 import './store-location-settings.test';
 
 const appSource = readFileSync('src/App.tsx', 'utf8');
@@ -68,6 +74,46 @@ test('integration onboarding includes the requested fiscal and marketplace chann
   assert.match(integrationsSource, /Receber pedidos/);
   assert.match(integrationsSource, /Sincronizar catálogo/);
   assert.match(integrationsSource, /Sincronizar estoque/);
+});
+
+test('fiscal issuer onboarding validates CPF, numeric CNPJ and alphanumeric CNPJ', () => {
+  assert.equal(getBrazilFiscalTaxIdentifierKind('529.982.247-25'), 'cpf');
+  assert.equal(isValidBrazilCpf('529.982.247-25'), true);
+
+  assert.equal(getBrazilFiscalTaxIdentifierKind('04.252.011/0001-10'), 'cnpj');
+  assert.equal(isValidBrazilCnpj('04.252.011/0001-10'), true);
+
+  assert.equal(getBrazilFiscalTaxIdentifierKind('00.000.000/E08G-12'), 'cnpj');
+  assert.equal(isValidBrazilCnpj('00.000.000/E08G-12'), true);
+
+  assert.doesNotThrow(() =>
+    validateBrazilFiscalIssuerIdentity('João da Silva', '529.982.247-25')
+  );
+  assert.doesNotThrow(() =>
+    validateBrazilFiscalIssuerIdentity('Unidade Fiscal', '00.000.000/E08G-12')
+  );
+  assert.throws(
+    () => validateBrazilFiscalIssuerIdentity('', '529.982.247-25'),
+    /nome ou a razão social/i
+  );
+  assert.throws(
+    () => validateBrazilFiscalIssuerIdentity('Unidade Fiscal', '00.000.000/E08G-99'),
+    /CPF ou CNPJ válido/i
+  );
+});
+
+test('SEFAZ runtime is explicit fiscal issuer onboarding and keeps new production activation blocked', () => {
+  assert.match(integrationsSource, /Identificação fiscal do emissor/);
+  assert.match(integrationsSource, /CPF \/ CNPJ do emissor/);
+  assert.match(integrationsSource, /CNPJ alfanumérico/);
+  assert.match(integrationsSource, /Cadastrar emissor fiscal/);
+  assert.match(integrationsSource, /Salvar cadastro fiscal/);
+  assert.match(integrationsSource, /plan\.environment !== 'production'/);
+  assert.match(integrationsSource, /Produção permanece bloqueada neste primeiro cadastro/);
+  assert.match(gerencialIntegrationsSource, /saveSefazDraft/);
+  assert.match(gerencialIntegrationsSource, /validateBrazilFiscalIssuerIdentity/);
+  assert.match(gerencialIntegrationsSource, /Salvar cadastro fiscal/);
+  assert.match(gerencialIntegrationsSource, /A emissão continua bloqueada/);
 });
 
 test('canonical integrations runtime owns store channel planning', () => {
