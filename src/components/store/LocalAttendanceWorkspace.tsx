@@ -28,39 +28,26 @@ const formatTime = (value: string): string => {
 type AttendanceChoice = {
   key: string;
   label: string;
-  serviceLocationId?: string;
+  serviceLocationId: string;
 };
 
 export const LocalAttendanceWorkspace = ({
   storeId,
   serviceLocations,
-  legacySpaces,
 }: {
   storeId: string;
   serviceLocations: ServiceLocation[];
-  legacySpaces: string[];
 }) => {
-  const choices = useMemo<AttendanceChoice[]>(() => {
-    const canonical = serviceLocations
+  const choices = useMemo<AttendanceChoice[]>(
+    () => serviceLocations
       .filter(location => location.active)
       .map(location => ({
         key: `canonical:${location.id}`,
         label: location.label,
         serviceLocationId: location.id,
-      }));
-    const canonicalLabels = new Set(
-      canonical.map(item => item.label.trim().toLocaleUpperCase('pt-BR'))
-    );
-    const legacy = Array.from(new Set(
-      legacySpaces.map(item => item.trim()).filter(Boolean)
-    ))
-      .filter(label => !canonicalLabels.has(label.toLocaleUpperCase('pt-BR')))
-      .map(label => ({
-        key: `legacy:${label.toLocaleUpperCase('pt-BR')}`,
-        label,
-      }));
-    return [...canonical, ...legacy];
-  }, [legacySpaces, serviceLocations]);
+      })),
+    [serviceLocations]
+  );
 
   const [sessions, setSessions] = useState<LocalAttendanceSession[]>([]);
   const [customerLabel, setCustomerLabel] = useState('');
@@ -161,7 +148,7 @@ export const LocalAttendanceWorkspace = ({
             </span>
           </div>
           <p className="mt-1 text-[9px] leading-relaxed text-slate-500">
-            Balcão, mesas e outros atendimentos iniciados na loja. Este módulo não confirma pagamento, fiscal ou pedido online.
+            Atendimentos iniciados nos locais configurados pela loja. Este módulo não confirma pagamento, fiscal ou pedido online.
           </p>
         </div>
         <button type="button" onClick={() => void refresh()} className="rounded-xl border border-slate-800 bg-slate-950 p-2 text-slate-500 hover:text-white" aria-label="Atualizar atendimentos">
@@ -171,7 +158,7 @@ export const LocalAttendanceWorkspace = ({
 
       {choices.length === 0 && (
         <div className="rounded-2xl border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-[9px] text-amber-200">
-          Cadastre um local em Configurações da Loja → Ambientes antes de abrir um novo atendimento local.
+          Cadastre um local em Configurações da Loja → Locais de atendimento antes de abrir um novo atendimento local.
         </div>
       )}
 
