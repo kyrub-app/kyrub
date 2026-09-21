@@ -6,6 +6,14 @@ const service = readFileSync(
   'server/attendance/localPendingPaymentService.ts',
   'utf8'
 );
+const expirationService = readFileSync(
+  'server/attendance/localPendingPaymentExpirationService.ts',
+  'utf8'
+);
+const financialContextService = readFileSync(
+  'server/attendance/localOrderFinancialContextService.ts',
+  'utf8'
+);
 const router = readFileSync(
   'server/attendance/localAttendanceRouter.ts',
   'utf8'
@@ -43,6 +51,30 @@ test('pending recovery is read-only and does not call a PSP or mutate order/paym
   assert.doesNotMatch(service, /runTransaction/);
   assert.doesNotMatch(service, /\.set\(|\.update\(|\.delete\(/);
   assert.doesNotMatch(service, /paymentStatus|paidQuantity/);
+});
+
+test('expired unbound attempts are released without touching provider-bound Pix', () => {
+  assert.match(expirationService, /payment\.status !== 'pending'/);
+  assert.match(expirationService, /clean\(input\.payment\.provider/);
+  assert.match(expirationService, /clean\(input\.payment\.providerPaymentId\)/);
+  assert.match(expirationService, /clean\(intent\.provider/);
+  assert.match(expirationService, /clean\(intent\.providerIntentId\)/);
+  assert.match(expirationService, /Date\.parse\(intent\.expiresAt\)/);
+  assert.match(expirationService, /expiresAt > now\.getTime\(\)/);
+  assert.match(expirationService, /assertPaymentStatusTransition\(payment\.status, 'expired'\)/);
+  assert.match(expirationService, /transaction\.update\(paymentRef, \{ status: 'expired', updatedAt \}\)/);
+  assert.match(expirationService, /transaction\.update\(intentRef, \{ status: 'expired', updatedAt \}\)/);
+  assert.doesNotMatch(expirationService, /paymentStatus|paidQuantity/);
+});
+
+test('financial context expires stale unbound attempts before projecting pending count', () => {
+  assert.match(financialContextService, /expireStaleUnboundLocalPayment/);
+  assert.match(financialContextService, /payment\.status === 'pending'/);
+  assert.match(financialContextService, /!payment\.provider\.trim\(\)/);
+  assert.match(financialContextService, /!payment\.providerPaymentId\.trim\(\)/);
+  const expiryIndex = financialContextService.indexOf('expireStaleUnboundLocalPayment({');
+  const projectionIndex = financialContextService.indexOf('buildCanonicalOrderFinancialProjection({');
+  assert.ok(expiryIndex >= 0 && projectionIndex > expiryIndex);
 });
 
 test('owner-authorized GET exposes only the pending pair for store and order scope', () => {

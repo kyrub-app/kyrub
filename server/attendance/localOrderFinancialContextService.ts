@@ -10,6 +10,7 @@ import type {
 import { classifyCompatiblePaymentRecord } from '../payments/paymentRecordCompatibility.js';
 import { resolveInPersonOrderStoreContext } from './inPersonOrderService.js';
 import { summarizeLocalOrderPayable } from './localOrderPayable.js';
+import { expireStaleUnboundLocalPayment } from './localPendingPaymentExpirationService.js';
 
 const MAX_PAYMENT_RECORDS_PER_ORDER = 50;
 
@@ -98,6 +99,22 @@ export const loadLocalOrderFinancialContext = async (input: {
       throw new Error('LOCAL_ORDER_FINANCIAL_PAYMENT_CONTEXT_INVALID');
     }
     canonicalPayments.push(compatible.payment);
+  }
+
+  for (let index = 0; index < canonicalPayments.length; index += 1) {
+    const payment = canonicalPayments[index];
+    if (
+      payment.status === 'pending' &&
+      !payment.provider.trim() &&
+      !payment.providerPaymentId.trim() &&
+      payment.paymentIntentId
+    ) {
+      canonicalPayments[index] = await expireStaleUnboundLocalPayment({
+        canonicalStoreId: context.canonicalStoreId,
+        orderId,
+        payment,
+      });
+    }
   }
 
   let payable;
