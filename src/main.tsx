@@ -8,7 +8,6 @@ import { KyrubAiConversationCloudSyncGate } from './components/KyrubAiConversati
 import { OfficialKnowledgeSemanticSetupBridge } from './components/OfficialKnowledgeSemanticSetupBridge';
 import { OfficialKnowledgeSetupBridge } from './components/OfficialKnowledgeSetupBridge';
 import { BuyerPickupCodeBridge } from './components/store/BuyerPickupCodeBridge';
-import { LocalServicePdvBridge } from './components/store/LocalServicePdvBridge';
 import { MercadoLivreOAuthReturnBridge } from './components/store/MercadoLivreOAuthReturnBridge';
 import { MercadoPagoReceivablesBridge } from './components/store/MercadoPagoReceivablesBridge';
 import { PickupPdvNavigationBridge } from './components/store/PickupPdvNavigationBridge';
@@ -50,7 +49,6 @@ createRoot(rootElement).render(
           <ProfilePublishingDestinationsCloudBridge />
           <ProfileCommunitiesCloudBridge />
           <BuyerPickupCodeBridge />
-          <LocalServicePdvBridge />
           <ServiceLocationOperationalWorkspaceBridge />
           <MercadoLivreOAuthReturnBridge />
           <PickupPdvNavigationBridge />
