@@ -1,0 +1,504 @@
+name: Temporary table item exclusion implementation
+
+on:
+  push:
+    branches:
+      - ux/table-item-exclusion
+
+permissions:
+  contents: write
+
+jobs:
+  implement:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Apply focused table-account changes
+        shell: bash
+        run: |
+          python <<'PY'
+          from pathlib import Path
+
+          def replace_once(text: str, old: str, new: str, label: str) -> str:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected exactly 1 match, found {count}')
+              return text.replace(old, new, 1)
+
+          # 1) Customer-order item contract: retain excluded quantity without deleting history.
+          path = Path('src/utils/customerOrders.ts')
+          text = path.read_text()
+          text = replace_once(
+              text,
+              "  transferredQuantity: number;\n  note: string;",
+              "  transferredQuantity: number;\n  voidedQuantity?: number;\n  note: string;",
+              'customer order item type',
+          )
+          text = replace_once(
+              text,
+              "  Math.max(0, item.quantity - item.paidQuantity - item.transferredQuantity);",
+              "  Math.max(\n    0,\n    item.quantity -\n      item.paidQuantity -\n      item.transferredQuantity -\n      (item.voidedQuantity ?? 0)\n  );",
+              'open quantity',
+          )
+          text = replace_once(
+              text,
+              "    (sum, item) => sum + Math.max(0, item.quantity - item.transferredQuantity),",
+              "    (sum, item) =>\n      sum +\n      Math.max(\n        0,\n        item.quantity - item.transferredQuantity - (item.voidedQuantity ?? 0)\n      ),",
+              'billable quantity',
+          )
+          text = replace_once(
+              text,
+              "      transferredQuantity: 0,\n      note: cleanString(input.itemNotes[product.id]),",
+              "      transferredQuantity: 0,\n      voidedQuantity: 0,\n      note: cleanString(input.itemNotes[product.id]),",
+              'customer order builder',
+          )
+          text = replace_once(
+              text,
+              "    const transferredQuantity = finiteNumber(record.transferredQuantity) ?? 0;\n\n    if (",
+              "    const transferredQuantity = finiteNumber(record.transferredQuantity) ?? 0;\n    const voidedQuantity = finiteNumber(record.voidedQuantity) ?? 0;\n\n    if (",
+              'parse voided quantity',
+          )
+          text = replace_once(
+              text,
+              "      !Number.isInteger(transferredQuantity) ||\n      transferredQuantity < 0 ||\n      paidQuantity + transferredQuantity > quantity",
+              "      !Number.isInteger(transferredQuantity) ||\n      transferredQuantity < 0 ||\n      !Number.isInteger(voidedQuantity) ||\n      voidedQuantity < 0 ||\n      paidQuantity + transferredQuantity + voidedQuantity > quantity",
+              'validate voided quantity',
+          )
+          text = replace_once(
+              text,
+              "      transferredQuantity,\n      note: cleanString(record.note),",
+              "      transferredQuantity,\n      voidedQuantity,\n      note: cleanString(record.note),",
+              'parsed item output',
+          )
+          text = replace_once(
+              text,
+              "    transferredQuantity: item.transferredQuantity,\n    note: item.note,",
+              "    transferredQuantity: item.transferredQuantity,\n    voidedQuantity: item.voidedQuantity ?? 0,\n    note: item.note,",
+              'order equivalence',
+          )
+          path.write_text(text)
+
+          # 2) Table operations: add non-destructive exclusion + audit record.
+          path = Path('src/utils/legacyTableOperations.ts')
+          text = path.read_text()
+          text = replace_once(
+              text,
+              "export interface AppliedTableTransfer {\n  updatedSourceOrders: CustomerOrder[];\n  targetOrders: CustomerOrder[];\n  amount: number;\n  quantity: number;\n}\n",
+              "export interface AppliedTableTransfer {\n  updatedSourceOrders: CustomerOrder[];\n  targetOrders: CustomerOrder[];\n  amount: number;\n  quantity: number;\n}\n\nexport interface TableItemExclusionReceipt {\n  exclusionId: string;\n  orderId: string;\n  lineId: string;\n  tableCode: string;\n  productId: string;\n  itemName: string;\n  quantity: number;\n  amount: number;\n  createdAt: string;\n}\n",
+              'exclusion receipt type',
+          )
+          text = replace_once(
+              text,
+              "interface TransferTableItemsInput {\n  storeId: string;\n  sourceTableCode: string;\n  targetTableCode: string;\n  selections: TableItemSelection[];\n}\n",
+              "interface TransferTableItemsInput {\n  storeId: string;\n  sourceTableCode: string;\n  targetTableCode: string;\n  selections: TableItemSelection[];\n}\n\ninterface ExcludeTableItemInput {\n  storeId: string;\n  tableCode: string;\n  orderId: string;\n  lineId: string;\n}\n",
+              'exclusion input type',
+          )
+          text = replace_once(
+              text,
+              "      transferredQuantity: 0,\n      note: note.trim(),",
+              "      transferredQuantity: 0,\n      voidedQuantity: 0,\n      note: note.trim(),",
+              'staff order builder',
+          )
+          text = replace_once(
+              text,
+              "        transferredQuantity: 0,\n      });",
+              "        transferredQuantity: 0,\n        voidedQuantity: 0,\n      });",
+              'transfer target reset',
+          )
+
+          marker = "export const getTablePaymentMethodLabel = (\n  method: TablePaymentMethod\n): string => {"
+          if text.count(marker) != 1:
+              raise SystemExit('payment label marker not found uniquely')
+          exclusion_fn = r'''export const excludeTableItem = async (
+  user: Pick<User, 'uid' | 'email' | 'displayName'>,
+  input: ExcludeTableItemInput
+): Promise<TableItemExclusionReceipt> => {
+  const tableCode = normalizeTableCode(input.tableCode);
+  const orderId = input.orderId.trim();
+  const lineId = input.lineId.trim();
+
+  if (user.uid !== input.storeId) {
+    throw new Error('Somente a loja autenticada pode excluir itens da conta.');
+  }
+  if (!tableCode || !orderId || !lineId) {
+    throw new Error('Item da conta não identificado.');
+  }
+
+  const orderReference = doc(
+    db,
+    getCustomerOrderDocumentPath(input.storeId, orderId)
+  );
+  const exclusionReference = doc(
+    collection(
+      db,
+      `artifacts/${input.storeId}/public/data/tableItemExclusions`
+    )
+  );
+  let receipt: TableItemExclusionReceipt | null = null;
+
+  await runTransaction(db, async transaction => {
+    const snapshot = await transaction.get(orderReference);
+    const order = parseCustomerOrder(snapshot.data());
+
+    if (!order) throw new Error('O pedido não foi encontrado.');
+    if (
+      order.fulfillmentType !== 'dine_in' ||
+      tableKey(order.tableCode) !== tableKey(tableCode) ||
+      isTerminalCustomerOrderStatus(order.status)
+    ) {
+      throw new Error('O item não está em uma conta ativa desta mesa.');
+    }
+
+    const sourceItem = order.items.find(item => item.lineId === lineId);
+    if (!sourceItem) throw new Error('O item selecionado não foi encontrado.');
+
+    const availableQuantity = getCustomerOrderItemOpenQuantity(sourceItem);
+    if (availableQuantity <= 0) {
+      throw new Error('Este item já não possui quantidade em aberto.');
+    }
+
+    const createdAt = new Date().toISOString();
+    const nextItems = order.items.map(item =>
+      item.lineId === lineId
+        ? {
+            ...item,
+            voidedQuantity: (item.voidedQuantity ?? 0) + availableQuantity,
+          }
+        : item
+    );
+    const allItemsClosed = nextItems.every(
+      item => getCustomerOrderItemOpenQuantity(item) === 0
+    );
+    const nextSubtotal = nextItems.reduce(
+      (sum, item) =>
+        sum +
+        item.price * Math.max(0, item.quantity - (item.voidedQuantity ?? 0)),
+      0
+    );
+
+    transaction.update(orderReference, {
+      items: nextItems,
+      subtotal: nextSubtotal,
+      total: nextSubtotal,
+      status: allItemsClosed ? 'cancelled' : order.status,
+      updatedAt: createdAt,
+    });
+
+    const nextReceipt: TableItemExclusionReceipt = {
+      exclusionId: exclusionReference.id,
+      orderId: order.id,
+      lineId: sourceItem.lineId,
+      tableCode,
+      productId: sourceItem.productId,
+      itemName: sourceItem.name,
+      quantity: availableQuantity,
+      amount: sourceItem.price * availableQuantity,
+      createdAt,
+    };
+    receipt = nextReceipt;
+
+    transaction.set(exclusionReference, {
+      ...nextReceipt,
+      storeId: input.storeId,
+      unitPrice: sourceItem.price,
+      previousOrderStatus: order.status,
+      operatorId: user.uid,
+      operatorName: operatorNameFor(user),
+      reason: '',
+      authorizationMode: 'temporary_simple_exclusion',
+    });
+  });
+
+  if (!receipt) throw new Error('Não foi possível excluir o item da conta.');
+  return receipt;
+};
+
+'''
+          text = text.replace(marker, exclusion_fn + marker, 1)
+          path.write_text(text)
+
+          # 3) Public facade.
+          path = Path('src/utils/tableOperations.ts')
+          text = path.read_text()
+          text = replace_once(
+              text,
+              "  transferTableItems,\n  getTablePaymentMethodLabel,",
+              "  transferTableItems,\n  excludeTableItem,\n  getTablePaymentMethodLabel,",
+              'facade function export',
+          )
+          text = replace_once(
+              text,
+              "  AppliedTableTransfer,\n} from './legacyTableOperations';",
+              "  AppliedTableTransfer,\n  TableItemExclusionReceipt,\n} from './legacyTableOperations';",
+              'facade type export',
+          )
+          path.write_text(text)
+
+          # 4) Account UI: remove the large PDV-back button, preserve Transfer, add Excluir per line.
+          path = Path('src/components/customer/LegacyTableServiceWorkspace.tsx')
+          text = path.read_text()
+          text = replace_once(text, "  Send,\n  Utensils,", "  Send,\n  Trash2,\n  Utensils,", 'trash icon import')
+          text = replace_once(
+              text,
+              "  createStaffTableOrder,\n  getActiveTableOrders,",
+              "  createStaffTableOrder,\n  excludeTableItem,\n  getActiveTableOrders,",
+              'exclude operation import',
+          )
+          text = replace_once(
+              text,
+              "type BusyAction = '' | 'order' | 'payment' | 'transfer';",
+              "type BusyAction = '' | 'order' | 'payment' | 'transfer' | 'exclude';",
+              'busy action',
+          )
+          text = replace_once(
+              text,
+              "  setSelections,\n  emptyMessage,\n}: {\n  lines: TableOpenLine[];\n  selections: Record<string, number>;\n  setSelections: React.Dispatch<React.SetStateAction<Record<string, number>>>;\n  emptyMessage: string;\n}) => {",
+              "  setSelections,\n  emptyMessage,\n  onExclude,\n  excludingLineKey,\n}: {\n  lines: TableOpenLine[];\n  selections: Record<string, number>;\n  setSelections: React.Dispatch<React.SetStateAction<Record<string, number>>>;\n  emptyMessage: string;\n  onExclude?: (line: TableOpenLine) => void;\n  excludingLineKey?: string;\n}) => {",
+              'selection list props',
+          )
+
+          old_selector = '''              <button
+                type="button"
+                onClick={() =>
+                  updateQuantity(line, selected > 0 ? 0 : line.availableQuantity)
+                }
+                className={`flex h-7 w-7 items-center justify-center rounded-lg border ${
+                  selected > 0
+                    ? 'border-orange-500 bg-orange-500 text-slate-950'
+                    : 'border-slate-700 bg-slate-900 text-slate-500'
+                }`}
+                aria-label={`Selecionar ${line.name}`}
+              >
+                {selected > 0 && <Check className="h-3.5 w-3.5" />}
+              </button>'''
+          new_selector = '''              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() =>
+                    updateQuantity(line, selected > 0 ? 0 : line.availableQuantity)
+                  }
+                  className={`flex h-7 w-7 items-center justify-center rounded-lg border ${
+                    selected > 0
+                      ? 'border-orange-500 bg-orange-500 text-slate-950'
+                      : 'border-slate-700 bg-slate-900 text-slate-500'
+                  }`}
+                  aria-label={`Selecionar ${line.name}`}
+                >
+                  {selected > 0 && <Check className="h-3.5 w-3.5" />}
+                </button>
+                {onExclude && (
+                  <button
+                    type="button"
+                    onClick={() => onExclude(line)}
+                    disabled={excludingLineKey === line.key}
+                    className="flex min-h-7 items-center gap-1.5 rounded-lg border border-red-500/30 bg-red-500/10 px-2.5 text-[9px] font-black uppercase text-red-300 disabled:opacity-50"
+                    aria-label={`Excluir ${line.name} da conta`}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    {excludingLineKey === line.key ? 'Excluindo...' : 'Excluir'}
+                  </button>
+                )}
+              </div>'''
+          text = replace_once(text, old_selector, new_selector, 'item selector/exclude control')
+          text = replace_once(
+              text,
+              "  const [busyAction, setBusyAction] = useState<BusyAction>('');\n",
+              "  const [busyAction, setBusyAction] = useState<BusyAction>('');\n  const [excludingLineKey, setExcludingLineKey] = useState('');\n",
+              'exclude busy state',
+          )
+          text = replace_once(
+              text,
+              "    setTargetTableCode('');\n  }, [tableCode]);",
+              "    setTargetTableCode('');\n    setExcludingLineKey('');\n  }, [tableCode]);",
+              'exclude reset',
+          )
+
+          transfer_handler_marker = "  const handleTransferItems = async (): Promise<void> => {"
+          if text.count(transfer_handler_marker) != 1:
+              raise SystemExit('transfer handler marker not found uniquely')
+          exclude_handler = r'''  const handleExcludeItem = async (line: TableOpenLine): Promise<void> => {
+    const user = auth.currentUser;
+    if (!user) {
+      notify('Faça login novamente para excluir o item.', 'error');
+      return;
+    }
+
+    setBusyAction('exclude');
+    setExcludingLineKey(line.key);
+    try {
+      const result = await excludeTableItem(user, {
+        storeId,
+        tableCode,
+        orderId: line.orderId,
+        lineId: line.lineId,
+      });
+      setPaymentSelections(previous => {
+        const next = { ...previous };
+        delete next[line.key];
+        return next;
+      });
+      notify(
+        `${result.quantity}x ${result.itemName} excluído(s) da conta da mesa ${tableCode}.`,
+        'success'
+      );
+    } catch (error) {
+      notify(
+        error instanceof Error ? error.message : 'Não foi possível excluir o item.',
+        'error'
+      );
+    } finally {
+      setExcludingLineKey('');
+      setBusyAction('');
+    }
+  };
+
+'''
+          text = text.replace(transfer_handler_marker, exclude_handler + transfer_handler_marker, 1)
+
+          old_account_actions = '''              <div className="mb-4 flex items-center justify-between gap-3">
+                <button
+                  type="button"
+                  onClick={() => setView('catalog')}
+                  className="flex min-h-10 items-center gap-2 rounded-xl border border-slate-800 bg-slate-950 px-3 text-[10px] font-black uppercase text-slate-300"
+                >
+                  <ChevronLeft className="h-4 w-4" /> Voltar ao PDV
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setView('transfer')}
+                  className="flex min-h-10 items-center gap-2 rounded-xl border border-blue-500/30 bg-blue-500/10 px-3 text-[10px] font-black uppercase text-blue-300"
+                >
+                  <ArrowRightLeft className="h-4 w-4" /> Transferir
+                </button>
+              </div>'''
+          new_account_actions = '''              <div className="mb-4 flex items-center justify-end">
+                <button
+                  type="button"
+                  onClick={() => setView('transfer')}
+                  className="flex min-h-10 items-center gap-2 rounded-xl border border-blue-500/30 bg-blue-500/10 px-4 text-[10px] font-black uppercase text-blue-300"
+                >
+                  <ArrowRightLeft className="h-4 w-4" /> Transferir
+                </button>
+              </div>'''
+          text = replace_once(text, old_account_actions, new_account_actions, 'account primary actions')
+          text = replace_once(
+              text,
+              "                    setSelections={setPaymentSelections}\n                    emptyMessage=\"Não há itens pendentes de pagamento nesta mesa.\"",
+              "                    setSelections={setPaymentSelections}\n                    emptyMessage=\"Não há itens pendentes de pagamento nesta mesa.\"\n                    onExclude={line => void handleExcludeItem(line)}\n                    excludingLineKey={excludingLineKey}",
+              'account exclusion props',
+          )
+          path.write_text(text)
+
+          # 5) Fix the stale assertion exposed by PR #744.
+          path = Path('tests/local-attendance.test.ts')
+          text = path.read_text()
+          text = replace_once(
+              text,
+              "    const manager = readFileSync('src/components/store/ServiceLocationManager.tsx', 'utf8');\n    assert.match(modal, /<ServiceLocationManager legacySpaces=\\{atendimentoSpaces\\} \\/>/);\n    assert.match(modal, /Espaços de Produção/);",
+              "    const manager = readFileSync('src/components/store/ServiceLocationManager.tsx', 'utf8');\n    const productionManager = readFileSync('src/components/store/ProductionSpaceManager.tsx', 'utf8');\n    assert.match(modal, /<ServiceLocationManager legacySpaces=\\{atendimentoSpaces\\} \\/>/);\n    assert.match(modal, /<ProductionSpaceManager/);\n    assert.match(productionManager, /Espaços de produção/i);",
+              'stale production manager assertion',
+          )
+          path.write_text(text)
+
+          # 6) Focused source/contract regression test for this cut.
+          Path('tests/table-item-exclusion.test.ts').write_text(r'''import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { describe, test } from 'node:test';
+import {
+  getCustomerOrderItemOpenQuantity,
+  parseCustomerOrder,
+} from '../src/utils/customerOrders';
+
+describe('table account item exclusion', () => {
+  test('voided quantity leaves the original quantity auditable but removes it from the open balance', () => {
+    const order = parseCustomerOrder({
+      id: 'staff-order-1',
+      storeId: 'store-1',
+      buyerId: 'walk-in-mesa-5',
+      buyerName: 'Atendimento presencial',
+      buyerEmail: '',
+      fulfillmentType: 'dine_in',
+      deliveryAddress: '',
+      tableCode: '5',
+      customerNote: '',
+      items: [{
+        lineId: 'line-1',
+        productId: 'product-1',
+        name: 'X-BURGER',
+        price: 29.5,
+        quantity: 2,
+        paidQuantity: 0,
+        transferredQuantity: 0,
+        voidedQuantity: 1,
+        note: '',
+        image: '',
+        isService: false,
+      }],
+      subtotal: 59,
+      total: 59,
+      status: 'ready',
+      paymentStatus: 'unpaid',
+      source: 'staff',
+      sourceChannel: 'kyrub',
+      operatorId: 'store-1',
+      operatorName: 'Operador',
+      createdAt: '2026-09-21T00:00:00.000Z',
+      updatedAt: '2026-09-21T00:00:00.000Z',
+    });
+
+    assert.ok(order);
+    assert.equal(order.items[0].quantity, 2);
+    assert.equal(order.items[0].voidedQuantity, 1);
+    assert.equal(getCustomerOrderItemOpenQuantity(order.items[0]), 1);
+  });
+
+  test('runtime records exclusion separately instead of deleting the order or line', () => {
+    const runtime = readFileSync('src/utils/legacyTableOperations.ts', 'utf8');
+    assert.match(runtime, /export const excludeTableItem/);
+    assert.match(runtime, /tableItemExclusions/);
+    assert.match(runtime, /voidedQuantity:/);
+    assert.match(runtime, /operatorId: user\.uid/);
+    assert.match(runtime, /authorizationMode: 'temporary_simple_exclusion'/);
+    assert.doesNotMatch(runtime, /transaction\.delete\(/);
+  });
+
+  test('account UI keeps transfer, removes the redundant large PDV return and exposes Excluir per line', () => {
+    const workspace = readFileSync('src/components/customer/LegacyTableServiceWorkspace.tsx', 'utf8');
+    const accountStart = workspace.indexOf("{view === 'account'");
+    const transferStart = workspace.indexOf("{view === 'transfer'");
+    const accountBlock = workspace.slice(accountStart, transferStart);
+    assert.match(accountBlock, /> Transferir/);
+    assert.doesNotMatch(accountBlock, /Voltar ao PDV/);
+    assert.match(accountBlock, /onExclude=\{line => void handleExcludeItem\(line\)\}/);
+    assert.match(workspace, /Excluir \$\{line\.name\} da conta/);
+  });
+});
+''')
+          PY
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: TypeScript
+        run: npm run lint
+
+      - name: Focused regression tests
+        run: node --test --import tsx tests/table-item-exclusion.test.ts tests/table-operations.test.ts tests/local-attendance.test.ts
+
+      - name: Remove temporary workflow and commit implementation
+        shell: bash
+        run: |
+          rm .github/workflows/temporary-table-item-exclusion.yml
+          git config user.name "kyrub-app"
+          git config user.email "kyrub.app@gmail.com"
+          git add src/utils/customerOrders.ts src/utils/legacyTableOperations.ts src/utils/tableOperations.ts src/components/customer/LegacyTableServiceWorkspace.tsx tests/local-attendance.test.ts tests/table-item-exclusion.test.ts .github/workflows/temporary-table-item-exclusion.yml
+          git commit -m "Add auditable table item exclusion"
+          git push origin HEAD:ux/table-item-exclusion
