@@ -29,22 +29,23 @@ test('coupon sits below payable balance and before payment method buttons', () =
   assert.match(workspace, /couponQuote\.discountTotal/);
 });
 
-test('coupon quote is authenticated server authority and updates the recorded payment amount', () => {
+test('coupon quote is authenticated server authority and persists as a discount adjustment before payment', () => {
   assert.match(pixClient, /\/api\/payments\/coupons\/quote/);
   assert.match(pixClient, /authorizedFetch/);
   assert.match(workspace, /quoteLocalCoupon/);
   assert.match(workspace, /assertCouponMatchesSelection/);
-  assert.match(workspace, /coupon: confirmedCoupon/);
+  assert.match(workspace, /applyTableCoupon/);
+  assert.match(tableOperations, /entryType: 'discount'/);
   assert.match(tableOperations, /originalAmount: selectedSubtotal/);
   assert.match(tableOperations, /discountAmount/);
-  assert.match(tableOperations, /couponCode: coupon\?\.code/);
-  assert.match(tableOperations, /amount: paymentAmount/);
+  assert.match(tableOperations, /couponCode: quote\.code/);
+  assert.match(tableOperations, /method: 'coupon'/);
 });
 
-test('Pix reuses the already-applied coupon instead of rendering a second coupon input', () => {
-  assert.match(wrapper, /couponCode=\{appliedCouponCode\}/);
-  assert.match(financialPanel, /couponCode: appliedCouponCode = ''/);
-  assert.match(financialPanel, /const couponCode = appliedCouponCode\.trim\(\)/);
+test('Pix reuses the net account state and does not render a second coupon input', () => {
+  assert.match(wrapper, /requestedAmount=\{paymentDraft\.amount\}/);
+  assert.match(financialPanel, /requestedAmount = 0/);
+  assert.match(financialPanel, /amount: requestedAmount/);
   assert.doesNotMatch(financialPanel, /id=\{`coupon-\$\{order\.id\}`\}/);
   assert.match(financialPanel, /couponCode,/);
 });

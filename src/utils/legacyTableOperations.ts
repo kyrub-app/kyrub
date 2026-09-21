@@ -1,4 +1,4 @@
-import { collection, doc, runTransaction } from 'firebase/firestore';
+import { collection, doc, onSnapshot, runTransaction, type Unsubscribe } from 'firebase/firestore';
 import type { User } from 'firebase/auth';
 import type { Product } from '../types';
 import { db } from './firebase';
@@ -6,6 +6,7 @@ import type { StorePromotionQuote } from './storePromotions';
 import {
   getCustomerOrderDocumentPath,
   getCustomerOrderItemOpenQuantity,
+  getCustomerOrderItemOutstandingAmount,
   getCustomerOrderOutstandingTotal,
   isTerminalCustomerOrderStatus,
   parseCustomerOrder,
@@ -46,6 +47,7 @@ export interface TableOpenLine {
   name: string;
   note: string;
   price: number;
+  outstandingAmount: number;
   availableQuantity: number;
   buyerName: string;
   orderStatus: CustomerOrderStatus;
@@ -74,6 +76,19 @@ export interface AppliedTableTransfer {
   quantity: number;
 }
 
+export interface TableSettlementEntry {
+  id: string;
+  kind: 'payment' | 'discount';
+  tableCode: string;
+  method: TablePaymentMethod | 'coupon';
+  amount: number;
+  status: 'confirmed' | 'applied';
+  couponCode: string;
+  title: string;
+  operatorName: string;
+  createdAt: string;
+}
+
 export interface TableItemExclusionReceipt {
   exclusionId: string;
   orderId: string;
@@ -92,6 +107,21 @@ interface RegisterTablePaymentInput {
   selections: TableItemSelection[];
   method: TablePaymentMethod;
   coupon?: StorePromotionQuote;
+}
+
+interface RegisterPartialTablePaymentInput {
+  storeId: string;
+  tableCode: string;
+  selections: TableItemSelection[];
+  method: Exclude<TablePaymentMethod, 'pix'>;
+  amount: number;
+}
+
+interface ApplyTableCouponInput {
+  storeId: string;
+  tableCode: string;
+  selections: TableItemSelection[];
+  quote: StorePromotionQuote;
 }
 
 interface TransferTableItemsInput {
@@ -178,6 +208,7 @@ export const getTableOpenLines = (
           name: item.name,
           note: item.note,
           price: item.price,
+          outstandingAmount: getCustomerOrderItemOutstandingAmount(item),
           availableQuantity,
           buyerName: order.buyerName,
           orderStatus: order.status,
@@ -233,6 +264,8 @@ export const buildStaffTableOrder = (
       paidQuantity: 0,
       transferredQuantity: 0,
       voidedQuantity: 0,
+      settledAmount: 0,
+      discountAmount: 0,
       note: note.trim(),
       image: product.image.trim(),
       isService: product.isService === true,
@@ -448,6 +481,327 @@ export const registerTablePayment = async (
   return result;
 };
 
+const selectedOutstandingCapacity = (
+  item: CustomerOrderItem,
+  selectedQuantity: number
+): number => {
+  const availableQuantity = getCustomerOrderItemOpenQuantity(item);
+  if (selectedQuantity > availableQuantity) {
+    throw new Error(`Quantidade indisponível para “${item.name}”.`);
+  }
+  const outstandingAmount = getCustomerOrderItemOutstandingAmount(item);
+  return roundMoney(
+    selectedQuantity >= availableQuantity
+      ? outstandingAmount
+      : Math.min(outstandingAmount, selectedQuantity * item.price)
+  );
+};
+
+export const registerTablePartialPayment = async (
+  user: Pick<User, 'uid' | 'email' | 'displayName'>,
+  input: RegisterPartialTablePaymentInput
+): Promise<AppliedTablePayment> => {
+  if (user.uid !== input.storeId) {
+    throw new Error('Somente a loja autenticada pode receber esta conta.');
+  }
+  const requestedAmount = roundMoney(input.amount);
+  if (!Number.isFinite(requestedAmount) || requestedAmount <= 0) {
+    throw new Error('Informe um valor válido para receber agora.');
+  }
+
+  const grouped = groupSelections(input.selections);
+  const orderReferences = Array.from(grouped.keys()).map(orderId =>
+    doc(db, getCustomerOrderDocumentPath(input.storeId, orderId))
+  );
+  const paymentReference = doc(
+    collection(db, `artifacts/${input.storeId}/public/data/tablePayments`)
+  );
+  let result: AppliedTablePayment | null = null;
+
+  await runTransaction(db, async transaction => {
+    const snapshots = await Promise.all(orderReferences.map(reference => transaction.get(reference)));
+    const orders = snapshots.map(snapshot => parseCustomerOrder(snapshot.data()));
+    if (orders.some(order => order === null)) {
+      throw new Error('Não foi possível carregar todos os itens da conta.');
+    }
+
+    const timestamp = new Date().toISOString();
+    const expectedTableKey = tableKey(input.tableCode);
+    let capacity = 0;
+    for (const order of orders as CustomerOrder[]) {
+      const orderSelections = grouped.get(order.id);
+      if (!orderSelections) continue;
+      if (
+        order.fulfillmentType !== 'dine_in' ||
+        tableKey(order.tableCode) !== expectedTableKey ||
+        isTerminalCustomerOrderStatus(order.status)
+      ) {
+        throw new Error('O pedido selecionado não está ativo nesta mesa.');
+      }
+      orderSelections.forEach((selectedQuantity, lineId) => {
+        const item = order.items.find(candidate => candidate.lineId === lineId);
+        if (!item) throw new Error('Um dos itens selecionados não foi encontrado.');
+        capacity += selectedOutstandingCapacity(item, selectedQuantity);
+      });
+    }
+    capacity = roundMoney(capacity);
+    if (requestedAmount > capacity + 0.009) {
+      throw new Error('O valor informado é maior que o saldo selecionado.');
+    }
+
+    let remaining = requestedAmount;
+    let selectedQuantityTotal = 0;
+    const settledItems: AppliedTablePayment['items'] = [];
+    const updatedOrders = (orders as CustomerOrder[]).map(order => {
+      const orderSelections = grouped.get(order.id);
+      if (!orderSelections) return order;
+      const nextItems = order.items.map(item => {
+        const selectedQuantity = orderSelections.get(item.lineId) ?? 0;
+        if (selectedQuantity <= 0) return item;
+        const lineCapacity = selectedOutstandingCapacity(item, selectedQuantity);
+        const allocated = roundMoney(Math.min(lineCapacity, remaining));
+        selectedQuantityTotal += selectedQuantity;
+        if (allocated > 0) {
+          settledItems.push({
+            orderId: order.id,
+            lineId: item.lineId,
+            productId: item.productId,
+            name: item.name,
+            quantity: selectedQuantity,
+            unitPrice: item.price,
+            total: allocated,
+          });
+          remaining = roundMoney(remaining - allocated);
+        }
+        return allocated > 0
+          ? { ...item, settledAmount: roundMoney((item.settledAmount ?? 0) + allocated) }
+          : item;
+      });
+      const paymentStatus = resolveCustomerOrderPaymentStatus(nextItems);
+      const allItemsClosed = nextItems.every(item => getCustomerOrderItemOutstandingAmount(item) <= 0.009);
+      return {
+        ...order,
+        items: nextItems,
+        paymentStatus,
+        status: allItemsClosed ? 'completed' : order.status,
+        updatedAt: timestamp,
+      };
+    });
+
+    if (remaining > 0.009) throw new Error('Não foi possível alocar todo o valor informado.');
+    updatedOrders.forEach(order => {
+      transaction.update(doc(db, getCustomerOrderDocumentPath(input.storeId, order.id)), {
+        items: order.items,
+        paymentStatus: order.paymentStatus,
+        status: order.status,
+        updatedAt: order.updatedAt,
+      });
+    });
+    transaction.set(paymentReference, {
+      id: paymentReference.id,
+      entryType: 'payment',
+      status: 'confirmed',
+      storeId: input.storeId,
+      tableCode: normalizeTableCode(input.tableCode),
+      method: input.method,
+      amount: requestedAmount,
+      originalAmount: requestedAmount,
+      discountAmount: 0,
+      couponCode: '',
+      couponTitle: '',
+      promotionId: '',
+      quantity: selectedQuantityTotal,
+      items: settledItems,
+      operatorId: user.uid,
+      operatorName: operatorNameFor(user),
+      createdAt: timestamp,
+    });
+    result = {
+      updatedOrders,
+      amount: requestedAmount,
+      quantity: selectedQuantityTotal,
+      items: settledItems,
+    };
+  });
+
+  if (!result) throw new Error('Não foi possível registrar o pagamento parcial.');
+  return result;
+};
+
+export const applyTableCoupon = async (
+  user: Pick<User, 'uid' | 'email' | 'displayName'>,
+  input: ApplyTableCouponInput
+): Promise<TableSettlementEntry> => {
+  if (user.uid !== input.storeId) {
+    throw new Error('Somente a loja autenticada pode aplicar cupom nesta conta.');
+  }
+  const grouped = groupSelections(input.selections);
+  const quote = input.quote;
+  const discountTotal = roundMoney(quote.discountTotal);
+  if (!quote.code.trim() || discountTotal <= 0) throw new Error('O cupom não gerou desconto válido.');
+  const orderReferences = Array.from(grouped.keys()).map(orderId =>
+    doc(db, getCustomerOrderDocumentPath(input.storeId, orderId))
+  );
+  const ledgerReference = doc(
+    collection(db, `artifacts/${input.storeId}/public/data/tablePayments`)
+  );
+  let receipt: TableSettlementEntry | null = null;
+
+  await runTransaction(db, async transaction => {
+    const snapshots = await Promise.all(orderReferences.map(reference => transaction.get(reference)));
+    const orders = snapshots.map(snapshot => parseCustomerOrder(snapshot.data()));
+    if (orders.some(order => order === null)) throw new Error('Não foi possível carregar a conta.');
+    const typedOrders = orders as CustomerOrder[];
+    const expectedTableKey = tableKey(input.tableCode);
+    let selectedSubtotal = 0;
+    const eligible: Array<{ orderId: string; lineId: string; amount: number }> = [];
+
+    for (const order of typedOrders) {
+      if (
+        order.fulfillmentType !== 'dine_in' ||
+        tableKey(order.tableCode) !== expectedTableKey ||
+        isTerminalCustomerOrderStatus(order.status)
+      ) throw new Error('O pedido selecionado não está ativo nesta mesa.');
+      if (order.items.some(item => item.paidQuantity > 0 || (item.settledAmount ?? 0) > 0.009)) {
+        throw new Error('O cupom deve ser definido antes do primeiro pagamento da conta.');
+      }
+      const selections = grouped.get(order.id);
+      if (!selections) continue;
+      selections.forEach((selectedQuantity, lineId) => {
+        const item = order.items.find(candidate => candidate.lineId === lineId);
+        if (!item) throw new Error('Um dos itens selecionados não foi encontrado.');
+        if ((item.discountAmount ?? 0) > 0.009) throw new Error('Já existe desconto aplicado nesta conta.');
+        if (selectedQuantity > getCustomerOrderItemOpenQuantity(item)) {
+          throw new Error(`Quantidade indisponível para “${item.name}”.`);
+        }
+        const lineAmount = roundMoney(selectedQuantity * item.price);
+        selectedSubtotal += lineAmount;
+        if (quote.eligibleProductIds.includes(item.productId)) {
+          eligible.push({ orderId: order.id, lineId: item.lineId, amount: lineAmount });
+        }
+      });
+    }
+    selectedSubtotal = roundMoney(selectedSubtotal);
+    if (Math.abs(roundMoney(quote.subtotal) - selectedSubtotal) > 0.009) {
+      throw new Error('O saldo selecionado mudou. Aplique o cupom novamente.');
+    }
+    const eligibleTotal = roundMoney(eligible.reduce((sum, item) => sum + item.amount, 0));
+    if (eligibleTotal <= 0 || discountTotal > eligibleTotal + 0.009) {
+      throw new Error('O desconto não pode ser aplicado aos itens selecionados.');
+    }
+
+    let remainingDiscount = discountTotal;
+    const allocations = new Map<string, number>();
+    eligible.forEach((entry, index) => {
+      const isLast = index === eligible.length - 1;
+      const proportional = isLast
+        ? remainingDiscount
+        : roundMoney(discountTotal * (entry.amount / eligibleTotal));
+      const allocated = roundMoney(Math.min(entry.amount, proportional, remainingDiscount));
+      allocations.set(`${entry.orderId}:${entry.lineId}`, allocated);
+      remainingDiscount = roundMoney(remainingDiscount - allocated);
+    });
+    if (remainingDiscount > 0.009 && eligible.length) {
+      const last = eligible[eligible.length - 1];
+      const key = `${last.orderId}:${last.lineId}`;
+      allocations.set(key, roundMoney((allocations.get(key) ?? 0) + remainingDiscount));
+      remainingDiscount = 0;
+    }
+
+    const timestamp = new Date().toISOString();
+    typedOrders.forEach(order => {
+      const nextItems = order.items.map(item => {
+        const allocation = allocations.get(`${order.id}:${item.lineId}`) ?? 0;
+        return allocation > 0
+          ? { ...item, discountAmount: roundMoney((item.discountAmount ?? 0) + allocation) }
+          : item;
+      });
+      transaction.update(doc(db, getCustomerOrderDocumentPath(input.storeId, order.id)), {
+        items: nextItems,
+        paymentStatus: resolveCustomerOrderPaymentStatus(nextItems),
+        updatedAt: timestamp,
+      });
+    });
+
+    const nextReceipt: TableSettlementEntry = {
+      id: ledgerReference.id,
+      kind: 'discount',
+      tableCode: normalizeTableCode(input.tableCode),
+      method: 'coupon',
+      amount: discountTotal,
+      status: 'applied',
+      couponCode: quote.code,
+      title: quote.title,
+      operatorName: operatorNameFor(user),
+      createdAt: timestamp,
+    };
+    receipt = nextReceipt;
+    transaction.set(ledgerReference, {
+      id: ledgerReference.id,
+      entryType: 'discount',
+      status: 'applied',
+      storeId: input.storeId,
+      tableCode: nextReceipt.tableCode,
+      method: 'coupon',
+      amount: discountTotal,
+      originalAmount: selectedSubtotal,
+      discountAmount: discountTotal,
+      couponCode: quote.code,
+      couponTitle: quote.title,
+      promotionId: quote.promotionId,
+      quantity: input.selections.reduce((sum, selection) => sum + selection.quantity, 0),
+      items: Array.from(allocations.entries()).map(([key, amount]) => ({ key, amount })),
+      operatorId: user.uid,
+      operatorName: nextReceipt.operatorName,
+      createdAt: timestamp,
+    });
+  });
+
+  if (!receipt) throw new Error('Não foi possível aplicar o cupom.');
+  return receipt;
+};
+
+export const subscribeTableSettlementHistory = (
+  storeId: string,
+  tableCode: string,
+  onChange: (entries: TableSettlementEntry[]) => void,
+  onError?: (error: Error) => void
+): Unsubscribe => {
+  const expectedTableKey = tableKey(tableCode);
+  return onSnapshot(
+    collection(db, `artifacts/${storeId}/public/data/tablePayments`),
+    snapshot => {
+      const entries = snapshot.docs.flatMap(documentSnapshot => {
+        const value = documentSnapshot.data() as Record<string, unknown>;
+        if (tableKey(typeof value.tableCode === 'string' ? value.tableCode : '') !== expectedTableKey) return [];
+        const rawMethod = value.method;
+        const paymentMethod: TablePaymentMethod | null =
+          rawMethod === 'cash' || rawMethod === 'pix' || rawMethod === 'card' || rawMethod === 'other'
+            ? rawMethod
+            : null;
+        const isDiscount = value.entryType === 'discount' || rawMethod === 'coupon';
+        if (!isDiscount && !paymentMethod) return [];
+        const amount = typeof value.amount === 'number' && Number.isFinite(value.amount) ? value.amount : 0;
+        const createdAt = typeof value.createdAt === 'string' ? value.createdAt : '';
+        return [{
+          id: documentSnapshot.id,
+          kind: isDiscount ? 'discount' as const : 'payment' as const,
+          tableCode: normalizeTableCode(tableCode),
+          method: isDiscount ? 'coupon' as const : paymentMethod!,
+          amount: roundMoney(Math.max(0, amount)),
+          status: isDiscount ? 'applied' as const : 'confirmed' as const,
+          couponCode: typeof value.couponCode === 'string' ? value.couponCode.trim() : '',
+          title: typeof value.couponTitle === 'string' ? value.couponTitle.trim() : '',
+          operatorName: typeof value.operatorName === 'string' ? value.operatorName.trim() : '',
+          createdAt,
+        } satisfies TableSettlementEntry];
+      }).sort((left, right) => left.createdAt.localeCompare(right.createdAt));
+      onChange(entries);
+    },
+    error => onError?.(error instanceof Error ? error : new Error('Não foi possível carregar o histórico.'))
+  );
+};
+
 export const applyTableTransferSelections = (
   orders: CustomerOrder[],
   sourceTableCode: string,
@@ -499,6 +853,8 @@ export const applyTableTransferSelections = (
         paidQuantity: 0,
         transferredQuantity: 0,
         voidedQuantity: 0,
+        settledAmount: 0,
+        discountAmount: 0,
       });
 
       return {

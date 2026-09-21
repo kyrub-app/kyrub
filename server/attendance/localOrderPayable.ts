@@ -42,6 +42,9 @@ export const summarizeLocalOrderPayable = (
     const ordered = quantity(line.quantity);
     const paid = quantity(line.paidQuantity ?? 0);
     const transferred = quantity(line.transferredQuantity ?? 0);
+    const voided = quantity(line.voidedQuantity ?? 0);
+    const settledAmount = finite(line.settledAmount ?? 0);
+    const discountAmount = finite(line.discountAmount ?? 0);
     if (
       price === null ||
       price < 0 ||
@@ -49,18 +52,24 @@ export const summarizeLocalOrderPayable = (
       ordered <= 0 ||
       paid === null ||
       transferred === null ||
-      paid + transferred > ordered
+      voided === null ||
+      settledAmount === null || settledAmount < 0 ||
+      discountAmount === null || discountAmount < 0 ||
+      paid + transferred + voided > ordered
     ) {
       throw new Error('LOCAL_ORDER_PAYABLE_ITEM_INVALID');
     }
 
-    const billableQuantity = ordered - transferred;
-    const openQuantity = ordered - paid - transferred;
-    billableAmount += billableQuantity * price;
-    openAmount += openQuantity * price;
-    operationalPaidAmount += paid * price;
+    const billableQuantity = ordered - transferred - voided;
+    const grossBillableAmount = billableQuantity * price;
+    const legacyPaidAmount = paid * price;
+    const netBillableAmount = Math.max(0, grossBillableAmount - discountAmount);
+    const lineOpenAmount = Math.max(0, netBillableAmount - legacyPaidAmount - settledAmount);
+    billableAmount += netBillableAmount;
+    openAmount += lineOpenAmount;
+    operationalPaidAmount += legacyPaidAmount + settledAmount;
     transferredAmount += transferred * price;
-    hasOperationalPaidQuantity ||= paid > 0;
+    hasOperationalPaidQuantity ||= paid > 0 || settledAmount > 0;
   }
 
   return {

@@ -13,15 +13,15 @@ type TableServiceWorkspaceProps = Omit<
   'onAppliedCouponChange'
 >;
 
-const PIX_LABEL = getTablePaymentMethodLabel('pix').toLocaleLowerCase('pt-BR');
-
 export const TableServiceWorkspace = (props: TableServiceWorkspaceProps) => {
   const [pixCheckoutOpen, setPixCheckoutOpen] = useState(false);
   const [appliedCouponCode, setAppliedCouponCode] = useState('');
+  const [paymentDraft, setPaymentDraft] = useState<{ amount: number; orderIds: string[] }>({ amount: 0, orderIds: [] });
 
   useEffect(() => {
     setPixCheckoutOpen(false);
     setAppliedCouponCode('');
+    setPaymentDraft({ amount: 0, orderIds: [] });
   }, [props.storeId, props.tableCode]);
 
   const activeOrders = useMemo(
@@ -29,24 +29,15 @@ export const TableServiceWorkspace = (props: TableServiceWorkspaceProps) => {
     [props.orders, props.tableCode]
   );
 
-  const interceptLegacyPix = (event: React.MouseEvent<HTMLDivElement>): void => {
-    const target = event.target;
-    if (!(target instanceof Element)) return;
-    const button = target.closest('button');
-    if (!button) return;
-    const label = button.textContent?.trim().toLocaleLowerCase('pt-BR') ?? '';
-    if (label !== PIX_LABEL) return;
 
-    event.preventDefault();
-    event.stopPropagation();
-    setPixCheckoutOpen(true);
-  };
 
   const canonicalCheckout = activeOrders.length > 0 ? (
     <ServiceLocationFinancialContextPanel
       storeId={props.storeId}
       orders={activeOrders}
       couponCode={appliedCouponCode}
+      requestedAmount={paymentDraft.amount}
+      targetOrderIds={paymentDraft.orderIds}
     />
   ) : (
     <div className="rounded-2xl border border-dashed border-slate-800 bg-slate-950/60 px-4 py-8 text-center text-[10px] text-slate-500">
@@ -56,12 +47,12 @@ export const TableServiceWorkspace = (props: TableServiceWorkspaceProps) => {
 
   return (
     <>
-      <div onClickCapture={interceptLegacyPix}>
-        <LegacyTableServiceWorkspace
-          {...props}
-          onAppliedCouponChange={setAppliedCouponCode}
-        />
-      </div>
+      <LegacyTableServiceWorkspace
+        {...props}
+        onAppliedCouponChange={setAppliedCouponCode}
+        onPaymentDraftChange={setPaymentDraft}
+        onPixRequested={() => setPixCheckoutOpen(true)}
+      />
 
 
       {pixCheckoutOpen && (

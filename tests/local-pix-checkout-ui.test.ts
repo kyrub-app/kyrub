@@ -8,7 +8,7 @@ const panel = readFileSync(
   'utf8'
 );
 
-test('browser Pix client sends only scope, idempotency and opaque payment ids', () => {
+test('browser Pix client may request an operator-entered amount while server keeps financial authority', () => {
   assert.match(client, /\/api\/local-attendance\/payment-intents\/pending/);
   assert.match(client, /\/api\/local-attendance\/payment-intents'/);
   assert.match(client, /\/api\/local-attendance\/payment-intents\/mercado-pago-pix/);
@@ -18,7 +18,7 @@ test('browser Pix client sends only scope, idempotency and opaque payment ids', 
   assert.match(client, /idempotencyKey: input\.idempotencyKey/);
   assert.match(client, /paymentIntentId: input\.paymentIntentId/);
   assert.match(client, /paymentId: input\.paymentId/);
-  assert.doesNotMatch(client, /amount: input\./);
+  assert.match(client, /amount: input\.amount/);
   assert.doesNotMatch(client, /email: input\./);
   assert.doesNotMatch(client, /buyerId: input\./);
   assert.doesNotMatch(client, /firebase\/firestore|setDoc|updateDoc|addDoc/);

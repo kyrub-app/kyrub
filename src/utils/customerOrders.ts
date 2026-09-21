@@ -49,6 +49,8 @@ export interface CustomerOrderItem {
   paidQuantity: number;
   transferredQuantity: number;
   voidedQuantity?: number;
+  settledAmount?: number;
+  discountAmount?: number;
   note: string;
   image: string;
   isService: boolean;
@@ -195,34 +197,69 @@ export const clearLastCustomerOrderId = (
   storage.removeItem(getLastCustomerOrderStorageKey(buyerId, storeId));
 };
 
+const roundOrderMoney = (value: number): number => Math.round(value * 100) / 100;
+
+export const getCustomerOrderItemOutstandingAmount = (
+  item: CustomerOrderItem
+): number => {
+  const billableQuantity = Math.max(
+    0,
+    item.quantity - item.transferredQuantity - (item.voidedQuantity ?? 0)
+  );
+  const grossAmount = billableQuantity * item.price;
+  const legacyPaidAmount = item.paidQuantity * item.price;
+  const settledAmount = Math.max(0, item.settledAmount ?? 0);
+  const discountAmount = Math.max(0, item.discountAmount ?? 0);
+  return Math.max(
+    0,
+    roundOrderMoney(grossAmount - legacyPaidAmount - settledAmount - discountAmount)
+  );
+};
+
 export const getCustomerOrderItemOpenQuantity = (
   item: CustomerOrderItem
-): number =>
-  Math.max(
+): number => {
+  const availableQuantity = Math.max(
     0,
     item.quantity - item.paidQuantity - item.transferredQuantity - (item.voidedQuantity ?? 0)
   );
+  const outstandingAmount = getCustomerOrderItemOutstandingAmount(item);
+  if (outstandingAmount <= 0.009 || availableQuantity === 0) return 0;
+  if (item.price <= 0) return availableQuantity;
+  return Math.min(availableQuantity, Math.ceil((outstandingAmount - 0.009) / item.price));
+};
 
 export const getCustomerOrderOutstandingTotal = (
   order: Pick<CustomerOrder, 'items'>
 ): number =>
-  order.items.reduce(
-    (sum, item) => sum + getCustomerOrderItemOpenQuantity(item) * item.price,
-    0
+  roundOrderMoney(
+    order.items.reduce(
+      (sum, item) => sum + getCustomerOrderItemOutstandingAmount(item),
+      0
+    )
   );
 
 export const resolveCustomerOrderPaymentStatus = (
   items: CustomerOrderItem[]
 ): CustomerOrderPaymentStatus => {
-  const billableQuantity = items.reduce(
-    (sum, item) =>
-      sum + Math.max(0, item.quantity - item.transferredQuantity - (item.voidedQuantity ?? 0)),
+  const billableAmount = items.reduce((sum, item) => {
+    const quantity = Math.max(
+      0,
+      item.quantity - item.transferredQuantity - (item.voidedQuantity ?? 0)
+    );
+    return sum + quantity * item.price - Math.max(0, item.discountAmount ?? 0);
+  }, 0);
+  const outstandingAmount = items.reduce(
+    (sum, item) => sum + getCustomerOrderItemOutstandingAmount(item),
     0
   );
-  const paidQuantity = items.reduce((sum, item) => sum + item.paidQuantity, 0);
+  const paidAmount = items.reduce(
+    (sum, item) => sum + item.paidQuantity * item.price + Math.max(0, item.settledAmount ?? 0),
+    0
+  );
 
-  if (billableQuantity === 0 || paidQuantity >= billableQuantity) return 'paid';
-  if (paidQuantity > 0) return 'partial';
+  if (billableAmount <= 0.009 || outstandingAmount <= 0.009) return 'paid';
+  if (paidAmount > 0.009) return 'partial';
   return 'unpaid';
 };
 
@@ -304,6 +341,8 @@ export const buildCustomerOrder = (
       paidQuantity: 0,
       transferredQuantity: 0,
       voidedQuantity: 0,
+      settledAmount: 0,
+      discountAmount: 0,
       note: cleanString(input.itemNotes[product.id]),
       image: cleanString(product.image),
       isService: product.isService === true,
@@ -384,6 +423,8 @@ export const parseCustomerOrder = (value: unknown): CustomerOrder | null => {
     const paidQuantity = finiteNumber(record.paidQuantity) ?? 0;
     const transferredQuantity = finiteNumber(record.transferredQuantity) ?? 0;
     const voidedQuantity = finiteNumber(record.voidedQuantity) ?? 0;
+    const settledAmount = finiteNumber(record.settledAmount) ?? 0;
+    const discountAmount = finiteNumber(record.discountAmount) ?? 0;
 
     if (
       !productId ||
@@ -399,7 +440,11 @@ export const parseCustomerOrder = (value: unknown): CustomerOrder | null => {
       transferredQuantity < 0 ||
       !Number.isInteger(voidedQuantity) ||
       voidedQuantity < 0 ||
-      paidQuantity + transferredQuantity + voidedQuantity > quantity
+      settledAmount < 0 ||
+      discountAmount < 0 ||
+      paidQuantity + transferredQuantity + voidedQuantity > quantity ||
+      settledAmount + discountAmount >
+        Math.max(0, (quantity - paidQuantity - transferredQuantity - voidedQuantity) * price) + 0.009
     ) {
       return [];
     }
@@ -413,6 +458,8 @@ export const parseCustomerOrder = (value: unknown): CustomerOrder | null => {
       paidQuantity,
       transferredQuantity,
       voidedQuantity,
+      settledAmount,
+      discountAmount,
       note: cleanString(record.note),
       image: cleanString(record.image),
       isService: record.isService === true,
@@ -476,6 +523,8 @@ const comparableOrder = (order: CustomerOrder) => ({
     paidQuantity: item.paidQuantity,
     transferredQuantity: item.transferredQuantity,
     voidedQuantity: item.voidedQuantity ?? 0,
+    settledAmount: Number((item.settledAmount ?? 0).toFixed(2)),
+    discountAmount: Number((item.discountAmount ?? 0).toFixed(2)),
     note: item.note,
   })),
 });

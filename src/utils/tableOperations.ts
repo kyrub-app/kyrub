@@ -9,6 +9,9 @@ export {
   applyTablePaymentSelections,
   applyTableTransferSelections,
   transferTableItems,
+  registerTablePartialPayment,
+  applyTableCoupon,
+  subscribeTableSettlementHistory,
   excludeTableItem,
   getTablePaymentMethodLabel,
 } from './legacyTableOperations';
@@ -21,6 +24,7 @@ export type {
   AppliedTablePayment,
   AppliedTableTransfer,
   TableItemExclusionReceipt,
+  TableSettlementEntry,
 } from './legacyTableOperations';
 
 export type TablePaymentMethod = 'cash' | 'pix' | 'card' | 'other';
