@@ -93,6 +93,7 @@ const SelectionList = ({
   setSelections,
   emptyMessage,
   onExclude,
+  onTransfer,
   excludingLineKey,
 }: {
   lines: TableOpenLine[];
@@ -100,6 +101,7 @@ const SelectionList = ({
   setSelections: React.Dispatch<React.SetStateAction<Record<string, number>>>;
   emptyMessage: string;
   onExclude?: (line: TableOpenLine) => void;
+  onTransfer?: (line: TableOpenLine) => void;
   excludingLineKey?: string;
 }) => {
   const updateQuantity = (line: TableOpenLine, quantity: number): void => {
@@ -184,6 +186,17 @@ const SelectionList = ({
                   >
                     <Trash2 className="h-3.5 w-3.5" />
                     {excludingLineKey === line.key ? 'Excluindo...' : 'Excluir'}
+                  </button>
+                )}
+                {onTransfer && (
+                  <button
+                    type="button"
+                    onClick={() => onTransfer(line)}
+                    className="flex min-h-7 items-center gap-1.5 rounded-lg border border-blue-500/30 bg-blue-500/10 px-2.5 text-[9px] font-black uppercase text-blue-300"
+                    aria-label={`Transferir ${line.name} para outra mesa`}
+                  >
+                    <ArrowRightLeft className="h-3.5 w-3.5" />
+                    Transferir
                   </button>
                 )}
               </div>
@@ -687,16 +700,6 @@ export const TableServiceWorkspace = ({
             id="staff-pdv-account-view"
           >
             <div className="mx-auto max-w-5xl">
-              <div className="mb-4 flex items-center justify-end">
-                <button
-                  type="button"
-                  onClick={() => setView('transfer')}
-                  className="flex min-h-10 items-center gap-2 rounded-xl border border-blue-500/30 bg-blue-500/10 px-4 text-[10px] font-black uppercase text-blue-300"
-                >
-                  <ArrowRightLeft className="h-4 w-4" /> Transferir
-                </button>
-              </div>
-
               <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
                 <section className="space-y-4">
                   <div>
@@ -716,6 +719,10 @@ export const TableServiceWorkspace = ({
                     setSelections={setPaymentSelections}
                     emptyMessage="Não há itens pendentes de pagamento nesta mesa."
                     onExclude={line => void handleExcludeItem(line)}
+                    onTransfer={line => {
+                      setTransferSelections({ [line.key]: line.availableQuantity });
+                      setView('transfer');
+                    }}
                     excludingLineKey={excludingLineKey}
                   />
                 </section>
