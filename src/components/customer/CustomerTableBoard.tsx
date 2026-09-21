@@ -233,21 +233,19 @@ export const CustomerTableBoard = ({
       onOpenTable?.(card.tableCode);
       return;
     }
+    const location = card.serviceLocation;
     if (onOpenLocation) {
-      onOpenLocation(card.serviceLocation);
+      onOpenLocation(location);
       return;
     }
-    if (
-      card.serviceLocation.kind === 'table' ||
-      card.serviceLocation.source === 'legacy_table_code'
-    ) {
+    if (location.kind === 'table' || location.source === 'legacy_table_code') {
       onOpenTable?.(card.tableCode);
       return;
     }
     if (effectiveStoreId) {
       requestServiceLocationWorkspaceOpen({
         storeId: effectiveStoreId,
-        location: card.serviceLocation,
+        location,
       });
     }
   };
