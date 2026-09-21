@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
+  ArrowRight,
   Clock3,
   LoaderCircle,
   MapPin,
-  Plus,
   RefreshCw,
   Users,
 } from 'lucide-react';
@@ -175,7 +175,7 @@ export const LocalAttendanceWorkspace = ({
         </div>
       )}
 
-      <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_minmax(9rem,0.35fr)_6rem_auto]">
+      <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_minmax(9rem,0.35fr)]">
         <input
           value={customerLabel}
           onChange={event => setCustomerLabel(event.target.value)}
@@ -187,11 +187,30 @@ export const LocalAttendanceWorkspace = ({
             ? <option value="">Nenhum local</option>
             : choices.map(choice => <option key={choice.key} value={choice.key}>{choice.label}</option>)}
         </select>
-        <input type="number" min={1} max={999} value={itemCount} onChange={event => setItemCount(Math.max(1, Math.min(999, Number(event.target.value) || 1)))} className="min-h-10 rounded-xl border border-slate-800 bg-slate-950 px-3 text-center text-xs text-white outline-none" aria-label="Quantidade de itens estimada" />
-        <button type="button" onClick={() => void handleOpen()} disabled={loading || !customerLabel.trim() || !choiceKey} className="flex min-h-10 items-center justify-center gap-2 rounded-xl bg-orange-600 px-4 text-[9px] font-black uppercase text-white disabled:bg-slate-800 disabled:text-slate-600">
-          {loading ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-          Abrir
-        </button>
+        <div className="grid grid-cols-[minmax(0,1fr)_4rem] gap-2 md:col-span-2">
+          <label className="flex min-h-10 items-center justify-between gap-3 rounded-xl border border-slate-800 bg-slate-950 px-3">
+            <span className="text-[10px] font-black uppercase tracking-wide text-slate-400">Pessoas</span>
+            <input
+              type="number"
+              min={1}
+              max={999}
+              value={itemCount}
+              onChange={event => setItemCount(Math.max(1, Math.min(999, Number(event.target.value) || 1)))}
+              className="w-16 bg-transparent text-right text-xs font-black text-white outline-none"
+              aria-label="Quantidade de pessoas"
+            />
+          </label>
+          <button
+            type="button"
+            onClick={() => void handleOpen()}
+            disabled={loading || !customerLabel.trim() || !choiceKey}
+            className="flex min-h-10 items-center justify-center rounded-xl bg-orange-600 text-white transition-colors hover:bg-orange-500 disabled:bg-slate-800 disabled:text-slate-600"
+            aria-label="Iniciar atendimento"
+            title="Iniciar atendimento"
+          >
+            {loading ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <ArrowRight className="h-5 w-5" />}
+          </button>
+        </div>
       </div>
 
       {errorMessage && (
@@ -207,7 +226,7 @@ export const LocalAttendanceWorkspace = ({
                   <strong className="block truncate text-xs text-white">{session.customerLabel}</strong>
                   <div className="mt-1 flex flex-wrap items-center gap-2 text-[8px] text-slate-600">
                     <span className="flex items-center gap-1"><MapPin className="h-3 w-3" />{session.serviceLocation?.label ?? session.space}</span>
-                    <span>{session.itemCount} item(ns)</span>
+                    <span>{session.itemCount} pessoa(s)</span>
                     <span className="flex items-center gap-1"><Clock3 className="h-3 w-3" />{formatTime(session.openedAt)}</span>
                   </div>
                 </div>
