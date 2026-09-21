@@ -30,6 +30,10 @@ const utilitySource = readFileSync(
   'utf8'
 );
 const appSource = readFileSync('src/App.tsx', 'utf8');
+const rendaSource = readFileSync(
+  'src/components/tabs/RendaTab.tsx',
+  'utf8'
+);
 
 test('ready delivery orders publish idempotent Kyrub Entregas jobs', () => {
   assert.match(serverSource, /createDeliveryOpportunityRouter/);
@@ -63,6 +67,19 @@ test('delivery opportunities refresh the authorized Renda mural cache', () => {
   assert.match(bridgeSource, /acceptedByName/);
   assert.match(appSource, /KyrubDeliveryOpportunityBridge/);
   assert.match(appSource, /onOpportunitiesChanged=\{refreshLegacyCache\}/);
+});
+
+test('Renda keeps delivery earnings behind the Kyrub Entregas shortcut', () => {
+  assert.match(rendaSource, /id="btn-delivery-earnings"/);
+  assert.match(rendaSource, /aria-label="Ver ganhos em entregas"/);
+  assert.match(rendaSource, /isDeliveryEarningsOpen && createPortal/);
+  assert.match(rendaSource, /id="delivery-earnings-sheet"/);
+  assert.match(rendaSource, /aria-modal="true"/);
+  assert.match(rendaSource, /<CourierEarningsProjectionCard \/>/);
+  assert.doesNotMatch(
+    rendaSource,
+    /<CourierEarningsProjectionCard \/>\s*\n\s*<div className="grid gap-4 sm:grid-cols-2">/
+  );
 });
 
 test('courier actions use a server-authoritative atomic claim', () => {
