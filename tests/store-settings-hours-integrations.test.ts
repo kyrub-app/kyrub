@@ -10,6 +10,7 @@ import {
 import './store-location-settings.test';
 
 const appSource = readFileSync('src/App.tsx', 'utf8');
+const mainSource = readFileSync('src/main.tsx', 'utf8');
 const legacyModalSource = readFileSync(
   'src/components/modals/LegacyStoreConfigModal.tsx',
   'utf8'
@@ -32,6 +33,14 @@ const integrationsSource = readFileSync(
 );
 const integrationBridgeSource = readFileSync(
   'src/components/store/IntegrationTestOrderBridge.tsx',
+  'utf8'
+);
+const fiscalHomologationBridgeSource = readFileSync(
+  'src/components/store/FiscalHomologationTabBridge.tsx',
+  'utf8'
+);
+const fiscalPreflightWorkspaceSource = readFileSync(
+  'src/components/store/FiscalPreflightWorkspace.tsx',
   'utf8'
 );
 const settingsSource = readFileSync(
@@ -114,6 +123,39 @@ test('SEFAZ runtime is explicit fiscal issuer onboarding and keeps new productio
   assert.match(gerencialIntegrationsSource, /validateBrazilFiscalIssuerIdentity/);
   assert.match(gerencialIntegrationsSource, /Salvar cadastro fiscal/);
   assert.match(gerencialIntegrationsSource, /A emissão continua bloqueada/);
+});
+
+test('fiscal homologation is mounted as a fourth read-only tab in the accounting hub', () => {
+  assert.match(mainSource, /FiscalHomologationTabBridge/);
+  assert.match(fiscalHomologationBridgeSource, /accounting-fiscal-integrations-hub/);
+  assert.match(fiscalHomologationBridgeSource, /accounting-fiscal-tab-homologation/);
+  assert.match(fiscalHomologationBridgeSource, /Homologação/);
+  assert.match(fiscalHomologationBridgeSource, /FiscalPreflightWorkspace/);
+  assert.match(fiscalHomologationBridgeSource, /repeat\(4, minmax\(0, 1fr\)\)/);
+});
+
+test('fiscal homologation only performs an authenticated canonical GET and never offers emission', () => {
+  assert.match(fiscalPreflightWorkspaceSource, /user\.getIdToken\(\)/);
+  assert.match(
+    fiscalPreflightWorkspaceSource,
+    /\/api\/store-connections\/\$\{encodeURIComponent\(storeId\)\}\/fiscal-preflight\//
+  );
+  assert.match(fiscalPreflightWorkspaceSource, /method: 'GET'/);
+  assert.match(fiscalPreflightWorkspaceSource, /cache: 'no-store'/);
+  assert.match(fiscalPreflightWorkspaceSource, /Sem autoridade de emissão/);
+  assert.match(fiscalPreflightWorkspaceSource, /Bloqueado para emissão/);
+  assert.match(fiscalPreflightWorkspaceSource, /não chama SEFAZ\/provedor/);
+  assert.doesNotMatch(fiscalPreflightWorkspaceSource, /method: '(POST|PUT|PATCH|DELETE)'/);
+  assert.doesNotMatch(fiscalPreflightWorkspaceSource, />\s*Emitir nota\s*</i);
+});
+
+test('fiscal homologation translates every current preflight blocker for the merchant', () => {
+  assert.match(fiscalPreflightWorkspaceSource, /accounting_decision_required/);
+  assert.match(fiscalPreflightWorkspaceSource, /accounting_policy_resolution_required/);
+  assert.match(fiscalPreflightWorkspaceSource, /fiscal_issuer_identity_required/);
+  assert.match(fiscalPreflightWorkspaceSource, /product_fiscal_preparation_incomplete/);
+  assert.match(fiscalPreflightWorkspaceSource, /commercial_confirmation_required/);
+  assert.match(fiscalPreflightWorkspaceSource, /Completar nome fiscal e CPF\/CNPJ do emissor/);
 });
 
 test('canonical integrations runtime owns store channel planning', () => {
