@@ -6,6 +6,7 @@ import {
   normalizeProductFiscalProfile,
   parseProductFiscalProfiles,
 } from '../src/utils/productFiscal';
+import { simulateFiscalPreflight } from '../shared/fiscalSimulation';
 
 const editorSource = readFileSync(
   'src/components/store/ProductEditorModal.tsx',
@@ -17,6 +18,18 @@ const fieldsSource = readFileSync(
 );
 const rulesSource = readFileSync(
   'firestore.product-inventory.fragment.rules',
+  'utf8'
+);
+const fiscalSimulationSource = readFileSync(
+  'shared/fiscalSimulation.ts',
+  'utf8'
+);
+const fiscalPreflightServiceSource = readFileSync(
+  'server/integrations/fiscalPreflightReadService.ts',
+  'utf8'
+);
+const storeConnectionRouterSource = readFileSync(
+  'server/integrations/storeConnectionOnboardingRouter.ts',
   'utf8'
 );
 
@@ -133,4 +146,170 @@ test('private inventory rules admit only an owner fiscal map', () => {
   assert.match(rulesSource, /data\.productFiscalProfiles is map/);
   assert.match(rulesSource, /request\.auth\.uid == userId/);
   assert.match(rulesSource, /productFiscalProfiles\.size\(\) <= 200/);
+});
+
+test('fiscal preflight never turns payment confirmation into emission authority', () => {
+  const simulation = simulateFiscalPreflight({
+    storeId: 'store-1',
+    orderId: 'order-123',
+    sourceChannel: 'kyrub',
+    commerciallyConfirmed: true,
+    issuerIdentity: {
+      status: 'ready',
+      identifierKind: 'cpf',
+      environment: 'sandbox',
+    },
+    items: [{ productId: 'product-1', kind: 'goods', fiscalProfileReady: true }],
+    simulatedAt: '2026-09-21T18:00:00-03:00',
+  });
+
+  assert.equal(simulation.schemaVersion, 2);
+  assert.equal(simulation.mode, 'simulation_only');
+  assert.equal(simulation.simulationStatus, 'blocked');
+  assert.equal(simulation.candidate.commercialEvidence, 'confirmed');
+  assert.equal(simulation.candidate.status, 'accounting_decision_required');
+  assert.deepEqual(simulation.blockingReasons, ['accounting_decision_required']);
+  assert.deepEqual(simulation.requiredInputs, ['accounting_decision']);
+  assert.equal(simulation.execution.fiscalTrigger, null);
+  assert.equal(simulation.execution.documentFamily, null);
+  assert.equal(simulation.execution.emissionAuthority, 'none_until_accounting_policy');
+  assert.equal(simulation.execution.providerCallAllowed, false);
+  assert.equal(simulation.execution.sefazCallAllowed, false);
+  assert.equal(simulation.artifact.authoritativeDocument, false);
+});
+
+test('fiscal issuer identity is an explicit preflight gate', () => {
+  const simulation = simulateFiscalPreflight({
+    storeId: 'store-1',
+    orderId: 'order-without-issuer',
+    sourceChannel: 'kyrub',
+    commerciallyConfirmed: true,
+    items: [{ productId: 'product-1', kind: 'goods', fiscalProfileReady: true }],
+    simulatedAt: '2026-09-21T18:05:00-03:00',
+  });
+
+  assert.equal(simulation.issuerIdentity.status, 'required');
+  assert.deepEqual(simulation.blockingReasons, [
+    'accounting_decision_required',
+    'fiscal_issuer_identity_required',
+  ]);
+  assert.deepEqual(simulation.requiredInputs, [
+    'accounting_decision',
+    'fiscal_issuer_identity',
+  ]);
+});
+
+test('recorded accounting reference advances only to executable policy resolution', () => {
+  const simulation = simulateFiscalPreflight({
+    storeId: 'store-1',
+    orderId: 'order-accounting-reference',
+    sourceChannel: '99food',
+    commerciallyConfirmed: true,
+    issuerIdentity: {
+      status: 'ready',
+      identifierKind: 'cnpj',
+      environment: 'sandbox',
+    },
+    accountingDecision: {
+      status: 'recorded',
+      policyReference: ' contador/parecer-fiscal-2026-09 ',
+      recordedAt: '2026-09-21T14:30:00-03:00',
+    },
+    items: [{ productId: 'product-1', kind: 'goods', fiscalProfileReady: true }],
+    simulatedAt: '2026-09-21T18:10:00-03:00',
+  });
+
+  assert.equal(simulation.candidate.status, 'accounting_policy_resolution_required');
+  assert.deepEqual(simulation.blockingReasons, ['accounting_policy_resolution_required']);
+  assert.deepEqual(simulation.requiredInputs, ['executable_accounting_policy']);
+  assert.equal(simulation.execution.providerCallAllowed, false);
+  assert.equal(simulation.execution.sefazCallAllowed, false);
+});
+
+test('simulation accumulates issuer, product and commercial gaps without selecting a document', () => {
+  const simulation = simulateFiscalPreflight({
+    storeId: 'store-1',
+    orderId: 'order-incomplete',
+    sourceChannel: 'other',
+    commerciallyConfirmed: false,
+    items: [{
+      productId: 'product-missing-fiscal-profile',
+      kind: 'service',
+      fiscalProfileReady: false,
+    }],
+    simulatedAt: '2026-09-21T18:15:00-03:00',
+  });
+
+  assert.deepEqual(simulation.blockingReasons, [
+    'accounting_decision_required',
+    'fiscal_issuer_identity_required',
+    'product_fiscal_preparation_incomplete',
+    'commercial_confirmation_required',
+  ]);
+  assert.equal(simulation.candidate.documentFamily, null);
+  assert.equal(simulation.candidate.trigger, null);
+  assert.deepEqual(simulation.candidate.missingProductIds, ['product-missing-fiscal-profile']);
+});
+
+test('simulation artifact cannot masquerade as an authorized fiscal document', () => {
+  const simulation = simulateFiscalPreflight({
+    storeId: 'store-1',
+    orderId: 'order-no-fake-document',
+    sourceChannel: 'kyrub',
+    commerciallyConfirmed: true,
+    issuerIdentity: {
+      status: 'ready',
+      identifierKind: 'cpf',
+      environment: 'sandbox',
+    },
+    items: [],
+    simulatedAt: '2026-09-21T18:20:00-03:00',
+  });
+  const serialized = JSON.stringify(simulation);
+
+  assert.equal(simulation.artifact.kind, 'fiscal_preflight_simulation');
+  assert.equal(simulation.artifact.authoritativeDocument, false);
+  assert.doesNotMatch(
+    serialized,
+    /accessKey|chaveDeAcesso|authorizationProtocol|documentNumber|invoiceNumber|cfop|cst|csosn|taxRate/i
+  );
+});
+
+test('fiscal simulation remains a pure contract with no provider or database side effects', () => {
+  assert.doesNotMatch(
+    fiscalSimulationSource,
+    /firebase-admin|adminDb|mercadoLivrePutJson|sendNinetyNineFood|fetch\s*\(/
+  );
+  assert.match(fiscalSimulationSource, /providerCallAllowed: false/);
+  assert.match(fiscalSimulationSource, /sefazCallAllowed: false/);
+  assert.match(fiscalSimulationSource, /simulationStatus: 'blocked'/);
+});
+
+test('server preflight rereads canonical evidence and exposes only an owner-only GET', () => {
+  assert.match(fiscalPreflightServiceSource, /tenants\/\$\{tenantId\}/);
+  assert.match(fiscalPreflightServiceSource, /stores\/\$\{canonicalStoreId\}\/orders\/\$\{orderId\}/);
+  assert.match(fiscalPreflightServiceSource, /users\/\$\{tenantId\}\/private_store\/inventory/);
+  assert.match(fiscalPreflightServiceSource, /fiscalIssuerProfile/);
+  assert.match(fiscalPreflightServiceSource, /productFiscalProfiles/);
+  assert.match(fiscalPreflightServiceSource, /order\.paymentStatus === 'paid'/);
+  assert.doesNotMatch(fiscalPreflightServiceSource, /request\.body|request\.query/);
+  assert.match(
+    storeConnectionRouterSource,
+    /router\.get\('\/:storeId\/fiscal-preflight\/:orderId'/
+  );
+  assert.match(storeConnectionRouterSource, /authenticatedOwner/);
+});
+
+test('fiscal simulation requires an auditable timestamp instead of inventing one', () => {
+  assert.throws(
+    () => simulateFiscalPreflight({
+      storeId: 'store-1',
+      orderId: 'order-invalid-time',
+      sourceChannel: 'kyrub',
+      commerciallyConfirmed: true,
+      items: [],
+      simulatedAt: 'not-a-date',
+    }),
+    /FISCAL_SIMULATION_TIMESTAMP_INVALID/
+  );
 });
