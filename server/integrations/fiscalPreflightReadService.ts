@@ -132,7 +132,7 @@ const fiscalIssuerIdentityFromTenant = (
 
   return {
     status: ready ? 'ready' : 'required',
-    identifierKind: ready ? kind : null,
+    identifierKind: ready && kind !== 'unknown' ? kind : null,
     environment: source.environment === 'production' ? 'production' : 'sandbox',
   };
 };
