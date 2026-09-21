@@ -50,7 +50,7 @@ test('Pix reuses the net account state and does not render a second coupon input
   assert.match(financialPanel, /couponCode,/);
 });
 
-
+// Regression: an invalid coupon attempt must return the Apply control to an idle, retryable state.
 test('failed coupon validation returns the form to a retryable idle state', () => {
   assert.match(workspace, /const \[isCouponApplying, setIsCouponApplying\] = useState\(false\)/);
   assert.match(workspace, /setIsCouponApplying\(true\)/);
