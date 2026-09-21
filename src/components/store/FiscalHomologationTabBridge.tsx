@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { onAuthStateChanged, type User } from 'firebase/auth';
 import { auth } from '../../utils/firebase';
+import FiscalHomologationPolicyWorkspace from './FiscalHomologationPolicyWorkspace';
 import FiscalPreflightWorkspace from './FiscalPreflightWorkspace';
 
 const HUB_ID = 'accounting-fiscal-integrations-hub';
@@ -125,7 +126,8 @@ export function FiscalHomologationTabBridge() {
           }
         }
       `}</style>
-      <div role="tabpanel" id={PANEL_ID}>
+      <div role="tabpanel" id={PANEL_ID} className="space-y-4">
+        <FiscalHomologationPolicyWorkspace user={user} storeId={user.uid} />
         <FiscalPreflightWorkspace user={user} storeId={user.uid} />
       </div>
     </>,
