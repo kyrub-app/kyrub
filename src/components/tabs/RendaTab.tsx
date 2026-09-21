@@ -16,6 +16,7 @@ import { auth, db } from '../../utils/firebase';
 import { loadCachedUserStore } from '../../utils/storePersistence';
 import { getPrimaryUserStoreDocumentPath } from '../../utils/storePaths';
 import { CourierEarningsProjectionCard } from '../renda/CourierEarningsProjectionCard';
+import { LocalServiceDashboardCards } from '../store/LocalServiceDashboardCards';
 
 interface RendaTabProps {
   deliveries: DeliveryJob[];
@@ -310,6 +311,8 @@ export function RendaTab({
                 ? 'Acessar loja'
                 : 'Ativar loja'}
           </button>
+
+          {hasConfiguredStore && <LocalServiceDashboardCards />}
         </section>
 
         <section className="flex flex-col justify-between space-y-4 rounded-3xl border border-teal-500/20 bg-slate-900 p-5">
