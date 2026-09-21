@@ -23,12 +23,13 @@ jobs:
         run: |
           python3 .github/scripts/split-table-payments-history.py
           python3 .github/scripts/fix-split-history-types.py
+          python3 .github/scripts/fix-split-payment-convergence.py
       - name: Install dependencies
         run: npm ci
       - name: TypeScript
         run: npm run lint
       - name: Focused regression tests
-        run: node --test --import tsx tests/table-split-payment-history.test.ts tests/table-operations.test.ts tests/table-checkout-coupon.test.ts tests/local-pix-checkout-ui.test.ts
+        run: node --test --import tsx tests/table-split-payment-history.test.ts tests/table-operations.test.ts tests/table-checkout-coupon.test.ts tests/local-pix-checkout-ui.test.ts tests/local-payment-intent.test.ts tests/local-order-payable.test.ts
       - name: Full application build
         run: npm run build
       - name: Commit implementation
@@ -36,6 +37,7 @@ jobs:
           rm .github/workflows/temporary-split-table-payments-history.yml
           rm .github/scripts/split-table-payments-history.py
           rm .github/scripts/fix-split-history-types.py
+          rm .github/scripts/fix-split-payment-convergence.py
           git config user.name "kyrub-app"
           git config user.email "kyrub.app@gmail.com"
           git add -A
