@@ -205,6 +205,7 @@ describe('canonical local attendance', () => {
     const app = readFileSync('src/App.tsx', 'utf8');
     assert.match(app, /<LocalAttendanceBridge \/>/);
     assert.match(bridge, /erp-attendance-opener-row/);
+    assert.match(bridge, /canonical-local-attendance-summary-host/);
     assert.match(bridge, /canonical-local-attendance-opener-host/);
     assert.match(bridge, /canonical-attendance-location-filter-host/);
     assert.match(bridge, /kyrub-customer-table-board-host/);
@@ -212,6 +213,27 @@ describe('canonical local attendance', () => {
     assert.match(bridge, /openLocalAttendance/);
     assert.doesNotMatch(bridge, /LocalAttendanceWorkspace/);
     assert.doesNotMatch(bridge, /canonical-local-attendance-host/);
+  });
+
+  test('attendance summary replaces redundant legacy active counters and reuses the existing board heading', () => {
+    const bridge = readFileSync('src/components/store/LocalAttendanceBridge.tsx', 'utf8');
+    assert.match(bridge, /hideLegacyActiveCounters/);
+    assert.match(bridge, /Locais em atendimento/);
+    assert.match(bridge, /openSessions\.length/);
+    assert.match(bridge, /customer-service-location-board/);
+    assert.match(bridge, /inlineBoardSummary/);
+  });
+
+  test('people count input can be cleared while editing and is validated only before submission or blur', () => {
+    const bridge = readFileSync('src/components/store/LocalAttendanceBridge.tsx', 'utf8');
+    assert.match(bridge, /const \[peopleInput, setPeopleInput\] = useState\('1'\)/);
+    assert.match(bridge, /parsePeopleInput/);
+    assert.match(bridge, /type="text"/);
+    assert.match(bridge, /inputMode="numeric"/);
+    assert.match(bridge, /replace\(\/\\D\/g, ''\)\.slice\(0, 3\)/);
+    assert.match(bridge, /onBlur=\{handlePeopleBlur\}/);
+    assert.match(bridge, /itemCount: parsedPeopleCount/);
+    assert.doesNotMatch(bridge, /Number\(event\.target\.value\) \|\| 1/);
   });
 
   test('PDV derives opener and filter choices only from active canonical service locations', () => {
