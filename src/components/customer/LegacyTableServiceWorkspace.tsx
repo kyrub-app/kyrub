@@ -56,7 +56,7 @@ interface TableServiceWorkspaceProps {
 }
 
 type WorkspaceView = 'catalog' | 'account' | 'transfer';
-type BusyAction = '' | 'order' | 'payment' | 'transfer' | 'exclude' | 'coupon';
+type BusyAction = '' | 'order' | 'payment' | 'transfer' | 'exclude';
 type CartEntry = { product: Product; quantity: number; note: string };
 
 const CONFIRMED_SALE_STATUSES = new Set<CustomerOrder['status']>([
@@ -251,6 +251,7 @@ export const TableServiceWorkspace = ({
   const [excludingLineKey, setExcludingLineKey] = useState('');
   const [couponCode, setCouponCode] = useState('');
   const [couponQuote, setCouponQuote] = useState<StorePromotionQuote | null>(null);
+  const [isCouponApplying, setIsCouponApplying] = useState(false);
   const [paymentAmountInput, setPaymentAmountInput] = useState('');
   const [settlementHistory, setSettlementHistory] = useState<TableSettlementEntry[]>([]);
 
@@ -266,6 +267,7 @@ export const TableServiceWorkspace = ({
     setExcludingLineKey('');
     setCouponCode('');
     setCouponQuote(null);
+    setIsCouponApplying(false);
     setPaymentAmountInput('');
     setSettlementHistory([]);
     onAppliedCouponChange?.('');
@@ -466,7 +468,8 @@ export const TableServiceWorkspace = ({
       return;
     }
 
-    setBusyAction('coupon');
+    if (isCouponApplying) return;
+    setIsCouponApplying(true);
     try {
       const quote = await quoteLocalCoupon({
         storeId,
@@ -492,12 +495,13 @@ export const TableServiceWorkspace = ({
     } catch (error) {
       setCouponQuote(null);
       onAppliedCouponChange?.('');
+      setIsCouponApplying(false);
       notify(
         error instanceof Error ? error.message : 'Não foi possível aplicar o cupom.',
         'error'
       );
     } finally {
-      setBusyAction('');
+      setIsCouponApplying(false);
     }
   };
 
@@ -831,7 +835,7 @@ export const TableServiceWorkspace = ({
                           setCouponQuote(null);
                           onAppliedCouponChange?.('');
                         }}
-                        disabled={confirmedPaymentExists}
+                        disabled={confirmedPaymentExists || isCouponApplying}
                         placeholder={confirmedPaymentExists ? 'Cupom bloqueado após o primeiro pagamento' : 'Digite o cupom'}
                         className="min-h-10 min-w-0 flex-1 rounded-xl border border-slate-800 bg-slate-900 px-3 text-xs font-bold uppercase text-white outline-none placeholder:normal-case placeholder:text-slate-600 focus:border-violet-400"
                       />
@@ -842,12 +846,12 @@ export const TableServiceWorkspace = ({
                           confirmedPaymentExists ||
                           !couponCode.trim() ||
                           paymentSelectionArray.length === 0 ||
-                          busyAction === 'coupon' ||
+                          isCouponApplying ||
                           busyAction === 'payment'
                         }
                         className="min-h-10 rounded-xl bg-violet-500 px-3 text-[9px] font-black uppercase text-white disabled:opacity-40"
                       >
-                        {busyAction === 'coupon' ? 'Aplicando...' : 'Aplicar'}
+                        {isCouponApplying ? 'Aplicando...' : 'Aplicar'}
                       </button>
                     </div>
                     {couponQuote && (
@@ -878,7 +882,7 @@ export const TableServiceWorkspace = ({
                   </p>
                   <button
                     type="button"
-                    disabled={paymentSelectionArray.length === 0 || paymentAmount <= 0 || paymentAmount > payablePaymentTotal + 0.009 || busyAction === 'payment'}
+                    disabled={paymentSelectionArray.length === 0 || paymentAmount <= 0 || paymentAmount > payablePaymentTotal + 0.009 || busyAction === 'payment' || isCouponApplying}
                     onClick={() => void handleRegisterPayment()}
                     className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 text-[10px] font-black uppercase text-white disabled:opacity-50"
                   >

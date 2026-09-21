@@ -49,3 +49,14 @@ test('Pix reuses the net account state and does not render a second coupon input
   assert.doesNotMatch(financialPanel, /id=\{`coupon-\$\{order\.id\}`\}/);
   assert.match(financialPanel, /couponCode,/);
 });
+
+
+test('failed coupon validation returns the form to a retryable idle state', () => {
+  assert.match(workspace, /const \[isCouponApplying, setIsCouponApplying\] = useState\(false\)/);
+  assert.match(workspace, /setIsCouponApplying\(true\)/);
+  assert.match(workspace, /catch \(error\)[\s\S]*setIsCouponApplying\(false\)/);
+  assert.match(workspace, /finally \{[\s\S]*setIsCouponApplying\(false\)/);
+  assert.match(workspace, /disabled=\{confirmedPaymentExists \|\| isCouponApplying\}/);
+  assert.match(workspace, /isCouponApplying \|\|[\s\S]*busyAction === 'payment'/);
+  assert.doesNotMatch(workspace, /busyAction === 'coupon'/);
+});
