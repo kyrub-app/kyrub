@@ -48,6 +48,7 @@ export interface CustomerOrderItem {
   quantity: number;
   paidQuantity: number;
   transferredQuantity: number;
+  voidedQuantity?: number;
   note: string;
   image: string;
   isService: boolean;
@@ -197,7 +198,10 @@ export const clearLastCustomerOrderId = (
 export const getCustomerOrderItemOpenQuantity = (
   item: CustomerOrderItem
 ): number =>
-  Math.max(0, item.quantity - item.paidQuantity - item.transferredQuantity);
+  Math.max(
+    0,
+    item.quantity - item.paidQuantity - item.transferredQuantity - (item.voidedQuantity ?? 0)
+  );
 
 export const getCustomerOrderOutstandingTotal = (
   order: Pick<CustomerOrder, 'items'>
@@ -211,7 +215,8 @@ export const resolveCustomerOrderPaymentStatus = (
   items: CustomerOrderItem[]
 ): CustomerOrderPaymentStatus => {
   const billableQuantity = items.reduce(
-    (sum, item) => sum + Math.max(0, item.quantity - item.transferredQuantity),
+    (sum, item) =>
+      sum + Math.max(0, item.quantity - item.transferredQuantity - (item.voidedQuantity ?? 0)),
     0
   );
   const paidQuantity = items.reduce((sum, item) => sum + item.paidQuantity, 0);
@@ -298,6 +303,7 @@ export const buildCustomerOrder = (
       quantity: normalizedQuantity,
       paidQuantity: 0,
       transferredQuantity: 0,
+      voidedQuantity: 0,
       note: cleanString(input.itemNotes[product.id]),
       image: cleanString(product.image),
       isService: product.isService === true,
@@ -377,6 +383,7 @@ export const parseCustomerOrder = (value: unknown): CustomerOrder | null => {
     const quantity = finiteNumber(record.quantity);
     const paidQuantity = finiteNumber(record.paidQuantity) ?? 0;
     const transferredQuantity = finiteNumber(record.transferredQuantity) ?? 0;
+    const voidedQuantity = finiteNumber(record.voidedQuantity) ?? 0;
 
     if (
       !productId ||
@@ -390,7 +397,9 @@ export const parseCustomerOrder = (value: unknown): CustomerOrder | null => {
       paidQuantity < 0 ||
       !Number.isInteger(transferredQuantity) ||
       transferredQuantity < 0 ||
-      paidQuantity + transferredQuantity > quantity
+      !Number.isInteger(voidedQuantity) ||
+      voidedQuantity < 0 ||
+      paidQuantity + transferredQuantity + voidedQuantity > quantity
     ) {
       return [];
     }
@@ -403,6 +412,7 @@ export const parseCustomerOrder = (value: unknown): CustomerOrder | null => {
       quantity,
       paidQuantity,
       transferredQuantity,
+      voidedQuantity,
       note: cleanString(record.note),
       image: cleanString(record.image),
       isService: record.isService === true,
@@ -465,6 +475,7 @@ const comparableOrder = (order: CustomerOrder) => ({
     quantity: item.quantity,
     paidQuantity: item.paidQuantity,
     transferredQuantity: item.transferredQuantity,
+    voidedQuantity: item.voidedQuantity ?? 0,
     note: item.note,
   })),
 });
