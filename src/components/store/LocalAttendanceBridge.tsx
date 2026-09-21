@@ -56,10 +56,6 @@ export const LocalAttendanceBridge = () => {
     () => sessions.filter(session => session.status === 'open'),
     [sessions]
   );
-  const peopleCount = useMemo(
-    () => parsePeopleInput(peopleInput),
-    [peopleInput]
-  );
 
   const refresh = useCallback(async (quiet = false): Promise<void> => {
     if (!storeId) {
@@ -300,7 +296,15 @@ export const LocalAttendanceBridge = () => {
     const label = customerLabel.trim();
     const location = activeLocations.find(item => item.id === selectedLocationId);
     const parsedPeopleCount = parsePeopleInput(peopleInput);
-    if (!label || !location || busy) return;
+    if (busy) return;
+    if (!label) {
+      setErrorMessage('Informe a mesa, senha, nome ou identificação do atendimento.');
+      return;
+    }
+    if (!location) {
+      setErrorMessage('Selecione um local de atendimento.');
+      return;
+    }
     if (parsedPeopleCount === null) {
       setErrorMessage('Informe uma quantidade de pessoas entre 1 e 999.');
       return;
@@ -363,18 +367,24 @@ export const LocalAttendanceBridge = () => {
 
   const opener = openerHost ? createPortal(
     <div className="space-y-2">
-      <div className="grid w-full gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(9rem,0.42fr)_7rem_2.75rem]">
+      <div className="grid w-full grid-cols-[minmax(0,1fr)_3.25rem] gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(9rem,0.42fr)_7rem_2.75rem]">
         <input
           value={customerLabel}
-          onChange={event => setCustomerLabel(event.target.value)}
+          onChange={event => {
+            setCustomerLabel(event.target.value);
+            if (errorMessage) setErrorMessage('');
+          }}
           placeholder="Mesa, senha, nome ou identificação..."
-          className="min-h-10 rounded-xl border border-slate-800 bg-slate-950 px-3 text-xs font-semibold text-white outline-none focus:border-orange-500/40"
+          className="col-span-2 min-h-10 rounded-xl border border-slate-800 bg-slate-950 px-3 text-xs font-semibold text-white outline-none focus:border-orange-500/40 sm:col-span-1"
         />
         <select
           value={selectedLocationId}
-          onChange={event => setSelectedLocationId(event.target.value)}
+          onChange={event => {
+            setSelectedLocationId(event.target.value);
+            if (errorMessage) setErrorMessage('');
+          }}
           disabled={activeLocations.length === 0}
-          className="min-h-10 rounded-xl border border-slate-800 bg-slate-950 px-3 text-[10px] font-bold uppercase text-white outline-none disabled:text-slate-600"
+          className="col-span-2 min-h-10 rounded-xl border border-slate-800 bg-slate-950 px-3 text-[10px] font-bold uppercase text-white outline-none disabled:text-slate-600 sm:col-span-1"
         >
           {activeLocations.length === 0
             ? <option value="">Nenhum local</option>
@@ -382,16 +392,17 @@ export const LocalAttendanceBridge = () => {
                 <option key={location.id} value={location.id}>{location.label}</option>
               ))}
         </select>
-        <label className="flex min-h-10 items-center justify-between gap-2 rounded-xl border border-slate-800 bg-slate-950 px-3">
+        <label className="flex min-h-10 min-w-0 items-center justify-between gap-2 rounded-xl border border-slate-800 bg-slate-950 px-3">
           <span className="text-[9px] font-black uppercase text-slate-500">Pessoas</span>
           <input
             type="text"
             inputMode="numeric"
             pattern="[0-9]*"
             value={peopleInput}
-            onChange={event =>
-              setPeopleInput(event.target.value.replace(/\D/g, '').slice(0, 3))
-            }
+            onChange={event => {
+              setPeopleInput(event.target.value.replace(/\D/g, '').slice(0, 3));
+              if (errorMessage) setErrorMessage('');
+            }}
             onBlur={handlePeopleBlur}
             className="w-10 bg-transparent text-right text-xs font-black text-white outline-none"
             aria-label="Quantidade de pessoas"
@@ -400,7 +411,7 @@ export const LocalAttendanceBridge = () => {
         <button
           type="button"
           onClick={() => void handleOpen()}
-          disabled={busy || !customerLabel.trim() || !selectedLocationId || peopleCount === null}
+          disabled={busy || !selectedLocationId}
           className="flex min-h-10 items-center justify-center rounded-xl bg-orange-500 text-slate-950 disabled:bg-slate-800 disabled:text-slate-600"
           aria-label="Iniciar atendimento"
           title="Iniciar atendimento"
