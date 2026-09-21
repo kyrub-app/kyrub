@@ -212,6 +212,16 @@ describe('canonical local attendance', () => {
     assert.match(bridge, /node\.style\.display = 'none'/);
   });
 
+  test('PDV derives new attendance choices only from configured canonical service locations', () => {
+    const bridge = readFileSync('src/components/store/LocalAttendanceBridge.tsx', 'utf8');
+    const workspace = readFileSync('src/components/store/LocalAttendanceWorkspace.tsx', 'utf8');
+    assert.match(bridge, /loadServiceLocations\(storeId, \{ activeOnly: true \}\)/);
+    assert.doesNotMatch(bridge, /legacySpaces|normalizedLegacySpaces|select option/);
+    assert.match(workspace, /serviceLocations\s*\.filter\(location => location\.active\)/);
+    assert.match(workspace, /serviceLocationId: location\.id/);
+    assert.doesNotMatch(workspace, /legacySpaces|key: `legacy:/);
+  });
+
   test('managed environment UI preserves production spaces and does not auto-promote seed values', () => {
     const modal = readFileSync('src/components/modals/LegacyStoreConfigModal.tsx', 'utf8');
     const manager = readFileSync('src/components/store/ServiceLocationManager.tsx', 'utf8');

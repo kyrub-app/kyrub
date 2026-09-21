@@ -12,24 +12,10 @@ const CANONICAL_HOST_IDS = new Set([
   'canonical-local-attendance-host',
 ]);
 
-const LEGACY_SEED = ['GERAL', 'BALCÃO', 'ENTREGA', 'AGENDADOS'];
-
-const normalizedLegacySpaces = (spaces: string[]): string[] => {
-  const unique = Array.from(new Set(
-    spaces.map(item => item.trim().toLocaleUpperCase('pt-BR')).filter(Boolean)
-  ));
-  const current = [...unique].sort();
-  const seed = [...LEGACY_SEED].sort();
-  const isOnlySeed = current.length === seed.length &&
-    current.every((item, index) => item === seed[index]);
-  return isOnlySeed ? [] : unique;
-};
-
 export const LocalAttendanceBridge = () => {
   const [storeId, setStoreId] = useState(auth.currentUser?.uid ?? '');
   const [host, setHost] = useState<HTMLElement | null>(null);
   const [serviceLocations, setServiceLocations] = useState<ServiceLocation[]>([]);
-  const [legacySpaces, setLegacySpaces] = useState<string[]>([]);
 
   useEffect(() => onAuthStateChanged(auth, user => setStoreId(user?.uid ?? '')), []);
 
@@ -87,11 +73,6 @@ export const LocalAttendanceBridge = () => {
         return;
       }
 
-      const detectedSpaces = Array.from(opener.querySelectorAll('select option'))
-        .map(option => option.textContent?.trim() ?? '')
-        .filter(Boolean);
-      setLegacySpaces(normalizedLegacySpaces(detectedSpaces));
-
       const directChildren = Array.from(container.children).filter(
         (child): child is HTMLElement => child instanceof HTMLElement
       );
@@ -139,7 +120,6 @@ export const LocalAttendanceBridge = () => {
     <LocalAttendanceWorkspace
       storeId={storeId}
       serviceLocations={serviceLocations}
-      legacySpaces={legacySpaces}
     />,
     host
   );
