@@ -15,9 +15,11 @@ import {
 import MercadoLivreE2ETestBridge from './store/MercadoLivreE2ETestBridge';
 import StoreConnectionsWorkspace from './store/StoreConnectionsWorkspace';
 import { StoreIntegrationsPanel } from './store/StoreIntegrationsPanel';
+import FiscalHomologationPolicyWorkspace from './store/FiscalHomologationPolicyWorkspace';
+import FiscalPreflightWorkspace from './store/FiscalPreflightWorkspace';
 
 type ToastType = 'success' | 'error' | 'info';
-type FiscalWorkspaceTab = 'overview' | 'sefaz' | 'accountant-api';
+type FiscalWorkspaceTab = 'overview' | 'sefaz' | 'homologation' | 'accountant-api';
 
 interface GerencialIntegrationsRuntimeProps {
   triggerToast: (message: string, type?: ToastType) => void;
@@ -26,6 +28,7 @@ interface GerencialIntegrationsRuntimeProps {
 const fiscalTabLabel: Record<FiscalWorkspaceTab, string> = {
   overview: 'Visão geral',
   sefaz: 'SEFAZ',
+  homologation: 'Homologação',
   'accountant-api': 'API Contador',
 };
 
@@ -283,7 +286,7 @@ export function GerencialIntegrationsRuntime({
               </span>
             </div>
 
-            <div className="mt-4 grid grid-cols-3 gap-2" role="tablist" aria-label="Contábil e fiscais">
+            <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4" role="tablist" aria-label="Contábil e fiscais">
               {(Object.keys(fiscalTabLabel) as FiscalWorkspaceTab[]).map(tab => {
                 const active = fiscalTab === tab;
                 return (
@@ -421,6 +424,13 @@ export function GerencialIntegrationsRuntime({
                     disabled={savingChannels}
                   />
                 </div>
+              </div>
+            )}
+
+            {fiscalTab === 'homologation' && (
+              <div className="mt-4 space-y-4" role="tabpanel" id="accounting-fiscal-homologation">
+                <FiscalHomologationPolicyWorkspace user={user} storeId={user.uid} />
+                <FiscalPreflightWorkspace user={user} storeId={user.uid} />
               </div>
             )}
 
