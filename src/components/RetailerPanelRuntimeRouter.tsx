@@ -1,7 +1,13 @@
 import React, { lazy, Suspense, useEffect, useState } from 'react';
 import { RetailerPanel as LegacyRetailerPanel } from './LegacyRetailerPanel';
 import { RetailerPanel as ModernRetailerPanel } from './RetailerPanel';
-import { KYRUB_ERP_MANAGEMENT_NAVIGATION_EVENT, requestErpManagementNavigation, type ErpManagementModule, type ErpManagementNavigationRequest } from '../utils/erpManagementNavigation';
+import {
+  consumePendingErpManagementNavigation,
+  KYRUB_ERP_MANAGEMENT_NAVIGATION_EVENT,
+  requestErpManagementNavigation,
+  type ErpManagementModule,
+  type ErpManagementNavigationRequest,
+} from '../utils/erpManagementNavigation';
 
 type RetailerPanelProps = React.ComponentProps<typeof LegacyRetailerPanel>;
 type ModuleDefinition = { title: string; description: string; status: 'native' | 'migration' | 'development' };
@@ -45,11 +51,35 @@ function DirectManagementModule({ moduleId, retailerProps, onBackToPdv }: { modu
 
 export const RetailerPanel: React.FC<RetailerPanelProps> = props => {
   const [managementModule, setManagementModule] = useState<ErpManagementModule | null>(() => mercadoLivreOAuthReturnModule());
+
   useEffect(() => {
-    const handleManagementNavigation = (event: Event): void => setManagementModule((event as CustomEvent<ErpManagementNavigationRequest>).detail?.module ?? null);
-    window.addEventListener(KYRUB_ERP_MANAGEMENT_NAVIGATION_EVENT, handleManagementNavigation);
-    return () => window.removeEventListener(KYRUB_ERP_MANAGEMENT_NAVIGATION_EVENT, handleManagementNavigation);
+    const handleManagementNavigation = (event: Event): void => {
+      // Clear the retained request when the live listener receives it so a later
+      // remount cannot replay an already-applied selection.
+      consumePendingErpManagementNavigation();
+      setManagementModule(
+        (event as CustomEvent<ErpManagementNavigationRequest>).detail?.module ?? null
+      );
+    };
+
+    window.addEventListener(
+      KYRUB_ERP_MANAGEMENT_NAVIGATION_EVENT,
+      handleManagementNavigation
+    );
+
+    // If the mobile dialog committed its selection before this effect existed,
+    // apply that one retained intent now. This closes the first-tap race without
+    // persisting navigation across reloads.
+    const pending = consumePendingErpManagementNavigation();
+    if (pending) setManagementModule(pending.module);
+
+    return () =>
+      window.removeEventListener(
+        KYRUB_ERP_MANAGEMENT_NAVIGATION_EVENT,
+        handleManagementNavigation
+      );
   }, []);
+
   useEffect(() => { setManagementModule(mercadoLivreOAuthReturnModule()); }, [props.activeSubTab]);
   const backToPdv = (): void => { requestErpManagementNavigation(null); props.setActiveSubTab('clientes'); };
   if (managementModule) return <DirectManagementModule moduleId={managementModule} retailerProps={props} onBackToPdv={backToPdv} />;
