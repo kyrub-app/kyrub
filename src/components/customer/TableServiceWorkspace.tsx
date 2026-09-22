@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import type React from 'react';
+import { createPortal } from 'react-dom';
 import { QrCode, X } from 'lucide-react';
 import { TableServiceWorkspace as LegacyTableServiceWorkspace } from './LegacyTableServiceWorkspace';
+import { FiscalConsumerIdentityCheckout } from './FiscalConsumerIdentityCheckout';
 import { ServiceLocationFinancialContextPanel } from '../store/ServiceLocationFinancialContextPanel';
 import {
   getActiveTableOrders,
-  getTablePaymentMethodLabel,
 } from '../../utils/tableOperations';
 
 type TableServiceWorkspaceProps = Omit<
@@ -17,11 +18,13 @@ export const TableServiceWorkspace = (props: TableServiceWorkspaceProps) => {
   const [pixCheckoutOpen, setPixCheckoutOpen] = useState(false);
   const [appliedCouponCode, setAppliedCouponCode] = useState('');
   const [paymentDraft, setPaymentDraft] = useState<{ amount: number; orderIds: string[] }>({ amount: 0, orderIds: [] });
+  const [fiscalIdentityHost, setFiscalIdentityHost] = useState<HTMLElement | null>(null);
 
   useEffect(() => {
     setPixCheckoutOpen(false);
     setAppliedCouponCode('');
     setPaymentDraft({ amount: 0, orderIds: [] });
+    setFiscalIdentityHost(null);
   }, [props.storeId, props.tableCode]);
 
   const activeOrders = useMemo(
@@ -29,7 +32,40 @@ export const TableServiceWorkspace = (props: TableServiceWorkspaceProps) => {
     [props.orders, props.tableCode]
   );
 
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    let cancelled = false;
+    let host: HTMLDivElement | null = null;
 
+    const mount = (): void => {
+      if (cancelled) return;
+      if (host && !host.isConnected) {
+        host = null;
+        setFiscalIdentityHost(null);
+      }
+      const accountView = document.getElementById('staff-pdv-account-view');
+      const couponInput = document.getElementById('staff-table-coupon-code');
+      const couponPanel = couponInput?.closest('div.rounded-2xl');
+      if (!accountView || !(couponPanel instanceof HTMLElement)) return;
+      if (!host) {
+        const existing = document.getElementById('staff-checkout-fiscal-consumer-identity-host');
+        host = existing instanceof HTMLDivElement ? existing : document.createElement('div');
+        host.id = 'staff-checkout-fiscal-consumer-identity-host';
+        if (!host.isConnected) couponPanel.insertAdjacentElement('afterend', host);
+        setFiscalIdentityHost(host);
+      }
+    };
+
+    mount();
+    const observer = new MutationObserver(mount);
+    observer.observe(document.body, { childList: true, subtree: true });
+    return () => {
+      cancelled = true;
+      observer.disconnect();
+      host?.remove();
+      setFiscalIdentityHost(null);
+    };
+  }, [props.storeId, props.tableCode]);
 
   const canonicalCheckout = activeOrders.length > 0 ? (
     <ServiceLocationFinancialContextPanel
@@ -56,6 +92,13 @@ export const TableServiceWorkspace = (props: TableServiceWorkspaceProps) => {
         onPixRequested={() => setPixCheckoutOpen(true)}
       />
 
+      {fiscalIdentityHost && createPortal(
+        <FiscalConsumerIdentityCheckout
+          storeId={props.storeId}
+          orderIds={paymentDraft.orderIds}
+        />,
+        fiscalIdentityHost
+      )}
 
       {pixCheckoutOpen && (
         <div className="fixed inset-0 z-[150] flex items-end justify-center bg-slate-950/90 backdrop-blur-sm sm:items-center sm:p-5">
