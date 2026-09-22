@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
+import './fiscal-consumer-identity.test';
 import type { Store } from '../src/types';
 import {
   buildRestartedStore,

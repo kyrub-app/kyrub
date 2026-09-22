@@ -12,6 +12,7 @@ import type {
 import {
   getBrazilFiscalTaxIdentifierKind,
   isValidBrazilFiscalTaxIdentifier,
+  normalizeBrazilFiscalTaxIdentifier,
 } from '../../src/utils/brazilFiscalIdentifier.js';
 
 const FISCAL_UNITS = new Set([
@@ -137,9 +138,55 @@ const fiscalIssuerIdentityFromTenant = (
   };
 };
 
+export interface FiscalConsumerIdentityEvidence {
+  status: 'identified' | 'not_provided';
+  identifierKind: 'cpf' | 'cnpj' | null;
+  maskedTaxIdentifier: string | null;
+}
+
+const maskTaxIdentifier = (normalized: string): string => {
+  const suffix = normalized.slice(-4);
+  return `${'•'.repeat(Math.max(0, normalized.length - suffix.length))}${suffix}`;
+};
+
+const fiscalConsumerIdentityFromOrder = (
+  order: Record<string, unknown>
+): FiscalConsumerIdentityEvidence => {
+  const identity = record(order.fiscalConsumerIdentity);
+  if (Object.keys(identity).length === 0) {
+    return {
+      status: 'not_provided',
+      identifierKind: null,
+      maskedTaxIdentifier: null,
+    };
+  }
+
+  const taxIdentifier = normalizeBrazilFiscalTaxIdentifier(
+    clean(identity.taxIdentifier, 32)
+  );
+  const kind = getBrazilFiscalTaxIdentifierKind(taxIdentifier);
+  if (
+    identity.schemaVersion !== 1 ||
+    identity.status !== 'identified' ||
+    identity.source !== 'staff_checkout' ||
+    (kind !== 'cpf' && kind !== 'cnpj') ||
+    identity.identifierKind !== kind ||
+    !isValidBrazilFiscalTaxIdentifier(taxIdentifier)
+  ) {
+    throw new Error('FISCAL_PREFLIGHT_ORDER_INTEGRITY_INVALID');
+  }
+
+  return {
+    status: 'identified',
+    identifierKind: kind,
+    maskedTaxIdentifier: maskTaxIdentifier(taxIdentifier),
+  };
+};
+
 interface CanonicalOrderFiscalEvidence {
   sourceChannel: CommerceChannel;
   paymentStatus: string;
+  consumerIdentity: FiscalConsumerIdentityEvidence;
   items: Array<{ productId: string; kind: FiscalItemPreparation['kind'] }>;
 }
 
@@ -176,6 +223,7 @@ const parseCanonicalOrderFiscalEvidence = (
   return {
     sourceChannel: parseChannel(order.sourceChannel),
     paymentStatus: clean(order.paymentStatus, 40),
+    consumerIdentity: fiscalConsumerIdentityFromOrder(order),
     items: Object.entries(itemsByProductId).map(([productId, kind]) => ({
       productId,
       kind,
@@ -195,6 +243,8 @@ export interface CanonicalFiscalPreflightReadResult {
     commercialConfirmationAuthority: 'canonical_order_payment_status';
     issuerIdentity: FiscalSimulationIssuerIdentityEvidence;
     issuerIdentityAuthority: 'tenant_operational_settings_fiscal_issuer_profile';
+    consumerIdentity: FiscalConsumerIdentityEvidence;
+    consumerIdentityAuthority: 'canonical_order_fiscal_consumer_identity';
     productPreparation: FiscalItemPreparation[];
     accountingDecision: FiscalSimulationResult['candidate']['accountingDecisionEvidence'];
   };
@@ -268,6 +318,8 @@ export const loadCanonicalFiscalPreflight = async (input: {
       commercialConfirmationAuthority: 'canonical_order_payment_status',
       issuerIdentity,
       issuerIdentityAuthority: 'tenant_operational_settings_fiscal_issuer_profile',
+      consumerIdentity: order.consumerIdentity,
+      consumerIdentityAuthority: 'canonical_order_fiscal_consumer_identity',
       productPreparation,
       accountingDecision: simulation.candidate.accountingDecisionEvidence,
     },

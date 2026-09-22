@@ -5,6 +5,10 @@ import {
   createInPersonOrder,
   listInPersonOrderCatalog,
 } from './inPersonOrderService.js';
+import {
+  loadFiscalConsumerIdentitySelection,
+  saveFiscalConsumerIdentitySelection,
+} from './fiscalConsumerIdentityService.js';
 
 const clean = (value: unknown): string =>
   typeof value === 'string' ? value.trim() : '';
@@ -33,9 +37,28 @@ const mapError = (error: unknown): { status: number; message: string; code?: str
   }
   if (
     code === 'STORE_REPRESENTATION_FORBIDDEN' ||
-    code === 'IN_PERSON_ORDER_FORBIDDEN'
+    code === 'IN_PERSON_ORDER_FORBIDDEN' ||
+    code === 'FISCAL_CONSUMER_IDENTITY_FORBIDDEN'
   ) {
-    return { status: 403, message: 'Você não pode criar pedidos para esta loja.' };
+    return { status: 403, message: 'Você não pode operar pedidos desta loja.' };
+  }
+  if (code === 'FISCAL_CONSUMER_ORDER_NOT_FOUND') {
+    return { status: 404, message: 'Um dos pedidos selecionados não foi encontrado.', code };
+  }
+  if (code === 'FISCAL_CONSUMER_TAX_IDENTIFIER_INVALID') {
+    return { status: 400, message: 'Informe um CPF ou CNPJ válido.', code };
+  }
+  if (
+    code === 'FISCAL_CONSUMER_ORDER_IDS_REQUIRED' ||
+    code === 'FISCAL_CONSUMER_ORDER_IDS_INVALID'
+  ) {
+    return { status: 400, message: 'Selecione os pedidos que receberão a identificação fiscal.', code };
+  }
+  if (
+    code === 'FISCAL_CONSUMER_ORDER_INTEGRITY_INVALID' ||
+    code === 'FISCAL_CONSUMER_IDENTITY_STORED_INVALID'
+  ) {
+    return { status: 409, message: 'A identidade fiscal do pedido precisa ser reconciliada.', code };
   }
   if (
     code === 'STORE_INSTITUTIONAL_NOT_FOUND' ||
@@ -75,7 +98,8 @@ const mapError = (error: unknown): { status: number; message: string; code?: str
     code.startsWith('IN_PERSON_ORDER_') ||
     code.startsWith('SERVICE_LOCATION_') ||
     code.startsWith('STORE_INSTITUTIONAL_') ||
-    code.startsWith('STORE_REPRESENTATION_')
+    code.startsWith('STORE_REPRESENTATION_') ||
+    code.startsWith('FISCAL_CONSUMER_')
   ) {
     return { status: 400, message: 'Revise os dados do pedido presencial.', code };
   }
@@ -97,6 +121,61 @@ export const createInPersonOrderRouter = (): Router => {
       response.status(200).json(
         await listInPersonOrderCatalog({ legacyStoreId: storeId })
       );
+    } catch (error) {
+      const mapped = mapError(error);
+      response.status(mapped.status).json({
+        error: mapped.message,
+        ...(mapped.code ? { code: mapped.code } : {}),
+      });
+    }
+  });
+
+  router.get('/fiscal-consumer-identity', async (request, response) => {
+    try {
+      const storeId = clean(request.query.storeId);
+      if (!storeId) throw new Error('IN_PERSON_ORDER_STORE_REQUIRED');
+      const representation = await authorizeOwnerStore({
+        authorization: request.get('authorization') ?? '',
+        storeId,
+      });
+      const orderIds = clean(request.query.orderIds)
+        .split(',')
+        .map(orderId => orderId.trim())
+        .filter(Boolean);
+      response.setHeader('Cache-Control', 'no-store, max-age=0');
+      response.status(200).json({
+        fiscalConsumerIdentity: await loadFiscalConsumerIdentitySelection({
+          legacyStoreId: storeId,
+          requestedByUserId: representation.authenticatedUserId,
+          orderIds,
+        }),
+      });
+    } catch (error) {
+      const mapped = mapError(error);
+      response.status(mapped.status).json({
+        error: mapped.message,
+        ...(mapped.code ? { code: mapped.code } : {}),
+      });
+    }
+  });
+
+  router.put('/fiscal-consumer-identity', async (request, response) => {
+    try {
+      const storeId = clean(request.body?.storeId);
+      if (!storeId) throw new Error('IN_PERSON_ORDER_STORE_REQUIRED');
+      const representation = await authorizeOwnerStore({
+        authorization: request.get('authorization') ?? '',
+        storeId,
+      });
+      response.setHeader('Cache-Control', 'no-store, max-age=0');
+      response.status(200).json({
+        fiscalConsumerIdentity: await saveFiscalConsumerIdentitySelection({
+          legacyStoreId: storeId,
+          requestedByUserId: representation.authenticatedUserId,
+          orderIds: request.body?.orderIds,
+          taxIdentifier: request.body?.taxIdentifier,
+        }),
+      });
     } catch (error) {
       const mapped = mapError(error);
       response.status(mapped.status).json({
