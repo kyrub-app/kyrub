@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
+import './fiscal-homologation-policy-ui.test';
 
 const routerSource = readFileSync(
   'server/integrations/storeConnectionOnboardingRouter.ts',
