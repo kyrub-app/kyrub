@@ -1,4 +1,4 @@
-import React, { lazy, Suspense, useEffect, useState } from 'react';
+import React, { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { RetailerPanel as LegacyRetailerPanel } from './LegacyRetailerPanel';
 import { RetailerPanel as ModernRetailerPanel } from './RetailerPanel';
 import {
@@ -51,6 +51,7 @@ function DirectManagementModule({ moduleId, retailerProps, onBackToPdv }: { modu
 
 export const RetailerPanel: React.FC<RetailerPanelProps> = props => {
   const [managementModule, setManagementModule] = useState<ErpManagementModule | null>(() => mercadoLivreOAuthReturnModule());
+  const previousActiveSubTabRef = useRef(props.activeSubTab);
 
   useEffect(() => {
     const handleManagementNavigation = (event: Event): void => {
@@ -80,7 +81,12 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = props => {
       );
   }, []);
 
-  useEffect(() => { setManagementModule(mercadoLivreOAuthReturnModule()); }, [props.activeSubTab]);
+  useEffect(() => {
+    if (previousActiveSubTabRef.current === props.activeSubTab) return;
+    previousActiveSubTabRef.current = props.activeSubTab;
+    setManagementModule(mercadoLivreOAuthReturnModule());
+  }, [props.activeSubTab]);
+
   const backToPdv = (): void => { requestErpManagementNavigation(null); props.setActiveSubTab('clientes'); };
   if (managementModule) return <DirectManagementModule moduleId={managementModule} retailerProps={props} onBackToPdv={backToPdv} />;
   if (props.activeSubTab === 'gerencial') return <section className="rounded-3xl border border-amber-500/25 bg-slate-900 p-5 text-white"><span className="font-mono text-[9px] font-black uppercase tracking-[0.16em] text-amber-300">Rota desativada</span><h2 className="mt-2 text-base font-black">Gerencial foi removido.</h2><p className="mt-2 text-[11px] leading-relaxed text-slate-400">Os módulos de gestão agora são destinos diretos do menu. Esta rota antiga permanece apenas como proteção temporária para links legados e não monta o painel anterior.</p><button type="button" onClick={backToPdv} className="mt-4 min-h-10 rounded-xl bg-orange-500 px-4 text-[9px] font-black uppercase text-slate-950">Voltar ao PDV</button></section>;
