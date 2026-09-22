@@ -36,10 +36,6 @@ const integrationBridgeSource = readFileSync(
   'src/components/store/IntegrationTestOrderBridge.tsx',
   'utf8'
 );
-const fiscalHomologationBridgeSource = readFileSync(
-  'src/components/store/FiscalHomologationTabBridge.tsx',
-  'utf8'
-);
 const fiscalPreflightWorkspaceSource = readFileSync(
   'src/components/store/FiscalPreflightWorkspace.tsx',
   'utf8'
@@ -126,13 +122,15 @@ test('SEFAZ runtime is explicit fiscal issuer onboarding and keeps new productio
   assert.match(gerencialIntegrationsSource, /A emissão continua bloqueada/);
 });
 
-test('fiscal homologation is mounted as a fourth read-only tab in the accounting hub', () => {
-  assert.match(mainSource, /FiscalHomologationTabBridge/);
-  assert.match(fiscalHomologationBridgeSource, /accounting-fiscal-integrations-hub/);
-  assert.match(fiscalHomologationBridgeSource, /accounting-fiscal-tab-homologation/);
-  assert.match(fiscalHomologationBridgeSource, /Homologação/);
-  assert.match(fiscalHomologationBridgeSource, /FiscalPreflightWorkspace/);
-  assert.match(fiscalHomologationBridgeSource, /repeat\(4, minmax\(0, 1fr\)\)/);
+test('fiscal homologation is mounted as a native fourth tab in the accounting hub', () => {
+  assert.doesNotMatch(mainSource, /FiscalHomologationTabBridge/);
+  assert.match(gerencialIntegrationsSource, /homologation: 'Homologação'/);
+  assert.match(gerencialIntegrationsSource, /fiscalTab === 'homologation'/);
+  assert.match(gerencialIntegrationsSource, /accounting-fiscal-homologation/);
+  assert.match(gerencialIntegrationsSource, /FiscalHomologationPolicyWorkspace/);
+  assert.match(gerencialIntegrationsSource, /FiscalPreflightWorkspace/);
+  assert.match(gerencialIntegrationsSource, /sm:grid-cols-4/);
+  assert.doesNotMatch(gerencialIntegrationsSource, /MutationObserver|createPortal/);
 });
 
 test('fiscal homologation only performs an authenticated canonical GET and never offers emission', () => {
