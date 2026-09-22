@@ -5,6 +5,7 @@ import { AppErrorBoundary } from './components/AppErrorBoundary';
 import { AdminMercadoPagoOAuthBridge } from './components/admin/AdminMercadoPagoOAuthBridge';
 import { GerencialIntegrationsNativeBridge } from './components/GerencialIntegrationsNativeBridge';
 import { KyrubAiConversationCloudSyncGate } from './components/KyrubAiConversationCloudSyncGate';
+import { NotificationCenterBridge } from './components/NotificationCenterBridge';
 import { OfficialKnowledgeSemanticSetupBridge } from './components/OfficialKnowledgeSemanticSetupBridge';
 import { OfficialKnowledgeSetupBridge } from './components/OfficialKnowledgeSetupBridge';
 import { PdvProductQuickActionsBridge } from './components/pdv/PdvProductQuickActionsBridge';
@@ -21,6 +22,7 @@ import { ProfileContactGroupsPolishBridge } from './components/ProfileContactGro
 import { ProfileNextPolishBridge } from './components/ProfileNextPolishBridge';
 import { ProfileOffersFiltersBridge } from './components/ProfileOffersFiltersBridge';
 import { ProfilePublishingDestinationsCloudBridge } from './components/ProfilePublishingDestinationsCloudBridge';
+import { ProfileSuggestionsGridBridge } from './components/ProfileSuggestionsGridBridge';
 import { KyrubOfficialKnowledgeRuntimeBridge } from './knowledge/KyrubOfficialKnowledgeRuntimeBridge';
 import { KyrubActivityLogSetupBridge } from './observability/KyrubActivityLogSetupBridge';
 import { KyrubActivityObserverBridge } from './observability/KyrubActivityObserverBridge';
@@ -49,6 +51,8 @@ createRoot(rootElement).render(
           <ProfileOffersFiltersBridge />
           <ProfilePublishingDestinationsCloudBridge />
           <ProfileCommunitiesCloudBridge />
+          <ProfileSuggestionsGridBridge />
+          <NotificationCenterBridge />
           <BuyerPickupCodeBridge />
           <ServiceLocationOperationalWorkspaceBridge />
           <MercadoLivreOAuthReturnBridge />
