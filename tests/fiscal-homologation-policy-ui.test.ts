@@ -2,22 +2,27 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
-const bridgeSource = readFileSync(
-  'src/components/store/FiscalHomologationTabBridge.tsx',
+const integrationsSource = readFileSync(
+  'src/components/GerencialIntegrationsRuntime.tsx',
   'utf8'
 );
+const mainSource = readFileSync('src/main.tsx', 'utf8');
 const policyUiSource = readFileSync(
   'src/components/store/FiscalHomologationPolicyWorkspace.tsx',
   'utf8'
 );
 
-test('homologation tab mounts policy editor before canonical order preflight', () => {
-  assert.match(bridgeSource, /FiscalHomologationPolicyWorkspace/);
-  assert.match(bridgeSource, /FiscalPreflightWorkspace/);
+test('homologation is a native fiscal tab with policy editor before canonical order preflight', () => {
+  assert.match(integrationsSource, /homologation: 'Homologação'/);
+  assert.match(integrationsSource, /fiscalTab === 'homologation'/);
+  assert.match(integrationsSource, /FiscalHomologationPolicyWorkspace/);
+  assert.match(integrationsSource, /FiscalPreflightWorkspace/);
   assert.ok(
-    bridgeSource.indexOf('<FiscalHomologationPolicyWorkspace') <
-      bridgeSource.indexOf('<FiscalPreflightWorkspace')
+    integrationsSource.indexOf('<FiscalHomologationPolicyWorkspace') <
+      integrationsSource.indexOf('<FiscalPreflightWorkspace')
   );
+  assert.doesNotMatch(mainSource, /FiscalHomologationTabBridge/);
+  assert.doesNotMatch(integrationsSource, /MutationObserver|createPortal/);
 });
 
 test('policy UI loads and saves only through the owner fiscal policy API', () => {

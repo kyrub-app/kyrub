@@ -1,7 +1,13 @@
-import React, { lazy, Suspense, useEffect, useState } from 'react';
+import React, { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { RetailerPanel as LegacyRetailerPanel } from './LegacyRetailerPanel';
 import { RetailerPanel as ModernRetailerPanel } from './RetailerPanel';
-import { KYRUB_ERP_MANAGEMENT_NAVIGATION_EVENT, requestErpManagementNavigation, type ErpManagementModule, type ErpManagementNavigationRequest } from '../utils/erpManagementNavigation';
+import {
+  consumePendingErpManagementNavigation,
+  KYRUB_ERP_MANAGEMENT_NAVIGATION_EVENT,
+  requestErpManagementNavigation,
+  type ErpManagementModule,
+  type ErpManagementNavigationRequest,
+} from '../utils/erpManagementNavigation';
 
 type RetailerPanelProps = React.ComponentProps<typeof LegacyRetailerPanel>;
 type ModuleDefinition = { title: string; description: string; status: 'native' | 'migration' | 'development' };
@@ -45,12 +51,42 @@ function DirectManagementModule({ moduleId, retailerProps, onBackToPdv }: { modu
 
 export const RetailerPanel: React.FC<RetailerPanelProps> = props => {
   const [managementModule, setManagementModule] = useState<ErpManagementModule | null>(() => mercadoLivreOAuthReturnModule());
+  const previousActiveSubTabRef = useRef(props.activeSubTab);
+
   useEffect(() => {
-    const handleManagementNavigation = (event: Event): void => setManagementModule((event as CustomEvent<ErpManagementNavigationRequest>).detail?.module ?? null);
-    window.addEventListener(KYRUB_ERP_MANAGEMENT_NAVIGATION_EVENT, handleManagementNavigation);
-    return () => window.removeEventListener(KYRUB_ERP_MANAGEMENT_NAVIGATION_EVENT, handleManagementNavigation);
+    const handleManagementNavigation = (event: Event): void => {
+      // Clear the retained request when the live listener receives it so a later
+      // remount cannot replay an already-applied selection.
+      consumePendingErpManagementNavigation();
+      setManagementModule(
+        (event as CustomEvent<ErpManagementNavigationRequest>).detail?.module ?? null
+      );
+    };
+
+    window.addEventListener(
+      KYRUB_ERP_MANAGEMENT_NAVIGATION_EVENT,
+      handleManagementNavigation
+    );
+
+    // If the mobile dialog committed its selection before this effect existed,
+    // apply that one retained intent now. This closes the first-tap race without
+    // persisting navigation across reloads.
+    const pending = consumePendingErpManagementNavigation();
+    if (pending) setManagementModule(pending.module);
+
+    return () =>
+      window.removeEventListener(
+        KYRUB_ERP_MANAGEMENT_NAVIGATION_EVENT,
+        handleManagementNavigation
+      );
   }, []);
-  useEffect(() => { setManagementModule(mercadoLivreOAuthReturnModule()); }, [props.activeSubTab]);
+
+  useEffect(() => {
+    if (previousActiveSubTabRef.current === props.activeSubTab) return;
+    previousActiveSubTabRef.current = props.activeSubTab;
+    setManagementModule(mercadoLivreOAuthReturnModule());
+  }, [props.activeSubTab]);
+
   const backToPdv = (): void => { requestErpManagementNavigation(null); props.setActiveSubTab('clientes'); };
   if (managementModule) return <DirectManagementModule moduleId={managementModule} retailerProps={props} onBackToPdv={backToPdv} />;
   if (props.activeSubTab === 'gerencial') return <section className="rounded-3xl border border-amber-500/25 bg-slate-900 p-5 text-white"><span className="font-mono text-[9px] font-black uppercase tracking-[0.16em] text-amber-300">Rota desativada</span><h2 className="mt-2 text-base font-black">Gerencial foi removido.</h2><p className="mt-2 text-[11px] leading-relaxed text-slate-400">Os módulos de gestão agora são destinos diretos do menu. Esta rota antiga permanece apenas como proteção temporária para links legados e não monta o painel anterior.</p><button type="button" onClick={backToPdv} className="mt-4 min-h-10 rounded-xl bg-orange-500 px-4 text-[9px] font-black uppercase text-slate-950">Voltar ao PDV</button></section>;
