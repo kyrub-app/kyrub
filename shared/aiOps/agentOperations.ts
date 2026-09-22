@@ -2,13 +2,14 @@ export type KyrubAgentId =
   | 'lead-orchestrator'
   | 'payments-agent'
   | 'platform-secrets-agent'
+  | 'omnichannel-agent'
   | 'gamification-agent'
   | 'ai-platform-agent'
   | 'qa-security-agent'
   | 'compliance-agent'
   | 'ai-operations-agent';
 
-export type KyrubWorkstreamId = 'A' | 'B' | 'C' | 'D' | 'E' | 'F' | 'G';
+export type KyrubWorkstreamId = 'A' | 'B' | 'C' | 'D' | 'E' | 'F' | 'G' | 'H';
 export type KyrubTaskStatus =
   | 'queued'
   | 'active'
@@ -138,6 +139,15 @@ export const KYRUB_AGENT_REGISTRY: readonly KyrubAgentDefinition[] = [
     ownerGateCategories: ['real-credentials', 'production-activation'],
   },
   {
+    id: 'omnichannel-agent',
+    title: 'Store Connections / Omnichannel Engineer',
+    workstream: 'H',
+    canImplement: true,
+    canReview: true,
+    persistentExecutionEligible: false,
+    ownerGateCategories: ['external-account-authorization', 'catalog-write-authority'],
+  },
+  {
     id: 'gamification-agent',
     title: 'Gamification Engineer',
     workstream: 'C',
@@ -192,6 +202,7 @@ export const KYRUB_WORKSTREAM_REGISTRY: readonly KyrubWorkstreamDefinition[] = [
   { id: 'E', title: 'AI Operations / Agent Control Plane', ownerAgent: 'ai-operations-agent', dependencies: ['F'], priority: 'P0' },
   { id: 'F', title: 'QA / Security / Infrastructure', ownerAgent: 'qa-security-agent', dependencies: [], priority: 'continuous' },
   { id: 'G', title: 'Legal / Compliance / Trust', ownerAgent: 'compliance-agent', dependencies: [], priority: 'continuous' },
+  { id: 'H', title: 'Store Connections / Omnichannel Onboarding', ownerAgent: 'omnichannel-agent', dependencies: ['B', 'F', 'G'], priority: 'P1' },
 ] as const;
 
 export const sanitizeAgentAuditEvent = (
