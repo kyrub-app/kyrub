@@ -5,6 +5,7 @@ import {
   Briefcase,
   Calendar,
   ClipboardList,
+  CreditCard,
   DollarSign,
   Fingerprint,
   Menu,
@@ -23,6 +24,7 @@ import {
   type MobileErpMenuItemId,
 } from './MobileErpMenu';
 import type { ErpManagementModule } from '../utils/erpManagementNavigation';
+import { getPlanCenterUrl } from '../utils/planCenter';
 
 type MenuItem = {
   id: MobileErpMenuItemId;
@@ -32,6 +34,7 @@ type MenuItem = {
 };
 
 const MENU_ITEMS: readonly MenuItem[] = [
+  { id: 'planos', label: 'Planos', icon: CreditCard, section: 'gestao' },
   { id: 'loja', label: 'Loja', icon: StoreIcon, section: 'gestao' },
   { id: 'produtos', label: 'Produtos & Estoque', icon: Package, section: 'gestao' },
   { id: 'vendas', label: 'Vendas & Analytics', icon: BarChart3, section: 'gestao' },
@@ -110,6 +113,7 @@ export function MobileErpMenu({
     selectionFrameRef.current = window.requestAnimationFrame(() => {
       selectionFrameRef.current = null;
       commitMobileErpMenuSelection(itemId, {
+        onOpenPlanCenter: () => window.location.assign(getPlanCenterUrl()),
         onOpenStoreConfig,
         onSelectTab,
       });
@@ -127,6 +131,7 @@ export function MobileErpMenu({
       const Icon = item.icon;
       const isSelected =
         !isManagementModule(item.id) &&
+        item.id !== 'planos' &&
         item.id !== 'loja' &&
         item.id === activeSubTab;
 
@@ -152,7 +157,7 @@ export function MobileErpMenu({
   return (
     <div
       className="sm:hidden -mx-6 -my-2.5 flex w-screen max-w-none shrink-0 items-center justify-between border-b border-slate-800 bg-slate-900 px-6 py-2.5"
-      data-kyrub-mobile-menu-runtime="frame-fallback-flat-management"
+      data-kyrub-mobile-menu-runtime="frame-fallback-flat-management-plans"
     >
       {canClosePanel ? (
         <button
