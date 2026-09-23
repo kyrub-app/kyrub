@@ -8,6 +8,7 @@ import type {
   FiscalCanonicalPaymentEvidence,
   FiscalHomologationIssuerIdentityEvidence,
 } from './fiscalHomologationPreflightSimulation';
+import type { FiscalExecutableDocumentStatus } from './fiscalExecutableDocument';
 
 export type FiscalHomologationAttemptState =
   | 'prepared'
@@ -67,6 +68,8 @@ export interface FiscalHomologationAttempt {
   triggerEvidence: FiscalHomologationAttemptTriggerEvidence;
   actor: FiscalHomologationAttemptActorEvidence;
   state: FiscalHomologationAttemptState;
+  fiscalDocumentSnapshotId: string | null;
+  fiscalDocumentStatus: FiscalExecutableDocumentStatus | null;
   providerAdapterId: string | null;
   providerAdapterVersion: string | null;
   externalRequestId: string | null;
