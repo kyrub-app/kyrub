@@ -2,14 +2,13 @@ import { createHash } from 'node:crypto';
 import { adminDb } from '../firebaseAdmin.js';
 import type { FiscalHomologationAttempt } from '../../shared/fiscalHomologationAttempt.js';
 import type { FiscalExecutableDocumentSnapshot } from '../../shared/fiscalExecutableDocument.js';
-import type {
-  FiscalGoodsLineTaxRule,
-  FiscalTaxExecutionPolicy,
-} from '../../shared/fiscalTaxExecutionPolicy.js';
 import {
-  isPaymentAuthoritativelyPaid,
-  type PaymentMethod,
-} from '../../src/utils/canonicalPayment.js';
+  validateFiscalGoodsLineTaxRule,
+  type FiscalGoodsLineTaxRule,
+  type FiscalTaxExecutionPolicy,
+} from '../../shared/fiscalTaxExecutionPolicy.js';
+import { buildCanonicalOrderFinancialProjection } from '../../shared/canonicalOrderFinancialProjection.js';
+import type { PaymentMethod } from '../../src/utils/canonicalPayment.js';
 import {
   normalizeBrazilFiscalTaxIdentifier,
   isValidBrazilFiscalTaxIdentifier,
@@ -51,12 +50,16 @@ const parseBoundNfcePolicy = (
   const raw = record(value);
   const operation = record(raw.operation);
   const goodsRaw = record(raw.goodsRules);
+  const accountingReference = clean(raw.accountingReference, 180);
+  const effectiveFrom = clean(raw.effectiveFrom, 64);
   if (
     raw.schemaVersion !== 1 ||
     clean(raw.policyId, 200) !== expected.policyId ||
     clean(raw.storeId, 160) !== expected.canonicalStoreId ||
     raw.version !== expected.version ||
     raw.status !== 'approved_for_homologation' ||
+    !accountingReference ||
+    !Number.isFinite(Date.parse(effectiveFrom)) ||
     raw.documentFamily !== 'nfce' ||
     raw.environment !== 'sandbox' ||
     raw.authority !== 'explicit_accounting_tax_policy_for_homologation' ||
@@ -76,20 +79,16 @@ const parseBoundNfcePolicy = (
   }
 
   const goodsRules: Record<string, FiscalGoodsLineTaxRule> = {};
-  for (const [productId, candidateValue] of Object.entries(goodsRaw)) {
-    const candidate = record(candidateValue);
-    if (
-      clean(candidate.productId, 128) !== productId ||
-      !/^\d{4}$/.test(clean(candidate.cfop, 4)) ||
-      !/^[0-9A-Za-z_]{2,20}$/.test(clean(candidate.icmsSituation, 20)) ||
-      !/^\d{2}$/.test(clean(candidate.pisSituation, 2)) ||
-      !/^\d{2}$/.test(clean(candidate.cofinsSituation, 2)) ||
-      !/^\d{3}$/.test(clean(candidate.ibsCbsSituation, 3)) ||
-      !/^\d{6}$/.test(clean(candidate.ibsCbsClassification, 6))
-    ) {
-      throw new Error('FISCAL_EXECUTION_TAX_POLICY_REVISION_INVALID');
+  try {
+    for (const [productId, candidateValue] of Object.entries(goodsRaw)) {
+      const candidate = record(candidateValue);
+      goodsRules[productId] = validateFiscalGoodsLineTaxRule({
+        ...(candidate as unknown as FiscalGoodsLineTaxRule),
+        productId,
+      });
     }
-    goodsRules[productId] = candidate as unknown as FiscalGoodsLineTaxRule;
+  } catch {
+    throw new Error('FISCAL_EXECUTION_TAX_POLICY_REVISION_INVALID');
   }
 
   return {
@@ -98,8 +97,8 @@ const parseBoundNfcePolicy = (
     storeId: expected.canonicalStoreId,
     version: expected.version,
     status: 'approved_for_homologation',
-    accountingReference: clean(raw.accountingReference, 180),
-    effectiveFrom: clean(raw.effectiveFrom, 64),
+    accountingReference,
+    effectiveFrom: new Date(effectiveFrom).toISOString(),
     documentFamily: 'nfce',
     operation: operation as unknown as FiscalTaxExecutionPolicy['operation'],
     goodsRules,
@@ -188,30 +187,56 @@ const loadPaymentEvidence = async (input: {
     throw new Error('FISCAL_EXECUTION_PAYMENT_EVIDENCE_CAPPED');
   }
 
-  const payments: FiscalExecutionPaymentEvidence[] = [];
+  const canonical = [] as Array<ReturnType<typeof classifyCompatiblePaymentRecord> extends infer T
+    ? T extends { kind: 'canonical'; payment: infer P } ? P : never
+    : never>;
+  let legacyMirrorCount = 0;
   for (const document of querySnapshot.docs) {
     const compatible = classifyCompatiblePaymentRecord(
       document.data(),
       input.canonicalStoreId
     );
-    if (compatible.kind === 'legacy_table_payment_mirror') continue;
-    const payment = compatible.payment;
-    if (
-      payment.orderId !== input.attempt.orderId ||
-      !isPaymentAuthoritativelyPaid(payment.status)
-    ) {
-      if (payment.orderId === input.attempt.orderId && payment.status === 'pending') {
-        throw new Error('FISCAL_EXECUTION_PAYMENT_EVIDENCE_STALE');
-      }
+    if (compatible.kind === 'legacy_table_payment_mirror') {
+      legacyMirrorCount += 1;
       continue;
     }
+    if (compatible.payment.orderId !== input.attempt.orderId) {
+      throw new Error('FISCAL_EXECUTION_PAYMENT_EVIDENCE_STALE');
+    }
+    canonical.push(compatible.payment);
+  }
+  if (legacyMirrorCount > 0) {
+    throw new Error('FISCAL_EXECUTION_LEGACY_PAYMENT_MIRROR_PRESENT');
+  }
+
+  const projection = buildCanonicalOrderFinancialProjection({
+    expectedAmount: input.documentTotal,
+    payments: canonical.map(payment => ({
+      amount: payment.amount,
+      status: payment.status,
+    })),
+  });
+  if (
+    projection.state !== 'paid' ||
+    projection.pendingPaymentCount !== 0 ||
+    Math.abs(projection.authoritativelyPaidAmount - input.documentTotal) > 0.009
+  ) {
+    throw new Error('FISCAL_EXECUTION_PAYMENT_TOTAL_MISMATCH');
+  }
+
+  const payments: FiscalExecutionPaymentEvidence[] = [];
+  for (const payment of canonical) {
     if (
       payment.status === 'refund_requested' ||
       payment.status === 'refund_processing' ||
-      payment.status === 'charged_back'
+      payment.status === 'refunded' ||
+      payment.status === 'refund_failed' ||
+      payment.status === 'charged_back' ||
+      payment.status === 'chargeback_reversed'
     ) {
       throw new Error('FISCAL_EXECUTION_PAYMENT_STATE_NOT_ELIGIBLE');
     }
+    if (payment.status !== 'paid') continue;
     payments.push({
       paymentId: payment.id,
       amount: payment.amount,
@@ -225,10 +250,7 @@ const loadPaymentEvidence = async (input: {
   const paidTotal = Number(
     payments.reduce((sum, payment) => sum + payment.amount, 0).toFixed(2)
   );
-  if (
-    payments.length === 0 ||
-    Math.abs(paidTotal - input.documentTotal) > 0.009
-  ) {
+  if (payments.length === 0 || Math.abs(paidTotal - input.documentTotal) > 0.009) {
     throw new Error('FISCAL_EXECUTION_PAYMENT_TOTAL_MISMATCH');
   }
   return payments.sort((a, b) => a.paymentId.localeCompare(b.paymentId));
