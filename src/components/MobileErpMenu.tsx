@@ -38,14 +38,17 @@ export type MobileErpMenuItemId =
   | ErpSubTab
   | ErpManagementModule;
 
-type MenuItem = {
+export type MobileErpMenuItem = {
   id: MobileErpMenuItemId;
   label: string;
   icon: typeof StoreIcon;
   section: 'gestao' | 'operacao';
 };
 
-const MENU_ITEMS: readonly MenuItem[] = [
+// Single source of truth for both the source component and the production
+// runtime selected by Vite. Runtime wrappers must consume this collection
+// instead of maintaining a second menu list.
+export const MOBILE_ERP_MENU_ITEMS: readonly MobileErpMenuItem[] = [
   { id: 'planos', label: 'Planos', icon: CreditCard, section: 'gestao' },
   { id: 'loja', label: 'Loja', icon: StoreIcon, section: 'gestao' },
   { id: 'produtos', label: 'Produtos & Estoque', icon: Package, section: 'gestao' },
@@ -74,7 +77,7 @@ const MANAGEMENT_MODULES = new Set<ErpManagementModule>([
   'vouchers',
 ]);
 
-const isManagementModule = (
+export const isMobileErpManagementModule = (
   itemId: MobileErpMenuItemId
 ): itemId is ErpManagementModule =>
   MANAGEMENT_MODULES.has(itemId as ErpManagementModule);
@@ -103,7 +106,7 @@ export const commitMobileErpMenuSelection = (
     return;
   }
 
-  if (isManagementModule(itemId)) {
+  if (isMobileErpManagementModule(itemId)) {
     selectManagement(itemId);
     return;
   }
@@ -174,11 +177,11 @@ export function MobileErpMenu({
     if (event.target === event.currentTarget) closeMenu();
   };
 
-  const renderItems = (section: MenuItem['section']) =>
-    MENU_ITEMS.filter(item => item.section === section).map(item => {
+  const renderItems = (section: MobileErpMenuItem['section']) =>
+    MOBILE_ERP_MENU_ITEMS.filter(item => item.section === section).map(item => {
       const Icon = item.icon;
       const isSelected =
-        !isManagementModule(item.id) &&
+        !isMobileErpManagementModule(item.id) &&
         item.id !== 'planos' &&
         item.id !== 'loja' &&
         item.id === activeSubTab;
