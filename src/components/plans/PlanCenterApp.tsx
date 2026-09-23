@@ -4,10 +4,12 @@ import {
   BadgeCheck,
   Check,
   ExternalLink,
+  FileCheck2,
   LoaderCircle,
   LogIn,
   LogOut,
   PackageCheck,
+  ShieldCheck,
   Sparkles,
   Store,
   TicketPercent,
@@ -41,7 +43,6 @@ type PlanView = {
   name: string;
   price: number;
   catalogLimit: number | null;
-  credits: number;
   commission: number;
   positioning: string;
   features: KyrubActivePlanPublicEntry['features'] | null;
@@ -63,7 +64,6 @@ const planFromPublicEntry = (entry: KyrubActivePlanPublicEntry): PlanView => ({
   name: labels[entry.planId],
   price: entry.monthlyPriceBRL,
   catalogLimit: entry.activeCatalogLimit,
-  credits: entry.kyrubiaIntelligenceCredits,
   commission: entry.marketplaceOriginatedSaleCommissionPercent,
   positioning: KYRUB_COMMERCIAL_PLANS_V1[entry.planId].positioning,
   features: entry.features,
@@ -76,7 +76,6 @@ const compiledPlan = (id: KyrubCommercialPlanId): PlanView => {
     name: plan.name,
     price: plan.monthlyPriceBRL,
     catalogLimit: plan.activeCatalogLimit,
-    credits: plan.kyrubiaIntelligenceCredits,
     commission: plan.marketplaceOriginatedSaleCommissionPercent,
     positioning: plan.positioning,
     features: null,
@@ -87,6 +86,12 @@ const catalogLabel = (limit: number | null): string =>
   limit === null
     ? 'Catálogo comercialmente ilimitado*'
     : `Até ${limit.toLocaleString('pt-BR')} produtos ou serviços ativos`;
+
+const operationLabel = (plan: KyrubCommercialPlanId): string => {
+  if (plan === 'business') return 'Mais escala para equipe, integrações e automações';
+  if (plan === 'pro') return 'Mais capacidade para crescer e automatizar a operação';
+  return 'Base completa para começar e validar a operação';
+};
 
 const planRank = (plan: KyrubCommercialPlanId): number => planOrder.indexOf(plan);
 
@@ -255,13 +260,13 @@ export function PlanCenterApp() {
 
         <section className="py-8 text-center sm:py-12">
           <span className="inline-flex items-center gap-2 rounded-full border border-cyan-500/20 bg-cyan-500/10 px-3 py-1 text-[10px] font-black uppercase tracking-wider text-cyan-300">
-            <Sparkles className="h-3.5 w-3.5" /> O menor plano suficiente para cada fase
+            <Sparkles className="h-3.5 w-3.5" /> Planos para cada fase da operação
           </span>
-          <h2 className="mx-auto mt-4 max-w-3xl text-3xl font-black leading-tight text-white sm:text-5xl">
-            Cresça sua Loja Kyrub sem misturar operação com contratação.
+          <h2 className="mx-auto mt-4 max-w-4xl text-3xl font-black leading-tight text-white sm:text-5xl">
+            Um sistema inteiro que cresce com a sua operação.
           </h2>
-          <p className="mx-auto mt-4 max-w-2xl text-sm leading-relaxed text-slate-400 sm:text-base">
-            Compare capacidades, acompanhe seu plano e resgate benefícios em um lugar separado do ERP.
+          <p className="mx-auto mt-4 max-w-3xl text-sm leading-relaxed text-slate-400 sm:text-base">
+            Comece com o essencial e amplie catálogo, equipe, automações e integrações conforme o negócio evolui. A inteligência da Kyrubia faz parte da experiência; o plano é definido pela capacidade operacional da sua loja.
           </p>
         </section>
 
@@ -277,7 +282,7 @@ export function PlanCenterApp() {
               </div>
               <p className="mt-2 text-xs text-slate-400">
                 {activePlan
-                  ? `${catalogLabel(activePlan.catalogLimit)} · ${activePlan.credits.toLocaleString('pt-BR')} Créditos Kyrubia Inteligência/mês`
+                  ? `${catalogLabel(activePlan.catalogLimit)} · ${operationLabel(activePlan.id)}`
                   : 'Consultando o entitlement autoritativo da sua loja.'}
               </p>
             </div>
@@ -316,9 +321,12 @@ export function PlanCenterApp() {
                   </strong>
                   <span className="text-xs text-slate-500"> / mês</span>
                 </div>
+                <p className="mt-3 text-xs font-bold leading-relaxed text-cyan-200">
+                  {operationLabel(plan.id)}
+                </p>
                 <ul className="mt-5 flex-1 space-y-3 text-xs text-slate-300">
                   <li className="flex gap-2"><PackageCheck className="h-4 w-4 shrink-0 text-cyan-400" /> {catalogLabel(plan.catalogLimit)}</li>
-                  <li className="flex gap-2"><Sparkles className="h-4 w-4 shrink-0 text-violet-400" /> {plan.credits.toLocaleString('pt-BR')} Créditos Kyrubia Inteligência/mês</li>
+                  <li className="flex gap-2"><Sparkles className="h-4 w-4 shrink-0 text-violet-400" /> Kyrubia integrada à experiência operacional</li>
                   <li className="flex gap-2"><Check className="h-4 w-4 shrink-0 text-emerald-400" /> Comissão de referência de {plan.commission}% em vendas originadas pelo Kyrub</li>
                   {plan.features?.team && <li className="flex gap-2"><Check className="h-4 w-4 shrink-0 text-emerald-400" /> Equipe habilitada</li>}
                   {plan.features?.automations && <li className="flex gap-2"><Check className="h-4 w-4 shrink-0 text-emerald-400" /> Automações habilitadas</li>}
@@ -346,6 +354,47 @@ export function PlanCenterApp() {
               </article>
             );
           })}
+        </section>
+
+        <section className="mt-7 overflow-hidden rounded-3xl border border-emerald-500/20 bg-gradient-to-br from-emerald-500/10 via-slate-900 to-slate-900 p-5 sm:p-7">
+          <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+            <div className="max-w-2xl">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="inline-flex items-center gap-2 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-[10px] font-black uppercase tracking-wider text-emerald-300">
+                  <ShieldCheck className="h-3.5 w-3.5" /> Fiscal em homologação
+                </span>
+                <span className="rounded-full border border-slate-700 px-3 py-1 text-[10px] font-black uppercase tracking-wider text-slate-400">
+                  Arquitetura multiprovedor
+                </span>
+              </div>
+              <h3 className="mt-4 text-2xl font-black text-white">O fiscal acompanha a operação — não é um pacote de notas.</h3>
+              <p className="mt-3 text-sm leading-relaxed text-slate-400">
+                O Kyrub está estruturando a camada fiscal como parte do fluxo real da loja: pedido, pagamento, política contábil, tentativa fiscal, retorno e reconciliação. A implementação permanece em homologação e não representa emissão fiscal de produção nesta página.
+              </p>
+            </div>
+            <div className="grid min-w-0 gap-2 sm:grid-cols-3 lg:w-[420px]">
+              {['NF-e', 'NFC-e', 'NFS-e'].map(document => (
+                <div key={document} className="rounded-2xl border border-slate-700 bg-slate-950/70 p-4 text-center">
+                  <FileCheck2 className="mx-auto h-5 w-5 text-emerald-300" />
+                  <strong className="mt-2 block text-sm font-black text-white">{document}</strong>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="mt-5 grid gap-3 border-t border-slate-800 pt-5 sm:grid-cols-3">
+            <div className="rounded-2xl bg-slate-950/50 p-4">
+              <p className="text-[10px] font-black uppercase tracking-wider text-cyan-400">Política contábil</p>
+              <p className="mt-2 text-xs leading-relaxed text-slate-400">Regras explícitas por loja, sem o sistema adivinhar enquadramento tributário.</p>
+            </div>
+            <div className="rounded-2xl bg-slate-950/50 p-4">
+              <p className="text-[10px] font-black uppercase tracking-wider text-violet-400">Reforma tributária</p>
+              <p className="mt-2 text-xs leading-relaxed text-slate-400">Arquitetura preparada para acompanhar a evolução de IBS/CBS e dos documentos fiscais eletrônicos.</p>
+            </div>
+            <div className="rounded-2xl bg-slate-950/50 p-4">
+              <p className="text-[10px] font-black uppercase tracking-wider text-emerald-400">Provedor desacoplado</p>
+              <p className="mt-2 text-xs leading-relaxed text-slate-400">O Kyrub preserva a camada operacional sem amarrar o produto a um único provedor fiscal.</p>
+            </div>
+          </div>
         </section>
 
         <section className="mt-7 grid gap-5 lg:grid-cols-[1.1fr_0.9fr]">
@@ -412,7 +461,7 @@ export function PlanCenterApp() {
         </section>
 
         <footer className="mt-8 border-t border-slate-800 pt-5 text-center text-[10px] leading-relaxed text-slate-600">
-          * Catálogo ilimitado sujeito a uso justo e às políticas operacionais do Kyrub. Operações locais/determinísticas da Kyrubia não consomem Créditos Kyrubia Inteligência.
+          * Catálogo ilimitado sujeito a uso justo e às políticas operacionais do Kyrub. Recursos em homologação permanecem separados de qualquer promessa de disponibilidade em produção.
           {catalogLoading && ' Atualizando catálogo vigente…'}
         </footer>
       </div>
