@@ -142,18 +142,19 @@ test('fiscal homologation only performs an authenticated canonical GET and never
   assert.match(fiscalPreflightWorkspaceSource, /method: 'GET'/);
   assert.match(fiscalPreflightWorkspaceSource, /cache: 'no-store'/);
   assert.match(fiscalPreflightWorkspaceSource, /Sem autoridade de emissão/);
-  assert.match(fiscalPreflightWorkspaceSource, /Bloqueado para emissão/);
-  assert.match(fiscalPreflightWorkspaceSource, /não chama SEFAZ\/provedor/);
+  assert.match(fiscalPreflightWorkspaceSource, /Bloqueado para homologação/);
+  assert.match(fiscalPreflightWorkspaceSource, /não chama Focus, outro provedor, SEFAZ ou prefeitura/);
   assert.doesNotMatch(fiscalPreflightWorkspaceSource, /method: '(POST|PUT|PATCH|DELETE)'/);
-  assert.doesNotMatch(fiscalPreflightWorkspaceSource, />\s*Emitir nota\s*</i);
+  assert.doesNotMatch(fiscalPreflightWorkspaceSource, />\s*Emitir(?: nota)?\s*</i);
 });
 
-test('fiscal homologation translates every current preflight blocker for the merchant', () => {
-  assert.match(fiscalPreflightWorkspaceSource, /accounting_decision_required/);
-  assert.match(fiscalPreflightWorkspaceSource, /accounting_policy_resolution_required/);
+test('fiscal homologation translates every current policy-aware preflight blocker for the merchant', () => {
+  assert.match(fiscalPreflightWorkspaceSource, /homologation_policy_required/);
+  assert.match(fiscalPreflightWorkspaceSource, /homologation_policy_not_effective/);
+  assert.match(fiscalPreflightWorkspaceSource, /homologation_policy_scope_mismatch/);
   assert.match(fiscalPreflightWorkspaceSource, /fiscal_issuer_identity_required/);
   assert.match(fiscalPreflightWorkspaceSource, /product_fiscal_preparation_incomplete/);
-  assert.match(fiscalPreflightWorkspaceSource, /commercial_confirmation_required/);
+  assert.match(fiscalPreflightWorkspaceSource, /operational_trigger_not_satisfied/);
   assert.match(fiscalPreflightWorkspaceSource, /Completar nome fiscal e CPF\/CNPJ do emissor/);
 });
 
