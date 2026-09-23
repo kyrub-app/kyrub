@@ -43,6 +43,9 @@ export const loadFiscalProviderExecutionConfiguration = async (input: {
   if (!snapshot.exists) throw new Error('FISCAL_PROVIDER_NOT_CONFIGURED');
 
   const stored = record(snapshot.data());
+  if (stored.status === 'inactive') {
+    throw new Error('FISCAL_PROVIDER_CONFIGURATION_INACTIVE');
+  }
   const adapterId = clean(stored.adapterId, 80);
   const adapterVersion = clean(stored.adapterVersion, 40);
   const credentialSecretRef = clean(stored.credentialSecretRef, 320);
@@ -60,8 +63,6 @@ export const loadFiscalProviderExecutionConfiguration = async (input: {
     throw new Error('FISCAL_PROVIDER_CONFIGURATION_INVALID');
   }
 
-  // Validate the protected reference server-side. The resource topology is not
-  // returned by any browser endpoint in this phase.
   parseGoogleSecretManagerRef(credentialSecretRef);
 
   return {
