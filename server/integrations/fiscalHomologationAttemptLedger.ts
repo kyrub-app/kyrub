@@ -32,7 +32,7 @@ const requiredIsoTimestamp = (value: Date): string => {
 const attemptPath = (canonicalStoreId: string, attemptId: string): string =>
   `stores/${canonicalStoreId}/fiscalAttempts/${attemptId}`;
 
-const resolveOwnerAuthority = async (input: {
+export const resolveFiscalHomologationOwnerAuthority = async (input: {
   tenantId: string;
   requestedByUserId: string;
 }): Promise<string> => {
@@ -199,9 +199,14 @@ const buildAttemptFromPreflight = (input: {
     providerAdapterId: null,
     providerAdapterVersion: null,
     externalRequestId: null,
+    providerStatus: null,
+    providerCode: null,
+    providerMessage: null,
     authorizationProtocol: null,
     accessKey: null,
     documentNumber: null,
+    submittedAt: null,
+    lastCheckedAt: null,
     createdAt: timestamp,
     updatedAt: timestamp,
     authority: 'kyrub_fiscal_homologation_attempt_ledger',
@@ -248,7 +253,7 @@ export const prepareFiscalHomologationAttempt = async (input: {
     throw new Error('FISCAL_ATTEMPT_ORDER_ID_INVALID');
   }
 
-  const canonicalStoreId = await resolveOwnerAuthority({
+  const canonicalStoreId = await resolveFiscalHomologationOwnerAuthority({
     tenantId,
     requestedByUserId,
   });
