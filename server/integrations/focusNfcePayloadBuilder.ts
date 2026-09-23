@@ -113,11 +113,11 @@ const taxRegimeCode = (value: string): 1 | 2 | 3 | 4 => {
   return code;
 };
 
-const recipientIeCode = (value: string | null): 1 | 2 | 9 => {
+const recipientIeCode = (value: string): 1 | 2 | 9 => {
   if (value === 'contributor') return 1;
   if (value === 'exempt') return 2;
   if (value === 'non_contributor') return 9;
-  throw new Error('FOCUS_NFCE_RECIPIENT_IE_REQUIRED');
+  throw new Error('FOCUS_NFCE_RECIPIENT_IE_UNSUPPORTED');
 };
 
 export const focusNfcePaymentCode = (
@@ -229,9 +229,13 @@ export const buildFocusNfcePayload = (input: {
     finalidade_emissao: purposeCode(operation.purpose),
     consumidor_final: 1,
     presenca_comprador: presenceCode(operation.buyerPresence),
-    indicador_inscricao_estadual_destinatario: recipientIeCode(
-      operation.recipientIeIndicator
-    ),
+    ...(operation.recipientIeIndicator
+      ? {
+          indicador_inscricao_estadual_destinatario: recipientIeCode(
+            operation.recipientIeIndicator
+          ),
+        }
+      : {}),
     modalidade_frete: freightCode(operation.freightMode),
     natureza_operacao: operation.operationNature,
     regime_tributario_emitente: taxRegimeCode(operation.issuerTaxRegime),
