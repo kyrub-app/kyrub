@@ -201,6 +201,7 @@ const buildAttemptFromPreflight = (input: {
     providerAdapterId: null,
     providerAdapterVersion: null,
     externalRequestId: null,
+    providerPayloadFingerprint: null,
     providerStatus: null,
     providerCode: null,
     providerMessage: null,
