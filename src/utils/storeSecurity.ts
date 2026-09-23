@@ -37,7 +37,18 @@ export type StorePermission =
   | 'reports.read'
   | 'reports.read_own'
   | 'audit.read'
+  | 'fiscal.read'
+  | 'fiscal.policy.manage'
+  | 'fiscal.homologation.emit'
   | 'ownership.transfer';
+
+export type FiscalStorePermission = Extract<StorePermission, `fiscal.${string}`>;
+
+export const FISCAL_STORE_PERMISSIONS: readonly FiscalStorePermission[] = [
+  'fiscal.read',
+  'fiscal.policy.manage',
+  'fiscal.homologation.emit',
+];
 
 export type OrderActorRole = StoreRole | 'customer' | 'system';
 export type OrderSource = 'customer' | 'staff' | 'transfer';
@@ -97,8 +108,14 @@ const ALL_PERMISSIONS: readonly StorePermission[] = [
   'reports.read',
   'reports.read_own',
   'audit.read',
+  ...FISCAL_STORE_PERMISSIONS,
   'ownership.transfer',
 ];
+
+const isFiscalStorePermission = (
+  permission: StorePermission
+): permission is FiscalStorePermission =>
+  FISCAL_STORE_PERMISSIONS.includes(permission as FiscalStorePermission);
 
 export const STORE_ROLE_LABELS: Record<StoreRole, string> = {
   owner: 'Proprietário',
@@ -111,7 +128,9 @@ export const STORE_ROLE_LABELS: Record<StoreRole, string> = {
 export const STORE_ROLE_PERMISSIONS: Record<StoreRole, readonly StorePermission[]> = {
   owner: ALL_PERMISSIONS,
   manager: ALL_PERMISSIONS.filter(
-    permission => permission !== 'ownership.transfer'
+    permission =>
+      permission !== 'ownership.transfer' &&
+      !isFiscalStorePermission(permission)
   ),
   cashier: [
     'store.read',
@@ -181,6 +200,11 @@ export const hasStorePermission = (
   role: StoreRole,
   permission: StorePermission
 ): boolean => STORE_ROLE_PERMISSIONS[role].includes(permission);
+
+export const hasStoreFiscalPermission = (
+  role: StoreRole,
+  permission: FiscalStorePermission
+): boolean => hasStorePermission(role, permission);
 
 export const canManageStoreRole = (
   actorRole: StoreRole,
