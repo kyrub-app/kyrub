@@ -5,6 +5,7 @@ import {
   Briefcase,
   Calendar,
   ClipboardList,
+  CreditCard,
   DollarSign,
   Fingerprint,
   Menu,
@@ -32,6 +33,7 @@ type MenuItem = {
 };
 
 const MENU_ITEMS: readonly MenuItem[] = [
+  { id: 'planos', label: 'Planos', icon: CreditCard, section: 'gestao' },
   { id: 'loja', label: 'Loja', icon: StoreIcon, section: 'gestao' },
   { id: 'produtos', label: 'Produtos & Estoque', icon: Package, section: 'gestao' },
   { id: 'vendas', label: 'Vendas & Analytics', icon: BarChart3, section: 'gestao' },
@@ -127,6 +129,7 @@ export function MobileErpMenu({
       const Icon = item.icon;
       const isSelected =
         !isManagementModule(item.id) &&
+        item.id !== 'planos' &&
         item.id !== 'loja' &&
         item.id === activeSubTab;
 
