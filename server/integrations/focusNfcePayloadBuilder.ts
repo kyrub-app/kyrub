@@ -196,6 +196,9 @@ export interface FocusNfcePreparedPayload {
   payloadFingerprint: string;
 }
 
+const isNormalizedCnpj = (value: string): boolean =>
+  /^[A-Z0-9]{12}\d{2}$/.test(value);
+
 export const buildFocusNfcePayload = (input: {
   evidence: FiscalProviderExecutionEvidence;
   emissionAt: Date;
@@ -211,7 +214,7 @@ export const buildFocusNfcePayload = (input: {
   ) {
     throw new Error('FOCUS_NFCE_OPERATION_UNSUPPORTED');
   }
-  if (!/^\d{14}$/.test(evidence.issuerTaxIdentifier)) {
+  if (!isNormalizedCnpj(evidence.issuerTaxIdentifier)) {
     throw new Error('FOCUS_NFCE_CNPJ_ISSUER_REQUIRED');
   }
   if (Number.isNaN(input.emissionAt.getTime())) {
@@ -242,7 +245,7 @@ export const buildFocusNfcePayload = (input: {
   if (evidence.consumerTaxIdentifier) {
     if (/^\d{11}$/.test(evidence.consumerTaxIdentifier)) {
       payload.cpf_destinatario = evidence.consumerTaxIdentifier;
-    } else if (/^\d{14}$/.test(evidence.consumerTaxIdentifier)) {
+    } else if (isNormalizedCnpj(evidence.consumerTaxIdentifier)) {
       payload.cnpj_destinatario = evidence.consumerTaxIdentifier;
     } else {
       throw new Error('FOCUS_NFCE_CONSUMER_TAX_ID_INVALID');
