@@ -7,6 +7,7 @@ import { createMercadoLivreStockExecutionRouter } from './mercadoLivreStockExecu
 import { createMercadoLivreE2ETestRouter } from './mercadoLivreE2ETestRouter.js';
 import { createMercadoPagoStoreRouter } from './mercadoPagoStoreRouter.js';
 import { createStoreOwnedPixRouter } from './storeOwnedPixRouter.js';
+import { createFocusNfceProviderOnboardingRouter } from './focusNfceProviderOnboardingRouter.js';
 
 type QueryValue = string | string[] | undefined;
 
@@ -64,6 +65,11 @@ app.use(
   '/api/store-connections/pix-own',
   integrationRateLimiter,
   createStoreOwnedPixRouter()
+);
+app.use(
+  '/api/store-connections/fiscal-provider/focus-nfce',
+  integrationRateLimiter,
+  createFocusNfceProviderOnboardingRouter()
 );
 app.use(
   '/api/store-connections',
