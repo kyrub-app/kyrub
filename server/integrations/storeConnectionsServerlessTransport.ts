@@ -9,6 +9,7 @@ import { createMercadoPagoStoreRouter } from './mercadoPagoStoreRouter.js';
 import { createStoreOwnedPixRouter } from './storeOwnedPixRouter.js';
 import { createFocusNfceProviderOnboardingRouter } from './focusNfceProviderOnboardingRouter.js';
 import { createFiscalTaxExecutionPolicyRouter } from './fiscalTaxExecutionPolicyRouter.js';
+import { createFiscalHomologationOrchestratorRouter } from './fiscalHomologationOrchestratorRouter.js';
 
 type QueryValue = string | string[] | undefined;
 
@@ -76,6 +77,11 @@ app.use(
   '/api/store-connections/fiscal-tax-policy',
   integrationRateLimiter,
   createFiscalTaxExecutionPolicyRouter()
+);
+app.use(
+  '/api/store-connections/fiscal-homologation',
+  integrationRateLimiter,
+  createFiscalHomologationOrchestratorRouter()
 );
 app.use(
   '/api/store-connections',
