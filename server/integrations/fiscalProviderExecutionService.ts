@@ -10,16 +10,19 @@ import {
   type FiscalProviderAdapter,
   type FiscalProviderAdapterRegistry,
   type FiscalProviderOutcome,
+  type FiscalProviderPreparedSubmission,
   type FiscalProviderProtectedContext,
 } from './fiscalProviderAdapter.js';
 import {
   loadFiscalProviderExecutionConfiguration,
   type FiscalProviderExecutionConfiguration,
 } from './fiscalProviderConfigurationRegistry.js';
+import { loadFiscalProviderExecutionEvidence } from './fiscalProviderExecutionEvidence.js';
 import { createKyrubCredentialVault } from './kyrubCredentialVault.js';
 import { resolveFiscalHomologationOwnerAuthority } from './fiscalHomologationAttemptLedger.js';
 
 const ATTEMPT_ID_PATTERN = /^fiscal-attempt-[a-f0-9]{48}$/;
+const SHA256_PATTERN = /^[a-f0-9]{64}$/;
 const SAFE_TEXT_MAX = 500;
 
 const clean = (value: unknown, maxLength = 240): string =>
@@ -33,7 +36,10 @@ const record = (value: unknown): Record<string, unknown> =>
 const attemptPath = (canonicalStoreId: string, attemptId: string): string =>
   `stores/${canonicalStoreId}/fiscalAttempts/${attemptId}`;
 
-const nowIso = (value: Date): string => value.toISOString();
+const nowIso = (value: Date): string => {
+  if (Number.isNaN(value.getTime())) throw new Error('FISCAL_PROVIDER_EXECUTION_TIME_INVALID');
+  return value.toISOString();
+};
 
 const parseAttempt = (
   value: unknown,
@@ -93,6 +99,28 @@ const protectedContextFor = (input: {
   },
 });
 
+const assertPreparedSubmission = (
+  value: FiscalProviderPreparedSubmission
+): FiscalProviderPreparedSubmission => {
+  const externalRequestId = clean(value.externalRequestId, 160);
+  const payloadFingerprint = clean(value.payloadFingerprint, 80);
+  if (
+    !externalRequestId ||
+    !SHA256_PATTERN.test(payloadFingerprint) ||
+    !value.payload ||
+    typeof value.payload !== 'object' ||
+    Array.isArray(value.payload) ||
+    Object.keys(value.payload).length === 0
+  ) {
+    throw new Error('FISCAL_PROVIDER_PREPARED_SUBMISSION_INVALID');
+  }
+  return {
+    externalRequestId,
+    payloadFingerprint,
+    payload: value.payload,
+  };
+};
+
 export type FiscalProviderAttemptPatch = Pick<
   FiscalHomologationAttempt,
   | 'state'
@@ -107,6 +135,7 @@ export type FiscalProviderAttemptPatch = Pick<
 
 export const fiscalProviderOutcomePatch = (input: {
   currentState: FiscalHomologationAttemptState;
+  currentExternalRequestId?: string | null;
   outcome: FiscalProviderOutcome;
   reconciliation: boolean;
 }): FiscalProviderAttemptPatch => {
@@ -114,9 +143,10 @@ export const fiscalProviderOutcomePatch = (input: {
     const normalized = clean(value, SAFE_TEXT_MAX);
     return normalized || null;
   };
-  const externalRequestId = 'externalRequestId' in input.outcome
+  const outcomeExternalRequestId = 'externalRequestId' in input.outcome
     ? safeMessage(input.outcome.externalRequestId)
     : null;
+  const externalRequestId = outcomeExternalRequestId ?? safeMessage(input.currentExternalRequestId);
   const providerStatus = safeMessage(input.outcome.providerStatus);
 
   if (input.outcome.kind === 'authorized') {
@@ -148,8 +178,6 @@ export const fiscalProviderOutcomePatch = (input: {
   }
 
   if (input.outcome.kind === 'processing') {
-    // A status read that is still pending must never convert a
-    // reconciliation-required attempt back into a submit-eligible state.
     return {
       state: input.reconciliation && input.currentState === 'reconciliation_required'
         ? 'reconciliation_required'
@@ -222,6 +250,8 @@ const persistProviderOutcome = async (input: {
   actorUserId: string;
   expectedAdapterId: string;
   expectedAdapterVersion: string;
+  expectedExternalRequestId: string;
+  expectedPayloadFingerprint: string;
   allowedStates: readonly FiscalHomologationAttemptState[];
   patch: FiscalProviderAttemptPatch;
   checkedAt: string;
@@ -238,7 +268,11 @@ const persistProviderOutcome = async (input: {
     if (
       !input.allowedStates.includes(current.state) ||
       current.providerAdapterId !== input.expectedAdapterId ||
-      current.providerAdapterVersion !== input.expectedAdapterVersion
+      current.providerAdapterVersion !== input.expectedAdapterVersion ||
+      current.externalRequestId !== input.expectedExternalRequestId ||
+      current.providerPayloadFingerprint !== input.expectedPayloadFingerprint ||
+      (input.patch.externalRequestId !== null &&
+        input.patch.externalRequestId !== input.expectedExternalRequestId)
     ) {
       throw new Error('FISCAL_ATTEMPT_EXECUTION_STALE');
     }
@@ -289,16 +323,30 @@ export const executePreparedFiscalHomologationAttempt = async (input: {
     throw new Error('FISCAL_ATTEMPT_NOT_PREPARED');
   }
 
-  // Fail closed before claiming the attempt if provider configuration, adapter
-  // or protected credentials are missing. This avoids stranding the attempt in
-  // processing when no external request could even be attempted.
+  // Re-read all authoritative fiscal evidence before touching provider config or
+  // credentials. A missing/stale ready snapshot, identity, policy or payment
+  // therefore fails while the attempt remains completely unclaimed.
+  const executionEvidence = await loadFiscalProviderExecutionEvidence({
+    tenantId: input.tenantId,
+    canonicalStoreId,
+    attempt: initialAttempt,
+  });
+
   const registry = input.registry ?? createRuntimeFiscalProviderAdapterRegistry();
   const context = await loadProtectedAdapterContext({
     canonicalStoreId,
     attempt: initialAttempt,
     registry,
   });
-  const submittedAt = nowIso(input.now ?? new Date());
+  const submissionAt = input.now ?? new Date();
+  const submittedAt = nowIso(submissionAt);
+  const preparedSubmission = assertPreparedSubmission(
+    await context.adapter.prepareSubmission({
+      attempt: initialAttempt,
+      evidence: executionEvidence,
+      submissionAt,
+    })
+  );
 
   const claimedAttempt = await adminDb.runTransaction(async transaction => {
     const snapshot = await transaction.get(ref);
@@ -311,6 +359,16 @@ export const executePreparedFiscalHomologationAttempt = async (input: {
     if (current.state !== 'prepared') {
       throw new Error('FISCAL_ATTEMPT_ALREADY_CLAIMED');
     }
+    if (
+      current.fiscalDocumentStatus !== 'ready' ||
+      current.fiscalDocumentSnapshotId !== executionEvidence.snapshot.snapshotId ||
+      current.providerAdapterId !== null ||
+      current.providerAdapterVersion !== null ||
+      current.providerPayloadFingerprint !== null ||
+      current.externalRequestId !== null
+    ) {
+      throw new Error('FISCAL_ATTEMPT_EXECUTION_STALE');
+    }
     assertFiscalHomologationAttemptStateTransition(current.state, 'processing');
 
     const next: FiscalHomologationAttempt = {
@@ -318,6 +376,8 @@ export const executePreparedFiscalHomologationAttempt = async (input: {
       state: 'processing',
       providerAdapterId: context.adapter.id,
       providerAdapterVersion: context.adapter.version,
+      providerPayloadFingerprint: preparedSubmission.payloadFingerprint,
+      externalRequestId: preparedSubmission.externalRequestId,
       providerStatus: 'submission_claimed',
       submittedAt,
       lastCheckedAt: submittedAt,
@@ -327,6 +387,8 @@ export const executePreparedFiscalHomologationAttempt = async (input: {
       state: 'processing',
       providerAdapterId: context.adapter.id,
       providerAdapterVersion: context.adapter.version,
+      providerPayloadFingerprint: preparedSubmission.payloadFingerprint,
+      externalRequestId: preparedSubmission.externalRequestId,
       providerStatus: 'submission_claimed',
       submittedAt,
       lastCheckedAt: submittedAt,
@@ -340,14 +402,13 @@ export const executePreparedFiscalHomologationAttempt = async (input: {
   try {
     outcome = await context.adapter.submit({
       attempt: claimedAttempt,
+      preparedSubmission,
       protectedContext: context.protectedContext,
     });
   } catch {
-    // Once submit has been invoked, an unclassified throw is ambiguous: the
-    // provider may have received the document. Never blindly submit again.
     outcome = {
       kind: 'technical_ambiguity',
-      externalRequestId: null,
+      externalRequestId: preparedSubmission.externalRequestId,
       providerStatus: 'submission_outcome_unknown',
       safeMessage: 'O resultado do envio ao provedor precisa ser reconciliado antes de qualquer nova ação.',
     };
@@ -356,6 +417,7 @@ export const executePreparedFiscalHomologationAttempt = async (input: {
   const checkedAt = nowIso(input.now ?? new Date());
   const patch = fiscalProviderOutcomePatch({
     currentState: 'processing',
+    currentExternalRequestId: preparedSubmission.externalRequestId,
     outcome,
     reconciliation: false,
   });
@@ -365,6 +427,8 @@ export const executePreparedFiscalHomologationAttempt = async (input: {
     actorUserId: input.requestedByUserId,
     expectedAdapterId: context.adapter.id,
     expectedAdapterVersion: context.adapter.version,
+    expectedExternalRequestId: preparedSubmission.externalRequestId,
+    expectedPayloadFingerprint: preparedSubmission.payloadFingerprint,
     allowedStates: ['processing'],
     patch,
     checkedAt,
@@ -398,7 +462,13 @@ export const reconcileFiscalHomologationAttempt = async (input: {
   ) {
     throw new Error('FISCAL_ATTEMPT_RECONCILIATION_NOT_ALLOWED');
   }
-  if (!current.providerAdapterId || !current.providerAdapterVersion) {
+  if (
+    !current.providerAdapterId ||
+    !current.providerAdapterVersion ||
+    !current.externalRequestId ||
+    !current.providerPayloadFingerprint ||
+    !SHA256_PATTERN.test(current.providerPayloadFingerprint)
+  ) {
     throw new Error('FISCAL_ATTEMPT_PROVIDER_BINDING_REQUIRED');
   }
 
@@ -417,7 +487,8 @@ export const reconcileFiscalHomologationAttempt = async (input: {
 
   let outcome: FiscalProviderOutcome;
   try {
-    // Reconciliation is read/status only. It never calls submit again.
+    // Reconciliation is status-read only. It never rebuilds or resubmits the
+    // frozen payload, even when the external result remains ambiguous.
     outcome = await context.adapter.getStatus({
       attempt: current,
       externalRequestId: current.externalRequestId,
@@ -435,6 +506,7 @@ export const reconcileFiscalHomologationAttempt = async (input: {
   const checkedAt = nowIso(input.now ?? new Date());
   const patch = fiscalProviderOutcomePatch({
     currentState: current.state,
+    currentExternalRequestId: current.externalRequestId,
     outcome,
     reconciliation: true,
   });
@@ -444,6 +516,8 @@ export const reconcileFiscalHomologationAttempt = async (input: {
     actorUserId: input.requestedByUserId,
     expectedAdapterId: current.providerAdapterId,
     expectedAdapterVersion: current.providerAdapterVersion,
+    expectedExternalRequestId: current.externalRequestId,
+    expectedPayloadFingerprint: current.providerPayloadFingerprint,
     allowedStates: ['processing', 'reconciliation_required'],
     patch,
     checkedAt,

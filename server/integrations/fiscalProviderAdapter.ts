@@ -1,5 +1,12 @@
 import type { FiscalHomologationDocumentFamily } from '../../shared/fiscalHomologationPolicy.js';
 import type { FiscalHomologationAttempt } from '../../shared/fiscalHomologationAttempt.js';
+import type { FiscalProviderExecutionEvidence } from './fiscalProviderExecutionEvidence.js';
+import { buildFocusNfcePayload } from './focusNfcePayloadBuilder.js';
+import {
+  buildFocusNfeReference,
+  getFocusNfeSandboxDocumentStatus,
+  submitFocusNfeSandboxDocument,
+} from './focusNfeSandboxTransport.js';
 
 export type FiscalProviderOutcome =
   | {
@@ -46,13 +53,25 @@ export interface FiscalProviderProtectedContext {
   };
 }
 
+export interface FiscalProviderPreparedSubmission {
+  externalRequestId: string;
+  payloadFingerprint: string;
+  payload: Record<string, unknown>;
+}
+
 export interface FiscalProviderAdapter {
   id: string;
   version: string;
   supportedDocumentFamilies: readonly FiscalHomologationDocumentFamily[];
   supportedEnvironments: readonly ['sandbox'];
+  prepareSubmission(input: {
+    attempt: FiscalHomologationAttempt;
+    evidence: FiscalProviderExecutionEvidence;
+    submissionAt: Date;
+  }): Promise<FiscalProviderPreparedSubmission> | FiscalProviderPreparedSubmission;
   submit(input: {
     attempt: FiscalHomologationAttempt;
+    preparedSubmission: FiscalProviderPreparedSubmission;
     protectedContext: FiscalProviderProtectedContext;
   }): Promise<FiscalProviderOutcome>;
   getStatus(input: {
@@ -92,7 +111,66 @@ export const buildFiscalProviderAdapterRegistry = (
   };
 };
 
-// No runtime fiscal provider is selected in this phase. A concrete sandbox
-// adapter is added only after #771 chooses and verifies the provider.
+export const focusNfceSandboxAdapter: FiscalProviderAdapter = {
+  id: 'focus-nfe',
+  version: '1',
+  supportedDocumentFamilies: ['nfce'],
+  supportedEnvironments: ['sandbox'],
+
+  prepareSubmission({ attempt, evidence, submissionAt }) {
+    if (
+      attempt.policy.documentFamily !== 'nfce' ||
+      evidence.snapshot.documentFamily !== 'nfce'
+    ) {
+      throw new Error('FOCUS_NFCE_DOCUMENT_FAMILY_UNSUPPORTED');
+    }
+    const prepared = buildFocusNfcePayload({ evidence, emissionAt: submissionAt });
+    return {
+      externalRequestId: buildFocusNfeReference(attempt.attemptId),
+      payloadFingerprint: prepared.payloadFingerprint,
+      payload: prepared.payload,
+    };
+  },
+
+  async submit({ attempt, preparedSubmission, protectedContext }) {
+    const expectedReference = buildFocusNfeReference(attempt.attemptId);
+    if (
+      protectedContext.configuration.adapterId !== 'focus-nfe' ||
+      protectedContext.configuration.adapterVersion !== '1' ||
+      protectedContext.configuration.documentFamily !== 'nfce' ||
+      preparedSubmission.externalRequestId !== expectedReference ||
+      !/^[a-f0-9]{64}$/.test(preparedSubmission.payloadFingerprint)
+    ) {
+      throw new Error('FOCUS_NFCE_PREPARED_SUBMISSION_INVALID');
+    }
+    return submitFocusNfeSandboxDocument({
+      family: 'nfce',
+      attemptId: attempt.attemptId,
+      token: protectedContext.credential,
+      payload: preparedSubmission.payload,
+    });
+  },
+
+  async getStatus({ attempt, externalRequestId, protectedContext }) {
+    const expectedReference = buildFocusNfeReference(attempt.attemptId);
+    if (
+      protectedContext.configuration.adapterId !== 'focus-nfe' ||
+      protectedContext.configuration.adapterVersion !== '1' ||
+      protectedContext.configuration.documentFamily !== 'nfce' ||
+      (externalRequestId !== null && externalRequestId !== expectedReference)
+    ) {
+      throw new Error('FOCUS_NFCE_RECONCILIATION_BINDING_INVALID');
+    }
+    return getFocusNfeSandboxDocumentStatus({
+      family: 'nfce',
+      attemptId: attempt.attemptId,
+      token: protectedContext.credential,
+    });
+  },
+};
+
+// The first concrete runtime provider is intentionally limited to NFC-e in
+// sandbox. NF-e/NFS-e remain unavailable until their payload builders are
+// separately verified and registered.
 export const createRuntimeFiscalProviderAdapterRegistry = (): FiscalProviderAdapterRegistry =>
-  buildFiscalProviderAdapterRegistry([]);
+  buildFiscalProviderAdapterRegistry([focusNfceSandboxAdapter]);

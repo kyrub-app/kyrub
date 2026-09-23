@@ -73,6 +73,7 @@ export interface FiscalHomologationAttempt {
   providerAdapterId: string | null;
   providerAdapterVersion: string | null;
   externalRequestId: string | null;
+  providerPayloadFingerprint: string | null;
   providerStatus: string | null;
   providerCode: string | null;
   providerMessage: string | null;

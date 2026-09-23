@@ -30,6 +30,13 @@ const fakeAdapter: FiscalProviderAdapter = {
   version: '1',
   supportedDocumentFamilies: ['nfe', 'nfce', 'nfse'],
   supportedEnvironments: ['sandbox'],
+  async prepareSubmission() {
+    return {
+      externalRequestId: 'external-1',
+      payloadFingerprint: 'a'.repeat(64),
+      payload: { test: true },
+    };
+  },
   async submit() {
     return {
       kind: 'authorized',
@@ -49,18 +56,22 @@ const fakeAdapter: FiscalProviderAdapter = {
   },
 };
 
-test('provider registry is explicit and runtime ships with no selectable provider', () => {
+test('provider registry stays explicit and runtime exposes only the selected concrete adapter', () => {
   const testRegistry = buildFiscalProviderAdapterRegistry([fakeAdapter]);
   assert.equal(testRegistry.get('test-provider', '1'), fakeAdapter);
   assert.throws(
     () => testRegistry.get('missing', '1'),
     /FISCAL_PROVIDER_ADAPTER_UNAVAILABLE/
   );
+  const runtime = createRuntimeFiscalProviderAdapterRegistry();
   assert.throws(
-    () => createRuntimeFiscalProviderAdapterRegistry().get('test-provider', '1'),
+    () => runtime.get('test-provider', '1'),
     /FISCAL_PROVIDER_ADAPTER_UNAVAILABLE/
   );
-  assert.match(adapterSource, /buildFiscalProviderAdapterRegistry\(\[\]\)/);
+  const focus = runtime.get('focus-nfe', '1');
+  assert.deepEqual(focus.supportedDocumentFamilies, ['nfce']);
+  assert.deepEqual(focus.supportedEnvironments, ['sandbox']);
+  assert.match(adapterSource, /buildFiscalProviderAdapterRegistry\(\[focusNfceAdapter\]\)/);
   assert.doesNotMatch(adapterSource, /authorized.*mock|mock.*authorized/i);
 });
 
@@ -137,13 +148,14 @@ test('protected provider configuration is store and document-family scoped', () 
 });
 
 test('executor claims persisted attempt before provider submit and resolves secrets server-side', () => {
-  const claimIndex = executionSource.indexOf("state: 'processing'");
+  const claimIndex = executionSource.indexOf("providerStatus: 'submission_claimed'");
   const submitIndex = executionSource.indexOf('context.adapter.submit');
   assert.ok(claimIndex >= 0);
   assert.ok(submitIndex > claimIndex);
   assert.match(executionSource, /createKyrubCredentialVault\(\)/);
   assert.match(executionSource, /vault\.readLatest\(configuration\.credentialSecretRef\)/);
   assert.match(executionSource, /FISCAL_ATTEMPT_ALREADY_CLAIMED/);
+  assert.match(executionSource, /providerPayloadFingerprint/);
   assert.match(executionSource, /submission_outcome_unknown/);
   assert.match(executionSource, /reconciliation_required/);
 });
