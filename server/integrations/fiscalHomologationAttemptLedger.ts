@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import { FieldValue } from 'firebase-admin/firestore';
 import { adminDb } from '../firebaseAdmin.js';
 import { getPrimaryUserStoreDocumentPath } from '../../src/utils/storePaths.js';
@@ -10,6 +9,7 @@ import type {
   FiscalHomologationAttemptTriggerEvidence,
 } from '../../shared/fiscalHomologationAttempt.js';
 import { loadCanonicalFiscalPreflight } from './fiscalPreflightReadService.js';
+import { buildFiscalHomologationAttemptIdentity } from './fiscalHomologationAttemptIdentity.js';
 
 const ORDER_ID_PATTERN = /^[a-zA-Z0-9:_-]{1,240}$/;
 
@@ -28,10 +28,6 @@ const requiredIsoTimestamp = (value: Date): string => {
   }
   return timestamp;
 };
-
-const stableFingerprint = (value: unknown): string => createHash('sha256')
-  .update(JSON.stringify(value))
-  .digest('hex');
 
 const attemptPath = (canonicalStoreId: string, attemptId: string): string =>
   `stores/${canonicalStoreId}/fiscalAttempts/${attemptId}`;
@@ -181,8 +177,8 @@ const buildAttemptFromPreflight = (input: {
     triggerEvidence,
     actor,
   };
-  const evidenceFingerprint = stableFingerprint(fingerprintInput);
-  const attemptId = `fiscal-attempt-${evidenceFingerprint.slice(0, 48)}`;
+  const { evidenceFingerprint, attemptId } =
+    buildFiscalHomologationAttemptIdentity(fingerprintInput);
   const timestamp = requiredIsoTimestamp(input.now);
 
   return {
