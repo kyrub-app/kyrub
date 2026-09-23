@@ -2,6 +2,7 @@ import type { User } from 'firebase/auth';
 import FiscalHomologationStructuralPolicyWorkspace from './FiscalHomologationStructuralPolicyWorkspace';
 import FiscalTaxExecutionPolicyWorkspace from './FiscalTaxExecutionPolicyWorkspace';
 import FocusNfceProviderWorkspace from './FocusNfceProviderWorkspace';
+import FiscalHomologationManualExecutionWorkspace from './FiscalHomologationManualExecutionWorkspace';
 
 export default function FiscalHomologationPolicyWorkspace({
   user,
@@ -15,6 +16,7 @@ export default function FiscalHomologationPolicyWorkspace({
       <FiscalHomologationStructuralPolicyWorkspace user={user} storeId={storeId} />
       <FiscalTaxExecutionPolicyWorkspace user={user} storeId={storeId} />
       <FocusNfceProviderWorkspace user={user} storeId={storeId} />
+      <FiscalHomologationManualExecutionWorkspace user={user} storeId={storeId} />
     </div>
   );
 }
