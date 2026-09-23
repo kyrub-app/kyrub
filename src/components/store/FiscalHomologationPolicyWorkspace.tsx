@@ -8,6 +8,7 @@ import {
   Save,
   ShieldCheck,
 } from 'lucide-react';
+import FocusNfceProviderWorkspace from './FocusNfceProviderWorkspace';
 
 type OperationScope = '' | 'goods' | 'service' | 'mixed';
 type DocumentFamily = '' | 'nfe' | 'nfce' | 'nfse';
@@ -219,6 +220,7 @@ export default function FiscalHomologationPolicyWorkspace({
   const serverMissing = record?.resolution.missingInputs ?? EMPTY_MISSING;
 
   return (
+    <>
     <section
       className="rounded-2xl border border-violet-500/20 bg-violet-500/[0.035] p-4"
       id="fiscal-homologation-policy-workspace"
@@ -394,5 +396,7 @@ export default function FiscalHomologationPolicyWorkspace({
         </div>
       )}
     </section>
+    <FocusNfceProviderWorkspace user={user} storeId={storeId} />
+    </>
   );
 }
