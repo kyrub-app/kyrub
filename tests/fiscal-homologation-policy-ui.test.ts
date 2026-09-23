@@ -8,7 +8,7 @@ const integrationsSource = readFileSync(
 );
 const mainSource = readFileSync('src/main.tsx', 'utf8');
 const policyUiSource = readFileSync(
-  'src/components/store/FiscalHomologationPolicyWorkspace.tsx',
+  'src/components/store/FiscalHomologationStructuralPolicyWorkspace.tsx',
   'utf8'
 );
 
