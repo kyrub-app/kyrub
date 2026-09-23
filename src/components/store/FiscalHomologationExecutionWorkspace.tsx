@@ -91,7 +91,7 @@ const readError = async (response: Response, fallback: string): Promise<string> 
     FISCAL_ATTEMPT_PREFLIGHT_NOT_READY: 'O pré-flight fiscal deixou de estar pronto. Analise novamente o pedido.',
     FISCAL_EXECUTABLE_DOCUMENT_NOT_READY: 'O documento fiscal executável não está pronto. Prepare novamente após revisar as configurações.',
   };
-  return known[code] ?? code || fallback;
+  return known[code] ?? (code || fallback);
 };
 
 const attemptStateLabel = (state: AttemptState): string => {
