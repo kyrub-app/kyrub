@@ -196,6 +196,8 @@ const buildAttemptFromPreflight = (input: {
     triggerEvidence,
     actor,
     state: 'prepared',
+    fiscalDocumentSnapshotId: null,
+    fiscalDocumentStatus: null,
     providerAdapterId: null,
     providerAdapterVersion: null,
     externalRequestId: null,
