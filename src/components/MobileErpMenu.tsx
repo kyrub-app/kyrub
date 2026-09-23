@@ -5,6 +5,7 @@ import {
   Briefcase,
   Calendar,
   ClipboardList,
+  CreditCard,
   DollarSign,
   Fingerprint,
   Menu,
@@ -21,6 +22,7 @@ import {
   requestErpManagementNavigation,
   type ErpManagementModule,
 } from '../utils/erpManagementNavigation';
+import { getPlanCenterUrl } from '../utils/planCenter';
 
 export type ErpSubTab =
   | 'clientes'
@@ -30,7 +32,11 @@ export type ErpSubTab =
   | 'ponto'
   | 'gerencial';
 
-export type MobileErpMenuItemId = 'loja' | ErpSubTab | ErpManagementModule;
+export type MobileErpMenuItemId =
+  | 'planos'
+  | 'loja'
+  | ErpSubTab
+  | ErpManagementModule;
 
 type MenuItem = {
   id: MobileErpMenuItemId;
@@ -40,6 +46,7 @@ type MenuItem = {
 };
 
 const MENU_ITEMS: readonly MenuItem[] = [
+  { id: 'planos', label: 'Planos', icon: CreditCard, section: 'gestao' },
   { id: 'loja', label: 'Loja', icon: StoreIcon, section: 'gestao' },
   { id: 'produtos', label: 'Produtos & Estoque', icon: Package, section: 'gestao' },
   { id: 'vendas', label: 'Vendas & Analytics', icon: BarChart3, section: 'gestao' },
@@ -78,10 +85,21 @@ export const commitMobileErpMenuSelection = (
     onOpenStoreConfig: () => void;
     onSelectTab: (tab: ErpSubTab) => void;
     onSelectManagementModule?: (module: ErpManagementModule | null) => void;
+    onOpenPlanCenter?: () => void;
   }
 ): void => {
   const selectManagement =
     actions.onSelectManagementModule ?? requestErpManagementNavigation;
+
+  if (itemId === 'planos') {
+    selectManagement(null);
+    if (actions.onOpenPlanCenter) {
+      actions.onOpenPlanCenter();
+    } else if (typeof window !== 'undefined') {
+      window.location.assign(getPlanCenterUrl(window.location));
+    }
+    return;
+  }
 
   if (itemId === 'loja') {
     selectManagement(null);
@@ -164,6 +182,7 @@ export function MobileErpMenu({
       const Icon = item.icon;
       const isSelected =
         !isManagementModule(item.id) &&
+        item.id !== 'planos' &&
         item.id !== 'loja' &&
         item.id === activeSubTab;
 
