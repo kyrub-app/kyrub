@@ -1,71 +1,14 @@
 import { useRef, useState, type MouseEvent } from 'react';
+import { ArrowLeft, Menu, X } from 'lucide-react';
 import {
-  ArrowLeft,
-  BarChart3,
-  Briefcase,
-  Calendar,
-  ClipboardList,
-  CreditCard,
-  DollarSign,
-  Fingerprint,
-  Menu,
-  Package,
-  Percent,
-  Settings,
-  Store as StoreIcon,
-  UserCheck,
-  Users,
-  X,
-  Zap,
-} from 'lucide-react';
-import {
+  MOBILE_ERP_MENU_ITEMS,
   commitMobileErpMenuSelection,
+  isMobileErpManagementModule,
   type ErpSubTab,
+  type MobileErpMenuItem,
   type MobileErpMenuItemId,
 } from './MobileErpMenu';
-import type { ErpManagementModule } from '../utils/erpManagementNavigation';
 import { getPlanCenterUrl } from '../utils/planCenter';
-
-type MenuItem = {
-  id: MobileErpMenuItemId;
-  label: string;
-  icon: typeof StoreIcon;
-  section: 'gestao' | 'operacao';
-};
-
-const MENU_ITEMS: readonly MenuItem[] = [
-  { id: 'planos', label: 'Planos', icon: CreditCard, section: 'gestao' },
-  { id: 'loja', label: 'Loja', icon: StoreIcon, section: 'gestao' },
-  { id: 'produtos', label: 'Produtos & Estoque', icon: Package, section: 'gestao' },
-  { id: 'vendas', label: 'Vendas & Analytics', icon: BarChart3, section: 'gestao' },
-  { id: 'financeiro', label: 'Financeiro Interno', icon: DollarSign, section: 'gestao' },
-  { id: 'rh', label: 'Recursos Humanos', icon: Briefcase, section: 'gestao' },
-  { id: 'crm', label: 'CRM', icon: UserCheck, section: 'gestao' },
-  { id: 'marketing', label: 'Marketing', icon: Zap, section: 'gestao' },
-  { id: 'integracoes', label: 'Integrações & Sandbox', icon: Settings, section: 'gestao' },
-  { id: 'vouchers', label: 'Promocionais', icon: Percent, section: 'gestao' },
-  { id: 'clientes', label: 'PDV', icon: Users, section: 'operacao' },
-  { id: 'caixa', label: 'Caixa', icon: DollarSign, section: 'operacao' },
-  { id: 'pedidos', label: 'Pedidos', icon: ClipboardList, section: 'operacao' },
-  { id: 'reservas', label: 'Reservas', icon: Calendar, section: 'operacao' },
-  { id: 'ponto', label: 'Ponto', icon: Fingerprint, section: 'operacao' },
-];
-
-const MANAGEMENT_MODULES = new Set<ErpManagementModule>([
-  'produtos',
-  'vendas',
-  'financeiro',
-  'rh',
-  'crm',
-  'marketing',
-  'integracoes',
-  'vouchers',
-]);
-
-const isManagementModule = (
-  itemId: MobileErpMenuItemId
-): itemId is ErpManagementModule =>
-  MANAGEMENT_MODULES.has(itemId as ErpManagementModule);
 
 interface MobileErpMenuProps {
   activeSubTab: ErpSubTab;
@@ -126,11 +69,11 @@ export function MobileErpMenu({
     if (event.target === event.currentTarget) closeMenu();
   };
 
-  const renderItems = (section: MenuItem['section']) =>
-    MENU_ITEMS.filter(item => item.section === section).map(item => {
+  const renderItems = (section: MobileErpMenuItem['section']) =>
+    MOBILE_ERP_MENU_ITEMS.filter(item => item.section === section).map(item => {
       const Icon = item.icon;
       const isSelected =
-        !isManagementModule(item.id) &&
+        !isMobileErpManagementModule(item.id) &&
         item.id !== 'planos' &&
         item.id !== 'loja' &&
         item.id === activeSubTab;
@@ -157,7 +100,7 @@ export function MobileErpMenu({
   return (
     <div
       className="sm:hidden -mx-6 -my-2.5 flex w-screen max-w-none shrink-0 items-center justify-between border-b border-slate-800 bg-slate-900 px-6 py-2.5"
-      data-kyrub-mobile-menu-runtime="frame-fallback-flat-management-plans"
+      data-kyrub-mobile-menu-runtime="canonical-items-frame-fallback-flat-management"
     >
       {canClosePanel ? (
         <button
