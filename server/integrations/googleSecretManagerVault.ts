@@ -13,6 +13,11 @@ export interface KyrubVaultWriteResult {
   resourceName: string;
 }
 
+export interface KyrubVaultEnsureSecretResult {
+  created: boolean;
+  resourceName: string;
+}
+
 type FetchLike = (
   input: string,
   init?: RequestInit
@@ -65,8 +70,16 @@ const bearerHeaders = async (
   };
 };
 
-const throwHttpError = (operation: 'access' | 'add-version', status: number): never => {
-  throw new Error(`KYRUB_VAULT_${operation === 'access' ? 'ACCESS' : 'WRITE'}_FAILED:${status}`);
+const throwHttpError = (
+  operation: 'access' | 'add-version' | 'create-secret',
+  status: number
+): never => {
+  const kind = operation === 'access'
+    ? 'ACCESS'
+    : operation === 'add-version'
+      ? 'WRITE'
+      : 'CREATE';
+  throw new Error(`KYRUB_VAULT_${kind}_FAILED:${status}`);
 };
 
 export class GoogleSecretManagerVault {
@@ -74,6 +87,32 @@ export class GoogleSecretManagerVault {
     private readonly tokenProvider: KyrubVaultAccessTokenProvider,
     private readonly fetchImpl: FetchLike = fetch
   ) {}
+
+  async ensureSecret(secretRef: string): Promise<KyrubVaultEnsureSecretResult> {
+    const ref = parseGoogleSecretManagerRef(secretRef);
+    const headers = {
+      ...(await bearerHeaders(this.tokenProvider)),
+      'content-type': 'application/json; charset=utf-8',
+    };
+    const response = await this.fetchImpl(
+      `${SECRET_MANAGER_API}/projects/${encodeURIComponent(ref.projectId)}/secrets?secretId=${encodeURIComponent(ref.secretId)}`,
+      {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ replication: { automatic: {} } }),
+      }
+    );
+    if (response.status === 409) {
+      return { created: false, resourceName: ref.parent };
+    }
+    if (!response.ok) throwHttpError('create-secret', response.status);
+    const payload = await response.json() as { name?: unknown };
+    const resourceName = typeof payload.name === 'string' ? payload.name.trim() : '';
+    if (resourceName !== ref.parent) {
+      throw new Error('KYRUB_VAULT_CREATE_RESPONSE_INVALID');
+    }
+    return { created: true, resourceName };
+  }
 
   async readLatest(secretRef: string): Promise<KyrubVaultReadResult> {
     const ref = parseGoogleSecretManagerRef(secretRef);
