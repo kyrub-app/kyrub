@@ -76,6 +76,12 @@ const getLegacyAdminAuth = (): Auth => {
   return authModule.getAuth(getAdminApp());
 };
 
+export const getFirebaseAdminProjectId = (): string => {
+  const projectId = getAdminApp().options.projectId?.trim() ?? '';
+  if (!projectId) throw new Error('FIREBASE_ADMIN_PROJECT_ID_UNAVAILABLE');
+  return projectId;
+};
+
 export const getFirebaseAdminAccessToken = async (): Promise<string> => {
   const credential = getAdminApp().options.credential;
   if (!credential) throw new Error('FIREBASE_ADMIN_CREDENTIAL_UNAVAILABLE');
