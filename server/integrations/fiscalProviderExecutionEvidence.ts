@@ -8,7 +8,7 @@ import {
   type FiscalTaxExecutionPolicy,
 } from '../../shared/fiscalTaxExecutionPolicy.js';
 import { buildCanonicalOrderFinancialProjection } from '../../shared/canonicalOrderFinancialProjection.js';
-import type { PaymentMethod } from '../../src/utils/canonicalPayment.js';
+import type { CanonicalPayment, PaymentMethod } from '../../src/utils/canonicalPayment.js';
 import {
   normalizeBrazilFiscalTaxIdentifier,
   isValidBrazilFiscalTaxIdentifier,
@@ -187,9 +187,7 @@ const loadPaymentEvidence = async (input: {
     throw new Error('FISCAL_EXECUTION_PAYMENT_EVIDENCE_CAPPED');
   }
 
-  const canonical = [] as Array<ReturnType<typeof classifyCompatiblePaymentRecord> extends infer T
-    ? T extends { kind: 'canonical'; payment: infer P } ? P : never
-    : never>;
+  const canonical: CanonicalPayment[] = [];
   let legacyMirrorCount = 0;
   for (const document of querySnapshot.docs) {
     const compatible = classifyCompatiblePaymentRecord(
