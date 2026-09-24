@@ -99,6 +99,25 @@ describe('marketplace discovery', () => {
     );
   });
 
+  test('public storefront restores published tenant fallback without overriding canonical authority', () => {
+    const service = readFileSync(
+      'server/payments/marketplaceDiscoveryService.ts',
+      'utf8'
+    );
+
+    assert.match(service, /collection\('marketplace_listings'\)/);
+    assert.match(service, /where\('slug', '==', slug\)/);
+    assert.match(service, /canonicalStoreDocument/);
+    assert.match(service, /storeData\.publicationStatus !== 'published'/);
+    assert.match(service, /collection\('tenants'\)/);
+    assert.match(service, /data\.publicationStatus === 'published'/);
+    assert.match(service, /projectLegacyPublicOffers\(legacyData\.publicProducts, legacyStoreId\)/);
+    assert.match(service, /where\('storeId', '==', legacyStoreId\)/);
+    assert.match(service, /hasCanonicalStoreAuthority/);
+    assert.doesNotMatch(service, /ownerEmail:/);
+    assert.doesNotMatch(service, /contact:/);
+  });
+
   test('marketplace UI exposes promotion and for-you as separate filters', () => {
     const source = readFileSync('src/components/tabs/KyrubTab.tsx', 'utf8');
     assert.match(source, />\s*Em promoção\s*</);
