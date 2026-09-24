@@ -83,4 +83,5 @@ test('header shortcut order is Praça, Marketplace, Carteira, Notas and Avisos w
   assert.match(navigationSource, /width: 2\.25rem !important/);
   assert.match(navigationSource, /#header-wallet-balance > button:first-child > span/);
   assert.match(navigationSource, /#toggle-balance-visibility-btn/);
+  assert.match(navigationSource, /justify-content: flex-start !important/);
 });
