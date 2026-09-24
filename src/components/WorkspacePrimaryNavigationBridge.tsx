@@ -3,23 +3,45 @@ import { createPortal } from 'react-dom';
 import { CheckSquare } from 'lucide-react';
 
 const SOCIAL_ENTRY_ATTRIBUTE = 'data-kyrub-social-entry';
+const PRIMARY_NAV_ATTRIBUTE = 'data-kyrub-primary-workspace-nav';
+const ORIGINAL_LABEL_ATTRIBUTE = 'data-kyrub-original-label';
 
 const findPrimaryBottomNav = (): HTMLElement | null => {
+  const markedNav = document.querySelector(
+    `nav[${PRIMARY_NAV_ATTRIBUTE}="true"]`
+  );
+  if (markedNav instanceof HTMLElement) return markedNav;
+
   const navs = Array.from(document.querySelectorAll('nav'));
-  return (
-    navs.find(nav => {
-      const text = nav.textContent ?? '';
-      return text.includes('Notas') && text.includes('Renda');
-    }) as HTMLElement | undefined
-  ) ?? null;
+  const nav = navs.find(candidate => {
+    const text = candidate.textContent ?? '';
+    return (
+      text.includes('Renda') &&
+      (text.includes('Notas') || text.includes('Social')) &&
+      (text.includes('Kyrub') || text.includes('Kyrubia'))
+    );
+  });
+
+  if (!(nav instanceof HTMLElement)) return null;
+  nav.setAttribute(PRIMARY_NAV_ATTRIBUTE, 'true');
+  return nav;
 };
 
 const findLegacyNotesButton = (): HTMLButtonElement | null => {
   const nav = findPrimaryBottomNav();
   if (!nav) return null;
+
+  const markedButton = nav.querySelector(
+    `button[${SOCIAL_ENTRY_ATTRIBUTE}="true"]`
+  );
+  if (markedButton instanceof HTMLButtonElement) return markedButton;
+
   return (
     Array.from(nav.querySelectorAll('button')).find(button =>
-      (button.textContent ?? '').trim().toLocaleLowerCase('pt-BR').includes('notas')
+      (button.textContent ?? '')
+        .trim()
+        .toLocaleLowerCase('pt-BR')
+        .includes('notas')
     ) as HTMLButtonElement | undefined
   ) ?? null;
 };
@@ -29,9 +51,39 @@ const findProfileTrigger = (): HTMLButtonElement | null => {
   return trigger instanceof HTMLButtonElement ? trigger : null;
 };
 
+const closeSocialHub = (): void => {
+  const closeButton = document.querySelector(
+    '#profile-social-hub-modal button[aria-label="Fechar meu perfil"]'
+  );
+  if (closeButton instanceof HTMLButtonElement) closeButton.click();
+};
+
+const normalizeSocialEntry = (
+  button: HTMLButtonElement,
+  active: boolean
+): void => {
+  button.setAttribute(SOCIAL_ENTRY_ATTRIBUTE, 'true');
+  button.setAttribute('aria-label', 'Social');
+  button.setAttribute('title', 'Abrir Social');
+  button.setAttribute('aria-pressed', String(active));
+  button.setAttribute('data-kyrub-social-active', String(active));
+
+  const label = button.querySelector('span');
+  if (label instanceof HTMLElement) {
+    if (!label.hasAttribute(ORIGINAL_LABEL_ATTRIBUTE)) {
+      label.setAttribute(
+        ORIGINAL_LABEL_ATTRIBUTE,
+        label.textContent?.trim() || 'Notas'
+      );
+    }
+    if (label.textContent !== 'Social') label.textContent = 'Social';
+  }
+};
+
 export function WorkspacePrimaryNavigationBridge() {
   const [notesHost, setNotesHost] = useState<HTMLElement | null>(null);
   const [notesActive, setNotesActive] = useState(false);
+  const [socialActive, setSocialActive] = useState(false);
   const allowLegacyNotesClick = useRef(false);
 
   useEffect(() => {
@@ -42,13 +94,28 @@ export function WorkspacePrimaryNavigationBridge() {
       if (cancelled) return;
 
       const header = document.getElementById('app-header');
+      const nav = findPrimaryBottomNav();
       const notesButton = findLegacyNotesButton();
+      const socialOpen = Boolean(
+        document.getElementById('profile-social-hub-modal')
+      );
 
-      if (notesButton) {
-        notesButton.setAttribute(SOCIAL_ENTRY_ATTRIBUTE, 'true');
-        notesButton.setAttribute('aria-label', 'Social');
-        notesButton.setAttribute('title', 'Abrir Social');
-        setNotesActive(notesButton.className.includes('text-orange-500'));
+      setSocialActive(socialOpen);
+      if (notesButton) normalizeSocialEntry(notesButton, socialOpen);
+
+      if (header instanceof HTMLElement) {
+        document.documentElement.style.setProperty(
+          '--kyrub-workspace-header-height',
+          `${Math.ceil(header.getBoundingClientRect().bottom)}px`
+        );
+      }
+
+      if (nav instanceof HTMLElement) {
+        nav.style.zIndex = '160';
+        document.documentElement.style.setProperty(
+          '--kyrub-workspace-nav-height',
+          `${Math.ceil(window.innerHeight - nav.getBoundingClientRect().top)}px`
+        );
       }
 
       if (!(header instanceof HTMLElement)) {
@@ -96,20 +163,32 @@ export function WorkspacePrimaryNavigationBridge() {
         event.stopPropagation();
         event.stopImmediatePropagation();
         setNotesActive(false);
+        setSocialActive(true);
+        normalizeSocialEntry(socialEntry, true);
 
-        // The native social hub already owns the canonical profile trigger.
-        // Reuse that authority instead of duplicating profile/social state.
-        findProfileTrigger()?.click();
+        if (!document.getElementById('profile-social-hub-modal')) {
+          findProfileTrigger()?.click();
+        }
         return;
       }
 
       const nav = findPrimaryBottomNav();
-      if (nav && target.closest('button')?.closest('nav') === nav) {
+      const navButton = target.closest('button');
+      if (
+        nav &&
+        navButton instanceof HTMLButtonElement &&
+        navButton.closest('nav') === nav
+      ) {
+        closeSocialHub();
+        setSocialActive(false);
+        const socialButton = findLegacyNotesButton();
+        if (socialButton) normalizeSocialEntry(socialButton, false);
         setNotesActive(false);
       }
     };
 
     synchronize();
+    window.addEventListener('resize', synchronize);
     document.addEventListener('click', handleDocumentClick, true);
 
     const observer = new MutationObserver(synchronize);
@@ -118,9 +197,29 @@ export function WorkspacePrimaryNavigationBridge() {
     return () => {
       cancelled = true;
       observer.disconnect();
+      window.removeEventListener('resize', synchronize);
       document.removeEventListener('click', handleDocumentClick, true);
-      findLegacyNotesButton()?.removeAttribute(SOCIAL_ENTRY_ATTRIBUTE);
+
+      const socialButton = findLegacyNotesButton();
+      if (socialButton) {
+        const label = socialButton.querySelector('span');
+        if (label instanceof HTMLElement) {
+          label.textContent =
+            label.getAttribute(ORIGINAL_LABEL_ATTRIBUTE) || 'Notas';
+          label.removeAttribute(ORIGINAL_LABEL_ATTRIBUTE);
+        }
+        socialButton.removeAttribute(SOCIAL_ENTRY_ATTRIBUTE);
+        socialButton.removeAttribute('data-kyrub-social-active');
+      }
+
+      findPrimaryBottomNav()?.removeAttribute(PRIMARY_NAV_ATTRIBUTE);
       currentHost?.remove();
+      document.documentElement.style.removeProperty(
+        '--kyrub-workspace-header-height'
+      );
+      document.documentElement.style.removeProperty(
+        '--kyrub-workspace-nav-height'
+      );
       setNotesHost(null);
     };
   }, []);
@@ -128,6 +227,10 @@ export function WorkspacePrimaryNavigationBridge() {
   const openNotes = (): void => {
     const notesButton = findLegacyNotesButton();
     if (!notesButton) return;
+
+    closeSocialHub();
+    setSocialActive(false);
+    normalizeSocialEntry(notesButton, false);
 
     allowLegacyNotesClick.current = true;
     try {
@@ -165,6 +268,7 @@ export function WorkspacePrimaryNavigationBridge() {
         #app-header {
           justify-content: flex-end !important;
           gap: 0.5rem;
+          z-index: 160 !important;
         }
 
         #app-header #header-user-profile-trigger {
@@ -185,8 +289,17 @@ export function WorkspacePrimaryNavigationBridge() {
           padding-left: 0 !important;
         }
 
+        nav[${PRIMARY_NAV_ATTRIBUTE}="true"] {
+          position: fixed !important;
+          z-index: 160 !important;
+        }
+
         button[${SOCIAL_ENTRY_ATTRIBUTE}="true"] {
           color: rgb(100 116 139) !important;
+        }
+
+        button[${SOCIAL_ENTRY_ATTRIBUTE}="true"][data-kyrub-social-active="true"] {
+          color: rgb(249 115 22) !important;
         }
 
         button[${SOCIAL_ENTRY_ATTRIBUTE}="true"] > svg {
@@ -203,12 +316,39 @@ export function WorkspacePrimaryNavigationBridge() {
         }
 
         button[${SOCIAL_ENTRY_ATTRIBUTE}="true"] > span {
-          font-size: 0 !important;
+          font-size: 10px !important;
         }
 
-        button[${SOCIAL_ENTRY_ATTRIBUTE}="true"] > span::after {
-          content: 'Social';
-          font-size: 10px;
+        #profile-social-hub-modal {
+          position: fixed !important;
+          top: var(--kyrub-workspace-header-height, 64px) !important;
+          right: 0 !important;
+          bottom: var(--kyrub-workspace-nav-height, 72px) !important;
+          left: 0 !important;
+          width: 100% !important;
+          height: auto !important;
+          min-height: 0 !important;
+          padding: 0 !important;
+          align-items: stretch !important;
+          justify-content: center !important;
+          background: rgb(2 6 23) !important;
+          backdrop-filter: none !important;
+          z-index: 120 !important;
+        }
+
+        #profile-social-hub-modal > section {
+          width: 100% !important;
+          max-width: 48rem !important;
+          height: 100% !important;
+          max-height: none !important;
+          border-radius: 0 !important;
+          border-top: 0 !important;
+          border-bottom: 0 !important;
+          box-shadow: none !important;
+        }
+
+        #profile-social-hub-modal button[aria-label="Fechar meu perfil"] {
+          display: none !important;
         }
       `}</style>
     </>
