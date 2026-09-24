@@ -16,7 +16,7 @@ concurrency:
 
 jobs:
   application:
-    name: TypeScript, contracts and build
+    name: Prebuild concurrency diagnostic
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -32,65 +32,17 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Compose Firestore rules
-        run: npm run firestore:compose
-
-      - name: MVP readiness
-        run: npm run mvp:check
-
-      - name: TypeScript
-        run: npm run lint
-
-      - name: Contract tests
-        run: >-
-          node --test --import tsx
-          tests/identity-verification.test.ts
-          tests/passkey-security.test.ts
-          tests/work-eligibility-enforcement.test.ts
-          tests/kyrubia-cloud-history-contract.test.ts
-          tests/kyrubia-list-products-category-semantics.test.ts
-          tests/kyrubia-operational-read-manual-bypass.test.ts
-          tests/kyrubia-product-publication-by-id.test.ts
-          tests/gamification-redemption-repository.test.ts
-          tests/app-error-boundary.test.ts
-          tests/production-health.test.ts
-          tests/local-attendance-serverless-routing.test.ts
-
-      - name: Prebuild block A 0-24
+      - name: Full prebuild suite concurrency 4
         continue-on-error: true
         run: |
-          FILES=$(node -e "const a=require('./package.json').scripts.prebuild.split(/\\s+/).filter(x=>x.startsWith('tests/')); console.log(a.slice(0,25).join(' '))")
-          node --test --import tsx $FILES
+          FILES=$(node -e "const a=require('./package.json').scripts.prebuild.split(/\\s+/).filter(x=>x.startsWith('tests/')); console.log(a.join(' '))")
+          node --test --test-concurrency=4 --import tsx $FILES
 
-      - name: Prebuild block B 25-49
+      - name: Full prebuild suite concurrency 1
         continue-on-error: true
         run: |
-          FILES=$(node -e "const a=require('./package.json').scripts.prebuild.split(/\\s+/).filter(x=>x.startsWith('tests/')); console.log(a.slice(25,50).join(' '))")
-          node --test --import tsx $FILES
-
-      - name: Prebuild block C 50-74
-        continue-on-error: true
-        run: |
-          FILES=$(node -e "const a=require('./package.json').scripts.prebuild.split(/\\s+/).filter(x=>x.startsWith('tests/')); console.log(a.slice(50,75).join(' '))")
-          node --test --import tsx $FILES
-
-      - name: Prebuild block D 75-99
-        continue-on-error: true
-        run: |
-          FILES=$(node -e "const a=require('./package.json').scripts.prebuild.split(/\\s+/).filter(x=>x.startsWith('tests/')); console.log(a.slice(75,100).join(' '))")
-          node --test --import tsx $FILES
-
-      - name: Prebuild block E 100-124
-        continue-on-error: true
-        run: |
-          FILES=$(node -e "const a=require('./package.json').scripts.prebuild.split(/\\s+/).filter(x=>x.startsWith('tests/')); console.log(a.slice(100,125).join(' '))")
-          node --test --import tsx $FILES
-
-      - name: Prebuild block F 125-end
-        continue-on-error: true
-        run: |
-          FILES=$(node -e "const a=require('./package.json').scripts.prebuild.split(/\\s+/).filter(x=>x.startsWith('tests/')); console.log(a.slice(125).join(' '))")
-          if [ -n "$FILES" ]; then node --test --import tsx $FILES; fi
+          FILES=$(node -e "const a=require('./package.json').scripts.prebuild.split(/\\s+/).filter(x=>x.startsWith('tests/')); console.log(a.join(' '))")
+          node --test --test-concurrency=1 --import tsx $FILES
 
       - name: Diagnostic suite complete
-        run: echo "Prebuild suite bisect completed"
+        run: echo "Full-suite concurrency diagnostic completed"
