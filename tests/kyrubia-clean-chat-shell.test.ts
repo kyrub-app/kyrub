@@ -10,6 +10,14 @@ const providerSettings = readFileSync(
   'src/components/KyrubAiProviderSettingsBridge.tsx',
   'utf8'
 );
+const externalBridge = readFileSync(
+  'src/components/KyrubiaExternalBridgeControls.tsx',
+  'utf8'
+);
+const externalBridgeEvents = readFileSync(
+  'src/ai/kyrubiaExternalBridgeEvents.ts',
+  'utf8'
+);
 
 test('Kyrubia uses the clean conversation shell requested for the primary workspace', () => {
   assert.match(workspace, /aria-label="Abrir conversas"/);
@@ -29,6 +37,20 @@ test('the plus menu reuses attachments, camera and the canonical provider settin
   assert.match(providerSettings, /google-gemini/);
   assert.match(providerSettings, /openai/);
   assert.match(providerSettings, /anthropic/);
+});
+
+test('ChatGPT bridge is consolidated inside Minha IA without changing the tested bridge semantics', () => {
+  assert.match(providerSettings, /Conectar ChatGPT à Kyrubia/);
+  assert.match(providerSettings, /Ponte temporária/);
+  assert.match(providerSettings, /openKyrubiaExternalBridge/);
+  assert.match(providerSettings, /não é a mesma coisa que usar uma chave da OpenAI como motor da Kyrubia/);
+  assert.doesNotMatch(externalBridge, /mb-3 flex justify-end/);
+  assert.match(externalBridge, /KYRUBIA_EXTERNAL_BRIDGE_OPEN_EVENT/);
+  assert.match(externalBridge, /ttlMinutes: 120/);
+  assert.match(externalBridge, /label: 'ChatGPT bridge'/);
+  assert.match(externalBridge, /Conectar ChatGPT temporariamente/);
+  assert.match(externalBridge, /proposal only/);
+  assert.match(externalBridgeEvents, /kyrubia-external-bridge-open/);
 });
 
 test('conversation history stays available from the hamburger drawer', () => {
