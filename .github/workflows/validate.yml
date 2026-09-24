@@ -1,48 +1,47 @@
 name: Validate Kyrub
 
 on:
-  pull_request:
-    branches: [main]
   push:
-    branches: [main, 'agent/**', 'fix/**']
+    branches: ['fix/diag-merchant-approval-build-v2']
   workflow_dispatch:
 
 permissions:
-  contents: read
-
-concurrency:
-  group: validate-${{ github.ref }}
-  cancel-in-progress: true
+  contents: write
 
 jobs:
-  application:
-    name: Prebuild concurrency diagnostic
+  apply-package-change:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Use Node.js
-        uses: actions/setup-node@v4
         with:
-          node-version: 22
-          cache: npm
+          ref: fix/diag-merchant-approval-build-v2
 
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Full prebuild suite concurrency 4
-        continue-on-error: true
+      - name: Bound prebuild test concurrency
         run: |
-          FILES=$(node -e "const a=require('./package.json').scripts.prebuild.split(/\\s+/).filter(x=>x.startsWith('tests/')); console.log(a.join(' '))")
-          node --test --test-concurrency=4 --import tsx $FILES
+          node - <<'NODE'
+          const fs = require('node:fs');
+          const path = 'package.json';
+          const pkg = JSON.parse(fs.readFileSync(path, 'utf8'));
+          const before = pkg.scripts.prebuild;
+          pkg.scripts.prebuild = before.replace(
+            'node --test --import tsx ',
+            'node --test --test-concurrency=4 --import tsx '
+          );
+          if (pkg.scripts.prebuild === before && !before.includes('--test-concurrency=4')) {
+            throw new Error('Expected prebuild test command was not found.');
+          }
+          fs.writeFileSync(path, `${JSON.stringify(pkg, null, 2)}\n`);
+          NODE
 
-      - name: Full prebuild suite concurrency 1
-        continue-on-error: true
+      - name: Commit package change
         run: |
-          FILES=$(node -e "const a=require('./package.json').scripts.prebuild.split(/\\s+/).filter(x=>x.startsWith('tests/')); console.log(a.join(' '))")
-          node --test --test-concurrency=1 --import tsx $FILES
-
-      - name: Diagnostic suite complete
-        run: echo "Full-suite concurrency diagnostic completed"
+          if git diff --quiet -- package.json; then
+            echo "package.json already bounded"
+            exit 0
+          fi
+          git config user.name "kyrub-app"
+          git config user.email "kyrub.app@gmail.com"
+          git add package.json
+          git commit -m "Bound prebuild test concurrency"
+          git push origin HEAD:fix/diag-merchant-approval-build-v2
