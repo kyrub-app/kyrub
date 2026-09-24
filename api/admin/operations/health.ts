@@ -127,6 +127,30 @@ export default async function handler(
     return;
   }
 
+  if (transport === 'promotional-pro') {
+    if (method !== 'POST') {
+      response.status(405).json({ error: 'Método não permitido.', code: 'METHOD_NOT_ALLOWED' });
+      return;
+    }
+    let mapError: ((error: unknown) => HttpErrorResult) | null = null;
+    try {
+      const promotion = await import('../../../server/admin/promotionalPlanService.js');
+      mapError = promotion.mapPromotionalPlanError;
+      const body = bodyRecord(request.body);
+      const result = await promotion.grantFoundingProPromotion(
+        authorization,
+        body.targetUserId
+      );
+      response.status(result.status === 'granted' ? 201 : 200).json(result);
+    } catch (error) {
+      const mapped = mapError
+        ? mapError(error)
+        : unavailable('Não foi possível conceder a cortesia Pro com segurança agora.');
+      response.status(mapped.status).json(mapped.body);
+    }
+    return;
+  }
+
   if (
     transport === 'mercado-livre-platform-status'
     || transport === 'mercado-livre-platform-credentials'
