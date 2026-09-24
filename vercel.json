@@ -53,6 +53,10 @@
       "destination": "/api/health?transport=store-promotions&path=:path*"
     },
     {
+      "source": "/api/marketplace-discovery/public/:slug",
+      "destination": "/api/health?transport=public-storefront&slug=:slug"
+    },
+    {
       "source": "/api/orders/:orderId/attendance-review",
       "destination": "/api/health?transport=local-attendance&path=orders/:orderId/attendance-review"
     },
