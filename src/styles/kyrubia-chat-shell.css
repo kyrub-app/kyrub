@@ -1,0 +1,86 @@
+#kyrub-ai-workspace {
+  min-height: calc(100dvh - 7.25rem) !important;
+  height: calc(100dvh - 7.25rem);
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+#kyrub-ai-workspace > .flex-1.space-y-4 {
+  padding: 4.5rem 1rem 1.25rem !important;
+  scroll-padding-bottom: 7rem;
+}
+
+#kyrub-ai-workspace > .flex-1.space-y-4 > * {
+  width: min(100%, 48rem);
+  margin-left: auto;
+  margin-right: auto;
+}
+
+#kyrub-ai-workspace .rounded-tl-md {
+  border-color: transparent !important;
+  background: transparent !important;
+  padding-left: 0 !important;
+}
+
+#kyrub-ai-workspace > form {
+  position: sticky;
+  bottom: 0;
+  z-index: 25;
+  border-top: 0 !important;
+  background: linear-gradient(to top, rgb(2 6 23) 72%, rgb(2 6 23 / 0));
+  padding: 1rem !important;
+  padding-top: 2rem !important;
+}
+
+#kyrub-ai-workspace > form > [aria-label="Anexos selecionados"],
+#kyrub-ai-workspace > form > .items-end {
+  width: min(100%, 48rem);
+  margin-left: auto;
+  margin-right: auto;
+}
+
+#kyrub-ai-workspace > form > .items-end {
+  border-radius: 1.75rem !important;
+  border-color: rgb(51 65 85 / 0.9) !important;
+  background: rgb(15 23 42 / 0.96) !important;
+  padding: 0.4rem !important;
+  box-shadow: 0 10px 35px rgb(0 0 0 / 0.22);
+}
+
+#kyrub-ai-workspace > form textarea {
+  min-height: 2.75rem !important;
+  padding-top: 0.7rem !important;
+  padding-bottom: 0.7rem !important;
+}
+
+#kyrub-ai-workspace > form button[aria-label="Anexar ou conectar IA"],
+#kyrub-ai-workspace > form button[aria-label="Enviar mensagem para a Kyrubia"] {
+  border-radius: 9999px !important;
+}
+
+#kyrub-ai-workspace > .absolute.right-3.top-3 {
+  position: sticky !important;
+  top: 0.75rem !important;
+  align-self: flex-end;
+  margin-right: 0.75rem;
+  margin-bottom: -2.5rem;
+}
+
+@media (max-width: 640px) {
+  #kyrub-ai-workspace {
+    min-height: calc(100dvh - 6.75rem) !important;
+    height: calc(100dvh - 6.75rem);
+  }
+
+  #kyrub-ai-workspace > .flex-1.space-y-4 {
+    padding-left: 0.75rem !important;
+    padding-right: 0.75rem !important;
+  }
+
+  #kyrub-ai-workspace > form {
+    padding-left: 0.75rem !important;
+    padding-right: 0.75rem !important;
+  }
+}
