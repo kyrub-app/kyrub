@@ -7,12 +7,28 @@ const drawerSource = readFileSync(
   'src/components/modals/B2CCartDrawer.tsx',
   'utf8'
 );
+const approvalBaseSource = readFileSync(
+  'src/components/modals/B2CCartDrawerApprovalBase.tsx',
+  'utf8'
+);
 const checkoutClientSource = readFileSync(
   'src/utils/marketplaceCheckout.ts',
   'utf8'
 );
+const approvedPaymentSource = readFileSync(
+  'src/utils/marketplaceApprovedPayment.ts',
+  'utf8'
+);
 const intentRouterSource = readFileSync(
   'server/payments/paymentIntentRouter.ts',
+  'utf8'
+);
+const checkoutBridgeSource = readFileSync(
+  'server/payments/mercadoPagoCheckoutBridge.ts',
+  'utf8'
+);
+const settlementSource = readFileSync(
+  'server/payments/marketplaceOrderPaymentSettlementService.ts',
   'utf8'
 );
 const vercelActionSource = readFileSync('api/action-execute.ts', 'utf8');
@@ -25,24 +41,42 @@ const materializationSource = readFileSync(
   'utf8'
 );
 
-test('delivery and pickup initiate payment without materializing an order in the browser', () => {
-  assert.match(drawerSource, /fulfillmentType === 'delivery' \|\| fulfillmentType === 'pickup'/);
-  assert.match(drawerSource, /initiateMarketplaceCheckout\(user/);
-  assert.match(drawerSource, /nenhum pedido foi enviado à loja/i);
-  assert.match(drawerSource, /Continuar para pagamento Pix/);
+test('delivery and pickup materialize an unpaid approval-gated order without creating Pix before merchant acceptance', () => {
+  assert.match(
+    approvalBaseSource,
+    /fulfillmentType === 'delivery' \|\| fulfillmentType === 'pickup'/
+  );
+  assert.match(approvalBaseSource, /initiateMarketplaceCheckout\(user/);
+  assert.match(intentRouterSource, /materializePendingMarketplaceOrder/);
+  assert.match(intentRouterSource, /transaction\.set\(orderRef, pendingOrder\)/);
+  assert.match(materializationSource, /checkoutAuthority: 'merchant_approval_required'/);
+  assert.match(materializationSource, /paymentStatus: paid \? 'paid' : 'unpaid'/);
+  assert.match(checkoutBridgeSource, /if \(status === 'pending'\)/);
+  assert.match(checkoutBridgeSource, /approvalRequired: true/);
+  assert.match(checkoutBridgeSource, /if \(approval\.approvalRequired\)/);
+  assert.match(checkoutBridgeSource, /return emptyBridge\(intent\.expiresAt/);
 
-  const marketplaceBranch = drawerSource.indexOf("fulfillmentType === 'delivery'");
-  const directOrderBuild = drawerSource.indexOf('const order = buildCustomerOrder');
-  assert.ok(marketplaceBranch >= 0);
-  assert.ok(directOrderBuild > marketplaceBranch);
-  assert.match(drawerSource.slice(marketplaceBranch, directOrderBuild), /return;/);
+  const approvalGate = checkoutBridgeSource.indexOf('if (approval.approvalRequired)');
+  const providerCreation = checkoutBridgeSource.indexOf('createMercadoPagoPixPayment({');
+  assert.ok(approvalGate >= 0);
+  assert.ok(providerCreation > approvalGate);
 });
 
-test('dine-in keeps the attendance order path', () => {
-  assert.match(drawerSource, /const order = buildCustomerOrder/);
-  assert.match(drawerSource, /await persistCustomerOrder\(order\)/);
-  assert.match(drawerSource, /No local/);
-  assert.match(drawerSource, /aprovação do atendimento/);
+test('dine-in keeps the direct attendance-order path outside the marketplace payment gate', () => {
+  assert.match(approvalBaseSource, /const order = buildCustomerOrder/);
+  assert.match(approvalBaseSource, /await persistCustomerOrder\(order\)/);
+  assert.match(approvalBaseSource, /No local/);
+  assert.doesNotMatch(drawerSource, /const order = buildCustomerOrder/);
+});
+
+test('accepted marketplace order exposes an explicit buyer action that resumes the existing payment intent', () => {
+  assert.match(drawerSource, /approvalGatedOrder\?\.status === 'accepted'/);
+  assert.match(drawerSource, /approvalGatedOrder\?\.paymentStatus !== 'paid'/);
+  assert.match(drawerSource, /resumeMarketplaceApprovedPayment/);
+  assert.match(drawerSource, /Pagar agora por Pix/);
+  assert.match(approvedPaymentSource, /resumeOrderId: input\.orderId\.trim\(\)/);
+  assert.match(intentRouterSource, /if \(status === 'pending'\) throw new Error\('CHECKOUT_ORDER_APPROVAL_REQUIRED'\)/);
+  assert.match(intentRouterSource, /if \(status !== 'accepted'\) throw new Error\('CHECKOUT_ORDER_NOT_PAYABLE'\)/);
 });
 
 test('checkout client sends only item identity and quantity, not authoritative prices', () => {
@@ -51,20 +85,6 @@ test('checkout client sends only item identity and quantity, not authoritative p
   assert.doesNotMatch(checkoutClientSource, /price: item\.product\.price/);
   assert.match(checkoutClientSource, /\/api\/payments\/intents/);
   assert.match(checkoutClientSource, /method: 'pix'/);
-});
-
-test('pending Pix stays inside Kyrub and reuses the same session instead of redirecting or duplicating', () => {
-  assert.match(checkoutClientSource, /Pagamento Pix pendente/);
-  assert.match(checkoutClientSource, /QR Code Pix/);
-  assert.match(checkoutClientSource, /Pix copia e cola/);
-  assert.match(checkoutClientSource, /Copiar código Pix/);
-  assert.match(checkoutClientSource, /Aguardando confirmação do pagamento/);
-  assert.match(checkoutClientSource, /sessionStorage\.setItem/);
-  assert.match(checkoutClientSource, /readPendingPixSession/);
-  assert.match(checkoutClientSource, /if \(pendingCheckout\)/);
-  assert.match(checkoutClientSource, /subscribeToCustomerOrder/);
-  assert.match(checkoutClientSource, /Pagamento confirmado pelo backend/);
-  assert.doesNotMatch(checkoutClientSource, /window\.location\.assign/);
 });
 
 test('backend reconstructs marketplace totals from the published store catalog', () => {
@@ -78,7 +98,7 @@ test('backend reconstructs marketplace totals from the published store catalog',
   assert.match(intentRouterSource, /CHECKOUT_PRODUCT_NOT_AVAILABLE/);
 });
 
-test('coupon pricing is reconstructed on the backend and snapshotted before Pix creation', () => {
+test('coupon pricing is reconstructed on the backend and snapshotted before merchant approval', () => {
   assert.match(intentRouterSource, /resolveStorePromotionForCheckout/);
   assert.match(intentRouterSource, /couponCode: normalizePromotionCode/);
   assert.match(intentRouterSource, /discountTotal = resolvedPromotion\?\.quote\.discountTotal/);
@@ -88,7 +108,7 @@ test('coupon pricing is reconstructed on the backend and snapshotted before Pix 
   assert.doesNotMatch(checkoutClientSource, /discountTotal:\s*input/);
 });
 
-test('backend atomically creates pending PaymentIntent and Payment with idempotency', () => {
+test('backend atomically creates pending PaymentIntent, Payment and approval-gated operational order with idempotency', () => {
   assert.match(intentRouterSource, /status: 'pending'/);
   assert.match(intentRouterSource, /context: 'marketplace'/);
   assert.match(intentRouterSource, /paymentIntents\/\$\{intentId\}/);
@@ -96,8 +116,10 @@ test('backend atomically creates pending PaymentIntent and Payment with idempote
   assert.match(intentRouterSource, /adminDb\.runTransaction/);
   assert.match(intentRouterSource, /existingIntent/);
   assert.match(intentRouterSource, /existingPayment/);
+  assert.match(intentRouterSource, /existingOrder/);
   assert.match(intentRouterSource, /idempotencyKey/);
   assert.match(intentRouterSource, /providerReady: false/);
+  assert.match(intentRouterSource, /transaction\.set\(orderRef, pendingOrder\)/);
   assert.doesNotMatch(intentRouterSource, /simulat|mock.*success|isMockGatewaySuccessful/i);
 });
 
@@ -130,7 +152,14 @@ test('Express and Vercel expose payment intent plus Mercado Pago webhook without
   assert.match(vercelActionSource, /processMercadoPagoWebhook/);
 });
 
-test('paid materialization preserves checkout item metadata', () => {
+test('paid settlement requires the same accepted operational order before marking it paid', () => {
+  assert.match(settlementSource, /if \(order\.status !== 'accepted'\)/);
+  assert.match(settlementSource, /PAYMENT_ORDER_SETTLEMENT_REQUIRES_ACCEPTED_ORDER/);
+  assert.match(settlementSource, /settleExistingMarketplaceOrder/);
+  assert.match(materializationSource, /paymentStatus: 'paid'/);
+});
+
+test('marketplace materialization preserves checkout item metadata', () => {
   assert.match(materializationSource, /note: item\.note \?\? ''/);
   assert.match(materializationSource, /image: item\.image \?\? ''/);
   assert.match(materializationSource, /isService: item\.isService === true/);
