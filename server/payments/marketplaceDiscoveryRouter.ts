@@ -3,6 +3,7 @@ import { verifyFirebaseIdToken } from '../ai/consultantAuth.js';
 import {
   MARKETPLACE_DISCOVERY_STORE_LIMIT,
   loadMarketplaceDiscovery,
+  loadPublicStorefrontBySlug,
 } from './marketplaceDiscoveryService.js';
 
 const clean = (value: unknown): string =>
@@ -42,6 +43,25 @@ const mapError = (error: unknown): { status: number; message: string } => {
 
 export const createMarketplaceDiscoveryRouter = (): Router => {
   const router = Router();
+
+  // Anonymous discovery is deliberately limited to the already-published
+  // storefront projection. The service never returns canonical/private docs.
+  router.get('/public/:slug', async (request, response) => {
+    try {
+      const result = await loadPublicStorefrontBySlug(request.params.slug ?? '');
+      if (!result) {
+        response.status(404).json({ error: 'Vitrine não encontrada ou não publicada.' });
+        return;
+      }
+      response.setHeader('Cache-Control', 'public, max-age=20, stale-while-revalidate=60');
+      response.status(200).json(result);
+    } catch (error) {
+      console.error('[Public storefront]', error);
+      response.status(503).json({
+        error: 'A vitrine está temporariamente indisponível.',
+      });
+    }
+  });
 
   router.post('/', async (request, response) => {
     try {
