@@ -107,7 +107,7 @@ test('management menu selections use a direct navigation authority instead of ac
   );
   assert.match(managementNavigation, /ErpManagementModule/);
   assert.match(mobileErpMenu, /requestErpManagementNavigation/);
-  assert.match(mobileErpMenu, /isManagementModule\(itemId\)/);
+  assert.match(mobileErpMenu, /isMobileErpManagementModule\(itemId\)/);
   assert.match(mobileErpMenu, /selectManagement\(itemId\)/);
   assert.doesNotMatch(
     mobileErpMenu,
