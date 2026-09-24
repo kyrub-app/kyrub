@@ -79,10 +79,11 @@ const promotionalServiceSource = readFileSync(
   'server/admin/promotionalPlanService.ts',
   'utf8'
 );
-const promotionalEndpointSource = readFileSync(
-  'api/admin/store-entitlements/promotional-pro.ts',
+const adminOperationsSource = readFileSync(
+  'api/admin/operations/health.ts',
   'utf8'
 );
+const vercelConfigSource = readFileSync('vercel.json', 'utf8');
 
 const collectApiFunctions = (directory: string): string[] =>
   readdirSync(directory).flatMap(name => {
@@ -300,24 +301,37 @@ test('active plan versions hydrate the action executor with a safe V1 fallback',
   assert.ok(executionCall > hydrationCall);
 });
 
-test('plans and coupons stay within the current Vercel Hobby serverless function budget', () => {
+test('plans and coupons preserve one Vercel Hobby serverless slot as operational headroom', () => {
   const apiFunctions = collectApiFunctions('api');
   assert.ok(
-    apiFunctions.length <= 12,
-    `Expected at most 12 Vercel functions, found ${apiFunctions.length}: ${apiFunctions.join(', ')}`
+    apiFunctions.length <= 11,
+    `Expected at most 11 active Vercel functions so one Hobby slot stays reserved, found ${apiFunctions.length}: ${apiFunctions.join(', ')}`
   );
   assert.ok(apiFunctions.includes('api/plan-control.ts'));
+  assert.equal(
+    apiFunctions.includes('api/admin/store-entitlements/promotional-pro.ts'),
+    false
+  );
   assert.equal(apiFunctions.some(path => path.startsWith('api/coupons/')), false);
   assert.equal(apiFunctions.some(path => path.startsWith('api/plans/')), false);
 });
 
-test('legacy founding Pro endpoint remains a fixed compatibility path, not the new plan authority', () => {
+test('legacy founding Pro URL stays compatible through the admin multiplexer, not a dedicated function', () => {
   assert.match(promotionalServiceSource, /FOUNDING_PRO_PROMOTION_ID = 'founding_pro_001'/);
   assert.match(promotionalServiceSource, /admin\.role !== 'super_admin'/);
   assert.match(promotionalServiceSource, /source: 'promotional'/);
   assert.match(promotionalServiceSource, /benefitType: 'complimentary'/);
   assert.match(promotionalServiceSource, /expiresAt: null/);
   assert.doesNotMatch(promotionalServiceSource, /checkout|subscription|payment/i);
-  assert.match(promotionalEndpointSource, /toUpperCase\(\) !== 'POST'/);
-  assert.match(promotionalEndpointSource, /grantFoundingProPromotion/);
+  assert.match(adminOperationsSource, /transport === 'promotional-pro'/);
+  assert.match(adminOperationsSource, /grantFoundingProPromotion/);
+  assert.match(adminOperationsSource, /result\.status === 'granted' \? 201 : 200/);
+  assert.match(
+    vercelConfigSource,
+    /\/api\/admin\/store-entitlements\/promotional-pro/
+  );
+  assert.match(
+    vercelConfigSource,
+    /\/api\/admin\/operations\/health\?transport=promotional-pro/
+  );
 });
