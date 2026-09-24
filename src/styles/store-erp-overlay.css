@@ -1,0 +1,10 @@
+/*
+ * The store/PDV workspace is intentionally a full-screen operational layer.
+ * WorkspacePrimaryNavigationBridge elevates the global app header and bottom
+ * navigation to z-index 160, so the legacy ERP overlay must sit above that
+ * shell while it is mounted. The original store header remains untouched and
+ * becomes the visible top bar simply by restoring the intended stacking order.
+ */
+div.fixed.inset-0:has(> #erp-main-header) {
+  z-index: 190 !important;
+}
