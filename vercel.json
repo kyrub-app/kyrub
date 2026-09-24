@@ -1,6 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "buildCommand": "npm run build --ignore-scripts && node scripts/normalize-serverless-esm-imports.mjs && npm run lint",
+  "buildCommand": "node scripts/check-vercel-function-budget.mjs && npm run build --ignore-scripts && node scripts/normalize-serverless-esm-imports.mjs && npm run lint",
   "git": {
     "deploymentEnabled": {
       "*": false,
@@ -111,6 +111,10 @@
     {
       "source": "/api/admin/platform-economy",
       "destination": "/api/admin/operations/health?transport=platform-economy"
+    },
+    {
+      "source": "/api/admin/store-entitlements/promotional-pro",
+      "destination": "/api/admin/operations/health?transport=promotional-pro"
     },
     {
       "source": "/staff",
