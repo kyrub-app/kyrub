@@ -6,6 +6,7 @@ import { AdminMercadoPagoOAuthBridge } from './components/admin/AdminMercadoPago
 import { GerencialIntegrationsNativeBridge } from './components/GerencialIntegrationsNativeBridge';
 import { HeaderDiscoveryShortcutActivationBridge } from './components/HeaderDiscoveryShortcutActivationBridge';
 import { KyrubAiConversationCloudSyncGate } from './components/KyrubAiConversationCloudSyncGate';
+import { KyrubiaMarketplaceFilterGuard } from './components/KyrubiaMarketplaceFilterGuard';
 import { OfficialKnowledgeSemanticSetupBridge } from './components/OfficialKnowledgeSemanticSetupBridge';
 import { OfficialKnowledgeSetupBridge } from './components/OfficialKnowledgeSetupBridge';
 import { PdvProductQuickActionsBridge } from './components/pdv/PdvProductQuickActionsBridge';
@@ -32,6 +33,7 @@ import './styles/catalog-category-tree.css';
 import './styles/profile-verification.css';
 import './styles/profile-header-layout.css';
 import './styles/retired-gerencial-route.css';
+import './styles/kyrubia-chat-shell.css';
 
 const rootElement = document.getElementById('root');
 
@@ -66,6 +68,7 @@ createRoot(rootElement).render(
           <OfficialKnowledgeSetupBridge />
           <OfficialKnowledgeSemanticSetupBridge />
           <App />
+          <KyrubiaMarketplaceFilterGuard />
           <WorkspacePrimaryNavigationBridge />
           <HeaderDiscoveryShortcutActivationBridge />
         </>

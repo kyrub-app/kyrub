@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Check, Copy, ExternalLink, Link2, LoaderCircle, ShieldCheck, Trash2, X } from 'lucide-react';
+import { Check, Copy, Link2, LoaderCircle, ShieldCheck, Trash2, X } from 'lucide-react';
 import { onAuthStateChanged, type User } from 'firebase/auth';
 import { auth } from '../utils/firebase';
+import { KYRUBIA_EXTERNAL_BRIDGE_OPEN_EVENT } from '../ai/kyrubiaExternalBridgeEvents';
 import {
   createKyrubiaBridgeSession,
   kyrubiaBridgeMcpUrl,
@@ -35,6 +36,15 @@ export function KyrubiaExternalBridgeControls() {
   const [copied, setCopied] = useState<'url' | 'token' | null>(null);
 
   useEffect(() => onAuthStateChanged(auth, setUser), []);
+
+  useEffect(() => {
+    const handleOpen = () => {
+      if (!auth.currentUser) return;
+      setOpen(true);
+    };
+    window.addEventListener(KYRUBIA_EXTERNAL_BRIDGE_OPEN_EVENT, handleOpen);
+    return () => window.removeEventListener(KYRUBIA_EXTERNAL_BRIDGE_OPEN_EVENT, handleOpen);
+  }, []);
 
   useEffect(() => {
     let currentWorkspace: HTMLElement | null = null;
@@ -123,12 +133,6 @@ export function KyrubiaExternalBridgeControls() {
       : 'border-cyan-500/25 bg-cyan-500/10 text-cyan-100';
 
   return createPortal(<>
-    <div className="mb-3 flex justify-end">
-      <button type="button" onClick={() => setOpen(true)} disabled={!user} className="flex items-center gap-2 rounded-xl border border-cyan-500/25 bg-cyan-500/10 px-3 py-2 text-xs font-black text-cyan-200 disabled:opacity-40">
-        <Link2 className="h-4 w-4" /> Conectar ChatGPT
-      </button>
-    </div>
-
     {open && <div className="fixed inset-0 z-[365] flex items-end justify-center bg-slate-950/85 p-0 backdrop-blur-sm sm:items-center sm:p-4" role="dialog" aria-modal="true" aria-label="Conexão temporária com ChatGPT">
       <div className="max-h-[92dvh] w-full max-w-2xl overflow-y-auto rounded-t-3xl border border-slate-800 bg-slate-950 p-4 shadow-2xl sm:rounded-3xl sm:p-5">
         <header className="flex items-start gap-3">

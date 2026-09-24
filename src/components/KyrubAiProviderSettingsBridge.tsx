@@ -6,6 +6,7 @@ import {
   CircleDollarSign,
   ExternalLink,
   KeyRound,
+  Link2,
   LoaderCircle,
   PlugZap,
   RefreshCw,
@@ -17,6 +18,7 @@ import {
 } from 'lucide-react';
 import { onAuthStateChanged, type User } from 'firebase/auth';
 import { auth } from '../utils/firebase';
+import { openKyrubiaExternalBridge } from '../ai/kyrubiaExternalBridgeEvents';
 import {
   deleteUserAiProviderCredential,
   loadUserAiProviderSettings,
@@ -250,6 +252,13 @@ export function KyrubAiProviderSettingsBridge() {
     }
   };
 
+  const openChatGptBridge = () => {
+    setOpen(false);
+    setAdvancedOpen(false);
+    setDraftKeys({});
+    openKyrubiaExternalBridge();
+  };
+
   if (!host) return null;
 
   const noticeClass = notice?.type === 'success'
@@ -290,7 +299,7 @@ export function KyrubAiProviderSettingsBridge() {
                 </span>
                 <h2 className="mt-1 text-xl font-black text-white">Como você quer usar a IA?</h2>
                 <p className="mt-1 text-xs leading-relaxed text-slate-400">
-                  Você não precisa entender de API para usar a Kyrubia. A conexão com uma IA própria é uma opção avançada.
+                  Você não precisa entender de API para usar a Kyrubia. Aqui ficam, em um só lugar, as opções de motor de IA e as pontes com serviços externos.
                 </p>
               </div>
               <button
@@ -332,7 +341,7 @@ export function KyrubAiProviderSettingsBridge() {
                 </div>
                 <h3 className="mt-3 text-sm font-black text-white">Usar minha própria IA</h3>
                 <p className="mt-1 text-xs leading-relaxed text-slate-400">
-                  Opção avançada para quem já possui acesso de API ao Gemini, OpenAI ou Anthropic e quer usar a própria conta na Kyrubia.
+                  Opção avançada para quem já possui acesso de API ao Gemini, OpenAI ou Anthropic e quer usar a própria conta como motor da Kyrubia.
                 </p>
                 <button
                   type="button"
@@ -344,6 +353,34 @@ export function KyrubAiProviderSettingsBridge() {
                 </button>
               </section>
             </div>
+
+            <section className="mt-3 rounded-3xl border border-cyan-500/25 bg-cyan-500/5 p-4">
+              <div className="flex items-start gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-cyan-500/10 text-cyan-300">
+                  <Link2 className="h-5 w-5" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="text-sm font-black text-white">Conectar ChatGPT à Kyrubia</h3>
+                    <span className="rounded-full border border-cyan-500/25 bg-cyan-500/10 px-2 py-1 text-[9px] font-black uppercase text-cyan-200">
+                      Ponte temporária
+                    </span>
+                  </div>
+                  <p className="mt-1 text-xs leading-relaxed text-slate-400">
+                    Abre a ponte ChatGPT já testada no Kyrub: uma sessão MCP de 2 horas, revogável e com acesso limitado. Isso permite que o ChatGPT converse com sua Kyrubia; não é a mesma coisa que usar uma chave da OpenAI como motor da Kyrubia.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={openChatGptBridge}
+                    disabled={!user}
+                    className="mt-3 inline-flex items-center gap-2 rounded-xl border border-cyan-500/30 bg-cyan-500/10 px-3 py-2 text-[10px] font-black text-cyan-100 disabled:opacity-40"
+                  >
+                    <Link2 className="h-3.5 w-3.5" />
+                    Conectar ChatGPT
+                  </button>
+                </div>
+              </div>
+            </section>
 
             <div className="mt-3 rounded-2xl border border-slate-800 bg-slate-900/70 p-3 text-xs leading-relaxed text-slate-400">
               <strong className="text-slate-200">Importante:</strong> assinar ChatGPT, Gemini ou Claude não significa necessariamente ter acesso de API incluído. A API pode ter cadastro, limites e cobrança próprios definidos pelo provedor.
