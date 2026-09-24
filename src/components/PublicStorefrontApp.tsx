@@ -276,7 +276,7 @@ export function PublicStorefrontApp({ slug }: PublicStorefrontAppProps) {
       storeName: store.name,
     });
     saveStorefrontCart(store.slug, cart);
-    window.location.assign('/?entry=renda');
+    window.location.assign('/?app=1');
   };
 
   if (storeLoading || !loadCompleted) {
@@ -301,7 +301,7 @@ export function PublicStorefrontApp({ slug }: PublicStorefrontAppProps) {
               `A vitrine @${slug} não existe ou ainda não está publicada.`}
           </p>
           <a
-            href="/"
+            href="/?app=1"
             className="mt-6 inline-flex min-h-11 items-center gap-2 rounded-xl bg-orange-500 px-4 text-xs font-black text-slate-950"
           >
             <ArrowLeft className="h-4 w-4" />

@@ -260,7 +260,7 @@ export default function App() {
   const [userCoords, setUserCoords] = useState<{ lat: number; lng: number } | null>(null);
 
   // Mobile Bottom Navigation
-  const [activeTab, setActiveTab] = useState<'perfil' | 'renda' | 'kyrub'>('perfil');
+  const [activeTab, setActiveTab] = useState<'perfil' | 'renda' | 'kyrub'>('renda');
 
   // Slide-overs & ERP Overlays
   const [isWalletOpen, setIsWalletOpen] = useState(false);
