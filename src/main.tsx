@@ -34,6 +34,7 @@ import './styles/profile-verification.css';
 import './styles/profile-header-layout.css';
 import './styles/retired-gerencial-route.css';
 import './styles/kyrubia-chat-shell.css';
+import './styles/store-erp-overlay.css';
 
 const rootElement = document.getElementById('root');
 
