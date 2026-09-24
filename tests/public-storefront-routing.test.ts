@@ -31,6 +31,10 @@ const marketplaceDiscoveryServiceSource = readFileSync(
   'server/payments/marketplaceDiscoveryService.ts',
   'utf8'
 );
+const publicStorefrontServerlessSource = readFileSync(
+  'api/marketplace-discovery/public/[slug].ts',
+  'utf8'
+);
 const operationalEntrySource = readFileSync(
   'src/components/store/OperationalAppEntryBridge.tsx',
   'utf8'
@@ -152,6 +156,16 @@ test('anonymous public storefront endpoint returns only a strict published proje
     marketplaceDiscoveryServiceSource,
     /contact:/
   );
+});
+
+test('Vercel serves the same anonymous public storefront projection through a dedicated function', () => {
+  assert.match(publicStorefrontServerlessSource, /loadPublicStorefrontBySlug/);
+  assert.match(publicStorefrontServerlessSource, /request\.query\?\.slug/);
+  assert.match(publicStorefrontServerlessSource, /X-Kyrub-Route', 'public-storefront/);
+  assert.match(publicStorefrontServerlessSource, /status\(404\)\.json/);
+  assert.match(publicStorefrontServerlessSource, /status\(200\)\.json\(result\)/);
+  assert.match(publicStorefrontServerlessSource, /status\(503\)\.json/);
+  assert.doesNotMatch(publicStorefrontServerlessSource, /verifyFirebaseIdToken/);
 });
 
 test('authenticated storefront enrichments stay behind an authenticated user', () => {
