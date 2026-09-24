@@ -58,7 +58,7 @@ export const executeAuthorizedOrderStatusTransition = async (
           error: 'O pedido foi aceito, mas o pagamento ainda não foi confirmado. Aguarde o Pix antes de iniciar a produção.',
           code: 'PAYMENT_REQUIRED_FOR_PRODUCTION',
         },
-      };
+      } as unknown as OrderStatusExecutionHttpResult;
     }
   } catch (error) {
     console.warn('[Order Status Execution] Payment gate precheck deferred to canonical transition.', error);
