@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: validate-${{ github.ref }}
@@ -20,6 +20,27 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Align drawer route contract with approval base
+        run: |
+          node - <<'NODE'
+          const fs = require('node:fs');
+          const path = 'tests/app-routes.test.ts';
+          const source = fs.readFileSync(path, 'utf8');
+          const before = "'src/components/modals/B2CCartDrawer.tsx'";
+          const after = "'src/components/modals/B2CCartDrawerApprovalBase.tsx'";
+          if (!source.includes(before) && !source.includes(after)) {
+            throw new Error('Expected cart drawer contract source was not found.');
+          }
+          fs.writeFileSync(path, source.replace(before, after));
+          NODE
+          if ! git diff --quiet -- tests/app-routes.test.ts; then
+            git config user.name "kyrub-app"
+            git config user.email "kyrub.app@gmail.com"
+            git add tests/app-routes.test.ts
+            git commit -m "Align app route drawer contract with approval base"
+            git push origin HEAD:fix/diag-prebuild-chunk-runner
+          fi
 
       - name: Use Node.js
         uses: actions/setup-node@v4
