@@ -49,6 +49,13 @@ test('Social reuses the canonical hub as a persistent workspace surface between 
   assert.match(navigationSource, /--kyrub-workspace-header-height/);
   assert.match(navigationSource, /--kyrub-workspace-nav-height/);
   assert.match(navigationSource, /#profile-social-hub-modal > section/);
+  assert.match(navigationSource, /#profile-social-hub-modal > section > header:first-child/);
+  assert.match(navigationSource, /button\[aria-label="Abrir Ofertas"\]/);
+  assert.match(navigationSource, /\[data-profile-square-shortcut-slot="true"\]/);
+  assert.match(
+    navigationSource,
+    /nav\[aria-label="Seções do perfil"\] > button:last-child/
+  );
   assert.match(
     navigationSource,
     /#profile-social-hub-modal button\[aria-label="Fechar meu perfil"\][\s\S]*display: none !important/
@@ -62,13 +69,32 @@ test('leaving Social through the fixed primary navigation closes the social surf
   assert.match(navigationSource, /setSocialActive\(false\)/);
 });
 
-test('header keeps logout isolated on the left and exposes discovery shortcuts on the right', () => {
+test('header discovery shortcuts select Praça or Marketplace after the legacy discovery surface mounts', () => {
   assert.match(navigationSource, /id="header-praca-trigger"/);
   assert.match(navigationSource, /aria-label="Abrir Praça"/);
   assert.match(navigationSource, /id="header-marketplace-trigger"/);
   assert.match(navigationSource, /aria-label="Abrir Marketplace"/);
   assert.match(navigationSource, /pendingKyrubDestination/);
   assert.match(navigationSource, /expectedLabel = pending === 'praca' \? 'praça' : 'ofertas'/);
+  assert.match(navigationSource, /requestAnimationFrame/);
+  assert.match(navigationSource, /attempt >= 24/);
+  assert.match(navigationSource, /target\.click\(\)/);
+});
+
+test('header discovery does not visually promote the Kyrub primary entry while Praça or Marketplace is active', () => {
+  assert.match(navigationSource, /data-kyrub-primary-kyrub-entry/);
+  assert.match(navigationSource, /data-kyrub-header-discovery-active/);
+  assert.match(navigationSource, /allowHeaderDiscoveryClick/);
+  assert.match(navigationSource, /setDiscoveryActive\(destination\)/);
+  assert.match(navigationSource, /aria-pressed=\{discoveryActive === 'praca'\}/);
+  assert.match(navigationSource, /aria-pressed=\{discoveryActive === 'marketplace'\}/);
+  assert.match(
+    navigationSource,
+    /nav\[\$\{PRIMARY_NAV_ATTRIBUTE\}="true"\]\[\$\{DISCOVERY_ACTIVE_ATTRIBUTE\}\][\s\S]*button\[\$\{KYRUB_ENTRY_ATTRIBUTE\}="true"\]/
+  );
+});
+
+test('header keeps logout isolated on the left and exposes discovery shortcuts on the right', () => {
   assert.match(navigationSource, /#app-header button\[title="Sair"\][\s\S]*margin-right: auto/);
   assert.match(navigationSource, /#app-header button\[title="Sair"\] > svg[\s\S]*scaleX\(-1\)/);
 });
