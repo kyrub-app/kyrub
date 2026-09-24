@@ -260,7 +260,7 @@ export default function App() {
   const [userCoords, setUserCoords] = useState<{ lat: number; lng: number } | null>(null);
 
   // Mobile Bottom Navigation
-  const [activeTab, setActiveTab] = useState<'perfil' | 'renda' | 'kyrub'>('perfil');
+  const [activeTab, setActiveTab] = useState<'perfil' | 'renda' | 'kyrub'>('renda');
 
   // Slide-overs & ERP Overlays
   const [isWalletOpen, setIsWalletOpen] = useState(false);
@@ -710,7 +710,7 @@ export default function App() {
     }
     setAtendimentoSpaces([...atendimentoSpaces, trimmed]);
     setNewAtendimentoSpace('');
-    triggerToast(`Espaço "${trimmed}" adicionado!`, 'success');
+    triggerToast(`Espaço \"${trimmed}\" adicionado!`, 'success');
   };
 
   const handleRemoveAtendimentoSpace = (space: string) => {
@@ -719,7 +719,7 @@ export default function App() {
       return;
     }
     setAtendimentoSpaces(atendimentoSpaces.filter(s => s !== space));
-    triggerToast(`Espaço "${space}" removido.`, 'info');
+    triggerToast(`Espaço \"${space}\" removido.`, 'info');
   };
 
   const handleAddProducaoSpace = () => {
@@ -731,7 +731,7 @@ export default function App() {
     }
     setProducaoSpaces([...producaoSpaces, trimmed]);
     setNewProducaoSpace('');
-    triggerToast(`Espaço de produção "${trimmed}" adicionado!`, 'success');
+    triggerToast(`Espaço de produção \"${trimmed}\" adicionado!`, 'success');
   };
 
   const handleRemoveProducaoSpace = (space: string) => {
@@ -740,7 +740,7 @@ export default function App() {
       return;
     }
     setProducaoSpaces(producaoSpaces.filter(s => s !== space));
-    triggerToast(`Espaço de produção "${space}" removido.`, 'info');
+    triggerToast(`Espaço de produção \"${space}\" removido.`, 'info');
   };
 
   const handleSaveStoreProfile = async () => {
@@ -1076,7 +1076,9 @@ if (newMomentPublishToPraca) {
         user: profileName || 'Você',
         avatar: profilePhotoUrl || '',
         time: 'Agora mesmo',
-        content: `🏪 [MOMENTO DA LOJA: ${selectedStoreForMoments.name.toUpperCase()}] ⭐ ${'★'.repeat(newMomentRating)}\n\n"${newMomentContent}"`,
+        content: `🏪 [MOMENTO DA LOJA: ${selectedStoreForMoments.name.toUpperCase()}] ⭐ ${'★'.repeat(newMomentRating)}\
+\
+\"${newMomentContent}\"`,
         likes: 0,
         mediaUrls: newMomentPhoto ? [newMomentPhoto] : undefined
       };
@@ -1134,7 +1136,7 @@ if (newMomentPublishToPraca) {
 
     setProducts(prev => [newProd, ...prev]);
     setNewProductModal(false);
-    triggerToast(`"${newProdName}" cadastrado com sucesso!`, 'success');
+    triggerToast(`\"${newProdName}\" cadastrado com sucesso!`, 'success');
 
     // Reset fields
     setNewProdName('');
@@ -1206,7 +1208,7 @@ if (newMomentPublishToPraca) {
       }
       return [...prev, { product, quantity: 1 }];
     });
-    triggerToast(`"${product.name}" adicionado ao carrinho!`, 'success');
+    triggerToast(`\"${product.name}\" adicionado ao carrinho!`, 'success');
   };
 
   // Filtered stores list by GPS radius & search query
@@ -1875,7 +1877,7 @@ if (newMomentPublishToPraca) {
               user: profileName || 'Você',
               avatar: profilePhotoUrl || '',
               time: 'Agora mesmo',
-              content: `Avaliou a loja ${selectedStoreForMoments.name} com ${'★'.repeat(data.rating)}: "${data.content}"`,
+              content: `Avaliou a loja ${selectedStoreForMoments.name} com ${'★'.repeat(data.rating)}: \"${data.content}\"`,
               likes: 0,
               mediaUrls: data.mediaUrl ? [data.mediaUrl] : undefined
             };
