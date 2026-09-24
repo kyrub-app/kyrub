@@ -22,7 +22,7 @@ test('workspace mounts the primary navigation bridge without changing Renda as t
   );
 });
 
-test('Notas moves to the header while preserving the existing notes tab authority', () => {
+test('Notas stays in the header while preserving the existing notes tab authority', () => {
   assert.match(navigationSource, /CheckSquare/);
   assert.match(navigationSource, /id="header-notes-trigger"/);
   assert.match(navigationSource, /aria-label="Abrir Notas"/);
@@ -35,11 +35,29 @@ test('Notas moves to the header while preserving the existing notes tab authorit
   );
 });
 
-test('bottom Notes entry becomes Social and reuses the canonical native profile hub', () => {
+test('bottom Notes entry is renamed directly to Social without overlaying both labels', () => {
   assert.match(navigationSource, /data-kyrub-social-entry/);
-  assert.match(navigationSource, /content: 'Social'/);
+  assert.match(navigationSource, /label\.textContent = 'Social'/);
+  assert.doesNotMatch(navigationSource, /content: 'Social'/);
+  assert.match(navigationSource, /aria-label', 'Social'/);
+});
+
+test('Social reuses the canonical hub as a persistent workspace surface between header and bottom navigation', () => {
   assert.match(navigationSource, /findProfileTrigger\(\)\?\.click\(\)/);
   assert.match(socialHubSource, /closest\('#header-user-profile-trigger'\)/);
   assert.match(socialHubSource, /setOpen\(true\)/);
-  assert.match(socialHubSource, /document\.addEventListener\('click', handleProfileTrigger, true\)/);
+  assert.match(navigationSource, /--kyrub-workspace-header-height/);
+  assert.match(navigationSource, /--kyrub-workspace-nav-height/);
+  assert.match(navigationSource, /#profile-social-hub-modal > section/);
+  assert.match(
+    navigationSource,
+    /#profile-social-hub-modal button\[aria-label="Fechar meu perfil"\][\s\S]*display: none !important/
+  );
+  assert.match(navigationSource, /nav\[\$\{PRIMARY_NAV_ATTRIBUTE\}="true"\]/);
+});
+
+test('leaving Social through the fixed primary navigation closes the social surface', () => {
+  assert.match(navigationSource, /const closeSocialHub =/);
+  assert.match(navigationSource, /closeSocialHub\(\);/);
+  assert.match(navigationSource, /setSocialActive\(false\)/);
 });
