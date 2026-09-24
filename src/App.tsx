@@ -29,6 +29,7 @@ import { ProfileSocialHubNative } from './components/ProfileSocialHubNative';
 import { ProfileVerificationBridge } from './components/ProfileVerificationBridge';
 import { PublicStorefrontApp } from './components/PublicStorefrontApp';
 import { SocialPublishingBridge } from './components/SocialPublishingBridge';
+import { StorefrontReturnBridge } from './components/StorefrontReturnBridge';
 import { UserNotificationCenterBridge } from './components/UserNotificationCenterBridge';
 import { CatalogCustomizationInheritanceBridge } from './components/store/CatalogCustomizationInheritanceBridge';
 import { CourierLiveTrackingBridge } from './components/store/CourierLiveTrackingBridge';
@@ -246,6 +247,7 @@ function AuthenticatedKyrubApp({ operational }: { operational: boolean }) {
       <UnifiedProductCreateModalBridge />
       <CatalogCustomizationInheritanceBridge />
       {operational && <OperationalAppEntryBridge />}
+      <StorefrontReturnBridge />
       <LegacyApp key={`legacy-cache-${legacyCacheRevision}`} />
       {legacyRefreshing && <KyrubBootstrapScreen />}
     </>
@@ -274,8 +276,19 @@ export default function App() {
     return <PublicStorefrontApp slug={route.slug} />;
   }
 
-  const entry = new URLSearchParams(window.location.search).get('entry');
-  if (route.kind === 'default' && entry === 'renda') {
+  const searchParams = new URLSearchParams(window.location.search);
+  const entry = searchParams.get('entry');
+  const fullAppRequested = searchParams.get('app') === '1';
+
+  // Renda is the public discovery door for Kyrub. Direct visitors and people
+  // arriving from a merchant storefront can explore it before authenticating.
+  // The complete authenticated workspace remains available explicitly via
+  // ?app=1 and preserves the storefront return bridge when there is an origin.
+  if (
+    route.kind === 'default' &&
+    !fullAppRequested &&
+    (entry === null || entry === 'renda')
+  ) {
     return <KyrubRendaEntryApp />;
   }
 
