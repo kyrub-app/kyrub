@@ -6,7 +6,7 @@ const SOCIAL_ENTRY_ATTRIBUTE = 'data-kyrub-social-entry';
 const PRIMARY_NAV_ATTRIBUTE = 'data-kyrub-primary-workspace-nav';
 const ORIGINAL_LABEL_ATTRIBUTE = 'data-kyrub-original-label';
 
-type KyrubDestination = 'praca' | 'marketplace';
+type SocialShortcutDestination = 'praca' | 'marketplace';
 
 const findPrimaryBottomNav = (): HTMLElement | null => {
   const markedNav = document.querySelector(
@@ -48,23 +48,32 @@ const findLegacyNotesButton = (): HTMLButtonElement | null => {
   ) ?? null;
 };
 
-const findKyrubButton = (): HTMLButtonElement | null => {
-  const nav = findPrimaryBottomNav();
-  if (!nav) return null;
-
-  return (
-    Array.from(nav.querySelectorAll('button')).find(button => {
-      const label = (button.textContent ?? '')
-        .trim()
-        .toLocaleLowerCase('pt-BR');
-      return label.includes('kyrub') || label.includes('kyrubia');
-    }) as HTMLButtonElement | undefined
-  ) ?? null;
-};
-
 const findProfileTrigger = (): HTMLButtonElement | null => {
   const trigger = document.getElementById('header-user-profile-trigger');
   return trigger instanceof HTMLButtonElement ? trigger : null;
+};
+
+const findProfileSquareButton = (): HTMLButtonElement | null => {
+  const profileTabs = document.querySelector(
+    '#profile-social-hub-modal nav[aria-label="Seções do perfil"]'
+  );
+  if (!(profileTabs instanceof HTMLElement)) return null;
+
+  return (
+    Array.from(profileTabs.querySelectorAll('button')).find(button =>
+      (button.textContent ?? '')
+        .trim()
+        .toLocaleLowerCase('pt-BR')
+        .startsWith('praça')
+    ) as HTMLButtonElement | undefined
+  ) ?? null;
+};
+
+const findProfileMarketplaceButton = (): HTMLButtonElement | null => {
+  const button = document.querySelector(
+    '#profile-social-hub-modal button[aria-label="Abrir Ofertas"]'
+  );
+  return button instanceof HTMLButtonElement ? button : null;
 };
 
 const closeSocialHub = (): void => {
@@ -102,30 +111,29 @@ export function WorkspacePrimaryNavigationBridge() {
   const [notesActive, setNotesActive] = useState(false);
   const [socialActive, setSocialActive] = useState(false);
   const allowLegacyNotesClick = useRef(false);
-  const pendingKyrubDestination = useRef<KyrubDestination | null>(null);
+  const pendingSocialDestination = useRef<SocialShortcutDestination | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     let currentDiscoveryHost: HTMLDivElement | null = null;
     let currentNotesHost: HTMLDivElement | null = null;
 
-    const activatePendingKyrubDestination = (): void => {
-      const pending = pendingKyrubDestination.current;
+    const activatePendingSocialDestination = (): void => {
+      const pending = pendingSocialDestination.current;
       if (!pending) return;
 
-      const tabs = document.getElementById('social-tabs');
-      if (!(tabs instanceof HTMLElement)) return;
+      if (!document.getElementById('profile-social-hub-modal')) {
+        findProfileTrigger()?.click();
+        return;
+      }
 
-      const expectedLabel = pending === 'praca' ? 'praça' : 'ofertas';
-      const target = Array.from(tabs.querySelectorAll('button')).find(button =>
-        (button.textContent ?? '')
-          .trim()
-          .toLocaleLowerCase('pt-BR')
-          .includes(expectedLabel)
-      );
-      if (!(target instanceof HTMLButtonElement)) return;
+      const target =
+        pending === 'praca'
+          ? findProfileSquareButton()
+          : findProfileMarketplaceButton();
+      if (!target) return;
 
-      pendingKyrubDestination.current = null;
+      pendingSocialDestination.current = null;
       target.click();
       window.scrollTo({ top: 0, behavior: 'smooth' });
     };
@@ -192,7 +200,7 @@ export function WorkspacePrimaryNavigationBridge() {
         notificationHost.style.paddingLeft = '0';
       }
 
-      activatePendingKyrubDestination();
+      activatePendingSocialDestination();
     };
 
     const handleDocumentClick = (event: MouseEvent): void => {
@@ -225,6 +233,7 @@ export function WorkspacePrimaryNavigationBridge() {
         navButton instanceof HTMLButtonElement &&
         navButton.closest('nav') === nav
       ) {
+        pendingSocialDestination.current = null;
         closeSocialHub();
         setSocialActive(false);
         const socialButton = findLegacyNotesButton();
@@ -276,6 +285,7 @@ export function WorkspacePrimaryNavigationBridge() {
     const notesButton = findLegacyNotesButton();
     if (!notesButton) return;
 
+    pendingSocialDestination.current = null;
     closeSocialHub();
     setSocialActive(false);
     normalizeSocialEntry(notesButton, false);
@@ -290,19 +300,31 @@ export function WorkspacePrimaryNavigationBridge() {
     }
   };
 
-  const openKyrubDestination = (destination: KyrubDestination): void => {
-    closeSocialHub();
-    setSocialActive(false);
+  const openSocialDestination = (
+    destination: SocialShortcutDestination
+  ): void => {
     setNotesActive(false);
+    setSocialActive(true);
 
     const socialButton = findLegacyNotesButton();
-    if (socialButton) normalizeSocialEntry(socialButton, false);
+    if (socialButton) normalizeSocialEntry(socialButton, true);
 
-    pendingKyrubDestination.current = destination;
-    const kyrubButton = findKyrubButton();
-    if (!kyrubButton) return;
+    pendingSocialDestination.current = destination;
 
-    kyrubButton.click();
+    if (!document.getElementById('profile-social-hub-modal')) {
+      findProfileTrigger()?.click();
+      return;
+    }
+
+    const target =
+      destination === 'praca'
+        ? findProfileSquareButton()
+        : findProfileMarketplaceButton();
+    if (!target) return;
+
+    pendingSocialDestination.current = null;
+    target.click();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const compactShortcutClassName =
@@ -315,7 +337,7 @@ export function WorkspacePrimaryNavigationBridge() {
           <div className="flex items-center gap-2 kyrub-header-discovery-group">
             <button
               type="button"
-              onClick={() => openKyrubDestination('praca')}
+              onClick={() => openSocialDestination('praca')}
               className={compactShortcutClassName}
               title="Praça"
               aria-label="Abrir Praça"
@@ -325,7 +347,7 @@ export function WorkspacePrimaryNavigationBridge() {
             </button>
             <button
               type="button"
-              onClick={() => openKyrubDestination('marketplace')}
+              onClick={() => openSocialDestination('marketplace')}
               className={compactShortcutClassName}
               title="Marketplace"
               aria-label="Abrir Marketplace"
@@ -481,7 +503,11 @@ export function WorkspacePrimaryNavigationBridge() {
           box-shadow: none !important;
         }
 
-        #profile-social-hub-modal button[aria-label="Fechar meu perfil"] {
+        #profile-social-hub-modal > section > header:first-child,
+        #profile-social-hub-modal button[aria-label="Fechar meu perfil"],
+        #profile-social-hub-modal button[aria-label="Abrir Ofertas"],
+        #profile-social-hub-modal button[aria-label="Abrir Praça"],
+        #profile-social-hub-modal button[title="Praça"] {
           display: none !important;
         }
 
