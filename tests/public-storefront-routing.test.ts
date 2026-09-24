@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import test from 'node:test';
 
 const appSource = readFileSync('src/App.tsx', 'utf8');
+const legacyAppSource = readFileSync('src/LegacyApp.tsx', 'utf8');
 const publicStorefrontSource = readFileSync(
   'src/components/PublicStorefrontApp.tsx',
   'utf8'
@@ -63,7 +64,7 @@ test('application routes public slugs before the Kyrub discovery and authenticat
   );
 });
 
-test('Renda is the canonical direct and storefront discovery door before the full app', () => {
+test('Renda is the canonical direct discovery door before the full app', () => {
   assert.match(appSource, /entry === null \|\| entry === 'renda'/);
   assert.match(appSource, /!fullAppRequested/);
   assert.match(rendaEntrySource, /Comece por aqui/);
@@ -71,6 +72,22 @@ test('Renda is the canonical direct and storefront discovery door before the ful
   assert.match(rendaEntrySource, /Kyrub Freelas/);
   assert.match(rendaEntrySource, /Kyrub Ofertas/);
   assert.match(rendaEntrySource, /window\.location\.assign\('\/\?app=1'\)/);
+});
+
+test('full Kyrub panel opens on Renda and storefront handoff skips the external Renda entry', () => {
+  assert.match(
+    legacyAppSource,
+    /useState<'perfil' \| 'renda' \| 'kyrub'>\('renda'\)/
+  );
+  assert.match(
+    publicStorefrontSource,
+    /window\.location\.assign\('\/\?app=1'\)/
+  );
+  assert.match(publicStorefrontSource, /href="\/\?app=1"/);
+  assert.doesNotMatch(
+    publicStorefrontSource,
+    /window\.location\.assign\('\/\?entry=renda'\)/
+  );
 });
 
 test('storefront origin remains an explicit return path while exploring the full Kyrub app', () => {
