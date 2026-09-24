@@ -41,6 +41,23 @@ const findMarketplaceCloseButton = (): HTMLButtonElement | null => {
   return button instanceof HTMLButtonElement ? button : null;
 };
 
+const closeSocialHub = (): void => {
+  const button = document.querySelector(
+    '#profile-social-hub-modal button[aria-label="Fechar meu perfil"]'
+  );
+  if (button instanceof HTMLButtonElement) button.click();
+};
+
+const closeWalletModal = (): void => {
+  const modal = document.getElementById('modal-wallet');
+  if (!(modal instanceof HTMLElement)) return;
+
+  const closeButton = Array.from(modal.querySelectorAll('button')).find(
+    button => (button.textContent ?? '').trim() === '✕'
+  );
+  if (closeButton instanceof HTMLButtonElement) closeButton.click();
+};
+
 const ensureSocialHubOpen = (): void => {
   if (document.getElementById('profile-social-hub-modal')) return;
   findProfileTrigger()?.click();
@@ -121,9 +138,25 @@ export function HeaderDiscoveryShortcutActivationBridge() {
       }
     };
 
-    const handleHeaderDiscoveryClick = (event: MouseEvent): void => {
+    const handleHeaderShortcutClick = (event: MouseEvent): void => {
       const target = event.target as Element | null;
       if (!target) return;
+
+      const walletTrigger = target.closest(
+        '#header-wallet-balance > button:first-child'
+      );
+      if (walletTrigger instanceof HTMLButtonElement) {
+        clearPendingActivation();
+        closeSocialHub();
+        return;
+      }
+
+      const notesTrigger = target.closest('#header-notes-trigger');
+      if (notesTrigger instanceof HTMLButtonElement) {
+        clearPendingActivation();
+        closeWalletModal();
+        return;
+      }
 
       const trigger = target.closest(
         '#header-praca-trigger, #header-marketplace-trigger'
@@ -134,15 +167,16 @@ export function HeaderDiscoveryShortcutActivationBridge() {
       event.stopPropagation();
       event.stopImmediatePropagation();
 
+      closeWalletModal();
       scheduleActivation(
         trigger.id === 'header-praca-trigger' ? 'praca' : 'marketplace'
       );
     };
 
-    document.addEventListener('click', handleHeaderDiscoveryClick, true);
+    document.addEventListener('click', handleHeaderShortcutClick, true);
 
     return () => {
-      document.removeEventListener('click', handleHeaderDiscoveryClick, true);
+      document.removeEventListener('click', handleHeaderShortcutClick, true);
       clearPendingActivation();
     };
   }, []);
