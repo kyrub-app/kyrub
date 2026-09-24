@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import test from 'node:test';
 
 const appSource = readFileSync('src/App.tsx', 'utf8');
@@ -31,10 +31,7 @@ const marketplaceDiscoveryServiceSource = readFileSync(
   'server/payments/marketplaceDiscoveryService.ts',
   'utf8'
 );
-const publicStorefrontServerlessSource = readFileSync(
-  'api/marketplace-discovery/public/[slug].ts',
-  'utf8'
-);
+const healthSource = readFileSync('api/health.ts', 'utf8');
 const operationalEntrySource = readFileSync(
   'src/components/store/OperationalAppEntryBridge.tsx',
   'utf8'
@@ -158,14 +155,30 @@ test('anonymous public storefront endpoint returns only a strict published proje
   );
 });
 
-test('Vercel serves the same anonymous public storefront projection through a dedicated function', () => {
-  assert.match(publicStorefrontServerlessSource, /loadPublicStorefrontBySlug/);
-  assert.match(publicStorefrontServerlessSource, /request\.query\?\.slug/);
-  assert.match(publicStorefrontServerlessSource, /X-Kyrub-Route', 'public-storefront/);
-  assert.match(publicStorefrontServerlessSource, /status\(404\)\.json/);
-  assert.match(publicStorefrontServerlessSource, /status\(200\)\.json\(result\)/);
-  assert.match(publicStorefrontServerlessSource, /status\(503\)\.json/);
-  assert.doesNotMatch(publicStorefrontServerlessSource, /verifyFirebaseIdToken/);
+test('Vercel serves public storefront through the existing health multiplexer', () => {
+  const config = JSON.parse(vercelConfig) as {
+    rewrites: Array<{ source: string; destination: string }>;
+  };
+  const routes = new Map(
+    config.rewrites.map(rewrite => [rewrite.source, rewrite.destination])
+  );
+
+  assert.equal(
+    routes.get('/api/marketplace-discovery/public/:slug'),
+    '/api/health?transport=public-storefront&slug=:slug'
+  );
+  assert.match(healthSource, /transport === 'public-storefront'/);
+  assert.match(healthSource, /loadPublicStorefrontBySlug\(slug\)/);
+  assert.match(healthSource, /request\.query\?\.slug/);
+  assert.match(healthSource, /X-Kyrub-Route', 'public-storefront/);
+  assert.match(healthSource, /status\(404\)\.json/);
+  assert.match(healthSource, /status\(200\)\.json\(result\)/);
+  assert.match(healthSource, /PUBLIC_STOREFRONT_TRANSPORT_UNAVAILABLE/);
+  assert.equal(
+    existsSync('api/marketplace-discovery/public/[slug].ts'),
+    false,
+    'public storefront must reuse the existing serverless multiplexer instead of consuming another Hobby function slot'
+  );
 });
 
 test('authenticated storefront enrichments stay behind an authenticated user', () => {
