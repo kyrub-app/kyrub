@@ -17,6 +17,7 @@ import { KyrubAiTaskActionBridge } from './components/KyrubAiTaskActionBridge';
 import { KyrubAiWorkspaceBridge } from './components/KyrubAiWorkspaceBridge';
 import { KyrubiaExternalBridgeControls } from './components/KyrubiaExternalBridgeControls';
 import { KyrubiaNamingBridge } from './components/KyrubiaNamingBridge';
+import { KyrubRendaEntryApp } from './components/KyrubRendaEntryApp';
 import { NoteInvitationOutboxBridge } from './components/NoteInvitationOutboxBridge';
 import { PlanCenterApp } from './components/plans/PlanCenterApp';
 import { ProfileIdentityRecoveryBridge } from './components/ProfileIdentityRecoveryBridge';
@@ -271,6 +272,11 @@ export default function App() {
 
   if (route.kind === 'public-storefront') {
     return <PublicStorefrontApp slug={route.slug} />;
+  }
+
+  const entry = new URLSearchParams(window.location.search).get('entry');
+  if (route.kind === 'default' && entry === 'renda') {
+    return <KyrubRendaEntryApp />;
   }
 
   if (route.kind === 'staff-app' && route.legacyRedirect) {
