@@ -5,6 +5,8 @@ import { CheckSquare, Compass, Store as StoreIcon } from 'lucide-react';
 const SOCIAL_ENTRY_ATTRIBUTE = 'data-kyrub-social-entry';
 const PRIMARY_NAV_ATTRIBUTE = 'data-kyrub-primary-workspace-nav';
 const ORIGINAL_LABEL_ATTRIBUTE = 'data-kyrub-original-label';
+const KYRUB_ENTRY_ATTRIBUTE = 'data-kyrub-primary-kyrub-entry';
+const DISCOVERY_ACTIVE_ATTRIBUTE = 'data-kyrub-header-discovery-active';
 
 type KyrubDestination = 'praca' | 'marketplace';
 
@@ -52,14 +54,22 @@ const findKyrubButton = (): HTMLButtonElement | null => {
   const nav = findPrimaryBottomNav();
   if (!nav) return null;
 
-  return (
-    Array.from(nav.querySelectorAll('button')).find(button => {
-      const label = (button.textContent ?? '')
+  const markedButton = nav.querySelector(
+    `button[${KYRUB_ENTRY_ATTRIBUTE}="true"]`
+  );
+  if (markedButton instanceof HTMLButtonElement) return markedButton;
+
+  const button = (
+    Array.from(nav.querySelectorAll('button')).find(candidate => {
+      const label = (candidate.textContent ?? '')
         .trim()
         .toLocaleLowerCase('pt-BR');
       return label.includes('kyrub') || label.includes('kyrubia');
     }) as HTMLButtonElement | undefined
   ) ?? null;
+
+  if (button) button.setAttribute(KYRUB_ENTRY_ATTRIBUTE, 'true');
+  return button;
 };
 
 const findProfileTrigger = (): HTMLButtonElement | null => {
@@ -101,21 +111,18 @@ export function WorkspacePrimaryNavigationBridge() {
   const [notesHost, setNotesHost] = useState<HTMLElement | null>(null);
   const [notesActive, setNotesActive] = useState(false);
   const [socialActive, setSocialActive] = useState(false);
+  const [discoveryActive, setDiscoveryActive] =
+    useState<KyrubDestination | null>(null);
   const allowLegacyNotesClick = useRef(false);
+  const allowHeaderDiscoveryClick = useRef(false);
   const pendingKyrubDestination = useRef<KyrubDestination | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
-    let currentDiscoveryHost: HTMLDivElement | null = null;
-    let currentNotesHost: HTMLDivElement | null = null;
+  const activatePendingKyrubDestination = (attempt = 0): void => {
+    const pending = pendingKyrubDestination.current;
+    if (!pending) return;
 
-    const activatePendingKyrubDestination = (): void => {
-      const pending = pendingKyrubDestination.current;
-      if (!pending) return;
-
-      const tabs = document.getElementById('social-tabs');
-      if (!(tabs instanceof HTMLElement)) return;
-
+    const tabs = document.getElementById('social-tabs');
+    if (tabs instanceof HTMLElement) {
       const expectedLabel = pending === 'praca' ? 'praça' : 'ofertas';
       const target = Array.from(tabs.querySelectorAll('button')).find(button =>
         (button.textContent ?? '')
@@ -123,12 +130,31 @@ export function WorkspacePrimaryNavigationBridge() {
           .toLocaleLowerCase('pt-BR')
           .includes(expectedLabel)
       );
-      if (!(target instanceof HTMLButtonElement)) return;
 
-      pendingKyrubDestination.current = null;
-      target.click();
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    };
+      if (target instanceof HTMLButtonElement) {
+        pendingKyrubDestination.current = null;
+        target.click();
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        return;
+      }
+    }
+
+    if (attempt >= 24) return;
+    window.requestAnimationFrame(() =>
+      activatePendingKyrubDestination(attempt + 1)
+    );
+  };
+
+  const clearDiscoveryNavigation = (): void => {
+    pendingKyrubDestination.current = null;
+    setDiscoveryActive(null);
+    findPrimaryBottomNav()?.removeAttribute(DISCOVERY_ACTIVE_ATTRIBUTE);
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+    let currentDiscoveryHost: HTMLDivElement | null = null;
+    let currentNotesHost: HTMLDivElement | null = null;
 
     const synchronize = (): void => {
       if (cancelled) return;
@@ -142,6 +168,7 @@ export function WorkspacePrimaryNavigationBridge() {
 
       setSocialActive(socialOpen);
       if (notesButton) normalizeSocialEntry(notesButton, socialOpen);
+      findKyrubButton();
 
       if (header instanceof HTMLElement) {
         document.documentElement.style.setProperty(
@@ -192,7 +219,9 @@ export function WorkspacePrimaryNavigationBridge() {
         notificationHost.style.paddingLeft = '0';
       }
 
-      activatePendingKyrubDestination();
+      if (pendingKyrubDestination.current) {
+        activatePendingKyrubDestination();
+      }
     };
 
     const handleDocumentClick = (event: MouseEvent): void => {
@@ -208,6 +237,7 @@ export function WorkspacePrimaryNavigationBridge() {
         event.preventDefault();
         event.stopPropagation();
         event.stopImmediatePropagation();
+        clearDiscoveryNavigation();
         setNotesActive(false);
         setSocialActive(true);
         normalizeSocialEntry(socialEntry, true);
@@ -230,6 +260,10 @@ export function WorkspacePrimaryNavigationBridge() {
         const socialButton = findLegacyNotesButton();
         if (socialButton) normalizeSocialEntry(socialButton, false);
         setNotesActive(false);
+
+        if (!allowHeaderDiscoveryClick.current) {
+          clearDiscoveryNavigation();
+        }
       }
     };
 
@@ -258,7 +292,10 @@ export function WorkspacePrimaryNavigationBridge() {
         socialButton.removeAttribute('data-kyrub-social-active');
       }
 
-      findPrimaryBottomNav()?.removeAttribute(PRIMARY_NAV_ATTRIBUTE);
+      findKyrubButton()?.removeAttribute(KYRUB_ENTRY_ATTRIBUTE);
+      const nav = findPrimaryBottomNav();
+      nav?.removeAttribute(PRIMARY_NAV_ATTRIBUTE);
+      nav?.removeAttribute(DISCOVERY_ACTIVE_ATTRIBUTE);
       currentDiscoveryHost?.remove();
       currentNotesHost?.remove();
       document.documentElement.style.removeProperty(
@@ -277,6 +314,7 @@ export function WorkspacePrimaryNavigationBridge() {
     if (!notesButton) return;
 
     closeSocialHub();
+    clearDiscoveryNavigation();
     setSocialActive(false);
     normalizeSocialEntry(notesButton, false);
 
@@ -298,15 +336,36 @@ export function WorkspacePrimaryNavigationBridge() {
     const socialButton = findLegacyNotesButton();
     if (socialButton) normalizeSocialEntry(socialButton, false);
 
+    const nav = findPrimaryBottomNav();
+    nav?.setAttribute(DISCOVERY_ACTIVE_ATTRIBUTE, destination);
+    setDiscoveryActive(destination);
     pendingKyrubDestination.current = destination;
-    const kyrubButton = findKyrubButton();
-    if (!kyrubButton) return;
 
-    kyrubButton.click();
+    const kyrubButton = findKyrubButton();
+    if (!kyrubButton) {
+      clearDiscoveryNavigation();
+      return;
+    }
+
+    allowHeaderDiscoveryClick.current = true;
+    try {
+      kyrubButton.click();
+    } finally {
+      allowHeaderDiscoveryClick.current = false;
+    }
+
+    window.requestAnimationFrame(() => activatePendingKyrubDestination());
   };
 
   const compactShortcutClassName =
-    'kyrub-header-shortcut flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-800 bg-slate-900 text-slate-400 transition-colors hover:border-orange-500/40 hover:text-orange-300';
+    'kyrub-header-shortcut flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border bg-slate-900 transition-colors';
+
+  const discoveryShortcutClassName = (destination: KyrubDestination) =>
+    `${compactShortcutClassName} ${
+      discoveryActive === destination
+        ? 'border-orange-500/50 text-orange-400'
+        : 'border-slate-800 text-slate-400 hover:border-orange-500/40 hover:text-orange-300'
+    }`;
 
   return (
     <>
@@ -316,9 +375,10 @@ export function WorkspacePrimaryNavigationBridge() {
             <button
               type="button"
               onClick={() => openKyrubDestination('praca')}
-              className={compactShortcutClassName}
+              className={discoveryShortcutClassName('praca')}
               title="Praça"
               aria-label="Abrir Praça"
+              aria-pressed={discoveryActive === 'praca'}
               id="header-praca-trigger"
             >
               <Compass className="h-4 w-4" />
@@ -326,9 +386,10 @@ export function WorkspacePrimaryNavigationBridge() {
             <button
               type="button"
               onClick={() => openKyrubDestination('marketplace')}
-              className={compactShortcutClassName}
+              className={discoveryShortcutClassName('marketplace')}
               title="Marketplace"
               aria-label="Abrir Marketplace"
+              aria-pressed={discoveryActive === 'marketplace'}
               id="header-marketplace-trigger"
             >
               <StoreIcon className="h-4 w-4" />
@@ -428,6 +489,11 @@ export function WorkspacePrimaryNavigationBridge() {
           z-index: 160 !important;
         }
 
+        nav[${PRIMARY_NAV_ATTRIBUTE}="true"][${DISCOVERY_ACTIVE_ATTRIBUTE}]
+          button[${KYRUB_ENTRY_ATTRIBUTE}="true"] {
+          color: rgb(100 116 139) !important;
+        }
+
         button[${SOCIAL_ENTRY_ATTRIBUTE}="true"] {
           color: rgb(100 116 139) !important;
         }
@@ -481,6 +547,10 @@ export function WorkspacePrimaryNavigationBridge() {
           box-shadow: none !important;
         }
 
+        #profile-social-hub-modal > section > header:first-child,
+        #profile-social-hub-modal button[aria-label="Abrir Ofertas"],
+        #profile-social-hub-modal [data-profile-square-shortcut-slot="true"],
+        #profile-social-hub-modal nav[aria-label="Seções do perfil"] > button:last-child,
         #profile-social-hub-modal button[aria-label="Fechar meu perfil"] {
           display: none !important;
         }
