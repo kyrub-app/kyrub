@@ -139,11 +139,14 @@ test('staff can create another order in the selected canonical service location 
   assert.doesNotMatch(inPersonOrderComposerSource, /tableCode:/);
 });
 
-test('Kyrub marketplace delivery and pickup require paid status before KDS', () => {
-  assert.match(workflowSource, /order\.source !== 'customer'/);
-  assert.match(workflowSource, /order\.fulfillmentType === 'dine_in'/);
-  assert.match(workflowSource, /isNinetyNineFoodOrder\(order\)/);
-  assert.match(workflowSource, /order\.paymentStatus === 'paid'/);
+test('approval-gated Kyrub delivery and pickup reach KDS before payment while legacy unpaid orders stay gated', () => {
+  assert.match(workflowSource, /isApprovalGatedKyrubMarketplaceOrder/);
+  assert.match(workflowSource, /order\.sourceChannel === 'kyrub'/);
+  assert.match(workflowSource, /order\.fulfillmentType === 'delivery'/);
+  assert.match(workflowSource, /order\.fulfillmentType === 'pickup'/);
+  assert.match(workflowSource, /order\.operatorId\.trim\(\) === order\.buyerId\.trim\(\)/);
+  assert.match(workflowSource, /if \(isApprovalGatedKyrubMarketplaceOrder\(order\)\) return true/);
+  assert.match(workflowSource, /return order\.paymentStatus === 'paid'/);
 });
 
 test('authoritative paid webhook materializes the marketplace order transactionally', () => {
