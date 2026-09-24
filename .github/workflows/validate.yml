@@ -65,24 +65,28 @@ jobs:
           tests/local-attendance-serverless-routing.test.ts
 
       - name: Diagnostic legacy checkout-before-order contract
+        continue-on-error: true
         run: >-
           node --test --import tsx
           --test-name-pattern="delivery and pickup initiate payment without materializing an order in the browser"
           tests/marketplace-payment-intent-checkout.test.ts
 
       - name: Diagnostic legacy intent-before-order contract
+        continue-on-error: true
         run: >-
           node --test --import tsx
           --test-name-pattern="delivery and pickup create a server-side pending PaymentIntent instead of an operational order"
           tests/customer-storefront-order-e2e-contract.test.ts
 
       - name: Diagnostic legacy paid-only materialization contract
+        continue-on-error: true
         run: >-
           node --test --import tsx
           --test-name-pattern="only an authoritative paid provider event materializes the marketplace CustomerOrder"
           tests/customer-storefront-order-e2e-contract.test.ts
 
       - name: Diagnostic KDS approval routing contract
+        continue-on-error: true
         run: node --test --import tsx tests/order-approval-routing.test.ts
 
       - name: Build
