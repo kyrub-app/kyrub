@@ -172,6 +172,57 @@ export default async function handler(
     return;
   }
 
+  if (transport === 'public-storefront') {
+    response.setHeader('Content-Type', 'application/json; charset=utf-8');
+    response.setHeader('X-Kyrub-Route', 'public-storefront');
+
+    if ((request.method?.toUpperCase() || 'GET') !== 'GET') {
+      response.setHeader('Allow', 'GET');
+      response.setHeader('Cache-Control', 'no-store, max-age=0');
+      response.status(405).json({ error: 'Método não permitido.' });
+      return;
+    }
+
+    const slug = queryValue(request.query?.slug).trim();
+    if (!slug) {
+      response.setHeader('Cache-Control', 'no-store, max-age=0');
+      response.status(400).json({ error: 'Identificador da vitrine não informado.' });
+      return;
+    }
+
+    try {
+      const storefront = await import(
+        '../server/payments/marketplaceDiscoveryService.js'
+      );
+      const result = await storefront.loadPublicStorefrontBySlug(slug);
+      if (!result) {
+        response.setHeader('Cache-Control', 'no-store, max-age=0');
+        response.status(404).json({
+          error: 'Vitrine não encontrada ou ainda não publicada.',
+        });
+        return;
+      }
+
+      response.setHeader(
+        'Cache-Control',
+        'public, max-age=20, stale-while-revalidate=60'
+      );
+      response.status(200).json(result);
+    } catch (error) {
+      console.error(
+        '[public-storefront-transport]',
+        error instanceof Error ? error.message : String(error)
+      );
+      response.setHeader('Cache-Control', 'no-store, max-age=0');
+      response.status(503).json({
+        error: 'A vitrine está temporariamente indisponível.',
+        code: 'PUBLIC_STOREFRONT_TRANSPORT_UNAVAILABLE',
+        requestId: traceId,
+      });
+    }
+    return;
+  }
+
   if (transport === 'local-attendance') {
     response.setHeader('Cache-Control', 'no-store, max-age=0');
     try {
