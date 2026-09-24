@@ -1,26 +1,64 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { CheckSquare } from 'lucide-react';
+import { CheckSquare, Compass, Store as StoreIcon } from 'lucide-react';
 
 const SOCIAL_ENTRY_ATTRIBUTE = 'data-kyrub-social-entry';
+const PRIMARY_NAV_ATTRIBUTE = 'data-kyrub-primary-workspace-nav';
+const ORIGINAL_LABEL_ATTRIBUTE = 'data-kyrub-original-label';
+
+type KyrubDestination = 'praca' | 'marketplace';
 
 const findPrimaryBottomNav = (): HTMLElement | null => {
+  const markedNav = document.querySelector(
+    `nav[${PRIMARY_NAV_ATTRIBUTE}="true"]`
+  );
+  if (markedNav instanceof HTMLElement) return markedNav;
+
   const navs = Array.from(document.querySelectorAll('nav'));
-  return (
-    navs.find(nav => {
-      const text = nav.textContent ?? '';
-      return text.includes('Notas') && text.includes('Renda');
-    }) as HTMLElement | undefined
-  ) ?? null;
+  const nav = navs.find(candidate => {
+    const text = candidate.textContent ?? '';
+    return (
+      text.includes('Renda') &&
+      (text.includes('Notas') || text.includes('Social')) &&
+      (text.includes('Kyrub') || text.includes('Kyrubia'))
+    );
+  });
+
+  if (!(nav instanceof HTMLElement)) return null;
+  nav.setAttribute(PRIMARY_NAV_ATTRIBUTE, 'true');
+  return nav;
 };
 
 const findLegacyNotesButton = (): HTMLButtonElement | null => {
   const nav = findPrimaryBottomNav();
   if (!nav) return null;
+
+  const markedButton = nav.querySelector(
+    `button[${SOCIAL_ENTRY_ATTRIBUTE}="true"]`
+  );
+  if (markedButton instanceof HTMLButtonElement) return markedButton;
+
   return (
     Array.from(nav.querySelectorAll('button')).find(button =>
-      (button.textContent ?? '').trim().toLocaleLowerCase('pt-BR').includes('notas')
+      (button.textContent ?? '')
+        .trim()
+        .toLocaleLowerCase('pt-BR')
+        .includes('notas')
     ) as HTMLButtonElement | undefined
+  ) ?? null;
+};
+
+const findKyrubButton = (): HTMLButtonElement | null => {
+  const nav = findPrimaryBottomNav();
+  if (!nav) return null;
+
+  return (
+    Array.from(nav.querySelectorAll('button')).find(button => {
+      const label = (button.textContent ?? '')
+        .trim()
+        .toLocaleLowerCase('pt-BR');
+      return label.includes('kyrub') || label.includes('kyrubia');
+    }) as HTMLButtonElement | undefined
   ) ?? null;
 };
 
@@ -29,48 +67,121 @@ const findProfileTrigger = (): HTMLButtonElement | null => {
   return trigger instanceof HTMLButtonElement ? trigger : null;
 };
 
+const closeSocialHub = (): void => {
+  const closeButton = document.querySelector(
+    '#profile-social-hub-modal button[aria-label="Fechar meu perfil"]'
+  );
+  if (closeButton instanceof HTMLButtonElement) closeButton.click();
+};
+
+const normalizeSocialEntry = (
+  button: HTMLButtonElement,
+  active: boolean
+): void => {
+  button.setAttribute(SOCIAL_ENTRY_ATTRIBUTE, 'true');
+  button.setAttribute('aria-label', 'Social');
+  button.setAttribute('title', 'Abrir Social');
+  button.setAttribute('aria-pressed', String(active));
+  button.setAttribute('data-kyrub-social-active', String(active));
+
+  const label = button.querySelector('span');
+  if (label instanceof HTMLElement) {
+    if (!label.hasAttribute(ORIGINAL_LABEL_ATTRIBUTE)) {
+      label.setAttribute(
+        ORIGINAL_LABEL_ATTRIBUTE,
+        label.textContent?.trim() || 'Notas'
+      );
+    }
+    if (label.textContent !== 'Social') label.textContent = 'Social';
+  }
+};
+
 export function WorkspacePrimaryNavigationBridge() {
+  const [discoveryHost, setDiscoveryHost] = useState<HTMLElement | null>(null);
   const [notesHost, setNotesHost] = useState<HTMLElement | null>(null);
   const [notesActive, setNotesActive] = useState(false);
+  const [socialActive, setSocialActive] = useState(false);
   const allowLegacyNotesClick = useRef(false);
+  const pendingKyrubDestination = useRef<KyrubDestination | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    let currentHost: HTMLDivElement | null = null;
+    let currentDiscoveryHost: HTMLDivElement | null = null;
+    let currentNotesHost: HTMLDivElement | null = null;
+
+    const activatePendingKyrubDestination = (): void => {
+      const pending = pendingKyrubDestination.current;
+      if (!pending) return;
+
+      const tabs = document.getElementById('social-tabs');
+      if (!(tabs instanceof HTMLElement)) return;
+
+      const expectedLabel = pending === 'praca' ? 'praça' : 'ofertas';
+      const target = Array.from(tabs.querySelectorAll('button')).find(button =>
+        (button.textContent ?? '')
+          .trim()
+          .toLocaleLowerCase('pt-BR')
+          .includes(expectedLabel)
+      );
+      if (!(target instanceof HTMLButtonElement)) return;
+
+      pendingKyrubDestination.current = null;
+      target.click();
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    };
 
     const synchronize = (): void => {
       if (cancelled) return;
 
       const header = document.getElementById('app-header');
+      const nav = findPrimaryBottomNav();
       const notesButton = findLegacyNotesButton();
+      const socialOpen = Boolean(
+        document.getElementById('profile-social-hub-modal')
+      );
 
-      if (notesButton) {
-        notesButton.setAttribute(SOCIAL_ENTRY_ATTRIBUTE, 'true');
-        notesButton.setAttribute('aria-label', 'Social');
-        notesButton.setAttribute('title', 'Abrir Social');
-        setNotesActive(notesButton.className.includes('text-orange-500'));
+      setSocialActive(socialOpen);
+      if (notesButton) normalizeSocialEntry(notesButton, socialOpen);
+
+      if (header instanceof HTMLElement) {
+        document.documentElement.style.setProperty(
+          '--kyrub-workspace-header-height',
+          `${Math.ceil(header.getBoundingClientRect().bottom)}px`
+        );
+      }
+
+      if (nav instanceof HTMLElement) {
+        nav.style.zIndex = '160';
+        document.documentElement.style.setProperty(
+          '--kyrub-workspace-nav-height',
+          `${Math.ceil(window.innerHeight - nav.getBoundingClientRect().top)}px`
+        );
       }
 
       if (!(header instanceof HTMLElement)) {
-        currentHost?.remove();
-        currentHost = null;
+        currentDiscoveryHost?.remove();
+        currentDiscoveryHost = null;
+        currentNotesHost?.remove();
+        currentNotesHost = null;
+        setDiscoveryHost(null);
         setNotesHost(null);
         return;
       }
 
-      if (!currentHost?.isConnected) {
-        currentHost = document.createElement('div');
-        currentHost.id = 'workspace-notes-shortcut-host';
-        currentHost.className = 'flex shrink-0 items-center';
+      if (!currentDiscoveryHost?.isConnected) {
+        currentDiscoveryHost = document.createElement('div');
+        currentDiscoveryHost.id = 'workspace-discovery-shortcuts-host';
+        currentDiscoveryHost.className = 'flex shrink-0 items-center';
+        header.appendChild(currentDiscoveryHost);
+        setDiscoveryHost(currentDiscoveryHost);
+      }
 
-        const wallet = document.getElementById('header-wallet-balance');
-        const actionRow = wallet?.parentElement;
-        if (actionRow?.parentElement === header) {
-          header.insertBefore(currentHost, actionRow);
-        } else {
-          header.appendChild(currentHost);
-        }
-        setNotesHost(currentHost);
+      if (!currentNotesHost?.isConnected) {
+        currentNotesHost = document.createElement('div');
+        currentNotesHost.id = 'workspace-notes-shortcut-host';
+        currentNotesHost.className = 'flex shrink-0 items-center';
+        header.appendChild(currentNotesHost);
+        setNotesHost(currentNotesHost);
       }
 
       const notificationHost = document.getElementById(
@@ -80,6 +191,8 @@ export function WorkspacePrimaryNavigationBridge() {
         notificationHost.style.marginLeft = '0';
         notificationHost.style.paddingLeft = '0';
       }
+
+      activatePendingKyrubDestination();
     };
 
     const handleDocumentClick = (event: MouseEvent): void => {
@@ -96,20 +209,32 @@ export function WorkspacePrimaryNavigationBridge() {
         event.stopPropagation();
         event.stopImmediatePropagation();
         setNotesActive(false);
+        setSocialActive(true);
+        normalizeSocialEntry(socialEntry, true);
 
-        // The native social hub already owns the canonical profile trigger.
-        // Reuse that authority instead of duplicating profile/social state.
-        findProfileTrigger()?.click();
+        if (!document.getElementById('profile-social-hub-modal')) {
+          findProfileTrigger()?.click();
+        }
         return;
       }
 
       const nav = findPrimaryBottomNav();
-      if (nav && target.closest('button')?.closest('nav') === nav) {
+      const navButton = target.closest('button');
+      if (
+        nav &&
+        navButton instanceof HTMLButtonElement &&
+        navButton.closest('nav') === nav
+      ) {
+        closeSocialHub();
+        setSocialActive(false);
+        const socialButton = findLegacyNotesButton();
+        if (socialButton) normalizeSocialEntry(socialButton, false);
         setNotesActive(false);
       }
     };
 
     synchronize();
+    window.addEventListener('resize', synchronize);
     document.addEventListener('click', handleDocumentClick, true);
 
     const observer = new MutationObserver(synchronize);
@@ -118,9 +243,31 @@ export function WorkspacePrimaryNavigationBridge() {
     return () => {
       cancelled = true;
       observer.disconnect();
+      window.removeEventListener('resize', synchronize);
       document.removeEventListener('click', handleDocumentClick, true);
-      findLegacyNotesButton()?.removeAttribute(SOCIAL_ENTRY_ATTRIBUTE);
-      currentHost?.remove();
+
+      const socialButton = findLegacyNotesButton();
+      if (socialButton) {
+        const label = socialButton.querySelector('span');
+        if (label instanceof HTMLElement) {
+          label.textContent =
+            label.getAttribute(ORIGINAL_LABEL_ATTRIBUTE) || 'Notas';
+          label.removeAttribute(ORIGINAL_LABEL_ATTRIBUTE);
+        }
+        socialButton.removeAttribute(SOCIAL_ENTRY_ATTRIBUTE);
+        socialButton.removeAttribute('data-kyrub-social-active');
+      }
+
+      findPrimaryBottomNav()?.removeAttribute(PRIMARY_NAV_ATTRIBUTE);
+      currentDiscoveryHost?.remove();
+      currentNotesHost?.remove();
+      document.documentElement.style.removeProperty(
+        '--kyrub-workspace-header-height'
+      );
+      document.documentElement.style.removeProperty(
+        '--kyrub-workspace-nav-height'
+      );
+      setDiscoveryHost(null);
       setNotesHost(null);
     };
   }, []);
@@ -128,6 +275,10 @@ export function WorkspacePrimaryNavigationBridge() {
   const openNotes = (): void => {
     const notesButton = findLegacyNotesButton();
     if (!notesButton) return;
+
+    closeSocialHub();
+    setSocialActive(false);
+    normalizeSocialEntry(notesButton, false);
 
     allowLegacyNotesClick.current = true;
     try {
@@ -139,14 +290,59 @@ export function WorkspacePrimaryNavigationBridge() {
     }
   };
 
+  const openKyrubDestination = (destination: KyrubDestination): void => {
+    closeSocialHub();
+    setSocialActive(false);
+    setNotesActive(false);
+
+    const socialButton = findLegacyNotesButton();
+    if (socialButton) normalizeSocialEntry(socialButton, false);
+
+    pendingKyrubDestination.current = destination;
+    const kyrubButton = findKyrubButton();
+    if (!kyrubButton) return;
+
+    kyrubButton.click();
+  };
+
+  const compactShortcutClassName =
+    'kyrub-header-shortcut flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-800 bg-slate-900 text-slate-400 transition-colors hover:border-orange-500/40 hover:text-orange-300';
+
   return (
     <>
+      {discoveryHost &&
+        createPortal(
+          <div className="flex items-center gap-2 kyrub-header-discovery-group">
+            <button
+              type="button"
+              onClick={() => openKyrubDestination('praca')}
+              className={compactShortcutClassName}
+              title="Praça"
+              aria-label="Abrir Praça"
+              id="header-praca-trigger"
+            >
+              <Compass className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => openKyrubDestination('marketplace')}
+              className={compactShortcutClassName}
+              title="Marketplace"
+              aria-label="Abrir Marketplace"
+              id="header-marketplace-trigger"
+            >
+              <StoreIcon className="h-4 w-4" />
+            </button>
+          </div>,
+          discoveryHost
+        )}
+
       {notesHost &&
         createPortal(
           <button
             type="button"
             onClick={openNotes}
-            className={`flex h-10 w-10 items-center justify-center rounded-xl border bg-slate-900 transition-colors ${
+            className={`kyrub-header-shortcut flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border bg-slate-900 transition-colors ${
               notesActive
                 ? 'border-orange-500/50 text-orange-400'
                 : 'border-slate-800 text-slate-400 hover:border-orange-500/40 hover:text-orange-300'
@@ -163,30 +359,81 @@ export function WorkspacePrimaryNavigationBridge() {
 
       <style>{`
         #app-header {
-          justify-content: flex-end !important;
+          justify-content: flex-start !important;
           gap: 0.5rem;
+          z-index: 160 !important;
         }
 
         #app-header #header-user-profile-trigger {
           display: none !important;
         }
 
-        #workspace-notes-shortcut-host {
+        #app-header > div:has(#header-wallet-balance) {
+          display: contents !important;
+        }
+
+        #app-header button[title="Sair"] {
+          order: 0;
+          width: 2.5rem;
+          height: 2.5rem;
+          flex: 0 0 2.5rem;
+          margin-right: auto;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 0 !important;
+        }
+
+        #app-header button[title="Sair"] > svg {
+          transform: scaleX(-1);
+        }
+
+        #workspace-discovery-shortcuts-host {
           order: 1;
         }
 
-        #app-header > div:has(#header-wallet-balance) {
+        #header-wallet-balance {
           order: 2;
+          width: 2.5rem;
+          height: 2.5rem;
+          flex: 0 0 2.5rem;
+          justify-content: center;
+          padding: 0 !important;
+        }
+
+        #header-wallet-balance > button:first-child {
+          width: 100%;
+          height: 100%;
+          justify-content: center;
+          padding: 0 !important;
+        }
+
+        #header-wallet-balance > button:first-child > span,
+        #toggle-balance-visibility-btn {
+          display: none !important;
+        }
+
+        #workspace-notes-shortcut-host {
+          order: 3;
         }
 
         #user-notification-center-host {
-          order: 3;
+          order: 4;
           margin-left: 0 !important;
           padding-left: 0 !important;
         }
 
+        nav[${PRIMARY_NAV_ATTRIBUTE}="true"] {
+          position: fixed !important;
+          z-index: 160 !important;
+        }
+
         button[${SOCIAL_ENTRY_ATTRIBUTE}="true"] {
           color: rgb(100 116 139) !important;
+        }
+
+        button[${SOCIAL_ENTRY_ATTRIBUTE}="true"][data-kyrub-social-active="true"] {
+          color: rgb(249 115 22) !important;
         }
 
         button[${SOCIAL_ENTRY_ATTRIBUTE}="true"] > svg {
@@ -203,12 +450,60 @@ export function WorkspacePrimaryNavigationBridge() {
         }
 
         button[${SOCIAL_ENTRY_ATTRIBUTE}="true"] > span {
-          font-size: 0 !important;
+          font-size: 10px !important;
         }
 
-        button[${SOCIAL_ENTRY_ATTRIBUTE}="true"] > span::after {
-          content: 'Social';
-          font-size: 10px;
+        #profile-social-hub-modal {
+          position: fixed !important;
+          top: var(--kyrub-workspace-header-height, 64px) !important;
+          right: 0 !important;
+          bottom: var(--kyrub-workspace-nav-height, 72px) !important;
+          left: 0 !important;
+          width: 100% !important;
+          height: auto !important;
+          min-height: 0 !important;
+          padding: 0 !important;
+          align-items: stretch !important;
+          justify-content: center !important;
+          background: rgb(2 6 23) !important;
+          backdrop-filter: none !important;
+          z-index: 120 !important;
+        }
+
+        #profile-social-hub-modal > section {
+          width: 100% !important;
+          max-width: 48rem !important;
+          height: 100% !important;
+          max-height: none !important;
+          border-radius: 0 !important;
+          border-top: 0 !important;
+          border-bottom: 0 !important;
+          box-shadow: none !important;
+        }
+
+        #profile-social-hub-modal button[aria-label="Fechar meu perfil"] {
+          display: none !important;
+        }
+
+        @media (max-width: 390px) {
+          #app-header {
+            gap: 0.25rem !important;
+            padding-left: 0.5rem !important;
+            padding-right: 0.5rem !important;
+          }
+
+          #app-header button[title="Sair"],
+          #header-wallet-balance,
+          .kyrub-header-shortcut,
+          #canonical-notification-trigger {
+            width: 2.25rem !important;
+            height: 2.25rem !important;
+            flex-basis: 2.25rem !important;
+          }
+
+          .kyrub-header-discovery-group {
+            gap: 0.25rem !important;
+          }
         }
       `}</style>
     </>
