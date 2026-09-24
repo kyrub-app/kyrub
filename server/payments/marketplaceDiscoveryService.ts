@@ -80,6 +80,90 @@ export type PublicStorefrontSnapshot = {
   }>;
 };
 
+const storefrontStatus = (
+  value: unknown
+): PublicStorefrontSnapshot['store']['status'] =>
+  value === 'open' || value === 'delayed' || value === 'closed'
+    ? value
+    : 'closed';
+
+const projectLegacyPublicOffers = (
+  value: unknown,
+  storeId: string
+): PublicStorefrontSnapshot['offers'] => {
+  if (!Array.isArray(value)) return [];
+
+  return value.slice(0, MAX_PUBLIC_STOREFRONT_OFFERS).flatMap(candidate => {
+    if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) {
+      return [];
+    }
+
+    const data = candidate as Record<string, unknown>;
+    const id = clean(data.id);
+    const name = clean(data.name);
+    const category = clean(data.category);
+    const price = data.price;
+    const stock = data.stock;
+
+    if (
+      !id ||
+      !name ||
+      typeof price !== 'number' ||
+      !Number.isFinite(price) ||
+      price < 0 ||
+      typeof stock !== 'number' ||
+      !Number.isFinite(stock) ||
+      stock < 0
+    ) {
+      return [];
+    }
+
+    return [{
+      id,
+      name,
+      description: clean(data.description),
+      price,
+      image: clean(data.image),
+      stock: data.isService === true ? 0 : Math.floor(stock),
+      isService: data.isService === true,
+      category,
+      supplierId: storeId,
+    }];
+  });
+};
+
+const projectCanonicalOffers = (
+  docs: readonly QueryDocumentSnapshot<DocumentData>[],
+  storeId: string
+): PublicStorefrontSnapshot['offers'] =>
+  docs.flatMap(document => {
+    const data = document.data();
+    if (
+      data.listingType !== 'offer' ||
+      data.publicationStatus !== 'published' ||
+      clean(data.storeId) !== storeId
+    ) {
+      return [];
+    }
+
+    const offerId = clean(data.offerId) || clean(data.productId) || document.id;
+    const name = clean(data.name);
+    if (!offerId || !name) return [];
+
+    const imageUrls = stringList(data.imageUrls);
+    return [{
+      id: offerId,
+      name,
+      description: clean(data.description),
+      price: Math.max(0, finiteNumber(data.price)),
+      image: imageUrls[0] ?? clean(data.image),
+      stock: Math.max(0, Math.floor(finiteNumber(data.stock))),
+      isService: data.isService === true,
+      category: clean(data.category),
+      supplierId: storeId,
+    }];
+  });
+
 const countConfirmedPurchases = (
   docs: readonly QueryDocumentSnapshot<DocumentData>[],
   storeId: string,
@@ -162,88 +246,102 @@ export const loadPublicStorefrontBySlug = async (
   const slug = normalizePublicSlug(requestedSlug);
   if (!slug) return null;
 
-  // This endpoint deliberately reads through Admin and returns a strict public
-  // projection. Anonymous clients never receive access to canonical store,
-  // product, order, customer, CRM or inventory documents.
+  // Canonical marketplace listings are authoritative whenever they exist.
+  // The tenant fallback is only for stores that were published before the
+  // canonical marketplace projection existed.
   const storeCandidates = await adminDb
     .collection('marketplace_listings')
     .where('slug', '==', slug)
     .limit(8)
     .get();
 
-  const publishedStoreDocument = storeCandidates.docs.find(document => {
+  const canonicalStoreDocument = storeCandidates.docs.find(document => {
     const data = document.data();
     return (
       data.listingType === 'store' &&
-      data.publicationStatus === 'published' &&
       normalizePublicSlug(data.slug) === slug &&
       clean(data.storeId)
     );
   });
 
-  if (!publishedStoreDocument) return null;
+  if (canonicalStoreDocument) {
+    const storeData = canonicalStoreDocument.data();
+    if (storeData.publicationStatus !== 'published') return null;
 
-  const storeData = publishedStoreDocument.data();
-  const storeId = clean(storeData.storeId);
-  if (!storeId) return null;
+    const storeId = clean(storeData.storeId);
+    if (!storeId) return null;
 
-  const offerCandidates = await adminDb
-    .collection('marketplace_listings')
-    .where('storeId', '==', storeId)
-    .limit(MAX_PUBLIC_STOREFRONT_OFFERS)
+    const offerCandidates = await adminDb
+      .collection('marketplace_listings')
+      .where('storeId', '==', storeId)
+      .limit(MAX_PUBLIC_STOREFRONT_OFFERS)
+      .get();
+
+    return {
+      store: {
+        id: storeId,
+        name: clean(storeData.name),
+        slug,
+        description: clean(storeData.description),
+        logo: clean(storeData.logo),
+        banner: clean(storeData.banner),
+        primaryColor: clean(storeData.primaryColor),
+        address: clean(storeData.address),
+        keywords: stringList(storeData.keywords),
+        status: storefrontStatus(storeData.status),
+      },
+      offers: projectCanonicalOffers(offerCandidates.docs, storeId),
+    };
+  }
+
+  const legacyCandidates = await adminDb
+    .collection('tenants')
+    .where('slug', '==', slug)
+    .limit(8)
     .get();
 
-  const offers = offerCandidates.docs.flatMap(document => {
+  const legacyStoreDocument = legacyCandidates.docs.find(document => {
     const data = document.data();
-    if (
-      data.listingType !== 'offer' ||
-      data.publicationStatus !== 'published' ||
-      clean(data.storeId) !== storeId
-    ) {
-      return [];
-    }
-
-    const offerId = clean(data.offerId) || clean(data.productId) || document.id;
-    const name = clean(data.name);
-    if (!offerId || !name) return [];
-
-    const imageUrls = stringList(data.imageUrls);
-    return [
-      {
-        id: offerId,
-        name,
-        description: clean(data.description),
-        price: Math.max(0, finiteNumber(data.price)),
-        image: imageUrls[0] ?? clean(data.image),
-        stock: Math.max(0, Math.floor(finiteNumber(data.stock))),
-        isService: data.isService === true,
-        category: clean(data.category),
-        supplierId: storeId,
-      },
-    ];
+    return (
+      data.publicationStatus === 'published' &&
+      normalizePublicSlug(data.slug) === slug &&
+      (clean(data.id) || document.id)
+    );
   });
 
-  const status =
-    storeData.status === 'open' ||
-    storeData.status === 'delayed' ||
-    storeData.status === 'closed'
-      ? storeData.status
-      : 'closed';
+  if (!legacyStoreDocument) return null;
+
+  const legacyData = legacyStoreDocument.data();
+  const legacyStoreId = clean(legacyData.id) || legacyStoreDocument.id;
+  if (!legacyStoreId) return null;
+
+  // If this store already has any canonical store projection, that projection
+  // owns publication and slug state. Never let stale tenant data override a
+  // canonical pause, rename or migration.
+  const canonicalAuthority = await adminDb
+    .collection('marketplace_listings')
+    .where('storeId', '==', legacyStoreId)
+    .limit(8)
+    .get();
+  const hasCanonicalStoreAuthority = canonicalAuthority.docs.some(
+    document => document.data().listingType === 'store'
+  );
+  if (hasCanonicalStoreAuthority) return null;
 
   return {
     store: {
-      id: storeId,
-      name: clean(storeData.name),
+      id: legacyStoreId,
+      name: clean(legacyData.name),
       slug,
-      description: clean(storeData.description),
-      logo: clean(storeData.logo),
-      banner: clean(storeData.banner),
-      primaryColor: clean(storeData.primaryColor),
-      address: clean(storeData.address),
-      keywords: stringList(storeData.keywords),
-      status,
+      description: clean(legacyData.description),
+      logo: clean(legacyData.logo),
+      banner: clean(legacyData.banner),
+      primaryColor: clean(legacyData.primaryColor),
+      address: clean(legacyData.address),
+      keywords: stringList(legacyData.keywords),
+      status: storefrontStatus(legacyData.status),
     },
-    offers,
+    offers: projectLegacyPublicOffers(legacyData.publicProducts, legacyStoreId),
   };
 };
 
