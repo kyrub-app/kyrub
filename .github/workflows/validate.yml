@@ -64,6 +64,19 @@ jobs:
           tests/production-health.test.ts
           tests/local-attendance-serverless-routing.test.ts
 
+      - name: Diagnostic force prebuild concurrency 1
+        run: |
+          node - <<'NODE'
+          const fs = require('node:fs');
+          const path = 'package.json';
+          const pkg = JSON.parse(fs.readFileSync(path, 'utf8'));
+          pkg.scripts.prebuild = pkg.scripts.prebuild.replace(
+            '--test-concurrency=4',
+            '--test-concurrency=1'
+          );
+          fs.writeFileSync(path, `${JSON.stringify(pkg, null, 2)}\n`);
+          NODE
+
       - name: Build
         run: npm run build
 
