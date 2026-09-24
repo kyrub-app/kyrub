@@ -3,7 +3,7 @@ import {
   normalizeCanonicalPaymentIntent,
   type CanonicalPaymentIntent,
 } from '../../src/utils/canonicalPaymentIntent.js';
-import { parseCustomerOrder } from '../../src/utils/customerOrders.js';
+import type { CustomerOrder } from '../../src/utils/customerOrders.js';
 import { settleExistingMarketplaceOrder } from '../../src/utils/paymentOrderMaterialization.js';
 
 const clean = (value: unknown): string =>
@@ -11,6 +11,20 @@ const clean = (value: unknown): string =>
 
 const operationalOrderPath = (storeId: string, orderId: string): string =>
   `artifacts/${storeId}/public/data/customerOrders/${orderId}`;
+
+const orderFromServerRecord = (value: Record<string, unknown>): CustomerOrder => {
+  if (
+    !clean(value.id) ||
+    !clean(value.storeId) ||
+    !clean(value.buyerId) ||
+    !Array.isArray(value.items) ||
+    !clean(value.status) ||
+    !clean(value.paymentStatus)
+  ) {
+    throw new Error('PAYMENT_ORDER_SETTLEMENT_ORDER_INVALID');
+  }
+  return value as unknown as CustomerOrder;
+};
 
 export const settleMarketplaceOperationalOrderAfterPayment = async (input: {
   storeId: string;
@@ -39,8 +53,7 @@ export const settleMarketplaceOperationalOrderAfterPayment = async (input: {
     }
 
     const rawOrder = orderSnapshot.data() as Record<string, unknown>;
-    const order = parseCustomerOrder(rawOrder);
-    if (!order) throw new Error('PAYMENT_ORDER_SETTLEMENT_ORDER_INVALID');
+    const order = orderFromServerRecord(rawOrder);
     const intent = normalizeCanonicalPaymentIntent(
       intentSnapshot.data() as CanonicalPaymentIntent
     );
