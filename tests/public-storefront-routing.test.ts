@@ -11,8 +11,24 @@ const storefrontPanelSource = readFileSync(
   'src/components/LegacyStorefrontPanel.tsx',
   'utf8'
 );
-const publicStorefrontDataSource = readFileSync(
-  'src/utils/publicStorefront.ts',
+const rendaEntrySource = readFileSync(
+  'src/components/KyrubRendaEntryApp.tsx',
+  'utf8'
+);
+const returnBridgeSource = readFileSync(
+  'src/components/StorefrontReturnBridge.tsx',
+  'utf8'
+);
+const originContextSource = readFileSync(
+  'src/utils/storefrontOriginContext.ts',
+  'utf8'
+);
+const marketplaceDiscoveryRouterSource = readFileSync(
+  'server/payments/marketplaceDiscoveryRouter.ts',
+  'utf8'
+);
+const marketplaceDiscoveryServiceSource = readFileSync(
+  'server/payments/marketplaceDiscoveryService.ts',
   'utf8'
 );
 const operationalEntrySource = readFileSync(
@@ -33,10 +49,12 @@ const storefrontEventsSource = readFileSync(
 );
 const vercelConfig = readFileSync('vercel.json', 'utf8');
 
-test('application routes public slugs before the authenticated legacy shell', () => {
+test('application routes public slugs before the Kyrub discovery and authenticated shells', () => {
   assert.match(appSource, /resolveKyrubAppRoute\(window\.location\.pathname\)/);
   assert.match(appSource, /route\.kind === 'public-storefront'/);
   assert.match(appSource, /<PublicStorefrontApp slug=\{route\.slug\}/);
+  assert.match(appSource, /fullAppRequested = searchParams\.get\('app'\) === '1'/);
+  assert.match(appSource, /<KyrubRendaEntryApp \/>/);
   assert.match(appSource, /route\.legacyRedirect/);
   assert.match(
     appSource,
@@ -44,24 +62,102 @@ test('application routes public slugs before the authenticated legacy shell', ()
   );
 });
 
-test('the staff route opens the real retailer workspace after Google authentication', () => {
-  assert.match(appSource, /operational=\{route\.kind === 'staff-app'\}/);
-  assert.match(appSource, /<OperationalAppEntryBridge/);
-  assert.match(operationalEntrySource, /onAuthStateChanged/);
-  assert.match(operationalEntrySource, /btn-criar-loja-ofertas/);
-  assert.match(operationalEntrySource, /rendaButton\.click\(\)/);
-  assert.match(operationalEntrySource, /retailerButton\.click\(\)/);
+test('Renda is the canonical direct and storefront discovery door before the full app', () => {
+  assert.match(appSource, /entry === null \|\| entry === 'renda'/);
+  assert.match(appSource, /!fullAppRequested/);
+  assert.match(rendaEntrySource, /Comece por aqui/);
+  assert.match(rendaEntrySource, /Kyrub Entregas/);
+  assert.match(rendaEntrySource, /Kyrub Freelas/);
+  assert.match(rendaEntrySource, /Kyrub Ofertas/);
+  assert.match(rendaEntrySource, /window\.location\.assign\('\/\?app=1'\)/);
 });
 
-test('direct storefront keeps checkout authenticated without advertising staff access', () => {
-  assert.match(publicStorefrontSource, /onAuthStateChanged/);
-  assert.match(publicStorefrontSource, /signInWithPopup/);
-  assert.match(publicStorefrontSource, /subscribeToPublishedStorefrontBySlug/);
+test('storefront origin remains an explicit return path while exploring the full Kyrub app', () => {
+  assert.match(appSource, /<StorefrontReturnBridge \/>/);
+  assert.match(returnBridgeSource, /loadStorefrontOriginContext/);
+  assert.match(returnBridgeSource, /Voltar para \{origin\.storeName\}/);
+  assert.match(returnBridgeSource, /Retomar loja e pedido de origem/);
+  assert.match(returnBridgeSource, /href=\{origin\.path\}/);
+  assert.match(rendaEntrySource, /Voltar para \{origin\.storeName\}/);
+});
+
+test('storefront origin and cart are session-scoped and expire the navigation context', () => {
+  assert.match(originContextSource, /window\.sessionStorage/);
+  assert.match(originContextSource, /MAX_CONTEXT_AGE_MS = 12 \* 60 \* 60 \* 1000/);
+  assert.match(originContextSource, /saveStorefrontOriginContext/);
+  assert.match(originContextSource, /saveStorefrontCart/);
+  assert.match(originContextSource, /loadStorefrontCart/);
+  assert.doesNotMatch(originContextSource, /localStorage/);
+});
+
+test('public storefront loads published projections without requiring login to browse', () => {
+  assert.match(
+    publicStorefrontSource,
+    /\/api\/marketplace-discovery\/public\/\$\{encodeURIComponent\(slug\)\}/
+  );
+  assert.match(publicStorefrontSource, /<LegacyStorefrontPanel/);
   assert.match(publicStorefrontSource, /<StorefrontPanel/);
-  assert.match(publicStorefrontSource, /<B2CCartDrawer/);
-  assert.match(publicStorefrontSource, /public-storefront-google-login/);
+  assert.match(publicStorefrontSource, /loadStorefrontCart\(slug\)/);
+  assert.match(publicStorefrontSource, /saveStorefrontCart\(slug, cart\)/);
+  assert.match(publicStorefrontSource, /id="public-storefront-open-kyrub"/);
+  assert.match(publicStorefrontSource, />\s*Acessar meu Kyrub\s*</);
+  assert.doesNotMatch(publicStorefrontSource, /if \(!user\) return/);
   assert.doesNotMatch(publicStorefrontSource, /Área da equipe/);
-  assert.doesNotMatch(publicStorefrontSource, /href="\/app"/);
+});
+
+test('checkout asks for explicit Google authentication only when identity is required', () => {
+  assert.match(publicStorefrontSource, /signInWithPopup\(auth, googleProvider\)/);
+  assert.match(publicStorefrontSource, /Seu pedido está preservado/);
+  assert.match(publicStorefrontSource, /Entre para continuar/);
+  assert.match(publicStorefrontSource, /Continuar com Google/);
+  assert.match(publicStorefrontSource, /public-storefront-checkout-google-login/);
+  assert.match(publicStorefrontSource, /O login identifica quem está enviando o pedido/);
+  assert.match(publicStorefrontSource, /<B2CCartDrawer/);
+});
+
+test('anonymous public storefront endpoint returns only a strict published projection', () => {
+  assert.match(
+    marketplaceDiscoveryRouterSource,
+    /router\.get\('\/public\/:slug'/
+  );
+  assert.match(
+    marketplaceDiscoveryRouterSource,
+    /loadPublicStorefrontBySlug/
+  );
+  assert.match(
+    marketplaceDiscoveryServiceSource,
+    /collection\('marketplace_listings'\)/
+  );
+  assert.match(
+    marketplaceDiscoveryServiceSource,
+    /data\.listingType === 'store'/
+  );
+  assert.match(
+    marketplaceDiscoveryServiceSource,
+    /data\.publicationStatus === 'published'/
+  );
+  assert.match(
+    marketplaceDiscoveryServiceSource,
+    /data\.listingType !== 'offer'/
+  );
+  assert.match(
+    marketplaceDiscoveryServiceSource,
+    /data\.publicationStatus !== 'published'/
+  );
+  assert.doesNotMatch(
+    marketplaceDiscoveryServiceSource,
+    /ownerEmail:/
+  );
+  assert.doesNotMatch(
+    marketplaceDiscoveryServiceSource,
+    /contact:/
+  );
+});
+
+test('authenticated storefront enrichments stay behind an authenticated user', () => {
+  assert.match(publicStorefrontSource, /user && <BuyerDeliveryTrackingBridge/);
+  assert.match(publicStorefrontSource, /if \(!user \|\| !store\?\.id\) return/);
+  assert.match(publicStorefrontSource, /subscribeToStoreCustomerOrders/);
 });
 
 test('public storefront uses the real logo in the header and a banner carousel', () => {
@@ -97,18 +193,13 @@ test('storefront header owns info and close actions while movement uses fire bes
   assert.doesNotMatch(storefrontPanelSource, />\s*Vitrine pública\s*</);
 });
 
-test('slug lookup reads only published marketplace copies and strips private contact data', () => {
-  assert.match(
-    publicStorefrontDataSource,
-    /where\('publicationStatus', '==', 'published'\)/
-  );
-  assert.match(publicStorefrontDataSource, /listing\.listingType === 'store'/);
-  assert.match(
-    publicStorefrontDataSource,
-    /normalizeStorefrontSlug\(store\.slug\)/
-  );
-  assert.match(publicStorefrontDataSource, /ownerEmail: ''/);
-  assert.match(publicStorefrontDataSource, /contact: ''/);
+test('the staff route opens the real retailer workspace after Google authentication', () => {
+  assert.match(appSource, /operational=\{route\.kind === 'staff-app'\}/);
+  assert.match(appSource, /<OperationalAppEntryBridge/);
+  assert.match(operationalEntrySource, /onAuthStateChanged/);
+  assert.match(operationalEntrySource, /btn-criar-loja-ofertas/);
+  assert.match(operationalEntrySource, /rendaButton\.click\(\)/);
+  assert.match(operationalEntrySource, /retailerButton\.click\(\)/);
 });
 
 test('store configuration receives public sharing and staff access controls', () => {
