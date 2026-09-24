@@ -83,11 +83,19 @@ export const isPendingAttendanceApproval = (order: CustomerOrder): boolean =>
   order.status === 'pending' &&
   !order.operatorId.trim();
 
+const isApprovalGatedKyrubMarketplaceOrder = (order: CustomerOrder): boolean =>
+  order.source === 'customer' &&
+  order.sourceChannel === 'kyrub' &&
+  (order.fulfillmentType === 'delivery' || order.fulfillmentType === 'pickup') &&
+  Boolean(order.buyerId.trim()) &&
+  order.operatorId.trim() === order.buyerId.trim();
+
 export const isOrderVisibleInKds = (order: CustomerOrder): boolean => {
   if (isPendingAttendanceApproval(order)) return false;
   if (order.source !== 'customer') return true;
   if (order.fulfillmentType === 'dine_in') return true;
   if (isNinetyNineFoodOrder(order)) return true;
+  if (isApprovalGatedKyrubMarketplaceOrder(order)) return true;
   return order.paymentStatus === 'paid';
 };
 
