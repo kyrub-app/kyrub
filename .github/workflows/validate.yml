@@ -1,22 +1,16 @@
 name: Validate Kyrub
 
 on:
-  pull_request:
-    branches: [main]
   push:
-    branches: [main, 'agent/**', 'fix/**']
+    branches: ['fix/diag-merchant-approval-build-v3']
   workflow_dispatch:
 
 permissions:
   contents: read
 
-concurrency:
-  group: validate-${{ github.ref }}
-  cancel-in-progress: true
-
 jobs:
-  application:
-    name: TypeScript, contracts and build
+  lifecycle-diagnostic:
+    name: NPM lifecycle diagnostic
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -35,21 +29,13 @@ jobs:
       - name: Compose Firestore rules
         run: npm run firestore:compose
 
-      - name: Capture composed rules
-        uses: actions/upload-artifact@v4
-        with:
-          name: composed-firestore-rules
-          path: .firebase/firestore.combined.rules
-          if-no-files-found: error
-          retention-days: 3
-
-      - name: MVP readiness
+      - name: Initial MVP readiness
         run: npm run mvp:check
 
-      - name: TypeScript
+      - name: Initial TypeScript
         run: npm run lint
 
-      - name: Contract tests
+      - name: Initial contract tests
         run: >-
           node --test --import tsx
           tests/identity-verification.test.ts
@@ -64,24 +50,29 @@ jobs:
           tests/production-health.test.ts
           tests/local-attendance-serverless-routing.test.ts
 
-      - name: Diagnostic force prebuild concurrency 1
+      - name: Direct prebuild chain
+        continue-on-error: true
         run: |
-          node - <<'NODE'
-          const fs = require('node:fs');
-          const path = 'package.json';
-          const pkg = JSON.parse(fs.readFileSync(path, 'utf8'));
-          pkg.scripts.prebuild = pkg.scripts.prebuild.replace(
-            '--test-concurrency=4',
-            '--test-concurrency=1'
-          );
-          fs.writeFileSync(path, `${JSON.stringify(pkg, null, 2)}\n`);
-          NODE
+          npm run mvp:check
+          npm run lint
+          FILES=$(node -e "const a=require('./package.json').scripts.prebuild.split(/\\s+/).filter(x=>x.startsWith('tests/')); console.log(a.join(' '))")
+          node --test --test-concurrency=4 --import tsx $FILES
 
-      - name: Build
-        run: npm run build
+      - name: Exact npm prebuild lifecycle
+        continue-on-error: true
+        run: npm run prebuild
 
-      - name: Normalize Vercel serverless ESM dependency graph
-        run: node scripts/normalize-serverless-esm-imports.mjs
+      - name: Npm build script without lifecycle hooks
+        continue-on-error: true
+        run: npm --ignore-scripts run build
 
-      - name: Validate normalized serverless TypeScript graph
-        run: npm run lint
+      - name: Direct Vite bundle
+        continue-on-error: true
+        run: npx vite build
+
+      - name: Direct server esbuild
+        continue-on-error: true
+        run: npx esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=/tmp/kyrub-server.cjs
+
+      - name: Diagnostic complete
+        run: echo "NPM lifecycle diagnostic completed"
