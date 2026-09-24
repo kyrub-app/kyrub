@@ -10,33 +10,33 @@ const indexSource = readFileSync('index.html', 'utf8');
 const manifestSource = readFileSync('public/site.webmanifest', 'utf8');
 const logoSource = readFileSync('public/kyrub-logo.svg', 'utf8');
 
-test('landing uses the supplied Kyrub brand and focused hero copy', () => {
+test('landing uses the supplied Kyrub brand and makes Renda the guest entry', () => {
   assert.match(landingSource, /src="\/kyrub-logo\.svg"/);
   assert.match(logoSource, /viewBox="0 0 500 500"/);
   assert.match(logoSource, /data:image\/jpeg;base64,/);
   assert.match(logoSource, /<image width="500" height="500"/);
-  assert.match(landingSource, /Um app, muitas possibilidades/);
+  assert.match(landingSource, /data-kyrub-guest-entry="renda"/);
+  assert.match(landingSource, /Renda é a sua porta de entrada/);
   assert.match(
     landingSource,
-    /Tudo o que você precisa para organizar, conectar e crescer\./
+    /Descubra o que você pode fazer, prestar ou vender no Kyrub\./
   );
-  assert.match(
-    landingSource,
-    /O Kyrub reúne ferramentas pessoais, sociais e comerciais/
-  );
+  assert.match(landingSource, /Explore sem compromisso/);
   assert.match(landingSource, /Entrar com Google/);
   assert.doesNotMatch(landingSource, />Entrar com Apple</);
 });
 
-test('about content is moved into an accessible modal', () => {
-  assert.match(landingSource, /Sobre Kyrub/);
-  assert.match(landingSource, /aria-haspopup="dialog"/);
-  assert.match(landingSource, /role="dialog"/);
-  assert.match(landingSource, /aria-modal="true"/);
-  assert.match(landingSource, /event\.key === 'Escape'/);
-  assert.match(landingSource, /document\.body\.style\.overflow = 'hidden'/);
-  assert.match(landingSource, /featureCards\.map/);
-  assert.match(landingSource, /trustItems\.map/);
+test('guest landing preserves browsing context and explicit authentication boundaries', () => {
+  assert.match(landingSource, /loadStorefrontOriginContext/);
+  assert.match(landingSource, /id="guest-return-to-origin-store"/);
+  assert.match(landingSource, /props\.handleLogin\('google'\)/);
+  assert.match(landingSource, /rendaCards\.map/);
+  assert.match(landingSource, /ecosystemCards\.map/);
+  assert.match(
+    landingSource,
+    /window\.history\.pushState\(\{\}, '', '\/staff'\)/
+  );
+  assert.match(landingSource, /props\.setCurrentPath\('\/staff'\)/);
 });
 
 test('document registers the Kyrub logo as favicon and install icon', () => {
