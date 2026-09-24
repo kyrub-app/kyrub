@@ -49,10 +49,6 @@ test('Social reuses the canonical hub as a persistent workspace surface between 
   assert.match(navigationSource, /--kyrub-workspace-header-height/);
   assert.match(navigationSource, /--kyrub-workspace-nav-height/);
   assert.match(navigationSource, /#profile-social-hub-modal > section/);
-  assert.match(
-    navigationSource,
-    /#profile-social-hub-modal button\[aria-label="Fechar meu perfil"\][\s\S]*display: none !important/
-  );
   assert.match(navigationSource, /nav\[\$\{PRIMARY_NAV_ATTRIBUTE\}="true"\]/);
 });
 
@@ -62,13 +58,39 @@ test('leaving Social through the fixed primary navigation closes the social surf
   assert.match(navigationSource, /setSocialActive\(false\)/);
 });
 
-test('header keeps logout isolated on the left and exposes discovery shortcuts on the right', () => {
+test('header Praça and Marketplace delegate to the already-working Social controls', () => {
   assert.match(navigationSource, /id="header-praca-trigger"/);
   assert.match(navigationSource, /aria-label="Abrir Praça"/);
   assert.match(navigationSource, /id="header-marketplace-trigger"/);
   assert.match(navigationSource, /aria-label="Abrir Marketplace"/);
-  assert.match(navigationSource, /pendingKyrubDestination/);
-  assert.match(navigationSource, /expectedLabel = pending === 'praca' \? 'praça' : 'ofertas'/);
+  assert.match(navigationSource, /pendingSocialDestination/);
+  assert.match(navigationSource, /findProfileSquareButton/);
+  assert.match(navigationSource, /nav\[aria-label="Seções do perfil"\]/);
+  assert.match(navigationSource, /findProfileMarketplaceButton/);
+  assert.match(navigationSource, /button\[aria-label="Abrir Ofertas"\]/);
+  assert.match(navigationSource, /target\.click\(\)/);
+  assert.match(socialHubSource, /aria-label="Seções do perfil"/);
+  assert.match(socialHubSource, /aria-label="Abrir Ofertas"/);
+});
+
+test('Social removes the redundant personal heading and duplicate discovery actions from view', () => {
+  assert.match(
+    navigationSource,
+    /#profile-social-hub-modal > section > header:first-child[\s\S]*display: none !important/
+  );
+  assert.match(
+    navigationSource,
+    /#profile-social-hub-modal button\[aria-label="Abrir Ofertas"\]/
+  );
+  assert.match(
+    navigationSource,
+    /#profile-social-hub-modal button\[aria-label="Abrir Praça"\]/
+  );
+  assert.match(socialHubSource, /Meu perfil/);
+  assert.match(socialHubSource, /Painel pessoal/);
+});
+
+test('header keeps logout isolated on the left and exposes discovery shortcuts on the right', () => {
   assert.match(navigationSource, /#app-header button\[title="Sair"\][\s\S]*margin-right: auto/);
   assert.match(navigationSource, /#app-header button\[title="Sair"\] > svg[\s\S]*scaleX\(-1\)/);
 });
