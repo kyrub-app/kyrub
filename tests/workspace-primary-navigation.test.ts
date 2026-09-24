@@ -61,3 +61,25 @@ test('leaving Social through the fixed primary navigation closes the social surf
   assert.match(navigationSource, /closeSocialHub\(\);/);
   assert.match(navigationSource, /setSocialActive\(false\)/);
 });
+
+test('header keeps logout isolated on the left and exposes discovery shortcuts on the right', () => {
+  assert.match(navigationSource, /id="header-praca-trigger"/);
+  assert.match(navigationSource, /aria-label="Abrir Praça"/);
+  assert.match(navigationSource, /id="header-marketplace-trigger"/);
+  assert.match(navigationSource, /aria-label="Abrir Marketplace"/);
+  assert.match(navigationSource, /pendingKyrubDestination/);
+  assert.match(navigationSource, /expectedLabel = pending === 'praca' \? 'praça' : 'ofertas'/);
+  assert.match(navigationSource, /#app-header button\[title="Sair"\][\s\S]*margin-right: auto/);
+  assert.match(navigationSource, /#app-header button\[title="Sair"\] > svg[\s\S]*scaleX\(-1\)/);
+});
+
+test('header shortcut order is Praça, Marketplace, Carteira, Notas and Avisos with narrow-screen compression', () => {
+  assert.match(navigationSource, /#workspace-discovery-shortcuts-host[\s\S]*order: 1/);
+  assert.match(navigationSource, /#header-wallet-balance[\s\S]*order: 2/);
+  assert.match(navigationSource, /#workspace-notes-shortcut-host[\s\S]*order: 3/);
+  assert.match(navigationSource, /#user-notification-center-host[\s\S]*order: 4/);
+  assert.match(navigationSource, /@media \(max-width: 390px\)/);
+  assert.match(navigationSource, /gap: 0\.25rem !important/);
+  assert.match(navigationSource, /width: 2\.25rem !important/);
+  assert.match(navigationSource, /#header-wallet-balance > button:first-child > span,[\s\S]*display: none !important/);
+});
