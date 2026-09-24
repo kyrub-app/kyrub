@@ -6,63 +6,70 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
+
+concurrency:
+  group: validate-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  generate-chunked-runner:
+  application:
+    name: TypeScript, contracts and build
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
         with:
-          ref: fix/diag-prebuild-chunk-runner
+          node-version: 22
+          cache: npm
 
-      - name: Generate chunked prebuild runner
-        run: |
-          node - <<'NODE'
-          const fs = require('node:fs');
-          const pkgPath = 'package.json';
-          const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
-          const source = pkg.scripts.prebuild;
-          const tests = source.split(/\s+/).filter(token => token.startsWith('tests/'));
-          if (tests.length < 100) {
-            throw new Error(`Unexpected prebuild test manifest size: ${tests.length}`);
-          }
+      - name: Install dependencies
+        run: npm ci
 
-          const runner = `import { spawnSync } from 'node:child_process';
+      - name: Compose Firestore rules
+        run: npm run firestore:compose
 
-const TEST_FILES = ${JSON.stringify(tests, null, 2)};
-const CHUNK_SIZE = 25;
-const TEST_CONCURRENCY = 4;
+      - name: Capture composed rules
+        uses: actions/upload-artifact@v4
+        with:
+          name: composed-firestore-rules
+          path: .firebase/firestore.combined.rules
+          if-no-files-found: error
+          retention-days: 3
 
-for (let offset = 0; offset < TEST_FILES.length; offset += CHUNK_SIZE) {
-  const chunk = TEST_FILES.slice(offset, offset + CHUNK_SIZE);
-  const block = Math.floor(offset / CHUNK_SIZE) + 1;
-  console.log(\`[prebuild] Running contract block \${block} (\${chunk.length} files)\`);
-  const result = spawnSync(
-    process.execPath,
-    ['--test', \`--test-concurrency=\${TEST_CONCURRENCY}\`, '--import', 'tsx', ...chunk],
-    { stdio: 'inherit', env: process.env }
-  );
-  if (result.error) throw result.error;
-  if (result.status !== 0) process.exit(result.status ?? 1);
-}
-`;
+      - name: MVP readiness
+        run: npm run mvp:check
 
-          fs.writeFileSync('scripts/run-prebuild-tests.mjs', runner);
-          pkg.scripts.prebuild =
-            'npm run mvp:check && npm run lint && node scripts/run-prebuild-tests.mjs';
-          fs.writeFileSync(pkgPath, `${JSON.stringify(pkg, null, 2)}\n`);
-          NODE
+      - name: TypeScript
+        run: npm run lint
 
-      - name: Commit generated runner
-        run: |
-          git config user.name "kyrub-app"
-          git config user.email "kyrub.app@gmail.com"
-          git add package.json scripts/run-prebuild-tests.mjs
-          if git diff --cached --quiet; then
-            echo "Chunked prebuild runner already generated"
-            exit 0
-          fi
-          git commit -m "Run prebuild contracts in isolated chunks"
-          git push origin HEAD:fix/diag-prebuild-chunk-runner
+      - name: Contract tests
+        run: >-
+          node --test --import tsx
+          tests/identity-verification.test.ts
+          tests/passkey-security.test.ts
+          tests/work-eligibility-enforcement.test.ts
+          tests/kyrubia-cloud-history-contract.test.ts
+          tests/kyrubia-list-products-category-semantics.test.ts
+          tests/kyrubia-operational-read-manual-bypass.test.ts
+          tests/kyrubia-product-publication-by-id.test.ts
+          tests/gamification-redemption-repository.test.ts
+          tests/app-error-boundary.test.ts
+          tests/production-health.test.ts
+          tests/local-attendance-serverless-routing.test.ts
+
+      - name: Prebuild contract suite
+        run: node scripts/run-prebuild-tests.mjs
+
+      - name: Bundle application
+        run: npm --ignore-scripts run build
+
+      - name: Normalize Vercel serverless ESM dependency graph
+        run: node scripts/normalize-serverless-esm-imports.mjs
+
+      - name: Validate normalized serverless TypeScript graph
+        run: npm run lint
