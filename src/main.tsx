@@ -4,6 +4,7 @@ import App from './App.tsx';
 import { AppErrorBoundary } from './components/AppErrorBoundary';
 import { AdminMercadoPagoOAuthBridge } from './components/admin/AdminMercadoPagoOAuthBridge';
 import { GerencialIntegrationsNativeBridge } from './components/GerencialIntegrationsNativeBridge';
+import { HeaderDiscoveryShortcutActivationBridge } from './components/HeaderDiscoveryShortcutActivationBridge';
 import { KyrubAiConversationCloudSyncGate } from './components/KyrubAiConversationCloudSyncGate';
 import { OfficialKnowledgeSemanticSetupBridge } from './components/OfficialKnowledgeSemanticSetupBridge';
 import { OfficialKnowledgeSetupBridge } from './components/OfficialKnowledgeSetupBridge';
@@ -66,6 +67,7 @@ createRoot(rootElement).render(
           <OfficialKnowledgeSemanticSetupBridge />
           <App />
           <WorkspacePrimaryNavigationBridge />
+          <HeaderDiscoveryShortcutActivationBridge />
         </>
       </KyrubAiConversationCloudSyncGate>
     </AppErrorBoundary>
