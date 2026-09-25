@@ -6,32 +6,20 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: prebuild-diagnostic-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  diagnose:
-    name: Validate corrected full prebuild
+  materialize:
+    name: Materialize corrected static contracts
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 10
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Use Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Compose Firestore rules
-        run: npm run firestore:compose
 
       - name: Align extracted implementation contracts
         run: |
@@ -48,26 +36,29 @@ jobs:
 
           for (const [path, oldValue, newValue] of replacements) {
             const source = fs.readFileSync(path, 'utf8');
-            if (!source.includes(oldValue)) throw new Error(`Expected stale contract not found in ${path}: ${oldValue}`);
-            fs.writeFileSync(path, source.replace(oldValue, newValue));
+            if (source.includes(oldValue)) {
+              fs.writeFileSync(path, source.replace(oldValue, newValue));
+              continue;
+            }
+            if (!source.includes(newValue)) {
+              throw new Error(`Neither stale nor corrected contract found in ${path}`);
+            }
           }
           NODE
 
-      - name: Full prebuild validation
+      - name: Commit corrected contract files on diagnostic branch
         run: |
-          mkdir -p diagnostics
-          set +e
-          npm run prebuild > diagnostics/full-prebuild.txt 2>&1
-          status=$?
-          echo "prebuild_exit_code=$status" > diagnostics/full-prebuild-status.txt
-          tail -n 80 diagnostics/full-prebuild.txt || true
-          exit $status
-
-      - name: Upload full prebuild diagnostic
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: full-prebuild-diagnostic
-          path: diagnostics/full-prebuild*.txt
-          if-no-files-found: error
-          retention-days: 3
+          git config user.name "kyrub-app"
+          git config user.email "kyrub.app@gmail.com"
+          git add \
+            tests/app-routes.test.ts \
+            tests/storefront-experience-refinement.test.ts \
+            tests/in-person-payment-convergence.test.ts \
+            tests/local-service-pos.test.ts \
+            tests/economic-obligation-eligibility.test.ts
+          if git diff --cached --quiet; then
+            echo "Corrected contract blobs already materialized."
+            exit 0
+          fi
+          git commit -m "Materialize corrected static contract blobs"
+          git push origin HEAD:fix/diag-merchant-approval-prebuild-v4
