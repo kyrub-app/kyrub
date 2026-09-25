@@ -1,0 +1,348 @@
+name: Apply KDS omnichannel origin authority
+
+on:
+  push:
+    branches: [feat/profile-react-rebuild]
+    paths: [.github/workflows/apply-kds-omnichannel-origin.yml]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/profile-react-rebuild
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Apply omnichannel origin model
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path: str, old: str, new: str):
+              p = Path(path)
+              text = p.read_text()
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{path}: expected exactly one match, found {count}')
+              p.write_text(text.replace(old, new, 1))
+
+          replace_once(
+              'shared/channelAvailabilityFiscalFoundation.ts',
+              "export type CommerceChannel = 'kyrub' | 'mercado_livre' | '99food' | 'other';",
+              """export type CommerceChannel =
+            | 'kyrub'
+            | 'mercado_livre'
+            | '99food'
+            | 'shopee'
+            | 'ifood'
+            | 'instagram'
+            | 'erp'
+            | 'other';"""
+          )
+
+          replace_once(
+              'src/utils/customerOrders.ts',
+              """const isCommercialChannel = (
+            value: unknown
+          ): value is CustomerOrderCommercialChannel =>
+            value === 'kyrub' ||
+            value === 'mercado_livre' ||
+            value === '99food' ||
+            value === 'other';""",
+              """const isCommercialChannel = (
+            value: unknown
+          ): value is CustomerOrderCommercialChannel =>
+            value === 'kyrub' ||
+            value === 'mercado_livre' ||
+            value === '99food' ||
+            value === 'shopee' ||
+            value === 'ifood' ||
+            value === 'instagram' ||
+            value === 'erp' ||
+            value === 'other';"""
+          )
+
+          store_connections = Path('src/utils/storeConnections.ts')
+          text = store_connections.read_text()
+          anchor = """export const loadStoreConnectionOnboarding = async (
+            user: User,
+            storeId: string
+          ): Promise<StoreConnectionOnboardingSnapshot> =>
+            authorizedFetch<StoreConnectionOnboardingSnapshot>(user, `/api/store-connections/${encoded(storeId)}`);
+          """
+          addition = anchor + """
+          export const getConnectedStoreChannels = (
+            snapshot: StoreConnectionOnboardingSnapshot
+          ): KyrubCommerceChannel[] =>
+            [...new Set(
+              snapshot.connections
+                .filter(connection => connection.status === 'connected')
+                .map(connection => connection.channel)
+            )];
+          """
+          if text.count(anchor) != 1:
+              raise SystemExit('src/utils/storeConnections.ts: onboarding anchor mismatch')
+          store_connections.write_text(text.replace(anchor, addition, 1))
+
+          workflow = Path('src/utils/orderWorkflow.ts')
+          text = workflow.read_text()
+          import_anchor = """import type {
+            CustomerOrder,
+            CustomerOrderStatus,
+          } from './customerOrders';
+          """
+          if text.count(import_anchor) != 1:
+              raise SystemExit('orderWorkflow import anchor mismatch')
+          text = text.replace(
+              import_anchor,
+              import_anchor + "import type { KyrubCommerceChannel } from '../../shared/storeConnections';\n",
+              1,
+          )
+          text = text.replace("  group: 'attendance' | 'kyrub' | 'marketplace' | 'internal';", "  group: 'kyrub' | 'marketplace' | 'internal';", 1)
+          normalize_block = """const normalize = (value: string): string =>
+            value.trim().toLocaleUpperCase('pt-BR');
+
+          """
+          if normalize_block not in text:
+              raise SystemExit('orderWorkflow normalize block missing')
+          text = text.replace(normalize_block, '', 1)
+          start = text.find('const attendanceEnvironmentFor = (')
+          end = text.find('const orderActivityAction = (')
+          if start < 0 or end < 0 or end <= start:
+              raise SystemExit('orderWorkflow origin block boundaries missing')
+          origin_block = """const EXTERNAL_ORIGIN_OPTIONS: Record<KyrubCommerceChannel, OrderOriginOption> = {
+            mercado_livre: { id: 'marketplace:mercado_livre', label: 'Mercado Livre', group: 'marketplace' },
+            '99food': { id: 'marketplace:99food', label: '99Food', group: 'marketplace' },
+            shopee: { id: 'marketplace:shopee', label: 'Shopee', group: 'marketplace' },
+            ifood: { id: 'marketplace:ifood', label: 'iFood', group: 'marketplace' },
+            instagram: { id: 'marketplace:instagram', label: 'Instagram', group: 'marketplace' },
+            erp: { id: 'marketplace:erp', label: 'ERP', group: 'marketplace' },
+            other: { id: 'marketplace:other', label: 'Outro canal', group: 'marketplace' },
+          };
+
+          const KYRUB_ORIGIN_OPTION: OrderOriginOption = {
+            id: 'kyrub:native',
+            label: 'Kyrub',
+            group: 'kyrub',
+          };
+
+          const PDV_ORIGIN_OPTION: OrderOriginOption = {
+            id: 'internal:pdv',
+            label: 'PDV / Staff',
+            group: 'internal',
+          };
+
+          const INTERNAL_ORIGIN_OPTION: OrderOriginOption = {
+            id: 'internal:operation',
+            label: 'Operação interna',
+            group: 'internal',
+          };
+
+          export const getOrderOrigin = (order: CustomerOrder): OrderOriginOption => {
+            if (order.sourceChannel && order.sourceChannel !== 'kyrub') {
+              return EXTERNAL_ORIGIN_OPTIONS[order.sourceChannel];
+            }
+
+            if (isNinetyNineFoodOrder(order)) {
+              return EXTERNAL_ORIGIN_OPTIONS['99food'];
+            }
+
+            if (order.source === 'staff') {
+              return PDV_ORIGIN_OPTION;
+            }
+
+            if (order.source === 'customer' || order.sourceChannel === 'kyrub') {
+              return KYRUB_ORIGIN_OPTION;
+            }
+
+            return INTERNAL_ORIGIN_OPTION;
+          };
+
+          export const buildOrderOriginOptions = (
+            _orders: CustomerOrder[],
+            _attendanceSpaces: string[] = [],
+            connectedChannels: KyrubCommerceChannel[] = []
+          ): OrderOriginOption[] => {
+            const connected = [...new Set(connectedChannels)]
+              .map(channel => EXTERNAL_ORIGIN_OPTIONS[channel])
+              .sort((left, right) => left.label.localeCompare(right.label, 'pt-BR'));
+            return [KYRUB_ORIGIN_OPTION, PDV_ORIGIN_OPTION, ...connected];
+          };
+
+          """
+          workflow.write_text(text[:start] + origin_block + text[end:])
+
+          inbox = Path('src/components/customer/CustomerOrderInbox.tsx')
+          text = inbox.read_text()
+          text = text.replace(
+              "import { useEffect, useMemo, useState } from 'react';\n",
+              "import { useEffect, useMemo, useState } from 'react';\nimport { onAuthStateChanged } from 'firebase/auth';\nimport type { KyrubCommerceChannel } from '../../../shared/storeConnections';\n",
+              1,
+          )
+          order_import = """import {
+            buildOrderOriginOptions,
+            getOrderOrigin,
+            type OrderDecision,
+            type OrderDeliveryProvider,
+          } from '../../utils/orderWorkflow';
+          """
+          if text.count(order_import) != 1:
+              raise SystemExit('CustomerOrderInbox order import anchor mismatch')
+          text = text.replace(
+              order_import,
+              order_import + """import { auth } from '../../utils/firebase';
+          import {
+            getConnectedStoreChannels,
+            loadStoreConnectionOnboarding,
+          } from '../../utils/storeConnections';
+          """,
+              1,
+          )
+          state_anchor = """  const [originFilter, setOriginFilter] = useState('all');
+            const [stationFilter, setStationFilter] = useState('all');
+          """
+          if text.count(state_anchor) != 1:
+              raise SystemExit('CustomerOrderInbox state anchor mismatch')
+          text = text.replace(
+              state_anchor,
+              state_anchor + """  const [connectedOriginChannels, setConnectedOriginChannels] = useState<KyrubCommerceChannel[]>([]);
+          """,
+              1,
+          )
+          options_anchor = """  const originOptions = useMemo(
+            () => buildOrderOriginOptions(orders, attendanceSpaces),
+            [attendanceSpaces, orders]
+          );
+          """
+          if text.count(options_anchor) != 1:
+              raise SystemExit('CustomerOrderInbox origin options anchor mismatch')
+          connection_effect = """  useEffect(() => {
+            let disposed = false;
+
+            const refreshConnectedOriginChannels = async (): Promise<void> => {
+              const user = auth.currentUser;
+              if (!user) {
+                if (!disposed) setConnectedOriginChannels([]);
+                return;
+              }
+              try {
+                const snapshot = await loadStoreConnectionOnboarding(user, storeId);
+                if (!disposed) {
+                  setConnectedOriginChannels(getConnectedStoreChannels(snapshot));
+                }
+              } catch (error) {
+                console.warn('Canais conectados indisponíveis para o filtro do KDS.', error);
+              }
+            };
+
+            const unsubscribeAuth = onAuthStateChanged(auth, () => {
+              void refreshConnectedOriginChannels();
+            });
+            const handleFocus = (): void => {
+              void refreshConnectedOriginChannels();
+            };
+            window.addEventListener('focus', handleFocus);
+            void refreshConnectedOriginChannels();
+
+            return () => {
+              disposed = true;
+              unsubscribeAuth();
+              window.removeEventListener('focus', handleFocus);
+            };
+          }, [storeId]);
+
+          """
+          new_options = connection_effect + """  const originOptions = useMemo(
+            () => buildOrderOriginOptions(orders, attendanceSpaces, connectedOriginChannels),
+            [attendanceSpaces, connectedOriginChannels, orders]
+          );
+
+            useEffect(() => {
+              if (
+                originFilter !== 'all' &&
+                !originOptions.some(option => option.id === originFilter)
+              ) {
+                setOriginFilter('all');
+              }
+            }, [originFilter, originOptions]);
+          """
+          text = text.replace(options_anchor, new_options, 1)
+          text = text.replace('getOrderOrigin(order, attendanceSpaces)', 'getOrderOrigin(order)')
+          inbox.write_text(text)
+
+          tests = Path('tests/order-approval-routing.test.ts')
+          text = tests.read_text()
+          inbox_decl = """const inboxSource = readFileSync(
+            'src/components/customer/CustomerOrderInbox.tsx',
+            'utf8'
+          );
+          """
+          if text.count(inbox_decl) != 1:
+              raise SystemExit('order approval test inbox declaration mismatch')
+          text = text.replace(
+              inbox_decl,
+              inbox_decl + """const customerOrdersSource = readFileSync('src/utils/customerOrders.ts', 'utf8');
+          const storeConnectionsSource = readFileSync('src/utils/storeConnections.ts', 'utf8');
+          """,
+              1,
+          )
+          old_test = """test('KDS exposes origin filter above production stage filters', () => {
+            const originIndex = inboxSource.indexOf('Origem do pedido');
+            const stageIndex = inboxSource.indexOf("{filterOptions.map");
+            assert.ok(originIndex >= 0);
+            assert.ok(stageIndex > originIndex);
+            assert.match(workflowSource, /Kyrub Ofertas/);
+            assert.match(workflowSource, /marketplace:99food/);
+            assert.match(workflowSource, /attendanceSpaces/);
+          });"""
+          new_test = """test('KDS origin filter is driven by canonical connected sales channels', () => {
+            const originIndex = inboxSource.indexOf('Origem do pedido');
+            const stageIndex = inboxSource.indexOf("{filterOptions.map");
+            assert.ok(originIndex >= 0);
+            assert.ok(stageIndex > originIndex);
+            assert.match(inboxSource, /loadStoreConnectionOnboarding/);
+            assert.match(inboxSource, /getConnectedStoreChannels/);
+            assert.match(storeConnectionsSource, /connection\.status === 'connected'/);
+            assert.match(workflowSource, /marketplace:mercado_livre/);
+            assert.match(workflowSource, /marketplace:99food/);
+            assert.match(workflowSource, /marketplace:shopee/);
+            assert.match(workflowSource, /marketplace:ifood/);
+            assert.match(workflowSource, /PDV \/ Staff/);
+            assert.match(workflowSource, /label: 'Kyrub'/);
+            assert.doesNotMatch(workflowSource, /Atendimento presencial/);
+            assert.match(customerOrdersSource, /value === 'shopee'/);
+            assert.match(customerOrdersSource, /value === 'ifood'/);
+          });"""
+          if text.count(old_test) != 1:
+              raise SystemExit('order approval origin contract mismatch')
+          tests.write_text(text.replace(old_test, new_test, 1))
+          PY
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate targeted contracts and TypeScript
+        run: |
+          node --test --import tsx tests/order-approval-routing.test.ts tests/customer-orders.test.ts tests/channel-availability-fiscal-foundation.test.ts
+          npm run lint
+
+      - name: Commit product changes and remove temporary workflow
+        shell: bash
+        run: |
+          rm .github/workflows/apply-kds-omnichannel-origin.yml
+          git config user.name "kyrub-app"
+          git config user.email "kyrub.app@gmail.com"
+          git add shared/channelAvailabilityFiscalFoundation.ts src/utils/customerOrders.ts src/utils/storeConnections.ts src/utils/orderWorkflow.ts src/components/customer/CustomerOrderInbox.tsx tests/order-approval-routing.test.ts .github/workflows/apply-kds-omnichannel-origin.yml
+          git commit -m "Make KDS origin filters connection-aware"
+          git push origin HEAD:feat/profile-react-rebuild
