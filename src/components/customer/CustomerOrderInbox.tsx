@@ -376,10 +376,15 @@ export const CustomerOrderInbox = ({
         </div>
       </div>
 
-      <div className="flex gap-1.5 overflow-x-auto pb-0.5 scrollbar-none" aria-label="Etapas dos pedidos">
-        {filterOptions.map(option => (
+      <div className="space-y-1.5">
+        <div className="px-0.5 text-[8px] font-black uppercase tracking-wide text-orange-300">
+          Status
+        </div>
+        <div className="flex gap-1.5 overflow-x-auto pb-0.5 scrollbar-none" aria-label="Status dos pedidos">
+          {filterOptions.map(option => (
           <button key={option.id} type="button" onClick={() => setFilter(option.id)} className={`whitespace-nowrap rounded-xl px-3 py-2 text-[10px] font-black uppercase tracking-wide transition-colors ${filter === option.id ? option.id === 'pickup' ? 'bg-cyan-500 text-slate-950' : 'bg-orange-500 text-slate-950' : 'border border-slate-800 bg-slate-950 text-slate-400 hover:text-white'}`}>{option.label}</button>
-        ))}
+          ))}
+        </div>
       </div>
 
       {filter === 'pickup' && (
