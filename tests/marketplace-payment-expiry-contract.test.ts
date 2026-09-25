@@ -86,6 +86,10 @@ test('Pix expiry multiplexes through the one existing Vercel queue trigger', () 
   assert.match(expiryQueueSource, /idempotencyKey/);
   assert.match(expiryQueueSource, /createKyrubSharedQueueEnvelope/);
   assert.match(expiryQueueSource, /expireDueMarketplacePixReservations\(100\)/);
+  assert.match(expiryQueueSource, /result\.failed > 0/);
+  assert.match(expiryQueueSource, /MARKETPLACE_PAYMENT_EXPIRY_QUEUE_RECONCILIATION_FAILED/);
+  assert.match(expiryQueueSource, /result\.deferred > 0/);
+  assert.match(expiryQueueSource, /MARKETPLACE_PAYMENT_EXPIRY_QUEUE_RECONCILIATION_DEFERRED/);
   assert.match(mlQueueSource, /createKyrubSharedQueueEnvelope\('mercado_livre_orders_v2'/);
   assert.match(queueConsumerSource, /isLegacyMercadoLivreOrdersV2QueuePayload/);
   assert.match(queueConsumerSource, /parseKyrubSharedQueueEnvelope/);

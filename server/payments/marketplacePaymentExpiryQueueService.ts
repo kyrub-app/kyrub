@@ -89,6 +89,12 @@ export const consumeMarketplacePaymentExpiryQueueMessage = async (
     throw new Error('MARKETPLACE_PAYMENT_EXPIRY_QUEUE_EARLY_DELIVERY');
   }
   const result = await expireDueMarketplacePixReservations(100);
+  if (result.failed > 0) {
+    throw new Error(`MARKETPLACE_PAYMENT_EXPIRY_QUEUE_RECONCILIATION_FAILED:${result.failed}`);
+  }
+  if (result.deferred > 0) {
+    throw new Error(`MARKETPLACE_PAYMENT_EXPIRY_QUEUE_RECONCILIATION_DEFERRED:${result.deferred}`);
+  }
   return {
     ...message,
     ...result,
