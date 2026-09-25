@@ -35,6 +35,11 @@ const LazyPromotionsManager = lazy(async () => {
   return { default: module.StorePromotionsManager };
 });
 
+const LazyFinanceRuntime = lazy(async () => {
+  const module = await import('./StoreFinanceRuntime');
+  return { default: module.StoreFinanceRuntime };
+});
+
 const MODULES: Array<{
   id: GerencialModule | 'crm' | 'marketing';
   title: string;
@@ -44,7 +49,7 @@ const MODULES: Array<{
 }> = [
   { id: 'produtos', title: 'Produtos & Estoque', description: 'Catálogo, publicação, estoque e edição dos itens da loja.', badge: 'Próximo corte' },
   { id: 'vendas', title: 'Vendas & Analytics', description: 'Indicadores e leitura operacional das vendas da loja.', badge: 'Próximo corte' },
-  { id: 'financeiro', title: 'Financeiro Interno', description: 'Custos, entradas, obrigações e projeções financeiras da operação.', badge: 'Migração nativa' },
+  { id: 'financeiro', title: 'Financeiro Interno', description: 'Custos, entradas, obrigações e projeções financeiras da operação.', badge: 'Runtime nativo' },
   { id: 'rh', title: 'Recursos Humanos', description: 'Equipe, cargos, acessos e rotinas da loja única do usuário.', badge: 'Migração nativa' },
   { id: 'crm', title: 'CRM', description: 'Relacionamento, segmentação, histórico e inteligência sobre clientes.', badge: 'Em desenvolvimento', disabled: true },
   { id: 'marketing', title: 'Marketing', description: 'Aquisição, conversão, retenção, canais e inteligência de crescimento.', badge: 'Em desenvolvimento', disabled: true },
@@ -112,7 +117,13 @@ export function GerencialPanel({ activeRetailerId, products, triggerToast, setAc
         </Suspense>
       )}
 
-      {activeModule && activeModule !== 'integracoes' && activeModule !== 'vouchers' && <MigrationNotice title={TITLES[activeModule]} />}
+      {activeModule === 'financeiro' && (
+        <Suspense fallback={<div className="rounded-3xl border border-emerald-500/20 bg-slate-900 p-5 text-[10px] text-emerald-100">Carregando Financeiro…</div>}>
+          <LazyFinanceRuntime storeId={activeRetailerId} />
+        </Suspense>
+      )}
+
+      {activeModule && activeModule !== 'integracoes' && activeModule !== 'vouchers' && activeModule !== 'financeiro' && <MigrationNotice title={TITLES[activeModule]} />}
     </div>
   );
 }
