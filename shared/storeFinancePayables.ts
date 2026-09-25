@@ -9,9 +9,12 @@ export type StoreFinancePayableCategory =
   | 'utilities'
   | 'tax'
   | 'service'
+  | 'payroll'
   | 'other';
 export type StoreFinancePayableRecurrence = 'none' | 'monthly';
-export type StoreFinancePayableSourceAuthority = 'store_owner_manual';
+export type StoreFinancePayableSourceAuthority =
+  | 'store_owner_manual'
+  | 'payroll_compensation_snapshot';
 
 export interface StoreFinancePayable {
   schemaVersion: typeof STORE_FINANCE_PAYABLE_SCHEMA_VERSION;
@@ -26,6 +29,9 @@ export interface StoreFinancePayable {
   dueDate: string;
   recurrence: StoreFinancePayableRecurrence;
   sourceAuthority: StoreFinancePayableSourceAuthority;
+  teamStoreId: string;
+  teamMemberUserId: string;
+  payrollPeriod: string;
   createdByUserId: string;
   createdAt: string;
   updatedAt: string;
@@ -46,6 +52,9 @@ const validDateOnly = (value: string): boolean => {
   return new Date(parsed).toISOString().slice(0, 10) === value;
 };
 
+const validPayrollPeriod = (value: string): boolean =>
+  /^\d{4}-(?:0[1-9]|1[0-2])$/.test(value);
+
 const validPathId = (value: string): boolean =>
   Boolean(value) && value.length <= 240 && value !== '.' && value !== '..' && !value.includes('/');
 
@@ -59,10 +68,14 @@ const isCategory = (value: unknown): value is StoreFinancePayableCategory =>
   || value === 'utilities'
   || value === 'tax'
   || value === 'service'
+  || value === 'payroll'
   || value === 'other';
 
 const isRecurrence = (value: unknown): value is StoreFinancePayableRecurrence =>
   value === 'none' || value === 'monthly';
+
+const isSourceAuthority = (value: unknown): value is StoreFinancePayableSourceAuthority =>
+  value === 'store_owner_manual' || value === 'payroll_compensation_snapshot';
 
 const positiveMinor = (value: unknown): number => {
   const amount = Number(value);
@@ -97,6 +110,9 @@ export const normalizeStoreFinancePayable = (value: unknown): StoreFinancePayabl
   const storeId = requiredText(source.storeId, 'STORE', 240);
   const description = requiredText(source.description, 'DESCRIPTION', 160);
   const counterparty = optionalText(source.counterparty, 'COUNTERPARTY', 120);
+  const teamStoreId = optionalText(source.teamStoreId, 'TEAM_STORE', 240);
+  const teamMemberUserId = optionalText(source.teamMemberUserId, 'TEAM_MEMBER', 240);
+  const payrollPeriod = optionalText(source.payrollPeriod, 'PAYROLL_PERIOD', 7);
   const createdByUserId = requiredText(source.createdByUserId, 'CREATED_BY', 240);
   const createdAt = clean(source.createdAt);
   const updatedAt = clean(source.updatedAt);
@@ -112,12 +128,28 @@ export const normalizeStoreFinancePayable = (value: unknown): StoreFinancePayabl
     || !isStatus(source.status)
     || !isCategory(source.category)
     || !isRecurrence(source.recurrence)
-    || source.sourceAuthority !== 'store_owner_manual'
+    || !isSourceAuthority(source.sourceAuthority)
     || !validDateOnly(dueDate)
     || !validIso(createdAt)
     || !validIso(updatedAt)
   ) {
     throw new Error('STORE_FINANCE_PAYABLE_INVALID');
+  }
+
+  if (source.sourceAuthority === 'store_owner_manual') {
+    if (source.category === 'payroll' || teamStoreId || teamMemberUserId || payrollPeriod) {
+      throw new Error('STORE_FINANCE_PAYABLE_MANUAL_SCOPE_INVALID');
+    }
+  } else {
+    if (
+      source.category !== 'payroll'
+      || source.recurrence !== 'none'
+      || !validPathId(teamStoreId)
+      || !validPathId(teamMemberUserId)
+      || !validPayrollPeriod(payrollPeriod)
+    ) {
+      throw new Error('STORE_FINANCE_PAYABLE_PAYROLL_SCOPE_INVALID');
+    }
   }
 
   if (source.status === 'open' && (paidAt || cancelledAt)) {
@@ -142,7 +174,10 @@ export const normalizeStoreFinancePayable = (value: unknown): StoreFinancePayabl
     counterparty,
     dueDate,
     recurrence: source.recurrence,
-    sourceAuthority: 'store_owner_manual',
+    sourceAuthority: source.sourceAuthority,
+    teamStoreId,
+    teamMemberUserId,
+    payrollPeriod,
     createdByUserId,
     createdAt,
     updatedAt,
@@ -156,7 +191,7 @@ export const buildManualStoreFinancePayable = (input: {
   storeId: string;
   amountMinor: number;
   description: string;
-  category: StoreFinancePayableCategory;
+  category: Exclude<StoreFinancePayableCategory, 'payroll'>;
   counterparty?: string;
   dueDate: string;
   recurrence: StoreFinancePayableRecurrence;
@@ -177,12 +212,66 @@ export const buildManualStoreFinancePayable = (input: {
     dueDate: input.dueDate,
     recurrence: input.recurrence,
     sourceAuthority: 'store_owner_manual',
+    teamStoreId: '',
+    teamMemberUserId: '',
+    payrollPeriod: '',
     createdByUserId: input.createdByUserId,
     createdAt: now,
     updatedAt: now,
     paidAt: '',
     cancelledAt: '',
   });
+};
+
+export const buildPayrollStoreFinancePayable = (input: {
+  id: string;
+  storeId: string;
+  teamStoreId: string;
+  teamMemberUserId: string;
+  payrollPeriod: string;
+  amountMinor: number;
+  memberDisplayName: string;
+  dueDate: string;
+  createdByUserId: string;
+  now?: string;
+}): StoreFinancePayable => {
+  const now = clean(input.now) || new Date().toISOString();
+  return normalizeStoreFinancePayable({
+    schemaVersion: STORE_FINANCE_PAYABLE_SCHEMA_VERSION,
+    id: input.id,
+    storeId: input.storeId,
+    status: 'open',
+    currency: STORE_FINANCE_PAYABLE_CURRENCY,
+    amountMinor: input.amountMinor,
+    description: `Remuneração ${input.payrollPeriod} — ${input.memberDisplayName}`,
+    category: 'payroll',
+    counterparty: input.memberDisplayName,
+    dueDate: input.dueDate,
+    recurrence: 'none',
+    sourceAuthority: 'payroll_compensation_snapshot',
+    teamStoreId: input.teamStoreId,
+    teamMemberUserId: input.teamMemberUserId,
+    payrollPeriod: input.payrollPeriod,
+    createdByUserId: input.createdByUserId,
+    createdAt: now,
+    updatedAt: now,
+    paidAt: '',
+    cancelledAt: '',
+  });
+};
+
+export const buildPayrollStoreFinancePayableId = (input: {
+  payrollPeriod: string;
+  teamMemberUserId: string;
+}): string => {
+  const payrollPeriod = clean(input.payrollPeriod);
+  const teamMemberUserId = clean(input.teamMemberUserId);
+  if (!validPayrollPeriod(payrollPeriod) || !validPathId(teamMemberUserId)) {
+    throw new Error('STORE_FINANCE_PAYABLE_PAYROLL_ID_INVALID');
+  }
+  const id = `payroll_${payrollPeriod.replace('-', '')}_${teamMemberUserId}`;
+  if (!validPathId(id)) throw new Error('STORE_FINANCE_PAYABLE_PAYROLL_ID_INVALID');
+  return id;
 };
 
 export const storeFinancePayablePath = (
