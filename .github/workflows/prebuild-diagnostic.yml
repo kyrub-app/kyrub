@@ -1,0 +1,58 @@
+name: Prebuild Diagnostic
+
+on:
+  push:
+    branches: ['fix/diag-merchant-approval-prebuild-v4']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    name: Split prebuild contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Compose Firestore rules
+        run: npm run firestore:compose
+
+      - name: Prebuild contracts 1 of 4
+        if: always()
+        env:
+          CHUNK_INDEX: '0'
+          CHUNK_COUNT: '4'
+        run: node scripts/run-prebuild-test-chunk.mjs
+
+      - name: Prebuild contracts 2 of 4
+        if: always()
+        env:
+          CHUNK_INDEX: '1'
+          CHUNK_COUNT: '4'
+        run: node scripts/run-prebuild-test-chunk.mjs
+
+      - name: Prebuild contracts 3 of 4
+        if: always()
+        env:
+          CHUNK_INDEX: '2'
+          CHUNK_COUNT: '4'
+        run: node scripts/run-prebuild-test-chunk.mjs
+
+      - name: Prebuild contracts 4 of 4
+        if: always()
+        env:
+          CHUNK_INDEX: '3'
+          CHUNK_COUNT: '4'
+        run: node scripts/run-prebuild-test-chunk.mjs
