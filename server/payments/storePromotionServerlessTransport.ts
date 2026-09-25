@@ -1,6 +1,7 @@
 import express from 'express';
 import { createStoreFinanceRouter } from './storeFinanceRouter.js';
 import { createStoreFinanceHistoryRouter } from './storeFinanceHistoryRouter.js';
+import { createStoreMercadoPagoPeriodSummaryRouter } from './storeMercadoPagoPeriodSummaryRouter.js';
 import { createStoreMercadoPagoReconciliationRouter } from './storeMercadoPagoReconciliationRouter.js';
 import { createStorePayrollRouter } from './storePayrollRouter.js';
 import { createStorePromotionManagementRouter } from './storePromotionManagementRouter.js';
@@ -28,6 +29,7 @@ const app = express();
 app.set('trust proxy', 1);
 app.use('/api/store-promotions', createStorePromotionManagementRouter());
 app.use('/api/store-finance', createStoreFinanceRouter());
+app.use('/api/store-finance-history', createStoreMercadoPagoPeriodSummaryRouter());
 app.use('/api/store-finance-history', createStoreMercadoPagoReconciliationRouter());
 app.use('/api/store-finance-history', createStoreFinanceHistoryRouter());
 app.use('/api/store-payroll', createStorePayrollRouter());
