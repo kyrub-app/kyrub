@@ -1,8 +1,12 @@
 import { createHash } from 'node:crypto';
 import { send } from '@vercel/queue';
 import { expireDueMarketplacePixReservations } from './marketplacePaymentExpiryService.js';
+import {
+  KYRUB_SHARED_QUEUE_TOPIC,
+  createKyrubSharedQueueEnvelope,
+} from '../queue/kyrubSharedQueueEnvelope.js';
 
-export const MARKETPLACE_PAYMENT_EXPIRY_QUEUE_TOPIC = 'marketplace_payment_expiry';
+export const MARKETPLACE_PAYMENT_EXPIRY_QUEUE_KIND = 'marketplace_payment_expiry' as const;
 
 export interface MarketplacePaymentExpiryQueueMessage {
   storeId: string;
@@ -49,8 +53,8 @@ export const enqueueMarketplacePaymentExpiry = async (
   const message = parseMessage(input);
   const delaySeconds = delayUntilExpirySeconds(message.expiresAt);
   const result = await send(
-    MARKETPLACE_PAYMENT_EXPIRY_QUEUE_TOPIC,
-    message,
+    KYRUB_SHARED_QUEUE_TOPIC,
+    createKyrubSharedQueueEnvelope(MARKETPLACE_PAYMENT_EXPIRY_QUEUE_KIND, message),
     {
       delaySeconds,
       retentionSeconds: Math.max(3_600, delaySeconds + 3_600),

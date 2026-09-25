@@ -16,12 +16,6 @@
           "topic": "mercado_livre_orders_v2",
           "retryAfterSeconds": 30,
           "initialDelaySeconds": 0
-        },
-        {
-          "type": "queue/v2beta",
-          "topic": "marketplace_payment_expiry",
-          "retryAfterSeconds": 30,
-          "initialDelaySeconds": 0
         }
       ]
     }
