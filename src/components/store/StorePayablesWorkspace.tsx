@@ -9,7 +9,9 @@ export type StorePayableCategory =
   | 'utilities'
   | 'tax'
   | 'service'
+  | 'payroll'
   | 'other';
+export type ManualStorePayableCategory = Exclude<StorePayableCategory, 'payroll'>;
 export type StorePayableRecurrence = 'none' | 'monthly';
 
 export type StorePayable = {
@@ -22,7 +24,10 @@ export type StorePayable = {
   counterparty: string;
   dueDate: string;
   recurrence: StorePayableRecurrence;
-  sourceAuthority: 'store_owner_manual';
+  sourceAuthority: 'store_owner_manual' | 'payroll_compensation_snapshot';
+  teamStoreId: string;
+  teamMemberUserId: string;
+  payrollPeriod: string;
   createdAt: string;
   updatedAt: string;
   paidAt: string;
@@ -68,6 +73,7 @@ const categoryLabel = (category: StorePayableCategory): string => ({
   utilities: 'Água, luz e serviços básicos',
   tax: 'Impostos e taxas',
   service: 'Serviços contratados',
+  payroll: 'Folha / remuneração',
   other: 'Outros',
 }[category]);
 
@@ -146,7 +152,7 @@ export default function StorePayablesWorkspace({
   const [description, setDescription] = useState('');
   const [amount, setAmount] = useState('');
   const [dueDate, setDueDate] = useState('');
-  const [category, setCategory] = useState<StorePayableCategory>('supplier');
+  const [category, setCategory] = useState<ManualStorePayableCategory>('supplier');
   const [counterparty, setCounterparty] = useState('');
   const [recurrence, setRecurrence] = useState<StorePayableRecurrence>('none');
   const [saving, setSaving] = useState(false);
@@ -258,7 +264,7 @@ export default function StorePayablesWorkspace({
         <div className="mb-3">
           <h5 className="text-[10px] font-black uppercase text-slate-200">Registrar nova conta</h5>
           <p className="mt-1 text-[8px] leading-relaxed text-slate-600">
-            Salários não entram por este formulário: a folha será vinculada aos membros reais do RH em uma etapa própria.
+            Folha e remuneração são geradas pelo RH e aparecem aqui como obrigações vinculadas ao colaborador; este formulário continua reservado às demais despesas da loja.
           </p>
         </div>
 
@@ -299,7 +305,7 @@ export default function StorePayablesWorkspace({
             Categoria
             <select
               value={category}
-              onChange={event => setCategory(event.target.value as StorePayableCategory)}
+              onChange={event => setCategory(event.target.value as ManualStorePayableCategory)}
               className="mt-1 min-h-10 w-full min-w-0 rounded-xl border border-slate-700 bg-slate-900 px-3 text-[10px] font-medium normal-case text-white outline-none focus:border-amber-400"
             >
               <option value="supplier">Fornecedor</option>
@@ -386,10 +392,18 @@ export default function StorePayablesWorkspace({
                             Mensal
                           </span>
                         )}
+                        {payable.sourceAuthority === 'payroll_compensation_snapshot' && (
+                          <span className="rounded-full border border-pink-500/20 bg-pink-500/10 px-2 py-1 text-[7px] font-black uppercase text-pink-200">
+                            RH / Folha
+                          </span>
+                        )}
                       </div>
                       <p className="mt-2 text-[8px] text-slate-500">
                         {categoryLabel(payable.category)} · vence em {dateOnlyLabel(payable.dueDate)}
                       </p>
+                      {payable.payrollPeriod && (
+                        <p className="mt-1 text-[8px] text-violet-300/70">Competência: {payable.payrollPeriod}</p>
+                      )}
                       {payable.counterparty && (
                         <p className="mt-1 max-w-full break-words text-[8px] text-slate-600 [overflow-wrap:anywhere]">
                           Favorecido: {payable.counterparty}
