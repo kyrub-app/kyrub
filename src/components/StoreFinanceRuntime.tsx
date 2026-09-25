@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { auth } from '../utils/firebase';
+import HistoricalFiscalSaleWorkspace from './store/HistoricalFiscalSaleWorkspace';
 
 type LedgerKind =
   | 'payment_capture'
@@ -108,6 +109,7 @@ export function StoreFinanceRuntime({ storeId }: { storeId: string }) {
   const [payload, setPayload] = useState<StoreFinancePayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [fiscalOrderId, setFiscalOrderId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -184,6 +186,7 @@ export function StoreFinanceRuntime({ storeId }: { storeId: string }) {
               const providerNetMinor = entry.kind === 'payment_capture' && feeMinor !== null
                 ? entry.amountMinor - feeMinor
                 : null;
+              const fiscalOpen = fiscalOrderId === entry.orderId;
               return (
                 <article key={entry.id} className="min-w-0 max-w-full overflow-hidden rounded-2xl border border-slate-800 bg-slate-950 p-4">
                   <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -198,11 +201,40 @@ export function StoreFinanceRuntime({ storeId }: { storeId: string }) {
                     <strong className={`shrink-0 text-left sm:text-right ${entry.amountMinor >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>{money(entry.amountMinor)}</strong>
                   </div>
                   {entry.kind === 'payment_capture' && (
-                    <div className="mt-3 grid min-w-0 gap-2 border-t border-slate-800 pt-3 text-[9px] sm:grid-cols-3">
-                      <div className="min-w-0"><span className="block uppercase text-slate-600">Bruto</span><b>{money(entry.amountMinor)}</b></div>
-                      <div className="min-w-0"><span className="block uppercase text-slate-600">Taxa do provedor</span><b>{feeMinor === null ? 'Não informada' : money(feeMinor)}</b></div>
-                      <div className="min-w-0"><span className="block uppercase text-slate-600">Líquido do provedor</span><b>{providerNetMinor === null ? 'Aguardando evidência' : money(providerNetMinor)}</b></div>
-                    </div>
+                    <>
+                      <div className="mt-3 grid min-w-0 gap-2 border-t border-slate-800 pt-3 text-[9px] sm:grid-cols-3">
+                        <div className="min-w-0"><span className="block uppercase text-slate-600">Bruto</span><b>{money(entry.amountMinor)}</b></div>
+                        <div className="min-w-0"><span className="block uppercase text-slate-600">Taxa do provedor</span><b>{feeMinor === null ? 'Não informada' : money(feeMinor)}</b></div>
+                        <div className="min-w-0"><span className="block uppercase text-slate-600">Líquido do provedor</span><b>{providerNetMinor === null ? 'Aguardando evidência' : money(providerNetMinor)}</b></div>
+                      </div>
+
+                      <div className="mt-3 min-w-0 rounded-xl border border-violet-500/20 bg-violet-500/[0.035] p-3">
+                        <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                          <div className="min-w-0">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="text-[8px] font-black uppercase tracking-wide text-violet-300">Documento fiscal</span>
+                              <span className="rounded-full border border-violet-500/20 bg-violet-500/10 px-2 py-1 text-[7px] font-black uppercase text-violet-200">Homologação</span>
+                            </div>
+                            <p className="mt-1 text-[8px] leading-relaxed text-slate-500">Reabra o pedido original desta venda para consultar as evidências fiscais e preparar o documento, inclusive quando o cliente solicitar a nota depois da compra.</p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setFiscalOrderId(fiscalOpen ? null : entry.orderId)}
+                            className="min-h-9 shrink-0 rounded-lg border border-violet-500/25 bg-violet-500/10 px-3 text-[8px] font-black uppercase text-violet-100"
+                            aria-expanded={fiscalOpen}
+                          >
+                            {fiscalOpen ? 'Fechar fiscal' : 'Abrir fiscal'}
+                          </button>
+                        </div>
+                      </div>
+
+                      {fiscalOpen && (
+                        <HistoricalFiscalSaleWorkspace
+                          orderId={entry.orderId}
+                          onClose={() => setFiscalOrderId(null)}
+                        />
+                      )}
+                    </>
                   )}
                 </article>
               );
