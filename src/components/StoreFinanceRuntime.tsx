@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { auth } from '../utils/firebase';
 import HistoricalFiscalSaleWorkspace from './store/HistoricalFiscalSaleWorkspace';
+import StoreCashFinanceWorkspace, {
+  type StoreCashFinanceProjection,
+} from './store/StoreCashFinanceWorkspace';
 import StorePayablesWorkspace, {
   type StorePayable,
   type StorePayableSummary,
@@ -84,6 +87,7 @@ type StoreFinancePayload = {
   receivables?: StoreReceivable[];
   payableSummary?: StorePayableSummary;
   payables?: StorePayable[];
+  cash?: StoreCashFinanceProjection;
   error?: string;
 };
 
@@ -177,6 +181,7 @@ export function StoreFinanceRuntime({ storeId }: { storeId: string }) {
   const receivableSummary = payload?.receivableSummary;
   const payables = payload?.payables ?? [];
   const payableSummary = payload?.payableSummary;
+  const cash = payload?.cash;
   const knownProviderFeesMinor = useMemo(
     () => entries.reduce((total, entry) => total + (providerFeeMinor(entry) ?? 0), 0),
     [entries]
@@ -267,6 +272,8 @@ export function StoreFinanceRuntime({ storeId }: { storeId: string }) {
           </div>
         )}
       </div>
+
+      <StoreCashFinanceWorkspace projection={cash} />
 
       <StorePayablesWorkspace
         storeId={storeId}
