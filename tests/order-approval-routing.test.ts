@@ -69,7 +69,7 @@ test('canonical non-table locations use stable service-location identity for app
   assert.match(workflowSource, /getPendingAttendanceOrdersForLocation/);
   assert.match(workflowSource, /serviceLocationIdentityKey\(location\)/);
   assert.match(workflowSource, /serviceLocationIdentityKey\(orderLocation\) === expected/);
-  assert.match(workflowSource, /resolvedLocation\?\.source === 'canonical'/);
+  assert.match(workflowSource, /serviceLocation: order\.serviceLocation/);
   assert.match(approvalSource, /serviceLocation\?: ResolvedOrderServiceLocation/);
   assert.match(approvalSource, /getPendingAttendanceOrdersForLocation/);
 });
