@@ -31,16 +31,29 @@ jobs:
           code=$?
           echo "exit_code=$code" >> "$GITHUB_OUTPUT"
           tail -n 250 prebuild.log > prebuild-tail.log
+          if [ "$code" -ne 0 ]; then
+            first_failure_line="$(grep -n -m1 '^not ok ' prebuild.log | cut -d: -f1)"
+            if [ -n "$first_failure_line" ]; then
+              start=$(( first_failure_line > 25 ? first_failure_line - 25 : 1 ))
+              end=$(( first_failure_line + 120 ))
+              sed -n "${start},${end}p" prebuild.log > prebuild-failure.log
+            else
+              grep -n -E -B 25 -A 80 'ERR_ASSERTION|AssertionError|(^|[^a-zA-Z])Error:|FAIL|failed' prebuild.log | head -n 220 > prebuild-failure.log || true
+            fi
+            printf '\n--- matching failure markers ---\n' >> prebuild-failure.log
+            grep -n -E 'not ok |ERR_ASSERTION|AssertionError|expected:|actual:|operator:|FAIL|failed' prebuild.log | head -n 100 >> prebuild-failure.log || true
+          fi
           exit 0
-      - name: Persist failure tail on diagnostic branch head
+      - name: Persist exact failure on diagnostic branch head
         if: steps.prebuild.outputs.exit_code != '0'
         shell: bash
         run: |
           cp prebuild-tail.log .github/pr803-prebuild-tail.txt
+          cp prebuild-failure.log .github/pr803-prebuild-failure.txt
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add .github/pr803-prebuild-tail.txt
-          git commit -m "chore: persist PR 803 prebuild tail [skip ci]"
+          git add .github/pr803-prebuild-tail.txt .github/pr803-prebuild-failure.txt
+          git commit -m "chore: persist PR 803 exact prebuild failure [skip ci]"
           git push origin HEAD:fix/merchant-approval-before-payment
       - name: Fail after diagnostic capture
         if: steps.prebuild.outputs.exit_code != '0'
