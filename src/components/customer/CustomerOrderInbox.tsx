@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
+import { onAuthStateChanged } from 'firebase/auth';
+import type { KyrubCommerceChannel } from '../../../shared/storeConnections';
 import {
   CheckCircle2,
   ChefHat,
@@ -38,6 +40,11 @@ import {
   type OrderDecision,
   type OrderDeliveryProvider,
 } from '../../utils/orderWorkflow';
+import { auth } from '../../utils/firebase';
+import {
+  getConnectedStoreChannels,
+  loadStoreConnectionOnboarding,
+} from '../../utils/storeConnections';
 import {
   getProductionStationOptions,
   loadCachedProductPreparationStations,
@@ -140,6 +147,7 @@ export const CustomerOrderInbox = ({
   const [filter, setFilter] = useState<InboxFilter>('active');
   const [originFilter, setOriginFilter] = useState('all');
   const [stationFilter, setStationFilter] = useState('all');
+  const [connectedOriginChannels, setConnectedOriginChannels] = useState<KyrubCommerceChannel[]>([]);
   const [stationRoutes, setStationRoutes] = useState<ProductPreparationStations>(
     loadCachedProductPreparationStations
   );
@@ -196,10 +204,54 @@ export const CustomerOrderInbox = ({
     };
   }, []);
 
+  useEffect(() => {
+  let disposed = false;
+
+  const refreshConnectedOriginChannels = async (): Promise<void> => {
+    const user = auth.currentUser;
+    if (!user) {
+      if (!disposed) setConnectedOriginChannels([]);
+      return;
+    }
+    try {
+      const snapshot = await loadStoreConnectionOnboarding(user, storeId);
+      if (!disposed) {
+        setConnectedOriginChannels(getConnectedStoreChannels(snapshot));
+      }
+    } catch (error) {
+      console.warn('Canais conectados indisponíveis para o filtro do KDS.', error);
+    }
+  };
+
+  const unsubscribeAuth = onAuthStateChanged(auth, () => {
+    void refreshConnectedOriginChannels();
+  });
+  const handleFocus = (): void => {
+    void refreshConnectedOriginChannels();
+  };
+  window.addEventListener('focus', handleFocus);
+  void refreshConnectedOriginChannels();
+
+  return () => {
+    disposed = true;
+    unsubscribeAuth();
+    window.removeEventListener('focus', handleFocus);
+  };
+}, [storeId]);
+
   const originOptions = useMemo(
-    () => buildOrderOriginOptions(orders, attendanceSpaces),
-    [attendanceSpaces, orders]
+    () => buildOrderOriginOptions(orders, attendanceSpaces, connectedOriginChannels),
+    [attendanceSpaces, connectedOriginChannels, orders]
   );
+
+  useEffect(() => {
+    if (
+      originFilter !== 'all' &&
+      !originOptions.some(option => option.id === originFilter)
+    ) {
+      setOriginFilter('all');
+    }
+  }, [originFilter, originOptions]);
 
   const stationOptions = useMemo(
     () => getProductionStationOptions(orders.flatMap(order => order.items), stationRoutes),
@@ -234,7 +286,7 @@ export const CustomerOrderInbox = ({
   const filteredOrders = useMemo(
     () =>
       orders.filter(order => {
-        const origin = getOrderOrigin(order, attendanceSpaces);
+        const origin = getOrderOrigin(order);
         const hasStation =
           stationFilter === 'all' ||
           order.items.some(
@@ -411,7 +463,7 @@ export const CustomerOrderInbox = ({
               const matchesStation = stationFilter === 'all' || resolveProductPreparationStation(item.productId, stationRoutes) === stationFilter;
               return operational && matchesStation;
             });
-            const origin = getOrderOrigin(order, attendanceSpaces);
+            const origin = getOrderOrigin(order);
             const pickupWaiting = isPickupWaiting(order);
 
             return (

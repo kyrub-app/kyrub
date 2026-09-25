@@ -1,4 +1,12 @@
-export type CommerceChannel = 'kyrub' | 'mercado_livre' | '99food' | 'other';
+export type CommerceChannel =
+  | 'kyrub'
+  | 'mercado_livre'
+  | '99food'
+  | 'shopee'
+  | 'ifood'
+  | 'instagram'
+  | 'erp'
+  | 'other';
 
 export type InventoryReservationStatus = 'active' | 'released' | 'consumed' | 'expired';
 

@@ -4,6 +4,7 @@ import type {
   CustomerOrder,
   CustomerOrderStatus,
 } from './customerOrders';
+import type { KyrubCommerceChannel } from '../../shared/storeConnections';
 import {
   resolveOrderServiceLocation,
   serviceLocationIdentityKey,
@@ -46,7 +47,7 @@ export interface AttendanceReviewInput {
 export interface OrderOriginOption {
   id: string;
   label: string;
-  group: 'attendance' | 'kyrub' | 'marketplace' | 'internal';
+  group: 'kyrub' | 'marketplace' | 'internal';
 }
 
 export interface OrderStatusUpdateResult {
@@ -57,9 +58,6 @@ export interface OrderStatusUpdateResult {
   partnerSync: NinetyNineFoodStatusWriteResult['partnerSync'];
   partnerWarning: string;
 }
-
-const normalize = (value: string): string =>
-  value.trim().toLocaleUpperCase('pt-BR');
 
 const attendanceLocationFor = (
   order: CustomerOrder
@@ -130,61 +128,63 @@ export const getPendingAttendanceOrders = (
   });
 };
 
-const attendanceEnvironmentFor = (
-  order: CustomerOrder,
-  attendanceSpaces: string[]
-): string => {
-  const resolvedLocation = attendanceLocationFor(order);
-  if (resolvedLocation?.source === 'canonical') {
-    return normalize(resolvedLocation.label);
-  }
-  const tableCode = normalize(order.tableCode);
-  const configured = attendanceSpaces
-    .map(normalize)
-    .filter(space => space && space !== 'GERAL');
-  return configured.find(space => tableCode.includes(space)) || 'ATENDIMENTO';
+const EXTERNAL_ORIGIN_OPTIONS: Record<KyrubCommerceChannel, OrderOriginOption> = {
+  mercado_livre: { id: 'marketplace:mercado_livre', label: 'Mercado Livre', group: 'marketplace' },
+  '99food': { id: 'marketplace:99food', label: '99Food', group: 'marketplace' },
+  shopee: { id: 'marketplace:shopee', label: 'Shopee', group: 'marketplace' },
+  ifood: { id: 'marketplace:ifood', label: 'iFood', group: 'marketplace' },
+  instagram: { id: 'marketplace:instagram', label: 'Instagram', group: 'marketplace' },
+  erp: { id: 'marketplace:erp', label: 'ERP', group: 'marketplace' },
+  other: { id: 'marketplace:other', label: 'Outro canal', group: 'marketplace' },
 };
 
-export const getOrderOrigin = (
-  order: CustomerOrder,
-  attendanceSpaces: string[] = []
-): OrderOriginOption => {
+const KYRUB_ORIGIN_OPTION: OrderOriginOption = {
+  id: 'kyrub:native',
+  label: 'Kyrub',
+  group: 'kyrub',
+};
+
+const PDV_ORIGIN_OPTION: OrderOriginOption = {
+  id: 'internal:pdv',
+  label: 'PDV / Staff',
+  group: 'internal',
+};
+
+const INTERNAL_ORIGIN_OPTION: OrderOriginOption = {
+  id: 'internal:operation',
+  label: 'Operação interna',
+  group: 'internal',
+};
+
+export const getOrderOrigin = (order: CustomerOrder): OrderOriginOption => {
+  if (order.sourceChannel && order.sourceChannel !== 'kyrub') {
+    return EXTERNAL_ORIGIN_OPTIONS[order.sourceChannel];
+  }
+
   if (isNinetyNineFoodOrder(order)) {
-    return { id: 'marketplace:99food', label: '99Food', group: 'marketplace' };
-  }
-
-  if (order.source === 'customer' && order.fulfillmentType === 'dine_in') {
-    const environment = attendanceEnvironmentFor(order, attendanceSpaces);
-    return {
-      id: `attendance:${environment}`,
-      label: environment === 'ATENDIMENTO' ? 'Atendimento presencial' : environment,
-      group: 'attendance',
-    };
-  }
-
-  if (order.source === 'customer') {
-    return { id: 'kyrub:offers', label: 'Kyrub Ofertas', group: 'kyrub' };
+    return EXTERNAL_ORIGIN_OPTIONS['99food'];
   }
 
   if (order.source === 'staff') {
-    return { id: 'internal:pdv', label: 'PDV / Staff', group: 'internal' };
+    return PDV_ORIGIN_OPTION;
   }
 
-  return { id: 'marketplace:other', label: 'Outros canais', group: 'marketplace' };
+  if (order.source === 'customer' || order.sourceChannel === 'kyrub') {
+    return KYRUB_ORIGIN_OPTION;
+  }
+
+  return INTERNAL_ORIGIN_OPTION;
 };
 
 export const buildOrderOriginOptions = (
-  orders: CustomerOrder[],
-  attendanceSpaces: string[] = []
+  _orders: CustomerOrder[],
+  _attendanceSpaces: string[] = [],
+  connectedChannels: KyrubCommerceChannel[] = []
 ): OrderOriginOption[] => {
-  const unique = new Map<string, OrderOriginOption>();
-  for (const order of orders) {
-    const origin = getOrderOrigin(order, attendanceSpaces);
-    unique.set(origin.id, origin);
-  }
-  return Array.from(unique.values()).sort((left, right) =>
-    left.label.localeCompare(right.label, 'pt-BR')
-  );
+  const connected = [...new Set(connectedChannels)]
+    .map(channel => EXTERNAL_ORIGIN_OPTIONS[channel])
+    .sort((left, right) => left.label.localeCompare(right.label, 'pt-BR'));
+  return [KYRUB_ORIGIN_OPTION, PDV_ORIGIN_OPTION, ...connected];
 };
 
 const orderActivityAction = (

@@ -19,6 +19,8 @@ const inboxSource = readFileSync(
   'src/components/customer/CustomerOrderInbox.tsx',
   'utf8'
 );
+const customerOrdersSource = readFileSync('src/utils/customerOrders.ts', 'utf8');
+const storeConnectionsSource = readFileSync('src/utils/storeConnections.ts', 'utf8');
 const tableBoardSource = readFileSync(
   'src/components/customer/CustomerTableBoard.tsx',
   'utf8'
@@ -181,12 +183,21 @@ test('attendance and KDS rejection require reason and support alternatives', () 
   assert.match(attendanceReviewSource, /Alternativa sugerida/);
 });
 
-test('KDS exposes origin filter above production stage filters', () => {
+test('KDS origin filter is driven by canonical connected sales channels', () => {
   const originIndex = inboxSource.indexOf('Origem do pedido');
   const stageIndex = inboxSource.indexOf("{filterOptions.map");
   assert.ok(originIndex >= 0);
   assert.ok(stageIndex > originIndex);
-  assert.match(workflowSource, /Kyrub Ofertas/);
+  assert.match(inboxSource, /loadStoreConnectionOnboarding/);
+  assert.match(inboxSource, /getConnectedStoreChannels/);
+  assert.match(storeConnectionsSource, /connection\.status === 'connected'/);
+  assert.match(workflowSource, /marketplace:mercado_livre/);
   assert.match(workflowSource, /marketplace:99food/);
-  assert.match(workflowSource, /attendanceSpaces/);
+  assert.match(workflowSource, /marketplace:shopee/);
+  assert.match(workflowSource, /marketplace:ifood/);
+  assert.match(workflowSource, /PDV \/ Staff/);
+  assert.match(workflowSource, /label: 'Kyrub'/);
+  assert.doesNotMatch(workflowSource, /Atendimento presencial/);
+  assert.match(customerOrdersSource, /value === 'shopee'/);
+  assert.match(customerOrdersSource, /value === 'ifood'/);
 });

@@ -145,6 +145,10 @@ const isCommercialChannel = (
   value === 'kyrub' ||
   value === 'mercado_livre' ||
   value === '99food' ||
+  value === 'shopee' ||
+  value === 'ifood' ||
+  value === 'instagram' ||
+  value === 'erp' ||
   value === 'other';
 
 const isPaymentStatus = (
