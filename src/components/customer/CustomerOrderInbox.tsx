@@ -130,6 +130,72 @@ const matchesStage = (order: CustomerOrder, filter: InboxFilter): boolean => {
   }
 };
 
+type OrderCardVisualTone = {
+  card: string;
+  headerBorder: string;
+  statusBadge: string;
+};
+
+const getOrderCardVisualTone = (
+  order: CustomerOrder,
+  orderIndex: number,
+  pickupWaiting: boolean
+): OrderCardVisualTone => {
+  const alternatingBackground = orderIndex % 2 === 0
+    ? 'bg-slate-800/80'
+    : 'bg-slate-900/95';
+
+  if (pickupWaiting) {
+    return {
+      card: `${alternatingBackground} border-cyan-400/45 border-l-4 border-l-cyan-400 shadow-lg shadow-cyan-950/20`,
+      headerBorder: 'border-cyan-400/20',
+      statusBadge: 'border-cyan-400/30 bg-cyan-400/10 text-cyan-200',
+    };
+  }
+
+  switch (order.status) {
+    case 'pending':
+      return {
+        card: `${alternatingBackground} border-amber-400/35 border-l-4 border-l-amber-400 shadow-lg shadow-amber-950/20`,
+        headerBorder: 'border-amber-400/20',
+        statusBadge: 'border-amber-400/30 bg-amber-400/10 text-amber-200',
+      };
+    case 'accepted':
+    case 'preparing':
+      return {
+        card: `${alternatingBackground} border-orange-400/35 border-l-4 border-l-orange-400 shadow-lg shadow-orange-950/20`,
+        headerBorder: 'border-orange-400/20',
+        statusBadge: 'border-orange-400/30 bg-orange-400/10 text-orange-200',
+      };
+    case 'ready':
+      return {
+        card: `${alternatingBackground} border-emerald-400/35 border-l-4 border-l-emerald-400 shadow-lg shadow-emerald-950/20`,
+        headerBorder: 'border-emerald-400/20',
+        statusBadge: 'border-emerald-400/30 bg-emerald-400/10 text-emerald-200',
+      };
+    case 'out_for_delivery':
+      return {
+        card: `${alternatingBackground} border-sky-400/35 border-l-4 border-l-sky-400 shadow-lg shadow-sky-950/20`,
+        headerBorder: 'border-sky-400/20',
+        statusBadge: 'border-sky-400/30 bg-sky-400/10 text-sky-200',
+      };
+    case 'rejected':
+    case 'cancelled':
+      return {
+        card: `${alternatingBackground} border-red-400/30 border-l-4 border-l-red-400`,
+        headerBorder: 'border-red-400/20',
+        statusBadge: 'border-red-400/30 bg-red-400/10 text-red-200',
+      };
+    case 'completed':
+    default:
+      return {
+        card: `${alternatingBackground} border-slate-600/60 border-l-4 border-l-slate-500`,
+        headerBorder: 'border-slate-700',
+        statusBadge: 'border-slate-600 bg-slate-950/60 text-slate-300',
+      };
+  }
+};
+
 export const CustomerOrderInbox = ({
   storeId,
   orders,
@@ -397,7 +463,7 @@ export const CustomerOrderInbox = ({
         </div>
       ) : (
         <div className="grid gap-3 sm:gap-4 lg:grid-cols-2">
-          {filteredOrders.map(order => {
+          {filteredOrders.map((order, orderIndex) => {
             const actions = actionForOrder(order);
             const isBusy = busyOrderId === order.id;
             const outstandingTotal = getCustomerOrderOutstandingTotal(order);
@@ -408,21 +474,22 @@ export const CustomerOrderInbox = ({
             });
             const origin = getOrderOrigin(order, attendanceSpaces);
             const pickupWaiting = isPickupWaiting(order);
+            const cardTone = getOrderCardVisualTone(order, orderIndex, pickupWaiting);
 
             return (
               <article
                 key={order.id}
                 id={orderElementId(order.id)}
                 tabIndex={-1}
-                className={`flex flex-col overflow-hidden rounded-3xl border bg-slate-950 focus:outline-none focus:ring-2 focus:ring-emerald-400/60 ${pickupWaiting ? 'border-cyan-500/30' : 'border-slate-800'}`}
+                className={`flex flex-col overflow-hidden rounded-3xl border transition-colors focus:outline-none focus:ring-2 focus:ring-emerald-400/60 ${cardTone.card}`}
               >
-                <div className="flex items-start justify-between gap-2.5 border-b border-slate-800 p-3 sm:p-4">
+                <div className={`flex items-start justify-between gap-2.5 border-b p-3 sm:p-4 ${cardTone.headerBorder}`}>
                   <div className="min-w-0">
                     <span className={`font-mono text-[9px] font-bold uppercase tracking-wide ${pickupWaiting ? 'text-cyan-300' : 'text-orange-400'}`}>{origin.label} · {getFulfillmentLabel(order.fulfillmentType)}</span>
                     <h4 className="mt-1 truncate text-sm font-black text-white">{order.buyerName}</h4>
                     <span className="mt-1 flex items-center gap-1.5 text-[10px] text-slate-500"><Clock3 className="h-3 w-3" />{formatDateTime(pickupWaiting ? order.updatedAt : order.createdAt)}</span>
                   </div>
-                  <span className={`max-w-[46%] rounded-full border px-2.5 py-1 text-center text-[9px] font-black uppercase ${pickupWaiting ? 'border-cyan-500/25 bg-cyan-500/10 text-cyan-200' : 'border-slate-700 bg-slate-900 text-slate-300'}`}>{pickupWaiting ? 'Aguardando retirada' : getCustomerOrderStatusLabel(order.status)}</span>
+                  <span className={`max-w-[46%] rounded-full border px-2.5 py-1 text-center text-[9px] font-black uppercase ${cardTone.statusBadge}`}>{pickupWaiting ? 'Aguardando retirada' : getCustomerOrderStatusLabel(order.status)}</span>
                 </div>
 
                 <div className="flex-1 space-y-3 p-3 sm:space-y-4 sm:p-4">
@@ -432,7 +499,7 @@ export const CustomerOrderInbox = ({
                       const openQuantity = getCustomerOrderItemOpenQuantity(item);
                       const station = resolveProductPreparationStation(item.productId, stationRoutes);
                       return (
-                        <div key={item.lineId} className="rounded-2xl border border-slate-800 bg-slate-900/70 p-3">
+                        <div key={item.lineId} className="rounded-2xl border border-slate-700/80 bg-slate-950/55 p-3">
                           <div className="flex items-start justify-between gap-3">
                             <div>
                               <span className="mb-1 inline-flex rounded-full bg-violet-500/10 px-2 py-0.5 text-[8px] font-black uppercase text-violet-300">{station}</span>
@@ -449,7 +516,7 @@ export const CustomerOrderInbox = ({
                     })}
                   </div>
 
-                  <div className="space-y-2 rounded-2xl border border-slate-800 bg-slate-900/50 p-3 text-[10px] text-slate-400">
+                  <div className="space-y-2 rounded-2xl border border-slate-700/80 bg-slate-950/45 p-3 text-[10px] text-slate-300">
                     {order.buyerEmail && <p className="flex items-center gap-2"><UserRound className="h-3.5 w-3.5 text-slate-500" />{order.buyerEmail}</p>}
                     {order.deliveryAddress && <p className="flex items-start gap-2"><MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-500" />{order.deliveryAddress}</p>}
                     {order.tableCode && <p className="flex items-center gap-2"><ChefHat className="h-3.5 w-3.5 text-slate-500" />Mesa/código: {order.tableCode}</p>}
