@@ -161,7 +161,7 @@ const subtractReservationLines = (
   const next = { ...current };
   for (const line of lines) {
     const remaining = roundQuantity(
-      Math.max(0, (next[line.inventoryItemId] ?? 0) - line.quantity)
+      Math.max(0, (next[line.inventoryItemId] ?? 0) - line.quantity
     );
     if (remaining > 0) next[line.inventoryItemId] = remaining;
     else delete next[line.inventoryItemId];
@@ -218,6 +218,14 @@ const reservationStatus = (value: unknown): ReservationStatus | '' => {
     : '';
 };
 
+const validExpiry = (value: unknown): string => {
+  const expiry = clean(value);
+  if (!expiry || Number.isNaN(Date.parse(expiry))) {
+    throw new Error('Prazo de pagamento inválido para reserva de estoque.');
+  }
+  return expiry;
+};
+
 export const reserveMarketplaceOrderInventoryOnAcceptance = async (
   tenantId: string,
   orderId: string
@@ -253,6 +261,30 @@ export const reserveMarketplaceOrderInventoryOnAcceptance = async (
     if (currentStatus === 'released') {
       throw new Error('A reserva de estoque deste pedido já foi liberada. Refaça o pedido.');
     }
+
+    const paymentIntentId = clean(order.paymentIntentId);
+    if (!paymentIntentId) {
+      throw new Error('Pedido sem referência de pagamento para reserva de estoque.');
+    }
+    const intentRef = adminDb.doc(
+      `stores/${normalizedTenantId}/paymentIntents/${paymentIntentId}`
+    );
+    const intentSnapshot = await transaction.get(intentRef);
+    if (!intentSnapshot.exists) {
+      throw new Error('Pagamento do pedido não encontrado para reserva de estoque.');
+    }
+    const intent = normalizeCanonicalPaymentIntent(
+      intentSnapshot.data() as CanonicalPaymentIntent
+    );
+    if (
+      intent.context !== 'marketplace' ||
+      intent.storeId !== normalizedTenantId ||
+      intent.target.orderId !== normalizedOrderId ||
+      intent.status !== 'pending'
+    ) {
+      throw new Error('Pagamento do pedido inconsistente para reserva de estoque.');
+    }
+    const activeExpiresAt = validExpiry(intent.expiresAt);
 
     const items = parseOrderItems(order.items);
     if (!items.length || items.length !== (Array.isArray(order.items) ? order.items.length : 0)) {
@@ -303,6 +335,7 @@ export const reserveMarketplaceOrderInventoryOnAcceptance = async (
           skippedReason: catalog.length === 0
             ? 'inventory_not_configured'
             : 'order_without_composition',
+          activeExpiresAt: FieldValue.delete(),
           createdAt: currentReservation?.createdAt ?? now,
           updatedAt: now,
         },
@@ -331,11 +364,14 @@ export const reserveMarketplaceOrderInventoryOnAcceptance = async (
         inventoryAuthorityOwnerUserId: authority.ownerUserId,
         inventoryAuthority: authority.authority,
         inventoryDocumentPath: authority.inventoryDocumentPath,
+        paymentIntentId,
+        activeExpiresAt,
         status: 'reserved',
         lines,
         releaseReason: FieldValue.delete(),
         releasedAt: FieldValue.delete(),
         committedAt: FieldValue.delete(),
+        paymentConfirmedAt: FieldValue.delete(),
         reservedAt: now,
         createdAt: currentReservation?.createdAt ?? now,
         updatedAt: now,
@@ -384,6 +420,7 @@ const finishReservation = async (input: {
       reservationRef,
       {
         status: input.status,
+        activeExpiresAt: FieldValue.delete(),
         ...(input.status === 'committed'
           ? { committedAt: now }
           : { releasedAt: now, releaseReason: input.reason }),
@@ -391,6 +428,54 @@ const finishReservation = async (input: {
       },
       { merge: true }
     );
+    return true;
+  });
+};
+
+export const syncMarketplaceOrderInventoryReservationExpiry = async (
+  tenantId: string,
+  orderId: string,
+  expiresAt: string
+): Promise<boolean> => {
+  const normalizedTenantId = tenantId.trim();
+  const normalizedOrderId = orderId.trim();
+  const normalizedExpiry = validExpiry(expiresAt);
+  if (!normalizedTenantId || !normalizedOrderId) return false;
+
+  return adminDb.runTransaction(async transaction => {
+    const reservationRef = reservationReference(normalizedTenantId, normalizedOrderId);
+    const snapshot = await transaction.get(reservationRef);
+    if (!snapshot.exists) return false;
+    const reservation = snapshot.data() as Record<string, unknown>;
+    if (reservationStatus(reservation.status) !== 'reserved') return false;
+    transaction.update(reservationRef, {
+      activeExpiresAt: normalizedExpiry,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    return true;
+  });
+};
+
+export const markMarketplaceOrderInventoryReservationPaymentConfirmed = async (
+  tenantId: string,
+  orderId: string
+): Promise<boolean> => {
+  const normalizedTenantId = tenantId.trim();
+  const normalizedOrderId = orderId.trim();
+  if (!normalizedTenantId || !normalizedOrderId) return false;
+
+  return adminDb.runTransaction(async transaction => {
+    const reservationRef = reservationReference(normalizedTenantId, normalizedOrderId);
+    const snapshot = await transaction.get(reservationRef);
+    if (!snapshot.exists) return false;
+    const reservation = snapshot.data() as Record<string, unknown>;
+    if (reservationStatus(reservation.status) !== 'reserved') return false;
+    const now = FieldValue.serverTimestamp();
+    transaction.update(reservationRef, {
+      activeExpiresAt: FieldValue.delete(),
+      paymentConfirmedAt: now,
+      updatedAt: now,
+    });
     return true;
   });
 };
