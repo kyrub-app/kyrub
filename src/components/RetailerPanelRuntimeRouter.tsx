@@ -16,7 +16,7 @@ const MANAGEMENT_MODULES: Record<ErpManagementModule, ModuleDefinition> = {
   produtos: { title: 'Produtos & Estoque', description: 'Catálogo, publicação, estoque e edição dos itens da loja.', status: 'native' },
   vendas: { title: 'Vendas & Analytics', description: 'Indicadores e leitura operacional das vendas da loja.', status: 'migration' },
   financeiro: { title: 'Financeiro Interno', description: 'Custos, entradas, obrigações e projeções financeiras da operação.', status: 'native' },
-  rh: { title: 'Recursos Humanos', description: 'Equipe, cargos, acessos e permissões da operação.', status: 'native' },
+  rh: { title: 'Recursos Humanos', description: 'Equipe, cargos, acessos, remuneração e folha da operação.', status: 'native' },
   crm: { title: 'CRM', description: 'Relacionamento, segmentação, histórico e inteligência sobre clientes.', status: 'native' },
   marketing: { title: 'Marketing', description: 'Aquisição, conversão, retenção, canais e inteligência de crescimento.', status: 'development' },
   integracoes: { title: 'Integrações & Sandbox', description: 'Conexões externas, OAuth, sincronização e testes controlados dos canais.', status: 'native' },
@@ -32,6 +32,7 @@ const LazyIntegrationsRuntime = lazy(async () => { const module = await import('
 const LazyProductInventoryRuntime = lazy(async () => { const module = await import('./store/ProductInventoryDirectRuntime'); return { default: module.ProductInventoryDirectRuntime }; });
 const LazyFinanceRuntime = lazy(async () => { const module = await import('./StoreFinanceRuntime'); return { default: module.StoreFinanceRuntime }; });
 const LazyStoreTeamWorkspace = lazy(async () => { const module = await import('./store/StoreTeamWorkspace'); return { default: module.StoreTeamWorkspace }; });
+const LazyStorePayrollWorkspace = lazy(async () => { const module = await import('./store/StorePayrollWorkspace'); return { default: module.default }; });
 const LazyPromotionalRuntime = lazy(async () => { const module = await import('./store/PromotionalDirectRuntime'); return { default: module.PromotionalDirectRuntime }; });
 const LazyCrmRelationshipPanel = lazy(async () => { const module = await import('./store/StoreCrmRelationshipPanel'); return { default: module.StoreCrmRelationshipPanel }; });
 
@@ -46,7 +47,7 @@ function DirectManagementModule({ moduleId, retailerProps, onBackToPdv }: { modu
     {moduleId === 'integracoes' ? <Suspense fallback={<Loading>Carregando Integrações & Sandbox…</Loading>}><LazyIntegrationsRuntime triggerToast={retailerProps.triggerToast} /></Suspense>
       : moduleId === 'produtos' ? <Suspense fallback={<Loading>Carregando Produtos & Estoque…</Loading>}><LazyProductInventoryRuntime activeRetailerId={retailerProps.activeRetailerId} activeStore={retailerProps.activeStore} products={retailerProps.products} setProducts={retailerProps.setProducts} triggerToast={retailerProps.triggerToast} /></Suspense>
       : moduleId === 'financeiro' ? <Suspense fallback={<Loading>Carregando Financeiro Interno…</Loading>}><LazyFinanceRuntime storeId={retailerProps.activeRetailerId} /></Suspense>
-      : moduleId === 'rh' ? <Suspense fallback={<Loading>Carregando Recursos Humanos…</Loading>}><LazyStoreTeamWorkspace legacyStore={retailerProps.activeStore} legacyStoreId={retailerProps.activeRetailerId} notify={retailerProps.triggerToast} /></Suspense>
+      : moduleId === 'rh' ? <Suspense fallback={<Loading>Carregando Recursos Humanos…</Loading>}><div className="space-y-5"><LazyStoreTeamWorkspace legacyStore={retailerProps.activeStore} legacyStoreId={retailerProps.activeRetailerId} notify={retailerProps.triggerToast} /><LazyStorePayrollWorkspace legacyStoreId={retailerProps.activeRetailerId} notify={retailerProps.triggerToast} /></div></Suspense>
       : moduleId === 'vouchers' ? <Suspense fallback={<Loading>Carregando Promocionais…</Loading>}><LazyPromotionalRuntime /></Suspense>
       : moduleId === 'crm' ? <Suspense fallback={<Loading>Carregando CRM…</Loading>}><LazyCrmRelationshipPanel storeId={retailerProps.activeRetailerId} /></Suspense>
       : <div className="rounded-3xl border border-slate-800 bg-slate-900 p-5 text-white"><span className="font-mono text-[9px] font-black uppercase tracking-[0.16em] text-slate-500">{definition.status === 'development' ? 'Em desenvolvimento' : 'Migração nativa'}</span><p className="mt-3 max-w-2xl text-[11px] leading-relaxed text-slate-400">{definition.status === 'development' ? 'Este módulo já tem destino próprio no menu e será implementado sem depender do antigo painel Gerencial.' : 'Este módulo já tem destino próprio no menu. Sua funcionalidade será reativada diretamente aqui, sem restaurar estados locais ou bridges do antigo Gerencial.'}</p></div>}
@@ -59,8 +60,6 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = props => {
 
   useEffect(() => {
     const handleManagementNavigation = (event: Event): void => {
-      // Clear the retained request when the live listener receives it so a later
-      // remount cannot replay an already-applied selection.
       consumePendingErpManagementNavigation();
       setManagementModule(
         (event as CustomEvent<ErpManagementNavigationRequest>).detail?.module ?? null
@@ -72,9 +71,6 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = props => {
       handleManagementNavigation
     );
 
-    // If the mobile dialog committed its selection before this effect existed,
-    // apply that one retained intent now. This closes the first-tap race without
-    // persisting navigation across reloads.
     const pending = consumePendingErpManagementNavigation();
     if (pending) setManagementModule(pending.module);
 
