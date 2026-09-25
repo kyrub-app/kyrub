@@ -129,7 +129,7 @@ const receivableStatusClass = (status: StoreReceivableStatus): string => ({
 }[status]);
 
 const providerFeeMinor = (entry: StoreFinanceEntry): number | null => {
-  const costs = entry.economicAllocation?.observCosts ?? entry.economicAllocation?.observedCosts ?? [];
+  const costs = entry.economicAllocation?.observedCosts ?? [];
   const fees = costs.filter(cost => cost.kind === 'provider_processing' && cost.borneBy === 'store');
   if (!fees.length) return null;
   return fees.reduce((total, fee) => total + fee.amountMinor, 0);
