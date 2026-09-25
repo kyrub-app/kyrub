@@ -1,5 +1,6 @@
 import express from 'express';
 import { createStoreFinanceRouter } from './storeFinanceRouter.js';
+import { createStorePayrollRouter } from './storePayrollRouter.js';
 import { createStorePromotionManagementRouter } from './storePromotionManagementRouter.js';
 
 type QueryValue = string | string[] | undefined;
@@ -25,6 +26,7 @@ const app = express();
 app.set('trust proxy', 1);
 app.use('/api/store-promotions', createStorePromotionManagementRouter());
 app.use('/api/store-finance', createStoreFinanceRouter());
+app.use('/api/store-payroll', createStorePayrollRouter());
 
 const first = (value: QueryValue | HeaderValue): string =>
   (Array.isArray(value) ? value[0] : value)?.trim() ?? '';
@@ -53,7 +55,11 @@ export const handleStorePromotionServerlessRequest = async (
   const response = responseInput as ResponseLike;
   const path = first(request.query?.path).replace(/^\/+|\/+$/g, '');
   const surface = first(request.query?.surface);
-  const routeBase = surface === 'finance' ? '/api/store-finance' : '/api/store-promotions';
+  const routeBase = surface === 'finance'
+    ? '/api/store-finance'
+    : surface === 'payroll'
+      ? '/api/store-payroll'
+      : '/api/store-promotions';
   const originalUrl = request.url;
   request.url = `${routeBase}${path ? `/${path}` : ''}${reconstructedQuery(request.query)}`;
 
