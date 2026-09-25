@@ -109,7 +109,7 @@ describe('operational test bench', () => {
     assert.equal(canTransitionCustomerOrderStatus('completed', 'pending'), false);
   });
 
-  test('origin filter distinguishes attendance, Kyrub, staff and 99Food', () => {
+  test('origin filter separates native channels from connected external channels', () => {
     const attendance = {
       ...selfServiceOrder(),
       operatorId: 'store-a',
@@ -135,18 +135,19 @@ describe('operational test bench', () => {
       operatorName: '99Food',
     };
 
-    assert.equal(getOrderOrigin(attendance, ['SALÃO 01']).label, 'SALÃO 01');
-    assert.equal(getOrderOrigin(kyrub).label, 'Kyrub Ofertas');
+    assert.equal(getOrderOrigin(attendance).label, 'Kyrub');
+    assert.equal(getOrderOrigin(kyrub).label, 'Kyrub');
     assert.equal(getOrderOrigin(staff).label, 'PDV / Staff');
     assert.equal(getOrderOrigin(food99).label, '99Food');
 
     const options = buildOrderOriginOptions(
       [attendance, kyrub, staff, food99],
-      ['SALÃO 01']
+      [],
+      ['99food']
     );
     assert.deepEqual(
       new Set(options.map(option => option.label)),
-      new Set(['SALÃO 01', 'Kyrub Ofertas', 'PDV / Staff', '99Food'])
+      new Set(['Kyrub', 'PDV / Staff', '99Food'])
     );
   });
 
