@@ -283,7 +283,7 @@ describe('Kyrub public and operational routes', () => {
       'utf8'
     );
     const cartDrawerSource = readFileSync(
-      'src/components/modals/B2CCartDrawer.tsx',
+      'src/components/modals/B2CCartDrawerApprovalBase.tsx',
       'utf8'
     );
     const notificationCenterSource = readFileSync(

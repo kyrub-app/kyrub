@@ -124,7 +124,7 @@ describe('in-person payment convergence', () => {
   });
 
   test('customer account already exists as a read model and does not confirm payment by itself', () => {
-    const drawer = readFileSync('src/components/modals/B2CCartDrawer.tsx', 'utf8');
+    const drawer = readFileSync('src/components/modals/B2CCartDrawerApprovalBase.tsx', 'utf8');
     assert.match(drawer, /id="customer-account-panel"/);
     assert.match(drawer, /A forma de pagamento e o fechamento são confirmados pela loja/);
     assert.match(drawer, /accountTotals\.outstanding/);
