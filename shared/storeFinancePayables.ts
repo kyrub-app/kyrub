@@ -191,13 +191,16 @@ export const buildManualStoreFinancePayable = (input: {
   storeId: string;
   amountMinor: number;
   description: string;
-  category: Exclude<StoreFinancePayableCategory, 'payroll'>;
+  category: StoreFinancePayableCategory;
   counterparty?: string;
   dueDate: string;
   recurrence: StoreFinancePayableRecurrence;
   createdByUserId: string;
   now?: string;
 }): StoreFinancePayable => {
+  if (input.category === 'payroll') {
+    throw new Error('STORE_FINANCE_PAYABLE_MANUAL_SCOPE_INVALID');
+  }
   const now = clean(input.now) || new Date().toISOString();
   return normalizeStoreFinancePayable({
     schemaVersion: STORE_FINANCE_PAYABLE_SCHEMA_VERSION,
