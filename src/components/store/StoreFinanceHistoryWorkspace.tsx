@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { auth } from '../../utils/firebase';
 
 type LedgerKind =
@@ -36,8 +36,45 @@ type HistoryPayload = {
   error?: string;
 };
 
+type ProviderReconciliation = {
+  schemaVersion: 1;
+  storeId: string;
+  paymentId: string;
+  orderId: string;
+  provider: 'mercado-pago';
+  providerPaymentId: string;
+  currency: 'BRL';
+  canonicalPaymentMethod: PaymentMethod;
+  providerPaymentMethodId: string;
+  providerPaymentTypeId: string;
+  installments: number | null;
+  providerStatus: string;
+  providerStatusDetail: string;
+  grossMinor: number;
+  totalPaidMinor: number | null;
+  providerFeeMinor: number | null;
+  mercadoPagoFeeMinor: number | null;
+  financingFeeMinor: number | null;
+  otherCollectorFeeMinor: number | null;
+  netReceivedMinor: number | null;
+  moneyReleaseDate: string;
+  moneyReleaseStatus: string;
+  providerUpdatedAt: string;
+  reconciledAt: string;
+  sourceAuthority: 'mercado_pago_payment_api';
+  evidenceFingerprint: string;
+};
+
+type ProviderReconciliationPayload = {
+  reconciliation?: ProviderReconciliation | null;
+  error?: string;
+};
+
 const money = (minor: number): string =>
   new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(minor / 100);
+
+const optionalMoney = (minor: number | null): string =>
+  minor === null ? 'Não informado pelo provedor' : money(minor);
 
 const dateTime = (value: string): string => {
   const date = new Date(value);
@@ -65,6 +102,18 @@ const authorityLabel = (authority: SourceAuthority): string => ({
   canonical_payment_snapshot: 'Pagamento reconciliado',
   operator_attestation: 'Registro operacional',
 }[authority]);
+
+const isMercadoPago = (provider: string): boolean =>
+  provider.toLowerCase().replace(/[^a-z0-9]+/g, '') === 'mercadopago';
+
+const providerMethodLabel = (reconciliation: ProviderReconciliation): string => {
+  if (reconciliation.providerPaymentMethodId === 'pix') return 'Pix';
+  if (reconciliation.providerPaymentTypeId === 'credit_card') return 'Cartão de crédito';
+  if (reconciliation.providerPaymentTypeId === 'debit_card') return 'Cartão de débito';
+  if (reconciliation.providerPaymentTypeId === 'prepaid_card') return 'Cartão pré-pago';
+  if (reconciliation.providerPaymentTypeId === 'bank_transfer') return 'Transferência / Pix';
+  return reconciliation.providerPaymentTypeId || reconciliation.providerPaymentMethodId || 'Não informado';
+};
 
 async function fetchHistory(input: {
   storeId: string;
@@ -100,6 +149,34 @@ async function fetchHistory(input: {
   return payload;
 }
 
+async function fetchProviderReconciliation(input: {
+  storeId: string;
+  paymentId: string;
+  refresh: boolean;
+}): Promise<ProviderReconciliation | null> {
+  const user = auth.currentUser;
+  if (!user) throw new Error('Faça login novamente.');
+  const token = await user.getIdToken();
+  const params = new URLSearchParams({
+    transport: 'store-promotions',
+    surface: 'finance-history',
+    path: 'provider-reconciliation',
+    storeId: input.storeId,
+    paymentId: input.paymentId,
+  });
+  const response = await fetch(`/api/health?${params.toString()}`, {
+    method: input.refresh ? 'POST' : 'GET',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const contentType = response.headers.get('content-type')?.toLowerCase() ?? '';
+  if (!contentType.includes('application/json')) {
+    throw new Error('A conciliação do Mercado Pago respondeu em um formato inesperado.');
+  }
+  const payload = await response.json() as ProviderReconciliationPayload;
+  if (!response.ok) throw new Error(payload.error || 'Não foi possível reconciliar o Mercado Pago.');
+  return payload.reconciliation ?? null;
+}
+
 export default function StoreFinanceHistoryWorkspace({ storeId }: { storeId: string }) {
   const [period, setPeriod] = useState('');
   const [kind, setKind] = useState<LedgerKind | 'all'>('all');
@@ -111,6 +188,10 @@ export default function StoreFinanceHistoryWorkspace({ storeId }: { storeId: str
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState('');
   const [recoveredCount, setRecoveredCount] = useState(0);
+  const [reconciliations, setReconciliations] = useState<Record<string, ProviderReconciliation | null>>({});
+  const [reconciliationErrors, setReconciliationErrors] = useState<Record<string, string>>({});
+  const [reconcilingPaymentId, setReconcilingPaymentId] = useState('');
+  const reconciliationRequestedRef = useRef(new Set<string>());
 
   const load = useCallback(async (append = false) => {
     append ? setLoadingMore(true) : setLoading(true);
@@ -149,10 +230,44 @@ export default function StoreFinanceHistoryWorkspace({ storeId }: { storeId: str
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [storeId, period, kind, paymentMethod]);
 
+  useEffect(() => {
+    const candidates = items.filter(item =>
+      item.kind === 'payment_capture'
+      && isMercadoPago(item.provider)
+      && !reconciliationRequestedRef.current.has(item.paymentId)
+    );
+    for (const item of candidates) {
+      reconciliationRequestedRef.current.add(item.paymentId);
+      void fetchProviderReconciliation({ storeId, paymentId: item.paymentId, refresh: false })
+        .then(reconciliation => {
+          setReconciliations(current => ({ ...current, [item.paymentId]: reconciliation }));
+        })
+        .catch(() => {
+          // Existing reconciliation is supplemental. A read failure must not block the finance history.
+        });
+    }
+  }, [items, storeId]);
+
   const activeFilterCount = useMemo(
     () => Number(Boolean(period)) + Number(kind !== 'all') + Number(paymentMethod !== 'all'),
     [period, kind, paymentMethod]
   );
+
+  const reconcile = useCallback(async (paymentId: string) => {
+    setReconcilingPaymentId(paymentId);
+    setReconciliationErrors(current => ({ ...current, [paymentId]: '' }));
+    try {
+      const reconciliation = await fetchProviderReconciliation({ storeId, paymentId, refresh: true });
+      setReconciliations(current => ({ ...current, [paymentId]: reconciliation }));
+    } catch (caught) {
+      setReconciliationErrors(current => ({
+        ...current,
+        [paymentId]: caught instanceof Error ? caught.message : 'Não foi possível reconciliar o Mercado Pago.',
+      }));
+    } finally {
+      setReconcilingPaymentId('');
+    }
+  }, [storeId]);
 
   return (
     <section className="min-w-0 max-w-full overflow-hidden rounded-3xl border border-cyan-500/20 bg-slate-900 p-5 text-white" data-kyrub-finance-history="cursor-paginated">
@@ -243,10 +358,9 @@ export default function StoreFinanceHistoryWorkspace({ storeId }: { storeId: str
       ) : (
         <div className="mt-4 min-w-0 space-y-2">
           {items.map(item => {
-            const feeMinor = item.providerFeeMinor;
-            const providerNetMinor = item.kind === 'payment_capture' && feeMinor !== null
-              ? item.amountMinor - feeMinor
-              : null;
+            const reconciliation = reconciliations[item.paymentId];
+            const reconciliationError = reconciliationErrors[item.paymentId];
+            const canReconcileMercadoPago = item.kind === 'payment_capture' && isMercadoPago(item.provider);
             return (
               <article key={item.id} className="min-w-0 max-w-full overflow-hidden rounded-2xl border border-slate-800 bg-slate-950 p-4">
                 <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -261,7 +375,7 @@ export default function StoreFinanceHistoryWorkspace({ storeId }: { storeId: str
                     <p className="mt-1 text-[8px] text-slate-600">{dateTime(item.occurredAt)}</p>
                     {item.kind === 'payment_capture' && (
                       <p className="mt-2 text-[8px] text-slate-600">
-                        Taxa PSP: {feeMinor === null ? 'não informada' : money(feeMinor)} · Líquido conhecido: {providerNetMinor === null ? 'aguardando evidência' : money(providerNetMinor)}
+                        Taxa PSP registrada no ledger: {item.providerFeeMinor === null ? 'não informada' : money(item.providerFeeMinor)}
                       </p>
                     )}
                   </div>
@@ -269,6 +383,83 @@ export default function StoreFinanceHistoryWorkspace({ storeId }: { storeId: str
                     {money(item.amountMinor)}
                   </strong>
                 </div>
+
+                {canReconcileMercadoPago && (
+                  <div className="mt-4 rounded-2xl border border-sky-500/20 bg-sky-500/5 p-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <p className="text-[8px] font-black uppercase text-sky-200">Conciliação Mercado Pago</p>
+                        <p className="mt-1 text-[8px] leading-relaxed text-slate-500">
+                          Consulta a conta Mercado Pago conectada à loja e registra somente valores devolvidos pelo provedor.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        disabled={reconcilingPaymentId === item.paymentId}
+                        onClick={() => void reconcile(item.paymentId)}
+                        className="min-h-9 rounded-xl border border-sky-400/30 bg-sky-500/10 px-3 text-[8px] font-black uppercase text-sky-100 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {reconcilingPaymentId === item.paymentId
+                          ? 'Reconciliando…'
+                          : reconciliation ? 'Atualizar Mercado Pago' : 'Reconciliar Mercado Pago'}
+                      </button>
+                    </div>
+
+                    {reconciliationError && (
+                      <p className="mt-3 rounded-xl border border-rose-500/20 bg-rose-500/10 p-3 text-[8px] text-rose-200">
+                        {reconciliationError}
+                      </p>
+                    )}
+
+                    {reconciliation && (
+                      <div className="mt-3">
+                        <div className="grid min-w-0 gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                          <div className="min-w-0 rounded-xl border border-slate-800 bg-slate-950/70 p-3">
+                            <span className="text-[7px] font-black uppercase text-slate-600">Venda bruta</span>
+                            <strong className="mt-1 block text-[11px] text-white">{money(reconciliation.grossMinor)}</strong>
+                          </div>
+                          <div className="min-w-0 rounded-xl border border-slate-800 bg-slate-950/70 p-3">
+                            <span className="text-[7px] font-black uppercase text-slate-600">Cliente pagou</span>
+                            <strong className="mt-1 block text-[11px] text-white">{optionalMoney(reconciliation.totalPaidMinor)}</strong>
+                          </div>
+                          <div className="min-w-0 rounded-xl border border-slate-800 bg-slate-950/70 p-3">
+                            <span className="text-[7px] font-black uppercase text-slate-600">Taxas do vendedor</span>
+                            <strong className="mt-1 block text-[11px] text-amber-200">{optionalMoney(reconciliation.providerFeeMinor)}</strong>
+                          </div>
+                          <div className="min-w-0 rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-3">
+                            <span className="text-[7px] font-black uppercase text-emerald-300/70">Líquido informado pelo MP</span>
+                            <strong className="mt-1 block text-[11px] text-emerald-200">{optionalMoney(reconciliation.netReceivedMinor)}</strong>
+                          </div>
+                        </div>
+
+                        <div className="mt-2 grid min-w-0 gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                          <p className="min-w-0 rounded-xl border border-slate-800 p-2 text-[8px] text-slate-500">
+                            Taxa Mercado Pago: <strong className="text-slate-300">{optionalMoney(reconciliation.mercadoPagoFeeMinor)}</strong>
+                          </p>
+                          <p className="min-w-0 rounded-xl border border-slate-800 p-2 text-[8px] text-slate-500">
+                            Custo de parcelamento: <strong className="text-slate-300">{optionalMoney(reconciliation.financingFeeMinor)}</strong>
+                          </p>
+                          <p className="min-w-0 rounded-xl border border-slate-800 p-2 text-[8px] text-slate-500">
+                            Meio: <strong className="text-slate-300">{providerMethodLabel(reconciliation)}</strong>{reconciliation.installments ? ` · ${reconciliation.installments}x` : ''}
+                          </p>
+                          <p className="min-w-0 rounded-xl border border-slate-800 p-2 text-[8px] text-slate-500">
+                            Status MP: <strong className="text-slate-300">{reconciliation.providerStatusDetail || reconciliation.providerStatus}</strong>
+                          </p>
+                        </div>
+
+                        <p className="mt-2 text-[8px] leading-relaxed text-slate-500">
+                          {reconciliation.moneyReleaseDate
+                            ? `Data de liberação informada pelo Mercado Pago: ${dateTime(reconciliation.moneyReleaseDate)}.`
+                            : 'O Mercado Pago não informou uma data de liberação nesta leitura.'}
+                          {' '}Última conciliação: {dateTime(reconciliation.reconciledAt)}.
+                        </p>
+                        <p className="mt-2 rounded-xl border border-amber-500/20 bg-amber-500/5 p-3 text-[8px] leading-relaxed text-amber-100/80">
+                          “Líquido informado pelo MP” e data de liberação são evidências da conta Mercado Pago. Eles não confirmam, por si só, que o dinheiro foi transferido para uma conta bancária da loja. Transferência bancária só será marcada quando houver evidência própria de payout/saque.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
               </article>
             );
           })}
