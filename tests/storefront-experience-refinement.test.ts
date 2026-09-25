@@ -12,7 +12,7 @@ const staffPdvSource = [
   source('src/components/customer/TableServiceWorkspace.tsx'),
   source('src/components/customer/LegacyTableServiceWorkspace.tsx'),
 ].join('\n');
-const checkoutSource = source('src/components/modals/B2CCartDrawer.tsx');
+const checkoutSource = source('src/components/modals/B2CCartDrawerApprovalBase.tsx');
 const productModalSource = source('src/components/modals/NewProductModal.tsx');
 const storeConfigSource = source('src/components/modals/StoreConfigModal.tsx');
 const storePersistenceSource = source('src/utils/storePersistence.ts');
