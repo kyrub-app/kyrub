@@ -64,8 +64,11 @@ jobs:
           tests/production-health.test.ts
           tests/local-attendance-serverless-routing.test.ts
 
-      - name: Build
-        run: npm run build
+      - name: Prebuild validation
+        run: npm run prebuild
+
+      - name: Bundle application
+        run: npm --ignore-scripts run build
 
       - name: Normalize Vercel serverless ESM dependency graph
         run: node scripts/normalize-serverless-esm-imports.mjs

@@ -4,6 +4,7 @@ import {
   verifiedMercadoPagoPaymentEvent,
 } from './mercadoPagoPixProvider.js';
 import { verifiedStoreScopedMercadoPagoPaymentEvent } from './mercadoPagoStoreScopedProvider.js';
+import { settleMarketplaceOperationalOrderAfterPayment } from './marketplaceOrderPaymentSettlementService.js';
 import {
   attachPreparedCustomerDestinationResolutionToOperationalOrder,
   prepareCustomerDestinationResolutionForPaymentIntent,
@@ -67,6 +68,15 @@ export const processMercadoPagoWebhook = async (input: {
     paymentId: event.kyrubPaymentId,
     event,
   });
+
+  if (event.eventType === 'payment.paid' && result.orderId) {
+    await settleMarketplaceOperationalOrderAfterPayment({
+      storeId: event.kyrubStoreId,
+      orderId: result.orderId,
+      paymentIntentId: event.paymentIntentId,
+      occurredAt: event.occurredAt,
+    });
+  }
 
   await attachPreparedCustomerDestinationResolutionToOperationalOrder(preparedDestination);
 
