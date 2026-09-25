@@ -14,6 +14,7 @@ import {
   isMercadoPagoPixRuntimeConfigured,
   type MercadoPagoPixCheckout,
 } from './mercadoPagoPixProvider.js';
+import { syncMarketplaceOrderInventoryReservationExpiry } from '../inventory/marketplaceOrderInventoryReservationService.js';
 
 export interface MercadoPagoCheckoutBridgeResult {
   providerReady: boolean;
@@ -171,6 +172,11 @@ export const attachMercadoPagoPixToExistingIntent = async (input: {
       throw new Error('CHECKOUT_PROVIDER_PAYMENT_CONFLICT');
     }
     const existingPix = await getMercadoPagoPixCheckout(intent.providerIntentId);
+    await syncMarketplaceOrderInventoryReservationExpiry(
+      intent.storeId,
+      intent.target.orderId,
+      existingPix.expiresAt || intent.expiresAt
+    );
     return bridgeFromPix(existingPix, approval.status);
   }
 
@@ -185,6 +191,7 @@ export const attachMercadoPagoPixToExistingIntent = async (input: {
     intent: refreshedIntent,
     paymentId: payment.id,
   });
+  const effectiveExpiresAt = pix.expiresAt || refreshedExpiresAt;
 
   await adminDb.runTransaction(async transaction => {
     const [freshIntentSnapshot, freshPaymentSnapshot, freshOrderSnapshot] = await Promise.all([
@@ -222,7 +229,7 @@ export const attachMercadoPagoPixToExistingIntent = async (input: {
     transaction.update(intentRef, {
       provider: pix.provider,
       providerIntentId: pix.providerPaymentId,
-      expiresAt: pix.expiresAt || refreshedExpiresAt,
+      expiresAt: effectiveExpiresAt,
       updatedAt: refreshedAt,
     });
     transaction.update(paymentRef, {
@@ -232,5 +239,11 @@ export const attachMercadoPagoPixToExistingIntent = async (input: {
     });
   });
 
-  return bridgeFromPix(pix, approval.status);
+  await syncMarketplaceOrderInventoryReservationExpiry(
+    intent.storeId,
+    intent.target.orderId,
+    effectiveExpiresAt
+  );
+
+  return bridgeFromPix({ ...pix, expiresAt: effectiveExpiresAt }, approval.status);
 };
