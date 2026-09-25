@@ -53,6 +53,10 @@
       "destination": "/api/health?transport=store-promotions&path=:path*"
     },
     {
+      "source": "/api/store-finance",
+      "destination": "/api/health?transport=store-promotions&surface=finance"
+    },
+    {
       "source": "/api/marketplace-discovery/public/:slug",
       "destination": "/api/health?transport=public-storefront&slug=:slug"
     },
