@@ -1,0 +1,166 @@
+# Subtest: notification persistence is deterministic and idempotent after queue delivery
+ok 1059 - notification persistence is deterministic and idempotent after queue delivery
+  ---
+  duration_ms: 0.28493
+  type: 'test'
+  ...
+# Subtest: orders_v2 is recognized by the inbox but is not synchronously refetched there
+ok 1060 - orders_v2 is recognized by the inbox but is not synchronously refetched there
+  ---
+  duration_ms: 0.184312
+  type: 'test'
+  ...
+# Subtest: orders_v2 public ingress sends to Vercel Queue while catalog notifications fall through to manual-review router
+ok 1061 - orders_v2 public ingress sends to Vercel Queue while catalog notifications fall through to manual-review router
+  ---
+  duration_ms: 0.257989
+  type: 'test'
+  ...
+# Subtest: Vercel Queue publication is durable and deduplicated by Mercado Livre notification id
+ok 1062 - Vercel Queue publication is durable and deduplicated by Mercado Livre notification id
+  ---
+  duration_ms: 0.377817
+  type: 'test'
+  ...
+# Subtest: Vercel Queue consumer is a dedicated private trigger and cannot air-gap public health
+not ok 1063 - Vercel Queue consumer is a dedicated private trigger and cannot air-gap public health
+  ---
+  duration_ms: 5.18125
+  type: 'test'
+  location: '/home/runner/work/kyrub/kyrub/tests/mercado-livre-notification-inbox.test.ts:1:5066'
+  failureType: 'testCodeFailure'
+  error: |-
+    The input did not match the regular expression /consumeMercadoLivreOrderQueueMessage\(message\)/. Input:
+    
+    "import { QueueClient } from '@vercel/queue';\n" +
+      'import {\n' +
+      '  MERCADO_LIVRE_ORDERS_V2_QUEUE_TOPIC,\n' +
+      '  consumeMercadoLivreOrderQueueMessage,\n' +
+      "} from '../server/integrations/mercadoLivreOrderQueueService.js';\n" +
+      'import {\n' +
+      '  MARKETPLACE_PAYMENT_EXPIRY_QUEUE_KIND,\n' +
+      '  consumeMarketplacePaymentExpiryQueueMessage,\n' +
+      "} from '../server/payments/marketplacePaymentExpiryQueueService.js';\n" +
+      'import {\n' +
+      '  isLegacyMercadoLivreOrdersV2QueuePayload,\n' +
+      '  parseKyrubSharedQueueEnvelope,\n' +
+      "} from '../server/queue/kyrubSharedQueueEnvelope.js';\n" +
+      '\n' +
+      'const queue = new QueueClient();\n' +
+      '\n' +
+      'const consumeMercadoLivre = async (\n' +
+      '  payload: unknown,\n' +
+      '  metadata: { topicName: string; messageId: string; deliveryCount: number }\n' +
+      '): Promise<void> => {\n' +
+      '  const result = await consumeMercadoLivreOrderQueueMessage(payload);\n' +
+      "  console.info('[Mercado Livre orders_v2 consumed]', JSON.stringify({\n" +
+      '    topic: metadata.topicName,\n' +
+      '    messageId: metadata.messageId,\n' +
+      '    deliveryCount: metadata.deliveryCount,\n' +
+      '    disposition: result.disposition,\n' +
+      '    inboxId: result.inboxId,\n' +
+      '    outcome: result.outcome,\n' +
+      '  }));\n' +
+      '};\n' +
+      '\n' +
+      'export default queue.handleNodeCallback(async (message, metadata) => {\n' +
+      '  if (metadata.topicName !== MERCADO_LIVRE_ORDERS_V2_QUEUE_TOPIC) {\n' +
+      "    throw new Error('KYRUB_QUEUE_TOPIC_MISMATCH');\n" +
+      '  }\n' +
+      '\n' +
+      '  // Preserve compatibility with raw Mercado Livre messages that were queued\n' +
+      '  // before the shared, versioned envelope was introduced.\n' +
+      '  if (isLegacyMercadoLivreOrdersV2QueuePayload(message)) {\n' +
+      '    await consumeMercadoLivre(message, metadata);\n' +
+      '    return;\n' +
+      '  }\n' +
+      '\n' +
+      '  const envelope = parseKyrubSharedQueueEnvelope(message);\n' +
+      '  if (!envelope) {\n' +
+      "    throw new Error('KYRUB_QUEUE_ENVELOPE_INVALID');\n" +
+      '  }\n' +
+      '\n' +
+      "  if (envelope.kind === 'mercado_livre_orders_v2') {\n" +
+      '    await consumeMercadoLivre(envelope.payload, metadata);\n' +
+      '    return;\n' +
+      '  }\n' +
+      '\n' +
+      '  if (envelope.kind === MARKETPLACE_PAYMENT_EXPIRY_QUEUE_KIND) {\n' +
+      '    const result = await consumeMarketplacePaymentExpiryQueueMessage(envelope.payload);\n' +
+      "    console.info('[Marketplace payment expiry consumed]', JSON.stringify({\n" +
+      '      topic: metadata.topicName,\n' +
+      '      messageId: metadata.messageId,\n' +
+      '      deliveryCount: metadata.deliveryCount,\n' +
+      '      storeId: result.storeId,\n' +
+      '      orderId: result.orderId,\n' +
+      '      paymentIntentId: result.paymentIntentId,\n' +
+      '      expiresAt: result.expiresAt,\n' +
+      '      scanned: result.scanned,\n' +
+      '      paid: result.paid,\n' +
+      '      released: result.released,\n' +
+      '      deferred: result.deferred,\n' +
+      '      failed: result.failed,\n' +
+      '    }));\n' +
+      '    return;\n' +
+      '  }\n' +
+      '\n' +
+      "  throw new Error('KYRUB_QUEUE_KIND_UNSUPPORTED');\n" +
+      '});\n'
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual: |-
+    import { QueueClient } from '@vercel/queue';
+    import {
+      MERCADO_LIVRE_ORDERS_V2_QUEUE_TOPIC,
+      consumeMercadoLivreOrderQueueMessage,
+    } from '../server/integrations/mercadoLivreOrderQueueService.js';
+    import {
+      MARKETPLACE_PAYMENT_EXPIRY_QUEUE_KIND,
+      consumeMarketplacePaymentExpiryQueueMessage,
+    } from '../server/payments/marketplacePaymentExpiryQueueService.js';
+    import {
+      isLegacyMercadoLivreOrdersV2QueuePayload,
+      parseKyrubSharedQueueEnvelope,
+    } from '../server/queue/kyrubSharedQueueEnvelope.js';
+    
+    const queue = new QueueClient();
+    
+    const consumeMercadoLivre = async (
+      payload: unknown,
+      metadata: { topicName: string; messageId: string; deliveryCount: number }
+    ): Promise<void> => {
+      const result = await consumeMercadoLivreOrderQueueMessage(payload);
+      console.info('[Mercado Livre orders_v2 consumed]', JSON.stringify({
+        topic: metadata.topicName,
+        messageId: metadata.messageId,
+        deliveryCount: metadata.deliveryCount,
+        disposition: result.disposition,
+        inboxId: result.inboxId,
+        outcome: result.outcome,
+      }));
+    };
+    
+    export default queue.handleNodeCallback(async (message, metadata) => {
+      if (metadata.topicName !== MERCADO_LIVRE_ORDERS_V2_QUEUE_TOPIC) {
+
+--- matching failure markers ---
+879:# Subtest: runtime plan overrides reset to compiled V1 before stale or failed hydration can authorize capacity
+880:ok 145 - runtime plan overrides reset to compiled V1 before stale or failed hydration can authorize capacity
+2133:    # Subtest: failed and expired intents are retryable but never reach KDS
+2134:    ok 3 - failed and expired intents are retryable but never reach KDS
+2145:    # Subtest: failed refund can be requested again without retrying the original payment
+2146:    ok 5 - failed refund can be requested again without retrying the original payment
+4187:# Subtest: failed staging never produces a cutover authority
+4188:ok 592 - failed staging never produces a cutover authority
+4853:# Subtest: failed Mercado Livre selection can retry the exact selected intent without reviving other choices
+4854:ok 703 - failed Mercado Livre selection can retry the exact selected intent without reviving other choices
+7403:not ok 1063 - Vercel Queue consumer is a dedicated private trigger and cannot air-gap public health
+7479:      '      failed: result.failed,\n' +
+7487:  code: 'ERR_ASSERTION'
+7488:  name: 'AssertionError'
+7489:  expected:
+7490:  actual: |-
+7558:          failed: result.failed,
+7566:  operator: 'match'
