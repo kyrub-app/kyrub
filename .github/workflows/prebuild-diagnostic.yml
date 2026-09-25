@@ -8,9 +8,13 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: prebuild-diagnostic-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   diagnose:
-    name: Split prebuild contracts
+    name: Capture exact prebuild failures
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -41,42 +45,14 @@ jobs:
           fs.writeFileSync(path, source.replace(oldPath, newPath));
           NODE
 
-      - name: Prebuild contracts 1 of 8
-        if: always()
-        env: { CHUNK_INDEX: '0', CHUNK_COUNT: '8' }
-        run: node scripts/run-prebuild-test-chunk.mjs
+      - name: Capture prebuild test failures
+        run: node scripts/report-prebuild-test-failures.mjs
 
-      - name: Prebuild contracts 2 of 8
+      - name: Upload prebuild diagnostic report
         if: always()
-        env: { CHUNK_INDEX: '1', CHUNK_COUNT: '8' }
-        run: node scripts/run-prebuild-test-chunk.mjs
-
-      - name: Prebuild contracts 3 of 8
-        if: always()
-        env: { CHUNK_INDEX: '2', CHUNK_COUNT: '8' }
-        run: node scripts/run-prebuild-test-chunk.mjs
-
-      - name: Prebuild contracts 4 of 8
-        if: always()
-        env: { CHUNK_INDEX: '3', CHUNK_COUNT: '8' }
-        run: node scripts/run-prebuild-test-chunk.mjs
-
-      - name: Prebuild contracts 5 of 8
-        if: always()
-        env: { CHUNK_INDEX: '4', CHUNK_COUNT: '8' }
-        run: node scripts/run-prebuild-test-chunk.mjs
-
-      - name: Prebuild contracts 6 of 8
-        if: always()
-        env: { CHUNK_INDEX: '5', CHUNK_COUNT: '8' }
-        run: node scripts/run-prebuild-test-chunk.mjs
-
-      - name: Prebuild contracts 7 of 8
-        if: always()
-        env: { CHUNK_INDEX: '6', CHUNK_COUNT: '8' }
-        run: node scripts/run-prebuild-test-chunk.mjs
-
-      - name: Prebuild contracts 8 of 8
-        if: always()
-        env: { CHUNK_INDEX: '7', CHUNK_COUNT: '8' }
-        run: node scripts/run-prebuild-test-chunk.mjs
+        uses: actions/upload-artifact@v4
+        with:
+          name: prebuild-test-failures
+          path: diagnostics/prebuild-test-failures.*
+          if-no-files-found: error
+          retention-days: 3
