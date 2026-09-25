@@ -1,4 +1,5 @@
 import express from 'express';
+import { createStoreFinanceRouter } from './storeFinanceRouter.js';
 import { createStorePromotionManagementRouter } from './storePromotionManagementRouter.js';
 
 type QueryValue = string | string[] | undefined;
@@ -23,6 +24,7 @@ type ResponseLike = {
 const app = express();
 app.set('trust proxy', 1);
 app.use('/api/store-promotions', createStorePromotionManagementRouter());
+app.use('/api/store-finance', createStoreFinanceRouter());
 
 const first = (value: QueryValue | HeaderValue): string =>
   (Array.isArray(value) ? value[0] : value)?.trim() ?? '';
@@ -32,7 +34,7 @@ const reconstructedQuery = (
 ): string => {
   const params = new URLSearchParams();
   for (const [key, value] of Object.entries(query ?? {})) {
-    if (key === 'transport' || key === 'path') continue;
+    if (key === 'transport' || key === 'path' || key === 'surface') continue;
     if (Array.isArray(value)) {
       for (const item of value) params.append(key, item);
     } else if (typeof value === 'string') {
@@ -50,8 +52,10 @@ export const handleStorePromotionServerlessRequest = async (
   const request = requestInput as RequestLike;
   const response = responseInput as ResponseLike;
   const path = first(request.query?.path).replace(/^\/+|\/+$/g, '');
+  const surface = first(request.query?.surface);
+  const routeBase = surface === 'finance' ? '/api/store-finance' : '/api/store-promotions';
   const originalUrl = request.url;
-  request.url = `/api/store-promotions${path ? `/${path}` : ''}${reconstructedQuery(request.query)}`;
+  request.url = `${routeBase}${path ? `/${path}` : ''}${reconstructedQuery(request.query)}`;
 
   response.setHeader?.('Cache-Control', 'no-store, max-age=0');
 
@@ -71,7 +75,7 @@ export const handleStorePromotionServerlessRequest = async (
         requestInput as Parameters<typeof app>[0],
         responseInput as Parameters<typeof app>[1],
         (error?: unknown) =>
-          settle(error ?? new Error('STORE_PROMOTIONS_ROUTE_NOT_FOUND'))
+          settle(error ?? new Error('STORE_MANAGEMENT_ROUTE_NOT_FOUND'))
       );
 
       if (response.writableEnded) settle();
