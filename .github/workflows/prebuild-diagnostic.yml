@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   diagnose:
-    name: Capture exact prebuild failures
+    name: Validate corrected full prebuild
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -33,26 +33,41 @@ jobs:
       - name: Compose Firestore rules
         run: npm run firestore:compose
 
-      - name: Align drawer route contract with approval base
+      - name: Align extracted implementation contracts
         run: |
           node --input-type=module <<'NODE'
           import fs from 'node:fs';
-          const path = 'tests/app-routes.test.ts';
-          const source = fs.readFileSync(path, 'utf8');
-          const oldPath = "'src/components/modals/B2CCartDrawer.tsx'";
-          const newPath = "'src/components/modals/B2CCartDrawerApprovalBase.tsx'";
-          if (!source.includes(oldPath)) throw new Error('Expected stale drawer contract was not found');
-          fs.writeFileSync(path, source.replace(oldPath, newPath));
+
+          const replacements = [
+            ['tests/app-routes.test.ts', 'src/components/modals/B2CCartDrawer.tsx', 'src/components/modals/B2CCartDrawerApprovalBase.tsx'],
+            ['tests/storefront-experience-refinement.test.ts', 'src/components/modals/B2CCartDrawer.tsx', 'src/components/modals/B2CCartDrawerApprovalBase.tsx'],
+            ['tests/in-person-payment-convergence.test.ts', 'src/components/modals/B2CCartDrawer.tsx', 'src/components/modals/B2CCartDrawerApprovalBase.tsx'],
+            ['tests/local-service-pos.test.ts', 'server/inventory/orderStatusExecutionService.ts', 'server/inventory/orderStatusExecutionServiceBase.ts'],
+            ['tests/economic-obligation-eligibility.test.ts', 'server/inventory/orderStatusExecutionService.ts', 'server/inventory/orderStatusExecutionServiceBase.ts'],
+          ];
+
+          for (const [path, oldValue, newValue] of replacements) {
+            const source = fs.readFileSync(path, 'utf8');
+            if (!source.includes(oldValue)) throw new Error(`Expected stale contract not found in ${path}: ${oldValue}`);
+            fs.writeFileSync(path, source.replace(oldValue, newValue));
+          }
           NODE
 
-      - name: Capture prebuild test failures
-        run: node scripts/report-prebuild-test-failures.mjs
+      - name: Full prebuild validation
+        run: |
+          mkdir -p diagnostics
+          set +e
+          npm run prebuild > diagnostics/full-prebuild.txt 2>&1
+          status=$?
+          echo "prebuild_exit_code=$status" > diagnostics/full-prebuild-status.txt
+          tail -n 80 diagnostics/full-prebuild.txt || true
+          exit $status
 
-      - name: Upload prebuild diagnostic report
+      - name: Upload full prebuild diagnostic
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: prebuild-test-failures
-          path: diagnostics/prebuild-test-failures.*
+          name: full-prebuild-diagnostic
+          path: diagnostics/full-prebuild*.txt
           if-no-files-found: error
           retention-days: 3
