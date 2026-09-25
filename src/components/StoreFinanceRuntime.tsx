@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { auth } from '../utils/firebase';
 import HistoricalFiscalSaleWorkspace from './store/HistoricalFiscalSaleWorkspace';
+import StorePayablesWorkspace, {
+  type StorePayable,
+  type StorePayableSummary,
+} from './store/StorePayablesWorkspace';
 
 type LedgerKind =
   | 'payment_capture'
@@ -78,6 +82,8 @@ type StoreFinancePayload = {
   recoveredCount?: number;
   receivableSummary?: StoreReceivableSummary;
   receivables?: StoreReceivable[];
+  payableSummary?: StorePayableSummary;
+  payables?: StorePayable[];
   error?: string;
 };
 
@@ -123,7 +129,7 @@ const receivableStatusClass = (status: StoreReceivableStatus): string => ({
 }[status]);
 
 const providerFeeMinor = (entry: StoreFinanceEntry): number | null => {
-  const costs = entry.economicAllocation?.observedCosts ?? [];
+  const costs = entry.economicAllocation?.observCosts ?? entry.economicAllocation?.observedCosts ?? [];
   const fees = costs.filter(cost => cost.kind === 'provider_processing' && cost.borneBy === 'store');
   if (!fees.length) return null;
   return fees.reduce((total, fee) => total + fee.amountMinor, 0);
@@ -151,15 +157,15 @@ export function StoreFinanceRuntime({ storeId }: { storeId: string }) {
   const [error, setError] = useState('');
   const [fiscalOrderId, setFiscalOrderId] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     setError('');
     try {
       setPayload(await loadStoreFinance(storeId));
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Não foi possível carregar o Financeiro.');
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [storeId]);
 
@@ -169,6 +175,8 @@ export function StoreFinanceRuntime({ storeId }: { storeId: string }) {
   const summary = payload?.summary;
   const receivables = payload?.receivables ?? [];
   const receivableSummary = payload?.receivableSummary;
+  const payables = payload?.payables ?? [];
+  const payableSummary = payload?.payableSummary;
   const knownProviderFeesMinor = useMemo(
     () => entries.reduce((total, entry) => total + (providerFeeMinor(entry) ?? 0), 0),
     [entries]
@@ -201,7 +209,7 @@ export function StoreFinanceRuntime({ storeId }: { storeId: string }) {
             <h3 className="mt-1 text-base font-black">Movimentações da loja</h3>
             <p className="mt-1 text-[10px] leading-relaxed text-slate-400">Valores vindos dos pagamentos canônicos do Kyrub. Nenhum lançamento de demonstração é exibido aqui.</p>
           </div>
-          <button type="button" onClick={() => void load()} className="min-h-10 rounded-xl border border-slate-700 bg-slate-950 px-4 text-[9px] font-black uppercase text-slate-300">Atualizar</button>
+          <button type="button" onClick={() => void load(true)} className="min-h-10 rounded-xl border border-slate-700 bg-slate-950 px-4 text-[9px] font-black uppercase text-slate-300">Atualizar</button>
         </div>
         {(payload?.recoveredCount ?? 0) > 0 && (
           <p className="mt-4 rounded-2xl border border-cyan-500/20 bg-cyan-500/10 p-3 text-[10px] text-cyan-100">
@@ -259,6 +267,13 @@ export function StoreFinanceRuntime({ storeId }: { storeId: string }) {
           </div>
         )}
       </div>
+
+      <StorePayablesWorkspace
+        storeId={storeId}
+        payables={payables}
+        summary={payableSummary}
+        onReload={() => load(true)}
+      />
 
       <div className="min-w-0 max-w-full overflow-hidden rounded-3xl border border-slate-800 bg-slate-900 p-5">
         <div className="mb-4 flex items-center justify-between gap-3"><div className="min-w-0"><h4 className="text-xs font-black uppercase">Movimentações</h4><p className="mt-1 text-[9px] text-slate-500">{summary?.entryCount ?? entries.length} lançamento(s)</p></div></div>
