@@ -30,7 +30,7 @@ const mercadoLivreOAuthReturnModule = (): ErpManagementModule | null => {
 
 const LazyIntegrationsRuntime = lazy(async () => { const module = await import('./GerencialIntegrationsRuntime'); return { default: module.GerencialIntegrationsRuntime }; });
 const LazyProductInventoryRuntime = lazy(async () => { const module = await import('./store/ProductInventoryDirectRuntime'); return { default: module.ProductInventoryDirectRuntime }; });
-const LazyFinanceRuntime = lazy(async () => { const module = await import('./StoreFinanceRuntime'); return { default: module.StoreFinanceRuntime }; });
+const LazyFinanceRuntime = lazy(async () => { const module = await import('./StoreFinanceCompositeRuntime'); return { default: module.StoreFinanceCompositeRuntime }; });
 const LazyStoreTeamWorkspace = lazy(async () => { const module = await import('./store/StoreTeamWorkspace'); return { default: module.StoreTeamWorkspace }; });
 const LazyStorePayrollWorkspace = lazy(async () => { const module = await import('./store/StorePayrollWorkspace'); return { default: module.default }; });
 const LazyPromotionalRuntime = lazy(async () => { const module = await import('./store/PromotionalDirectRuntime'); return { default: module.PromotionalDirectRuntime }; });
