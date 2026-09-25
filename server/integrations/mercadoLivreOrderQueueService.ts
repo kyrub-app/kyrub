@@ -5,8 +5,12 @@ import {
   parseMercadoLivreNotification,
 } from './mercadoLivreNotificationInboxService.js';
 import { processMercadoLivreOrderNotificationInboxItem } from './mercadoLivreOrderIngressService.js';
+import {
+  KYRUB_SHARED_QUEUE_TOPIC,
+  createKyrubSharedQueueEnvelope,
+} from '../queue/kyrubSharedQueueEnvelope.js';
 
-export const MERCADO_LIVRE_ORDERS_V2_QUEUE_TOPIC = 'mercado_livre_orders_v2';
+export const MERCADO_LIVRE_ORDERS_V2_QUEUE_TOPIC = KYRUB_SHARED_QUEUE_TOPIC;
 
 const queueIdempotencyKey = (notificationId: string): string =>
   `ml-orders-v2-${createHash('sha256').update(notificationId).digest('hex')}`;
@@ -27,7 +31,7 @@ export const enqueueMercadoLivreOrderNotification = async (
 
   const result = await send(
     MERCADO_LIVRE_ORDERS_V2_QUEUE_TOPIC,
-    input,
+    createKyrubSharedQueueEnvelope('mercado_livre_orders_v2', input),
     {
       idempotencyKey: queueIdempotencyKey(notification.notificationId),
       retentionSeconds: 86_400,

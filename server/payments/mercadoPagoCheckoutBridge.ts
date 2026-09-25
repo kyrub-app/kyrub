@@ -10,12 +10,17 @@ import {
 } from '../../src/utils/canonicalPayment.js';
 import {
   createMercadoPagoPixPayment,
+  getMercadoPagoPixCheckout,
   isMercadoPagoPixRuntimeConfigured,
   type MercadoPagoPixCheckout,
 } from './mercadoPagoPixProvider.js';
+import { syncMarketplaceOrderInventoryReservationExpiry } from '../inventory/marketplaceOrderInventoryReservationService.js';
+import { enqueueMarketplacePaymentExpiry } from './marketplacePaymentExpiryQueueService.js';
 
 export interface MercadoPagoCheckoutBridgeResult {
   providerReady: boolean;
+  approvalRequired: boolean;
+  orderStatus: string;
   provider: string;
   providerPaymentId: string;
   pixQrCode: string;
@@ -24,8 +29,13 @@ export interface MercadoPagoCheckoutBridgeResult {
   expiresAt: string;
 }
 
-const emptyBridge = (expiresAt: string): MercadoPagoCheckoutBridgeResult => ({
+const emptyBridge = (
+  expiresAt: string,
+  input: { approvalRequired?: boolean; orderStatus?: string } = {}
+): MercadoPagoCheckoutBridgeResult => ({
   providerReady: false,
+  approvalRequired: input.approvalRequired === true,
+  orderStatus: input.orderStatus ?? '',
   provider: '',
   providerPaymentId: '',
   pixQrCode: '',
@@ -33,6 +43,12 @@ const emptyBridge = (expiresAt: string): MercadoPagoCheckoutBridgeResult => ({
   pixTicketUrl: '',
   expiresAt,
 });
+
+const operationalOrderPath = (storeId: string, orderId: string): string =>
+  `artifacts/${storeId}/public/data/customerOrders/${orderId}`;
+
+const clean = (value: unknown): string =>
+  typeof value === 'string' ? value.trim() : '';
 
 function assertMarketplaceCheckoutContext(
   intent: NormalizedCanonicalPaymentIntent,
@@ -52,14 +68,64 @@ function assertMarketplaceCheckoutContext(
   }
 }
 
+const assertApprovedOperationalOrder = (input: {
+  data: Record<string, unknown>;
+  intent: MarketplaceCanonicalPaymentIntent;
+  payment: CanonicalPayment;
+}): { status: string; approvalRequired: boolean } => {
+  const { data, intent, payment } = input;
+  if (
+    clean(data.id) !== intent.target.orderId ||
+    clean(data.storeId) !== intent.storeId ||
+    clean(data.buyerId) !== intent.buyerId ||
+    clean(data.paymentIntentId) !== intent.id ||
+    clean(data.paymentId) !== payment.id
+  ) {
+    throw new Error('CHECKOUT_ORDER_PAYMENT_AUTHORITY_MISMATCH');
+  }
+  const status = clean(data.status);
+  if (status === 'pending') {
+    return { status, approvalRequired: true };
+  }
+  if (status !== 'accepted') {
+    throw new Error('CHECKOUT_ORDER_NOT_PAYABLE');
+  }
+  if (clean(data.paymentStatus) === 'paid') {
+    throw new Error('CHECKOUT_ORDER_ALREADY_PAID');
+  }
+  return { status, approvalRequired: false };
+};
+
+const bridgeFromPix = (
+  pix: MercadoPagoPixCheckout,
+  orderStatus: string
+): MercadoPagoCheckoutBridgeResult => ({
+  providerReady: Boolean(pix.qrCode || pix.qrCodeBase64 || pix.ticketUrl),
+  approvalRequired: false,
+  orderStatus,
+  provider: pix.provider,
+  providerPaymentId: pix.providerPaymentId,
+  pixQrCode: pix.qrCode,
+  pixQrCodeBase64: pix.qrCodeBase64,
+  pixTicketUrl: pix.ticketUrl,
+  expiresAt: pix.expiresAt,
+});
+
+const schedulePaymentExpiry = async (input: {
+  storeId: string;
+  orderId: string;
+  paymentIntentId: string;
+  expiresAt: string;
+}): Promise<void> => {
+  await enqueueMarketplacePaymentExpiry(input);
+};
+
 export const attachMercadoPagoPixToExistingIntent = async (input: {
   storeId: string;
   paymentIntentId: string;
   paymentId: string;
   expiresAt: string;
 }): Promise<MercadoPagoCheckoutBridgeResult> => {
-  if (!(await isMercadoPagoPixRuntimeConfigured())) return emptyBridge(input.expiresAt);
-
   const intentRef = adminDb.doc(
     `stores/${input.storeId}/paymentIntents/${input.paymentIntentId}`
   );
@@ -85,6 +151,27 @@ export const attachMercadoPagoPixToExistingIntent = async (input: {
     throw new Error('CHECKOUT_PAYMENT_NOT_PENDING');
   }
 
+  const orderRef = adminDb.doc(
+    operationalOrderPath(intent.storeId, intent.target.orderId)
+  );
+  const orderSnapshot = await orderRef.get();
+  if (!orderSnapshot.exists) throw new Error('CHECKOUT_ORDER_NOT_FOUND');
+  const approval = assertApprovedOperationalOrder({
+    data: orderSnapshot.data() as Record<string, unknown>,
+    intent,
+    payment,
+  });
+  if (approval.approvalRequired) {
+    return emptyBridge(intent.expiresAt, {
+      approvalRequired: true,
+      orderStatus: approval.status,
+    });
+  }
+
+  if (!(await isMercadoPagoPixRuntimeConfigured())) {
+    return emptyBridge(intent.expiresAt, { orderStatus: approval.status });
+  }
+
   if (intent.providerIntentId || payment.providerPaymentId) {
     if (
       intent.provider !== 'mercado-pago' ||
@@ -94,24 +181,45 @@ export const attachMercadoPagoPixToExistingIntent = async (input: {
     ) {
       throw new Error('CHECKOUT_PROVIDER_PAYMENT_CONFLICT');
     }
-    return {
-      ...emptyBridge(intent.expiresAt),
-      provider: 'mercado-pago',
-      providerPaymentId: intent.providerIntentId,
-    };
+    const existingPix = await getMercadoPagoPixCheckout(intent.providerIntentId);
+    const effectiveExpiresAt = existingPix.expiresAt || intent.expiresAt;
+    await syncMarketplaceOrderInventoryReservationExpiry(
+      intent.storeId,
+      intent.target.orderId,
+      effectiveExpiresAt
+    );
+    await schedulePaymentExpiry({
+      storeId: intent.storeId,
+      orderId: intent.target.orderId,
+      paymentIntentId: intent.id,
+      expiresAt: effectiveExpiresAt,
+    });
+    return bridgeFromPix(
+      { ...existingPix, expiresAt: effectiveExpiresAt },
+      approval.status
+    );
   }
 
+  const refreshedAt = new Date().toISOString();
+  const refreshedExpiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+  const refreshedIntent: MarketplaceCanonicalPaymentIntent = {
+    ...intent,
+    expiresAt: refreshedExpiresAt,
+    updatedAt: refreshedAt,
+  };
   const pix: MercadoPagoPixCheckout = await createMercadoPagoPixPayment({
-    intent,
+    intent: refreshedIntent,
     paymentId: payment.id,
   });
+  const effectiveExpiresAt = pix.expiresAt || refreshedExpiresAt;
 
   await adminDb.runTransaction(async transaction => {
-    const [freshIntentSnapshot, freshPaymentSnapshot] = await Promise.all([
+    const [freshIntentSnapshot, freshPaymentSnapshot, freshOrderSnapshot] = await Promise.all([
       transaction.get(intentRef),
       transaction.get(paymentRef),
+      transaction.get(orderRef),
     ]);
-    if (!freshIntentSnapshot.exists || !freshPaymentSnapshot.exists) {
+    if (!freshIntentSnapshot.exists || !freshPaymentSnapshot.exists || !freshOrderSnapshot.exists) {
       throw new Error('CHECKOUT_PAYMENT_STATE_MISSING');
     }
     const freshIntent = normalizeCanonicalPaymentIntent(
@@ -121,6 +229,11 @@ export const attachMercadoPagoPixToExistingIntent = async (input: {
       freshPaymentSnapshot.data() as CanonicalPayment
     );
     assertMarketplaceCheckoutContext(freshIntent, freshPayment);
+    assertApprovedOperationalOrder({
+      data: freshOrderSnapshot.data() as Record<string, unknown>,
+      intent: freshIntent,
+      payment: freshPayment,
+    });
     if (
       freshIntent.providerIntentId &&
       freshIntent.providerIntentId !== pix.providerPaymentId
@@ -136,22 +249,27 @@ export const attachMercadoPagoPixToExistingIntent = async (input: {
     transaction.update(intentRef, {
       provider: pix.provider,
       providerIntentId: pix.providerPaymentId,
-      updatedAt: new Date().toISOString(),
+      expiresAt: effectiveExpiresAt,
+      updatedAt: refreshedAt,
     });
     transaction.update(paymentRef, {
       provider: pix.provider,
       providerPaymentId: pix.providerPaymentId,
-      updatedAt: new Date().toISOString(),
+      updatedAt: refreshedAt,
     });
   });
 
-  return {
-    providerReady: Boolean(pix.qrCode || pix.ticketUrl),
-    provider: pix.provider,
-    providerPaymentId: pix.providerPaymentId,
-    pixQrCode: pix.qrCode,
-    pixQrCodeBase64: pix.qrCodeBase64,
-    pixTicketUrl: pix.ticketUrl,
-    expiresAt: pix.expiresAt || input.expiresAt,
-  };
+  await syncMarketplaceOrderInventoryReservationExpiry(
+    intent.storeId,
+    intent.target.orderId,
+    effectiveExpiresAt
+  );
+  await schedulePaymentExpiry({
+    storeId: intent.storeId,
+    orderId: intent.target.orderId,
+    paymentIntentId: intent.id,
+    expiresAt: effectiveExpiresAt,
+  });
+
+  return bridgeFromPix({ ...pix, expiresAt: effectiveExpiresAt }, approval.status);
 };

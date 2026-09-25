@@ -11,6 +11,18 @@ const paymentWebhookSource = readFileSync(
   'server/payments/paymentWebhookProcessor.ts',
   'utf8'
 );
+const mercadoPagoWebhookSource = readFileSync(
+  'server/payments/mercadoPagoWebhook.ts',
+  'utf8'
+);
+const orderStatusExecutionSource = readFileSync(
+  'server/inventory/orderStatusExecutionService.ts',
+  'utf8'
+);
+const marketplaceInventoryReservationSource = readFileSync(
+  'server/inventory/marketplaceOrderInventoryReservationService.ts',
+  'utf8'
+);
 const approvalSource = readFileSync(
   'src/components/customer/AttendanceOrderApproval.tsx',
   'utf8'
@@ -139,11 +151,44 @@ test('staff can create another order in the selected canonical service location 
   assert.doesNotMatch(inPersonOrderComposerSource, /tableCode:/);
 });
 
-test('Kyrub marketplace delivery and pickup require paid status before KDS', () => {
-  assert.match(workflowSource, /order\.source !== 'customer'/);
-  assert.match(workflowSource, /order\.fulfillmentType === 'dine_in'/);
-  assert.match(workflowSource, /isNinetyNineFoodOrder\(order\)/);
-  assert.match(workflowSource, /order\.paymentStatus === 'paid'/);
+test('approval-gated Kyrub delivery and pickup reach KDS before payment while legacy unpaid orders stay gated', () => {
+  assert.match(workflowSource, /isApprovalGatedKyrubMarketplaceOrder/);
+  assert.match(workflowSource, /order\.sourceChannel === 'kyrub'/);
+  assert.match(workflowSource, /order\.fulfillmentType === 'delivery'/);
+  assert.match(workflowSource, /order\.fulfillmentType === 'pickup'/);
+  assert.match(workflowSource, /order\.operatorId\.trim\(\) === order\.buyerId\.trim\(\)/);
+  assert.match(workflowSource, /if \(isApprovalGatedKyrubMarketplaceOrder\(order\)\) return true/);
+  assert.match(workflowSource, /return order\.paymentStatus === 'paid'/);
+});
+
+test('merchant acceptance reserves stock before releasing an unpaid Kyrub order for Pix', () => {
+  const reservationCall = orderStatusExecutionSource.indexOf(
+    'reservationAction = await reserveMarketplaceOrderInventoryOnAcceptance'
+  );
+  const acceptanceTransition = orderStatusExecutionSource.indexOf(
+    'const result = await executeBaseOrderStatusTransition(authorization, body)',
+    reservationCall
+  );
+  assert.ok(reservationCall >= 0);
+  assert.ok(acceptanceTransition > reservationCall);
+  assert.match(marketplaceInventoryReservationSource, /inventoryOrderReservations/);
+  assert.match(marketplaceInventoryReservationSource, /inventoryReservationStates/);
+  assert.match(marketplaceInventoryReservationSource, /reservedByItem/);
+  assert.match(marketplaceInventoryReservationSource, /availableCatalogAfterReservations/);
+  assert.match(marketplaceInventoryReservationSource, /buildOrderInventoryConsumptionWithOptions/);
+  assert.match(orderStatusExecutionSource, /acceptance_failed/);
+  assert.match(orderStatusExecutionSource, /commitMarketplaceOrderInventoryReservation/);
+});
+
+test('terminal Pix outcomes release reserved marketplace stock and cancel the unpaid accepted order', () => {
+  assert.match(mercadoPagoWebhookSource, /payment\.failed/);
+  assert.match(mercadoPagoWebhookSource, /payment\.expired/);
+  assert.match(mercadoPagoWebhookSource, /payment\.cancelled/);
+  assert.match(mercadoPagoWebhookSource, /releaseMarketplaceReservationForTerminalPayment/);
+  assert.match(marketplaceInventoryReservationSource, /transitionOrderStatusWithInventory/);
+  assert.match(marketplaceInventoryReservationSource, /'cancelled'/);
+  assert.match(marketplaceInventoryReservationSource, /releaseMarketplaceOrderInventoryReservation/);
+  assert.match(marketplaceInventoryReservationSource, /subtractReservationLines/);
 });
 
 test('authoritative paid webhook materializes the marketplace order transactionally', () => {

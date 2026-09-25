@@ -24,7 +24,7 @@ export interface MercadoPagoPixCheckout {
   expiresAt: string;
 }
 
-interface MercadoPagoPayment {
+export interface MercadoPagoPayment {
   id?: string | number;
   status?: string;
   status_detail?: string;
@@ -170,8 +170,25 @@ export const createMercadoPagoPixPayment = async (
   return normalizePixCheckout(payment);
 };
 
-export const getMercadoPagoPayment = async (providerPaymentId: string): Promise<MercadoPagoPayment> =>
-  mercadoPagoRequest<MercadoPagoPayment>(`/v1/payments/${encodeURIComponent(providerPaymentId)}`);
+export const getMercadoPagoPayment = async (
+  providerPaymentId: string
+): Promise<MercadoPagoPayment> =>
+  mercadoPagoRequest<MercadoPagoPayment>(
+    `/v1/payments/${encodeURIComponent(providerPaymentId)}`
+  );
+
+export const cancelMercadoPagoPayment = async (
+  providerPaymentId: string,
+  idempotencyKey: string
+): Promise<MercadoPagoPayment> =>
+  mercadoPagoRequest<MercadoPagoPayment>(
+    `/v1/payments/${encodeURIComponent(providerPaymentId)}`,
+    {
+      method: 'PUT',
+      headers: { 'X-Idempotency-Key': idempotencyKey },
+      body: JSON.stringify({ status: 'cancelled' }),
+    }
+  );
 
 export const testMercadoPagoConnection = async (): Promise<void> => {
   await mercadoPagoRequest<Record<string, unknown>>('/users/me');
@@ -258,7 +275,9 @@ const eventTypeForPayment = (payment: MercadoPagoPayment): PaymentProviderEventT
   const detail = clean(payment.status_detail).toLowerCase();
   if (status === 'approved') return 'payment.paid';
   if (status === 'rejected') return 'payment.failed';
-  if (status === 'cancelled') return detail.includes('expired') ? 'payment.expired' : 'payment.failed';
+  if (status === 'cancelled') {
+    return detail.includes('expired') ? 'payment.expired' : 'payment.cancelled';
+  }
   if (status === 'refunded' || status === 'charged_back') return 'refund.succeeded';
   return null;
 };
