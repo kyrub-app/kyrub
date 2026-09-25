@@ -1,0 +1,42 @@
+name: Add KDS status label
+on:
+  push:
+    branches:
+      - feat/profile-react-rebuild
+    paths:
+      - .github/workflows/add-kds-status-label.yml
+permissions:
+  contents: write
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/profile-react-rebuild
+      - name: Add status heading above stage filters
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('src/components/customer/CustomerOrderInbox.tsx')
+          text = path.read_text()
+          old = '''      <div className="flex gap-1.5 overflow-x-auto pb-0.5 scrollbar-none" aria-label="Etapas dos pedidos">\n        {filterOptions.map(option => (\n'''
+          new = '''      <div className="space-y-1.5">\n        <div className="px-0.5 text-[8px] font-black uppercase tracking-wide text-orange-300">\n          Status\n        </div>\n        <div className="flex gap-1.5 overflow-x-auto pb-0.5 scrollbar-none" aria-label="Status dos pedidos">\n          {filterOptions.map(option => (\n'''
+          if old not in text:
+              raise SystemExit('target status filter block not found')
+          text = text.replace(old, new, 1)
+          old_close = '''        ))}\n      </div>\n\n      {filter === 'pickup' && (\n'''
+          new_close = '''          ))}\n        </div>\n      </div>\n\n      {filter === 'pickup' && (\n'''
+          if old_close not in text:
+              raise SystemExit('target status filter close not found')
+          text = text.replace(old_close, new_close, 1)
+          path.write_text(text)
+          PY
+      - name: Commit label and remove temporary workflow
+        run: |
+          rm .github/workflows/add-kds-status-label.yml
+          git config user.name "kyrub-app"
+          git config user.email "kyrub.app@gmail.com"
+          git add src/components/customer/CustomerOrderInbox.tsx .github/workflows/add-kds-status-label.yml
+          git commit -m "Label KDS order stage filters as status"
+          git push origin HEAD:feat/profile-react-rebuild
