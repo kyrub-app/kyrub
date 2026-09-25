@@ -29,6 +29,7 @@ import {
   type StoreFinancePayableStatus,
 } from '../../shared/storeFinancePayables.js';
 import { listStoreEconomicLedgerEntries } from './storeEconomicLedgerService.js';
+import { listStoreCashFinanceProjection } from './storeCashFinanceProjection.js';
 
 const clean = (value: unknown): string =>
   typeof value === 'string' ? value.trim() : '';
@@ -378,13 +379,14 @@ export const createStoreFinanceRouter = (): Router => {
     try {
       const storeId = clean(request.query.storeId);
       if (!storeId) throw new Error('STORE_FINANCE_STORE_REQUIRED');
-      await requireOwner(request.get('authorization') ?? '', storeId);
+      const ownerId = await requireOwner(request.get('authorization') ?? '', storeId);
 
       const recoveredCount = await recoverMissingCanonicalPaidCaptures(storeId);
-      const [entries, receivables, payables] = await Promise.all([
+      const [entries, receivables, payables, cash] = await Promise.all([
         listStoreEconomicLedgerEntries({ storeId, limit: 100 }),
         listStoreReceivables(storeId),
         listStorePayables(storeId),
+        listStoreCashFinanceProjection({ financeStoreId: storeId, ownerId }),
       ]);
       const summary = deriveStoreEconomicLedgerSummary(entries);
 
@@ -397,6 +399,7 @@ export const createStoreFinanceRouter = (): Router => {
         receivables: receivables.items,
         payableSummary: payables.summary,
         payables: payables.items,
+        cash,
       });
     } catch (error) {
       const mapped = mapError(error);
