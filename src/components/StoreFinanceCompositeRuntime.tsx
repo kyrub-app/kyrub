@@ -1,10 +1,12 @@
 import { StoreFinanceRuntime } from './StoreFinanceRuntime';
-import StoreFinancePeriodWorkspace from './store/StoreFinancePeriodWorkspace';
+import StoreFinanceHistoryWorkspace from './store/StoreFinanceHistoryWorkspace';
+import StoreFinancePeriodRuntime from './store/StoreFinancePeriodRuntime';
 
 export function StoreFinanceCompositeRuntime({ storeId }: { storeId: string }) {
   return (
     <div className="space-y-4">
-      <StoreFinancePeriodWorkspace storeId={storeId} />
+      <StoreFinancePeriodRuntime storeId={storeId} />
+      <StoreFinanceHistoryWorkspace storeId={storeId} />
       <StoreFinanceRuntime storeId={storeId} />
     </div>
   );
