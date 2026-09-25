@@ -29,30 +29,54 @@ jobs:
       - name: Compose Firestore rules
         run: npm run firestore:compose
 
-      - name: Prebuild contracts 1 of 4
+      - name: Align drawer route contract with approval base
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const path = 'tests/app-routes.test.ts';
+          const source = fs.readFileSync(path, 'utf8');
+          const oldPath = "'src/components/modals/B2CCartDrawer.tsx'";
+          const newPath = "'src/components/modals/B2CCartDrawerApprovalBase.tsx'";
+          if (!source.includes(oldPath)) throw new Error('Expected stale drawer contract was not found');
+          fs.writeFileSync(path, source.replace(oldPath, newPath));
+          NODE
+
+      - name: Prebuild contracts 1 of 8
         if: always()
-        env:
-          CHUNK_INDEX: '0'
-          CHUNK_COUNT: '4'
+        env: { CHUNK_INDEX: '0', CHUNK_COUNT: '8' }
         run: node scripts/run-prebuild-test-chunk.mjs
 
-      - name: Prebuild contracts 2 of 4
+      - name: Prebuild contracts 2 of 8
         if: always()
-        env:
-          CHUNK_INDEX: '1'
-          CHUNK_COUNT: '4'
+        env: { CHUNK_INDEX: '1', CHUNK_COUNT: '8' }
         run: node scripts/run-prebuild-test-chunk.mjs
 
-      - name: Prebuild contracts 3 of 4
+      - name: Prebuild contracts 3 of 8
         if: always()
-        env:
-          CHUNK_INDEX: '2'
-          CHUNK_COUNT: '4'
+        env: { CHUNK_INDEX: '2', CHUNK_COUNT: '8' }
         run: node scripts/run-prebuild-test-chunk.mjs
 
-      - name: Prebuild contracts 4 of 4
+      - name: Prebuild contracts 4 of 8
         if: always()
-        env:
-          CHUNK_INDEX: '3'
-          CHUNK_COUNT: '4'
+        env: { CHUNK_INDEX: '3', CHUNK_COUNT: '8' }
+        run: node scripts/run-prebuild-test-chunk.mjs
+
+      - name: Prebuild contracts 5 of 8
+        if: always()
+        env: { CHUNK_INDEX: '4', CHUNK_COUNT: '8' }
+        run: node scripts/run-prebuild-test-chunk.mjs
+
+      - name: Prebuild contracts 6 of 8
+        if: always()
+        env: { CHUNK_INDEX: '5', CHUNK_COUNT: '8' }
+        run: node scripts/run-prebuild-test-chunk.mjs
+
+      - name: Prebuild contracts 7 of 8
+        if: always()
+        env: { CHUNK_INDEX: '6', CHUNK_COUNT: '8' }
+        run: node scripts/run-prebuild-test-chunk.mjs
+
+      - name: Prebuild contracts 8 of 8
+        if: always()
+        env: { CHUNK_INDEX: '7', CHUNK_COUNT: '8' }
         run: node scripts/run-prebuild-test-chunk.mjs
