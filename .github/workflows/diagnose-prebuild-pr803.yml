@@ -1,0 +1,46 @@
+name: Diagnose PR 803 prebuild
+
+on:
+  push:
+    branches:
+      - fix/merchant-approval-before-payment
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose-prebuild:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Run prebuild and capture output
+        id: prebuild
+        shell: bash
+        run: |
+          set +e
+          npm run prebuild > prebuild.log 2>&1
+          code=$?
+          echo "exit_code=$code" >> "$GITHUB_OUTPUT"
+          tail -n 250 prebuild.log > prebuild-tail.log
+          exit 0
+      - name: Upload diagnostic log
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr803-prebuild-failure
+          path: |
+            prebuild.log
+            prebuild-tail.log
+          if-no-files-found: error
+          retention-days: 1
+      - name: Fail after artifact upload
+        if: steps.prebuild.outputs.exit_code != '0'
+        run: exit 1
