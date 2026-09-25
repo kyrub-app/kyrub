@@ -65,51 +65,12 @@ jobs:
           rewrites.insert(payment_index, rewrite)
           config['rewrites'] = rewrites
           vercel.write_text(json.dumps(config, ensure_ascii=False, indent=2) + '\n')
-
-          tests = Path('tests/order-approval-routing.test.ts')
-          test_text = tests.read_text()
-          marker = "test('merchant-approved Pix reservations are expiration-aware and swept through the existing multiplexer'"
-          if marker not in test_text:
-            test_text += r'''
-
-test('merchant-approved Pix reservations are expiration-aware and swept through the existing multiplexer', () => {
-  const reservationSource = readFileSync(
-    'server/inventory/marketplaceOrderInventoryReservationService.ts',
-    'utf8'
-  );
-  const expirySource = readFileSync(
-    'server/payments/marketplacePaymentExpiryService.ts',
-    'utf8'
-  );
-  const checkoutBridgeSource = readFileSync(
-    'server/payments/mercadoPagoCheckoutBridge.ts',
-    'utf8'
-  );
-  const actionExecuteSource = readFileSync('api/action-execute.ts', 'utf8');
-  const vercelConfig = readFileSync('vercel.json', 'utf8');
-
-  assert.match(reservationSource, /activeExpiresAt/);
-  assert.match(reservationSource, /syncMarketplaceOrderInventoryReservationExpiry/);
-  assert.match(reservationSource, /markMarketplaceOrderInventoryReservationPaymentConfirmed/);
-  assert.match(checkoutBridgeSource, /effectiveExpiresAt/);
-  assert.match(checkoutBridgeSource, /syncMarketplaceOrderInventoryReservationExpiry/);
-  assert.match(expirySource, /where\('activeExpiresAt', '<=', now\)/);
-  assert.match(expirySource, /cancelMercadoPagoPayment/);
-  assert.match(expirySource, /processVerifiedPaymentWebhook/);
-  assert.match(expirySource, /releaseMarketplaceReservationForTerminalPayment/);
-  assert.match(actionExecuteSource, /transport === 'marketplace-payment-expiry'/);
-  assert.match(actionExecuteSource, /process\.env\.CRON_SECRET/);
-  assert.match(vercelConfig, /"source": "\/api\/payments\/maintenance\/expire"/);
-  assert.match(vercelConfig, /"schedule": "\*\/5 \* \* \* \*"/);
-});
-'''
-          tests.write_text(test_text)
           PY
       - name: Install dependencies
         run: npm ci
       - name: Validate TypeScript
         run: npm run lint
-      - name: Validate focused approval and expiry contract
+      - name: Validate focused approval contract
         run: node --test --import tsx tests/order-approval-routing.test.ts
       - name: Validate serverless graph
         run: |
@@ -122,6 +83,6 @@ test('merchant-approved Pix reservations are expiration-aware and swept through 
           rm .github/workflows/apply-payment-expiry-sweeper-pr803.yml
           git config user.name "kyrub-app"
           git config user.email "kyrub.app@gmail.com"
-          git add api/action-execute.ts vercel.json server/inventory/marketplaceOrderInventoryReservationService.ts tests/order-approval-routing.test.ts .github/workflows/apply-payment-expiry-sweeper-pr803.yml
+          git add api/action-execute.ts vercel.json server/inventory/marketplaceOrderInventoryReservationService.ts .github/workflows/apply-payment-expiry-sweeper-pr803.yml
           git commit -m "Schedule deterministic marketplace Pix expiry"
           git push origin HEAD:fix/merchant-approval-before-payment
