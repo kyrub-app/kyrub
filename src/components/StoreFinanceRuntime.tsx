@@ -47,11 +47,37 @@ type StoreFinanceSummary = {
   entryCount: number;
 };
 
+type StoreReceivableStatus = 'pending' | 'eligible' | 'settled' | 'reversed';
+
+type StoreReceivable = {
+  id: string;
+  status: StoreReceivableStatus;
+  amountMinor: number;
+  paymentId: string;
+  orderId: string;
+  createdAt: string;
+  eligibleAt: string;
+  settledAt: string;
+  reversedAt: string;
+};
+
+type StoreReceivableSummary = {
+  currency: 'BRL';
+  pendingMinor: number;
+  eligibleMinor: number;
+  settledMinor: number;
+  reversedMinor: number;
+  openMinor: number;
+  count: number;
+};
+
 type StoreFinancePayload = {
   storeId?: string;
   summary?: StoreFinanceSummary;
   entries?: StoreFinanceEntry[];
   recoveredCount?: number;
+  receivableSummary?: StoreReceivableSummary;
+  receivables?: StoreReceivable[];
   error?: string;
 };
 
@@ -81,6 +107,20 @@ const authorityLabel = (authority: StoreFinanceEntry['sourceAuthority']): string
 const methodLabel = (method: StoreFinanceEntry['paymentMethod']): string => ({
   pix: 'Pix', card: 'Cartão', cash: 'Dinheiro', other: 'Outro',
 }[method]);
+
+const receivableStatusLabel = (status: StoreReceivableStatus): string => ({
+  pending: 'Aguardando condição de repasse',
+  eligible: 'Elegível para repasse',
+  settled: 'Repasse liquidado',
+  reversed: 'Obrigação revertida',
+}[status]);
+
+const receivableStatusClass = (status: StoreReceivableStatus): string => ({
+  pending: 'border-amber-500/20 bg-amber-500/10 text-amber-200',
+  eligible: 'border-cyan-500/20 bg-cyan-500/10 text-cyan-200',
+  settled: 'border-emerald-500/20 bg-emerald-500/10 text-emerald-200',
+  reversed: 'border-slate-700 bg-slate-900 text-slate-400',
+}[status]);
 
 const providerFeeMinor = (entry: StoreFinanceEntry): number | null => {
   const costs = entry.economicAllocation?.observedCosts ?? [];
@@ -127,6 +167,8 @@ export function StoreFinanceRuntime({ storeId }: { storeId: string }) {
 
   const entries = payload?.entries ?? [];
   const summary = payload?.summary;
+  const receivables = payload?.receivables ?? [];
+  const receivableSummary = payload?.receivableSummary;
   const knownProviderFeesMinor = useMemo(
     () => entries.reduce((total, entry) => total + (providerFeeMinor(entry) ?? 0), 0),
     [entries]
@@ -173,6 +215,49 @@ export function StoreFinanceRuntime({ storeId }: { storeId: string }) {
         <article className="min-w-0 overflow-hidden rounded-2xl border border-slate-800 bg-slate-900 p-4"><span className="text-[8px] font-black uppercase text-slate-500">Estornos</span><strong className="mt-2 block text-lg">{money(summary?.refundedMinor ?? 0)}</strong></article>
         <article className="min-w-0 overflow-hidden rounded-2xl border border-slate-800 bg-slate-900 p-4"><span className="text-[8px] font-black uppercase text-slate-500">Taxas conhecidas do provedor</span><strong className="mt-2 block text-lg">{hasKnownProviderFees ? money(knownProviderFeesMinor) : 'Não informado'}</strong></article>
         <article className="min-w-0 overflow-hidden rounded-2xl border border-slate-800 bg-slate-900 p-4"><span className="text-[8px] font-black uppercase text-slate-500">Saldo após reversões</span><strong className="mt-2 block text-lg">{money(summary?.economicNetMinor ?? 0)}</strong><span className="mt-1 block text-[8px] text-slate-500">Não representa o líquido do PSP quando a taxa ainda não foi informada.</span></article>
+      </div>
+
+      <div className="min-w-0 max-w-full overflow-hidden rounded-3xl border border-cyan-500/20 bg-slate-900 p-5" data-kyrub-store-receivables="canonical">
+        <div className="min-w-0">
+          <span className="font-mono text-[9px] font-black uppercase tracking-[0.16em] text-cyan-300">Repasses a receber</span>
+          <h4 className="mt-1 text-xs font-black uppercase">Obrigações econômicas da loja</h4>
+          <p className="mt-2 text-[9px] leading-relaxed text-slate-400">
+            Mostra somente repasses canônicos criados a partir de vendas pagas com alocação econômica registrada. Não inclui contas a receber lançadas manualmente nem estima valores sem evidência.
+          </p>
+        </div>
+
+        <div className="mt-4 grid min-w-0 gap-2 sm:grid-cols-2 xl:grid-cols-4">
+          <article className="min-w-0 rounded-2xl border border-slate-800 bg-slate-950 p-3"><span className="text-[8px] font-black uppercase text-slate-600">Aguardando condição</span><strong className="mt-1 block text-sm text-amber-200">{money(receivableSummary?.pendingMinor ?? 0)}</strong></article>
+          <article className="min-w-0 rounded-2xl border border-slate-800 bg-slate-950 p-3"><span className="text-[8px] font-black uppercase text-slate-600">Elegível para repasse</span><strong className="mt-1 block text-sm text-cyan-200">{money(receivableSummary?.eligibleMinor ?? 0)}</strong></article>
+          <article className="min-w-0 rounded-2xl border border-slate-800 bg-slate-950 p-3"><span className="text-[8px] font-black uppercase text-slate-600">Em aberto</span><strong className="mt-1 block text-sm">{money(receivableSummary?.openMinor ?? 0)}</strong></article>
+          <article className="min-w-0 rounded-2xl border border-slate-800 bg-slate-950 p-3"><span className="text-[8px] font-black uppercase text-slate-600">Já liquidado</span><strong className="mt-1 block text-sm text-emerald-200">{money(receivableSummary?.settledMinor ?? 0)}</strong></article>
+        </div>
+
+        {receivables.length === 0 ? (
+          <p className="mt-4 rounded-2xl border border-dashed border-slate-700 p-4 text-center text-[9px] leading-relaxed text-slate-500">
+            Ainda não há repasse canônico registrado para esta loja. Vendas diretas sem alocação econômica não são transformadas artificialmente em contas a receber.
+          </p>
+        ) : (
+          <div className="mt-4 min-w-0 space-y-2">
+            {receivables.map(receivable => (
+              <article key={receivable.id} className="min-w-0 max-w-full overflow-hidden rounded-2xl border border-slate-800 bg-slate-950 p-3">
+                <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="min-w-0 flex-1">
+                    <span className={`inline-block max-w-full whitespace-normal break-words rounded-full border px-2 py-1 text-[7px] font-black uppercase leading-tight ${receivableStatusClass(receivable.status)}`}>
+                      {receivableStatusLabel(receivable.status)}
+                    </span>
+                    <p className="mt-2 max-w-full break-words text-[9px] leading-relaxed text-slate-500 [overflow-wrap:anywhere]">Pedido {receivable.orderId}</p>
+                    <p className="mt-1 text-[8px] text-slate-600">Criado em {dateTime(receivable.createdAt)}</p>
+                    {receivable.status === 'eligible' && receivable.eligibleAt && <p className="mt-1 text-[8px] text-cyan-300/70">Elegível desde {dateTime(receivable.eligibleAt)}</p>}
+                    {receivable.status === 'settled' && receivable.settledAt && <p className="mt-1 text-[8px] text-emerald-300/70">Liquidado em {dateTime(receivable.settledAt)}</p>}
+                    {receivable.status === 'reversed' && receivable.reversedAt && <p className="mt-1 text-[8px] text-slate-500">Revertido em {dateTime(receivable.reversedAt)}</p>}
+                  </div>
+                  <strong className="shrink-0 text-left text-sm text-cyan-100 sm:text-right">{money(receivable.amountMinor)}</strong>
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="min-w-0 max-w-full overflow-hidden rounded-3xl border border-slate-800 bg-slate-900 p-5">
