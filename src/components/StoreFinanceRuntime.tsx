@@ -149,10 +149,10 @@ export function StoreFinanceRuntime({ storeId }: { storeId: string }) {
   }
 
   return (
-    <section className="space-y-4 text-white" data-kyrub-store-finance-runtime="canonical-ledger">
-      <div className="rounded-3xl border border-emerald-500/25 bg-slate-900 p-5">
+    <section className="max-w-full space-y-4 overflow-x-hidden text-white" data-kyrub-store-finance-runtime="canonical-ledger">
+      <div className="max-w-full overflow-hidden rounded-3xl border border-emerald-500/25 bg-slate-900 p-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
+          <div className="min-w-0">
             <span className="font-mono text-[9px] font-black uppercase tracking-[0.16em] text-emerald-300">Financeiro Interno</span>
             <h3 className="mt-1 text-base font-black">Movimentações da loja</h3>
             <p className="mt-1 text-[10px] leading-relaxed text-slate-400">Valores vindos dos pagamentos canônicos do Kyrub. Nenhum lançamento de demonstração é exibido aqui.</p>
@@ -166,39 +166,42 @@ export function StoreFinanceRuntime({ storeId }: { storeId: string }) {
         )}
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <article className="rounded-2xl border border-slate-800 bg-slate-900 p-4"><span className="text-[8px] font-black uppercase text-slate-500">Recebido bruto</span><strong className="mt-2 block text-lg">{money(summary?.capturedMinor ?? 0)}</strong></article>
-        <article className="rounded-2xl border border-slate-800 bg-slate-900 p-4"><span className="text-[8px] font-black uppercase text-slate-500">Estornos</span><strong className="mt-2 block text-lg">{money(summary?.refundedMinor ?? 0)}</strong></article>
-        <article className="rounded-2xl border border-slate-800 bg-slate-900 p-4"><span className="text-[8px] font-black uppercase text-slate-500">Taxas conhecidas do provedor</span><strong className="mt-2 block text-lg">{hasKnownProviderFees ? money(knownProviderFeesMinor) : 'Não informado'}</strong></article>
-        <article className="rounded-2xl border border-slate-800 bg-slate-900 p-4"><span className="text-[8px] font-black uppercase text-slate-500">Saldo após reversões</span><strong className="mt-2 block text-lg">{money(summary?.economicNetMinor ?? 0)}</strong><span className="mt-1 block text-[8px] text-slate-500">Não representa o líquido do PSP quando a taxa ainda não foi informada.</span></article>
+      <div className="grid min-w-0 max-w-full gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <article className="min-w-0 overflow-hidden rounded-2xl border border-slate-800 bg-slate-900 p-4"><span className="text-[8px] font-black uppercase text-slate-500">Recebido bruto</span><strong className="mt-2 block text-lg">{money(summary?.capturedMinor ?? 0)}</strong></article>
+        <article className="min-w-0 overflow-hidden rounded-2xl border border-slate-800 bg-slate-900 p-4"><span className="text-[8px] font-black uppercase text-slate-500">Estornos</span><strong className="mt-2 block text-lg">{money(summary?.refundedMinor ?? 0)}</strong></article>
+        <article className="min-w-0 overflow-hidden rounded-2xl border border-slate-800 bg-slate-900 p-4"><span className="text-[8px] font-black uppercase text-slate-500">Taxas conhecidas do provedor</span><strong className="mt-2 block text-lg">{hasKnownProviderFees ? money(knownProviderFeesMinor) : 'Não informado'}</strong></article>
+        <article className="min-w-0 overflow-hidden rounded-2xl border border-slate-800 bg-slate-900 p-4"><span className="text-[8px] font-black uppercase text-slate-500">Saldo após reversões</span><strong className="mt-2 block text-lg">{money(summary?.economicNetMinor ?? 0)}</strong><span className="mt-1 block text-[8px] text-slate-500">Não representa o líquido do PSP quando a taxa ainda não foi informada.</span></article>
       </div>
 
-      <div className="rounded-3xl border border-slate-800 bg-slate-900 p-5">
-        <div className="mb-4 flex items-center justify-between gap-3"><div><h4 className="text-xs font-black uppercase">Movimentações</h4><p className="mt-1 text-[9px] text-slate-500">{summary?.entryCount ?? entries.length} lançamento(s)</p></div></div>
+      <div className="min-w-0 max-w-full overflow-hidden rounded-3xl border border-slate-800 bg-slate-900 p-5">
+        <div className="mb-4 flex items-center justify-between gap-3"><div className="min-w-0"><h4 className="text-xs font-black uppercase">Movimentações</h4><p className="mt-1 text-[9px] text-slate-500">{summary?.entryCount ?? entries.length} lançamento(s)</p></div></div>
         {entries.length === 0 ? (
           <p className="rounded-2xl border border-dashed border-slate-700 p-5 text-center text-[10px] text-slate-400">Ainda não há pagamento confirmado registrado para esta loja.</p>
         ) : (
-          <div className="space-y-3">
+          <div className="min-w-0 space-y-3">
             {entries.map(entry => {
               const feeMinor = providerFeeMinor(entry);
               const providerNetMinor = entry.kind === 'payment_capture' && feeMinor !== null
                 ? entry.amountMinor - feeMinor
                 : null;
               return (
-                <article key={entry.id} className="rounded-2xl border border-slate-800 bg-slate-950 p-4">
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div>
-                      <div className="flex flex-wrap items-center gap-2"><strong className="text-xs">{kindLabel(entry.kind)}</strong><span className="rounded-full bg-emerald-500/10 px-2 py-1 text-[8px] font-black uppercase text-emerald-300">{authorityLabel(entry.sourceAuthority)}</span></div>
-                      <p className="mt-1 text-[9px] text-slate-500">Pedido {entry.orderId} · {methodLabel(entry.paymentMethod)} · {entry.provider || 'provedor não informado'}</p>
+                <article key={entry.id} className="min-w-0 max-w-full overflow-hidden rounded-2xl border border-slate-800 bg-slate-950 p-4">
+                  <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex min-w-0 flex-wrap items-center gap-2">
+                        <strong className="text-xs">{kindLabel(entry.kind)}</strong>
+                        <span className="max-w-full whitespace-normal break-words rounded-full bg-emerald-500/10 px-2 py-1 text-left text-[8px] font-black uppercase leading-tight text-emerald-300">{authorityLabel(entry.sourceAuthority)}</span>
+                      </div>
+                      <p className="mt-1 max-w-full break-words text-[9px] leading-relaxed text-slate-500 [overflow-wrap:anywhere]">Pedido {entry.orderId} · {methodLabel(entry.paymentMethod)} · {entry.provider || 'provedor não informado'}</p>
                       <p className="mt-1 text-[9px] text-slate-600">{dateTime(entry.occurredAt)}</p>
                     </div>
-                    <strong className={entry.amountMinor >= 0 ? 'text-emerald-300' : 'text-rose-300'}>{money(entry.amountMinor)}</strong>
+                    <strong className={`shrink-0 text-left sm:text-right ${entry.amountMinor >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>{money(entry.amountMinor)}</strong>
                   </div>
                   {entry.kind === 'payment_capture' && (
-                    <div className="mt-3 grid gap-2 border-t border-slate-800 pt-3 text-[9px] sm:grid-cols-3">
-                      <div><span className="block uppercase text-slate-600">Bruto</span><b>{money(entry.amountMinor)}</b></div>
-                      <div><span className="block uppercase text-slate-600">Taxa do provedor</span><b>{feeMinor === null ? 'Não informada' : money(feeMinor)}</b></div>
-                      <div><span className="block uppercase text-slate-600">Líquido do provedor</span><b>{providerNetMinor === null ? 'Aguardando evidência' : money(providerNetMinor)}</b></div>
+                    <div className="mt-3 grid min-w-0 gap-2 border-t border-slate-800 pt-3 text-[9px] sm:grid-cols-3">
+                      <div className="min-w-0"><span className="block uppercase text-slate-600">Bruto</span><b>{money(entry.amountMinor)}</b></div>
+                      <div className="min-w-0"><span className="block uppercase text-slate-600">Taxa do provedor</span><b>{feeMinor === null ? 'Não informada' : money(feeMinor)}</b></div>
+                      <div className="min-w-0"><span className="block uppercase text-slate-600">Líquido do provedor</span><b>{providerNetMinor === null ? 'Aguardando evidência' : money(providerNetMinor)}</b></div>
                     </div>
                   )}
                 </article>
