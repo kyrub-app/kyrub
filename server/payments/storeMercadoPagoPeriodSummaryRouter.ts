@@ -195,12 +195,38 @@ const summarizePeriod = async (
     });
   }
 
+  const feeCoverageCount = new Set([
+    ...captures.filter(capture => capture.ledgerProviderFeeMinor !== null).map(capture => capture.paymentId),
+  ]);
+  if (reconciliationFallbackFeeCount > 0) {
+    for (let offset = 0; offset < captures.length; offset += RECONCILIATION_GET_BATCH) {
+      const slice = captures.slice(offset, offset + RECONCILIATION_GET_BATCH);
+      const refs = slice.map(capture => adminDb.doc(storeProviderPaymentReconciliationPath(
+        storeId,
+        'mercado-pago',
+        capture.providerPaymentId
+      )));
+      const snapshots = refs.length > 0 ? await adminDb.getAll(...refs) : [];
+      slice.forEach((capture, index) => {
+        if (capture.ledgerProviderFeeMinor !== null || !snapshots[index]?.exists) return;
+        try {
+          const reconciliation = normalizeStoreProviderPaymentReconciliation(snapshots[index].data());
+          if (reconciliation.paymentId === capture.paymentId && reconciliation.providerFeeMinor !== null) {
+            feeCoverageCount.add(capture.paymentId);
+          }
+        } catch {
+          // Invalid observations are already excluded from the monetary summary above.
+        }
+      });
+    }
+  }
+
   return {
     period: period.period,
     provider: 'mercado-pago' as const,
     captureCount: captures.length,
     reconciledPaymentCount,
-    feeEvidenceCount: ledgerFeeEvidenceCount + reconciliationFallbackFeeCount,
+    feeEvidenceCount: feeCoverageCount.size,
     ledgerFeeEvidenceCount,
     reconciliationFallbackFeeCount,
     providerFeesMinor: ledgerProviderFeesMinor + reconciliationFallbackFeesMinor,
