@@ -161,7 +161,7 @@ const subtractReservationLines = (
   const next = { ...current };
   for (const line of lines) {
     const remaining = roundQuantity(
-      Math.max(0, (next[line.inventoryItemId] ?? 0) - line.quantity
+      Math.max(0, (next[line.inventoryItemId] ?? 0) - line.quantity)
     );
     if (remaining > 0) next[line.inventoryItemId] = remaining;
     else delete next[line.inventoryItemId];
