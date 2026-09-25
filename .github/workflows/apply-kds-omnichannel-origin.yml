@@ -11,7 +11,7 @@ permissions:
 jobs:
   apply:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
         with:
@@ -109,7 +109,11 @@ jobs:
               import_anchor + "import type { KyrubCommerceChannel } from '../../shared/storeConnections';\n",
               1,
           )
-          text = text.replace("  group: 'attendance' | 'kyrub' | 'marketplace' | 'internal';", "  group: 'kyrub' | 'marketplace' | 'internal';", 1)
+          text = text.replace(
+              "  group: 'attendance' | 'kyrub' | 'marketplace' | 'internal';",
+              "  group: 'kyrub' | 'marketplace' | 'internal';",
+              1,
+          )
           normalize_block = """const normalize = (value: string): string =>
             value.trim().toLocaleUpperCase('pt-BR');
 
@@ -185,9 +189,12 @@ jobs:
 
           inbox = Path('src/components/customer/CustomerOrderInbox.tsx')
           text = inbox.read_text()
+          react_import = "import { useEffect, useMemo, useState } from 'react';\n"
+          if text.count(react_import) != 1:
+              raise SystemExit('CustomerOrderInbox react import mismatch')
           text = text.replace(
-              "import { useEffect, useMemo, useState } from 'react';\n",
-              "import { useEffect, useMemo, useState } from 'react';\nimport { onAuthStateChanged } from 'firebase/auth';\nimport type { KyrubCommerceChannel } from '../../../shared/storeConnections';\n",
+              react_import,
+              react_import + "import { onAuthStateChanged } from 'firebase/auth';\nimport type { KyrubCommerceChannel } from '../../../shared/storeConnections';\n",
               1,
           )
           order_import = """import {
@@ -220,14 +227,12 @@ jobs:
           """,
               1,
           )
-          options_anchor = """  const originOptions = useMemo(
-            () => buildOrderOriginOptions(orders, attendanceSpaces),
-            [attendanceSpaces, orders]
-          );
-          """
-          if text.count(options_anchor) != 1:
-              raise SystemExit('CustomerOrderInbox origin options anchor mismatch')
-          connection_effect = """  useEffect(() => {
+
+          options_start = text.find('  const originOptions = useMemo(')
+          station_start = text.find('  const stationOptions = useMemo(')
+          if options_start < 0 or station_start < 0 or station_start <= options_start:
+              raise SystemExit('CustomerOrderInbox origin option boundaries missing')
+          new_options = """  useEffect(() => {
             let disposed = false;
 
             const refreshConnectedOriginChannels = async (): Promise<void> => {
@@ -262,11 +267,10 @@ jobs:
             };
           }, [storeId]);
 
-          """
-          new_options = connection_effect + """  const originOptions = useMemo(
-            () => buildOrderOriginOptions(orders, attendanceSpaces, connectedOriginChannels),
-            [attendanceSpaces, connectedOriginChannels, orders]
-          );
+            const originOptions = useMemo(
+              () => buildOrderOriginOptions(orders, attendanceSpaces, connectedOriginChannels),
+              [attendanceSpaces, connectedOriginChannels, orders]
+            );
 
             useEffect(() => {
               if (
@@ -276,8 +280,9 @@ jobs:
                 setOriginFilter('all');
               }
             }, [originFilter, originOptions]);
+
           """
-          text = text.replace(options_anchor, new_options, 1)
+          text = text[:options_start] + new_options + text[station_start:]
           text = text.replace('getOrderOrigin(order, attendanceSpaces)', 'getOrderOrigin(order)')
           inbox.write_text(text)
 
@@ -297,15 +302,13 @@ jobs:
           """,
               1,
           )
-          old_test = """test('KDS exposes origin filter above production stage filters', () => {
-            const originIndex = inboxSource.indexOf('Origem do pedido');
-            const stageIndex = inboxSource.indexOf("{filterOptions.map");
-            assert.ok(originIndex >= 0);
-            assert.ok(stageIndex > originIndex);
-            assert.match(workflowSource, /Kyrub Ofertas/);
-            assert.match(workflowSource, /marketplace:99food/);
-            assert.match(workflowSource, /attendanceSpaces/);
-          });"""
+          test_start = text.find("test('KDS exposes origin filter above production stage filters'")
+          if test_start < 0:
+              raise SystemExit('order approval origin test start missing')
+          test_end = text.find('\n});', test_start)
+          if test_end < 0:
+              raise SystemExit('order approval origin test end missing')
+          test_end += len('\n});')
           new_test = """test('KDS origin filter is driven by canonical connected sales channels', () => {
             const originIndex = inboxSource.indexOf('Origem do pedido');
             const stageIndex = inboxSource.indexOf("{filterOptions.map");
@@ -324,18 +327,20 @@ jobs:
             assert.match(customerOrdersSource, /value === 'shopee'/);
             assert.match(customerOrdersSource, /value === 'ifood'/);
           });"""
-          if text.count(old_test) != 1:
-              raise SystemExit('order approval origin contract mismatch')
-          tests.write_text(text.replace(old_test, new_test, 1))
+          tests.write_text(text[:test_start] + new_test + text[test_end:])
           PY
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Validate targeted contracts and TypeScript
-        run: |
-          node --test --import tsx tests/order-approval-routing.test.ts tests/customer-orders.test.ts tests/channel-availability-fiscal-foundation.test.ts
-          npm run lint
+      - name: Validate targeted contracts
+        run: node --test --import tsx tests/order-approval-routing.test.ts tests/customer-orders.test.ts tests/channel-availability-fiscal-foundation.test.ts
+
+      - name: Validate full prebuild
+        run: npm run prebuild
+
+      - name: Validate bundle
+        run: npm --ignore-scripts run build
 
       - name: Commit product changes and remove temporary workflow
         shell: bash
