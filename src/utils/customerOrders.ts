@@ -16,13 +16,14 @@ import {
   type ServiceLocationSnapshot,
 } from '../../shared/serviceLocation';
 import type { CartItem } from '../types';
-import { db } from './firebase';
+import { auth, db } from './firebase';
 import {
   chooseCanonicalReadSource,
   parseCanonicalReadConfig,
   recordCanonicalReadDecision,
   type CanonicalReadDecision,
 } from './canonicalReadCutover';
+import { syncCanonicalOrderToStoreCrm } from './storeCrm';
 
 export type CustomerFulfillmentType = 'delivery' | 'pickup' | 'dine_in';
 
@@ -596,6 +597,23 @@ export const resolveCanonicalCustomerOrderStoreId = async (
   }
 };
 
+const syncPersistedCanonicalOrderToCrm = async (
+  order: CustomerOrder,
+  canonicalStoreId: string
+): Promise<void> => {
+  const user = auth.currentUser;
+  if (!user || user.uid !== order.buyerId) return;
+
+  try {
+    await syncCanonicalOrderToStoreCrm(user, canonicalStoreId, order.id);
+  } catch (error) {
+    console.warn(
+      '[customer-orders] Pedido canônico salvo; sincronização imediata do CRM ficará para a reconciliação.',
+      error
+    );
+  }
+};
+
 export const persistCustomerOrder = async (
   order: CustomerOrder
 ): Promise<void> => {
@@ -624,6 +642,7 @@ export const persistCustomerOrder = async (
       throw new Error('Já existe um pedido canônico incompatível com este identificador.');
     }
     await setDoc(legacyReference, order);
+    await syncPersistedCanonicalOrderToCrm(order, canonicalStoreId);
     return;
   }
 
@@ -634,6 +653,7 @@ export const persistCustomerOrder = async (
   );
   batch.set(legacyReference, order);
   await batch.commit();
+  await syncPersistedCanonicalOrderToCrm(order, canonicalStoreId);
 };
 
 export const subscribeToPreferredCustomerOrder = (
