@@ -1,6 +1,9 @@
 import { Router } from 'express';
 import { verifyFirebaseIdToken } from '../ai/consultantAuth.js';
-import { syncCanonicalOrderCustomerIntoCrm } from './storeCrmOrderSyncService.js';
+import {
+  reconcilePersistedCustomerOrdersIntoCrm,
+  syncCanonicalOrderCustomerIntoCrm,
+} from './storeCrmOrderSyncService.js';
 import { loadStoreCrmSummary } from './storeCrmService.js';
 
 const clean = (value: unknown): string => typeof value === 'string' ? value.trim() : '';
@@ -34,6 +37,7 @@ export const createStoreCrmRouter = (): Router => {
         return response.status(403).json({ error: 'Apenas o proprietário pode consultar este CRM nesta versão.' });
       }
 
+      await reconcilePersistedCustomerOrdersIntoCrm({ storeId });
       response.status(200).json(await loadStoreCrmSummary({ storeId }));
     } catch (error) {
       console.error('[Store CRM]', error);
