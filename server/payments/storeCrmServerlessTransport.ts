@@ -103,8 +103,9 @@ export const handleStoreCrmServerlessRequest = async (
       return;
     }
 
+    const summary = await loadStoreCrmSummary({ storeId });
     await reconcilePersistedCustomerOrdersIntoCrm({ storeId });
-    response.status(200).json(await loadStoreCrmSummary({ storeId }));
+    response.status(200).json(summary);
   } catch (error) {
     console.error(
       '[store-crm-serverless]',
