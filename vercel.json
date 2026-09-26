@@ -66,6 +66,10 @@
       "destination": "/api/health?transport=store-promotions&surface=payroll"
     },
     {
+      "source": "/api/store-sales-analytics",
+      "destination": "/api/health?transport=store-promotions&surface=sales-analytics"
+    },
+    {
       "source": "/api/marketplace-discovery/public/:slug",
       "destination": "/api/health?transport=public-storefront&slug=:slug"
     },
