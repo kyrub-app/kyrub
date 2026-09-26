@@ -37,7 +37,7 @@ describe('store CRM relationship projection', () => {
     assert.match(source, /isPaymentAuthoritativelyPaid/);
   });
 
-  it('materializes each buyer idempotently into one CRM customer and backfills before projection', () => {
+  it('materializes each canonical buyer idempotently into one CRM customer before projection', () => {
     const source = readFileSync('server/payments/storeCrmService.ts', 'utf8');
     assert.match(source, /crmCustomerPath\(input\.storeId\).*customer\.customerId/s);
     assert.match(source, /orderCount: sorted\.length/);
@@ -58,33 +58,55 @@ describe('store CRM relationship projection', () => {
     assert.doesNotMatch(source, /\bcontactHistory:/);
   });
 
-  it('owner GET remains owner-only while buyer POST is authorized from the persisted order', () => {
+  it('buyer POST authorizes from the persisted order and accepts canonical or operational order storage', () => {
     const router = readFileSync('server/payments/storeCrmRouter.ts', 'utf8');
     const syncService = readFileSync('server/payments/storeCrmOrderSyncService.ts', 'utf8');
 
     assert.match(router, /router\.get\('/);
     assert.match(router, /identity\.uid !== storeId/);
     assert.match(router, /router\.post\('/);
-    assert.match(router, /storeId = clean\(request\.body\?\.storeId\)/);
-    assert.match(router, /orderId = clean\(request\.body\?\.orderId\)/);
     assert.match(router, /authenticatedBuyerId: identity\.uid/);
     assert.doesNotMatch(router, /request\.body\?\.customerId/);
 
-    assert.match(syncService, /orderPath\(storeId\)\}\/\$\{orderId\}/);
-    assert.match(syncService, /targetBuyerId !== authenticatedBuyerId/);
-    assert.match(syncService, /targetData\?\.source/);
-    assert.match(syncService, /\.where\('buyerId', '==', authenticatedBuyerId\)/);
+    assert.match(syncService, /stores\/\$\{storeId\}\/orders/);
+    assert.match(syncService, /artifacts\/\$\{storeId\}\/public\/data\/customerOrders/);
+    assert.match(syncService, /loadTargetOrder\(storeId, orderId\)/);
+    assert.match(syncService, /targetOrder\.customerId !== authenticatedBuyerId/);
+    assert.match(syncService, /\.where\('buyerId', '==', customerId\)/);
   });
 
-  it('write-through recomputes absolute order stats and preserves existing CRM-owned fields', () => {
+  it('deduplicates canonical and operational copies by order id before computing absolute stats', () => {
     const source = readFileSync('server/payments/storeCrmOrderSyncService.ts', 'utf8');
+    assert.match(source, /const byOrderId = new Map<string, PersistedCrmOrder>\(\)/);
+    assert.match(source, /byOrderId\.set\(order\.orderId, order\)/);
     assert.match(source, /orderCount: orders\.length/);
-    assert.match(source, /existingCrmCustomer\.exists/);
+    assert.match(source, /existing\.exists/);
     assert.match(source, /marketingConsent: defaultMarketingConsent\(\)/);
     assert.match(source, /\{ merge: true \}/);
     assert.doesNotMatch(source, /\bnotes:/);
     assert.doesNotMatch(source, /\bcontactHistory:/);
     assert.doesNotMatch(source, /orderCount:\s*[^\n]*\+\s*1/);
+  });
+
+  it('owner CRM GET reconciles historical canonical and operational orders before loading the projection', () => {
+    const transport = readFileSync('server/payments/storeCrmServerlessTransport.ts', 'utf8');
+    const localRouter = readFileSync('server/payments/storeCrmRouter.ts', 'utf8');
+    const syncService = readFileSync('server/payments/storeCrmOrderSyncService.ts', 'utf8');
+
+    assert.match(syncService, /reconcilePersistedCustomerOrdersIntoCrm/);
+    assert.match(syncService, /collection\(canonicalOrderPath\(storeId\)\)\.get\(\)/);
+    assert.match(syncService, /collection\(operationalOrderPath\(storeId\)\)\.get\(\)/);
+    assert.match(transport, /await reconcilePersistedCustomerOrdersIntoCrm\(\{ storeId \}\);\s*response\.status\(200\)\.json\(await loadStoreCrmSummary/s);
+    assert.match(localRouter, /await reconcilePersistedCustomerOrdersIntoCrm\(\{ storeId \}\);\s*response\.status\(200\)\.json\(await loadStoreCrmSummary/s);
+  });
+
+  it('confirmed Mercado Pago marketplace orders write through to CRM after order materialization without invalidating the webhook', () => {
+    const webhook = readFileSync('server/payments/mercadoPagoWebhook.ts', 'utf8');
+    assert.match(webhook, /await processVerifiedPaymentWebhook/);
+    assert.match(webhook, /await attachPreparedCustomerDestinationResolutionToOperationalOrder/);
+    assert.match(webhook, /if \(result\.orderId\)/);
+    assert.match(webhook, /await syncPersistedCustomerOrderIntoCrm/);
+    assert.match(webhook, /catch \(error\)[\s\S]*CRM ficará para a reconciliação/);
   });
 
   it('production CRM reuses the existing health serverless runtime for GET and POST', () => {
