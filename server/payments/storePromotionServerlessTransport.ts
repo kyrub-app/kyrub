@@ -29,6 +29,7 @@ const app = express();
 app.set('trust proxy', 1);
 app.use('/api/store-promotions', createStorePromotionManagementRouter());
 app.use('/api/store-finance', createStoreFinanceRouter());
+// Provider-period aggregation shares the existing finance-history surface/function.
 app.use('/api/store-finance-history', createStoreMercadoPagoPeriodSummaryRouter());
 app.use('/api/store-finance-history', createStoreMercadoPagoReconciliationRouter());
 app.use('/api/store-finance-history', createStoreFinanceHistoryRouter());
