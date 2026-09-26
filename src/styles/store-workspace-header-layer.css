@@ -1,0 +1,10 @@
+/*
+ * The global Kyrub header is intentionally elevated by the primary navigation
+ * bridge. While the retailer ERP/PDV workspace is open, its own fixed overlay
+ * (z-50) must visually own the top of the screen so the native store controls
+ * remain available. Keep the global header mounted; only lower its stacking
+ * priority for the lifetime of #erp-main-header.
+ */
+body:has(#erp-main-header) #app-header {
+  z-index: 30 !important;
+}
