@@ -22,14 +22,23 @@ const PROVIDER = 'mercado_pago' as const;
 const MP_API = 'https://api.mercadopago.com';
 
 const clean = (value: unknown): string => typeof value === 'string' ? value.trim() : '';
-const record = (value: unknown): Record<string, unknown> =>
-  value && typeof value === 'object' && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : {};
+const accessToken = (): string => clean(process.env.KYRUB_BILLING_MERCADO_PAGO_ACCESS_TOKEN);
+const webhookSecret = (): string => clean(process.env.KYRUB_BILLING_MERCADO_PAGO_WEBHOOK_SECRET);
+const webhookUrl = (): string => clean(process.env.KYRUB_PLAN_BILLING_WEBHOOK_URL);
+const returnUrl = (): string => clean(process.env.KYRUB_PLAN_BILLING_RETURN_URL) || 'https://planos.kyrub.com/';
 
-const paidPlan = (value: unknown): 'pro' | 'business' => {
-  if (value === 'pro' || value === 'business') return value;
-  throw new PlanManagementError(400, 'INVALID_TARGET_PLAN', 'Escolha Pro ou Business.');
+export const loadPaidPlanBillingAvailability = (): KyrubPlanBillingAvailability => ({
+  available: Boolean(accessToken() && webhookSecret() && webhookUrl()),
+  provider: PROVIDER,
+});
+
+const requireBillingConfig = (): { token: string; notificationUrl: string } => {
+  const token = accessToken();
+  const notificationUrl = webhookUrl();
+  if (!token || !webhookSecret() || !notificationUrl) {
+    throw new PlanManagementError(503, 'PLAN_BILLING_NOT_CONFIGURED', 'A contratação paga ainda não está habilitada para esta instalação.');
+  }
+  return { token, notificationUrl };
 };
 
 const safeOwnerId = (value: unknown): string => {
@@ -38,6 +47,11 @@ const safeOwnerId = (value: unknown): string => {
     throw new PlanManagementError(400, 'INVALID_STORE_OWNER', 'A identidade da loja é inválida.');
   }
   return ownerId;
+};
+
+const paidPlan = (value: unknown): 'pro' | 'business' => {
+  if (value === 'pro' || value === 'business') return value;
+  throw new PlanManagementError(400, 'INVALID_TARGET_PLAN', 'Escolha Pro ou Business.');
 };
 
 const timestampIso = (value: unknown): string | null => {
@@ -53,35 +67,10 @@ const timestampIso = (value: unknown): string | null => {
   return null;
 };
 
-const accessToken = (): string => clean(process.env.KYRUB_BILLING_MERCADO_PAGO_ACCESS_TOKEN);
-const webhookSecret = (): string => clean(process.env.KYRUB_BILLING_MERCADO_PAGO_WEBHOOK_SECRET);
-const returnUrl = (): string =>
-  clean(process.env.KYRUB_PLAN_BILLING_RETURN_URL) || 'https://planos.kyrub.com/';
-
-export const loadPaidPlanBillingAvailability = (): KyrubPlanBillingAvailability => ({
-  available: Boolean(accessToken()),
-  provider: PROVIDER,
-});
-
-const requireBillingToken = (): string => {
-  const token = accessToken();
-  if (!token) {
-    throw new PlanManagementError(
-      503,
-      'PLAN_BILLING_NOT_CONFIGURED',
-      'A contratação paga ainda não está habilitada para esta instalação.'
-    );
-  }
-  return token;
-};
-
 type MpPreapproval = {
   id?: unknown;
   status?: unknown;
   init_point?: unknown;
-  external_reference?: unknown;
-  next_payment_date?: unknown;
-  auto_recurring?: { transaction_amount?: unknown; currency_id?: unknown };
 };
 
 const providerStatus = (value: unknown): KyrubPlanSubscriptionStatus => {
@@ -90,11 +79,12 @@ const providerStatus = (value: unknown): KyrubPlanSubscriptionStatus => {
 };
 
 const mpRequest = async (path: string, init: RequestInit = {}): Promise<Record<string, unknown>> => {
+  const { token } = requireBillingConfig();
   const response = await fetch(`${MP_API}${path}`, {
     ...init,
     headers: {
       accept: 'application/json',
-      authorization: `Bearer ${requireBillingToken()}`,
+      authorization: `Bearer ${token}`,
       'content-type': 'application/json',
       ...(init.headers ?? {}),
     },
@@ -102,11 +92,7 @@ const mpRequest = async (path: string, init: RequestInit = {}): Promise<Record<s
   const payload = await response.json().catch(() => null) as Record<string, unknown> | null;
   if (!response.ok || !payload) {
     console.error('[Kyrub Plans] Mercado Pago billing request failed.', response.status, payload);
-    throw new PlanManagementError(
-      502,
-      'PLAN_BILLING_PROVIDER_ERROR',
-      'O provedor de cobrança não conseguiu processar a assinatura agora.'
-    );
+    throw new PlanManagementError(502, 'PLAN_BILLING_PROVIDER_ERROR', 'O provedor de cobrança não conseguiu processar a assinatura agora.');
   }
   return payload;
 };
@@ -133,21 +119,18 @@ const writePlanMirrors = (
   }
 };
 
-const parseStoredSubscription = (
-  ownerId: string,
-  data: Record<string, unknown> | undefined
-): KyrubPlanSubscriptionSnapshot | null => {
+const parseStoredSubscription = (ownerId: string, data?: Record<string, unknown>): KyrubPlanSubscriptionSnapshot | null => {
   if (!data) return null;
-  const target = data.plan === 'business' ? 'business' : data.plan === 'pro' ? 'pro' : null;
+  const plan = data.plan === 'business' ? 'business' : data.plan === 'pro' ? 'pro' : null;
   const providerSubscriptionId = clean(data.providerSubscriptionId);
-  const planVersion = typeof data.planVersion === 'number' && Number.isInteger(data.planVersion) ? data.planVersion : 0;
-  const amountMinor = typeof data.amountMinor === 'number' && Number.isInteger(data.amountMinor) ? data.amountMinor : 0;
-  if (!target || !providerSubscriptionId || planVersion < 1 || amountMinor < 1) return null;
+  const planVersion = Number.isInteger(data.planVersion) ? data.planVersion as number : 0;
+  const amountMinor = Number.isInteger(data.amountMinor) ? data.amountMinor as number : 0;
+  if (!plan || !providerSubscriptionId || planVersion < 1 || amountMinor < 1) return null;
   return {
     schemaVersion: KYRUB_PLAN_BILLING_SCHEMA_VERSION,
     storeId: ownerId,
     ownerId,
-    plan: target,
+    plan,
     planVersion,
     provider: PROVIDER,
     providerSubscriptionId,
@@ -164,9 +147,7 @@ const parseStoredSubscription = (
 
 const assertStoreExists = async (ownerId: string): Promise<void> => {
   const snapshot = await adminDb.doc(`users/${ownerId}/stores/${ownerId}`).get();
-  if (!snapshot.exists) {
-    throw new PlanManagementError(404, 'STORE_NOT_FOUND', 'Ative sua Loja Kyrub antes de contratar um plano.');
-  }
+  if (!snapshot.exists) throw new PlanManagementError(404, 'STORE_NOT_FOUND', 'Ative sua Loja Kyrub antes de contratar um plano.');
 };
 
 const assertSubscriptionCanReplaceEntitlement = async (ownerId: string): Promise<void> => {
@@ -174,11 +155,7 @@ const assertSubscriptionCanReplaceEntitlement = async (ownerId: string): Promise
   if (!snapshot.exists) return;
   const data = snapshot.data() as Record<string, unknown>;
   if (data.status === 'active' && (data.source === 'promotion' || data.source === 'admin_grant')) {
-    throw new PlanManagementError(
-      409,
-      'ACTIVE_PROMOTIONAL_BENEFIT_EXISTS',
-      'Esta loja possui uma cortesia ou promoção ativa. Aguarde o término antes de iniciar uma assinatura paga.'
-    );
+    throw new PlanManagementError(409, 'ACTIVE_PROMOTIONAL_BENEFIT_EXISTS', 'Esta loja possui uma cortesia ou promoção ativa. Aguarde o término antes de iniciar uma assinatura paga.');
   }
 };
 
@@ -191,21 +168,18 @@ const selectedPlan = async (targetPlan: 'pro' | 'business') => {
   return entry;
 };
 
-const activateSubscriptionEntitlement = async (
-  ownerId: string,
-  subscription: KyrubPlanSubscriptionSnapshot
-): Promise<void> => {
+const activateSubscriptionEntitlement = async (ownerId: string, subscription: KyrubPlanSubscriptionSnapshot): Promise<void> => {
   const canonicalStoreId = await findCanonicalStore(ownerId);
-  const entitlementReference = adminDb.doc(`${ENTITLEMENT_COLLECTION}/${ownerId}`);
-  const subscriptionReference = adminDb.doc(`${SUBSCRIPTION_COLLECTION}/${ownerId}`);
-  const auditReference = adminDb.doc(`${AUDIT_COLLECTION}/${randomUUID().replaceAll('-', '_')}`);
-
+  const entitlementRef = adminDb.doc(`${ENTITLEMENT_COLLECTION}/${ownerId}`);
+  const subscriptionRef = adminDb.doc(`${SUBSCRIPTION_COLLECTION}/${ownerId}`);
   await adminDb.runTransaction(async transaction => {
-    const existing = await transaction.get(entitlementReference);
-    const previousPlan = existing.exists ? clean(existing.data()?.plan) || 'free' : 'free';
+    const existing = await transaction.get(entitlementRef);
+    const data = existing.exists ? existing.data() as Record<string, unknown> : {};
+    const alreadyActive = data.status === 'active' && data.source === 'subscription' &&
+      clean(data.providerSubscriptionId) === subscription.providerSubscriptionId && data.plan === subscription.plan;
     const now = FieldValue.serverTimestamp();
     writePlanMirrors(transaction, ownerId, canonicalStoreId, subscription.plan, now);
-    transaction.set(entitlementReference, {
+    transaction.set(entitlementRef, {
       schemaVersion: 2,
       storeId: ownerId,
       ownerId,
@@ -213,64 +187,73 @@ const activateSubscriptionEntitlement = async (
       planVersion: subscription.planVersion,
       source: 'subscription',
       status: 'active',
-      benefitStartsAt: now,
+      benefitStartsAt: data.benefitStartsAt ?? now,
       benefitEndsAt: null,
       provider: PROVIDER,
       providerSubscriptionId: subscription.providerSubscriptionId,
       updatedAt: now,
     });
-    transaction.set(subscriptionReference, {
-      providerStatus: 'authorized',
-      activatedAt: now,
-      updatedAt: now,
-    }, { merge: true });
-    transaction.set(auditReference, {
-      id: auditReference.id,
-      action: 'store.subscription.activated',
-      actorId: 'kyrub_billing',
-      actorRole: 'system',
-      targetType: 'store',
-      targetId: ownerId,
-      previousPlan,
-      nextPlan: subscription.plan,
-      provider: PROVIDER,
-      providerSubscriptionId: subscription.providerSubscriptionId,
-      source: 'server',
-      createdAt: now,
-    });
+    transaction.set(subscriptionRef, { providerStatus: 'authorized', activatedAt: data.activatedAt ?? now, cancelledAt: null, updatedAt: now }, { merge: true });
+    if (!alreadyActive) {
+      const auditRef = adminDb.doc(`${AUDIT_COLLECTION}/${randomUUID().replaceAll('-', '_')}`);
+      transaction.set(auditRef, {
+        id: auditRef.id,
+        action: 'store.subscription.activated',
+        actorId: 'kyrub_billing',
+        actorRole: 'system',
+        targetType: 'store',
+        targetId: ownerId,
+        previousPlan: clean(data.plan) || 'free',
+        nextPlan: subscription.plan,
+        provider: PROVIDER,
+        providerSubscriptionId: subscription.providerSubscriptionId,
+        source: 'server',
+        createdAt: now,
+      });
+    }
   });
 };
 
-const downgradeCancelledSubscription = async (ownerId: string, providerSubscriptionId: string): Promise<void> => {
+const deactivateSubscriptionEntitlement = async (
+  ownerId: string,
+  providerSubscriptionId: string,
+  status: 'paused' | 'cancelled'
+): Promise<void> => {
   const canonicalStoreId = await findCanonicalStore(ownerId);
-  const entitlementReference = adminDb.doc(`${ENTITLEMENT_COLLECTION}/${ownerId}`);
-  const subscriptionReference = adminDb.doc(`${SUBSCRIPTION_COLLECTION}/${ownerId}`);
-  const auditReference = adminDb.doc(`${AUDIT_COLLECTION}/${randomUUID().replaceAll('-', '_')}`);
-
+  const entitlementRef = adminDb.doc(`${ENTITLEMENT_COLLECTION}/${ownerId}`);
+  const subscriptionRef = adminDb.doc(`${SUBSCRIPTION_COLLECTION}/${ownerId}`);
   await adminDb.runTransaction(async transaction => {
-    const entitlement = await transaction.get(entitlementReference);
-    const data = entitlement.exists ? entitlement.data() as Record<string, unknown> : {};
-    const ownedSubscription = data.source === 'subscription' && clean(data.providerSubscriptionId) === providerSubscriptionId;
+    const existing = await transaction.get(entitlementRef);
+    const data = existing.exists ? existing.data() as Record<string, unknown> : {};
+    const owns = data.source === 'subscription' && clean(data.providerSubscriptionId) === providerSubscriptionId;
+    const wasActive = owns && data.status === 'active';
     const now = FieldValue.serverTimestamp();
-    if (ownedSubscription) {
+    if (owns) {
       writePlanMirrors(transaction, ownerId, canonicalStoreId, 'free', now);
-      transaction.set(entitlementReference, { status: 'revoked', revokedAt: now, updatedAt: now }, { merge: true });
+      transaction.set(entitlementRef, { status: 'revoked', revokedAt: now, updatedAt: now }, { merge: true });
     }
-    transaction.set(subscriptionReference, { providerStatus: 'cancelled', cancelledAt: now, updatedAt: now }, { merge: true });
-    transaction.set(auditReference, {
-      id: auditReference.id,
-      action: 'store.subscription.cancelled',
-      actorId: ownerId,
-      actorRole: 'store_owner',
-      targetType: 'store',
-      targetId: ownerId,
-      previousPlan: clean(data.plan) || null,
-      nextPlan: ownedSubscription ? 'free' : clean(data.plan) || null,
-      provider: PROVIDER,
-      providerSubscriptionId,
-      source: 'server',
-      createdAt: now,
-    });
+    transaction.set(subscriptionRef, {
+      providerStatus: status,
+      ...(status === 'cancelled' ? { cancelledAt: now } : {}),
+      updatedAt: now,
+    }, { merge: true });
+    if (wasActive) {
+      const auditRef = adminDb.doc(`${AUDIT_COLLECTION}/${randomUUID().replaceAll('-', '_')}`);
+      transaction.set(auditRef, {
+        id: auditRef.id,
+        action: status === 'cancelled' ? 'store.subscription.cancelled' : 'store.subscription.paused',
+        actorId: 'kyrub_billing',
+        actorRole: 'system',
+        targetType: 'store',
+        targetId: ownerId,
+        previousPlan: clean(data.plan) || null,
+        nextPlan: 'free',
+        provider: PROVIDER,
+        providerSubscriptionId,
+        source: 'server',
+        createdAt: now,
+      });
+    }
   });
 };
 
@@ -278,21 +261,23 @@ const persistProviderState = async (
   ownerId: string,
   provider: MpPreapproval,
   fallback: KyrubPlanSubscriptionSnapshot
-): Promise<KyrubPlanSubscriptionSnapshot> => {
+): Promise<void> => {
   const status = providerStatus(provider.status);
-  const now = FieldValue.serverTimestamp();
   await adminDb.doc(`${SUBSCRIPTION_COLLECTION}/${ownerId}`).set({
     providerStatus: status,
     checkoutUrl: clean(provider.init_point) || fallback.checkoutUrl,
-    updatedAt: now,
+    updatedAt: FieldValue.serverTimestamp(),
   }, { merge: true });
-  const next = { ...fallback, providerStatus: status, checkoutUrl: clean(provider.init_point) || fallback.checkoutUrl, updatedAt: new Date().toISOString() };
-  if (status === 'authorized' && fallback.providerStatus !== 'authorized') {
-    await activateSubscriptionEntitlement(ownerId, next);
-  } else if (status === 'cancelled') {
-    await downgradeCancelledSubscription(ownerId, fallback.providerSubscriptionId);
+  const next: KyrubPlanSubscriptionSnapshot = {
+    ...fallback,
+    providerStatus: status,
+    checkoutUrl: clean(provider.init_point) || fallback.checkoutUrl,
+    updatedAt: new Date().toISOString(),
+  };
+  if (status === 'authorized') await activateSubscriptionEntitlement(ownerId, next);
+  if (status === 'paused' || status === 'cancelled') {
+    await deactivateSubscriptionEntitlement(ownerId, fallback.providerSubscriptionId, status);
   }
-  return next;
 };
 
 export const loadOwnPlanSubscriptionState = async (authorization: string): Promise<KyrubPlanSubscriptionState> => {
@@ -305,26 +290,24 @@ export const loadOwnPlanSubscriptionState = async (authorization: string): Promi
   };
 };
 
-export const createOwnPaidPlanCheckout = async (
-  authorization: string,
-  rawPlan: unknown
-): Promise<KyrubPlanCheckoutResult> => {
+export const createOwnPaidPlanCheckout = async (authorization: string, rawPlan: unknown): Promise<KyrubPlanCheckoutResult> => {
   const user = await authenticateConsultantRequest(authorization);
   const ownerId = safeOwnerId(user.uid);
   const targetPlan = paidPlan(rawPlan);
+  const config = requireBillingConfig();
   if (!clean(user.email) || user.emailVerified === false) {
     throw new PlanManagementError(409, 'BILLING_EMAIL_REQUIRED', 'Sua conta precisa ter um e-mail válido para iniciar a assinatura.');
   }
   await assertStoreExists(ownerId);
   await assertSubscriptionCanReplaceEntitlement(ownerId);
   const plan = await selectedPlan(targetPlan);
-
   const existingSnapshot = await adminDb.doc(`${SUBSCRIPTION_COLLECTION}/${ownerId}`).get();
   const existing = parseStoredSubscription(ownerId, existingSnapshot.exists ? existingSnapshot.data() as Record<string, unknown> : undefined);
   if (existing && existing.providerStatus !== 'cancelled') {
     const provider = await mpRequest(`/preapproval/${encodeURIComponent(existing.providerSubscriptionId)}`) as MpPreapproval;
-    const refreshed = await persistProviderState(ownerId, provider, existing);
-    if (refreshed.providerStatus !== 'cancelled') {
+    await persistProviderState(ownerId, provider, existing);
+    const refreshed = providerStatus(provider.status);
+    if (refreshed !== 'cancelled') {
       throw new PlanManagementError(409, 'ACTIVE_SUBSCRIPTION_EXISTS', 'Esta loja já possui uma assinatura em andamento.');
     }
   }
@@ -343,10 +326,10 @@ export const createOwnPaidPlanCheckout = async (
         currency_id: 'BRL',
       },
       back_url: returnUrl(),
+      notification_url: config.notificationUrl,
       status: 'pending',
     }),
   }) as MpPreapproval;
-
   const providerSubscriptionId = clean(provider.id);
   const checkoutUrl = clean(provider.init_point);
   if (!providerSubscriptionId || !checkoutUrl) {
@@ -388,11 +371,7 @@ export const reconcileOwnPaidPlanSubscription = async (authorization: string): P
   if (!subscription) return { billing: loadPaidPlanBillingAvailability(), subscription: null };
   const provider = await mpRequest(`/preapproval/${encodeURIComponent(subscription.providerSubscriptionId)}`) as MpPreapproval;
   await persistProviderState(ownerId, provider, subscription);
-  const refreshed = await adminDb.doc(`${SUBSCRIPTION_COLLECTION}/${ownerId}`).get();
-  return {
-    billing: loadPaidPlanBillingAvailability(),
-    subscription: parseStoredSubscription(ownerId, refreshed.exists ? refreshed.data() as Record<string, unknown> : undefined),
-  };
+  return loadOwnPlanSubscriptionState(authorization);
 };
 
 export const cancelOwnPaidPlanSubscription = async (authorization: string): Promise<KyrubPlanSubscriptionState> => {
@@ -401,16 +380,12 @@ export const cancelOwnPaidPlanSubscription = async (authorization: string): Prom
   const snapshot = await adminDb.doc(`${SUBSCRIPTION_COLLECTION}/${ownerId}`).get();
   const subscription = parseStoredSubscription(ownerId, snapshot.exists ? snapshot.data() as Record<string, unknown> : undefined);
   if (!subscription) throw new PlanManagementError(404, 'SUBSCRIPTION_NOT_FOUND', 'Nenhuma assinatura paga foi encontrada para esta loja.');
-  const provider = await mpRequest(`/preapproval/${encodeURIComponent(subscription.providerSubscriptionId)}`, {
+  await mpRequest(`/preapproval/${encodeURIComponent(subscription.providerSubscriptionId)}`, {
     method: 'PUT',
     body: JSON.stringify({ status: 'cancelled' }),
-  }) as MpPreapproval;
-  await persistProviderState(ownerId, { ...provider, status: 'cancelled' }, subscription);
-  const refreshed = await adminDb.doc(`${SUBSCRIPTION_COLLECTION}/${ownerId}`).get();
-  return {
-    billing: loadPaidPlanBillingAvailability(),
-    subscription: parseStoredSubscription(ownerId, refreshed.exists ? refreshed.data() as Record<string, unknown> : undefined),
-  };
+  });
+  await deactivateSubscriptionEntitlement(ownerId, subscription.providerSubscriptionId, 'cancelled');
+  return loadOwnPlanSubscriptionState(authorization);
 };
 
 const headerValue = (value: string | string[] | undefined): string => Array.isArray(value) ? value[0] ?? '' : value ?? '';
@@ -428,8 +403,9 @@ export const verifyPaidPlanWebhookSignature = (input: {
   const requestId = headerValue(input.requestId).trim();
   const dataId = clean(input.dataId).toLowerCase();
   if (!ts || !supplied || !requestId || !dataId) return false;
-  const manifest = `id:${dataId};request-id:${requestId};ts:${ts};`;
-  const expected = createHmac('sha256', secret).update(manifest).digest('hex');
+  const expected = createHmac('sha256', secret)
+    .update(`id:${dataId};request-id:${requestId};ts:${ts};`)
+    .digest('hex');
   const left = Buffer.from(expected, 'utf8');
   const right = Buffer.from(supplied, 'utf8');
   return left.length === right.length && timingSafeEqual(left, right);
@@ -444,7 +420,10 @@ export const handlePaidPlanProviderWebhook = async (input: {
     throw new PlanManagementError(401, 'INVALID_BILLING_WEBHOOK_SIGNATURE', 'Assinatura do webhook inválida.');
   }
   const providerSubscriptionId = clean(input.dataId);
-  const matches = await adminDb.collection(SUBSCRIPTION_COLLECTION).where('providerSubscriptionId', '==', providerSubscriptionId).limit(2).get();
+  const matches = await adminDb.collection(SUBSCRIPTION_COLLECTION)
+    .where('providerSubscriptionId', '==', providerSubscriptionId)
+    .limit(2)
+    .get();
   if (matches.size > 1) {
     throw new PlanManagementError(409, 'SUBSCRIPTION_IDENTITY_CONFLICT', 'A assinatura do provedor está vinculada a mais de uma loja.');
   }
