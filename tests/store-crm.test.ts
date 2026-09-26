@@ -88,7 +88,7 @@ describe('store CRM relationship projection', () => {
     assert.doesNotMatch(source, /orderCount:\s*[^\n]*\+\s*1/);
   });
 
-  it('owner CRM GET reconciles historical canonical and operational orders before loading the projection', () => {
+  it('owner CRM GET reconciles historical canonical and operational orders after the legacy projection', () => {
     const transport = readFileSync('server/payments/storeCrmServerlessTransport.ts', 'utf8');
     const localRouter = readFileSync('server/payments/storeCrmRouter.ts', 'utf8');
     const syncService = readFileSync('server/payments/storeCrmOrderSyncService.ts', 'utf8');
@@ -96,8 +96,8 @@ describe('store CRM relationship projection', () => {
     assert.match(syncService, /reconcilePersistedCustomerOrdersIntoCrm/);
     assert.match(syncService, /collection\(canonicalOrderPath\(storeId\)\)\.get\(\)/);
     assert.match(syncService, /collection\(operationalOrderPath\(storeId\)\)\.get\(\)/);
-    assert.match(transport, /await reconcilePersistedCustomerOrdersIntoCrm\(\{ storeId \}\);\s*response\.status\(200\)\.json\(await loadStoreCrmSummary/s);
-    assert.match(localRouter, /await reconcilePersistedCustomerOrdersIntoCrm\(\{ storeId \}\);\s*response\.status\(200\)\.json\(await loadStoreCrmSummary/s);
+    assert.match(transport, /const summary = await loadStoreCrmSummary\(\{ storeId \}\);\s*await reconcilePersistedCustomerOrdersIntoCrm\(\{ storeId \}\);\s*response\.status\(200\)\.json\(summary\)/s);
+    assert.match(localRouter, /const summary = await loadStoreCrmSummary\(\{ storeId \}\);\s*await reconcilePersistedCustomerOrdersIntoCrm\(\{ storeId \}\);\s*response\.status\(200\)\.json\(summary\)/s);
   });
 
   it('confirmed Mercado Pago marketplace orders write through to CRM after order materialization without invalidating the webhook', () => {
