@@ -25,8 +25,10 @@ describe('store CRM relationship projection', () => {
     assert.equal(STORE_CRM_MAX_CUSTOMERS, 100);
   });
 
-  it('server derives CRM from canonical payments, ledger, challenges and redemptions', () => {
+  it('server derives CRM from canonical orders, payments, ledger, challenges and redemptions', () => {
     const source = readFileSync('server/payments/storeCrmService.ts', 'utf8');
+    assert.match(source, /stores\/\$\{storeId\}\/orders/);
+    assert.match(source, /stores\/\$\{storeId\}\/crmCustomers/);
     assert.match(source, /stores\/\$\{storeId\}\/payments/);
     assert.match(source, /stores\/\$\{storeId\}\/storePointLedger/);
     assert.match(source, /stores\/\$\{storeId\}\/challengeProgress/);
@@ -35,10 +37,44 @@ describe('store CRM relationship projection', () => {
     assert.match(source, /isPaymentAuthoritativelyPaid/);
   });
 
+  it('materializes each buyer idempotently into one CRM customer and backfills before projection', () => {
+    const source = readFileSync('server/payments/storeCrmService.ts', 'utf8');
+    assert.match(source, /crmCustomerPath\(input\.storeId\).*customer\.customerId/s);
+    assert.match(source, /orderCount: sorted\.length/);
+    assert.match(source, /materializeCanonicalOrders\(orderSnapshot\.docs, storeId\)/);
+    assert.match(source, /await reconcileCanonicalOrdersIntoCrm/);
+    assert.match(source, /customerIds\.add\(customer\.customerId\)/);
+  });
+
+  it('new CRM customers start marketing channels unknown without overwriting existing consent or relationship history', () => {
+    const source = readFileSync('server/payments/storeCrmService.ts', 'utf8');
+    assert.match(source, /whatsapp: \{ status: 'unknown'/);
+    assert.match(source, /email: \{ status: 'unknown'/);
+    assert.match(source, /sms: \{ status: 'unknown'/);
+    assert.match(source, /exists \? \{\} : \{/);
+    assert.match(source, /marketingConsent: defaultMarketingConsent\(\)/);
+    assert.match(source, /\{ merge: true \}/);
+    assert.doesNotMatch(source, /\bnotes:/);
+    assert.doesNotMatch(source, /\bcontactHistory:/);
+  });
+
   it('owner endpoint does not accept a customer-supplied CRM projection', () => {
     const router = readFileSync('server/payments/storeCrmRouter.ts', 'utf8');
     assert.match(router, /identity\.uid !== storeId/);
     assert.doesNotMatch(router, /request\.body/);
+  });
+
+  it('production CRM reuses the existing health serverless runtime', () => {
+    const health = readFileSync('api/health.ts', 'utf8');
+    const transport = readFileSync('server/payments/storeCrmServerlessTransport.ts', 'utf8');
+    const vercel = readFileSync('vercel.json', 'utf8');
+
+    assert.match(vercel, /\/api\/store-crm/);
+    assert.match(vercel, /\/api\/health\?transport=store-crm/);
+    assert.match(health, /transport === 'store-crm'/);
+    assert.match(health, /storeCrmServerlessTransport\.js/);
+    assert.match(transport, /identity\.uid !== storeId/);
+    assert.match(transport, /loadStoreCrmSummary/);
   });
 
   it('client sends only authenticated store CRM read request', () => {
