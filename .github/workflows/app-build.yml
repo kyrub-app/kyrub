@@ -31,6 +31,9 @@ jobs:
       - name: Validate marketplace payment expiry contract
         run: node --test --import tsx tests/marketplace-payment-expiry-contract.test.ts >> build.log 2>&1
 
+      - name: Validate paid plan billing contract
+        run: node --test --import tsx tests/paid-plan-billing.test.ts >> build.log 2>&1
+
       - name: Bundle application
         run: npm --ignore-scripts run build >> build.log 2>&1
 
