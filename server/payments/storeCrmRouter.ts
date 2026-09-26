@@ -37,8 +37,9 @@ export const createStoreCrmRouter = (): Router => {
         return response.status(403).json({ error: 'Apenas o proprietário pode consultar este CRM nesta versão.' });
       }
 
+      const summary = await loadStoreCrmSummary({ storeId });
       await reconcilePersistedCustomerOrdersIntoCrm({ storeId });
-      response.status(200).json(await loadStoreCrmSummary({ storeId }));
+      response.status(200).json(summary);
     } catch (error) {
       console.error('[Store CRM]', error);
       response.status(503).json({ error: 'Não foi possível carregar o CRM da loja.' });
