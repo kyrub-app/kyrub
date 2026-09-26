@@ -5,7 +5,8 @@
     "deploymentEnabled": {
       "*": false,
       "main": true,
-      "preview-*": true
+      "preview-*": true,
+      "feat/profile-react-rebuild": true
     }
   },
   "functions": {
