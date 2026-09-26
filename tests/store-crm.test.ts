@@ -70,7 +70,7 @@ describe('store CRM relationship projection', () => {
     assert.match(router, /authenticatedBuyerId: identity\.uid/);
     assert.doesNotMatch(router, /request\.body\?\.customerId/);
 
-    assert.match(syncService, /orders\/\$\{orderId\}/);
+    assert.match(syncService, /orderPath\(storeId\)\}\/\$\{orderId\}/);
     assert.match(syncService, /targetBuyerId !== authenticatedBuyerId/);
     assert.match(syncService, /targetData\?\.source/);
     assert.match(syncService, /\.where\('buyerId', '==', authenticatedBuyerId\)/);
