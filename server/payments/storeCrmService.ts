@@ -11,6 +11,20 @@ const finiteIso = (value: unknown): string => {
   const normalized = clean(value);
   return normalized && Number.isFinite(Date.parse(normalized)) ? normalized : '';
 };
+const timestampIso = (value: unknown): string => {
+  const direct = finiteIso(value);
+  if (direct) return direct;
+  if (value instanceof Date && !Number.isNaN(value.getTime())) return value.toISOString();
+  if (value && typeof value === 'object' && 'toDate' in value) {
+    try {
+      const date = (value as { toDate: () => Date }).toDate();
+      return date instanceof Date && !Number.isNaN(date.getTime()) ? date.toISOString() : '';
+    } catch {
+      return '';
+    }
+  }
+  return '';
+};
 const isResolvedCustomerId = (value: unknown): value is string => {
   const customerId = clean(value);
   return Boolean(customerId) && !customerId.startsWith('local-order:');
@@ -21,6 +35,184 @@ const paymentPath = (storeId: string) => `stores/${storeId}/payments`;
 const challengePath = (storeId: string) => `stores/${storeId}/challengeProgress`;
 const redemptionPath = (storeId: string) => `stores/${storeId}/rewardRedemptions`;
 const relationshipPath = (storeId: string) => `stores/${storeId}/customerRelationships`;
+const orderPath = (storeId: string) => `stores/${storeId}/orders`;
+const crmCustomerPath = (storeId: string) => `stores/${storeId}/crmCustomers`;
+
+const ORDER_STATUSES = new Set([
+  'pending',
+  'accepted',
+  'preparing',
+  'ready',
+  'out_for_delivery',
+  'completed',
+  'rejected',
+  'cancelled',
+]);
+const ORDER_SOURCES = new Set(['customer', 'staff', 'transfer']);
+
+interface CanonicalCrmOrder {
+  orderId: string;
+  customerId: string;
+  buyerName: string;
+  buyerEmail: string;
+  occurredAt: string;
+}
+
+interface MaterializedCrmCustomer {
+  customerId: string;
+  displayName: string;
+  email: string;
+  firstOrderId: string;
+  firstOrderAt: string;
+  lastOrderId: string;
+  lastOrderAt: string;
+  orderCount: number;
+}
+
+const parseCanonicalOrder = (
+  doc: QueryDocumentSnapshot<DocumentData>,
+  storeId: string
+): CanonicalCrmOrder | null => {
+  const data = doc.data() as Record<string, unknown>;
+  const orderId = clean(data.id) || doc.id;
+  const customerId = clean(data.buyerId);
+  const buyerName = clean(data.buyerName);
+  const buyerEmail = clean(data.buyerEmail);
+  const source = clean(data.source) || 'customer';
+  const status = clean(data.status);
+  const occurredAt =
+    timestampIso(data.legacyCreatedAt) ||
+    timestampIso(data.createdAt) ||
+    timestampIso(data.legacyUpdatedAt) ||
+    timestampIso(data.updatedAt);
+
+  if (
+    !orderId ||
+    clean(data.storeId) !== storeId ||
+    !isResolvedCustomerId(customerId) ||
+    !buyerName ||
+    !ORDER_SOURCES.has(source) ||
+    !ORDER_STATUSES.has(status) ||
+    !Array.isArray(data.items) ||
+    data.items.length === 0 ||
+    !occurredAt ||
+    (source === 'customer' && !buyerEmail)
+  ) {
+    return null;
+  }
+
+  return {
+    orderId,
+    customerId,
+    buyerName,
+    buyerEmail,
+    occurredAt,
+  };
+};
+
+const materializeCanonicalOrders = (
+  docs: QueryDocumentSnapshot<DocumentData>[],
+  storeId: string
+): Map<string, MaterializedCrmCustomer> => {
+  const ordersByCustomer = new Map<string, CanonicalCrmOrder[]>();
+
+  for (const doc of docs) {
+    const order = parseCanonicalOrder(doc, storeId);
+    if (!order) continue;
+    const orders = ordersByCustomer.get(order.customerId) ?? [];
+    orders.push(order);
+    ordersByCustomer.set(order.customerId, orders);
+  }
+
+  return new Map(
+    Array.from(ordersByCustomer.entries()).map(([customerId, orders]) => {
+      const sorted = [...orders].sort((left, right) =>
+        left.occurredAt.localeCompare(right.occurredAt) ||
+        left.orderId.localeCompare(right.orderId)
+      );
+      const first = sorted[0];
+      const last = sorted.at(-1) ?? first;
+      return [customerId, {
+        customerId,
+        displayName: last.buyerName || first.buyerName,
+        email: last.buyerEmail || first.buyerEmail,
+        firstOrderId: first.orderId,
+        firstOrderAt: first.occurredAt,
+        lastOrderId: last.orderId,
+        lastOrderAt: last.occurredAt,
+        orderCount: sorted.length,
+      } satisfies MaterializedCrmCustomer];
+    })
+  );
+};
+
+const defaultMarketingConsent = () => ({
+  whatsapp: { status: 'unknown' as const },
+  email: { status: 'unknown' as const },
+  sms: { status: 'unknown' as const },
+});
+
+const reconcileCanonicalOrdersIntoCrm = async (input: {
+  storeId: string;
+  customers: Map<string, MaterializedCrmCustomer>;
+  existingCustomerIds: Set<string>;
+  nowIso: string;
+}): Promise<void> => {
+  const entries = Array.from(input.customers.values());
+  const batchSize = 400;
+
+  for (let offset = 0; offset < entries.length; offset += batchSize) {
+    const batch = adminDb.batch();
+    for (const customer of entries.slice(offset, offset + batchSize)) {
+      const exists = input.existingCustomerIds.has(customer.customerId);
+      const reference = adminDb.doc(
+        `${crmCustomerPath(input.storeId)}/${customer.customerId}`
+      );
+      batch.set(reference, {
+        schemaVersion: 1,
+        storeId: input.storeId,
+        customerId: customer.customerId,
+        orderIdentity: {
+          displayName: customer.displayName,
+          email: customer.email,
+        },
+        orderStats: {
+          firstOrderId: customer.firstOrderId,
+          firstOrderAt: customer.firstOrderAt,
+          lastOrderId: customer.lastOrderId,
+          lastOrderAt: customer.lastOrderAt,
+          orderCount: customer.orderCount,
+        },
+        ...(exists ? {} : {
+          marketingConsent: defaultMarketingConsent(),
+          createdAt: input.nowIso,
+        }),
+        updatedAt: input.nowIso,
+      }, { merge: true });
+    }
+    await batch.commit();
+  }
+};
+
+const parsePersistedCrmCustomer = (
+  doc: QueryDocumentSnapshot<DocumentData>,
+  storeId: string
+): { customerId: string; displayName: string; lastOrderAt: string } | null => {
+  const data = doc.data() as Record<string, unknown>;
+  const customerId = clean(data.customerId) || doc.id;
+  if (!isResolvedCustomerId(customerId) || clean(data.storeId) !== storeId) return null;
+  const orderIdentity = data.orderIdentity && typeof data.orderIdentity === 'object'
+    ? data.orderIdentity as Record<string, unknown>
+    : {};
+  const orderStats = data.orderStats && typeof data.orderStats === 'object'
+    ? data.orderStats as Record<string, unknown>
+    : {};
+  return {
+    customerId,
+    displayName: clean(orderIdentity.displayName),
+    lastOrderAt: timestampIso(orderStats.lastOrderAt),
+  };
+};
 
 const parsePayment = (
   doc: QueryDocumentSnapshot<DocumentData>,
@@ -72,14 +264,19 @@ export const loadStoreCrmSummary = async (input: { storeId: string; now?: Date }
   if (!storeId) throw new Error('STORE_CRM_STORE_REQUIRED');
   const now = input.now ?? new Date();
   if (Number.isNaN(now.getTime())) throw new Error('STORE_CRM_NOW_INVALID');
+  const nowIso = now.toISOString();
 
   const [
+    orderSnapshot,
+    crmCustomerSnapshot,
     paymentSnapshot,
     ledgerSnapshot,
     challengeSnapshot,
     redemptionSnapshot,
     relationshipSnapshot,
   ] = await Promise.all([
+    adminDb.collection(orderPath(storeId)).get(),
+    adminDb.collection(crmCustomerPath(storeId)).get(),
     adminDb.collection(paymentPath(storeId)).get(),
     adminDb.collection(ledgerPath(storeId)).get(),
     adminDb.collection(challengePath(storeId)).get(),
@@ -87,7 +284,35 @@ export const loadStoreCrmSummary = async (input: { storeId: string; now?: Date }
     adminDb.collection(relationshipPath(storeId)).get(),
   ]);
 
-  const customerIds = new Set<string>();
+  const materializedCustomers = materializeCanonicalOrders(orderSnapshot.docs, storeId);
+  const existingCrmCustomerIds = new Set<string>();
+  const persistedCrmIdentity = new Map<string, string>();
+  const persistedCrmActivity = new Map<string, string>();
+
+  for (const doc of crmCustomerSnapshot.docs) {
+    const customer = parsePersistedCrmCustomer(doc, storeId);
+    if (!customer) continue;
+    existingCrmCustomerIds.add(customer.customerId);
+    persistedCrmIdentity.set(customer.customerId, customer.displayName);
+    persistedCrmActivity.set(customer.customerId, customer.lastOrderAt);
+  }
+
+  await reconcileCanonicalOrdersIntoCrm({
+    storeId,
+    customers: materializedCustomers,
+    existingCustomerIds: existingCrmCustomerIds,
+    nowIso,
+  });
+
+  const customerIds = new Set<string>(existingCrmCustomerIds);
+  const orderIdentity = new Map<string, string>(persistedCrmIdentity);
+  const orderActivity = new Map<string, string>(persistedCrmActivity);
+  for (const customer of materializedCustomers.values()) {
+    customerIds.add(customer.customerId);
+    orderIdentity.set(customer.customerId, customer.displayName);
+    orderActivity.set(customer.customerId, customer.lastOrderAt);
+  }
+
   const relationshipActivity = new Map<string, string>();
   for (const doc of relationshipSnapshot.docs) {
     const relationship = parseRelationship(doc, storeId);
@@ -159,14 +384,19 @@ export const loadStoreCrmSummary = async (input: { storeId: string; now?: Date }
     }, '');
     const lastLedgerAt = ledger.reduce((latest, entry) => entry.occurredAt > latest ? entry.occurredAt : latest, '');
     const lastRelationshipAt = relationshipActivity.get(customerId) ?? '';
-    const lastActivityAt = [lastPaymentAt, lastLedgerAt, lastRelationshipAt]
+    const lastOrderAt = orderActivity.get(customerId) ?? '';
+    const lastActivityAt = [lastPaymentAt, lastLedgerAt, lastRelationshipAt, lastOrderAt]
       .sort()
       .at(-1) ?? '';
     const challenge = challengeCounts.get(customerId) ?? { active: 0, completed: 0 };
 
     return buildStoreCrmCustomerSummary({
       customerId,
-      displayName: clean(profile?.displayName) || clean(profile?.name) || `Cliente ${customerId.slice(0, 6)}`,
+      displayName:
+        clean(profile?.displayName) ||
+        clean(profile?.name) ||
+        orderIdentity.get(customerId) ||
+        `Cliente ${customerId.slice(0, 6)}`,
       photoUrl: clean(profile?.photoURL) || clean(profile?.photoUrl),
       confirmedPurchases: paid.length,
       confirmedSpentMinor: paid.reduce((sum, payment) => sum + Math.round(payment.amount * 100), 0),
@@ -185,7 +415,7 @@ export const loadStoreCrmSummary = async (input: { storeId: string; now?: Date }
   return {
     schemaVersion: STORE_CRM_SCHEMA_VERSION,
     storeId,
-    generatedAt: now.toISOString(),
+    generatedAt: nowIso,
     customerCount: customers.length,
     customers,
   };
