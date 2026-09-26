@@ -53,6 +53,9 @@ const requirePositiveAmount = (value: number): number => {
   return Number(value.toFixed(2));
 };
 
+export const isMercadoPagoSubscriptionRuntimeConfigured = async (): Promise<boolean> =>
+  Boolean(await resolveMercadoPagoAccessToken());
+
 export const buildMercadoPagoSubscriptionCheckoutRequest = (
   input: MercadoPagoSubscriptionCheckoutInput
 ): MercadoPagoSubscriptionRequest => ({
