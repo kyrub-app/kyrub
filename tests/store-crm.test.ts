@@ -2,6 +2,10 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { readFileSync } from 'node:fs';
 import { buildStoreCrmCustomerSummary, STORE_CRM_MAX_CUSTOMERS } from '../shared/storeCrm';
+import {
+  buildStoreSalesAnalytics,
+  type StoreSalesAnalyticsOrder,
+} from '../shared/storeSalesAnalytics';
 
 describe('store CRM relationship projection', () => {
   it('derives level from confirmed purchase recurrence', () => {
@@ -91,5 +95,75 @@ describe('store CRM relationship projection', () => {
     assert.match(panel, /Pontos da Loja/);
     assert.match(panel, /completedChallenges/);
     assert.match(panel, /rewardRedemptions/);
+  });
+});
+
+const salesOrder = (
+  input: Partial<StoreSalesAnalyticsOrder> & Pick<StoreSalesAnalyticsOrder, 'orderId' | 'status' | 'occurredAt'>
+): StoreSalesAnalyticsOrder => ({
+  orderId: input.orderId,
+  buyerId: input.buyerId ?? 'buyer-1',
+  buyerName: input.buyerName ?? 'Cliente',
+  status: input.status,
+  paymentStatus: input.paymentStatus ?? 'unknown',
+  fulfillmentType: input.fulfillmentType ?? 'delivery',
+  sourceChannel: input.sourceChannel ?? 'kyrub',
+  operatorId: input.operatorId ?? '',
+  operatorName: input.operatorName ?? '',
+  totalMinor: input.totalMinor ?? 0,
+  occurredAt: input.occurredAt,
+  authority: input.authority ?? 'canonical',
+  items: input.items ?? [],
+});
+
+describe('native Vendas & Analytics guard', () => {
+  it('counts completed commercial value without pretending it is financial settlement', () => {
+    const payload = buildStoreSalesAnalytics({
+      storeId: 'store-1',
+      period: '30d',
+      now: new Date('2026-09-26T12:00:00.000Z'),
+      orders: [
+        salesOrder({
+          orderId: 'completed',
+          status: 'completed',
+          paymentStatus: 'unpaid',
+          totalMinor: 3000,
+          occurredAt: '2026-09-25T12:00:00.000Z',
+          items: [{ productId: 'p1', name: 'Produto', unitPriceMinor: 1000, quantity: 4, transferredQuantity: 1, voidedQuantity: 1, discountMinor: 0 }],
+        }),
+        salesOrder({ orderId: 'cancelled', status: 'cancelled', paymentStatus: 'paid', totalMinor: 9000, occurredAt: '2026-09-25T13:00:00.000Z' }),
+        salesOrder({ orderId: 'open', status: 'preparing', totalMinor: 5000, occurredAt: '2026-09-25T14:00:00.000Z' }),
+      ],
+    });
+
+    assert.equal(payload.summary.totalOrders, 3);
+    assert.equal(payload.summary.completedOrders, 1);
+    assert.equal(payload.summary.completedSalesMinor, 3000);
+    assert.equal(payload.summary.unitsSold, 2);
+    assert.equal(payload.summary.cancelledOrders, 1);
+    assert.equal(payload.summary.openOrders, 1);
+    assert.equal(payload.products[0]?.grossMinor, 2000);
+  });
+
+  it('is wired into the runtime actually mounted by the Vite alias', () => {
+    const router = readFileSync('src/components/RetailerPanelRuntimeRouter.tsx', 'utf8');
+    const vite = readFileSync('vite.config.ts', 'utf8');
+    assert.match(vite, /RetailerPanelRuntimeRouter\.tsx/);
+    assert.match(router, /vendas: \{[^\n]+status: 'native'/);
+    assert.match(router, /LazySalesAnalyticsRuntime/);
+    assert.match(router, /moduleId === 'vendas'[\s\S]*LazySalesAnalyticsRuntime/);
+  });
+
+  it('deduplicates the two order stores and reuses the existing serverless multiplexer', () => {
+    const service = readFileSync('server/payments/storeSalesAnalyticsService.ts', 'utf8');
+    const transport = readFileSync('server/payments/storePromotionServerlessTransport.ts', 'utf8');
+    const vercel = readFileSync('vercel.json', 'utf8');
+    assert.match(service, /stores\/\$\{storeId\}\/orders/);
+    assert.match(service, /artifacts\/\$\{storeId\}\/public\/data\/customerOrders/);
+    assert.match(service, /for \(const doc of operationalSnapshot\.docs\)[\s\S]*for \(const doc of canonicalSnapshot\.docs\)/);
+    assert.match(service, /byOrderId\.set\(order\.orderId, order\)/);
+    assert.match(vercel, /\/api\/health\?transport=store-promotions&surface=sales-analytics/);
+    assert.match(transport, /surface === 'sales-analytics'/);
+    assert.match(transport, /createStoreSalesAnalyticsRouter/);
   });
 });
