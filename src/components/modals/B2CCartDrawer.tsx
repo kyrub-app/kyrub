@@ -6,10 +6,12 @@ import { B2CCartDrawer as ApprovalBaseB2CCartDrawer } from './B2CCartDrawerAppro
 import { auth } from '../../utils/firebase';
 import {
   loadLastCustomerOrderId,
+  resolveCanonicalCustomerOrderStoreId,
   subscribeToCustomerOrder,
   type CustomerOrder,
 } from '../../utils/customerOrders';
 import { resumeMarketplaceApprovedPayment } from '../../utils/marketplaceApprovedPayment';
+import { syncCanonicalOrderToStoreCrm } from '../../utils/storeCrm';
 
 type B2CCartDrawerProps = React.ComponentProps<typeof ApprovalBaseB2CCartDrawer>;
 
@@ -22,6 +24,7 @@ export const B2CCartDrawer: React.FC<B2CCartDrawerProps> = props => {
   const [paymentBusy, setPaymentBusy] = useState(false);
   const [paymentError, setPaymentError] = useState('');
   const initialOrderIdRef = useRef('');
+  const crmSyncAttemptedOrderIdRef = useRef('');
 
   useEffect(() => onAuthStateChanged(auth, setUser), []);
 
@@ -31,6 +34,7 @@ export const B2CCartDrawer: React.FC<B2CCartDrawerProps> = props => {
       setTrackedOrder(null);
       setSubmittedThisOpen(false);
       initialOrderIdRef.current = '';
+      crmSyncAttemptedOrderIdRef.current = '';
       return;
     }
 
@@ -67,6 +71,28 @@ export const B2CCartDrawer: React.FC<B2CCartDrawerProps> = props => {
       error => console.warn('Acompanhamento do pedido para liberação do Pix indisponível.', error)
     );
   }, [isOpen, visitingStore?.id, trackedOrderId]);
+
+  useEffect(() => {
+    if (!user || !visitingStore || !trackedOrder || trackedOrder.buyerId !== user.uid) return;
+    if (crmSyncAttemptedOrderIdRef.current === trackedOrder.id) return;
+    crmSyncAttemptedOrderIdRef.current = trackedOrder.id;
+
+    void (async () => {
+      try {
+        const canonicalStoreId = await resolveCanonicalCustomerOrderStoreId(visitingStore.id);
+        await syncCanonicalOrderToStoreCrm(
+          user,
+          canonicalStoreId || visitingStore.id,
+          trackedOrder.id
+        );
+      } catch (error) {
+        console.warn(
+          '[customer-order-crm] Pedido persistido; sincronização imediata do CRM ficará para a reconciliação.',
+          error
+        );
+      }
+    })();
+  }, [user?.uid, visitingStore?.id, trackedOrder?.id]);
 
   useEffect(() => {
     if (!submittedThisOpen || !trackedOrder || cart.length === 0) return;
