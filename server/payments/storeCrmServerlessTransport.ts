@@ -1,5 +1,8 @@
 import { verifyFirebaseIdToken } from '../ai/consultantAuth.js';
-import { syncCanonicalOrderCustomerIntoCrm } from './storeCrmOrderSyncService.js';
+import {
+  reconcilePersistedCustomerOrdersIntoCrm,
+  syncCanonicalOrderCustomerIntoCrm,
+} from './storeCrmOrderSyncService.js';
 import { loadStoreCrmSummary } from './storeCrmService.js';
 
 type RequestLike = {
@@ -100,6 +103,7 @@ export const handleStoreCrmServerlessRequest = async (
       return;
     }
 
+    await reconcilePersistedCustomerOrdersIntoCrm({ storeId });
     response.status(200).json(await loadStoreCrmSummary({ storeId }));
   } catch (error) {
     console.error(
