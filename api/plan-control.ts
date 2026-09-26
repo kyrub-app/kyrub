@@ -5,6 +5,13 @@ import {
   publishPlanVersion,
   setCouponCampaignStatus,
 } from '../server/admin/planManagementService.js';
+import {
+  cancelOwnPlanSubscription,
+  createOwnPlanSubscriptionCheckout,
+  loadOwnPlanSubscription,
+  refreshOwnPlanSubscription,
+  synchronizeMercadoPagoPlanSubscriptionById,
+} from '../server/admin/planSubscriptionService.js';
 import { loadPublicActivePlanCatalog } from '../server/admin/publicPlanCatalogService.js';
 import {
   grantComplimentaryPlanWithLifecycle,
@@ -12,6 +19,7 @@ import {
   redeemCouponWithLifecycle,
 } from '../server/admin/storeEntitlementLifecycleService.js';
 import { mapStoreEntitlementError } from '../server/admin/storeEntitlementService.js';
+import { verifyMercadoPagoWebhookSignature } from '../server/payments/mercadoPagoPixProvider.js';
 
 type HeaderValue = string | string[] | undefined;
 type QueryValue = string | string[] | undefined;
@@ -33,6 +41,12 @@ const record = (value: unknown): Record<string, unknown> =>
   value && typeof value === 'object' && !Array.isArray(value)
     ? value as Record<string, unknown>
     : {};
+const nestedDataId = (body: Record<string, unknown>): string => {
+  const data = record(body.data);
+  return typeof data.id === 'string' || typeof data.id === 'number'
+    ? String(data.id)
+    : '';
+};
 
 const methodNotAllowed = (response: ResponseLike): void => {
   response.status(405).json({
@@ -153,6 +167,74 @@ export default async function handler(
         response.status(200).json(
           await reconcileStoreEntitlementFromAuthorization(authorization)
         );
+        return;
+      }
+      case 'store.subscription.status': {
+        if (method !== 'GET') {
+          methodNotAllowed(response);
+          return;
+        }
+        response.status(200).json(await loadOwnPlanSubscription(authorization));
+        return;
+      }
+      case 'store.subscription.checkout': {
+        if (method !== 'POST') {
+          methodNotAllowed(response);
+          return;
+        }
+        response.status(201).json(
+          await createOwnPlanSubscriptionCheckout(authorization, body.plan)
+        );
+        return;
+      }
+      case 'store.subscription.refresh': {
+        if (method !== 'POST') {
+          methodNotAllowed(response);
+          return;
+        }
+        response.status(200).json(await refreshOwnPlanSubscription(authorization));
+        return;
+      }
+      case 'store.subscription.cancel': {
+        if (method !== 'POST') {
+          methodNotAllowed(response);
+          return;
+        }
+        response.status(200).json(await cancelOwnPlanSubscription(authorization));
+        return;
+      }
+      case 'provider.mercado-pago.subscription': {
+        if (method !== 'POST') {
+          methodNotAllowed(response);
+          return;
+        }
+        const topic = first(request.query?.type) || String(body.type ?? '');
+        if (topic && topic !== 'subscription_preapproval') {
+          response.status(200).json({ status: 'ignored', topic });
+          return;
+        }
+        const dataId = first(request.query?.['data.id']) || nestedDataId(body);
+        if (!dataId) {
+          response.status(400).json({
+            error: 'Identificador da assinatura não informado.',
+            code: 'SUBSCRIPTION_PROVIDER_ID_REQUIRED',
+          });
+          return;
+        }
+        try {
+          await verifyMercadoPagoWebhookSignature({
+            headers: request.headers,
+            dataId,
+          });
+        } catch {
+          response.status(401).json({
+            error: 'Notificação do Mercado Pago não autenticada.',
+            code: 'MERCADO_PAGO_SIGNATURE_INVALID',
+          });
+          return;
+        }
+        const subscription = await synchronizeMercadoPagoPlanSubscriptionById(dataId);
+        response.status(200).json({ status: 'processed', subscription });
         return;
       }
       default:
