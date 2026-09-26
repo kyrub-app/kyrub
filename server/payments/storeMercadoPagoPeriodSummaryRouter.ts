@@ -224,12 +224,13 @@ const summarizePeriod = async (
   return {
     period: period.period,
     provider: 'mercado-pago' as const,
-    captureCount: captures.length,
+    paymentCount: captures.length,
     reconciledPaymentCount,
-    feeEvidenceCount: feeCoverageCount.size,
+    feeCoverageCount: feeCoverageCount.size,
     ledgerFeeEvidenceCount,
     reconciliationFallbackFeeCount,
-    providerFeesMinor: ledgerProviderFeesMinor + reconciliationFallbackFeesMinor,
+    ledgerProviderFeesMinor,
+    reconciliationFallbackFeesMinor,
     explicitNetReceivedMinor,
     explicitNetReceivedCount,
     releaseDateEvidenceCount,
@@ -240,10 +241,18 @@ const summarizePeriod = async (
 const mapError = (error: unknown): { status: number; message: string; code: string } => {
   const code = error instanceof Error ? error.message : String(error);
   if (code === 'AUTH_REQUIRED') return { status: 401, message: 'Faça login novamente.', code };
-  if (code === 'STORE_REPRESENTATION_FORBIDDEN') return { status: 403, message: 'Você não pode consultar esta conciliação.', code };
-  if (code === 'STORE_PROVIDER_PERIOD_INVALID') return { status: 400, message: 'Competência inválida.', code };
+  if (code === 'STORE_REPRESENTATION_FORBIDDEN') {
+    return { status: 403, message: 'Você não pode consultar a conciliação financeira desta loja.', code };
+  }
+  if (code === 'STORE_PROVIDER_PERIOD_INVALID') {
+    return { status: 400, message: 'Competência financeira inválida.', code };
+  }
   console.error('[Store Mercado Pago period]', error);
-  return { status: 503, message: 'Não foi possível consolidar o Mercado Pago neste período.', code: 'STORE_PROVIDER_PERIOD_UNAVAILABLE' };
+  return {
+    status: 503,
+    message: 'Não foi possível consolidar a conciliação do Mercado Pago agora.',
+    code: 'STORE_PROVIDER_PERIOD_UNAVAILABLE',
+  };
 };
 
 export const createStoreMercadoPagoPeriodSummaryRouter = (): Router => {
