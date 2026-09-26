@@ -7,6 +7,10 @@ import { verifiedStoreScopedMercadoPagoPaymentEvent } from './mercadoPagoStoreSc
 import { settleMarketplaceOperationalOrderAfterPayment } from './marketplaceOrderPaymentSettlementService.js';
 import { syncPersistedCustomerOrderIntoCrm } from './storeCrmOrderSyncService.js';
 import {
+  markMarketplaceOrderInventoryReservationPaymentConfirmed,
+  releaseMarketplaceReservationForTerminalPayment,
+} from '../inventory/marketplaceOrderInventoryReservationService.js';
+import {
   attachPreparedCustomerDestinationResolutionToOperationalOrder,
   prepareCustomerDestinationResolutionForPaymentIntent,
 } from '../delivery/customerDestinationOrderResolutionService.js';
@@ -76,6 +80,20 @@ export const processMercadoPagoWebhook = async (input: {
       orderId: result.orderId,
       paymentIntentId: event.paymentIntentId,
       occurredAt: event.occurredAt,
+    });
+    await markMarketplaceOrderInventoryReservationPaymentConfirmed(
+      event.kyrubStoreId,
+      result.orderId
+    );
+  } else if (
+    event.eventType === 'payment.failed' ||
+    event.eventType === 'payment.expired' ||
+    event.eventType === 'payment.cancelled'
+  ) {
+    await releaseMarketplaceReservationForTerminalPayment({
+      storeId: event.kyrubStoreId,
+      paymentIntentId: event.paymentIntentId,
+      eventType: event.eventType,
     });
   }
 

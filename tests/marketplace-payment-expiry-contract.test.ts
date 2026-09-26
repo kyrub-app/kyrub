@@ -1,0 +1,157 @@
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import test from 'node:test';
+
+const reservationSource = readFileSync(
+  'server/inventory/marketplaceOrderInventoryReservationService.ts',
+  'utf8'
+);
+const orderStatusSource = readFileSync(
+  'server/inventory/orderStatusExecutionService.ts',
+  'utf8'
+);
+const checkoutSource = readFileSync(
+  'server/payments/mercadoPagoCheckoutBridge.ts',
+  'utf8'
+);
+const expirySource = readFileSync(
+  'server/payments/marketplacePaymentExpiryService.ts',
+  'utf8'
+);
+const expiryQueueSource = readFileSync(
+  'server/payments/marketplacePaymentExpiryQueueService.ts',
+  'utf8'
+);
+const mlQueueSource = readFileSync(
+  'server/integrations/mercadoLivreOrderQueueService.ts',
+  'utf8'
+);
+const sharedEnvelopeSource = readFileSync(
+  'server/queue/kyrubSharedQueueEnvelope.ts',
+  'utf8'
+);
+const queueConsumerSource = readFileSync(
+  'api/mercado-livre-orders-v2-consumer.ts',
+  'utf8'
+);
+const providerSource = readFileSync(
+  'server/payments/mercadoPagoPixProvider.ts',
+  'utf8'
+);
+const webhookSource = readFileSync(
+  'server/payments/mercadoPagoWebhook.ts',
+  'utf8'
+);
+const actionExecuteSource = readFileSync('api/action-execute.ts', 'utf8');
+const vercelConfig = JSON.parse(readFileSync('vercel.json', 'utf8')) as {
+  rewrites?: Array<{ source?: string; destination?: string }>;
+  crons?: Array<{ path?: string; schedule?: string }>;
+  functions?: Record<string, {
+    experimentalTriggers?: Array<{
+      type?: string;
+      topic?: string;
+      retryAfterSeconds?: number;
+      initialDelaySeconds?: number;
+    }>;
+  }>;
+};
+
+test('merchant acceptance reserves stock before the canonical acceptance transition', () => {
+  const reservationCall = orderStatusSource.indexOf(
+    'reservationAction = await reserveMarketplaceOrderInventoryOnAcceptance'
+  );
+  const acceptanceTransition = orderStatusSource.indexOf(
+    'const result = await executeBaseOrderStatusTransition(authorization, body)',
+    reservationCall
+  );
+  assert.ok(reservationCall >= 0);
+  assert.ok(acceptanceTransition > reservationCall);
+  assert.match(reservationSource, /inventoryOrderReservations/);
+  assert.match(reservationSource, /inventoryReservationStates/);
+  assert.match(reservationSource, /reservedByItem/);
+  assert.match(reservationSource, /availableCatalogAfterReservations/);
+  assert.match(reservationSource, /buildOrderInventoryConsumptionWithOptions/);
+  assert.match(orderStatusSource, /acceptance_failed/);
+  assert.match(orderStatusSource, /commitMarketplaceOrderInventoryReservation/);
+});
+
+test('accepted unpaid marketplace orders keep an expiration-aware stock reservation', () => {
+  assert.match(reservationSource, /activeExpiresAt/);
+  assert.match(reservationSource, /paymentIntentId/);
+  assert.match(reservationSource, /syncMarketplaceOrderInventoryReservationExpiry/);
+  assert.match(reservationSource, /markMarketplaceOrderInventoryReservationPaymentConfirmed/);
+  assert.match(checkoutSource, /effectiveExpiresAt/);
+  assert.match(checkoutSource, /syncMarketplaceOrderInventoryReservationExpiry/);
+  assert.match(checkoutSource, /enqueueMarketplacePaymentExpiry/);
+  assert.match(webhookSource, /markMarketplaceOrderInventoryReservationPaymentConfirmed/);
+});
+
+test('terminal Pix outcomes release the reservation and cancel the unpaid accepted order', () => {
+  assert.match(webhookSource, /payment\.failed/);
+  assert.match(webhookSource, /payment\.expired/);
+  assert.match(webhookSource, /payment\.cancelled/);
+  assert.match(webhookSource, /releaseMarketplaceReservationForTerminalPayment/);
+  assert.match(reservationSource, /transitionOrderStatusWithInventory/);
+  assert.match(reservationSource, /'cancelled'/);
+  assert.match(reservationSource, /releaseMarketplaceOrderInventoryReservation/);
+  assert.match(reservationSource, /subtractReservationLines/);
+});
+
+test('expiry reconciliation checks Mercado Pago before releasing stock', () => {
+  const providerRead = expirySource.indexOf('getMercadoPagoPayment');
+  const providerCancel = expirySource.indexOf('cancelMercadoPagoPayment');
+  const terminalRelease = expirySource.indexOf('releaseMarketplaceReservationForTerminalPayment');
+  assert.ok(providerRead >= 0);
+  assert.ok(providerCancel >= 0);
+  assert.ok(terminalRelease >= 0);
+  assert.match(expirySource, /where\('activeExpiresAt', '<=', now\)/);
+  assert.match(expirySource, /processVerifiedPaymentWebhook/);
+  assert.match(providerSource, /method: 'PUT'/);
+  assert.match(providerSource, /status: 'cancelled'/);
+});
+
+test('Pix expiry multiplexes through the one existing Vercel queue trigger', () => {
+  assert.match(sharedEnvelopeSource, /KYRUB_SHARED_QUEUE_TOPIC = 'mercado_livre_orders_v2'/);
+  assert.match(sharedEnvelopeSource, /__kyrubQueueVersion/);
+  assert.match(sharedEnvelopeSource, /marketplace_payment_expiry/);
+  assert.match(expiryQueueSource, /KYRUB_SHARED_QUEUE_TOPIC/);
+  assert.match(expiryQueueSource, /delaySeconds/);
+  assert.match(expiryQueueSource, /retentionSeconds/);
+  assert.match(expiryQueueSource, /idempotencyKey/);
+  assert.match(expiryQueueSource, /createKyrubSharedQueueEnvelope/);
+  assert.match(expiryQueueSource, /expireDueMarketplacePixReservations\(100\)/);
+  assert.match(expiryQueueSource, /result\.failed > 0/);
+  assert.match(expiryQueueSource, /MARKETPLACE_PAYMENT_EXPIRY_QUEUE_RECONCILIATION_FAILED/);
+  assert.match(expiryQueueSource, /result\.deferred > 0/);
+  assert.match(expiryQueueSource, /MARKETPLACE_PAYMENT_EXPIRY_QUEUE_RECONCILIATION_DEFERRED/);
+  assert.match(mlQueueSource, /createKyrubSharedQueueEnvelope\('mercado_livre_orders_v2'/);
+  assert.match(queueConsumerSource, /isLegacyMercadoLivreOrdersV2QueuePayload/);
+  assert.match(queueConsumerSource, /parseKyrubSharedQueueEnvelope/);
+  assert.match(queueConsumerSource, /MARKETPLACE_PAYMENT_EXPIRY_QUEUE_KIND/);
+  assert.match(queueConsumerSource, /consumeMarketplacePaymentExpiryQueueMessage/);
+
+  const triggers = vercelConfig.functions?.['api/mercado-livre-orders-v2-consumer.ts']
+    ?.experimentalTriggers ?? [];
+  assert.deepEqual(triggers, [{
+    type: 'queue/v2beta',
+    topic: 'mercado_livre_orders_v2',
+    retryAfterSeconds: 30,
+    initialDelaySeconds: 0,
+  }]);
+  assert.deepEqual(vercelConfig.crons ?? [], []);
+});
+
+test('manual expiry maintenance remains available as a protected recovery path', () => {
+  assert.match(actionExecuteSource, /transport === 'marketplace-payment-expiry'/);
+  assert.match(actionExecuteSource, /process\.env\.CRON_SECRET/);
+  assert.match(actionExecuteSource, /bearerToken\(authorization\) !== cronSecret/);
+  assert.match(actionExecuteSource, /expireDueMarketplacePixReservations/);
+
+  const rewrite = vercelConfig.rewrites?.find(
+    entry => entry.source === '/api/payments/maintenance/expire'
+  );
+  assert.deepEqual(rewrite, {
+    source: '/api/payments/maintenance/expire',
+    destination: '/api/action-execute?transport=marketplace-payment-expiry',
+  });
+});

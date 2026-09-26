@@ -28,6 +28,9 @@ jobs:
       - name: Validate TypeScript and tests
         run: npm run prebuild > build.log 2>&1
 
+      - name: Validate marketplace payment expiry contract
+        run: node --test --import tsx tests/marketplace-payment-expiry-contract.test.ts >> build.log 2>&1
+
       - name: Bundle application
         run: npm --ignore-scripts run build >> build.log 2>&1
 

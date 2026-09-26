@@ -63,6 +63,8 @@ jobs:
           tests/app-error-boundary.test.ts
           tests/production-health.test.ts
           tests/local-attendance-serverless-routing.test.ts
+          tests/order-approval-routing.test.ts
+          tests/marketplace-payment-expiry-contract.test.ts
 
       - name: Prebuild validation
         run: npm run prebuild

@@ -14,6 +14,8 @@ import {
   isMercadoPagoPixRuntimeConfigured,
   type MercadoPagoPixCheckout,
 } from './mercadoPagoPixProvider.js';
+import { syncMarketplaceOrderInventoryReservationExpiry } from '../inventory/marketplaceOrderInventoryReservationService.js';
+import { enqueueMarketplacePaymentExpiry } from './marketplacePaymentExpiryQueueService.js';
 
 export interface MercadoPagoCheckoutBridgeResult {
   providerReady: boolean;
@@ -109,6 +111,15 @@ const bridgeFromPix = (
   expiresAt: pix.expiresAt,
 });
 
+const schedulePaymentExpiry = async (input: {
+  storeId: string;
+  orderId: string;
+  paymentIntentId: string;
+  expiresAt: string;
+}): Promise<void> => {
+  await enqueueMarketplacePaymentExpiry(input);
+};
+
 export const attachMercadoPagoPixToExistingIntent = async (input: {
   storeId: string;
   paymentIntentId: string;
@@ -171,7 +182,22 @@ export const attachMercadoPagoPixToExistingIntent = async (input: {
       throw new Error('CHECKOUT_PROVIDER_PAYMENT_CONFLICT');
     }
     const existingPix = await getMercadoPagoPixCheckout(intent.providerIntentId);
-    return bridgeFromPix(existingPix, approval.status);
+    const effectiveExpiresAt = existingPix.expiresAt || intent.expiresAt;
+    await syncMarketplaceOrderInventoryReservationExpiry(
+      intent.storeId,
+      intent.target.orderId,
+      effectiveExpiresAt
+    );
+    await schedulePaymentExpiry({
+      storeId: intent.storeId,
+      orderId: intent.target.orderId,
+      paymentIntentId: intent.id,
+      expiresAt: effectiveExpiresAt,
+    });
+    return bridgeFromPix(
+      { ...existingPix, expiresAt: effectiveExpiresAt },
+      approval.status
+    );
   }
 
   const refreshedAt = new Date().toISOString();
@@ -185,6 +211,7 @@ export const attachMercadoPagoPixToExistingIntent = async (input: {
     intent: refreshedIntent,
     paymentId: payment.id,
   });
+  const effectiveExpiresAt = pix.expiresAt || refreshedExpiresAt;
 
   await adminDb.runTransaction(async transaction => {
     const [freshIntentSnapshot, freshPaymentSnapshot, freshOrderSnapshot] = await Promise.all([
@@ -222,7 +249,7 @@ export const attachMercadoPagoPixToExistingIntent = async (input: {
     transaction.update(intentRef, {
       provider: pix.provider,
       providerIntentId: pix.providerPaymentId,
-      expiresAt: pix.expiresAt || refreshedExpiresAt,
+      expiresAt: effectiveExpiresAt,
       updatedAt: refreshedAt,
     });
     transaction.update(paymentRef, {
@@ -232,5 +259,17 @@ export const attachMercadoPagoPixToExistingIntent = async (input: {
     });
   });
 
-  return bridgeFromPix(pix, approval.status);
+  await syncMarketplaceOrderInventoryReservationExpiry(
+    intent.storeId,
+    intent.target.orderId,
+    effectiveExpiresAt
+  );
+  await schedulePaymentExpiry({
+    storeId: intent.storeId,
+    orderId: intent.target.orderId,
+    paymentIntentId: intent.id,
+    expiresAt: effectiveExpiresAt,
+  });
+
+  return bridgeFromPix({ ...pix, expiresAt: effectiveExpiresAt }, approval.status);
 };

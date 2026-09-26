@@ -45,18 +45,48 @@ export default async function handler(
   response.setHeader('cache-control', 'no-store, max-age=0');
   response.setHeader('content-type', 'application/json; charset=utf-8');
 
-  if ((request.method ?? 'GET').toUpperCase() !== 'POST') {
+  const method = (request.method ?? 'GET').toUpperCase();
+  const authorization = headerValue(
+    request.headers.authorization ?? request.headers.Authorization
+  );
+  const transport = headerValue(request.query?.transport);
+
+  if (transport === 'marketplace-payment-expiry') {
+    if (method !== 'GET') {
+      response.status(405).json({
+        error: 'Método não permitido.',
+        code: 'METHOD_NOT_ALLOWED',
+      });
+      return;
+    }
+    const cronSecret = clean(process.env.CRON_SECRET);
+    if (!cronSecret || bearerToken(authorization) !== cronSecret) {
+      response.status(401).json({
+        error: 'Cron não autorizado.',
+        code: 'CRON_UNAUTHORIZED',
+      });
+      return;
+    }
+    try {
+      const expiry = await import('../server/payments/marketplacePaymentExpiryService.js');
+      response.status(200).json(await expiry.expireDueMarketplacePixReservations());
+    } catch (error) {
+      console.error('[Marketplace Payment Expiry]', error);
+      response.status(503).json({
+        error: 'Não foi possível reconciliar os Pix expirados agora.',
+        code: 'PAYMENT_EXPIRY_SWEEP_UNAVAILABLE',
+      });
+    }
+    return;
+  }
+
+  if (method !== 'POST') {
     response.status(405).json({
       error: 'Método não permitido.',
       code: 'METHOD_NOT_ALLOWED',
     });
     return;
   }
-
-  const authorization = headerValue(
-    request.headers.authorization ?? request.headers.Authorization
-  );
-  const transport = headerValue(request.query?.transport);
 
   if (transport === 'kyrubia-user-ai-chat') {
     try {
