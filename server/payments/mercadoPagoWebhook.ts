@@ -4,6 +4,7 @@ import {
   verifiedMercadoPagoPaymentEvent,
 } from './mercadoPagoPixProvider.js';
 import { verifiedStoreScopedMercadoPagoPaymentEvent } from './mercadoPagoStoreScopedProvider.js';
+import { syncPersistedCustomerOrderIntoCrm } from './storeCrmOrderSyncService.js';
 import {
   attachPreparedCustomerDestinationResolutionToOperationalOrder,
   prepareCustomerDestinationResolutionForPaymentIntent,
@@ -69,6 +70,20 @@ export const processMercadoPagoWebhook = async (input: {
   });
 
   await attachPreparedCustomerDestinationResolutionToOperationalOrder(preparedDestination);
+
+  if (result.orderId) {
+    try {
+      await syncPersistedCustomerOrderIntoCrm({
+        storeId: event.kyrubStoreId,
+        orderId: result.orderId,
+      });
+    } catch (error) {
+      console.warn(
+        '[Mercado Pago Webhook] Pagamento e pedido confirmados; CRM ficará para a reconciliação.',
+        error instanceof Error ? error.message : String(error)
+      );
+    }
+  }
 
   return {
     accepted: true,
