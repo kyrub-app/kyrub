@@ -5,6 +5,14 @@ import {
   publishPlanVersion,
   setCouponCampaignStatus,
 } from '../server/admin/planManagementService.js';
+import {
+  cancelOwnPaidPlanSubscription,
+  createOwnPaidPlanCheckout,
+  handlePaidPlanProviderWebhook,
+  loadOwnPlanSubscriptionState,
+  loadPaidPlanBillingAvailability,
+  reconcileOwnPaidPlanSubscription,
+} from '../server/admin/paidPlanSubscriptionService.js';
 import { loadPublicActivePlanCatalog } from '../server/admin/publicPlanCatalogService.js';
 import {
   grantComplimentaryPlanWithLifecycle,
@@ -41,6 +49,19 @@ const methodNotAllowed = (response: ResponseLike): void => {
   });
 };
 
+const webhookDataId = (
+  body: Record<string, unknown>,
+  query: Record<string, QueryValue> | undefined
+): string => {
+  const data = record(body.data);
+  return String(data.id ?? first(query?.['data.id']) ?? first(query?.id) ?? '').trim();
+};
+
+const webhookEventType = (
+  body: Record<string, unknown>,
+  query: Record<string, QueryValue> | undefined
+): string => String(body.type ?? body.topic ?? first(query?.type) ?? first(query?.topic) ?? '').trim();
+
 export default async function handler(
   request: RequestLike,
   response: ResponseLike
@@ -70,6 +91,41 @@ export default async function handler(
         error: 'Catálogo de planos temporariamente indisponível.',
         code: 'PLAN_CATALOG_UNAVAILABLE',
       });
+    }
+    return;
+  }
+
+  if (operation === 'plans.billing') {
+    if (method !== 'GET') {
+      methodNotAllowed(response);
+      return;
+    }
+    response.setHeader('cache-control', 'no-store, max-age=0');
+    response.status(200).json(loadPaidPlanBillingAvailability());
+    return;
+  }
+
+  if (operation === 'subscription.webhook') {
+    if (method !== 'POST') {
+      methodNotAllowed(response);
+      return;
+    }
+    response.setHeader('cache-control', 'no-store, max-age=0');
+    try {
+      const dataId = webhookDataId(body, request.query);
+      if (!dataId) {
+        response.status(400).json({ error: 'Assinatura não informada.', code: 'SUBSCRIPTION_ID_REQUIRED' });
+        return;
+      }
+      response.status(200).json(await handlePaidPlanProviderWebhook({
+        signature: request.headers['x-signature'] ?? request.headers['X-Signature'],
+        requestId: request.headers['x-request-id'] ?? request.headers['X-Request-Id'],
+        dataId,
+        eventType: webhookEventType(body, request.query),
+      }));
+    } catch (error) {
+      const mapped = mapPlanManagementError(error);
+      response.status(mapped.status).json(mapped.body);
     }
     return;
   }
@@ -155,6 +211,38 @@ export default async function handler(
         );
         return;
       }
+      case 'store.subscription.state': {
+        if (method !== 'GET') {
+          methodNotAllowed(response);
+          return;
+        }
+        response.status(200).json(await loadOwnPlanSubscriptionState(authorization));
+        return;
+      }
+      case 'store.subscription.checkout': {
+        if (method !== 'POST') {
+          methodNotAllowed(response);
+          return;
+        }
+        response.status(201).json(await createOwnPaidPlanCheckout(authorization, body.plan));
+        return;
+      }
+      case 'store.subscription.reconcile': {
+        if (method !== 'POST') {
+          methodNotAllowed(response);
+          return;
+        }
+        response.status(200).json(await reconcileOwnPaidPlanSubscription(authorization));
+        return;
+      }
+      case 'store.subscription.cancel': {
+        if (method !== 'POST') {
+          methodNotAllowed(response);
+          return;
+        }
+        response.status(200).json(await cancelOwnPaidPlanSubscription(authorization));
+        return;
+      }
       default:
         response.status(404).json({
           error: 'Operação de planos não encontrada.',
@@ -162,10 +250,11 @@ export default async function handler(
         });
     }
   } catch (error) {
-    const mapped = operation.startsWith('store.') ||
-      operation === 'admin.entitlement.grant'
-      ? mapStoreEntitlementError(error)
-      : mapPlanManagementError(error);
+    const mapped = operation.startsWith('store.subscription')
+      ? mapPlanManagementError(error)
+      : operation.startsWith('store.') || operation === 'admin.entitlement.grant'
+        ? mapStoreEntitlementError(error)
+        : mapPlanManagementError(error);
     response.status(mapped.status).json(mapped.body);
   }
 }
