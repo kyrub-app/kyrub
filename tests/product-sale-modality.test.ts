@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import './commercial-recipient-authority.test';
+import './store-subscription-runtime.test';
 import {
   buildSubscriptionSaleModality,
   isSubscriptionSaleModality,
