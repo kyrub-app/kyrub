@@ -250,27 +250,25 @@ export const StorefrontPanel: React.FC<StorefrontPanelProps> = props => {
 
   const storefrontProducts = useMemo(
     () =>
-      (publicProducts ?? localStoreProducts)
-        .filter(product => product.saleModality?.mode !== 'subscription')
-        .map(product => {
-          const resolved = resolveCatalogCustomization(
-            product,
-            customizationDefaults
-          );
-          const derivedStock = derivedStockByProductId[product.id];
-          return {
-            ...product,
-            ...(typeof derivedStock === 'number' && !product.isService
-              ? { stock: derivedStock }
-              : {}),
-            ...(resolved.quickNotes.length > 0
-              ? { quickNotes: resolved.quickNotes }
-              : { quickNotes: undefined }),
-            ...(resolved.optionGroups.length > 0
-              ? { optionGroups: resolved.optionGroups }
-              : { optionGroups: undefined }),
-          };
-        }),
+      (publicProducts ?? localStoreProducts).map(product => {
+        const resolved = resolveCatalogCustomization(
+          product,
+          customizationDefaults
+        );
+        const derivedStock = derivedStockByProductId[product.id];
+        return {
+          ...product,
+          ...(typeof derivedStock === 'number' && !product.isService
+            ? { stock: derivedStock }
+            : {}),
+          ...(resolved.quickNotes.length > 0
+            ? { quickNotes: resolved.quickNotes }
+            : { quickNotes: undefined }),
+          ...(resolved.optionGroups.length > 0
+            ? { optionGroups: resolved.optionGroups }
+            : { optionGroups: undefined }),
+        };
+      }),
     [
       customizationDefaults,
       derivedStockByProductId,
