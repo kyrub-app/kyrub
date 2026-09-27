@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { describe, test } from 'node:test';
+import './merchant-subscriptions-management-ui.test';
 import { commitMobileErpMenuSelection } from '../src/components/MobileErpMenu';
 import {
   buildPublicStorefrontPath,
