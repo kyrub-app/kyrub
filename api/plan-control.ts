@@ -29,6 +29,13 @@ import {
   reconcileAuthorizedStoreSubscription,
 } from '../server/payments/storeSubscriptionService.js';
 import {
+  StoreSubscriptionBenefitError,
+  consumeAuthorizedStoreSubscriptionBenefit,
+  listAuthorizedStoreSubscriptionBenefitCycles,
+  mapStoreSubscriptionBenefitError,
+  reconcileStoreSubscriptionBenefitCycle,
+} from '../server/payments/storeSubscriptionBenefitService.js';
+import {
   loadAuthorizedStoreSubscriberRegistry,
   mapStoreSubscriberRegistryError,
   reconcileAuthorizedStoreSubscribersIntoCrm,
@@ -163,14 +170,20 @@ export default async function handler(
         });
         return;
       }
-      response.status(200).json(await processStoreSubscriptionMercadoPagoWebhook({
+      const result = await processStoreSubscriptionMercadoPagoWebhook({
         headers: request.headers,
         dataId,
         eventType: webhookEventType(body, request.query),
         userId: webhookUserId(body, request.query),
-      }));
+      });
+      const benefitCycle = result.processed && result.storeId && result.subscriptionId
+        ? await reconcileStoreSubscriptionBenefitCycle(result.storeId, result.subscriptionId)
+        : null;
+      response.status(200).json({ ...result, benefitCycle });
     } catch (error) {
-      const mapped = mapStoreSubscriptionError(error);
+      const mapped = error instanceof StoreSubscriptionBenefitError
+        ? mapStoreSubscriptionBenefitError(error)
+        : mapStoreSubscriptionError(error);
       response.status(mapped.status).json(mapped.body);
     }
     return;
@@ -294,9 +307,12 @@ export default async function handler(
           methodNotAllowed(response);
           return;
         }
-        response.status(201).json(
-          await createAuthorizedStoreSubscription(authorization, request.body)
+        const result = await createAuthorizedStoreSubscription(authorization, request.body);
+        const benefitCycle = await reconcileStoreSubscriptionBenefitCycle(
+          result.subscription.storeId,
+          result.subscription.id
         );
+        response.status(201).json({ ...result, benefitCycle });
         return;
       }
       case 'merchant.subscription.state': {
@@ -314,9 +330,15 @@ export default async function handler(
           methodNotAllowed(response);
           return;
         }
-        response.status(200).json(
-          await reconcileAuthorizedStoreSubscription(authorization, request.body)
+        const subscription = await reconcileAuthorizedStoreSubscription(
+          authorization,
+          request.body
         );
+        const benefitCycle = await reconcileStoreSubscriptionBenefitCycle(
+          subscription.storeId,
+          subscription.id
+        );
+        response.status(200).json({ ...subscription, benefitCycle });
         return;
       }
       case 'merchant.subscription.cancel': {
@@ -326,6 +348,26 @@ export default async function handler(
         }
         response.status(200).json(
           await cancelAuthorizedStoreSubscription(authorization, request.body)
+        );
+        return;
+      }
+      case 'merchant.subscription.benefits.list': {
+        if (method !== 'POST') {
+          methodNotAllowed(response);
+          return;
+        }
+        response.status(200).json(
+          await listAuthorizedStoreSubscriptionBenefitCycles(authorization, request.body)
+        );
+        return;
+      }
+      case 'merchant.subscription.benefit.consume': {
+        if (method !== 'POST') {
+          methodNotAllowed(response);
+          return;
+        }
+        response.status(200).json(
+          await consumeAuthorizedStoreSubscriptionBenefit(authorization, request.body)
         );
         return;
       }
@@ -362,15 +404,19 @@ export default async function handler(
         });
     }
   } catch (error) {
-    const mapped = operation.startsWith('merchant.subscribers')
-      ? mapStoreSubscriberRegistryError(error)
-      : operation.startsWith('merchant.subscription')
-        ? mapStoreSubscriptionError(error)
-        : operation.startsWith('store.subscription')
-          ? mapPlanManagementError(error)
-          : operation.startsWith('store.') || operation === 'admin.entitlement.grant'
-            ? mapStoreEntitlementError(error)
-            : mapPlanManagementError(error);
+    const mapped = operation.startsWith('merchant.subscription.benefit')
+      ? mapStoreSubscriptionBenefitError(error)
+      : operation.startsWith('merchant.subscribers')
+        ? mapStoreSubscriberRegistryError(error)
+        : operation.startsWith('merchant.subscription')
+          ? error instanceof StoreSubscriptionBenefitError
+            ? mapStoreSubscriptionBenefitError(error)
+            : mapStoreSubscriptionError(error)
+          : operation.startsWith('store.subscription')
+            ? mapPlanManagementError(error)
+            : operation.startsWith('store.') || operation === 'admin.entitlement.grant'
+              ? mapStoreEntitlementError(error)
+              : mapPlanManagementError(error);
     response.status(mapped.status).json(mapped.body);
   }
 }
