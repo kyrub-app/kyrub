@@ -74,7 +74,8 @@ type MpPreapproval = {
 };
 
 const providerStatus = (value: unknown): KyrubPlanSubscriptionStatus => {
-  if (value === 'authorized' || value === 'paused' || value === 'cancelled') return value;
+  if (value === 'authorized' || value === 'paused') return value;
+  if (value === 'canceled' || value === 'cancelled') return 'cancelled';
   return 'pending';
 };
 
@@ -380,11 +381,14 @@ export const cancelOwnPaidPlanSubscription = async (authorization: string): Prom
   const snapshot = await adminDb.doc(`${SUBSCRIPTION_COLLECTION}/${ownerId}`).get();
   const subscription = parseStoredSubscription(ownerId, snapshot.exists ? snapshot.data() as Record<string, unknown> : undefined);
   if (!subscription) throw new PlanManagementError(404, 'SUBSCRIPTION_NOT_FOUND', 'Nenhuma assinatura paga foi encontrada para esta loja.');
-  await mpRequest(`/preapproval/${encodeURIComponent(subscription.providerSubscriptionId)}`, {
+  const provider = await mpRequest(`/preapproval/${encodeURIComponent(subscription.providerSubscriptionId)}`, {
     method: 'PUT',
-    body: JSON.stringify({ status: 'cancelled' }),
-  });
-  await deactivateSubscriptionEntitlement(ownerId, subscription.providerSubscriptionId, 'cancelled');
+    body: JSON.stringify({ status: 'canceled' }),
+  }) as MpPreapproval;
+  if (providerStatus(provider.status) !== 'cancelled') {
+    throw new PlanManagementError(502, 'PLAN_BILLING_CANCEL_NOT_CONFIRMED', 'O Mercado Pago não confirmou o cancelamento da assinatura.');
+  }
+  await persistProviderState(ownerId, provider, subscription);
   return loadOwnPlanSubscriptionState(authorization);
 };
 
