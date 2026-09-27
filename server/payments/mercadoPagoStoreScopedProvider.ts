@@ -1,4 +1,3 @@
-import { adminDb } from '../firebaseAdmin.js';
 import type { ExistingOrderCanonicalPaymentIntent } from '../../src/utils/canonicalPaymentIntent.js';
 import type { PaymentProviderEventType, VerifiedPaymentProviderEvent } from '../../src/utils/paymentProvider.js';
 import { mercadoPagoStoreRequest } from '../integrations/mercadoPagoStoreOauthService.js';
@@ -6,6 +5,7 @@ import {
   loadMercadoPagoPaymentProviderBinding,
   saveMercadoPagoPaymentProviderBinding,
 } from './paymentProviderBindingService.js';
+import { resolveCommercialRecipientAuthority } from './commercialRecipientAuthorityService.js';
 import { verifyMercadoPagoWebhookSignature } from './mercadoPagoPixProvider.js';
 
 interface MercadoPagoPayment {
@@ -30,17 +30,6 @@ interface MercadoPagoPayment {
 const clean = (value: unknown): string =>
   typeof value === 'string' || typeof value === 'number' ? String(value).trim() : '';
 
-const legacyStoreIdForCanonicalStore = async (canonicalStoreId: string): Promise<string> => {
-  const snapshot = await adminDb.doc(`stores/${canonicalStoreId}`).get();
-  if (!snapshot.exists) throw new Error('MERCADO_PAGO_CANONICAL_STORE_NOT_FOUND');
-  const data = snapshot.data() as Record<string, unknown>;
-  const legacyStoreId = clean(data.legacyTenantId) || clean(data.ownerId);
-  if (!legacyStoreId || clean(data.ownerId) !== legacyStoreId) {
-    throw new Error('MERCADO_PAGO_CANONICAL_STORE_SCOPE_INVALID');
-  }
-  return legacyStoreId;
-};
-
 const checkout = (payment: MercadoPagoPayment) => {
   const providerPaymentId = clean(payment.id);
   if (!providerPaymentId) throw new Error('MERCADO_PAGO_PAYMENT_ID_MISSING');
@@ -61,8 +50,12 @@ export const createStoreScopedMercadoPagoLocalPix = async (input: {
   paymentId: string;
   payerEmail: string;
 }) => {
-  const legacyStoreId = await legacyStoreIdForCanonicalStore(input.intent.storeId);
-  const payment = await mercadoPagoStoreRequest<MercadoPagoPayment>(legacyStoreId, '/v1/payments', {
+  const recipientAuthority = await resolveCommercialRecipientAuthority({
+    context: 'store_sale',
+    canonicalStoreId: input.intent.storeId,
+  });
+  const credentialScopeId = recipientAuthority.credentialScopeId;
+  const payment = await mercadoPagoStoreRequest<MercadoPagoPayment>(credentialScopeId, '/v1/payments', {
     method: 'POST',
     headers: { 'X-Idempotency-Key': input.intent.idempotencyKey },
     body: JSON.stringify({
@@ -83,7 +76,7 @@ export const createStoreScopedMercadoPagoLocalPix = async (input: {
   await saveMercadoPagoPaymentProviderBinding({
     provider: 'mercado-pago',
     providerPaymentId: normalized.providerPaymentId,
-    legacyStoreId,
+    legacyStoreId: credentialScopeId,
     canonicalStoreId: input.intent.storeId,
     paymentId: input.paymentId,
     paymentIntentId: input.intent.id,
