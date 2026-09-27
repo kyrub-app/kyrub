@@ -15,6 +15,7 @@ type ModuleDefinition = { title: string; description: string; status: 'native' |
 const MANAGEMENT_MODULES: Record<ErpManagementModule, ModuleDefinition> = {
   produtos: { title: 'Produtos & Estoque', description: 'Catálogo, publicação, estoque e edição dos itens da loja.', status: 'native' },
   vendas: { title: 'Vendas & Analytics', description: 'Indicadores e leitura operacional das vendas da loja.', status: 'native' },
+  assinaturas: { title: 'Assinaturas', description: 'Assinantes, situação de cobrança e contratos recorrentes da loja.', status: 'native' },
   financeiro: { title: 'Financeiro Interno', description: 'Custos, entradas, obrigações e projeções financeiras da operação.', status: 'native' },
   rh: { title: 'Recursos Humanos', description: 'Equipe, cargos, acessos, remuneração e folha da operação.', status: 'native' },
   crm: { title: 'CRM', description: 'Relacionamento, segmentação, histórico e inteligência sobre clientes.', status: 'native' },
@@ -31,6 +32,7 @@ const mercadoLivreOAuthReturnModule = (): ErpManagementModule | null => {
 const LazyIntegrationsRuntime = lazy(async () => { const module = await import('./GerencialIntegrationsRuntime'); return { default: module.GerencialIntegrationsRuntime }; });
 const LazyProductInventoryRuntime = lazy(async () => { const module = await import('./store/ProductInventoryDirectRuntime'); return { default: module.ProductInventoryDirectRuntime }; });
 const LazySalesAnalyticsRuntime = lazy(async () => { const module = await import('./store/StoreSalesAnalyticsRuntime'); return { default: module.StoreSalesAnalyticsRuntime }; });
+const LazySubscriptionsRuntime = lazy(async () => { const module = await import('./store/StoreSubscriptionsRuntime'); return { default: module.default }; });
 const LazyFinanceRuntime = lazy(async () => { const module = await import('./StoreFinanceCompositeRuntime'); return { default: module.StoreFinanceCompositeRuntime }; });
 const LazyStoreTeamWorkspace = lazy(async () => { const module = await import('./store/StoreTeamWorkspace'); return { default: module.StoreTeamWorkspace }; });
 const LazyStorePayrollWorkspace = lazy(async () => { const module = await import('./store/StorePayrollWorkspace'); return { default: module.default }; });
@@ -48,6 +50,7 @@ function DirectManagementModule({ moduleId, retailerProps, onBackToPdv }: { modu
     {moduleId === 'integracoes' ? <Suspense fallback={<Loading>Carregando Integrações & Sandbox…</Loading>}><LazyIntegrationsRuntime triggerToast={retailerProps.triggerToast} /></Suspense>
       : moduleId === 'produtos' ? <Suspense fallback={<Loading>Carregando Produtos & Estoque…</Loading>}><LazyProductInventoryRuntime activeRetailerId={retailerProps.activeRetailerId} activeStore={retailerProps.activeStore} products={retailerProps.products} setProducts={retailerProps.setProducts} triggerToast={retailerProps.triggerToast} /></Suspense>
       : moduleId === 'vendas' ? <Suspense fallback={<Loading>Carregando Vendas & Analytics…</Loading>}><LazySalesAnalyticsRuntime storeId={retailerProps.activeRetailerId} /></Suspense>
+      : moduleId === 'assinaturas' ? <Suspense fallback={<Loading>Carregando Assinaturas…</Loading>}><LazySubscriptionsRuntime storeId={retailerProps.activeRetailerId} triggerToast={retailerProps.triggerToast} /></Suspense>
       : moduleId === 'financeiro' ? <Suspense fallback={<Loading>Carregando Financeiro Interno…</Loading>}><LazyFinanceRuntime storeId={retailerProps.activeRetailerId} /></Suspense>
       : moduleId === 'rh' ? <Suspense fallback={<Loading>Carregando Recursos Humanos…</Loading>}><div className="space-y-5"><LazyStoreTeamWorkspace legacyStore={retailerProps.activeStore} legacyStoreId={retailerProps.activeRetailerId} notify={retailerProps.triggerToast} /><LazyStorePayrollWorkspace legacyStoreId={retailerProps.activeRetailerId} notify={retailerProps.triggerToast} /></div></Suspense>
       : moduleId === 'vouchers' ? <Suspense fallback={<Loading>Carregando Promocionais…</Loading>}><LazyPromotionalRuntime /></Suspense>
