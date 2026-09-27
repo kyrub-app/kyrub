@@ -21,6 +21,10 @@ import {
 } from './operationalDualWrite';
 import type { CanonicalStoreRecord } from './storeDirectory';
 import type { StoreRole } from './storeSecurity';
+import {
+  parseProductSaleModality,
+  type ProductSaleModality,
+} from '../../shared/productSaleModality';
 import { normalizeStorePointsPerUnit } from '../../shared/storePoints';
 
 export type CanonicalProductPublicationStatus =
@@ -41,6 +45,7 @@ export interface CanonicalProductMirrorData {
   category: string;
   isService: boolean;
   storePointsPerUnit: number;
+  saleModality: ProductSaleModality;
   publicationStatus: CanonicalProductPublicationStatus;
   createdByUserId: string;
   createdByRole: StoreRole;
@@ -144,6 +149,7 @@ export const buildCanonicalProductMirrorData = (
   const storeId = canonicalStoreId.trim();
   const actorUserId = migratedByUserId.trim();
   const legacyStoreId = product.storeId.trim();
+  const saleModality = parseProductSaleModality(product.saleModality);
 
   if (!storeId) throw new Error('A loja canônica não foi identificada.');
   if (!actorUserId) throw new Error('O responsável pela migração não foi identificado.');
@@ -159,6 +165,9 @@ export const buildCanonicalProductMirrorData = (
   if (!Number.isInteger(product.stock) || product.stock < 0) {
     throw new Error(`O estoque de “${product.name}” é inválido.`);
   }
+  if (!saleModality) {
+    throw new Error(`A forma de venda de “${product.name}” é inválida.`);
+  }
 
   return {
     id: product.id,
@@ -172,6 +181,7 @@ export const buildCanonicalProductMirrorData = (
     category: product.category.trim(),
     isService: product.isService === true,
     storePointsPerUnit: normalizeStorePointsPerUnit(product.storePointsPerUnit),
+    saleModality,
     publicationStatus: 'published',
     createdByUserId: actorUserId,
     createdByRole: migratedByRole,
@@ -205,6 +215,7 @@ const comparableProductFields = (
   category: cleanString(value.category),
   isService: value.isService === true,
   storePointsPerUnit: normalizeStorePointsPerUnit(value.storePointsPerUnit),
+  saleModality: parseProductSaleModality(value.saleModality),
   publicationStatus: cleanString(value.publicationStatus),
   legacyUpdatedAt: cleanString(value.legacyUpdatedAt),
   archivedAt: cleanString(value.archivedAt),
@@ -355,6 +366,7 @@ export const syncLegacyProductsToCanonical = async (
         category: next.category,
         isService: next.isService,
         storePointsPerUnit: next.storePointsPerUnit,
+        saleModality: next.saleModality,
         publicationStatus: 'published',
         updatedByUserId: user.uid,
         updatedByRole: 'owner',
