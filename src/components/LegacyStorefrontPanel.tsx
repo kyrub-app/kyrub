@@ -11,6 +11,7 @@ import {
 import type { CartItem, Product, Store } from '../types';
 import { OPEN_PUBLIC_STOREFRONT_INFO_EVENT } from '../utils/storefrontEvents';
 import { SharedPdvCatalog } from './pdv/SharedPdvCatalog';
+import { StorefrontSubscriptionOffers } from './storefront/StorefrontSubscriptionOffers';
 
 interface StorefrontPanelProps {
   activeConsumerStore: Store | undefined;
@@ -165,6 +166,12 @@ export const StorefrontPanel: React.FC<StorefrontPanelProps> = ({
 
     return belongsToStore && product.wholesalePrice === undefined;
   });
+  const subscriptionOffers = storefrontOffers.filter(
+    product => product.saleModality?.mode === 'subscription'
+  );
+  const oneTimeOffers = storefrontOffers.filter(
+    product => product.saleModality?.mode !== 'subscription'
+  );
 
   const movementMetadata = (() => {
     if (activeConsumerStore.status === 'closed') {
@@ -325,10 +332,17 @@ export const StorefrontPanel: React.FC<StorefrontPanelProps> = ({
         </div>
       </section>
 
+      <StorefrontSubscriptionOffers
+        storeId={activeConsumerStore.id}
+        storeName={activeConsumerStore.name}
+        products={subscriptionOffers}
+        accentColor={accentColor}
+      />
+
       <SharedPdvCatalog
         idPrefix="storefront"
         resetKey={activeConsumerStore.id}
-        products={storefrontOffers}
+        products={oneTimeOffers}
         keywords={storeKeywords}
         selectedItems={cart}
         onAddProduct={handleAddToCart}
