@@ -11,7 +11,16 @@ export type StoreSubscriptionProviderStatus =
 export type StoreSubscriptionState =
   | 'pending'
   | 'active'
+  | 'payment_due'
   | 'paused'
+  | 'cancelled';
+
+export type StoreSubscriptionPaymentStatus =
+  | ''
+  | 'pending_confirmation'
+  | 'pending'
+  | 'approved'
+  | 'rejected'
   | 'cancelled';
 
 export interface StoreSubscriptionSnapshot {
@@ -31,8 +40,9 @@ export interface StoreSubscriptionSnapshot {
   checkoutUrl: string;
   providerInvoiceId: string;
   providerPaymentId: string;
-  providerPaymentStatus: '' | 'pending_confirmation' | 'approved';
-  providerPaymentStatusDetail: '' | 'accredited';
+  providerPaymentStatus: StoreSubscriptionPaymentStatus;
+  providerPaymentStatusDetail: string;
+  providerPaymentOccurredAt: string;
   createdAt: string;
   updatedAt: string;
   activatedAt: string;
