@@ -46,6 +46,14 @@ test('provider-authorized subscription is the only paid activation path and writ
   assert.match(service, /writePlanMirrors/);
 });
 
+test('Mercado Pago canceled status is translated to Kyrub cancelled and confirmed before entitlement revocation', () => {
+  assert.match(service, /value === 'canceled' \|\| value === 'cancelled'/);
+  assert.match(service, /JSON\.stringify\(\{ status: 'canceled' \}\)/);
+  assert.match(service, /providerStatus\(provider\.status\) !== 'cancelled'/);
+  assert.match(service, /PLAN_BILLING_CANCEL_NOT_CONFIRMED/);
+  assert.match(service, /await persistProviderState\(ownerId, provider, subscription\)/);
+});
+
 test('webhook is signature checked and re-reads provider state instead of trusting webhook status', () => {
   assert.match(service, /verifyPaidPlanWebhookSignature/);
   assert.match(service, /createHmac\('sha256'/);
