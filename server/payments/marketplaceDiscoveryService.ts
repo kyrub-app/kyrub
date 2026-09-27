@@ -8,6 +8,10 @@ import {
   type MarketplaceStoreDiscoverySignal,
 } from '../../shared/marketplaceDiscovery.js';
 import {
+  parseProductSaleModality,
+  type ProductSaleModality,
+} from '../../shared/productSaleModality.js';
+import {
   STORE_POINTS_CURRENCY,
   deriveStorePointBalance,
   type StorePointLedgerEntry,
@@ -77,6 +81,7 @@ export type PublicStorefrontSnapshot = {
     isService: boolean;
     category: string;
     supplierId: string;
+    saleModality: ProductSaleModality;
   }>;
 };
 
@@ -104,6 +109,7 @@ const projectLegacyPublicOffers = (
     const category = clean(data.category);
     const price = data.price;
     const stock = data.stock;
+    const saleModality = parseProductSaleModality(data.saleModality);
 
     if (
       !id ||
@@ -113,7 +119,8 @@ const projectLegacyPublicOffers = (
       price < 0 ||
       typeof stock !== 'number' ||
       !Number.isFinite(stock) ||
-      stock < 0
+      stock < 0 ||
+      !saleModality
     ) {
       return [];
     }
@@ -128,6 +135,7 @@ const projectLegacyPublicOffers = (
       isService: data.isService === true,
       category,
       supplierId: storeId,
+      saleModality,
     }];
   });
 };
@@ -148,7 +156,8 @@ const projectCanonicalOffers = (
 
     const offerId = clean(data.offerId) || clean(data.productId) || document.id;
     const name = clean(data.name);
-    if (!offerId || !name) return [];
+    const saleModality = parseProductSaleModality(data.saleModality);
+    if (!offerId || !name || !saleModality) return [];
 
     const imageUrls = stringList(data.imageUrls);
     return [{
@@ -161,6 +170,7 @@ const projectCanonicalOffers = (
       isService: data.isService === true,
       category: clean(data.category),
       supplierId: storeId,
+      saleModality,
     }];
   });
 
