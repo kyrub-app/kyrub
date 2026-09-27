@@ -57,6 +57,11 @@ const webhookDataId = (
   return String(data.id ?? first(query?.['data.id']) ?? first(query?.id) ?? '').trim();
 };
 
+const webhookEventType = (
+  body: Record<string, unknown>,
+  query: Record<string, QueryValue> | undefined
+): string => String(body.type ?? body.topic ?? first(query?.type) ?? first(query?.topic) ?? '').trim();
+
 export default async function handler(
   request: RequestLike,
   response: ResponseLike
@@ -116,6 +121,7 @@ export default async function handler(
         signature: request.headers['x-signature'] ?? request.headers['X-Signature'],
         requestId: request.headers['x-request-id'] ?? request.headers['X-Request-Id'],
         dataId,
+        eventType: webhookEventType(body, request.query),
       }));
     } catch (error) {
       const mapped = mapPlanManagementError(error);
