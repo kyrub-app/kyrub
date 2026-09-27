@@ -10,6 +10,7 @@ import {
 import {
   STORE_SUBSCRIPTION_SCHEMA_VERSION,
   type StoreSubscriptionCheckoutResult,
+  type StoreSubscriptionPaymentStatus,
   type StoreSubscriptionProviderStatus,
   type StoreSubscriptionSnapshot,
   type StoreSubscriptionState,
@@ -23,6 +24,7 @@ const SUBSCRIPTION_COLLECTION = 'subscriptions';
 const SLOT_COLLECTION = 'subscriptionCheckoutSlots';
 const PROVIDER_BINDING_COLLECTION = 'mercadoPagoStoreSubscriptionBindings';
 const ACCOUNT_BINDING_COLLECTION = 'mercadoPagoMerchantAccountBindings';
+const CREATION_LOCK_MS = 10 * 60 * 1000;
 
 const clean = (value: unknown): string =>
   typeof value === 'string' || typeof value === 'number' ? String(value).trim() : '';
@@ -41,6 +43,10 @@ const safeIdentity = (value: unknown): string => {
 const validEmail = (value: unknown): string => {
   const email = clean(value).toLocaleLowerCase('pt-BR');
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(email) ? email : '';
+};
+const validIsoTime = (value: unknown): number => {
+  const parsed = Date.parse(clean(value));
+  return Number.isFinite(parsed) ? parsed : 0;
 };
 
 export class StoreSubscriptionError extends Error {
@@ -94,8 +100,9 @@ interface InternalStoreSubscriptionRecord {
   externalReference: string;
   providerInvoiceId: string;
   providerPaymentId: string;
-  providerPaymentStatus: '' | 'pending_confirmation' | 'approved';
-  providerPaymentStatusDetail: '' | 'accredited';
+  providerPaymentStatus: StoreSubscriptionPaymentStatus;
+  providerPaymentStatusDetail: string;
+  providerPaymentOccurredAt: string;
   createdAt: string;
   updatedAt: string;
   activatedAt: string;
@@ -126,9 +133,11 @@ interface MpPreapproval {
   auto_recurring?: unknown;
 }
 
-interface PaymentEvidence {
+interface ProviderInvoiceSnapshot {
   invoiceId: string;
   paymentId: string;
+  paymentStatus: StoreSubscriptionPaymentStatus;
+  paymentStatusDetail: string;
   occurredAt: string;
 }
 
@@ -140,6 +149,25 @@ const providerBindingPath = (providerSubscriptionId: string): string =>
   `${PROVIDER_BINDING_COLLECTION}/${hash(providerSubscriptionId)}`;
 const accountBindingPath = (externalAccountId: string): string =>
   `${ACCOUNT_BINDING_COLLECTION}/${hash(externalAccountId)}`;
+
+const providerBackUrl = (): string =>
+  clean(process.env.KYRUB_STORE_SUBSCRIPTION_RETURN_URL) || 'https://kyrub.com/?app=1';
+
+const providerWebhookUrl = (): string => {
+  const explicit = clean(process.env.KYRUB_STORE_SUBSCRIPTION_WEBHOOK_URL);
+  if (explicit) return explicit;
+  const planWebhook = clean(process.env.KYRUB_PLAN_BILLING_WEBHOOK_URL);
+  if (planWebhook) {
+    try {
+      const url = new URL(planWebhook);
+      url.searchParams.set('op', 'merchant.subscription.webhook');
+      return url.toString();
+    } catch {
+      // Fall through to the canonical public endpoint.
+    }
+  }
+  return 'https://kyrub.com/api/plan-control?op=merchant.subscription.webhook';
+};
 
 const resolveCanonicalStore = async (storeReference: unknown): Promise<CanonicalStoreIdentity> => {
   const input = safeIdentity(storeReference);
@@ -235,6 +263,24 @@ const providerStatus = (value: unknown): StoreSubscriptionProviderStatus => {
   return 'pending';
 };
 
+const paymentStatus = (
+  statusValue: unknown,
+  detailValue: unknown
+): StoreSubscriptionPaymentStatus => {
+  const status = clean(statusValue).toLowerCase();
+  const detail = clean(detailValue).toLowerCase();
+  if (status === 'approved' && detail === 'accredited') return 'approved';
+  if (status === 'rejected') return 'rejected';
+  if (
+    status === 'cancelled' ||
+    status === 'canceled' ||
+    status === 'refunded' ||
+    status === 'charged_back'
+  ) return 'cancelled';
+  if (status) return 'pending';
+  return 'pending_confirmation';
+};
+
 const safeSnapshot = (subscription: InternalStoreSubscriptionRecord): StoreSubscriptionSnapshot => ({
   schemaVersion: STORE_SUBSCRIPTION_SCHEMA_VERSION,
   id: subscription.id,
@@ -254,6 +300,7 @@ const safeSnapshot = (subscription: InternalStoreSubscriptionRecord): StoreSubsc
   providerPaymentId: subscription.providerPaymentId,
   providerPaymentStatus: subscription.providerPaymentStatus,
   providerPaymentStatusDetail: subscription.providerPaymentStatusDetail,
+  providerPaymentOccurredAt: subscription.providerPaymentOccurredAt,
   createdAt: subscription.createdAt,
   updatedAt: subscription.updatedAt,
   activatedAt: subscription.activatedAt,
@@ -281,16 +328,23 @@ const parseStoredSubscription = (value: unknown): InternalStoreSubscriptionRecor
     !Number.isInteger(amountMinor) || amountMinor <= 0 ||
     !saleModality || saleModality.mode !== 'subscription' || !saleModality.subscription
   ) return null;
-  const status = providerStatus(data.providerStatus);
+
   const state: StoreSubscriptionState =
-    data.state === 'active' || data.state === 'paused' || data.state === 'cancelled'
+    data.state === 'active' ||
+    data.state === 'payment_due' ||
+    data.state === 'paused' ||
+    data.state === 'cancelled'
       ? data.state
       : 'pending';
-  const paymentStatus = data.providerPaymentStatus === 'approved'
-    ? 'approved'
-    : data.providerPaymentStatus === 'pending_confirmation'
-      ? 'pending_confirmation'
+  const payment =
+    data.providerPaymentStatus === 'approved' ||
+    data.providerPaymentStatus === 'pending' ||
+    data.providerPaymentStatus === 'rejected' ||
+    data.providerPaymentStatus === 'cancelled' ||
+    data.providerPaymentStatus === 'pending_confirmation'
+      ? data.providerPaymentStatus
       : '';
+
   return {
     schemaVersion: STORE_SUBSCRIPTION_SCHEMA_VERSION,
     id,
@@ -306,7 +360,7 @@ const parseStoredSubscription = (value: unknown): InternalStoreSubscriptionRecor
     saleModality,
     provider: PROVIDER,
     providerSubscriptionId,
-    providerStatus: status,
+    providerStatus: providerStatus(data.providerStatus),
     state,
     checkoutUrl: clean(data.checkoutUrl),
     credentialScopeId,
@@ -314,8 +368,9 @@ const parseStoredSubscription = (value: unknown): InternalStoreSubscriptionRecor
     externalReference: clean(data.externalReference),
     providerInvoiceId: safeIdentity(data.providerInvoiceId),
     providerPaymentId: safeIdentity(data.providerPaymentId),
-    providerPaymentStatus: paymentStatus,
-    providerPaymentStatusDetail: data.providerPaymentStatusDetail === 'accredited' ? 'accredited' : '',
+    providerPaymentStatus: payment,
+    providerPaymentStatusDetail: clean(data.providerPaymentStatusDetail),
+    providerPaymentOccurredAt: clean(data.providerPaymentOccurredAt),
     createdAt: clean(data.createdAt),
     updatedAt: clean(data.updatedAt),
     activatedAt: clean(data.activatedAt),
@@ -364,9 +419,6 @@ const assertProviderPreapproval = (
   subscription: InternalStoreSubscriptionRecord,
   provider: MpPreapproval
 ): StoreSubscriptionProviderStatus => {
-  const providerId = safeIdentity(provider.id);
-  const collectorId = safeIdentity(provider.collector_id);
-  const externalReference = clean(provider.external_reference);
   const recurring = record(provider.auto_recurring);
   const recurrence = recurrenceForProvider(
     (subscription.saleModality as ProductSaleModality & { subscription: ProductSubscriptionTerms }).subscription
@@ -374,9 +426,9 @@ const assertProviderPreapproval = (
   const amount = Number(recurring.transaction_amount);
   const amountMinor = Number.isFinite(amount) ? Math.round(amount * 100) : 0;
   if (
-    providerId !== subscription.providerSubscriptionId ||
-    collectorId !== subscription.externalAccountId ||
-    externalReference !== subscription.externalReference ||
+    safeIdentity(provider.id) !== subscription.providerSubscriptionId ||
+    safeIdentity(provider.collector_id) !== subscription.externalAccountId ||
+    clean(provider.external_reference) !== subscription.externalReference ||
     clean(recurring.currency_id) !== CURRENCY ||
     amountMinor !== subscription.amountMinor ||
     Number(recurring.frequency) !== recurrence.frequency ||
@@ -387,37 +439,49 @@ const assertProviderPreapproval = (
   return providerStatus(provider.status);
 };
 
-const loadApprovedPaymentEvidence = async (
+const loadLatestInvoice = async (
   subscription: InternalStoreSubscriptionRecord
-): Promise<PaymentEvidence | null> => {
+): Promise<ProviderInvoiceSnapshot | null> => {
   const payload = await mercadoPagoStoreRequest<Record<string, unknown>>(
     subscription.credentialScopeId,
     `/authorized_payments/search?preapproval_id=${encodeURIComponent(subscription.providerSubscriptionId)}`
   );
   const results = Array.isArray(payload.results) ? payload.results : [];
-  let selected: PaymentEvidence | null = null;
-  let selectedTime = 0;
+  let latest: ProviderInvoiceSnapshot | null = null;
+  let latestTime = -1;
+
   for (const raw of results) {
     const invoice = record(raw);
     const payment = record(invoice.payment);
     const amount = Number(invoice.transaction_amount);
     const amountMinor = Number.isFinite(amount) ? Math.round(amount * 100) : 0;
-    if (clean(invoice.preapproval_id) !== subscription.providerSubscriptionId) continue;
-    if (clean(invoice.external_reference) !== subscription.externalReference) continue;
-    if (clean(invoice.currency_id) !== CURRENCY) continue;
-    if (amountMinor !== subscription.amountMinor) continue;
-    if (clean(payment.status) !== 'approved' || clean(payment.status_detail) !== 'accredited') continue;
+    if (safeIdentity(invoice.preapproval_id) !== subscription.providerSubscriptionId) continue;
+    if (clean(invoice.currency_id) !== CURRENCY || amountMinor !== subscription.amountMinor) continue;
+
     const invoiceId = safeIdentity(invoice.id);
+    if (!invoiceId) continue;
+    const occurredAt =
+      clean(invoice.last_modified) ||
+      clean(invoice.date_created) ||
+      clean(payment.date_last_updated) ||
+      clean(payment.date_created) ||
+      nowIso();
+    const occurredTime = validIsoTime(occurredAt);
+    if (latest && occurredTime < latestTime) continue;
+
+    const status = paymentStatus(payment.status, payment.status_detail);
     const paymentId = safeIdentity(payment.id);
-    if (!invoiceId || !paymentId) continue;
-    const occurredAt = clean(invoice.last_modified) || clean(invoice.date_created) || nowIso();
-    const time = Number.isFinite(Date.parse(occurredAt)) ? Date.parse(occurredAt) : 0;
-    if (!selected || time >= selectedTime) {
-      selected = { invoiceId, paymentId, occurredAt };
-      selectedTime = time;
-    }
+    if (status === 'approved' && !paymentId) continue;
+    latest = {
+      invoiceId,
+      paymentId,
+      paymentStatus: status,
+      paymentStatusDetail: clean(payment.status_detail),
+      occurredAt,
+    };
+    latestTime = occurredTime;
   }
-  return selected;
+  return latest;
 };
 
 const loadInternalSubscription = async (
@@ -432,6 +496,26 @@ const loadInternalSubscription = async (
   return subscription;
 };
 
+const releaseCheckoutSlotIfCancelled = async (
+  subscription: InternalStoreSubscriptionRecord
+): Promise<void> => {
+  if (subscription.state !== 'cancelled') return;
+  const reference = adminDb.doc(
+    slotPath(subscription.storeId, subscription.buyerId, subscription.productId)
+  );
+  await adminDb.runTransaction(async transaction => {
+    const snapshot = await transaction.get(reference);
+    if (!snapshot.exists) return;
+    const data = record(snapshot.data());
+    if (safeIdentity(data.subscriptionId) !== subscription.id) return;
+    transaction.set(reference, {
+      state: 'cancelled',
+      subscriptionId: subscription.id,
+      updatedAt: nowIso(),
+    }, { merge: true });
+  });
+};
+
 const reconcileInternalSubscription = async (
   subscription: InternalStoreSubscriptionRecord
 ): Promise<InternalStoreSubscriptionRecord> => {
@@ -440,49 +524,49 @@ const reconcileInternalSubscription = async (
     `/preapproval/${encodeURIComponent(subscription.providerSubscriptionId)}`
   );
   const nextProviderStatus = assertProviderPreapproval(subscription, provider);
-  const evidence = nextProviderStatus === 'authorized'
-    ? await loadApprovedPaymentEvidence(subscription)
+  const latestInvoice = nextProviderStatus === 'authorized'
+    ? await loadLatestInvoice(subscription)
     : null;
+
+  let nextState: StoreSubscriptionState = 'pending';
+  if (nextProviderStatus === 'cancelled') nextState = 'cancelled';
+  else if (nextProviderStatus === 'paused') nextState = 'paused';
+  else if (nextProviderStatus === 'authorized') {
+    if (latestInvoice?.paymentStatus === 'approved') nextState = 'active';
+    else if (latestInvoice) nextState = subscription.activatedAt ? 'payment_due' : 'pending';
+    else nextState = subscription.activatedAt ? 'active' : 'pending';
+  }
+
   const updatedAt = nowIso();
-  const nextState: StoreSubscriptionState =
-    nextProviderStatus === 'cancelled'
-      ? 'cancelled'
-      : nextProviderStatus === 'paused'
-        ? 'paused'
-        : nextProviderStatus === 'authorized' && evidence
-          ? 'active'
-          : 'pending';
   const next: InternalStoreSubscriptionRecord = {
     ...subscription,
     providerStatus: nextProviderStatus,
     state: nextState,
     checkoutUrl: clean(provider.init_point) || subscription.checkoutUrl,
-    providerInvoiceId: evidence?.invoiceId ?? subscription.providerInvoiceId,
-    providerPaymentId: evidence?.paymentId ?? subscription.providerPaymentId,
-    providerPaymentStatus: evidence
-      ? 'approved'
-      : nextProviderStatus === 'authorized'
+    providerInvoiceId: latestInvoice?.invoiceId ?? subscription.providerInvoiceId,
+    providerPaymentId: latestInvoice?.paymentId ?? '',
+    providerPaymentStatus: latestInvoice?.paymentStatus ?? (
+      nextProviderStatus === 'authorized' && !subscription.activatedAt
         ? 'pending_confirmation'
-        : subscription.providerPaymentStatus === 'approved'
-          ? 'approved'
-          : '',
-    providerPaymentStatusDetail: evidence
-      ? 'accredited'
-      : subscription.providerPaymentStatusDetail === 'accredited'
-        ? 'accredited'
-        : '',
-    activatedAt: nextState === 'active'
-      ? subscription.activatedAt || updatedAt
-      : subscription.activatedAt,
-    cancelledAt: nextState === 'cancelled'
-      ? subscription.cancelledAt || updatedAt
-      : '',
-    paymentConfirmedAt: evidence
-      ? subscription.paymentConfirmedAt || evidence.occurredAt || updatedAt
-      : subscription.paymentConfirmedAt,
+        : subscription.providerPaymentStatus
+    ),
+    providerPaymentStatusDetail:
+      latestInvoice?.paymentStatusDetail ?? subscription.providerPaymentStatusDetail,
+    providerPaymentOccurredAt:
+      latestInvoice?.occurredAt ?? subscription.providerPaymentOccurredAt,
+    activatedAt:
+      nextState === 'active' ? subscription.activatedAt || updatedAt : subscription.activatedAt,
+    cancelledAt:
+      nextState === 'cancelled' ? subscription.cancelledAt || updatedAt : '',
+    paymentConfirmedAt:
+      latestInvoice?.paymentStatus === 'approved'
+        ? latestInvoice.occurredAt || updatedAt
+        : subscription.paymentConfirmedAt,
     updatedAt,
   };
+
   await adminDb.doc(subscriptionPath(subscription.storeId, subscription.id)).set(next, { merge: true });
+  await releaseCheckoutSlotIfCancelled(next);
   return next;
 };
 
@@ -496,12 +580,27 @@ const reserveCheckoutSlot = async (input: {
     const snapshot = await transaction.get(reference);
     const data = snapshot.exists ? record(snapshot.data()) : {};
     const existingSubscriptionId = safeIdentity(data.subscriptionId);
-    if (clean(data.state) === 'ready' && existingSubscriptionId) {
-      return { subscriptionId: existingSubscriptionId, existing: true };
+    const slotState = clean(data.state);
+
+    if (slotState === 'ready' && existingSubscriptionId) {
+      const subscriptionSnapshot = await transaction.get(
+        adminDb.doc(subscriptionPath(input.storeId, existingSubscriptionId))
+      );
+      const existing = subscriptionSnapshot.exists
+        ? parseStoredSubscription(subscriptionSnapshot.data())
+        : null;
+      if (existing && existing.state !== 'cancelled') {
+        return { subscriptionId: existingSubscriptionId, existing: true };
+      }
     }
-    if (clean(data.state) === 'creating') {
-      fail(409, 'STORE_SUBSCRIPTION_CREATION_IN_PROGRESS', 'A criação desta assinatura já está em andamento.');
+
+    if (slotState === 'creating') {
+      const lockAge = Date.now() - validIsoTime(data.updatedAt);
+      if (lockAge >= 0 && lockAge < CREATION_LOCK_MS) {
+        fail(409, 'STORE_SUBSCRIPTION_CREATION_IN_PROGRESS', 'A criação desta assinatura já está em andamento.');
+      }
     }
+
     const subscriptionId = `store-sub-${randomUUID()}`;
     transaction.set(reference, {
       state: 'creating',
@@ -535,6 +634,7 @@ const persistCreatedSubscription = async (
   const slotRef = adminDb.doc(slotPath(subscription.storeId, subscription.buyerId, subscription.productId));
   const providerRef = adminDb.doc(providerBindingPath(subscription.providerSubscriptionId));
   const accountRef = adminDb.doc(accountBindingPath(subscription.externalAccountId));
+
   await adminDb.runTransaction(async transaction => {
     const [existingProvider, existingAccount] = await Promise.all([
       transaction.get(providerRef),
@@ -557,6 +657,7 @@ const persistCreatedSubscription = async (
         fail(409, 'STORE_SUBSCRIPTION_ACCOUNT_BINDING_CONFLICT', 'A conta Mercado Pago está vinculada a outra identidade Kyrub.');
       }
     }
+
     transaction.set(subscriptionRef, subscription);
     transaction.set(providerRef, {
       providerSubscriptionId: subscription.providerSubscriptionId,
@@ -580,9 +681,6 @@ const persistCreatedSubscription = async (
   });
 };
 
-const providerBackUrl = (): string =>
-  clean(process.env.KYRUB_STORE_SUBSCRIPTION_RETURN_URL) || 'https://kyrub.com/?app=1';
-
 export const createAuthorizedStoreSubscription = async (
   authorization: string,
   body: unknown
@@ -593,6 +691,7 @@ export const createAuthorizedStoreSubscription = async (
   if (!buyerEmail || identity.emailVerified === false) {
     fail(409, 'STORE_SUBSCRIPTION_EMAIL_UNVERIFIED', 'Confirme seu e-mail antes de iniciar uma assinatura.');
   }
+
   const store = await resolveCanonicalStore(payload.storeId);
   const product = await loadPublishedSubscriptionProduct(store.canonicalStoreId, payload.productId);
   const recipient = await resolveCommercialRecipientAuthority({
@@ -624,6 +723,7 @@ export const createAuthorizedStoreSubscription = async (
   const externalReference = `kyrub-store-subscription:${slot.subscriptionId}`;
   const recurrence = recurrenceForProvider(product.saleModality.subscription);
   let provider: MpPreapproval | null = null;
+
   try {
     provider = await mercadoPagoStoreRequest<MpPreapproval>(
       recipient.credentialScopeId,
@@ -642,15 +742,19 @@ export const createAuthorizedStoreSubscription = async (
             currency_id: CURRENCY,
           },
           back_url: providerBackUrl(),
+          notification_url: providerWebhookUrl(),
+          status: 'pending',
         }),
       }
     );
+
     const providerSubscriptionId = safeIdentity(provider.id);
     const checkoutUrl = clean(provider.init_point);
     const providerCollectorId = safeIdentity(provider.collector_id);
     if (!providerSubscriptionId || !checkoutUrl || providerCollectorId !== recipient.externalAccountId) {
       fail(502, 'STORE_SUBSCRIPTION_PROVIDER_RESPONSE_INVALID', 'O provedor não confirmou a assinatura na conta correta da loja.');
     }
+
     const recurring = record(provider.auto_recurring);
     const providerAmount = Number(recurring.transaction_amount);
     if (
@@ -662,6 +766,7 @@ export const createAuthorizedStoreSubscription = async (
     ) {
       fail(502, 'STORE_SUBSCRIPTION_PROVIDER_TERMS_MISMATCH', 'O provedor devolveu termos diferentes da assinatura cadastrada.');
     }
+
     const timestamp = nowIso();
     const subscription: InternalStoreSubscriptionRecord = {
       schemaVersion: STORE_SUBSCRIPTION_SCHEMA_VERSION,
@@ -686,14 +791,17 @@ export const createAuthorizedStoreSubscription = async (
       externalReference,
       providerInvoiceId: '',
       providerPaymentId: '',
-      providerPaymentStatus: providerStatus(provider.status) === 'authorized' ? 'pending_confirmation' : '',
+      providerPaymentStatus:
+        providerStatus(provider.status) === 'authorized' ? 'pending_confirmation' : '',
       providerPaymentStatusDetail: '',
+      providerPaymentOccurredAt: '',
       createdAt: timestamp,
       updatedAt: timestamp,
       activatedAt: '',
       cancelledAt: '',
       paymentConfirmedAt: '',
     };
+
     await persistCreatedSubscription(subscription);
     const reconciled = await reconcileInternalSubscription(subscription);
     return { subscription: safeSnapshot(reconciled), checkoutUrl: reconciled.checkoutUrl };
@@ -801,16 +909,18 @@ export const processStoreSubscriptionMercadoPagoWebhook = async (input: {
   const dataId = safeIdentity(input.dataId);
   const eventType = clean(input.eventType);
   const userId = safeIdentity(input.userId);
-  if (!dataId) fail(400, 'STORE_SUBSCRIPTION_WEBHOOK_DATA_REQUIRED', 'A notificação não contém o recurso do Mercado Pago.');
+  if (!dataId) {
+    fail(400, 'STORE_SUBSCRIPTION_WEBHOOK_DATA_REQUIRED', 'A notificação não contém o recurso do Mercado Pago.');
+  }
   if (
     eventType !== 'subscription_preapproval' &&
-    eventType !== 'subscription_authorized_payment' &&
-    eventType !== 'payment'
+    eventType !== 'subscription_authorized_payment'
   ) {
     return { accepted: true, processed: false, storeId: '', subscriptionId: '' };
   }
 
-  // The HMAC is always checked before user_id is used as a routing hint.
+  // The HMAC is checked before user_id is used as a routing hint. Provider
+  // state is then re-read with the merchant credential before any state change.
   await verifyMercadoPagoWebhookSignature({ headers: input.headers, dataId });
   if (!userId) {
     fail(409, 'STORE_SUBSCRIPTION_WEBHOOK_USER_REQUIRED', 'A notificação não identifica a conta Mercado Pago recebedora.');
@@ -830,31 +940,19 @@ export const processStoreSubscriptionMercadoPagoWebhook = async (input: {
 
   const account = await loadAccountBinding(userId);
   if (!account) return { accepted: true, processed: false, storeId: '', subscriptionId: '' };
-
-  let providerSubscriptionId = '';
-  if (eventType === 'subscription_authorized_payment') {
-    const invoice = await mercadoPagoStoreRequest<Record<string, unknown>>(
-      account.credentialScopeId,
-      `/authorized_payments/${encodeURIComponent(dataId)}`
-    );
-    providerSubscriptionId = safeIdentity(invoice.preapproval_id);
-  } else {
-    const payload = await mercadoPagoStoreRequest<Record<string, unknown>>(
-      account.credentialScopeId,
-      `/authorized_payments/search?payment_id=${encodeURIComponent(dataId)}`
-    );
-    const results = Array.isArray(payload.results) ? payload.results : [];
-    providerSubscriptionId = results
-      .map(item => safeIdentity(record(item).preapproval_id))
-      .find(Boolean) ?? '';
-    if (!providerSubscriptionId) {
-      return { accepted: true, processed: false, storeId: '', subscriptionId: '' };
-    }
+  const invoice = await mercadoPagoStoreRequest<Record<string, unknown>>(
+    account.credentialScopeId,
+    `/authorized_payments/${encodeURIComponent(dataId)}`
+  );
+  const invoiceCollector = safeIdentity(invoice.collector_id);
+  if (invoiceCollector && invoiceCollector !== account.externalAccountId) {
+    fail(409, 'STORE_SUBSCRIPTION_WEBHOOK_INVOICE_ACCOUNT_MISMATCH', 'A fatura pertence a outra conta Mercado Pago.');
   }
-
+  const providerSubscriptionId = safeIdentity(invoice.preapproval_id);
   if (!providerSubscriptionId) {
     fail(409, 'STORE_SUBSCRIPTION_WEBHOOK_PREAPPROVAL_MISSING', 'A fatura não identifica a assinatura de origem.');
   }
+
   const binding = await loadProviderBinding(providerSubscriptionId);
   if (!binding) return { accepted: true, processed: false, storeId: '', subscriptionId: '' };
   if (
@@ -872,7 +970,9 @@ export const processStoreSubscriptionMercadoPagoWebhook = async (input: {
   };
 };
 
-export const mapStoreSubscriptionError = (error: unknown): { status: number; body: { error: string; code?: string } } => {
+export const mapStoreSubscriptionError = (
+  error: unknown
+): { status: number; body: { error: string; code?: string } } => {
   if (error instanceof StoreSubscriptionError) {
     return { status: error.status, body: { error: error.message, code: error.code } };
   }
@@ -888,8 +988,20 @@ export const mapStoreSubscriptionError = (error: unknown): { status: number; bod
   }
   if (message.startsWith('MERCADO_PAGO_STORE_') || message.startsWith('MERCADO_PAGO_OAUTH_')) {
     console.warn('[Store Subscription]', message);
-    return { status: 502, body: { error: 'O Mercado Pago da loja não conseguiu processar a assinatura agora.', code: 'STORE_SUBSCRIPTION_PROVIDER_ERROR' } };
+    return {
+      status: 502,
+      body: {
+        error: 'O Mercado Pago da loja não conseguiu processar a assinatura agora.',
+        code: 'STORE_SUBSCRIPTION_PROVIDER_ERROR',
+      },
+    };
   }
   console.error('[Store Subscription]', error);
-  return { status: 503, body: { error: 'Não foi possível processar a assinatura agora.', code: 'STORE_SUBSCRIPTION_UNAVAILABLE' } };
+  return {
+    status: 503,
+    body: {
+      error: 'Não foi possível processar a assinatura agora.',
+      code: 'STORE_SUBSCRIPTION_UNAVAILABLE',
+    },
+  };
 };
