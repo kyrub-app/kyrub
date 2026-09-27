@@ -98,8 +98,10 @@ const catalogLabel = (limit: number | null): string =>
 const planRank = (plan: KyrubCommercialPlanId): number => planOrder.indexOf(plan);
 
 const subscriptionLabel = (state: KyrubPlanSubscriptionState | null): string => {
-  const status = state?.subscription?.providerStatus;
-  if (status === 'authorized') return 'Assinatura ativa';
+  const subscription = state?.subscription;
+  const status = subscription?.providerStatus;
+  if (status === 'authorized' && subscription?.activatedAt) return 'Assinatura ativa e paga';
+  if (status === 'authorized') return 'Autorizada no Mercado Pago · aguardando pagamento creditado';
   if (status === 'pending') return 'Aguardando autorização no Mercado Pago';
   if (status === 'paused') return 'Assinatura pausada no provedor';
   if (status === 'cancelled') return 'Assinatura cancelada';
@@ -152,7 +154,12 @@ export function PlanCenterApp() {
       .then(async state => {
         setSubscriptionState(state);
         setBillingAvailable(state.billing.available);
-        if (state.subscription?.providerStatus === 'pending' && state.billing.available) {
+        const subscription = state.subscription;
+        const needsBillingReconcile = subscription && state.billing.available && (
+          subscription.providerStatus === 'pending' ||
+          (subscription.providerStatus === 'authorized' && !subscription.activatedAt)
+        );
+        if (needsBillingReconcile) {
           const reconciled = await reconcilePaidPlanSubscription();
           setSubscriptionState(reconciled);
         }
@@ -241,10 +248,13 @@ export function PlanCenterApp() {
     try {
       const result = await reconcilePaidPlanSubscription();
       setSubscriptionState(result);
+      const subscription = result.subscription;
       setMessage(
-        result.subscription?.providerStatus === 'authorized'
-          ? `Assinatura ${labels[result.subscription.plan]} confirmada pelo provedor.`
-          : 'Estado da assinatura atualizado com o Mercado Pago.'
+        subscription?.providerStatus === 'authorized' && subscription.activatedAt
+          ? `Assinatura ${labels[subscription.plan]} ativada após confirmação do pagamento pelo Mercado Pago.`
+          : subscription?.providerStatus === 'authorized'
+            ? 'Assinatura autorizada. O Kyrub ainda aguarda a confirmação de pagamento aprovado e creditado.'
+            : 'Estado da assinatura atualizado com o Mercado Pago.'
       );
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Não foi possível atualizar a assinatura.');
@@ -343,6 +353,7 @@ export function PlanCenterApp() {
             const subscription = subscriptionState?.subscription;
             const hasLiveSubscription = subscription && subscription.providerStatus !== 'cancelled';
             const samePendingPlan = subscription?.plan === plan.id && subscription.providerStatus === 'pending';
+            const sameAwaitingPaymentPlan = subscription?.plan === plan.id && subscription.providerStatus === 'authorized' && !subscription.activatedAt;
             return (
               <article key={plan.id} className={`relative flex flex-col rounded-3xl border p-5 ${plan.id === 'pro' ? 'border-violet-500/40 bg-violet-500/5' : 'border-slate-800 bg-slate-900/60'}`}>
                 {plan.id === 'pro' && <span className="absolute right-4 top-4 rounded-full bg-violet-500/15 px-2.5 py-1 text-[9px] font-black uppercase text-violet-300">Próximo passo natural</span>}
@@ -363,6 +374,8 @@ export function PlanCenterApp() {
                     <div className="min-h-11 rounded-2xl border border-slate-800 px-4 py-3 text-center text-xs font-bold text-slate-500">Plano gratuito disponível</div>
                   ) : samePendingPlan ? (
                     <button type="button" onClick={resumeSubscription} disabled={subscriptionBusy} className="min-h-11 w-full rounded-2xl bg-violet-500 px-4 text-sm font-black text-white disabled:opacity-50">Continuar checkout {plan.name}</button>
+                  ) : sameAwaitingPaymentPlan ? (
+                    <div className="min-h-11 rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-center text-xs font-bold text-amber-200">Autorizada · aguardando pagamento creditado</div>
                   ) : hasLiveSubscription ? (
                     <div className="min-h-11 rounded-2xl border border-slate-700 px-4 py-3 text-center text-xs font-bold text-slate-400">Cancele a assinatura atual para trocar</div>
                   ) : billingAvailable ? (
@@ -396,7 +409,7 @@ export function PlanCenterApp() {
             <h3 className="text-sm font-black uppercase text-white">Contratação e faturamento</h3>
             <p className="mt-3 text-sm leading-relaxed text-slate-400">
               {billingAvailable
-                ? 'Assinaturas Pro e Business são criadas pela conta de cobrança central do Kyrub. Seu plano só é ativado depois que o servidor confirma a autorização diretamente com o Mercado Pago.'
+                ? 'Assinaturas Pro e Business são criadas pela conta de cobrança central do Kyrub. Seu plano só é ativado depois que o servidor confirma a autorização da assinatura e um pagamento aprovado e creditado diretamente com o Mercado Pago.'
                 : 'A estrutura de assinatura está pronta, mas a credencial central de cobrança do Kyrub ainda não está configurada neste ambiente.'}
             </p>
             {user && subscriptionState?.subscription && (
@@ -404,7 +417,7 @@ export function PlanCenterApp() {
                 <strong className="block text-white">{subscriptionLabel(subscriptionState)}</strong>
                 <span className="mt-1 block">Plano {labels[subscriptionState.subscription.plan]} · {(subscriptionState.subscription.amountMinor / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}/mês</span>
                 {subscriptionState.subscription.providerStatus === 'pending' && subscriptionState.subscription.checkoutUrl && <button type="button" onClick={resumeSubscription} className="mt-3 mr-2 rounded-xl bg-violet-500 px-3 py-2 font-black text-white">Continuar checkout</button>}
-                {(subscriptionState.subscription.providerStatus === 'pending' || subscriptionState.subscription.providerStatus === 'paused') && <button type="button" onClick={() => void reconcileSubscription()} disabled={subscriptionBusy} className="mt-3 mr-2 rounded-xl border border-slate-700 px-3 py-2 font-black text-slate-300 disabled:opacity-50">Atualizar estado</button>}
+                {(subscriptionState.subscription.providerStatus === 'pending' || subscriptionState.subscription.providerStatus === 'paused' || (subscriptionState.subscription.providerStatus === 'authorized' && !subscriptionState.subscription.activatedAt)) && <button type="button" onClick={() => void reconcileSubscription()} disabled={subscriptionBusy} className="mt-3 mr-2 rounded-xl border border-slate-700 px-3 py-2 font-black text-slate-300 disabled:opacity-50">Atualizar estado</button>}
                 {subscriptionState.subscription.providerStatus !== 'cancelled' && <button type="button" onClick={() => void cancelSubscription()} disabled={subscriptionBusy} className="mt-3 rounded-xl border border-red-500/30 px-3 py-2 font-black text-red-300 disabled:opacity-50">Cancelar assinatura</button>}
               </div>
             )}
