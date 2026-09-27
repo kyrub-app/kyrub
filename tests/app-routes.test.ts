@@ -128,8 +128,10 @@ describe('Kyrub public and operational routes', () => {
     assert.match(appSource, /<ProfilePlanCenterBridge \/>/);
     assert.doesNotMatch(appSource, /<StoreCouponRedemptionBridge \/>/);
     assert.match(planCenterSource, /redeemKyrubCoupon/);
-    assert.match(planCenterSource, /KYRUB_COMMERCIAL_PLAN_BILLING_AVAILABLE/);
-    assert.match(planCenterSource, /Contratação paga em breve/);
+    assert.match(planCenterSource, /loadPlanBillingAvailability/);
+    assert.match(planCenterSource, /createPaidPlanCheckout/);
+    assert.doesNotMatch(planCenterSource, /KYRUB_COMMERCIAL_PLAN_BILLING_AVAILABLE/);
+    assert.doesNotMatch(planCenterSource, /Contratação paga em breve/);
     assert.match(profileBridgeSource, /Plano e faturamento/);
     assert.match(profileBridgeSource, /Abrir Central de Planos/);
   });
