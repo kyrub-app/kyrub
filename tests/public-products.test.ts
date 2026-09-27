@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import './product-sale-modality.test';
+import { buildSubscriptionSaleModality } from '../shared/productSaleModality';
 import {
   buildPublicProduct,
   parsePublicProducts,
@@ -31,6 +32,33 @@ describe('public marketplace products', () => {
     assert.equal(product.stock, 0);
     assert.equal(product.category, 'Categoria própria');
     assert.equal(product.storePointsPerUnit, 0);
+    assert.equal(product.saleModality?.mode, 'one_time');
+  });
+
+  test('persists subscription terms through the public product round trip', () => {
+    const saleModality = buildSubscriptionSaleModality({
+      billingUnit: 'month',
+      benefitKind: 'usage_credits',
+      unitsPerCycle: 4,
+    });
+    const product = buildPublicProduct(
+      { uid: 'user-a' },
+      {
+        name: 'Plano mensal',
+        description: 'Quatro atendimentos por mês',
+        price: '120',
+        stock: '',
+        category: 'Serviços',
+        image: '',
+        isService: true,
+        saleModality,
+      },
+      1_700_000_000_010
+    );
+
+    assert.deepEqual(product.saleModality, saleModality);
+    const [parsed] = parsePublicProducts([product]);
+    assert.deepEqual(parsed?.saleModality, saleModality);
   });
 
   test('keeps store points on the same canonical product round trip', () => {
@@ -200,6 +228,7 @@ describe('public marketplace products', () => {
     assert.equal(parsed.length, 1);
     assert.equal(parsed[0]?.name, 'Produto A');
     assert.equal(parsed[0]?.storePointsPerUnit, 0);
+    assert.equal(parsed[0]?.saleModality?.mode, 'one_time');
     assert.deepEqual(parsed[0]?.categoryCollections, [
       {
         path: 'Local > Artesanal',
@@ -207,5 +236,35 @@ describe('public marketplace products', () => {
         image: '/api/media/drive?fileId=artisan',
       },
     ]);
+  });
+
+  test('rejects malformed explicit subscription metadata instead of downgrading it', () => {
+    const parsed = parsePublicProducts([
+      {
+        id: 'invalid-subscription',
+        storeId: 'user-a',
+        supplierId: 'user-a',
+        name: 'Plano inválido',
+        description: '',
+        price: 50,
+        image: '',
+        stock: 0,
+        category: 'Serviços',
+        isService: true,
+        saleModality: {
+          schemaVersion: 1,
+          mode: 'subscription',
+          subscription: {
+            schemaVersion: 1,
+            billingInterval: { unit: 'month', count: 0 },
+            benefit: { kind: 'access', unitsPerCycle: null },
+            autoRenew: true,
+          },
+        },
+        updatedAt: '2026-09-27T00:00:00.000Z',
+      },
+    ]);
+
+    assert.deepEqual(parsed, []);
   });
 });

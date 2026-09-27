@@ -4,6 +4,7 @@ import './payment-ux-policy.test';
 import './marketplace-payment-intent-checkout.test';
 import './customer-storefront-order-e2e-contract.test';
 import './local-service-pos.test';
+import { buildSubscriptionSaleModality } from '../shared/productSaleModality';
 import type { CartItem, Product } from '../src/types';
 import {
   buildCanonicalCustomerOrderWriteData,
@@ -88,6 +89,40 @@ describe('customer orders', () => {
     assert.equal(order.status, 'pending');
     assert.equal(order.paymentStatus, 'unpaid');
     assert.equal(order.serviceLocation, null);
+  });
+
+  test('keeps subscription products out of the one-time order checkout', () => {
+    const subscription = buildSubscriptionSaleModality({
+      billingUnit: 'month',
+      benefitKind: 'usage_credits',
+      unitsPerCycle: 2,
+    });
+
+    assert.throws(
+      () =>
+        buildCustomerOrder(
+          { uid: 'buyer-a' },
+          {
+            storeId: 'store-a',
+            buyerName: 'Ana',
+            buyerEmail: 'ana@example.com',
+            fulfillmentType: 'pickup',
+            deliveryAddress: '',
+            tableCode: '',
+            customerNote: '',
+            cart: [{
+              product: product({
+                name: 'Plano mensal',
+                isService: true,
+                saleModality: subscription,
+              }),
+              quantity: 1,
+            }],
+            itemNotes: {},
+          }
+        ),
+      /assinatura.*fluxo de assinatura/i
+    );
   });
 
   test('builds the canonical-first payload without losing legacy lineage', () => {

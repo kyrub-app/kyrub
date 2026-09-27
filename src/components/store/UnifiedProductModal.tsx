@@ -20,6 +20,11 @@ import type {
   Product,
   ProductCategoryCollection,
 } from '../../types';
+import {
+  ONE_TIME_PRODUCT_SALE_MODALITY,
+  parseProductSaleModality,
+  type ProductSaleModality,
+} from '../../../shared/productSaleModality';
 import { auth, db } from '../../utils/firebase';
 import {
   joinCatalogCategoryPath,
@@ -60,6 +65,7 @@ import {
 import { ProductInventoryCompositionEditor } from './ProductInventoryCompositionEditor';
 import { ProductPurchaseList } from './ProductPurchaseList';
 import { ProductQuickNotesEditor } from './ProductQuickNotesEditor';
+import { ProductSaleModalityEditor } from './ProductSaleModalityEditor';
 
 export type ProductModalMode = 'create' | 'edit';
 type ProductModalTab = 'showcase' | 'inventory' | 'purchase';
@@ -176,6 +182,9 @@ export const UnifiedProductModal: React.FC<UnifiedProductModalProps> = ({
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [price, setPrice] = useState('');
+  const [saleModality, setSaleModality] = useState<ProductSaleModality>(
+    ONE_TIME_PRODUCT_SALE_MODALITY
+  );
   const [categoryRoot, setCategoryRoot] = useState('');
   const [hierarchySegments, setHierarchySegments] = useState<string[]>([]);
   const [catalogPaths, setCatalogPaths] = useState<ProductCategoryCollection[]>([]);
@@ -252,6 +261,10 @@ export const UnifiedProductModal: React.FC<UnifiedProductModalProps> = ({
       setName(product.name);
       setDescription(product.description);
       setPrice(String(product.price));
+      setSaleModality(
+        parseProductSaleModality(product.saleModality)
+          ?? ONE_TIME_PRODUCT_SALE_MODALITY
+      );
       setCategoryRoot(segments[0] ?? '');
       setHierarchySegments(segments.slice(1, 5));
       setImage(product.image);
@@ -264,6 +277,7 @@ export const UnifiedProductModal: React.FC<UnifiedProductModalProps> = ({
       setName('');
       setDescription('');
       setPrice('');
+      setSaleModality(ONE_TIME_PRODUCT_SALE_MODALITY);
       setCategoryRoot('');
       setHierarchySegments([]);
       setImage('');
@@ -458,6 +472,7 @@ export const UnifiedProductModal: React.FC<UnifiedProductModalProps> = ({
           image,
           isService,
           isComplimentary,
+          saleModality,
         });
       } else {
         if (!product) {
@@ -485,6 +500,7 @@ export const UnifiedProductModal: React.FC<UnifiedProductModalProps> = ({
           image: image.trim(),
           isService,
           isComplimentary,
+          saleModality,
         });
       }
 
@@ -654,6 +670,12 @@ export const UnifiedProductModal: React.FC<UnifiedProductModalProps> = ({
                   </strong>
                 </div>
               </div>
+
+              <ProductSaleModalityEditor
+                value={saleModality}
+                onChange={setSaleModality}
+                disabled={isSaving}
+              />
 
               <CatalogHierarchySelector
                 keywords={keywords}

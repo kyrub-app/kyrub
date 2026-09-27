@@ -23,6 +23,10 @@ const unifiedModalSource = readFileSync(
   'src/components/store/UnifiedProductModal.tsx',
   'utf8'
 );
+const saleModalityEditorSource = readFileSync(
+  'src/components/store/ProductSaleModalityEditor.tsx',
+  'utf8'
+);
 const createBridgeSource = readFileSync(
   'src/components/store/UnifiedProductCreateModalBridge.tsx',
   'utf8'
@@ -107,6 +111,21 @@ test('the unified modal keeps media, hierarchy, quick notes and personalization'
   assert.match(hierarchySource, /Categorias e grupos/);
   assert.match(quickNotesSource, /Botões rápidos de observação/);
   assert.match(optionGroupsSource, /Personalização, etapas e múltiplas escolhas/);
+});
+
+test('the unified modal exposes one-time and subscription sale modes', () => {
+  assert.match(unifiedModalSource, /ProductSaleModalityEditor/);
+  assert.match(unifiedModalSource, /saleModality/);
+  assert.match(saleModalityEditorSource, /id="product-sale-modality-control"/);
+  assert.match(saleModalityEditorSource, /id="product-sale-mode-one-time"/);
+  assert.match(saleModalityEditorSource, /id="product-sale-mode-subscription"/);
+  assert.match(saleModalityEditorSource, /id="product-subscription-terms"/);
+  assert.match(saleModalityEditorSource, /buildSubscriptionSaleModality/);
+  assert.match(saleModalityEditorSource, /Quantidade por ciclo/);
+  assert.match(
+    saleModalityEditorSource,
+    /nunca pelo checkout comum/
+  );
 });
 
 test('product deletion removes only the authenticated store item', () => {

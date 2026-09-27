@@ -17,6 +17,10 @@ import type {
   ProductCategoryCollection,
   ProductOptionGroup,
 } from '../types';
+import {
+  parseProductSaleModality,
+  type ProductSaleModality,
+} from '../../shared/productSaleModality';
 import { normalizeStorePointsPerUnit } from '../../shared/storePoints';
 import { db } from './firebase';
 import {
@@ -49,6 +53,7 @@ export interface PublicProductDraft {
   isService: boolean;
   isComplimentary?: boolean;
   storePointsPerUnit?: number;
+  saleModality?: ProductSaleModality;
   categoryCollections?: ProductCategoryCollection[];
   optionGroups?: ProductOptionGroup[];
   quickNotes?: string[];
@@ -125,6 +130,7 @@ export const buildPublicProduct = (
     ? 0
     : Number.parseInt(draft.stock || '0', 10);
   const storePointsPerUnit = normalizeStorePointsPerUnit(draft.storePointsPerUnit);
+  const saleModality = parseProductSaleModality(draft.saleModality);
   const categoryCollections = parseProductCategoryCollections(
     draft.categoryCollections
   );
@@ -150,6 +156,10 @@ export const buildPublicProduct = (
     throw new Error('Informe um estoque válido.');
   }
 
+  if (!saleModality) {
+    throw new Error('A forma de venda do item é inválida.');
+  }
+
   return {
     id: `product-${user.uid}-${now}`,
     storeId: user.uid,
@@ -163,6 +173,7 @@ export const buildPublicProduct = (
     isService: draft.isService,
     isComplimentary,
     storePointsPerUnit,
+    saleModality,
     ...(categoryCollections.length > 0 ? { categoryCollections } : {}),
     ...(optionGroups.length > 0 ? { optionGroups } : {}),
     ...(quickNotes.length > 0 ? { quickNotes } : {}),
@@ -184,6 +195,7 @@ export const parsePublicProducts = (value: unknown): PublicProduct[] => {
     const category = cleanString(product.category);
     const price = finiteNumber(product.price);
     const stock = finiteNumber(product.stock);
+    const saleModality = parseProductSaleModality(product.saleModality);
     let storePointsPerUnit = 0;
     try {
       storePointsPerUnit = normalizeStorePointsPerUnit(product.storePointsPerUnit);
@@ -208,7 +220,8 @@ export const parsePublicProducts = (value: unknown): PublicProduct[] => {
       price === null ||
       price < 0 ||
       stock === null ||
-      stock < 0
+      stock < 0 ||
+      saleModality === null
     ) {
       return [];
     }
@@ -226,6 +239,7 @@ export const parsePublicProducts = (value: unknown): PublicProduct[] => {
       isService: product.isService === true,
       isComplimentary: product.isComplimentary === true,
       storePointsPerUnit,
+      saleModality,
       ...(categoryCollections.length > 0 ? { categoryCollections } : {}),
       ...(optionGroups.length > 0 ? { optionGroups } : {}),
       ...(quickNotes.length > 0 ? { quickNotes } : {}),
@@ -244,6 +258,7 @@ const parseCanonicalPublicProduct = (
   const category = cleanString(value.category);
   const price = finiteNumber(value.price);
   const stock = finiteNumber(value.stock);
+  const saleModality = parseProductSaleModality(value.saleModality);
   let storePointsPerUnit = 0;
   try {
     storePointsPerUnit = normalizeStorePointsPerUnit(value.storePointsPerUnit);
@@ -267,6 +282,7 @@ const parseCanonicalPublicProduct = (
     price < 0 ||
     stock === null ||
     stock < 0 ||
+    saleModality === null ||
     cleanString(value.publicationStatus) !== 'published'
   ) {
     return null;
@@ -285,6 +301,7 @@ const parseCanonicalPublicProduct = (
     isService: value.isService === true,
     isComplimentary: value.isComplimentary === true,
     storePointsPerUnit,
+    saleModality,
     ...(categoryCollections.length > 0 ? { categoryCollections } : {}),
     ...(optionGroups.length > 0 ? { optionGroups } : {}),
     ...(quickNotes.length > 0 ? { quickNotes } : {}),
@@ -312,6 +329,7 @@ const comparableProduct = (product: PublicProduct) => ({
   isService: product.isService === true,
   isComplimentary: product.isComplimentary === true,
   storePointsPerUnit: normalizeStorePointsPerUnit(product.storePointsPerUnit),
+  saleModality: parseProductSaleModality(product.saleModality),
 });
 
 export const publicProductCollectionsEquivalent = (
@@ -346,9 +364,14 @@ export const persistPublicProduct = async (
       product.optionGroups,
       quickNotes
     );
+    const saleModality = parseProductSaleModality(product.saleModality);
+    if (!saleModality) {
+      throw new Error('A forma de venda do item é inválida.');
+    }
     const normalizedProduct: PublicProduct = {
       ...product,
       storePointsPerUnit: normalizeStorePointsPerUnit(product.storePointsPerUnit),
+      saleModality,
       quickNotes,
       optionGroups,
     };
