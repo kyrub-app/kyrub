@@ -20,6 +20,14 @@ import {
   redeemCouponWithLifecycle,
 } from '../server/admin/storeEntitlementLifecycleService.js';
 import { mapStoreEntitlementError } from '../server/admin/storeEntitlementService.js';
+import {
+  cancelAuthorizedStoreSubscription,
+  createAuthorizedStoreSubscription,
+  getAuthorizedStoreSubscription,
+  mapStoreSubscriptionError,
+  processStoreSubscriptionMercadoPagoWebhook,
+  reconcileAuthorizedStoreSubscription,
+} from '../server/payments/storeSubscriptionService.js';
 
 type HeaderValue = string | string[] | undefined;
 type QueryValue = string | string[] | undefined;
@@ -61,6 +69,11 @@ const webhookEventType = (
   body: Record<string, unknown>,
   query: Record<string, QueryValue> | undefined
 ): string => String(body.type ?? body.topic ?? first(query?.type) ?? first(query?.topic) ?? '').trim();
+
+const webhookUserId = (
+  body: Record<string, unknown>,
+  query: Record<string, QueryValue> | undefined
+): string => String(body.user_id ?? first(query?.user_id) ?? '').trim();
 
 export default async function handler(
   request: RequestLike,
@@ -125,6 +138,34 @@ export default async function handler(
       }));
     } catch (error) {
       const mapped = mapPlanManagementError(error);
+      response.status(mapped.status).json(mapped.body);
+    }
+    return;
+  }
+
+  if (operation === 'merchant.subscription.webhook') {
+    if (method !== 'POST') {
+      methodNotAllowed(response);
+      return;
+    }
+    response.setHeader('cache-control', 'no-store, max-age=0');
+    try {
+      const dataId = webhookDataId(body, request.query);
+      if (!dataId) {
+        response.status(400).json({
+          error: 'Recurso da assinatura não informado.',
+          code: 'STORE_SUBSCRIPTION_WEBHOOK_DATA_REQUIRED',
+        });
+        return;
+      }
+      response.status(200).json(await processStoreSubscriptionMercadoPagoWebhook({
+        headers: request.headers,
+        dataId,
+        eventType: webhookEventType(body, request.query),
+        userId: webhookUserId(body, request.query),
+      }));
+    } catch (error) {
+      const mapped = mapStoreSubscriptionError(error);
       response.status(mapped.status).json(mapped.body);
     }
     return;
@@ -243,6 +284,46 @@ export default async function handler(
         response.status(200).json(await cancelOwnPaidPlanSubscription(authorization));
         return;
       }
+      case 'merchant.subscription.checkout': {
+        if (method !== 'POST') {
+          methodNotAllowed(response);
+          return;
+        }
+        response.status(201).json(
+          await createAuthorizedStoreSubscription(authorization, request.body)
+        );
+        return;
+      }
+      case 'merchant.subscription.state': {
+        if (method !== 'POST') {
+          methodNotAllowed(response);
+          return;
+        }
+        response.status(200).json(
+          await getAuthorizedStoreSubscription(authorization, request.body)
+        );
+        return;
+      }
+      case 'merchant.subscription.reconcile': {
+        if (method !== 'POST') {
+          methodNotAllowed(response);
+          return;
+        }
+        response.status(200).json(
+          await reconcileAuthorizedStoreSubscription(authorization, request.body)
+        );
+        return;
+      }
+      case 'merchant.subscription.cancel': {
+        if (method !== 'POST') {
+          methodNotAllowed(response);
+          return;
+        }
+        response.status(200).json(
+          await cancelAuthorizedStoreSubscription(authorization, request.body)
+        );
+        return;
+      }
       default:
         response.status(404).json({
           error: 'Operação de planos não encontrada.',
@@ -250,11 +331,13 @@ export default async function handler(
         });
     }
   } catch (error) {
-    const mapped = operation.startsWith('store.subscription')
-      ? mapPlanManagementError(error)
-      : operation.startsWith('store.') || operation === 'admin.entitlement.grant'
-        ? mapStoreEntitlementError(error)
-        : mapPlanManagementError(error);
+    const mapped = operation.startsWith('merchant.subscription')
+      ? mapStoreSubscriptionError(error)
+      : operation.startsWith('store.subscription')
+        ? mapPlanManagementError(error)
+        : operation.startsWith('store.') || operation === 'admin.entitlement.grant'
+          ? mapStoreEntitlementError(error)
+          : mapPlanManagementError(error);
     response.status(mapped.status).json(mapped.body);
   }
 }
