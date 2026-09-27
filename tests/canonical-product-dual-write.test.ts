@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { buildSubscriptionSaleModality } from '../shared/productSaleModality';
 import {
   buildCanonicalProductMirrorData,
   canonicalProductNeedsUpdate,
@@ -37,6 +38,7 @@ test('builds a canonical product with independent store identity and migration p
   assert.equal(mirrored.supplierId, 'store-independent-a');
   assert.equal(mirrored.legacyStoreId, 'owner-a');
   assert.equal(mirrored.legacyProductId, 'product-owner-a-1');
+  assert.equal(mirrored.saleModality.mode, 'one_time');
   assert.equal(mirrored.publicationStatus, 'published');
   assert.equal(mirrored.migration.mode, 'dual_write');
   assert.equal(mirrored.migration.migratedByUserId, 'owner-a');
@@ -44,6 +46,23 @@ test('builds a canonical product with independent store identity and migration p
     mirrored.migratedFromPath,
     'tenants/owner-a#publicProducts/product-owner-a-1'
   );
+});
+
+test('mirrors subscription terms without adding payment ownership to the product', () => {
+  const saleModality = buildSubscriptionSaleModality({
+    billingUnit: 'month',
+    benefitKind: 'recurring_delivery',
+    unitsPerCycle: 20,
+  });
+  const mirrored = buildCanonicalProductMirrorData(
+    legacyProduct({ saleModality }),
+    'store-independent-a',
+    'owner-a'
+  );
+
+  assert.deepEqual(mirrored.saleModality, saleModality);
+  assert.equal('provider' in mirrored.saleModality, false);
+  assert.equal('merchantAccountId' in mirrored.saleModality, false);
 });
 
 test('services are mirrored with zero stock', () => {
@@ -108,6 +127,33 @@ test('detects updates without rewriting an unchanged canonical product', () => {
     canonicalProductNeedsUpdate(
       { ...mirrored, price: 30 } as unknown as Record<string, unknown>,
       mirrored
+    ),
+    true
+  );
+});
+
+test('detects a one-time to subscription modality change', () => {
+  const oneTime = buildCanonicalProductMirrorData(
+    legacyProduct(),
+    'store-independent-a',
+    'owner-a'
+  );
+  const subscription = buildCanonicalProductMirrorData(
+    legacyProduct({
+      saleModality: buildSubscriptionSaleModality({
+        billingUnit: 'month',
+        benefitKind: 'usage_credits',
+        unitsPerCycle: 2,
+      }),
+    }),
+    'store-independent-a',
+    'owner-a'
+  );
+
+  assert.equal(
+    canonicalProductNeedsUpdate(
+      oneTime as unknown as Record<string, unknown>,
+      subscription
     ),
     true
   );
