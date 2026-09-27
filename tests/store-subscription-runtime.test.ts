@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import test from 'node:test';
+import './store-subscriber-registry.test';
 
 const service = readFileSync('server/payments/storeSubscriptionService.ts', 'utf8');
 const billingContract = readFileSync('shared/storeSubscriptionBilling.ts', 'utf8');
