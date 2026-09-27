@@ -3,20 +3,30 @@ import type { User } from 'firebase/auth';
 import {
   AlertTriangle,
   CheckCircle2,
+  ChevronDown,
+  ChevronUp,
   Clock3,
+  History,
+  MinusCircle,
   RefreshCw,
   Search,
   Users,
 } from 'lucide-react';
 import type {
   StoreSubscriberRegistrySummary,
+  StoreSubscriberSubscriptionSummary,
   StoreSubscriberSummary,
 } from '../../../shared/storeSubscriberRegistry';
 import type { StoreSubscriptionState } from '../../../shared/storeSubscriptionBilling';
+import type { StoreSubscriptionBenefitLedgerSnapshot } from '../../../shared/storeSubscriptionBenefits';
 import {
   loadStoreSubscriberRegistry,
   reconcileStoreSubscribersWithCrm,
 } from '../../utils/storeSubscribers';
+import {
+  consumeStoreSubscriptionBenefit,
+  loadStoreSubscriptionBenefitLedger,
+} from '../../utils/storeSubscriptionBenefits';
 
 type SubscriberFilter = 'all' | StoreSubscriptionState;
 type Notice = (message: string, type?: 'success' | 'error' | 'info') => void;
@@ -61,10 +71,21 @@ const date = new Intl.DateTimeFormat('pt-BR', {
   month: 'short',
   year: 'numeric',
 });
+const dateTime = new Intl.DateTimeFormat('pt-BR', {
+  day: '2-digit',
+  month: 'short',
+  year: 'numeric',
+  hour: '2-digit',
+  minute: '2-digit',
+});
 
 const dateLabel = (value: string): string => {
   if (!value || !Number.isFinite(Date.parse(value))) return 'Sem registro';
   return date.format(new Date(value));
+};
+const dateTimeLabel = (value: string): string => {
+  if (!value || !Number.isFinite(Date.parse(value))) return 'Sem registro';
+  return dateTime.format(new Date(value));
 };
 
 const matchesSearch = (subscriber: StoreSubscriberSummary, query: string): boolean => {
@@ -81,6 +102,24 @@ const matchesSearch = (subscriber: StoreSubscriberSummary, query: string): boole
   return haystack.includes(query.toLocaleLowerCase('pt-BR'));
 };
 
+const nextOperationId = (): string => {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return `benefit-${crypto.randomUUID()}`;
+  }
+  return `benefit-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+};
+
+const benefitKindLabel = (subscription: StoreSubscriberSubscriptionSummary): string => {
+  switch (subscription.terms.benefit.kind) {
+    case 'usage_credits':
+      return 'Créditos de uso';
+    case 'recurring_delivery':
+      return 'Unidades do ciclo';
+    case 'access':
+      return 'Acesso do ciclo';
+  }
+};
+
 export default function StoreSubscriptionsWorkspace({
   user,
   storeId,
@@ -92,6 +131,14 @@ export default function StoreSubscriptionsWorkspace({
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState('');
+  const [expandedSubscriptionId, setExpandedSubscriptionId] = useState<string | null>(null);
+  const [benefitLedger, setBenefitLedger] = useState<StoreSubscriptionBenefitLedgerSnapshot | null>(null);
+  const [benefitLoading, setBenefitLoading] = useState(false);
+  const [benefitError, setBenefitError] = useState('');
+  const [usageUnits, setUsageUnits] = useState('1');
+  const [usageNote, setUsageNote] = useState('');
+  const [pendingUsageOperationId, setPendingUsageOperationId] = useState('');
+  const [consumingBenefit, setConsumingBenefit] = useState(false);
 
   const load = async (): Promise<void> => {
     setError('');
@@ -119,6 +166,101 @@ export default function StoreSubscriptionsWorkspace({
       }
     } finally {
       setSyncing(false);
+    }
+  };
+
+  const loadBenefits = async (subscriptionId: string): Promise<void> => {
+    setBenefitLoading(true);
+    setBenefitError('');
+    try {
+      const ledger = await loadStoreSubscriptionBenefitLedger(user, storeId, subscriptionId);
+      setBenefitLedger(ledger);
+    } catch (loadError) {
+      setBenefitLedger(null);
+      setBenefitError(
+        loadError instanceof Error
+          ? loadError.message
+          : 'Não foi possível carregar os benefícios desta assinatura.'
+      );
+    } finally {
+      setBenefitLoading(false);
+    }
+  };
+
+  const toggleBenefits = (subscriptionId: string): void => {
+    if (expandedSubscriptionId === subscriptionId) {
+      setExpandedSubscriptionId(null);
+      setBenefitLedger(null);
+      setBenefitError('');
+      setPendingUsageOperationId('');
+      return;
+    }
+    setExpandedSubscriptionId(subscriptionId);
+    setBenefitLedger(null);
+    setBenefitError('');
+    setUsageUnits('1');
+    setUsageNote('');
+    setPendingUsageOperationId('');
+    void loadBenefits(subscriptionId);
+  };
+
+  const registerBenefitUsage = async (
+    subscription: StoreSubscriberSubscriptionSummary
+  ): Promise<void> => {
+    const units = Number(usageUnits);
+    if (!Number.isInteger(units) || units <= 0) {
+      const message = 'Informe uma quantidade inteira positiva.';
+      setBenefitError(message);
+      notify?.(message, 'error');
+      return;
+    }
+
+    const currentCycle = benefitLedger?.cycles.find(
+      cycle => cycle.id === benefitLedger.currentCycleId
+    );
+    if (!currentCycle || currentCycle.remainingUnits === null) {
+      const message = 'Não existe saldo consumível no ciclo atual.';
+      setBenefitError(message);
+      notify?.(message, 'error');
+      return;
+    }
+    if (units > currentCycle.remainingUnits) {
+      const message = `O ciclo possui somente ${currentCycle.remainingUnits} unidade(s) disponível(is).`;
+      setBenefitError(message);
+      notify?.(message, 'error');
+      return;
+    }
+
+    const operationId = pendingUsageOperationId || nextOperationId();
+    if (!pendingUsageOperationId) setPendingUsageOperationId(operationId);
+    setConsumingBenefit(true);
+    setBenefitError('');
+    try {
+      const result = await consumeStoreSubscriptionBenefit(user, {
+        storeId,
+        subscriptionId: subscription.id,
+        units,
+        operationId,
+        note: usageNote,
+      });
+      setPendingUsageOperationId('');
+      setUsageUnits('1');
+      setUsageNote('');
+      await loadBenefits(subscription.id);
+      notify?.(
+        result.duplicate
+          ? 'Esta baixa já havia sido registrada; nenhum saldo foi descontado novamente.'
+          : 'Uso do benefício registrado com sucesso.',
+        'success'
+      );
+    } catch (consumeError) {
+      const message = consumeError instanceof Error
+        ? consumeError.message
+        : 'Não foi possível registrar o uso do benefício.';
+      setBenefitError(message);
+      notify?.(message, 'error');
+    } finally {
+      setConsumingBenefit(false);
     }
   };
 
@@ -299,19 +441,187 @@ export default function StoreSubscriptionsWorkspace({
               </div>
 
               <div className="mt-4 space-y-2">
-                {subscriber.subscriptions.map(subscription => (
-                  <div key={subscription.id} className="flex flex-col gap-2 rounded-2xl border border-slate-800 bg-slate-950 p-3 sm:flex-row sm:items-center sm:justify-between">
-                    <div className="min-w-0">
-                      <strong className="block truncate text-[10px] text-slate-200">{subscription.productName}</strong>
-                      <span className="mt-0.5 block text-[9px] text-slate-600">
-                        {money.format(subscription.amountMinor / 100)} · a cada {subscription.terms.billingInterval.count} {subscription.terms.billingInterval.unit}
-                      </span>
+                {subscriber.subscriptions.map(subscription => {
+                  const expanded = expandedSubscriptionId === subscription.id;
+                  const currentCycle = expanded && benefitLedger?.subscriptionId === subscription.id
+                    ? benefitLedger.cycles.find(cycle => cycle.id === benefitLedger.currentCycleId) ?? null
+                    : null;
+                  const benefitKind = subscription.terms.benefit.kind;
+                  const consumable = benefitKind !== 'access';
+
+                  return (
+                    <div key={subscription.id} className="rounded-2xl border border-slate-800 bg-slate-950 p-3">
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                        <div className="min-w-0">
+                          <strong className="block truncate text-[10px] text-slate-200">{subscription.productName}</strong>
+                          <span className="mt-0.5 block text-[9px] text-slate-600">
+                            {money.format(subscription.amountMinor / 100)} · a cada {subscription.terms.billingInterval.count} {subscription.terms.billingInterval.unit} · {benefitKindLabel(subscription)}
+                          </span>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className={`w-fit rounded-full border px-2 py-1 font-mono text-[8px] font-black uppercase ${stateClass[subscription.state]}`}>
+                            {stateLabel[subscription.state]}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => toggleBenefits(subscription.id)}
+                            className="inline-flex min-h-8 items-center gap-1 rounded-lg border border-slate-700 px-2 text-[8px] font-black uppercase text-cyan-200"
+                          >
+                            {expanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                            Benefícios
+                          </button>
+                        </div>
+                      </div>
+
+                      {expanded && (
+                        <div className="mt-3 border-t border-slate-800 pt-3" data-kyrub-subscription-benefit-panel={subscription.id}>
+                          {benefitLoading ? (
+                            <p className="text-[9px] text-slate-500">Carregando ciclo e histórico…</p>
+                          ) : benefitError ? (
+                            <div className="flex items-start gap-2 rounded-xl border border-red-500/20 bg-red-500/[0.07] p-3 text-[9px] text-red-100" role="alert">
+                              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                              <span>{benefitError}</span>
+                            </div>
+                          ) : !benefitLedger || benefitLedger.subscriptionId !== subscription.id ? (
+                            <p className="text-[9px] text-slate-500">Nenhum ledger carregado.</p>
+                          ) : (
+                            <div className="space-y-3">
+                              {currentCycle ? (
+                                <div className="rounded-xl border border-slate-800 bg-slate-900 p-3">
+                                  <div className="flex flex-wrap items-start justify-between gap-2">
+                                    <div>
+                                      <span className="text-[8px] font-black uppercase text-cyan-300">Ciclo pago atual</span>
+                                      <p className="mt-1 text-[9px] text-slate-500">
+                                        {dateLabel(currentCycle.billingPeriodStartsAt)} → {dateLabel(currentCycle.billingPeriodEndsAt)}
+                                      </p>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={() => void loadBenefits(subscription.id)}
+                                      className="inline-flex min-h-8 items-center gap-1 rounded-lg border border-slate-700 px-2 text-[8px] font-black uppercase text-slate-400"
+                                    >
+                                      <RefreshCw className="h-3 w-3" /> Atualizar
+                                    </button>
+                                  </div>
+
+                                  {currentCycle.remainingUnits === null ? (
+                                    <div className="mt-3 rounded-xl border border-emerald-500/20 bg-emerald-500/[0.07] p-3">
+                                      <strong className="text-[10px] text-emerald-200">Acesso válido neste ciclo</strong>
+                                      <p className="mt-1 text-[9px] text-slate-500">Válido até {dateLabel(currentCycle.billingPeriodEndsAt)}. Assinaturas de acesso não geram unidades artificiais.</p>
+                                    </div>
+                                  ) : (
+                                    <>
+                                      <div className="mt-3 grid grid-cols-3 gap-2">
+                                        <div className="rounded-xl border border-slate-800 bg-slate-950 p-2">
+                                          <span className="text-[7px] font-black uppercase text-slate-600">Concedido</span>
+                                          <strong className="mt-1 block text-sm text-white">{currentCycle.grantedUnits}</strong>
+                                        </div>
+                                        <div className="rounded-xl border border-slate-800 bg-slate-950 p-2">
+                                          <span className="text-[7px] font-black uppercase text-slate-600">Usado</span>
+                                          <strong className="mt-1 block text-sm text-amber-200">{currentCycle.consumedUnits}</strong>
+                                        </div>
+                                        <div className="rounded-xl border border-slate-800 bg-slate-950 p-2">
+                                          <span className="text-[7px] font-black uppercase text-slate-600">Restante</span>
+                                          <strong className="mt-1 block text-sm text-emerald-300">{currentCycle.remainingUnits}</strong>
+                                        </div>
+                                      </div>
+
+                                      {consumable && subscription.state === 'active' && currentCycle.remainingUnits > 0 && (
+                                        <div className="mt-3 grid gap-2 sm:grid-cols-[7rem_1fr_auto] sm:items-end">
+                                          <label className="block">
+                                            <span className="text-[8px] font-black uppercase text-slate-600">Quantidade</span>
+                                            <input
+                                              type="number"
+                                              min={1}
+                                              max={currentCycle.remainingUnits}
+                                              step={1}
+                                              value={usageUnits}
+                                              onChange={event => {
+                                                setUsageUnits(event.target.value);
+                                                setPendingUsageOperationId('');
+                                              }}
+                                              className="mt-1 h-9 w-full rounded-lg border border-slate-700 bg-slate-950 px-2 text-[10px] text-white outline-none"
+                                            />
+                                          </label>
+                                          <label className="block">
+                                            <span className="text-[8px] font-black uppercase text-slate-600">Observação opcional</span>
+                                            <input
+                                              value={usageNote}
+                                              maxLength={240}
+                                              onChange={event => {
+                                                setUsageNote(event.target.value);
+                                                setPendingUsageOperationId('');
+                                              }}
+                                              placeholder={benefitKind === 'recurring_delivery' ? 'Ex.: almoço entregue em 27/09' : 'Ex.: corte realizado'}
+                                              className="mt-1 h-9 w-full rounded-lg border border-slate-700 bg-slate-950 px-2 text-[10px] text-white outline-none placeholder:text-slate-700"
+                                            />
+                                          </label>
+                                          <button
+                                            type="button"
+                                            disabled={consumingBenefit}
+                                            onClick={() => void registerBenefitUsage(subscription)}
+                                            className="inline-flex min-h-9 items-center justify-center gap-1 rounded-lg bg-cyan-500 px-3 text-[8px] font-black uppercase text-slate-950 disabled:opacity-50"
+                                          >
+                                            <MinusCircle className="h-3.5 w-3.5" />
+                                            {consumingBenefit ? 'Registrando' : 'Registrar uso'}
+                                          </button>
+                                        </div>
+                                      )}
+                                    </>
+                                  )}
+                                </div>
+                              ) : (
+                                <div className="rounded-xl border border-dashed border-slate-800 bg-slate-900/50 p-3 text-[9px] text-slate-500">
+                                  Ainda não existe ciclo pago de benefício para esta assinatura.
+                                </div>
+                              )}
+
+                              <div className="rounded-xl border border-slate-800 bg-slate-900 p-3">
+                                <div className="flex items-center gap-2">
+                                  <History className="h-3.5 w-3.5 text-slate-500" />
+                                  <strong className="text-[9px] uppercase text-slate-300">Histórico de baixas</strong>
+                                </div>
+                                {benefitLedger.usages.length === 0 ? (
+                                  <p className="mt-2 text-[9px] text-slate-600">Nenhum consumo registrado neste contrato.</p>
+                                ) : (
+                                  <div className="mt-2 space-y-2">
+                                    {benefitLedger.usages.map(usage => (
+                                      <div key={usage.id} className="flex flex-col gap-1 rounded-lg border border-slate-800 bg-slate-950 p-2 sm:flex-row sm:items-center sm:justify-between">
+                                        <div className="min-w-0">
+                                          <span className="block text-[9px] font-black text-slate-300">{usage.units} unidade(s)</span>
+                                          {usage.note && <span className="block truncate text-[8px] text-slate-600">{usage.note}</span>}
+                                        </div>
+                                        <span className="font-mono text-[8px] uppercase text-slate-600">{dateTimeLabel(usage.createdAt)}</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+
+                              {benefitLedger.cycles.length > 1 && (
+                                <div className="rounded-xl border border-slate-800 bg-slate-900 p-3">
+                                  <strong className="text-[9px] uppercase text-slate-300">Ciclos anteriores</strong>
+                                  <div className="mt-2 space-y-1">
+                                    {benefitLedger.cycles.slice(1).map(cycle => (
+                                      <div key={cycle.id} className="flex items-center justify-between gap-2 rounded-lg bg-slate-950 px-2 py-2 text-[8px] text-slate-600">
+                                        <span>{dateLabel(cycle.billingPeriodStartsAt)} → {dateLabel(cycle.billingPeriodEndsAt)}</span>
+                                        <span>
+                                          {cycle.remainingUnits === null
+                                            ? 'Acesso'
+                                            : `${cycle.consumedUnits}/${cycle.grantedUnits} usado(s)`}
+                                        </span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
-                    <span className={`w-fit rounded-full border px-2 py-1 font-mono text-[8px] font-black uppercase ${stateClass[subscription.state]}`}>
-                      {stateLabel[subscription.state]}
-                    </span>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </section>
           ))}

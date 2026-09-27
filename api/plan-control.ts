@@ -35,6 +35,7 @@ import {
   mapStoreSubscriptionBenefitError,
   reconcileStoreSubscriptionBenefitCycle,
 } from '../server/payments/storeSubscriptionBenefitService.js';
+import { loadAuthorizedStoreSubscriptionBenefitLedger } from '../server/payments/storeSubscriptionBenefitLedgerService.js';
 import {
   loadAuthorizedStoreSubscriberRegistry,
   mapStoreSubscriberRegistryError,
@@ -358,6 +359,16 @@ export default async function handler(
         }
         response.status(200).json(
           await listAuthorizedStoreSubscriptionBenefitCycles(authorization, request.body)
+        );
+        return;
+      }
+      case 'merchant.subscription.benefits.ledger': {
+        if (method !== 'POST') {
+          methodNotAllowed(response);
+          return;
+        }
+        response.status(200).json(
+          await loadAuthorizedStoreSubscriptionBenefitLedger(authorization, request.body)
         );
         return;
       }

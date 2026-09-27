@@ -2,6 +2,7 @@ import type { User } from 'firebase/auth';
 import type {
   ConsumeStoreSubscriptionBenefitResult,
   StoreSubscriptionBenefitCycle,
+  StoreSubscriptionBenefitLedgerSnapshot,
 } from '../../shared/storeSubscriptionBenefits';
 
 const json = async <T>(response: Response): Promise<T> => {
@@ -36,6 +37,16 @@ export const loadStoreSubscriptionBenefitCycles = async (
   subscriptionId: string
 ): Promise<StoreSubscriptionBenefitCycle[]> =>
   post(user, 'merchant.subscription.benefits.list', {
+    storeId: storeId.trim(),
+    subscriptionId: subscriptionId.trim(),
+  });
+
+export const loadStoreSubscriptionBenefitLedger = async (
+  user: User,
+  storeId: string,
+  subscriptionId: string
+): Promise<StoreSubscriptionBenefitLedgerSnapshot> =>
+  post(user, 'merchant.subscription.benefits.ledger', {
     storeId: storeId.trim(),
     subscriptionId: subscriptionId.trim(),
   });
