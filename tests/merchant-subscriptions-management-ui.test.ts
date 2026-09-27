@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
+import './store-subscription-benefit-ledger.test';
 
 const navigation = readFileSync('src/utils/erpManagementNavigation.ts', 'utf8');
 const menu = readFileSync('src/components/MobileErpMenu.tsx', 'utf8');
