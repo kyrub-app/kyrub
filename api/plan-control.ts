@@ -28,6 +28,11 @@ import {
   processStoreSubscriptionMercadoPagoWebhook,
   reconcileAuthorizedStoreSubscription,
 } from '../server/payments/storeSubscriptionService.js';
+import {
+  loadAuthorizedStoreSubscriberRegistry,
+  mapStoreSubscriberRegistryError,
+  reconcileAuthorizedStoreSubscribersIntoCrm,
+} from '../server/payments/storeSubscriberRegistryService.js';
 
 type HeaderValue = string | string[] | undefined;
 type QueryValue = string | string[] | undefined;
@@ -324,6 +329,32 @@ export default async function handler(
         );
         return;
       }
+      case 'merchant.subscribers.list': {
+        if (method !== 'GET') {
+          methodNotAllowed(response);
+          return;
+        }
+        response.status(200).json(
+          await loadAuthorizedStoreSubscriberRegistry(
+            authorization,
+            first(request.query?.storeId)
+          )
+        );
+        return;
+      }
+      case 'merchant.subscribers.reconcile': {
+        if (method !== 'POST') {
+          methodNotAllowed(response);
+          return;
+        }
+        response.status(200).json(
+          await reconcileAuthorizedStoreSubscribersIntoCrm(
+            authorization,
+            body.storeId
+          )
+        );
+        return;
+      }
       default:
         response.status(404).json({
           error: 'Operação de planos não encontrada.',
@@ -331,13 +362,15 @@ export default async function handler(
         });
     }
   } catch (error) {
-    const mapped = operation.startsWith('merchant.subscription')
-      ? mapStoreSubscriptionError(error)
-      : operation.startsWith('store.subscription')
-        ? mapPlanManagementError(error)
-        : operation.startsWith('store.') || operation === 'admin.entitlement.grant'
-          ? mapStoreEntitlementError(error)
-          : mapPlanManagementError(error);
+    const mapped = operation.startsWith('merchant.subscribers')
+      ? mapStoreSubscriberRegistryError(error)
+      : operation.startsWith('merchant.subscription')
+        ? mapStoreSubscriptionError(error)
+        : operation.startsWith('store.subscription')
+          ? mapPlanManagementError(error)
+          : operation.startsWith('store.') || operation === 'admin.entitlement.grant'
+            ? mapStoreEntitlementError(error)
+            : mapPlanManagementError(error);
     response.status(mapped.status).json(mapped.body);
   }
 }
