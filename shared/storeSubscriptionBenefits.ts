@@ -40,6 +40,13 @@ export interface StoreSubscriptionBenefitUsage {
   createdAt: string;
 }
 
+export interface StoreSubscriptionBenefitLedgerSnapshot {
+  subscriptionId: string;
+  currentCycleId: string | null;
+  cycles: StoreSubscriptionBenefitCycle[];
+  usages: StoreSubscriptionBenefitUsage[];
+}
+
 export interface ConsumeStoreSubscriptionBenefitResult {
   cycle: StoreSubscriptionBenefitCycle;
   usage: StoreSubscriptionBenefitUsage;
