@@ -4,6 +4,7 @@ import {
   verifiedMercadoPagoPaymentEvent,
 } from './mercadoPagoPixProvider.js';
 import { verifiedStoreScopedMercadoPagoPaymentEvent } from './mercadoPagoStoreScopedProvider.js';
+import { routeStoreSubscriptionWebhook } from './storeSubscriptionWebhookRouter.js';
 import { settleMarketplaceOperationalOrderAfterPayment } from './marketplaceOrderPaymentSettlementService.js';
 import { syncPersistedCustomerOrderIntoCrm } from './storeCrmOrderSyncService.js';
 import {
@@ -22,47 +23,33 @@ export interface MercadoPagoWebhookResult {
   paymentId: string;
   orderId: string;
   orderMaterialized: boolean;
+  subscriptionId?: string;
+  subscriptionStoreId?: string;
 }
 
 export interface MercadoPagoWebhookErrorResult {
   status: number;
-  body: { error: string };
+  body: { error: string; code?: string };
 }
 
-export const processMercadoPagoWebhook = async (input: {
-  headers: Record<string, string | string[] | undefined>;
-  dataId: string;
-}): Promise<MercadoPagoWebhookResult> => {
-  if (!(await isMercadoPagoWebhookRuntimeConfigured())) {
-    throw new Error('MERCADO_PAGO_WEBHOOK_NOT_CONFIGURED');
-  }
-  const dataId = input.dataId.trim();
-  if (!dataId) throw new Error('MERCADO_PAGO_WEBHOOK_DATA_ID_REQUIRED');
+const subscriptionWebhookResult = (
+  result: Awaited<ReturnType<typeof routeStoreSubscriptionWebhook>>['result']
+): MercadoPagoWebhookResult => ({
+  accepted: true,
+  processed: result.processed,
+  duplicate: false,
+  paymentId: '',
+  orderId: '',
+  orderMaterialized: false,
+  subscriptionId: result.subscriptionId,
+  subscriptionStoreId: result.storeId,
+});
 
-  // New local/direct payments are resolved from a server-owned provider binding
-  // before the Mercado Pago payment is fetched. This prevents webhook metadata
-  // from selecting another merchant credential. Payments created before this
-  // cutover continue through the legacy platform credential path.
-  const storeScopedEvent = await verifiedStoreScopedMercadoPagoPaymentEvent({
-    headers: input.headers,
-    dataId,
-  });
-  const event = storeScopedEvent ?? await verifiedMercadoPagoPaymentEvent({
-    headers: input.headers,
-    dataId,
-  });
-
-  if (!event) {
-    return {
-      accepted: true,
-      processed: false,
-      duplicate: false,
-      paymentId: '',
-      orderId: '',
-      orderMaterialized: false,
-    };
-  }
-
+const processVerifiedOrdinaryPayment = async (
+  event: Awaited<ReturnType<typeof verifiedStoreScopedMercadoPagoPaymentEvent>> extends infer T
+    ? Exclude<T, null>
+    : never
+): Promise<MercadoPagoWebhookResult> => {
   const preparedDestination = await prepareCustomerDestinationResolutionForPaymentIntent({
     storeId: event.kyrubStoreId,
     paymentIntentId: event.paymentIntentId,
@@ -123,6 +110,77 @@ export const processMercadoPagoWebhook = async (input: {
   };
 };
 
+export const processMercadoPagoWebhook = async (input: {
+  headers: Record<string, string | string[] | undefined>;
+  dataId: string;
+  eventType?: string;
+  userId?: string;
+}): Promise<MercadoPagoWebhookResult> => {
+  const dataId = input.dataId.trim();
+  if (!dataId) throw new Error('MERCADO_PAGO_WEBHOOK_DATA_ID_REQUIRED');
+  const eventType = input.eventType?.trim() ?? '';
+  const userId = input.userId?.trim() ?? '';
+
+  // Subscription topics never belong to the ordinary payment/order runtime.
+  if (
+    eventType === 'subscription_preapproval' ||
+    eventType === 'subscription_authorized_payment'
+  ) {
+    const routed = await routeStoreSubscriptionWebhook({
+      headers: input.headers,
+      dataId,
+      eventType,
+      userId,
+    });
+    return subscriptionWebhookResult(routed.result);
+  }
+
+  // For shared `payment` notifications, preserve ordinary Kyrub Pix first. A
+  // subscription payment only gets a chance when no canonical payment binding
+  // exists for this provider payment ID.
+  const storeScopedEvent = await verifiedStoreScopedMercadoPagoPaymentEvent({
+    headers: input.headers,
+    dataId,
+  });
+  if (storeScopedEvent) {
+    return processVerifiedOrdinaryPayment(storeScopedEvent);
+  }
+
+  if (eventType === 'payment') {
+    const routed = await routeStoreSubscriptionWebhook({
+      headers: input.headers,
+      dataId,
+      eventType,
+      userId,
+    });
+    if (routed.handled) return subscriptionWebhookResult(routed.result);
+  }
+
+  if (!(await isMercadoPagoWebhookRuntimeConfigured())) {
+    throw new Error('MERCADO_PAGO_WEBHOOK_NOT_CONFIGURED');
+  }
+
+  // Payments created before the store-scoped cutover continue through the
+  // legacy platform credential path.
+  const event = await verifiedMercadoPagoPaymentEvent({
+    headers: input.headers,
+    dataId,
+  });
+
+  if (!event) {
+    return {
+      accepted: true,
+      processed: false,
+      duplicate: false,
+      paymentId: '',
+      orderId: '',
+      orderMaterialized: false,
+    };
+  }
+
+  return processVerifiedOrdinaryPayment(event);
+};
+
 export const mapMercadoPagoWebhookError = (
   error: unknown
 ): MercadoPagoWebhookErrorResult => {
@@ -138,6 +196,16 @@ export const mapMercadoPagoWebhookError = (
   }
   if (message === 'MERCADO_PAGO_WEBHOOK_NOT_CONFIGURED') {
     return { status: 503, body: { error: 'Webhook do Mercado Pago não configurado.' } };
+  }
+  if (message.startsWith('STORE_SUBSCRIPTION_')) {
+    console.warn('[Mercado Pago Subscription Webhook]', message);
+    return {
+      status: 409,
+      body: {
+        error: 'Notificação de assinatura inconsistente.',
+        code: message.split(':', 1)[0],
+      },
+    };
   }
   if (
     message.startsWith('MERCADO_PAGO_') ||
