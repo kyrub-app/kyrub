@@ -1,4 +1,5 @@
 import type { GeoPoint, Timestamp } from 'firebase/firestore';
+import type { ProductSaleModality } from '../../shared/productSaleModality';
 
 export interface ProductCategoryCollection {
   path: string;
@@ -40,6 +41,7 @@ export interface Product {
   isService?: boolean;
   isComplimentary?: boolean;
   storePointsPerUnit?: number;
+  saleModality?: ProductSaleModality;
   category: string;
   categoryCollections?: ProductCategoryCollection[];
   optionGroups?: ProductOptionGroup[];
@@ -134,6 +136,7 @@ export interface MarketplaceOfferListingDocument
   stock: number;
   isService: boolean;
   category: string;
+  saleModality?: ProductSaleModality;
 }
 
 export type MarketplaceListingDocument =
