@@ -22,6 +22,12 @@ const PROVIDER = 'mercado_pago' as const;
 const MP_API = 'https://api.mercadopago.com';
 
 const clean = (value: unknown): string => typeof value === 'string' ? value.trim() : '';
+const scalar = (value: unknown): string =>
+  typeof value === 'string' || typeof value === 'number' ? String(value).trim() : '';
+const record = (value: unknown): Record<string, unknown> =>
+  value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
 const accessToken = (): string => clean(process.env.KYRUB_BILLING_MERCADO_PAGO_ACCESS_TOKEN);
 const webhookSecret = (): string => clean(process.env.KYRUB_BILLING_MERCADO_PAGO_WEBHOOK_SECRET);
 const webhookUrl = (): string => clean(process.env.KYRUB_PLAN_BILLING_WEBHOOK_URL);
@@ -73,6 +79,13 @@ type MpPreapproval = {
   init_point?: unknown;
 };
 
+type ApprovedPaymentEvidence = {
+  invoiceId: string;
+  paymentId: string;
+  status: 'approved';
+  statusDetail: 'accredited';
+};
+
 const providerStatus = (value: unknown): KyrubPlanSubscriptionStatus => {
   if (value === 'authorized' || value === 'paused') return value;
   if (value === 'canceled' || value === 'cancelled') return 'cancelled';
@@ -96,6 +109,35 @@ const mpRequest = async (path: string, init: RequestInit = {}): Promise<Record<s
     throw new PlanManagementError(502, 'PLAN_BILLING_PROVIDER_ERROR', 'O provedor de cobrança não conseguiu processar a assinatura agora.');
   }
   return payload;
+};
+
+const loadApprovedSubscriptionPayment = async (
+  subscription: KyrubPlanSubscriptionSnapshot
+): Promise<ApprovedPaymentEvidence | null> => {
+  const payload = await mpRequest(
+    `/authorized_payments/search?preapproval_id=${encodeURIComponent(subscription.providerSubscriptionId)}`
+  );
+  const results = Array.isArray(payload.results) ? payload.results : [];
+  for (const raw of results) {
+    const invoice = record(raw);
+    const payment = record(invoice.payment);
+    const amount = Number(invoice.transaction_amount);
+    const amountMinor = Number.isFinite(amount) ? Math.round(amount * 100) : 0;
+    if (scalar(invoice.preapproval_id) !== subscription.providerSubscriptionId) continue;
+    if (scalar(invoice.currency_id) !== subscription.currency) continue;
+    if (amountMinor !== subscription.amountMinor) continue;
+    if (scalar(payment.status) !== 'approved' || scalar(payment.status_detail) !== 'accredited') continue;
+    const invoiceId = scalar(invoice.id);
+    const paymentId = scalar(payment.id);
+    if (!invoiceId || !paymentId) continue;
+    return {
+      invoiceId,
+      paymentId,
+      status: 'approved',
+      statusDetail: 'accredited',
+    };
+  }
+  return null;
 };
 
 const findCanonicalStore = async (ownerId: string): Promise<string | null> => {
@@ -264,9 +306,26 @@ const persistProviderState = async (
   fallback: KyrubPlanSubscriptionSnapshot
 ): Promise<void> => {
   const status = providerStatus(provider.status);
+  const paymentEvidence = status === 'authorized'
+    ? await loadApprovedSubscriptionPayment(fallback)
+    : null;
   await adminDb.doc(`${SUBSCRIPTION_COLLECTION}/${ownerId}`).set({
     providerStatus: status,
     checkoutUrl: clean(provider.init_point) || fallback.checkoutUrl,
+    ...(status === 'authorized'
+      ? paymentEvidence
+        ? {
+            providerInvoiceId: paymentEvidence.invoiceId,
+            providerPaymentId: paymentEvidence.paymentId,
+            providerPaymentStatus: paymentEvidence.status,
+            providerPaymentStatusDetail: paymentEvidence.statusDetail,
+            paymentConfirmedAt: FieldValue.serverTimestamp(),
+          }
+        : {
+            providerPaymentStatus: 'pending_confirmation',
+            providerPaymentStatusDetail: null,
+          }
+      : {}),
     updatedAt: FieldValue.serverTimestamp(),
   }, { merge: true });
   const next: KyrubPlanSubscriptionSnapshot = {
@@ -275,7 +334,9 @@ const persistProviderState = async (
     checkoutUrl: clean(provider.init_point) || fallback.checkoutUrl,
     updatedAt: new Date().toISOString(),
   };
-  if (status === 'authorized') await activateSubscriptionEntitlement(ownerId, next);
+  if (status === 'authorized' && paymentEvidence) {
+    await activateSubscriptionEntitlement(ownerId, next);
+  }
   if (status === 'paused' || status === 'cancelled') {
     await deactivateSubscriptionEntitlement(ownerId, fallback.providerSubscriptionId, status);
   }
@@ -358,6 +419,8 @@ export const createOwnPaidPlanCheckout = async (authorization: string, rawPlan: 
     ...subscription,
     billingReference,
     payerEmail: user.email,
+    providerPaymentStatus: 'pending_confirmation',
+    providerPaymentStatusDetail: null,
     createdAt: FieldValue.serverTimestamp(),
     updatedAt: FieldValue.serverTimestamp(),
   });
@@ -419,11 +482,17 @@ export const handlePaidPlanProviderWebhook = async (input: {
   signature: string | string[] | undefined;
   requestId: string | string[] | undefined;
   dataId: string;
+  eventType?: string;
 }): Promise<{ accepted: true }> => {
   if (!verifyPaidPlanWebhookSignature(input)) {
     throw new PlanManagementError(401, 'INVALID_BILLING_WEBHOOK_SIGNATURE', 'Assinatura do webhook inválida.');
   }
-  const providerSubscriptionId = clean(input.dataId);
+  let providerSubscriptionId = clean(input.dataId);
+  if (clean(input.eventType) === 'subscription_authorized_payment') {
+    const invoice = await mpRequest(`/authorized_payments/${encodeURIComponent(input.dataId)}`);
+    providerSubscriptionId = scalar(invoice.preapproval_id);
+    if (!providerSubscriptionId) return { accepted: true };
+  }
   const matches = await adminDb.collection(SUBSCRIPTION_COLLECTION)
     .where('providerSubscriptionId', '==', providerSubscriptionId)
     .limit(2)
