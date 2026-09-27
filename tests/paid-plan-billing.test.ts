@@ -21,7 +21,7 @@ const collectApiFunctions = (directory: string): string[] =>
 test('paid billing uses a dedicated Kyrub platform credential and never seller Mercado Pago credentials', () => {
   assert.match(service, /KYRUB_BILLING_MERCADO_PAGO_ACCESS_TOKEN/);
   assert.match(service, /KYRUB_BILLING_MERCADO_PAGO_WEBHOOK_SECRET/);
-  assert.doesNotMatch(service, /resolveMercadoPagoAccessToken|providerCredentialResolver|MERCADO_PAGO_ACCESS_TOKEN\b/);
+  assert.doesNotMatch(service, /resolveMercadoPagoAccessToken|providerCredentialResolver|process\.env\.MERCADO_PAGO_ACCESS_TOKEN\b/);
 });
 
 test('checkout pins current Control Plane plan price and does not activate entitlement from browser input', () => {
