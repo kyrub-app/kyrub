@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
+import './product-sale-modality.test';
 import {
   buildPublicProduct,
   parsePublicProducts,
