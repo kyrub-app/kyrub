@@ -11,6 +11,7 @@ import {
   Menu,
   Package,
   Percent,
+  RefreshCw,
   Settings,
   Store as StoreIcon,
   UserCheck,
@@ -53,6 +54,7 @@ export const MOBILE_ERP_MENU_ITEMS: readonly MobileErpMenuItem[] = [
   { id: 'loja', label: 'Loja', icon: StoreIcon, section: 'gestao' },
   { id: 'produtos', label: 'Produtos & Estoque', icon: Package, section: 'gestao' },
   { id: 'vendas', label: 'Vendas & Analytics', icon: BarChart3, section: 'gestao' },
+  { id: 'assinaturas', label: 'Assinaturas', icon: RefreshCw, section: 'gestao' },
   { id: 'financeiro', label: 'Financeiro Interno', icon: DollarSign, section: 'gestao' },
   { id: 'rh', label: 'Recursos Humanos', icon: Briefcase, section: 'gestao' },
   { id: 'crm', label: 'CRM', icon: UserCheck, section: 'gestao' },
@@ -69,6 +71,7 @@ export const MOBILE_ERP_MENU_ITEMS: readonly MobileErpMenuItem[] = [
 const MANAGEMENT_MODULES = new Set<ErpManagementModule>([
   'produtos',
   'vendas',
+  'assinaturas',
   'financeiro',
   'rh',
   'crm',
