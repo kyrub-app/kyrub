@@ -38,12 +38,17 @@ test('checkout pins current Control Plane plan price and does not activate entit
   assert.doesNotMatch(checkoutBody, /activateSubscriptionEntitlement\(/);
 });
 
-test('provider-authorized subscription is the only paid activation path and writes source subscription', () => {
-  assert.match(service, /status === 'authorized'/);
+test('paid activation requires authorized preapproval plus an approved accredited invoice payment', () => {
+  assert.match(service, /authorized_payments\/search\?preapproval_id=/);
+  assert.match(service, /scalar\(invoice\.preapproval_id\) !== subscription\.providerSubscriptionId/);
+  assert.match(service, /amountMinor !== subscription\.amountMinor/);
+  assert.match(service, /scalar\(payment\.status\) !== 'approved'/);
+  assert.match(service, /scalar\(payment\.status_detail\) !== 'accredited'/);
+  assert.match(service, /status === 'authorized' && paymentEvidence/);
   assert.match(service, /await activateSubscriptionEntitlement/);
   assert.match(service, /source: 'subscription'/);
-  assert.match(service, /providerSubscriptionId/);
-  assert.match(service, /writePlanMirrors/);
+  assert.match(service, /providerPaymentStatus: paymentEvidence\.status/);
+  assert.match(service, /paymentConfirmedAt: FieldValue\.serverTimestamp\(\)/);
 });
 
 test('Mercado Pago canceled status is translated to Kyrub cancelled and confirmed before entitlement revocation', () => {
@@ -54,13 +59,18 @@ test('Mercado Pago canceled status is translated to Kyrub cancelled and confirme
   assert.match(service, /await persistProviderState\(ownerId, provider, subscription\)/);
 });
 
-test('webhook is signature checked and re-reads provider state instead of trusting webhook status', () => {
+test('webhook is signature checked, understands invoice events and re-reads provider state', () => {
   assert.match(service, /verifyPaidPlanWebhookSignature/);
   assert.match(service, /createHmac\('sha256'/);
   assert.match(service, /timingSafeEqual/);
+  assert.match(service, /subscription_authorized_payment/);
+  assert.match(service, /authorized_payments\/\$\{encodeURIComponent\(input\.dataId\)\}/);
+  assert.match(service, /providerSubscriptionId = scalar\(invoice\.preapproval_id\)/);
   assert.match(service, /where\('providerSubscriptionId', '==', providerSubscriptionId\)/);
   assert.match(service, /mpRequest\(`\/preapproval\/\$\{encodeURIComponent\(providerSubscriptionId\)\}`\)/);
   assert.match(gateway, /subscription\.webhook/);
+  assert.match(gateway, /webhookEventType/);
+  assert.match(gateway, /eventType: webhookEventType\(body, request\.query\)/);
   assert.match(gateway, /x-signature/);
   assert.match(gateway, /x-request-id/);
 });
@@ -79,11 +89,14 @@ test('plan-control owns state, checkout, reconcile and cancel without adding a s
   assert.ok(apiFunctions.length <= 11, `Expected serverless budget <= 11, found ${apiFunctions.length}`);
 });
 
-test('Plan Center dynamically reflects billing availability and never relies on the old compile-time flag', () => {
+test('Plan Center separates provider authorization from payment-confirmed activation', () => {
   assert.match(planCenter, /loadPlanBillingAvailability/);
   assert.match(planCenter, /createPaidPlanCheckout/);
   assert.match(planCenter, /reconcilePaidPlanSubscription/);
   assert.match(planCenter, /cancelPaidPlanSubscription/);
   assert.doesNotMatch(planCenter, /KYRUB_COMMERCIAL_PLAN_BILLING_AVAILABLE/);
-  assert.match(planCenter, /plano só é ativado depois que o servidor confirma a autorização diretamente com o Mercado Pago/);
+  assert.match(planCenter, /Assinatura ativa e paga/);
+  assert.match(planCenter, /aguardando pagamento creditado/);
+  assert.match(planCenter, /providerStatus === 'authorized' && !subscription\.activatedAt/);
+  assert.match(planCenter, /pagamento aprovado e creditado diretamente com o Mercado Pago/);
 });
