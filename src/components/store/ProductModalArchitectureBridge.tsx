@@ -4,22 +4,70 @@ interface ProductModalArchitectureBridgeProps {
   isOpen: boolean;
 }
 
-const setButtonLabel = (button: HTMLButtonElement, label: string): void => {
-  const labelSpan = button.querySelector<HTMLSpanElement>('span');
-  if (!labelSpan) return;
-  const textNode = Array.from(labelSpan.childNodes).find(
-    node => node.nodeType === Node.TEXT_NODE
-  );
-  if (textNode) textNode.textContent = ` ${label}`;
+const identifyLegacyTabs = (tabs: HTMLElement): void => {
+  const buttons = tabs.querySelectorAll<HTMLButtonElement>('button');
+  buttons.forEach(button => {
+    const text = button.textContent ?? '';
+    if (
+      text.includes('Itens da vitrine') ||
+      text.includes('Produto') ||
+      button.dataset.kyrubProductTab === 'product'
+    ) {
+      button.dataset.kyrubProductTab = 'product';
+    } else if (
+      text.includes('Estoque') ||
+      text.includes('Composição') ||
+      button.dataset.kyrubProductTab === 'composition'
+    ) {
+      button.dataset.kyrubProductTab = 'composition';
+    } else if (
+      text.includes('Lista de compras') ||
+      button.dataset.kyrubProductTab === 'purchase'
+    ) {
+      button.dataset.kyrubProductTab = 'purchase';
+    }
+  });
 };
 
-const setButtonDescription = (
-  button: HTMLButtonElement,
-  description: string
-): void => {
-  const spans = button.querySelectorAll<HTMLSpanElement>(':scope > span');
-  const descriptionSpan = spans.item(1);
-  if (descriptionSpan) descriptionSpan.textContent = description;
+const createCompositionBackControl = (
+  inventoryTab: HTMLElement
+): HTMLDivElement => {
+  const control = document.createElement('div');
+  control.id = 'product-composition-back-control';
+  control.className =
+    'mb-4 flex items-center justify-between gap-3 rounded-2xl border border-slate-800 bg-slate-950/65 px-3 py-3';
+
+  const copy = document.createElement('div');
+  copy.className = 'min-w-0';
+
+  const title = document.createElement('strong');
+  title.className =
+    'block text-[10px] font-black uppercase tracking-wide text-white';
+  title.textContent = 'Composição do item';
+
+  const description = document.createElement('span');
+  description.className =
+    'mt-0.5 block text-[9px] leading-relaxed text-slate-500';
+  description.textContent =
+    'Ficha técnica, componentes, rendimento e custos deste produto.';
+
+  copy.append(title, description);
+
+  const backButton = document.createElement('button');
+  backButton.type = 'button';
+  backButton.className =
+    'min-h-9 shrink-0 rounded-xl border border-slate-700 bg-slate-900 px-3 text-[8px] font-black uppercase text-slate-300';
+  backButton.textContent = '← Produto';
+  backButton.addEventListener('click', () => {
+    const productButton = document.querySelector<HTMLButtonElement>(
+      '[data-kyrub-product-tab="product"]'
+    );
+    productButton?.click();
+  });
+
+  control.append(copy, backButton);
+  inventoryTab.prepend(control);
+  return control;
 };
 
 export function ProductModalArchitectureBridge({
@@ -41,55 +89,44 @@ export function ProductModalArchitectureBridge({
       if (kicker) kicker.textContent = 'Cadastro do produto';
       if (description) {
         description.textContent =
-          'Defina o que você vende e, quando necessário, do que este item é feito. Estoque e compras são operações globais da loja.';
+          'Edite os dados do item. Estoque e compras são operações da loja; aqui ficam apenas os dados e a composição deste produto.';
       }
 
       const tabs = document.getElementById('unified-product-modal-tabs');
-      const buttons = tabs?.querySelectorAll<HTMLButtonElement>('button') ?? [];
-      buttons.forEach(button => {
-        const text = button.textContent ?? '';
-        if (text.includes('Itens da vitrine') || button.dataset.kyrubProductTab === 'product') {
-          button.dataset.kyrubProductTab = 'product';
-          button.style.removeProperty('display');
-          setButtonLabel(button, 'Produto');
-          setButtonDescription(button, 'Identidade, venda e apresentação');
-        } else if (text.includes('Estoque') || button.dataset.kyrubProductTab === 'composition') {
-          button.dataset.kyrubProductTab = 'composition';
-          button.style.removeProperty('display');
-          setButtonLabel(button, 'Composição');
-          setButtonDescription(button, 'Ficha técnica, kit, consumo e custos');
-        } else if (text.includes('Lista de compras') || button.dataset.kyrubProductTab === 'purchase') {
-          button.dataset.kyrubProductTab = 'purchase';
-          button.style.display = 'none';
-        }
-      });
+      if (tabs instanceof HTMLElement) {
+        identifyLegacyTabs(tabs);
+        tabs.style.display = 'none';
+      }
 
       const inventoryTab = document.getElementById('product-inventory-tab');
       if (inventoryTab instanceof HTMLElement) {
-        let note = inventoryTab.querySelector<HTMLDivElement>(
+        const oldNote = inventoryTab.querySelector(
           '#product-composition-architecture-note'
         );
-        if (!note) {
-          note = document.createElement('div');
-          note.id = 'product-composition-architecture-note';
-          note.className =
-            'rounded-2xl border border-cyan-500/20 bg-cyan-500/[0.06] px-4 py-3 text-[10px] leading-relaxed text-cyan-100';
-          note.textContent =
-            'Aqui você define a composição deste produto. Cadastre e movimente saldos, mínimos, custos e fornecedores na guia Estoque da loja.';
-          inventoryTab.prepend(note);
+        oldNote?.remove();
+
+        if (!inventoryTab.querySelector('#product-composition-back-control')) {
+          createCompositionBackControl(inventoryTab);
         }
 
-        const catalogSection = document.getElementById('inventory-catalog-accordion');
+        const catalogSection = document.getElementById(
+          'inventory-catalog-accordion'
+        );
         if (catalogSection instanceof HTMLElement) {
           catalogSection.style.display = 'none';
         }
 
-        const componentsSection = document.getElementById('inventory-components-accordion');
+        const componentsSection = document.getElementById(
+          'inventory-components-accordion'
+        );
         if (componentsSection instanceof HTMLElement) {
           const emptyButton = Array.from(
             componentsSection.querySelectorAll<HTMLButtonElement>('button')
-          ).find(button => (button.textContent ?? '').includes('Cadastrar insumo'));
+          ).find(button =>
+            (button.textContent ?? '').includes('Cadastrar insumo')
+          );
           if (emptyButton) emptyButton.style.display = 'none';
+
           const emptyParagraph = Array.from(
             componentsSection.querySelectorAll<HTMLParagraphElement>('p')
           ).find(paragraph =>
@@ -97,7 +134,7 @@ export function ProductModalArchitectureBridge({
           );
           if (emptyParagraph) {
             emptyParagraph.textContent =
-              'Nenhum item de estoque disponível. Cadastre-o primeiro na guia Estoque da loja.';
+              'Nenhum item de estoque disponível. Cadastre-o primeiro em Estoque, fora deste produto.';
           }
         }
 
