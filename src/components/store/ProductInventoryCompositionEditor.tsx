@@ -162,7 +162,7 @@ export function ProductInventoryCompositionEditor({
   );
 
   const toggleSection = (section: InventoryAccordionSection): void => {
-    setActiveSection(current => (current === section ? section : section));
+    setActiveSection(section);
   };
 
   const resetDraft = (): void => {
@@ -254,7 +254,6 @@ export function ProductInventoryCompositionEditor({
         : [...catalog, nextItem]
     );
     resetDraft();
-    setActiveSection('components');
   };
 
   const removeCatalogItem = (item: InventoryCatalogItem): void => {
@@ -372,6 +371,9 @@ export function ProductInventoryCompositionEditor({
         onToggle={() => toggleSection('components')}
         icon={<PackagePlus className="h-4 w-4" />}
       >
+        <span className="sr-only">
+          Caixa de seleção. Criar, editar ou remover componentes.
+        </span>
         {catalog.length === 0 ? (
           <div className="rounded-xl border border-dashed border-slate-800 px-4 py-7 text-center text-[10px] text-slate-500">
             <p>Cadastre primeiro um insumo ou componente do estoque.</p>
