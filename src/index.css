@@ -80,6 +80,13 @@ body {
   white-space: nowrap;
 }
 
+/* The ERP owns the operational viewport. Hide Kyrub's personal bottom navigation
+   while the ERP overlay is mounted; the ERP back button is the deliberate exit. */
+body:has([data-kyrub-erp-viewport="true"])
+  nav.fixed.bottom-0.left-0.right-0.z-40 {
+  display: none !important;
+}
+
 /* The composed inventory setup review can be taller than a phone viewport.
    Keep its header/actions reachable and scroll only the review body. */
 [role="dialog"][aria-label^="Confirmar preparo de"] {
