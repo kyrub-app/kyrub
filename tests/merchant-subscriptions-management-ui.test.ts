@@ -8,6 +8,7 @@ import './official-store-identity.test';
 const navigation = readFileSync('src/utils/erpManagementNavigation.ts', 'utf8');
 const menu = readFileSync('src/components/MobileErpMenu.tsx', 'utf8');
 const router = readFileSync('src/components/RetailerPanelRuntimeRouter.tsx', 'utf8');
+const modalLayout = readFileSync('src/components/AppModalLayoutBridge.tsx', 'utf8');
 const runtime = readFileSync('src/components/store/StoreSubscriptionsRuntime.tsx', 'utf8');
 const workspace = readFileSync('src/components/store/StoreSubscriptionsWorkspace.tsx', 'utf8');
 
@@ -20,6 +21,25 @@ test('subscriptions is a first-class direct management destination rather than t
   assert.match(router, /LazySubscriptionsRuntime/);
   assert.match(router, /Gerencial foi removido\./);
   assert.doesNotMatch(router, /GerencialPanel/);
+});
+
+test('Promocionais is the visible management destination while the vouchers id remains backward compatible', () => {
+  assert.match(menu, /id: 'vouchers', label: 'Promocionais'/);
+  assert.doesNotMatch(menu, /id: 'vouchers', label: 'Cupons & Vouchers'/);
+  assert.match(router, /vouchers: \{ title: 'Promocionais'/);
+  assert.match(router, /moduleId === 'vouchers'/);
+  assert.match(router, /LazyPromotionalRuntime/);
+});
+
+test('ERP viewport is isolated from the global modal inset bridge and covers the full screen opaquely', () => {
+  assert.match(modalLayout, /isErpViewportOverlay/);
+  assert.match(modalLayout, /:scope > #erp-main-header/);
+  assert.match(modalLayout, /overlay\.dataset\.kyrubSkipTopOverlay = 'true'/);
+  assert.match(modalLayout, /overlay\.dataset\.kyrubErpViewport = 'true'/);
+  assert.match(modalLayout, /\[data-kyrub-erp-viewport="true"\]/);
+  assert.match(modalLayout, /height: 100dvh !important/);
+  assert.match(modalLayout, /min-height: 100dvh !important/);
+  assert.match(modalLayout, /background: rgb\(2 6 23\) !important/);
 });
 
 test('subscription management auth and Firebase load only after the direct module is selected', () => {

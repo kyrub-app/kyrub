@@ -60,7 +60,7 @@ export const MOBILE_ERP_MENU_ITEMS: readonly MobileErpMenuItem[] = [
   { id: 'crm', label: 'CRM', icon: UserCheck, section: 'gestao' },
   { id: 'marketing', label: 'Marketing', icon: Zap, section: 'gestao' },
   { id: 'integracoes', label: 'Integrações & Sandbox', icon: Settings, section: 'gestao' },
-  { id: 'vouchers', label: 'Cupons & Vouchers', icon: Percent, section: 'gestao' },
+  { id: 'vouchers', label: 'Promocionais', icon: Percent, section: 'gestao' },
   { id: 'clientes', label: 'PDV', icon: Users, section: 'operacao' },
   { id: 'caixa', label: 'Caixa', icon: DollarSign, section: 'operacao' },
   { id: 'pedidos', label: 'Pedidos', icon: ClipboardList, section: 'operacao' },

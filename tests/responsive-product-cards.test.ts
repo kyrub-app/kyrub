@@ -94,7 +94,7 @@ test('mobile ERP menu removes Gerencial and exposes every management module dire
     'CRM',
     'Marketing',
     'Integrações & Sandbox',
-    'Cupons & Vouchers',
+    'Promocionais',
   ]) {
     assert.match(mobileErpMenu, new RegExp(label));
   }
