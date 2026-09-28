@@ -7,6 +7,7 @@ import {
   type AdminProfile,
 } from '../../utils/adminControlPlane';
 import { auth } from '../../utils/firebase';
+import type { OfficialStoreIdentity } from '../../utils/officialStore';
 import { persistPublicProduct, subscribeToPreferredPublicProducts, type PublicProduct } from '../../utils/publicProducts';
 import { StorePromotionsManager } from '../StorePromotionsManager';
 import OfficialStoreCommercialWorkspace from './OfficialStoreCommercialWorkspace';
@@ -25,6 +26,7 @@ const parsePoints = (value: string): number | null => {
 export function PromotionalDirectRuntime({ storeId }: { storeId: string }) {
   const [user, setUser] = useState<User | null>(auth.currentUser);
   const [adminProfile, setAdminProfile] = useState<AdminProfile | null>(null);
+  const [officialIdentity, setOfficialIdentity] = useState<OfficialStoreIdentity | null>(null);
   const [activeTab, setActiveTab] = useState<PromotionalTab>('coupons');
   const [products, setProducts] = useState<PublicProduct[]>([]);
   const [drafts, setDrafts] = useState<DraftMap>({});
@@ -33,8 +35,12 @@ export function PromotionalDirectRuntime({ storeId }: { storeId: string }) {
 
   useEffect(() => onAuthStateChanged(auth, setUser), []);
   useEffect(() => {
+    setOfficialIdentity(null);
+  }, [storeId]);
+  useEffect(() => {
     if (!user) {
       setAdminProfile(null);
+      setOfficialIdentity(null);
       return;
     }
     return subscribeToAdminProfile(
@@ -51,14 +57,18 @@ export function PromotionalDirectRuntime({ storeId }: { storeId: string }) {
     }, () => { setProducts([]); setDrafts({}); });
   }, [user?.uid]);
 
-  const officialCommercialAccess =
+  const officialAdminAccess =
     adminProfile?.status === 'active' && adminProfile.role === 'super_admin';
+  const currentStoreIsOfficial = Boolean(
+    officialIdentity &&
+    (officialIdentity.canonicalStoreId === storeId || officialIdentity.legacyStoreId === storeId)
+  );
 
   useEffect(() => {
-    if (!officialCommercialAccess && activeTab === 'official') {
+    if (!officialAdminAccess && activeTab === 'official') {
       setActiveTab('coupons');
     }
-  }, [activeTab, officialCommercialAccess]);
+  }, [activeTab, officialAdminAccess]);
 
   const configuredCount = useMemo(() => products.filter(product => (product.storePointsPerUnit ?? 0) > 0).length, [products]);
   const savePoints = async (product: PublicProduct) => {
@@ -80,7 +90,7 @@ export function PromotionalDirectRuntime({ storeId }: { storeId: string }) {
     { id: 'points', label: 'Pontos', icon: Award },
     { id: 'challenges', label: 'Desafios', icon: Target },
     { id: 'rewards', label: 'Recompensas', icon: Gift },
-    ...(officialCommercialAccess
+    ...(officialAdminAccess
       ? [{ id: 'official' as const, label: 'Cairubi Oficial', icon: ShieldCheck }]
       : []),
   ];
@@ -88,16 +98,34 @@ export function PromotionalDirectRuntime({ storeId }: { storeId: string }) {
   return <div id="kyrub-promocionais-direct-runtime" data-kyrub-promocionais-native="true" className="space-y-4">
     <section className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
       <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between"><div><span className="font-mono text-[9px] font-black uppercase tracking-[0.16em] text-amber-400">Promocionais</span><h3 className="mt-1 text-base font-black text-white">Benefícios da sua loja</h3></div>{products.length > 0 && <span className="text-[10px] font-bold text-slate-500">{configuredCount}/{products.length} itens pontuando</span>}</div>
-      <nav className={`mt-4 grid grid-cols-2 gap-2 ${officialCommercialAccess ? 'sm:grid-cols-5' : 'sm:grid-cols-4'}`} aria-label="Áreas promocionais">{tabs.map(tab => { const Icon = tab.icon; const active = activeTab === tab.id; return <button key={tab.id} type="button" onClick={() => { setActiveTab(tab.id); setMessage(''); }} className={`flex items-center justify-center gap-2 rounded-xl border px-3 py-2.5 text-[10px] font-black uppercase ${active ? 'border-amber-500/50 bg-amber-500/10 text-amber-200' : 'border-slate-800 bg-slate-950 text-slate-500'}`}><Icon className="h-3.5 w-3.5" />{tab.label}</button>; })}</nav>
+      <nav className={`mt-4 grid grid-cols-2 gap-2 ${officialAdminAccess ? 'sm:grid-cols-5' : 'sm:grid-cols-4'}`} aria-label="Áreas promocionais">{tabs.map(tab => { const Icon = tab.icon; const active = activeTab === tab.id; return <button key={tab.id} type="button" onClick={() => { setActiveTab(tab.id); setMessage(''); }} className={`flex items-center justify-center gap-2 rounded-xl border px-3 py-2.5 text-[10px] font-black uppercase ${active ? 'border-amber-500/50 bg-amber-500/10 text-amber-200' : 'border-slate-800 bg-slate-950 text-slate-500'}`}><Icon className="h-3.5 w-3.5" />{tab.label}</button>; })}</nav>
     </section>
     {activeTab === 'coupons' && <StorePromotionsManager storeId={storeId} products={products} triggerToast={next => setMessage(next)} />}
     {activeTab === 'points' && <section className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5"><h4 className="text-sm font-black uppercase text-white">Pontos por produto</h4><p className="mt-1 text-[10px] text-slate-500">O valor vigente é congelado no pedido e o ledger credita quantidade × pontos por unidade.</p><div className="mt-4 space-y-2">{products.map(product => { const draft = drafts[product.id] ?? String(product.storePointsPerUnit ?? 0); const parsed = parsePoints(draft); const changed = parsed !== null && parsed !== (product.storePointsPerUnit ?? 0); return <div key={product.id} className="grid gap-3 rounded-2xl border border-slate-800 bg-slate-950 p-3 sm:grid-cols-[minmax(0,1fr)_8rem_auto] sm:items-center"><strong className="truncate text-xs text-white">{product.name}</strong><input type="number" min="0" step="1" value={draft} disabled={Boolean(busyProductId)} onChange={event => setDrafts(current => ({ ...current, [product.id]: event.target.value }))} className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2.5 text-sm font-black text-amber-200"/><button type="button" disabled={!changed || Boolean(busyProductId)} onClick={() => void savePoints(product)} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-amber-500/35 bg-amber-500/10 px-3 text-[9px] font-black uppercase text-amber-200 disabled:opacity-35">{busyProductId === product.id ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}Salvar</button></div>; })}</div></section>}
     {activeTab === 'challenges' && <StoreChallengeManager />}
     {activeTab === 'rewards' && <StoreRewardManager products={products} />}
-    {activeTab === 'official' && adminProfile?.status === 'active' && adminProfile.role === 'super_admin' && (
-      <div data-kyrub-official-store-commercial="true" data-store-id={storeId} className="space-y-4">
-        <OfficialStoreIdentityPanel authenticatedUser={user} storeId={storeId} />
-        <OfficialStoreCommercialWorkspace authenticatedUser={user} profile={adminProfile} />
+    {activeTab === 'official' && officialAdminAccess && (
+      <div data-kyrub-official-store-admin="true" data-store-id={storeId} className="space-y-4">
+        <OfficialStoreIdentityPanel
+          authenticatedUser={user}
+          storeId={storeId}
+          onIdentityChange={setOfficialIdentity}
+        />
+        {currentStoreIsOfficial ? (
+          <div data-kyrub-official-store-commercial="true">
+            <OfficialStoreCommercialWorkspace authenticatedUser={user} profile={adminProfile} />
+          </div>
+        ) : (
+          <section
+            data-kyrub-official-store-commerce-locked="true"
+            className="rounded-3xl border border-amber-500/25 bg-amber-500/5 p-4 sm:p-5"
+          >
+            <h4 className="text-sm font-black text-white">Comercial Cairubi bloqueado nesta loja</h4>
+            <p className="mt-2 max-w-2xl text-[10px] leading-relaxed text-slate-400">
+              Planos, cupons e cortesias da plataforma só podem ser administrados quando a loja aberta coincide com a identidade canônica da Loja Oficial Cairobi. Confirme ou designe a identidade acima primeiro.
+            </p>
+          </section>
+        )}
       </div>
     )}
     {message && <div className="rounded-2xl border border-slate-700 bg-slate-900 px-3 py-2.5 text-[10px] font-bold text-slate-300">{message}</div>}
