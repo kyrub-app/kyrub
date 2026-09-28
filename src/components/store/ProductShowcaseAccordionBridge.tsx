@@ -218,13 +218,13 @@ export function ProductShowcaseAccordionBridge({
       {SECTION_OPTIONS.map(section => {
         const Icon = section.icon;
         const isComposition = section.id === 'composition';
-        const active = !isComposition && activeSection === section.id;
+        const active = section.id !== 'composition' && activeSection === section.id;
         return (
           <button
             key={section.id}
             type="button"
             onClick={() => {
-              if (isComposition) {
+              if (section.id === 'composition') {
                 openComposition();
                 return;
               }
