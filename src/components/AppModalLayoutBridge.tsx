@@ -55,6 +55,9 @@ const usesSelfManagedOverlayLayout = (
   return absolutelyPositionedPanel || fullHeightDrawer || viewportOwnedPanel;
 };
 
+const isErpViewportOverlay = (overlay: HTMLElement): boolean =>
+  Boolean(overlay.querySelector(':scope > #erp-main-header'));
+
 const normalizeText = (value: string | null | undefined): string =>
   (value ?? '').replace(/\s+/g, ' ').trim().toLocaleUpperCase('pt-BR');
 
@@ -102,6 +105,7 @@ export function AppModalLayoutBridge() {
     const decoratedNoteOverlays = new Set<HTMLElement>();
     const decoratedNotePanels = new Set<HTMLElement>();
     const decoratedConversations = new Set<HTMLElement>();
+    const decoratedErpOverlays = new Set<HTMLElement>();
 
     const decorateConversation = () => {
       const conversation = document.querySelector<HTMLElement>(
@@ -130,6 +134,13 @@ export function AppModalLayoutBridge() {
       document
         .querySelectorAll<HTMLElement>('.fixed.inset-0')
         .forEach(overlay => {
+          if (isErpViewportOverlay(overlay)) {
+            overlay.dataset.kyrubSkipTopOverlay = 'true';
+            overlay.dataset.kyrubErpViewport = 'true';
+            decoratedErpOverlays.add(overlay);
+            return;
+          }
+
           const panel = findModalPanel(overlay);
           if (!panel || usesSelfManagedOverlayLayout(overlay, panel)) return;
 
@@ -173,6 +184,10 @@ export function AppModalLayoutBridge() {
       decoratedNotePanels.forEach(panel => {
         delete panel.dataset.kyrubAiNotePanel;
       });
+      decoratedErpOverlays.forEach(overlay => {
+        delete overlay.dataset.kyrubSkipTopOverlay;
+        delete overlay.dataset.kyrubErpViewport;
+      });
       decoratedConversations.forEach(conversation => {
         delete conversation.dataset.kyrubAiConversation;
         conversation.style.removeProperty('--kyrub-ai-conversation-height');
@@ -182,6 +197,19 @@ export function AppModalLayoutBridge() {
 
   return (
     <style>{`
+      [data-kyrub-erp-viewport="true"] {
+        position: fixed !important;
+        inset: 0 !important;
+        width: 100% !important;
+        height: 100dvh !important;
+        min-height: 100dvh !important;
+        max-height: none !important;
+        padding: 0 !important;
+        border-radius: 0 !important;
+        overflow: hidden !important;
+        background: rgb(2 6 23) !important;
+      }
+
       [data-kyrub-top-overlay="true"] {
         align-items: flex-start !important;
         justify-content: center !important;
@@ -316,7 +344,7 @@ export function AppModalLayoutBridge() {
         [data-kyrub-top-panel="true"] {
           max-height: calc(
             100dvh - 48px - env(safe-area-inset-top, 0px) -
-              env(safe-area-inset-bottom, 0px)
+            env(safe-area-inset-bottom, 0px)
           ) !important;
         }
       }
