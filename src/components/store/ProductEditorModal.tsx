@@ -11,6 +11,7 @@ import {
 } from '../../utils/productFiscal';
 import { ProductFiscalFieldsBridge } from './ProductFiscalFieldsBridge';
 import { ProductPricingFieldsBridge } from './ProductPricingFieldsBridge';
+import { ProductShowcaseAccordionBridge } from './ProductShowcaseAccordionBridge';
 import { ProductStorePointsFieldBridge } from './ProductStorePointsFieldBridge';
 import {
   UnifiedProductModal,
@@ -115,6 +116,7 @@ export const ProductEditorModal: React.FC<ProductEditorModalProps> = ({
         isSaving={isSaving}
         onSave={handleSave}
       />
+      <ProductShowcaseAccordionBridge isOpen={resolvedOpen} />
       <ProductFiscalFieldsBridge
         isOpen={resolvedOpen}
         product={product}
