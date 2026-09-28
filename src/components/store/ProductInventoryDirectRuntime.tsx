@@ -1,6 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import type React from 'react';
-import { AlertTriangle, Trash2, X } from 'lucide-react';
+import {
+  AlertTriangle,
+  Boxes,
+  ShoppingCart,
+  Store,
+  Trash2,
+  X,
+} from 'lucide-react';
 import type { Product } from '../../types';
 import { RetailerPanel as LegacyRetailerPanel } from '../LegacyRetailerPanel';
 import { auth } from '../../utils/firebase';
@@ -12,8 +19,11 @@ import {
 } from '../../utils/publicProducts';
 import { removePublicProduct } from '../../utils/publicProductMutations';
 import { OperationalDualWriteBridge } from './OperationalDualWriteBridge';
+import { PhysicalInventoryWorkspace } from './PhysicalInventoryWorkspace';
 import { ProductEditorModal } from './ProductEditorModal';
 import { ProductInventoryWorkspace } from './ProductInventoryWorkspace';
+import { StoreInventoryCatalogWorkspace } from './StoreInventoryCatalogWorkspace';
+import { StorePurchaseWorkspace } from './StorePurchaseWorkspace';
 
 type RetailerPanelProps = React.ComponentProps<typeof LegacyRetailerPanel>;
 
@@ -26,6 +36,34 @@ type ProductInventoryDirectRuntimeProps = Pick<
   | 'triggerToast'
 >;
 
+type CatalogWorkspace = 'products' | 'stock' | 'purchases';
+
+const WORKSPACES: Array<{
+  id: CatalogWorkspace;
+  label: string;
+  description: string;
+  icon: typeof Store;
+}> = [
+  {
+    id: 'products',
+    label: 'Produtos',
+    description: 'O que a loja vende',
+    icon: Store,
+  },
+  {
+    id: 'stock',
+    label: 'Estoque',
+    description: 'O que a loja tem',
+    icon: Boxes,
+  },
+  {
+    id: 'purchases',
+    label: 'Compras',
+    description: 'O que precisa repor',
+    icon: ShoppingCart,
+  },
+];
+
 export function ProductInventoryDirectRuntime({
   activeRetailerId,
   activeStore,
@@ -33,6 +71,8 @@ export function ProductInventoryDirectRuntime({
   setProducts,
   triggerToast,
 }: ProductInventoryDirectRuntimeProps) {
+  const [activeWorkspace, setActiveWorkspace] =
+    useState<CatalogWorkspace>('products');
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [deletingProduct, setDeletingProduct] = useState<Product | null>(null);
   const [busyProductId, setBusyProductId] = useState('');
@@ -193,17 +233,63 @@ export function ProductInventoryDirectRuntime({
         className="space-y-4"
       >
         <div className="rounded-2xl border border-cyan-500/20 bg-cyan-500/[0.06] px-4 py-3 text-[10px] leading-relaxed text-cyan-100">
-          As alterações feitas aqui atualizam o catálogo do Kyrub. Publicações em canais externos continuam exigindo preparação e autorização explícitas; este módulo não envia alterações automaticamente ao Mercado Livre.
+          <strong className="text-white">Produto → Composição → Estoque → Compras.</strong>{' '}
+          Produtos definem o que você vende; Estoque controla os itens físicos da loja; Compras consolida o que precisa ser reposto. Publicações em canais externos continuam exigindo autorização explícita.
         </div>
 
-        <ProductInventoryWorkspace
-          products={activeRetailerProducts}
-          keywords={activeStore.keywords ?? []}
-          onCreateProduct={() => undefined}
-          onEditProduct={setEditingProduct}
-          onDeleteProduct={setDeletingProduct}
-          busyProductId={busyProductId}
-        />
+        <nav
+          className="grid grid-cols-3 gap-2"
+          aria-label="Produtos, estoque e compras"
+          id="kyrub-catalog-workspace-tabs"
+        >
+          {WORKSPACES.map(workspace => {
+            const Icon = workspace.icon;
+            const active = activeWorkspace === workspace.id;
+            return (
+              <button
+                key={workspace.id}
+                type="button"
+                onClick={() => setActiveWorkspace(workspace.id)}
+                aria-pressed={active}
+                className={`min-w-0 rounded-2xl border px-2 py-3 text-left transition-colors sm:px-4 ${
+                  active
+                    ? 'border-orange-500/45 bg-orange-500/10'
+                    : 'border-slate-800 bg-slate-950/60 hover:border-slate-700'
+                }`}
+              >
+                <span className="flex items-center gap-1.5 text-[9px] font-black uppercase text-white">
+                  <Icon className={`h-3.5 w-3.5 shrink-0 ${active ? 'text-orange-300' : 'text-slate-500'}`} />
+                  <span className="truncate">{workspace.label}</span>
+                </span>
+                <span className="mt-1 hidden text-[8px] text-slate-500 sm:block">
+                  {workspace.description}
+                </span>
+              </button>
+            );
+          })}
+        </nav>
+
+        {activeWorkspace === 'products' && (
+          <ProductInventoryWorkspace
+            products={activeRetailerProducts}
+            keywords={activeStore.keywords ?? []}
+            onCreateProduct={() => undefined}
+            onEditProduct={setEditingProduct}
+            onDeleteProduct={setDeletingProduct}
+            busyProductId={busyProductId}
+          />
+        )}
+
+        {activeWorkspace === 'stock' && (
+          <div className="space-y-4" id="kyrub-global-stock-workspace">
+            <StoreInventoryCatalogWorkspace storeId={activeRetailerId} />
+            <PhysicalInventoryWorkspace storeId={activeRetailerId} />
+          </div>
+        )}
+
+        {activeWorkspace === 'purchases' && (
+          <StorePurchaseWorkspace storeId={activeRetailerId} />
+        )}
       </div>
 
       <ProductEditorModal
@@ -244,7 +330,7 @@ export function ProductInventoryDirectRuntime({
             </div>
 
             <p className="mt-4 rounded-2xl border border-red-500/20 bg-red-500/[0.07] p-4 text-[10px] leading-relaxed text-red-100">
-              O item deixará de aparecer no estoque e na vitrine. Pedidos antigos continuarão preservando o nome, o preço e as quantidades registrados no momento da venda.
+              O item deixará de aparecer na lista de produtos e na vitrine. Pedidos antigos continuarão preservando o nome, o preço e as quantidades registrados no momento da venda.
             </p>
 
             <div className="mt-5 grid grid-cols-2 gap-3">
