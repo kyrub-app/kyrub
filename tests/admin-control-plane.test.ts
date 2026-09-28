@@ -33,6 +33,10 @@ const promotionalDirectSource = readFileSync(
   'src/components/store/PromotionalDirectRuntime.tsx',
   'utf8'
 );
+const officialIdentityPanelSource = readFileSync(
+  'src/components/store/OfficialStoreIdentityPanel.tsx',
+  'utf8'
+);
 const retailerRouterSource = readFileSync(
   'src/components/RetailerPanelRuntimeRouter.tsx',
   'utf8'
@@ -215,7 +219,17 @@ test('Official Store owns plans, coupons and courtesy UI while server authority 
   assert.match(promotionalDirectSource, /subscribeToAdminProfile/);
   assert.match(promotionalDirectSource, /adminProfile\.role === 'super_admin'/);
   assert.match(promotionalDirectSource, /Cairubi Oficial/);
-  assert.match(promotionalDirectSource, /data-kyrub-official-store-commercial/);
+  assert.match(promotionalDirectSource, /OfficialStoreIdentityPanel/);
+  assert.match(promotionalDirectSource, /onIdentityChange=\{setOfficialIdentity\}/);
+  assert.match(promotionalDirectSource, /const currentStoreIsOfficial = Boolean/);
+  assert.match(promotionalDirectSource, /officialIdentity\.canonicalStoreId === storeId/);
+  assert.match(promotionalDirectSource, /officialIdentity\.legacyStoreId === storeId/);
+  assert.match(promotionalDirectSource, /currentStoreIsOfficial \? \(/);
+  assert.match(promotionalDirectSource, /data-kyrub-official-store-commercial="true"/);
+  assert.match(promotionalDirectSource, /data-kyrub-official-store-commerce-locked="true"/);
+  assert.match(officialIdentityPanelSource, /onIdentityChange\?:/);
+  assert.match(officialIdentityPanelSource, /commitIdentity/);
+  assert.match(officialIdentityPanelSource, /onIdentityChange\?\.\(next\)/);
   assert.match(retailerRouterSource, /<LazyPromotionalRuntime storeId=\{retailerProps\.activeRetailerId\}/);
 
   assert.match(planManagementSource, /admin\.role !== 'super_admin'/);
