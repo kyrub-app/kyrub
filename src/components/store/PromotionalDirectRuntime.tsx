@@ -10,6 +10,7 @@ import { auth } from '../../utils/firebase';
 import { persistPublicProduct, subscribeToPreferredPublicProducts, type PublicProduct } from '../../utils/publicProducts';
 import { StorePromotionsManager } from '../StorePromotionsManager';
 import OfficialStoreCommercialWorkspace from './OfficialStoreCommercialWorkspace';
+import OfficialStoreIdentityPanel from './OfficialStoreIdentityPanel';
 import { StoreChallengeManager } from './StoreChallengeManager';
 import { StoreRewardManager } from './StoreRewardManager';
 
@@ -94,7 +95,8 @@ export function PromotionalDirectRuntime({ storeId }: { storeId: string }) {
     {activeTab === 'challenges' && <StoreChallengeManager />}
     {activeTab === 'rewards' && <StoreRewardManager products={products} />}
     {activeTab === 'official' && adminProfile?.status === 'active' && adminProfile.role === 'super_admin' && (
-      <div data-kyrub-official-store-commercial="true" data-store-id={storeId}>
+      <div data-kyrub-official-store-commercial="true" data-store-id={storeId} className="space-y-4">
+        <OfficialStoreIdentityPanel authenticatedUser={user} storeId={storeId} />
         <OfficialStoreCommercialWorkspace authenticatedUser={user} profile={adminProfile} />
       </div>
     )}
