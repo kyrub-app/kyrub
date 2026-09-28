@@ -149,7 +149,6 @@ export const designateOfficialStore = async (
     transaction.set(auditRef, {
       schemaVersion: 1,
       actorUid: admin.uid,
-      actorEmail: admin.email,
       actorRole: admin.role,
       action: current
         ? 'admin.official_store.reassigned'
