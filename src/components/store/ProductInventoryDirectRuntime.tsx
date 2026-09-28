@@ -235,6 +235,7 @@ export function ProductInventoryDirectRuntime({
         <nav
           className="grid grid-cols-3 gap-2"
           aria-label="Produtos, estoque e compras"
+          aria-description="Este módulo não envia alterações automaticamente ao Mercado Livre."
           id="kyrub-catalog-workspace-tabs"
         >
           {WORKSPACES.map(workspace => {
