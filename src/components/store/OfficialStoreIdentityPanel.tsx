@@ -16,6 +16,7 @@ import {
 interface Props {
   authenticatedUser: User;
   storeId: string;
+  onIdentityChange?: (identity: OfficialStoreIdentity | null) => void;
 }
 
 type AsyncState = {
@@ -38,11 +39,18 @@ const storeLabel = (identity: OfficialStoreIdentity): string =>
 export default function OfficialStoreIdentityPanel({
   authenticatedUser,
   storeId,
+  onIdentityChange,
 }: Props) {
   const [identity, setIdentity] = useState<OfficialStoreIdentity | null>(null);
   const [state, setState] = useState<AsyncState>(initialState);
 
+  const commitIdentity = useCallback((next: OfficialStoreIdentity | null) => {
+    setIdentity(next);
+    onIdentityChange?.(next);
+  }, [onIdentityChange]);
+
   const load = useCallback(async () => {
+    commitIdentity(null);
     setState(current => ({
       ...current,
       loading: true,
@@ -50,9 +58,10 @@ export default function OfficialStoreIdentityPanel({
     }));
     try {
       const snapshot = await loadOfficialStoreIdentity(authenticatedUser);
-      setIdentity(snapshot.identity);
+      commitIdentity(snapshot.identity);
       setState(current => ({ ...current, loading: false }));
     } catch (error) {
+      commitIdentity(null);
       setState(current => ({
         ...current,
         loading: false,
@@ -61,7 +70,7 @@ export default function OfficialStoreIdentityPanel({
           : 'Não foi possível carregar a Loja Oficial Cairobi.',
       }));
     }
-  }, [authenticatedUser]);
+  }, [authenticatedUser, commitIdentity]);
 
   useEffect(() => {
     void load();
@@ -102,7 +111,7 @@ export default function OfficialStoreIdentityPanel({
         storeId,
         replacing
       );
-      setIdentity(result.identity);
+      commitIdentity(result.identity);
       setState(current => ({
         ...current,
         busy: false,
