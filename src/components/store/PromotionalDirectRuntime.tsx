@@ -106,11 +106,7 @@ export function PromotionalDirectRuntime({ storeId }: { storeId: string }) {
     {activeTab === 'rewards' && <StoreRewardManager products={products} />}
     {activeTab === 'official' && officialAdminAccess && (
       <div data-kyrub-official-store-admin="true" data-store-id={storeId} className="space-y-4">
-        <OfficialStoreIdentityPanel
-          authenticatedUser={user}
-          storeId={storeId}
-          onIdentityChange={setOfficialIdentity}
-        />
+        <OfficialStoreIdentityPanel authenticatedUser={user} storeId={storeId} onIdentityChange={setOfficialIdentity} />
         {currentStoreIsOfficial ? (
           <div data-kyrub-official-store-commercial="true">
             <OfficialStoreCommercialWorkspace authenticatedUser={user} profile={adminProfile} />
