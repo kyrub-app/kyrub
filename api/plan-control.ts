@@ -6,6 +6,10 @@ import {
   setCouponCampaignStatus,
 } from '../server/admin/planManagementService.js';
 import {
+  designateOfficialStore,
+  loadOfficialStoreSnapshot,
+} from '../server/admin/officialStoreService.js';
+import {
   cancelOwnPaidPlanSubscription,
   createOwnPaidPlanCheckout,
   handlePaidPlanProviderWebhook,
@@ -201,6 +205,26 @@ export default async function handler(
         }
         response.status(200).json(
           await loadPlanManagementSnapshot(authorization)
+        );
+        return;
+      }
+      case 'admin.official-store.snapshot': {
+        if (method !== 'GET') {
+          methodNotAllowed(response);
+          return;
+        }
+        response.status(200).json(
+          await loadOfficialStoreSnapshot(authorization)
+        );
+        return;
+      }
+      case 'admin.official-store.designate': {
+        if (method !== 'POST') {
+          methodNotAllowed(response);
+          return;
+        }
+        response.status(200).json(
+          await designateOfficialStore(authorization, request.body)
         );
         return;
       }

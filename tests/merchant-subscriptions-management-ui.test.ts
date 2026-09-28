@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import './store-subscription-benefit-ledger.test';
 import './store-subscription-benefit-management-ui.test';
+import './official-store-identity.test';
 
 const navigation = readFileSync('src/utils/erpManagementNavigation.ts', 'utf8');
 const menu = readFileSync('src/components/MobileErpMenu.tsx', 'utf8');
