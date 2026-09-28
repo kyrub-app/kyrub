@@ -25,12 +25,16 @@ const appSource = readFileSync(
   'src/components/admin/AdminControlPlaneApp.tsx',
   'utf8'
 );
-const promotionalWorkspaceSource = readFileSync(
-  'src/components/admin/AdminPromotionalPlanWorkspace.tsx',
+const plansWorkspaceSource = readFileSync(
+  'src/components/store/OfficialStoreCommercialWorkspace.tsx',
   'utf8'
 );
-const plansWorkspaceSource = readFileSync(
-  'src/components/admin/AdminPlansCouponsWorkspace.tsx',
+const promotionalDirectSource = readFileSync(
+  'src/components/store/PromotionalDirectRuntime.tsx',
+  'utf8'
+);
+const retailerRouterSource = readFileSync(
+  'src/components/RetailerPanelRuntimeRouter.tsx',
   'utf8'
 );
 const planManagementSource = readFileSync(
@@ -169,21 +173,26 @@ test('routes only the administrative hostname, local path, or explicit Vercel pr
   );
 });
 
-test('groups control plane modules into operational folders for mobile', () => {
+test('keeps the control plane focused on platform governance instead of Cairubi commerce', () => {
   assert.match(modulesSource, /Pessoas & Tenants/);
-  assert.match(modulesSource, /Comercial & Financeiro/);
+  assert.match(modulesSource, /Financeiro da Plataforma/);
+  assert.match(modulesSource, /Financeiro da Plataforma & BaaS/);
   assert.match(modulesSource, /Operações & Infraestrutura/);
   assert.match(modulesSource, /Governança & IA/);
   assert.match(modulesSource, /Saúde do sistema/);
   assert.match(modulesSource, /status: 'available'/);
-  assert.match(modulesSource, /Planos & Cupons/);
-  assert.match(modulesSource, /admin-plans-coupons/);
+  assert.doesNotMatch(modulesSource, /Planos & Cupons/);
+  assert.doesNotMatch(modulesSource, /admin-plans-coupons/);
+  assert.doesNotMatch(modulesSource, /Comercial & Financeiro/);
+  assert.match(modulesSource, /Loja Oficial/);
   assert.match(modulesSource, /Em preparação/);
   assert.match(modulesSource, /<details/);
   assert.match(modulesSource, /AdminAiOperationsDashboard/);
   assert.match(modulesSource, /admin-directory/);
   assert.match(modulesSource, /admin-system-health/);
   assert.match(rootSource, /id="admin-system-health"/);
+  assert.doesNotMatch(appSource, /AdminPromotionalPlanWorkspace/);
+  assert.match(appSource, /comércio da própria Cairubi é administrado pela Loja Oficial/);
 });
 
 test('directory exposes explicit searching, empty and error feedback', () => {
@@ -196,15 +205,18 @@ test('directory exposes explicit searching, empty and error feedback', () => {
   assert.match(directorySource, /aria-live="polite"/);
 });
 
-test('Plans & Coupons replaces the one-off courtesy UI while preserving server-side authority', () => {
-  assert.match(appSource, /profile\.role === 'super_admin'/);
-  assert.match(appSource, /AdminPromotionalPlanWorkspace/);
-  assert.match(promotionalWorkspaceSource, /AdminPlansCouponsWorkspace/);
+test('Official Store owns plans, coupons and courtesy UI while server authority stays protected', () => {
   assert.match(plansWorkspaceSource, /Planos & Cupons/);
   assert.match(plansWorkspaceSource, /Salvar como nova versão/);
   assert.match(plansWorkspaceSource, /createAdminCoupon/);
   assert.match(plansWorkspaceSource, /grantAdminComplimentaryPlan/);
   assert.match(plansWorkspaceSource, /window\.confirm/);
+  assert.match(promotionalDirectSource, /OfficialStoreCommercialWorkspace/);
+  assert.match(promotionalDirectSource, /subscribeToAdminProfile/);
+  assert.match(promotionalDirectSource, /adminProfile\.role === 'super_admin'/);
+  assert.match(promotionalDirectSource, /Cairubi Oficial/);
+  assert.match(promotionalDirectSource, /data-kyrub-official-store-commercial/);
+  assert.match(retailerRouterSource, /<LazyPromotionalRuntime storeId=\{retailerProps\.activeRetailerId\}/);
 
   assert.match(planManagementSource, /admin\.role !== 'super_admin'/);
   assert.match(planManagementSource, /PLAN_VERSIONS_COLLECTION/);
