@@ -173,3 +173,36 @@ export const setKyrubCatalogProductPublished = async (
 
   dispatchCatalogProductChanged(normalizedId, { published });
 };
+
+export const deleteKyrubCatalogDraft = async (
+  user: User,
+  productId: string
+): Promise<void> => {
+  const normalizedId = productId.trim();
+  if (!normalizedId) throw new Error('O rascunho não foi identificado.');
+
+  const body = await authenticatedPost(
+    user,
+    {
+      operation: 'set_catalog_product_publication',
+      productId: normalizedId,
+      published: false,
+      deleteDraft: true,
+    },
+    'Não foi possível excluir o item não publicado agora.'
+  );
+
+  if (
+    !isRecord(body) ||
+    body.productId !== normalizedId ||
+    body.publicationStatus !== 'draft' ||
+    body.deleted !== true
+  ) {
+    throw new Error('O Kyrub não confirmou a exclusão do item não publicado.');
+  }
+
+  dispatchCatalogProductChanged(normalizedId, {
+    publicationStatus: 'draft',
+    deleted: true,
+  });
+};
