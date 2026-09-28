@@ -26,6 +26,7 @@ interface ProductInventoryWorkspaceProps {
   onEditProduct: (product: Product) => void;
   onDeleteProduct: (product: Product) => void;
   busyProductId?: string;
+  searchQuery?: string;
 }
 
 type InventoryItem = {
@@ -116,6 +117,7 @@ export function ProductInventoryWorkspace({
   onEditProduct,
   onDeleteProduct,
   busyProductId = '',
+  searchQuery = '',
 }: ProductInventoryWorkspaceProps) {
   const categoryOptions = useMemo(() => uniqueKeywords(keywords), [keywords]);
   const [selectedKeyword, setSelectedKeyword] = useState('');
@@ -192,14 +194,25 @@ export function ProductInventoryWorkspace({
   );
 
   const visibleProducts = useMemo(() => {
+    const normalizedSearch = normalizeCategoryValue(searchQuery);
+
     return inventoryItems.filter(product => {
       if (showUnpublishedOnly && product.published) return false;
-      if (!selectedKeyword) return true;
-      return (
-        normalizeCategoryValue(categoryRoot(product.category)) === selectedKeyword
-      );
+      if (
+        selectedKeyword &&
+        normalizeCategoryValue(categoryRoot(product.category)) !== selectedKeyword
+      ) {
+        return false;
+      }
+      if (
+        normalizedSearch &&
+        !normalizeCategoryValue(product.name).includes(normalizedSearch)
+      ) {
+        return false;
+      }
+      return true;
     });
-  }, [inventoryItems, selectedKeyword, showUnpublishedOnly]);
+  }, [inventoryItems, searchQuery, selectedKeyword, showUnpublishedOnly]);
 
   const handlePublicationChange = async (
     item: InventoryItem,
@@ -521,9 +534,11 @@ export function ProductInventoryWorkspace({
             <p className="mt-3 text-xs text-slate-500">
               {inventoryItems.length === 0
                 ? 'Nenhum produto ou serviço cadastrado.'
-                : showUnpublishedOnly
-                  ? 'Nenhum produto não publicado neste filtro.'
-                  : 'Nenhum item encontrado nesta categoria.'}
+                : searchQuery.trim()
+                  ? `Nenhum produto encontrado para “${searchQuery.trim()}”.`
+                  : showUnpublishedOnly
+                    ? 'Nenhum produto não publicado neste filtro.'
+                    : 'Nenhum item encontrado nesta categoria.'}
             </p>
           </div>
         )}
