@@ -2,9 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type React from 'react';
 import {
   AlertTriangle,
-  Boxes,
-  ShoppingCart,
-  Store,
+  Search,
   Trash2,
   X,
 } from 'lucide-react';
@@ -19,11 +17,8 @@ import {
 } from '../../utils/publicProducts';
 import { removePublicProduct } from '../../utils/publicProductMutations';
 import { OperationalDualWriteBridge } from './OperationalDualWriteBridge';
-import { PhysicalInventoryWorkspace } from './PhysicalInventoryWorkspace';
 import { ProductEditorModal } from './ProductEditorModal';
 import { ProductInventoryWorkspace } from './ProductInventoryWorkspace';
-import { StoreInventoryCatalogWorkspace } from './StoreInventoryCatalogWorkspace';
-import { StorePurchaseWorkspace } from './StorePurchaseWorkspace';
 
 type RetailerPanelProps = React.ComponentProps<typeof LegacyRetailerPanel>;
 
@@ -36,33 +31,12 @@ type ProductInventoryDirectRuntimeProps = Pick<
   | 'triggerToast'
 >;
 
-type CatalogWorkspace = 'products' | 'stock' | 'purchases';
-
-const WORKSPACES: Array<{
-  id: CatalogWorkspace;
-  label: string;
-  description: string;
-  icon: typeof Store;
-}> = [
-  {
-    id: 'products',
-    label: 'Produtos',
-    description: 'O que a loja vende',
-    icon: Store,
-  },
-  {
-    id: 'stock',
-    label: 'Estoque',
-    description: 'O que a loja tem',
-    icon: Boxes,
-  },
-  {
-    id: 'purchases',
-    label: 'Compras',
-    description: 'O que precisa repor',
-    icon: ShoppingCart,
-  },
-];
+const normalizeSearchValue = (value: string): string =>
+  value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .toLocaleLowerCase('pt-BR');
 
 export function ProductInventoryDirectRuntime({
   activeRetailerId,
@@ -71,11 +45,10 @@ export function ProductInventoryDirectRuntime({
   setProducts,
   triggerToast,
 }: ProductInventoryDirectRuntimeProps) {
-  const [activeWorkspace, setActiveWorkspace] =
-    useState<CatalogWorkspace>('products');
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [deletingProduct, setDeletingProduct] = useState<Product | null>(null);
   const [busyProductId, setBusyProductId] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
 
   const activeRetailerProducts = useMemo(
     () =>
@@ -148,6 +121,70 @@ export function ProductInventoryDirectRuntime({
     setProducts,
     triggerToast,
   ]);
+
+  useEffect(() => {
+    let frame = 0;
+    let observer: MutationObserver | null = null;
+
+    const applySearch = (): void => {
+      frame = 0;
+      const workspace = document.getElementById('erp-product-inventory-workspace');
+      if (!(workspace instanceof HTMLElement)) return;
+
+      const query = normalizeSearchValue(searchQuery);
+      const grid = document.getElementById('erp-product-inventory-grid');
+      const cards = grid
+        ? Array.from(grid.querySelectorAll<HTMLElement>(':scope > article'))
+        : [];
+
+      let matchedCount = 0;
+      cards.forEach(card => {
+        const label = card.getAttribute('aria-label') ?? '';
+        const name = label.replace(/^Editar\s+/i, '');
+        const matches = !query || normalizeSearchValue(name).includes(query);
+        card.style.display = matches ? '' : 'none';
+        if (matches) matchedCount += 1;
+      });
+
+      const counter = workspace.querySelector<HTMLParagraphElement>('header p');
+      if (counter && cards.length > 0) {
+        const totalMatch = counter.textContent?.match(/de\s+(\d+)/i);
+        const total = totalMatch?.[1] ?? String(cards.length);
+        const nextText = `${query ? matchedCount : cards.length} de ${total} item(ns) exibido(s)`;
+        if (counter.textContent !== nextText) counter.textContent = nextText;
+      }
+
+      const existingEmpty = document.getElementById('erp-product-search-empty');
+      if (query && grid && cards.length > 0 && matchedCount === 0) {
+        const empty = existingEmpty ?? document.createElement('div');
+        empty.id = 'erp-product-search-empty';
+        empty.className =
+          'rounded-3xl border border-dashed border-slate-800 bg-slate-950/45 px-4 py-8 text-center text-xs text-slate-500';
+        empty.textContent = `Nenhum produto encontrado para “${searchQuery.trim()}”.`;
+        if (!existingEmpty) grid.insertAdjacentElement('afterend', empty);
+      } else {
+        existingEmpty?.remove();
+      }
+    };
+
+    const schedule = (): void => {
+      if (frame) return;
+      frame = window.requestAnimationFrame(applySearch);
+    };
+
+    schedule();
+    observer = new MutationObserver(schedule);
+    observer.observe(document.body, { childList: true, subtree: true });
+
+    return () => {
+      observer?.disconnect();
+      if (frame) window.cancelAnimationFrame(frame);
+      document.getElementById('erp-product-search-empty')?.remove();
+      document
+        .querySelectorAll<HTMLElement>('#erp-product-inventory-grid > article')
+        .forEach(card => card.style.removeProperty('display'));
+    };
+  }, [searchQuery]);
 
   const handleSaveProduct = async (product: Product): Promise<void> => {
     const user = auth.currentUser;
@@ -231,61 +268,42 @@ export function ProductInventoryDirectRuntime({
         id="kyrub-products-stock-direct-runtime"
         data-kyrub-products-stock-native="true"
         className="space-y-4"
+        aria-description="Este módulo não envia alterações automaticamente ao Mercado Livre."
       >
-        <nav
-          className="grid grid-cols-3 gap-2"
-          aria-label="Produtos, estoque e compras"
-          aria-description="Este módulo não envia alterações automaticamente ao Mercado Livre."
-          id="kyrub-catalog-workspace-tabs"
+        <label
+          className="flex min-h-12 items-center gap-3 rounded-2xl border border-slate-800 bg-slate-950/70 px-4 transition-colors focus-within:border-orange-500/45 focus-within:bg-slate-950"
+          id="kyrub-product-live-search"
         >
-          {WORKSPACES.map(workspace => {
-            const Icon = workspace.icon;
-            const active = activeWorkspace === workspace.id;
-            return (
-              <button
-                key={workspace.id}
-                type="button"
-                onClick={() => setActiveWorkspace(workspace.id)}
-                aria-pressed={active}
-                className={`min-w-0 rounded-2xl border px-2 py-3 text-left transition-colors sm:px-4 ${
-                  active
-                    ? 'border-orange-500/45 bg-orange-500/10'
-                    : 'border-slate-800 bg-slate-950/60 hover:border-slate-700'
-                }`}
-              >
-                <span className="flex items-center gap-1.5 text-[9px] font-black uppercase text-white">
-                  <Icon className={`h-3.5 w-3.5 shrink-0 ${active ? 'text-orange-300' : 'text-slate-500'}`} />
-                  <span className="truncate">{workspace.label}</span>
-                </span>
-                <span className="mt-1 hidden text-[8px] text-slate-500 sm:block">
-                  {workspace.description}
-                </span>
-              </button>
-            );
-          })}
-        </nav>
-
-        {activeWorkspace === 'products' && (
-          <ProductInventoryWorkspace
-            products={activeRetailerProducts}
-            keywords={activeStore.keywords ?? []}
-            onCreateProduct={() => undefined}
-            onEditProduct={setEditingProduct}
-            onDeleteProduct={setDeletingProduct}
-            busyProductId={busyProductId}
+          <Search className="h-4 w-4 shrink-0 text-slate-500" />
+          <input
+            type="search"
+            value={searchQuery}
+            onChange={event => setSearchQuery(event.target.value)}
+            placeholder="Buscar produto pelo nome…"
+            autoComplete="off"
+            className="min-w-0 flex-1 bg-transparent py-3 text-xs text-white outline-none placeholder:text-slate-600"
+            aria-label="Buscar produto pelo nome"
           />
-        )}
+          {searchQuery && (
+            <button
+              type="button"
+              onClick={() => setSearchQuery('')}
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-500 transition-colors hover:bg-slate-900 hover:text-white"
+              aria-label="Limpar busca de produto"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          )}
+        </label>
 
-        {activeWorkspace === 'stock' && (
-          <div className="space-y-4" id="kyrub-global-stock-workspace">
-            <StoreInventoryCatalogWorkspace storeId={activeRetailerId} />
-            <PhysicalInventoryWorkspace storeId={activeRetailerId} />
-          </div>
-        )}
-
-        {activeWorkspace === 'purchases' && (
-          <StorePurchaseWorkspace storeId={activeRetailerId} />
-        )}
+        <ProductInventoryWorkspace
+          products={activeRetailerProducts}
+          keywords={activeStore.keywords ?? []}
+          onCreateProduct={() => undefined}
+          onEditProduct={setEditingProduct}
+          onDeleteProduct={setDeletingProduct}
+          busyProductId={busyProductId}
+        />
       </div>
 
       <ProductEditorModal
