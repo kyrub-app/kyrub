@@ -31,13 +31,6 @@ type ProductInventoryDirectRuntimeProps = Pick<
   | 'triggerToast'
 >;
 
-const normalizeSearchValue = (value: string): string =>
-  value
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .trim()
-    .toLocaleLowerCase('pt-BR');
-
 export function ProductInventoryDirectRuntime({
   activeRetailerId,
   activeStore,
@@ -121,70 +114,6 @@ export function ProductInventoryDirectRuntime({
     setProducts,
     triggerToast,
   ]);
-
-  useEffect(() => {
-    let frame = 0;
-    let observer: MutationObserver | null = null;
-
-    const applySearch = (): void => {
-      frame = 0;
-      const workspace = document.getElementById('erp-product-inventory-workspace');
-      if (!(workspace instanceof HTMLElement)) return;
-
-      const query = normalizeSearchValue(searchQuery);
-      const grid = document.getElementById('erp-product-inventory-grid');
-      const cards = grid
-        ? Array.from(grid.querySelectorAll<HTMLElement>(':scope > article'))
-        : [];
-
-      let matchedCount = 0;
-      cards.forEach(card => {
-        const label = card.getAttribute('aria-label') ?? '';
-        const name = label.replace(/^Editar\s+/i, '');
-        const matches = !query || normalizeSearchValue(name).includes(query);
-        card.style.display = matches ? '' : 'none';
-        if (matches) matchedCount += 1;
-      });
-
-      const counter = workspace.querySelector<HTMLParagraphElement>('header p');
-      if (counter && cards.length > 0) {
-        const totalMatch = counter.textContent?.match(/de\s+(\d+)/i);
-        const total = totalMatch?.[1] ?? String(cards.length);
-        const nextText = `${query ? matchedCount : cards.length} de ${total} item(ns) exibido(s)`;
-        if (counter.textContent !== nextText) counter.textContent = nextText;
-      }
-
-      const existingEmpty = document.getElementById('erp-product-search-empty');
-      if (query && grid && cards.length > 0 && matchedCount === 0) {
-        const empty = existingEmpty ?? document.createElement('div');
-        empty.id = 'erp-product-search-empty';
-        empty.className =
-          'rounded-3xl border border-dashed border-slate-800 bg-slate-950/45 px-4 py-8 text-center text-xs text-slate-500';
-        empty.textContent = `Nenhum produto encontrado para “${searchQuery.trim()}”.`;
-        if (!existingEmpty) grid.insertAdjacentElement('afterend', empty);
-      } else {
-        existingEmpty?.remove();
-      }
-    };
-
-    const schedule = (): void => {
-      if (frame) return;
-      frame = window.requestAnimationFrame(applySearch);
-    };
-
-    schedule();
-    observer = new MutationObserver(schedule);
-    observer.observe(document.body, { childList: true, subtree: true });
-
-    return () => {
-      observer?.disconnect();
-      if (frame) window.cancelAnimationFrame(frame);
-      document.getElementById('erp-product-search-empty')?.remove();
-      document
-        .querySelectorAll<HTMLElement>('#erp-product-inventory-grid > article')
-        .forEach(card => card.style.removeProperty('display'));
-    };
-  }, [searchQuery]);
 
   const handleSaveProduct = async (product: Product): Promise<void> => {
     const user = auth.currentUser;
@@ -303,6 +232,7 @@ export function ProductInventoryDirectRuntime({
           onEditProduct={setEditingProduct}
           onDeleteProduct={setDeletingProduct}
           busyProductId={busyProductId}
+          searchQuery={searchQuery}
         />
       </div>
 
