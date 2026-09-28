@@ -11,6 +11,7 @@ import type { KyrubCatalogDraftListItem } from '../../../shared/kyrubCatalogDraf
 import { auth } from '../../utils/firebase';
 import { requestProductCreateModal } from '../../utils/productModalEvents';
 import {
+  deleteKyrubCatalogDraft,
   KYRUB_CATALOG_PRODUCT_CHANGED_EVENT,
   listKyrubCatalogDrafts,
   setKyrubCatalogProductPublished,
@@ -124,6 +125,7 @@ export function ProductInventoryWorkspace({
   >([]);
   const [publicationBusyId, setPublicationBusyId] = useState('');
   const [draftSaveBusyId, setDraftSaveBusyId] = useState('');
+  const [draftDeleteBusyId, setDraftDeleteBusyId] = useState('');
   const [editingDraftProduct, setEditingDraftProduct] = useState<Product | null>(null);
   const [publicationError, setPublicationError] = useState('');
 
@@ -232,6 +234,35 @@ export function ProductInventoryWorkspace({
       return;
     }
     setEditingDraftProduct(inventoryItemToProduct(item));
+  };
+
+  const handleDeleteDraft = async (item: InventoryItem): Promise<void> => {
+    const user = auth.currentUser;
+    if (!user) {
+      setPublicationError('Faça login novamente para excluir o item.');
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Excluir “${item.name}”? Este item não publicado será removido do catálogo.`
+    );
+    if (!confirmed) return;
+
+    setDraftDeleteBusyId(item.id);
+    setPublicationError('');
+    try {
+      await deleteKyrubCatalogDraft(user, item.id);
+      await loadUnpublishedProducts();
+    } catch (error) {
+      console.error('Falha ao excluir produto não publicado:', error);
+      setPublicationError(
+        error instanceof Error
+          ? error.message
+          : 'Não foi possível excluir o item não publicado.'
+      );
+    } finally {
+      setDraftDeleteBusyId('');
+    }
   };
 
   const handleSaveDraftProduct = async (product: Product): Promise<void> => {
@@ -357,7 +388,8 @@ export function ProductInventoryWorkspace({
               const isBusy =
                 busyProductId === item.id ||
                 publicationBusyId === item.id ||
-                draftSaveBusyId === item.id;
+                draftSaveBusyId === item.id ||
+                draftDeleteBusyId === item.id;
 
               return (
                 <article
@@ -460,18 +492,22 @@ export function ProductInventoryWorkspace({
                         >
                           <Pencil className="h-3.5 w-3.5" />
                         </button>
-                        {item.product && (
-                          <button
-                            type="button"
-                            onClick={() => onDeleteProduct(item.product as Product)}
-                            disabled={isBusy}
-                            className="flex h-8 w-8 items-center justify-center rounded-lg border border-red-500/20 bg-red-500/10 text-red-300 hover:bg-red-500/20 disabled:opacity-35"
-                            aria-label={`Excluir ${item.name}`}
-                            title="Excluir item"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </button>
-                        )}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (item.product) {
+                              onDeleteProduct(item.product);
+                              return;
+                            }
+                            void handleDeleteDraft(item);
+                          }}
+                          disabled={isBusy}
+                          className="flex h-8 w-8 items-center justify-center rounded-lg border border-red-500/20 bg-red-500/10 text-red-300 hover:bg-red-500/20 disabled:opacity-35"
+                          aria-label={`Excluir ${item.name}`}
+                          title={item.product ? 'Excluir item' : 'Excluir item não publicado'}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
                       </div>
                     </div>
                   </div>
