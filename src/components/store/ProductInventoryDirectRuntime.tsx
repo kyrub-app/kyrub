@@ -234,7 +234,7 @@ export function ProductInventoryDirectRuntime({
       >
         <div className="rounded-2xl border border-cyan-500/20 bg-cyan-500/[0.06] px-4 py-3 text-[10px] leading-relaxed text-cyan-100">
           <strong className="text-white">Produto → Composição → Estoque → Compras.</strong>{' '}
-          Produtos definem o que você vende; Estoque controla os itens físicos da loja; Compras consolida o que precisa ser reposto. Publicações em canais externos continuam exigindo autorização explícita.
+          Produtos definem o que você vende; Estoque controla os itens físicos da loja; Compras consolida o que precisa ser reposto. Publicações em canais externos continuam exigindo autorização explícita; este módulo não envia alterações automaticamente ao Mercado Livre.
         </div>
 
         <nav
