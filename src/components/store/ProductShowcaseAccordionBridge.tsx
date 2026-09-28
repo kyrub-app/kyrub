@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Award,
+  Boxes,
   ChevronDown,
   ImagePlus,
   ReceiptText,
@@ -16,6 +17,7 @@ type ShowcaseAccordionSection =
   | 'points'
   | 'sale'
   | 'personalization'
+  | 'composition'
   | 'fiscal';
 
 interface ProductShowcaseAccordionBridgeProps {
@@ -65,17 +67,24 @@ const SECTION_OPTIONS: Array<{
     icon: SlidersHorizontal,
   },
   {
+    id: 'composition',
+    label: 'Composição',
+    description: 'Ficha técnica, componentes, rendimento e custos',
+    order: 60,
+    icon: Boxes,
+  },
+  {
     id: 'fiscal',
     label: 'Dados fiscais',
     description: 'Classificação opcional para documentos fiscais',
-    order: 60,
+    order: 70,
     icon: ReceiptText,
   },
 ];
 
 const sectionForElement = (
   element: HTMLElement
-): ShowcaseAccordionSection => {
+): Exclude<ShowcaseAccordionSection, 'composition'> => {
   if (element.id === 'product-drive-image-control') return 'media';
   if (
     element.querySelector(
@@ -97,11 +106,18 @@ const sectionForElement = (
   return 'basic';
 };
 
+const openComposition = (): void => {
+  const compositionButton = document.querySelector<HTMLButtonElement>(
+    '[data-kyrub-product-tab="composition"]'
+  );
+  compositionButton?.click();
+};
+
 export function ProductShowcaseAccordionBridge({
   isOpen,
 }: ProductShowcaseAccordionBridgeProps) {
   const [activeSection, setActiveSection] =
-    useState<ShowcaseAccordionSection>('basic');
+    useState<Exclude<ShowcaseAccordionSection, 'composition'>>('basic');
   const [host, setHost] = useState<HTMLElement | null>(null);
 
   const orderBySection = useMemo(
@@ -201,18 +217,31 @@ export function ProductShowcaseAccordionBridge({
     <>
       {SECTION_OPTIONS.map(section => {
         const Icon = section.icon;
-        const active = activeSection === section.id;
+        const isComposition = section.id === 'composition';
+        const active = !isComposition && activeSection === section.id;
         return (
           <button
             key={section.id}
             type="button"
-            onClick={() => setActiveSection(section.id)}
+            onClick={() => {
+              if (isComposition) {
+                openComposition();
+                return;
+              }
+              setActiveSection(section.id);
+            }}
             aria-expanded={active}
-            aria-controls={`product-showcase-accordion-${section.id}`}
+            aria-controls={
+              isComposition
+                ? 'product-inventory-tab'
+                : `product-showcase-accordion-${section.id}`
+            }
             className={`flex w-full items-center gap-3 rounded-2xl border px-4 py-3 text-left transition ${
               active
                 ? 'border-orange-500/50 bg-orange-500/10'
-                : 'border-slate-800 bg-slate-950/65 hover:border-slate-700'
+                : isComposition
+                  ? 'border-cyan-500/25 bg-cyan-500/[0.04] hover:border-cyan-500/45'
+                  : 'border-slate-800 bg-slate-950/65 hover:border-slate-700'
             }`}
             style={{ order: section.order }}
             id={`product-showcase-accordion-${section.id}`}
@@ -221,7 +250,9 @@ export function ProductShowcaseAccordionBridge({
               className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${
                 active
                   ? 'bg-orange-500/15 text-orange-300'
-                  : 'bg-slate-900 text-slate-500'
+                  : isComposition
+                    ? 'bg-cyan-500/10 text-cyan-300'
+                    : 'bg-slate-900 text-slate-500'
               }`}
             >
               <Icon className="h-4 w-4" />
@@ -237,7 +268,7 @@ export function ProductShowcaseAccordionBridge({
             <ChevronDown
               className={`h-4 w-4 shrink-0 text-slate-400 transition-transform ${
                 active ? 'rotate-180 text-orange-300' : ''
-              }`}
+              } ${isComposition ? '-rotate-90 text-cyan-300' : ''}`}
             />
           </button>
         );
