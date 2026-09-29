@@ -141,9 +141,12 @@ const validateTokenClaims = (
   return subject;
 };
 
+export const resolveFirebaseAuthProjectId = (): string =>
+  process.env.KYRUB_FIREBASE_PROJECT_ID?.trim() || DEFAULT_FIREBASE_PROJECT_ID;
+
 export const verifyFirebaseIdToken = async (
   token: string,
-  projectId = process.env.FIREBASE_PROJECT_ID?.trim() || DEFAULT_FIREBASE_PROJECT_ID
+  projectId = resolveFirebaseAuthProjectId()
 ): Promise<AuthenticatedConsultantUser> => {
   const parts = token.split('.');
   if (parts.length !== 3) {
