@@ -1,6 +1,7 @@
 import React, { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { RetailerPanel as LegacyRetailerPanel } from './LegacyRetailerPanel';
 import { RetailerPanel as ModernRetailerPanel } from './RetailerPanel';
+import { OrderRejectionScopeBridge } from './store/OrderRejectionScopeBridge';
 import { PaidOrderRefundBridge } from './store/PaidOrderRefundBridge';
 import {
   consumePendingErpManagementNavigation,
@@ -99,10 +100,16 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = props => {
   return <>
     <ModernRetailerPanel {...props} />
     {props.activeSubTab === 'pedidos' && (
-      <PaidOrderRefundBridge
-        storeId={props.activeRetailerId}
-        notify={props.triggerToast}
-      />
+      <>
+        <OrderRejectionScopeBridge
+          storeId={props.activeRetailerId}
+          notify={props.triggerToast}
+        />
+        <PaidOrderRefundBridge
+          storeId={props.activeRetailerId}
+          notify={props.triggerToast}
+        />
+      </>
     )}
   </>;
 };
