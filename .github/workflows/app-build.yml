@@ -34,6 +34,9 @@ jobs:
       - name: Validate paid plan billing contract
         run: node --test --import tsx tests/paid-plan-billing.test.ts >> build.log 2>&1
 
+      - name: Validate payment refund contract
+        run: node --test --import tsx tests/payment-refund-contract.test.ts >> build.log 2>&1
+
       - name: Bundle application
         run: npm --ignore-scripts run build >> build.log 2>&1
 
