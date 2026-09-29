@@ -42,6 +42,8 @@ type InventoryItem = {
   product?: Product;
 };
 
+type PublicationFilter = 'all' | 'published' | 'unpublished';
+
 const currencyFormatter = new Intl.NumberFormat('pt-BR', {
   style: 'currency',
   currency: 'BRL',
@@ -121,7 +123,8 @@ export function ProductInventoryWorkspace({
 }: ProductInventoryWorkspaceProps) {
   const categoryOptions = useMemo(() => uniqueKeywords(keywords), [keywords]);
   const [selectedKeyword, setSelectedKeyword] = useState('');
-  const [showUnpublishedOnly, setShowUnpublishedOnly] = useState(false);
+  const [publicationFilter, setPublicationFilter] =
+    useState<PublicationFilter>('all');
   const [unpublishedProducts, setUnpublishedProducts] = useState<
     KyrubCatalogDraftListItem[]
   >([]);
@@ -188,6 +191,11 @@ export function ProductInventoryWorkspace({
     ];
   }, [products, unpublishedProducts]);
 
+  const publishedCount = useMemo(
+    () => inventoryItems.filter(item => item.published).length,
+    [inventoryItems]
+  );
+
   const unpublishedCount = useMemo(
     () => inventoryItems.filter(item => !item.published).length,
     [inventoryItems]
@@ -197,7 +205,8 @@ export function ProductInventoryWorkspace({
     const normalizedSearch = normalizeCategoryValue(searchQuery);
 
     return inventoryItems.filter(product => {
-      if (showUnpublishedOnly && product.published) return false;
+      if (publicationFilter === 'published' && !product.published) return false;
+      if (publicationFilter === 'unpublished' && product.published) return false;
       if (
         selectedKeyword &&
         normalizeCategoryValue(categoryRoot(product.category)) !== selectedKeyword
@@ -212,7 +221,13 @@ export function ProductInventoryWorkspace({
       }
       return true;
     });
-  }, [inventoryItems, searchQuery, selectedKeyword, showUnpublishedOnly]);
+  }, [inventoryItems, publicationFilter, searchQuery, selectedKeyword]);
+
+  const togglePublicationFilter = (
+    next: Exclude<PublicationFilter, 'all'>
+  ): void => {
+    setPublicationFilter(current => (current === next ? 'all' : next));
+  };
 
   const handlePublicationChange = async (
     item: InventoryItem,
@@ -325,13 +340,29 @@ export function ProductInventoryWorkspace({
           </button>
         </header>
 
-        <div className="flex justify-end" id="erp-product-status-filters">
+        <div
+          className="flex flex-wrap justify-end gap-2"
+          id="erp-product-status-filters"
+          aria-label="Filtrar produtos por status de publicação"
+        >
           <button
             type="button"
-            onClick={() => setShowUnpublishedOnly(current => !current)}
-            aria-pressed={showUnpublishedOnly}
+            onClick={() => togglePublicationFilter('published')}
+            aria-pressed={publicationFilter === 'published'}
             className={`inline-flex min-h-9 items-center justify-center rounded-xl border px-3 text-[9px] font-black uppercase tracking-wide transition-colors ${
-              showUnpublishedOnly
+              publicationFilter === 'published'
+                ? 'border-emerald-400/45 bg-emerald-400/15 text-emerald-200'
+                : 'border-emerald-400/20 bg-slate-950 text-emerald-300 hover:border-emerald-400/40 hover:bg-emerald-400/10'
+            }`}
+          >
+            Publicados · {publishedCount}
+          </button>
+          <button
+            type="button"
+            onClick={() => togglePublicationFilter('unpublished')}
+            aria-pressed={publicationFilter === 'unpublished'}
+            className={`inline-flex min-h-9 items-center justify-center rounded-xl border px-3 text-[9px] font-black uppercase tracking-wide transition-colors ${
+              publicationFilter === 'unpublished'
                 ? 'border-amber-400/45 bg-amber-400/15 text-amber-200'
                 : 'border-amber-400/20 bg-slate-950 text-amber-300 hover:border-amber-400/40 hover:bg-amber-400/10'
             }`}
@@ -536,9 +567,11 @@ export function ProductInventoryWorkspace({
                 ? 'Nenhum produto ou serviço cadastrado.'
                 : searchQuery.trim()
                   ? `Nenhum produto encontrado para “${searchQuery.trim()}”.`
-                  : showUnpublishedOnly
+                  : publicationFilter === 'unpublished'
                     ? 'Nenhum produto não publicado neste filtro.'
-                    : 'Nenhum item encontrado nesta categoria.'}
+                    : publicationFilter === 'published'
+                      ? 'Nenhum produto publicado neste filtro.'
+                      : 'Nenhum item encontrado nesta categoria.'}
             </p>
           </div>
         )}
