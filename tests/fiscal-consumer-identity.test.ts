@@ -15,6 +15,10 @@ const routerSource = readFileSync(
   'server/attendance/inPersonOrderRouter.ts',
   'utf8'
 );
+const clientSource = readFileSync(
+  'src/utils/fiscalConsumerIdentity.ts',
+  'utf8'
+);
 const checkoutSource = readFileSync(
   'src/components/customer/FiscalConsumerIdentityCheckout.tsx',
   'utf8'
@@ -48,31 +52,53 @@ test('consumer fiscal identity is persisted only on canonical orders in one tran
   assert.doesNotMatch(serviceSource, /console\.(log|warn|error)/);
 });
 
-test('consumer document readback is masked instead of returning the full identifier', () => {
+test('consumer document readback is masked and recipient raw fields remain server-side', () => {
   assert.match(serviceSource, /maskTaxIdentifier/);
   assert.match(serviceSource, /maskedTaxIdentifier/);
+  assert.match(serviceSource, /recipientProfileStatus/);
   const resultBlock = serviceSource.slice(serviceSource.indexOf('export interface FiscalConsumerIdentitySummary'));
   assert.doesNotMatch(resultBlock.slice(0, resultBlock.indexOf('interface StoredFiscalConsumerIdentity')), /taxIdentifier: string/);
+  assert.doesNotMatch(clientSource, /recipientProfile\?: FiscalRecipientProfileInput[\s\S]*loadFiscalConsumerIdentity[\s\S]*recipientProfile:/);
 });
 
-test('checkout API is owner-authenticated and accepts only selected order ids plus tax identifier', () => {
+test('checkout API is owner-authenticated and allowlists selected orders, tax id and recipient profile only', () => {
   assert.match(routerSource, /router\.get\('\/fiscal-consumer-identity'/);
   assert.match(routerSource, /router\.put\('\/fiscal-consumer-identity'/);
   assert.match(routerSource, /authorizeOwnerStore/);
   assert.match(routerSource, /orderIds: request\.body\?\.orderIds/);
   assert.match(routerSource, /taxIdentifier: request\.body\?\.taxIdentifier/);
+  assert.match(routerSource, /recipientProfile: request\.body\?\.recipientProfile/);
   assert.doesNotMatch(routerSource, /request\.body\?\.canonicalStoreId/);
   assert.doesNotMatch(routerSource, /request\.body\?\.identifierKind/);
+  assert.doesNotMatch(routerSource, /\.\.\.request\.body/);
 });
 
-test('staff checkout keeps consumer identity optional and scoped to selected payment orders', () => {
-  assert.match(checkoutSource, /Documento fiscal do consumidor/);
-  assert.match(checkoutSource, /CPF\/CNPJ opcional neste momento/);
+test('NFe recipient profile is explicit, complete and never inferred', () => {
+  assert.match(serviceSource, /name: clean\(raw\.name/);
+  assert.match(serviceSource, /street: clean\(address\.street/);
+  assert.match(serviceSource, /number: clean\(address\.number/);
+  assert.match(serviceSource, /district: clean\(address\.district/);
+  assert.match(serviceSource, /city: clean\(address\.city/);
+  assert.match(serviceSource, /state: clean\(address\.state/);
+  assert.match(serviceSource, /postalCode: digits\(address\.postalCode, 8\)/);
+  assert.match(serviceSource, /country: clean\(address\.country/);
+  assert.match(serviceSource, /FISCAL_CONSUMER_RECIPIENT_PROFILE_INVALID/);
+  assert.doesNotMatch(serviceSource, /country:\s*['"]Brasil['"]/);
+  assert.doesNotMatch(serviceSource, /state:\s*['"][A-Z]{2}['"]/);
+});
+
+test('staff checkout preserves optional CPF/CNPJ and exposes a separate explicit NFe recipient section', () => {
+  assert.match(checkoutSource, /Identificação fiscal do destinatário/);
+  assert.match(checkoutSource, /CPF\/CNPJ continua opcional/);
+  assert.match(checkoutSource, /Dados para NF-e/);
+  assert.match(checkoutSource, /Nome \/ razão social/);
+  assert.match(checkoutSource, /Inscrição estadual \(quando aplicável\)/);
+  assert.match(checkoutSource, /Nenhum dado é inferido/);
   assert.match(checkoutSource, /orderIds=|orderIds:/);
   assert.match(workspaceSource, /paymentDraft\.orderIds/);
   assert.match(workspaceSource, /staff-checkout-fiscal-consumer-identity-host/);
   assert.doesNotMatch(checkoutSource, /required=\{?true\}?/);
-  assert.doesNotMatch(checkoutSource, /Emitir|SEFAZ|provider/i);
+  assert.doesNotMatch(checkoutSource, /Emitir NF-e|Produção fiscal/i);
 });
 
 test('canonical fiscal preflight exposes masked consumer identity as evidence without making it a global blocker', () => {
