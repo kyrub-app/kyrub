@@ -7,6 +7,7 @@ const read = (path: string): string => readFileSync(path, 'utf8');
 const refundService = read('server/payments/paymentRefundService.ts');
 const refundRouter = read('server/payments/storePaymentRefundRouter.ts');
 const transport = read('server/payments/storePromotionServerlessTransport.ts');
+const webhook = read('server/payments/mercadoPagoWebhook.ts');
 const refundBridge = read('src/components/store/PaidOrderRefundBridge.tsx');
 
 test('full Mercado Pago refund stays canonical, idempotent and separate from manual cash', () => {
@@ -29,6 +30,10 @@ test('full Mercado Pago refund stays canonical, idempotent and separate from man
   assert.match(refundRouter, /loadOwnerStoreInstitutionalRepresentation/);
   assert.match(transport, /surface === 'refunds'/);
   assert.match(transport, /createStorePaymentRefundRouter/);
+
+  assert.match(webhook, /event\.eventType === 'refund\.succeeded'/);
+  assert.match(webhook, /writeOperationalOrderRefundState/);
+  assert.match(webhook, /paymentRefunds/);
 
   assert.match(refundBridge, /Reembolso necessário/);
   assert.match(refundBridge, /não como saída manual de caixa/i);
