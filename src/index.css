@@ -80,8 +80,36 @@ body {
   white-space: nowrap;
 }
 
-/* The ERP owns the operational viewport. Hide Kyrub's personal bottom navigation
-   while the ERP overlay is mounted; the ERP back button is the deliberate exit. */
+/* The ERP owns the operational viewport. Once the store workspace is open,
+   Kyrub's personal/social surface must remain behind it and must not continue
+   scrolling underneath the ERP. The ERP header/back action is the deliberate
+   boundary between the two application contexts. */
+html:has([data-kyrub-erp-viewport="true"]),
+body:has([data-kyrub-erp-viewport="true"]),
+body:has([data-kyrub-erp-viewport="true"]) #root {
+  width: 100% !important;
+  height: 100dvh !important;
+  min-height: 100dvh !important;
+  max-height: 100dvh !important;
+  overflow: hidden !important;
+  overscroll-behavior: none !important;
+  background: rgb(2 6 23) !important;
+}
+
+[data-kyrub-erp-viewport="true"] {
+  z-index: 200 !important;
+  isolation: isolate !important;
+  background: rgb(2 6 23) !important;
+  overscroll-behavior: none !important;
+}
+
+/* Modals launched from inside the ERP still need to sit above the ERP shell. */
+body:has([data-kyrub-erp-viewport="true"])
+  [data-kyrub-top-overlay="true"] {
+  z-index: 240 !important;
+}
+
+/* Hide Kyrub's personal bottom navigation while the ERP overlay is mounted. */
 body:has([data-kyrub-erp-viewport="true"])
   nav.fixed.bottom-0.left-0.right-0.z-40 {
   display: none !important;
