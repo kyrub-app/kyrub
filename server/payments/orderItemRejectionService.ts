@@ -27,7 +27,7 @@ const nonNegativeInteger = (value: unknown): number | null =>
     ? value
     : null;
 
-const positiveMoney = (value: unknown): number | null =>
+const nonNegativeMoney = (value: unknown): number | null =>
   typeof value === 'number' && Number.isFinite(value) && value >= 0
     ? money(value)
     : null;
@@ -50,6 +50,48 @@ const parseSelection = (value: unknown): OrderItemRejectionLineInput[] => {
   const parsed = [...byLine.entries()].map(([lineId, quantity]) => ({ lineId, quantity }));
   if (parsed.length === 0) throw new Error('ORDER_ITEM_REJECTION_LINES_REQUIRED');
   return parsed;
+};
+
+type ParsedOrderLine = {
+  raw: Record<string, unknown>;
+  lineId: string;
+  productId: string;
+  name: string;
+  price: number;
+  quantity: number;
+  discountAmount: number;
+};
+
+const parsePendingOrderLine = (candidate: unknown): ParsedOrderLine => {
+  if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) {
+    throw new Error('ORDER_ITEM_REJECTION_ORDER_INVALID');
+  }
+  const raw = candidate as Record<string, unknown>;
+  const lineId = clean(raw.lineId);
+  const productId = clean(raw.productId);
+  const name = clean(raw.name) || 'Item';
+  const quantity = nonNegativeInteger(raw.quantity);
+  const paidQuantity = nonNegativeInteger(raw.paidQuantity) ?? 0;
+  const transferredQuantity = nonNegativeInteger(raw.transferredQuantity) ?? 0;
+  const voidedQuantity = nonNegativeInteger(raw.voidedQuantity) ?? 0;
+  const settledAmount = nonNegativeMoney(raw.settledAmount) ?? 0;
+  const price = nonNegativeMoney(raw.price);
+  const discountAmount = nonNegativeMoney(raw.discountAmount) ?? 0;
+  if (
+    !lineId ||
+    !productId ||
+    quantity === null ||
+    quantity <= 0 ||
+    price === null ||
+    paidQuantity !== 0 ||
+    transferredQuantity !== 0 ||
+    voidedQuantity !== 0 ||
+    settledAmount > 0 ||
+    discountAmount > money(price * quantity) + 0.009
+  ) {
+    throw new Error('ORDER_ITEM_REJECTION_ORDER_INVALID');
+  }
+  return { raw, lineId, productId, name, price, quantity, discountAmount };
 };
 
 export const rejectPendingOrderItems = async (input: {
@@ -101,80 +143,136 @@ export const rejectPendingOrderItems = async (input: {
       throw new Error('ORDER_ITEM_REJECTION_ORDER_INVALID');
     }
 
+    const parsedItems = order.items.map(parsePendingOrderLine);
     const requestedByLine = new Map(requestedLines.map(line => [line.lineId, line.quantity]));
     const found = new Set<string>();
     let cancelledGross = 0;
     let cancelledDiscount = 0;
-    let remainingOperationalQuantity = 0;
     const rejectedDescriptions: string[] = [];
 
-    const nextItems = order.items.map(candidate => {
-      if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) {
-        throw new Error('ORDER_ITEM_REJECTION_ORDER_INVALID');
+    const nextItems = parsedItems.flatMap(item => {
+      const requested = requestedByLine.get(item.lineId) ?? 0;
+      if (requested <= 0) return [item.raw];
+      found.add(item.lineId);
+      if (requested > item.quantity) {
+        throw new Error('ORDER_ITEM_REJECTION_QUANTITY_INVALID');
       }
-      const item = candidate as Record<string, unknown>;
-      const lineId = clean(item.lineId);
-      const name = clean(item.name) || 'Item';
-      const quantity = nonNegativeInteger(item.quantity);
-      const transferredQuantity = nonNegativeInteger(item.transferredQuantity) ?? 0;
-      const voidedQuantity = nonNegativeInteger(item.voidedQuantity) ?? 0;
-      const price = positiveMoney(item.price);
-      const discountAmount = positiveMoney(item.discountAmount) ?? 0;
-      if (!lineId || quantity === null || quantity <= 0 || price === null) {
-        throw new Error('ORDER_ITEM_REJECTION_ORDER_INVALID');
-      }
-      const available = Math.max(0, quantity - transferredQuantity - voidedQuantity);
-      const requested = requestedByLine.get(lineId) ?? 0;
-      if (requested > 0) {
-        found.add(lineId);
-        if (requested > available) {
-          throw new Error('ORDER_ITEM_REJECTION_QUANTITY_INVALID');
-        }
-        const discountShare = available > 0
-          ? money(discountAmount * requested / available)
-          : 0;
-        cancelledGross = money(cancelledGross + price * requested);
-        cancelledDiscount = money(cancelledDiscount + discountShare);
-        rejectedDescriptions.push(`${requested}× ${name}`);
-        remainingOperationalQuantity += available - requested;
-        return {
-          ...item,
-          voidedQuantity: voidedQuantity + requested,
-          discountAmount: money(Math.max(0, discountAmount - discountShare)),
-        };
-      }
-      remainingOperationalQuantity += available;
-      return item;
+      const discountShare = money(item.discountAmount * requested / item.quantity);
+      cancelledGross = money(cancelledGross + item.price * requested);
+      cancelledDiscount = money(cancelledDiscount + discountShare);
+      rejectedDescriptions.push(`${requested}× ${item.name}`);
+      const remainingQuantity = item.quantity - requested;
+      if (remainingQuantity === 0) return [];
+      return [{
+        ...item.raw,
+        quantity: remainingQuantity,
+        discountAmount: money(Math.max(0, item.discountAmount - discountShare)),
+      }];
     });
 
     if (found.size !== requestedByLine.size) {
       throw new Error('ORDER_ITEM_REJECTION_LINE_NOT_FOUND');
     }
-    if (remainingOperationalQuantity <= 0) {
+    if (nextItems.length === 0) {
       throw new Error('ORDER_ITEM_REJECTION_WHOLE_ORDER_REQUIRED');
     }
 
-    const currentSubtotal = positiveMoney(order.subtotal);
-    const currentTotal = positiveMoney(order.total);
+    const currentSubtotal = nonNegativeMoney(order.subtotal);
+    const currentTotal = nonNegativeMoney(order.total);
     if (currentSubtotal === null || currentTotal === null) {
       throw new Error('ORDER_ITEM_REJECTION_ORDER_INVALID');
     }
     const cancelledAmount = money(Math.max(0, cancelledGross - cancelledDiscount));
     const nextSubtotal = money(Math.max(0, currentSubtotal - cancelledGross));
     const nextTotal = money(Math.max(0, currentTotal - cancelledAmount));
+    if (nextTotal <= 0) throw new Error('ORDER_ITEM_REJECTION_WHOLE_ORDER_REQUIRED');
+
+    const paymentIntentId = clean(order.paymentIntentId);
+    const paymentId = clean(order.paymentId);
+    if (Boolean(paymentIntentId) !== Boolean(paymentId)) {
+      throw new Error('ORDER_ITEM_REJECTION_PAYMENT_STATE_INVALID');
+    }
+
+    let intentRef: ReturnType<typeof adminDb.doc> | null = null;
+    let paymentRef: ReturnType<typeof adminDb.doc> | null = null;
+    let nextOrderDraft: Record<string, unknown> | null = null;
+    if (paymentIntentId && paymentId) {
+      intentRef = adminDb.doc(`stores/${storeId}/paymentIntents/${paymentIntentId}`);
+      paymentRef = adminDb.doc(`stores/${storeId}/payments/${paymentId}`);
+      const [intentSnapshot, paymentSnapshot] = await Promise.all([
+        transaction.get(intentRef),
+        transaction.get(paymentRef),
+      ]);
+      if (!intentSnapshot.exists || !paymentSnapshot.exists) {
+        throw new Error('ORDER_ITEM_REJECTION_PAYMENT_STATE_INVALID');
+      }
+      const intent = intentSnapshot.data() as Record<string, unknown>;
+      const payment = paymentSnapshot.data() as Record<string, unknown>;
+      const orderDraft = intent.orderDraft && typeof intent.orderDraft === 'object' && !Array.isArray(intent.orderDraft)
+        ? intent.orderDraft as Record<string, unknown>
+        : null;
+      const draftItems = Array.isArray(orderDraft?.items) ? orderDraft.items : [];
+      if (
+        clean(intent.id) !== paymentIntentId ||
+        clean(intent.storeId) !== storeId ||
+        clean(intent.status) !== 'pending' ||
+        clean(intent.providerIntentId) ||
+        clean(payment.id) !== paymentId ||
+        clean(payment.storeId) !== storeId ||
+        clean(payment.orderId) !== orderId ||
+        clean(payment.status) !== 'pending' ||
+        clean(payment.providerPaymentId) ||
+        !orderDraft ||
+        clean(orderDraft.draftId) !== orderId ||
+        draftItems.length !== parsedItems.length
+      ) {
+        throw new Error('ORDER_ITEM_REJECTION_PAYMENT_ALREADY_AUTHORIZED');
+      }
+
+      const nextDraftItems = draftItems.flatMap((candidate, index) => {
+        if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) {
+          throw new Error('ORDER_ITEM_REJECTION_PAYMENT_STATE_INVALID');
+        }
+        const draftItem = candidate as Record<string, unknown>;
+        const orderItem = parsedItems[index];
+        const draftQuantity = nonNegativeInteger(draftItem.quantity);
+        const unitPrice = nonNegativeMoney(draftItem.unitPrice);
+        if (
+          clean(draftItem.productId) !== orderItem.productId ||
+          draftQuantity !== orderItem.quantity ||
+          unitPrice === null ||
+          unitPrice !== orderItem.price
+        ) {
+          throw new Error('ORDER_ITEM_REJECTION_PAYMENT_STATE_INVALID');
+        }
+        const requested = requestedByLine.get(orderItem.lineId) ?? 0;
+        const remainingQuantity = orderItem.quantity - requested;
+        if (remainingQuantity <= 0) return [];
+        return [{
+          ...draftItem,
+          quantity: remainingQuantity,
+          total: money(unitPrice * remainingQuantity),
+        }];
+      });
+      const currentDiscountTotal = nonNegativeMoney(orderDraft.discountTotal) ?? 0;
+      nextOrderDraft = {
+        ...orderDraft,
+        items: nextDraftItems,
+        subtotal: nextSubtotal,
+        discountTotal: money(Math.max(0, currentDiscountTotal - cancelledDiscount)),
+        total: nextTotal,
+      };
+    }
+
     const now = new Date().toISOString();
-    const note = [
-      `Itens recusados: ${rejectedDescriptions.join(', ')}`,
-      `Motivo: ${reason}`,
-      alternative ? `Alternativa: ${alternative}` : '',
-    ].filter(Boolean).join(' · ');
-    const currentCustomerNote = clean(order.customerNote);
-    const nextCustomerNote = [currentCustomerNote, note].filter(Boolean).join('\n');
     const event = {
       id: `item-rejection:${now}:${requestedLines.map(line => `${line.lineId}:${line.quantity}`).join('|')}`,
       reason,
       alternative,
       lines: requestedLines,
+      items: rejectedDescriptions,
+      cancelledGross,
+      cancelledDiscount,
       cancelledAmount,
       rejectedAt: now,
       actorUid: storeId,
@@ -183,7 +281,6 @@ export const rejectPendingOrderItems = async (input: {
       items: nextItems,
       subtotal: nextSubtotal,
       total: nextTotal,
-      customerNote: nextCustomerNote,
       updatedAt: now,
       lastItemRejectionAt: now,
       itemRejections: FieldValue.arrayUnion(event),
@@ -197,6 +294,17 @@ export const rejectPendingOrderItems = async (input: {
         patch,
         { merge: true }
       );
+    }
+    if (intentRef && paymentRef && nextOrderDraft) {
+      transaction.update(intentRef, {
+        amount: nextTotal,
+        orderDraft: nextOrderDraft,
+        updatedAt: now,
+      });
+      transaction.update(paymentRef, {
+        amount: nextTotal,
+        updatedAt: now,
+      });
     }
 
     return {
