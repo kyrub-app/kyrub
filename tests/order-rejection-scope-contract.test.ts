@@ -8,6 +8,7 @@ const read = (path: string): string =>
 const bridge = read('src/components/store/PaidOrderRefundBridge.tsx');
 const router = read('server/payments/storePaymentRefundRouter.ts');
 const service = read('server/payments/orderItemCancellationService.ts');
+const refundSafety = read('server/payments/partialRefundSafetyService.ts');
 
 test('KDS rejection asks for whole order or selected items before confirmation', () => {
   assert.match(bridge, /O que será cancelado\?/);
@@ -39,4 +40,12 @@ test('partial cancellation uses the authenticated refunds transport without weak
   assert.match(router, /cancelOrderItemsWithRefund/);
   assert.match(bridge, /operation:\s*'cancel-items'/);
   assert.match(bridge, /authorization:\s*`Bearer \$\{token\}`/);
+});
+
+test('a later full refund is blocked when confirmed partial refunds already exist', () => {
+  assert.match(refundSafety, /paymentPartialRefunds/);
+  assert.match(refundSafety, /clean\(data\.status\) !== 'refunded'/);
+  assert.match(refundSafety, /PAYMENT_REFUND_PARTIAL_HISTORY_REQUIRES_RESIDUAL/);
+  assert.match(router, /assertFullRefundHasNoConfirmedPartialHistory/);
+  assert.match(router, /reembolso residual/);
 });
