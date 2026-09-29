@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { verifyFirebaseIdToken } from '../ai/consultantAuth.js';
 import { loadOwnerStoreInstitutionalRepresentation } from '../store/storeInstitutionalIdentityService.js';
+import { rejectPendingOrderItems } from './orderItemRejectionService.js';
 import { requestCanonicalOrderRefund } from './paymentRefundService.js';
 
 const clean = (value: unknown): string =>
@@ -19,7 +20,37 @@ const mapRefundError = (error: unknown): {
     return { status: 401, error: 'Faça login novamente.', code: 'AUTH_REQUIRED' };
   }
   if (code === 'STORE_REPRESENTATION_FORBIDDEN') {
-    return { status: 403, error: 'Você não pode reembolsar pagamentos desta loja.', code };
+    return { status: 403, error: 'Você não pode alterar pedidos desta loja.', code };
+  }
+  if (code === 'ORDER_ITEM_REJECTION_ORDER_NOT_FOUND') {
+    return { status: 404, error: 'Pedido não encontrado para recusa dos itens.', code };
+  }
+  if (code === 'ORDER_ITEM_REJECTION_PARTIAL_REFUND_REQUIRED') {
+    return {
+      status: 409,
+      error: 'Este pedido já possui pagamento. Para recusar somente parte dele, o Kyrub precisa executar um reembolso parcial correspondente; por segurança, essa operação não será convertida em reembolso integral.',
+      code,
+    };
+  }
+  if (code === 'ORDER_ITEM_REJECTION_INTEGRATED_UNSUPPORTED') {
+    return {
+      status: 409,
+      error: 'A recusa parcial de itens deste canal integrado ainda precisa ser confirmada também no parceiro. Nenhuma alteração foi aplicada.',
+      code,
+    };
+  }
+  if (code === 'ORDER_ITEM_REJECTION_WHOLE_ORDER_REQUIRED') {
+    return {
+      status: 409,
+      error: 'A seleção remove todos os itens restantes. Escolha “Pedido inteiro” para registrar a recusa completa.',
+      code,
+    };
+  }
+  if (code === 'ORDER_ITEM_REJECTION_PENDING_REQUIRED') {
+    return { status: 409, error: 'A recusa parcial só pode ser feita enquanto o pedido ainda aguarda decisão.', code };
+  }
+  if (code.startsWith('ORDER_ITEM_REJECTION_')) {
+    return { status: 400, error: 'Revise os itens e as quantidades escolhidas para a recusa.', code };
   }
   if (code === 'PAYMENT_REFUND_ORDER_NOT_FOUND' || code === 'PAYMENT_REFUND_PAYMENT_NOT_FOUND') {
     return { status: 404, error: 'Não encontramos o pagamento canônico deste pedido.', code };
@@ -52,7 +83,7 @@ const mapRefundError = (error: unknown): {
     return { status: 409, error: 'Não foi possível concluir o reembolso agora. O pagamento original foi preservado para nova verificação.', code };
   }
   console.error('[Store payment refund]', error);
-  return { status: 503, error: 'Não foi possível processar o reembolso agora.', code: 'PAYMENT_REFUND_UNAVAILABLE' };
+  return { status: 503, error: 'Não foi possível processar a operação agora.', code: 'PAYMENT_REFUND_UNAVAILABLE' };
 };
 
 const requireOwner = async (authorization: string, storeId: string): Promise<void> => {
@@ -67,6 +98,31 @@ const requireOwner = async (authorization: string, storeId: string): Promise<voi
 
 export const createStorePaymentRefundRouter = (): Router => {
   const router = Router();
+
+  router.post('/item-rejections', async (request, response) => {
+    try {
+      const body = request.body && typeof request.body === 'object' && !Array.isArray(request.body)
+        ? request.body as Record<string, unknown>
+        : {};
+      const storeId = clean(body.storeId);
+      const orderId = clean(body.orderId);
+      const reason = clean(body.reason);
+      const alternative = clean(body.alternative);
+      if (!storeId || !orderId) throw new Error('ORDER_ITEM_REJECTION_TARGET_REQUIRED');
+      await requireOwner(request.get('authorization') ?? '', storeId);
+      const result = await rejectPendingOrderItems({
+        storeId,
+        orderId,
+        reason,
+        alternative,
+        lines: Array.isArray(body.lines) ? body.lines as Array<{ lineId: string; quantity: number }> : [],
+      });
+      response.status(200).json(result);
+    } catch (error) {
+      const mapped = mapRefundError(error);
+      response.status(mapped.status).json({ error: mapped.error, code: mapped.code });
+    }
+  });
 
   router.post('/', async (request, response) => {
     try {
