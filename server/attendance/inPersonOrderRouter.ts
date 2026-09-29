@@ -48,6 +48,13 @@ const mapError = (error: unknown): { status: number; message: string; code?: str
   if (code === 'FISCAL_CONSUMER_TAX_IDENTIFIER_INVALID') {
     return { status: 400, message: 'Informe um CPF ou CNPJ válido.', code };
   }
+  if (code === 'FISCAL_CONSUMER_RECIPIENT_PROFILE_INVALID') {
+    return {
+      status: 400,
+      message: 'Revise nome e endereço do destinatário antes de preparar uma NF-e.',
+      code,
+    };
+  }
   if (
     code === 'FISCAL_CONSUMER_ORDER_IDS_REQUIRED' ||
     code === 'FISCAL_CONSUMER_ORDER_IDS_INVALID'
@@ -174,6 +181,7 @@ export const createInPersonOrderRouter = (): Router => {
           requestedByUserId: representation.authenticatedUserId,
           orderIds: request.body?.orderIds,
           taxIdentifier: request.body?.taxIdentifier,
+          recipientProfile: request.body?.recipientProfile,
         }),
       });
     } catch (error) {
