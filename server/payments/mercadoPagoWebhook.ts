@@ -76,6 +76,20 @@ const projectRefundConfirmation = async (input: {
   return orderId;
 };
 
+const syncWebhookOrderIntoCrm = async (
+  storeId: string,
+  orderId: string
+): Promise<void> => {
+  try {
+    await syncPersistedCustomerOrderIntoCrm({ storeId, orderId });
+  } catch (error) {
+    console.warn(
+      '[Mercado Pago Webhook] Pagamento e pedido confirmados; CRM ficará para a reconciliação.',
+      error instanceof Error ? error.message : String(error)
+    );
+  }
+};
+
 export const processMercadoPagoWebhook = async (input: {
   headers: Record<string, string | string[] | undefined>;
   dataId: string;
@@ -156,18 +170,10 @@ export const processMercadoPagoWebhook = async (input: {
 
   await attachPreparedCustomerDestinationResolutionToOperationalOrder(preparedDestination);
 
-  if (effectiveOrderId) {
-    try {
-      await syncPersistedCustomerOrderIntoCrm({
-        storeId: event.kyrubStoreId,
-        orderId: effectiveOrderId,
-      });
-    } catch (error) {
-      console.warn(
-        '[Mercado Pago Webhook] Pagamento e pedido confirmados; CRM ficará para a reconciliação.',
-        error instanceof Error ? error.message : String(error)
-      );
-    }
+  if (result.orderId) {
+    await syncWebhookOrderIntoCrm(event.kyrubStoreId, result.orderId);
+  } else if (effectiveOrderId) {
+    await syncWebhookOrderIntoCrm(event.kyrubStoreId, effectiveOrderId);
   }
 
   return {
