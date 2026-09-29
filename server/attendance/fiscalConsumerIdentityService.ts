@@ -1,4 +1,5 @@
 import { FieldValue } from 'firebase-admin/firestore';
+import { createHash } from 'node:crypto';
 import { adminDb } from '../firebaseAdmin.js';
 import {
   getBrazilFiscalTaxIdentifierKind,
@@ -18,6 +19,9 @@ const record = (value: unknown): Record<string, unknown> =>
     ? value as Record<string, unknown>
     : {};
 
+const digits = (value: unknown, maxLength: number): string =>
+  clean(value, maxLength * 2).replace(/\D/g, '').slice(0, maxLength);
+
 const normalizeOrderIds = (value: unknown): string[] => {
   if (!Array.isArray(value)) throw new Error('FISCAL_CONSUMER_ORDER_IDS_REQUIRED');
   const result = Array.from(new Set(value.map(item => clean(item)).filter(Boolean)));
@@ -35,10 +39,30 @@ const maskTaxIdentifier = (normalized: string): string => {
   return `${'•'.repeat(Math.max(0, normalized.length - suffix.length))}${suffix}`;
 };
 
+export interface FiscalRecipientAddress {
+  street: string;
+  number: string;
+  complement: string;
+  district: string;
+  city: string;
+  state: string;
+  postalCode: string;
+  country: string;
+}
+
+export interface FiscalRecipientProfile {
+  name: string;
+  stateRegistration: string;
+  email: string;
+  phone: string;
+  address: FiscalRecipientAddress;
+}
+
 export interface FiscalConsumerIdentitySummary {
   status: 'identified';
   identifierKind: 'cpf' | 'cnpj';
   maskedTaxIdentifier: string;
+  recipientProfileStatus: 'not_captured' | 'complete_for_nfe';
   capturedAt: string;
 }
 
@@ -52,7 +76,52 @@ interface StoredFiscalConsumerIdentity {
   taxIdentifier: string;
   identifierKind: 'cpf' | 'cnpj';
   capturedAt: string;
+  recipientProfile: FiscalRecipientProfile | null;
+  recipientProfileFingerprint: string | null;
 }
+
+const normalizeRecipientProfile = (value: unknown): FiscalRecipientProfile | null => {
+  if (value === undefined || value === null) return null;
+  const raw = record(value);
+  if (Object.keys(raw).length === 0) return null;
+  const address = record(raw.address);
+  const profile: FiscalRecipientProfile = {
+    name: clean(raw.name, 120),
+    stateRegistration: clean(raw.stateRegistration, 30),
+    email: clean(raw.email, 160).toLowerCase(),
+    phone: digits(raw.phone, 12),
+    address: {
+      street: clean(address.street, 120),
+      number: clean(address.number, 20),
+      complement: clean(address.complement, 60),
+      district: clean(address.district, 80),
+      city: clean(address.city, 80),
+      state: clean(address.state, 2).toUpperCase(),
+      postalCode: digits(address.postalCode, 8),
+      country: clean(address.country, 60),
+    },
+  };
+  if (
+    !profile.name ||
+    !profile.address.street ||
+    !profile.address.number ||
+    !profile.address.district ||
+    !profile.address.city ||
+    !/^[A-Z]{2}$/.test(profile.address.state) ||
+    !/^\d{8}$/.test(profile.address.postalCode) ||
+    !profile.address.country ||
+    (profile.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(profile.email)) ||
+    (profile.phone && !/^\d{7,12}$/.test(profile.phone))
+  ) {
+    throw new Error('FISCAL_CONSUMER_RECIPIENT_PROFILE_INVALID');
+  }
+  return profile;
+};
+
+const recipientProfileFingerprint = (profile: FiscalRecipientProfile | null): string | null =>
+  profile
+    ? createHash('sha256').update(JSON.stringify(profile)).digest('hex')
+    : null;
 
 const parseStoredIdentity = (value: unknown): StoredFiscalConsumerIdentity | null => {
   if (value === undefined || value === null) return null;
@@ -62,7 +131,7 @@ const parseStoredIdentity = (value: unknown): StoredFiscalConsumerIdentity | nul
   const identifierKind = getBrazilFiscalTaxIdentifierKind(taxIdentifier);
   const capturedAt = clean(raw.capturedAt, 64);
   if (
-    raw.schemaVersion !== 1 ||
+    (raw.schemaVersion !== 1 && raw.schemaVersion !== 2) ||
     raw.status !== 'identified' ||
     raw.source !== 'staff_checkout' ||
     (identifierKind !== 'cpf' && identifierKind !== 'cnpj') ||
@@ -73,7 +142,16 @@ const parseStoredIdentity = (value: unknown): StoredFiscalConsumerIdentity | nul
   ) {
     throw new Error('FISCAL_CONSUMER_IDENTITY_STORED_INVALID');
   }
-  return { taxIdentifier, identifierKind, capturedAt };
+  const recipientProfile = raw.schemaVersion === 2
+    ? normalizeRecipientProfile(raw.recipientProfile)
+    : null;
+  return {
+    taxIdentifier,
+    identifierKind,
+    capturedAt,
+    recipientProfile,
+    recipientProfileFingerprint: recipientProfileFingerprint(recipientProfile),
+  };
 };
 
 const assertOwnerScope = async (input: {
@@ -118,7 +196,10 @@ const readSelection = async (input: {
   }
   const first = identified[0];
   const uniform = identified.length === identities.length &&
-    identified.every(identity => identity.taxIdentifier === first.taxIdentifier);
+    identified.every(identity =>
+      identity.taxIdentifier === first.taxIdentifier &&
+      identity.recipientProfileFingerprint === first.recipientProfileFingerprint
+    );
   if (!uniform) {
     return { status: 'mixed', orderIds: input.orderIds, identity: null };
   }
@@ -129,6 +210,7 @@ const readSelection = async (input: {
       status: 'identified',
       identifierKind: first.identifierKind,
       maskedTaxIdentifier: maskTaxIdentifier(first.taxIdentifier),
+      recipientProfileStatus: first.recipientProfile ? 'complete_for_nfe' : 'not_captured',
       capturedAt: first.capturedAt,
     },
   };
@@ -149,6 +231,7 @@ export const saveFiscalConsumerIdentitySelection = async (input: {
   requestedByUserId: string;
   orderIds: unknown;
   taxIdentifier: unknown;
+  recipientProfile?: unknown;
   now?: Date;
 }): Promise<FiscalConsumerIdentitySelectionResult> => {
   const orderIds = normalizeOrderIds(input.orderIds);
@@ -160,6 +243,13 @@ export const saveFiscalConsumerIdentitySelection = async (input: {
     !isValidBrazilFiscalTaxIdentifier(taxIdentifier)
   ) {
     throw new Error('FISCAL_CONSUMER_TAX_IDENTIFIER_INVALID');
+  }
+  const profileProvided = input.recipientProfile !== undefined && input.recipientProfile !== null;
+  const recipientProfile = profileProvided
+    ? normalizeRecipientProfile(input.recipientProfile)
+    : null;
+  if (profileProvided && !recipientProfile) {
+    throw new Error('FISCAL_CONSUMER_RECIPIENT_PROFILE_INVALID');
   }
   const capturedAt = (input.now ?? new Date()).toISOString();
   if (!Number.isFinite(Date.parse(capturedAt))) {
@@ -187,10 +277,11 @@ export const saveFiscalConsumerIdentitySelection = async (input: {
     refs.forEach(ref => {
       transaction.set(ref, {
         fiscalConsumerIdentity: {
-          schemaVersion: 1,
+          schemaVersion: recipientProfile ? 2 : 1,
           status: 'identified',
           taxIdentifier,
           identifierKind,
+          ...(recipientProfile ? { recipientProfile } : {}),
           source: 'staff_checkout',
           capturedByUserId: input.requestedByUserId,
           capturedAt,
@@ -207,6 +298,7 @@ export const saveFiscalConsumerIdentitySelection = async (input: {
       status: 'identified',
       identifierKind,
       maskedTaxIdentifier: maskTaxIdentifier(taxIdentifier),
+      recipientProfileStatus: recipientProfile ? 'complete_for_nfe' : 'not_captured',
       capturedAt,
     },
   };
