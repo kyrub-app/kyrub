@@ -1,9 +1,27 @@
 import { auth } from './firebase';
 
+export interface FiscalRecipientProfileInput {
+  name: string;
+  stateRegistration: string;
+  email: string;
+  phone: string;
+  address: {
+    street: string;
+    number: string;
+    complement: string;
+    district: string;
+    city: string;
+    state: string;
+    postalCode: string;
+    country: string;
+  };
+}
+
 export interface FiscalConsumerIdentitySummary {
   status: 'identified';
   identifierKind: 'cpf' | 'cnpj';
   maskedTaxIdentifier: string;
+  recipientProfileStatus: 'not_captured' | 'complete_for_nfe';
   capturedAt: string;
 }
 
@@ -63,11 +81,17 @@ const parseResult = (value: unknown): FiscalConsumerIdentitySelectionResult => {
   let identity: FiscalConsumerIdentitySummary | null = null;
   if (raw.identity && typeof raw.identity === 'object' && !Array.isArray(raw.identity)) {
     const candidate = raw.identity as Record<string, unknown>;
+    const recipientProfileStatus = candidate.recipientProfileStatus === 'complete_for_nfe'
+      ? 'complete_for_nfe'
+      : candidate.recipientProfileStatus === 'not_captured' || candidate.recipientProfileStatus === undefined
+        ? 'not_captured'
+        : null;
     if (
       candidate.status !== 'identified' ||
       (candidate.identifierKind !== 'cpf' && candidate.identifierKind !== 'cnpj') ||
       typeof candidate.maskedTaxIdentifier !== 'string' ||
       !candidate.maskedTaxIdentifier.trim() ||
+      recipientProfileStatus === null ||
       typeof candidate.capturedAt !== 'string' ||
       !Number.isFinite(Date.parse(candidate.capturedAt))
     ) {
@@ -77,6 +101,7 @@ const parseResult = (value: unknown): FiscalConsumerIdentitySelectionResult => {
       status: 'identified',
       identifierKind: candidate.identifierKind,
       maskedTaxIdentifier: candidate.maskedTaxIdentifier.trim(),
+      recipientProfileStatus,
       capturedAt: candidate.capturedAt,
     };
   }
@@ -104,6 +129,7 @@ export const saveFiscalConsumerIdentity = async (input: {
   storeId: string;
   orderIds: string[];
   taxIdentifier: string;
+  recipientProfile?: FiscalRecipientProfileInput;
 }): Promise<FiscalConsumerIdentitySelectionResult> => {
   const payload = await request('/api/local-attendance/orders/fiscal-consumer-identity', {
     method: 'PUT',
@@ -111,6 +137,7 @@ export const saveFiscalConsumerIdentity = async (input: {
       storeId: input.storeId.trim(),
       orderIds: Array.from(new Set(input.orderIds.map(item => item.trim()).filter(Boolean))),
       taxIdentifier: input.taxIdentifier,
+      ...(input.recipientProfile ? { recipientProfile: input.recipientProfile } : {}),
     }),
   });
   return parseResult(payload.fiscalConsumerIdentity);
