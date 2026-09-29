@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { verifyFirebaseIdToken } from '../ai/consultantAuth.js';
 import { loadOwnerStoreInstitutionalRepresentation } from '../store/storeInstitutionalIdentityService.js';
-import { cancelOrderItemsWithRefund } from './orderItemCancellationService.js';
+import { cancelOrderItemsWithAuthoritativeRefund } from './authoritativeOrderItemCancellationService.js';
 import { assertFullRefundHasNoConfirmedPartialHistory } from './partialRefundSafetyService.js';
 import { requestCanonicalOrderRefund } from './paymentRefundService.js';
 
@@ -51,6 +51,13 @@ const mapRefundError = (error: unknown): {
   }
   if (code === 'ORDER_ITEM_CANCELLATION_USE_FULL_REJECTION') {
     return { status: 409, error: 'Você selecionou todos os itens. Use “Pedido inteiro” para concluir a recusa.', code };
+  }
+  if (code.startsWith('ORDER_COMMERCIAL_REFUND_')) {
+    return {
+      status: 409,
+      error: 'A composição financeira original deste pedido não confere com o estado atual. O reembolso automático foi bloqueado para evitar um valor incorreto.',
+      code,
+    };
   }
   if (code.startsWith('ORDER_ITEM_CANCELLATION_')) {
     return { status: 409, error: 'O pedido mudou enquanto você fazia a seleção. Revise os itens antes de confirmar.', code };
@@ -121,7 +128,7 @@ export const createStorePaymentRefundRouter = (): Router => {
       await requireOwner(request.get('authorization') ?? '', storeId);
 
       if (clean(body.operation) === 'cancel-items') {
-        const result = await cancelOrderItemsWithRefund({
+        const result = await cancelOrderItemsWithAuthoritativeRefund({
           storeId,
           orderId,
           operationId: clean(body.operationId),
