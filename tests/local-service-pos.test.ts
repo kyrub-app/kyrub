@@ -171,7 +171,7 @@ test('local attendance workspace omits redundant filters and empty-state filler'
 
 test('secure pickup remains the only completion path for ready pickup in the local PDV', () => {
   const pickup = readFileSync('src/components/store/PickupPdvNavigationBridge.tsx', 'utf8');
-  const execution = readFileSync('server/inventory/orderStatusExecutionService.ts', 'utf8');
+  const execution = readFileSync('server/inventory/orderStatusExecutionServiceBase.ts', 'utf8');
   const eligibility = readFileSync(
     'server/payments/economicObligationEligibilityService.ts',
     'utf8'

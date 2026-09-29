@@ -80,6 +80,13 @@ body {
   white-space: nowrap;
 }
 
+/* The ERP owns the operational viewport. Hide Kyrub's personal bottom navigation
+   while the ERP overlay is mounted; the ERP back button is the deliberate exit. */
+body:has([data-kyrub-erp-viewport="true"])
+  nav.fixed.bottom-0.left-0.right-0.z-40 {
+  display: none !important;
+}
+
 /* The composed inventory setup review can be taller than a phone viewport.
    Keep its header/actions reachable and scroll only the review body. */
 [role="dialog"][aria-label^="Confirmar preparo de"] {
@@ -135,5 +142,28 @@ body {
 
   #kyrub-ai-workspace > section > form {
     flex-shrink: 0;
+  }
+
+  /* Visual experiment: present the ERP product catalog as a readable list on phones.
+     Tablet/desktop keep the existing multi-column grid. */
+  #erp-product-inventory-grid {
+    grid-template-columns: minmax(0, 1fr) !important;
+    gap: 0.625rem !important;
+  }
+
+  #erp-product-inventory-grid > article {
+    display: grid !important;
+    grid-template-columns: 6.5rem minmax(0, 1fr) !important;
+    align-items: stretch !important;
+  }
+
+  #erp-product-inventory-grid > article > div:first-child {
+    min-height: 9rem !important;
+    height: 100% !important;
+    aspect-ratio: auto !important;
+  }
+
+  #erp-product-inventory-grid > article > div:last-child {
+    min-width: 0 !important;
   }
 }

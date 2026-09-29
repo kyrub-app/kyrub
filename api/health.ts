@@ -296,6 +296,28 @@ export default async function handler(
     return;
   }
 
+  if (transport === 'store-crm') {
+    response.setHeader('Cache-Control', 'no-store, max-age=0');
+    try {
+      const storeCrm = await import(
+        '../server/payments/storeCrmServerlessTransport.js'
+      );
+      await storeCrm.handleStoreCrmServerlessRequest(request, response);
+    } catch (error) {
+      console.error(
+        '[store-crm-transport]',
+        error instanceof Error ? error.message : String(error)
+      );
+      if (!(response as unknown as { writableEnded?: boolean }).writableEnded) {
+        response.status(503).json({
+          error: 'O CRM está temporariamente indisponível.',
+          code: 'STORE_CRM_TRANSPORT_UNAVAILABLE',
+        });
+      }
+    }
+    return;
+  }
+
   if (transport === 'drive-media') {
     if ((request.method?.toUpperCase() || 'GET') !== 'GET') {
       response.setHeader('Allow', 'GET');

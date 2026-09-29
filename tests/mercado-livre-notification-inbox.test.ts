@@ -120,7 +120,10 @@ test('Vercel Queue consumer is a dedicated private trigger and cannot air-gap pu
   };
   assert.match(consumer, /new QueueClient\(\)/);
   assert.match(consumer, /handleNodeCallback/);
-  assert.match(consumer, /consumeMercadoLivreOrderQueueMessage\(message\)/);
+  assert.match(consumer, /consumeMercadoLivreOrderQueueMessage\(payload\)/);
+  assert.match(consumer, /isLegacyMercadoLivreOrdersV2QueuePayload\(message\)/);
+  assert.match(consumer, /await consumeMercadoLivre\(message, metadata\)/);
+  assert.match(consumer, /await consumeMercadoLivre\(envelope\.payload, metadata\)/);
   const trigger = vercel.functions?.['api/mercado-livre-orders-v2-consumer.ts']?.experimentalTriggers?.[0];
   assert.equal(trigger?.type, 'queue/v2beta');
   assert.equal(trigger?.topic, 'mercado_livre_orders_v2');

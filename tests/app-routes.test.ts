@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { describe, test } from 'node:test';
+import './merchant-subscriptions-management-ui.test';
 import { commitMobileErpMenuSelection } from '../src/components/MobileErpMenu';
 import {
   buildPublicStorefrontPath,
@@ -128,8 +129,10 @@ describe('Kyrub public and operational routes', () => {
     assert.match(appSource, /<ProfilePlanCenterBridge \/>/);
     assert.doesNotMatch(appSource, /<StoreCouponRedemptionBridge \/>/);
     assert.match(planCenterSource, /redeemKyrubCoupon/);
-    assert.match(planCenterSource, /KYRUB_COMMERCIAL_PLAN_BILLING_AVAILABLE/);
-    assert.match(planCenterSource, /Contratação paga em breve/);
+    assert.match(planCenterSource, /loadPlanBillingAvailability/);
+    assert.match(planCenterSource, /createPaidPlanCheckout/);
+    assert.doesNotMatch(planCenterSource, /KYRUB_COMMERCIAL_PLAN_BILLING_AVAILABLE/);
+    assert.doesNotMatch(planCenterSource, /Contratação paga em breve/);
     assert.match(profileBridgeSource, /Plano e faturamento/);
     assert.match(profileBridgeSource, /Abrir Central de Planos/);
   });
@@ -283,7 +286,7 @@ describe('Kyrub public and operational routes', () => {
       'utf8'
     );
     const cartDrawerSource = readFileSync(
-      'src/components/modals/B2CCartDrawer.tsx',
+      'src/components/modals/B2CCartDrawerApprovalBase.tsx',
       'utf8'
     );
     const notificationCenterSource = readFileSync(

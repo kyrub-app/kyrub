@@ -29,7 +29,7 @@ interface AdminModuleDefinition {
   icon: typeof Users;
   status: 'available' | 'planned';
   anchor?: string;
-  folder: 'people' | 'business' | 'operations' | 'governance';
+  folder: 'people' | 'platform_finance' | 'operations' | 'governance';
 }
 
 const FOLDERS = [
@@ -40,9 +40,9 @@ const FOLDERS = [
     icon: Users,
   },
   {
-    id: 'business' as const,
-    label: 'Comercial & Financeiro',
-    description: 'Planos, cupons, BaaS, pagamentos, splits e conciliação.',
+    id: 'platform_finance' as const,
+    label: 'Financeiro da Plataforma',
+    description: 'BaaS, taxas da plataforma, splits, settlement e conciliação sistêmica.',
     icon: Banknote,
   },
   {
@@ -79,21 +79,12 @@ const MODULES: AdminModuleDefinition[] = [
     folder: 'people',
   },
   {
-    label: 'Planos & Cupons',
-    description: 'Versões comerciais, funcionalidades, campanhas e cortesias auditadas.',
-    permission: 'manage_admins',
-    icon: Banknote,
-    status: 'available',
-    anchor: 'admin-plans-coupons',
-    folder: 'business',
-  },
-  {
-    label: 'Financeiro e BaaS',
-    description: 'Onboarding, taxas, splits, settlement e conciliação.',
+    label: 'Financeiro da Plataforma & BaaS',
+    description: 'Taxas da plataforma, splits, settlement, conciliação e infraestrutura financeira.',
     permission: 'read_finance',
     icon: Banknote,
     status: 'planned',
-    folder: 'business',
+    folder: 'platform_finance',
   },
   {
     label: 'Saúde do sistema',
@@ -179,7 +170,7 @@ export default function AdminModulesWorkspace({ profile }: { profile: AdminProfi
               </h2>
             </div>
             <p className="mt-1 text-[10px] leading-relaxed text-slate-500">
-              Funções agrupadas por contexto para reduzir ruído e tornar o Control Plane mais fácil de acompanhar.
+              O Control Plane concentra governança, infraestrutura e operação da plataforma. A atividade comercial da própria Cairubi é administrada pela Loja Oficial.
             </p>
           </div>
           <span className="shrink-0 rounded-full border border-slate-800 bg-slate-900 px-2.5 py-1 text-[9px] font-black text-slate-400">

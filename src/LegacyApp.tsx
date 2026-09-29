@@ -1582,7 +1582,13 @@ if (newMomentPublishToPraca) {
           </div>
 
           {/* ERP Core Panel Container */}
-          <div className="flex-1 overflow-y-auto px-6 py-8 max-w-7xl w-full mx-auto">
+          <div
+  className={`flex-1 w-full max-w-7xl mx-auto overflow-y-auto ${
+    gestaoRole === 'retailer' && activeSubTab === 'pedidos'
+      ? 'px-2 py-3 sm:px-6 sm:py-8'
+      : 'px-6 py-8'
+  }`}
+>
             {gestaoRole === 'retailer' && (
               <RetailerPanel
                 activeRetailerId={activeRetailerId}

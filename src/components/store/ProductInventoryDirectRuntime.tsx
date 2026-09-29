@@ -1,6 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import type React from 'react';
-import { AlertTriangle, Trash2, X } from 'lucide-react';
+import {
+  AlertTriangle,
+  Search,
+  Trash2,
+  X,
+} from 'lucide-react';
 import type { Product } from '../../types';
 import { RetailerPanel as LegacyRetailerPanel } from '../LegacyRetailerPanel';
 import { auth } from '../../utils/firebase';
@@ -36,6 +41,7 @@ export function ProductInventoryDirectRuntime({
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [deletingProduct, setDeletingProduct] = useState<Product | null>(null);
   const [busyProductId, setBusyProductId] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
 
   const activeRetailerProducts = useMemo(
     () =>
@@ -191,10 +197,33 @@ export function ProductInventoryDirectRuntime({
         id="kyrub-products-stock-direct-runtime"
         data-kyrub-products-stock-native="true"
         className="space-y-4"
+        aria-description="Este módulo não envia alterações automaticamente ao Mercado Livre."
       >
-        <div className="rounded-2xl border border-cyan-500/20 bg-cyan-500/[0.06] px-4 py-3 text-[10px] leading-relaxed text-cyan-100">
-          As alterações feitas aqui atualizam o catálogo do Kyrub. Publicações em canais externos continuam exigindo preparação e autorização explícitas; este módulo não envia alterações automaticamente ao Mercado Livre.
-        </div>
+        <label
+          className="flex min-h-12 items-center gap-3 rounded-2xl border border-slate-800 bg-slate-950/70 px-4 transition-colors focus-within:border-orange-500/45 focus-within:bg-slate-950"
+          id="kyrub-product-live-search"
+        >
+          <Search className="h-4 w-4 shrink-0 text-slate-500" />
+          <input
+            type="search"
+            value={searchQuery}
+            onChange={event => setSearchQuery(event.target.value)}
+            placeholder="Buscar produto pelo nome…"
+            autoComplete="off"
+            className="min-w-0 flex-1 bg-transparent py-3 text-xs text-white outline-none placeholder:text-slate-600"
+            aria-label="Buscar produto pelo nome"
+          />
+          {searchQuery && (
+            <button
+              type="button"
+              onClick={() => setSearchQuery('')}
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-500 transition-colors hover:bg-slate-900 hover:text-white"
+              aria-label="Limpar busca de produto"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          )}
+        </label>
 
         <ProductInventoryWorkspace
           products={activeRetailerProducts}
@@ -203,6 +232,7 @@ export function ProductInventoryDirectRuntime({
           onEditProduct={setEditingProduct}
           onDeleteProduct={setDeletingProduct}
           busyProductId={busyProductId}
+          searchQuery={searchQuery}
         />
       </div>
 
@@ -244,7 +274,7 @@ export function ProductInventoryDirectRuntime({
             </div>
 
             <p className="mt-4 rounded-2xl border border-red-500/20 bg-red-500/[0.07] p-4 text-[10px] leading-relaxed text-red-100">
-              O item deixará de aparecer no estoque e na vitrine. Pedidos antigos continuarão preservando o nome, o preço e as quantidades registrados no momento da venda.
+              O item deixará de aparecer na lista de produtos e na vitrine. Pedidos antigos continuarão preservando o nome, o preço e as quantidades registrados no momento da venda.
             </p>
 
             <div className="mt-5 grid grid-cols-2 gap-3">

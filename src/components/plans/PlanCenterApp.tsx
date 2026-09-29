@@ -22,18 +22,25 @@ import {
 } from 'firebase/auth';
 import { doc, onSnapshot } from 'firebase/firestore';
 import {
-  KYRUB_COMMERCIAL_PLAN_BILLING_AVAILABLE,
   KYRUB_COMMERCIAL_PLANS_V1,
   formatKyrubPlanMonthlyPrice,
   type KyrubCommercialPlanId,
 } from '../../../shared/kyrubCommercialPlans';
 import type { KyrubActivePlanPublicEntry } from '../../../shared/kyrubActivePlanCatalog';
+import type { KyrubPlanSubscriptionState } from '../../../shared/kyrubPlanBilling';
 import { hydrateActivePlanCatalog } from '../../utils/activePlanCatalog';
 import {
   reconcileOwnStoreEntitlement,
   redeemKyrubCoupon,
 } from '../../utils/couponRedemption';
 import { auth, db } from '../../utils/firebase';
+import {
+  cancelPaidPlanSubscription,
+  createPaidPlanCheckout,
+  loadOwnPlanSubscriptionState,
+  loadPlanBillingAvailability,
+  reconcilePaidPlanSubscription,
+} from '../../utils/planSubscription';
 import { getPrimaryUserStoreDocumentPath } from '../../utils/storePaths';
 
 type PlanView = {
@@ -90,6 +97,17 @@ const catalogLabel = (limit: number | null): string =>
 
 const planRank = (plan: KyrubCommercialPlanId): number => planOrder.indexOf(plan);
 
+const subscriptionLabel = (state: KyrubPlanSubscriptionState | null): string => {
+  const subscription = state?.subscription;
+  const status = subscription?.providerStatus;
+  if (status === 'authorized' && subscription?.activatedAt) return 'Assinatura ativa e paga';
+  if (status === 'authorized') return 'Autorizada no Mercado Pago · aguardando pagamento creditado';
+  if (status === 'pending') return 'Aguardando autorização no Mercado Pago';
+  if (status === 'paused') return 'Assinatura pausada no provedor';
+  if (status === 'cancelled') return 'Assinatura cancelada';
+  return 'Sem assinatura paga';
+};
+
 export function PlanCenterApp() {
   const [user, setUser] = useState<User | null>(auth.currentUser);
   const [currentPlan, setCurrentPlan] = useState<KyrubCommercialPlanId | null>(null);
@@ -98,6 +116,9 @@ export function PlanCenterApp() {
   const [authBusy, setAuthBusy] = useState(false);
   const [couponCode, setCouponCode] = useState('');
   const [couponBusy, setCouponBusy] = useState(false);
+  const [billingAvailable, setBillingAvailable] = useState(false);
+  const [subscriptionState, setSubscriptionState] = useState<KyrubPlanSubscriptionState | null>(null);
+  const [subscriptionBusy, setSubscriptionBusy] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
 
@@ -105,8 +126,8 @@ export function PlanCenterApp() {
 
   useEffect(() => {
     const controller = new AbortController();
-    void hydrateActivePlanCatalog(controller.signal, true)
-      .then(snapshot => {
+    void Promise.all([
+      hydrateActivePlanCatalog(controller.signal, true).then(snapshot => {
         if (!snapshot) return;
         const byId = new Map(snapshot.plans.map(plan => [plan.planId, plan]));
         setPlans(
@@ -115,16 +136,36 @@ export function PlanCenterApp() {
             return entry ? planFromPublicEntry(entry) : compiledPlan(planId);
           })
         );
-      })
-      .finally(() => setCatalogLoading(false));
+      }),
+      loadPlanBillingAvailability()
+        .then(result => setBillingAvailable(result.available))
+        .catch(() => setBillingAvailable(false)),
+    ]).finally(() => setCatalogLoading(false));
     return () => controller.abort();
   }, []);
 
   useEffect(() => {
     setCurrentPlan(null);
+    setSubscriptionState(null);
     if (!user) return;
 
     void reconcileOwnStoreEntitlement(user).catch(() => undefined);
+    void loadOwnPlanSubscriptionState()
+      .then(async state => {
+        setSubscriptionState(state);
+        setBillingAvailable(state.billing.available);
+        const subscription = state.subscription;
+        const needsBillingReconcile = subscription && state.billing.available && (
+          subscription.providerStatus === 'pending' ||
+          (subscription.providerStatus === 'authorized' && !subscription.activatedAt)
+        );
+        if (needsBillingReconcile) {
+          const reconciled = await reconcilePaidPlanSubscription();
+          setSubscriptionState(reconciled);
+        }
+      })
+      .catch(() => undefined);
+
     return onSnapshot(
       doc(db, getPrimaryUserStoreDocumentPath(user.uid)),
       snapshot => {
@@ -175,6 +216,70 @@ export function PlanCenterApp() {
     setError('');
   };
 
+  const startSubscription = async (targetPlan: 'pro' | 'business') => {
+    if (!user) {
+      setError('Entre com sua conta Kyrub antes de contratar um plano.');
+      return;
+    }
+    if (subscriptionBusy) return;
+    setSubscriptionBusy(true);
+    setMessage('');
+    setError('');
+    try {
+      const result = await createPaidPlanCheckout(targetPlan);
+      setSubscriptionState({ billing: { available: true, provider: 'mercado_pago' }, subscription: result.subscription });
+      window.location.assign(result.checkoutUrl);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Não foi possível iniciar a assinatura.');
+      setSubscriptionBusy(false);
+    }
+  };
+
+  const resumeSubscription = () => {
+    const url = subscriptionState?.subscription?.checkoutUrl;
+    if (url) window.location.assign(url);
+  };
+
+  const reconcileSubscription = async () => {
+    if (!user || subscriptionBusy) return;
+    setSubscriptionBusy(true);
+    setError('');
+    setMessage('');
+    try {
+      const result = await reconcilePaidPlanSubscription();
+      setSubscriptionState(result);
+      const subscription = result.subscription;
+      setMessage(
+        subscription?.providerStatus === 'authorized' && subscription.activatedAt
+          ? `Assinatura ${labels[subscription.plan]} ativada após confirmação do pagamento pelo Mercado Pago.`
+          : subscription?.providerStatus === 'authorized'
+            ? 'Assinatura autorizada. O Kyrub ainda aguarda a confirmação de pagamento aprovado e creditado.'
+            : 'Estado da assinatura atualizado com o Mercado Pago.'
+      );
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Não foi possível atualizar a assinatura.');
+    } finally {
+      setSubscriptionBusy(false);
+    }
+  };
+
+  const cancelSubscription = async () => {
+    if (!user || subscriptionBusy) return;
+    if (!window.confirm('Cancelar a assinatura paga agora? O plano da loja voltará para Free assim que o cancelamento for confirmado pelo provedor.')) return;
+    setSubscriptionBusy(true);
+    setError('');
+    setMessage('');
+    try {
+      const result = await cancelPaidPlanSubscription();
+      setSubscriptionState(result);
+      setMessage('Assinatura cancelada. O entitlement pago foi encerrado.');
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Não foi possível cancelar a assinatura.');
+    } finally {
+      setSubscriptionBusy(false);
+    }
+  };
+
   const redeem = async (event: FormEvent) => {
     event.preventDefault();
     const normalizedCode = couponCode.trim().toUpperCase();
@@ -200,11 +305,7 @@ export function PlanCenterApp() {
         }.`
       );
     } catch (caught) {
-      setError(
-        caught instanceof Error
-          ? caught.message
-          : 'Não foi possível resgatar este cupom.'
-      );
+      setError(caught instanceof Error ? caught.message : 'Não foi possível resgatar este cupom.');
     } finally {
       setCouponBusy(false);
     }
@@ -215,76 +316,33 @@ export function PlanCenterApp() {
       <div className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 sm:py-10">
         <header className="flex flex-col gap-5 border-b border-slate-800 pb-6 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-cyan-500/30 bg-cyan-500/10 text-cyan-300">
-              <Zap className="h-6 w-6" />
-            </div>
-            <div>
-              <p className="text-[10px] font-black uppercase tracking-[0.3em] text-cyan-400">planos.kyrub.com</p>
-              <h1 className="text-2xl font-black text-white">Central de Planos Kyrub</h1>
-            </div>
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-cyan-500/30 bg-cyan-500/10 text-cyan-300"><Zap className="h-6 w-6" /></div>
+            <div><p className="text-[10px] font-black uppercase tracking-[0.3em] text-cyan-400">planos.kyrub.com</p><h1 className="text-2xl font-black text-white">Central de Planos Kyrub</h1></div>
           </div>
-
           <div className="flex flex-wrap items-center gap-2">
-            <a
-              href="https://www.kyrub.com"
-              className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-xs font-bold text-slate-300 hover:text-white"
-            >
-              <ArrowLeft className="h-4 w-4" /> Voltar ao Kyrub
-            </a>
+            <a href="https://www.kyrub.com" className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-xs font-bold text-slate-300 hover:text-white"><ArrowLeft className="h-4 w-4" /> Voltar ao Kyrub</a>
             {user ? (
-              <button
-                type="button"
-                onClick={() => void logout()}
-                className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-slate-700 px-3 py-2 text-xs font-bold text-slate-300 hover:text-white"
-              >
-                <LogOut className="h-4 w-4" /> Sair
-              </button>
+              <button type="button" onClick={() => void logout()} className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-slate-700 px-3 py-2 text-xs font-bold text-slate-300 hover:text-white"><LogOut className="h-4 w-4" /> Sair</button>
             ) : (
-              <button
-                type="button"
-                onClick={() => void login()}
-                disabled={authBusy}
-                className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-white px-4 py-2 text-xs font-black text-slate-950 disabled:opacity-60"
-              >
-                {authBusy ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <LogIn className="h-4 w-4" />}
-                Entrar com Google
-              </button>
+              <button type="button" onClick={() => void login()} disabled={authBusy} className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-white px-4 py-2 text-xs font-black text-slate-950 disabled:opacity-60">{authBusy ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <LogIn className="h-4 w-4" />} Entrar com Google</button>
             )}
           </div>
         </header>
 
         <section className="py-8 text-center sm:py-12">
-          <span className="inline-flex items-center gap-2 rounded-full border border-cyan-500/20 bg-cyan-500/10 px-3 py-1 text-[10px] font-black uppercase tracking-wider text-cyan-300">
-            <Sparkles className="h-3.5 w-3.5" /> O menor plano suficiente para cada fase
-          </span>
-          <h2 className="mx-auto mt-4 max-w-3xl text-3xl font-black leading-tight text-white sm:text-5xl">
-            Cresça sua Loja Kyrub sem misturar operação com contratação.
-          </h2>
-          <p className="mx-auto mt-4 max-w-2xl text-sm leading-relaxed text-slate-400 sm:text-base">
-            Compare capacidades, acompanhe seu plano e resgate benefícios em um lugar separado do ERP.
-          </p>
+          <span className="inline-flex items-center gap-2 rounded-full border border-cyan-500/20 bg-cyan-500/10 px-3 py-1 text-[10px] font-black uppercase tracking-wider text-cyan-300"><Sparkles className="h-3.5 w-3.5" /> O menor plano suficiente para cada fase</span>
+          <h2 className="mx-auto mt-4 max-w-3xl text-3xl font-black leading-tight text-white sm:text-5xl">Cresça sua Loja Kyrub sem misturar operação com contratação.</h2>
+          <p className="mx-auto mt-4 max-w-2xl text-sm leading-relaxed text-slate-400 sm:text-base">Compare capacidades, acompanhe seu plano e resgate benefícios em um lugar separado do ERP.</p>
         </section>
 
         {user && (
           <section className="mb-7 rounded-3xl border border-cyan-500/20 bg-cyan-500/5 p-5 sm:flex sm:items-center sm:justify-between sm:gap-6">
             <div>
               <p className="text-[10px] font-black uppercase tracking-wider text-cyan-400">Seu plano atual</p>
-              <div className="mt-2 flex items-center gap-2">
-                <Store className="h-5 w-5 text-cyan-300" />
-                <strong className="text-2xl font-black text-white">
-                  {currentPlan ? labels[currentPlan] : 'Carregando…'}
-                </strong>
-              </div>
-              <p className="mt-2 text-xs text-slate-400">
-                {activePlan
-                  ? `${catalogLabel(activePlan.catalogLimit)} · ${activePlan.credits.toLocaleString('pt-BR')} Créditos Kyrubia Inteligência/mês`
-                  : 'Consultando o entitlement autoritativo da sua loja.'}
-              </p>
+              <div className="mt-2 flex items-center gap-2"><Store className="h-5 w-5 text-cyan-300" /><strong className="text-2xl font-black text-white">{currentPlan ? labels[currentPlan] : 'Carregando…'}</strong></div>
+              <p className="mt-2 text-xs text-slate-400">{activePlan ? `${catalogLabel(activePlan.catalogLimit)} · ${activePlan.credits.toLocaleString('pt-BR')} Créditos Kyrubia Inteligência/mês` : 'Consultando o entitlement autoritativo da sua loja.'}</p>
             </div>
-            <div className="mt-4 text-xs text-slate-500 sm:mt-0 sm:text-right">
-              Conta conectada<br />
-              <span className="text-slate-300">{user.email}</span>
-            </div>
+            <div className="mt-4 text-xs text-slate-500 sm:mt-0 sm:text-right">Conta conectada<br /><span className="text-slate-300">{user.email}</span></div>
           </section>
         )}
 
@@ -292,30 +350,15 @@ export function PlanCenterApp() {
           {plans.map(plan => {
             const isCurrent = currentPlan === plan.id;
             const isUpgrade = currentPlan ? planRank(plan.id) > planRank(currentPlan) : false;
+            const subscription = subscriptionState?.subscription;
+            const hasLiveSubscription = subscription && subscription.providerStatus !== 'cancelled';
+            const samePendingPlan = subscription?.plan === plan.id && subscription.providerStatus === 'pending';
+            const sameAwaitingPaymentPlan = subscription?.plan === plan.id && subscription.providerStatus === 'authorized' && !subscription.activatedAt;
             return (
-              <article
-                key={plan.id}
-                className={`relative flex flex-col rounded-3xl border p-5 ${
-                  plan.id === 'pro'
-                    ? 'border-violet-500/40 bg-violet-500/5'
-                    : 'border-slate-800 bg-slate-900/60'
-                }`}
-              >
-                {plan.id === 'pro' && (
-                  <span className="absolute right-4 top-4 rounded-full bg-violet-500/15 px-2.5 py-1 text-[9px] font-black uppercase text-violet-300">
-                    Próximo passo natural
-                  </span>
-                )}
-                <div className="pr-24">
-                  <h3 className="text-xl font-black text-white">{plan.name}</h3>
-                  <p className="mt-1 text-xs text-slate-500">{plan.positioning}</p>
-                </div>
-                <div className="mt-5">
-                  <strong className="text-3xl font-black text-white">
-                    {formatKyrubPlanMonthlyPrice(plan.price)}
-                  </strong>
-                  <span className="text-xs text-slate-500"> / mês</span>
-                </div>
+              <article key={plan.id} className={`relative flex flex-col rounded-3xl border p-5 ${plan.id === 'pro' ? 'border-violet-500/40 bg-violet-500/5' : 'border-slate-800 bg-slate-900/60'}`}>
+                {plan.id === 'pro' && <span className="absolute right-4 top-4 rounded-full bg-violet-500/15 px-2.5 py-1 text-[9px] font-black uppercase text-violet-300">Próximo passo natural</span>}
+                <div className="pr-24"><h3 className="text-xl font-black text-white">{plan.name}</h3><p className="mt-1 text-xs text-slate-500">{plan.positioning}</p></div>
+                <div className="mt-5"><strong className="text-3xl font-black text-white">{formatKyrubPlanMonthlyPrice(plan.price)}</strong><span className="text-xs text-slate-500"> / mês</span></div>
                 <ul className="mt-5 flex-1 space-y-3 text-xs text-slate-300">
                   <li className="flex gap-2"><PackageCheck className="h-4 w-4 shrink-0 text-cyan-400" /> {catalogLabel(plan.catalogLimit)}</li>
                   <li className="flex gap-2"><Sparkles className="h-4 w-4 shrink-0 text-violet-400" /> {plan.credits.toLocaleString('pt-BR')} Créditos Kyrubia Inteligência/mês</li>
@@ -326,21 +369,19 @@ export function PlanCenterApp() {
                 </ul>
                 <div className="mt-6">
                   {isCurrent ? (
-                    <div className="flex min-h-11 items-center justify-center gap-2 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 px-4 text-sm font-black text-emerald-300">
-                      <BadgeCheck className="h-4 w-4" /> Plano atual
-                    </div>
+                    <div className="flex min-h-11 items-center justify-center gap-2 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 px-4 text-sm font-black text-emerald-300"><BadgeCheck className="h-4 w-4" /> Plano atual</div>
                   ) : plan.id === 'free' ? (
-                    <div className="min-h-11 rounded-2xl border border-slate-800 px-4 py-3 text-center text-xs font-bold text-slate-500">
-                      Plano gratuito disponível
-                    </div>
-                  ) : KYRUB_COMMERCIAL_PLAN_BILLING_AVAILABLE ? (
-                    <button type="button" className="min-h-11 w-full rounded-2xl bg-violet-500 px-4 text-sm font-black text-white">
-                      {isUpgrade ? `Contratar ${plan.name}` : `Alterar para ${plan.name}`}
-                    </button>
+                    <div className="min-h-11 rounded-2xl border border-slate-800 px-4 py-3 text-center text-xs font-bold text-slate-500">Plano gratuito disponível</div>
+                  ) : samePendingPlan ? (
+                    <button type="button" onClick={resumeSubscription} disabled={subscriptionBusy} className="min-h-11 w-full rounded-2xl bg-violet-500 px-4 text-sm font-black text-white disabled:opacity-50">Continuar checkout {plan.name}</button>
+                  ) : sameAwaitingPaymentPlan ? (
+                    <div className="min-h-11 rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-center text-xs font-bold text-amber-200">Autorizada · aguardando pagamento creditado</div>
+                  ) : hasLiveSubscription ? (
+                    <div className="min-h-11 rounded-2xl border border-slate-700 px-4 py-3 text-center text-xs font-bold text-slate-400">Cancele a assinatura atual para trocar</div>
+                  ) : billingAvailable ? (
+                    <button type="button" onClick={() => void startSubscription(plan.id as 'pro' | 'business')} disabled={!user || subscriptionBusy} className="min-h-11 w-full rounded-2xl bg-violet-500 px-4 text-sm font-black text-white disabled:opacity-50">{subscriptionBusy ? 'Preparando checkout…' : isUpgrade ? `Contratar ${plan.name}` : `Alterar para ${plan.name}`}</button>
                   ) : (
-                    <div className="min-h-11 rounded-2xl border border-slate-700 px-4 py-3 text-center text-xs font-bold text-slate-400">
-                      Contratação paga em breve
-                    </div>
+                    <div className="min-h-11 rounded-2xl border border-slate-700 px-4 py-3 text-center text-xs font-bold text-slate-400">Cobrança ainda não habilitada</div>
                   )}
                 </div>
               </article>
@@ -350,52 +391,16 @@ export function PlanCenterApp() {
 
         <section className="mt-7 grid gap-5 lg:grid-cols-[1.1fr_0.9fr]">
           <div className="rounded-3xl border border-violet-500/25 bg-slate-900 p-5 sm:p-6">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-violet-500/15 text-violet-300">
-                <TicketPercent className="h-5 w-5" />
-              </div>
-              <div>
-                <p className="text-[10px] font-black uppercase tracking-wider text-violet-300">Benefício Kyrub</p>
-                <h3 className="text-lg font-black text-white">Tem um cupom?</h3>
-              </div>
-            </div>
-            <p className="mt-3 text-sm leading-relaxed text-slate-400">
-              O servidor valida campanha, validade, limite de usos e elegibilidade antes de alterar seu plano. Cupom não simula pagamento.
-            </p>
-
+            <div className="flex items-center gap-3"><div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-violet-500/15 text-violet-300"><TicketPercent className="h-5 w-5" /></div><div><p className="text-[10px] font-black uppercase tracking-wider text-violet-300">Benefício Kyrub</p><h3 className="text-lg font-black text-white">Tem um cupom?</h3></div></div>
+            <p className="mt-3 text-sm leading-relaxed text-slate-400">O servidor valida campanha, validade, limite de usos e elegibilidade antes de alterar seu plano. Cupom não simula pagamento.</p>
             {user ? (
               <form onSubmit={redeem} className="mt-5 flex flex-col gap-2 sm:flex-row">
-                <input
-                  value={couponCode}
-                  onChange={event => setCouponCode(event.target.value.toUpperCase().replace(/\s+/g, ''))}
-                  placeholder="Ex.: KYRUB-PRO-BETA-001"
-                  autoComplete="off"
-                  autoCapitalize="characters"
-                  spellCheck={false}
-                  maxLength={40}
-                  disabled={couponBusy}
-                  className="min-h-12 flex-1 rounded-2xl border border-slate-700 bg-slate-950 px-4 font-mono text-sm uppercase text-white outline-none focus:border-violet-500/60 disabled:opacity-60"
-                />
-                <button
-                  type="submit"
-                  disabled={couponBusy || !couponCode.trim()}
-                  className="inline-flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-violet-500 px-5 text-sm font-black text-white hover:bg-violet-400 disabled:opacity-50"
-                >
-                  {couponBusy ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <TicketPercent className="h-4 w-4" />}
-                  {couponBusy ? 'Validando' : 'Aplicar cupom'}
-                </button>
+                <input value={couponCode} onChange={event => setCouponCode(event.target.value.toUpperCase().replace(/\s+/g, ''))} placeholder="Ex.: KYRUB-PRO-BETA-001" autoComplete="off" autoCapitalize="characters" spellCheck={false} maxLength={40} disabled={couponBusy} className="min-h-12 flex-1 rounded-2xl border border-slate-700 bg-slate-950 px-4 font-mono text-sm uppercase text-white outline-none focus:border-violet-500/60 disabled:opacity-60" />
+                <button type="submit" disabled={couponBusy || !couponCode.trim()} className="inline-flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-violet-500 px-5 text-sm font-black text-white hover:bg-violet-400 disabled:opacity-50">{couponBusy ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <TicketPercent className="h-4 w-4" />}{couponBusy ? 'Validando' : 'Aplicar cupom'}</button>
               </form>
             ) : (
-              <button
-                type="button"
-                onClick={() => void login()}
-                disabled={authBusy}
-                className="mt-5 inline-flex min-h-12 items-center gap-2 rounded-2xl bg-white px-5 text-sm font-black text-slate-950 disabled:opacity-60"
-              >
-                <LogIn className="h-4 w-4" /> Entrar para resgatar
-              </button>
+              <button type="button" onClick={() => void login()} disabled={authBusy} className="mt-5 inline-flex min-h-12 items-center gap-2 rounded-2xl bg-white px-5 text-sm font-black text-slate-950 disabled:opacity-60"><LogIn className="h-4 w-4" /> Entrar para resgatar</button>
             )}
-
             {message && <div role="status" className="mt-4 rounded-2xl border border-emerald-500/25 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200">{message}</div>}
             {error && <div role="alert" className="mt-4 rounded-2xl border border-red-500/25 bg-red-500/10 px-4 py-3 text-sm text-red-200">{error}</div>}
           </div>
@@ -403,11 +408,20 @@ export function PlanCenterApp() {
           <aside className="rounded-3xl border border-slate-800 bg-slate-900/60 p-5 sm:p-6">
             <h3 className="text-sm font-black uppercase text-white">Contratação e faturamento</h3>
             <p className="mt-3 text-sm leading-relaxed text-slate-400">
-              A estrutura de planos já é real, mas checkout e cobrança de Pro/Business ainda não estão conectados. Até lá, nenhum botão desta página afirma uma assinatura paga.
+              {billingAvailable
+                ? 'Assinaturas Pro e Business são criadas pela conta de cobrança central do Kyrub. Seu plano só é ativado depois que o servidor confirma a autorização da assinatura e um pagamento aprovado e creditado diretamente com o Mercado Pago.'
+                : 'A estrutura de assinatura está pronta, mas a credencial central de cobrança do Kyrub ainda não está configurada neste ambiente.'}
             </p>
-            <a href="https://www.kyrub.com" className="mt-5 inline-flex items-center gap-2 text-xs font-black text-cyan-300 hover:text-cyan-200">
-              Continuar usando o Kyrub <ExternalLink className="h-3.5 w-3.5" />
-            </a>
+            {user && subscriptionState?.subscription && (
+              <div className="mt-4 rounded-2xl border border-slate-800 bg-slate-950 p-4 text-xs text-slate-400">
+                <strong className="block text-white">{subscriptionLabel(subscriptionState)}</strong>
+                <span className="mt-1 block">Plano {labels[subscriptionState.subscription.plan]} · {(subscriptionState.subscription.amountMinor / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}/mês</span>
+                {subscriptionState.subscription.providerStatus === 'pending' && subscriptionState.subscription.checkoutUrl && <button type="button" onClick={resumeSubscription} className="mt-3 mr-2 rounded-xl bg-violet-500 px-3 py-2 font-black text-white">Continuar checkout</button>}
+                {(subscriptionState.subscription.providerStatus === 'pending' || subscriptionState.subscription.providerStatus === 'paused' || (subscriptionState.subscription.providerStatus === 'authorized' && !subscriptionState.subscription.activatedAt)) && <button type="button" onClick={() => void reconcileSubscription()} disabled={subscriptionBusy} className="mt-3 mr-2 rounded-xl border border-slate-700 px-3 py-2 font-black text-slate-300 disabled:opacity-50">Atualizar estado</button>}
+                {subscriptionState.subscription.providerStatus !== 'cancelled' && <button type="button" onClick={() => void cancelSubscription()} disabled={subscriptionBusy} className="mt-3 rounded-xl border border-red-500/30 px-3 py-2 font-black text-red-300 disabled:opacity-50">Cancelar assinatura</button>}
+              </div>
+            )}
+            <a href="https://www.kyrub.com" className="mt-5 inline-flex items-center gap-2 text-xs font-black text-cyan-300 hover:text-cyan-200">Continuar usando o Kyrub <ExternalLink className="h-3.5 w-3.5" /></a>
           </aside>
         </section>
 

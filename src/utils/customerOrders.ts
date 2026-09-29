@@ -11,6 +11,7 @@ import {
 } from 'firebase/firestore';
 import type { User } from 'firebase/auth';
 import type { CommerceChannel } from '../../shared/channelAvailabilityFiscalFoundation';
+import { parseProductSaleModality } from '../../shared/productSaleModality';
 import {
   parseServiceLocationSnapshot,
   type ServiceLocationSnapshot,
@@ -145,6 +146,10 @@ const isCommercialChannel = (
   value === 'kyrub' ||
   value === 'mercado_livre' ||
   value === '99food' ||
+  value === 'shopee' ||
+  value === 'ifood' ||
+  value === 'instagram' ||
+  value === 'erp' ||
   value === 'other';
 
 const isPaymentStatus = (
@@ -319,6 +324,16 @@ export const buildCustomerOrder = (
   const orderId = `customer-order-${user.uid}-${now}`;
   const items = input.cart.map(({ product, quantity }, index) => {
     const normalizedQuantity = Math.trunc(quantity);
+    const saleModality = parseProductSaleModality(product.saleModality);
+
+    if (!saleModality) {
+      throw new Error(`A forma de venda de “${product.name}” é inválida.`);
+    }
+    if (saleModality.mode === 'subscription') {
+      throw new Error(
+        `“${product.name}” é uma assinatura e precisa ser contratada pelo fluxo de assinatura.`
+      );
+    }
 
     if (
       !Number.isFinite(quantity) ||

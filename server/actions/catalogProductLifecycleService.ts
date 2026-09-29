@@ -467,11 +467,16 @@ export const updateAuthorizedKyrubCatalogProduct = async (
 export const setAuthorizedKyrubCatalogProductPublication = async (
   authorization: string,
   rawRequest: unknown
-): Promise<{ productId: string; publicationStatus: 'draft' | 'published' }> => {
+): Promise<{
+  productId: string;
+  publicationStatus: 'draft' | 'published';
+  deleted?: boolean;
+}> => {
   const actor = await verifyActor(authorization);
   const body = requestRecord(rawRequest);
   const productId = cleanText(body.productId, 160);
   const published = body.published === true;
+  const deleteDraft = body.deleteDraft === true;
   if (!productId || typeof body.published !== 'boolean') {
     throw new KyrubActionExecutionError(
       400,
@@ -484,15 +489,23 @@ export const setAuthorizedKyrubCatalogProductPublication = async (
   const canonicalReference = adminDb.doc(
     `stores/${canonicalStoreId}/products/${productId}`
   );
+  const stagingReference = adminDb.doc(
+    `kyrub_catalog_drafts/${actor.uid}/drafts/${productId}`
+  );
   const tenantReference = adminDb.doc(`tenants/${actor.uid}`);
   const nowIso = new Date().toISOString();
 
   await adminDb.runTransaction(async transaction => {
-    const [canonicalSnapshot, tenantSnapshot] = await Promise.all([
+    const [canonicalSnapshot, tenantSnapshot, stagedSnapshot] = await Promise.all([
       transaction.get(canonicalReference),
       transaction.get(tenantReference),
+      transaction.get(stagingReference),
     ]);
     if (!canonicalSnapshot.exists) {
+      if (deleteDraft) {
+        if (stagedSnapshot.exists) transaction.delete(stagingReference);
+        return;
+      }
       throw new KyrubActionExecutionError(
         404,
         'PRODUCT_NOT_FOUND',
@@ -521,6 +534,32 @@ export const setAuthorizedKyrubCatalogProductPublication = async (
     const alreadyPublished = currentProducts.some(
       item => cleanText(item.id, 160) === productId
     );
+
+    if (deleteDraft) {
+      if (cleanText(canonical.publicationStatus, 20) !== 'draft') {
+        throw new KyrubActionExecutionError(
+          409,
+          'PRODUCT_NOT_DRAFT',
+          'Este item já não é um rascunho. Atualize a lista antes de excluí-lo.'
+        );
+      }
+
+      transaction.delete(canonicalReference);
+      if (stagedSnapshot.exists) transaction.delete(stagingReference);
+      if (tenantSnapshot.exists && alreadyPublished) {
+        transaction.set(
+          tenantReference,
+          {
+            publicProducts: currentProducts.filter(
+              item => cleanText(item.id, 160) !== productId
+            ),
+            updatedAt: FieldValue.serverTimestamp(),
+          },
+          { merge: true }
+        );
+      }
+      return;
+    }
 
     if (published) {
       const name = cleanText(canonical.name, 120);
@@ -599,5 +638,6 @@ export const setAuthorizedKyrubCatalogProductPublication = async (
   return {
     productId,
     publicationStatus: published ? 'published' : 'draft',
+    ...(deleteDraft ? { deleted: true } : {}),
   };
 };

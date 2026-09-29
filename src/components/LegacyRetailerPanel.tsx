@@ -83,8 +83,7 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = ({
   triggerToast,
   activeSubTab,
   setActiveSubTab,
-  atendimentoSpaces,
-  producaoSpaces
+  atendimentoSpaces
 }) => {
   const activeRetailerProducts = products.filter(p => p.supplierId === activeRetailerId && !p.wholesalePrice);
   
@@ -171,17 +170,7 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = ({
     loadDexieData();
   }, []);
 
-  // 3. KDS / SALES STATES
-  const [kdsFilter, setKdsFilter] = useState<string>('TODOS');
 
-  useEffect(() => {
-    if (producaoSpaces && producaoSpaces.length > 0) {
-      if (!producaoSpaces.includes(kdsFilter)) {
-        setKdsFilter(producaoSpaces[0]);
-      }
-    }
-  }, [producaoSpaces]);
-  
   // 4. RESERVATIONS
   const [reservations, setReservations] = useState<any[]>([]);
   const [showNewReservationModal, setShowNewReservationModal] = useState(false);
@@ -593,24 +582,7 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = ({
               TAB 3: PAINEL DE PEDIDOS E VENDAS
              ------------------------------------------ */}
           {activeSubTab === 'pedidos' && (
-            <div className="space-y-5 animate-fade-in" id="erp-pedidos-tab">
-              {/* Filter pills */}
-              <div className="flex items-center gap-2 bg-slate-950 p-1.5 rounded-2xl border border-slate-900 overflow-x-auto whitespace-nowrap scrollbar-none max-w-full pb-1">
-                {producaoSpaces.map(f => (
-                  <button
-                    key={f}
-                    onClick={() => setKdsFilter(f)}
-                    className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer ${
-                      kdsFilter === f 
-                        ? 'bg-orange-500 text-slate-950' 
-                        : 'text-slate-400 hover:text-slate-200'
-                    }`}
-                  >
-                    {f}
-                  </button>
-                ))}
-              </div>
-
+            <div className="animate-fade-in" id="erp-pedidos-tab">
               {/* Central area */}
               <div className="bg-slate-900/40 border border-dashed border-slate-800 rounded-3xl py-16 text-center" id="kds-funnel-view">
                 <ClipboardList className="w-12 h-12 text-slate-600 mx-auto mb-3 animate-pulse" />

@@ -27,7 +27,6 @@ import {
 } from '../../utils/adminControlPlane';
 import AdminDirectoryWorkspace from './AdminDirectoryWorkspace';
 import AdminModulesWorkspace from './AdminModulesWorkspace';
-import AdminPromotionalPlanWorkspace from './AdminPromotionalPlanWorkspace';
 
 const ROLE_LABELS: Record<AdminRole, string> = {
   super_admin: 'Super Admin',
@@ -66,7 +65,7 @@ const LoginScreen = ({
         Administração do ecossistema
       </h1>
       <p className="mt-3 text-sm leading-relaxed text-slate-400">
-        Área restrita para operação, segurança, finanças e compliance. O login não concede acesso automaticamente.
+        Área restrita para operação, segurança, finanças da plataforma e compliance. O login não concede acesso automaticamente.
       </p>
 
       {error && (
@@ -335,7 +334,7 @@ export default function AdminControlPlaneApp() {
                   Governança do ecossistema Kyrub
                 </h1>
                 <p className="mt-2 max-w-2xl text-xs leading-relaxed text-slate-400">
-                  Fundação segura para usuários, lojas, planos, BaaS, logística, compliance e operação. Nenhum dado comercial é simulado neste painel.
+                  Fundação segura para usuários, lojas, BaaS, infraestrutura, compliance e operação. O comércio da própria Cairubi é administrado pela Loja Oficial.
                 </p>
               </div>
             </div>
@@ -421,20 +420,13 @@ export default function AdminControlPlaneApp() {
           />
         )}
 
-        {profile.role === 'super_admin' && (
-          <AdminPromotionalPlanWorkspace
-            authenticatedUser={user}
-            profile={profile}
-          />
-        )}
-
         <AdminModulesWorkspace profile={profile} />
 
         <section className="rounded-2xl border border-slate-800 bg-slate-900/40 px-4 py-3">
           <div className="flex items-start gap-3">
             <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-slate-500" />
             <p className="text-[10px] leading-relaxed text-slate-500">
-              Consultas permanecem somente leitura. Alterações críticas, como concessões de plano, só podem ocorrer por backend seguro, autorização administrativa explícita e auditoria autoritativa.
+              O Control Plane preserva autoridade, auditoria e políticas sistêmicas. Operações comerciais da própria Cairubi são executadas na Loja Oficial sem enfraquecer os gates server-side.
             </p>
           </div>
         </section>

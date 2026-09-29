@@ -195,6 +195,15 @@ export const loadStoreConnectionOnboarding = async (
 ): Promise<StoreConnectionOnboardingSnapshot> =>
   authorizedFetch<StoreConnectionOnboardingSnapshot>(user, `/api/store-connections/${encoded(storeId)}`);
 
+export const getConnectedStoreChannels = (
+  snapshot: StoreConnectionOnboardingSnapshot
+): KyrubCommerceChannel[] =>
+  [...new Set(
+    snapshot.connections
+      .filter(connection => connection.status === 'connected')
+      .map(connection => connection.channel)
+  )];
+
 export const beginMercadoLivreConnection = async (user: User, storeId: string): Promise<string> => {
   const payload = await authorizedFetch<{ authorizationUrl: string }>(
     user,

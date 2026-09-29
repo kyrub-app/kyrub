@@ -17,20 +17,37 @@ const cartDrawer = readFileSync(
   'src/components/modals/B2CCartDrawer.tsx',
   'utf8'
 );
+const cartDrawerBase = readFileSync(
+  'src/components/modals/B2CCartDrawerApprovalBase.tsx',
+  'utf8'
+);
 const checkoutClient = readFileSync('src/utils/marketplaceCheckout.ts', 'utf8');
+const approvedPayment = readFileSync(
+  'src/utils/marketplaceApprovedPayment.ts',
+  'utf8'
+);
 const paymentIntentRouter = readFileSync(
   'server/payments/paymentIntentRouter.ts',
   'utf8'
 );
-const webhookProcessor = readFileSync(
-  'server/payments/paymentWebhookProcessor.ts',
+const checkoutBridge = readFileSync(
+  'server/payments/mercadoPagoCheckoutBridge.ts',
+  'utf8'
+);
+const mercadoPagoWebhook = readFileSync(
+  'server/payments/mercadoPagoWebhook.ts',
   'utf8'
 );
 const materialization = readFileSync(
   'src/utils/paymentOrderMaterialization.ts',
   'utf8'
 );
+const settlement = readFileSync(
+  'server/payments/marketplaceOrderPaymentSettlementService.ts',
+  'utf8'
+);
 const retailer = readFileSync('src/components/RetailerPanel.tsx', 'utf8');
+const orderWorkflow = readFileSync('src/utils/orderWorkflow.ts', 'utf8');
 const deliveryOpportunity = readFileSync(
   'server/delivery/deliveryOpportunityRouter.ts',
   'utf8'
@@ -74,47 +91,61 @@ test('storefront resolves customization before rendering the shared PDV', () => 
   assert.match(sharedPdv, /priceDelta/);
 });
 
-test('delivery and pickup create a server-side pending PaymentIntent instead of an operational order', () => {
+test('delivery and pickup create an unpaid approval-gated operational order before any Pix authority', () => {
   assert.match(
-    cartDrawer,
+    cartDrawerBase,
     /fulfillmentType === 'delivery' \|\| fulfillmentType === 'pickup'/
   );
-  assert.match(cartDrawer, /initiateMarketplaceCheckout\(user/);
+  assert.match(cartDrawerBase, /initiateMarketplaceCheckout\(user/);
   assert.match(checkoutClient, /\/api\/payments\/intents/);
   assert.match(checkoutClient, /productId: item\.product\.id/);
   assert.doesNotMatch(checkoutClient, /price: item\.product\.price/);
   assert.match(paymentIntentRouter, /tenant\?\.publicProducts/);
-  assert.match(paymentIntentRouter, /status: 'pending'/);
-  assert.match(paymentIntentRouter, /context: 'marketplace'/);
+  assert.match(paymentIntentRouter, /materializePendingMarketplaceOrder/);
+  assert.match(paymentIntentRouter, /transaction\.set\(orderRef, pendingOrder\)/);
+  assert.match(materialization, /checkoutAuthority: 'merchant_approval_required'/);
+  assert.match(materialization, /paymentStatus: paid \? 'paid' : 'unpaid'/);
+  assert.match(checkoutBridge, /if \(status === 'pending'\)/);
+  assert.match(checkoutBridge, /approvalRequired: true/);
 });
 
 test('dine-in remains an attendance order and does not inherit the marketplace payment gate', () => {
-  assert.match(cartDrawer, /const order = buildCustomerOrder\(user/);
-  assert.match(cartDrawer, /await persistCustomerOrder\(order\)/);
-  const marketplaceBranch = cartDrawer.indexOf("fulfillmentType === 'delivery'");
-  const directOrderBuild = cartDrawer.indexOf('const order = buildCustomerOrder');
+  assert.match(cartDrawerBase, /const order = buildCustomerOrder\(user/);
+  assert.match(cartDrawerBase, /await persistCustomerOrder\(order\)/);
+  const marketplaceBranch = cartDrawerBase.indexOf("fulfillmentType === 'delivery'");
+  const directOrderBuild = cartDrawerBase.indexOf('const order = buildCustomerOrder');
   assert.ok(marketplaceBranch >= 0);
   assert.ok(directOrderBuild > marketplaceBranch);
-  assert.match(cartDrawer.slice(marketplaceBranch, directOrderBuild), /return;/);
+  assert.match(cartDrawerBase.slice(marketplaceBranch, directOrderBuild), /return;/);
 });
 
-test('only an authoritative paid provider event materializes the marketplace CustomerOrder', () => {
-  assert.match(webhookProcessor, /normalizeVerifiedProviderEvent/);
-  assert.match(webhookProcessor, /buildPaymentWebhookIdempotencyKey/);
-  assert.match(webhookProcessor, /effectiveStatus === 'paid'/);
-  assert.match(webhookProcessor, /materializePaidMarketplaceOrder/);
-  assert.match(webhookProcessor, /operationalOrderExists/);
-  assert.match(materialization, /canMaterializeOperationalOrder/);
-  assert.match(materialization, /PAYMENT_REQUIRED_BEFORE_ORDER_MATERIALIZATION/);
+test('accepted delivery or pickup exposes the buyer payment action against the existing order', () => {
+  assert.match(cartDrawer, /approvalGatedOrder\?\.status === 'accepted'/);
+  assert.match(cartDrawer, /Pagar agora por Pix/);
+  assert.match(cartDrawer, /resumeMarketplaceApprovedPayment/);
+  assert.match(approvedPayment, /resumeOrderId: input\.orderId\.trim\(\)/);
+  assert.match(paymentIntentRouter, /CHECKOUT_ORDER_APPROVAL_REQUIRED/);
+  assert.match(paymentIntentRouter, /status !== 'accepted'/);
+});
+
+test('authoritative paid provider event settles the existing accepted marketplace order', () => {
+  assert.match(mercadoPagoWebhook, /event\.eventType === 'payment\.paid'/);
+  assert.match(mercadoPagoWebhook, /settleMarketplaceOperationalOrderAfterPayment/);
+  assert.match(settlement, /order\.status !== 'accepted'/);
+  assert.match(settlement, /PAYMENT_ORDER_SETTLEMENT_REQUIRES_ACCEPTED_ORDER/);
+  assert.match(settlement, /settleExistingMarketplaceOrder/);
   assert.match(materialization, /paymentStatus: 'paid'/);
-  assert.match(materialization, /source: 'customer'/);
 });
 
-test('the materialized paid order feeds the seller inbox and KDS without a second payment truth', () => {
+test('the approval-gated order feeds the seller inbox and KDS before payment without broadening legacy unpaid visibility', () => {
   assert.match(retailer, /subscribeToStoreCustomerOrders/);
   assert.match(retailer, /customerOrders\.filter\(isOrderVisibleInKds\)/);
   assert.match(retailer, /<CustomerOrderInbox/);
   assert.match(retailer, /kyrub-customer-order-inbox-host/);
+  assert.match(orderWorkflow, /isApprovalGatedKyrubMarketplaceOrder/);
+  assert.match(orderWorkflow, /order\.operatorId\.trim\(\) === order\.buyerId\.trim\(\)/);
+  assert.match(orderWorkflow, /if \(isApprovalGatedKyrubMarketplaceOrder\(order\)\) return true/);
+  assert.match(orderWorkflow, /return order\.paymentStatus === 'paid'/);
   assert.doesNotMatch(retailer, /setPaymentIntent.*paid|isPaid\s*=\s*true/i);
 });
 
@@ -143,7 +174,7 @@ test('live GPS stays private and can be read only by buyer, merchant or assigned
   assert.match(deliveryTracking, /json\(\{ deliveryId, active: false \}\)/);
 });
 
-test('configured lines still reach inventory reconciliation after the paid-order boundary', () => {
+test('configured lines still reach inventory reconciliation after the approval and paid-production boundaries', () => {
   assert.match(inventoryService, /parseConfiguredLineSelectedOptions/);
   assert.match(inventoryService, /buildOrderInventoryConsumptionWithOptions/);
   assert.match(inventoryService, /optionInventoryImpacts/);

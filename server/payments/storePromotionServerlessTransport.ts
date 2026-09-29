@@ -5,6 +5,7 @@ import { createStoreMercadoPagoPeriodSummaryRouter } from './storeMercadoPagoPer
 import { createStoreMercadoPagoReconciliationRouter } from './storeMercadoPagoReconciliationRouter.js';
 import { createStorePayrollRouter } from './storePayrollRouter.js';
 import { createStorePromotionManagementRouter } from './storePromotionManagementRouter.js';
+import { createStoreSalesAnalyticsRouter } from './storeSalesAnalyticsRouter.js';
 
 type QueryValue = string | string[] | undefined;
 type HeaderValue = string | string[] | undefined;
@@ -29,10 +30,12 @@ const app = express();
 app.set('trust proxy', 1);
 app.use('/api/store-promotions', createStorePromotionManagementRouter());
 app.use('/api/store-finance', createStoreFinanceRouter());
+// Provider-period aggregation shares the existing finance-history surface/function.
 app.use('/api/store-finance-history', createStoreMercadoPagoPeriodSummaryRouter());
 app.use('/api/store-finance-history', createStoreMercadoPagoReconciliationRouter());
 app.use('/api/store-finance-history', createStoreFinanceHistoryRouter());
 app.use('/api/store-payroll', createStorePayrollRouter());
+app.use('/api/store-sales-analytics', createStoreSalesAnalyticsRouter());
 
 const first = (value: QueryValue | HeaderValue): string =>
   (Array.isArray(value) ? value[0] : value)?.trim() ?? '';
@@ -67,7 +70,9 @@ export const handleStorePromotionServerlessRequest = async (
       ? '/api/store-finance-history'
       : surface === 'payroll'
         ? '/api/store-payroll'
-        : '/api/store-promotions';
+        : surface === 'sales-analytics'
+          ? '/api/store-sales-analytics'
+          : '/api/store-promotions';
   const originalUrl = request.url;
   request.url = `${routeBase}${path ? `/${path}` : ''}${reconstructedQuery(request.query)}`;
 

@@ -11,6 +11,7 @@ import type { KyrubCatalogDraftListItem } from '../../../shared/kyrubCatalogDraf
 import { auth } from '../../utils/firebase';
 import { requestProductCreateModal } from '../../utils/productModalEvents';
 import {
+  deleteKyrubCatalogDraft,
   KYRUB_CATALOG_PRODUCT_CHANGED_EVENT,
   listKyrubCatalogDrafts,
   setKyrubCatalogProductPublished,
@@ -25,6 +26,7 @@ interface ProductInventoryWorkspaceProps {
   onEditProduct: (product: Product) => void;
   onDeleteProduct: (product: Product) => void;
   busyProductId?: string;
+  searchQuery?: string;
 }
 
 type InventoryItem = {
@@ -39,6 +41,8 @@ type InventoryItem = {
   published: boolean;
   product?: Product;
 };
+
+type PublicationFilter = 'all' | 'published' | 'unpublished';
 
 const currencyFormatter = new Intl.NumberFormat('pt-BR', {
   style: 'currency',
@@ -115,15 +119,18 @@ export function ProductInventoryWorkspace({
   onEditProduct,
   onDeleteProduct,
   busyProductId = '',
+  searchQuery = '',
 }: ProductInventoryWorkspaceProps) {
   const categoryOptions = useMemo(() => uniqueKeywords(keywords), [keywords]);
   const [selectedKeyword, setSelectedKeyword] = useState('');
-  const [showUnpublishedOnly, setShowUnpublishedOnly] = useState(false);
+  const [publicationFilter, setPublicationFilter] =
+    useState<PublicationFilter>('all');
   const [unpublishedProducts, setUnpublishedProducts] = useState<
     KyrubCatalogDraftListItem[]
   >([]);
   const [publicationBusyId, setPublicationBusyId] = useState('');
   const [draftSaveBusyId, setDraftSaveBusyId] = useState('');
+  const [draftDeleteBusyId, setDraftDeleteBusyId] = useState('');
   const [editingDraftProduct, setEditingDraftProduct] = useState<Product | null>(null);
   const [publicationError, setPublicationError] = useState('');
 
@@ -184,20 +191,43 @@ export function ProductInventoryWorkspace({
     ];
   }, [products, unpublishedProducts]);
 
+  const publishedCount = useMemo(
+    () => inventoryItems.filter(item => item.published).length,
+    [inventoryItems]
+  );
+
   const unpublishedCount = useMemo(
     () => inventoryItems.filter(item => !item.published).length,
     [inventoryItems]
   );
 
   const visibleProducts = useMemo(() => {
+    const normalizedSearch = normalizeCategoryValue(searchQuery);
+
     return inventoryItems.filter(product => {
-      if (showUnpublishedOnly && product.published) return false;
-      if (!selectedKeyword) return true;
-      return (
-        normalizeCategoryValue(categoryRoot(product.category)) === selectedKeyword
-      );
+      if (publicationFilter === 'published' && !product.published) return false;
+      if (publicationFilter === 'unpublished' && product.published) return false;
+      if (
+        selectedKeyword &&
+        normalizeCategoryValue(categoryRoot(product.category)) !== selectedKeyword
+      ) {
+        return false;
+      }
+      if (
+        normalizedSearch &&
+        !normalizeCategoryValue(product.name).includes(normalizedSearch)
+      ) {
+        return false;
+      }
+      return true;
     });
-  }, [inventoryItems, selectedKeyword, showUnpublishedOnly]);
+  }, [inventoryItems, publicationFilter, searchQuery, selectedKeyword]);
+
+  const togglePublicationFilter = (
+    next: Exclude<PublicationFilter, 'all'>
+  ): void => {
+    setPublicationFilter(current => (current === next ? 'all' : next));
+  };
 
   const handlePublicationChange = async (
     item: InventoryItem,
@@ -232,6 +262,35 @@ export function ProductInventoryWorkspace({
       return;
     }
     setEditingDraftProduct(inventoryItemToProduct(item));
+  };
+
+  const handleDeleteDraft = async (item: InventoryItem): Promise<void> => {
+    const user = auth.currentUser;
+    if (!user) {
+      setPublicationError('Faça login novamente para excluir o item.');
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Excluir “${item.name}”? Este item não publicado será removido do catálogo.`
+    );
+    if (!confirmed) return;
+
+    setDraftDeleteBusyId(item.id);
+    setPublicationError('');
+    try {
+      await deleteKyrubCatalogDraft(user, item.id);
+      await loadUnpublishedProducts();
+    } catch (error) {
+      console.error('Falha ao excluir produto não publicado:', error);
+      setPublicationError(
+        error instanceof Error
+          ? error.message
+          : 'Não foi possível excluir o item não publicado.'
+      );
+    } finally {
+      setDraftDeleteBusyId('');
+    }
   };
 
   const handleSaveDraftProduct = async (product: Product): Promise<void> => {
@@ -281,13 +340,29 @@ export function ProductInventoryWorkspace({
           </button>
         </header>
 
-        <div className="flex justify-end" id="erp-product-status-filters">
+        <div
+          className="flex flex-wrap justify-end gap-2"
+          id="erp-product-status-filters"
+          aria-label="Filtrar produtos por status de publicação"
+        >
           <button
             type="button"
-            onClick={() => setShowUnpublishedOnly(current => !current)}
-            aria-pressed={showUnpublishedOnly}
+            onClick={() => togglePublicationFilter('published')}
+            aria-pressed={publicationFilter === 'published'}
             className={`inline-flex min-h-9 items-center justify-center rounded-xl border px-3 text-[9px] font-black uppercase tracking-wide transition-colors ${
-              showUnpublishedOnly
+              publicationFilter === 'published'
+                ? 'border-emerald-400/45 bg-emerald-400/15 text-emerald-200'
+                : 'border-emerald-400/20 bg-slate-950 text-emerald-300 hover:border-emerald-400/40 hover:bg-emerald-400/10'
+            }`}
+          >
+            Publicados · {publishedCount}
+          </button>
+          <button
+            type="button"
+            onClick={() => togglePublicationFilter('unpublished')}
+            aria-pressed={publicationFilter === 'unpublished'}
+            className={`inline-flex min-h-9 items-center justify-center rounded-xl border px-3 text-[9px] font-black uppercase tracking-wide transition-colors ${
+              publicationFilter === 'unpublished'
                 ? 'border-amber-400/45 bg-amber-400/15 text-amber-200'
                 : 'border-amber-400/20 bg-slate-950 text-amber-300 hover:border-amber-400/40 hover:bg-amber-400/10'
             }`}
@@ -357,7 +432,8 @@ export function ProductInventoryWorkspace({
               const isBusy =
                 busyProductId === item.id ||
                 publicationBusyId === item.id ||
-                draftSaveBusyId === item.id;
+                draftSaveBusyId === item.id ||
+                draftDeleteBusyId === item.id;
 
               return (
                 <article
@@ -460,18 +536,22 @@ export function ProductInventoryWorkspace({
                         >
                           <Pencil className="h-3.5 w-3.5" />
                         </button>
-                        {item.product && (
-                          <button
-                            type="button"
-                            onClick={() => onDeleteProduct(item.product as Product)}
-                            disabled={isBusy}
-                            className="flex h-8 w-8 items-center justify-center rounded-lg border border-red-500/20 bg-red-500/10 text-red-300 hover:bg-red-500/20 disabled:opacity-35"
-                            aria-label={`Excluir ${item.name}`}
-                            title="Excluir item"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </button>
-                        )}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (item.product) {
+                              onDeleteProduct(item.product);
+                              return;
+                            }
+                            void handleDeleteDraft(item);
+                          }}
+                          disabled={isBusy}
+                          className="flex h-8 w-8 items-center justify-center rounded-lg border border-red-500/20 bg-red-500/10 text-red-300 hover:bg-red-500/20 disabled:opacity-35"
+                          aria-label={`Excluir ${item.name}`}
+                          title={item.product ? 'Excluir item' : 'Excluir item não publicado'}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
                       </div>
                     </div>
                   </div>
@@ -485,9 +565,13 @@ export function ProductInventoryWorkspace({
             <p className="mt-3 text-xs text-slate-500">
               {inventoryItems.length === 0
                 ? 'Nenhum produto ou serviço cadastrado.'
-                : showUnpublishedOnly
-                  ? 'Nenhum produto não publicado neste filtro.'
-                  : 'Nenhum item encontrado nesta categoria.'}
+                : searchQuery.trim()
+                  ? `Nenhum produto encontrado para “${searchQuery.trim()}”.`
+                  : publicationFilter === 'unpublished'
+                    ? 'Nenhum produto não publicado neste filtro.'
+                    : publicationFilter === 'published'
+                      ? 'Nenhum produto publicado neste filtro.'
+                      : 'Nenhum item encontrado nesta categoria.'}
             </p>
           </div>
         )}

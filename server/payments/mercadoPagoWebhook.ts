@@ -4,6 +4,12 @@ import {
   verifiedMercadoPagoPaymentEvent,
 } from './mercadoPagoPixProvider.js';
 import { verifiedStoreScopedMercadoPagoPaymentEvent } from './mercadoPagoStoreScopedProvider.js';
+import { settleMarketplaceOperationalOrderAfterPayment } from './marketplaceOrderPaymentSettlementService.js';
+import { syncPersistedCustomerOrderIntoCrm } from './storeCrmOrderSyncService.js';
+import {
+  markMarketplaceOrderInventoryReservationPaymentConfirmed,
+  releaseMarketplaceReservationForTerminalPayment,
+} from '../inventory/marketplaceOrderInventoryReservationService.js';
 import {
   attachPreparedCustomerDestinationResolutionToOperationalOrder,
   prepareCustomerDestinationResolutionForPaymentIntent,
@@ -68,7 +74,44 @@ export const processMercadoPagoWebhook = async (input: {
     event,
   });
 
+  if (event.eventType === 'payment.paid' && result.orderId) {
+    await settleMarketplaceOperationalOrderAfterPayment({
+      storeId: event.kyrubStoreId,
+      orderId: result.orderId,
+      paymentIntentId: event.paymentIntentId,
+      occurredAt: event.occurredAt,
+    });
+    await markMarketplaceOrderInventoryReservationPaymentConfirmed(
+      event.kyrubStoreId,
+      result.orderId
+    );
+  } else if (
+    event.eventType === 'payment.failed' ||
+    event.eventType === 'payment.expired' ||
+    event.eventType === 'payment.cancelled'
+  ) {
+    await releaseMarketplaceReservationForTerminalPayment({
+      storeId: event.kyrubStoreId,
+      paymentIntentId: event.paymentIntentId,
+      eventType: event.eventType,
+    });
+  }
+
   await attachPreparedCustomerDestinationResolutionToOperationalOrder(preparedDestination);
+
+  if (result.orderId) {
+    try {
+      await syncPersistedCustomerOrderIntoCrm({
+        storeId: event.kyrubStoreId,
+        orderId: result.orderId,
+      });
+    } catch (error) {
+      console.warn(
+        '[Mercado Pago Webhook] Pagamento e pedido confirmados; CRM ficará para a reconciliação.',
+        error instanceof Error ? error.message : String(error)
+      );
+    }
+  }
 
   return {
     accepted: true,

@@ -4,6 +4,7 @@ export const KYRUB_ERP_MANAGEMENT_NAVIGATION_EVENT =
 export type ErpManagementModule =
   | 'produtos'
   | 'vendas'
+  | 'assinaturas'
   | 'financeiro'
   | 'rh'
   | 'crm'

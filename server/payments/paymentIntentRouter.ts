@@ -4,6 +4,7 @@ import { verifyFirebaseIdToken } from '../ai/consultantAuth.js';
 import {
   normalizeCanonicalPaymentIntent,
   type CanonicalPaymentIntent,
+  type MarketplaceCanonicalPaymentIntent,
   type PaymentIntentOrderDraft,
 } from '../../src/utils/canonicalPaymentIntent.js';
 import {
@@ -11,6 +12,7 @@ import {
   type CanonicalPayment,
   type PaymentMethod,
 } from '../../src/utils/canonicalPayment.js';
+import { materializePendingMarketplaceOrder } from '../../src/utils/paymentOrderMaterialization.js';
 import { normalizePromotionCode } from '../../src/utils/storePromotions.js';
 import { normalizeStorePointsPerUnit } from '../../shared/storePoints.js';
 import { attachMercadoPagoPixToExistingIntent } from './mercadoPagoCheckoutBridge.js';
@@ -82,6 +84,9 @@ const clean = (value: unknown): string =>
 
 const bearerToken = (authorization: string): string =>
   /^Bearer\s+(.+)$/i.exec(authorization)?.[1]?.trim() ?? '';
+
+const operationalOrderPath = (storeId: string, orderId: string): string =>
+  `artifacts/${storeId}/public/data/customerOrders/${orderId}`;
 
 const parseCheckoutItems = (value: unknown): MarketplaceCheckoutItemInput[] => {
   if (!Array.isArray(value) || value.length === 0) {
@@ -201,6 +206,86 @@ const buildIntentItems = (
 const documentToken = (idempotencyKey: string): string =>
   Buffer.from(idempotencyKey).toString('base64url').slice(0, 160);
 
+const paymentIntentResponse = (
+  intent: MarketplaceCanonicalPaymentIntent,
+  payment: CanonicalPayment,
+  duplicate: boolean
+): MarketplacePaymentIntentResponse => ({
+  paymentIntentId: intent.id,
+  paymentId: payment.id,
+  orderId: intent.orderDraft.draftId,
+  status: 'pending',
+  subtotal: intent.orderDraft.subtotal,
+  discountTotal: intent.orderDraft.discountTotal ?? 0,
+  couponCode: intent.orderDraft.couponCode ?? '',
+  amount: intent.amount,
+  currency: intent.currency,
+  method: intent.method,
+  expiresAt: intent.expiresAt,
+  providerReady: false,
+  duplicate,
+});
+
+const resumeApprovedMarketplacePaymentIntent = async (input: {
+  storeId: string;
+  orderId: string;
+  buyerId: string;
+}): Promise<MarketplacePaymentIntentHttpResult> => {
+  const orderRef = adminDb.doc(operationalOrderPath(input.storeId, input.orderId));
+  const orderSnapshot = await orderRef.get();
+  if (!orderSnapshot.exists) throw new Error('CHECKOUT_ORDER_NOT_FOUND');
+  const order = orderSnapshot.data() as Record<string, unknown>;
+  if (
+    clean(order.storeId) !== input.storeId ||
+    clean(order.id) !== input.orderId ||
+    clean(order.buyerId) !== input.buyerId
+  ) {
+    throw new Error('CHECKOUT_ORDER_NOT_OWNED');
+  }
+  const status = clean(order.status);
+  if (status === 'pending') throw new Error('CHECKOUT_ORDER_APPROVAL_REQUIRED');
+  if (status !== 'accepted') throw new Error('CHECKOUT_ORDER_NOT_PAYABLE');
+  if (clean(order.paymentStatus) === 'paid') throw new Error('CHECKOUT_ORDER_ALREADY_PAID');
+
+  const paymentIntentId = clean(order.paymentIntentId);
+  const paymentId = clean(order.paymentId);
+  if (!paymentIntentId || !paymentId) {
+    throw new Error('CHECKOUT_PAYMENT_REFERENCE_MISSING');
+  }
+
+  const [intentSnapshot, paymentSnapshot] = await Promise.all([
+    adminDb.doc(`stores/${input.storeId}/paymentIntents/${paymentIntentId}`).get(),
+    adminDb.doc(`stores/${input.storeId}/payments/${paymentId}`).get(),
+  ]);
+  if (!intentSnapshot.exists || !paymentSnapshot.exists) {
+    throw new Error('CHECKOUT_PAYMENT_STATE_MISSING');
+  }
+  const intent = normalizeCanonicalPaymentIntent(
+    intentSnapshot.data() as CanonicalPaymentIntent
+  );
+  const payment = normalizeCanonicalPayment(
+    paymentSnapshot.data() as CanonicalPayment
+  );
+  if (
+    intent.context !== 'marketplace' ||
+    intent.storeId !== input.storeId ||
+    intent.buyerId !== input.buyerId ||
+    intent.target.orderId !== input.orderId ||
+    payment.storeId !== input.storeId ||
+    payment.buyerId !== input.buyerId ||
+    payment.orderId !== input.orderId ||
+    payment.status !== 'pending' ||
+    intent.status !== 'pending'
+  ) {
+    throw new Error('CHECKOUT_PAYMENT_STATE_MISMATCH');
+  }
+
+  return {
+    status: 200,
+    body: paymentIntentResponse(intent, payment, true),
+  };
+};
+
 export const mapMarketplaceCheckoutError = (
   error: unknown
 ): MarketplaceCheckoutErrorResult => {
@@ -238,6 +323,21 @@ export const mapMarketplaceCheckoutError = (
   if (message === 'PROMOTION_NOT_APPLICABLE') {
     return { status: 409, body: { error: 'O cupom não se aplica aos itens deste carrinho.' } };
   }
+  if (message === 'CHECKOUT_ORDER_NOT_FOUND') {
+    return { status: 404, body: { error: 'Pedido não encontrado para pagamento.' } };
+  }
+  if (message === 'CHECKOUT_ORDER_NOT_OWNED') {
+    return { status: 403, body: { error: 'Este pedido pertence a outro comprador.' } };
+  }
+  if (message === 'CHECKOUT_ORDER_APPROVAL_REQUIRED') {
+    return { status: 409, body: { error: 'A loja ainda precisa aceitar o pedido antes do pagamento.' } };
+  }
+  if (message === 'CHECKOUT_ORDER_NOT_PAYABLE') {
+    return { status: 409, body: { error: 'Este pedido não está disponível para pagamento.' } };
+  }
+  if (message === 'CHECKOUT_ORDER_ALREADY_PAID') {
+    return { status: 409, body: { error: 'Este pedido já está pago.' } };
+  }
   if (/Collector user without key enabled for QR render/i.test(message)) {
     return {
       status: 503,
@@ -266,6 +366,20 @@ export const createMarketplacePaymentIntent = async (
   const token = bearerToken(authorization);
   if (!token) throw new Error('AUTH_REQUIRED');
   const identity = await verifyFirebaseIdToken(token);
+  const candidate = body && typeof body === 'object' && !Array.isArray(body)
+    ? body as Record<string, unknown>
+    : {};
+  const resumeOrderId = clean(candidate.resumeOrderId);
+  const resumeStoreId = clean(candidate.storeId);
+  if (resumeOrderId) {
+    if (!resumeStoreId) throw new Error('CHECKOUT_REQUIRED_FIELDS_MISSING');
+    return resumeApprovedMarketplacePaymentIntent({
+      storeId: resumeStoreId,
+      orderId: resumeOrderId,
+      buyerId: identity.uid,
+    });
+  }
+
   const input = parseCheckout(body);
   const catalog = await loadPublishedCatalog(input.storeId);
   const intentItems = buildIntentItems(catalog, input.items);
@@ -295,7 +409,7 @@ export const createMarketplacePaymentIntent = async (
   const paymentId = `pay_${suffix}`;
   const orderId = `customer-order-${identity.uid}-${suffix.slice(0, 48)}`;
   const now = new Date().toISOString();
-  const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
   const orderDraft: PaymentIntentOrderDraft = {
     draftId: orderId,
     storeId: input.storeId,
@@ -342,6 +456,7 @@ export const createMarketplacePaymentIntent = async (
     storeId: input.storeId,
     orderId,
     buyerId: identity.uid,
+    paymentIntentId: intentId,
     amount,
     currency: 'BRL',
     method: input.method,
@@ -355,13 +470,20 @@ export const createMarketplacePaymentIntent = async (
     paidAt: '',
     refundedAt: '',
   });
+  const pendingOrder = materializePendingMarketplaceOrder({
+    intent,
+    paymentId,
+    now,
+  });
 
   const intentRef = adminDb.doc(`stores/${input.storeId}/paymentIntents/${intentId}`);
   const paymentRef = adminDb.doc(`stores/${input.storeId}/payments/${paymentId}`);
+  const orderRef = adminDb.doc(operationalOrderPath(input.storeId, orderId));
   const result = await adminDb.runTransaction(async transaction => {
-    const [existingIntent, existingPayment] = await Promise.all([
+    const [existingIntent, existingPayment, existingOrder] = await Promise.all([
       transaction.get(intentRef),
       transaction.get(paymentRef),
+      transaction.get(orderRef),
     ]);
     if (existingIntent.exists || existingPayment.exists) {
       if (!existingIntent.exists || !existingPayment.exists) {
@@ -374,6 +496,7 @@ export const createMarketplacePaymentIntent = async (
         existingPayment.data() as CanonicalPayment
       );
       if (
+        savedIntent.context !== 'marketplace' ||
         savedIntent.buyerId !== identity.uid ||
         savedIntent.storeId !== input.storeId ||
         savedIntent.idempotencyKey !== input.idempotencyKey ||
@@ -381,30 +504,25 @@ export const createMarketplacePaymentIntent = async (
       ) {
         throw new Error('CHECKOUT_IDEMPOTENCY_CONFLICT');
       }
+      if (!existingOrder.exists && savedIntent.status === 'pending' && savedPayment.status === 'pending') {
+        transaction.set(orderRef, materializePendingMarketplaceOrder({
+          intent: savedIntent,
+          paymentId: savedPayment.id,
+          now,
+        }));
+      }
       return { intent: savedIntent, payment: savedPayment, duplicate: true };
     }
+    if (existingOrder.exists) throw new Error('CHECKOUT_IDEMPOTENCY_CONFLICT');
     transaction.set(intentRef, intent);
     transaction.set(paymentRef, payment);
+    transaction.set(orderRef, pendingOrder);
     return { intent, payment, duplicate: false };
   });
 
   return {
     status: result.duplicate ? 200 : 201,
-    body: {
-      paymentIntentId: result.intent.id,
-      paymentId: result.payment.id,
-      orderId: result.intent.orderDraft.draftId,
-      status: 'pending',
-      subtotal: result.intent.orderDraft.subtotal,
-      discountTotal: result.intent.orderDraft.discountTotal ?? 0,
-      couponCode: result.intent.orderDraft.couponCode ?? '',
-      amount: result.intent.amount,
-      currency: result.intent.currency,
-      method: result.intent.method,
-      expiresAt: result.intent.expiresAt,
-      providerReady: false,
-      duplicate: result.duplicate,
-    },
+    body: paymentIntentResponse(result.intent, result.payment, result.duplicate),
   };
 };
 

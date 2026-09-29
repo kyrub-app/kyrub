@@ -19,6 +19,8 @@ const inboxSource = readFileSync(
   'src/components/customer/CustomerOrderInbox.tsx',
   'utf8'
 );
+const customerOrdersSource = readFileSync('src/utils/customerOrders.ts', 'utf8');
+const storeConnectionsSource = readFileSync('src/utils/storeConnections.ts', 'utf8');
 const tableBoardSource = readFileSync(
   'src/components/customer/CustomerTableBoard.tsx',
   'utf8'
@@ -69,7 +71,7 @@ test('canonical non-table locations use stable service-location identity for app
   assert.match(workflowSource, /getPendingAttendanceOrdersForLocation/);
   assert.match(workflowSource, /serviceLocationIdentityKey\(location\)/);
   assert.match(workflowSource, /serviceLocationIdentityKey\(orderLocation\) === expected/);
-  assert.match(workflowSource, /resolvedLocation\?\.source === 'canonical'/);
+  assert.match(workflowSource, /serviceLocation: order\.serviceLocation/);
   assert.match(approvalSource, /serviceLocation\?: ResolvedOrderServiceLocation/);
   assert.match(approvalSource, /getPendingAttendanceOrdersForLocation/);
 });
@@ -139,11 +141,14 @@ test('staff can create another order in the selected canonical service location 
   assert.doesNotMatch(inPersonOrderComposerSource, /tableCode:/);
 });
 
-test('Kyrub marketplace delivery and pickup require paid status before KDS', () => {
-  assert.match(workflowSource, /order\.source !== 'customer'/);
-  assert.match(workflowSource, /order\.fulfillmentType === 'dine_in'/);
-  assert.match(workflowSource, /isNinetyNineFoodOrder\(order\)/);
-  assert.match(workflowSource, /order\.paymentStatus === 'paid'/);
+test('approval-gated Kyrub delivery and pickup reach KDS before payment while legacy unpaid orders stay gated', () => {
+  assert.match(workflowSource, /isApprovalGatedKyrubMarketplaceOrder/);
+  assert.match(workflowSource, /order\.sourceChannel === 'kyrub'/);
+  assert.match(workflowSource, /order\.fulfillmentType === 'delivery'/);
+  assert.match(workflowSource, /order\.fulfillmentType === 'pickup'/);
+  assert.match(workflowSource, /order\.operatorId\.trim\(\) === order\.buyerId\.trim\(\)/);
+  assert.match(workflowSource, /if \(isApprovalGatedKyrubMarketplaceOrder\(order\)\) return true/);
+  assert.match(workflowSource, /return order\.paymentStatus === 'paid'/);
 });
 
 test('authoritative paid webhook materializes the marketplace order transactionally', () => {
@@ -178,12 +183,21 @@ test('attendance and KDS rejection require reason and support alternatives', () 
   assert.match(attendanceReviewSource, /Alternativa sugerida/);
 });
 
-test('KDS exposes origin filter above production stage filters', () => {
+test('KDS origin filter is driven by canonical connected sales channels', () => {
   const originIndex = inboxSource.indexOf('Origem do pedido');
   const stageIndex = inboxSource.indexOf("{filterOptions.map");
   assert.ok(originIndex >= 0);
   assert.ok(stageIndex > originIndex);
-  assert.match(workflowSource, /Kyrub Ofertas/);
+  assert.match(inboxSource, /loadStoreConnectionOnboarding/);
+  assert.match(inboxSource, /getConnectedStoreChannels/);
+  assert.match(storeConnectionsSource, /connection\.status === 'connected'/);
+  assert.match(workflowSource, /marketplace:mercado_livre/);
   assert.match(workflowSource, /marketplace:99food/);
-  assert.match(workflowSource, /attendanceSpaces/);
+  assert.match(workflowSource, /marketplace:shopee/);
+  assert.match(workflowSource, /marketplace:ifood/);
+  assert.match(workflowSource, /PDV \/ Staff/);
+  assert.match(workflowSource, /label: 'Kyrub'/);
+  assert.doesNotMatch(workflowSource, /Atendimento presencial/);
+  assert.match(customerOrdersSource, /value === 'shopee'/);
+  assert.match(customerOrdersSource, /value === 'ifood'/);
 });

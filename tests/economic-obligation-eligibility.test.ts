@@ -142,7 +142,7 @@ describe('economic obligation secure pickup eligibility', () => {
 
   test('actual order completion flow invokes eligibility only behind the secure pickup completion gate', () => {
     const execution = readFileSync(
-      'server/inventory/orderStatusExecutionService.ts',
+      'server/inventory/orderStatusExecutionServiceBase.ts',
       'utf8'
     );
     const transitionAt = execution.indexOf('transitionOrderStatusWithInventory(');

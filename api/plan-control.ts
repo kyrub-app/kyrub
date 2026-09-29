@@ -5,6 +5,18 @@ import {
   publishPlanVersion,
   setCouponCampaignStatus,
 } from '../server/admin/planManagementService.js';
+import {
+  designateOfficialStore,
+  loadOfficialStoreSnapshot,
+} from '../server/admin/officialStoreService.js';
+import {
+  cancelOwnPaidPlanSubscription,
+  createOwnPaidPlanCheckout,
+  handlePaidPlanProviderWebhook,
+  loadOwnPlanSubscriptionState,
+  loadPaidPlanBillingAvailability,
+  reconcileOwnPaidPlanSubscription,
+} from '../server/admin/paidPlanSubscriptionService.js';
 import { loadPublicActivePlanCatalog } from '../server/admin/publicPlanCatalogService.js';
 import {
   grantComplimentaryPlanWithLifecycle,
@@ -12,6 +24,27 @@ import {
   redeemCouponWithLifecycle,
 } from '../server/admin/storeEntitlementLifecycleService.js';
 import { mapStoreEntitlementError } from '../server/admin/storeEntitlementService.js';
+import {
+  cancelAuthorizedStoreSubscription,
+  createAuthorizedStoreSubscription,
+  getAuthorizedStoreSubscription,
+  mapStoreSubscriptionError,
+  processStoreSubscriptionMercadoPagoWebhook,
+  reconcileAuthorizedStoreSubscription,
+} from '../server/payments/storeSubscriptionService.js';
+import {
+  StoreSubscriptionBenefitError,
+  consumeAuthorizedStoreSubscriptionBenefit,
+  listAuthorizedStoreSubscriptionBenefitCycles,
+  mapStoreSubscriptionBenefitError,
+  reconcileStoreSubscriptionBenefitCycle,
+} from '../server/payments/storeSubscriptionBenefitService.js';
+import { loadAuthorizedStoreSubscriptionBenefitLedger } from '../server/payments/storeSubscriptionBenefitLedgerService.js';
+import {
+  loadAuthorizedStoreSubscriberRegistry,
+  mapStoreSubscriberRegistryError,
+  reconcileAuthorizedStoreSubscribersIntoCrm,
+} from '../server/payments/storeSubscriberRegistryService.js';
 
 type HeaderValue = string | string[] | undefined;
 type QueryValue = string | string[] | undefined;
@@ -40,6 +73,24 @@ const methodNotAllowed = (response: ResponseLike): void => {
     code: 'METHOD_NOT_ALLOWED',
   });
 };
+
+const webhookDataId = (
+  body: Record<string, unknown>,
+  query: Record<string, QueryValue> | undefined
+): string => {
+  const data = record(body.data);
+  return String(data.id ?? first(query?.['data.id']) ?? first(query?.id) ?? '').trim();
+};
+
+const webhookEventType = (
+  body: Record<string, unknown>,
+  query: Record<string, QueryValue> | undefined
+): string => String(body.type ?? body.topic ?? first(query?.type) ?? first(query?.topic) ?? '').trim();
+
+const webhookUserId = (
+  body: Record<string, unknown>,
+  query: Record<string, QueryValue> | undefined
+): string => String(body.user_id ?? first(query?.user_id) ?? '').trim();
 
 export default async function handler(
   request: RequestLike,
@@ -74,6 +125,75 @@ export default async function handler(
     return;
   }
 
+  if (operation === 'plans.billing') {
+    if (method !== 'GET') {
+      methodNotAllowed(response);
+      return;
+    }
+    response.setHeader('cache-control', 'no-store, max-age=0');
+    response.status(200).json(loadPaidPlanBillingAvailability());
+    return;
+  }
+
+  if (operation === 'subscription.webhook') {
+    if (method !== 'POST') {
+      methodNotAllowed(response);
+      return;
+    }
+    response.setHeader('cache-control', 'no-store, max-age=0');
+    try {
+      const dataId = webhookDataId(body, request.query);
+      if (!dataId) {
+        response.status(400).json({ error: 'Assinatura não informada.', code: 'SUBSCRIPTION_ID_REQUIRED' });
+        return;
+      }
+      response.status(200).json(await handlePaidPlanProviderWebhook({
+        signature: request.headers['x-signature'] ?? request.headers['X-Signature'],
+        requestId: request.headers['x-request-id'] ?? request.headers['X-Request-Id'],
+        dataId,
+        eventType: webhookEventType(body, request.query),
+      }));
+    } catch (error) {
+      const mapped = mapPlanManagementError(error);
+      response.status(mapped.status).json(mapped.body);
+    }
+    return;
+  }
+
+  if (operation === 'merchant.subscription.webhook') {
+    if (method !== 'POST') {
+      methodNotAllowed(response);
+      return;
+    }
+    response.setHeader('cache-control', 'no-store, max-age=0');
+    try {
+      const dataId = webhookDataId(body, request.query);
+      if (!dataId) {
+        response.status(400).json({
+          error: 'Recurso da assinatura não informado.',
+          code: 'STORE_SUBSCRIPTION_WEBHOOK_DATA_REQUIRED',
+        });
+        return;
+      }
+      const result = await processStoreSubscriptionMercadoPagoWebhook({
+        headers: request.headers,
+        dataId,
+        eventType: webhookEventType(body, request.query),
+        userId: webhookUserId(body, request.query),
+      });
+      const benefitCycle = result.processed && result.storeId && result.subscriptionId
+        ? await reconcileStoreSubscriptionBenefitCycle(result.storeId, result.subscriptionId)
+        : null;
+      response.status(200).json({ ...result, benefitCycle });
+    } catch (error) {
+      const mapped = error instanceof StoreSubscriptionBenefitError
+        ? mapStoreSubscriptionBenefitError(error)
+        : mapStoreSubscriptionError(error);
+      response.status(mapped.status).json(mapped.body);
+    }
+    return;
+  }
+
   response.setHeader('cache-control', 'no-store, max-age=0');
 
   try {
@@ -85,6 +205,26 @@ export default async function handler(
         }
         response.status(200).json(
           await loadPlanManagementSnapshot(authorization)
+        );
+        return;
+      }
+      case 'admin.official-store.snapshot': {
+        if (method !== 'GET') {
+          methodNotAllowed(response);
+          return;
+        }
+        response.status(200).json(
+          await loadOfficialStoreSnapshot(authorization)
+        );
+        return;
+      }
+      case 'admin.official-store.designate': {
+        if (method !== 'POST') {
+          methodNotAllowed(response);
+          return;
+        }
+        response.status(200).json(
+          await designateOfficialStore(authorization, request.body)
         );
         return;
       }
@@ -155,6 +295,143 @@ export default async function handler(
         );
         return;
       }
+      case 'store.subscription.state': {
+        if (method !== 'GET') {
+          methodNotAllowed(response);
+          return;
+        }
+        response.status(200).json(await loadOwnPlanSubscriptionState(authorization));
+        return;
+      }
+      case 'store.subscription.checkout': {
+        if (method !== 'POST') {
+          methodNotAllowed(response);
+          return;
+        }
+        response.status(201).json(await createOwnPaidPlanCheckout(authorization, body.plan));
+        return;
+      }
+      case 'store.subscription.reconcile': {
+        if (method !== 'POST') {
+          methodNotAllowed(response);
+          return;
+        }
+        response.status(200).json(await reconcileOwnPaidPlanSubscription(authorization));
+        return;
+      }
+      case 'store.subscription.cancel': {
+        if (method !== 'POST') {
+          methodNotAllowed(response);
+          return;
+        }
+        response.status(200).json(await cancelOwnPaidPlanSubscription(authorization));
+        return;
+      }
+      case 'merchant.subscription.checkout': {
+        if (method !== 'POST') {
+          methodNotAllowed(response);
+          return;
+        }
+        const result = await createAuthorizedStoreSubscription(authorization, request.body);
+        const benefitCycle = await reconcileStoreSubscriptionBenefitCycle(
+          result.subscription.storeId,
+          result.subscription.id
+        );
+        response.status(201).json({ ...result, benefitCycle });
+        return;
+      }
+      case 'merchant.subscription.state': {
+        if (method !== 'POST') {
+          methodNotAllowed(response);
+          return;
+        }
+        response.status(200).json(
+          await getAuthorizedStoreSubscription(authorization, request.body)
+        );
+        return;
+      }
+      case 'merchant.subscription.reconcile': {
+        if (method !== 'POST') {
+          methodNotAllowed(response);
+          return;
+        }
+        const subscription = await reconcileAuthorizedStoreSubscription(
+          authorization,
+          request.body
+        );
+        const benefitCycle = await reconcileStoreSubscriptionBenefitCycle(
+          subscription.storeId,
+          subscription.id
+        );
+        response.status(200).json({ ...subscription, benefitCycle });
+        return;
+      }
+      case 'merchant.subscription.cancel': {
+        if (method !== 'POST') {
+          methodNotAllowed(response);
+          return;
+        }
+        response.status(200).json(
+          await cancelAuthorizedStoreSubscription(authorization, request.body)
+        );
+        return;
+      }
+      case 'merchant.subscription.benefits.list': {
+        if (method !== 'POST') {
+          methodNotAllowed(response);
+          return;
+        }
+        response.status(200).json(
+          await listAuthorizedStoreSubscriptionBenefitCycles(authorization, request.body)
+        );
+        return;
+      }
+      case 'merchant.subscription.benefits.ledger': {
+        if (method !== 'POST') {
+          methodNotAllowed(response);
+          return;
+        }
+        response.status(200).json(
+          await loadAuthorizedStoreSubscriptionBenefitLedger(authorization, request.body)
+        );
+        return;
+      }
+      case 'merchant.subscription.benefit.consume': {
+        if (method !== 'POST') {
+          methodNotAllowed(response);
+          return;
+        }
+        response.status(200).json(
+          await consumeAuthorizedStoreSubscriptionBenefit(authorization, request.body)
+        );
+        return;
+      }
+      case 'merchant.subscribers.list': {
+        if (method !== 'GET') {
+          methodNotAllowed(response);
+          return;
+        }
+        response.status(200).json(
+          await loadAuthorizedStoreSubscriberRegistry(
+            authorization,
+            first(request.query?.storeId)
+          )
+        );
+        return;
+      }
+      case 'merchant.subscribers.reconcile': {
+        if (method !== 'POST') {
+          methodNotAllowed(response);
+          return;
+        }
+        response.status(200).json(
+          await reconcileAuthorizedStoreSubscribersIntoCrm(
+            authorization,
+            body.storeId
+          )
+        );
+        return;
+      }
       default:
         response.status(404).json({
           error: 'Operação de planos não encontrada.',
@@ -162,10 +439,19 @@ export default async function handler(
         });
     }
   } catch (error) {
-    const mapped = operation.startsWith('store.') ||
-      operation === 'admin.entitlement.grant'
-      ? mapStoreEntitlementError(error)
-      : mapPlanManagementError(error);
+    const mapped = operation.startsWith('merchant.subscription.benefit')
+      ? mapStoreSubscriptionBenefitError(error)
+      : operation.startsWith('merchant.subscribers')
+        ? mapStoreSubscriberRegistryError(error)
+        : operation.startsWith('merchant.subscription')
+          ? error instanceof StoreSubscriptionBenefitError
+            ? mapStoreSubscriptionBenefitError(error)
+            : mapStoreSubscriptionError(error)
+          : operation.startsWith('store.subscription')
+            ? mapPlanManagementError(error)
+            : operation.startsWith('store.') || operation === 'admin.entitlement.grant'
+              ? mapStoreEntitlementError(error)
+              : mapPlanManagementError(error);
     response.status(mapped.status).json(mapped.body);
   }
 }
