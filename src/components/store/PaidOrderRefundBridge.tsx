@@ -297,7 +297,6 @@ export const PaidOrderRefundBridge = ({
   };
 
   const closeScopedRejection = (): void => {
-    if (rejectionBusy) return;
     setRejectionOrder(null);
     setRejectionReason('');
     setRejectionAlternative('');
