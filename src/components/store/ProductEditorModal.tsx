@@ -10,7 +10,6 @@ import {
   persistProductFiscalProfile,
   type ProductFiscalEditorState,
 } from '../../utils/productFiscal';
-import { PhysicalInventoryWorkspace } from './PhysicalInventoryWorkspace';
 import { ProductFiscalFieldsBridge } from './ProductFiscalFieldsBridge';
 import { ProductModalArchitectureBridge } from './ProductModalArchitectureBridge';
 import {
@@ -246,10 +245,7 @@ export const ProductEditorModal: React.FC<ProductEditorModalProps> = ({
                   Faça login novamente para acessar estoque e compras.
                 </p>
               ) : activeWorkspace === 'stock' ? (
-                <>
-                  <StoreInventoryCatalogWorkspace storeId={storeId} />
-                  <PhysicalInventoryWorkspace storeId={storeId} />
-                </>
+                <StoreInventoryCatalogWorkspace storeId={storeId} />
               ) : (
                 <StorePurchaseWorkspace storeId={storeId} />
               )}
