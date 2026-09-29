@@ -28,7 +28,10 @@ type PartialCancellationResponse = {
 };
 
 const ORDER_PREFIX = 'kyrub-customer-order-';
-const money = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
+const money = new Intl.NumberFormat('pt-BR', {
+  style: 'currency',
+  currency: 'BRL',
+});
 const roundMoney = (value: number): number =>
   Math.round((value + Number.EPSILON) * 100) / 100;
 
@@ -46,7 +49,11 @@ const asNumber = (value: unknown): number =>
 const asInteger = (value: unknown): number =>
   typeof value === 'number' && Number.isInteger(value) && value >= 0 ? value : 0;
 
-const parseItem = (value: unknown, index: number, orderId: string): CustomerOrderItem | null => {
+const parseItem = (
+  value: unknown,
+  index: number,
+  orderId: string
+): CustomerOrderItem | null => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   const raw = value as Record<string, unknown>;
   const quantity = asInteger(raw.quantity);
@@ -69,7 +76,11 @@ const parseItem = (value: unknown, index: number, orderId: string): CustomerOrde
   };
 };
 
-const parseOrder = (storeId: string, orderId: string, value: unknown): CustomerOrder | null => {
+const parseOrder = (
+  storeId: string,
+  orderId: string,
+  value: unknown
+): CustomerOrder | null => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   const raw = value as Record<string, unknown>;
   const rawItems = Array.isArray(raw.items) ? raw.items : [];
@@ -99,7 +110,9 @@ const parseOrder = (storeId: string, orderId: string, value: unknown): CustomerO
         ? raw.paymentStatus
         : 'unpaid',
     source:
-      raw.source === 'staff' || raw.source === 'transfer' ? raw.source : 'customer',
+      raw.source === 'staff' || raw.source === 'transfer'
+        ? raw.source
+        : 'customer',
     sourceChannel: null,
     operatorId: asString(raw.operatorId),
     operatorName: asString(raw.operatorName),
@@ -114,8 +127,14 @@ const cancellableQuantity = (item: CustomerOrderItem): number =>
     item.quantity - item.transferredQuantity - (item.voidedQuantity ?? 0)
   );
 
-const estimateCancelledAmount = (item: CustomerOrderItem, quantity: number): number => {
-  const cancellable = Math.min(cancellableQuantity(item), Math.max(0, Math.trunc(quantity)));
+const estimateCancelledAmount = (
+  item: CustomerOrderItem,
+  quantity: number
+): number => {
+  const cancellable = Math.min(
+    cancellableQuantity(item),
+    Math.max(0, Math.trunc(quantity))
+  );
   if (!cancellable || item.quantity <= 0) return 0;
   const remainingQuantity = item.quantity - cancellable;
   const settled = Math.max(0, item.settledAmount ?? 0);
@@ -123,11 +142,17 @@ const estimateCancelledAmount = (item: CustomerOrderItem, quantity: number): num
   const currentNet = settled > 0
     ? settled
     : roundMoney(Math.max(0, item.quantity * item.price - discount));
-  const remainingSettled = roundMoney(settled * remainingQuantity / item.quantity);
-  const remainingDiscount = roundMoney(discount * remainingQuantity / item.quantity);
+  const remainingSettled = roundMoney(
+    settled * remainingQuantity / item.quantity
+  );
+  const remainingDiscount = roundMoney(
+    discount * remainingQuantity / item.quantity
+  );
   const remainingNet = settled > 0
     ? remainingSettled
-    : roundMoney(Math.max(0, remainingQuantity * item.price - remainingDiscount));
+    : roundMoney(
+        Math.max(0, remainingQuantity * item.price - remainingDiscount)
+      );
   return roundMoney(Math.max(0, currentNet - remainingNet));
 };
 
@@ -146,7 +171,6 @@ export const KdsScopedRejectionController = ({
   const [error, setError] = useState('');
 
   const reset = (): void => {
-    if (busy) return;
     setOrder(null);
     setLoadingOrder(false);
     setReason('');
@@ -168,8 +192,8 @@ export const KdsScopedRejectionController = ({
       const card = button.closest(`[id^="${ORDER_PREFIX}"]`);
       if (!(card instanceof HTMLElement)) return;
 
-      // Bloqueia o modal legado antes de qualquer leitura assíncrona. Assim o clique
-      // real do KDS sempre entra no fluxo com escopo, mesmo se a sessão acabou de hidratar.
+      // O listener fica no window em capture, um nível acima do document usado pelos
+      // bridges antigos. Bloqueamos o modal legado ANTES de qualquer leitura assíncrona.
       event.preventDefault();
       event.stopPropagation();
       event.stopImmediatePropagation();
@@ -191,7 +215,9 @@ export const KdsScopedRejectionController = ({
             ? parseOrder(storeId, orderId, snapshot.data())
             : null;
           if (!parsed) {
-            setError('Este pedido não está mais disponível para recusa. Atualize o painel.');
+            setError(
+              'Este pedido não está mais disponível para recusa. Atualize o painel.'
+            );
             return;
           }
           setOrder(parsed);
@@ -204,8 +230,8 @@ export const KdsScopedRejectionController = ({
         .finally(() => setLoadingOrder(false));
     };
 
-    document.addEventListener('click', interceptNativeReject, true);
-    return () => document.removeEventListener('click', interceptNativeReject, true);
+    window.addEventListener('click', interceptNativeReject, true);
+    return () => window.removeEventListener('click', interceptNativeReject, true);
   }, [busy, loadingOrder, order, storeId]);
 
   const selectedQuantity = useMemo(
@@ -213,21 +239,36 @@ export const KdsScopedRejectionController = ({
     [selections]
   );
   const totalCancellableQuantity = useMemo(
-    () => order?.items.reduce((sum, item) => sum + cancellableQuantity(item), 0) ?? 0,
+    () =>
+      order?.items.reduce(
+        (sum, item) => sum + cancellableQuantity(item),
+        0
+      ) ?? 0,
     [order]
   );
   const cancelsEverything =
     selectedQuantity > 0 && selectedQuantity >= totalCancellableQuantity;
   const selectedAmount = useMemo(
-    () => roundMoney(order?.items.reduce(
-      (sum, item) => sum + estimateCancelledAmount(item, selections[item.lineId] ?? 0),
-      0
-    ) ?? 0),
+    () =>
+      roundMoney(
+        order?.items.reduce(
+          (sum, item) =>
+            sum +
+            estimateCancelledAmount(item, selections[item.lineId] ?? 0),
+          0
+        ) ?? 0
+      ),
     [order, selections]
   );
 
-  const setItemQuantity = (item: CustomerOrderItem, quantity: number): void => {
-    const nextQuantity = Math.max(0, Math.min(cancellableQuantity(item), Math.trunc(quantity)));
+  const setItemQuantity = (
+    item: CustomerOrderItem,
+    quantity: number
+  ): void => {
+    const nextQuantity = Math.max(
+      0,
+      Math.min(cancellableQuantity(item), Math.trunc(quantity))
+    );
     setSelections(current => {
       const next = { ...current };
       if (nextQuantity > 0) next[item.lineId] = nextQuantity;
@@ -240,19 +281,29 @@ export const KdsScopedRejectionController = ({
     if (!order || !reason.trim() || !scope) return;
     const user = auth.currentUser;
     if (!user) {
-      setError('Sua sessão ainda não está disponível. Aguarde um instante e tente novamente.');
+      setError(
+        'Sua sessão ainda não está disponível. Aguarde um instante e tente novamente.'
+      );
       return;
     }
+
     setBusy(true);
     setError('');
     try {
       if (scope === 'whole') {
-        await updateOrderStatusWithDecision(storeId, order.id, 'rejected', {
-          reason: reason.trim(),
-          alternative: alternative.trim(),
-        });
-        notify('Pedido recusado. Se houver pagamento confirmado, o Kyrub sinalizará o reembolso necessário.', 'success');
-        setBusy(false);
+        await updateOrderStatusWithDecision(
+          storeId,
+          order.id,
+          'rejected',
+          {
+            reason: reason.trim(),
+            alternative: alternative.trim(),
+          }
+        );
+        notify(
+          'Pedido recusado. Se houver pagamento confirmado, o Kyrub sinalizará o reembolso necessário.',
+          'success'
+        );
         reset();
         return;
       }
@@ -267,47 +318,63 @@ export const KdsScopedRejectionController = ({
       }
 
       const token = await user.getIdToken();
-      const response = await fetch('/api/health?transport=store-promotions&surface=refunds', {
-        method: 'POST',
-        headers: {
-          authorization: `Bearer ${token}`,
-          'content-type': 'application/json',
-        },
-        body: JSON.stringify({
-          operation: 'cancel-items',
-          operationId,
-          storeId,
-          orderId: order.id,
-          reason: reason.trim(),
-          alternative: alternative.trim(),
-          selections: Object.entries(selections)
-            .filter(([, quantity]) => quantity > 0)
-            .map(([lineId, quantity]) => ({ lineId, quantity })),
-        }),
-      });
+      const response = await fetch(
+        '/api/health?transport=store-promotions&surface=refunds',
+        {
+          method: 'POST',
+          headers: {
+            authorization: `Bearer ${token}`,
+            'content-type': 'application/json',
+          },
+          body: JSON.stringify({
+            operation: 'cancel-items',
+            operationId,
+            storeId,
+            orderId: order.id,
+            reason: reason.trim(),
+            alternative: alternative.trim(),
+            selections: Object.entries(selections)
+              .filter(([, quantity]) => quantity > 0)
+              .map(([lineId, quantity]) => ({ lineId, quantity })),
+          }),
+        }
+      );
       const payload = await response.json().catch(() => ({})) as PartialCancellationResponse;
       if (!response.ok) {
-        throw new Error(payload.error || 'Não foi possível cancelar os itens selecionados.');
+        throw new Error(
+          payload.error || 'Não foi possível cancelar os itens selecionados.'
+        );
       }
+
       const amount = payload.cancelledAmount ?? selectedAmount;
       if (payload.refundRequired && payload.refundStatus === 'processing') {
-        setError(`Os itens foram cancelados. O reembolso parcial de ${money.format(amount)} está sendo confirmado pelo Mercado Pago. Toque novamente em confirmar para verificar a mesma operação, sem duplicar o cancelamento.`);
+        setError(
+          `Os itens foram cancelados. O reembolso parcial de ${money.format(amount)} está sendo confirmado pelo Mercado Pago. Toque novamente em confirmar para verificar a mesma operação, sem duplicar o cancelamento.`
+        );
         return;
       }
       if (payload.refundRequired && payload.refundStatus === 'failed') {
-        setError(`Os itens foram cancelados, mas o reembolso parcial de ${money.format(amount)} ainda não foi confirmado. Tente novamente para reaproveitar a mesma operação idempotente.`);
+        setError(
+          `Os itens foram cancelados, mas o reembolso parcial de ${money.format(amount)} ainda não foi confirmado. Tente novamente para reaproveitar a mesma operação idempotente.`
+        );
         return;
       }
+
       notify(
         payload.refundRequired
           ? `Itens cancelados e reembolso parcial de ${money.format(amount)} confirmado.`
-          : `Itens cancelados. O pedido continua em ${money.format(payload.remainingTotal ?? Math.max(0, order.total - amount))}.`,
+          : `Itens cancelados. O pedido continua em ${money.format(
+              payload.remainingTotal ?? Math.max(0, order.total - amount)
+            )}.`,
         'success'
       );
-      setBusy(false);
       reset();
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : 'Não foi possível concluir o cancelamento.');
+      setError(
+        requestError instanceof Error
+          ? requestError.message
+          : 'Não foi possível concluir o cancelamento.'
+      );
     } finally {
       setBusy(false);
     }
@@ -320,19 +387,30 @@ export const KdsScopedRejectionController = ({
       <section className="max-h-[92dvh] w-full max-w-lg overflow-y-auto rounded-t-3xl border border-red-500/30 bg-slate-900 p-5 shadow-2xl sm:rounded-3xl">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <span className="font-mono text-[9px] font-black uppercase tracking-[0.14em] text-red-300">Recusa do pedido</span>
+            <span className="font-mono text-[9px] font-black uppercase tracking-[0.14em] text-red-300">
+              Recusa do pedido
+            </span>
             <h3 className="mt-1 text-lg font-black text-white">
-              {order ? `${order.buyerName} · ${money.format(order.total)}` : 'Carregando pedido…'}
+              {order
+                ? `${order.buyerName} · ${money.format(order.total)}`
+                : 'Carregando pedido…'}
             </h3>
           </div>
-          <button type="button" disabled={busy} onClick={reset} className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-700 bg-slate-950 text-slate-400 disabled:opacity-40" aria-label="Fechar recusa">
+          <button
+            type="button"
+            disabled={busy}
+            onClick={reset}
+            className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-700 bg-slate-950 text-slate-400 disabled:opacity-40"
+            aria-label="Fechar recusa"
+          >
             <X className="h-4 w-4" />
           </button>
         </div>
 
         {loadingOrder && (
           <div className="mt-6 flex items-center gap-2 rounded-2xl border border-slate-700 bg-slate-950 p-4 text-xs text-slate-300">
-            <LoaderCircle className="h-4 w-4 animate-spin" /> Carregando itens do pedido…
+            <LoaderCircle className="h-4 w-4 animate-spin" />
+            Carregando itens do pedido…
           </div>
         )}
 
@@ -340,19 +418,56 @@ export const KdsScopedRejectionController = ({
           <>
             <label className="mt-5 block text-[9px] font-black uppercase text-slate-400">
               Motivo da recusa
-              <textarea value={reason} onChange={event => setReason(event.target.value)} rows={3} maxLength={500} className="mt-2 w-full rounded-2xl border border-slate-700 bg-slate-950 px-3 py-3 text-[11px] normal-case text-white outline-none focus:border-red-400" placeholder="Ex.: item indisponível, erro no pedido…" />
+              <textarea
+                value={reason}
+                onChange={event => setReason(event.target.value)}
+                rows={3}
+                maxLength={500}
+                className="mt-2 w-full rounded-2xl border border-slate-700 bg-slate-950 px-3 py-3 text-[11px] normal-case text-white outline-none focus:border-red-400"
+                placeholder="Ex.: item indisponível, erro no pedido…"
+              />
             </label>
             <label className="mt-3 block text-[9px] font-black uppercase text-slate-400">
               Alternativa ao cliente (opcional)
-              <input value={alternative} onChange={event => setAlternative(event.target.value)} maxLength={300} className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-3 text-[11px] normal-case text-white outline-none focus:border-red-400" />
+              <input
+                value={alternative}
+                onChange={event => setAlternative(event.target.value)}
+                maxLength={300}
+                className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-3 text-[11px] normal-case text-white outline-none focus:border-red-400"
+              />
             </label>
 
             {reason.trim() && (
               <div className="mt-5">
-                <p className="text-[10px] font-black uppercase text-white">O que será cancelado?</p>
+                <p className="text-[10px] font-black uppercase text-white">
+                  O que será cancelado?
+                </p>
                 <div className="mt-2 grid grid-cols-2 gap-2">
-                  <button type="button" onClick={() => { setScope('whole'); setSelections({}); }} className={`min-h-12 rounded-xl border px-3 text-[10px] font-black uppercase ${scope === 'whole' ? 'border-red-400 bg-red-500/20 text-red-100' : 'border-slate-700 bg-slate-950 text-slate-300'}`}>Pedido inteiro</button>
-                  <button type="button" onClick={() => setScope('items')} className={`min-h-12 rounded-xl border px-3 text-[10px] font-black uppercase ${scope === 'items' ? 'border-amber-400 bg-amber-500/15 text-amber-100' : 'border-slate-700 bg-slate-950 text-slate-300'}`}>Alguns itens</button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setScope('whole');
+                      setSelections({});
+                    }}
+                    className={`min-h-12 rounded-xl border px-3 text-[10px] font-black uppercase ${
+                      scope === 'whole'
+                        ? 'border-red-400 bg-red-500/20 text-red-100'
+                        : 'border-slate-700 bg-slate-950 text-slate-300'
+                    }`}
+                  >
+                    Pedido inteiro
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setScope('items')}
+                    className={`min-h-12 rounded-xl border px-3 text-[10px] font-black uppercase ${
+                      scope === 'items'
+                        ? 'border-amber-400 bg-amber-500/15 text-amber-100'
+                        : 'border-slate-700 bg-slate-950 text-slate-300'
+                    }`}
+                  >
+                    Alguns itens
+                  </button>
                 </div>
               </div>
             )}
@@ -363,13 +478,39 @@ export const KdsScopedRejectionController = ({
                   const maximum = cancellableQuantity(item);
                   const selected = selections[item.lineId] ?? 0;
                   return (
-                    <div key={item.lineId} className="rounded-2xl border border-slate-700 bg-slate-950 p-3">
+                    <div
+                      key={item.lineId}
+                      className="rounded-2xl border border-slate-700 bg-slate-950 p-3"
+                    >
                       <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0"><p className="truncate text-xs font-black text-white">{item.name}</p><p className="mt-1 text-[9px] text-slate-500">Disponível para cancelar: {maximum} · {money.format(item.price)} cada</p></div>
+                        <div className="min-w-0">
+                          <p className="truncate text-xs font-black text-white">
+                            {item.name}
+                          </p>
+                          <p className="mt-1 text-[9px] text-slate-500">
+                            Disponível para cancelar: {maximum} · {money.format(item.price)} cada
+                          </p>
+                        </div>
                         <div className="flex items-center gap-2">
-                          <button type="button" disabled={!selected} onClick={() => setItemQuantity(item, selected - 1)} className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-700 text-slate-300 disabled:opacity-30"><Minus className="h-3.5 w-3.5" /></button>
-                          <span className="min-w-5 text-center text-sm font-black text-white">{selected}</span>
-                          <button type="button" disabled={selected >= maximum} onClick={() => setItemQuantity(item, selected + 1)} className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-700 text-slate-300 disabled:opacity-30"><Plus className="h-3.5 w-3.5" /></button>
+                          <button
+                            type="button"
+                            disabled={!selected}
+                            onClick={() => setItemQuantity(item, selected - 1)}
+                            className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-700 text-slate-300 disabled:opacity-30"
+                          >
+                            <Minus className="h-3.5 w-3.5" />
+                          </button>
+                          <span className="min-w-5 text-center text-sm font-black text-white">
+                            {selected}
+                          </span>
+                          <button
+                            type="button"
+                            disabled={selected >= maximum}
+                            onClick={() => setItemQuantity(item, selected + 1)}
+                            className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-700 text-slate-300 disabled:opacity-30"
+                          >
+                            <Plus className="h-3.5 w-3.5" />
+                          </button>
                         </div>
                       </div>
                     </div>
@@ -377,24 +518,46 @@ export const KdsScopedRejectionController = ({
                 })}
                 {selectedQuantity > 0 && (
                   <div className="rounded-2xl border border-amber-500/25 bg-amber-500/10 p-3 text-[10px] text-amber-100">
-                    Valor estimado a cancelar: <strong>{money.format(selectedAmount)}</strong>. O restante do pedido continua ativo.
+                    Valor estimado a cancelar:{' '}
+                    <strong>{money.format(selectedAmount)}</strong>. O restante do pedido continua ativo.
                   </div>
                 )}
               </div>
             )}
 
-            {error && <p className="mt-4 rounded-2xl border border-red-500/25 bg-red-500/10 px-3 py-2 text-[10px] leading-relaxed text-red-200">{error}</p>}
+            {error && (
+              <p className="mt-4 rounded-2xl border border-red-500/25 bg-red-500/10 px-3 py-2 text-[10px] leading-relaxed text-red-200">
+                {error}
+              </p>
+            )}
 
             {scope && (
-              <button type="button" disabled={busy || !reason.trim() || (scope === 'items' && (!selectedQuantity || cancelsEverything))} onClick={() => void confirm()} className="mt-5 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-red-600 px-4 text-[10px] font-black uppercase text-white disabled:opacity-40">
+              <button
+                type="button"
+                disabled={
+                  busy ||
+                  !reason.trim() ||
+                  (scope === 'items' && (!selectedQuantity || cancelsEverything))
+                }
+                onClick={() => void confirm()}
+                className="mt-5 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-red-600 px-4 text-[10px] font-black uppercase text-white disabled:opacity-40"
+              >
                 {busy && <LoaderCircle className="h-4 w-4 animate-spin" />}
-                {busy ? 'Processando…' : scope === 'whole' ? 'Confirmar recusa do pedido inteiro' : 'Cancelar itens selecionados'}
+                {busy
+                  ? 'Processando…'
+                  : scope === 'whole'
+                    ? 'Confirmar recusa do pedido inteiro'
+                    : 'Cancelar itens selecionados'}
               </button>
             )}
           </>
         )}
 
-        {!order && error && <p className="mt-5 rounded-2xl border border-red-500/25 bg-red-500/10 px-3 py-3 text-xs text-red-200">{error}</p>}
+        {!order && error && (
+          <p className="mt-5 rounded-2xl border border-red-500/25 bg-red-500/10 px-3 py-3 text-xs text-red-200">
+            {error}
+          </p>
+        )}
       </section>
     </div>
   );
