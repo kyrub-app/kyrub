@@ -54,14 +54,17 @@ export const writeOperationalOrderRefundState = async (
     throw new Error('ORDER_REFUND_STATE_ORDER_NOT_FOUND');
   }
 
+  const legacy = legacySnapshot.data() as Record<string, unknown>;
   const now = new Date().toISOString();
+  const existingReason = clean(legacy.refundReason);
+  const existingRequestedAt = clean(legacy.refundRequestedAt);
   const patch = {
     refundStatus: input.status,
     refundPaymentId: paymentId,
     refundProvider: provider,
     refundAmount: Number(amount.toFixed(2)),
-    refundReason: reason,
-    refundRequestedAt: requestedAt || now,
+    refundReason: reason || existingReason,
+    refundRequestedAt: requestedAt || existingRequestedAt || now,
     refundedAt: input.status === 'refunded' ? refundedAt || now : '',
     refundFailureCode: input.status === 'failed' ? failureCode : '',
     updatedAt: now,
