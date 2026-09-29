@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { verifyFirebaseIdToken } from '../ai/consultantAuth.js';
 import { loadOwnerStoreInstitutionalRepresentation } from '../store/storeInstitutionalIdentityService.js';
+import { cancelOrderItemsWithRefund } from './orderItemCancellationService.js';
 import { requestCanonicalOrderRefund } from './paymentRefundService.js';
 
 const clean = (value: unknown): string =>
@@ -19,7 +20,39 @@ const mapRefundError = (error: unknown): {
     return { status: 401, error: 'Faça login novamente.', code: 'AUTH_REQUIRED' };
   }
   if (code === 'STORE_REPRESENTATION_FORBIDDEN') {
-    return { status: 403, error: 'Você não pode reembolsar pagamentos desta loja.', code };
+    return { status: 403, error: 'Você não pode alterar pedidos desta loja.', code };
+  }
+  if (
+    code === 'ORDER_ITEM_CANCELLATION_TARGET_REQUIRED' ||
+    code === 'ORDER_ITEM_CANCELLATION_OPERATION_REQUIRED' ||
+    code === 'ORDER_ITEM_CANCELLATION_SELECTION_REQUIRED' ||
+    code === 'ORDER_ITEM_CANCELLATION_SELECTION_INVALID'
+  ) {
+    return { status: 400, error: 'Escolha os itens e as quantidades que serão cancelados.', code };
+  }
+  if (code === 'ORDER_ITEM_CANCELLATION_REASON_REQUIRED') {
+    return { status: 400, error: 'Informe o motivo do cancelamento.', code };
+  }
+  if (code === 'ORDER_ITEM_CANCELLATION_ORDER_NOT_FOUND') {
+    return { status: 404, error: 'Pedido não encontrado.', code };
+  }
+  if (code === 'ORDER_ITEM_CANCELLATION_ORDER_NOT_PENDING') {
+    return { status: 409, error: 'O cancelamento parcial desta etapa só pode ser feito antes do aceite do pedido.', code };
+  }
+  if (
+    code === 'ORDER_ITEM_CANCELLATION_QUANTITY_EXCEEDED' ||
+    code === 'ORDER_ITEM_CANCELLATION_TRANSFERRED_QUANTITY'
+  ) {
+    return { status: 409, error: 'A quantidade escolhida já não está disponível para cancelamento.', code };
+  }
+  if (code === 'ORDER_ITEM_CANCELLATION_LINE_NOT_FOUND') {
+    return { status: 409, error: 'Um dos itens selecionados não pertence mais a este pedido. Reabra a recusa e revise a lista.', code };
+  }
+  if (code === 'ORDER_ITEM_CANCELLATION_USE_FULL_REJECTION') {
+    return { status: 409, error: 'Você selecionou todos os itens. Use “Pedido inteiro” para concluir a recusa.', code };
+  }
+  if (code.startsWith('ORDER_ITEM_CANCELLATION_')) {
+    return { status: 409, error: 'O pedido mudou enquanto você fazia a seleção. Revise os itens antes de confirmar.', code };
   }
   if (code === 'PAYMENT_REFUND_ORDER_NOT_FOUND' || code === 'PAYMENT_REFUND_PAYMENT_NOT_FOUND') {
     return { status: 404, error: 'Não encontramos o pagamento canônico deste pedido.', code };
@@ -52,7 +85,7 @@ const mapRefundError = (error: unknown): {
     return { status: 409, error: 'Não foi possível concluir o reembolso agora. O pagamento original foi preservado para nova verificação.', code };
   }
   console.error('[Store payment refund]', error);
-  return { status: 503, error: 'Não foi possível processar o reembolso agora.', code: 'PAYMENT_REFUND_UNAVAILABLE' };
+  return { status: 503, error: 'Não foi possível processar a operação agora.', code: 'PAYMENT_REFUND_UNAVAILABLE' };
 };
 
 const requireOwner = async (authorization: string, storeId: string): Promise<void> => {
@@ -78,6 +111,22 @@ export const createStorePaymentRefundRouter = (): Router => {
       const reason = clean(body.reason);
       if (!storeId || !orderId) throw new Error('PAYMENT_REFUND_TARGET_REQUIRED');
       await requireOwner(request.get('authorization') ?? '', storeId);
+
+      if (clean(body.operation) === 'cancel-items') {
+        const result = await cancelOrderItemsWithRefund({
+          storeId,
+          orderId,
+          operationId: clean(body.operationId),
+          reason,
+          alternative: clean(body.alternative),
+          selections: body.selections,
+        });
+        response
+          .status(result.refundStatus === 'processing' ? 202 : 200)
+          .json(result);
+        return;
+      }
+
       const result = await requestCanonicalOrderRefund({ storeId, orderId, reason });
       response.status(result.status === 'refunded' ? 200 : 202).json(result);
     } catch (error) {
