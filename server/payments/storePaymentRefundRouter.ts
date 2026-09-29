@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { verifyFirebaseIdToken } from '../ai/consultantAuth.js';
 import { loadOwnerStoreInstitutionalRepresentation } from '../store/storeInstitutionalIdentityService.js';
 import { cancelOrderItemsWithRefund } from './orderItemCancellationService.js';
+import { assertFullRefundHasNoConfirmedPartialHistory } from './partialRefundSafetyService.js';
 import { requestCanonicalOrderRefund } from './paymentRefundService.js';
 
 const clean = (value: unknown): string =>
@@ -53,6 +54,13 @@ const mapRefundError = (error: unknown): {
   }
   if (code.startsWith('ORDER_ITEM_CANCELLATION_')) {
     return { status: 409, error: 'O pedido mudou enquanto você fazia a seleção. Revise os itens antes de confirmar.', code };
+  }
+  if (code === 'PAYMENT_REFUND_PARTIAL_HISTORY_REQUIRES_RESIDUAL') {
+    return {
+      status: 409,
+      error: 'Este pagamento já teve reembolso parcial. O restante precisa ser conciliado pelo fluxo de reembolso residual antes de um cancelamento financeiro integral.',
+      code,
+    };
   }
   if (code === 'PAYMENT_REFUND_ORDER_NOT_FOUND' || code === 'PAYMENT_REFUND_PAYMENT_NOT_FOUND') {
     return { status: 404, error: 'Não encontramos o pagamento canônico deste pedido.', code };
@@ -127,6 +135,7 @@ export const createStorePaymentRefundRouter = (): Router => {
         return;
       }
 
+      await assertFullRefundHasNoConfirmedPartialHistory({ storeId, orderId });
       const result = await requestCanonicalOrderRefund({ storeId, orderId, reason });
       response.status(result.status === 'refunded' ? 200 : 202).json(result);
     } catch (error) {
