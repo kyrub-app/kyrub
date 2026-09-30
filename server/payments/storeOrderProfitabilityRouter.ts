@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { verifyFirebaseIdToken } from '../ai/consultantAuth.js';
 import { loadOwnerStoreInstitutionalRepresentation } from '../store/storeInstitutionalIdentityService.js';
 import { reconcileStoreOrderProfitability } from './storeOrderProfitabilityService.js';
+import { reconcileStoreProductProfitability } from './storeProductProfitabilityService.js';
 
 const clean = (value: unknown): string =>
   typeof value === 'string' ? value.trim() : '';
@@ -54,6 +55,22 @@ export const createStoreOrderProfitabilityRouter = (): Router => {
       if (!storeId) throw new Error('STORE_ORDER_PROFITABILITY_STORE_REQUIRED');
       await requireOwner(request.get('authorization') ?? '', storeId);
       const profitability = await reconcileStoreOrderProfitability(storeId);
+      response.status(200).json(profitability);
+    } catch (error) {
+      const mapped = mapError(error);
+      response.status(mapped.status).json({
+        error: mapped.message,
+        code: mapped.code,
+      });
+    }
+  });
+
+  router.get('/products', async (request, response) => {
+    try {
+      const storeId = clean(request.query.storeId);
+      if (!storeId) throw new Error('STORE_ORDER_PROFITABILITY_STORE_REQUIRED');
+      await requireOwner(request.get('authorization') ?? '', storeId);
+      const profitability = await reconcileStoreProductProfitability(storeId);
       response.status(200).json(profitability);
     } catch (error) {
       const mapped = mapError(error);
