@@ -135,7 +135,7 @@ export function StoreInventoryMovementTimeline({ storeId }: Props) {
     setError('');
     try {
       const token = await user.getIdToken();
-      const response = await fetch(`/api/store-inventory-movements?storeId=${encodeURIComponent(storeId)}`, {
+      const response = await fetch(`/api/store-procurement/movements?storeId=${encodeURIComponent(storeId)}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       const contentType = response.headers.get('content-type')?.toLowerCase() ?? '';
