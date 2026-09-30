@@ -5,6 +5,7 @@ import { createStoreFinanceRouter } from './storeFinanceRouter.js';
 import { createStoreFinanceHistoryRouter } from './storeFinanceHistoryRouter.js';
 import { createStoreMercadoPagoPeriodSummaryRouter } from './storeMercadoPagoPeriodSummaryRouter.js';
 import { createStoreMercadoPagoReconciliationRouter } from './storeMercadoPagoReconciliationRouter.js';
+import { createStoreOrderProfitabilityRouter } from './storeOrderProfitabilityRouter.js';
 import { createStorePaymentRefundRouter } from './storePaymentRefundRouter.js';
 import { createStorePayrollRouter } from './storePayrollRouter.js';
 import { createStorePromotionManagementRouter } from './storePromotionManagementRouter.js';
@@ -18,6 +19,7 @@ type ResponseLike = { once?: (event: string, listener: () => void) => unknown; w
 const app = express();
 app.set('trust proxy', 1);
 app.use('/api/store-promotions', createStorePromotionManagementRouter());
+app.use('/api/store-finance/profitability', createStoreOrderProfitabilityRouter());
 app.use('/api/store-finance', createStoreFinanceRouter());
 app.use('/api/store-refunds', createStorePaymentRefundRouter());
 app.use('/api/store-finance-history', createStoreMercadoPagoPeriodSummaryRouter());
