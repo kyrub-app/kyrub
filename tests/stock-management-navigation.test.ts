@@ -81,6 +81,7 @@ describe('stock management navigation', () => {
     assert.match(workspace, /create_receipt_draft/);
     assert.match(workspace, /confirm_receipt/);
     assert.match(workspace, /Confirmar entrada no estoque/);
+    assert.match(workspace, /quotedUnitCostMinor: null/);
     assert.doesNotMatch(workspace, /firebase\/firestore|\bdb\b|setDoc|addDoc/);
   });
 
@@ -103,8 +104,9 @@ describe('stock management navigation', () => {
     assert.match(service, /stores\/\$\{storeId\}\/members\/\$\{identity\.uid\}/);
     assert.match(service, /role !== 'owner'/);
     assert.match(service, /applyConfirmedPurchaseReceiptToInventory/);
-    assert.match(service, /quotedUnitCostMinor: null/);
-    assert.doesNotMatch(service, /financePayables|moving.?average|CMV/i);
+    assert.match(service, /documentedUnitCostMinor/);
+    assert.doesNotMatch(service, /financePayables|moving.?average|\bCMV\b/i);
+    assert.doesNotMatch(service, /purchaseCost\s*:/);
     assert.match(router, /listAuthorizedStoreProcurement/);
     assert.match(router, /executeAuthorizedStoreProcurementAction/);
     assert.match(multiplexer, /surface === 'procurement'/);
