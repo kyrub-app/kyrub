@@ -33,6 +33,12 @@ describe('Finance Results & Margins workspace', () => {
     assert.doesNotMatch(workspace, /\bfirestore\b/i);
   });
 
+  test('does not persist profitability snapshots in browser storage where they could become stale', () => {
+    assert.doesNotMatch(workspace, /\blocalStorage\b/);
+    assert.doesNotMatch(workspace, /\bsessionStorage\b/);
+    assert.match(workspace, /void load\(true\)/);
+  });
+
   test('shows order-level revenue, CMV, observed costs, contribution and lifecycle states', () => {
     assert.match(workspace, /Receita mercadoria/);
     assert.match(workspace, /Desconto loja/);
