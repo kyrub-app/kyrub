@@ -10,6 +10,8 @@ const controller = read('src/components/store/KdsScopedRejectionController.tsx')
 const runtimeRouter = read('src/components/RetailerPanelRuntimeRouter.tsx');
 const router = read('server/payments/storePaymentRefundRouter.ts');
 const service = read('server/payments/orderItemCancellationService.ts');
+const authoritativeService = read('server/payments/authoritativeOrderItemCancellationService.ts');
+const authority = read('server/payments/orderCommercialRefundAuthorityService.ts');
 const refundSafety = read('server/payments/partialRefundSafetyService.ts');
 
 test('real KDS reject click is owned by the scoped controller before legacy bridges', () => {
@@ -56,9 +58,20 @@ test('paid partial cancellation refunds only the cancelled amount through the or
 test('partial cancellation uses authenticated refunds transport without weakening store ownership', () => {
   assert.match(router, /clean\(body\.operation\) === 'cancel-items'/);
   assert.match(router, /await requireOwner/);
-  assert.match(router, /cancelOrderItemsWithRefund/);
+  assert.match(router, /cancelOrderItemsWithAuthoritativeRefund/);
+  assert.match(authoritativeService, /loadCommercialRefundAuthority/);
+  assert.match(authoritativeService, /cancelOrderItemsWithRefund/);
   assert.match(controller, /operation:\s*'cancel-items'/);
   assert.match(controller, /authorization:\s*`Bearer \$\{token\}`/);
+});
+
+test('immutable commercial snapshot is the financial authority when it exists', () => {
+  assert.match(authority, /source:\s*'immutable_commercial_snapshot'/);
+  assert.match(authority, /discountAmount/);
+  assert.match(authority, /settledAmount/);
+  assert.match(authority, /netAmount/);
+  assert.match(authoritativeService, /ORDER_COMMERCIAL_REFUND_FINANCIAL_MISMATCH/);
+  assert.match(authoritativeService, /calculateAuthoritativeCancellationAmount/);
 });
 
 test('successful scoped rejection can close after authoritative acknowledgement', () => {
