@@ -31,6 +31,10 @@ import {
   resolveCanonicalInventoryAuthorityInTransaction,
   type CanonicalInventoryAuthority,
 } from './canonicalInventoryAuthorityService.js';
+import {
+  appendOrderInventoryMovementsInTransaction,
+  nextOrderInventoryMovementRevision,
+} from './orderInventoryMovementLedger.js';
 
 const INVENTORY_LEDGER_COLLECTION = 'inventoryOrderConsumptions';
 
@@ -293,6 +297,19 @@ const applyInventoryForStatus = (input: {
       restoredCatalog,
       compositions
     );
+    const inventoryMovementRevision = nextOrderInventoryMovementRevision(ledgerData);
+    appendOrderInventoryMovementsInTransaction({
+      transaction,
+      inventoryReference,
+      inventoryData,
+      ownerUserId: inventoryAuthority.ownerUserId,
+      tenantId,
+      orderId: order.id,
+      revision: inventoryMovementRevision,
+      reason: 'order_cancellation',
+      previousCatalog: catalog,
+      resultingCatalog: restoredCatalog,
+    });
     transaction.set(
       inventoryReference,
       {
@@ -317,6 +334,7 @@ const applyInventoryForStatus = (input: {
         inventoryAuthority: inventoryAuthority.authority,
         inventoryDocumentPath: inventoryAuthority.inventoryDocumentPath,
         canonicalStoreId: inventoryAuthority.canonicalStoreId,
+        inventoryMovementRevision,
         reversedForStatus: effectiveStatus,
         reversedAt: FieldValue.serverTimestamp(),
         updatedAt: FieldValue.serverTimestamp(),
@@ -368,6 +386,19 @@ const applyInventoryForStatus = (input: {
     consumedCatalog,
     compositions
   );
+  const inventoryMovementRevision = 1;
+  appendOrderInventoryMovementsInTransaction({
+    transaction,
+    inventoryReference,
+    inventoryData,
+    ownerUserId: inventoryAuthority.ownerUserId,
+    tenantId,
+    orderId: order.id,
+    revision: inventoryMovementRevision,
+    reason: 'order_sale',
+    previousCatalog: catalog,
+    resultingCatalog: consumedCatalog,
+  });
   transaction.set(
     inventoryReference,
     {
@@ -395,6 +426,7 @@ const applyInventoryForStatus = (input: {
     status: 'consumed',
     orderStatusAtConsumption: effectiveStatus,
     lines,
+    inventoryMovementRevision,
     createdAt: FieldValue.serverTimestamp(),
     consumedAt: FieldValue.serverTimestamp(),
     updatedAt: FieldValue.serverTimestamp(),
