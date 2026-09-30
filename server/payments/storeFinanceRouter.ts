@@ -24,7 +24,9 @@ import {
   normalizeStoreFinancePayable,
   storeFinancePayablePath,
   type StoreFinancePayable,
+  type StoreFinancePayableBillingDocumentType,
   type StoreFinancePayableCategory,
+  type StoreFinancePayableCostNature,
   type StoreFinancePayableRecurrence,
   type StoreFinancePayableStatus,
 } from '../../shared/storeFinancePayables.js';
@@ -340,6 +342,22 @@ const payableRecurrence = (value: unknown): StoreFinancePayableRecurrence => {
   throw new Error('STORE_FINANCE_PAYABLE_RECURRENCE_INVALID');
 };
 
+const payableCostNature = (value: unknown): StoreFinancePayableCostNature => {
+  const nature = clean(value);
+  if (!nature || nature === 'unspecified') return 'unspecified';
+  if (nature === 'fixed' || nature === 'variable') return nature;
+  throw new Error('STORE_FINANCE_PAYABLE_COST_NATURE_INVALID');
+};
+
+const payableBillingDocumentType = (
+  value: unknown
+): StoreFinancePayableBillingDocumentType => {
+  const type = clean(value);
+  if (!type || type === 'none') return 'none';
+  if (type === 'boleto' || type === 'invoice' || type === 'other') return type;
+  throw new Error('STORE_FINANCE_PAYABLE_BILLING_DOCUMENT_TYPE_INVALID');
+};
+
 const transitionPayable = async (input: {
   storeId: string;
   payableId: string;
@@ -418,6 +436,7 @@ export const createStoreFinanceRouter = (): Router => {
       const action = clean(body.action);
 
       if (action === 'create_payable') {
+        const billingDocumentType = payableBillingDocumentType(body.billingDocumentType);
         const payable = buildManualStoreFinancePayable({
           id: `payable_${randomUUID()}`,
           storeId,
@@ -427,6 +446,17 @@ export const createStoreFinanceRouter = (): Router => {
           counterparty: clean(body.counterparty),
           dueDate: clean(body.dueDate),
           recurrence: payableRecurrence(body.recurrence),
+          costNature: payableCostNature(body.costNature),
+          billingDocumentType,
+          billingDocumentReference: billingDocumentType === 'none'
+            ? ''
+            : clean(body.billingDocumentReference),
+          billingDigitableLine: billingDocumentType === 'boleto'
+            ? clean(body.billingDigitableLine)
+            : '',
+          billingBarcode: billingDocumentType === 'boleto'
+            ? clean(body.billingBarcode)
+            : '',
           createdByUserId: ownerId,
         });
         await adminDb.doc(storeFinancePayablePath(storeId, payable.id)).set(payable);
