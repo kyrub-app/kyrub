@@ -5,6 +5,11 @@ import type {
   StorePurchase,
   StoreSupplier,
 } from '../../../shared/storePurchases';
+import {
+  nextStorePurchasePayableKey,
+  storePurchasePayableKeyLabel,
+  summarizeStorePurchasePayables,
+} from '../../../shared/storePurchasePayableSchedule';
 
 type CostNature = 'unspecified' | 'fixed' | 'variable';
 type BillingDocumentType = 'none' | 'boleto' | 'invoice' | 'other';
@@ -64,6 +69,12 @@ const suggestedPurchaseTotalMinor = (purchase: StorePurchase): number | null => 
   );
   return Number.isSafeInteger(total) && total > 0 ? total : null;
 };
+
+const payableStatusLabel = (status: LinkedPayable['status']): string => ({
+  open: 'Em aberto',
+  paid: 'Paga',
+  cancelled: 'Cancelada',
+}[status]);
 
 const requestJson = async <T,>(url: string, init?: RequestInit): Promise<T> => {
   const user = auth.currentUser;
@@ -143,14 +154,39 @@ export function StorePurchasePayableBridge({ storeId }: { storeId: string }) {
     ),
     [payables, purchaseId]
   );
-  const primaryPayable = linkedPayables.find(payable => payable.purchasePayableKey === 'primary') ?? null;
+  const linkedPayablesSorted = useMemo(
+    () => [...linkedPayables].sort((left, right) => {
+      const byDueDate = left.dueDate.localeCompare(right.dueDate);
+      if (byDueDate !== 0) return byDueDate;
+      return (left.purchasePayableKey ?? '').localeCompare(right.purchasePayableKey ?? '');
+    }),
+    [linkedPayables]
+  );
+  const estimatedPurchaseTotalMinor = selectedPurchase
+    ? suggestedPurchaseTotalMinor(selectedPurchase)
+    : null;
+  const payableSummary = useMemo(
+    () => summarizeStorePurchasePayables(linkedPayables, estimatedPurchaseTotalMinor),
+    [linkedPayables, estimatedPurchaseTotalMinor]
+  );
+  const nextPayableKey = nextStorePurchasePayableKey(
+    linkedPayables.map(payable => payable.purchasePayableKey ?? '')
+  );
+  const nextPayableLabel = storePurchasePayableKeyLabel(nextPayableKey);
 
   useEffect(() => {
     if (!selectedPurchase) {
       setAmount('');
+      setDueDate('');
+      setFeedback('');
+      setError('');
       return;
     }
-    const suggested = suggestedPurchaseTotalMinor(selectedPurchase);
+    const suggested = payableSummary.differenceMinor !== null && payableSummary.differenceMinor > 0
+      ? payableSummary.differenceMinor
+      : linkedPayables.length === 0
+        ? estimatedPurchaseTotalMinor
+        : null;
     setAmount(suggested === null ? '' : (suggested / 100).toFixed(2).replace('.', ','));
     setDueDate('');
     setCostNature('unspecified');
@@ -159,13 +195,14 @@ export function StorePurchasePayableBridge({ storeId }: { storeId: string }) {
     setBillingDigitableLine('');
     setBillingBarcode('');
     setFeedback('');
-  }, [purchaseId]);
+    setError('');
+  }, [purchaseId, nextPayableKey, payableSummary.differenceMinor]);
 
   const createPayable = async (): Promise<void> => {
     if (!selectedPurchase) return;
     const amountMinor = amountToMinor(amount);
     if (amountMinor === null || !dueDate) {
-      setError('Informe valor e vencimento válidos antes de registrar a conta.');
+      setError('Informe valor e vencimento válidos antes de registrar a obrigação.');
       return;
     }
     setSaving(true);
@@ -177,7 +214,7 @@ export function StorePurchasePayableBridge({ storeId }: { storeId: string }) {
         body: JSON.stringify({
           storeId,
           purchaseId: selectedPurchase.id,
-          purchasePayableKey: 'primary',
+          purchasePayableKey: nextPayableKey,
           amountMinor,
           dueDate,
           costNature,
@@ -188,11 +225,11 @@ export function StorePurchasePayableBridge({ storeId }: { storeId: string }) {
         }),
       });
       setFeedback(result.status === 'existing'
-        ? 'Esta obrigação já estava vinculada à compra; nenhuma duplicação foi criada.'
-        : 'Conta vinculada à compra e registrada no Financeiro → Contas a pagar.');
+        ? `${nextPayableLabel} já estava vinculada; nenhuma duplicação foi criada.`
+        : `${nextPayableLabel} registrada no Financeiro → Contas a pagar.`);
       await load();
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'Não foi possível registrar a conta.');
+      setError(caught instanceof Error ? caught.message : 'Não foi possível registrar a obrigação.');
     } finally {
       setSaving(false);
     }
@@ -208,7 +245,7 @@ export function StorePurchasePayableBridge({ storeId }: { storeId: string }) {
           </div>
           <h3 className="mt-1 text-sm font-black text-white">Compra → Contas a pagar</h3>
           <p className="mt-1 max-w-2xl text-[10px] leading-relaxed text-slate-500">
-            Registrar a obrigação não altera estoque nem marca pagamento. Recebimento físico e liquidação financeira continuam eventos separados.
+            Uma compra pode ter várias obrigações com vencimentos próprios. Nada é parcelado automaticamente: cada obrigação é registrada explicitamente e continua independente do recebimento físico.
           </p>
         </div>
         <button type="button" disabled={loading} onClick={() => void load()} className="flex min-h-9 items-center gap-2 rounded-xl border border-slate-700 bg-slate-950 px-3 text-[8px] font-black uppercase text-slate-400 disabled:opacity-50">
@@ -232,25 +269,76 @@ export function StorePurchasePayableBridge({ storeId }: { storeId: string }) {
 
       {selectedPurchase && (
         <div className="space-y-4">
-          {primaryPayable && (
-            <div className="rounded-2xl border border-cyan-500/20 bg-cyan-500/5 p-3 text-[9px] text-slate-400">
-              <strong className="block text-[10px] text-cyan-200">Conta principal já vinculada</strong>
-              {money(primaryPayable.amountMinor)} · vencimento {primaryPayable.dueDate} · status {primaryPayable.status}
+          <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+            <article className="rounded-2xl border border-slate-800 bg-slate-950/60 p-3">
+              <span className="text-[8px] font-black uppercase text-slate-600">Total estimado da compra</span>
+              <strong className="mt-1 block text-sm text-slate-200">
+                {estimatedPurchaseTotalMinor === null ? 'Não informado' : money(estimatedPurchaseTotalMinor)}
+              </strong>
+            </article>
+            <article className="rounded-2xl border border-slate-800 bg-slate-950/60 p-3">
+              <span className="text-[8px] font-black uppercase text-slate-600">Obrigações ativas</span>
+              <strong className="mt-1 block text-sm text-amber-100">{money(payableSummary.activeMinor)}</strong>
+            </article>
+            <article className="rounded-2xl border border-slate-800 bg-slate-950/60 p-3">
+              <span className="text-[8px] font-black uppercase text-slate-600">Em aberto / pagas</span>
+              <strong className="mt-1 block text-sm text-cyan-100">{money(payableSummary.openMinor)} / {money(payableSummary.paidMinor)}</strong>
+            </article>
+            <article className="rounded-2xl border border-slate-800 bg-slate-950/60 p-3">
+              <span className="text-[8px] font-black uppercase text-slate-600">
+                {payableSummary.differenceMinor !== null && payableSummary.differenceMinor < 0
+                  ? 'Acima do estimado'
+                  : 'Saldo não comprometido'}
+              </span>
+              <strong className={`mt-1 block text-sm ${payableSummary.differenceMinor !== null && payableSummary.differenceMinor < 0 ? 'text-rose-200' : 'text-emerald-200'}`}>
+                {payableSummary.differenceMinor === null
+                  ? '—'
+                  : money(Math.abs(payableSummary.differenceMinor))}
+              </strong>
+            </article>
+          </div>
+
+          {linkedPayablesSorted.length > 0 && (
+            <div className="space-y-2 rounded-2xl border border-cyan-500/15 bg-cyan-500/5 p-3">
+              <div className="flex items-center justify-between gap-3">
+                <strong className="text-[10px] text-cyan-100">Obrigações desta compra</strong>
+                <span className="text-[8px] text-cyan-300/70">{linkedPayablesSorted.length} registrada(s)</span>
+              </div>
+              {linkedPayablesSorted.map(payable => (
+                <div key={payable.id} className="flex flex-col gap-1 rounded-xl border border-slate-800 bg-slate-950/70 p-3 text-[9px] sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <strong className="text-slate-200">{storePurchasePayableKeyLabel(payable.purchasePayableKey ?? '')}</strong>
+                    <span className="ml-2 text-slate-500">vence {payable.dueDate}</span>
+                    <span className="ml-2 text-slate-500">· {payableStatusLabel(payable.status)}</span>
+                  </div>
+                  <strong className={payable.status === 'cancelled' ? 'text-slate-500 line-through' : 'text-amber-100'}>{money(payable.amountMinor)}</strong>
+                </div>
+              ))}
+              {payableSummary.cancelledMinor > 0 && (
+                <p className="text-[8px] text-slate-600">Obrigações canceladas não entram no total ativo: {money(payableSummary.cancelledMinor)}.</p>
+              )}
             </div>
           )}
+
+          <div className="rounded-2xl border border-amber-500/15 bg-amber-500/5 p-3">
+            <strong className="text-[10px] text-amber-100">Registrar {nextPayableLabel}</strong>
+            <p className="mt-1 text-[8px] leading-relaxed text-slate-500">
+              O valor abaixo é apenas sugerido quando há total estimado e diferença positiva. Frete, desconto e outros ajustes podem fazer a soma financeira divergir do valor estimado da compra.
+            </p>
+          </div>
 
           <div className="grid gap-3 md:grid-cols-2">
             <label className="text-[8px] font-black uppercase text-slate-500">
               Valor da obrigação
-              <input value={amount} onChange={event => setAmount(event.target.value)} inputMode="decimal" disabled={Boolean(primaryPayable)} placeholder="0,00" className="mt-1 min-h-10 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 text-xs font-medium normal-case text-white disabled:opacity-50" />
+              <input value={amount} onChange={event => setAmount(event.target.value)} inputMode="decimal" placeholder="0,00" className="mt-1 min-h-10 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 text-xs font-medium normal-case text-white" />
             </label>
             <label className="text-[8px] font-black uppercase text-slate-500">
               Vencimento
-              <input type="date" value={dueDate} onChange={event => setDueDate(event.target.value)} disabled={Boolean(primaryPayable)} className="mt-1 min-h-10 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 text-xs font-medium normal-case text-white disabled:opacity-50" />
+              <input type="date" value={dueDate} onChange={event => setDueDate(event.target.value)} className="mt-1 min-h-10 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 text-xs font-medium normal-case text-white" />
             </label>
             <label className="text-[8px] font-black uppercase text-slate-500">
               Natureza do custo
-              <select value={costNature} onChange={event => setCostNature(event.target.value as CostNature)} disabled={Boolean(primaryPayable)} className="mt-1 min-h-10 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 text-xs font-medium normal-case text-white disabled:opacity-50">
+              <select value={costNature} onChange={event => setCostNature(event.target.value as CostNature)} className="mt-1 min-h-10 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 text-xs font-medium normal-case text-white">
                 <option value="unspecified">Não classificado</option>
                 <option value="fixed">Fixo</option>
                 <option value="variable">Variável</option>
@@ -258,7 +346,19 @@ export function StorePurchasePayableBridge({ storeId }: { storeId: string }) {
             </label>
             <label className="text-[8px] font-black uppercase text-slate-500">
               Documento de cobrança
-              <select value={billingDocumentType} onChange={event => setBillingDocumentType(event.target.value as BillingDocumentType)} disabled={Boolean(primaryPayable)} className="mt-1 min-h-10 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 text-xs font-medium normal-case text-white disabled:opacity-50">
+              <select
+                value={billingDocumentType}
+                onChange={event => {
+                  const next = event.target.value as BillingDocumentType;
+                  setBillingDocumentType(next);
+                  if (next === 'none') setBillingDocumentReference('');
+                  if (next !== 'boleto') {
+                    setBillingDigitableLine('');
+                    setBillingBarcode('');
+                  }
+                }}
+                className="mt-1 min-h-10 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 text-xs font-medium normal-case text-white"
+              >
                 <option value="none">Sem documento informado</option>
                 <option value="boleto">Boleto</option>
                 <option value="invoice">Nota / fatura</option>
@@ -268,18 +368,18 @@ export function StorePurchasePayableBridge({ storeId }: { storeId: string }) {
             {billingDocumentType !== 'none' && (
               <label className="text-[8px] font-black uppercase text-slate-500 md:col-span-2">
                 Referência do documento / anexo
-                <input value={billingDocumentReference} onChange={event => setBillingDocumentReference(event.target.value)} disabled={Boolean(primaryPayable)} maxLength={500} placeholder="Número, URL ou referência do arquivo" className="mt-1 min-h-10 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 text-xs font-medium normal-case text-white disabled:opacity-50" />
+                <input value={billingDocumentReference} onChange={event => setBillingDocumentReference(event.target.value)} maxLength={500} placeholder="Número, URL ou referência do arquivo" className="mt-1 min-h-10 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 text-xs font-medium normal-case text-white" />
               </label>
             )}
             {billingDocumentType === 'boleto' && (
               <>
                 <label className="text-[8px] font-black uppercase text-slate-500 md:col-span-2">
                   Linha digitável
-                  <input value={billingDigitableLine} onChange={event => setBillingDigitableLine(event.target.value)} disabled={Boolean(primaryPayable)} maxLength={220} className="mt-1 min-h-10 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 text-xs font-medium normal-case text-white disabled:opacity-50" />
+                  <input value={billingDigitableLine} onChange={event => setBillingDigitableLine(event.target.value)} maxLength={220} className="mt-1 min-h-10 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 text-xs font-medium normal-case text-white" />
                 </label>
                 <label className="text-[8px] font-black uppercase text-slate-500 md:col-span-2">
                   Código de barras
-                  <input value={billingBarcode} onChange={event => setBillingBarcode(event.target.value)} disabled={Boolean(primaryPayable)} maxLength={220} className="mt-1 min-h-10 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 text-xs font-medium normal-case text-white disabled:opacity-50" />
+                  <input value={billingBarcode} onChange={event => setBillingBarcode(event.target.value)} maxLength={220} className="mt-1 min-h-10 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 text-xs font-medium normal-case text-white" />
                 </label>
               </>
             )}
@@ -287,14 +387,12 @@ export function StorePurchasePayableBridge({ storeId }: { storeId: string }) {
 
           <div className="rounded-2xl border border-slate-800 bg-slate-950/60 p-3 text-[9px] leading-relaxed text-slate-500">
             <FileText className="mr-1 inline h-3.5 w-3.5" />
-            O valor sugerido só é preenchido quando todas as linhas da compra possuem custo informado. O Kyrub não estima preço ausente nem considera a conta paga ao receber mercadoria.
+            Receber mercadoria não cria, quita ou altera parcelas. Cada obrigação registrada aqui continua sendo gerida no Financeiro → Contas a pagar.
           </div>
 
-          {!primaryPayable && (
-            <button type="button" disabled={saving} onClick={() => void createPayable()} className="min-h-10 rounded-xl bg-amber-400 px-4 text-[9px] font-black uppercase text-slate-950 disabled:opacity-50">
-              {saving ? 'Registrando…' : 'Registrar em Contas a pagar'}
-            </button>
-          )}
+          <button type="button" disabled={saving} onClick={() => void createPayable()} className="min-h-10 rounded-xl bg-amber-400 px-4 text-[9px] font-black uppercase text-slate-950 disabled:opacity-50">
+            {saving ? 'Registrando…' : `Registrar ${nextPayableLabel}`}
+          </button>
         </div>
       )}
 
