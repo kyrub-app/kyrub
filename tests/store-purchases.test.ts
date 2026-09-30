@@ -2,6 +2,10 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { describe, test } from 'node:test';
 import {
+  buildPurchaseReceiptInventoryPlan,
+} from '../shared/purchaseReceiptInventory';
+import type { InventoryCatalogRecord } from '../shared/inventoryConsumption';
+import {
   STORE_PROCUREMENT_SCHEMA_VERSION,
   STORE_PURCHASE_CURRENCY,
   buildManualStoreSupplier,
@@ -47,6 +51,12 @@ const orderedPurchase = (): StorePurchase => normalizeStorePurchase({
   updatedAt: now,
 });
 
+const partiallyReceivedPurchase = (): StorePurchase => normalizeStorePurchase({
+  ...orderedPurchase(),
+  status: 'partially_received',
+  updatedAt: now,
+});
+
 const confirmedReceipt = (
   id: string,
   quantity: number,
@@ -79,6 +89,20 @@ const confirmedReceipt = (
     ...overrides,
   });
 };
+
+const inventoryCatalog = (
+  overrides: Partial<InventoryCatalogRecord> = {}
+): InventoryCatalogRecord[] => [{
+  id: 'ingredient-flour',
+  name: 'Farinha',
+  unit: 'kg',
+  currentQuantity: 10,
+  minimumQuantity: 5,
+  purchaseCost: 9.75,
+  supplier: 'Fornecedor anterior',
+  updatedAt: now,
+  ...overrides,
+}];
 
 describe('canonical store purchases foundation', () => {
   test('supplier, purchase and receipt paths are explicitly store scoped', () => {
@@ -245,7 +269,87 @@ describe('canonical store purchases foundation', () => {
     );
   });
 
-  test('foundation is deliberately separate from stock mutation and client Firestore writes', () => {
+  test('confirmed receipt plan increments only physical quantity and preserves inventory cost policy', () => {
+    const receipt = confirmedReceipt('receipt-1', 60);
+    const plan = buildPurchaseReceiptInventoryPlan({
+      purchase: orderedPurchase(),
+      receipt,
+      catalog: inventoryCatalog(),
+    });
+
+    assert.equal(plan.resultingPurchaseStatus, 'partially_received');
+    assert.equal(plan.resultingCatalog[0]?.currentQuantity, 70);
+    assert.equal(plan.resultingCatalog[0]?.purchaseCost, 9.75);
+    assert.equal(plan.resultingCatalog[0]?.supplier, 'Fornecedor anterior');
+    assert.deepEqual(plan.movementLines[0], {
+      inventoryItemId: 'ingredient-flour',
+      name: 'Farinha',
+      unit: 'kg',
+      receivedQuantity: 60,
+      quantityDelta: 60,
+      previousQuantity: 10,
+      resultingQuantity: 70,
+      purchaseLineIds: ['line-flour'],
+      documentedUnitCostMinor: 1250,
+    });
+  });
+
+  test('second physical receipt applies only its own 40 units and closes the purchase', () => {
+    const firstReceipt = confirmedReceipt('receipt-1', 60);
+    const secondReceipt = confirmedReceipt('receipt-2', 40);
+    const plan = buildPurchaseReceiptInventoryPlan({
+      purchase: partiallyReceivedPurchase(),
+      receipt: secondReceipt,
+      confirmedReceipts: [firstReceipt],
+      catalog: inventoryCatalog({ currentQuantity: 70 }),
+    });
+
+    assert.equal(plan.resultingPurchaseStatus, 'received');
+    assert.equal(plan.resultingCatalog[0]?.currentQuantity, 110);
+    assert.equal(plan.movementLines[0]?.receivedQuantity, 40);
+    assert.equal(plan.movementLines[0]?.previousQuantity, 70);
+    assert.equal(plan.movementLines[0]?.resultingQuantity, 110);
+  });
+
+  test('receipt plan refuses missing or unit-mismatched canonical inventory identity', () => {
+    assert.throws(
+      () => buildPurchaseReceiptInventoryPlan({
+        purchase: orderedPurchase(),
+        receipt: confirmedReceipt('receipt-missing', 10),
+        catalog: [],
+      }),
+      /PURCHASE_RECEIPT_INVENTORY_ITEM_NOT_FOUND/
+    );
+
+    assert.throws(
+      () => buildPurchaseReceiptInventoryPlan({
+        purchase: orderedPurchase(),
+        receipt: confirmedReceipt('receipt-unit', 10),
+        catalog: inventoryCatalog({ unit: 'g' }),
+      }),
+      /PURCHASE_RECEIPT_INVENTORY_UNIT_MISMATCH/
+    );
+  });
+
+  test('receipt inventory executor uses the canonical physical stock and generic movement ledger atomically', () => {
+    const service = readFileSync(
+      'server/inventory/purchaseReceiptInventoryService.ts',
+      'utf8'
+    );
+
+    assert.match(service, /resolveCanonicalInventoryAuthorityInTransaction/);
+    assert.match(service, /inventoryPurchaseReceipts/);
+    assert.match(service, /collection\('movements'\)/);
+    assert.match(service, /actionType: 'purchase_receipt_inventory'/);
+    assert.match(service, /reason: 'purchase_receipt'/);
+    assert.match(service, /transaction\.create\(movementReference/);
+    assert.match(service, /transaction\.create\(ledgerReference/);
+    assert.match(service, /transaction\.update\(purchaseReference/);
+    assert.doesNotMatch(service, /financePayables/);
+    assert.doesNotMatch(service, /purchaseCost\s*:/);
+  });
+
+  test('foundation keeps procurement writes server-only', () => {
     const contract = readFileSync('shared/storePurchases.ts', 'utf8');
     const rules = readFileSync('firestore.rules', 'utf8');
 
