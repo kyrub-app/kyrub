@@ -19,6 +19,11 @@ import {
   legacyTenantInventoryAuthority,
 } from './canonicalInventoryAuthorityService';
 import { reconcilePersistedOrderInventory } from './orderInventoryService';
+import {
+  appendOrderInventoryMovementsInTransaction,
+  currentOrderInventoryMovementRevision,
+  nextOrderInventoryMovementRevision,
+} from './orderInventoryMovementLedger.js';
 import { createHash } from 'node:crypto';
 
 const clean = (value: unknown): string =>
@@ -226,6 +231,19 @@ export const adjustConsumedOrderInventoryQuantities = async (
       adjustedCatalog,
       compositions
     );
+    const inventoryMovementRevision = nextOrderInventoryMovementRevision(ledgerData);
+    const movementIds = appendOrderInventoryMovementsInTransaction({
+      transaction,
+      inventoryReference,
+      inventoryData,
+      ownerUserId: inventoryAuthority.ownerUserId,
+      tenantId,
+      orderId,
+      revision: inventoryMovementRevision,
+      reason: 'order_adjustment',
+      previousCatalog: catalog,
+      resultingCatalog: adjustedCatalog,
+    });
     transaction.set(
       inventoryReference,
       {
@@ -253,6 +271,9 @@ export const adjustConsumedOrderInventoryQuantities = async (
         inventoryDocumentPath: inventoryAuthority.inventoryDocumentPath,
         canonicalStoreId: inventoryAuthority.canonicalStoreId,
         lines: desiredLines,
+        inventoryMovementRevision: movementIds.length > 0
+          ? inventoryMovementRevision
+          : currentOrderInventoryMovementRevision(ledgerData),
         adjustedAt: FieldValue.serverTimestamp(),
         adjustmentReason: 'order_items_changed',
         updatedAt: FieldValue.serverTimestamp(),
