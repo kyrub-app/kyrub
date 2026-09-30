@@ -37,12 +37,12 @@ export function StoreCouponRedemptionBridge() {
     const user = auth.currentUser;
     const normalizedCode = code.trim().toUpperCase();
     if (!user) {
-      setError('Faça login novamente para resgatar o cupom.');
+      setError('Faça login novamente para resgatar a cortesia.');
       return;
     }
     if (!normalizedCode || busy) return;
     if (!window.confirm(
-      `Resgatar o cupom ${normalizedCode} para sua Loja Kyrub? Se ele estiver ativo e elegível, o entitlement do plano poderá ser alterado.`
+      `Resgatar a Cortesia Kyrub ${normalizedCode} para sua Loja Kyrub? Se ela estiver ativa e elegível, o entitlement do plano poderá ser alterado.`
     )) {
       return;
     }
@@ -75,14 +75,14 @@ export function StoreCouponRedemptionBridge() {
         },
       }));
       setSuccess(
-        `${result.code} resgatado. Sua Loja Kyrub agora possui o plano ${result.plan === 'business' ? 'Business' : 'Pro'}${result.benefitEndsAt ? ` até ${new Date(result.benefitEndsAt).toLocaleDateString('pt-BR')}` : ' sem vencimento promocional definido'}.`
+        `${result.code} resgatada. Sua Loja Kyrub agora possui o plano ${result.plan === 'business' ? 'Business' : 'Pro'}${result.benefitEndsAt ? ` até ${new Date(result.benefitEndsAt).toLocaleDateString('pt-BR')}` : ' sem vencimento promocional definido'}.`
       );
       setCode('');
     } catch (caught) {
       setError(
         caught instanceof Error
           ? caught.message
-          : 'Não foi possível resgatar este cupom.'
+          : 'Não foi possível resgatar esta Cortesia Kyrub.'
       );
     } finally {
       setBusy(false);
@@ -104,7 +104,7 @@ export function StoreCouponRedemptionBridge() {
           className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-violet-500/30 bg-violet-500/10 px-3 py-2 text-xs font-black text-violet-200 transition hover:bg-violet-500/20"
         >
           <TicketPercent className="h-4 w-4" />
-          Resgatar cupom
+          Resgatar cortesia
         </button>,
         host
       )}
@@ -127,18 +127,18 @@ export function StoreCouponRedemptionBridge() {
               <div>
                 <div className="flex items-center gap-2 text-violet-300">
                   <TicketPercent className="h-5 w-5" />
-                  <span className="text-[10px] font-black uppercase tracking-[0.18em]">Cupom Kyrub</span>
+                  <span className="text-[10px] font-black uppercase tracking-[0.18em]">Cortesia Kyrub</span>
                 </div>
                 <h2 id="store-coupon-redemption-title" className="mt-2 text-xl font-black text-white">
-                  Resgatar benefício
+                  Resgatar cortesia
                 </h2>
                 <p className="mt-2 text-sm leading-relaxed text-slate-400">
-                  Digite o código compartilhado pelo Kyrub. O servidor confirma validade, limites e elegibilidade antes de alterar o plano da loja.
+                  Digite o código de cortesia compartilhado pelo Kyrub. O servidor confirma validade, limites e elegibilidade antes de alterar o plano da loja.
                 </p>
               </div>
               <button
                 type="button"
-                aria-label="Fechar resgate de cupom"
+                aria-label="Fechar resgate de cortesia"
                 disabled={busy}
                 onClick={() => setOpen(false)}
                 className="rounded-xl border border-slate-700 p-2 text-slate-400 hover:text-white disabled:opacity-50"
@@ -150,7 +150,7 @@ export function StoreCouponRedemptionBridge() {
             <form onSubmit={redeem} className="mt-5 space-y-3">
               <label className="block">
                 <span className="mb-2 block text-[10px] font-black uppercase tracking-wider text-slate-500">
-                  Código
+                  Código da cortesia
                 </span>
                 <input
                   value={code}
@@ -171,7 +171,7 @@ export function StoreCouponRedemptionBridge() {
                 className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-2xl bg-violet-500 px-4 py-3 text-sm font-black text-white hover:bg-violet-400 disabled:opacity-50"
               >
                 {busy ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <TicketPercent className="h-4 w-4" />}
-                {busy ? 'Validando cupom' : 'Resgatar cupom'}
+                {busy ? 'Validando cortesia' : 'Resgatar cortesia'}
               </button>
             </form>
 
