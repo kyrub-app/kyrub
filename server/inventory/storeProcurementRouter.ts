@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { createAuthorizedPurchasePayable } from '../payments/storePurchasePayableService.js';
 import { listAuthorizedStoreInventoryMovements } from './storeInventoryMovementService.js';
 import {
   executeAuthorizedStoreProcurementAction,
@@ -32,6 +33,12 @@ const errorResponse = (error: unknown): { status: number; code: string; message:
   if (code === 'STORE_PROCUREMENT_RECEIPT_NOT_FOUND' || code === 'PURCHASE_RECEIPT_NOT_FOUND') {
     return { status: 404, code, message: 'Recebimento não encontrado.' };
   }
+  if (code === 'STORE_FINANCE_PAYABLE_PURCHASE_NOT_COMMITTED') {
+    return { status: 409, code, message: 'Marque a compra como pedido realizado antes de registrar a obrigação financeira.' };
+  }
+  if (code === 'STORE_FINANCE_PAYABLE_IDEMPOTENCY_CONFLICT') {
+    return { status: 409, code, message: 'Esta compra já possui uma conta com a mesma chave, mas com dados financeiros diferentes.' };
+  }
   if (
     code.includes('TRANSITION_INVALID')
     || code.includes('NOT_RECEIVABLE')
@@ -40,6 +47,9 @@ const errorResponse = (error: unknown): { status: number; code: string; message:
     || code.includes('NOT_CONFIRMED')
   ) {
     return { status: 409, code, message: 'Esta operação não é compatível com o estado atual da compra ou do recebimento.' };
+  }
+  if (code.startsWith('STORE_FINANCE_PAYABLE_')) {
+    return { status: 400, code, message: 'Revise os dados do compromisso financeiro desta compra.' };
   }
   if (
     code.startsWith('STORE_PROCUREMENT_')
@@ -66,6 +76,19 @@ export const createStoreProcurementRouter = (): Router => {
         first(request.query.storeId)
       );
       response.status(200).json(result);
+    } catch (error) {
+      const mapped = errorResponse(error);
+      response.status(mapped.status).json({ error: mapped.message, code: mapped.code });
+    }
+  });
+
+  router.post('/finance-payable', async (request, response) => {
+    try {
+      const result = await createAuthorizedPurchasePayable(
+        authorizationHeader(request.headers.authorization),
+        request.body
+      );
+      response.status(result.status === 'created' ? 201 : 200).json(result);
     } catch (error) {
       const mapped = errorResponse(error);
       response.status(mapped.status).json({ error: mapped.message, code: mapped.code });
