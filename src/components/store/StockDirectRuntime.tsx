@@ -3,6 +3,7 @@ import { Boxes, ClipboardList, History, PackageCheck, Truck, Users } from 'lucid
 import type { PurchaseListEntry } from '../../utils/productInventory';
 import { StoreInventoryMovementTimeline } from './StoreInventoryMovementTimeline';
 import { StoreProcurementWorkspace } from './StoreProcurementWorkspace';
+import { StorePurchasePayableBridge } from './StorePurchasePayableBridge';
 import { StorePurchaseWorkspace } from './StorePurchaseWorkspace';
 
 interface StockDirectRuntimeProps {
@@ -65,12 +66,15 @@ export function StockDirectRuntime({ storeId }: StockDirectRuntimeProps) {
       ) : section === 'movements' ? (
         <StoreInventoryMovementTimeline storeId={storeId} />
       ) : (
-        <StoreProcurementWorkspace
-          storeId={storeId}
-          section={section}
-          replenishmentDraft={replenishmentDraft}
-          onReplenishmentDraftConsumed={() => setReplenishmentDraft([])}
-        />
+        <>
+          <StoreProcurementWorkspace
+            storeId={storeId}
+            section={section}
+            replenishmentDraft={replenishmentDraft}
+            onReplenishmentDraftConsumed={() => setReplenishmentDraft([])}
+          />
+          {section === 'purchases' && <StorePurchasePayableBridge storeId={storeId} />}
+        </>
       )}
 
       <p className="flex items-center gap-2 rounded-2xl border border-slate-800 bg-slate-950/50 px-4 py-3 text-[9px] text-slate-500">
