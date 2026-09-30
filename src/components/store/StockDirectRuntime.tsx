@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { Boxes, ClipboardList, PackageCheck, Truck, Users } from 'lucide-react';
+import { Boxes, ClipboardList, History, PackageCheck, Truck, Users } from 'lucide-react';
 import type { PurchaseListEntry } from '../../utils/productInventory';
+import { StoreInventoryMovementTimeline } from './StoreInventoryMovementTimeline';
 import { StoreProcurementWorkspace } from './StoreProcurementWorkspace';
 import { StorePurchaseWorkspace } from './StorePurchaseWorkspace';
 
@@ -8,10 +9,11 @@ interface StockDirectRuntimeProps {
   storeId: string;
 }
 
-type StockSection = 'replenishment' | 'purchases' | 'receipts' | 'suppliers';
+type StockSection = 'replenishment' | 'movements' | 'purchases' | 'receipts' | 'suppliers';
 
 const tabs: Array<{ id: StockSection; label: string; icon: typeof Boxes }> = [
   { id: 'replenishment', label: 'Reposição', icon: ClipboardList },
+  { id: 'movements', label: 'Movimentações', icon: History },
   { id: 'purchases', label: 'Compras', icon: Boxes },
   { id: 'receipts', label: 'Recebimentos', icon: PackageCheck },
   { id: 'suppliers', label: 'Fornecedores', icon: Users },
@@ -60,6 +62,8 @@ export function StockDirectRuntime({ storeId }: StockDirectRuntimeProps) {
           storeId={storeId}
           onPreparePurchaseDraft={preparePurchase}
         />
+      ) : section === 'movements' ? (
+        <StoreInventoryMovementTimeline storeId={storeId} />
       ) : (
         <StoreProcurementWorkspace
           storeId={storeId}
@@ -71,7 +75,7 @@ export function StockDirectRuntime({ storeId }: StockDirectRuntimeProps) {
 
       <p className="flex items-center gap-2 rounded-2xl border border-slate-800 bg-slate-950/50 px-4 py-3 text-[9px] text-slate-500">
         <Truck className="h-3.5 w-3.5 text-slate-400" />
-        Pedido ao fornecedor e recebimento físico são etapas separadas. Somente um recebimento confirmado altera o saldo do estoque.
+        Pedido ao fornecedor, recebimento físico e pagamento são eventos separados. Somente um recebimento confirmado altera o saldo do estoque.
       </p>
     </div>
   );
