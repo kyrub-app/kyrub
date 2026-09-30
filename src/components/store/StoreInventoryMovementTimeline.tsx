@@ -49,11 +49,23 @@ type Movement = {
   lines: MovementLine[];
 };
 
+type ValuationItem = {
+  itemId: string;
+  name: string;
+  unit: string;
+  currentQuantity: number;
+  costBasisStatus: 'complete' | 'incomplete';
+  averageUnitCostMinor: number | null;
+  lastPurchaseUnitCostMinor: number | null;
+  inventoryValueMinor: number | null;
+};
+
 type Valuation = {
   knownInventoryValueMinor: number;
   itemCount: number;
   completeItemCount: number;
   incompleteItemCount: number;
+  items: ValuationItem[];
 };
 
 type Payload = {
@@ -243,33 +255,82 @@ export function StoreInventoryMovementTimeline({ storeId }: Props) {
       </div>
 
       {valuation && (
-        <div className="grid gap-2 sm:grid-cols-3" data-kyrub-inventory-valuation="moving-average">
-          <article className="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-3">
-            <span className="flex items-center gap-1 text-[8px] font-black uppercase text-amber-300">
-              <BadgeDollarSign className="h-3.5 w-3.5" /> Valor conhecido do estoque
-            </span>
-            <strong className="mt-1 block text-sm text-amber-100">
-              {moneyMinor(valuation.knownInventoryValueMinor)}
-            </strong>
-            <p className="mt-1 text-[8px] text-slate-600">Custo médio ponderado móvel</p>
-          </article>
-          <article className="rounded-2xl border border-slate-800 bg-slate-950 p-3">
-            <span className="text-[8px] font-black uppercase text-slate-600">Base de custo completa</span>
-            <strong className="mt-1 block text-sm text-emerald-200">
-              {valuation.completeItemCount}/{valuation.itemCount} itens
-            </strong>
-          </article>
-          <article className={`rounded-2xl border p-3 ${valuation.incompleteItemCount > 0 ? 'border-amber-500/20 bg-amber-500/5' : 'border-slate-800 bg-slate-950'}`}>
-            <span className="text-[8px] font-black uppercase text-slate-600">Custo incompleto</span>
-            <strong className={`mt-1 block text-sm ${valuation.incompleteItemCount > 0 ? 'text-amber-200' : 'text-slate-300'}`}>
-              {valuation.incompleteItemCount} item(ns)
-            </strong>
-            {valuation.incompleteItemCount > 0 && (
-              <p className="mt-1 text-[8px] leading-relaxed text-amber-200/70">
-                O valor acima não inclui itens sem custo confiável; o Kyrub não atribui custo zero automaticamente.
-              </p>
-            )}
-          </article>
+        <div className="space-y-3" data-kyrub-inventory-valuation="moving-average">
+          <div className="grid gap-2 sm:grid-cols-3">
+            <article className="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-3">
+              <span className="flex items-center gap-1 text-[8px] font-black uppercase text-amber-300">
+                <BadgeDollarSign className="h-3.5 w-3.5" /> Valor conhecido do estoque
+              </span>
+              <strong className="mt-1 block text-sm text-amber-100">
+                {moneyMinor(valuation.knownInventoryValueMinor)}
+              </strong>
+              <p className="mt-1 text-[8px] text-slate-600">Custo médio ponderado móvel</p>
+            </article>
+            <article className="rounded-2xl border border-slate-800 bg-slate-950 p-3">
+              <span className="text-[8px] font-black uppercase text-slate-600">Base de custo completa</span>
+              <strong className="mt-1 block text-sm text-emerald-200">
+                {valuation.completeItemCount}/{valuation.itemCount} itens
+              </strong>
+            </article>
+            <article className={`rounded-2xl border p-3 ${valuation.incompleteItemCount > 0 ? 'border-amber-500/20 bg-amber-500/5' : 'border-slate-800 bg-slate-950'}`}>
+              <span className="text-[8px] font-black uppercase text-slate-600">Custo incompleto</span>
+              <strong className={`mt-1 block text-sm ${valuation.incompleteItemCount > 0 ? 'text-amber-200' : 'text-slate-300'}`}>
+                {valuation.incompleteItemCount} item(ns)
+              </strong>
+              {valuation.incompleteItemCount > 0 && (
+                <p className="mt-1 text-[8px] leading-relaxed text-amber-200/70">
+                  O valor acima não inclui itens sem custo confiável; o Kyrub não atribui custo zero automaticamente.
+                </p>
+              )}
+            </article>
+          </div>
+
+          {valuation.items.length > 0 && (
+            <div className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-950/60">
+              <div className="border-b border-slate-800 px-3 py-2">
+                <h5 className="text-[9px] font-black uppercase text-slate-300">Posição econômica atual</h5>
+                <p className="mt-1 text-[8px] text-slate-600">Saldo, custo médio, última compra e valor conhecido por item.</p>
+              </div>
+              <div className="divide-y divide-slate-800">
+                {valuation.items.map(item => (
+                  <div key={item.itemId} className="grid gap-2 px-3 py-3 text-[9px] sm:grid-cols-[minmax(0,1.5fr)_repeat(4,minmax(0,1fr))] sm:items-center">
+                    <div className="min-w-0">
+                      <strong className="block truncate text-slate-200">{item.name}</strong>
+                      <span className="text-[8px] text-slate-600">{item.currentQuantity} {item.unit}</span>
+                    </div>
+                    <div>
+                      <span className="block text-[7px] font-black uppercase text-slate-600">Custo médio</span>
+                      <strong className={item.costBasisStatus === 'complete' && item.averageUnitCostMinor !== null ? 'text-slate-300' : 'text-amber-300'}>
+                        {item.costBasisStatus === 'complete' && item.averageUnitCostMinor !== null
+                          ? `${moneyMinor(item.averageUnitCostMinor)}/${item.unit}`
+                          : 'Incompleto'}
+                      </strong>
+                    </div>
+                    <div>
+                      <span className="block text-[7px] font-black uppercase text-slate-600">Última compra</span>
+                      <strong className="text-slate-300">
+                        {item.lastPurchaseUnitCostMinor !== null
+                          ? `${moneyMinor(item.lastPurchaseUnitCostMinor)}/${item.unit}`
+                          : '—'}
+                      </strong>
+                    </div>
+                    <div>
+                      <span className="block text-[7px] font-black uppercase text-slate-600">Valor em estoque</span>
+                      <strong className={item.inventoryValueMinor !== null ? 'text-amber-100' : 'text-amber-300'}>
+                        {item.inventoryValueMinor !== null ? moneyMinor(item.inventoryValueMinor) : 'Incompleto'}
+                      </strong>
+                    </div>
+                    <div>
+                      <span className="block text-[7px] font-black uppercase text-slate-600">Base</span>
+                      <strong className={item.costBasisStatus === 'complete' ? 'text-emerald-300' : 'text-amber-300'}>
+                        {item.costBasisStatus === 'complete' ? 'Completa' : 'Incompleta'}
+                      </strong>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
