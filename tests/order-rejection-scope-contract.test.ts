@@ -70,7 +70,8 @@ test('immutable commercial snapshot is the financial authority when it exists', 
   assert.match(authority, /discountAmount/);
   assert.match(authority, /settledAmount/);
   assert.match(authority, /netAmount/);
-  assert.match(authoritativeService, /ORDER_COMMERCIAL_REFUND_FINANCIAL_MISMATCH/);
+  assert.match(authoritativeService, /ORDER_COMMERCIAL_REFUND_AMOUNT_MISMATCH/);
+  assert.match(authoritativeService, /ORDER_COMMERCIAL_REFUND_LINE_IDENTITY_MISMATCH/);
   assert.match(authoritativeService, /calculateAuthoritativeCancellationAmount/);
 });
 
