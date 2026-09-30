@@ -1,4 +1,5 @@
 import express from 'express';
+import { createStoreProcurementRouter } from '../inventory/storeProcurementRouter.js';
 import { createStoreCashTransactionDetailRouter } from './storeCashTransactionDetailRouter.js';
 import { createStoreFinanceRouter } from './storeFinanceRouter.js';
 import { createStoreFinanceHistoryRouter } from './storeFinanceHistoryRouter.js';
@@ -25,6 +26,7 @@ app.use('/api/store-finance-history', createStoreFinanceHistoryRouter());
 app.use('/api/store-cash-transaction-detail', createStoreCashTransactionDetailRouter());
 app.use('/api/store-payroll', createStorePayrollRouter());
 app.use('/api/store-sales-analytics', createStoreSalesAnalyticsRouter());
+app.use('/api/store-procurement', createStoreProcurementRouter());
 
 const first = (value: QueryValue | HeaderValue): string => (Array.isArray(value) ? value[0] : value)?.trim() ?? '';
 const reconstructedQuery = (query: Record<string, QueryValue> | undefined): string => {
@@ -45,6 +47,7 @@ export const handleStorePromotionServerlessRequest = async (requestInput: unknow
     : surface === 'cash-transaction-detail' ? '/api/store-cash-transaction-detail'
     : surface === 'payroll' ? '/api/store-payroll'
     : surface === 'sales-analytics' ? '/api/store-sales-analytics'
+    : surface === 'procurement' ? '/api/store-procurement'
     : '/api/store-promotions';
   const originalUrl = request.url; request.url = `${routeBase}${path ? `/${path}` : ''}${reconstructedQuery(request.query)}`;
   response.setHeader?.('Cache-Control', 'no-store, max-age=0');
