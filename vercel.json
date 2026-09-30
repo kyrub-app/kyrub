@@ -62,6 +62,10 @@
       "destination": "/api/health?transport=store-promotions&surface=finance"
     },
     {
+      "source": "/api/store-finance/:path*",
+      "destination": "/api/health?transport=store-promotions&surface=finance&path=:path*"
+    },
+    {
       "source": "/api/store-payroll",
       "destination": "/api/health?transport=store-promotions&surface=payroll"
     },
