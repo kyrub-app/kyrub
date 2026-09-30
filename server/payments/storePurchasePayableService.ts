@@ -166,7 +166,7 @@ export const createAuthorizedPurchasePayable = async (
     supplierId: supplier.id,
     purchasePayableKey,
     amountMinor,
-    supplierDisplayName: supplier.displayName,
+    supplierDisplayName: supplier.displayName.slice(0, 100),
     dueDate,
     costNature,
     billingDocumentType,
