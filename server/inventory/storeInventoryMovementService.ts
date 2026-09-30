@@ -1,5 +1,7 @@
 import { adminDb } from '../firebaseAdmin.js';
 import { verifyFirebaseIdToken } from '../ai/consultantAuth.js';
+import { parseInventoryCatalogRecords } from '../../shared/inventoryConsumption.js';
+import { normalizeInventoryCostBasis } from '../../shared/inventoryCostBasis.js';
 import { inventoryDocumentPathForOwner } from './canonicalInventoryAuthorityService.js';
 
 const clean = (value: unknown): string =>
@@ -40,6 +42,11 @@ const requireCanonicalStoreOwner = async (
 const finite = (value: unknown): number | null =>
   typeof value === 'number' && Number.isFinite(value) ? value : null;
 
+const nonNegative = (value: unknown): number | null => {
+  const numeric = finite(value);
+  return numeric !== null && numeric >= 0 ? numeric : null;
+};
+
 const isoDate = (value: unknown): string => {
   if (typeof value === 'string' && Number.isFinite(Date.parse(value))) {
     return new Date(value).toISOString();
@@ -68,6 +75,14 @@ export type StoreInventoryMovementLine = {
   quantityDelta: number;
   previousQuantity: number | null;
   resultingQuantity: number | null;
+  costBasisStatus: 'complete' | 'incomplete' | '';
+  unitCostMinor: number | null;
+  totalCostMinor: number | null;
+  inventoryValueBeforeMinor: number | null;
+  inventoryValueAfterMinor: number | null;
+  averageUnitCostBeforeMinor: number | null;
+  averageUnitCostAfterMinor: number | null;
+  lastPurchaseUnitCostMinor: number | null;
 };
 
 export type StoreInventoryMovementView = {
@@ -111,6 +126,17 @@ const normalizeLine = (value: unknown): StoreInventoryMovementLine | null => {
     quantityDelta,
     previousQuantity: finite(record.previousQuantity),
     resultingQuantity: finite(record.resultingQuantity),
+    costBasisStatus:
+      record.costBasisStatus === 'complete' || record.costBasisStatus === 'incomplete'
+        ? record.costBasisStatus
+        : '',
+    unitCostMinor: nonNegative(record.unitCostMinor),
+    totalCostMinor: nonNegative(record.totalCostMinor),
+    inventoryValueBeforeMinor: nonNegative(record.inventoryValueBeforeMinor),
+    inventoryValueAfterMinor: nonNegative(record.inventoryValueAfterMinor),
+    averageUnitCostBeforeMinor: nonNegative(record.averageUnitCostBeforeMinor),
+    averageUnitCostAfterMinor: nonNegative(record.averageUnitCostAfterMinor),
+    lastPurchaseUnitCostMinor: nonNegative(record.lastPurchaseUnitCostMinor),
   };
 };
 
@@ -148,6 +174,17 @@ export const normalizeStoreInventoryMovement = (
   };
 };
 
+export type StoreInventoryValuationItem = {
+  itemId: string;
+  name: string;
+  unit: string;
+  currentQuantity: number;
+  costBasisStatus: 'complete' | 'incomplete';
+  averageUnitCostMinor: number | null;
+  lastPurchaseUnitCostMinor: number | null;
+  inventoryValueMinor: number | null;
+};
+
 export type StoreInventoryMovementOverview = {
   storeId: string;
   movements: StoreInventoryMovementView[];
@@ -157,6 +194,13 @@ export type StoreInventoryMovementOverview = {
     outflow: number;
     loss: number;
     correction: number;
+  };
+  valuation: {
+    knownInventoryValueMinor: number;
+    itemCount: number;
+    completeItemCount: number;
+    incompleteItemCount: number;
+    items: StoreInventoryValuationItem[];
   };
 };
 
@@ -169,11 +213,14 @@ export const listAuthorizedStoreInventoryMovements = async (
     storeIdValue
   );
   const inventoryPath = inventoryDocumentPathForOwner(ownerUserId);
-  const snapshot = await adminDb
-    .collection(`${inventoryPath}/movements`)
-    .orderBy('createdAt', 'desc')
-    .limit(120)
-    .get();
+  const [snapshot, inventorySnapshot] = await Promise.all([
+    adminDb
+      .collection(`${inventoryPath}/movements`)
+      .orderBy('createdAt', 'desc')
+      .limit(120)
+      .get(),
+    adminDb.doc(inventoryPath).get(),
+  ]);
   const movements = snapshot.docs
     .map(document => normalizeStoreInventoryMovement(document.id, document.data()))
     .filter((movement): movement is StoreInventoryMovementView => Boolean(movement));
@@ -185,5 +232,41 @@ export const listAuthorizedStoreInventoryMovements = async (
     },
     { total: 0, intake: 0, outflow: 0, loss: 0, correction: 0 }
   );
-  return { storeId, movements, summary };
+  const inventoryData = inventorySnapshot.data();
+  const catalog = parseInventoryCatalogRecords(
+    inventoryData?.catalog ?? inventoryData?.inventoryCatalog
+  );
+  const valuationItems = catalog.map(item => {
+    const basis = normalizeInventoryCostBasis(item);
+    return {
+      itemId: item.id,
+      name: item.name,
+      unit: item.unit,
+      currentQuantity: item.currentQuantity,
+      costBasisStatus: basis.costBasisStatus,
+      averageUnitCostMinor: basis.averageUnitCostMinor,
+      lastPurchaseUnitCostMinor: basis.lastPurchaseUnitCostMinor,
+      inventoryValueMinor: basis.inventoryValueMinor,
+    } satisfies StoreInventoryValuationItem;
+  }).sort((left, right) => left.name.localeCompare(right.name, 'pt-BR'));
+  const valuation = valuationItems.reduce(
+    (current, item) => {
+      current.itemCount += 1;
+      if (item.costBasisStatus === 'complete' && item.inventoryValueMinor !== null) {
+        current.completeItemCount += 1;
+        current.knownInventoryValueMinor += item.inventoryValueMinor;
+      } else {
+        current.incompleteItemCount += 1;
+      }
+      return current;
+    },
+    {
+      knownInventoryValueMinor: 0,
+      itemCount: 0,
+      completeItemCount: 0,
+      incompleteItemCount: 0,
+      items: valuationItems,
+    }
+  );
+  return { storeId, movements, summary, valuation };
 };

@@ -3,6 +3,7 @@ import {
   AlertTriangle,
   ArrowDownToLine,
   ArrowUpFromLine,
+  BadgeDollarSign,
   PackageSearch,
   RefreshCw,
   RotateCcw,
@@ -20,6 +21,14 @@ type MovementLine = {
   quantityDelta: number;
   previousQuantity: number | null;
   resultingQuantity: number | null;
+  costBasisStatus: 'complete' | 'incomplete' | '';
+  unitCostMinor: number | null;
+  totalCostMinor: number | null;
+  inventoryValueBeforeMinor: number | null;
+  inventoryValueAfterMinor: number | null;
+  averageUnitCostBeforeMinor: number | null;
+  averageUnitCostAfterMinor: number | null;
+  lastPurchaseUnitCostMinor: number | null;
 };
 
 type Movement = {
@@ -40,6 +49,25 @@ type Movement = {
   lines: MovementLine[];
 };
 
+type ValuationItem = {
+  itemId: string;
+  name: string;
+  unit: string;
+  currentQuantity: number;
+  costBasisStatus: 'complete' | 'incomplete';
+  averageUnitCostMinor: number | null;
+  lastPurchaseUnitCostMinor: number | null;
+  inventoryValueMinor: number | null;
+};
+
+type Valuation = {
+  knownInventoryValueMinor: number;
+  itemCount: number;
+  completeItemCount: number;
+  incompleteItemCount: number;
+  items: ValuationItem[];
+};
+
 type Payload = {
   movements?: Movement[];
   summary?: {
@@ -49,6 +77,7 @@ type Payload = {
     loss: number;
     correction: number;
   };
+  valuation?: Valuation;
   error?: string;
 };
 
@@ -87,6 +116,14 @@ const kindConfig: Record<MovementKind, { label: string; icon: typeof ArrowDownTo
   },
 };
 
+const moneyMinor = (minor: number): string =>
+  new Intl.NumberFormat('pt-BR', {
+    style: 'currency',
+    currency: 'BRL',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 4,
+  }).format(minor / 100);
+
 const dateLabel = (value: string): string => {
   const date = new Date(value);
   return Number.isFinite(date.getTime())
@@ -117,9 +154,22 @@ const relationLabel = (movement: Movement): string => {
   return relations.join(' · ');
 };
 
+const economicLabel = (movement: Movement, line: MovementLine): string => {
+  if (line.costBasisStatus === 'incomplete') return 'Custo incompleto';
+  if (line.totalCostMinor === null) return '';
+  if (movement.kind === 'outflow' || movement.kind === 'loss') {
+    return `CMV ${moneyMinor(line.totalCostMinor)}`;
+  }
+  if (movement.kind === 'intake') {
+    return `Custo da entrada ${moneyMinor(line.totalCostMinor)}`;
+  }
+  return `Impacto de custo ${moneyMinor(line.totalCostMinor)}`;
+};
+
 export function StoreInventoryMovementTimeline({ storeId }: Props) {
   const [movements, setMovements] = useState<Movement[]>([]);
   const [summary, setSummary] = useState<Payload['summary']>();
+  const [valuation, setValuation] = useState<Valuation>();
   const [filter, setFilter] = useState<MovementFilter>('all');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -146,6 +196,7 @@ export function StoreInventoryMovementTimeline({ storeId }: Props) {
       if (!response.ok) throw new Error(payload.error || 'Não foi possível carregar as movimentações.');
       setMovements(Array.isArray(payload.movements) ? payload.movements : []);
       setSummary(payload.summary);
+      setValuation(payload.valuation);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Não foi possível carregar as movimentações.');
     } finally {
@@ -170,11 +221,11 @@ export function StoreInventoryMovementTimeline({ storeId }: Props) {
       <header className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-800 pb-3">
         <div>
           <span className="text-[9px] font-black uppercase tracking-[0.18em] text-cyan-300">
-            Razão físico
+            Razão físico + econômico
           </span>
           <h4 className="mt-1 text-sm font-black uppercase text-white">Movimentações do estoque</h4>
           <p className="mt-1 max-w-2xl text-[10px] leading-relaxed text-slate-500">
-            Linha do tempo única das entradas, saídas, perdas e correções já registradas no estoque canônico. Compra, recebimento e pagamento continuam eventos separados.
+            Linha do tempo única das entradas, saídas, perdas e correções. Quando a base de custo está completa, o Kyrub congela o custo da saída para preservar CMV e margem históricos.
           </p>
         </div>
         <button
@@ -202,6 +253,86 @@ export function StoreInventoryMovementTimeline({ storeId }: Props) {
           </article>
         ))}
       </div>
+
+      {valuation && (
+        <div className="space-y-3" data-kyrub-inventory-valuation="moving-average">
+          <div className="grid gap-2 sm:grid-cols-3">
+            <article className="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-3">
+              <span className="flex items-center gap-1 text-[8px] font-black uppercase text-amber-300">
+                <BadgeDollarSign className="h-3.5 w-3.5" /> Valor conhecido do estoque
+              </span>
+              <strong className="mt-1 block text-sm text-amber-100">
+                {moneyMinor(valuation.knownInventoryValueMinor)}
+              </strong>
+              <p className="mt-1 text-[8px] text-slate-600">Custo médio ponderado móvel</p>
+            </article>
+            <article className="rounded-2xl border border-slate-800 bg-slate-950 p-3">
+              <span className="text-[8px] font-black uppercase text-slate-600">Base de custo completa</span>
+              <strong className="mt-1 block text-sm text-emerald-200">
+                {valuation.completeItemCount}/{valuation.itemCount} itens
+              </strong>
+            </article>
+            <article className={`rounded-2xl border p-3 ${valuation.incompleteItemCount > 0 ? 'border-amber-500/20 bg-amber-500/5' : 'border-slate-800 bg-slate-950'}`}>
+              <span className="text-[8px] font-black uppercase text-slate-600">Custo incompleto</span>
+              <strong className={`mt-1 block text-sm ${valuation.incompleteItemCount > 0 ? 'text-amber-200' : 'text-slate-300'}`}>
+                {valuation.incompleteItemCount} item(ns)
+              </strong>
+              {valuation.incompleteItemCount > 0 && (
+                <p className="mt-1 text-[8px] leading-relaxed text-amber-200/70">
+                  O valor acima não inclui itens sem custo confiável; o Kyrub não atribui custo zero automaticamente.
+                </p>
+              )}
+            </article>
+          </div>
+
+          {valuation.items.length > 0 && (
+            <div className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-950/60">
+              <div className="border-b border-slate-800 px-3 py-2">
+                <h5 className="text-[9px] font-black uppercase text-slate-300">Posição econômica atual</h5>
+                <p className="mt-1 text-[8px] text-slate-600">Saldo, custo médio, última compra e valor conhecido por item.</p>
+              </div>
+              <div className="divide-y divide-slate-800">
+                {valuation.items.map(item => (
+                  <div key={item.itemId} className="grid gap-2 px-3 py-3 text-[9px] sm:grid-cols-[minmax(0,1.5fr)_repeat(4,minmax(0,1fr))] sm:items-center">
+                    <div className="min-w-0">
+                      <strong className="block truncate text-slate-200">{item.name}</strong>
+                      <span className="text-[8px] text-slate-600">{item.currentQuantity} {item.unit}</span>
+                    </div>
+                    <div>
+                      <span className="block text-[7px] font-black uppercase text-slate-600">Custo médio</span>
+                      <strong className={item.costBasisStatus === 'complete' && item.averageUnitCostMinor !== null ? 'text-slate-300' : 'text-amber-300'}>
+                        {item.costBasisStatus === 'complete' && item.averageUnitCostMinor !== null
+                          ? `${moneyMinor(item.averageUnitCostMinor)}/${item.unit}`
+                          : 'Incompleto'}
+                      </strong>
+                    </div>
+                    <div>
+                      <span className="block text-[7px] font-black uppercase text-slate-600">Última compra</span>
+                      <strong className="text-slate-300">
+                        {item.lastPurchaseUnitCostMinor !== null
+                          ? `${moneyMinor(item.lastPurchaseUnitCostMinor)}/${item.unit}`
+                          : '—'}
+                      </strong>
+                    </div>
+                    <div>
+                      <span className="block text-[7px] font-black uppercase text-slate-600">Valor em estoque</span>
+                      <strong className={item.inventoryValueMinor !== null ? 'text-amber-100' : 'text-amber-300'}>
+                        {item.inventoryValueMinor !== null ? moneyMinor(item.inventoryValueMinor) : 'Incompleto'}
+                      </strong>
+                    </div>
+                    <div>
+                      <span className="block text-[7px] font-black uppercase text-slate-600">Base</span>
+                      <strong className={item.costBasisStatus === 'complete' ? 'text-emerald-300' : 'text-amber-300'}>
+                        {item.costBasisStatus === 'complete' ? 'Completa' : 'Incompleta'}
+                      </strong>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="flex items-center gap-2 overflow-x-auto" aria-label="Filtrar movimentações">
         <SlidersHorizontal className="h-3.5 w-3.5 shrink-0 text-slate-600" />
@@ -264,19 +395,39 @@ export function StoreInventoryMovementTimeline({ storeId }: Props) {
 
                 {movement.lines.length > 0 && (
                   <div className="mt-3 space-y-2 border-t border-slate-800 pt-3">
-                    {movement.lines.map((line, index) => (
-                      <div key={`${movement.id}-${line.itemId}-${index}`} className="flex flex-wrap items-center justify-between gap-2 text-[9px]">
-                        <span className="min-w-0 flex-1 truncate text-slate-300">{line.name}</span>
-                        <strong className={line.quantityDelta >= 0 ? 'text-emerald-300' : 'text-cyan-300'}>
-                          {line.quantityDelta >= 0 ? '+' : ''}{line.quantityDelta} {line.unit}
-                        </strong>
-                        {line.previousQuantity !== null && line.resultingQuantity !== null && (
-                          <span className="text-slate-600">
-                            {line.previousQuantity} → {line.resultingQuantity}
-                          </span>
-                        )}
-                      </div>
-                    ))}
+                    {movement.lines.map((line, index) => {
+                      const economics = economicLabel(movement, line);
+                      return (
+                        <div key={`${movement.id}-${line.itemId}-${index}`} className="rounded-xl border border-slate-800/70 bg-slate-950 p-2 text-[9px]">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <span className="min-w-0 flex-1 truncate text-slate-300">{line.name}</span>
+                            <strong className={line.quantityDelta >= 0 ? 'text-emerald-300' : 'text-cyan-300'}>
+                              {line.quantityDelta >= 0 ? '+' : ''}{line.quantityDelta} {line.unit}
+                            </strong>
+                            {line.previousQuantity !== null && line.resultingQuantity !== null && (
+                              <span className="text-slate-600">
+                                {line.previousQuantity} → {line.resultingQuantity}
+                              </span>
+                            )}
+                          </div>
+                          {(economics || line.averageUnitCostAfterMinor !== null) && (
+                            <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[8px] text-slate-600">
+                              {economics && (
+                                <span className={line.costBasisStatus === 'incomplete' ? 'text-amber-300' : 'text-slate-500'}>
+                                  {economics}
+                                </span>
+                              )}
+                              {line.averageUnitCostAfterMinor !== null && (
+                                <span>Médio após: {moneyMinor(line.averageUnitCostAfterMinor)}/{line.unit}</span>
+                              )}
+                              {line.lastPurchaseUnitCostMinor !== null && (
+                                <span>Última compra: {moneyMinor(line.lastPurchaseUnitCostMinor)}/{line.unit}</span>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </article>

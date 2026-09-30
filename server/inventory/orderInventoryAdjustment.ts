@@ -120,6 +120,18 @@ const parseLedgerLines = (value: unknown): InventoryConsumptionLine[] => {
       productIds: Array.isArray(line.productIds)
         ? line.productIds.map(clean).filter(Boolean)
         : [],
+      costBasisStatus:
+        line.costBasisStatus === 'complete' || line.costBasisStatus === 'incomplete'
+          ? line.costBasisStatus
+          : undefined,
+      unitCostMinor:
+        typeof line.unitCostMinor === 'number' && Number.isFinite(line.unitCostMinor) && line.unitCostMinor >= 0
+          ? line.unitCostMinor
+          : null,
+      totalCostMinor:
+        typeof line.totalCostMinor === 'number' && Number.isSafeInteger(line.totalCostMinor) && line.totalCostMinor >= 0
+          ? line.totalCostMinor
+          : null,
     } satisfies InventoryConsumptionLine];
   });
 };

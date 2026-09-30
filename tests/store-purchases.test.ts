@@ -269,7 +269,7 @@ describe('canonical store purchases foundation', () => {
     );
   });
 
-  test('confirmed receipt plan increments only physical quantity and preserves inventory cost policy', () => {
+  test('confirmed receipt recalculates moving average while preserving latest purchase cost separately', () => {
     const receipt = confirmedReceipt('receipt-1', 60);
     const plan = buildPurchaseReceiptInventoryPlan({
       purchase: orderedPurchase(),
@@ -277,38 +277,79 @@ describe('canonical store purchases foundation', () => {
       catalog: inventoryCatalog(),
     });
 
+    const item = plan.resultingCatalog[0];
     assert.equal(plan.resultingPurchaseStatus, 'partially_received');
-    assert.equal(plan.resultingCatalog[0]?.currentQuantity, 70);
-    assert.equal(plan.resultingCatalog[0]?.purchaseCost, 9.75);
-    assert.equal(plan.resultingCatalog[0]?.supplier, 'Fornecedor anterior');
-    assert.deepEqual(plan.movementLines[0], {
-      inventoryItemId: 'ingredient-flour',
-      name: 'Farinha',
-      unit: 'kg',
-      receivedQuantity: 60,
-      quantityDelta: 60,
-      previousQuantity: 10,
-      resultingQuantity: 70,
-      purchaseLineIds: ['line-flour'],
-      documentedUnitCostMinor: 1250,
-    });
+    assert.equal(item?.currentQuantity, 70);
+    assert.equal(item?.purchaseCost, 12.5);
+    assert.equal(item?.costBasisStatus, 'complete');
+    assert.equal(item?.lastPurchaseUnitCostMinor, 1250);
+    assert.equal(item?.inventoryValueMinor, 84750);
+    assert.equal(item?.averageUnitCostMinor, 1210.714286);
+    assert.equal(item?.supplier, 'Fornecedor anterior');
+
+    const movement = plan.movementLines[0];
+    assert.equal(movement?.inventoryItemId, 'ingredient-flour');
+    assert.equal(movement?.receivedQuantity, 60);
+    assert.equal(movement?.previousQuantity, 10);
+    assert.equal(movement?.resultingQuantity, 70);
+    assert.equal(movement?.documentedUnitCostMinor, 1250);
+    assert.equal(movement?.unitCostMinor, 1250);
+    assert.equal(movement?.totalCostMinor, 75000);
+    assert.equal(movement?.inventoryValueBeforeMinor, 9750);
+    assert.equal(movement?.inventoryValueAfterMinor, 84750);
+    assert.equal(movement?.averageUnitCostBeforeMinor, 975);
+    assert.equal(movement?.averageUnitCostAfterMinor, 1210.714286);
   });
 
-  test('second physical receipt applies only its own 40 units and closes the purchase', () => {
+  test('second physical receipt applies only its own quantity and continues the same moving average basis', () => {
     const firstReceipt = confirmedReceipt('receipt-1', 60);
     const secondReceipt = confirmedReceipt('receipt-2', 40);
-    const plan = buildPurchaseReceiptInventoryPlan({
+    const firstPlan = buildPurchaseReceiptInventoryPlan({
+      purchase: orderedPurchase(),
+      receipt: firstReceipt,
+      catalog: inventoryCatalog(),
+    });
+    const secondPlan = buildPurchaseReceiptInventoryPlan({
       purchase: partiallyReceivedPurchase(),
       receipt: secondReceipt,
       confirmedReceipts: [firstReceipt],
-      catalog: inventoryCatalog({ currentQuantity: 70 }),
+      catalog: firstPlan.resultingCatalog,
     });
 
-    assert.equal(plan.resultingPurchaseStatus, 'received');
-    assert.equal(plan.resultingCatalog[0]?.currentQuantity, 110);
-    assert.equal(plan.movementLines[0]?.receivedQuantity, 40);
-    assert.equal(plan.movementLines[0]?.previousQuantity, 70);
-    assert.equal(plan.movementLines[0]?.resultingQuantity, 110);
+    assert.equal(secondPlan.resultingPurchaseStatus, 'received');
+    assert.equal(secondPlan.resultingCatalog[0]?.currentQuantity, 110);
+    assert.equal(secondPlan.resultingCatalog[0]?.inventoryValueMinor, 134750);
+    assert.equal(secondPlan.resultingCatalog[0]?.averageUnitCostMinor, 1225);
+    assert.equal(secondPlan.resultingCatalog[0]?.lastPurchaseUnitCostMinor, 1250);
+    assert.equal(secondPlan.movementLines[0]?.receivedQuantity, 40);
+    assert.equal(secondPlan.movementLines[0]?.totalCostMinor, 50000);
+    assert.equal(secondPlan.movementLines[0]?.previousQuantity, 70);
+    assert.equal(secondPlan.movementLines[0]?.resultingQuantity, 110);
+  });
+
+  test('receipt without a reliable price increases physical stock but marks valuation incomplete', () => {
+    const unpriced = normalizeStorePurchaseReceipt({
+      ...confirmedReceipt('receipt-unpriced', 10),
+      lines: [{
+        purchaseLineId: 'line-flour',
+        inventoryItemId: 'ingredient-flour',
+        unit: 'kg',
+        receivedQuantity: 10,
+        documentedUnitCostMinor: null,
+      }],
+    });
+    const plan = buildPurchaseReceiptInventoryPlan({
+      purchase: orderedPurchase(),
+      receipt: unpriced,
+      catalog: inventoryCatalog(),
+    });
+
+    assert.equal(plan.resultingCatalog[0]?.currentQuantity, 20);
+    assert.equal(plan.resultingCatalog[0]?.costBasisStatus, 'incomplete');
+    assert.equal(plan.resultingCatalog[0]?.inventoryValueMinor, null);
+    assert.equal(plan.resultingCatalog[0]?.averageUnitCostMinor, null);
+    assert.equal(plan.resultingCatalog[0]?.purchaseCost, 9.75);
+    assert.equal(plan.movementLines[0]?.totalCostMinor, null);
   });
 
   test('receipt plan refuses missing or unit-mismatched canonical inventory identity', () => {
@@ -331,7 +372,7 @@ describe('canonical store purchases foundation', () => {
     );
   });
 
-  test('receipt inventory executor uses the canonical physical stock and generic movement ledger atomically', () => {
+  test('receipt inventory executor uses canonical stock and journals valuation evidence atomically', () => {
     const service = readFileSync(
       'server/inventory/purchaseReceiptInventoryService.ts',
       'utf8'
@@ -342,11 +383,13 @@ describe('canonical store purchases foundation', () => {
     assert.match(service, /collection\('movements'\)/);
     assert.match(service, /actionType: 'purchase_receipt_inventory'/);
     assert.match(service, /reason: 'purchase_receipt'/);
+    assert.match(service, /averageUnitCostAfterMinor/);
+    assert.match(service, /inventoryValueAfterMinor/);
+    assert.match(service, /lastPurchaseUnitCostMinor/);
     assert.match(service, /transaction\.create\(movementReference/);
     assert.match(service, /transaction\.create\(ledgerReference/);
     assert.match(service, /transaction\.update\(purchaseReference/);
     assert.doesNotMatch(service, /financePayables/);
-    assert.doesNotMatch(service, /purchaseCost\s*:/);
   });
 
   test('foundation keeps procurement writes server-only', () => {

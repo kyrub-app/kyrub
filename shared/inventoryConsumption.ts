@@ -1,3 +1,11 @@
+import {
+  applyMovingAverageInventoryOutflow,
+  normalizeInventoryCostBasis,
+  restoreInventoryAtHistoricalCost,
+  type InventoryCostBasisSource,
+  type InventoryCostBasisStatus,
+} from './inventoryCostBasis.js';
+
 export type InventoryConsumptionTrigger = 'accepted' | 'preparing' | 'completed';
 
 export type InventoryOrderStatus =
@@ -19,6 +27,12 @@ export interface InventoryCatalogRecord {
   purchaseCost: number;
   supplier: string;
   updatedAt: string;
+  costBasisStatus?: InventoryCostBasisStatus;
+  averageUnitCostMinor?: number | null;
+  lastPurchaseUnitCostMinor?: number | null;
+  inventoryValueMinor?: number | null;
+  costBasisSource?: InventoryCostBasisSource;
+  costBasisUpdatedAt?: string;
 }
 
 export interface InventoryCompositionLineRecord {
@@ -48,6 +62,9 @@ export interface InventoryConsumptionLine {
   beforeQuantity: number;
   afterQuantity: number;
   productIds: string[];
+  costBasisStatus?: InventoryCostBasisStatus;
+  unitCostMinor?: number | null;
+  totalCostMinor?: number | null;
 }
 
 const STATUS_RANK: Record<InventoryOrderStatus, number> = {
@@ -115,7 +132,7 @@ export const parseInventoryCatalogRecords = (
       return [];
     }
     seen.add(id);
-    return [{
+    const base: InventoryCatalogRecord = {
       id,
       name,
       unit: clean(record.unit) || 'un',
@@ -124,6 +141,21 @@ export const parseInventoryCatalogRecords = (
       purchaseCost,
       supplier: clean(record.supplier),
       updatedAt: clean(record.updatedAt),
+      costBasisStatus:
+        record.costBasisStatus === 'complete' || record.costBasisStatus === 'incomplete'
+          ? record.costBasisStatus
+          : undefined,
+      averageUnitCostMinor: finiteNonNegative(record.averageUnitCostMinor),
+      lastPurchaseUnitCostMinor: finiteNonNegative(record.lastPurchaseUnitCostMinor),
+      inventoryValueMinor: finiteNonNegative(record.inventoryValueMinor),
+      costBasisSource: typeof record.costBasisSource === 'string'
+        ? record.costBasisSource as InventoryCostBasisSource
+        : undefined,
+      costBasisUpdatedAt: clean(record.costBasisUpdatedAt),
+    };
+    return [{
+      ...base,
+      ...normalizeInventoryCostBasis(base),
     } satisfies InventoryCatalogRecord];
   });
 };
@@ -237,13 +269,35 @@ export const applyInventoryConsumptionLines = (
   return catalog.map(item => {
     const line = lineById.get(item.id);
     if (!line) return item;
+    const now = new Date().toISOString();
+    if (direction === 'consume') {
+      const economic = applyMovingAverageInventoryOutflow(item, {
+        quantity: line.quantity,
+        resultingQuantity: line.afterQuantity,
+        now,
+      });
+      line.costBasisStatus = economic.snapshot.costBasisStatus;
+      line.unitCostMinor = economic.snapshot.unitCostMinor;
+      line.totalCostMinor = economic.snapshot.totalCostMinor;
+      return {
+        ...economic.item,
+        currentQuantity: line.afterQuantity,
+        updatedAt: now,
+      };
+    }
+
+    const resultingQuantity = roundQuantity(item.currentQuantity + line.quantity);
+    const economic = restoreInventoryAtHistoricalCost(item, {
+      quantity: line.quantity,
+      resultingQuantity,
+      historicalUnitCostMinor: line.unitCostMinor,
+      historicalTotalCostMinor: line.totalCostMinor,
+      now,
+    });
     return {
-      ...item,
-      currentQuantity:
-        direction === 'consume'
-          ? line.afterQuantity
-          : roundQuantity(item.currentQuantity + line.quantity),
-      updatedAt: new Date().toISOString(),
+      ...economic.item,
+      currentQuantity: resultingQuantity,
+      updatedAt: now,
     };
   });
 };
