@@ -16,8 +16,11 @@ import {
 import { classifyKyrubiaCapability } from '../shared/kyrubiaCapabilityRouter';
 import {
   calculateCompositionUnitCost,
+  calculateMarginGapPercentagePoints,
+  calculateProductCostImpact,
   calculateSaleMarginPercent,
   calculateSuggestedPrice,
+  resolveInventoryPricingCost,
   roundCurrency,
 } from '../shared/productPricing';
 
@@ -59,7 +62,7 @@ test('simulated X-Burger invoice becomes four inventory entries, never catalog p
   assert.equal(proposal?.source.label, 'Distribuidora Teste Kyrub');
 });
 
-test('X-Burger recipe supports ten units and calculates margin without confusing markup', () => {
+test('X-Burger recipe supports legacy pricing while preserving margin semantics', () => {
   const catalog = [
     { id: 'pao', purchaseCost: 1.2 },
     { id: 'carne', purchaseCost: 30 },
@@ -80,6 +83,86 @@ test('X-Burger recipe supports ten units and calculates margin without confusing
   assert.equal(roundCurrency(cost ?? -1), 7.7);
   assert.equal(roundCurrency(calculateSuggestedPrice(cost, 40) ?? -1), 12.83);
   assert.equal(roundCurrency(calculateSaleMarginPercent(cost, 29.5) ?? -1), 73.9);
+});
+
+test('canonical moving average overrides latest purchase cost for current product pricing', () => {
+  const catalog = [{
+    id: 'carne',
+    currentQuantity: 10,
+    purchaseCost: 20,
+    costBasisStatus: 'complete' as const,
+    averageUnitCostMinor: 1500,
+    lastPurchaseUnitCostMinor: 2000,
+    inventoryValueMinor: 15000,
+    costBasisSource: 'purchase_receipt' as const,
+    costBasisUpdatedAt: '2026-09-30T12:00:00.000Z',
+  }];
+  const composition = {
+    yieldQuantity: 1,
+    lines: [{ inventoryItemId: 'carne', quantity: 1 }],
+  };
+
+  const cost = calculateCompositionUnitCost(catalog, composition);
+  assert.equal(cost, 15);
+  assert.equal(resolveInventoryPricingCost(catalog[0]).source, 'moving_average');
+  assert.equal(calculateSaleMarginPercent(cost, 30), 50);
+  assert.equal(calculateMarginGapPercentagePoints(50, 40), 10);
+  assert.equal(roundCurrency(calculateSuggestedPrice(cost, 40) ?? -1), 25);
+});
+
+test('explicitly incomplete cost basis never falls back to stale latest purchase price', () => {
+  const item = {
+    id: 'carne',
+    currentQuantity: 10,
+    purchaseCost: 20,
+    costBasisStatus: 'incomplete' as const,
+    averageUnitCostMinor: null,
+    lastPurchaseUnitCostMinor: 2000,
+    inventoryValueMinor: null,
+  };
+  const cost = calculateCompositionUnitCost(
+    [item],
+    { yieldQuantity: 1, lines: [{ inventoryItemId: 'carne', quantity: 1 }] }
+  );
+
+  assert.equal(resolveInventoryPricingCost(item).source, 'incomplete');
+  assert.equal(cost, null);
+  assert.equal(calculateSuggestedPrice(cost, 40), null);
+});
+
+test('replenishment simulation projects moving average from quantity and purchase price', () => {
+  const catalog = [{
+    id: 'carne',
+    currentQuantity: 10,
+    purchaseCost: 20,
+    costBasisStatus: 'complete' as const,
+    averageUnitCostMinor: 1500,
+    lastPurchaseUnitCostMinor: 2000,
+    inventoryValueMinor: 15000,
+    costBasisSource: 'purchase_receipt' as const,
+    costBasisUpdatedAt: '2026-09-30T12:00:00.000Z',
+  }];
+  const composition = {
+    yieldQuantity: 1,
+    lines: [{ inventoryItemId: 'carne', quantity: 1 }],
+  };
+
+  const impact = calculateProductCostImpact(
+    catalog,
+    composition,
+    'carne',
+    20,
+    10,
+    30,
+    40
+  );
+
+  assert.ok(impact);
+  assert.equal(roundCurrency(impact.currentInventoryUnitCost), 15);
+  assert.equal(roundCurrency(impact.projectedInventoryUnitCost), 17.5);
+  assert.equal(roundCurrency(impact.projectedUnitCost), 17.5);
+  assert.equal(roundCurrency(impact.projectedMarginPercent ?? -1), 41.67);
+  assert.equal(roundCurrency(impact.projectedSuggestedPrice ?? -1), 29.17);
 });
 
 test('one X-Burger sale consumes the recipe and cancellation restores capacity from 10 to 9 to 10', () => {
@@ -151,4 +234,23 @@ test('private inventory editor keeps canonical and legacy aliases synchronized',
   assert.match(source, /compositions:\s*nextSettings\.compositions/);
   assert.match(source, /Array\.isArray\(value\?\.inventoryCatalog\)/);
   assert.match(source, /value\?\.catalog/);
+});
+
+test('product pricing UI names target versus estimated margin and uses quantity-aware replenishment simulation', async () => {
+  const panel = await readFile(
+    new URL('../src/components/store/ProductPricingPanel.tsx', import.meta.url),
+    'utf8'
+  );
+  const pricingUtils = await readFile(
+    new URL('../src/utils/productPricing.ts', import.meta.url),
+    'utf8'
+  );
+
+  assert.match(panel, /Margem desejada/);
+  assert.match(panel, /Margem atual estimada/);
+  assert.match(panel, /Custo médio da ficha/);
+  assert.match(panel, /Simular próxima reposição/);
+  assert.match(panel, /projectedPurchaseQuantity/);
+  assert.match(panel, /p\.p\. vs meta/);
+  assert.match(pricingUtils, /updatedAt: new Date\(\)\.toISOString\(\)/);
 });
