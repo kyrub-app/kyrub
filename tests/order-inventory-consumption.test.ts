@@ -9,6 +9,11 @@ import {
   type InventoryCatalogRecord,
   type InventoryCompositionRecord,
 } from '../shared/inventoryConsumption';
+import {
+  buildOrderInventoryMovementLines,
+  currentOrderInventoryMovementRevision,
+  nextOrderInventoryMovementRevision,
+} from '../server/inventory/orderInventoryMovementLedger';
 
 const catalog: InventoryCatalogRecord[] = [
   {
@@ -53,12 +58,20 @@ const compositions: Record<string, InventoryCompositionRecord> = {
 
 const domainSource = readFileSync('shared/inventoryConsumption.ts', 'utf8');
 const serviceSource = readFileSync('server/inventory/orderInventoryService.ts', 'utf8');
+const movementLedgerSource = readFileSync(
+  'server/inventory/orderInventoryMovementLedger.ts',
+  'utf8'
+);
 const authoritySource = readFileSync(
   'server/inventory/canonicalInventoryAuthorityService.ts',
   'utf8'
 );
 const adjustmentSource = readFileSync(
   'server/inventory/orderInventoryAdjustment.ts',
+  'utf8'
+);
+const actionFacadeSource = readFileSync(
+  'server/actions/actionExecutionFacade.ts',
   'utf8'
 );
 const routerSource = readFileSync('server/inventory/orderInventoryRouter.ts', 'utf8');
@@ -144,6 +157,37 @@ describe('order inventory consumption', () => {
     assert.equal(restored.find(item => item.id === 'cheese')?.currentQuantity, 1800);
   });
 
+  test('generic movement lines are derived from already-applied stock deltas', () => {
+    const resulting = catalog.map(item => ({
+      ...item,
+      currentQuantity: item.id === 'flour'
+        ? 4400
+        : item.id === 'cheese'
+          ? 1900
+          : item.currentQuantity,
+    }));
+    const lines = buildOrderInventoryMovementLines(catalog, resulting);
+    assert.deepEqual(
+      lines.map(line => [
+        line.itemId,
+        line.quantityDelta,
+        line.previousQuantity,
+        line.resultingQuantity,
+      ]),
+      [
+        ['flour', -600, 5000, 4400],
+        ['cheese', 100, 1800, 1900],
+      ]
+    );
+  });
+
+  test('order inventory movement revisions advance deterministically', () => {
+    assert.equal(currentOrderInventoryMovementRevision(undefined), 0);
+    assert.equal(nextOrderInventoryMovementRevision(undefined), 1);
+    assert.equal(currentOrderInventoryMovementRevision({ inventoryMovementRevision: 3 }), 3);
+    assert.equal(nextOrderInventoryMovementRevision({ inventoryMovementRevision: 3 }), 4);
+  });
+
   test('status and stock update share one server transaction and one ledger', () => {
     assert.match(serviceSource, /runTransaction/);
     assert.match(serviceSource, /inventoryOrderConsumptions/);
@@ -152,6 +196,36 @@ describe('order inventory consumption', () => {
     assert.match(serviceSource, /transaction\.create\(ledgerReference/);
     assert.match(serviceSource, /publicProductsWithCalculatedStock/);
     assert.match(domainSource, /Estoque insuficiente/);
+  });
+
+  test('automatic order stock changes append to the generic inventory movement ledger', () => {
+    assert.match(serviceSource, /appendOrderInventoryMovementsInTransaction/);
+    assert.match(serviceSource, /reason: 'order_sale'/);
+    assert.match(serviceSource, /reason: 'order_cancellation'/);
+    assert.match(serviceSource, /inventoryMovementRevision/);
+    assert.match(adjustmentSource, /reason: 'order_adjustment'/);
+    assert.match(adjustmentSource, /previousCatalog: catalog/);
+    assert.match(adjustmentSource, /resultingCatalog: adjustedCatalog/);
+    assert.match(movementLedgerSource, /collection\('movements'\)/);
+    assert.match(movementLedgerSource, /recentInventoryMovements/);
+    assert.match(movementLedgerSource, /actionType: 'order_inventory'/);
+    assert.match(movementLedgerSource, /orderInventoryRevision/);
+  });
+
+  test('order movement history does not become a second stock mutator', () => {
+    assert.doesNotMatch(movementLedgerSource, /currentQuantity\s*:/);
+    assert.match(movementLedgerSource, /quantityDelta/);
+    assert.match(movementLedgerSource, /previousQuantity/);
+    assert.match(movementLedgerSource, /resultingQuantity/);
+  });
+
+  test('adjust_inventory is routed to the specialized executor before legacy fallback', () => {
+    assert.match(actionFacadeSource, /isKyrubInventoryAdjustmentExecutionRequest/);
+    assert.match(actionFacadeSource, /executeAuthorizedKyrubInventoryAdjustment/);
+    assert.ok(
+      actionFacadeSource.indexOf('isKyrubInventoryAdjustmentExecutionRequest') <
+      actionFacadeSource.lastIndexOf('executeLegacyAuthorizedKyrubAction')
+    );
   });
 
   test('canonical stores resolve physical inventory through exactly one active owner', () => {
