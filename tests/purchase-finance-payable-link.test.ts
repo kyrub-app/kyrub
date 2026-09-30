@@ -84,7 +84,7 @@ describe('purchase to finance payable linkage', () => {
     }), /STORE_FINANCE_PAYABLE_BILLING_DOCUMENT_SCOPE_INVALID/);
   });
 
-  test('server bridge requires committed purchase and deterministic idempotency', () => {
+  test('server bridge requires committed purchase and deterministic idempotency per obligation key', () => {
     const service = readFileSync(
       'server/payments/storePurchasePayableService.ts',
       'utf8'
@@ -95,6 +95,7 @@ describe('purchase to finance payable linkage', () => {
     );
 
     assert.match(service, /createHash\('sha256'\)/);
+    assert.match(service, /input\.storeId.*input\.purchaseId.*input\.purchasePayableKey/s);
     assert.match(service, /purchasePayableKey/);
     assert.match(service, /purchase\.status !== 'ordered'/);
     assert.match(service, /purchase\.status !== 'partially_received'/);
@@ -106,7 +107,7 @@ describe('purchase to finance payable linkage', () => {
     assert.match(router, /createAuthorizedPurchasePayable/);
   });
 
-  test('Stock purchase bridge uses authorized APIs and never writes Firestore directly', () => {
+  test('Stock purchase bridge supports sequential obligations through authorized APIs', () => {
     const bridge = readFileSync(
       'src/components/store/StorePurchasePayableBridge.tsx',
       'utf8'
@@ -118,10 +119,13 @@ describe('purchase to finance payable linkage', () => {
 
     assert.match(bridge, /\/api\/store-procurement\/finance-payable/);
     assert.match(bridge, /\/api\/store-finance\?storeId=/);
-    assert.match(bridge, /purchasePayableKey: 'primary'/);
+    assert.match(bridge, /nextStorePurchasePayableKey/);
+    assert.match(bridge, /purchasePayableKey: nextPayableKey/);
+    assert.match(bridge, /summarizeStorePurchasePayables/);
     assert.match(bridge, /billingDigitableLine/);
     assert.match(bridge, /billingBarcode/);
     assert.match(bridge, /Natureza do custo/);
+    assert.match(bridge, /Nada é parcelado automaticamente/);
     assert.doesNotMatch(bridge, /firebase\/firestore|setDoc|addDoc|updateDoc/);
     assert.match(stockRuntime, /StorePurchasePayableBridge/);
     assert.match(stockRuntime, /section === 'purchases'/);

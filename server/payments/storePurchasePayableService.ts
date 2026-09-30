@@ -15,6 +15,7 @@ import {
   type StoreFinancePayableBillingDocumentType,
   type StoreFinancePayableCostNature,
 } from '../../shared/storeFinancePayables.js';
+import { storePurchasePayableKeyLabel } from '../../shared/storePurchasePayableSchedule.js';
 
 const clean = (value: unknown): string =>
   typeof value === 'string' ? value.trim() : '';
@@ -159,7 +160,7 @@ export const createAuthorizedPurchasePayable = async (
   }
 
   const payableId = payableIdFor({ storeId, purchaseId, purchasePayableKey });
-  const payable = buildStorePurchaseFinancePayable({
+  const basePayable = buildStorePurchaseFinancePayable({
     id: payableId,
     storeId,
     purchaseId,
@@ -174,6 +175,10 @@ export const createAuthorizedPurchasePayable = async (
     billingDigitableLine,
     billingBarcode,
     createdByUserId: ownerUserId,
+  });
+  const payable = normalizeStoreFinancePayable({
+    ...basePayable,
+    description: `${storePurchasePayableKeyLabel(purchasePayableKey)} · ${basePayable.description}`.slice(0, 160),
   });
   const payableReference = adminDb.doc(storeFinancePayablePath(storeId, payableId));
 
