@@ -1,21 +1,8 @@
-import {
-  buildOrderInventoryConsumptionWithOptions,
-  type OptionAwareInventoryOrderItem,
-  type OptionInventoryImpactRecord,
-} from './optionInventoryImpact.js';
-import type {
-  InventoryCatalogRecord,
-  InventoryCompositionRecord,
-  InventoryConsumptionLine,
-} from './inventoryConsumption.js';
-
-const QUANTITY_SCALE = 1_000_000;
+import type { InventoryConsumptionLine } from './inventoryConsumption.js';
+import type { OptionAwareInventoryOrderItem } from './optionInventoryImpact.js';
 
 const clean = (value: unknown): string =>
   typeof value === 'string' ? value.trim() : '';
-
-const roundQuantity = (value: number): number =>
-  Math.round((value + Number.EPSILON) * QUANTITY_SCALE) / QUANTITY_SCALE;
 
 const safeNonNegativeMinor = (value: unknown): number | null =>
   typeof value === 'number' && Number.isSafeInteger(value) && value >= 0
@@ -42,19 +29,7 @@ export interface ProductAwareOrderItem extends OptionAwareInventoryOrderItem {
   discountAmount?: number;
 }
 
-export interface InventoryProductQuantityAllocation {
-  productId: string;
-  quantity: number;
-}
-
-export interface InventoryProductCostAllocation extends InventoryProductQuantityAllocation {
-  costBasisStatus: 'complete' | 'incomplete';
-  totalCostMinor: number | null;
-}
-
-export interface ProductAwareInventoryConsumptionLine extends InventoryConsumptionLine {
-  productCostAllocations?: InventoryProductCostAllocation[];
-}
+export interface ProductAwareInventoryConsumptionLine extends InventoryConsumptionLine {}
 
 export interface OrderProductCommercialSnapshot {
   lineId: string;
@@ -106,109 +81,6 @@ export interface StoreProductProfitabilityRow {
   dataStatus: 'complete' | 'partial';
   issues: StoreProductProfitabilityIssue[];
 }
-
-export const buildInventoryProductQuantityAllocations = (input: {
-  orderItems: ProductAwareOrderItem[];
-  catalog: InventoryCatalogRecord[];
-  compositions: Record<string, InventoryCompositionRecord>;
-  productCategories: Record<string, string>;
-  optionImpacts: OptionInventoryImpactRecord[];
-}): Map<string, InventoryProductQuantityAllocation[]> => {
-  const byInventoryItem = new Map<string, Map<string, number>>();
-
-  for (const item of input.orderItems) {
-    const productId = clean(item.productId);
-    if (!productId) continue;
-    const perProductLines = buildOrderInventoryConsumptionWithOptions(
-      [item],
-      input.catalog,
-      input.compositions,
-      input.productCategories,
-      input.optionImpacts
-    );
-    for (const line of perProductLines) {
-      const byProduct = byInventoryItem.get(line.inventoryItemId) ?? new Map<string, number>();
-      byProduct.set(
-        productId,
-        roundQuantity((byProduct.get(productId) ?? 0) + line.quantity)
-      );
-      byInventoryItem.set(line.inventoryItemId, byProduct);
-    }
-  }
-
-  return new Map(
-    [...byInventoryItem.entries()].map(([inventoryItemId, byProduct]) => [
-      inventoryItemId,
-      [...byProduct.entries()]
-        .map(([productId, quantity]) => ({ productId, quantity }))
-        .sort((left, right) => left.productId.localeCompare(right.productId)),
-    ])
-  );
-};
-
-const allocateMinorByQuantity = (
-  totalMinor: number,
-  allocations: InventoryProductQuantityAllocation[]
-): InventoryProductCostAllocation[] => {
-  const totalQuantity = allocations.reduce((sum, allocation) => sum + allocation.quantity, 0);
-  if (!(totalQuantity > 0)) {
-    throw new Error('ORDER_PRODUCT_PROFITABILITY_ALLOCATION_QUANTITY_INVALID');
-  }
-
-  const shares = allocations.map(allocation => {
-    const exact = totalMinor * allocation.quantity / totalQuantity;
-    const floor = Math.floor(exact);
-    return { allocation, floor, fraction: exact - floor };
-  });
-  let remainder = totalMinor - shares.reduce((sum, share) => sum + share.floor, 0);
-  const ranked = shares
-    .map((share, index) => ({ ...share, index }))
-    .sort((left, right) =>
-      right.fraction - left.fraction ||
-      left.allocation.productId.localeCompare(right.allocation.productId)
-    );
-  const extras = new Map<number, number>();
-  for (const share of ranked) {
-    if (remainder <= 0) break;
-    extras.set(share.index, 1);
-    remainder -= 1;
-  }
-  if (remainder !== 0) {
-    throw new Error('ORDER_PRODUCT_PROFITABILITY_ALLOCATION_REMAINDER_INVALID');
-  }
-
-  return shares.map((share, index) => ({
-    ...share.allocation,
-    costBasisStatus: 'complete',
-    totalCostMinor: share.floor + (extras.get(index) ?? 0),
-  }));
-};
-
-export const attachProductCostAllocations = (
-  lines: InventoryConsumptionLine[],
-  quantityAllocations: Map<string, InventoryProductQuantityAllocation[]>
-): ProductAwareInventoryConsumptionLine[] =>
-  lines.map(line => {
-    const allocations = quantityAllocations.get(line.inventoryItemId) ?? [];
-    if (allocations.length === 0) return { ...line };
-    const allocatedQuantity = roundQuantity(
-      allocations.reduce((sum, allocation) => sum + allocation.quantity, 0)
-    );
-    if (Math.abs(allocatedQuantity - roundQuantity(line.quantity)) > 1 / QUANTITY_SCALE) {
-      throw new Error('ORDER_PRODUCT_PROFITABILITY_ALLOCATION_MISMATCH');
-    }
-
-    const totalCostMinor = safeNonNegativeMinor(line.totalCostMinor);
-    const productCostAllocations =
-      line.costBasisStatus === 'complete' && totalCostMinor !== null
-        ? allocateMinorByQuantity(totalCostMinor, allocations)
-        : allocations.map(allocation => ({
-            ...allocation,
-            costBasisStatus: 'incomplete' as const,
-            totalCostMinor: null,
-          }));
-    return { ...line, productCostAllocations };
-  });
 
 export const buildOrderProductCommercialSnapshots = (
   orderItems: ProductAwareOrderItem[]
@@ -270,8 +142,11 @@ export const buildOrderProductMarginTargetSnapshots = (
       ? record.targetMarginPercent
       : null;
     if (target === null) return [];
-    const updatedAt = clean(record.updatedAt);
-    return [{ productId, targetMarginPercent: target, updatedAt }];
+    return [{
+      productId,
+      targetMarginPercent: target,
+      updatedAt: clean(record.updatedAt),
+    }];
   });
 };
 
