@@ -111,9 +111,7 @@ export const normalizeInventoryCostBasis = (
     if (explicitValue !== null) {
       return {
         costBasisStatus: 'complete',
-        averageUnitCostMinor: roundUnitCost(
-          explicitAverage ?? explicitValue / quantity
-        ),
+        averageUnitCostMinor: roundUnitCost(explicitAverage ?? explicitValue / quantity),
         lastPurchaseUnitCostMinor: fallbackLastPurchase,
         inventoryValueMinor: explicitValue,
         costBasisSource: normalizeSource(item.costBasisSource),
@@ -242,7 +240,7 @@ export const applyMovingAverageInventoryIntake = <T extends CostableInventoryIte
       inventoryValueBeforeMinor: previousValueMinor,
       inventoryValueAfterMinor: inventoryValueMinor,
       averageUnitCostBeforeMinor: before.averageUnitCostMinor,
-      averageUnitCostAfterMinor,
+      averageUnitCostAfterMinor: averageUnitCostMinor,
       lastPurchaseUnitCostMinor: unitCostMinor,
     },
   };
@@ -316,7 +314,7 @@ export const applyMovingAverageInventoryOutflow = <T extends CostableInventoryIt
       inventoryValueBeforeMinor: before.inventoryValueMinor,
       inventoryValueAfterMinor: inventoryValueMinor,
       averageUnitCostBeforeMinor: before.averageUnitCostMinor,
-      averageUnitCostAfterMinor,
+      averageUnitCostAfterMinor: averageUnitCostMinor,
       lastPurchaseUnitCostMinor: before.lastPurchaseUnitCostMinor,
     },
   };
@@ -392,7 +390,7 @@ export const restoreInventoryAtHistoricalCost = <T extends CostableInventoryItem
       inventoryValueBeforeMinor: previousValueMinor,
       inventoryValueAfterMinor: inventoryValueMinor,
       averageUnitCostBeforeMinor: before.averageUnitCostMinor,
-      averageUnitCostAfterMinor,
+      averageUnitCostAfterMinor: averageUnitCostMinor,
       lastPurchaseUnitCostMinor: before.lastPurchaseUnitCostMinor,
     },
   };
