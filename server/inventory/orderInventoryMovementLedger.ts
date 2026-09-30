@@ -6,6 +6,7 @@ import {
   type Transaction,
 } from 'firebase-admin/firestore';
 import type { InventoryCatalogRecord } from '../../shared/inventoryConsumption.js';
+import { normalizeInventoryCostBasis } from '../../shared/inventoryCostBasis.js';
 
 const MAX_RECENT_MOVEMENTS = 20;
 const MAX_RECENT_MOVEMENT_LINES = 12;
@@ -24,6 +25,14 @@ type OrderInventoryMovementLine = {
   previousQuantity: number;
   resultingQuantity: number;
   purchaseCost?: number;
+  costBasisStatus: 'complete' | 'incomplete';
+  unitCostMinor: number | null;
+  totalCostMinor: number | null;
+  inventoryValueBeforeMinor: number | null;
+  inventoryValueAfterMinor: number | null;
+  averageUnitCostBeforeMinor: number | null;
+  averageUnitCostAfterMinor: number | null;
+  lastPurchaseUnitCostMinor: number | null;
 };
 
 type OrderInventoryMovement = {
@@ -100,6 +109,25 @@ export const buildOrderInventoryMovementLines = (
     const resultingQuantity = roundQuantity(resulting.currentQuantity);
     const quantityDelta = roundQuantity(resultingQuantity - previousQuantity);
     if (Math.abs(quantityDelta) < 1 / QUANTITY_SCALE) continue;
+
+    const previousCost = normalizeInventoryCostBasis(previous);
+    const resultingCost = normalizeInventoryCostBasis(resulting);
+    const complete = previousCost.costBasisStatus === 'complete'
+      && resultingCost.costBasisStatus === 'complete'
+      && previousCost.inventoryValueMinor !== null
+      && resultingCost.inventoryValueMinor !== null;
+    const totalCostMinor = complete
+      ? Math.abs(
+          (resultingCost.inventoryValueMinor ?? 0)
+          - (previousCost.inventoryValueMinor ?? 0)
+        )
+      : null;
+    const unitCostMinor = totalCostMinor === null
+      ? null
+      : Math.abs(quantityDelta) > 0
+        ? totalCostMinor / Math.abs(quantityDelta)
+        : null;
+
     lines.push({
       itemId,
       name: resulting.name || previous.name,
@@ -110,6 +138,14 @@ export const buildOrderInventoryMovementLines = (
       ...(Number.isFinite(resulting.purchaseCost)
         ? { purchaseCost: resulting.purchaseCost }
         : {}),
+      costBasisStatus: complete ? 'complete' : 'incomplete',
+      unitCostMinor,
+      totalCostMinor,
+      inventoryValueBeforeMinor: previousCost.inventoryValueMinor,
+      inventoryValueAfterMinor: resultingCost.inventoryValueMinor,
+      averageUnitCostBeforeMinor: previousCost.averageUnitCostMinor,
+      averageUnitCostAfterMinor: resultingCost.averageUnitCostMinor,
+      lastPurchaseUnitCostMinor: resultingCost.lastPurchaseUnitCostMinor,
     });
   }
 
