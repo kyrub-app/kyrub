@@ -2,6 +2,7 @@ import {
   parseInventoryCatalogRecords,
   type InventoryCatalogRecord,
 } from './inventoryConsumption.js';
+import { applyMovingAverageInventoryIntake } from './inventoryCostBasis.js';
 import {
   canTransitionStorePurchaseStatus,
   deriveStorePurchaseReceivingProgress,
@@ -25,6 +26,14 @@ export interface PurchaseReceiptInventoryMovementLine {
   resultingQuantity: number;
   purchaseLineIds: string[];
   documentedUnitCostMinor: number | null;
+  costBasisStatus: 'complete' | 'incomplete';
+  unitCostMinor: number | null;
+  totalCostMinor: number | null;
+  averageUnitCostBeforeMinor: number | null;
+  averageUnitCostAfterMinor: number | null;
+  inventoryValueBeforeMinor: number | null;
+  inventoryValueAfterMinor: number | null;
+  lastPurchaseUnitCostMinor: number | null;
 }
 
 export interface PurchaseReceiptInventoryPlan {
@@ -126,6 +135,7 @@ export const buildPurchaseReceiptInventoryPlan = (input: {
   }
 
   const movementLines: PurchaseReceiptInventoryMovementLine[] = [];
+  const costBasisTime = receipt.confirmedAt || receipt.updatedAt;
 
   for (const group of grouped.values()) {
     const item = catalogById.get(group.inventoryItemId);
@@ -140,9 +150,20 @@ export const buildPurchaseReceiptInventoryPlan = (input: {
     const resultingQuantity = roundQuantity(
       previousQuantity + group.receivedQuantity
     );
+    const documentedUnitCostMinor = matchingDocumentedCost(
+      group.documentedUnitCostsMinor
+    );
+    const economic = applyMovingAverageInventoryIntake(item, {
+      quantity: group.receivedQuantity,
+      resultingQuantity,
+      unitCostMinor: documentedUnitCostMinor,
+      now: costBasisTime,
+      source: 'purchase_receipt',
+    });
     catalogById.set(item.id, {
-      ...item,
+      ...economic.item,
       currentQuantity: resultingQuantity,
+      updatedAt: costBasisTime || item.updatedAt,
     });
     movementLines.push({
       inventoryItemId: item.id,
@@ -153,9 +174,15 @@ export const buildPurchaseReceiptInventoryPlan = (input: {
       previousQuantity,
       resultingQuantity,
       purchaseLineIds: [...group.purchaseLineIds].sort(),
-      documentedUnitCostMinor: matchingDocumentedCost(
-        group.documentedUnitCostsMinor
-      ),
+      documentedUnitCostMinor,
+      costBasisStatus: economic.snapshot.costBasisStatus,
+      unitCostMinor: economic.snapshot.unitCostMinor,
+      totalCostMinor: economic.snapshot.totalCostMinor,
+      averageUnitCostBeforeMinor: economic.snapshot.averageUnitCostBeforeMinor,
+      averageUnitCostAfterMinor: economic.snapshot.averageUnitCostAfterMinor,
+      inventoryValueBeforeMinor: economic.snapshot.inventoryValueBeforeMinor,
+      inventoryValueAfterMinor: economic.snapshot.inventoryValueAfterMinor,
+      lastPurchaseUnitCostMinor: economic.snapshot.lastPurchaseUnitCostMinor,
     });
   }
 
