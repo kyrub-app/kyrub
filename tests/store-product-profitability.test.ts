@@ -48,6 +48,45 @@ const compositions: Record<string, InventoryCompositionRecord> = {
   },
 };
 
+const completeProductEvidence = () => ({
+  commercialLines: buildOrderProductCommercialSnapshots([{
+    productId: 'produto_a',
+    name: 'Produto A',
+    quantity: 1,
+    transferredQuantity: 0,
+    lineId: 'line-a',
+    price: 30,
+    discountAmount: 5,
+  }]),
+  inventoryLines: [{
+    inventoryItemId: 'base',
+    inventoryItemName: 'Base',
+    unit: 'kg',
+    quantity: 1,
+    beforeQuantity: 10,
+    afterQuantity: 9,
+    productIds: ['produto_a'],
+    costBasisStatus: 'complete' as const,
+    unitCostMinor: 1000,
+    totalCostMinor: 1000,
+    productCostAllocations: [{
+      productId: 'produto_a',
+      quantity: 1,
+      costBasisStatus: 'complete' as const,
+      totalCostMinor: 1000,
+    }],
+  }],
+  marginTargets: buildOrderProductMarginTargetSnapshots(
+    {
+      produto_a: {
+        targetMarginPercent: 40,
+        updatedAt: '2026-09-30T10:00:00.000Z',
+      },
+    },
+    ['produto_a']
+  ),
+});
+
 describe('product profitability allocation', () => {
   test('shared ingredient freezes exact consumed quantity and CMV per product', () => {
     const lines = buildOrderInventoryConsumption(
@@ -136,46 +175,10 @@ describe('product profitability allocation', () => {
   });
 
   test('commercial line, CMV and historical target produce realized product margin', () => {
-    const commercial = buildOrderProductCommercialSnapshots([{
-      productId: 'produto_a',
-      name: 'Produto A',
-      quantity: 1,
-      transferredQuantity: 0,
-      lineId: 'line-a',
-      price: 30,
-      discountAmount: 5,
-    }]);
-    const targets = buildOrderProductMarginTargetSnapshots(
-      {
-        produto_a: {
-          targetMarginPercent: 40,
-          updatedAt: '2026-09-30T10:00:00.000Z',
-        },
-      },
-      ['produto_a']
-    );
     const rows = deriveStoreProductProfitabilityRows({
       inventoryState: 'consumed',
-      commercialLines: commercial,
-      inventoryLines: [{
-        inventoryItemId: 'base',
-        inventoryItemName: 'Base',
-        unit: 'kg',
-        quantity: 1,
-        beforeQuantity: 10,
-        afterQuantity: 9,
-        productIds: ['produto_a'],
-        costBasisStatus: 'complete',
-        unitCostMinor: 1000,
-        totalCostMinor: 1000,
-        productCostAllocations: [{
-          productId: 'produto_a',
-          quantity: 1,
-          costBasisStatus: 'complete',
-          totalCostMinor: 1000,
-        }],
-      }],
-      marginTargets: targets,
+      financialState: 'captured',
+      ...completeProductEvidence(),
     });
 
     assert.equal(rows.length, 1);
@@ -187,12 +190,26 @@ describe('product profitability allocation', () => {
     assert.equal(rows[0].realizedMarginPercent, 60);
     assert.equal(rows[0].targetMarginPercent, 40);
     assert.equal(rows[0].marginGapPercentagePoints, 20);
+    assert.equal(rows[0].effectiveMarginAvailable, true);
     assert.equal(rows[0].dataStatus, 'complete');
+  });
+
+  test('refund preserves historical realized margin but removes it from effective margin', () => {
+    const rows = deriveStoreProductProfitabilityRows({
+      inventoryState: 'consumed',
+      financialState: 'refunded',
+      ...completeProductEvidence(),
+    });
+
+    assert.equal(rows[0].realizedMarginPercent, 60);
+    assert.equal(rows[0].marginGapPercentagePoints, 20);
+    assert.equal(rows[0].effectiveMarginAvailable, false);
   });
 
   test('missing per-product CMV fails closed instead of dividing aggregate CMV heuristically', () => {
     const rows = deriveStoreProductProfitabilityRows({
       inventoryState: 'consumed',
+      financialState: 'captured',
       commercialLines: buildOrderProductCommercialSnapshots([{
         productId: 'produto_a',
         name: 'Produto A',
@@ -225,6 +242,7 @@ describe('product profitability allocation', () => {
     assert.match(service, /productPricingSettings/);
     assert.match(service, /orderProductProfitability/);
     assert.match(service, /Date\.parse\(target\.updatedAt\).*Date\.parse\(occurredAt\)/s);
+    assert.match(service, /financialState: item\.financialState/);
     assert.match(router, /router\.get\('\/products'/);
     assert.match(router, /reconcileStoreProductProfitability/);
   });
