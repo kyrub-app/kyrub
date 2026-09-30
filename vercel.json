@@ -74,6 +74,10 @@
       "destination": "/api/health?transport=store-promotions&surface=procurement"
     },
     {
+      "source": "/api/store-procurement/:path*",
+      "destination": "/api/health?transport=store-promotions&surface=procurement&path=:path*"
+    },
+    {
       "source": "/api/marketplace-discovery/public/:slug",
       "destination": "/api/health?transport=public-storefront&slug=:slug"
     },
