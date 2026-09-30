@@ -8,6 +8,7 @@ import {
   type OrderProductMarginTargetSnapshot,
   type ProductAwareInventoryConsumptionLine,
   type ProductAwareOrderItem,
+  type ProductProfitabilityFinancialState,
   type StoreProductProfitabilityRow,
 } from '../../shared/orderProductProfitability.js';
 import { reconcileStoreOrderProfitability } from './storeOrderProfitabilityService.js';
@@ -248,6 +249,7 @@ const reconcileProductOrder = async (input: {
   orderProfitability: {
     orderId: string;
     occurredAt: string;
+    financialState: ProductProfitabilityFinancialState;
     inventoryState: 'consumed' | 'reversed' | 'skipped' | 'missing';
     merchandiseGrossMinor: number | null;
     storeDiscountMinor: number | null;
@@ -293,6 +295,7 @@ const reconcileProductOrder = async (input: {
       : [];
   const rows = deriveStoreProductProfitabilityRows({
     inventoryState: order.inventoryState,
+    financialState: order.financialState,
     commercialLines,
     inventoryLines,
     marginTargets,
@@ -345,6 +348,7 @@ export type StoreProductProfitabilityOverview = {
     targetMarginPercent: number | null;
     marginGapPercentagePoints: number | null;
     completeOrderCount: number;
+    effectiveOrderCount: number;
     partialOrderCount: number;
   }>;
 };
@@ -358,6 +362,7 @@ export const reconcileStoreProductProfitability = async (
   const orderSources = orderOverview.items.slice(0, MAX_PRODUCT_ORDERS).map(item => ({
     orderId: item.orderId,
     occurredAt: item.occurredAt,
+    financialState: item.financialState,
     inventoryState: item.inventoryState,
     merchandiseGrossMinor: item.merchandiseGrossMinor,
     storeDiscountMinor: item.storeDiscountMinor,
@@ -383,16 +388,19 @@ export const reconcileStoreProductProfitability = async (
 
   const products = [...byProduct.entries()].map(([productId, rows]) => {
     const complete = rows.filter(row => row.dataStatus === 'complete');
-    const allRevenueKnown = complete.length > 0 && complete.every(row => row.merchandiseRevenueMinor !== null);
-    const allCmvKnown = complete.length > 0 && complete.every(row => row.saleCmvMinor !== null);
+    const effective = complete.filter(row => row.effectiveMarginAvailable);
+    const allRevenueKnown = effective.length > 0
+      && effective.every(row => row.merchandiseRevenueMinor !== null);
+    const allCmvKnown = effective.length > 0
+      && effective.every(row => row.saleCmvMinor !== null);
     const revenue = allRevenueKnown
-      ? complete.reduce((sum, row) => sum + (row.merchandiseRevenueMinor ?? 0), 0)
+      ? effective.reduce((sum, row) => sum + (row.merchandiseRevenueMinor ?? 0), 0)
       : null;
     const cmv = allCmvKnown
-      ? complete.reduce((sum, row) => sum + (row.saleCmvMinor ?? 0), 0)
+      ? effective.reduce((sum, row) => sum + (row.saleCmvMinor ?? 0), 0)
       : null;
     const contribution = revenue !== null && cmv !== null ? revenue - cmv : null;
-    const targetValues = complete
+    const targetValues = effective
       .map(row => row.targetMarginPercent)
       .filter((value): value is number => value !== null);
     const targetMarginPercent = targetValues.length > 0
@@ -407,7 +415,7 @@ export const reconcileStoreProductProfitability = async (
       productId,
       name: rows.find(row => row.name)?.name ?? productId,
       orderCount: rows.length,
-      soldQuantity: rows.reduce((sum, row) => sum + row.soldQuantity, 0),
+      soldQuantity: effective.reduce((sum, row) => sum + row.soldQuantity, 0),
       merchandiseRevenueMinor: revenue,
       saleCmvMinor: cmv,
       grossContributionMinor: contribution,
@@ -418,6 +426,7 @@ export const reconcileStoreProductProfitability = async (
           ? realizedMarginPercent - targetMarginPercent
           : null,
       completeOrderCount: complete.length,
+      effectiveOrderCount: effective.length,
       partialOrderCount: rows.length - complete.length,
     };
   }).sort((left, right) =>
