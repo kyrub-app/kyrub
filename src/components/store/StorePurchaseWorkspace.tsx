@@ -6,14 +6,19 @@ import {
   getProductInventoryDocumentPath,
   readProductInventorySettings,
   type InventoryCatalogItem,
+  type PurchaseListEntry,
 } from '../../utils/productInventory';
 import { ProductPurchaseList } from './ProductPurchaseList';
 
 interface StorePurchaseWorkspaceProps {
   storeId: string;
+  onPreparePurchaseDraft?: (entries: PurchaseListEntry[]) => void;
 }
 
-export function StorePurchaseWorkspace({ storeId }: StorePurchaseWorkspaceProps) {
+export function StorePurchaseWorkspace({
+  storeId,
+  onPreparePurchaseDraft,
+}: StorePurchaseWorkspaceProps) {
   const [catalog, setCatalog] = useState<InventoryCatalogItem[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState('');
@@ -70,7 +75,10 @@ export function StorePurchaseWorkspace({ storeId }: StorePurchaseWorkspaceProps)
           Calculando necessidades de reposição…
         </p>
       ) : (
-        <ProductPurchaseList catalog={catalog} />
+        <ProductPurchaseList
+          catalog={catalog}
+          onPreparePurchaseDraft={onPreparePurchaseDraft}
+        />
       )}
     </section>
   );
