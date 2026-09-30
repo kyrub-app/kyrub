@@ -71,6 +71,14 @@ const recentLineFrom = (line: PurchaseReceiptInventoryMovementLine) => ({
   previousQuantity: line.previousQuantity,
   resultingQuantity: line.resultingQuantity,
   documentedUnitCostMinor: line.documentedUnitCostMinor,
+  costBasisStatus: line.costBasisStatus,
+  unitCostMinor: line.unitCostMinor,
+  totalCostMinor: line.totalCostMinor,
+  averageUnitCostBeforeMinor: line.averageUnitCostBeforeMinor,
+  averageUnitCostAfterMinor: line.averageUnitCostAfterMinor,
+  inventoryValueBeforeMinor: line.inventoryValueBeforeMinor,
+  inventoryValueAfterMinor: line.inventoryValueAfterMinor,
+  lastPurchaseUnitCostMinor: line.lastPurchaseUnitCostMinor,
 });
 
 export const applyConfirmedPurchaseReceiptToInventory = async (
