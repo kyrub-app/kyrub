@@ -75,6 +75,13 @@ export interface OrderProductMarginTargetSnapshot {
   updatedAt: string;
 }
 
+export type ProductProfitabilityFinancialState =
+  | 'captured'
+  | 'refunded'
+  | 'charged_back'
+  | 'chargeback_reversed'
+  | 'mixed';
+
 export type StoreProductProfitabilityIssue =
   | 'commercial_evidence_missing'
   | 'cmv_evidence_missing'
@@ -206,7 +213,7 @@ export const attachProductCostAllocations = (
 export const buildOrderProductCommercialSnapshots = (
   orderItems: ProductAwareOrderItem[]
 ): OrderProductCommercialSnapshot[] =>
-  orderItems.map((item, index) => {
+  orderItems.map((item, index): OrderProductCommercialSnapshot => {
     const orderedQuantity = Math.max(0, Math.trunc(item.quantity));
     const operationalQuantity = Math.max(
       0,
@@ -270,6 +277,7 @@ export const buildOrderProductMarginTargetSnapshots = (
 
 export const deriveStoreProductProfitabilityRows = (input: {
   inventoryState: 'consumed' | 'reversed' | 'skipped' | 'missing';
+  financialState: ProductProfitabilityFinancialState;
   commercialLines?: readonly OrderProductCommercialSnapshot[];
   inventoryLines?: readonly ProductAwareInventoryConsumptionLine[];
   marginTargets?: readonly OrderProductMarginTargetSnapshot[];
@@ -349,6 +357,8 @@ export const deriveStoreProductProfitabilityRows = (input: {
       realizedMarginPercent !== null && targetMarginPercent !== null
         ? realizedMarginPercent - targetMarginPercent
         : null;
+    const financialStateSupportsEffectiveMargin =
+      input.financialState === 'captured' || input.financialState === 'chargeback_reversed';
 
     return {
       productId,
@@ -365,7 +375,9 @@ export const deriveStoreProductProfitabilityRows = (input: {
       targetMarginUpdatedAt: target?.updatedAt ?? '',
       marginGapPercentagePoints,
       effectiveMarginAvailable:
-        realizedMarginPercent !== null && input.inventoryState === 'consumed',
+        realizedMarginPercent !== null
+        && input.inventoryState === 'consumed'
+        && financialStateSupportsEffectiveMargin,
       dataStatus: issues.some(issue => issue !== 'target_margin_missing') ? 'partial' : 'complete',
       issues,
     };
