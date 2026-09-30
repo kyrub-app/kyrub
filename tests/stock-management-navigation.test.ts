@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { describe, test } from 'node:test';
+import './inventory-cost-basis.test.js';
+import './order-inventory-cost-snapshot.test.js';
+import './product-inventory-cost-preservation.test.js';
 
 describe('stock management navigation', () => {
   test('Products and Stock are sibling direct management destinations', () => {
@@ -117,7 +120,7 @@ describe('stock management navigation', () => {
     assert.match(server, /"\/api\/store-procurement"/);
   });
 
-  test('movement timeline reads the canonical physical ledger without direct browser Firestore access', () => {
+  test('movement timeline reads the canonical physical and economic ledger without direct browser Firestore access', () => {
     const timeline = readFileSync(
       'src/components/store/StoreInventoryMovementTimeline.tsx',
       'utf8'
@@ -137,6 +140,11 @@ describe('stock management navigation', () => {
     assert.match(timeline, /Saídas/);
     assert.match(timeline, /Perdas/);
     assert.match(timeline, /Correções/);
+    assert.match(timeline, /Valor conhecido do estoque/);
+    assert.match(timeline, /Posição econômica atual/);
+    assert.match(timeline, /Custo médio/);
+    assert.match(timeline, /Última compra/);
+    assert.match(timeline, /CMV/);
     assert.doesNotMatch(timeline, /firebase\/firestore|\bdb\b|setDoc|addDoc/);
 
     assert.match(service, /stores\/\$\{storeId\}\/members\/\$\{identity\.uid\}/);
@@ -147,7 +155,11 @@ describe('stock management navigation', () => {
     assert.match(service, /purchaseId: clean\(record\.purchaseId\)/);
     assert.match(service, /purchaseReceiptId: clean\(record\.purchaseReceiptId\)/);
     assert.match(service, /supplierId: clean\(record\.supplierId\)/);
-    assert.doesNotMatch(service, /financePayables|amountMinor|moving.?average|\bCMV\b/i);
+    assert.match(service, /knownInventoryValueMinor/);
+    assert.match(service, /averageUnitCostMinor/);
+    assert.match(service, /lastPurchaseUnitCostMinor/);
+    assert.match(service, /inventoryValueMinor/);
+    assert.doesNotMatch(service, /financePayables|amountMinor/i);
 
     assert.match(router, /router\.get\('\/movements'/);
     assert.match(router, /listAuthorizedStoreInventoryMovements/);
