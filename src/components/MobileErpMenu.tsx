@@ -16,6 +16,7 @@ import {
   Store as StoreIcon,
   UserCheck,
   Users,
+  Warehouse,
   X,
   Zap,
 } from 'lucide-react';
@@ -52,7 +53,8 @@ export type MobileErpMenuItem = {
 export const MOBILE_ERP_MENU_ITEMS: readonly MobileErpMenuItem[] = [
   { id: 'planos', label: 'Planos', icon: CreditCard, section: 'gestao' },
   { id: 'loja', label: 'Loja', icon: StoreIcon, section: 'gestao' },
-  { id: 'produtos', label: 'Produtos & Estoque', icon: Package, section: 'gestao' },
+  { id: 'produtos', label: 'Produtos', icon: Package, section: 'gestao' },
+  { id: 'estoque', label: 'Estoque', icon: Warehouse, section: 'gestao' },
   { id: 'vendas', label: 'Vendas & Analytics', icon: BarChart3, section: 'gestao' },
   { id: 'assinaturas', label: 'Assinaturas', icon: RefreshCw, section: 'gestao' },
   { id: 'financeiro', label: 'Financeiro Interno', icon: DollarSign, section: 'gestao' },
@@ -70,6 +72,7 @@ export const MOBILE_ERP_MENU_ITEMS: readonly MobileErpMenuItem[] = [
 
 const MANAGEMENT_MODULES = new Set<ErpManagementModule>([
   'produtos',
+  'estoque',
   'vendas',
   'assinaturas',
   'financeiro',
