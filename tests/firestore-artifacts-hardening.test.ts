@@ -6,7 +6,7 @@ import {
   initializeTestEnvironment,
   type RulesTestEnvironment,
 } from '@firebase/rules-unit-testing';
-import { doc, setDoc, updateDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
 
 const PROJECT_ID = 'kyrub-security-test';
 const STORE_ID = 'store-owner-a';
@@ -65,27 +65,44 @@ after(async () => {
   await environment.cleanup();
 });
 
-test('tenant owner keeps legacy artifact write access only inside own tenant', async () => {
+test('tenant owner keeps legacy artifact read/write access only inside own tenant', async () => {
   const owner = environment.authenticatedContext(STORE_ID).firestore();
-  await assertSucceeds(
-    setDoc(doc(owner, 'artifacts', STORE_ID, 'private', 'data', 'note', 'note-a'), {
-      value: 'owner data',
-    })
+  const ownReference = doc(
+    owner,
+    'artifacts', STORE_ID, 'private', 'data', 'note', 'note-a'
   );
+
+  await assertSucceeds(setDoc(ownReference, { value: 'owner data' }));
+  await assertSucceeds(getDoc(ownReference));
   await assertFails(
     setDoc(doc(owner, 'artifacts', 'another-owner', 'private', 'data', 'note', 'note-a'), {
       value: 'cross tenant write',
     })
   );
+  await assertFails(
+    getDoc(doc(owner, 'artifacts', 'another-owner', 'private', 'data', 'note', 'note-a'))
+  );
 });
 
-test('signed-in stranger cannot mutate arbitrary artifact paths in another tenant', async () => {
+test('signed-in stranger cannot read or mutate arbitrary artifact paths in another tenant', async () => {
+  await environment.withSecurityRulesDisabled(async context => {
+    await setDoc(
+      doc(
+        context.firestore(),
+        'artifacts', STORE_ID, 'private', 'data', 'inventory', 'item-a'
+      ),
+      { stock: 12 }
+    );
+  });
+
   const stranger = environment.authenticatedContext('stranger-a').firestore();
-  await assertFails(
-    setDoc(doc(stranger, 'artifacts', STORE_ID, 'private', 'data', 'inventory', 'item-a'), {
-      stock: 999,
-    })
+  const reference = doc(
+    stranger,
+    'artifacts', STORE_ID, 'private', 'data', 'inventory', 'item-a'
   );
+
+  await assertFails(getDoc(reference));
+  await assertFails(setDoc(reference, { stock: 999 }));
 });
 
 test('buyer can create only an unpaid pending dine-in customer order', async () => {
@@ -106,6 +123,32 @@ test('buyer can create only an unpaid pending dine-in customer order', async () 
       doc(buyer, 'artifacts', STORE_ID, 'public', 'data', 'customerOrders', 'customer-order-paid'),
       customerOrder({ id: 'customer-order-paid', paymentStatus: 'paid' })
     )
+  );
+});
+
+test('buyer reads only their own legacy customer order across tenant boundary', async () => {
+  await environment.withSecurityRulesDisabled(async context => {
+    await setDoc(
+      doc(
+        context.firestore(),
+        'artifacts', STORE_ID, 'public', 'data', 'customerOrders', 'customer-order-a'
+      ),
+      customerOrder()
+    );
+  });
+
+  const owner = environment.authenticatedContext(STORE_ID).firestore();
+  const buyer = environment.authenticatedContext('buyer-a').firestore();
+  const otherBuyer = environment.authenticatedContext('buyer-b').firestore();
+
+  await assertSucceeds(
+    getDoc(doc(owner, 'artifacts', STORE_ID, 'public', 'data', 'customerOrders', 'customer-order-a'))
+  );
+  await assertSucceeds(
+    getDoc(doc(buyer, 'artifacts', STORE_ID, 'public', 'data', 'customerOrders', 'customer-order-a'))
+  );
+  await assertFails(
+    getDoc(doc(otherBuyer, 'artifacts', STORE_ID, 'public', 'data', 'customerOrders', 'customer-order-a'))
   );
 });
 
