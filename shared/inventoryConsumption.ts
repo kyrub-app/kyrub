@@ -1,3 +1,9 @@
+import {
+  normalizeInventoryCostBasis,
+  type InventoryCostBasisSource,
+  type InventoryCostBasisStatus,
+} from './inventoryCostBasis.js';
+
 export type InventoryConsumptionTrigger = 'accepted' | 'preparing' | 'completed';
 
 export type InventoryOrderStatus =
@@ -19,6 +25,12 @@ export interface InventoryCatalogRecord {
   purchaseCost: number;
   supplier: string;
   updatedAt: string;
+  costBasisStatus?: InventoryCostBasisStatus;
+  averageUnitCostMinor?: number | null;
+  lastPurchaseUnitCostMinor?: number | null;
+  inventoryValueMinor?: number | null;
+  costBasisSource?: InventoryCostBasisSource;
+  costBasisUpdatedAt?: string;
 }
 
 export interface InventoryCompositionLineRecord {
@@ -48,6 +60,9 @@ export interface InventoryConsumptionLine {
   beforeQuantity: number;
   afterQuantity: number;
   productIds: string[];
+  costBasisStatus?: InventoryCostBasisStatus;
+  unitCostMinor?: number | null;
+  totalCostMinor?: number | null;
 }
 
 const STATUS_RANK: Record<InventoryOrderStatus, number> = {
@@ -115,7 +130,7 @@ export const parseInventoryCatalogRecords = (
       return [];
     }
     seen.add(id);
-    return [{
+    const base: InventoryCatalogRecord = {
       id,
       name,
       unit: clean(record.unit) || 'un',
@@ -124,6 +139,21 @@ export const parseInventoryCatalogRecords = (
       purchaseCost,
       supplier: clean(record.supplier),
       updatedAt: clean(record.updatedAt),
+      costBasisStatus:
+        record.costBasisStatus === 'complete' || record.costBasisStatus === 'incomplete'
+          ? record.costBasisStatus
+          : undefined,
+      averageUnitCostMinor: finiteNonNegative(record.averageUnitCostMinor),
+      lastPurchaseUnitCostMinor: finiteNonNegative(record.lastPurchaseUnitCostMinor),
+      inventoryValueMinor: finiteNonNegative(record.inventoryValueMinor),
+      costBasisSource: typeof record.costBasisSource === 'string'
+        ? record.costBasisSource as InventoryCostBasisSource
+        : undefined,
+      costBasisUpdatedAt: clean(record.costBasisUpdatedAt),
+    };
+    return [{
+      ...base,
+      ...normalizeInventoryCostBasis(base),
     } satisfies InventoryCatalogRecord];
   });
 };
