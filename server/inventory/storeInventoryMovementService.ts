@@ -174,6 +174,17 @@ export const normalizeStoreInventoryMovement = (
   };
 };
 
+export type StoreInventoryValuationItem = {
+  itemId: string;
+  name: string;
+  unit: string;
+  currentQuantity: number;
+  costBasisStatus: 'complete' | 'incomplete';
+  averageUnitCostMinor: number | null;
+  lastPurchaseUnitCostMinor: number | null;
+  inventoryValueMinor: number | null;
+};
+
 export type StoreInventoryMovementOverview = {
   storeId: string;
   movements: StoreInventoryMovementView[];
@@ -189,6 +200,7 @@ export type StoreInventoryMovementOverview = {
     itemCount: number;
     completeItemCount: number;
     incompleteItemCount: number;
+    items: StoreInventoryValuationItem[];
   };
 };
 
@@ -224,13 +236,25 @@ export const listAuthorizedStoreInventoryMovements = async (
   const catalog = parseInventoryCatalogRecords(
     inventoryData?.catalog ?? inventoryData?.inventoryCatalog
   );
-  const valuation = catalog.reduce(
+  const valuationItems = catalog.map(item => {
+    const basis = normalizeInventoryCostBasis(item);
+    return {
+      itemId: item.id,
+      name: item.name,
+      unit: item.unit,
+      currentQuantity: item.currentQuantity,
+      costBasisStatus: basis.costBasisStatus,
+      averageUnitCostMinor: basis.averageUnitCostMinor,
+      lastPurchaseUnitCostMinor: basis.lastPurchaseUnitCostMinor,
+      inventoryValueMinor: basis.inventoryValueMinor,
+    } satisfies StoreInventoryValuationItem;
+  }).sort((left, right) => left.name.localeCompare(right.name, 'pt-BR'));
+  const valuation = valuationItems.reduce(
     (current, item) => {
-      const basis = normalizeInventoryCostBasis(item);
       current.itemCount += 1;
-      if (basis.costBasisStatus === 'complete' && basis.inventoryValueMinor !== null) {
+      if (item.costBasisStatus === 'complete' && item.inventoryValueMinor !== null) {
         current.completeItemCount += 1;
-        current.knownInventoryValueMinor += basis.inventoryValueMinor;
+        current.knownInventoryValueMinor += item.inventoryValueMinor;
       } else {
         current.incompleteItemCount += 1;
       }
@@ -241,6 +265,7 @@ export const listAuthorizedStoreInventoryMovements = async (
       itemCount: 0,
       completeItemCount: 0,
       incompleteItemCount: 0,
+      items: valuationItems,
     }
   );
   return { storeId, movements, summary, valuation };
