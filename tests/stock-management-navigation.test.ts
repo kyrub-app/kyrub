@@ -38,15 +38,16 @@ describe('stock management navigation', () => {
     assert.match(purchaseWorkspace, /ProductPurchaseList/);
   });
 
-  test('Stock exposes replenishment, purchases, receipts and suppliers as operational tabs', () => {
+  test('Stock exposes replenishment, movements, purchases, receipts and suppliers as operational tabs', () => {
     const stockRuntime = readFileSync(
       'src/components/store/StockDirectRuntime.tsx',
       'utf8'
     );
 
-    for (const section of ['replenishment', 'purchases', 'receipts', 'suppliers']) {
+    for (const section of ['replenishment', 'movements', 'purchases', 'receipts', 'suppliers']) {
       assert.match(stockRuntime, new RegExp(`id: '${section}'`));
     }
+    assert.match(stockRuntime, /StoreInventoryMovementTimeline/);
     assert.match(stockRuntime, /onPreparePurchaseDraft=\{preparePurchase\}/);
     assert.match(stockRuntime, /StoreProcurementWorkspace/);
     assert.match(stockRuntime, /Somente um recebimento confirmado altera o saldo do estoque/);
@@ -114,5 +115,43 @@ describe('stock management navigation', () => {
     assert.match(vercel, /transport=store-promotions&surface=procurement/);
     assert.match(server, /createStoreProcurementRouter/);
     assert.match(server, /"\/api\/store-procurement"/);
+  });
+
+  test('movement timeline reads the canonical physical ledger without direct browser Firestore access', () => {
+    const timeline = readFileSync(
+      'src/components/store/StoreInventoryMovementTimeline.tsx',
+      'utf8'
+    );
+    const service = readFileSync(
+      'server/inventory/storeInventoryMovementService.ts',
+      'utf8'
+    );
+    const router = readFileSync(
+      'server/inventory/storeProcurementRouter.ts',
+      'utf8'
+    );
+    const vercel = readFileSync('vercel.json', 'utf8');
+
+    assert.match(timeline, /\/api\/store-procurement\/movements/);
+    assert.match(timeline, /Entradas/);
+    assert.match(timeline, /Saídas/);
+    assert.match(timeline, /Perdas/);
+    assert.match(timeline, /Correções/);
+    assert.doesNotMatch(timeline, /firebase\/firestore|\bdb\b|setDoc|addDoc/);
+
+    assert.match(service, /stores\/\$\{storeId\}\/members\/\$\{identity\.uid\}/);
+    assert.match(service, /member\?\.role !== 'owner'/);
+    assert.match(service, /collection\(`\$\{inventoryPath\}\/movements`\)/);
+    assert.match(service, /orderBy\('createdAt', 'desc'\)/);
+    assert.match(service, /orderId: clean\(record\.orderId\)/);
+    assert.match(service, /purchaseId: clean\(record\.purchaseId\)/);
+    assert.match(service, /purchaseReceiptId: clean\(record\.purchaseReceiptId\)/);
+    assert.match(service, /supplierId: clean\(record\.supplierId\)/);
+    assert.doesNotMatch(service, /financePayables|amountMinor|moving.?average|\bCMV\b/i);
+
+    assert.match(router, /router\.get\('\/movements'/);
+    assert.match(router, /listAuthorizedStoreInventoryMovements/);
+    assert.match(vercel, /"source": "\/api\/store-procurement\/:path\*"/);
+    assert.match(vercel, /surface=procurement&path=:path\*/);
   });
 });
