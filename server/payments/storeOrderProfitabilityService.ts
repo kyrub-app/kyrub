@@ -12,6 +12,9 @@ import { listStoreEconomicLedgerEntries } from './storeEconomicLedgerService.js'
 const MAX_ECONOMIC_ENTRIES = 100;
 const MAX_ORDERS = 40;
 
+// Canonical server-only persistence remains under stores/{storeId}/orderProfitability/{orderId}.
+// The shared path helper owns escaping so raw order ids are never interpolated into Firestore paths here.
+
 const clean = (value: unknown): string =>
   typeof value === 'string' ? value.trim() : '';
 
