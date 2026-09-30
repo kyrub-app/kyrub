@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import './store-order-profitability.test';
 import './store-product-profitability.test';
+import './finance-results-margins-ui.test';
 import {
   buildEconomicAllocationSnapshot,
   buildMarketplaceEconomicAllocationSnapshot,
