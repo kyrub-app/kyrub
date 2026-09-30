@@ -182,7 +182,7 @@ export function StorePurchasePayableBridge({ storeId }: { storeId: string }) {
           dueDate,
           costNature,
           billingDocumentType,
-          billingDocumentReference,
+          billingDocumentReference: billingDocumentType === 'none' ? '' : billingDocumentReference,
           billingDigitableLine: billingDocumentType === 'boleto' ? billingDigitableLine : '',
           billingBarcode: billingDocumentType === 'boleto' ? billingBarcode : '',
         }),
