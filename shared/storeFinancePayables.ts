@@ -12,9 +12,12 @@ export type StoreFinancePayableCategory =
   | 'payroll'
   | 'other';
 export type StoreFinancePayableRecurrence = 'none' | 'monthly';
+export type StoreFinancePayableCostNature = 'unspecified' | 'fixed' | 'variable';
+export type StoreFinancePayableBillingDocumentType = 'none' | 'boleto' | 'invoice' | 'other';
 export type StoreFinancePayableSourceAuthority =
   | 'store_owner_manual'
-  | 'payroll_compensation_snapshot';
+  | 'payroll_compensation_snapshot'
+  | 'store_purchase';
 
 export interface StoreFinancePayable {
   schemaVersion: typeof STORE_FINANCE_PAYABLE_SCHEMA_VERSION;
@@ -28,7 +31,15 @@ export interface StoreFinancePayable {
   counterparty: string;
   dueDate: string;
   recurrence: StoreFinancePayableRecurrence;
+  costNature: StoreFinancePayableCostNature;
+  billingDocumentType: StoreFinancePayableBillingDocumentType;
+  billingDocumentReference: string;
+  billingDigitableLine: string;
+  billingBarcode: string;
   sourceAuthority: StoreFinancePayableSourceAuthority;
+  purchaseId: string;
+  supplierId: string;
+  purchasePayableKey: string;
   teamStoreId: string;
   teamMemberUserId: string;
   payrollPeriod: string;
@@ -74,8 +85,16 @@ const isCategory = (value: unknown): value is StoreFinancePayableCategory =>
 const isRecurrence = (value: unknown): value is StoreFinancePayableRecurrence =>
   value === 'none' || value === 'monthly';
 
+const isCostNature = (value: unknown): value is StoreFinancePayableCostNature =>
+  value === 'unspecified' || value === 'fixed' || value === 'variable';
+
+const isBillingDocumentType = (value: unknown): value is StoreFinancePayableBillingDocumentType =>
+  value === 'none' || value === 'boleto' || value === 'invoice' || value === 'other';
+
 const isSourceAuthority = (value: unknown): value is StoreFinancePayableSourceAuthority =>
-  value === 'store_owner_manual' || value === 'payroll_compensation_snapshot';
+  value === 'store_owner_manual'
+  || value === 'payroll_compensation_snapshot'
+  || value === 'store_purchase';
 
 const positiveMinor = (value: unknown): number => {
   const amount = Number(value);
@@ -110,6 +129,14 @@ export const normalizeStoreFinancePayable = (value: unknown): StoreFinancePayabl
   const storeId = requiredText(source.storeId, 'STORE', 240);
   const description = requiredText(source.description, 'DESCRIPTION', 160);
   const counterparty = optionalText(source.counterparty, 'COUNTERPARTY', 120);
+  const costNature = source.costNature === undefined ? 'unspecified' : source.costNature;
+  const billingDocumentType = source.billingDocumentType === undefined ? 'none' : source.billingDocumentType;
+  const billingDocumentReference = optionalText(source.billingDocumentReference, 'BILLING_DOCUMENT_REFERENCE', 500);
+  const billingDigitableLine = optionalText(source.billingDigitableLine, 'BILLING_DIGITABLE_LINE', 220);
+  const billingBarcode = optionalText(source.billingBarcode, 'BILLING_BARCODE', 220);
+  const purchaseId = optionalText(source.purchaseId, 'PURCHASE_ID', 240);
+  const supplierId = optionalText(source.supplierId, 'SUPPLIER_ID', 240);
+  const purchasePayableKey = optionalText(source.purchasePayableKey, 'PURCHASE_PAYABLE_KEY', 120);
   const teamStoreId = optionalText(source.teamStoreId, 'TEAM_STORE', 240);
   const teamMemberUserId = optionalText(source.teamMemberUserId, 'TEAM_MEMBER', 240);
   const payrollPeriod = optionalText(source.payrollPeriod, 'PAYROLL_PERIOD', 7);
@@ -128,6 +155,8 @@ export const normalizeStoreFinancePayable = (value: unknown): StoreFinancePayabl
     || !isStatus(source.status)
     || !isCategory(source.category)
     || !isRecurrence(source.recurrence)
+    || !isCostNature(costNature)
+    || !isBillingDocumentType(billingDocumentType)
     || !isSourceAuthority(source.sourceAuthority)
     || !validDateOnly(dueDate)
     || !validIso(createdAt)
@@ -136,19 +165,51 @@ export const normalizeStoreFinancePayable = (value: unknown): StoreFinancePayabl
     throw new Error('STORE_FINANCE_PAYABLE_INVALID');
   }
 
+  if (billingDocumentType !== 'boleto' && (billingDigitableLine || billingBarcode)) {
+    throw new Error('STORE_FINANCE_PAYABLE_BILLING_DOCUMENT_SCOPE_INVALID');
+  }
+  if (billingDocumentType === 'none' && billingDocumentReference) {
+    throw new Error('STORE_FINANCE_PAYABLE_BILLING_DOCUMENT_SCOPE_INVALID');
+  }
+
   if (source.sourceAuthority === 'store_owner_manual') {
-    if (source.category === 'payroll' || teamStoreId || teamMemberUserId || payrollPeriod) {
+    if (
+      source.category === 'payroll'
+      || teamStoreId
+      || teamMemberUserId
+      || payrollPeriod
+      || purchaseId
+      || supplierId
+      || purchasePayableKey
+    ) {
       throw new Error('STORE_FINANCE_PAYABLE_MANUAL_SCOPE_INVALID');
     }
-  } else {
+  } else if (source.sourceAuthority === 'payroll_compensation_snapshot') {
     if (
       source.category !== 'payroll'
       || source.recurrence !== 'none'
       || !validPathId(teamStoreId)
       || !validPathId(teamMemberUserId)
       || !validPayrollPeriod(payrollPeriod)
+      || purchaseId
+      || supplierId
+      || purchasePayableKey
+      || billingDocumentType !== 'none'
     ) {
       throw new Error('STORE_FINANCE_PAYABLE_PAYROLL_SCOPE_INVALID');
+    }
+  } else {
+    if (
+      (source.category !== 'supplier' && source.category !== 'inventory')
+      || source.recurrence !== 'none'
+      || !validPathId(purchaseId)
+      || !validPathId(supplierId)
+      || !validPathId(purchasePayableKey)
+      || teamStoreId
+      || teamMemberUserId
+      || payrollPeriod
+    ) {
+      throw new Error('STORE_FINANCE_PAYABLE_PURCHASE_SCOPE_INVALID');
     }
   }
 
@@ -174,7 +235,15 @@ export const normalizeStoreFinancePayable = (value: unknown): StoreFinancePayabl
     counterparty,
     dueDate,
     recurrence: source.recurrence,
+    costNature,
+    billingDocumentType,
+    billingDocumentReference,
+    billingDigitableLine,
+    billingBarcode,
     sourceAuthority: source.sourceAuthority,
+    purchaseId,
+    supplierId,
+    purchasePayableKey,
     teamStoreId,
     teamMemberUserId,
     payrollPeriod,
@@ -195,6 +264,11 @@ export const buildManualStoreFinancePayable = (input: {
   counterparty?: string;
   dueDate: string;
   recurrence: StoreFinancePayableRecurrence;
+  costNature?: StoreFinancePayableCostNature;
+  billingDocumentType?: StoreFinancePayableBillingDocumentType;
+  billingDocumentReference?: string;
+  billingDigitableLine?: string;
+  billingBarcode?: string;
   createdByUserId: string;
   now?: string;
 }): StoreFinancePayable => {
@@ -214,7 +288,65 @@ export const buildManualStoreFinancePayable = (input: {
     counterparty: input.counterparty ?? '',
     dueDate: input.dueDate,
     recurrence: input.recurrence,
+    costNature: input.costNature ?? 'unspecified',
+    billingDocumentType: input.billingDocumentType ?? 'none',
+    billingDocumentReference: input.billingDocumentReference ?? '',
+    billingDigitableLine: input.billingDigitableLine ?? '',
+    billingBarcode: input.billingBarcode ?? '',
     sourceAuthority: 'store_owner_manual',
+    purchaseId: '',
+    supplierId: '',
+    purchasePayableKey: '',
+    teamStoreId: '',
+    teamMemberUserId: '',
+    payrollPeriod: '',
+    createdByUserId: input.createdByUserId,
+    createdAt: now,
+    updatedAt: now,
+    paidAt: '',
+    cancelledAt: '',
+  });
+};
+
+export const buildStorePurchaseFinancePayable = (input: {
+  id: string;
+  storeId: string;
+  purchaseId: string;
+  supplierId: string;
+  purchasePayableKey: string;
+  amountMinor: number;
+  supplierDisplayName: string;
+  dueDate: string;
+  costNature?: StoreFinancePayableCostNature;
+  billingDocumentType?: StoreFinancePayableBillingDocumentType;
+  billingDocumentReference?: string;
+  billingDigitableLine?: string;
+  billingBarcode?: string;
+  createdByUserId: string;
+  now?: string;
+}): StoreFinancePayable => {
+  const now = clean(input.now) || new Date().toISOString();
+  return normalizeStoreFinancePayable({
+    schemaVersion: STORE_FINANCE_PAYABLE_SCHEMA_VERSION,
+    id: input.id,
+    storeId: input.storeId,
+    status: 'open',
+    currency: STORE_FINANCE_PAYABLE_CURRENCY,
+    amountMinor: input.amountMinor,
+    description: `Compra ${input.purchaseId} — ${input.supplierDisplayName}`,
+    category: 'inventory',
+    counterparty: input.supplierDisplayName,
+    dueDate: input.dueDate,
+    recurrence: 'none',
+    costNature: input.costNature ?? 'unspecified',
+    billingDocumentType: input.billingDocumentType ?? 'none',
+    billingDocumentReference: input.billingDocumentReference ?? '',
+    billingDigitableLine: input.billingDigitableLine ?? '',
+    billingBarcode: input.billingBarcode ?? '',
+    sourceAuthority: 'store_purchase',
+    purchaseId: input.purchaseId,
+    supplierId: input.supplierId,
+    purchasePayableKey: input.purchasePayableKey,
     teamStoreId: '',
     teamMemberUserId: '',
     payrollPeriod: '',
@@ -251,7 +383,15 @@ export const buildPayrollStoreFinancePayable = (input: {
     counterparty: input.memberDisplayName,
     dueDate: input.dueDate,
     recurrence: 'none',
+    costNature: 'unspecified',
+    billingDocumentType: 'none',
+    billingDocumentReference: '',
+    billingDigitableLine: '',
+    billingBarcode: '',
     sourceAuthority: 'payroll_compensation_snapshot',
+    purchaseId: '',
+    supplierId: '',
+    purchasePayableKey: '',
     teamStoreId: input.teamStoreId,
     teamMemberUserId: input.teamMemberUserId,
     payrollPeriod: input.payrollPeriod,
