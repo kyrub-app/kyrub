@@ -1,5 +1,7 @@
 import {
+  applyMovingAverageInventoryOutflow,
   normalizeInventoryCostBasis,
+  restoreInventoryAtHistoricalCost,
   type InventoryCostBasisSource,
   type InventoryCostBasisStatus,
 } from './inventoryCostBasis.js';
@@ -267,13 +269,35 @@ export const applyInventoryConsumptionLines = (
   return catalog.map(item => {
     const line = lineById.get(item.id);
     if (!line) return item;
+    const now = new Date().toISOString();
+    if (direction === 'consume') {
+      const economic = applyMovingAverageInventoryOutflow(item, {
+        quantity: line.quantity,
+        resultingQuantity: line.afterQuantity,
+        now,
+      });
+      line.costBasisStatus = economic.snapshot.costBasisStatus;
+      line.unitCostMinor = economic.snapshot.unitCostMinor;
+      line.totalCostMinor = economic.snapshot.totalCostMinor;
+      return {
+        ...economic.item,
+        currentQuantity: line.afterQuantity,
+        updatedAt: now,
+      };
+    }
+
+    const resultingQuantity = roundQuantity(item.currentQuantity + line.quantity);
+    const economic = restoreInventoryAtHistoricalCost(item, {
+      quantity: line.quantity,
+      resultingQuantity,
+      historicalUnitCostMinor: line.unitCostMinor,
+      historicalTotalCostMinor: line.totalCostMinor,
+      now,
+    });
     return {
-      ...item,
-      currentQuantity:
-        direction === 'consume'
-          ? line.afterQuantity
-          : roundQuantity(item.currentQuantity + line.quantity),
-      updatedAt: new Date().toISOString(),
+      ...economic.item,
+      currentQuantity: resultingQuantity,
+      updatedAt: now,
     };
   });
 };
