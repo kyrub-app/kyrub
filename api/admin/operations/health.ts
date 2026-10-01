@@ -44,21 +44,6 @@ export default async function handler(request: RequestLike, response: ResponseLi
     return;
   }
 
-  if (transport === 'fiscal-store-directory') {
-    if (method !== 'GET') { response.status(405).json({ error: 'Método não permitido.', code: 'METHOD_NOT_ALLOWED' }); return; }
-    try {
-      const directory = await import('../../../server/admin/fiscalStoreDirectoryService.js');
-      response.status(200).json(await directory.loadAuthorizedFiscalStoreDirectory(authorization));
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (/AUTH_REQUIRED|id-token|expired|revoked/i.test(message)) { response.status(401).json({ error: 'Faça login novamente.', code: 'AUTH_REQUIRED' }); return; }
-      if (message === 'EMAIL_NOT_VERIFIED' || message === 'FORBIDDEN') { response.status(403).json({ error: 'Somente Super Admin pode consultar lojas fiscais.', code: message }); return; }
-      console.error('[Admin Fiscal Store Directory]', error);
-      response.status(503).json({ error: 'Não foi possível consultar as lojas agora.', code: 'FISCAL_STORE_DIRECTORY_UNAVAILABLE' });
-    }
-    return;
-  }
-
   if (transport === 'fiscal-store-prepare') {
     if (method !== 'POST') { response.status(405).json({ error: 'Método não permitido.', code: 'METHOD_NOT_ALLOWED' }); return; }
     let mapError: ((error: unknown) => HttpErrorResult) | null = null;
