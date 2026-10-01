@@ -1,6 +1,7 @@
 import { FieldValue } from 'firebase-admin/firestore';
 import { adminDb } from '../firebaseAdmin.js';
 import type { FiscalProductionExecutionClaim } from './fiscalProductionExecutorFoundation.js';
+import type { FiscalProductionOutcomePatch } from './fiscalProductionOutcome.js';
 
 export type FiscalProductionAttemptState =
   | 'prepared'
@@ -21,6 +22,12 @@ export interface FiscalProductionAttemptRecord {
   payloadFingerprint: string | null;
   claimedAt: string | null;
   lastCheckedAt: string | null;
+  providerStatus?: string | null;
+  providerCode?: string | null;
+  providerMessage?: string | null;
+  authorizationProtocol?: string | null;
+  accessKey?: string | null;
+  documentNumber?: string | null;
   authority: 'server_fiscal_production_attempt_ledger';
 }
 
@@ -130,6 +137,54 @@ export const requireFiscalProductionReconciliation = async (input: {
     transaction.update(ref, {
       state: 'reconciliation_required',
       lastCheckedAt: input.checkedAt,
+      serverUpdatedAt: FieldValue.serverTimestamp(),
+    });
+    return next;
+  });
+};
+
+/** Persists one provider outcome only while the frozen submission binding matches. */
+export const persistFiscalProductionOutcome = async (input: {
+  canonicalStoreId: string;
+  attemptId: string;
+  expectedExternalRequestId: string;
+  expectedPayloadFingerprint: string;
+  checkedAt: string;
+  patch: FiscalProductionOutcomePatch;
+}): Promise<FiscalProductionAttemptRecord> => {
+  const ref = adminDb.doc(pathFor(input.canonicalStoreId, input.attemptId));
+  return adminDb.runTransaction(async transaction => {
+    const snapshot = await transaction.get(ref);
+    if (!snapshot.exists) throw new Error('FISCAL_PRODUCTION_ATTEMPT_NOT_FOUND');
+    const current = parse(snapshot.data(), input.canonicalStoreId, input.attemptId);
+    if (current.state === 'authorized' || current.state === 'rejected') {
+      throw new Error('FISCAL_PRODUCTION_ATTEMPT_TERMINAL');
+    }
+    if (
+      !['processing', 'reconciliation_required'].includes(current.state) ||
+      current.externalRequestId !== input.expectedExternalRequestId ||
+      current.payloadFingerprint !== input.expectedPayloadFingerprint
+    ) {
+      throw new Error('FISCAL_PRODUCTION_OUTCOME_BINDING_STALE');
+    }
+    if (!['processing', 'authorized', 'rejected', 'reconciliation_required'].includes(input.patch.state)) {
+      throw new Error('FISCAL_PRODUCTION_OUTCOME_STATE_INVALID');
+    }
+
+    const next: FiscalProductionAttemptRecord = {
+      ...current,
+      ...input.patch,
+      lastCheckedAt: input.checkedAt,
+    };
+    transaction.update(ref, {
+      state: next.state,
+      providerStatus: next.providerStatus ?? null,
+      providerCode: next.providerCode ?? null,
+      providerMessage: next.providerMessage ?? null,
+      authorizationProtocol: next.authorizationProtocol ?? null,
+      accessKey: next.accessKey ?? null,
+      documentNumber: next.documentNumber ?? null,
+      lastCheckedAt: next.lastCheckedAt,
       serverUpdatedAt: FieldValue.serverTimestamp(),
     });
     return next;
