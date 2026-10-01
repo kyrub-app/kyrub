@@ -11,6 +11,7 @@ import {
   type ProductProfitabilityFinancialState,
   type StoreProductProfitabilityRow,
 } from '../../shared/orderProductProfitability.js';
+import { orderCommercialSnapshotPath } from './orderCommercialSnapshotService.js';
 import { reconcileStoreOrderProfitability } from './storeOrderProfitabilityService.js';
 
 const MAX_PRODUCT_ORDERS = 40;
@@ -201,7 +202,7 @@ const cmvReconciles = (
 const productSnapshotPath = (storeId: string, orderId: string): string =>
   `stores/${storeId}/orderProductProfitability/${encodeURIComponent(orderId)}`;
 
-type PersistedProductOrderSnapshot = {
+export type PersistedProductOrderSnapshot = {
   schemaVersion: 1;
   storeId: string;
   orderId: string;
@@ -241,10 +242,26 @@ const historicalTargets = (
     Date.parse(target.updatedAt) <= Date.parse(occurredAt)
   );
 
+const parseFrozenMarginTargets = (value: unknown): OrderProductMarginTargetSnapshot[] => {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap(candidate => {
+    if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return [];
+    const record = candidate as Record<string, unknown>;
+    const productId = clean(record.productId);
+    const targetMarginPercent = finiteNonNegative(record.targetMarginPercent);
+    if (!productId || targetMarginPercent === null || targetMarginPercent >= 100) return [];
+    return [{
+      productId,
+      targetMarginPercent,
+      updatedAt: clean(record.updatedAt),
+    }];
+  });
+};
+
 const fingerprintFor = (value: unknown): string =>
   createHash('sha256').update(JSON.stringify(value)).digest('hex');
 
-const reconcileProductOrder = async (input: {
+export const reconcileStoreProductProfitabilityForOrder = async (input: {
   storeId: string;
   orderProfitability: {
     orderId: string;
@@ -260,23 +277,55 @@ const reconcileProductOrder = async (input: {
   };
 }): Promise<PersistedProductOrderSnapshot> => {
   const order = input.orderProfitability;
-  const inventoryEvidence = await inventoryEvidenceForOrder(input.storeId, order.orderId);
-  const ref = adminDb.doc(productSnapshotPath(input.storeId, order.orderId));
-  const existing = parseExisting((await ref.get()).data());
+  const storeId = clean(input.storeId);
+  if (!storeId) throw new Error('STORE_ORDER_PROFITABILITY_STORE_REQUIRED');
+  if (!clean(order.orderId)) throw new Error('STORE_ORDER_PROFITABILITY_ORDER_REQUIRED');
 
-  let commercialLines = existing?.commercialLines ?? [];
-  if (commercialLines.length === 0 && inventoryEvidence?.tenantId) {
-    const orderDocument = await adminDb
-      .doc(`artifacts/${inventoryEvidence.tenantId}/public/data/customerOrders/${order.orderId}`)
-      .get();
-    const candidate = buildOrderProductCommercialSnapshots(
-      parseOrderItems(orderDocument.data()?.items)
-    );
-    if (commercialReconciles(candidate, order)) commercialLines = candidate;
+  const [inventoryEvidence, commercialSnapshotDocument] = await Promise.all([
+    inventoryEvidenceForOrder(storeId, order.orderId),
+    adminDb.doc(orderCommercialSnapshotPath(storeId, order.orderId)).get(),
+  ]);
+  const ref = adminDb.doc(productSnapshotPath(storeId, order.orderId));
+  const existing = parseExisting((await ref.get()).data());
+  const commercialSnapshot = commercialSnapshotDocument.exists
+    ? commercialSnapshotDocument.data() as Record<string, unknown>
+    : null;
+  if (
+    commercialSnapshot &&
+    (clean(commercialSnapshot.storeId) !== storeId || clean(commercialSnapshot.orderId) !== order.orderId)
+  ) {
+    throw new Error('STORE_PRODUCT_PROFITABILITY_COMMERCIAL_SNAPSHOT_SCOPE_MISMATCH');
   }
 
-  let marginTargets = existing?.marginTargets ?? [];
+  let commercialLines: OrderProductCommercialSnapshot[] = [];
+  if (commercialSnapshot) {
+    const frozenOrder = commercialSnapshot.order;
+    const frozenItems =
+      frozenOrder && typeof frozenOrder === 'object' && !Array.isArray(frozenOrder)
+        ? (frozenOrder as Record<string, unknown>).items
+        : undefined;
+    const candidate = buildOrderProductCommercialSnapshots(parseOrderItems(frozenItems));
+    if (commercialReconciles(candidate, order)) commercialLines = candidate;
+  } else {
+    commercialLines = existing?.commercialLines ?? [];
+    if (commercialLines.length === 0 && inventoryEvidence?.tenantId) {
+      const orderDocument = await adminDb
+        .doc(`artifacts/${inventoryEvidence.tenantId}/public/data/customerOrders/${order.orderId}`)
+        .get();
+      const candidate = buildOrderProductCommercialSnapshots(
+        parseOrderItems(orderDocument.data()?.items)
+      );
+      if (commercialReconciles(candidate, order)) commercialLines = candidate;
+    }
+  }
+
+  const hasFrozenMarginTargets = commercialSnapshot !== null
+    && Object.prototype.hasOwnProperty.call(commercialSnapshot, 'marginTargets');
+  let marginTargets = hasFrozenMarginTargets
+    ? parseFrozenMarginTargets(commercialSnapshot?.marginTargets)
+    : existing?.marginTargets ?? [];
   if (
+    !hasFrozenMarginTargets &&
     marginTargets.length === 0 &&
     inventoryEvidence?.inventoryDocumentPath &&
     commercialLines.length > 0
@@ -303,6 +352,12 @@ const reconcileProductOrder = async (input: {
   const sourceFingerprint = fingerprintFor({
     orderProfitability: order.sourceFingerprint,
     sourceInventoryLedgerId: inventoryEvidence?.ledgerId ?? '',
+    commercialAuthority: commercialSnapshot
+      ? {
+          capturedAt: clean(commercialSnapshot.capturedAt),
+          hasFrozenMarginTargets,
+        }
+      : null,
     commercialLines,
     marginTargets,
     inventoryLines: inventoryLines.map(line => ({
@@ -316,7 +371,7 @@ const reconcileProductOrder = async (input: {
       : new Date().toISOString();
   const persisted: PersistedProductOrderSnapshot = {
     schemaVersion: 1,
-    storeId: input.storeId,
+    storeId,
     orderId: order.orderId,
     sourceFingerprint,
     sourceOrderProfitabilityFingerprint: order.sourceFingerprint,
@@ -373,7 +428,7 @@ export const reconcileStoreProductProfitability = async (
   }));
   const orders = await Promise.all(
     orderSources.map(orderProfitability =>
-      reconcileProductOrder({ storeId, orderProfitability })
+      reconcileStoreProductProfitabilityForOrder({ storeId, orderProfitability })
     )
   );
 
