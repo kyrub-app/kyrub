@@ -10,6 +10,7 @@ const controller = read('src/components/store/KdsScopedRejectionController.tsx')
 const runtimeRouter = read('src/components/RetailerPanelRuntimeRouter.tsx');
 const router = read('server/payments/storePaymentRefundRouter.ts');
 const service = read('server/payments/orderItemCancellationService.ts');
+const snapshotService = read('server/payments/orderCommercialSnapshotService.ts');
 const authoritativeService = read('server/payments/authoritativeOrderItemCancellationService.ts');
 const authority = read('server/payments/orderCommercialRefundAuthorityService.ts');
 const refundSafety = read('server/payments/partialRefundSafetyService.ts');
@@ -73,6 +74,29 @@ test('immutable commercial snapshot is the financial authority when it exists', 
   assert.match(authoritativeService, /ORDER_COMMERCIAL_REFUND_AMOUNT_MISMATCH/);
   assert.match(authoritativeService, /ORDER_COMMERCIAL_REFUND_LINE_IDENTITY_MISMATCH/);
   assert.match(authoritativeService, /calculateAuthoritativeCancellationAmount/);
+});
+
+test('commercial snapshot freezes private product margin targets with source provenance exactly once', () => {
+  assert.match(snapshotService, /ORDER_COMMERCIAL_SNAPSHOT_SCHEMA_VERSION = 1/);
+  assert.match(snapshotService, /buildOrderProductMarginTargetSnapshots/);
+  assert.match(snapshotService, /users\/\$\{storeId\}\/private_store\/inventory/);
+  assert.match(snapshotService, /sourceProductId/);
+  assert.match(snapshotService, /split\('::', 1\)/);
+  assert.match(snapshotService, /marginTargets,/);
+  assert.match(snapshotService, /kind:\s*'private_product_pricing_settings'/);
+  assert.match(snapshotService, /documentPath:\s*productPricingRef\.path/);
+  assert.match(snapshotService, /transaction\.create\(snapshotRef/);
+  assert.match(
+    snapshotService,
+    /if \(existingSnapshot\.exists\) \{[\s\S]*?return;[\s\S]*?\}\s*const productPricingSnapshot = await transaction\.get\(productPricingRef\)/
+  );
+});
+
+test('legacy commercial snapshots remain readable and item 3 does not backfill historical snapshots', () => {
+  assert.match(authority, /const order = frozen\.order/);
+  assert.doesNotMatch(authority, /marginTargets/);
+  assert.doesNotMatch(snapshotService, /\.collection\(/);
+  assert.doesNotMatch(snapshotService, /transaction\.set\(snapshotRef/);
 });
 
 test('successful scoped rejection can close after authoritative acknowledgement', () => {
