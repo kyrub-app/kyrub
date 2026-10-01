@@ -233,4 +233,49 @@ describe('store economic ledger', () => {
       capture,
     }));
   });
+
+  test('historical profitability pagination is deterministic, bounded and tenant-bound', () => {
+    const service = readFileSync('server/payments/storeEconomicLedgerService.ts', 'utf8');
+    assert.match(service, /orderBy\('occurredAt', 'desc'\)[\s\S]*?orderBy\(FieldPath\.documentId\(\), 'desc'\)/);
+    assert.match(service, /query\.limit\(requestedLimit \+ 1\)/);
+    assert.match(service, /startAfter\(cursor\.occurredAt, cursor\.documentId\)/);
+    assert.match(service, /storeId,[\s\S]*?occurredAt:[\s\S]*?documentId:/);
+    assert.match(service, /requestedLimit > 50/);
+  });
+
+  test('backfill re-reads the complete order ledger before either profitability projection', () => {
+    const service = readFileSync('server/payments/storeProfitabilityBackfillService.ts', 'utf8');
+    const fullLedgerAt = service.indexOf('listStoreEconomicLedgerEntriesForOrder');
+    const orderAt = service.indexOf('reconcileStoreOrderProfitabilityForOrder({', fullLedgerAt);
+    const productAt = service.indexOf('reconcileStoreProductProfitabilityForOrder({', orderAt);
+    assert.ok(fullLedgerAt >= 0);
+    assert.ok(orderAt > fullLedgerAt);
+    assert.ok(productAt > orderAt);
+    assert.match(service, /economicEntries: completeEconomicEntries/);
+  });
+
+  test('product profitability prefers immutable commercial snapshots and frozen margin targets', () => {
+    const service = readFileSync('server/payments/storeProductProfitabilityService.ts', 'utf8');
+    const snapshotAt = service.indexOf('orderCommercialSnapshotPath');
+    const legacyAt = service.indexOf('artifacts/${inventoryEvidence.tenantId}', snapshotAt);
+    assert.ok(snapshotAt >= 0);
+    assert.ok(legacyAt > snapshotAt);
+    assert.match(service, /Object\.prototype\.hasOwnProperty\.call\(commercialSnapshot, 'marginTargets'\)/);
+    assert.match(service, /hasFrozenMarginTargets[\s\S]*?parseFrozenMarginTargets/);
+    assert.match(service, /!hasFrozenMarginTargets[\s\S]*?historicalTargets/);
+  });
+
+  test('backfill endpoint stays owner-only and retries remain fingerprint-idempotent', () => {
+    const router = readFileSync('server/payments/storeOrderProfitabilityRouter.ts', 'utf8');
+    const orderService = readFileSync('server/payments/storeOrderProfitabilityService.ts', 'utf8');
+    const productService = readFileSync('server/payments/storeProductProfitabilityService.ts', 'utf8');
+    const routeAt = router.indexOf("router.post('/backfill'");
+    const ownerAt = router.indexOf('await requireOwner', routeAt);
+    const backfillAt = router.indexOf('backfillStoreProfitabilityPage', ownerAt);
+    assert.ok(routeAt >= 0);
+    assert.ok(ownerAt > routeAt);
+    assert.ok(backfillAt > ownerAt);
+    assert.match(orderService, /if \(!stableCalculatedAt\) \{\s*await ref\.set/);
+    assert.match(productService, /existing\.sourceFingerprint !== sourceFingerprint/);
+  });
 });

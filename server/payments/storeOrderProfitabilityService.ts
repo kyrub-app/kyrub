@@ -66,7 +66,7 @@ const inventoryEvidenceForOrder = async (
   };
 };
 
-type PersistedOrderProfitability = StoreOrderProfitabilitySnapshot & {
+export type PersistedOrderProfitability = StoreOrderProfitabilitySnapshot & {
   sourceFingerprint: string;
 };
 
@@ -102,23 +102,31 @@ const existingCalculatedAt = (
   return calculatedAt && Number.isFinite(Date.parse(calculatedAt)) ? calculatedAt : '';
 };
 
-const reconcileOrder = async (input: {
+export const reconcileStoreOrderProfitabilityForOrder = async (input: {
   storeId: string;
   orderId: string;
   economicEntries: readonly StoreEconomicLedgerEntry[];
 }): Promise<PersistedOrderProfitability> => {
-  const inventoryEvidence = await inventoryEvidenceForOrder(input.storeId, input.orderId);
+  const storeId = clean(input.storeId);
+  const orderId = clean(input.orderId);
+  if (!storeId) throw new Error('STORE_ORDER_PROFITABILITY_STORE_REQUIRED');
+  if (!orderId) throw new Error('STORE_ORDER_PROFITABILITY_ORDER_REQUIRED');
+  if (input.economicEntries.some(entry => entry.storeId !== storeId || clean(entry.orderId) !== orderId)) {
+    throw new Error('STORE_ORDER_PROFITABILITY_LEDGER_SCOPE_MISMATCH');
+  }
+
+  const inventoryEvidence = await inventoryEvidenceForOrder(storeId, orderId);
   const fingerprint = sourceFingerprint({
     economicEntries: input.economicEntries,
     inventoryEvidence,
   });
-  const ref = adminDb.doc(storeOrderProfitabilityPath(input.storeId, input.orderId));
+  const ref = adminDb.doc(storeOrderProfitabilityPath(storeId, orderId));
   const existing = await ref.get();
   const stableCalculatedAt = existingCalculatedAt(existing.data(), fingerprint);
   const calculatedAt = stableCalculatedAt || new Date().toISOString();
   const snapshot = buildStoreOrderProfitabilitySnapshot({
-    storeId: input.storeId,
-    orderId: input.orderId,
+    storeId,
+    orderId,
     economicEntries: input.economicEntries,
     inventoryEvidence,
     calculatedAt,
@@ -176,7 +184,7 @@ export const reconcileStoreOrderProfitability = async (
   const orderIds = [...byOrder.keys()].slice(0, MAX_ORDERS);
   const reconciled = await Promise.all(orderIds.map(async orderId => {
     try {
-      const item = await reconcileOrder({
+      const item = await reconcileStoreOrderProfitabilityForOrder({
         storeId,
         orderId,
         economicEntries: byOrder.get(orderId) ?? [],
