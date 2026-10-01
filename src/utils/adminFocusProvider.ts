@@ -1,15 +1,18 @@
 import type { User } from 'firebase/auth';
 import type { AdminProfile } from './adminControlPlane';
 
+type FocusFiscalCapability = 'nfce' | 'nfe' | 'nfse';
+
 export interface AdminFocusCredentialStatus {
   configured: boolean;
   tokenLast4: string;
   status: string;
   lastValidatedAt: string;
   lastValidationCode: string;
-  capabilities: Array<'nfce' | 'nfe' | 'nfse'>;
+  capabilities: FocusFiscalCapability[];
 }
 
+const DEFAULT_CAPABILITIES: FocusFiscalCapability[] = ['nfce', 'nfe', 'nfse'];
 const safeString = (value: unknown): string => typeof value === 'string' ? value.trim() : '';
 const requireSuperAdmin = (profile: Pick<AdminProfile, 'role' | 'status'>): void => {
   if (profile.status !== 'active' || profile.role !== 'super_admin') throw new Error('Somente Super Admin pode alterar o fornecedor fiscal da plataforma.');
@@ -20,7 +23,7 @@ const parse = (value: unknown): AdminFocusCredentialStatus => {
   const credential = record(payload.credential);
   const credentials = record(credential.credentials);
   const token = record(credentials.token);
-  const capabilities = Array.isArray(payload.capabilities) ? payload.capabilities.filter((item): item is 'nfce' | 'nfe' | 'nfse' => item === 'nfce' || item === 'nfe' || item === 'nfse') : ['nfce', 'nfe', 'nfse'];
+  const capabilities: FocusFiscalCapability[] = Array.isArray(payload.capabilities) ? payload.capabilities.filter((item): item is FocusFiscalCapability => item === 'nfce' || item === 'nfe' || item === 'nfse') : DEFAULT_CAPABILITIES;
   return { configured: payload.configured === true || token.configured === true, tokenLast4: safeString(token.last4), status: safeString(credential.status), lastValidatedAt: safeString(credential.lastValidatedAt), lastValidationCode: safeString(credential.lastValidationCode), capabilities };
 };
 const tokenFor = async (user: Pick<User, 'getIdToken'>): Promise<string> => user.getIdToken();
@@ -38,7 +41,7 @@ export const saveAdminFocusCredential = async (user: Pick<User, 'getIdToken'>, p
   const response = await fetch('/api/admin/operations/health?transport=fiscal-platform-credentials', { method: 'POST', headers: { authorization: `Bearer ${await tokenFor(user)}`, 'content-type': 'application/json' }, body: JSON.stringify({ environment: 'production', token: focusToken }) });
   const payload = await response.json().catch(() => ({})) as Record<string, unknown>;
   if (!response.ok) throw new Error(safeString(payload.error) || 'Não foi possível salvar a credencial da Focus.');
-  return parse({ credential: payload, configured: true, capabilities: ['nfce', 'nfe', 'nfse'] });
+  return parse({ credential: payload, configured: true, capabilities: DEFAULT_CAPABILITIES });
 };
 
 export const testAdminFocusConnection = async (user: Pick<User, 'getIdToken'>, profile: Pick<AdminProfile, 'role' | 'status'>): Promise<{ ok: boolean; code: string; credential: AdminFocusCredentialStatus }> => {
@@ -46,5 +49,5 @@ export const testAdminFocusConnection = async (user: Pick<User, 'getIdToken'>, p
   const response = await fetch('/api/admin/operations/health?transport=fiscal-platform-validate', { method: 'POST', headers: { authorization: `Bearer ${await tokenFor(user)}`, 'content-type': 'application/json' }, body: JSON.stringify({ environment: 'production' }) });
   const payload = await response.json().catch(() => ({})) as Record<string, unknown>;
   if (!response.ok && response.status !== 422) throw new Error(safeString(payload.error) || 'Não foi possível testar a conexão com a Focus.');
-  return { ok: payload.ok === true, code: safeString(payload.code), credential: parse({ credential: payload.credential, configured: true, capabilities: ['nfce', 'nfe', 'nfse'] }) };
+  return { ok: payload.ok === true, code: safeString(payload.code), credential: parse({ credential: payload.credential, configured: true, capabilities: DEFAULT_CAPABILITIES }) };
 };
