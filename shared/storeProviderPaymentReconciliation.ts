@@ -26,12 +26,14 @@ export interface StoreProviderPaymentReconciliation {
   providerStatusDetail: string;
   grossMinor: number;
   totalPaidMinor: number | null;
+  refundedMinor: number | null;
   providerFeeMinor: number | null;
   mercadoPagoFeeMinor: number | null;
   financingFeeMinor: number | null;
   otherCollectorFeeMinor: number | null;
   netReceivedMinor: number | null;
   feeEvidence: StoreProviderPaymentFeeEvidence[];
+  providerFeeEvidenceAvailable: boolean;
   moneyReleaseDate: string;
   moneyReleaseStatus: string;
   providerUpdatedAt: string;
@@ -147,12 +149,14 @@ export const normalizeStoreProviderPaymentReconciliation = (
     providerStatusDetail,
     grossMinor,
     totalPaidMinor: nullableMinor(source.totalPaidMinor, 'TOTAL_PAID'),
+    refundedMinor: nullableMinor(source.refundedMinor, 'REFUNDED'),
     providerFeeMinor: nullableMinor(source.providerFeeMinor, 'PROVIDER_FEE'),
     mercadoPagoFeeMinor: nullableMinor(source.mercadoPagoFeeMinor, 'MERCADO_PAGO_FEE'),
     financingFeeMinor: nullableMinor(source.financingFeeMinor, 'FINANCING_FEE'),
     otherCollectorFeeMinor: nullableMinor(source.otherCollectorFeeMinor, 'OTHER_FEE'),
     netReceivedMinor: nullableMinor(source.netReceivedMinor, 'NET_RECEIVED'),
     feeEvidence: normalizeFeeEvidence(source.feeEvidence),
+    providerFeeEvidenceAvailable: source.providerFeeEvidenceAvailable === true,
     moneyReleaseDate,
     moneyReleaseStatus,
     providerUpdatedAt,
