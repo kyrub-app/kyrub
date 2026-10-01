@@ -14,6 +14,11 @@ import {
   mapFiscalStoreOnboardingError,
   prepareOwnFiscalStoreOnboarding,
 } from '../fiscal/fiscalStoreOnboardingService.js';
+import {
+  loadOwnFiscalStoreProfile,
+  mapFiscalStoreProfileError,
+  saveOwnFiscalStoreProfile,
+} from '../fiscal/fiscalStoreProfileService.js';
 
 type QueryValue = string | string[] | undefined;
 
@@ -100,6 +105,46 @@ app.post(
       response.status(200).json(result);
     } catch (error) {
       const mapped = mapFiscalStoreOnboardingError(error);
+      response.setHeader('Cache-Control', 'no-store, max-age=0');
+      response.status(mapped.status).json(mapped.body);
+    }
+  }
+);
+app.get(
+  '/api/store-connections/fiscal/profile',
+  fiscalOnboardingRateLimiter,
+  async (request, response) => {
+    try {
+      const result = await loadOwnFiscalStoreProfile({
+        authorization: request.headers.authorization ?? '',
+        canonicalStoreId: request.query.canonicalStoreId,
+      });
+      response.setHeader('Cache-Control', 'no-store, max-age=0');
+      response.status(200).json(result);
+    } catch (error) {
+      const mapped = mapFiscalStoreProfileError(error);
+      response.setHeader('Cache-Control', 'no-store, max-age=0');
+      response.status(mapped.status).json(mapped.body);
+    }
+  }
+);
+app.put(
+  '/api/store-connections/fiscal/profile',
+  fiscalOnboardingRateLimiter,
+  async (request, response) => {
+    try {
+      const body = request.body && typeof request.body === 'object' && !Array.isArray(request.body)
+        ? request.body as Record<string, unknown>
+        : {};
+      const result = await saveOwnFiscalStoreProfile({
+        authorization: request.headers.authorization ?? '',
+        canonicalStoreId: body.canonicalStoreId,
+        profile: body.profile,
+      });
+      response.setHeader('Cache-Control', 'no-store, max-age=0');
+      response.status(200).json(result);
+    } catch (error) {
+      const mapped = mapFiscalStoreProfileError(error);
       response.setHeader('Cache-Control', 'no-store, max-age=0');
       response.status(mapped.status).json(mapped.body);
     }
