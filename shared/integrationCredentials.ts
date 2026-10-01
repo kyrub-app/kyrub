@@ -6,6 +6,7 @@ export type KyrubIntegrationProviderId =
   | 'pagbank'
   | 'pagarme'
   | 'google_maps'
+  | 'focus_nfe'
   | 'custom';
 
 export type KyrubIntegrationEnvironment = 'sandbox' | 'production';
@@ -40,7 +41,7 @@ export interface KyrubIntegrationCredentialRecord {
 export interface KyrubIntegrationProviderDefinition {
   providerId: KyrubIntegrationProviderId;
   title: string;
-  category: 'payments' | 'logistics' | 'maps' | 'other';
+  category: 'payments' | 'logistics' | 'maps' | 'fiscal' | 'other';
   supportedEnvironments: KyrubIntegrationEnvironment[];
   credentialSlots: Array<{
     key: string;
@@ -99,6 +100,15 @@ export const KYRUB_INTEGRATION_PROVIDERS: KyrubIntegrationProviderDefinition[] =
     credentialSlots: [
       { key: 'api_key', label: 'API Key', required: true },
       { key: 'api_secret', label: 'API Secret', required: true },
+    ],
+  },
+  {
+    providerId: 'focus_nfe',
+    title: 'Focus NFe',
+    category: 'fiscal',
+    supportedEnvironments: ['sandbox', 'production'],
+    credentialSlots: [
+      { key: 'token', label: 'Token', required: true },
     ],
   },
 ];
