@@ -38,150 +38,101 @@ const mercadoLivrePlatformError = (error: unknown): HttpErrorResult => {
     return { status: 401, body: { error: 'Faça login novamente.', code: 'AUTH_REQUIRED' } };
   }
   if (message === 'EMAIL_NOT_VERIFIED' || message === 'FORBIDDEN') {
-    return {
-      status: 403,
-      body: {
-        error: 'Somente Super Admin pode alterar a integração Mercado Livre da plataforma.',
-        code: message,
-      },
-    };
+    return { status: 403, body: { error: 'Somente Super Admin pode alterar a integração Mercado Livre da plataforma.', code: message } };
   }
   if (message.startsWith('MERCADO_LIVRE_')) {
-    return {
-      status: 400,
-      body: {
-        error: 'Revise Client ID, Client Secret e Redirect URI.',
-        code: message.split(':')[0],
-      },
-    };
+    return { status: 400, body: { error: 'Revise Client ID, Client Secret e Redirect URI.', code: message.split(':')[0] } };
   }
   if (/INTEGRATION_MASTER_KEY/i.test(message)) {
-    return {
-      status: 503,
-      body: {
-        error: 'O cofre seguro da plataforma não está disponível.',
-        code: 'VAULT_UNAVAILABLE',
-      },
-    };
+    return { status: 503, body: { error: 'O cofre seguro da plataforma não está disponível.', code: 'VAULT_UNAVAILABLE' } };
   }
   console.error('[Admin Mercado Livre Platform]', message);
-  return {
-    status: 503,
-    body: {
-      error: 'Não foi possível concluir a configuração do Mercado Livre.',
-      code: 'MERCADO_LIVRE_PLATFORM_OPERATION_FAILED',
-    },
-  };
+  return { status: 503, body: { error: 'Não foi possível concluir a configuração do Mercado Livre.', code: 'MERCADO_LIVRE_PLATFORM_OPERATION_FAILED' } };
 };
 
-export default async function handler(
-  request: RequestLike,
-  response: ResponseLike
-): Promise<void> {
+export default async function handler(request: RequestLike, response: ResponseLike): Promise<void> {
   response.setHeader('cache-control', 'no-store, max-age=0');
   response.setHeader('content-type', 'application/json; charset=utf-8');
 
-  const authorization = headerValue(
-    request.headers.authorization ?? request.headers.Authorization
-  );
+  const authorization = headerValue(request.headers.authorization ?? request.headers.Authorization);
   const transport = headerValue(request.query?.transport);
   const method = (request.method ?? 'GET').toUpperCase();
 
   if (transport === 'integration-readiness') {
-    if (method !== 'GET') {
-      response.status(405).json({ error: 'Método não permitido.', code: 'METHOD_NOT_ALLOWED' });
-      return;
-    }
+    if (method !== 'GET') { response.status(405).json({ error: 'Método não permitido.', code: 'METHOD_NOT_ALLOWED' }); return; }
     let mapError: ((error: unknown) => HttpErrorResult) | null = null;
     try {
       const readiness = await import('../../../server/admin/integrationReadinessService.js');
       mapError = readiness.mapIntegrationReadinessError;
-      const snapshot = await readiness.loadAuthorizedIntegrationReadiness(authorization);
-      response.status(200).json(snapshot);
+      response.status(200).json(await readiness.loadAuthorizedIntegrationReadiness(authorization));
     } catch (error) {
-      const mapped = mapError
-        ? mapError(error)
-        : unavailable('Não foi possível consultar as integrações agora.');
+      const mapped = mapError ? mapError(error) : unavailable('Não foi possível consultar as integrações agora.');
+      response.status(mapped.status).json(mapped.body);
+    }
+    return;
+  }
+
+  if (transport === 'fiscal-store-prepare') {
+    if (method !== 'POST') { response.status(405).json({ error: 'Método não permitido.', code: 'METHOD_NOT_ALLOWED' }); return; }
+    let mapError: ((error: unknown) => HttpErrorResult) | null = null;
+    try {
+      const fiscal = await import('../../../server/admin/fiscalStoreEnrollmentService.js');
+      mapError = fiscal.mapFiscalStoreEnrollmentError;
+      const body = bodyRecord(request.body);
+      const result = await fiscal.prepareAuthorizedFiscalStoreEnrollment({ authorization, canonicalStoreId: body.canonicalStoreId });
+      response.status(200).json(result);
+    } catch (error) {
+      const mapped = mapError ? mapError(error) : unavailable('Não foi possível preparar a loja para o Kyrub Fiscal agora.');
       response.status(mapped.status).json(mapped.body);
     }
     return;
   }
 
   if (transport === 'platform-economy') {
-    if (method !== 'GET') {
-      response.status(405).json({ error: 'Método não permitido.', code: 'METHOD_NOT_ALLOWED' });
-      return;
-    }
+    if (method !== 'GET') { response.status(405).json({ error: 'Método não permitido.', code: 'METHOD_NOT_ALLOWED' }); return; }
     let mapError: ((error: unknown) => HttpErrorResult) | null = null;
     try {
       const economy = await import('../../../server/admin/platformEconomyRouter.js');
       mapError = economy.mapPlatformEconomyError;
-      const snapshot = await economy.loadAuthorizedPlatformEconomySnapshot(authorization);
-      response.status(200).json(snapshot);
+      response.status(200).json(await economy.loadAuthorizedPlatformEconomySnapshot(authorization));
     } catch (error) {
-      const mapped = mapError
-        ? mapError(error)
-        : unavailable('Não foi possível consultar a economia da plataforma agora.');
+      const mapped = mapError ? mapError(error) : unavailable('Não foi possível consultar a economia da plataforma agora.');
       response.status(mapped.status).json(mapped.body);
     }
     return;
   }
 
   if (transport === 'promotional-pro') {
-    if (method !== 'POST') {
-      response.status(405).json({ error: 'Método não permitido.', code: 'METHOD_NOT_ALLOWED' });
-      return;
-    }
+    if (method !== 'POST') { response.status(405).json({ error: 'Método não permitido.', code: 'METHOD_NOT_ALLOWED' }); return; }
     let mapError: ((error: unknown) => HttpErrorResult) | null = null;
     try {
       const promotion = await import('../../../server/admin/promotionalPlanService.js');
       mapError = promotion.mapPromotionalPlanError;
       const body = bodyRecord(request.body);
-      const result = await promotion.grantFoundingProPromotion(
-        authorization,
-        body.targetUserId
-      );
+      const result = await promotion.grantFoundingProPromotion(authorization, body.targetUserId);
       response.status(result.status === 'granted' ? 201 : 200).json(result);
     } catch (error) {
-      const mapped = mapError
-        ? mapError(error)
-        : unavailable('Não foi possível conceder a cortesia Pro com segurança agora.');
+      const mapped = mapError ? mapError(error) : unavailable('Não foi possível conceder a cortesia Pro com segurança agora.');
       response.status(mapped.status).json(mapped.body);
     }
     return;
   }
 
-  if (
-    transport === 'mercado-livre-platform-status'
-    || transport === 'mercado-livre-platform-credentials'
-    || transport === 'mercado-livre-platform-validate'
-  ) {
+  if (transport === 'mercado-livre-platform-status' || transport === 'mercado-livre-platform-credentials' || transport === 'mercado-livre-platform-validate') {
     const expectedMethod = transport === 'mercado-livre-platform-status' ? 'GET' : 'POST';
-    if (method !== expectedMethod) {
-      response.status(405).json({ error: 'Método não permitido.', code: 'METHOD_NOT_ALLOWED' });
-      return;
-    }
-
+    if (method !== expectedMethod) { response.status(405).json({ error: 'Método não permitido.', code: 'METHOD_NOT_ALLOWED' }); return; }
     try {
       const mercadoLivre = await import('../../../server/admin/mercadoLivrePlatformCredentialService.js');
       if (transport === 'mercado-livre-platform-status') {
-        const status = await mercadoLivre.loadAuthorizedMercadoLivrePlatformCredentialStatus(authorization);
-        response.status(200).json(status);
+        response.status(200).json(await mercadoLivre.loadAuthorizedMercadoLivrePlatformCredentialStatus(authorization));
         return;
       }
       if (transport === 'mercado-livre-platform-credentials') {
         const body = bodyRecord(request.body);
-        const status = await mercadoLivre.saveAuthorizedMercadoLivrePlatformCredentials({
-          authorization,
-          clientId: body.clientId,
-          clientSecret: body.clientSecret,
-          redirectUri: body.redirectUri,
-        });
-        response.status(200).json(status);
+        response.status(200).json(await mercadoLivre.saveAuthorizedMercadoLivrePlatformCredentials({ authorization, clientId: body.clientId, clientSecret: body.clientSecret, redirectUri: body.redirectUri }));
         return;
       }
-      const result = await mercadoLivre.validateAuthorizedMercadoLivrePlatformConfiguration(authorization);
-      response.status(200).json(result);
+      response.status(200).json(await mercadoLivre.validateAuthorizedMercadoLivrePlatformConfiguration(authorization));
     } catch (error) {
       const mapped = mercadoLivrePlatformError(error);
       response.status(mapped.status).json(mapped.body);
@@ -190,10 +141,7 @@ export default async function handler(
   }
 
   if (transport === 'mercado-pago-oauth-application') {
-    if (method !== 'GET' && method !== 'POST') {
-      response.status(405).json({ error: 'Método não permitido.', code: 'METHOD_NOT_ALLOWED' });
-      return;
-    }
+    if (method !== 'GET' && method !== 'POST') { response.status(405).json({ error: 'Método não permitido.', code: 'METHOD_NOT_ALLOWED' }); return; }
     let mapError: ((error: unknown) => HttpErrorResult) | null = null;
     try {
       const credentials = await import('../../../server/admin/integrationCredentialService.js');
@@ -203,63 +151,39 @@ export default async function handler(
       await readiness.authorizeIntegrationReadiness(authorization);
       if (method === 'POST') {
         const body = bodyRecord(request.body);
-        await credentials.saveAuthorizedMercadoPagoOAuthApplication({
-          authorization,
-          clientId: body.clientId,
-          clientSecret: body.clientSecret,
-          redirectUri: body.redirectUri,
-        });
+        await credentials.saveAuthorizedMercadoPagoOAuthApplication({ authorization, clientId: body.clientId, clientSecret: body.clientSecret, redirectUri: body.redirectUri });
       }
       const metadata = await store.loadPlatformCredentialMetadata('mercado_pago', 'production');
       response.status(200).json({
-        configured: Boolean(
-          metadata?.credentials.client_id
-          && metadata.credentials.client_secret
-          && metadata.credentials.redirect_uri
-        ),
+        configured: Boolean(metadata?.credentials.client_id && metadata.credentials.client_secret && metadata.credentials.redirect_uri),
         clientIdLast4: metadata?.credentials.client_id?.last4 ?? '',
         clientSecretLast4: metadata?.credentials.client_secret?.last4 ?? '',
         redirectUriConfigured: Boolean(metadata?.credentials.redirect_uri),
       });
     } catch (error) {
-      const mapped = mapError
-        ? mapError(error)
-        : unavailable('Não foi possível configurar o OAuth do Mercado Pago agora.');
+      const mapped = mapError ? mapError(error) : unavailable('Não foi possível configurar o OAuth do Mercado Pago agora.');
       response.status(mapped.status).json(mapped.body);
     }
     return;
   }
 
   if (transport === 'mercado-pago-credentials') {
-    if (method !== 'POST') {
-      response.status(405).json({ error: 'Método não permitido.', code: 'METHOD_NOT_ALLOWED' });
-      return;
-    }
+    if (method !== 'POST') { response.status(405).json({ error: 'Método não permitido.', code: 'METHOD_NOT_ALLOWED' }); return; }
     const body = bodyRecord(request.body);
     let mapError: ((error: unknown) => HttpErrorResult) | null = null;
     try {
       const credentials = await import('../../../server/admin/integrationCredentialService.js');
       mapError = credentials.mapIntegrationCredentialError;
-      const credential = await credentials.saveAuthorizedMercadoPagoCredentials({
-        authorization,
-        accessToken: body.accessToken,
-        webhookSecret: body.webhookSecret,
-      });
-      response.status(200).json({ ok: true, credential });
+      response.status(200).json({ ok: true, credential: await credentials.saveAuthorizedMercadoPagoCredentials({ authorization, accessToken: body.accessToken, webhookSecret: body.webhookSecret }) });
     } catch (error) {
-      const mapped = mapError
-        ? mapError(error)
-        : unavailable('Não foi possível salvar a credencial agora.');
+      const mapped = mapError ? mapError(error) : unavailable('Não foi possível salvar a credencial agora.');
       response.status(mapped.status).json(mapped.body);
     }
     return;
   }
 
   if (transport === 'mercado-pago-test') {
-    if (method !== 'POST') {
-      response.status(405).json({ error: 'Método não permitido.', code: 'METHOD_NOT_ALLOWED' });
-      return;
-    }
+    if (method !== 'POST') { response.status(405).json({ error: 'Método não permitido.', code: 'METHOD_NOT_ALLOWED' }); return; }
     let mapError: ((error: unknown) => HttpErrorResult) | null = null;
     try {
       const credentials = await import('../../../server/admin/integrationCredentialService.js');
@@ -267,29 +191,21 @@ export default async function handler(
       const result = await credentials.testAuthorizedMercadoPagoConnection(authorization);
       response.status(result.ok ? 200 : 422).json(result);
     } catch (error) {
-      const mapped = mapError
-        ? mapError(error)
-        : unavailable('Não foi possível testar a integração agora.');
+      const mapped = mapError ? mapError(error) : unavailable('Não foi possível testar a integração agora.');
       response.status(mapped.status).json(mapped.body);
     }
     return;
   }
 
-  if (method !== 'GET') {
-    response.status(405).json({ error: 'Método não permitido.', code: 'METHOD_NOT_ALLOWED' });
-    return;
-  }
+  if (method !== 'GET') { response.status(405).json({ error: 'Método não permitido.', code: 'METHOD_NOT_ALLOWED' }); return; }
 
   let mapError: ((error: unknown) => HttpErrorResult) | null = null;
   try {
     const operations = await import('../../../server/admin/operationsHealthRouter.js');
     mapError = operations.mapOperationsHealthError;
-    const snapshot = await operations.loadAuthorizedOperationsHealth(authorization);
-    response.status(200).json(snapshot);
+    response.status(200).json(await operations.loadAuthorizedOperationsHealth(authorization));
   } catch (error) {
-    const mapped = mapError
-      ? mapError(error)
-      : unavailable('Não foi possível consultar a saúde operacional agora.');
+    const mapped = mapError ? mapError(error) : unavailable('Não foi possível consultar a saúde operacional agora.');
     response.status(mapped.status).json(mapped.body);
   }
 }
