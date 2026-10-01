@@ -46,6 +46,9 @@ jobs:
       - name: Validate partial cancellation inventory contract
         run: node --test --import tsx tests/partial-cancellation-inventory-contract.test.ts >> build.log 2>&1
 
+      - name: Validate historical product margin snapshot
+        run: node --test --import tsx tests/order-product-at-sale-snapshot.test.ts >> build.log 2>&1
+
       - name: Bundle application
         run: npm --ignore-scripts run build >> build.log 2>&1
 
