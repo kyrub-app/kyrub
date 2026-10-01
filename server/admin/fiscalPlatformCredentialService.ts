@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { FieldValue } from 'firebase-admin/firestore';
-import { publicIntegrationCredentialView, type KyrubIntegrationEnvironment } from '../../shared/integrationCredentials.js';
+import { publicIntegrationCredentialView } from '../../shared/integrationCredentials.js';
 import { adminDb } from '../firebaseAdmin.js';
 import {
   loadPlatformCredentialMetadata,
@@ -11,19 +11,11 @@ import {
 import { authorizeIntegrationReadiness } from './integrationReadinessService.js';
 
 const PROVIDER_ID = 'focus_nfe' as const;
+const PLATFORM_ENVIRONMENT = 'production' as const;
+const FOCUS_COMPANY_API = 'https://api.focusnfe.com.br/v2/empresas';
 const clean = (value: unknown): string => typeof value === 'string' ? value.trim() : '';
-const FOCUS_BASE_URL: Record<KyrubIntegrationEnvironment, string> = {
-  sandbox: 'https://homologacao.focusnfe.com.br',
-  production: 'https://api.focusnfe.com.br',
-};
 
-const environment = (value: unknown): KyrubIntegrationEnvironment => {
-  const candidate = clean(value);
-  if (candidate === 'sandbox' || candidate === 'production') return candidate;
-  throw new Error('FOCUS_NFE_ENVIRONMENT_INVALID');
-};
-
-const audit = async (input: { actorId: string; action: string; result: string; environment: KyrubIntegrationEnvironment }): Promise<void> => {
+const audit = async (input: { actorId: string; action: string; result: string }): Promise<void> => {
   const id = randomUUID().replaceAll('-', '_');
   await adminDb.doc(`kyrub_admin/control_plane/audit_logs/${id}`).set({
     id,
@@ -31,18 +23,20 @@ const audit = async (input: { actorId: string; action: string; result: string; e
     actorId: input.actorId,
     actorRole: 'super_admin',
     targetType: 'platform_integration',
-    targetId: `${PROVIDER_ID}:${input.environment}`,
+    targetId: `${PROVIDER_ID}:platform_authority`,
     result: input.result,
     source: 'server',
     createdAt: FieldValue.serverTimestamp(),
   });
 };
 
-const probeFocusCredential = async (token: string, targetEnvironment: KyrubIntegrationEnvironment): Promise<{ ok: boolean; code: string }> => {
+const probePlatformAuthority = async (token: string): Promise<{ ok: boolean; code: string }> => {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 8000);
   try {
-    const response = await fetch(`${FOCUS_BASE_URL[targetEnvironment]}/v2/empresas?offset=0`, {
+    // Focus' company-management API is production-only. This probe validates the
+    // Kyrub platform/master authority; it does not validate any tenant issuer token.
+    const response = await fetch(`${FOCUS_COMPANY_API}?offset=0`, {
       method: 'GET',
       headers: {
         accept: 'application/json',
@@ -51,79 +45,63 @@ const probeFocusCredential = async (token: string, targetEnvironment: KyrubInteg
       cache: 'no-store',
       signal: controller.signal,
     });
-    if (response.ok) return { ok: true, code: 'FOCUS_REMOTE_AUTHENTICATED' };
-    if (response.status === 401 || response.status === 403) return { ok: false, code: 'FOCUS_REMOTE_UNAUTHORIZED' };
-    if (response.status === 404 && targetEnvironment === 'sandbox') return { ok: false, code: 'FOCUS_SANDBOX_COMPANY_API_UNAVAILABLE' };
-    if (response.status === 429) return { ok: false, code: 'FOCUS_REMOTE_RATE_LIMITED' };
-    return { ok: false, code: `FOCUS_REMOTE_HTTP_${response.status}` };
+    if (response.ok) return { ok: true, code: 'FOCUS_PLATFORM_AUTHORITY_VALIDATED' };
+    if (response.status === 401 || response.status === 403) return { ok: false, code: 'FOCUS_PLATFORM_AUTHORITY_UNAUTHORIZED' };
+    if (response.status === 429) return { ok: false, code: 'FOCUS_PLATFORM_AUTHORITY_RATE_LIMITED' };
+    return { ok: false, code: `FOCUS_PLATFORM_AUTHORITY_HTTP_${response.status}` };
   } catch (error) {
-    if (error instanceof Error && error.name === 'AbortError') return { ok: false, code: 'FOCUS_REMOTE_TIMEOUT' };
-    return { ok: false, code: 'FOCUS_REMOTE_UNREACHABLE' };
+    if (error instanceof Error && error.name === 'AbortError') return { ok: false, code: 'FOCUS_PLATFORM_AUTHORITY_TIMEOUT' };
+    return { ok: false, code: 'FOCUS_PLATFORM_AUTHORITY_UNREACHABLE' };
   } finally {
     clearTimeout(timeout);
   }
 };
 
-export const loadAuthorizedFiscalPlatformCredentialStatus = async (authorization: string, rawEnvironment: unknown) => {
+export const loadAuthorizedFiscalPlatformCredentialStatus = async (authorization: string) => {
   await authorizeIntegrationReadiness(authorization);
-  const targetEnvironment = environment(rawEnvironment);
-  const record = await loadPlatformCredentialMetadata(PROVIDER_ID, targetEnvironment);
+  const record = await loadPlatformCredentialMetadata(PROVIDER_ID, PLATFORM_ENVIRONMENT);
   return {
     providerId: PROVIDER_ID,
-    environment: targetEnvironment,
+    authorityType: 'platform_master_production',
+    environment: PLATFORM_ENVIRONMENT,
     configured: Boolean(record?.credentials.token),
     credential: record ? publicIntegrationCredentialView(record) : null,
-    capabilities: ['nfce', 'nfe', 'nfse'] as const,
+    capabilities: ['company_provisioning', 'nfce', 'nfe', 'nfse'] as const,
+    issuerCredentialPolicy: {
+      scope: 'per_provisioned_company',
+      storedServerSideOnly: true,
+      exposedToTenant: false,
+      productionTokenFromProvisioning: true,
+      homologationTokenFromProvisioning: true,
+    },
   };
 };
 
-export const saveAuthorizedFiscalPlatformCredential = async (input: {
-  authorization: string;
-  environment: unknown;
-  token: unknown;
-}) => {
+export const saveAuthorizedFiscalPlatformCredential = async (input: { authorization: string; token: unknown }) => {
   const admin = await authorizeIntegrationReadiness(input.authorization);
-  const targetEnvironment = environment(input.environment);
   const token = clean(input.token);
-  if (!token) throw new Error('FOCUS_NFE_TOKEN_REQUIRED');
+  if (!token) throw new Error('FOCUS_PLATFORM_TOKEN_REQUIRED');
   if (token.length > 4096) throw new Error('FOCUS_NFE_CREDENTIAL_TOO_LARGE');
-  const record = await savePlatformCredentials({
-    providerId: PROVIDER_ID,
-    environment: targetEnvironment,
-    credentials: { token },
-  });
-  await audit({
-    actorId: admin.uid,
-    action: 'admin.integration.focus_nfe.credentials.saved',
-    result: 'configured',
-    environment: targetEnvironment,
-  });
+  const record = await savePlatformCredentials({ providerId: PROVIDER_ID, environment: PLATFORM_ENVIRONMENT, credentials: { token } });
+  await audit({ actorId: admin.uid, action: 'admin.integration.focus_nfe.platform_authority.saved', result: 'configured' });
   return publicIntegrationCredentialView(record);
 };
 
-export const validateAuthorizedFiscalPlatformCredential = async (authorization: string, rawEnvironment: unknown) => {
+export const validateAuthorizedFiscalPlatformCredential = async (authorization: string) => {
   const admin = await authorizeIntegrationReadiness(authorization);
-  const targetEnvironment = environment(rawEnvironment);
-  const credentials = await resolvePlatformCredentials(PROVIDER_ID, targetEnvironment);
+  const credentials = await resolvePlatformCredentials(PROVIDER_ID, PLATFORM_ENVIRONMENT);
   const token = clean(credentials?.token);
-  if (!token) throw new Error('FOCUS_NFE_TOKEN_REQUIRED');
-
-  const probe = await probeFocusCredential(token, targetEnvironment);
-  await markPlatformCredentialValidation({ providerId: PROVIDER_ID, environment: targetEnvironment, ok: probe.ok, code: probe.code });
-  await audit({
-    actorId: admin.uid,
-    action: 'admin.integration.focus_nfe.credentials.remote_validated',
-    result: probe.code,
-    environment: targetEnvironment,
-  });
-  const record = await loadPlatformCredentialMetadata(PROVIDER_ID, targetEnvironment);
-  return { ok: probe.ok, code: probe.code, credential: record ? publicIntegrationCredentialView(record) : null };
+  if (!token) throw new Error('FOCUS_PLATFORM_TOKEN_REQUIRED');
+  const probe = await probePlatformAuthority(token);
+  await markPlatformCredentialValidation({ providerId: PROVIDER_ID, environment: PLATFORM_ENVIRONMENT, ok: probe.ok, code: probe.code });
+  await audit({ actorId: admin.uid, action: 'admin.integration.focus_nfe.platform_authority.remote_validated', result: probe.code });
+  const record = await loadPlatformCredentialMetadata(PROVIDER_ID, PLATFORM_ENVIRONMENT);
+  return { ok: probe.ok, code: probe.code, authorityType: 'platform_master_production', credential: record ? publicIntegrationCredentialView(record) : null };
 };
 
 export const mapFiscalPlatformCredentialError = (error: unknown): { status: number; body: { error: string; code: string } } => {
   const message = error instanceof Error ? error.message : String(error);
-  if (message === 'FOCUS_NFE_TOKEN_REQUIRED') return { status: 400, body: { error: 'Informe o token da Focus NFe.', code: message } };
-  if (message === 'FOCUS_NFE_ENVIRONMENT_INVALID') return { status: 400, body: { error: 'Selecione homologação ou produção.', code: message } };
+  if (message === 'FOCUS_PLATFORM_TOKEN_REQUIRED') return { status: 400, body: { error: 'Informe o token principal de produção da Focus NFe.', code: message } };
   if (message === 'FOCUS_NFE_CREDENTIAL_TOO_LARGE') return { status: 400, body: { error: 'A credencial excede o tamanho permitido.', code: message } };
   if (/AUTH_REQUIRED|id-token|expired|revoked/i.test(message)) return { status: 401, body: { error: 'Faça login novamente.', code: 'AUTH_REQUIRED' } };
   if (message === 'EMAIL_NOT_VERIFIED' || message === 'FORBIDDEN') return { status: 403, body: { error: 'Somente Super Admin pode alterar a integração fiscal da plataforma.', code: message } };
