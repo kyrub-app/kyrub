@@ -1,6 +1,10 @@
 import { createHash } from 'node:crypto';
 import { adminDb } from '../firebaseAdmin.js';
 import {
+  parseOrderProductAtSaleSnapshot,
+  type OrderProductAtSaleSnapshot,
+} from '../../shared/orderProductAtSaleSnapshot.js';
+import {
   buildOrderProductCommercialSnapshots,
   buildOrderProductMarginTargetSnapshots,
   deriveStoreProductProfitabilityRows,
@@ -208,6 +212,7 @@ type PersistedProductOrderSnapshot = {
   sourceFingerprint: string;
   sourceOrderProfitabilityFingerprint: string;
   sourceInventoryLedgerId: string;
+  atSaleSnapshot?: OrderProductAtSaleSnapshot;
   commercialLines: OrderProductCommercialSnapshot[];
   marginTargets: OrderProductMarginTargetSnapshot[];
   rows: StoreProductProfitabilityRow[];
@@ -262,10 +267,21 @@ const reconcileProductOrder = async (input: {
   const order = input.orderProfitability;
   const inventoryEvidence = await inventoryEvidenceForOrder(input.storeId, order.orderId);
   const ref = adminDb.doc(productSnapshotPath(input.storeId, order.orderId));
-  const existing = parseExisting((await ref.get()).data());
+  const document = await ref.get();
+  const rawPersisted = document.data();
+  const rawAtSaleSnapshot = rawPersisted?.atSaleSnapshot;
+  const atSaleSnapshot = parseOrderProductAtSaleSnapshot(rawAtSaleSnapshot);
+  if (rawAtSaleSnapshot !== undefined && !atSaleSnapshot) {
+    throw new Error('STORE_PRODUCT_PROFITABILITY_AT_SALE_SNAPSHOT_INVALID');
+  }
+  const existing = parseExisting(rawPersisted);
 
-  let commercialLines = existing?.commercialLines ?? [];
-  if (commercialLines.length === 0 && inventoryEvidence?.tenantId) {
+  let commercialLines = atSaleSnapshot
+    ? commercialReconciles(atSaleSnapshot.commercialLines, order)
+      ? atSaleSnapshot.commercialLines
+      : []
+    : existing?.commercialLines ?? [];
+  if (!atSaleSnapshot && commercialLines.length === 0 && inventoryEvidence?.tenantId) {
     const orderDocument = await adminDb
       .doc(`artifacts/${inventoryEvidence.tenantId}/public/data/customerOrders/${order.orderId}`)
       .get();
@@ -275,8 +291,11 @@ const reconcileProductOrder = async (input: {
     if (commercialReconciles(candidate, order)) commercialLines = candidate;
   }
 
-  let marginTargets = existing?.marginTargets ?? [];
+  let marginTargets = atSaleSnapshot
+    ? atSaleSnapshot.marginTargets
+    : existing?.marginTargets ?? [];
   if (
+    !atSaleSnapshot &&
     marginTargets.length === 0 &&
     inventoryEvidence?.inventoryDocumentPath &&
     commercialLines.length > 0
@@ -303,6 +322,7 @@ const reconcileProductOrder = async (input: {
   const sourceFingerprint = fingerprintFor({
     orderProfitability: order.sourceFingerprint,
     sourceInventoryLedgerId: inventoryEvidence?.ledgerId ?? '',
+    atSaleCapturedAt: atSaleSnapshot?.capturedAt ?? '',
     commercialLines,
     marginTargets,
     inventoryLines: inventoryLines.map(line => ({
@@ -321,6 +341,7 @@ const reconcileProductOrder = async (input: {
     sourceFingerprint,
     sourceOrderProfitabilityFingerprint: order.sourceFingerprint,
     sourceInventoryLedgerId: inventoryEvidence?.ledgerId ?? '',
+    ...(atSaleSnapshot ? { atSaleSnapshot } : {}),
     commercialLines,
     marginTargets,
     rows,
