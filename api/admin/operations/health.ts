@@ -1,19 +1,8 @@
 type HeaderValue = string | string[] | undefined;
 type QueryValue = string | string[] | undefined;
 
-type RequestLike = {
-  method?: string;
-  headers: Record<string, HeaderValue>;
-  query?: Record<string, QueryValue>;
-  body?: unknown;
-};
-
-type ResponseLike = {
-  setHeader(name: string, value: string): void;
-  status(code: number): ResponseLike;
-  json(body: unknown): void;
-};
-
+type RequestLike = { method?: string; headers: Record<string, HeaderValue>; query?: Record<string, QueryValue>; body?: unknown; };
+type ResponseLike = { setHeader(name: string, value: string): void; status(code: number): ResponseLike; json(body: unknown): void; };
 type HttpErrorResult = { status: number; body: unknown };
 const headerValue = (value: HeaderValue | QueryValue): string => Array.isArray(value) ? value[0] ?? '' : value ?? '';
 const bodyRecord = (value: unknown): Record<string, unknown> => value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
@@ -52,10 +41,9 @@ export default async function handler(request: RequestLike, response: ResponseLi
       const fiscal = await import('../../../server/admin/fiscalPlatformCredentialService.js');
       mapError = fiscal.mapFiscalPlatformCredentialError;
       const body = bodyRecord(request.body);
-      const targetEnvironment = method === 'GET' ? headerValue(request.query?.environment) : body.environment;
-      if (transport === 'fiscal-platform-status') { response.status(200).json(await fiscal.loadAuthorizedFiscalPlatformCredentialStatus(authorization, targetEnvironment)); return; }
-      if (transport === 'fiscal-platform-credentials') { response.status(200).json(await fiscal.saveAuthorizedFiscalPlatformCredential({ authorization, environment: targetEnvironment, token: body.token })); return; }
-      const result = await fiscal.validateAuthorizedFiscalPlatformCredential(authorization, targetEnvironment); response.status(result.ok ? 200 : 422).json(result);
+      if (transport === 'fiscal-platform-status') { response.status(200).json(await fiscal.loadAuthorizedFiscalPlatformCredentialStatus(authorization)); return; }
+      if (transport === 'fiscal-platform-credentials') { response.status(200).json(await fiscal.saveAuthorizedFiscalPlatformCredential({ authorization, token: body.token })); return; }
+      const result = await fiscal.validateAuthorizedFiscalPlatformCredential(authorization); response.status(result.ok ? 200 : 422).json(result);
     } catch (error) { const mapped = mapError ? mapError(error) : unavailable('Não foi possível configurar o fornecedor fiscal agora.'); response.status(mapped.status).json(mapped.body); }
     return;
   }
