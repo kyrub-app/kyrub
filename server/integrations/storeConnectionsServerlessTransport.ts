@@ -10,6 +10,10 @@ import { createStoreOwnedPixRouter } from './storeOwnedPixRouter.js';
 import { createFocusNfceProviderOnboardingRouter } from './focusNfceProviderOnboardingRouter.js';
 import { createFiscalTaxExecutionPolicyRouter } from './fiscalTaxExecutionPolicyRouter.js';
 import { createFiscalHomologationOrchestratorRouter } from './fiscalHomologationOrchestratorRouter.js';
+import {
+  mapFiscalStoreOnboardingError,
+  prepareOwnFiscalStoreOnboarding,
+} from '../fiscal/fiscalStoreOnboardingService.js';
 
 type QueryValue = string | string[] | undefined;
 
@@ -26,6 +30,7 @@ type ResponseLike = {
 
 const app = express();
 app.set('trust proxy', 1);
+app.use(express.json({ limit: '32kb' }));
 
 const integrationRateLimiter = rateLimit({
   windowMs: 60 * 1000,
@@ -33,6 +38,17 @@ const integrationRateLimiter = rateLimit({
   message: {
     error: 'Muitas solicitações de integração. Tente novamente em instantes.',
     code: 'TOO_MANY_INTEGRATION_REQUESTS',
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+const fiscalOnboardingRateLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 30,
+  message: {
+    error: 'Muitas tentativas de configuração fiscal. Tente novamente em instantes.',
+    code: 'TOO_MANY_FISCAL_ONBOARDING_REQUESTS',
   },
   standardHeaders: true,
   legacyHeaders: false,
@@ -67,6 +83,27 @@ app.use(
   '/api/store-connections/pix-own',
   integrationRateLimiter,
   createStoreOwnedPixRouter()
+);
+app.post(
+  '/api/store-connections/fiscal/onboarding/prepare',
+  fiscalOnboardingRateLimiter,
+  async (request, response) => {
+    try {
+      const body = request.body && typeof request.body === 'object' && !Array.isArray(request.body)
+        ? request.body as Record<string, unknown>
+        : {};
+      const result = await prepareOwnFiscalStoreOnboarding({
+        authorization: request.headers.authorization ?? '',
+        canonicalStoreId: body.canonicalStoreId,
+      });
+      response.setHeader('Cache-Control', 'no-store, max-age=0');
+      response.status(200).json(result);
+    } catch (error) {
+      const mapped = mapFiscalStoreOnboardingError(error);
+      response.setHeader('Cache-Control', 'no-store, max-age=0');
+      response.status(mapped.status).json(mapped.body);
+    }
+  }
 );
 app.use(
   '/api/store-connections/fiscal-provider/focus-nfce',
