@@ -1,24 +1,28 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { managedFiscalProviderReadiness } from '../server/integrations/fiscalManagedProviderControlPlane.js';
+import {
+  managedFiscalProviderReadiness,
+  type ManagedFiscalProviderPlatformConfig,
+  type ManagedFiscalStoreEnrollment,
+} from '../server/integrations/fiscalManagedProviderControlPlane.js';
 
-const platform = () => ({
-  schemaVersion: 1 as const,
-  providerId: 'focus-nfe' as const,
-  environment: 'production' as const,
-  status: 'ready' as const,
+const platform = (): ManagedFiscalProviderPlatformConfig => ({
+  schemaVersion: 1,
+  providerId: 'focus-nfe',
+  environment: 'production',
+  status: 'ready',
   credentialSecretRef: 'gsm://projects/kyrub/secrets/focus-production',
-  authority: 'server_owned_managed_fiscal_provider' as const,
+  authority: 'server_owned_managed_fiscal_provider',
 });
 
-const enrollment = () => ({
-  schemaVersion: 1 as const,
+const enrollment = (): ManagedFiscalStoreEnrollment => ({
+  schemaVersion: 1,
   canonicalStoreId: 'store-1',
-  providerId: 'focus-nfe' as const,
-  documentFamily: 'nfce' as const,
-  environment: 'production' as const,
-  status: 'production_authorized' as const,
-  authority: 'server_owned_managed_fiscal_store_enrollment' as const,
+  providerId: 'focus-nfe',
+  documentFamily: 'nfce',
+  environment: 'production',
+  status: 'production_authorized',
+  authority: 'server_owned_managed_fiscal_store_enrollment',
 });
 
 test('backstage reports provider and store readiness independently', () => {
