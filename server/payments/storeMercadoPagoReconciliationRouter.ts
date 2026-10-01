@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { Router } from 'express';
+import { FieldPath } from 'firebase-admin/firestore';
 import { adminDb } from '../firebaseAdmin.js';
 import { verifyFirebaseIdToken } from '../ai/consultantAuth.js';
 import { loadOwnerStoreInstitutionalRepresentation } from '../store/storeInstitutionalIdentityService.js';
@@ -19,6 +20,9 @@ import {
   type StoreProviderPaymentReconciliation,
 } from '../../shared/storeProviderPaymentReconciliation.js';
 
+const DEFAULT_BACKFILL_LIMIT = 20;
+const MAX_BACKFILL_LIMIT = 50;
+
 type MercadoPagoFeeDetail = {
   type?: unknown;
   fee_payer?: unknown;
@@ -32,6 +36,7 @@ type MercadoPagoPaymentDetails = {
   currency_id?: unknown;
   collector_id?: unknown;
   transaction_amount?: unknown;
+  transaction_amount_refunded?: unknown;
   payment_method_id?: unknown;
   payment_type_id?: unknown;
   installments?: unknown;
@@ -45,6 +50,12 @@ type MercadoPagoPaymentDetails = {
     net_received_amount?: unknown;
     total_paid_amount?: unknown;
   };
+};
+
+type StorePaymentBackfillCursor = {
+  v: 1;
+  storeId: string;
+  documentId: string;
 };
 
 const clean = (value: unknown): string =>
@@ -74,9 +85,6 @@ const normalizeProviderIso = (value: unknown): string => {
   const text = clean(value);
   return text && Number.isFinite(Date.parse(text)) ? new Date(text).toISOString() : '';
 };
-
-const canonicalPaymentMinor = (payment: CanonicalPayment): number =>
-  Math.round(payment.amount * 100);
 
 const requireOwner = async (authorization: string, storeId: string): Promise<string> => {
   const token = bearerToken(authorization);
@@ -117,19 +125,31 @@ const legacyStoreIdForCanonicalStore = async (canonicalStoreId: string): Promise
   return legacyStoreId;
 };
 
-const feeEvidence = (payment: MercadoPagoPaymentDetails): StoreProviderPaymentFeeEvidence[] =>
-  (Array.isArray(payment.fee_details) ? payment.fee_details : []).flatMap(detail => {
+const feeEvidence = (payment: MercadoPagoPaymentDetails): {
+  available: boolean;
+  evidence: StoreProviderPaymentFeeEvidence[];
+} => {
+  if (!Array.isArray(payment.fee_details)) {
+    return { available: false, evidence: [] };
+  }
+  const evidence: StoreProviderPaymentFeeEvidence[] = [];
+  for (const detail of payment.fee_details) {
     const type = clean(detail?.type).toLowerCase();
     const payer = clean(detail?.fee_payer).toLowerCase();
     const amountMinor = toMinor(detail?.amount);
-    return type && payer && amountMinor !== null
-      ? [{ type, payer, amountMinor }]
-      : [];
-  });
+    if (!type || !payer || amountMinor === null) {
+      return { available: false, evidence };
+    }
+    evidence.push({ type, payer, amountMinor });
+  }
+  return { available: true, evidence };
+};
 
-const feeSummary = (fees: StoreProviderPaymentFeeEvidence[]) => {
-  const collectorFees = fees.filter(fee => fee.payer === 'collector');
-  if (collectorFees.length === 0) {
+const feeSummary = (
+  fees: StoreProviderPaymentFeeEvidence[],
+  evidenceAvailable: boolean
+) => {
+  if (!evidenceAvailable) {
     return {
       providerFeeMinor: null,
       mercadoPagoFeeMinor: null,
@@ -137,6 +157,7 @@ const feeSummary = (fees: StoreProviderPaymentFeeEvidence[]) => {
       otherCollectorFeeMinor: null,
     };
   }
+  const collectorFees = fees.filter(fee => fee.payer === 'collector');
   const sum = (items: StoreProviderPaymentFeeEvidence[]) =>
     items.reduce((total, fee) => total + fee.amountMinor, 0);
   const mercadoPago = collectorFees.filter(fee =>
@@ -150,9 +171,9 @@ const feeSummary = (fees: StoreProviderPaymentFeeEvidence[]) => {
   );
   return {
     providerFeeMinor: sum(collectorFees),
-    mercadoPagoFeeMinor: mercadoPago.length > 0 ? sum(mercadoPago) : null,
-    financingFeeMinor: financing.length > 0 ? sum(financing) : null,
-    otherCollectorFeeMinor: other.length > 0 ? sum(other) : null,
+    mercadoPagoFeeMinor: sum(mercadoPago),
+    financingFeeMinor: sum(financing),
+    otherCollectorFeeMinor: sum(other),
   };
 };
 
@@ -169,19 +190,17 @@ const buildReconciliation = (input: {
   const status = clean(input.providerPayment.status).toLowerCase();
   const currency = clean(input.providerPayment.currency_id).toUpperCase();
   const grossMinor = toMinor(input.providerPayment.transaction_amount);
-  const expectedMinor = canonicalPaymentMinor(input.payment);
   if (
     providerPaymentId !== input.payment.providerPaymentId
     || !status
     || currency !== 'BRL'
     || grossMinor === null
-    || grossMinor !== expectedMinor
   ) {
     throw new Error('STORE_PROVIDER_RECONCILIATION_PROVIDER_FACT_MISMATCH');
   }
 
-  const fees = feeEvidence(input.providerPayment);
-  const summarizedFees = feeSummary(fees);
+  const feeState = feeEvidence(input.providerPayment);
+  const summarizedFees = feeSummary(feeState.evidence, feeState.available);
   const base = {
     schemaVersion: 1 as const,
     storeId: input.storeId,
@@ -198,9 +217,11 @@ const buildReconciliation = (input: {
     providerStatusDetail: clean(input.providerPayment.status_detail).toLowerCase(),
     grossMinor,
     totalPaidMinor: toMinor(input.providerPayment.transaction_details?.total_paid_amount),
+    refundedMinor: toMinor(input.providerPayment.transaction_amount_refunded),
     ...summarizedFees,
     netReceivedMinor: toMinor(input.providerPayment.transaction_details?.net_received_amount),
-    feeEvidence: fees,
+    feeEvidence: feeState.evidence,
+    providerFeeEvidenceAvailable: feeState.available,
     moneyReleaseDate: normalizeProviderIso(input.providerPayment.money_release_date),
     moneyReleaseStatus: clean(input.providerPayment.money_release_status).toLowerCase(),
     providerUpdatedAt: normalizeProviderIso(input.providerPayment.date_last_updated),
@@ -215,19 +236,40 @@ const buildReconciliation = (input: {
 
 const saveReconciliation = async (
   reconciliation: StoreProviderPaymentReconciliation
-): Promise<void> => {
+): Promise<StoreProviderPaymentReconciliation> => {
   const reference = adminDb.doc(storeProviderPaymentReconciliationPath(
     reconciliation.storeId,
     reconciliation.provider,
     reconciliation.providerPaymentId
   ));
   const observation = reference.collection('observations').doc(reconciliation.evidenceFingerprint);
-  await adminDb.runTransaction(async transaction => {
+  return adminDb.runTransaction(async transaction => {
+    const current = await transaction.get(reference);
+    if (current.exists) {
+      let existing: StoreProviderPaymentReconciliation;
+      try {
+        existing = normalizeStoreProviderPaymentReconciliation(current.data());
+      } catch {
+        throw new Error('STORE_PROVIDER_RECONCILIATION_SNAPSHOT_INVALID');
+      }
+      if (
+        existing.storeId !== reconciliation.storeId
+        || existing.paymentId !== reconciliation.paymentId
+        || existing.providerPaymentId !== reconciliation.providerPaymentId
+      ) {
+        throw new Error('STORE_PROVIDER_RECONCILIATION_SNAPSHOT_INVALID');
+      }
+      if (existing.evidenceFingerprint === reconciliation.evidenceFingerprint) {
+        return existing;
+      }
+    }
+
     const existingObservation = await transaction.get(observation);
     transaction.set(reference, reconciliation);
     if (!existingObservation.exists) {
       transaction.create(observation, reconciliation);
     }
+    return reconciliation;
   });
 };
 
@@ -269,8 +311,7 @@ const reconcileMercadoPagoPayment = async (
   }
 
   const reconciliation = buildReconciliation({ storeId, payment, providerPayment });
-  await saveReconciliation(reconciliation);
-  return reconciliation;
+  return saveReconciliation(reconciliation);
 };
 
 const loadReconciliation = async (
@@ -293,6 +334,106 @@ const loadReconciliation = async (
   }
 };
 
+const encodeBackfillCursor = (cursor: StorePaymentBackfillCursor): string =>
+  Buffer.from(JSON.stringify(cursor), 'utf8').toString('base64url');
+
+const decodeBackfillCursor = (
+  storeId: string,
+  value: unknown
+): StorePaymentBackfillCursor | null => {
+  const encoded = clean(value);
+  if (!encoded) return null;
+  try {
+    const parsed = JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8')) as Partial<StorePaymentBackfillCursor>;
+    if (
+      parsed.v !== 1
+      || parsed.storeId !== storeId
+      || !clean(parsed.documentId)
+      || clean(parsed.documentId).includes('/')
+    ) {
+      throw new Error('STORE_PROVIDER_RECONCILIATION_BACKFILL_CURSOR_INVALID');
+    }
+    return { v: 1, storeId, documentId: clean(parsed.documentId) };
+  } catch (error) {
+    if (error instanceof Error && error.message === 'STORE_PROVIDER_RECONCILIATION_BACKFILL_CURSOR_INVALID') {
+      throw error;
+    }
+    throw new Error('STORE_PROVIDER_RECONCILIATION_BACKFILL_CURSOR_INVALID');
+  }
+};
+
+const parseBackfillLimit = (value: unknown): number => {
+  if (value === undefined || value === null || clean(value) === '') return DEFAULT_BACKFILL_LIMIT;
+  const limit = Number(value);
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > MAX_BACKFILL_LIMIT) {
+    throw new Error('STORE_PROVIDER_RECONCILIATION_BACKFILL_LIMIT_INVALID');
+  }
+  return limit;
+};
+
+const backfillMercadoPagoReconciliations = async (input: {
+  storeId: string;
+  cursor?: unknown;
+  limit?: unknown;
+}) => {
+  const cursor = decodeBackfillCursor(input.storeId, input.cursor);
+  const requestedLimit = parseBackfillLimit(input.limit);
+  let query = adminDb
+    .collection(`stores/${input.storeId}/payments`)
+    .orderBy(FieldPath.documentId(), 'asc')
+    .limit(requestedLimit + 1);
+  if (cursor) query = query.startAfter(cursor.documentId);
+
+  const snapshot = await query.get();
+  const pageDocuments = snapshot.docs.slice(0, requestedLimit);
+  const hasMore = snapshot.docs.length > requestedLimit;
+  const errors: Array<{ paymentId: string; code: string }> = [];
+  let eligiblePaymentCount = 0;
+  let reconciledPaymentCount = 0;
+
+  for (const document of pageDocuments) {
+    let payment: CanonicalPayment;
+    try {
+      payment = normalizeCanonicalPayment({
+        ...(document.data() as CanonicalPayment),
+        id: document.id,
+        storeId: input.storeId,
+      });
+    } catch {
+      errors.push({
+        paymentId: document.id,
+        code: 'STORE_PROVIDER_RECONCILIATION_PAYMENT_INVALID',
+      });
+      continue;
+    }
+    if (!isMercadoPagoProvider(payment.provider) || !clean(payment.providerPaymentId)) continue;
+    eligiblePaymentCount += 1;
+    try {
+      await reconcileMercadoPagoPayment(input.storeId, payment.id);
+      reconciledPaymentCount += 1;
+    } catch (error) {
+      errors.push({
+        paymentId: payment.id,
+        code: error instanceof Error ? error.message : 'STORE_PROVIDER_RECONCILIATION_UNAVAILABLE',
+      });
+    }
+  }
+
+  const lastDocument = pageDocuments.at(-1);
+  return {
+    storeId: input.storeId,
+    pageLimit: requestedLimit,
+    processedPaymentDocuments: pageDocuments.length,
+    eligiblePaymentCount,
+    reconciledPaymentCount,
+    reconciliationErrors: errors,
+    hasMore,
+    nextCursor: hasMore && lastDocument
+      ? encodeBackfillCursor({ v: 1, storeId: input.storeId, documentId: lastDocument.id })
+      : '',
+  };
+};
+
 const mapError = (error: unknown): { status: number; message: string; code: string } => {
   const code = error instanceof Error ? error.message : String(error);
   if (code === 'AUTH_REQUIRED') {
@@ -313,8 +454,10 @@ const mapError = (error: unknown): { status: number; message: string; code: stri
   if (
     code === 'STORE_PROVIDER_RECONCILIATION_PROVIDER_UNSUPPORTED'
     || code === 'STORE_PROVIDER_RECONCILIATION_PAYMENT_INVALID'
+    || code === 'STORE_PROVIDER_RECONCILIATION_BACKFILL_CURSOR_INVALID'
+    || code === 'STORE_PROVIDER_RECONCILIATION_BACKFILL_LIMIT_INVALID'
   ) {
-    return { status: 400, message: 'Este pagamento não pode ser reconciliado com o Mercado Pago.', code };
+    return { status: 400, message: 'Este pagamento ou página histórica não pode ser reconciliado com o Mercado Pago.', code };
   }
   if (
     code === 'STORE_PROVIDER_RECONCILIATION_BINDING_MISMATCH'
@@ -365,6 +508,23 @@ export const createStoreMercadoPagoReconciliationRouter = (): Router => {
       await requireOwner(clean(request.headers.authorization), storeId);
       const reconciliation = await reconcileMercadoPagoPayment(storeId, paymentId);
       response.status(200).json({ reconciliation });
+    } catch (error) {
+      const mapped = mapError(error);
+      response.status(mapped.status).json({ error: mapped.message, code: mapped.code });
+    }
+  });
+
+  router.post('/provider-reconciliation/backfill', async (request, response) => {
+    try {
+      const storeId = clean(request.query.storeId);
+      if (!storeId) throw new Error('STORE_PROVIDER_RECONCILIATION_PAYMENT_INVALID');
+      await requireOwner(clean(request.headers.authorization), storeId);
+      const result = await backfillMercadoPagoReconciliations({
+        storeId,
+        cursor: request.body?.cursor,
+        limit: request.body?.limit,
+      });
+      response.status(200).json(result);
     } catch (error) {
       const mapped = mapError(error);
       response.status(mapped.status).json({ error: mapped.message, code: mapped.code });

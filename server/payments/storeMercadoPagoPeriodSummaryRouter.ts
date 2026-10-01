@@ -66,6 +66,7 @@ type MercadoPagoCapture = {
   paymentId: string;
   orderId: string;
   providerPaymentId: string;
+  canonicalGrossMinor: number;
   ledgerProviderFeeMinor: number | null;
 };
 
@@ -80,6 +81,8 @@ const parseMercadoPagoCapture = (
     || entry.storeId !== storeId
     || entry.currency !== 'BRL'
     || entry.kind !== 'payment_capture'
+    || !Number.isSafeInteger(entry.amountMinor)
+    || Number(entry.amountMinor) <= 0
     || !clean(entry.paymentId)
     || !clean(entry.orderId)
     || !clean(entry.providerPaymentId)
@@ -89,6 +92,7 @@ const parseMercadoPagoCapture = (
     paymentId: clean(entry.paymentId),
     orderId: clean(entry.orderId),
     providerPaymentId: clean(entry.providerPaymentId),
+    canonicalGrossMinor: Number(entry.amountMinor),
     ledgerProviderFeeMinor: providerFeeMinor(entry as StoreEconomicLedgerEntry),
   };
 };
@@ -137,14 +141,20 @@ const summarizePeriod = async (
   period: { period: string; startIso: string; endExclusiveIso: string }
 ) => {
   const captures = await listMercadoPagoCaptures(storeId, period);
+  const feeCoveragePaymentIds = new Set<string>();
   let reconciledPaymentCount = 0;
   let ledgerFeeEvidenceCount = 0;
   let reconciliationFallbackFeeCount = 0;
+  let providerFeeEvidenceCount = 0;
   let ledgerProviderFeesMinor = 0;
   let reconciliationFallbackFeesMinor = 0;
+  let authoritativeProviderFeesMinor = 0;
   let explicitNetReceivedMinor = 0;
   let explicitNetReceivedCount = 0;
-  let releaseDateEvidenceCount = 0;
+  let providerRefundedMinor = 0;
+  let providerRefundedEvidenceCount = 0;
+  let releaseEvidenceCount = 0;
+  let grossDivergenceCount = 0;
 
   for (let offset = 0; offset < captures.length; offset += RECONCILIATION_GET_BATCH) {
     const slice = captures.slice(offset, offset + RECONCILIATION_GET_BATCH);
@@ -159,6 +169,7 @@ const summarizePeriod = async (
       if (capture.ledgerProviderFeeMinor !== null) {
         ledgerFeeEvidenceCount += 1;
         ledgerProviderFeesMinor += capture.ledgerProviderFeeMinor;
+        feeCoveragePaymentIds.add(capture.paymentId);
       }
 
       const snapshot = snapshots[index];
@@ -173,18 +184,32 @@ const summarizePeriod = async (
         ) return;
 
         reconciledPaymentCount += 1;
+        if (reconciliation.grossMinor !== capture.canonicalGrossMinor) {
+          grossDivergenceCount += 1;
+        }
         if (
-          capture.ledgerProviderFeeMinor === null
+          reconciliation.providerFeeEvidenceAvailable
           && reconciliation.providerFeeMinor !== null
         ) {
-          reconciliationFallbackFeeCount += 1;
-          reconciliationFallbackFeesMinor += reconciliation.providerFeeMinor;
+          providerFeeEvidenceCount += 1;
+          authoritativeProviderFeesMinor += reconciliation.providerFeeMinor;
+          feeCoveragePaymentIds.add(capture.paymentId);
+          if (capture.ledgerProviderFeeMinor === null) {
+            reconciliationFallbackFeeCount += 1;
+            reconciliationFallbackFeesMinor += reconciliation.providerFeeMinor;
+          }
         }
         if (reconciliation.netReceivedMinor !== null) {
           explicitNetReceivedCount += 1;
           explicitNetReceivedMinor += reconciliation.netReceivedMinor;
         }
-        if (reconciliation.moneyReleaseDate) releaseDateEvidenceCount += 1;
+        if (reconciliation.refundedMinor !== null) {
+          providerRefundedEvidenceCount += 1;
+          providerRefundedMinor += reconciliation.refundedMinor;
+        }
+        if (reconciliation.moneyReleaseDate || reconciliation.moneyReleaseStatus) {
+          releaseEvidenceCount += 1;
+        }
       } catch (error) {
         console.warn('[Store Mercado Pago period] Invalid reconciliation skipped.', {
           storeId,
@@ -195,46 +220,39 @@ const summarizePeriod = async (
     });
   }
 
-  const feeCoverageCount = new Set([
-    ...captures.filter(capture => capture.ledgerProviderFeeMinor !== null).map(capture => capture.paymentId),
-  ]);
-  if (reconciliationFallbackFeeCount > 0) {
-    for (let offset = 0; offset < captures.length; offset += RECONCILIATION_GET_BATCH) {
-      const slice = captures.slice(offset, offset + RECONCILIATION_GET_BATCH);
-      const refs = slice.map(capture => adminDb.doc(storeProviderPaymentReconciliationPath(
-        storeId,
-        'mercado-pago',
-        capture.providerPaymentId
-      )));
-      const snapshots = refs.length > 0 ? await adminDb.getAll(...refs) : [];
-      slice.forEach((capture, index) => {
-        if (capture.ledgerProviderFeeMinor !== null || !snapshots[index]?.exists) return;
-        try {
-          const reconciliation = normalizeStoreProviderPaymentReconciliation(snapshots[index].data());
-          if (reconciliation.paymentId === capture.paymentId && reconciliation.providerFeeMinor !== null) {
-            feeCoverageCount.add(capture.paymentId);
-          }
-        } catch {
-          // Invalid observations are already excluded from the monetary summary above.
-        }
-      });
-    }
-  }
+  const paymentCount = captures.length;
+  const complete = reconciledPaymentCount === paymentCount
+    && providerFeeEvidenceCount === paymentCount
+    && explicitNetReceivedCount === paymentCount
+    && providerRefundedEvidenceCount === paymentCount
+    && releaseEvidenceCount === paymentCount;
 
   return {
     period: period.period,
     provider: 'mercado-pago' as const,
-    paymentCount: captures.length,
+    paymentCount,
     reconciledPaymentCount,
-    feeCoverageCount: feeCoverageCount.size,
+    unreconciledPaymentCount: Math.max(0, paymentCount - reconciledPaymentCount),
+    feeCoverageCount: feeCoveragePaymentIds.size,
     ledgerFeeEvidenceCount,
     reconciliationFallbackFeeCount,
+    providerFeeEvidenceCount,
+    missingProviderFeeEvidenceCount: Math.max(0, paymentCount - providerFeeEvidenceCount),
     ledgerProviderFeesMinor,
     reconciliationFallbackFeesMinor,
+    authoritativeProviderFeesMinor,
     explicitNetReceivedMinor,
     explicitNetReceivedCount,
-    releaseDateEvidenceCount,
-    complete: true,
+    missingNetReceivedEvidenceCount: Math.max(0, paymentCount - explicitNetReceivedCount),
+    providerRefundedMinor,
+    providerRefundedEvidenceCount,
+    missingRefundEvidenceCount: Math.max(0, paymentCount - providerRefundedEvidenceCount),
+    releaseDateEvidenceCount: releaseEvidenceCount,
+    missingReleaseEvidenceCount: Math.max(0, paymentCount - releaseEvidenceCount),
+    grossDivergenceCount,
+    hasDivergences: grossDivergenceCount > 0,
+    complete,
+    balanced: complete && grossDivergenceCount === 0,
   };
 };
 
