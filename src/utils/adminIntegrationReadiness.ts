@@ -7,6 +7,14 @@ export type AdminIntegrationProviderState =
   | 'not-configured'
   | 'contract-only';
 
+export interface AdminFiscalProviderReadiness {
+  providerId: 'focus-nfe';
+  providerReady: boolean;
+  storeReady: boolean;
+  productionTrafficAllowed: false;
+  blockers: string[];
+}
+
 export interface AdminIntegrationReadinessSnapshot {
   generatedAt: string;
   vault: {
@@ -14,6 +22,7 @@ export interface AdminIntegrationReadinessSnapshot {
     googleSecretManagerAdapterEnabled: boolean;
     googleSecretManagerState: 'disabled' | 'adapter-enabled-unverified';
   };
+  fiscal: AdminFiscalProviderReadiness;
   providers: Array<{
     id: 'mercado_pago' | 'google_maps' | '99food' | 'lalamove';
     title: string;
@@ -76,6 +85,22 @@ const parseProviderState = (value: unknown): AdminIntegrationProviderState =>
     ? value
     : 'not-configured';
 
+const parseFiscalReadiness = (value: unknown): AdminFiscalProviderReadiness => {
+  const candidate = value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+  const blockers = Array.isArray(candidate.blockers)
+    ? candidate.blockers.flatMap(item => typeof item === 'string' ? [item.trim().slice(0, 120)] : []).filter(Boolean)
+    : [];
+  return {
+    providerId: 'focus-nfe',
+    providerReady: candidate.providerId === 'focus-nfe' && candidate.providerReady === true,
+    storeReady: candidate.providerId === 'focus-nfe' && candidate.storeReady === true,
+    productionTrafficAllowed: false,
+    blockers,
+  };
+};
+
 export const parseAdminIntegrationReadiness = (
   value: unknown
 ): AdminIntegrationReadinessSnapshot | null => {
@@ -126,6 +151,7 @@ export const parseAdminIntegrationReadiness = (
         ? 'adapter-enabled-unverified'
         : 'disabled',
     },
+    fiscal: parseFiscalReadiness(candidate.fiscal),
     providers,
   };
 };
