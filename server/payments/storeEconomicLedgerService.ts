@@ -1,4 +1,4 @@
-import type { Transaction } from 'firebase-admin/firestore';
+import { FieldPath, type Transaction } from 'firebase-admin/firestore';
 import { adminDb } from '../firebaseAdmin.js';
 import type { CanonicalPayment } from '../../src/utils/canonicalPayment.js';
 import {
@@ -223,4 +223,98 @@ export const listStoreEconomicLedgerEntries = async (input: {
   const snapshot = await adminDb.collection(`stores/${storeId}/economicLedger`)
     .orderBy('occurredAt', 'desc').limit(limit).get();
   return snapshot.docs.map(document => parseEntry(document.data(), storeId, decodeURIComponent(document.id)));
+};
+
+type StoreEconomicLedgerCursor = {
+  v: 1;
+  storeId: string;
+  occurredAt: string;
+  documentId: string;
+};
+
+export type StoreEconomicLedgerPage = {
+  entries: StoreEconomicLedgerEntry[];
+  hasMore: boolean;
+  nextCursor: string;
+};
+
+const encodeCursor = (cursor: StoreEconomicLedgerCursor): string =>
+  Buffer.from(JSON.stringify(cursor), 'utf8').toString('base64url');
+
+const decodeCursor = (value: string, expectedStoreId: string): StoreEconomicLedgerCursor => {
+  try {
+    const parsed = JSON.parse(Buffer.from(value, 'base64url').toString('utf8')) as Partial<StoreEconomicLedgerCursor>;
+    if (
+      parsed.v !== 1 ||
+      clean(parsed.storeId) !== expectedStoreId ||
+      !clean(parsed.occurredAt) ||
+      !Number.isFinite(Date.parse(parsed.occurredAt ?? '')) ||
+      !clean(parsed.documentId)
+    ) {
+      throw new Error('STORE_ECONOMIC_LEDGER_CURSOR_INVALID');
+    }
+    return parsed as StoreEconomicLedgerCursor;
+  } catch (error) {
+    if (error instanceof Error && error.message === 'STORE_ECONOMIC_LEDGER_CURSOR_INVALID') throw error;
+    throw new Error('STORE_ECONOMIC_LEDGER_CURSOR_INVALID');
+  }
+};
+
+export const listStoreEconomicLedgerPage = async (input: {
+  storeId: string;
+  limit?: number;
+  cursor?: string;
+}): Promise<StoreEconomicLedgerPage> => {
+  const storeId = clean(input.storeId);
+  if (!storeId) throw new Error('STORE_ECONOMIC_LEDGER_STORE_REQUIRED');
+  const requestedLimit = input.limit === undefined ? 25 : input.limit;
+  if (!Number.isSafeInteger(requestedLimit) || requestedLimit < 1 || requestedLimit > 50) {
+    throw new Error('STORE_ECONOMIC_LEDGER_PAGE_LIMIT_INVALID');
+  }
+
+  let query = adminDb.collection(`stores/${storeId}/economicLedger`)
+    .orderBy('occurredAt', 'desc')
+    .orderBy(FieldPath.documentId(), 'desc');
+  const cursorValue = clean(input.cursor);
+  if (cursorValue) {
+    const cursor = decodeCursor(cursorValue, storeId);
+    query = query.startAfter(cursor.occurredAt, cursor.documentId);
+  }
+
+  const snapshot = await query.limit(requestedLimit + 1).get();
+  const hasMore = snapshot.docs.length > requestedLimit;
+  const documents = snapshot.docs.slice(0, requestedLimit);
+  const entries = documents.map(document =>
+    parseEntry(document.data(), storeId, decodeURIComponent(document.id))
+  );
+  const lastDocument = documents.at(-1);
+  const nextCursor = hasMore && lastDocument
+    ? encodeCursor({
+        v: 1,
+        storeId,
+        occurredAt: clean(lastDocument.data().occurredAt),
+        documentId: lastDocument.id,
+      })
+    : '';
+
+  return { entries, hasMore, nextCursor };
+};
+
+export const listStoreEconomicLedgerEntriesForOrder = async (input: {
+  storeId: string;
+  orderId: string;
+}): Promise<StoreEconomicLedgerEntry[]> => {
+  const storeId = clean(input.storeId);
+  const orderId = clean(input.orderId);
+  if (!storeId) throw new Error('STORE_ECONOMIC_LEDGER_STORE_REQUIRED');
+  if (!orderId) throw new Error('STORE_ECONOMIC_LEDGER_ORDER_REQUIRED');
+  const snapshot = await adminDb.collection(`stores/${storeId}/economicLedger`)
+    .where('orderId', '==', orderId)
+    .get();
+  return snapshot.docs
+    .map(document => parseEntry(document.data(), storeId, decodeURIComponent(document.id)))
+    .sort((left, right) =>
+      Date.parse(right.occurredAt) - Date.parse(left.occurredAt)
+      || right.id.localeCompare(left.id)
+    );
 };
