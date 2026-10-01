@@ -23,8 +23,12 @@ import {
   parseConfiguredLineSelectedOptions,
   parseInventorySelectedOptions,
   parseOptionInventoryImpacts,
-  type OptionAwareInventoryOrderItem,
 } from '../../shared/optionInventoryImpact.js';
+import {
+  buildOrderProductAtSaleSnapshot,
+  parseOrderProductAtSaleSnapshot,
+} from '../../shared/orderProductAtSaleSnapshot.js';
+import type { ProductAwareOrderItem } from '../../shared/orderProductProfitability.js';
 import {
   inventoryAuthorityFromLedger,
   legacyTenantInventoryAuthority,
@@ -77,7 +81,7 @@ interface ParsedOrder {
   id: string;
   status: InventoryOrderStatus;
   customerNote: string;
-  items: OptionAwareInventoryOrderItem[];
+  items: ProductAwareOrderItem[];
   integration: Record<string, unknown>;
 }
 
@@ -86,6 +90,11 @@ const clean = (value: unknown): string =>
 
 const finiteInteger = (value: unknown): number | null =>
   typeof value === 'number' && Number.isInteger(value) && value >= 0
+    ? value
+    : null;
+
+const finiteNonNegative = (value: unknown): number | null =>
+  typeof value === 'number' && Number.isFinite(value) && value >= 0
     ? value
     : null;
 
@@ -100,6 +109,18 @@ const ledgerId = (tenantId: string, orderId: string): string =>
 
 const ledgerPath = (tenantId: string, orderId: string): string =>
   `${INVENTORY_LEDGER_COLLECTION}/${ledgerId(tenantId, orderId)}`;
+
+const productProfitabilityPath = (storeId: string, orderId: string): string =>
+  `stores/${storeId}/orderProductProfitability/${encodeURIComponent(orderId)}`;
+
+const shouldCaptureAtSaleSnapshot = (
+  currentStatus: InventoryOrderStatus,
+  effectiveStatus: InventoryOrderStatus
+): boolean =>
+  currentStatus === 'pending'
+  && effectiveStatus !== 'pending'
+  && effectiveStatus !== 'rejected'
+  && effectiveStatus !== 'cancelled';
 
 const sourceProductId = (configuredProductId: string, explicitSource: unknown): string =>
   clean(explicitSource) ||
@@ -129,13 +150,19 @@ const parseOrder = (value: unknown): ParsedOrder | null => {
     const selectedOptions = explicitSelectedOptions.length > 0
       ? explicitSelectedOptions
       : parseConfiguredLineSelectedOptions(configuredProductId);
+    const lineId = clean(item.lineId);
+    const price = finiteNonNegative(item.price);
+    const discountAmount = finiteNonNegative(item.discountAmount);
     return [{
       productId,
       name,
       quantity,
       transferredQuantity,
+      ...(lineId ? { lineId } : {}),
+      ...(price !== null ? { price } : {}),
+      ...(discountAmount !== null ? { discountAmount } : {}),
       ...(selectedOptions.length > 0 ? { selectedOptions } : {}),
-    } satisfies OptionAwareInventoryOrderItem];
+    } satisfies ProductAwareOrderItem];
   });
 
   if (items.length !== record.items.length) return null;
@@ -454,6 +481,27 @@ const integrationIdentity = (order: ParsedOrder): {
   externalOrderId: clean(order.integration.externalOrderId),
 });
 
+const prepareAtSaleSnapshot = (input: {
+  rawExisting: unknown;
+  orderItems: ProductAwareOrderItem[];
+  rawPricingSettings: unknown;
+  capturedAt: string;
+  capturedForStatus: InventoryOrderStatus;
+}) => {
+  if (input.rawExisting !== undefined) {
+    if (!parseOrderProductAtSaleSnapshot(input.rawExisting)) {
+      throw new Error('ORDER_PRODUCT_AT_SALE_SNAPSHOT_INVALID');
+    }
+    return null;
+  }
+  return buildOrderProductAtSaleSnapshot({
+    orderItems: input.orderItems,
+    rawPricingSettings: input.rawPricingSettings,
+    capturedAt: input.capturedAt,
+    capturedForStatus: input.capturedForStatus,
+  });
+};
+
 export const transitionOrderStatusWithInventory = async (
   tenantId: string,
   orderId: string,
@@ -502,6 +550,13 @@ export const transitionOrderStatusWithInventory = async (
     const inventorySnapshot = await transaction.get(
       adminDb.doc(inventoryAuthority.inventoryDocumentPath)
     );
+    const atSaleReference =
+      canonicalStoreId && shouldCaptureAtSaleSnapshot(order.status, nextStatus)
+        ? adminDb.doc(productProfitabilityPath(canonicalStoreId, normalizedOrderId))
+        : null;
+    const atSaleDocument = atSaleReference
+      ? await transaction.get(atSaleReference)
+      : null;
 
     if (nextStatus === 'ready') {
       await writeStoreMarkedReadyEvidenceInTransaction({
@@ -526,6 +581,16 @@ export const transitionOrderStatusWithInventory = async (
       status: nextStatus,
       customerNote: nextNote,
     };
+    const updatedAt = new Date().toISOString();
+    const atSaleSnapshot = atSaleReference
+      ? prepareAtSaleSnapshot({
+          rawExisting: atSaleDocument?.data()?.atSaleSnapshot,
+          orderItems: effectiveOrder.items,
+          rawPricingSettings: inventorySnapshot.data()?.productPricingSettings,
+          capturedAt: updatedAt,
+          capturedForStatus: nextStatus,
+        })
+      : null;
     const inventoryAction = applyInventoryForStatus({
       transaction,
       tenantId: normalizedTenantId,
@@ -536,7 +601,6 @@ export const transitionOrderStatusWithInventory = async (
       inventoryData: inventorySnapshot.data(),
       ledgerData: ledgerSnapshot.data(),
     });
-    const updatedAt = new Date().toISOString();
     transaction.set(
       orderReference,
       {
@@ -569,6 +633,9 @@ export const transitionOrderStatusWithInventory = async (
         },
         { merge: true }
       );
+    }
+    if (atSaleReference && atSaleSnapshot) {
+      transaction.set(atSaleReference, { atSaleSnapshot }, { merge: true });
     }
 
     return {
@@ -622,7 +689,24 @@ export const updateIntegratedOrderStatusWithInventory = async (
       order.status,
       requestedStatus
     );
+    const atSaleReference =
+      canonicalStoreId && shouldCaptureAtSaleSnapshot(order.status, effectiveStatus)
+        ? adminDb.doc(productProfitabilityPath(canonicalStoreId, orderId))
+        : null;
+    const atSaleDocument = atSaleReference
+      ? await transaction.get(atSaleReference)
+      : null;
     const effectiveOrder = { ...order, status: effectiveStatus };
+    const updatedAt = new Date().toISOString();
+    const atSaleSnapshot = atSaleReference
+      ? prepareAtSaleSnapshot({
+          rawExisting: atSaleDocument?.data()?.atSaleSnapshot,
+          orderItems: effectiveOrder.items,
+          rawPricingSettings: inventorySnapshot.data()?.productPricingSettings,
+          capturedAt: updatedAt,
+          capturedForStatus: effectiveStatus,
+        })
+      : null;
     const inventoryAction = applyInventoryForStatus({
       transaction,
       tenantId,
@@ -633,7 +717,6 @@ export const updateIntegratedOrderStatusWithInventory = async (
       inventoryData: inventorySnapshot.data(),
       ledgerData: ledgerSnapshot.data(),
     });
-    const updatedAt = new Date().toISOString();
     transaction.set(
       orderReference,
       {
@@ -671,6 +754,9 @@ export const updateIntegratedOrderStatusWithInventory = async (
         },
         { merge: true }
       );
+    }
+    if (atSaleReference && atSaleSnapshot) {
+      transaction.set(atSaleReference, { atSaleSnapshot }, { merge: true });
     }
     return {
       orderId,
