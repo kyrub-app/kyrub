@@ -22,6 +22,7 @@ import {
 } from '../../utils/adminIntegrationReadiness';
 import AdminCustomerArrivalPolicyCard from './AdminCustomerArrivalPolicyCard';
 import AdminMercadoLivrePlatformCard from './AdminMercadoLivrePlatformCard';
+import AdminFiscalProviderCard from './AdminFiscalProviderCard';
 
 const STATE_LABEL: Record<AdminIntegrationProviderState, string> = {
   configured: 'Configurado',
@@ -198,6 +199,8 @@ export default function AdminIntegrationsWorkspace({
           <span className="mt-3 inline-flex rounded-full border border-slate-700 px-2.5 py-1 text-[9px] font-black uppercase tracking-wider text-slate-300">{snapshot?.vault.googleSecretManagerAdapterEnabled ? 'Adapter habilitado — infraestrutura não verificada' : 'Adapter desabilitado'}</span>
         </article>
       </div>
+
+      <AdminFiscalProviderCard readiness={snapshot?.fiscal} />
 
       <article className="mt-5 rounded-2xl border border-cyan-500/20 bg-cyan-500/5 p-4">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
