@@ -44,6 +44,22 @@ export default async function handler(request: RequestLike, response: ResponseLi
     return;
   }
 
+  if (transport === 'fiscal-platform-status' || transport === 'fiscal-platform-credentials' || transport === 'fiscal-platform-validate') {
+    const expectedMethod = transport === 'fiscal-platform-status' ? 'GET' : 'POST';
+    if (method !== expectedMethod) { response.status(405).json({ error: 'Método não permitido.', code: 'METHOD_NOT_ALLOWED' }); return; }
+    let mapError: ((error: unknown) => HttpErrorResult) | null = null;
+    try {
+      const fiscal = await import('../../../server/admin/fiscalPlatformCredentialService.js');
+      mapError = fiscal.mapFiscalPlatformCredentialError;
+      const body = bodyRecord(request.body);
+      const targetEnvironment = method === 'GET' ? headerValue(request.query?.environment) : body.environment;
+      if (transport === 'fiscal-platform-status') { response.status(200).json(await fiscal.loadAuthorizedFiscalPlatformCredentialStatus(authorization, targetEnvironment)); return; }
+      if (transport === 'fiscal-platform-credentials') { response.status(200).json(await fiscal.saveAuthorizedFiscalPlatformCredential({ authorization, environment: targetEnvironment, token: body.token })); return; }
+      const result = await fiscal.validateAuthorizedFiscalPlatformCredential(authorization, targetEnvironment); response.status(result.ok ? 200 : 422).json(result);
+    } catch (error) { const mapped = mapError ? mapError(error) : unavailable('Não foi possível configurar o fornecedor fiscal agora.'); response.status(mapped.status).json(mapped.body); }
+    return;
+  }
+
   if (transport === 'fiscal-store-prepare') {
     if (method !== 'POST') { response.status(405).json({ error: 'Método não permitido.', code: 'METHOD_NOT_ALLOWED' }); return; }
     let mapError: ((error: unknown) => HttpErrorResult) | null = null;
