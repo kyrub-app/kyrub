@@ -36,7 +36,7 @@ const parseJson = async (response: Pick<Response, 'json'>): Promise<Record<strin
 };
 
 const assertCapability = (input: {
-  capability: FocusNfceProductionCapability | null | undefined;
+  capability?: FocusNfceProductionCapability | null;
   canonicalStoreId: string;
 }): FocusNfceProductionCapability => {
   const capability = input.capability;
