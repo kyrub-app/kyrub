@@ -4,6 +4,7 @@ import type { User } from 'firebase/auth';
 import type { AdminProfile } from '../../utils/adminControlPlane';
 import { loadAdminIntegrationReadiness, type AdminIntegrationReadinessSnapshot } from '../../utils/adminIntegrationReadiness';
 import AdminCustomerArrivalPolicyCard from './AdminCustomerArrivalPolicyCard';
+import AdminFiscalIssuerCard from './AdminFiscalIssuerCard';
 import AdminFiscalProviderCard from './AdminFiscalProviderCard';
 import AdminGoogleMapsProviderCard from './AdminGoogleMapsProviderCard';
 import AdminMercadoLivrePlatformCard from './AdminMercadoLivrePlatformCard';
@@ -73,6 +74,7 @@ export default function AdminIntegrationsWorkspace({ authenticatedUser, profile 
       </div>
 
       <AdminFiscalProviderCard readiness={snapshot?.fiscal} user={authenticatedUser} profile={profile} />
+      <AdminFiscalIssuerCard user={authenticatedUser} profile={profile} />
       <AdminMercadoPagoProviderCard authenticatedUser={authenticatedUser} profile={profile} providerState={mercadoPago?.state} vaultReady={vaultReady} onChanged={refresh} />
       <AdminGoogleMapsProviderCard authenticatedUser={authenticatedUser} profile={profile} providerState={googleMaps?.state} vaultReady={vaultReady} onChanged={refresh} />
       <AdminMercadoLivrePlatformCard authenticatedUser={authenticatedUser} profile={profile} />
