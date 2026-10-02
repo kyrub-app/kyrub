@@ -19,6 +19,7 @@ interface StoredIssuerCredentialDocument {
   enabled: boolean;
   encryptedCredential: EncryptedSecretEnvelope;
   tokenLast4: string;
+  lastValidationCode?: string;
 }
 
 export interface FiscalIssuerCredentialMetadata {
@@ -28,7 +29,18 @@ export interface FiscalIssuerCredentialMetadata {
   configured: boolean;
   status: StoredIssuerCredentialDocument['status'];
   tokenLast4: string;
+  lastValidationCode?: string;
 }
+
+const metadataFrom = (value: unknown): FiscalIssuerCredentialMetadata | null => {
+  if (!value || typeof value !== 'object') return null;
+  const document = value as Partial<StoredIssuerCredentialDocument>;
+  const canonicalStoreId = clean(document.canonicalStoreId);
+  if (!canonicalStoreId || document.providerId !== PROVIDER_ID) return null;
+  if (document.environment !== 'homologation' && document.environment !== 'production') return null;
+  if (!document.status) return null;
+  return { canonicalStoreId, providerId: PROVIDER_ID, environment: document.environment, configured: true, status: document.status, tokenLast4: clean(document.tokenLast4), lastValidationCode: clean(document.lastValidationCode) || undefined };
+};
 
 export const saveFiscalIssuerCredential = async (input: { canonicalStoreId: string; environment: ManagedFiscalIssuerEnvironment; token: unknown }): Promise<FiscalIssuerCredentialMetadata> => {
   const canonicalStoreId = clean(input.canonicalStoreId);
@@ -39,17 +51,19 @@ export const saveFiscalIssuerCredential = async (input: { canonicalStoreId: stri
   const id = documentId(canonicalStoreId, input.environment);
   const ref = adminDb.doc(`${COLLECTION}/${id}`);
   const existing = await ref.get();
-  await ref.set({
-    id,
-    canonicalStoreId,
-    providerId: PROVIDER_ID,
-    environment: input.environment,
-    status: 'configured',
-    enabled: true,
-    encryptedCredential: encryptIntegrationSecret({ token }, getIntegrationMasterKey(), aad(canonicalStoreId, input.environment)),
-    tokenLast4: token.slice(-4),
-    updatedAt: FieldValue.serverTimestamp(),
-    ...(existing.exists ? {} : { createdAt: FieldValue.serverTimestamp() }),
-  }, { merge: true });
+  await ref.set({ id, canonicalStoreId, providerId: PROVIDER_ID, environment: input.environment, status: 'configured', enabled: true, encryptedCredential: encryptIntegrationSecret({ token }, getIntegrationMasterKey(), aad(canonicalStoreId, input.environment)), tokenLast4: token.slice(-4), updatedAt: FieldValue.serverTimestamp(), ...(existing.exists ? {} : { createdAt: FieldValue.serverTimestamp() }) }, { merge: true });
   return { canonicalStoreId, providerId: PROVIDER_ID, environment: input.environment, configured: true, status: 'configured', tokenLast4: token.slice(-4) };
+};
+
+export const loadFiscalIssuerCredentialMetadata = async (canonicalStoreIdInput: string, environment: ManagedFiscalIssuerEnvironment): Promise<FiscalIssuerCredentialMetadata | null> => {
+  const canonicalStoreId = clean(canonicalStoreIdInput);
+  if (!canonicalStoreId) return null;
+  const snapshot = await adminDb.doc(`${COLLECTION}/${documentId(canonicalStoreId, environment)}`).get();
+  return metadataFrom(snapshot.data());
+};
+
+export const markFiscalIssuerCredentialValidation = async (input: { canonicalStoreId: string; environment: ManagedFiscalIssuerEnvironment; ok: boolean; code: string }): Promise<void> => {
+  const canonicalStoreId = clean(input.canonicalStoreId);
+  if (!canonicalStoreId) throw new Error('FISCAL_ISSUER_STORE_REQUIRED');
+  await adminDb.doc(`${COLLECTION}/${documentId(canonicalStoreId, input.environment)}`).set({ status: input.ok ? 'validated' : 'error', lastValidationCode: clean(input.code), lastValidatedAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp() }, { merge: true });
 };
