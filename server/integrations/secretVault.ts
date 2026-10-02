@@ -88,6 +88,12 @@ export const decryptIntegrationSecret = <T>(
   return JSON.parse(plaintext) as T;
 };
 
+/** Server-only convenience wrapper so integration stores do not duplicate key handling. */
+export const resolveEncryptedIntegrationSecret = <T>(
+  envelope: EncryptedSecretEnvelope,
+  associatedData: string
+): T => decryptIntegrationSecret<T>(envelope, getIntegrationMasterKey(), associatedData);
+
 export const createOpenDeliverySignature = (
   rawBody: Buffer,
   clientSecret: string
