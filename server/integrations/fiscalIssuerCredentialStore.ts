@@ -1,6 +1,6 @@
 import { FieldValue } from 'firebase-admin/firestore';
 import { adminDb } from '../firebaseAdmin.js';
-import { encryptIntegrationSecret, getIntegrationMasterKey, type EncryptedSecretEnvelope } from './secretVault.js';
+import { encryptIntegrationSecret, getIntegrationMasterKey, resolveEncryptedIntegrationSecret, type EncryptedSecretEnvelope } from './secretVault.js';
 import type { ManagedFiscalIssuerEnvironment } from './fiscalManagedProviderControlPlane.js';
 
 const COLLECTION = 'fiscalIssuerCredentials';
@@ -32,14 +32,19 @@ export interface FiscalIssuerCredentialMetadata {
   lastValidationCode?: string;
 }
 
-const metadataFrom = (value: unknown): FiscalIssuerCredentialMetadata | null => {
+const storedFrom = (value: unknown): StoredIssuerCredentialDocument | null => {
   if (!value || typeof value !== 'object') return null;
   const document = value as Partial<StoredIssuerCredentialDocument>;
-  const canonicalStoreId = clean(document.canonicalStoreId);
-  if (!canonicalStoreId || document.providerId !== PROVIDER_ID) return null;
+  if (!clean(document.id) || !clean(document.canonicalStoreId) || document.providerId !== PROVIDER_ID || !document.encryptedCredential) return null;
   if (document.environment !== 'homologation' && document.environment !== 'production') return null;
   if (!document.status) return null;
-  return { canonicalStoreId, providerId: PROVIDER_ID, environment: document.environment, configured: true, status: document.status, tokenLast4: clean(document.tokenLast4), lastValidationCode: clean(document.lastValidationCode) || undefined };
+  return document as StoredIssuerCredentialDocument;
+};
+
+const metadataFrom = (value: unknown): FiscalIssuerCredentialMetadata | null => {
+  const document = storedFrom(value);
+  if (!document) return null;
+  return { canonicalStoreId: clean(document.canonicalStoreId), providerId: PROVIDER_ID, environment: document.environment, configured: true, status: document.status, tokenLast4: clean(document.tokenLast4), lastValidationCode: clean(document.lastValidationCode) || undefined };
 };
 
 export const saveFiscalIssuerCredential = async (input: { canonicalStoreId: string; environment: ManagedFiscalIssuerEnvironment; token: unknown }): Promise<FiscalIssuerCredentialMetadata> => {
@@ -60,6 +65,17 @@ export const loadFiscalIssuerCredentialMetadata = async (canonicalStoreIdInput: 
   if (!canonicalStoreId) return null;
   const snapshot = await adminDb.doc(`${COLLECTION}/${documentId(canonicalStoreId, environment)}`).get();
   return metadataFrom(snapshot.data());
+};
+
+export const resolveFiscalIssuerCredential = async (canonicalStoreIdInput: string, environment: ManagedFiscalIssuerEnvironment): Promise<{ token: string } | null> => {
+  const canonicalStoreId = clean(canonicalStoreIdInput);
+  if (!canonicalStoreId) return null;
+  const snapshot = await adminDb.doc(`${COLLECTION}/${documentId(canonicalStoreId, environment)}`).get();
+  const document = storedFrom(snapshot.data());
+  if (!document || document.enabled !== true || document.status === 'disabled') return null;
+  const resolved = resolveEncryptedIntegrationSecret<{ token: string }>(document.encryptedCredential, aad(canonicalStoreId, environment));
+  const token = clean(resolved?.token);
+  return token ? { token } : null;
 };
 
 export const markFiscalIssuerCredentialValidation = async (input: { canonicalStoreId: string; environment: ManagedFiscalIssuerEnvironment; ok: boolean; code: string }): Promise<void> => {
