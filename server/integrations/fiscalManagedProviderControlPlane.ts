@@ -1,5 +1,6 @@
 export type ManagedFiscalProviderId = 'focus-nfe';
 export type ManagedFiscalDocumentFamily = 'nfce';
+export type ManagedFiscalIssuerEnvironment = 'homologation' | 'production';
 
 export interface ManagedFiscalProviderPlatformConfig {
   schemaVersion: 1;
@@ -15,8 +16,8 @@ export interface ManagedFiscalStoreEnrollment {
   canonicalStoreId: string;
   providerId: ManagedFiscalProviderId;
   documentFamily: ManagedFiscalDocumentFamily;
-  environment: 'production';
-  status: 'disabled' | 'prepared' | 'production_authorized' | 'suspended';
+  environment: ManagedFiscalIssuerEnvironment;
+  status: 'disabled' | 'prepared' | 'homologation_ready' | 'production_authorized' | 'suspended';
   authority: 'server_owned_managed_fiscal_store_enrollment';
 }
 
@@ -24,6 +25,7 @@ export interface ManagedFiscalProviderReadiness {
   providerId: ManagedFiscalProviderId;
   providerReady: boolean;
   storeReady: boolean;
+  homologationTrafficAllowed: boolean;
   productionTrafficAllowed: boolean;
   blockers: string[];
 }
@@ -33,8 +35,8 @@ const clean = (value: unknown, maxLength = 320): string =>
 
 /**
  * Control-plane projection for Kyrub Fiscal.
- * This is intentionally provider-management only: it exposes no credential
- * value and cannot create the runtime production capability used by transport.
+ * Platform/master authority remains production-only, while issuer enrollment
+ * may be prepared and validated in homologation without minting production authority.
  */
 export const managedFiscalProviderReadiness = (input: {
   canonicalStoreId: string;
@@ -57,15 +59,26 @@ export const managedFiscalProviderReadiness = (input: {
   );
   if (!providerReady) blockers.push('provider_not_ready');
 
-  const storeReady = Boolean(
+  const enrollmentMatches = Boolean(
     enrollment &&
     enrollment.schemaVersion === 1 &&
     clean(enrollment.canonicalStoreId, 160) === canonicalStoreId &&
     enrollment.providerId === 'focus-nfe' &&
     enrollment.documentFamily === 'nfce' &&
-    enrollment.environment === 'production' &&
-    enrollment.status === 'production_authorized' &&
     enrollment.authority === 'server_owned_managed_fiscal_store_enrollment'
+  );
+
+  const homologationTrafficAllowed = Boolean(
+    providerReady &&
+    enrollmentMatches &&
+    enrollment?.environment === 'homologation' &&
+    enrollment.status === 'homologation_ready'
+  );
+
+  const storeReady = Boolean(
+    enrollmentMatches &&
+    enrollment?.environment === 'production' &&
+    enrollment.status === 'production_authorized'
   );
   if (!storeReady) blockers.push('store_not_production_authorized');
 
@@ -73,7 +86,8 @@ export const managedFiscalProviderReadiness = (input: {
     providerId: 'focus-nfe',
     providerReady,
     storeReady,
-    // Deliberately false: the admin projection cannot mint transport authority.
+    homologationTrafficAllowed,
+    // Deliberately false: admin/control-plane state cannot mint runtime production authority.
     productionTrafficAllowed: false,
     blockers,
   };
