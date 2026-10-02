@@ -48,6 +48,22 @@ export default async function handler(request: RequestLike, response: ResponseLi
     return;
   }
 
+  if (transport === 'fiscal-issuer-status' || transport === 'fiscal-issuer-credentials' || transport === 'fiscal-issuer-validate') {
+    const expectedMethod = transport === 'fiscal-issuer-status' ? 'GET' : 'POST';
+    if (method !== expectedMethod) { response.status(405).json({ error: 'Método não permitido.', code: 'METHOD_NOT_ALLOWED' }); return; }
+    let mapError: ((error: unknown) => HttpErrorResult) | null = null;
+    try {
+      const fiscal = await import('../../../server/admin/fiscalIssuerCredentialService.js');
+      mapError = fiscal.mapFiscalIssuerCredentialError;
+      const body = bodyRecord(request.body);
+      const canonicalStoreId = method === 'GET' ? headerValue(request.query?.canonicalStoreId) : body.canonicalStoreId;
+      if (transport === 'fiscal-issuer-status') { response.status(200).json(await fiscal.loadAuthorizedFiscalIssuerCredentialStatus({ authorization, canonicalStoreId })); return; }
+      if (transport === 'fiscal-issuer-credentials') { response.status(200).json(await fiscal.saveAuthorizedFiscalIssuerCredential({ authorization, canonicalStoreId, token: body.token })); return; }
+      const result = await fiscal.validateAuthorizedFiscalIssuerCredential({ authorization, canonicalStoreId }); response.status(result.ok ? 200 : 422).json(result);
+    } catch (error) { const mapped = mapError ? mapError(error) : unavailable('Não foi possível configurar o emitente fiscal agora.'); response.status(mapped.status).json(mapped.body); }
+    return;
+  }
+
   if (transport === 'fiscal-store-prepare') {
     if (method !== 'POST') { response.status(405).json({ error: 'Método não permitido.', code: 'METHOD_NOT_ALLOWED' }); return; }
     let mapError: ((error: unknown) => HttpErrorResult) | null = null;
