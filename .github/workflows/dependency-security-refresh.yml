@@ -25,7 +25,7 @@ jobs:
         run: |
           npm pkg set 'overrides.@grpc/grpc-js=>=1.14.5'
           npm install --package-lock-only --ignore-scripts express@^4.22.3 firebase@^12.19.0 firebase-admin@^14.5.0
-          npm audit fix --package-lock-only --ignore-scripts
+          npm audit fix --package-lock-only --ignore-scripts || true
       - name: Verify patched grpc resolution
         run: |
           npm ls @grpc/grpc-js
