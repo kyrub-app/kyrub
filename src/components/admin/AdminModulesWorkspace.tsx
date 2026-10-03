@@ -10,7 +10,7 @@ interface AdminModuleDefinition { label: string; description: string; permission
 const FOLDERS = [
   { id: 'people' as const, label: 'Pessoas & Tenants', description: 'Usuários, lojas, identidade e vínculos administrativos.', icon: Users },
   { id: 'platform_finance' as const, label: 'Financeiro da Plataforma', description: 'BaaS, taxas da plataforma, splits, settlement e conciliação sistêmica.', icon: Banknote },
-  { id: 'operations' as const, label: 'Operações', description: 'Saúde, logística e controles técnicos da plataforma.', icon: Activity },
+  { id: 'operations' as const, label: 'Operações & Infraestrutura', description: 'Saúde, logística e controles técnicos da plataforma.', icon: Activity },
   { id: 'governance' as const, label: 'Governança', description: 'Auditoria, compliance, segurança, capacidades e políticas.', icon: ShieldCheck },
 ] as const;
 const MODULES: AdminModuleDefinition[] = [
