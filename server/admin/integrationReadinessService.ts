@@ -4,6 +4,7 @@ import { verifyFirebaseIdToken } from '../ai/consultantAuth.js';
 import { adminDb } from '../firebaseAdmin.js';
 import { kyrubCredentialVaultConfig } from '../integrations/kyrubCredentialVault.js';
 import { loadPlatformCredentialMetadata } from '../integrations/platformCredentialStore.js';
+import { managedFiscalProviderReadiness, type ManagedFiscalProviderPlatformConfig, type ManagedFiscalStoreEnrollment } from '../integrations/fiscalManagedProviderControlPlane.js';
 import {
   isMercadoPagoPixConfigured,
   isMercadoPagoWebhookConfigured,
@@ -27,6 +28,7 @@ export interface AdminIntegrationReadinessSnapshot {
     googleSecretManagerAdapterEnabled: boolean;
     googleSecretManagerState: 'disabled' | 'adapter-enabled-unverified';
   };
+  fiscal: ReturnType<typeof managedFiscalProviderReadiness>;
   providers: Array<{
     id: 'mercado_pago' | 'google_maps' | '99food' | 'lalamove';
     title: string;
@@ -81,11 +83,29 @@ const recordIntegrationReadinessAudit = async (admin: AuthorizedIntegrationAdmin
   });
 };
 
+const loadManagedFiscalReadiness = async () => {
+  const platformSnapshot = await adminDb.doc('kyrub_admin/control_plane/fiscal_providers/focus-nfe').get();
+  const platform = platformSnapshot.exists
+    ? platformSnapshot.data() as ManagedFiscalProviderPlatformConfig
+    : null;
+
+  // Store selection/enrollment is deliberately not inferred. Until the admin
+  // explicitly selects a store in the next control-plane step, readiness is
+  // fail-closed and cannot imply that any tenant is production-authorized.
+  const enrollment: ManagedFiscalStoreEnrollment | null = null;
+  return managedFiscalProviderReadiness({
+    canonicalStoreId: '',
+    platform,
+    enrollment,
+  });
+};
+
 export const loadIntegrationReadinessSnapshot = async (): Promise<AdminIntegrationReadinessSnapshot> => {
-  const [ninetyNine, mercadoPagoVault, googleMapsVault] = await Promise.all([
+  const [ninetyNine, mercadoPagoVault, googleMapsVault, fiscal] = await Promise.all([
     loadProviderStatuses('99food'),
     loadPlatformCredentialMetadata('mercado_pago', 'production'),
     loadPlatformCredentialMetadata('google_maps', 'production'),
+    loadManagedFiscalReadiness(),
   ]);
   const vault = kyrubCredentialVaultConfig();
   const envCheckout = isMercadoPagoPixConfigured();
@@ -107,6 +127,7 @@ export const loadIntegrationReadinessSnapshot = async (): Promise<AdminIntegrati
       googleSecretManagerAdapterEnabled: vault.enabled,
       googleSecretManagerState: vault.enabled ? 'adapter-enabled-unverified' : 'disabled',
     },
+    fiscal,
     providers: [
       {
         id: 'mercado_pago',

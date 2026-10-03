@@ -13,6 +13,8 @@ export type StorePayableCategory =
   | 'other';
 export type ManualStorePayableCategory = Exclude<StorePayableCategory, 'payroll'>;
 export type StorePayableRecurrence = 'none' | 'monthly';
+export type StorePayableCostNature = 'unspecified' | 'fixed' | 'variable';
+export type StorePayableBillingDocumentType = 'none' | 'boleto' | 'invoice' | 'other';
 
 export type StorePayable = {
   id: string;
@@ -24,7 +26,15 @@ export type StorePayable = {
   counterparty: string;
   dueDate: string;
   recurrence: StorePayableRecurrence;
-  sourceAuthority: 'store_owner_manual' | 'payroll_compensation_snapshot';
+  costNature: StorePayableCostNature;
+  billingDocumentType: StorePayableBillingDocumentType;
+  billingDocumentReference: string;
+  billingDigitableLine: string;
+  billingBarcode: string;
+  sourceAuthority: 'store_owner_manual' | 'payroll_compensation_snapshot' | 'store_purchase';
+  purchaseId: string;
+  supplierId: string;
+  purchasePayableKey: string;
   teamStoreId: string;
   teamMemberUserId: string;
   payrollPeriod: string;
@@ -76,6 +86,19 @@ const categoryLabel = (category: StorePayableCategory): string => ({
   payroll: 'Folha / remuneração',
   other: 'Outros',
 }[category]);
+
+const costNatureLabel = (nature: StorePayableCostNature): string => ({
+  unspecified: 'Não classificado',
+  fixed: 'Custo fixo',
+  variable: 'Custo variável',
+}[nature]);
+
+const billingDocumentLabel = (type: StorePayableBillingDocumentType): string => ({
+  none: 'Sem documento',
+  boleto: 'Boleto',
+  invoice: 'Nota / fatura',
+  other: 'Outro documento',
+}[type]);
 
 const amountToMinor = (value: string): number | null => {
   const normalized = value.trim().replace(/\s/g, '').replace(',', '.');
@@ -155,6 +178,11 @@ export default function StorePayablesWorkspace({
   const [category, setCategory] = useState<ManualStorePayableCategory>('supplier');
   const [counterparty, setCounterparty] = useState('');
   const [recurrence, setRecurrence] = useState<StorePayableRecurrence>('none');
+  const [costNature, setCostNature] = useState<StorePayableCostNature>('unspecified');
+  const [billingDocumentType, setBillingDocumentType] = useState<StorePayableBillingDocumentType>('none');
+  const [billingDocumentReference, setBillingDocumentReference] = useState('');
+  const [billingDigitableLine, setBillingDigitableLine] = useState('');
+  const [billingBarcode, setBillingBarcode] = useState('');
   const [saving, setSaving] = useState(false);
   const [changingId, setChangingId] = useState('');
   const [feedback, setFeedback] = useState('');
@@ -182,12 +210,28 @@ export default function StorePayablesWorkspace({
         category,
         counterparty: counterparty.trim(),
         recurrence,
+        costNature,
+        billingDocumentType,
+        billingDocumentReference: billingDocumentType === 'none'
+          ? ''
+          : billingDocumentReference.trim(),
+        billingDigitableLine: billingDocumentType === 'boleto'
+          ? billingDigitableLine.trim()
+          : '',
+        billingBarcode: billingDocumentType === 'boleto'
+          ? billingBarcode.trim()
+          : '',
       });
       setDescription('');
       setAmount('');
       setDueDate('');
       setCounterparty('');
       setRecurrence('none');
+      setCostNature('unspecified');
+      setBillingDocumentType('none');
+      setBillingDocumentReference('');
+      setBillingDigitableLine('');
+      setBillingBarcode('');
       setFeedback('Conta registrada no financeiro da loja.');
       await onReload();
     } catch (caught) {
@@ -230,7 +274,7 @@ export default function StorePayablesWorkspace({
         </span>
         <h4 className="mt-1 text-xs font-black uppercase">Despesas e compromissos da loja</h4>
         <p className="mt-2 text-[9px] leading-relaxed text-slate-400">
-          Estes registros pertencem ao financeiro canônico da loja e só são criados pelo proprietário. Uma conta marcada como mensal registra a recorrência, mas não cria parcelas futuras escondidas automaticamente.
+          Estes registros pertencem ao financeiro canônico da loja e só são criados pelo proprietário. Recorrência e natureza do custo são independentes: uma despesa mensal pode ser fixa ou variável. O Kyrub não cria parcelas futuras escondidas automaticamente.
         </p>
       </div>
 
@@ -264,7 +308,7 @@ export default function StorePayablesWorkspace({
         <div className="mb-3">
           <h5 className="text-[10px] font-black uppercase text-slate-200">Registrar nova conta</h5>
           <p className="mt-1 text-[8px] leading-relaxed text-slate-600">
-            Folha e remuneração são geradas pelo RH e aparecem aqui como obrigações vinculadas ao colaborador; este formulário continua reservado às demais despesas da loja.
+            Folha e remuneração são geradas pelo RH. Compras podem chegar aqui vinculadas pelo Estoque; este formulário continua reservado ao lançamento manual das demais despesas da loja.
           </p>
         </div>
 
@@ -319,6 +363,19 @@ export default function StorePayablesWorkspace({
           </label>
 
           <label className="min-w-0 text-[8px] font-black uppercase text-slate-500">
+            Natureza do custo
+            <select
+              value={costNature}
+              onChange={event => setCostNature(event.target.value as StorePayableCostNature)}
+              className="mt-1 min-h-10 w-full min-w-0 rounded-xl border border-slate-700 bg-slate-900 px-3 text-[10px] font-medium normal-case text-white outline-none focus:border-amber-400"
+            >
+              <option value="unspecified">Não classificado</option>
+              <option value="fixed">Fixo</option>
+              <option value="variable">Variável</option>
+            </select>
+          </label>
+
+          <label className="min-w-0 text-[8px] font-black uppercase text-slate-500">
             Recorrência
             <select
               value={recurrence}
@@ -327,6 +384,28 @@ export default function StorePayablesWorkspace({
             >
               <option value="none">Não recorrente</option>
               <option value="monthly">Mensal</option>
+            </select>
+          </label>
+
+          <label className="min-w-0 text-[8px] font-black uppercase text-slate-500">
+            Documento de cobrança
+            <select
+              value={billingDocumentType}
+              onChange={event => {
+                const next = event.target.value as StorePayableBillingDocumentType;
+                setBillingDocumentType(next);
+                if (next === 'none') setBillingDocumentReference('');
+                if (next !== 'boleto') {
+                  setBillingDigitableLine('');
+                  setBillingBarcode('');
+                }
+              }}
+              className="mt-1 min-h-10 w-full min-w-0 rounded-xl border border-slate-700 bg-slate-900 px-3 text-[10px] font-medium normal-case text-white outline-none focus:border-amber-400"
+            >
+              <option value="none">Sem documento informado</option>
+              <option value="boleto">Boleto</option>
+              <option value="invoice">Nota / fatura</option>
+              <option value="other">Outro</option>
             </select>
           </label>
 
@@ -339,6 +418,42 @@ export default function StorePayablesWorkspace({
               className="mt-1 min-h-10 w-full min-w-0 rounded-xl border border-slate-700 bg-slate-900 px-3 text-[10px] font-medium normal-case text-white outline-none focus:border-amber-400"
             />
           </label>
+
+          {billingDocumentType !== 'none' && (
+            <label className="min-w-0 text-[8px] font-black uppercase text-slate-500 md:col-span-2">
+              Referência do documento / anexo
+              <input
+                value={billingDocumentReference}
+                onChange={event => setBillingDocumentReference(event.target.value)}
+                maxLength={500}
+                className="mt-1 min-h-10 w-full min-w-0 rounded-xl border border-slate-700 bg-slate-900 px-3 text-[10px] font-medium normal-case text-white outline-none focus:border-amber-400"
+                placeholder="Número, URL ou referência do arquivo"
+              />
+            </label>
+          )}
+
+          {billingDocumentType === 'boleto' && (
+            <>
+              <label className="min-w-0 text-[8px] font-black uppercase text-slate-500 md:col-span-2">
+                Linha digitável
+                <input
+                  value={billingDigitableLine}
+                  onChange={event => setBillingDigitableLine(event.target.value)}
+                  maxLength={220}
+                  className="mt-1 min-h-10 w-full min-w-0 rounded-xl border border-slate-700 bg-slate-900 px-3 text-[10px] font-medium normal-case text-white outline-none focus:border-amber-400"
+                />
+              </label>
+              <label className="min-w-0 text-[8px] font-black uppercase text-slate-500 md:col-span-2">
+                Código de barras
+                <input
+                  value={billingBarcode}
+                  onChange={event => setBillingBarcode(event.target.value)}
+                  maxLength={220}
+                  className="mt-1 min-h-10 w-full min-w-0 rounded-xl border border-slate-700 bg-slate-900 px-3 text-[10px] font-medium normal-case text-white outline-none focus:border-amber-400"
+                />
+              </label>
+            </>
+          )}
         </div>
 
         <button
@@ -392,9 +507,24 @@ export default function StorePayablesWorkspace({
                             Mensal
                           </span>
                         )}
+                        {payable.costNature !== 'unspecified' && (
+                          <span className="rounded-full border border-amber-500/20 bg-amber-500/10 px-2 py-1 text-[7px] font-black uppercase text-amber-200">
+                            {costNatureLabel(payable.costNature)}
+                          </span>
+                        )}
+                        {payable.billingDocumentType !== 'none' && (
+                          <span className="rounded-full border border-cyan-500/20 bg-cyan-500/10 px-2 py-1 text-[7px] font-black uppercase text-cyan-200">
+                            {billingDocumentLabel(payable.billingDocumentType)}
+                          </span>
+                        )}
                         {payable.sourceAuthority === 'payroll_compensation_snapshot' && (
                           <span className="rounded-full border border-pink-500/20 bg-pink-500/10 px-2 py-1 text-[7px] font-black uppercase text-pink-200">
                             RH / Folha
+                          </span>
+                        )}
+                        {payable.sourceAuthority === 'store_purchase' && (
+                          <span className="rounded-full border border-orange-500/20 bg-orange-500/10 px-2 py-1 text-[7px] font-black uppercase text-orange-200">
+                            Compra vinculada
                           </span>
                         )}
                       </div>
@@ -404,9 +534,27 @@ export default function StorePayablesWorkspace({
                       {payable.payrollPeriod && (
                         <p className="mt-1 text-[8px] text-violet-300/70">Competência: {payable.payrollPeriod}</p>
                       )}
+                      {payable.purchaseId && (
+                        <p className="mt-1 text-[8px] text-orange-300/70">Compra: {payable.purchaseId}</p>
+                      )}
                       {payable.counterparty && (
                         <p className="mt-1 max-w-full break-words text-[8px] text-slate-600 [overflow-wrap:anywhere]">
                           Favorecido: {payable.counterparty}
+                        </p>
+                      )}
+                      {payable.billingDocumentReference && (
+                        <p className="mt-1 max-w-full break-words text-[8px] text-slate-600 [overflow-wrap:anywhere]">
+                          Documento: {payable.billingDocumentReference}
+                        </p>
+                      )}
+                      {payable.billingDigitableLine && (
+                        <p className="mt-1 max-w-full break-all font-mono text-[8px] text-slate-600">
+                          Linha digitável: {payable.billingDigitableLine}
+                        </p>
+                      )}
+                      {payable.billingBarcode && (
+                        <p className="mt-1 max-w-full break-all font-mono text-[8px] text-slate-600">
+                          Código de barras: {payable.billingBarcode}
                         </p>
                       )}
                       {payable.status === 'paid' && payable.paidAt && (

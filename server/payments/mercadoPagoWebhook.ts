@@ -1,3 +1,4 @@
+import { adminDb } from '../firebaseAdmin.js';
 import { processVerifiedPaymentWebhook } from './paymentWebhookProcessor.js';
 import {
   isMercadoPagoWebhookRuntimeConfigured,
@@ -6,6 +7,7 @@ import {
 import { verifiedStoreScopedMercadoPagoPaymentEvent } from './mercadoPagoStoreScopedProvider.js';
 import { settleMarketplaceOperationalOrderAfterPayment } from './marketplaceOrderPaymentSettlementService.js';
 import { syncPersistedCustomerOrderIntoCrm } from './storeCrmOrderSyncService.js';
+import { writeOperationalOrderRefundState } from './orderRefundStateService.js';
 import {
   markMarketplaceOrderInventoryReservationPaymentConfirmed,
   releaseMarketplaceReservationForTerminalPayment,
@@ -28,6 +30,65 @@ export interface MercadoPagoWebhookErrorResult {
   status: number;
   body: { error: string };
 }
+
+const clean = (value: unknown): string =>
+  typeof value === 'string' ? value.trim() : '';
+
+const projectRefundConfirmation = async (input: {
+  storeId: string;
+  paymentId: string;
+  provider: string;
+  amount: number;
+  occurredAt: string;
+  eventId: string;
+}): Promise<string> => {
+  const paymentRef = adminDb.doc(
+    `stores/${input.storeId}/payments/${input.paymentId}`
+  );
+  const paymentSnapshot = await paymentRef.get();
+  if (!paymentSnapshot.exists) return '';
+  const payment = paymentSnapshot.data() as Record<string, unknown>;
+  const orderId = clean(payment.orderId);
+  if (!orderId) return '';
+
+  await writeOperationalOrderRefundState({
+    storeId: input.storeId,
+    orderId,
+    paymentId: input.paymentId,
+    provider: input.provider,
+    amount: input.amount,
+    status: 'refunded',
+    refundedAt: input.occurredAt,
+  });
+
+  const refundRef = adminDb.doc(
+    `stores/${input.storeId}/paymentRefunds/${input.paymentId}`
+  );
+  const refundSnapshot = await refundRef.get();
+  if (refundSnapshot.exists) {
+    await refundRef.set({
+      status: 'refunded',
+      providerEventId: input.eventId,
+      refundedAt: input.occurredAt,
+      updatedAt: new Date().toISOString(),
+    }, { merge: true });
+  }
+  return orderId;
+};
+
+const syncWebhookOrderIntoCrm = async (
+  storeId: string,
+  orderId: string
+): Promise<void> => {
+  try {
+    await syncPersistedCustomerOrderIntoCrm({ storeId, orderId });
+  } catch (error) {
+    console.warn(
+      '[Mercado Pago Webhook] Pagamento e pedido confirmados; CRM ficará para a reconciliação.',
+      error instanceof Error ? error.message : String(error)
+    );
+  }
+};
 
 export const processMercadoPagoWebhook = async (input: {
   headers: Record<string, string | string[] | undefined>;
@@ -74,6 +135,7 @@ export const processMercadoPagoWebhook = async (input: {
     event,
   });
 
+  let effectiveOrderId = result.orderId;
   if (event.eventType === 'payment.paid' && result.orderId) {
     await settleMarketplaceOperationalOrderAfterPayment({
       storeId: event.kyrubStoreId,
@@ -85,6 +147,15 @@ export const processMercadoPagoWebhook = async (input: {
       event.kyrubStoreId,
       result.orderId
     );
+  } else if (event.eventType === 'refund.succeeded') {
+    effectiveOrderId = await projectRefundConfirmation({
+      storeId: event.kyrubStoreId,
+      paymentId: event.kyrubPaymentId,
+      provider: event.provider,
+      amount: event.amount,
+      occurredAt: event.occurredAt,
+      eventId: event.eventId,
+    });
   } else if (
     event.eventType === 'payment.failed' ||
     event.eventType === 'payment.expired' ||
@@ -100,17 +171,9 @@ export const processMercadoPagoWebhook = async (input: {
   await attachPreparedCustomerDestinationResolutionToOperationalOrder(preparedDestination);
 
   if (result.orderId) {
-    try {
-      await syncPersistedCustomerOrderIntoCrm({
-        storeId: event.kyrubStoreId,
-        orderId: result.orderId,
-      });
-    } catch (error) {
-      console.warn(
-        '[Mercado Pago Webhook] Pagamento e pedido confirmados; CRM ficará para a reconciliação.',
-        error instanceof Error ? error.message : String(error)
-      );
-    }
+    await syncWebhookOrderIntoCrm(event.kyrubStoreId, result.orderId);
+  } else if (effectiveOrderId) {
+    await syncWebhookOrderIntoCrm(event.kyrubStoreId, effectiveOrderId);
   }
 
   return {
@@ -118,7 +181,7 @@ export const processMercadoPagoWebhook = async (input: {
     processed: true,
     duplicate: result.duplicate,
     paymentId: result.paymentId,
-    orderId: result.orderId,
+    orderId: effectiveOrderId,
     orderMaterialized: result.orderMaterialized,
   };
 };

@@ -6,14 +6,19 @@ import {
   getProductInventoryDocumentPath,
   readProductInventorySettings,
   type InventoryCatalogItem,
+  type PurchaseListEntry,
 } from '../../utils/productInventory';
 import { ProductPurchaseList } from './ProductPurchaseList';
 
 interface StorePurchaseWorkspaceProps {
   storeId: string;
+  onPreparePurchaseDraft?: (entries: PurchaseListEntry[]) => void;
 }
 
-export function StorePurchaseWorkspace({ storeId }: StorePurchaseWorkspaceProps) {
+export function StorePurchaseWorkspace({
+  storeId,
+  onPreparePurchaseDraft,
+}: StorePurchaseWorkspaceProps) {
   const [catalog, setCatalog] = useState<InventoryCatalogItem[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState('');
@@ -52,10 +57,10 @@ export function StorePurchaseWorkspace({ storeId }: StorePurchaseWorkspaceProps)
           Reposição da loja
         </span>
         <h4 className="mt-1 text-sm font-black uppercase text-white">
-          Compras
+          Lista de compras
         </h4>
         <p className="mt-1 max-w-2xl text-[10px] leading-relaxed text-slate-500">
-          Esta visão considera o estoque inteiro da loja. Um insumo usado por vários produtos aparece uma única vez na necessidade de reposição.
+          Esta visão considera o estoque inteiro da loja. Um insumo usado por vários produtos aparece uma única vez na necessidade de reposição. A lista ainda representa necessidade de compra; ela não registra pedido ao fornecedor nem entrada física por si só.
         </p>
       </header>
 
@@ -70,7 +75,10 @@ export function StorePurchaseWorkspace({ storeId }: StorePurchaseWorkspaceProps)
           Calculando necessidades de reposição…
         </p>
       ) : (
-        <ProductPurchaseList catalog={catalog} />
+        <ProductPurchaseList
+          catalog={catalog}
+          onPreparePurchaseDraft={onPreparePurchaseDraft}
+        />
       )}
     </section>
   );

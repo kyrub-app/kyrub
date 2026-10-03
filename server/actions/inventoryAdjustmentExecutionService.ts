@@ -12,6 +12,12 @@ import {
   type KyrubExactInventoryAdjustmentEntry,
   type KyrubExactInventoryAdjustmentProposal,
 } from '../../shared/exactInventoryAdjustment.js';
+import {
+  applyMovingAverageInventoryIntake,
+  applyMovingAverageInventoryOutflow,
+  normalizeInventoryCostBasis,
+  type InventoryCostBasisFields,
+} from '../../shared/inventoryCostBasis.js';
 import { verifyFirebaseIdToken } from '../ai/consultantAuth.js';
 import { adminDb } from '../firebaseAdmin.js';
 import { KyrubActionExecutionError } from './actionExecutionService.js';
@@ -25,7 +31,7 @@ type InventoryItemRecord = {
   purchaseCost: number;
   supplier: string;
   updatedAt: string;
-};
+} & Partial<InventoryCostBasisFields>;
 
 type InventoryMovementLine = {
   itemId: string;
@@ -35,6 +41,14 @@ type InventoryMovementLine = {
   previousQuantity: number;
   resultingQuantity: number;
   purchaseCost?: number;
+  costBasisStatus?: 'complete' | 'incomplete';
+  unitCostMinor?: number | null;
+  totalCostMinor?: number | null;
+  inventoryValueBeforeMinor?: number | null;
+  inventoryValueAfterMinor?: number | null;
+  averageUnitCostBeforeMinor?: number | null;
+  averageUnitCostAfterMinor?: number | null;
+  lastPurchaseUnitCostMinor?: number | null;
 };
 
 type RecentInventoryMovement = {
@@ -233,7 +247,7 @@ const normalizeInventoryItem = (value: unknown): InventoryItemRecord | null => {
   if (!id || !name || !isUnit(unit) || currentQuantity === null || minimumQuantity === null) {
     return null;
   }
-  return {
+  const base: InventoryItemRecord = {
     id,
     name,
     unit,
@@ -244,7 +258,28 @@ const normalizeInventoryItem = (value: unknown): InventoryItemRecord | null => {
       : 0,
     supplier: cleanText(value.supplier, 160),
     updatedAt: cleanText(value.updatedAt, 80),
+    costBasisStatus:
+      value.costBasisStatus === 'complete' || value.costBasisStatus === 'incomplete'
+        ? value.costBasisStatus
+        : undefined,
+    averageUnitCostMinor:
+      typeof value.averageUnitCostMinor === 'number' && Number.isFinite(value.averageUnitCostMinor)
+        ? Math.max(0, value.averageUnitCostMinor)
+        : null,
+    lastPurchaseUnitCostMinor:
+      typeof value.lastPurchaseUnitCostMinor === 'number' && Number.isFinite(value.lastPurchaseUnitCostMinor)
+        ? Math.max(0, value.lastPurchaseUnitCostMinor)
+        : null,
+    inventoryValueMinor:
+      typeof value.inventoryValueMinor === 'number' && Number.isSafeInteger(value.inventoryValueMinor)
+        ? Math.max(0, value.inventoryValueMinor)
+        : null,
+    costBasisSource: typeof value.costBasisSource === 'string'
+      ? value.costBasisSource as InventoryItemRecord['costBasisSource']
+      : undefined,
+    costBasisUpdatedAt: cleanText(value.costBasisUpdatedAt, 80),
   };
+  return { ...base, ...normalizeInventoryCostBasis(base) };
 };
 
 const normalizeMovementLine = (value: unknown): InventoryMovementLine | null => {
@@ -272,6 +307,38 @@ const normalizeMovementLine = (value: unknown): InventoryMovementLine | null => 
     quantityDelta,
     previousQuantity,
     resultingQuantity,
+    costBasisStatus:
+      value.costBasisStatus === 'complete' || value.costBasisStatus === 'incomplete'
+        ? value.costBasisStatus
+        : undefined,
+    unitCostMinor:
+      typeof value.unitCostMinor === 'number' && Number.isFinite(value.unitCostMinor)
+        ? Math.max(0, value.unitCostMinor)
+        : null,
+    totalCostMinor:
+      typeof value.totalCostMinor === 'number' && Number.isSafeInteger(value.totalCostMinor)
+        ? Math.max(0, value.totalCostMinor)
+        : null,
+    inventoryValueBeforeMinor:
+      typeof value.inventoryValueBeforeMinor === 'number' && Number.isSafeInteger(value.inventoryValueBeforeMinor)
+        ? Math.max(0, value.inventoryValueBeforeMinor)
+        : null,
+    inventoryValueAfterMinor:
+      typeof value.inventoryValueAfterMinor === 'number' && Number.isSafeInteger(value.inventoryValueAfterMinor)
+        ? Math.max(0, value.inventoryValueAfterMinor)
+        : null,
+    averageUnitCostBeforeMinor:
+      typeof value.averageUnitCostBeforeMinor === 'number' && Number.isFinite(value.averageUnitCostBeforeMinor)
+        ? Math.max(0, value.averageUnitCostBeforeMinor)
+        : null,
+    averageUnitCostAfterMinor:
+      typeof value.averageUnitCostAfterMinor === 'number' && Number.isFinite(value.averageUnitCostAfterMinor)
+        ? Math.max(0, value.averageUnitCostAfterMinor)
+        : null,
+    lastPurchaseUnitCostMinor:
+      typeof value.lastPurchaseUnitCostMinor === 'number' && Number.isFinite(value.lastPurchaseUnitCostMinor)
+        ? Math.max(0, value.lastPurchaseUnitCostMinor)
+        : null,
   };
 };
 
@@ -344,6 +411,28 @@ const resultingQuantityFor = (
   }
   return currentQuantity - requestedQuantity;
 };
+
+const movementLineFromSnapshot = (
+  existing: InventoryItemRecord,
+  resultingQuantity: number,
+  quantityDelta: number,
+  snapshot: ReturnType<typeof applyMovingAverageInventoryOutflow>['snapshot']
+): InventoryMovementLine => ({
+  itemId: existing.id,
+  name: existing.name,
+  unit: existing.unit,
+  quantityDelta,
+  previousQuantity: existing.currentQuantity,
+  resultingQuantity,
+  costBasisStatus: snapshot.costBasisStatus,
+  unitCostMinor: snapshot.unitCostMinor,
+  totalCostMinor: snapshot.totalCostMinor,
+  inventoryValueBeforeMinor: snapshot.inventoryValueBeforeMinor,
+  inventoryValueAfterMinor: snapshot.inventoryValueAfterMinor,
+  averageUnitCostBeforeMinor: snapshot.averageUnitCostBeforeMinor,
+  averageUnitCostAfterMinor: snapshot.averageUnitCostAfterMinor,
+  lastPurchaseUnitCostMinor: snapshot.lastPurchaseUnitCostMinor,
+});
 
 export const isKyrubInventoryAdjustmentExecutionRequest = (value: unknown): boolean => {
   if (!isRecord(value) || value.confirmed !== true || !isRecord(value.proposal)) return false;
@@ -429,23 +518,37 @@ export const executeAuthorizedKyrubInventoryAdjustment = async (
           );
         }
         const itemId = deterministicItemId(actor.uid, entry);
-        catalog.push({
+        const base: InventoryItemRecord = {
           id: itemId,
           name: entry.name,
           unit: entry.unit,
-          currentQuantity: entry.quantity,
+          currentQuantity: 0,
           minimumQuantity: 0,
-          purchaseCost: entry.purchaseCost ?? 0,
+          purchaseCost: 0,
           supplier: proposal.source.label ?? '',
+          updatedAt: now,
+        };
+        const economic = applyMovingAverageInventoryIntake(base, {
+          quantity: entry.quantity,
+          resultingQuantity: entry.quantity,
+          unitCostMinor: entry.purchaseCost === undefined
+            ? null
+            : Math.round(entry.purchaseCost * 100),
+          now,
+          source: 'manual_adjustment',
+        });
+        catalog.push({
+          ...economic.item,
+          currentQuantity: entry.quantity,
           updatedAt: now,
         });
         movementLines.push({
-          itemId,
-          name: entry.name,
-          unit: entry.unit,
-          quantityDelta: entry.quantity,
-          previousQuantity: 0,
-          resultingQuantity: entry.quantity,
+          ...movementLineFromSnapshot(
+            base,
+            entry.quantity,
+            entry.quantity,
+            economic.snapshot
+          ),
           ...(entry.purchaseCost !== undefined ? { purchaseCost: entry.purchaseCost } : {}),
         });
         continue;
@@ -470,24 +573,50 @@ export const executeAuthorizedKyrubInventoryAdjustment = async (
         existing.name
       );
       const quantityDelta = resultingQuantity - existing.currentQuantity;
+      const economic = quantityDelta > 0
+        ? applyMovingAverageInventoryIntake(existing, {
+            quantity: quantityDelta,
+            resultingQuantity,
+            unitCostMinor: proposal.mode === 'increment' && entry.purchaseCost !== undefined
+              ? Math.round(entry.purchaseCost * 100)
+              : null,
+            now,
+            source: 'manual_adjustment',
+          })
+        : quantityDelta < 0
+          ? applyMovingAverageInventoryOutflow(existing, {
+              quantity: Math.abs(quantityDelta),
+              resultingQuantity,
+              now,
+            })
+          : {
+              item: { ...existing, ...normalizeInventoryCostBasis(existing) },
+              snapshot: {
+                costBasisStatus: normalizeInventoryCostBasis(existing).costBasisStatus,
+                unitCostMinor: null,
+                totalCostMinor: 0,
+                inventoryValueBeforeMinor: normalizeInventoryCostBasis(existing).inventoryValueMinor,
+                inventoryValueAfterMinor: normalizeInventoryCostBasis(existing).inventoryValueMinor,
+                averageUnitCostBeforeMinor: normalizeInventoryCostBasis(existing).averageUnitCostMinor,
+                averageUnitCostAfterMinor: normalizeInventoryCostBasis(existing).averageUnitCostMinor,
+                lastPurchaseUnitCostMinor: normalizeInventoryCostBasis(existing).lastPurchaseUnitCostMinor,
+              },
+            };
       catalog[existingIndex] = {
-        ...existing,
+        ...economic.item,
         currentQuantity: resultingQuantity,
-        ...(proposal.mode === 'increment' && entry.purchaseCost !== undefined
-          ? { purchaseCost: entry.purchaseCost }
-          : {}),
         ...(proposal.mode === 'increment' && proposal.source.label && !existing.supplier
           ? { supplier: proposal.source.label }
           : {}),
         updatedAt: now,
       };
       movementLines.push({
-        itemId: existing.id,
-        name: existing.name,
-        unit: existing.unit,
-        quantityDelta,
-        previousQuantity: existing.currentQuantity,
-        resultingQuantity,
+        ...movementLineFromSnapshot(
+          existing,
+          resultingQuantity,
+          quantityDelta,
+          economic.snapshot
+        ),
         ...(proposal.mode === 'increment' && entry.purchaseCost !== undefined
           ? { purchaseCost: entry.purchaseCost }
           : {}),

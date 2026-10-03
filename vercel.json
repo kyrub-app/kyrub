@@ -62,12 +62,24 @@
       "destination": "/api/health?transport=store-promotions&surface=finance"
     },
     {
+      "source": "/api/store-finance/:path*",
+      "destination": "/api/health?transport=store-promotions&surface=finance&path=:path*"
+    },
+    {
       "source": "/api/store-payroll",
       "destination": "/api/health?transport=store-promotions&surface=payroll"
     },
     {
       "source": "/api/store-sales-analytics",
       "destination": "/api/health?transport=store-promotions&surface=sales-analytics"
+    },
+    {
+      "source": "/api/store-procurement",
+      "destination": "/api/health?transport=store-promotions&surface=procurement"
+    },
+    {
+      "source": "/api/store-procurement/:path*",
+      "destination": "/api/health?transport=store-promotions&surface=procurement&path=:path*"
     },
     {
       "source": "/api/marketplace-discovery/public/:slug",

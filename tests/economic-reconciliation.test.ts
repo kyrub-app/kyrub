@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { describe, test } from 'node:test';
+import './mercado-pago-receivables-reconciliation.test';
 import type { EconomicObligation } from '../shared/economicObligations';
 import type { EconomicSettlementRecord } from '../shared/economicSettlements';
 import {

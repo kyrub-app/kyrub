@@ -2,9 +2,11 @@ import type { User } from 'firebase/auth';
 import { doc, runTransaction, serverTimestamp } from 'firebase/firestore';
 import {
   calculateCompositionUnitCost,
+  calculateMarginGapPercentagePoints,
   calculateProductCostImpact,
   calculateSaleMarginPercent,
   calculateSuggestedPrice,
+  resolveInventoryPricingCost,
   roundCurrency,
 } from '../../shared/productPricing';
 import { db } from './firebase';
@@ -12,14 +14,17 @@ import { getProductInventoryDocumentPath } from './productInventory';
 
 export {
   calculateCompositionUnitCost,
+  calculateMarginGapPercentagePoints,
   calculateProductCostImpact,
   calculateSaleMarginPercent,
   calculateSuggestedPrice,
+  resolveInventoryPricingCost,
   roundCurrency,
 };
 
 export type ProductPricingSetting = {
   targetMarginPercent: number;
+  updatedAt?: string;
 };
 
 const validProductId = (value: string): boolean =>
@@ -30,6 +35,9 @@ const finitePercent = (value: unknown): number | null =>
     ? value
     : null;
 
+const clean = (value: unknown): string =>
+  typeof value === 'string' ? value.trim() : '';
+
 export const parseProductPricingSettings = (
   value: unknown
 ): Record<string, ProductPricingSetting> => {
@@ -39,9 +47,14 @@ export const parseProductPricingSettings = (
     if (!validProductId(productId) || !raw || typeof raw !== 'object' || Array.isArray(raw)) {
       continue;
     }
-    const margin = finitePercent((raw as Record<string, unknown>).targetMarginPercent);
+    const record = raw as Record<string, unknown>;
+    const margin = finitePercent(record.targetMarginPercent);
     if (margin === null) continue;
-    parsed[productId] = { targetMarginPercent: margin };
+    const updatedAt = clean(record.updatedAt);
+    parsed[productId] = {
+      targetMarginPercent: margin,
+      ...(updatedAt ? { updatedAt } : {}),
+    };
   }
   return parsed;
 };
@@ -65,7 +78,10 @@ export const saveProductTargetMargin = async (
       ownerId: user.uid,
       productPricingSettings: {
         ...current,
-        [normalizedProductId]: { targetMarginPercent: margin },
+        [normalizedProductId]: {
+          targetMarginPercent: margin,
+          updatedAt: new Date().toISOString(),
+        },
       },
       updatedAt: serverTimestamp(),
       ...(snapshot.exists() ? {} : { createdAt: serverTimestamp() }),
