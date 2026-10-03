@@ -21,12 +21,18 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - name: Refresh patched direct dependencies and lockfile
+      - name: Refresh patched direct dependencies and grpc resolution
         run: |
+          npm pkg set 'overrides.@grpc/grpc-js=^1.14.0'
           npm install --package-lock-only --ignore-scripts express@^4.22.3 firebase@^12.19.0 firebase-admin@^14.5.0
           npm audit fix --package-lock-only --ignore-scripts
       - name: Verify production dependency audit
         run: npm audit --omit=dev --audit-level=high
+      - name: Verify application after dependency resolution
+        run: |
+          npm ci --ignore-scripts
+          npm run lint
+          npm run build
       - name: Commit safe dependency refresh
         run: |
           if git diff --quiet -- package.json package-lock.json; then
