@@ -10,8 +10,9 @@ export interface AdminFiscalStoreEnrollmentView {
   canonicalStoreId: string;
   providerId: 'focus-nfe';
   documentFamily: 'nfce';
-  environment: 'production';
+  environment: 'homologation';
   status: 'prepared';
+  homologationTrafficAllowed: false;
   productionTrafficAllowed: false;
 }
 
@@ -26,6 +27,7 @@ export const prepareAuthorizedFiscalStoreEnrollment = async (input: {
   const enrollment = await prepareManagedFiscalStoreEnrollment({
     canonicalStoreId,
     actorId: admin.uid,
+    environment: 'homologation',
   });
 
   const auditId = crypto.randomUUID().replaceAll('-', '_');
@@ -38,6 +40,7 @@ export const prepareAuthorizedFiscalStoreEnrollment = async (input: {
     targetId: canonicalStoreId,
     providerId: enrollment.providerId,
     documentFamily: enrollment.documentFamily,
+    environment: enrollment.environment,
     source: 'server',
     createdAt: FieldValue.serverTimestamp(),
   });
@@ -46,8 +49,9 @@ export const prepareAuthorizedFiscalStoreEnrollment = async (input: {
     canonicalStoreId: enrollment.canonicalStoreId,
     providerId: 'focus-nfe',
     documentFamily: 'nfce',
-    environment: 'production',
+    environment: 'homologation',
     status: 'prepared',
+    homologationTrafficAllowed: false,
     productionTrafficAllowed: false,
   };
 };
@@ -58,7 +62,7 @@ export const mapFiscalStoreEnrollmentError = (error: unknown): { status: number;
   if (message === 'EMAIL_NOT_VERIFIED' || message === 'FORBIDDEN') return { status: 403, body: { error: 'Somente Super Admin pode preparar lojas para o Kyrub Fiscal.', code: message } };
   if (message === 'FISCAL_STORE_NOT_FOUND') return { status: 404, body: { error: 'A loja selecionada não existe.', code: message } };
   if (message === 'FISCAL_STORE_ENROLLMENT_INPUT_REQUIRED') return { status: 400, body: { error: 'Selecione uma loja válida.', code: message } };
-  if (message === 'FISCAL_STORE_ENROLLMENT_STATE_REQUIRES_SEPARATE_CONTROL') return { status: 409, body: { error: 'O estado fiscal atual da loja exige um controle administrativo separado.', code: message } };
+  if (message === 'FISCAL_STORE_ENROLLMENT_STATE_REQUIRES_SEPARATE_CONTROL' || message === 'FISCAL_STORE_ENROLLMENT_ENVIRONMENT_REQUIRES_SEPARATE_CONTROL') return { status: 409, body: { error: 'O estado fiscal atual da loja exige um controle administrativo separado.', code: message } };
   console.error('[Admin Fiscal Store Enrollment]', error);
   return { status: 503, body: { error: 'Não foi possível preparar a loja para o Kyrub Fiscal agora.', code: 'FISCAL_STORE_ENROLLMENT_FAILED' } };
 };
