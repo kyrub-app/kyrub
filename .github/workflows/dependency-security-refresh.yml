@@ -1,0 +1,40 @@
+name: Dependency security refresh
+
+on:
+  push:
+    branches:
+      - feat/profile-react-rebuild
+    paths:
+      - .github/workflows/dependency-security-refresh.yml
+
+permissions:
+  contents: write
+
+jobs:
+  refresh-lockfile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/profile-react-rebuild
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Refresh patched direct dependencies and lockfile
+        run: |
+          npm install --package-lock-only --ignore-scripts express@^4.22.3 firebase@^12.19.0 firebase-admin@^14.5.0
+          npm audit fix --package-lock-only --ignore-scripts
+      - name: Verify production dependency audit
+        run: npm audit --omit=dev --audit-level=high
+      - name: Commit safe dependency refresh
+        run: |
+          if git diff --quiet -- package.json package-lock.json; then
+            echo "No dependency changes required"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.json package-lock.json
+          git commit -m "fix: refresh production dependencies after security audit"
+          git push origin HEAD:feat/profile-react-rebuild
