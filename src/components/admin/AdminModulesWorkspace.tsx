@@ -11,7 +11,7 @@ const FOLDERS = [
   { id: 'people' as const, label: 'Pessoas & Tenants', description: 'Usuários, lojas, identidade e vínculos administrativos.', icon: Users },
   { id: 'platform_finance' as const, label: 'Financeiro da Plataforma', description: 'BaaS, taxas da plataforma, splits, settlement e conciliação sistêmica.', icon: Banknote },
   { id: 'operations' as const, label: 'Operações & Infraestrutura', description: 'Saúde, logística e controles técnicos da plataforma.', icon: Activity },
-  { id: 'governance' as const, label: 'Governança', description: 'Auditoria, compliance, segurança, capacidades e políticas.', icon: ShieldCheck },
+  { id: 'governance' as const, label: 'Governança & IA', description: 'IA, auditoria, compliance, segurança, capacidades e políticas.', icon: ShieldCheck },
 ] as const;
 const MODULES: AdminModuleDefinition[] = [
   { label: 'Usuários', description: 'Busca exata, situação cadastral e vínculos conhecidos.', permission: 'read_users', icon: Users, status: 'available', anchor: 'admin-directory', folder: 'people' },
@@ -42,7 +42,7 @@ export default function AdminModulesWorkspace({ profile }: { profile: AdminProfi
 
       {superAdmin && authenticatedUser && <AdminAccordionSection id="admin-fiscal" title="Fiscal / Nota Fiscal" description="Focus NFe, homologação, produção, emitentes e gates fiscais. A Loja Oficial aparece aqui somente como um emitente da plataforma." icon={ReceiptText} badge="Super Admin"><AdminIntegrationsWorkspace authenticatedUser={authenticatedUser} profile={profile} mode="fiscal" /></AdminAccordionSection>}
 
-      <AdminAccordionSection id="admin-governance" title="Governança & Operações" description="IA, políticas, capacidades e limites técnicos derivados dos entitlements, auditoria, incidentes e saúde operacional." icon={ShieldCheck} badge={superAdmin ? 'Governança' : 'Operações'}>
+      <AdminAccordionSection id="admin-governance" title="Governança & Operações" description="Governança & IA, políticas, capacidades e limites técnicos derivados dos entitlements, auditoria, incidentes e saúde operacional." icon={ShieldCheck} badge={superAdmin ? 'Governança & IA' : 'Operações'}>
         <div className="grid gap-2 sm:grid-cols-2">{visibleModules.filter(module => module.folder === 'operations' || module.folder === 'governance').map(module => <ModuleCard key={module.label} module={module}/>)}</div>
         {superAdmin && <div className="mt-4"><AdminAiOperationsDashboard profile={profile} /></div>}
         {canReviewResponsibility && authenticatedUser && <div className="mt-4"><AdminOperationalResponsibilityWorkspace authenticatedUser={authenticatedUser} profile={profile} /></div>}
