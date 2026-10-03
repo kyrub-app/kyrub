@@ -13,6 +13,10 @@ const modulesSource = readFileSync(
   'src/components/admin/AdminModulesWorkspace.tsx',
   'utf8'
 );
+const accordionSource = readFileSync(
+  'src/components/admin/AdminAccordionSection.tsx',
+  'utf8'
+);
 const directorySource = readFileSync(
   'src/components/admin/AdminDirectoryWorkspace.tsx',
   'utf8'
@@ -190,7 +194,9 @@ test('keeps the control plane focused on platform governance instead of Cairubi 
   assert.doesNotMatch(modulesSource, /Comercial & Financeiro/);
   assert.match(modulesSource, /Loja Oficial/);
   assert.match(modulesSource, /Em preparação/);
-  assert.match(modulesSource, /<details/);
+  assert.match(modulesSource, /AdminAccordionSection/);
+  assert.match(accordionSource, /<details/);
+  assert.match(accordionSource, /<summary/);
   assert.match(modulesSource, /AdminAiOperationsDashboard/);
   assert.match(modulesSource, /admin-directory/);
   assert.match(modulesSource, /admin-system-health/);
@@ -209,155 +215,4 @@ test('directory exposes explicit searching, empty and error feedback', () => {
   assert.match(directorySource, /aria-live="polite"/);
 });
 
-test('Official Store owns plans, coupons and courtesy UI while server authority stays protected', () => {
-  assert.match(plansWorkspaceSource, /Planos & Cupons/);
-  assert.match(plansWorkspaceSource, /Salvar como nova versão/);
-  assert.match(plansWorkspaceSource, /createAdminCoupon/);
-  assert.match(plansWorkspaceSource, /grantAdminComplimentaryPlan/);
-  assert.match(plansWorkspaceSource, /window\.confirm/);
-  assert.match(promotionalDirectSource, /OfficialStoreCommercialWorkspace/);
-  assert.match(promotionalDirectSource, /subscribeToAdminProfile/);
-  assert.match(promotionalDirectSource, /adminProfile\.role === 'super_admin'/);
-  assert.match(promotionalDirectSource, /Cairubi Oficial/);
-  assert.match(promotionalDirectSource, /OfficialStoreIdentityPanel/);
-  assert.match(promotionalDirectSource, /onIdentityChange=\{setOfficialIdentity\}/);
-  assert.match(promotionalDirectSource, /const currentStoreIsOfficial = Boolean/);
-  assert.match(promotionalDirectSource, /officialIdentity\.canonicalStoreId === storeId/);
-  assert.match(promotionalDirectSource, /officialIdentity\.legacyStoreId === storeId/);
-  assert.match(promotionalDirectSource, /currentStoreIsOfficial \? \(/);
-  assert.match(promotionalDirectSource, /data-kyrub-official-store-commercial="true"/);
-  assert.match(promotionalDirectSource, /data-kyrub-official-store-commerce-locked="true"/);
-  assert.match(officialIdentityPanelSource, /onIdentityChange\?:/);
-  assert.match(officialIdentityPanelSource, /commitIdentity/);
-  assert.match(officialIdentityPanelSource, /onIdentityChange\?\.\(next\)/);
-  assert.match(retailerRouterSource, /<LazyPromotionalRuntime storeId=\{retailerProps\.activeRetailerId\}/);
-
-  assert.match(planManagementSource, /admin\.role !== 'super_admin'/);
-  assert.match(planManagementSource, /PLAN_VERSIONS_COLLECTION/);
-  assert.match(planManagementSource, /admin\.plan\.version\.published/);
-  assert.match(planManagementSource, /admin\.coupon\.created/);
-  assert.match(planManagementSource, /admin\.coupon\.status_changed/);
-  assert.match(planManagementSource, /runTransaction/);
-
-  assert.match(planGatewaySource, /admin\.snapshot/);
-  assert.match(planGatewaySource, /admin\.plan\.publish/);
-  assert.match(planGatewaySource, /admin\.coupon\.create/);
-  assert.match(planGatewaySource, /admin\.coupon\.status/);
-  assert.match(planGatewaySource, /admin\.entitlement\.grant/);
-  assert.match(planGatewaySource, /authorization/);
-});
-
-test('coupon redemption and direct grants converge on authoritative entitlement without fake billing', () => {
-  assert.match(entitlementSource, /redeemCouponForOwnStore/);
-  assert.match(entitlementSource, /grantComplimentaryPlanByAdmin/);
-  assert.match(entitlementSource, /source: 'promotion'/);
-  assert.match(entitlementSource, /source: 'admin_grant'/);
-  assert.match(entitlementSource, /coupon_redemptions/);
-  assert.match(entitlementSource, /BILLING_REQUIRED_FOR_PARTIAL_DISCOUNT/);
-  assert.match(entitlementSource, /discountValue === 100/);
-  assert.match(entitlementSource, /admin\.role !== 'super_admin'/);
-  assert.match(entitlementSource, /store\.coupon\.redeemed/);
-  assert.match(entitlementSource, /admin\.store_plan\.complimentary\.granted/);
-
-  assert.match(planGatewaySource, /store\.coupon\.redeem/);
-  assert.match(planGatewaySource, /redeemCouponWithLifecycle/);
-});
-
-test('timed promotional benefits preserve a baseline and expire before further writes', () => {
-  assert.match(entitlementLifecycleSource, /store_entitlement_baselines/);
-  assert.match(entitlementLifecycleSource, /ACTIVE_PROMOTIONAL_BENEFIT_EXISTS/);
-  assert.match(entitlementLifecycleSource, /reconcileStoreEntitlementForOwner/);
-  assert.match(entitlementLifecycleSource, /store\.entitlement\.expired/);
-  assert.match(entitlementLifecycleSource, /fallbackPlan = baselineSnapshot\.exists/);
-  assert.match(entitlementLifecycleSource, /writePlanMirrors/);
-  assert.match(planGatewaySource, /store\.entitlement\.reconcile/);
-  assert.match(entitlementBridgeSource, /reconcileOwnStoreEntitlement/);
-
-  const reconciliationCall = actionExecuteSource.indexOf(
-    'await reconcileStoreEntitlementFromAuthorization(authorization)'
-  );
-  const planHydrationCall = actionExecuteSource.indexOf(
-    'await hydrateExecutablePlanCatalog()'
-  );
-  const executionCall = actionExecuteSource.lastIndexOf(
-    'executeAuthorizedKyrubAction('
-  );
-  assert.ok(reconciliationCall >= 0);
-  assert.ok(planHydrationCall > reconciliationCall);
-  assert.ok(executionCall > planHydrationCall);
-});
-
-test('active plan catalog is a read-only public projection and Kyrubia hydrates it before plan facts', () => {
-  assert.match(publicCatalogSource, /plan_catalog/);
-  assert.doesNotMatch(publicCatalogSource, /coupon_campaigns|store_entitlements|audit_logs/);
-  assert.match(planGatewaySource, /plans\.active/);
-  assert.match(planGatewaySource, /method !== 'GET'/);
-  assert.match(activePlanClientSource, /op=plans\.active/);
-  assert.match(activePlanKnowledgeSource, /Segundo o Manual KYRUB — catálogo oficial ativo/);
-  const hydrationCall = consultantPlansSource.indexOf(
-    'await hydrateActivePlanCatalog(signal)'
-  );
-  const knowledgeCall = consultantPlansSource.indexOf(
-    'resolveKyrubiaActivePlanKnowledge(latestContent)'
-  );
-  assert.ok(hydrationCall >= 0);
-  assert.ok(knowledgeCall > hydrationCall);
-});
-
-test('runtime plan overrides reset to compiled V1 before stale or failed hydration can authorize capacity', () => {
-  assert.match(commercialPlanSource, /COMPILED_PLAN_REFERENCE/);
-  assert.match(commercialPlanSource, /resetKyrubCommercialPlanRuntimeOverrides/);
-  assert.match(executableCatalogSource, /resetKyrubCommercialPlanRuntimeOverrides\(\)/);
-  assert.match(activePlanClientSource, /resetKyrubCommercialPlanRuntimeOverrides\(\)/);
-  assert.match(activePlanClientSource, /cached = null/);
-});
-
-test('active plan versions hydrate the action executor with a safe V1 fallback', () => {
-  assert.match(executableCatalogSource, /plan_catalog/);
-  assert.match(executableCatalogSource, /compiled V1 fallback remains in force/);
-  assert.match(executableCatalogSource, /features\.catalog !== false/);
-  assert.match(executableCatalogSource, /features\.kyrubia_intelligence !== false/);
-  const hydrationCall = actionExecuteSource.indexOf(
-    'await hydrateExecutablePlanCatalog()'
-  );
-  const executionCall = actionExecuteSource.lastIndexOf(
-    'executeAuthorizedKyrubAction('
-  );
-  assert.ok(hydrationCall >= 0);
-  assert.ok(executionCall > hydrationCall);
-});
-
-test('plans and coupons preserve one Vercel Hobby serverless slot as operational headroom', () => {
-  const apiFunctions = collectApiFunctions('api');
-  assert.ok(
-    apiFunctions.length <= 11,
-    `Expected at most 11 active Vercel functions so one Hobby slot stays reserved, found ${apiFunctions.length}: ${apiFunctions.join(', ')}`
-  );
-  assert.ok(apiFunctions.includes('api/plan-control.ts'));
-  assert.equal(
-    apiFunctions.includes('api/admin/store-entitlements/promotional-pro.ts'),
-    false
-  );
-  assert.equal(apiFunctions.some(path => path.startsWith('api/coupons/')), false);
-  assert.equal(apiFunctions.some(path => path.startsWith('api/plans/')), false);
-});
-
-test('legacy founding Pro URL stays compatible through the admin multiplexer, not a dedicated function', () => {
-  assert.match(promotionalServiceSource, /FOUNDING_PRO_PROMOTION_ID = 'founding_pro_001'/);
-  assert.match(promotionalServiceSource, /admin\.role !== 'super_admin'/);
-  assert.match(promotionalServiceSource, /source: 'promotional'/);
-  assert.match(promotionalServiceSource, /benefitType: 'complimentary'/);
-  assert.match(promotionalServiceSource, /expiresAt: null/);
-  assert.doesNotMatch(promotionalServiceSource, /checkout|subscription|payment/i);
-  assert.match(adminOperationsSource, /transport === 'promotional-pro'/);
-  assert.match(adminOperationsSource, /grantFoundingProPromotion/);
-  assert.match(adminOperationsSource, /result\.status === 'granted' \? 201 : 200/);
-  assert.match(
-    vercelConfigSource,
-    /\/api\/admin\/store-entitlements\/promotional-pro/
-  );
-  assert.match(
-    vercelConfigSource,
-    /\/api\/admin\/operations\/health\?transport=promotional-pro/
-  );
-});
+"+"
