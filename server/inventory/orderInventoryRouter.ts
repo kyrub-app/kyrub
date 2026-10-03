@@ -1,6 +1,8 @@
 import { Router, type Request, type Response } from 'express';
 import { FieldValue } from 'firebase-admin/firestore';
-import { adminAuth, adminDb } from '../firebaseAdmin';
+import { verifyFirebaseIdToken } from '../ai/consultantAuth';
+import { ConsultantHttpError } from '../ai/types';
+import { adminDb } from '../firebaseAdmin';
 import { sendNinetyNineFoodOrderStatus } from '../integrations/ninetyNineFoodService';
 import { reviewAttendanceOrderAuthoritatively } from './attendanceReviewService';
 import { reconcileOrderInventoryAfterMutation } from './orderInventoryAdjustment';
@@ -45,7 +47,14 @@ const bearerToken = (request: Request): string => {
 const authenticatedTenantId = async (request: Request): Promise<string> => {
   const token = bearerToken(request);
   if (!token) throw new Error('AUTH_REQUIRED');
-  return (await adminAuth.verifyIdToken(token, true)).uid;
+  try {
+    return (await verifyFirebaseIdToken(token)).uid;
+  } catch (error) {
+    if (error instanceof ConsultantHttpError && error.status === 503) {
+      throw new Error('AUTH_UNAVAILABLE');
+    }
+    throw new Error('AUTH_REQUIRED');
+  }
 };
 
 const parseDecision = (value: unknown): ParsedOrderDecision => {
@@ -91,6 +100,12 @@ const errorResponse = (response: Response, error: unknown): void => {
   const message = error instanceof Error ? error.message : String(error);
   if (message === 'AUTH_REQUIRED' || /id-token|expired|revoked/i.test(message)) {
     response.status(401).json({ error: 'Faça login novamente.' });
+    return;
+  }
+  if (message === 'AUTH_UNAVAILABLE') {
+    response.status(503).json({
+      error: 'Não foi possível validar sua sessão agora. Tente novamente em instantes.',
+    });
     return;
   }
   if (/não encontrado/i.test(message)) {

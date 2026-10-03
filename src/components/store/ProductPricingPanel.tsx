@@ -3,10 +3,12 @@ import { Calculator, Check, CircleDollarSign, FlaskConical, LoaderCircle } from 
 import { doc, onSnapshot } from 'firebase/firestore';
 import {
   calculateCompositionUnitCost,
+  calculateMarginGapPercentagePoints,
   calculateProductCostImpact,
   calculateSaleMarginPercent,
   calculateSuggestedPrice,
   parseProductPricingSettings,
+  resolveInventoryPricingCost,
   roundCurrency,
   saveProductTargetMargin,
 } from '../../utils/productPricing';
@@ -42,6 +44,18 @@ const numberFromInput = (value: string): number | null => {
   return Number.isFinite(parsed) ? parsed : null;
 };
 
+const latestPurchaseCost = (item: InventoryCatalogItem | null): number | null => {
+  if (!item) return null;
+  if (
+    typeof item.lastPurchaseUnitCostMinor === 'number'
+    && Number.isFinite(item.lastPurchaseUnitCostMinor)
+    && item.lastPurchaseUnitCostMinor > 0
+  ) return item.lastPurchaseUnitCostMinor / 100;
+  return Number.isFinite(item.purchaseCost) && item.purchaseCost > 0
+    ? item.purchaseCost
+    : null;
+};
+
 export function ProductPricingPanel({
   userId,
   productId,
@@ -57,6 +71,7 @@ export function ProductPricingPanel({
   const [status, setStatus] = useState('');
   const [impactItemId, setImpactItemId] = useState('');
   const [projectedCost, setProjectedCost] = useState('');
+  const [projectedQuantity, setProjectedQuantity] = useState('');
 
   useEffect(() => {
     if (!userId || !productId) return;
@@ -91,9 +106,11 @@ export function ProductPricingPanel({
   useEffect(() => {
     const selected = compositionItems.find(item => item.id === impactItemId);
     if (selected) return;
-    const first = compositionItems[0];
+    const first = compositionItems[0] ?? null;
     setImpactItemId(first?.id ?? '');
-    setProjectedCost(first?.purchaseCost ? String(first.purchaseCost) : '');
+    const lastCost = latestPurchaseCost(first);
+    setProjectedCost(lastCost === null ? '' : String(lastCost));
+    setProjectedQuantity('');
   }, [compositionItems, impactItemId, productId]);
 
   const unitCost = useMemo(
@@ -107,16 +124,21 @@ export function ProductPricingPanel({
     : null;
   const suggestedPrice = calculateSuggestedPrice(unitCost, validTargetMargin);
   const currentMargin = calculateSaleMarginPercent(unitCost, currentSalePrice);
+  const marginGap = calculateMarginGapPercentagePoints(currentMargin, validTargetMargin);
   const marginChanged = validTargetMargin !== null &&
     (savedMargin === null || Math.abs(validTargetMargin - savedMargin) > 0.000001);
   const impactItem = compositionItems.find(item => item.id === impactItemId) ?? null;
+  const impactItemCost = impactItem ? resolveInventoryPricingCost(impactItem) : null;
+  const impactLastPurchaseCost = latestPurchaseCost(impactItem);
   const projectedPurchaseCost = numberFromInput(projectedCost);
+  const projectedPurchaseQuantity = numberFromInput(projectedQuantity);
   const costImpact = useMemo(
     () => calculateProductCostImpact(
       catalog,
       composition,
       impactItemId,
       projectedPurchaseCost,
+      projectedPurchaseQuantity,
       currentSalePrice,
       validTargetMargin
     ),
@@ -125,6 +147,7 @@ export function ProductPricingPanel({
       composition,
       impactItemId,
       projectedPurchaseCost,
+      projectedPurchaseQuantity,
       currentSalePrice,
       validTargetMargin,
     ]
@@ -167,20 +190,21 @@ export function ProductPricingPanel({
             Precificação da ficha técnica
           </span>
           <h4 className="mt-1 text-sm font-black text-white">
-            Custo, margem e preço sugerido
+            Custo médio, meta de margem e preço sugerido
           </h4>
           <p className="mt-1 text-[10px] leading-relaxed text-slate-500">
-            A meta de margem é privada. O Kyrub nunca altera o preço público automaticamente.
+            A meta de margem é privada e será a referência para comparar a margem realizada. O Kyrub nunca altera o preço público automaticamente.
           </p>
         </div>
       </div>
 
       <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
         <div className="rounded-xl border border-slate-800 bg-slate-950 p-3">
-          <span className="block text-[8px] font-black uppercase text-slate-500">Custo calculado</span>
+          <span className="block text-[8px] font-black uppercase text-slate-500">Custo médio da ficha</span>
           <strong className={`mt-1 block text-sm ${unitCost === null ? 'text-amber-300' : 'text-white'}`}>
             {unitCost === null ? 'Custo incompleto' : currency.format(unitCost)}
           </strong>
+          <span className="mt-1 block text-[8px] text-slate-600">Base econômica atual do estoque</span>
         </div>
         <div className="rounded-xl border border-slate-800 bg-slate-950 p-3">
           <span className="block text-[8px] font-black uppercase text-slate-500">Preço atual</span>
@@ -189,16 +213,22 @@ export function ProductPricingPanel({
           </strong>
         </div>
         <div className="rounded-xl border border-slate-800 bg-slate-950 p-3">
-          <span className="block text-[8px] font-black uppercase text-slate-500">Margem atual</span>
+          <span className="block text-[8px] font-black uppercase text-slate-500">Margem atual estimada</span>
           <strong className="mt-1 block text-sm text-cyan-300">
             {currentMargin === null ? '—' : `${percent.format(currentMargin)}%`}
           </strong>
+          {marginGap !== null && (
+            <span className={`mt-1 block text-[8px] ${marginGap >= 0 ? 'text-emerald-300' : 'text-amber-300'}`}>
+              {marginGap >= 0 ? '+' : ''}{percent.format(marginGap)} p.p. vs meta
+            </span>
+          )}
         </div>
         <div className="rounded-xl border border-slate-800 bg-slate-950 p-3">
           <span className="block text-[8px] font-black uppercase text-slate-500">Preço sugerido</span>
           <strong className="mt-1 block text-sm text-emerald-300">
             {suggestedPrice === null ? '—' : currency.format(roundCurrency(suggestedPrice))}
           </strong>
+          <span className="mt-1 block text-[8px] text-slate-600">Para alcançar a meta informada</span>
         </div>
       </div>
 
@@ -248,15 +278,15 @@ export function ProductPricingPanel({
             <FlaskConical className="mt-0.5 h-4 w-4 shrink-0 text-cyan-300" />
             <div>
               <strong className="block text-[10px] font-black uppercase text-cyan-200">
-                Simular impacto de custo
+                Simular próxima reposição
               </strong>
               <p className="mt-1 text-[9px] leading-relaxed text-slate-500">
-                Teste um novo custo de compra para um insumo. Esta simulação não salva o custo, não altera estoque e não muda o preço de venda.
+                Informe quantidade e custo hipotéticos de uma nova entrada. O Kyrub projeta a nova média móvel sem salvar compra, estoque ou preço de venda.
               </p>
             </div>
           </div>
 
-          <div className="mt-3 grid gap-2 sm:grid-cols-2">
+          <div className="mt-3 grid gap-2 sm:grid-cols-3">
             <label className="text-[8px] font-black uppercase text-slate-500">
               Insumo da ficha
               <select
@@ -264,21 +294,39 @@ export function ProductPricingPanel({
                 onChange={event => {
                   const nextId = event.target.value;
                   setImpactItemId(nextId);
-                  const nextItem = compositionItems.find(item => item.id === nextId);
-                  setProjectedCost(nextItem?.purchaseCost ? String(nextItem.purchaseCost) : '');
+                  const nextItem = compositionItems.find(item => item.id === nextId) ?? null;
+                  const lastCost = latestPurchaseCost(nextItem);
+                  setProjectedCost(lastCost === null ? '' : String(lastCost));
+                  setProjectedQuantity('');
                 }}
                 disabled={disabled}
                 className="mt-1.5 w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2.5 text-xs text-white"
               >
-                {compositionItems.map(item => (
-                  <option key={item.id} value={item.id}>
-                    {item.name} — {currency.format(item.purchaseCost)} / {item.unit}
-                  </option>
-                ))}
+                {compositionItems.map(item => {
+                  const pricingCost = resolveInventoryPricingCost(item);
+                  return (
+                    <option key={item.id} value={item.id}>
+                      {item.name} — {pricingCost.unitCost === null ? 'custo incompleto' : `${currency.format(pricingCost.unitCost)} / ${item.unit}`}
+                    </option>
+                  );
+                })}
               </select>
             </label>
             <label className="text-[8px] font-black uppercase text-slate-500">
-              Custo hipotético por {impactItem?.unit ?? 'unidade'}
+              Quantidade hipotética ({impactItem?.unit ?? 'unidade'})
+              <input
+                type="number"
+                min="0.000001"
+                step="any"
+                value={projectedQuantity}
+                onChange={event => setProjectedQuantity(event.target.value)}
+                disabled={disabled}
+                placeholder="Informe a quantidade"
+                className="mt-1.5 w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2.5 text-xs text-white"
+              />
+            </label>
+            <label className="text-[8px] font-black uppercase text-slate-500">
+              Custo da nova compra por {impactItem?.unit ?? 'unidade'}
               <input
                 type="number"
                 min="0.01"
@@ -286,16 +334,31 @@ export function ProductPricingPanel({
                 value={projectedCost}
                 onChange={event => setProjectedCost(event.target.value)}
                 disabled={disabled}
-                placeholder="Ex.: 35,00"
+                placeholder="Informe o custo"
                 className="mt-1.5 w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2.5 text-xs text-white"
               />
             </label>
           </div>
 
+          {impactItem && (
+            <p className="mt-2 text-[8px] text-slate-600">
+              Custo médio atual: {impactItemCost?.unitCost === null || impactItemCost === null ? 'incompleto' : currency.format(impactItemCost.unitCost)}
+              {' · '}Última compra: {impactLastPurchaseCost === null ? 'não informada' : currency.format(impactLastPurchaseCost)}
+              {' · '}Saldo: {impactItem.currentQuantity} {impactItem.unit}
+            </p>
+          )}
+
           {costImpact ? (
-            <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
               <div className="rounded-xl border border-slate-800 bg-slate-950 p-2.5">
-                <span className="block text-[8px] uppercase text-slate-500">Novo custo unitário</span>
+                <span className="block text-[8px] uppercase text-slate-500">Média do insumo</span>
+                <strong className="mt-1 block text-xs text-white">
+                  {currency.format(roundCurrency(costImpact.currentInventoryUnitCost))}
+                  {' → '}{currency.format(roundCurrency(costImpact.projectedInventoryUnitCost))}
+                </strong>
+              </div>
+              <div className="rounded-xl border border-slate-800 bg-slate-950 p-2.5">
+                <span className="block text-[8px] uppercase text-slate-500">Novo custo da ficha</span>
                 <strong className="mt-1 block text-xs text-white">
                   {currency.format(roundCurrency(costImpact.projectedUnitCost))}
                 </strong>
@@ -328,7 +391,7 @@ export function ProductPricingPanel({
             </div>
           ) : (
             <p className="mt-3 text-[9px] text-slate-500">
-              Informe um custo hipotético maior que zero e mantenha custos válidos em todos os componentes para calcular o impacto.
+              Informe quantidade e custo positivos. Se o estoque atual tiver base econômica incompleta, o Kyrub não inventará uma média projetada.
             </p>
           )}
         </div>
@@ -341,7 +404,7 @@ export function ProductPricingPanel({
       )}
       {unitCost === null && composition.lines.length > 0 && (
         <p className="mt-3 rounded-xl border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-[9px] leading-relaxed text-amber-200">
-          Informe um custo de compra maior que zero para todos os componentes da ficha técnica. A entrada de estoque sem valor fiscal não será tratada como custo zero.
+          Um ou mais componentes da ficha estão sem base econômica confiável. O Kyrub não usa custo zero nem último preço antigo para fabricar uma margem atual.
         </p>
       )}
       {status && (

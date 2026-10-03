@@ -75,6 +75,7 @@ test('mobile ERP menu removes Gerencial and exposes every management module dire
 
   for (const id of [
     'produtos',
+    'estoque',
     'vendas',
     'financeiro',
     'rh',
@@ -87,7 +88,8 @@ test('mobile ERP menu removes Gerencial and exposes every management module dire
   }
 
   for (const label of [
-    'Produtos & Estoque',
+    'Produtos',
+    'Estoque',
     'Vendas & Analytics',
     'Financeiro Interno',
     'Recursos Humanos',
@@ -98,6 +100,8 @@ test('mobile ERP menu removes Gerencial and exposes every management module dire
   ]) {
     assert.match(mobileErpMenu, new RegExp(label));
   }
+
+  assert.doesNotMatch(mobileErpMenu, /Produtos & Estoque/);
 });
 
 test('management menu selections use a direct navigation authority instead of activeSubTab gerencial', () => {

@@ -4,6 +4,10 @@ import {
   mapKyrubActionExecutionError,
 } from './actionExecutionService.js';
 import {
+  executeAuthorizedKyrubInventoryAdjustment,
+  isKyrubInventoryAdjustmentExecutionRequest,
+} from './inventoryAdjustmentExecutionService.js';
+import {
   executeAuthorizedKyrubOrderStatus,
   isKyrubOrderStatusExecutionRequest,
 } from './orderStatusExecutionService.js';
@@ -71,6 +75,12 @@ export const executeAuthorizedKyrubAction = async (
   }
   if (isKyrubProductPublicationExecutionRequest(rawRequest)) {
     return executeAuthorizedKyrubProductPublication(authorization, rawRequest);
+  }
+  if (isKyrubInventoryAdjustmentExecutionRequest(rawRequest)) {
+    return executeAuthorizedKyrubInventoryAdjustment(
+      authorization,
+      rawRequest
+    ) as Promise<KyrubActionExecutionResult>;
   }
   if (isKyrubOrderStatusExecutionRequest(rawRequest)) {
     return executeAuthorizedKyrubOrderStatus(authorization, rawRequest);

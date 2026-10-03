@@ -1,0 +1,50 @@
+name: Dependency security refresh
+
+on:
+  push:
+    branches:
+      - feat/profile-react-rebuild
+    paths:
+      - .github/workflows/dependency-security-refresh.yml
+
+permissions:
+  contents: write
+
+jobs:
+  refresh-lockfile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/profile-react-rebuild
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Refresh patched direct dependencies and grpc resolution
+        run: |
+          npm pkg set 'overrides.@grpc/grpc-js=>=1.14.5'
+          npm install --package-lock-only --ignore-scripts express@^4.22.3 firebase@^12.19.0 firebase-admin@^14.5.0
+          npm audit fix --package-lock-only --ignore-scripts || true
+      - name: Verify patched grpc resolution in lockfile
+        run: |
+          node -e "const l=require('./package-lock.json'); const grpc=Object.entries(l.packages||{}).filter(([k])=>k.endsWith('node_modules/@grpc/grpc-js')); const bad=grpc.filter(([k,v])=>(!v.version || /^1\.(?:[0-9]|1[0-3])\.|^1\.14\.[0-4]$/.test(v.version))); console.log(grpc.map(([k,v])=>k+' '+v.version).join('\n') || 'grpc-js not present in production lockfile'); if(bad.length){console.error(bad);process.exit(1)}"
+      - name: Verify production dependency audit
+        run: npm audit --omit=dev --audit-level=high
+      - name: Verify application after dependency resolution
+        run: |
+          npm ci --ignore-scripts
+          npm ls @grpc/grpc-js || true
+          npm run lint
+          npm run build
+      - name: Commit safe dependency refresh
+        run: |
+          if git diff --quiet -- package.json package-lock.json; then
+            echo "No dependency changes required"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.json package-lock.json
+          git commit -m "fix: refresh production dependencies after security audit"
+          git push origin HEAD:feat/profile-react-rebuild

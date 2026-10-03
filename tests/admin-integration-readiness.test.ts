@@ -15,6 +15,10 @@ const workspaceSource = readFileSync(
   'src/components/admin/AdminIntegrationsWorkspace.tsx',
   'utf8'
 );
+const mercadoPagoCardSource = readFileSync(
+  'src/components/admin/AdminMercadoPagoProviderCard.tsx',
+  'utf8'
+);
 const vercelConfig = JSON.parse(readFileSync('vercel.json', 'utf8')) as {
   rewrites?: Array<{ source?: string; destination?: string }>;
 };
@@ -74,13 +78,14 @@ test('client parser allowlists public detail fields and drops secret-shaped extr
 });
 
 test('admin workspace submits Mercado Pago credentials one-way through server operations', () => {
-  assert.match(workspaceSource, /type=["']password["']/i);
-  assert.match(workspaceSource, /saveAdminMercadoPagoCredentials/);
-  assert.match(workspaceSource, /testAdminMercadoPagoConnection/);
-  assert.match(workspaceSource, /setAccessToken\(''\)/);
-  assert.match(workspaceSource, /setWebhookSecret\(''\)/);
-  assert.match(workspaceSource, /metadados mascarados/);
-  assert.doesNotMatch(workspaceSource, /setDoc\(|addDoc\(|updateDoc\(/);
+  assert.match(workspaceSource, /AdminMercadoPagoProviderCard/);
+  assert.match(mercadoPagoCardSource, /type=["']password["']/i);
+  assert.match(mercadoPagoCardSource, /saveAdminMercadoPagoCredentials/);
+  assert.match(mercadoPagoCardSource, /testAdminMercadoPagoConnection/);
+  assert.match(mercadoPagoCardSource, /setAccessToken\(''\)/);
+  assert.match(mercadoPagoCardSource, /setWebhookSecret\(''\)/);
+  assert.match(mercadoPagoCardSource, /metadados mascarados/);
+  assert.doesNotMatch(mercadoPagoCardSource, /setDoc\(|addDoc\(|updateDoc\(/);
   assert.match(clientSource, /profile\.role !== 'super_admin'/);
 });
 

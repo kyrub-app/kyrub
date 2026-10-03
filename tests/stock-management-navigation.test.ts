@@ -1,0 +1,169 @@
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { describe, test } from 'node:test';
+import './inventory-cost-basis.test.js';
+import './order-inventory-cost-snapshot.test.js';
+import './product-inventory-cost-preservation.test.js';
+
+describe('stock management navigation', () => {
+  test('Products and Stock are sibling direct management destinations', () => {
+    const navigation = readFileSync('src/utils/erpManagementNavigation.ts', 'utf8');
+    const menu = readFileSync('src/components/MobileErpMenu.tsx', 'utf8');
+    const router = readFileSync('src/components/RetailerPanelRuntimeRouter.tsx', 'utf8');
+
+    assert.match(navigation, /\| 'produtos'[\s\S]*\| 'estoque'/);
+    assert.match(menu, /id: 'produtos', label: 'Produtos'/);
+    assert.match(menu, /id: 'estoque', label: 'Estoque'/);
+    assert.doesNotMatch(menu, /Produtos & Estoque/);
+    assert.match(router, /produtos: \{ title: 'Produtos'/);
+    assert.match(router, /estoque: \{ title: 'Estoque'/);
+    assert.match(router, /moduleId === 'estoque'/);
+  });
+
+  test('Products keeps catalog editing while Stock reuses canonical replenishment workspace', () => {
+    const productsRuntime = readFileSync(
+      'src/components/store/ProductInventoryDirectRuntime.tsx',
+      'utf8'
+    );
+    const stockRuntime = readFileSync(
+      'src/components/store/StockDirectRuntime.tsx',
+      'utf8'
+    );
+    const purchaseWorkspace = readFileSync(
+      'src/components/store/StorePurchaseWorkspace.tsx',
+      'utf8'
+    );
+
+    assert.match(productsRuntime, /ProductInventoryWorkspace/);
+    assert.match(productsRuntime, /ProductEditorModal/);
+    assert.match(stockRuntime, /StorePurchaseWorkspace/);
+    assert.match(purchaseWorkspace, /getProductInventoryDocumentPath/);
+    assert.match(purchaseWorkspace, /ProductPurchaseList/);
+  });
+
+  test('Stock exposes replenishment, movements, purchases, receipts and suppliers as operational tabs', () => {
+    const stockRuntime = readFileSync(
+      'src/components/store/StockDirectRuntime.tsx',
+      'utf8'
+    );
+
+    for (const section of ['replenishment', 'movements', 'purchases', 'receipts', 'suppliers']) {
+      assert.match(stockRuntime, new RegExp(`id: '${section}'`));
+    }
+    assert.match(stockRuntime, /StoreInventoryMovementTimeline/);
+    assert.match(stockRuntime, /onPreparePurchaseDraft=\{preparePurchase\}/);
+    assert.match(stockRuntime, /StoreProcurementWorkspace/);
+    assert.match(stockRuntime, /Somente um recebimento confirmado altera o saldo do estoque/);
+  });
+
+  test('replenishment selection prepares a purchase instead of mutating stock', () => {
+    const purchaseList = readFileSync(
+      'src/components/store/ProductPurchaseList.tsx',
+      'utf8'
+    );
+    const purchaseWorkspace = readFileSync(
+      'src/components/store/StorePurchaseWorkspace.tsx',
+      'utf8'
+    );
+
+    assert.match(purchaseList, /onPreparePurchaseDraft/);
+    assert.match(purchaseList, /type="checkbox"/);
+    assert.match(purchaseList, /Preparar compra/);
+    assert.match(purchaseWorkspace, /onPreparePurchaseDraft=\{onPreparePurchaseDraft\}/);
+  });
+
+  test('procurement UI uses the authorized API and keeps physical confirmation explicit', () => {
+    const workspace = readFileSync(
+      'src/components/store/StoreProcurementWorkspace.tsx',
+      'utf8'
+    );
+
+    assert.match(workspace, /\/api\/store-procurement/);
+    assert.match(workspace, /create_supplier/);
+    assert.match(workspace, /create_purchase_draft/);
+    assert.match(workspace, /order_purchase/);
+    assert.match(workspace, /create_receipt_draft/);
+    assert.match(workspace, /confirm_receipt/);
+    assert.match(workspace, /Confirmar entrada no estoque/);
+    assert.match(workspace, /quotedUnitCostMinor: null/);
+    assert.doesNotMatch(workspace, /firebase\/firestore|\bdb\b|setDoc|addDoc/);
+  });
+
+  test('procurement API reuses canonical receipt intake and serverless function budget', () => {
+    const service = readFileSync(
+      'server/inventory/storeProcurementService.ts',
+      'utf8'
+    );
+    const router = readFileSync(
+      'server/inventory/storeProcurementRouter.ts',
+      'utf8'
+    );
+    const multiplexer = readFileSync(
+      'server/payments/storePromotionServerlessTransport.ts',
+      'utf8'
+    );
+    const vercel = readFileSync('vercel.json', 'utf8');
+    const server = readFileSync('server.ts', 'utf8');
+
+    assert.match(service, /stores\/\$\{storeId\}\/members\/\$\{identity\.uid\}/);
+    assert.match(service, /role !== 'owner'/);
+    assert.match(service, /applyConfirmedPurchaseReceiptToInventory/);
+    assert.match(service, /documentedUnitCostMinor/);
+    assert.doesNotMatch(service, /financePayables|moving.?average|\bCMV\b/i);
+    assert.doesNotMatch(service, /purchaseCost\s*:/);
+    assert.match(router, /listAuthorizedStoreProcurement/);
+    assert.match(router, /executeAuthorizedStoreProcurementAction/);
+    assert.match(multiplexer, /surface === 'procurement'/);
+    assert.match(vercel, /"source": "\/api\/store-procurement"/);
+    assert.match(vercel, /transport=store-promotions&surface=procurement/);
+    assert.match(server, /createStoreProcurementRouter/);
+    assert.match(server, /"\/api\/store-procurement"/);
+  });
+
+  test('movement timeline reads the canonical physical and economic ledger without direct browser Firestore access', () => {
+    const timeline = readFileSync(
+      'src/components/store/StoreInventoryMovementTimeline.tsx',
+      'utf8'
+    );
+    const service = readFileSync(
+      'server/inventory/storeInventoryMovementService.ts',
+      'utf8'
+    );
+    const router = readFileSync(
+      'server/inventory/storeProcurementRouter.ts',
+      'utf8'
+    );
+    const vercel = readFileSync('vercel.json', 'utf8');
+
+    assert.match(timeline, /\/api\/store-procurement\/movements/);
+    assert.match(timeline, /Entradas/);
+    assert.match(timeline, /Saídas/);
+    assert.match(timeline, /Perdas/);
+    assert.match(timeline, /Correções/);
+    assert.match(timeline, /Valor conhecido do estoque/);
+    assert.match(timeline, /Posição econômica atual/);
+    assert.match(timeline, /Custo médio/);
+    assert.match(timeline, /Última compra/);
+    assert.match(timeline, /CMV/);
+    assert.doesNotMatch(timeline, /firebase\/firestore|\bdb\b|setDoc|addDoc/);
+
+    assert.match(service, /stores\/\$\{storeId\}\/members\/\$\{identity\.uid\}/);
+    assert.match(service, /member\?\.role !== 'owner'/);
+    assert.match(service, /collection\(`\$\{inventoryPath\}\/movements`\)/);
+    assert.match(service, /orderBy\('createdAt', 'desc'\)/);
+    assert.match(service, /orderId: clean\(record\.orderId\)/);
+    assert.match(service, /purchaseId: clean\(record\.purchaseId\)/);
+    assert.match(service, /purchaseReceiptId: clean\(record\.purchaseReceiptId\)/);
+    assert.match(service, /supplierId: clean\(record\.supplierId\)/);
+    assert.match(service, /knownInventoryValueMinor/);
+    assert.match(service, /averageUnitCostMinor/);
+    assert.match(service, /lastPurchaseUnitCostMinor/);
+    assert.match(service, /inventoryValueMinor/);
+    assert.doesNotMatch(service, /financePayables|amountMinor/i);
+
+    assert.match(router, /router\.get\('\/movements'/);
+    assert.match(router, /listAuthorizedStoreInventoryMovements/);
+    assert.match(vercel, /"source": "\/api\/store-procurement\/:path\*"/);
+    assert.match(vercel, /surface=procurement&path=:path\*/);
+  });
+});

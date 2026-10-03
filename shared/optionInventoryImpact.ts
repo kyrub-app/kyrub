@@ -4,6 +4,7 @@ import {
   type InventoryCatalogRecord,
   type InventoryCompositionRecord,
   type InventoryConsumptionLine,
+  type InventoryConsumptionProductAllocation,
   type InventoryOrderItemRecord,
 } from './inventoryConsumption.js';
 
@@ -54,6 +55,25 @@ const positive = (value: unknown): number | null =>
   typeof value === 'number' && Number.isFinite(value) && value > 0
     ? value
     : null;
+
+const roundQuantity = (value: number): number =>
+  Math.round(value * 1_000_000) / 1_000_000;
+
+const mergeProductAllocations = (
+  left: InventoryConsumptionProductAllocation[] = [],
+  right: InventoryConsumptionProductAllocation[] = []
+): InventoryConsumptionProductAllocation[] => {
+  const totals = new Map<string, number>();
+  for (const allocation of [...left, ...right]) {
+    totals.set(
+      allocation.productId,
+      roundQuantity((totals.get(allocation.productId) ?? 0) + allocation.quantity)
+    );
+  }
+  return [...totals.entries()]
+    .map(([productId, quantity]) => ({ productId, quantity }))
+    .sort((a, b) => a.productId.localeCompare(b.productId));
+};
 
 export const parseInventorySelectedOptions = (
   value: unknown
@@ -206,7 +226,7 @@ const buildOptionConsumption = (
   const catalogById = new Map(catalog.map(item => [item.id, item]));
   const totals = new Map<
     string,
-    { quantity: number; productIds: Set<string> }
+    { quantity: number; productQuantities: Map<string, number> }
   >();
 
   for (const item of orderItems) {
@@ -223,10 +243,14 @@ const buildOptionConsumption = (
       for (const line of impact.lines) {
         const current = totals.get(line.inventoryItemId) ?? {
           quantity: 0,
-          productIds: new Set<string>(),
+          productQuantities: new Map<string, number>(),
         };
-        current.quantity += line.quantity * operationalQuantity;
-        current.productIds.add(item.productId);
+        const required = line.quantity * operationalQuantity;
+        current.quantity += required;
+        current.productQuantities.set(
+          item.productId,
+          (current.productQuantities.get(item.productId) ?? 0) + required
+        );
         totals.set(line.inventoryItemId, current);
       }
     }
@@ -239,22 +263,27 @@ const buildOptionConsumption = (
         `A personalização referencia um componente removido (${inventoryItemId}).`
       );
     }
-    const quantity = Math.round(total.quantity * 1_000_000) / 1_000_000;
+    const quantity = roundQuantity(total.quantity);
     if (inventoryItem.currentQuantity + 0.000001 < quantity) {
       throw new Error(
         `Estoque insuficiente de “${inventoryItem.name}” para a personalização: necessário ${quantity} ${inventoryItem.unit}, disponível ${inventoryItem.currentQuantity} ${inventoryItem.unit}.`
       );
     }
+    const productQuantityAllocations = [...total.productQuantities.entries()]
+      .map(([productId, allocatedQuantity]) => ({
+        productId,
+        quantity: roundQuantity(allocatedQuantity),
+      }))
+      .sort((a, b) => a.productId.localeCompare(b.productId));
     return {
       inventoryItemId,
       inventoryItemName: inventoryItem.name,
       unit: inventoryItem.unit,
       quantity,
       beforeQuantity: inventoryItem.currentQuantity,
-      afterQuantity:
-        Math.round((inventoryItem.currentQuantity - quantity) * 1_000_000) /
-        1_000_000,
-      productIds: [...total.productIds].sort(),
+      afterQuantity: roundQuantity(inventoryItem.currentQuantity - quantity),
+      productIds: productQuantityAllocations.map(allocation => allocation.productId),
+      productQuantityAllocations,
     } satisfies InventoryConsumptionLine;
   });
 };
@@ -271,12 +300,17 @@ const mergeConsumptionLines = (
       byItem.set(extra.inventoryItemId, extra);
       continue;
     }
+    const productQuantityAllocations = mergeProductAllocations(
+      current.productQuantityAllocations,
+      extra.productQuantityAllocations
+    );
     byItem.set(extra.inventoryItemId, {
       ...current,
-      quantity:
-        Math.round((current.quantity + extra.quantity) * 1_000_000) / 1_000_000,
+      quantity: roundQuantity(current.quantity + extra.quantity),
       afterQuantity: extra.afterQuantity,
-      productIds: [...new Set([...current.productIds, ...extra.productIds])].sort(),
+      productIds: productQuantityAllocations.map(allocation => allocation.productId),
+      productQuantityAllocations,
+      productCostAllocations: undefined,
     });
   }
   return [...byItem.values()].sort((left, right) =>

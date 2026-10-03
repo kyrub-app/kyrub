@@ -54,17 +54,24 @@ const SECURE_FREELANCE_RULES = `${FREELANCE_SECTION_HEADER}
     }`;
 
 const SECURE_ARTIFACT_RULES = `${ARTIFACT_SECTION_HEADER}
-    // Legacy artifact reads stay compatible while write authority is reduced.
+    // Legacy artifact data is tenant-private by default. Cross-tenant access
+    // must be granted only by an explicit child rule with document ownership.
     // Server-side Admin SDK flows bypass these client rules.
     match /artifacts/{tenantId} {
-      allow read: if isSignedIn();
+      allow read: if isSignedIn()
+        && request.auth.uid == tenantId;
       allow create, update, delete: if isSignedIn()
         && request.auth.uid == tenantId;
 
       // Direct browser creation remains only for the legacy dine-in flow.
       // Delivery/pickup orders are server-authoritative via PaymentIntent.
+      // A buyer may read only their own order inside another store tenant.
       match /public/data/customerOrders/{orderId} {
-        allow read: if isSignedIn();
+        allow read: if isSignedIn()
+          && (
+            request.auth.uid == tenantId
+            || existing().buyerId == request.auth.uid
+          );
         allow create: if isSignedIn()
           && (
             request.auth.uid == tenantId
@@ -98,7 +105,8 @@ const SECURE_ARTIFACT_RULES = `${ARTIFACT_SECTION_HEADER}
       }
 
       match /{allData=**} {
-        allow read: if isSignedIn();
+        allow read: if isSignedIn()
+          && request.auth.uid == tenantId;
         allow create, update, delete: if isSignedIn()
           && request.auth.uid == tenantId;
       }

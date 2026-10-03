@@ -1,3 +1,11 @@
+import {
+  applyMovingAverageInventoryOutflow,
+  normalizeInventoryCostBasis,
+  restoreInventoryAtHistoricalCost,
+  type InventoryCostBasisSource,
+  type InventoryCostBasisStatus,
+} from './inventoryCostBasis.js';
+
 export type InventoryConsumptionTrigger = 'accepted' | 'preparing' | 'completed';
 
 export type InventoryOrderStatus =
@@ -19,6 +27,12 @@ export interface InventoryCatalogRecord {
   purchaseCost: number;
   supplier: string;
   updatedAt: string;
+  costBasisStatus?: InventoryCostBasisStatus;
+  averageUnitCostMinor?: number | null;
+  lastPurchaseUnitCostMinor?: number | null;
+  inventoryValueMinor?: number | null;
+  costBasisSource?: InventoryCostBasisSource;
+  costBasisUpdatedAt?: string;
 }
 
 export interface InventoryCompositionLineRecord {
@@ -40,6 +54,17 @@ export interface InventoryOrderItemRecord {
   transferredQuantity?: number;
 }
 
+export interface InventoryConsumptionProductAllocation {
+  productId: string;
+  quantity: number;
+}
+
+export interface InventoryConsumptionProductCostAllocation
+  extends InventoryConsumptionProductAllocation {
+  costBasisStatus: InventoryCostBasisStatus;
+  totalCostMinor: number | null;
+}
+
 export interface InventoryConsumptionLine {
   inventoryItemId: string;
   inventoryItemName: string;
@@ -48,6 +73,11 @@ export interface InventoryConsumptionLine {
   beforeQuantity: number;
   afterQuantity: number;
   productIds: string[];
+  productQuantityAllocations?: InventoryConsumptionProductAllocation[];
+  productCostAllocations?: InventoryConsumptionProductCostAllocation[];
+  costBasisStatus?: InventoryCostBasisStatus;
+  unitCostMinor?: number | null;
+  totalCostMinor?: number | null;
 }
 
 const STATUS_RANK: Record<InventoryOrderStatus, number> = {
@@ -76,6 +106,56 @@ const finitePositive = (value: unknown): number | null =>
 
 const roundQuantity = (value: number): number =>
   Math.round((value + Number.EPSILON) * 1_000_000) / 1_000_000;
+
+const addProductQuantity = (
+  quantities: Map<string, number>,
+  productId: string,
+  quantity: number
+): void => {
+  quantities.set(
+    productId,
+    roundQuantity((quantities.get(productId) ?? 0) + quantity)
+  );
+};
+
+const productAllocationsFrom = (
+  quantities: Map<string, number>
+): InventoryConsumptionProductAllocation[] =>
+  [...quantities.entries()]
+    .map(([productId, quantity]) => ({ productId, quantity }))
+    .sort((left, right) => left.productId.localeCompare(right.productId));
+
+const allocateProductCosts = (
+  totalCostMinor: number,
+  allocations: InventoryConsumptionProductAllocation[]
+): InventoryConsumptionProductCostAllocation[] => {
+  const totalQuantity = allocations.reduce((sum, allocation) => sum + allocation.quantity, 0);
+  if (!(totalQuantity > 0)) return [];
+  const shares = allocations.map(allocation => {
+    const exact = totalCostMinor * allocation.quantity / totalQuantity;
+    const floor = Math.floor(exact);
+    return { allocation, floor, fraction: exact - floor };
+  });
+  let remainder = totalCostMinor - shares.reduce((sum, share) => sum + share.floor, 0);
+  const ranked = shares
+    .map((share, index) => ({ ...share, index }))
+    .sort((left, right) =>
+      right.fraction - left.fraction ||
+      left.allocation.productId.localeCompare(right.allocation.productId)
+    );
+  const extraIndexes = new Set<number>();
+  for (const share of ranked) {
+    if (remainder <= 0) break;
+    extraIndexes.add(share.index);
+    remainder -= 1;
+  }
+  if (remainder !== 0) throw new Error('INVENTORY_PRODUCT_COST_ALLOCATION_INVALID');
+  return shares.map((share, index) => ({
+    ...share.allocation,
+    costBasisStatus: 'complete',
+    totalCostMinor: share.floor + (extraIndexes.has(index) ? 1 : 0),
+  }));
+};
 
 export const parseInventoryConsumptionTrigger = (
   value: unknown
@@ -115,7 +195,7 @@ export const parseInventoryCatalogRecords = (
       return [];
     }
     seen.add(id);
-    return [{
+    const base: InventoryCatalogRecord = {
       id,
       name,
       unit: clean(record.unit) || 'un',
@@ -124,6 +204,21 @@ export const parseInventoryCatalogRecords = (
       purchaseCost,
       supplier: clean(record.supplier),
       updatedAt: clean(record.updatedAt),
+      costBasisStatus:
+        record.costBasisStatus === 'complete' || record.costBasisStatus === 'incomplete'
+          ? record.costBasisStatus
+          : undefined,
+      averageUnitCostMinor: finiteNonNegative(record.averageUnitCostMinor),
+      lastPurchaseUnitCostMinor: finiteNonNegative(record.lastPurchaseUnitCostMinor),
+      inventoryValueMinor: finiteNonNegative(record.inventoryValueMinor),
+      costBasisSource: typeof record.costBasisSource === 'string'
+        ? record.costBasisSource as InventoryCostBasisSource
+        : undefined,
+      costBasisUpdatedAt: clean(record.costBasisUpdatedAt),
+    };
+    return [{
+      ...base,
+      ...normalizeInventoryCostBasis(base),
     } satisfies InventoryCatalogRecord];
   });
 };
@@ -174,11 +269,12 @@ export const buildOrderInventoryConsumption = (
   const catalogById = new Map(catalog.map(item => [item.id, item]));
   const totals = new Map<
     string,
-    { quantity: number; productIds: Set<string> }
+    { quantity: number; productQuantities: Map<string, number> }
   >();
 
   for (const orderItem of orderItems) {
-    const composition = compositions[clean(orderItem.productId)];
+    const productId = clean(orderItem.productId);
+    const composition = compositions[productId];
     if (!composition) continue;
     const operationalQuantity = Math.max(
       0,
@@ -192,10 +288,10 @@ export const buildOrderInventoryConsumption = (
       );
       const current = totals.get(line.inventoryItemId) ?? {
         quantity: 0,
-        productIds: new Set<string>(),
+        productQuantities: new Map<string, number>(),
       };
       current.quantity = roundQuantity(current.quantity + required);
-      current.productIds.add(orderItem.productId);
+      addProductQuantity(current.productQuantities, productId, required);
       totals.set(line.inventoryItemId, current);
     }
   }
@@ -213,6 +309,7 @@ export const buildOrderInventoryConsumption = (
           `Estoque insuficiente de “${item.name}”: necessário ${total.quantity} ${item.unit}, disponível ${item.currentQuantity} ${item.unit}.`
         );
       }
+      const productQuantityAllocations = productAllocationsFrom(total.productQuantities);
       return {
         inventoryItemId,
         inventoryItemName: item.name,
@@ -220,7 +317,8 @@ export const buildOrderInventoryConsumption = (
         quantity: total.quantity,
         beforeQuantity: item.currentQuantity,
         afterQuantity: roundQuantity(item.currentQuantity - total.quantity),
-        productIds: [...total.productIds].sort(),
+        productIds: productQuantityAllocations.map(allocation => allocation.productId),
+        productQuantityAllocations,
       } satisfies InventoryConsumptionLine;
     })
     .sort((left, right) =>
@@ -237,13 +335,46 @@ export const applyInventoryConsumptionLines = (
   return catalog.map(item => {
     const line = lineById.get(item.id);
     if (!line) return item;
+    const now = new Date().toISOString();
+    if (direction === 'consume') {
+      const economic = applyMovingAverageInventoryOutflow(item, {
+        quantity: line.quantity,
+        resultingQuantity: line.afterQuantity,
+        now,
+      });
+      line.costBasisStatus = economic.snapshot.costBasisStatus;
+      line.unitCostMinor = economic.snapshot.unitCostMinor;
+      line.totalCostMinor = economic.snapshot.totalCostMinor;
+      const productQuantityAllocations = line.productQuantityAllocations ?? [];
+      line.productCostAllocations =
+        economic.snapshot.costBasisStatus === 'complete'
+        && economic.snapshot.totalCostMinor !== null
+        && Number.isSafeInteger(economic.snapshot.totalCostMinor)
+          ? allocateProductCosts(economic.snapshot.totalCostMinor, productQuantityAllocations)
+          : productQuantityAllocations.map(allocation => ({
+              ...allocation,
+              costBasisStatus: 'incomplete',
+              totalCostMinor: null,
+            }));
+      return {
+        ...economic.item,
+        currentQuantity: line.afterQuantity,
+        updatedAt: now,
+      };
+    }
+
+    const resultingQuantity = roundQuantity(item.currentQuantity + line.quantity);
+    const economic = restoreInventoryAtHistoricalCost(item, {
+      quantity: line.quantity,
+      resultingQuantity,
+      historicalUnitCostMinor: line.unitCostMinor,
+      historicalTotalCostMinor: line.totalCostMinor,
+      now,
+    });
     return {
-      ...item,
-      currentQuantity:
-        direction === 'consume'
-          ? line.afterQuantity
-          : roundQuantity(item.currentQuantity + line.quantity),
-      updatedAt: new Date().toISOString(),
+      ...economic.item,
+      currentQuantity: resultingQuantity,
+      updatedAt: now,
     };
   });
 };

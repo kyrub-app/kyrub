@@ -21,6 +21,14 @@ export const INVENTORY_UNITS = [
 
 export type InventoryUnit = (typeof INVENTORY_UNITS)[number];
 export type ProductCompositionKind = 'recipe' | 'bundle';
+export type InventoryCostBasisStatus = 'complete' | 'incomplete';
+export type InventoryCostBasisSource =
+  | 'legacy_purchase_cost_seed'
+  | 'purchase_receipt'
+  | 'inventory_outflow'
+  | 'inventory_restoration'
+  | 'manual_adjustment'
+  | 'unknown';
 
 export interface InventoryCatalogItem {
   id: string;
@@ -31,6 +39,12 @@ export interface InventoryCatalogItem {
   purchaseCost: number;
   supplier: string;
   updatedAt: string;
+  costBasisStatus?: InventoryCostBasisStatus;
+  averageUnitCostMinor?: number | null;
+  lastPurchaseUnitCostMinor?: number | null;
+  inventoryValueMinor?: number | null;
+  costBasisSource?: InventoryCostBasisSource;
+  costBasisUpdatedAt?: string;
 }
 
 export interface ProductCompositionLine {
@@ -77,6 +91,11 @@ const finiteNonNegative = (value: unknown): number | null =>
     ? value
     : null;
 
+const finiteNonNegativeInteger = (value: unknown): number | null => {
+  const numeric = finiteNonNegative(value);
+  return numeric !== null && Number.isSafeInteger(numeric) ? numeric : null;
+};
+
 const positiveNumber = (value: unknown): number | null =>
   typeof value === 'number' && Number.isFinite(value) && value > 0
     ? value
@@ -84,6 +103,20 @@ const positiveNumber = (value: unknown): number | null =>
 
 const validEntityId = (value: string): boolean =>
   /^[a-zA-Z0-9_-]{1,128}$/.test(value);
+
+const parseCostBasisSource = (value: unknown): InventoryCostBasisSource | undefined => {
+  switch (value) {
+    case 'legacy_purchase_cost_seed':
+    case 'purchase_receipt':
+    case 'inventory_outflow':
+    case 'inventory_restoration':
+    case 'manual_adjustment':
+    case 'unknown':
+      return value;
+    default:
+      return undefined;
+  }
+};
 
 export const getProductInventoryDocumentPath = (uid: string): string =>
   `users/${uid.trim()}/private_store/inventory`;
@@ -126,6 +159,15 @@ export const parseInventoryCatalog = (
     }
 
     seen.add(id);
+    const costBasisStatus = item.costBasisStatus === 'complete' || item.costBasisStatus === 'incomplete'
+      ? item.costBasisStatus
+      : undefined;
+    const averageUnitCostMinor = finiteNonNegative(item.averageUnitCostMinor);
+    const lastPurchaseUnitCostMinor = finiteNonNegativeInteger(item.lastPurchaseUnitCostMinor);
+    const inventoryValueMinor = finiteNonNegativeInteger(item.inventoryValueMinor);
+    const costBasisSource = parseCostBasisSource(item.costBasisSource);
+    const costBasisUpdatedAt = clean(item.costBasisUpdatedAt);
+
     return [{
       id,
       name,
@@ -135,6 +177,12 @@ export const parseInventoryCatalog = (
       purchaseCost,
       supplier: clean(item.supplier).slice(0, 160),
       updatedAt: clean(item.updatedAt),
+      ...(costBasisStatus ? { costBasisStatus } : {}),
+      ...(averageUnitCostMinor !== null ? { averageUnitCostMinor } : {}),
+      ...(lastPurchaseUnitCostMinor !== null ? { lastPurchaseUnitCostMinor } : {}),
+      ...(inventoryValueMinor !== null ? { inventoryValueMinor } : {}),
+      ...(costBasisSource ? { costBasisSource } : {}),
+      ...(costBasisUpdatedAt ? { costBasisUpdatedAt } : {}),
     } satisfies InventoryCatalogItem];
   });
 };
@@ -354,7 +402,9 @@ export const persistProductInventorySettings = async (
         ownerId: user.uid,
         // Keep both names synchronized while the order pipeline still accepts
         // the legacy aliases. This prevents a stale legacy array/object from
-        // shadowing the freshly edited canonical inventory data.
+        // shadowing the freshly edited canonical inventory data. Economic cost
+        // basis fields are intentionally preserved by parseInventoryCatalog so
+        // product/composition edits cannot erase valuation history.
         inventoryCatalog: nextSettings.catalog,
         catalog: nextSettings.catalog,
         productCompositions: nextSettings.compositions,

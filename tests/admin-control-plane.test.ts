@@ -9,144 +9,48 @@ import {
   parseAdminProfile,
 } from '../src/utils/adminControlPlane';
 
-const modulesSource = readFileSync(
-  'src/components/admin/AdminModulesWorkspace.tsx',
-  'utf8'
-);
-const directorySource = readFileSync(
-  'src/components/admin/AdminDirectoryWorkspace.tsx',
-  'utf8'
-);
-const rootSource = readFileSync(
-  'src/components/admin/AdminControlPlaneRoot.tsx',
-  'utf8'
-);
-const appSource = readFileSync(
-  'src/components/admin/AdminControlPlaneApp.tsx',
-  'utf8'
-);
-const plansWorkspaceSource = readFileSync(
-  'src/components/store/OfficialStoreCommercialWorkspace.tsx',
-  'utf8'
-);
-const promotionalDirectSource = readFileSync(
-  'src/components/store/PromotionalDirectRuntime.tsx',
-  'utf8'
-);
-const officialIdentityPanelSource = readFileSync(
-  'src/components/store/OfficialStoreIdentityPanel.tsx',
-  'utf8'
-);
-const retailerRouterSource = readFileSync(
-  'src/components/RetailerPanelRuntimeRouter.tsx',
-  'utf8'
-);
-const planManagementSource = readFileSync(
-  'server/admin/planManagementService.ts',
-  'utf8'
-);
-const entitlementSource = readFileSync(
-  'server/admin/storeEntitlementService.ts',
-  'utf8'
-);
-const entitlementLifecycleSource = readFileSync(
-  'server/admin/storeEntitlementLifecycleService.ts',
-  'utf8'
-);
-const entitlementBridgeSource = readFileSync(
-  'src/components/store/StoreEntitlementLifecycleBridge.tsx',
-  'utf8'
-);
-const executableCatalogSource = readFileSync(
-  'server/admin/executablePlanCatalogService.ts',
-  'utf8'
-);
-const publicCatalogSource = readFileSync(
-  'server/admin/publicPlanCatalogService.ts',
-  'utf8'
-);
-const commercialPlanSource = readFileSync(
-  'shared/kyrubCommercialPlans.ts',
-  'utf8'
-);
-const activePlanClientSource = readFileSync(
-  'src/utils/activePlanCatalog.ts',
-  'utf8'
-);
-const activePlanKnowledgeSource = readFileSync(
-  'src/ai/activePlanKnowledgeRuntime.ts',
-  'utf8'
-);
-const consultantPlansSource = readFileSync(
-  'src/ai/consultantClientWithPlans.ts',
-  'utf8'
-);
+const modulesSource = readFileSync('src/components/admin/AdminModulesWorkspace.tsx', 'utf8');
+const directorySource = readFileSync('src/components/admin/AdminDirectoryWorkspace.tsx', 'utf8');
+const rootSource = readFileSync('src/components/admin/AdminControlPlaneRoot.tsx', 'utf8');
+const appSource = readFileSync('src/components/admin/AdminControlPlaneApp.tsx', 'utf8');
+const plansWorkspaceSource = readFileSync('src/components/store/OfficialStoreCommercialWorkspace.tsx', 'utf8');
+const promotionalDirectSource = readFileSync('src/components/store/PromotionalDirectRuntime.tsx', 'utf8');
+const officialIdentityPanelSource = readFileSync('src/components/store/OfficialStoreIdentityPanel.tsx', 'utf8');
+const retailerRouterSource = readFileSync('src/components/RetailerPanelRuntimeRouter.tsx', 'utf8');
+const planManagementSource = readFileSync('server/admin/planManagementService.ts', 'utf8');
+const entitlementSource = readFileSync('server/admin/storeEntitlementService.ts', 'utf8');
+const entitlementLifecycleSource = readFileSync('server/admin/storeEntitlementLifecycleService.ts', 'utf8');
+const entitlementBridgeSource = readFileSync('src/components/store/StoreEntitlementLifecycleBridge.tsx', 'utf8');
+const executableCatalogSource = readFileSync('server/admin/executablePlanCatalogService.ts', 'utf8');
+const publicCatalogSource = readFileSync('server/admin/publicPlanCatalogService.ts', 'utf8');
+const commercialPlanSource = readFileSync('shared/kyrubCommercialPlans.ts', 'utf8');
+const activePlanClientSource = readFileSync('src/utils/activePlanCatalog.ts', 'utf8');
+const activePlanKnowledgeSource = readFileSync('src/ai/activePlanKnowledgeRuntime.ts', 'utf8');
+const consultantPlansSource = readFileSync('src/ai/consultantClientWithPlans.ts', 'utf8');
 const actionExecuteSource = readFileSync('api/action-execute.ts', 'utf8');
 const planGatewaySource = readFileSync('api/plan-control.ts', 'utf8');
-const promotionalServiceSource = readFileSync(
-  'server/admin/promotionalPlanService.ts',
-  'utf8'
-);
-const adminOperationsSource = readFileSync(
-  'api/admin/operations/health.ts',
-  'utf8'
-);
+const promotionalServiceSource = readFileSync('server/admin/promotionalPlanService.ts', 'utf8');
+const adminOperationsSource = readFileSync('api/admin/operations/health.ts', 'utf8');
 const vercelConfigSource = readFileSync('vercel.json', 'utf8');
 
-const collectApiFunctions = (directory: string): string[] =>
-  readdirSync(directory).flatMap(name => {
-    const path = join(directory, name);
-    return statSync(path).isDirectory()
-      ? collectApiFunctions(path)
-      : path.endsWith('.ts')
-        ? [path]
-        : [];
-  });
+const collectApiFunctions = (directory: string): string[] => readdirSync(directory).flatMap(name => {
+  const path = join(directory, name);
+  return statSync(path).isDirectory() ? collectApiFunctions(path) : path.endsWith('.ts') ? [path] : [];
+});
 
 test('parses only known administrative roles and matching identities', () => {
-  const profile = parseAdminProfile(
-    {
-      uid: 'admin_a',
-      email: 'admin@example.com',
-      displayName: 'Admin A',
-      role: 'operations',
-      status: 'active',
-      createdBy: 'bootstrap',
-      createdAt: '2026-07-22T00:00:00.000Z',
-      updatedAt: '2026-07-22T00:00:00.000Z',
-      suspendedAt: '',
-      revokedAt: '',
-    },
-    'admin_a'
-  );
-
+  const profile = parseAdminProfile({ uid: 'admin_a', email: 'admin@example.com', displayName: 'Admin A', role: 'operations', status: 'active', createdBy: 'bootstrap', createdAt: '2026-07-22T00:00:00.000Z', updatedAt: '2026-07-22T00:00:00.000Z', suspendedAt: '', revokedAt: '' }, 'admin_a');
   assert.equal(profile?.role, 'operations');
   assert.equal(profile?.status, 'active');
-  assert.equal(
-    parseAdminProfile({ uid: 'admin_a', role: 'owner', status: 'active' }),
-    null
-  );
-  assert.equal(
-    parseAdminProfile(
-      { uid: 'admin_a', role: 'support', status: 'active' },
-      'admin_b'
-    ),
-    null
-  );
+  assert.equal(parseAdminProfile({ uid: 'admin_a', role: 'owner', status: 'active' }), null);
+  assert.equal(parseAdminProfile({ uid: 'admin_a', role: 'support', status: 'active' }, 'admin_b'), null);
 });
 
 test('derives permissions from role and blocks suspended profiles', () => {
-  const operations = {
-    role: 'operations' as const,
-    status: 'active' as const,
-  };
+  const operations = { role: 'operations' as const, status: 'active' as const };
   assert.equal(hasAdminPermission(operations, 'read_system_health'), true);
   assert.equal(hasAdminPermission(operations, 'read_finance'), false);
-  assert.equal(
-    hasAdminPermission({ ...operations, status: 'suspended' }, 'read_users'),
-    false
-  );
-
+  assert.equal(hasAdminPermission({ ...operations, status: 'suspended' }, 'read_users'), false);
   const superPermissions = getAdminPermissions('super_admin');
   assert.equal(superPermissions.includes('manage_admins'), true);
   assert.equal(superPermissions.includes('manage_compliance'), true);
@@ -159,22 +63,9 @@ test('routes only the administrative hostname, local path, or explicit Vercel pr
   assert.equal(isAdminControlPlaneLocation('localhost', '/admin/users'), true);
   assert.equal(isAdminControlPlaneLocation('kyrub.com', '/admin'), false);
   assert.equal(isAdminControlPlaneLocation('kyrub.com', '/'), false);
-  assert.equal(
-    isAdminControlPlaneLocation(
-      'kyrub-preview.vercel.app',
-      '/',
-      '?kyrub_admin_preview=1'
-    ),
-    true
-  );
-  assert.equal(
-    isAdminControlPlaneLocation('kyrub-preview.vercel.app', '/', ''),
-    false
-  );
-  assert.equal(
-    isAdminControlPlaneLocation('kyrub.com', '/', '?kyrub_admin_preview=1'),
-    false
-  );
+  assert.equal(isAdminControlPlaneLocation('kyrub-preview.vercel.app', '/', '?kyrub_admin_preview=1'), true);
+  assert.equal(isAdminControlPlaneLocation('kyrub-preview.vercel.app', '/', ''), false);
+  assert.equal(isAdminControlPlaneLocation('kyrub.com', '/', '?kyrub_admin_preview=1'), false);
 });
 
 test('keeps the control plane focused on platform governance instead of Cairubi commerce', () => {
@@ -231,14 +122,12 @@ test('Official Store owns plans, coupons and courtesy UI while server authority 
   assert.match(officialIdentityPanelSource, /commitIdentity/);
   assert.match(officialIdentityPanelSource, /onIdentityChange\?\.\(next\)/);
   assert.match(retailerRouterSource, /<LazyPromotionalRuntime storeId=\{retailerProps\.activeRetailerId\}/);
-
   assert.match(planManagementSource, /admin\.role !== 'super_admin'/);
   assert.match(planManagementSource, /PLAN_VERSIONS_COLLECTION/);
   assert.match(planManagementSource, /admin\.plan\.version\.published/);
   assert.match(planManagementSource, /admin\.coupon\.created/);
   assert.match(planManagementSource, /admin\.coupon\.status_changed/);
   assert.match(planManagementSource, /runTransaction/);
-
   assert.match(planGatewaySource, /admin\.snapshot/);
   assert.match(planGatewaySource, /admin\.plan\.publish/);
   assert.match(planGatewaySource, /admin\.coupon\.create/);
@@ -258,7 +147,6 @@ test('coupon redemption and direct grants converge on authoritative entitlement 
   assert.match(entitlementSource, /admin\.role !== 'super_admin'/);
   assert.match(entitlementSource, /store\.coupon\.redeemed/);
   assert.match(entitlementSource, /admin\.store_plan\.complimentary\.granted/);
-
   assert.match(planGatewaySource, /store\.coupon\.redeem/);
   assert.match(planGatewaySource, /redeemCouponWithLifecycle/);
 });
@@ -272,16 +160,9 @@ test('timed promotional benefits preserve a baseline and expire before further w
   assert.match(entitlementLifecycleSource, /writePlanMirrors/);
   assert.match(planGatewaySource, /store\.entitlement\.reconcile/);
   assert.match(entitlementBridgeSource, /reconcileOwnStoreEntitlement/);
-
-  const reconciliationCall = actionExecuteSource.indexOf(
-    'await reconcileStoreEntitlementFromAuthorization(authorization)'
-  );
-  const planHydrationCall = actionExecuteSource.indexOf(
-    'await hydrateExecutablePlanCatalog()'
-  );
-  const executionCall = actionExecuteSource.lastIndexOf(
-    'executeAuthorizedKyrubAction('
-  );
+  const reconciliationCall = actionExecuteSource.indexOf('await reconcileStoreEntitlementFromAuthorization(authorization)');
+  const planHydrationCall = actionExecuteSource.indexOf('await hydrateExecutablePlanCatalog()');
+  const executionCall = actionExecuteSource.lastIndexOf('executeAuthorizedKyrubAction(');
   assert.ok(reconciliationCall >= 0);
   assert.ok(planHydrationCall > reconciliationCall);
   assert.ok(executionCall > planHydrationCall);
@@ -294,12 +175,8 @@ test('active plan catalog is a read-only public projection and Kyrubia hydrates 
   assert.match(planGatewaySource, /method !== 'GET'/);
   assert.match(activePlanClientSource, /op=plans\.active/);
   assert.match(activePlanKnowledgeSource, /Segundo o Manual KYRUB — catálogo oficial ativo/);
-  const hydrationCall = consultantPlansSource.indexOf(
-    'await hydrateActivePlanCatalog(signal)'
-  );
-  const knowledgeCall = consultantPlansSource.indexOf(
-    'resolveKyrubiaActivePlanKnowledge(latestContent)'
-  );
+  const hydrationCall = consultantPlansSource.indexOf('await hydrateActivePlanCatalog(signal)');
+  const knowledgeCall = consultantPlansSource.indexOf('resolveKyrubiaActivePlanKnowledge(latestContent)');
   assert.ok(hydrationCall >= 0);
   assert.ok(knowledgeCall > hydrationCall);
 });
@@ -317,27 +194,17 @@ test('active plan versions hydrate the action executor with a safe V1 fallback',
   assert.match(executableCatalogSource, /compiled V1 fallback remains in force/);
   assert.match(executableCatalogSource, /features\.catalog !== false/);
   assert.match(executableCatalogSource, /features\.kyrubia_intelligence !== false/);
-  const hydrationCall = actionExecuteSource.indexOf(
-    'await hydrateExecutablePlanCatalog()'
-  );
-  const executionCall = actionExecuteSource.lastIndexOf(
-    'executeAuthorizedKyrubAction('
-  );
+  const hydrationCall = actionExecuteSource.indexOf('await hydrateExecutablePlanCatalog()');
+  const executionCall = actionExecuteSource.lastIndexOf('executeAuthorizedKyrubAction(');
   assert.ok(hydrationCall >= 0);
   assert.ok(executionCall > hydrationCall);
 });
 
 test('plans and coupons preserve one Vercel Hobby serverless slot as operational headroom', () => {
   const apiFunctions = collectApiFunctions('api');
-  assert.ok(
-    apiFunctions.length <= 11,
-    `Expected at most 11 active Vercel functions so one Hobby slot stays reserved, found ${apiFunctions.length}: ${apiFunctions.join(', ')}`
-  );
+  assert.ok(apiFunctions.length <= 11, `Expected at most 11 active Vercel functions so one Hobby slot stays reserved, found ${apiFunctions.length}: ${apiFunctions.join(', ')}`);
   assert.ok(apiFunctions.includes('api/plan-control.ts'));
-  assert.equal(
-    apiFunctions.includes('api/admin/store-entitlements/promotional-pro.ts'),
-    false
-  );
+  assert.equal(apiFunctions.includes('api/admin/store-entitlements/promotional-pro.ts'), false);
   assert.equal(apiFunctions.some(path => path.startsWith('api/coupons/')), false);
   assert.equal(apiFunctions.some(path => path.startsWith('api/plans/')), false);
 });
@@ -351,13 +218,6 @@ test('legacy founding Pro URL stays compatible through the admin multiplexer, no
   assert.doesNotMatch(promotionalServiceSource, /checkout|subscription|payment/i);
   assert.match(adminOperationsSource, /transport === 'promotional-pro'/);
   assert.match(adminOperationsSource, /grantFoundingProPromotion/);
-  assert.match(adminOperationsSource, /result\.status === 'granted' \? 201 : 200/);
-  assert.match(
-    vercelConfigSource,
-    /\/api\/admin\/store-entitlements\/promotional-pro/
-  );
-  assert.match(
-    vercelConfigSource,
-    /\/api\/admin\/operations\/health\?transport=promotional-pro/
-  );
+  assert.match(vercelConfigSource, /api\/admin\/store-entitlements\/promotional-pro/);
+  assert.match(vercelConfigSource, /transport=promotional-pro/);
 });

@@ -5,6 +5,7 @@ import {
   ARTIFACT_SECTION_HEADER,
   DELIVERY_SECTION_HEADER,
   FREELANCE_SECTION_HEADER,
+  NEXT_ARTIFACT_SECTION_HEADER,
   hardenKyrubArtifactRules,
   hardenKyrubDeliveryRules,
   hardenKyrubFreelanceRules,
@@ -124,6 +125,28 @@ test('artifact composition removes recursive cross-tenant writes', () => {
   assert.match(result, /incoming\(\)\.paymentStatus == 'unpaid'/);
   assert.match(result, /incoming\(\)\.status == 'cancelled'/);
   assert.match(result, /allow delete: if false;/);
+});
+
+test('artifact composition isolates reads while preserving buyer-owned order access', () => {
+  const result = hardenKyrubArtifactRules(legacyArtifactRules);
+  const sectionStart = result.indexOf(ARTIFACT_SECTION_HEADER);
+  const sectionEnd = result.indexOf(
+    NEXT_ARTIFACT_SECTION_HEADER,
+    sectionStart + ARTIFACT_SECTION_HEADER.length
+  );
+  const artifactSection = result.slice(sectionStart, sectionEnd);
+
+  assert.ok(sectionStart >= 0);
+  assert.ok(sectionEnd > sectionStart);
+  assert.doesNotMatch(artifactSection, /allow read: if isSignedIn\(\);/);
+  assert.match(
+    artifactSection,
+    /allow read: if isSignedIn\(\)\s*&& request\.auth\.uid == tenantId;/
+  );
+  assert.match(
+    artifactSection,
+    /existing\(\)\.buyerId == request\.auth\.uid/
+  );
 });
 
 test('artifact composition is idempotent', () => {
