@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ReceiptText } from 'lucide-react';
 import { FiscalWorkspace } from './FiscalWorkspace';
@@ -6,27 +6,47 @@ import { FiscalWorkspace } from './FiscalWorkspace';
 const GERENCIAL_ID = 'erp-gerencial-tab';
 const HOST_ID = 'kyrub-gerencial-fiscal-workspace-host';
 const BUTTON_ID = 'kyrub-gerencial-fiscal-entry';
+const MENU_ANCHOR_LABEL = 'PRODUTOS & ESTOQUE';
+
+const findGerencialMenuGrid = (gerencial: HTMLElement): HTMLElement | null => {
+  const anchorHeading = Array.from(gerencial.querySelectorAll('h4')).find(
+    heading => heading.textContent?.trim().toLocaleUpperCase('pt-BR') === MENU_ANCHOR_LABEL
+  );
+  const candidate = anchorHeading?.closest('.grid');
+  return candidate instanceof HTMLElement ? candidate : null;
+};
 
 export function GerencialFiscalWorkspaceBridge() {
   const [host, setHost] = useState<HTMLElement | null>(null);
   const [open, setOpen] = useState(false);
+  const menuGridRef = useRef<HTMLElement | null>(null);
 
   const closeFiscal = useCallback(() => {
     setOpen(false);
     const gerencial = document.getElementById(GERENCIAL_ID);
-    const menuGrid = gerencial?.querySelector(':scope > .grid') as HTMLElement | null;
-    if (menuGrid) menuGrid.style.display = '';
+    const menuGrid =
+      menuGridRef.current?.isConnected && menuGridRef.current
+        ? menuGridRef.current
+        : gerencial
+          ? findGerencialMenuGrid(gerencial)
+          : null;
+    if (menuGrid) {
+      menuGrid.style.display = '';
+      menuGridRef.current = menuGrid;
+    }
   }, []);
 
   const ensureEntry = useCallback(() => {
     const gerencial = document.getElementById(GERENCIAL_ID);
     if (!gerencial) {
+      menuGridRef.current = null;
       setHost(previous => previous && !previous.isConnected ? null : previous);
       return;
     }
 
-    const menuGrid = gerencial.querySelector(':scope > .grid') as HTMLElement | null;
+    const menuGrid = findGerencialMenuGrid(gerencial);
     if (!menuGrid) return;
+    menuGridRef.current = menuGrid;
 
     let button = document.getElementById(BUTTON_ID) as HTMLButtonElement | null;
     if (!button) {
@@ -43,9 +63,17 @@ export function GerencialFiscalWorkspaceBridge() {
           <p class="text-[10px] text-slate-400 leading-relaxed mt-0.5">Dados fiscais, prontidão e homologação segura da emissão da loja.</p>
         </div>`;
       button.addEventListener('click', () => {
-        menuGrid.style.display = 'none';
+        const currentGerencial = document.getElementById(GERENCIAL_ID);
+        const currentMenuGrid =
+          currentGerencial ? findGerencialMenuGrid(currentGerencial) : null;
+        if (currentMenuGrid) {
+          currentMenuGrid.style.display = 'none';
+          menuGridRef.current = currentMenuGrid;
+        }
         setOpen(true);
       });
+      menuGrid.appendChild(button);
+    } else if (button.parentElement !== menuGrid) {
       menuGrid.appendChild(button);
     }
 
