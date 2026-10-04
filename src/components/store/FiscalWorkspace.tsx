@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Building2, CheckCircle2, Circle, FileCheck2, ReceiptText, ShieldCheck } from 'lucide-react';
 import { auth } from '../../utils/firebase';
 
-interface FiscalWorkspaceProps { storeName: string; onStartOnboarding?: () => void | Promise<void>; }
+interface FiscalWorkspaceProps { storeName: string; canonicalStoreId: string; onStartOnboarding?: () => void | Promise<void>; }
 type FiscalOnboardingState = 'required' | 'preparing' | 'prepared' | 'error';
 type ProfileState = 'loading' | 'ready' | 'saving' | 'error';
 type ReadinessRequirement = { key: string; label: string; status: 'pending' | 'complete'; secret: boolean; };
@@ -15,7 +15,7 @@ const readinessEndpoint = '/api/store-connections/fiscal/readiness';
 const familyName = (family: FiscalFamily['family']) => family === 'nfce' ? 'NFC-e' : family === 'nfe' ? 'NF-e' : 'NFS-e';
 const familyDescription = (family: FiscalFamily['family']) => family === 'nfce' ? 'Venda ao consumidor' : family === 'nfe' ? 'Operações com mercadorias' : 'Prestação de serviços';
 
-export const FiscalWorkspace: React.FC<FiscalWorkspaceProps> = ({ storeName, onStartOnboarding }) => {
+export const FiscalWorkspace: React.FC<FiscalWorkspaceProps> = ({ storeName, canonicalStoreId, onStartOnboarding }) => {
   const [onboardingState, setOnboardingState] = useState<FiscalOnboardingState>('required');
   const [feedback, setFeedback] = useState('');
   const [profileState, setProfileState] = useState<ProfileState>('loading');
@@ -27,16 +27,16 @@ export const FiscalWorkspace: React.FC<FiscalWorkspaceProps> = ({ storeName, onS
   const [families, setFamilies] = useState<FiscalFamily[]>([]);
   const [readinessFeedback, setReadinessFeedback] = useState('');
 
-  const requestToken = async (): Promise<{ token: string; uid: string }> => {
+  const requestToken = async (): Promise<string> => {
     const user = auth.currentUser;
     if (!user) throw new Error('Faça login novamente para configurar a emissão fiscal.');
-    return { token: await user.getIdToken(), uid: user.uid };
+    return user.getIdToken();
   };
 
   const loadReadiness = async (): Promise<void> => {
     try {
-      const { token, uid } = await requestToken();
-      const response = await fetch(`${readinessEndpoint}?canonicalStoreId=${encodeURIComponent(uid)}`, { headers: { authorization: `Bearer ${token}` }, cache: 'no-store' });
+      const token = await requestToken();
+      const response = await fetch(`${readinessEndpoint}?canonicalStoreId=${encodeURIComponent(canonicalStoreId)}`, { headers: { authorization: `Bearer ${token}` }, cache: 'no-store' });
       const payload = await response.json().catch(() => ({})) as Record<string, any>;
       if (!response.ok) throw new Error(typeof payload.error === 'string' ? payload.error : 'Não foi possível consultar a prontidão fiscal.');
       if (payload.productionTrafficAllowed !== false) throw new Error('A prontidão fiscal retornou um estado de produção inesperado.');
@@ -54,8 +54,8 @@ export const FiscalWorkspace: React.FC<FiscalWorkspaceProps> = ({ storeName, onS
     let active = true;
     void (async () => {
       try {
-        const { token, uid } = await requestToken();
-        const response = await fetch(`${profileEndpoint}?canonicalStoreId=${encodeURIComponent(uid)}`, { headers: { authorization: `Bearer ${token}` }, cache: 'no-store' });
+        const token = await requestToken();
+        const response = await fetch(`${profileEndpoint}?canonicalStoreId=${encodeURIComponent(canonicalStoreId)}`, { headers: { authorization: `Bearer ${token}` }, cache: 'no-store' });
         const payload = await response.json().catch(() => ({})) as Record<string, any>;
         if (!response.ok) throw new Error(typeof payload.error === 'string' ? payload.error : 'Não foi possível carregar os dados fiscais.');
         if (!active) return;
@@ -71,7 +71,7 @@ export const FiscalWorkspace: React.FC<FiscalWorkspaceProps> = ({ storeName, onS
       }
     })();
     return () => { active = false; };
-  }, []);
+  }, [canonicalStoreId]);
 
   const startOnboarding = async (): Promise<void> => {
     if (onboardingState === 'preparing' || onboardingState === 'prepared') return;
@@ -79,8 +79,8 @@ export const FiscalWorkspace: React.FC<FiscalWorkspaceProps> = ({ storeName, onS
     try {
       if (onStartOnboarding) await onStartOnboarding();
       else {
-        const { token, uid } = await requestToken();
-        const response = await fetch('/api/store-connections/fiscal/onboarding/prepare', { method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, body: JSON.stringify({ canonicalStoreId: uid }), cache: 'no-store' });
+        const token = await requestToken();
+        const response = await fetch('/api/store-connections/fiscal/onboarding/prepare', { method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, body: JSON.stringify({ canonicalStoreId }), cache: 'no-store' });
         const payload = await response.json().catch(() => ({})) as Record<string, unknown>;
         if (!response.ok) throw new Error(typeof payload.error === 'string' && payload.error.trim() ? payload.error.trim() : 'Não foi possível iniciar a configuração fiscal.');
         if (payload.status !== 'prepared' || payload.productionTrafficAllowed !== false) throw new Error('O backend não confirmou a preparação fiscal em modo seguro.');
@@ -93,8 +93,8 @@ export const FiscalWorkspace: React.FC<FiscalWorkspaceProps> = ({ storeName, onS
     if (profileState === 'saving') return;
     setProfileState('saving'); setProfileFeedback('');
     try {
-      const { token, uid } = await requestToken();
-      const response = await fetch(profileEndpoint, { method: 'PUT', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, body: JSON.stringify({ canonicalStoreId: uid, profile }), cache: 'no-store' });
+      const token = await requestToken();
+      const response = await fetch(profileEndpoint, { method: 'PUT', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, body: JSON.stringify({ canonicalStoreId, profile }), cache: 'no-store' });
       const payload = await response.json().catch(() => ({})) as Record<string, any>;
       if (!response.ok) throw new Error(typeof payload.error === 'string' ? payload.error : 'Não foi possível salvar os dados fiscais.');
       setProfile({ legalName: payload.legalName ?? '', cnpj: payload.cnpj ?? '', stateRegistration: payload.stateRegistration ?? '', municipalRegistration: payload.municipalRegistration ?? '', taxRegime: payload.taxRegime ?? '', address: { ...emptyProfile().address, ...(payload.address ?? {}) } });
