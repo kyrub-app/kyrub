@@ -20,10 +20,6 @@ import {
   loadFiscalHomologationPolicy,
   saveFiscalHomologationPolicy,
 } from './fiscalHomologationPolicyRegistry.js';
-import {
-  loadFiscalStoreProfile,
-  saveFiscalStoreProfile,
-} from './fiscalStoreProfileService.js';
 import type {
   FiscalHomologationDocumentFamily,
   FiscalHomologationOperationScope,
@@ -75,37 +71,21 @@ const mapError = (error: unknown): { status: number; message: string } => {
     message === 'STORE_REPRESENTATION_FORBIDDEN' ||
     message === 'STORE_INVENTORY_AUTHORITY_FORBIDDEN' ||
     message === 'STORE_INVENTORY_AUTHORITY_REPAIR_FORBIDDEN' ||
-    message === 'STORE_OWNER_GOVERNANCE_FORBIDDEN' ||
-    message === 'FISCAL_PROFILE_FORBIDDEN'
+    message === 'STORE_OWNER_GOVERNANCE_FORBIDDEN'
   ) {
     return { status: 403, message: 'Você não pode administrar conexões desta loja.' };
   }
   if (
     message === 'STORE_INSTITUTIONAL_NOT_FOUND' ||
     message === 'STORE_CONNECTION_NOT_FOUND' ||
-    message === 'FISCAL_PREFLIGHT_ORDER_NOT_FOUND' ||
-    message === 'FISCAL_PROFILE_STORE_NOT_FOUND'
+    message === 'FISCAL_PREFLIGHT_ORDER_NOT_FOUND'
   ) {
     return {
       status: 404,
       message: message === 'FISCAL_PREFLIGHT_ORDER_NOT_FOUND'
         ? 'O pedido canônico não foi encontrado.'
-        : message === 'FISCAL_PROFILE_STORE_NOT_FOUND'
-          ? 'A loja autenticada não foi encontrada.'
-          : 'A loja ou conexão ainda não foi encontrada.',
+        : 'A loja ou conexão ainda não foi encontrada.',
     };
-  }
-  if (
-    message === 'FISCAL_PROFILE_STORE_IDENTITY_INVALID' ||
-    message === 'FISCAL_PROFILE_STORED_IDENTITY_INVALID'
-  ) {
-    return { status: 409, message: 'A identidade fiscal da loja está inconsistente.' };
-  }
-  if (
-    message.startsWith('FISCAL_PROFILE_') &&
-    (message.endsWith('_INVALID') || message.endsWith('_REQUIRED') || message === 'FISCAL_PROFILE_ADDRESS_INCOMPLETE')
-  ) {
-    return { status: 400, message: 'Revise os dados fiscais informados antes de salvar.' };
   }
   if (message === 'FISCAL_PREFLIGHT_CANONICAL_STORE_REQUIRED') {
     return {
@@ -226,36 +206,6 @@ export const createStoreConnectionOnboardingRouter = (): Router => {
       const identity = await authenticatedOwner(request.get('authorization') ?? '', storeId);
       response.setHeader('Cache-Control', 'no-store, max-age=0');
       response.json(await loadStoreConnectionOnboarding({ storeId, userId: identity.uid }));
-    } catch (error) {
-      const mapped = mapError(error);
-      response.status(mapped.status).json({ error: mapped.message });
-    }
-  });
-
-  router.get('/:storeId/fiscal-profile', async (request, response) => {
-    try {
-      const storeId = clean(request.params.storeId);
-      const identity = await authenticatedOwner(request.get('authorization') ?? '', storeId);
-      response.setHeader('Cache-Control', 'no-store, max-age=0');
-      response.json({ profile: await loadFiscalStoreProfile({ ownerId: identity.uid, storeId }) });
-    } catch (error) {
-      const mapped = mapError(error);
-      response.status(mapped.status).json({ error: mapped.message });
-    }
-  });
-
-  router.put('/:storeId/fiscal-profile', async (request, response) => {
-    try {
-      const storeId = clean(request.params.storeId);
-      const identity = await authenticatedOwner(request.get('authorization') ?? '', storeId);
-      response.setHeader('Cache-Control', 'no-store, max-age=0');
-      response.json({
-        profile: await saveFiscalStoreProfile({
-          ownerId: identity.uid,
-          storeId,
-          profile: request.body ?? {},
-        }),
-      });
     } catch (error) {
       const mapped = mapError(error);
       response.status(mapped.status).json({ error: mapped.message });

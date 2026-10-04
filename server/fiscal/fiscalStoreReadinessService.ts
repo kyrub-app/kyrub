@@ -1,6 +1,10 @@
 import { FieldValue } from 'firebase-admin/firestore';
 import { verifyFirebaseIdToken } from '../ai/consultantAuth.js';
 import { adminDb } from '../firebaseAdmin.js';
+import {
+  assertCanonicalOwnedStore,
+  loadCanonicalFiscalProfileData,
+} from './fiscalCanonicalStore.js';
 
 const bearerToken = (authorization: string): string => /^Bearer\s+(.+)$/i.exec(authorization)?.[1]?.trim() ?? '';
 const clean = (value: unknown, maxLength = 160): string => typeof value === 'string' ? value.trim().slice(0, maxLength) : '';
@@ -44,8 +48,7 @@ const assertOwnStore = async (authorization: string, canonicalStoreIdInput: unkn
   const canonicalStoreId = clean(canonicalStoreIdInput);
   if (!canonicalStoreId) throw new Error('FISCAL_STORE_REQUIRED');
   if (canonicalStoreId !== decoded.uid) throw new Error('FISCAL_STORE_OWNERSHIP_REQUIRED');
-  const store = await adminDb.doc(`stores/${canonicalStoreId}`).get();
-  if (!store.exists) throw new Error('FISCAL_STORE_NOT_FOUND');
+  await assertCanonicalOwnedStore({ ownerId: decoded.uid, storeId: canonicalStoreId });
   return canonicalStoreId;
 };
 
@@ -82,12 +85,11 @@ const buildFamily = (input: {
 /** Tenant-safe readiness projection by fiscal document family. Secret material never leaves backstage. */
 export const loadOwnFiscalStoreReadiness = async (input: { authorization: string; canonicalStoreId: unknown; }): Promise<FiscalStoreReadinessView> => {
   const canonicalStoreId = await assertOwnStore(input.authorization, input.canonicalStoreId);
-  const [profileSnapshot, enrollmentSnapshot, readinessSnapshot] = await Promise.all([
-    adminDb.doc(`stores/${canonicalStoreId}/fiscal/profile`).get(),
+  const [profile, enrollmentSnapshot, readinessSnapshot] = await Promise.all([
+    loadCanonicalFiscalProfileData(canonicalStoreId, canonicalStoreId),
     adminDb.doc(`kyrub_admin/fiscal/store_enrollments/${canonicalStoreId}`).get(),
     adminDb.doc(`kyrub_admin/fiscal/store_readiness/${canonicalStoreId}`).get(),
   ]);
-  const profile = profileSnapshot.data() ?? {};
   const enrollment = enrollmentSnapshot.data() ?? {};
   const backstage = readinessSnapshot.data() ?? {};
   const enrollmentPrepared = enrollment.status === 'prepared' || enrollment.status === 'production_authorized';
@@ -142,6 +144,7 @@ export const mapFiscalStoreReadinessError = (error: unknown): { status: number; 
   if (message === 'EMAIL_NOT_VERIFIED') return { status: 403, body: { error: 'Verifique seu e-mail para consultar a prontidão fiscal.', code: message } };
   if (message === 'FISCAL_STORE_OWNERSHIP_REQUIRED') return { status: 403, body: { error: 'A prontidão fiscal só pode ser consultada pela própria loja autenticada.', code: message } };
   if (message === 'FISCAL_STORE_NOT_FOUND') return { status: 404, body: { error: 'A loja autenticada não foi encontrada.', code: message } };
+  if (message === 'FISCAL_STORE_IDENTITY_INVALID') return { status: 409, body: { error: 'A identidade canônica da loja está inconsistente.', code: message } };
   if (message === 'FISCAL_STORE_REQUIRED' || message === 'FISCAL_DOCUMENT_FAMILY_INVALID') return { status: 400, body: { error: 'A configuração fiscal informada é inválida.', code: message } };
   console.error('[Fiscal Store Readiness]', error);
   return { status: 503, body: { error: 'Não foi possível consultar a prontidão fiscal agora.', code: 'FISCAL_STORE_READINESS_FAILED' } };
