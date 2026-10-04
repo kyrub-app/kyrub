@@ -11,6 +11,7 @@ import { OfficialKnowledgeSemanticSetupBridge } from './components/OfficialKnowl
 import { OfficialKnowledgeSetupBridge } from './components/OfficialKnowledgeSetupBridge';
 import { PdvProductQuickActionsBridge } from './components/pdv/PdvProductQuickActionsBridge';
 import { BuyerPickupCodeBridge } from './components/store/BuyerPickupCodeBridge';
+import { GerencialFiscalWorkspaceBridge } from './components/store/GerencialFiscalWorkspaceBridge';
 import { MercadoLivreOAuthReturnBridge } from './components/store/MercadoLivreOAuthReturnBridge';
 import { MercadoPagoReceivablesBridge } from './components/store/MercadoPagoReceivablesBridge';
 import { PickupPdvNavigationBridge } from './components/store/PickupPdvNavigationBridge';
@@ -60,6 +61,7 @@ createRoot(rootElement).render(
           <PickupPdvNavigationBridge />
           <PdvProductQuickActionsBridge />
           <GerencialIntegrationsNativeBridge />
+          <GerencialFiscalWorkspaceBridge />
           <MercadoPagoReceivablesBridge />
           <StoreOwnedPixReceivablesBridge />
           <AdminMercadoPagoOAuthBridge />
