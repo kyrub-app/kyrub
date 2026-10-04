@@ -7,6 +7,7 @@ type GerencialModule =
   | 'vendas'
   | 'financeiro'
   | 'rh'
+  | 'fiscal'
   | 'integracoes'
   | 'vouchers';
 
@@ -40,6 +41,11 @@ const LazyFinanceRuntime = lazy(async () => {
   return { default: module.StoreFinanceRuntime };
 });
 
+const LazyFiscalWorkspace = lazy(async () => {
+  const module = await import('./store/FiscalWorkspace');
+  return { default: module.FiscalWorkspace };
+});
+
 const MODULES: Array<{
   id: GerencialModule | 'crm' | 'marketing';
   title: string;
@@ -53,13 +59,14 @@ const MODULES: Array<{
   { id: 'rh', title: 'Recursos Humanos', description: 'Equipe, cargos, acessos e rotinas da loja única do usuário.', badge: 'Migração nativa' },
   { id: 'crm', title: 'CRM', description: 'Relacionamento, segmentação, histórico e inteligência sobre clientes.', badge: 'Em desenvolvimento', disabled: true },
   { id: 'marketing', title: 'Marketing', description: 'Aquisição, conversão, retenção, canais e inteligência de crescimento.', badge: 'Em desenvolvimento', disabled: true },
+  { id: 'fiscal', title: 'Fiscal', description: 'Emissor Fiscal Kyrub, configuração da empresa e histórico de documentos fiscais.', badge: 'Runtime nativo' },
   { id: 'integracoes', title: 'Integrações & Sandbox', description: 'Conexões externas, OAuth, sincronização e testes controlados dos canais.' },
   { id: 'vouchers', title: 'Cupons & Vouchers', description: 'Criação, edição, validade, limites e ativação de incentivos promocionais.', badge: 'Runtime nativo' },
 ];
 
 const TITLES: Record<GerencialModule, string> = {
   produtos: 'Produtos & Estoque', vendas: 'Vendas & Analytics', financeiro: 'Financeiro Interno',
-  rh: 'Recursos Humanos', integracoes: 'Integrações & Sandbox', vouchers: 'Cupons & Vouchers',
+  rh: 'Recursos Humanos', fiscal: 'Fiscal', integracoes: 'Integrações & Sandbox', vouchers: 'Cupons & Vouchers',
 };
 
 function MigrationNotice({ title }: { title: string }) {
@@ -72,7 +79,7 @@ function MigrationNotice({ title }: { title: string }) {
   );
 }
 
-export function GerencialPanel({ activeRetailerId, products, triggerToast, setActiveSubTab }: GerencialPanelProps) {
+export function GerencialPanel({ activeRetailerId, activeStore, products, triggerToast, setActiveSubTab }: GerencialPanelProps) {
   const [activeModule, setActiveModule] = useState<GerencialModule | null>(null);
 
   return (
@@ -123,7 +130,13 @@ export function GerencialPanel({ activeRetailerId, products, triggerToast, setAc
         </Suspense>
       )}
 
-      {activeModule && activeModule !== 'integracoes' && activeModule !== 'vouchers' && activeModule !== 'financeiro' && <MigrationNotice title={TITLES[activeModule]} />}
+      {activeModule === 'fiscal' && (
+        <Suspense fallback={<div className="rounded-3xl border border-teal-500/20 bg-slate-900 p-5 text-[10px] text-teal-100">Carregando Fiscal…</div>}>
+          <LazyFiscalWorkspace storeName={activeStore.name} />
+        </Suspense>
+      )}
+
+      {activeModule && activeModule !== 'integracoes' && activeModule !== 'vouchers' && activeModule !== 'financeiro' && activeModule !== 'fiscal' && <MigrationNotice title={TITLES[activeModule]} />}
     </div>
   );
 }
