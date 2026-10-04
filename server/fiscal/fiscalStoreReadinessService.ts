@@ -1,6 +1,7 @@
 import { FieldValue } from 'firebase-admin/firestore';
 import { verifyFirebaseIdToken } from '../ai/consultantAuth.js';
 import { adminDb } from '../firebaseAdmin.js';
+import { loadManagedFiscalStoreEnrollment } from '../integrations/fiscalManagedStoreEnrollment.js';
 import {
   assertCanonicalOwnedStore,
   loadCanonicalFiscalProfileData,
@@ -85,14 +86,16 @@ const buildFamily = (input: {
 /** Tenant-safe readiness projection by fiscal document family. Secret material never leaves backstage. */
 export const loadOwnFiscalStoreReadiness = async (input: { authorization: string; canonicalStoreId: unknown; }): Promise<FiscalStoreReadinessView> => {
   const canonicalStoreId = await assertOwnStore(input.authorization, input.canonicalStoreId);
-  const [profile, enrollmentSnapshot, readinessSnapshot] = await Promise.all([
+  const [profile, enrollmentRead, readinessSnapshot] = await Promise.all([
     loadCanonicalFiscalProfileData(canonicalStoreId, canonicalStoreId),
-    adminDb.doc(`kyrub_admin/fiscal/store_enrollments/${canonicalStoreId}`).get(),
+    loadManagedFiscalStoreEnrollment(canonicalStoreId),
     adminDb.doc(`kyrub_admin/fiscal/store_readiness/${canonicalStoreId}`).get(),
   ]);
-  const enrollment = enrollmentSnapshot.data() ?? {};
+  const enrollment = enrollmentRead.enrollment ?? {};
   const backstage = readinessSnapshot.data() ?? {};
-  const enrollmentPrepared = enrollment.status === 'prepared' || enrollment.status === 'production_authorized';
+  // Enrollment only proves that managed onboarding has reached an explicit lifecycle state.
+  // It never completes habilitation, A1, CSC, provider provisioning or homologation evidence.
+  const enrollmentPrepared = enrollment.status === 'prepared' || enrollment.status === 'homologation_ready' || enrollment.status === 'production_authorized';
   const configuredFamilies = backstage.families && typeof backstage.families === 'object' ? backstage.families as Record<string, unknown> : {};
   // Backward-compatible migration: the existing single-family evidence is treated as NFC-e only.
   const legacyNfceEvidence = { stateDocumentEnabled: backstage.stateNfceEnabled, certificateA1Configured: backstage.certificateA1Configured, nfceCscConfigured: backstage.nfceCscConfigured, providerCompanyProvisioned: backstage.providerCompanyProvisioned, homologationApproved: backstage.homologationApproved };
