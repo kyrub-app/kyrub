@@ -92,7 +92,7 @@ test('mobile ERP menu removes Gerencial and exposes every management module dire
     'Estoque',
     'Vendas & Analytics',
     'Financeiro Interno',
-    'Recursos Humanos',
+    'Equipe & Permissões',
     'CRM',
     'Marketing',
     'Integrações & Sandbox',
