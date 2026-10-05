@@ -23,6 +23,12 @@ import {
   loadOwnFiscalStoreReadiness,
   mapFiscalStoreReadinessError,
 } from '../fiscal/fiscalStoreReadinessService.js';
+import {
+  loadOwnFiscalStoreCredentialStatus,
+  mapFiscalStoreCredentialError,
+  saveOwnFiscalA1Credential,
+  saveOwnFiscalNfceCscCredential,
+} from '../fiscal/fiscalStoreCredentialService.js';
 
 type QueryValue = string | string[] | undefined;
 type RequestLike = { url?: string; query?: Record<string, QueryValue>; once?: (event: string, listener: () => void) => unknown; };
@@ -30,6 +36,8 @@ type ResponseLike = { once?: (event: string, listener: () => void) => unknown; w
 
 const app = express();
 app.set('trust proxy', 1);
+// A1 is the only merchant-facing integration payload that may legitimately exceed the generic 32 KB JSON budget.
+app.use('/api/store-connections/fiscal/credentials/a1', express.json({ limit: '96kb' }));
 app.use(express.json({ limit: '32kb' }));
 
 const integrationRateLimiter = rateLimit({ windowMs: 60 * 1000, max: 600, message: { error: 'Muitas solicitações de integração. Tente novamente em instantes.', code: 'TOO_MANY_INTEGRATION_REQUESTS' }, standardHeaders: true, legacyHeaders: false });
@@ -70,6 +78,40 @@ app.get('/api/store-connections/fiscal/readiness', fiscalOnboardingRateLimiter, 
     const result = await loadOwnFiscalStoreReadiness({ authorization: request.headers.authorization ?? '', canonicalStoreId: request.query.canonicalStoreId });
     response.setHeader('Cache-Control', 'no-store, max-age=0'); response.status(200).json(result);
   } catch (error) { const mapped = mapFiscalStoreReadinessError(error); response.setHeader('Cache-Control', 'no-store, max-age=0'); response.status(mapped.status).json(mapped.body); }
+});
+
+app.get('/api/store-connections/fiscal/credentials', fiscalOnboardingRateLimiter, async (request, response) => {
+  try {
+    const result = await loadOwnFiscalStoreCredentialStatus({ authorization: request.headers.authorization ?? '', canonicalStoreId: request.query.canonicalStoreId });
+    response.setHeader('Cache-Control', 'no-store, max-age=0'); response.status(200).json(result);
+  } catch (error) { const mapped = mapFiscalStoreCredentialError(error); response.setHeader('Cache-Control', 'no-store, max-age=0'); response.status(mapped.status).json(mapped.body); }
+});
+
+app.put('/api/store-connections/fiscal/credentials/a1', fiscalOnboardingRateLimiter, async (request, response) => {
+  try {
+    const body = request.body && typeof request.body === 'object' && !Array.isArray(request.body) ? request.body as Record<string, unknown> : {};
+    const result = await saveOwnFiscalA1Credential({
+      authorization: request.headers.authorization ?? '',
+      canonicalStoreId: body.canonicalStoreId,
+      fileName: body.fileName,
+      certificateBase64: body.certificateBase64,
+      password: body.password,
+    });
+    response.setHeader('Cache-Control', 'no-store, max-age=0'); response.status(200).json(result);
+  } catch (error) { const mapped = mapFiscalStoreCredentialError(error); response.setHeader('Cache-Control', 'no-store, max-age=0'); response.status(mapped.status).json(mapped.body); }
+});
+
+app.put('/api/store-connections/fiscal/credentials/nfce-csc', fiscalOnboardingRateLimiter, async (request, response) => {
+  try {
+    const body = request.body && typeof request.body === 'object' && !Array.isArray(request.body) ? request.body as Record<string, unknown> : {};
+    const result = await saveOwnFiscalNfceCscCredential({
+      authorization: request.headers.authorization ?? '',
+      canonicalStoreId: body.canonicalStoreId,
+      cscId: body.cscId,
+      csc: body.csc,
+    });
+    response.setHeader('Cache-Control', 'no-store, max-age=0'); response.status(200).json(result);
+  } catch (error) { const mapped = mapFiscalStoreCredentialError(error); response.setHeader('Cache-Control', 'no-store, max-age=0'); response.status(mapped.status).json(mapped.body); }
 });
 
 app.use('/api/store-connections/fiscal-provider/focus-nfce', integrationRateLimiter, createFocusNfceProviderOnboardingRouter());

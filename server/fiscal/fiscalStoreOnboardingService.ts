@@ -1,14 +1,7 @@
 import { FieldValue } from 'firebase-admin/firestore';
-import { verifyFirebaseIdToken } from '../ai/consultantAuth.js';
 import { adminDb } from '../firebaseAdmin.js';
 import { prepareManagedFiscalStoreEnrollment } from '../integrations/fiscalManagedStoreEnrollment.js';
-import { assertCanonicalOwnedStore } from './fiscalCanonicalStore.js';
-
-const bearerToken = (authorization: string): string =>
-  /^Bearer\s+(.+)$/i.exec(authorization)?.[1]?.trim() ?? '';
-
-const clean = (value: unknown, maxLength = 160): string =>
-  typeof value === 'string' ? value.trim().slice(0, maxLength) : '';
+import { authorizeOwnFiscalStore } from './fiscalStoreAuthorization.js';
 
 export interface FiscalStoreOnboardingView {
   canonicalStoreId: string;
@@ -28,27 +21,18 @@ export const prepareOwnFiscalStoreOnboarding = async (input: {
   authorization: string;
   canonicalStoreId: unknown;
 }): Promise<FiscalStoreOnboardingView> => {
-  const token = bearerToken(input.authorization);
-  if (!token) throw new Error('AUTH_REQUIRED');
-
-  const decoded = await verifyFirebaseIdToken(token);
-  if (decoded.emailVerified !== true) throw new Error('EMAIL_NOT_VERIFIED');
-
-  const canonicalStoreId = clean(input.canonicalStoreId);
-  if (!canonicalStoreId) throw new Error('FISCAL_STORE_ENROLLMENT_INPUT_REQUIRED');
-  if (canonicalStoreId !== decoded.uid) throw new Error('FISCAL_STORE_OWNERSHIP_REQUIRED');
-
-  await assertCanonicalOwnedStore({ ownerId: decoded.uid, storeId: canonicalStoreId });
+  const authorized = await authorizeOwnFiscalStore({ ...input, storeRequiredCode: 'FISCAL_STORE_ENROLLMENT_INPUT_REQUIRED' });
+  const canonicalStoreId = authorized.canonicalStoreId;
 
   const enrollment = await prepareManagedFiscalStoreEnrollment({
     canonicalStoreId,
-    actorId: decoded.uid,
+    actorId: authorized.actorId,
   });
 
   const auditId = crypto.randomUUID().replaceAll('-', '_');
   await adminDb.doc(`kyrub_admin/control_plane/audit_logs/${auditId}`).set({
     id: auditId, action: 'store.fiscal.onboarding.prepared',
-    actorId: decoded.uid,
+    actorId: authorized.actorId,
     actorRole: 'store_owner',
     targetType: 'store',
     targetId: canonicalStoreId,
