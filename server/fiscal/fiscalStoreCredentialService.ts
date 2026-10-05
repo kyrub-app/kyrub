@@ -8,6 +8,8 @@ import { authorizeOwnFiscalStore } from './fiscalStoreAuthorization.js';
 const MAX_SECRET_BYTES = 64 * 1024;
 const clean = (value: unknown, maxLength: number): string =>
   typeof value === 'string' ? value.trim().slice(0, maxLength) : '';
+const boundedSecret = (value: unknown, maxLength: number): string =>
+  typeof value === 'string' ? value.slice(0, maxLength) : '';
 
 const metadataPath = (canonicalStoreId: string): string =>
   `kyrub_admin/fiscal/store_credentials/${canonicalStoreId}`;
@@ -27,6 +29,25 @@ const assertSecretSize = (value: string): void => {
   if (Buffer.byteLength(value, 'utf8') > MAX_SECRET_BYTES) {
     throw new Error('FISCAL_CREDENTIAL_SECRET_TOO_LARGE');
   }
+};
+
+const writeCredentialAudit = async (input: {
+  action: 'store.fiscal.credential.a1.saved' | 'store.fiscal.credential.nfce_csc.saved';
+  actorId: string;
+  canonicalStoreId: string;
+}): Promise<void> => {
+  const auditId = crypto.randomUUID().replaceAll('-', '_');
+  await adminDb.doc(`kyrub_admin/control_plane/audit_logs/${auditId}`).set({
+    id: auditId,
+    action: input.action,
+    actorId: input.actorId,
+    actorRole: 'store_owner',
+    targetType: 'store',
+    targetId: input.canonicalStoreId,
+    source: 'server',
+    secretMaterialLogged: false,
+    createdAt: FieldValue.serverTimestamp(),
+  });
 };
 
 const decodeCertificate = (value: unknown): Buffer => {
@@ -113,7 +134,7 @@ export const saveOwnFiscalA1Credential = async (input: {
 }): Promise<FiscalStoreCredentialStatus> => {
   const authorized = await authorizeOwnFiscalStore(input);
   const fileName = safeFileName(input.fileName);
-  const password = clean(input.password, 512);
+  const password = boundedSecret(input.password, 512);
   if (!password) throw new Error('FISCAL_A1_PASSWORD_REQUIRED');
   const certificate = decodeCertificate(input.certificateBase64);
   const certificateBase64 = certificate.toString('base64');
@@ -142,6 +163,11 @@ export const saveOwnFiscalA1Credential = async (input: {
     },
     updatedAt: FieldValue.serverTimestamp(),
   }, { merge: true });
+  await writeCredentialAudit({
+    action: 'store.fiscal.credential.a1.saved',
+    actorId: authorized.actorId,
+    canonicalStoreId: authorized.canonicalStoreId,
+  });
   return loadFiscalStoreCredentialStatus(authorized.canonicalStoreId);
 };
 
@@ -178,6 +204,11 @@ export const saveOwnFiscalNfceCscCredential = async (input: {
     },
     updatedAt: FieldValue.serverTimestamp(),
   }, { merge: true });
+  await writeCredentialAudit({
+    action: 'store.fiscal.credential.nfce_csc.saved',
+    actorId: authorized.actorId,
+    canonicalStoreId: authorized.canonicalStoreId,
+  });
   return loadFiscalStoreCredentialStatus(authorized.canonicalStoreId);
 };
 
