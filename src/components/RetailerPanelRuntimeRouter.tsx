@@ -39,6 +39,7 @@ const LazyStockRuntime = lazy(async () => { const module = await import('./store
 const LazySalesAnalyticsRuntime = lazy(async () => { const module = await import('./store/StoreSalesAnalyticsRuntime'); return { default: module.StoreSalesAnalyticsRuntime }; });
 const LazySubscriptionsRuntime = lazy(async () => { const module = await import('./store/StoreSubscriptionsRuntime'); return { default: module.default }; });
 const LazyFinanceRuntime = lazy(async () => { const module = await import('./StoreFinanceCompositeRuntime'); return { default: module.StoreFinanceCompositeRuntime }; });
+const LazyFiscalGuidedOnboarding = lazy(async () => { const module = await import('./store/FiscalGuidedOnboarding'); return { default: module.FiscalGuidedOnboarding }; });
 const LazyFiscalWorkspace = lazy(async () => { const module = await import('./store/FiscalWorkspace'); return { default: module.FiscalWorkspace }; });
 const LazyStoreTeamWorkspace = lazy(async () => { const module = await import('./store/StoreTeamWorkspace'); return { default: module.StoreTeamWorkspace }; });
 const LazyStorePayrollWorkspace = lazy(async () => { const module = await import('./store/StorePayrollWorkspace'); return { default: module.default }; });
@@ -59,7 +60,7 @@ function DirectManagementModule({ moduleId, retailerProps, onBackToPdv }: { modu
       : moduleId === 'vendas' ? <Suspense fallback={<Loading>Carregando Vendas & Analytics…</Loading>}><LazySalesAnalyticsRuntime storeId={retailerProps.activeRetailerId} /></Suspense>
       : moduleId === 'assinaturas' ? <Suspense fallback={<Loading>Carregando Assinaturas…</Loading>}><LazySubscriptionsRuntime storeId={retailerProps.activeRetailerId} triggerToast={retailerProps.triggerToast} /></Suspense>
       : moduleId === 'financeiro' ? <Suspense fallback={<Loading>Carregando Financeiro Interno…</Loading>}><LazyFinanceRuntime storeId={retailerProps.activeRetailerId} /></Suspense>
-      : moduleId === 'fiscal' ? <Suspense fallback={<Loading>Carregando Fiscal…</Loading>}><LazyFiscalWorkspace storeName={retailerProps.activeStore.name} canonicalStoreId={retailerProps.activeRetailerId} /></Suspense>
+      : moduleId === 'fiscal' ? <Suspense fallback={<Loading>Carregando Fiscal…</Loading>}><div className="space-y-5"><LazyFiscalGuidedOnboarding canonicalStoreId={retailerProps.activeRetailerId} /><LazyFiscalWorkspace storeName={retailerProps.activeStore.name} canonicalStoreId={retailerProps.activeRetailerId} /></div></Suspense>
       : moduleId === 'rh' ? <Suspense fallback={<Loading>Carregando Recursos Humanos…</Loading>}><div className="space-y-5"><LazyStoreTeamWorkspace legacyStore={retailerProps.activeStore} legacyStoreId={retailerProps.activeRetailerId} notify={retailerProps.triggerToast} /><LazyStorePayrollWorkspace legacyStoreId={retailerProps.activeRetailerId} notify={retailerProps.triggerToast} /></div></Suspense>
       : moduleId === 'vouchers' ? <Suspense fallback={<Loading>Carregando Promocionais…</Loading>}><LazyPromotionalRuntime storeId={retailerProps.activeRetailerId} /></Suspense>
       : moduleId === 'crm' ? <Suspense fallback={<Loading>Carregando CRM…</Loading>}><LazyCrmRelationshipPanel storeId={retailerProps.activeRetailerId} /></Suspense>
