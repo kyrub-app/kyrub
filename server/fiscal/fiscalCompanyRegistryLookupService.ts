@@ -77,9 +77,10 @@ const requestBearerToken = async (): Promise<string> => {
   return token;
 };
 
-const normalizeBasicResponse = (
+export const normalizeSerproCnpjBasicResponse = (
   cnpj: string,
-  payload: Record<string, unknown>
+  payload: Record<string, unknown>,
+  lookedUpAt = new Date().toISOString()
 ): SerproCnpjBasicLookupView => {
   const status = record(payload.situacaoCadastral);
   const cnae = record(payload.cnaePrincipal);
@@ -90,7 +91,7 @@ const normalizeBasicResponse = (
   const street = [streetType, streetName].filter(Boolean).join(' ').trim();
   return {
     source: 'serpro_cnpj',
-    lookedUpAt: new Date().toISOString(),
+    lookedUpAt,
     cnpj: digits(payload.ni) || cnpj,
     legalName: clean(payload.nomeEmpresarial, 180),
     tradeName: clean(payload.nomeFantasia, 180),
@@ -149,7 +150,7 @@ export const lookupOwnFiscalCompanyRegistry = async (input: {
   if (response.status === 429) throw new Error('SERPRO_CNPJ_RATE_LIMITED');
   if (!response.ok && response.status !== 206) throw new Error('SERPRO_CNPJ_QUERY_UNAVAILABLE');
 
-  const result = normalizeBasicResponse(cnpj, payload);
+  const result = normalizeSerproCnpjBasicResponse(cnpj, payload);
   if (!result.legalName) throw new Error('SERPRO_CNPJ_RESPONSE_INVALID');
 
   const auditId = crypto.randomUUID().replaceAll('-', '_');
@@ -178,6 +179,9 @@ export const mapFiscalCompanyRegistryLookupError = (
   if (message === 'EMAIL_NOT_VERIFIED' || message === 'FISCAL_STORE_OWNERSHIP_REQUIRED') {
     return { status: 403, body: { error: 'Você não pode consultar dados empresariais para esta loja.', code: message } };
   }
+  if (message === 'FISCAL_COMPANY_LOOKUP_INPUT_REQUIRED') {
+    return { status: 400, body: { error: 'Informe a loja canônica para consultar o CNPJ.', code: message } };
+  }
   if (message === 'FISCAL_STORE_NOT_FOUND') {
     return { status: 404, body: { error: 'A loja autenticada não foi encontrada.', code: message } };
   }
@@ -192,6 +196,9 @@ export const mapFiscalCompanyRegistryLookupError = (
   }
   if (message === 'SERPRO_CNPJ_NOT_CONFIGURED') {
     return { status: 503, body: { error: 'A consulta oficial de CNPJ ainda não está configurada pelo Kyrub.', code: message } };
+  }
+  if (message === 'SERPRO_CNPJ_CONSUMER_KEY_REQUIRED' || message === 'SERPRO_CNPJ_CONSUMER_SECRET_REQUIRED') {
+    return { status: 503, body: { error: 'As credenciais da consulta oficial de CNPJ estão incompletas no cofre.', code: message } };
   }
   if (message === 'SERPRO_CNPJ_AUTH_FAILED' || message === 'SERPRO_CNPJ_QUERY_NOT_AUTHORIZED') {
     return { status: 503, body: { error: 'A integração oficial de CNPJ precisa ser validada pelo administrador do Kyrub.', code: message } };
