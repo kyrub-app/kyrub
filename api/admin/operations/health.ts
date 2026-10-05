@@ -127,6 +127,35 @@ export default async function handler(request: RequestLike, response: ResponseLi
     return;
   }
 
+  if (transport === 'serpro-cnpj-status' || transport === 'serpro-cnpj-credentials' || transport === 'serpro-cnpj-test') {
+    const expectedMethod = transport === 'serpro-cnpj-status' ? 'GET' : 'POST';
+    if (method !== expectedMethod) { response.status(405).json({ error: 'Método não permitido.', code: 'METHOD_NOT_ALLOWED' }); return; }
+    let mapError: ((error: unknown) => HttpErrorResult) | null = null;
+    try {
+      const serpro = await import('../../../server/admin/serproCnpjCredentialService.js');
+      mapError = serpro.mapSerproCnpjCredentialError;
+      if (transport === 'serpro-cnpj-status') {
+        response.status(200).json(await serpro.loadAuthorizedSerproCnpjCredentialStatus(authorization));
+        return;
+      }
+      if (transport === 'serpro-cnpj-credentials') {
+        const body = bodyRecord(request.body);
+        response.status(200).json(await serpro.saveAuthorizedSerproCnpjCredentials({
+          authorization,
+          consumerKey: body.consumerKey,
+          consumerSecret: body.consumerSecret,
+        }));
+        return;
+      }
+      const result = await serpro.testAuthorizedSerproCnpjAuthentication(authorization);
+      response.status(result.ok ? 200 : 422).json(result);
+    } catch (error) {
+      const mapped = mapError ? mapError(error) : unavailable('Não foi possível configurar a integração SERPRO agora.');
+      response.status(mapped.status).json(mapped.body);
+    }
+    return;
+  }
+
   if (method !== 'GET') { response.status(405).json({ error: 'Método não permitido.', code: 'METHOD_NOT_ALLOWED' }); return; }
   let mapError: ((error: unknown) => HttpErrorResult) | null = null;
   try { const operations = await import('../../../server/admin/operationsHealthRouter.js'); mapError = operations.mapOperationsHealthError; response.status(200).json(await operations.loadAuthorizedOperationsHealth(authorization)); }
