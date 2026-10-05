@@ -7,10 +7,20 @@ type FiscalOnboardingState = 'required' | 'preparing' | 'prepared' | 'error';
 type ProfileState = 'loading' | 'ready' | 'saving' | 'error';
 type CredentialState = 'loading' | 'ready' | 'saving_a1' | 'saving_csc' | 'error';
 type ContextualHelpTopic = 'mei' | 'a1' | 'csc' | null;
-type CompanyLookupState = 'idle' | 'validated' | 'error';
+type CompanyLookupState = 'idle' | 'loading' | 'review' | 'applied' | 'error';
 type ReadinessRequirement = { key: string; label: string; status: 'pending' | 'complete'; secret: boolean; };
 type FiscalFamily = { family: 'nfce' | 'nfe' | 'nfse'; enabled: boolean; status: 'not_configured' | 'pending' | 'ready_for_production_authorization'; requirements: ReadinessRequirement[]; productionTrafficAllowed: false; };
 type FiscalProfile = { legalName: string; cnpj: string; stateRegistration: string; municipalRegistration: string; taxRegime: string; address: { street: string; number: string; complement: string; district: string; city: string; state: string; postalCode: string; ibgeCityCode: string; }; };
+type CompanyLookupResult = {
+  source: 'serpro_cnpj';
+  lookedUpAt: string;
+  cnpj: string;
+  legalName: string;
+  tradeName: string;
+  registrationStatus: { code: string; date: string; reason: string; };
+  primaryCnae: { code: string; description: string; };
+  address: FiscalProfile['address'];
+};
 type FiscalCredentialStatus = {
   canonicalStoreId: string;
   certificateA1: { configured: boolean; fileName: string | null; fingerprintSha256: string | null; byteLength: number | null; updatedAt: string | null; };
@@ -24,6 +34,7 @@ const emptyCredentialStatus = (canonicalStoreId: string): FiscalCredentialStatus
 const profileEndpoint = '/api/store-connections/fiscal/profile';
 const readinessEndpoint = '/api/store-connections/fiscal/readiness';
 const credentialsEndpoint = '/api/store-connections/fiscal/credentials';
+const companyLookupEndpoint = '/api/store-connections/fiscal/company-registry/lookup';
 const SP_NFCE_URL = 'https://portal.fazenda.sp.gov.br/servicos/nfce';
 const NFF_PLAY_URL = 'https://play.google.com/store/apps/details?id=br.gov.rs.procergs.nff';
 const NFF_APPLE_URL = 'https://apps.apple.com/br/app/nota-fiscal-f%C3%A1cil-nff/id1531717982';
@@ -83,6 +94,32 @@ const credentialStatusFrom = (payload: Record<string, any>, canonicalStoreId: st
     productionTrafficAllowed: false,
   };
 };
+const lookupResultFrom = (payload: Record<string, any>): CompanyLookupResult => ({
+  source: 'serpro_cnpj',
+  lookedUpAt: typeof payload.lookedUpAt === 'string' ? payload.lookedUpAt : '',
+  cnpj: typeof payload.cnpj === 'string' ? onlyDigits(payload.cnpj) : '',
+  legalName: typeof payload.legalName === 'string' ? payload.legalName.trim() : '',
+  tradeName: typeof payload.tradeName === 'string' ? payload.tradeName.trim() : '',
+  registrationStatus: {
+    code: typeof payload.registrationStatus?.code === 'string' ? payload.registrationStatus.code.trim() : '',
+    date: typeof payload.registrationStatus?.date === 'string' ? payload.registrationStatus.date.trim() : '',
+    reason: typeof payload.registrationStatus?.reason === 'string' ? payload.registrationStatus.reason.trim() : '',
+  },
+  primaryCnae: {
+    code: typeof payload.primaryCnae?.code === 'string' ? payload.primaryCnae.code.trim() : '',
+    description: typeof payload.primaryCnae?.description === 'string' ? payload.primaryCnae.description.trim() : '',
+  },
+  address: {
+    street: typeof payload.address?.street === 'string' ? payload.address.street.trim() : '',
+    number: typeof payload.address?.number === 'string' ? payload.address.number.trim() : '',
+    complement: typeof payload.address?.complement === 'string' ? payload.address.complement.trim() : '',
+    district: typeof payload.address?.district === 'string' ? payload.address.district.trim() : '',
+    city: typeof payload.address?.city === 'string' ? payload.address.city.trim() : '',
+    state: typeof payload.address?.state === 'string' ? payload.address.state.trim().toUpperCase() : '',
+    postalCode: typeof payload.address?.postalCode === 'string' ? onlyDigits(payload.address.postalCode).slice(0, 8) : '',
+    ibgeCityCode: typeof payload.address?.ibgeCityCode === 'string' ? onlyDigits(payload.address.ibgeCityCode).slice(0, 7) : '',
+  },
+});
 
 export const FiscalWorkspace: React.FC<FiscalWorkspaceProps> = ({ storeName, canonicalStoreId, onStartOnboarding }) => {
   const [onboardingState, setOnboardingState] = useState<FiscalOnboardingState>('required');
@@ -106,6 +143,7 @@ export const FiscalWorkspace: React.FC<FiscalWorkspaceProps> = ({ storeName, can
   const [contextualHelp, setContextualHelp] = useState<ContextualHelpTopic>(null);
   const [companyLookupState, setCompanyLookupState] = useState<CompanyLookupState>('idle');
   const [companyLookupFeedback, setCompanyLookupFeedback] = useState('');
+  const [companyLookupResult, setCompanyLookupResult] = useState<CompanyLookupResult | null>(null);
   const [formalizationOpen, setFormalizationOpen] = useState(false);
 
   const requestToken = async (): Promise<string> => {
@@ -153,7 +191,7 @@ export const FiscalWorkspace: React.FC<FiscalWorkspaceProps> = ({ storeName, can
     setCredentialStatus(emptyCredentialStatus(canonicalStoreId));
     setCredentialState('loading');
     setA1File(null); setA1Password(''); setCscId(''); setCsc(''); setContextualHelp(null);
-    setCompanyLookupState('idle'); setCompanyLookupFeedback(''); setFormalizationOpen(false);
+    setCompanyLookupState('idle'); setCompanyLookupFeedback(''); setCompanyLookupResult(null); setFormalizationOpen(false);
     void (async () => {
       try {
         const token = await requestToken();
@@ -255,17 +293,58 @@ export const FiscalWorkspace: React.FC<FiscalWorkspaceProps> = ({ storeName, can
 
   const setField = (key: keyof Omit<FiscalProfile, 'address'>, value: string) => setProfile(current => ({ ...current, [key]: value }));
   const setAddress = (key: keyof FiscalProfile['address'], value: string) => setProfile(current => ({ ...current, address: { ...current.address, [key]: value } }));
-  const handleCompanyLookup = (): void => {
+  const handleCompanyLookup = async (): Promise<void> => {
+    if (companyLookupState === 'loading') return;
     const normalized = onlyDigits(profile.cnpj);
     setFormalizationOpen(false);
+    setCompanyLookupResult(null);
     if (!isValidCnpj(normalized)) {
       setCompanyLookupState('error');
       setCompanyLookupFeedback('Confira o CNPJ informado. Ele precisa ter 14 dígitos e dígitos verificadores válidos.');
       return;
     }
     setField('cnpj', normalized);
-    setCompanyLookupState('validated');
-    setCompanyLookupFeedback('CNPJ validado. A consulta automática ainda precisa ser conectada a uma fonte cadastral autorizada antes de preencher ou substituir dados da empresa. Você pode revisar o formulário manual abaixo enquanto essa integração não está habilitada.');
+    setCompanyLookupState('loading');
+    setCompanyLookupFeedback('Consultando o cadastro oficial da empresa...');
+    try {
+      const token = await requestToken();
+      const response = await fetch(companyLookupEndpoint, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ canonicalStoreId, cnpj: normalized }),
+        cache: 'no-store',
+      });
+      const payload = await response.json().catch(() => ({})) as Record<string, any>;
+      if (!response.ok) throw new Error(typeof payload.error === 'string' && payload.error.trim() ? payload.error.trim() : 'Não foi possível consultar os dados da empresa.');
+      const result = lookupResultFrom(payload);
+      if (!result.cnpj || !result.legalName) throw new Error('O serviço oficial retornou dados incompletos para este CNPJ.');
+      setCompanyLookupResult(result);
+      setCompanyLookupState('review');
+      setCompanyLookupFeedback('Dados encontrados. Compare as informações antes de aplicá-las ao formulário fiscal. Nada foi salvo ainda.');
+    } catch (error) {
+      setCompanyLookupState('error');
+      setCompanyLookupFeedback(error instanceof Error ? error.message : 'Não foi possível consultar os dados da empresa agora.');
+    }
+  };
+  const applyCompanyLookup = (): void => {
+    if (!companyLookupResult) return;
+    setProfile(current => ({
+      ...current,
+      cnpj: companyLookupResult.cnpj || current.cnpj,
+      legalName: companyLookupResult.legalName || current.legalName,
+      address: {
+        street: companyLookupResult.address.street || current.address.street,
+        number: companyLookupResult.address.number || current.address.number,
+        complement: companyLookupResult.address.complement || current.address.complement,
+        district: companyLookupResult.address.district || current.address.district,
+        city: companyLookupResult.address.city || current.address.city,
+        state: companyLookupResult.address.state || current.address.state,
+        postalCode: companyLookupResult.address.postalCode || current.address.postalCode,
+        ibgeCityCode: companyLookupResult.address.ibgeCityCode || current.address.ibgeCityCode,
+      },
+    }));
+    setCompanyLookupState('applied');
+    setCompanyLookupFeedback('Dados oficiais aplicados ao formulário. Revise os campos e clique em “Salvar dados fiscais” para confirmar a gravação. Regime tributário, IE e IM não foram alterados.');
   };
   const openNffGuidance = (): void => {
     setContextualHelp('mei');
@@ -277,6 +356,18 @@ export const FiscalWorkspace: React.FC<FiscalWorkspaceProps> = ({ storeName, can
   const isSp = profile.address.state.trim().toUpperCase() === 'SP';
   const isMei = /(^|\W)MEI($|\W)/i.test(profile.taxRegime);
   const toggleHelp = (topic: Exclude<ContextualHelpTopic, null>) => setContextualHelp(current => current === topic ? null : topic);
+  const comparisonRows = companyLookupResult ? [
+    { label: 'Razão social', current: profile.legalName, found: companyLookupResult.legalName },
+    { label: 'CNPJ', current: onlyDigits(profile.cnpj), found: companyLookupResult.cnpj },
+    { label: 'Logradouro', current: profile.address.street, found: companyLookupResult.address.street },
+    { label: 'Número', current: profile.address.number, found: companyLookupResult.address.number },
+    { label: 'Complemento', current: profile.address.complement, found: companyLookupResult.address.complement },
+    { label: 'Bairro', current: profile.address.district, found: companyLookupResult.address.district },
+    { label: 'Município', current: profile.address.city, found: companyLookupResult.address.city },
+    { label: 'UF', current: profile.address.state, found: companyLookupResult.address.state },
+    { label: 'CEP', current: onlyDigits(profile.address.postalCode), found: companyLookupResult.address.postalCode },
+    { label: 'Código IBGE', current: onlyDigits(profile.address.ibgeCityCode), found: companyLookupResult.address.ibgeCityCode },
+  ].filter(item => item.found) : [];
 
   return <div className="space-y-5" id="kyrub-fiscal-workspace">
     <div className="space-y-3 rounded-3xl border border-slate-800 bg-slate-900 p-5">
@@ -289,13 +380,30 @@ export const FiscalWorkspace: React.FC<FiscalWorkspaceProps> = ({ storeName, can
       <div className="flex items-start justify-between gap-3"><div><div className="flex items-center gap-2"><Building2 className="h-5 w-5 text-blue-400" /><h4 className="text-xs font-black uppercase text-white">Dados fiscais</h4></div><p className="mt-1 text-[10px] leading-relaxed text-slate-400">Comece pelo CNPJ ou revise os dados manualmente. O Kyrub não aplica enquadramento tributário nem substitui informações sem sua confirmação.</p></div><span className={`rounded-full border px-2 py-1 font-mono text-[8px] font-black uppercase ${completeness === 'complete' ? 'border-emerald-500/20 text-emerald-300' : 'border-amber-500/20 text-amber-300'}`}>{completeness === 'complete' ? 'Completo' : 'Pendente'}</span></div>
       {profileState === 'loading' ? <p className="text-[10px] text-slate-500">Carregando dados fiscais...</p> : <>
         <div className="space-y-4 rounded-2xl border border-blue-500/20 bg-blue-500/5 p-4">
-          <div><div className="flex items-center gap-2"><Search className="h-4 w-4 text-blue-300" /><h5 className="text-[10px] font-black uppercase text-blue-100">Comece pelo CNPJ</h5></div><p className="mt-1 text-[9px] normal-case leading-relaxed text-slate-400">Se já tem CNPJ, informe-o para preparar a busca dos dados da empresa. Se ainda não tem, o Kyrub organiza com você o caminho de formalização.</p></div>
-          <label className={labelClass}>CNPJ da empresa<input className={inputClass} inputMode="numeric" maxLength={18} value={profile.cnpj} onChange={e => { setField('cnpj', e.target.value); setCompanyLookupState('idle'); setCompanyLookupFeedback(''); }} placeholder="Digite o CNPJ" /></label>
+          <div><div className="flex items-center gap-2"><Search className="h-4 w-4 text-blue-300" /><h5 className="text-[10px] font-black uppercase text-blue-100">Comece pelo CNPJ</h5></div><p className="mt-1 text-[9px] normal-case leading-relaxed text-slate-400">Se já tem CNPJ, informe-o para consultar os dados cadastrais oficiais disponíveis. Se ainda não tem, o Kyrub organiza com você o caminho de formalização.</p></div>
+          <label className={labelClass}>CNPJ da empresa<input className={inputClass} inputMode="numeric" maxLength={18} value={profile.cnpj} onChange={e => { setField('cnpj', e.target.value); setCompanyLookupState('idle'); setCompanyLookupFeedback(''); setCompanyLookupResult(null); }} placeholder="Digite o CNPJ" /></label>
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-            <button type="button" onClick={handleCompanyLookup} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 text-[9px] font-black uppercase text-white"><Search className="h-4 w-4" />Buscar dados da empresa</button>
-            <button type="button" onClick={() => { setFormalizationOpen(current => !current); setCompanyLookupFeedback(''); setCompanyLookupState('idle'); }} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-violet-500/30 bg-violet-500/10 px-4 text-[9px] font-black uppercase text-violet-100"><Sparkles className="h-4 w-4" />{formalizationOpen ? 'Fechar formalização' : 'Criar meu CNPJ'}</button>
+            <button type="button" onClick={() => void handleCompanyLookup()} disabled={companyLookupState === 'loading'} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 text-[9px] font-black uppercase text-white disabled:opacity-50"><Search className="h-4 w-4" />{companyLookupState === 'loading' ? 'Consultando...' : 'Buscar dados da empresa'}</button>
+            <button type="button" onClick={() => { setFormalizationOpen(current => !current); setCompanyLookupFeedback(''); setCompanyLookupState('idle'); setCompanyLookupResult(null); }} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-violet-500/30 bg-violet-500/10 px-4 text-[9px] font-black uppercase text-violet-100"><Sparkles className="h-4 w-4" />{formalizationOpen ? 'Fechar formalização' : 'Criar meu CNPJ'}</button>
           </div>
-          {companyLookupFeedback && <p className={`rounded-xl border px-3 py-2.5 text-[9px] leading-relaxed ${companyLookupState === 'error' ? 'border-red-500/20 bg-red-500/5 text-red-100' : 'border-blue-500/20 bg-blue-500/5 text-blue-100'}`} role="status">{companyLookupFeedback}</p>}
+          {companyLookupFeedback && <p className={`rounded-xl border px-3 py-2.5 text-[9px] leading-relaxed ${companyLookupState === 'error' ? 'border-red-500/20 bg-red-500/5 text-red-100' : companyLookupState === 'applied' ? 'border-emerald-500/20 bg-emerald-500/5 text-emerald-100' : 'border-blue-500/20 bg-blue-500/5 text-blue-100'}`} role="status">{companyLookupFeedback}</p>}
+          {companyLookupResult && (companyLookupState === 'review' || companyLookupState === 'applied') && <div className="space-y-3 rounded-xl border border-blue-500/20 bg-slate-950/50 p-3">
+            <div className="flex items-start justify-between gap-3"><div><strong className="block text-[10px] uppercase text-blue-100">Dados encontrados no cadastro oficial</strong><p className="mt-1 text-[9px] normal-case leading-relaxed text-slate-400">Fonte: SERPRO · Consulta CNPJ. A consulta não altera nem salva o cadastro até você confirmar.</p></div><span className={`shrink-0 rounded-full border px-2 py-1 text-[8px] font-black uppercase ${companyLookupState === 'applied' ? 'border-emerald-500/20 text-emerald-300' : 'border-blue-500/20 text-blue-300'}`}>{companyLookupState === 'applied' ? 'Aplicado ao formulário' : 'Revisar'}</span></div>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+              {companyLookupResult.tradeName && <div className="rounded-lg border border-slate-800 bg-slate-950 p-2.5"><span className="block text-[8px] font-black uppercase text-slate-500">Nome fantasia</span><strong className="mt-1 block text-[9px] normal-case text-white">{companyLookupResult.tradeName}</strong></div>}
+              {(companyLookupResult.registrationStatus.code || companyLookupResult.registrationStatus.reason) && <div className="rounded-lg border border-slate-800 bg-slate-950 p-2.5"><span className="block text-[8px] font-black uppercase text-slate-500">Situação cadastral</span><strong className="mt-1 block text-[9px] normal-case text-white">{[companyLookupResult.registrationStatus.code, companyLookupResult.registrationStatus.reason].filter(Boolean).join(' · ')}</strong></div>}
+              {(companyLookupResult.primaryCnae.code || companyLookupResult.primaryCnae.description) && <div className="rounded-lg border border-slate-800 bg-slate-950 p-2.5"><span className="block text-[8px] font-black uppercase text-slate-500">CNAE principal</span><strong className="mt-1 block text-[9px] normal-case text-white">{[companyLookupResult.primaryCnae.code, companyLookupResult.primaryCnae.description].filter(Boolean).join(' · ')}</strong></div>}
+            </div>
+            <div className="overflow-hidden rounded-lg border border-slate-800">
+              <div className="grid grid-cols-[0.8fr_1fr_1fr] gap-2 bg-slate-900 px-2.5 py-2 text-[8px] font-black uppercase text-slate-500"><span>Campo</span><span>No Kyrub</span><span>Encontrado</span></div>
+              {comparisonRows.map(item => {
+                const differs = item.current.trim().toUpperCase() !== item.found.trim().toUpperCase();
+                return <div key={item.label} className="grid grid-cols-[0.8fr_1fr_1fr] gap-2 border-t border-slate-800 px-2.5 py-2 text-[9px]"><span className="font-black text-slate-500">{item.label}</span><span className={differs ? 'text-amber-200' : 'text-slate-300'}>{item.current || '—'}</span><span className={differs ? 'text-blue-100' : 'text-slate-300'}>{item.found || '—'}</span></div>;
+              })}
+            </div>
+            <p className="text-[9px] normal-case leading-relaxed text-slate-400">Regime tributário, inscrição estadual e inscrição municipal não são modificados por esta consulta. Esses dados continuam dependendo de confirmação adequada.</p>
+            {companyLookupState === 'review' && <button type="button" onClick={applyCompanyLookup} className="min-h-11 w-full rounded-xl bg-emerald-600 px-4 text-[9px] font-black uppercase text-white">Aplicar dados encontrados ao formulário</button>}
+          </div>}
           {formalizationOpen && <div className="space-y-3 rounded-xl border border-violet-500/20 bg-slate-950/40 p-3">
             <div><strong className="block text-[10px] uppercase text-violet-100">Formalizar meu negócio</strong><p className="mt-1 text-[9px] normal-case leading-relaxed text-slate-400">O Kyrub prepara e reaproveita as informações do seu negócio antes de qualquer etapa externa. A criação oficial do CNPJ continua sendo concluída nos canais públicos competentes.</p></div>
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
