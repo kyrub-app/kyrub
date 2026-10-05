@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Building2, CheckCircle2, Circle, ExternalLink, FileCheck2, HelpCircle, KeyRound, ReceiptText, ShieldCheck, Smartphone } from 'lucide-react';
+import { Building2, CheckCircle2, Circle, ExternalLink, FileCheck2, HelpCircle, KeyRound, ReceiptText, Search, ShieldCheck, Smartphone, Sparkles } from 'lucide-react';
 import { auth } from '../../utils/firebase';
 
 interface FiscalWorkspaceProps { storeName: string; canonicalStoreId: string; onStartOnboarding?: () => void | Promise<void>; }
@@ -7,6 +7,7 @@ type FiscalOnboardingState = 'required' | 'preparing' | 'prepared' | 'error';
 type ProfileState = 'loading' | 'ready' | 'saving' | 'error';
 type CredentialState = 'loading' | 'ready' | 'saving_a1' | 'saving_csc' | 'error';
 type ContextualHelpTopic = 'mei' | 'a1' | 'csc' | null;
+type CompanyLookupState = 'idle' | 'validated' | 'error';
 type ReadinessRequirement = { key: string; label: string; status: 'pending' | 'complete'; secret: boolean; };
 type FiscalFamily = { family: 'nfce' | 'nfe' | 'nfse'; enabled: boolean; status: 'not_configured' | 'pending' | 'ready_for_production_authorization'; requirements: ReadinessRequirement[]; productionTrafficAllowed: false; };
 type FiscalProfile = { legalName: string; cnpj: string; stateRegistration: string; municipalRegistration: string; taxRegime: string; address: { street: string; number: string; complement: string; district: string; city: string; state: string; postalCode: string; ibgeCityCode: string; }; };
@@ -36,6 +37,19 @@ const missingFieldLabels: Record<string, string> = {
   'address.ibgeCityCode': 'código IBGE do município',
 };
 const friendlyMissingField = (field: string): string => missingFieldLabels[field] ?? field;
+const onlyDigits = (value: string) => value.replace(/\D/g, '');
+const isValidCnpj = (value: string): boolean => {
+  const digits = onlyDigits(value);
+  if (digits.length !== 14 || /^(\d)\1{13}$/.test(digits)) return false;
+  const calculateDigit = (base: string, weights: number[]) => {
+    const sum = base.split('').reduce((total, digit, index) => total + Number(digit) * weights[index], 0);
+    const remainder = sum % 11;
+    return remainder < 2 ? 0 : 11 - remainder;
+  };
+  const first = calculateDigit(digits.slice(0, 12), [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]);
+  const second = calculateDigit(digits.slice(0, 12) + first, [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]);
+  return digits.endsWith(`${first}${second}`);
+};
 const fileToBase64 = (file: File): Promise<string> => new Promise((resolve, reject) => {
   const reader = new FileReader();
   reader.onerror = () => reject(new Error('Não foi possível ler o certificado A1.'));
@@ -90,6 +104,9 @@ export const FiscalWorkspace: React.FC<FiscalWorkspaceProps> = ({ storeName, can
   const [cscId, setCscId] = useState('');
   const [csc, setCsc] = useState('');
   const [contextualHelp, setContextualHelp] = useState<ContextualHelpTopic>(null);
+  const [companyLookupState, setCompanyLookupState] = useState<CompanyLookupState>('idle');
+  const [companyLookupFeedback, setCompanyLookupFeedback] = useState('');
+  const [formalizationOpen, setFormalizationOpen] = useState(false);
 
   const requestToken = async (): Promise<string> => {
     const user = auth.currentUser;
@@ -136,6 +153,7 @@ export const FiscalWorkspace: React.FC<FiscalWorkspaceProps> = ({ storeName, can
     setCredentialStatus(emptyCredentialStatus(canonicalStoreId));
     setCredentialState('loading');
     setA1File(null); setA1Password(''); setCscId(''); setCsc(''); setContextualHelp(null);
+    setCompanyLookupState('idle'); setCompanyLookupFeedback(''); setFormalizationOpen(false);
     void (async () => {
       try {
         const token = await requestToken();
@@ -237,6 +255,22 @@ export const FiscalWorkspace: React.FC<FiscalWorkspaceProps> = ({ storeName, can
 
   const setField = (key: keyof Omit<FiscalProfile, 'address'>, value: string) => setProfile(current => ({ ...current, [key]: value }));
   const setAddress = (key: keyof FiscalProfile['address'], value: string) => setProfile(current => ({ ...current, address: { ...current.address, [key]: value } }));
+  const handleCompanyLookup = (): void => {
+    const normalized = onlyDigits(profile.cnpj);
+    setFormalizationOpen(false);
+    if (!isValidCnpj(normalized)) {
+      setCompanyLookupState('error');
+      setCompanyLookupFeedback('Confira o CNPJ informado. Ele precisa ter 14 dígitos e dígitos verificadores válidos.');
+      return;
+    }
+    setField('cnpj', normalized);
+    setCompanyLookupState('validated');
+    setCompanyLookupFeedback('CNPJ validado. A consulta automática ainda precisa ser conectada a uma fonte cadastral autorizada antes de preencher ou substituir dados da empresa. Você pode revisar o formulário manual abaixo enquanto essa integração não está habilitada.');
+  };
+  const openNffGuidance = (): void => {
+    setContextualHelp('mei');
+    window.requestAnimationFrame(() => document.getElementById('kyrub-nff-guidance')?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+  };
   const inputClass = 'min-h-11 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 text-[11px] text-white outline-none focus:border-emerald-500/60';
   const labelClass = 'space-y-1 text-[9px] font-black uppercase tracking-wide text-slate-500';
   const statusLabel = onboardingState === 'prepared' ? 'Preparação iniciada' : onboardingState === 'preparing' ? 'Preparando...' : onboardingState === 'error' ? 'Configuração pendente' : 'Configuração necessária';
@@ -252,46 +286,37 @@ export const FiscalWorkspace: React.FC<FiscalWorkspaceProps> = ({ storeName, can
     </div>
 
     <section className="space-y-4 rounded-3xl border border-slate-800 bg-slate-900 p-5">
-      <div className="flex items-start justify-between gap-3"><div><div className="flex items-center gap-2"><Building2 className="h-5 w-5 text-blue-400" /><h4 className="text-xs font-black uppercase text-white">Dados fiscais</h4></div><p className="mt-1 text-[10px] text-slate-400">Informe os dados reais da empresa emitente. O Kyrub não infere regime tributário nem classificação fiscal.</p></div><span className={`rounded-full border px-2 py-1 font-mono text-[8px] font-black uppercase ${completeness === 'complete' ? 'border-emerald-500/20 text-emerald-300' : 'border-amber-500/20 text-amber-300'}`}>{completeness === 'complete' ? 'Completo' : 'Pendente'}</span></div>
+      <div className="flex items-start justify-between gap-3"><div><div className="flex items-center gap-2"><Building2 className="h-5 w-5 text-blue-400" /><h4 className="text-xs font-black uppercase text-white">Dados fiscais</h4></div><p className="mt-1 text-[10px] leading-relaxed text-slate-400">Comece pelo CNPJ ou revise os dados manualmente. O Kyrub não aplica enquadramento tributário nem substitui informações sem sua confirmação.</p></div><span className={`rounded-full border px-2 py-1 font-mono text-[8px] font-black uppercase ${completeness === 'complete' ? 'border-emerald-500/20 text-emerald-300' : 'border-amber-500/20 text-amber-300'}`}>{completeness === 'complete' ? 'Completo' : 'Pendente'}</span></div>
       {profileState === 'loading' ? <p className="text-[10px] text-slate-500">Carregando dados fiscais...</p> : <>
+        <div className="space-y-4 rounded-2xl border border-blue-500/20 bg-blue-500/5 p-4">
+          <div><div className="flex items-center gap-2"><Search className="h-4 w-4 text-blue-300" /><h5 className="text-[10px] font-black uppercase text-blue-100">Comece pelo CNPJ</h5></div><p className="mt-1 text-[9px] normal-case leading-relaxed text-slate-400">Se já tem CNPJ, informe-o para preparar a busca dos dados da empresa. Se ainda não tem, o Kyrub organiza com você o caminho de formalização.</p></div>
+          <label className={labelClass}>CNPJ da empresa<input className={inputClass} inputMode="numeric" maxLength={18} value={profile.cnpj} onChange={e => { setField('cnpj', e.target.value); setCompanyLookupState('idle'); setCompanyLookupFeedback(''); }} placeholder="Digite o CNPJ" /></label>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <button type="button" onClick={handleCompanyLookup} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 text-[9px] font-black uppercase text-white"><Search className="h-4 w-4" />Buscar dados da empresa</button>
+            <button type="button" onClick={() => { setFormalizationOpen(current => !current); setCompanyLookupFeedback(''); setCompanyLookupState('idle'); }} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-violet-500/30 bg-violet-500/10 px-4 text-[9px] font-black uppercase text-violet-100"><Sparkles className="h-4 w-4" />{formalizationOpen ? 'Fechar formalização' : 'Criar meu CNPJ'}</button>
+          </div>
+          {companyLookupFeedback && <p className={`rounded-xl border px-3 py-2.5 text-[9px] leading-relaxed ${companyLookupState === 'error' ? 'border-red-500/20 bg-red-500/5 text-red-100' : 'border-blue-500/20 bg-blue-500/5 text-blue-100'}`} role="status">{companyLookupFeedback}</p>}
+          {formalizationOpen && <div className="space-y-3 rounded-xl border border-violet-500/20 bg-slate-950/40 p-3">
+            <div><strong className="block text-[10px] uppercase text-violet-100">Formalizar meu negócio</strong><p className="mt-1 text-[9px] normal-case leading-relaxed text-slate-400">O Kyrub prepara e reaproveita as informações do seu negócio antes de qualquer etapa externa. A criação oficial do CNPJ continua sendo concluída nos canais públicos competentes.</p></div>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <div className="rounded-lg border border-slate-800 bg-slate-950/60 p-3"><strong className="text-[9px] text-white">1. Entender sua atividade</strong><p className="mt-1 text-[9px] normal-case leading-relaxed text-slate-400">Organizar o que você vende ou presta para identificar atividades compatíveis.</p></div>
+              <div className="rounded-lg border border-slate-800 bg-slate-950/60 p-3"><strong className="text-[9px] text-white">2. Verificar o caminho</strong><p className="mt-1 text-[9px] normal-case leading-relaxed text-slate-400">Avaliar se MEI pode se aplicar ou se outro tipo de formalização precisa ser considerado.</p></div>
+              <div className="rounded-lg border border-slate-800 bg-slate-950/60 p-3"><strong className="text-[9px] text-white">3. Preparar os dados</strong><p className="mt-1 text-[9px] normal-case leading-relaxed text-slate-400">Reaproveitar endereço e informações já existentes no Kyrub para evitar nova digitação.</p></div>
+              <div className="rounded-lg border border-slate-800 bg-slate-950/60 p-3"><strong className="text-[9px] text-white">4. Concluir a etapa oficial</strong><p className="mt-1 text-[9px] normal-case leading-relaxed text-slate-400">Sair do Kyrub apenas quando autenticação, registro ou autorização oficial forem obrigatórios.</p></div>
+            </div>
+            <p className="text-[9px] normal-case leading-relaxed text-amber-200">Este bloco organiza a jornada, mas ainda não envia cadastro para Receita, Junta, prefeitura ou GOV.BR. Essas integrações só serão ativadas com fonte e autorização adequadas.</p>
+          </div>}
+        </div>
+
+        <div className="flex items-center gap-3"><div className="h-px flex-1 bg-slate-800" /><span className="text-[8px] font-black uppercase tracking-wider text-slate-600">Ou preencha / ajuste manualmente</span><div className="h-px flex-1 bg-slate-800" /></div>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <label className={labelClass}>Razão social<input className={inputClass} value={profile.legalName} onChange={e => setField('legalName', e.target.value)} /></label>
           <label className={labelClass}>CNPJ<input className={inputClass} inputMode="numeric" value={profile.cnpj} onChange={e => setField('cnpj', e.target.value)} /></label>
           <label className={labelClass}>Inscrição estadual<input className={inputClass} value={profile.stateRegistration} onChange={e => setField('stateRegistration', e.target.value)} /></label>
           <label className={labelClass}>Inscrição municipal<input className={inputClass} value={profile.municipalRegistration} onChange={e => setField('municipalRegistration', e.target.value)} /></label>
           <label className={`${labelClass} sm:col-span-2`}>Regime tributário declarado<input className={inputClass} value={profile.taxRegime} onChange={e => setField('taxRegime', e.target.value)} placeholder="Informe conforme orientação contábil" /></label>
-          {isMei && <div className="space-y-3 rounded-2xl border border-cyan-500/15 bg-cyan-500/5 p-4 sm:col-span-2">
-            <button type="button" onClick={() => toggleHelp('mei')} aria-expanded={contextualHelp === 'mei'} className="flex w-full items-start justify-between gap-3 text-left">
-              <div className="flex items-start gap-2"><HelpCircle className="mt-0.5 h-4 w-4 shrink-0 text-cyan-300" /><div><strong className="block text-[10px] uppercase text-cyan-100">Seu regime indica MEI</strong><span className="mt-1 block text-[9px] normal-case leading-relaxed text-slate-400">Entenda a Nota Fiscal Fácil e quando ela pode ser uma alternativa antes de contratar certificado.</span></div></div>
-              <span className="shrink-0 rounded-full border border-cyan-500/20 px-2 py-1 text-[8px] font-black uppercase text-cyan-200">{contextualHelp === 'mei' ? 'Fechar' : 'Entender'}</span>
-            </button>
-            {contextualHelp === 'mei' && <div className="space-y-4 border-t border-cyan-500/10 pt-3">
-              <div>
-                <div className="flex items-center gap-2"><Smartphone className="h-4 w-4 text-cyan-300" /><h5 className="text-[10px] font-black uppercase text-cyan-100">Nota Fiscal Fácil (NFF)</h5></div>
-                <p className="mt-2 text-[10px] normal-case leading-relaxed text-slate-300">A Nota Fiscal Fácil é um regime especial de âmbito nacional, instituído pelo Ajuste SINIEF 37/19, para simplificar a emissão de documentos fiscais eletrônicos. Ela atende públicos como transportadores autônomos, microempreendedores individuais e produtores primários, conforme a implantação e as regras de cada UF.</p>
-              </div>
-              <div className="grid grid-cols-1 gap-2 text-[9px] normal-case leading-relaxed text-slate-400 sm:grid-cols-2">
-                <div className="rounded-xl border border-slate-800 bg-slate-950/50 p-3"><strong className="block text-white">Sem certificado digital</strong>O aplicativo NFF permite preencher e solicitar a emissão de documentos fiscais sem exigir certificado A1 para esse fluxo simplificado.</div>
-                <div className="rounded-xl border border-slate-800 bg-slate-950/50 p-3"><strong className="block text-white">Gratuito no celular</strong>O app é gratuito e está disponível para Android e iPhone, reduzindo a complexidade técnica para quem está começando.</div>
-                <div className="rounded-xl border border-slate-800 bg-slate-950/50 p-3"><strong className="block text-white">Pode funcionar off-line</strong>A NFF prevê operação simplificada com recursos de contingência/off-line e armazenamento no aparelho, conforme o módulo e as regras aplicáveis.</div>
-                <div className="rounded-xl border border-slate-800 bg-slate-950/50 p-3"><strong className="block text-white">É complementar</strong>A NFF não substitui obrigatoriamente os emissores convencionais. O contribuinte pode usar caminhos diferentes conforme sua necessidade e enquadramento.</div>
-              </div>
-              {isSp ? <div className="space-y-2 rounded-xl border border-emerald-500/15 bg-emerald-500/5 p-3 normal-case">
-                <strong className="block text-[9px] uppercase text-emerald-200">Para sua empresa em São Paulo</strong>
-                <p className="text-[9px] leading-relaxed text-slate-300">Em São Paulo, a NFF está disponível para Transportadores Autônomos de Cargas e, desde 16/09/2024, também para MEI e Produtor Rural. Para MEI e Produtor Rural, o fluxo paulista contempla NF-e e NFC-e em operações como vendas e devoluções.</p>
-                <p className="text-[9px] leading-relaxed text-slate-400">Isso permite avaliar a NFF antes de contratar certificado apenas para começar a emitir. A escolha não configura automaticamente o emissor integrado do Kyrub nem marca A1 ou CSC como concluídos.</p>
-              </div> : <div className="space-y-2 rounded-xl border border-amber-500/15 bg-amber-500/5 p-3 normal-case">
-                <strong className="block text-[9px] uppercase text-amber-200">Disponibilidade depende da sua UF</strong>
-                <p className="text-[9px] leading-relaxed text-slate-300">A NFF é nacional, mas a implantação por público e documento fiscal pode variar por estado. O Kyrub não presume que o recorte paulista vale para sua empresa.</p>
-              </div>}
-              <div className="space-y-2 normal-case">
-                <p className="text-[9px] font-black uppercase text-slate-300">Baixar o aplicativo oficial</p>
-                <div className="flex flex-col gap-2 sm:flex-row">
-                  <a className={externalLinkClass} href={NFF_PLAY_URL} target="_blank" rel="noreferrer">Android / Google Play <ExternalLink className="h-3.5 w-3.5" /></a>
-                  <a className={externalLinkClass} href={NFF_APPLE_URL} target="_blank" rel="noreferrer">iPhone / App Store <ExternalLink className="h-3.5 w-3.5" /></a>
-                </div>
-              </div>
-            </div>}
+          {isMei && <div className="rounded-2xl border border-cyan-500/15 bg-cyan-500/5 p-4 sm:col-span-2">
+            <div className="flex items-start justify-between gap-3"><div className="flex items-start gap-2"><HelpCircle className="mt-0.5 h-4 w-4 shrink-0 text-cyan-300" /><div><strong className="block text-[10px] uppercase text-cyan-100">Seu regime indica MEI</strong><span className="mt-1 block text-[9px] normal-case leading-relaxed text-slate-400">Há uma alternativa simplificada de emissão que pode evitar a contratação imediata de A1 apenas para começar.</span></div></div><button type="button" onClick={openNffGuidance} className="shrink-0 rounded-full border border-cyan-500/20 px-2.5 py-1 text-[8px] font-black uppercase text-cyan-200">Conhecer a NFF</button></div>
           </div>}
         </div>
         <div className="grid grid-cols-1 gap-3 border-t border-slate-800 pt-4 sm:grid-cols-2"><label className={labelClass}>Logradouro<input className={inputClass} value={profile.address.street} onChange={e => setAddress('street', e.target.value)} /></label><label className={labelClass}>Número<input className={inputClass} value={profile.address.number} onChange={e => setAddress('number', e.target.value)} /></label><label className={labelClass}>Complemento<input className={inputClass} value={profile.address.complement} onChange={e => setAddress('complement', e.target.value)} /></label><label className={labelClass}>Bairro<input className={inputClass} value={profile.address.district} onChange={e => setAddress('district', e.target.value)} /></label><label className={labelClass}>Município<input className={inputClass} value={profile.address.city} onChange={e => setAddress('city', e.target.value)} /></label><label className={labelClass}>UF<input className={inputClass} maxLength={2} value={profile.address.state} onChange={e => setAddress('state', e.target.value.toUpperCase())} /></label><label className={labelClass}>CEP<input className={inputClass} inputMode="numeric" value={profile.address.postalCode} onChange={e => setAddress('postalCode', e.target.value)} /></label><label className={labelClass}>Código IBGE do município<input className={inputClass} inputMode="numeric" value={profile.address.ibgeCityCode} onChange={e => setAddress('ibgeCityCode', e.target.value)} /></label></div>
@@ -301,6 +326,19 @@ export const FiscalWorkspace: React.FC<FiscalWorkspaceProps> = ({ storeName, can
       </>}
     </section>
 
+    {isMei && <section id="kyrub-nff-guidance" className="scroll-mt-24 space-y-4 rounded-3xl border border-cyan-500/20 bg-slate-900 p-5">
+      <div className="flex items-start justify-between gap-3"><div><div className="flex items-center gap-2"><Smartphone className="h-5 w-5 text-cyan-300" /><h4 className="text-xs font-black uppercase text-white">Como sua empresa pode emitir notas</h4></div><p className="mt-1 max-w-xl text-[10px] leading-relaxed text-slate-400">Como o regime declarado indica MEI, vale avaliar a Nota Fiscal Fácil antes de contratar um certificado A1 apenas para começar a emitir.</p></div>{isSp && <span className="shrink-0 rounded-full border border-emerald-500/20 px-2 py-1 font-mono text-[8px] font-black uppercase text-emerald-300">SP</span>}</div>
+      <div className="rounded-2xl border border-cyan-500/15 bg-cyan-500/5 p-4">
+        <button type="button" onClick={() => toggleHelp('mei')} aria-expanded={contextualHelp === 'mei'} className="flex w-full items-start justify-between gap-3 text-left"><div><strong className="block text-[10px] uppercase text-cyan-100">Nota Fiscal Fácil (NFF)</strong><span className="mt-1 block text-[9px] leading-relaxed text-slate-400">Veja quando essa alternativa pode fazer sentido e acesse o aplicativo oficial somente se decidir seguir por esse caminho.</span></div><span className="shrink-0 text-[8px] font-black uppercase text-cyan-200">{contextualHelp === 'mei' ? 'Fechar' : 'Saiba mais'}</span></button>
+        {contextualHelp === 'mei' && <div className="mt-3 space-y-3 border-t border-cyan-500/10 pt-3">
+          <p className="text-[9px] leading-relaxed text-slate-300">A Nota Fiscal Fácil é um regime especial nacional voltado à simplificação da emissão de documentos fiscais eletrônicos para públicos e operações alcançados pelas regras aplicáveis em cada UF.</p>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-3"><div className="rounded-lg border border-slate-800 bg-slate-950/50 p-3"><strong className="block text-[9px] text-white">Sem A1 neste fluxo</strong><p className="mt-1 text-[9px] leading-relaxed text-slate-400">A emissão pelo aplicativo NFF não exige certificado A1 para o fluxo simplificado.</p></div><div className="rounded-lg border border-slate-800 bg-slate-950/50 p-3"><strong className="block text-[9px] text-white">Aplicativo oficial</strong><p className="mt-1 text-[9px] leading-relaxed text-slate-400">O serviço é operado por aplicativo próprio e não substitui automaticamente o emissor integrado do Kyrub.</p></div><div className="rounded-lg border border-slate-800 bg-slate-950/50 p-3"><strong className="block text-[9px] text-white">Regras por UF</strong><p className="mt-1 text-[9px] leading-relaxed text-slate-400">Disponibilidade, público e documentos suportados podem variar conforme o estado e o enquadramento.</p></div></div>
+          {isSp ? <div className="rounded-xl border border-emerald-500/15 bg-emerald-500/5 p-3"><strong className="block text-[9px] uppercase text-emerald-200">Para sua empresa em São Paulo</strong><p className="mt-1 text-[9px] leading-relaxed text-slate-300">Em São Paulo, a NFF pode ser avaliada por MEI dentro das regras estaduais aplicáveis. Isso não marca A1 ou CSC como concluídos e não ativa automaticamente a emissão pelo Kyrub.</p></div> : <div className="rounded-xl border border-amber-500/15 bg-amber-500/5 p-3"><strong className="block text-[9px] uppercase text-amber-200">Confirme a disponibilidade na sua UF</strong><p className="mt-1 text-[9px] leading-relaxed text-slate-300">O Kyrub não presume que as condições de um estado valem para outro. A orientação será contextualizada conforme a UF fiscal.</p></div>}
+          <div className="space-y-2"><p className="text-[9px] font-black uppercase text-slate-300">Aplicativo oficial</p><div className="flex flex-col gap-2 sm:flex-row"><a className={externalLinkClass} href={NFF_PLAY_URL} target="_blank" rel="noreferrer">Android / Google Play <ExternalLink className="h-3.5 w-3.5" /></a><a className={externalLinkClass} href={NFF_APPLE_URL} target="_blank" rel="noreferrer">iPhone / App Store <ExternalLink className="h-3.5 w-3.5" /></a></div></div>
+        </div>}
+      </div>
+    </section>}
+
     <section className="space-y-4 rounded-3xl border border-slate-800 bg-slate-900 p-5">
       <div className="flex items-start justify-between gap-3"><div><div className="flex items-center gap-2"><ShieldCheck className="h-5 w-5 text-cyan-400" /><h4 className="text-xs font-black uppercase text-white">Credenciais da NFC-e</h4></div><p className="mt-1 max-w-xl text-[10px] leading-relaxed text-slate-400">Cadastre o certificado A1 e o CSC da empresa. Os segredos são enviados ao cofre seguro e não podem ser lidos de volta pela interface.</p></div><span className="rounded-full border border-slate-700 px-2 py-1 font-mono text-[8px] font-black uppercase text-slate-400">Produção bloqueada</span></div>
       {credentialState === 'loading' ? <p className="text-[10px] text-slate-500">Consultando credenciais...</p> : <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -309,15 +347,7 @@ export const FiscalWorkspace: React.FC<FiscalWorkspaceProps> = ({ storeName, can
           {credentialStatus.certificateA1.configured && <p className="rounded-xl border border-emerald-500/10 bg-emerald-500/5 px-3 py-2 text-[9px] text-emerald-100">Certificado atual: {credentialStatus.certificateA1.fileName || 'A1 protegido'}. Para substituir, selecione um novo arquivo e informe a senha correspondente.</p>}
           <div className="rounded-xl border border-cyan-500/15 bg-cyan-500/5 p-3">
             <button type="button" onClick={() => toggleHelp('a1')} aria-expanded={contextualHelp === 'a1'} className="flex w-full items-start justify-between gap-3 text-left"><div className="flex items-start gap-2"><ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-cyan-300" /><div><strong className="block text-[9px] uppercase text-cyan-100">Não tenho certificado A1</strong><span className="mt-1 block text-[9px] leading-relaxed text-slate-400">Entenda o que é e como providenciar.</span></div></div><span className="shrink-0 text-[8px] font-black uppercase text-cyan-200">{contextualHelp === 'a1' ? 'Fechar' : 'Como obter'}</span></button>
-            {contextualHelp === 'a1' && <div className="mt-3 space-y-3 border-t border-cyan-500/10 pt-3">
-              <p className="text-[9px] leading-relaxed text-slate-300">O A1 é o certificado digital da empresa usado na assinatura de documentos fiscais no fluxo integrado convencional. Ele não é criado automaticamente quando o CNPJ é aberto.</p>
-              <div className="space-y-2 text-[9px] leading-relaxed text-slate-400">
-                <div className="rounded-lg border border-slate-800 bg-slate-950/50 p-2.5"><strong className="block text-white">1. Confirme se já existe</strong>Consulte sua contabilidade e procure por arquivos .pfx ou .p12 e mensagens sobre certificado digital.</div>
-                <div className="rounded-lg border border-slate-800 bg-slate-950/50 p-2.5"><strong className="block text-white">2. Se não existir</strong>Providencie o certificado com uma autoridade certificadora adequada à empresa e guarde a senha com segurança.</div>
-                <div className="rounded-lg border border-slate-800 bg-slate-950/50 p-2.5"><strong className="block text-white">3. Depois</strong>Cadastre o arquivo e a senha diretamente aqui. Não envie esses dados por mensagem.</div>
-              </div>
-              <p className="text-[9px] leading-relaxed text-amber-200">Não compre um certificado apenas para “deixar o check verde”. Primeiro confirme qual modalidade fiscal realmente se aplica à empresa.</p>
-            </div>}
+            {contextualHelp === 'a1' && <div className="mt-3 space-y-3 border-t border-cyan-500/10 pt-3"><p className="text-[9px] leading-relaxed text-slate-300">O A1 é o certificado digital da empresa usado na assinatura de documentos fiscais no fluxo integrado convencional. Ele não é criado automaticamente quando o CNPJ é aberto.</p><div className="space-y-2 text-[9px] leading-relaxed text-slate-400"><div className="rounded-lg border border-slate-800 bg-slate-950/50 p-2.5"><strong className="block text-white">1. Confirme se já existe</strong>Consulte sua contabilidade e procure por arquivos .pfx ou .p12 e mensagens sobre certificado digital.</div><div className="rounded-lg border border-slate-800 bg-slate-950/50 p-2.5"><strong className="block text-white">2. Se não existir</strong>Providencie o certificado com uma autoridade certificadora adequada à empresa e guarde a senha com segurança.</div><div className="rounded-lg border border-slate-800 bg-slate-950/50 p-2.5"><strong className="block text-white">3. Depois</strong>Cadastre o arquivo e a senha diretamente aqui. Não envie esses dados por mensagem.</div></div><p className="text-[9px] leading-relaxed text-amber-200">Não compre um certificado apenas para “deixar o check verde”. Primeiro confirme qual modalidade fiscal realmente se aplica à empresa.</p></div>}
           </div>
           <label className={labelClass}>Arquivo A1<input key={a1InputKey} className="block min-h-11 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[10px] normal-case text-slate-300 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-800 file:px-3 file:py-1.5 file:text-[9px] file:font-black file:uppercase file:text-white" type="file" accept=".pfx,.p12,application/x-pkcs12" onChange={event => setA1File(event.target.files?.[0] ?? null)} /></label>
           <label className={labelClass}>Senha do A1<input className={inputClass} type="password" autoComplete="new-password" value={a1Password} onChange={event => setA1Password(event.target.value)} placeholder="Não será exibida após salvar" /></label>
@@ -328,17 +358,7 @@ export const FiscalWorkspace: React.FC<FiscalWorkspaceProps> = ({ storeName, can
           {credentialStatus.nfceCsc.configured && <p className="rounded-xl border border-emerald-500/10 bg-emerald-500/5 px-3 py-2 text-[9px] text-emerald-100">CSC configurado com identificador {credentialStatus.nfceCsc.cscId || 'protegido'}. O código secreto não é exibido.</p>}
           <div className="rounded-xl border border-cyan-500/15 bg-cyan-500/5 p-3">
             <button type="button" onClick={() => toggleHelp('csc')} aria-expanded={contextualHelp === 'csc'} className="flex w-full items-start justify-between gap-3 text-left"><div className="flex items-start gap-2"><KeyRound className="mt-0.5 h-4 w-4 shrink-0 text-cyan-300" /><div><strong className="block text-[9px] uppercase text-cyan-100">Como obter meu CSC?</strong><span className="mt-1 block text-[9px] leading-relaxed text-slate-400">Veja de onde vêm o idCSC e o código de segurança.</span></div></div><span className="shrink-0 text-[8px] font-black uppercase text-cyan-200">{contextualHelp === 'csc' ? 'Fechar' : 'Ver passo a passo'}</span></button>
-            {contextualHelp === 'csc' && <div className="mt-3 space-y-3 border-t border-cyan-500/10 pt-3">
-              {isSp ? <>
-                <p className="text-[9px] leading-relaxed text-slate-300">Para estabelecimento em São Paulo, o CSC é obtido no ambiente da SEFAZ-SP após o credenciamento para NFC-e. No portal, a função de gerenciamento do Código de Segurança fornece o código e seu identificador (idCSC).</p>
-                <div className="rounded-lg border border-slate-800 bg-slate-950/50 p-2.5 text-[9px] leading-relaxed text-slate-400"><strong className="block text-white">Sequência esperada</strong>Credenciar o estabelecimento para NFC-e → acessar o gerenciamento do Código de Segurança → gerar/consultar CSC e idCSC → cadastrar ambos aqui no Kyrub.</div>
-                <a className={externalLinkClass} href={SP_NFCE_URL} target="_blank" rel="noreferrer">Abrir portal oficial NFC-e/SP <ExternalLink className="h-3.5 w-3.5" /></a>
-              </> : <>
-                <p className="text-[9px] leading-relaxed text-slate-300">O CSC é fornecido pela administração tributária competente para a NFC-e e o procedimento varia por UF.</p>
-                <p className="text-[9px] leading-relaxed text-slate-400">Consulte o portal oficial da SEFAZ da sua UF para credenciamento de NFC-e e geração do CSC/idCSC. Depois, cadastre os valores diretamente aqui.</p>
-              </>}
-              <p className="text-[9px] leading-relaxed text-amber-200">CSC é segredo fiscal. O código não deve ser enviado por chat, e-mail aberto ou campo de observação.</p>
-            </div>}
+            {contextualHelp === 'csc' && <div className="mt-3 space-y-3 border-t border-cyan-500/10 pt-3">{isSp ? <><p className="text-[9px] leading-relaxed text-slate-300">Para estabelecimento em São Paulo, o CSC é obtido no ambiente da SEFAZ-SP após o credenciamento para NFC-e. No portal, a função de gerenciamento do Código de Segurança fornece o código e seu identificador (idCSC).</p><div className="rounded-lg border border-slate-800 bg-slate-950/50 p-2.5 text-[9px] leading-relaxed text-slate-400"><strong className="block text-white">Sequência esperada</strong>Credenciar o estabelecimento para NFC-e → acessar o gerenciamento do Código de Segurança → gerar/consultar CSC e idCSC → cadastrar ambos aqui no Kyrub.</div><a className={externalLinkClass} href={SP_NFCE_URL} target="_blank" rel="noreferrer">Abrir portal oficial NFC-e/SP <ExternalLink className="h-3.5 w-3.5" /></a></> : <><p className="text-[9px] leading-relaxed text-slate-300">O CSC é fornecido pela administração tributária competente para a NFC-e e o procedimento varia por UF.</p><p className="text-[9px] leading-relaxed text-slate-400">Consulte o portal oficial da SEFAZ da sua UF para credenciamento de NFC-e e geração do CSC/idCSC. Depois, cadastre os valores diretamente aqui.</p></>}<p className="text-[9px] leading-relaxed text-amber-200">CSC é segredo fiscal. O código não deve ser enviado por chat, e-mail aberto ou campo de observação.</p></div>}
           </div>
           <label className={labelClass}>Identificador do CSC (idCSC)<input className={inputClass} value={cscId} onChange={event => setCscId(event.target.value)} placeholder="Ex.: 000001" /></label>
           <label className={labelClass}>Código CSC<input className={inputClass} type="password" autoComplete="new-password" value={csc} onChange={event => setCsc(event.target.value)} placeholder="Não será exibido após salvar" /></label>
