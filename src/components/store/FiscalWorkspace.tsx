@@ -5,15 +5,65 @@ import { auth } from '../../utils/firebase';
 interface FiscalWorkspaceProps { storeName: string; canonicalStoreId: string; onStartOnboarding?: () => void | Promise<void>; }
 type FiscalOnboardingState = 'required' | 'preparing' | 'prepared' | 'error';
 type ProfileState = 'loading' | 'ready' | 'saving' | 'error';
+type CredentialState = 'loading' | 'ready' | 'saving_a1' | 'saving_csc' | 'error';
 type ReadinessRequirement = { key: string; label: string; status: 'pending' | 'complete'; secret: boolean; };
 type FiscalFamily = { family: 'nfce' | 'nfe' | 'nfse'; enabled: boolean; status: 'not_configured' | 'pending' | 'ready_for_production_authorization'; requirements: ReadinessRequirement[]; productionTrafficAllowed: false; };
 type FiscalProfile = { legalName: string; cnpj: string; stateRegistration: string; municipalRegistration: string; taxRegime: string; address: { street: string; number: string; complement: string; district: string; city: string; state: string; postalCode: string; ibgeCityCode: string; }; };
+type FiscalCredentialStatus = {
+  canonicalStoreId: string;
+  certificateA1: { configured: boolean; fileName: string | null; fingerprintSha256: string | null; byteLength: number | null; updatedAt: string | null; };
+  nfceCsc: { configured: boolean; cscId: string | null; updatedAt: string | null; };
+  authority: 'google_secret_manager';
+  productionTrafficAllowed: false;
+};
 
 const emptyProfile = (): FiscalProfile => ({ legalName: '', cnpj: '', stateRegistration: '', municipalRegistration: '', taxRegime: '', address: { street: '', number: '', complement: '', district: '', city: '', state: '', postalCode: '', ibgeCityCode: '' } });
+const emptyCredentialStatus = (canonicalStoreId: string): FiscalCredentialStatus => ({ canonicalStoreId, certificateA1: { configured: false, fileName: null, fingerprintSha256: null, byteLength: null, updatedAt: null }, nfceCsc: { configured: false, cscId: null, updatedAt: null }, authority: 'google_secret_manager', productionTrafficAllowed: false });
 const profileEndpoint = '/api/store-connections/fiscal/profile';
 const readinessEndpoint = '/api/store-connections/fiscal/readiness';
+const credentialsEndpoint = '/api/store-connections/fiscal/credentials';
 const familyName = (family: FiscalFamily['family']) => family === 'nfce' ? 'NFC-e' : family === 'nfe' ? 'NF-e' : 'NFS-e';
 const familyDescription = (family: FiscalFamily['family']) => family === 'nfce' ? 'Venda ao consumidor' : family === 'nfe' ? 'Operações com mercadorias' : 'Prestação de serviços';
+const missingFieldLabels: Record<string, string> = {
+  legalName: 'razão social', cnpj: 'CNPJ', taxRegime: 'regime tributário',
+  'address.street': 'logradouro', 'address.number': 'número', 'address.district': 'bairro',
+  'address.city': 'município', 'address.state': 'UF', 'address.postalCode': 'CEP',
+  'address.ibgeCityCode': 'código IBGE do município',
+};
+const friendlyMissingField = (field: string): string => missingFieldLabels[field] ?? field;
+const fileToBase64 = (file: File): Promise<string> => new Promise((resolve, reject) => {
+  const reader = new FileReader();
+  reader.onerror = () => reject(new Error('Não foi possível ler o certificado A1.'));
+  reader.onload = () => {
+    const result = typeof reader.result === 'string' ? reader.result : '';
+    const comma = result.indexOf(',');
+    if (comma < 0) return reject(new Error('Não foi possível ler o certificado A1.'));
+    resolve(result.slice(comma + 1));
+  };
+  reader.readAsDataURL(file);
+});
+const credentialStatusFrom = (payload: Record<string, any>, canonicalStoreId: string): FiscalCredentialStatus => {
+  if (payload.authority !== 'google_secret_manager' || payload.productionTrafficAllowed !== false || payload.canonicalStoreId !== canonicalStoreId) {
+    throw new Error('O backend retornou um estado inesperado para as credenciais fiscais.');
+  }
+  return {
+    canonicalStoreId,
+    certificateA1: {
+      configured: payload.certificateA1?.configured === true,
+      fileName: typeof payload.certificateA1?.fileName === 'string' ? payload.certificateA1.fileName : null,
+      fingerprintSha256: typeof payload.certificateA1?.fingerprintSha256 === 'string' ? payload.certificateA1.fingerprintSha256 : null,
+      byteLength: typeof payload.certificateA1?.byteLength === 'number' ? payload.certificateA1.byteLength : null,
+      updatedAt: typeof payload.certificateA1?.updatedAt === 'string' ? payload.certificateA1.updatedAt : null,
+    },
+    nfceCsc: {
+      configured: payload.nfceCsc?.configured === true,
+      cscId: typeof payload.nfceCsc?.cscId === 'string' ? payload.nfceCsc.cscId : null,
+      updatedAt: typeof payload.nfceCsc?.updatedAt === 'string' ? payload.nfceCsc.updatedAt : null,
+    },
+    authority: 'google_secret_manager',
+    productionTrafficAllowed: false,
+  };
+};
 
 export const FiscalWorkspace: React.FC<FiscalWorkspaceProps> = ({ storeName, canonicalStoreId, onStartOnboarding }) => {
   const [onboardingState, setOnboardingState] = useState<FiscalOnboardingState>('required');
@@ -26,6 +76,14 @@ export const FiscalWorkspace: React.FC<FiscalWorkspaceProps> = ({ storeName, can
   const [readinessStatus, setReadinessStatus] = useState<'loading' | 'pending' | 'ready_for_production_authorization' | 'error'>('loading');
   const [families, setFamilies] = useState<FiscalFamily[]>([]);
   const [readinessFeedback, setReadinessFeedback] = useState('');
+  const [credentialState, setCredentialState] = useState<CredentialState>('loading');
+  const [credentialStatus, setCredentialStatus] = useState<FiscalCredentialStatus>(() => emptyCredentialStatus(canonicalStoreId));
+  const [credentialFeedback, setCredentialFeedback] = useState('');
+  const [a1File, setA1File] = useState<File | null>(null);
+  const [a1Password, setA1Password] = useState('');
+  const [a1InputKey, setA1InputKey] = useState(0);
+  const [cscId, setCscId] = useState('');
+  const [csc, setCsc] = useState('');
 
   const requestToken = async (): Promise<string> => {
     const user = auth.currentUser;
@@ -50,8 +108,28 @@ export const FiscalWorkspace: React.FC<FiscalWorkspaceProps> = ({ storeName, can
     }
   };
 
+  const loadCredentials = async (): Promise<void> => {
+    try {
+      const token = await requestToken();
+      const response = await fetch(`${credentialsEndpoint}?canonicalStoreId=${encodeURIComponent(canonicalStoreId)}`, { headers: { authorization: `Bearer ${token}` }, cache: 'no-store' });
+      const payload = await response.json().catch(() => ({})) as Record<string, any>;
+      if (!response.ok) throw new Error(typeof payload.error === 'string' ? payload.error : 'Não foi possível consultar as credenciais fiscais.');
+      const next = credentialStatusFrom(payload, canonicalStoreId);
+      setCredentialStatus(next);
+      setCscId(next.nfceCsc.cscId ?? '');
+      setCredentialState('ready');
+      setCredentialFeedback('');
+    } catch (error) {
+      setCredentialState('error');
+      setCredentialFeedback(error instanceof Error ? error.message : 'Não foi possível consultar as credenciais fiscais.');
+    }
+  };
+
   useEffect(() => {
     let active = true;
+    setCredentialStatus(emptyCredentialStatus(canonicalStoreId));
+    setCredentialState('loading');
+    setA1File(null); setA1Password(''); setCscId(''); setCsc('');
     void (async () => {
       try {
         const token = await requestToken();
@@ -63,7 +141,7 @@ export const FiscalWorkspace: React.FC<FiscalWorkspaceProps> = ({ storeName, can
         setCompleteness(payload.completeness === 'complete' ? 'complete' : 'pending');
         setMissingFields(Array.isArray(payload.missingFields) ? payload.missingFields.filter((item: unknown): item is string => typeof item === 'string') : []);
         setProfileState('ready');
-        await loadReadiness();
+        await Promise.all([loadReadiness(), loadCredentials()]);
       } catch (error) {
         if (!active) return;
         setProfileState('error');
@@ -106,6 +184,51 @@ export const FiscalWorkspace: React.FC<FiscalWorkspaceProps> = ({ storeName, can
     } catch (error) { setProfileState('error'); setProfileFeedback(error instanceof Error ? error.message : 'Não foi possível salvar os dados fiscais.'); }
   };
 
+  const saveA1 = async (): Promise<void> => {
+    if (credentialState === 'saving_a1' || credentialState === 'saving_csc') return;
+    if (!a1File) { setCredentialState('error'); setCredentialFeedback('Selecione o arquivo do certificado A1 (.pfx ou .p12).'); return; }
+    if (!/\.(pfx|p12)$/i.test(a1File.name)) { setCredentialState('error'); setCredentialFeedback('Selecione um certificado A1 no formato .pfx ou .p12.'); return; }
+    if (!a1Password) { setCredentialState('error'); setCredentialFeedback('Informe a senha do certificado A1.'); return; }
+    setCredentialState('saving_a1'); setCredentialFeedback('');
+    try {
+      const certificateBase64 = await fileToBase64(a1File);
+      const token = await requestToken();
+      const response = await fetch(`${credentialsEndpoint}/a1`, { method: 'PUT', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, body: JSON.stringify({ canonicalStoreId, fileName: a1File.name, certificateBase64, password: a1Password }), cache: 'no-store' });
+      const payload = await response.json().catch(() => ({})) as Record<string, any>;
+      if (!response.ok) throw new Error(typeof payload.error === 'string' ? payload.error : 'Não foi possível guardar o certificado A1.');
+      const next = credentialStatusFrom(payload, canonicalStoreId);
+      setCredentialStatus(next);
+      setA1File(null); setA1Password(''); setA1InputKey(current => current + 1);
+      setCredentialState('ready');
+      setCredentialFeedback('Certificado A1 guardado no cofre seguro. A senha não fica disponível para leitura pela interface.');
+      await loadReadiness();
+    } catch (error) {
+      setCredentialState('error');
+      setCredentialFeedback(error instanceof Error ? error.message : 'Não foi possível guardar o certificado A1.');
+    }
+  };
+
+  const saveCsc = async (): Promise<void> => {
+    if (credentialState === 'saving_a1' || credentialState === 'saving_csc') return;
+    if (!cscId.trim() || !csc) { setCredentialState('error'); setCredentialFeedback('Informe o identificador do CSC e o código CSC da NFC-e.'); return; }
+    setCredentialState('saving_csc'); setCredentialFeedback('');
+    try {
+      const token = await requestToken();
+      const response = await fetch(`${credentialsEndpoint}/nfce-csc`, { method: 'PUT', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, body: JSON.stringify({ canonicalStoreId, cscId, csc }), cache: 'no-store' });
+      const payload = await response.json().catch(() => ({})) as Record<string, any>;
+      if (!response.ok) throw new Error(typeof payload.error === 'string' ? payload.error : 'Não foi possível guardar o CSC da NFC-e.');
+      const next = credentialStatusFrom(payload, canonicalStoreId);
+      setCredentialStatus(next);
+      setCscId(next.nfceCsc.cscId ?? cscId.trim()); setCsc('');
+      setCredentialState('ready');
+      setCredentialFeedback('CSC e identificador guardados no cofre seguro. O código CSC não fica disponível para leitura pela interface.');
+      await loadReadiness();
+    } catch (error) {
+      setCredentialState('error');
+      setCredentialFeedback(error instanceof Error ? error.message : 'Não foi possível guardar o CSC da NFC-e.');
+    }
+  };
+
   const setField = (key: keyof Omit<FiscalProfile, 'address'>, value: string) => setProfile(current => ({ ...current, [key]: value }));
   const setAddress = (key: keyof FiscalProfile['address'], value: string) => setProfile(current => ({ ...current, address: { ...current.address, [key]: value } }));
   const inputClass = 'min-h-11 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 text-[11px] text-white outline-none focus:border-emerald-500/60';
@@ -121,7 +244,29 @@ export const FiscalWorkspace: React.FC<FiscalWorkspaceProps> = ({ storeName, can
 
     <section className="space-y-4 rounded-3xl border border-slate-800 bg-slate-900 p-5">
       <div className="flex items-start justify-between gap-3"><div><div className="flex items-center gap-2"><Building2 className="h-5 w-5 text-blue-400" /><h4 className="text-xs font-black uppercase text-white">Dados fiscais</h4></div><p className="mt-1 text-[10px] text-slate-400">Informe os dados reais da empresa emitente. O Kyrub não infere regime tributário nem classificação fiscal.</p></div><span className={`rounded-full border px-2 py-1 font-mono text-[8px] font-black uppercase ${completeness === 'complete' ? 'border-emerald-500/20 text-emerald-300' : 'border-amber-500/20 text-amber-300'}`}>{completeness === 'complete' ? 'Completo' : 'Pendente'}</span></div>
-      {profileState === 'loading' ? <p className="text-[10px] text-slate-500">Carregando dados fiscais...</p> : <><div className="grid grid-cols-1 gap-3 sm:grid-cols-2"><label className={labelClass}>Razão social<input className={inputClass} value={profile.legalName} onChange={e => setField('legalName', e.target.value)} /></label><label className={labelClass}>CNPJ<input className={inputClass} inputMode="numeric" value={profile.cnpj} onChange={e => setField('cnpj', e.target.value)} /></label><label className={labelClass}>Inscrição estadual<input className={inputClass} value={profile.stateRegistration} onChange={e => setField('stateRegistration', e.target.value)} /></label><label className={labelClass}>Inscrição municipal<input className={inputClass} value={profile.municipalRegistration} onChange={e => setField('municipalRegistration', e.target.value)} /></label><label className={`${labelClass} sm:col-span-2`}>Regime tributário declarado<input className={inputClass} value={profile.taxRegime} onChange={e => setField('taxRegime', e.target.value)} placeholder="Informe conforme orientação contábil" /></label></div><div className="grid grid-cols-1 gap-3 border-t border-slate-800 pt-4 sm:grid-cols-2"><label className={labelClass}>Logradouro<input className={inputClass} value={profile.address.street} onChange={e => setAddress('street', e.target.value)} /></label><label className={labelClass}>Número<input className={inputClass} value={profile.address.number} onChange={e => setAddress('number', e.target.value)} /></label><label className={labelClass}>Complemento<input className={inputClass} value={profile.address.complement} onChange={e => setAddress('complement', e.target.value)} /></label><label className={labelClass}>Bairro<input className={inputClass} value={profile.address.district} onChange={e => setAddress('district', e.target.value)} /></label><label className={labelClass}>Município<input className={inputClass} value={profile.address.city} onChange={e => setAddress('city', e.target.value)} /></label><label className={labelClass}>UF<input className={inputClass} maxLength={2} value={profile.address.state} onChange={e => setAddress('state', e.target.value.toUpperCase())} /></label><label className={labelClass}>CEP<input className={inputClass} inputMode="numeric" value={profile.address.postalCode} onChange={e => setAddress('postalCode', e.target.value)} /></label><label className={labelClass}>Código IBGE do município<input className={inputClass} inputMode="numeric" value={profile.address.ibgeCityCode} onChange={e => setAddress('ibgeCityCode', e.target.value)} /></label></div>{missingFields.length > 0 && <p className="rounded-2xl border border-amber-500/20 px-3 py-2.5 text-[10px] text-amber-100">Campos obrigatórios pendentes: {missingFields.join(', ')}.</p>}{profileFeedback && <p className={`rounded-2xl border px-3 py-2.5 text-[10px] ${profileState === 'error' ? 'border-red-500/20 text-red-100' : 'border-emerald-500/20 text-emerald-100'}`}>{profileFeedback}</p>}<div className="flex justify-end"><button type="button" onClick={() => void saveProfile()} disabled={profileState === 'saving'} className="min-h-11 rounded-xl bg-blue-600 px-4 text-[10px] font-black uppercase text-white disabled:opacity-50">{profileState === 'saving' ? 'Salvando...' : 'Salvar dados fiscais'}</button></div></>}
+      {profileState === 'loading' ? <p className="text-[10px] text-slate-500">Carregando dados fiscais...</p> : <><div className="grid grid-cols-1 gap-3 sm:grid-cols-2"><label className={labelClass}>Razão social<input className={inputClass} value={profile.legalName} onChange={e => setField('legalName', e.target.value)} /></label><label className={labelClass}>CNPJ<input className={inputClass} inputMode="numeric" value={profile.cnpj} onChange={e => setField('cnpj', e.target.value)} /></label><label className={labelClass}>Inscrição estadual<input className={inputClass} value={profile.stateRegistration} onChange={e => setField('stateRegistration', e.target.value)} /></label><label className={labelClass}>Inscrição municipal<input className={inputClass} value={profile.municipalRegistration} onChange={e => setField('municipalRegistration', e.target.value)} /></label><label className={`${labelClass} sm:col-span-2`}>Regime tributário declarado<input className={inputClass} value={profile.taxRegime} onChange={e => setField('taxRegime', e.target.value)} placeholder="Informe conforme orientação contábil" /></label></div><div className="grid grid-cols-1 gap-3 border-t border-slate-800 pt-4 sm:grid-cols-2"><label className={labelClass}>Logradouro<input className={inputClass} value={profile.address.street} onChange={e => setAddress('street', e.target.value)} /></label><label className={labelClass}>Número<input className={inputClass} value={profile.address.number} onChange={e => setAddress('number', e.target.value)} /></label><label className={labelClass}>Complemento<input className={inputClass} value={profile.address.complement} onChange={e => setAddress('complement', e.target.value)} /></label><label className={labelClass}>Bairro<input className={inputClass} value={profile.address.district} onChange={e => setAddress('district', e.target.value)} /></label><label className={labelClass}>Município<input className={inputClass} value={profile.address.city} onChange={e => setAddress('city', e.target.value)} /></label><label className={labelClass}>UF<input className={inputClass} maxLength={2} value={profile.address.state} onChange={e => setAddress('state', e.target.value.toUpperCase())} /></label><label className={labelClass}>CEP<input className={inputClass} inputMode="numeric" value={profile.address.postalCode} onChange={e => setAddress('postalCode', e.target.value)} /></label><label className={labelClass}>Código IBGE do município<input className={inputClass} inputMode="numeric" value={profile.address.ibgeCityCode} onChange={e => setAddress('ibgeCityCode', e.target.value)} /></label></div>{missingFields.length > 0 && <p className="rounded-2xl border border-amber-500/20 px-3 py-2.5 text-[10px] text-amber-100">Campos obrigatórios pendentes: {missingFields.map(friendlyMissingField).join(', ')}.</p>}{profileFeedback && <p className={`rounded-2xl border px-3 py-2.5 text-[10px] ${profileState === 'error' ? 'border-red-500/20 text-red-100' : 'border-emerald-500/20 text-emerald-100'}`}>{profileFeedback}</p>}<div className="flex justify-end"><button type="button" onClick={() => void saveProfile()} disabled={profileState === 'saving'} className="min-h-11 rounded-xl bg-blue-600 px-4 text-[10px] font-black uppercase text-white disabled:opacity-50">{profileState === 'saving' ? 'Salvando...' : 'Salvar dados fiscais'}</button></div></>}
+    </section>
+
+    <section className="space-y-4 rounded-3xl border border-slate-800 bg-slate-900 p-5">
+      <div className="flex items-start justify-between gap-3"><div><div className="flex items-center gap-2"><ShieldCheck className="h-5 w-5 text-cyan-400" /><h4 className="text-xs font-black uppercase text-white">Credenciais da NFC-e</h4></div><p className="mt-1 max-w-xl text-[10px] leading-relaxed text-slate-400">Cadastre o certificado A1 e o CSC da empresa. Os segredos são enviados ao cofre seguro e não podem ser lidos de volta pela interface.</p></div><span className="rounded-full border border-slate-700 px-2 py-1 font-mono text-[8px] font-black uppercase text-slate-400">Produção bloqueada</span></div>
+      {credentialState === 'loading' ? <p className="text-[10px] text-slate-500">Consultando credenciais...</p> : <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <div className="space-y-3 rounded-2xl border border-slate-800 bg-slate-950/40 p-4">
+          <div className="flex items-start justify-between gap-2"><div><h5 className="text-[11px] font-black uppercase text-white">Certificado digital A1</h5><p className="mt-1 text-[9px] text-slate-500">Arquivo PKCS#12 (.pfx ou .p12) e senha do certificado.</p></div><span className={`rounded-full border px-2 py-1 font-mono text-[7px] font-black uppercase ${credentialStatus.certificateA1.configured ? 'border-emerald-500/20 text-emerald-300' : 'border-amber-500/20 text-amber-300'}`}>{credentialStatus.certificateA1.configured ? 'Configurado' : 'Pendente'}</span></div>
+          {credentialStatus.certificateA1.configured && <p className="rounded-xl border border-emerald-500/10 bg-emerald-500/5 px-3 py-2 text-[9px] text-emerald-100">Certificado atual: {credentialStatus.certificateA1.fileName || 'A1 protegido'}. Para substituir, selecione um novo arquivo e informe a senha correspondente.</p>}
+          <label className={labelClass}>Arquivo A1<input key={a1InputKey} className="block min-h-11 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[10px] normal-case text-slate-300 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-800 file:px-3 file:py-1.5 file:text-[9px] file:font-black file:uppercase file:text-white" type="file" accept=".pfx,.p12,application/x-pkcs12" onChange={event => setA1File(event.target.files?.[0] ?? null)} /></label>
+          <label className={labelClass}>Senha do A1<input className={inputClass} type="password" autoComplete="new-password" value={a1Password} onChange={event => setA1Password(event.target.value)} placeholder="Não será exibida após salvar" /></label>
+          <button type="button" onClick={() => void saveA1()} disabled={credentialState === 'saving_a1' || credentialState === 'saving_csc'} className="min-h-11 w-full rounded-xl bg-cyan-700 px-4 text-[10px] font-black uppercase text-white disabled:opacity-50">{credentialState === 'saving_a1' ? 'Guardando A1...' : credentialStatus.certificateA1.configured ? 'Substituir certificado A1' : 'Guardar certificado A1'}</button>
+        </div>
+        <div className="space-y-3 rounded-2xl border border-slate-800 bg-slate-950/40 p-4">
+          <div className="flex items-start justify-between gap-2"><div><h5 className="text-[11px] font-black uppercase text-white">CSC da NFC-e</h5><p className="mt-1 text-[9px] text-slate-500">Identificador do CSC (idCSC) e código de segurança fornecidos pela SEFAZ.</p></div><span className={`rounded-full border px-2 py-1 font-mono text-[7px] font-black uppercase ${credentialStatus.nfceCsc.configured ? 'border-emerald-500/20 text-emerald-300' : 'border-amber-500/20 text-amber-300'}`}>{credentialStatus.nfceCsc.configured ? 'Configurado' : 'Pendente'}</span></div>
+          {credentialStatus.nfceCsc.configured && <p className="rounded-xl border border-emerald-500/10 bg-emerald-500/5 px-3 py-2 text-[9px] text-emerald-100">CSC configurado com identificador {credentialStatus.nfceCsc.cscId || 'protegido'}. O código secreto não é exibido.</p>}
+          <label className={labelClass}>Identificador do CSC (idCSC)<input className={inputClass} value={cscId} onChange={event => setCscId(event.target.value)} placeholder="Ex.: 000001" /></label>
+          <label className={labelClass}>Código CSC<input className={inputClass} type="password" autoComplete="new-password" value={csc} onChange={event => setCsc(event.target.value)} placeholder="Não será exibido após salvar" /></label>
+          <button type="button" onClick={() => void saveCsc()} disabled={credentialState === 'saving_a1' || credentialState === 'saving_csc'} className="min-h-11 w-full rounded-xl bg-cyan-700 px-4 text-[10px] font-black uppercase text-white disabled:opacity-50">{credentialState === 'saving_csc' ? 'Guardando CSC...' : credentialStatus.nfceCsc.configured ? 'Substituir CSC' : 'Guardar CSC'}</button>
+        </div>
+      </div>}
+      {credentialFeedback && <p className={`rounded-2xl border px-3 py-2.5 text-[10px] ${credentialState === 'error' ? 'border-red-500/20 text-red-100' : 'border-emerald-500/20 text-emerald-100'}`} role="status">{credentialFeedback}</p>}
+      <p className="text-[9px] leading-relaxed text-slate-500">Guardar A1 ou CSC apenas comprova que a credencial está protegida no cofre. Isso não habilita tráfego fiscal de produção nem comprova homologação na SEFAZ.</p>
     </section>
 
     <section className="space-y-3 rounded-3xl border border-slate-800 bg-slate-900 p-5">
