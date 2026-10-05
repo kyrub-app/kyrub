@@ -29,6 +29,10 @@ import {
   saveOwnFiscalA1Credential,
   saveOwnFiscalNfceCscCredential,
 } from '../fiscal/fiscalStoreCredentialService.js';
+import {
+  lookupOwnFiscalCompanyRegistry,
+  mapFiscalCompanyRegistryLookupError,
+} from '../fiscal/fiscalCompanyRegistryLookupService.js';
 
 type QueryValue = string | string[] | undefined;
 type RequestLike = { url?: string; query?: Record<string, QueryValue>; once?: (event: string, listener: () => void) => unknown; };
@@ -42,6 +46,7 @@ app.use(express.json({ limit: '32kb' }));
 
 const integrationRateLimiter = rateLimit({ windowMs: 60 * 1000, max: 600, message: { error: 'Muitas solicitações de integração. Tente novamente em instantes.', code: 'TOO_MANY_INTEGRATION_REQUESTS' }, standardHeaders: true, legacyHeaders: false });
 const fiscalOnboardingRateLimiter = rateLimit({ windowMs: 60 * 1000, max: 30, message: { error: 'Muitas tentativas de configuração fiscal. Tente novamente em instantes.', code: 'TOO_MANY_FISCAL_ONBOARDING_REQUESTS' }, standardHeaders: true, legacyHeaders: false });
+const fiscalCompanyLookupRateLimiter = rateLimit({ windowMs: 60 * 1000, max: 20, message: { error: 'Muitas consultas de CNPJ. Tente novamente em instantes.', code: 'TOO_MANY_COMPANY_LOOKUP_REQUESTS' }, standardHeaders: true, legacyHeaders: false });
 
 app.use('/api/store-connections/mercado-livre', integrationRateLimiter, createMercadoLivreOrderQueueIngressRouter());
 app.use('/api/store-connections/mercado-livre', integrationRateLimiter, createMercadoLivreRouter());
@@ -56,6 +61,14 @@ app.post('/api/store-connections/fiscal/onboarding/prepare', fiscalOnboardingRat
     const result = await prepareOwnFiscalStoreOnboarding({ authorization: request.headers.authorization ?? '', canonicalStoreId: body.canonicalStoreId });
     response.setHeader('Cache-Control', 'no-store, max-age=0'); response.status(200).json(result);
   } catch (error) { const mapped = mapFiscalStoreOnboardingError(error); response.setHeader('Cache-Control', 'no-store, max-age=0'); response.status(mapped.status).json(mapped.body); }
+});
+
+app.post('/api/store-connections/fiscal/company-registry/lookup', fiscalCompanyLookupRateLimiter, async (request, response) => {
+  try {
+    const body = request.body && typeof request.body === 'object' && !Array.isArray(request.body) ? request.body as Record<string, unknown> : {};
+    const result = await lookupOwnFiscalCompanyRegistry({ authorization: request.headers.authorization ?? '', canonicalStoreId: body.canonicalStoreId, cnpj: body.cnpj });
+    response.setHeader('Cache-Control', 'no-store, max-age=0'); response.status(200).json(result);
+  } catch (error) { const mapped = mapFiscalCompanyRegistryLookupError(error); response.setHeader('Cache-Control', 'no-store, max-age=0'); response.status(mapped.status).json(mapped.body); }
 });
 
 app.get('/api/store-connections/fiscal/profile', fiscalOnboardingRateLimiter, async (request, response) => {
