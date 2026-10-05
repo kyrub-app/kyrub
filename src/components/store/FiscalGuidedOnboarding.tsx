@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { ExternalLink, HelpCircle, KeyRound, ShieldCheck } from 'lucide-react';
+import { ExternalLink, HelpCircle, KeyRound, ShieldCheck, Smartphone, Sparkles } from 'lucide-react';
 import { auth } from '../../utils/firebase';
 
 type HelpTopic = 'a1' | 'csc' | 'mei' | null;
@@ -10,7 +10,8 @@ type FiscalGuidedOnboardingProps = {
 
 const profileEndpoint = '/api/store-connections/fiscal/profile';
 const SP_NFCE_URL = 'https://portal.fazenda.sp.gov.br/servicos/nfce';
-const SP_NFF_URL = 'https://portal.fazenda.sp.gov.br/servicos/nff';
+const NFF_PLAY_URL = 'https://play.google.com/store/apps/details?id=br.gov.rs.procergs.nff';
+const NFF_APPLE_URL = 'https://apps.apple.com/br/app/nota-fiscal-f%C3%A1cil-nff/id1531717982';
 
 const externalLinkClass = 'inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-slate-700 bg-slate-950 px-3 text-[9px] font-black uppercase text-white transition hover:border-cyan-500/40';
 
@@ -48,7 +49,7 @@ export const FiscalGuidedOnboarding: React.FC<FiscalGuidedOnboardingProps> = ({ 
     <div className="flex items-start justify-between gap-3">
       <div>
         <div className="flex items-center gap-2"><HelpCircle className="h-5 w-5 text-cyan-300" /><h3 className="text-xs font-black uppercase">Assistente de configuração fiscal</h3></div>
-        <p className="mt-1 max-w-2xl text-[10px] leading-relaxed text-slate-400">Ainda não tem certificado ou não sabe onde conseguir o CSC? O Kyrub orienta o próximo passo sem marcar requisitos como concluídos antes da hora.</p>
+        <p className="mt-1 max-w-2xl text-[10px] leading-relaxed text-slate-400">Ainda não tem certificado ou não sabe onde conseguir o CSC? O Kyrub explica o caminho aqui mesmo e só direciona para fora quando você realmente precisa executar uma etapa externa.</p>
       </div>
       {fiscalState && <span className="shrink-0 rounded-full border border-slate-700 px-2 py-1 font-mono text-[8px] font-black uppercase text-slate-400">UF fiscal: {fiscalState}</span>}
     </div>
@@ -67,7 +68,7 @@ export const FiscalGuidedOnboarding: React.FC<FiscalGuidedOnboardingProps> = ({ 
       <button type="button" onClick={() => toggle('mei')} aria-expanded={topic === 'mei'} className="min-h-20 rounded-2xl border border-slate-800 bg-slate-950/50 p-4 text-left transition hover:border-cyan-500/30">
         <HelpCircle className="h-4 w-4 text-cyan-300" />
         <strong className="mt-2 block text-[10px] uppercase">Sou MEI / estou começando</strong>
-        <span className="mt-1 block text-[9px] leading-relaxed text-slate-500">Confira caminhos simplificados disponíveis para pequenos negócios.</span>
+        <span className="mt-1 block text-[9px] leading-relaxed text-slate-500">Entenda a Nota Fiscal Fácil e quando ela pode ser uma alternativa.</span>
       </button>
     </div>
 
@@ -95,17 +96,41 @@ export const FiscalGuidedOnboarding: React.FC<FiscalGuidedOnboardingProps> = ({ 
       <p className="text-[9px] leading-relaxed text-amber-200">CSC é segredo fiscal. O código não deve ser enviado por chat, e-mail aberto ou campo de observação.</p>
     </div>}
 
-    {topic === 'mei' && <div className="space-y-3 rounded-2xl border border-cyan-500/15 bg-cyan-500/5 p-4">
-      <h4 className="text-[10px] font-black uppercase text-cyan-100">Caminho para quem está começando</h4>
-      {isSp ? <>
-        <p className="text-[10px] leading-relaxed text-slate-300">Para MEI em São Paulo, existe também a Nota Fiscal Fácil (NFF), oferecida pela SEFAZ-SP como caminho simplificado pelo celular. Ela é uma alternativa externa ao emissor integrado do Kyrub e não será tratada como se configurasse automaticamente A1 ou CSC dentro da plataforma.</p>
-        <p className="text-[9px] leading-relaxed text-slate-400">Isso permite ao empreendedor entender primeiro qual caminho atende ao negócio antes de contratar certificado ou configurar uma integração mais completa.</p>
-        <a className={externalLinkClass} href={SP_NFF_URL} target="_blank" rel="noreferrer">Conhecer a Nota Fiscal Fácil/SP <ExternalLink className="h-3.5 w-3.5" /></a>
-      </> : <>
-        <p className="text-[10px] leading-relaxed text-slate-300">Regimes simplificados e alternativas para MEI variam conforme o documento fiscal, atividade e localidade. O Kyrub vai orientar por UF sem presumir que uma solução estadual serve para todo o país.</p>
-        <p className="text-[9px] leading-relaxed text-slate-400">Por enquanto, confirme sua UF fiscal, atividade e orientação contábil antes de contratar certificado ou habilitar emissão integrada.</p>
-      </>}
+    {topic === 'mei' && <div className="space-y-4 rounded-2xl border border-cyan-500/15 bg-cyan-500/5 p-4">
+      <div>
+        <div className="flex items-center gap-2"><Smartphone className="h-4 w-4 text-cyan-300" /><h4 className="text-[10px] font-black uppercase text-cyan-100">Nota Fiscal Fácil (NFF)</h4></div>
+        <p className="mt-2 text-[10px] leading-relaxed text-slate-300">A Nota Fiscal Fácil é um regime especial de âmbito nacional, instituído pelo Ajuste SINIEF 37/19, para simplificar a emissão de documentos fiscais eletrônicos. Ela atende públicos como transportadores autônomos, microempreendedores individuais e produtores primários, conforme a implantação e as regras de cada UF.</p>
+      </div>
+
+      <div className="grid grid-cols-1 gap-2 text-[9px] leading-relaxed text-slate-400 sm:grid-cols-2">
+        <div className="rounded-xl border border-slate-800 bg-slate-950/50 p-3"><strong className="block text-white">Sem certificado digital</strong>O aplicativo NFF permite preencher e solicitar a emissão de documentos fiscais sem exigir certificado A1 para esse fluxo simplificado.</div>
+        <div className="rounded-xl border border-slate-800 bg-slate-950/50 p-3"><strong className="block text-white">Gratuito no celular</strong>O app é gratuito e está disponível para Android e iPhone. A proposta é reduzir a complexidade técnica para quem está começando.</div>
+        <div className="rounded-xl border border-slate-800 bg-slate-950/50 p-3"><strong className="block text-white">Pode funcionar off-line</strong>A NFF prevê operação simplificada com recursos de contingência/off-line e armazenamento no aparelho, conforme o módulo e as regras aplicáveis.</div>
+        <div className="rounded-xl border border-slate-800 bg-slate-950/50 p-3"><strong className="block text-white">É complementar</strong>A NFF não substitui obrigatoriamente os emissores convencionais. O contribuinte pode usar caminhos diferentes de emissão conforme sua necessidade e enquadramento.</div>
+      </div>
+
+      {isSp ? <div className="space-y-2 rounded-xl border border-emerald-500/15 bg-emerald-500/5 p-3">
+        <strong className="block text-[9px] uppercase text-emerald-200">Para sua UF fiscal: São Paulo</strong>
+        <p className="text-[9px] leading-relaxed text-slate-300">Em São Paulo, a NFF está disponível para Transportadores Autônomos de Cargas (TAC) e, desde 16/09/2024, também para MEI e Produtor Rural. Para MEI e Produtor Rural, o fluxo paulista contempla NF-e e NFC-e em operações como vendas e devoluções, inclusive conforme as regras aplicáveis a operações internas ou interestaduais.</p>
+        <p className="text-[9px] leading-relaxed text-slate-400">Isso significa que um MEI paulista pode avaliar a NFF antes de contratar certificado apenas para começar a emitir. A escolha não configura automaticamente o emissor integrado do Kyrub nem marca A1 ou CSC como concluídos aqui.</p>
+      </div> : <div className="space-y-2 rounded-xl border border-amber-500/15 bg-amber-500/5 p-3">
+        <strong className="block text-[9px] uppercase text-amber-200">Disponibilidade depende da sua UF</strong>
+        <p className="text-[9px] leading-relaxed text-slate-300">A NFF é nacional, mas a implantação por público e documento fiscal pode variar por estado. O Kyrub não presume que o recorte paulista vale para sua empresa.</p>
+      </div>}
+
+      <div className="space-y-2">
+        <p className="text-[9px] font-black uppercase text-slate-300">Baixar o aplicativo oficial</p>
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <a className={externalLinkClass} href={NFF_PLAY_URL} target="_blank" rel="noreferrer">Android / Google Play <ExternalLink className="h-3.5 w-3.5" /></a>
+          <a className={externalLinkClass} href={NFF_APPLE_URL} target="_blank" rel="noreferrer">iPhone / App Store <ExternalLink className="h-3.5 w-3.5" /></a>
+        </div>
+      </div>
     </div>}
+
+    <div className="flex items-start gap-3 rounded-2xl border border-violet-500/15 bg-violet-500/5 p-4">
+      <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-violet-300" />
+      <div><strong className="block text-[9px] uppercase text-violet-200">Próxima evolução com a Kyrubia</strong><p className="mt-1 text-[9px] leading-relaxed text-slate-400">Futuramente, o assistente poderá oferecer “Pedir para a Kyrubia preparar minhas informações fiscais”, organizando o checklist e os dados necessários antes de qualquer ação sensível. O botão só será ativado quando esse agente estiver realmente conectado ao fluxo fiscal.</p></div>
+    </div>
 
     <p className="text-[9px] leading-relaxed text-slate-500">Este assistente explica o caminho, mas não altera sozinho credenciais, habilitação fiscal, homologação ou autorização de produção.</p>
   </section>;
