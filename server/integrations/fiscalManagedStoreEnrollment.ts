@@ -5,17 +5,60 @@ import type { ManagedFiscalIssuerEnvironment, ManagedFiscalStoreEnrollment } fro
 const clean = (value: unknown, maxLength = 160): string =>
   typeof value === 'string' ? value.trim().slice(0, maxLength) : '';
 
+const managedEnrollmentRef = (canonicalStoreId: string) =>
+  adminDb.doc(`kyrub_admin/control_plane/fiscal_store_enrollments/${canonicalStoreId}`);
+
+const legacyEnrollmentRef = (canonicalStoreId: string) =>
+  adminDb.doc(`kyrub_admin/fiscal/store_enrollments/${canonicalStoreId}`);
+
 export interface PrepareManagedFiscalStoreEnrollmentInput {
   canonicalStoreId: string;
   actorId: string;
   environment?: ManagedFiscalIssuerEnvironment;
 }
 
+export interface ManagedFiscalStoreEnrollmentRead {
+  enrollment: Partial<ManagedFiscalStoreEnrollment> | null;
+  source: 'canonical' | 'legacy' | 'none';
+}
+
+/**
+ * Reads the server-owned enrollment authority. The control-plane document is the
+ * canonical source. The old fiscal/store_enrollments location remains read-only
+ * compatibility evidence so historical state is not lost during cutover.
+ */
+export const loadManagedFiscalStoreEnrollment = async (
+  canonicalStoreIdInput: unknown
+): Promise<ManagedFiscalStoreEnrollmentRead> => {
+  const canonicalStoreId = clean(canonicalStoreIdInput);
+  if (!canonicalStoreId) throw new Error('FISCAL_STORE_REQUIRED');
+
+  const canonicalSnapshot = await managedEnrollmentRef(canonicalStoreId).get();
+  if (canonicalSnapshot.exists) {
+    return {
+      enrollment: canonicalSnapshot.data() as Partial<ManagedFiscalStoreEnrollment>,
+      source: 'canonical',
+    };
+  }
+
+  const legacySnapshot = await legacyEnrollmentRef(canonicalStoreId).get();
+  if (legacySnapshot.exists) {
+    return {
+      enrollment: legacySnapshot.data() as Partial<ManagedFiscalStoreEnrollment>,
+      source: 'legacy',
+    };
+  }
+
+  return { enrollment: null, source: 'none' };
+};
+
 /**
  * Prepares a store for Kyrub Fiscal without granting production authority.
- * New enrollments default to homologation. Existing production enrollments are
- * never silently downgraded or reinterpreted; changing their environment requires
- * a separate explicit control operation.
+ * Canonical store ownership/existence is asserted by the authenticated fiscal
+ * onboarding boundary before this helper is called. New enrollments default to
+ * homologation. Existing production enrollments are never silently downgraded or
+ * reinterpreted; changing their environment requires a separate explicit control
+ * operation.
  */
 export const prepareManagedFiscalStoreEnrollment = async (
   input: PrepareManagedFiscalStoreEnrollmentInput
@@ -25,10 +68,7 @@ export const prepareManagedFiscalStoreEnrollment = async (
   const environment: ManagedFiscalIssuerEnvironment = input.environment === 'production' ? 'production' : 'homologation';
   if (!canonicalStoreId || !actorId) throw new Error('FISCAL_STORE_ENROLLMENT_INPUT_REQUIRED');
 
-  const storeSnapshot = await adminDb.doc(`stores/${canonicalStoreId}`).get();
-  if (!storeSnapshot.exists) throw new Error('FISCAL_STORE_NOT_FOUND');
-
-  const ref = adminDb.doc(`kyrub_admin/control_plane/fiscal_store_enrollments/${canonicalStoreId}`);
+  const ref = managedEnrollmentRef(canonicalStoreId);
   const existingSnapshot = await ref.get();
   const existing = existingSnapshot.data() as Partial<ManagedFiscalStoreEnrollment> | undefined;
   if (existing?.status === 'production_authorized' || existing?.status === 'suspended') {
