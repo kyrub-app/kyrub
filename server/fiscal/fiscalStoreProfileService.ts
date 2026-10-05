@@ -1,8 +1,11 @@
 import { FieldValue } from 'firebase-admin/firestore';
-import { verifyFirebaseIdToken } from '../ai/consultantAuth.js';
 import { adminDb } from '../firebaseAdmin.js';
+import {
+  canonicalFiscalProfilePath,
+  loadCanonicalFiscalProfileData,
+} from './fiscalCanonicalStore.js';
+import { authorizeOwnFiscalStore } from './fiscalStoreAuthorization.js';
 
-const bearerToken = (authorization: string): string => /^Bearer\s+(.+)$/i.exec(authorization)?.[1]?.trim() ?? '';
 const clean = (value: unknown, maxLength: number): string => typeof value === 'string' ? value.trim().slice(0, maxLength) : '';
 const digits = (value: unknown): string => clean(value, 32).replace(/\D/g, '');
 
@@ -40,19 +43,6 @@ export interface FiscalStoreProfileView {
   productionTrafficAllowed: false;
 }
 
-const authorizeOwnStore = async (authorization: string, canonicalStoreIdInput: unknown): Promise<string> => {
-  const token = bearerToken(authorization);
-  if (!token) throw new Error('AUTH_REQUIRED');
-  const decoded = await verifyFirebaseIdToken(token);
-  if (decoded.emailVerified !== true) throw new Error('EMAIL_NOT_VERIFIED');
-  const canonicalStoreId = clean(canonicalStoreIdInput, 160);
-  if (!canonicalStoreId) throw new Error('FISCAL_STORE_ENROLLMENT_INPUT_REQUIRED');
-  if (canonicalStoreId !== decoded.uid) throw new Error('FISCAL_STORE_OWNERSHIP_REQUIRED');
-  const store = await adminDb.doc(`stores/${canonicalStoreId}`).get();
-  if (!store.exists) throw new Error('FISCAL_STORE_NOT_FOUND');
-  return canonicalStoreId;
-};
-
 const viewFrom = (canonicalStoreId: string, data: Record<string, unknown>): FiscalStoreProfileView => {
   const addressRaw = data.address && typeof data.address === 'object' && !Array.isArray(data.address) ? data.address as Record<string, unknown> : {};
   const profile = {
@@ -77,13 +67,15 @@ const viewFrom = (canonicalStoreId: string, data: Record<string, unknown>): Fisc
 };
 
 export const loadOwnFiscalStoreProfile = async (input: { authorization: string; canonicalStoreId: unknown }): Promise<FiscalStoreProfileView> => {
-  const canonicalStoreId = await authorizeOwnStore(input.authorization, input.canonicalStoreId);
-  const snapshot = await adminDb.doc(`stores/${canonicalStoreId}/fiscal/profile`).get();
-  return viewFrom(canonicalStoreId, snapshot.exists ? snapshot.data() ?? {} : {});
+  const authorized = await authorizeOwnFiscalStore({ ...input, storeRequiredCode: 'FISCAL_STORE_ENROLLMENT_INPUT_REQUIRED' });
+  const canonicalStoreId = authorized.canonicalStoreId;
+  const data = await loadCanonicalFiscalProfileData(canonicalStoreId, canonicalStoreId);
+  return viewFrom(canonicalStoreId, data);
 };
 
 export const saveOwnFiscalStoreProfile = async (input: { authorization: string; canonicalStoreId: unknown; profile: unknown }): Promise<FiscalStoreProfileView> => {
-  const canonicalStoreId = await authorizeOwnStore(input.authorization, input.canonicalStoreId);
+  const authorized = await authorizeOwnFiscalStore({ authorization: input.authorization, canonicalStoreId: input.canonicalStoreId, storeRequiredCode: 'FISCAL_STORE_ENROLLMENT_INPUT_REQUIRED' });
+  const canonicalStoreId = authorized.canonicalStoreId;
   const raw = input.profile && typeof input.profile === 'object' && !Array.isArray(input.profile) ? input.profile as Record<string, unknown> : {};
   const view = viewFrom(canonicalStoreId, raw);
   if (view.cnpj && !isValidCnpj(view.cnpj)) throw new Error('FISCAL_CNPJ_INVALID');
@@ -91,7 +83,7 @@ export const saveOwnFiscalStoreProfile = async (input: { authorization: string; 
   if (view.address.postalCode && view.address.postalCode.length !== 8) throw new Error('FISCAL_POSTAL_CODE_INVALID');
   if (view.address.ibgeCityCode && view.address.ibgeCityCode.length !== 7) throw new Error('FISCAL_IBGE_CITY_CODE_INVALID');
 
-  await adminDb.doc(`stores/${canonicalStoreId}/fiscal/profile`).set({
+  await adminDb.doc(canonicalFiscalProfilePath(canonicalStoreId, canonicalStoreId)).set({
     legalName: view.legalName, cnpj: view.cnpj, stateRegistration: view.stateRegistration,
     municipalRegistration: view.municipalRegistration, taxRegime: view.taxRegime, address: view.address,
     completeness: view.completeness, missingFields: view.missingFields,
@@ -100,7 +92,7 @@ export const saveOwnFiscalStoreProfile = async (input: { authorization: string; 
 
   const auditId = crypto.randomUUID().replaceAll('-', '_');
   await adminDb.doc(`kyrub_admin/control_plane/audit_logs/${auditId}`).set({
-    id: auditId, action: 'store.fiscal.profile.saved', actorId: canonicalStoreId, actorRole: 'store_owner',
+    id: auditId, action: 'store.fiscal.profile.saved', actorId: authorized.actorId, actorRole: 'store_owner',
     targetType: 'store', targetId: canonicalStoreId, completeness: view.completeness,
     source: 'server', createdAt: FieldValue.serverTimestamp(),
   });
@@ -112,6 +104,7 @@ export const mapFiscalStoreProfileError = (error: unknown): { status: number; bo
   if (message === 'AUTH_REQUIRED' || /id-token|expired|revoked/i.test(message)) return { status: 401, body: { error: 'Faça login novamente.', code: 'AUTH_REQUIRED' } };
   if (message === 'EMAIL_NOT_VERIFIED' || message === 'FISCAL_STORE_OWNERSHIP_REQUIRED') return { status: 403, body: { error: 'Você não pode alterar os dados fiscais desta loja.', code: message } };
   if (message === 'FISCAL_STORE_NOT_FOUND') return { status: 404, body: { error: 'A loja autenticada não foi encontrada.', code: message } };
+  if (message === 'FISCAL_STORE_IDENTITY_INVALID') return { status: 409, body: { error: 'A identidade canônica da loja está inconsistente.', code: message } };
   if (message === 'FISCAL_CNPJ_INVALID') return { status: 400, body: { error: 'Informe um CNPJ válido.', code: message } };
   if (message === 'FISCAL_UF_INVALID') return { status: 400, body: { error: 'Informe a UF com duas letras.', code: message } };
   if (message === 'FISCAL_POSTAL_CODE_INVALID') return { status: 400, body: { error: 'Informe um CEP com 8 dígitos.', code: message } };

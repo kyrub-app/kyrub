@@ -7,6 +7,7 @@ export type ErpManagementModule =
   | 'vendas'
   | 'assinaturas'
   | 'financeiro'
+  | 'fiscal'
   | 'rh'
   | 'crm'
   | 'marketing'

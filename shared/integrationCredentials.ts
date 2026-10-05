@@ -7,6 +7,7 @@ export type KyrubIntegrationProviderId =
   | 'pagarme'
   | 'google_maps'
   | 'focus_nfe'
+  | 'serpro_cnpj'
   | 'custom';
 
 export type KyrubIntegrationEnvironment = 'sandbox' | 'production';
@@ -41,7 +42,7 @@ export interface KyrubIntegrationCredentialRecord {
 export interface KyrubIntegrationProviderDefinition {
   providerId: KyrubIntegrationProviderId;
   title: string;
-  category: 'payments' | 'logistics' | 'maps' | 'fiscal' | 'other';
+  category: 'payments' | 'logistics' | 'maps' | 'fiscal' | 'registry' | 'other';
   supportedEnvironments: KyrubIntegrationEnvironment[];
   credentialSlots: Array<{
     key: string;
@@ -109,6 +110,16 @@ export const KYRUB_INTEGRATION_PROVIDERS: KyrubIntegrationProviderDefinition[] =
     supportedEnvironments: ['sandbox', 'production'],
     credentialSlots: [
       { key: 'token', label: 'Token', required: true },
+    ],
+  },
+  {
+    providerId: 'serpro_cnpj',
+    title: 'SERPRO · Consulta CNPJ',
+    category: 'registry',
+    supportedEnvironments: ['production'],
+    credentialSlots: [
+      { key: 'consumer_key', label: 'Consumer Key', required: true },
+      { key: 'consumer_secret', label: 'Consumer Secret', required: true },
     ],
   },
 ];
