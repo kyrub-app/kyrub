@@ -115,7 +115,9 @@ const isSquareSearchInput = (input: HTMLInputElement): boolean => {
   const placeholder = input.placeholder.toLocaleLowerCase('pt-BR');
   return (
     placeholder.startsWith('buscar') &&
-    (placeholder.includes('publica') || placeholder.includes('comunidade')) &&
+    (placeholder.includes('publica') ||
+      placeholder.includes('comunidade') ||
+      placeholder.includes('praça')) &&
     Boolean(input.closest('#profile-social-hub-modal main'))
   );
 };
@@ -290,16 +292,17 @@ export function ProfileCommunitiesPreviewBridge() {
       }
 
       const searchContainer = input.parentElement;
-      if (!searchContainer) return;
+      const searchRow = searchContainer?.parentElement;
+      if (!searchContainer || !searchRow) return;
 
-      let mount = searchContainer.parentElement?.querySelector<HTMLElement>(
+      let mount = searchRow.parentElement?.querySelector<HTMLElement>(
         ':scope > [data-kyrub-communities-preview]'
       );
 
       if (!mount || !mount.isConnected) {
         mount = document.createElement('div');
         mount.dataset.kyrubCommunitiesPreview = 'true';
-        searchContainer.insertAdjacentElement('afterend', mount);
+        searchRow.insertAdjacentElement('afterend', mount);
       }
 
       mountRef.current = mount;
