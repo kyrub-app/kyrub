@@ -1326,26 +1326,28 @@ export function ProfileSocialHubNative() {
               </div>
             </section>
 
-            <nav
-              className="sticky top-0 z-10 flex gap-1 overflow-x-auto border-b border-slate-900 bg-slate-950/95 px-3 py-2 backdrop-blur-md"
-              aria-label="Seções do perfil"
-            >
-              {tabs.map(tab => (
-                <button
-                  key={tab.id}
-                  type="button"
-                  onClick={() => setActiveTab(tab.id)}
-                  className={`shrink-0 rounded-xl px-3 py-2 text-[9px] font-black uppercase ${
-                    activeTab === tab.id
-                      ? 'bg-orange-500 text-slate-950'
-                      : 'border border-slate-800 bg-slate-900 text-slate-400'
-                  }`}
-                >
-                  {tab.label}
-                  {typeof tab.count === 'number' ? ` ${tab.count}` : ''}
-                </button>
-              ))}
-            </nav>
+            {activeTab !== 'square' && (
+              <nav
+                className="sticky top-0 z-10 flex gap-1 overflow-x-auto border-b border-slate-900 bg-slate-950/95 px-3 py-2 backdrop-blur-md"
+                aria-label="Seções do perfil"
+              >
+                {tabs.map(tab => (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => setActiveTab(tab.id)}
+                    className={`shrink-0 rounded-xl px-3 py-2 text-[9px] font-black uppercase ${
+                      activeTab === tab.id
+                        ? 'bg-orange-500 text-slate-950'
+                        : 'border border-slate-800 bg-slate-900 text-slate-400'
+                    }`}
+                  >
+                    {tab.label}
+                    {typeof tab.count === 'number' ? ` ${tab.count}` : ''}
+                  </button>
+                ))}
+              </nav>
+            )}
 
             <main className="space-y-4 p-4 sm:p-5">
               {activeTab === 'publications' && (
@@ -1653,30 +1655,24 @@ export function ProfileSocialHubNative() {
 
               {activeTab === 'square' && (
                 <div className="space-y-4">
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <span className="font-mono text-[8px] font-black uppercase tracking-[0.16em] text-orange-400">
-                        Descoberta pública
-                      </span>
-                      <h3 className="mt-1 text-base font-black text-white">Praça</h3>
+                  <div className="flex items-center gap-2">
+                    <div className="relative min-w-0 flex-1">
+                      <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-600" />
+                      <input
+                        value={squareSearch}
+                        onChange={event => setSquareSearch(event.target.value)}
+                        placeholder="Buscar na Praça..."
+                        className="w-full rounded-2xl border border-slate-800 bg-slate-900 py-3 pl-10 pr-3 text-xs text-white outline-none"
+                      />
                     </div>
                     <button
                       type="button"
                       onClick={() => setComposerOpen(true)}
-                      className="flex h-10 items-center gap-2 rounded-xl bg-orange-500 px-3 text-[9px] font-black uppercase text-slate-950"
+                      className="flex h-11 shrink-0 items-center gap-1.5 rounded-xl bg-orange-500 px-3 text-[9px] font-black uppercase text-slate-950"
                     >
                       <Send className="h-4 w-4" />
                       + Publicar
                     </button>
-                  </div>
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-600" />
-                    <input
-                      value={squareSearch}
-                      onChange={event => setSquareSearch(event.target.value)}
-                      placeholder="Buscar pessoas e publicações..."
-                      className="w-full rounded-2xl border border-slate-800 bg-slate-900 py-3 pl-10 pr-3 text-xs text-white outline-none"
-                    />
                   </div>
                   {renderPostList(
                     squarePosts.filter(
