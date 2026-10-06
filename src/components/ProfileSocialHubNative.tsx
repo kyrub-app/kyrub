@@ -485,7 +485,6 @@ export function ProfileSocialHubNative() {
     window.setTimeout(() => setToast(null), 3500);
   };
 
-  const communityDirectory = useCommunityDirectory();
   const directory = useSocialDirectoryV2({
     profileName: profile.name,
     profilePhotoUrl: profile.photoUrl,
@@ -495,6 +494,7 @@ export function ProfileSocialHubNative() {
     isLoggedIn: Boolean(user),
     triggerToast,
   });
+  const communityDirectory = useCommunityDirectory();
 
   useEffect(() => {
     return onAuthStateChanged(auth, nextUser => {
