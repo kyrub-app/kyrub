@@ -230,6 +230,18 @@ export function HeaderDiscoveryShortcutActivationBridge() {
         return;
       }
 
+      const personalPageTrigger = target.closest(
+        '[data-personal-page-header-slot="true"] > button'
+      );
+      if (personalPageTrigger instanceof HTMLButtonElement) {
+        clearPendingActivation();
+        activeDestination = null;
+        closeWalletModal();
+        closeNotificationCenter();
+        findMarketplaceCloseButton()?.click();
+        return;
+      }
+
       const notificationTrigger = target.closest(
         '#canonical-notification-trigger'
       );
