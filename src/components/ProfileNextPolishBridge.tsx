@@ -125,16 +125,16 @@ export function ProfileNextPolishBridge() {
       );
 
       const appHeader = document.getElementById('app-header');
-      const headerActions = appHeader?.lastElementChild as HTMLElement | null;
       let nextPersonalPageHeaderTarget: HTMLElement | null = null;
-      if (headerActions) {
-        let target = headerActions.querySelector<HTMLElement>(
+      if (appHeader) {
+        let target = appHeader.querySelector<HTMLElement>(
           '[data-personal-page-header-slot="true"]'
         );
         if (!target) {
           target = document.createElement('div');
           target.dataset.personalPageHeaderSlot = 'true';
-          headerActions.insertAdjacentElement('afterbegin', target);
+          target.className = 'flex shrink-0 items-center';
+          appHeader.appendChild(target);
         }
         nextPersonalPageHeaderTarget = target;
       }
@@ -315,14 +315,7 @@ export function ProfileNextPolishBridge() {
         createPortal(
           <button
             type="button"
-            onClick={() => {
-              const trigger = document.getElementById('header-user-profile-trigger');
-              if (trigger instanceof HTMLButtonElement) {
-                trigger.click();
-                return;
-              }
-              window.dispatchEvent(new CustomEvent('kyrub-personal-page-open-requested'));
-            }}
+            onClick={() => window.dispatchEvent(new CustomEvent('kyrub-personal-page-open-requested'))}
             className="flex h-11 w-11 items-center justify-center rounded-2xl border border-slate-700 bg-slate-900 text-slate-400 transition-colors hover:border-orange-500/50 hover:text-orange-400"
             aria-label="Abrir minha página"
             title="Minha página"
