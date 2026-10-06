@@ -204,6 +204,13 @@ describe('native React profile social hub', () => {
     assert.match(profileSource, /deleteGroup/);
   });
 
+  test('keeps Praça focused on discovery instead of profile navigation', () => {
+    assert.match(profileSource, /activeTab !== 'square'/);
+    assert.match(profileSource, /placeholder="Buscar na Praça\.\.\."/);
+    assert.match(profileSource, /\+ Publicar/);
+    assert.doesNotMatch(profileSource, /Descoberta pública/);
+  });
+
   test('publishes through the existing offline-to-cloud social pipeline', () => {
     assert.match(profileSource, /kyrub-social-posts-updated/);
     assert.match(profileSource, /source: 'local'/);
