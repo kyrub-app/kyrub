@@ -1155,7 +1155,6 @@ export function ProfileSocialHubNative() {
     { id: 'saved', label: 'Salvos', count: savedPosts.length },
     { id: 'communities', label: 'Comunidades' },
     { id: 'connected', label: 'Conectados', count: directory.friends.length },
-    { id: 'square', label: 'Praça' },
   ];
 
   const suggestionCount = directory.getSuggestions().length;
