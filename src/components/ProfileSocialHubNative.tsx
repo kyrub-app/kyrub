@@ -431,6 +431,7 @@ function ContactCard({
 export function ProfileSocialHubNative() {
   const [open, setOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
+  const [composerOpen, setComposerOpen] = useState(false);
   const [savedOpen, setSavedOpen] = useState(false);
   const [offersOpen, setOffersOpen] = useState(false);
   const [newConnectionsOpen, setNewConnectionsOpen] = useState(false);
@@ -544,7 +545,8 @@ export function ProfileSocialHubNative() {
     setDraftBio(profile.bio);
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return;
-      if (savedOpen) setSavedOpen(false);
+      if (composerOpen) setComposerOpen(false);
+      else if (savedOpen) setSavedOpen(false);
       else if (offersOpen) setOffersOpen(false);
       else if (editOpen) setEditOpen(false);
       else if (newConnectionsOpen) setNewConnectionsOpen(false);
@@ -553,6 +555,7 @@ export function ProfileSocialHubNative() {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [
+    composerOpen,
     editOpen,
     newConnectionsOpen,
     offersOpen,
@@ -823,6 +826,7 @@ export function ProfileSocialHubNative() {
     setTagPickerOpen(false);
     setPublishToStatus(false);
     setShareToSquare(false);
+    setComposerOpen(false);
     triggerToast(
       publishToStatus
         ? 'Publicação criada e copiada para o Status por 24 horas.'
@@ -1346,202 +1350,24 @@ export function ProfileSocialHubNative() {
             <main className="space-y-4 p-4 sm:p-5">
               {activeTab === 'publications' && (
                 <>
-                  <section className="space-y-3 rounded-3xl border border-slate-800 bg-slate-900 p-4">
-                    <textarea
-                      value={newPostText}
-                      onChange={event =>
-                        setNewPostText(event.target.value.slice(0, 3000))
-                      }
-                      rows={3}
-                      placeholder="O que você quer publicar na sua linha do tempo?"
-                      className="w-full resize-none rounded-2xl border border-slate-800 bg-slate-950 px-3 py-3 text-xs text-white outline-none focus:border-orange-500/60"
-                    />
-
-                    {postMediaUrls.length > 0 && (
-                      <div className="grid grid-cols-3 gap-2">
-                        {postMediaUrls.map((url, index) => (
-                          <div
-                            key={`${url.slice(0, 24)}-${index}`}
-                            className="relative aspect-square overflow-hidden rounded-xl"
-                          >
-                            <img
-                              src={url}
-                              alt={`Imagem ${index + 1}`}
-                              className="h-full w-full object-cover"
-                            />
-                            <button
-                              type="button"
-                              onClick={() =>
-                                setPostMediaUrls(current =>
-                                  current.filter(
-                                    (_, itemIndex) => itemIndex !== index
-                                  )
-                                )
-                              }
-                              className="absolute right-1 top-1 rounded-full bg-slate-950/90 p-1 text-white"
-                              aria-label={`Remover imagem ${index + 1}`}
-                            >
-                              <X className="h-3 w-3" />
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    {selectedTaggedFriends.length > 0 && (
-                      <div className="flex flex-wrap gap-2">
-                        {selectedTaggedFriends.map(friend => (
-                          <button
-                            key={friend.id}
-                            type="button"
-                            onClick={() => toggleTaggedUser(friend.id)}
-                            className="flex items-center gap-1 rounded-full border border-teal-500/25 bg-teal-500/10 px-2.5 py-1.5 text-[8px] font-black text-teal-300"
-                          >
-                            @{friend.name}
-                            <X className="h-3 w-3" />
-                          </button>
-                        ))}
-                      </div>
-                    )}
-
-                    {tagPickerOpen && (
-                      <div className="space-y-2 rounded-2xl border border-slate-800 bg-slate-950 p-3">
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <h4 className="text-[9px] font-black uppercase text-white">
-                              Marcar conectados
-                            </h4>
-                            <p className="text-[8px] text-slate-500">
-                              Somente pessoas da sua lista.
-                            </p>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => setTagPickerOpen(false)}
-                            className="text-slate-500"
-                            aria-label="Fechar seleção"
-                          >
-                            <X className="h-4 w-4" />
-                          </button>
-                        </div>
-                        <div className="max-h-44 space-y-2 overflow-y-auto">
-                          {directory.friends.map(friend => {
-                            const selected = selectedTaggedUserIds.includes(
-                              friend.id
-                            );
-                            return (
-                              <button
-                                key={friend.id}
-                                type="button"
-                                onClick={() => toggleTaggedUser(friend.id)}
-                                className={`flex w-full items-center gap-3 rounded-xl border p-2.5 text-left ${
-                                  selected
-                                    ? 'border-teal-500/40 bg-teal-500/10'
-                                    : 'border-slate-800 bg-slate-900'
-                                }`}
-                              >
-                                <Avatar
-                                  src={friend.avatar}
-                                  name={friend.name}
-                                  className="h-9 w-9 rounded-full object-cover"
-                                />
-                                <span className="min-w-0 flex-1 truncate text-[10px] font-bold text-white">
-                                  {friend.name}
-                                </span>
-                                {selected && (
-                                  <Check className="h-4 w-4 text-teal-300" />
-                                )}
-                              </button>
-                            );
-                          })}
-                          {directory.friends.length === 0 && (
-                            <p className="py-4 text-center text-[9px] text-slate-600">
-                              Você ainda não possui conectados para marcar.
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                    )}
-
-                    <div className="grid gap-2 sm:grid-cols-2">
-                      <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-teal-500/20 bg-teal-500/5 p-3">
-                        <input
-                          type="checkbox"
-                          checked={publishToStatus}
-                          onChange={event =>
-                            setPublishToStatus(event.target.checked)
-                          }
-                          className="mt-0.5 h-4 w-4 accent-teal-500"
-                        />
-                        <span>
-                          <strong className="block text-[9px] font-black uppercase text-teal-200">
-                            Publicar no Status
-                          </strong>
-                          <span className="mt-0.5 block text-[8px] leading-relaxed text-slate-500">
-                            Esta publicação também ficará visível nos seus
-                            Status por 24 horas.
-                          </span>
-                        </span>
-                      </label>
-
-                      <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-orange-500/20 bg-orange-500/5 p-3">
-                        <input
-                          type="checkbox"
-                          checked={shareToSquare}
-                          onChange={event =>
-                            setShareToSquare(event.target.checked)
-                          }
-                          className="mt-0.5 h-4 w-4 accent-orange-500"
-                        />
-                        <span>
-                          <strong className="block text-[9px] font-black uppercase text-orange-200">
-                            Enviar para a Praça
-                          </strong>
-                          <span className="mt-0.5 block text-[8px] leading-relaxed text-slate-500">
-                            Compartilha a publicação no feed geral do Kyrub.
-                          </span>
-                        </span>
-                      </label>
-                    </div>
-
-                    <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-800 pt-3">
-                      <div className="flex flex-wrap gap-2">
-                        <label className="flex h-10 cursor-pointer items-center gap-2 rounded-xl border border-slate-800 bg-slate-950 px-3 text-[9px] font-black uppercase text-slate-400">
-                          <ImagePlus className="h-4 w-4" />
-                          Imagens {postMediaUrls.length}/9
-                          <input
-                            type="file"
-                            accept="image/*"
-                            multiple
-                            className="hidden"
-                            onChange={readPostImages}
-                          />
-                        </label>
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setTagPickerOpen(current => !current)
-                          }
-                          className={`flex h-10 items-center gap-2 rounded-xl border px-3 text-[9px] font-black uppercase ${
-                            selectedTaggedUserIds.length > 0
-                              ? 'border-teal-500/35 bg-teal-500/10 text-teal-300'
-                              : 'border-slate-800 bg-slate-950 text-slate-400'
-                          }`}
-                        >
-                          <UserPlus className="h-4 w-4" />
-                          Marcar {selectedTaggedUserIds.length || ''}
-                        </button>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={publish}
-                        className="flex h-10 items-center gap-2 rounded-xl bg-orange-500 px-4 text-[9px] font-black uppercase text-slate-950"
-                      >
-                        <Send className="h-4 w-4" />
-                        Publicar
-                      </button>
-                    </div>
-                  </section>
+                  <button
+                    type="button"
+                    onClick={() => setComposerOpen(true)}
+                    className="flex w-full items-center justify-between gap-3 rounded-3xl border border-orange-500/25 bg-orange-500/5 p-4 text-left transition-colors hover:bg-orange-500/10"
+                  >
+                    <span>
+                      <span className="block text-[9px] font-black uppercase tracking-[0.16em] text-orange-300">
+                        Criar
+                      </span>
+                      <strong className="mt-1 block text-sm text-white">
+                        + Publicar
+                      </strong>
+                      <span className="mt-1 block text-[9px] text-slate-500">
+                        Crie uma publicação e escolha onde ela será distribuída.
+                      </span>
+                    </span>
+                    <Send className="h-5 w-5 shrink-0 text-orange-400" />
+                  </button>
 
                   {ownStatuses.length > 0 && (
                     <section className="space-y-3 rounded-3xl border border-teal-500/20 bg-teal-500/5 p-4">
@@ -1827,6 +1653,22 @@ export function ProfileSocialHubNative() {
 
               {activeTab === 'square' && (
                 <div className="space-y-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <span className="font-mono text-[8px] font-black uppercase tracking-[0.16em] text-orange-400">
+                        Descoberta pública
+                      </span>
+                      <h3 className="mt-1 text-base font-black text-white">Praça</h3>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setComposerOpen(true)}
+                      className="flex h-10 items-center gap-2 rounded-xl bg-orange-500 px-3 text-[9px] font-black uppercase text-slate-950"
+                    >
+                      <Send className="h-4 w-4" />
+                      + Publicar
+                    </button>
+                  </div>
                   <div className="relative">
                     <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-600" />
                     <input
@@ -2119,6 +1961,232 @@ export function ProfileSocialHubNative() {
               Salvar perfil
             </button>
           </form>
+        </div>
+      )}
+
+      {composerOpen && (
+        <div className="fixed inset-0 z-[134] flex items-end justify-center bg-slate-950/95 backdrop-blur-md sm:items-center sm:p-4">
+          <section className="flex max-h-[94dvh] w-full max-w-xl flex-col overflow-hidden rounded-t-3xl border border-slate-800 bg-slate-950 sm:rounded-3xl">
+            <header className="flex items-center justify-between border-b border-slate-900 px-4 py-3">
+              <div>
+                <span className="text-[9px] font-black uppercase tracking-wider text-orange-400">
+                  Criar
+                </span>
+                <h3 className="text-base font-black text-white">
+                  Nova publicação
+                </h3>
+                <p className="mt-1 text-[9px] text-slate-500">
+                  Publique no seu perfil e escolha se deseja ampliar para a Praça.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setComposerOpen(false)}
+                className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-800 bg-slate-900 text-slate-500"
+                aria-label="Fechar criação de publicação"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </header>
+            <div className="flex-1 overflow-y-auto p-4">
+                                <section className="space-y-3 rounded-3xl border border-slate-800 bg-slate-900 p-4">
+                                  <textarea
+                                    value={newPostText}
+                                    onChange={event =>
+                                      setNewPostText(event.target.value.slice(0, 3000))
+                                    }
+                                    rows={3}
+                                    placeholder="O que você quer publicar?"
+                                    className="w-full resize-none rounded-2xl border border-slate-800 bg-slate-950 px-3 py-3 text-xs text-white outline-none focus:border-orange-500/60"
+                                  />
+              
+                                  {postMediaUrls.length > 0 && (
+                                    <div className="grid grid-cols-3 gap-2">
+                                      {postMediaUrls.map((url, index) => (
+                                        <div
+                                          key={`${url.slice(0, 24)}-${index}`}
+                                          className="relative aspect-square overflow-hidden rounded-xl"
+                                        >
+                                          <img
+                                            src={url}
+                                            alt={`Imagem ${index + 1}`}
+                                            className="h-full w-full object-cover"
+                                          />
+                                          <button
+                                            type="button"
+                                            onClick={() =>
+                                              setPostMediaUrls(current =>
+                                                current.filter(
+                                                  (_, itemIndex) => itemIndex !== index
+                                                )
+                                              )
+                                            }
+                                            className="absolute right-1 top-1 rounded-full bg-slate-950/90 p-1 text-white"
+                                            aria-label={`Remover imagem ${index + 1}`}
+                                          >
+                                            <X className="h-3 w-3" />
+                                          </button>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+              
+                                  {selectedTaggedFriends.length > 0 && (
+                                    <div className="flex flex-wrap gap-2">
+                                      {selectedTaggedFriends.map(friend => (
+                                        <button
+                                          key={friend.id}
+                                          type="button"
+                                          onClick={() => toggleTaggedUser(friend.id)}
+                                          className="flex items-center gap-1 rounded-full border border-teal-500/25 bg-teal-500/10 px-2.5 py-1.5 text-[8px] font-black text-teal-300"
+                                        >
+                                          @{friend.name}
+                                          <X className="h-3 w-3" />
+                                        </button>
+                                      ))}
+                                    </div>
+                                  )}
+              
+                                  {tagPickerOpen && (
+                                    <div className="space-y-2 rounded-2xl border border-slate-800 bg-slate-950 p-3">
+                                      <div className="flex items-center justify-between">
+                                        <div>
+                                          <h4 className="text-[9px] font-black uppercase text-white">
+                                            Marcar conectados
+                                          </h4>
+                                          <p className="text-[8px] text-slate-500">
+                                            Somente pessoas da sua lista.
+                                          </p>
+                                        </div>
+                                        <button
+                                          type="button"
+                                          onClick={() => setTagPickerOpen(false)}
+                                          className="text-slate-500"
+                                          aria-label="Fechar seleção"
+                                        >
+                                          <X className="h-4 w-4" />
+                                        </button>
+                                      </div>
+                                      <div className="max-h-44 space-y-2 overflow-y-auto">
+                                        {directory.friends.map(friend => {
+                                          const selected = selectedTaggedUserIds.includes(
+                                            friend.id
+                                          );
+                                          return (
+                                            <button
+                                              key={friend.id}
+                                              type="button"
+                                              onClick={() => toggleTaggedUser(friend.id)}
+                                              className={`flex w-full items-center gap-3 rounded-xl border p-2.5 text-left ${
+                                                selected
+                                                  ? 'border-teal-500/40 bg-teal-500/10'
+                                                  : 'border-slate-800 bg-slate-900'
+                                              }`}
+                                            >
+                                              <Avatar
+                                                src={friend.avatar}
+                                                name={friend.name}
+                                                className="h-9 w-9 rounded-full object-cover"
+                                              />
+                                              <span className="min-w-0 flex-1 truncate text-[10px] font-bold text-white">
+                                                {friend.name}
+                                              </span>
+                                              {selected && (
+                                                <Check className="h-4 w-4 text-teal-300" />
+                                              )}
+                                            </button>
+                                          );
+                                        })}
+                                        {directory.friends.length === 0 && (
+                                          <p className="py-4 text-center text-[9px] text-slate-600">
+                                            Você ainda não possui conectados para marcar.
+                                          </p>
+                                        )}
+                                      </div>
+                                    </div>
+                                  )}
+              
+                                  <div className="grid gap-2 sm:grid-cols-2">
+                                    <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-teal-500/20 bg-teal-500/5 p-3">
+                                      <input
+                                        type="checkbox"
+                                        checked={publishToStatus}
+                                        onChange={event =>
+                                          setPublishToStatus(event.target.checked)
+                                        }
+                                        className="mt-0.5 h-4 w-4 accent-teal-500"
+                                      />
+                                      <span>
+                                        <strong className="block text-[9px] font-black uppercase text-teal-200">
+                                          Publicar no Status
+                                        </strong>
+                                        <span className="mt-0.5 block text-[8px] leading-relaxed text-slate-500">
+                                          Esta publicação também ficará visível nos seus
+                                          Status por 24 horas.
+                                        </span>
+                                      </span>
+                                    </label>
+              
+                                    <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-orange-500/20 bg-orange-500/5 p-3">
+                                      <input
+                                        type="checkbox"
+                                        checked={shareToSquare}
+                                        onChange={event =>
+                                          setShareToSquare(event.target.checked)
+                                        }
+                                        className="mt-0.5 h-4 w-4 accent-orange-500"
+                                      />
+                                      <span>
+                                        <strong className="block text-[9px] font-black uppercase text-orange-200">
+                                          Enviar para a Praça
+                                        </strong>
+                                        <span className="mt-0.5 block text-[8px] leading-relaxed text-slate-500">
+                                          Compartilha a publicação no feed geral do Kyrub.
+                                        </span>
+                                      </span>
+                                    </label>
+                                  </div>
+              
+                                  <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-800 pt-3">
+                                    <div className="flex flex-wrap gap-2">
+                                      <label className="flex h-10 cursor-pointer items-center gap-2 rounded-xl border border-slate-800 bg-slate-950 px-3 text-[9px] font-black uppercase text-slate-400">
+                                        <ImagePlus className="h-4 w-4" />
+                                        Imagens {postMediaUrls.length}/9
+                                        <input
+                                          type="file"
+                                          accept="image/*"
+                                          multiple
+                                          className="hidden"
+                                          onChange={readPostImages}
+                                        />
+                                      </label>
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          setTagPickerOpen(current => !current)
+                                        }
+                                        className={`flex h-10 items-center gap-2 rounded-xl border px-3 text-[9px] font-black uppercase ${
+                                          selectedTaggedUserIds.length > 0
+                                            ? 'border-teal-500/35 bg-teal-500/10 text-teal-300'
+                                            : 'border-slate-800 bg-slate-950 text-slate-400'
+                                        }`}
+                                      >
+                                        <UserPlus className="h-4 w-4" />
+                                        Marcar {selectedTaggedUserIds.length || ''}
+                                      </button>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={publish}
+                                      className="flex h-10 items-center gap-2 rounded-xl bg-orange-500 px-4 text-[9px] font-black uppercase text-slate-950"
+                                    >
+                                      <Send className="h-4 w-4" />
+                                      Publicar
+                                    </button>
+                                  </div>
+                                </section>
+            </div>
+          </section>
         </div>
       )}
 
