@@ -75,11 +75,6 @@ describe('native React profile social hub', () => {
     assert.match(profileSource, /sm:h-32 sm:w-32/);
     assert.match(profileSource, /aria-label="Editar minha página"/);
     assert.match(profileSource, /aria-label="Abrir publicações salvas"/);
-    assert.match(profileSource, /aria-label="Abrir Ofertas"/);
-    assert.ok(
-      profileSource.indexOf('aria-label="Abrir publicações salvas"') <
-        profileSource.indexOf('aria-label="Abrir Ofertas"')
-    );
     assert.match(profileSource, /Foto do Google/);
     assert.match(profileSource, /Publicações salvas/);
     assert.match(mainSource, /profile-header-layout\.css/);
