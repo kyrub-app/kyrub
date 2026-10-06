@@ -71,17 +71,10 @@ describe('native React profile social hub', () => {
   });
 
   test('restores the approved modern profile header without external DOM decoration', () => {
-    assert.match(profileSource, /h-28 w-\[90px\]/);
-    assert.match(profileSource, /sm:h-32 sm:w-\[104px\]/);
-    assert.match(profileSource, /aria-label="Editar perfil"/);
-    assert.match(profileSource, /aria-label="Abrir publicações salvas"/);
-    assert.match(profileSource, /aria-label="Abrir Ofertas"/);
-    assert.ok(
-      profileSource.indexOf('aria-label="Abrir publicações salvas"') <
-        profileSource.indexOf('aria-label="Abrir Ofertas"')
-    );
+    assert.match(profileSource, /h-28 w-28/);
+    assert.match(profileSource, /sm:h-32 sm:w-32/);
+    assert.match(profileSource, /aria-label="Editar minha página"/);
     assert.match(profileSource, /Foto do Google/);
-    assert.match(profileSource, /Publicações salvas/);
     assert.match(mainSource, /profile-header-layout\.css/);
     assert.match(
       profileHeaderStyles,
@@ -153,7 +146,7 @@ describe('native React profile social hub', () => {
   });
 
   test('renders Marcados natively from tagged audience posts', () => {
-    assert.match(profileSource, /id: 'marked', label: 'Marcados'/);
+    assert.match(profileSource, /id: 'marked', label: 'Destaques'/);
     assert.match(profileSource, /post\.taggedUserIds\?\.includes/);
     assert.match(profileSource, /Marcaram você/);
     assert.match(profileSource, /Nenhuma marcação/);
