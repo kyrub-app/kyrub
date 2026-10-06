@@ -479,6 +479,12 @@ export function WorkspacePrimaryNavigationBridge() {
           order: 1;
         }
 
+        #app-header [data-personal-page-header-slot="true"] {
+          order: 4;
+          display: flex;
+          flex: 0 0 auto;
+        }
+
         #header-wallet-balance {
           order: 2;
           width: 2.5rem;
@@ -505,7 +511,7 @@ export function WorkspacePrimaryNavigationBridge() {
         }
 
         #user-notification-center-host {
-          order: 4;
+          order: 5;
           margin-left: 0 !important;
           padding-left: 0 !important;
         }
