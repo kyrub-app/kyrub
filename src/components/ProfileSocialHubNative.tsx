@@ -52,7 +52,7 @@ import { auth, db, storage } from '../utils/firebase';
 import { MediaCarousel } from './MediaCarousel';
 import { ChatModal } from './modals/ChatModal';
 
-type ProfileTab = 'publications' | 'marked' | 'connected' | 'square';
+type ProfileTab = 'publications' | 'saved' | 'communities' | 'connected' | 'square';
 type ConnectionSection = 'connected' | 'favorites' | 'groups';
 type NewConnectionsTab = 'requests' | 'suggestions';
 type ToastType = 'success' | 'error' | 'info' | 'warning';
@@ -518,11 +518,19 @@ export function ProfileSocialHubNative() {
       event.preventDefault();
       event.stopPropagation();
       event.stopImmediatePropagation();
+      setActiveTab('publications');
       setOpen(true);
     };
 
+    const handlePersonalPageRequest = () => {
+      setActiveTab('publications');
+      setOpen(true);
+    };
+
+    window.addEventListener('kyrub-personal-page-open-requested', handlePersonalPageRequest);
     document.addEventListener('click', handleProfileTrigger, true);
     return () => {
+      window.removeEventListener('kyrub-personal-page-open-requested', handlePersonalPageRequest);
       document.removeEventListener('click', handleProfileTrigger, true);
     };
   }, []);
@@ -1141,8 +1149,9 @@ export function ProfileSocialHubNative() {
   if (!open || !user) return null;
 
   const tabs: Array<{ id: ProfileTab; label: string; count?: number }> = [
-    { id: 'publications', label: 'Publicações', count: ownFeedPosts.length },
-    { id: 'marked', label: 'Marcados', count: markedPosts.length },
+    { id: 'publications', label: 'Mural', count: ownFeedPosts.length },
+    { id: 'saved', label: 'Salvos', count: savedPosts.length },
+    { id: 'communities', label: 'Comunidades' },
     { id: 'connected', label: 'Conectados', count: directory.friends.length },
     { id: 'square', label: 'Praça' },
   ];
@@ -1221,10 +1230,10 @@ export function ProfileSocialHubNative() {
           <header className="flex items-center justify-between border-b border-slate-900 px-4 py-3 sm:px-5">
             <div>
               <span className="block text-[9px] font-black uppercase tracking-[0.18em] text-orange-400">
-                Meu perfil
+                Minha página
               </span>
               <h2 className="text-base font-black text-white">
-                Painel pessoal
+                Página pessoal
               </h2>
             </div>
             <button
@@ -1250,7 +1259,7 @@ export function ProfileSocialHubNative() {
                     type="button"
                     onClick={() => setEditOpen(true)}
                     className="absolute bottom-2 right-2 flex h-9 w-9 items-center justify-center rounded-full border-2 border-slate-950 bg-orange-500 text-slate-950"
-                    aria-label="Editar perfil"
+                    aria-label="Editar minha página"
                   >
                     <Pencil className="h-4 w-4" />
                   </button>
@@ -1421,25 +1430,28 @@ export function ProfileSocialHubNative() {
                 </>
               )}
 
-              {activeTab === 'marked' && (
-                <>
-                  <div className="rounded-2xl border border-teal-500/20 bg-teal-500/5 p-3">
-                    <div className="flex items-center gap-2 text-[9px] font-black uppercase text-teal-300">
-                      <AtSign className="h-4 w-4" />
-                      Marcaram você
-                    </div>
-                    <p className="mt-1 text-[9px] leading-relaxed text-slate-500">
-                      Publicações e Status em que pessoas conectadas incluíram
-                      seu perfil.
-                    </p>
-                  </div>
-                  {renderPostList(markedPosts, {
-                    title: 'Nenhuma marcação',
-                    description:
-                      'Quando alguém conectado marcar você, o conteúdo aparecerá aqui.',
-                    icon: AtSign,
-                  })}
-                </>
+              {activeTab === 'saved' &&
+                renderPostList(savedPosts, {
+                  title: 'Nenhuma publicação salva',
+                  description: 'As publicações que você salvar aparecerão aqui.',
+                  icon: Bookmark,
+                })}
+
+              {activeTab === 'communities' && (
+                <section className="rounded-3xl border border-sky-500/20 bg-sky-500/5 p-5 text-center">
+                  <Users className="mx-auto h-7 w-7 text-sky-300" />
+                  <h3 className="mt-3 text-xs font-black uppercase text-white">Suas comunidades</h3>
+                  <p className="mx-auto mt-2 max-w-sm text-[10px] leading-relaxed text-slate-500">
+                    Suas comunidades são administradas na Praça e também compõem sua página pessoal.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('square')}
+                    className="mt-4 rounded-xl bg-sky-500 px-4 py-3 text-[9px] font-black uppercase text-slate-950"
+                  >
+                    Abrir comunidades na Praça
+                  </button>
+                </section>
               )}
 
               {activeTab === 'connected' && (

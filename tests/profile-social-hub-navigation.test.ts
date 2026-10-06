@@ -73,7 +73,7 @@ describe('native React profile social hub', () => {
   test('restores the approved modern profile header without external DOM decoration', () => {
     assert.match(profileSource, /h-28 w-\[90px\]/);
     assert.match(profileSource, /sm:h-32 sm:w-\[104px\]/);
-    assert.match(profileSource, /aria-label="Editar perfil"/);
+    assert.match(profileSource, /aria-label="Editar minha página"/);
     assert.match(profileSource, /aria-label="Abrir publicações salvas"/);
     assert.match(profileSource, /aria-label="Abrir Ofertas"/);
     assert.ok(
@@ -135,7 +135,7 @@ describe('native React profile social hub', () => {
   });
 
   test('keeps Status inside Publications and creates a temporary copy', () => {
-    assert.match(profileSource, /type ProfileTab = 'publications' \| 'marked' \| 'connected' \| 'square'/);
+    assert.match(profileSource, /type ProfileTab = 'publications' \| 'saved' \| 'communities' \| 'connected' \| 'square'/);
     assert.doesNotMatch(profileSource, /ProfileTab[^\n]*'status'/);
     assert.match(profileSource, /Publicar no Status/);
     assert.match(
@@ -152,11 +152,10 @@ describe('native React profile social hub', () => {
     assert.match(profileSource, /Seus Status ativos/);
   });
 
-  test('renders Marcados natively from tagged audience posts', () => {
-    assert.match(profileSource, /id: 'marked', label: 'Marcados'/);
+  test('keeps tagged audience derivation while Minha Página exposes Salvos and Comunidades', () => {
+    assert.match(profileSource, /id: 'saved', label: 'Salvos'/);
+    assert.match(profileSource, /id: 'communities', label: 'Comunidades'/);
     assert.match(profileSource, /post\.taggedUserIds\?\.includes/);
-    assert.match(profileSource, /Marcaram você/);
-    assert.match(profileSource, /Nenhuma marcação/);
     assert.match(feedHookSource, /where\('audienceIds', 'array-contains', user\.uid\)/);
   });
 
