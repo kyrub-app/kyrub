@@ -1227,7 +1227,7 @@ export function ProfileSocialHubNative() {
         id="profile-social-hub-modal"
       >
         <section className="flex h-[100dvh] w-full max-w-3xl flex-col overflow-hidden border border-slate-800 bg-slate-950 shadow-2xl sm:h-auto sm:max-h-[96dvh] sm:rounded-3xl">
-          <header className="flex items-center justify-between border-b border-slate-900 px-4 py-3 sm:px-5">
+          <header className={`flex items-center justify-between border-b border-slate-900 px-4 py-3 sm:px-5 ${activeTab === 'square' ? 'hidden' : ''}`}>
             <div>
               <span className="block text-[9px] font-black uppercase tracking-[0.18em] text-orange-400">
                 Minha página
@@ -1247,7 +1247,8 @@ export function ProfileSocialHubNative() {
           </header>
 
           <div className="flex-1 overflow-y-auto">
-            <section className="border-b border-slate-900 bg-gradient-to-b from-slate-900/90 to-slate-950 px-4 py-5 sm:px-5">
+            {activeTab !== 'square' && (
+            <section className="border-b border-slate-900 bg-gradient-to-b from-orange-500/15 via-slate-900/90 to-slate-950 px-4 pb-5 pt-8 sm:px-5">
               <div className="flex items-start gap-4">
                 <div className="relative shrink-0">
                   <Avatar
@@ -1334,11 +1335,12 @@ export function ProfileSocialHubNative() {
                 </div>
               </div>
             </section>
+            )}
 
             {activeTab !== 'square' && (
               <nav
                 className="sticky top-0 z-10 flex gap-1 overflow-x-auto border-b border-slate-900 bg-slate-950/95 px-3 py-2 backdrop-blur-md"
-                aria-label="Seções do perfil"
+                aria-label="Seções da minha página"
               >
                 {tabs.map(tab => (
                   <button
@@ -1358,7 +1360,7 @@ export function ProfileSocialHubNative() {
               </nav>
             )}
 
-            <main className="space-y-4 p-4 sm:p-5">
+            <main className={`space-y-4 ${activeTab === 'square' ? 'p-0' : 'p-4 sm:p-5'}`}>
               {activeTab === 'publications' && (
                 <>
                   <button
