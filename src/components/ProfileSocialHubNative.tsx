@@ -1463,7 +1463,7 @@ export function ProfileSocialHubNative() {
                       {communityDirectory.activeCommunities.map(community => (
                         <button key={community.id} type="button" onClick={() => setActiveTab('square')} className="overflow-hidden rounded-3xl border border-slate-800 bg-slate-900 text-left">
                           <div className="h-20 bg-gradient-to-br from-sky-500/25 via-slate-800 to-slate-950">
-                            {community.coverUrl ? <img src={community.coverUrl} alt="" className="h-full w-full object-cover" /> : null}
+                            {community.coverImage ? <img src={community.coverImage} alt="" className="h-full w-full object-cover" /> : null}
                           </div>
                           <div className="p-4">
                             <span className="text-[8px] font-black uppercase tracking-[0.14em] text-sky-300">{community.isOwner ? 'Sua comunidade' : 'Participando'}</span>
