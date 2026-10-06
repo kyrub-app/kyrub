@@ -24,6 +24,8 @@ import {
   Pencil,
   Search,
   Send,
+  QrCode,
+  Share2,
   ShoppingBag,
   Star,
   Store as StoreIcon,
@@ -1137,10 +1139,9 @@ export function ProfileSocialHubNative() {
   if (!open || !user) return null;
 
   const tabs: Array<{ id: ProfileTab; label: string; count?: number }> = [
-    { id: 'publications', label: 'Publicações', count: ownFeedPosts.length },
-    { id: 'marked', label: 'Marcados', count: markedPosts.length },
+    { id: 'publications', label: 'Mural', count: ownFeedPosts.length },
+    { id: 'marked', label: 'Destaques', count: markedPosts.length },
     { id: 'connected', label: 'Conectados', count: directory.friends.length },
-    { id: 'square', label: 'Praça' },
   ];
 
   const suggestionCount = directory.getSuggestions().length;
@@ -1234,90 +1235,72 @@ export function ProfileSocialHubNative() {
           </header>
 
           <div className="flex-1 overflow-y-auto">
-            <section className="border-b border-slate-900 bg-gradient-to-b from-slate-900/90 to-slate-950 px-4 py-5 sm:px-5">
-              <div className="flex items-start gap-4">
-                <div className="relative shrink-0">
-                  <Avatar
-                    src={profile.photoUrl}
-                    name={profile.name}
-                    className="h-28 w-[90px] rounded-[22px] border-2 border-orange-500 object-cover sm:h-32 sm:w-[104px]"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setEditOpen(true)}
-                    className="absolute bottom-2 right-2 flex h-9 w-9 items-center justify-center rounded-full border-2 border-slate-950 bg-orange-500 text-slate-950"
-                    aria-label="Editar perfil"
-                  >
-                    <Pencil className="h-4 w-4" />
+            <section className="relative overflow-hidden border-b border-slate-900 bg-slate-950">
+              <div className="h-36 bg-gradient-to-br from-orange-500/25 via-slate-900 to-teal-500/20 sm:h-44" />
+              <div className="-mt-16 px-4 pb-5 sm:px-5">
+                <div className="flex items-end justify-between gap-3">
+                  <div className="relative shrink-0">
+                    <Avatar
+                      src={profile.photoUrl}
+                      name={profile.name}
+                      className="h-28 w-28 rounded-[28px] border-4 border-slate-950 object-cover shadow-2xl sm:h-32 sm:w-32"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setEditOpen(true)}
+                      className="absolute bottom-1 right-1 flex h-9 w-9 items-center justify-center rounded-full border-2 border-slate-950 bg-orange-500 text-slate-950"
+                      aria-label="Editar minha página"
+                    >
+                      <Pencil className="h-4 w-4" />
+                    </button>
+                  </div>
+                  <span className="mb-2 rounded-full border border-slate-800 bg-slate-900/90 px-3 py-1.5 text-[8px] font-black uppercase tracking-wider text-slate-400">
+                    Minha página
+                  </span>
+                </div>
+
+                <div className="mt-4">
+                  <h3 className="text-xl font-black text-white">{profile.name}</h3>
+                  <p className="mt-1 font-mono text-[10px] text-orange-300">
+                    @{profileHandle(profile.email, profile.name)}
+                  </p>
+                  <p className="mt-3 max-w-xl text-[11px] leading-relaxed text-slate-400">
+                    {profile.bio ||
+                      'Adicione uma apresentação curta para transformar sua página no seu cartão de visita digital.'}
+                  </p>
+                </div>
+
+                <div className="mt-5 grid grid-cols-4 gap-2" aria-label="Ações da página pessoal">
+                  <button type="button" onClick={() => setEditOpen(true)} className="flex min-w-0 flex-col items-center gap-2 rounded-2xl border border-slate-800 bg-slate-900 px-1 py-3 text-slate-300">
+                    <span className="flex h-10 w-10 items-center justify-center rounded-full bg-orange-500 text-slate-950"><Pencil className="h-4 w-4" /></span>
+                    <span className="text-[8px] font-black uppercase">Editar</span>
+                  </button>
+                  <button type="button" onClick={() => triggerToast('O QR público da sua página entra na próxima etapa.', 'info')} className="flex min-w-0 flex-col items-center gap-2 rounded-2xl border border-slate-800 bg-slate-900 px-1 py-3 text-slate-300">
+                    <span className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-800"><QrCode className="h-4 w-4" /></span>
+                    <span className="text-[8px] font-black uppercase">QR</span>
+                  </button>
+                  <button type="button" onClick={() => triggerToast('O compartilhamento público será ligado ao endereço canônico da página.', 'info')} className="flex min-w-0 flex-col items-center gap-2 rounded-2xl border border-slate-800 bg-slate-900 px-1 py-3 text-slate-300">
+                    <span className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-800"><Share2 className="h-4 w-4" /></span>
+                    <span className="text-[8px] font-black uppercase">Compartilhar</span>
+                  </button>
+                  <button type="button" onClick={() => setSavedOpen(true)} className="relative flex min-w-0 flex-col items-center gap-2 rounded-2xl border border-slate-800 bg-slate-900 px-1 py-3 text-slate-300">
+                    <span className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-800"><Bookmark className="h-4 w-4" /></span>
+                    <span className="text-[8px] font-black uppercase">Salvos</span>
+                    {savedPosts.length > 0 && <span className="absolute right-2 top-2 min-w-5 rounded-full bg-amber-400 px-1 text-center text-[8px] font-black text-slate-950">{savedPosts.length}</span>}
                   </button>
                 </div>
 
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <h3 className="truncate text-lg font-black text-white">
-                        {profile.name}
-                      </h3>
-                      <p className="mt-1 truncate font-mono text-[10px] text-slate-500">
-                        @{profileHandle(profile.email, profile.name)}
-                      </p>
+                <div className="mt-4 grid grid-cols-3 gap-2">
+                  {[
+                    ['Mural', ownFeedPosts.length],
+                    ['Status', ownStatuses.length],
+                    ['Conectados', directory.friends.length],
+                  ].map(([label, count]) => (
+                    <div key={String(label)} className="rounded-2xl border border-slate-800 bg-slate-900/75 p-2 text-center">
+                      <strong className="block text-sm text-white">{count}</strong>
+                      <span className="text-[7px] font-black uppercase text-slate-500">{label}</span>
                     </div>
-                    <div className="flex shrink-0 items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setSavedOpen(true)}
-                        className="relative flex h-11 w-11 items-center justify-center rounded-2xl border border-amber-500/30 bg-amber-500/10 text-amber-300"
-                        aria-label="Abrir publicações salvas"
-                        title="Salvos"
-                      >
-                        <Bookmark className="h-5 w-5" />
-                        {savedPosts.length > 0 && (
-                          <span className="absolute -right-1 -top-1 min-w-5 rounded-full bg-amber-400 px-1 text-center text-[8px] font-black text-slate-950">
-                            {savedPosts.length}
-                          </span>
-                        )}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setOffersOpen(true)}
-                        className="relative flex h-11 w-11 items-center justify-center rounded-2xl border border-orange-500/35 bg-orange-500/10 text-orange-300"
-                        aria-label="Abrir Ofertas"
-                        title="Ofertas"
-                      >
-                        <ShoppingBag className="h-5 w-5" />
-                        {stores.length > 0 && (
-                          <span className="absolute -right-1 -top-1 min-w-5 rounded-full bg-orange-500 px-1 text-center text-[8px] font-black text-slate-950">
-                            {stores.length}
-                          </span>
-                        )}
-                      </button>
-                    </div>
-                  </div>
-
-                  <p className="mt-3 line-clamp-3 text-[10px] leading-relaxed text-slate-400">
-                    {profile.bio ||
-                      'Adicione uma breve apresentação para contar aos conectados quem você é.'}
-                  </p>
-
-                  <div className="mt-4 grid grid-cols-3 gap-2">
-                    {[
-                      ['Publicações', ownFeedPosts.length],
-                      ['Status', ownStatuses.length],
-                      ['Conectados', directory.friends.length],
-                    ].map(([label, count]) => (
-                      <div
-                        key={String(label)}
-                        className="rounded-2xl border border-slate-800 bg-slate-900/75 p-2 text-center"
-                      >
-                        <strong className="block text-sm text-white">
-                          {count}
-                        </strong>
-                        <span className="text-[7px] font-black uppercase text-slate-500">
-                          {label}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
+                  ))}
                 </div>
               </div>
             </section>
