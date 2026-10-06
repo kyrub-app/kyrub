@@ -2,10 +2,8 @@ import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import {
   Building2,
   Check,
-  ChevronDown,
   CircleAlert,
   Loader2,
-  Plus,
   Search,
   ShieldCheck,
   Store as StoreIcon,
@@ -24,7 +22,6 @@ import {
   type StoreRole,
 } from '../../utils/storeSecurity';
 import {
-  createCanonicalStore,
   createCanonicalStoreFromLegacy,
   inviteExistingKyrubUser,
   searchExistingKyrubUsers,
@@ -91,7 +88,6 @@ export const StoreTeamWorkspace = ({
   const [directoryResults, setDirectoryResults] = useState<KyrubDirectoryUser[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [inviteRole, setInviteRole] = useState<StoreRole>('seller');
-  const [newStoreName, setNewStoreName] = useState('');
   const [isLoadingAccess, setIsLoadingAccess] = useState(true);
   const [isSearching, setIsSearching] = useState(false);
   const [busyKey, setBusyKey] = useState('');
@@ -148,7 +144,7 @@ export const StoreTeamWorkspace = ({
         });
       },
       error => {
-        console.warn('Diretório multi-loja indisponível:', error);
+        console.warn('Diretório de lojas indisponível:', error);
         setIsLoadingAccess(false);
         setAccessError(
           'As regras canônicas de lojas ainda não estão implantadas neste Firebase.'
@@ -201,31 +197,12 @@ export const StoreTeamWorkspace = ({
           legacyStoreId
         );
         setSelectedStoreId(created.id);
-        notify('Estrutura multi-loja ativada para esta loja.', 'success');
+        notify('Equipe e permissões ativadas para esta loja.', 'success');
       } catch (error) {
         notify(
           error instanceof Error
             ? error.message
             : 'Não foi possível registrar a loja.',
-          'error'
-        );
-      }
-    });
-  };
-
-  const handleCreateStore = async (event: FormEvent): Promise<void> => {
-    event.preventDefault();
-    if (!user) return;
-
-    await runBusy('create-store', async () => {
-      try {
-        const created = await createCanonicalStore(user, { name: newStoreName });
-        setNewStoreName('');
-        setSelectedStoreId(created.id);
-        notify('Nova loja criada no diretório multi-loja.', 'success');
-      } catch (error) {
-        notify(
-          error instanceof Error ? error.message : 'Não foi possível criar a loja.',
           'error'
         );
       }
@@ -347,39 +324,17 @@ export const StoreTeamWorkspace = ({
 
   return (
     <section className="mb-5 space-y-4 rounded-3xl border border-slate-800 bg-slate-900/80 p-4 sm:p-5">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <div>
-          <span className="font-mono text-[9px] font-bold uppercase tracking-[0.18em] text-orange-400">
-            Segurança multi-loja
-          </span>
-          <h3 className="mt-1 flex items-center gap-2 text-base font-black text-white">
-            <ShieldCheck className="h-5 w-5 text-orange-400" />
-            Lojas, equipe e permissões
-          </h3>
-          <p className="mt-1 max-w-2xl text-[11px] text-slate-500">
-            Somente contas Kyrub existentes podem receber convites. Este seletor controla o contexto administrativo; pedidos e produtos serão migrados na etapa de gravação dupla.
-          </p>
-        </div>
-
-        {accesses.length > 0 && (
-          <label className="relative min-w-0 lg:w-72">
-            <span className="mb-1 block font-mono text-[8px] font-bold uppercase text-slate-500">
-              Loja administrativa
-            </span>
-            <select
-              value={selectedStoreId}
-              onChange={event => setSelectedStoreId(event.target.value)}
-              className="w-full appearance-none rounded-xl border border-slate-700 bg-slate-950 px-3 py-2.5 pr-9 text-xs font-bold text-white focus:border-orange-500 focus:outline-none"
-            >
-              {accesses.map(access => (
-                <option key={access.store.id} value={access.store.id}>
-                  {access.store.name} — {STORE_ROLE_LABELS[access.role]}
-                </option>
-              ))}
-            </select>
-            <ChevronDown className="pointer-events-none absolute bottom-3 right-3 h-4 w-4 text-slate-500" />
-          </label>
-        )}
+      <div>
+        <span className="font-mono text-[9px] font-bold uppercase tracking-[0.18em] text-orange-400">
+          Equipe da loja
+        </span>
+        <h3 className="mt-1 flex items-center gap-2 text-base font-black text-white">
+          <ShieldCheck className="h-5 w-5 text-orange-400" />
+          Equipe & Permissões
+        </h3>
+        <p className="mt-1 max-w-2xl text-[11px] text-slate-500">
+          Convide contas Kyrub existentes e defina o acesso de cada pessoa à loja atual.
+        </p>
       </div>
 
       {accessError && (
@@ -451,9 +406,9 @@ export const StoreTeamWorkspace = ({
           {!legacyStoreRegistered && user?.uid === legacyStoreId && !accessError && (
             <div className="rounded-2xl border border-dashed border-orange-500/30 bg-slate-950/60 p-4 sm:flex sm:items-center sm:justify-between sm:gap-4">
               <div>
-                <strong className="text-xs uppercase text-white">Registrar a loja atual</strong>
+                <strong className="text-xs uppercase text-white">Preparar equipe e permissões</strong>
                 <p className="mt-1 text-[11px] text-slate-500">
-                  Cria um ID independente e mantém a ligação temporária com os dados existentes.
+                  Prepare esta loja para convidar pessoas e controlar seus acessos.
                 </p>
               </div>
               <button
@@ -467,62 +422,31 @@ export const StoreTeamWorkspace = ({
                 ) : (
                   <Building2 className="h-4 w-4" />
                 )}
-                Ativar multi-loja
+                Ativar equipe
               </button>
             </div>
           )}
 
-          {!accessError && (
-            <form
-              onSubmit={event => void handleCreateStore(event)}
-              className="flex flex-col gap-2 rounded-2xl border border-slate-800 bg-slate-950/50 p-3 sm:flex-row"
-            >
-              <input
-                value={newStoreName}
-                onChange={event => setNewStoreName(event.target.value)}
-                placeholder="Nome da nova loja"
-                className="min-w-0 flex-1 rounded-xl border border-slate-800 bg-slate-950 px-3 py-2.5 text-xs text-white focus:border-orange-500 focus:outline-none"
-              />
-              <button
-                type="submit"
-                disabled={!newStoreName.trim() || busyKey === 'create-store'}
-                className="flex items-center justify-center gap-2 rounded-xl border border-slate-700 bg-slate-800 px-4 py-2.5 text-[10px] font-black uppercase text-white disabled:opacity-40"
-              >
-                <Plus className="h-4 w-4" />
-                Nova loja
-              </button>
-            </form>
-          )}
-
           {selectedAccess && (
             <div className="space-y-4">
-              <div className="grid gap-3 sm:grid-cols-3">
-                <div className="rounded-2xl border border-slate-800 bg-slate-950 p-4 sm:col-span-2">
-                  <span className="font-mono text-[8px] font-bold uppercase text-slate-600">Contexto selecionado</span>
-                  <div className="mt-2 flex items-center gap-3">
-                    <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-900 text-orange-400">
-                      <StoreIcon className="h-5 w-5" />
-                    </span>
-                    <div className="min-w-0">
-                      <strong className="block truncate text-sm text-white">{selectedAccess.store.name}</strong>
-                      <span className="text-[10px] text-slate-500">{selectedAccess.store.id}</span>
-                    </div>
+              <div className="flex flex-col gap-3 rounded-2xl border border-slate-800 bg-slate-950 p-4 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex min-w-0 items-center gap-3">
+                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-900 text-orange-400">
+                    <StoreIcon className="h-5 w-5" />
+                  </span>
+                  <div className="min-w-0">
+                    <span className="font-mono text-[8px] font-bold uppercase text-slate-600">Loja atual</span>
+                    <strong className="block truncate text-sm text-white">{selectedAccess.store.name}</strong>
                   </div>
                 </div>
-                <div className="rounded-2xl border border-slate-800 bg-slate-950 p-4">
+                <div className="sm:text-right">
                   <span className="font-mono text-[8px] font-bold uppercase text-slate-600">Seu acesso</span>
-                  <span className={`mt-2 block w-fit rounded-full border px-2.5 py-1 text-[9px] font-black uppercase ${roleBadgeClass(selectedAccess.role)}`}>
+                  <span className={`mt-1 block w-fit rounded-full border px-2.5 py-1 text-[9px] font-black uppercase sm:ml-auto ${roleBadgeClass(selectedAccess.role)}`}>
                     {STORE_ROLE_LABELS[selectedAccess.role]}
                   </span>
-                  <p className="mt-2 text-[10px] text-slate-500">{statusLabel(selectedAccess.status)}</p>
+                  <p className="mt-1 text-[10px] text-slate-500">{statusLabel(selectedAccess.status)}</p>
                 </div>
               </div>
-
-              {selectedAccess.store.migrationStatus === 'registry_only' && (
-                <p className="rounded-xl border border-blue-500/20 bg-blue-500/10 px-3 py-2 text-[10px] text-blue-200">
-                  Cadastro e permissões preparados. Produtos, pedidos, caixa e PDV continuarão no caminho legado até a gravação dupla.
-                </p>
-              )}
 
               {canManageMembers ? (
                 <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(300px,0.7fr)]">
