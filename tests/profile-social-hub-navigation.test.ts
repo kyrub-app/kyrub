@@ -152,8 +152,9 @@ describe('native React profile social hub', () => {
     assert.match(profileSource, /Seus Status ativos/);
   });
 
-  test('renders Marcados natively from tagged audience posts', () => {
-    assert.match(profileSource, /id: 'marked', label: 'Marcados'/);
+  test('keeps tagged audience derivation while Minha Página exposes Salvos and Comunidades', () => {
+    assert.match(profileSource, /id: 'saved', label: 'Salvos'/);
+    assert.match(profileSource, /id: 'communities', label: 'Comunidades'/);
     assert.match(profileSource, /post\.taggedUserIds\?\.includes/);
     assert.match(profileSource, /Marcaram você/);
     assert.match(profileSource, /Nenhuma marcação/);
