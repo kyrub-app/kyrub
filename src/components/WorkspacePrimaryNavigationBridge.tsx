@@ -441,6 +441,20 @@ export function WorkspacePrimaryNavigationBridge() {
           display: none !important;
         }
 
+        #app-header .kyrub-header-shortcut,
+        #app-header [data-personal-page-header-slot="true"] > button,
+        #app-header #canonical-notification-trigger,
+        #app-header #header-wallet-balance,
+        #app-header button[title="Sair"] {
+          width: 2.5rem !important;
+          height: 2.5rem !important;
+          flex: 0 0 2.5rem !important;
+          border-radius: 0.75rem !important;
+          border: 1px solid rgb(30 41 59) !important;
+          background: rgb(15 23 42) !important;
+          padding: 0 !important;
+        }
+
         #app-header > div:has(#header-wallet-balance) {
           display: contents !important;
         }

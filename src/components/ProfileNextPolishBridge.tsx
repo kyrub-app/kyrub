@@ -315,8 +315,15 @@ export function ProfileNextPolishBridge() {
         createPortal(
           <button
             type="button"
-            onClick={() => window.dispatchEvent(new CustomEvent('kyrub-personal-page-open-requested'))}
-            className="flex h-11 w-11 items-center justify-center rounded-2xl border border-sky-500/30 bg-sky-500/10 text-sky-200"
+            onClick={() => {
+              const trigger = document.getElementById('header-user-profile-trigger');
+              if (trigger instanceof HTMLButtonElement) {
+                trigger.click();
+                return;
+              }
+              window.dispatchEvent(new CustomEvent('kyrub-personal-page-open-requested'));
+            }}
+            className="flex h-11 w-11 items-center justify-center rounded-2xl border border-slate-700 bg-slate-900 text-slate-400 transition-colors hover:border-orange-500/50 hover:text-orange-400"
             aria-label="Abrir minha página"
             title="Minha página"
           >
