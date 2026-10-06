@@ -35,14 +35,15 @@ test('Notas stays in the header while preserving the existing notes tab authorit
   );
 });
 
-test('bottom Notes entry is renamed directly to Social without overlaying both labels', () => {
+test('bottom Notes entry becomes the primary Praça destination without overlaying both labels', () => {
   assert.match(navigationSource, /data-kyrub-social-entry/);
-  assert.match(navigationSource, /label\.textContent = 'Social'/);
-  assert.doesNotMatch(navigationSource, /content: 'Social'/);
-  assert.match(navigationSource, /aria-label', 'Social'/);
+  assert.match(navigationSource, /label\.textContent = 'Praça'/);
+  assert.doesNotMatch(navigationSource, /content: 'Praça'/);
+  assert.match(navigationSource, /aria-label', 'Praça'/);
+  assert.match(navigationSource, /activateProfileSquare/);
 });
 
-test('Social reuses the canonical hub as a persistent workspace surface between header and bottom navigation', () => {
+test('Praça reuses the canonical hub as a persistent workspace surface between header and bottom navigation', () => {
   assert.match(navigationSource, /findProfileTrigger\(\)\?\.click\(\)/);
   assert.match(socialHubSource, /closest\('#header-user-profile-trigger'\)/);
   assert.match(socialHubSource, /setOpen\(true\)/);
@@ -63,30 +64,27 @@ test('Social reuses the canonical hub as a persistent workspace surface between 
   assert.match(navigationSource, /nav\[\$\{PRIMARY_NAV_ATTRIBUTE\}="true"\]/);
 });
 
-test('leaving Social through the fixed primary navigation closes the social surface', () => {
+test('leaving Praça through the fixed primary navigation closes the social surface', () => {
   assert.match(navigationSource, /const closeSocialHub =/);
   assert.match(navigationSource, /closeSocialHub\(\);/);
   assert.match(navigationSource, /setSocialActive\(false\)/);
 });
 
-test('header discovery shortcuts select Praça or Marketplace after the legacy discovery surface mounts', () => {
-  assert.match(navigationSource, /id="header-praca-trigger"/);
-  assert.match(navigationSource, /aria-label="Abrir Praça"/);
+test('header keeps Marketplace discovery while Praça moves to the primary bottom navigation', () => {
+  assert.doesNotMatch(navigationSource, /id="header-praca-trigger"/);
   assert.match(navigationSource, /id="header-marketplace-trigger"/);
   assert.match(navigationSource, /aria-label="Abrir Marketplace"/);
   assert.match(navigationSource, /pendingKyrubDestination/);
-  assert.match(navigationSource, /expectedLabel = pending === 'praca' \? 'praça' : 'ofertas'/);
+  assert.match(navigationSource, /activateProfileSquare/);
   assert.match(navigationSource, /requestAnimationFrame/);
   assert.match(navigationSource, /attempt >= 24/);
-  assert.match(navigationSource, /target\.click\(\)/);
 });
 
-test('header discovery does not visually promote the Kyrub primary entry while Praça or Marketplace is active', () => {
+test('header Marketplace discovery does not visually promote the Kyrub primary entry while active', () => {
   assert.match(navigationSource, /data-kyrub-primary-kyrub-entry/);
   assert.match(navigationSource, /data-kyrub-header-discovery-active/);
   assert.match(navigationSource, /allowHeaderDiscoveryClick/);
   assert.match(navigationSource, /setDiscoveryActive\(destination\)/);
-  assert.match(navigationSource, /aria-pressed=\{discoveryActive === 'praca'\}/);
   assert.match(navigationSource, /aria-pressed=\{discoveryActive === 'marketplace'\}/);
   assert.match(
     navigationSource,
@@ -99,7 +97,7 @@ test('header keeps logout isolated on the left and exposes discovery shortcuts o
   assert.match(navigationSource, /#app-header button\[title="Sair"\] > svg[\s\S]*scaleX\(-1\)/);
 });
 
-test('header shortcut order is Praça, Marketplace, Carteira, Notas and Avisos with narrow-screen compression', () => {
+test('header shortcut order is Marketplace, Carteira, Notas and Avisos with narrow-screen compression', () => {
   assert.match(navigationSource, /#workspace-discovery-shortcuts-host[\s\S]*order: 1/);
   assert.match(navigationSource, /#header-wallet-balance[\s\S]*order: 2/);
   assert.match(navigationSource, /#workspace-notes-shortcut-host[\s\S]*order: 3/);
