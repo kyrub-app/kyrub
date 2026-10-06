@@ -89,8 +89,8 @@ const normalizeSocialEntry = (
   active: boolean
 ): void => {
   button.setAttribute(SOCIAL_ENTRY_ATTRIBUTE, 'true');
-  button.setAttribute('aria-label', 'Praça');
-  button.setAttribute('title', 'Abrir Praça');
+  button.setAttribute('aria-label', 'Pessoal');
+  button.setAttribute('title', 'Abrir Pessoal');
   button.setAttribute('aria-pressed', String(active));
   button.setAttribute('data-kyrub-social-active', String(active));
 
@@ -102,7 +102,7 @@ const normalizeSocialEntry = (
         label.textContent?.trim() || 'Notas'
       );
     }
-    if (label.textContent !== 'Praça') label.textContent = 'Praça';
+    if (label.textContent !== 'Pessoal') label.textContent = 'Pessoal';
   }
 };
 
