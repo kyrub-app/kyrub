@@ -30,7 +30,6 @@ import {
   Trash2,
   UserMinus,
   UserPlus,
-  UserRound,
   Users,
   X,
 } from 'lucide-react';
@@ -439,7 +438,6 @@ export function ProfileSocialHubNative() {
   const [newConnectionsTab, setNewConnectionsTab] =
     useState<NewConnectionsTab>('requests');
   const [activeTab, setActiveTab] = useState<ProfileTab>('publications');
-  const [squareReturnTab, setSquareReturnTab] = useState<ProfileTab>('publications');
   const [connectionSection, setConnectionSection] =
     useState<ConnectionSection>('connected');
   const [user, setUser] = useState<User | null>(auth.currentUser);
@@ -1448,7 +1446,7 @@ export function ProfileSocialHubNative() {
                   </p>
                   <button
                     type="button"
-                    onClick={() => { setSquareReturnTab('communities'); setActiveTab('square'); }}
+                    onClick={() => setActiveTab('square')}
                     className="mt-4 rounded-xl bg-sky-500 px-4 py-3 text-[9px] font-black uppercase text-slate-950"
                   >
                     Abrir comunidades na Praça
