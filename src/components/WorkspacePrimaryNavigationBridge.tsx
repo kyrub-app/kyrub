@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { CheckSquare, Compass, Store as StoreIcon } from 'lucide-react';
+import { CheckSquare, Store as StoreIcon } from 'lucide-react';
 
 const SOCIAL_ENTRY_ATTRIBUTE = 'data-kyrub-social-entry';
 const PRIMARY_NAV_ATTRIBUTE = 'data-kyrub-primary-workspace-nav';
@@ -84,13 +84,35 @@ const closeSocialHub = (): void => {
   if (closeButton instanceof HTMLButtonElement) closeButton.click();
 };
 
+const activateProfileSquare = (attempt = 0): void => {
+  const hub = document.getElementById('profile-social-hub-modal');
+  const navigation = hub?.querySelector('nav[aria-label="Seções do perfil"]');
+  const squareButton = navigation
+    ? Array.from(navigation.querySelectorAll('button')).find(button =>
+        (button.textContent ?? '')
+          .trim()
+          .toLocaleLowerCase('pt-BR')
+          .includes('praça')
+      )
+    : null;
+
+  if (squareButton instanceof HTMLButtonElement) {
+    squareButton.click();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    return;
+  }
+
+  if (attempt >= 24) return;
+  window.requestAnimationFrame(() => activateProfileSquare(attempt + 1));
+};
+
 const normalizeSocialEntry = (
   button: HTMLButtonElement,
   active: boolean
 ): void => {
   button.setAttribute(SOCIAL_ENTRY_ATTRIBUTE, 'true');
-  button.setAttribute('aria-label', 'Social');
-  button.setAttribute('title', 'Abrir Social');
+  button.setAttribute('aria-label', 'Praça');
+  button.setAttribute('title', 'Abrir Praça');
   button.setAttribute('aria-pressed', String(active));
   button.setAttribute('data-kyrub-social-active', String(active));
 
@@ -102,7 +124,7 @@ const normalizeSocialEntry = (
         label.textContent?.trim() || 'Notas'
       );
     }
-    if (label.textContent !== 'Social') label.textContent = 'Social';
+    if (label.textContent !== 'Praça') label.textContent = 'Praça';
   }
 };
 
@@ -245,6 +267,7 @@ export function WorkspacePrimaryNavigationBridge() {
         if (!document.getElementById('profile-social-hub-modal')) {
           findProfileTrigger()?.click();
         }
+        window.requestAnimationFrame(() => activateProfileSquare());
         return;
       }
 
@@ -374,17 +397,6 @@ export function WorkspacePrimaryNavigationBridge() {
           <div className="flex items-center gap-2 kyrub-header-discovery-group">
             <button
               type="button"
-              onClick={() => openKyrubDestination('praca')}
-              className={discoveryShortcutClassName('praca')}
-              title="Praça"
-              aria-label="Abrir Praça"
-              aria-pressed={discoveryActive === 'praca'}
-              id="header-praca-trigger"
-            >
-              <Compass className="h-4 w-4" />
-            </button>
-            <button
-              type="button"
               onClick={() => openKyrubDestination('marketplace')}
               className={discoveryShortcutClassName('marketplace')}
               title="Marketplace"
@@ -511,8 +523,8 @@ export function WorkspacePrimaryNavigationBridge() {
           width: 1.25rem;
           height: 1.25rem;
           background-color: currentColor;
-          -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='none' stroke='black' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8m13 10v-2a4 4 0 0 0-3-3.87m-1-11.26a4 4 0 0 1 0 7.75'/%3E%3C/svg%3E") center / contain no-repeat;
-          mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='none' stroke='black' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8m13 10v-2a4 4 0 0 0-3-3.87m-1-11.26a4 4 0 0 1 0 7.75'/%3E%3C/svg%3E") center / contain no-repeat;
+          -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='12' r='9' fill='none' stroke='black' stroke-width='2'/%3E%3Cpath d='m16 8-2.5 5.5L8 16l2.5-5.5L16 8Z' fill='black'/%3E%3C/svg%3E") center / contain no-repeat;
+          mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='12' r='9' fill='none' stroke='black' stroke-width='2'/%3E%3Cpath d='m16 8-2.5 5.5L8 16l2.5-5.5L16 8Z' fill='black'/%3E%3C/svg%3E") center / contain no-repeat;
         }
 
         button[${SOCIAL_ENTRY_ATTRIBUTE}="true"] > span {
