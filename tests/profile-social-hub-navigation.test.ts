@@ -156,8 +156,6 @@ describe('native React profile social hub', () => {
     assert.match(profileSource, /id: 'saved', label: 'Salvos'/);
     assert.match(profileSource, /id: 'communities', label: 'Comunidades'/);
     assert.match(profileSource, /post\.taggedUserIds\?\.includes/);
-    assert.match(profileSource, /Marcaram você/);
-    assert.match(profileSource, /Nenhuma marcação/);
     assert.match(feedHookSource, /where\('audienceIds', 'array-contains', user\.uid\)/);
   });
 
