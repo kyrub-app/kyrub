@@ -46,6 +46,7 @@ import {
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 import type { Friend, SocialPost } from '../types';
 import { usePublicSocialFeed } from '../hooks/usePublicSocialFeed';
+import { useCommunityDirectory } from '../hooks/useCommunityDirectory';
 import { useSocialDirectoryV2 } from '../hooks/useSocialDirectoryV2';
 import { buildPublicStorefrontPath } from '../utils/appRoutes';
 import { auth, db, storage } from '../utils/firebase';
@@ -493,6 +494,7 @@ export function ProfileSocialHubNative() {
     isLoggedIn: Boolean(user),
     triggerToast,
   });
+  const communityDirectory = useCommunityDirectory();
 
   useEffect(() => {
     return onAuthStateChanged(auth, nextUser => {
@@ -1153,7 +1155,6 @@ export function ProfileSocialHubNative() {
     { id: 'saved', label: 'Salvos', count: savedPosts.length },
     { id: 'communities', label: 'Comunidades' },
     { id: 'connected', label: 'Conectados', count: directory.friends.length },
-    { id: 'square', label: 'Praça' },
   ];
 
   const suggestionCount = directory.getSuggestions().length;
@@ -1440,19 +1441,39 @@ export function ProfileSocialHubNative() {
                 })}
 
               {activeTab === 'communities' && (
-                <section className="rounded-3xl border border-sky-500/20 bg-sky-500/5 p-5 text-center">
-                  <Users className="mx-auto h-7 w-7 text-sky-300" />
-                  <h3 className="mt-3 text-xs font-black uppercase text-white">Suas comunidades</h3>
-                  <p className="mx-auto mt-2 max-w-sm text-[10px] leading-relaxed text-slate-500">
-                    Suas comunidades são administradas na Praça e também compõem sua página pessoal.
-                  </p>
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab('square')}
-                    className="mt-4 rounded-xl bg-sky-500 px-4 py-3 text-[9px] font-black uppercase text-slate-950"
-                  >
-                    Abrir comunidades na Praça
-                  </button>
+                <section className="space-y-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <h3 className="text-xs font-black uppercase text-white">Suas comunidades</h3>
+                      <p className="mt-1 text-[9px] text-slate-500">Espaços que você criou ou participa.</p>
+                    </div>
+                    <button type="button" onClick={() => setActiveTab('square')} className="rounded-xl border border-sky-500/30 bg-sky-500/10 px-3 py-2 text-[8px] font-black uppercase text-sky-200">
+                      Ver na Praça
+                    </button>
+                  </div>
+                  {communityDirectory.loading ? (
+                    <div className="rounded-3xl border border-slate-800 bg-slate-900/70 p-5 text-center text-[10px] text-slate-500">Carregando comunidades...</div>
+                  ) : communityDirectory.activeCommunities.length === 0 ? (
+                    <div className="rounded-3xl border border-sky-500/20 bg-sky-500/5 p-5 text-center">
+                      <Users className="mx-auto h-7 w-7 text-sky-300" />
+                      <p className="mt-3 text-[10px] text-slate-500">Você ainda não participa de nenhuma comunidade.</p>
+                    </div>
+                  ) : (
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      {communityDirectory.activeCommunities.map(community => (
+                        <button key={community.id} type="button" onClick={() => setActiveTab('square')} className="overflow-hidden rounded-3xl border border-slate-800 bg-slate-900 text-left">
+                          <div className="h-20 bg-gradient-to-br from-sky-500/25 via-slate-800 to-slate-950">
+                            {community.coverImage ? <img src={community.coverImage} alt="" className="h-full w-full object-cover" /> : null}
+                          </div>
+                          <div className="p-4">
+                            <span className="text-[8px] font-black uppercase tracking-[0.14em] text-sky-300">{community.isOwner ? 'Sua comunidade' : 'Participando'}</span>
+                            <strong className="mt-1 block truncate text-sm text-white">{community.name}</strong>
+                            <p className="mt-1 line-clamp-2 text-[9px] leading-relaxed text-slate-500">{community.description || 'Comunidade Kyrub'}</p>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </section>
               )}
 

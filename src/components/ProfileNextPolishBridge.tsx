@@ -79,9 +79,7 @@ export function ProfileNextPolishBridge() {
           profileModal.querySelector<HTMLElement>(
             'nav[aria-label="Seções do perfil"]'
           );
-        const squareButton = profileNavigation
-          ? buttonWithText(profileNavigation, 'Praça')
-          : null;
+        const squareButton = null;
 
         squareButtonRef.current = squareButton;
         setSquareActive(current => {
