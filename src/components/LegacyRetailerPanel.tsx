@@ -10,7 +10,7 @@ import {
 import Dexie, { type Table } from 'dexie';
 import { Tenant, Store, Product, Order } from '../types';
 import type { BuildUserStoreUpdateInput } from '../utils/userStoreDocument';
-import { auth } from '../firebase';
+import { auth } from '../utils/firebase';
 
 // ==========================================
 // DEXIE OFFLINE CACHE SCHEMA
