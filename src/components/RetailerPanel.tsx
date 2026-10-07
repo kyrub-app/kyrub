@@ -424,7 +424,7 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = props => {
     }
 
     const user = auth.currentUser;
-    if (!user || user.uid !== activeRetailerId) {
+    if (!user) {
       setCustomerOrders([]);
       return;
     }
@@ -445,7 +445,7 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = props => {
     decision?: OrderDecision
   ): Promise<void> => {
     const user = auth.currentUser;
-    if (!user || user.uid !== activeRetailerId) {
+    if (!user) {
       triggerToast('Faça login novamente para atualizar o pedido.', 'error');
       return;
     }
