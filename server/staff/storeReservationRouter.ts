@@ -53,13 +53,20 @@ export const createStoreReservationRouter = (): Router => {
       const clientName = clean(request.body?.clientName);
       const scheduledAt = clean(request.body?.scheduledAt);
       const people = Number(request.body?.people);
-      if (!clientName || !scheduledAt || !Number.isFinite(people) || people < 1) {
+      if (!clientName || !isValidLocalDateTime(scheduledAt) || !Number.isFinite(people) || people < 1) {
         response.status(400).json({ error: 'Dados da reserva inválidos.' }); return;
       }
       const actor = await authorize(request.get('authorization') ?? '', storeId);
       const ref = adminDb.collection(`stores/${actor.canonicalStoreId}/reservations`).doc();
       await ref.set({
-        clientName, scheduledAt, people: Math.floor(people), status: 'scheduled',
+        clientName,
+        // Until the store has an explicit IANA timezone, this is deliberately
+        // a wall-clock value. Do not reinterpret it as UTC or device-local time.
+        scheduledAt,
+        scheduledLocal: scheduledAt,
+        scheduleTimeBasis: 'store-local-unzoned',
+        timezone: null,
+        people: Math.floor(people), status: 'scheduled',
         createdBy: actor.userId, completedBy: null,
         createdAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp(),
       });
