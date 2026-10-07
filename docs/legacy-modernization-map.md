@@ -181,3 +181,110 @@ O LegacyApp deve virar progressivamente um consumidor fino e depois desaparecer:
 → remover LegacyApp quando não possuir autoridade.
 
 A primeira extração continua sendo **Social**, mas agora ela será feita como modelo para as demais: criar autoridade social atual, migrar Marketplace/Praça/Pessoal/Comunidades para ela e retirar `LegacyKyrubTab` da cadeia. Não adicionar novos eventos cujo receptor autoritativo seja LegacyApp.
+
+
+## Auditoria de bridges globais e manipulação de DOM
+
+Terceira passagem: bridges montadas globalmente em `main.tsx`/`App.tsx` e bridges operacionais de alto impacto foram inspecionadas por sinais de acoplamento à estrutura visual: `MutationObserver`, `querySelector`, `createElement`, portals, listeners globais, timers e cliques programáticos.
+
+### Grupo vermelho — compatibilidade interna de alto risco
+
+**HeaderDiscoveryShortcutActivationBridge**
+- consulta repetidamente estrutura do header/social hub;
+- intercepta clique global em capture;
+- executa vários `.click()` programáticos para abrir/fechar/trocar destinos.
+- Classificação: **TRANSIÇÃO / retirar** quando a navegação canônica existir.
+
+**WorkspacePrimaryNavigationBridge**
+- descobre a bottom nav pelo DOM;
+- cria hosts manualmente, usa portals e MutationObserver;
+- intercepta cliques globais;
+- executa cliques programáticos para perfil/notas/Kyrub e para destinos internos.
+- Classificação: **TRANSIÇÃO CRÍTICA**. Hoje funciona como segundo sistema de navegação sobre o LegacyApp.
+
+**ProfileNextPolishBridge**
+- localiza botões/seções por texto/estrutura;
+- cria vários hosts manualmente;
+- usa timer de sincronização a cada 250 ms;
+- portals disparam cliques em controles originais.
+- Classificação: **TRANSIÇÃO / absorver no ProfileSocialHubNative**.
+
+**ProfileOffersFiltersBridge**
+- localiza heading/cards por DOM;
+- injeta botões/host;
+- timer de 300 ms + listener global de clique.
+- Classificação: **TRANSIÇÃO / absorver no componente de Marketplace/ofertas**.
+
+**ProfilePublishingDestinationsCloudBridge**
+- descobre composer/labels/textarea pelo DOM;
+- cria host, MutationObserver e listener global;
+- apesar de usar dados cloud, sua integração visual é implícita.
+- Classificação: **TRANSIÇÃO**; preservar serviços cloud, substituir montagem.
+
+**ProfilePostInteractionsBridge / ProfileRecoveredActionsBridge**
+- grande número de seletores, hosts criados, portals e timers de 250–300 ms;
+- enriquecem cards/forms existentes sem composição React explícita.
+- Classificação: **TRANSIÇÃO ALTA**; lógica útil deve ser migrada para componentes canônicos.
+
+### Grupo laranja — operacional com risco semelhante
+
+**OperationalAppEntryBridge**
+- encontra botões da navegação pelo DOM e executa cliques;
+- MutationObserver aguarda a UI aparecer.
+- Classificação: **TRANSIÇÃO**; entrada operacional deve usar roteamento/estado explícito.
+
+**PickupPdvNavigationBridge**
+- injeta hosts em tabs/KDS, instala listeners diretamente e executa cliques programáticos;
+- usa MutationObservers para manter alterações.
+- Classificação: **TRANSIÇÃO ALTA**; não remover até migrar a fila/PDV para componentes canônicos.
+
+**ProductWorkspaceLayoutBridge**
+- usa MutationObserver/DOM/portal para complementar workspace de produto.
+- Classificação preliminar: **TRANSIÇÃO**, requer leitura funcional antes da retirada.
+
+### Grupo amarelo — apresentação transversal
+
+**AppModalLayoutBridge**
+- observa o DOM global para decorar/reorganizar overlays/modais e reage a viewport.
+- Não parece possuir regra de negócio, mas acopla layout à estrutura DOM de vários modais.
+- Classificação: **TRANSIÇÃO DE APRESENTAÇÃO**; pode ser retirada depois que modais compartilharem um shell/layout canônico.
+
+**KyrubiaNamingBridge**
+- usa MutationObserver, seletores e timer para normalizar nomenclatura.
+- Classificação: **TRANSIÇÃO DE APRESENTAÇÃO**; nomes devem ser corrigidos nas fontes/componentes, não pós-processados no DOM.
+
+### Grupo verde provisório — fronteiras explícitas
+
+Bridges que tratam OAuth, provedores externos, sincronização cloud, observabilidade ou eventos entre subsistemas não entram automaticamente na fila de remoção. Exemplos: retornos OAuth do Mercado Livre/Mercado Pago, recebíveis, tracking e observabilidade. Elas serão auditadas por contrato, mas não há justificativa para removê-las apenas por serem chamadas Bridge.
+
+## Diagnóstico consolidado
+
+O problema estrutural não é apenas “há código antigo”. Existem **dois modelos de composição concorrentes**:
+
+1. React/estado/serviços atuais;
+2. uma camada de compatibilidade que trata o DOM renderizado pelo sistema antigo como se fosse uma API: procura elementos, cria hosts, injeta portals, observa mutações e simula cliques.
+
+Esse segundo modelo explica intermitências: mudanças de texto, ordem de montagem ou estrutura visual podem quebrar comportamento sem erro de tipo ou compilação.
+
+## Regra nova para código futuro
+
+A partir deste mapa, novas funcionalidades internas não devem:
+- procurar controles de outra tela por texto/placeholder para acioná-los;
+- usar `.click()` programático como navegação;
+- usar `MutationObserver` para descobrir quando uma tela interna ficou pronta;
+- criar hosts DOM manualmente para completar um componente interno que podemos editar;
+- usar timer periódico para manter patches visuais internos.
+
+Exceções precisam ser fronteiras técnicas justificadas (por exemplo integração com DOM de terceiro) e documentadas.
+
+## Fila de modernização derivada do risco
+
+**Onda 1 — Social e navegação:** WorkspacePrimaryNavigationBridge, HeaderDiscoveryShortcutActivationBridge, LegacyKyrubTab e bridges Profile que patcham Social/Pessoal.
+
+**Onda 2 — Shell:** extrair `activeTab`/composição do LegacyApp e substituir bridges de entrada/nomenclatura/layout.
+
+**Onda 3 — ERP operacional:** RetailerPanel/LegacyRetailerPanel, ProductWorkspaceLayoutBridge, PickupPdvNavigationBridge e OperationalAppEntryBridge.
+
+**Onda 4 — Storefront/configuração:** LegacyStorefrontPanel e LegacyStoreConfigModal.
+
+Essa ordem é por acoplamento estrutural, não por importância de negócio.
