@@ -64,7 +64,7 @@ export const canStoreRoleAccessErpMenuItem = (
   if (itemId === 'caixa') return hasStorePermission(role, 'cash.read');
   if (itemId === 'pedidos') return hasStorePermission(role, 'orders.read');
   if (itemId === 'ponto') return true;
-  if (itemId === 'reservas') return hasStorePermission(role, 'orders.read');
+  if (itemId === 'reservas') return hasStorePermission(role, 'orders.create');
   if (itemId === 'assinaturas' || itemId === 'marketing' || itemId === 'integracoes' || itemId === 'vouchers') return role === 'manager';
   return false;
 };
