@@ -224,6 +224,7 @@ export const createInPersonOrderRouter = (): Router => {
       });
       const order = await createInPersonOrder({
         authenticatedUserId: representation.authenticatedUserId,
+        authorizedStoreId: storeId,
         value: request.body,
       });
       response.status(201).json({ order });
