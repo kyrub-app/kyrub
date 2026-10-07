@@ -98,3 +98,86 @@ Para cada legado: listar consumidores -> identificar estado/regra que possui -> 
 ## Decisão sobre a PR #906
 
 A #906 não deve ser mergeada enquanto depender de remendo novo no `LegacyApp`. Os commits que adicionam navegação canônica apenas no nome, mas fazem `LegacyApp` continuar como receptor autoritativo, não representam o destino arquitetural.
+
+
+## Inventário de autoridade do LegacyApp
+
+A leitura do `LegacyApp` em `main` encontrou **92 estados locais via useState**. Isso confirma que ele não é apenas uma casca visual antiga: continua funcionando como agregador de estado de vários domínios.
+
+### Estados por domínio
+
+**Shell/autenticação/navegação**
+- `isLoggedIn`, `authenticatedUserId`, `showLoginModal`, `gpsGranted`, `showGpsOverlay`
+- `activeTab`, `activeSubTab`, `currentPath`
+- `isGestaoOpen`, `gestaoRole`
+
+**Loja/ERP**
+- `tenants`, `stores`, `userStore`, `products`, `orders`
+- configuração de loja, publicação, espaços de atendimento/produção
+- `newProductModal` e campos de criação de produto
+
+**Marketplace/checkout**
+- `visitingStore`, `cart`, `isCartOpen`, dados do comprador
+
+**Social**
+- `posts`, `newPostText`, `radiusKm`, `searchQuery`
+- `socialSubTab`, `ofertasFilter`, `pracaFilter`, `conectadosSubTab`
+- chat, momentos e publicação de momento na Praça
+- `useSocialDirectoryV2` também entrega conexões, solicitações e favoritos diretamente ao LegacyApp
+
+**Renda/operação**
+- `deliveries`, `freelanceJobs` e modais relacionados
+
+**Conta/identidade**
+- nome, email, foto, tipos de conta, endereço, WhatsApp
+- biometria, PIN e vários campos KYC
+
+**Carteira**
+- `useWallet` injeta saldo, histórico e mutações diretamente no LegacyApp.
+
+Conclusão: a retirada do LegacyApp deve ser uma **extração de autoridades por domínio**, não uma reescrita única do arquivo.
+
+## Cadeias de legado confirmadas além do Social
+
+A auditoria dos wrappers atuais encontrou:
+
+- `RetailerPanel.tsx -> LegacyRetailerPanel.tsx`
+- `StorefrontPanel.tsx -> LegacyStorefrontPanel.tsx`
+- `StoreConfigModal.tsx -> LegacyStoreConfigModal.tsx`
+- `KyrubTab.tsx -> LegacyKyrubTab.tsx`
+
+Esses quatro casos têm o mesmo padrão estrutural: o arquivo de nome atual acrescenta comportamento à implementação Legacy em vez de ser uma implementação independente.
+
+Há também componentes atuais que **não importam Legacy diretamente**, como `NewProductModal.tsx`, `PerfilTab.tsx` e `RendaTab.tsx`. Porém isso não os torna automaticamente independentes: eles ainda recebem grande parte do estado e callbacks do LegacyApp. Portanto a classificação deve considerar propriedade de estado, não apenas imports.
+
+## Matriz de autoridade — segunda passagem
+
+| Área | Dono atual observado | Dependência | Destino |
+| --- | --- | --- | --- |
+| Navegação principal | `LegacyApp.activeTab` | bottom nav + bridges externas | mover para shell canônico fora do LegacyApp |
+| Marketplace/Praça | `LegacyApp.socialSubTab` + filtros | `KyrubTab -> LegacyKyrubTab` | estado e tela canônicos em componente social atual |
+| Pessoal | `ProfileSocialHubNative` já possui estado próprio | abertura ainda coordenada por bridge global | integrar ao shell canônico |
+| Comunidades | dados cloud próprios | montagem por DOM/MutationObserver no perfil | composição React explícita |
+| Loja privada | `LegacyApp.userStore` + bootstrap | `StorePersistenceBridge` espera o LegacyApp criar/ler primeiro | criar store provider/bootstrap canônico |
+| Produtos/pedidos | arrays no LegacyApp + serviços novos ao redor | Retailer wrapper/bridges | mover para stores/hooks canônicos por domínio |
+| Retailer/ERP | wrapper atual sobre `LegacyRetailerPanel` | grande risco de dupla implementação | decompor por workspace antes de remover |
+| Storefront | wrapper atual sobre `LegacyStorefrontPanel` | serviços atuais alimentam apresentação antiga | tornar Storefront atual independente |
+| Configuração de loja | wrapper atual sobre `LegacyStoreConfigModal` | persistência atual + UI antiga | migrar UI base mantendo contratos atuais |
+| Notas | `PerfilTab` atual, estado fornecido pelo LegacyApp | autoridade ainda no pai antigo | extrair provider/hook de produtividade |
+| Renda | `RendaTab` atual, estado fornecido pelo LegacyApp | autoridade ainda no pai antigo | extrair estado operacional |
+| Identidade/KYC | muitos estados no LegacyApp | modais/bridges de perfil | mapear antes de mover; alta sensibilidade |
+| Carteira | hook dedicado já existe | hook é instanciado pelo LegacyApp | candidato mais simples a sair do shell antigo |
+
+## Estratégia de desmontagem do LegacyApp
+
+O LegacyApp deve virar progressivamente um consumidor fino e depois desaparecer:
+
+`LegacyApp monolítico`
+→ extrair providers/controladores canônicos por domínio
+→ componentes atuais passam a consumir esses controladores diretamente
+→ wrappers deixam de depender de componentes Legacy
+→ LegacyApp perde estados e handlers
+→ shell atual assume composição
+→ remover LegacyApp quando não possuir autoridade.
+
+A primeira extração continua sendo **Social**, mas agora ela será feita como modelo para as demais: criar autoridade social atual, migrar Marketplace/Praça/Pessoal/Comunidades para ela e retirar `LegacyKyrubTab` da cadeia. Não adicionar novos eventos cujo receptor autoritativo seja LegacyApp.
