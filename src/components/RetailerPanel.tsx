@@ -15,8 +15,6 @@ import { ProductInventoryWorkspace } from './store/ProductInventoryWorkspace';
 import { StoreDeliveryTrackingBridge } from './store/StoreDeliveryTrackingBridge';
 import { StorePromotionsLegacyBridge } from './store/StorePromotionsLegacyBridge';
 import { StoreFinanceCompositeRuntime } from './StoreFinanceCompositeRuntime';
-import { StoreTeamWorkspace } from './store/StoreTeamWorkspace';
-import StorePayrollWorkspace from './store/StorePayrollWorkspace';
 import type { Product } from '../types';
 import { auth } from '../utils/firebase';
 import {
@@ -64,7 +62,6 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = props => {
   const [cashHost, setCashHost] = useState<HTMLElement | null>(null);
   const [productsHost, setProductsHost] = useState<HTMLElement | null>(null);
   const [financeHost, setFinanceHost] = useState<HTMLElement | null>(null);
-  const [hrHost, setHrHost] = useState<HTMLElement | null>(null);
   const [customerOrders, setCustomerOrders] = useState<CustomerOrder[]>([]);
   const [canonicalNavigationOrderId, setCanonicalNavigationOrderId] = useState('');
   const [busyOrderId, setBusyOrderId] = useState('');
@@ -342,38 +339,6 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = props => {
     };
   }, [activeSubTab]);
 
-  useEffect(() => {
-    if (activeSubTab !== 'gerencial') {
-      setHrHost(null);
-      return;
-    }
-
-    let cancelled = false;
-    let timer = 0;
-    let portalHost: HTMLDivElement | null = null;
-
-    const mountHrWorkspace = (): void => {
-      if (cancelled) return;
-      const anchor = document.getElementById('kyrub-store-hr-legacy-anchor');
-      if (!anchor) {
-        timer = window.setTimeout(mountHrWorkspace, 80);
-        return;
-      }
-      portalHost = document.createElement('div');
-      portalHost.id = 'kyrub-canonical-store-hr-host';
-      portalHost.className = 'min-w-0 space-y-4';
-      anchor.replaceChildren(portalHost);
-      setHrHost(portalHost);
-    };
-
-    timer = window.setTimeout(mountHrWorkspace, 0);
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timer);
-      portalHost?.remove();
-      setHrHost(null);
-    };
-  }, [activeSubTab, activeRetailerId]);
 
   useEffect(() => {
     if (activeSubTab !== 'gerencial' || auth.currentUser?.uid !== activeRetailerId) {
@@ -658,23 +623,6 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = props => {
             />
           </div>,
           cashHost
-        )}
-      {hrHost &&
-        createPortal(
-          <div className="space-y-4">
-            <StoreTeamWorkspace
-              legacyStore={activeStore}
-              legacyStoreId={activeRetailerId}
-              notify={triggerToast}
-            />
-            {auth.currentUser?.uid === activeRetailerId && (
-              <StorePayrollWorkspace
-                legacyStoreId={activeRetailerId}
-                notify={triggerToast}
-              />
-            )}
-          </div>,
-          hrHost
         )}
       {financeHost &&
         createPortal(
