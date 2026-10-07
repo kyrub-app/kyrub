@@ -289,7 +289,7 @@ export const updateOrderStatusWithDecision = async (
   const user = auth.currentUser;
   const normalizedStoreId = storeId.trim();
   const normalizedOrderId = orderId.trim();
-  if (!user || user.uid !== normalizedStoreId) {
+  if (!user) {
     throw new Error('Faça login novamente para atualizar o pedido.');
   }
 
