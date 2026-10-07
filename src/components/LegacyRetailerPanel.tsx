@@ -636,12 +636,7 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = ({
                       <div className="bg-slate-900 p-5 rounded-3xl border border-slate-800 space-y-4">
                         <div className="flex items-center justify-between border-b border-slate-850 pb-2">
                           <h4 className="text-xs font-black text-white uppercase">Itens Ativos no Estoque</h4>
-                          <button
-                            onClick={handleManualProductAddition}
-                            className="text-orange-400 hover:text-orange-300 text-[10px] font-mono uppercase font-bold"
-                          >
-                            + Novo Item
-                          </button>
+
                         </div>
 
                         <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1">
