@@ -309,6 +309,25 @@ export function WorkspacePrimaryNavigationBridge() {
     };
   }, []);
 
+  useEffect(() => {
+    const handlePersonalDestination = (event: Event) => {
+      const destination = (event as CustomEvent<{ destination?: string }>).detail?.destination;
+      if (destination === 'praca') {
+        openKyrubDestination('praca');
+        return;
+      }
+      if (destination === 'communities') {
+        closeSocialHub();
+        setSocialActive(false);
+        window.dispatchEvent(new CustomEvent('kyrub:open-profile-communities'));
+      }
+    };
+
+    window.addEventListener('kyrub:personal-destination', handlePersonalDestination);
+    return () =>
+      window.removeEventListener('kyrub:personal-destination', handlePersonalDestination);
+  });
+
   const openNotes = (): void => {
     const notesButton = findLegacyNotesButton();
     if (!notesButton) return;
@@ -372,17 +391,6 @@ export function WorkspacePrimaryNavigationBridge() {
       {discoveryHost &&
         createPortal(
           <div className="flex items-center gap-2 kyrub-header-discovery-group">
-            <button
-              type="button"
-              onClick={() => openKyrubDestination('praca')}
-              className={discoveryShortcutClassName('praca')}
-              title="Praça"
-              aria-label="Abrir Praça"
-              aria-pressed={discoveryActive === 'praca'}
-              id="header-praca-trigger"
-            >
-              <Compass className="h-4 w-4" />
-            </button>
             <button
               type="button"
               onClick={() => openKyrubDestination('marketplace')}
