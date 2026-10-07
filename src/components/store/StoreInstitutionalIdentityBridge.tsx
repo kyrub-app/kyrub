@@ -3,7 +3,6 @@ import { createPortal } from 'react-dom';
 import { onAuthStateChanged, type User } from 'firebase/auth';
 import { auth } from '../../utils/firebase';
 import { StoreInstitutionalIdentityPanel } from './StoreInstitutionalIdentityPanel';
-import { StorePromotionsLegacyBridge } from './StorePromotionsLegacyBridge';
 
 export function StoreInstitutionalIdentityBridge() {
   const [user, setUser] = useState<User | null>(auth.currentUser);
@@ -59,7 +58,6 @@ export function StoreInstitutionalIdentityBridge() {
       {user && host
         ? createPortal(<StoreInstitutionalIdentityPanel user={user} />, host)
         : null}
-      <StorePromotionsLegacyBridge />
     </>
   );
 }
