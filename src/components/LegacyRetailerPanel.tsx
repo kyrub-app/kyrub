@@ -913,25 +913,11 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = ({
                         </div>
                       </div>
 
-                      <div className="bg-slate-900 p-5 rounded-3xl border border-slate-800 space-y-4">
-                        <h4 className="text-xs font-black text-orange-400 uppercase">Sandbox Simulador</h4>
+                      <div className="bg-slate-900 p-5 rounded-3xl border border-slate-800 space-y-3">
+                        <h4 className="text-xs font-black text-orange-400 uppercase">Webhooks de integração</h4>
                         <p className="text-[11px] text-slate-400 leading-relaxed">
-                          Envie um payload de teste para simular o recebimento de uma venda integrada no KDS.
+                          Eventos externos só aparecem no KDS depois de serem recebidos e validados pelo backend. Este painel não gera pedidos simulados.
                         </p>
-
-                        <div className="bg-slate-950 p-3.5 rounded-2xl border border-slate-850 font-mono text-[10px] text-slate-400">
-                          <p className="text-emerald-400">POST /api/webhooks/order-received</p>
-                          <p className="text-slate-500">Nenhuma requisição simulada nesta sessão.</p>
-                        </div>
-
-                        <button
-                          onClick={() => {
-                            triggerToast('Simulação de Payload recebido! Novo pedido integrado no funil KDS.', 'success');
-                          }}
-                          className="w-full py-2 bg-orange-600 hover:bg-orange-500 text-white font-black rounded-xl text-xs uppercase"
-                        >
-                          Disparar Payload Webhook
-                        </button>
                       </div>
 
                     </div>
@@ -939,35 +925,13 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = ({
 
                   {/* SUBMODULE: VENDAS (Sales) */}
                   {activeGerencialModule === 'vendas' && (
-                    <div className="bg-slate-900 p-6 rounded-3xl border border-slate-850 space-y-5">
+                    <div className="bg-slate-900 p-6 rounded-3xl border border-slate-850 space-y-3">
                       <h4 className="text-xs font-black text-blue-500 uppercase">GERENCIAL: SALES</h4>
-                      
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
-                        <div className="bg-slate-950 p-3 rounded-2xl border border-slate-850">
-                          <span className="text-[8px] text-slate-500 block uppercase font-bold">Vendas Hoje</span>
-                          <strong className="text-white text-xs font-mono">R$ 1.842,90</strong>
-                        </div>
-                        <div className="bg-slate-950 p-3 rounded-2xl border border-slate-850">
-                          <span className="text-[8px] text-slate-500 block uppercase font-bold">Ticket Médio</span>
-                          <strong className="text-white text-xs font-mono">R$ 153,50</strong>
-                        </div>
-                        <div className="bg-slate-950 p-3 rounded-2xl border border-slate-850">
-                          <span className="text-[8px] text-slate-500 block uppercase font-bold">Total Pedidos</span>
-                          <strong className="text-white text-xs font-mono">12 un</strong>
-                        </div>
-                        <div className="bg-slate-950 p-3 rounded-2xl border border-slate-850">
-                          <span className="text-[8px] text-slate-500 block uppercase font-bold">Meta Alcançada</span>
-                          <strong className="text-emerald-400 text-xs font-mono">92 %</strong>
-                        </div>
-                      </div>
-
-                      <div className="p-4 bg-slate-950 border border-slate-850 rounded-2xl text-center space-y-1">
-                        <span className="text-[9px] font-mono text-slate-500 uppercase block">GRÁFICO DE VENDAS (ÚLTIMOS 15 DIAS)</span>
-                        <div className="h-28 flex items-end justify-center gap-2 pt-4">
-                          {[30, 45, 25, 60, 80, 50, 95, 70, 85, 40, 65, 90, 110, 80, 120].map((val, idx) => (
-                            <div key={idx} className="flex-1 bg-blue-500/80 rounded-t" style={{ height: `${val}%` }} title={`Dia ${idx + 1}: R$ ${val * 10}`} />
-                          ))}
-                        </div>
+                      <p className="text-[11px] text-slate-400 leading-relaxed">
+                        Indicadores de vendas serão exibidos somente quando derivados dos pedidos e pagamentos reais da loja.
+                      </p>
+                      <div className="rounded-2xl border border-dashed border-slate-800 bg-slate-950 p-6 text-center text-[10px] font-mono uppercase text-slate-500">
+                        Nenhum indicador demonstrativo é exibido.
                       </div>
                     </div>
                   )}
