@@ -262,3 +262,15 @@ test('store customization persists through the owner store handler and blocks st
   assert.match(legacyApp, /setUserStore\(previousStore\.id \? previousStore : null\)/);
   assert.match(legacyApp, /Staff store profile mutation is not allowed/);
 });
+
+
+test('direct management router leaves no unreachable Gerencial bridge polling in RetailerPanel', () => {
+  assert.doesNotMatch(retailerPanel, /kyrub-store-finance-legacy-anchor/);
+  assert.doesNotMatch(retailerPanel, /kyrub-store-promotions-legacy-anchor/);
+  assert.doesNotMatch(retailerPanel, /synchronizeProductsWorkspace/);
+  assert.doesNotMatch(retailerPanel, /mountFinanceWorkspace/);
+  assert.doesNotMatch(retailerPanel, /StorePromotionsLegacyBridge/);
+  assert.match(runtimeRouter, /LazyFinanceRuntime/);
+  assert.match(runtimeRouter, /LazyProductInventoryRuntime/);
+  assert.match(runtimeRouter, /LazyPromotionalRuntime/);
+});
