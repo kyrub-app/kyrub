@@ -77,7 +77,7 @@ test('Renda is the canonical direct discovery door before the full app', () => {
 test('full Kyrub panel opens on Renda and storefront handoff skips the external Renda entry', () => {
   assert.match(
     legacyAppSource,
-    /useState<'perfil' \| 'renda' \| 'kyrub'>\('renda'\)/
+    /useState<'perfil' \| 'renda' \| 'kyrub' \| 'cairubia'>\('renda'\)/
   );
   assert.match(
     publicStorefrontSource,

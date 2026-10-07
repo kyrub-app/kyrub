@@ -9,6 +9,7 @@ import {
 import { createPortal } from 'react-dom';
 import {
   ArrowLeft,
+  Bookmark,
   Camera,
   Check,
   ChevronRight,
@@ -60,6 +61,7 @@ import {
   type CloudCommunityPost,
   type CommunityVisibility,
 } from '../utils/communityCloud';
+import { removeSavedPublication, savePublication, subscribeSavedPublications } from '../utils/savedLibrary';
 
 type CommunityListTab = 'mine' | 'discover' | 'trending';
 type CommunityPageTab = 'wall' | 'debates' | 'notices' | 'about';
@@ -221,6 +223,7 @@ export function ProfileCommunitiesCloudBridge() {
   const [selectedCommunityId, setSelectedCommunityId] = useState('');
   const [pageTab, setPageTab] = useState<CommunityPageTab>('wall');
   const [posts, setPosts] = useState<CloudCommunityPost[]>([]);
+  const [savedPostIds, setSavedPostIds] = useState<Set<string>>(new Set());
   const [debates, setDebates] = useState<CloudCommunityDebate[]>([]);
   const [members, setMembers] = useState<CloudCommunityMembership[]>([]);
   const [selectedDebateId, setSelectedDebateId] = useState('');
@@ -263,6 +266,17 @@ export function ProfileCommunitiesCloudBridge() {
   );
 
   useEffect(() => {
+    if (!user) {
+      setSavedPostIds(new Set());
+      return;
+    }
+    return subscribeSavedPublications(
+      items => setSavedPostIds(new Set(items.filter(item => item.sourceKind === 'community').map(item => item.sourceId))),
+      error => console.warn('Não foi possível acompanhar Salvos das comunidades.', error)
+    );
+  }, [user?.uid]);
+
+  useEffect(() => {
     const openCreate = () => {
       setCreateError('');
       setCreateOpen(true);
@@ -276,20 +290,23 @@ export function ProfileCommunitiesCloudBridge() {
     let frame = 0;
     const detach = () => {
       if (searchInputRef.current && searchListenerRef.current) {
-        searchInputRef.current.removeEventListener(
-          'input',
-          searchListenerRef.current
-        );
+        searchInputRef.current.removeEventListener('input', searchListenerRef.current);
       }
       searchInputRef.current = null;
       searchListenerRef.current = null;
     };
     const synchronize = () => {
+      const directHost = document.querySelector<HTMLElement>('#praca-communities-host');
+      if (directHost) {
+        detach();
+        mountRef.current = directHost;
+        setHost(current => (current === directHost ? current : directHost));
+        return;
+      }
+
       const modal = document.querySelector('#profile-social-hub-modal');
       const input = modal
-        ? Array.from(modal.querySelectorAll<HTMLInputElement>('main input')).find(
-            isSquareSearchInput
-          ) ?? null
+        ? Array.from(modal.querySelectorAll<HTMLInputElement>('main input')).find(isSquareSearchInput) ?? null
         : null;
       if (!input) {
         setHost(null);
@@ -299,8 +316,7 @@ export function ProfileCommunitiesCloudBridge() {
         detach();
         input.id = 'profile-square-search-input';
         input.placeholder = 'Buscar pessoas, publicações ou comunidades...';
-        const listener = (event: Event) =>
-          setSearchValue((event.target as HTMLInputElement).value);
+        const listener = (event: Event) => setSearchValue((event.target as HTMLInputElement).value);
         input.addEventListener('input', listener);
         searchInputRef.current = input;
         searchListenerRef.current = listener;
@@ -308,9 +324,7 @@ export function ProfileCommunitiesCloudBridge() {
       }
       const searchContainer = input.parentElement;
       if (!searchContainer) return;
-      let mount = searchContainer.parentElement?.querySelector<HTMLElement>(
-        ':scope > [data-kyrub-cloud-communities]'
-      );
+      let mount = searchContainer.parentElement?.querySelector<HTMLElement>(':scope > [data-kyrub-cloud-communities]');
       if (!mount || !mount.isConnected) {
         mount = document.createElement('div');
         mount.dataset.kyrubCloudCommunities = 'true';
@@ -326,13 +340,13 @@ export function ProfileCommunitiesCloudBridge() {
     schedule();
     const observer = new MutationObserver(schedule);
     observer.observe(document.body, { childList: true, subtree: true });
-    const interval = window.setInterval(schedule, 600);
     return () => {
       window.cancelAnimationFrame(frame);
-      window.clearInterval(interval);
       observer.disconnect();
       detach();
-      mountRef.current?.remove();
+      if (mountRef.current?.dataset.kyrubCloudCommunities === 'true') {
+        mountRef.current.remove();
+      }
     };
   }, []);
 
@@ -1396,6 +1410,34 @@ export function ProfileCommunitiesCloudBridge() {
                             {post.mediaUrls[0] && (
                               <img src={post.mediaUrls[0]} alt="Imagem da publicação" className="mt-3 max-h-80 w-full rounded-2xl object-cover" />
                             )}
+                            <div className="mt-3 flex justify-end border-t border-slate-800 pt-3">
+                              <button
+                                type="button"
+                                disabled={actionBusy === `save-${post.id}`}
+                                onClick={async () => {
+                                  const isSaved = savedPostIds.has(post.id);
+                                  setActionBusy(`save-${post.id}`);
+                                  try {
+                                    if (isSaved) await removeSavedPublication('community', post.id);
+                                    else await savePublication('community', post.id);
+                                    setMessage(isSaved ? 'Publicação removida dos Salvos.' : 'Publicação salva.');
+                                  } catch (error) {
+                                    console.warn('Falha ao atualizar Salvos da comunidade.', error);
+                                    setMessage('Não foi possível atualizar seus Salvos.');
+                                  } finally {
+                                    setActionBusy('');
+                                  }
+                                }}
+                                className={`flex min-h-9 items-center gap-1.5 rounded-xl border px-3 text-[8px] font-black uppercase ${
+                                  savedPostIds.has(post.id)
+                                    ? 'border-amber-500/30 bg-amber-500/10 text-amber-300'
+                                    : 'border-slate-700 bg-slate-950 text-slate-400'
+                                }`}
+                              >
+                                <Bookmark className={`h-3.5 w-3.5 ${savedPostIds.has(post.id) ? 'fill-current' : ''}`} />
+                                {savedPostIds.has(post.id) ? 'Salvo' : 'Salvar'}
+                              </button>
+                            </div>
                           </article>
                         ))}
                         {posts.length === 0 && (

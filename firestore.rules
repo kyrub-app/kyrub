@@ -81,6 +81,15 @@ service cloud.firestore {
       match /favorites/{favoriteId} {
         allow read, write: if isSignedIn() && request.auth.uid == userId;
       }
+
+      // Biblioteca privada do usuário. Salvos referencia conteúdo; Seleções apenas organiza referências.
+      match /savedItems/{savedItemId} {
+        allow read, write: if isSignedIn() && request.auth.uid == userId;
+      }
+
+      match /selections/{selectionId} {
+        allow read, write: if isSignedIn() && request.auth.uid == userId;
+      }
       match /skills/{skillId} {
         allow read, write: if isSignedIn() && request.auth.uid == userId;
       }

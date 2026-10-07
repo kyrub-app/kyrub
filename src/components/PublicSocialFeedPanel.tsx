@@ -1,5 +1,6 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
+  Bookmark,
   CircleUserRound,
   Heart,
   LoaderCircle,
@@ -10,6 +11,7 @@ import {
 import type { Friend, SocialPost } from '../types';
 import type { SocialPostComment } from '../hooks/usePublicSocialFeed';
 import { MediaCarousel } from './MediaCarousel';
+import { removeSavedPublication, savePublication, subscribeSavedPublications } from '../utils/savedLibrary';
 
 interface PublicSocialFeedPanelProps {
   posts: SocialPost[];
@@ -82,6 +84,12 @@ export function PublicSocialFeedPanel({
   );
   const [commentDrafts, setCommentDrafts] = useState<Record<string, string>>({});
   const [pendingAction, setPendingAction] = useState('');
+  const [savedPostIds, setSavedPostIds] = useState<Set<string>>(new Set());
+
+  useEffect(() => subscribeSavedPublications(
+    items => setSavedPostIds(new Set(items.filter(item => item.sourceKind === 'praca').map(item => item.sourceId))),
+    error => console.warn('Falha ao acompanhar Salvos.', error)
+  ), []);
 
   const visiblePosts = useMemo(() => {
     const normalizedSearch = searchQuery.trim().toLocaleLowerCase('pt-BR');
@@ -200,7 +208,7 @@ export function PublicSocialFeedPanel({
               <MediaCarousel mediaUrls={post.mediaUrls} />
             )}
 
-            <div className="grid grid-cols-2 gap-2 border-t border-slate-800/70 pt-3">
+            <div className="grid grid-cols-3 gap-2 border-t border-slate-800/70 pt-3">
               <button
                 type="button"
                 onClick={async () => {
@@ -223,6 +231,33 @@ export function PublicSocialFeedPanel({
               >
                 <Heart className={`h-4 w-4 ${isLiked ? 'fill-current' : ''}`} />
                 {post.likes} {post.likes === 1 ? 'curtida' : 'curtidas'}
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  const isSaved = savedPostIds.has(post.id);
+                  setPendingAction(`save-${post.id}`);
+                  try {
+                    if (isSaved) await removeSavedPublication('praca', post.id);
+                    else await savePublication('praca', post.id);
+                    triggerToast(isSaved ? 'Publicação removida dos Salvos.' : 'Publicação salva.', 'success');
+                  } catch (error) {
+                    console.warn('Falha ao atualizar Salvos.', error);
+                    triggerToast('Não foi possível atualizar seus Salvos.', 'error');
+                  } finally {
+                    setPendingAction('');
+                  }
+                }}
+                disabled={pendingAction === `save-${post.id}`}
+                className={`flex items-center justify-center gap-2 rounded-xl border px-3 py-2 text-[9px] font-black uppercase transition-colors ${
+                  savedPostIds.has(post.id)
+                    ? 'border-amber-500/30 bg-amber-500/10 text-amber-300'
+                    : 'border-slate-800 bg-slate-950 text-slate-400 hover:text-amber-300'
+                }`}
+                aria-label={savedPostIds.has(post.id) ? 'Remover dos Salvos' : 'Salvar publicação'}
+              >
+                <Bookmark className={`h-4 w-4 ${savedPostIds.has(post.id) ? 'fill-current' : ''}`} />
+                {savedPostIds.has(post.id) ? 'Salvo' : 'Salvar'}
               </button>
               <button
                 type="button"
