@@ -1,4 +1,6 @@
 import React, { lazy, Suspense, useEffect, useRef, useState } from 'react';
+import { canStoreRoleAccessErpMenuItem } from './MobileErpMenu';
+import type { StoreRole } from '../utils/storeSecurity';
 import { RetailerPanel as LegacyRetailerPanel } from './LegacyRetailerPanel';
 import { RetailerPanel as ModernRetailerPanel } from './RetailerPanel';
 import { KdsScopedRejectionController } from './store/KdsScopedRejectionController';
@@ -11,7 +13,7 @@ import {
   type ErpManagementNavigationRequest,
 } from '../utils/erpManagementNavigation';
 
-type RetailerPanelProps = React.ComponentProps<typeof LegacyRetailerPanel>;
+type RetailerPanelProps = React.ComponentProps<typeof LegacyRetailerPanel> & { accessRole?: StoreRole };
 type ModuleDefinition = { title: string; description: string; status: 'native' | 'migration' | 'development' };
 
 const MANAGEMENT_MODULES: Record<ErpManagementModule, ModuleDefinition> = {
@@ -74,8 +76,12 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = props => {
   useEffect(() => {
     const handleManagementNavigation = (event: Event): void => {
       consumePendingErpManagementNavigation();
+      const requestedModule =
+        (event as CustomEvent<ErpManagementNavigationRequest>).detail?.module ?? null;
       setManagementModule(
-        (event as CustomEvent<ErpManagementNavigationRequest>).detail?.module ?? null
+        requestedModule && props.accessRole && !canStoreRoleAccessErpMenuItem(props.accessRole, requestedModule)
+          ? null
+          : requestedModule
       );
     };
 
@@ -85,14 +91,20 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = props => {
     );
 
     const pending = consumePendingErpManagementNavigation();
-    if (pending) setManagementModule(pending.module);
+    if (pending) {
+      setManagementModule(
+        props.accessRole && !canStoreRoleAccessErpMenuItem(props.accessRole, pending.module)
+          ? null
+          : pending.module
+      );
+    }
 
     return () =>
       window.removeEventListener(
         KYRUB_ERP_MANAGEMENT_NAVIGATION_EVENT,
         handleManagementNavigation
       );
-  }, []);
+  }, [props.accessRole]);
 
   useEffect(() => {
     if (previousActiveSubTabRef.current === props.activeSubTab) return;
@@ -101,7 +113,9 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = props => {
   }, [props.activeSubTab]);
 
   const backToPdv = (): void => { requestErpManagementNavigation(null); props.setActiveSubTab('clientes'); };
-  if (managementModule) return <DirectManagementModule moduleId={managementModule} retailerProps={props} onBackToPdv={backToPdv} />;
+  if (managementModule && (!props.accessRole || canStoreRoleAccessErpMenuItem(props.accessRole, managementModule))) {
+    return <DirectManagementModule moduleId={managementModule} retailerProps={props} onBackToPdv={backToPdv} />;
+  }
   if (props.activeSubTab === 'gerencial') return <section className="rounded-3xl border border-amber-500/25 bg-slate-900 p-5 text-white"><span className="font-mono text-[9px] font-black uppercase tracking-[0.16em] text-amber-300">Rota desativada</span><h2 className="mt-2 text-base font-black">Gerencial foi removido.</h2><p className="mt-2 text-[11px] leading-relaxed text-slate-400">Os módulos de gestão agora são destinos diretos do menu. Esta rota antiga permanece apenas como proteção temporária para links legados e não monta o painel anterior.</p><button type="button" onClick={backToPdv} className="mt-4 min-h-10 rounded-xl bg-orange-500 px-4 text-[9px] font-black uppercase text-slate-950">Voltar ao PDV</button></section>;
   return <>
     <ModernRetailerPanel {...props} />
