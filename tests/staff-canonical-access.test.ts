@@ -86,3 +86,12 @@ test('canonical time clock binds punches to authenticated active member', () => 
   assert.match(timeClockRouter, /FieldValue\.serverTimestamp\(\)/);
   assert.doesNotMatch(timeClockRouter, /request\.body\?\.userId/);
 });
+
+
+test('point UI uses canonical authenticated time clock instead of local-only logs', () => {
+  assert.match(legacyRetailerPanel, /\/api\/staff\/time-clock\/me/);
+  assert.match(legacyRetailerPanel, /\/api\/staff\/time-clock\/\$\{action\}/);
+  assert.match(legacyRetailerPanel, /auth\.currentUser/);
+  assert.match(legacyRetailerPanel, /user\.getIdToken\(\)/);
+  assert.doesNotMatch(legacyRetailerPanel, /const handleClockIn = \(\) =>/);
+});
