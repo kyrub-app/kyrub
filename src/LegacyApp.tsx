@@ -388,6 +388,20 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [socialSubTab, setSocialSubTab] = useState<'lojas' | 'usuarios'>('lojas');
 
+  useEffect(() => {
+    const handleDiscoveryNavigation = (event: Event) => {
+      const destination = (event as CustomEvent<{ destination?: string }>).detail?.destination;
+      if (destination !== 'marketplace' && destination !== 'praca') return;
+
+      setActiveTab('kyrub');
+      setSocialSubTab(destination === 'marketplace' ? 'lojas' : 'usuarios');
+    };
+
+    window.addEventListener('kyrub:navigate-discovery', handleDiscoveryNavigation);
+    return () =>
+      window.removeEventListener('kyrub:navigate-discovery', handleDiscoveryNavigation);
+  }, []);
+
   // New states for restructure
   const [isProfileVisible, setIsProfileVisible] = useState(true);
   const [ofertasFilter, setOfertasFilter] = useState<'todas' | 'novas' | 'favoritas' | 'cliente'>('todas');
