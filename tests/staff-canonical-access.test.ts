@@ -166,3 +166,13 @@ test('customer attendance no longer keeps a parallel local ticket workflow', () 
   assert.match(retailerPanel, /TableServiceWorkspace/);
   assert.match(retailerPanel, /AttendanceOrderApproval/);
 });
+
+test('cash tab no longer keeps the superseded Dexie simulation behind canonical CashWorkspace', () => {
+  assert.doesNotMatch(legacyRetailerPanel, /DexieERPDB/);
+  assert.doesNotMatch(legacyRetailerPanel, /erpDB\.movements/);
+  assert.doesNotMatch(legacyRetailerPanel, /handleSyncFirestore/);
+  assert.doesNotMatch(legacyRetailerPanel, /Sincronizar Dexie/);
+  assert.match(legacyRetailerPanel, /id="erp-caixa-tab"/);
+  assert.match(retailerPanel, /CashWorkspace/);
+  assert.match(canonicalCash, /requireCashPermission\(context, 'cash\.manage'\)/);
+});
