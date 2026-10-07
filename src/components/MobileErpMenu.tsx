@@ -26,6 +26,7 @@ import {
   type ErpManagementModule,
 } from '../utils/erpManagementNavigation';
 import { getPlanCenterUrl } from '../utils/planCenter';
+import { hasStorePermission, type StoreRole } from '../utils/storeSecurity';
 
 export type ErpSubTab =
   | 'clientes'
@@ -46,6 +47,26 @@ export type MobileErpMenuItem = {
   label: string;
   icon: typeof StoreIcon;
   section: 'gestao' | 'operacao';
+};
+
+export const canStoreRoleAccessErpMenuItem = (
+  role: StoreRole,
+  itemId: MobileErpMenuItemId
+): boolean => {
+  if (role === 'owner') return true;
+  if (itemId === 'planos' || itemId === 'loja') return false;
+  if (itemId === 'rh') return hasStorePermission(role, 'members.read');
+  if (itemId === 'produtos' || itemId === 'estoque') return hasStorePermission(role, 'products.read');
+  if (itemId === 'vendas' || itemId === 'crm') return hasStorePermission(role, 'reports.read') || hasStorePermission(role, 'reports.read_own');
+  if (itemId === 'financeiro') return hasStorePermission(role, 'payments.read') || hasStorePermission(role, 'payments.read_own');
+  if (itemId === 'fiscal') return hasStorePermission(role, 'fiscal.read');
+  if (itemId === 'clientes') return hasStorePermission(role, 'orders.create');
+  if (itemId === 'caixa') return hasStorePermission(role, 'cash.read');
+  if (itemId === 'pedidos') return hasStorePermission(role, 'orders.read');
+  if (itemId === 'ponto') return true;
+  if (itemId === 'reservas') return hasStorePermission(role, 'orders.read');
+  if (itemId === 'assinaturas' || itemId === 'marketing' || itemId === 'integracoes' || itemId === 'vouchers') return role === 'manager';
+  return false;
 };
 
 // Single source of truth for both the source component and the production
@@ -131,6 +152,7 @@ interface MobileErpMenuProps {
   onClosePanel: () => void;
   onOpenStoreConfig: () => void;
   onSelectTab: (tab: ErpSubTab) => void;
+  accessRole?: StoreRole;
 }
 
 export function MobileErpMenu({
@@ -140,6 +162,7 @@ export function MobileErpMenu({
   onClosePanel,
   onOpenStoreConfig,
   onSelectTab,
+  accessRole,
 }: MobileErpMenuProps) {
   const dialogRef = useRef<HTMLDialogElement | null>(null);
   const pendingSelectionRef = useRef<MobileErpMenuItemId | null>(null);
@@ -187,7 +210,7 @@ export function MobileErpMenu({
   };
 
   const renderItems = (section: MobileErpMenuItem['section']) =>
-    MOBILE_ERP_MENU_ITEMS.filter(item => item.section === section).map(item => {
+    MOBILE_ERP_MENU_ITEMS.filter(item => item.section === section && (!accessRole || canStoreRoleAccessErpMenuItem(accessRole, item.id))).map(item => {
       const Icon = item.icon;
       const isSelected =
         !isMobileErpManagementModule(item.id) &&
