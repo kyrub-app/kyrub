@@ -23,3 +23,10 @@ test('staff route does not create a second password login', () => {
   assert.doesNotMatch(staffViewport, /type="password"/);
   assert.doesNotMatch(legacyApp, /setIsStaffLoggedIn/);
 });
+
+
+test('staff access enters the existing ERP and filters its menu by role', () => {
+  assert.match(legacyApp, /onEnterErp=/);
+  assert.match(legacyApp, /canStoreRoleAccessErpMenuItem/);
+  assert.match(staffViewport, /Entrar no ERP/);
+});
