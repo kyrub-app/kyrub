@@ -260,7 +260,7 @@ export default function App() {
   const [userCoords, setUserCoords] = useState<{ lat: number; lng: number } | null>(null);
 
   // Mobile Bottom Navigation
-  const [activeTab, setActiveTab] = useState<'perfil' | 'renda' | 'kyrub'>('renda');
+  const [activeTab, setActiveTab] = useState<'perfil' | 'renda' | 'kyrub' | 'cairubia'>('renda');
 
   // Slide-overs & ERP Overlays
   const [isWalletOpen, setIsWalletOpen] = useState(false);
@@ -1426,7 +1426,7 @@ if (newMomentPublishToPraca) {
               />
             )}
 
-            {/* GUIA 3: KYRUB (Social Feed, Discovery & Proximity map) */}
+            {/* GUIA 3: PRAÇA (Social Feed, Communities & Discovery) */}
             {activeTab === 'kyrub' && (
               <KyrubTab
                 searchQuery={searchQuery}
@@ -1467,18 +1467,27 @@ if (newMomentPublishToPraca) {
                 getDistance={getDistance}
               />
             )}
+
+            {/* GUIA 4: CAIRÚBIA (AI workspace mounted by KyrubAiWorkspaceBridge) */}
+            {activeTab === 'cairubia' && (
+              <div id="kyrub-tab-container" aria-label="Cairúbia" />
+            )}
           </main>
 
           {/* 3. FIXED BOTTOM NAVIGATION BAR */}
           <nav className="fixed bottom-0 left-0 right-0 z-40 bg-slate-950/95 border-t border-slate-900 py-3 px-6 flex justify-around items-center backdrop-blur-lg shadow-2xl">
             <button
-              onClick={() => setActiveTab('perfil')}
+              onClick={() => {
+                setSocialSubTab('usuarios');
+                setPracaFilter('recentes');
+                setActiveTab('kyrub');
+              }}
               className={`flex flex-col items-center gap-1 text-[10px] font-bold uppercase transition-all ${
-                activeTab === 'perfil' ? 'text-orange-500' : 'text-slate-500 hover:text-slate-300'
+                activeTab === 'kyrub' ? 'text-orange-500' : 'text-slate-500 hover:text-slate-300'
               }`}
             >
-              <CheckSquare className="w-5 h-5" />
-              <span>Notas</span>
+              <Compass className="w-5 h-5" />
+              <span>Praça</span>
             </button>
             <button
               onClick={() => setActiveTab('renda')}
@@ -1490,13 +1499,13 @@ if (newMomentPublishToPraca) {
               <span>Renda</span>
             </button>
             <button
-              onClick={() => setActiveTab('kyrub')}
+              onClick={() => setActiveTab('cairubia')}
               className={`flex flex-col items-center gap-1 text-[10px] font-bold uppercase transition-all ${
-                activeTab === 'kyrub' ? 'text-orange-500' : 'text-slate-500 hover:text-slate-300'
+                activeTab === 'cairubia' ? 'text-orange-500' : 'text-slate-500 hover:text-slate-300'
               }`}
             >
-              <Compass className="w-5 h-5" />
-              <span>Kyrub</span>
+              <Sparkles className="w-5 h-5" />
+              <span>Cairúbia</span>
             </button>
           </nav>
         </div>
