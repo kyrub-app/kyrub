@@ -519,6 +519,7 @@ export function ProfileSocialHubNative() {
       event.preventDefault();
       event.stopPropagation();
       event.stopImmediatePropagation();
+      setActiveTab('publications');
       setOpen(true);
     };
 
@@ -1138,12 +1139,6 @@ export function ProfileSocialHubNative() {
 
   if (!open || !user) return null;
 
-  const tabs: Array<{ id: ProfileTab; label: string; count?: number }> = [
-    { id: 'publications', label: 'Mural', count: ownFeedPosts.length },
-    { id: 'marked', label: 'Destaques', count: markedPosts.length },
-    { id: 'connected', label: 'Conectados', count: directory.friends.length },
-  ];
-
   const suggestionCount = directory.getSuggestions().length;
   const requestCount = directory.connectionRequests.length;
   const newConnectionsCount = suggestionCount + requestCount;
@@ -1254,9 +1249,7 @@ export function ProfileSocialHubNative() {
                       <Pencil className="h-4 w-4" />
                     </button>
                   </div>
-                  <span className="mb-2 rounded-full border border-slate-800 bg-slate-900/90 px-3 py-1.5 text-[8px] font-black uppercase tracking-wider text-slate-400">
-                    Minha página
-                  </span>
+
                 </div>
 
                 <div className="mt-4">
@@ -1271,9 +1264,9 @@ export function ProfileSocialHubNative() {
                 </div>
 
                 <div className="mt-5 grid grid-cols-4 gap-2" aria-label="Ações da página pessoal">
-                  <button type="button" onClick={() => setEditOpen(true)} className="flex min-w-0 flex-col items-center gap-2 rounded-2xl border border-slate-800 bg-slate-900 px-1 py-3 text-slate-300">
-                    <span className="flex h-10 w-10 items-center justify-center rounded-full bg-orange-500 text-slate-950"><Pencil className="h-4 w-4" /></span>
-                    <span className="text-[8px] font-black uppercase">Editar</span>
+                  <button type="button" onClick={() => setActiveTab('connected')} className="flex min-w-0 flex-col items-center gap-2 rounded-2xl border border-slate-800 bg-slate-900 px-1 py-3 text-slate-300">
+                    <span className="flex h-10 w-10 items-center justify-center rounded-full bg-teal-500/15 text-teal-300"><Users className="h-4 w-4" /></span>
+                    <span className="text-[8px] font-black uppercase">Conectados</span>
                   </button>
                   <button type="button" onClick={() => triggerToast('O QR público da sua página entra na próxima etapa.', 'info')} className="flex min-w-0 flex-col items-center gap-2 rounded-2xl border border-slate-800 bg-slate-900 px-1 py-3 text-slate-300">
                     <span className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-800"><QrCode className="h-4 w-4" /></span>
@@ -1290,41 +1283,8 @@ export function ProfileSocialHubNative() {
                   </button>
                 </div>
 
-                <div className="mt-4 grid grid-cols-3 gap-2">
-                  {[
-                    ['Mural', ownFeedPosts.length],
-                    ['Status', ownStatuses.length],
-                    ['Conectados', directory.friends.length],
-                  ].map(([label, count]) => (
-                    <div key={String(label)} className="rounded-2xl border border-slate-800 bg-slate-900/75 p-2 text-center">
-                      <strong className="block text-sm text-white">{count}</strong>
-                      <span className="text-[7px] font-black uppercase text-slate-500">{label}</span>
-                    </div>
-                  ))}
-                </div>
               </div>
             </section>
-
-            <nav
-              className="sticky top-0 z-10 flex gap-1 overflow-x-auto border-b border-slate-900 bg-slate-950/95 px-3 py-2 backdrop-blur-md"
-              aria-label="Seções do perfil"
-            >
-              {tabs.map(tab => (
-                <button
-                  key={tab.id}
-                  type="button"
-                  onClick={() => setActiveTab(tab.id)}
-                  className={`shrink-0 rounded-xl px-3 py-2 text-[9px] font-black uppercase ${
-                    activeTab === tab.id
-                      ? 'bg-orange-500 text-slate-950'
-                      : 'border border-slate-800 bg-slate-900 text-slate-400'
-                  }`}
-                >
-                  {tab.label}
-                  {typeof tab.count === 'number' ? ` ${tab.count}` : ''}
-                </button>
-              ))}
-            </nav>
 
             <main className="space-y-4 p-4 sm:p-5">
               {activeTab === 'publications' && (
@@ -1599,6 +1559,14 @@ export function ProfileSocialHubNative() {
 
               {activeTab === 'connected' && (
                 <div className="space-y-4">
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('publications')}
+                    className="inline-flex items-center gap-2 rounded-xl border border-slate-800 bg-slate-900 px-3 py-2 text-[9px] font-black uppercase text-slate-300"
+                  >
+                    <span aria-hidden="true">←</span>
+                    Voltar ao perfil
+                  </button>
                   <nav
                     className="grid grid-cols-4 gap-2"
                     aria-label="Seções de conectados"
