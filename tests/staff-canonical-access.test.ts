@@ -51,6 +51,7 @@ const retailerPanel = readFileSync(new URL('../src/components/RetailerPanel.tsx'
 const runtimeRouter = readFileSync(new URL('../src/components/RetailerPanelRuntimeRouter.tsx', import.meta.url), 'utf8');
 const deliveryManager = readFileSync(new URL('../src/components/modals/DeliveryManagerModal.tsx', import.meta.url), 'utf8');
 const freelaManager = readFileSync(new URL('../src/components/modals/FreelaManagerModal.tsx', import.meta.url), 'utf8');
+const walletModal = readFileSync(new URL('../src/components/modals/WalletModal.tsx', import.meta.url), 'utf8');
 const promotionsLegacyBridge = readFileSync(new URL('../src/components/store/StorePromotionsLegacyBridge.tsx', import.meta.url), 'utf8');
 test('staff order workspace no longer requires employee uid to equal store tenant', () => {
   assert.doesNotMatch(orderWorkflow, /user\.uid !== normalizedStoreId/);
@@ -295,4 +296,15 @@ test('gig completion cannot fabricate personal wallet settlement', () => {
   assert.doesNotMatch(freelaManager, /setWalletBalance/);
   assert.doesNotMatch(freelaManager, /setWalletHistory/);
   assert.match(freelaManager, /pendente de liquidação real/);
+});
+
+
+test('personal wallet cannot simulate banking operations', () => {
+  assert.doesNotMatch(walletModal, /handleSimulateDeposit/);
+  assert.doesNotMatch(walletModal, /handleSimulatePix/);
+  assert.doesNotMatch(walletModal, /setWalletBalance/);
+  assert.doesNotMatch(walletModal, /Agência:/);
+  assert.doesNotMatch(walletModal, /99042-9/);
+  assert.match(walletModal, /Movimentação financeira indisponível/);
+  assert.match(walletModal, /não comprovam saldo, pagamento ou liquidação/);
 });
