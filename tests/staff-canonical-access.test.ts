@@ -274,3 +274,12 @@ test('direct management router leaves no unreachable Gerencial bridge polling in
   assert.match(runtimeRouter, /LazyProductInventoryRuntime/);
   assert.match(runtimeRouter, /LazyPromotionalRuntime/);
 });
+
+
+test('legacy app cannot fabricate marketplace checkout or product creation', () => {
+  assert.doesNotMatch(legacyApp, /Cart B2C Checkout Simulation/);
+  assert.doesNotMatch(legacyApp, /Gateway Kyrub dividindo splits/);
+  assert.doesNotMatch(legacyApp, /setWalletBalance\(curr => curr \+ retailerProfit\)/);
+  assert.doesNotMatch(legacyApp, /<NewProductModal/);
+  assert.doesNotMatch(legacyApp, /p-ret-\$\{Date\.now\(\)\}/);
+});
