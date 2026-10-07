@@ -95,3 +95,11 @@ test('point UI uses canonical authenticated time clock instead of local-only log
   assert.match(legacyRetailerPanel, /user\.getIdToken\(\)/);
   assert.doesNotMatch(legacyRetailerPanel, /const handleClockIn = \(\) =>/);
 });
+
+
+test('team time clock is manager-only while personal punches remain self-bound', () => {
+  assert.match(timeClockRouter, /router\.get\('\/team'/);
+  assert.match(timeClockRouter, /actor\.role !== 'owner' && actor\.role !== 'manager'/);
+  assert.match(timeClockRouter, /router\.get\('\/me'/);
+  assert.match(timeClockRouter, /where\('userId', '==', actor\.userId\)/);
+});
