@@ -290,20 +290,23 @@ export function ProfileCommunitiesCloudBridge() {
     let frame = 0;
     const detach = () => {
       if (searchInputRef.current && searchListenerRef.current) {
-        searchInputRef.current.removeEventListener(
-          'input',
-          searchListenerRef.current
-        );
+        searchInputRef.current.removeEventListener('input', searchListenerRef.current);
       }
       searchInputRef.current = null;
       searchListenerRef.current = null;
     };
     const synchronize = () => {
+      const directHost = document.querySelector<HTMLElement>('#praca-communities-host');
+      if (directHost) {
+        detach();
+        mountRef.current = directHost;
+        setHost(current => (current === directHost ? current : directHost));
+        return;
+      }
+
       const modal = document.querySelector('#profile-social-hub-modal');
       const input = modal
-        ? Array.from(modal.querySelectorAll<HTMLInputElement>('main input')).find(
-            isSquareSearchInput
-          ) ?? null
+        ? Array.from(modal.querySelectorAll<HTMLInputElement>('main input')).find(isSquareSearchInput) ?? null
         : null;
       if (!input) {
         setHost(null);
@@ -313,8 +316,7 @@ export function ProfileCommunitiesCloudBridge() {
         detach();
         input.id = 'profile-square-search-input';
         input.placeholder = 'Buscar pessoas, publicações ou comunidades...';
-        const listener = (event: Event) =>
-          setSearchValue((event.target as HTMLInputElement).value);
+        const listener = (event: Event) => setSearchValue((event.target as HTMLInputElement).value);
         input.addEventListener('input', listener);
         searchInputRef.current = input;
         searchListenerRef.current = listener;
@@ -322,9 +324,7 @@ export function ProfileCommunitiesCloudBridge() {
       }
       const searchContainer = input.parentElement;
       if (!searchContainer) return;
-      let mount = searchContainer.parentElement?.querySelector<HTMLElement>(
-        ':scope > [data-kyrub-cloud-communities]'
-      );
+      let mount = searchContainer.parentElement?.querySelector<HTMLElement>(':scope > [data-kyrub-cloud-communities]');
       if (!mount || !mount.isConnected) {
         mount = document.createElement('div');
         mount.dataset.kyrubCloudCommunities = 'true';
@@ -340,13 +340,13 @@ export function ProfileCommunitiesCloudBridge() {
     schedule();
     const observer = new MutationObserver(schedule);
     observer.observe(document.body, { childList: true, subtree: true });
-    const interval = window.setInterval(schedule, 600);
     return () => {
       window.cancelAnimationFrame(frame);
-      window.clearInterval(interval);
       observer.disconnect();
       detach();
-      mountRef.current?.remove();
+      if (mountRef.current?.dataset.kyrubCloudCommunities === 'true') {
+        mountRef.current.remove();
+      }
     };
   }, []);
 
