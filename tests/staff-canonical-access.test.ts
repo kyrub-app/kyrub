@@ -239,3 +239,9 @@ test('HR workspace is backed by canonical team and payroll components', () => {
   assert.match(retailerPanel, /StoreTeamWorkspace/);
   assert.match(retailerPanel, /StorePayrollWorkspace/);
 });
+
+test('manager integrations do not advertise a simulated sandbox', () => {
+  assert.doesNotMatch(legacyRetailerPanel, /INTEGRAÇÕES & SANDBOX/);
+  assert.doesNotMatch(legacyRetailerPanel, /sandbox de simulação/);
+  assert.match(legacyRetailerPanel, /Este painel não gera pedidos simulados/);
+});
