@@ -630,11 +630,26 @@ export default function App() {
   const activeRetailerId = selectedStaffAccess?.store.legacyTenantId || authenticatedUserId;
 
   const activeStore = useMemo<Store>(() => {
+    if (selectedStaffAccess) {
+      const legacyStoreId = selectedStaffAccess.store.legacyTenantId;
+      const staffStore =
+        stores.find(store => store.id === legacyStoreId) ??
+        stores.find(store => store.id === selectedStaffAccess.store.id);
+
+      if (staffStore) return staffStore;
+
+      return {
+        ...createEmptyUserStore(legacyStoreId, ''),
+        name: selectedStaffAccess.store.name,
+        plan: selectedStaffAccess.store.plan,
+      };
+    }
+
     return userStore ?? createEmptyUserStore(
       activeRetailerId,
       profileEmail
     );
-  }, [userStore, activeRetailerId, profileEmail]);
+  }, [selectedStaffAccess, stores, userStore, activeRetailerId, profileEmail]);
 
   const activeRetailer = useMemo<Tenant | undefined>(() => {
     if (!activeRetailerId) return undefined;
@@ -665,6 +680,14 @@ export default function App() {
         'error'
       );
       throw new Error('Authenticated user is required.');
+    }
+
+    if (selectedStaffAccess) {
+      triggerToast(
+        'Configurações da loja só podem ser alteradas pelo contexto proprietário.',
+        'error'
+      );
+      throw new Error('Staff store profile mutation is not allowed.');
     }
 
     const ownerEmail = user.email ?? '';
