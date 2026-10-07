@@ -531,163 +531,165 @@ export function KyrubTab({
 
   return (
     <div className="space-y-5 animate-fade-in" id="praca-tab-container">
-      <section className="space-y-3 rounded-3xl border border-slate-800 bg-slate-900 p-4">
-        <div className="flex items-center gap-2">
-          <div className="relative min-w-0 flex-1">
-            <Search className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
-            <input
-              type="search"
-              placeholder="Buscar lojas, produtos ou usuários..."
-              value={searchQuery}
-              onChange={event => setSearchQuery(event.target.value)}
-              className="w-full rounded-xl border border-slate-800 bg-slate-950 py-2.5 pl-10 pr-9 text-xs text-white outline-none transition-colors focus:border-orange-500/60"
-            />
-            {searchQuery && (
-              <button
-                type="button"
-                onClick={() => setSearchQuery('')}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white"
-                title="Limpar busca"
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
-            )}
-          </div>
-
-          <button
-            type="button"
-            onClick={() => setIsSearchFilterOpen(current => !current)}
-            className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border transition-colors ${
-              isSearchFilterOpen || isDistancePanelOpen
-                ? 'border-orange-500/50 bg-orange-500/15 text-orange-400'
-                : 'border-slate-800 bg-slate-950 text-slate-500 hover:text-orange-400'
-            }`}
-            title="Filtros da Praça"
-            aria-label="Abrir filtros da Praça"
-            id="praca-filter-trigger"
-          >
-            <SlidersHorizontal className="h-4 w-4" />
-          </button>
-        </div>
-
-        {isSearchFilterOpen && (
-          <div className="flex flex-wrap gap-2 rounded-2xl border border-slate-800 bg-slate-950/80 p-3">
-            <button
-              type="button"
-              onClick={() => {
-                setSocialSubTab('usuarios');
-                setPracaFilter('recentes');
-              }}
-              className="rounded-xl border border-orange-500/30 bg-orange-500/10 px-3 py-2 text-[9px] font-black uppercase text-orange-300"
-            >
-              Publicações
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setSocialSubTab('usuarios');
-                document
-                  .querySelector<HTMLElement>('#square-communities')
-                  ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-              }}
-              className="rounded-xl border border-sky-500/30 bg-sky-500/10 px-3 py-2 text-[9px] font-black uppercase text-sky-300"
-            >
-              Comunidades
-            </button>
-            <button
-              type="button"
-              onClick={() => setPracaFilter('conectados')}
-              className="rounded-xl border border-teal-500/30 bg-teal-500/10 px-3 py-2 text-[9px] font-black uppercase text-teal-300"
-            >
-              Pessoas
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setSocialSubTab('lojas');
-                setIsSearchFilterOpen(false);
-              }}
-              className="rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-[9px] font-black uppercase text-slate-300"
-            >
-              Marketplace
-            </button>
-            <button
-              type="button"
-              onClick={requestActualLocation}
-              className="flex items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-[9px] font-black uppercase text-slate-300"
-            >
-              <LocateFixed className="h-3.5 w-3.5" />
-              Distância
-            </button>
-          </div>
-        )}
-
-        {isDistancePanelOpen && (
-          <div className="rounded-2xl border border-slate-800 bg-slate-950/80 p-3">
-            <div className="flex items-center justify-between gap-3">
-              <div className="min-w-0">
-                <span className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider text-slate-300">
-                  <MapPin className="h-3.5 w-3.5 text-orange-400" />
-                  Distância
-                </span>
-                <p className="mt-1 text-[9px] text-slate-500">
-                  {locationStatus === 'ready'
-                    ? 'Localização ativa. Lojas sem coordenadas não entram no resultado.'
-                    : 'Autorize sua localização para filtrar as vitrines próximas.'}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsDistancePanelOpen(false)}
-                className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-900 hover:text-white"
-                title="Fechar filtro"
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
-            </div>
-
-            <div className="mt-3 flex items-center gap-3">
+      {socialSubTab === 'lojas' && (
+        <section className="space-y-3 rounded-3xl border border-slate-800 bg-slate-900 p-4">
+          <div className="flex items-center gap-2">
+            <div className="relative min-w-0 flex-1">
+              <Search className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
               <input
-                type="range"
-                min="1"
-                max="50"
-                value={radiusKm}
-                onChange={event => setRadiusKm(Number(event.target.value))}
-                className="h-1 flex-1 cursor-pointer appearance-none rounded-lg bg-slate-800 accent-orange-500"
-                aria-label="Raio de distância em quilômetros"
+                type="search"
+                placeholder="Buscar lojas, produtos ou usuários..."
+                value={searchQuery}
+                onChange={event => setSearchQuery(event.target.value)}
+                className="w-full rounded-xl border border-slate-800 bg-slate-950 py-2.5 pl-10 pr-9 text-xs text-white outline-none transition-colors focus:border-orange-500/60"
               />
-              <span className="w-12 text-right font-mono text-[10px] font-black text-orange-400">
-                {radiusKm} KM
-              </span>
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white"
+                  title="Limpar busca"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
             </div>
-          </div>
-        )}
 
-        <div className="flex border-b border-slate-800" id="social-tabs">
-          <button
-            type="button"
-            onClick={() => setSocialSubTab('lojas')}
-            className={`flex-1 border-b-2 pb-2.5 text-xs font-black uppercase tracking-wider transition-all ${
-              socialSubTab === 'lojas'
-                ? 'border-orange-500 text-white'
-                : 'border-transparent text-slate-500 hover:text-slate-300'
-            }`}
-          >
-            Ofertas
-          </button>
-          <button
-            type="button"
-            onClick={() => setSocialSubTab('usuarios')}
-            className={`flex-1 border-b-2 pb-2.5 text-xs font-black uppercase tracking-wider transition-all ${
-              socialSubTab === 'usuarios'
-                ? 'border-orange-500 text-white'
-                : 'border-transparent text-slate-500 hover:text-slate-300'
-            }`}
-          >
-            Praça
-          </button>
-        </div>
-      </section>
+            <button
+              type="button"
+              onClick={() => setIsSearchFilterOpen(current => !current)}
+              className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border transition-colors ${
+                isSearchFilterOpen || isDistancePanelOpen
+                  ? 'border-orange-500/50 bg-orange-500/15 text-orange-400'
+                  : 'border-slate-800 bg-slate-950 text-slate-500 hover:text-orange-400'
+              }`}
+              title="Filtros da Praça"
+              aria-label="Abrir filtros da Praça"
+              id="praca-filter-trigger"
+            >
+              <SlidersHorizontal className="h-4 w-4" />
+            </button>
+          </div>
+
+          {isSearchFilterOpen && (
+            <div className="flex flex-wrap gap-2 rounded-2xl border border-slate-800 bg-slate-950/80 p-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setSocialSubTab('usuarios');
+                  setPracaFilter('recentes');
+                }}
+                className="rounded-xl border border-orange-500/30 bg-orange-500/10 px-3 py-2 text-[9px] font-black uppercase text-orange-300"
+              >
+                Publicações
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setSocialSubTab('usuarios');
+                  document
+                    .querySelector<HTMLElement>('#square-communities')
+                    ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }}
+                className="rounded-xl border border-sky-500/30 bg-sky-500/10 px-3 py-2 text-[9px] font-black uppercase text-sky-300"
+              >
+                Comunidades
+              </button>
+              <button
+                type="button"
+                onClick={() => setPracaFilter('conectados')}
+                className="rounded-xl border border-teal-500/30 bg-teal-500/10 px-3 py-2 text-[9px] font-black uppercase text-teal-300"
+              >
+                Pessoas
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setSocialSubTab('lojas');
+                  setIsSearchFilterOpen(false);
+                }}
+                className="rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-[9px] font-black uppercase text-slate-300"
+              >
+                Marketplace
+              </button>
+              <button
+                type="button"
+                onClick={requestActualLocation}
+                className="flex items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-[9px] font-black uppercase text-slate-300"
+              >
+                <LocateFixed className="h-3.5 w-3.5" />
+                Distância
+              </button>
+            </div>
+          )}
+
+          {isDistancePanelOpen && (
+            <div className="rounded-2xl border border-slate-800 bg-slate-950/80 p-3">
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <span className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider text-slate-300">
+                    <MapPin className="h-3.5 w-3.5 text-orange-400" />
+                    Distância
+                  </span>
+                  <p className="mt-1 text-[9px] text-slate-500">
+                    {locationStatus === 'ready'
+                      ? 'Localização ativa. Lojas sem coordenadas não entram no resultado.'
+                      : 'Autorize sua localização para filtrar as vitrines próximas.'}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsDistancePanelOpen(false)}
+                  className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-900 hover:text-white"
+                  title="Fechar filtro"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+
+              <div className="mt-3 flex items-center gap-3">
+                <input
+                  type="range"
+                  min="1"
+                  max="50"
+                  value={radiusKm}
+                  onChange={event => setRadiusKm(Number(event.target.value))}
+                  className="h-1 flex-1 cursor-pointer appearance-none rounded-lg bg-slate-800 accent-orange-500"
+                  aria-label="Raio de distância em quilômetros"
+                />
+                <span className="w-12 text-right font-mono text-[10px] font-black text-orange-400">
+                  {radiusKm} KM
+                </span>
+              </div>
+            </div>
+          )}
+
+          <div className="flex border-b border-slate-800" id="social-tabs">
+            <button
+              type="button"
+              onClick={() => setSocialSubTab('lojas')}
+              className={`flex-1 border-b-2 pb-2.5 text-xs font-black uppercase tracking-wider transition-all ${
+                socialSubTab === 'lojas'
+                  ? 'border-orange-500 text-white'
+                  : 'border-transparent text-slate-500 hover:text-slate-300'
+              }`}
+            >
+              Ofertas
+            </button>
+            <button
+              type="button"
+              onClick={() => setSocialSubTab('usuarios')}
+              className={`flex-1 border-b-2 pb-2.5 text-xs font-black uppercase tracking-wider transition-all ${
+                socialSubTab === 'usuarios'
+                  ? 'border-orange-500 text-white'
+                  : 'border-transparent text-slate-500 hover:text-slate-300'
+              }`}
+            >
+              Praça
+            </button>
+          </div>
+        </section>
+      )}
 
       {socialSubTab === 'lojas' && (
         <div className="space-y-4 animate-fade-in">
@@ -828,208 +830,10 @@ export function KyrubTab({
 
       {socialSubTab === 'usuarios' && (
         <div className="space-y-5 animate-fade-in">
-          <div className="flex gap-1 rounded-2xl border border-slate-800 bg-slate-900/80 p-1 shadow-lg">
-            {[
-              { id: 'recentes', label: 'Recentes' },
-              { id: 'favoritos', label: 'Favoritos' },
-              { id: 'conectados', label: 'Conectados' },
-            ].map(filter => (
-              <button
-                type="button"
-                key={filter.id}
-                onClick={() =>
-                  setPracaFilter(
-                    filter.id as 'recentes' | 'favoritos' | 'conectados'
-                  )
-                }
-                className={`flex-1 rounded-xl py-2 text-[10px] font-black uppercase tracking-wider transition-all ${
-                  pracaFilter === filter.id
-                    ? 'bg-orange-600 text-white shadow-lg shadow-orange-600/10'
-                    : 'text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                {filter.label}
-              </button>
-            ))}
-          </div>
+          <div id="praca-communities-host" aria-label="Comunidades da Praça" />
 
           {(pracaFilter === 'recentes' || pracaFilter === 'favoritos') && (
             <div className="space-y-4">
-              {pracaFilter === 'recentes' && (
-                <section className="space-y-3 rounded-3xl border border-slate-800/80 bg-slate-900 p-4">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-2">
-                      <Avatar
-                        src={currentUserAvatar}
-                        name={currentUserName}
-                        className="h-9 w-9 rounded-full border border-slate-800 object-cover"
-                      />
-                      <div>
-                        <span className="block text-[10px] font-black text-white">
-                          {currentUserName}
-                        </span>
-                        <span className="text-[8px] font-mono uppercase text-slate-500">
-                          Nova publicação
-                        </span>
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={openOwnRegister}
-                      className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-800 bg-slate-950 text-slate-400 hover:border-orange-500/40 hover:text-orange-400"
-                      title="Meu registro de publicações"
-                      aria-label="Abrir meu registro de publicações"
-                    >
-                      <CircleUserRound className="h-4 w-4" />
-                    </button>
-                  </div>
-
-                  <textarea
-                    value={newPostText}
-                    onChange={event => setNewPostText(event.target.value)}
-                    placeholder="O que está acontecendo no seu negócio ou região?"
-                    className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 text-xs text-white outline-none focus:border-orange-500"
-                    rows={3}
-                  />
-
-                  {postMediaUrls.length > 0 && (
-                    <div className="grid grid-cols-3 gap-2 rounded-2xl border border-slate-800 bg-slate-950 p-2">
-                      {postMediaUrls.map((url, index) => (
-                        <div
-                          key={`${url.slice(0, 32)}-${index}`}
-                          className="relative aspect-square overflow-hidden rounded-xl border border-slate-800"
-                        >
-                          <img
-                            src={url}
-                            alt={`Imagem ${index + 1} da publicação`}
-                            className="h-full w-full object-cover"
-                          />
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setPostMediaUrls(current =>
-                                current.filter((_, itemIndex) => itemIndex !== index)
-                              )
-                            }
-                            className="absolute right-1 top-1 rounded-full bg-slate-950/90 p-1 text-white"
-                            title="Remover imagem"
-                          >
-                            <X className="h-3 w-3" />
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  {taggedUsers.length > 0 && (
-                    <div className="flex flex-wrap gap-1.5">
-                      {taggedUsers.map(name => (
-                        <button
-                          type="button"
-                          key={name}
-                          onClick={() => toggleTaggedUser(name)}
-                          className="flex items-center gap-1 rounded-full border border-teal-500/30 bg-teal-500/10 px-2 py-1 text-[9px] font-bold text-teal-300"
-                          title="Remover marcação"
-                        >
-                          @{name}
-                          <X className="h-2.5 w-2.5" />
-                        </button>
-                      ))}
-                    </div>
-                  )}
-
-                  <div className="relative flex flex-wrap items-center justify-between gap-2 border-t border-slate-800/70 pt-3">
-                    <div className="flex items-center gap-2">
-                      <label
-                        className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-xl border border-slate-800 bg-slate-950 text-slate-400 hover:text-orange-400"
-                        title="Adicionar até 9 imagens"
-                      >
-                        <ImagePlus className="h-4 w-4" />
-                        <input
-                          type="file"
-                          accept="image/*"
-                          multiple
-                          className="hidden"
-                          onChange={readPostImages}
-                        />
-                      </label>
-                      <button
-                        type="button"
-                        onClick={() => setIsTagPickerOpen(current => !current)}
-                        className={`flex h-9 w-9 items-center justify-center rounded-xl border bg-slate-950 transition-colors ${
-                          isTagPickerOpen || taggedUsers.length > 0
-                            ? 'border-teal-500/40 text-teal-400'
-                            : 'border-slate-800 text-slate-400 hover:text-teal-400'
-                        }`}
-                        title="Marcar usuários"
-                      >
-                        <AtSign className="h-4 w-4" />
-                      </button>
-                      <span className="font-mono text-[8px] text-slate-500">
-                        {postMediaUrls.length}/9
-                      </span>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => publishPost('status')}
-                        className="flex items-center gap-1.5 rounded-xl border border-teal-500/30 bg-teal-500/10 px-3 py-2 text-[9px] font-black uppercase text-teal-300 hover:bg-teal-500/20"
-                      >
-                        <Clock3 className="h-3.5 w-3.5" />
-                        Status
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => publishPost('feed')}
-                        className="flex items-center gap-1.5 rounded-xl bg-orange-600 px-3 py-2 text-[9px] font-black uppercase text-white hover:bg-orange-500"
-                      >
-                        <Send className="h-3.5 w-3.5" />
-                        Feed
-                      </button>
-                    </div>
-
-                    {isTagPickerOpen && (
-                      <div className="absolute left-0 right-0 top-full z-20 mt-2 max-h-52 overflow-y-auto rounded-2xl border border-slate-800 bg-slate-950 p-2 shadow-2xl">
-                        {friends.filter(friend => friend.isProfileVisible !== false)
-                          .length === 0 ? (
-                          <p className="p-3 text-center text-[10px] text-slate-500">
-                            Nenhum usuário disponível para marcação.
-                          </p>
-                        ) : (
-                          friends
-                            .filter(friend => friend.isProfileVisible !== false)
-                            .map(friend => (
-                              <button
-                                type="button"
-                                key={friend.id}
-                                onClick={() => toggleTaggedUser(friend.name)}
-                                className="flex w-full items-center justify-between gap-3 rounded-xl px-2 py-2 text-left hover:bg-slate-900"
-                              >
-                                <span className="flex min-w-0 items-center gap-2">
-                                  <Avatar
-                                    src={friend.avatar}
-                                    name={friend.name}
-                                    className="h-7 w-7 shrink-0 rounded-full border border-slate-800 object-cover"
-                                  />
-                                  <span className="truncate text-[10px] font-bold text-slate-300">
-                                    {friend.name}
-                                  </span>
-                                </span>
-                                <span className="text-[9px] font-mono text-teal-400">
-                                  {taggedUsers.includes(friend.name)
-                                    ? 'Marcado'
-                                    : 'Marcar'}
-                                </span>
-                              </button>
-                            ))
-                        )}
-                      </div>
-                    )}
-                  </div>
-                </section>
-              )}
-
               <div className="space-y-4">
                 {feedPosts.map(post => (
                   <article
