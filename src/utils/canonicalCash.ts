@@ -29,6 +29,8 @@ import {
   getStoreCashSessionDocumentPath,
   getStoreCashSessionsCollectionPath,
   getStoreDocumentPath,
+  hasStorePermission,
+  type StorePermission,
   type StoreRole,
 } from './storeSecurity';
 
@@ -185,6 +187,15 @@ const getDeviceId = (): string => {
 
 const createRecordId = (prefix: string, userId: string): string =>
   `${prefix}-${Date.now().toString(36)}-${userId.slice(0, 8)}-${Math.random().toString(36).slice(2, 8)}`;
+
+const requireCashPermission = (
+  context: CashStoreContext,
+  permission: StorePermission
+): void => {
+  if (!hasStorePermission(context.role, permission)) {
+    throw new Error('Seu papel não possui permissão para executar esta ação no caixa.');
+  }
+};
 
 export const getCashDirection = (
   type: CashMovementType,
@@ -506,6 +517,7 @@ export const openCashSession = async (
   context: CashStoreContext,
   openingAmount: number
 ): Promise<string> => {
+  requireCashPermission(context, 'cash.manage');
   if (!Number.isFinite(openingAmount) || openingAmount < 0) {
     throw new Error('Informe um valor inicial válido.');
   }
@@ -564,6 +576,7 @@ export const addCashMovement = async (
   context: CashStoreContext,
   input: AddCashMovementInput
 ): Promise<string> => {
+  requireCashPermission(context, 'cash.manage');
   const description = input.description.trim();
   const category = input.category.trim();
   const reason = input.reason?.trim() ?? '';
@@ -618,6 +631,7 @@ export const closeCashSession = async (
   countedAmount: number,
   closeReason: string
 ): Promise<void> => {
+  requireCashPermission(context, 'cash.manage');
   if (!Number.isFinite(countedAmount) || countedAmount < 0) {
     throw new Error('Informe o valor contado no caixa.');
   }
@@ -691,6 +705,7 @@ export interface CashSyncStats {
 export const syncPendingCashRecords = async (
   context: CashStoreContext
 ): Promise<CashSyncStats> => {
+  requireCashPermission(context, 'cash.manage');
   const sessions = await cashDb.sessions
     .filter(session => session.storeId === context.store.id && Boolean(session.canonicalId))
     .toArray();
