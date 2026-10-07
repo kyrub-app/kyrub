@@ -626,7 +626,8 @@ export default function App() {
   }, [notes, isLoggedIn]);
 
   // The private ERP store is owned by the authenticated Firebase user.
-  const activeRetailerId = authenticatedUserId;
+  const selectedStaffAccess = staffAccesses.find(access => access.store.id === selectedStaffStoreId) ?? null;
+  const activeRetailerId = selectedStaffAccess?.store.legacyTenantId || authenticatedUserId;
 
   const activeStore = useMemo<Store>(() => {
     return userStore ?? createEmptyUserStore(
@@ -1282,8 +1283,7 @@ if (newMomentPublishToPraca) {
       setCurrentPath('/');
     };
 
-    const selectedStaffAccess =
-      staffAccesses.find(access => access.store.id === selectedStaffStoreId) ?? staffAccesses[0] ?? null;
+    const routeStaffAccess = selectedStaffAccess ?? staffAccesses[0] ?? null;
 
     return (
       <StaffViewport
@@ -1294,9 +1294,10 @@ if (newMomentPublishToPraca) {
         selectedStoreId={selectedStaffStoreId}
         onSelectStore={setSelectedStaffStoreId}
         onGoBackToMain={handleGoBackToMain}
-        onEnterErp={selectedStaffAccess ? () => {
+        onEnterErp={routeStaffAccess ? () => {
+          setSelectedStaffStoreId(routeStaffAccess.store.id);
           setGestaoRole('retailer');
-          setActiveSubTab(canStoreRoleAccessErpMenuItem(selectedStaffAccess.role, 'clientes') ? 'clientes' : canStoreRoleAccessErpMenuItem(selectedStaffAccess.role, 'pedidos') ? 'pedidos' : 'ponto');
+          setActiveSubTab(canStoreRoleAccessErpMenuItem(routeStaffAccess.role, 'clientes') ? 'clientes' : canStoreRoleAccessErpMenuItem(routeStaffAccess.role, 'pedidos') ? 'pedidos' : 'ponto');
           setIsGestaoOpen(true);
           window.history.pushState({}, '', '/');
           setCurrentPath('/');
