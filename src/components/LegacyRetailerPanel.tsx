@@ -577,9 +577,9 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = ({
                       <Settings className="w-5 h-5" />
                     </div>
                     <div>
-                      <h4 className="text-xs font-black text-white uppercase group-hover:text-purple-400 transition-colors">INTEGRAÇÕES & SANDBOX</h4>
+                      <h4 className="text-xs font-black text-white uppercase group-hover:text-purple-400 transition-colors">INTEGRAÇÕES</h4>
                       <p className="text-[10px] text-slate-400 leading-relaxed mt-0.5">
-                        API tokens, Webhooks, sandbox de simulação e faturadores externos.
+                        API tokens, webhooks e canais externos validados pelo backend.
                       </p>
                     </div>
                   </button>
@@ -700,7 +700,7 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = ({
                     />
                   )}
 
-                  {/* SUBMODULE: INTEGRATIONS & SANDBOX */}
+                  {/* SUBMODULE: INTEGRATIONS */}
                   {activeGerencialModule === 'integracoes' && (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                       
