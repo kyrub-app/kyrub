@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { verifyFirebaseIdToken } from '../ai/consultantAuth.js';
 import { loadOwnerStoreInstitutionalRepresentation } from '../store/storeInstitutionalIdentityService.js';
 import { adminDb } from '../firebaseAdmin.js';
-import { hasStorePermission, parseStoreMember, type StorePermission } from '../../src/utils/storeSecurity.js';
+import { hasStorePermission, parseStoreMember, type StorePermission, type StoreRole } from '../../src/utils/storeSecurity.js';
 import {
   createInPersonOrder,
   listInPersonOrderCatalog,
@@ -41,10 +41,11 @@ const authorizeStoreMember = async (input: {
   if (!token) throw new Error('AUTH_REQUIRED');
   const identity = await verifyFirebaseIdToken(token);
   if (identity.uid === input.storeId) {
-    return loadOwnerStoreInstitutionalRepresentation({
+    const representation = await loadOwnerStoreInstitutionalRepresentation({
       storeId: input.storeId,
       authenticatedUserId: identity.uid,
     });
+    return { authenticatedUserId: representation.authenticatedUserId, role: 'owner' as StoreRole };
   }
   const tenantSnapshot = await adminDb.doc('tenants/' + input.storeId).get();
   const canonicalStoreId = clean(tenantSnapshot.data()?.canonicalStoreId);
@@ -54,7 +55,7 @@ const authorizeStoreMember = async (input: {
   if (!member || member.status !== 'active' || !hasStorePermission(member.role, input.permission)) {
     throw new Error('IN_PERSON_ORDER_FORBIDDEN');
   }
-  return { authenticatedUserId: identity.uid };
+  return { authenticatedUserId: identity.uid, role: member.role };
 };
 
 const mapError = (error: unknown): { status: number; message: string; code?: string } => {
@@ -225,6 +226,7 @@ export const createInPersonOrderRouter = (): Router => {
       const order = await createInPersonOrder({
         authenticatedUserId: representation.authenticatedUserId,
         authorizedStoreId: storeId,
+        actorRole: representation.role,
         value: request.body,
       });
       response.status(201).json({ order });
