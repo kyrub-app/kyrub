@@ -6,8 +6,16 @@ const profileSource = readFileSync(
   'src/components/modals/UserProfileModal.tsx',
   'utf8'
 );
-const bridgeSource = readFileSync(
-  'src/components/SocialPublishingBridge.tsx',
+const savedLibrarySource = readFileSync(
+  'src/utils/savedLibrary.ts',
+  'utf8'
+);
+const publicFeedSource = readFileSync(
+  'src/components/PublicSocialFeedPanel.tsx',
+  'utf8'
+);
+const communitiesSource = readFileSync(
+  'src/components/ProfileCommunitiesCloudBridge.tsx',
   'utf8'
 );
 const kyrubWrapperSource = readFileSync(
@@ -16,23 +24,20 @@ const kyrubWrapperSource = readFileSync(
 );
 const globalCss = readFileSync('src/index.css', 'utf8');
 
-test('Meu perfil is the primary social publishing surface', () => {
-  assert.match(profileSource, /id="profile-publication-composer"/);
-  assert.match(profileSource, /Nova publicação/);
-  assert.match(profileSource, /Minhas publicações/);
-  assert.match(profileSource, /id="profile-publication-register"/);
-  assert.match(profileSource, /Visível na Praça/);
-  assert.match(profileSource, /Publicações/);
-  assert.match(profileSource, /Status/);
+test('Meu perfil is a private personal center instead of a publishing surface', () => {
+  assert.match(profileSource, /Seu centro pessoal é privado/);
+  assert.match(profileSource, /Minhas comunidades/);
+  assert.match(profileSource, /Conectados/);
+  assert.match(profileSource, /Salvos/);
+  assert.match(profileSource, /Conta/);
+  assert.doesNotMatch(profileSource, /id="profile-publication-composer"/);
+  assert.doesNotMatch(profileSource, /id="profile-publication-register"/);
+  assert.doesNotMatch(profileSource, /publicationType: 'feed' \| 'status'/);
 });
 
-test('the Clips action opens account, data, security and verification settings', () => {
-  assert.match(profileSource, /<Copy className="h-4 w-4"/);
-  assert.match(
-    profileSource,
-    /aria-label="Abrir informações e configurações do perfil"/
-  );
-  assert.match(profileSource, /Informações e configurações/);
+test('Conta keeps account, data, security and verification settings', () => {
+  assert.match(profileSource, /setIsSettingsOpen\(true\)/);
+  assert.match(profileSource, /ProfileSettingsPanel/);
   assert.match(profileSource, /label: 'Conta'/);
   assert.match(profileSource, /label: 'Dados'/);
   assert.match(profileSource, /label: 'Segurança'/);
@@ -40,14 +45,15 @@ test('the Clips action opens account, data, security and verification settings',
   assert.match(profileSource, /Perfil visível na Praça/);
 });
 
-test('profile publications remain connected to the realtime Praça feed', () => {
-  assert.match(profileSource, /getUserPostsKey/);
-  assert.match(profileSource, /kyrub-social-posts-updated/);
-  assert.match(profileSource, /publicationType: 'feed' \| 'status'/);
-  assert.match(profileSource, /Publicação enviada para o feed da Praça/);
-
-  assert.match(bridgeSource, /kyrub-social-posts-updated/);
-  assert.match(bridgeSource, /collection\(db, 'social_posts'\)/);
+test('Praça and Comunidades save canonical publications into the private library', () => {
+  assert.match(savedLibrarySource, /users', user\.uid, 'savedItems'/);
+  assert.match(savedLibrarySource, /sourceKind: SavedSourceKind/);
+  assert.match(savedLibrarySource, /path = item\.sourceKind === 'community' \? 'community_posts' : 'social_posts'/);
+  assert.match(savedLibrarySource, /setSavedPublicationSelections/);
+  assert.match(profileSource, /subscribeSavedPublications/);
+  assert.match(profileSource, /subscribeSelections/);
+  assert.match(publicFeedSource, /savePublication\('praca', post\.id\)/);
+  assert.match(communitiesSource, /savePublication\('community', post\.id\)/);
   assert.match(kyrubWrapperSource, /usePublicSocialFeed/);
   assert.match(kyrubWrapperSource, /<PublicSocialFeedPanel/);
 });
