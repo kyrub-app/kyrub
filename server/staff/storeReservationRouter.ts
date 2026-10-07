@@ -6,6 +6,20 @@ import { hasStorePermission, parseStoreMember } from '../../src/utils/storeSecur
 
 const clean = (value: unknown): string => typeof value === 'string' ? value.trim() : '';
 const bearer = (value: string): string => /^Bearer\s+(.+)$/i.exec(value)?.[1]?.trim() ?? '';
+const LOCAL_DATE_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/;
+const isValidLocalDateTime = (value: string): boolean => {
+  if (!LOCAL_DATE_TIME.test(value)) return false;
+  const [date, time] = value.split('T');
+  const [year, month, day] = date.split('-').map(Number);
+  const [hour, minute, second] = time.split(':').map(Number);
+  const candidate = new Date(Date.UTC(year, month - 1, day, hour, minute, second));
+  return candidate.getUTCFullYear() === year &&
+    candidate.getUTCMonth() === month - 1 &&
+    candidate.getUTCDate() === day &&
+    candidate.getUTCHours() === hour &&
+    candidate.getUTCMinutes() === minute &&
+    candidate.getUTCSeconds() === second;
+};
 
 const authorize = async (authorization: string, legacyStoreId: string) => {
   const token = bearer(authorization);
