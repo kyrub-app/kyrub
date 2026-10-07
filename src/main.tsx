@@ -4,7 +4,6 @@ import App from './App.tsx';
 import { AppErrorBoundary } from './components/AppErrorBoundary';
 import { AdminMercadoPagoOAuthBridge } from './components/admin/AdminMercadoPagoOAuthBridge';
 import { GerencialIntegrationsNativeBridge } from './components/GerencialIntegrationsNativeBridge';
-import { HeaderDiscoveryShortcutActivationBridge } from './components/HeaderDiscoveryShortcutActivationBridge';
 import { KyrubAiConversationCloudSyncGate } from './components/KyrubAiConversationCloudSyncGate';
 import { KyrubiaMarketplaceFilterGuard } from './components/KyrubiaMarketplaceFilterGuard';
 import { OfficialKnowledgeSemanticSetupBridge } from './components/OfficialKnowledgeSemanticSetupBridge';
@@ -23,7 +22,6 @@ import { ProfileContactGroupsPolishBridge } from './components/ProfileContactGro
 import { ProfileNextPolishBridge } from './components/ProfileNextPolishBridge';
 import { ProfileOffersFiltersBridge } from './components/ProfileOffersFiltersBridge';
 import { ProfilePublishingDestinationsCloudBridge } from './components/ProfilePublishingDestinationsCloudBridge';
-import { WorkspacePrimaryNavigationBridge } from './components/WorkspacePrimaryNavigationBridge';
 import { KyrubOfficialKnowledgeRuntimeBridge } from './knowledge/KyrubOfficialKnowledgeRuntimeBridge';
 import { KyrubActivityLogSetupBridge } from './observability/KyrubActivityLogSetupBridge';
 import { KyrubActivityObserverBridge } from './observability/KyrubActivityObserverBridge';
@@ -70,8 +68,6 @@ createRoot(rootElement).render(
           <OfficialKnowledgeSemanticSetupBridge />
           <App />
           <KyrubiaMarketplaceFilterGuard />
-          <WorkspacePrimaryNavigationBridge />
-          <HeaderDiscoveryShortcutActivationBridge />
         </>
       </KyrubAiConversationCloudSyncGate>
     </AppErrorBoundary>
