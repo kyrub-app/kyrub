@@ -221,3 +221,14 @@ test('finance workspace has one canonical owner authority and no session-only le
   assert.match(retailerPanel, /auth\.currentUser\?\.uid !== activeRetailerId/);
   assert.match(retailerPanel, /<StoreFinanceCompositeRuntime storeId=\{activeRetailerId\}/);
 });
+
+test('PDV canonical provenance records the authenticated operator role', () => {
+  assert.match(inPersonOrderRouter, /role: member\.role/);
+  assert.match(inPersonOrderRouter, /role: 'owner' as StoreRole/);
+  assert.match(inPersonOrderRouter, /actorRole: representation\.role/);
+  assert.match(inPersonOrderService, /actorRole\?: StoreRole/);
+  assert.match(inPersonOrderService, /createdByRole: actorRole/);
+  assert.match(inPersonOrderService, /originatedByRole: actorRole/);
+  assert.doesNotMatch(inPersonOrderService, /createdByRole: 'owner'/);
+  assert.doesNotMatch(inPersonOrderService, /originatedByRole: 'owner'/);
+});
