@@ -60,3 +60,13 @@ test('order API separates actor identity from selected store and enforces member
   assert.match(orderInventoryRouter, /response\.status\(403\)/);
   assert.match(orderInventoryRouter, /permissionForOrderStatus/);
 });
+
+
+const inPersonOrderRouter = readFileSync(new URL('../server/attendance/inPersonOrderRouter.ts', import.meta.url), 'utf8');
+test('PDV authorizes active staff membership by operation permission', () => {
+  assert.match(inPersonOrderRouter, /authorizeStoreMember/);
+  assert.match(inPersonOrderRouter, /permission: 'orders\.read'/);
+  assert.match(inPersonOrderRouter, /permission: 'orders\.create'/);
+  assert.match(inPersonOrderRouter, /member\.status !== 'active'/);
+  assert.match(inPersonOrderRouter, /hasStorePermission\(member\.role, input\.permission\)/);
+});
