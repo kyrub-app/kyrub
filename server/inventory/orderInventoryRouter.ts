@@ -44,7 +44,7 @@ const bearerToken = (request: Request): string => {
   return /^Bearer\s+(.+)$/i.exec(authorization)?.[1]?.trim() ?? '';
 };
 
-const authenticatedTenantId = async (request: Request): Promise<string> => {
+const authenticatedUserId = async (request: Request): Promise<string> => {
   const token = bearerToken(request);
   if (!token) throw new Error('AUTH_REQUIRED');
   try {
@@ -266,7 +266,8 @@ export const createOrderInventoryRouter = (): Router => {
 
   router.get('/provider-sync/99food/pending', async (request, response) => {
     try {
-      const tenantId = await authenticatedTenantId(request);
+      const userId = await authenticatedUserId(request);
+      const tenantId = clean(request.get('x-kyrub-store-id')) || userId;
       response.json(await listPendingNinetyNineFoodStatusSyncs(tenantId));
     } catch (error) {
       errorResponse(response, error);
@@ -275,7 +276,8 @@ export const createOrderInventoryRouter = (): Router => {
 
   router.post('/:orderId/provider-sync/99food', async (request, response) => {
     try {
-      const tenantId = await authenticatedTenantId(request);
+      const userId = await authenticatedUserId(request);
+      const tenantId = clean(request.get('x-kyrub-store-id')) || userId;
       const orderId = clean(request.params.orderId);
       const authorizationValue = request.body?.providerWriteAuthorization;
       const authorizationCandidate =
@@ -371,7 +373,8 @@ export const createOrderInventoryRouter = (): Router => {
 
   router.post('/:orderId/reconcile-inventory', async (request, response) => {
     try {
-      const tenantId = await authenticatedTenantId(request);
+      const userId = await authenticatedUserId(request);
+      const tenantId = clean(request.get('x-kyrub-store-id')) || userId;
       response.json(
         await reconcileOrderInventoryAfterMutation(
           tenantId,
@@ -385,7 +388,8 @@ export const createOrderInventoryRouter = (): Router => {
 
   router.post('/:orderId/attendance-review', async (request, response) => {
     try {
-      const tenantId = await authenticatedTenantId(request);
+      const userId = await authenticatedUserId(request);
+      const tenantId = clean(request.get('x-kyrub-store-id')) || userId;
       response.json(
         await reviewAttendanceOrderAuthoritatively(
           tenantId,
@@ -400,7 +404,8 @@ export const createOrderInventoryRouter = (): Router => {
 
   router.post('/:orderId/status', async (request, response) => {
     try {
-      const tenantId = await authenticatedTenantId(request);
+      const userId = await authenticatedUserId(request);
+      const tenantId = clean(request.get('x-kyrub-store-id')) || userId;
       const orderId = request.params.orderId;
       const status = typeof request.body?.status === 'string'
         ? request.body.status as InventoryOrderStatus
