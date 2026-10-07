@@ -12,6 +12,7 @@ import {
   type OrderStatusDecisionInput,
 } from './orderInventoryService';
 import type { InventoryOrderStatus } from '../../shared/inventoryConsumption';
+import { hasStorePermission, parseStoreMember, type StorePermission } from '../../src/utils/storeSecurity';
 
 const SUPPORTED_STATUSES = new Set<InventoryOrderStatus>([
   'accepted',
@@ -54,6 +55,29 @@ const authenticatedUserId = async (request: Request): Promise<string> => {
       throw new Error('AUTH_UNAVAILABLE');
     }
     throw new Error('AUTH_REQUIRED');
+  }
+};
+
+const permissionForOrderStatus = (status: InventoryOrderStatus): StorePermission =>
+  status === 'cancelled' || status === 'rejected'
+    ? 'orders.cancel'
+    : status === 'preparing' || status === 'ready'
+      ? 'production.update'
+      : 'orders.transfer';
+
+const authorizeStoreOperation = async (
+  userId: string,
+  tenantId: string,
+  permission: StorePermission
+): Promise<void> => {
+  if (userId === tenantId) return;
+  const tenantSnapshot = await adminDb.doc(`tenants/${tenantId}`).get();
+  const canonicalStoreId = clean(tenantSnapshot.data()?.canonicalStoreId);
+  if (!canonicalStoreId) throw new Error('STORE_ACCESS_DENIED');
+  const memberSnapshot = await adminDb.doc(`stores/${canonicalStoreId}/members/${userId}`).get();
+  const member = parseStoreMember(memberSnapshot.data());
+  if (!member || member.status !== 'active' || !hasStorePermission(member.role, permission)) {
+    throw new Error('STORE_ACCESS_DENIED');
   }
 };
 
@@ -100,6 +124,10 @@ const errorResponse = (response: Response, error: unknown): void => {
   const message = error instanceof Error ? error.message : String(error);
   if (message === 'AUTH_REQUIRED' || /id-token|expired|revoked/i.test(message)) {
     response.status(401).json({ error: 'Faça login novamente.' });
+    return;
+  }
+  if (message === 'STORE_ACCESS_DENIED') {
+    response.status(403).json({ error: 'Seu papel não possui permissão para executar esta ação na loja.' });
     return;
   }
   if (message === 'AUTH_UNAVAILABLE') {
@@ -414,6 +442,7 @@ export const createOrderInventoryRouter = (): Router => {
         response.status(400).json({ error: 'Status do pedido não suportado.' });
         return;
       }
+      await authorizeStoreOperation(userId, tenantId, permissionForOrderStatus(status));
 
       const providerAuthorizationSupplied =
         request.body?.providerWriteAuthorization !== undefined;
