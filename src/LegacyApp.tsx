@@ -260,7 +260,7 @@ export default function App() {
   const [userCoords, setUserCoords] = useState<{ lat: number; lng: number } | null>(null);
 
   // Mobile Bottom Navigation
-  const [activeTab, setActiveTab] = useState<'perfil' | 'renda' | 'kyrub'>('renda');
+  const [activeTab, setActiveTab] = useState<'perfil' | 'renda' | 'kyrub' | 'cairubia'>('renda');
 
   // Slide-overs & ERP Overlays
   const [isWalletOpen, setIsWalletOpen] = useState(false);
@@ -1307,66 +1307,72 @@ if (newMomentPublishToPraca) {
         <div className="flex-1 flex flex-col min-h-screen">
 
           {/* 1. TOP MOBILE NAV HEADER */}
-          <header className="border-b border-slate-900 bg-slate-950/90 backdrop-blur-md sticky top-0 z-40 px-4 py-3 flex items-center justify-between" id="app-header">
+          <header className="border-b border-slate-900 bg-slate-950/90 backdrop-blur-md sticky top-0 z-40 px-3 py-3 flex items-center gap-2" id="app-header">
             <button
-              onClick={() => setShowUserProfileModal(true)}
-              className="flex items-center gap-2.5 hover:opacity-90 transition-all text-left cursor-pointer focus:outline-none group"
-              id="header-user-profile-trigger"
+              onClick={async () => {
+                try {
+                  await signOut(auth);
+                  setIsLoggedIn(false);
+                  setGpsGranted(false);
+                  triggerToast('Você saiu do ecossistema Kyrub.', 'info');
+                } catch (e) {
+                  console.error('Sign out error:', e);
+                  setIsLoggedIn(false);
+                  setGpsGranted(false);
+                }
+              }}
+              className="p-2 rounded-xl bg-slate-900 border border-slate-800 text-slate-400 hover:text-red-400 transition-all mr-auto"
+              title="Sair"
+              aria-label="Sair"
             >
-              <div className="relative">
-                <img
-                  src={profilePhotoUrl || undefined}
-                  alt={profileName}
-                  className="w-9 h-9 rounded-full object-cover border-2 border-orange-500/80 group-hover:border-orange-400 transition-colors"
-                />
-                <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-emerald-500 border-2 border-slate-950 rounded-full"></span>
-              </div>
-              <div>
-                <span className="font-mono text-[8px] tracking-wider text-orange-400 font-bold uppercase block">Meu Perfil ⚙️</span>
-                <h1 className="text-xs font-black text-white uppercase tracking-tight flex items-center gap-1 group-hover:text-orange-300 transition-colors">
-                  <span>{profileName.split(' ')[0]}</span>
-                </h1>
-              </div>
+              <LogOut className="w-4 h-4 rotate-180" />
             </button>
 
-            <div className="flex items-center gap-3">
-              {/* Wallet and account balance in Header for ease of use with privacy mask */}
-              <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-800 text-teal-400 font-mono text-[11px]" id="header-wallet-balance">
-                <button
-                  onClick={() => setIsWalletOpen(true)}
-                  className="flex items-center gap-1.5 hover:text-teal-300 transition-all font-mono"
-                  title="Abrir Carteira BaaS"
-                >
-                  <Wallet className="w-3.5 h-3.5 shrink-0" />
-                  <span>{showBalance ? `R$ ${walletBalance.toFixed(2)}` : 'R$ •••••'}</span>
-                </button>
-                <button
-                  onClick={() => setShowBalance(!showBalance)}
-                  className="text-slate-400 hover:text-slate-200 p-0.5 ml-0.5 transition-all flex items-center justify-center shrink-0"
-                  title={showBalance ? "Ocultar Saldo" : "Exibir Saldo"}
-                  id="toggle-balance-visibility-btn"
-                >
-                  {showBalance ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                </button>
-              </div>
+            <button
+              onClick={() => setShowUserProfileModal(true)}
+              className="w-10 h-10 rounded-xl border border-slate-800 bg-slate-900 flex items-center justify-center overflow-hidden hover:border-orange-500/40 transition-colors"
+              id="header-user-profile-trigger"
+              title="Meu perfil"
+              aria-label="Abrir meu perfil"
+            >
+              {profilePhotoUrl ? (
+                <img src={profilePhotoUrl} alt="" className="w-full h-full object-cover" />
+              ) : (
+                <User className="w-4 h-4 text-slate-400" />
+              )}
+            </button>
 
+            <button
+              onClick={() => {
+                setSocialSubTab('lojas');
+                setActiveTab('kyrub');
+              }}
+              className="w-10 h-10 rounded-xl border border-slate-800 bg-slate-900 flex items-center justify-center text-slate-400 hover:text-orange-300 hover:border-orange-500/40 transition-colors"
+              id="header-marketplace-trigger"
+              title="Marketplace"
+              aria-label="Abrir Marketplace"
+            >
+              <StoreIcon className="w-4 h-4" />
+            </button>
+
+            <button
+              onClick={() => setActiveTab('perfil')}
+              className="w-10 h-10 rounded-xl border border-slate-800 bg-slate-900 flex items-center justify-center text-slate-400 hover:text-orange-300 hover:border-orange-500/40 transition-colors"
+              id="header-tasks-trigger"
+              title="Tarefas"
+              aria-label="Abrir Tarefas"
+            >
+              <CheckSquare className="w-4 h-4" />
+            </button>
+
+            <div className="w-10 h-10 rounded-xl bg-slate-900 border border-slate-800 text-teal-400 flex items-center justify-center" id="header-wallet-balance">
               <button
-                onClick={async () => {
-                  try {
-                    await signOut(auth);
-                    setIsLoggedIn(false);
-                    setGpsGranted(false);
-                    triggerToast('Você saiu do ecossistema Kyrub.', 'info');
-                  } catch (e) {
-                    console.error('Sign out error:', e);
-                    setIsLoggedIn(false);
-                    setGpsGranted(false);
-                  }
-                }}
-                className="p-2 rounded-xl bg-slate-900 border border-slate-800 text-slate-400 hover:text-red-400 transition-all"
-                title="Sair"
+                onClick={() => setIsWalletOpen(true)}
+                className="w-full h-full flex items-center justify-center hover:text-teal-300 transition-all"
+                title="Abrir Carteira"
+                aria-label="Abrir Carteira"
               >
-                <LogOut className="w-3.5 h-3.5" />
+                <Wallet className="w-4 h-4" />
               </button>
             </div>
           </header>
@@ -1426,7 +1432,7 @@ if (newMomentPublishToPraca) {
               />
             )}
 
-            {/* GUIA 3: KYRUB (Social Feed, Discovery & Proximity map) */}
+            {/* GUIA 3: PRAÇA (Social Feed, Communities & Discovery) */}
             {activeTab === 'kyrub' && (
               <KyrubTab
                 searchQuery={searchQuery}
@@ -1467,18 +1473,27 @@ if (newMomentPublishToPraca) {
                 getDistance={getDistance}
               />
             )}
+
+            {/* GUIA 4: CAIRÚBIA (AI workspace mounted by KyrubAiWorkspaceBridge) */}
+            {activeTab === 'cairubia' && (
+              <div id="kyrub-tab-container" aria-label="Cairúbia" />
+            )}
           </main>
 
           {/* 3. FIXED BOTTOM NAVIGATION BAR */}
           <nav className="fixed bottom-0 left-0 right-0 z-40 bg-slate-950/95 border-t border-slate-900 py-3 px-6 flex justify-around items-center backdrop-blur-lg shadow-2xl">
             <button
-              onClick={() => setActiveTab('perfil')}
+              onClick={() => {
+                setSocialSubTab('usuarios');
+                setPracaFilter('recentes');
+                setActiveTab('kyrub');
+              }}
               className={`flex flex-col items-center gap-1 text-[10px] font-bold uppercase transition-all ${
-                activeTab === 'perfil' ? 'text-orange-500' : 'text-slate-500 hover:text-slate-300'
+                activeTab === 'kyrub' ? 'text-orange-500' : 'text-slate-500 hover:text-slate-300'
               }`}
             >
-              <CheckSquare className="w-5 h-5" />
-              <span>Notas</span>
+              <Compass className="w-5 h-5" />
+              <span>Praça</span>
             </button>
             <button
               onClick={() => setActiveTab('renda')}
@@ -1490,13 +1505,13 @@ if (newMomentPublishToPraca) {
               <span>Renda</span>
             </button>
             <button
-              onClick={() => setActiveTab('kyrub')}
+              onClick={() => setActiveTab('cairubia')}
               className={`flex flex-col items-center gap-1 text-[10px] font-bold uppercase transition-all ${
-                activeTab === 'kyrub' ? 'text-orange-500' : 'text-slate-500 hover:text-slate-300'
+                activeTab === 'cairubia' ? 'text-orange-500' : 'text-slate-500 hover:text-slate-300'
               }`}
             >
-              <Compass className="w-5 h-5" />
-              <span>Kyrub</span>
+              <Sparkles className="w-5 h-5" />
+              <span>Cairúbia</span>
             </button>
           </nav>
         </div>
@@ -1835,6 +1850,25 @@ if (newMomentPublishToPraca) {
         setKycCnh={setKycCnh}
         kycCnpj={kycCnpj}
         setKycCnpj={setKycCnpj}
+        friends={friends}
+        connectionRequests={connectionRequests}
+        onOpenCommunities={() => {
+          setShowUserProfileModal(false);
+          setSocialSubTab('usuarios');
+          setPracaFilter('recentes');
+          setActiveTab('kyrub');
+          window.setTimeout(() => {
+            document
+              .querySelector<HTMLElement>('#square-communities')
+              ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }, 0);
+        }}
+        onOpenConnections={() => {
+          setShowUserProfileModal(false);
+          setSocialSubTab('usuarios');
+          setPracaFilter('conectados');
+          setActiveTab('kyrub');
+        }}
         triggerToast={triggerToast}
       />
 
