@@ -1582,10 +1582,6 @@ if (newMomentPublishToPraca) {
       <WalletModal
         isOpen={isWalletOpen}
         onClose={() => setIsWalletOpen(false)}
-        walletBalance={walletBalance}
-        setWalletBalance={setWalletBalance}
-        walletHistory={walletHistory}
-        setWalletHistory={setWalletHistory}
         triggerToast={triggerToast}
       />
 
@@ -1661,10 +1657,6 @@ if (newMomentPublishToPraca) {
         deliveries={deliveries}
         setDeliveries={setDeliveries}
         profileName={profileName}
-        walletBalance={walletBalance}
-        setWalletBalance={setWalletBalance}
-        walletHistory={walletHistory}
-        setWalletHistory={setWalletHistory}
         triggerToast={triggerToast}
       />
 
@@ -1707,10 +1699,6 @@ if (newMomentPublishToPraca) {
         deliveries={deliveries}
         setDeliveries={setDeliveries}
         profileName={profileName}
-        walletBalance={walletBalance}
-        setWalletBalance={setWalletBalance}
-        walletHistory={walletHistory}
-        setWalletHistory={setWalletHistory}
         triggerToast={triggerToast}
       />
 
@@ -1722,9 +1710,6 @@ if (newMomentPublishToPraca) {
         freelanceJobs={freelanceJobs}
         setFreelanceJobs={setFreelanceJobs}
         profileName={profileName}
-        walletHistory={walletHistory}
-        setWalletHistory={setWalletHistory}
-        setWalletBalance={setWalletBalance}
         triggerToast={triggerToast}
       />
 
