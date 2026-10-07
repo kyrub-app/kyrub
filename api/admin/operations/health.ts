@@ -25,6 +25,23 @@ export default async function handler(request: RequestLike, response: ResponseLi
   const transport = headerValue(request.query?.transport);
   const method = (request.method ?? 'GET').toUpperCase();
 
+  if (transport === 'social-moderation-list' || transport === 'social-moderation-remove') {
+    const expectedMethod = transport === 'social-moderation-list' ? 'GET' : 'POST';
+    if (method !== expectedMethod) { response.status(405).json({ error: 'Método não permitido.', code: 'METHOD_NOT_ALLOWED' }); return; }
+    let mapError: ((error: unknown) => HttpErrorResult) | null = null;
+    try {
+      const moderation = await import('../../../server/admin/socialModerationService.js');
+      mapError = moderation.mapSocialModerationError;
+      if (transport === 'social-moderation-list') { response.status(200).json({ posts: await moderation.listModerationPosts(authorization) }); return; }
+      const body = bodyRecord(request.body);
+      response.status(200).json(await moderation.removeModeratedPost(authorization, body.postId, body.reason));
+    } catch (error) {
+      const mapped = mapError ? mapError(error) : unavailable('Não foi possível acessar a moderação agora.');
+      response.status(mapped.status).json(mapped.body);
+    }
+    return;
+  }
+
   if (transport === 'integration-readiness') {
     if (method !== 'GET') { response.status(405).json({ error: 'Método não permitido.', code: 'METHOD_NOT_ALLOWED' }); return; }
     let mapError: ((error: unknown) => HttpErrorResult) | null = null;
