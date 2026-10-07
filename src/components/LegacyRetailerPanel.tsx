@@ -98,60 +98,8 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = ({
     return () => clearInterval(timer);
   }, []);
 
-  // 1. CLIENTS PANEL STATES
-  const [clientSearchCode, setClientSearchCode] = useState('');
-  const [clientCategory, setClientCategory] = useState<string>('GERAL');
-  const [clientItemCount, setClientItemCount] = useState(1);
-  const [clientSubTab, setClientSubTab] = useState<string>('GERAL');
-  const [activeTickets, setActiveTickets] = useState<any[]>([]);
-  const [activeTicketsCacheStoreId, setActiveTicketsCacheStoreId] =
-    useState('');
-
-  useEffect(() => {
-    if (atendimentoSpaces && atendimentoSpaces.length > 0) {
-      if (!atendimentoSpaces.includes(clientSubTab)) {
-        setClientSubTab(atendimentoSpaces[0]);
-      }
-      if (!atendimentoSpaces.includes(clientCategory)) {
-        setClientCategory(atendimentoSpaces[0]);
-      }
-    }
-  }, [atendimentoSpaces]);
-
-  useEffect(() => {
-    if (!activeRetailerId) {
-      setActiveTickets([]);
-      setActiveTicketsCacheStoreId('');
-      return;
-    }
-
-    try {
-      const saved = localStorage.getItem(
-        getLegacyActiveTicketsStorageKey(activeRetailerId)
-      );
-      const parsed = saved ? JSON.parse(saved) : [];
-      setActiveTickets(Array.isArray(parsed) ? parsed : []);
-    } catch (error) {
-      console.warn('Falha ao ler atendimentos locais da loja:', error);
-      setActiveTickets([]);
-    }
-
-    setActiveTicketsCacheStoreId(activeRetailerId);
-  }, [activeRetailerId]);
-
-  useEffect(() => {
-    if (
-      !activeRetailerId ||
-      activeTicketsCacheStoreId !== activeRetailerId
-    ) {
-      return;
-    }
-
-    localStorage.setItem(
-      getLegacyActiveTicketsStorageKey(activeRetailerId),
-      JSON.stringify(activeTickets)
-    );
-  }, [activeRetailerId, activeTickets, activeTicketsCacheStoreId]);
+  // 1. CLIENTS / ATTENDANCE
+  // Canonical customer/table service is mounted by RetailerPanel.tsx.
 
   // 2. CAIXA STATES (Dexie Cached)
   const [isCashierOpen, setIsCashierOpen] = useState(true);
@@ -242,43 +190,6 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = ({
       `[${new Date().toLocaleTimeString()}] Documento fiscal não emitido: integração fiscal ainda não configurada para esta loja.`,
       ...prev
     ]);
-  };
-
-  const handleOpenTicket = () => {
-    if (!clientSearchCode.trim()) {
-      triggerToast('Insira um nome ou identificador do cliente!', 'error');
-      return;
-    }
-    const id = `TCK-${Math.floor(100 + Math.random() * 900)}`;
-    const newTicket = {
-      id,
-      name: `${clientCategory} - ${clientSearchCode}`,
-      category: clientCategory.toUpperCase(),
-      items: clientItemCount,
-      status: 'open',
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    };
-    setActiveTickets(previous => [newTicket, ...previous]);
-    setClientSearchCode('');
-    triggerToast(`Atendimento ${id} aberto com sucesso!`, 'success');
-
-  };
-
-  const handleCheckoutTicket = (ticketId: string) => {
-    const ticket = activeTickets.find(item => item.id === ticketId);
-    if (!ticket) return;
-
-    // This legacy attendance card stays local until it is replaced by the
-    // canonical table and order workflow rendered by RetailerPanel.tsx.
-    registerFiscalIntegrationPending();
-    setActiveTickets(previous =>
-      previous.filter(item => item.id !== ticketId)
-    );
-    triggerToast(
-      `Atendimento ${ticket.id} fechado neste dispositivo. Emissão fiscal ainda não configurada.`,
-      'success'
-    );
   };
 
   const handleManualProductAddition = () => {
@@ -485,115 +396,17 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = ({
              ------------------------------------------ */}
           {activeSubTab === 'clientes' && (
             <div className="space-y-5 animate-fade-in" id="erp-clientes-tab">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-900 p-4 rounded-3xl border border-slate-800">
-                <div className="space-y-0.5">
-                  <h3 className="text-sm font-black text-white flex items-center gap-1.5 uppercase">
-                    <span>Atendimentos Ativos</span>
-                    <span className="text-[10px] font-mono bg-orange-500/10 text-orange-400 border border-orange-500/20 px-2 py-0.2 rounded-full">
-                      {activeTickets.length} Ativos
-                    </span>
-                  </h3>
-                </div>
-
-                <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center w-full" id="erp-attendance-opener-row">
-                  <div className="flex items-center bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-2 w-full sm:w-auto">
-                    <input
-                      type="text"
-                      placeholder="Nome ou Cód. do Cliente..."
-                      value={clientSearchCode}
-                      onChange={(e) => setClientSearchCode(e.target.value)}
-                      className="bg-transparent border-none text-xs text-white focus:outline-none font-semibold py-0.5 w-full sm:w-44"
-                    />
-                  </div>
-                  <select
-                    value={clientCategory}
-                    onChange={(e) => setClientCategory(e.target.value)}
-                    className="bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none font-semibold cursor-pointer w-full sm:w-auto"
-                  >
-                    {atendimentoSpaces.map(space => (
-                      <option key={space} value={space}>{space}</option>
-                    ))}
-                  </select>
-                  <div className="flex items-center gap-2 w-full sm:w-auto">
-                    <input
-                      type="number"
-                      min={1}
-                      value={clientItemCount}
-                      onChange={(e) => setClientItemCount(parseInt(e.target.value) || 1)}
-                      className="flex-1 sm:w-14 bg-slate-950 border border-slate-800 rounded-xl px-2 py-2 text-xs text-white text-center focus:outline-none font-semibold"
-                      title="Quantidade de pessoas"
-                    />
-                    <button
-                      onClick={handleOpenTicket}
-                      className="bg-orange-500 hover:bg-orange-600 text-slate-950 p-2 rounded-xl transition-all cursor-pointer flex items-center justify-center shrink-0 w-10 h-10 sm:w-8 sm:h-8 shadow-sm"
-                      title="Abrir Atendimento"
-                    >
-                      <Plus className="w-4 h-4 font-black" />
-                    </button>
-                  </div>
-                </div>
+              <div
+                id="kyrub-canonical-attendance-anchor"
+                className="rounded-3xl border border-slate-800 bg-slate-900 p-4"
+              >
+                <h3 className="text-sm font-black uppercase text-white">
+                  Atendimentos
+                </h3>
+                <p className="mt-1 text-[10px] leading-relaxed text-slate-500">
+                  Mesas, comandas e pedidos são carregados pelo fluxo canônico da loja.
+                </p>
               </div>
-
-              {/* Sub-abas de Categorias (Filtros em bloco) */}
-              <div className="flex items-center gap-2 overflow-x-auto whitespace-nowrap scrollbar-none max-w-full pb-1">
-                {atendimentoSpaces.map(cat => (
-                  <button
-                    key={cat}
-                    onClick={() => setClientSubTab(cat)}
-                    className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer ${
-                      clientSubTab === cat 
-                        ? 'bg-orange-500 text-slate-950' 
-                        : 'bg-slate-900 text-slate-400 hover:text-slate-300'
-                    }`}
-                  >
-                    {cat}
-                  </button>
-                ))}
-              </div>
-
-              {/* Active tickets listings */}
-              {activeTickets.filter(t => clientSubTab === (atendimentoSpaces[0] || 'GERAL') || t.category === clientSubTab).length > 0 ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {activeTickets.filter(t => clientSubTab === (atendimentoSpaces[0] || 'GERAL') || t.category === clientSubTab).map(ticket => (
-                    <div key={ticket.id} className="bg-slate-900 border border-slate-800 p-4 rounded-3xl space-y-4 flex flex-col justify-between">
-                      <div className="flex items-start justify-between">
-                        <div>
-                          <span className="text-[9px] font-mono text-orange-400 uppercase font-black">{ticket.category} • {ticket.id}</span>
-                          <h4 className="text-sm font-black text-white mt-1">{ticket.name}</h4>
-                          <p className="text-[11px] text-slate-400 mt-0.5">Qtd. Itens Solicitados: {ticket.items}</p>
-                        </div>
-                        <span className="text-[9px] font-mono text-slate-500">{ticket.createdAt}</span>
-                      </div>
-                      
-                      <div className="flex items-center gap-2 pt-2 border-t border-slate-850">
-                        <button
-                          onClick={() => handleCheckoutTicket(ticket.id)}
-                          className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-black rounded-xl text-xs uppercase tracking-wider transition-all cursor-pointer"
-                        >
-                          Faturar & Transmitir Fiscal
-                        </button>
-                        <button
-                          onClick={() => {
-                            setActiveTickets(previous =>
-                              previous.filter(item => item.id !== ticket.id)
-                            );
-                            triggerToast('Atendimento cancelado.', 'info');
-                          }}
-                          className="p-2 bg-slate-950 border border-slate-850 hover:bg-red-950/20 text-red-400 hover:text-red-300 rounded-xl transition-all cursor-pointer"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="bg-slate-900/40 border border-dashed border-slate-800 rounded-3xl py-12 text-center" id="empty-clients">
-                  <Users className="w-10 h-10 text-slate-600 mx-auto mb-3" />
-                  <p className="text-xs text-slate-400 font-bold">NENHUM CLIENTE EM ATENDIMENTO</p>
-                  <p className="text-[11px] text-slate-500 mt-1">Insira os dados acima para abrir um novo atendimento do caixa.</p>
-                </div>
-              )}
             </div>
           )}
 
