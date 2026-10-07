@@ -1582,11 +1582,7 @@ if (newMomentPublishToPraca) {
       <WalletModal
         isOpen={isWalletOpen}
         onClose={() => setIsWalletOpen(false)}
-        walletBalance={walletBalance}
-        setWalletBalance={setWalletBalance}
         walletHistory={walletHistory}
-        setWalletHistory={setWalletHistory}
-        triggerToast={triggerToast}
       />
 
       {/* 6. CONSUMER B2C SHOPPING VITRINE OVERLAY MODAL */}
