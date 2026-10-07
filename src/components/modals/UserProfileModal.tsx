@@ -4,6 +4,7 @@ import {
   Bookmark,
   Bike,
   Building2,
+  CheckCircle2,
   CircleUserRound,
   Eye,
   EyeOff,
