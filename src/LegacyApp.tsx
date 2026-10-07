@@ -616,6 +616,7 @@ export default function App() {
 
   // The private ERP store is owned by the authenticated Firebase user.
   const selectedStaffAccess = staffAccesses.find(access => access.store.id === selectedStaffStoreId) ?? null;
+  const erpAccessRole = selectedStaffAccess?.role ?? 'owner';
   const activeRetailerId = selectedStaffAccess?.store.legacyTenantId || authenticatedUserId;
 
   const activeStore = useMemo<Store>(() => {
@@ -1466,7 +1467,7 @@ if (newMomentPublishToPraca) {
               onClosePanel={() => setIsGestaoOpen(false)}
               onOpenStoreConfig={() => setIsConfigModalOpen(true)}
               onSelectTab={setActiveSubTab}
-              accessRole={staffAccesses.find(access => access.store.id === selectedStaffStoreId)?.role}
+              accessRole={erpAccessRole}
             />
 
             {/* LADO ESQUERDO: Botão de fechar */}
@@ -1484,7 +1485,7 @@ if (newMomentPublishToPraca) {
               {gestaoRole === 'retailer' ? (
                 <div className="hidden sm:flex items-center gap-1.5 overflow-x-auto whitespace-nowrap scrollbar-none flex-1 px-2" id="erp-tab-navigation-header">
                   {/* Botão Loja (estilizado como os itens do menu) */}
-                  <button
+                  {canStoreRoleAccessErpMenuItem(erpAccessRole, 'loja') && (                  <button
                     onClick={() => setIsConfigModalOpen(true)}
                     className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer shrink-0 text-slate-400 hover:text-slate-200 hover:bg-slate-800/40"
                     title="Configurar Perfil e Ambientes"
@@ -1493,6 +1494,7 @@ if (newMomentPublishToPraca) {
                     <StoreIcon className="w-3.5 h-3.5" />
                     <span>Loja</span>
                   </button>
+                  )}
 
                   {/* Restantes abas de navegação */}
                   {[
@@ -1502,7 +1504,7 @@ if (newMomentPublishToPraca) {
                     { id: 'reservas', label: 'Reservas', icon: Calendar },
                     { id: 'ponto', label: 'Ponto', icon: Fingerprint },
                     { id: 'gerencial', label: 'Gerencial', icon: LayoutGrid }
-                  ].map(tab => {
+                  ].filter(tab => canStoreRoleAccessErpMenuItem(erpAccessRole, tab.id as any)).map(tab => {
                     const Icon = tab.icon;
                     const isSelected = activeSubTab === tab.id;
                     return (
@@ -1556,6 +1558,7 @@ if (newMomentPublishToPraca) {
                 setActiveSubTab={setActiveSubTab}
                 atendimentoSpaces={atendimentoSpaces}
                 producaoSpaces={producaoSpaces}
+                accessRole={erpAccessRole}
               />
             )}
 
