@@ -664,30 +664,7 @@ export function KyrubTab({
             </div>
           )}
 
-          <div className="flex border-b border-slate-800" id="social-tabs">
-            <button
-              type="button"
-              onClick={() => setSocialSubTab('lojas')}
-              className={`flex-1 border-b-2 pb-2.5 text-xs font-black uppercase tracking-wider transition-all ${
-                socialSubTab === 'lojas'
-                  ? 'border-orange-500 text-white'
-                  : 'border-transparent text-slate-500 hover:text-slate-300'
-              }`}
-            >
-              Ofertas
-            </button>
-            <button
-              type="button"
-              onClick={() => setSocialSubTab('usuarios')}
-              className={`flex-1 border-b-2 pb-2.5 text-xs font-black uppercase tracking-wider transition-all ${
-                socialSubTab === 'usuarios'
-                  ? 'border-orange-500 text-white'
-                  : 'border-transparent text-slate-500 hover:text-slate-300'
-              }`}
-            >
-              Praça
-            </button>
-          </div>
+
         </section>
       )}
 
