@@ -137,3 +137,12 @@ test('authorized staff order navigation is not restricted to owner uid equality'
   assert.doesNotMatch(retailerPanel, /user\.uid !== activeRetailerId/);
   assert.match(retailerPanel, /detail\?\.storeId\?\.trim\(\) !== activeRetailerId/);
 });
+
+
+test('adjacent order routes stay owner scoped while status supports selected staff store', () => {
+  assert.match(orderInventoryRouter, /provider-sync\/99food\/pending[\s\S]*?const tenantId = userId;/);
+  assert.match(orderInventoryRouter, /provider-sync\/99food'[\s\S]*?const tenantId = userId;/);
+  assert.match(orderInventoryRouter, /reconcile-inventory'[\s\S]*?const tenantId = userId;/);
+  assert.match(orderInventoryRouter, /attendance-review'[\s\S]*?const tenantId = userId;/);
+  assert.match(orderInventoryRouter, /\/:orderId\/status'[\s\S]*?x-kyrub-store-id/);
+});
