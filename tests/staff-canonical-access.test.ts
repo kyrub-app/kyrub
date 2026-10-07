@@ -209,3 +209,15 @@ test('voucher workspace has one canonical authority and a stable host', () => {
   assert.match(promotionsLegacyBridge, /kyrub-store-promotions-legacy-anchor/);
   assert.doesNotMatch(promotionsLegacyBridge, /CRIAR NOVO CUPOM/);
 });
+
+test('finance workspace has one canonical owner authority and no session-only ledger', () => {
+  assert.match(legacyRetailerPanel, /id="kyrub-store-finance-legacy-anchor"/);
+  assert.doesNotMatch(legacyRetailerPanel, /finMovements/);
+  assert.doesNotMatch(legacyRetailerPanel, /newFinDesc/);
+  assert.doesNotMatch(legacyRetailerPanel, /Registrar Movimentação/);
+  assert.doesNotMatch(legacyRetailerPanel, /Lançamento registrado com sucesso!/);
+  assert.match(retailerPanel, /StoreFinanceCompositeRuntime/);
+  assert.match(retailerPanel, /id = 'kyrub-canonical-store-finance-host'/);
+  assert.match(retailerPanel, /auth\.currentUser\?\.uid !== activeRetailerId/);
+  assert.match(retailerPanel, /<StoreFinanceCompositeRuntime storeId=\{activeRetailerId\}/);
+});
