@@ -13,6 +13,7 @@ import { OperationalDualWriteBridge } from './store/OperationalDualWriteBridge';
 import { ProductEditorModal } from './store/ProductEditorModal';
 import { ProductInventoryWorkspace } from './store/ProductInventoryWorkspace';
 import { StoreDeliveryTrackingBridge } from './store/StoreDeliveryTrackingBridge';
+import { StorePromotionsLegacyBridge } from './store/StorePromotionsLegacyBridge';
 import type { Product } from '../types';
 import { auth } from '../utils/firebase';
 import {
@@ -560,6 +561,13 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = props => {
         notify={triggerToast}
       />
       <LegacyRetailerPanel {...props} />
+      {auth.currentUser?.uid === activeRetailerId && (
+        <StorePromotionsLegacyBridge
+          storeId={activeRetailerId}
+          products={activeRetailerProducts}
+          triggerToast={triggerToast}
+        />
+      )}
       {tablesHost &&
         createPortal(
           <CustomerTableBoard
