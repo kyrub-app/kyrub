@@ -1850,6 +1850,25 @@ if (newMomentPublishToPraca) {
         setKycCnh={setKycCnh}
         kycCnpj={kycCnpj}
         setKycCnpj={setKycCnpj}
+        friends={friends}
+        connectionRequests={connectionRequests}
+        onOpenCommunities={() => {
+          setShowUserProfileModal(false);
+          setSocialSubTab('usuarios');
+          setPracaFilter('recentes');
+          setActiveTab('kyrub');
+          window.setTimeout(() => {
+            document
+              .querySelector<HTMLElement>('#square-communities')
+              ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }, 0);
+        }}
+        onOpenConnections={() => {
+          setShowUserProfileModal(false);
+          setSocialSubTab('usuarios');
+          setPracaFilter('conectados');
+          setActiveTab('kyrub');
+        }}
         triggerToast={triggerToast}
       />
 
