@@ -41,3 +41,12 @@ test('cash mutations enforce role permission inside the action layer', () => {
   assert.match(canonicalCash, /requireCashPermission/);
   assert.match(canonicalCash, /hasStorePermission/);
 });
+
+
+const orderWorkflow = readFileSync(new URL('../src/utils/orderWorkflow.ts', import.meta.url), 'utf8');
+const retailerPanel = readFileSync(new URL('../src/components/RetailerPanel.tsx', import.meta.url), 'utf8');
+test('staff order workspace no longer requires employee uid to equal store tenant', () => {
+  assert.doesNotMatch(orderWorkflow, /user\.uid !== normalizedStoreId/);
+  assert.match(orderWorkflow, /Bearer/);
+  assert.match(retailerPanel, /subscribeToStoreCustomerOrders/);
+});
