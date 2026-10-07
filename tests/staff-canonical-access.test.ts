@@ -187,3 +187,13 @@ test('manager workspace does not present fictitious sales or fake webhook succes
   assert.match(legacyRetailerPanel, /Nenhum indicador demonstrativo é exibido/);
   assert.match(legacyRetailerPanel, /Este painel não gera pedidos simulados/);
 });
+
+test('canonical promotions bind to the selected owner store without impersonating staff', () => {
+  assert.match(retailerPanel, /auth\.currentUser\?\.uid === activeRetailerId/);
+  assert.match(retailerPanel, /<StorePromotionsLegacyBridge/);
+  assert.match(retailerPanel, /storeId=\{activeRetailerId\}/);
+  assert.match(retailerPanel, /products=\{activeRetailerProducts\}/);
+  assert.match(promotionsLegacyBridge, /storeId=\{storeId\}/);
+  assert.match(promotionsLegacyBridge, /products=\{products\}/);
+  assert.doesNotMatch(promotionsLegacyBridge, /storeId=\{user\.uid\}/);
+});
