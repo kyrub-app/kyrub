@@ -3,6 +3,8 @@ import { verifyFirebaseIdToken } from '../ai/consultantAuth.js';
 import { loadOwnerStoreInstitutionalRepresentation } from '../store/storeInstitutionalIdentityService.js';
 import { adminDb } from '../firebaseAdmin.js';
 import { hasStorePermission, parseStoreMember, type StorePermission } from '../../src/utils/storeSecurity.js';
+import { adminDb } from '../firebaseAdmin.js';
+import { hasStorePermission, parseStoreMember, type StorePermission } from '../../src/utils/storeSecurity.js';
 import {
   createInPersonOrder,
   listInPersonOrderCatalog,
