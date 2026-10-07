@@ -146,3 +146,12 @@ test('adjacent order routes stay owner scoped while status supports selected sta
   assert.match(orderInventoryRouter, /attendance-review'[\s\S]*?const tenantId = userId;/);
   assert.match(orderInventoryRouter, /\/:orderId\/status'[\s\S]*?x-kyrub-store-id/);
 });
+
+const inPersonOrderService = readFileSync(new URL('../server/attendance/inPersonOrderService.ts', import.meta.url), 'utf8');
+test('PDV service separates authenticated operator from authorized store context', () => {
+  assert.match(inPersonOrderRouter, /authorizedStoreId: storeId/);
+  assert.match(inPersonOrderService, /authorizedStoreId\?: string/);
+  assert.match(inPersonOrderService, /authorizedStoreId !== request\.storeId/);
+  assert.doesNotMatch(inPersonOrderService, /actorUserId !== request\.storeId/);
+  assert.match(inPersonOrderService, /operatorId: actorUserId/);
+});
