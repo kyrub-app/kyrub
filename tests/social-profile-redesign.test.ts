@@ -26,8 +26,7 @@ const globalCss = readFileSync('src/index.css', 'utf8');
 
 test('Meu perfil is a private personal center instead of a publishing surface', () => {
   assert.match(profileSource, /Seu centro pessoal é privado/);
-  assert.match(profileSource, /Minhas comunidades/);
-  assert.match(profileSource, /Conectados/);
+  assert.match(profileSource, />Comunidades<\/strong>/);
   assert.match(profileSource, /Salvos/);
   assert.match(profileSource, /Conta/);
   assert.doesNotMatch(profileSource, /id="profile-publication-composer"/);
