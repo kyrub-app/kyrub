@@ -77,6 +77,7 @@ import { useProductivityNotes } from './hooks/useProductivityNotes';
 import { useSocialDirectoryV2 } from './hooks/useSocialDirectoryV2';
 import { LandingView } from './components/LandingView';
 import { StaffViewport } from './components/StaffViewport';
+import { subscribeToUserStoreAccess, type StoreAccessRecord } from './utils/storeDirectory';
 import { PerfilTab } from './components/tabs/PerfilTab';
 import { RendaTab } from './components/tabs/RendaTab';
 import { KyrubTab } from './components/tabs/KyrubTab';
@@ -332,9 +333,43 @@ export default function App() {
 
   // Staff Private Route & Operational States
   const [currentPath, setCurrentPath] = useState(window.location.pathname);
-  const [staffEmail, setStaffEmail] = useState('');
-  const [staffPassword, setStaffPassword] = useState('');
-  const [isStaffLoggedIn, setIsStaffLoggedIn] = useState(false);
+  const [staffAccesses, setStaffAccesses] = useState<StoreAccessRecord[]>([]);
+  const [staffAccessLoading, setStaffAccessLoading] = useState(false);
+  const [staffAccessError, setStaffAccessError] = useState('');
+  const [selectedStaffStoreId, setSelectedStaffStoreId] = useState('');
+
+  useEffect(() => {
+    if (!(currentPath === '/staff' || currentPath.endsWith('/staff'))) return;
+
+    const user = auth.currentUser;
+    if (!user) {
+      setStaffAccesses([]);
+      setStaffAccessLoading(false);
+      return;
+    }
+
+    setStaffAccessLoading(true);
+    setStaffAccessError('');
+    return subscribeToUserStoreAccess(
+      user.uid,
+      accesses => {
+        const operational = accesses.filter(access => access.status === 'active');
+        setStaffAccesses(operational);
+        setSelectedStaffStoreId(current =>
+          operational.some(access => access.store.id === current)
+            ? current
+            : operational[0]?.store.id ?? ''
+        );
+        setStaffAccessLoading(false);
+      },
+      error => {
+        console.warn('Staff access lookup failed:', error);
+        setStaffAccesses([]);
+        setStaffAccessLoading(false);
+        setStaffAccessError('Não foi possível validar seus vínculos operacionais.');
+      }
+    );
+  }, [authenticatedUserId, currentPath]);
 
   useEffect(() => {
     const handleLocationChange = () => {
@@ -1238,37 +1273,9 @@ if (newMomentPublishToPraca) {
     return isMatchingQuery;
   });
 
-  // Rota externa privada /staff
+  // Rota operacional /staff — usa a mesma identidade Google e os vínculos
+  // canônicos da loja. Não há credenciais demonstrativas nem um segundo login.
   if (currentPath === '/staff' || currentPath.endsWith('/staff')) {
-    const staffStore = activeStore.id ? activeStore : undefined;
-    const staffProducts = activeRetailerId
-      ? products.filter(
-          product =>
-            product.supplierId === activeRetailerId &&
-            !product.wholesalePrice
-        )
-      : [];
-    const staffOrders = staffStore
-      ? orders.filter(order => order.storeId === staffStore.id)
-      : [];
-
-    const handleStaffLogin = (e: React.FormEvent) => {
-      e.preventDefault();
-      if (staffEmail === 'staff@kyrub.com' && staffPassword === 'kyrub123') {
-        setIsStaffLoggedIn(true);
-        triggerToast('Colaborador staff autenticado com sucesso!', 'success');
-      } else {
-        triggerToast('Credenciais de staff incorretas. Use staff@kyrub.com / kyrub123', 'error');
-      }
-    };
-
-    const handleStaffLogout = () => {
-      setIsStaffLoggedIn(false);
-      setStaffEmail('');
-      setStaffPassword('');
-      triggerToast('Sessão staff finalizada.', 'info');
-    };
-
     const handleGoBackToMain = () => {
       window.history.pushState({}, '', '/');
       setCurrentPath('/');
@@ -1276,17 +1283,13 @@ if (newMomentPublishToPraca) {
 
     return (
       <StaffViewport
-        isStaffLoggedIn={isStaffLoggedIn}
-        staffEmail={staffEmail}
-        setStaffEmail={setStaffEmail}
-        staffPassword={staffPassword}
-        setStaffPassword={setStaffPassword}
-        handleStaffLogin={handleStaffLogin}
-        handleStaffLogout={handleStaffLogout}
-        handleGoBackToMain={handleGoBackToMain}
-        activeStore={staffStore}
-        staffProducts={staffProducts}
-        staffOrders={staffOrders}
+        user={auth.currentUser}
+        accesses={staffAccesses}
+        isLoading={staffAccessLoading}
+        errorMessage={staffAccessError}
+        selectedStoreId={selectedStaffStoreId}
+        onSelectStore={setSelectedStaffStoreId}
+        onGoBackToMain={handleGoBackToMain}
       />
     );
   }
