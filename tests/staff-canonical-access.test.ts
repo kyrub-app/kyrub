@@ -103,3 +103,11 @@ test('team time clock is manager-only while personal punches remain self-bound',
   assert.match(timeClockRouter, /router\.get\('\/me'/);
   assert.match(timeClockRouter, /where\('userId', '==', actor\.userId\)/);
 });
+
+
+test('team workspace reads canonical time clock without creating a second employee identity', () => {
+  assert.match(storeTeamWorkspace, /\/api\/staff\/time-clock\/team/);
+  assert.match(storeTeamWorkspace, /members\.find\(item => item\.userId === entry\.userId\)/);
+  assert.match(storeTeamWorkspace, /user\.getIdToken\(\)/);
+  assert.doesNotMatch(storeTeamWorkspace, /timeClock.*displayName.*request/i);
+});
