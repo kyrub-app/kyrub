@@ -111,8 +111,7 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = props => {
       if (
         !detail?.orderId?.trim() ||
         detail?.storeId?.trim() !== activeRetailerId ||
-        !user ||
-        user.uid !== activeRetailerId
+        !user
       ) {
         return;
       }
