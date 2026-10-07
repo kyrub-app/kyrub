@@ -1,22 +1,16 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
-  AtSign,
   BadgeCheck,
   Bookmark,
   Bike,
   Building2,
-  CheckCircle2,
   CircleUserRound,
-  Clock3,
-  Copy,
   Eye,
   EyeOff,
   Fingerprint,
   IdCard,
-  ImagePlus,
   LockKeyhole,
   MapPin,
-  Send,
   ShieldCheck,
   Smartphone,
   Store,
@@ -26,16 +20,13 @@ import {
   X,
 } from 'lucide-react';
 import {
-  collection,
   doc,
-  onSnapshot,
   serverTimestamp,
   setDoc,
 } from 'firebase/firestore';
-import type { SocialPost } from '../../types';
-import { MediaCarousel } from '../MediaCarousel';
 import { auth, db } from '../../utils/firebase';
 import { formatWhatsApp, formatCpf, formatCnpj } from '../../utils/helpers';
+import { createSelection, subscribeSavedPublications, subscribeSelections, type SavedPublication, type SavedSelection } from '../../utils/savedLibrary';
 
 interface UserProfileModalProps {
   isOpen: boolean;
@@ -88,37 +79,7 @@ interface UserProfileModalProps {
   ) => void;
 }
 
-type ExtendedSocialPost = SocialPost & {
-  authorId?: string;
-  publicationType?: 'feed' | 'status';
-  taggedUsers?: string[];
-  taggedUserIds?: string[];
-  createdAt?: string;
-};
-
 type ProfileSection = 'conta' | 'dados' | 'seguranca' | 'verificacao';
-
-type DirectoryUser = {
-  uid: string;
-  name: string;
-  email: string;
-  photoUrl: string;
-};
-
-const LEGACY_POSTS_KEY = 'kyrub_posts';
-const getUserPostsKey = (uid: string) => `kyrub_posts_${uid}`;
-
-const readStoredPosts = (rawValue: string | null): ExtendedSocialPost[] => {
-  if (!rawValue) return [];
-
-  try {
-    const parsed = JSON.parse(rawValue);
-    return Array.isArray(parsed) ? (parsed as ExtendedSocialPost[]) : [];
-  } catch (error) {
-    console.warn('Não foi possível ler as publicações do perfil.', error);
-    return [];
-  }
-};
 
 const getProfileHandle = (email: string, name: string): string => {
   const emailHandle = email.split('@')[0]?.trim();
@@ -756,14 +717,11 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = props => {
     triggerToast,
   } = props;
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [newPostText, setNewPostText] = useState('');
-  const [postMediaUrls, setPostMediaUrls] = useState<string[]>([]);
-  const [taggedUsers, setTaggedUsers] = useState<string[]>([]);
-  const [taggedUserIds, setTaggedUserIds] = useState<string[]>([]);
-  const [isTagPickerOpen, setIsTagPickerOpen] = useState(false);
-  const [directoryUsers, setDirectoryUsers] = useState<DirectoryUser[]>([]);
-  const [profilePosts, setProfilePosts] = useState<ExtendedSocialPost[]>([]);
-  const postsSectionRef = useRef<HTMLElement | null>(null);
+  const [savedItems, setSavedItems] = useState<SavedPublication[]>([]);
+  const [selections, setSelections] = useState<SavedSelection[]>([]);
+  const [isSavedOpen, setIsSavedOpen] = useState(false);
+  const [newSelectionName, setNewSelectionName] = useState('');
+  const [isCreatingSelection, setIsCreatingSelection] = useState(false);
 
   const currentUser = auth.currentUser;
   const currentUserId = currentUser?.uid ?? '';
@@ -773,211 +731,20 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = props => {
   const profileHandle = getProfileHandle(profileEmail, displayName);
 
   useEffect(() => {
-    if (!isOpen) return;
-
-    const user = auth.currentUser;
-    if (!user) return;
-
-    const userPostsKey = getUserPostsKey(user.uid);
-    setProfilePosts(
-      readStoredPosts(
-        localStorage.getItem(userPostsKey) ??
-          localStorage.getItem(LEGACY_POSTS_KEY)
-      )
+    if (!isOpen || !auth.currentUser) return;
+    const unsubscribeSaved = subscribeSavedPublications(setSavedItems, error =>
+      console.warn('Não foi possível carregar Salvos.', error)
     );
-
-    const unsubscribeDirectory = onSnapshot(
-      collection(db, 'users'),
-      snapshot => {
-        setDirectoryUsers(
-          snapshot.docs.flatMap(snapshotDocument => {
-            if (snapshotDocument.id === user.uid) return [];
-            const data = snapshotDocument.data() as Record<string, unknown>;
-            if (data.isProfileVisible === false) return [];
-            const name =
-              typeof data.name === 'string' && data.name.trim()
-                ? data.name.trim()
-                : typeof data.email === 'string'
-                  ? data.email.split('@')[0]
-                  : 'Usuário Kyrub';
-            return [
-              {
-                uid: snapshotDocument.id,
-                name,
-                email: typeof data.email === 'string' ? data.email : '',
-                photoUrl:
-                  typeof data.photoUrl === 'string' ? data.photoUrl : '',
-              },
-            ];
-          })
-        );
-      },
-      error => {
-        console.warn('Não foi possível carregar usuários para marcação.', error);
-        setDirectoryUsers([]);
-      }
+    const unsubscribeSelections = subscribeSelections(setSelections, error =>
+      console.warn('Não foi possível carregar Seleções.', error)
     );
-
-    const handlePostsUpdated = (event: Event) => {
-      const detail = (
-        event as CustomEvent<{ uid?: string; posts?: ExtendedSocialPost[] }>
-      ).detail;
-      if (detail?.uid === user.uid && Array.isArray(detail.posts)) {
-        setProfilePosts(detail.posts);
-      }
-    };
-
-    const handleStorage = (event: StorageEvent) => {
-      if (event.key === userPostsKey) {
-        setProfilePosts(readStoredPosts(event.newValue));
-      }
-    };
-
-    window.addEventListener(
-      'kyrub-social-posts-updated',
-      handlePostsUpdated as EventListener
-    );
-    window.addEventListener('storage', handleStorage);
-
     return () => {
-      unsubscribeDirectory();
-      window.removeEventListener(
-        'kyrub-social-posts-updated',
-        handlePostsUpdated as EventListener
-      );
-      window.removeEventListener('storage', handleStorage);
+      unsubscribeSaved();
+      unsubscribeSelections();
     };
   }, [isOpen]);
 
-  const ownFeedPosts = useMemo(
-    () =>
-      profilePosts.filter(post => {
-        if (post.publicationType === 'status') return false;
-        if (post.authorId && currentUserId) return post.authorId === currentUserId;
-        return post.user === displayName || post.user.includes('Você');
-      }),
-    [currentUserId, displayName, profilePosts]
-  );
-
-  const ownStatusCount = useMemo(
-    () =>
-      profilePosts.filter(
-        post =>
-          post.publicationType === 'status' &&
-          (!post.authorId || post.authorId === currentUserId)
-      ).length,
-    [currentUserId, profilePosts]
-  );
-
   if (!isOpen) return null;
-
-  const persistPosts = (nextPosts: ExtendedSocialPost[]) => {
-    const user = auth.currentUser;
-    if (!user) return;
-
-    try {
-      localStorage.setItem(getUserPostsKey(user.uid), JSON.stringify(nextPosts));
-      localStorage.setItem(LEGACY_POSTS_KEY, JSON.stringify(nextPosts));
-    } catch (error) {
-      console.warn('Não foi possível salvar a publicação localmente.', error);
-    }
-
-    setProfilePosts(nextPosts);
-    window.dispatchEvent(
-      new CustomEvent('kyrub-social-posts-updated', {
-        detail: { uid: user.uid, posts: nextPosts },
-      })
-    );
-  };
-
-  const readPostImages = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(event.target.files ?? []);
-    event.target.value = '';
-    if (files.length === 0) return;
-
-    const remainingSlots = 9 - postMediaUrls.length;
-    if (remainingSlots <= 0) {
-      triggerToast('O carrossel aceita no máximo 9 imagens.', 'info');
-      return;
-    }
-
-    const selectedFiles = files
-      .filter(file => file.type.startsWith('image/'))
-      .slice(0, remainingSlots);
-    const encodedImages = await Promise.all(
-      selectedFiles.map(
-        file =>
-          new Promise<string>((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => resolve(String(reader.result));
-            reader.onerror = () => reject(reader.error);
-            reader.readAsDataURL(file);
-          })
-      )
-    );
-
-    setPostMediaUrls(current => [...current, ...encodedImages].slice(0, 9));
-  };
-
-  const toggleTaggedUser = (user: DirectoryUser) => {
-    const selected = taggedUserIds.includes(user.uid);
-    setTaggedUserIds(current =>
-      selected ? current.filter(uid => uid !== user.uid) : [...current, user.uid]
-    );
-    setTaggedUsers(current =>
-      selected
-        ? current.filter(name => name !== user.name)
-        : [...current, user.name]
-    );
-  };
-
-  const publishPost = (publicationType: 'feed' | 'status') => {
-    const user = auth.currentUser;
-    const content = newPostText.trim();
-    if (!user) {
-      triggerToast('Faça login novamente para publicar.', 'error');
-      return;
-    }
-    if (!content && postMediaUrls.length === 0) {
-      triggerToast('Escreva algo ou adicione imagens antes de publicar.', 'info');
-      return;
-    }
-
-    const newPost: ExtendedSocialPost = {
-      id: `${publicationType}-${Date.now()}`,
-      authorId: user.uid,
-      user: displayName,
-      avatar: displayAvatar,
-      time: 'Agora mesmo',
-      createdAt: new Date().toISOString(),
-      content,
-      likes: 0,
-      mediaUrls: postMediaUrls,
-      taggedUsers,
-      taggedUserIds,
-      publicationType,
-    };
-    persistPosts([newPost, ...profilePosts]);
-    setNewPostText('');
-    setPostMediaUrls([]);
-    setTaggedUsers([]);
-    setTaggedUserIds([]);
-    setIsTagPickerOpen(false);
-    triggerToast(
-      publicationType === 'feed'
-        ? 'Publicação enviada para o feed da Praça.'
-        : 'Status publicado para seus contatos conectados.',
-      'success'
-    );
-  };
-
-  const likeOwnPost = (postId: string) => {
-    persistPosts(
-      profilePosts.map(post =>
-        post.id === postId ? { ...post, likes: post.likes + 1 } : post
-      )
-    );
-  };
 
   return (
     <>
@@ -1031,32 +798,9 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = props => {
                   <p className="mt-1 truncate text-[10px] font-mono text-slate-500">
                     @{profileHandle}
                   </p>
-                  <div className="mt-4 grid grid-cols-3 gap-2">
-                    <div className="rounded-xl border border-slate-800 bg-slate-900/80 px-2 py-2 text-center">
-                      <strong className="block text-sm font-black text-white">
-                        {ownFeedPosts.length}
-                      </strong>
-                      <span className="text-[8px] uppercase text-slate-500">
-                        Publicações
-                      </span>
-                    </div>
-                    <div className="rounded-xl border border-slate-800 bg-slate-900/80 px-2 py-2 text-center">
-                      <strong className="block text-sm font-black text-white">
-                        {ownStatusCount}
-                      </strong>
-                      <span className="text-[8px] uppercase text-slate-500">
-                        Status
-                      </span>
-                    </div>
-                    <div className="rounded-xl border border-slate-800 bg-slate-900/80 px-2 py-2 text-center">
-                      <strong className="block text-sm font-black text-white">
-                        {taggedUsers.length}
-                      </strong>
-                      <span className="text-[8px] uppercase text-slate-500">
-                        Marcados
-                      </span>
-                    </div>
-                  </div>
+                  <p className="mt-3 text-[9px] leading-relaxed text-slate-500">
+                    Seu centro pessoal é privado. Publicações acontecem na Praça e nas Comunidades.
+                  </p>
                 </div>
               </div>
             </section>
@@ -1072,11 +816,11 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = props => {
                 <strong className="mt-3 block text-[10px] font-black uppercase text-slate-100">Conectados</strong>
                 <span className="mt-1 block text-[8px] leading-relaxed text-slate-500">{friends.length} conexões · {connectionRequests.length} solicitações</span>
               </button>
-              <div className="rounded-2xl border border-amber-500/20 bg-amber-500/10 p-3 text-left">
+              <button type="button" onClick={() => setIsSavedOpen(current => !current)} className="rounded-2xl border border-amber-500/20 bg-amber-500/10 p-3 text-left hover:border-amber-500/40">
                 <Bookmark className="h-5 w-5 text-amber-300" />
                 <strong className="mt-3 block text-[10px] font-black uppercase text-slate-100">Salvos</strong>
-                <span className="mt-1 block text-[8px] leading-relaxed text-slate-500">Publicações guardadas e organizadas em Seleções.</span>
-              </div>
+                <span className="mt-1 block text-[8px] leading-relaxed text-slate-500">{savedItems.length} publicações · {selections.length} Seleções</span>
+              </button>
               <button type="button" onClick={() => setIsSettingsOpen(true)} className="rounded-2xl border border-slate-700 bg-slate-900 p-3 text-left hover:border-slate-600">
                 <ShieldCheck className="h-5 w-5 text-slate-300" />
                 <strong className="mt-3 block text-[10px] font-black uppercase text-slate-100">Conta</strong>
@@ -1084,275 +828,56 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = props => {
               </button>
             </section>
 
-            <section
-              className="space-y-3 border-b border-slate-900 bg-slate-900/55 p-4 sm:p-5"
-              id="profile-publication-composer"
-            >
-              <div className="flex items-center justify-between gap-3">
-                <div className="flex items-center gap-2">
-                  <Avatar
-                    src={displayAvatar}
-                    name={displayName}
-                    className="h-9 w-9 rounded-full border border-slate-800 object-cover"
-                  />
-                  <div>
-                    <span className="block text-[10px] font-black text-white">
-                      {displayName}
-                    </span>
-                    <span className="text-[8px] font-mono uppercase text-slate-500">
-                      Nova publicação
-                    </span>
-                  </div>
+            {isSavedOpen && (
+              <section className="space-y-4 border-b border-slate-900 bg-slate-900/45 p-4 sm:p-5" id="profile-saved-library">
+                <div>
+                  <h3 className="text-xs font-black uppercase text-slate-100">Salvos</h3>
+                  <p className="mt-1 text-[9px] text-slate-500">Biblioteca privada de publicações guardadas na Praça e nas Comunidades.</p>
                 </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setIsSettingsOpen(true)}
-                    className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-800 bg-slate-950 text-slate-400 hover:border-orange-500/40 hover:text-orange-400"
-                    title="Informações e configurações do perfil"
-                    aria-label="Abrir informações e configurações do perfil"
-                  >
-                    <Copy className="h-4 w-4" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      postsSectionRef.current?.scrollIntoView({
-                        behavior: 'smooth',
-                        block: 'start',
-                      })
+                <form
+                  className="flex gap-2"
+                  onSubmit={async event => {
+                    event.preventDefault();
+                    if (!newSelectionName.trim() || isCreatingSelection) return;
+                    setIsCreatingSelection(true);
+                    try {
+                      await createSelection(newSelectionName);
+                      setNewSelectionName('');
+                      triggerToast('Seleção criada.', 'success');
+                    } catch (error) {
+                      console.warn('Falha ao criar Seleção.', error);
+                      triggerToast('Não foi possível criar a Seleção.', 'error');
+                    } finally {
+                      setIsCreatingSelection(false);
                     }
-                    className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-800 bg-slate-950 text-slate-400 hover:border-teal-500/40 hover:text-teal-400"
-                    title="Meu registro de publicações"
-                    aria-label="Abrir meu registro de publicações"
-                  >
-                    <CircleUserRound className="h-4 w-4" />
-                  </button>
-                </div>
-              </div>
-
-              <textarea
-                value={newPostText}
-                onChange={event => setNewPostText(event.target.value)}
-                placeholder="O que está acontecendo no seu negócio ou região?"
-                className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-3 text-xs text-white outline-none focus:border-orange-500"
-                rows={4}
-                maxLength={3000}
-              />
-
-              {postMediaUrls.length > 0 && (
-                <div className="grid grid-cols-3 gap-2 rounded-2xl border border-slate-800 bg-slate-950 p-2">
-                  {postMediaUrls.map((url, index) => (
-                    <div
-                      key={`${url.slice(0, 32)}-${index}`}
-                      className="relative aspect-square overflow-hidden rounded-xl border border-slate-800"
-                    >
-                      <img
-                        src={url}
-                        alt={`Imagem ${index + 1} da publicação`}
-                        className="h-full w-full object-cover"
-                      />
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setPostMediaUrls(current =>
-                            current.filter((_, itemIndex) => itemIndex !== index)
-                          )
-                        }
-                        className="absolute right-1 top-1 rounded-full bg-slate-950/90 p-1 text-white"
-                        aria-label={`Remover imagem ${index + 1}`}
-                      >
-                        <X className="h-3 w-3" />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {taggedUsers.length > 0 && (
-                <div className="flex flex-wrap gap-1.5">
-                  {taggedUsers.map(name => (
-                    <span
-                      key={name}
-                      className="rounded-full border border-teal-500/30 bg-teal-500/10 px-2 py-1 text-[9px] font-bold text-teal-300"
-                    >
-                      @{name}
-                    </span>
-                  ))}
-                </div>
-              )}
-
-              <div className="relative flex flex-wrap items-center justify-between gap-2 border-t border-slate-800/70 pt-3">
-                <div className="flex items-center gap-2">
-                  <label
-                    className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-xl border border-slate-800 bg-slate-950 text-slate-400 hover:text-orange-400"
-                    title="Adicionar até 9 imagens"
-                  >
-                    <ImagePlus className="h-4 w-4" />
-                    <input
-                      type="file"
-                      accept="image/*"
-                      multiple
-                      className="hidden"
-                      onChange={readPostImages}
-                    />
-                  </label>
-                  <button
-                    type="button"
-                    onClick={() => setIsTagPickerOpen(current => !current)}
-                    className={`flex h-9 w-9 items-center justify-center rounded-xl border bg-slate-950 transition-colors ${
-                      isTagPickerOpen || taggedUsers.length > 0
-                        ? 'border-teal-500/40 text-teal-400'
-                        : 'border-slate-800 text-slate-400 hover:text-teal-400'
-                    }`}
-                    title="Marcar usuários"
-                    aria-label="Marcar usuários na publicação"
-                  >
-                    <AtSign className="h-4 w-4" />
-                  </button>
-                  <span className="font-mono text-[8px] text-slate-500">
-                    {postMediaUrls.length}/9
-                  </span>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => publishPost('status')}
-                    className="flex items-center gap-1.5 rounded-xl border border-teal-500/30 bg-teal-500/10 px-3 py-2 text-[9px] font-black uppercase text-teal-300 hover:bg-teal-500/20"
-                  >
-                    <Clock3 className="h-3.5 w-3.5" />
-                    Status
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => publishPost('feed')}
-                    className="flex items-center gap-1.5 rounded-xl bg-orange-600 px-3 py-2 text-[9px] font-black uppercase text-white hover:bg-orange-500"
-                  >
-                    <Send className="h-3.5 w-3.5" />
-                    Feed
-                  </button>
-                </div>
-
-                {isTagPickerOpen && (
-                  <div className="absolute left-0 right-0 top-full z-20 mt-2 max-h-56 overflow-y-auto rounded-2xl border border-slate-800 bg-slate-950 p-2 shadow-2xl">
-                    {directoryUsers.length === 0 ? (
-                      <p className="p-3 text-center text-[10px] text-slate-500">
-                        Nenhum usuário visível disponível para marcação.
-                      </p>
-                    ) : (
-                      directoryUsers.map(user => (
-                        <button
-                          type="button"
-                          key={user.uid}
-                          onClick={() => toggleTaggedUser(user)}
-                          className="flex w-full items-center justify-between gap-3 rounded-xl px-2 py-2 text-left hover:bg-slate-900"
-                        >
-                          <span className="flex min-w-0 items-center gap-2">
-                            <Avatar
-                              src={user.photoUrl}
-                              name={user.name}
-                              className="h-7 w-7 shrink-0 rounded-full border border-slate-800 object-cover"
-                            />
-                            <span className="min-w-0">
-                              <span className="block truncate text-[10px] font-bold text-slate-300">
-                                {user.name}
-                              </span>
-                              <span className="block truncate text-[8px] text-slate-600">
-                                {user.email}
-                              </span>
-                            </span>
-                          </span>
-                          <span className="text-[9px] font-mono text-teal-400">
-                            {taggedUserIds.includes(user.uid)
-                              ? 'Marcado'
-                              : 'Marcar'}
-                          </span>
-                        </button>
-                      ))
-                    )}
+                  }}
+                >
+                  <input value={newSelectionName} onChange={event => setNewSelectionName(event.target.value)} maxLength={80} placeholder="Nova Seleção..." className="min-w-0 flex-1 rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 text-xs text-white outline-none focus:border-amber-500/50" />
+                  <button type="submit" disabled={!newSelectionName.trim() || isCreatingSelection} className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[9px] font-black uppercase text-amber-300 disabled:opacity-40">Criar</button>
+                </form>
+                {selections.length > 0 && (
+                  <div className="flex flex-wrap gap-2">
+                    {selections.map(selection => <span key={selection.id} className="rounded-full border border-slate-700 bg-slate-950 px-3 py-1.5 text-[9px] text-slate-300">{selection.name}</span>)}
                   </div>
                 )}
-              </div>
-            </section>
-
-            <section
-              ref={postsSectionRef}
-              className="space-y-4 p-4 sm:p-5"
-              id="profile-publication-register"
-            >
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <h3 className="text-sm font-black uppercase tracking-wide text-white">
-                    Minhas publicações
-                  </h3>
-                  <p className="mt-1 text-[9px] text-slate-500">
-                    Seu registro social publicado no feed da Praça.
-                  </p>
-                </div>
-                <span className="rounded-full border border-slate-800 bg-slate-900 px-2.5 py-1 text-[9px] font-mono text-slate-400">
-                  {ownFeedPosts.length}
-                </span>
-              </div>
-
-              {ownFeedPosts.length === 0 ? (
-                <div className="rounded-3xl border border-dashed border-slate-800 bg-slate-900/40 px-5 py-12 text-center">
-                  <CircleUserRound className="mx-auto h-8 w-8 text-slate-700" />
-                  <p className="mt-3 text-xs text-slate-500">
-                    Suas publicações aparecerão aqui e no feed Recentes da Praça.
-                  </p>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {ownFeedPosts.map(post => (
-                    <article
-                      key={post.id}
-                      className="space-y-3 rounded-2xl border border-slate-800 bg-slate-900 p-4"
-                    >
-                      <div className="flex items-center gap-3">
-                        <Avatar
-                          src={post.avatar || displayAvatar}
-                          name={post.user}
-                          className="h-9 w-9 rounded-full border border-slate-800 object-cover"
-                        />
-                        <div className="min-w-0">
-                          <h4 className="truncate text-xs font-bold text-slate-200">
-                            {post.user}
-                          </h4>
-                          <span className="font-mono text-[9px] text-slate-500">
-                            {post.time}
-                          </span>
+                {savedItems.length === 0 ? (
+                  <div className="rounded-2xl border border-dashed border-slate-800 px-4 py-8 text-center text-[10px] text-slate-500">Quando você salvar uma publicação, ela aparecerá aqui.</div>
+                ) : (
+                  <div className="space-y-2">
+                    {savedItems.map(item => (
+                      <div key={item.id} className="rounded-2xl border border-slate-800 bg-slate-950 p-3">
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="text-[9px] font-black uppercase text-amber-300">{item.sourceKind === 'community' ? 'Comunidade' : 'Praça'}</span>
+                          <span className="text-[8px] text-slate-600">{item.selectionIds.length ? `${item.selectionIds.length} Seleções` : 'Sem Seleção'}</span>
                         </div>
+                        <p className="mt-2 truncate font-mono text-[9px] text-slate-500">Publicação {item.sourceId}</p>
                       </div>
-                      {post.content && (
-                        <p className="whitespace-pre-line text-xs leading-relaxed text-slate-300">
-                          {post.content}
-                        </p>
-                      )}
-                      {post.taggedUsers && post.taggedUsers.length > 0 && (
-                        <p className="text-[9px] font-mono text-teal-400">
-                          com {post.taggedUsers.map(name => `@${name}`).join(', ')}
-                        </p>
-                      )}
-                      {post.mediaUrls && post.mediaUrls.length > 0 && (
-                        <MediaCarousel mediaUrls={post.mediaUrls} />
-                      )}
-                      <div className="flex items-center justify-between border-t border-slate-800 pt-2.5 text-[9px] font-mono text-slate-500">
-                        <button
-                          type="button"
-                          onClick={() => likeOwnPost(post.id)}
-                          className="flex items-center gap-1.5 hover:text-orange-300"
-                        >
-                          <CheckCircle2 className="h-3.5 w-3.5 text-orange-500" />
-                          {post.likes} curtidas
-                        </button>
-                        <span>Feed Kyrub</span>
-                      </div>
-                    </article>
-                  ))}
-                </div>
-              )}
-            </section>
+                    ))}
+                  </div>
+                )}
+              </section>
+            )}
+
           </div>
         </div>
       </div>
