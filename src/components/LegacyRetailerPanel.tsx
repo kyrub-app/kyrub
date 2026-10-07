@@ -80,12 +80,6 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = ({
   // 6. GENERAL FINANCE / HR / CUSTOMIZATION / FISCAL
   const [hrWorkers, setHrWorkers] = useState<any[]>([]);
 
-  const [finMovements, setFinMovements] = useState<any[]>([]);
-  const [newFinDesc, setNewFinDesc] = useState('');
-  const [newFinVal, setNewFinVal] = useState('');
-  const [newFinType, setNewFinType] = useState<'entrada' | 'saida'>('entrada');
-  const [newFinCat, setNewFinCat] = useState('Mercadorias');
-
   // Customization States
   const [storeName, setStoreName] = useState(activeStore?.name || '');
   const [storeDesc, setStoreDesc] = useState(activeStore?.description || '');
@@ -762,126 +756,10 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = ({
 
                   {/* SUBMODULE: FINANCEIRO INTERNO */}
                   {activeGerencialModule === 'financeiro' && (
-                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                      
-                      {/* Form inputs */}
-                      <div className="lg:col-span-1 bg-slate-900 p-5 rounded-3xl border border-slate-800 space-y-4">
-                        <h4 className="text-xs font-black text-white uppercase border-b border-slate-850 pb-2">Lançar Movimentação</h4>
-                        
-                        <div className="space-y-3">
-                          <div>
-                            <label className="block text-[10px] font-mono text-slate-400 uppercase font-bold mb-1">Descrição</label>
-                            <input
-                              type="text"
-                              value={newFinDesc}
-                              onChange={(e) => setNewFinDesc(e.target.value)}
-                              className="w-full bg-slate-950 border border-slate-850 rounded-xl px-3 py-1.5 text-xs text-white focus:outline-none"
-                              placeholder="Ex: Conta de Luz"
-                            />
-                          </div>
-
-                          <div>
-                            <label className="block text-[10px] font-mono text-slate-400 uppercase font-bold mb-1">Valor R$</label>
-                            <input
-                              type="number"
-                              value={newFinVal}
-                              onChange={(e) => setNewFinVal(e.target.value)}
-                              className="w-full bg-slate-950 border border-slate-850 rounded-xl px-3 py-1.5 text-xs text-white focus:outline-none"
-                              placeholder="0,00"
-                            />
-                          </div>
-
-                          <div>
-                            <label className="block text-[10px] font-mono text-slate-400 uppercase font-bold mb-1">Tipo</label>
-                            <select
-                              value={newFinType}
-                              onChange={(e) => setNewFinType(e.target.value as any)}
-                              className="w-full bg-slate-950 border border-slate-850 rounded-xl px-3 py-1.5 text-xs text-white focus:outline-none"
-                            >
-                              <option value="entrada">Entrada (+)</option>
-                              <option value="saida">Saída (-)</option>
-                            </select>
-                          </div>
-
-                          <div>
-                            <label className="block text-[10px] font-mono text-slate-400 uppercase font-bold mb-1">Categoria</label>
-                            <select
-                              value={newFinCat}
-                              onChange={(e) => setNewFinCat(e.target.value)}
-                              className="w-full bg-slate-950 border border-slate-850 rounded-xl px-3 py-1.5 text-xs text-white focus:outline-none"
-                            >
-                              <option value="Mercadorias">Mercadorias</option>
-                              <option value="Custos Operacionais">Custos Operacionais</option>
-                              <option value="Logística">Logística</option>
-                            </select>
-                          </div>
-
-                          <button
-                            onClick={() => {
-                              if (!newFinDesc.trim() || !newFinVal) {
-                                triggerToast('Preencha os dados do lançamento!', 'error');
-                                return;
-                              }
-                              const entry = {
-                                id: `f-${Date.now()}`,
-                                desc: newFinDesc,
-                                val: parseFloat(newFinVal),
-                                type: newFinType,
-                                cat: newFinCat
-                              };
-                              setFinMovements([entry, ...finMovements]);
-                              setNewFinDesc('');
-                              setNewFinVal('');
-                              triggerToast('Lançamento registrado com sucesso!', 'success');
-                            }}
-                            className="w-full py-2 bg-orange-600 hover:bg-orange-500 text-white font-black rounded-xl text-xs uppercase"
-                          >
-                            Registrar Movimentação
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* Display summary */}
-                      <div className="lg:col-span-2 bg-slate-900 p-5 rounded-3xl border border-slate-800 space-y-4">
-                        <h4 className="text-xs font-black text-emerald-400 uppercase">GERENCIAL: FINANCE</h4>
-                        
-                        <div className="grid grid-cols-3 gap-2.5">
-                          <div className="bg-slate-950 p-3 rounded-2xl border border-slate-850 text-center font-mono">
-                            <span className="text-[8px] text-slate-500 block uppercase">ENTRADAS (MÊS)</span>
-                            <strong className="text-emerald-400 text-xs">
-                              R$ {finMovements.filter(m => m.type === 'entrada').reduce((sum, m) => sum + m.val, 0).toFixed(2)}
-                            </strong>
-                          </div>
-                          <div className="bg-slate-950 p-3 rounded-2xl border border-slate-850 text-center font-mono">
-                            <span className="text-[8px] text-slate-500 block uppercase">SAÍDAS (MÊS)</span>
-                            <strong className="text-red-400 text-xs">
-                              R$ {finMovements.filter(m => m.type === 'saida').reduce((sum, m) => sum + m.val, 0).toFixed(2)}
-                            </strong>
-                          </div>
-                          <div className="bg-slate-950 p-3 rounded-2xl border border-slate-850 text-center font-mono">
-                            <span className="text-[8px] text-slate-500 block uppercase">SALDO ATUAL</span>
-                            <strong className="text-white text-xs">
-                              R$ {(finMovements.filter(m => m.type === 'entrada').reduce((sum, m) => sum + m.val, 0) - finMovements.filter(m => m.type === 'saida').reduce((sum, m) => sum + m.val, 0)).toFixed(2)}
-                            </strong>
-                          </div>
-                        </div>
-
-                        <div className="space-y-1.5 max-h-[220px] overflow-y-auto">
-                          {finMovements.map(m => (
-                            <div key={m.id} className="bg-slate-950 p-2 rounded-xl border border-slate-850 flex items-center justify-between text-xs font-mono">
-                              <div>
-                                <span className="text-slate-300 block">{m.desc}</span>
-                                <span className="text-[9px] text-slate-500">{m.cat}</span>
-                              </div>
-                              <span className={m.type === 'entrada' ? 'text-emerald-400' : 'text-red-400'}>
-                                {m.type === 'entrada' ? '+' : '-'} R$ {m.val.toFixed(2)}
-                              </span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-
-                    </div>
+                    <div
+                      id="kyrub-store-finance-legacy-anchor"
+                      className="min-w-0"
+                    />
                   )}
 
                   {/* SUBMODULE: INTEGRATIONS & SANDBOX */}
