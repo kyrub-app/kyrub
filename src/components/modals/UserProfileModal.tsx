@@ -78,6 +78,10 @@ interface UserProfileModalProps {
   setKycCnh: React.Dispatch<React.SetStateAction<string>>;
   kycCnpj: string;
   setKycCnpj: React.Dispatch<React.SetStateAction<string>>;
+  friends: Array<{ id: string; name: string; avatar?: string; role?: string; favorited?: boolean }>;
+  connectionRequests: Array<{ id: string; name: string }>;
+  onOpenCommunities: () => void;
+  onOpenConnections: () => void;
   triggerToast: (
     msg: string,
     type: 'success' | 'error' | 'info' | 'warning'
@@ -745,6 +749,10 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = props => {
     profileEmail,
     profilePhotoUrl,
     isProfileVisible,
+    friends,
+    connectionRequests,
+    onOpenCommunities,
+    onOpenConnections,
     triggerToast,
   } = props;
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -1054,17 +1062,21 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = props => {
             </section>
 
             <section className="grid grid-cols-2 gap-2 border-b border-slate-900 bg-slate-950 p-4 sm:grid-cols-4 sm:p-5" id="profile-personal-center">
-              {[
-                ['Minhas comunidades', 'Crie e administre seus espaços.', UsersRound],
-                ['Conectados', 'Contatos, grupos e relações pessoais.', Users],
-                ['Salvos', 'Conteúdo guardado só para você.', Bookmark],
-              ].map(([label, description, Icon]) => (
-                <div key={String(label)} className="rounded-2xl border border-slate-800 bg-slate-900 p-3 text-left">
-                  <Icon className="h-5 w-5 text-teal-300" />
-                  <strong className="mt-3 block text-[10px] font-black uppercase text-slate-100">{label}</strong>
-                  <span className="mt-1 block text-[8px] leading-relaxed text-slate-500">{description}</span>
-                </div>
-              ))}
+              <button type="button" onClick={onOpenCommunities} className="rounded-2xl border border-sky-500/20 bg-sky-500/10 p-3 text-left hover:border-sky-500/40">
+                <UsersRound className="h-5 w-5 text-sky-300" />
+                <strong className="mt-3 block text-[10px] font-black uppercase text-slate-100">Minhas comunidades</strong>
+                <span className="mt-1 block text-[8px] leading-relaxed text-slate-500">Crie e administre seus espaços.</span>
+              </button>
+              <button type="button" onClick={onOpenConnections} className="rounded-2xl border border-teal-500/20 bg-teal-500/10 p-3 text-left hover:border-teal-500/40">
+                <Users className="h-5 w-5 text-teal-300" />
+                <strong className="mt-3 block text-[10px] font-black uppercase text-slate-100">Conectados</strong>
+                <span className="mt-1 block text-[8px] leading-relaxed text-slate-500">{friends.length} conexões · {connectionRequests.length} solicitações</span>
+              </button>
+              <div className="rounded-2xl border border-amber-500/20 bg-amber-500/10 p-3 text-left">
+                <Bookmark className="h-5 w-5 text-amber-300" />
+                <strong className="mt-3 block text-[10px] font-black uppercase text-slate-100">Salvos</strong>
+                <span className="mt-1 block text-[8px] leading-relaxed text-slate-500">Coleção privada em preparação.</span>
+              </div>
               <button type="button" onClick={() => setIsSettingsOpen(true)} className="rounded-2xl border border-slate-700 bg-slate-900 p-3 text-left hover:border-slate-600">
                 <ShieldCheck className="h-5 w-5 text-slate-300" />
                 <strong className="mt-3 block text-[10px] font-black uppercase text-slate-100">Conta</strong>
