@@ -358,22 +358,14 @@ export function WorkspacePrimaryNavigationBridge() {
     const nav = findPrimaryBottomNav();
     nav?.setAttribute(DISCOVERY_ACTIVE_ATTRIBUTE, destination);
     setDiscoveryActive(destination);
-    pendingKyrubDestination.current = destination;
+    pendingKyrubDestination.current = null;
 
-    const kyrubButton = findKyrubButton();
-    if (!kyrubButton) {
-      clearDiscoveryNavigation();
-      return;
-    }
-
-    allowHeaderDiscoveryClick.current = true;
-    try {
-      kyrubButton.click();
-    } finally {
-      allowHeaderDiscoveryClick.current = false;
-    }
-
-    window.requestAnimationFrame(() => activatePendingKyrubDestination());
+    window.dispatchEvent(
+      new CustomEvent('kyrub:navigate-discovery', {
+        detail: { destination },
+      })
+    );
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const compactShortcutClassName =
