@@ -75,3 +75,14 @@ test('PDV authorizes active staff membership by operation permission', () => {
 test('legacy reservations remain restricted until canonical persistence exists', () => {
   assert.match(mobileMenu, /itemId === 'reservas'.*orders\.create/);
 });
+
+
+const timeClockRouter = readFileSync(new URL('../server/staff/timeClockRouter.ts', import.meta.url), 'utf8');
+test('canonical time clock binds punches to authenticated active member', () => {
+  assert.match(timeClockRouter, /members\/\$\{identity\.uid\}/);
+  assert.match(timeClockRouter, /member\.status !== 'active'/);
+  assert.match(timeClockRouter, /timeClockEntries/);
+  assert.match(timeClockRouter, /userId: actor\.userId/);
+  assert.match(timeClockRouter, /FieldValue\.serverTimestamp\(\)/);
+  assert.doesNotMatch(timeClockRouter, /request\.body\?\.userId/);
+});
