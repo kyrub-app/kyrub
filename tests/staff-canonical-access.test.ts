@@ -50,3 +50,13 @@ test('staff order workspace no longer requires employee uid to equal store tenan
   assert.match(orderWorkflow, /Bearer/);
   assert.match(retailerPanel, /subscribeToStoreCustomerOrders/);
 });
+
+
+const orderInventoryRouter = readFileSync(new URL('../server/inventory/orderInventoryRouter.ts', import.meta.url), 'utf8');
+test('order API separates actor identity from selected store and enforces membership permission', () => {
+  assert.match(orderWorkflow, /x-kyrub-store-id/);
+  assert.match(orderInventoryRouter, /stores\/\$\{canonicalStoreId\}\/members\/\$\{userId\}/);
+  assert.match(orderInventoryRouter, /STORE_ACCESS_DENIED/);
+  assert.match(orderInventoryRouter, /response\.status\(403\)/);
+  assert.match(orderInventoryRouter, /permissionForOrderStatus/);
+});
