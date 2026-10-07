@@ -65,7 +65,6 @@ import { UserProfileModal } from './components/modals/UserProfileModal';
 import { WalletModal } from './components/modals/WalletModal';
 import { ChatModal } from './components/modals/ChatModal';
 import { StoreConfigModal } from './components/modals/StoreConfigModal';
-import { NewProductModal } from './components/modals/NewProductModal';
 import { SharedNotesModal } from './components/modals/SharedNotesModal';
 import { UserSearchModal } from './components/modals/UserSearchModal';
 import { MomentsModal } from './components/modals/MomentsModal';
@@ -491,16 +490,6 @@ export default function App() {
     if (!isLoggedIn) return;
     localStorage.setItem(STORAGE_KEYS.MOMENTOS, JSON.stringify(momentos));
   }, [momentos, isLoggedIn]);
-
-  // Product addition state
-  const [newProductModal, setNewProductModal] = useState(false);
-  const [newProdName, setNewProdName] = useState('');
-  const [newProdPrice, setNewProdPrice] = useState('');
-  const [newProdWholesale, setNewProdWholesale] = useState('');
-  const [newProdStock, setNewProdStock] = useState('100');
-  const [newProdCategory, setNewProdCategory] = useState('Eletrônicos');
-  const [newProdDesc, setNewProdDesc] = useState('');
-  const [newProdIsService, setNewProdIsService] = useState(false);
 
   // Wallet privacy state (hidden by default)
   const [showBalance, setShowBalance] = useState(false);
@@ -1159,97 +1148,6 @@ if (newMomentPublishToPraca) {
     );
   };
 
-  // Original product creation handler
-  const handleCreateProduct = (e: React.FormEvent) => {
-    e.preventDefault();
-
-    if (!newProdName || !newProdPrice) {
-      triggerToast('Nome e preço são obrigatórios!', 'error');
-      return;
-    }
-
-    const priceNum = parseFloat(newProdPrice);
-    const wholesalePriceNum = newProdWholesale ? parseFloat(newProdWholesale) : undefined;
-    const stockNum = parseInt(newProdStock) || 0;
-
-    // Check freemium limit for retailer
-    if (isLimitReached) {
-      triggerToast('Limite Freemium: Você atingiu o limite de 5 itens. Assine o Plano Premium para cadastrar mais!', 'error');
-      setNewProductModal(false);
-      return;
-    }
-
-    const newProd: Product = {
-      id: `p-ret-${Date.now()}`,
-      name: newProdName,
-      description: newProdDesc || 'Item de excelente qualidade publicado no ecossistema Kyrub.',
-      price: priceNum,
-      wholesalePrice: wholesalePriceNum,
-      image: 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=400&h=400&fit=crop&q=80',
-      stock: stockNum,
-      supplierId: activeRetailerId,
-      category: newProdCategory,
-      isService: newProdIsService
-    };
-
-    setProducts(prev => [newProd, ...prev]);
-    setNewProductModal(false);
-    triggerToast(`"${newProdName}" cadastrado com sucesso!`, 'success');
-
-    // Reset fields
-    setNewProdName('');
-    setNewProdPrice('');
-    setNewProdWholesale('');
-    setNewProdStock('100');
-    setNewProdDesc('');
-    setNewProdIsService(false);
-  };
-
-  // Cart B2C Checkout Simulation
-  const checkoutCart = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (cart.length === 0 || !visitingStore) return;
-
-    const subtotal = cart.reduce((sum, item) => sum + item.product.price * item.quantity, 0);
-
-    const newOrder: Order = {
-      id: `ord-b2c-${Date.now().toString().slice(-4)}`,
-      storeId: visitingStore.id,
-      buyerName,
-      buyerEmail,
-      items: cart.map(it => ({
-        productId: it.product.id,
-        name: it.product.name,
-        price: it.product.price,
-        quantity: it.quantity,
-        wholesalePrice: it.product.wholesalePrice
-      })),
-      total: subtotal,
-      status: 'pending',
-      createdAt: new Date().toISOString(),
-      type: 'retail'
-    };
-
-    // Calculate platform split, retailer split, and mock it
-    const platformFee = subtotal * 0.1;
-    const retailerProfit = subtotal * 0.9;
-
-    setWalletBalance(curr => curr + retailerProfit);
-    setWalletHistory([
-      { id: `tx-sale-${Date.now()}`, type: 'Venda Recebida', desc: `Venda B2C via ${visitingStore.name}`, val: retailerProfit, date: new Date().toLocaleString('pt-BR') },
-      ...walletHistory
-    ]);
-
-    setOrders(prev => [newOrder, ...prev]);
-    setCart([]);
-    setIsCartOpen(false);
-    setVisitingStore(null);
-    setBuyerName('');
-    setBuyerEmail('');
-    setBuyerAddress('');
-    triggerToast(`Pedido finalizado com sucesso! Gateway Kyrub dividindo splits (10% Plataforma / 90% Loja)...`, 'success');
-  };
-
   const updateCartQty = (productId: string, qty: number) => {
     if (qty <= 0) {
       setCart(prev => prev.filter(item => item.product.id !== productId));
@@ -1650,7 +1548,6 @@ if (newMomentPublishToPraca) {
                 activeStore={activeStore}
                 products={products}
                 orders={orders}
-                setNewProductModal={setNewProductModal}
                 setProducts={setProducts}
                 setOrders={setOrders}
                 onUpdateStore={handleUpdateStoreProfile}
@@ -1725,25 +1622,6 @@ if (newMomentPublishToPraca) {
         </div>
       )}
 
-      {/* 7. MODAL DE CADASTRO DE PRODUTOS / SERVIÇOS (RETAILER NEW PRODUCT FORM) */}
-      <NewProductModal
-        isOpen={newProductModal}
-        onClose={() => setNewProductModal(false)}
-        handleCreateProduct={handleCreateProduct}
-        newProdName={newProdName}
-        setNewProdName={setNewProdName}
-        newProdPrice={newProdPrice}
-        setNewProdPrice={setNewProdPrice}
-        newProdCategory={newProdCategory}
-        setNewProdCategory={setNewProdCategory}
-        newProdStock={newProdStock}
-        setNewProdStock={setNewProdStock}
-        newProdDesc={newProdDesc}
-        setNewProdDesc={setNewProdDesc}
-        newProdIsService={newProdIsService}
-        setNewProdIsService={setNewProdIsService}
-      />
-
       {/* 8. SLIDEOVER CARRINHO DE COMPRAS B2C */}
       <B2CCartDrawer
         isOpen={isCartOpen}
@@ -1751,7 +1629,6 @@ if (newMomentPublishToPraca) {
         onClose={() => setIsCartOpen(false)}
         cart={cart}
         updateCartQty={updateCartQty}
-        checkoutCart={checkoutCart}
         buyerName={buyerName}
         setBuyerName={setBuyerName}
         buyerEmail={buyerEmail}
