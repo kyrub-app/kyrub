@@ -11,6 +11,7 @@ import {
   MessageCircle,
   Search,
   SearchX,
+  SlidersHorizontal,
   Send,
   Star,
   Store as StoreIcon,
@@ -204,6 +205,7 @@ export function KyrubTab({
 }: KyrubTabProps) {
   const [effectiveUserCoords, setEffectiveUserCoords] = useState(userCoords);
   const [isDistancePanelOpen, setIsDistancePanelOpen] = useState(false);
+  const [isSearchFilterOpen, setIsSearchFilterOpen] = useState(false);
   const [locationStatus, setLocationStatus] = useState<
     'idle' | 'loading' | 'ready' | 'error'
   >(userCoords ? 'ready' : 'idle');
@@ -531,27 +533,6 @@ export function KyrubTab({
     <div className="space-y-5 animate-fade-in" id="praca-tab-container">
       <section className="space-y-3 rounded-3xl border border-slate-800 bg-slate-900 p-4">
         <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={requestActualLocation}
-            className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border transition-colors ${
-              locationStatus === 'ready'
-                ? 'border-orange-500/50 bg-orange-500/15 text-orange-400'
-                : locationStatus === 'error'
-                  ? 'border-red-500/40 bg-red-500/10 text-red-400'
-                  : 'border-slate-800 bg-slate-950 text-slate-500 hover:text-orange-400'
-            }`}
-            title="Usar localização atual e ajustar distância"
-            aria-label="Filtro de distância"
-            id="distance-filter-trigger"
-          >
-            {locationStatus === 'loading' ? (
-              <LoaderCircle className="h-4 w-4 animate-spin" />
-            ) : (
-              <LocateFixed className="h-4 w-4" />
-            )}
-          </button>
-
           <div className="relative min-w-0 flex-1">
             <Search className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
             <input
@@ -572,7 +553,74 @@ export function KyrubTab({
               </button>
             )}
           </div>
+
+          <button
+            type="button"
+            onClick={() => setIsSearchFilterOpen(current => !current)}
+            className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border transition-colors ${
+              isSearchFilterOpen || isDistancePanelOpen
+                ? 'border-orange-500/50 bg-orange-500/15 text-orange-400'
+                : 'border-slate-800 bg-slate-950 text-slate-500 hover:text-orange-400'
+            }`}
+            title="Filtros da Praça"
+            aria-label="Abrir filtros da Praça"
+            id="praca-filter-trigger"
+          >
+            <SlidersHorizontal className="h-4 w-4" />
+          </button>
         </div>
+
+        {isSearchFilterOpen && (
+          <div className="flex flex-wrap gap-2 rounded-2xl border border-slate-800 bg-slate-950/80 p-3">
+            <button
+              type="button"
+              onClick={() => {
+                setSocialSubTab('usuarios');
+                setPracaFilter('recentes');
+              }}
+              className="rounded-xl border border-orange-500/30 bg-orange-500/10 px-3 py-2 text-[9px] font-black uppercase text-orange-300"
+            >
+              Publicações
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setSocialSubTab('usuarios');
+                document
+                  .querySelector<HTMLElement>('#square-communities')
+                  ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+              }}
+              className="rounded-xl border border-sky-500/30 bg-sky-500/10 px-3 py-2 text-[9px] font-black uppercase text-sky-300"
+            >
+              Comunidades
+            </button>
+            <button
+              type="button"
+              onClick={() => setPracaFilter('conectados')}
+              className="rounded-xl border border-teal-500/30 bg-teal-500/10 px-3 py-2 text-[9px] font-black uppercase text-teal-300"
+            >
+              Pessoas
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setSocialSubTab('lojas');
+                setIsSearchFilterOpen(false);
+              }}
+              className="rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-[9px] font-black uppercase text-slate-300"
+            >
+              Marketplace
+            </button>
+            <button
+              type="button"
+              onClick={requestActualLocation}
+              className="flex items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-[9px] font-black uppercase text-slate-300"
+            >
+              <LocateFixed className="h-3.5 w-3.5" />
+              Distância
+            </button>
+          </div>
+        )}
 
         {isDistancePanelOpen && (
           <div className="rounded-2xl border border-slate-800 bg-slate-950/80 p-3">
