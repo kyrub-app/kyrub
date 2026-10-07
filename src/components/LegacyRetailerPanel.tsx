@@ -110,13 +110,6 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = ({
     activeStore.offerImages,
   ]);
 
-  // Vouchers state
-  const [vouchers, setVouchers] = useState<any[]>([]);
-  const [newVoucherCode, setNewVoucherCode] = useState('');
-  const [newVoucherType, setNewVoucherType] = useState<'percentage' | 'fixed'>('percentage');
-  const [newVoucherVal, setNewVoucherVal] = useState('');
-  const [newVoucherLimit, setNewVoucherLimit] = useState('');
-
   // FISCAL SEFAZ ENGINE STATE
   const [fiscalLogs, setFiscalLogs] = useState<string[]>([]);
   const [showFiscalLogsModal, setShowFiscalLogsModal] = useState(false);
@@ -938,101 +931,10 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = ({
 
                   {/* SUBMODULE: VOUCHERS */}
                   {activeGerencialModule === 'vouchers' && (
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                      
-                      <div className="bg-slate-900 p-5 rounded-3xl border border-slate-800 space-y-4">
-                        <h4 className="text-xs font-black text-amber-500 uppercase">Criar Novo Cupom</h4>
-                        
-                        <div className="space-y-3">
-                          <div>
-                            <label className="block text-[10px] font-mono text-slate-400 uppercase font-bold mb-1">CÓDIGO DO CUPOM</label>
-                            <input
-                              type="text"
-                              value={newVoucherCode}
-                              onChange={(e) => setNewVoucherCode(e.target.value)}
-                              placeholder="Ex: SPECIAL50"
-                              className="w-full bg-slate-950 border border-slate-850 rounded-xl px-3 py-1.5 text-xs text-white uppercase"
-                            />
-                          </div>
-
-                          <div>
-                            <label className="block text-[10px] font-mono text-slate-400 uppercase font-bold mb-1">TIPO DE DESCONTO</label>
-                            <select
-                              value={newVoucherType}
-                              onChange={(e) => setNewVoucherType(e.target.value as any)}
-                              className="w-full bg-slate-950 border border-slate-850 rounded-xl px-3 py-1.5 text-xs text-white focus:outline-none"
-                            >
-                              <option value="percentage">Porcentagem (%)</option>
-                              <option value="fixed">Valor Fixo (R$)</option>
-                            </select>
-                          </div>
-
-                          <div>
-                            <label className="block text-[10px] font-mono text-slate-400 uppercase font-bold mb-1">VALOR DO DESCONTO</label>
-                            <input
-                              type="number"
-                              value={newVoucherVal}
-                              onChange={(e) => setNewVoucherVal(e.target.value)}
-                              placeholder="Ex: 10"
-                              className="w-full bg-slate-950 border border-slate-850 rounded-xl px-3 py-1.5 text-xs text-white"
-                            />
-                          </div>
-
-                          <div>
-                            <label className="block text-[10px] font-mono text-slate-400 uppercase font-bold mb-1">LIMITE DE USO</label>
-                            <input
-                              type="number"
-                              value={newVoucherLimit}
-                              onChange={(e) => setNewVoucherLimit(e.target.value)}
-                              placeholder="Ex: 100"
-                              className="w-full bg-slate-950 border border-slate-850 rounded-xl px-3 py-1.5 text-xs text-white"
-                            />
-                          </div>
-
-                          <button
-                            onClick={() => {
-                              if (!newVoucherCode.trim() || !newVoucherVal) {
-                                triggerToast('Preencha os campos do voucher!', 'error');
-                                return;
-                              }
-                              const voucher = {
-                                id: `v-${Date.now()}`,
-                                code: newVoucherCode.toUpperCase(),
-                                type: newVoucherType,
-                                val: parseFloat(newVoucherVal),
-                                limit: parseInt(newVoucherLimit) || 100
-                              };
-                              setVouchers([...vouchers, voucher]);
-                              setNewVoucherCode('');
-                              setNewVoucherVal('');
-                              setNewVoucherLimit('');
-                              triggerToast(`Cupom ${voucher.code} ativado com sucesso!`, 'success');
-                            }}
-                            className="w-full py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black rounded-xl text-xs uppercase"
-                          >
-                            Ativar Cupom Promocional
-                          </button>
-                        </div>
-                      </div>
-
-                      <div className="bg-slate-900 p-5 rounded-3xl border border-slate-800 space-y-4">
-                        <h4 className="text-xs font-black text-white uppercase">Cupons Promocionais Ativos</h4>
-                        <div className="space-y-2">
-                          {vouchers.map(v => (
-                            <div key={v.id} className="bg-slate-950 p-3 rounded-2xl border border-slate-850 flex items-center justify-between text-xs">
-                              <div className="font-mono">
-                                <strong className="text-amber-400 block">{v.code}</strong>
-                                <span className="text-slate-500 text-[10px]">Limite de Uso: {v.limit} un</span>
-                              </div>
-                              <span className="bg-amber-500/10 text-amber-400 border border-amber-500/20 text-[10px] font-bold font-mono px-2 py-0.5 rounded-full">
-                                {v.type === 'percentage' ? `${v.val}% OFF` : `R$ ${v.val} OFF`}
-                              </span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-
-                    </div>
+                    <div
+                      id="kyrub-store-promotions-legacy-anchor"
+                      className="min-w-0"
+                    />
                   )}
 
                 </div>
