@@ -456,6 +456,7 @@ export function ProfileSocialHubNative() {
   const [publishToStatus, setPublishToStatus] = useState(false);
   const [shareToSquare, setShareToSquare] = useState(false);
   const [tagPickerOpen, setTagPickerOpen] = useState(false);
+  const [composerToolsOpen, setComposerToolsOpen] = useState(false);
   const [selectedTaggedUserIds, setSelectedTaggedUserIds] = useState<string[]>(
     []
   );
@@ -824,6 +825,7 @@ export function ProfileSocialHubNative() {
     setPostMediaUrls([]);
     setSelectedTaggedUserIds([]);
     setTagPickerOpen(false);
+    setComposerToolsOpen(false);
     setPublishToStatus(false);
     setShareToSquare(false);
     triggerToast(
@@ -1290,15 +1292,68 @@ export function ProfileSocialHubNative() {
               {activeTab === 'publications' && (
                 <>
                   <section className="space-y-3 rounded-3xl border border-slate-800 bg-slate-900 p-4">
-                    <textarea
-                      value={newPostText}
-                      onChange={event =>
-                        setNewPostText(event.target.value.slice(0, 3000))
-                      }
-                      rows={3}
-                      placeholder="O que você quer publicar na sua linha do tempo?"
-                      className="w-full resize-none rounded-2xl border border-slate-800 bg-slate-950 px-3 py-3 text-xs text-white outline-none focus:border-orange-500/60"
-                    />
+                    <div className="relative">
+                      <textarea
+                        value={newPostText}
+                        onChange={event =>
+                          setNewPostText(event.target.value.slice(0, 3000))
+                        }
+                        rows={3}
+                        placeholder="O que você quer publicar na sua linha do tempo?"
+                        className="w-full resize-none rounded-2xl border border-slate-800 bg-slate-950 px-12 py-3 pr-12 text-xs text-white outline-none focus:border-orange-500/60"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setComposerToolsOpen(current => !current)}
+                        className="absolute bottom-3 left-3 flex h-8 w-8 items-center justify-center rounded-full border border-slate-700 bg-slate-900 text-slate-300"
+                        aria-label="Adicionar à publicação"
+                        aria-expanded={composerToolsOpen}
+                      >
+                        <Plus className="h-4 w-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          window.dispatchEvent(
+                            new Event('kyrub-profile-publish-menu-requested')
+                          )
+                        }
+                        className="absolute bottom-3 right-3 flex h-8 w-8 items-center justify-center rounded-full bg-orange-500 text-slate-950"
+                        aria-label="Escolher destino e publicar"
+                      >
+                        <Send className="h-4 w-4" />
+                      </button>
+                    </div>
+
+                    {composerToolsOpen && (
+                      <div className="flex flex-col gap-1 rounded-2xl border border-slate-800 bg-slate-950 p-2 shadow-xl">
+                        <label className="flex min-h-11 cursor-pointer items-center gap-3 rounded-xl px-3 text-[9px] font-black uppercase text-slate-300 hover:bg-slate-900">
+                          <ImagePlus className="h-4 w-4" />
+                          Adicionar imagens {postMediaUrls.length}/9
+                          <input
+                            type="file"
+                            accept="image/*"
+                            multiple
+                            className="hidden"
+                            onChange={event => {
+                              void readPostImages(event);
+                              setComposerToolsOpen(false);
+                            }}
+                          />
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setTagPickerOpen(current => !current);
+                            setComposerToolsOpen(false);
+                          }}
+                          className="flex min-h-11 items-center gap-3 rounded-xl px-3 text-left text-[9px] font-black uppercase text-slate-300 hover:bg-slate-900"
+                        >
+                          <UserPlus className="h-4 w-4" />
+                          Marcar pessoas {selectedTaggedUserIds.length || ''}
+                        </button>
+                      </div>
+                    )}
 
                     {postMediaUrls.length > 0 && (
                       <div className="grid grid-cols-3 gap-2">
@@ -1447,43 +1502,14 @@ export function ProfileSocialHubNative() {
                       </label>
                     </div>
 
-                    <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-800 pt-3">
-                      <div className="flex flex-wrap gap-2">
-                        <label className="flex h-10 cursor-pointer items-center gap-2 rounded-xl border border-slate-800 bg-slate-950 px-3 text-[9px] font-black uppercase text-slate-400">
-                          <ImagePlus className="h-4 w-4" />
-                          Imagens {postMediaUrls.length}/9
-                          <input
-                            type="file"
-                            accept="image/*"
-                            multiple
-                            className="hidden"
-                            onChange={readPostImages}
-                          />
-                        </label>
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setTagPickerOpen(current => !current)
-                          }
-                          className={`flex h-10 items-center gap-2 rounded-xl border px-3 text-[9px] font-black uppercase ${
-                            selectedTaggedUserIds.length > 0
-                              ? 'border-teal-500/35 bg-teal-500/10 text-teal-300'
-                              : 'border-slate-800 bg-slate-950 text-slate-400'
-                          }`}
-                        >
-                          <UserPlus className="h-4 w-4" />
-                          Marcar {selectedTaggedUserIds.length || ''}
-                        </button>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={publish}
-                        className="flex h-10 items-center gap-2 rounded-xl bg-orange-500 px-4 text-[9px] font-black uppercase text-slate-950"
-                      >
-                        <Send className="h-4 w-4" />
-                        Publicar
-                      </button>
-                    </div>
+                    <button
+                      type="button"
+                      onClick={publish}
+                      className="hidden"
+                      aria-label="Confirmar publicação"
+                    >
+                      Publicar
+                    </button>
                   </section>
 
                   {ownStatuses.length > 0 && (
