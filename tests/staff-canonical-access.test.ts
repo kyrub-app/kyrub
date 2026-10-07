@@ -197,3 +197,14 @@ test('canonical promotions bind to the selected owner store without impersonatin
   assert.match(promotionsLegacyBridge, /products=\{products\}/);
   assert.doesNotMatch(promotionsLegacyBridge, /storeId=\{user\.uid\}/);
 });
+
+test('voucher workspace has one canonical authority and a stable host', () => {
+  assert.match(legacyRetailerPanel, /id="kyrub-store-promotions-legacy-anchor"/);
+  assert.doesNotMatch(legacyRetailerPanel, /const \[vouchers, setVouchers\]/);
+  assert.doesNotMatch(legacyRetailerPanel, /newVoucherCode/);
+  assert.doesNotMatch(legacyRetailerPanel, /Ativar Cupom Promocional/);
+  assert.doesNotMatch(legacyRetailerPanel, /ativado com sucesso!/);
+  assert.match(promotionsLegacyBridge, /findLegacyVoucherAnchor/);
+  assert.match(promotionsLegacyBridge, /kyrub-store-promotions-legacy-anchor/);
+  assert.doesNotMatch(promotionsLegacyBridge, /CRIAR NOVO CUPOM/);
+});
