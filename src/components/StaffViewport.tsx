@@ -11,6 +11,7 @@ interface StaffViewportProps {
   selectedStoreId: string;
   onSelectStore: (storeId: string) => void;
   onGoBackToMain: () => void;
+  onEnterErp?: () => void;
 }
 
 export function StaffViewport({
@@ -21,6 +22,7 @@ export function StaffViewport({
   selectedStoreId,
   onSelectStore,
   onGoBackToMain,
+  onEnterErp,
 }: StaffViewportProps) {
   const selectedAccess =
     accesses.find(access => access.store.id === selectedStoreId) ?? accesses[0] ?? null;
@@ -112,8 +114,13 @@ export function StaffViewport({
                   <div>
                     <strong className="text-sm text-white">{selectedAccess.store.name}</strong>
                     <p className="mt-1 text-[11px] leading-relaxed text-emerald-100/70">
-                      Vínculo ativo como {STORE_ROLE_LABELS[selectedAccess.role]}. A próxima etapa conecta este contexto ao ERP canônico e aplica as permissões do papel em cada módulo e ação.
+                      Vínculo ativo como {STORE_ROLE_LABELS[selectedAccess.role]}. O ERP reutiliza este contexto e filtra a navegação pelas permissões do papel.
                     </p>
+                    {onEnterErp && (
+                      <button type="button" onClick={onEnterErp} className="mt-4 rounded-xl bg-emerald-400 px-4 py-2.5 text-[10px] font-black uppercase text-slate-950">
+                        Entrar no ERP
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
