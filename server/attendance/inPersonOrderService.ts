@@ -270,15 +270,17 @@ const resolveOrderItems = async (input: {
 
 export const createInPersonOrder = async (input: {
   authenticatedUserId: string;
+  authorizedStoreId?: string;
   value: unknown;
   now?: Date;
 }): Promise<CustomerOrder> => {
   const request = parseInPersonOrderCreateInput(input.value);
   const actorUserId = clean(input.authenticatedUserId);
-  if (!actorUserId || actorUserId !== request.storeId) {
+  const authorizedStoreId = clean(input.authorizedStoreId ?? actorUserId);
+  if (!actorUserId || !authorizedStoreId || authorizedStoreId !== request.storeId) {
     throw new Error('IN_PERSON_ORDER_FORBIDDEN');
   }
-  const context = await resolveInPersonOrderStoreContext(request.storeId);
+  const context = await resolveInPersonOrderStoreContext(authorizedStoreId);
   const location = await getServiceLocation({
     storeId: context.legacyStoreId,
     locationId: request.serviceLocationId,
