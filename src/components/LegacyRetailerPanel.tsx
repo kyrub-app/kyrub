@@ -102,24 +102,13 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = ({
     activeStore.offerImages,
   ]);
 
-  // FISCAL SEFAZ ENGINE STATE
-  const [fiscalLogs, setFiscalLogs] = useState<string[]>([]);
-  const [showFiscalLogsModal, setShowFiscalLogsModal] = useState(false);
-  const [latestFiscalXml, setLatestFiscalXml] = useState<string>('');
-
   // Helpers
   const isPremium = activeRetailer?.plan === 'business';
 
   // ==========================================
   // ECOSSISTEMA: PDV SALE SUBTRACTION LINKED TO MARKETPLACE
   // ==========================================
-  const registerFiscalIntegrationPending = () => {
-    setLatestFiscalXml('');
-    setFiscalLogs(prev => [
-      `[${new Date().toLocaleTimeString()}] Documento fiscal não emitido: integração fiscal ainda não configurada para esta loja.`,
-      ...prev
-    ]);
-  };
+
 
   const handleManualProductAddition = () => {
     if (activeRetailer?.plan === 'free' && activeRetailerProducts.length >= 5) {
@@ -832,53 +821,7 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = ({
         </div>
       )}
 
-      {/* ==========================================
-          MODAL 2: TERMINAL SEFAZ / FISCAL CONSOLE LOGS
-         ========================================== */}
-      {showFiscalLogsModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4 animate-fade-in">
-          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 w-full max-w-2xl space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-855 pb-2">
-              <div className="flex items-center gap-2">
-                <Laptop className="w-5 h-5 text-emerald-400 animate-pulse" />
-                <h3 className="text-xs font-black text-white uppercase tracking-wider">Terminal SEFAZ Retaguarda Fator-PDV</h3>
-              </div>
-              <button 
-                onClick={() => setShowFiscalLogsModal(false)}
-                className="p-1.5 bg-slate-950 border border-slate-850 text-slate-400 hover:text-white rounded-lg"
-              >
-                Fechar
-              </button>
-            </div>
 
-            <p className="text-[11px] text-slate-400 leading-relaxed">
-              A integração fiscal ainda não está configurada para esta loja. Nenhum XML, protocolo ou autorização é fabricado pelo painel.
-            </p>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <span className="text-[10px] font-mono text-slate-500 uppercase block">Transmissões Recentes</span>
-                <div className="bg-slate-950 border border-slate-850 p-3 rounded-2xl h-60 overflow-y-auto text-[10px] font-mono text-slate-300 space-y-2">
-                  {fiscalLogs.length > 0 ? (
-                    fiscalLogs.map((log, idx) => (
-                      <p key={idx} className="border-b border-slate-900/50 pb-1.5 last:border-b-0">{log}</p>
-                    ))
-                  ) : (
-                    <p className="text-slate-600">Nenhuma transmissão fiscal registrada no faturamento recente.</p>
-                  )}
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <span className="text-[10px] font-mono text-slate-500 uppercase block">Último documento fiscal</span>
-                <div className="bg-slate-950 border border-slate-850 p-3 rounded-2xl h-60 overflow-y-auto text-[9px] font-mono text-amber-500/95 leading-tight whitespace-pre">
-                  {latestFiscalXml || 'Nenhum documento fiscal emitido.'}
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
     </div>
   );
