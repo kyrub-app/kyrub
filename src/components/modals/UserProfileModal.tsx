@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AtSign,
   BadgeCheck,
+  Bookmark,
   Bike,
   Building2,
   CheckCircle2,
@@ -21,6 +22,7 @@ import {
   Store,
   UserRound,
   UsersRound,
+  Users,
   X,
 } from 'lucide-react';
 import {
@@ -1049,6 +1051,25 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = props => {
                   </div>
                 </div>
               </div>
+            </section>
+
+            <section className="grid grid-cols-2 gap-2 border-b border-slate-900 bg-slate-950 p-4 sm:grid-cols-4 sm:p-5" id="profile-personal-center">
+              {[
+                ['Minhas comunidades', 'Crie e administre seus espaços.', UsersRound],
+                ['Conectados', 'Contatos, grupos e relações pessoais.', Users],
+                ['Salvos', 'Conteúdo guardado só para você.', Bookmark],
+              ].map(([label, description, Icon]) => (
+                <div key={String(label)} className="rounded-2xl border border-slate-800 bg-slate-900 p-3 text-left">
+                  <Icon className="h-5 w-5 text-teal-300" />
+                  <strong className="mt-3 block text-[10px] font-black uppercase text-slate-100">{label}</strong>
+                  <span className="mt-1 block text-[8px] leading-relaxed text-slate-500">{description}</span>
+                </div>
+              ))}
+              <button type="button" onClick={() => setIsSettingsOpen(true)} className="rounded-2xl border border-slate-700 bg-slate-900 p-3 text-left hover:border-slate-600">
+                <ShieldCheck className="h-5 w-5 text-slate-300" />
+                <strong className="mt-3 block text-[10px] font-black uppercase text-slate-100">Conta</strong>
+                <span className="mt-1 block text-[8px] leading-relaxed text-slate-500">Dados, segurança e verificação.</span>
+              </button>
             </section>
 
             <section
