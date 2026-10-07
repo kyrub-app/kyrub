@@ -49,6 +49,8 @@ test('cash mutations enforce role permission inside the action layer', () => {
 const orderWorkflow = readFileSync(new URL('../src/utils/orderWorkflow.ts', import.meta.url), 'utf8');
 const retailerPanel = readFileSync(new URL('../src/components/RetailerPanel.tsx', import.meta.url), 'utf8');
 const runtimeRouter = readFileSync(new URL('../src/components/RetailerPanelRuntimeRouter.tsx', import.meta.url), 'utf8');
+const deliveryManager = readFileSync(new URL('../src/components/modals/DeliveryManagerModal.tsx', import.meta.url), 'utf8');
+const freelaManager = readFileSync(new URL('../src/components/modals/FreelaManagerModal.tsx', import.meta.url), 'utf8');
 const promotionsLegacyBridge = readFileSync(new URL('../src/components/store/StorePromotionsLegacyBridge.tsx', import.meta.url), 'utf8');
 test('staff order workspace no longer requires employee uid to equal store tenant', () => {
   assert.doesNotMatch(orderWorkflow, /user\.uid !== normalizedStoreId/);
@@ -282,4 +284,15 @@ test('legacy app cannot fabricate marketplace checkout or product creation', () 
   assert.doesNotMatch(legacyApp, /setWalletBalance\(curr => curr \+ retailerProfit\)/);
   assert.doesNotMatch(legacyApp, /<NewProductModal/);
   assert.doesNotMatch(legacyApp, /p-ret-\$\{Date\.now\(\)\}/);
+});
+
+
+test('gig completion cannot fabricate personal wallet settlement', () => {
+  assert.doesNotMatch(deliveryManager, /setWalletBalance/);
+  assert.doesNotMatch(deliveryManager, /setWalletHistory/);
+  assert.match(deliveryManager, /pendente de liquidação real/);
+  assert.doesNotMatch(freelaManager, /handleSimulateGigDone/);
+  assert.doesNotMatch(freelaManager, /setWalletBalance/);
+  assert.doesNotMatch(freelaManager, /setWalletHistory/);
+  assert.match(freelaManager, /pendente de liquidação real/);
 });
