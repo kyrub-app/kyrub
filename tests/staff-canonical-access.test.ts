@@ -245,3 +245,19 @@ test('manager integrations do not advertise a simulated sandbox', () => {
   assert.doesNotMatch(legacyRetailerPanel, /sandbox de simulação/);
   assert.match(legacyRetailerPanel, /Este painel não gera pedidos simulados/);
 });
+
+
+test('fiscal has one canonical workspace and no legacy SEFAZ console', () => {
+  assert.match(runtimeRouter, /FiscalWorkspace/);
+  assert.doesNotMatch(legacyRetailerPanel, /Terminal SEFAZ Retaguarda Fator-PDV/);
+  assert.doesNotMatch(legacyRetailerPanel, /fiscalLogs/);
+  assert.doesNotMatch(legacyRetailerPanel, /latestFiscalXml/);
+});
+
+test('store customization persists through the owner store handler and blocks staff mutation', () => {
+  assert.match(legacyRetailerPanel, /await onUpdateStore\(\{/);
+  assert.match(legacyApp, /await updateDoc\(/);
+  assert.match(legacyApp, /await setDoc\(/);
+  assert.match(legacyApp, /setUserStore\(previousStore\.id \? previousStore : null\)/);
+  assert.match(legacyApp, /Staff store profile mutation is not allowed/);
+});
