@@ -176,3 +176,14 @@ test('cash tab no longer keeps the superseded Dexie simulation behind canonical 
   assert.match(retailerPanel, /CashWorkspace/);
   assert.match(canonicalCash, /requireCashPermission\(context, 'cash\.manage'\)/);
 });
+
+test('manager workspace does not present fictitious sales or fake webhook success', () => {
+  assert.doesNotMatch(legacyRetailerPanel, /R\$ 1\.842,90/);
+  assert.doesNotMatch(legacyRetailerPanel, /R\$ 153,50/);
+  assert.doesNotMatch(legacyRetailerPanel, /12 un/);
+  assert.doesNotMatch(legacyRetailerPanel, /92 %/);
+  assert.doesNotMatch(legacyRetailerPanel, /Simulação de Payload recebido/);
+  assert.doesNotMatch(legacyRetailerPanel, /Disparar Payload Webhook/);
+  assert.match(legacyRetailerPanel, /Nenhum indicador demonstrativo é exibido/);
+  assert.match(legacyRetailerPanel, /Este painel não gera pedidos simulados/);
+});
