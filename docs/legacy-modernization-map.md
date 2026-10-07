@@ -288,3 +288,128 @@ Exceções precisam ser fronteiras técnicas justificadas (por exemplo integraç
 **Onda 4 — Storefront/configuração:** LegacyStorefrontPanel e LegacyStoreConfigModal.
 
 Essa ordem é por acoplamento estrutural, não por importância de negócio.
+
+
+## Serviços e componentes atuais reaproveitáveis
+
+Quarta passagem: foram separados contratos de dados/componentes atuais da camada de compatibilidade DOM. O resultado é favorável: a modernização não exige reconstruir o Social do zero.
+
+### Social — preservar
+
+**usePublicSocialFeed**
+- hook React/Firebase sem dependência de DOM legado;
+- já concentra feed público e interações relacionadas.
+- Classificação: **CANÔNICO / candidato a compor SocialDomainProvider**.
+
+**useSocialDirectoryV2**
+- hook React/Firestore sem manipulação de DOM;
+- concentra usuários, conexões, solicitações e favoritos.
+- Classificação: **CANÔNICO**, embora hoje seja instanciado também pelo LegacyApp.
+
+**PublicSocialFeedPanel**
+- componente sem querySelector/MutationObserver/click programático/portal.
+- Classificação: **CANÔNICO REUTILIZÁVEL**.
+
+**ConnectedContactsPanel**
+- componente sem manipulação de DOM.
+- Classificação: **CANÔNICO REUTILIZÁVEL**.
+
+**ProfileSocialHubNative**
+- já é uma implementação React própria e não depende de seletores/MutationObserver;
+- usa hooks sociais atuais.
+- Ainda possui portals legítimos de modal e um click programático pontual a revisar, mas não apresenta o padrão de patch global.
+- Classificação: **BASE CANÔNICA DO PESSOAL**.
+
+### Comunidades — preservar dados, substituir composição
+
+**useCommunityDirectory**
+- hook independente do DOM.
+- **CANÔNICO**.
+
+**communityCloud.ts**
+- contratos Firestore/Storage explícitos para comunidades, membros, posts, debates, comentários, capa e moderação;
+- nenhuma dependência de DOM.
+- **CANÔNICO**.
+
+**ProfileCommunitiesCloudBridge**
+- regra/dados atuais, mas montagem visual por DOM, MutationObserver, timer e portals.
+- **DIVIDIR**: preservar lógica/componentes de comunidade; retirar o mecanismo de descoberta/injeção no modal.
+
+### Marketplace — preservar contratos, substituir shell legado
+
+**marketplaceDiscovery.ts**
+- serviço sem dependência visual.
+- **CANÔNICO**.
+
+**marketplacePaths.ts**
+- caminhos/identidade de documentos.
+- **CANÔNICO**.
+
+**publicProducts.ts**
+- criação, parsing, persistência e subscriptions de produtos públicos; sem DOM.
+- **CANÔNICO**.
+
+O `KyrubTab.tsx` atual já usa descoberta/listings canônicos e não manipula DOM. O problema é que seu tipo e sua renderização ainda envolvem `LegacyKyrubTab`. Portanto ele é um bom ponto de migração: **manter seus reads/componentes atuais e substituir a base Legacy**.
+
+### Pedidos/ERP — contratos já aproveitáveis
+
+**customerOrders.ts**
+- contrato amplo e explícito para pedido, status, pagamento, persistência, subscriptions e transições.
+- sem dependência visual.
+- **CANÔNICO**.
+
+**canonicalOrderNavigation.ts**
+- contrato explícito para intenção/ack/consumo de navegação de pedidos.
+- não depende de DOM.
+- **CANÔNICO**, embora o uso de eventos deva permanecer restrito a contrato de domínio, não simulação de UI.
+
+**storePersistence.ts / storePaths.ts**
+- persistência e identidade da loja estão separadas da UI.
+- **CANÔNICOS**.
+- O problema atual é o bootstrap/orquestração ainda depender do LegacyApp, não esses utilitários.
+
+## Consequência para a Onda 1
+
+Não precisamos criar um “novo Social” do zero. A migração deve recompor peças que já existem:
+
+```
+SocialWorkspace (novo dono de navegação social)
+├── Pessoal -> ProfileSocialHubNative
+├── Praça -> PublicSocialFeedPanel + usePublicSocialFeed
+├── Marketplace -> descoberta/listings atuais
+├── Conectados -> ConnectedContactsPanel + useSocialDirectoryV2
+└── Comunidades -> UI extraída do ProfileCommunitiesCloudBridge
+```
+
+O `SocialWorkspace` não deve importar `LegacyKyrubTab`, procurar bottom nav/header no DOM ou receber `socialSubTab` do LegacyApp.
+
+### Estado mínimo que deve sair primeiro do LegacyApp
+
+- `socialSubTab`
+- `ofertasFilter`
+- `pracaFilter`
+- `conectadosSubTab`
+- coordenação de abertura entre Pessoal/Praça/Marketplace/Conectados/Comunidades.
+
+Posts/conexões podem inicialmente continuar vindo dos hooks atuais sem migração de schema. Isso reduz drasticamente o risco.
+
+## Primeiro desenho de contrato canônico de navegação social
+
+Destino deve ser dado sem referência a botão ou texto visual:
+
+`pessoal | praca | marketplace | conectados | comunidades`
+
+A API interna pode ser Context/Reducer do React no shell autenticado. O componente que solicita navegação informa o destino; o workspace renderiza o destino. Não há clique indireto nem busca por DOM.
+
+A URL pública/canônica da página Pessoal é um problema separado e não precisa bloquear a retirada do LegacyKyrubTab.
+
+## Situação do mapeamento antes da implementação
+
+Já temos evidência suficiente para iniciar a Onda 1 sem reconstrução cega:
+- autoridade antiga identificada;
+- bridges de compatibilidade identificadas;
+- serviços/hooks que sobrevivem identificados;
+- componentes React reutilizáveis identificados;
+- estado mínimo a extrair delimitado.
+
+Ainda será necessário validar os contratos/props exatos de `LegacyKyrubTab` durante a implementação para garantir paridade funcional antes de removê-lo.
