@@ -78,8 +78,6 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = ({
   const [pontoLoading, setPontoLoading] = useState(false);
 
   // 6. GENERAL FINANCE / HR / CUSTOMIZATION / FISCAL
-  const [hrWorkers, setHrWorkers] = useState<any[]>([]);
-
   // Customization States
   const [storeName, setStoreName] = useState(activeStore?.name || '');
   const [storeDesc, setStoreDesc] = useState(activeStore?.description || '');
@@ -688,70 +686,10 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = ({
 
                   {/* SUBMODULE: RECURSOS HUMANOS */}
                   {activeGerencialModule === 'rh' && (
-                    <div className="bg-slate-900 p-6 rounded-3xl border border-slate-850 space-y-5">
-                      <div className="flex items-center justify-between border-b border-slate-850 pb-3">
-                        <div>
-                          <h4 className="text-xs font-black text-pink-500 uppercase">RECURSOS HUMANOS</h4>
-                          <p className="text-[10px] text-slate-400 mt-0.5">Gestão Completa de Equipe & Folha</p>
-                        </div>
-                        <div className="flex gap-2">
-                          <button 
-                            onClick={() => triggerToast('Menu de cargos e equipe acessado.', 'info')}
-                            className="bg-pink-950/80 text-pink-400 border border-pink-900/60 font-black px-3 py-1.5 rounded-xl text-[10px] uppercase cursor-pointer"
-                          >
-                            Equipe
-                          </button>
-                          <button 
-                            onClick={() => triggerToast('Contratação de Extra/Freelancer iniciada via Kyrub Freelas.', 'info')}
-                            className="bg-orange-600 hover:bg-orange-500 text-white font-black px-3 py-1.5 rounded-xl text-[10px] uppercase cursor-pointer"
-                          >
-                            Chamar Extra
-                          </button>
-                        </div>
-                      </div>
-
-                      <div className="space-y-3">
-                        {hrWorkers.map(w => (
-                          <div key={w.id} className="bg-slate-950 p-4 rounded-2xl border border-slate-850/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                            <div>
-                              <div className="flex items-center gap-2">
-                                <strong className="text-xs text-white">{w.name}</strong>
-                                <span className="bg-pink-500/10 text-pink-400 text-[8px] font-mono font-bold px-1.5 py-0.2 rounded-full uppercase">
-                                  {w.role}
-                                </span>
-                              </div>
-                              <span className="text-[10px] text-slate-500 font-mono mt-0.5 block">{w.email}</span>
-                            </div>
-
-                            <div className="flex items-center gap-2">
-                              <span className="flex items-center gap-1 text-[10px] text-slate-400">
-                                <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
-                                <span>Ativo</span>
-                              </span>
-                              <button 
-                                onClick={() => triggerToast(`Folha de pagamento para ${w.name} gerada com sucesso!`, 'success')}
-                                className="px-2.5 py-1 bg-slate-900 hover:bg-slate-850 border border-slate-800 text-[10px] text-slate-300 rounded-lg cursor-pointer"
-                              >
-                                Folha
-                              </button>
-                              <button 
-                                onClick={() => triggerToast(`Editar dados de ${w.name}`, 'info')}
-                                className="px-2.5 py-1 bg-slate-900 hover:bg-slate-850 border border-slate-800 text-[10px] text-slate-300 rounded-lg cursor-pointer"
-                              >
-                                Editar
-                              </button>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-
-                      <button
-                        onClick={() => triggerToast('Cadastros de segurança e acessos de equipe abertos.', 'info')}
-                        className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-black rounded-xl text-xs uppercase text-center cursor-pointer"
-                      >
-                        + Gerenciar Cadastros & Senhas
-                      </button>
-                    </div>
+                    <div
+                      id="kyrub-store-hr-legacy-anchor"
+                      className="min-w-0"
+                    />
                   )}
 
                   {/* SUBMODULE: FINANCEIRO INTERNO */}
