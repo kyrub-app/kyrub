@@ -78,6 +78,7 @@ import { useSocialDirectoryV2 } from './hooks/useSocialDirectoryV2';
 import { LandingView } from './components/LandingView';
 import { StaffViewport } from './components/StaffViewport';
 import { subscribeToUserStoreAccess, type StoreAccessRecord } from './utils/storeDirectory';
+import { canStoreRoleAccessErpMenuItem } from './components/MobileErpMenu';
 import { PerfilTab } from './components/tabs/PerfilTab';
 import { RendaTab } from './components/tabs/RendaTab';
 import { KyrubTab } from './components/tabs/KyrubTab';
@@ -1281,6 +1282,9 @@ if (newMomentPublishToPraca) {
       setCurrentPath('/');
     };
 
+    const selectedStaffAccess =
+      staffAccesses.find(access => access.store.id === selectedStaffStoreId) ?? staffAccesses[0] ?? null;
+
     return (
       <StaffViewport
         user={auth.currentUser}
@@ -1290,6 +1294,13 @@ if (newMomentPublishToPraca) {
         selectedStoreId={selectedStaffStoreId}
         onSelectStore={setSelectedStaffStoreId}
         onGoBackToMain={handleGoBackToMain}
+        onEnterErp={selectedStaffAccess ? () => {
+          setGestaoRole('retailer');
+          setActiveSubTab(canStoreRoleAccessErpMenuItem(selectedStaffAccess.role, 'clientes') ? 'clientes' : canStoreRoleAccessErpMenuItem(selectedStaffAccess.role, 'pedidos') ? 'pedidos' : 'ponto');
+          setIsGestaoOpen(true);
+          window.history.pushState({}, '', '/');
+          setCurrentPath('/');
+        } : undefined}
       />
     );
   }
@@ -1533,6 +1544,7 @@ if (newMomentPublishToPraca) {
               onClosePanel={() => setIsGestaoOpen(false)}
               onOpenStoreConfig={() => setIsConfigModalOpen(true)}
               onSelectTab={setActiveSubTab}
+              accessRole={staffAccesses.find(access => access.store.id === selectedStaffStoreId)?.role}
             />
 
             {/* LADO ESQUERDO: Botão de fechar */}
