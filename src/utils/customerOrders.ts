@@ -18,6 +18,7 @@ import {
 } from '../../shared/serviceLocation';
 import type { CartItem } from '../types';
 import { db } from './firebase';
+import { getStoreMemberDocumentPath, hasStorePermission, parseStoreMember, type StorePermission } from './storeSecurity';
 import {
   chooseCanonicalReadSource,
   parseCanonicalReadConfig,
@@ -919,6 +920,43 @@ export const canTransitionCustomerOrderStatus = (
   current: CustomerOrderStatus,
   next: CustomerOrderStatus
 ): boolean => STATUS_TRANSITIONS[current].includes(next);
+
+const permissionForOrderStatus = (
+  nextStatus: CustomerOrderStatus
+): StorePermission =>
+  nextStatus === 'cancelled' || nextStatus === 'rejected'
+    ? 'orders.cancel'
+    : nextStatus === 'preparing' || nextStatus === 'ready'
+      ? 'production.update'
+      : 'orders.transfer';
+
+const assertCanonicalOrderPermission = async (
+  canonicalStoreId: string,
+  user: Pick<User, 'uid'>,
+  permission: StorePermission
+): Promise<void> => {
+  const membershipSnapshot = await getDoc(
+    doc(db, getStoreMemberDocumentPath(canonicalStoreId, user.uid))
+  );
+  const membership = parseStoreMember(membershipSnapshot.data());
+  if (!membership || membership.status !== 'active' || !hasStorePermission(membership.role, permission)) {
+    throw new Error('Seu papel não possui permissão para executar esta ação no pedido.');
+  }
+};
+
+export const updateAuthorizedCustomerOrderStatus = async (
+  user: Pick<User, 'uid'>,
+  storeId: string,
+  orderId: string,
+  nextStatus: CustomerOrderStatus
+): Promise<void> => {
+  const canonicalStoreId = await resolveCanonicalCustomerOrderStoreId(storeId);
+  if (!canonicalStoreId) {
+    throw new Error('A loja precisa estar no contrato canônico para autorizar ações da equipe.');
+  }
+  await assertCanonicalOrderPermission(canonicalStoreId, user, permissionForOrderStatus(nextStatus));
+  await updateCustomerOrderStatus(storeId, orderId, nextStatus);
+};
 
 export const updateCustomerOrderStatus = async (
   storeId: string,
