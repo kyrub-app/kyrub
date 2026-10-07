@@ -232,3 +232,10 @@ test('PDV canonical provenance records the authenticated operator role', () => {
   assert.doesNotMatch(inPersonOrderService, /createdByRole: 'owner'/);
   assert.doesNotMatch(inPersonOrderService, /originatedByRole: 'owner'/);
 });
+
+test('HR workspace is backed by canonical team and payroll components', () => {
+  assert.match(legacyRetailerPanel, /kyrub-store-hr-legacy-anchor/);
+  assert.doesNotMatch(legacyRetailerPanel, /hrWorkers/);
+  assert.match(retailerPanel, /StoreTeamWorkspace/);
+  assert.match(retailerPanel, /StorePayrollWorkspace/);
+});
