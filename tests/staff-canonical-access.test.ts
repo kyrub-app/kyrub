@@ -111,3 +111,13 @@ test('team workspace reads canonical time clock without creating a second employ
   assert.match(storeTeamWorkspace, /user\.getIdToken\(\)/);
   assert.doesNotMatch(storeTeamWorkspace, /timeClock.*displayName.*request/i);
 });
+
+
+test('reservations UI uses canonical authenticated API instead of local-only mutations', () => {
+  assert.match(legacyRetailerPanel, /\/api\/staff\/reservations\?storeId=/);
+  assert.match(legacyRetailerPanel, /fetch\('\/api\/staff\/reservations'/);
+  assert.match(legacyRetailerPanel, /\/complete/);
+  assert.match(legacyRetailerPanel, /user\.getIdToken\(\)/);
+  assert.doesNotMatch(legacyRetailerPanel, /res-\$\{Math\.floor\(Math\.random/);
+  assert.doesNotMatch(legacyRetailerPanel, /setReservations\(\[newRes,/);
+});
