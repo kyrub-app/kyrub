@@ -1,6 +1,83 @@
-# Mapa de modernização do legado Kyrub
+# Kyrub — Mapa arquitetural, caminhos funcionais e legado
 
-Base auditada: `main@f3064725ee90ec0cd17c33d604dc6e143d444669`.
+> Documento de referência do projeto. Base inicial auditada: `main@f3064725ee90ec0cd17c33d604dc6e143d444669`.
+>
+> Objetivo: registrar **onde cada família de funcionalidades entra, quem possui seu estado/regra, quais caminhos atuais são canônicos e quais dependem de legado/compatibilidade**. Deve ser atualizado sempre que um domínio mudar de autoridade.
+>
+> Este documento não é uma lista para apagar arquivos. `Bridge` pode ser uma fronteira legítima; `Legacy` pode ainda possuir regra necessária. A migração exige provar consumidores, dados e paridade antes da retirada.
+
+## Como ler este mapa
+
+**CANÔNICO** = implementação/contrato atual que deve sobreviver.  
+**FRONTEIRA** = integração legítima entre subsistemas/provedores.  
+**TRANSIÇÃO** = compatibilidade temporária, normalmente DOM/evento/UI antiga.  
+**LEGADO AUTORITATIVO** = implementação antiga que ainda possui estado ou regra real.
+
+## Índice funcional rápido
+
+| Família | Entrada/composição observada | Caminhos principais | Autoridade/situação |
+| --- | --- | --- | --- |
+| Bootstrap e rotas | `src/main.tsx -> src/App.tsx` | `utils/appRoutes.ts`, Admin, PlanCenter, PublicStorefront, Renda, Authenticated app | App atual decide portas; workspace autenticado ainda termina em LegacyApp |
+| Workspace autenticado | `AuthenticatedKyrubApp` | bridges globais + `LegacyApp` | **LEGADO AUTORITATIVO** no shell |
+| Navegação principal | LegacyApp + `WorkspacePrimaryNavigationBridge` | activeTab, bottom nav, header | **TRANSIÇÃO CRÍTICA** |
+| Pessoal | `ProfileSocialHubNative.tsx` | `usePublicSocialFeed`, `useSocialDirectoryV2`, perfil público | base **CANÔNICA**, abertura ainda acoplada |
+| Praça/feed | `KyrubTab.tsx` / `PublicSocialFeedPanel.tsx` | `usePublicSocialFeed.ts` | dados atuais; shell ainda passa por LegacyKyrubTab |
+| Marketplace | `KyrubTab.tsx` | `marketplaceDiscovery.ts`, `marketplacePaths.ts`, listings/produtos públicos | contratos **CANÔNICOS**, composição ainda legacy |
+| Conectados | `ConnectedContactsPanel.tsx` | `useSocialDirectoryV2.ts` | **CANÔNICO** |
+| Comunidades | `ProfileCommunitiesCloudBridge.tsx` | `useCommunityDirectory.ts`, `communityCloud.ts` | dados **CANÔNICOS**, montagem **TRANSIÇÃO** |
+| ERP/Lojista | `RetailerPanel.tsx -> LegacyRetailerPanel.tsx` | workspaces store/customer/product/finance | migração parcial; base visual ainda legacy |
+| Vitrine | `StorefrontPanel.tsx -> LegacyStorefrontPanel.tsx` | produtos públicos, pedidos, relacionamento/chat | migração parcial |
+| Configuração da loja | `StoreConfigModal.tsx -> LegacyStoreConfigModal.tsx` | storePersistence, localização, horários, integrações | persistência atual + UI legacy |
+| Produtos | NewProduct/ProductEditor/ProductInventory + bridges | `publicProducts.ts`, catálogo/customização | contratos atuais; composição distribuída |
+| Pedidos | customer workspaces | `customerOrders.ts`, canonicalOrderNavigation | **CANÔNICO** nos contratos |
+| PDV/KDS | Retailer/PDV/customer workspaces | PickupPdvNavigationBridge etc. | operacional atual com bridges de transição |
+| Financeiro | StoreFinance runtimes/workspaces | domínio financeiro + pagamentos/recebíveis | auditar por subdomínio; não classificar bridge externa como dívida |
+| Fiscal | workspaces fiscais | contratos/provedores fiscais atuais | preservar; fronteiras externas legítimas |
+| CRM | StoreCrmRelationshipBridge e utilitários | cliente derivado de pedido/relacionamento | atual; auditar composição |
+| Promoções/fidelidade | StorePromotions/StoreLoyalty + legado pontual | cupons/promoções/gamificação | migração parcial |
+| Entregas/retirada | store/customer/renda bridges/workspaces | tracking, pickup, courier | integrações + transições operacionais |
+| Integrações | Gerencial + Mercado Livre/99Food/MP | OAuth, sync, status | predominantemente **FRONTEIRA** |
+| IA/Kyrubia | KyrubAiWorkspace + actions/runtimes | `src/ai`, action services | dois runtimes explicitamente legacy a migrar |
+| Admin | AdminControlPlaneRoot | `components/admin`, `utils/admin*` | aplicação atual separada |
+| Observabilidade | bridges em main/App | `src/observability`, receipts/activity | **FRONTEIRA transversal** provisória |
+| Knowledge | setup/runtime | `src/knowledge` | infraestrutura transversal |
+
+## Caminho de execução do aplicativo
+
+```text
+src/main.tsx
+└─ AppErrorBoundary / bridges globais
+   └─ src/App.tsx
+      ├─ AdminControlPlaneRoot       (host/path admin)
+      ├─ PlanCenterApp               (rota de planos)
+      ├─ PublicStorefrontApp         (vitrine pública)
+      ├─ KyrubRendaEntryApp          (entrada pública/default)
+      └─ AuthenticatedKyrubApp
+         ├─ serviços/bridges globais
+         ├─ ProfileSocialHubNative
+         ├─ Store/AI/notifications integrations
+         └─ LegacyApp                ← workspace principal ainda autoritativo
+            ├─ PerfilTab
+            ├─ RendaTab
+            ├─ KyrubTab
+            │  └─ LegacyKyrubTab
+            ├─ RetailerPanel
+            │  └─ LegacyRetailerPanel
+            ├─ StorefrontPanel
+            │  └─ LegacyStorefrontPanel
+            └─ modais/workspaces
+```
+
+## Regra de manutenção deste documento
+
+Quando uma funcionalidade mudar:
+1. atualizar sua linha no índice funcional;
+2. registrar mudança de autoridade (Legacy -> Transição -> Canônico);
+3. manter o caminho de entrada e os contratos de dados;
+4. não apagar o histórico de risco até a migração estar validada;
+5. registrar bridges novas somente quando forem fronteiras justificadas.
+
+---
 
 ## Regra da auditoria
 
