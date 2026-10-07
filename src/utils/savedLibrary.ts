@@ -67,3 +67,45 @@ export const removeSavedPublication = async (
   const user = currentUser();
   await deleteDoc(doc(db, 'users', user.uid, 'savedItems', idFor(sourceKind, sourceId)));
 };
+
+
+export interface SavedSelection {
+  id: string;
+  name: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export const subscribeSelections = (
+  onChange: (items: SavedSelection[]) => void,
+  onError?: (error: Error) => void
+): Unsubscribe => {
+  const user = currentUser();
+  return onSnapshot(collection(db, 'users', user.uid, 'selections'), snapshot => {
+    onChange(snapshot.docs.map(item => {
+      const data = item.data();
+      return {
+        id: item.id,
+        name: typeof data.name === 'string' ? data.name : 'Seleção',
+        createdAt: typeof data.createdAtIso === 'string' ? data.createdAtIso : '',
+        updatedAt: typeof data.updatedAtIso === 'string' ? data.updatedAtIso : '',
+      };
+    }));
+  }, error => onError?.(error));
+};
+
+export const createSelection = async (name: string): Promise<string> => {
+  const user = currentUser();
+  const cleanName = name.trim().slice(0, 80);
+  if (!cleanName) throw new Error('Informe um nome para a Seleção.');
+  const reference = doc(collection(db, 'users', user.uid, 'selections'));
+  const nowIso = new Date().toISOString();
+  await setDoc(reference, {
+    name: cleanName,
+    createdAtIso: nowIso,
+    createdAt: serverTimestamp(),
+    updatedAtIso: nowIso,
+    updatedAt: serverTimestamp(),
+  });
+  return reference.id;
+};
