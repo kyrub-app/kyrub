@@ -257,3 +257,14 @@ Um PR verde significa **implementation-ready**, não `production-complete`.
 7. completar governance/legal e gates de compliance;
 8. conectar Kyrubia e agentes externos ao mesmo Policy/Action Engine;
 9. continuar reduzindo responsabilidades do `LegacyApp` sem quebrar contratos existentes.
+
+
+## Mapa operacional do código existente
+
+Para localizar os caminhos **realmente utilizados hoje** por cada funcionalidade — incluindo `LegacyApp`, wrappers, bridges de transição, Social/Pessoal/Praça/Marketplace, ERP, Storefront, Produtos/PDV e os contratos canônicos que já podem sobreviver à modernização — consulte:
+
+**[Mapa arquitetural, caminhos funcionais e legado](./legacy-modernization-map.md)**
+
+Esse mapa complementa os princípios desta página: `ARCHITECTURE.md` define o destino arquitetural; `legacy-modernization-map.md` registra a fotografia do código existente e o caminho de migração.
+
+Antes de corrigir uma funcionalidade ligada ao workspace autenticado, confira no mapa quem possui seu estado/regra e evite criar uma nova camada de compatibilidade DOM.
