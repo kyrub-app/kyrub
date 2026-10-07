@@ -296,6 +296,14 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = ({
     );
   };
 
+  const formatReservationLocalTime = (value: unknown): string => {
+    if (typeof value !== 'string') return 'Horário indisponível';
+    const match = /^(\\d{4})-(\\d{2})-(\\d{2})T(\\d{2}):(\\d{2})(?::\\d{2})?$/.exec(value.trim());
+    if (!match) return 'Horário indisponível';
+    const [, year, month, day, hour, minute] = match;
+    return `${day}/${month}/${year}, ${hour}:${minute}`;
+  };
+
   // 4. CANONICAL RESERVATIONS
   const loadReservations = async () => {
     const user = auth.currentUser;
@@ -715,7 +723,7 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = ({
                     <div key={res.id} className="bg-slate-900 border border-slate-800 p-4 rounded-3xl space-y-3">
                       <div className="flex items-center justify-between">
                         <span className="text-[9px] font-mono text-purple-400 font-bold">{res.id}</span>
-                        <span className="text-[9px] font-mono text-slate-400">{res.scheduledAt ? new Date(res.scheduledAt).toLocaleString('pt-BR') : 'Horário indisponível'}</span>
+                        <span className="text-[9px] font-mono text-slate-400">{formatReservationLocalTime(res.scheduledLocal ?? res.scheduledAt)}</span>
                       </div>
                       <div>
                         <h4 className="text-xs font-bold text-white">{res.clientName}</h4>
