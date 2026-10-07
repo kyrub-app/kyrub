@@ -10,6 +10,7 @@ import {
 import Dexie, { type Table } from 'dexie';
 import { Tenant, Store, Product, Order } from '../types';
 import type { BuildUserStoreUpdateInput } from '../utils/userStoreDocument';
+import { auth } from '../firebase';
 
 // ==========================================
 // DEXIE OFFLINE CACHE SCHEMA
@@ -179,8 +180,9 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = ({
   const [newResTime, setNewResTime] = useState('');
   const [newResPeople, setNewResPeople] = useState(1);
 
-  // 5. COLLABORATOR PORTAL / GPS PUNCH-IN
+  // 5. COLLABORATOR PORTAL / CANONICAL TIME CLOCK
   const [pontoLogs, setPontoLogs] = useState<any[]>([]);
+  const [pontoLoading, setPontoLoading] = useState(false);
 
   // 6. GENERAL FINANCE / HR / CUSTOMIZATION / FISCAL
   const [hrWorkers, setHrWorkers] = useState<any[]>([]);
@@ -312,18 +314,52 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = ({
     triggerToast(`Reserva para ${newResName} agendada com sucesso!`, 'success');
   };
 
-  // 5. CLOCK IN
-  const handleClockIn = () => {
-    const timeStr = currentTime.toLocaleTimeString();
-    const dateStr = currentTime.toLocaleDateString();
-    const newLog = {
-      time: timeStr,
-      date: dateStr,
-      location: ''
-    };
-    setPontoLogs([newLog, ...pontoLogs]);
-    triggerToast(`Ponto registrado com sucesso às ${timeStr}!`, 'success');
+  // 5. CANONICAL TIME CLOCK
+  const loadTimeClockEntries = async () => {
+    const user = auth.currentUser;
+    if (!user || !activeRetailerId) return;
+    const token = await user.getIdToken();
+    const response = await fetch(`/api/staff/time-clock/me?storeId=${encodeURIComponent(activeRetailerId)}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload?.error || 'Não foi possível carregar o ponto.');
+    setPontoLogs(Array.isArray(payload?.entries) ? payload.entries : []);
   };
+
+  useEffect(() => {
+    if (activeSubTab !== 'ponto') return;
+    void loadTimeClockEntries().catch(error =>
+      triggerToast(error instanceof Error ? error.message : 'Não foi possível carregar o ponto.', 'error')
+    );
+  }, [activeSubTab, activeRetailerId]);
+
+  const handleTimeClockAction = async (action: 'clock-in' | 'clock-out') => {
+    const user = auth.currentUser;
+    if (!user || !activeRetailerId || pontoLoading) return;
+    setPontoLoading(true);
+    try {
+      const token = await user.getIdToken();
+      const response = await fetch(`/api/staff/time-clock/${action}`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ storeId: activeRetailerId }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload?.error || 'Não foi possível registrar o ponto.');
+      await loadTimeClockEntries();
+      triggerToast(action === 'clock-in' ? 'Entrada registrada com sucesso!' : 'Saída registrada com sucesso!', 'success');
+    } catch (error) {
+      triggerToast(error instanceof Error ? error.message : 'Não foi possível registrar o ponto.', 'error');
+    } finally {
+      setPontoLoading(false);
+    }
+  };
+
+  const hasOpenTimeClockEntry = pontoLogs.some(log => log?.status === 'open');
 
   // Theme configuration saving
   const handleSaveThemeCustomization = async () => {
@@ -657,7 +693,7 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = ({
                 <div>
                   <span className="text-[9px] font-mono text-orange-400 font-bold uppercase tracking-wider block">Mural do Colaborador</span>
                   <h3 className="text-xs font-black text-white uppercase mt-0.5">REGISTRO DE PONTO</h3>
-                  <p className="text-[10px] text-slate-400">Validação obrigatória via Geofencing GPS</p>
+                  <p className="text-[10px] text-slate-400">Registro vinculado à sua identidade Kyrub</p>
                 </div>
 
                 <div className="bg-slate-950 border border-slate-850/80 p-5 rounded-2xl font-mono">
@@ -670,11 +706,12 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = ({
                 </div>
 
                 <button
-                  onClick={handleClockIn}
+                  onClick={() => void handleTimeClockAction(hasOpenTimeClockEntry ? 'clock-out' : 'clock-in')}
+                  disabled={pontoLoading}
                   className="w-full py-3 bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-black rounded-2xl text-xs uppercase tracking-wider transition-all shadow-lg shadow-emerald-500/10 cursor-pointer flex items-center justify-center gap-1.5"
                 >
                   <Fingerprint className="w-4 h-4 text-slate-950" />
-                  <span>REGISTRAR ENTRADA</span>
+                  <span>{pontoLoading ? 'REGISTRANDO...' : hasOpenTimeClockEntry ? 'REGISTRAR SAÍDA' : 'REGISTRAR ENTRADA'}</span>
                 </button>
 
                 <div className="pt-4 border-t border-slate-850 text-left space-y-2">
@@ -684,10 +721,10 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = ({
                       {pontoLogs.map((log, idx) => (
                         <div key={idx} className="bg-slate-950 p-2.5 rounded-xl border border-slate-850 text-[10px] font-mono flex items-center justify-between">
                           <div>
-                            <span className="text-white font-bold block">Entrada Registrada</span>
-                            <span className="text-slate-500">{log.location || 'Localização não registrada'}</span>
+                            <span className="text-white font-bold block">{log.status === 'open' ? 'Entrada registrada' : 'Turno encerrado'}</span>
+                            <span className="text-slate-500">{log.clockOutAt ? 'Entrada e saída registradas pelo servidor' : 'Turno em andamento'}</span>
                           </div>
-                          <span className="text-emerald-400 font-bold">{log.time}</span>
+                          <span className="text-emerald-400 font-bold">{log.status === 'open' ? 'ABERTO' : 'FECHADO'}</span>
                         </div>
                       ))}
                     </div>
