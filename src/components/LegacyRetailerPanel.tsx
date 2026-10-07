@@ -179,6 +179,7 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = ({
   const [newResDate, setNewResDate] = useState('');
   const [newResTime, setNewResTime] = useState('');
   const [newResPeople, setNewResPeople] = useState(1);
+  const [reservationsLoading, setReservationsLoading] = useState(false);
 
   // 5. COLLABORATOR PORTAL / CANONICAL TIME CLOCK
   const [pontoLogs, setPontoLogs] = useState<any[]>([]);
@@ -295,23 +296,83 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = ({
     );
   };
 
-  // 4. RESERVATIONS CONFIRMATION
-  const handleConfirmReservation = () => {
-    if (!newResName.trim()) {
-      triggerToast('Nome do cliente é obrigatório!', 'error');
+  // 4. CANONICAL RESERVATIONS
+  const loadReservations = async () => {
+    const user = auth.currentUser;
+    if (!user || !activeRetailerId) return;
+    const token = await user.getIdToken();
+    const response = await fetch(`/api/staff/reservations?storeId=${encodeURIComponent(activeRetailerId)}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload?.error || 'Não foi possível carregar as reservas.');
+    setReservations(Array.isArray(payload?.reservations) ? payload.reservations : []);
+  };
+
+  useEffect(() => {
+    if (activeSubTab !== 'reservas') return;
+    setReservationsLoading(true);
+    void loadReservations()
+      .catch(error => triggerToast(error instanceof Error ? error.message : 'Não foi possível carregar as reservas.', 'error'))
+      .finally(() => setReservationsLoading(false));
+  }, [activeSubTab, activeRetailerId]);
+
+  const handleConfirmReservation = async () => {
+    if (!newResName.trim() || !newResDate || !newResTime) {
+      triggerToast('Preencha cliente, data e horário da reserva.', 'error');
       return;
     }
-    const newRes = {
-      id: `res-${Math.floor(Math.random() * 1000)}`,
-      client: newResName,
-      date: newResDate.split('-').reverse().join('/'),
-      time: newResTime,
-      people: newResPeople
-    };
-    setReservations([newRes, ...reservations]);
-    setNewResName('');
-    setShowNewReservationModal(false);
-    triggerToast(`Reserva para ${newResName} agendada com sucesso!`, 'success');
+    const user = auth.currentUser;
+    if (!user || !activeRetailerId || reservationsLoading) return;
+    setReservationsLoading(true);
+    try {
+      const token = await user.getIdToken();
+      const response = await fetch('/api/staff/reservations', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          storeId: activeRetailerId,
+          clientName: newResName.trim(),
+          scheduledAt: `${newResDate}T${newResTime}:00`,
+          people: newResPeople,
+        }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload?.error || 'Não foi possível criar a reserva.');
+      await loadReservations();
+      setNewResName('');
+      setNewResDate('');
+      setNewResTime('');
+      setNewResPeople(1);
+      setShowNewReservationModal(false);
+      triggerToast('Reserva agendada com sucesso!', 'success');
+    } catch (error) {
+      triggerToast(error instanceof Error ? error.message : 'Não foi possível criar a reserva.', 'error');
+    } finally {
+      setReservationsLoading(false);
+    }
+  };
+
+  const handleCompleteReservation = async (reservationId: string) => {
+    const user = auth.currentUser;
+    if (!user || !activeRetailerId || reservationsLoading) return;
+    setReservationsLoading(true);
+    try {
+      const token = await user.getIdToken();
+      const response = await fetch(`/api/staff/reservations/${encodeURIComponent(reservationId)}/complete`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ storeId: activeRetailerId }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload?.error || 'Não foi possível concluir a reserva.');
+      await loadReservations();
+      triggerToast('Reserva concluída.', 'success');
+    } catch (error) {
+      triggerToast(error instanceof Error ? error.message : 'Não foi possível concluir a reserva.', 'error');
+    } finally {
+      setReservationsLoading(false);
+    }
   };
 
   // 5. CANONICAL TIME CLOCK
@@ -654,18 +715,16 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = ({
                     <div key={res.id} className="bg-slate-900 border border-slate-800 p-4 rounded-3xl space-y-3">
                       <div className="flex items-center justify-between">
                         <span className="text-[9px] font-mono text-purple-400 font-bold">{res.id}</span>
-                        <span className="text-[9px] font-mono text-slate-400">{res.date} • {res.time}</span>
+                        <span className="text-[9px] font-mono text-slate-400">{res.scheduledAt ? new Date(res.scheduledAt).toLocaleString('pt-BR') : 'Horário indisponível'}</span>
                       </div>
                       <div>
-                        <h4 className="text-xs font-bold text-white">{res.client}</h4>
+                        <h4 className="text-xs font-bold text-white">{res.clientName}</h4>
                         <p className="text-[11px] text-slate-400 mt-0.5">Pessoas/Companhantes: {res.people}</p>
                       </div>
                       <div className="pt-2 border-t border-slate-850 flex justify-end">
                         <button
-                          onClick={() => {
-                            setReservations(reservations.filter(r => r.id !== res.id));
-                            triggerToast('Reserva concluída.', 'success');
-                          }}
+                          onClick={() => void handleCompleteReservation(res.id)}
+                          disabled={reservationsLoading}
                           className="px-3 py-1 bg-slate-950 border border-slate-850 hover:bg-slate-900 text-[10px] text-emerald-400 font-bold rounded-lg transition-colors cursor-pointer"
                         >
                           Atender / Finalizar
