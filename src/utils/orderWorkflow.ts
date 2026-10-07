@@ -323,6 +323,7 @@ export const updateOrderStatusWithDecision = async (
         headers: {
           authorization: `Bearer ${token}`,
           'content-type': 'application/json',
+          'x-kyrub-store-id': normalizedStoreId,
         },
         body: JSON.stringify({
           status: nextStatus,
