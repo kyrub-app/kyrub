@@ -63,6 +63,24 @@ export const createTimeClockRouter = (): Router => {
     }
   });
 
+  router.get('/team', async (request, response) => {
+    try {
+      const storeId = clean(request.query.storeId);
+      if (!storeId) throw new Error('TIME_CLOCK_STORE_NOT_FOUND');
+      const actor = await resolveActor(request.get('authorization') ?? '', storeId);
+      if (actor.role !== 'owner' && actor.role !== 'manager') throw new Error('TIME_CLOCK_FORBIDDEN');
+      const snapshot = await adminDb
+        .collection(`stores/${actor.canonicalStoreId}/timeClockEntries`)
+        .orderBy('clockInAt', 'desc')
+        .limit(200)
+        .get();
+      response.status(200).json({ entries: snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) });
+    } catch (error) {
+      const mapped = mapError(error);
+      response.status(mapped.status).json({ error: mapped.message });
+    }
+  });
+
   router.post('/clock-in', async (request, response) => {
     try {
       const storeId = clean(request.body?.storeId);
