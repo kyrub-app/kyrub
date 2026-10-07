@@ -528,7 +528,7 @@ export function KyrubTab({
   }, [currentUser?.uid, posts, selectedRegister]);
 
   return (
-    <div className="space-y-5 animate-fade-in" id="kyrub-tab-container">
+    <div className="space-y-5 animate-fade-in" id="praca-tab-container">
       <section className="space-y-3 rounded-3xl border border-slate-800 bg-slate-900 p-4">
         <div className="flex items-center gap-2">
           <button
