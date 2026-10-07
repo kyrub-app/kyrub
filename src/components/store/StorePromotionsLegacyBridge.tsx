@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { onAuthStateChanged, type User } from 'firebase/auth';
+import type { Product } from '../../types';
 import { Award, Gift, Sparkles, Target } from 'lucide-react';
 import { auth } from '../../utils/firebase';
 import { StorePromotionsManager } from '../StorePromotionsManager';
@@ -74,7 +75,15 @@ const LoyaltyGamificationOverview = () => (
  * form with the server-authoritative promotion manager and expose the loyalty
  * surface that belongs to the same commercial module.
  */
-export function StorePromotionsLegacyBridge() {
+export function StorePromotionsLegacyBridge({
+  storeId,
+  products,
+  triggerToast,
+}: {
+  storeId: string;
+  products: Product[];
+  triggerToast: (message: string, type?: 'success' | 'error' | 'info') => void;
+}) {
   const [user, setUser] = useState<User | null>(auth.currentUser);
   const [host, setHost] = useState<HTMLElement | null>(null);
 
@@ -132,9 +141,9 @@ export function StorePromotionsLegacyBridge() {
   return createPortal(
     <>
       <StorePromotionsManager
-        storeId={user.uid}
-        products={[]}
-        triggerToast={() => undefined}
+        storeId={storeId}
+        products={products}
+        triggerToast={triggerToast}
       />
       <LoyaltyGamificationOverview />
     </>,
