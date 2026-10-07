@@ -14,6 +14,7 @@ import { ProductEditorModal } from './store/ProductEditorModal';
 import { ProductInventoryWorkspace } from './store/ProductInventoryWorkspace';
 import { StoreDeliveryTrackingBridge } from './store/StoreDeliveryTrackingBridge';
 import { StorePromotionsLegacyBridge } from './store/StorePromotionsLegacyBridge';
+import { StoreFinanceCompositeRuntime } from './StoreFinanceCompositeRuntime';
 import type { Product } from '../types';
 import { auth } from '../utils/firebase';
 import {
@@ -60,6 +61,7 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = props => {
   const [tablesHost, setTablesHost] = useState<HTMLElement | null>(null);
   const [cashHost, setCashHost] = useState<HTMLElement | null>(null);
   const [productsHost, setProductsHost] = useState<HTMLElement | null>(null);
+  const [financeHost, setFinanceHost] = useState<HTMLElement | null>(null);
   const [customerOrders, setCustomerOrders] = useState<CustomerOrder[]>([]);
   const [canonicalNavigationOrderId, setCanonicalNavigationOrderId] = useState('');
   const [busyOrderId, setBusyOrderId] = useState('');
@@ -338,6 +340,40 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = props => {
   }, [activeSubTab]);
 
   useEffect(() => {
+    if (activeSubTab !== 'gerencial' || auth.currentUser?.uid !== activeRetailerId) {
+      setFinanceHost(null);
+      return;
+    }
+
+    let cancelled = false;
+    let timer = 0;
+    let portalHost: HTMLDivElement | null = null;
+
+    const mountFinanceWorkspace = (): void => {
+      if (cancelled) return;
+      const anchor = document.getElementById('kyrub-store-finance-legacy-anchor');
+      if (!anchor) {
+        timer = window.setTimeout(mountFinanceWorkspace, 80);
+        return;
+      }
+
+      portalHost = document.createElement('div');
+      portalHost.id = 'kyrub-canonical-store-finance-host';
+      portalHost.className = 'min-w-0';
+      anchor.replaceChildren(portalHost);
+      setFinanceHost(portalHost);
+    };
+
+    timer = window.setTimeout(mountFinanceWorkspace, 0);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+      portalHost?.remove();
+      setFinanceHost(null);
+    };
+  }, [activeSubTab, activeRetailerId]);
+
+  useEffect(() => {
     if (activeSubTab !== 'gerencial') {
       setProductsHost(null);
       return;
@@ -586,6 +622,11 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = props => {
             />
           </div>,
           cashHost
+        )}
+      {financeHost &&
+        createPortal(
+          <StoreFinanceCompositeRuntime storeId={activeRetailerId} />,
+          financeHost
         )}
       {productsHost &&
         createPortal(
