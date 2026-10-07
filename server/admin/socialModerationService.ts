@@ -6,9 +6,10 @@ type ModeratorRole = 'super_admin' | 'operations' | 'compliance';
 interface AuthorizedModerator { uid: string; role: ModeratorRole; }
 export interface ModerationPost {
   id: string; authorId: string; authorName: string; content: string;
-  publicationType: 'feed' | 'status'; visibility: string; createdAtIso: string;
+  publicationType: 'feed' | 'status'; visibility: string; createdAtIso: string; mediaUrls: string[];
 }
 const clean = (value: unknown): string => typeof value === 'string' ? value.trim() : '';
+const stringList = (value: unknown): string[] => Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0) : [];
 const bearerToken = (authorization: string): string => /^Bearer\s+(.+)$/i.exec(authorization)?.[1]?.trim() ?? '';
 
 const authorizeModerator = async (authorization: string): Promise<AuthorizedModerator> => {
@@ -28,7 +29,7 @@ export const listModerationPosts = async (authorization: string): Promise<Modera
   const snapshot = await adminDb.collection('social_posts').orderBy('createdAt', 'desc').limit(100).get();
   return snapshot.docs.map(document => {
     const data = document.data() as Record<string, unknown>;
-    return { id: document.id, authorId: clean(data.authorId), authorName: clean(data.authorName) || clean(data.user) || 'Usuário Kyrub', content: clean(data.content), publicationType: data.publicationType === 'status' ? 'status' : 'feed', visibility: clean(data.visibility), createdAtIso: clean(data.createdAtIso) };
+    return { id: document.id, authorId: clean(data.authorId), authorName: clean(data.authorName) || clean(data.user) || 'Usuário Kyrub', content: clean(data.content), publicationType: data.publicationType === 'status' ? 'status' : 'feed', visibility: clean(data.visibility), createdAtIso: clean(data.createdAtIso), mediaUrls: stringList(data.mediaUrls) };
   });
 };
 
@@ -50,7 +51,7 @@ export const removeModeratedPost = async (authorization: string, postIdValue: un
   const post = await postRef.get();
   if (!post.exists) throw new Error('POST_NOT_FOUND');
   const postData = post.data() as Record<string, unknown>;
-  const dependencies = ['social_post_likes','social_post_comments','social_post_reports','social_post_engagements'];
+  const dependencies = ['social_post_likes','social_post_comments','social_post_reports','social_post_engagements','social_post_campaigns'];
   const deleted: Record<string, number> = {};
   for (const name of dependencies) deleted[name] = await deleteByPostId(name, postId);
   await postRef.delete();
