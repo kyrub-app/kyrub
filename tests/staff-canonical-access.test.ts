@@ -121,3 +121,16 @@ test('reservations UI uses canonical authenticated API instead of local-only mut
   assert.doesNotMatch(legacyRetailerPanel, /res-\$\{Math\.floor\(Math\.random/);
   assert.doesNotMatch(legacyRetailerPanel, /setReservations\(\[newRes,/);
 });
+
+
+test('selected staff store context does not reuse the authenticated user store', () => {
+  assert.match(legacyApp, /if \(selectedStaffAccess\)/);
+  assert.match(legacyApp, /stores\.find\(store => store\.id === legacyStoreId\)/);
+  assert.match(legacyApp, /name: selectedStaffAccess\.store\.name/);
+  assert.match(legacyApp, /Staff store profile mutation is not allowed/);
+});
+
+test('authorized staff order navigation is not restricted to owner uid equality', () => {
+  assert.doesNotMatch(retailerPanel, /user\.uid !== activeRetailerId/);
+  assert.match(retailerPanel, /detail\?\.storeId\?\.trim\(\) !== activeRetailerId/);
+});
