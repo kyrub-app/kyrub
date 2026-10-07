@@ -155,3 +155,14 @@ test('PDV service separates authenticated operator from authorized store context
   assert.doesNotMatch(inPersonOrderService, /actorUserId !== request\.storeId/);
   assert.match(inPersonOrderService, /operatorId: actorUserId/);
 });
+
+test('customer attendance no longer keeps a parallel local ticket workflow', () => {
+  assert.doesNotMatch(legacyRetailerPanel, /kyrub_legacy_active_tickets_/);
+  assert.doesNotMatch(legacyRetailerPanel, /activeTickets/);
+  assert.doesNotMatch(legacyRetailerPanel, /handleOpenTicket/);
+  assert.doesNotMatch(legacyRetailerPanel, /handleCheckoutTicket/);
+  assert.doesNotMatch(legacyRetailerPanel, /TCK-\$\{Math\.floor/);
+  assert.match(retailerPanel, /CustomerTableBoard/);
+  assert.match(retailerPanel, /TableServiceWorkspace/);
+  assert.match(retailerPanel, /AttendanceOrderApproval/);
+});
