@@ -1582,6 +1582,10 @@ if (newMomentPublishToPraca) {
       <WalletModal
         isOpen={isWalletOpen}
         onClose={() => setIsWalletOpen(false)}
+        walletBalance={walletBalance}
+        setWalletBalance={setWalletBalance}
+        walletHistory={walletHistory}
+        setWalletHistory={setWalletHistory}
         triggerToast={triggerToast}
       />
 
