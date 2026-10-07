@@ -1,4 +1,4 @@
-import { collection, deleteDoc, doc, onSnapshot, serverTimestamp, setDoc, type Unsubscribe } from 'firebase/firestore';
+import { collection, deleteDoc, doc, getDoc, onSnapshot, serverTimestamp, setDoc, updateDoc, type Unsubscribe } from 'firebase/firestore';
 import { auth, db } from './firebase';
 
 export type SavedSourceKind = 'praca' | 'community';
@@ -108,4 +108,44 @@ export const createSelection = async (name: string): Promise<string> => {
     updatedAt: serverTimestamp(),
   });
   return reference.id;
+};
+
+
+export interface ResolvedSavedPublication extends SavedPublication {
+  authorName: string;
+  content: string;
+  mediaUrls: string[];
+  available: boolean;
+}
+
+export const resolveSavedPublication = async (
+  item: SavedPublication
+): Promise<ResolvedSavedPublication> => {
+  const path = item.sourceKind === 'community' ? 'community_posts' : 'social_posts';
+  const snapshot = await getDoc(doc(db, path, item.sourceId));
+  if (!snapshot.exists()) {
+    return { ...item, authorName: '', content: '', mediaUrls: [], available: false };
+  }
+  const data = snapshot.data();
+  return {
+    ...item,
+    authorName: typeof data.authorName === 'string'
+      ? data.authorName
+      : typeof data.user === 'string' ? data.user : 'Usuário Kyrub',
+    content: typeof data.content === 'string' ? data.content : '',
+    mediaUrls: Array.isArray(data.mediaUrls)
+      ? data.mediaUrls.filter((value): value is string => typeof value === 'string')
+      : [],
+    available: true,
+  };
+};
+
+export const setSavedPublicationSelections = async (
+  item: SavedPublication,
+  selectionIds: string[]
+): Promise<void> => {
+  const user = currentUser();
+  await updateDoc(doc(db, 'users', user.uid, 'savedItems', item.id), {
+    selectionIds: Array.from(new Set(selectionIds)),
+  });
 };
