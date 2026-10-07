@@ -70,3 +70,8 @@ test('PDV authorizes active staff membership by operation permission', () => {
   assert.match(inPersonOrderRouter, /member\.status !== 'active'/);
   assert.match(inPersonOrderRouter, /hasStorePermission\(member\.role, input\.permission\)/);
 });
+
+
+test('legacy reservations remain restricted until canonical persistence exists', () => {
+  assert.match(mobileMenu, /itemId === 'reservas'.*orders\.create/);
+});
