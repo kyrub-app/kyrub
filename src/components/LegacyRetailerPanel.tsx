@@ -20,7 +20,6 @@ interface RetailerPanelProps {
   activeStore: Store;
   products: Product[];
   orders: Order[];
-  setNewProductModal: (val: boolean) => void;
   setProducts: React.Dispatch<React.SetStateAction<Product[]>>;
   setOrders: React.Dispatch<React.SetStateAction<Order[]>>;
   onUpdateStore: (updates: BuildUserStoreUpdateInput) => Promise<void>;
@@ -37,7 +36,6 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = ({
   activeStore,
   products,
   orders,
-  setNewProductModal,
   setProducts,
   setOrders,
   onUpdateStore,
@@ -109,14 +107,6 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = ({
   // ECOSSISTEMA: PDV SALE SUBTRACTION LINKED TO MARKETPLACE
   // ==========================================
 
-
-  const handleManualProductAddition = () => {
-    if (activeRetailer?.plan === 'free' && activeRetailerProducts.length >= 5) {
-      triggerToast('Limite Freemium atingido! Faça upgrade para o plano Business para cadastrar mais de 5 produtos.', 'error');
-      return;
-    }
-    setNewProductModal(true);
-  };
 
   const handlePlanUpgrade = () => {
     triggerToast(
