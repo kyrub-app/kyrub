@@ -22,6 +22,7 @@ import {
   LoaderCircle,
   MessageCircle,
   Pencil,
+  Plus,
   Search,
   Send,
   QrCode,
