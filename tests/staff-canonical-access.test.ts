@@ -30,3 +30,14 @@ test('staff access enters the existing ERP and filters its menu by role', () => 
   assert.match(legacyApp, /canStoreRoleAccessErpMenuItem/);
   assert.match(staffViewport, /Entrar no ERP/);
 });
+
+
+test('selected staff store becomes the ERP tenant context', () => {
+  assert.match(legacyApp, /legacyTenantId/);
+});
+
+const canonicalCash = readFileSync(new URL('../src/utils/canonicalCash.ts', import.meta.url), 'utf8');
+test('cash mutations enforce role permission inside the action layer', () => {
+  assert.match(canonicalCash, /requireCashPermission/);
+  assert.match(canonicalCash, /hasStorePermission/);
+});
