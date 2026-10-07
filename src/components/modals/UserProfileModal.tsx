@@ -26,7 +26,7 @@ import {
 } from 'firebase/firestore';
 import { auth, db } from '../../utils/firebase';
 import { formatWhatsApp, formatCpf, formatCnpj } from '../../utils/helpers';
-import { createSelection, subscribeSavedPublications, subscribeSelections, type SavedPublication, type SavedSelection } from '../../utils/savedLibrary';
+import { createSelection, resolveSavedPublication, setSavedPublicationSelections, subscribeSavedPublications, subscribeSelections, type ResolvedSavedPublication, type SavedPublication, type SavedSelection } from '../../utils/savedLibrary';
 
 interface UserProfileModalProps {
   isOpen: boolean;
@@ -718,6 +718,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = props => {
   } = props;
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [savedItems, setSavedItems] = useState<SavedPublication[]>([]);
+  const [resolvedSavedItems, setResolvedSavedItems] = useState<ResolvedSavedPublication[]>([]);
   const [selections, setSelections] = useState<SavedSelection[]>([]);
   const [isSavedOpen, setIsSavedOpen] = useState(false);
   const [newSelectionName, setNewSelectionName] = useState('');
@@ -743,6 +744,14 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = props => {
       unsubscribeSelections();
     };
   }, [isOpen]);
+
+  useEffect(() => {
+    let active = true;
+    Promise.all(savedItems.map(resolveSavedPublication))
+      .then(items => { if (active) setResolvedSavedItems(items); })
+      .catch(error => console.warn('Não foi possível resolver os Salvos.', error));
+    return () => { active = false; };
+  }, [savedItems]);
 
   if (!isOpen) return null;
 
@@ -864,13 +873,47 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = props => {
                   <div className="rounded-2xl border border-dashed border-slate-800 px-4 py-8 text-center text-[10px] text-slate-500">Quando você salvar uma publicação, ela aparecerá aqui.</div>
                 ) : (
                   <div className="space-y-2">
-                    {savedItems.map(item => (
+                    {resolvedSavedItems.map(item => (
                       <div key={item.id} className="rounded-2xl border border-slate-800 bg-slate-950 p-3">
                         <div className="flex items-center justify-between gap-3">
                           <span className="text-[9px] font-black uppercase text-amber-300">{item.sourceKind === 'community' ? 'Comunidade' : 'Praça'}</span>
                           <span className="text-[8px] text-slate-600">{item.selectionIds.length ? `${item.selectionIds.length} Seleções` : 'Sem Seleção'}</span>
                         </div>
-                        <p className="mt-2 truncate font-mono text-[9px] text-slate-500">Publicação {item.sourceId}</p>
+                        {item.available ? (
+                          <>
+                            <strong className="mt-2 block text-[10px] text-slate-200">{item.authorName}</strong>
+                            <p className="mt-1 whitespace-pre-line text-[10px] leading-relaxed text-slate-400">{item.content || (item.mediaUrls.length ? 'Publicação com mídia' : 'Publicação')}</p>
+                          </>
+                        ) : (
+                          <p className="mt-2 text-[10px] text-slate-600">Esta publicação não está mais disponível.</p>
+                        )}
+                        {selections.length > 0 && (
+                          <div className="mt-3 flex flex-wrap gap-1.5 border-t border-slate-900 pt-3">
+                            {selections.map(selection => {
+                              const selected = item.selectionIds.includes(selection.id);
+                              return (
+                                <button
+                                  key={selection.id}
+                                  type="button"
+                                  onClick={async () => {
+                                    const next = selected
+                                      ? item.selectionIds.filter(id => id !== selection.id)
+                                      : [...item.selectionIds, selection.id];
+                                    try {
+                                      await setSavedPublicationSelections(item, next);
+                                    } catch (error) {
+                                      console.warn('Falha ao organizar Seleção.', error);
+                                      triggerToast('Não foi possível atualizar a Seleção.', 'error');
+                                    }
+                                  }}
+                                  className={`rounded-full border px-2.5 py-1 text-[8px] ${selected ? 'border-amber-500/40 bg-amber-500/15 text-amber-300' : 'border-slate-800 text-slate-500'}`}
+                                >
+                                  {selection.name}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>
