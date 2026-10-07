@@ -308,3 +308,14 @@ test('personal wallet cannot simulate banking operations', () => {
   assert.match(walletModal, /Movimentação financeira indisponível/);
   assert.match(walletModal, /não comprovam saldo, pagamento ou liquidação/);
 });
+
+
+test('direct management router revalidates canonical staff role', () => {
+  assert.match(runtimeRouter, /canStoreRoleAccessErpMenuItem\(props\.accessRole, requestedModule\)/);
+  assert.match(runtimeRouter, /canStoreRoleAccessErpMenuItem\(props\.accessRole, pending\.module\)/);
+  assert.match(runtimeRouter, /canStoreRoleAccessErpMenuItem\(props\.accessRole, managementModule\)/);
+  assert.match(legacyApp, /const erpAccessRole = selectedStaffAccess\?\.role \?\? 'owner'/);
+  assert.match(legacyApp, /accessRole=\{erpAccessRole\}/);
+  assert.match(legacyApp, /canStoreRoleAccessErpMenuItem\(erpAccessRole, 'loja'\)/);
+  assert.match(legacyApp, /filter\(tab => canStoreRoleAccessErpMenuItem\(erpAccessRole, tab\.id as any\)\)/);
+});
