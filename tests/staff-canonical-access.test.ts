@@ -4,6 +4,9 @@ import { test } from 'node:test';
 
 const legacyApp = readFileSync(new URL('../src/LegacyApp.tsx', import.meta.url), 'utf8');
 const staffViewport = readFileSync(new URL('../src/components/StaffViewport.tsx', import.meta.url), 'utf8');
+const mobileMenu = readFileSync(new URL('../src/components/MobileErpMenu.tsx', import.meta.url), 'utf8');
+const legacyRetailerPanel = readFileSync(new URL('../src/components/LegacyRetailerPanel.tsx', import.meta.url), 'utf8');
+const storeTeamWorkspace = readFileSync(new URL('../src/components/store/StoreTeamWorkspace.tsx', import.meta.url), 'utf8');
 
 test('staff route has no shared demo credentials', () => {
   assert.doesNotMatch(legacyApp, /staff@kyrub\.com/);
