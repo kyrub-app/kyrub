@@ -1141,8 +1141,13 @@ export function ProfileSocialHubNative() {
   const tabs: Array<{ id: ProfileTab; label: string; count?: number }> = [
     { id: 'publications', label: 'Mural', count: ownFeedPosts.length },
     { id: 'marked', label: 'Destaques', count: markedPosts.length },
-    { id: 'connected', label: 'Conectados', count: directory.friends.length },
   ];
+
+  const openPersonalDestination = (destination: 'communities' | 'praca') => {
+    window.dispatchEvent(
+      new CustomEvent('kyrub:personal-destination', { detail: { destination } })
+    );
+  };
 
   const suggestionCount = directory.getSuggestions().length;
   const requestCount = directory.connectionRequests.length;
@@ -1270,11 +1275,8 @@ export function ProfileSocialHubNative() {
                   </p>
                 </div>
 
-                <div className="mt-5 grid grid-cols-4 gap-2" aria-label="Ações da página pessoal">
-                  <button type="button" onClick={() => setEditOpen(true)} className="flex min-w-0 flex-col items-center gap-2 rounded-2xl border border-slate-800 bg-slate-900 px-1 py-3 text-slate-300">
-                    <span className="flex h-10 w-10 items-center justify-center rounded-full bg-orange-500 text-slate-950"><Pencil className="h-4 w-4" /></span>
-                    <span className="text-[8px] font-black uppercase">Editar</span>
-                  </button>
+                <div className="mt-5 grid grid-cols-3 gap-2" aria-label="Ações da página pessoal">
+
                   <button type="button" onClick={() => triggerToast('O QR público da sua página entra na próxima etapa.', 'info')} className="flex min-w-0 flex-col items-center gap-2 rounded-2xl border border-slate-800 bg-slate-900 px-1 py-3 text-slate-300">
                     <span className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-800"><QrCode className="h-4 w-4" /></span>
                     <span className="text-[8px] font-black uppercase">QR</span>
@@ -1324,6 +1326,12 @@ export function ProfileSocialHubNative() {
                   {typeof tab.count === 'number' ? ` ${tab.count}` : ''}
                 </button>
               ))}
+              <button type="button" onClick={() => openPersonalDestination('communities')} className="shrink-0 rounded-xl border border-slate-800 bg-slate-900 px-3 py-2 text-[9px] font-black uppercase text-slate-400">
+                Comunidades
+              </button>
+              <button type="button" onClick={() => openPersonalDestination('praca')} className="shrink-0 rounded-xl border border-slate-800 bg-slate-900 px-3 py-2 text-[9px] font-black uppercase text-slate-400">
+                Praça
+              </button>
             </nav>
 
             <main className="space-y-4 p-4 sm:p-5">
