@@ -1075,7 +1075,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = props => {
               <div className="rounded-2xl border border-amber-500/20 bg-amber-500/10 p-3 text-left">
                 <Bookmark className="h-5 w-5 text-amber-300" />
                 <strong className="mt-3 block text-[10px] font-black uppercase text-slate-100">Salvos</strong>
-                <span className="mt-1 block text-[8px] leading-relaxed text-slate-500">Coleção privada em preparação.</span>
+                <span className="mt-1 block text-[8px] leading-relaxed text-slate-500">Publicações guardadas e organizadas em Seleções.</span>
               </div>
               <button type="button" onClick={() => setIsSettingsOpen(true)} className="rounded-2xl border border-slate-700 bg-slate-900 p-3 text-left hover:border-slate-600">
                 <ShieldCheck className="h-5 w-5 text-slate-300" />
