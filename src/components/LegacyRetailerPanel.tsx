@@ -7,49 +7,9 @@ import {
   Settings, Briefcase, BarChart3, ChevronRight, Fingerprint, Store as StoreIcon,
   Zap, X
 } from 'lucide-react';
-import Dexie, { type Table } from 'dexie';
 import { Tenant, Store, Product, Order } from '../types';
 import type { BuildUserStoreUpdateInput } from '../utils/userStoreDocument';
 import { auth } from '../utils/firebase';
-
-// ==========================================
-// DEXIE OFFLINE CACHE SCHEMA
-// ==========================================
-interface CashSession {
-  id?: number;
-  status: 'open' | 'closed';
-  openedAt: string;
-  closedAt?: string;
-  initialCash: number;
-  finalCash?: number;
-}
-
-interface CashMovement {
-  id?: number;
-  type: 'entrada' | 'saida';
-  description: string;
-  amount: number;
-  category: string;
-  timestamp: string;
-}
-
-class DexieERPDB extends Dexie {
-  sessions!: Table<CashSession>;
-  movements!: Table<CashMovement>;
-
-  constructor() {
-    super('DexieERPDB');
-    this.version(1).stores({
-      sessions: '++id, status, openedAt',
-      movements: '++id, type, category, timestamp'
-    });
-  }
-}
-
-const erpDB = new DexieERPDB();
-
-const getLegacyActiveTicketsStorageKey = (storeId: string): string =>
-  `kyrub_legacy_active_tickets_${storeId}`;
 
 // ==========================================
 // RETAILER PANEL MAIN COMPONENT
@@ -101,24 +61,8 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = ({
   // 1. CLIENTS / ATTENDANCE
   // Canonical customer/table service is mounted by RetailerPanel.tsx.
 
-  // 2. CAIXA STATES (Dexie Cached)
-  const [isCashierOpen, setIsCashierOpen] = useState(true);
-  const [cashList, setCashList] = useState<CashMovement[]>([]);
-  const [isSyncingWithFirestore, setIsSyncingWithFirestore] = useState(false);
-
-  useEffect(() => {
-    // Load local cached cashier movements from Dexie
-    const loadDexieData = async () => {
-      try {
-        const moves = await erpDB.movements.toArray();
-        setCashList(moves);
-      } catch (err) {
-        console.error(err);
-      }
-    };
-    loadDexieData();
-  }, []);
-
+  // 2. CASH
+  // Canonical cash state is mounted by RetailerPanel.tsx via CashWorkspace.
 
   // 4. RESERVATIONS
   const [reservations, setReservations] = useState<any[]>([]);
@@ -374,18 +318,6 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = ({
     setStoreOfferImages(prev => [...prev, url].slice(0, 5));
   };
 
-  const handleSyncFirestore = () => {
-    setIsSyncingWithFirestore(true);
-    setTimeout(() => {
-      setIsSyncingWithFirestore(false);
-      triggerToast('Sincronização reativa de cache Dexie concluída com o Firestore!', 'success');
-    }, 1200);
-  };
-
-  // Totalized sales
-  const cashTotalDinheiro = cashList.filter(c => c.type === 'entrada').reduce((sum, c) => sum + c.amount, 0);
-  const cashTotalCartao = orders.filter(o => o.type === 'retail' && o.storeId === activeStore?.id).reduce((sum, o) => sum + o.total, 0);
-
   return (
     <div className="space-y-6 text-slate-100 font-sans" id="erp-master-dashboard">
       
@@ -414,86 +346,7 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = ({
               TAB 2: PAINEL DO CAIXA (Dexie Cached)
              ------------------------------------------ */}
           {activeSubTab === 'caixa' && (
-            <div className="space-y-5 animate-fade-in" id="erp-caixa-tab">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="bg-slate-900 p-5 rounded-3xl border border-slate-800 space-y-1">
-                  <span className="text-[10px] font-mono uppercase text-slate-500 font-bold block">DINHEIRO (LOCAL CACHE)</span>
-                  <strong className="text-xl font-mono text-white">
-                    R$ {cashTotalDinheiro.toFixed(2)}
-                  </strong>
-                  <p className="text-[10px] text-slate-400">Gravado via Dexie Offline-First</p>
-                </div>
-                
-                <div className="bg-slate-900 p-5 rounded-3xl border border-slate-800 space-y-1">
-                  <span className="text-[10px] font-mono uppercase text-slate-500 font-bold block">CARTÃO / PIX (ONLINE)</span>
-                  <strong className="text-xl font-mono text-teal-400">
-                    R$ {cashTotalCartao.toFixed(2)}
-                  </strong>
-                  <p className="text-[10px] text-slate-400">Sincronizado via Gateway de Vendas</p>
-                </div>
-
-                <div className="bg-slate-900 p-5 rounded-3xl border border-slate-800 flex flex-col justify-center space-y-2">
-                  <button
-                    onClick={() => {
-                      setIsCashierOpen(!isCashierOpen);
-                      triggerToast(isCashierOpen ? 'Caixa fechado com sucesso.' : 'Caixa aberto para lançamentos.', 'info');
-                    }}
-                    className={`w-full py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all cursor-pointer ${
-                      isCashierOpen 
-                        ? 'bg-red-950/80 hover:bg-red-900/60 text-red-400 border border-red-800' 
-                        : 'bg-emerald-600 hover:bg-emerald-500 text-white'
-                    }`}
-                  >
-                    {isCashierOpen ? 'FECHAR CAIXA' : 'ABRIR CAIXA'}
-                  </button>
-                  
-                  <button
-                    onClick={handleSyncFirestore}
-                    disabled={isSyncingWithFirestore}
-                    className="w-full py-2 bg-slate-950 hover:bg-slate-900 border border-slate-850 text-slate-400 hover:text-slate-300 rounded-xl text-[10px] uppercase font-bold tracking-wider flex items-center justify-center gap-1.5 transition-all cursor-pointer disabled:opacity-50"
-                  >
-                    <RefreshCw className={`w-3 h-3 ${isSyncingWithFirestore ? 'animate-spin text-orange-400' : 'text-slate-400'}`} />
-                    <span>Sincronizar Dexie</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* Transactions logs list */}
-              <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 space-y-4">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-xs font-black text-white uppercase tracking-wider">Últimas Movimentações do Caixa</h3>
-                  <span className="text-[9px] font-mono text-emerald-400 font-bold flex items-center gap-1">
-                    <Database className="w-3 h-3" />
-                    <span>SQLite/Dexie Ativo</span>
-                  </span>
-                </div>
-
-                {cashList.length > 0 ? (
-                  <div className="space-y-2 max-h-[250px] overflow-y-auto pr-1">
-                    {cashList.map((c, idx) => (
-                      <div key={idx} className="bg-slate-950 p-3 rounded-2xl border border-slate-850/60 flex items-center justify-between text-xs font-mono">
-                        <div className="flex items-center gap-2.5">
-                          {c.type === 'entrada' ? (
-                            <ArrowUpRight className="w-4 h-4 text-emerald-400 shrink-0" />
-                          ) : (
-                            <ArrowDownLeft className="w-4 h-4 text-red-400 shrink-0" />
-                          )}
-                          <div>
-                            <span className="text-slate-200 font-bold block">{c.description}</span>
-                            <span className="text-[10px] text-slate-500">{c.category} • {c.timestamp}</span>
-                          </div>
-                        </div>
-                        <span className={c.type === 'entrada' ? 'text-emerald-400 font-bold' : 'text-red-400 font-bold'}>
-                          {c.type === 'entrada' ? '+' : '-'} R$ {c.amount.toFixed(2)}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-center text-xs text-slate-500 py-8 font-mono">NENHUMA MOVIMENTAÇÃO REGISTRADA</p>
-                )}
-              </div>
-            </div>
+            <div className="animate-fade-in" id="erp-caixa-tab" />
           )}
 
           {/* ------------------------------------------
