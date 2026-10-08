@@ -59,3 +59,10 @@ test('coupon Pix requires full discounted settlement and returns a conflict for 
   assert.match(attendanceRouter, /LOCAL_PAYMENT_INTENT_COUPON_REQUIRES_FULL_SETTLEMENT/);
   assert.match(attendanceRouter, /status: 409, message: 'Para usar cupom no Pix/);
 });
+
+test('canonical Pix rejects a second coupon when the local order already has item discounts', () => {
+  assert.match(canonicalLocalService, /order\.items\.some\(\(item: unknown\)/);
+  assert.match(canonicalLocalService, /discount > 0\.009/);
+  assert.match(canonicalLocalService, /LOCAL_PAYMENT_INTENT_COUPON_ALREADY_APPLIED/);
+  assert.match(attendanceRouter, /LOCAL_PAYMENT_INTENT_COUPON_ALREADY_APPLIED/);
+});
