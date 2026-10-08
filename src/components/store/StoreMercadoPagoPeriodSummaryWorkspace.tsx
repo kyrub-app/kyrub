@@ -111,7 +111,7 @@ export default function StoreMercadoPagoPeriodSummaryWorkspace({ storeId }: { st
           type="month"
           value={period}
           onChange={event => setPeriod(event.target.value || currentMonth)}
-          className="min-h-9 shrink-0 rounded-xl border border-slate-700 bg-slate-950 px-3 text-[9px] text-slate-200 outline-none focus:border-sky-400"
+          className="min-h-9 w-full min-w-0 rounded-xl sm:w-auto border border-slate-700 bg-slate-950 px-3 text-[9px] text-slate-200 outline-none focus:border-sky-400"
         />
       </div>
 
@@ -135,7 +135,7 @@ export default function StoreMercadoPagoPeriodSummaryWorkspace({ storeId }: { st
               Conciliação parcial: existem evidências do Mercado Pago ainda pendentes. Os valores abaixo representam somente informações confirmadas, não o fechamento definitivo do período.
             </p>
           )}
-          <div className="mt-4 grid min-w-0 gap-2 sm:grid-cols-2 xl:grid-cols-5">
+          <div className="mt-4 grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-5">
             <article className="rounded-2xl border border-slate-800 bg-slate-950 p-3"><span className="text-[8px] font-black uppercase text-slate-600">Pagamentos MP</span><strong className="mt-1 block text-sm text-white">{summary.paymentCount}</strong></article>
             <article className="rounded-2xl border border-slate-800 bg-slate-950 p-3"><span className="text-[8px] font-black uppercase text-slate-600">Conciliados</span><strong className={`mt-1 block text-sm ${reconciliationComplete ? 'text-emerald-200' : 'text-amber-200'}`}>{summary.reconciledPaymentCount}/{summary.paymentCount}</strong></article>
             <article className="rounded-2xl border border-slate-800 bg-slate-950 p-3"><span className="text-[8px] font-black uppercase text-slate-600">Taxas com evidência</span><strong className={`mt-1 block text-sm ${feeCoverageComplete ? 'text-emerald-200' : 'text-amber-200'}`}>{summary.feeCoverageCount}/{summary.paymentCount}</strong></article>
@@ -147,7 +147,7 @@ export default function StoreMercadoPagoPeriodSummaryWorkspace({ storeId }: { st
             <article className="rounded-2xl border border-slate-800 bg-slate-950 p-4 text-[9px]">
               <h5 className="text-[10px] font-black uppercase text-slate-200">Cobertura da evidência</h5>
               <div className="mt-3 space-y-2">
-                <div className="flex justify-between gap-3"><span className="text-slate-500">Taxa já presente no ledger</span><b>{summary.ledgerFeeEvidenceCount}</b></div>
+                <div className="flex min-w-0 flex-wrap items-start justify-between gap-2"><span className="text-slate-500">Taxa já presente no ledger</span><b>{summary.ledgerFeeEvidenceCount}</b></div>
                 <div className="flex justify-between gap-3"><span className="text-slate-500">Taxa recuperada pela conciliação MP</span><b>{summary.reconciliationFallbackFeeCount}</b></div>
                 <div className="flex justify-between gap-3"><span className="text-slate-500">Pagamento com líquido explícito do provedor</span><b>{summary.explicitNetReceivedCount}</b></div>
                 <div className="flex justify-between gap-3"><span className="text-slate-500">Pagamento com informação de liberação</span><b>{summary.releaseDateEvidenceCount}</b></div>
