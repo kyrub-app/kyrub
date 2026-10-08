@@ -202,7 +202,7 @@ export function ServiceLocationFinancialContextPanel({
           orderId: order.id,
           idempotencyKey: newLocalPaymentAttemptKey(order.id),
           ...(couponCode ? { couponCode } : {}),
-          ...(requestedAmount > 0 ? { amount: requestedAmount } : {}),
+          ...(!couponCode && requestedAmount > 0 ? { amount: requestedAmount } : {}),
         });
       }
       const checkout = provider === 'mercado-pago'
