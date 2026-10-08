@@ -618,7 +618,9 @@ export default function App() {
   const selectedStaffAccess = staffAccesses.find(access => access.store.id === selectedStaffStoreId) ?? null;
   const erpAccessRole = selectedStaffStoreId
     ? selectedStaffAccess?.role
-    : (authenticatedUserId && userStore ? 'owner' : undefined);
+    : (staffAccessLoading || staffAccessError || staffAccesses.length > 0
+      ? undefined
+      : (authenticatedUserId && userStore ? 'owner' : undefined));
   const activeRetailerId = selectedStaffAccess?.store.legacyTenantId || authenticatedUserId;
 
   const activeStore = useMemo<Store>(() => {
