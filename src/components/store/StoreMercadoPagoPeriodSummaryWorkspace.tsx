@@ -20,6 +20,8 @@ type ProviderPeriodSummary = {
   missingReleaseEvidenceCount: number;
   complete: boolean;
   balanced: boolean;
+  hasDivergences: boolean;
+  grossDivergenceCount: number;
 };
 
 type ProviderPeriodPayload = {
@@ -130,6 +132,16 @@ export default function StoreMercadoPagoPeriodSummaryWorkspace({ storeId }: { st
         <p className="mt-4 rounded-2xl border border-dashed border-slate-700 p-4 text-center text-[9px] text-slate-500">Nenhuma venda Mercado Pago confirmada foi encontrada nesta competência.</p>
       ) : summary ? (
         <>
+          {summary.hasDivergences && (
+            <p role="alert" className="mt-4 rounded-2xl border border-rose-500/25 bg-rose-500/10 p-3 text-[9px] text-rose-100">
+              Divergência financeira: {summary.grossDivergenceCount} pagamento(s) apresentam valor diferente entre o registro canônico e o Mercado Pago. Verifique os pagamentos antes de considerar o período conciliado.
+            </p>
+          )}
+          {summary.complete && !summary.balanced && !summary.hasDivergences && (
+            <p role="status" className="mt-4 rounded-2xl border border-amber-500/25 bg-amber-500/10 p-3 text-[9px] text-amber-100">
+              Todas as evidências exigidas estão disponíveis, mas o período ainda não foi classificado como balanceado.
+            </p>
+          )}
           {!summary.complete && (
             <p role="status" className="mt-4 rounded-2xl border border-amber-500/25 bg-amber-500/10 p-3 text-[9px] text-amber-100">
               Conciliação parcial: existem evidências do Mercado Pago ainda pendentes. Os valores abaixo representam somente informações confirmadas, não o fechamento definitivo do período.
