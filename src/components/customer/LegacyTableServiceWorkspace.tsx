@@ -475,7 +475,7 @@ export const TableServiceWorkspace = ({
     setIsCouponApplying(true);
     try {
       if (paymentMethod === 'pix') {
-        if (selectedPaymentOrderIds.length !== 1 || selectedPaymentTotal + 0.009 < outstandingTotal) {
+        if (selectedPaymentOrderIds.length !== 1 || selectedPaymentTotal + 0.009 < openLines.filter(line => line.orderId === selectedPaymentOrderIds[0]).reduce((total, line) => total + line.outstandingAmount, 0)) {
           throw new Error('Para usar cupom no Pix, selecione a conta integral de um único pedido, sem pagamentos parciais.');
         }
         if (confirmedPaymentExists) {
@@ -546,7 +546,7 @@ export const TableServiceWorkspace = ({
       return;
     }
     if (paymentMethod === 'pix') {
-      if (validatedPixCoupon && (selectedPaymentOrderIds.length !== 1 || selectedPaymentOrderIds[0] !== validatedPixCoupon.orderId || Math.abs(selectedPaymentTotal - validatedPixCoupon.subtotal) > 0.009 || selectedPaymentTotal + 0.009 < outstandingTotal)) {
+      if (validatedPixCoupon && (selectedPaymentOrderIds.length !== 1 || selectedPaymentOrderIds[0] !== validatedPixCoupon.orderId || Math.abs(selectedPaymentTotal - validatedPixCoupon.subtotal) > 0.009 || selectedPaymentTotal + 0.009 < openLines.filter(line => line.orderId === selectedPaymentOrderIds[0]).reduce((total, line) => total + line.outstandingAmount, 0))) {
         notify('A seleção da conta mudou após a validação do cupom. Valide o cupom novamente.', 'error');
         setValidatedPixCoupon(null);
         onAppliedCouponChange?.('');
