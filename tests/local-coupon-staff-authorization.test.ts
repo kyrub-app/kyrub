@@ -38,3 +38,15 @@ test('table checkout uses authenticated coupon quote and payment snapshot invari
   assert.match(checkoutSource, /rejects a Pix amount that differs from immutable commercial total/);
   assert.match(checkoutSource, /rejects discounted local intent without coupon\/promotion snapshot/);
 });
+
+const paymentRouterSource = readFileSync('server/payments/paymentIntentRouter.ts', 'utf8');
+const tableSource = readFileSync('src/components/customer/LegacyTableServiceWorkspace.tsx', 'utf8');
+
+test('table coupon path does not mistake staff identity for customer eligibility', () => {
+  assert.match(paymentRouterSource, /router\.post\('\/coupons\/quote'/);
+  assert.match(paymentRouterSource, /buyerId: identity\.uid/);
+  assert.match(tableSource, /quoteLocalCoupon\(/);
+  assert.match(tableSource, /applyTableCoupon\(/);
+  // Existing behavior is documented here until an order-bound customer identity is available.
+  assert.doesNotMatch(tableSource, /buyerId:/);
+});
