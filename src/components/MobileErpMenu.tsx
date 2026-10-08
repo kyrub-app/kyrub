@@ -55,10 +55,10 @@ export const canStoreRoleAccessErpMenuItem = (
 ): boolean => {
   if (role === 'owner') return true;
   if (itemId === 'planos' || itemId === 'loja') return false;
-  if (itemId === 'rh') return hasStorePermission(role, 'members.read');
+  if (itemId === 'rh') return role === 'manager';
   if (itemId === 'produtos' || itemId === 'estoque') return hasStorePermission(role, 'products.read');
-  if (itemId === 'vendas' || itemId === 'crm') return hasStorePermission(role, 'reports.read') || hasStorePermission(role, 'reports.read_own');
-  if (itemId === 'financeiro') return hasStorePermission(role, 'payments.read') || hasStorePermission(role, 'payments.read_own');
+  if (itemId === 'vendas' || itemId === 'crm') return hasStorePermission(role, 'reports.read');
+  if (itemId === 'financeiro') return role === 'manager';
   if (itemId === 'fiscal') return hasStorePermission(role, 'fiscal.read');
   if (itemId === 'clientes') return hasStorePermission(role, 'orders.create');
   if (itemId === 'caixa') return hasStorePermission(role, 'cash.read');
