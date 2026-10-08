@@ -1,6 +1,8 @@
 import { Router } from 'express';
 import { verifyFirebaseIdToken } from '../ai/consultantAuth.js';
 import { loadOwnerStoreInstitutionalRepresentation } from '../store/storeInstitutionalIdentityService.js';
+import { adminDb } from '../firebaseAdmin.js';
+import { hasStorePermission, parseStoreMember } from '../../src/utils/storeSecurity.js';
 import { quoteLocalOrderCoupon } from './localCouponQuoteService.js';
 
 const clean = (value: unknown, max = 220): string =>
@@ -37,10 +39,21 @@ export const createLocalCouponQuoteRouter = (): Router => {
       const token = bearerToken(request.get('authorization') ?? '');
       if (!token) throw new Error('AUTH_REQUIRED');
       const identity = await verifyFirebaseIdToken(token);
-      await loadOwnerStoreInstitutionalRepresentation({
-        storeId,
-        authenticatedUserId: identity.uid,
-      });
+      if (identity.uid === storeId) {
+        await loadOwnerStoreInstitutionalRepresentation({
+          storeId,
+          authenticatedUserId: identity.uid,
+        });
+      } else {
+        const tenant = await adminDb.doc('tenants/' + storeId).get();
+        const canonicalStoreId = clean(tenant.data()?.canonicalStoreId);
+        if (!canonicalStoreId) throw new Error('STORE_REPRESENTATION_FORBIDDEN');
+        const memberSnapshot = await adminDb.doc('stores/' + canonicalStoreId + '/members/' + identity.uid).get();
+        const member = parseStoreMember(memberSnapshot.data());
+        if (!member || member.storeId !== canonicalStoreId || member.userId !== identity.uid || member.status !== 'active' || !hasStorePermission(member.role, 'orders.create')) {
+          throw new Error('STORE_REPRESENTATION_FORBIDDEN');
+        }
+      }
       response.status(200).json(await quoteLocalOrderCoupon({
         legacyStoreId: storeId,
         orderId,
