@@ -556,6 +556,23 @@ export const TableServiceWorkspace = ({
         notify('O cupom Pix exige a cobrança integral do pedido. Use o saldo completo ou valide novamente.', 'error');
         return;
       }
+      if (validatedPixCoupon) {
+        try {
+          const refreshedQuote = await quoteLocalOrderCoupon({
+            storeId,
+            orderId: validatedPixCoupon.orderId,
+            couponCode: validatedPixCoupon.code,
+          });
+          if (Math.abs(refreshedQuote.subtotal - validatedPixCoupon.subtotal) > 0.009 || refreshedQuote.couponCode !== validatedPixCoupon.code) {
+            throw new Error('O cupom ou o saldo da conta mudou. Valide o cupom novamente.');
+          }
+        } catch (error) {
+          setValidatedPixCoupon(null);
+          onAppliedCouponChange?.('');
+          notify(error instanceof Error ? error.message : 'Não foi possível revalidar o cupom.', 'error');
+          return;
+        }
+      }
       if (selectedPaymentOrderIds.length !== 1) {
         notify('Para Pix parcial, selecione itens de um único pedido por vez.', 'info');
         return;
