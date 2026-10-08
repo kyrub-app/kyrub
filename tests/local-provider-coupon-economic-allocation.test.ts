@@ -50,6 +50,7 @@ test('local coupon capture preserves gross, discount and net for profitability',
 test('duplicate provider events do not rewrite existing capture and historical allocations remain optional', () => {
   assert.match(service, /const snapshot = await input\.transaction\.get\(captureRef\)/);
   assert.match(service, /if \(snapshot\.exists\) \{\s*assertEntryEquivalent\(parseEntry\(snapshot\.data\(\), storeId, captureId\), capture\);\s*return \{ writes: \[\] \};/);
+  assert.match(service, /existing\.economicAllocation && !expected\.economicAllocation/);
   assert.match(service, /existing\.economicAllocation && expected\.economicAllocation &&/);
   assert.match(service, /STORE_ECONOMIC_LEDGER_ENTRY_CONFLICT:economicAllocation/);
   assert.match(service, /if \(!commercial\?\.couponCode\) return undefined/);
