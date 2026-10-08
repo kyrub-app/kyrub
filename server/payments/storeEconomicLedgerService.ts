@@ -158,9 +158,12 @@ const assertEntryEquivalent = (
       throw new Error(`STORE_ECONOMIC_LEDGER_ENTRY_CONFLICT:${String(key)}`);
     }
   }
+  // Preserve historical captures without allocation, but reject a replay that
+  // changes or strips an allocation already persisted on the original capture.
   if (
-    existing.economicAllocation && expected.economicAllocation &&
-    JSON.stringify(existing.economicAllocation) !== JSON.stringify(expected.economicAllocation)
+    (existing.economicAllocation && !expected.economicAllocation) ||
+    (existing.economicAllocation && expected.economicAllocation &&
+      JSON.stringify(existing.economicAllocation) !== JSON.stringify(expected.economicAllocation))
   ) throw new Error('STORE_ECONOMIC_LEDGER_ENTRY_CONFLICT:economicAllocation');
 };
 
