@@ -117,6 +117,49 @@ describe('store economic ledger', () => {
     assert.equal(capture.economicAllocation?.courierRemunerationMinor, 450);
   });
 
+  test('table Pix coupon full refund reverses net paid and preserves gross/discount evidence', () => {
+    const localPayment = payment({ context: 'table', amount: 25 });
+    const allocation = buildMarketplaceEconomicAllocationSnapshot({
+      subtotal: 30, discountTotal: 5, deliveryFee: 0, total: 25,
+    });
+    const capture = buildPaymentCaptureEconomicEntry({
+      payment: localPayment,
+      event: event('payment.paid', { amount: 25 }),
+      economicAllocation: allocation,
+    });
+    const refund = buildPaymentRefundEconomicEntry({
+      payment: { ...localPayment, status: 'refund_processing' },
+      event: event('refund.succeeded', { amount: 25 }),
+      capture,
+    });
+    assert.equal(capture.amountMinor, 2500);
+    assert.equal(refund.amountMinor, -2500);
+    assert.equal(refund.reversalOfEntryId, capture.id);
+    assert.equal(refund.economicAllocation?.merchandiseGrossMinor, 3000);
+    assert.equal(refund.economicAllocation?.storeSubsidyMinor, 500);
+    assert.equal(refund.economicAllocation?.customerPaidMinor, 2500);
+    const summary = deriveStoreEconomicLedgerSummary([capture, refund]);
+    assert.equal(summary.capturedMinor, 2500);
+    assert.equal(summary.refundedMinor, 2500);
+    assert.equal(summary.economicNetMinor, 0);
+  });
+
+  test('historical table Pix refund without coupon allocation stays allocation-free', () => {
+    const localPayment = payment({ context: 'table', amount: 25 });
+    const capture = buildPaymentCaptureEconomicEntry({
+      payment: localPayment,
+      event: event('payment.paid', { amount: 25 }),
+    });
+    const refund = buildPaymentRefundEconomicEntry({
+      payment: { ...localPayment, status: 'refund_processing' },
+      event: event('refund.succeeded', { amount: 25 }),
+      capture,
+    });
+    assert.equal(capture.economicAllocation, undefined);
+    assert.equal(refund.economicAllocation, undefined);
+    assert.equal(deriveStoreEconomicLedgerSummary([capture, refund]).economicNetMinor, 0);
+  });
+
   test('full refund remains an exact opposite-sign reversal of capture', () => {
     const capture = buildPaymentCaptureEconomicEntry({ payment: payment(), event: event('payment.paid') });
     const refund = buildPaymentRefundEconomicEntry({
