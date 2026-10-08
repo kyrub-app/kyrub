@@ -29,3 +29,12 @@ test('operational roles may quote only while active and scoped to their store', 
   const production = member('production', 'active');
   assert.ok(production && !hasStorePermission(production.role, 'orders.create'));
 });
+
+const pixClientSource = readFileSync('src/utils/localPixCheckout.ts', 'utf8');
+const checkoutSource = readFileSync('tests/local-payment-intent-coupon.test.ts', 'utf8');
+
+test('table checkout uses authenticated coupon quote and payment snapshot invariants', () => {
+  assert.match(pixClientSource, /authorizedFetch\('\/api\/payments\/coupons\/quote'/);
+  assert.match(checkoutSource, /rejects a Pix amount that differs from immutable commercial total/);
+  assert.match(checkoutSource, /rejects discounted local intent without coupon\/promotion snapshot/);
+});
