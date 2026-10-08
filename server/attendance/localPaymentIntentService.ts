@@ -84,7 +84,7 @@ export const createLocalPaymentIntent = async (input: { authenticatedUserId: str
     if (amount > outstandingSubtotal + 0.009) throw new Error('LOCAL_PAYMENT_INTENT_AMOUNT_EXCEEDS_OUTSTANDING');
     let commercialSnapshot: ExistingOrderPaymentIntentDocument['commercialSnapshot'];
     if (request.couponCode) {
-      if (Array.isArray(order.items) && order.items.some((item: unknown) => {
+      if (Array.isArray(operationalOrder.items) && operationalOrder.items.some((item: unknown) => {
         if (!item || typeof item !== 'object') return false;
         const discount = (item as Record<string, unknown>).discountAmount;
         return typeof discount === 'number' && Number.isFinite(discount) && discount > 0.009;
