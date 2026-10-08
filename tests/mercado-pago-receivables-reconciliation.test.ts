@@ -129,6 +129,15 @@ describe('Mercado Pago authoritative receivables reconciliation', () => {
     assert.match(period, /missingReleaseEvidenceCount/);
   });
 
+  test('period UI distinguishes provider gross divergences from missing evidence', () => {
+    const workspace = readFileSync('src/components/store/StoreMercadoPagoPeriodSummaryWorkspace.tsx', 'utf8');
+    assert.match(workspace, /summary\.hasDivergences/);
+    assert.match(workspace, /summary\.grossDivergenceCount/);
+    assert.match(workspace, /summary\.complete && !summary\.balanced && !summary\.hasDivergences/);
+    assert.match(workspace, /!summary\.complete/);
+    assert.match(workspace, /data futura ou prevista/);
+  });
+
   test('period UI retains incomplete evidence instead of hiding financial rows', () => {
     const workspace = readFileSync('src/components/store/StoreMercadoPagoPeriodSummaryWorkspace.tsx', 'utf8');
     assert.doesNotMatch(workspace, /if \(!payload\.summary\?\.complete\)/);
