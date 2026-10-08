@@ -50,3 +50,20 @@ test('table coupon path does not mistake staff identity for customer eligibility
   // Existing behavior is documented here until an order-bound customer identity is available.
   assert.doesNotMatch(tableSource, /buyerId:/);
 });
+
+const legacyOperationsSource = readFileSync('src/utils/legacyTableOperations.ts', 'utf8');
+const canonicalPaymentSource = readFileSync('server/attendance/localPaymentIntentService.ts', 'utf8');
+
+test('legacy staff table discount is owner-only and must not be mistaken for canonical staff checkout', () => {
+  const legacyApply = legacyOperationsSource.slice(legacyOperationsSource.indexOf('export const applyTableCoupon'));
+  assert.match(legacyApply, /user\.uid !== input\.storeId/);
+  assert.match(legacyApply, /runTransaction\(db/);
+  assert.match(legacyApply, /entryType: 'discount'/);
+});
+
+test('canonical local Pix derives coupon beneficiary from verified order rather than staff UID', () => {
+  assert.match(canonicalPaymentSource, /const buyerId = clean\(order\.buyerId/);
+  assert.match(canonicalPaymentSource, /value\.source === 'staff' && value\.buyerIdentityStatus !== 'verified_account'/);
+  assert.match(canonicalPaymentSource, /resolveStorePromotionForCheckout\(\{ storeId: storeContext\.canonicalStoreId, buyerId/);
+  assert.match(canonicalPaymentSource, /LOCAL_PAYMENT_INTENT_COUPON_PARTIAL_PAYMENT_UNSUPPORTED/);
+});
