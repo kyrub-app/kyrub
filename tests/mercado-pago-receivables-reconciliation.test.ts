@@ -129,6 +129,17 @@ describe('Mercado Pago authoritative receivables reconciliation', () => {
     assert.match(period, /missingReleaseEvidenceCount/);
   });
 
+  test('period UI retains incomplete evidence instead of hiding financial rows', () => {
+    const workspace = readFileSync('src/components/store/StoreMercadoPagoPeriodSummaryWorkspace.tsx', 'utf8');
+    assert.doesNotMatch(workspace, /if \(!payload\.summary\?\.complete\)/);
+    assert.match(workspace, /if \(!payload\.summary\)/);
+    assert.match(workspace, /!summary\.complete/);
+    assert.match(workspace, /summary\.missingRefundEvidenceCount > 0/);
+    assert.match(workspace, /summary\.missingReleaseEvidenceCount/);
+    assert.match(workspace, /summary\.explicitNetReceivedCount\}\/\{summary\.paymentCount\}/);
+    assert.match(workspace, /grid-cols-1 gap-2 sm:grid-cols-2/);
+  });
+
   test('internal economic ledger fees remain separate from authoritative provider fee totals', () => {
     const period = readFileSync('server/payments/storeMercadoPagoPeriodSummaryRouter.ts', 'utf8');
     assert.match(period, /ledgerProviderFeesMinor/);
