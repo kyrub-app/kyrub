@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { DocumentData } from 'firebase-admin/firestore';
 import { adminDb } from '../firebaseAdmin.js';
+import { hasStorePermission, parseStoreMember } from '../../src/utils/storeSecurity.js';
 import { isPaymentAuthoritativelyPaid, normalizeCanonicalPayment, type CanonicalPayment } from '../../src/utils/canonicalPayment.js';
 import { normalizeCanonicalPaymentIntent, type ExistingOrderPaymentIntentDocument, type ExistingOrderCanonicalPaymentIntent } from '../../src/utils/canonicalPaymentIntent.js';
 import { parseServiceLocationSnapshot } from '../../shared/serviceLocation.js';
@@ -52,8 +53,13 @@ const assertExistingPair = (input: { intent: ExistingOrderCanonicalPaymentIntent
 export interface LocalPaymentIntentCreateResult { paymentIntentId: string; paymentId: string; orderId: string; status: 'pending'; amount: number; currency: 'BRL'; method: 'pix'; context: LocalPaymentContext; expiresAt: string; providerReady: false; duplicate: boolean; }
 
 export const createLocalPaymentIntent = async (input: { authenticatedUserId: string; value: unknown; now?: Date; }): Promise<LocalPaymentIntentCreateResult> => {
-  const request = parseLocalPaymentIntentCreateInput(input.value); const actorUserId = clean(input.authenticatedUserId, 180); if (!actorUserId || actorUserId !== request.storeId) throw new Error('LOCAL_PAYMENT_INTENT_FORBIDDEN');
-  const storeContext = await resolveInPersonOrderStoreContext(request.storeId); const now = input.now ?? new Date(); if (Number.isNaN(now.getTime())) throw new Error('LOCAL_PAYMENT_INTENT_TIME_INVALID');
+  const request = parseLocalPaymentIntentCreateInput(input.value); const actorUserId = clean(input.authenticatedUserId, 180); if (!actorUserId) throw new Error('LOCAL_PAYMENT_INTENT_FORBIDDEN');
+  const storeContext = await resolveInPersonOrderStoreContext(request.storeId);
+  if (actorUserId !== request.storeId) {
+    const memberSnapshot = await adminDb.doc(`stores/${storeContext.canonicalStoreId}/members/${actorUserId}`).get();
+    const member = parseStoreMember(memberSnapshot.data());
+    if (!member || member.storeId !== storeContext.canonicalStoreId || member.userId !== actorUserId || member.status !== 'active' || !hasStorePermission(member.role, 'payments.create')) throw new Error('LOCAL_PAYMENT_INTENT_FORBIDDEN');
+  } const now = input.now ?? new Date(); if (Number.isNaN(now.getTime())) throw new Error('LOCAL_PAYMENT_INTENT_TIME_INVALID');
   const createdAt = now.toISOString(); const expiresAt = new Date(now.getTime() + INTENT_TTL_MS).toISOString(); const suffix = documentToken(`${storeContext.canonicalStoreId}|${request.orderId}|${request.idempotencyKey}`); const paymentIntentId = `pi_local_${suffix}`; const paymentId = `pay_local_${suffix}`;
   const orderRef = adminDb.doc(`stores/${storeContext.canonicalStoreId}/orders/${request.orderId}`); const legacyOrderRef = adminDb.doc(`artifacts/${request.storeId}/public/data/customerOrders/${request.orderId}`); const intentRef = adminDb.doc(`stores/${storeContext.canonicalStoreId}/paymentIntents/${paymentIntentId}`); const paymentRef = adminDb.doc(`stores/${storeContext.canonicalStoreId}/payments/${paymentId}`); const paymentQuery = adminDb.collection(`stores/${storeContext.canonicalStoreId}/payments`).where('orderId', '==', request.orderId).limit(MAX_PAYMENT_RECORDS_PER_ORDER);
 
