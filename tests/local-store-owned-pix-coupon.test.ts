@@ -37,3 +37,13 @@ test('operator-confirmed coupon capture persists immutable economic allocation f
   assert.match(confirmation, /total: payment\.amount/);
   assert.match(confirmation, /\.\.\.\(commercialSnapshot\?\.couponCode \? \{/);
 });
+
+
+test('duplicate store-owned Pix confirmation verifies existing coupon allocation', () => {
+  assert.match(confirmation, /intent\.commercialSnapshot\?\.couponCode && \(/);
+  assert.match(confirmation, /!capture\?\.economicAllocation/);
+  assert.match(confirmation, /customerPaidMinor !== brlToMinor\(payment\.amount\)/);
+  assert.match(confirmation, /storeSubsidyMinor !== brlToMinor\(intent\.commercialSnapshot\.discountTotal\)/);
+  assert.match(confirmation, /merchandiseGrossMinor !== brlToMinor\(intent\.commercialSnapshot\.subtotal\)/);
+  assert.match(confirmation, /LOCAL_STORE_PIX_CONFIRM_RECONCILIATION_REQUIRED/);
+});
