@@ -116,3 +116,27 @@ test('excess coupon discount or over-settlement fails closed instead of silently
     { price: 10, quantity: 1, discountAmount: 3, settledAmount: 8 },
   ] }), /LOCAL_ORDER_PAYABLE_ITEM_INVALID/);
 });
+
+test('historical legacy order without discount and settlement fields remains compatible', () => {
+  assert.deepEqual(summarizeLocalOrderPayable({ items: [
+    { price: 15, quantity: 2, paidQuantity: 1 },
+  ] }), {
+    billableAmount: 30,
+    openAmount: 15,
+    operationalPaidAmount: 15,
+    transferredAmount: 0,
+    hasOperationalPaidQuantity: true,
+  });
+});
+
+test('legacy discount exactly equal to billable value is valid, but cannot be paid again', () => {
+  assert.deepEqual(summarizeLocalOrderPayable({ items: [
+    { price: 10, quantity: 1, discountAmount: 10 },
+  ] }), {
+    billableAmount: 0,
+    openAmount: 0,
+    operationalPaidAmount: 0,
+    transferredAmount: 0,
+    hasOperationalPaidQuantity: false,
+  });
+});
