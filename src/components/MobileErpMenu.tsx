@@ -211,7 +211,7 @@ export function MobileErpMenu({
   };
 
   const renderItems = (section: MobileErpMenuItem['section']) =>
-    MOBILE_ERP_MENU_ITEMS.filter(item => item.section === section && (!accessRole || canStoreRoleAccessErpMenuItem(accessRole, item.id))).map(item => {
+    MOBILE_ERP_MENU_ITEMS.filter(item => item.section === section && (accessRole && canStoreRoleAccessErpMenuItem(accessRole, item.id))).map(item => {
       const Icon = item.icon;
       const isSelected =
         !isMobileErpManagementModule(item.id) &&
