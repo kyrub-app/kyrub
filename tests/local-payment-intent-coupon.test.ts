@@ -66,3 +66,8 @@ test('canonical Pix rejects a second coupon when the local order already has ite
   assert.match(canonicalLocalService, /LOCAL_PAYMENT_INTENT_COUPON_ALREADY_APPLIED/);
   assert.match(attendanceRouter, /LOCAL_PAYMENT_INTENT_COUPON_ALREADY_APPLIED/);
 });
+
+test('local Pix reconciles operational open balance and canonical payments before creating intent', () => {
+  assert.match(canonicalLocalService, /Math\.abs\(outstandingSubtotal - payable\.openAmount \+ canonicalPaidAmount\) > 0\.009/);
+  assert.match(canonicalLocalService, /LOCAL_PAYMENT_INTENT_RECONCILIATION_REQUIRED/);
+});
