@@ -79,6 +79,7 @@ export const createLocalPaymentIntent = async (input: { authenticatedUserId: str
     const projectedStatus = operationalPaymentStatus(operationalOrder.paymentStatus);
     if ((projectedStatus === 'paid' && authoritativelyPaidAmount + 0.009 < expectedAmount) || (projectedStatus === 'partial' && authoritativelyPaidAmount <= 0)) throw new Error('LOCAL_PAYMENT_INTENT_RECONCILIATION_REQUIRED');
     const outstandingSubtotal = Number((expectedAmount - authoritativelyPaidAmount).toFixed(2)); if (outstandingSubtotal <= 0.009) throw new Error('LOCAL_PAYMENT_INTENT_ALREADY_PAID');
+    if (Math.abs(outstandingSubtotal - payable.openAmount + canonicalPaidAmount) > 0.009) throw new Error('LOCAL_PAYMENT_INTENT_RECONCILIATION_REQUIRED');
 
     let amount = request.amount ?? outstandingSubtotal;
     if (amount > outstandingSubtotal + 0.009) throw new Error('LOCAL_PAYMENT_INTENT_AMOUNT_EXCEEDS_OUTSTANDING');
