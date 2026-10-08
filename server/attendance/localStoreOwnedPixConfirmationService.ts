@@ -141,7 +141,13 @@ export const confirmStoreOwnedPixLocalPayment = async (input: {
         audit?.sourceAuthority !== 'operator_attestation' || audit?.actorUserId !== actorUserId ||
         audit?.providerPaymentId !== request.providerPaymentId ||
         capture?.sourceAuthority !== 'operator_attestation' || capture?.paymentId !== payment.id ||
-        capture?.providerPaymentId !== request.providerPaymentId
+        capture?.providerPaymentId !== request.providerPaymentId ||
+        (intent.commercialSnapshot?.couponCode && (
+          !capture?.economicAllocation ||
+          (capture.economicAllocation as Record<string, unknown>).customerPaidMinor !== brlToMinor(payment.amount) ||
+          (capture.economicAllocation as Record<string, unknown>).storeSubsidyMinor !== brlToMinor(intent.commercialSnapshot.discountTotal) ||
+          (capture.economicAllocation as Record<string, unknown>).merchandiseGrossMinor !== brlToMinor(intent.commercialSnapshot.subtotal)
+        ))
       ) throw new Error('LOCAL_STORE_PIX_CONFIRM_RECONCILIATION_REQUIRED');
       return {
         confirmed: true, duplicate: true, paymentIntentId: intent.id, paymentId: payment.id,
