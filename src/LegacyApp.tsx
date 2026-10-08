@@ -356,7 +356,7 @@ export default function App() {
         const operational = accesses.filter(access => access.status === 'active');
         setStaffAccesses(operational);
         setSelectedStaffStoreId(current =>
-          operational.some(access => access.store.id === current)
+          current
             ? current
             : operational[0]?.store.id ?? ''
         );
