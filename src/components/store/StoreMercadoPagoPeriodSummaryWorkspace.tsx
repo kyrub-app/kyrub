@@ -139,8 +139,8 @@ export default function StoreMercadoPagoPeriodSummaryWorkspace({ storeId }: { st
             <article className="rounded-2xl border border-slate-800 bg-slate-950 p-3"><span className="text-[8px] font-black uppercase text-slate-600">Pagamentos MP</span><strong className="mt-1 block text-sm text-white">{summary.paymentCount}</strong></article>
             <article className="rounded-2xl border border-slate-800 bg-slate-950 p-3"><span className="text-[8px] font-black uppercase text-slate-600">Conciliados</span><strong className={`mt-1 block text-sm ${reconciliationComplete ? 'text-emerald-200' : 'text-amber-200'}`}>{summary.reconciledPaymentCount}/{summary.paymentCount}</strong></article>
             <article className="rounded-2xl border border-slate-800 bg-slate-950 p-3"><span className="text-[8px] font-black uppercase text-slate-600">Taxas com evidência</span><strong className={`mt-1 block text-sm ${feeCoverageComplete ? 'text-emerald-200' : 'text-amber-200'}`}>{summary.feeCoverageCount}/{summary.paymentCount}</strong></article>
-            <article className="rounded-2xl border border-sky-500/20 bg-sky-500/[0.06] p-3"><span className="text-[8px] font-black uppercase text-sky-300">Taxas conhecidas</span><strong className="mt-1 block text-sm text-amber-200">{money(knownProviderFeesMinor)}</strong></article>
-            <article className="rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.05] p-3"><span className="text-[8px] font-black uppercase text-emerald-300">Líquido explícito</span><strong className="mt-1 block text-sm text-emerald-200">{money(summary.explicitNetReceivedMinor)}</strong><span className="mt-1 block text-[7px] text-slate-600">{summary.explicitNetReceivedCount} pagamento(s)</span></article>
+            <article className="rounded-2xl border border-sky-500/20 bg-sky-500/[0.06] p-3"><span className="text-[8px] font-black uppercase text-sky-300">Taxas conhecidas (parcial)</span><strong className="mt-1 block text-sm text-amber-200">{money(knownProviderFeesMinor)}</strong></article>
+            <article className="rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.05] p-3"><span className="text-[8px] font-black uppercase text-emerald-300">Líquido informado pelo MP</span><strong className="mt-1 block text-sm text-emerald-200">{money(summary.explicitNetReceivedMinor)}</strong><span className="mt-1 block text-[7px] text-slate-600">{summary.explicitNetReceivedCount}/{summary.paymentCount} pagamento(s) com evidência</span></article>
           </div>
 
           <div className="mt-4 grid min-w-0 gap-3 lg:grid-cols-2">
@@ -163,6 +163,12 @@ export default function StoreMercadoPagoPeriodSummaryWorkspace({ storeId }: { st
               <p className="mt-2">As taxas conhecidas combinam a evidência já registrada no ledger com a conciliação do provedor somente quando o ledger ainda não tinha aquela taxa, evitando dupla contagem.</p>
             </article>
           </div>
+
+          {summary.missingRefundEvidenceCount > 0 && (
+            <p className="mt-4 rounded-2xl border border-amber-500/20 bg-amber-500/10 p-3 text-[8px] leading-relaxed text-amber-100">
+              {summary.missingRefundEvidenceCount} pagamento(s) sem evidência explícita de reembolso do Mercado Pago. Ausência dessa informação não significa reembolso zero.
+            </p>
+          )}
 
           {!feeCoverageComplete && (
             <p className="mt-4 rounded-2xl border border-amber-500/20 bg-amber-500/10 p-3 text-[8px] leading-relaxed text-amber-100">
