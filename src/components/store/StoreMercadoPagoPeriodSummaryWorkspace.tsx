@@ -150,16 +150,16 @@ export default function StoreMercadoPagoPeriodSummaryWorkspace({ storeId }: { st
                 <div className="flex min-w-0 flex-wrap items-start justify-between gap-2"><span className="text-slate-500">Taxa já presente no ledger</span><b>{summary.ledgerFeeEvidenceCount}</b></div>
                 <div className="flex justify-between gap-3"><span className="text-slate-500">Taxa recuperada pela conciliação MP</span><b>{summary.reconciliationFallbackFeeCount}</b></div>
                 <div className="flex justify-between gap-3"><span className="text-slate-500">Pagamento com líquido explícito do provedor</span><b>{summary.explicitNetReceivedCount}</b></div>
-                <div className="flex justify-between gap-3"><span className="text-slate-500">Pagamento com informação de liberação</span><b>{summary.releaseDateEvidenceCount}</b></div>
+                <div className="flex justify-between gap-3"><span className="text-slate-500">Pagamento com data/status de liberação</span><b>{summary.releaseDateEvidenceCount}</b></div>
                 <div className="flex justify-between gap-3"><span className="text-slate-500">Reembolso informado pelo provedor</span><b>{summary.providerRefundedEvidenceCount}/{summary.paymentCount} — {money(summary.providerRefundedMinor)}</b></div>
-                <div className="flex justify-between gap-3"><span className="text-slate-500">Sem evidência de liberação</span><b>{summary.missingReleaseEvidenceCount}</b></div>
+                <div className="flex justify-between gap-3"><span className="text-slate-500">Sem data/status de liberação</span><b>{summary.missingReleaseEvidenceCount}</b></div>
               </div>
             </article>
 
             <article className="rounded-2xl border border-slate-800 bg-slate-950 p-4 text-[9px] leading-relaxed text-slate-500">
               <h5 className="text-[10px] font-black uppercase text-slate-200">Como interpretar</h5>
               <p className="mt-3">“Líquido explícito” é a soma apenas dos pagamentos em que o próprio Mercado Pago informou <code className="text-sky-200">net_received_amount</code>. Se a cobertura não for total, esse valor não representa o líquido completo do mês.</p>
-              <p className="mt-2">Pagamento aprovado não significa dinheiro liberado. A existência de uma data ou situação de liberação é evidência do provedor, mas não comprova, por si só, crédito em conta bancária.</p>
+              <p className="mt-2">Pagamento aprovado não significa dinheiro liberado. A contagem de liberação inclui data ou status informado pelo provedor, inclusive uma data futura ou prevista. Não é contagem de valores efetivamente creditados na conta bancária.</p>
               <p className="mt-2">As taxas conhecidas combinam a evidência já registrada no ledger com a conciliação do provedor somente quando o ledger ainda não tinha aquela taxa, evitando dupla contagem.</p>
             </article>
           </div>
