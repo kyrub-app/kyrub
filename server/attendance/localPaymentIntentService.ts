@@ -84,6 +84,11 @@ export const createLocalPaymentIntent = async (input: { authenticatedUserId: str
     if (amount > outstandingSubtotal + 0.009) throw new Error('LOCAL_PAYMENT_INTENT_AMOUNT_EXCEEDS_OUTSTANDING');
     let commercialSnapshot: ExistingOrderPaymentIntentDocument['commercialSnapshot'];
     if (request.couponCode) {
+      if (Array.isArray(order.items) && order.items.some((item: unknown) => {
+        if (!item || typeof item !== 'object') return false;
+        const discount = (item as Record<string, unknown>).discountAmount;
+        return typeof discount === 'number' && Number.isFinite(discount) && discount > 0.009;
+      })) throw new Error('LOCAL_PAYMENT_INTENT_COUPON_ALREADY_APPLIED');
       if (authoritativelyPaidAmount > 0) throw new Error('LOCAL_PAYMENT_INTENT_COUPON_PARTIAL_PAYMENT_UNSUPPORTED');
       const resolved = await resolveStorePromotionForCheckout({ storeId: storeContext.canonicalStoreId, buyerId, couponCode: request.couponCode, lines: promotionLinesForOrder(order), now });
       const discountTotal = Number(resolved.quote.discountTotal.toFixed(2)); if (discountTotal <= 0) throw new Error('LOCAL_COUPON_NO_DISCOUNT');
