@@ -552,6 +552,10 @@ export const TableServiceWorkspace = ({
         onAppliedCouponChange?.('');
         return;
       }
+      if (validatedPixCoupon && Math.abs(paymentAmount - selectedPaymentTotal) > 0.009) {
+        notify('O cupom Pix exige a cobrança integral do pedido. Use o saldo completo ou valide novamente.', 'error');
+        return;
+      }
       if (selectedPaymentOrderIds.length !== 1) {
         notify('Para Pix parcial, selecione itens de um único pedido por vez.', 'info');
         return;
