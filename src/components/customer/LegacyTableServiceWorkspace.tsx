@@ -39,7 +39,7 @@ import {
   type TablePaymentMethod,
   type TableSettlementEntry,
 } from '../../utils/tableOperations';
-import { quoteLocalCoupon } from '../../utils/localPixCheckout';
+import { quoteLocalCoupon, quoteLocalOrderCoupon } from '../../utils/localPixCheckout';
 import type { StorePromotionQuote } from '../../utils/storePromotions';
 import { SharedPdvCatalog } from '../pdv/SharedPdvCatalog';
 
@@ -471,6 +471,26 @@ export const TableServiceWorkspace = ({
     if (isCouponApplying) return;
     setIsCouponApplying(true);
     try {
+      if (paymentMethod === 'pix') {
+        if (selectedPaymentOrderIds.length !== 1 || selectedPaymentTotal + 0.009 < outstandingTotal) {
+          throw new Error('Para usar cupom no Pix, selecione a conta integral de um único pedido, sem pagamentos parciais.');
+        }
+        if (confirmedPaymentExists) {
+          throw new Error('Não é possível aplicar cupom Pix depois de um pagamento confirmado.');
+        }
+        const quote = await quoteLocalOrderCoupon({
+          storeId,
+          orderId: selectedPaymentOrderIds[0],
+          couponCode: code,
+        });
+        if (Math.abs(quote.subtotal - selectedPaymentTotal) > 0.009) {
+          throw new Error('O saldo canônico diverge da seleção. Revise a conta antes de cobrar.');
+        }
+        onAppliedCouponChange?.(quote.couponCode);
+        setCouponCode(quote.couponCode);
+        notify(`Cupom ${quote.couponCode} validado: ${formatCurrency(quote.discountTotal)} de desconto. O valor líquido será calculado ao gerar o Pix.`, 'success');
+        return;
+      }
       const quote = await quoteLocalCoupon({
         storeId,
         couponCode: code,
