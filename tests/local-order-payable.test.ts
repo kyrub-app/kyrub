@@ -107,3 +107,12 @@ test('transferred quantities are excluded before coupon discount is deducted', (
     hasOperationalPaidQuantity: false,
   });
 });
+
+test('excess coupon discount or over-settlement fails closed instead of silently clamping balance', () => {
+  assert.throws(() => summarizeLocalOrderPayable({ items: [
+    { price: 10, quantity: 1, discountAmount: 11 },
+  ] }), /LOCAL_ORDER_PAYABLE_ITEM_INVALID/);
+  assert.throws(() => summarizeLocalOrderPayable({ items: [
+    { price: 10, quantity: 1, discountAmount: 3, settledAmount: 8 },
+  ] }), /LOCAL_ORDER_PAYABLE_ITEM_INVALID/);
+});
