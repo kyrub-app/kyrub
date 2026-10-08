@@ -251,6 +251,7 @@ export const TableServiceWorkspace = ({
   const [excludingLineKey, setExcludingLineKey] = useState('');
   const [couponCode, setCouponCode] = useState('');
   const [couponQuote, setCouponQuote] = useState<StorePromotionQuote | null>(null);
+  const [validatedPixCoupon, setValidatedPixCoupon] = useState<{ code: string; orderId: string; subtotal: number } | null>(null);
   const [isCouponApplying, setIsCouponApplying] = useState(false);
   const [paymentAmountInput, setPaymentAmountInput] = useState('');
   const [settlementHistory, setSettlementHistory] = useState<TableSettlementEntry[]>([]);
@@ -267,6 +268,7 @@ export const TableServiceWorkspace = ({
     setExcludingLineKey('');
     setCouponCode('');
     setCouponQuote(null);
+    setValidatedPixCoupon(null);
     setIsCouponApplying(false);
     setPaymentAmountInput('');
     setSettlementHistory([]);
@@ -277,6 +279,7 @@ export const TableServiceWorkspace = ({
   useEffect(() => {
     setCouponQuote(null);
     onAppliedCouponChange?.('');
+    setValidatedPixCoupon(null);
   }, [paymentSelections, onAppliedCouponChange]);
 
   useEffect(() =>
@@ -486,6 +489,7 @@ export const TableServiceWorkspace = ({
         if (Math.abs(quote.subtotal - selectedPaymentTotal) > 0.009) {
           throw new Error('O saldo canônico diverge da seleção. Revise a conta antes de cobrar.');
         }
+        setValidatedPixCoupon({ code: quote.couponCode, orderId: quote.orderId, subtotal: quote.subtotal });
         onAppliedCouponChange?.(quote.couponCode);
         setCouponCode(quote.couponCode);
         notify(`Cupom ${quote.couponCode} validado: ${formatCurrency(quote.discountTotal)} de desconto. O valor líquido será calculado ao gerar o Pix.`, 'success');
@@ -514,6 +518,7 @@ export const TableServiceWorkspace = ({
       );
     } catch (error) {
       setCouponQuote(null);
+      setValidatedPixCoupon(null);
       onAppliedCouponChange?.('');
       setIsCouponApplying(false);
       notify(
@@ -541,6 +546,12 @@ export const TableServiceWorkspace = ({
       return;
     }
     if (paymentMethod === 'pix') {
+      if (validatedPixCoupon && (selectedPaymentOrderIds.length !== 1 || selectedPaymentOrderIds[0] !== validatedPixCoupon.orderId || Math.abs(selectedPaymentTotal - validatedPixCoupon.subtotal) > 0.009 || selectedPaymentTotal + 0.009 < outstandingTotal)) {
+        notify('A seleção da conta mudou após a validação do cupom. Valide o cupom novamente.', 'error');
+        setValidatedPixCoupon(null);
+        onAppliedCouponChange?.('');
+        return;
+      }
       if (selectedPaymentOrderIds.length !== 1) {
         notify('Para Pix parcial, selecione itens de um único pedido por vez.', 'info');
         return;
@@ -853,6 +864,7 @@ export const TableServiceWorkspace = ({
                         onChange={event => {
                           setCouponCode(event.target.value.toUpperCase());
                           setCouponQuote(null);
+                          setValidatedPixCoupon(null);
                           onAppliedCouponChange?.('');
                         }}
                         disabled={confirmedPaymentExists || isCouponApplying}
@@ -886,7 +898,11 @@ export const TableServiceWorkspace = ({
                       <button
                         key={method}
                         type="button"
-                        onClick={() => setPaymentMethod(method)}
+                        onClick={() => {
+                          setPaymentMethod(method);
+                          setValidatedPixCoupon(null);
+                          onAppliedCouponChange?.('');
+                        }}
                         className={`rounded-xl border px-3 py-2 text-[9px] font-black uppercase ${
                           paymentMethod === method
                             ? 'border-orange-500 bg-orange-500 text-slate-950'
