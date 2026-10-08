@@ -1459,7 +1459,7 @@ if (newMomentPublishToPraca) {
       )}
 
       {/* 4. MODAL DETALHADO DO ERP / GESTÃO (PRESERVA TODAS AS TELAS ANTERIORES) */}
-      {isGestaoOpen && (
+      {isGestaoOpen && !(gestaoRole === 'retailer' && !erpAccessRole) && (
         <div className="fixed inset-0 z-50 bg-slate-950/95 backdrop-blur-sm flex flex-col">
           {/* Header Gestão */}
           <div className="bg-slate-900 border-b border-slate-800 px-6 py-2.5 flex items-center justify-between gap-4 font-sans shrink-0" id="erp-main-header">
