@@ -4,6 +4,7 @@ import type { CanonicalPayment } from '../../src/utils/canonicalPayment.js';
 import {
   normalizeCanonicalPaymentIntent,
   type CanonicalPaymentIntent,
+  type NormalizedCanonicalPaymentIntent,
 } from '../../src/utils/canonicalPaymentIntent.js';
 import type { VerifiedPaymentProviderEvent } from '../../src/utils/paymentProvider.js';
 import {
@@ -37,21 +38,44 @@ const clean = (value: unknown): string =>
 
 const allocationFromIntent = (
   payment: CanonicalPayment,
-  intent: CanonicalPaymentIntent | null | undefined
+  intent: NormalizedCanonicalPaymentIntent | null | undefined
 ): EconomicAllocationSnapshot | undefined => {
-  if (payment.context !== 'marketplace' || !intent) return undefined;
+  if (!intent) return undefined;
   if (
-    intent.id.trim() === '' ||
+    !intent.id.trim() ||
     intent.storeId !== payment.storeId ||
     intent.buyerId !== payment.buyerId ||
-    intent.orderDraft.draftId !== payment.orderId ||
     Number(intent.amount.toFixed(2)) !== Number(payment.amount.toFixed(2))
   ) throw new Error('STORE_ECONOMIC_LEDGER_INTENT_MISMATCH');
+  if (payment.context === 'marketplace') {
+    if (intent.context !== 'marketplace' || intent.orderDraft.draftId !== payment.orderId) {
+      throw new Error('STORE_ECONOMIC_LEDGER_INTENT_MISMATCH');
+    }
+    return buildMarketplaceEconomicAllocationSnapshot({
+      subtotal: intent.orderDraft.subtotal,
+      discountTotal: intent.orderDraft.discountTotal ?? 0,
+      deliveryFee: intent.orderDraft.deliveryFee,
+      total: intent.orderDraft.total,
+    });
+  }
+  if (payment.context !== 'table' && payment.context !== 'pos') return undefined;
+  if (
+    intent.context !== payment.context ||
+    intent.target.kind !== 'existing_order' ||
+    intent.target.orderId !== payment.orderId
+  ) throw new Error('STORE_ECONOMIC_LEDGER_INTENT_MISMATCH');
+  const commercial = intent.commercialSnapshot;
+  if (!commercial?.couponCode) return undefined;
+  if (
+    commercial.discountTotal <= 0 ||
+    Math.abs(commercial.subtotal - commercial.discountTotal - commercial.total) > 0.009 ||
+    Math.abs(commercial.total - payment.amount) > 0.009
+  ) throw new Error('STORE_ECONOMIC_LEDGER_INTENT_MISMATCH');
   return buildMarketplaceEconomicAllocationSnapshot({
-    subtotal: intent.orderDraft.subtotal,
-    discountTotal: intent.orderDraft.discountTotal ?? 0,
-    deliveryFee: intent.orderDraft.deliveryFee,
-    total: intent.orderDraft.total,
+    subtotal: commercial.subtotal,
+    discountTotal: commercial.discountTotal,
+    deliveryFee: 0,
+    total: commercial.total,
   });
 };
 
@@ -60,11 +84,16 @@ const resolvePaymentIntent = async (input: {
   payment: CanonicalPayment;
   event: VerifiedPaymentProviderEvent;
   paymentIntent?: CanonicalPaymentIntent | null;
-}): Promise<CanonicalPaymentIntent | null> => {
-  if (input.payment.context !== 'marketplace') return null;
-  if (input.paymentIntent) return input.paymentIntent;
+}): Promise<NormalizedCanonicalPaymentIntent | null> => {
+  if (input.payment.context !== 'marketplace' && input.payment.context !== 'table' && input.payment.context !== 'pos') return null;
+  if (input.paymentIntent) return normalizeCanonicalPaymentIntent(input.paymentIntent);
+  const paymentIntentId = input.payment.paymentIntentId || input.event.paymentIntentId;
+  if (!paymentIntentId) {
+    if (input.payment.context === 'marketplace') throw new Error('STORE_ECONOMIC_LEDGER_INTENT_NOT_FOUND');
+    return null;
+  }
   const snapshot = await input.transaction.get(
-    adminDb.doc(`stores/${input.payment.storeId}/paymentIntents/${input.event.paymentIntentId}`)
+    adminDb.doc(`stores/${input.payment.storeId}/paymentIntents/${paymentIntentId}`)
   );
   if (!snapshot.exists) throw new Error('STORE_ECONOMIC_LEDGER_INTENT_NOT_FOUND');
   return normalizeCanonicalPaymentIntent(snapshot.data() as CanonicalPaymentIntent);
