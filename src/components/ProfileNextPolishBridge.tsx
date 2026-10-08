@@ -8,7 +8,6 @@ import { createPortal } from 'react-dom';
 import {
   BarChart3,
   Camera,
-  Compass,
   FileBadge,
   Fingerprint,
   Rocket,
@@ -41,19 +40,15 @@ const buttonWithText = (
   ) ?? null;
 
 export function ProfileNextPolishBridge() {
-  const [squareTarget, setSquareTarget] =
-    useState<HTMLElement | null>(null);
   const [secureTarget, setSecureTarget] =
     useState<HTMLElement | null>(null);
   const [metricsSponsorTarget, setMetricsSponsorTarget] =
     useState<HTMLElement | null>(null);
   const [sponsoredListTarget, setSponsoredListTarget] =
     useState<HTMLElement | null>(null);
-  const [squareActive, setSquareActive] = useState(false);
   const [activeSecureLabel, setActiveSecureLabel] =
     useState('Perfil');
 
-  const squareButtonRef = useRef<HTMLButtonElement | null>(null);
   const sponsorButtonRef = useRef<HTMLButtonElement | null>(null);
   const secureButtonsRef = useRef<
     Record<string, HTMLButtonElement | null>
@@ -61,68 +56,6 @@ export function ProfileNextPolishBridge() {
 
   useEffect(() => {
     const synchronize = () => {
-      const profileModal = document.getElementById(
-        'profile-social-hub-modal'
-      );
-      let nextSquareTarget: HTMLElement | null = null;
-
-      if (profileModal) {
-        const savedButton =
-          profileModal.querySelector<HTMLButtonElement>(
-            'button[aria-label="Abrir publicações salvas"]'
-          );
-        const actionGroup = savedButton?.parentElement ?? null;
-        const profileNavigation =
-          profileModal.querySelector<HTMLElement>(
-            'nav[aria-label="Seções do perfil"]'
-          );
-        const squareButton = profileNavigation
-          ? buttonWithText(profileNavigation, 'Praça')
-          : null;
-
-        squareButtonRef.current = squareButton;
-        setSquareActive(current => {
-          const next = Boolean(
-            squareButton?.className.includes('bg-orange-500')
-          );
-          return current === next ? current : next;
-        });
-
-        if (actionGroup && savedButton && squareButton) {
-          let target = actionGroup.querySelector<HTMLElement>(
-            '[data-profile-square-shortcut-slot="true"]'
-          );
-
-          if (!target) {
-            target = document.createElement('div');
-            target.dataset.profileSquareShortcutSlot = 'true';
-            savedButton.insertAdjacentElement('beforebegin', target);
-          }
-
-          nextSquareTarget = target;
-          squareButton.style.display = 'none';
-
-          profileNavigation.style.display = 'grid';
-          profileNavigation.style.gridTemplateColumns =
-            'repeat(3, minmax(0, 1fr))';
-          profileNavigation.style.overflowX = 'visible';
-          profileNavigation
-            .querySelectorAll<HTMLButtonElement>('button')
-            .forEach(button => {
-              if (button !== squareButton) {
-                button.style.width = '100%';
-                button.style.minWidth = '0';
-              }
-            });
-        }
-      } else {
-        squareButtonRef.current = null;
-      }
-
-      setSquareTarget(current =>
-        sameTarget(current, nextSquareTarget)
-      );
-
       const editCloseButton =
         document.querySelector<HTMLButtonElement>(
           'button[aria-label="Fechar edição"]'
@@ -278,7 +211,7 @@ export function ProfileNextPolishBridge() {
       window.clearInterval(timer);
       document
         .querySelectorAll<HTMLElement>(
-          '[data-profile-square-shortcut-slot="true"], [data-profile-secure-shortcuts-slot="true"], [data-profile-metrics-sponsor-slot="true"], [data-profile-sponsored-list-slot="true"]'
+          '[data-profile-secure-shortcuts-slot="true"], [data-profile-metrics-sponsor-slot="true"], [data-profile-sponsored-list-slot="true"]'
         )
         .forEach(target => target.remove());
     };
@@ -292,24 +225,6 @@ export function ProfileNextPolishBridge() {
 
   return (
     <>
-      {squareTarget &&
-        createPortal(
-          <button
-            type="button"
-            onClick={() => squareButtonRef.current?.click()}
-            className={`flex h-11 w-11 items-center justify-center rounded-2xl border ${
-              squareActive
-                ? 'border-orange-500 bg-orange-500 text-slate-950'
-                : 'border-sky-500/30 bg-sky-500/10 text-sky-300'
-            }`}
-            aria-label="Abrir Praça"
-            title="Praça"
-          >
-            <Compass className="h-5 w-5" />
-          </button>,
-          squareTarget
-        )}
-
       {secureTarget &&
         createPortal(
           <nav

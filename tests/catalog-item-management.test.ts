@@ -72,18 +72,19 @@ test('new and edited items open the same unified product modal', () => {
   assert.match(createBridgeSource, /<ProductEditorModal/);
   assert.match(createBridgeSource, /mode="create"/);
   assert.match(editorAdapterSource, /<UnifiedProductModal/);
-  assert.match(retailerSource, /<ProductEditorModal/);
+  assert.match(directInventorySource, /<ProductEditorModal/);
   assert.match(appSource, /<UnifiedProductCreateModalBridge/);
   assert.doesNotMatch(appSource, /<ProductCreationEnhancementBridge/);
 });
 
-test('retailer catalog persists edits and confirms deletion', () => {
-  assert.match(retailerSource, /handleSaveProduct/);
-  assert.match(retailerSource, /persistPublicProduct\(user, updatedProduct\)/);
-  assert.match(retailerSource, /handleConfirmDeleteProduct/);
-  assert.match(retailerSource, /removePublicProduct\(user, product\.id\)/);
-  assert.match(retailerSource, /confirm-delete-product-button/);
-  assert.match(retailerSource, /Pedidos antigos continuarão preservando/);
+test('direct retailer catalog persists edits and confirms deletion', () => {
+  assert.match(directInventorySource, /handleSaveProduct/);
+  assert.match(directInventorySource, /persistPublicProduct\(user, updatedProduct\)/);
+  assert.match(directInventorySource, /handleConfirmDeleteProduct/);
+  assert.match(directInventorySource, /removePublicProduct\(user, product\.id\)/);
+  assert.match(directInventorySource, /confirm-delete-product-direct-button/);
+  assert.match(directInventorySource, /Pedidos antigos continuarão preservando/);
+  assert.doesNotMatch(retailerSource, /handleSaveProduct/);
 });
 
 test('the direct products module mounts native cloud-backed inventory management', () => {

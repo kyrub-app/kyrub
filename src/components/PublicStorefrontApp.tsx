@@ -480,7 +480,6 @@ export function PublicStorefrontApp({ slug }: PublicStorefrontAppProps) {
           onClose={() => setIsCartOpen(false)}
           cart={cart}
           updateCartQty={updateCartQty}
-          checkoutCart={event => event.preventDefault()}
           buyerName={buyerName}
           setBuyerName={setBuyerName}
           buyerEmail={buyerEmail}

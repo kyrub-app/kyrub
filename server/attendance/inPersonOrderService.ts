@@ -10,6 +10,7 @@ import type {
   CustomerOrder,
   CustomerOrderItem,
 } from '../../src/utils/customerOrders.js';
+import type { StoreRole } from '../../src/utils/storeSecurity.js';
 import { getServiceLocation } from './serviceLocationService.js';
 
 const clean = (value: unknown): string =>
@@ -270,15 +271,19 @@ const resolveOrderItems = async (input: {
 
 export const createInPersonOrder = async (input: {
   authenticatedUserId: string;
+  authorizedStoreId?: string;
+  actorRole?: StoreRole;
   value: unknown;
   now?: Date;
 }): Promise<CustomerOrder> => {
   const request = parseInPersonOrderCreateInput(input.value);
   const actorUserId = clean(input.authenticatedUserId);
-  if (!actorUserId || actorUserId !== request.storeId) {
+  const authorizedStoreId = clean(input.authorizedStoreId ?? actorUserId);
+  const actorRole: StoreRole = input.actorRole ?? 'owner';
+  if (!actorUserId || !authorizedStoreId || authorizedStoreId !== request.storeId) {
     throw new Error('IN_PERSON_ORDER_FORBIDDEN');
   }
-  const context = await resolveInPersonOrderStoreContext(request.storeId);
+  const context = await resolveInPersonOrderStoreContext(authorizedStoreId);
   const location = await getServiceLocation({
     storeId: context.legacyStoreId,
     locationId: request.serviceLocationId,
@@ -337,7 +342,7 @@ export const createInPersonOrder = async (input: {
     storeId: context.canonicalStoreId,
     buyerIdentityStatus: 'unverified_local',
     createdByUserId: actorUserId,
-    createdByRole: 'owner',
+    createdByRole: actorRole,
     legacyStoreId: context.legacyStoreId,
     legacyCreatedAt: timestamp,
     legacyUpdatedAt: timestamp,
@@ -345,7 +350,7 @@ export const createInPersonOrder = async (input: {
     migration: {
       mode: 'canonical_first',
       originatedByUserId: actorUserId,
-      originatedByRole: 'owner',
+      originatedByRole: actorRole,
     },
     createdAt: FieldValue.serverTimestamp(),
     updatedAt: FieldValue.serverTimestamp(),

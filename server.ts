@@ -40,6 +40,8 @@ import { createMarketplaceDiscoveryRouter } from "./server/payments/marketplaceD
 import { createStoreCrmRouter } from "./server/payments/storeCrmRouter";
 import { enforceDeliveryWorkEligibility } from "./server/identity/workEligibilityMiddleware";
 import { createStoreInstitutionalIdentityRouter } from "./server/store/storeInstitutionalIdentityRouter";
+import { createTimeClockRouter } from "./server/staff/timeClockRouter";
+import { createStoreReservationRouter } from "./server/staff/storeReservationRouter";
 
 dotenv.config();
 
@@ -218,6 +220,18 @@ app.use(
   "/api/store-identity",
   integrationRateLimiter,
   createStoreInstitutionalIdentityRouter()
+);
+
+app.use(
+  "/api/staff/time-clock",
+  integrationRateLimiter,
+  createTimeClockRouter()
+);
+
+app.use(
+  "/api/staff/reservations",
+  integrationRateLimiter,
+  createStoreReservationRouter()
 );
 
 app.use(

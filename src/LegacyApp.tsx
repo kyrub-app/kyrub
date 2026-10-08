@@ -65,7 +65,6 @@ import { UserProfileModal } from './components/modals/UserProfileModal';
 import { WalletModal } from './components/modals/WalletModal';
 import { ChatModal } from './components/modals/ChatModal';
 import { StoreConfigModal } from './components/modals/StoreConfigModal';
-import { NewProductModal } from './components/modals/NewProductModal';
 import { SharedNotesModal } from './components/modals/SharedNotesModal';
 import { UserSearchModal } from './components/modals/UserSearchModal';
 import { MomentsModal } from './components/modals/MomentsModal';
@@ -77,6 +76,8 @@ import { useProductivityNotes } from './hooks/useProductivityNotes';
 import { useSocialDirectoryV2 } from './hooks/useSocialDirectoryV2';
 import { LandingView } from './components/LandingView';
 import { StaffViewport } from './components/StaffViewport';
+import { subscribeToUserStoreAccess, type StoreAccessRecord } from './utils/storeDirectory';
+import { canStoreRoleAccessErpMenuItem } from './components/MobileErpMenu';
 import { PerfilTab } from './components/tabs/PerfilTab';
 import { RendaTab } from './components/tabs/RendaTab';
 import { KyrubTab } from './components/tabs/KyrubTab';
@@ -332,9 +333,43 @@ export default function App() {
 
   // Staff Private Route & Operational States
   const [currentPath, setCurrentPath] = useState(window.location.pathname);
-  const [staffEmail, setStaffEmail] = useState('');
-  const [staffPassword, setStaffPassword] = useState('');
-  const [isStaffLoggedIn, setIsStaffLoggedIn] = useState(false);
+  const [staffAccesses, setStaffAccesses] = useState<StoreAccessRecord[]>([]);
+  const [staffAccessLoading, setStaffAccessLoading] = useState(false);
+  const [staffAccessError, setStaffAccessError] = useState('');
+  const [selectedStaffStoreId, setSelectedStaffStoreId] = useState('');
+
+  useEffect(() => {
+    if (!(currentPath === '/staff' || currentPath.endsWith('/staff'))) return;
+
+    const user = auth.currentUser;
+    if (!user) {
+      setStaffAccesses([]);
+      setStaffAccessLoading(false);
+      return;
+    }
+
+    setStaffAccessLoading(true);
+    setStaffAccessError('');
+    return subscribeToUserStoreAccess(
+      user.uid,
+      accesses => {
+        const operational = accesses.filter(access => access.status === 'active');
+        setStaffAccesses(operational);
+        setSelectedStaffStoreId(current =>
+          operational.some(access => access.store.id === current)
+            ? current
+            : operational[0]?.store.id ?? ''
+        );
+        setStaffAccessLoading(false);
+      },
+      error => {
+        console.warn('Staff access lookup failed:', error);
+        setStaffAccesses([]);
+        setStaffAccessLoading(false);
+        setStaffAccessError('Não foi possível validar seus vínculos operacionais.');
+      }
+    );
+  }, [authenticatedUserId, currentPath]);
 
   useEffect(() => {
     const handleLocationChange = () => {
@@ -455,16 +490,6 @@ export default function App() {
     if (!isLoggedIn) return;
     localStorage.setItem(STORAGE_KEYS.MOMENTOS, JSON.stringify(momentos));
   }, [momentos, isLoggedIn]);
-
-  // Product addition state
-  const [newProductModal, setNewProductModal] = useState(false);
-  const [newProdName, setNewProdName] = useState('');
-  const [newProdPrice, setNewProdPrice] = useState('');
-  const [newProdWholesale, setNewProdWholesale] = useState('');
-  const [newProdStock, setNewProdStock] = useState('100');
-  const [newProdCategory, setNewProdCategory] = useState('Eletrônicos');
-  const [newProdDesc, setNewProdDesc] = useState('');
-  const [newProdIsService, setNewProdIsService] = useState(false);
 
   // Wallet privacy state (hidden by default)
   const [showBalance, setShowBalance] = useState(false);
@@ -590,14 +615,31 @@ export default function App() {
   }, [notes, isLoggedIn]);
 
   // The private ERP store is owned by the authenticated Firebase user.
-  const activeRetailerId = authenticatedUserId;
+  const selectedStaffAccess = staffAccesses.find(access => access.store.id === selectedStaffStoreId) ?? null;
+  const erpAccessRole = selectedStaffAccess?.role ?? 'owner';
+  const activeRetailerId = selectedStaffAccess?.store.legacyTenantId || authenticatedUserId;
 
   const activeStore = useMemo<Store>(() => {
+    if (selectedStaffAccess) {
+      const legacyStoreId = selectedStaffAccess.store.legacyTenantId;
+      const staffStore =
+        stores.find(store => store.id === legacyStoreId) ??
+        stores.find(store => store.id === selectedStaffAccess.store.id);
+
+      if (staffStore) return staffStore;
+
+      return {
+        ...createEmptyUserStore(legacyStoreId, ''),
+        name: selectedStaffAccess.store.name,
+        plan: selectedStaffAccess.store.plan,
+      };
+    }
+
     return userStore ?? createEmptyUserStore(
       activeRetailerId,
       profileEmail
     );
-  }, [userStore, activeRetailerId, profileEmail]);
+  }, [selectedStaffAccess, stores, userStore, activeRetailerId, profileEmail]);
 
   const activeRetailer = useMemo<Tenant | undefined>(() => {
     if (!activeRetailerId) return undefined;
@@ -628,6 +670,14 @@ export default function App() {
         'error'
       );
       throw new Error('Authenticated user is required.');
+    }
+
+    if (selectedStaffAccess) {
+      triggerToast(
+        'Configurações da loja só podem ser alteradas pelo contexto proprietário.',
+        'error'
+      );
+      throw new Error('Staff store profile mutation is not allowed.');
     }
 
     const ownerEmail = user.email ?? '';
@@ -1099,97 +1149,6 @@ if (newMomentPublishToPraca) {
     );
   };
 
-  // Original product creation handler
-  const handleCreateProduct = (e: React.FormEvent) => {
-    e.preventDefault();
-
-    if (!newProdName || !newProdPrice) {
-      triggerToast('Nome e preço são obrigatórios!', 'error');
-      return;
-    }
-
-    const priceNum = parseFloat(newProdPrice);
-    const wholesalePriceNum = newProdWholesale ? parseFloat(newProdWholesale) : undefined;
-    const stockNum = parseInt(newProdStock) || 0;
-
-    // Check freemium limit for retailer
-    if (isLimitReached) {
-      triggerToast('Limite Freemium: Você atingiu o limite de 5 itens. Assine o Plano Premium para cadastrar mais!', 'error');
-      setNewProductModal(false);
-      return;
-    }
-
-    const newProd: Product = {
-      id: `p-ret-${Date.now()}`,
-      name: newProdName,
-      description: newProdDesc || 'Item de excelente qualidade publicado no ecossistema Kyrub.',
-      price: priceNum,
-      wholesalePrice: wholesalePriceNum,
-      image: 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=400&h=400&fit=crop&q=80',
-      stock: stockNum,
-      supplierId: activeRetailerId,
-      category: newProdCategory,
-      isService: newProdIsService
-    };
-
-    setProducts(prev => [newProd, ...prev]);
-    setNewProductModal(false);
-    triggerToast(`"${newProdName}" cadastrado com sucesso!`, 'success');
-
-    // Reset fields
-    setNewProdName('');
-    setNewProdPrice('');
-    setNewProdWholesale('');
-    setNewProdStock('100');
-    setNewProdDesc('');
-    setNewProdIsService(false);
-  };
-
-  // Cart B2C Checkout Simulation
-  const checkoutCart = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (cart.length === 0 || !visitingStore) return;
-
-    const subtotal = cart.reduce((sum, item) => sum + item.product.price * item.quantity, 0);
-
-    const newOrder: Order = {
-      id: `ord-b2c-${Date.now().toString().slice(-4)}`,
-      storeId: visitingStore.id,
-      buyerName,
-      buyerEmail,
-      items: cart.map(it => ({
-        productId: it.product.id,
-        name: it.product.name,
-        price: it.product.price,
-        quantity: it.quantity,
-        wholesalePrice: it.product.wholesalePrice
-      })),
-      total: subtotal,
-      status: 'pending',
-      createdAt: new Date().toISOString(),
-      type: 'retail'
-    };
-
-    // Calculate platform split, retailer split, and mock it
-    const platformFee = subtotal * 0.1;
-    const retailerProfit = subtotal * 0.9;
-
-    setWalletBalance(curr => curr + retailerProfit);
-    setWalletHistory([
-      { id: `tx-sale-${Date.now()}`, type: 'Venda Recebida', desc: `Venda B2C via ${visitingStore.name}`, val: retailerProfit, date: new Date().toLocaleString('pt-BR') },
-      ...walletHistory
-    ]);
-
-    setOrders(prev => [newOrder, ...prev]);
-    setCart([]);
-    setIsCartOpen(false);
-    setVisitingStore(null);
-    setBuyerName('');
-    setBuyerEmail('');
-    setBuyerAddress('');
-    triggerToast(`Pedido finalizado com sucesso! Gateway Kyrub dividindo splits (10% Plataforma / 90% Loja)...`, 'success');
-  };
-
   const updateCartQty = (productId: string, qty: number) => {
     if (qty <= 0) {
       setCart(prev => prev.filter(item => item.product.id !== productId));
@@ -1238,55 +1197,33 @@ if (newMomentPublishToPraca) {
     return isMatchingQuery;
   });
 
-  // Rota externa privada /staff
+  // Rota operacional /staff — usa a mesma identidade Google e os vínculos
+  // canônicos da loja. Não há credenciais demonstrativas nem um segundo login.
   if (currentPath === '/staff' || currentPath.endsWith('/staff')) {
-    const staffStore = activeStore.id ? activeStore : undefined;
-    const staffProducts = activeRetailerId
-      ? products.filter(
-          product =>
-            product.supplierId === activeRetailerId &&
-            !product.wholesalePrice
-        )
-      : [];
-    const staffOrders = staffStore
-      ? orders.filter(order => order.storeId === staffStore.id)
-      : [];
-
-    const handleStaffLogin = (e: React.FormEvent) => {
-      e.preventDefault();
-      if (staffEmail === 'staff@kyrub.com' && staffPassword === 'kyrub123') {
-        setIsStaffLoggedIn(true);
-        triggerToast('Colaborador staff autenticado com sucesso!', 'success');
-      } else {
-        triggerToast('Credenciais de staff incorretas. Use staff@kyrub.com / kyrub123', 'error');
-      }
-    };
-
-    const handleStaffLogout = () => {
-      setIsStaffLoggedIn(false);
-      setStaffEmail('');
-      setStaffPassword('');
-      triggerToast('Sessão staff finalizada.', 'info');
-    };
-
     const handleGoBackToMain = () => {
       window.history.pushState({}, '', '/');
       setCurrentPath('/');
     };
 
+    const routeStaffAccess = selectedStaffAccess ?? staffAccesses[0] ?? null;
+
     return (
       <StaffViewport
-        isStaffLoggedIn={isStaffLoggedIn}
-        staffEmail={staffEmail}
-        setStaffEmail={setStaffEmail}
-        staffPassword={staffPassword}
-        setStaffPassword={setStaffPassword}
-        handleStaffLogin={handleStaffLogin}
-        handleStaffLogout={handleStaffLogout}
-        handleGoBackToMain={handleGoBackToMain}
-        activeStore={staffStore}
-        staffProducts={staffProducts}
-        staffOrders={staffOrders}
+        user={auth.currentUser}
+        accesses={staffAccesses}
+        isLoading={staffAccessLoading}
+        errorMessage={staffAccessError}
+        selectedStoreId={selectedStaffStoreId}
+        onSelectStore={setSelectedStaffStoreId}
+        onGoBackToMain={handleGoBackToMain}
+        onEnterErp={routeStaffAccess ? () => {
+          setSelectedStaffStoreId(routeStaffAccess.store.id);
+          setGestaoRole('retailer');
+          setActiveSubTab(canStoreRoleAccessErpMenuItem(routeStaffAccess.role, 'clientes') ? 'clientes' : canStoreRoleAccessErpMenuItem(routeStaffAccess.role, 'pedidos') ? 'pedidos' : 'ponto');
+          setIsGestaoOpen(true);
+          window.history.pushState({}, '', '/');
+          setCurrentPath('/');
+        } : undefined}
       />
     );
   }
@@ -1530,6 +1467,7 @@ if (newMomentPublishToPraca) {
               onClosePanel={() => setIsGestaoOpen(false)}
               onOpenStoreConfig={() => setIsConfigModalOpen(true)}
               onSelectTab={setActiveSubTab}
+              accessRole={erpAccessRole}
             />
 
             {/* LADO ESQUERDO: Botão de fechar */}
@@ -1547,7 +1485,7 @@ if (newMomentPublishToPraca) {
               {gestaoRole === 'retailer' ? (
                 <div className="hidden sm:flex items-center gap-1.5 overflow-x-auto whitespace-nowrap scrollbar-none flex-1 px-2" id="erp-tab-navigation-header">
                   {/* Botão Loja (estilizado como os itens do menu) */}
-                  <button
+                  {canStoreRoleAccessErpMenuItem(erpAccessRole, 'loja') && (                  <button
                     onClick={() => setIsConfigModalOpen(true)}
                     className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer shrink-0 text-slate-400 hover:text-slate-200 hover:bg-slate-800/40"
                     title="Configurar Perfil e Ambientes"
@@ -1556,6 +1494,7 @@ if (newMomentPublishToPraca) {
                     <StoreIcon className="w-3.5 h-3.5" />
                     <span>Loja</span>
                   </button>
+                  )}
 
                   {/* Restantes abas de navegação */}
                   {[
@@ -1565,7 +1504,7 @@ if (newMomentPublishToPraca) {
                     { id: 'reservas', label: 'Reservas', icon: Calendar },
                     { id: 'ponto', label: 'Ponto', icon: Fingerprint },
                     { id: 'gerencial', label: 'Gerencial', icon: LayoutGrid }
-                  ].map(tab => {
+                  ].filter(tab => canStoreRoleAccessErpMenuItem(erpAccessRole, tab.id as any)).map(tab => {
                     const Icon = tab.icon;
                     const isSelected = activeSubTab === tab.id;
                     return (
@@ -1611,7 +1550,6 @@ if (newMomentPublishToPraca) {
                 activeStore={activeStore}
                 products={products}
                 orders={orders}
-                setNewProductModal={setNewProductModal}
                 setProducts={setProducts}
                 setOrders={setOrders}
                 onUpdateStore={handleUpdateStoreProfile}
@@ -1620,6 +1558,7 @@ if (newMomentPublishToPraca) {
                 setActiveSubTab={setActiveSubTab}
                 atendimentoSpaces={atendimentoSpaces}
                 producaoSpaces={producaoSpaces}
+                accessRole={erpAccessRole}
               />
             )}
 
@@ -1646,11 +1585,7 @@ if (newMomentPublishToPraca) {
       <WalletModal
         isOpen={isWalletOpen}
         onClose={() => setIsWalletOpen(false)}
-        walletBalance={walletBalance}
-        setWalletBalance={setWalletBalance}
         walletHistory={walletHistory}
-        setWalletHistory={setWalletHistory}
-        triggerToast={triggerToast}
       />
 
       {/* 6. CONSUMER B2C SHOPPING VITRINE OVERLAY MODAL */}
@@ -1686,25 +1621,6 @@ if (newMomentPublishToPraca) {
         </div>
       )}
 
-      {/* 7. MODAL DE CADASTRO DE PRODUTOS / SERVIÇOS (RETAILER NEW PRODUCT FORM) */}
-      <NewProductModal
-        isOpen={newProductModal}
-        onClose={() => setNewProductModal(false)}
-        handleCreateProduct={handleCreateProduct}
-        newProdName={newProdName}
-        setNewProdName={setNewProdName}
-        newProdPrice={newProdPrice}
-        setNewProdPrice={setNewProdPrice}
-        newProdCategory={newProdCategory}
-        setNewProdCategory={setNewProdCategory}
-        newProdStock={newProdStock}
-        setNewProdStock={setNewProdStock}
-        newProdDesc={newProdDesc}
-        setNewProdDesc={setNewProdDesc}
-        newProdIsService={newProdIsService}
-        setNewProdIsService={setNewProdIsService}
-      />
-
       {/* 8. SLIDEOVER CARRINHO DE COMPRAS B2C */}
       <B2CCartDrawer
         isOpen={isCartOpen}
@@ -1712,7 +1628,6 @@ if (newMomentPublishToPraca) {
         onClose={() => setIsCartOpen(false)}
         cart={cart}
         updateCartQty={updateCartQty}
-        checkoutCart={checkoutCart}
         buyerName={buyerName}
         setBuyerName={setBuyerName}
         buyerEmail={buyerEmail}
@@ -1745,10 +1660,6 @@ if (newMomentPublishToPraca) {
         deliveries={deliveries}
         setDeliveries={setDeliveries}
         profileName={profileName}
-        walletBalance={walletBalance}
-        setWalletBalance={setWalletBalance}
-        walletHistory={walletHistory}
-        setWalletHistory={setWalletHistory}
         triggerToast={triggerToast}
       />
 
@@ -1791,10 +1702,6 @@ if (newMomentPublishToPraca) {
         deliveries={deliveries}
         setDeliveries={setDeliveries}
         profileName={profileName}
-        walletBalance={walletBalance}
-        setWalletBalance={setWalletBalance}
-        walletHistory={walletHistory}
-        setWalletHistory={setWalletHistory}
         triggerToast={triggerToast}
       />
 
@@ -1806,9 +1713,6 @@ if (newMomentPublishToPraca) {
         freelanceJobs={freelanceJobs}
         setFreelanceJobs={setFreelanceJobs}
         profileName={profileName}
-        walletHistory={walletHistory}
-        setWalletHistory={setWalletHistory}
-        setWalletBalance={setWalletBalance}
         triggerToast={triggerToast}
       />
 

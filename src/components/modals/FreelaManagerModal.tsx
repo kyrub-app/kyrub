@@ -11,9 +11,6 @@ interface FreelaManagerModalProps {
   freelanceJobs: FreelanceJob[];
   setFreelanceJobs: React.Dispatch<React.SetStateAction<FreelanceJob[]>>;
   profileName: string;
-  walletHistory?: any[];
-  setWalletHistory?: React.Dispatch<React.SetStateAction<any[]>>;
-  setWalletBalance?: React.Dispatch<React.SetStateAction<number>>;
   triggerToast: (msg: string, type: 'success' | 'error' | 'info' | 'warning') => void;
 }
 
@@ -24,9 +21,6 @@ export const FreelaManagerModal: React.FC<FreelaManagerModalProps> = ({
   freelanceJobs,
   setFreelanceJobs,
   profileName,
-  walletHistory = [],
-  setWalletHistory,
-  setWalletBalance,
   triggerToast,
 }) => {
   // Modal interior tab states
@@ -131,21 +125,15 @@ export const FreelaManagerModal: React.FC<FreelaManagerModalProps> = ({
     );
   };
 
-  // Worker completes a job
-  const handleSimulateGigDone = (gigId: string) => {
+  // Completion records operational status only. Payment requires a real settlement source.
+  const handleCompleteGig = (gigId: string) => {
     setFreelanceJobs(prev =>
       prev.map(g => {
         if (g.id !== gigId) return g;
-        if (setWalletBalance) {
-          setWalletBalance(curr => curr + g.payment);
-        }
-        if (setWalletHistory) {
-          setWalletHistory(currHistory => [
-            { id: `tx-gig-${Date.now()}`, type: 'Serviço Gig', desc: `Faturamento freela: ${g.title}`, val: g.payment, date: new Date().toLocaleString('pt-BR') },
-            ...currHistory
-          ]);
-        }
-        triggerToast(`Parabéns! Trabalho concluído e R$ ${g.payment.toFixed(2)} recebidos.`, 'success');
+        triggerToast(
+          `Trabalho concluído. O valor de R$ ${g.payment.toFixed(2)} permanece pendente de liquidação real.`,
+          'success'
+        );
         return { ...g, status: 'done' };
       })
     );
@@ -502,7 +490,7 @@ export const FreelaManagerModal: React.FC<FreelaManagerModalProps> = ({
                           Em Andamento
                         </span>
                         <button
-                          onClick={() => handleSimulateGigDone(job.id)}
+                          onClick={() => handleCompleteGig(job.id)}
                           className="px-3.5 py-1.5 bg-orange-600 hover:bg-orange-500 text-white font-black rounded-lg text-[10px] uppercase tracking-wider transition-all cursor-pointer font-mono"
                         >
                           Concluir Trabalho

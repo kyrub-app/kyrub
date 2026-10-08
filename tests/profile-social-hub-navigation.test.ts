@@ -145,11 +145,9 @@ describe('native React profile social hub', () => {
     assert.match(profileSource, /Seus Status ativos/);
   });
 
-  test('renders Marcados natively from tagged audience posts', () => {
-    assert.match(profileSource, /id: 'marked', label: 'Destaques'/);
+  test('keeps tagged-audience data without restoring the retired Destaques tab', () => {
+    assert.doesNotMatch(profileSource, /id: 'marked', label: 'Destaques'/);
     assert.match(profileSource, /post\.taggedUserIds\?\.includes/);
-    assert.match(profileSource, /Marcaram você/);
-    assert.match(profileSource, /Nenhuma marcação/);
     assert.match(feedHookSource, /where\('audienceIds', 'array-contains', user\.uid\)/);
   });
 

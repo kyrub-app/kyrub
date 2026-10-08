@@ -30,8 +30,9 @@ const indexHtml = fs.readFileSync('index.html', 'utf8');
   assert.ok(canonicalPathIndex > guardIndex);
 });
 
-test('legacy active tickets remain scoped to local storage', () => {
-  assert.match(retailer, /kyrub_legacy_active_tickets_/);
+test('legacy active tickets are removed instead of persisted through a parallel runtime store', () => {
+  assert.doesNotMatch(retailer, /kyrub_legacy_active_tickets_/);
+  assert.doesNotMatch(retailer, /activeTickets/);
   assert.doesNotMatch(retailer, /active_sessions/);
   assert.doesNotMatch(retailer, /tenant_default/);
   assert.doesNotMatch(retailer, /saveDocLWW/);

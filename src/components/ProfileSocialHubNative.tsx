@@ -14,6 +14,10 @@ import {
   Check,
   Clock3,
   Compass,
+  ChevronRight,
+  FileText,
+  Fingerprint,
+  LockKeyhole,
   EllipsisVertical,
   Flag,
   FolderPlus,
@@ -22,6 +26,7 @@ import {
   LoaderCircle,
   MessageCircle,
   Pencil,
+  Plus,
   Search,
   Send,
   QrCode,
@@ -30,6 +35,7 @@ import {
   Star,
   Store as StoreIcon,
   Trash2,
+  ShieldCheck,
   UserMinus,
   UserPlus,
   Users,
@@ -456,6 +462,7 @@ export function ProfileSocialHubNative() {
   const [publishToStatus, setPublishToStatus] = useState(false);
   const [shareToSquare, setShareToSquare] = useState(false);
   const [tagPickerOpen, setTagPickerOpen] = useState(false);
+  const [composerToolsOpen, setComposerToolsOpen] = useState(false);
   const [selectedTaggedUserIds, setSelectedTaggedUserIds] = useState<string[]>(
     []
   );
@@ -519,6 +526,7 @@ export function ProfileSocialHubNative() {
       event.preventDefault();
       event.stopPropagation();
       event.stopImmediatePropagation();
+      setActiveTab('publications');
       setOpen(true);
     };
 
@@ -823,6 +831,7 @@ export function ProfileSocialHubNative() {
     setPostMediaUrls([]);
     setSelectedTaggedUserIds([]);
     setTagPickerOpen(false);
+    setComposerToolsOpen(false);
     setPublishToStatus(false);
     setShareToSquare(false);
     triggerToast(
@@ -1138,12 +1147,6 @@ export function ProfileSocialHubNative() {
 
   if (!open || !user) return null;
 
-  const tabs: Array<{ id: ProfileTab; label: string; count?: number }> = [
-    { id: 'publications', label: 'Mural', count: ownFeedPosts.length },
-    { id: 'marked', label: 'Destaques', count: markedPosts.length },
-    { id: 'connected', label: 'Conectados', count: directory.friends.length },
-  ];
-
   const suggestionCount = directory.getSuggestions().length;
   const requestCount = directory.connectionRequests.length;
   const newConnectionsCount = suggestionCount + requestCount;
@@ -1254,9 +1257,7 @@ export function ProfileSocialHubNative() {
                       <Pencil className="h-4 w-4" />
                     </button>
                   </div>
-                  <span className="mb-2 rounded-full border border-slate-800 bg-slate-900/90 px-3 py-1.5 text-[8px] font-black uppercase tracking-wider text-slate-400">
-                    Minha página
-                  </span>
+
                 </div>
 
                 <div className="mt-4">
@@ -1271,9 +1272,9 @@ export function ProfileSocialHubNative() {
                 </div>
 
                 <div className="mt-5 grid grid-cols-4 gap-2" aria-label="Ações da página pessoal">
-                  <button type="button" onClick={() => setEditOpen(true)} className="flex min-w-0 flex-col items-center gap-2 rounded-2xl border border-slate-800 bg-slate-900 px-1 py-3 text-slate-300">
-                    <span className="flex h-10 w-10 items-center justify-center rounded-full bg-orange-500 text-slate-950"><Pencil className="h-4 w-4" /></span>
-                    <span className="text-[8px] font-black uppercase">Editar</span>
+                  <button type="button" onClick={() => setActiveTab('connected')} className="flex min-w-0 flex-col items-center gap-2 rounded-2xl border border-slate-800 bg-slate-900 px-1 py-3 text-slate-300">
+                    <span className="flex h-10 w-10 items-center justify-center rounded-full bg-teal-500/15 text-teal-300"><Users className="h-4 w-4" /></span>
+                    <span className="text-[8px] font-black uppercase">Conectados</span>
                   </button>
                   <button type="button" onClick={() => triggerToast('O QR público da sua página entra na próxima etapa.', 'info')} className="flex min-w-0 flex-col items-center gap-2 rounded-2xl border border-slate-800 bg-slate-900 px-1 py-3 text-slate-300">
                     <span className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-800"><QrCode className="h-4 w-4" /></span>
@@ -1290,55 +1291,75 @@ export function ProfileSocialHubNative() {
                   </button>
                 </div>
 
-                <div className="mt-4 grid grid-cols-3 gap-2">
-                  {[
-                    ['Mural', ownFeedPosts.length],
-                    ['Status', ownStatuses.length],
-                    ['Conectados', directory.friends.length],
-                  ].map(([label, count]) => (
-                    <div key={String(label)} className="rounded-2xl border border-slate-800 bg-slate-900/75 p-2 text-center">
-                      <strong className="block text-sm text-white">{count}</strong>
-                      <span className="text-[7px] font-black uppercase text-slate-500">{label}</span>
-                    </div>
-                  ))}
-                </div>
               </div>
             </section>
-
-            <nav
-              className="sticky top-0 z-10 flex gap-1 overflow-x-auto border-b border-slate-900 bg-slate-950/95 px-3 py-2 backdrop-blur-md"
-              aria-label="Seções do perfil"
-            >
-              {tabs.map(tab => (
-                <button
-                  key={tab.id}
-                  type="button"
-                  onClick={() => setActiveTab(tab.id)}
-                  className={`shrink-0 rounded-xl px-3 py-2 text-[9px] font-black uppercase ${
-                    activeTab === tab.id
-                      ? 'bg-orange-500 text-slate-950'
-                      : 'border border-slate-800 bg-slate-900 text-slate-400'
-                  }`}
-                >
-                  {tab.label}
-                  {typeof tab.count === 'number' ? ` ${tab.count}` : ''}
-                </button>
-              ))}
-            </nav>
 
             <main className="space-y-4 p-4 sm:p-5">
               {activeTab === 'publications' && (
                 <>
                   <section className="space-y-3 rounded-3xl border border-slate-800 bg-slate-900 p-4">
-                    <textarea
-                      value={newPostText}
-                      onChange={event =>
-                        setNewPostText(event.target.value.slice(0, 3000))
-                      }
-                      rows={3}
-                      placeholder="O que você quer publicar na sua linha do tempo?"
-                      className="w-full resize-none rounded-2xl border border-slate-800 bg-slate-950 px-3 py-3 text-xs text-white outline-none focus:border-orange-500/60"
-                    />
+                    <div className="relative">
+                      <textarea
+                        value={newPostText}
+                        onChange={event =>
+                          setNewPostText(event.target.value.slice(0, 3000))
+                        }
+                        rows={3}
+                        placeholder="O que você quer publicar na sua linha do tempo?"
+                        className="w-full resize-none rounded-2xl border border-slate-800 bg-slate-950 px-12 py-3 pr-12 text-xs text-white outline-none focus:border-orange-500/60"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setComposerToolsOpen(current => !current)}
+                        className="absolute bottom-3 left-3 flex h-8 w-8 items-center justify-center rounded-full border border-slate-700 bg-slate-900 text-slate-300"
+                        aria-label="Adicionar à publicação"
+                        aria-expanded={composerToolsOpen}
+                      >
+                        <Plus className="h-4 w-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          window.dispatchEvent(
+                            new Event('kyrub-profile-publish-menu-requested')
+                          )
+                        }
+                        className="absolute bottom-3 right-3 flex h-8 w-8 items-center justify-center rounded-full bg-orange-500 text-slate-950"
+                        aria-label="Escolher destino e publicar"
+                      >
+                        <Send className="h-4 w-4" />
+                      </button>
+                    </div>
+
+                    {composerToolsOpen && (
+                      <div className="flex flex-col gap-1 rounded-2xl border border-slate-800 bg-slate-950 p-2 shadow-xl">
+                        <label className="flex min-h-11 cursor-pointer items-center gap-3 rounded-xl px-3 text-[9px] font-black uppercase text-slate-300 hover:bg-slate-900">
+                          <ImagePlus className="h-4 w-4" />
+                          Adicionar imagens {postMediaUrls.length}/9
+                          <input
+                            type="file"
+                            accept="image/*"
+                            multiple
+                            className="hidden"
+                            onChange={event => {
+                              void readPostImages(event);
+                              setComposerToolsOpen(false);
+                            }}
+                          />
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setTagPickerOpen(current => !current);
+                            setComposerToolsOpen(false);
+                          }}
+                          className="flex min-h-11 items-center gap-3 rounded-xl px-3 text-left text-[9px] font-black uppercase text-slate-300 hover:bg-slate-900"
+                        >
+                          <UserPlus className="h-4 w-4" />
+                          Marcar pessoas {selectedTaggedUserIds.length || ''}
+                        </button>
+                      </div>
+                    )}
 
                     {postMediaUrls.length > 0 && (
                       <div className="grid grid-cols-3 gap-2">
@@ -1487,43 +1508,14 @@ export function ProfileSocialHubNative() {
                       </label>
                     </div>
 
-                    <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-800 pt-3">
-                      <div className="flex flex-wrap gap-2">
-                        <label className="flex h-10 cursor-pointer items-center gap-2 rounded-xl border border-slate-800 bg-slate-950 px-3 text-[9px] font-black uppercase text-slate-400">
-                          <ImagePlus className="h-4 w-4" />
-                          Imagens {postMediaUrls.length}/9
-                          <input
-                            type="file"
-                            accept="image/*"
-                            multiple
-                            className="hidden"
-                            onChange={readPostImages}
-                          />
-                        </label>
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setTagPickerOpen(current => !current)
-                          }
-                          className={`flex h-10 items-center gap-2 rounded-xl border px-3 text-[9px] font-black uppercase ${
-                            selectedTaggedUserIds.length > 0
-                              ? 'border-teal-500/35 bg-teal-500/10 text-teal-300'
-                              : 'border-slate-800 bg-slate-950 text-slate-400'
-                          }`}
-                        >
-                          <UserPlus className="h-4 w-4" />
-                          Marcar {selectedTaggedUserIds.length || ''}
-                        </button>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={publish}
-                        className="flex h-10 items-center gap-2 rounded-xl bg-orange-500 px-4 text-[9px] font-black uppercase text-slate-950"
-                      >
-                        <Send className="h-4 w-4" />
-                        Publicar
-                      </button>
-                    </div>
+                    <button
+                      type="button"
+                      onClick={publish}
+                      className="hidden"
+                      aria-label="Confirmar publicação"
+                    >
+                      Publicar
+                    </button>
                   </section>
 
                   {ownStatuses.length > 0 && (
@@ -1599,6 +1591,14 @@ export function ProfileSocialHubNative() {
 
               {activeTab === 'connected' && (
                 <div className="space-y-4">
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('publications')}
+                    className="inline-flex items-center gap-2 rounded-xl border border-slate-800 bg-slate-900 px-3 py-2 text-[9px] font-black uppercase text-slate-300"
+                  >
+                    <span aria-hidden="true">←</span>
+                    Voltar ao perfil
+                  </button>
                   <nav
                     className="grid grid-cols-4 gap-2"
                     aria-label="Seções de conectados"
@@ -2009,17 +2009,14 @@ export function ProfileSocialHubNative() {
 
       {editOpen && (
         <div className="fixed inset-0 z-[132] flex items-end justify-center bg-slate-950/95 backdrop-blur-md sm:items-center sm:p-4">
-          <form
-            onSubmit={saveProfile}
-            className="w-full max-w-md space-y-4 rounded-t-3xl border border-slate-800 bg-slate-950 p-4 sm:rounded-3xl"
-          >
-            <div className="flex items-center justify-between">
+          <section className="flex max-h-[94dvh] w-full max-w-md flex-col overflow-hidden rounded-t-3xl border border-slate-800 bg-slate-950 sm:rounded-3xl">
+            <header className="flex items-center justify-between border-b border-slate-900 px-4 py-3">
               <div>
                 <span className="text-[9px] font-black uppercase text-orange-400">
-                  Meu perfil
+                  Minha conta
                 </span>
                 <h3 className="text-base font-black text-white">
-                  Editar perfil
+                  Perfil e identidade
                 </h3>
               </div>
               <button
@@ -2030,78 +2027,145 @@ export function ProfileSocialHubNative() {
               >
                 <X className="h-4 w-4" />
               </button>
-            </div>
+            </header>
 
-            <div className="flex items-center gap-4">
-              <Avatar
-                src={profile.photoUrl}
-                name={profile.name}
-                className="h-28 w-[90px] rounded-[22px] border border-slate-800 object-cover"
-              />
-              <div className="space-y-2">
+            <div className="flex-1 space-y-4 overflow-y-auto p-4">
+              <div className="rounded-2xl border border-orange-500/20 bg-orange-500/5 p-3">
+                <div className="flex items-center gap-3">
+                  <Avatar
+                    src={profile.photoUrl}
+                    name={profile.name}
+                    className="h-16 w-16 rounded-2xl border border-slate-800 object-cover"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-black text-white">
+                      {profile.name || 'Seu perfil'}
+                    </p>
+                    <p className="mt-1 text-[9px] text-slate-500">
+                      Perfil básico ativo · complete sua identidade conforme usar novos serviços.
+                    </p>
+                  </div>
+                  <ShieldCheck className="h-5 w-5 shrink-0 text-orange-400" />
+                </div>
+              </div>
+
+              <form onSubmit={saveProfile} className="space-y-3 rounded-2xl border border-slate-800 bg-slate-900/60 p-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h4 className="text-[10px] font-black uppercase text-white">Perfil público</h4>
+                    <p className="text-[8px] text-slate-500">Foto, nome e biografia que aparecem para outras pessoas.</p>
+                  </div>
+                  <Pencil className="h-4 w-4 text-orange-400" />
+                </div>
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={photoBusy}
+                    className="flex min-h-10 items-center gap-2 rounded-xl bg-orange-500 px-3 text-[9px] font-black uppercase text-slate-950"
+                  >
+                    {photoBusy ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Camera className="h-4 w-4" />}
+                    Alterar foto
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void restoreGooglePhoto()}
+                    className="min-h-10 rounded-xl border border-slate-800 bg-slate-950 px-3 text-[9px] font-black uppercase text-slate-300"
+                  >
+                    Usar Google
+                  </button>
+                  <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={uploadProfilePhoto} />
+                </div>
+                <label className="block">
+                  <span className="mb-1 block text-[8px] font-black uppercase text-slate-500">Nome</span>
+                  <input value={draftName} onChange={event => setDraftName(event.target.value.slice(0, 80))} className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-3 text-xs text-white outline-none" />
+                </label>
+                <label className="block">
+                  <span className="mb-1 block text-[8px] font-black uppercase text-slate-500">Biografia</span>
+                  <textarea value={draftBio} onChange={event => setDraftBio(event.target.value.slice(0, 280))} rows={3} className="w-full resize-none rounded-xl border border-slate-800 bg-slate-950 px-3 py-3 text-xs text-white outline-none" />
+                  <span className="mt-1 block text-right text-[8px] text-slate-600">{draftBio.length}/280</span>
+                </label>
+                <button type="submit" className="w-full rounded-xl bg-orange-500 py-3 text-[9px] font-black uppercase text-slate-950">
+                  Salvar perfil público
+                </button>
+              </form>
+
+              {[
+                {
+                  title: 'Identidade e verificação',
+                  description: 'Documento de identidade, CPF, reconhecimento facial e biometria.',
+                  detail: 'Privado · usado somente quando necessário',
+                  icon: Fingerprint,
+                },
+                {
+                  title: 'Habilitações profissionais',
+                  description: 'CNH e documentos exigidos conforme atividade, veículo e serviço.',
+                  detail: 'Entrega · carro · moto · frete',
+                  icon: FileText,
+                },
+                {
+                  title: 'Privacidade e dados',
+                  description: 'Visibilidade, consentimentos, uso de dados e Política de Privacidade.',
+                  detail: 'Você controla suas preferências',
+                  icon: LockKeyhole,
+                },
+                {
+                  title: 'Segurança e acesso',
+                  description: 'Conta Google, métodos de acesso, sessões e dispositivos.',
+                  detail: profile.email || 'Conta autenticada',
+                  icon: ShieldCheck,
+                },
+              ].map(item => {
+                const Icon = item.icon;
+                return (
+                  <button
+                    key={item.title}
+                    type="button"
+                    onClick={() => triggerToast(`${item.title}: detalhamento será conectado ao fluxo existente na próxima etapa.`, 'info')}
+                    className="flex w-full items-center gap-3 rounded-2xl border border-slate-800 bg-slate-900/60 p-3 text-left"
+                  >
+                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-950 text-orange-300">
+                      <Icon className="h-4 w-4" />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <strong className="block text-[10px] font-black text-white">{item.title}</strong>
+                      <span className="mt-1 block text-[9px] leading-relaxed text-slate-400">{item.description}</span>
+                      <span className="mt-1 block truncate text-[8px] text-slate-600">{item.detail}</span>
+                    </span>
+                    <ChevronRight className="h-4 w-4 shrink-0 text-slate-600" />
+                  </button>
+                );
+              })}
+
+              <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-3">
+                <div className="flex items-center gap-3">
+                  <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-950 text-slate-400">
+                    <FileText className="h-4 w-4" />
+                  </span>
+                  <div>
+                    <h4 className="text-[10px] font-black text-white">Conta e seus dados</h4>
+                    <p className="mt-1 text-[9px] text-slate-500">Dados da conta e solicitações relacionadas às suas informações.</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-red-500/20 bg-red-500/5 p-3">
+                <span className="text-[8px] font-black uppercase tracking-wide text-red-300">Zona de risco</span>
+                <h4 className="mt-1 text-[10px] font-black text-white">Excluir minha conta</h4>
+                <p className="mt-1 text-[9px] leading-relaxed text-slate-500">
+                  Inicia uma solicitação de exclusão. Registros que precisem ser preservados por obrigação legal ou fiscal não serão apagados automaticamente.
+                </p>
                 <button
                   type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={photoBusy}
-                  className="flex items-center gap-2 rounded-xl bg-orange-500 px-3 py-2 text-[9px] font-black uppercase text-slate-950"
+                  onClick={() => triggerToast('A exclusão definitiva exigirá confirmação de identidade antes de ser habilitada.', 'warning')}
+                  className="mt-3 flex min-h-10 w-full items-center justify-center gap-2 rounded-xl border border-red-500/30 bg-red-500/10 px-3 text-[9px] font-black uppercase text-red-300"
                 >
-                  {photoBusy ? (
-                    <LoaderCircle className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Camera className="h-4 w-4" />
-                  )}
-                  Galeria
+                  <Trash2 className="h-4 w-4" />
+                  Excluir minha conta
                 </button>
-                <button
-                  type="button"
-                  onClick={() => void restoreGooglePhoto()}
-                  className="rounded-xl border border-slate-800 bg-slate-900 px-3 py-2 text-[9px] font-black uppercase text-slate-300"
-                >
-                  Foto do Google
-                </button>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={uploadProfilePhoto}
-                />
               </div>
             </div>
-
-            <label className="block">
-              <span className="mb-1 block text-[9px] font-black uppercase text-slate-500">
-                Nome
-              </span>
-              <input
-                value={draftName}
-                onChange={event => setDraftName(event.target.value.slice(0, 80))}
-                className="w-full rounded-xl border border-slate-800 bg-slate-900 px-3 py-3 text-xs text-white outline-none"
-              />
-            </label>
-
-            <label className="block">
-              <span className="mb-1 block text-[9px] font-black uppercase text-slate-500">
-                Bio
-              </span>
-              <textarea
-                value={draftBio}
-                onChange={event => setDraftBio(event.target.value.slice(0, 280))}
-                rows={4}
-                className="w-full resize-none rounded-xl border border-slate-800 bg-slate-900 px-3 py-3 text-xs text-white outline-none"
-              />
-              <span className="mt-1 block text-right text-[8px] text-slate-600">
-                {draftBio.length}/280
-              </span>
-            </label>
-
-            <button
-              type="submit"
-              className="w-full rounded-xl bg-orange-500 py-3 text-[10px] font-black uppercase text-slate-950"
-            >
-              Salvar perfil
-            </button>
-          </form>
+          </section>
         </div>
       )}
 

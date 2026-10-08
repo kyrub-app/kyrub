@@ -8,7 +8,6 @@ interface B2CCartDrawerProps {
   onClose: () => void;
   cart: CartItem[];
   updateCartQty: (productId: string, quantity: number) => void;
-  checkoutCart: (e: React.FormEvent) => void;
   buyerName: string;
   setBuyerName: (val: string) => void;
   buyerEmail: string;
@@ -23,7 +22,6 @@ export const B2CCartDrawer: React.FC<B2CCartDrawerProps> = ({
   onClose,
   cart,
   updateCartQty,
-  checkoutCart,
   buyerName,
   setBuyerName,
   buyerEmail,
@@ -90,7 +88,7 @@ export const B2CCartDrawer: React.FC<B2CCartDrawerProps> = ({
         </div>
 
         {cart.length > 0 && (
-          <form onSubmit={checkoutCart} className="border-t border-slate-800/80 pt-6 space-y-4">
+          <div className="border-t border-slate-800/80 pt-6 space-y-4">
             <div className="space-y-2.5">
               <h4 className="text-xs font-mono uppercase text-slate-400">Dados do Destinatário</h4>
               
@@ -146,7 +144,7 @@ export const B2CCartDrawer: React.FC<B2CCartDrawerProps> = ({
             >
               Confirmar Pedido B2C
             </button>
-          </form>
+          </div>
         )}
       </div>
     </div>

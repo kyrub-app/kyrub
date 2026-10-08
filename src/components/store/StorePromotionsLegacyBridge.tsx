@@ -1,23 +1,14 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { onAuthStateChanged, type User } from 'firebase/auth';
+import type { Product } from '../../types';
 import { Award, Gift, Sparkles, Target } from 'lucide-react';
 import { auth } from '../../utils/firebase';
 import { StorePromotionsManager } from '../StorePromotionsManager';
 
-const LEGACY_VOUCHER_HEADING = 'CRIAR NOVO CUPOM';
-
-const findLegacyVoucherGrid = (): HTMLElement | null => {
-  const managementContainer = document.getElementById('erp-gerencial-tab');
-  if (!managementContainer) return null;
-
-  const heading = Array.from(managementContainer.querySelectorAll('h4')).find(
-    candidate =>
-      candidate.textContent?.trim().toLocaleUpperCase('pt-BR') ===
-      LEGACY_VOUCHER_HEADING
-  );
-  const grid = heading?.closest('.grid');
-  return grid instanceof HTMLElement ? grid : null;
+const findLegacyVoucherAnchor = (): HTMLElement | null => {
+  const anchor = document.getElementById('kyrub-store-promotions-legacy-anchor');
+  return anchor instanceof HTMLElement ? anchor : null;
 };
 
 const LoyaltyGamificationOverview = () => (
@@ -74,7 +65,15 @@ const LoyaltyGamificationOverview = () => (
  * form with the server-authoritative promotion manager and expose the loyalty
  * surface that belongs to the same commercial module.
  */
-export function StorePromotionsLegacyBridge() {
+export function StorePromotionsLegacyBridge({
+  storeId,
+  products,
+  triggerToast,
+}: {
+  storeId: string;
+  products: Product[];
+  triggerToast: (message: string, type?: 'success' | 'error' | 'info') => void;
+}) {
   const [user, setUser] = useState<User | null>(auth.currentUser);
   const [host, setHost] = useState<HTMLElement | null>(null);
 
@@ -84,15 +83,13 @@ export function StorePromotionsLegacyBridge() {
     let cancelled = false;
     let timer = 0;
     let portalHost: HTMLDivElement | null = null;
-    let legacyGrid: HTMLElement | null = null;
-    let previousDisplay = '';
-
+    let legacyAnchor: HTMLElement | null = null;
+    
     const detach = (): void => {
-      if (legacyGrid?.isConnected) legacyGrid.style.display = previousDisplay;
+      if (legacyAnchor?.isConnected) legacyAnchor.replaceChildren();
       portalHost?.remove();
       portalHost = null;
-      legacyGrid = null;
-      previousDisplay = '';
+      legacyAnchor = null;
       setHost(null);
     };
 
@@ -102,16 +99,13 @@ export function StorePromotionsLegacyBridge() {
       if (portalHost && !portalHost.isConnected) detach();
 
       if (!portalHost) {
-        const candidate = findLegacyVoucherGrid();
-        if (candidate?.parentElement) {
-          legacyGrid = candidate;
-          previousDisplay = candidate.style.display;
-          candidate.style.display = 'none';
-
+        const candidate = findLegacyVoucherAnchor();
+        if (candidate) {
+          legacyAnchor = candidate;
           portalHost = document.createElement('div');
           portalHost.id = 'kyrub-native-store-promotions-host';
           portalHost.className = 'min-w-0';
-          candidate.parentElement.insertBefore(portalHost, candidate);
+          candidate.replaceChildren(portalHost);
           setHost(portalHost);
         }
       }
@@ -132,9 +126,9 @@ export function StorePromotionsLegacyBridge() {
   return createPortal(
     <>
       <StorePromotionsManager
-        storeId={user.uid}
-        products={[]}
-        triggerToast={() => undefined}
+        storeId={storeId}
+        products={products}
+        triggerToast={triggerToast}
       />
       <LoyaltyGamificationOverview />
     </>,

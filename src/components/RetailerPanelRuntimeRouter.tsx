@@ -1,4 +1,6 @@
 import React, { lazy, Suspense, useEffect, useRef, useState } from 'react';
+import { canStoreRoleAccessErpMenuItem } from './MobileErpMenu';
+import type { StoreRole } from '../utils/storeSecurity';
 import { RetailerPanel as LegacyRetailerPanel } from './LegacyRetailerPanel';
 import { RetailerPanel as ModernRetailerPanel } from './RetailerPanel';
 import { KdsScopedRejectionController } from './store/KdsScopedRejectionController';
@@ -11,7 +13,7 @@ import {
   type ErpManagementNavigationRequest,
 } from '../utils/erpManagementNavigation';
 
-type RetailerPanelProps = React.ComponentProps<typeof LegacyRetailerPanel>;
+type RetailerPanelProps = React.ComponentProps<typeof LegacyRetailerPanel> & { accessRole?: StoreRole };
 type ModuleDefinition = { title: string; description: string; status: 'native' | 'migration' | 'development' };
 
 const MANAGEMENT_MODULES: Record<ErpManagementModule, ModuleDefinition> = {
@@ -24,7 +26,7 @@ const MANAGEMENT_MODULES: Record<ErpManagementModule, ModuleDefinition> = {
   rh: { title: 'Equipe & Permissões', description: 'Equipe, cargos, acessos, remuneração e folha da operação.', status: 'native' },
   crm: { title: 'CRM', description: 'Relacionamento, segmentação, histórico e inteligência sobre clientes.', status: 'native' },
   marketing: { title: 'Marketing', description: 'Aquisição, conversão, retenção, canais e inteligência de crescimento.', status: 'development' },
-  integracoes: { title: 'Integrações & Sandbox', description: 'Conexões externas, OAuth, sincronização e testes controlados dos canais.', status: 'native' },
+  integracoes: { title: 'Integrações', description: 'Conexões externas, OAuth e sincronização dos canais validados pelo backend.', status: 'native' },
   vouchers: { title: 'Promocionais', description: 'Cupons, pontos, desafios e recompensas em uma única central.', status: 'native' },
 };
 
@@ -53,7 +55,7 @@ function DirectManagementModule({ moduleId, retailerProps, onBackToPdv }: { modu
   const definition = MANAGEMENT_MODULES[moduleId];
   return <section id={`kyrub-management-module-${moduleId}`} data-kyrub-management-module={moduleId} className="space-y-5">
     {moduleId !== 'rh' && <header className="rounded-3xl border border-slate-800 bg-slate-900 p-5 text-white"><div className="flex flex-wrap items-start justify-between gap-3"><div><span className="font-mono text-[9px] font-black uppercase tracking-[0.16em] text-orange-300">Módulo direto</span><h2 className="mt-1 text-lg font-black">{definition.title}</h2><p className="mt-1 max-w-2xl text-[10px] leading-relaxed text-slate-400">{definition.description}</p></div><button type="button" onClick={onBackToPdv} className="min-h-10 rounded-xl bg-orange-500 px-3 text-[9px] font-black uppercase text-slate-950">Voltar ao PDV</button></div></header>}
-    {moduleId === 'integracoes' ? <Suspense fallback={<Loading>Carregando Integrações & Sandbox…</Loading>}><LazyIntegrationsRuntime triggerToast={retailerProps.triggerToast} /></Suspense>
+    {moduleId === 'integracoes' ? <Suspense fallback={<Loading>Carregando Integrações…</Loading>}><LazyIntegrationsRuntime triggerToast={retailerProps.triggerToast} /></Suspense>
       : moduleId === 'produtos' ? <Suspense fallback={<Loading>Carregando Produtos…</Loading>}><LazyProductInventoryRuntime activeRetailerId={retailerProps.activeRetailerId} activeStore={retailerProps.activeStore} products={retailerProps.products} setProducts={retailerProps.setProducts} triggerToast={retailerProps.triggerToast} /></Suspense>
       : moduleId === 'estoque' ? <Suspense fallback={<Loading>Carregando Estoque…</Loading>}><LazyStockRuntime storeId={retailerProps.activeRetailerId} /></Suspense>
       : moduleId === 'vendas' ? <Suspense fallback={<Loading>Carregando Vendas & Analytics…</Loading>}><LazySalesAnalyticsRuntime storeId={retailerProps.activeRetailerId} /></Suspense>
@@ -74,8 +76,12 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = props => {
   useEffect(() => {
     const handleManagementNavigation = (event: Event): void => {
       consumePendingErpManagementNavigation();
+      const requestedModule =
+        (event as CustomEvent<ErpManagementNavigationRequest>).detail?.module ?? null;
       setManagementModule(
-        (event as CustomEvent<ErpManagementNavigationRequest>).detail?.module ?? null
+        requestedModule && props.accessRole && !canStoreRoleAccessErpMenuItem(props.accessRole, requestedModule)
+          ? null
+          : requestedModule
       );
     };
 
@@ -85,7 +91,13 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = props => {
     );
 
     const pending = consumePendingErpManagementNavigation();
-    if (pending) setManagementModule(pending.module);
+    if (pending) {
+      setManagementModule(
+        props.accessRole && !canStoreRoleAccessErpMenuItem(props.accessRole, pending.module)
+          ? null
+          : pending.module
+      );
+    }
 
     return () =>
       window.removeEventListener(
@@ -101,7 +113,9 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = props => {
   }, [props.activeSubTab]);
 
   const backToPdv = (): void => { requestErpManagementNavigation(null); props.setActiveSubTab('clientes'); };
-  if (managementModule) return <DirectManagementModule moduleId={managementModule} retailerProps={props} onBackToPdv={backToPdv} />;
+  if (managementModule && (!props.accessRole || canStoreRoleAccessErpMenuItem(props.accessRole, managementModule))) {
+    return <DirectManagementModule moduleId={managementModule} retailerProps={props} onBackToPdv={backToPdv} />;
+  }
   if (props.activeSubTab === 'gerencial') return <section className="rounded-3xl border border-amber-500/25 bg-slate-900 p-5 text-white"><span className="font-mono text-[9px] font-black uppercase tracking-[0.16em] text-amber-300">Rota desativada</span><h2 className="mt-2 text-base font-black">Gerencial foi removido.</h2><p className="mt-2 text-[11px] leading-relaxed text-slate-400">Os módulos de gestão agora são destinos diretos do menu. Esta rota antiga permanece apenas como proteção temporária para links legados e não monta o painel anterior.</p><button type="button" onClick={backToPdv} className="mt-4 min-h-10 rounded-xl bg-orange-500 px-4 text-[9px] font-black uppercase text-slate-950">Voltar ao PDV</button></section>;
   return <>
     <ModernRetailerPanel {...props} />

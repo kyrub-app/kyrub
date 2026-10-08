@@ -1,6 +1,8 @@
 import { Router } from 'express';
 import { verifyFirebaseIdToken } from '../ai/consultantAuth.js';
 import { loadOwnerStoreInstitutionalRepresentation } from '../store/storeInstitutionalIdentityService.js';
+import { adminDb } from '../firebaseAdmin.js';
+import { hasStorePermission, parseStoreMember, type StorePermission, type StoreRole } from '../../src/utils/storeSecurity.js';
 import {
   createInPersonOrder,
   listInPersonOrderCatalog,
@@ -28,6 +30,32 @@ const authorizeOwnerStore = async (input: {
     authenticatedUserId: identity.uid,
   });
   return representation;
+};
+
+const authorizeStoreMember = async (input: {
+  authorization: string;
+  storeId: string;
+  permission: StorePermission;
+}) => {
+  const token = bearerToken(input.authorization);
+  if (!token) throw new Error('AUTH_REQUIRED');
+  const identity = await verifyFirebaseIdToken(token);
+  if (identity.uid === input.storeId) {
+    const representation = await loadOwnerStoreInstitutionalRepresentation({
+      storeId: input.storeId,
+      authenticatedUserId: identity.uid,
+    });
+    return { authenticatedUserId: representation.authenticatedUserId, role: 'owner' as StoreRole };
+  }
+  const tenantSnapshot = await adminDb.doc('tenants/' + input.storeId).get();
+  const canonicalStoreId = clean(tenantSnapshot.data()?.canonicalStoreId);
+  if (!canonicalStoreId) throw new Error('IN_PERSON_ORDER_FORBIDDEN');
+  const memberSnapshot = await adminDb.doc('stores/' + canonicalStoreId + '/members/' + identity.uid).get();
+  const member = parseStoreMember(memberSnapshot.data());
+  if (!member || member.status !== 'active' || !hasStorePermission(member.role, input.permission)) {
+    throw new Error('IN_PERSON_ORDER_FORBIDDEN');
+  }
+  return { authenticatedUserId: identity.uid, role: member.role };
 };
 
 const mapError = (error: unknown): { status: number; message: string; code?: string } => {
@@ -114,9 +142,10 @@ export const createInPersonOrderRouter = (): Router => {
     try {
       const storeId = clean(request.query.storeId);
       if (!storeId) throw new Error('IN_PERSON_ORDER_STORE_REQUIRED');
-      await authorizeOwnerStore({
+      await authorizeStoreMember({
         authorization: request.get('authorization') ?? '',
         storeId,
+        permission: 'orders.read',
       });
       response.status(200).json(
         await listInPersonOrderCatalog({ legacyStoreId: storeId })
@@ -189,12 +218,15 @@ export const createInPersonOrderRouter = (): Router => {
     try {
       const storeId = clean(request.body?.storeId);
       if (!storeId) throw new Error('IN_PERSON_ORDER_STORE_REQUIRED');
-      const representation = await authorizeOwnerStore({
+      const representation = await authorizeStoreMember({
         authorization: request.get('authorization') ?? '',
         storeId,
+        permission: 'orders.create',
       });
       const order = await createInPersonOrder({
         authenticatedUserId: representation.authenticatedUserId,
+        authorizedStoreId: storeId,
+        actorRole: representation.role,
         value: request.body,
       });
       response.status(201).json({ order });

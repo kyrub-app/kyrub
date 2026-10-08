@@ -2,6 +2,7 @@ import { useRef, useState, type MouseEvent } from 'react';
 import { ArrowLeft, Menu, X } from 'lucide-react';
 import {
   MOBILE_ERP_MENU_ITEMS,
+  canStoreRoleAccessErpMenuItem,
   commitMobileErpMenuSelection,
   isMobileErpManagementModule,
   type ErpSubTab,
@@ -187,3 +188,5 @@ export function MobileErpMenu({
     </div>
   );
 }
+
+export { canStoreRoleAccessErpMenuItem };

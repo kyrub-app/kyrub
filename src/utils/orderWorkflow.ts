@@ -289,7 +289,7 @@ export const updateOrderStatusWithDecision = async (
   const user = auth.currentUser;
   const normalizedStoreId = storeId.trim();
   const normalizedOrderId = orderId.trim();
-  if (!user || user.uid !== normalizedStoreId) {
+  if (!user) {
     throw new Error('Faça login novamente para atualizar o pedido.');
   }
 
@@ -323,6 +323,7 @@ export const updateOrderStatusWithDecision = async (
         headers: {
           authorization: `Bearer ${token}`,
           'content-type': 'application/json',
+          'x-kyrub-store-id': normalizedStoreId,
         },
         body: JSON.stringify({
           status: nextStatus,

@@ -26,6 +26,10 @@ const inventoryWorkspace = readFileSync(
   'src/components/store/ProductInventoryWorkspace.tsx',
   'utf8'
 );
+const directInventoryRuntime = readFileSync(
+  'src/components/store/ProductInventoryDirectRuntime.tsx',
+  'utf8'
+);
 const sharedPdv = readFileSync(
   'src/components/pdv/SharedPdvCatalog.tsx',
   'utf8'
@@ -61,12 +65,13 @@ test('responsive product styles still load after the Tailwind entry stylesheet',
   assert.ok(responsiveImport > tailwindImport);
 });
 
-test('retailer inventory removes admin workspaces and replaces the appearance card', () => {
+test('retailer inventory is owned by the direct products runtime, not the retired Gerencial bridge', () => {
   assert.doesNotMatch(retailerPanel, /MigrationReconciliationWorkspace/);
   assert.doesNotMatch(retailerPanel, /StoreTeamWorkspace/);
-  assert.match(retailerPanel, /ProductInventoryWorkspace/);
-  assert.match(retailerPanel, /APARÊNCIA DA VITRINE/);
-  assert.match(retailerPanel, /candidateGrid\.style\.display = 'none'/);
+  assert.doesNotMatch(retailerPanel, /ProductInventoryWorkspace/);
+  assert.doesNotMatch(retailerPanel, /candidateGrid\.style\.display = 'none'/);
+  assert.match(runtimeRouter, /LazyProductInventoryRuntime/);
+  assert.match(directInventoryRuntime, /ProductInventoryWorkspace/);
 });
 
 test('mobile ERP menu removes Gerencial and exposes every management module directly', () => {
@@ -95,7 +100,7 @@ test('mobile ERP menu removes Gerencial and exposes every management module dire
     'Equipe & Permissões',
     'CRM',
     'Marketing',
-    'Integrações & Sandbox',
+    'Integrações',
     'Promocionais',
   ]) {
     assert.match(mobileErpMenu, new RegExp(label));

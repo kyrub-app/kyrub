@@ -4,7 +4,7 @@ import {
   Check,
   Compass,
   FolderPlus,
-  MessageCircle,
+  Send,
   Plus,
   Users,
   X,
@@ -46,6 +46,7 @@ export function ProfilePublishingDestinationsCloudBridge() {
   const { activeCommunities } = useCommunityDirectory();
   const [host, setHost] = useState<HTMLElement | null>(null);
   const [shareToSquare, setShareToSquare] = useState(false);
+  const [publishMenuOpen, setPublishMenuOpen] = useState(false);
   const [communityPanelOpen, setCommunityPanelOpen] = useState(false);
   const [selectionPanelOpen, setSelectionPanelOpen] = useState(false);
   const [selectedCommunityId, setSelectedCommunityId] = useState('');
@@ -63,6 +64,22 @@ export function ProfilePublishingDestinationsCloudBridge() {
   useEffect(() => {
     selectedCommunityIdRef.current = selectedCommunityId;
   }, [selectedCommunityId]);
+
+  useEffect(() => {
+    const openPublishMenu = () => {
+      setCommunityMessage('');
+      setPublishMenuOpen(true);
+    };
+    window.addEventListener(
+      'kyrub-profile-publish-menu-requested',
+      openPublishMenu
+    );
+    return () =>
+      window.removeEventListener(
+        'kyrub-profile-publish-menu-requested',
+        openPublishMenu
+      );
+  }, []);
 
   useEffect(() => {
     if (
@@ -173,6 +190,7 @@ export function ProfilePublishingDestinationsCloudBridge() {
           setCommunityPanelOpen(false);
           setSelectionName('');
           setSelectionDraft('');
+          setPublishMenuOpen(false);
         })
         .catch(value => {
           console.warn('Não foi possível publicar na comunidade.', value);
@@ -207,58 +225,45 @@ export function ProfilePublishingDestinationsCloudBridge() {
   ].filter(Boolean);
 
   return createPortal(
-    <section
-      className="space-y-3 rounded-3xl border border-slate-700 bg-slate-950/75 p-3 shadow-inner"
-      id="profile-publishing-destinations"
-      aria-label="Destinos da publicação"
-    >
-      <header className="flex items-start justify-between gap-3">
-        <div>
-          <span className="text-[8px] font-black uppercase tracking-[0.18em] text-orange-400">
-            Publicação permanente
-          </span>
-          <h4 className="mt-0.5 text-xs font-black text-white">
-            Onde este conteúdo deve aparecer?
-          </h4>
-          <p className="mt-1 text-[8px] leading-relaxed text-slate-500">
-            O perfil guarda a publicação. Praça e Comunidade ampliam a distribuição.
-          </p>
-        </div>
-        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-orange-500/25 bg-orange-500/10 text-orange-300">
-          <MessageCircle className="h-4 w-4" />
-        </span>
-      </header>
+    publishMenuOpen ? (
+      <section
+        className="space-y-3 rounded-2xl border border-slate-700 bg-slate-950 p-3 shadow-2xl"
+        id="profile-publishing-destinations"
+        aria-label="Destinos da publicação"
+      >
+        <header className="flex items-center justify-between gap-3">
+          <div>
+            <h4 className="text-[10px] font-black uppercase text-white">
+              Publicar em
+            </h4>
+            <p className="mt-0.5 text-[8px] text-slate-500">
+              O perfil guarda a publicação. Escolha onde mais ela deve aparecer.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setPublishMenuOpen(false)}
+            className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-800 text-slate-400"
+            aria-label="Fechar destinos"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </header>
 
-      {communityMessage && (
-        <p className="rounded-xl border border-sky-500/20 bg-sky-500/5 px-3 py-2 text-[8px] text-sky-200">
-          {communityMessage}
-        </p>
-      )}
-
-      <div>
-        <span className="mb-2 block text-[8px] font-black uppercase tracking-wide text-slate-500">
-          Compartilhar em
-        </span>
-        <div className="grid gap-2 sm:grid-cols-2">
+        <div className="grid gap-2">
           <button
             type="button"
             onClick={toggleSquare}
-            className={`flex min-h-[64px] items-center gap-3 rounded-2xl border p-3 text-left transition-colors ${
+            className={`flex min-h-12 items-center gap-3 rounded-xl border px-3 text-left ${
               shareToSquare
                 ? 'border-orange-500/45 bg-orange-500/10'
                 : 'border-slate-800 bg-slate-900/70'
             }`}
           >
-            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-950 text-orange-300">
-              <Compass className="h-4 w-4" />
-            </span>
+            <Compass className="h-4 w-4 text-orange-300" />
             <span className="min-w-0 flex-1">
-              <strong className="block text-[9px] font-black uppercase text-white">
-                Praça
-              </strong>
-              <span className="mt-0.5 block text-[8px] text-slate-500">
-                Descoberta pública no feed geral.
-              </span>
+              <strong className="block text-[9px] font-black uppercase text-white">Praça</strong>
+              <span className="block text-[8px] text-slate-500">Feed público geral</span>
             </span>
             {shareToSquare && <Check className="h-4 w-4 text-orange-300" />}
           </button>
@@ -266,170 +271,94 @@ export function ProfilePublishingDestinationsCloudBridge() {
           <button
             type="button"
             onClick={() => setCommunityPanelOpen(current => !current)}
-            className={`flex min-h-[64px] items-center gap-3 rounded-2xl border p-3 text-left transition-colors ${
+            className={`flex min-h-12 items-center gap-3 rounded-xl border px-3 text-left ${
               selectedCommunity
                 ? 'border-sky-500/45 bg-sky-500/10'
                 : 'border-slate-800 bg-slate-900/70'
             }`}
           >
-            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-950 text-sky-300">
-              <Users className="h-4 w-4" />
-            </span>
+            <Users className="h-4 w-4 text-sky-300" />
             <span className="min-w-0 flex-1">
-              <strong className="block text-[9px] font-black uppercase text-white">
-                Comunidade
-              </strong>
-              <span className="mt-0.5 block truncate text-[8px] text-slate-500">
-                {selectedCommunity?.name || 'Escolher uma comunidade'}
+              <strong className="block text-[9px] font-black uppercase text-white">Comunidade</strong>
+              <span className="block truncate text-[8px] text-slate-500">
+                {selectedCommunity?.name || 'Escolher comunidade'}
               </span>
             </span>
-            {selectedCommunity ? (
-              <Check className="h-4 w-4 text-sky-300" />
-            ) : (
-              <Plus className="h-4 w-4 text-slate-600" />
-            )}
+            {selectedCommunity ? <Check className="h-4 w-4 text-sky-300" /> : <Plus className="h-4 w-4 text-slate-600" />}
           </button>
-        </div>
 
-        {communityPanelOpen && (
-          <div className="mt-2 space-y-2 rounded-2xl border border-sky-500/25 bg-sky-500/5 p-3">
-            <div className="flex items-center justify-between gap-2">
-              <div>
-                <strong className="block text-[9px] font-black uppercase text-sky-200">
-                  Comunidades em que você participa
-                </strong>
-                <span className="text-[8px] text-slate-500">
-                  O conteúdo aparecerá no mural escolhido.
-                </span>
-              </div>
-              <button
-                type="button"
-                onClick={() => setCommunityPanelOpen(false)}
-                className="text-slate-500"
-                aria-label="Fechar comunidades"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-            <div className="max-h-48 space-y-2 overflow-y-auto">
-              {activeCommunities.map(community => (
-                <button
-                  key={community.id}
-                  type="button"
-                  onClick={() => {
-                    setSelectedCommunityId(
-                      selectedCommunityId === community.id ? '' : community.id
-                    );
-                    setCommunityPanelOpen(false);
-                  }}
-                  className={`flex w-full items-center gap-3 rounded-xl border p-2.5 text-left ${
-                    selectedCommunityId === community.id
-                      ? 'border-sky-500/45 bg-sky-500/10'
-                      : 'border-slate-800 bg-slate-950'
-                  }`}
-                >
-                  {community.coverImage ? (
-                    <img
-                      src={community.coverImage}
-                      alt=""
-                      className="h-9 w-9 shrink-0 rounded-xl object-cover"
-                    />
-                  ) : (
-                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-900 text-xs font-black text-sky-300">
-                      {community.name.charAt(0).toLocaleUpperCase('pt-BR')}
-                    </span>
-                  )}
-                  <span className="min-w-0 flex-1">
-                    <strong className="block truncate text-[9px] text-white">
+          {communityPanelOpen && (
+            <div className="space-y-2 rounded-xl border border-sky-500/20 bg-sky-500/5 p-2">
+              <div className="max-h-40 space-y-1 overflow-y-auto">
+                {activeCommunities.map(community => (
+                  <button
+                    key={community.id}
+                    type="button"
+                    onClick={() => {
+                      setSelectedCommunityId(
+                        selectedCommunityId === community.id ? '' : community.id
+                      );
+                      setCommunityPanelOpen(false);
+                    }}
+                    className={`flex w-full items-center gap-2 rounded-lg border p-2 text-left ${
+                      selectedCommunityId === community.id
+                        ? 'border-sky-500/45 bg-sky-500/10'
+                        : 'border-slate-800 bg-slate-950'
+                    }`}
+                  >
+                    <span className="min-w-0 flex-1 truncate text-[9px] font-bold text-white">
                       {community.name}
-                    </strong>
-                    <span className="block truncate text-[8px] text-slate-500">
-                      {community.category}
                     </span>
-                  </span>
-                  {selectedCommunityId === community.id && (
-                    <Check className="h-4 w-4 text-sky-300" />
-                  )}
-                </button>
-              ))}
-              {activeCommunities.length === 0 && (
-                <p className="rounded-xl border border-dashed border-slate-800 px-3 py-5 text-center text-[8px] text-slate-500">
-                  Entre ou crie uma comunidade pela Praça para publicar nela.
-                </p>
-              )}
-            </div>
-            <button
-              type="button"
-              onClick={() => {
-                setCommunityPanelOpen(false);
-                window.dispatchEvent(new Event(OPEN_COMMUNITY_CLOUD_CREATE_EVENT));
-              }}
-              className="flex min-h-10 w-full items-center justify-center gap-2 rounded-xl border border-sky-500/25 bg-sky-500/10 px-3 text-[8px] font-black uppercase text-sky-200"
-            >
-              <Plus className="h-4 w-4" />
-              Criar comunidade
-            </button>
-          </div>
-        )}
-      </div>
-
-      <div>
-        <span className="mb-2 block text-[8px] font-black uppercase tracking-wide text-slate-500">
-          Organizar, sem duplicar
-        </span>
-        <button
-          type="button"
-          onClick={() => setSelectionPanelOpen(current => !current)}
-          className={`flex min-h-[62px] w-full items-center gap-3 rounded-2xl border p-3 text-left ${
-            selectionName
-              ? 'border-violet-500/45 bg-violet-500/10'
-              : 'border-slate-800 bg-slate-900/70'
-          }`}
-        >
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-950 text-violet-300">
-            <FolderPlus className="h-4 w-4" />
-          </span>
-          <span className="min-w-0 flex-1">
-            <strong className="block text-[9px] font-black uppercase text-white">
-              Seleções
-            </strong>
-            <span className="mt-0.5 block truncate text-[8px] text-slate-500">
-              {selectionName || 'Agrupar esta publicação no perfil'}
-            </span>
-          </span>
-          {selectionName ? (
-            <Check className="h-4 w-4 text-violet-300" />
-          ) : (
-            <Plus className="h-4 w-4 text-slate-600" />
-          )}
-        </button>
-
-        {selectionPanelOpen && (
-          <div className="mt-2 rounded-2xl border border-violet-500/25 bg-violet-500/5 p-3">
-            <div className="flex items-center justify-between gap-2">
-              <div>
-                <strong className="block text-[9px] font-black uppercase text-violet-200">
-                  Seleção do perfil
-                </strong>
-                <span className="text-[8px] text-slate-500">
-                  Este recurso continua visual até definirmos seu nome e estrutura final.
-                </span>
+                    {selectedCommunityId === community.id && <Check className="h-4 w-4 text-sky-300" />}
+                  </button>
+                ))}
+                {activeCommunities.length === 0 && (
+                  <p className="px-2 py-3 text-center text-[8px] text-slate-500">
+                    Você ainda não participa de uma comunidade.
+                  </p>
+                )}
               </div>
               <button
                 type="button"
-                onClick={() => setSelectionPanelOpen(false)}
-                className="text-slate-500"
-                aria-label="Fechar seleção"
+                onClick={() => {
+                  setCommunityPanelOpen(false);
+                  setPublishMenuOpen(false);
+                  window.dispatchEvent(new Event(OPEN_COMMUNITY_CLOUD_CREATE_EVENT));
+                }}
+                className="flex min-h-9 w-full items-center justify-center gap-2 rounded-lg border border-sky-500/25 text-[8px] font-black uppercase text-sky-200"
               >
-                <X className="h-4 w-4" />
+                <Plus className="h-4 w-4" />
+                Criar comunidade
               </button>
             </div>
-            <div className="mt-2 flex gap-2">
+          )}
+
+          <button
+            type="button"
+            onClick={() => setSelectionPanelOpen(current => !current)}
+            className={`flex min-h-12 items-center gap-3 rounded-xl border px-3 text-left ${
+              selectionName
+                ? 'border-violet-500/45 bg-violet-500/10'
+                : 'border-slate-800 bg-slate-900/70'
+            }`}
+          >
+            <FolderPlus className="h-4 w-4 text-violet-300" />
+            <span className="min-w-0 flex-1">
+              <strong className="block text-[9px] font-black uppercase text-white">Seleções</strong>
+              <span className="block truncate text-[8px] text-slate-500">
+                {selectionName || 'Organizar sem duplicar'}
+              </span>
+            </span>
+            {selectionName ? <Check className="h-4 w-4 text-violet-300" /> : <Plus className="h-4 w-4 text-slate-600" />}
+          </button>
+
+          {selectionPanelOpen && (
+            <div className="flex gap-2 rounded-xl border border-violet-500/20 bg-violet-500/5 p-2">
               <input
                 value={selectionDraft}
                 onChange={event => setSelectionDraft(event.target.value.slice(0, 60))}
                 placeholder="Nome da seleção"
-                className="min-h-10 min-w-0 flex-1 rounded-xl border border-slate-800 bg-slate-950 px-3 text-[10px] text-white outline-none"
+                className="min-h-10 min-w-0 flex-1 rounded-lg border border-slate-800 bg-slate-950 px-3 text-[9px] text-white outline-none"
               />
               <button
                 type="button"
@@ -439,43 +368,40 @@ export function ProfilePublishingDestinationsCloudBridge() {
                   setSelectionName(name);
                   setSelectionPanelOpen(false);
                 }}
-                className="min-h-10 rounded-xl bg-violet-500 px-3 text-[8px] font-black uppercase text-white"
+                className="rounded-lg bg-violet-500 px-3 text-[8px] font-black uppercase text-white"
               >
                 Usar
               </button>
             </div>
-            {selectionName && (
-              <button
-                type="button"
-                onClick={() => {
-                  setSelectionName('');
-                  setSelectionDraft('');
-                }}
-                className="mt-2 text-[8px] font-bold text-slate-500 underline"
-              >
-                Não adicionar a uma seleção
-              </button>
-            )}
-          </div>
-        )}
-      </div>
-
-      <footer className="border-t border-slate-800 pt-3">
-        <span className="block text-[7px] font-black uppercase tracking-wide text-slate-600">
-          Destinos
-        </span>
-        <div className="mt-2 flex flex-wrap gap-1.5">
-          {distributionSummary.map(item => (
-            <span
-              key={item}
-              className="rounded-full border border-slate-700 bg-slate-900 px-2.5 py-1 text-[8px] font-bold text-slate-300"
-            >
-              {item}
-            </span>
-          ))}
+          )}
         </div>
-      </footer>
-    </section>,
+
+        {communityMessage && (
+          <p className="rounded-xl border border-sky-500/20 bg-sky-500/5 px-3 py-2 text-[8px] text-sky-200">
+            {communityMessage}
+          </p>
+        )}
+
+        <button
+          type="button"
+          onClick={() => {
+            const nativePublish = document.querySelector<HTMLButtonElement>(
+              '#profile-social-hub-modal button[aria-label="Confirmar publicação"]'
+            );
+            nativePublish?.click();
+            if (!selectedCommunityIdRef.current) {
+              setPublishMenuOpen(false);
+              setSelectionName('');
+              setSelectionDraft('');
+            }
+          }}
+          className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-orange-500 px-4 text-[9px] font-black uppercase text-slate-950"
+        >
+          <Send className="h-4 w-4" />
+          Publicar agora
+        </button>
+      </section>
+    ) : null,
     host
   );
 }

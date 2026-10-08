@@ -3,6 +3,7 @@ import {
   Building2,
   Check,
   CircleAlert,
+  Clock3,
   Loader2,
   Search,
   ShieldCheck,
@@ -92,6 +93,8 @@ export const StoreTeamWorkspace = ({
   const [isSearching, setIsSearching] = useState(false);
   const [busyKey, setBusyKey] = useState('');
   const [accessError, setAccessError] = useState('');
+  const [teamTimeEntries, setTeamTimeEntries] = useState<any[]>([]);
+  const [teamTimeLoading, setTeamTimeLoading] = useState(false);
 
   const user = auth.currentUser;
   const selectedAccess = useMemo(
@@ -172,6 +175,34 @@ export const StoreTeamWorkspace = ({
       setInviteRole(assignableRoles[0]);
     }
   }, [assignableRoles, inviteRole]);
+
+  useEffect(() => {
+    if (!user || !selectedAccess || !canManageMembers) {
+      setTeamTimeEntries([]);
+      return;
+    }
+
+    let cancelled = false;
+    setTeamTimeLoading(true);
+    void user.getIdToken()
+      .then(token => fetch(
+        `/api/staff/time-clock/team?storeId=${encodeURIComponent(selectedAccess.store.legacyTenantId)}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      ))
+      .then(async response => {
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(payload?.error || 'Não foi possível carregar o ponto da equipe.');
+        if (!cancelled) setTeamTimeEntries(Array.isArray(payload?.entries) ? payload.entries : []);
+      })
+      .catch(error => {
+        if (!cancelled) notify(error instanceof Error ? error.message : 'Não foi possível carregar o ponto da equipe.', 'error');
+      })
+      .finally(() => {
+        if (!cancelled) setTeamTimeLoading(false);
+      });
+
+    return () => { cancelled = true; };
+  }, [canManageMembers, notify, selectedAccess?.store.id, selectedAccess?.store.legacyTenantId, user?.uid]);
 
   const runBusy = async (key: string, action: () => Promise<void>): Promise<void> => {
     setBusyKey(key);
@@ -532,6 +563,41 @@ export const StoreTeamWorkspace = ({
                                     <X className="h-3.5 w-3.5" />
                                   </button>
                                 )}
+                              </div>
+                            </article>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="space-y-3 rounded-2xl border border-slate-800 bg-slate-950/60 p-4">
+                    <div>
+                      <h4 className="flex items-center gap-2 text-xs font-black uppercase text-white">
+                        <Clock3 className="h-4 w-4 text-cyan-400" /> Ponto da equipe
+                      </h4>
+                      <p className="mt-1 text-[10px] text-slate-500">Registros canônicos vinculados à identidade Kyrub de cada colaborador.</p>
+                    </div>
+                    {teamTimeLoading ? (
+                      <div className="flex items-center justify-center gap-2 py-6 text-[10px] text-slate-500">
+                        <Loader2 className="h-4 w-4 animate-spin" /> Carregando registros…
+                      </div>
+                    ) : teamTimeEntries.length === 0 ? (
+                      <p className="rounded-xl border border-dashed border-slate-800 py-6 text-center text-[10px] text-slate-600">Nenhum ponto registrado.</p>
+                    ) : (
+                      <div className="max-h-72 space-y-2 overflow-y-auto">
+                        {teamTimeEntries.map(entry => {
+                          const member = members.find(item => item.userId === entry.userId);
+                          return (
+                            <article key={entry.id} className="rounded-xl border border-slate-800 bg-slate-950 p-3">
+                              <div className="flex items-center justify-between gap-3">
+                                <div className="min-w-0">
+                                  <strong className="block truncate text-xs text-white">{member?.displayName || member?.email || 'Colaborador'}</strong>
+                                  <span className="block truncate text-[9px] text-slate-600">{member ? STORE_ROLE_LABELS[member.role] : entry.role}</span>
+                                </div>
+                                <span className={`rounded-full border px-2 py-1 text-[8px] font-black uppercase ${entry.status === 'open' ? 'border-emerald-500/25 bg-emerald-500/10 text-emerald-300' : 'border-slate-700 bg-slate-900 text-slate-400'}`}>
+                                  {entry.status === 'open' ? 'Em turno' : 'Encerrado'}
+                                </span>
                               </div>
                             </article>
                           );
