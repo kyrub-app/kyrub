@@ -616,7 +616,9 @@ export default function App() {
 
   // The private ERP store is owned by the authenticated Firebase user.
   const selectedStaffAccess = staffAccesses.find(access => access.store.id === selectedStaffStoreId) ?? null;
-  const erpAccessRole = selectedStaffAccess?.role ?? (authenticatedUserId && userStore ? 'owner' : undefined);
+  const erpAccessRole = selectedStaffStoreId
+    ? selectedStaffAccess?.role
+    : (authenticatedUserId && userStore ? 'owner' : undefined);
   const activeRetailerId = selectedStaffAccess?.store.legacyTenantId || authenticatedUserId;
 
   const activeStore = useMemo<Store>(() => {
