@@ -51,6 +51,20 @@ describe('Mercado Pago authoritative receivables reconciliation', () => {
     assert.match(router, /providerFeeEvidenceAvailable: feeState\.available/);
   });
 
+  test('local Pix coupon provider reconciliation uses net payment as provider gross, not pre-discount merchandise', () => {
+    const router = readFileSync('server/payments/storeMercadoPagoReconciliationRouter.ts', 'utf8');
+    const period = readFileSync('server/payments/storeMercadoPagoPeriodSummaryRouter.ts', 'utf8');
+    assert.match(router, /grossMinor: toMinor\(input\.providerPayment\.transaction_amount\)|grossMinor,/);
+    assert.match(router, /paymentId: input\.payment\.id/);
+    assert.match(router, /orderId: input\.payment\.orderId/);
+    assert.match(period, /reconciliation\.grossMinor !== capture\.canonicalGrossMinor/);
+    // The discount belongs to the immutable commercial allocation, not the PSP gross.
+    const ledger = readFileSync('server/payments/storeEconomicLedgerService.ts', 'utf8');
+    assert.match(ledger, /subtotal: commercial\.subtotal/);
+    assert.match(ledger, /discountTotal: commercial\.discountTotal/);
+    assert.match(ledger, /total: commercial\.total/);
+  });
+
   test('provider refund, net and release facts are persisted independently', () => {
     const router = readFileSync('server/payments/storeMercadoPagoReconciliationRouter.ts', 'utf8');
     assert.match(router, /transaction_amount_refunded/);
