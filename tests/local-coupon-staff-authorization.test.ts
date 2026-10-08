@@ -67,3 +67,11 @@ test('canonical local Pix derives coupon beneficiary from verified order rather 
   assert.match(canonicalPaymentSource, /resolveStorePromotionForCheckout\(\{ storeId: storeContext\.canonicalStoreId, buyerId/);
   assert.match(canonicalPaymentSource, /LOCAL_PAYMENT_INTENT_COUPON_PARTIAL_PAYMENT_UNSUPPORTED/);
 });
+
+test('staff table legacy coupon remains separate from order-bound canonical Pix coupon', () => {
+  assert.match(tableSource, /await quoteLocalCoupon\(\{[\s\S]*?items: selectedCouponItems/);
+  assert.match(tableSource, /await applyTableCoupon\(user, \{/);
+  assert.match(tableSource, /onAppliedCouponChange\?\.\(''\)/);
+  assert.match(canonicalPaymentSource, /commercialSnapshot = \{ subtotal: outstandingSubtotal, discountTotal/);
+  assert.match(canonicalPaymentSource, /assertExistingPair\(/);
+});
