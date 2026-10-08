@@ -88,7 +88,7 @@ export const createLocalPaymentIntent = async (input: { authenticatedUserId: str
       const resolved = await resolveStorePromotionForCheckout({ storeId: storeContext.canonicalStoreId, buyerId, couponCode: request.couponCode, lines: promotionLinesForOrder(order), now });
       const discountTotal = Number(resolved.quote.discountTotal.toFixed(2)); if (discountTotal <= 0) throw new Error('LOCAL_COUPON_NO_DISCOUNT');
       const discountedOutstanding = Number((outstandingSubtotal - discountTotal).toFixed(2)); if (discountedOutstanding <= 0.009) throw new Error('LOCAL_COUPON_TOTAL_INVALID');
-      if (request.amount !== undefined && request.amount > discountedOutstanding + 0.009) throw new Error('LOCAL_PAYMENT_INTENT_AMOUNT_EXCEEDS_OUTSTANDING');
+      if (request.amount !== undefined && Math.abs(request.amount - discountedOutstanding) > 0.009) throw new Error('LOCAL_PAYMENT_INTENT_COUPON_REQUIRES_FULL_SETTLEMENT');
       amount = request.amount ?? discountedOutstanding;
       commercialSnapshot = { subtotal: outstandingSubtotal, discountTotal, total: amount, couponCode: resolved.promotion.code, promotionSnapshot: { promotionId: resolved.promotion.id, code: resolved.promotion.code, title: resolved.promotion.title, badge: resolved.promotion.badge, discountType: resolved.promotion.discountType, discountValue: resolved.promotion.discountValue, eligibleProductIds: [...resolved.promotion.productIds] } };
     }
