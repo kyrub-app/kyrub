@@ -191,7 +191,18 @@ export const confirmStoreOwnedPixLocalPayment = async (input: {
     }
     if (!currentFound) throw new Error('LOCAL_STORE_PIX_CONFIRM_PAYMENT_NOT_INDEXED');
     const remaining = Number((payable.billableAmount - otherPaidAmount).toFixed(2));
-    if (Math.abs(remaining - payment.amount) > 0.009) throw new Error('LOCAL_STORE_PIX_CONFIRM_INTENT_STALE');
+    const commercialSnapshot = intent.commercialSnapshot;
+    if (commercialSnapshot?.couponCode) {
+      if (
+        otherPaidAmount > 0.009 ||
+        Math.abs(commercialSnapshot.subtotal - remaining) > 0.009 ||
+        commercialSnapshot.discountTotal <= 0 ||
+        Math.abs(commercialSnapshot.subtotal - commercialSnapshot.discountTotal - payment.amount) > 0.009 ||
+        Math.abs(commercialSnapshot.total - payment.amount) > 0.009
+      ) throw new Error('LOCAL_STORE_PIX_CONFIRM_INTENT_STALE');
+    } else if (Math.abs(remaining - payment.amount) > 0.009) {
+      throw new Error('LOCAL_STORE_PIX_CONFIRM_INTENT_STALE');
+    }
 
     const audit = {
       schemaVersion: 1, storeId: storeContext.canonicalStoreId, legacyStoreId: request.storeId,
