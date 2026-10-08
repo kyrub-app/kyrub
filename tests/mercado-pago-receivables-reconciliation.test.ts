@@ -109,6 +109,12 @@ describe('Mercado Pago authoritative receivables reconciliation', () => {
     assert.ok(backfillAt > ownerAt);
   });
 
+  test('empty financial period cannot claim complete or balanced provider reconciliation', () => {
+    const period = readFileSync('server/payments/storeMercadoPagoPeriodSummaryRouter.ts', 'utf8');
+    assert.match(period, /const complete = paymentCount > 0\s*&& reconciledPaymentCount === paymentCount/);
+    assert.match(period, /balanced: complete && grossDivergenceCount === 0/);
+  });
+
   test('period completeness requires provider-authoritative fee, net, refund and release evidence', () => {
     const period = readFileSync('server/payments/storeMercadoPagoPeriodSummaryRouter.ts', 'utf8');
     assert.doesNotMatch(period, /complete: true/);
