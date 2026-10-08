@@ -19,6 +19,7 @@ import {
   type StoreEconomicLedgerEntry,
 } from '../../shared/storeEconomicLedger.js';
 import { classifyCompatiblePaymentRecord } from '../payments/paymentRecordCompatibility.js';
+import { buildMarketplaceEconomicAllocationSnapshot } from '../../shared/economicFeesSubsidies.js';
 import { resolveInPersonOrderStoreContext } from './inPersonOrderService.js';
 import { summarizeLocalOrderPayable } from './localOrderPayable.js';
 import {
@@ -231,6 +232,14 @@ export const confirmStoreOwnedPixLocalPayment = async (input: {
       sourceAuthority: 'operator_attestation',
       reversalOfEntryId: '',
       occurredAt: attestedAt,
+      ...(commercialSnapshot?.couponCode ? {
+        economicAllocation: buildMarketplaceEconomicAllocationSnapshot({
+          subtotal: commercialSnapshot.subtotal,
+          discountTotal: commercialSnapshot.discountTotal,
+          deliveryFee: 0,
+          total: payment.amount,
+        }),
+      } : {}),
     };
 
     transaction.set(attestationRef, audit);
