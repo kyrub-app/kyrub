@@ -11,6 +11,7 @@ import { StorePaidWaitingFundingResponsibilityCard } from './store/StorePaidWait
 import { OperationalDualWriteBridge } from './store/OperationalDualWriteBridge';
 import { StoreDeliveryTrackingBridge } from './store/StoreDeliveryTrackingBridge';
 import { auth } from '../utils/firebase';
+import type { StoreRole } from '../utils/storeSecurity';
 import {
   KYRUB_CANONICAL_ORDER_NAVIGATION_CHANGED_EVENT,
   KYRUB_CANONICAL_ORDER_NAVIGATION_REQUESTED_EVENT,
