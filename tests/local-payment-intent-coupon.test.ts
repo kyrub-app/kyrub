@@ -48,3 +48,26 @@ test('rejects discounted local intent without coupon/promotion snapshot', () => 
 test('rejects commercial arithmetic inconsistent with subtotal minus discount', () => {
   assert.throws(() => normalizeCanonicalPaymentIntent(intent({ commercialSnapshot: { ...intent().commercialSnapshot!, total: 0.2 } })), /total does not match subtotal - discount/i);
 });
+
+// Until partial coupon settlement has its own commercial snapshot, reject it explicitly.
+import { readFileSync } from 'node:fs';
+const canonicalLocalService = readFileSync('server/attendance/localPaymentIntentService.ts', 'utf8');
+const attendanceRouter = readFileSync('server/attendance/localAttendanceRouter.ts', 'utf8');
+test('coupon Pix requires full discounted settlement and returns a conflict for partial amount', () => {
+  assert.match(canonicalLocalService, /Math\.abs\(request\.amount - discountedOutstanding\) > 0\.009/);
+  assert.match(canonicalLocalService, /LOCAL_PAYMENT_INTENT_COUPON_REQUIRES_FULL_SETTLEMENT/);
+  assert.match(attendanceRouter, /LOCAL_PAYMENT_INTENT_COUPON_REQUIRES_FULL_SETTLEMENT/);
+  assert.match(attendanceRouter, /status: 409, message: 'Para usar cupom no Pix/);
+});
+
+test('canonical Pix rejects a second coupon when the local order already has item discounts', () => {
+  assert.match(canonicalLocalService, /operationalOrder\.items\.some\(\(item: unknown\)/);
+  assert.match(canonicalLocalService, /discount > 0\.009/);
+  assert.match(canonicalLocalService, /LOCAL_PAYMENT_INTENT_COUPON_ALREADY_APPLIED/);
+  assert.match(attendanceRouter, /LOCAL_PAYMENT_INTENT_COUPON_ALREADY_APPLIED/);
+});
+
+test('local Pix reconciles operational open balance and canonical payments before creating intent', () => {
+  assert.match(canonicalLocalService, /Math\.abs\(outstandingSubtotal - payable\.openAmount \+ canonicalPaidAmount\) > 0\.009/);
+  assert.match(canonicalLocalService, /LOCAL_PAYMENT_INTENT_RECONCILIATION_REQUIRED/);
+});

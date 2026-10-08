@@ -221,7 +221,9 @@ const summarizePeriod = async (
   }
 
   const paymentCount = captures.length;
-  const complete = reconciledPaymentCount === paymentCount
+  // An empty period has no provider evidence: never present it as reconciled.
+  const complete = paymentCount > 0
+    && reconciledPaymentCount === paymentCount
     && providerFeeEvidenceCount === paymentCount
     && explicitNetReceivedCount === paymentCount
     && providerRefundedEvidenceCount === paymentCount

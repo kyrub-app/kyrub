@@ -141,3 +141,14 @@ test('owner-authorized local route preserves compatibility without accepting pay
   assert.doesNotMatch(router, /request\.body\?\.amount/);
   assert.doesNotMatch(router, /request\.body\?\.email/);
 });
+
+
+test('provider attach reconciles coupon against the canonical commercial snapshot, not gross order amount', () => {
+  assert.match(service, /const commercialSnapshot = intent\.commercialSnapshot/);
+  assert.match(service, /commercialSnapshot\?\.couponCode/);
+  assert.match(service, /Math\.abs\(commercialSnapshot\.subtotal - remaining\) > 0\.009/);
+  assert.match(service, /commercialSnapshot\.discountTotal <= 0/);
+  assert.match(service, /Math\.abs\(commercialSnapshot\.subtotal - commercialSnapshot\.discountTotal - intent\.amount\) > 0\.009/);
+  assert.match(service, /Math\.abs\(commercialSnapshot\.total - intent\.amount\) > 0\.009/);
+  assert.match(service, /else if \(Math\.abs\(remaining - intent\.amount\) > 0\.009\)/);
+});

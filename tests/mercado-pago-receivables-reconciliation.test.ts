@@ -51,6 +51,20 @@ describe('Mercado Pago authoritative receivables reconciliation', () => {
     assert.match(router, /providerFeeEvidenceAvailable: feeState\.available/);
   });
 
+  test('local Pix coupon provider reconciliation uses net payment as provider gross, not pre-discount merchandise', () => {
+    const router = readFileSync('server/payments/storeMercadoPagoReconciliationRouter.ts', 'utf8');
+    const period = readFileSync('server/payments/storeMercadoPagoPeriodSummaryRouter.ts', 'utf8');
+    assert.match(router, /grossMinor: toMinor\(input\.providerPayment\.transaction_amount\)|grossMinor,/);
+    assert.match(router, /paymentId: input\.payment\.id/);
+    assert.match(router, /orderId: input\.payment\.orderId/);
+    assert.match(period, /reconciliation\.grossMinor !== capture\.canonicalGrossMinor/);
+    // The discount belongs to the immutable commercial allocation, not the PSP gross.
+    const ledger = readFileSync('server/payments/storeEconomicLedgerService.ts', 'utf8');
+    assert.match(ledger, /subtotal: commercial\.subtotal/);
+    assert.match(ledger, /discountTotal: commercial\.discountTotal/);
+    assert.match(ledger, /total: commercial\.total/);
+  });
+
   test('provider refund, net and release facts are persisted independently', () => {
     const router = readFileSync('server/payments/storeMercadoPagoReconciliationRouter.ts', 'utf8');
     assert.match(router, /transaction_amount_refunded/);
@@ -95,6 +109,12 @@ describe('Mercado Pago authoritative receivables reconciliation', () => {
     assert.ok(backfillAt > ownerAt);
   });
 
+  test('empty financial period cannot claim complete or balanced provider reconciliation', () => {
+    const period = readFileSync('server/payments/storeMercadoPagoPeriodSummaryRouter.ts', 'utf8');
+    assert.match(period, /const complete = paymentCount > 0\s*&& reconciledPaymentCount === paymentCount/);
+    assert.match(period, /balanced: complete && grossDivergenceCount === 0/);
+  });
+
   test('period completeness requires provider-authoritative fee, net, refund and release evidence', () => {
     const period = readFileSync('server/payments/storeMercadoPagoPeriodSummaryRouter.ts', 'utf8');
     assert.doesNotMatch(period, /complete: true/);
@@ -107,6 +127,26 @@ describe('Mercado Pago authoritative receivables reconciliation', () => {
     assert.match(period, /missingNetReceivedEvidenceCount/);
     assert.match(period, /missingRefundEvidenceCount/);
     assert.match(period, /missingReleaseEvidenceCount/);
+  });
+
+  test('period UI distinguishes provider gross divergences from missing evidence', () => {
+    const workspace = readFileSync('src/components/store/StoreMercadoPagoPeriodSummaryWorkspace.tsx', 'utf8');
+    assert.match(workspace, /summary\.hasDivergences/);
+    assert.match(workspace, /summary\.grossDivergenceCount/);
+    assert.match(workspace, /summary\.complete && !summary\.balanced && !summary\.hasDivergences/);
+    assert.match(workspace, /!summary\.complete/);
+    assert.match(workspace, /data futura ou prevista/);
+  });
+
+  test('period UI retains incomplete evidence instead of hiding financial rows', () => {
+    const workspace = readFileSync('src/components/store/StoreMercadoPagoPeriodSummaryWorkspace.tsx', 'utf8');
+    assert.doesNotMatch(workspace, /if \(!payload\.summary\?\.complete\)/);
+    assert.match(workspace, /if \(!payload\.summary\)/);
+    assert.match(workspace, /!summary\.complete/);
+    assert.match(workspace, /summary\.missingRefundEvidenceCount > 0/);
+    assert.match(workspace, /summary\.missingReleaseEvidenceCount/);
+    assert.match(workspace, /summary\.explicitNetReceivedCount\}\/\{summary\.paymentCount\}/);
+    assert.match(workspace, /grid-cols-1 gap-2 sm:grid-cols-2/);
   });
 
   test('internal economic ledger fees remain separate from authoritative provider fee totals', () => {

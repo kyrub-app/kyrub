@@ -77,6 +77,15 @@ test('financial context expires stale unbound attempts before projecting pending
   assert.ok(expiryIndex >= 0 && projectionIndex > expiryIndex);
 });
 
+test('pending recovery expires only safely unbound stale attempts before returning a pair', () => {
+  assert.match(service, /import \{ expireStaleUnboundLocalPayment \} from '\.\/localPendingPaymentExpirationService\.js'/);
+  assert.match(service, /payment: pending\[0\]/);
+  assert.match(service, /if \(payment\.status !== 'pending'\) return null/);
+  const expiryIndex = service.indexOf('expireStaleUnboundLocalPayment({');
+  const intentIndex = service.indexOf('const paymentIntentId = clean(payment.paymentIntentId)');
+  assert.ok(expiryIndex >= 0 && intentIndex > expiryIndex);
+});
+
 test('owner-authorized GET exposes only the pending pair for store and order scope', () => {
   assert.match(router, /router\.get\('\/payment-intents\/pending'/);
   assert.match(router, /requireStoreAuthority/);
