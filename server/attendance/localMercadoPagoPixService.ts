@@ -250,7 +250,18 @@ const validateBeforeProvider = async (input: {
   const remaining = Number(
     (payable.billableAmount - authoritativelyPaidAmount).toFixed(2)
   );
-  if (Math.abs(remaining - intent.amount) > 0.009) {
+  const commercialSnapshot = intent.commercialSnapshot;
+  if (commercialSnapshot?.couponCode) {
+    if (
+      authoritativelyPaidAmount > 0.009 ||
+      Math.abs(commercialSnapshot.subtotal - remaining) > 0.009 ||
+      commercialSnapshot.discountTotal <= 0 ||
+      Math.abs(commercialSnapshot.subtotal - commercialSnapshot.discountTotal - intent.amount) > 0.009 ||
+      Math.abs(commercialSnapshot.total - intent.amount) > 0.009
+    ) {
+      throw new Error('LOCAL_PIX_PROVIDER_INTENT_STALE');
+    }
+  } else if (Math.abs(remaining - intent.amount) > 0.009) {
     throw new Error('LOCAL_PIX_PROVIDER_INTENT_STALE');
   }
 
