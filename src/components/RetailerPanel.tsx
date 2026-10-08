@@ -35,7 +35,7 @@ import {
   type OrderDecision,
 } from '../utils/orderWorkflow';
 
-type RetailerPanelProps = React.ComponentProps<typeof LegacyRetailerPanel>;
+type RetailerPanelProps = React.ComponentProps<typeof LegacyRetailerPanel> & { accessRole?: StoreRole };
 
 export const RetailerPanel: React.FC<RetailerPanelProps> = props => {
   const {
