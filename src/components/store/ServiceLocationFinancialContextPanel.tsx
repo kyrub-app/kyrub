@@ -189,6 +189,9 @@ export function ServiceLocationFinancialContextPanel({
     patchPix(order.id, { loading: true, error: '', copied: false, confirmedCredit: false });
     try {
       let pending = await loadPendingLocalPayment({ storeId, orderId: order.id });
+      if (pending && !couponCode && requestedAmount > 0 && Math.abs(pending.amount - requestedAmount) > 0.009) {
+        throw new Error('Já existe um Pix pendente com valor diferente. Retome a cobrança original ou aguarde seu encerramento antes de alterar o valor.');
+      }
       if (pending && couponCode) {
         throw new Error('Já existe uma cobrança pendente para este pedido. O cupom só pode ser definido ao criar uma nova tentativa de pagamento.');
       }
