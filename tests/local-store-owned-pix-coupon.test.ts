@@ -27,3 +27,13 @@ test('operator attestation records the net payment amount, not gross order total
   assert.match(confirmation, /sourceAuthority: 'operator_attestation'/);
   assert.match(confirmation, /bankVerifiedByKyrub: false/);
 });
+
+
+test('operator-confirmed coupon capture persists immutable economic allocation for margins', () => {
+  assert.match(confirmation, /economicAllocation: buildMarketplaceEconomicAllocationSnapshot\(\{/);
+  assert.match(confirmation, /subtotal: commercialSnapshot\.subtotal/);
+  assert.match(confirmation, /discountTotal: commercialSnapshot\.discountTotal/);
+  assert.match(confirmation, /deliveryFee: 0/);
+  assert.match(confirmation, /total: payment\.amount/);
+  assert.match(confirmation, /\.\.\.\(commercialSnapshot\?\.couponCode \? \{/);
+});
