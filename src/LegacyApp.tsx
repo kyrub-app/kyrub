@@ -497,6 +497,29 @@ export default function App() {
   const [profileName, setProfileName] = useState('');
   const [profileEmail, setProfileEmail] = useState('');
   const [profilePhotoUrl, setProfilePhotoUrl] = useState('');
+  // Profile identity is passed through React state, never patched into the header DOM.
+  useEffect(() => {
+    const handleIdentityUpdated = (event: Event): void => {
+      const detail = (event as CustomEvent<{
+        uid?: unknown;
+        name?: unknown;
+        photoUrl?: unknown;
+      }>).detail;
+      if (!detail || detail.uid !== auth.currentUser?.uid) return;
+      if (typeof detail.name === 'string' && detail.name.trim()) {
+        setProfileName(current => current === detail.name ? current : detail.name as string);
+      }
+      if (typeof detail.photoUrl === 'string') {
+        setProfilePhotoUrl(current =>
+          current === detail.photoUrl ? current : detail.photoUrl as string
+        );
+      }
+    };
+    window.addEventListener('kyrub-profile-identity-updated', handleIdentityUpdated);
+    return () =>
+      window.removeEventListener('kyrub-profile-identity-updated', handleIdentityUpdated);
+  }, []);
+
   const [accountTypeCliente, setAccountTypeCliente] = useState(false);
   const [accountTypeEntregador, setAccountTypeEntregador] = useState(false);
   const [accountTypeLojista, setAccountTypeLojista] = useState(false);
@@ -790,9 +813,32 @@ export default function App() {
         setAuthenticatedUserId(user.uid);
         setUserStore(null);
         setStores([]);
-        setProfileName(user.displayName ?? '');
+        // The public profile recovery bridge caches the authoritative display identity.
+        // Apply the same cache through state at login even if its event fired earlier.
+        let cachedProfileIdentity: Record<string, unknown> | null = null;
+        try {
+          const cached = JSON.parse(
+            localStorage.getItem(`kyrub_profile_identity_v1:${user.uid}`) ?? 'null'
+          ) as unknown;
+          if (cached && typeof cached === 'object' && !Array.isArray(cached)) {
+            cachedProfileIdentity = cached as Record<string, unknown>;
+          }
+        } catch {
+          // Fall back to Firebase Auth metadata.
+        }
+        const cachedName = cachedProfileIdentity?.name;
+        const cachedPhoto = cachedProfileIdentity?.photoUrl;
+        setProfileName(
+          typeof cachedName === 'string' && cachedName.trim()
+            ? cachedName.trim()
+            : user.displayName ?? ''
+        );
         setProfileEmail(user.email ?? '');
-        setProfilePhotoUrl(user.photoURL ?? '');
+        setProfilePhotoUrl(
+          typeof cachedPhoto === 'string' && cachedPhoto.trim()
+            ? cachedPhoto.trim()
+            : user.photoURL ?? ''
+        );
 
         let cachedStore: Store | null = null;
         const cachedStoreValue = localStorage.getItem(
