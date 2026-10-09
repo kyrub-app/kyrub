@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { DocumentData, Transaction } from 'firebase-admin/firestore';
 import { adminDb } from '../firebaseAdmin.js';
-import { hasStorePermission, parseStoreMember } from '../../src/utils/storeSecurity.js';
+import { canCreateLocalStorePayment } from './localPaymentAuthorization.js';
 import {
   isPaymentAuthoritativelyPaid,
   normalizeCanonicalPayment,
@@ -262,11 +262,7 @@ export const attachStoreOwnedPixToLocalIntent = async (input: {
   const actorUserId = clean(input.authenticatedUserId, 180);
   if (!actorUserId) throw new Error('LOCAL_STORE_PIX_FORBIDDEN');
   const storeContext = await resolveInPersonOrderStoreContext(request.storeId);
-  if (actorUserId !== request.storeId) {
-    const memberSnapshot = await adminDb.doc(`stores/${storeContext.canonicalStoreId}/members/${actorUserId}`).get();
-    const member = parseStoreMember(memberSnapshot.data());
-    if (!member || member.storeId !== storeContext.canonicalStoreId || member.userId !== actorUserId || member.status !== 'active' || !hasStorePermission(member.role, 'payments.create')) throw new Error('LOCAL_STORE_PIX_FORBIDDEN');
-  }
+  if (!await canCreateLocalStorePayment({ actorUserId, legacyStoreId: request.storeId, canonicalStoreId: storeContext.canonicalStoreId })) throw new Error('LOCAL_STORE_PIX_FORBIDDEN');
   const now = input.now ?? new Date();
   if (Number.isNaN(now.getTime())) throw new Error('LOCAL_STORE_PIX_TIME_INVALID');
 
