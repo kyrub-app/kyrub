@@ -1479,7 +1479,7 @@ if (newMomentPublishToPraca) {
             {/* LADO ESQUERDO: Botão de fechar */}
             {!isAdminSubdomain && (
               <button
-                onClick={() => setIsGestaoOpen(false)}
+                onClick={() => { setIsGestaoOpen(false); setStaffErpSession(false); }}
                 className="hidden sm:flex text-slate-500 hover:text-slate-300 font-bold bg-slate-950 border border-slate-850 w-8 h-8 rounded-full items-center justify-center text-sm cursor-pointer shadow-sm shrink-0"
               >
                 ✕
