@@ -1,0 +1,66 @@
+/* Bottom Praça navigation and its panel only. App-header controls belong to AppHeader. */
+nav[data-kyrub-primary-workspace-nav="true"] {
+          position: fixed !important;
+          z-index: 160 !important;
+        }
+
+        button[data-kyrub-social-entry="true"] {
+          color: rgb(100 116 139) !important;
+        }
+
+        button[data-kyrub-social-entry="true"][data-kyrub-social-active="true"] {
+          color: rgb(249 115 22) !important;
+        }
+
+        button[data-kyrub-social-entry="true"] > svg {
+          display: none !important;
+        }
+
+        button[data-kyrub-social-entry="true"]::before {
+          content: '';
+          width: 1.25rem;
+          height: 1.25rem;
+          background-color: currentColor;
+          -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='12' r='9' fill='none' stroke='black' stroke-width='2'/%3E%3Cpath d='m16 8-2.5 5.5L8 16l2.5-5.5L16 8Z' fill='black'/%3E%3C/svg%3E") center / contain no-repeat;
+          mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='12' r='9' fill='none' stroke='black' stroke-width='2'/%3E%3Cpath d='m16 8-2.5 5.5L8 16l2.5-5.5L16 8Z' fill='black'/%3E%3C/svg%3E") center / contain no-repeat;
+        }
+
+        button[data-kyrub-social-entry="true"] > span {
+          font-size: 10px !important;
+        }
+
+        #profile-social-hub-modal {
+          position: fixed !important;
+          top: var(--kyrub-workspace-header-height, 64px) !important;
+          right: 0 !important;
+          bottom: var(--kyrub-workspace-nav-height, 72px) !important;
+          left: 0 !important;
+          width: 100% !important;
+          height: auto !important;
+          min-height: 0 !important;
+          padding: 0 !important;
+          align-items: stretch !important;
+          justify-content: center !important;
+          background: rgb(2 6 23) !important;
+          backdrop-filter: none !important;
+          z-index: 120 !important;
+        }
+
+        #profile-social-hub-modal > section {
+          width: 100% !important;
+          max-width: 48rem !important;
+          height: 100% !important;
+          max-height: none !important;
+          border-radius: 0 !important;
+          border-top: 0 !important;
+          border-bottom: 0 !important;
+          box-shadow: none !important;
+        }
+
+        #profile-social-hub-modal > section > header:first-child,
+        #profile-social-hub-modal button[aria-label="Abrir Ofertas"],
+        #profile-social-hub-modal [data-profile-square-shortcut-slot="true"],
+        #profile-social-hub-modal nav[aria-label="Seções do perfil"] > button:last-child,
+        #profile-social-hub-modal button[aria-label="Fechar meu perfil"] {
+          display: none !important;
+        }
