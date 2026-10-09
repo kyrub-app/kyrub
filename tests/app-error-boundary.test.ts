@@ -55,7 +55,10 @@ test('first mobile management selection survives a router that mounts after the 
     routerSource,
     /window\.addEventListener\([\s\S]*KYRUB_ERP_MANAGEMENT_NAVIGATION_EVENT[\s\S]*handleManagementNavigation[\s\S]*\);[\s\S]*const pending = consumePendingErpManagementNavigation\(\)/
   );
-  assert.match(routerSource, /if \(pending\) setManagementModule\(pending\.module\)/);
+  assert.match(routerSource, /const pending = consumePendingErpManagementNavigation\(\)/);
+  assert.match(routerSource, /if \(pending\) \{/);
+  assert.match(routerSource, /!props\.accessRole \|\| !canStoreRoleAccessErpMenuItem\(props\.accessRole, pending\.module\)/);
+  assert.match(routerSource, /: pending\.module/);
   assert.match(routerSource, /previousActiveSubTabRef = useRef\(props\.activeSubTab\)/);
   assert.match(
     routerSource,

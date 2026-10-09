@@ -78,10 +78,11 @@ import { useProductivityNotes } from './hooks/useProductivityNotes';
 import { useSocialDirectoryV2 } from './hooks/useSocialDirectoryV2';
 import { LandingView } from './components/LandingView';
 import { StaffViewport } from './components/StaffViewport';
+import { subscribeToUserStoreAccess, type StoreAccessRecord } from './utils/storeDirectory';
 import { PerfilTab } from './components/tabs/PerfilTab';
 import { RendaTab } from './components/tabs/RendaTab';
 import { KyrubTab } from './components/tabs/KyrubTab';
-import { MobileErpMenu, MOBILE_ERP_MENU_ITEMS, commitMobileErpMenuSelection } from './components/MobileErpMenu';
+import { MobileErpMenu, canStoreRoleAccessErpMenuItem, MOBILE_ERP_MENU_ITEMS, commitMobileErpMenuSelection } from './components/MobileErpMenu';
 import { getPlanCenterUrl } from './utils/planCenter';
 
 // Import helper functions
@@ -334,9 +335,47 @@ export default function App() {
 
   // Staff Private Route & Operational States
   const [currentPath, setCurrentPath] = useState(window.location.pathname);
-  const [staffEmail, setStaffEmail] = useState('');
-  const [staffPassword, setStaffPassword] = useState('');
-  const [isStaffLoggedIn, setIsStaffLoggedIn] = useState(false);
+  const [staffAccesses, setStaffAccesses] = useState<StoreAccessRecord[]>([]);
+  const [staffAccessLoading, setStaffAccessLoading] = useState(false);
+  const [staffAccessError, setStaffAccessError] = useState('');
+  const [selectedStaffStoreId, setSelectedStaffStoreId] = useState('');
+  const [staffErpSession, setStaffErpSession] = useState(false);
+
+  useEffect(() => {
+    if (!(currentPath === '/staff' || currentPath.endsWith('/staff') || staffErpSession)) return;
+
+    const user = auth.currentUser;
+    if (!user) {
+      setStaffAccesses([]);
+      setSelectedStaffStoreId('');
+      setStaffAccessLoading(false);
+      setStaffErpSession(false);
+      setIsGestaoOpen(false);
+      return;
+    }
+
+    setStaffAccessLoading(true);
+    setStaffAccessError('');
+    return subscribeToUserStoreAccess(
+      user.uid,
+      accesses => {
+        const operational = accesses.filter(access => access.status === 'active');
+        setStaffAccesses(operational);
+        setSelectedStaffStoreId(current =>
+          current
+            ? current
+            : operational[0]?.store.id ?? ''
+        );
+        setStaffAccessLoading(false);
+      },
+      error => {
+        console.warn('Staff access lookup failed:', error);
+        setStaffAccesses([]);
+        setStaffAccessLoading(false);
+        setStaffAccessError('Não foi possível validar seus vínculos operacionais.');
+      }
+    );
+  }, [authenticatedUserId, currentPath, staffErpSession]);
 
   useEffect(() => {
     const handleLocationChange = () => {
@@ -615,14 +654,44 @@ export default function App() {
   }, [notes, isLoggedIn]);
 
   // The private ERP store is owned by the authenticated Firebase user.
-  const activeRetailerId = authenticatedUserId;
+  // Staff selection belongs only to an entered operational session; leaving /staff
+  // must not change the authenticated owner's own ERP context.
+  const selectedStaffAccess = staffErpSession
+    ? staffAccesses.find(access => access.store.id === selectedStaffStoreId && access.status === 'active') ?? null
+    : null;
+  const erpAccessRole = staffErpSession
+    ? selectedStaffAccess?.role
+    : (authenticatedUserId && userStore ? 'owner' : undefined);
+  const activeRetailerId = selectedStaffAccess?.store.legacyTenantId || authenticatedUserId;
+  useEffect(() => {
+    if (!staffErpSession || staffAccessLoading) return;
+    if (selectedStaffAccess && authenticatedUserId && selectedStaffAccess.status === 'active') return;
+    setStaffErpSession(false);
+    setIsGestaoOpen(false);
+  }, [staffErpSession, staffAccessLoading, selectedStaffAccess, authenticatedUserId]);
+
 
   const activeStore = useMemo<Store>(() => {
+    if (selectedStaffAccess) {
+      const legacyStoreId = selectedStaffAccess.store.legacyTenantId;
+      const staffStore =
+        stores.find(store => store.id === legacyStoreId) ??
+        stores.find(store => store.id === selectedStaffAccess.store.id);
+
+      if (staffStore) return staffStore;
+
+      return {
+        ...createEmptyUserStore(legacyStoreId, ''),
+        name: selectedStaffAccess.store.name,
+        plan: selectedStaffAccess.store.plan,
+      };
+    }
+
     return userStore ?? createEmptyUserStore(
       activeRetailerId,
       profileEmail
     );
-  }, [userStore, activeRetailerId, profileEmail]);
+  }, [selectedStaffAccess, stores, userStore, activeRetailerId, profileEmail]);
 
   const activeRetailer = useMemo<Tenant | undefined>(() => {
     if (!activeRetailerId) return undefined;
@@ -1287,54 +1356,34 @@ if (newMomentPublishToPraca) {
   });
 
   // Rota externa privada /staff
+  // Rota operacional /staff — usa a mesma identidade Google e os vínculos
+  // canônicos da loja. Não há credenciais demonstrativas nem um segundo login.
   if (currentPath === '/staff' || currentPath.endsWith('/staff')) {
-    const staffStore = activeStore.id ? activeStore : undefined;
-    const staffProducts = activeRetailerId
-      ? products.filter(
-          product =>
-            product.supplierId === activeRetailerId &&
-            !product.wholesalePrice
-        )
-      : [];
-    const staffOrders = staffStore
-      ? orders.filter(order => order.storeId === staffStore.id)
-      : [];
-
-    const handleStaffLogin = (e: React.FormEvent) => {
-      e.preventDefault();
-      if (staffEmail === 'staff@kyrub.com' && staffPassword === 'kyrub123') {
-        setIsStaffLoggedIn(true);
-        triggerToast('Colaborador staff autenticado com sucesso!', 'success');
-      } else {
-        triggerToast('Credenciais de staff incorretas. Use staff@kyrub.com / kyrub123', 'error');
-      }
-    };
-
-    const handleStaffLogout = () => {
-      setIsStaffLoggedIn(false);
-      setStaffEmail('');
-      setStaffPassword('');
-      triggerToast('Sessão staff finalizada.', 'info');
-    };
-
     const handleGoBackToMain = () => {
       window.history.pushState({}, '', '/');
       setCurrentPath('/');
     };
 
+    const routeStaffAccess = staffAccesses.find(access => access.store.id === selectedStaffStoreId && access.status === 'active') ?? staffAccesses[0] ?? null;
+
     return (
       <StaffViewport
-        isStaffLoggedIn={isStaffLoggedIn}
-        staffEmail={staffEmail}
-        setStaffEmail={setStaffEmail}
-        staffPassword={staffPassword}
-        setStaffPassword={setStaffPassword}
-        handleStaffLogin={handleStaffLogin}
-        handleStaffLogout={handleStaffLogout}
-        handleGoBackToMain={handleGoBackToMain}
-        activeStore={staffStore}
-        staffProducts={staffProducts}
-        staffOrders={staffOrders}
+        user={auth.currentUser}
+        accesses={staffAccesses}
+        isLoading={staffAccessLoading}
+        errorMessage={staffAccessError}
+        selectedStoreId={selectedStaffStoreId}
+        onSelectStore={setSelectedStaffStoreId}
+        onGoBackToMain={handleGoBackToMain}
+        onEnterErp={routeStaffAccess ? () => {
+          setSelectedStaffStoreId(routeStaffAccess.store.id);
+          setStaffErpSession(true);
+          setGestaoRole('retailer');
+          setActiveSubTab(canStoreRoleAccessErpMenuItem(routeStaffAccess.role, 'clientes') ? 'clientes' : canStoreRoleAccessErpMenuItem(routeStaffAccess.role, 'pedidos') ? 'pedidos' : 'ponto');
+          setIsGestaoOpen(true);
+          window.history.pushState({}, '', '/');
+          setCurrentPath('/');
+        } : undefined}
       />
     );
   }
@@ -1530,7 +1579,7 @@ if (newMomentPublishToPraca) {
       )}
 
       {/* 4. MODAL DETALHADO DO ERP / GESTÃO (PRESERVA TODAS AS TELAS ANTERIORES) */}
-      {isGestaoOpen && (
+      {isGestaoOpen && !(gestaoRole === 'retailer' && !erpAccessRole) && (
         <div className="fixed inset-0 z-50 bg-slate-950/95 backdrop-blur-sm flex flex-col">
           {/* Header Gestão */}
           <div className="bg-slate-900 border-b border-slate-800 px-6 py-2.5 flex items-center justify-between gap-4 font-sans shrink-0" id="erp-main-header">
@@ -1539,15 +1588,16 @@ if (newMomentPublishToPraca) {
               activeSubTab={activeSubTab}
               isRetailer={gestaoRole === 'retailer'}
               canClosePanel={!isAdminSubdomain}
-              onClosePanel={() => setIsGestaoOpen(false)}
+              onClosePanel={() => { setIsGestaoOpen(false); setStaffErpSession(false); }}
               onOpenStoreConfig={() => setIsConfigModalOpen(true)}
               onSelectTab={setActiveSubTab}
+              accessRole={erpAccessRole}
             />
 
             {/* LADO ESQUERDO: Botão de fechar */}
             {!isAdminSubdomain && (
               <button
-                onClick={() => setIsGestaoOpen(false)}
+                onClick={() => { setIsGestaoOpen(false); setStaffErpSession(false); }}
                 className="hidden sm:flex text-slate-500 hover:text-slate-300 font-bold bg-slate-950 border border-slate-850 w-8 h-8 rounded-full items-center justify-center text-sm cursor-pointer shadow-sm shrink-0"
               >
                 ✕
@@ -1558,7 +1608,7 @@ if (newMomentPublishToPraca) {
             <div className="hidden sm:flex flex-1 min-w-0 items-center gap-2">
               {gestaoRole === 'retailer' ? (
                 <div className="hidden sm:flex items-center gap-1.5 overflow-x-auto whitespace-nowrap scrollbar-none flex-1 px-2" id="erp-tab-navigation-header">
-                  {MOBILE_ERP_MENU_ITEMS.map(item => {
+                  {MOBILE_ERP_MENU_ITEMS.filter(item => erpAccessRole && canStoreRoleAccessErpMenuItem(erpAccessRole, item.id)).map(item => {
                     const Icon = item.icon;
                     const isSelected = item.id === activeSubTab; // Operational tabs are selected locally; management modules navigate through the canonical event bridge.
                     return (
@@ -1616,6 +1666,7 @@ if (newMomentPublishToPraca) {
                 setActiveSubTab={setActiveSubTab}
                 atendimentoSpaces={atendimentoSpaces}
                 producaoSpaces={producaoSpaces}
+                accessRole={erpAccessRole}
               />
             )}
 

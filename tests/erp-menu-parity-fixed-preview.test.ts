@@ -7,14 +7,14 @@ const runtime = readFileSync('src/components/MobileErpMenuRuntime.tsx', 'utf8');
 const canonical = readFileSync('src/components/MobileErpMenu.tsx', 'utf8');
 
 test('desktop renders the shared ERP menu catalog and uses canonical selection', () => {
-  assert.ok(desktop.includes('MOBILE_ERP_MENU_ITEMS.map(item =>'));
+  assert.ok(desktop.includes('MOBILE_ERP_MENU_ITEMS.filter(item => erpAccessRole && canStoreRoleAccessErpMenuItem(erpAccessRole, item.id)).map(item =>'));
   assert.ok(desktop.includes('commitMobileErpMenuSelection(item.id'));
   assert.ok(desktop.includes('data-kyrub-desktop-menu-item={item.id}'));
   assert.ok(!desktop.includes("{ id: 'gerencial', label: 'Gerencial'"));
 });
 
 test('production runtime exposes the canonical menu contract', () => {
-  assert.ok(runtime.includes("export { MOBILE_ERP_MENU_ITEMS, commitMobileErpMenuSelection } from './MobileErpMenu'"));
+  assert.ok(runtime.includes("export { MOBILE_ERP_MENU_ITEMS, canStoreRoleAccessErpMenuItem, commitMobileErpMenuSelection } from './MobileErpMenu'"));
 });
 
 test('shared catalog covers key management and operational destinations', () => {
