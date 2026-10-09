@@ -82,6 +82,7 @@ import { PerfilTab } from './components/tabs/PerfilTab';
 import { RendaTab } from './components/tabs/RendaTab';
 import { KyrubTab } from './components/tabs/KyrubTab';
 import { MobileErpMenu } from './components/MobileErpMenu';
+import { getPlanCenterUrl } from './utils/planCenter';
 
 // Import helper functions
 import { getDistance, formatWhatsApp, formatCpf, formatCnpj } from './utils/helpers';
