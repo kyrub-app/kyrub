@@ -59,3 +59,13 @@ test('canonical account header is compact and profile is not hidden by workspace
   assert.ok(!workspace.includes('#app-header #header-user-profile-trigger {\n          display: none !important;'));
   assert.ok(!legacy.includes('id="toggle-balance-visibility-btn"'));
 });
+
+test('marketplace shortcut uses a single cancellable pending navigation frame', () => {
+  assert.ok(workspace.includes('const pendingKyrubActivationFrame = useRef<number | null>(null)'));
+  assert.ok(workspace.includes('pendingKyrubActivationFrame.current !== null'));
+  assert.ok(workspace.includes('window.cancelAnimationFrame(pendingKyrubActivationFrame.current)'));
+  assert.ok(workspace.includes('pendingKyrubActivationAttempts.current >= 24'));
+  assert.ok(workspace.includes('clearPendingKyrubActivation();\n      observer.disconnect();'));
+  assert.ok(workspace.includes('schedulePendingKyrubActivation();'));
+  assert.ok(!workspace.includes('activatePendingKyrubDestination(attempt + 1)'));
+});
