@@ -23,5 +23,6 @@ test('both payment entrypoints enforce the shared authorization before writes or
     assert.match(service, /actorUserId, legacyStoreId: request\.storeId, canonicalStoreId: storeContext\.canonicalStoreId/);
   }
   assert.ok(intent.indexOf('await canCreateLocalStorePayment(') < intent.indexOf('adminDb.runTransaction('));
-  assert.ok(pix.indexOf('await canCreateLocalStorePayment(') < pix.indexOf('adminDb.runTransaction('));
+  const pixAttach = pix.slice(pix.indexOf('export const attachStoreOwnedPixToLocalIntent'));
+  assert.ok(pixAttach.indexOf('await canCreateLocalStorePayment(') < pixAttach.indexOf('adminDb.runTransaction('));
 });
