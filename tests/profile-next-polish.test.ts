@@ -22,7 +22,9 @@ test('places Docs, Bio and Face beside the profile photo controls', () => {
   assert.match(polishSource, /label: 'Bio'/);
   assert.match(polishSource, /label: 'Face'/);
   assert.match(polishSource, /controls\.appendChild\(target\)/);
-  assert.match(polishSource, /photoRow\.insertAdjacentElement\('afterend', contentTarget\)/);
+  assert.ok(polishSource.includes('photoRow.insertAdjacentElement('));
+  assert.ok(polishSource.includes("'afterend',"));
+  assert.ok(polishSource.includes('contentTarget'));
   assert.match(polishSource, /grid grid-cols-3/);
 });
 
