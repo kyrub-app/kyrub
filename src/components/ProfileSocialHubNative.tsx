@@ -513,8 +513,10 @@ export function ProfileSocialHubNative() {
   }, []);
 
   useEffect(() => {
-    const handlePersonalPageRequest = () => {
-      setActiveTab('publications');
+    const handlePersonalPageRequest = (event: Event) => {
+      const requestedSection =
+        event instanceof CustomEvent ? (event.detail as { section?: unknown } | null)?.section : null;
+      setActiveTab(requestedSection === 'square' ? 'square' : 'publications');
       setOpen(true);
     };
     const handlePersonalPageCloseRequest = () => {
