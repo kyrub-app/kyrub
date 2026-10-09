@@ -1357,7 +1357,8 @@ if (newMomentPublishToPraca) {
           {/* One React-owned header: no portal hosts or delegated header controls. */}
           <AppHeader
             profilePhotoUrl={profilePhotoUrl}
-            activeSection={activeTab}
+            marketplaceActive={activeTab === 'kyrub' && socialSubTab === 'lojas'}
+            notesActive={activeTab === 'perfil'}
             onLogout={async () => {
               try {
                 await signOut(auth);
