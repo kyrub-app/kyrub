@@ -138,8 +138,20 @@ export function WorkspacePrimaryNavigationBridge() {
   const allowLegacyNotesClick = useRef(false);
   const allowHeaderDiscoveryClick = useRef(false);
   const pendingKyrubDestination = useRef<KyrubDestination | null>(null);
+  const pendingKyrubActivationFrame = useRef<number | null>(null);
+  const pendingKyrubActivationAttempts = useRef(0);
 
-  const activatePendingKyrubDestination = (attempt = 0): void => {
+  const clearPendingKyrubActivation = (): void => {
+    pendingKyrubDestination.current = null;
+    pendingKyrubActivationAttempts.current = 0;
+    if (pendingKyrubActivationFrame.current !== null) {
+      window.cancelAnimationFrame(pendingKyrubActivationFrame.current);
+      pendingKyrubActivationFrame.current = null;
+    }
+  };
+
+  const activatePendingKyrubDestination = (): void => {
+    pendingKyrubActivationFrame.current = null;
     const pending = pendingKyrubDestination.current;
     if (!pending) return;
 
@@ -154,21 +166,35 @@ export function WorkspacePrimaryNavigationBridge() {
       );
 
       if (target instanceof HTMLButtonElement) {
-        pendingKyrubDestination.current = null;
+        clearPendingKyrubActivation();
         target.click();
         window.scrollTo({ top: 0, behavior: 'smooth' });
         return;
       }
     }
 
-    if (attempt >= 24) return;
-    window.requestAnimationFrame(() =>
-      activatePendingKyrubDestination(attempt + 1)
+    pendingKyrubActivationAttempts.current += 1;
+    if (pendingKyrubActivationAttempts.current >= 24) {
+      clearPendingKyrubActivation();
+      setDiscoveryActive(null);
+      findPrimaryBottomNav()?.removeAttribute(DISCOVERY_ACTIVE_ATTRIBUTE);
+      return;
+    }
+    schedulePendingKyrubActivation();
+  };
+
+  const schedulePendingKyrubActivation = (): void => {
+    if (
+      !pendingKyrubDestination.current ||
+      pendingKyrubActivationFrame.current !== null
+    ) return;
+    pendingKyrubActivationFrame.current = window.requestAnimationFrame(
+      activatePendingKyrubDestination
     );
   };
 
   const clearDiscoveryNavigation = (): void => {
-    pendingKyrubDestination.current = null;
+    clearPendingKyrubActivation();
     setDiscoveryActive(null);
     findPrimaryBottomNav()?.removeAttribute(DISCOVERY_ACTIVE_ATTRIBUTE);
   };
@@ -241,9 +267,7 @@ export function WorkspacePrimaryNavigationBridge() {
         notificationHost.style.paddingLeft = '0';
       }
 
-      if (pendingKyrubDestination.current) {
-        activatePendingKyrubDestination();
-      }
+      schedulePendingKyrubActivation();
     };
 
     const handleDocumentClick = (event: MouseEvent): void => {
@@ -299,6 +323,7 @@ export function WorkspacePrimaryNavigationBridge() {
 
     return () => {
       cancelled = true;
+      clearPendingKyrubActivation();
       observer.disconnect();
       window.removeEventListener('resize', synchronize);
       document.removeEventListener('click', handleDocumentClick, true);
@@ -363,6 +388,7 @@ export function WorkspacePrimaryNavigationBridge() {
     nav?.setAttribute(DISCOVERY_ACTIVE_ATTRIBUTE, destination);
     setDiscoveryActive(destination);
     pendingKyrubDestination.current = destination;
+    pendingKyrubActivationAttempts.current = 0;
 
     const kyrubButton = findKyrubButton();
     if (!kyrubButton) {
@@ -377,7 +403,7 @@ export function WorkspacePrimaryNavigationBridge() {
       allowHeaderDiscoveryClick.current = false;
     }
 
-    window.requestAnimationFrame(() => activatePendingKyrubDestination());
+    schedulePendingKyrubActivation();
   };
 
   const compactShortcutClassName =
