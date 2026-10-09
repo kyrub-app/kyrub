@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
+import { hasStorePermission, parseStoreMember } from '../src/utils/storeSecurity';
 
 const authorization = readFileSync('server/attendance/localPaymentAuthorization.ts', 'utf8');
 const intent = readFileSync('server/attendance/localPaymentIntentService.ts', 'utf8');
@@ -25,4 +26,24 @@ test('both payment entrypoints enforce the shared authorization before writes or
   assert.ok(intent.indexOf('await canCreateLocalStorePayment(') < intent.indexOf('adminDb.runTransaction('));
   const pixAttach = pix.slice(pix.indexOf('export const attachStoreOwnedPixToLocalIntent'));
   assert.ok(pixAttach.indexOf('await canCreateLocalStorePayment(') < pixAttach.indexOf('adminDb.runTransaction('));
+});
+
+
+test('payment permission matrix rejects suspended, removed, cross-store and production membership', () => {
+  const eligibleRoles = ['owner', 'manager', 'cashier', 'seller'] as const;
+  for (const role of eligibleRoles) {
+    const member = parseStoreMember({ storeId: 'canonical-a', userId: 'staff-a', role, status: 'active' });
+    assert.ok(member && member.status === 'active' && hasStorePermission(member.role, 'payments.create'));
+  }
+  const production = parseStoreMember({ storeId: 'canonical-a', userId: 'staff-a', role: 'production', status: 'active' });
+  assert.ok(production && !hasStorePermission(production.role, 'payments.create'));
+  for (const status of ['invited', 'suspended', 'removed'] as const) {
+    const member = parseStoreMember({ storeId: 'canonical-a', userId: 'staff-a', role: 'cashier', status });
+    assert.ok(member && member.status !== 'active');
+  }
+  const crossStore = parseStoreMember({ storeId: 'canonical-b', userId: 'staff-a', role: 'cashier', status: 'active' });
+  assert.ok(crossStore && crossStore.storeId !== 'canonical-a');
+  const crossUser = parseStoreMember({ storeId: 'canonical-a', userId: 'staff-b', role: 'cashier', status: 'active' });
+  assert.ok(crossUser && crossUser.userId !== 'staff-a');
+  assert.equal(parseStoreMember({ storeId: 'canonical-a', userId: 'staff-a', role: 'administrator', status: 'active' }), null);
 });
