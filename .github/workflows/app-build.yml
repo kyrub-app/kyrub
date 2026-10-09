@@ -31,6 +31,9 @@ jobs:
       - name: Validate canonical header composition contract
         run: node --test --import tsx tests/header-composition-contract.test.ts tests/workspace-primary-navigation.test.ts tests/profile-dom-containment.test.ts tests/profile-next-polish.test.ts >> build.log 2>&1
 
+      - name: Validate canonical Staff and ERP role boundaries
+        run: node --test --import tsx tests/staff-fixed-homologation-contract.test.ts >> build.log 2>&1
+
       - name: Validate fiscal production foundation
         run: node --test --test-concurrency=1 --import tsx tests/fiscal-production-authorization.test.ts tests/fiscal-production-authorization-registry.test.ts tests/fiscal-production-execution-prerequisites.test.ts tests/fiscal-production-executor-foundation.test.ts tests/fiscal-production-attempt-ledger-contract.test.ts tests/fiscal-production-outcome.test.ts tests/fiscal-production-outcome-ledger-contract.test.ts tests/focus-nfce-production-transport.test.ts tests/fiscal-production-focus-orchestrator.test.ts >> build.log 2>&1
 
