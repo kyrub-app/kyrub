@@ -4,7 +4,8 @@ import { UserNotificationCenter } from './UserNotificationCenter';
 
 interface AppHeaderProps {
   profilePhotoUrl: string;
-  activeSection: 'perfil' | 'renda' | 'kyrub';
+  marketplaceActive: boolean;
+  notesActive: boolean;
   onLogout: () => void | Promise<void>;
   onProfile: () => void;
   onMarketplace: () => void;
@@ -18,7 +19,8 @@ const controlClassName =
 
 export function AppHeader({
   profilePhotoUrl,
-  activeSection,
+  marketplaceActive,
+  notesActive,
   onLogout,
   onProfile,
   onMarketplace,
@@ -68,7 +70,7 @@ export function AppHeader({
         id="header-marketplace-trigger"
         title="Marketplace"
         aria-label="Abrir Marketplace"
-        aria-pressed={activeSection === 'kyrub'}
+        aria-pressed={marketplaceActive}
         onClick={() => navigate(onMarketplace)}
       >
         <StoreIcon className="h-4 w-4" />
@@ -89,7 +91,7 @@ export function AppHeader({
         id="header-notes-trigger"
         title="Notas"
         aria-label="Abrir Notas"
-        aria-pressed={activeSection === 'perfil'}
+        aria-pressed={notesActive}
         onClick={() => navigate(onNotes)}
       >
         <CheckSquare className="h-4 w-4" />
