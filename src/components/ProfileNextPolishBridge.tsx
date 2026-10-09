@@ -12,7 +12,6 @@ import {
   FileBadge,
   Fingerprint,
   Rocket,
-  UserRound,
 } from 'lucide-react';
 import { ProfileCampaignManager } from './ProfileCampaignManager';
 
@@ -43,8 +42,6 @@ const buttonWithText = (
 
 export function ProfileNextPolishBridge() {
   const [squareTarget, setSquareTarget] =
-    useState<HTMLElement | null>(null);
-  const [personalPageHeaderTarget, setPersonalPageHeaderTarget] =
     useState<HTMLElement | null>(null);
   const [secureTarget, setSecureTarget] =
     useState<HTMLElement | null>(null);
@@ -122,24 +119,6 @@ export function ProfileNextPolishBridge() {
 
       setSquareTarget(current =>
         sameTarget(current, nextSquareTarget)
-      );
-
-      const appHeader = document.getElementById('app-header');
-      const headerActions = appHeader?.lastElementChild as HTMLElement | null;
-      let nextPersonalPageHeaderTarget: HTMLElement | null = null;
-      if (headerActions) {
-        let target = headerActions.querySelector<HTMLElement>(
-          '[data-personal-page-header-slot="true"]'
-        );
-        if (!target) {
-          target = document.createElement('div');
-          target.dataset.personalPageHeaderSlot = 'true';
-          headerActions.insertAdjacentElement('afterbegin', target);
-        }
-        nextPersonalPageHeaderTarget = target;
-      }
-      setPersonalPageHeaderTarget(current =>
-        sameTarget(current, nextPersonalPageHeaderTarget)
       );
 
       const editCloseButton =
@@ -297,7 +276,7 @@ export function ProfileNextPolishBridge() {
       window.clearInterval(timer);
       document
         .querySelectorAll<HTMLElement>(
-          '[data-profile-square-shortcut-slot="true"], [data-personal-page-header-slot="true"], [data-profile-secure-shortcuts-slot="true"], [data-profile-metrics-sponsor-slot="true"], [data-profile-sponsored-list-slot="true"]'
+          '[data-profile-square-shortcut-slot="true"], [data-profile-secure-shortcuts-slot="true"], [data-profile-metrics-sponsor-slot="true"], [data-profile-sponsored-list-slot="true"]'
         )
         .forEach(target => target.remove());
     };
@@ -311,27 +290,6 @@ export function ProfileNextPolishBridge() {
 
   return (
     <>
-      {personalPageHeaderTarget &&
-        createPortal(
-          <button
-            type="button"
-            onClick={() => {
-              const trigger = document.getElementById('header-user-profile-trigger');
-              if (trigger instanceof HTMLButtonElement) {
-                trigger.click();
-                return;
-              }
-              window.dispatchEvent(new CustomEvent('kyrub-personal-page-open-requested'));
-            }}
-            className="flex h-11 w-11 items-center justify-center rounded-2xl border border-slate-700 bg-slate-900 text-slate-400 transition-colors hover:border-orange-500/50 hover:text-orange-400"
-            aria-label="Abrir minha página"
-            title="Minha página"
-          >
-            <UserRound className="h-5 w-5" />
-          </button>,
-          personalPageHeaderTarget
-        )}
-
       {squareTarget &&
         createPortal(
           <button
