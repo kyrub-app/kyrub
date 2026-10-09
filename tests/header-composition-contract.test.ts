@@ -62,11 +62,14 @@ test('profile ownership is explicit instead of capturing header clicks', () => {
   assert.match(profile, /window\.addEventListener\('kyrub-personal-page-open-requested'/);
   assert.match(profile, /window\.addEventListener\('kyrub-personal-page-close-requested'/);
   assert.doesNotMatch(profile, /closest\('#header-user-profile-trigger'\)/);
+  assert.match(profile, /requestedSection === 'square' \? 'square' : 'publications'/);
 });
 
 test('the bottom navigation stays functional but cannot own header elements or styles', () => {
   assert.match(bottomNav, /data-kyrub-primary-workspace-nav/);
-  assert.match(bottomNav, /activateProfileSquare/);
+  assert.match(bottomNav, /new CustomEvent\('kyrub-personal-page-open-requested'/);
+  assert.match(bottomNav, /detail: \{ section: 'square' \}/);
+  assert.doesNotMatch(bottomNav, /activateProfileSquare|requestAnimationFrame|squareButton\.click/);
   assert.match(bottomNav, /observer\.disconnect\(\)/);
   assert.match(bottomNav, /document\.removeEventListener\('click', handleBottomNavigationClick, true\)/);
   assert.doesNotMatch(bottomNav, /createPortal|workspace-discovery-shortcuts-host|workspace-notes-shortcut-host/);
