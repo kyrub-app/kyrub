@@ -290,7 +290,7 @@ describe('Kyrub public and operational routes', () => {
       'utf8'
     );
     const notificationCenterSource = readFileSync(
-      'src/components/UserNotificationCenterBridge.tsx',
+      'src/components/UserNotificationCenter.tsx',
       'utf8'
     );
     const storeChatSource = readFileSync(
