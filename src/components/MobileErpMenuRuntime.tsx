@@ -187,3 +187,5 @@ export function MobileErpMenu({
     </div>
   );
 }
+
+export { MOBILE_ERP_MENU_ITEMS, commitMobileErpMenuSelection } from './MobileErpMenu';
