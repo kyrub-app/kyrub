@@ -1534,7 +1534,7 @@ if (newMomentPublishToPraca) {
                 <div className="hidden sm:flex items-center gap-1.5 overflow-x-auto whitespace-nowrap scrollbar-none flex-1 px-2" id="erp-tab-navigation-header">
                   {MOBILE_ERP_MENU_ITEMS.map(item => {
                     const Icon = item.icon;
-                    const isSelected = item.id === activeSubTab;
+                    const isSelected = item.id === activeSubTab; // Operational tabs are selected locally; management modules navigate through the canonical event bridge.
                     return (
                       <button
                         key={item.id}
