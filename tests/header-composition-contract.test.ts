@@ -95,3 +95,27 @@ test('remaining active profile bridges cannot inject a second header button', ()
   assert.match(legacy, /window\.addEventListener\('kyrub-profile-identity-updated'/);
   assert.match(legacy, /detail\.uid !== auth\.currentUser\?\.uid/);
 });
+
+test('production visual parity keeps native shortcut order and branded profile fallback', () => {
+  const shortcutSequence = [
+    'aria-label="Sair"',
+    'id="header-user-profile-trigger"',
+    'id="header-marketplace-trigger"',
+    'id="header-notes-trigger"',
+    'id="header-wallet-balance"',
+    'data-header-notifications-slot="true"',
+  ];
+  const positions = shortcutSequence.map(needle => header.indexOf(needle));
+  assert.ok(positions.every(position => position >= 0), 'every production shortcut exists');
+  assert.ok(positions.every((position, index) => index === 0 || position > positions[index - 1]),
+    'header shortcuts follow the production mobile order');
+  assert.ok(header.includes('mr-auto hover:text-red-400'), 'logout is separated from primary shortcuts');
+  assert.ok(header.includes('ml-auto shrink-0'), 'notification bell aligns independently at the far right');
+  assert.ok(header.includes("'/kyrub-logo.svg'"), 'empty or failed profile photo uses the official Kyrub brand');
+  assert.ok(header.includes('failedPhotoUrl !== profilePhotoUrl'), 'invalid profile photos fall back without a legacy DOM patch');
+  const officialLogo = readFileSync('public/kyrub-logo.svg', 'utf8');
+  assert.ok(officialLogo.includes('<title id="title">Kyrub</title>'));
+  assert.doesNotMatch(header, /createPortal|MutationObserver|appendChild/);
+  assert.doesNotMatch(bottomNav, /header-user-profile-trigger|header-marketplace-trigger|header-notes-trigger/);
+  assert.ok(notifications.includes('max-[390px]:h-9 max-[390px]:w-9'));
+});

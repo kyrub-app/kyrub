@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { CheckSquare, LogOut, Store as StoreIcon, User, Wallet } from 'lucide-react';
+import { CheckSquare, LogOut, Store as StoreIcon, Wallet } from 'lucide-react';
 import { UserNotificationCenter } from './UserNotificationCenter';
 
 interface AppHeaderProps {
@@ -29,6 +29,7 @@ export function AppHeader({
   onNotificationsOpen,
 }: AppHeaderProps) {
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [failedPhotoUrl, setFailedPhotoUrl] = useState<string | null>(null);
 
   const navigate = (action: () => void): void => {
     setNotificationsOpen(false);
@@ -58,11 +59,16 @@ export function AppHeader({
         aria-label="Abrir meu perfil"
         onClick={() => navigate(onProfile)}
       >
-        {profilePhotoUrl ? (
-          <img src={profilePhotoUrl} alt="" className="h-full w-full object-cover" />
-        ) : (
-          <User className="h-4 w-4" />
-        )}
+        <img
+          src={profilePhotoUrl && failedPhotoUrl !== profilePhotoUrl ? profilePhotoUrl : '/kyrub-logo.svg'}
+          alt=""
+          onError={() => {
+            if (profilePhotoUrl && failedPhotoUrl !== profilePhotoUrl) {
+              setFailedPhotoUrl(profilePhotoUrl);
+            }
+          }}
+          className="h-full w-full object-cover"
+        />
       </button>
       <button
         type="button"
@@ -77,16 +83,6 @@ export function AppHeader({
       </button>
       <button
         type="button"
-        className={`${controlClassName} text-teal-400 hover:text-teal-300`}
-        id="header-wallet-balance"
-        title="Abrir Carteira"
-        aria-label="Abrir Carteira"
-        onClick={() => navigate(onWallet)}
-      >
-        <Wallet className="h-4 w-4" />
-      </button>
-      <button
-        type="button"
         className={controlClassName}
         id="header-notes-trigger"
         title="Notas"
@@ -96,13 +92,25 @@ export function AppHeader({
       >
         <CheckSquare className="h-4 w-4" />
       </button>
-      <UserNotificationCenter
-        open={notificationsOpen}
-        onOpenChange={value => {
-          setNotificationsOpen(value);
-          if (value) onNotificationsOpen();
-        }}
-      />
+      <button
+        type="button"
+        className={`${controlClassName} text-teal-400 hover:text-teal-300`}
+        id="header-wallet-balance"
+        title="Abrir Carteira"
+        aria-label="Abrir Carteira"
+        onClick={() => navigate(onWallet)}
+      >
+        <Wallet className="h-4 w-4" />
+      </button>
+      <div className="ml-auto shrink-0" data-header-notifications-slot="true">
+        <UserNotificationCenter
+          open={notificationsOpen}
+          onOpenChange={value => {
+            setNotificationsOpen(value);
+            if (value) onNotificationsOpen();
+          }}
+        />
+      </div>
     </header>
   );
 }

@@ -239,7 +239,7 @@ export function UserNotificationCenter({ open, onOpenChange }: UserNotificationC
     <button
       type="button"
       onClick={() => onOpenChange(!open)}
-      className="relative flex h-10 w-10 items-center justify-center rounded-xl border border-slate-800 bg-slate-900 text-slate-400 transition-colors hover:border-orange-500/40 hover:text-orange-300"
+      className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-800 bg-slate-900 text-slate-400 transition-colors hover:border-orange-500/40 hover:text-orange-300 max-[390px]:h-9 max-[390px]:w-9"
       aria-label={unreadCount > 0 ? `Notificações, ${unreadCount} não lidas` : 'Notificações'}
       aria-expanded={open}
       id="canonical-notification-trigger"
