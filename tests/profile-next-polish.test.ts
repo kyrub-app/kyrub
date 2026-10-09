@@ -8,13 +8,11 @@ const polishSource = readFileSync(
   'utf8'
 );
 
-test('moves Praça from the duplicated tab row into the profile header actions', () => {
-  assert.match(mainSource, /<ProfileNextPolishBridge\s*\/?>/);
-  assert.match(polishSource, /aria-label="Abrir Praça"/);
-  assert.match(polishSource, /profile-square-shortcut-slot/);
-  assert.match(polishSource, /buttonWithText\(profileNavigation, 'Praça'\)/);
-  assert.match(polishSource, /squareButton\.style\.display = 'none'/);
-  assert.match(polishSource, /repeat\(3, minmax\(0, 1fr\)\)/);
+test('polish never injects duplicate header controls', () => {
+  assert.match(mainSource, /<ProfileNextPolishBridge\\s*\\/?>/);
+  assert.doesNotMatch(polishSource, /personalPageHeaderTarget|personal-page-header-slot/);
+  assert.doesNotMatch(polishSource, /getElementById\\('app-header'\\)/);
+  assert.doesNotMatch(polishSource, /header-user-profile-trigger/);
 });
 
 test('places Docs, Bio and Face beside the profile photo controls', () => {
