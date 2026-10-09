@@ -8,13 +8,12 @@ const polishSource = readFileSync(
   'utf8'
 );
 
-test('moves Praça from the duplicated tab row into the profile header actions', () => {
-  assert.match(mainSource, /<ProfileNextPolishBridge\s*\/?>/);
-  assert.match(polishSource, /aria-label="Abrir Praça"/);
-  assert.match(polishSource, /profile-square-shortcut-slot/);
-  assert.match(polishSource, /buttonWithText\(profileNavigation, 'Praça'\)/);
-  assert.match(polishSource, /squareButton\.style\.display = 'none'/);
-  assert.match(polishSource, /repeat\(3, minmax\(0, 1fr\)\)/);
+test('polish never injects duplicate header controls', () => {
+  assert.ok(mainSource.includes('<ProfileNextPolishBridge />'));
+  assert.ok(!polishSource.includes('personalPageHeaderTarget'));
+  assert.ok(!polishSource.includes('personal-page-header-slot'));
+  assert.ok(!polishSource.includes("getElementById('app-header')"));
+  assert.ok(!polishSource.includes('header-user-profile-trigger'));
 });
 
 test('places Docs, Bio and Face beside the profile photo controls', () => {
@@ -23,7 +22,9 @@ test('places Docs, Bio and Face beside the profile photo controls', () => {
   assert.match(polishSource, /label: 'Bio'/);
   assert.match(polishSource, /label: 'Face'/);
   assert.match(polishSource, /controls\.appendChild\(target\)/);
-  assert.match(polishSource, /photoRow\.insertAdjacentElement\('afterend', contentTarget\)/);
+  assert.ok(polishSource.includes('photoRow.insertAdjacentElement('));
+  assert.ok(polishSource.includes("'afterend',"));
+  assert.ok(polishSource.includes('contentTarget'));
   assert.match(polishSource, /grid grid-cols-3/);
 });
 

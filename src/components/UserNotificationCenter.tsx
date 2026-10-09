@@ -83,10 +83,13 @@ const showBrowserNotification = (
   };
 };
 
-export function UserNotificationCenterBridge() {
+interface UserNotificationCenterProps {
+  open: boolean;
+  onOpenChange: (value: boolean) => void;
+}
+
+export function UserNotificationCenter({ open, onOpenChange }: UserNotificationCenterProps) {
   const [user, setUser] = useState<User | null>(auth.currentUser);
-  const [host, setHost] = useState<HTMLElement | null>(null);
-  const [open, setOpen] = useState(false);
   const [preferencesOpen, setPreferencesOpen] = useState(false);
   const [preferences, setPreferences] = useState<UserCommunicationPreferences | null>(null);
   const [notifications, setNotifications] = useState<UserNotification[]>([]);
@@ -123,38 +126,6 @@ export function UserNotificationCenterBridge() {
       cancelled = true;
     };
   }, [user]);
-
-  useEffect(() => {
-    let cancelled = false;
-    let currentHost: HTMLDivElement | null = null;
-
-    const synchronize = (): void => {
-      if (cancelled) return;
-      const header = document.getElementById('app-header');
-      if (!(header instanceof HTMLElement)) {
-        currentHost?.remove();
-        currentHost = null;
-        setHost(null);
-        return;
-      }
-      if (currentHost?.isConnected) return;
-      currentHost = document.createElement('div');
-      currentHost.id = 'user-notification-center-host';
-      currentHost.className = 'ml-auto flex shrink-0 items-center pl-2';
-      header.appendChild(currentHost);
-      setHost(currentHost);
-    };
-
-    synchronize();
-    const observer = new MutationObserver(synchronize);
-    observer.observe(document.body, { childList: true, subtree: true });
-    return () => {
-      cancelled = true;
-      observer.disconnect();
-      currentHost?.remove();
-      setHost(null);
-    };
-  }, []);
 
   const refresh = useCallback(async (silent = false): Promise<void> => {
     if (!user) {
@@ -242,7 +213,7 @@ export function UserNotificationCenterBridge() {
     }
 
     if (user && openNotificationTarget(notification, user)) {
-      setOpen(false);
+      onOpenChange(false);
     }
   };
 
@@ -262,12 +233,12 @@ export function UserNotificationCenterBridge() {
     }
   };
 
-  if (!user || !host || !effectivePreferences) return null;
+  if (!user || !effectivePreferences) return null;
 
-  const trigger = createPortal(
+  const trigger = (
     <button
       type="button"
-      onClick={() => setOpen(current => !current)}
+      onClick={() => onOpenChange(!open)}
       className="relative flex h-10 w-10 items-center justify-center rounded-xl border border-slate-800 bg-slate-900 text-slate-400 transition-colors hover:border-orange-500/40 hover:text-orange-300"
       aria-label={unreadCount > 0 ? `Notificações, ${unreadCount} não lidas` : 'Notificações'}
       aria-expanded={open}
@@ -279,13 +250,12 @@ export function UserNotificationCenterBridge() {
           {unreadCount > 99 ? '99+' : unreadCount}
         </span>
       )}
-    </button>,
-    host
+    </button>
   );
 
   const panel = open
     ? createPortal(
-        <div className="fixed inset-0 z-[215] bg-slate-950/70 backdrop-blur-sm sm:bg-transparent sm:backdrop-blur-none" onClick={() => setOpen(false)}>
+        <div className="fixed inset-0 z-[215] bg-slate-950/70 backdrop-blur-sm sm:bg-transparent sm:backdrop-blur-none" onClick={() => onOpenChange(false)}>
           <section
             className="absolute inset-x-2 top-[max(4.5rem,env(safe-area-inset-top))] max-h-[78dvh] overflow-hidden rounded-3xl border border-slate-800 bg-slate-950 shadow-2xl sm:inset-x-auto sm:right-4 sm:top-16 sm:w-[min(26rem,calc(100vw-2rem))]"
             role="dialog"
@@ -304,7 +274,7 @@ export function UserNotificationCenterBridge() {
                 <button
                   type="button"
                   onClick={() => {
-                    setOpen(false);
+                    onOpenChange(false);
                     setPreferencesOpen(true);
                   }}
                   className="flex h-8 w-8 items-center justify-center rounded-xl border border-slate-800 text-slate-500 hover:text-orange-300"
@@ -331,7 +301,7 @@ export function UserNotificationCenterBridge() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setOpen(false)}
+                  onClick={() => onOpenChange(false)}
                   className="flex h-8 w-8 items-center justify-center rounded-xl border border-slate-800 text-slate-500 hover:text-white"
                   aria-label="Fechar notificações"
                 >

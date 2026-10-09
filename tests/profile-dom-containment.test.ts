@@ -22,7 +22,8 @@ describe('profile DOM containment', () => {
     assert.doesNotMatch(appSource, /ProfileConnectedCardOrganizationBridge/);
     assert.doesNotMatch(appSource, /ProfileSocialPostActionsBridge/);
     assert.doesNotMatch(nativeProfileSource, /MutationObserver/);
-    assert.match(nativeProfileSource, /document\.addEventListener\('click'/);
-    assert.match(nativeProfileSource, /#header-user-profile-trigger/);
+    assert.match(nativeProfileSource, /window\.addEventListener\('kyrub-personal-page-open-requested'/);
+    assert.match(nativeProfileSource, /window\.addEventListener\('kyrub-personal-page-close-requested'/);
+    assert.doesNotMatch(nativeProfileSource, /closest\('#header-user-profile-trigger'\)/);
   });
 });

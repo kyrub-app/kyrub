@@ -50,6 +50,7 @@ import {
   LayoutGrid
 } from 'lucide-react';
 import { Tenant, Store, Product, Order, CartItem, Note, Friend, SocialPost, DeliveryJob, FreelanceJob, type UserStoreDocument } from './types';
+import { AppHeader } from './components/AppHeader';
 
 // Import our modular sub-panels
 import { AdminPanel } from './components/AdminPanel';
@@ -496,6 +497,29 @@ export default function App() {
   const [profileName, setProfileName] = useState('');
   const [profileEmail, setProfileEmail] = useState('');
   const [profilePhotoUrl, setProfilePhotoUrl] = useState('');
+  // Profile identity is passed through React state, never patched into the header DOM.
+  useEffect(() => {
+    const handleIdentityUpdated = (event: Event): void => {
+      const detail = (event as CustomEvent<{
+        uid?: unknown;
+        name?: unknown;
+        photoUrl?: unknown;
+      }>).detail;
+      if (!detail || detail.uid !== auth.currentUser?.uid) return;
+      if (typeof detail.name === 'string' && detail.name.trim()) {
+        setProfileName(current => current === detail.name ? current : detail.name as string);
+      }
+      if (typeof detail.photoUrl === 'string') {
+        setProfilePhotoUrl(current =>
+          current === detail.photoUrl ? current : detail.photoUrl as string
+        );
+      }
+    };
+    window.addEventListener('kyrub-profile-identity-updated', handleIdentityUpdated);
+    return () =>
+      window.removeEventListener('kyrub-profile-identity-updated', handleIdentityUpdated);
+  }, []);
+
   const [accountTypeCliente, setAccountTypeCliente] = useState(false);
   const [accountTypeEntregador, setAccountTypeEntregador] = useState(false);
   const [accountTypeLojista, setAccountTypeLojista] = useState(false);
@@ -789,9 +813,32 @@ export default function App() {
         setAuthenticatedUserId(user.uid);
         setUserStore(null);
         setStores([]);
-        setProfileName(user.displayName ?? '');
+        // The public profile recovery bridge caches the authoritative display identity.
+        // Apply the same cache through state at login even if its event fired earlier.
+        let cachedProfileIdentity: Record<string, unknown> | null = null;
+        try {
+          const cached = JSON.parse(
+            localStorage.getItem(`kyrub_profile_identity_v1:${user.uid}`) ?? 'null'
+          ) as unknown;
+          if (cached && typeof cached === 'object' && !Array.isArray(cached)) {
+            cachedProfileIdentity = cached as Record<string, unknown>;
+          }
+        } catch {
+          // Fall back to Firebase Auth metadata.
+        }
+        const cachedName = cachedProfileIdentity?.name;
+        const cachedPhoto = cachedProfileIdentity?.photoUrl;
+        setProfileName(
+          typeof cachedName === 'string' && cachedName.trim()
+            ? cachedName.trim()
+            : user.displayName ?? ''
+        );
         setProfileEmail(user.email ?? '');
-        setProfilePhotoUrl(user.photoURL ?? '');
+        setProfilePhotoUrl(
+          typeof cachedPhoto === 'string' && cachedPhoto.trim()
+            ? cachedPhoto.trim()
+            : user.photoURL ?? ''
+        );
 
         let cachedStore: Store | null = null;
         const cachedStoreValue = localStorage.getItem(
@@ -1307,70 +1354,49 @@ if (newMomentPublishToPraca) {
         /* REGISTERED LOGIN SCREEN WORKSPACE */
         <div className="flex-1 flex flex-col min-h-screen">
 
-          {/* 1. TOP MOBILE NAV HEADER */}
-          <header className="border-b border-slate-900 bg-slate-950/90 backdrop-blur-md sticky top-0 z-40 px-4 py-3 flex items-center justify-between" id="app-header">
-            <button
-              onClick={() => setShowUserProfileModal(true)}
-              className="flex items-center gap-2.5 hover:opacity-90 transition-all text-left cursor-pointer focus:outline-none group"
-              id="header-user-profile-trigger"
-            >
-              <div className="relative">
-                <img
-                  src={profilePhotoUrl || undefined}
-                  alt={profileName}
-                  className="w-9 h-9 rounded-full object-cover border-2 border-orange-500/80 group-hover:border-orange-400 transition-colors"
-                />
-                <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-emerald-500 border-2 border-slate-950 rounded-full"></span>
-              </div>
-              <div>
-                <span className="font-mono text-[8px] tracking-wider text-orange-400 font-bold uppercase block">Meu Perfil ⚙️</span>
-                <h1 className="text-xs font-black text-white uppercase tracking-tight flex items-center gap-1 group-hover:text-orange-300 transition-colors">
-                  <span>{profileName.split(' ')[0]}</span>
-                </h1>
-              </div>
-            </button>
-
-            <div className="flex items-center gap-3">
-              {/* Wallet and account balance in Header for ease of use with privacy mask */}
-              <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-800 text-teal-400 font-mono text-[11px]" id="header-wallet-balance">
-                <button
-                  onClick={() => setIsWalletOpen(true)}
-                  className="flex items-center gap-1.5 hover:text-teal-300 transition-all font-mono"
-                  title="Abrir Carteira BaaS"
-                >
-                  <Wallet className="w-3.5 h-3.5 shrink-0" />
-                  <span>{showBalance ? `R$ ${walletBalance.toFixed(2)}` : 'R$ •••••'}</span>
-                </button>
-                <button
-                  onClick={() => setShowBalance(!showBalance)}
-                  className="text-slate-400 hover:text-slate-200 p-0.5 ml-0.5 transition-all flex items-center justify-center shrink-0"
-                  title={showBalance ? "Ocultar Saldo" : "Exibir Saldo"}
-                  id="toggle-balance-visibility-btn"
-                >
-                  {showBalance ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                </button>
-              </div>
-
-              <button
-                onClick={async () => {
-                  try {
-                    await signOut(auth);
-                    setIsLoggedIn(false);
-                    setGpsGranted(false);
-                    triggerToast('Você saiu do ecossistema Kyrub.', 'info');
-                  } catch (e) {
-                    console.error('Sign out error:', e);
-                    setIsLoggedIn(false);
-                    setGpsGranted(false);
-                  }
-                }}
-                className="p-2 rounded-xl bg-slate-900 border border-slate-800 text-slate-400 hover:text-red-400 transition-all"
-                title="Sair"
-              >
-                <LogOut className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          </header>
+          {/* One React-owned header: no portal hosts or delegated header controls. */}
+          <AppHeader
+            profilePhotoUrl={profilePhotoUrl}
+            marketplaceActive={activeTab === 'kyrub' && socialSubTab === 'lojas'}
+            notesActive={activeTab === 'perfil'}
+            onLogout={async () => {
+              try {
+                await signOut(auth);
+                setIsLoggedIn(false);
+                setGpsGranted(false);
+                triggerToast('Você saiu do ecossistema Kyrub.', 'info');
+              } catch (error) {
+                console.error('Sign out error:', error);
+                setIsLoggedIn(false);
+                setGpsGranted(false);
+              }
+            }}
+            onProfile={() => {
+              setIsWalletOpen(false);
+              window.dispatchEvent(new Event('kyrub-personal-page-open-requested'));
+            }}
+            onMarketplace={() => {
+              setIsWalletOpen(false);
+              window.dispatchEvent(new Event('kyrub-personal-page-close-requested'));
+              setSocialSubTab('lojas');
+              setActiveTab('kyrub');
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+            }}
+            onNotes={() => {
+              setIsWalletOpen(false);
+              window.dispatchEvent(new Event('kyrub-personal-page-close-requested'));
+              setActiveTab('perfil');
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+            }}
+            onWallet={() => {
+              window.dispatchEvent(new Event('kyrub-personal-page-close-requested'));
+              setIsWalletOpen(current => !current);
+            }}
+            onNotificationsOpen={() => {
+              window.dispatchEvent(new Event('kyrub-personal-page-close-requested'));
+              setIsWalletOpen(false);
+            }}
+          />
 
           {/* MAIN TAB CONTENT DISPLAY ROUTER */}
           <main className="flex-1 max-w-lg w-full mx-auto px-4 py-6 pb-24 relative space-y-6">
