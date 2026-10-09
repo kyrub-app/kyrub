@@ -21,7 +21,8 @@ test('workspace shortcuts do not duplicate IDs in the legacy header', () => {
 });
 
 test('activation bridge recognizes the same workspace shortcut destinations', () => {
-  assert.ok(activation.includes("'#header-praca-trigger, #header-marketplace-trigger'"));
+  assert.ok(activation.includes("target.closest('#header-praca-trigger')"));
+  assert.ok(!activation.includes("'#header-praca-trigger, #header-marketplace-trigger'"));
   assert.ok(workspace.includes("openKyrubDestination('marketplace')"));
   assert.ok(workspace.includes("id=\"header-marketplace-trigger\""));
 });
