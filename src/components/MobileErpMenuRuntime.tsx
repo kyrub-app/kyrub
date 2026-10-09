@@ -191,6 +191,4 @@ export function MobileErpMenu({
   );
 }
 
-export { canStoreRoleAccessErpMenuItem };
-
 export { MOBILE_ERP_MENU_ITEMS, canStoreRoleAccessErpMenuItem, commitMobileErpMenuSelection } from './MobileErpMenu';
