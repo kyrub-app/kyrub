@@ -1313,6 +1313,8 @@ if (newMomentPublishToPraca) {
               onClick={() => setShowUserProfileModal(true)}
               className="flex items-center gap-2.5 hover:opacity-90 transition-all text-left cursor-pointer focus:outline-none group"
               id="header-user-profile-trigger"
+              title="Meu perfil"
+              aria-label="Abrir meu perfil"
             >
               <div className="relative">
                 <img
@@ -1366,6 +1368,7 @@ if (newMomentPublishToPraca) {
                 }}
                 className="p-2 rounded-xl bg-slate-900 border border-slate-800 text-slate-400 hover:text-red-400 transition-all"
                 title="Sair"
+                aria-label="Sair"
               >
                 <LogOut className="w-3.5 h-3.5" />
               </button>
