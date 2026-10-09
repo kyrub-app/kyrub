@@ -241,9 +241,9 @@ export function HeaderDiscoveryShortcutActivationBridge() {
         return;
       }
 
-      const trigger = target.closest(
-        '#header-praca-trigger, #header-marketplace-trigger'
-      );
+      // Marketplace is owned by WorkspacePrimaryNavigationBridge. Do not
+      // intercept its React portal click with a document capture listener.
+      const trigger = target.closest('#header-praca-trigger');
       if (!(trigger instanceof HTMLButtonElement)) return;
 
       event.preventDefault();
