@@ -19,6 +19,7 @@ test('staff route has one authenticated membership authority and no demonstratio
   assert.match(staff, /Sem acesso operacional ativo/);
   assert.match(staff, /Entrar no ERP/);
   assert.match(app, /routeStaffAccess\.store\.id/);
+  assert.match(app, /const routeStaffAccess = staffAccesses\.find\(access => access\.store\.id === selectedStaffStoreId/);
   assert.match(app, /legacyTenantId/);
   assert.match(app, /onEnterErp=/);
   assert.doesNotMatch(staff, /staffOrders|staffProducts/);
@@ -29,8 +30,10 @@ test('staff session is live, revoked roles fail closed and logout cannot retain 
   assert.match(app, /\[authenticatedUserId, currentPath, staffErpSession\]/);
   assert.match(app, /selectedStaffAccess && authenticatedUserId && selectedStaffAccess\.status === 'active'/);
   assert.match(app, /setStaffErpSession\(false\);\s*setIsGestaoOpen\(false\);/);
-  assert.match(app, /selectedStaffStoreId\s*\?\s*selectedStaffAccess\?\.role/);
-  assert.match(app, /staffAccessLoading \|\| staffAccessError/);
+  assert.match(app, /const selectedStaffAccess = staffErpSession/);
+  assert.match(app, /staffAccesses\.find\(access => access\.store\.id === selectedStaffStoreId && access\.status === 'active'\)/);
+  assert.match(app, /const erpAccessRole = staffErpSession/);
+  assert.match(app, /setSelectedStaffStoreId\(''\)/);
   assert.match(app, /authenticatedUserId && userStore \? 'owner' : undefined/);
   assert.match(app, /isGestaoOpen && !\(gestaoRole === 'retailer' && !erpAccessRole\)/);
   assert.match(app, /onClosePanel=\{\(\) => \{ setIsGestaoOpen\(false\); setStaffErpSession\(false\); \}\}/);
