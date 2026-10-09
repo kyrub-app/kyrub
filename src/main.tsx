@@ -4,7 +4,6 @@ import App from './App.tsx';
 import { AppErrorBoundary } from './components/AppErrorBoundary';
 import { AdminMercadoPagoOAuthBridge } from './components/admin/AdminMercadoPagoOAuthBridge';
 import { GerencialIntegrationsNativeBridge } from './components/GerencialIntegrationsNativeBridge';
-import { HeaderDiscoveryShortcutActivationBridge } from './components/HeaderDiscoveryShortcutActivationBridge';
 import { KyrubAiConversationCloudSyncGate } from './components/KyrubAiConversationCloudSyncGate';
 import { KyrubiaMarketplaceFilterGuard } from './components/KyrubiaMarketplaceFilterGuard';
 import { OfficialKnowledgeSemanticSetupBridge } from './components/OfficialKnowledgeSemanticSetupBridge';
@@ -32,6 +31,7 @@ import './styles/responsive-product-cards.css';
 import './styles/catalog-category-tree.css';
 import './styles/profile-verification.css';
 import './styles/profile-header-layout.css';
+import './styles/workspace-navigation.css';
 import './styles/retired-gerencial-route.css';
 import './styles/kyrubia-chat-shell.css';
 import './styles/store-workspace-header-layer.css';
@@ -71,7 +71,6 @@ createRoot(rootElement).render(
           <App />
           <KyrubiaMarketplaceFilterGuard />
           <WorkspacePrimaryNavigationBridge />
-          <HeaderDiscoveryShortcutActivationBridge />
         </>
       </KyrubAiConversationCloudSyncGate>
     </AppErrorBoundary>
