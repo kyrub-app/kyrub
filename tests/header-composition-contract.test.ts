@@ -32,3 +32,20 @@ test('legacy header retains its account controls', () => {
     assert.ok(legacy.includes(`id="${id}"`), `Missing account control ${id}`);
   }
 });
+
+
+test('marketplace activation has exactly one click owner', () => {
+  assert.ok(workspace.includes("onClick={() => openKyrubDestination('marketplace')}"));
+  assert.ok(activation.includes("target.closest('#header-praca-trigger')"));
+  assert.ok(!activation.includes("'#header-praca-trigger, #header-marketplace-trigger'"));
+});
+
+test('workspace header portals are mounted and cleaned up together', () => {
+  for (const host of ['currentDiscoveryHost', 'currentNotesHost']) {
+    assert.ok(workspace.includes(`${host} = document.createElement('div')`));
+    assert.ok(workspace.includes(`${host}?.remove()`));
+  }
+  assert.ok(workspace.includes('observer.disconnect()'));
+  assert.ok(workspace.includes("document.removeEventListener('click', handleDocumentClick, true)"));
+  assert.ok(activation.includes("document.removeEventListener('click', handleHeaderShortcutClick, true)"));
+});
