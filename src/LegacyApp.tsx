@@ -77,7 +77,7 @@ import { useSocialDirectoryV2 } from './hooks/useSocialDirectoryV2';
 import { LandingView } from './components/LandingView';
 import { StaffViewport } from './components/StaffViewport';
 import { subscribeToUserStoreAccess, type StoreAccessRecord } from './utils/storeDirectory';
-import { canStoreRoleAccessErpMenuItem } from './components/MobileErpMenu';
+import { canStoreRoleAccessErpMenuItem, MOBILE_ERP_MENU_ITEMS, commitMobileErpMenuSelection } from './components/MobileErpMenu';
 import { PerfilTab } from './components/tabs/PerfilTab';
 import { RendaTab } from './components/tabs/RendaTab';
 import { KyrubTab } from './components/tabs/KyrubTab';
@@ -1490,41 +1490,24 @@ if (newMomentPublishToPraca) {
             <div className="hidden sm:flex flex-1 min-w-0 items-center gap-2">
               {gestaoRole === 'retailer' ? (
                 <div className="hidden sm:flex items-center gap-1.5 overflow-x-auto whitespace-nowrap scrollbar-none flex-1 px-2" id="erp-tab-navigation-header">
-                  {/* Botão Loja (estilizado como os itens do menu) */}
-                  {canStoreRoleAccessErpMenuItem(erpAccessRole, 'loja') && (                  <button
-                    onClick={() => setIsConfigModalOpen(true)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer shrink-0 text-slate-400 hover:text-slate-200 hover:bg-slate-800/40"
-                    title="Configurar Perfil e Ambientes"
-                    id="orange-house-config-btn"
-                  >
-                    <StoreIcon className="w-3.5 h-3.5" />
-                    <span>Loja</span>
-                  </button>
-                  )}
-
-                  {/* Restantes abas de navegação */}
-                  {[
-                    { id: 'clientes', label: 'Clientes', icon: Users },
-                    { id: 'caixa', label: 'Caixa', icon: DollarSign },
-                    { id: 'pedidos', label: 'KDS/Vendas', icon: ClipboardList },
-                    { id: 'reservas', label: 'Reservas', icon: Calendar },
-                    { id: 'ponto', label: 'Ponto', icon: Fingerprint },
-                    { id: 'gerencial', label: 'Gerencial', icon: LayoutGrid }
-                  ].filter(tab => canStoreRoleAccessErpMenuItem(erpAccessRole, tab.id as any)).map(tab => {
-                    const Icon = tab.icon;
-                    const isSelected = activeSubTab === tab.id;
+                  {MOBILE_ERP_MENU_ITEMS.filter(item => erpAccessRole && canStoreRoleAccessErpMenuItem(erpAccessRole, item.id)).map(item => {
+                    const Icon = item.icon;
+                    const isSelected = item.id === activeSubTab;
                     return (
                       <button
-                        key={tab.id}
-                        onClick={() => setActiveSubTab(tab.id as any)}
-                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer shrink-0 ${
-                          isSelected
-                            ? 'bg-orange-500 text-slate-950 shadow-md shadow-orange-500/10'
-                            : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/40'
-                        }`}
+                        key={item.id}
+                        type="button"
+                        data-kyrub-desktop-menu-item={item.id}
+                        onClick={() => commitMobileErpMenuSelection(item.id, {
+                          onOpenPlanCenter: () => window.location.assign(getPlanCenterUrl()),
+                          onOpenStoreConfig: () => setIsConfigModalOpen(true),
+                          onSelectTab: setActiveSubTab,
+                        })}
+                        aria-current={isSelected ? 'page' : undefined}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer shrink-0 ${isSelected ? 'bg-orange-500 text-slate-950 shadow-md shadow-orange-500/10' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/40'}`}
                       >
                         <Icon className="w-3.5 h-3.5" />
-                        <span>{tab.label}</span>
+                        <span>{item.label}</span>
                       </button>
                     );
                   })}
