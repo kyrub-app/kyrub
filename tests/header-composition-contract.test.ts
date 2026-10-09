@@ -9,6 +9,8 @@ const header = readFileSync('src/components/AppHeader.tsx', 'utf8');
 const bottomNav = readFileSync('src/components/WorkspacePrimaryNavigationBridge.tsx', 'utf8');
 const notifications = readFileSync('src/components/UserNotificationCenter.tsx', 'utf8');
 const profile = readFileSync('src/components/ProfileSocialHubNative.tsx', 'utf8');
+const profilePolish = readFileSync('src/components/ProfileNextPolishBridge.tsx', 'utf8');
+const identityRecovery = readFileSync('src/components/ProfileIdentityRecoveryBridge.tsx', 'utf8');
 
 test('exactly one authenticated header belongs to AppHeader (not a legacy DOM injection)', () => {
   assert.equal((header.match(/id="app-header"/g) ?? []).length, 1);
@@ -75,4 +77,13 @@ test('the bottom navigation stays functional but cannot own header elements or s
   assert.doesNotMatch(bottomNav, /createPortal|workspace-discovery-shortcuts-host|workspace-notes-shortcut-host/);
   assert.doesNotMatch(bottomNav, /#app-header|style>\{/);
   assert.match(main, /workspace-navigation\.css/);
+});
+
+test('remaining active profile bridges cannot inject a second header button', () => {
+  assert.doesNotMatch(profilePolish, /personalPageHeaderTarget|personal-page-header-slot|header-user-profile-trigger/);
+  assert.doesNotMatch(profilePolish, /getElementById\('app-header'\)/);
+  assert.doesNotMatch(identityRecovery, /syncLegacyHeader|header-user-profile-trigger|\.src\s*=|\.textContent\s*=/);
+  assert.match(identityRecovery, /kyrub-profile-identity-updated/);
+  assert.match(legacy, /window\.addEventListener\('kyrub-profile-identity-updated'/);
+  assert.match(legacy, /detail\.uid !== auth\.currentUser\?\.uid/);
 });
