@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { readFileSync } from 'node:fs';
 import { canStoreRoleAccessErpMenuItem } from '../src/components/MobileErpMenu';
 
 test('administrative RH and finance workspaces are not exposed to operational roles', () => {
@@ -24,4 +25,15 @@ test('operational roles retain authorized PDV and production destinations', () =
   assert.equal(canStoreRoleAccessErpMenuItem('seller', 'clientes'), true);
   assert.equal(canStoreRoleAccessErpMenuItem('production', 'pedidos'), true);
   assert.equal(canStoreRoleAccessErpMenuItem('production', 'caixa'), false);
+});
+
+
+test('staff ERP keeps live membership subscribed after leaving /staff and closes from both viewports', () => {
+  const app = readFileSync('src/LegacyApp.tsx', 'utf8');
+  assert.match(app, /currentPath\.endsWith\('\/staff'\) \|\| staffErpSession/);
+  assert.match(app, /\[authenticatedUserId, currentPath, staffErpSession\]/);
+  assert.match(app, /setStaffErpSession\(true\)/);
+  assert.match(app, /onClosePanel=\{\(\) => \{ setIsGestaoOpen\(false\); setStaffErpSession\(false\); \}\}/);
+  assert.match(app, /onClick=\{\(\) => \{ setIsGestaoOpen\(false\); setStaffErpSession\(false\); \}\}/);
+  assert.match(app, /isGestaoOpen && !\(gestaoRole === 'retailer' && !erpAccessRole\)/);
 });
