@@ -105,20 +105,22 @@ describe('canonical user notifications', () => {
     assert.match(rules, /match \/\{document=\*\*\} \{\s*allow read, write: if false;/);
   });
 
-  test('app mounts one canonical notification center in the existing header', () => {
+  test('canonical notifications are direct children of the React-owned header', () => {
     const app = readFileSync('src/App.tsx', 'utf8');
-    const bridge = readFileSync('src/components/UserNotificationCenterBridge.tsx', 'utf8');
+    const header = readFileSync('src/components/AppHeader.tsx', 'utf8');
+    const center = readFileSync('src/components/UserNotificationCenter.tsx', 'utf8');
 
-    assert.match(app, /<UserNotificationCenterBridge \/>/);
-    assert.match(bridge, /getElementById\('app-header'\)/);
-    assert.match(bridge, /canonical-notification-trigger/);
-    assert.match(bridge, /canonical-notification-center/);
-    assert.match(bridge, /unreadCount/);
-    assert.match(bridge, /markAllUserNotificationsRead/);
+    assert.match(header, /<UserNotificationCenter/);
+    assert.match(center, /canonical-notification-trigger/);
+    assert.match(center, /canonical-notification-center/);
+    assert.match(center, /unreadCount/);
+    assert.match(center, /markAllUserNotificationsRead/);
+    assert.doesNotMatch(center, /header\.appendChild|currentHost|MutationObserver/);
+    assert.doesNotMatch(app, /<UserNotificationCenterBridge \/>/);
   });
 
   test('store chat notification opens the same customer-store thread', () => {
-    const bridge = readFileSync('src/components/UserNotificationCenterBridge.tsx', 'utf8');
+    const bridge = readFileSync('src/components/UserNotificationCenter.tsx', 'utf8');
     assert.match(bridge, /const openNotificationTarget =/);
     assert.match(bridge, /notification\.target\.kind !== 'store_chat'/);
     assert.match(bridge, /openStoreCustomerChat\(/);
