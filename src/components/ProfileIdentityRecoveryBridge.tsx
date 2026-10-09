@@ -40,20 +40,12 @@ const saveBackup = (uid: string, identity: ProfileIdentity): void => {
 const fallbackName = (user: User): string =>
   user.displayName?.trim() || user.email?.split('@')[0]?.trim() || 'Usuário Kyrub';
 
-const syncLegacyHeader = (identity: ProfileIdentity): void => {
-  const trigger = document.getElementById('header-user-profile-trigger');
-  if (!trigger) return;
-
-  const firstName = identity.name.split(/\s+/)[0]?.trim();
-  const name = trigger.querySelector<HTMLElement>('h1 span');
-  if (name && firstName && name.textContent !== firstName) {
-    name.textContent = firstName;
-  }
-
-  const image = trigger.querySelector<HTMLImageElement>('img');
-  if (image && identity.photoUrl && image.src !== identity.photoUrl) {
-    image.src = identity.photoUrl;
-  }
+const publishProfileIdentity = (uid: string, identity: ProfileIdentity): void => {
+  window.dispatchEvent(
+    new CustomEvent('kyrub-profile-identity-updated', {
+      detail: { uid, name: identity.name, photoUrl: identity.photoUrl },
+    })
+  );
 };
 
 export function ProfileIdentityRecoveryBridge() {
@@ -91,7 +83,7 @@ export function ProfileIdentityRecoveryBridge() {
 
       currentIdentity = preferred;
       saveBackup(user.uid, preferred);
-      syncLegacyHeader(preferred);
+      publishProfileIdentity(user.uid, preferred);
 
       const serverBackedName = publicIdentity.name || userIdentity.name;
       const serverBackedPhoto = publicIdentity.photoUrl || userIdentity.photoUrl;
@@ -141,7 +133,7 @@ export function ProfileIdentityRecoveryBridge() {
       }
     };
 
-    syncLegacyHeader(currentIdentity);
+    publishProfileIdentity(user.uid, currentIdentity);
 
     const unsubscribeUser = onSnapshot(
       doc(db, 'users', user.uid),
@@ -155,7 +147,7 @@ export function ProfileIdentityRecoveryBridge() {
       },
       error => {
         console.warn('O perfil principal está temporariamente indisponível.', error);
-        syncLegacyHeader(currentIdentity);
+        publishProfileIdentity(user.uid, currentIdentity);
       }
     );
 
@@ -171,16 +163,11 @@ export function ProfileIdentityRecoveryBridge() {
       },
       error => {
         console.warn('O perfil público está temporariamente indisponível.', error);
-        syncLegacyHeader(currentIdentity);
+        publishProfileIdentity(user.uid, currentIdentity);
       }
     );
 
-    const interval = window.setInterval(() => {
-      syncLegacyHeader(currentIdentity);
-    }, 750);
-
     return () => {
-      window.clearInterval(interval);
       unsubscribeUser();
       unsubscribePublicProfile();
     };
