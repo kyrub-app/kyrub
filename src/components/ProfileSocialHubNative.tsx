@@ -513,27 +513,19 @@ export function ProfileSocialHubNative() {
   }, []);
 
   useEffect(() => {
-    const handleProfileTrigger = (event: Event) => {
-      const target = event.target as Element | null;
-      const trigger = target?.closest('#header-user-profile-trigger');
-      if (!trigger) return;
-      event.preventDefault();
-      event.stopPropagation();
-      event.stopImmediatePropagation();
-      setActiveTab('publications');
-      setOpen(true);
-    };
-
     const handlePersonalPageRequest = () => {
       setActiveTab('publications');
       setOpen(true);
     };
+    const handlePersonalPageCloseRequest = () => {
+      setOpen(false);
+    };
 
     window.addEventListener('kyrub-personal-page-open-requested', handlePersonalPageRequest);
-    document.addEventListener('click', handleProfileTrigger, true);
+    window.addEventListener('kyrub-personal-page-close-requested', handlePersonalPageCloseRequest);
     return () => {
       window.removeEventListener('kyrub-personal-page-open-requested', handlePersonalPageRequest);
-      document.removeEventListener('click', handleProfileTrigger, true);
+      window.removeEventListener('kyrub-personal-page-close-requested', handlePersonalPageCloseRequest);
     };
   }, []);
 
