@@ -337,9 +337,10 @@ export default function App() {
   const [staffAccessLoading, setStaffAccessLoading] = useState(false);
   const [staffAccessError, setStaffAccessError] = useState('');
   const [selectedStaffStoreId, setSelectedStaffStoreId] = useState('');
+  const [staffErpSession, setStaffErpSession] = useState(false);
 
   useEffect(() => {
-    if (!(currentPath === '/staff' || currentPath.endsWith('/staff'))) return;
+    if (!(currentPath === '/staff' || currentPath.endsWith('/staff') || staffErpSession)) return;
 
     const user = auth.currentUser;
     if (!user) {
@@ -369,7 +370,7 @@ export default function App() {
         setStaffAccessError('Não foi possível validar seus vínculos operacionais.');
       }
     );
-  }, [authenticatedUserId, currentPath]);
+  }, [authenticatedUserId, currentPath, staffErpSession]);
 
   useEffect(() => {
     const handleLocationChange = () => {
@@ -1222,6 +1223,7 @@ if (newMomentPublishToPraca) {
         onGoBackToMain={handleGoBackToMain}
         onEnterErp={routeStaffAccess ? () => {
           setSelectedStaffStoreId(routeStaffAccess.store.id);
+          setStaffErpSession(true);
           setGestaoRole('retailer');
           setActiveSubTab(canStoreRoleAccessErpMenuItem(routeStaffAccess.role, 'clientes') ? 'clientes' : canStoreRoleAccessErpMenuItem(routeStaffAccess.role, 'pedidos') ? 'pedidos' : 'ponto');
           setIsGestaoOpen(true);
@@ -1468,7 +1470,7 @@ if (newMomentPublishToPraca) {
               activeSubTab={activeSubTab}
               isRetailer={gestaoRole === 'retailer'}
               canClosePanel={!isAdminSubdomain}
-              onClosePanel={() => setIsGestaoOpen(false)}
+              onClosePanel={() => { setIsGestaoOpen(false); setStaffErpSession(false); }}
               onOpenStoreConfig={() => setIsConfigModalOpen(true)}
               onSelectTab={setActiveSubTab}
               accessRole={erpAccessRole}
