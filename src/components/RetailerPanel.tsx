@@ -15,6 +15,7 @@ import { ProductInventoryWorkspace } from './store/ProductInventoryWorkspace';
 import { StoreDeliveryTrackingBridge } from './store/StoreDeliveryTrackingBridge';
 import type { Product } from '../types';
 import { auth } from '../utils/firebase';
+import type { StoreRole } from '../utils/storeSecurity';
 import {
   KYRUB_CANONICAL_ORDER_NAVIGATION_CHANGED_EVENT,
   KYRUB_CANONICAL_ORDER_NAVIGATION_REQUESTED_EVENT,
@@ -40,7 +41,7 @@ import {
   type OrderDecision,
 } from '../utils/orderWorkflow';
 
-type RetailerPanelProps = React.ComponentProps<typeof LegacyRetailerPanel>;
+type RetailerPanelProps = React.ComponentProps<typeof LegacyRetailerPanel> & { accessRole?: StoreRole };
 
 export const RetailerPanel: React.FC<RetailerPanelProps> = props => {
   const {
