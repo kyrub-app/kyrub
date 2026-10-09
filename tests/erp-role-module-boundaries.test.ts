@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { readFileSync } from 'node:fs';
 import { canStoreRoleAccessErpMenuItem } from '../src/components/MobileErpMenu';
 
 test('administrative RH and finance workspaces are not exposed to operational roles', () => {
@@ -24,4 +25,34 @@ test('operational roles retain authorized PDV and production destinations', () =
   assert.equal(canStoreRoleAccessErpMenuItem('seller', 'clientes'), true);
   assert.equal(canStoreRoleAccessErpMenuItem('production', 'pedidos'), true);
   assert.equal(canStoreRoleAccessErpMenuItem('production', 'caixa'), false);
+});
+
+
+test('staff ERP keeps live membership subscribed after leaving /staff and closes from both viewports', () => {
+  const app = readFileSync('src/LegacyApp.tsx', 'utf8');
+  assert.match(app, /currentPath\.endsWith\('\/staff'\) \|\| staffErpSession/);
+  assert.match(app, /\[authenticatedUserId, currentPath, staffErpSession\]/);
+  assert.match(app, /setStaffErpSession\(true\)/);
+  assert.match(app, /onClosePanel=\{\(\) => \{ setIsGestaoOpen\(false\); setStaffErpSession\(false\); \}\}/);
+  assert.match(app, /onClick=\{\(\) => \{ setIsGestaoOpen\(false\); setStaffErpSession\(false\); \}\}/);
+  assert.match(app, /isGestaoOpen && !\(gestaoRole === 'retailer' && !erpAccessRole\)/);
+});
+
+
+test('desktop and mobile ERP share the same catalog, permission filter and navigation contract', () => {
+  const desktop = readFileSync('src/LegacyApp.tsx', 'utf8');
+  const mobile = readFileSync('src/components/MobileErpMenu.tsx', 'utf8');
+  assert.match(desktop, /MOBILE_ERP_MENU_ITEMS\.filter\(item => erpAccessRole && canStoreRoleAccessErpMenuItem\(erpAccessRole, item\.id\)\)/);
+  assert.match(desktop, /commitMobileErpMenuSelection\(item\.id/);
+  assert.match(mobile, /MOBILE_ERP_MENU_ITEMS\.filter\(item => item\.section === section/);
+  assert.match(mobile, /commitMobileErpMenuSelection\(itemId/);
+  assert.doesNotMatch(desktop, /\{ id: 'gerencial', label: 'Gerencial'/);
+});
+
+
+test('production mobile runtime applies canonical staff permission filtering', () => {
+  const runtime = readFileSync('src/components/MobileErpMenuRuntime.tsx', 'utf8');
+  assert.match(runtime, /MOBILE_ERP_MENU_ITEMS\.filter\(item => item\.section === section && accessRole && canStoreRoleAccessErpMenuItem\(accessRole, item\.id\)\)/);
+  assert.match(runtime, /commitMobileErpMenuSelection\(itemId/);
+  assert.match(runtime, /export \{ MOBILE_ERP_MENU_ITEMS, canStoreRoleAccessErpMenuItem, commitMobileErpMenuSelection \} from '\.\/MobileErpMenu'/);
 });
