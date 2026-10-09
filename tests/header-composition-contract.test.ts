@@ -49,3 +49,13 @@ test('workspace header portals are mounted and cleaned up together', () => {
   assert.ok(workspace.includes("document.removeEventListener('click', handleDocumentClick, true)"));
   assert.ok(activation.includes("document.removeEventListener('click', handleHeaderShortcutClick, true)"));
 });
+
+
+test('canonical account header is compact and profile is not hidden by workspace CSS', () => {
+  assert.ok(legacy.includes('id="header-user-profile-trigger"'));
+  assert.ok(legacy.includes('aria-label="Abrir meu perfil"'));
+  assert.ok(legacy.includes('aria-label="Abrir Carteira"'));
+  assert.ok(workspace.includes('order: 1;'));
+  assert.ok(!workspace.includes('#app-header #header-user-profile-trigger {\n          display: none !important;'));
+  assert.ok(!legacy.includes('id="toggle-balance-visibility-btn"'));
+});
