@@ -48,3 +48,11 @@ test('desktop and mobile ERP share the same catalog, permission filter and navig
   assert.match(mobile, /commitMobileErpMenuSelection\(itemId/);
   assert.doesNotMatch(desktop, /\{ id: 'gerencial', label: 'Gerencial'/);
 });
+
+
+test('production mobile runtime applies canonical staff permission filtering', () => {
+  const runtime = readFileSync('src/components/MobileErpMenuRuntime.tsx', 'utf8');
+  assert.match(runtime, /MOBILE_ERP_MENU_ITEMS\.filter\(item => item\.section === section && accessRole && canStoreRoleAccessErpMenuItem\(accessRole, item\.id\)\)/);
+  assert.match(runtime, /commitMobileErpMenuSelection\(itemId/);
+  assert.match(runtime, /export \{ MOBILE_ERP_MENU_ITEMS, canStoreRoleAccessErpMenuItem, commitMobileErpMenuSelection \} from '\.\/MobileErpMenu'/);
+});
