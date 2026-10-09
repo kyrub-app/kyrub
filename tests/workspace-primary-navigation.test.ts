@@ -31,9 +31,11 @@ test('the bottom entry continues to open Praça without a second header owner', 
   assert.match(main, /<WorkspacePrimaryNavigationBridge \/>/);
   assert.match(bottomNav, /data-kyrub-social-entry/);
   assert.match(bottomNav, /label\.textContent = 'Praça'/);
-  assert.match(bottomNav, /activateProfileSquare/);
+  assert.match(bottomNav, /new CustomEvent/);
+  assert.match(bottomNav, /section: 'square'/);
+  assert.doesNotMatch(bottomNav, /activateProfileSquare|requestAnimationFrame|squareButton\.click/);
   assert.match(bottomNav, /kyrub-personal-page-open-requested/);
-  assert.match(socialHub, /setActiveTab\('publications'\)/);
+  assert.match(socialHub, /requestedSection === 'square'/);
   assert.match(bottomNav, /closeSocialHub\(\)/);
   assert.match(navStyles, /#profile-social-hub-modal/);
   assert.match(navStyles, /--kyrub-workspace-header-height/);
