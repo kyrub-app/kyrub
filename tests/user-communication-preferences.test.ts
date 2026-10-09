@@ -198,7 +198,7 @@ describe('user communication preferences', () => {
 
   test('notification center establishes a silent baseline before browser alerts', () => {
     const bridge = readFileSync(
-      'src/components/UserNotificationCenterBridge.tsx',
+      'src/components/UserNotificationCenter.tsx',
       'utf8'
     );
     assert.match(bridge, /notificationBaselineRef = useRef<Set<string> \| null>\(null\)/);
