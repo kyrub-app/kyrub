@@ -3,69 +3,73 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
 const legacy = readFileSync('src/LegacyApp.tsx', 'utf8');
-const entry = readFileSync('src/main.tsx', 'utf8');
-const workspace = readFileSync('src/components/WorkspacePrimaryNavigationBridge.tsx', 'utf8');
-const activation = readFileSync('src/components/HeaderDiscoveryShortcutActivationBridge.tsx', 'utf8');
+const app = readFileSync('src/App.tsx', 'utf8');
+const main = readFileSync('src/main.tsx', 'utf8');
+const header = readFileSync('src/components/AppHeader.tsx', 'utf8');
+const bottomNav = readFileSync('src/components/WorkspacePrimaryNavigationBridge.tsx', 'utf8');
+const notifications = readFileSync('src/components/UserNotificationCenter.tsx', 'utf8');
+const profile = readFileSync('src/components/ProfileSocialHubNative.tsx', 'utf8');
 
-test('the app header has one base owner and one workspace shortcut owner', () => {
-  assert.equal((legacy.match(/id="app-header"/g) ?? []).length, 1);
-  assert.equal((entry.match(/<WorkspacePrimaryNavigationBridge \/>/g) ?? []).length, 1);
-  assert.equal((entry.match(/<HeaderDiscoveryShortcutActivationBridge \/>/g) ?? []).length, 1);
+test('exactly one authenticated header belongs to AppHeader (not a legacy DOM injection)', () => {
+  assert.equal((header.match(/id="app-header"/g) ?? []).length, 1);
+  assert.match(legacy, /<AppHeader/);
+  assert.doesNotMatch(legacy, /id="app-header"/);
+  assert.equal((main.match(/<WorkspacePrimaryNavigationBridge \/>/g) ?? []).length, 1);
+  assert.doesNotMatch(main, /HeaderDiscoveryShortcutActivationBridge/);
+  assert.doesNotMatch(app, /UserNotificationCenterBridge/);
+  assert.doesNotMatch(header, /MutationObserver|createPortal|appendChild|document\.createElement/);
 });
 
-test('workspace shortcuts do not duplicate IDs in the legacy header', () => {
-  for (const id of ['header-marketplace-trigger', 'header-notes-trigger']) {
-    assert.ok(workspace.includes(`id="${id}"`), `Workspace must own ${id}`);
-    assert.ok(!legacy.includes(`id="${id}"`), `Legacy header duplicates ${id}`);
+test('every header shortcut belongs to the same React header', () => {
+  const ids = [
+    'header-user-profile-trigger',
+    'header-marketplace-trigger',
+    'header-notes-trigger',
+    'header-wallet-balance',
+  ];
+  for (const id of ids) {
+    assert.match(header, new RegExp('id="' + id + '"'));
+    assert.doesNotMatch(legacy, new RegExp('id="' + id + '"'));
+    assert.doesNotMatch(bottomNav, new RegExp('id="' + id + '"'));
   }
+  assert.match(header, /aria-label="Sair"/);
+  assert.match(header, /<UserNotificationCenter/);
+  assert.match(notifications, /id="canonical-notification-trigger"/);
+  assert.doesNotMatch(notifications, /setHost|currentHost|header\.appendChild|MutationObserver/);
 });
 
-test('activation bridge recognizes the same workspace shortcut destinations', () => {
-  assert.ok(activation.includes("target.closest('#header-praca-trigger')"));
-  assert.ok(!activation.includes("'#header-praca-trigger, #header-marketplace-trigger'"));
-  assert.ok(workspace.includes("openKyrubDestination('marketplace')"));
-  assert.ok(workspace.includes("id=\"header-marketplace-trigger\""));
+test('Marketplace and Notas navigate using application state, not hidden nav clicks', () => {
+  assert.match(header, /onClick=\{\(\) => navigate\(onMarketplace\)\}/);
+  assert.match(header, /onClick=\{\(\) => navigate\(onNotes\)\}/);
+  assert.match(legacy, /onMarketplace=\{\(\) => \{[\s\S]*?setSocialSubTab\('lojas'\);[\s\S]*?setActiveTab\('kyrub'\);/);
+  assert.match(legacy, /onNotes=\{\(\) => \{[\s\S]*?setActiveTab\('perfil'\);/);
+  assert.doesNotMatch(bottomNav, /openKyrubDestination|pendingKyrubDestination|header-marketplace-trigger|header-notes-trigger/);
 });
 
-test('legacy header retains its account controls', () => {
-  for (const id of ['header-user-profile-trigger', 'header-wallet-balance']) {
-    assert.ok(legacy.includes(`id="${id}"`), `Missing account control ${id}`);
-  }
+test('notification trigger lives in the header, but its panel remains a controlled modal', () => {
+  assert.match(notifications, /open: boolean/);
+  assert.match(notifications, /onOpenChange: \(value: boolean\) => void/);
+  assert.match(notifications, /onClick=\{\(\) => onOpenChange\(!open\)\}/);
+  assert.match(notifications, /id="canonical-notification-center"/);
+  assert.match(notifications, /createPortal\(/);
+  assert.doesNotMatch(notifications, /createPortal\(\s*<button/);
+  assert.match(header, /if \(value\) onNotificationsOpen\(\)/);
 });
 
-
-test('marketplace activation has exactly one click owner', () => {
-  assert.ok(workspace.includes("onClick={() => openKyrubDestination('marketplace')}"));
-  assert.ok(activation.includes("target.closest('#header-praca-trigger')"));
-  assert.ok(!activation.includes("'#header-praca-trigger, #header-marketplace-trigger'"));
+test('profile ownership is explicit instead of capturing header clicks', () => {
+  assert.match(header, /onClick=\{\(\) => navigate\(onProfile\)\}/);
+  assert.match(legacy, /kyrub-personal-page-open-requested/);
+  assert.match(profile, /window\.addEventListener\('kyrub-personal-page-open-requested'/);
+  assert.match(profile, /window\.addEventListener\('kyrub-personal-page-close-requested'/);
+  assert.doesNotMatch(profile, /closest\('#header-user-profile-trigger'\)/);
 });
 
-test('workspace header portals are mounted and cleaned up together', () => {
-  for (const host of ['currentDiscoveryHost', 'currentNotesHost']) {
-    assert.ok(workspace.includes(`${host} = document.createElement('div')`));
-    assert.ok(workspace.includes(`${host}?.remove()`));
-  }
-  assert.ok(workspace.includes('observer.disconnect()'));
-  assert.ok(workspace.includes("document.removeEventListener('click', handleDocumentClick, true)"));
-  assert.ok(activation.includes("document.removeEventListener('click', handleHeaderShortcutClick, true)"));
-});
-
-
-test('canonical account header is compact and profile is not hidden by workspace CSS', () => {
-  assert.ok(legacy.includes('id="header-user-profile-trigger"'));
-  assert.ok(legacy.includes('aria-label="Abrir meu perfil"'));
-  assert.ok(legacy.includes('aria-label="Abrir Carteira"'));
-  assert.ok(workspace.includes('order: 1;'));
-  assert.ok(!workspace.includes('#app-header #header-user-profile-trigger {\n          display: none !important;'));
-  assert.ok(!legacy.includes('id="toggle-balance-visibility-btn"'));
-});
-
-test('marketplace shortcut uses a single cancellable pending navigation frame', () => {
-  assert.ok(workspace.includes('const pendingKyrubActivationFrame = useRef<number | null>(null)'));
-  assert.ok(workspace.includes('pendingKyrubActivationFrame.current !== null'));
-  assert.ok(workspace.includes('window.cancelAnimationFrame(pendingKyrubActivationFrame.current)'));
-  assert.ok(workspace.includes('pendingKyrubActivationAttempts.current >= 24'));
-  assert.ok(workspace.includes('clearPendingKyrubActivation();\n      observer.disconnect();'));
-  assert.ok(workspace.includes('schedulePendingKyrubActivation();'));
-  assert.ok(!workspace.includes('activatePendingKyrubDestination(attempt + 1)'));
+test('the bottom navigation stays functional but cannot own header elements or styles', () => {
+  assert.match(bottomNav, /data-kyrub-primary-workspace-nav/);
+  assert.match(bottomNav, /activateProfileSquare/);
+  assert.match(bottomNav, /observer\.disconnect\(\)/);
+  assert.match(bottomNav, /document\.removeEventListener\('click', handleBottomNavigationClick, true\)/);
+  assert.doesNotMatch(bottomNav, /createPortal|workspace-discovery-shortcuts-host|workspace-notes-shortcut-host/);
+  assert.doesNotMatch(bottomNav, /#app-header|style>\{/);
+  assert.match(main, /workspace-navigation\.css/);
 });
