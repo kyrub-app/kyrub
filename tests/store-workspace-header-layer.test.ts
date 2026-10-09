@@ -10,7 +10,7 @@ const appHeader = readFileSync('src/components/AppHeader.tsx', 'utf8');
 test('retailer workspace header can visually cover the global app header', () => {
   assert.match(legacyApp, /id="erp-main-header"/);
   assert.match(appHeader, /id="app-header"/);
-  assert.match(appHeader, /z-\\[160\\]/);
+  assert.ok(appHeader.includes('z-[160]'));
   assert.match(
     css,
     /body:has\(#erp-main-header\)\s+#app-header\s*\{[\s\S]*z-index:\s*30\s*!important/
