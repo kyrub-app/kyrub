@@ -9,10 +9,11 @@ const polishSource = readFileSync(
 );
 
 test('polish never injects duplicate header controls', () => {
-  assert.match(mainSource, /<ProfileNextPolishBridge\\s*\\/?>/);
-  assert.doesNotMatch(polishSource, /personalPageHeaderTarget|personal-page-header-slot/);
-  assert.doesNotMatch(polishSource, /getElementById\\('app-header'\\)/);
-  assert.doesNotMatch(polishSource, /header-user-profile-trigger/);
+  assert.ok(mainSource.includes('<ProfileNextPolishBridge />'));
+  assert.ok(!polishSource.includes('personalPageHeaderTarget'));
+  assert.ok(!polishSource.includes('personal-page-header-slot'));
+  assert.ok(!polishSource.includes("getElementById('app-header')"));
+  assert.ok(!polishSource.includes('header-user-profile-trigger'));
 });
 
 test('places Docs, Bio and Face beside the profile photo controls', () => {
