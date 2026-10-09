@@ -50,6 +50,7 @@ import {
   LayoutGrid
 } from 'lucide-react';
 import { Tenant, Store, Product, Order, CartItem, Note, Friend, SocialPost, DeliveryJob, FreelanceJob, type UserStoreDocument } from './types';
+import { AppHeader } from './components/AppHeader';
 
 // Import our modular sub-panels
 import { AdminPanel } from './components/AdminPanel';
@@ -1307,53 +1308,48 @@ if (newMomentPublishToPraca) {
         /* REGISTERED LOGIN SCREEN WORKSPACE */
         <div className="flex-1 flex flex-col min-h-screen">
 
-          {/* 1. TOP MOBILE NAV HEADER: canonical account controls; workspace owns shortcuts */}
-          <header className="border-b border-slate-900 bg-slate-950/90 backdrop-blur-md sticky top-0 z-40 px-3 py-3 flex items-center gap-2" id="app-header">
-            <button
-                onClick={async () => {
-                  try {
-                    await signOut(auth);
-                    setIsLoggedIn(false);
-                    setGpsGranted(false);
-                    triggerToast('Você saiu do ecossistema Kyrub.', 'info');
-                  } catch (e) {
-                    console.error('Sign out error:', e);
-                    setIsLoggedIn(false);
-                    setGpsGranted(false);
-                  }
-                }}
-                className="p-2 rounded-xl bg-slate-900 border border-slate-800 text-slate-400 hover:text-red-400 transition-all mr-auto"
-                title="Sair"
-                aria-label="Sair"
-              >
-                <LogOut className="w-4 h-4 rotate-180" />
-              </button>
-
-            <button
-              onClick={() => setShowUserProfileModal(true)}
-              className="w-10 h-10 rounded-xl border border-slate-800 bg-slate-900 flex items-center justify-center overflow-hidden hover:border-orange-500/40 transition-colors"
-              id="header-user-profile-trigger"
-              title="Meu perfil"
-              aria-label="Abrir meu perfil"
-            >
-              {profilePhotoUrl ? (
-                <img src={profilePhotoUrl} alt="" className="w-full h-full object-cover" />
-              ) : (
-                <User className="w-4 h-4 text-slate-400" />
-              )}
-            </button>
-
-            <div className="w-10 h-10 rounded-xl bg-slate-900 border border-slate-800 text-teal-400 flex items-center justify-center" id="header-wallet-balance">
-              <button
-                onClick={() => setIsWalletOpen(true)}
-                className="w-full h-full flex items-center justify-center hover:text-teal-300 transition-all"
-                title="Abrir Carteira"
-                aria-label="Abrir Carteira"
-              >
-                <Wallet className="w-4 h-4" />
-              </button>
-            </div>
-          </header>
+          {/* One React-owned header: no portal hosts or delegated header controls. */}
+          <AppHeader
+            profilePhotoUrl={profilePhotoUrl}
+            activeSection={activeTab}
+            onLogout={async () => {
+              try {
+                await signOut(auth);
+                setIsLoggedIn(false);
+                setGpsGranted(false);
+                triggerToast('Você saiu do ecossistema Kyrub.', 'info');
+              } catch (error) {
+                console.error('Sign out error:', error);
+                setIsLoggedIn(false);
+                setGpsGranted(false);
+              }
+            }}
+            onProfile={() => {
+              setIsWalletOpen(false);
+              window.dispatchEvent(new Event('kyrub-personal-page-open-requested'));
+            }}
+            onMarketplace={() => {
+              setIsWalletOpen(false);
+              window.dispatchEvent(new Event('kyrub-personal-page-close-requested'));
+              setSocialSubTab('lojas');
+              setActiveTab('kyrub');
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+            }}
+            onNotes={() => {
+              setIsWalletOpen(false);
+              window.dispatchEvent(new Event('kyrub-personal-page-close-requested'));
+              setActiveTab('perfil');
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+            }}
+            onWallet={() => {
+              window.dispatchEvent(new Event('kyrub-personal-page-close-requested'));
+              setIsWalletOpen(current => !current);
+            }}
+            onNotificationsOpen={() => {
+              window.dispatchEvent(new Event('kyrub-personal-page-close-requested'));
+              setIsWalletOpen(false);
+            }}
+          />
 
           {/* MAIN TAB CONTENT DISPLAY ROUTER */}
           <main className="flex-1 max-w-lg w-full mx-auto px-4 py-6 pb-24 relative space-y-6">
