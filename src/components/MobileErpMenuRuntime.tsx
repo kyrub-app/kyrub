@@ -2,6 +2,7 @@ import { useRef, useState, type MouseEvent } from 'react';
 import { ArrowLeft, Menu, X } from 'lucide-react';
 import {
   MOBILE_ERP_MENU_ITEMS,
+  canStoreRoleAccessErpMenuItem,
   commitMobileErpMenuSelection,
   isMobileErpManagementModule,
   type ErpSubTab,
@@ -17,6 +18,7 @@ interface MobileErpMenuProps {
   onClosePanel: () => void;
   onOpenStoreConfig: () => void;
   onSelectTab: (tab: ErpSubTab) => void;
+  accessRole?: import('../utils/storeSecurity').StoreRole;
 }
 
 export function MobileErpMenu({
@@ -26,6 +28,7 @@ export function MobileErpMenu({
   onClosePanel,
   onOpenStoreConfig,
   onSelectTab,
+  accessRole,
 }: MobileErpMenuProps) {
   const dialogRef = useRef<HTMLDialogElement | null>(null);
   const selectionFrameRef = useRef<number | null>(null);
@@ -70,7 +73,7 @@ export function MobileErpMenu({
   };
 
   const renderItems = (section: MobileErpMenuItem['section']) =>
-    MOBILE_ERP_MENU_ITEMS.filter(item => item.section === section).map(item => {
+    MOBILE_ERP_MENU_ITEMS.filter(item => item.section === section && accessRole && canStoreRoleAccessErpMenuItem(accessRole, item.id)).map(item => {
       const Icon = item.icon;
       const isSelected =
         !isMobileErpManagementModule(item.id) &&
@@ -188,4 +191,4 @@ export function MobileErpMenu({
   );
 }
 
-export { MOBILE_ERP_MENU_ITEMS, commitMobileErpMenuSelection } from './MobileErpMenu';
+export { MOBILE_ERP_MENU_ITEMS, canStoreRoleAccessErpMenuItem, commitMobileErpMenuSelection } from './MobileErpMenu';
