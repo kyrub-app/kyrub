@@ -347,7 +347,10 @@ export default function App() {
     const user = auth.currentUser;
     if (!user) {
       setStaffAccesses([]);
+      setSelectedStaffStoreId('');
       setStaffAccessLoading(false);
+      setStaffErpSession(false);
+      setIsGestaoOpen(false);
       return;
     }
 
@@ -651,12 +654,14 @@ export default function App() {
   }, [notes, isLoggedIn]);
 
   // The private ERP store is owned by the authenticated Firebase user.
-  const selectedStaffAccess = staffAccesses.find(access => access.store.id === selectedStaffStoreId) ?? null;
-  const erpAccessRole = selectedStaffStoreId
+  // Staff selection belongs only to an entered operational session; leaving /staff
+  // must not change the authenticated owner's own ERP context.
+  const selectedStaffAccess = staffErpSession
+    ? staffAccesses.find(access => access.store.id === selectedStaffStoreId && access.status === 'active') ?? null
+    : null;
+  const erpAccessRole = staffErpSession
     ? selectedStaffAccess?.role
-    : (staffAccessLoading || staffAccessError || staffAccesses.length > 0
-      ? undefined
-      : (authenticatedUserId && userStore ? 'owner' : undefined));
+    : (authenticatedUserId && userStore ? 'owner' : undefined);
   const activeRetailerId = selectedStaffAccess?.store.legacyTenantId || authenticatedUserId;
   useEffect(() => {
     if (!staffErpSession || staffAccessLoading) return;
@@ -1359,7 +1364,7 @@ if (newMomentPublishToPraca) {
       setCurrentPath('/');
     };
 
-    const routeStaffAccess = selectedStaffAccess ?? staffAccesses[0] ?? null;
+    const routeStaffAccess = staffAccesses.find(access => access.store.id === selectedStaffStoreId && access.status === 'active') ?? staffAccesses[0] ?? null;
 
     return (
       <StaffViewport
