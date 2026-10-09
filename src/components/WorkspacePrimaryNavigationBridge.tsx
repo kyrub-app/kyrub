@@ -51,28 +51,6 @@ const closeSocialHub = (): void => {
   window.dispatchEvent(new Event('kyrub-personal-page-close-requested'));
 };
 
-const activateProfileSquare = (attempt = 0): void => {
-  const hub = document.getElementById('profile-social-hub-modal');
-  const navigation = hub?.querySelector('nav[aria-label="Seções do perfil"]');
-  const squareButton = navigation
-    ? Array.from(navigation.querySelectorAll('button')).find(button =>
-        (button.textContent ?? '')
-          .trim()
-          .toLocaleLowerCase('pt-BR')
-          .includes('praça')
-      )
-    : null;
-
-  if (squareButton instanceof HTMLButtonElement) {
-    squareButton.click();
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-    return;
-  }
-
-  if (attempt >= 24) return;
-  window.requestAnimationFrame(() => activateProfileSquare(attempt + 1));
-};
-
 const normalizeSocialEntry = (
   button: HTMLButtonElement,
   active: boolean
@@ -139,8 +117,11 @@ export function WorkspacePrimaryNavigationBridge() {
         event.preventDefault();
         event.stopPropagation();
         event.stopImmediatePropagation();
-        window.dispatchEvent(new Event('kyrub-personal-page-open-requested'));
-        window.requestAnimationFrame(() => activateProfileSquare());
+        window.dispatchEvent(
+          new CustomEvent('kyrub-personal-page-open-requested', {
+            detail: { section: 'square' },
+          })
+        );
         return;
       }
 
