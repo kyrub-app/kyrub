@@ -48,6 +48,14 @@ test('Marketplace and Notas navigate using application state, not hidden nav cli
   assert.doesNotMatch(bottomNav, /openKyrubDestination|pendingKyrubDestination|header-marketplace-trigger|header-notes-trigger/);
 });
 
+test('pressed header states describe the selected destination, not merely the parent tab', () => {
+  assert.match(header, /aria-pressed=\{marketplaceActive\}/);
+  assert.match(header, /aria-pressed=\{notesActive\}/);
+  assert.match(legacy, /marketplaceActive=\{activeTab === 'kyrub' && socialSubTab === 'lojas'\}/);
+  assert.match(legacy, /notesActive=\{activeTab === 'perfil'\}/);
+  assert.doesNotMatch(header, /aria-pressed=\{activeSection === 'kyrub'\}/);
+});
+
 test('notification trigger lives in the header, but its panel remains a controlled modal', () => {
   assert.match(notifications, /open: boolean/);
   assert.match(notifications, /onOpenChange: \(value: boolean\) => void/);
