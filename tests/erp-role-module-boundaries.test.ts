@@ -37,3 +37,14 @@ test('staff ERP keeps live membership subscribed after leaving /staff and closes
   assert.match(app, /onClick=\{\(\) => \{ setIsGestaoOpen\(false\); setStaffErpSession\(false\); \}\}/);
   assert.match(app, /isGestaoOpen && !\(gestaoRole === 'retailer' && !erpAccessRole\)/);
 });
+
+
+test('desktop and mobile ERP share the same catalog, permission filter and navigation contract', () => {
+  const desktop = readFileSync('src/LegacyApp.tsx', 'utf8');
+  const mobile = readFileSync('src/components/MobileErpMenu.tsx', 'utf8');
+  assert.match(desktop, /MOBILE_ERP_MENU_ITEMS\.filter\(item => erpAccessRole && canStoreRoleAccessErpMenuItem\(erpAccessRole, item\.id\)\)/);
+  assert.match(desktop, /commitMobileErpMenuSelection\(item\.id/);
+  assert.match(mobile, /MOBILE_ERP_MENU_ITEMS\.filter\(item => item\.section === section/);
+  assert.match(mobile, /commitMobileErpMenuSelection\(itemId/);
+  assert.doesNotMatch(desktop, /\{ id: 'gerencial', label: 'Gerencial'/);
+});
