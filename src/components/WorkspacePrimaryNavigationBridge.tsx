@@ -438,7 +438,8 @@ export function WorkspacePrimaryNavigationBridge() {
         }
 
         #app-header #header-user-profile-trigger {
-          display: none !important;
+          order: 1;
+          flex: 0 0 2.5rem;
         }
 
         #app-header .kyrub-header-shortcut,
@@ -476,11 +477,11 @@ export function WorkspacePrimaryNavigationBridge() {
         }
 
         #workspace-discovery-shortcuts-host {
-          order: 1;
+          order: 2;
         }
 
         #header-wallet-balance {
-          order: 2;
+          order: 4;
           width: 2.5rem;
           height: 2.5rem;
           flex: 0 0 2.5rem;
@@ -505,7 +506,7 @@ export function WorkspacePrimaryNavigationBridge() {
         }
 
         #user-notification-center-host {
-          order: 4;
+          order: 5;
           margin-left: 0 !important;
           padding-left: 0 !important;
         }
