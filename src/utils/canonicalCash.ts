@@ -374,6 +374,53 @@ export const parseCashMovement = (value: unknown): CanonicalCashMovement | null 
   };
 };
 
+/** The legacy Dexie queue is device-wide, but cash actors are not interchangeable. */
+export const selectPendingCashReplay = (
+  context: CashStoreContext,
+  sessions: readonly LocalCashSession[],
+  movements: readonly LocalCashMovement[]
+) => {
+  const storeSessions = sessions.filter(
+    session => session.storeId === context.store.id &&
+      session.legacyStoreId === context.legacyStoreId
+  );
+  return {
+    openings: storeSessions.filter(
+      session => !session.createSynced && session.operatorUserId === context.userId
+    ),
+    closings: storeSessions.filter(
+      session => session.status === 'closed' && !session.closeSynced &&
+        session.closedByUserId === context.userId
+    ),
+    movements: movements.filter(
+      movement => movement.legacyStoreId === context.legacyStoreId &&
+        movement.actorUserId === context.userId &&
+        Boolean(movement.sessionId) && !movement.synced
+    ),
+  };
+};
+
+/** An existing document is a replay only when the immutable payload matches. */
+export const assertCashReplayFieldsMatch = (
+  remote: Record<string, unknown>,
+  expected: Record<string, unknown>
+): void => {
+  if (Object.entries(expected).some(([key, value]) => remote[key] !== value)) {
+    throw new Error('CASH_LEGACY_REPLAY_CONFLICT');
+  }
+};
+
+const assertLegacyCashActor = (
+  context: CashStoreContext,
+  localActorUserId: string,
+  legacyStoreId: string
+): void => {
+  if (!localActorUserId || localActorUserId !== context.userId ||
+    legacyStoreId !== context.legacyStoreId) {
+    throw new Error('CASH_LEGACY_ACTOR_MISMATCH');
+  }
+};
+
 const auditReference = (storeId: string, auditId: string) =>
   doc(db, `${getStoreAuditLogsCollectionPath(storeId)}/${auditId}`);
 
@@ -381,8 +428,27 @@ const persistSessionOpen = async (
   context: CashStoreContext,
   local: LocalCashSession
 ): Promise<void> => {
+  assertLegacyCashActor(context, local.operatorUserId, local.legacyStoreId);
+  if (local.storeId !== context.store.id) throw new Error('CASH_LEGACY_STORE_MISMATCH');
   const reference = doc(db, getStoreCashSessionDocumentPath(context.store.id, local.canonicalId));
-  if ((await getDoc(reference)).exists()) return;
+  const existing = await getDoc(reference);
+  if (existing.exists()) {
+    const remote = existing.data() as Record<string, unknown>;
+    assertCashReplayFieldsMatch(remote, {
+      id: local.canonicalId,
+      storeId: context.store.id,
+      legacyStoreId: context.legacyStoreId,
+      operatorUserId: local.operatorUserId,
+      operatorRole: local.operatorRole,
+      operatorName: local.operatorName,
+      deviceId: local.deviceId,
+      openingAmount: local.initialCash,
+    });
+    if (remote.status !== 'open' && remote.status !== 'closed') {
+      throw new Error('CASH_LEGACY_REPLAY_CONFLICT');
+    }
+    return;
+  }
 
   const auditId = `audit-cash-open-${local.canonicalId}`;
   const batch = writeBatch(db);
@@ -429,11 +495,45 @@ const persistMovement = async (
   context: CashStoreContext,
   local: LocalCashMovement
 ): Promise<void> => {
+  assertLegacyCashActor(context, local.actorUserId, local.legacyStoreId);
+  if (!local.sessionId) throw new Error('CASH_LEGACY_SESSION_MISMATCH');
+  const sessionSnapshot = await getDoc(
+    doc(db, getStoreCashSessionDocumentPath(context.store.id, local.sessionId))
+  );
+  const session = sessionSnapshot.data();
+  if (!sessionSnapshot.exists() ||
+    session?.storeId !== context.store.id ||
+    session?.legacyStoreId !== context.legacyStoreId ||
+    session?.deviceId === 'server-managed-register') {
+    throw new Error('CASH_LEGACY_SESSION_MISMATCH');
+  }
   const reference = doc(
     db,
     `${getStoreCashMovementsCollectionPath(context.store.id, local.sessionId)}/${local.canonicalId}`
   );
-  if ((await getDoc(reference)).exists()) return;
+  const existing = await getDoc(reference);
+  if (existing.exists()) {
+    assertCashReplayFieldsMatch(existing.data() as Record<string, unknown>, {
+      id: local.canonicalId,
+      storeId: context.store.id,
+      sessionId: local.sessionId,
+      type: local.movementType,
+      direction: local.direction,
+      amount: local.amount,
+      description: local.description,
+      category: local.category,
+      reason: local.reason,
+      actorUserId: local.actorUserId,
+      actorRole: local.actorRole,
+      actorName: local.actorName,
+      source: local.source,
+      paymentId: local.paymentId,
+      deviceId: local.deviceId,
+      legacyStoreId: local.legacyStoreId,
+    });
+    return;
+  }
+  if (session?.status !== 'open') throw new Error('CASH_LEGACY_SESSION_CLOSED');
 
   const auditId = `audit-cash-movement-${local.canonicalId}`;
   const batch = writeBatch(db);
@@ -477,10 +577,30 @@ const persistSessionClose = async (
   context: CashStoreContext,
   local: LocalCashSession
 ): Promise<void> => {
+  assertLegacyCashActor(context, local.closedByUserId, local.legacyStoreId);
+  if (local.storeId !== context.store.id) throw new Error('CASH_LEGACY_STORE_MISMATCH');
   const reference = doc(db, getStoreCashSessionDocumentPath(context.store.id, local.canonicalId));
   const snapshot = await getDoc(reference);
   if (!snapshot.exists()) throw new Error('A sessão precisa ser sincronizada antes do fechamento.');
-  if (snapshot.data()?.status === 'closed') return;
+  const remote = snapshot.data() as Record<string, unknown>;
+  if (remote.storeId !== context.store.id ||
+    remote.legacyStoreId !== context.legacyStoreId ||
+    remote.deviceId === 'server-managed-register') {
+    throw new Error('CASH_LEGACY_SESSION_MISMATCH');
+  }
+  if (remote.status === 'closed') {
+    assertCashReplayFieldsMatch(remote, {
+      countedAmount: local.finalCash ?? 0,
+      expectedAmount: local.expectedAmount,
+      difference: local.difference,
+      closedByUserId: local.closedByUserId,
+      closedByRole: local.closedByRole,
+      closedByName: local.closedByName,
+      closeReason: local.closeReason,
+    });
+    return;
+  }
+  if (remote.status !== 'open') throw new Error('CASH_LEGACY_SESSION_MISMATCH');
 
   const auditId = `audit-cash-close-${local.canonicalId}`;
   const batch = writeBatch(db);
@@ -706,70 +826,55 @@ export interface CashSyncStats {
 export const syncPendingCashRecords = async (
   context: CashStoreContext
 ): Promise<CashSyncStats> => {
-  const sessions = await cashDb.sessions
-    .filter(session => session.storeId === context.store.id && Boolean(session.canonicalId))
-    .toArray();
-  const movements = await cashDb.movements
-    .filter(movement => movement.legacyStoreId === context.legacyStoreId && Boolean(movement.canonicalId))
-    .toArray();
+  const sessions = await cashDb.sessions.toArray();
+  const movements = await cashDb.movements.toArray();
+  const pending = selectPendingCashReplay(context, sessions, movements);
 
   let sessionsOpened = 0;
   let movementsSynced = 0;
   let sessionsClosed = 0;
 
-  for (const session of sessions.filter(candidate => !candidate.createSynced)) {
+  for (const session of pending.openings) {
     await persistSessionOpen(context, session);
     if (session.id) await cashDb.sessions.update(session.id, { createSynced: true });
     sessionsOpened += 1;
   }
 
-  for (const movement of movements.filter(candidate => !candidate.synced)) {
+  for (const movement of pending.movements) {
     await persistMovement(context, movement);
     if (movement.id) await cashDb.movements.update(movement.id, { synced: true });
     movementsSynced += 1;
   }
 
-  for (const session of sessions.filter(
-    candidate => candidate.status === 'closed' && !candidate.closeSynced
-  )) {
+  for (const session of pending.closings) {
     await persistSessionClose(context, { ...session, createSynced: true });
     if (session.id) await cashDb.sessions.update(session.id, { closeSynced: true });
     sessionsClosed += 1;
   }
 
-  const pendingSessions = await cashDb.sessions
-    .filter(
-      session =>
-        session.storeId === context.store.id &&
-        (!session.createSynced || (session.status === 'closed' && !session.closeSynced))
-    )
-    .count();
-  const pendingMovements = await cashDb.movements
-    .filter(movement => movement.legacyStoreId === context.legacyStoreId && !movement.synced)
-    .count();
+  const stillPending = selectPendingCashReplay(
+    context,
+    await cashDb.sessions.toArray(),
+    await cashDb.movements.toArray()
+  );
 
   return {
     sessionsOpened,
     movements: movementsSynced,
     sessionsClosed,
-    pending: pendingSessions + pendingMovements,
+    pending: stillPending.openings.length + stillPending.closings.length + stillPending.movements.length,
   };
 };
 
 export const getCashLocalPendingCount = async (
   context: CashStoreContext
 ): Promise<number> => {
-  const sessions = await cashDb.sessions
-    .filter(
-      session =>
-        session.storeId === context.store.id &&
-        (!session.createSynced || (session.status === 'closed' && !session.closeSynced))
-    )
-    .count();
-  const movements = await cashDb.movements
-    .filter(movement => movement.legacyStoreId === context.legacyStoreId && !movement.synced)
-    .count();
-  return sessions + movements;
+  const pending = selectPendingCashReplay(
+    context,
+    await cashDb.sessions.toArray(),
+    await cashDb.movements.toArray()
+  );
+  return pending.openings.length + pending.closings.length + pending.movements.length;
 };
 
 export const subscribeToCashSessions = (
