@@ -8,6 +8,8 @@ import { AttendanceOrderApproval } from './customer/AttendanceOrderApproval';
 import { CustomerTableBoard } from './customer/CustomerTableBoard';
 import { TableServiceWorkspace } from './customer/TableServiceWorkspace';
 import { CashWorkspace } from './store/CashWorkspace';
+import { InPersonOrderComposer } from './store/InPersonOrderComposer';
+import { canStoreRoleAccessErpMenuItem } from './MobileErpMenu';
 import { StorePaidWaitingFundingResponsibilityCard } from './store/StorePaidWaitingFundingResponsibilityCard';
 import { OperationalDualWriteBridge } from './store/OperationalDualWriteBridge';
 import { ProductEditorModal } from './store/ProductEditorModal';
@@ -564,10 +566,19 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = props => {
       <LegacyRetailerPanel {...props} />
       {tablesHost &&
         createPortal(
-          <CustomerTableBoard
-            orders={customerOrders}
-            onOpenTable={handleOpenTable}
-          />,
+          <>
+            {props.accessRole &&
+              props.accessRole !== 'owner' &&
+              canStoreRoleAccessErpMenuItem(props.accessRole, 'clientes') && (
+                <div className="mb-4" data-kyrub-staff-pdv-composer="true">
+                  <InPersonOrderComposer storeId={activeRetailerId} />
+                </div>
+              )}
+            <CustomerTableBoard
+              orders={customerOrders}
+              onOpenTable={handleOpenTable}
+            />
+          </>,
           tablesHost
         )}
       {cashHost &&

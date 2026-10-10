@@ -13,6 +13,7 @@ import {
   updateServiceLocation,
 } from './serviceLocationService.js';
 import { createInPersonOrderRouter } from './inPersonOrderRouter.js';
+import { authorizeInPersonOrderOperator } from './inPersonOrderService.js';
 import { createInPersonCustomerIdentityRouter } from './inPersonCustomerIdentityRouter.js';
 import { createLocalServiceRequestRouter } from './localServiceRequestRouter.js';
 import { loadLocalOrderFinancialContext } from './localOrderFinancialContextService.js';
@@ -48,6 +49,7 @@ const mapError = (error: unknown): { status: number; message: string } => {
   }
   if (
     message === 'STORE_REPRESENTATION_FORBIDDEN' ||
+    message === 'IN_PERSON_ORDER_FORBIDDEN' ||
     message === 'LOCAL_PAYMENT_INTENT_FORBIDDEN' ||
     message === 'LOCAL_PIX_PROVIDER_FORBIDDEN'
   ) {
@@ -269,14 +271,27 @@ export const createLocalAttendanceRouter = (): Router => {
     try {
       const storeId = clean(request.query.storeId);
       if (!storeId) throw new Error('SERVICE_LOCATION_STORE_REQUIRED');
-      await requireStoreAuthority({
-        authorization: request.get('authorization') ?? '',
-        storeId,
-      });
+      const activeOnly = request.query.activeOnly === 'true';
+      if (activeOnly) {
+        // PDV operators may read active locations, not manage the store's configuration.
+        const token = bearerToken(request.get('authorization') ?? '');
+        if (!token) throw new Error('AUTH_REQUIRED');
+        const actor = await verifyFirebaseIdToken(token);
+        await authorizeInPersonOrderOperator({
+          legacyStoreId: storeId,
+          authenticatedUserId: actor.uid,
+          permission: 'orders.create',
+        });
+      } else {
+        await requireStoreAuthority({
+          authorization: request.get('authorization') ?? '',
+          storeId,
+        });
+      }
       response.status(200).json({
         locations: await listServiceLocations({
           storeId,
-          activeOnly: request.query.activeOnly === 'true',
+          activeOnly,
         }),
       });
     } catch (error) {

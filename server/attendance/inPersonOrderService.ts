@@ -1,5 +1,6 @@
 import { FieldValue } from 'firebase-admin/firestore';
 import { adminDb } from '../firebaseAdmin.js';
+import { hasStorePermission, isStoreRole, type StorePermission, type StoreRole } from '../../src/utils/storeSecurity.js';
 import { buildServiceLocationSnapshot } from '../../shared/serviceLocation.js';
 import {
   parseInPersonOrderCreateInput,
@@ -177,6 +178,42 @@ export const resolveInPersonOrderStoreContext = async (
   return { legacyStoreId, canonicalStoreId };
 };
 
+
+/**
+ * Read the verified actor's CURRENT membership from the authoritative canonical
+ * store. The browser must never supply a role or select another tenant by UID.
+ * Fiscal identity, refunds and payment operations remain owner-only.
+ */
+export const authorizeInPersonOrderOperator = async (input: {
+  legacyStoreId: string;
+  authenticatedUserId: string;
+  permission: StorePermission;
+}): Promise<InPersonOrderStoreContext & { role: StoreRole }> => {
+  const actorId = clean(input.authenticatedUserId);
+  if (!actorId || actorId.includes('/')) throw new Error('IN_PERSON_ORDER_FORBIDDEN');
+  const context = await resolveInPersonOrderStoreContext(input.legacyStoreId);
+  if (actorId === context.legacyStoreId) {
+    return { ...context, role: 'owner' };
+  }
+
+  const memberSnapshot = await adminDb
+    .doc(`stores/${context.canonicalStoreId}/members/${actorId}`)
+    .get();
+  const member = memberSnapshot.data() as Record<string, unknown> | undefined;
+  const role = member?.role;
+  if (
+    !memberSnapshot.exists ||
+    clean(member?.userId) !== actorId ||
+    clean(member?.storeId) !== context.canonicalStoreId ||
+    clean(member?.status) !== 'active' ||
+    !isStoreRole(role) ||
+    !hasStorePermission(role, input.permission)
+  ) {
+    throw new Error('IN_PERSON_ORDER_FORBIDDEN');
+  }
+  return { ...context, role };
+};
+
 const parseCatalogProduct = (
   documentId: string,
   value: Record<string, unknown>,
@@ -216,8 +253,13 @@ const parseCatalogProduct = (
 
 export const listInPersonOrderCatalog = async (input: {
   legacyStoreId: string;
+  authenticatedUserId: string;
 }): Promise<{ canonicalStoreId: string; products: InPersonCatalogProduct[] }> => {
-  const context = await resolveInPersonOrderStoreContext(input.legacyStoreId);
+  const context = await authorizeInPersonOrderOperator({
+    legacyStoreId: input.legacyStoreId,
+    authenticatedUserId: input.authenticatedUserId,
+    permission: 'products.read',
+  });
   const snapshot = await adminDb
     .collection(`stores/${context.canonicalStoreId}/products`)
     .limit(500)
@@ -275,10 +317,11 @@ export const createInPersonOrder = async (input: {
 }): Promise<CustomerOrder> => {
   const request = parseInPersonOrderCreateInput(input.value);
   const actorUserId = clean(input.authenticatedUserId);
-  if (!actorUserId || actorUserId !== request.storeId) {
-    throw new Error('IN_PERSON_ORDER_FORBIDDEN');
-  }
-  const context = await resolveInPersonOrderStoreContext(request.storeId);
+  const context = await authorizeInPersonOrderOperator({
+    legacyStoreId: request.storeId,
+    authenticatedUserId: actorUserId,
+    permission: 'orders.create',
+  });
   const location = await getServiceLocation({
     storeId: context.legacyStoreId,
     locationId: request.serviceLocationId,
@@ -337,7 +380,7 @@ export const createInPersonOrder = async (input: {
     storeId: context.canonicalStoreId,
     buyerIdentityStatus: 'unverified_local',
     createdByUserId: actorUserId,
-    createdByRole: 'owner',
+    createdByRole: context.role,
     legacyStoreId: context.legacyStoreId,
     legacyCreatedAt: timestamp,
     legacyUpdatedAt: timestamp,
@@ -345,7 +388,7 @@ export const createInPersonOrder = async (input: {
     migration: {
       mode: 'canonical_first',
       originatedByUserId: actorUserId,
-      originatedByRole: 'owner',
+      originatedByRole: context.role,
     },
     createdAt: FieldValue.serverTimestamp(),
     updatedAt: FieldValue.serverTimestamp(),

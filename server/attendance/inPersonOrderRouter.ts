@@ -16,19 +16,22 @@ const clean = (value: unknown): string =>
 const bearerToken = (authorization: string): string =>
   /^Bearer\s+(.+)$/i.exec(authorization)?.[1]?.trim() ?? '';
 
+const authenticatedActorId = async (authorization: string): Promise<string> => {
+  const token = bearerToken(authorization);
+  if (!token) throw new Error('AUTH_REQUIRED');
+  const identity = await verifyFirebaseIdToken(token);
+  if (!identity.uid) throw new Error('AUTH_REQUIRED');
+  return identity.uid;
+};
+
+// Only fiscal operations require the owner's institutional representation.
 const authorizeOwnerStore = async (input: {
   authorization: string;
   storeId: string;
-}) => {
-  const token = bearerToken(input.authorization);
-  if (!token) throw new Error('AUTH_REQUIRED');
-  const identity = await verifyFirebaseIdToken(token);
-  const representation = await loadOwnerStoreInstitutionalRepresentation({
-    storeId: input.storeId,
-    authenticatedUserId: identity.uid,
-  });
-  return representation;
-};
+}) => loadOwnerStoreInstitutionalRepresentation({
+  storeId: input.storeId,
+  authenticatedUserId: await authenticatedActorId(input.authorization),
+});
 
 const mapError = (error: unknown): { status: number; message: string; code?: string } => {
   const code = error instanceof Error ? error.message : String(error);
@@ -114,12 +117,9 @@ export const createInPersonOrderRouter = (): Router => {
     try {
       const storeId = clean(request.query.storeId);
       if (!storeId) throw new Error('IN_PERSON_ORDER_STORE_REQUIRED');
-      await authorizeOwnerStore({
-        authorization: request.get('authorization') ?? '',
-        storeId,
-      });
+      const authenticatedUserId = await authenticatedActorId(request.get('authorization') ?? '');
       response.status(200).json(
-        await listInPersonOrderCatalog({ legacyStoreId: storeId })
+        await listInPersonOrderCatalog({ legacyStoreId: storeId, authenticatedUserId })
       );
     } catch (error) {
       const mapped = mapError(error);
@@ -189,12 +189,9 @@ export const createInPersonOrderRouter = (): Router => {
     try {
       const storeId = clean(request.body?.storeId);
       if (!storeId) throw new Error('IN_PERSON_ORDER_STORE_REQUIRED');
-      const representation = await authorizeOwnerStore({
-        authorization: request.get('authorization') ?? '',
-        storeId,
-      });
+      const authenticatedUserId = await authenticatedActorId(request.get('authorization') ?? '');
       const order = await createInPersonOrder({
-        authenticatedUserId: representation.authenticatedUserId,
+        authenticatedUserId,
         value: request.body,
       });
       response.status(201).json({ order });
