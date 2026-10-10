@@ -101,12 +101,15 @@ describe('authoritative in-person order creation', () => {
     assert.match(service, /await batch\.commit\(\)/);
   });
 
-  test('API derives operator authority from Firebase identity and store representation', () => {
+  test('API derives operator identity from Firebase and permissions from authoritative membership', () => {
     const router = readFileSync('server/attendance/inPersonOrderRouter.ts', 'utf8');
+    const service = readFileSync('server/attendance/inPersonOrderService.ts', 'utf8');
     const parent = readFileSync('server/attendance/localAttendanceRouter.ts', 'utf8');
     assert.match(router, /verifyFirebaseIdToken\(token\)/);
-    assert.match(router, /loadOwnerStoreInstitutionalRepresentation/);
-    assert.match(router, /authenticatedUserId: representation\.authenticatedUserId/);
+    assert.match(router, /authenticatedUserId = await authenticatedActorId\(/);
+    assert.match(router, /authenticatedUserId,\s*value: request\.body/);
+    assert.match(service, /authorizeInPersonOrderOperator/);
+    assert.match(service, /get\(\)/);
     assert.doesNotMatch(router, /request\.body\?\.operatorId/);
     assert.match(parent, /router\.use\('\/orders', createInPersonOrderRouter\(\)\)/);
   });
