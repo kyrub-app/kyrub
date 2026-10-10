@@ -35,6 +35,10 @@ test('KDS backend validates active membership and per-status authority on every 
   assert.match(server, /authorizeOrderActor\(request, request\.body\?\.storeId\)/);
   assert.match(server, /authority\.isStaff && !canStoreRoleTransitionOrderStatus\(authority\.role, status\)/);
   assert.match(server, /authority\.isStaff && currentProvider === '99food'/);
+  assert.match(server, /PAYMENT_REQUIRED_FOR_PRODUCTION/);
+  assert.match(server, /checkoutAuthority\) === 'merchant_approval_required'/);
+  assert.match(server, /currentData\?\.paymentStatus\) !== 'paid'/);
+  assert.match(server, /STAFF_PAID_ORDER_REJECTION_REQUIRES_REFUND_REVIEW/);
   assert.match(server, /transitionOrderStatusWithInventory\(/);
   assert.match(server, /STORE_ORDER_ACCESS_FORBIDDEN/);
   assert.doesNotMatch(server, /request\.body\?\.role|request\.body\?\.actorId/);
