@@ -215,6 +215,21 @@ export const calculateCashDifference = (
   expectedAmount: number
 ): number => Number((countedAmount - expectedAmount).toFixed(2));
 
+/**
+ * Multiple open cash sessions are separate operational registers. Never
+ * silently select the first session when more than one is open in a store:
+ * a cashier must explicitly choose the session receiving the movement.
+ * This does not treat the browser deviceId as a registered terminal.
+ */
+export const resolveSelectedCashSession = (
+  sessions: readonly CanonicalCashSession[],
+  selectedSessionId: string
+): CanonicalCashSession | null => {
+  const openSessions = sessions.filter(session => session.status === 'open');
+  if (openSessions.length === 1) return openSessions[0];
+  return openSessions.find(session => session.id === selectedSessionId) ?? null;
+};
+
 export const resolveCashStoreContext = async (
   user: Pick<User, 'uid' | 'displayName' | 'email'>,
   legacyStoreId: string
