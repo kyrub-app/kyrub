@@ -255,10 +255,12 @@ service cloud.firestore {
             )
             || (
               operationalStaff(storeId)
+              // Status and payment are server-owned: the canonical HTTP KDS
+              // verifies current membership, transitions, inventory and Pix.
+              && incoming().status == existing().status
+              && incoming().paymentStatus == existing().paymentStatus
               && incoming().diff(existing()).affectedKeys().hasOnly([
                 'items',
-                'status',
-                'paymentStatus',
                 'tableCode',
                 'customerNote',
                 'updatedAt'
@@ -266,9 +268,10 @@ service cloud.firestore {
             )
             || (
               activeRole(storeId, ['production'])
+              && incoming().status == existing().status
+              && incoming().paymentStatus == existing().paymentStatus
               && incoming().diff(existing()).affectedKeys().hasOnly([
                 'items',
-                'status',
                 'updatedAt'
               ])
             )
