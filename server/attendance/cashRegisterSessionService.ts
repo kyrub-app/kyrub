@@ -1,5 +1,5 @@
-import { randomUUID } from 'node:crypto';
-import { FieldValue } from 'firebase-admin/firestore';
+import { createHash } from 'node:crypto';
+import { FieldValue, type Transaction } from 'firebase-admin/firestore';
 import { adminDb } from '../firebaseAdmin.js';
 import { hasStorePermission, isStoreRole, type StoreRole } from '../../src/utils/storeSecurity.js';
 import { authorizeInPersonOrderOperator } from './inPersonOrderService.js';
@@ -48,7 +48,7 @@ const authorizeRegisterActor = async (input: {
 };
 
 const requireTransactionActor = async (
-  transaction: FirebaseFirestore.Transaction,
+  transaction: Transaction,
   actor: RegisterActor
 ): Promise<void> => {
   const store = await transaction.get(adminDb.doc(`stores/${actor.canonicalStoreId}`));
@@ -97,13 +97,15 @@ export const assertCashRegisterOpenIdempotency = (input: {
   actorId: string;
   amountMinor: number;
   operationId: string;
+  shiftLabel: string;
 }): 'create' | 'replay' => {
   if (!input.existing) return 'create';
   if (
     clean(input.existing.registerId) !== input.registerId ||
     clean(input.existing.openedByUserId) !== input.actorId ||
     input.existing.openingMinor !== input.amountMinor ||
-    clean(input.existing.openOperationId) !== input.operationId
+    clean(input.existing.openOperationId) !== input.operationId ||
+    clean(input.existing.shiftLabel) !== input.shiftLabel
   ) throw new Error('CASH_REGISTER_IDEMPOTENCY_CONFLICT');
   return 'replay';
 };
@@ -139,10 +141,16 @@ export const createCanonicalCashRegister = async (input: {
 }): Promise<{ id: string; name: string }> => {
   const actor = await authorizeRegisterActor(input);
   const name = normalizedCashRegisterName(input.name);
-  const id = `register-${randomUUID()}`;
+  if (actor.role !== 'owner' && actor.role !== 'manager') {
+    throw new Error('CASH_REGISTER_FORBIDDEN');
+  }
+  const id = `register-${createHash('sha256').update(name.normalize('NFKC').toLocaleLowerCase('pt-BR')).digest('hex').slice(0,24)}`;
   const register = adminDb.doc(registerPath(actor.canonicalStoreId, id));
   await adminDb.runTransaction(async transaction => {
     await requireTransactionActor(transaction, actor);
+    if ((await transaction.get(register)).exists) {
+      throw new Error('CASH_REGISTER_ALREADY_EXISTS');
+    }
     transaction.create(register, {
       id,
       storeId: actor.canonicalStoreId,
@@ -231,6 +239,7 @@ export const openCanonicalCashRegisterSession = async (input: {
       actorId: actor.actorId,
       amountMinor: openingMinor,
       operationId,
+      shiftLabel,
     });
     if (idempotency === 'replay') {
       const status = clean(sessionSnapshot.data()?.status);
