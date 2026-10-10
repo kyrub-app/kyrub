@@ -40,6 +40,9 @@ jobs:
       - name: Validate managed Cash movement and closure contracts
         run: node --test --import tsx tests/cash-register-atomic-movements-close.test.ts >> build.log 2>&1
 
+      - name: Validate legacy Cash replay identity and idempotency
+        run: node --test --import tsx tests/cash-legacy-replay-identity.test.ts >> build.log 2>&1
+
       - name: Validate canonical Cash register transaction contracts
         run: node --test --import tsx tests/cash-register-atomic-opening.test.ts >> build.log 2>&1
 
