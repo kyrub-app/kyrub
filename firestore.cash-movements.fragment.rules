@@ -2,8 +2,7 @@
       allow get, list: if cashLedgerRoleAllowed(storeId);
 
       allow create: if cashLedgerRoleAllowed(storeId)
-        && exists(cashLedgerSessionPath(storeId, sessionId))
-        && get(cashLedgerSessionPath(storeId, sessionId)).data.status == 'open'
+        && cashLedgerAllowsLegacyClientMovement(storeId, sessionId)
         && cashLedgerMovementFieldsAreValid(storeId, sessionId, movementId);
 
       allow update, delete: if false;
