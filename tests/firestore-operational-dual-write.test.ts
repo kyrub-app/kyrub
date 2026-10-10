@@ -192,3 +192,38 @@ test('owner mirrors a legacy table payment and outsiders remain blocked', async 
     )
   );
 });
+
+test('composed rules: active members cannot bypass HTTP KDS authority for status or payment writes', async () => {
+  await environment.withSecurityRulesDisabled(async context => {
+    const db = context.firestore();
+    for (const [userId, role] of [
+      ['seller-a', 'seller'],
+      ['manager-a', 'manager'],
+      ['production-a', 'production'],
+    ]) {
+      await setDoc(doc(db, 'stores', STORE_ID, 'members', userId), {
+        storeId: STORE_ID,
+        userId,
+        role,
+        status: 'active',
+      });
+    }
+    await setDoc(doc(db, 'stores', STORE_ID, 'orders', 'staff-kds-guard'), {
+      ...mirroredCustomerOrder(),
+      id: 'staff-kds-guard',
+    });
+  });
+
+  for (const userId of ['seller-a', 'manager-a', 'production-a']) {
+    const db = environment.authenticatedContext(userId).firestore();
+    const reference = doc(db, 'stores', STORE_ID, 'orders', 'staff-kds-guard');
+    await assertFails(updateDoc(reference, {
+      status: 'accepted',
+      updatedAt: serverTimestamp(),
+    }));
+    await assertFails(updateDoc(reference, {
+      paymentStatus: 'paid',
+      updatedAt: serverTimestamp(),
+    }));
+  }
+});
