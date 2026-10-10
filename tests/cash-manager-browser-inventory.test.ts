@@ -75,8 +75,24 @@ test('finance embeds device inventory into existing Cash operational projection'
   assert.match(service, /await adminDb.runTransaction\(transaction => requireTransactionActor/);
   assert.match(service, /\.limit\(101\)\.get\(\)/);
   assert.match(service, /CASH_REGISTER_INSPECTION_SCAN_INCOMPLETE/);
-  assert.match(cash, /StoreCashDeviceInventory storeId=\{storeId\}/);
-  assert.match(finance, /StoreCashFinanceWorkspace projection=\{cash\} storeId=\{storeId\}/);
+  const listing = service.slice(
+    service.indexOf('export const listCashDeviceInspectionInventory'),
+    service.indexOf('export const normalizedCashRegisterName')
+  );
+  const inventoryRoute = router.slice(
+    router.indexOf("router.get('/device-inspections'"),
+    router.indexOf("router.post('/device-inspections'")
+  );
+  assert.ok(inventoryRoute.includes('legacyStoreId: clean(request.query.storeId)'));
+  assert.match(listing, /legacyStoreId: string/);
+  assert.match(listing, /const actor = await authorizeRegisterActor/);
+  assert.match(listing, /const storeId = actor.canonicalStoreId/);
+  assert.doesNotMatch(listing, /input.canonicalStoreId/);
+  const composite = readFileSync('src/components/StoreFinanceCompositeRuntime.tsx', 'utf8');
+  assert.ok(composite.includes('<StoreCashDeviceInventory storeId={storeId} />'));
+  assert.ok(composite.includes('Caixa operacional'));
+  assert.doesNotMatch(cash, /StoreCashDeviceInventory/);
+  assert.ok(finance.includes('<StoreCashFinanceWorkspace projection={cash} />'));
   assert.match(ui, /data-kyrub-cash-manager-inventory="submitted-only"/);
   assert.doesNotMatch(ui, /[Ll]iberar migração|[Aa]provar migração/);
 });
