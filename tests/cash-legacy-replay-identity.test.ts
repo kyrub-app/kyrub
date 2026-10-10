@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import {
   assertCashReplayFieldsMatch,
+  inspectCashLocalQueue,
   selectPendingCashReplay,
   type CashStoreContext,
 } from '../src/utils/canonicalCash';
@@ -128,4 +129,56 @@ test('legacy transport refuses server-managed sessions and verifies existing doc
   assert.match(source, /assertLegacyCashActor\(context, local\.closedByUserId/);
   assert.match(source, /assertCashReplayFieldsMatch\(existing\.data\(\)/);
   assert.match(source, /selectPendingCashReplay\(context, sessions, movements\)/);
+});
+
+test('local queue report separates current employee and other operators on same device', () => {
+  const audit = inspectCashLocalQueue(context, [
+    session(),
+    session({ canonicalId: 'session-ana', operatorUserId: 'ana' }),
+    session({ canonicalId: 'closed-ana', status: 'closed', createSynced: true, closeSynced: false, closedByUserId: 'ana' }),
+    session({ canonicalId: 'closed-bruno', status: 'closed', createSynced: true, closeSynced: false, closedByUserId: 'bruno' }),
+    session({ canonicalId: 'unattributed-close', status: 'closed', createSynced: true, closeSynced: false, closedByUserId: '' }),
+  ], [
+    movement(),
+    movement({ canonicalId: 'movement-ana', actorUserId: 'ana' }),
+    movement({ canonicalId: 'movement-unattributed', actorUserId: '' }),
+    movement({ canonicalId: 'already-synced', synced: true }),
+    movement({ canonicalId: 'other-tenant', legacyStoreId: 'owner-b' }),
+  ]);
+  assert.equal(audit.currentActorPending, 3);
+  assert.equal(audit.otherActorsPending, 3);
+  assert.equal(audit.unattributedPending, 2);
+  assert.equal(audit.localOpenSessions, 2);
+  assert.equal(audit.pendingOpeningOperations, 2);
+  assert.equal(audit.pendingClosingOperations, 3);
+  assert.equal(audit.pendingMovementOperations, 3);
+  assert.equal(audit.migrationAllowed, false);
+  assert.equal(audit.otherDevicesVerified, false);
+  assert.equal(audit.requiresReview, true);
+});
+
+test('empty browser queue never means the whole store is migration-ready', () => {
+  const audit = inspectCashLocalQueue(context, [], []);
+  assert.equal(audit.currentActorPending, 0);
+  assert.equal(audit.otherActorsPending, 0);
+  assert.equal(audit.requiresReview, false);
+  assert.equal(audit.migrationAllowed, false);
+  assert.equal(audit.otherDevicesVerified, false);
+});
+
+test('local audit never leaks actor identifiers or financial payloads through the summary', () => {
+  const audit = inspectCashLocalQueue(context, [
+    session({ operatorUserId: 'private-actor', initialCash: 934.95 }),
+  ], [
+    movement({ actorUserId: 'private-actor', amount: 3451.33, paymentId: 'secret-pay' }),
+  ]);
+  const json = JSON.stringify(audit);
+  assert.doesNotMatch(json, /private-actor|secret-pay|934\.95|3451\.33/);
+});
+
+test('Cash UI replaces misleading global sync claim with device-local read-only inventory', () => {
+  const source = readFileSync('src/components/store/CashWorkspace.tsx', 'utf8');
+  assert.doesNotMatch(source, /Dexie e Firestore sincronizados/);
+  assert.match(source, /data-kyrub-cash-local-audit="read-only"/);
+  assert.match(source, /getCashLocalQueueAudit\(context\)/);
 });
