@@ -155,7 +155,13 @@ async function loadStoreFinance(storeId: string): Promise<StoreFinancePayload> {
   return payload;
 }
 
-export function StoreFinanceRuntime({ storeId }: { storeId: string }) {
+export function StoreFinanceRuntime({
+  storeId,
+  surface = 'payments',
+}: {
+  storeId: string;
+  surface?: 'payments' | 'cash';
+}) {
   const [payload, setPayload] = useState<StoreFinancePayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -205,14 +211,20 @@ export function StoreFinanceRuntime({ storeId }: { storeId: string }) {
     );
   }
 
+  // The cash projection is the existing read-only Cash authority, not a new
+  // register. Its ledger is distinct from the canonical payment ledger.
+  if (surface === 'cash') {
+    return <StoreCashFinanceWorkspace projection={cash} />;
+  }
+
   return (
     <section className="max-w-full space-y-4 overflow-x-hidden text-white" data-kyrub-store-finance-runtime="canonical-ledger">
       <div className="max-w-full overflow-hidden rounded-3xl border border-emerald-500/25 bg-slate-900 p-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
-            <span className="font-mono text-[9px] font-black uppercase tracking-[0.16em] text-emerald-300">Financeiro Interno</span>
-            <h3 className="mt-1 text-base font-black">Movimentações da loja</h3>
-            <p className="mt-1 text-[10px] leading-relaxed text-slate-400">Valores vindos dos pagamentos canônicos do Kyrub. Nenhum lançamento de demonstração é exibido aqui.</p>
+            <span className="font-mono text-[9px] font-black uppercase tracking-[0.16em] text-emerald-300">Pagamentos e Contas</span>
+            <h3 className="mt-1 text-base font-black">Repasses e compromissos da loja</h3>
+            <p className="mt-1 text-[10px] leading-relaxed text-slate-400">O histórico paginado acima é a lista principal de pagamentos. Esta área preserva recebíveis, contas a pagar e acesso fiscal dos registros recentes.</p>
           </div>
           <button type="button" onClick={() => void load(true)} className="min-h-10 rounded-xl border border-slate-700 bg-slate-950 px-4 text-[9px] font-black uppercase text-slate-300">Atualizar</button>
         </div>
@@ -223,12 +235,17 @@ export function StoreFinanceRuntime({ storeId }: { storeId: string }) {
         )}
       </div>
 
-      <div className="grid min-w-0 max-w-full gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <details className="rounded-2xl border border-slate-800 bg-slate-900 p-4" data-kyrub-finance-recent-window="collapsed">
+        <summary className="cursor-pointer text-[10px] font-bold text-slate-200">
+          Indicadores da amostra recente (até 100 lançamentos, não representam os totais globais)
+        </summary>
+        <div className="mt-3 grid min-w-0 max-w-full gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <article className="min-w-0 overflow-hidden rounded-2xl border border-slate-800 bg-slate-900 p-4"><span className="text-[8px] font-black uppercase text-slate-500">Recebido bruto</span><strong className="mt-2 block text-lg">{money(summary?.capturedMinor ?? 0)}</strong></article>
         <article className="min-w-0 overflow-hidden rounded-2xl border border-slate-800 bg-slate-900 p-4"><span className="text-[8px] font-black uppercase text-slate-500">Estornos</span><strong className="mt-2 block text-lg">{money(summary?.refundedMinor ?? 0)}</strong></article>
         <article className="min-w-0 overflow-hidden rounded-2xl border border-slate-800 bg-slate-900 p-4"><span className="text-[8px] font-black uppercase text-slate-500">Taxas conhecidas do provedor</span><strong className="mt-2 block text-lg">{hasKnownProviderFees ? money(knownProviderFeesMinor) : 'Não informado'}</strong></article>
         <article className="min-w-0 overflow-hidden rounded-2xl border border-slate-800 bg-slate-900 p-4"><span className="text-[8px] font-black uppercase text-slate-500">Saldo após reversões</span><strong className="mt-2 block text-lg">{money(summary?.economicNetMinor ?? 0)}</strong><span className="mt-1 block text-[8px] text-slate-500">Não representa o líquido do PSP quando a taxa ainda não foi informada.</span></article>
       </div>
+      </details>
 
       <div className="min-w-0 max-w-full overflow-hidden rounded-3xl border border-cyan-500/20 bg-slate-900 p-5" data-kyrub-store-receivables="canonical">
         <div className="min-w-0">
@@ -273,8 +290,6 @@ export function StoreFinanceRuntime({ storeId }: { storeId: string }) {
         )}
       </div>
 
-      <StoreCashFinanceWorkspace projection={cash} />
-
       <StorePayablesWorkspace
         storeId={storeId}
         payables={payables}
@@ -282,8 +297,16 @@ export function StoreFinanceRuntime({ storeId }: { storeId: string }) {
         onReload={() => load(true)}
       />
 
-      <div className="min-w-0 max-w-full overflow-hidden rounded-3xl border border-slate-800 bg-slate-900 p-5">
-        <div className="mb-4 flex items-center justify-between gap-3"><div className="min-w-0"><h4 className="text-xs font-black uppercase">Movimentações</h4><p className="mt-1 text-[9px] text-slate-500">{summary?.entryCount ?? entries.length} lançamento(s)</p></div></div>
+      <details className="min-w-0 max-w-full overflow-hidden rounded-3xl border border-slate-800 bg-slate-900 p-5"
+        data-kyrub-finance-fiscal-recent="collapsed">
+        <summary className="cursor-pointer text-[10px] font-bold text-slate-200">
+          Consultar documentos fiscais de pagamentos recentes (até 100 lançamentos)
+        </summary>
+        <p className="mt-2 text-[9px] text-slate-400">
+          Lista auxiliar limitada à amostra recente para reabrir os documentos fiscais.
+          Para o histórico completo com filtros, utilize a lista paginada acima.
+        </p>
+        <div className="mt-3 mb-4 text-[9px] text-slate-500">{summary?.entryCount ?? entries.length} registro(s) nesta amostra</div>
         {entries.length === 0 ? (
           <p className="rounded-2xl border border-dashed border-slate-700 p-5 text-center text-[10px] text-slate-400">Ainda não há pagamento confirmado registrado para esta loja.</p>
         ) : (
@@ -348,7 +371,7 @@ export function StoreFinanceRuntime({ storeId }: { storeId: string }) {
             })}
           </div>
         )}
-      </div>
+      </details>
     </section>
   );
 }

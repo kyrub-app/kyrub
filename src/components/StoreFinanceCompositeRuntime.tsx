@@ -1,3 +1,4 @@
+import { useState, type KeyboardEvent } from 'react';
 import { StoreFinanceRuntime } from './StoreFinanceRuntime';
 import StoreCashDeviceInventory from './store/StoreCashDeviceInventory';
 import StoreFinanceHistoryWorkspace from './store/StoreFinanceHistoryWorkspace';
@@ -5,19 +6,106 @@ import StoreFinancePeriodRuntime from './store/StoreFinancePeriodRuntime';
 import StoreMercadoPagoPeriodSummaryWorkspace from './store/StoreMercadoPagoPeriodSummaryWorkspace';
 import StoreResultsMarginsWorkspace from './store/StoreResultsMarginsWorkspace';
 
-export function StoreFinanceCompositeRuntime({ storeId }: { storeId: string }) {
+// One route, four views: do not mount independent financial ledgers at once.
+// Switching tabs only changes presentation; source collections and APIs remain unchanged.
+export const STORE_FINANCE_TABS = [
+  { id: 'overview', label: 'Visão geral' },
+  { id: 'payments', label: 'Pagamentos e Contas' },
+  { id: 'margins', label: 'Resultados & Margens' },
+  { id: 'cash', label: 'Caixa operacional' },
+] as const;
+
+export type StoreFinanceTab = (typeof STORE_FINANCE_TABS)[number]['id'];
+
+function FinanceTabsForStore({ storeId }: { storeId: string }) {
+  const [activeTab, setActiveTab] = useState<StoreFinanceTab>('overview');
+
+  const handleTabKeys = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
+    const last = STORE_FINANCE_TABS.length - 1;
+    const target = event.key === 'ArrowRight' ? (index + 1) % STORE_FINANCE_TABS.length
+      : event.key === 'ArrowLeft' ? (index + last) % STORE_FINANCE_TABS.length
+      : event.key === 'Home' ? 0
+      : event.key === 'End' ? last
+      : -1;
+    if (target === -1) return;
+    event.preventDefault();
+    setActiveTab(STORE_FINANCE_TABS[target].id);
+    const destinationId = `kyrub-finance-tab-${STORE_FINANCE_TABS[target].id}`;
+    // Focus stays within the existing tab controls; no synthetic navigation
+    // or second ERP routing surface is created.
+    event.currentTarget.parentElement?.querySelector<HTMLButtonElement>(
+      `#${destinationId}`
+    )?.focus();
+  };
+
   return (
-    <div className="space-y-4">
-      <StoreFinancePeriodRuntime storeId={storeId} />
-      <StoreResultsMarginsWorkspace storeId={storeId} />
-      <StoreMercadoPagoPeriodSummaryWorkspace storeId={storeId} />
-      <StoreFinanceHistoryWorkspace storeId={storeId} />
-      <StoreFinanceRuntime storeId={storeId} />
-      <section className="rounded-3xl border border-cyan-500/20 bg-slate-900 p-5"
-        data-kyrub-cash-management-section="device-inventory">
-        <h3 className="text-xs font-black uppercase text-white">Caixa operacional</h3>
-        <StoreCashDeviceInventory storeId={storeId} />
-      </section>
-    </div>
+    <section className="min-w-0 max-w-full space-y-4 overflow-x-hidden text-white" data-kyrub-finance-four-areas="canonical">
+      <header className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
+        <h2 className="text-sm font-black text-white">Financeiro Interno</h2>
+        <p className="mt-1 text-[10px] leading-relaxed text-slate-400">
+          Informações financeiras da loja organizadas por assunto, sem repetir lançamentos em diversos painéis.
+        </p>
+        <div className="mt-4 flex max-w-full gap-2 overflow-x-auto pb-1" role="tablist" aria-label="Áreas do Financeiro Interno">
+          {STORE_FINANCE_TABS.map((tab, index) => {
+            const active = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                id={`kyrub-finance-tab-${tab.id}`}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                aria-controls="kyrub-finance-active-panel"
+                tabIndex={active ? 0 : -1}
+                onClick={() => setActiveTab(tab.id)}
+                onKeyDown={event => handleTabKeys(event, index)}
+                className={`min-h-11 shrink-0 rounded-xl border px-3 py-2 text-[10px] font-bold transition-colors ${active
+                  ? 'border-cyan-500/40 bg-cyan-500/10 text-cyan-100'
+                  : 'border-slate-700 bg-slate-950 text-slate-400 hover:text-white'}`}
+              >
+                {tab.label}
+              </button>
+            );
+          })}
+        </div>
+      </header>
+
+      <div
+        id="kyrub-finance-active-panel"
+        role="tabpanel"
+        aria-labelledby={`kyrub-finance-tab-${activeTab}`}
+        tabIndex={0}
+        className="min-w-0 max-w-full space-y-4"
+      >
+        {activeTab === 'overview' && (
+          <StoreFinancePeriodRuntime storeId={storeId} />
+        )}
+        {activeTab === 'payments' && (
+          <>
+            <StoreMercadoPagoPeriodSummaryWorkspace storeId={storeId} />
+            <StoreFinanceHistoryWorkspace storeId={storeId} />
+            <StoreFinanceRuntime storeId={storeId} surface="payments" />
+          </>
+        )}
+        {activeTab === 'margins' && (
+          <StoreResultsMarginsWorkspace storeId={storeId} />
+        )}
+        {activeTab === 'cash' && (
+          <>
+            <StoreFinanceRuntime storeId={storeId} surface="cash" />
+            <section className="rounded-3xl border border-cyan-500/20 bg-slate-900 p-5"
+              data-kyrub-cash-management-section="device-inventory">
+              <h3 className="text-xs font-black uppercase text-white">Conferência de dispositivos</h3>
+              <StoreCashDeviceInventory storeId={storeId} />
+            </section>
+          </>
+        )}
+      </div>
+    </section>
   );
+}
+
+export function StoreFinanceCompositeRuntime({ storeId }: { storeId: string }) {
+  // Reset tab state on tenant changes, preventing cross-store presentation.
+  return <FinanceTabsForStore key={storeId} storeId={storeId} />;
 }
