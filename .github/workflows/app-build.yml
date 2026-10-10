@@ -49,6 +49,9 @@ jobs:
       - name: Validate Cash cutover write fence
         run: node --test --import tsx tests/cash-cutover-write-fence.test.ts >> build.log 2>&1
 
+      - name: Validate Cash device inspection evidence
+        run: node --test --import tsx tests/cash-device-inspection-evidence.test.ts >> build.log 2>&1
+
       - name: Validate canonical Cash register transaction contracts
         run: node --test --import tsx tests/cash-register-atomic-opening.test.ts >> build.log 2>&1
 

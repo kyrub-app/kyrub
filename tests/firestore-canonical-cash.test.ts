@@ -468,3 +468,21 @@ test('client cannot forge cashCoordination document or read it without cash role
   });
   await assertFails(getDoc(doc(seller, 'stores', STORE_ID, 'cashCoordination', 'current')));
 });
+
+
+test('device inspection evidence cannot be forged or altered by Firebase clients', async () => {
+  const owner = environment.authenticatedContext('owner-a').firestore();
+  const cashier = environment.authenticatedContext('cashier-a').firestore();
+  const path = ['stores', STORE_ID, 'cashDeviceInspections', 'device-one'] as const;
+  const evidence = {
+    id: 'device-one', storeId: STORE_ID, actorUserId: 'cashier-a',
+    selfReported: true, verified: false, activationAllowed: false,
+  };
+  await assertFails(setDoc(doc(owner, ...path), evidence));
+  await assertFails(setDoc(doc(cashier, ...path), evidence));
+  await environment.withSecurityRulesDisabled(async context => {
+    await setDoc(doc(context.firestore(), ...path), evidence);
+  });
+  await assertFails(updateDoc(doc(owner, ...path), { verified: true }));
+  await assertFails(getDoc(doc(cashier, ...path)));
+});

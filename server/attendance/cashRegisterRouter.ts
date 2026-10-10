@@ -7,6 +7,7 @@ import {
   addCanonicalCashRegisterMovement,
   closeCanonicalCashRegisterSession,
   inspectCanonicalCashCutoverReadiness,
+  recordCashDeviceInspection,
 } from './cashRegisterSessionService.js';
 
 const clean = (value: unknown): string =>
@@ -30,6 +31,10 @@ const sendError = (response: import('express').Response, error: unknown): void =
     response.status(404).json({ error: 'Terminal não encontrado ou desativado.', code });
    } else if (code === 'CASH_REGISTER_ALREADY_EXISTS') {
     response.status(409).json({ error: 'Já existe um terminal com esse nome.', code });
+  } else if (code === 'CASH_REGISTER_INSPECTION_CONFLICT') {
+    response.status(409).json({ error: 'Este relatório já foi registrado com dados diferentes.', code });
+  } else if (code === 'CASH_REGISTER_INSPECTION_INVALID') {
+    response.status(400).json({ error: 'Revise os dados da conferência do aparelho.', code });
   } else if (code === 'CASH_REGISTER_CUTOVER_NOT_ENABLED') {
     response.status(409).json({
       error: 'Esta loja ainda não concluiu a migração segura do Caixa.',
@@ -74,6 +79,25 @@ export const createCashRegisterRouter = (): Router => {
       });
       response.setHeader('Cache-Control', 'no-store, max-age=0');
       response.status(200).json(report);
+    } catch (error) {
+      sendError(response, error);
+    }
+  });
+
+  // Authenticated self-report only: never advances migration or moves cash.
+  // Deliberately available while managed sessions remain disabled.
+  router.post('/device-inspections', async (request, response) => {
+    try {
+      const authenticatedUserId = await requireActorId(request.get('authorization') ?? '');
+      const result = await recordCashDeviceInspection({
+        legacyStoreId: clean(request.body?.storeId),
+        authenticatedUserId,
+        operationId: request.body?.operationId,
+        deviceId: request.body?.deviceId,
+        counts: request.body?.counts,
+      });
+      response.setHeader('Cache-Control', 'no-store, max-age=0');
+      response.status(result.replay ? 200 : 201).json(result);
     } catch (error) {
       sendError(response, error);
     }

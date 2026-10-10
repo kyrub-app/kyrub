@@ -493,6 +493,50 @@ export const getCashLocalQueueAudit = async (
     await cashDb.movements.toArray()
   );
 
+
+/**
+ * Explicit user action: the server stores a SELF-REPORTED device inspection,
+ * never a reconciliation approval. Nothing here syncs another actor's queue.
+ */
+export const submitCashDeviceInspection = async (
+  context: CashStoreContext,
+  token: string,
+  operationId: string
+): Promise<{ inspectionId: string; selfReported: true; verified: false; activationAllowed: false }> => {
+  const audit = await getCashLocalQueueAudit(context);
+  const response = await fetch('/api/local-attendance/cash-registers/device-inspections', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      storeId: context.legacyStoreId,
+      operationId,
+      deviceId: getDeviceId(),
+      counts: {
+        currentActorPending: audit.currentActorPending,
+        otherActorsPending: audit.otherActorsPending,
+        unattributedPending: audit.unattributedPending,
+        localOpenSessions: audit.localOpenSessions,
+        pendingOpeningOperations: audit.pendingOpeningOperations,
+        pendingMovementOperations: audit.pendingMovementOperations,
+        pendingClosingOperations: audit.pendingClosingOperations,
+      },
+    }),
+  });
+  const result = await response.json().catch(() => null) as Record<string, unknown> | null;
+  if (!response.ok || result?.selfReported !== true || result?.verified !== false ||
+    result?.activationAllowed !== false || typeof result?.inspectionId !== 'string') {
+    throw new Error(
+      typeof result?.error === 'string'
+        ? result.error
+        : 'Não foi possível registrar a conferência deste aparelho.'
+    );
+  }
+  return result as { inspectionId: string; selfReported: true; verified: false; activationAllowed: false };
+};
+
 export const assertCashReplayFieldsMatch = (
   remote: Record<string, unknown>,
   expected: Record<string, unknown>
