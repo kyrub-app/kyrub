@@ -661,8 +661,9 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = props => {
               busyOrderId={busyOrderId}
               attendanceSpaces={atendimentoSpaces}
               onChangeStatus={handleChangeOrderStatus}
-              canChangeStatus={status => Boolean(
-                props.accessRole && canStoreRoleTransitionOrderStatus(props.accessRole, status)
+              canChangeStatus={status => (
+                auth.currentUser?.uid === activeRetailerId ||
+                Boolean(props.accessRole && canStoreRoleTransitionOrderStatus(props.accessRole, status))
               )}
             />
           </>,
