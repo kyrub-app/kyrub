@@ -208,7 +208,7 @@ export const hasStorePermission = (
  */
 export const canStoreRoleTransitionOrderStatus = (
   role: StoreRole,
-  status: 'accepted' | 'preparing' | 'ready' | 'out_for_delivery' | 'completed' | 'rejected' | 'cancelled'
+  status: 'pending' | 'accepted' | 'preparing' | 'ready' | 'out_for_delivery' | 'completed' | 'rejected' | 'cancelled'
 ): boolean => {
   if (role === 'owner' || role === 'manager') return true;
   if (status === 'accepted' || status === 'out_for_delivery') {
