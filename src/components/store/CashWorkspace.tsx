@@ -20,6 +20,7 @@ import {
   movementRequiresReason,
   openCashSession,
   resolveCashStoreContext,
+  resolveSelectedCashSession,
   subscribeToCashMovements,
   subscribeToCashSessions,
   syncPendingCashRecords,
@@ -69,7 +70,9 @@ export const CashWorkspace = ({
 }: CashWorkspaceProps) => {
   const [context, setContext] = useState<CashStoreContext | null>(null);
   const [sessions, setSessions] = useState<CanonicalCashSession[]>([]);
+  const [selectedSessionId, setSelectedSessionId] = useState('');
   const [movements, setMovements] = useState<CanonicalCashMovement[]>([]);
+  const [loadedMovementSessionId, setLoadedMovementSessionId] = useState('');
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
@@ -86,10 +89,23 @@ export const CashWorkspace = ({
   const [countedAmount, setCountedAmount] = useState('');
   const [closeReason, setCloseReason] = useState('');
 
-  const activeSession = useMemo(
-    () => sessions.find(session => session.status === 'open') ?? null,
+  const openSessions = useMemo(
+    () => sessions.filter(session => session.status === 'open'),
     [sessions]
   );
+  const activeSession = useMemo(
+    () => resolveSelectedCashSession(openSessions, selectedSessionId),
+    [openSessions, selectedSessionId]
+  );
+  const movementsReady = Boolean(
+    activeSession && loadedMovementSessionId === activeSession.id
+  );
+
+  useEffect(() => {
+    setSelectedSessionId('');
+    setMovements([]);
+    setLoadedMovementSessionId('');
+  }, [legacyStoreId]);
 
   useEffect(() => {
     const user = auth.currentUser;
@@ -144,16 +160,19 @@ export const CashWorkspace = ({
   }, [context]);
 
   useEffect(() => {
-    if (!context || !activeSession) {
-      setMovements([]);
-      return;
-    }
+    setMovements([]);
+    setLoadedMovementSessionId('');
+    if (!context || !activeSession) return;
 
     return subscribeToCashMovements(
       context,
       activeSession.id,
-      setMovements,
+      nextMovements => {
+        setMovements(nextMovements);
+        setLoadedMovementSessionId(activeSession.id);
+      },
       error => {
+        setLoadedMovementSessionId('');
         console.warn('Falha ao carregar movimentações do caixa.', error);
         notify('Não foi possível carregar as movimentações do caixa.', 'error');
       }
@@ -205,7 +224,7 @@ export const CashWorkspace = ({
   };
 
   const handleMovement = async (): Promise<void> => {
-    if (!context || !activeSession) return;
+    if (!context || !activeSession || !movementsReady) return;
     const value = Number.parseFloat(movementAmount.replace(',', '.'));
     setBusy(true);
     try {
@@ -236,7 +255,7 @@ export const CashWorkspace = ({
   };
 
   const handleClose = async (): Promise<void> => {
-    if (!context || !activeSession) return;
+    if (!context || !activeSession || !movementsReady) return;
     const value = Number.parseFloat(countedAmount.replace(',', '.'));
     setBusy(true);
     try {
@@ -338,7 +357,38 @@ export const CashWorkspace = ({
         </div>
       </div>
 
+      {openSessions.length > 1 && (
+        <div className="rounded-3xl border border-cyan-500/30 bg-slate-900 p-5" data-kyrub-cash-session-selector="explicit">
+          <label htmlFor="kyrub-cash-active-session" className="block text-xs font-black uppercase text-white">
+            Selecione a sessão de Caixa
+          </label>
+          <p className="mt-2 text-xs text-slate-400">
+            Há vários caixas abertos nesta loja. Escolha o turno correto antes de movimentar ou fechar valores.
+            O identificador de sessão ainda não representa um terminal físico cadastrado.
+          </p>
+          <select
+            id="kyrub-cash-active-session"
+            value={activeSession?.id ?? ''}
+            onChange={event => setSelectedSessionId(event.target.value)}
+            disabled={busy}
+            className="mt-4 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-3 text-xs text-white outline-none focus:border-cyan-500/60 disabled:opacity-50"
+          >
+            <option value="">Escolha uma sessão aberta...</option>
+            {openSessions.map(session => (
+              <option key={session.id} value={session.id}>
+                {session.operatorName} · Sessão {session.id.slice(-10)}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+
       {!activeSession ? (
+        openSessions.length > 0 ? (
+          <div className="rounded-3xl border border-cyan-500/30 bg-slate-900 p-5 text-xs text-slate-300">
+            Escolha a sessão de Caixa aberta acima para consultar os movimentos, registrar valores ou fechar o turno.
+          </div>
+        ) : (
         <div className="rounded-3xl border border-slate-800 bg-slate-900 p-5">
           <div className="flex items-start gap-3">
             <Banknote className="mt-0.5 h-5 w-5 text-emerald-400" />
@@ -367,8 +417,14 @@ export const CashWorkspace = ({
             </div>
           </div>
         </div>
+        )
       ) : (
         <>
+          {!movementsReady && (
+            <div className="rounded-2xl border border-amber-500/20 bg-amber-500/10 p-3 text-xs text-amber-100">
+              Carregando os movimentos confirmados desta sessão. As alterações estão bloqueadas até a leitura terminar.
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
             {[
               ['Abertura', activeSession.openingAmount, 'text-white'],
@@ -447,7 +503,7 @@ export const CashWorkspace = ({
               <button
                 type="button"
                 onClick={handleMovement}
-                disabled={busy}
+                disabled={busy || !movementsReady}
                 className="mt-4 w-full rounded-xl bg-slate-100 py-2.5 text-xs font-black uppercase text-slate-950 transition hover:bg-white disabled:opacity-50"
               >
                 Registrar movimentação
@@ -479,7 +535,7 @@ export const CashWorkspace = ({
               <button
                 type="button"
                 onClick={handleClose}
-                disabled={busy}
+                disabled={busy || !movementsReady}
                 className="mt-3 w-full rounded-xl border border-rose-500/40 bg-rose-500/10 py-2.5 text-xs font-black uppercase text-rose-300 transition hover:bg-rose-500/20 disabled:opacity-50"
               >
                 Conferir e fechar
