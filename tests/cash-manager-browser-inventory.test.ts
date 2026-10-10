@@ -79,7 +79,11 @@ test('finance embeds device inventory into existing Cash operational projection'
     service.indexOf('export const listCashDeviceInspectionInventory'),
     service.indexOf('export const normalizedCashRegisterName')
   );
-  assert.match(router, /legacyStoreId: clean\\(request.query.storeId\\)/);
+  const inventoryRoute = router.slice(
+    router.indexOf("router.get('/device-inspections'"),
+    router.indexOf("router.post('/device-inspections'")
+  );
+  assert.ok(inventoryRoute.includes('legacyStoreId: clean(request.query.storeId)'));
   assert.match(listing, /legacyStoreId: string/);
   assert.match(listing, /const actor = await authorizeRegisterActor/);
   assert.match(listing, /const storeId = actor.canonicalStoreId/);
