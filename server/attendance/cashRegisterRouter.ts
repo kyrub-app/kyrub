@@ -4,6 +4,8 @@ import {
   createCanonicalCashRegister,
   listCanonicalCashRegisters,
   openCanonicalCashRegisterSession,
+  addCanonicalCashRegisterMovement,
+  closeCanonicalCashRegisterSession,
 } from './cashRegisterSessionService.js';
 
 const clean = (value: unknown): string =>
@@ -27,6 +29,12 @@ const sendError = (response: import('express').Response, error: unknown): void =
     response.status(404).json({ error: 'Terminal não encontrado ou desativado.', code });
    } else if (code === 'CASH_REGISTER_ALREADY_EXISTS') {
     response.status(409).json({ error: 'Já existe um terminal com esse nome.', code });
+  } else if (code === 'CASH_REGISTER_SESSION_CLOSED') {
+    response.status(409).json({ error: 'A sessão já foi encerrada ou deixou de pertencer a este terminal.', code });
+  } else if (code === 'CASH_REGISTER_BALANCE_INVALID') {
+    response.status(409).json({ error: 'O lançamento faria o saldo físico ficar inválido.', code });
+  } else if (code === 'CASH_REGISTER_CLOSE_REASON_REQUIRED') {
+    response.status(400).json({ error: 'Justifique a diferença de numerário antes do fechamento.', code });
   } else if (code === 'CASH_REGISTER_ALREADY_OPEN') {
     response.status(409).json({ error: 'Já existe uma sessão aberta neste terminal.', code });
   } else if (
@@ -105,5 +113,48 @@ export const createCashRegisterRouter = (): Router => {
       sendError(response, error);
     }
   });
+
+  router.post('/:registerId/sessions/:sessionId/movements', async (request, response) => {
+    try {
+      const authenticatedUserId = await requireActorId(request.get('authorization') ?? '');
+      const result = await addCanonicalCashRegisterMovement({
+        legacyStoreId: clean(request.body?.storeId),
+        authenticatedUserId,
+        registerId: request.params.registerId,
+        sessionId: request.params.sessionId,
+        operationId: request.body?.operationId,
+        type: request.body?.type,
+        direction: request.body?.direction,
+        amountMinor: request.body?.amountMinor,
+        description: request.body?.description,
+        category: request.body?.category,
+        reason: request.body?.reason,
+      });
+      response.setHeader('Cache-Control', 'no-store, max-age=0');
+      response.status(result.replay ? 200 : 201).json(result);
+    } catch (error) {
+      sendError(response, error);
+    }
+  });
+
+  router.post('/:registerId/sessions/:sessionId/close', async (request, response) => {
+    try {
+      const authenticatedUserId = await requireActorId(request.get('authorization') ?? '');
+      const result = await closeCanonicalCashRegisterSession({
+        legacyStoreId: clean(request.body?.storeId),
+        authenticatedUserId,
+        registerId: request.params.registerId,
+        sessionId: request.params.sessionId,
+        operationId: request.body?.operationId,
+        countedMinor: request.body?.countedMinor,
+        reason: request.body?.reason,
+      });
+      response.setHeader('Cache-Control', 'no-store, max-age=0');
+      response.status(200).json(result);
+    } catch (error) {
+      sendError(response, error);
+    }
+  });
+
   return router;
 };
