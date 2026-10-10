@@ -1,6 +1,8 @@
 import { Router, type Request, type Response } from 'express';
 import { FieldValue } from 'firebase-admin/firestore';
 import { verifyFirebaseIdToken } from '../ai/consultantAuth';
+import { authorizeInPersonOrderOperator } from '../attendance/inPersonOrderService.js';
+import { canStaffUpdateOrderStatus } from './staffOrderStatusPolicy.js';
 import { ConsultantHttpError } from '../ai/types';
 import { adminDb } from '../firebaseAdmin';
 import { sendNinetyNineFoodOrderStatus } from '../integrations/ninetyNineFoodService';
@@ -56,6 +58,31 @@ const authenticatedTenantId = async (request: Request): Promise<string> => {
     throw new Error('AUTH_REQUIRED');
   }
 };
+type OrderActorAuthority = {
+  tenantId: string;
+  actorId: string;
+  role: 'owner' | 'manager' | 'cashier' | 'seller' | 'production';
+  isStaff: boolean;
+};
+
+// The store reference comes from a request target, never from a claimed client role.
+// For staff, re-check active server-side canonical membership on EACH operation.
+const authorizeOrderActor = async (
+  request: Request,
+  requestedStoreId: unknown
+): Promise<OrderActorAuthority> => {
+  const actorId = await authenticatedTenantId(request);
+  const tenantId = clean(requestedStoreId) || actorId;
+  if (!tenantId || tenantId.includes('/')) throw new Error('STORE_ORDER_ACCESS_FORBIDDEN');
+  if (tenantId === actorId) return { tenantId, actorId, role: 'owner', isStaff: false };
+  const membership = await authorizeInPersonOrderOperator({
+    legacyStoreId: tenantId,
+    authenticatedUserId: actorId,
+    permission: 'orders.read',
+  });
+  return { tenantId, actorId, role: membership.role, isStaff: true };
+};
+
 
 const parseDecision = (value: unknown): ParsedOrderDecision => {
   const candidate = value && typeof value === 'object'
@@ -105,6 +132,13 @@ const errorResponse = (response: Response, error: unknown): void => {
   if (message === 'AUTH_UNAVAILABLE') {
     response.status(503).json({
       error: 'Não foi possível validar sua sessão agora. Tente novamente em instantes.',
+    });
+    return;
+  }
+  if (message === 'STORE_ORDER_ACCESS_FORBIDDEN' || message === 'IN_PERSON_ORDER_FORBIDDEN') {
+    response.status(403).json({
+      error: 'Sua função não autoriza esta operação sobre os pedidos da loja.',
+      code: 'STORE_ORDER_ACCESS_FORBIDDEN',
     });
     return;
   }
@@ -264,6 +298,37 @@ export const createOrderInventoryRouter = (): Router => {
 
   router.use('/availability', createChannelAvailabilityPolicyRouter());
 
+  // Staff KDS reads the SAME operational order ledger through a scoped server
+  // transport. Never broaden tenant Firestore client rules to expose orders.
+  router.get('/kds', async (request, response) => {
+    try {
+      const storeId = clean(request.query.storeId);
+      if (!storeId) throw new Error('STORE_ORDER_ACCESS_FORBIDDEN');
+      const { tenantId } = await authorizeOrderActor(request, storeId);
+      const snapshot = await orderCollection(tenantId)
+        .orderBy('createdAt', 'desc')
+        .limit(150)
+        .get();
+      const allowed = [
+        'id', 'storeId', 'buyerId', 'buyerName', 'buyerEmail',
+        'fulfillmentType', 'deliveryAddress', 'tableCode',
+        'serviceLocation', 'customerNote', 'items',
+        'subtotal', 'total', 'status', 'paymentStatus',
+        'source', 'sourceChannel', 'operatorId', 'operatorName',
+        'createdAt', 'updatedAt',
+      ];
+      const orders = snapshot.docs.map(document => {
+        const data = document.data() as Record<string, unknown>;
+        const projected = Object.fromEntries(allowed.map(key => [key, data[key]]));
+        return { ...projected, id: document.id, storeId: tenantId };
+      });
+      response.setHeader('Cache-Control', 'no-store, max-age=0');
+      response.status(200).json({ orders });
+    } catch (error) {
+      errorResponse(response, error);
+    }
+  });
+
   router.get('/provider-sync/99food/pending', async (request, response) => {
     try {
       const tenantId = await authenticatedTenantId(request);
@@ -400,7 +465,8 @@ export const createOrderInventoryRouter = (): Router => {
 
   router.post('/:orderId/status', async (request, response) => {
     try {
-      const tenantId = await authenticatedTenantId(request);
+      const authority = await authorizeOrderActor(request, request.body?.storeId);
+      const { tenantId } = authority;
       const orderId = request.params.orderId;
       const status = typeof request.body?.status === 'string'
         ? request.body.status as InventoryOrderStatus
@@ -408,6 +474,13 @@ export const createOrderInventoryRouter = (): Router => {
       if (!SUPPORTED_STATUSES.has(status)) {
         response.status(400).json({ error: 'Status do pedido não suportado.' });
         return;
+      }
+      if (authority.isStaff && !canStaffUpdateOrderStatus(authority.role, status)) {
+        throw new Error('STORE_ORDER_ACCESS_FORBIDDEN');
+      }
+      if (authority.isStaff && request.body?.providerWriteAuthorization !== undefined) {
+        // External marketplace provider writes remain owner-only.
+        throw new Error('STORE_ORDER_ACCESS_FORBIDDEN');
       }
 
       const providerAuthorizationSupplied =
@@ -428,6 +501,9 @@ export const createOrderInventoryRouter = (): Router => {
           ? currentData.integration as Record<string, unknown>
           : {};
       const currentProvider = clean(currentIntegration.provider);
+      if (authority.isStaff && currentProvider === '99food') {
+        throw new Error('STORE_ORDER_ACCESS_FORBIDDEN');
+      }
 
       if (providerWriteAuthorization && currentProvider !== '99food') {
         throw new Error('Autorização 99Food não corresponde ao provedor deste pedido.');
