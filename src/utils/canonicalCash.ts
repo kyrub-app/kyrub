@@ -401,6 +401,98 @@ export const selectPendingCashReplay = (
 };
 
 /** An existing document is a replay only when the immutable payload matches. */
+
+/**
+ * A read-only assessment of this browser's existing Dexie cash queue.
+ * The database is device-wide and can contain records by other employees.
+ * No identities, amounts or payment references are returned.
+ */
+export interface CashLocalQueueAudit {
+  assessmentOnly: true;
+  currentDeviceOnly: true;
+  otherDevicesVerified: false;
+  migrationAllowed: false;
+  currentActorPending: number;
+  otherActorsPending: number;
+  unattributedPending: number;
+  localOpenSessions: number;
+  pendingOpeningOperations: number;
+  pendingMovementOperations: number;
+  pendingClosingOperations: number;
+  requiresReview: boolean;
+}
+
+export const inspectCashLocalQueue = (
+  context: CashStoreContext,
+  sessions: readonly LocalCashSession[],
+  movements: readonly LocalCashMovement[]
+): CashLocalQueueAudit => {
+  const storeSessions = sessions.filter(row => row.storeId === context.store.id);
+  const tenantMovements = movements.filter(row => row.legacyStoreId === context.legacyStoreId);
+  let currentActorPending = 0;
+  let otherActorsPending = 0;
+  let unattributedPending = 0;
+  let pendingOpeningOperations = 0;
+  let pendingMovementOperations = 0;
+  let pendingClosingOperations = 0;
+
+  const classify = (userId: string, valid: boolean): void => {
+    if (!valid || !userId) unattributedPending += 1;
+    else if (userId === context.userId) currentActorPending += 1;
+    else otherActorsPending += 1;
+  };
+
+  for (const row of storeSessions) {
+    const scoped = row.legacyStoreId === context.legacyStoreId && Boolean(row.canonicalId);
+    if (!row.createSynced) {
+      pendingOpeningOperations += 1;
+      classify(row.operatorUserId, scoped);
+    }
+    if (row.status === 'closed' && !row.closeSynced) {
+      pendingClosingOperations += 1;
+      classify(row.closedByUserId, scoped);
+    }
+  }
+
+  for (const row of tenantMovements) {
+    if (row.synced) continue;
+    pendingMovementOperations += 1;
+    // The linked session may exist only in Firestore. Missing from local
+    // Dexie is not proof of an orphan, so do not discard or relabel it.
+    classify(row.actorUserId, Boolean(row.canonicalId && row.sessionId));
+  }
+
+  const localOpenSessions = storeSessions.filter(
+    row => row.legacyStoreId === context.legacyStoreId && row.status === 'open'
+  ).length;
+  // Avoid claiming that an empty local queue proves any remote state.
+  return {
+    assessmentOnly: true,
+    currentDeviceOnly: true,
+    otherDevicesVerified: false,
+    migrationAllowed: false,
+    currentActorPending,
+    otherActorsPending,
+    unattributedPending,
+    localOpenSessions,
+    pendingOpeningOperations,
+    pendingMovementOperations,
+    pendingClosingOperations,
+    requiresReview: Boolean(
+      currentActorPending || otherActorsPending || unattributedPending || localOpenSessions
+    ),
+  };
+};
+
+export const getCashLocalQueueAudit = async (
+  context: CashStoreContext
+): Promise<CashLocalQueueAudit> =>
+  inspectCashLocalQueue(
+    context,
+    await cashDb.sessions.toArray(),
+    await cashDb.movements.toArray()
+  );
+
 export const assertCashReplayFieldsMatch = (
   remote: Record<string, unknown>,
   expected: Record<string, unknown>

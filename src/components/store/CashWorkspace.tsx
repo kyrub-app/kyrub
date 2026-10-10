@@ -16,7 +16,7 @@ import {
   calculateExpectedCash,
   closeCashSession,
   getCashDirection,
-  getCashLocalPendingCount,
+  getCashLocalQueueAudit,
   movementRequiresReason,
   openCashSession,
   resolveCashStoreContext,
@@ -29,6 +29,7 @@ import {
   type CashDirection,
   type CashMovementType,
   type CashStoreContext,
+  type CashLocalQueueAudit,
 } from '../../utils/canonicalCash';
 import { STORE_ROLE_LABELS } from '../../utils/storeSecurity';
 
@@ -77,6 +78,8 @@ export const CashWorkspace = ({
   const [busy, setBusy] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [pendingCount, setPendingCount] = useState(0);
+  const [deviceAudit, setDeviceAudit] = useState<CashLocalQueueAudit | null>(null);
+  const [deviceAuditError, setDeviceAuditError] = useState(false);
   const [openingAmount, setOpeningAmount] = useState('');
   const [movementType, setMovementType] = useState<CashMovementType>('income');
   const [adjustmentDirection, setAdjustmentDirection] = useState<CashDirection>('in');
@@ -180,8 +183,21 @@ export const CashWorkspace = ({
   }, [activeSession?.id, context, notify]);
 
   useEffect(() => {
+    setDeviceAudit(null);
+    setDeviceAuditError(false);
     if (!context) return;
-    void getCashLocalPendingCount(context).then(setPendingCount).catch(() => undefined);
+    let cancelled = false;
+    void getCashLocalQueueAudit(context)
+      .then(report => {
+        if (cancelled) return;
+        setDeviceAudit(report);
+        setPendingCount(report.currentActorPending);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setDeviceAuditError(true);
+      });
+    return () => { cancelled = true; };
   }, [context, sessions.length, movements.length]);
 
   useEffect(() => {
@@ -201,7 +217,16 @@ export const CashWorkspace = ({
 
   const refreshPending = async (): Promise<void> => {
     if (!context) return;
-    setPendingCount(await getCashLocalPendingCount(context));
+    try {
+      const report = await getCashLocalQueueAudit(context);
+      setDeviceAudit(report);
+      setDeviceAuditError(false);
+      setPendingCount(report.currentActorPending);
+    } catch (error) {
+      setDeviceAudit(null);
+      setDeviceAuditError(true);
+      throw error;
+    }
   };
 
   const handleOpen = async (): Promise<void> => {
@@ -342,8 +367,12 @@ export const CashWorkspace = ({
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <span className={`rounded-full border px-3 py-1 text-[10px] font-bold uppercase ${pendingCount > 0 ? 'border-amber-500/30 bg-amber-500/10 text-amber-300' : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'}`}>
-            {pendingCount > 0 ? `${pendingCount} pendente(s)` : 'Dexie e Firestore sincronizados'}
+          <span className={`rounded-full border px-3 py-1 text-[10px] font-bold uppercase ${!deviceAudit || pendingCount > 0 || deviceAudit.requiresReview ? 'border-amber-500/30 bg-amber-500/10 text-amber-300' : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'}`}>
+            {!deviceAudit
+              ? 'Pendências locais não verificadas'
+              : pendingCount > 0
+                ? `${pendingCount} operação(ões) sua(s) pendente(s)`
+                : 'Sem pendências da sua conta neste aparelho'}
           </span>
           <button
             type="button"
@@ -355,6 +384,35 @@ export const CashWorkspace = ({
             Sincronizar
           </button>
         </div>
+      </div>
+
+      <div className="rounded-2xl border border-slate-700 bg-slate-900 p-4 text-xs text-slate-300" data-kyrub-cash-local-audit="read-only">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <strong className="font-bold text-white">Verificação das pendências deste aparelho</strong>
+          <button
+            type="button"
+            onClick={() => { void refreshPending().catch(() => notify('Não foi possível consultar as pendências locais deste aparelho.', 'error')); }}
+            disabled={busy}
+            className="rounded-lg border border-slate-600 px-3 py-1.5 text-[10px] font-bold text-white disabled:opacity-50"
+          >
+            Conferir novamente
+          </button>
+        </div>
+        {deviceAudit ? (
+          <p className="mt-2 leading-relaxed">
+            Sua conta: <b>{deviceAudit.currentActorPending}</b> pendência(s) ·
+            Outros colaboradores neste aparelho: <b>{deviceAudit.otherActorsPending}</b> ·
+            Registros para conferência: <b>{deviceAudit.unattributedPending}</b> ·
+            Sessões locais abertas: <b>{deviceAudit.localOpenSessions}</b>.
+          </p>
+        ) : (
+          <p className="mt-2 text-amber-300">
+            {deviceAuditError ? 'Falha ao ler o armazenamento local.' : 'Conferindo armazenamento local…'}
+          </p>
+        )}
+        <p className="mt-2 text-[11px] text-amber-200/80">
+          Somente este navegador foi verificado. Outros aparelhos, registros remotos e a liberação da migração exigem conferência separada. Nenhum registro foi alterado.
+        </p>
       </div>
 
       {openSessions.length > 1 && (
