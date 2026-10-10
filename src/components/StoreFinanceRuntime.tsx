@@ -273,7 +273,7 @@ export function StoreFinanceRuntime({ storeId }: { storeId: string }) {
         )}
       </div>
 
-      <StoreCashFinanceWorkspace projection={cash} />
+      <StoreCashFinanceWorkspace projection={cash} storeId={storeId} />
 
       <StorePayablesWorkspace
         storeId={storeId}

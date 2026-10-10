@@ -4,6 +4,12 @@ import { adminDb } from '../firebaseAdmin.js';
 import { hasStorePermission, isStoreRole, type StoreRole } from '../../src/utils/storeSecurity.js';
 import { authorizeInPersonOrderOperator } from './inPersonOrderService.js';
 import { assessCashCutoverPreflight, type CashCutoverPreflight } from './cashRegisterCutoverReadiness.js';
+import {
+  aggregateCashDeviceInspections,
+  requireCashInventoryManagerRole,
+  type CashManagerDeviceInventory,
+  type CashDeviceInspectionRow,
+} from './cashDeviceInspectionInventory.js';
 
 const clean = (value: unknown): string =>
   typeof value === 'string' ? value.trim() : '';
@@ -156,6 +162,9 @@ export const recordCashDeviceInspection = async (input: {
     throw new Error('CASH_REGISTER_INSPECTION_INVALID');
   }
   const counts = validateCashDeviceInspectionCounts(input.counts);
+  const deviceKey = 'browser-' + createHash('sha256')
+    .update(JSON.stringify([actor.canonicalStoreId, deviceId]))
+    .digest('hex').slice(0,32);
   const inspectionId = 'cash-device-' + createHash('sha256')
     .update(JSON.stringify([actor.canonicalStoreId, actor.actorId, deviceId]))
     .digest('hex').slice(0,32);
@@ -188,6 +197,7 @@ export const recordCashDeviceInspection = async (input: {
     const mode = clean(coordinationSnapshot.data()?.mode) || 'legacy';
     transaction.set(reference, {
       id: inspectionId,
+      deviceKey,
       storeId: actor.canonicalStoreId,
       legacyStoreId: actor.legacyStoreId,
       actorUserId: actor.actorId,
@@ -219,6 +229,63 @@ export const recordCashDeviceInspection = async (input: {
       activationAllowed: false as const, otherDevicesVerified: false as const, replay: false,
     };
   });
+};
+
+
+/**
+ * Management view scoped to the canonical store. The backend discovers
+ * browsers strictly from submitted reports and never claims missing BYOD
+ * phones, apps, or employees have been inspected.
+ */
+export const listCashDeviceInspectionInventory = async (input: {
+  canonicalStoreId: string;
+  authenticatedUserId: string;
+}): Promise<CashManagerDeviceInventory> => {
+  const storeId = clean(input.canonicalStoreId);
+  if (!validId(storeId)) throw new Error('CASH_REGISTER_ID_INVALID');
+  const storeSnapshot = await adminDb.doc(`stores/${storeId}`).get();
+  const storeData = storeSnapshot.data() as Record<string, unknown> | undefined;
+  const legacyStoreId = clean(storeData?.ownerId);
+  if (!storeSnapshot.exists || !legacyStoreId ||
+    clean(storeData?.legacyTenantId) !== legacyStoreId) {
+    throw new Error('CASH_REGISTER_FORBIDDEN');
+  }
+  const actor = await authorizeRegisterActor({
+    legacyStoreId,
+    authenticatedUserId: input.authenticatedUserId,
+  });
+  if (actor.canonicalStoreId !== storeId) throw new Error('CASH_REGISTER_FORBIDDEN');
+  requireCashInventoryManagerRole(actor.role);
+  // Reconfirm current membership in server authority immediately before read.
+  await adminDb.runTransaction(transaction => requireTransactionActor(transaction, actor));
+  const snapshot = await adminDb.collection(
+    `stores/${storeId}/cashDeviceInspections`
+  ).limit(101).get();
+  if (snapshot.size > 100) throw new Error('CASH_REGISTER_INSPECTION_SCAN_INCOMPLETE');
+  const rows: CashDeviceInspectionRow[] = snapshot.docs.map(document => {
+    const value = document.data() as Record<string, unknown>;
+    const raw = value.counts as Record<string, unknown> | undefined;
+    if (
+      clean(value.id) !== document.id ||
+      clean(value.storeId) !== storeId ||
+      !raw || value.selfReported !== true || value.verified !== false ||
+      value.activationAllowed !== false
+    ) throw new Error('CASH_REGISTER_INSPECTION_INCONSISTENT');
+    const counts = validateCashDeviceInspectionCounts(raw);
+    const timestamp = value.updatedAt as { toMillis?: () => number } | undefined;
+    const reportedAtMs = timestamp?.toMillis?.();
+    if (!Number.isFinite(reportedAtMs)) {
+      throw new Error('CASH_REGISTER_INSPECTION_INCONSISTENT');
+    }
+    return {
+      id: document.id,
+      deviceKey: clean(value.deviceKey),
+      actorUserId: clean(value.actorUserId),
+      reportedAtMs: reportedAtMs as number,
+      counts,
+    };
+  });
+  return aggregateCashDeviceInspections(rows);
 };
 
 export const normalizedCashRegisterName = (value: unknown): string => {
