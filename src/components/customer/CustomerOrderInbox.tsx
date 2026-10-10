@@ -58,6 +58,7 @@ interface CustomerOrderInboxProps {
   orders: CustomerOrder[];
   busyOrderId: string;
   attendanceSpaces?: string[];
+  canChangeStatus?: (status: CustomerOrderStatus) => boolean;
   onChangeStatus: (
     order: CustomerOrder,
     status: CustomerOrderStatus,
@@ -208,6 +209,7 @@ export const CustomerOrderInbox = ({
   orders,
   busyOrderId,
   attendanceSpaces = [],
+  canChangeStatus,
   onChangeStatus,
 }: CustomerOrderInboxProps) => {
   const [filter, setFilter] = useState<InboxFilter>('active');
@@ -521,7 +523,9 @@ export const CustomerOrderInbox = ({
       ) : (
         <div className="grid gap-3 sm:gap-4 lg:grid-cols-2">
           {filteredOrders.map((order, orderIndex) => {
-            const actions = actionForOrder(order);
+            const actions = actionForOrder(order).filter(action =>
+              canChangeStatus?.(action.status) ?? true
+            );
             const isBusy = busyOrderId === order.id;
             const outstandingTotal = getCustomerOrderOutstandingTotal(order);
             const visibleItems = order.items.filter(item => {
@@ -590,7 +594,7 @@ export const CustomerOrderInbox = ({
                   </div>
                 </div>
 
-                {pickupWaiting ? (
+                {pickupWaiting && (canChangeStatus?.('completed') ?? true) ? (
                   <div className="border-t border-cyan-500/20 bg-cyan-500/[0.05] p-3">
                     <button type="button" disabled={isBusy} onClick={() => openPickupHandoff(order)} className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-cyan-500 px-4 text-[10px] font-black uppercase text-slate-950 hover:bg-cyan-400 disabled:opacity-40"><KeyRound className="h-4 w-4" />Entregar pedido</button>
                   </div>
