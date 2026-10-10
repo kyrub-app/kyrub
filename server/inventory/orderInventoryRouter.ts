@@ -154,6 +154,20 @@ const errorResponse = (response: Response, error: unknown): void => {
     response.status(400).json({ error: message });
     return;
   }
+  if (message === 'PAYMENT_REQUIRED_FOR_PRODUCTION') {
+    response.status(409).json({
+      error: 'O pedido foi aceito, mas o Pix ainda não foi confirmado. Aguarde a confirmação antes de iniciar a produção.',
+      code: message,
+    });
+    return;
+  }
+  if (message === 'STAFF_PAID_ORDER_REJECTION_REQUIRES_REFUND_REVIEW') {
+    response.status(409).json({
+      error: 'Este pedido possui pagamento. Solicite revisão gerencial antes de recusá-lo.',
+      code: message,
+    });
+    return;
+  }
   if (/Estoque insuficiente|componente removido/i.test(message)) {
     response.status(409).json({ error: message, code: 'INVENTORY_BLOCKED' });
     return;
@@ -501,6 +515,24 @@ export const createOrderInventoryRouter = (): Router => {
           ? currentData.integration as Record<string, unknown>
           : {};
       const currentProvider = clean(currentIntegration.provider);
+      // The canonical payment gate also applies to Staff routes. Taking over
+      // production never means the Pix/merchant-approved payment was captured.
+      if (
+        ['preparing', 'ready', 'out_for_delivery', 'completed'].includes(status) &&
+        currentSnapshot.exists &&
+        clean(currentData?.checkoutAuthority) === 'merchant_approval_required' &&
+        clean(currentData?.paymentStatus) !== 'paid'
+      ) {
+        throw new Error('PAYMENT_REQUIRED_FOR_PRODUCTION');
+      }
+      if (
+        authority.isStaff &&
+        status === 'rejected' &&
+        currentSnapshot.exists &&
+        ['paid', 'partial'].includes(clean(currentData?.paymentStatus))
+      ) {
+        throw new Error('STAFF_PAID_ORDER_REJECTION_REQUIRES_REFUND_REVIEW');
+      }
       if (authority.isStaff && currentProvider === '99food') {
         throw new Error('STORE_ORDER_ACCESS_FORBIDDEN');
       }
