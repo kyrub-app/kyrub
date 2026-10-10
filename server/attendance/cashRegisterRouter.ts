@@ -6,6 +6,7 @@ import {
   openCanonicalCashRegisterSession,
   addCanonicalCashRegisterMovement,
   closeCanonicalCashRegisterSession,
+  inspectCanonicalCashCutoverReadiness,
 } from './cashRegisterSessionService.js';
 
 const clean = (value: unknown): string =>
@@ -57,6 +58,22 @@ const sendError = (response: import('express').Response, error: unknown): void =
  */
 export const createCashRegisterRouter = (): Router => {
   const router = Router();
+  // Assessment only, permitted with managed Cash DISABLED. This endpoint
+  // neither enables the feature nor writes sessions, ledgers or cutover state.
+  router.get('/readiness', async (request, response) => {
+    try {
+      const authenticatedUserId = await requireActorId(request.get('authorization') ?? '');
+      const report = await inspectCanonicalCashCutoverReadiness({
+        legacyStoreId: clean(request.query.storeId),
+        authenticatedUserId,
+      });
+      response.setHeader('Cache-Control', 'no-store, max-age=0');
+      response.status(200).json(report);
+    } catch (error) {
+      sendError(response, error);
+    }
+  });
+
   router.use((_request, response, next) => {
     if (process.env.CASH_REGISTER_MANAGED_SESSIONS_ENABLED !== 'true') {
       response.status(409).json({
