@@ -24,6 +24,8 @@ test('cash sessions enforce roles, immutable identity and one-way closing', () =
 
 test('cash movements are append-only and reasons are required for sensitive operations', () => {
   assert.match(functions, /\['expense', 'withdrawal', 'adjustment'\]/);
-  assert.match(movements, /data\.status == 'open'/);
+  assert.match(functions, /data\.status == 'open'/);
+  assert.match(functions, /data\.deviceId != 'server-managed-register'/);
+  assert.match(movements, /cashLedgerAllowsLegacyClientMovement\(storeId, sessionId\)/);
   assert.match(movements, /allow update, delete: if false/);
 });

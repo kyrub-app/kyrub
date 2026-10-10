@@ -6,6 +6,17 @@
       return /databases/$(database)/documents/stores/$(storeId)/cashSessions/$(sessionId);
     }
 
+    // The legacy browser writer may only write movements under legacy sessions.
+    // Server-managed sessions share cashSessions but are owned by the Admin SDK
+    // transaction service. Firebase client rules must not bypass its totals.
+    function cashLedgerAllowsLegacyClientMovement(storeId, sessionId) {
+      return exists(cashLedgerSessionPath(storeId, sessionId))
+        && get(cashLedgerSessionPath(storeId, sessionId)).data.status == 'open'
+        && get(cashLedgerSessionPath(storeId, sessionId)).data.deviceId != 'server-managed-register'
+        && get(cashLedgerSessionPath(storeId, sessionId)).data.migration.mode == 'write_through'
+        && get(cashLedgerSessionPath(storeId, sessionId)).data.migration.source == 'dexie';
+    }
+
     function cashLedgerMigrationIsValid() {
       return incoming().migration is map
         && incoming().migration.keys().hasOnly(['mode', 'source'])

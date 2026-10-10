@@ -310,3 +310,84 @@ test('financial reads are limited to owner, manager and cashier', async () => {
   await assertFails(getDoc(doc(seller, 'stores', STORE_ID, 'cashSessions', SESSION_ID)));
   await assertFails(getDoc(doc(production, 'stores', STORE_ID, 'cashSessions', SESSION_ID)));
 });
+
+
+test('server-managed Cash sessions reject direct Firebase client movements and close attempts', async () => {
+  const managedId = 'cash-session-managed-operation-1234';
+  await environment.withSecurityRulesDisabled(async context => {
+    await setDoc(
+      doc(context.firestore(), 'stores', STORE_ID, 'cashSessions', managedId),
+      {
+        ...openSession('cashier-a', 'cashier', 'Caixa Bruno'),
+        id: managedId,
+        deviceId: 'server-managed-register',
+        registerId: 'register-01',
+        openOperationId: 'managed-operation-1234',
+        shiftLabel: 'Manhã',
+        revision: 0,
+        openingMinor: 10000,
+        movementNetMinor: 0,
+        movementCount: 0,
+      }
+    );
+  });
+
+  const cashier = environment.authenticatedContext('cashier-a').firestore();
+  const manager = environment.authenticatedContext('manager-a').firestore();
+  const owner = environment.authenticatedContext('owner-a').firestore();
+  const path = ['stores', STORE_ID, 'cashSessions', managedId] as const;
+
+  await assertSucceeds(getDoc(doc(cashier, ...path)));
+
+  await assertFails(
+    setDoc(
+      doc(cashier, ...path, 'movements', 'cash-movement-managed-blocked'),
+      movement('cashier-a', 'cashier', {
+        id: 'cash-movement-managed-blocked',
+        sessionId: managedId,
+        deviceId: 'device-a',
+      })
+    )
+  );
+
+  await assertFails(
+    setDoc(
+      doc(owner, ...path, 'movements', 'cash-movement-owner-blocked'),
+      movement('owner-a', 'owner', {
+        id: 'cash-movement-owner-blocked',
+        sessionId: managedId,
+        deviceId: 'device-owner',
+      })
+    )
+  );
+
+  await assertFails(
+    updateDoc(doc(manager, ...path), {
+      status: 'closed',
+      expectedAmount: 100,
+      countedAmount: 100,
+      difference: 0,
+      closedAt: serverTimestamp(),
+      closedByUserId: 'manager-a',
+      closedByRole: 'manager',
+      closedByName: 'Gerente',
+      closeReason: '',
+      updatedAt: serverTimestamp(),
+    })
+  );
+});
+
+test('legacy client cannot impersonate server-managed session identity', async () => {
+  const cashier = environment.authenticatedContext('cashier-a').firestore();
+  const id = 'cash-session-forged-managed';
+  await assertFails(
+    setDoc(
+      doc(cashier, 'stores', STORE_ID, 'cashSessions', id),
+      {
+        ...openSession('cashier-a', 'cashier', 'Caixa'),
+        id,
+        deviceId: 'server-managed-register',
+      }
+    )
+  );
+});
