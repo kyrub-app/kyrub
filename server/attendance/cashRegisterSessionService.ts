@@ -311,3 +311,367 @@ export const openCanonicalCashRegisterSession = async (input: {
     return { sessionId, registerId, status: 'open' as const, replay: false };
   });
 };
+
+
+type ManagedCashMovementType = 'income' | 'expense' | 'supply' | 'withdrawal' | 'adjustment';
+type CashDirection = 'in' | 'out';
+
+const validManagedMovementType = (value: string): value is ManagedCashMovementType =>
+  ['income', 'expense', 'supply', 'withdrawal', 'adjustment'].includes(value);
+
+const requireManagedSession = (
+  session: Record<string, unknown> | undefined,
+  register: Record<string, unknown> | undefined,
+  actor: RegisterActor,
+  registerId: string,
+  sessionId: string
+): void => {
+  if (
+    !session ||
+    clean(session.id) !== sessionId ||
+    clean(session.storeId) !== actor.canonicalStoreId ||
+    clean(session.legacyStoreId) !== actor.legacyStoreId ||
+    clean(session.registerId) !== registerId ||
+    !validOperationId(clean(session.openOperationId)) ||
+    session.deviceId !== 'server-managed-register' ||
+    !register ||
+    clean(register.id) !== registerId ||
+    clean(register.storeId) !== actor.canonicalStoreId
+  ) throw new Error('CASH_REGISTER_INTEGRITY_CONFLICT');
+};
+
+const managedLedgerTotals = (session: Record<string, unknown>): {
+  openingMinor: number;
+  netMinor: number;
+  count: number;
+  revision: number;
+  expectedMinor: number;
+} => {
+  const openingMinor = session.openingMinor;
+  const netMinor = session.movementNetMinor;
+  const count = session.movementCount;
+  const revision = session.revision;
+  if (
+    !Number.isSafeInteger(openingMinor) || (openingMinor as number) < 0 ||
+    !Number.isSafeInteger(netMinor) ||
+    !Number.isSafeInteger(count) || (count as number) < 0 ||
+    !Number.isSafeInteger(revision) || (revision as number) < 0
+  ) throw new Error('CASH_REGISTER_INTEGRITY_CONFLICT');
+  const expectedMinor = (openingMinor as number) + (netMinor as number);
+  if (!Number.isSafeInteger(expectedMinor) || expectedMinor < 0) {
+    throw new Error('CASH_REGISTER_INTEGRITY_CONFLICT');
+  }
+  return {
+    openingMinor: openingMinor as number,
+    netMinor: netMinor as number,
+    count: count as number,
+    revision: revision as number,
+    expectedMinor,
+  };
+};
+
+const managedOperationId = (value: unknown): string => {
+  const operationId = clean(value);
+  if (!validOperationId(operationId)) throw new Error('CASH_REGISTER_OPERATION_INVALID');
+  return operationId;
+};
+
+export const validateManagedCashMovementInput = (input: {
+  type: unknown;
+  direction: unknown;
+  amountMinor: unknown;
+  description: unknown;
+  category: unknown;
+  reason: unknown;
+}): {
+  type: ManagedCashMovementType;
+  direction: CashDirection;
+  amountMinor: number;
+  description: string;
+  category: string;
+  reason: string;
+} => {
+  const type = clean(input.type);
+  const direction = clean(input.direction);
+  const description = clean(input.description);
+  const category = clean(input.category);
+  const reason = clean(input.reason);
+  const amountMinor = input.amountMinor;
+  if (!validManagedMovementType(type)) throw new Error('CASH_REGISTER_MOVEMENT_TYPE_INVALID');
+  if (
+    (type === 'income' || type === 'supply') && direction !== 'in' ||
+    (type === 'expense' || type === 'withdrawal') && direction !== 'out' ||
+    type === 'adjustment' && direction !== 'in' && direction !== 'out'
+  ) throw new Error('CASH_REGISTER_MOVEMENT_DIRECTION_INVALID');
+  if (
+    !Number.isSafeInteger(amountMinor) ||
+    (amountMinor as number) <= 0 ||
+    (amountMinor as number) > 10_000_000_000
+  ) throw new Error('CASH_REGISTER_AMOUNT_INVALID');
+  if (!description || description.length > 160 || !category || category.length > 80) {
+    throw new Error('CASH_REGISTER_MOVEMENT_INVALID');
+  }
+  if (reason.length > 300 || (
+    ['expense', 'withdrawal', 'adjustment'].includes(type) && !reason
+  )) throw new Error('CASH_REGISTER_MOVEMENT_REASON_REQUIRED');
+  return { type, direction: direction as CashDirection, amountMinor: amountMinor as number, description, category, reason };
+};
+
+/**
+ * Physical-money movements only. `sale` and provider `payment_capture`
+ * are intentionally excluded; payment settlement uses the existing economic
+ * ledger. Never count Pix/card as banknotes in the register.
+ *
+ * Each movement updates the SAME cashSession aggregate in the transaction,
+ * serializing concurrent cashiers with a closing transaction. The route
+ * remains disabled until legacy direct Firestore writes are blocked.
+ */
+export const addCanonicalCashRegisterMovement = async (input: {
+  legacyStoreId: string;
+  authenticatedUserId: string;
+  registerId: unknown;
+  sessionId: unknown;
+  operationId: unknown;
+  type: unknown;
+  direction: unknown;
+  amountMinor: unknown;
+  description: unknown;
+  category: unknown;
+  reason: unknown;
+}): Promise<{ movementId: string; sessionId: string; replay: boolean }> => {
+  const actor = await authorizeRegisterActor(input);
+  const registerId = clean(input.registerId);
+  const sessionId = clean(input.sessionId);
+  const operationId = managedOperationId(input.operationId);
+  if (!validId(registerId) || !validId(sessionId)) throw new Error('CASH_REGISTER_ID_INVALID');
+  const body = validateManagedCashMovementInput(input);
+  const movementId = `cash-movement-${operationId}`;
+  const registerRef = adminDb.doc(registerPath(actor.canonicalStoreId, registerId));
+  const sessionRef = adminDb.doc(sessionPath(actor.canonicalStoreId, sessionId));
+  const movementRef = sessionRef.collection('movements').doc(movementId);
+
+  return adminDb.runTransaction(async transaction => {
+    await requireTransactionActor(transaction, actor);
+    const [registerSnapshot, sessionSnapshot, movementSnapshot] = await Promise.all([
+      transaction.get(registerRef),
+      transaction.get(sessionRef),
+      transaction.get(movementRef),
+    ]);
+    const register = registerSnapshot.data() as Record<string, unknown> | undefined;
+    const session = sessionSnapshot.data() as Record<string, unknown> | undefined;
+    requireManagedSession(session, register, actor, registerId, sessionId);
+    if (movementSnapshot.exists) {
+      const previous = movementSnapshot.data() as Record<string, unknown>;
+      if (
+        clean(previous.id) !== movementId ||
+        clean(previous.sessionId) !== sessionId ||
+        clean(previous.actorUserId) !== actor.actorId ||
+        clean(previous.operationId) !== operationId ||
+        clean(previous.type) !== body.type ||
+        clean(previous.direction) !== body.direction ||
+        previous.amountMinor !== body.amountMinor ||
+        clean(previous.description) !== body.description ||
+        clean(previous.category) !== body.category ||
+        clean(previous.reason) !== body.reason ||
+        clean(previous.source) !== 'manual'
+      ) throw new Error('CASH_REGISTER_IDEMPOTENCY_CONFLICT');
+      return { movementId, sessionId, replay: true };
+    }
+    if (clean(session?.status) !== 'open' || clean(register?.activeSessionId) !== sessionId) {
+      throw new Error('CASH_REGISTER_SESSION_CLOSED');
+    }
+    const totals = managedLedgerTotals(session!);
+    const delta = body.direction === 'in' ? body.amountMinor : -body.amountMinor;
+    const newNetMinor = totals.netMinor + delta;
+    const expectedMinor = totals.openingMinor + newNetMinor;
+    if (
+      !Number.isSafeInteger(newNetMinor) ||
+      !Number.isSafeInteger(expectedMinor) ||
+      expectedMinor < 0
+    ) throw new Error('CASH_REGISTER_BALANCE_INVALID');
+
+    transaction.create(movementRef, {
+      id: movementId,
+      operationId,
+      storeId: actor.canonicalStoreId,
+      sessionId,
+      registerId,
+      actorUserId: actor.actorId,
+      actorRole: actor.role,
+      actorName: actor.actorId,
+      type: body.type,
+      direction: body.direction,
+      amountMinor: body.amountMinor,
+      amount: body.amountMinor / 100,
+      description: body.description,
+      category: body.category,
+      reason: body.reason,
+      source: 'manual',
+      paymentId: '',
+      deviceId: 'server-managed-register',
+      legacyStoreId: actor.legacyStoreId,
+      occurredAt: FieldValue.serverTimestamp(),
+      createdAt: FieldValue.serverTimestamp(),
+    });
+    transaction.update(sessionRef, {
+      movementNetMinor: newNetMinor,
+      movementCount: totals.count + 1,
+      revision: totals.revision + 1,
+      expectedAmount: expectedMinor / 100,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    transaction.create(
+      adminDb.doc(`stores/${actor.canonicalStoreId}/auditLogs/audit-cash-movement-${movementId}`),
+      {
+        id: `audit-cash-movement-${movementId}`,
+        storeId: actor.canonicalStoreId,
+        actorUserId: actor.actorId,
+        actorRole: actor.role,
+        action: `cash.movement.${body.type}`,
+        entityType: 'cashMovement',
+        entityId: movementId,
+        reason: body.reason,
+        before: null,
+        after: { direction: body.direction, amount: body.amountMinor / 100, sessionId, registerId },
+        createdAt: FieldValue.serverTimestamp(),
+      }
+    );
+    return { movementId, sessionId, replay: false };
+  });
+};
+
+/**
+ * Closing competes for the same session document as every cash movement;
+ * the register pointer is cleared only after a confirmed, single closure.
+ * This does not backfill or silently close legacy Dexie sessions.
+ */
+export const closeCanonicalCashRegisterSession = async (input: {
+  legacyStoreId: string;
+  authenticatedUserId: string;
+  registerId: unknown;
+  sessionId: unknown;
+  operationId: unknown;
+  countedMinor: unknown;
+  reason: unknown;
+}): Promise<{
+  sessionId: string;
+  status: 'closed';
+  countedMinor: number;
+  expectedMinor: number;
+  differenceMinor: number;
+  replay: boolean;
+}> => {
+  const actor = await authorizeRegisterActor(input);
+  const registerId = clean(input.registerId);
+  const sessionId = clean(input.sessionId);
+  const operationId = managedOperationId(input.operationId);
+  const reason = clean(input.reason);
+  if (!validId(registerId) || !validId(sessionId)) throw new Error('CASH_REGISTER_ID_INVALID');
+  if (reason.length > 300) throw new Error('CASH_REGISTER_CLOSE_REASON_INVALID');
+  const countedMinor = cashOpeningAmountMinor(input.countedMinor);
+  const registerRef = adminDb.doc(registerPath(actor.canonicalStoreId, registerId));
+  const sessionRef = adminDb.doc(sessionPath(actor.canonicalStoreId, sessionId));
+
+  return adminDb.runTransaction(async transaction => {
+    await requireTransactionActor(transaction, actor);
+    const [registerSnapshot, sessionSnapshot] = await Promise.all([
+      transaction.get(registerRef),
+      transaction.get(sessionRef),
+    ]);
+    const register = registerSnapshot.data() as Record<string, unknown> | undefined;
+    const session = sessionSnapshot.data() as Record<string, unknown> | undefined;
+    requireManagedSession(session, register, actor, registerId, sessionId);
+    const status = clean(session?.status);
+    if (status === 'closed') {
+      if (
+        clean(session?.closeOperationId) !== operationId ||
+        clean(session?.closedByUserId) !== actor.actorId ||
+        session?.countedMinor !== countedMinor ||
+        clean(session?.closeReason) !== reason ||
+        !Number.isSafeInteger(session?.expectedMinor) ||
+        !Number.isSafeInteger(session?.differenceMinor)
+      ) throw new Error('CASH_REGISTER_IDEMPOTENCY_CONFLICT');
+      return {
+        sessionId,
+        status: 'closed' as const,
+        countedMinor,
+        expectedMinor: session!.expectedMinor as number,
+        differenceMinor: session!.differenceMinor as number,
+        replay: true,
+      };
+    }
+    if (status !== 'open' || clean(register?.activeSessionId) !== sessionId) {
+      throw new Error('CASH_REGISTER_SESSION_CLOSED');
+    }
+    // The cashier who opened the shift is its responsible closer. Manager and
+    // owner can close an assigned shift, preserving a real audit actor.
+    if (
+      actor.role === 'cashier' &&
+      clean(session?.openedByUserId) !== actor.actorId
+    ) throw new Error('CASH_REGISTER_FORBIDDEN');
+    const totals = managedLedgerTotals(session!);
+    const differenceMinor = countedMinor - totals.expectedMinor;
+    if (!Number.isSafeInteger(differenceMinor)) {
+      throw new Error('CASH_REGISTER_BALANCE_INVALID');
+    }
+    if (differenceMinor !== 0 && !reason) {
+      throw new Error('CASH_REGISTER_CLOSE_REASON_REQUIRED');
+    }
+    const revision = register?.revision;
+    if (!Number.isSafeInteger(revision) || (revision as number) < 0) {
+      throw new Error('CASH_REGISTER_INTEGRITY_CONFLICT');
+    }
+    transaction.update(sessionRef, {
+      status: 'closed',
+      closeOperationId: operationId,
+      expectedMinor: totals.expectedMinor,
+      countedMinor,
+      differenceMinor,
+      expectedAmount: totals.expectedMinor / 100,
+      countedAmount: countedMinor / 100,
+      difference: differenceMinor / 100,
+      closedAt: FieldValue.serverTimestamp(),
+      closedByUserId: actor.actorId,
+      closedByRole: actor.role,
+      closedByName: actor.actorId,
+      closeReason: reason,
+      revision: totals.revision + 1,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    transaction.update(registerRef, {
+      activeSessionId: '',
+      revision: (revision as number) + 1,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    transaction.create(
+      adminDb.doc(`stores/${actor.canonicalStoreId}/auditLogs/audit-cash-close-${sessionId}`),
+      {
+        id: `audit-cash-close-${sessionId}`,
+        storeId: actor.canonicalStoreId,
+        actorUserId: actor.actorId,
+        actorRole: actor.role,
+        action: 'cash.session.closed',
+        entityType: 'cashSession',
+        entityId: sessionId,
+        reason,
+        before: { status: 'open' },
+        after: {
+          status: 'closed',
+          expectedAmount: totals.expectedMinor / 100,
+          countedAmount: countedMinor / 100,
+          difference: differenceMinor / 100,
+          registerId,
+        },
+        createdAt: FieldValue.serverTimestamp(),
+      }
+    );
+    return {
+      sessionId,
+      status: 'closed' as const,
+      countedMinor,
+      expectedMinor: totals.expectedMinor,
+      differenceMinor,
+      replay: false,
+    };
+  });
+};
