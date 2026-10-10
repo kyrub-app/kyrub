@@ -1,5 +1,3 @@
-import StoreCashDeviceInventory from './StoreCashDeviceInventory';
-
 export type StoreCashFinanceMovementType =
   | 'sale'
   | 'income'
@@ -64,7 +62,6 @@ export type StoreCashFinanceProjection = {
 
 type Props = {
   projection?: StoreCashFinanceProjection;
-  storeId: string;
 };
 
 const money = (minor: number): string =>
@@ -111,8 +108,8 @@ const unavailableMessage = (reason: StoreCashFinanceProjection['reason']): strin
   return 'O Caixa canônico não pôde ser lido agora. As demais áreas do Financeiro continuam disponíveis.';
 };
 
-export default function StoreCashFinanceWorkspace({ projection, storeId }: Props) {
-  if (!projection) return <StoreCashDeviceInventory storeId={storeId} />;
+export default function StoreCashFinanceWorkspace({ projection }: Props) {
+  if (!projection) return null;
 
   if (!projection.available) {
     return (
@@ -122,7 +119,6 @@ export default function StoreCashFinanceWorkspace({ projection, storeId }: Props
         <p className="mt-3 rounded-2xl border border-dashed border-slate-700 p-4 text-[9px] leading-relaxed text-slate-500">
           {unavailableMessage(projection.reason)}
         </p>
-        <StoreCashDeviceInventory storeId={storeId} />
       </section>
     );
   }
@@ -138,8 +134,6 @@ export default function StoreCashFinanceWorkspace({ projection, storeId }: Props
           Esta área apenas projeta o Caixa existente dentro do Financeiro. Suprimento e sangria alteram a posição física do caixa, mas não são tratados como receita ou despesa. Vendas registradas no Caixa também não são somadas novamente ao faturamento, cuja autoridade continua sendo pagamentos/economicLedger.
         </p>
       </div>
-
-      <StoreCashDeviceInventory storeId={storeId} />
 
       <div className="mt-4 grid min-w-0 gap-2 sm:grid-cols-2 xl:grid-cols-4">
         <article className="min-w-0 rounded-2xl border border-slate-800 bg-slate-950 p-3">

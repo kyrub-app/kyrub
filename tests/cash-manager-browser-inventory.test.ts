@@ -84,8 +84,11 @@ test('finance embeds device inventory into existing Cash operational projection'
   assert.match(listing, /const actor = await authorizeRegisterActor/);
   assert.match(listing, /const storeId = actor.canonicalStoreId/);
   assert.doesNotMatch(listing, /input.canonicalStoreId/);
-  assert.match(cash, /StoreCashDeviceInventory storeId=\{storeId\}/);
-  assert.match(finance, /StoreCashFinanceWorkspace projection=\{cash\} storeId=\{storeId\}/);
+  const composite = readFileSync('src/components/StoreFinanceCompositeRuntime.tsx', 'utf8');
+  assert.ok(composite.includes('<StoreCashDeviceInventory storeId={storeId} />'));
+  assert.ok(composite.includes('Caixa operacional'));
+  assert.doesNotMatch(cash, /StoreCashDeviceInventory/);
+  assert.ok(finance.includes('<StoreCashFinanceWorkspace projection={cash} />'));
   assert.match(ui, /data-kyrub-cash-manager-inventory="submitted-only"/);
   assert.doesNotMatch(ui, /[Ll]iberar migração|[Aa]provar migração/);
 });
