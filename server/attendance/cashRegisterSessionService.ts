@@ -174,7 +174,9 @@ export const recordCashDeviceInspection = async (input: {
     ]);
     const previous = previousSnapshot.data() as Record<string, unknown> | undefined;
     if (previous?.operationId === operationId) {
-      if (JSON.stringify(previous?.counts) !== JSON.stringify(counts)) {
+      const existingCounts = previous?.counts as Record<string, unknown> | undefined;
+      if (!existingCounts ||
+        Object.entries(counts).some(([key, value]) => existingCounts[key] !== value)) {
         throw new Error('CASH_REGISTER_INSPECTION_CONFLICT');
       }
       return {
