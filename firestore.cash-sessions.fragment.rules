@@ -2,6 +2,7 @@
       allow get, list: if cashLedgerRoleAllowed(storeId);
 
       allow create: if cashLedgerRoleAllowed(storeId)
+        && cashLedgerLegacyWritesPermitted(storeId)
         && cashLedgerSessionFieldsAreValid(storeId, sessionId)
         && incoming().deviceId != 'server-managed-register'
         && incoming().status == 'open'
@@ -20,6 +21,7 @@
         && incoming().updatedAt == request.time;
 
       allow update: if cashLedgerRoleAllowed(storeId)
+        && cashLedgerLegacyWritesPermitted(storeId)
         && cashLedgerSessionFieldsAreValid(storeId, sessionId)
         && cashLedgerSessionIdentityIsImmutable()
         && existing().deviceId != 'server-managed-register'
