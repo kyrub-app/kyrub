@@ -20,6 +20,22 @@ const sessionPath = (storeId: string, sessionId: string): string =>
 const registerPath = (storeId: string, registerId: string): string =>
   `stores/${storeId}/cashRegisters/${registerId}`;
 
+const coordinationPath = (storeId: string): string =>
+  `stores/${storeId}/cashCoordination/current`;
+
+/**
+ * Only an explicitly committed, server-owned transition permits managed
+ * movements. A missing control doc is LEGACY mode, never managed.
+ */
+export const isAuthorizedManagedCashMode = (value: unknown, storeId: string): boolean => {
+  if (!value || typeof value !== 'object') return false;
+  const row = value as Record<string, unknown>;
+  return row.mode === 'managed' &&
+    row.storeId === storeId &&
+    row.schemaVersion === 1 &&
+    /^[a-zA-Z0-9][a-zA-Z0-9_-]{7,95}$/.test(clean(row.cutoverOperationId));
+};
+
 type RegisterActor = {
   canonicalStoreId: string;
   legacyStoreId: string;
@@ -74,6 +90,18 @@ const requireTransactionActor = async (
     !hasStorePermission(current.role, 'cash.manage') ||
     current.role !== actor.role
   ) throw new Error('CASH_REGISTER_FORBIDDEN');
+};
+
+const requireManagedCashMode = async (
+  transaction: Transaction,
+  actor: RegisterActor
+): Promise<void> => {
+  const snapshot = await transaction.get(
+    adminDb.doc(coordinationPath(actor.canonicalStoreId))
+  );
+  if (!snapshot.exists ||
+    !isAuthorizedManagedCashMode(snapshot.data(), actor.canonicalStoreId)
+  ) throw new Error('CASH_REGISTER_CUTOVER_NOT_ENABLED');
 };
 
 export const normalizedCashRegisterName = (value: unknown): string => {
@@ -253,6 +281,7 @@ export const openCanonicalCashRegisterSession = async (input: {
   return adminDb.runTransaction(async transaction => {
     // ALL reads precede ANY write, as required by Firestore transactions.
     await requireTransactionActor(transaction, actor);
+    await requireManagedCashMode(transaction, actor);
     const [registerSnapshot, sessionSnapshot] = await Promise.all([
       transaction.get(register),
       transaction.get(session),
@@ -486,6 +515,7 @@ export const addCanonicalCashRegisterMovement = async (input: {
 
   return adminDb.runTransaction(async transaction => {
     await requireTransactionActor(transaction, actor);
+    await requireManagedCashMode(transaction, actor);
     const [registerSnapshot, sessionSnapshot, movementSnapshot] = await Promise.all([
       transaction.get(registerRef),
       transaction.get(sessionRef),
@@ -608,6 +638,7 @@ export const closeCanonicalCashRegisterSession = async (input: {
 
   return adminDb.runTransaction(async transaction => {
     await requireTransactionActor(transaction, actor);
+    await requireManagedCashMode(transaction, actor);
     const [registerSnapshot, sessionSnapshot] = await Promise.all([
       transaction.get(registerRef),
       transaction.get(sessionRef),

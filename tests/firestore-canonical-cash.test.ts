@@ -391,3 +391,80 @@ test('legacy client cannot impersonate server-managed session identity', async (
     )
   );
 });
+
+
+test('missing coordination document keeps authorized legacy cash working', async () => {
+  const cashier = environment.authenticatedContext('cashier-a').firestore();
+  await assertSucceeds(setDoc(
+    doc(cashier, 'stores', STORE_ID, 'cashSessions', SESSION_ID),
+    openSession('cashier-a', 'cashier', 'Caixa')
+  ));
+  await assertSucceeds(setDoc(
+    doc(cashier, 'stores', STORE_ID, 'cashSessions', SESSION_ID, 'movements', 'cash-movement-a'),
+    movement()
+  ));
+});
+
+for (const mode of ['frozen', 'managed', 'unknown']) {
+  test(`server-owned coordination mode ${mode} blocks ALL client-side legacy cash mutation`, async () => {
+    await environment.withSecurityRulesDisabled(async context => {
+      const firestore = context.firestore();
+      await setDoc(doc(firestore, 'stores', STORE_ID, 'cashCoordination', 'current'), {
+        mode,
+        storeId: STORE_ID,
+        schemaVersion: 1,
+        cutoverOperationId: 'test-cutover-1234',
+      });
+      await setDoc(doc(firestore, 'stores', STORE_ID, 'cashSessions', SESSION_ID), {
+        ...openSession('cashier-a', 'cashier', 'Caixa'),
+        openedAt: Timestamp.fromMillis(1_700_000_000_000),
+        createdAt: Timestamp.fromMillis(1_700_000_000_000),
+        updatedAt: Timestamp.fromMillis(1_700_000_000_000),
+      });
+    });
+    const cashier = environment.authenticatedContext('cashier-a').firestore();
+    const manager = environment.authenticatedContext('manager-a').firestore();
+    const owner = environment.authenticatedContext('owner-a').firestore();
+    const session = doc(cashier, 'stores', STORE_ID, 'cashSessions', SESSION_ID);
+
+    await assertFails(setDoc(doc(cashier, 'stores', STORE_ID, 'cashSessions', 'cash-session-new'), {
+      ...openSession('cashier-a', 'cashier', 'Caixa'), id: 'cash-session-new',
+    }));
+    await assertFails(setDoc(
+      doc(cashier, 'stores', STORE_ID, 'cashSessions', SESSION_ID, 'movements', 'cash-movement-a'),
+      movement()
+    ));
+    await assertFails(updateDoc(doc(manager, 'stores', STORE_ID, 'cashSessions', SESSION_ID), {
+      status: 'closed',
+      expectedAmount: 100,
+      countedAmount: 100,
+      difference: 0,
+      closedAt: serverTimestamp(),
+      closedByUserId: 'manager-a',
+      closedByRole: 'manager',
+      closedByName: 'Gerente',
+      closeReason: '',
+      updatedAt: serverTimestamp(),
+    }));
+    await assertSucceeds(getDoc(session));
+    const control = doc(owner, 'stores', STORE_ID, 'cashCoordination', 'current');
+    await assertSucceeds(getDoc(control));
+    await assertFails(updateDoc(control, { mode: 'legacy' }));
+    await assertFails(deleteDoc(control));
+  });
+}
+
+test('client cannot forge cashCoordination document or read it without cash role', async () => {
+  const owner = environment.authenticatedContext('owner-a').firestore();
+  const seller = environment.authenticatedContext('seller-a').firestore();
+  const control = doc(owner, 'stores', STORE_ID, 'cashCoordination', 'current');
+  await assertFails(setDoc(control, {
+    mode: 'managed', storeId: STORE_ID, schemaVersion: 1, cutoverOperationId: 'request-12345',
+  }));
+  await environment.withSecurityRulesDisabled(async context => {
+    await setDoc(doc(context.firestore(), 'stores', STORE_ID, 'cashCoordination', 'current'), {
+      mode: 'legacy', storeId: STORE_ID, schemaVersion: 1, cutoverOperationId: 'request-12345',
+    });
+  });
+  await assertFails(getDoc(doc(seller, 'stores', STORE_ID, 'cashCoordination', 'current')));
+});

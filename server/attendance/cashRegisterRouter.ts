@@ -30,6 +30,11 @@ const sendError = (response: import('express').Response, error: unknown): void =
     response.status(404).json({ error: 'Terminal não encontrado ou desativado.', code });
    } else if (code === 'CASH_REGISTER_ALREADY_EXISTS') {
     response.status(409).json({ error: 'Já existe um terminal com esse nome.', code });
+  } else if (code === 'CASH_REGISTER_CUTOVER_NOT_ENABLED') {
+    response.status(409).json({
+      error: 'Esta loja ainda não concluiu a migração segura do Caixa.',
+      code,
+    });
   } else if (code === 'CASH_REGISTER_SESSION_CLOSED') {
     response.status(409).json({ error: 'A sessão já foi encerrada ou deixou de pertencer a este terminal.', code });
   } else if (code === 'CASH_REGISTER_BALANCE_INVALID') {

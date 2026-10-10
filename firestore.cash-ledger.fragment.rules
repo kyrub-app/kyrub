@@ -2,6 +2,18 @@
       return storeSecActiveRole(storeId, ['owner', 'manager', 'cashier']);
     }
 
+    // Immutable-to-clients control document. Absent = legacy for compatibility.
+    // A frozen or managed store denies ALL legacy client cash writes,
+    // including writes replayed by older installed clients.
+    function cashLedgerLegacyWritesPermitted(storeId) {
+      let path = /databases/$(database)/documents/stores/$(storeId)/cashCoordination/current;
+      return !exists(path) || (
+        get(path).data.mode == 'legacy'
+        && get(path).data.storeId == storeId
+        && get(path).data.schemaVersion == 1
+      );
+    }
+
     function cashLedgerSessionPath(storeId, sessionId) {
       return /databases/$(database)/documents/stores/$(storeId)/cashSessions/$(sessionId);
     }
@@ -10,7 +22,8 @@
     // Server-managed sessions share cashSessions but are owned by the Admin SDK
     // transaction service. Firebase client rules must not bypass its totals.
     function cashLedgerAllowsLegacyClientMovement(storeId, sessionId) {
-      return exists(cashLedgerSessionPath(storeId, sessionId))
+      return cashLedgerLegacyWritesPermitted(storeId)
+        && exists(cashLedgerSessionPath(storeId, sessionId))
         && get(cashLedgerSessionPath(storeId, sessionId)).data.status == 'open'
         && get(cashLedgerSessionPath(storeId, sessionId)).data.deviceId != 'server-managed-register'
         && get(cashLedgerSessionPath(storeId, sessionId)).data.migration.mode == 'write_through'
@@ -115,4 +128,12 @@
         && incoming().legacyStoreId != storeId
         && incoming().occurredAt == request.time
         && incoming().createdAt == request.time;
+    }
+
+    // Coordinates a future cutover, never stores cash totals or payment data.
+    // Only the privileged server may create or change this document.
+    match /stores/{storeId}/cashCoordination/{coordinationId} {
+      allow get: if coordinationId == 'current'
+        && cashLedgerRoleAllowed(storeId);
+      allow list, create, update, delete: if false;
     }
