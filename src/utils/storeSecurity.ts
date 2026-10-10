@@ -201,6 +201,28 @@ export const hasStorePermission = (
   permission: StorePermission
 ): boolean => STORE_ROLE_PERMISSIONS[role].includes(permission);
 
+/**
+ * Canonical Staff KDS status policy, shared by React and the server.
+ * Completion/cancellation affect handoff and economic lifecycle, so they remain
+ * manager/owner-only until the financial authorization block is audited.
+ */
+export const canStoreRoleTransitionOrderStatus = (
+  role: StoreRole,
+  status: 'accepted' | 'preparing' | 'ready' | 'out_for_delivery' | 'completed' | 'rejected' | 'cancelled'
+): boolean => {
+  if (role === 'owner' || role === 'manager') return true;
+  if (status === 'accepted' || status === 'out_for_delivery') {
+    return hasStorePermission(role, 'orders.transfer');
+  }
+  if (status === 'preparing' || status === 'ready') {
+    return hasStorePermission(role, 'production.update');
+  }
+  if (status === 'rejected') {
+    return hasStorePermission(role, 'orders.cancel');
+  }
+  return false;
+};
+
 export const hasStoreFiscalPermission = (
   role: StoreRole,
   permission: FiscalStorePermission
