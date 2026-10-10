@@ -302,40 +302,56 @@ test('seller reads only their own payment records', async () => {
   );
 });
 
-test('production updates production state but cannot change payment state', async () => {
+test('production changes item notes but cannot bypass KDS status or payments with direct Firestore writes', async () => {
   await seedStore();
   await environment.withSecurityRulesDisabled(async context => {
     await setDoc(
       doc(context.firestore(), 'stores', STORE_ID, 'orders', 'order-production'),
-      orderRecord('order-production', 'buyer-a', {
-        status: 'accepted',
-      })
+      orderRecord('order-production', 'buyer-a', { status: 'accepted' })
     );
   });
 
   const production = environment.authenticatedContext('production-a').firestore();
-  const reference = doc(
-    production,
-    'stores',
-    STORE_ID,
-    'orders',
-    'order-production'
-  );
+  const reference = doc(production, 'stores', STORE_ID, 'orders', 'order-production');
 
-  await assertSucceeds(
-    updateDoc(reference, {
-      status: 'preparing',
+  await assertFails(updateDoc(reference, {
+    status: 'preparing',
+    updatedAt: serverTimestamp(),
+  }));
+  await assertFails(updateDoc(reference, {
+    paymentStatus: 'paid',
+    updatedAt: serverTimestamp(),
+  }));
+  await assertSucceeds(updateDoc(reference, {
+    items: orderRecord('order-production', 'buyer-a').items.map(item => ({
+      ...item,
+      note: 'Sem cebola',
+    })),
+    updatedAt: serverTimestamp(),
+  }));
+  const snapshot = await getDoc(reference);
+  assert.equal(snapshot.data()?.status, 'accepted');
+  assert.equal(snapshot.data()?.items[0]?.note, 'Sem cebola');
+});
+
+test('seller and manager must use the authorized KDS server for status and payment changes', async () => {
+  await seedStore();
+  await environment.withSecurityRulesDisabled(async context => {
+    await setDoc(
+      doc(context.firestore(), 'stores', STORE_ID, 'orders', 'order-staff-kds'),
+      orderRecord('order-staff-kds', 'buyer-a', { status: 'pending' })
+    );
+  });
+  for (const userId of ['seller-a', 'manager-a']) {
+    const client = environment.authenticatedContext(userId).firestore();
+    const reference = doc(client, 'stores', STORE_ID, 'orders', 'order-staff-kds');
+    await assertFails(updateDoc(reference, {
+      status: 'accepted',
       updatedAt: serverTimestamp(),
-    })
-  );
-
-  await assertFails(
-    updateDoc(reference, {
+    }));
+    await assertFails(updateDoc(reference, {
       paymentStatus: 'paid',
       updatedAt: serverTimestamp(),
-    })
-  );
-
-  const snapshot = await getDoc(reference);
-  assert.equal(snapshot.data()?.status, 'preparing');
+    }));
+  }
 });

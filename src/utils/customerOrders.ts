@@ -915,6 +915,38 @@ export const subscribeToStoreCustomerOrders = (
     onError
   );
 
+/**
+ * Scoped Staff read transport for the existing operational order ledger.
+ * The backend validates membership on every request; no client Firestore
+ * rule is broadened and no second order store is introduced.
+ */
+export const loadStaffStoreCustomerOrders = async (
+  storeId: string,
+  user: Pick<User, 'getIdToken'>
+): Promise<CustomerOrder[]> => {
+  const token = await user.getIdToken();
+  const response = await fetch(
+    `/api/orders/kds?storeId=${encodeURIComponent(storeId.trim())}`,
+    {
+      headers: { authorization: `Bearer ${token}` },
+      cache: 'no-store',
+    }
+  );
+  const value = await response.json().catch(() => ({})) as Record<string, unknown>;
+  if (!response.ok) {
+    throw new Error(
+      typeof value.error === 'string'
+        ? value.error
+        : 'Não foi possível carregar a fila operacional da loja.'
+    );
+  }
+  return (Array.isArray(value.orders) ? value.orders : [])
+    .flatMap(item => {
+      const parsed = parseCustomerOrder(item);
+      return parsed && parsed.storeId === storeId.trim() ? [parsed] : [];
+    });
+};
+
 export const canTransitionCustomerOrderStatus = (
   current: CustomerOrderStatus,
   next: CustomerOrderStatus

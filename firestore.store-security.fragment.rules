@@ -269,10 +269,12 @@
             )
             || (
               storeSecOperationalStaff(storeId)
+              // Staff status/payment writes must pass the server's authoritative
+              // membership, inventory and payment-readiness checks.
+              && incoming().status == existing().status
+              && incoming().paymentStatus == existing().paymentStatus
               && incoming().diff(existing()).affectedKeys().hasOnly([
                 'items',
-                'status',
-                'paymentStatus',
                 'tableCode',
                 'customerNote',
                 'updatedAt'
@@ -280,9 +282,10 @@
             )
             || (
               storeSecActiveRole(storeId, ['production'])
+              && incoming().status == existing().status
+              && incoming().paymentStatus == existing().paymentStatus
               && incoming().diff(existing()).affectedKeys().hasOnly([
                 'items',
-                'status',
                 'updatedAt'
               ])
             )

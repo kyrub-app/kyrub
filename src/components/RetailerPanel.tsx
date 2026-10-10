@@ -17,7 +17,7 @@ import { ProductInventoryWorkspace } from './store/ProductInventoryWorkspace';
 import { StoreDeliveryTrackingBridge } from './store/StoreDeliveryTrackingBridge';
 import type { Product } from '../types';
 import { auth } from '../utils/firebase';
-import type { StoreRole } from '../utils/storeSecurity';
+import { canStoreRoleTransitionOrderStatus, hasStorePermission, type StoreRole } from '../utils/storeSecurity';
 import {
   KYRUB_CANONICAL_ORDER_NAVIGATION_CHANGED_EVENT,
   KYRUB_CANONICAL_ORDER_NAVIGATION_REQUESTED_EVENT,
@@ -33,6 +33,7 @@ import {
 import { removePublicProduct } from '../utils/publicProductMutations';
 import {
   subscribeToStoreCustomerOrders,
+  loadStaffStoreCustomerOrders,
   type CustomerOrder,
   type CustomerOrderStatus,
 } from '../utils/customerOrders';
@@ -427,9 +428,41 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = props => {
     }
 
     const user = auth.currentUser;
-    if (!user || user.uid !== activeRetailerId) {
+    if (!user) {
       setCustomerOrders([]);
       return;
+    }
+    if (user.uid !== activeRetailerId) {
+      if (!props.accessRole || !hasStorePermission(props.accessRole, 'orders.read')) {
+        setCustomerOrders([]);
+        return;
+      }
+      let stopped = false;
+      let errorNotified = false;
+      const refresh = async (): Promise<void> => {
+        try {
+          const orders = await loadStaffStoreCustomerOrders(activeRetailerId, user);
+          if (stopped) return;
+          setCustomerOrders(orders);
+          errorNotified = false;
+        } catch (error) {
+          if (stopped) return;
+          setCustomerOrders([]);
+          if (!errorNotified) {
+            triggerToast(
+              error instanceof Error ? error.message : 'A fila de pedidos está indisponível.',
+              'error'
+            );
+            errorNotified = true;
+          }
+        }
+      };
+      void refresh();
+      const interval = window.setInterval(() => void refresh(), 5000);
+      return () => {
+        stopped = true;
+        window.clearInterval(interval);
+      };
     }
 
     return subscribeToStoreCustomerOrders(
@@ -440,7 +473,7 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = props => {
         triggerToast('Não foi possível carregar os pedidos da loja.', 'error');
       }
     );
-  }, [activeRetailerId, activeSubTab, selectedTableCode, triggerToast]);
+  }, [activeRetailerId, activeSubTab, selectedTableCode, triggerToast, props.accessRole]);
 
   const handleChangeOrderStatus = async (
     order: CustomerOrder,
@@ -448,8 +481,10 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = props => {
     decision?: OrderDecision
   ): Promise<void> => {
     const user = auth.currentUser;
-    if (!user || user.uid !== activeRetailerId) {
-      triggerToast('Faça login novamente para atualizar o pedido.', 'error');
+    if (!user || (user.uid !== activeRetailerId && (
+      !props.accessRole || !canStoreRoleTransitionOrderStatus(props.accessRole, status)
+    ))) {
+      triggerToast('Sua função não autoriza atualizar este status.', 'error');
       return;
     }
 
@@ -626,6 +661,10 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = props => {
               busyOrderId={busyOrderId}
               attendanceSpaces={atendimentoSpaces}
               onChangeStatus={handleChangeOrderStatus}
+              canChangeStatus={status => (
+                auth.currentUser?.uid === activeRetailerId ||
+                Boolean(props.accessRole && canStoreRoleTransitionOrderStatus(props.accessRole, status))
+              )}
             />
           </>,
           ordersHost
