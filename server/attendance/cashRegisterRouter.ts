@@ -8,6 +8,7 @@ import {
   closeCanonicalCashRegisterSession,
   inspectCanonicalCashCutoverReadiness,
   recordCashDeviceInspection,
+  listCashDeviceInspectionInventory,
 } from './cashRegisterSessionService.js';
 
 const clean = (value: unknown): string =>
@@ -33,6 +34,14 @@ const sendError = (response: import('express').Response, error: unknown): void =
     response.status(409).json({ error: 'Já existe um terminal com esse nome.', code });
   } else if (code === 'CASH_REGISTER_INSPECTION_CONFLICT') {
     response.status(409).json({ error: 'Este relatório já foi registrado com dados diferentes.', code });
+  } else if (
+    code === 'CASH_REGISTER_INSPECTION_SCAN_INCOMPLETE' ||
+    code === 'CASH_REGISTER_INSPECTION_INCONSISTENT'
+  ) {
+    response.status(409).json({
+      error: 'Inventário inconclusivo: os relatórios precisam de conferência antes de prosseguir.',
+      code,
+    });
   } else if (code === 'CASH_REGISTER_INSPECTION_INVALID') {
     response.status(400).json({ error: 'Revise os dados da conferência do aparelho.', code });
   } else if (code === 'CASH_REGISTER_CUTOVER_NOT_ENABLED') {
@@ -75,6 +84,21 @@ export const createCashRegisterRouter = (): Router => {
       const authenticatedUserId = await requireActorId(request.get('authorization') ?? '');
       const report = await inspectCanonicalCashCutoverReadiness({
         legacyStoreId: clean(request.query.storeId),
+        authenticatedUserId,
+      });
+      response.setHeader('Cache-Control', 'no-store, max-age=0');
+      response.status(200).json(report);
+    } catch (error) {
+      sendError(response, error);
+    }
+  });
+
+  // Owner/manager view of submitted reports, before the managed Cash flag.
+  router.get('/device-inspections', async (request, response) => {
+    try {
+      const authenticatedUserId = await requireActorId(request.get('authorization') ?? '');
+      const report = await listCashDeviceInspectionInventory({
+        canonicalStoreId: clean(request.query.storeId),
         authenticatedUserId,
       });
       response.setHeader('Cache-Control', 'no-store, max-age=0');
