@@ -25,6 +25,8 @@ const sendError = (response: import('express').Response, error: unknown): void =
     response.status(403).json({ error: 'Sua função não autoriza esta operação do Caixa.', code: 'CASH_REGISTER_FORBIDDEN' });
   } else if (code === 'CASH_REGISTER_NOT_FOUND') {
     response.status(404).json({ error: 'Terminal não encontrado ou desativado.', code });
+   } else if (code === 'CASH_REGISTER_ALREADY_EXISTS') {
+    response.status(409).json({ error: 'Já existe um terminal com esse nome.', code });
   } else if (code === 'CASH_REGISTER_ALREADY_OPEN') {
     response.status(409).json({ error: 'Já existe uma sessão aberta neste terminal.', code });
   } else if (
