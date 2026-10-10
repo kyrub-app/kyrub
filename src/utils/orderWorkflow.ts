@@ -289,8 +289,11 @@ export const updateOrderStatusWithDecision = async (
   const user = auth.currentUser;
   const normalizedStoreId = storeId.trim();
   const normalizedOrderId = orderId.trim();
-  if (!user || user.uid !== normalizedStoreId) {
+  if (!user || !normalizedStoreId || !normalizedOrderId) {
     throw new Error('Faça login novamente para atualizar o pedido.');
+  }
+  if (user.uid !== normalizedStoreId && isNinetyNineFoodOrderId(normalizedOrderId)) {
+    throw new Error('A sincronização de pedidos 99Food exige autorização do proprietário.');
   }
 
   let syncWithNinetyNineFood = false;
@@ -325,6 +328,7 @@ export const updateOrderStatusWithDecision = async (
           'content-type': 'application/json',
         },
         body: JSON.stringify({
+          storeId: normalizedStoreId,
           status: nextStatus,
           decision,
         }),
