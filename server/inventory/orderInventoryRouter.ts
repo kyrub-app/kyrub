@@ -2,7 +2,7 @@ import { Router, type Request, type Response } from 'express';
 import { FieldValue } from 'firebase-admin/firestore';
 import { verifyFirebaseIdToken } from '../ai/consultantAuth';
 import { authorizeInPersonOrderOperator } from '../attendance/inPersonOrderService.js';
-import { canStaffUpdateOrderStatus } from './staffOrderStatusPolicy.js';
+import { canStoreRoleTransitionOrderStatus } from '../../src/utils/storeSecurity.js';
 import { ConsultantHttpError } from '../ai/types';
 import { adminDb } from '../firebaseAdmin';
 import { sendNinetyNineFoodOrderStatus } from '../integrations/ninetyNineFoodService';
@@ -475,7 +475,7 @@ export const createOrderInventoryRouter = (): Router => {
         response.status(400).json({ error: 'Status do pedido não suportado.' });
         return;
       }
-      if (authority.isStaff && !canStaffUpdateOrderStatus(authority.role, status)) {
+      if (authority.isStaff && !canStoreRoleTransitionOrderStatus(authority.role, status)) {
         throw new Error('STORE_ORDER_ACCESS_FORBIDDEN');
       }
       if (authority.isStaff && request.body?.providerWriteAuthorization !== undefined) {
