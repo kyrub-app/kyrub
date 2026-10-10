@@ -98,7 +98,7 @@ export const createCashRegisterRouter = (): Router => {
     try {
       const authenticatedUserId = await requireActorId(request.get('authorization') ?? '');
       const report = await listCashDeviceInspectionInventory({
-        canonicalStoreId: clean(request.query.storeId),
+        legacyStoreId: clean(request.query.storeId),
         authenticatedUserId,
       });
       response.setHeader('Cache-Control', 'no-store, max-age=0');

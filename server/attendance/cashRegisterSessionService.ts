@@ -238,24 +238,20 @@ export const recordCashDeviceInspection = async (input: {
  * phones, apps, or employees have been inspected.
  */
 export const listCashDeviceInspectionInventory = async (input: {
-  canonicalStoreId: string;
+  legacyStoreId: string;
   authenticatedUserId: string;
 }): Promise<CashManagerDeviceInventory> => {
-  const storeId = clean(input.canonicalStoreId);
-  if (!validId(storeId)) throw new Error('CASH_REGISTER_ID_INVALID');
-  const storeSnapshot = await adminDb.doc(`stores/${storeId}`).get();
-  const storeData = storeSnapshot.data() as Record<string, unknown> | undefined;
-  const legacyStoreId = clean(storeData?.ownerId);
-  if (!storeSnapshot.exists || !legacyStoreId ||
-    clean(storeData?.legacyTenantId) !== legacyStoreId) {
-    throw new Error('CASH_REGISTER_FORBIDDEN');
-  }
+  // Financeiro Interno is keyed by the legacy owner/tenant ID. Never treat
+  // that ID as the canonical Firestore stores/{storeId} document path.
+  // Resolve using the SAME trusted mapping as all canonical Cash commands.
+  const legacyStoreId = clean(input.legacyStoreId);
+  if (!validId(legacyStoreId)) throw new Error('CASH_REGISTER_ID_INVALID');
   const actor = await authorizeRegisterActor({
     legacyStoreId,
     authenticatedUserId: input.authenticatedUserId,
   });
-  if (actor.canonicalStoreId !== storeId) throw new Error('CASH_REGISTER_FORBIDDEN');
   requireCashInventoryManagerRole(actor.role);
+  const storeId = actor.canonicalStoreId;
   // Reconfirm current membership in server authority immediately before read.
   await adminDb.runTransaction(transaction => requireTransactionActor(transaction, actor));
   const snapshot = await adminDb.collection(

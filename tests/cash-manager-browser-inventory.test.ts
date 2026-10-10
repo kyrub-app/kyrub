@@ -75,6 +75,15 @@ test('finance embeds device inventory into existing Cash operational projection'
   assert.match(service, /await adminDb.runTransaction\(transaction => requireTransactionActor/);
   assert.match(service, /\.limit\(101\)\.get\(\)/);
   assert.match(service, /CASH_REGISTER_INSPECTION_SCAN_INCOMPLETE/);
+  const listing = service.slice(
+    service.indexOf('export const listCashDeviceInspectionInventory'),
+    service.indexOf('export const normalizedCashRegisterName')
+  );
+  assert.match(router, /legacyStoreId: clean\\(request.query.storeId\\)/);
+  assert.match(listing, /legacyStoreId: string/);
+  assert.match(listing, /const actor = await authorizeRegisterActor/);
+  assert.match(listing, /const storeId = actor.canonicalStoreId/);
+  assert.doesNotMatch(listing, /input.canonicalStoreId/);
   assert.match(cash, /StoreCashDeviceInventory storeId=\{storeId\}/);
   assert.match(finance, /StoreCashFinanceWorkspace projection=\{cash\} storeId=\{storeId\}/);
   assert.match(ui, /data-kyrub-cash-manager-inventory="submitted-only"/);
