@@ -13,6 +13,7 @@ import {
   updateServiceLocation,
 } from './serviceLocationService.js';
 import { createInPersonOrderRouter } from './inPersonOrderRouter.js';
+import { createCashRegisterRouter } from './cashRegisterRouter.js';
 import { authorizeInPersonOrderOperator } from './inPersonOrderService.js';
 import { createInPersonCustomerIdentityRouter } from './inPersonCustomerIdentityRouter.js';
 import { createLocalServiceRequestRouter } from './localServiceRequestRouter.js';
@@ -184,6 +185,7 @@ export const createLocalAttendanceRouter = (): Router => {
   const router = Router();
 
   router.use('/orders', createInPersonOrderRouter());
+  router.use('/cash-registers', createCashRegisterRouter());
   router.use('/customers', createInPersonCustomerIdentityRouter());
   router.use('/service-requests', createLocalServiceRequestRouter());
 
