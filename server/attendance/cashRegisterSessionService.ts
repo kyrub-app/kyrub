@@ -3,6 +3,7 @@ import { FieldValue, type Transaction } from 'firebase-admin/firestore';
 import { adminDb } from '../firebaseAdmin.js';
 import { hasStorePermission, isStoreRole, type StoreRole } from '../../src/utils/storeSecurity.js';
 import { authorizeInPersonOrderOperator } from './inPersonOrderService.js';
+import { assessCashCutoverPreflight, type CashCutoverPreflight } from './cashRegisterCutoverReadiness.js';
 
 const clean = (value: unknown): string =>
   typeof value === 'string' ? value.trim() : '';
@@ -108,6 +109,39 @@ export const assertCashRegisterOpenIdempotency = (input: {
     clean(input.existing.shiftLabel) !== input.shiftLabel
   ) throw new Error('CASH_REGISTER_IDEMPOTENCY_CONFLICT');
   return 'replay';
+};
+
+/**
+ * Read-only, bounded and fail-closed: remote state is not proof that other
+ * browsers have no unsynced Dexie writes. Owner or manager only.
+ */
+export const inspectCanonicalCashCutoverReadiness = async (input: {
+  legacyStoreId: string;
+  authenticatedUserId: string;
+}): Promise<CashCutoverPreflight> => {
+  const actor = await authorizeRegisterActor(input);
+  if (actor.role !== 'owner' && actor.role !== 'manager') {
+    throw new Error('CASH_REGISTER_FORBIDDEN');
+  }
+  // Revalidate current membership before reading the store's cash metadata.
+  await adminDb.runTransaction(transaction => requireTransactionActor(transaction, actor));
+  const [sessions, registers] = await Promise.all([
+    adminDb.collection(`stores/${actor.canonicalStoreId}/cashSessions`)
+      .where('status', '==', 'open').limit(101).get(),
+    adminDb.collection(`stores/${actor.canonicalStoreId}/cashRegisters`)
+      .limit(101).get(),
+  ]);
+  return assessCashCutoverPreflight({
+    canonicalStoreId: actor.canonicalStoreId,
+    openSessions: sessions.docs.slice(0, 100).map(document => ({
+      id: document.id, data: document.data() as Record<string, unknown>,
+    })),
+    registers: registers.docs.slice(0, 100).map(document => ({
+      id: document.id, data: document.data() as Record<string, unknown>,
+    })),
+    openSessionLimitReached: sessions.docs.length > 100,
+    registerLimitReached: registers.docs.length > 100,
+  });
 };
 
 export const listCanonicalCashRegisters = async (input: {
